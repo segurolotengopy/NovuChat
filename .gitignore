@@ -5,6 +5,11 @@
 !.env.example
 CONFIGURACION.local.md
 *.local.md
+*.local.json
+# Los respaldos heredan el contenido del original: mismos valores reales.
+*.respaldo
+*.respaldo[0-9]
+*.bak
 secrets/
 *.key
 *.pem
