@@ -296,6 +296,49 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 
 ---
 
+## Panel administrativo (pista paralela)
+
+**Diseño extendido y verificado el 2026-08-29: 72 de 72 pruebas de aislamiento
+en verde contra el emulador**, ejecutadas y comprobadas.
+
+- **Techo de crecimiento del producto, escrito:** 2 números por WABA por
+  defecto, hasta 20 con verificación de negocio; más allá hacen falta más
+  WABA. Con una WABA verificada, **el techo son 20 comercios**, y el número 21
+  no exige cambiar código sino un trámite de Meta, de días o semanas.
+- **El número es por comercio, no por flujo.** Varios flujos demo pueden
+  compartir número; cada cliente pago necesita el suyo.
+- Contactos del comercio en subcolección propia; el rol operador no los ve.
+- Conteo de personas atendidas sin crear un segundo registro de teléfonos: se
+  reutiliza el documento de conversación con una marca de período. Se descartó
+  el hash de teléfono porque el espacio de numeración boliviana se enumera en
+  segundos: un hash sin sal es una copia disfrazada de la agenda.
+- Suspensión separada de baja. Un comercio suspendido **sigue viendo sus
+  datos**, y el mensaje al cliente final es neutro y fijo en el código: nunca
+  revela que el comercio debe dinero.
+- Enrutamiento por `phone_number_id` con índice inverso `/rutasWhatsApp`.
+
+**Dos defectos que las pruebas nuevas destaparon, y que estaban "en verde":**
+
+1. `rolEn()` devolvía `null`, y comparar `null` con una cadena en el lenguaje
+   de reglas **lanza error** en vez de dar falso. El propietario de NovuChat no
+   podía leer auditoría, invitaciones ni accesos de soporte. Roto desde la
+   entrega anterior, sin cobertura que lo detectara.
+2. Ocho pruebas de contactos **pasaban en vacío**: los `assertFails` pasaban
+   porque los documentos no existían, no porque las reglas los negaran. En una
+   suite dominada por `assertFails`, el verde no prueba nada por sí solo. Se
+   agregó un control de la semilla, y se comprobó que el control funciona
+   rompiendo la semilla a propósito.
+
+**Conflicto de CI pendiente de resolver:** `ci-node-firebase.yml` (sin filtro
+de rutas) y `.github/workflows/despliegue-admin.yml` (sobre `admin/**`)
+**despliegan los dos** el mismo componente. Hay que dejar uno solo. Recomendado:
+conservar el del estándar y trasladarle los tres controles propios del otro
+—prohibiciones de renderizado, negación por defecto de las reglas y pruebas de
+Firestore—, que hoy no existen en el estándar.
+
+**Riesgo nuevo:** la suspensión de un comercio depende de que n8n respete el
+409 y no cachee la configuración más de 60 s.
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 - **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes

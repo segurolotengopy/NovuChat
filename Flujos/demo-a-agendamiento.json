@@ -113,6 +113,36 @@
               "name": "mensajeReservaNoConfirmada",
               "type": "string",
               "value": "Disculpe, no pude confirmar el registro de su cita en la agenda. Le paso con una persona de recepcion para que lo resuelva ahora mismo."
+            },
+            {
+              "id": "a12",
+              "name": "tratamiento",
+              "type": "string",
+              "value": "Tutea siempre al cliente (tu, te, ti). Nunca uses \"usted\", \"le\" ni \"don/dona\": un salon de belleza cercano habla de tu."
+            },
+            {
+              "id": "a13",
+              "name": "estiloEmojis",
+              "type": "string",
+              "value": "Usa emojis con moderacion y siempre relacionados con lo que dices: uno o dos por mensaje, al principio o al final de una frase, nunca dentro de un precio ni de un horario. Repertorio sugerido: 💇 corte · 💅 manicure · 🦶 pedicure · ✨ limpieza facial · 🦷 odontologia · 📅 dia · ⏰ hora · ✅ cita confirmada · 👋 saludo. Si el mensaje da una mala noticia o un problema, no pongas emojis alegres."
+            },
+            {
+              "id": "a14",
+              "name": "estadoComercio",
+              "type": "string",
+              "value": "operativo"
+            },
+            {
+              "id": "a15",
+              "name": "mensajeComercioSuspendido",
+              "type": "string",
+              "value": "En este momento no podemos atenderte por este medio. Por favor comunicate directamente con el negocio. Gracias por escribirnos."
+            },
+            {
+              "id": "a16",
+              "name": "prefijosPermitidos",
+              "type": "string",
+              "value": "591"
             }
           ]
         },
@@ -130,7 +160,7 @@
         280
       ],
       "parameters": {
-        "jsCode": "// Normaliza el payload de WhatsApp a texto para el agente (criterio B-3).\n// Descarta silenciosamente lo que no sea un mensaje de usuario.\nconst out = [];\nfor (const item of $input.all()) {\n  const src = item.json;\n  const msg = Array.isArray(src.messages) ? src.messages[0] : undefined;\n  if (!msg) continue; // acuse de estado u otro evento\n  const tipo = msg.type ?? 'desconocido';\n  let userInput = '';\n  switch (tipo) {\n    case 'text':\n      userInput = msg.text?.body ?? '';\n      break;\n    case 'interactive': {\n      const sel = msg.interactive?.list_reply ?? msg.interactive?.button_reply;\n      userInput = `El cliente seleccionó la opción del menú: ${sel?.title ?? ''} (id: ${sel?.id ?? ''})`;\n      break;\n    }\n    case 'image':\n      userInput = 'AVISO_SISTEMA: el cliente envió una imagen. Agradécela y continúa el agendamiento.';\n      break;\n    default:\n      userInput = `AVISO_SISTEMA: el cliente envió un mensaje de tipo \"${tipo}\" que no puedes leer. ` +\n        'Respóndele cortésmente que por ahora atiendes por texto.';\n  }\n  const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;\n  out.push({ json: {\n    userInput,\n    tipo,\n    from: msg.from,\n    nombrePerfil: contacto?.profile?.name ?? '',\n    nombreNegocio: src.nombreNegocio,\n    phoneNumberId: src.phoneNumberId,\n    numeroRecepcion: src.numeroRecepcion,\n    calendarioId: src.calendarioId,\n    horarioAtencion: src.horarioAtencion,\n  }});\n}\nreturn out;"
+        "jsCode": "// Normaliza el payload de WhatsApp a texto para el agente (criterio B-3).\n// Descarta silenciosamente lo que no sea un mensaje de usuario.\n\n// La configuracion se arrastra ENTERA y no campo por campo. Antes se copiaba\n// una lista fija, y agregar un campo al nodo `Config del negocio` no bastaba:\n// el prompt lo leia como undefined y la instruccion nunca llegaba al modelo.\n// Fue exactamente lo que paso con `estiloEmojis` y `tratamiento`.\nconst CLAVES_DEL_WEBHOOK = ['messages', 'contacts', 'metadata', 'messaging_product',\n                            'object', 'entry', 'statuses', 'errors'];\n\nconst out = [];\nfor (const item of $input.all()) {\n  const src = item.json;\n  const msg = Array.isArray(src.messages) ? src.messages[0] : undefined;\n  if (!msg) continue; // acuse de estado u otro evento\n\n  const config = {};\n  for (const [clave, valor] of Object.entries(src)) {\n    if (!CLAVES_DEL_WEBHOOK.includes(clave)) config[clave] = valor;\n  }\n\n  // Filtro por pais de origen. Meta cobra el mensaje segun el pais del\n  // DESTINATARIO, asi que responderle a un numero extranjero cuesta su tarifa,\n  // que puede ser diez veces la boliviana. Se descarta ANTES de responder: no\n  // se contesta y no se gasta. Lista vacia = se acepta cualquier origen.\n  const prefijos = String(config.prefijosPermitidos ?? '')\n    .split(',').map(p => p.trim()).filter(Boolean);\n  if (prefijos.length && !prefijos.some(p => String(msg.from ?? '').startsWith(p))) {\n    continue;\n  }\n\n  const tipo = msg.type ?? 'desconocido';\n  let userInput = '';\n  switch (tipo) {\n    case 'text':\n      userInput = msg.text?.body ?? '';\n      break;\n    case 'interactive': {\n      const sel = msg.interactive?.list_reply ?? msg.interactive?.button_reply;\n      userInput = `El cliente seleccionó la opción del menú: ${sel?.title ?? ''} (id: ${sel?.id ?? ''})`;\n      break;\n    }\n    case 'button':\n      userInput = `El cliente tocó el botón: ${msg.button?.text ?? ''}`;\n      break;\n    case 'image':\n      userInput = 'AVISO_SISTEMA: el cliente envió una imagen. Agradécela y continúa el agendamiento.';\n      break;\n    default:\n      userInput = `AVISO_SISTEMA: el cliente envió un mensaje de tipo \"${tipo}\" que no puedes leer. ` +\n        'Respóndele cortésmente que por ahora atiendes por texto.';\n  }\n\n  const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;\n  out.push({ json: {\n    ...config,\n    userInput,\n    tipo,\n    from: msg.from,\n    nombrePerfil: contacto?.profile?.name ?? '',\n  }});\n}\nreturn out;"
       }
     },
     {
@@ -139,14 +169,14 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        620,
+        760,
         280
       ],
       "parameters": {
         "promptType": "define",
         "text": "={{ $json.userInput }}",
         "options": {
-          "systemMessage": "=Eres Sofía, la asistente virtual de {{ $json.nombreNegocio }}. Amable, profesional y concisa: máximo 3 oraciones por mensaje, español boliviano, moneda siempre en \"Bs\".\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, UTC-4). Calcula con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'). Horario de atención: {{ $json.horarioAtencion }}. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }}.\n\nECONOMÍA DE HERRAMIENTAS (respétalo al pie de la letra; el cliente espera en WhatsApp y cada llamada demora):\n- Saludos, catálogo, precios, especialidades y dudas generales: responde DIRECTAMENTE, sin llamar a ninguna herramienta.\n- consultar_disponibilidad: como máximo UNA llamada por mensaje del cliente, y solo cuando vayas a proponer horarios. Pide el día completo en un solo rango (de 09:00 a 19:00 con zona -04:00); nunca consultes franja por franja ni un día por llamada.\n- agendar_cita: una sola vez, cuando el cliente ya confirmó el horario y tienes su nombre. No la uses para 'verificar' ni para releer la agenda.\n- Nunca repitas una llamada con los mismos parámetros. Con lo que te devolvió la herramienta, redacta ya tu respuesta al cliente.\n\nREGLAS DE NEGOCIO:\n1. BELLEZA: si preguntan por servicios de belleza, muestra el catálogo con precios: Manicure 50 Bs · Pedicure 60 Bs · Corte 70 Bs · Limpieza facial 120 Bs. Termina preguntando si desea agendar alguno.\n2. SALUD: si preguntan por servicios de salud, muestra las especialidades (Odontología General, Ortodoncia, Cirugía Maxilofacial) SIN precios. Si preguntan cuánto cuesta un tratamiento, explica profesionalmente que el precio exacto depende de la evaluación del especialista y ofrece agendar una cita de diagnóstico.\n3. AGENDAMIENTO: los eventos que devuelve consultar_disponibilidad son los horarios OCUPADOS: deduce los libres dentro del horario de atención y ofrece un máximo de 3 opciones exactas (ej.: 14:00, 15:30 o 17:00). Nunca inventes disponibilidad ni propongas horarios en el pasado.\n4. CONFIRMACIÓN: cuando el cliente elija un horario, pide su nombre completo si aún no lo tienes y usa la herramienta agendar_cita (título \"Cita <nombre> — <servicio>\", duración 1 hora). Después confirma servicio, día y hora, y despídete con calidez.\n5. RECHAZOS: si el cliente rechaza los horarios propuestos, recuerda lo que ya dijo (día, franja) y ofrece nuevas opciones coherentes con una sola consulta. Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].\n6. Nunca inventes precios, servicios ni disponibilidad. Si piden algo fuera de estas reglas, ofrece consultarlo con recepción.\n7. Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.",
+          "systemMessage": "=Eres Sofía, la asistente virtual de {{ $json.nombreNegocio }}. Amable, profesional y concisa: máximo 3 oraciones por mensaje, español boliviano, moneda siempre en \"Bs\".\n\nTRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, UTC-4). Calcula con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'). Horario de atención: {{ $json.horarioAtencion }}. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }}.\n\nECONOMÍA DE HERRAMIENTAS (respétalo al pie de la letra; el cliente espera en WhatsApp y cada llamada demora):\n- Saludos, catálogo, precios, especialidades y dudas generales: responde DIRECTAMENTE, sin llamar a ninguna herramienta.\n- consultar_disponibilidad: como máximo UNA llamada por mensaje del cliente, y solo cuando vayas a proponer horarios. Pide el día completo en un solo rango (de 09:00 a 19:00 con zona -04:00); nunca consultes franja por franja ni un día por llamada.\n- agendar_cita: una sola vez, cuando el cliente ya confirmó el horario y tienes su nombre. No la uses para 'verificar' ni para releer la agenda.\n- Nunca repitas una llamada con los mismos parámetros. Con lo que te devolvió la herramienta, redacta ya tu respuesta al cliente.\n\nREGLAS DE NEGOCIO:\n1. BELLEZA: si preguntan por servicios de belleza, muestra el catálogo con precios: Manicure 50 Bs · Pedicure 60 Bs · Corte 70 Bs · Limpieza facial 120 Bs. Termina preguntando si desea agendar alguno.\n2. SALUD: si preguntan por servicios de salud, muestra las especialidades (Odontología General, Ortodoncia, Cirugía Maxilofacial) SIN precios. Si preguntan cuánto cuesta un tratamiento, explica profesionalmente que el precio exacto depende de la evaluación del especialista y ofrece agendar una cita de diagnóstico.\n3. AGENDAMIENTO: los eventos que devuelve consultar_disponibilidad son los horarios OCUPADOS: deduce los libres dentro del horario de atención y ofrece un máximo de 3 opciones exactas (ej.: 14:00, 15:30 o 17:00). Nunca inventes disponibilidad ni propongas horarios en el pasado.\n4. CONFIRMACIÓN: cuando el cliente elija un horario, pide su nombre completo si aún no lo tienes y usa la herramienta agendar_cita (título \"Cita <nombre> — <servicio>\", duración 1 hora). Después confirma servicio, día y hora, y despídete con calidez.\n5. RECHAZOS: si el cliente rechaza los horarios propuestos, recuerda lo que ya dijo (día, franja) y ofrece nuevas opciones coherentes con una sola consulta. Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].\n6. Nunca inventes precios, servicios ni disponibilidad. Si piden algo fuera de estas reglas, ofrece consultarlo con recepción.\n7. Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.",
           "maxIterations": 5
         }
       },
@@ -402,6 +432,51 @@
         1440,
         140
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ $('Config del negocio').item.json.estadoComercio }}",
+              "rightValue": "operativo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "susp-if",
+      "name": "¿Comercio operativo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        560,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// El comercio no esta operativo (suspendido o dado de baja).\n// PROHIBIDO revelar el motivo: el cliente final no tiene por que enterarse de\n// que el negocio debe dinero. El texto es neutro y sale de Config del negocio.\n// Se corta ANTES del agente, asi que un comercio suspendido no consume ni\n// tokens ni llamadas al calendario.\nconst cfg = $('Config del negocio').first().json;\nconst aviso = String(cfg.mensajeComercioSuspendido ?? '').trim()\n  || 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';\n\nreturn $input.all().map(i => ({ json: {\n  respuesta: aviso,\n  transferir: false,\n  comercioSuspendido: true,\n  estadoComercio: cfg.estadoComercio,\n  from: i.json.from,\n  nombrePerfil: i.json.nombrePerfil,\n}}));"
+      },
+      "id": "susp-code",
+      "name": "Comercio no operativo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        480
+      ]
     }
   ],
   "connections": {
@@ -443,7 +518,7 @@
       "main": [
         [
           {
-            "node": "AI Agent (Sofía)",
+            "node": "¿Comercio operativo?",
             "type": "main",
             "index": 0
           }
@@ -572,6 +647,35 @@
           },
           {
             "node": "¿Transferir a humano?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comercio operativo?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Comercio no operativo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comercio no operativo": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
             "type": "main",
             "index": 0
           }
