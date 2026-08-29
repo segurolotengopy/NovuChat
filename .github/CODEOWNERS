@@ -1,0 +1,55 @@
+# =============================================================================
+# CODEOWNERS — NovuChat
+# -----------------------------------------------------------------------------
+# Adaptado del estándar DevSecOps al repositorio real: cuenta PERSONAL
+# `segurolotengopy`, no una organización, por lo que no existen equipos
+# (`@ORG/plataforma`) y se referencia directamente al usuario.
+#
+# ⚠️ LIMITACIÓN REAL, no cosmética. GitHub no permite que una persona apruebe
+# su propio Pull Request. Con un único propietario, un ruleset que exija
+# revisión de CODEOWNERS deja `main` bloqueado para siempre. La regla §4 de
+# `~/.claude/rules/security-rules.md` (separación de funciones: ningún agente
+# ni autor aprueba sus propios cambios) solo se puede hacer cumplir de forma
+# técnica cuando exista un segundo revisor humano.
+#
+# Pendiente para el propietario: agregar la cuenta de GitHub de Silvana como
+# colaboradora con permiso de revisión y sumarla a las líneas de abajo. Hasta
+# entonces, la revisión por pares es un acuerdo de proceso, no un control.
+# =============================================================================
+
+# Todo el repositorio
+*                                   @segurolotengopy
+
+# Cadena de suministro y CI: lo más sensible del repositorio.
+/.github/                           @segurolotengopy
+/.github/workflows/                 @segurolotengopy
+/.github/CODEOWNERS                 @segurolotengopy
+/.github/dependabot.yml             @segurolotengopy
+/.github/gitleaks.toml              @segurolotengopy
+/.pre-commit-config.yaml            @segurolotengopy
+/.devsecops.yml                     @segurolotengopy
+/deploy.sh                          @segurolotengopy
+/security-local.sh                  @segurolotengopy
+
+# Saneo del repositorio público: cambiar esto es cambiar la política de fugas.
+/scripts/verificar-saneo.sh         @segurolotengopy
+/CONVENCIONES-REPO-PUBLICO.md       @segurolotengopy
+/CONFIGURACION.md                   @segurolotengopy
+/.env.example                       @segurolotengopy
+/.gitignore                         @segurolotengopy
+
+# Sitio administrativo (Firebase). Las reglas de Firestore son un control de
+# seguridad: nunca deben fusionarse sin revisión.
+/admin/                             @segurolotengopy
+/admin/firestore.rules              @segurolotengopy
+/admin/firebase.json                @segurolotengopy
+/admin/package.json                 @segurolotengopy
+/admin/pnpm-lock.yaml               @segurolotengopy
+
+# Flujos de n8n: fuente de verdad de los demos; un export sin sanear filtra
+# identificadores reales (ver CONFIGURACION.local.md §0.b).
+/Flujos/                            @segurolotengopy
+
+# Configuración de los agentes de Claude Code.
+/.claude/                           @segurolotengopy
+/CLAUDE.md                          @segurolotengopy

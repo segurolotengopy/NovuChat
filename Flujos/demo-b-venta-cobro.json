@@ -1,0 +1,666 @@
+{
+  "name": "NovuChat Demo B — Venta y cobro (Gastronomía y Retail)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 60
+  },
+  "nodes": [
+    {
+      "id": "nota-configuracion-b",
+      "name": "Nota Configuración B",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        -240
+      ],
+      "parameters": {
+        "content": "## Demo B — Venta y cobro (QR SIMULADO)\n\n**App de Meta: `NovuChat-Demo-B`, en el portafolio comercial NUEVO.**\nEl número de prueba es **uno por portafolio comercial, no por app**: por eso el Demo B\nnecesita su propio portafolio. Pasos en `GUIA-META-NOVUCHAT.md` (raíz del repo).\n\n**Antes de activar:**\n1. `WhatsApp Trigger` → **Trigger On = Messages** a mano. Al importar el JSON el parámetro\n   llega vacío. Dejá *Receive Message Status Updates* **sin valores**.\n2. Credenciales: *WhatsApp Trigger* (App ID + App Secret de `NovuChat-Demo-B`), *WhatsApp*\n   (token permanente del usuario de sistema + WABA ID del portafolio nuevo) y *Header Auth*\n   (`Authorization: Bearer <token permanente>`) para los dos nodos HTTP.\n3. Credencial *Google Gemini*; el modelo se elige **del desplegable**, nunca a mano.\n4. Completar `Config del negocio`: todo lo `REEMPLAZAR_…`. Es el ÚNICO nodo que se toca\n   para instalar un cliente nuevo.\n5. Subir `Demo-Recursos/qr-demo.png` con `POST /{{PHONE_NUMBER_ID}}/media` **desde el número\n   del Demo B** y pegar el media ID en `qrMediaId` (vale 30 días, no necesita hosting).\n   Si preferís URL pública, dejá `qrMediaId` vacío y llená `qrUrl`.\n6. `subscribed_apps`: la WABA del portafolio nuevo debe estar suscrita a esta app. **No existe\n   en la interfaz de Meta, solo por API** — `scripts/verificar-meta.sh`. Sin esto no entra nada.\n7. El carrito nativo (`order`) solo funciona si la WABA tiene catálogo. Sin catálogo el pedido\n   entra por lista + texto y el flujo funciona igual.",
+        "width": 620,
+        "height": 460
+      }
+    },
+    {
+      "id": "nota-prohibiciones-b",
+      "name": "Nota Cobro simulado",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        250
+      ],
+      "parameters": {
+        "content": "## Prohibición 3 — el cobro es SIMULADO (tres compuertas)\n\nNo alcanza con pedírselo al modelo: un LLM puede omitir la frase. El rótulo está\nimpuesto **por código** en tres lugares, y todos los caminos de salida pasan por ellos:\n\n1. **La imagen**: `qr-demo.png` lleva el rótulo impreso *dentro* de la imagen.\n2. **El epígrafe**: `captionQr` de `Config del negocio`, que el nodo `Enviar QR` manda\n   siempre como `caption`. No hay camino que envíe la imagen sin epígrafe.\n3. **El texto**: el nodo `Procesar respuesta` revisa CADA respuesta antes de salir. Si\n   detecta una afirmación de cobro sin la palabra 'simulado', le agrega el rótulo. Cubre\n   el camino de reintento (el cliente manda dos veces el comprobante), el mensaje suelto\n   y cualquier respuesta fuera de guion.\n\n## Prohibición 4 — el agente no niega ser una IA\nRegla explícita en el System Message **y** corrección por código en `Procesar respuesta`:\nsi la respuesta niega ser IA o afirma ser una persona, se reescribe antes de enviarse.\n\nEl campo `avisos` de la salida registra qué compuerta actuó: revisalo en las ejecuciones\ndel ensayo. Si `rotulo_generico` aparece seguido, hay que ajustar el prompt.",
+        "width": 620,
+        "height": 420,
+        "color": 3
+      }
+    },
+    {
+      "id": "trigger-whatsapp",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "messages"
+        ]
+      }
+    },
+    {
+      "id": "if-es-mensaje",
+      "name": "¿Es un mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -80,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Array.isArray($json.messages) ? $json.messages.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ Array.isArray($json.statuses) ? $json.statuses.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "config-negocio",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        140,
+        280
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b01",
+              "name": "nombreNegocio",
+              "type": "string",
+              "value": "Resto & Tienda Demo NovuChat"
+            },
+            {
+              "id": "b02",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID"
+            },
+            {
+              "id": "b03",
+              "name": "numeroDueno",
+              "type": "string",
+              "value": "REEMPLAZAR_NUMERO_DUENO_SIN_+"
+            },
+            {
+              "id": "b04",
+              "name": "qrMediaId",
+              "type": "string",
+              "value": "REEMPLAZAR_MEDIA_ID_QR_DEMO"
+            },
+            {
+              "id": "b05",
+              "name": "qrUrl",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b06",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "b07",
+              "name": "zonaHoraria",
+              "type": "string",
+              "value": "America/La_Paz"
+            },
+            {
+              "id": "b08",
+              "name": "moneda",
+              "type": "string",
+              "value": "Bs"
+            },
+            {
+              "id": "b09",
+              "name": "horarioAtencion",
+              "type": "string",
+              "value": "lunes a sábado de 11:00 a 22:00"
+            },
+            {
+              "id": "b10",
+              "name": "menuGastronomia",
+              "type": "string",
+              "value": "Hamburguesa doble 35 Bs · Hamburguesa clásica 28 Bs · Salchipapa 20 Bs · Gaseosa (normal o zero) 8 Bs"
+            },
+            {
+              "id": "b11",
+              "name": "catalogoRetail",
+              "type": "string",
+              "value": "Chaqueta negra (tallas S, M, L) 180 Bs · Audífonos inalámbricos 95 Bs"
+            },
+            {
+              "id": "b12",
+              "name": "costoDelivery",
+              "type": "string",
+              "value": "7"
+            },
+            {
+              "id": "b13",
+              "name": "recargoFlota",
+              "type": "string",
+              "value": "10"
+            },
+            {
+              "id": "b14",
+              "name": "tiempoCocina",
+              "type": "string",
+              "value": "25 minutos"
+            },
+            {
+              "id": "b15",
+              "name": "despachoRetail",
+              "type": "string",
+              "value": "hoy a las 17:00"
+            },
+            {
+              "id": "b16",
+              "name": "puntosFidelizacion",
+              "type": "string",
+              "value": "15"
+            },
+            {
+              "id": "b17",
+              "name": "rotuloDemo",
+              "type": "string",
+              "value": "🧪 Aclaración: este QR es de DEMOSTRACIÓN, el cobro es SIMULADO y no mueve dinero."
+            },
+            {
+              "id": "b18",
+              "name": "captionQr",
+              "type": "string",
+              "value": "🧪 DEMOSTRACIÓN — cobro SIMULADO. Este QR no cobra ni mueve dinero. Enviá la foto de tu comprobante para continuar con la demo."
+            },
+            {
+              "id": "b19",
+              "name": "textoPagoSimulado",
+              "type": "string",
+              "value": "Pago verificado (SIMULADO — demostración, sin cobro real)."
+            },
+            {
+              "id": "b20",
+              "name": "textoBienvenida",
+              "type": "string",
+              "value": "¡Hola! 👋 Soy el asistente virtual (IA) de "
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "parser-b",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        280
+      ],
+      "parameters": {
+        "jsCode": "// Normaliza el payload de la Cloud API (regla \"normalización de entrada\" de\n// CLAUDE.md) y arrastra TODO lo que puso `Config del negocio`.\n// Nunca se accede a `.text.body` fuera de este nodo.\nconst out = [];\nfor (const item of $input.all()) {\n  const src = item.json;\n\n  // Config del negocio viene con includeOtherFields=true: separo lo que es\n  // payload de Meta de lo que es configuración, para no listar campo por campo\n  // (así, agregar una variable al Set no obliga a tocar este código).\n  const cfg = { ...src };\n  for (const k of ['messages', 'contacts', 'statuses', 'errors', 'metadata', 'messaging_product']) {\n    delete cfg[k];\n  }\n\n  const msg = Array.isArray(src.messages) ? src.messages[0] : undefined;\n  if (!msg) continue; // acuse de estado u otro evento: no debería llegar acá\n\n  const tipo = msg.type ?? 'desconocido';\n  let userInput = '';\n  let esSaludo = false;\n  let esComprobante = false;\n\n  switch (tipo) {\n    case 'text': {\n      userInput = msg.text?.body ?? '';\n      esSaludo = /^(hola|ola|buen(a|o)s?( d[ií]as| tardes| noches)?|hey|holi|qu[eé] tal)[\\s!¡.,?¿]*$/i\n        .test(userInput.trim());\n      break;\n    }\n    case 'interactive': {\n      const sel = msg.interactive?.list_reply ?? msg.interactive?.button_reply;\n      userInput = 'El cliente seleccionó la opción del menú interactivo: ' +\n        (sel?.title ?? '') + ' (id: ' + (sel?.id ?? '') + ')';\n      break;\n    }\n    case 'button': {\n      userInput = 'El cliente pulsó el botón: ' + (msg.button?.text ?? '');\n      break;\n    }\n    case 'order': {\n      const items = (msg.order?.product_items ?? [])\n        .map(p => '- ' + p.quantity + ' x ' + p.product_retailer_id +\n                  ' (precio unitario: ' + p.item_price + ' ' + p.currency + ')')\n        .join('\\n');\n      const nota = msg.order?.text ? '\\nNota del cliente: ' + msg.order.text : '';\n      userInput = 'El cliente envió un CARRITO de compras con estos ítems:\\n' +\n        (items || '(carrito vacío)') + nota +\n        '\\nRevisa si faltan variantes o notas especiales según tus reglas.';\n      break;\n    }\n    case 'image': {\n      esComprobante = true;\n      const cap = msg.image?.caption ? ' Escribió junto a la imagen: \"' + msg.image.caption + '\".' : '';\n      userInput = 'El cliente envió una IMAGEN. En esta demostración se asume que es la foto ' +\n        'del comprobante del pago SIMULADO del QR.' + cap;\n      break;\n    }\n    case 'document': {\n      esComprobante = true;\n      userInput = 'El cliente envió un DOCUMENTO (PDF o similar). En esta demostración se asume ' +\n        'que es el comprobante del pago SIMULADO del QR.';\n      break;\n    }\n    case 'audio':\n    case 'voice': {\n      userInput = 'AVISO_SISTEMA: el cliente envió una NOTA DE VOZ que no puedes escuchar. ' +\n        'Pídele con amabilidad que te lo escriba por texto.';\n      break;\n    }\n    case 'location': {\n      const loc = msg.location ?? {};\n      userInput = 'El cliente compartió su UBICACIÓN' +\n        (loc.address ? ' (' + loc.address + ')' : '') +\n        '. Úsala como dirección de entrega y confírmasela por escrito.';\n      break;\n    }\n    case 'sticker':\n    case 'video':\n    case 'contacts':\n    default: {\n      userInput = 'AVISO_SISTEMA: el cliente envió un mensaje de tipo \"' + tipo +\n        '\" que no puedes leer. Respóndele cortésmente que por ahora atiendes por texto ' +\n        'y retomá la venta donde quedó.';\n    }\n  }\n\n  const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;\n\n  out.push({ json: Object.assign({}, cfg, {\n    userInput,\n    tipo,\n    esSaludo,\n    esComprobante,\n    from: msg.from,\n    mensajeId: msg.id ?? '',\n    nombrePerfil: contacto?.profile?.name ?? '',\n  })});\n}\nreturn out;\n"
+      }
+    },
+    {
+      "id": "if-saludo",
+      "name": "¿Saludo inicial?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        580,
+        280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ $json.esSaludo }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "lista-bienvenida",
+      "name": "Lista interactiva de bienvenida",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        820,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.from,\n  type: 'interactive',\n  interactive: {\n    type: 'list',\n    header: { type: 'text', text: $json.nombreNegocio },\n    body: { text: $json.textoBienvenida + $json.nombreNegocio + '. ¿Cómo te ayudo hoy?' },\n    footer: { text: 'Demostración NovuChat · los cobros son simulados' },\n    action: { button: 'Ver opciones', sections: [ { title: 'Elegí una opción', rows: [\n      { id: 'delivery', title: '🛵 Pedir por Delivery' },\n      { id: 'recojo', title: '🛍️ Pasar a recoger' },\n      { id: 'menu', title: '📖 Ver Menú Completo' }\n    ] } ] }\n  }\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500
+    },
+    {
+      "id": "agente-novuchat",
+      "name": "AI Agent NovuChat",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        820,
+        400
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userInput }}",
+        "options": {
+          "systemMessage": "=Eres NovuChat, el asistente virtual de ventas de {{ $json.nombreNegocio }} (restaurante y tienda retail). Amable, conciso (máximo 3 oraciones por mensaje), español boliviano de trato informal con el cliente, moneda siempre en \"{{ $json.moneda }}\".\n\nTRANSPARENCIA (regla que no se negocia): sos un asistente con inteligencia artificial. Si te preguntan si sos un robot, un bot o una IA, decilo con naturalidad y seguí ayudando. Nunca digas que sos una persona.\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, {{ $json.zonaHoraria }}, UTC-4). Calculá con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'); nunca uses otra hora. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }} (ese es su WhatsApp registrado).\n\nHORARIO DE ATENCIÓN: {{ $json.horarioAtencion }}.\n\nREGLAS RESTAURANTE:\n1. Menú de referencia, no existe nada fuera de esto: {{ $json.menuGastronomia }}. Delivery en zona urbana: {{ $json.costoDelivery }} {{ $json.moneda }}.\n2. Al recibir un pedido o un carrito, preguntá SIEMPRE si desea agregar una nota especial (sin cebolla, sin tomate, término de la carne) antes de cobrar.\n3. MEMORIA: si el cliente ya eligió 'Delivery' o 'Pasar a recoger' (incluida la opción del menú interactivo inicial), NO vuelvas a preguntar la modalidad. Si solo pidió ver el menú, DEBÉS preguntarla antes de cobrar. Si es Delivery, pedí la dirección y sumá el envío al total.\n\nREGLAS RETAIL:\n4. Catálogo de referencia: {{ $json.catalogoRetail }}. Si falta una variante obligatoria (talla, color), pedila antes de cobrar.\n5. Envío nacional por flota (recargo de terminal {{ $json.recargoFlota }} {{ $json.moneda }}): NO entregues el QR hasta tener Nombre completo y CI. Confirmá el celular proactivamente: 'Tengo registrado este WhatsApp, ¿usamos este mismo para la guía de la flota?'.\n\nCOBRO — ES UNA DEMOSTRACIÓN, NUNCA UN COBRO REAL:\n6. Este asistente NO cobra. El QR que se envía está rotulado como simulacro en la propia imagen y en su epígrafe, y no mueve dinero. Nunca digas ni insinúes que el cobro es real, que el dinero se acreditó o que verificaste un pago en un banco.\n7. Cuando tengas todos los datos, mostrá el TOTAL desglosado (productos + envío o recargo si aplica), avisá que enviás el código QR aclarando que es de demostración, y terminá tu mensaje EXACTAMENTE con la marca [ENVIAR_QR].\n8. Después del QR, NO confirmes el pedido hasta que llegue una IMAGEN (el comprobante). Si el cliente escribe otra cosa, atendelo y recordale con amabilidad el pago pendiente.\n9. Cuando llegue la imagen del comprobante: confirmá con el texto literal '{{ $json.textoPagoSimulado }}', resumí el pedido completo con su total, dá el tiempo estimado (cocina: {{ $json.tiempoCocina }} · retail: despacho {{ $json.despachoRetail }}) y terminá EXACTAMENTE con la marca [PEDIDO_CONFIRMADO]. Cerrá agradeciendo y mencionando que sumó {{ $json.puntosFidelizacion }} puntos en el club de fidelización.\n10. Si el cliente insiste en pagar de verdad o pregunta si el cobro es real, respondé que es una demostración y que en producción la acreditación la confirma el banco por webhook.\n11. Si el cliente cambia de opinión a mitad del flujo, recalculá el total inmediatamente antes de enviar el QR.\n12. Nunca inventes productos ni precios fuera de estas reglas. Si te piden algo que no está, decilo con honestidad y ofrecé lo que sí hay.\n\nECONOMÍA (el cliente está esperando en el chat: respondé en menos de 10 segundos):\n13. Resolvé cada mensaje en UN SOLO paso de razonamiento. No encadenes llamadas ni herramientas que no necesites: este flujo no tiene herramientas, toda la información que precisás está en estas reglas y en el historial.\n14. No repitas el pedido completo en cada mensaje: resumilo solo al pedir el pago y al confirmar.\n15. Preguntá de a un dato por vez y respondé directo, sin preámbulos ni disculpas de relleno.",
+          "maxIterations": 5,
+          "returnIntermediateSteps": false
+        }
+      }
+    },
+    {
+      "id": "modelo-gemini",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        700,
+        660
+      ],
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.3,
+          "maxOutputTokens": 1024
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "memoria-ventana",
+      "name": "Memoria por teléfono",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        900,
+        660
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Normalizar entrada').item.json.from }}",
+        "contextWindowLength": 15
+      }
+    },
+    {
+      "id": "post-b",
+      "name": "Procesar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        400
+      ],
+      "parameters": {
+        "jsCode": "// Separa las marcas [ENVIAR_QR] / [PEDIDO_CONFIRMADO] y — sobre todo —\n// APLICA POR CÓDIGO las prohibiciones 3 y 4 de CLAUDE.md.\n//\n// Por qué acá y no solo en el prompt: un modelo puede omitir una frase del\n// system message (por temperatura, por truncado o por un reintento). Las dos\n// prohibiciones no pueden depender de la buena voluntad del LLM, así que este\n// nodo es la última compuerta antes de que cualquier texto salga a WhatsApp.\n// Todos los caminos de salida al cliente pasan por acá.\n\nconst entradas = $('Normalizar entrada').all();\n\n// Frases que, si aparecen sin la palabra \"simulad…\", harían pasar el cobro por real.\nconst AFIRMA_COBRO = /((pago|cobro|transferencia|dep[oó]sito|abono)\\s+(\\S+\\s+){0,3}(verificad|confirmad|recibid|acreditad|procesad|aprobad|realizad|efectuad|exitos)|ya\\s+(recibimos|se\\s+acredit|te\\s+cobr|se\\s+cobr)|(pago|cobro)\\s+(\\S+\\s+){0,2}(real|de\\s+verdad))/i;\nconst DICE_SIMULADO = /(simulad|simulacr|demostraci[oó]n|\\bdemo\\b|no\\s+cobra)/i;\n// Negaciones de ser IA (prohibición 4).\nconst NIEGA_IA = /(no\\s+soy\\s+(un[ao]?\\s+)?(bot|robot|m[aá]quina|programa|inteligencia\\s+artificial|\\bia\\b|asistente\\s+virtual|autom[aá]tic[ao])|soy\\s+(un[ao]?\\s+)?(persona|humano|humana|ser\\s+humano)|habl(as|[aá]s|a)\\s+con\\s+(un[ao]?\\s+)?(persona|humano|humana))/i;\n\nconst out = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const item = $input.all()[i];\n  // Emparejamiento por índice: nunca .first(), que le pondría el teléfono del\n  // primer mensaje a todos los items si llegaran dos a la vez.\n  const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;\n\n  const bruto = String(item.json.output ?? item.json.text ?? '').trim();\n  const enviarQr = /\\[ENVIAR_QR\\]/i.test(bruto);\n  const pedidoConfirmado = /\\[PEDIDO_CONFIRMADO\\]/i.test(bruto);\n\n  // Quita las marcas conocidas y cualquier otra marca en corchetes que el\n  // modelo se haya inventado, para que el cliente nunca las vea.\n  let texto = bruto\n    .replace(/\\[ENVIAR_QR\\]/gi, '')\n    .replace(/\\[PEDIDO_CONFIRMADO\\]/gi, '')\n    .replace(/\\[[A-ZÁÉÍÓÚÑ_ ]{3,30}\\]/g, '')\n    .trim();\n\n  const avisos = [];\n\n  // --- Prohibición 4: el agente no niega ser una IA ---------------------\n  if (NIEGA_IA.test(texto)) {\n    texto = texto.replace(NIEGA_IA, 'sí, soy un asistente virtual con inteligencia artificial');\n    avisos.push('correccion_ia');\n  }\n\n  // --- Prohibición 3: ningún cobro simulado se presenta como real -------\n  // (a) Si sale el QR, el texto que lo acompaña dice que es demostración.\n  if (enviarQr && !DICE_SIMULADO.test(texto)) {\n    texto = (texto ? texto + '\\n\\n' : '') + ent.rotuloDemo;\n    avisos.push('rotulo_qr');\n  }\n  // (b) Si se confirma el pedido, la confirmación dice \"simulado\".\n  if (pedidoConfirmado && !DICE_SIMULADO.test(texto)) {\n    texto = (texto ? texto + '\\n\\n' : '') + ent.textoPagoSimulado;\n    avisos.push('rotulo_confirmacion');\n  }\n  // (c) Red de seguridad para CUALQUIER otro camino —reintento del cliente,\n  //     mensaje suelto, respuesta fuera de guion— en el que el agente afirme\n  //     un cobro sin decir que es simulado.\n  if (AFIRMA_COBRO.test(texto) && !DICE_SIMULADO.test(texto)) {\n    texto = texto + '\\n\\n' + ent.rotuloDemo;\n    avisos.push('rotulo_generico');\n  }\n\n  if (!texto) {\n    texto = 'Disculpá, no pude generar la respuesta. ¿Me lo repetís?';\n    avisos.push('respuesta_vacia');\n  }\n\n  out.push({ json: {\n    respuesta: texto,\n    enviarQr,\n    pedidoConfirmado,\n    avisos,                       // queda en la ejecución para auditar el ensayo\n    from: ent.from,\n    nombrePerfil: ent.nombrePerfil,\n    // Config arrastrada: los nodos de salida leen $json y no dependen del\n    // emparejamiento de items hacia atrás, que se rompe después de un Code.\n    phoneNumberId: ent.phoneNumberId,\n    numeroDueno: ent.numeroDueno,\n    waGraphVersion: ent.waGraphVersion,\n    qrMediaId: ent.qrMediaId,\n    qrUrl: ent.qrUrl,\n    rotuloDemo: ent.rotuloDemo,\n    captionQr: ent.captionQr,\n    nombreNegocio: ent.nombreNegocio,\n  }});\n}\n\nreturn out;\n"
+      }
+    },
+    {
+      "id": "send-cliente-b",
+      "name": "Responder al cliente",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        220
+      ],
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.from }}",
+        "textBody": "={{ $json.respuesta }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "if-qr",
+      "name": "¿Enviar QR?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1340,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "q1",
+              "leftValue": "={{ $json.enviarQr }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "send-qr",
+      "name": "Enviar QR (imagen DEMO)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.from,\n  type: 'image',\n  image: Object.assign(\n    { caption: $json.captionQr },\n    $json.qrMediaId && !String($json.qrMediaId).startsWith('REEMPLAZAR')\n      ? { id: $json.qrMediaId }\n      : { link: $json.qrUrl }\n  )\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500
+    },
+    {
+      "id": "if-confirmado",
+      "name": "¿Pedido confirmado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1340,
+        620
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ $json.pedidoConfirmado }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "send-dueno",
+      "name": "Avisar al dueño",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1580,
+        620
+      ],
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.numeroDueno }}",
+        "textBody": "=🚨 NUEVO PEDIDO CONFIRMADO — DEMOSTRACIÓN\n⚠️ Cobro SIMULADO: no hay acreditación bancaria, no entró dinero.\n\nCliente: {{ $json.nombrePerfil || 'sin nombre de perfil' }} ({{ $json.from }})\n\nResumen enviado al cliente:\n{{ $json.respuesta }}"
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "nota-criterios-b",
+      "name": "Nota Criterios B",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -960,
+        700
+      ],
+      "parameters": {
+        "content": "## Reglas de diseño de CLAUDE.md — dónde vive cada una\n\n- **Clave de sesión = número de origen** → `Memoria por teléfono`, `sessionKey` =\n  `messages[0].from`. Sin esto dos clientes comparten memoria: el defecto más grave.\n- **Filtro de eventos antes del agente** → `¿Es un mensaje?` (hay `messages` y no hay\n  `statuses`). Los acuses de estado se descartan.\n- **Normalización de entrada** → `Normalizar entrada` cubre text, interactive, button,\n  order, image, document, audio, location, sticker y cualquier otro con respuesta cortés.\n  Es el único nodo que toca `.text.body`.\n- **Fecha, hora y zona en el prompt** → `America/La_Paz` (UTC-4) inyectada con `$now`, y\n  `timezone` del flujo en la misma zona.\n- **Modelo intercambiable** → sub-nodo `Google Gemini Chat Model`. Para producción se\n  reemplaza por *Anthropic Chat Model* y no se toca nada más.\n- **Todo lo configurable por negocio en `Config del negocio`** → menú, catálogo, precios,\n  costos de envío, tiempos, horario, moneda y los textos del rótulo de demostración.\n  El System Message los lee por expresión: instalar un cliente nuevo = editar un solo nodo.\n- **Nodos Code en JavaScript** → la imagen de n8n desplegada no trae Python.\n\n## Latencia (aprendizajes del Demo A)\n`retryOnFail` en el modelo (3 intentos, 1 s) por los 503 de Gemini · `maxIterations` = 5 ·\n`executionTimeout` = 60 s en Settings · `maxOutputTokens` = 1024 · `temperature` = 0.3 ·\nreglas 13–15 del System Message (economía: un solo paso de razonamiento, sin relleno).\nMismos valores verificados en el Demo A. Objetivo: respuesta en menos de 10 segundos.",
+        "width": 620,
+        "height": 460,
+        "color": 4
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "¿Es un mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es un mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Saludo inicial?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Saludo inicial?": {
+      "main": [
+        [
+          {
+            "node": "Lista interactiva de bienvenida",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent NovuChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent NovuChat",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memoria por teléfono": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent NovuChat",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent NovuChat": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Enviar QR?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Pedido confirmado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar QR?": {
+      "main": [
+        [
+          {
+            "node": "Enviar QR (imagen DEMO)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿Pedido confirmado?": {
+      "main": [
+        [
+          {
+            "node": "Avisar al dueño",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}

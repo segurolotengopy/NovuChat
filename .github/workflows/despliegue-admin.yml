@@ -1,0 +1,210 @@
+# =============================================================================
+# Despliegue del panel administrativo de NovuChat
+# =============================================================================
+#
+# Despliega el componente `admin/`. Vive acá, en `.github/workflows/`, porque es
+# el único lugar desde el que GitHub ejecuta un workflow: moverlo de vuelta
+# dentro de `admin/` lo deja inerte sin que nada avise.
+#
+# -----------------------------------------------------------------------------
+# SIN CLAVES DE CUENTA DE SERVICIO
+# -----------------------------------------------------------------------------
+# No hay ningún `GOOGLE_APPLICATION_CREDENTIALS` con un JSON pegado en los
+# secretos del repositorio. La autenticación es OIDC con Workload Identity
+# Federation: GitHub emite un token firmado que describe QUÉ repositorio, QUÉ
+# rama y QUÉ workflow está corriendo; Google lo canjea por credenciales que duran
+# menos de una hora. Nada que robar del repositorio, nada que rotar a mano.
+#
+# El repositorio es PÚBLICO, así que la condición del proveedor de identidad debe
+# atar el `subject` al repositorio Y a la rama/entorno. Si se dejara abierto por
+# `repository_owner`, cualquiera que forkee y abra un PR podría obtener el token.
+# Ver admin/SEGURIDAD.md §4 para el detalle de la condición de atributos.
+#
+# -----------------------------------------------------------------------------
+# SEPARACIÓN DE FUNCIONES
+# -----------------------------------------------------------------------------
+# El despliegue a producción no se dispara solo: requiere el entorno protegido
+# `produccion`, con revisor humano obligatorio. Ningún agente aprueba ni fusiona
+# su propio cambio (regla §4 de ~/.claude/rules/security-rules.md).
+# -----------------------------------------------------------------------------
+
+name: Panel admin — verificar y desplegar
+
+on:
+  push:
+    branches: [main]
+    paths: ['admin/**', '.github/workflows/despliegue-admin.yml']
+  pull_request:
+    paths: ['admin/**']
+  workflow_dispatch:
+
+# Mínimo privilegio por defecto. `id-token: write` solo donde hace falta OIDC.
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: admin
+
+jobs:
+  # ===========================================================================
+  # VERIFICAR — corre también en pull requests, INCLUSO desde forks.
+  #
+  # REGLA DE DOS (§1): este job procesa entrada no confiable (el contenido de un
+  # PR de cualquiera, porque el repositorio es público) y ejecuta código
+  # (compilar, pruebas). Por lo tanto NO recibe NINGÚN secreto ni token de nube:
+  # no pide `id-token`, no usa `environment`, y `contents: read` es todo lo que
+  # tiene. Dos de las tres capacidades, nunca las tres.
+  # ===========================================================================
+  verificar:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false   # el token de checkout no queda en .git/config
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: admin/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      # ---------------------------------------------------------------------
+      # Prohibiciones de renderizado (Regla de Dos, §1).
+      # El visor de conversaciones muestra texto escrito por clientes finales.
+      # Que nadie reintroduzca una vía por la que ese texto se interprete como
+      # HTML o como código. Esto es un control de CI, no una recomendación.
+      # ---------------------------------------------------------------------
+      - name: Prohibiciones de renderizado
+        run: |
+          set -euo pipefail
+          patrones='dangerouslySetInnerHTML|\.innerHTML|document\.write|new Function\(|eval\('
+          # Se descartan las líneas de comentario: la prohibición se explica en
+          # los comentarios de TextoSeguro.tsx y eso no es una violación.
+          hallazgos=$(grep -rInE "$patrones" web/src functions/src \
+                      | grep -vE ':[0-9]+: *(\*|//|/\*)' || true)
+          if [ -n "$hallazgos" ]; then
+            echo "$hallazgos"
+            echo "::error::Se encontró una vía de interpretación de texto no confiable."
+            exit 1
+          fi
+          echo "Sin coincidencias."
+
+      # ---------------------------------------------------------------------
+      # Que nadie deshaga el aislamiento borrando la negación final.
+      # ---------------------------------------------------------------------
+      - name: Las reglas niegan por defecto
+        run: |
+          set -euo pipefail
+          grep -q 'match /{documento=\*\*} {' firestore.rules
+          grep -q 'allow read, write: if false;' firestore.rules
+          echo "La negación final está presente."
+
+      - name: Compilar el frontend
+        run: pnpm --filter @novuchat/admin-web build
+        env:
+          # Configuración pública del cliente. No son secretos (viajan en el
+          # bundle), pero se inyectan como variables del repositorio para no
+          # versionar los identificadores del proyecto.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_APPCHECK_SITE_KEY: ${{ vars.VITE_APPCHECK_SITE_KEY }}
+
+      - name: Compilar las Cloud Functions
+        run: pnpm --filter @novuchat/admin-functions build
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Pruebas de las reglas de Firestore
+        run: |
+          npx firebase setup:emulators:firestore
+          pnpm pruebas:reglas
+
+  # ===========================================================================
+  # DESPLEGAR — solo desde `main`, solo con aprobación humana.
+  # Este job SÍ tiene credenciales, y por eso NO procesa entrada no confiable:
+  # corre exclusivamente sobre `main`, cuyo contenido ya pasó por revisión.
+  # ===========================================================================
+  desplegar:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: verificar
+    runs-on: ubuntu-24.04
+    environment: produccion        # revisor humano obligatorio; configúrelo en GitHub
+    permissions:
+      contents: read
+      id-token: write              # única razón: pedir el token OIDC
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: admin/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Compilar el frontend
+        run: pnpm --filter @novuchat/admin-web build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_APPCHECK_SITE_KEY: ${{ vars.VITE_APPCHECK_SITE_KEY }}
+
+      - name: Compilar las Cloud Functions
+        run: pnpm --filter @novuchat/admin-functions build
+
+      # ---------------------------------------------------------------------
+      # OIDC -> Google Cloud. Credenciales efímeras, sin clave JSON.
+      # `vars.WIF_PROVIDER` tiene la forma:
+      #   projects/<NUMERO>/locations/global/workloadIdentityPools/<POOL>/providers/<PROVEEDOR>
+      # `vars.WIF_SERVICE_ACCOUNT` es el correo de la cuenta de servicio que la
+      # federación puede suplantar. Son identificadores, no secretos; aun así van
+      # como variables del repositorio para no publicarlos en el árbol.
+      # ---------------------------------------------------------------------
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+          token_format: access_token
+          # Vida mínima útil del token de acceso.
+          access_token_lifetime: 900s
+          create_credentials_file: true
+
+      - name: Desplegar reglas, índices, Hosting y Functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+          FIREBASE_PROJECT: ${{ vars.FIREBASE_PROJECT_ID_PROD }}
+        run: |
+          npx firebase deploy \
+            --project "$FIREBASE_PROJECT" \
+            --only firestore:rules,firestore:indexes,hosting,functions \
+            --non-interactive \
+            --force

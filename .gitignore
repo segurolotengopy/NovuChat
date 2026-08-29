@@ -1,0 +1,48 @@
+# --- Valores reales y secretos (NUNCA versionar) -------------------------
+# El repositorio es PÚBLICO. Ver CONVENCIONES-REPO-PUBLICO.md.
+.env
+.env.*
+!.env.example
+CONFIGURACION.local.md
+*.local.md
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+**/credentials*.json
+**/client_secret*.json
+**/service-account*.json
+**/*serviceAccountKey*.json
+.gitleaks-report.json
+
+# --- Material original de terceros, no saneado ---------------------------
+Preliminares/
+
+# --- Ruido ---------------------------------------------------------------
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+node_modules/
+.venv/
+venv/
+
+# --- Firebase (directorio admin/) ----------------------------------------
+.firebase/
+admin/**/.env*
+!admin/**/.env.example
+.deploy-log/
+.security-reports/
+serviceAccountKey*.json
+*-sa-key.json
+tfplan*
+.terraform/
+*.tfstate*
+*.auto.tfvars
+secrets.tfvars
+.trivy-cache/
+.trivyignore.yaml
+.gitleaksignore

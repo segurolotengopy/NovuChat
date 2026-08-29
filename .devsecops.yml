@@ -1,0 +1,29 @@
+# Manifiesto del estándar DevSecOps (esquema: 02-pipelines/config/devsecops.schema.json;
+# convenciones: 00-gobernanza/00-convenciones.md; generado por bootstrap-repo.sh v2.0)
+version: 1
+proyecto: novuchat
+modo: A            # A | B | B0 (ver 00-gobernanza/03-ambientes-modos-y-aprobaciones.md)
+cobertura_minima: 70
+componentes:
+  # Unico componente desplegable: el sitio administrativo en Firebase.
+  # El directorio admin/ lo construye otro agente; mientras no tenga
+  # package.json, los jobs de Node de ci-node-firebase.yml se omiten y la
+  # compuerta se sostiene sobre calidad-documentacion + seguridad-estatica.
+  # Los flujos de n8n (Flujos/*.json) NO se despliegan desde el CI: se
+  # importan a mano en la instancia y se publican desde su interfaz.
+  - nombre: admin
+    ruta: ./admin
+    stack: node
+    proveedor: firebase
+    ambientes:
+      staging:
+        proyecto: novuchat-admin-staging
+        url: https://novuchat-admin-staging.web.app
+      production:
+        proyecto: novuchat-admin-prod
+        url: https://novuchat-admin-prod.web.app
+seguridad:
+  dast: true
+  zap_reglas: .github/zap-rules.tsv
+  bloquear_en: [CRITICAL, HIGH]   # se puede endurecer (añadir MEDIUM), nunca relajar
+  excepciones: []                 # id, herramienta, componente, justificacion, aprobado_por, creado, vence

@@ -1,0 +1,20 @@
+:root { font-family: system-ui, sans-serif; color-scheme: light dark; }
+body { margin: 0; }
+header { display: flex; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid #8884; }
+nav { display: flex; gap: 1rem; flex: 1; }
+section { padding: 1rem; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; }
+label { display: block; margin: .5rem 0; }
+input, textarea, select { display: block; width: 100%; max-width: 40rem; }
+textarea { min-height: 6rem; }
+.centrado { display: grid; place-content: center; min-height: 100vh; text-align: center; gap: .5rem; }
+.dos-columnas { display: grid; grid-template-columns: minmax(14rem, 22rem) 1fr; gap: 1rem; }
+.lista-hilos { list-style: none; margin: 0; padding: 0; }
+.lista-hilos button { display: grid; text-align: left; width: 100%; padding: .5rem; gap: .2rem; }
+.hilo { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.hilo li { padding: .5rem .75rem; border-radius: .5rem; max-width: 42rem; }
+.hilo .entrante { background: #8882; justify-self: start; }
+.hilo .saliente { background: #4a90d922; justify-self: end; }
+.hilo time { display: block; font-size: .75rem; opacity: .6; }
+.ayuda { font-size: .85rem; opacity: .8; max-width: 40rem; }

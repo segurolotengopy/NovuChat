@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador NovuChat — v2</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #e2e8f0; margin: 0; padding: 24px; display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #334155; }
+
+  .layout { display: flex; gap: 36px; max-width: 1180px; width: 100%; align-items: center; justify-content: center; flex-wrap: wrap; }
+
+  /* Panel de Control */
+  .controls { display: flex; flex-direction: column; gap: 12px; width: 310px; }
+  .controls h2 { margin: 0; color: #334155; font-size: 1.7em; }
+  .controls p { color: #64748b; font-size: 0.93em; line-height: 1.5; margin: 0 0 6px; }
+  .btn-flow { background: white; border: 2px solid #cbd5e1; padding: 13px 15px; border-radius: 12px; cursor: pointer; text-align: left; font-size: 1.02em; font-weight: bold; color: #334155; transition: all 0.2s; display: flex; align-items: center; gap: 10px; font-family: inherit; }
+  .btn-flow:hover { border-color: #4ADE80; box-shadow: 0 4px 10px rgba(74, 222, 128, 0.2); }
+  .btn-flow.active { background: #334155; color: white; border-color: #334155; }
+  .btn-flow.active .icon { color: #4ADE80; }
+  .btn-flow small { display: block; font-weight: normal; font-size: 0.78em; opacity: 0.75; margin-top: 2px; }
+  .btn-stop { margin-top: 14px; background: transparent; border: none; color: #f87171; cursor: pointer; font-weight: bold; text-decoration: underline; font-family: inherit; font-size: 0.95em; }
+  .nota { font-size: 0.78em; color: #94a3b8; line-height: 1.5; border-top: 1px solid #cbd5e1; padding-top: 12px; margin-top: 6px; }
+
+  /* Celular Virtual */
+  .phone { width: 360px; height: 720px; background: #f1f5f9; border-radius: 40px; box-shadow: 0 20px 50px rgba(0,0,0,0.2), inset 0 0 0 10px #334155; display: flex; flex-direction: column; overflow: hidden; position: relative; flex-shrink: 0; }
+  .notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 100px; height: 25px; background: #334155; border-radius: 0 0 15px 15px; z-index: 10; }
+
+  .header { background: #334155; color: white; padding: 40px 20px 15px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 5; }
+  .avatar { width: 45px; height: 45px; background: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .avatar-dots { display: flex; gap: 3px; }
+  .avatar-dots div { width: 6px; height: 6px; background: #4ADE80; border-radius: 50%; }
+  .contact-info { display: flex; flex-direction: column; }
+  .contact-name { font-weight: bold; font-size: 1.1em; }
+  .contact-status { font-size: 0.8em; color: #4ADE80; }
+
+  .chat-screen { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; background-image: url('data:image/svg+xml;utf8,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h100v100H0z" fill="%23f1f5f9"/><path d="M20 20h5v5h-5z" fill="%23e2e8f0"/></svg>'); }
+
+  .msg-container { display: flex; width: 100%; opacity: 0; transform: translateY(10px); animation: slideUp 0.3s forwards; }
+  @keyframes slideUp { to { opacity: 1; transform: translateY(0); } }
+  .msg-container.user { justify-content: flex-end; }
+  .msg-container.bot { justify-content: flex-start; }
+
+  .msg { padding: 12px 16px; border-radius: 18px; max-width: 82%; font-size: 0.94em; line-height: 1.45; position: relative; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .msg.user { background: #4ADE80; color: #1e293b; border-bottom-right-radius: 4px; }
+  .msg.bot { background: white; color: #334155; border-bottom-left-radius: 4px; border: 1px solid #e2e8f0; }
+  .msg.bot strong { color: #0f172a; }
+
+  /* Lista interactiva de WhatsApp */
+  .wa-list { margin-top: 10px; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+  .wa-list-row { padding: 9px 4px; border-bottom: 1px solid #f1f5f9; font-size: 0.95em; }
+  .wa-list-row:last-child { border-bottom: none; }
+  .wa-list-btn { text-align: center; color: #0ea5e9; font-weight: bold; padding-top: 8px; font-size: 0.92em; }
+
+  /* Opciones de horario */
+  .slots { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+  .slot { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 5px 11px; font-weight: bold; font-size: 0.9em; }
+
+  /* QR de demostración */
+  .qr-box { background: white; border-radius: 10px; margin-top: 10px; border: 1px solid #e2e8f0; overflow: hidden; width: 190px; }
+  .qr-banner { background: #c62828; color: white; text-align: center; font-weight: bold; font-size: 0.7em; letter-spacing: 0.5px; padding: 5px 4px; line-height: 1.3; }
+  .qr-art { display: flex; justify-content: center; padding: 10px; }
+  .qr-cap { font-size: 0.68em; color: #94a3b8; text-align: center; padding: 0 8px 8px; line-height: 1.35; }
+
+  .attachment { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.55); padding: 8px; border-radius: 8px; margin-top: 6px; border: 1px solid rgba(0,0,0,0.08); font-size: 0.9em; }
+  .tag-sim { display: inline-block; background: #fef3c7; color: #92400e; border-radius: 5px; padding: 1px 6px; font-size: 0.8em; font-weight: bold; }
+  .tag-hum { display: inline-block; background: #dbeafe; color: #1e40af; border-radius: 5px; padding: 1px 6px; font-size: 0.8em; font-weight: bold; }
+
+  .typing { display: none; align-items: center; gap: 4px; padding: 12px 16px; background: white; border-radius: 18px; border-bottom-left-radius: 4px; width: fit-content; border: 1px solid #e2e8f0; }
+  .typing .dot { width: 6px; height: 6px; background: #94a3b8; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+  .typing .dot:nth-child(1) { animation-delay: -0.32s; }
+  .typing .dot:nth-child(2) { animation-delay: -0.16s; }
+  @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+  .footer { background: #f8fafc; padding: 15px 20px; display: flex; gap: 10px; align-items: center; border-top: 1px solid #e2e8f0; }
+  .input-bar { flex: 1; background: white; border: 1px solid #cbd5e1; border-radius: 20px; padding: 10px 15px; color: #94a3b8; font-size: 0.9em; }
+  .mic-btn { width: 35px; height: 35px; background: #334155; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; }
+  svg { fill: currentColor; width: 20px; height: 20px; }
+  .qr-art svg { width: 118px; height: 118px; fill: none; }
+
+  /* Celular del negocio (alerta al dueño / recepción) */
+  .side { width: 260px; display: flex; flex-direction: column; gap: 10px; }
+  .side h3 { margin: 0; font-size: 0.95em; color: #64748b; text-transform: uppercase; letter-spacing: 0.6px; }
+  .biz-phone { background: #1e293b; border-radius: 22px; padding: 14px; min-height: 190px; color: #cbd5e1; box-shadow: 0 12px 30px rgba(0,0,0,0.18); }
+  .biz-empty { color: #64748b; font-size: 0.85em; text-align: center; padding-top: 60px; line-height: 1.5; }
+  .biz-card { background: #0f172a; border-left: 3px solid #4ADE80; border-radius: 10px; padding: 12px; font-size: 0.85em; line-height: 1.5; animation: pop 0.4s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: scale(0.9) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+  .biz-card .ttl { color: #4ADE80; font-weight: bold; display: block; margin-bottom: 5px; }
+  .biz-time { color: #64748b; font-size: 0.75em; margin-top: 7px; }
+
+  @media (max-width: 1000px) { .layout { flex-direction: column; } .side { width: 360px; } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="controls">
+    <h2>Simulador NovuChat</h2>
+    <p>Los cuatro guiones reales de los demos. Haz clic para reproducir la conversación.</p>
+
+    <button class="btn-flow" onclick="startFlow('salud', this)">
+      <span class="icon">⚕️</span><span>1. Salud — Agendamiento<small>Sin cotizar por chat · límite de 3 rechazos</small></span>
+    </button>
+    <button class="btn-flow" onclick="startFlow('belleza', this)">
+      <span class="icon">💇</span><span>2. Belleza — Catálogo y reserva<small>Precios reales · calendario en vivo</small></span>
+    </button>
+    <button class="btn-flow" onclick="startFlow('gastro', this)">
+      <span class="icon">🍔</span><span>3. Gastronomía — Pedido y cobro<small>Notas especiales · QR · aviso al dueño</small></span>
+    </button>
+    <button class="btn-flow" onclick="startFlow('retail', this)">
+      <span class="icon">🛍️</span><span>4. Retail — Variantes y flota<small>Talla obligatoria · sin CI no hay QR</small></span>
+    </button>
+
+    <button class="btn-stop" onclick="stopFlow()">Detener / Limpiar pantalla</button>
+
+    <p class="nota">Simulación fiel a los flujos de n8n (mismos precios, reglas y textos). Sirve como respaldo si falla la conexión durante la presentación. El QR mostrado es un simulacro rotulado: no cobra.</p>
+  </div>
+
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="header">
+      <div class="avatar"><div class="avatar-dots"><div></div><div></div><div></div></div></div>
+      <div class="contact-info">
+        <span class="contact-name" id="contact-name">NovuChat AI</span>
+        <span class="contact-status" id="status-text">en línea</span>
+      </div>
+    </div>
+    <div class="chat-screen" id="chat-screen"></div>
+    <div class="footer">
+      <div class="input-bar">Escribe un mensaje...</div>
+      <div class="mic-btn">
+        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <h3>📱 Celular del negocio</h3>
+    <div class="biz-phone" id="biz-phone">
+      <div class="biz-empty">Aquí llegan las alertas automáticas al dueño o a recepción.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const chatScreen = document.getElementById('chat-screen');
+  const statusText = document.getElementById('status-text');
+  const contactName = document.getElementById('contact-name');
+  const bizPhone = document.getElementById('biz-phone');
+  let flowTimeout, isPlaying = false;
+
+  const QR = `<div class="qr-box">
+      <div class="qr-banner">DEMOSTRACIÓN — ESTE QR NO COBRA</div>
+      <div class="qr-art">
+        <svg width="110" height="110" viewBox="0 0 100 100"><rect width="100" height="100" fill="white"/>
+        <rect x="8" y="8" width="24" height="24" fill="#334155"/><rect x="13" y="13" width="14" height="14" fill="white"/><rect x="16" y="16" width="8" height="8" fill="#334155"/>
+        <rect x="68" y="8" width="24" height="24" fill="#334155"/><rect x="73" y="13" width="14" height="14" fill="white"/><rect x="76" y="16" width="8" height="8" fill="#334155"/>
+        <rect x="8" y="68" width="24" height="24" fill="#334155"/><rect x="13" y="73" width="14" height="14" fill="white"/><rect x="16" y="76" width="8" height="8" fill="#334155"/>
+        <rect x="40" y="10" width="6" height="6" fill="#334155"/><rect x="52" y="18" width="6" height="6" fill="#334155"/><rect x="40" y="26" width="6" height="6" fill="#334155"/>
+        <rect x="10" y="40" width="6" height="6" fill="#334155"/><rect x="22" y="48" width="6" height="6" fill="#334155"/><rect x="34" y="40" width="6" height="6" fill="#334155"/>
+        <rect x="44" y="44" width="28" height="28" fill="#334155"/><rect x="50" y="50" width="16" height="16" fill="white"/><rect x="54" y="54" width="8" height="8" fill="#334155"/>
+        <rect x="78" y="42" width="6" height="6" fill="#334155"/><rect x="86" y="54" width="6" height="6" fill="#334155"/><rect x="78" y="66" width="6" height="6" fill="#334155"/>
+        <rect x="44" y="80" width="6" height="6" fill="#334155"/><rect x="58" y="86" width="6" height="6" fill="#334155"/><rect x="72" y="80" width="6" height="6" fill="#334155"/></svg>
+      </div>
+      <div class="qr-cap">Comercio de prueba · en la instalación real es el QR del banco del negocio</div>
+      <div class="qr-banner">SIMULACRO DE PAGO</div>
+    </div>`;
+
+  const flowsData = {
+    salud: { titulo: 'Clínica Demo NovuChat', msgs: [
+      { s: 'user', t: "Hola, ¿qué servicios tienen?", d: 900 },
+      { s: 'bot', t: "¡Hola! Atendemos <strong>Odontología General</strong>, <strong>Ortodoncia</strong> y <strong>Cirugía Maxilofacial</strong>. ¿Para cuál área te gustaría reservar una evaluación?", d: 2200 },
+      { s: 'user', t: "¿Y cuánto cuesta una curación?", d: 2400 },
+      { s: 'bot', t: "El precio exacto depende de la evaluación del especialista, porque varía según el estado de la pieza. Lo que sí puedo hacer ahora es agendarte una cita de diagnóstico, ¿te parece?", d: 2600 },
+      { s: 'user', t: "Bueno, quiero ir mañana en la mañana", d: 2400 },
+      { s: 'bot', t: "Perfecto. Revisando la agenda de mañana por la mañana tengo estos espacios:<div class='slots'><span class='slot'>10:00</span><span class='slot'>11:30</span><span class='slot'>13:00</span></div>¿Cuál te acomoda?", d: 2800 },
+      { s: 'user', t: "No puedo a esas horas, ¿no tienes nada en la tarde?", d: 2600 },
+      { s: 'bot', t: "Claro, para mañana por la tarde me quedan:<div class='slots'><span class='slot'>15:00</span><span class='slot'>17:00</span><span class='slot'>18:00</span></div>", d: 2600 },
+      { s: 'user', t: "Tampoco me sirve… ¿el miércoles?", d: 2400 },
+      { s: 'bot', t: "Te pido disculpas por no encontrar un horario que te acomode. Voy a pasar tu conversación a recepción para que te ayuden a coordinar personalmente. En un momento te escriben. 🙏", d: 2800,
+        biz: { ttl: '🔔 NovuChat — atención humana', body: 'El cliente <strong>+591 7•• ••4 321</strong> pidió atención humana tras 3 rechazos de horario.<br>Busca: consulta odontológica, prefiere miércoles.<br>Tomar el chat.' } }
+    ]},
+    belleza: { titulo: 'Salón Demo NovuChat', msgs: [
+      { s: 'user', t: "Hola, ¿qué servicios tienen y cuánto cuestan?", d: 900 },
+      { s: 'bot', t: "¡Hola! Estos son nuestros servicios: Manicure <strong>50 Bs</strong> · Pedicure <strong>60 Bs</strong> · Corte <strong>70 Bs</strong> · Limpieza facial <strong>120 Bs</strong>. ¿Te gustaría agendar alguno?", d: 2400 },
+      { s: 'user', t: "Quiero agendar un corte para el viernes en la tarde", d: 2600 },
+      { s: 'bot', t: "Para el viernes por la tarde tengo libres:<div class='slots'><span class='slot'>15:00</span><span class='slot'>17:00</span><span class='slot'>18:00</span></div>¿Con cuál te quedas?", d: 2600 },
+      { s: 'user', t: "Me quedo con el de las 17:00", d: 2200 },
+      { s: 'bot', t: "¡Perfecto! ¿A nombre de quién registro la cita?", d: 1800 },
+      { s: 'user', t: "Andrea Quiroga", d: 1800 },
+      { s: 'bot', t: "¡Listo, Andrea! Tu <strong>corte</strong> queda confirmado para el <strong>viernes a las 17:00</strong>. Ya quedó registrado en nuestra agenda. ¡Te esperamos! ✨", d: 2600,
+        biz: { ttl: '📅 Nueva cita agendada', body: '<strong>Cita Andrea Quiroga — Corte</strong><br>Viernes 17:00 · 1 hora<br><span style="color:#64748b">Creada automáticamente en Google Calendar</span>' } }
+    ]},
+    gastro: { titulo: 'Resto Demo NovuChat', msgs: [
+      { s: 'user', t: "Hola", d: 800 },
+      { s: 'bot', t: "¡Hola! 👋 Soy el asistente virtual de <strong>Resto Demo NovuChat</strong>. ¿Cómo te ayudo hoy?<div class='wa-list'><div class='wa-list-row'>🛵 Pedir por Delivery</div><div class='wa-list-row'>🛍️ Pasar a recoger</div><div class='wa-list-row'>📖 Ver Menú Completo</div><div class='wa-list-btn'>Ver opciones ▾</div></div>", d: 1800 },
+      { s: 'user', t: "🛵 Pedir por Delivery", d: 2000 },
+      { s: 'bot', t: "¡Genial! Dime qué te preparamos. Tenemos Hamburguesa doble <strong>35 Bs</strong>, clásica <strong>28 Bs</strong>, Salchipapa <strong>20 Bs</strong> y Gaseosa <strong>8 Bs</strong>.", d: 2200 },
+      { s: 'user', t: "Una hamburguesa doble y una gaseosa", d: 2400 },
+      { s: 'bot', t: "Anotado: 1 Hamburguesa doble + 1 Gaseosa. ¿Te gustaría agregar alguna nota especial? (por ejemplo: sin cebolla, término de la carne)", d: 2400 },
+      { s: 'user', t: "Sin tomate por favor, y la gaseosa zero", d: 2600 },
+      { s: 'bot', t: "¡Perfecto, sin tomate y la gaseosa zero! Para enviártelo, por favor indícame tu dirección.", d: 2200 },
+      { s: 'user', t: "A Obrajes, calle 2", d: 2200 },
+      { s: 'bot', t: "Tu pedido: Hamburguesa doble 35 Bs + Gaseosa zero 8 Bs + envío a Obrajes 7 Bs = <strong>50 Bs</strong>. Te envío el QR para el pago 👇", d: 2600 },
+      { s: 'bot', t: QR + "<div style='margin-top:8px;font-size:0.9em'>Cuando pagues, mándame la foto del comprobante por aquí.</div>", d: 2200 },
+      { s: 'user', t: "Listo, ya pagué<div class='attachment'>✅ <strong>comprobante_banco.jpg</strong></div>", d: 3000 },
+      { s: 'bot', t: "<span class='tag-sim'>Pago verificado (simulado — demo)</span><br><br>¡Gracias! Tu pedido de <strong>50 Bs</strong> ya entró a cocina. Tiempo estimado: <strong>25 minutos</strong>. Sumaste 15 puntos en nuestro club de fidelización 🎉", d: 2800,
+        biz: { ttl: '🚨 NUEVO PEDIDO CONFIRMADO', body: 'Cliente: <strong>+591 7•• ••4 321</strong><br><br>1 Hamburguesa doble <em>(sin tomate)</em><br>1 Gaseosa <em>(zero)</em><br>Delivery: Obrajes, calle 2<br><strong>Total: 50 Bs</strong> · pagado' } }
+    ]},
+    retail: { titulo: 'Tienda Demo NovuChat', msgs: [
+      { s: 'user', t: "Hola, quiero comprar una chaqueta negra", d: 900 },
+      { s: 'bot', t: "¡Hola! La chaqueta negra cuesta <strong>180 Bs</strong> y viene en tallas <strong>S, M y L</strong>. ¿Cuál te enviamos?", d: 2200 },
+      { s: 'user', t: "Talla M. ¿Hacen envíos a Oruro?", d: 2400 },
+      { s: 'bot', t: "Sí, enviamos a Oruro por flota. Para la guía necesito tu <strong>nombre completo</strong> y tu <strong>CI</strong>, por favor.", d: 2400 },
+      { s: 'user', t: "Mejor mándame el QR y te paso los datos después", d: 2600 },
+      { s: 'bot', t: "Te entiendo, pero la flota exige los datos del destinatario para emitir la guía. En cuanto me des tu nombre completo y CI te envío el QR al instante. 🙏", d: 2600 },
+      { s: 'user', t: "Ok: Juan Pérez, CI 1234567", d: 2400 },
+      { s: 'bot', t: "¡Gracias, Juan! Tengo registrado este WhatsApp, ¿usamos este mismo número para la guía de la flota?", d: 2400 },
+      { s: 'user', t: "Sí, ese mismo", d: 1800 },
+      { s: 'bot', t: "Total: Chaqueta negra talla M 180 Bs + recargo de terminal 10 Bs = <strong>190 Bs</strong>.", d: 2200 },
+      { s: 'bot', t: QR, d: 1800 },
+      { s: 'user', t: "Ahí está el pago<div class='attachment'>✅ <strong>comprobante_banco.jpg</strong></div>", d: 3000 },
+      { s: 'bot', t: "<span class='tag-sim'>Pago verificado (simulado — demo)</span><br><br>¡Confirmado, Juan! Despachamos hoy a las <strong>17:00</strong> y te reenvío la foto de la guía apenas la tengamos. ¡Gracias por tu compra! 📦", d: 2800,
+        biz: { ttl: '🚨 NUEVO PEDIDO CONFIRMADO', body: 'Cliente: <strong>Juan Pérez</strong> · CI 1234567<br>Tel: +591 7•• ••4 321<br><br>1 Chaqueta negra <strong>talla M</strong><br>Envío: flota a Oruro<br><strong>Total: 190 Bs</strong> · pagado' } }
+    ]}
+  };
+
+  function stopFlow() {
+    isPlaying = false;
+    clearTimeout(flowTimeout);
+    chatScreen.innerHTML = '';
+    contactName.innerText = 'NovuChat AI';
+    statusText.innerText = 'en línea';
+    bizPhone.innerHTML = '<div class="biz-empty">Aquí llegan las alertas automáticas al dueño o a recepción.</div>';
+    document.querySelectorAll('.btn-flow').forEach(b => b.classList.remove('active'));
+  }
+
+  function addTyping() {
+    const t = document.createElement('div');
+    t.className = 'typing';
+    t.id = 'typing-live';
+    t.style.display = 'flex';
+    t.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+    chatScreen.appendChild(t);
+    scrollToBottom();
+  }
+  function removeTyping() {
+    const t = document.getElementById('typing-live');
+    if (t) t.remove();
+  }
+
+  async function startFlow(flowId, btn) {
+    stopFlow();
+    isPlaying = true;
+    btn.classList.add('active');
+    const flow = flowsData[flowId];
+    contactName.innerText = flow.titulo;
+
+    for (const m of flow.msgs) {
+      if (!isPlaying) break;
+      if (m.s === 'bot') { statusText.innerText = 'escribiendo...'; addTyping(); }
+      await new Promise(res => {
+        flowTimeout = setTimeout(() => {
+          if (!isPlaying) return res();
+          if (m.s === 'bot') { removeTyping(); statusText.innerText = 'en línea'; }
+          addMessage(m.s, m.t);
+          if (m.biz) setTimeout(() => { if (isPlaying) addBiz(m.biz); }, 700);
+          res();
+        }, m.d);
+      });
+    }
+  }
+
+  function addMessage(sender, text) {
+    const c = document.createElement('div');
+    c.className = `msg-container ${sender}`;
+    const b = document.createElement('div');
+    b.className = `msg ${sender}`;
+    b.innerHTML = text;
+    c.appendChild(b);
+    chatScreen.appendChild(c);
+    scrollToBottom();
+  }
+
+  function addBiz(biz) {
+    const hora = new Date().toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
+    bizPhone.innerHTML = `<div class="biz-card"><span class="ttl">${biz.ttl}</span>${biz.body}<div class="biz-time">Recibido ${hora} · automático</div></div>`;
+  }
+
+  function scrollToBottom() { chatScreen.scrollTop = chatScreen.scrollHeight; }
+</script>
+
+</body>
+</html>

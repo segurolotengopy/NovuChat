@@ -1,0 +1,13 @@
+packages:
+  - web
+  - functions
+
+# Scripts de postinstalación permitidos. Todo lo demás queda bloqueado: un
+# paquete transitivo no debe poder ejecutar código al instalar sin que alguien
+# lo haya decidido. `esbuild` y `protobufjs` lo necesitan para funcionar
+# (binario nativo y generación de código); el resto se deja en false.
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+  '@firebase/util': false
+  re2: false

@@ -1,0 +1,467 @@
+{
+  "name": "NovuChat Demo A — Agendamiento (Belleza y Salud)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 60
+  },
+  "nodes": [
+    {
+      "id": "nota-configuración-a",
+      "name": "Nota Configuración A",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        -80
+      ],
+      "parameters": {
+        "content": "## Demo A — Agendamiento con calendario real\n\n**Antes de activar (ver Analisis/02-criterios-implementacion.md):**\n1. Credencial **WhatsApp Trigger** (App `NovuChat-Demo`: App Secret + Verify Token) — criterio A-2/D-16.\n2. Credencial **WhatsApp** de envío (token PERMANENTE de usuario de sistema, no el de 24 h).\n3. Credencial **Google Gemini (AI Studio)**. En el desplegable del modelo elegir el *flash* vigente.\n4. Credencial **Google Calendar OAuth2** y completar el nodo `Config del negocio` (phoneNumberId, calendario, número de recepción).\n5. Crear eventos de relleno en el calendario para que el agente proponga alternativas reales.\n6. Probar con los 5 números registrados del número de prueba (criterio A-3).",
+        "width": 520,
+        "height": 360
+      }
+    },
+    {
+      "id": "trigger-whatsapp",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "messages"
+        ]
+      }
+    },
+    {
+      "id": "if-es-mensaje",
+      "name": "¿Es un mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -80,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Array.isArray($json.messages) ? $json.messages.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "config-negocio",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        140,
+        280
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "nombreNegocio",
+              "type": "string",
+              "value": "Salón & Clínica Demo NovuChat"
+            },
+            {
+              "id": "a2",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID"
+            },
+            {
+              "id": "a3",
+              "name": "numeroRecepcion",
+              "type": "string",
+              "value": "REEMPLAZAR_NUMERO_RECEPCION_SIN_+"
+            },
+            {
+              "id": "a4",
+              "name": "calendarioId",
+              "type": "string",
+              "value": "REEMPLAZAR_ID_CALENDARIO@group.calendar.google.com"
+            },
+            {
+              "id": "a5",
+              "name": "horarioAtencion",
+              "type": "string",
+              "value": "Lunes a sábado, de 09:00 a 19:00"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "parser-a",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        280
+      ],
+      "parameters": {
+        "jsCode": "// Normaliza el payload de WhatsApp a texto para el agente (criterio B-3).\n// Descarta silenciosamente lo que no sea un mensaje de usuario.\nconst out = [];\nfor (const item of $input.all()) {\n  const src = item.json;\n  const msg = Array.isArray(src.messages) ? src.messages[0] : undefined;\n  if (!msg) continue; // acuse de estado u otro evento\n  const tipo = msg.type ?? 'desconocido';\n  let userInput = '';\n  switch (tipo) {\n    case 'text':\n      userInput = msg.text?.body ?? '';\n      break;\n    case 'interactive': {\n      const sel = msg.interactive?.list_reply ?? msg.interactive?.button_reply;\n      userInput = `El cliente seleccionó la opción del menú: ${sel?.title ?? ''} (id: ${sel?.id ?? ''})`;\n      break;\n    }\n    case 'image':\n      userInput = 'AVISO_SISTEMA: el cliente envió una imagen. Agradécela y continúa el agendamiento.';\n      break;\n    default:\n      userInput = `AVISO_SISTEMA: el cliente envió un mensaje de tipo \"${tipo}\" que no puedes leer. ` +\n        'Respóndele cortésmente que por ahora atiendes por texto.';\n  }\n  const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;\n  out.push({ json: {\n    userInput,\n    tipo,\n    from: msg.from,\n    nombrePerfil: contacto?.profile?.name ?? '',\n    nombreNegocio: src.nombreNegocio,\n    phoneNumberId: src.phoneNumberId,\n    numeroRecepcion: src.numeroRecepcion,\n    calendarioId: src.calendarioId,\n    horarioAtencion: src.horarioAtencion,\n  }});\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "agente-sofia",
+      "name": "AI Agent (Sofía)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        620,
+        280
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userInput }}",
+        "options": {
+          "systemMessage": "=Eres Sofía, la asistente virtual de {{ $json.nombreNegocio }}. Amable, profesional y concisa: máximo 3 oraciones por mensaje, español boliviano, moneda siempre en \"Bs\".\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, UTC-4). Calcula con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'). Horario de atención: {{ $json.horarioAtencion }}. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }}.\n\nECONOMÍA DE HERRAMIENTAS (respétalo al pie de la letra; el cliente espera en WhatsApp y cada llamada demora):\n- Saludos, catálogo, precios, especialidades y dudas generales: responde DIRECTAMENTE, sin llamar a ninguna herramienta.\n- consultar_disponibilidad: como máximo UNA llamada por mensaje del cliente, y solo cuando vayas a proponer horarios. Pide el día completo en un solo rango (de 09:00 a 19:00 con zona -04:00); nunca consultes franja por franja ni un día por llamada.\n- agendar_cita: una sola vez, cuando el cliente ya confirmó el horario y tienes su nombre. No la uses para 'verificar' ni para releer la agenda.\n- Nunca repitas una llamada con los mismos parámetros. Con lo que te devolvió la herramienta, redacta ya tu respuesta al cliente.\n\nREGLAS DE NEGOCIO:\n1. BELLEZA: si preguntan por servicios de belleza, muestra el catálogo con precios: Manicure 50 Bs · Pedicure 60 Bs · Corte 70 Bs · Limpieza facial 120 Bs. Termina preguntando si desea agendar alguno.\n2. SALUD: si preguntan por servicios de salud, muestra las especialidades (Odontología General, Ortodoncia, Cirugía Maxilofacial) SIN precios. Si preguntan cuánto cuesta un tratamiento, explica profesionalmente que el precio exacto depende de la evaluación del especialista y ofrece agendar una cita de diagnóstico.\n3. AGENDAMIENTO: los eventos que devuelve consultar_disponibilidad son los horarios OCUPADOS: deduce los libres dentro del horario de atención y ofrece un máximo de 3 opciones exactas (ej.: 14:00, 15:30 o 17:00). Nunca inventes disponibilidad ni propongas horarios en el pasado.\n4. CONFIRMACIÓN: cuando el cliente elija un horario, pide su nombre completo si aún no lo tienes y usa la herramienta agendar_cita (título \"Cita <nombre> — <servicio>\", duración 1 hora). Después confirma servicio, día y hora, y despídete con calidez.\n5. RECHAZOS: si el cliente rechaza los horarios propuestos, recuerda lo que ya dijo (día, franja) y ofrece nuevas opciones coherentes con una sola consulta. Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].\n6. Nunca inventes precios, servicios ni disponibilidad. Si piden algo fuera de estas reglas, ofrece consultarlo con recepción.\n7. Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.",
+          "maxIterations": 5
+        }
+      }
+    },
+    {
+      "id": "modelo-gemini",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        480,
+        560
+      ],
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.4,
+          "maxOutputTokens": 1024
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "memoria-ventana",
+      "name": "Memoria por teléfono",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        640,
+        560
+      ],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Normalizar entrada').item.json.from }}",
+        "contextWindowLength": 8
+      }
+    },
+    {
+      "id": "tool-consultar",
+      "name": "consultar_disponibilidad",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        560
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "consultar_disponibilidad: devuelve los eventos OCUPADOS del calendario entre dos fechas-hora. Úsala solo antes de proponer horarios, UNA sola vez por mensaje del cliente y con el día completo en un único rango. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (ej. 2026-09-09T09:00:00-04:00).",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').item.json.calendarioId }}"
+        },
+        "returnAll": false,
+        "timeMin": "={{ $fromAI('inicio', 'Inicio del rango a consultar, en ISO 8601 con zona -04:00', 'string') }}",
+        "timeMax": "={{ $fromAI('fin', 'Fin del rango a consultar, en ISO 8601 con zona -04:00', 'string') }}",
+        "options": {
+          "singleEvents": true,
+          "orderBy": "startTime",
+          "timeZone": "America/La_Paz"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "id": "tool-agendar",
+      "name": "agendar_cita",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        960,
+        560
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "agendar_cita: crea la cita en el calendario cuando el cliente CONFIRMA un horario y ya diste su nombre. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (fin = inicio + 1 hora) y titulo con el formato 'Cita <nombre> — <servicio>'.",
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').item.json.calendarioId }}"
+        },
+        "start": "={{ $fromAI('inicio', 'Inicio de la cita en ISO 8601 con zona -04:00', 'string') }}",
+        "end": "={{ $fromAI('fin', 'Fin de la cita en ISO 8601 con zona -04:00, normalmente 1 hora después', 'string') }}",
+        "additionalFields": {
+          "summary": "={{ $fromAI('titulo', 'Título: Cita <nombre> — <servicio>', 'string') }}",
+          "description": "=Agendado por NovuChat (DEMO). Cliente WhatsApp: {{ $('Normalizar entrada').item.json.from }}"
+        }
+      }
+    },
+    {
+      "id": "post-a",
+      "name": "Procesar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        280
+      ],
+      "parameters": {
+        "jsCode": "// Separa la marca [TRANSFERIR] de la respuesta al cliente (criterio C-11).\nconst out = [];\nfor (const item of $input.all()) {\n  const texto = String(item.json.output ?? '').trim();\n  const transferir = texto.includes('[TRANSFERIR]');\n  out.push({ json: {\n    respuesta: texto.split('[TRANSFERIR]').join('').trim(),\n    transferir,\n    from: $('Normalizar entrada').first().json.from,\n    nombrePerfil: $('Normalizar entrada').first().json.nombrePerfil,\n  }});\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "send-cliente-a",
+      "name": "Responder al cliente",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        200
+      ],
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $('Config del negocio').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.from }}",
+        "textBody": "={{ $json.respuesta }}"
+      }
+    },
+    {
+      "id": "if-transferir",
+      "name": "¿Transferir a humano?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1140,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "t1",
+              "leftValue": "={{ $json.transferir }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "send-recepcion",
+      "name": "Avisar a recepción",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        420
+      ],
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $('Config del negocio').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $('Config del negocio').item.json.numeroRecepcion }}",
+        "textBody": "=🔔 NovuChat (demo agendamiento): el cliente {{ $json.nombrePerfil || '' }} ({{ $json.from }}) pidió atención humana tras 3 rechazos de horario. Tomar el chat."
+      }
+    },
+    {
+      "id": "nota-criterios-a",
+      "name": "Nota Criterios A",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -860,
+        320
+      ],
+      "parameters": {
+        "content": "## Correcciones aplicadas (doc. 02)\n- **B-1** memoria con clave = teléfono del cliente\n- **B-2** filtro de acuses antes del agente\n- **B-3** parser: text / interactive / image / otros\n- **B-4** Calendar real: 2 tools (consultar + agendar)\n- **B-5** fecha/hora America/La_Paz inyectada al prompt\n- **B-7** Gemini flash (cambiar a Anthropic en producción)\n- **C-11** 3 rechazos → marca [TRANSFERIR] → aviso a recepción\n- **A-5** el agente no niega ser una IA",
+        "width": 520,
+        "height": 280,
+        "color": 4
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "¿Es un mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es un mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar entrada": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memoria por teléfono": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "consultar_disponibilidad": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "agendar_cita": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (Sofía)": {
+      "main": [
+        [
+          {
+            "node": "Procesar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Transferir a humano?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Transferir a humano?": {
+      "main": [
+        [
+          {
+            "node": "Avisar a recepción",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}

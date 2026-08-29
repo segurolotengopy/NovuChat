@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "novuchat-admin-dev",
+    "dev": "novuchat-admin-dev",
+    "prod": "novuchat-admin-prod"
+  }
+}

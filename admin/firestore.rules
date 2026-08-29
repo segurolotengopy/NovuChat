@@ -1,0 +1,430 @@
+rules_version = '2';
+
+// =============================================================================
+// NovuChat — Panel administrativo multi-tenant
+// Reglas de seguridad de Cloud Firestore
+// =============================================================================
+//
+// PRINCIPIOS (el porqué, no solo el cómo — ver admin/SEGURIDAD.md):
+//
+//  1. NEGAR POR DEFECTO. No existe ninguna regla comodín que permita. La última
+//     coincidencia de este archivo deniega todo lo que no se habilitó arriba de
+//     forma explícita. Una colección nueva nace inaccesible.
+//
+//  2. EL TENANT VIVE EN LA RUTA, NUNCA EN UN CAMPO. Todo dato de un negocio
+//     cuelga de /tenants/{tenantId}/... El identificador del tenant que la regla
+//     compara sale del *path* de la petición y del *token*: jamás del cuerpo del
+//     documento ni de un parámetro que el cliente pueda elegir.
+//
+//  3. LA PERTENENCIA Y EL ROL VIVEN EN CUSTOM CLAIMS. Los emite exclusivamente
+//     una Cloud Function con el SDK Admin. El navegador no puede escribirlos ni
+//     falsificarlos: van firmados dentro del ID token por Google.
+//     El documento /tenants/{t}/miembros/{uid} es un ESPEJO para pintar la
+//     interfaz; no otorga ningún permiso y es de solo lectura para todos.
+//
+//  4. MÍNIMO PRIVILEGIO. El propietario de NovuChat administra tenants pero NO
+//     lee conversaciones de clientes salvo con un permiso de soporte explícito,
+//     otorgado por el negocio y con vencimiento.
+//
+//  5. LAS REGLAS DE FIRESTORE NO FILTRAN RESULTADOS. Una consulta se permite o
+//     se rechaza entera. Por eso el aislamiento se apoya en la ruta: una consulta
+//     que no está anclada bajo el tenant del token simplemente falla.
+//
+//  6. LAS REGLAS NO PUEDEN OCULTAR CAMPOS SUELTOS EN LECTURA. Lo que un rol no
+//     debe ver va en OTRO documento, no en otro campo. Por eso los datos
+//     personales ampliados del contacto viven en .../conversaciones/{c}/privado.
+//
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de identidad
+    // -------------------------------------------------------------------------
+
+    // Espacio de nombres corto `nc` dentro de los custom claims. Los custom
+    // claims tienen un tope duro de 1000 bytes: las claves cortas son lo que
+    // permite que un usuario pertenezca a varios negocios sin reventarlo.
+    //
+    // Forma: { nc: { p: true, t: { "<tenantId>": "admin" | "oper" | "ingesta" }, v: 3 } }
+    //   p → propietario de plataforma (NovuChat)
+    //   t → mapa tenantId -> rol
+    //   v → versión de claims, para forzar refresco del token desde el cliente
+    function autenticado() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function nc() {
+      return request.auth.token.get('nc', {});
+    }
+
+    // Propietario de NovuChat. NO implica acceso a conversaciones (ver punto 4).
+    function esPropietario() {
+      return autenticado() && nc().get('p', false) == true;
+    }
+
+    // Rol del usuario EN ESTE tenant, o null. `tenantId` viene siempre del path.
+    function rolEn(tenantId) {
+      return nc().get('t', {}).get(tenantId, null);
+    }
+
+    function esMiembro(tenantId) {
+      return autenticado() && rolEn(tenantId) != null;
+    }
+
+    function esAdmin(tenantId) {
+      return autenticado() && rolEn(tenantId) == 'admin';
+    }
+
+    function esOperador(tenantId) {
+      return autenticado() && rolEn(tenantId) == 'oper';
+    }
+
+    // Principal de servicio de n8n, acotado a UN tenant. Se obtiene con un token
+    // efímero (1 h) que emite la Cloud Function de intercambio; n8n nunca guarda
+    // una clave de cuenta de servicio con alcance de proyecto.
+    function esIngesta(tenantId) {
+      return autenticado() && rolEn(tenantId) == 'ingesta';
+    }
+
+    // Persona (admin u operador). Excluye al principal de servicio, que es
+    // ciego por diseño: escribe conversaciones y no puede leerlas.
+    function esPersonaDelNegocio(tenantId) {
+      return esAdmin(tenantId) || esOperador(tenantId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de estado (cuestan una lectura documental cada uno)
+    // -------------------------------------------------------------------------
+
+    // Un tenant dado de baja deja de ser legible AL INSTANTE, sin esperar a que
+    // caduque el ID token del usuario (hasta 1 h de vida). Sin esto, la baja de
+    // un cliente no surte efecto durante una hora.
+    function tenantActivo(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        && get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('estado', '') == 'activo';
+    }
+
+    // Acceso de soporte: el propietario de NovuChat solo lee conversaciones si
+    // el negocio le concedió una ventana con vencimiento. La concesión la crea
+    // una Cloud Function a pedido de un admin del negocio y queda auditada.
+    function soporteVigente(tenantId) {
+      return esPropietario()
+        && exists(/databases/$(database)/documents/tenants/$(tenantId)/accesosSoporte/$(request.auth.uid))
+        && get(/databases/$(database)/documents/tenants/$(tenantId)/accesosSoporte/$(request.auth.uid))
+             .data.get('expira', request.time) > request.time;
+    }
+
+    function puedeLeerConversaciones(tenantId) {
+      return (esPersonaDelNegocio(tenantId) && tenantActivo(tenantId))
+        || soporteVigente(tenantId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de validación
+    // -------------------------------------------------------------------------
+
+    function soloCampos(permitidos) {
+      return resource != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(permitidos);
+    }
+
+    // NOTA IMPORTANTE SOBRE EL ESTILO DE ESTAS VALIDACIONES
+    // -----------------------------------------------------
+    // En el lenguaje de reglas, leer una clave ausente de un mapa (`d.campo`)
+    // NO devuelve nulo: lanza un error de evaluación. Un error de evaluación
+    // deniega la operación, así que "parece" seguro, pero deniega por el motivo
+    // equivocado: la misma expresión puede tumbar una escritura legítima y deja
+    // ruido de diagnóstico imposible de leer. Por eso acá TODO acceso a campos
+    // usa `d.get(clave, valorPorDefecto)`, que sí devuelve el valor por defecto
+    // cuando la clave falta. El valor por defecto se elige de modo que un campo
+    // opcional ausente PASE la validación y uno obligatorio ausente la falle.
+
+    function cadena(valor, maxLargo) {
+      return valor is string && valor.size() <= maxLargo;
+    }
+
+    // Campo obligatorio de texto, no vacío.
+    function textoReq(datos, campo, maxLargo) {
+      return cadena(datos.get(campo, null), maxLargo)
+        && datos.get(campo, '').size() > 0;
+    }
+
+    // Campo opcional de texto: ausente equivale a cadena vacía y pasa.
+    function textoOpc(datos, campo, maxLargo) {
+      return cadena(datos.get(campo, ''), maxLargo);
+    }
+
+    // Sello de auditoría: quien escribe no puede mentir sobre quién es ni sobre
+    // cuándo escribió. Sin esto, la pista de auditoría es decorativa.
+    function selloValido(datos) {
+      return datos.get('actualizadoPor', '') == request.auth.uid
+        && datos.get('actualizadoEn', null) == request.time;
+    }
+
+    // =========================================================================
+    // /tenants/{tenantId} — ficha del negocio
+    // =========================================================================
+    match /tenants/{tenantId} {
+
+      // `get` puntual: miembros del propio tenant y el propietario de NovuChat.
+      allow get: if esMiembro(tenantId) || esPropietario();
+
+      // `list` (consulta sobre la colección): SOLO el propietario. Sin esta
+      // separación, cualquier usuario autenticado podría enumerar la cartera
+      // completa de clientes de NovuChat, que es información comercial sensible
+      // aunque no incluya conversaciones.
+      allow list: if esPropietario();
+
+      // Alta, baja y cambio de plan pasan SIEMPRE por Cloud Functions con el SDK
+      // Admin, que además emiten los custom claims, escriben la auditoría e
+      // impiden reutilizar un tenantId dado de baja. Ningún navegador escribe acá.
+      allow create, update, delete: if false;
+
+      // -----------------------------------------------------------------------
+      // /config/{documento} — la configuración que hoy vive en el nodo
+      // `Config del negocio` de los flujos de n8n.
+      // -----------------------------------------------------------------------
+      match /config/{documento} {
+
+        allow get, list: if esMiembro(tenantId);
+
+        // Solo el admin del negocio edita la configuración, y solo el documento
+        // `negocio`. La creación y el borrado los hace la Function de alta/baja:
+        // así el documento nunca queda a medio formar ni desaparece por error.
+        allow update: if esAdmin(tenantId)
+                      && tenantActivo(tenantId)
+                      && documento == 'negocio'
+                      && configNegocioValida();
+        allow create, delete: if false;
+
+        // Validación de esquema. Esto NO es cosmética: el contenido de este
+        // documento termina inyectado en el prompt del agente de n8n. Sin límite
+        // de longitud ni lista blanca de claves, un admin del negocio (o un XSS
+        // en su sesión) podría inyectar instrucciones arbitrarias al modelo:
+        // inyección de prompt de segundo orden.
+        //
+        // El PROMPT BASE del agente NO es editable desde el panel: vive en el
+        // flujo de n8n. Acá solo se admiten datos, y `instruccionesExtra` entra
+        // al prompt delimitada y rotulada como dato, nunca como instrucción.
+        function configNegocioValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'nombreNegocio', 'descripcion', 'zonaHoraria', 'telefonoRecepcion',
+                   'calendarioId', 'horarios', 'mensajes', 'instruccionesExtra',
+                   'moneda', 'actualizadoPor', 'actualizadoEn'
+                 ])
+            && textoReq(d, 'nombreNegocio', 80)
+            && textoOpc(d, 'descripcion', 400)
+            // Zona horaria de una lista cerrada: evita valores que rompan el
+            // cálculo de "mañana a las 3" en el agente.
+            && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
+            // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
+            && d.get('telefonoRecepcion', '59100000000') is string
+            && d.get('telefonoRecepcion', '59100000000').matches('^[0-9]{8,15}$')
+            && textoOpc(d, 'calendarioId', 120)
+            && d.get('moneda', 'BOB') in ['BOB', 'USD']
+            && d.get('horarios', {}) is map
+            && d.get('mensajes', {}) is map
+            // Tope duro del texto libre que llega al modelo.
+            && textoOpc(d, 'instruccionesExtra', 1500)
+            && selloValido(d);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /catalogo/{itemId} — productos o servicios con precio.
+      // Va en subcolección, no como lista dentro de config, para que cada ítem
+      // se pueda validar de verdad: las reglas no saben recorrer listas de mapas.
+      // -----------------------------------------------------------------------
+      match /catalogo/{itemId} {
+
+        allow get, list: if esMiembro(tenantId);
+
+        allow create, update: if esAdmin(tenantId)
+                              && tenantActivo(tenantId)
+                              && itemValido();
+        allow delete: if esAdmin(tenantId) && tenantActivo(tenantId);
+
+        function itemValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'nombre', 'descripcion', 'precio', 'moneda', 'duracionMin',
+                   'activo', 'actualizadoPor', 'actualizadoEn'
+                 ])
+            && textoReq(d, 'nombre', 80)
+            && textoOpc(d, 'descripcion', 300)
+            // Número y no negativo: un precio negativo llega al agente y al
+            // cliente final como una promesa que el negocio no quiso hacer.
+            && d.get('precio', null) is number
+            && d.get('precio', -1) >= 0 && d.get('precio', -1) <= 1000000
+            && d.get('moneda', '') in ['BOB', 'USD']
+            && d.get('duracionMin', 30) is int
+            && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
+            && d.get('activo', null) is bool
+            && selloValido(d);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /miembros/{uid} — espejo de los custom claims, para la interfaz.
+      // NO otorga permisos. Es de solo lectura para TODOS los clientes: si fuera
+      // escribible, la interfaz mostraría un rol falso y, peor, el patrón
+      // invitaría a que alguien lo usara como fuente de autorización.
+      // -----------------------------------------------------------------------
+      match /miembros/{uid} {
+        allow get, list: if esMiembro(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /invitaciones/{invitacionId} — alta de usuarios del negocio.
+      // El token de invitación NO se guarda en claro: se guarda su hash. Quien
+      // lea esta colección no puede aceptar invitaciones ajenas.
+      // -----------------------------------------------------------------------
+      match /invitaciones/{invitacionId} {
+        allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /conversaciones/{conversacionId} — visor de conversaciones.
+      // Es el dato más sensible del sistema: mensajes de clientes finales.
+      // -----------------------------------------------------------------------
+      match /conversaciones/{conversacionId} {
+
+        allow get, list: if puedeLeerConversaciones(tenantId);
+
+        // Alta y actualización del hilo: solo el principal de servicio de n8n,
+        // acotado a ESTE tenant por su claim. Un token de ingesta del tenant A
+        // no satisface `esIngesta(B)`.
+        allow create: if esIngesta(tenantId) && conversacionValida();
+        allow delete: if false;
+
+        // Dos ramas de actualización disjuntas:
+        //  a) n8n actualiza el resumen del hilo;
+        //  b) una persona del negocio marca gestión interna, y SOLO puede tocar
+        //     los tres campos de gestión. Sin `hasOnly`, un operador podría
+        //     reescribir `ultimoMensaje` o `telefono` y falsear el historial.
+        allow update: if (esIngesta(tenantId) && conversacionValida())
+                      || (esPersonaDelNegocio(tenantId)
+                          && tenantActivo(tenantId)
+                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna'])
+                          && textoOpc(request.resource.data, 'notaInterna', 1000));
+
+        function conversacionValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'telefono', 'nombreContacto', 'ultimoMensaje', 'ultimoEn',
+                   'canal', 'mensajesTotal', 'etiquetas', 'atendidaPor', 'notaInterna'
+                 ])
+            && d.get('telefono', '') is string
+            && d.get('telefono', '').matches('^[0-9]{8,15}$')
+            && textoOpc(d, 'nombreContacto', 120)
+            // El resumen se recorta en origen: un mensaje entrante de 4 KB no
+            // debe poder inflar cada documento del listado.
+            && textoOpc(d, 'ultimoMensaje', 300)
+            && d.get('canal', '') in ['whatsapp'];
+        }
+
+        // ---------------------------------------------------------------------
+        // /mensajes/{mensajeId} — el registro conversacional.
+        // INMUTABLE: se crea y no se modifica ni se borra. Un historial que se
+        // puede editar no sirve como evidencia ante un reclamo del cliente.
+        // ---------------------------------------------------------------------
+        match /mensajes/{mensajeId} {
+          allow get, list: if puedeLeerConversaciones(tenantId);
+          allow create: if esIngesta(tenantId) && mensajeValido();
+          allow update, delete: if false;
+
+          function mensajeValido() {
+            let d = request.resource.data;
+            return d.keys().hasOnly(['direccion', 'tipo', 'texto', 'ts', 'idMeta'])
+              && d.get('direccion', '') in ['entrante', 'saliente']
+              && d.get('tipo', '') in ['text', 'interactive', 'image', 'audio',
+                                       'document', 'order', 'location', 'otro']
+              // Tope de tamaño del texto. El contenido es DATO NO CONFIABLE:
+              // lo escribe un cliente final de WhatsApp. Se guarda tal cual y se
+              // escapa al renderizar (ver admin/SEGURIDAD.md, §Regla de Dos).
+              && cadena(d.get('texto', null), 4096)
+              && d.get('ts', null) is timestamp
+              && textoOpc(d, 'idMeta', 120);
+          }
+        }
+
+        // ---------------------------------------------------------------------
+        // /privado/{documento} — datos personales ampliados del contacto.
+        // Vive aparte porque las reglas NO pueden ocultar campos sueltos en una
+        // lectura: si el dato estuviera en el documento de la conversación,
+        // cualquiera que pueda leerla lo vería. Solo el admin del negocio entra.
+        // ---------------------------------------------------------------------
+        match /privado/{documento} {
+          allow get, list: if esAdmin(tenantId) && tenantActivo(tenantId);
+          allow create, update: if esIngesta(tenantId);
+          allow delete: if false;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /metricas/{periodo} — contadores agregados (uno por mes: '2026-09').
+      // Los agrega la ruta de ingesta con incrementos atómicos. El panel LEE
+      // agregados en vez de contar conversaciones en el cliente: así el visor de
+      // métricas no necesita permiso de lectura sobre los mensajes.
+      // -----------------------------------------------------------------------
+      match /metricas/{periodo} {
+        allow get, list: if esMiembro(tenantId) || esPropietario();
+        allow create, update: if esIngesta(tenantId);
+        allow delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /auditoria/{eventoId} — quién cambió qué y cuándo.
+      // Solo escribe el SDK Admin (que se salta estas reglas por diseño).
+      // Denegar la escritura acá impide que alguien fabrique o borre evidencia.
+      // -----------------------------------------------------------------------
+      match /auditoria/{eventoId} {
+        allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // /accesosSoporte/{uid} — ventanas de acceso de NovuChat al negocio.
+      // Las otorga una Cloud Function a pedido de un admin del negocio. Que sean
+      // de solo lectura evita que el propietario se auto-conceda acceso desde el
+      // navegador: tiene que pasar por la Function, que lo audita.
+      // -----------------------------------------------------------------------
+      match /accesosSoporte/{uid} {
+        allow get, list: if esAdmin(tenantId) || esPropietario();
+        allow create, update, delete: if false;
+      }
+    }
+
+    // =========================================================================
+    // /usuarios/{uid} — perfil propio. NO contiene roles: los roles son claims.
+    // =========================================================================
+    match /usuarios/{uid} {
+      allow get: if autenticado() && (request.auth.uid == uid || esPropietario());
+      allow list: if esPropietario();
+
+      // El usuario edita su propio nombre y preferencias, nada más. La lista
+      // blanca de campos es lo que impide la escalada de privilegios clásica:
+      // el usuario agregándose a sí mismo un campo `rol: "admin"` con la
+      // esperanza de que alguna pantalla lo tome como autorización.
+      allow update: if autenticado()
+                    && request.auth.uid == uid
+                    && soloCampos(['nombre', 'preferencias'])
+                    && textoOpc(request.resource.data, 'nombre', 120);
+      allow create, delete: if false;
+    }
+
+    // =========================================================================
+    // NEGACIÓN FINAL. Todo lo que no coincidió con una regla de arriba queda
+    // prohibido: colecciones nuevas, rutas mal escritas, experimentos olvidados.
+    // Esta regla es la red de seguridad del diseño entero. No borrarla.
+    // =========================================================================
+    match /{documento=**} {
+      allow read, write: if false;
+    }
+  }
+}
