@@ -205,15 +205,23 @@ aislamiento de los datos, que es lo que importa.
 ```
 /usuarios/{uid}                                  perfil propio. SIN roles.
 
-/tenants/{tenantId}                              ficha: nombre, estado, plan
+/rutasWhatsApp/{phoneNumberId}                   índice inverso número → comercio
+/plataforma/notificaciones                       destinos de correo de NovuChat
+
+/tenants/{tenantId}                              ficha: nombre, estado, plan,
+                                                 waPhoneNumberId, waWabaId, vertical
    /config/negocio                               lo que hoy es `Config del negocio`
    /catalogo/{itemId}                            servicios y precios
    /miembros/{uid}                               ESPEJO de los claims (no autoriza)
+   /contactos/{contactoId}                       personas de referencia del comercio
+   /cuenta/estado                                plan y situación de pago (solo lectura)
+   /reclamos/{reclamoId}                         reclamos hacia NovuChat, inmutables
    /invitaciones/{id}                            hash del token, nunca el token
-   /conversaciones/{convId}                      hilo: teléfono, resumen, gestión
+   /conversaciones/{convId}                      hilo: teléfono, resumen, gestión,
+                                                 periodoContado
       /mensajes/{msgId}                          INMUTABLE
       /privado/datos                             datos personales ampliados
-   /metricas/{aaaa-mm}                           contadores agregados
+   /metricas/{aaaa-mm}                           contadores agregados + únicos
    /auditoria/{eventoId}                         quién cambió qué
    /accesosSoporte/{uid}                         ventanas de acceso de NovuChat
 ```
@@ -255,6 +263,10 @@ Tres roles de persona y uno de servicio:
 | Gestionar usuarios del negocio | ❌ (por Function) | ✅ | ❌ | ❌ |
 | **Leer conversaciones** | ⚠️ solo con acceso de soporte vigente | ✅ | ✅ | ❌ |
 | Datos personales ampliados (`/privado`) | ❌ | ✅ | ❌ | escribe |
+| **Personas de referencia del comercio** | ⚠️ solo el marcado *contacto comercial* | ✅ | ❌ | ❌ |
+| **Estado de cuenta** | ✅ lee y escribe (por Function) | ✅ solo lectura | ❌ | ❌ |
+| **Reclamos** | ✅ lee todos; mueve estado por Function | ✅ crea y lee | ✅ crea y lee | ❌ |
+| **Proveedor de identidad exigido** | Google | contraseña | contraseña | token personalizado |
 | Marcar gestión interna del hilo | ❌ | ✅ | ✅ | ❌ |
 | Escribir conversaciones y mensajes | ❌ | ❌ | ❌ | ✅ (su tenant) |
 | Leer métricas | ✅ | ✅ | ✅ | ❌ |
@@ -319,6 +331,415 @@ leyendo conversaciones durante una hora. Tres medidas:
 
 ---
 
+## 4bis. Control administrativo del comercio
+
+Cuatro requisitos que Andres definió después del andamiaje inicial. Van juntos
+porque los cuatro tocan la ficha del comercio.
+
+### 4bis.1 Personas de referencia del comercio
+
+No confundir con `/miembros`, que son **usuarios del panel**. Las personas de
+referencia son los contactos del negocio —el dueño, quien atiende recepción,
+quien factura— que en general **no tienen acceso al panel** y muchas veces ni
+saben que están anotadas.
+
+**Van en subcolección propia, `/tenants/{t}/contactos/{id}`**, por el mismo
+motivo que los datos ampliados de las conversaciones: las reglas de Firestore
+**no pueden ocultar campos sueltos en una lectura**. Si estos datos fueran campos
+de la ficha del tenant, cualquiera que pueda leer la ficha —incluido el
+operador— vería el teléfono del contador. Lo que un rol no debe ver va en otro
+documento, no en otro campo.
+
+Quién entra:
+
+| | Ve | Edita |
+|---|---|---|
+| Admin del negocio | toda la agenda | sí |
+| Operador | **nada** | no |
+| NovuChat | **solo el marcado `esContactoComercial`** | no |
+| NovuChat con acceso de soporte vigente | toda la agenda | no |
+| Ingesta (n8n) | nada | no |
+
+Tres decisiones que conviene justificar:
+
+- **El operador queda afuera por completo.** Atender conversaciones no requiere
+  el teléfono del contador del negocio. Es mínimo privilegio sin la excepción
+  cómoda de "total, es de la misma empresa".
+- **NovuChat ve un solo contacto.** Necesita a quién llamar por la factura, y
+  nada más. El resto de la agenda exige un acceso de soporte, igual que las
+  conversaciones. La casilla en la interfaz lo dice con todas las letras, para
+  que el comercio sepa exactamente qué está compartiendo.
+- **`rolNegocio` es una lista cerrada** (`dueno`, `recepcion`, `facturacion`,
+  `tecnico`, `otro`) y las notas tienen un tope de 500 caracteres. Sin eso, este
+  campo se convierte en el cajón de sastre donde termina cayendo información
+  personal que nadie previó guardar y que después hay que responder si alguien
+  la reclama.
+
+**⚠️ Nota sobre `list`.** Para que NovuChat pueda *listar* los contactos
+comerciales, su consulta tiene que traer `where('esContactoComercial','==',true)`.
+Las reglas de Firestore no filtran resultados: si la consulta no trae esa
+restricción, **falla entera**. Eso es deliberado — el modo de fallar es negar,
+nunca devolver de más— y está cubierto por una prueba específica.
+
+### 4bis.2 Contador de personas atendidas (únicos)
+
+**El problema.** `FieldValue.increment(1)` cuenta mensajes, no personas. Una
+persona que escribe treinta veces en el mes sumaría treinta. "Personas
+atendidas" es un conteo de **únicos** y un contador incremental no puede
+deduplicar.
+
+**La opción que se descartó, y por qué.** La solución de manual es un conjunto de
+hashes de teléfono por período (`/metricas/{p}/vistos/{hash}`). Se descartó por
+dos motivos:
+
+1. **Privacidad. Un hash de teléfono no es anonimización.** El espacio de números
+   bolivianos es del orden de 10⁸: enumerarlo entero y comparar hashes es
+   cuestión de segundos en una laptop. Sin sal secreta, ese conjunto es una
+   segunda copia de los teléfonos, disfrazada de dato técnico. Y con sal secreta
+   hay que custodiar y rotar la sal, o sea otro secreto más en la matriz.
+2. **Costo y basura.** Crea un documento por persona y por mes que después hay
+   que purgar.
+
+**La opción elegida.** Se aprovecha que el documento de la conversación **ya
+está indexado por teléfono** (`wa_<telefono>`) y **ya se escribe en cada
+mensaje**. Se le agrega un campo `periodoContado`. Si el período que trae no es
+el actual, esa persona todavía no fue contada este mes: se incrementa
+`personasAtendidas` y se actualiza la marca. Todo dentro de una transacción, para
+que dos mensajes simultáneos de la misma persona no la cuenten dos veces.
+
+**No se crea ningún registro nuevo de teléfonos.** Es minimización de datos: se
+reutiliza el identificador personal que ya existía en vez de sembrar una segunda
+copia en la colección de métricas.
+
+**Costo en Firestore, por mensaje entrante:**
+
+| | Costo |
+|---|---|
+| Lecturas | **+1** (el documento de la conversación, dentro de la transacción) |
+| Escrituras, caso común | **+0** — la conversación ya se escribía; solo se le agrega un campo |
+| Escrituras, primera vez de esa persona en el mes | **+1** (el documento de métricas) |
+
+Para un comercio con 500 mensajes al mes de 80 personas distintas: **500 lecturas
+y 80 escrituras extra al mes**. A la tarifa de Firestore eso es del orden de una
+milésima de dólar. El conteo exacto sale prácticamente gratis.
+
+**Quién puede tocarlo.** `periodoContado` está en la lista blanca de campos que
+escribe **solo la ingesta**, y no está entre los campos de gestión interna que
+puede tocar una persona del negocio. Nadie puede borrar la marca para volver a
+contar a la misma persona, ni al revés. **La métrica tiene que ser inmanipulable
+por quien la paga y por quien la cobra**, y por eso `/metricas` también es de
+solo lectura para el propietario de NovuChat.
+
+**Recuento.** Si hay que recalcular un período —una corrección, una disputa de
+factura— se recorre `/conversaciones` filtrando por `ultimoEn` dentro del mes. Es
+caro pero puntual, y no exige haber guardado ninguna estructura extra.
+
+### 4bis.3 Habilitar y deshabilitar un comercio
+
+**Suspender no es dar de baja.** Son cosas distintas y mezclarlas sale caro:
+
+| | `suspendido` | `dado_de_baja` |
+|---|---|---|
+| Motivo típico | falta de pago | fin de contrato |
+| El asistente atiende a los clientes finales | **no** | no |
+| El comercio ve sus conversaciones, config y métricas | **sí** | no |
+| El comercio edita algo | no | no |
+| n8n escribe conversaciones nuevas | no | no |
+| Claims de los usuarios | **intactos** | revocados |
+| Cómo se revierte | un clic, instantáneo | hay que volver a invitar a cada usuario |
+
+**Qué deja de funcionar exactamente al suspender:**
+
+- La ingesta se cierra: la regla `tenantOperativo()` niega toda escritura de
+  conversaciones, mensajes, datos privados y métricas.
+- La edición se cierra: configuración, catálogo, contactos y gestión interna de
+  los hilos.
+- `configuracionFlujo` devuelve **409** con el estado y un `mensajeCortesia`.
+
+**Qué sigue funcionando:** la lectura del panel. La regla `tenantLegible()`
+admite `activo` y `suspendido`. El comercio sigue viendo sus conversaciones
+históricas, su configuración y sus métricas. Son sus datos, y quitarle la vista
+no ayuda a cobrarle: le quita la manera de verificar lo que se le factura.
+
+**Qué hace n8n.** Al recibir el 409, envía el `mensajeCortesia` y corta el turno:
+
+> Gracias por escribirnos. En este momento no podemos atenderle por este medio.
+> Le pedimos comunicarse directamente con el negocio.
+
+**PROHIBIDO revelarle al cliente final el motivo comercial.** Quien escribe por
+WhatsApp es un tercero que no tiene nada que ver con la relación entre NovuChat y
+el comercio. Un mensaje que diga o insinúe que el negocio debe dinero daña al
+comercio, daña a NovuChat y no cobra la deuda. El motivo se guarda en
+`motivoSuspension` y en `/auditoria`, y no sale de ahí.
+
+**Por qué la suspensión no toca los claims.** Es lo que la hace inmediata **en
+los dos sentidos**. Si suspender revocara los claims, reactivar exigiría
+reemitirlos y que cada usuario renovara su token: el comercio que acaba de pagar
+seguiría sin servicio un rato largo, que es justo el peor momento para hacerlo
+esperar. Al depender solo del campo `estado`, que las reglas consultan en cada
+operación, el corte y la reanudación son instantáneos en ambas direcciones.
+
+**Auditoría.** `suspenderTenant` y `reactivarTenant` escriben en `/auditoria` con
+quién, cuándo y con qué motivo, y `/auditoria` no es escribible desde ningún
+navegador: nadie puede fabricar ni borrar el registro de una suspensión.
+
+**Requisito para n8n: no cachear la configuración más de 60 segundos.** Una
+palanca comercial con un caché de una hora no es una palanca.
+
+### 4bis.4 Varios flujos y varios números
+
+Habrá **al menos tres flujos** —Demo A (agendamiento), Demo B (venta y cobro) y
+uno interno de NovuChat— y **cada comercio necesita su propio número**.
+
+**El camino de resolución.** El webhook de Meta no trae el identificador del
+comercio: trae `entry[0].changes[0].value.metadata.phone_number_id`.
+
+```
+Meta ──► n8n
+          │  phone_number_id del payload
+          ▼
+        elige el secreto HMAC de ESE número, firma
+          │
+          ▼
+   Cloud Function ──► /rutasWhatsApp/{phoneNumberId}
+                        └─► { tenantId, flujo, wabaId, estado }
+                              │
+                              ▼
+                        /tenants/{tenantId}/...
+```
+
+**Por qué una colección de índice inverso y no una consulta sobre `/tenants`.**
+Un `where('waPhoneNumberId','==',id)` exigiría permiso de listado sobre la
+cartera entera de clientes —justo lo que la amenaza T-12 prohíbe— y además un
+índice compuesto. Acá el `phone_number_id` **es la clave del documento**: la
+resolución es una lectura directa, sin índice y sin abrir ningún listado. Nadie
+la lee desde el navegador salvo el propietario; n8n no la toca, la consulta la
+Function con el SDK Admin **después** de validar la firma.
+
+**El secreto HMAC pasó a indexarse por número, no por comercio.** Si se indexara
+por comercio, n8n tendría que resolver número → comercio *antes* de poder firmar,
+y para resolverlo necesitaría una credencial: un círculo. Indexando por número,
+n8n toma el `phone_number_id` que ya viene en el payload, elige el secreto y
+firma. **La propiedad que importa se conserva intacta: el comercio se deriva de
+la clave que valida la firma, jamás del cuerpo de la petición.** Solo cambió el
+paso intermedio.
+
+**Unicidad.** `asignarNumero` corre en una transacción y rechaza asignar un
+`phone_number_id` que ya apunta a otro comercio. Si un número pudiera apuntar a
+dos, las conversaciones de uno se escribirían en el otro: una fuga de datos
+provocada por un error de dedo, no por un atacante.
+
+**Un comercio puede tener varios números**, uno por vertical: dos documentos en
+`/rutasWhatsApp` con el mismo `tenantId` y distinto `flujo`. Y dos secretos HMAC
+distintos, así que comprometer uno no alcanza al otro.
+
+#### El techo de crecimiento del producto
+
+Esto no es un detalle de implementación: es un límite comercial que conviene
+tener escrito antes de prometerle plazos a un cliente.
+
+| Límite | Valor | Consecuencia |
+|---|---|---|
+| Números por WABA, por defecto | **2** | alcanza para dos comercios, o para un comercio con dos verticales |
+| Números por WABA, ampliado | **hasta 20** | requiere trámite y verificación de negocio ante Meta |
+| Más de 20 | hacen falta **más WABA** | y cada WABA cuelga de un portafolio comercial |
+| Portafolios por cuenta personal sin verificar | **2** | ya anotado como riesgo vivo en `ESTADO.md` |
+
+Lecturas de producto:
+
+- **Con una WABA verificada, el techo son 20 comercios** (un número cada uno). No
+  es poco para empezar, pero se toca antes de lo que parece si algún comercio
+  usa dos verticales.
+- **El comercio número 21 no obliga a cambiar código: obliga a un trámite de
+  Meta.** Los trámites de Meta se miden en días o semanas, no en horas, y no
+  dependen de NovuChat. Hay que iniciar la verificación de negocio y la
+  ampliación de números **mucho antes** de necesitarlas, no cuando ya hay un
+  contrato firmado.
+- Guardar `waWabaId` en la ficha del comercio permite contar cuántos cuelgan de
+  cada WABA y ver venir el techo. Conviene una métrica de plataforma que lo
+  muestre.
+- Esto convive con la restricción ya conocida del número de prueba: hasta 5
+  destinatarios registrados, que aplica a los demos y no a producción.
+
+---
+
+## 4ter. Modelo de acceso y funciones de relación con el comercio
+
+### 4ter.1 Autenticación mixta por rol
+
+| Quién | Proveedor | Y nada más |
+|---|---|---|
+| Superadministradores de NovuChat (Andres, Silvana) | **cuenta de Google** | sin contraseña |
+| Administradores y operadores de comercio | **usuario y contraseña** | sin Google |
+| Principal de ingesta (n8n) | **token personalizado** | sin acceso interactivo |
+
+**El vínculo se impone en dos lugares, a propósito.**
+
+*En las reglas*, dentro de los **predicados base** y no en cada `allow`:
+
+```
+function proveedor() {
+  return request.auth.token.get('firebase', {}).get('sign_in_provider', '');
+}
+function esPropietario() { return ... && proveedor() == 'google.com'; }
+function esAdmin(t)     { return ... && proveedor() == 'password' && correoVerificado(); }
+function esIngesta(t)   { return ... && proveedor() == 'custom'; }
+```
+
+Meterlo en los predicados y no en cada regla es lo que lo vuelve **imposible de
+eludir por olvido**: las 20 y pico de reglas del archivo pasan todas por
+`esPropietario`, `esAdmin`, `esOperador` o `esIngesta`. Una regla nueva hereda el
+vínculo sin que su autor tenga que acordarse. Y `esMiembro` se define
+*componiendo* esos predicados —no volviendo a leer `rolEn`— justamente para no
+abrir el agujero.
+
+`sign_in_provider` viaja **dentro del ID token firmado por Google**: dice con qué
+proveedor se abrió *esta* sesión y el cliente no lo puede alterar.
+
+*En la Cloud Function* (`claims.ts`), antes de otorgar cualquier rol: se
+comprueba `providerData` de la cuenta destino y se exige **una identidad, un
+proveedor**. No basta con tener el proveedor correcto: se rechaza también la
+cuenta vinculada con los dos. Las reglas ya neutralizarían ese caso, pero una
+identidad ambigua es una fuente permanente de razonamientos equivocados sobre
+quién puede qué. Un estado imposible no hay que explicarlo.
+
+Quitar un rol nunca se bloquea por el proveedor: si hay que sacarle el acceso a
+alguien, se le saca, y no importa cómo entró.
+
+El ataque concreto que esto impide está en `SEGURIDAD.md`, T-19.
+
+#### Qué queda cubierto y qué no, sin dar nada por hecho
+
+| Control | ¿Cubierto? | Con qué |
+|---|---|---|
+| **Verificación de correo antes del primer acceso** | ✅ **sí, y de verdad** | `correoVerificado()` en las reglas: sin verificar, el servidor niega los datos. No es un aviso de la interfaz que se saltee recargando. Gratis. |
+| **Recuperación de contraseña** | ✅ sí | `sendPasswordResetEmail`. Gratis. |
+| **Protección contra enumeración de usuarios** | ✅ sí | opción de Firebase Auth, activada por defecto en proyectos nuevos, más mensajes de error genéricos en la pantalla de ingreso. Gratis. |
+| **Longitud mínima de contraseña** | ⚠️ parcial | Firebase Auth impone **6 caracteres**. El formulario pide 12, pero **eso es del navegador y se saltea**. Una política real —longitud, tipos de carácter, contraseñas filtradas— es *password policy*, y eso **exige Identity Platform**. |
+| **Límite de intentos / bloqueo de cuenta** | ⚠️ parcial | Firebase Auth tiene protección anti-abuso por IP, **no configurable y no documentada como garantía**. Un límite real por cuenta **exige Identity Platform**. Mitigación gratuita mientras tanto: **App Check con reCAPTCHA Enterprise** en el flujo de ingreso. |
+| **Segundo factor para cuentas de contraseña** | ❌ **no** | MFA **exige Identity Platform**. Los superadministradores sí lo tienen, porque el segundo factor de su cuenta de Google lo administra Google. |
+
+**Sobre el costo de Identity Platform, con honestidad:** GCIP tiene un nivel
+gratuito de usuarios activos mensuales y por encima cobra por usuario activo; la
+MFA por SMS se cobra aparte, por mensaje. **No verifiqué la tarifa vigente y no
+la voy a inventar: hay que confirmarla en la consola antes de decidir.** Lo que
+sí se puede afirmar con el volumen de NovuChat —decenas de administradores de
+comercio, no decenas de miles— es que **el consumo caería con holgura dentro del
+nivel gratuito**, así que la decisión debería tomarse por la MFA y la política de
+contraseñas, no por el precio.
+
+**Y un detalle que cambia el orden de los pasos: activar Identity Platform sobre
+un proyecto es un cambio que conviene hacer al crear `novuchat-admin-prod`, no
+después.** Es de las cosas que se vuelven incómodas con clientes ya adentro.
+
+**Mientras no se active**, el riesgo residual concreto es: una contraseña de
+administrador de comercio, sin segundo factor y con política de 6 caracteres,
+protege las conversaciones de **un** comercio. El aislamiento multi-tenant es lo
+que evita que ese riesgo escale, y el vínculo con el proveedor es lo que evita
+que escale a la plataforma. No es lo ideal, pero está acotado y dicho.
+
+### 4ter.2 Estado de cuenta visible para el comercio
+
+`/tenants/{t}/cuenta/estado`: plan, situación de pago, monto, próximo
+vencimiento y `motivoVisible`.
+
+- **Solo lectura para el comercio.** Lo escribe NovuChat con
+  `actualizarEstadoCuenta`, y queda auditado. Si el comercio pudiera escribirlo
+  se pondría "al día" y el documento dejaría de significar nada.
+- **Lo lee el admin, no el operador.** La situación financiera del negocio no es
+  asunto de quien atiende el chat.
+- **Se lee con `tenantLegible`, no con `tenantOperativo`**, así que **un comercio
+  suspendido sigue viendo esta pantalla**. Es la coherencia que faltaba: si el
+  comercio conserva la vista de sus datos, tiene que ver también *por qué* se le
+  cortó el servicio. Un corte sin explicación visible es una llamada de reclamo
+  garantizada.
+- `suspenderTenant` y `reactivarTenant` escriben acá además de en la ficha, para
+  que las dos pantallas no puedan contradecirse.
+
+**Tres textos, tres públicos. No confundirlos:**
+
+| Campo | Quién lo lee | Qué dice |
+|---|---|---|
+| `cuenta.motivoVisible` | el **comercio**, en el panel | su situación. Es su relación comercial y tiene derecho a conocerla |
+| `tenant.motivoSuspension` | **NovuChat**, auditoría | el registro interno |
+| `mensajeCortesia` | el **cliente final** por WhatsApp | neutro. **Jamás menciona pagos** (T-18) |
+
+### 4ter.3 Contador de personas atendidas, visible para el comercio
+
+La pantalla de Uso muestra `personasAtendidas` por mes, junto con mensajes y
+citas. El conteo de únicos ya estaba diseñado (§4bis.2); lo nuevo es exponerlo.
+
+**Un defecto real que apareció al probarlo:** la consulta original usaba
+`orderBy('__name__', 'desc')` y **Firestore no lo admite** — *"does not support
+descending key scans"*. Habría fallado en producción la primera vez que alguien
+abriera la pantalla. Se reemplazó por la lista explícita de los últimos doce
+períodos con `where(documentId(), 'in', [...])` —el tope de `in` es 30— y el
+orden se hace en el cliente. Una sola ida y vuelta, sin índice compuesto.
+
+Nadie escribe `/metricas` desde el navegador, **ni el comercio ni NovuChat**: la
+métrica que se factura no la toca ninguna de las dos partes interesadas.
+
+### 4ter.4 Reclamos que llegan por correo
+
+`/tenants/{t}/reclamos/{id}`. El comercio crea y lee; **nadie edita ni borra**.
+Un reclamo editable no sirve para dirimir nada.
+
+**Se guarda primero y se avisa después.** Un disparador `onDocumentCreated`
+manda el correo. Si el proveedor está caído, el reclamo no se pierde: queda en
+Firestore y se ve en el panel de NovuChat igual. **El correo es una
+notificación, no el registro.** La columna "Aviso" de la pantalla muestra si el
+correo salió; sin ella, un canal de correo caído sería invisible durante semanas.
+
+**Un comercio suspendido puede reclamar.** Sería absurdo cortarle el canal justo
+cuando tiene el motivo más probable para usarlo.
+
+#### El correo va en TEXTO PLANO, y es una decisión de seguridad
+
+Sin `html`. Un correo HTML con el texto del reclamo interpolado es **inyección
+de HTML directa**: enlaces de phishing que parecen de NovuChat, imágenes remotas
+que confirman lectura, CSS que oculta contenido para que el destinatario lea una
+cosa distinta de la que está escrita. En texto plano no hay nada que interpretar:
+el problema **desaparece de raíz en vez de mitigarse**. Cuesta un correo más feo.
+
+Además: el **asunto se limpia de CR y LF** antes de usarse. Un salto de línea en
+un asunto permite inyectar encabezados propios —un `Bcc:` hacia otra casilla— y
+desviar una copia del correo. Es un ataque viejo que sigue funcionando.
+
+#### Proveedor de correo y dónde vive su credencial
+
+Google Cloud no tiene servicio de correo transaccional propio (la API de Gmail no
+sirve para esto), así que hay que salir a un tercero igual.
+
+| Opción | A favor | En contra |
+|---|---|---|
+| **Resend** | una sola llamada HTTPS con `Authorization: Bearer`. **La de menor superficie**: sin SMTP que configurar ni biblioteca pesada que auditar. Nivel gratuito suficiente | proveedor joven |
+| Postmark | mejor entregabilidad transaccional | de pago desde el primer correo, más trámite |
+| SendGrid | veterano, con nivel gratuito | las cuentas nuevas pasan por revisiones que pueden dejar el canal mudo sin aviso |
+| Amazon SES | el más barato | exige salir del *sandbox* y meter una **segunda nube** en un proyecto que ya tiene tres (OCI, GCP, Meta) |
+
+**Elegido: Resend**, por superficie mínima. El criterio no fue el precio sino
+cuánto código y cuánta configuración hay que auditar para que funcione.
+
+**La credencial vive en Secret Manager**, como `RESEND_API_KEY`, inyectada con
+`defineSecret`. **Nunca en el repositorio —que es público—, nunca en una variable
+de GitHub, nunca en el JSON de un flujo de n8n.** La Function la recibe en
+memoria en tiempo de ejecución; los errores de envío se registran sin cuerpo ni
+cabeceras, para que la clave no termine en un log.
+
+Antes del primer envío hay que **verificar el dominio remitente (SPF y DKIM)** o
+los correos van a spam. Es un paso de DNS, no de código.
+
+#### El destino del correo nunca sale del reclamo
+
+Los destinatarios se leen de `/plataforma/notificaciones`, que **ninguna sesión
+de navegador puede escribir**. Es el control central: si el texto de un reclamo
+pudiera influir en a dónde va el correo, el sistema sería un **reenviador** —
+alguien escribe lo que quiera y lo hace salir, firmado por NovuChat, hacia donde
+quiera. La lista blanca de claves del reclamo existe justamente para que no haya
+un campo `destinatario` por donde entre esa idea. Hay una prueba que lo verifica.
+
+---
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido
@@ -337,18 +758,23 @@ los clientes juntos. Es exactamente la credencial que el encargo pide evitar.
 
 **Lo que se hace:**
 
-1. **Un secreto HMAC por negocio**, en Secret Manager (`ingesta-<tenantId>`) y en
-   las credenciales de n8n. Uno por negocio, no uno para todos.
+1. **Un secreto HMAC por número de WhatsApp**, en Secret Manager
+   (`ingesta-<phone_number_id>`) y en las credenciales de n8n. Uno por número, no
+   uno para todos. Un comercio con dos verticales tiene dos secretos.
 2. n8n firma cada petición: `HMAC-SHA256(secreto, timestamp + "." + cuerpo)`.
    **El secreto no viaja**; viaja una firma. Un `Authorization: Bearer` queda
    escrito en los logs de cualquier proxy intermedio; una firma no sirve de nada
    una vez usada.
 3. Ventana de 5 minutos sobre el timestamp: acota la reproducción de una petición
    capturada.
-4. **El tenant se deriva de la clave que valida la firma, nunca del cuerpo.**
+4. **El comercio se deriva de la clave que valida la firma, nunca del cuerpo.**
    Este es el control central contra el *diputado confundido*: aunque n8n mande
-   `{"tenantId": "otro-negocio"}`, la función escribe donde dice la firma.
+   `{"tenantId": "otro-negocio"}`, ese campo se ignora por completo — el comercio
+   sale del índice `/rutasWhatsApp`, resuelto desde el número que la firma
+   acredita. Ver §4bis.4 para por qué el índice del secreto es el número.
 5. Comparación de firmas en tiempo constante (`timingSafeEqual`).
+6. **El estado del comercio se comprueba en cada petición.** Si no está activo,
+   409 y n8n manda el mensaje de cortesía neutro.
 
 **Fase 2, ya prevista en el código.** La función emite además un token de Firebase
 Auth efímero (1 h) para el principal `svc_<tenantId>`, con el claim
@@ -364,6 +790,7 @@ escritas y pasan**; falta solo cambiar el cliente de escritura.
 | Alternativa | Por qué no |
 |---|---|
 | Clave JSON de cuenta de servicio en n8n | larga duración, alcance de proyecto, compartida entre todos los negocios. Prohibida. |
+| Secreto HMAC indexado por comercio | n8n tendría que resolver número → comercio *antes* de poder firmar, y para eso necesitaría una credencial: un círculo. Ver §4bis.4. |
 | Workload Identity Federation desde OCI | WIF necesita que el emisor tenga identidad OIDC propia. GitHub Actions la tiene (y por eso el **despliegue sí usa OIDC**); una VM de OCI corriendo n8n no la tiene sin montar un emisor adicional que habría que operar y proteger. |
 | `Bearer` con clave por tenant | mejor que una clave única, pero la clave viaja en cada petición y termina en logs de proxy. HMAC cuesta lo mismo y no expone el secreto. |
 | Escribir Firestore desde n8n con el SDK cliente | requeriría un usuario de Auth con contraseña guardada en n8n: otra credencial de larga duración. |
@@ -371,7 +798,9 @@ escritas y pasan**; falta solo cambiar el cliente de escritura.
 ### 5.4 Cómo consume n8n la configuración
 
 El nodo `Config del negocio` deja de tener los valores escritos a mano y pasa a
-consultarlos. La respuesta llega con los campos **separados y rotulados**:
+consultar `configuracionFlujo` con el `phone_number_id` del webhook. La función
+resuelve el comercio, comprueba su estado y devuelve la configuración con los
+campos **separados y rotulados**:
 `instruccionesExtra` viene en su propia clave para que el flujo la inserte en una
 sección delimitada del prompt, marcada como *dato del negocio*, **nunca
 concatenada por delante de las reglas de comportamiento del agente**. Esto es lo
@@ -420,10 +849,8 @@ admin/
 ├── .firebaserc.ejemplo          copiar a .firebaserc (ignorado por git)
 ├── package.json / pnpm-workspace.yaml
 ├── vitest.config.ts
-├── ci/
-│   └── despliegue-admin.yml     ⚠️ mover a .github/workflows/ (ver §11)
 ├── pruebas/
-│   ├── reglas.test.ts           42 pruebas de aislamiento
+│   ├── reglas.test.ts           98 pruebas de aislamiento y control
 │   └── correr.sh                levanta el emulador y corre las pruebas
 ├── web/                         React 19 + Vite + TypeScript
 │   └── src/
@@ -434,12 +861,15 @@ admin/
 │       │   ├── TextoSeguro.tsx  ⭐ renderizado de texto no confiable
 │       │   └── Proteger.tsx     guardia de rutas (cosmético)
 │       └── paginas/             Ingresar, Tenants, Configuracion,
-│                                Conversaciones, Usuarios, Metricas
+│                                Conversaciones, Usuarios, Contactos,
+│                                Metricas, EstadoCuenta, Reclamos
 └── functions/                   Cloud Functions v2, TypeScript
     └── src/
-        ├── index.ts             alta/baja, roles, soporte, config para n8n
-        ├── claims.ts            ⭐ único emisor de permisos del sistema
-        └── ingesta.ts           ⭐ puente n8n → Firestore con HMAC
+        ├── index.ts             alta/baja, suspensión, roles, soporte, números
+        ├── claims.ts            ⭐ único emisor de permisos + vínculo proveedor
+        ├── reclamos.ts          ⭐ correo saliente: la única dependencia externa
+        └── ingesta.ts           ⭐ puente n8n → Firestore con HMAC, ruteo por
+                                 número y conteo de personas únicas
 ```
 
 ---
@@ -448,7 +878,7 @@ admin/
 
 GitHub Actions con **OIDC / Workload Identity Federation**. Cero claves JSON de
 cuenta de servicio en el repositorio, que además es público. El detalle está en
-`ci/despliegue-admin.yml` y el análisis de seguridad en `SEGURIDAD.md` §4.
+`.github/workflows/despliegue-admin.yml` y el análisis de seguridad en `SEGURIDAD.md` §4.
 
 Dos trabajos con separación estricta:
 
@@ -467,7 +897,7 @@ Dos trabajos con separación estricta:
 |---|---|
 | Compilación del frontend | ✅ `pnpm --filter @novuchat/admin-web build` — 72 módulos, sin errores |
 | Compilación de las Functions | ✅ `tsc -b` sin errores |
-| Pruebas de reglas con el emulador | ✅ **42 de 42, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
+| Pruebas de reglas con el emulador | ✅ **98 de 98, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
 | Comprobaciones del CI (grep) | ✅ corridas localmente, ambas pasan |
 | Despliegue a Firebase | ⛔ **no ejecutado.** No se creó ni modificó ningún recurso de nube |
 
@@ -481,7 +911,40 @@ Dos hallazgos del entorno, documentados para que no cuesten tiempo después:
    determinista y no necesita ninguna sesión de Firebase iniciada. El script del
    CI sí usa el CI de GitHub, donde el CLI funciona normalmente.
 
-2. **El `evaluation error` en el log de reglas es benigno.** Toda escritura con
+2. **Dos defectos reales que destaparon las pruebas nuevas.** Los dos estaban en
+   verde antes y no lo estaban de verdad:
+
+   - **`rolEn()` devolvía `null`.** Comparar `null == 'admin'` no da falso en el
+     lenguaje de reglas: lanza *Null value error*, que deniega por error de
+     evaluación en vez de por la condición. El efecto real era que el propietario
+     de NovuChat **no podía leer `/auditoria`, `/invitaciones` ni
+     `/accesosSoporte`** —las tres reglas de la forma `esAdmin(t) ||
+     esPropietario()`, donde `esAdmin` se evalúa primero y reventaba antes de
+     llegar a la segunda rama—. Corregido usando cadena vacía como valor por
+     defecto, y con una prueba de regresión.
+   - **Ocho pruebas de contactos pasaban en vacío.** Una edición de la semilla no
+     coincidió y falló en silencio, así que los `assertFails` pasaban porque los
+     documentos **no existían**, no porque las reglas los negaran. Se agregó el
+     bloque *Control de la semilla*, que lee la semilla sin reglas y verifica que
+     cada documento que las demás pruebas dan por sentado esté realmente ahí. Se
+     comprobó que el control funciona rompiendo la semilla a propósito: detecta
+     los cuatro documentos faltantes.
+
+   La lección vale para cualquiera que toque esta suite: **en un archivo de
+   pruebas dominado por `assertFails`, el verde no prueba nada por sí solo.** Un
+   documento inexistente y una regla que deniega producen el mismo
+   `permission-denied`.
+
+3. **`orderBy('__name__', 'desc')` no existe en Firestore.** La pantalla de Uso
+   lo usaba y habría fallado en producción la primera vez que alguien la
+   abriera: *"Firestore does not support descending key scans"*. No lo detectó
+   ninguna prueba de reglas porque no es un problema de permisos — apareció al
+   escribir la prueba que reproduce la consulta real de la pantalla. Corregido
+   con `where(documentId(), 'in', [...])` y orden en el cliente. **Moraleja: las
+   pruebas de reglas deben usar la MISMA consulta que la interfaz, no una
+   parecida.**
+
+4. **El `evaluation error` en el log de reglas es benigno.** Toda escritura con
    una transformación de servidor (`serverTimestamp()`, `increment()`) se evalúa
    dos veces: una antes de materializar la transformación, que produce ese
    mensaje, y otra con los valores resueltos, que es la que decide. Se comprobó
@@ -539,7 +1002,7 @@ activa de `gcloud` ni de `firebase`.
 **GitHub** (repositorio `segurolotengopy/NovuChat`)
 
 11. Mover el workflow:
-    `git mv admin/ci/despliegue-admin.yml .github/workflows/despliegue-admin.yml`
+    `git mv .github/workflows/despliegue-admin.yml .github/workflows/despliegue-admin.yml`
 12. Crear el entorno `produccion` **con revisor obligatorio**.
 13. Cargar las *variables* (no secretos): `WIF_PROVIDER`,
     `WIF_SERVICE_ACCOUNT`, `FIREBASE_PROJECT_ID_PROD`, `VITE_FIREBASE_*`,
@@ -547,10 +1010,41 @@ activa de `gcloud` ni de `firebase`.
 14. Proteger `main`: sin push directo, PR con revisión humana. Ningún agente
     aprueba ni fusiona (regla §4).
 
+**Autenticación**
+
+14b. Habilitar **dos** proveedores en Auth: *Google* y *Correo/contraseña*.
+14c. Comprobar que la **protección contra enumeración de correos** esté activa.
+14d. Decidir sobre **Identity Platform** (§4ter.1). Si se activa, hacerlo **al
+     crear `novuchat-admin-prod`**, no después: es lo que habilita política de
+     contraseñas, límite de intentos y segundo factor para los administradores de
+     comercio. Confirmar la tarifa vigente en la consola; con el volumen de
+     NovuChat debería caer en el nivel gratuito, pero **no lo dé por hecho**.
+14e. Crear la primera cuenta de cada tipo y comprobar el vínculo en vivo: que un
+     administrador de comercio que entra con Google **no vea nada**.
+
 **Secret Manager**
 
-15. Un secreto `ingesta-<tenantId>` por negocio, y declararlo en
-    `functions/src/ingesta.ts` (`SECRETOS_POR_TENANT`).
+15. Un secreto `ingesta-<phone_number_id>` **por número de WhatsApp**, y
+    declararlo en `functions/src/ingesta.ts` (`SECRETOS_POR_NUMERO`).
+15c. El secreto `RESEND_API_KEY` del proveedor de correo. **Nunca en el
+     repositorio ni en variables de GitHub.**
+
+**Correo saliente**
+
+15d. Crear la cuenta en Resend y **verificar el dominio remitente (SPF y DKIM)**.
+     Sin eso los correos van a spam. Es un paso de DNS.
+15e. Crear `/plataforma/notificaciones` con `correosReclamos`. Ninguna sesión de
+     navegador puede escribirlo: se carga desde una consola administrativa con el
+     SDK Admin.
+
+**Meta / WhatsApp — con anticipación, no cuando haga falta**
+
+15b. Iniciar la **verificación de negocio** y la ampliación de números de la
+     WABA. Por defecto son 2 números; ampliar a 20 es un trámite que se mide en
+     días o semanas y no depende de NovuChat. Ver §4bis.4: el comercio número 21
+     no obliga a cambiar código, obliga a un trámite. Y el límite de portafolios
+     por cuenta personal sin verificar es 2, que ya figura como riesgo vivo en
+     `ESTADO.md`.
 
 **Local**
 
@@ -571,4 +1065,11 @@ activa de `gcloud` ni de `firebase`.
 | **Presupuesto de reglas** | Firestore limita a 10 accesos a documentos por petición y 20 por consulta; `tenantActivo()` + `soporteVigente()` ya usan dos | no agregar más `get()` sin medir |
 | **Un solo propietario de plataforma** | si Andres pierde la cuenta, nadie administra | designar a Silvana como segundo propietario desde el primer día |
 | **Costo de lectura del visor** | un hilo largo son cientos de lecturas por apertura | ya hay `limit(300)`; paginar si molesta |
+| **Techo de 20 números por WABA** | el comercio 21 queda bloqueado por un trámite de Meta, no por código | iniciar la verificación de negocio y la ampliación **antes** de necesitarlas; métrica de comercios por WABA |
+| **La suspensión depende de que n8n respete el 409** | si n8n cachea la configuración o ignora el 409, un comercio suspendido sigue atendido | TTL de caché de 60 s como requisito del flujo; la ingesta igual queda cerrada por reglas, así que el daño se acota a respuestas sin registro |
+| **`personasAtendidas` sostiene la facturación** | un error en la transacción de conteo se traduce en una factura mal emitida | la marca `periodoContado` no la puede tocar ninguna persona; hay procedimiento de recuento; conviene contrastar contra el conteo real el primer mes |
+| **Contactos: datos de terceros sin consentimiento** | se guardan nombre, teléfono y correo de personas que no son usuarias del panel | roles cerrados, notas topeadas a 500 caracteres, operador excluido, y la política de retención pendiente los debe cubrir |
+| **Sin segundo factor ni política de contraseñas para los comercios** | una contraseña de 6 caracteres protege las conversaciones de un comercio | App Check en el ingreso, correo verificado obligatorio, mensajes de error genéricos. Se cierra activando Identity Platform (§4ter.1) |
+| **Primera dependencia externa: el correo** | si Resend cae o suspende la cuenta, NovuChat deja de enterarse de los reclamos | el reclamo se guarda en Firestore igual y se ve en el panel; la columna "Aviso" muestra los no notificados. Conviene una alerta si se acumulan pendientes |
+| **La Function de correo junta las tres capacidades de la Regla de Dos** | es el único punto del sistema donde pasa | destino fijo fuera del reclamo, texto plano, saneo de encabezados, sin adjuntos. Analizado en SEGURIDAD.md §1 y T-20 |
 | **El repositorio es público** | los identificadores del proyecto quedan a la vista | ya se aplican los marcadores de `CONVENCIONES-REPO-PUBLICO.md`; la seguridad no depende de que el ID sea secreto, sino de las reglas |

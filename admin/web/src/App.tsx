@@ -7,6 +7,9 @@ import { Configuracion } from './paginas/Configuracion';
 import { Conversaciones } from './paginas/Conversaciones';
 import { Metricas } from './paginas/Metricas';
 import { Usuarios } from './paginas/Usuarios';
+import { Contactos } from './paginas/Contactos';
+import { EstadoCuenta } from './paginas/EstadoCuenta';
+import { Reclamos } from './paginas/Reclamos';
 
 function Cabecera() {
   const { usuario, permisos, salir } = useSesion();
@@ -20,7 +23,10 @@ function Cabecera() {
           <Link to={`/negocio/${tenantId}/configuracion`}>Configuración</Link>
           <Link to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</Link>
           <Link to={`/negocio/${tenantId}/usuarios`}>Usuarios</Link>
+          <Link to={`/negocio/${tenantId}/contactos`}>Contactos</Link>
           <Link to={`/negocio/${tenantId}/uso`}>Uso</Link>
+          <Link to={`/negocio/${tenantId}/cuenta`}>Cuenta</Link>
+          <Link to={`/negocio/${tenantId}/reclamos`}>Reclamos</Link>
         </>}
       </nav>
       <button onClick={salir}>Salir</button>
@@ -55,8 +61,14 @@ export function App() {
           <Proteger requiere="miembroTenant"><><Cabecera /><Conversaciones /></></Proteger>} />
         <Route path="/negocio/:tenantId/usuarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />
+        <Route path="/negocio/:tenantId/contactos" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
         <Route path="/negocio/:tenantId/uso" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Metricas /></></Proteger>} />
+        <Route path="/negocio/:tenantId/cuenta" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
+        <Route path="/negocio/:tenantId/reclamos" element={
+          <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ProveedorSesion>

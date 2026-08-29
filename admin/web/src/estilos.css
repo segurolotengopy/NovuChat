@@ -18,3 +18,10 @@ textarea { min-height: 6rem; }
 .hilo .saliente { background: #4a90d922; justify-self: end; }
 .hilo time { display: block; font-size: .75rem; opacity: .6; }
 .ayuda { font-size: .85rem; opacity: .8; max-width: 40rem; }
+
+.pestanas { display: flex; gap: .5rem; justify-content: center; margin: .5rem 0 1rem; }
+.pestanas button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
+.enlace { background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 0; }
+.situacion { font-size: 1.2rem; padding: .5rem .75rem; border-radius: .5rem; display: inline-block; }
+.situacion.ok { background: #2e7d3222; }
+.situacion.alerta { background: #c6282822; }

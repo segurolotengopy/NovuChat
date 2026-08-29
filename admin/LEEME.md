@@ -15,7 +15,7 @@ nada de `Flujos/`.
 | | |
 |---|---|
 | Andamiaje | escrito y compilando |
-| Pruebas de reglas | **42 de 42 en verde**, ejecutadas contra el emulador |
+| Pruebas de reglas | **98 de 98 en verde**, ejecutadas contra el emulador |
 | Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
 
 ## Cómo trabajar
@@ -26,7 +26,7 @@ Requiere Node 24, pnpm y un JDK (para el emulador de Firestore).
 cd admin
 pnpm install
 
-pnpm pruebas:reglas     # emulador + 42 pruebas de aislamiento
+pnpm pruebas:reglas     # emulador + 98 pruebas de aislamiento y control
 pnpm web:build          # compila el frontend
 pnpm functions:build    # compila las Cloud Functions
 pnpm verificar          # las tres cosas
@@ -35,6 +35,14 @@ pnpm verificar          # las tres cosas
 **Antes de dar por bueno cualquier cambio en `firestore.rules`, corra
 `pnpm pruebas:reglas`.** Es el único control automático que impide que una
 edición bienintencionada abra el paso entre negocios.
+
+⚠️ **Y si agrega pruebas, agregue también el documento a la semilla.** Casi todas
+las pruebas son `assertFails`, y una prueba así pasa igual de bien cuando la
+regla deniega que cuando el documento **no existe**: el error es
+`permission-denied` en los dos casos. Ya pasó una vez —ocho pruebas de contactos
+en verde sin que existiera un solo contacto—. El bloque *Control de la semilla*
+está justamente para detectarlo: verifica que cada documento que las demás
+pruebas dan por sentado exista de verdad.
 
 ### Dos rarezas del entorno, ya documentadas
 
@@ -54,8 +62,9 @@ Cloud y a GitHub. Los tres que más fácil se hacen mal:
 - **La condición de atributos de Workload Identity Federation.** El repositorio
   es público; una condición laxa deja que un fork obtenga credenciales.
   `SEGURIDAD.md` §4 tiene la expresión concreta.
-- **Mover el workflow** de `admin/ci/` a `.github/workflows/`. Donde está ahora,
-  GitHub no lo ejecuta.
+- **El workflow ya está en `.github/workflows/despliegue-admin.yml`** y convive
+  con el pipeline del estándar DevSecOps. Revise que los dos no se pisen: ambos
+  disparan sobre `admin/**`.
 - **Presupuesto con alerta en el plan Blaze.** No tiene tope duro.
 
 ## Prohibiciones propias de este directorio
@@ -71,5 +80,19 @@ Cloud y a GitHub. Los tres que más fácil se hacen mal:
 4. **El rol nunca sale de un documento de Firestore**, siempre de los custom
    claims. `/tenants/{t}/miembros` es un espejo para pintar la interfaz.
 5. **Los identificadores de negocio no se reutilizan**, ni los dados de baja.
-6. Se respeta `CONVENCIONES-REPO-PUBLICO.md`: ningún valor real de
-   infraestructura en un archivo versionado.
+   Tampoco los `phone_number_id`: un número asignado a un comercio no se
+   reasigna a otro sin liberarlo primero.
+6. **Nunca revelarle al cliente final el motivo comercial de una suspensión.** El
+   mensaje de cortesía es neutro y está fijo en el código.
+7. **Una identidad, un proveedor.** Superadministradores solo con Google;
+   comercios solo con contraseña; ingesta solo con token personalizado. El
+   vínculo vive dentro de los predicados base de `firestore.rules` y en
+   `claims.ts`. **No lo saque de los predicados** para "simplificar": ahí es
+   donde lo heredan todas las reglas, incluidas las que se escriban mañana.
+8. **El correo de reclamos va en TEXTO PLANO y su destino nunca sale del
+   reclamo.** Las dos cosas son controles, no detalles de implementación.
+9. **Datos de prueba:** teléfonos con seis o más ceros seguidos
+   (`59170000001`) y correos `@ejemplo.com`. Es lo que acepta la lista de
+   admitidos de `scripts/verificar-saneo.sh`.
+10. Se respeta `CONVENCIONES-REPO-PUBLICO.md`: ningún valor real de
+    infraestructura en un archivo versionado.
