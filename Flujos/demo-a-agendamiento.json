@@ -7,21 +7,6 @@
   },
   "nodes": [
     {
-      "id": "nota-configuración-a",
-      "name": "Nota Configuración A",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        -860,
-        -80
-      ],
-      "parameters": {
-        "content": "## Demo A — Agendamiento con calendario real\n\n**Antes de activar (ver Analisis/02-criterios-implementacion.md):**\n1. Credencial **WhatsApp Trigger** (App `NovuChat-Demo`: App Secret + Verify Token) — criterio A-2/D-16.\n2. Credencial **WhatsApp** de envío (token PERMANENTE de usuario de sistema, no el de 24 h).\n3. Credencial **Google Gemini (AI Studio)**. En el desplegable del modelo elegir el *flash* vigente.\n4. Credencial **Google Calendar OAuth2** y completar el nodo `Config del negocio` (phoneNumberId, calendario, número de recepción).\n5. Crear eventos de relleno en el calendario para que el agente proponga alternativas reales.\n6. Probar con los 5 números registrados del número de prueba (criterio A-3).",
-        "width": 520,
-        "height": 360
-      }
-    },
-    {
       "id": "trigger-whatsapp",
       "name": "WhatsApp Trigger",
       "type": "n8n-nodes-base.whatsAppTrigger",
@@ -110,6 +95,24 @@
               "name": "horarioAtencion",
               "type": "string",
               "value": "Lunes a sábado, de 09:00 a 19:00"
+            },
+            {
+              "id": "a9",
+              "name": "mensajeCierre",
+              "type": "string",
+              "value": "Gracias por escribirnos. Si necesita algo mas, escribame por aca."
+            },
+            {
+              "id": "a10",
+              "name": "mensajeErrorTemporal",
+              "type": "string",
+              "value": "Disculpe, tuve un problema tecnico momentaneo. Me repite lo ultimo?"
+            },
+            {
+              "id": "a11",
+              "name": "mensajeReservaNoConfirmada",
+              "type": "string",
+              "value": "Disculpe, no pude confirmar el registro de su cita en la agenda. Le paso con una persona de recepcion para que lo resuelva ahora mismo."
             }
           ]
         },
@@ -146,7 +149,8 @@
           "systemMessage": "=Eres Sofía, la asistente virtual de {{ $json.nombreNegocio }}. Amable, profesional y concisa: máximo 3 oraciones por mensaje, español boliviano, moneda siempre en \"Bs\".\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, UTC-4). Calcula con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'). Horario de atención: {{ $json.horarioAtencion }}. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }}.\n\nECONOMÍA DE HERRAMIENTAS (respétalo al pie de la letra; el cliente espera en WhatsApp y cada llamada demora):\n- Saludos, catálogo, precios, especialidades y dudas generales: responde DIRECTAMENTE, sin llamar a ninguna herramienta.\n- consultar_disponibilidad: como máximo UNA llamada por mensaje del cliente, y solo cuando vayas a proponer horarios. Pide el día completo en un solo rango (de 09:00 a 19:00 con zona -04:00); nunca consultes franja por franja ni un día por llamada.\n- agendar_cita: una sola vez, cuando el cliente ya confirmó el horario y tienes su nombre. No la uses para 'verificar' ni para releer la agenda.\n- Nunca repitas una llamada con los mismos parámetros. Con lo que te devolvió la herramienta, redacta ya tu respuesta al cliente.\n\nREGLAS DE NEGOCIO:\n1. BELLEZA: si preguntan por servicios de belleza, muestra el catálogo con precios: Manicure 50 Bs · Pedicure 60 Bs · Corte 70 Bs · Limpieza facial 120 Bs. Termina preguntando si desea agendar alguno.\n2. SALUD: si preguntan por servicios de salud, muestra las especialidades (Odontología General, Ortodoncia, Cirugía Maxilofacial) SIN precios. Si preguntan cuánto cuesta un tratamiento, explica profesionalmente que el precio exacto depende de la evaluación del especialista y ofrece agendar una cita de diagnóstico.\n3. AGENDAMIENTO: los eventos que devuelve consultar_disponibilidad son los horarios OCUPADOS: deduce los libres dentro del horario de atención y ofrece un máximo de 3 opciones exactas (ej.: 14:00, 15:30 o 17:00). Nunca inventes disponibilidad ni propongas horarios en el pasado.\n4. CONFIRMACIÓN: cuando el cliente elija un horario, pide su nombre completo si aún no lo tienes y usa la herramienta agendar_cita (título \"Cita <nombre> — <servicio>\", duración 1 hora). Después confirma servicio, día y hora, y despídete con calidez.\n5. RECHAZOS: si el cliente rechaza los horarios propuestos, recuerda lo que ya dijo (día, franja) y ofrece nuevas opciones coherentes con una sola consulta. Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].\n6. Nunca inventes precios, servicios ni disponibilidad. Si piden algo fuera de estas reglas, ofrece consultarlo con recepción.\n7. Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.",
           "maxIterations": 5
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "id": "modelo-gemini",
@@ -158,7 +162,7 @@
         560
       ],
       "parameters": {
-        "modelName": "models/gemini-2.5-flash",
+        "modelName": "models/gemini-3.5-flash",
         "options": {
           "temperature": 0.4,
           "maxOutputTokens": 1024
@@ -166,7 +170,7 @@
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 1000
+      "waitBetweenTries": 3000
     },
     {
       "id": "memoria-ventana",
@@ -248,7 +252,7 @@
         280
       ],
       "parameters": {
-        "jsCode": "// Separa la marca [TRANSFERIR] de la respuesta al cliente (criterio C-11).\nconst out = [];\nfor (const item of $input.all()) {\n  const texto = String(item.json.output ?? '').trim();\n  const transferir = texto.includes('[TRANSFERIR]');\n  out.push({ json: {\n    respuesta: texto.split('[TRANSFERIR]').join('').trim(),\n    transferir,\n    from: $('Normalizar entrada').first().json.from,\n    nombrePerfil: $('Normalizar entrada').first().json.nombrePerfil,\n  }});\n}\nreturn out;"
+        "jsCode": "// Separa la marca [TRANSFERIR] de la respuesta al cliente (criterio C-11).\nconst entradas = $('Normalizar entrada').all();\nconst cfg = $('Config del negocio').first().json;\nconst cierre = String(cfg.mensajeCierre ?? '').trim()\n  || 'Gracias por escribirnos. Si necesita algo mas, escribame por aca.';\nconst falla = String(cfg.mensajeErrorTemporal ?? '').trim()\n  || 'Disculpe, tuve un problema tecnico momentaneo. Me repite lo ultimo?';\n\nconst items = $input.all();\nconst out = [];\nfor (let i = 0; i < items.length; i++) {\n  // Emparejamiento por indice: nunca .first(), que le pondria el telefono del\n  // primer cliente a la respuesta del segundo cuando llegan dos a la vez.\n  const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;\n  const dato = items[i].json;\n\n  // Gemini devuelve 500/503 en picos y entonces no llega `output`. Hay que\n  // distinguirlo de una respuesta vacia: despedirse cuando en realidad se cayo\n  // el modelo deja al cliente creyendo que la conversacion termino.\n  const fallo = dato.error !== undefined || dato.output === undefined;\n  const texto = String(dato.output ?? '').trim();\n  const transferir = texto.includes('[TRANSFERIR]');\n  let respuesta = texto.split('[TRANSFERIR]').join('').trim();\n\n  // El nodo de WhatsApp rechaza un cuerpo vacio con 400 Bad request.\n  const vacia = respuesta === '';\n  if (fallo) respuesta = falla;\n  else if (vacia) respuesta = cierre;\n\n\n  // Marca si la respuesta AFIRMA que la cita quedo agendada. Se decide aca y\n  // no en una expresion del nodo IF para poder probarlo: la trampa es que\n  // \"ya tiene reservada su cita\" no es una confirmacion nueva sino un aviso\n  // de que el horario esta ocupado, y disparar la compuerta ahi romperia una\n  // conversacion correcta. Probado contra las frases reales del agente.\n  const CONFIRMA = /(ha sido|han sido|hemos|he|queda|quedo|quedó|fue|esta|está)\\s+(agendad|reservad|registrad|confirmad)|(agendé|agende|agendamos|reservé|reserve|registré|registre)(?![a-záéíóúñ])/i;\n  const YA_EXISTE = /\\bya\\s+(tiene|tienes|cuenta con|hay)/i;\n  const afirmaAgendo = CONFIRMA.test(respuesta) && !YA_EXISTE.test(respuesta);\n\n  out.push({ json: {\n    respuesta,\n    transferir,\n    afirmaAgendo,\n    respuestaVacia: vacia,\n    falloModelo: fallo,\n    from: ent.from,\n    nombrePerfil: ent.nombrePerfil,\n  }});\n}\nreturn out;"
       }
     },
     {
@@ -257,7 +261,7 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1,
       "position": [
-        1140,
+        1640,
         200
       ],
       "parameters": {
@@ -273,7 +277,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1140,
+        1640,
         420
       ],
       "parameters": {
@@ -307,7 +311,7 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1,
       "position": [
-        1360,
+        1860,
         420
       ],
       "parameters": {
@@ -318,20 +322,86 @@
       }
     },
     {
-      "id": "nota-criterios-a",
-      "name": "Nota Criterios A",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        -860,
-        320
-      ],
       "parameters": {
-        "content": "## Correcciones aplicadas (doc. 02)\n- **B-1** memoria con clave = teléfono del cliente\n- **B-2** filtro de acuses antes del agente\n- **B-3** parser: text / interactive / image / otros\n- **B-4** Calendar real: 2 tools (consultar + agendar)\n- **B-5** fecha/hora America/La_Paz inyectada al prompt\n- **B-7** Gemini flash (cambiar a Anthropic en producción)\n- **C-11** 3 rechazos → marca [TRANSFERIR] → aviso a recepción\n- **A-5** el agente no niega ser una IA",
-        "width": 520,
-        "height": 280,
-        "color": 4
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "g1",
+              "leftValue": "={{ $json.afirmaAgendo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "gate-if",
+      "name": "¿Afirma que agendó?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').item.json.calendarioId }}"
+        },
+        "returnAll": false,
+        "limit": 10,
+        "options": {
+          "timeMin": "={{ $now.minus({ days: 1 }).toISO() }}",
+          "timeMax": "={{ $now.plus({ days: 90 }).toISO() }}",
+          "singleEvents": true
+        }
+      },
+      "id": "gate-cal",
+      "name": "Verificar en el calendario",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        140
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// COMPUERTA: no prometer una reserva que no exista.\n// El agente puede afirmar que agendo aunque la herramienta haya fallado: ya\n// paso el 2026-08-29, con un ID de calendario mal escrito. Una regla en el\n// prompt es una sugerencia estadistica; esto es una comprobacion.\nconst previos = $('Procesar respuesta').all();\nconst cfg = $('Config del negocio').first().json;\nconst aviso = String(cfg.mensajeReservaNoConfirmada ?? '').trim()\n  || 'Disculpe, no pude confirmar el registro de su cita. Le paso con recepcion.';\n\nconst VENTANA_MS = 5 * 60 * 1000;\nconst ahora = Date.now();\n\n// Solo cuentan eventos REALES creados recien. Si el nodo de Calendar fallo,\n// aca no llega ningun evento con id y la compuerta cierra, que es la\n// direccion segura: preferimos derivar a una persona antes que mentir.\nconst recien = $input.all()\n  .map(i => i.json)\n  .filter(e => e && e.id)\n  .filter(e => {\n    const c = Date.parse(e.created || e.updated || '');\n    return Number.isFinite(c) && (ahora - c) >= 0 && (ahora - c) < VENTANA_MS;\n  });\n\n// Con mas de un mensaje en la misma ejecucion no se puede atribuir el evento a\n// un cliente concreto: no se promete nada y lo toma una persona.\nconst ambiguo = previos.length !== 1;\nconst item = previos[0].json;\nconst verificada = recien.length > 0 && !ambiguo;\n\nif (verificada) {\n  return [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id } }];\n}\nreturn [{ json: { ...item, respuesta: aviso, transferir: true, reservaVerificada: false } }];"
+      },
+      "id": "gate-code",
+      "name": "Comprobar reserva",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        140
+      ]
     }
   ],
   "connections": {
@@ -439,12 +509,7 @@
       "main": [
         [
           {
-            "node": "Responder al cliente",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "¿Transferir a humano?",
+            "node": "¿Afirma que agendó?",
             "type": "main",
             "index": 0
           }
@@ -461,6 +526,56 @@
           }
         ],
         []
+      ]
+    },
+    "¿Afirma que agendó?": {
+      "main": [
+        [
+          {
+            "node": "Verificar en el calendario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Transferir a humano?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar en el calendario": {
+      "main": [
+        [
+          {
+            "node": "Comprobar reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprobar reserva": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Transferir a humano?",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }
