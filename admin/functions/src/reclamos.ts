@@ -134,9 +134,25 @@ export const notificarReclamo = onDocumentCreated(
     if (copias.length > 0) cuerpo['_cc'] = copias.join(',');
 
     try {
+      // FormSubmit RECHAZA las peticiones sin origen de navegador: responde
+      // "Make sure you open this page through a web server". Fue diseñado para
+      // formularios HTML, no para llamadas servidor a servidor, y sin estos dos
+      // encabezados esta función fallaría en producción SIN AVISAR — el aviso
+      // no llegaría y nadie lo notaría hasta que alguien preguntara por un
+      // reclamo. Comprobado a mano el 2026-08-29: sin ellos falla, con ellos
+      // pasa. El origen se declara desde configuración porque aparece dentro
+      // del correo que recibe NovuChat, así que tiene que ser el real.
+      const origen = String(config.get('formsubmitOrigen') ?? '').trim()
+        || 'https://novuchat.bo';
+
       const respuesta = await fetch(PUNTO_FINAL + encodeURIComponent(destinoBruto), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': origen,
+          'Referer': origen.replace(/\/?$/, '/'),
+        },
         body: JSON.stringify(cuerpo),
       });
 
