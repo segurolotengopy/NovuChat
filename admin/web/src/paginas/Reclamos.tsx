@@ -47,6 +47,15 @@ const ESTADOS: Record<string, string> = {
  *
  * El destinatario del correo NO se elige acá ni viaja en el reclamo: sale de la
  * configuración de plataforma, que ninguna sesión de navegador puede escribir.
+ *
+ * Y UNA TERCERA, QUE ES DE LA INTERFAZ Y NO DEL SERVIDOR: el aviso de qué NO
+ * escribir. El texto del reclamo viaja a un proveedor de correo con el que
+ * NovuChat no tiene contrato (hoy FormSubmit), así que quien escribe tiene que
+ * saberlo ANTES de escribir. Se evaluó filtrar teléfonos y correos
+ * automáticamente y se descartó: un filtro que se equivoca destruye información
+ * del reclamo —un teléfono puede ser el dato central de la queja— y uno que no
+ * se equivoca no existe. **La guía explícita es más honesta que un filtro que
+ * finge.** Ver SEGURIDAD.md, T-22. No quitar este aviso.
  */
 export function Reclamos() {
   const { tenantId = '' } = useParams();
@@ -105,11 +114,18 @@ export function Reclamos() {
           <textarea required maxLength={4000} value={texto}
                     onChange={(e) => setTexto(e.target.value)} />
         </label>
+        <p className="ayuda aviso-datos">
+          <strong>Por favor no escriba acá datos de sus clientes</strong> —nombres,
+          teléfonos, direcciones— ni contraseñas ni números de documento. Para
+          referirse a una conversación, indíquenos la fecha y la hora: nosotros la
+          ubicamos en el sistema. Un resumen de este reclamo se envía por correo a
+          nuestro equipo, y cuanto menos dato personal viaje, mejor para todos.
+        </p>
         <button type="submit" disabled={ocupado}>Enviar reclamo</button>
         <p className="ayuda">
-          Su reclamo queda registrado en el sistema y además se le avisa por
-          correo al equipo de NovuChat. Una vez enviado no se puede editar ni
-          borrar: es el registro de lo que se reclamó y cuándo.
+          Su reclamo queda registrado completo en el sistema, y por correo le
+          avisamos a nuestro equipo con un resumen. Una vez enviado no se puede
+          editar ni borrar: es el registro de lo que se reclamó y cuándo.
         </p>
       </form>
 

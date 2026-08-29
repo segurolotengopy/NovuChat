@@ -15,7 +15,8 @@ nada de `Flujos/`.
 | | |
 |---|---|
 | Andamiaje | escrito y compilando |
-| Pruebas de reglas | **98 de 98 en verde**, ejecutadas contra el emulador |
+| Pruebas de reglas | **99 de 99 en verde**, ejecutadas contra el emulador |
+| Pruebas puras del saneo | **13 de 13 en verde**, sin emulador ni red |
 | Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
 
 ## Cómo trabajar
@@ -26,7 +27,7 @@ Requiere Node 24, pnpm y un JDK (para el emulador de Firestore).
 cd admin
 pnpm install
 
-pnpm pruebas:reglas     # emulador + 98 pruebas de aislamiento y control
+pnpm pruebas:reglas     # emulador + 112 pruebas (99 de reglas, 13 puras)
 pnpm web:build          # compila el frontend
 pnpm functions:build    # compila las Cloud Functions
 pnpm verificar          # las tres cosas
@@ -89,8 +90,13 @@ Cloud y a GitHub. Los tres que más fácil se hacen mal:
    vínculo vive dentro de los predicados base de `firestore.rules` y en
    `claims.ts`. **No lo saque de los predicados** para "simplificar": ahí es
    donde lo heredan todas las reglas, incluidas las que se escriban mañana.
-8. **El correo de reclamos va en TEXTO PLANO y su destino nunca sale del
-   reclamo.** Las dos cosas son controles, no detalles de implementación.
+8. **El texto de un reclamo sale ESCAPADO desde `saneo.ts`, y el destino del
+   correo nunca sale del reclamo.** Las dos cosas son controles, no detalles.
+   El proveedor es **FormSubmit** (sin credencial) y compone el correo en HTML:
+   por eso el escapado se hace en origen. Si algún día se vuelve a Resend, el
+   escapado se puede aflojar pero conviene no hacerlo (DISENO.md §4ter.4).
+   **Nunca vuelque los campos del reclamo al cuerpo de la petición con un
+   spread:** `_cc`, `_replyto` y compañía son instrucciones de FormSubmit.
 9. **Datos de prueba:** teléfonos con seis o más ceros seguidos
    (`59170000001`) y correos `@ejemplo.com`. Es lo que acepta la lista de
    admitidos de `scripts/verificar-saneo.sh`.

@@ -188,6 +188,9 @@ beforeEach(async () => {
     await setDoc(doc(db, `tenants/${A}/accesosSoporte/u-vencido`), { expira: haceUnaHora, otorgadoPor: 'u-admin-a' });
     await setDoc(doc(db, 'usuarios/u-admin-a'), { nombre: 'Ana', preferencias: {} });
     await setDoc(doc(db, 'plataforma/notificaciones'), {
+      // FormSubmit: el destino es una dirección (o un alias opaco), no una API
+      // con credencial. Vive acá y NUNCA en el reclamo.
+      formsubmitDestino: 'reclamos@ejemplo.com',
       correosReclamos: ['reclamos@ejemplo.com'],
     });
   });
@@ -1037,6 +1040,22 @@ describe('Reclamos', () => {
       { ...reclamo('u-admin-a'), destinatario: 'atacante@ejemplo.com' }));
   });
 
+  it('rechaza los campos especiales de FormSubmit dentro del reclamo', async () => {
+    // FormSubmit interpreta `_cc`, `_replyto`, `_next`, `_subject` y `_template`
+    // como instrucciones de servicio. Si alguno llegara al cuerpo de la petición,
+    // un reclamo con `_cc` desviaría una copia del correo: es la inyección de
+    // encabezados con otro disfraz.
+    //
+    // Hay DOS defensas y ésta prueba la primera: la lista blanca de claves de la
+    // regla no los deja ni entrar a Firestore. La segunda está en
+    // `functions/src/reclamos.ts`, que arma el cuerpo campo por campo y no hace
+    // ningún spread de los datos del documento.
+    for (const especial of ['_cc', '_replyto', '_next', '_subject', '_template', '_captcha']) {
+      await assertFails(setDoc(doc(adminA(), `tenants/${A}/reclamos/r_fs`),
+        { ...reclamo('u-admin-a'), [especial]: 'atacante@ejemplo.com' }));
+    }
+  });
+
   it('la ingesta de n8n no tiene nada que hacer con los reclamos', async () => {
     await assertFails(getDoc(doc(ingestaA(), `tenants/${A}/reclamos/r1`)));
     await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/reclamos/r8`), reclamo('svc-a')));
@@ -1062,6 +1081,14 @@ describe('Configuración de plataforma', () => {
     }));
     await assertFails(setDoc(doc(adminA(), 'plataforma/notificaciones'), {
       correosReclamos: ['atacante@ejemplo.com'],
+    }));
+    // Con FormSubmit el destino ES la ruta del punto final. Que nadie pueda
+    // escribirlo es lo que impide redirigir todos los avisos a otra casilla.
+    await assertFails(updateDoc(doc(propietario(), 'plataforma/notificaciones'), {
+      formsubmitDestino: 'atacante@ejemplo.com',
+    }));
+    await assertFails(updateDoc(doc(adminA(), 'plataforma/notificaciones'), {
+      formsubmitDestino: 'atacante@ejemplo.com',
     }));
   });
 });

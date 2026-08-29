@@ -693,41 +693,94 @@ correo salió; sin ella, un canal de correo caído sería invisible durante sema
 **Un comercio suspendido puede reclamar.** Sería absurdo cortarle el canal justo
 cuando tiene el motivo más probable para usarlo.
 
-#### El correo va en TEXTO PLANO, y es una decisión de seguridad
+#### El texto no puede llegar como marcado, y eso se garantiza en origen
 
-Sin `html`. Un correo HTML con el texto del reclamo interpolado es **inyección
-de HTML directa**: enlaces de phishing que parecen de NovuChat, imágenes remotas
-que confirman lectura, CSS que oculta contenido para que el destinatario lea una
-cosa distinta de la que está escrita. En texto plano no hay nada que interpretar:
-el problema **desaparece de raíz en vez de mitigarse**. Cuesta un correo más feo.
+Un correo HTML con el texto del reclamo interpolado es **inyección de HTML
+directa**: enlaces de phishing que parecen de NovuChat, imágenes remotas que
+confirman lectura, CSS que oculta contenido para que el destinatario lea una cosa
+distinta de la que está escrita.
 
-Además: el **asunto se limpia de CR y LF** antes de usarse. Un salto de línea en
-un asunto permite inyectar encabezados propios —un `Bcc:` hacia otra casilla— y
-desviar una copia del correo. Es un ataque viejo que sigue funcionando.
+El argumento no cambió con el proveedor; **el lugar donde se aplica, sí**. Con
+Resend bastaba mandar `text` y omitir `html`. Con FormSubmit el correo lo compone
+el tercero, así que el texto sale ya **escapado desde acá** (ver «Lo que SÍ
+cambia», más abajo).
 
-#### Proveedor de correo y dónde vive su credencial
+Además: el **asunto se limpia de CR, LF y NUL** antes de usarse. Un salto de
+línea en un asunto permite inyectar encabezados propios —un `Bcc:` hacia otra
+casilla— y desviar una copia del correo. Es un ataque viejo que sigue
+funcionando, y tiene prueba propia en `pruebas/saneo.test.ts`.
 
-Google Cloud no tiene servicio de correo transaccional propio (la API de Gmail no
-sirve para esto), así que hay que salir a un tercero igual.
+#### Proveedor de correo: FormSubmit por ahora, Resend después
+
+**Decisión de Andres (2026-08-29): FormSubmit.**
+
+El motivo es de calendario y de superficie. Faltan diez días para el
+congelamiento del 8 de septiembre, los reclamos son **internos** —los leen solo
+Andres y Silvana— y **FormSubmit no necesita credencial**. En un repositorio
+público eso es una preocupación menos: no hay `RESEND_API_KEY` que guardar en
+Secret Manager, ni que rotar, ni que se pueda filtrar en un commit.
 
 | Opción | A favor | En contra |
 |---|---|---|
-| **Resend** | una sola llamada HTTPS con `Authorization: Bearer`. **La de menor superficie**: sin SMTP que configurar ni biblioteca pesada que auditar. Nivel gratuito suficiente | proveedor joven |
-| Postmark | mejor entregabilidad transaccional | de pago desde el primer correo, más trámite |
-| SendGrid | veterano, con nivel gratuito | las cuentas nuevas pasan por revisiones que pueden dejar el canal mudo sin aviso |
-| Amazon SES | el más barato | exige salir del *sandbox* y meter una **segunda nube** en un proyecto que ya tiene tres (OCI, GCP, Meta) |
+| **FormSubmit** *(elegida ahora)* | **sin credencial**: nada que custodiar ni rotar. Alta inmediata, sin dominio propio ni DNS | el correo lo compone un tercero (ver abajo), sin contrato ni acuerdo de tratamiento de datos, y el destino es una dirección sin autenticación |
+| **Resend** *(destino previsto)* | nosotros componemos el correo: `text` sin `html`, garantía absoluta. Dominio propio con SPF y DKIM | exige credencial en Secret Manager y verificación de dominio: días de trámite que hoy no hay |
+| Postmark | mejor entregabilidad | de pago desde el primer correo |
+| SendGrid | veterano, nivel gratuito | revisiones de cuentas nuevas que dejan el canal mudo sin aviso |
+| Amazon SES | el más barato | salir del *sandbox* y meter una **segunda nube** en un proyecto que ya tiene tres |
 
-**Elegido: Resend**, por superficie mínima. El criterio no fue el precio sino
-cuánto código y cuánta configuración hay que auditar para que funcione.
+**Cuándo pasar a Resend, y qué cambiar.** Cuando haya clientes reales y dominio
+propio. El cambio está acotado a `functions/src/reclamos.ts`:
 
-**La credencial vive en Secret Manager**, como `RESEND_API_KEY`, inyectada con
-`defineSecret`. **Nunca en el repositorio —que es público—, nunca en una variable
-de GitHub, nunca en el JSON de un flujo de n8n.** La Function la recibe en
-memoria en tiempo de ejecución; los errores de envío se registran sin cuerpo ni
-cabeceras, para que la clave no termine en un log.
+1. Declarar `RESEND_API_KEY` con `defineSecret` y agregarla a `secrets` de la
+   función. Es el único secreto nuevo del proyecto.
+2. Cambiar el punto final y el cuerpo: `{ from, to, subject, text }`, **con
+   `text` y sin `html`**.
+3. Verificar el dominio remitente (SPF y DKIM) antes del primer envío, o los
+   correos van a spam. Es un paso de DNS, no de código.
+4. **Se puede aflojar el escapado de entidades** de `neutralizar()`, porque con
+   Resend la garantía de texto plano vuelve a ser nuestra. Conviene **no
+   hacerlo**: no cuesta nada y protege de un cambio futuro de renderizado.
+5. `neutralizarEncabezado`, la validación del destino, el destino fuera del
+   reclamo y el guardado previo en Firestore **no cambian**. Las pruebas de
+   `pruebas/saneo.test.ts` siguen valiendo tal cual.
 
-Antes del primer envío hay que **verificar el dominio remitente (SPF y DKIM)** o
-los correos van a spam. Es un paso de DNS, no de código.
+#### Lo que NO cambia con el proveedor
+
+Las tres propiedades del diseño no dependen de quién manda el correo:
+
+1. **El texto se entrega sin posibilidad de interpretarse como marcado.**
+2. **El destinatario sale de `/plataforma/notificaciones`**, jamás del reclamo.
+3. **El reclamo se guarda en Firestore antes de enviarse**, con la columna de
+   avisos no notificados en la pantalla.
+
+#### Lo que SÍ cambia, y es lo importante
+
+Con Resend, **NovuChat componía el correo**: se mandaba `text`, se omitía `html`,
+y la garantía de "nada interpretable" era nuestra y absoluta.
+
+**Con FormSubmit el correo lo compone el tercero, y lo compone en HTML.** Ya no
+controlamos el renderizado. La consecuencia práctica es que **la neutralización
+tiene que hacerse en origen**, antes de que el texto salga del sistema: por eso
+`neutralizar()` escapa las entidades HTML (`&`, `<`, `>`, `"`, `'`) además de
+limpiar los caracteres de control.
+
+Si FormSubmit lo renderiza como HTML, se lee el texto literal. Si lo renderiza
+como texto plano, se leen las entidades escritas: feo y raro —un reclamo casi
+nunca trae un `<`— y muy preferible a que un enlace escrito por otra persona
+llegue vivo a una bandeja de entrada.
+
+**Campos especiales de FormSubmit.** `_cc`, `_replyto`, `_next`, `_subject`,
+`_template` y `_captcha` cambian el comportamiento del servicio. Si los campos
+del reclamo se volcaran al cuerpo de la petición con un *spread*, **un reclamo
+con un campo `_cc` desviaría una copia del correo**: es la inyección de
+encabezados con otro disfraz. Dos defensas, las dos probadas: la regla de
+Firestore tiene lista blanca de claves y no los deja entrar, y la función arma el
+cuerpo **campo por campo**, sin ningún *spread*.
+
+**Menos texto sale hacia el tercero.** El aviso lleva como máximo **1000
+caracteres** del reclamo; el texto completo queda en Firestore y el correo lo
+dice. Es minimización de datos, no una limitación técnica, y es coherente con
+que el correo sea una notificación y no el registro. Ver `SEGURIDAD.md`, T-22.
 
 #### El destino del correo nunca sale del reclamo
 
@@ -850,7 +903,8 @@ admin/
 ├── package.json / pnpm-workspace.yaml
 ├── vitest.config.ts
 ├── pruebas/
-│   ├── reglas.test.ts           98 pruebas de aislamiento y control
+│   ├── reglas.test.ts           99 pruebas de aislamiento y control
+│   ├── saneo.test.ts            13 pruebas puras del escapado (sin emulador)
 │   └── correr.sh                levanta el emulador y corre las pruebas
 ├── web/                         React 19 + Vite + TypeScript
 │   └── src/
@@ -867,7 +921,8 @@ admin/
     └── src/
         ├── index.ts             alta/baja, suspensión, roles, soporte, números
         ├── claims.ts            ⭐ único emisor de permisos + vínculo proveedor
-        ├── reclamos.ts          ⭐ correo saliente: la única dependencia externa
+        ├── reclamos.ts          ⭐ aviso de reclamos por FormSubmit
+        ├── saneo.ts             ⭐ neutralización del texto que sale (con pruebas)
         └── ingesta.ts           ⭐ puente n8n → Firestore con HMAC, ruteo por
                                  número y conteo de personas únicas
 ```
@@ -897,7 +952,8 @@ Dos trabajos con separación estricta:
 |---|---|
 | Compilación del frontend | ✅ `pnpm --filter @novuchat/admin-web build` — 72 módulos, sin errores |
 | Compilación de las Functions | ✅ `tsc -b` sin errores |
-| Pruebas de reglas con el emulador | ✅ **98 de 98, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
+| Pruebas de reglas con el emulador | ✅ **99 de 99, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
+| Pruebas puras del saneo del correo | ✅ **13 de 13**, sin emulador ni red |
 | Comprobaciones del CI (grep) | ✅ corridas localmente, ambas pasan |
 | Despliegue a Firebase | ⛔ **no ejecutado.** No se creó ni modificó ningún recurso de nube |
 
@@ -1026,16 +1082,38 @@ activa de `gcloud` ni de `firebase`.
 
 15. Un secreto `ingesta-<phone_number_id>` **por número de WhatsApp**, y
     declararlo en `functions/src/ingesta.ts` (`SECRETOS_POR_NUMERO`).
-15c. El secreto `RESEND_API_KEY` del proveedor de correo. **Nunca en el
-     repositorio ni en variables de GitHub.**
+15c. ~~El secreto `RESEND_API_KEY`.~~ **Ya no hace falta:** FormSubmit no usa
+     credencial. Es la ventaja que motivó la decisión.
 
-**Correo saliente**
+**Correo saliente (FormSubmit)**
 
-15d. Crear la cuenta en Resend y **verificar el dominio remitente (SPF y DKIM)**.
-     Sin eso los correos van a spam. Es un paso de DNS.
-15e. Crear `/plataforma/notificaciones` con `correosReclamos`. Ninguna sesión de
-     navegador puede escribirlo: se carga desde una consola administrativa con el
-     SDK Admin.
+15d. **Usar una dirección DEDICADA, no la personal de Andres.** Algo como
+     `reclamos@…`. Con FormSubmit el destino es una dirección de correo, no una
+     API con autenticación: cualquiera que descubra el identificador del
+     formulario puede mandarle correo. Para un buzón interno no es grave, pero
+     esa casilla va a recibir basura y no debe ser la de trabajo diario de nadie.
+     Ver `SEGURIDAD.md`, T-23.
+
+15e. ⚠️ **CONFIRMAR LA DIRECCIÓN EN FORMSUBMIT — PASO MANUAL Y OBLIGATORIO.**
+     La primera vez que se usa una dirección, FormSubmit manda un correo de
+     activación y **no entrega nada hasta que alguien hace clic en el enlace**.
+     Si este paso se saltea, **los reclamos se pierden en silencio**: la función
+     recibe una respuesta que parece correcta, el panel muestra el reclamo, y a
+     la bandeja no llega nada.
+
+     Cómo comprobarlo de verdad: crear un reclamo de prueba desde el panel y
+     verificar que **llegue el correo**, no que la función no haya dado error.
+     Es exactamente la clase de fallo silencioso que ya costó tiempo con
+     `subscribed_apps` de Meta (hallazgo 2 de `ESTADO.md`).
+
+15f. Crear `/plataforma/notificaciones` con `formsubmitDestino` (la dirección
+     dedicada o el alias opaco de FormSubmit) y `correosReclamos` (las copias).
+     Ninguna sesión de navegador puede escribirlo: se carga desde una consola
+     administrativa con el SDK Admin.
+
+15g. Poner en la pantalla de reclamos, y decirle a los comercios, **qué no
+     escribir ahí**: nada de datos de sus clientes finales, ni contraseñas, ni
+     números de documento. El texto viaja a un tercero sin contrato. Ver T-22.
 
 **Meta / WhatsApp — con anticipación, no cuando haga falta**
 
@@ -1070,6 +1148,8 @@ activa de `gcloud` ni de `firebase`.
 | **`personasAtendidas` sostiene la facturación** | un error en la transacción de conteo se traduce en una factura mal emitida | la marca `periodoContado` no la puede tocar ninguna persona; hay procedimiento de recuento; conviene contrastar contra el conteo real el primer mes |
 | **Contactos: datos de terceros sin consentimiento** | se guardan nombre, teléfono y correo de personas que no son usuarias del panel | roles cerrados, notas topeadas a 500 caracteres, operador excluido, y la política de retención pendiente los debe cubrir |
 | **Sin segundo factor ni política de contraseñas para los comercios** | una contraseña de 6 caracteres protege las conversaciones de un comercio | App Check en el ingreso, correo verificado obligatorio, mensajes de error genéricos. Se cierra activando Identity Platform (§4ter.1) |
-| **Primera dependencia externa: el correo** | si Resend cae o suspende la cuenta, NovuChat deja de enterarse de los reclamos | el reclamo se guarda en Firestore igual y se ve en el panel; la columna "Aviso" muestra los no notificados. Conviene una alerta si se acumulan pendientes |
+| **Primera dependencia externa: el correo** | si FormSubmit cae o deja de entregar, NovuChat deja de enterarse de los reclamos | el reclamo se guarda en Firestore igual y se ve en el panel; la columna "Aviso" muestra los no notificados. Conviene una alerta si se acumulan pendientes |
+| **FormSubmit sin activar** | los reclamos se pierden **en silencio**: la función no falla y el panel se ve bien | paso 15e de §11: confirmar con un reclamo de prueba que el correo LLEGA, no que la función no dio error |
+| **El texto del reclamo viaja a un tercero sin contrato** | un reclamo puede traer datos del comercio y hasta de sus clientes finales | tope de 1000 caracteres hacia el correo, guía en la pantalla sobre qué no escribir, y el registro completo solo en Firestore. Se cierra al pasar a Resend con dominio propio (T-22) |
 | **La Function de correo junta las tres capacidades de la Regla de Dos** | es el único punto del sistema donde pasa | destino fijo fuera del reclamo, texto plano, saneo de encabezados, sin adjuntos. Analizado en SEGURIDAD.md §1 y T-20 |
 | **El repositorio es público** | los identificadores del proyecto quedan a la vista | ya se aplican los marcadores de `CONVENCIONES-REPO-PUBLICO.md`; la seguridad no depende de que el ID sea secreto, sino de las reglas |

@@ -1,125 +1,82 @@
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
-import { defineSecret } from 'firebase-functions/params';
+import {
+  ALIAS_VALIDO, CORREO_VALIDO, neutralizar, neutralizarEncabezado,
+} from './saneo.js';
 
 /**
  * ===========================================================================
- * NOTIFICACIÓN POR CORREO DE UN RECLAMO
+ * NOTIFICACIÓN POR CORREO DE UN RECLAMO — vía FormSubmit
  * ===========================================================================
  *
- * ES LA PRIMERA DEPENDENCIA EXTERNA DEL PROYECTO, y hay que tratarla como tal.
+ * DECISIÓN DE ANDRES (2026-08-29): se usa **FormSubmit**, no Resend.
+ *
+ * El motivo es de calendario y de superficie: faltan diez días para el
+ * congelamiento del 8 de septiembre, los reclamos son internos —los leen solo
+ * Andres y Silvana— y FormSubmit **no necesita credencial**, lo que en un
+ * repositorio público es una preocupación menos: no hay `RESEND_API_KEY` que
+ * guardar en Secret Manager, ni que rotar, ni que se pueda filtrar.
+ *
+ * Resend queda como destino previsto para cuando haya clientes reales y dominio
+ * propio. Qué habría que cambiar entonces, y por qué, está en DISENO.md §4ter.4.
  *
  * ---------------------------------------------------------------------------
- * LA REGLA DE DOS, APLICADA CON HONESTIDAD
+ * LO QUE **NO** CAMBIA CON EL PROVEEDOR
  * ---------------------------------------------------------------------------
- * Esta función es el UNICO punto del sistema donde coinciden las tres
- * capacidades que la §1 de las reglas de seguridad pide no juntar:
+ * Las tres propiedades del diseño no dependen de quién manda el correo:
  *
- *   1. Entrada no confiable  -> el texto del reclamo lo escribe una persona.
- *   2. Acceso a secretos     -> la API key del proveedor de correo.
- *   3. Efectos externos      -> una llamada de red saliente que envía un correo.
- *
- * No se puede eliminar ninguna de las tres sin eliminar la función. Lo que sí se
- * puede es acotar cada una hasta que la combinación deje de ser explotable:
- *
- * (1) La entrada NO es de un desconocido de internet. La escribe un usuario
- *     autenticado, con correo verificado, con rol en un comercio, y queda
- *     firmada con su uid por la regla `creadoPor == request.auth.uid`. Está más
- *     cerca de "semi-confiable" que de "hostil". Aun así se la trata como
- *     hostil en todo lo que sigue.
- *
- * (2) EL DESTINO ES FIJO Y NO SALE DEL RECLAMO. Se lee de
- *     `/plataforma/notificaciones`, que ninguna sesión de navegador puede
- *     escribir. Éste es EL control central: si el texto pudiera influir en el
- *     destinatario, el sistema sería un reenviador de correo — alguien escribe
- *     lo que quiera y lo hace salir, firmado por NovuChat, hacia donde quiera.
- *     La regla de esquema del reclamo tiene lista blanca de claves justamente
- *     para que no exista un campo `destinatario` por donde entre esa idea.
- *
- * (3) EL CORREO VA EN TEXTO PLANO. Sin `html`. Un correo HTML con el texto del
- *     reclamo interpolado es inyección de HTML directa: enlaces de phishing,
- *     imágenes remotas que confirman lectura, CSS que oculta contenido. En
- *     texto plano no hay nada que interpretar y el problema desaparece de raíz,
- *     no se mitiga. Cuesta un correo más feo; se paga con gusto.
- *
- * (4) SANEO DE ENCABEZADOS. El asunto se limpia de CR y LF antes de usarse.
- *     Un salto de línea en un asunto permite inyectar encabezados propios
- *     (por ejemplo un "Bcc:" hacia otra casilla) y desviar una copia del
- *     correo. Es un ataque viejo y sigue funcionando en cualquier cliente que
- *     concatene encabezados.
- *
- * (5) Sin adjuntos, sin enlaces generados desde el texto, tamaño topeado por las
- *     reglas de Firestore (asunto 120, texto 4000) y `maxInstances` bajo.
+ *  1. El texto se entrega SIN posibilidad de interpretarse como marcado.
+ *  2. El destinatario sale de `/plataforma/notificaciones`, jamás del reclamo.
+ *     Es lo que impide que la entrada no confiable DIRIJA el efecto externo.
+ *  3. El reclamo se guarda en Firestore ANTES de enviarse. Si el correo falla,
+ *     no se pierde: queda en el panel, y la ausencia de `correoNotificado` lo
+ *     marca como no avisado.
  *
  * ---------------------------------------------------------------------------
- * PRIMERO SE GUARDA, DESPUÉS SE AVISA
+ * LO QUE **SÍ** CAMBIA, Y ES LO IMPORTANTE
  * ---------------------------------------------------------------------------
- * El reclamo ya está en Firestore cuando esta función se dispara: es un
- * disparador `onDocumentCreated`. Si el proveedor de correo está caído, el
- * reclamo NO se pierde — queda en `/tenants/{t}/reclamos` y se ve en el panel de
- * NovuChat igual. El correo es una notificación, no el registro.
+ * Con Resend, NovuChat componía el correo: se mandaba `text` y se omitía `html`,
+ * así que la garantía de "texto plano" era NUESTRA y era absoluta.
  *
- * ---------------------------------------------------------------------------
- * PROVEEDOR RECOMENDADO: Resend
- * ---------------------------------------------------------------------------
- * Google Cloud no tiene un servicio de correo transaccional propio (la API de
- * Gmail no sirve para esto), así que hay que salir a un tercero igual. Se
- * comparó:
+ * **Con FormSubmit el correo lo compone el tercero.** Nosotros mandamos campos y
+ * él arma el mensaje, y arma HTML. O sea: ya no controlamos el renderizado.
  *
- *   Resend     -> una sola llamada HTTPS con un `Authorization: Bearer`. Es la
- *                 de MENOR SUPERFICIE: no hay SMTP que configurar ni biblioteca
- *                 pesada que auditar. Nivel gratuito suficiente. ELEGIDA.
- *   Postmark   -> mejor entregabilidad transaccional, pero de pago desde el
- *                 primer correo y con más trámite de alta.
- *   SendGrid   -> veterano y con nivel gratuito, pero las cuentas nuevas pasan
- *                 por revisiones que pueden dejar el canal mudo sin aviso.
- *   Amazon SES -> el más barato, pero exige salir del sandbox y meter una
- *                 segunda nube en un proyecto que ya tiene tres (OCI, GCP, Meta).
+ * Consecuencia directa: la neutralización tiene que hacerse EN ORIGEN, antes de
+ * que el texto salga de acá. Por eso `neutralizar()` escapa las entidades HTML
+ * (`&`, `<`, `>`, `"`, `'`) además de limpiar los caracteres de control. Si
+ * FormSubmit lo renderiza como HTML, se ve el texto literal; si lo renderiza
+ * como texto plano, se ven las entidades escritas. Lo segundo es feo y raro —un
+ * reclamo casi nunca trae un `<`— y es infinitamente preferible a que un `<a
+ * href>` escrito por alguien llegue vivo a la bandeja de Andres.
  *
- * DÓNDE VIVE LA CREDENCIAL. En **Secret Manager**, como `RESEND_API_KEY`,
- * inyectada con `defineSecret`. NUNCA en el repositorio —que es público—, nunca
- * en una variable de GitHub, nunca en el JSON de un flujo de n8n. La Function la
- * recibe en memoria en tiempo de ejecución y no la escribe en ningún log: los
- * errores de envío se registran sin cuerpo ni cabeceras.
- *
- * Hay que verificar el dominio remitente (SPF y DKIM) antes del primer envío, o
- * los correos van a spam. Es un paso de DNS, no de código.
+ * ⚠️ CAMPOS ESPECIALES DE FORMSUBMIT. `_cc`, `_replyto`, `_next`, `_subject`,
+ * `_template` y `_captcha` cambian el comportamiento del servicio. Si alguna vez
+ * se volcaran los campos del reclamo al cuerpo de la petición con un spread,
+ * **un reclamo con un campo `_cc` desviaría una copia del correo**. Es la misma
+ * familia de ataque que la inyección de encabezados, con otro disfraz. Dos
+ * defensas: la regla de Firestore tiene lista blanca de claves, y acá el cuerpo
+ * se arma campo por campo, EXPLÍCITAMENTE. No hay ningún spread y no debe
+ * haberlo nunca.
  */
 
-const CLAVE_CORREO = defineSecret('RESEND_API_KEY');
-
-/** Remitente. Debe ser de un dominio verificado en el proveedor. */
-const REMITENTE = 'NovuChat <reclamos@ejemplo.com>';
-
-/** CR, LF y NUL: con ellos se inyectan encabezados nuevos en un asunto. */
-const RE_ENCABEZADO = /[\r\n\u0000]/g;
-/** Controles C0/C1 salvo tabulación y salto de línea. */
-const RE_CONTROLES = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
-/** Marcas bidireccionales: un texto puede leerse distinto de como se guardó. */
-const RE_BIDI = /[\u202A-\u202E\u2066-\u2069\u200E\u200F]/g;
-
-/** Limpia un valor para usarlo en un ENCABEZADO de correo. */
-function saneoEncabezado(valor: unknown, maxLargo: number): string {
-  if (typeof valor !== 'string') return '';
-  return valor.replace(RE_ENCABEZADO, ' ').trim().slice(0, maxLargo);
-}
+const PUNTO_FINAL = 'https://formsubmit.co/ajax/';
 
 /**
- * Limpia un valor para el CUERPO en texto plano. Conserva los saltos de línea
- * —es un texto que alguien escribió— y quita el resto de los controles.
+ * Tope del texto que sale hacia el tercero. El reclamo completo queda en
+ * Firestore; el correo es solo un aviso. Mandar menos a un servicio con el que
+ * no hay contrato es minimización de datos, no una limitación técnica.
  */
-function saneoCuerpo(valor: unknown, maxLargo: number): string {
-  if (typeof valor !== 'string') return '';
-  return valor.replace(RE_CONTROLES, '').replace(RE_BIDI, '').slice(0, maxLargo);
-}
+const MAX_TEXTO_CORREO = 1000;
 
-const CORREO_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// El saneo vive en `saneo.ts`, sin dependencias de Firebase, para poder
+// probarlo sin emulador ni red. Ver `pruebas/saneo.test.ts`.
 
 export const notificarReclamo = onDocumentCreated(
   {
     document: 'tenants/{tenantId}/reclamos/{reclamoId}',
     region: 'southamerica-east1',
-    secrets: [CLAVE_CORREO],
+    // Sin `secrets`: FormSubmit no usa credencial. Es la ventaja que motivó la
+    // decisión — un secreto menos que custodiar en un repositorio público.
     maxInstances: 5,
     retry: false,
   },
@@ -132,69 +89,69 @@ export const notificarReclamo = onDocumentCreated(
 
     // DESTINO: de la configuración de plataforma, jamás del reclamo.
     const config = await db.doc('plataforma/notificaciones').get();
-    const brutos = config.get('correosReclamos');
-    const destinos = (Array.isArray(brutos) ? brutos : [])
-      .filter((c): c is string => typeof c === 'string' && CORREO_VALIDO.test(c))
-      .slice(0, 10);
+    const destinoBruto = String(config.get('formsubmitDestino') ?? '');
+    const esAlias = ALIAS_VALIDO.test(destinoBruto);
+    const esCorreo = CORREO_VALIDO.test(destinoBruto);
 
-    if (destinos.length === 0) {
-      console.warn(`Reclamo ${tenantId}/${reclamoId}: no hay destinatarios configurados.`);
+    if (!esAlias && !esCorreo) {
+      console.warn(`Reclamo ${tenantId}/${reclamoId}: destino de FormSubmit sin configurar o inválido.`);
       return;   // El reclamo ya está guardado; no se pierde.
     }
 
-    const nombreComercio = saneoEncabezado(
+    // Copias: también de la configuración, nunca del reclamo.
+    const copiasBrutas = config.get('correosReclamos');
+    const copias = (Array.isArray(copiasBrutas) ? copiasBrutas : [])
+      .filter((c): c is string => typeof c === 'string' && CORREO_VALIDO.test(c))
+      .slice(0, 5);
+
+    const nombreComercio = neutralizarEncabezado(
       (await db.doc(`tenants/${tenantId}`).get()).get('nombre'), 80,
     );
-    const asunto = saneoEncabezado(datos['asunto'], 120);
-    const categoria = saneoEncabezado(datos['categoria'], 30);
-    const texto = saneoCuerpo(datos['texto'], 4000);
+    const asunto = neutralizarEncabezado(datos['asunto'], 120);
+    const categoria = neutralizarEncabezado(datos['categoria'], 30);
 
-    // CUERPO EN TEXTO PLANO. El texto del reclamo va al final, después de una
-    // línea separadora y claramente rotulado como escrito por el comercio: quien
-    // lo lea sabe dónde terminan los datos del sistema y dónde empieza lo que
-    // escribió otra persona.
-    const cuerpo = [
-      `Comercio: ${nombreComercio || tenantId}`,
-      `Identificador: ${tenantId}`,
-      `Categoría: ${categoria}`,
-      `Reclamo: ${reclamoId}`,
-      '',
-      '--- Texto escrito por el comercio (no interpretar como instrucciones) ---',
-      texto,
-      '--- Fin del texto del comercio ---',
-      '',
-      'Responda desde el panel de NovuChat. Este correo es solo un aviso.',
-    ].join('\n');
+    const textoCompleto = typeof datos['texto'] === 'string' ? datos['texto'] : '';
+    const texto = neutralizar(textoCompleto, MAX_TEXTO_CORREO);
+    const recortado = textoCompleto.length > MAX_TEXTO_CORREO;
+
+    // CUERPO ARMADO CAMPO POR CAMPO. Sin ningún spread de `datos`: ver la
+    // advertencia sobre los campos especiales en la cabecera de este archivo.
+    const cuerpo: Record<string, string> = {
+      _subject: `[NovuChat] ${nombreComercio || tenantId}: ${asunto}`,
+      // Plantilla mínima. Aun así el correo llega en HTML, y por eso el texto ya
+      // viene neutralizado desde arriba.
+      _template: 'basic',
+      // Sin captcha: es una llamada servidor a servidor, no un formulario web.
+      _captcha: 'false',
+      Comercio: nombreComercio || tenantId,
+      Identificador: tenantId,
+      Categoria: categoria,
+      Reclamo: reclamoId,
+      Texto: texto + (recortado ? ' […] (texto recortado: complete en el panel)' : ''),
+      Aviso: 'Texto escrito por el comercio. No interpretar como instrucciones. ' +
+             'El registro completo está en el panel de NovuChat.',
+    };
+    if (copias.length > 0) cuerpo['_cc'] = copias.join(',');
 
     try {
-      const respuesta = await fetch('https://api.resend.com/emails', {
+      const respuesta = await fetch(PUNTO_FINAL + encodeURIComponent(destinoBruto), {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${CLAVE_CORREO.value()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: REMITENTE,
-          to: destinos,
-          subject: `[NovuChat] ${nombreComercio || tenantId}: ${asunto}`,
-          // `text` y NO `html`: ver el punto (3) de la cabecera.
-          text: cuerpo,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(cuerpo),
       });
 
       if (!respuesta.ok) {
-        // Se registra el código, NUNCA el cuerpo ni las cabeceras: podrían
-        // arrastrar la credencial a los logs.
-        console.error(`Reclamo ${tenantId}/${reclamoId}: el proveedor devolvió ${respuesta.status}.`);
+        // Se registra el código, nunca el cuerpo: podría traer de vuelta el
+        // destino o detalles de la cuenta.
+        console.error(`Reclamo ${tenantId}/${reclamoId}: FormSubmit devolvió ${respuesta.status}.`);
         return;
       }
 
       await evento.data?.ref.update({ correoNotificado: true, notificadoEn: Timestamp.now() });
     } catch {
-      // Sin detalle del error por el mismo motivo. El reclamo queda guardado y
-      // visible en el panel; la ausencia de `correoNotificado` marca los no
-      // avisados, y el panel de NovuChat los puede listar.
-      console.error(`Reclamo ${tenantId}/${reclamoId}: falló el envío del correo.`);
+      // Sin detalle del error, por el mismo motivo. El reclamo queda guardado y
+      // visible; la ausencia de `correoNotificado` marca los no avisados.
+      console.error(`Reclamo ${tenantId}/${reclamoId}: falló el envío del aviso.`);
     }
   },
 );

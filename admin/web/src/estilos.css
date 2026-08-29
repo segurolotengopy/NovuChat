@@ -25,3 +25,4 @@ textarea { min-height: 6rem; }
 .situacion { font-size: 1.2rem; padding: .5rem .75rem; border-radius: .5rem; display: inline-block; }
 .situacion.ok { background: #2e7d3222; }
 .situacion.alerta { background: #c6282822; }
+.aviso-datos { border-left: 3px solid #c68a28; padding-left: .75rem; opacity: 1; }

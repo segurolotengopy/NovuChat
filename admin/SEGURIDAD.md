@@ -64,11 +64,17 @@ Hay que decirlo sin adornos: **`notificarReclamo` junta las tres capacidades**.
 | Capacidad | ¿La tiene? |
 |---|---|
 | Entrada no confiable | **sí** — el texto del reclamo lo escribe una persona |
-| Acceso a secretos | **sí** — la API key del proveedor de correo |
+| Acceso a secretos | **ya no** — FormSubmit no usa credencial. Con Resend eran las tres; hoy son dos |
 | Efectos externos | **sí** — una llamada de red saliente |
 
-Ninguna se puede eliminar sin eliminar la función. Lo que se hizo fue acotar cada
-una hasta que la combinación deje de ser explotable:
+**El cambio de proveedor mejoró esto por accidente.** Con Resend la función tenía
+las tres capacidades; FormSubmit no usa credencial, así que hoy tiene dos. No fue
+el motivo de la decisión —lo fue el calendario— pero es un beneficio real y
+conviene no perderlo de vista al volver a Resend: ahí vuelven a ser tres, y los
+controles de abajo pasan a ser lo único que las separa.
+
+Aun así, los controles se diseñaron para el caso de las tres. Lo que se hizo fue
+acotar cada capacidad hasta que la combinación deje de ser explotable:
 
 - **La entrada no es de un desconocido de internet.** La escribe un usuario
   autenticado, con correo verificado, con rol en un comercio, y firmada con su
@@ -80,9 +86,11 @@ una hasta que la combinación deje de ser explotable:
   observación que ordena todo el diseño de la función: **la Regla de Dos se viola
   de verdad cuando la entrada no confiable puede DIRIGIR el efecto externo**, no
   por el mero hecho de que las tres cosas coexistan en un proceso.
-- **El secreto no se puede exfiltrar por el canal.** El único destino posible es
-  la API del proveedor y las casillas de la lista fija. Los errores se registran
-  sin cuerpo ni cabeceras para que la clave no llegue a un log.
+- **No hay secreto que exfiltrar** mientras el proveedor sea FormSubmit. Los
+  errores igual se registran sin cuerpo ni cabeceras: para que no arrastren el
+  destino, y para que la práctica siga en pie el día que vuelva a haber una clave.
+- **A cambio aparece una capacidad nueva**: el contenido sale hacia un tercero sin
+  contrato. Eso no lo cubre la Regla de Dos y está tratado aparte, en T-22.
 
 Está desarrollado en la amenaza T-20 y en la cabecera de
 `functions/src/reclamos.ts`.
@@ -784,9 +792,19 @@ otro. Tres variantes concretas:
    justamente para que no exista un campo `destinatario` por donde entre la
    idea. Hay una prueba que intenta crear un reclamo con ese campo y falla.
 2. **El asunto se limpia de CR, LF y NUL** antes de usarse como encabezado.
-3. **El correo va en texto plano, sin `html`.** El problema **desaparece de
-   raíz** en vez de mitigarse: no hay nada que interpretar. Cuesta un correo más
-   feo y se paga con gusto.
+3. **El texto sale escapado desde acá.** Con Resend bastaba mandar `text` y
+   omitir `html`. **Con FormSubmit el correo lo compone el tercero, en HTML**, así
+   que la garantía dejó de ser nuestra y la neutralización se hace EN ORIGEN:
+   `neutralizar()` escapa `&`, `<`, `>`, `"` y `'`. Si el tercero renderiza HTML,
+   se lee el texto literal; si renderiza texto plano, se leen las entidades
+   escritas — feo, raro y muy preferible.
+
+4. **Campos especiales de FormSubmit.** `_cc`, `_replyto`, `_next`, `_subject`,
+   `_template` y `_captcha` son instrucciones de servicio. Un reclamo con un
+   campo `_cc` desviaría una copia del correo: es la variante 2 con otro
+   disfraz. Dos defensas, las dos probadas: la lista blanca de claves de la regla
+   no los deja entrar a Firestore, y la función arma el cuerpo **campo por
+   campo**, sin ningún *spread* de los datos del documento.
 
 Además: sin adjuntos, sin enlaces generados desde el texto, tamaños topeados por
 las reglas (asunto 120, texto 4000), `maxInstances: 5`, y el texto del comercio
@@ -801,7 +819,10 @@ autolinkeo. Es el **doble destino** del que hay que acordarse: el reclamo se
 escapa en el correo *y* en la pantalla, con mecanismos distintos porque los
 medios son distintos.
 
-**Pruebas.** 8 en *"Reclamos"* y 2 en *"Configuración de plataforma"*.
+**Pruebas.** 9 en *"Reclamos"* —una recorre los seis campos reservados de
+FormSubmit— y 2 en *"Configuración de plataforma"*, más las 13 pruebas puras de
+`pruebas/saneo.test.ts`, que verifican el escapado y la limpieza de encabezados
+sin emulador ni red.
 
 ---
 
@@ -828,21 +849,156 @@ sí ve, y la del dado de baja que ya no.
 
 ---
 
+### T-22 · El contenido de un reclamo viaja a un tercero sin contrato
+
+**Es la amenaza más incómoda de esta tanda, porque no se resuelve con código.**
+
+Con FormSubmit, el texto de cada reclamo sale del sistema y llega a un servicio
+con el que **NovuChat no tiene contrato ni acuerdo de tratamiento de datos**. No
+se sabe cuánto lo retiene, dónde lo almacena, quién puede leerlo ni qué pasa si
+el servicio cambia de dueño. Y un reclamo puede traer, sin que nadie lo pretenda:
+
+- datos del comercio (montos, condiciones, problemas internos);
+- **datos de los clientes finales del comercio** — «el señor Pérez del 7000001
+  se quejó de que la cita no se agendó»—, que son personas que nunca
+  consintieron nada ni ante el comercio ni ante NovuChat ni ante FormSubmit;
+- credenciales, si alguien pega una contraseña «para que la vean».
+
+**Lo que se hizo, que acota pero no elimina:**
+
+1. **Tope de 1000 caracteres hacia el correo.** El texto completo queda en
+   Firestore y el aviso lo dice. Es minimización de datos aplicada literalmente:
+   al tercero le llega menos. Es coherente con lo que ya estaba decidido —el
+   correo es una notificación, no el registro— así que no cuesta nada.
+2. **Nada se adjunta automáticamente.** El aviso nunca lleva contenido de
+   conversaciones, ni teléfonos de contactos, ni datos de cuenta. Solo lo que la
+   persona escribió, recortado.
+3. **Guía en la pantalla y en `DISENO.md` §11 paso 15g** sobre qué no escribir.
+
+**Lo que se recomienda, y hay que decidir:**
+
+- **No filtrar automáticamente el texto.** Se evaluó detectar y tapar teléfonos y
+  correos antes de enviar, y se descartó: un filtro que se equivoca **destruye
+  información del reclamo** —un teléfono puede ser el dato central de la queja— y
+  uno que no se equivoca no existe. Peor: daría una falsa sensación de que se
+  puede escribir cualquier cosa. **La guía explícita a quien escribe es más
+  honesta que un filtro que finge.**
+- **Instruir en la pantalla, no solo en la documentación.** Un aviso que nadie ve
+  no protege a nadie.
+- **Pasar a Resend con dominio propio en cuanto haya clientes reales.** Ahí el
+  correo sale a un proveedor con contrato y con dominio de NovuChat, y esta
+  amenaza baja de categoría. `DISENO.md` §4ter.4 tiene el cambio acotado.
+
+**Lo que sigue abierto.** Con clientes reales, esto se cruza con la política de
+retención que ya está pendiente desde la primera entrega. Un reclamo con datos de
+un tercero guardado indefinidamente en Firestore **y** en el buzón de un servicio
+gratuito es exactamente el tipo de acumulación que esa política tiene que cortar.
+
+---
+
+### T-23 · El destino es una dirección, no una API autenticada
+
+**El cambio respecto de Resend.** Con Resend, el envío exigía una API key: sin
+credencial no se manda nada, y el destinatario lo elegía nuestro código. Con
+FormSubmit, **el punto final es público y está determinado por la dirección de
+correo o por el alias**. Quien descubra ese identificador —adivinándolo,
+viéndolo en un log, o porque alguna vez estuvo en algún lado— puede enviarle
+correos.
+
+**Qué implica de verdad.** No es una fuga: nadie lee nada por esta vía, ni entra
+al panel, ni obtiene datos. Lo que consigue es **meter correo en el buzón**:
+basura, o mensajes falsos que aparentan ser reclamos de un comercio.
+
+**Por qué no es grave hoy, y por qué igual hay que tratarlo.** El buzón es
+interno —lo leen solo Andres y Silvana— y **el panel sigue siendo la fuente de
+verdad**: un reclamo real existe en `/tenants/{t}/reclamos`, con su `creadoPor`
+firmado por la regla. Un correo que no tenga su reclamo correspondiente en el
+panel es, por definición, falso. Esa comprobación es gratis y hay que hacerla.
+
+**Recomendaciones:**
+
+1. **Dirección dedicada, nunca la personal de Andres.** Algo como `reclamos@…`.
+   Esa casilla va a recibir basura y no debe ser la de trabajo diario de nadie.
+   Está como paso 15d de `DISENO.md` §11.
+2. **Preferir el alias opaco de FormSubmit** antes que la dirección en claro: no
+   revela a dónde llega el correo.
+3. **Ante un reclamo por correo, verificarlo en el panel antes de actuar.** El
+   correo avisa; el panel prueba.
+4. **El destino se valida con una lista blanca de caracteres** antes de pegarse a
+   la URL del punto final. El patrón anterior aceptaba
+   `reclamos@ejemplo.com/../otro`: **inyección de ruta** que habría cambiado a qué
+   servicio salen los avisos. Lo destapó una prueba y está corregido.
+
+---
+
+### T-24 · La activación de FormSubmit que nadie hizo
+
+**No es un ataque: es un fallo silencioso, y por eso merece estar acá.**
+
+FormSubmit exige una **confirmación por correo la primera vez que se usa una
+dirección**. Hasta que alguien haga clic en ese enlace, **no entrega nada**. Pero
+la función no se entera: recibe una respuesta que parece correcta, marca el
+reclamo como notificado y sigue. En el panel todo se ve bien.
+
+**El resultado es el peor de los mundos: los reclamos se pierden y el sistema
+dice que no.** Un comercio reclama, ve «Enviado», y del otro lado no llega nada.
+Se descubre semanas después, cuando alguien pregunta por qué nunca le
+contestaron.
+
+Es **exactamente la misma forma** de dos fallos que ya costaron tiempo en este
+proyecto: `subscribed_apps` de Meta, que hay que activar por API y no aparece en
+ninguna interfaz (hallazgo 2 de `ESTADO.md`), y la app de Meta sin publicar, que
+entrega los webhooks de prueba y ninguno real (hallazgo 3). El patrón se repite:
+**un paso manual, invisible desde el código, que hace que todo parezca funcionar
+mientras nada llega.**
+
+**Control.** Paso 15e de `DISENO.md` §11, marcado como obligatorio, con el
+criterio de verificación correcto: **crear un reclamo de prueba y comprobar que
+el correo LLEGA**, no que la función no haya dado error. La distinción es la
+misma que la regla del proyecto de probar contra un teléfono real y reportar el
+resultado *real*, no el esperado.
+
+---
+
 ## Resultado real de las pruebas
 
 ```
 $ pnpm pruebas:reglas
- ✓ pruebas/reglas.test.ts (98 tests)
-   Test Files  1 passed (1)
-        Tests  98 passed (98)
+ ✓ pruebas/reglas.test.ts (99 tests)
+ ✓ pruebas/saneo.test.ts  (13 tests)
+   Test Files  2 passed (2)
+        Tests  112 passed (112)
 ```
+
+Las de `saneo.test.ts` **no usan el emulador**: son funciones puras. Están
+separadas a propósito, porque el escapado en origen es el control que reemplazó
+la garantía de texto plano que daba Resend, y un control sin prueba es una
+afirmación.
 
 **Ejecutadas de verdad**, contra `cloud-firestore-emulator-v1.22.0` corriendo
 localmente con `admin/firestore.rules`, sobre el proyecto ficticio
 `demo-novuchat-pruebas`. No se usó ninguna sesión de Firebase ni de gcloud, y no
 se tocó ningún recurso de nube.
 
-**Un defecto real que destaparon las pruebas de esta tanda:**
+**Dos defectos reales que destaparon las pruebas puras del saneo**, escritas al
+cambiar de proveedor:
+
+1. **El validador del destino aceptaba una inyección de ruta.** El patrón de
+   correo era `^[^@\s]+@[^@\s]+\.[^@\s]+$` —"lo que no sea arroba ni espacio"— y
+   daba por válidos `reclamos@ejemplo.com/../otro`, `…?x=1` y `…#frag`. Como ese
+   valor se concatena a la URL del punto final de FormSubmit, **habría cambiado a
+   qué servicio salen los avisos**. Reemplazado por una lista blanca de
+   caracteres, deliberadamente más estricta que el RFC: acá no se busca aceptar
+   todo correo legal, sino solo lo que es seguro pegar en una URL.
+
+2. **El saneo de encabezados trataba distinto al CR que al LF.** El barrido de
+   caracteres de control corría primero y BORRABA el retorno de carro, así que
+   `Falla del bot\rBcc: …` quedaba con las palabras pegadas mientras la variante
+   con `\n` quedaba separada por un espacio. Seguro en los dos casos, pero
+   inconsistente — y un control que no hace siempre lo mismo es un control sobre
+   el que nadie puede razonar. Corregido invirtiendo el orden.
+
+**Un defecto real que destaparon las pruebas de la tanda anterior:**
 `orderBy('__name__', 'desc')` **no existe en Firestore** — *"does not support
 descending key scans"*. La pantalla de Uso lo usaba y habría fallado en
 producción la primera vez que alguien la abriera. No lo detectó ninguna prueba de
@@ -903,5 +1059,7 @@ Nada de esto se puede probar sin los proyectos creados, y **no se creó ninguno*
   administrador de comercio que inicia sesión con Google **no vea nada**.
 - Que `email_verified` se refleje en el token después de verificar, y cuánto
   tarda en hacerlo (puede requerir renovar el token con `getIdToken(true)`).
-- Que el correo de Resend llegue y no caiga en spam, lo que depende de tener SPF
-  y DKIM verificados en el dominio remitente.
+- **Que el correo de FormSubmit llegue de verdad.** Depende de un paso manual de
+  activación que, si falta, hace que los reclamos se pierdan en silencio (T-24).
+  El criterio de verificación es crear un reclamo de prueba y comprobar que el
+  correo LLEGA, no que la función no haya dado error.
