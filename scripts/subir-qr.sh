@@ -4,7 +4,14 @@
 # El media ID queda ligado al número que lo sube.
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
-[[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
+ENV_FILE=".env"
+while [[ "${1:-}" == --env* ]]; do
+  case "$1" in
+    --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
+    --env=*) ENV_FILE="${1#*=}"; shift ;;
+  esac
+done
+[[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
 set -a; source .env; set +a
 IMG="${1:-Demo-Recursos/qr-demo.png}"
 [[ -f "$IMG" ]] || { echo "✗ No existe $IMG"; exit 1; }

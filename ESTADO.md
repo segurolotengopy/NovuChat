@@ -418,6 +418,35 @@ diagnóstico exigía que una persona abriera n8n y sacara una captura.
 `https://github.com/segurolotengopy/NovuChat.git`, configurado como `origin`.
 Repositorio **público y vacío**: nunca se hizo push.
 
+## Demo B — canal completo (2026-08-30)
+
+**Segundo número operativo**, en el portafolio NovuChat. Las cuatro
+comprobaciones en verde y los tres identificadores distintos de los del Demo A:
+app, WABA y número. `subscribed_apps` ya venía puesta.
+
+**El límite de portafolios no era un problema:** la cuenta tiene tres
+—NovuChat, AAB1 y Segurolotengo—, así que el riesgo que arrastrábamos desde el
+jueves quedó descartado. El error *"Tu cuenta no se pudo crear"* al pedir el
+número se resolvió completando la información del portafolio nuevo: Meta se
+niega a crear activos sobre un portafolio incompleto y no lo dice.
+
+**Hallazgo 17 — el marcador del número no puede ser compartido entre demos.**
+El flujo del Demo B usaba `REEMPLAZAR_PHONE_NUMBER_ID`, el mismo del Demo A, así
+que `preparar-import.sh` le habría puesto el número del Demo A. Habría enviado
+desde el número equivocado, en silencio, fallando después con un error de
+permisos que apunta a cualquier lado menos a la causa. Ahora tiene marcador
+propio, `REEMPLAZAR_PHONE_NUMBER_ID_B`.
+
+**Hallazgo 18 — los nodos HTTP Request impedían publicar.** Los dos del Demo B
+declaraban autenticación genérica sin tipo de credencial, y n8n no publica un
+flujo con nodos así. Se conectaron a la credencial `whatsAppApi` ya existente en
+lugar de repetir el token en una cabecera: un secreto menos que custodiar.
+
+**QR subido** con el número del Demo B — el media ID queda ligado al número que
+lo sube, así que el del Demo A no habría servido. **Vence a los 30 días**: si el
+9 de septiembre estuviera vencido, se regenera con
+`./scripts/subir-qr.sh --env .env.demo-b`.
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 - **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes

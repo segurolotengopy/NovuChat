@@ -25,12 +25,15 @@ cd "$(dirname "$0")/.." || exit 1
 
 FLUJO="Flujos/demo-a-agendamiento.json"
 APLICAR=0
+ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --flujo)   FLUJO="${2:?--flujo necesita un archivo}"; shift 2 ;;
     --flujo=*) FLUJO="${1#*=}"; shift ;;
     --aplicar) APLICAR=1; shift ;;
+    --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
+    --env=*)   ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
@@ -47,8 +50,11 @@ if [[ "$FLUJO" != *.local.json && -f "$PREPARADO" ]]; then
   FLUJO="$PREPARADO"
 fi
 
-[[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
-set -a; . ./.env; set +a
+[[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige --env
+. "./$ENV_FILE"
+set +a
 : "${N8N_API_KEY:?Falta N8N_API_KEY en .env (n8n: Settings -> n8n API)}"
 : "${N8N_WORKFLOW_ID:?Falta N8N_WORKFLOW_ID en .env (esta en la URL del editor)}"
 : "${N8N_BASE_URL:?Falta N8N_BASE_URL en .env}"
@@ -84,7 +90,11 @@ V, R, G, A, FIN = "\033[1;32m", "\033[1;31m", "\033[0;90m", "\033[1;33m", "\033[
 vivo  = json.load(open(f"{tmp}/vivo.json", encoding="utf-8"))
 nuevo = json.load(open(flujo, encoding="utf-8"))
 
+webhooks = [n.get("webhookId") for n in vivo.get("nodes", [])
+            if n.get("webhookId") and "trigger" in n["type"].lower()]
 print(f"Flujo vivo : {vivo.get('name')}")
+if webhooks:
+    print(f"  webhook  : /webhook/{webhooks[0]}/webhook")
 print(f"  activo   : {vivo.get('active')}   nodos: {len(vivo.get('nodes', []))}")
 print(f"Origen     : {flujo}   nodos: {len(nuevo['nodes'])}\n")
 
