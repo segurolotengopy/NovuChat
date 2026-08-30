@@ -40,7 +40,12 @@ UUID = re.compile(r'^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$')
 uuids = [s for s in env.get("N8N_WEBHOOK_PATH", "").split("/") if UUID.match(s)]
 
 d = json.load(open(flujo, encoding="utf-8"))
-disparadores = [n for n in d["nodes"] if n["type"].lower().endswith("trigger")]
+# Solo los disparadores que REALMENTE tienen webhook. Un scheduleTrigger
+# termina en "trigger" pero no expone ninguna URL: ponerle un webhookId es
+# ruido en el mejor caso y una colision de rutas en el peor.
+CON_WEBHOOK = ("whatsapptrigger", "webhook", "formtrigger", "chattrigger")
+disparadores = [n for n in d["nodes"]
+                if any(c in n["type"].lower() for c in CON_WEBHOOK)]
 
 if len(uuids) == 1 and disparadores:
     for n in disparadores:

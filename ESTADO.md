@@ -339,6 +339,61 @@ Firestore—, que hoy no existen en el estándar.
 **Riesgo nuevo:** la suspensión de un comercio depende de que n8n respete el
 409 y no cachee la configuración más de 60 s.
 
+## Recordatorios — el bloqueo NO existía
+
+**Hallazgo 16 (2026-08-29): la WABA ya tiene 6 plantillas APROBADAS**, entre
+ellas `hello_world` (utility) y `requerimiento` (marketing, es). Comprobado con
+`scripts/listar-plantillas.sh`.
+
+Dábamos por sentado que sin la verificación de AAB1 no había plantillas y que
+por lo tanto **no se podían prometer recordatorios de 24 h antes en vivo**. Es
+falso: la WABA es la compartida con WhatsApp-Modular, cuyo `otp-service` en
+producción ya envía plantillas. **Se puede enviar fuera de la ventana de 24
+horas hoy mismo.**
+
+Consecuencias:
+
+- Se puede probar el camino de envío por plantilla **ya**, con `hello_world`,
+  sin crear nada.
+- Falta crear `recordatorio_cita_manana` con tres variables. Se crea en la
+  misma WABA: no toca la app `Demo SeguroLo Tengo`, porque las plantillas
+  pertenecen a la WABA y no a la app.
+- **El recordatorio de 24 h antes deja de ser una promesa condicionada.**
+
+**Flujo de recordatorios construido:** `Flujos/demo-a-recordatorios.json`, 8
+nodos, sobre el esqueleto que propuso Silvana. Agrega lo que faltaba: calendario
+y número desde configuración, filtro de prefijo de país, corte si el comercio no
+está operativo, y **marca en la descripción del evento para no enviar dos veces**
+— sin eso, un reintento o una prueba manual le manda el recordatorio repetido al
+cliente. Modo `texto` o `plantilla`, conmutable desde configuración.
+
+## Proyectos Firebase creados (2026-08-29)
+
+`novuchat-admin-dev` y `novuchat-admin-prod`, bajo `${GOOGLE_ACCOUNT_PANEL}`.
+Pendiente: cargar en GitHub los secretos y variables de
+`.github/DESPLIEGUE-FIREBASE.md` §5 cuando exista el remoto.
+
+## Hallazgos del chat de prueba de Silvana (2026-08-29, 19:59–20:04)
+
+1. **EL AGENTE INVENTÓ UNA DIRECCIÓN.** Ante "¿dónde queda su clínica?"
+   respondió "Sopocachi, sobre la Avenida 20 de Octubre". No existe tal dato en
+   ninguna configuración. La regla 6 prohibía inventar precios, servicios y
+   disponibilidad, y no cubría direcciones. **Es el peor defecto posible para
+   una demo comercial: un cliente podría presentarse en una dirección
+   inventada.** Corregido: la prohibición ahora cubre cualquier dato, hay campos
+   `direccion`, `politicaCancelacion` y `datosQueNoTenemos` en configuración, y
+   se prohíbe explícitamente la evasiva del tipo "contamos con un equipo
+   altamente calificado", que es una invención disfrazada.
+2. **Dejó una pregunta sin responder.** Silvana preguntó cómo cancelar y el
+   agente nunca contestó, ni siquiera al reclamárselo. Corregido con la regla
+   6b: responder todas las preguntas de un mismo mensaje antes de avanzar.
+3. **Un mensaje salió cortado a mitad de frase.** Sin diagnosticar.
+4. **La compuerta se disparó al confirmar la cita de Silvana**, con el mensaje
+   de "no pude confirmar el registro". Causa probable: la expresión
+   `$('Normalizar entrada').item` que agregué a `agendar_cita` para guardar el
+   teléfono no resuelve en un sub-nodo de herramienta. Cambiada a `.first()`.
+   **Sin confirmar: hace falta ver el error del nodo en esa ejecución.**
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 - **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes
