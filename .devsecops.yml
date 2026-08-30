@@ -28,10 +28,8 @@ seguridad:
   bloquear_en: [CRITICAL, HIGH]   # se puede endurecer (añadir MEDIUM), nunca relajar
   # id, herramienta, componente, justificacion, aprobado_por, creado, vence
   #
-  # ⏸️ EXCEPCIÓN PREPARADA, NO APLICADA. Requiere la aprobación de Andres.
-  # Un agente no aprueba sus propias excepciones de seguridad (§4 de
-  # ~/.claude/rules/security-rules.md), y `aprobado_por` es literalmente un
-  # campo de aprobación. Para activarla: descomentar las siete líneas.
+  # ✅ EXCEPCIÓN APLICADA. Aprobada por Andres el 2026-08-30.
+  # El análisis que la sustenta queda abajo, junto a la excepción.
   #
   # Análisis (2026-08-30, sobre el árbol de dependencias real):
   #   Trivy bloquea por CVE-2026-41907 en `uuid` 9.0.1, que entra como
@@ -48,15 +46,14 @@ seguridad:
   # NO se declara `componente`: el job seguridad-estatica analiza con ruta '.'
   # y el componente del manifiesto es './admin', así que una excepción con
   # componente quedaría filtrada y no surtiría efecto.
-  excepciones: []
-  # excepciones:
-  #   - id: CVE-2026-41907
-  #     herramienta: trivy
-  #     justificacion: >-
-  #       uuid 9.0.1 llega solo como transitiva de firebase-admin. El CVE afecta
-  #       a v3/v5/v6 con buffer externo; en todo el arbol la unica llamada es
-  #       uuid.v4() en teeny-request, verificado sobre node_modules. No es
-  #       alcanzable. Se revisa cuando firebase-admin actualice gaxios.
-  #     aprobado_por: Andres Alberdi
-  #     creado: 2026-08-30
-  #     vence: 2026-10-31
+  excepciones:
+    - id: CVE-2026-41907
+      herramienta: trivy
+      justificacion: >-
+        uuid 9.0.1 llega solo como transitiva de firebase-admin. El CVE afecta
+        a v3/v5/v6 con buffer externo; en todo el arbol la unica llamada es
+        uuid.v4() en teeny-request, verificado sobre node_modules. No es
+        alcanzable. Se revisa cuando firebase-admin actualice gaxios.
+      aprobado_por: Andres Alberdi
+      creado: 2026-08-30
+      vence: 2026-10-31
