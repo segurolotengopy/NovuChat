@@ -83,13 +83,11 @@ export function Bitacora() {
     } finally {
       setCargando(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipo, resultado, desde, hasta, cursor, filas, esVistaPlataforma, tenantDeLaRuta]);
 
   useEffect(() => {
     setCursor(null);
     void traer(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipo, resultado, desde, hasta, esVistaPlataforma, tenantDeLaRuta]);
 
   return (

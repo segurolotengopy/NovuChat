@@ -52,3 +52,22 @@ if len(neg) >= 2:
     print("  Ya hay 2 o mas: probablemente no se pueda crear otro con este perfil.")
 PY
 rm -f /tmp/waba.json /tmp/negocios.json
+
+echo
+echo "== Números registrados en la WABA =="
+consulta "${G}/${WABA_ID}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status,platform_type" > /tmp/nums.json
+python3 - /tmp/nums.json <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+if "error" in d:
+    print("  x " + str(d["error"].get("message", ""))[:150]); raise SystemExit
+nums = d.get("data", [])
+print("  " + str(len(nums)) + " numero(s):")
+for n in nums:
+    print("    - " + str(n.get("display_phone_number", "?")) + "  " + str(n.get("verified_name", "")))
+    print("      id " + str(n.get("id", "?")) + " · verificacion " + str(n.get("code_verification_status", "?"))
+          + " · calidad " + str(n.get("quality_rating", "?")) + " · " + str(n.get("platform_type", "")))
+print()
+print("  Una WABA admite 2 numeros por defecto, ampliable a 20.")
+PY
+rm -f /tmp/nums.json

@@ -11,3 +11,10 @@ allowBuilds:
   protobufjs: true
   '@firebase/util': false
   re2: false
+
+# Endurecimiento de cadena de suministro (lo pide Semgrep, y con razon).
+# Una version publicada hace minutos es la ventana en que aparecen los paquetes
+# comprometidos: la cuarentena de 7 dias la cierra sin costo real.
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+blockExoticSubdeps: true

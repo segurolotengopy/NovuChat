@@ -315,7 +315,7 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1,
       "position": [
-        1640,
+        1760,
         200
       ],
       "parameters": {
@@ -331,7 +331,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1640,
+        1760,
         420
       ],
       "parameters": {
@@ -365,7 +365,7 @@
       "type": "n8n-nodes-base.whatsApp",
       "typeVersion": 1,
       "position": [
-        1860,
+        1960,
         420
       ],
       "parameters": {
@@ -414,7 +414,7 @@
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
+          "value": "={{ $json.calendarioARevisar }}"
         },
         "returnAll": false,
         "limit": 50,
@@ -430,7 +430,7 @@
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
       "position": [
-        1280,
+        1380,
         140
       ],
       "alwaysOutputData": true,
@@ -454,7 +454,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1440,
+        1540,
         140
       ]
     },
@@ -501,6 +501,19 @@
       "position": [
         760,
         480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Emite un item por CADA calendario configurado.\n//\n// Hace falta porque `agendar_cita` escribe en el calendario del servicio -- el\n// de belleza o el de odontologia -- mientras que la verificacion leia el\n// calendario por defecto. Nunca encontraba nada, la compuerta mandaba la\n// disculpa, el cliente insistia y el agente volvia a agendar: el 2026-08-30 eso\n// produjo TRES pedicures y TRES ortodoncias identicas.\n//\n// El nodo de Calendar corre una vez por item, asi que emitiendo uno por\n// calendario se revisan todos y `Comprobar reserva` junta los resultados.\nconst cfg = $('Config del negocio').first().json;\n\nlet mapa = {};\ntry { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; }\n\nconst calendarios = [...new Set([cfg.calendarioId, ...Object.values(mapa)].filter(Boolean))];\n\nconst base = $input.first().json;\nreturn calendarios.map(calendarioARevisar => ({ json: { ...base, calendarioARevisar } }));"
+      },
+      "id": "gate-cals",
+      "name": "Calendarios a revisar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        140
       ]
     }
   ],
@@ -632,7 +645,7 @@
       "main": [
         [
           {
-            "node": "Verificar en el calendario",
+            "node": "Calendarios a revisar",
             "type": "main",
             "index": 0
           }
@@ -701,6 +714,17 @@
         [
           {
             "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendarios a revisar": {
+      "main": [
+        [
+          {
+            "node": "Verificar en el calendario",
             "type": "main",
             "index": 0
           }
