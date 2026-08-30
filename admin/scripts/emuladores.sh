@@ -124,5 +124,10 @@ echo "En OTRA terminal:"
 echo "  cd admin && pnpm sembrar     # carga los datos de prueba"
 echo "  cd admin && pnpm web:dev     # arranca el panel en http://127.0.0.1:5230"
 echo
+echo "IMPORTANTE: al invocar el jar directamente se pierde la RECARGA EN CALIENTE"
+echo "de firestore.rules, que la hacia el vigilante del CLI (el mismo que rompe"
+echo "por inotify). Si edita las reglas, REINICIE este script o va a seguir"
+echo "probando contra las anteriores."
+echo
 echo "Ctrl-C aca apaga los dos emuladores."
 wait

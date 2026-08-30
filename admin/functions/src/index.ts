@@ -3,12 +3,14 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol, type Rol } from './claims.js';
 
 initializeApp();
 setGlobalOptions({ region: 'southamerica-east1', maxInstances: 10 });
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
+import { registrar } from './ingesta.js';
 export { notificarReclamo } from './reclamos.js';
 
 const db = () => getFirestore();
@@ -201,6 +203,9 @@ export const suspenderTenant = onCall(async (peticion) => {
   }, { merge: true });
 
   await auditar(tenantId, 'suspender', uid, { motivo });
+  // La bitácora recibe el hecho SIN el motivo comercial: ese texto es interno y
+  // vive en /auditoria y en la ficha. La bitácora la lee también el comercio.
+  await registrar(tenantId, { tipo: 'suspension', resultado: 'ok', canal: 'panel' });
   return { estado: 'suspendido' };
 });
 
@@ -235,6 +240,7 @@ export const reactivarTenant = onCall(async (peticion) => {
     actualizadoEn: Timestamp.now(),
   }, { merge: true });
   await auditar(tenantId, 'reactivar', uid);
+  await registrar(tenantId, { tipo: 'reactivacion', resultado: 'ok', canal: 'panel' });
   return { estado: 'activo' };
 });
 
@@ -496,3 +502,40 @@ export const moverReclamo = onCall(async (peticion) => {
   await auditar(tenantId, 'mover_reclamo', uid, { reclamoId, estado });
   return { ok: true };
 });
+
+// ---------------------------------------------------------------------------
+// CONSTANCIA DE LOS CAMBIOS DE CONFIGURACIÓN
+//
+// La configuración la escribe el panel DIRECTAMENTE en Firestore —las reglas
+// validan el esquema—, así que no hay ninguna Function por la que pase. Sin un
+// disparador, el cambio que hace que el asistente empiece a decir otra cosa no
+// quedaría registrado en ninguna parte.
+//
+// Importa porque el panel es la fuente de verdad: cuando alguien pregunte «¿por
+// qué el asistente dijo eso el martes?», la respuesta está en saber qué decía la
+// configuración el martes. Acá queda el CUÁNDO y el QUÉ CAMBIÓ (los nombres de
+// los campos), no los valores: los valores de un campo como `direccion` o
+// `instruccionesExtra` son texto del comercio y la bitácora no guarda texto.
+// ---------------------------------------------------------------------------
+export const registrarCambioConfig = onDocumentWritten(
+  { document: 'tenants/{tenantId}/config/negocio', region: 'southamerica-east1', maxInstances: 5 },
+  async (evento) => {
+    const antes = (evento.data?.before.data() ?? {}) as Record<string, unknown>;
+    const despues = (evento.data?.after.data() ?? {}) as Record<string, unknown>;
+    if (!evento.data?.after.exists) return;
+
+    const cambiados = [...new Set([...Object.keys(antes), ...Object.keys(despues)])]
+      .filter((k) => k !== 'actualizadoEn' && k !== 'actualizadoPor')
+      .filter((k) => JSON.stringify(antes[k]) !== JSON.stringify(despues[k]))
+      .sort();
+    if (cambiados.length === 0) return;
+
+    await registrar(evento.params.tenantId, {
+      tipo: 'config_publicada',
+      resultado: 'ok',
+      canal: 'panel',
+      // Solo los NOMBRES de los campos, recortados al tope de `detalle`.
+      detalle: cambiados.join(','),
+    });
+  },
+);

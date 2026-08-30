@@ -214,6 +214,10 @@ aislamiento de los datos, que es lo que importa.
    /catalogo/{itemId}                            servicios y precios
    /miembros/{uid}                               ESPEJO de los claims (no autoriza)
    /contactos/{contactoId}                       personas de referencia del comercio
+   /funcionarios/{funcionarioId}                 quién atiende, con su calendario
+      /privado/datos                             teléfono y correo del funcionario
+   /agenda/{funcId}_{aaaammdd}_{ranura}          candado contra la doble reserva
+   /bitacora/{eventoId}                          registro operativo, INMUTABLE
    /cuenta/estado                                plan y situación de pago (solo lectura)
    /reclamos/{reclamoId}                         reclamos hacia NovuChat, inmutables
    /invitaciones/{id}                            hash del token, nunca el token
@@ -266,6 +270,10 @@ Tres roles de persona y uno de servicio:
 | **Personas de referencia del comercio** | ⚠️ solo el marcado *contacto comercial* | ✅ | ❌ | ❌ |
 | **Estado de cuenta** | ✅ lee y escribe (por Function) | ✅ solo lectura | ❌ | ❌ |
 | **Reclamos** | ✅ lee todos; mueve estado por Function | ✅ crea y lee | ✅ crea y lee | ❌ |
+| **Bitácora** | ✅ todos los comercios | ✅ el suyo | ❌ | escribe |
+| **Funcionarios (operativo)** | ⚠️ con soporte | ✅ lee y edita | ✅ solo lee | lee |
+| **Teléfono del funcionario** | ❌ | ✅ | ❌ | ❌ |
+| **Agenda (candado)** | ❌ | ✅ lee | ✅ lee | toma y libera |
 | **Proveedor de identidad exigido** | Google | contraseña | contraseña | token personalizado |
 | Marcar gestión interna del hilo | ❌ | ✅ | ✅ | ❌ |
 | Escribir conversaciones y mensajes | ❌ | ❌ | ❌ | ✅ (su tenant) |
@@ -793,6 +801,273 @@ un campo `destinatario` por donde entre esa idea. Hay una prueba que lo verifica
 
 ---
 
+## 4quater. Bitácora y configuración como fuente de verdad
+
+### 4quater.1 Bitácora: colección nueva, no extensión de `/auditoria`
+
+`/tenants/{t}/bitacora/{eventoId}`. Las dos son inmutables y las dos son
+evidencia, pero responden preguntas distintas y **crecen a ritmos distintos**:
+
+| | `/auditoria` | `/bitacora` |
+|---|---|---|
+| Pregunta | quién cambió qué | qué hizo el sistema |
+| Volumen | decenas por año | varios por cada mensaje |
+| Retención | años | meses |
+| Se lee | entera, de un vistazo | con filtros y paginación |
+
+Mezclarlas tendría tres costos concretos: la pista de auditoría —la que se mira
+cuando hay una disputa— quedaría ahogada en ruido de entregas; toda consulta
+sobre `/auditoria` pasaría a costar lo que cuesta recorrer la bitácora; y los
+índices compuestos que la bitácora necesita se aplicarían a una colección que no
+los usa, pagándolos en cada escritura.
+
+**No guarda el texto de los mensajes.** Solo tipo, resultado, código, latencia,
+tamaño y el teléfono **enmascarado** (`5917****001`). El motivo es de coherencia:
+ya está decidido que el propietario de NovuChat no lee conversaciones sin una
+ventana de soporte otorgada por el comercio (T-5). Si la bitácora llevara el
+texto sería exactamente esa puerta trasera, y peor: consultable entre todos los
+comercios a la vez. Cuando hace falta el texto, la bitácora lleva
+`conversacionId` y el camino sigue siendo el de siempre.
+
+El enmascarado no es una convención: **la regla exige el patrón con asteriscos**,
+así que un número completo se rechaza en el servidor.
+
+**Quién la lee:** el administrador del comercio y el propietario. El operador
+queda afuera — ya tiene la vista de conversaciones, que es la misma información
+con más contexto. Se lee con `tenantLegible`, así que un comercio suspendido
+conserva su evidencia; y **se escribe aunque esté suspendido**, porque la
+evidencia no puede tener agujeros justo en el tramo del corte de servicio. Se
+puede permitir precisamente porque no hay contenido personal acumulándose.
+
+#### Filtros, índices y la trampa que el emulador no detecta
+
+**El emulador de Firestore no exige índices compuestos: responde cualquier
+consulta.** El servicio real rechaza con «The query requires an index». O sea que
+una pantalla de filtros puede pasar todas las pruebas locales y romperse la
+primera vez que alguien la usa en producción.
+
+La defensa es estructural: las formas de consulta se declaran en
+`web/src/lib/bitacora.ts`, y de ahí salen **dos cosas** — la consulta que arma la
+pantalla y la prueba `pruebas/indices.test.ts`, que verifica que cada forma tenga
+su índice. La pantalla no puede construir una consulta que la prueba no haya
+visto, porque leen la misma lista.
+
+| Filtros | Alcance | Índice |
+|---|---|---|
+| solo fechas | un comercio | automático (un solo campo) |
+| tipo + fechas | un comercio | `(tipo ASC, ts DESC)` |
+| resultado + fechas | un comercio | `(resultado ASC, ts DESC)` |
+| tipo + resultado + fechas | un comercio | `(tipo, resultado, ts DESC)` |
+| las cuatro anteriores | todos | idem, con alcance `COLLECTION_GROUP` |
+
+El rango de fechas no agrega requisitos: es un rango sobre **el mismo campo** por
+el que se ordena.
+
+**Filtrar «por comercio» no es un `where`**: es consultar la subcolección de ese
+comercio. Así el tenant sigue viviendo en la ruta y no en un campo (T-2). En la
+vista de todos, a qué comercio pertenece cada fila sale del *path*.
+
+**⚠️ Y una trampa que sí costó encontrar:** una consulta de grupo de colecciones
+**no la autoriza la regla anidada**. Firestore la evalúa contra otro patrón y
+hace falta una regla con comodín recursivo. No lo detectó ninguna de las 137
+pruebas anteriores: apareció al abrir la pantalla. El comodín está acotado a
+`esPropietario()` y **solo a la bitácora** — uno equivalente sobre
+`conversaciones` sería la puerta trasera a T-5.
+
+**Paginación por cursor** (`startAfter`, 50 por página), no por desplazamiento
+numérico, que en Firestore obliga a leer y pagar todos los documentos salteados.
+
+### 4quater.2 La configuración del comercio como fuente de verdad
+
+El panel manda, n8n consulta. Eso convierte esta pantalla en **la superficie por
+donde entra lo que el asistente va a afirmar como verdad ante un cliente final**,
+y la validación deja de ser higiene para ser el único punto donde se puede frenar
+un dato antes de que salga por WhatsApp.
+
+**Tres clases de campo, y la diferencia importa:**
+
+| Clase | Campos | Por qué |
+|---|---|---|
+| **Enumerados** | `tratamiento`, `estiloEmojis`, `zonaHoraria`, `moneda` | lista cerrada; el código los traduce a una frase fija |
+| **Texto libre al prompt** | `nombreNegocio`, `descripcion`, `direccion`, `politicaCancelacion`, `datosQueNoTenemos`, `instruccionesExtra`, `mensajeCierre`, `mensajeErrorTemporal`, `mensajeReservaNoConfirmada`, `mensajeComercioSuspendido` | topeados y entregados en una sección rotulada |
+| **Derivados, NO almacenados** | `horarioAtencion`, `estadoComercio`, `phoneNumberId` | los calcula `configuracionFlujo` |
+
+**Los enumerados son la decisión más fuerte de este bloque.** `tratamiento` y
+`estiloEmojis` determinan la voz del agente, o sea que van *dentro* de sus
+instrucciones: es inyección de prompt por diseño. En vez de intentar limpiar
+texto libre, se elimina el texto libre. El valor del cliente **no se interpola en
+ninguna parte**: solo selecciona cuál de nuestras frases se usa. Es la diferencia
+entre elegir de un menú y escribir en el prompt. De paso cierra el defecto de
+estilo de `ESTADO.md`: el agente alternaba «usted» y «tú» con el mismo cliente.
+
+**Los derivados no se guardan, y eso es una defensa:**
+
+- `estadoComercio` sale de la ficha del tenant. Si el comercio pudiera fijarlo,
+  n8n lo leería de la configuración y **seguiría atendiendo pese a la
+  suspensión**. Es el vector más serio del bloque.
+- `phoneNumberId` sale del número que validó la firma HMAC. Guardado en la
+  configuración, un comercio podría poner el de otro y **enviar mensajes en
+  nombre de ese otro**.
+- `horarioAtencion` se calcula desde `horarios`. Guardarlo además invitaría a que
+  los dos valores se separaran y a que el agente anunciara un horario que la
+  pantalla no muestra.
+
+Las reglas los rechazan por lista blanca **y** `configuracionFlujo` nunca los lee
+de la configuración aunque aparecieran. Dos barreras, a propósito.
+
+### 4quater.3 `direccion` y `datosQueNoTenemos`: el incidente del 28/08
+
+Ante «¿dónde queda su clínica?» el agente **inventó una dirección** —zona y
+avenida— que no figuraba en ninguna parte. Para una demo comercial es el peor
+defecto posible: un cliente podría presentarse en un lugar que no existe.
+
+**`direccion` es opcional a propósito.** Obligarla tentaría a rellenarla con
+cualquier cosa para poder guardar, y un dato inventado por el comercio hace el
+mismo daño que uno inventado por el modelo. **Vacía significa «no la tenemos»**,
+que es una respuesta correcta y verificable.
+
+**`datosQueNoTenemos` se calcula, no se declara.** `configuracionFlujo` la computa
+desde los campos que están efectivamente vacíos —dirección, teléfono de
+recepción, calendario, horarios, política de cancelación— y le suma los que el
+comercio agregó a mano. **Los computados no se pueden quitar desde el panel.**
+
+El porqué: si dependiera de que el comercio se acuerde de escribir «no tenemos
+dirección cargada», el olvido más probable del mundo —no cargar la dirección y
+tampoco declarar que falta— devuelve exactamente el incidente. **La ausencia de
+un dato es un hecho verificable; pedir que alguien la declare es pedirle que se
+acuerde de lo que no hizo.**
+
+### 4quater.4 `mensajeComercioSuspendido` y una propiedad emergente
+
+Lo escribe el comercio: es su voz ante sus clientes. Pero como **toda escritura
+de configuración exige `tenantOperativo`**, nadie puede redactarlo *después* de
+que lo suspendieron. O se prepara antes, o rige el texto neutro de la plataforma.
+No fue diseñado así: es una consecuencia de que la suspensión cierre las
+escrituras, y conviene que quede escrita porque es deseable.
+
+---
+
+## 4quinquies. Funcionarios y agenda por persona
+
+### 4quinquies.1 El problema
+
+El modelo asumía **un calendario por comercio**, y eso produce un error visible:
+una cita de manicure a las 11:30 bloquea una de ortodoncia a las 11:30, cuando
+las atienden personas distintas. Lo que hay que impedir es que **un mismo
+funcionario** tenga dos citas simultáneas, no que el comercio tenga dos.
+
+`/tenants/{t}/funcionarios/{id}`: nombre, especialidad, `calendarioId`,
+`horarioTrabajo` —que puede diferir del horario del comercio, y ahí está la mitad
+de la gracia: el salón abre de 9 a 19 pero el odontólogo va martes y jueves de 14
+a 18—, `servicios` y `activo`.
+
+**Datos personales de un tercero que no es el cliente final.** Teléfono y correo
+van en `/funcionarios/{id}/privado/datos`, con el mismo criterio que los
+contactos y los datos ampliados de conversaciones: las reglas no pueden ocultar
+campos sueltos en una lectura, así que lo que un rol no debe ver va en otro
+documento. **El operador ve quién atiende qué —lo necesita para contestar— pero
+no el teléfono personal de la manicurista, que no necesita para nada.**
+
+La baja es **lógica** (`activo: false`), nunca borrado: un funcionario borrado
+dejaría citas pasadas apuntando a un identificador que ya no existe.
+
+### 4quinquies.2 Servicio ↔ funcionario: denormalizado de un solo lado
+
+Un servicio lo atienden varios funcionarios y un funcionario atiende varios
+servicios. Se resuelve con una lista `servicios: [idDeCatalogo]` **en el
+funcionario**, y nada del otro lado.
+
+**Por qué no hay consultas.** n8n tiene que resolver «quién puede atender una
+limpieza facial» y «cuál es su calendario» de forma barata. La respuesta no es un
+índice mejor: es **no consultar**. `configuracionFlujo` ya devuelve el catálogo;
+ahora devuelve también los funcionarios activos. Son colecciones chicas —200
+servicios y 50 funcionarios como tope— y traerlas enteras en la misma llamada
+cuesta menos que cualquier consulta con índice por servicio. n8n cruza las dos
+listas **en memoria**.
+
+**Referencias colgadas.** Las reglas solo pueden comprobar que `servicios` es una
+lista de hasta 50 elementos, no que esos identificadores existan. Un servicio
+borrado del catálogo deja la referencia atrás. `resolverFuncionarios()` las
+descarta contra los ids del catálogo, para que el agente no ofrezca un servicio
+inexistente. Hay una prueba de eso.
+
+### 4quinquies.3 Un solo funcionario tiene que ser trivial
+
+Muchas PyMEs bolivianas son una persona sola. **La colección puede estar vacía.**
+Si no hay ningún funcionario activo, `configuracionFlujo` fabrica uno por defecto
+con el calendario y los horarios del comercio, y el flujo ve siempre una lista
+con al menos un elemento.
+
+Resultado: **el flujo tiene un solo camino de código** y el comercio de una sola
+persona no configura nada. La complejidad la paga quien la necesita. Un
+funcionario que se cargó sin calendario propio hereda el del comercio, por el
+mismo motivo: nadie puede quedar sin agenda ninguna.
+
+### 4quinquies.4 El candado contra la doble reserva
+
+**Google Calendar no impide eventos superpuestos**: si dos clientes reservan a la
+vez, crea las dos citas sin chistar. Y entre «consultar disponibilidad» y «crear
+la cita» pasan segundos, que es tiempo de sobra. La garantía no puede vivir ahí.
+
+`/tenants/{t}/agenda/{funcionarioId}_{aaaammdd}_{ranura}`. El día se parte en
+ranuras de 15 minutos; una cita de 60 ocupa cuatro. El identificador es
+determinista y la reserva se hace con `create` **dentro de una transacción**:
+`create` falla si el documento ya existe, y la transacción hace que las cuatro
+ranuras se tomen todas o ninguna. Eso es exclusión mutua de verdad, no una
+comprobación previa.
+
+**La superposición parcial queda cubierta** porque el choque no se busca por hora
+de inicio —el reflejo natural, que dejaría pasar justamente ese caso— sino por
+ranura: 11:00–12:00 y 11:30–12:30 comparten dos.
+
+La ranura **no lleva datos personales**: ni teléfono ni nombre del cliente. Es un
+candado, no un registro. No se actualiza —mover una cita es liberar y volver a
+tomar, para que siga siendo atómico— y sí se borra al cancelar, porque si no el
+horario quedaría bloqueado para siempre.
+
+#### Lo que este diseño NO garantiza
+
+Dicho sin adornos, porque es la parte que importa:
+
+1. **El candado solo conoce las citas que pasaron por el asistente.** Si alguien
+   del comercio carga una cita a mano en Google Calendar, esta colección no se
+   entera y el choque vuelve a ser posible. Por eso el flujo **sigue consultando
+   Calendar** antes de ofrecer horarios: Calendar cubre lo manual, el candado
+   cubre la concurrencia. Ninguno de los dos alcanza solo.
+2. **Firestore y Calendar pueden divergir.** La cita se crea en dos sistemas y no
+   hay transacción entre ellos. Si el `create` en Calendar falla después de tomar
+   la ranura, queda una ranura ocupada sin cita. Mitigación: liberar la ranura
+   ante un fallo de Calendar, y una tarea de reconciliación pendiente.
+3. **La granularidad de 15 minutos redondea hacia arriba.** Una cita de 5 minutos
+   ocupa una ranura entera. Es deliberado —los turnos reales no son de 5
+   minutos— pero hay que saberlo antes de prometer agendas al minuto.
+
+### 4quinquies.5 El ID de calendario, validado en los dos lados
+
+Es **el dato que más caro salió en este proyecto**: uno pegado a mano con un
+carácter de menos hizo que Google devolviera 404 al crear, que el agente
+confirmara igual, y que la lectura de disponibilidad fallara **en silencio** — el
+agente pasó a inventar los horarios y llegó a ofrecer las 15:00 pisando una cita
+de las 15:30. El síntoma no apuntaba a la causa por ninguna parte.
+
+Ahora que habrá uno por funcionario cargado desde el panel, la validación está en
+**el panel y en las reglas**, con las dos trampas que ya se aprendieron
+escribiendo `scripts/fijar-calendario.sh`:
+
+1. **Exactamente 64 hexadecimales.** No «32 o más». La primera versión de aquel
+   script aceptaba un ID truncado, que es justo el caso que existía para impedir.
+   *Un validador que no rechaza el caso que motivó escribirlo no valida nada.*
+2. **El orden importa.** Un ID de calendario **tiene forma de correo**: si se
+   prueba primero la forma de correo, un ID de grupo malformado cae ahí y pasa.
+   En las reglas esa precedencia se expresa negando la segunda rama — lo que
+   termina en `@group.calendar.google.com` se juzga únicamente con la regla
+   estricta, sin red de rescate.
+
+Vacío es válido y significa «sin agenda propia». Lo que no puede pasar es un
+valor con forma equivocada, porque eso falla en silencio.
+
+---
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido
@@ -903,8 +1178,9 @@ admin/
 ├── package.json / pnpm-workspace.yaml
 ├── vitest.config.ts
 ├── pruebas/
-│   ├── reglas.test.ts           99 pruebas de aislamiento y control
-│   ├── saneo.test.ts            13 pruebas puras del escapado (sin emulador)
+│   ├── reglas.test.ts           155 pruebas de aislamiento y control
+│   ├── indices.test.ts          4 pruebas de índices (sin emulador)
+│   ├── saneo.test.ts            22 pruebas puras (escapado, ranuras, funcionarios)
 │   └── correr.sh                levanta el emulador y corre las pruebas
 ├── web/                         React 19 + Vite + TypeScript
 │   └── src/
@@ -916,13 +1192,15 @@ admin/
 │       │   └── Proteger.tsx     guardia de rutas (cosmético)
 │       └── paginas/             Ingresar, Tenants, Configuracion,
 │                                Conversaciones, Usuarios, Contactos,
-│                                Metricas, EstadoCuenta, Reclamos
+│                                Metricas, EstadoCuenta, Reclamos,
+│                                Bitacora, Funcionarios
 └── functions/                   Cloud Functions v2, TypeScript
     └── src/
         ├── index.ts             alta/baja, suspensión, roles, soporte, números
         ├── claims.ts            ⭐ único emisor de permisos + vínculo proveedor
         ├── reclamos.ts          ⭐ aviso de reclamos por FormSubmit
         ├── saneo.ts             ⭐ neutralización del texto que sale (con pruebas)
+        ├── prompt.ts            ⭐ campos derivados, voz del agente, ranuras
         └── ingesta.ts           ⭐ puente n8n → Firestore con HMAC, ruteo por
                                  número y conteo de personas únicas
 ```
@@ -952,8 +1230,8 @@ Dos trabajos con separación estricta:
 |---|---|
 | Compilación del frontend | ✅ `pnpm --filter @novuchat/admin-web build` — 72 módulos, sin errores |
 | Compilación de las Functions | ✅ `tsc -b` sin errores |
-| Pruebas de reglas con el emulador | ✅ **99 de 99, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
-| Pruebas puras del saneo del correo | ✅ **13 de 13**, sin emulador ni red |
+| Pruebas de reglas con el emulador | ✅ **155 de 155, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
+| Pruebas puras (saneo, ranuras, índices) | ✅ **26 de 26**, sin emulador ni red |
 | Comprobaciones del CI (grep) | ✅ corridas localmente, ambas pasan |
 | Despliegue a Firebase | ⛔ **no ejecutado.** No se creó ni modificó ningún recurso de nube |
 

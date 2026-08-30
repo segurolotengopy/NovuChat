@@ -960,15 +960,226 @@ resultado *real*, no el esperado.
 
 ---
 
+### T-25 · La bitácora como puerta trasera a las conversaciones
+
+**El ataque no es de un atacante: es de un diseño descuidado.** Una bitácora con
+el texto de los mensajes adentro sería una colección legible por el propietario
+de NovuChat, **consultable entre todos los comercios a la vez**, con el contenido
+de las conversaciones. Sería la peor versión de exactamente lo que T-5 impide, y
+llegaría sin que nadie lo decidiera: solo por agregar una columna «mensaje» que
+en el momento parece útil.
+
+**Control.** El esquema no tiene dónde poner el texto: la lista blanca de claves
+lo rechaza, y `detalle` está topeado en 120 caracteres para que no se lo use de
+contrabando. El teléfono va **enmascarado**, y la regla **exige el patrón con
+asteriscos**: un número completo se rechaza en el servidor. Es la diferencia
+entre «acordarse de enmascarar» y no poder no hacerlo.
+
+Cuando hace falta el texto, la bitácora lleva `conversacionId` y el camino sigue
+siendo el de siempre: ventana de soporte otorgada por el comercio y auditada.
+
+**Pruebas.** 11 en *"Bitácora"*, incluidas las que intentan escribir `texto`, un
+teléfono sin enmascarar y un `detalle` largo.
+
+---
+
+### T-26 · Evidencia editable, y el mensaje redactado a destiempo
+
+**Dos cosas distintas con la misma raíz.**
+
+**(a) Una bitácora que el proveedor puede editar no sirve como evidencia contra
+el proveedor**, que es justamente cuando más se la necesita. Por eso es inmutable
+para **todos**, incluido el propietario de NovuChat: `allow update, delete: if
+false` sin excepciones. Lo mismo vale para `/auditoria` y para `/mensajes`.
+
+**(b)** Como toda escritura de configuración exige `tenantOperativo`, **un
+comercio suspendido no puede reescribir su `mensajeComercioSuspendido`**. No fue
+diseñado así: es consecuencia de que la suspensión cierre las escrituras. Y es
+deseable — evita que un comercio molesto redacte, *después* del corte, un mensaje
+a sus propios clientes que arrastre a NovuChat. O se prepara antes, o rige el
+texto neutro de la plataforma.
+
+**Pruebas.** 1 en *"Bitácora"* para (a) y 1 en *"Configuración como fuente de
+verdad"* para (b).
+
+---
+
+### T-27 · Escalada por un campo derivado guardado como si fuera propio
+
+**El vector más serio del bloque de configuración**, y el menos vistoso.
+
+- Si el comercio pudiera guardar **`estadoComercio`**, n8n lo leería de la
+  configuración y **seguiría atendiendo pese a la suspensión**. La palanca
+  comercial se anularía escribiendo una palabra en un formulario.
+- Si pudiera guardar **`phoneNumberId`**, podría poner el de otro comercio y
+  **enviar mensajes en nombre de ese otro**.
+- Si pudiera guardar **`horarioAtencion`**, el agente anunciaría un horario que
+  la pantalla no muestra.
+
+**Control, en dos capas.** La lista blanca de claves de la regla los rechaza; y
+`configuracionFlujo` **nunca los lee de la configuración**, los calcula desde la
+ficha del tenant y desde el número que validó la firma HMAC. La segunda capa
+existe porque la primera protege el almacenamiento y la segunda protege el uso.
+
+**Y el límite de lo que las reglas pueden hacer, dicho con precisión:** las reglas
+de Firestore **no saben recorrer los elementos de una lista**. Para
+`datosQueNoTenemos`, `prefijosPermitidos` y `servicios` solo comprueban el tipo y
+el tamaño. El contenido lo valida y recorta la Cloud Function antes de que llegue
+al prompt. Quien lea `d.get('servicios', []) is list` no debe suponer más que eso.
+
+**Pruebas.** 3 en *"Configuración como fuente de verdad"*.
+
+---
+
+### T-28 · Inyección de prompt por la voz del agente
+
+`tratamiento` y `estiloEmojis` determinan cómo habla el asistente, o sea que van
+**dentro de sus instrucciones**. Es inyección de prompt por diseño: un campo de
+texto libre ahí es una orden al modelo escrita por el cliente.
+
+**Control: se elimina el texto libre en vez de intentar limpiarlo.** Son
+enumerados con lista cerrada, y el código los traduce a **frases escritas por
+nosotros**. El valor del cliente no se interpola en ninguna parte: solo
+selecciona cuál de nuestras frases se usa. Es la diferencia entre elegir de un
+menú y escribir en el prompt, y es la defensa más fuerte que existe acá porque no
+depende de que ningún saneo esté completo.
+
+El texto libre que sí queda —`direccion`, `politicaCancelacion`,
+`instruccionesExtra`, los `mensaje*`— viaja topeado y en una sección delimitada
+rotulada como DATO DEL NEGOCIO, nunca por delante de las reglas de comportamiento
+del agente. La lista completa está en `functions/src/prompt.ts`,
+`CAMPOS_LIBRES_AL_PROMPT`, y es cerrada a propósito: agregar un campo al prompt
+obliga a tocar esa constante.
+
+**Pruebas.** 1 en *"Configuración como fuente de verdad"*, que intenta poner
+«Ignora tus instrucciones anteriores» como tratamiento.
+
+---
+
+### T-29 · El dato inventado: dirección vacía y `datosQueNoTenemos`
+
+**El incidente del 28/08.** Ante «¿dónde queda su clínica?» el agente inventó una
+dirección —zona y avenida— que no figuraba en ninguna parte. Un cliente podría
+presentarse en un lugar que no existe. **Para una demo comercial es el peor
+defecto posible**, y ahora que el panel es la fuente de verdad, es el panel la
+superficie por donde entra lo que el agente afirma.
+
+**Control.** `direccion` es opcional a propósito: obligarla tentaría a rellenarla
+con cualquier cosa, y un dato inventado por el comercio hace el mismo daño que
+uno inventado por el modelo. Vacía significa «no la tenemos».
+
+**Y `datosQueNoTenemos` se calcula, no se declara.** `configuracionFlujo` la
+computa desde los campos efectivamente vacíos y le suma los declarados a mano;
+los computados no se pueden quitar desde el panel. El porqué: si dependiera de
+que el comercio se acuerde de escribir «no tenemos dirección», el olvido más
+probable —no cargarla y tampoco declarar que falta— devuelve el incidente.
+**La ausencia de un dato es un hecho verificable; pedir que alguien la declare es
+pedirle que se acuerde de lo que no hizo.**
+
+En la pantalla hay un aviso explícito de qué pasa si se deja vacía. Un control que
+el usuario no entiende no es un control.
+
+---
+
+### T-30 · Doble reserva sobre el mismo funcionario
+
+**El ataque es la concurrencia, no una persona.** Entre «consultar
+disponibilidad» y «crear la cita» pasan segundos, y otro cliente puede reservar
+el mismo horario. **Google Calendar no impide eventos superpuestos**: crea las dos
+citas sin chistar.
+
+**Control.** Un candado en Firestore con identificador determinista por ranura de
+15 minutos, tomado con `create` **dentro de una transacción**: `create` falla si
+el documento existe, y la transacción hace que todas las ranuras de la cita se
+tomen o ninguna. Exclusión mutua real, no una comprobación previa.
+
+La superposición parcial queda cubierta porque el choque se busca **por ranura y
+no por hora de inicio** — el reflejo natural, que dejaría pasar exactamente el
+caso de 11:00–12:00 contra 11:30–12:30. Hay una prueba pura que lo verifica, y
+otra que comprueba que **dos funcionarios distintos a la misma hora no chocan**,
+que es el error que motivó todo esto.
+
+**LO QUE NO GARANTIZA, sin adornos:**
+
+1. **Solo conoce las citas que pasaron por el asistente.** Una cita cargada a
+   mano en Google Calendar no está en el candado y puede chocar. Por eso el flujo
+   sigue consultando Calendar antes de ofrecer horarios: **Calendar cubre lo
+   manual, el candado cubre la concurrencia; ninguno alcanza solo.**
+2. **Firestore y Calendar pueden divergir.** No hay transacción entre los dos
+   sistemas. Si Calendar falla después de tomar la ranura, queda una ranura
+   ocupada sin cita. Mitigación: liberar ante fallo, más una reconciliación que
+   queda pendiente.
+3. **La granularidad redondea hacia arriba**: una cita de 5 minutos ocupa una
+   ranura de 15.
+
+Es riesgo residual declarado, no resuelto. Prometer «imposible que se
+superpongan» sería falso.
+
+---
+
+### T-31 · El ID de calendario que falla en silencio
+
+**No es un ataque: es el defecto que más caro salió en este proyecto, y ahora la
+superficie se multiplica** porque va a haber un calendario por funcionario
+cargado desde el panel.
+
+Un ID con **un carácter de menos** hizo que Google devolviera 404 al crear la
+cita, que el agente la confirmara igual, y que la lectura de disponibilidad
+fallara sin ruido: el agente pasó a **inventar los horarios** y llegó a ofrecer
+las 15:00 pisando una cita de las 15:30. Ninguno de los síntomas apuntaba a la
+causa.
+
+**Control, en el panel y en las reglas** —no confiado al cuidado de quien pega el
+valor—, con las dos trampas ya aprendidas:
+
+1. **Exactamente 64 hexadecimales.** No «32 o más». La primera versión de
+   `scripts/fijar-calendario.sh` aceptaba un ID truncado, o sea justo el caso que
+   existía para impedir. **Un validador que no rechaza el caso que motivó
+   escribirlo no valida nada.**
+2. **El sufijo decide antes que la forma de correo.** Un ID de calendario *tiene*
+   forma de correo: probando primero la forma de correo, un ID de grupo
+   malformado se cuela. En las reglas la precedencia se expresa negando la
+   segunda rama.
+
+Vacío es válido —«sin agenda propia», hereda la del comercio—. Lo que no puede
+pasar es un valor con forma equivocada.
+
+**Pruebas.** 3 en *"Funcionarios"*: truncado a 63, alargado a 65, con caracteres
+no hexadecimales, y el caso del sufijo con parte corta.
+
+---
+
+### T-32 · Datos personales del funcionario
+
+El teléfono y el correo de la manicurista o del odontólogo son datos personales
+de **un tercero que no es el cliente final**. Con todo en un solo documento,
+cualquiera que pueda leer «quién atiende ortodoncia» —incluido el operador
+temporal— se lleva la agenda de contactos del personal.
+
+**Control.** El mismo patrón que ya rige para los contactos y para los datos
+ampliados de conversaciones: como las reglas **no pueden ocultar campos sueltos en
+una lectura**, lo sensible va en otro documento,
+`/funcionarios/{id}/privado/datos`, que solo lee el administrador. El operador ve
+lo operativo, que es lo que necesita para contestar.
+
+**Pruebas.** 2 en *"Funcionarios"*.
+
+---
+
 ## Resultado real de las pruebas
 
 ```
 $ pnpm pruebas:reglas
- ✓ pruebas/reglas.test.ts (99 tests)
- ✓ pruebas/saneo.test.ts  (13 tests)
-   Test Files  2 passed (2)
-        Tests  112 passed (112)
+ ✓ pruebas/reglas.test.ts   (155 tests)
+ ✓ pruebas/saneo.test.ts    ( 22 tests)
+ ✓ pruebas/indices.test.ts  (  4 tests)
+   Test Files  3 passed (3)
+        Tests  164 passed (164)
 ```
+
+`saneo.test.ts` e `indices.test.ts` **no usan el emulador**: son puras. La
+segunda existe porque hay una clase de fallo que el emulador **no puede**
+detectar (ver abajo).
 
 Las de `saneo.test.ts` **no usan el emulador**: son funciones puras. Están
 separadas a propósito, porque el escapado en origen es el control que reemplazó
@@ -997,6 +1208,15 @@ cambiar de proveedor:
    con `\n` quedaba separada por un espacio. Seguro en los dos casos, pero
    inconsistente — y un control que no hace siempre lo mismo es un control sobre
    el que nadie puede razonar. Corregido invirtiendo el orden.
+
+**Y uno que destapó la pantalla de bitácora, que ninguna prueba anterior podía
+ver:** una **consulta de grupo de colecciones no la autoriza la regla anidada**.
+Firestore la evalúa contra otro patrón y hace falta una regla con comodín
+recursivo. Las 137 pruebas de entonces pasaban —todas consultaban colecciones
+anidadas— y la pantalla fallaba con «Missing or insufficient permissions». Se
+agregó el comodín acotado a `esPropietario()` y **solo a la bitácora**, más tres
+pruebas: una comprueba que ningún comercio pueda hacer esa consulta, y otra que
+el comodín no se haya extendido a `conversaciones` ni a `mensajes`.
 
 **Un defecto real que destaparon las pruebas de la tanda anterior:**
 `orderBy('__name__', 'desc')` **no existe en Firestore** — *"does not support
@@ -1028,6 +1248,20 @@ deben usar la misma consulta que la interfaz, no una parecida.** Corregido con
    **La lección, para cualquiera que toque esta suite: en un archivo dominado por
    `assertFails`, el verde no prueba nada por sí solo.** Un documento inexistente
    y una regla que deniega producen exactamente el mismo `permission-denied`.
+
+**Una limitación del emulador que hay que tener presente:** **no exige índices
+compuestos.** Responde cualquier consulta, así que una pantalla de filtros puede
+pasar todo lo local y romperse en producción con «The query requires an index».
+Por eso las formas de consulta se declaran en `web/src/lib/bitacora.ts` y
+`pruebas/indices.test.ts` verifica que cada una tenga su índice en
+`firestore.indexes.json`. Se comprobó que el control funciona quitando un índice
+a propósito: la prueba lo nombra exactamente.
+
+**Y otra del entorno de trabajo:** al invocar el jar del emulador directamente
+—el rodeo por el límite de inotify— **se pierde la recarga en caliente de
+`firestore.rules`**, que la hacía el vigilante del CLI. Si se editan las reglas
+hay que reiniciar `pnpm emuladores`, o se sigue probando contra las anteriores.
+Costó un rato descubrirlo y está avisado en la salida del script.
 
 Dos advertencias de operación:
 

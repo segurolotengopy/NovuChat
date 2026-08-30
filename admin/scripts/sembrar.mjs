@@ -211,7 +211,19 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
       ? 'Peluqueria, estetica y odontologia.'
       : 'Parrilla y comida al paso. Pedidos para llevar.',
     zonaHoraria: 'America/La_Paz',
-    telefonoRecepcion: telefono,
+    numeroRecepcion: telefono,
+    direccion: vertical === 'agendamiento'
+      ? 'Calle Comercio 100, zona Central'
+      : '',   // A propósito vacía: así se ve el efecto de `datosQueNoTenemos`.
+    tratamiento: 'usted',
+    estiloEmojis: 'pocos',
+    politicaCancelacion: 'Cancelar con 24 horas de anticipacion, sin cargo.',
+    prefijosPermitidos: ['591'],
+    datosQueNoTenemos: vertical === 'agendamiento' ? ['estacionamiento propio'] : [],
+    mensajeCierre: 'Gracias por escribirnos. Que tenga buen dia.',
+    mensajeErrorTemporal: 'Tuvimos un inconveniente. Intente en un momento, por favor.',
+    mensajeReservaNoConfirmada: 'No pude confirmar la reserva. Le escribe recepcion enseguida.',
+    mensajeComercioSuspendido: 'Por el momento no atendemos por este medio.',
     calendarioId: `${id}@group.calendar.google.com`,
     moneda: 'BOB',
     horarios: {
@@ -307,6 +319,51 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
     tenantId: id, flujo: vertical, wabaId: '100000000000001', estado,
     asignadoEn: dias(-90), asignadoPor: USUARIOS.propietario.uid,
   });
+
+  // --- Bitácora: eventos variados para que los filtros tengan qué filtrar ---
+  const tiposDemo = [
+    ['mensaje_entrante', 'ok'], ['mensaje_saliente', 'ok'],
+    ['mensaje_saliente', 'fallo'], ['cita_agendada', 'ok'],
+    ['error_flujo', 'fallo'], ['mensaje_saliente', 'reintento'],
+    ['transferencia_humano', 'ok'], ['entrada_descartada', 'rechazado'],
+    ['config_publicada', 'ok'], ['mensaje_entrante', 'ok'],
+  ];
+  for (const [i, [tipo, resultado]] of tiposDemo.entries()) {
+    await db.doc(`tenants/${id}/bitacora/ev-${String(i + 1).padStart(3, '0')}`).set({
+      ts: horas(-i * 7 - 1),
+      tipo, resultado,
+      canal: tipo === 'config_publicada' ? 'panel' : 'whatsapp',
+      // ENMASCARADO: la regla de Firestore rechaza un número completo.
+      ...(tipo.startsWith('mensaje') ? { destinoEnmascarado: `5917****00${(i % 8) + 1}` } : {}),
+      ...(tipo.startsWith('mensaje') ? { conversacionId: `wa_5917000000${(i % 3) + 5}` } : {}),
+      codigo: resultado === 'ok' ? '200' : resultado === 'fallo' ? '429' : '',
+      detalle: resultado === 'fallo' ? 'cuota del modelo agotada' : '',
+      tamanoTexto: 40 + i * 11,
+      latenciaMs: 1600 + i * 420,
+    });
+  }
+
+  // --- Funcionarios. El comercio de agendamiento tiene tres; el de venta,
+  // NINGUNO, para que se vea que el caso de una sola persona funciona igual.
+  if (vertical === 'agendamiento') {
+    const equipo = [
+      ['f-odonto', 'Dra. Rojas', 'Odontologia', ['item-4'], 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb@group.calendar.google.com'],
+      ['f-estetica', 'Sra. Choque', 'Estetica', ['item-2'], ''],
+      ['f-peluqueria', 'Sr. Mamani', 'Peluqueria', ['item-1', 'item-3'], ''],
+    ];
+    for (const [fid, nombre, especialidad, servicios, cal] of equipo) {
+      await db.doc(`tenants/${id}/funcionarios/${fid}`).set({
+        nombre, especialidad, calendarioId: cal,
+        horarioTrabajo: fid === 'f-odonto'
+          ? { mar: '14:00-18:00', jue: '14:00-18:00' }   // horario propio, distinto al del local
+          : { lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00' },
+        servicios, activo: true, ...sello,
+      });
+      await db.doc(`tenants/${id}/funcionarios/${fid}/privado/datos`).set({
+        telefono: '59170000009', correo: `${fid}@ejemplo.com`, ...sello,
+      });
+    }
+  }
 
   await db.doc(`tenants/${id}/auditoria/ev-alta`).set({
     accion: 'alta_tenant', uid: USUARIOS.propietario.uid, en: dias(-90),

@@ -246,6 +246,47 @@ service cloud.firestore {
       return cadena(datos.get(campo, ''), maxLargo);
     }
 
+    // -------------------------------------------------------------------------
+    // ID DE CALENDARIO DE GOOGLE — el dato que más caro salió en este proyecto.
+    //
+    // Un ID pegado a mano con UN carácter de menos hizo que Google devolviera 404
+    // al crear la cita, que el agente la confirmara igual, y que la lectura de
+    // disponibilidad fallara en silencio: el agente pasó a INVENTAR los horarios
+    // y llegó a ofrecer las 15:00 pisando una cita de las 15:30. El síntoma no
+    // apuntaba a la causa por ninguna parte.
+    //
+    // Ahora que va a haber un calendario POR FUNCIONARIO cargado desde el panel,
+    // la validación no puede quedar confiada al cuidado de quien lo pega.
+    //
+    // DOS TRAMPAS, las dos aprendidas escribiendo `scripts/fijar-calendario.sh`:
+    //
+    //  1. EXACTAMENTE 64 hexadecimales. No «32 o más». La primera versión de
+    //     aquel script aceptaba un ID truncado, que es justo el caso que existía
+    //     para impedir. Un validador que no rechaza el caso que motivó
+    //     escribirlo no valida nada.
+    //
+    //  2. EL ORDEN IMPORTA. Un ID de calendario TIENE forma de correo. Si se
+    //     prueba primero la forma de correo, un ID de grupo malformado cae ahí y
+    //     pasa. Acá esa precedencia se expresa con la negación de la segunda
+    //     rama: lo que termina en `@group.calendar.google.com` se juzga
+    //     ÚNICAMENTE con la regla estricta, sin red de rescate.
+    // -------------------------------------------------------------------------
+    function calendarioValido(valor) {
+      return valor is string
+        && (valor.matches('^[0-9a-fA-F]{64}@group[.]calendar[.]google[.]com$')
+            || (!valor.matches('^.*@group[.]calendar[.]google[.]com$')
+                && valor.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,24}$')));
+    }
+
+    // Vacío es válido: significa «este funcionario no tiene agenda propia» o
+    // «el comercio todavía no cargó la suya». Lo que NO puede pasar es que haya
+    // un valor con forma equivocada, porque eso falla en silencio.
+    function calendarioValidoOpcional(datos, campo) {
+      return !datos.keys().hasAny([campo])
+        || datos[campo] == ''
+        || calendarioValido(datos[campo]);
+    }
+
     // Sello de auditoría: quien escribe no puede mentir sobre quién es ni sobre
     // cuándo escribió. Sin esto, la pista de auditoría es decorativa.
     function selloValido(datos) {
@@ -289,35 +330,112 @@ service cloud.firestore {
                       && configNegocioValida();
         allow create, delete: if false;
 
-        // Validación de esquema. Esto NO es cosmética: el contenido de este
-        // documento termina inyectado en el prompt del agente de n8n. Sin límite
-        // de longitud ni lista blanca de claves, un admin del negocio (o un XSS
-        // en su sesión) podría inyectar instrucciones arbitrarias al modelo:
-        // inyección de prompt de segundo orden.
+        // =====================================================================
+        // ESQUEMA DE LA CONFIGURACIÓN DEL NEGOCIO
         //
-        // El PROMPT BASE del agente NO es editable desde el panel: vive en el
-        // flujo de n8n. Acá solo se admiten datos, y `instruccionesExtra` entra
-        // al prompt delimitada y rotulada como dato, nunca como instrucción.
+        // El panel es la FUENTE DE VERDAD: n8n ya no tiene estos valores escritos
+        // a mano en el nodo `Config del negocio`, los consulta. Eso invierte la
+        // responsabilidad y convierte a esta pantalla en **la superficie por
+        // donde entra lo que el asistente va a afirmar como verdad ante un
+        // cliente final**. La validación de acá no es higiene: es el único punto
+        // donde se puede frenar un dato que después sale por WhatsApp.
+        //
+        // TRES CLASES DE CAMPO, Y LA DIFERENCIA IMPORTA:
+        //
+        //  1. ENUMERADOS (`tratamiento`, `estiloEmojis`, `zonaHoraria`,
+        //     `moneda`). Lista cerrada. El código los traduce a una frase fija
+        //     antes de armar el prompt: el texto del cliente NUNCA se interpola.
+        //     Convertir un campo libre en un enumerado es la defensa más fuerte
+        //     que existe contra la inyección de prompt, porque elimina el texto
+        //     libre en vez de intentar limpiarlo.
+        //
+        //  2. TEXTO LIBRE que viaja al prompt (`direccion`, `politicaCancelacion`,
+        //     `datosQueNoTenemos`, `instruccionesExtra`, los `mensaje*`). Van
+        //     TOPEADOS y el flujo los inserta en una sección delimitada y
+        //     rotulada como DATO DEL NEGOCIO, nunca por delante de las reglas de
+        //     comportamiento del agente. La lista completa está en DISENO.md
+        //     §4quater.2.
+        //
+        //  3. DERIVADOS, QUE NO SE GUARDAN ACÁ. `estadoComercio`,
+        //     `phoneNumberId` y `horarioAtencion` los calcula
+        //     `configuracionFlujo` leyendo la ficha del tenant. Que NO estén en
+        //     la lista blanca es una defensa, no un olvido: ver más abajo.
+        // =====================================================================
         function configNegocioValida() {
           let d = request.resource.data;
-          return d.keys().hasOnly([
-                   'nombreNegocio', 'descripcion', 'zonaHoraria', 'telefonoRecepcion',
-                   'calendarioId', 'horarios', 'mensajes', 'instruccionesExtra',
-                   'moneda', 'actualizadoPor', 'actualizadoEn'
-                 ])
+          let clavesPermitidas = [
+            // Identidad y contacto
+            'nombreNegocio', 'descripcion', 'direccion', 'numeroRecepcion',
+            'zonaHoraria', 'moneda', 'calendarioId',
+            // Operación
+            'horarios', 'politicaCancelacion', 'prefijosPermitidos',
+            'datosQueNoTenemos',
+            // Voz del asistente (enumerados)
+            'tratamiento', 'estiloEmojis',
+            // Mensajes fijos
+            'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
+            'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
+            'instruccionesExtra',
+            // Sello
+            'actualizadoPor', 'actualizadoEn'
+          ];
+          return d.keys().hasOnly(clavesPermitidas)
+            && d.keys().hasAll(['nombreNegocio', 'actualizadoPor', 'actualizadoEn'])
             && textoReq(d, 'nombreNegocio', 80)
             && textoOpc(d, 'descripcion', 400)
-            // Zona horaria de una lista cerrada: evita valores que rompan el
-            // cálculo de "mañana a las 3" en el agente.
+
+            // DIRECCIÓN — el campo del incidente del 28/08.
+            // Ante «donde queda su clinica?» el agente INVENTO una direccion:
+            // zona y avenida que no figuraban en ninguna parte. Para una demo
+            // comercial es el peor defecto posible, porque un cliente puede
+            // presentarse en un lugar que no existe.
+            //
+            // Es OPCIONAL a propósito. Obligarla tentaría a rellenarla con
+            // cualquier cosa para poder guardar, y un dato inventado por el
+            // comercio es igual de dañino que uno inventado por el modelo. Vacía
+            // significa «no la tenemos», y `configuracionFlujo` la agrega
+            // automáticamente a `datosQueNoTenemos` para que el agente responda
+            // que la va a consultar. Ver DISENO.md §4quater.3.
+            && textoOpc(d, 'direccion', 200)
+
             && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
-            // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
-            && d.get('telefonoRecepcion', '59100000000') is string
-            && d.get('telefonoRecepcion', '59100000000').matches('^[0-9]{8,15}$')
-            && textoOpc(d, 'calendarioId', 120)
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
+            // Teléfono en formato E.164 sin '+', igual que lo espera la Cloud API.
+            && d.get('numeroRecepcion', '59100000000') is string
+            && d.get('numeroRecepcion', '59100000000').matches('^[0-9]{8,15}$')
+            // Misma validación estricta que para los funcionarios: un ID mal
+            // pegado acá tiene exactamente las mismas consecuencias.
+            && calendarioValidoOpcional(d, 'calendarioId')
             && d.get('horarios', {}) is map
+
+            && textoOpc(d, 'politicaCancelacion', 600)
+
+            // Listas. Las reglas NO saben recorrer los elementos de una lista, así
+            // que acá solo se comprueba el tipo y el tamaño; el contenido lo
+            // valida y recorta la Cloud Function antes de que llegue al prompt.
+            // Está dicho en SEGURIDAD.md, T-27, para que nadie suponga más de lo
+            // que esta línea garantiza.
+            && d.get('prefijosPermitidos', []) is list
+            && d.get('prefijosPermitidos', []).size() <= 10
+            && d.get('datosQueNoTenemos', []) is list
+            && d.get('datosQueNoTenemos', []).size() <= 20
+
+            // VOZ DEL ASISTENTE — enumerados, no texto libre.
+            // `tratamiento` cierra además el defecto de estilo de ESTADO.md: el
+            // agente alternaba «usted» y «tú» con el mismo cliente.
+            && d.get('tratamiento', 'usted') in ['usted', 'tu', 'neutro']
+            && d.get('estiloEmojis', 'pocos') in ['ninguno', 'pocos', 'muchos']
+
             && d.get('mensajes', {}) is map
-            // Tope duro del texto libre que llega al modelo.
+            && textoOpc(d, 'mensajeCierre', 300)
+            && textoOpc(d, 'mensajeErrorTemporal', 300)
+            && textoOpc(d, 'mensajeReservaNoConfirmada', 300)
+            // Se puede escribir MIENTRAS EL COMERCIO ESTÁ ACTIVO, porque toda
+            // escritura de configuración exige `tenantOperativo`. Consecuencia
+            // buscada: nadie redacta el mensaje de suspensión DESPUÉS de que lo
+            // suspendieron. Ver SEGURIDAD.md, T-26.
+            && textoOpc(d, 'mensajeComercioSuspendido', 300)
+
             && textoOpc(d, 'instruccionesExtra', 1500)
             && selloValido(d);
         }
@@ -354,6 +472,151 @@ service cloud.firestore {
             && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
             && d.get('activo', null) is bool
             && selloValido(d);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /funcionarios/{funcionarioId} — QUIÉN ATIENDE.
+      //
+      // EL PROBLEMA QUE RESUELVE. El modelo asumía un calendario por comercio, y
+      // eso produce un error visible: una cita de manicure a las 11:30 bloquea
+      // una de ortodoncia a las 11:30, cuando las atienden personas distintas.
+      // Lo que hay que impedir es que UN MISMO FUNCIONARIO tenga dos citas
+      // simultáneas, no que el comercio tenga dos.
+      //
+      // EL CASO DE UNA SOLA PERSONA SIGUE SIENDO TRIVIAL. Muchas PyMEs bolivianas
+      // son una persona sola. Esta colección puede estar VACÍA: si no hay ningún
+      // funcionario activo, `configuracionFlujo` fabrica uno por defecto con el
+      // calendario y los horarios del comercio, y el flujo ve siempre al menos
+      // uno. **La complejidad la paga quien la necesita.**
+      //
+      // HORARIO PROPIO. `horarioTrabajo` puede diferir del horario del comercio,
+      // y ahí está la mitad de la gracia: el salón abre de 9 a 19 pero el
+      // odontólogo va martes y jueves de 14 a 18.
+      //
+      // DATOS PERSONALES. El teléfono y el correo del funcionario son datos de
+      // un tercero que NO es el cliente final. Como las reglas no pueden ocultar
+      // campos sueltos en una lectura, van en `/privado/datos`, igual que con los
+      // contactos y con los datos ampliados de las conversaciones. El operador ve
+      // quién atiende qué —lo necesita para responder— pero no el teléfono
+      // personal de la manicurista, que no necesita para nada.
+      // -----------------------------------------------------------------------
+      match /funcionarios/{funcionarioId} {
+
+        // Lo operativo lo ve toda persona del negocio: es lo que hace falta para
+        // contestar «¿quién atiende ortodoncia?».
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esIngesta(tenantId)
+                         || soporteVigente(tenantId);
+
+        allow create, update: if esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && funcionarioValido();
+        // Baja LÓGICA con `activo: false`, no borrado: un funcionario borrado
+        // dejaría citas pasadas apuntando a un identificador que ya no existe.
+        allow delete: if false;
+
+        function funcionarioValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'nombre', 'especialidad', 'calendarioId', 'horarioTrabajo',
+                   'servicios', 'activo', 'actualizadoPor', 'actualizadoEn'
+                 ])
+            && textoReq(d, 'nombre', 120)
+            && textoOpc(d, 'especialidad', 80)
+            // EL CAMPO CARO. Ver `calendarioValido` arriba: 64 hexadecimales
+            // exactos, y el sufijo decide antes que la forma de correo.
+            && calendarioValidoOpcional(d, 'calendarioId')
+            && d.get('horarioTrabajo', {}) is map
+            // Relación servicio -> funcionario, denormalizada de este lado.
+            // Las reglas no saben recorrer una lista: acá solo el tipo y el
+            // tamaño. Que los identificadores existan lo resuelve la Function,
+            // que descarta las referencias colgadas (ver DISENO.md §4quinquies.2).
+            && d.get('servicios', []) is list
+            && d.get('servicios', []).size() <= 50
+            && d.get('activo', null) is bool
+            && selloValido(d);
+        }
+
+        // Teléfono y correo del funcionario. Solo el administrador del negocio.
+        match /privado/{documento} {
+          allow get, list: if esAdmin(tenantId) && tenantLegible(tenantId);
+          allow create, update: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                                && datosPersonalesValidos();
+          allow delete: if false;
+
+          function datosPersonalesValidos() {
+            let d = request.resource.data;
+            return d.keys().hasOnly(['telefono', 'correo', 'notas',
+                                     'actualizadoPor', 'actualizadoEn'])
+              && (!d.keys().hasAny(['telefono'])
+                  || d.telefono.matches('^[0-9]{8,15}$'))
+              && textoOpc(d, 'correo', 254)
+              && textoOpc(d, 'notas', 300)
+              && selloValido(d);
+          }
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /agenda/{ranuraId} — EL CANDADO CONTRA LA DOBLE RESERVA.
+      //
+      // POR QUÉ EXISTE. Google Calendar **no impide eventos superpuestos**: si
+      // dos clientes reservan a la vez, crea las dos citas sin chistar. Y entre
+      // «consultar disponibilidad» y «crear la cita» pasan segundos, que es
+      // tiempo de sobra para que otro cliente tome el mismo horario. La garantía
+      // no puede vivir en Calendar.
+      //
+      // CÓMO FUNCIONA. El día se parte en RANURAS fijas de 15 minutos. Una cita
+      // de 60 minutos ocupa cuatro. El identificador del documento es
+      // determinista —`{funcionarioId}_{aaaammdd}_{ranura}`— y la reserva se hace
+      // con `create` DENTRO DE UNA TRANSACCIÓN: `create` falla si el documento ya
+      // existe, y la transacción hace que las cuatro ranuras se tomen todas o
+      // ninguna. Eso es exclusión mutua de verdad, no una comprobación previa.
+      //
+      // La superposición parcial queda cubierta porque el choque no se busca por
+      // hora de inicio sino por ranura: 11:00–12:00 y 11:30–12:30 comparten dos.
+      //
+      // LO QUE ESTE CANDADO **NO** GARANTIZA, dicho sin adornos: solo conoce las
+      // citas que pasaron por el asistente. Si alguien del comercio carga una
+      // cita A MANO en Google Calendar, esta colección no se entera y el choque
+      // vuelve a ser posible. Por eso el flujo sigue consultando Calendar antes
+      // de ofrecer horarios: Calendar cubre lo manual, el candado cubre la
+      // concurrencia. Ninguno de los dos alcanza solo. Ver SEGURIDAD.md, T-30.
+      //
+      // NO LLEVA DATOS PERSONALES: ni teléfono ni nombre del cliente. Es un
+      // candado, no un registro.
+      // -----------------------------------------------------------------------
+      match /agenda/{ranuraId} {
+
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esIngesta(tenantId);
+
+        allow create: if esIngesta(tenantId)
+                      && tenantOperativo(tenantId)
+                      && ranuraValida();
+
+        // NO se actualiza: mover una cita es liberar y volver a tomar, para que
+        // la operación siga siendo atómica.
+        allow update: if false;
+        // SÍ se borra: una cita cancelada tiene que liberar sus ranuras o el
+        // horario queda bloqueado para siempre. La cancelación queda en la
+        // bitácora, que es donde vive la evidencia.
+        allow delete: if esIngesta(tenantId);
+
+        function ranuraValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'funcionarioId', 'inicio', 'fin', 'servicioId',
+                   'conversacionId', 'creadoEn'
+                 ])
+            && textoReq(d, 'funcionarioId', 80)
+            && d.get('inicio', null) is timestamp
+            && d.get('fin', null) is timestamp
+            && d.get('fin', null) > d.get('inicio', null)
+            && textoOpc(d, 'servicioId', 80)
+            && textoOpc(d, 'conversacionId', 80)
+            && d.get('creadoEn', null) == request.time;
         }
       }
 
@@ -650,6 +913,106 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /bitacora/{eventoId} — REGISTRO OPERATIVO. Qué se envió, a quién,
+      // cuándo y con qué resultado.
+      //
+      // POR QUÉ ES UNA COLECCIÓN NUEVA Y NO UNA EXTENSIÓN DE /auditoria
+      // ---------------------------------------------------------------
+      // Las dos son inmutables y las dos son evidencia, pero responden preguntas
+      // distintas y, sobre todo, CRECEN A RITMOS DISTINTOS:
+      //
+      //   /auditoria  «quién cambió qué». Unas pocas decenas de eventos por
+      //               comercio y por año: altas, bajas, cambios de rol,
+      //               suspensiones. Se lee entera de un vistazo.
+      //   /bitacora   «qué hizo el sistema». Varios eventos por CADA mensaje.
+      //               Miles por mes y por comercio.
+      //
+      // Mezclarlas tendría tres costos concretos: la pista de auditoría —que es
+      // la que se mira cuando hay una disputa— quedaría ahogada en ruido de
+      // entregas; cualquier consulta sobre /auditoria pasaría a costar lo que
+      // cuesta recorrer la bitácora; y los índices compuestos que la bitácora
+      // necesita se aplicarían también a una colección que no los usa. Además
+      // piden políticas de retención distintas: la auditoría se guarda años, la
+      // bitácora meses.
+      //
+      // QUÉ NO GUARDA, Y ESTO ES LO IMPORTANTE
+      // --------------------------------------
+      // **NO guarda el texto de los mensajes.** Solo metadatos: tipo, resultado,
+      // código, latencia, tamaño y el teléfono ENMASCARADO.
+      //
+      // El motivo es de coherencia, no de espacio. Ya está decidido que el
+      // propietario de NovuChat NO lee conversaciones sin una ventana de soporte
+      // otorgada por el comercio (T-5). Si la bitácora llevara el texto, sería
+      // una puerta trasera a exactamente eso: una colección legible por el
+      // propietario, consultable entre TODOS los comercios a la vez, con el
+      // contenido de las conversaciones adentro. Sería la peor versión de lo que
+      // el diseño entero evita.
+      //
+      // Cuando hace falta el texto, la bitácora lleva `conversacionId`: con una
+      // ventana de soporte vigente se salta al hilo en un clic. La regla no
+      // cambia; el camino sigue siendo el mismo y sigue quedando auditado.
+      //
+      // QUIÉN LA LEE
+      // -----------
+      // El administrador del comercio y el propietario. El operador queda afuera:
+      // ya tiene la vista de conversaciones, que es la misma información con más
+      // contexto y acotada a los hilos. La bitácora es una lista de destinos y no
+      // le agrega nada para atender.
+      //
+      // Se lee con `tenantLegible`: un comercio suspendido conserva su evidencia.
+      // -----------------------------------------------------------------------
+      match /bitacora/{eventoId} {
+
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+
+        // La escribe la ruta de ingesta. A diferencia de las conversaciones, se
+        // admite TAMBIÉN con el comercio suspendido: la evidencia no puede tener
+        // agujeros justo en el tramo más conflictivo, que es el del corte de
+        // servicio. Se puede porque acá no hay contenido personal acumulándose:
+        // solo metadatos y un teléfono enmascarado.
+        allow create: if esIngesta(tenantId) && eventoValido();
+
+        // INMUTABLE PARA TODOS, incluido el propietario de NovuChat. Una bitácora
+        // que el proveedor puede editar no sirve como evidencia contra el
+        // proveedor, que es justamente cuando más se la necesita.
+        allow update, delete: if false;
+
+        function eventoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'ts', 'tipo', 'resultado', 'canal', 'codigo',
+                   'destinoEnmascarado', 'conversacionId', 'detalle',
+                   'tamanoTexto', 'latenciaMs'
+                 ])
+            && d.get('ts', null) is timestamp
+            && d.get('tipo', '') in [
+                 'mensaje_entrante', 'mensaje_saliente', 'plantilla_enviada',
+                 'cita_agendada', 'cita_rechazada', 'cobro_simulado',
+                 'transferencia_humano', 'config_publicada', 'suspension',
+                 'reactivacion', 'error_flujo', 'entrada_descartada'
+               ]
+            && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
+            && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']
+            // Teléfono ENMASCARADO. El patrón exige los asteriscos: si alguien
+            // intentara escribir el número completo, la regla lo rechaza. Es la
+            // diferencia entre «acordarse de enmascarar» y «no poder no hacerlo».
+            && (!d.keys().hasAny(['destinoEnmascarado'])
+                || d.destinoEnmascarado.matches('^[0-9]{0,4}[*]{3,}[0-9]{0,4}$'))
+            && textoOpc(d, 'conversacionId', 80)
+            // `detalle` es un CÓDIGO CORTO de vocabulario técnico, no un lugar
+            // para volcar la respuesta del proveedor ni el mensaje del cliente.
+            // El tope de 120 lo hace incómodo de abusar y es deliberado.
+            && textoOpc(d, 'codigo', 24)
+            && textoOpc(d, 'detalle', 120)
+            && (!d.keys().hasAny(['tamanoTexto'])
+                || (d.tamanoTexto is int && d.tamanoTexto >= 0 && d.tamanoTexto <= 100000))
+            && (!d.keys().hasAny(['latenciaMs'])
+                || (d.latenciaMs is int && d.latenciaMs >= 0 && d.latenciaMs <= 600000));
+        }
+      }
+
+      // -----------------------------------------------------------------------
       // /auditoria/{eventoId} — quién cambió qué y cuándo.
       // Solo escribe el SDK Admin (que se salta estas reglas por diseño).
       // Denegar la escritura acá impide que alguien fabrique o borre evidencia.
@@ -687,6 +1050,34 @@ service cloud.firestore {
     match /plataforma/{documento} {
       allow get, list: if esPropietario();
       allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // CONSULTA DE GRUPO DE COLECCIONES SOBRE LA BITÁCORA
+    //
+    // ⚠️ TRAMPA DE FIRESTORE QUE COSTÓ UN RATO ENCONTRAR. Una consulta de grupo
+    // (`collectionGroup('bitacora')`) **NO la autoriza la regla anidada en
+    // `/tenants/{tenantId}/bitacora`**. Firestore la evalúa contra un patrón
+    // distinto, y hace falta una regla con comodín recursivo. Sin esto, la
+    // pantalla de plataforma falla con «Missing or insufficient permissions»
+    // aunque el propietario tenga permiso documento por documento.
+    //
+    // No lo detectó ninguna de las 137 pruebas anteriores: apareció al abrir la
+    // pantalla. Ahora hay tres pruebas que lo cubren.
+    //
+    // POR QUÉ ESTÁ ACOTADO AL PROPIETARIO. Una consulta de grupo SE SALTEA LA
+    // RUTA, que es donde vive todo el aislamiento de este diseño. Si un comercio
+    // pudiera hacerla, leería la bitácora de todos. Por eso el comodín admite
+    // únicamente a `esPropietario()`, y no otorga nada nuevo: el propietario ya
+    // podía leer cada bitácora por la regla anidada.
+    //
+    // POR QUÉ SOLO PARA LA BITÁCORA. Es la única colección sin contenido
+    // personal —solo metadatos y teléfonos enmascarados—. Un comodín equivalente
+    // sobre `conversaciones` o `mensajes` sería exactamente la puerta trasera a
+    // T-5 que el diseño entero evita. Hay una prueba que lo verifica.
+    // =========================================================================
+    match /{ruta=**}/bitacora/{eventoId} {
+      allow list: if esPropietario();
     }
 
     // =========================================================================

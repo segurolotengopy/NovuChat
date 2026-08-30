@@ -11,6 +11,8 @@ import { Usuarios } from './paginas/Usuarios';
 import { Contactos } from './paginas/Contactos';
 import { EstadoCuenta } from './paginas/EstadoCuenta';
 import { Reclamos } from './paginas/Reclamos';
+import { Bitacora } from './paginas/Bitacora';
+import { Funcionarios } from './paginas/Funcionarios';
 
 /**
  * Menú, filtrado por rol.
@@ -35,6 +37,7 @@ function Cabecera() {
     <header>
       <nav>
         {permisos.propietario && <Link to="/negocios">Negocios</Link>}
+        {permisos.propietario && !tenantId && <Link to="/bitacora">Bitácora</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/configuracion`}>Configuración</Link>}
         {tenantId && esPersona &&
@@ -43,12 +46,16 @@ function Cabecera() {
           <Link to={`/negocio/${tenantId}/usuarios`}>Usuarios</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/contactos`}>Contactos</Link>}
+        {tenantId && esAdminDelNegocio &&
+          <Link to={`/negocio/${tenantId}/funcionarios`}>Funcionarios</Link>}
         {tenantId && esPersona &&
           <Link to={`/negocio/${tenantId}/uso`}>Uso</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/cuenta`}>Cuenta</Link>}
         {tenantId && esPersona &&
           <Link to={`/negocio/${tenantId}/reclamos`}>Reclamos</Link>}
+        {tenantId && esAdminDelNegocio &&
+          <Link to={`/negocio/${tenantId}/bitacora`}>Bitácora</Link>}
       </nav>
       <button onClick={salir}>Salir</button>
     </header>
@@ -103,12 +110,19 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />
         <Route path="/negocio/:tenantId/contactos" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
+        <Route path="/negocio/:tenantId/funcionarios" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
         <Route path="/negocio/:tenantId/uso" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Metricas /></></Proteger>} />
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
+        {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}
+        <Route path="/bitacora" element={
+          <Proteger requiere="propietario"><><Cabecera /><Bitacora /></></Proteger>} />
+        <Route path="/negocio/:tenantId/bitacora" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Bitacora /></></Proteger>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ProveedorSesion>

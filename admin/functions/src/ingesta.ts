@@ -3,6 +3,10 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
+import {
+  CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
+  resolverFuncionarios,
+} from './prompt.js';
 
 /**
  * =========================================================================
@@ -162,6 +166,72 @@ async function resolverComercio(phoneNumberId: string): Promise<
   };
 }
 
+/**
+ * Enmascara un teléfono para la bitácora: `59170000001` -> `5917****001`.
+ *
+ * La regla de Firestore EXIGE el patrón con asteriscos, así que un número
+ * completo se rechaza en el servidor. Esta función existe para que el camino
+ * correcto sea el fácil, no para ser la única defensa: la diferencia entre
+ * «acordarse de enmascarar» y no poder no hacerlo.
+ */
+export function enmascarar(telefono: unknown): string {
+  const t = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
+  if (t.length < 7) return '****';
+  return `${t.slice(0, 4)}****${t.slice(-3)}`;
+}
+
+type TipoEvento =
+  | 'mensaje_entrante' | 'mensaje_saliente' | 'plantilla_enviada'
+  | 'cita_agendada' | 'cita_rechazada' | 'cobro_simulado'
+  | 'transferencia_humano' | 'config_publicada' | 'suspension'
+  | 'reactivacion' | 'error_flujo' | 'entrada_descartada';
+
+interface Evento {
+  tipo: TipoEvento;
+  resultado: 'ok' | 'fallo' | 'rechazado' | 'reintento';
+  canal?: 'whatsapp' | 'panel' | 'sistema';
+  telefono?: string;
+  conversacionId?: string;
+  codigo?: string;
+  detalle?: string;
+  tamanoTexto?: number;
+  latenciaMs?: number;
+}
+
+/**
+ * Escribe un evento en la bitácora del comercio.
+ *
+ * NUNCA EL TEXTO DEL MENSAJE. Solo metadatos. El motivo está en la cabecera de
+ * la colección en `firestore.rules`: si la bitácora llevara el contenido, sería
+ * una puerta trasera a lo que T-5 impide — el propietario de NovuChat leyendo
+ * conversaciones de todos los comercios sin ninguna ventana de soporte.
+ * `tamanoTexto` da la magnitud sin dar el contenido.
+ *
+ * NO FALLA LA OPERACIÓN. Si la bitácora no se puede escribir, se registra en el
+ * log y se sigue: perder un renglón de evidencia es malo, pero no atender a un
+ * cliente por eso es peor. La bitácora observa el sistema, no lo gobierna.
+ */
+export async function registrar(tenantId: string, evento: Evento): Promise<void> {
+  try {
+    await getFirestore().collection(`tenants/${tenantId}/bitacora`).add({
+      ts: Timestamp.now(),
+      tipo: evento.tipo,
+      resultado: evento.resultado,
+      canal: evento.canal ?? 'whatsapp',
+      ...(evento.telefono ? { destinoEnmascarado: enmascarar(evento.telefono) } : {}),
+      ...(evento.conversacionId ? { conversacionId: evento.conversacionId.slice(0, 80) } : {}),
+      ...(evento.codigo ? { codigo: String(evento.codigo).slice(0, 24) } : {}),
+      ...(evento.detalle ? { detalle: evento.detalle.slice(0, 120) } : {}),
+      ...(typeof evento.tamanoTexto === 'number'
+        ? { tamanoTexto: Math.max(0, Math.min(100000, Math.trunc(evento.tamanoTexto))) } : {}),
+      ...(typeof evento.latenciaMs === 'number'
+        ? { latenciaMs: Math.max(0, Math.min(600000, Math.trunc(evento.latenciaMs))) } : {}),
+    });
+  } catch {
+    console.error(`No se pudo registrar en la bitacora de ${tenantId}: ${evento.tipo}`);
+  }
+}
+
 export const ingesta = onRequest(
   {
     region: 'southamerica-east1',
@@ -178,7 +248,18 @@ export const ingesta = onRequest(
     if (!phoneNumberId) { respuesta.status(401).send('no autorizado'); return; }
 
     const mensaje = normalizar(peticion.body);
-    if (!mensaje) { respuesta.status(400).send('mensaje invalido'); return; }
+    if (!mensaje) {
+      // Entrada descartada: queda registrada para poder responder «nunca nos
+      // llegó» con evidencia, sin guardar lo que vino.
+      const rutaPrevia = await resolverComercio(phoneNumberId);
+      if (rutaPrevia) {
+        await registrar(rutaPrevia.tenantId, {
+          tipo: 'entrada_descartada', resultado: 'rechazado',
+          detalle: 'payload no valido',
+        });
+      }
+      respuesta.status(400).send('mensaje invalido'); return;
+    }
 
     const db = getFirestore();
 
@@ -195,6 +276,13 @@ export const ingesta = onRequest(
     // dice a n8n que mande el mensaje de cortesía —neutro, sin revelar el motivo
     // comercial— y corte el turno.
     if (comercio.estado !== 'activo') {
+      // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
+      // suspendido justamente para esto: el tramo del corte de servicio es el
+      // más conflictivo y es donde la evidencia no puede tener agujeros.
+      await registrar(comercio.tenantId, {
+        tipo: 'entrada_descartada', resultado: 'rechazado',
+        telefono: mensaje.telefono, codigo: '409', detalle: comercio.estado,
+      });
       respuesta.status(409).json({ estado: comercio.estado });
       return;
     }
@@ -287,6 +375,18 @@ export const ingesta = onRequest(
       }, { merge: true });
     });
 
+    await registrar(tenantId, {
+      tipo: mensaje.direccion === 'entrante' ? 'mensaje_entrante' : 'mensaje_saliente',
+      resultado: 'ok',
+      telefono: mensaje.telefono,
+      conversacionId: idConversacion,
+      // El TAMAÑO del texto, nunca el texto.
+      tamanoTexto: mensaje.texto.length,
+      ...(typeof peticion.body === 'object' && peticion.body !== null
+          && typeof (peticion.body as Record<string, unknown>)['latenciaMs'] === 'number'
+        ? { latenciaMs: (peticion.body as Record<string, number>)['latenciaMs'] } : {}),
+    });
+
     respuesta.status(204).send('');
   },
 );
@@ -349,24 +449,77 @@ export const configuracionFlujo = onRequest(
       return;
     }
 
-    const [config, catalogo] = await Promise.all([
+    // Tres lecturas en paralelo. n8n resuelve «quién atiende una limpieza
+    // facial» EN MEMORIA sobre estas listas, sin consultas adicionales: son
+    // colecciones chicas (200 servicios, 50 funcionarios como tope) y traerlas
+    // enteras cuesta menos que cualquier consulta con índice por servicio.
+    const [config, catalogo, funcionarios] = await Promise.all([
       db.doc(`tenants/${comercio.tenantId}/config/negocio`).get(),
       db.collection(`tenants/${comercio.tenantId}/catalogo`)
         .where('activo', '==', true).limit(200).get(),
+      db.collection(`tenants/${comercio.tenantId}/funcionarios`)
+        .where('activo', '==', true).limit(50).get(),
     ]);
 
-    const negocio = config.data() ?? {};
-    // Se separa deliberadamente el texto libre del resto de la configuración.
-    const { instruccionesExtra, ...datosDelNegocio } = negocio as Record<string, unknown>;
+    const negocio = (config.data() ?? {}) as Record<string, unknown>;
+
+    // --- CAMPOS DERIVADOS -------------------------------------------------
+    // Se calculan acá y NUNCA se leen de la configuración, aunque aparecieran.
+    // Las reglas ya impiden guardarlos; esto es la segunda barrera sobre el
+    // vector más serio: un comercio que se fija `estadoComercio: 'activo'` y
+    // sigue siendo atendido después de que lo suspendieron.
+    const derivados = {
+      estadoComercio: comercio.estado,          // de la ficha del tenant
+      phoneNumberId,                            // del número que validó la firma
+      horarioAtencion: horarioAtencion(negocio['horarios']),
+      datosQueNoTenemos: datosQueNoTenemos(negocio),
+    };
+
+    // --- TEXTO LIBRE, ROTULADO --------------------------------------------
+    // Sale en su propia sección para que el flujo lo inserte delimitado y
+    // marcado como DATO DEL NEGOCIO. Nunca por delante de las reglas de
+    // comportamiento del agente.
+    const datosDelNegocio: Record<string, unknown> = {};
+    for (const clave of CAMPOS_LIBRES_AL_PROMPT) {
+      if (negocio[clave] !== undefined) datosDelNegocio[clave] = negocio[clave];
+    }
+    datosDelNegocio['datosQueNoTenemos'] = derivados.datosQueNoTenemos;
 
     respuesta.status(200).json({
       tenantId: comercio.tenantId,
       flujo: comercio.flujo,
-      estado: comercio.estado,
-      negocio: datosDelNegocio,
+      estadoComercio: derivados.estadoComercio,
+      phoneNumberId: derivados.phoneNumberId,
+
+      // Operación: valores estructurados, sin texto libre.
+      operacion: {
+        zonaHoraria: negocio['zonaHoraria'] ?? 'America/La_Paz',
+        moneda: negocio['moneda'] ?? 'BOB',
+        numeroRecepcion: negocio['numeroRecepcion'] ?? '',
+        calendarioId: negocio['calendarioId'] ?? '',
+        horarioAtencion: derivados.horarioAtencion,
+        prefijosPermitidos: Array.isArray(negocio['prefijosPermitidos'])
+          ? (negocio['prefijosPermitidos'] as unknown[]).slice(0, 10)
+          : [],
+      },
+
+      // Voz del agente: FRASES NUESTRAS, elegidas por un enumerado del comercio.
+      // El valor que escribió el cliente no se interpola en ninguna parte.
+      instruccionesDeVoz: instruccionesDeVoz(negocio),
+
+      // Todo lo que escribió el comercio, junto y rotulado.
+      datosDelNegocio,
+
       catalogo: catalogo.docs.map((d) => ({ id: d.id, ...d.data() })),
-      // Clave aparte, con nombre que recuerda qué es: dato, no instrucción.
-      datosLibresDelNegocio: typeof instruccionesExtra === 'string' ? instruccionesExtra : '',
+
+      // Siempre al menos uno. Si el comercio no cargó ninguno, viene el
+      // funcionario por defecto con el calendario del negocio: el flujo tiene un
+      // solo camino de código y el comercio de una sola persona no configura nada.
+      funcionarios: resolverFuncionarios(
+        funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
+        negocio,
+        new Set(catalogo.docs.map((d) => d.id)),
+      ),
     });
   },
 );

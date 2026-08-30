@@ -15,8 +15,8 @@ nada de `Flujos/`.
 | | |
 |---|---|
 | Andamiaje | escrito y compilando |
-| Pruebas de reglas | **99 de 99 en verde**, ejecutadas contra el emulador |
-| Pruebas puras del saneo | **13 de 13 en verde**, sin emulador ni red |
+| Pruebas de reglas | **155 de 155 en verde**, ejecutadas contra el emulador |
+| Pruebas puras (saneo, ranuras, índices) | **26 de 26 en verde**, sin emulador |
 | Prueba a mano del panel | **recorrida de punta a punta** contra los emuladores, con datos sembrados |
 | Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
 
@@ -127,7 +127,7 @@ Requiere Node 24, pnpm y un JDK (para el emulador de Firestore).
 cd admin
 pnpm install
 
-pnpm pruebas:reglas     # emulador + 112 pruebas (99 de reglas, 13 puras)
+pnpm pruebas:reglas     # emulador + 164 pruebas (155 de reglas, 26 puras)
 pnpm emuladores         # Auth + Firestore para probar a mano
 pnpm sembrar            # datos de prueba (idempotente)
 pnpm web:build          # compila el frontend
@@ -199,8 +199,18 @@ Cloud y a GitHub. Los tres que más fácil se hacen mal:
    escapado se puede aflojar pero conviene no hacerlo (DISENO.md §4ter.4).
    **Nunca vuelque los campos del reclamo al cuerpo de la petición con un
    spread:** `_cc`, `_replyto` y compañía son instrucciones de FormSubmit.
-9. **Datos de prueba:** teléfonos con seis o más ceros seguidos
+9. **Al editar `firestore.rules`, REINICIE `pnpm emuladores`.** Invocar el jar
+   directamente —el rodeo por inotify— pierde la recarga en caliente que hacía el
+   vigilante del CLI. Si no reinicia, sigue probando contra las reglas viejas.
+10. **El emulador NO exige índices compuestos.** Un filtro nuevo puede pasar todo
+    lo local y fallar en producción. Declare la forma de consulta en
+    `web/src/lib/bitacora.ts` y corra `pnpm pruebas:reglas`:
+    `pruebas/indices.test.ts` le va a decir qué índice falta.
+11. **El ID de calendario se valida con 64 hexadecimales EXACTOS**, y el sufijo
+    decide antes que la forma de correo. Las dos trampas están explicadas en
+    `firestore.rules` y en `scripts/fijar-calendario.sh`. No aflojar ninguna.
+12. **Datos de prueba:** teléfonos con seis o más ceros seguidos
    (`59170000001`) y correos `@ejemplo.com`. Es lo que acepta la lista de
    admitidos de `scripts/verificar-saneo.sh`.
-10. Se respeta `CONVENCIONES-REPO-PUBLICO.md`: ningún valor real de
+13. Se respeta `CONVENCIONES-REPO-PUBLICO.md`: ningún valor real de
     infraestructura en un archivo versionado.
