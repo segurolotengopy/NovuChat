@@ -57,3 +57,31 @@ seguridad:
       aprobado_por: Andres Alberdi
       creado: 2026-08-30
       vence: 2026-10-31
+
+  # ---------------------------------------------------------------------------
+  # ⏸️ RESPALDO PREPARADO, NO APLICADO — hallazgo de Gitleaks del PR #1.
+  #
+  # La salida elegida fue de configuración: dos allowlists por FORMA DEL VALOR
+  # en .github/gitleaks.toml (asignación con valor vacío, y literal
+  # true/false/número). Es preferible a esta excepción porque no fija una
+  # huella de commit: describe por qué el dato no es un secreto.
+  #
+  # PERO no se pudo ejecutar gitleaks localmente para confirmarlo: instalarlo
+  # exige descargar un binario y no hay autorización para descargas. Si el
+  # próximo run sigue en rojo por `Secretos (Gitleaks)`, descomentar estas seis
+  # líneas es la salida garantizada: la huella es exacta (commit + archivo +
+  # regla + línea) y no puede tapar ningún otro hallazgo.
+  #
+  # Falso positivo verificado y reproducido: la regla generic-api-key cruza el
+  # salto de línea cuando el valor está vacío y captura el renglón siguiente.
+  # Lo que reporta como secreto es la cadena VITE_USAR_EMULADORES=true.
+  # ---------------------------------------------------------------------------
+  #   - id: ce0b484c46b784957ace1313296bf7089630dcd0:admin/scripts/emuladores.sh:generic-api-key:111
+  #     herramienta: gitleaks
+  #     justificacion: >-
+  #       Falso positivo: VITE_APPCHECK_SITE_KEY esta vacio y generic-api-key
+  #       cruza el salto de linea, capturando VITE_USAR_EMULADORES=true como si
+  #       fuera el secreto. No hay ninguna credencial en ese archivo.
+  #     aprobado_por: Andres Alberdi
+  #     creado: 2026-08-30
+  #     vence: 2026-10-31
