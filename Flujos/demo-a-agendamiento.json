@@ -166,7 +166,7 @@
               "id": "a20",
               "name": "calendariosPorServicio",
               "type": "string",
-              "value": "{}"
+              "value": "{\"manicure\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"pedicure\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"corte\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"limpieza facial\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"odontologia general\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"ortodoncia\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"cirugia maxilofacial\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"diagnostico\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\"}"
             }
           ]
         },
