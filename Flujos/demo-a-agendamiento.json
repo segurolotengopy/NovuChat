@@ -408,14 +408,15 @@
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del negocio').item.json.calendarioId }}"
+          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
         },
         "returnAll": false,
-        "limit": 10,
+        "limit": 50,
         "options": {
           "timeMin": "={{ $now.minus({ days: 1 }).toISO() }}",
           "timeMax": "={{ $now.plus({ days: 90 }).toISO() }}",
-          "singleEvents": true
+          "singleEvents": true,
+          "updatedMin": "={{ $now.minus({ minutes: 10 }).toISO() }}"
         }
       },
       "id": "gate-cal",

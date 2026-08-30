@@ -388,11 +388,35 @@ Pendiente: cargar en GitHub los secretos y variables de
    agente nunca contestó, ni siquiera al reclamárselo. Corregido con la regla
    6b: responder todas las preguntas de un mismo mensaje antes de avanzar.
 3. **Un mensaje salió cortado a mitad de frase.** Sin diagnosticar.
-4. **La compuerta se disparó al confirmar la cita de Silvana**, con el mensaje
-   de "no pude confirmar el registro". Causa probable: la expresión
-   `$('Normalizar entrada').item` que agregué a `agendar_cita` para guardar el
-   teléfono no resuelve en un sub-nodo de herramienta. Cambiada a `.first()`.
-   **Sin confirmar: hace falta ver el error del nodo en esa ejecución.**
+4. **La compuerta se disparó al confirmar la cita de Silvana, y la causa era
+   mía. CONFIRMADO leyendo la ejecución #232 por la API.** `agendar_cita` corrió
+   **sin error en 405 ms**: la cita se creó. Quien falló fue mi verificación:
+   `Verificar en el calendario` devolvió un item vacío porque
+   `$('Config del negocio').item` **no resuelve después de un nodo Code** — el
+   emparejamiento se rompe, el ID de calendario llegaba vacío y la consulta no
+   traía nada. Es exactamente el defecto que el agente del Demo B había
+   documentado al corregir sus nodos de salida, y que yo reintroduje.
+   Corregido con `.first()`, más `updatedMin` de 10 minutos y `limit` 50: sin
+   `updatedMin` la consulta ordena por fecha de inicio y una cita lejana puede
+   quedar fuera de la página de resultados, que era un segundo defecto latente
+   en la misma consulta.
+
+   **Lección de método:** el nodo tenía `onError: continueRegularOutput`, que
+   hace fallar en silencio y deja la ejecución marcada como exitosa. Falla del
+   lado seguro, pero es invisible: sin `scripts/ver-ejecuciones.sh` habríamos
+   seguido adivinando.
+
+## Diagnóstico remoto de n8n
+
+`scripts/ver-ejecuciones.sh` consulta las ejecuciones por la API con la clave
+que ya teníamos: resumen, filtro por error, y detalle nodo por nodo con tiempos
+y mensajes de error. **No hacía falta ningún permiso nuevo.** Hasta ahora cada
+diagnóstico exigía que una persona abriera n8n y sacara una captura.
+
+## Remoto de GitHub
+
+`https://github.com/segurolotengopy/NovuChat.git`, configurado como `origin`.
+Repositorio **público y vacío**: nunca se hizo push.
 
 ## Riesgos vivos para el 9–10 de septiembre
 
