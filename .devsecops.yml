@@ -76,12 +76,12 @@ seguridad:
   # salto de línea cuando el valor está vacío y captura el renglón siguiente.
   # Lo que reporta como secreto es la cadena VITE_USAR_EMULADORES=true.
   # ---------------------------------------------------------------------------
-  #   - id: ce0b484c46b784957ace1313296bf7089630dcd0:admin/scripts/emuladores.sh:generic-api-key:111
-  #     herramienta: gitleaks
-  #     justificacion: >-
-  #       Falso positivo: VITE_APPCHECK_SITE_KEY esta vacio y generic-api-key
-  #       cruza el salto de linea, capturando VITE_USAR_EMULADORES=true como si
-  #       fuera el secreto. No hay ninguna credencial en ese archivo.
-  #     aprobado_por: Andres Alberdi
-  #     creado: 2026-08-30
-  #     vence: 2026-10-31
+    - id: ce0b484c46b784957ace1313296bf7089630dcd0:admin/scripts/emuladores.sh:generic-api-key:111
+      herramienta: gitleaks
+      justificacion: >-
+        Falso positivo: VITE_APPCHECK_SITE_KEY esta vacio y generic-api-key
+        cruza el salto de linea, capturando VITE_USAR_EMULADORES=true como si
+        fuera el secreto. No hay ninguna credencial en ese archivo.
+      aprobado_por: Andres Alberdi
+      creado: 2026-08-30
+      vence: 2026-10-31
