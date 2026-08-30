@@ -193,13 +193,17 @@ modo_exacto() {
 # ============================================================================
 # Ejemplos deliberadamente falsos que aparecen en la documentacion y no deben
 # disparar el escaneo. Se listan aca, a la vista, para que se note si crecen.
-PERMITIDOS='(00000000-0000-0000-0000-000000000000|1234567890123456|gemini-code-[0-9]{13}|59170000000|59100000000|109xxxxxxxxxxx|example\.(com|org)|ejemplo\.(tld|com)|@group\.calendar\.google\.com|noreply@anthropic\.com|REEMPLAZAR|AKIAIOSFODNN7EXAMPLE|[0-9]*0{6,}[0-9]*)'
+PERMITIDOS='(00000000-0000-0000-0000-000000000000|1234567890123456|gemini-code-[0-9]{13}|59170000000|59100000000|109xxxxxxxxxxx|example\.(com|org)|ejemplo\.(tld|com)|@group\.calendar\.google\.com|noreply@anthropic\.com|REEMPLAZAR|AKIAIOSFODNN7EXAMPLE|[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com|[0-9]*0{6,}[0-9]*)'
 
 # Exclusiones por FORMA DE LINEA, no por valor. Se aplican despues de
 # PERMITIDOS y se listan aparte para que se vea que ninguna oculta un secreto:
 #   - `uses: accion@<sha de 40 hex>` es el pineado por SHA que exige el
 #     estandar; sus tramos de digitos disparan la regla de secuencias largas.
 #   - las lineas de integridad de paquetes (sha256-/sha512-) son hashes.
+# Nota sobre *.iam.gserviceaccount.com: no son dato personal ni secreto.
+# Se derivan del id del proyecto y su forma es justamente lo que el
+# instructivo de despliegue necesita mostrar. Los correos de PERSONAS
+# siguen disparando la regla.
 LINEAS_EXCLUIDAS='(uses: *[^ ]+@[0-9a-f]{40}|integrity: *sha[0-9]+-|resolved: *"?https://registry\.)'
 
 regla() { # $1 = nombre, $2 = ERE

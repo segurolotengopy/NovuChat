@@ -33,14 +33,23 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      destino:
+        description: A dónde desplegar
+        type: choice
+        required: true
+        default: dev
+        options: [dev, produccion]
       tag:
-        description: Tag vX.Y.Z ya creado (debe ser ancestro de main)
+        # Solo para destino=produccion. El job de producción NO confía en este
+        # campo: verifica que el tag exista, no sea prerelease, sea ancestro de
+        # origin/main y que quien ejecuta esté en vars.APROBADORES_PROD.
+        description: 'Solo produccion — Tag vX.Y.Z ya creado (ancestro de main)'
         type: string
-        required: true
+        required: false
       confirmar:
-        description: Escriba DESPLEGAR para publicar en producción desde el tag
+        description: 'Solo produccion — escriba DESPLEGAR para publicar'
         type: string
-        required: true
+        required: false
 
 # Mínimo global; cada job eleva lo que necesita.
 permissions:
@@ -555,6 +564,62 @@ jobs:
             npm run build -- --mode "$APP_ENV"
           fi
 
+      # ---------------------------------------------------------------------
+      # Cloud Functions: el punto donde este despliegue tiene mas chance de
+      # romperse, y por que.
+      #
+      # `firebase deploy` NO sube el monorepo: comprime solo el directorio
+      # `source` de firebase.json (aca `functions/`), excluyendo node_modules
+      # y .git. Verificado leyendo firebase-tools 14.27:
+      # lib/deploy/functions/prepareFunctionsUpload.js linea 56.
+      #
+      # Consecuencias, las tres:
+      #
+      #  1. `functions/lib/` esta en .gitignore, asi que NO viene del checkout.
+      #     Si no se construye aca, se sube un paquete cuyo `main` apunta a un
+      #     archivo inexistente. Por eso se construye y se guarda como
+      #     artefacto, y los jobs de despliegue lo bajan.
+      #
+      #  2. `pnpm-lock.yaml` vive en admin/, NO en admin/functions/, asi que no
+      #     entra al zip. Cloud Build (buildpack de Google) instala con npm, sin
+      #     lockfile: resuelve el ultimo semver compatible y el despliegue deja
+      #     de ser reproducible. Se genera un package-lock.json DENTRO de
+      #     functions/ para que si entre al zip y Cloud Build use `npm ci`.
+      #
+      #  3. Si alguna dependencia de functions/package.json usara el protocolo
+      #     `workspace:*`, npm fallaria con EUNSUPPORTEDPROTOCOL en Cloud Build,
+      #     lejos de aca y con un mensaje poco claro. Hoy no hay ninguna
+      #     (verificado); este paso lo mantiene asi.
+      # ---------------------------------------------------------------------
+      - name: Cloud Functions — sin dependencias `workspace:`
+        run: |
+          set -euo pipefail
+          if [[ ! -f functions/package.json ]]; then
+            echo "Sin functions/: nada que verificar."; exit 0
+          fi
+          malas=$(jq -r '
+            ((.dependencies // {}) + (.devDependencies // {}))
+            | to_entries[] | select(.value | tostring | startswith("workspace:"))
+            | "\(.key)=\(.value)"' functions/package.json)
+          if [[ -n "$malas" ]]; then
+            echo "$malas"
+            echo "::error::functions/package.json usa el protocolo 'workspace:'. Cloud Build instala con npm y fallara con EUNSUPPORTEDPROTOCOL. Publique el paquete o copie el codigo dentro de functions/."
+            exit 1
+          fi
+          echo "Sin dependencias 'workspace:'."
+
+      - name: Cloud Functions — lockfile npm para Cloud Build
+        run: |
+          set -euo pipefail
+          [[ -f functions/package.json ]] || exit 0
+          # --package-lock-only: resuelve el arbol y escribe el lockfile sin
+          # instalar nada. Queda dentro de functions/, que es lo unico que
+          # firebase sube, y hace que Cloud Build use `npm ci` en vez de
+          # `npm install` sin lock.
+          ( cd functions && npm install --package-lock-only --no-audit --no-fund )
+          test -f functions/package-lock.json
+          echo "package-lock.json generado para Cloud Build."
+
       - name: Localizar el directorio construido
         id: dist
         run: |
@@ -576,6 +641,18 @@ jobs:
         with:
           name: dist-${{ matrix.ambiente }}
           path: ${{ env.RUTA_COMPONENTE }}/${{ steps.dist.outputs.ruta }}/
+          retention-days: 7
+          if-no-files-found: error
+
+      # Se despliega lo que se probo: el `lib/` compilado y el lockfile viajan
+      # como artefacto, no se reconstruyen en el job de despliegue.
+      - name: Guardar functions/ (lib compilado + package-lock)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: functions-${{ matrix.ambiente }}
+          path: |
+            ${{ env.RUTA_COMPONENTE }}/functions/lib/
+            ${{ env.RUTA_COMPONENTE }}/functions/package-lock.json
           retention-days: 7
           if-no-files-found: error
 
@@ -616,6 +693,13 @@ jobs:
           name: dist-staging
           # firebase.json de admin/ publica `web/dist`.
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
+
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-staging
+          # Restaura lib/ y package-lock.json donde firebase.json los espera.
+          path: ${{ env.RUTA_COMPONENTE }}/functions
 
       - name: Autenticar en GCP (WIF + impersonación)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -723,6 +807,91 @@ jobs:
           echo "### Staging desplegado: $URL_STAGING" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
+  # desplegar-dev — camino corto para PROBAR, no para operar.
+  #
+  # Se dispara SOLO a mano (workflow_dispatch con destino=dev). No corre en
+  # push ni en PR, asi que no compite con staging ni con produccion.
+  #
+  # Por que este camino y no los canales de vista previa de Hosting: un canal
+  # de vista previa publica el frontend, pero NO despliega reglas de Firestore,
+  # ni indices, ni Functions. El panel sin reglas desplegadas no lee un solo
+  # documento: se veria la pantalla de login y nada mas. Ademas exigiria que el
+  # proveedor OIDC confiara en el evento `pull_request`, y con el repositorio
+  # publico eso amplia la superficie justo donde no conviene.
+  #
+  # No pide `dast-y-humo` ni bloquea por DAST: es un ambiente de prueba sin
+  # datos reales. Si pasa por `calidad`, que es donde viven las prohibiciones
+  # de renderizado, la negacion por defecto de las reglas y las 99 pruebas
+  # contra el emulador.
+  # ---------------------------------------------------------------------------
+  desplegar-dev:
+    name: desplegar-dev
+    needs: [preparar, calidad, construir]
+    if: github.event_name == 'workflow_dispatch' && inputs.destino == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: dev
+      url: ${{ vars.DEV_URL }}
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # unica razon: pedir el token OIDC
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
+    steps:
+      - name: Checkout (firebase.json, firestore.rules, functions/)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+
+      - name: Descargar dist/
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: dist-staging
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist
+
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-staging
+          path: ${{ env.RUTA_COMPONENTE }}/functions
+
+      - name: Autenticar en GCP (WIF + impersonacion de la SA de dev)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_DEPLOY_DEV }}
+
+      - name: Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Desplegar en el proyecto de desarrollo
+        env:
+          PROYECTO: ${{ vars.GCP_PROJECT_ID_DEV }}
+          # Functions exige plan Blaze. En un proyecto Spark hay que dejar
+          # vars.FIREBASE_DEPLOY_ONLY_DEV en 'hosting,firestore:rules,firestore:indexes'
+          # o el despliegue falla entero por ese unico componente.
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY_DEV || 'hosting,firestore:rules,firestore:indexes' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROYECTO" ]]; then
+            echo "::error::Falta la variable GCP_PROJECT_ID_DEV."
+            exit 1
+          fi
+          npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
+            --message "dev ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+          echo "### Dev desplegado: componentes [$SOLO] en $PROYECTO" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: https://${PROYECTO}.web.app" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
   # Fase 5 — dast-y-humo: contra staging recién desplegado.
   # ---------------------------------------------------------------------------
   dast-y-humo:
@@ -749,7 +918,8 @@ jobs:
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         && !contains(github.ref_name, '-') && vars.MODO != 'B0')
-      || (github.event_name == 'workflow_dispatch' && inputs.confirmar == 'DESPLEGAR')
+      || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
+            && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -820,6 +990,13 @@ jobs:
           name: dist-production
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-production
+          # Restaura lib/ y package-lock.json donde firebase.json los espera.
+          path: ${{ env.RUTA_COMPONENTE }}/functions
+
       - name: Autenticar en GCP (WIF + impersonación, SA de producción)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
@@ -866,6 +1043,15 @@ jobs:
     needs: desplegar-produccion
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Environment SIN reglas de proteccion, a proposito. Existe por la
+    # condicion de atributos del proveedor OIDC, que exige que el `sub` del
+    # token nombre un Environment (ver .github/DESPLIEGUE-FIREBASE.md §2).
+    # Sin esto, este job NO puede autenticarse y el rollback automatico no
+    # funciona: se descubriria justo cuando hace falta.
+    # No se reutiliza `production` porque su revisor obligatorio dejaria el
+    # rollback esperando aprobacion humana, que es lo contrario de un rollback.
+    environment:
+      name: production-rollback
     permissions:
       contents: read
       id-token: write
