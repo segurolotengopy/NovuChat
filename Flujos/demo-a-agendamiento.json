@@ -161,6 +161,12 @@
               "name": "datosQueNoTenemos",
               "type": "string",
               "value": "nombres de los profesionales, curriculums, formas de pago, promociones, estacionamiento, atencion a domicilio y cobertura de seguros"
+            },
+            {
+              "id": "a20",
+              "name": "calendariosPorServicio",
+              "type": "string",
+              "value": "{}"
             }
           ]
         },
@@ -246,12 +252,12 @@
       ],
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "consultar_disponibilidad: devuelve los eventos OCUPADOS del calendario entre dos fechas-hora. Úsala solo antes de proponer horarios, UNA sola vez por mensaje del cliente y con el día completo en un único rango. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (ej. 2026-09-09T09:00:00-04:00).",
+        "toolDescription": "consultar_disponibilidad: devuelve los eventos OCUPADOS del calendario entre dos fechas-hora. Úsala solo antes de proponer horarios, UNA sola vez por mensaje del cliente y con el día completo en un único rango. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (ej. 2026-09-09T09:00:00-04:00). SIEMPRE pasá también el parámetro 'servicio' con el nombre del servicio pedido tal como figura en el catálogo: de él depende a qué profesional se consulta o se agenda.",
         "operation": "getAll",
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del negocio').item.json.calendarioId }}"
+          "value": "={{ (() => { const cfg = $('Config del negocio').first().json; let mapa = {}; try { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; } const pedido = String($fromAI('servicio', 'Servicio solicitado, tal como figura en el catalogo', 'string') || '')   .toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim(); for (const clave of Object.keys(mapa)) {   const k = clave.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim();   if (k === pedido || pedido.includes(k) || k.includes(pedido)) return mapa[clave]; } return cfg.calendarioId; })() }}"
         },
         "returnAll": false,
         "timeMin": "={{ $fromAI('inicio', 'Inicio del rango a consultar, en ISO 8601 con zona -04:00', 'string') }}",
@@ -280,7 +286,7 @@
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del negocio').item.json.calendarioId }}"
+          "value": "={{ (() => { const cfg = $('Config del negocio').first().json; let mapa = {}; try { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; } const pedido = String($fromAI('servicio', 'Servicio solicitado, tal como figura en el catalogo', 'string') || '')   .toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim(); for (const clave of Object.keys(mapa)) {   const k = clave.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim();   if (k === pedido || pedido.includes(k) || k.includes(pedido)) return mapa[clave]; } return cfg.calendarioId; })() }}"
         },
         "start": "={{ $fromAI('inicio', 'Inicio de la cita en ISO 8601 con zona -04:00', 'string') }}",
         "end": "={{ $fromAI('fin', 'Fin de la cita en ISO 8601 con zona -04:00, normalmente 1 hora después', 'string') }}",
