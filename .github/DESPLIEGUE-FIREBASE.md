@@ -368,8 +368,72 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 
 ---
 
-## 6. Orden sugerido para la primera vez
+## 6. Ajustes del repositorio que hay que activar a mano
 
+Esta sección existe porque el primer PR falló por acá, no por el código. Son
+ajustes de la página de análisis de seguridad del repositorio; **no se pueden
+poner en un archivo del repositorio ni por `gh` con los permisos actuales**, y
+cuando faltan el pipeline falla con mensajes que no dicen «falta una casilla».
+
+`Settings → Advanced Security` (o `Settings → Code security and analysis`):
+
+| Ajuste | Por qué | Qué pasa si falta |
+|---|---|---|
+| **Dependency graph** | Lo exige la acción `dependency-review-action` | El check *Revisión de dependencias* falla con *«Dependency review is not supported on this repository. Please ensure that Dependency graph is enabled»*. Es el error que rompió el PR #1. |
+| **Dependabot alerts** | Avisos de vulnerabilidades en dependencias | Sin alertas; `dependabot.yml` sigue proponiendo actualizaciones igual |
+| **Dependabot security updates** | PR automáticos de parches de seguridad | Hay que subirlos a mano |
+| **Code scanning (CodeQL)** | Los workflows suben SARIF de CodeQL, Semgrep y Trivy | El SARIF se sube igual en repos públicos; sin esto no se ven las alertas |
+| **Secret scanning** y **Push protection** | Segunda red bajo Gitleaks | Solo queda Gitleaks en CI |
+
+Los tres primeros son **obligatorios** para que el pipeline quede verde.
+Dependency graph además es lo que alimenta el grafo que usa la revisión de
+dependencias en cada PR.
+
+---
+
+## 7. Vulnerabilidad conocida en dependencias (CVE-2026-41907)
+
+Trivy bloquea el pipeline por `uuid` 9.0.1 en `admin/pnpm-lock.yaml`, severidad
+HIGH. **No es una dependencia declarada del panel**: entra como transitiva de
+`firebase-admin` / `firebase-functions`, a través de `gaxios`, `google-gax` y
+`teeny-request`.
+
+**Análisis de alcance, hecho sobre el árbol real de `node_modules`:** el CVE
+afecta a `uuid.v3`, `v5` y `v6` cuando reciben un búfer de salida externo, por
+escrituras fuera de rango. En todo el árbol de dependencias la **única** llamada
+a uuid es `uuid.v4()` dentro de `teeny-request`; no hay ni una llamada a v3, v5
+o v6. **La vulnerabilidad no es alcanzable desde este proyecto.**
+
+Dos caminos, y conviene elegir a conciencia:
+
+1. **Forzar la versión** en `admin/package.json`:
+
+   ```json
+   "pnpm": { "overrides": { "uuid": "^11.1.1" } }
+   ```
+
+   Es la solución de fondo, pero sube una versión **mayor** de una dependencia
+   transitiva del runtime de Cloud Functions, y hoy **no hay forma de probarlo**:
+   no existe proyecto Firebase donde desplegar. Si rompe, rompe en el despliegue.
+
+2. **Excepción documentada y con vencimiento**, que es el mecanismo del estándar.
+   Ya está **escrita y comentada** en `.devsecops.yml`, con el análisis completo
+   y `vence: 2026-10-31`. Activarla es descomentar siete líneas.
+
+   No la dejé activa a propósito: `aprobado_por` es un campo de aprobación y un
+   agente no aprueba sus propias excepciones (§4). **La decisión es de Andres.**
+
+Recomendación: dado que faltan días para los demos y que el riesgo real es nulo,
+activar la excepción ahora y hacer el override después de los demos, con un
+proyecto Firebase donde probarlo.
+
+---
+
+## 8. Orden sugerido para la primera vez
+
+0. Activar **Dependency graph**, **Dependabot alerts** y **Dependabot
+   security updates** en el repositorio (punto 6). Sin esto el
+   pipeline falla aunque el código esté impecable.
 1. Crear `novuchat-admin-dev` y habilitar APIs (punto 1.1).
 2. Pool, proveedor y condición de atributos (punto 2.1).
 3. Cuenta de servicio y binding por Environment (punto 2.2).

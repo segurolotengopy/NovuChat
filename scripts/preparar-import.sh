@@ -15,7 +15,7 @@
 #   ./scripts/preparar-import.sh Flujos/demo-b-venta-cobro.json   # Demo B
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 FLUJO="${1:-Flujos/demo-a-agendamiento.json}"
 LOCAL="CONFIGURACION.local.md"

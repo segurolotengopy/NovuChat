@@ -3,7 +3,7 @@
 # Aísla si el problema está en el canal de Meta o en el flujo.
 # Requiere que usted le haya escrito al número en las últimas 24 h.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
 set -a; source .env; set +a
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"

@@ -15,7 +15,7 @@
 # por ahi pasan conversaciones de clientes finales.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 N=10; SOLO_ERROR=0; ID=""; NODO=""
 
 while [[ $# -gt 0 ]]; do

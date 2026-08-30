@@ -108,3 +108,26 @@ regexes = [
   '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
 ]
 stopwords = ["ejemplo", "example", "placeholder", "sample"]
+
+# -----------------------------------------------------------------------------
+# Igual que el bloque de arriba, pero mirando la LÍNEA COMPLETA en vez del valor
+# capturado. Hace falta porque la regla `generic-api-key` a veces recorta el
+# secreto y se pierde la palabra que delata que es sintético.
+#
+# Se agregan las formas en español: el repositorio está escrito en español y la
+# lista de arriba solo traía `ejemplo`. El hallazgo que bloqueó el pipeline el
+# 2026-08-30 fue exactamente eso:
+#   admin/scripts/emuladores.sh:107  VITE_FIREBASE_API_KEY=clave-ficticia-de-emulador
+# No es un secreto: es el valor que el script escribe en `web/.env.local` para
+# apuntar el frontend a los emuladores. Con un proyecto `demo-*` el SDK de
+# Firebase ni siquiera valida la clave.
+#
+# Se filtra por VALOR, nunca por ruta: si mañana aparece una clave de verdad en
+# ese mismo archivo, sigue saltando.
+# -----------------------------------------------------------------------------
+[[allowlists]]
+description = "Valores sintéticos declarados como tales (incluye español)"
+regexTarget = "line"
+regexes = [
+  '''(?i)(ficticia|ficticio|ejemplo|example|dummy|placeholder|changeme|REEMPLAZAR)''',
+]

@@ -7,7 +7,7 @@
 # obtener un segundo numero de prueba no es viable y hay que rediseniar.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
 set -a; . ./.env; set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"; : "${WABA_ID:?Falta WABA_ID}"

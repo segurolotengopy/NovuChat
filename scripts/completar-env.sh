@@ -15,7 +15,7 @@
 # se cargan a mano desde el gestor de contrasenas. Ver CONFIGURACION.md §4.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 ENV_FILE=".env"
 LOCAL="CONFIGURACION.local.md"

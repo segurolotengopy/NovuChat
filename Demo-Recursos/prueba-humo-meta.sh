@@ -20,8 +20,10 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${DIR}/.env.meta"
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta ${ENV_FILE} (ver cabecera del script)"; exit 1; }
-# shellcheck disable=SC1090
-set -a; source "$ENV_FILE"; set +a
+set -a
+# shellcheck disable=SC1090  # ruta variable: es el objetivo del script
+source "$ENV_FILE"
+set +a
 
 for v in WA_TOKEN WA_PHONE_ID WA_TO; do
   [[ -n "${!v:-}" ]] || { echo "✗ Falta la variable $v en .env.meta"; exit 1; }

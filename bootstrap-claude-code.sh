@@ -489,7 +489,7 @@ escribir "scripts/verificar-meta.sh" <<'EOF'
 # Todos los archivos .env* están en .gitignore (repositorio público).
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 ARCHIVO_ENV=".env"
 SUSCRIBIR=0
@@ -516,8 +516,10 @@ if [[ ! -f "$ARCHIVO_ENV" ]]; then
   exit 1
 fi
 echo "Entorno: ${ARCHIVO_ENV}"
-# shellcheck disable=SC1090
-set -a; source "$ARCHIVO_ENV"; set +a
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige --env
+source "$ARCHIVO_ENV"
+set +a
 : "${WA_TOKEN:?Falta WA_TOKEN en ${ARCHIVO_ENV}}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 
@@ -596,7 +598,7 @@ escribir "scripts/enviar-prueba.sh" <<'EOF'
 # Aísla si el problema está en el canal de Meta o en el flujo.
 # Requiere que usted le haya escrito al número en las últimas 24 h.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
 set -a; source .env; set +a
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
@@ -617,7 +619,7 @@ escribir "scripts/subir-qr.sh" <<'EOF'
 # Evita tener que publicar la imagen en una URL pública (Demo B).
 # El media ID queda ligado al número que lo sube.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
 set -a; source .env; set +a
 IMG="${1:-Demo-Recursos/qr-demo.png}"

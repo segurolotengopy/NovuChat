@@ -9,7 +9,7 @@
 #   ./scripts/listar-plantillas.sh --env .env.demo-b
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 ENV_FILE=".env"
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,7 +20,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
-set -a; . "./$ENV_FILE"; set +a
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige --env
+. "./$ENV_FILE"
+set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"
 : "${WABA_ID:?Falta WABA_ID}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"

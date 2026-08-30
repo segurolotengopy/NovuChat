@@ -26,4 +26,37 @@ seguridad:
   dast: true
   zap_reglas: .github/zap-rules.tsv
   bloquear_en: [CRITICAL, HIGH]   # se puede endurecer (añadir MEDIUM), nunca relajar
-  excepciones: []                 # id, herramienta, componente, justificacion, aprobado_por, creado, vence
+  # id, herramienta, componente, justificacion, aprobado_por, creado, vence
+  #
+  # ⏸️ EXCEPCIÓN PREPARADA, NO APLICADA. Requiere la aprobación de Andres.
+  # Un agente no aprueba sus propias excepciones de seguridad (§4 de
+  # ~/.claude/rules/security-rules.md), y `aprobado_por` es literalmente un
+  # campo de aprobación. Para activarla: descomentar las siete líneas.
+  #
+  # Análisis (2026-08-30, sobre el árbol de dependencias real):
+  #   Trivy bloquea por CVE-2026-41907 en `uuid` 9.0.1, que entra como
+  #   dependencia transitiva de firebase-admin/firebase-functions vía gaxios,
+  #   google-gax y teeny-request. El CVE afecta a `v3`, `v5` y `v6` cuando se
+  #   les pasa un búfer de salida externo. Se revisó todo node_modules: la
+  #   ÚNICA llamada a uuid en el árbol es `uuid.v4()` en teeny-request; no hay
+  #   una sola llamada a v3, v5 ni v6. La vulnerabilidad no es alcanzable.
+  #   La alternativa es forzar `overrides: { uuid: ^11.1.1 }` en
+  #   admin/package.json, que sube una versión mayor de una dependencia
+  #   transitiva del runtime de Functions y no se puede probar sin un proyecto
+  #   Firebase. Ver .github/DESPLIEGUE-FIREBASE.md §7.
+  #
+  # NO se declara `componente`: el job seguridad-estatica analiza con ruta '.'
+  # y el componente del manifiesto es './admin', así que una excepción con
+  # componente quedaría filtrada y no surtiría efecto.
+  excepciones: []
+  # excepciones:
+  #   - id: CVE-2026-41907
+  #     herramienta: trivy
+  #     justificacion: >-
+  #       uuid 9.0.1 llega solo como transitiva de firebase-admin. El CVE afecta
+  #       a v3/v5/v6 con buffer externo; en todo el arbol la unica llamada es
+  #       uuid.v4() en teeny-request, verificado sobre node_modules. No es
+  #       alcanzable. Se revisa cuando firebase-admin actualice gaxios.
+  #     aprobado_por: Andres Alberdi
+  #     creado: 2026-08-30
+  #     vence: 2026-10-31

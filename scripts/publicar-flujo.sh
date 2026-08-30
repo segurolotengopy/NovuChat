@@ -21,7 +21,7 @@
 # solo en .env (ignorado, chmod 600) y en el gestor de contrasenas.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 FLUJO="Flujos/demo-a-agendamiento.json"
 APLICAR=0

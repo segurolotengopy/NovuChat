@@ -12,7 +12,7 @@
 # cuerpo de la plantilla, en orden.
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
 set -a; . ./.env; set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"; : "${WA_PHONE_ID:?Falta WA_PHONE_ID}"; : "${WA_TO:?Falta WA_TO}"

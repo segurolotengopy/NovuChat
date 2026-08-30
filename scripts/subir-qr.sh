@@ -3,7 +3,7 @@
 # Evita tener que publicar la imagen en una URL pública (Demo B).
 # El media ID queda ligado al número que lo sube.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
 set -a; source .env; set +a
 IMG="${1:-Demo-Recursos/qr-demo.png}"

@@ -397,7 +397,12 @@ jobs:
   # Fase 2 — seguridad-estatica: reusable OSS (todos los modos).
   # NOTA: en el repositorio del proyecto la ruta es local
   # (./.github/workflows/_reusable-security.yml); bootstrap-repo.sh copia el
-  # archivo. `secrets: inherit` pasa GITLEAKS_LICENSE y SNYK_TOKEN si existen.
+  # archivo. Los secretos se pasan UNO POR UNO, no con `secrets: inherit`:
+  # inherit entrega al workflow llamado TODOS los secretos del repositorio,
+  # incluidas las credenciales de despliegue, que un escáner no necesita. Lo
+  # marca Semgrep (yaml.github-actions.security.secrets-inherit) y es la §5 de
+  # ~/.claude/rules/security-rules.md: privilegio mínimo. Estos dos son los
+  # únicos que `_reusable-security.yml` declara, y ambos son opcionales.
   # subir_sarif: solo cuando Code Scanning está disponible (público o GHAS).
   # ---------------------------------------------------------------------------
   seguridad-estatica:
@@ -417,7 +422,9 @@ jobs:
       bloquear_en: ${{ vars.BLOQUEAR_EN || 'CRITICAL,HIGH' }}
       subir_sarif: ${{ github.event.repository.visibility == 'public' || vars.GHAS_ENABLED == 'true' }}
       ref: ${{ inputs.tag || '' }}
-    secrets: inherit
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   # ---------------------------------------------------------------------------
   # Fase 1.b — calidad-documentacion: el stack que HOY existe en el repositorio

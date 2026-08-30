@@ -12,7 +12,7 @@
 #   ./scripts/fijar-calendario.sh          # lo pide sin mostrarlo
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 LOCAL="CONFIGURACION.local.md"
 ENV_FILE=".env"
 
