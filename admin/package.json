@@ -14,13 +14,19 @@
     "web:build": "pnpm --filter @novuchat/admin-web build",
     "functions:build": "pnpm --filter @novuchat/admin-functions build",
     "verificar": "pnpm web:build && pnpm functions:build && pnpm pruebas:reglas",
-    "pruebas:reglas:cli": "firebase emulators:exec --only firestore --project demo-novuchat-pruebas \"vitest run\""
+    "pruebas:reglas:cli": "firebase emulators:exec --only firestore --project demo-novuchat-pruebas \"vitest run\"",
+    "emuladores": "bash scripts/emuladores.sh",
+    "sembrar": "node scripts/sembrar.mjs",
+    "sembrar:limpio": "node scripts/sembrar.mjs --limpiar",
+    "web:dev:sondeo": "pnpm --filter @novuchat/admin-web dev:sondeo",
+    "web:servir": "pnpm web:build && pnpm --filter @novuchat/admin-web servir"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
     "firebase": "^11.6.0",
     "firebase-tools": "^14.2.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.1.2"
+    "vitest": "^3.1.2",
+    "firebase-admin": "^13.4.0"
   }
 }

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint src --max-warnings 0"
+    "lint": "eslint src --max-warnings 0",
+    "dev:sondeo": "VITE_SONDEO=true vite",
+    "servir": "vite preview --port 5230 --strictPort"
   },
   "dependencies": {
     "firebase": "^11.10.0",

@@ -14,6 +14,9 @@ importers:
       firebase:
         specifier: ^11.6.0
         version: 11.10.0
+      firebase-admin:
+        specifier: ^13.4.0
+        version: 13.10.0(supports-color@7.2.0)
       firebase-tools:
         specifier: ^14.2.0
         version: 14.27.0(@types/node@26.4.0)(supports-color@7.2.0)(typescript@5.9.3)
@@ -5271,7 +5274,7 @@ snapshots:
   '@types/jsonwebtoken@9.0.10':
     dependencies:
       '@types/ms': 2.1.0
-      '@types/node': 26.4.0
+      '@types/node': 22.20.1
 
   '@types/long@4.0.2':
     optional: true
@@ -5303,7 +5306,7 @@ snapshots:
   '@types/request@2.48.13':
     dependencies:
       '@types/caseless': 0.12.5
-      '@types/node': 26.4.0
+      '@types/node': 22.20.1
       '@types/tough-cookie': 4.0.5
       form-data: 2.5.6
     optional: true

@@ -17,7 +17,107 @@ nada de `Flujos/`.
 | Andamiaje | escrito y compilando |
 | Pruebas de reglas | **99 de 99 en verde**, ejecutadas contra el emulador |
 | Pruebas puras del saneo | **13 de 13 en verde**, sin emulador ni red |
+| Prueba a mano del panel | **recorrida de punta a punta** contra los emuladores, con datos sembrados |
 | Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
+
+## Probar el panel a mano (secuencia completa y probada)
+
+Requiere Node 24, pnpm y un JDK. Todo local, con un proyecto ficticio `demo-*`:
+no toca ningún recurso en la nube ni usa ninguna sesión de Firebase o gcloud.
+
+### ⚠️ Antes que nada: el límite de inotify
+
+**En esta máquina hay que arreglar esto primero, o nada arranca.** El kernel
+tiene un tope de *instancias* de inotify y ya está casi lleno:
+
+```bash
+cat /proc/sys/fs/inotify/max_user_instances      # 128
+find /proc/*/fd -lname 'anon_inode:inotify' | wc -l   # 110
+```
+
+Cuando se agotan, **el emulador de Firestore y el servidor de Vite fallan los
+dos** con el mismo error de fondo:
+
+```
+Error: ENOSPC: System limit for number of file watchers reached,
+       watch '.../admin/firestore.rules'
+```
+
+…que el CLI de Firebase tapa con un **`Error: An unexpected error has
+occurred.`** genérico. Ese mensaje hizo perder un buen rato: parece «puerto
+ocupado» y no lo es.
+
+**El arreglo, una sola vez, requiere sudo** (por eso no lo puede hacer un
+agente):
+
+```bash
+echo 'fs.inotify.max_user_instances=1024' | sudo tee /etc/sysctl.d/99-inotify.conf
+sudo sysctl --system
+```
+
+Mientras tanto hay rodeos, y son los que usan los scripts de acá:
+`scripts/emuladores.sh` arranca Firestore por el jar (sin el vigilante del CLI) y
+Auth por separado, y `pnpm web:dev:sondeo` hace que Vite vigile por sondeo en vez
+de por inotify. **Si el emulador no arranca, mire esto antes de sospechar del
+script.**
+
+### Los tres pasos
+
+```bash
+# Terminal 1 — emuladores de Auth y Firestore (dejar abierta)
+cd admin && pnpm emuladores
+
+# Terminal 2 — datos de prueba (idempotente: se puede repetir)
+cd admin && pnpm sembrar
+
+# Terminal 3 — el panel
+cd admin && pnpm web:dev:sondeo      # con el arreglo de inotify: pnpm web:dev
+```
+
+Y entrar a **http://127.0.0.1:5230**.
+
+### Con qué usuario entrar
+
+| Pestaña | Usuario | Rol | Contraseña |
+|---|---|---|---|
+| Soy de NovuChat | `andres@ejemplo.com` | superadministrador | *(Google, sin contraseña)* |
+| Soy de NovuChat | `silvana@ejemplo.com` | superadministrador | *(Google, sin contraseña)* |
+| Soy un comercio | `admin.aurora@ejemplo.com` | admin de Salón Aurora (**activo**) | `NovuChat-Demo-2026` |
+| Soy un comercio | `operador.aurora@ejemplo.com` | operador de Salón Aurora | `NovuChat-Demo-2026` |
+| Soy un comercio | `admin.fogon@ejemplo.com` | admin de Parrilla El Fogón (**suspendido**) | `NovuChat-Demo-2026` |
+
+Con Google, el emulador abre un selector con las dos cuentas **ya creadas**: se
+elige una y listo, no hace falta *Add new account*.
+
+### Qué mirar
+
+- **El aislamiento, a ojo.** Entre como `admin.aurora` y pida a mano
+  `/negocio/parrilla-el-fogon/conversaciones`: sale «Sin permiso». Después entre
+  como `admin.fogon` y compruebe que solo ve lo suyo.
+- **El comercio suspendido.** `admin.fogon` ve sus conversaciones, su
+  configuración y sus métricas, **pero no puede editar nada**, y en *Cuenta* lee
+  el motivo de la suspensión. Es la coherencia del diseño: si conserva la vista,
+  tiene que ver por qué se le cortó el servicio.
+- **Los roles en el menú.** El operador ve tres entradas (Conversaciones, Uso,
+  Reclamos); el administrador ve siete.
+- **El escapado.** En Salón Aurora hay una conversación *«Prueba de escapado»*
+  con `<img onerror>`, `<script>` y un intento de inyección de prompt. **Tiene
+  que verse como texto**. Si aparece una imagen rota, o cambia el título de la
+  pestaña, hay un defecto de seguridad.
+- **La columna «Aviso» de Reclamos.** Uno de los tres figura como *Pendiente*:
+  es el que no se notificó por correo. Sin ese caso, un canal de correo caído
+  sería invisible.
+
+### Detalles del entorno
+
+- **Puertos.** El entorno de trabajo a mano usa Firestore **8232** y Auth
+  **9299**; las pruebas usan Firestore **8231**. Están separados a propósito:
+  se puede dejar todo levantado y correr `pnpm pruebas:reglas` igual.
+- **La interfaz del emulador** (http://127.0.0.1:4231/auth) muestra **solo
+  Authentication**, porque Firestore se arranca por fuera del hub para esquivar
+  el problema de inotify. Los datos de Firestore se ven en el panel.
+- `web/.env.local` lo genera `pnpm emuladores` y está en `.gitignore`.
+- `pnpm sembrar:limpio` borra lo sembrado y vuelve a empezar.
 
 ## Cómo trabajar
 
@@ -28,6 +128,8 @@ cd admin
 pnpm install
 
 pnpm pruebas:reglas     # emulador + 112 pruebas (99 de reglas, 13 puras)
+pnpm emuladores         # Auth + Firestore para probar a mano
+pnpm sembrar            # datos de prueba (idempotente)
 pnpm web:build          # compila el frontend
 pnpm functions:build    # compila las Cloud Functions
 pnpm verificar          # las tres cosas

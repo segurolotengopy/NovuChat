@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  GoogleAuthProvider, sendEmailVerification, sendPasswordResetEmail,
-  signInWithEmailAndPassword, signInWithPopup,
+  GoogleAuthProvider, getRedirectResult, sendEmailVerification, sendPasswordResetEmail,
+  signInWithEmailAndPassword, signInWithPopup, signInWithRedirect,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 
@@ -29,12 +29,40 @@ export function Ingresar() {
   const [aviso, setAviso] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
 
+  // Si la vuelta fue por redirección (ver abajo), el error llega por acá.
+  useEffect(() => {
+    getRedirectResult(auth).catch(() => {
+      setError('No se pudo iniciar sesión con Google. Intente de nuevo.');
+    });
+  }, []);
+
   const conGoogle = async () => {
     setError(null); setAviso(null); setOcupado(true);
+    const proveedor = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, new GoogleAuthProvider());
-    } catch {
-      setError('No se pudo iniciar sesión. Intente de nuevo.');
+      await signInWithPopup(auth, proveedor);
+    } catch (error) {
+      const codigo = (error as { code?: string }).code ?? '';
+
+      // RESPALDO POR REDIRECCIÓN. Los bloqueadores de ventanas emergentes son
+      // comunes, y para el superadministrador de NovuChat esta es la ÚNICA
+      // puerta: su rol exige cuenta de Google, así que un bloqueador lo dejaría
+      // sin ninguna forma de entrar. La redirección no necesita abrir ventana.
+      //
+      // Se encontró probando a mano contra el emulador, donde la ventana quedó
+      // bloqueada y el flujo moría con «Auth Emulator Internal Error: No
+      // matching frame» — el handler intentaba responderle a un opener que no
+      // existía.
+      if (codigo === 'auth/popup-blocked'
+          || codigo === 'auth/cancelled-popup-request'
+          || codigo === 'auth/operation-not-supported-in-this-environment') {
+        await signInWithRedirect(auth, proveedor);
+        return;
+      }
+      // Cerrar la ventana a propósito no es un error que haya que mostrar.
+      if (codigo !== 'auth/popup-closed-by-user') {
+        setError('No se pudo iniciar sesión. Intente de nuevo.');
+      }
     } finally {
       setOcupado(false);
     }
