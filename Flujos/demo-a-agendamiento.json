@@ -268,7 +268,7 @@
         "end": "={{ $fromAI('fin', 'Fin de la cita en ISO 8601 con zona -04:00, normalmente 1 hora después', 'string') }}",
         "additionalFields": {
           "summary": "={{ $fromAI('titulo', 'Título: Cita <nombre> — <servicio>', 'string') }}",
-          "description": "=Agendado por NovuChat (DEMO). Cliente WhatsApp: {{ $('Normalizar entrada').item.json.from }}"
+          "description": "=Cliente: {{ $('Normalizar entrada').item.json.nombrePerfil }}\nTelefono: {{ $('Normalizar entrada').item.json.from }}\nAgendado por NovuChat."
         }
       }
     },

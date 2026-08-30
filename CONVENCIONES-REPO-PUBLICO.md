@@ -23,6 +23,7 @@ ambos ignorados por git, y en el gestor de contraseñas.
 | `${WA_TO}` | teléfono de destinatario | **dato personal**, no se publica |
 | `${GCP_PROJECT_ID}` / `${GCP_PROJECT_NUMBER}` | proyecto de Google Cloud | facilita enumeración |
 | `${GOOGLE_ACCOUNT}` | correo de la cuenta Google | dato personal |
+| `${GOOGLE_ACCOUNT_PANEL}` | correo de la cuenta del panel y de Firebase | dato personal |
 | `${CALENDAR_ID}` | ID del calendario del demo | acceso al recurso |
 | `${OTRA_APP_ID}` | App ID de `Demo SeguroLo Tengo` | proyecto ajeno en producción |
 | `${WA_PORTFOLIO_B}` | portafolio comercial del Demo B | facilita enumeración del negocio |
@@ -30,6 +31,16 @@ ambos ignorados por git, y en el gestor de contraseñas.
 | `${WA_PHONE_ID_B}` | Phone Number ID del Demo B | idem |
 | `${WABA_ID_B}` | WABA del Demo B | idem |
 | `${WA_TEST_NUMBER_B}` | segundo número de prueba | ver prohibición 6 de CLAUDE.md |
+
+## Una excepción explícita
+
+Los correos de **cuenta de servicio** (`*.iam.gserviceaccount.com`) **no** se
+marcan. No son dato personal, no identifican a nadie, y su forma es
+precisamente lo que hay que mostrar en un instructivo de despliegue para que
+alguien lo pueda seguir. El verificador de saneo los excluye a propósito, y
+tiene una prueba negativa que comprueba que un correo de persona **sí** sigue
+disparando: sin esa prueba, la excepción sería un agujero en vez de una
+decisión.
 
 ## Dos formas de marcador, según el archivo
 
