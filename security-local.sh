@@ -678,7 +678,7 @@ asegurar_gitignore() {
 
 main() {
   analizar_argumentos "$@"
-  cd "$RUTA"
+  cd "$RUTA" || exit 1
   printf '%ssecurity-local.sh v%s — %s (umbral %s)%s\n' "$C_NEGRITA" "$SCRIPT_VERSION" "$(date '+%Y-%m-%d %H:%M:%S')" "$UMBRAL" "$C_RESET"
 
   INFORME_DIR="${INFORMES_BASE}/$(date +%Y%m%d-%H%M%S)"

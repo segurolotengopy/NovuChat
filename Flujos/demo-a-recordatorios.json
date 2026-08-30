@@ -1,0 +1,342 @@
+{
+  "name": "NovuChat Demo A — Recordatorios de citas",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * *"
+            }
+          ]
+        }
+      },
+      "id": "todos-los-días-17:00",
+      "name": "Todos los días 17:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -40,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "calendarioId",
+              "type": "string",
+              "value": "REEMPLAZAR_ID_CALENDARIO@group.calendar.google.com"
+            },
+            {
+              "id": "r2",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID"
+            },
+            {
+              "id": "r3",
+              "name": "estadoComercio",
+              "type": "string",
+              "value": "operativo"
+            },
+            {
+              "id": "r4",
+              "name": "prefijosPermitidos",
+              "type": "string",
+              "value": "591"
+            },
+            {
+              "id": "r5",
+              "name": "modo",
+              "type": "string",
+              "value": "texto"
+            },
+            {
+              "id": "r6",
+              "name": "plantilla",
+              "type": "string",
+              "value": "recordatorio_cita_manana"
+            },
+            {
+              "id": "r7",
+              "name": "idiomaPlantilla",
+              "type": "string",
+              "value": "es"
+            },
+            {
+              "id": "r8",
+              "name": "textoRecordatorio",
+              "type": "string",
+              "value": "Hola {nombre} 👋 Te recordamos tu cita de {servicio} para mañana a las {hora}. Si necesitás cancelar o reprogramar, respondé por acá. ⏰"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-del-recordatorio",
+      "name": "Config del recordatorio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del recordatorio').item.json.calendarioId }}"
+        },
+        "returnAll": true,
+        "options": {
+          "timeMin": "={{ $now.setZone('America/La_Paz').plus({days:1}).startOf('day').toISO() }}",
+          "timeMax": "={{ $now.setZone('America/La_Paz').plus({days:1}).endOf('day').toISO() }}",
+          "singleEvents": true
+        }
+      },
+      "id": "citas-de-mañana",
+      "name": "Citas de mañana",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        400,
+        300
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara los recordatorios de las citas de manana.\n//\n// Tres cosas que el esqueleto original no contemplaba y que importan:\n//\n// 1. DOBLE ENVIO. Si el flujo corre dos veces -- reintento, prueba manual,\n//    reinicio de n8n -- el cliente recibe el recordatorio dos veces. Se marca\n//    el evento como recordado en su propia descripcion y se saltean los que ya\n//    lo tienen. La marca vive en el calendario, que es el unico estado que\n//    sobrevive a un reinicio.\n// 2. PREFIJO DE PAIS. Meta cobra segun el pais del destinatario: un evento con\n//    un telefono extranjero se saltea, igual que en el flujo conversacional.\n// 3. COMERCIO NO OPERATIVO. Un comercio suspendido no manda recordatorios.\n\nconst cfg = $('Config del recordatorio').first().json;\n\nif (String(cfg.estadoComercio ?? 'operativo') !== 'operativo') {\n  return [];\n}\n\nconst prefijos = String(cfg.prefijosPermitidos ?? '')\n  .split(',').map(p => p.trim()).filter(Boolean);\n\nconst MARCA = '[recordado]';\nconst salida = [];\n\nfor (const item of $input.all()) {\n  const ev = item.json;\n  const desc = String(ev.description ?? '');\n\n  if (desc.includes(MARCA)) continue;              // ya se le aviso\n\n  const m = desc.match(/\\b(\\d{8,15})\\b/);          // telefono en la descripcion\n  if (!m) continue;                                 // cita cargada a mano, sin telefono\n  const telefono = m[1];\n\n  if (prefijos.length && !prefijos.some(p => telefono.startsWith(p))) continue;\n\n  const inicio = ev.start?.dateTime;\n  if (!inicio) continue;                            // evento de dia completo\n\n  const hora = new Date(inicio).toLocaleTimeString('es-BO', {\n    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz',\n  });\n\n  // El titulo tiene la forma \"Cita <nombre> - <servicio>\".\n  const titulo = String(ev.summary ?? '');\n  const partes = titulo.replace(/^Cita\\s+/i, '').split(/\\s+[-\\u2014]\\s+/);\n  const nombre = (partes[0] ?? '').trim() || 'cliente';\n  const servicio = (partes[1] ?? '').trim() || 'su cita';\n\n  salida.push({ json: {\n    eventoId: ev.id,\n    telefono,\n    nombre,\n    servicio,\n    hora,\n    descripcionOriginal: desc,\n    descripcionMarcada: (desc ? desc + '\\n' : '') + MARCA + ' ' + new Date().toISOString(),\n    texto: String(cfg.textoRecordatorio ?? '')\n      .replace('{nombre}', nombre).replace('{servicio}', servicio).replace('{hora}', hora),\n  }});\n}\nreturn salida;"
+      },
+      "id": "preparar-recordatorios",
+      "name": "Preparar recordatorios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "m1",
+              "leftValue": "={{ $('Config del recordatorio').item.json.modo }}",
+              "rightValue": "plantilla",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "¿plantilla-aprobada?",
+      "name": "¿Plantilla aprobada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "phoneNumberId": "={{ $('Config del recordatorio').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.telefono }}",
+        "template": "={{ $('Config del recordatorio').item.json.plantilla }}",
+        "language": "={{ $('Config del recordatorio').item.json.idiomaPlantilla }}",
+        "components": {
+          "component": [
+            {
+              "type": "body",
+              "parameters": {
+                "parameter": [
+                  {
+                    "type": "text",
+                    "text": "={{ $json.nombre }}"
+                  },
+                  {
+                    "type": "text",
+                    "text": "={{ $json.servicio }}"
+                  },
+                  {
+                    "type": "text",
+                    "text": "={{ $json.hora }}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "id": "enviar-plantilla",
+      "name": "Enviar plantilla",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $('Config del recordatorio').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.telefono }}",
+        "textBody": "={{ $json.texto }}"
+      },
+      "id": "enviar-texto",
+      "name": "Enviar texto",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        420
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "eventId": "={{ $('Preparar recordatorios').item.json.eventoId }}",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del recordatorio').item.json.calendarioId }}"
+        },
+        "updateFields": {
+          "description": "={{ $('Preparar recordatorios').item.json.descripcionMarcada }}"
+        }
+      },
+      "id": "marcar-como-recordado",
+      "name": "Marcar como recordado",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1300,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    }
+  ],
+  "connections": {
+    "Todos los días 17:00": {
+      "main": [
+        [
+          {
+            "node": "Config del recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Citas de mañana",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Citas de mañana": {
+      "main": [
+        [
+          {
+            "node": "Preparar recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar recordatorios": {
+      "main": [
+        [
+          {
+            "node": "¿Plantilla aprobada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Plantilla aprobada?": {
+      "main": [
+        [
+          {
+            "node": "Enviar plantilla",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar plantilla": {
+      "main": [
+        [
+          {
+            "node": "Marcar como recordado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar texto": {
+      "main": [
+        [
+          {
+            "node": "Marcar como recordado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 300
+  }
+}

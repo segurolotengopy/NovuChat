@@ -39,6 +39,11 @@ export const auth: Auth = getAuth(app);
 export const db: Firestore = getFirestore(app);
 
 if (enEmuladores) {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9299', { disableWarnings: true });
-  connectFirestoreEmulator(db, '127.0.0.1', 8231);
+  // Puertos configurables para que el entorno de trabajo a mano y el de las
+  // pruebas puedan convivir sin pisarse. Los valores por defecto son los que
+  // levanta `scripts/emuladores.sh`.
+  const puertoAuth = Number(import.meta.env.VITE_AUTH_EMULATOR_PORT ?? 9299);
+  const puertoFirestore = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT ?? 8232);
+  connectAuthEmulator(auth, `http://127.0.0.1:${puertoAuth}`, { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', puertoFirestore);
 }

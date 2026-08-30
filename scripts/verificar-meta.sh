@@ -13,7 +13,7 @@
 # Todos los archivos .env* están en .gitignore (repositorio público).
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 ARCHIVO_ENV=".env"
 SUSCRIBIR=0
@@ -40,8 +40,10 @@ if [[ ! -f "$ARCHIVO_ENV" ]]; then
   exit 1
 fi
 echo "Entorno: ${ARCHIVO_ENV}"
-# shellcheck disable=SC1090
-set -a; source "$ARCHIVO_ENV"; set +a
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige --env
+source "$ARCHIVO_ENV"
+set +a
 : "${WA_TOKEN:?Falta WA_TOKEN en ${ARCHIVO_ENV}}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 

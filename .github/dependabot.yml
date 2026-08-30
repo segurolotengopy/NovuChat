@@ -1,23 +1,23 @@
 # =============================================================================
-# dependabot.yml — Actualización automática de dependencias y de pines por SHA
-# Versión: 2.0 | Fecha: 2026-08-24 | Destino: .github/dependabot.yml
+# dependabot.yml — NovuChat
 # -----------------------------------------------------------------------------
-# Dependabot es gratuito en todos los planes y visibilidades. Aquí se configura:
-#   - Un ecosistema por stack (elimine los que no apliquen al proyecto).
-#   - Frecuencia semanal (lunes temprano, zona horaria de La Paz/CDMX).
-#   - Agrupación de minor+patch en un solo PR para reducir ruido; los major
-#     llegan en PR individuales para revisarlos con cuidado.
-#   - Límite de PRs abiertos por ecosistema.
-#   - `github-actions`: mantiene los pines por SHA de los workflows y actualiza
-#     el comentario `# vX` automáticamente (Dependabot entiende el formato
-#     `uses: owner/repo@SHA # vX.Y.Z`).
-# Las actualizaciones de seguridad (security updates) se activan aparte en
-# Settings → Code security → Dependabot security updates.
+# Adaptado del estándar al stack REAL del repositorio. Se retiraron los
+# ecosistemas `pip`, `docker` y `terraform` que traía la plantilla: no hay
+# requirements.txt ni pyproject.toml (el único Python es un generador suelto
+# sin dependencias), no hay Dockerfile y no hay /infra. Un `directory` que no
+# existe no es inofensivo: Dependabot lo reporta como error de configuración
+# del repositorio y ensucia la pestaña de alertas.
+#
+# `cooldown` es obligatorio en todos los ecosistemas. Sin él, Dependabot puede
+# proponer una versión publicada hace minutos, que es la ventana en la que
+# aparecen los paquetes comprometidos por robo de credenciales del publicador.
+# Siete días de espera es el valor que exige la regla
+# package_managers.dependabot.dependabot-missing-cooldown de Semgrep, que
+# bloqueaba el pipeline.
 # =============================================================================
 version: 2
-
 updates:
-  # ---- GitHub Actions: pines por SHA de todos los workflows -------------------
+  # --- Acciones de GitHub (fijadas por SHA; Dependabot las actualiza) --------
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -25,6 +25,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: America/La_Paz
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels: [dependencias, github-actions, seguridad]
     commit-message:
@@ -33,14 +35,21 @@ updates:
       actions-minor-patch:
         update-types: [minor, patch]
 
-  # ---- npm (Node / React / Vite) ---------------------------------------------
+  # --- Panel administrativo (workspace pnpm en admin/) ----------------------
+  # El lockfile vive en admin/pnpm-lock.yaml y cubre admin/web y
+  # admin/functions. No hay package.json en la raíz del repositorio.
   - package-ecosystem: npm
-    directory: /
+    directory: /admin
     schedule:
       interval: weekly
       day: monday
       time: "06:00"
       timezone: America/La_Paz
+    cooldown:
+      # Una versión mayor merece más cuarentena que un parche: es donde más
+      # ruido y más regresiones hay.
+      default-days: 7
+      semver-major-days: 14
     open-pull-requests-limit: 10
     labels: [dependencias, npm]
     commit-message:
@@ -53,54 +62,4 @@ updates:
         update-types: [minor, patch]
       npm-desarrollo:
         dependency-type: development
-        update-types: [minor, patch]
-    ignore:
-      # Ejemplo de excepción con justificación (revisar cada trimestre):
-      # - dependency-name: "firebase"
-      #   update-types: ["version-update:semver-major"]
-      []
-
-  # ---- pip (Python / FastAPI) --------------------------------------------------
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: America/La_Paz
-    open-pull-requests-limit: 10
-    labels: [dependencias, python]
-    commit-message:
-      prefix: "chore(deps)"
-    groups:
-      pip-minor-patch:
-        update-types: [minor, patch]
-
-  # ---- Docker (imágenes base del Dockerfile) -----------------------------------
-  - package-ecosystem: docker
-    directory: /
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: America/La_Paz
-    open-pull-requests-limit: 3
-    labels: [dependencias, docker, seguridad]
-    commit-message:
-      prefix: "chore(docker)"
-
-  # ---- Terraform (providers y módulos) -----------------------------------------
-  - package-ecosystem: terraform
-    directory: /infra
-    schedule:
-      interval: weekly
-      day: monday
-      time: "06:00"
-      timezone: America/La_Paz
-    open-pull-requests-limit: 3
-    labels: [dependencias, terraform]
-    commit-message:
-      prefix: "chore(infra)"
-    groups:
-      terraform-minor-patch:
         update-types: [minor, patch]

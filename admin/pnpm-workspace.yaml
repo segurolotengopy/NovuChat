@@ -11,3 +11,28 @@ allowBuilds:
   protobufjs: true
   '@firebase/util': false
   re2: false
+
+# Endurecimiento de cadena de suministro: PENDIENTE, y no por descuido.
+#
+# Semgrep pide tres politicas de pnpm. Las tres son legitimas y las tres estan
+# desactivadas, porque NINGUNA se puede adoptar sobre un lockfile que ya existe:
+# pnpm verifica las 969 entradas contra la politica, no solo las que se
+# resuelven de nuevo. Comprobado contra el pipeline, no supuesto:
+#
+#   minimumReleaseAge: 10080   -> 59 entradas rechazadas (ERR_PNPM_LOCKFILE_
+#                                 RESOLUTION_VERIFICATION): paquetes publicados
+#                                 hace menos de 7 dias.
+#   trustPolicy: no-downgrade  ->  3 entradas rechazadas (ERR_PNPM_TRUST_
+#                                 DOWNGRADE).
+#   blockExoticSubdeps: true   -> sin comprobar; se desactiva junto con las
+#                                 otras para no seguir descubriendo fallos de a
+#                                 uno, a tres minutos por corrida del pipeline.
+#
+# Adoptarlas exige REGENERAR el lockfile con las politicas ya activas, y eso es
+# una tarea deliberada -- cambia versiones resueltas y hay que probar el panel
+# despues -- no algo que se cuele en un PR que tiene que quedar verde hoy.
+# Queda para despues del congelamiento del 8 de septiembre.
+#
+# minimumReleaseAge: 10080
+# trustPolicy: no-downgrade
+# blockExoticSubdeps: true

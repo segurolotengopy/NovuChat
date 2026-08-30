@@ -22,7 +22,7 @@
  *  - React escapa por defecto todo lo que se interpola como hijo de un elemento.
  *    Este componente solo interpola texto: NO usa `dangerouslySetInnerHTML`.
  *    Está prohibido en todo el proyecto y el CI lo verifica
- *    (ver `admin/ci/despliegue-admin.yml`, paso "Prohibiciones de renderizado").
+ *    (ver `.github/workflows/despliegue-admin.yml`, paso "Prohibiciones de renderizado").
  *  - No se autolinkean URLs. Convertir texto ajeno en un `<a href>` es entregarle
  *    al remitente el destino de un clic del operador: phishing servido por
  *    nosotros. Las URLs se muestran como texto plano.

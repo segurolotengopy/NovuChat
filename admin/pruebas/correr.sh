@@ -34,5 +34,5 @@ for _ in $(seq 1 60); do
 done
 curl -fsS -o /dev/null "http://127.0.0.1:${PUERTO}/" || { echo "El emulador no respondió."; exit 1; }
 
-cd "$RAIZ"
+cd "$RAIZ" || exit 1
 FIRESTORE_EMULATOR_PORT="$PUERTO" npx vitest run "$@"

@@ -24,6 +24,55 @@ import { getAuth } from 'firebase-admin/auth';
 
 export type Rol = 'admin' | 'oper' | 'ingesta';
 
+/**
+ * ===========================================================================
+ * VÍNCULO ROL ↔ PROVEEDOR DE IDENTIDAD — LA MITAD DE SERVIDOR
+ * ===========================================================================
+ *
+ * `firestore.rules` ya exige que la SESIÓN venga del proveedor correcto
+ * (`sign_in_provider`). Esta comprobación es la otra mitad: impide que el claim
+ * llegue a existir sobre una IDENTIDAD del tipo equivocado.
+ *
+ * POR QUÉ HACEN FALTA LAS DOS. La de las reglas protege cada lectura y cada
+ * escritura, y es la que no se puede eludir. La de acá evita que el sistema
+ * quede en un estado incoherente —un administrador de comercio con `p: true`
+ * guardado— que después alguien "arregla" relajando una regla porque "el claim
+ * está bien puesto, algo falla". Un estado imposible no hay que explicarlo.
+ *
+ * REGLA: UNA IDENTIDAD, UN PROVEEDOR.
+ *   superadministrador → la cuenta debe tener Google y NO tener contraseña
+ *   admin / operador   → la cuenta debe tener contraseña y NO tener Google
+ *
+ * Se rechaza el caso de cuenta VINCULADA (los dos proveedores sobre el mismo
+ * uid) aunque las reglas ya lo neutralizarían: una identidad ambigua es una
+ * fuente permanente de razonamientos equivocados sobre quién puede qué.
+ */
+const PROVEEDOR_GOOGLE = 'google.com';
+const PROVEEDOR_PASSWORD = 'password';
+
+function proveedoresDe(usuario: { providerData: Array<{ providerId: string }> }): Set<string> {
+  return new Set(usuario.providerData.map((p) => p.providerId));
+}
+
+async function exigirProveedor(uid: string, requerido: string, prohibido: string): Promise<void> {
+  const usuario = await getAuth().getUser(uid);
+  const proveedores = proveedoresDe(usuario);
+  if (!proveedores.has(requerido)) {
+    throw new Error(
+      `La cuenta ${uid} no tiene el proveedor «${requerido}», que este rol exige. ` +
+      'Superadministradores de NovuChat: solo cuenta de Google. ' +
+      'Administradores y operadores de comercio: solo usuario y contraseña.',
+    );
+  }
+  if (proveedores.has(prohibido)) {
+    throw new Error(
+      `La cuenta ${uid} tiene también «${prohibido}». Una identidad, un proveedor: ` +
+      'desvincule el otro método antes de asignar este rol.',
+    );
+  }
+}
+
+
 const TOPE_CLAIMS_BYTES = 1000;
 // Margen: Firebase cuenta el JSON completo de los custom claims.
 const MARGEN_SEGURIDAD = 100;
@@ -61,6 +110,24 @@ export async function asignarRol(
   opciones: { revocarSesiones?: boolean } = {},
 ): Promise<void> {
   const auth = getAuth();
+
+  // Solo al OTORGAR. Quitar un rol nunca se bloquea por el proveedor: si hay que
+  // sacarle el acceso a alguien, se le saca, y no importa cómo entró.
+  if (rol === 'admin' || rol === 'oper') {
+    await exigirProveedor(uid, PROVEEDOR_PASSWORD, PROVEEDOR_GOOGLE);
+  }
+  if (rol === 'ingesta') {
+    // El principal de servicio no es una persona y no debe tener ningún método
+    // de acceso interactivo: llega solo con tokens personalizados.
+    const proveedores = proveedoresDe(await auth.getUser(uid));
+    if (proveedores.size > 0) {
+      throw new Error(
+        `La cuenta ${uid} tiene proveedores de acceso interactivo y no puede ser ` +
+        'principal de ingesta. Ese rol es solo para identidades de servicio.',
+      );
+    }
+  }
+
   const usuario = await auth.getUser(uid);
   const actual = leerClaim(usuario.customClaims);
 
@@ -84,6 +151,13 @@ export async function asignarRol(
 /** Marca (o desmarca) a alguien como propietario de la plataforma NovuChat. */
 export async function asignarPropietario(uid: string, esPropietario: boolean): Promise<void> {
   const auth = getAuth();
+
+  // El rol más poderoso del sistema exige la cuenta de Google, cuyo segundo
+  // factor lo administra Google. Con esto, la superficie de ataque de la
+  // plataforma es "comprometer la cuenta de Google de Andres o de Silvana", no
+  // "adivinar una contraseña".
+  if (esPropietario) await exigirProveedor(uid, PROVEEDOR_GOOGLE, PROVEEDOR_PASSWORD);
+
   const usuario = await auth.getUser(uid);
   const actual = leerClaim(usuario.customClaims);
   const nuevo: ClaimNovuChat = esPropietario

@@ -33,14 +33,23 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      destino:
+        description: A dónde desplegar
+        type: choice
+        required: true
+        default: dev
+        options: [dev, produccion]
       tag:
-        description: Tag vX.Y.Z ya creado (debe ser ancestro de main)
+        # Solo para destino=produccion. El job de producción NO confía en este
+        # campo: verifica que el tag exista, no sea prerelease, sea ancestro de
+        # origin/main y que quien ejecuta esté en vars.APROBADORES_PROD.
+        description: 'Solo produccion — Tag vX.Y.Z ya creado (ancestro de main)'
         type: string
-        required: true
+        required: false
       confirmar:
-        description: Escriba DESPLEGAR para publicar en producción desde el tag
+        description: 'Solo produccion — escriba DESPLEGAR para publicar'
         type: string
-        required: true
+        required: false
 
 # Mínimo global; cada job eleva lo que necesita.
 permissions:
@@ -74,6 +83,10 @@ jobs:
     outputs:
       pm: ${{ steps.pm.outputs.pm }}
       instalar: ${{ steps.pm.outputs.instalar }}
+      # true si este evento toca el componente (o es un tag / dispatch)
+      admin_cambio: ${{ steps.cambios.outputs.admin_cambio }}
+      # nombre del script de pruebas de reglas de Firestore, vacio si no hay
+      script_reglas: ${{ steps.pm.outputs.script_reglas }}
       # true si existe RUTA_COMPONENTE/package.json (el sitio admin/ ya aterrizo)
       hay_componente: ${{ steps.pm.outputs.hay_componente }}
       lockfile: ${{ steps.pm.outputs.lockfile }}
@@ -83,8 +96,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
+          # Historia completa: el paso "Detectar cambios" necesita comparar
+          # contra la base del PR o contra el commit anterior del push.
+          fetch-depth: 0
 
       - name: Detectar componente Node y gestor de paquetes
         id: pm
@@ -98,6 +117,7 @@ jobs:
             {
               echo "hay_componente=false"; echo "pm=npm"
               echo "instalar=true"; echo "lockfile="; echo "hay_test_rules=false"
+              echo "script_reglas="
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -109,11 +129,70 @@ jobs:
             pm=npm;  instalar="npm ci";                          lockfile="${RUTA}/package-lock.json"
           fi
           hay_test_rules=$(jq -r 'if .scripts["test:rules"] then "true" else "false" end' "${RUTA}/package.json")
+          # Nombre real del script de pruebas de reglas de Firestore. El
+          # estandar asume `test:rules`; este proyecto lo llama `pruebas:reglas`.
+          script_reglas=$(jq -r '
+            if .scripts["pruebas:reglas"] then "pruebas:reglas"
+            elif .scripts["test:rules"] then "test:rules"
+            else "" end' "${RUTA}/package.json")
           {
             echo "hay_componente=true"; echo "pm=$pm"; echo "instalar=$instalar"
             echo "lockfile=$lockfile"; echo "hay_test_rules=$hay_test_rules"
+            echo "script_reglas=$script_reglas"
           } >> "$GITHUB_OUTPUT"
           echo "Componente: $RUTA | Gestor: $pm | test:rules: $hay_test_rules"
+
+      # -------------------------------------------------------------------
+      # Filtro de rutas hecho DENTRO del workflow, no en el trigger `on:`.
+      # El motivo es concreto: `compuerta-pr` es el unico status check que
+      # exige el ruleset de main. Si se filtrara con `on: pull_request: paths:`,
+      # un PR que solo toca documentacion no dispararia el workflow, el check
+      # requerido quedaria eternamente pendiente y el PR no se podria fusionar
+      # nunca. Filtrando aca, el workflow siempre corre y siempre reporta;
+      # lo que se omite es la parte cara (construir y desplegar el panel).
+      # El estandar lo admite: 02-pipelines/README.md linea 233 recomienda
+      # filtrar por rutas en monorepos.
+      # -------------------------------------------------------------------
+      - name: Detectar cambios en el componente
+        id: cambios
+        env:
+          RUTA: ${{ env.RUTA_COMPONENTE }}
+          EVENTO: ${{ github.event_name }}
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          ANTES_PUSH: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Un tag o un workflow_dispatch son ordenes explicitas de publicar:
+          # no se filtran nunca, aunque el diff no toque el componente.
+          if [[ "$EVENTO" == "workflow_dispatch" ]] || [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "Evento de publicacion explicita: no se filtra por rutas."
+            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          case "$EVENTO" in
+            pull_request) base="$BASE_PR" ;;
+            push)         base="$ANTES_PUSH" ;;
+            *)            base="" ;;
+          esac
+
+          # Sin base utilizable (primer push de la rama, base de todo ceros,
+          # commit ausente tras un force-push) se asume que SI cambio: ante la
+          # duda, el pipeline completo, nunca el atajo.
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "Sin base de comparacion fiable: se asume cambio en el componente."
+            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          archivos=$(git diff --name-only "$base" "$GITHUB_SHA")
+          echo "Archivos cambiados:"; echo "$archivos" | sed 's/^/  /'
+          # Cambiar el propio pipeline tambien obliga a ejercitarlo entero.
+          if echo "$archivos" | grep -qE "^(${RUTA}/|\.github/workflows/)"; then
+            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
+            echo "El componente ${RUTA}/ (o el pipeline) cambio: se construye."
+          else
+            echo "admin_cambio=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Sin cambios en ${RUTA}/: se omiten construir y desplegar."
+          fi
 
       - name: Habilitar corepack (pnpm/yarn)
         if: steps.pm.outputs.hay_componente == 'true' && steps.pm.outputs.pm != 'npm'
@@ -138,9 +217,11 @@ jobs:
   calidad:
     name: calidad
     needs: preparar
-    # Se omite mientras el componente Node no exista en el repositorio.
-    # compuerta-pr trata ese 'skipped' como aprobado solo en ese caso.
-    if: needs.preparar.outputs.hay_componente == 'true'
+    # Se omite si el componente no existe todavia, o si este evento no lo toca.
+    # compuerta-pr distingue esos 'skipped' legitimos de un fallo real.
+    if: >-
+      needs.preparar.outputs.hay_componente == 'true'
+      && needs.preparar.outputs.admin_cambio == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -152,8 +233,51 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
+
+      # ---------------------------------------------------------------------
+      # CONTROL 1 — Prohibiciones de renderizado.
+      # Portado de despliegue-admin.yml (retirado: duplicaba el despliegue).
+      #
+      # El visor de conversaciones muestra texto escrito por clientes finales
+      # de WhatsApp. Ese texto es entrada NO CONFIABLE: es dato, jamas marcado
+      # ni instruccion (§1 y §3 de ~/.claude/rules/security-rules.md). Este
+      # paso impide que alguien reintroduzca una via por la que ese texto se
+      # interprete como HTML o como codigo.
+      #
+      # Se descartan las lineas de comentario a proposito: TextoSeguro.tsx
+      # explica la prohibicion y nombra `dangerouslySetInnerHTML` dos veces,
+      # en comentarios. Explicar la prohibicion no es violarla.
+      # Va ANTES de instalar dependencias: es barato y falla rapido.
+      # ---------------------------------------------------------------------
+      - name: Prohibiciones de renderizado
+        run: |
+          set -euo pipefail
+          patrones='dangerouslySetInnerHTML|\.innerHTML|document\.write|new Function\(|eval\('
+          hallazgos=$(grep -rInE "$patrones" web/src functions/src \
+                      | grep -vE ':[0-9]+: *(\*|//|/\*)' || true)
+          if [ -n "$hallazgos" ]; then
+            echo "$hallazgos"
+            echo "::error::Se encontro una via de interpretacion de texto no confiable."
+            exit 1
+          fi
+          echo "Sin coincidencias fuera de comentarios."
+
+      # ---------------------------------------------------------------------
+      # CONTROL 2 — Las reglas de Firestore niegan por defecto.
+      # Portado de despliegue-admin.yml. Que nadie deshaga el aislamiento
+      # entre comercios borrando la negacion final del archivo de reglas.
+      # ---------------------------------------------------------------------
+      - name: Las reglas niegan por defecto
+        run: |
+          set -euo pipefail
+          grep -q 'match /{documento=\*\*} {' firestore.rules
+          grep -q 'allow read, write: if false;' firestore.rules
+          echo "La negacion final esta presente."
 
       - name: Habilitar corepack
         if: needs.preparar.outputs.pm != 'npm'
@@ -170,12 +294,44 @@ jobs:
         run: ${{ needs.preparar.outputs.instalar }}
 
       - name: Lint
-        run: npm run lint --if-present
+        # En un workspace pnpm el script `lint` vive en los paquetes (web/),
+        # no en la raiz: `pnpm -r` lo alcanza, `npm run` desde la raiz no.
+        env:
+          PM: ${{ needs.preparar.outputs.pm }}
+        run: |
+          set -euo pipefail
+          if [[ "$PM" == "pnpm" ]]; then pnpm -r --if-present run lint
+          else npm run lint --if-present; fi
 
-      - name: Verificación de tipos (si existe el script)
-        run: npm run typecheck --if-present
+      - name: Verificacion de tipos (si existe el script)
+        env:
+          PM: ${{ needs.preparar.outputs.pm }}
+        run: |
+          set -euo pipefail
+          if [[ "$PM" == "pnpm" ]]; then pnpm -r --if-present run typecheck
+          else npm run typecheck --if-present; fi
+
+      # ---------------------------------------------------------------------
+      # Pruebas unitarias con cobertura. El panel todavia no define un script
+      # `test` con cobertura (sus pruebas hoy son las de reglas de Firestore,
+      # que corren mas abajo contra el emulador). El control NO se elimina: se
+      # anuncia como no aplicado, para que se vea que falta, y vuelve a
+      # exigirse solo con agregar el script `test` en admin/package.json.
+      # ---------------------------------------------------------------------
+      - name: ¿Hay pruebas unitarias con cobertura?
+        id: cobertura
+        run: |
+          set -euo pipefail
+          if jq -e '.scripts.test' package.json >/dev/null 2>&1; then
+            echo "hay=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hay=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Sin script 'test' en package.json: el umbral COVERAGE_MIN=${COVERAGE_MIN} % NO se esta aplicando. Agregue pruebas unitarias con cobertura."
+            echo "### ⚠️ Cobertura no verificada: falta el script \`test\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Pruebas unitarias con cobertura (Vitest)
+        if: steps.cobertura.outputs.hay == 'true'
         # json-summary es lo que lee el umbral; text es para el log.
         run: >-
           npm test --
@@ -183,6 +339,7 @@ jobs:
           --coverage.reporter=text --coverage.reporter=json-summary
 
       - name: Umbral de cobertura (COVERAGE_MIN=${{ env.COVERAGE_MIN }} %)
+        if: steps.cobertura.outputs.hay == 'true'
         run: |
           set -euo pipefail
           archivo=coverage/coverage-summary.json
@@ -198,19 +355,54 @@ jobs:
             exit 1
           fi
 
+      # ---------------------------------------------------------------------
+      # CONTROL 3 — Pruebas de las reglas de Firestore contra el emulador.
+      # Portado de despliegue-admin.yml. Son las pruebas que verifican el
+      # aislamiento entre comercios; sin ellas, un cambio en firestore.rules
+      # entra sin red.
+      #
+      # Se invoca el script DEL PROYECTO (admin/pruebas/correr.sh), no
+      # `firebase emulators:exec`. Motivo, documentado en ese script: el
+      # detector de arranque del CLI reporta "port taken" aunque el puerto
+      # este libre y deja el proceso Java huerfano. El script levanta el jar
+      # directamente y es determinista. Si algun dia conviene volver al camino
+      # estandar, admin/package.json ya tiene `pruebas:reglas:cli`.
+      #
+      # Java: ubuntu-latest lo trae, pero se fija la version para no depender
+      # de que la imagen del runner cambie.
+      # ---------------------------------------------------------------------
+      - name: Java para el emulador de Firestore
+        if: needs.preparar.outputs.script_reglas != ''
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Descargar el emulador de Firestore
+        if: needs.preparar.outputs.script_reglas != ''
+        # Deja el jar en ~/.cache/firebase/emulators/, que es donde lo busca
+        # pruebas/correr.sh. No inicia sesion: el emulador es 100 % local.
+        run: npx --yes firebase-tools@${{ env.FIREBASE_TOOLS_VERSION }} setup:emulators:firestore
+
       - name: Pruebas de reglas de Firestore (emulador)
-        if: needs.preparar.outputs.hay_test_rules == 'true'
-        # El emulador necesita Java (preinstalado en ubuntu-latest).
-        run: >-
-          npx --yes firebase-tools@${{ env.FIREBASE_TOOLS_VERSION }}
-          emulators:exec --only firestore --project demo-pruebas
-          "npm run test:rules"
+        if: needs.preparar.outputs.script_reglas != ''
+        env:
+          PM: ${{ needs.preparar.outputs.pm }}
+          SCRIPT: ${{ needs.preparar.outputs.script_reglas }}
+        run: |
+          set -euo pipefail
+          "$PM" run "$SCRIPT"
 
   # ---------------------------------------------------------------------------
   # Fase 2 — seguridad-estatica: reusable OSS (todos los modos).
   # NOTA: en el repositorio del proyecto la ruta es local
   # (./.github/workflows/_reusable-security.yml); bootstrap-repo.sh copia el
-  # archivo. `secrets: inherit` pasa GITLEAKS_LICENSE y SNYK_TOKEN si existen.
+  # archivo. Los secretos se pasan UNO POR UNO, no con `secrets: inherit`:
+  # inherit entrega al workflow llamado TODOS los secretos del repositorio,
+  # incluidas las credenciales de despliegue, que un escáner no necesita. Lo
+  # marca Semgrep (yaml.github-actions.security.secrets-inherit) y es la §5 de
+  # ~/.claude/rules/security-rules.md: privilegio mínimo. Estos dos son los
+  # únicos que `_reusable-security.yml` declara, y ambos son opcionales.
   # subir_sarif: solo cuando Code Scanning está disponible (público o GHAS).
   # ---------------------------------------------------------------------------
   seguridad-estatica:
@@ -230,7 +422,9 @@ jobs:
       bloquear_en: ${{ vars.BLOQUEAR_EN || 'CRITICAL,HIGH' }}
       subir_sarif: ${{ github.event.repository.visibility == 'public' || vars.GHAS_ENABLED == 'true' }}
       ref: ${{ inputs.tag || '' }}
-    secrets: inherit
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   # ---------------------------------------------------------------------------
   # Fase 1.b — calidad-documentacion: el stack que HOY existe en el repositorio
@@ -248,6 +442,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Sintaxis de los scripts Bash
@@ -306,7 +503,9 @@ jobs:
   construir:
     name: construir
     needs: preparar
-    if: needs.preparar.outputs.hay_componente == 'true'
+    if: >-
+      needs.preparar.outputs.hay_componente == 'true'
+      && needs.preparar.outputs.admin_cambio == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -321,6 +520,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
 
@@ -341,14 +543,123 @@ jobs:
       - name: Build (${{ matrix.ambiente }})
         env:
           APP_ENV: ${{ matrix.ambiente }}
+          PM: ${{ needs.preparar.outputs.pm }}
           VITE_APP_VERSION: ${{ github.ref_name }}-${{ github.sha }}
-        run: npm run build -- --mode "$APP_ENV"
+          # Configuracion PUBLICA del cliente Firebase: viaja en el bundle, no
+          # son secretos. Van como variables del repositorio para no versionar
+          # los identificadores del proyecto (repositorio publico).
+          # PENDIENTE: hoy `vars` es de alcance repositorio, asi que las dos
+          # ramas de la matriz reciben los MISMOS valores. Para separar de
+          # verdad staging de produccion hay que declarar `environment:` en
+          # este job y mover las variables a cada Environment.
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_APPCHECK_SITE_KEY: ${{ vars.VITE_APPCHECK_SITE_KEY }}
+        run: |
+          set -euo pipefail
+          # Workspace: los scripts de construccion viven en la raiz del
+          # componente y delegan en los paquetes. Si no existen, se cae al
+          # `build` plano que asume el estandar.
+          if jq -e '.scripts["web:build"]' package.json >/dev/null 2>&1; then
+            "$PM" run web:build -- --mode "$APP_ENV"
+            if jq -e '.scripts["functions:build"]' package.json >/dev/null 2>&1; then
+              "$PM" run functions:build
+            fi
+          else
+            npm run build -- --mode "$APP_ENV"
+          fi
+
+      # ---------------------------------------------------------------------
+      # Cloud Functions: el punto donde este despliegue tiene mas chance de
+      # romperse, y por que.
+      #
+      # `firebase deploy` NO sube el monorepo: comprime solo el directorio
+      # `source` de firebase.json (aca `functions/`), excluyendo node_modules
+      # y .git. Verificado leyendo firebase-tools 14.27:
+      # lib/deploy/functions/prepareFunctionsUpload.js linea 56.
+      #
+      # Consecuencias, las tres:
+      #
+      #  1. `functions/lib/` esta en .gitignore, asi que NO viene del checkout.
+      #     Si no se construye aca, se sube un paquete cuyo `main` apunta a un
+      #     archivo inexistente. Por eso se construye y se guarda como
+      #     artefacto, y los jobs de despliegue lo bajan.
+      #
+      #  2. `pnpm-lock.yaml` vive en admin/, NO en admin/functions/, asi que no
+      #     entra al zip. Cloud Build (buildpack de Google) instala con npm, sin
+      #     lockfile: resuelve el ultimo semver compatible y el despliegue deja
+      #     de ser reproducible. Se genera un package-lock.json DENTRO de
+      #     functions/ para que si entre al zip y Cloud Build use `npm ci`.
+      #
+      #  3. Si alguna dependencia de functions/package.json usara el protocolo
+      #     `workspace:*`, npm fallaria con EUNSUPPORTEDPROTOCOL en Cloud Build,
+      #     lejos de aca y con un mensaje poco claro. Hoy no hay ninguna
+      #     (verificado); este paso lo mantiene asi.
+      # ---------------------------------------------------------------------
+      - name: Cloud Functions — sin dependencias `workspace:`
+        run: |
+          set -euo pipefail
+          if [[ ! -f functions/package.json ]]; then
+            echo "Sin functions/: nada que verificar."; exit 0
+          fi
+          malas=$(jq -r '
+            ((.dependencies // {}) + (.devDependencies // {}))
+            | to_entries[] | select(.value | tostring | startswith("workspace:"))
+            | "\(.key)=\(.value)"' functions/package.json)
+          if [[ -n "$malas" ]]; then
+            echo "$malas"
+            echo "::error::functions/package.json usa el protocolo 'workspace:'. Cloud Build instala con npm y fallara con EUNSUPPORTEDPROTOCOL. Publique el paquete o copie el codigo dentro de functions/."
+            exit 1
+          fi
+          echo "Sin dependencias 'workspace:'."
+
+      - name: Cloud Functions — lockfile npm para Cloud Build
+        run: |
+          set -euo pipefail
+          [[ -f functions/package.json ]] || exit 0
+          # --package-lock-only: resuelve el arbol y escribe el lockfile sin
+          # instalar nada. Queda dentro de functions/, que es lo unico que
+          # firebase sube, y hace que Cloud Build use `npm ci` en vez de
+          # `npm install` sin lock.
+          ( cd functions && npm install --package-lock-only --no-audit --no-fund )
+          test -f functions/package-lock.json
+          echo "package-lock.json generado para Cloud Build."
+
+      - name: Localizar el directorio construido
+        id: dist
+        run: |
+          set -euo pipefail
+          # firebase.json de este proyecto publica `web/dist`; el esqueleto del
+          # estandar asume `dist`. Se acepta cualquiera de los dos.
+          for d in web/dist dist; do
+            if [[ -d "$d" ]]; then
+              echo "ruta=$d" >> "$GITHUB_OUTPUT"
+              echo "Construido en ${RUTA_COMPONENTE:-.}/$d"
+              exit 0
+            fi
+          done
+          echo "::error::No se encontro el directorio construido (web/dist ni dist)."
+          exit 1
 
       - name: Guardar dist/
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dist-${{ matrix.ambiente }}
-          path: ${{ env.RUTA_COMPONENTE }}/dist/
+          path: ${{ env.RUTA_COMPONENTE }}/${{ steps.dist.outputs.ruta }}/
+          retention-days: 7
+          if-no-files-found: error
+
+      # Se despliega lo que se probo: el `lib/` compilado y el lockfile viajan
+      # como artefacto, no se reconstruyen en el job de despliegue.
+      - name: Guardar functions/ (lib compilado + package-lock)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: functions-${{ matrix.ambiente }}
+          path: |
+            ${{ env.RUTA_COMPONENTE }}/functions/lib/
+            ${{ env.RUTA_COMPONENTE }}/functions/package-lock.json
           retention-days: 7
           if-no-files-found: error
 
@@ -370,10 +681,16 @@ jobs:
       contents: read
       id-token: write
       pull-requests: write
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
     steps:
       - name: Checkout (firebase.json)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
 
@@ -381,7 +698,15 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: dist-staging
-          path: dist
+          # firebase.json de admin/ publica `web/dist`.
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist
+
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-staging
+          # Restaura lib/ y package-lock.json donde firebase.json los espera.
+          path: ${{ env.RUTA_COMPONENTE }}/functions
 
       - name: Autenticar en GCP (WIF + impersonación)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -433,10 +758,16 @@ jobs:
     permissions:
       contents: read
       id-token: write # token OIDC para WIF
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
     steps:
       - name: Checkout (firebase.json, firestore.rules)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
 
@@ -444,7 +775,8 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: dist-staging
-          path: dist
+          # firebase.json de admin/ publica `web/dist`.
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
       - name: Autenticar en GCP (WIF + impersonación de la SA de deploy)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -473,13 +805,98 @@ jobs:
       - name: Desplegar hosting + reglas (staging)
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
-          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules' }}
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
           URL_STAGING: ${{ vars.STAGING_URL }}
         run: |
           set -euo pipefail
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
             --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
           echo "### Staging desplegado: $URL_STAGING" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # desplegar-dev — camino corto para PROBAR, no para operar.
+  #
+  # Se dispara SOLO a mano (workflow_dispatch con destino=dev). No corre en
+  # push ni en PR, asi que no compite con staging ni con produccion.
+  #
+  # Por que este camino y no los canales de vista previa de Hosting: un canal
+  # de vista previa publica el frontend, pero NO despliega reglas de Firestore,
+  # ni indices, ni Functions. El panel sin reglas desplegadas no lee un solo
+  # documento: se veria la pantalla de login y nada mas. Ademas exigiria que el
+  # proveedor OIDC confiara en el evento `pull_request`, y con el repositorio
+  # publico eso amplia la superficie justo donde no conviene.
+  #
+  # No pide `dast-y-humo` ni bloquea por DAST: es un ambiente de prueba sin
+  # datos reales. Si pasa por `calidad`, que es donde viven las prohibiciones
+  # de renderizado, la negacion por defecto de las reglas y las 99 pruebas
+  # contra el emulador.
+  # ---------------------------------------------------------------------------
+  desplegar-dev:
+    name: desplegar-dev
+    needs: [preparar, calidad, construir]
+    if: github.event_name == 'workflow_dispatch' && inputs.destino == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: dev
+      url: ${{ vars.DEV_URL }}
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # unica razon: pedir el token OIDC
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
+    steps:
+      - name: Checkout (firebase.json, firestore.rules, functions/)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+
+      - name: Descargar dist/
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: dist-staging
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist
+
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-staging
+          path: ${{ env.RUTA_COMPONENTE }}/functions
+
+      - name: Autenticar en GCP (WIF + impersonacion de la SA de dev)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_DEPLOY_DEV }}
+
+      - name: Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Desplegar en el proyecto de desarrollo
+        env:
+          PROYECTO: ${{ vars.GCP_PROJECT_ID_DEV }}
+          # Functions exige plan Blaze. En un proyecto Spark hay que dejar
+          # vars.FIREBASE_DEPLOY_ONLY_DEV en 'hosting,firestore:rules,firestore:indexes'
+          # o el despliegue falla entero por ese unico componente.
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY_DEV || 'hosting,firestore:rules,firestore:indexes' }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROYECTO" ]]; then
+            echo "::error::Falta la variable GCP_PROJECT_ID_DEV."
+            exit 1
+          fi
+          npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
+            --message "dev ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+          echo "### Dev desplegado: componentes [$SOLO] en $PROYECTO" >> "$GITHUB_STEP_SUMMARY"
+          echo "URL: https://${PROYECTO}.web.app" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # Fase 5 — dast-y-humo: contra staging recién desplegado.
@@ -508,7 +925,8 @@ jobs:
     if: >-
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         && !contains(github.ref_name, '-') && vars.MODO != 'B0')
-      || (github.event_name == 'workflow_dispatch' && inputs.confirmar == 'DESPLEGAR')
+      || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
+            && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -520,10 +938,16 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # El token del checkout no queda en .git/config (portado de
+          # despliegue-admin.yml, retirado).
+          persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0 # historial y tags completos para verificar la aprobación
@@ -571,7 +995,14 @@ jobs:
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: dist-production
-          path: dist
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist
+
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-production
+          # Restaura lib/ y package-lock.json donde firebase.json los espera.
+          path: ${{ env.RUTA_COMPONENTE }}/functions
 
       - name: Autenticar en GCP (WIF + impersonación, SA de producción)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -601,7 +1032,7 @@ jobs:
       - name: Desplegar hosting + reglas (producción)
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
-          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules' }}
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
           URL_PROD: ${{ vars.PROD_URL }}
         run: |
           set -euo pipefail
@@ -619,10 +1050,22 @@ jobs:
     needs: desplegar-produccion
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Environment SIN reglas de proteccion, a proposito. Existe por la
+    # condicion de atributos del proveedor OIDC, que exige que el `sub` del
+    # token nombre un Environment (ver .github/DESPLIEGUE-FIREBASE.md §2).
+    # Sin esto, este job NO puede autenticarse y el rollback automatico no
+    # funciona: se descubriria justo cuando hace falta.
+    # No se reutiliza `production` porque su revisor obligatorio dejaria el
+    # rollback esperando aprobacion humana, que es lo contrario de un rollback.
+    environment:
+      name: production-rollback
     permissions:
       contents: read
       id-token: write
       deployments: write
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
     steps:
       - name: Health check de producción (10 intentos, 15 s)
         id: salud
@@ -712,16 +1155,19 @@ jobs:
       - name: Verificar resultados de los jobs requeridos
         env:
           HAY_COMPONENTE: ${{ needs.preparar.outputs.hay_componente }}
+          HUBO_CAMBIO: ${{ needs.preparar.outputs.admin_cambio }}
           R_PREPARAR: ${{ needs.preparar.result }}
           R_CALIDAD: ${{ needs.calidad.result }}
           R_DOCS: ${{ needs.calidad-documentacion.result }}
           R_SEGURIDAD: ${{ needs.seguridad-estatica.result }}
         run: |
           set -euo pipefail
-          echo "preparar=$R_PREPARAR | calidad=$R_CALIDAD (componente=$HAY_COMPONENTE)"
+          echo "preparar=$R_PREPARAR"
+          echo "calidad=$R_CALIDAD (componente=$HAY_COMPONENTE, cambio=$HUBO_CAMBIO)"
           echo "calidad-documentacion=$R_DOCS | seguridad-estatica=$R_SEGURIDAD"
 
-          # Siempre obligatorios, exista o no el componente Node.
+          # Obligatorios SIEMPRE, toque o no el componente. Son los que
+          # impiden que la compuerta quede vacia cuando 'calidad' se omite.
           for r in "$R_PREPARAR" "$R_DOCS" "$R_SEGURIDAD"; do
             if [[ "$r" != "success" ]]; then
               echo "::error::compuerta-pr bloqueada: algun job requerido no termino en success"
@@ -729,18 +1175,27 @@ jobs:
             fi
           done
 
-          # 'calidad' solo puede omitirse mientras NO exista admin/package.json.
-          # Si el componente existe, su resultado es obligatorio; y un 'skipped'
-          # con componente presente se trata como fallo, no como aprobacion.
-          if [[ "$HAY_COMPONENTE" == "true" ]]; then
-            if [[ "$R_CALIDAD" != "success" ]]; then
-              echo "::error::compuerta-pr bloqueada: el componente Node existe y 'calidad' no aprobo"
-              exit 1
-            fi
-          elif [[ "$R_CALIDAD" != "skipped" ]]; then
-            echo "::error::compuerta-pr bloqueada: 'calidad' termino en $R_CALIDAD sin componente Node"
-            exit 1
-          else
-            echo "::notice::'calidad' omitida: admin/package.json todavia no existe."
+          # 'calidad' solo puede omitirse por dos motivos legitimos y
+          # verificables: que el componente no exista todavia, o que este
+          # evento no lo toque. En cualquier otro caso, un 'skipped' es un
+          # fallo, no una aprobacion: si no, bastaria con romper 'preparar'
+          # para que el panel entre sin revisar.
+          if [[ "$R_CALIDAD" == "success" ]]; then
+            echo "compuerta-pr: aprobada"; exit 0
           fi
-          echo "compuerta-pr: aprobada"
+
+          if [[ "$R_CALIDAD" == "skipped" ]]; then
+            if [[ "$HAY_COMPONENTE" != "true" ]]; then
+              echo "::notice::'calidad' omitida: admin/package.json todavia no existe."
+              echo "compuerta-pr: aprobada"; exit 0
+            fi
+            if [[ "$HUBO_CAMBIO" == "false" ]]; then
+              echo "::notice::'calidad' omitida: este cambio no toca admin/."
+              echo "compuerta-pr: aprobada"; exit 0
+            fi
+            echo "::error::compuerta-pr bloqueada: 'calidad' se omitio sin motivo valido (componente=$HAY_COMPONENTE, cambio=$HUBO_CAMBIO)"
+            exit 1
+          fi
+
+          echo "::error::compuerta-pr bloqueada: 'calidad' termino en $R_CALIDAD"
+          exit 1

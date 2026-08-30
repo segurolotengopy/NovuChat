@@ -11,7 +11,12 @@ import { auth, db } from '../lib/firebase';
  * La validación del navegador es cortesía para el usuario; la que manda es la
  * del servidor. Nunca al revés.
  */
-const TOPES = { nombreNegocio: 80, descripcion: 400, calendarioId: 120, instruccionesExtra: 1500 };
+const TOPES: Record<string, number> = {
+  nombreNegocio: 80, descripcion: 400, direccion: 200, numeroRecepcion: 15,
+  calendarioId: 120, politicaCancelacion: 600, instruccionesExtra: 1500,
+  mensajeCierre: 300, mensajeErrorTemporal: 300,
+  mensajeReservaNoConfirmada: 300, mensajeComercioSuspendido: 300,
+};
 
 export function Configuracion() {
   const { tenantId = '' } = useParams();
@@ -25,8 +30,16 @@ export function Configuracion() {
       setDatos({
         nombreNegocio: String(v['nombreNegocio'] ?? ''),
         descripcion: String(v['descripcion'] ?? ''),
-        telefonoRecepcion: String(v['telefonoRecepcion'] ?? ''),
+        direccion: String(v['direccion'] ?? ''),
+        numeroRecepcion: String(v['numeroRecepcion'] ?? ''),
         calendarioId: String(v['calendarioId'] ?? ''),
+        politicaCancelacion: String(v['politicaCancelacion'] ?? ''),
+        tratamiento: String(v['tratamiento'] ?? 'usted'),
+        estiloEmojis: String(v['estiloEmojis'] ?? 'pocos'),
+        mensajeCierre: String(v['mensajeCierre'] ?? ''),
+        mensajeErrorTemporal: String(v['mensajeErrorTemporal'] ?? ''),
+        mensajeReservaNoConfirmada: String(v['mensajeReservaNoConfirmada'] ?? ''),
+        mensajeComercioSuspendido: String(v['mensajeComercioSuspendido'] ?? ''),
         instruccionesExtra: String(v['instruccionesExtra'] ?? ''),
       });
     }, () => setEstado('No se pudo leer la configuración.'));
@@ -51,17 +64,27 @@ export function Configuracion() {
     }
   };
 
-  const campo = (clave: keyof typeof TOPES | 'telefonoRecepcion', etiqueta: string, multilinea = false) => (
+  const opcion = (clave: string, etiqueta: string, opciones: [string, string][]) => (
+    <label>
+      {etiqueta}
+      <select value={datos[clave] ?? ''}
+              onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })}>
+        {opciones.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+      </select>
+    </label>
+  );
+
+  const campo = (clave: string, etiqueta: string, multilinea = false) => (
     <label>
       {etiqueta}
       {multilinea
         ? <textarea
             value={datos[clave] ?? ''}
-            maxLength={TOPES[clave as keyof typeof TOPES] ?? 200}
+            maxLength={TOPES[clave] ?? 200}
             onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />
         : <input
             value={datos[clave] ?? ''}
-            maxLength={TOPES[clave as keyof typeof TOPES] ?? 200}
+            maxLength={TOPES[clave] ?? 200}
             onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />}
     </label>
   );
@@ -72,8 +95,43 @@ export function Configuracion() {
       <form onSubmit={guardar}>
         {campo('nombreNegocio', 'Nombre del negocio')}
         {campo('descripcion', 'Descripción', true)}
-        {campo('telefonoRecepcion', 'Teléfono de recepción (sin +)')}
+
+        {campo('direccion', 'Dirección del local')}
+        <p className="ayuda aviso-datos">
+          Si deja este campo vacío, el asistente <strong>va a decir que no tiene
+          el dato y que lo consulta con recepción</strong>. Es lo correcto: el
+          28 de agosto, sin este campo, el asistente inventó una dirección. Un
+          dato equivocado acá hace que un cliente se presente donde no debe.
+        </p>
+
+        {campo('numeroRecepcion', 'Número de recepción (sin +, solo dígitos)')}
         {campo('calendarioId', 'ID del calendario de Google')}
+        {campo('politicaCancelacion', 'Política de cancelación', true)}
+
+        <h3>Voz del asistente</h3>
+        {opcion('tratamiento', 'Cómo trata al cliente', [
+          ['usted', 'De usted'], ['tu', 'De tú'], ['neutro', 'Impersonal'],
+        ])}
+        {opcion('estiloEmojis', 'Emojis', [
+          ['ninguno', 'Ninguno'], ['pocos', 'Pocos'], ['muchos', 'Varios'],
+        ])}
+        <p className="ayuda">
+          Son opciones cerradas y no campos de texto a propósito: lo que se elige
+          acá entra en las instrucciones del asistente, y una lista cerrada no se
+          puede usar para darle órdenes.
+        </p>
+
+        <h3>Mensajes fijos</h3>
+        {campo('mensajeCierre', 'Al cerrar la conversación', true)}
+        {campo('mensajeErrorTemporal', 'Si algo falla temporalmente', true)}
+        {campo('mensajeReservaNoConfirmada', 'Si no se pudo confirmar una reserva', true)}
+        {campo('mensajeComercioSuspendido', 'Si el servicio está suspendido', true)}
+        <p className="ayuda">
+          El mensaje de suspensión solo se puede escribir mientras el servicio
+          está activo. Conviene dejarlo preparado.
+        </p>
+
+        <h3>Indicaciones</h3>
         {campo('instruccionesExtra', 'Indicaciones para el asistente', true)}
         <p className="ayuda">
           Las indicaciones se le entregan al asistente como <strong>dato</strong>,

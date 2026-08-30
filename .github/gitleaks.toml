@@ -108,3 +108,69 @@ regexes = [
   '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
 ]
 stopwords = ["ejemplo", "example", "placeholder", "sample"]
+
+# -----------------------------------------------------------------------------
+# Falso positivo de `generic-api-key` por asignación con VALOR VACÍO
+# -----------------------------------------------------------------------------
+# Bloqueó el pipeline del PR #1. Diagnóstico hecho sobre el SARIF del run y
+# reproducido con la expresión regular de la regla, no supuesto:
+#
+#   admin/scripts/emuladores.sh, commit ce0b484, líneas 111 y 112
+#     111: VITE_APPCHECK_SITE_KEY=      <- valor VACÍO
+#     112: VITE_USAR_EMULADORES=true    <- lo que gitleaks reporta como secreto
+#
+# El mecanismo: la regla `generic-api-key` lleva una clase de caracteres
+# opcional después del separador `=` que incluye \s, y \s incluye el salto de
+# línea. Con el valor vacío, el motor cruza el renglón y captura la línea
+# SIGUIENTE como si fuera el secreto. Por eso el SARIF marca startLine 111 y
+# endLine 112: el hallazgo abarca dos líneas. El "secreto" es literalmente la
+# cadena VITE_USAR_EMULADORES=true.
+#
+# Nota: el hallazgo NUNCA fue VITE_FIREBASE_API_KEY=clave-ficticia-de-emulador
+# de la línea 107, como se creyó primero. Esa lectura mapeaba mal el número de
+# línea del SARIF. La allowlist de `ficticia` de abajo se conserva porque el
+# criterio es correcto -el repositorio está en español y la lista del estándar
+# solo traía `ejemplo`-, pero no era lo que bloqueaba.
+#
+# Se filtra por FORMA DEL VALOR, nunca por ruta ni por huella de commit: las
+# dos reglas de abajo son verdades sobre el dato, no permisos sobre un archivo.
+# Comprobado que NO permiten AIza..., sk-ant-..., ghp_... ni una contraseña.
+#
+# Como gitleaks escanea la HISTORIA, corregir el archivo hoy no borraría el
+# hallazgo: vive en un commit ya empujado. Por eso la salida es de config.
+# -----------------------------------------------------------------------------
+[[allowlists]]
+description = "Asignación con valor vacío: un valor vacío no puede ser un secreto"
+regexTarget = "line"
+regexes = [
+  '''^[ \t]*[A-Za-z_][A-Za-z0-9_]*=[ \t]*$''',
+]
+
+[[allowlists]]
+description = "El secreto capturado es otra asignación con literal no secreto"
+regexes = [
+  '''^[A-Z][A-Z0-9_]*=(true|false|[0-9]+)$''',
+]
+
+# -----------------------------------------------------------------------------
+# Igual que el bloque de arriba, pero mirando la LÍNEA COMPLETA en vez del valor
+# capturado. Hace falta porque la regla `generic-api-key` a veces recorta el
+# secreto y se pierde la palabra que delata que es sintético.
+#
+# Se agregan las formas en español: el repositorio está escrito en español y la
+# lista de arriba solo traía `ejemplo`. Cubre valores como:
+#   admin/scripts/emuladores.sh:107  VITE_FIREBASE_API_KEY=clave-ficticia-de-emulador
+# No es un secreto: es el valor que el script escribe en `web/.env.local` para
+# apuntar el frontend a los emuladores. Con un proyecto `demo-*` el SDK de
+# Firebase ni siquiera valida la clave. (Esta entrada NO era la que bloqueaba
+# el pipeline; ver el bloque de arriba.)
+#
+# Se filtra por VALOR, nunca por ruta: si mañana aparece una clave de verdad en
+# ese mismo archivo, sigue saltando.
+# -----------------------------------------------------------------------------
+[[allowlists]]
+description = "Valores sintéticos declarados como tales (incluye español)"
+regexTarget = "line"
+regexes = [
+  '''(?i)(ficticia|ficticio|ejemplo|example|dummy|placeholder|changeme|REEMPLAZAR)''',
+]
