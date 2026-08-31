@@ -418,6 +418,89 @@ diagnóstico exigía que una persona abriera n8n y sacara una captura.
 `https://github.com/segurolotengopy/NovuChat.git`, configurado como `origin`.
 Repositorio **público y vacío**: nunca se hizo push.
 
+## Demo B — canal completo (2026-08-30)
+
+**Segundo número operativo**, en el portafolio NovuChat. Las cuatro
+comprobaciones en verde y los tres identificadores distintos de los del Demo A:
+app, WABA y número. `subscribed_apps` ya venía puesta.
+
+**El límite de portafolios no era un problema:** la cuenta tiene tres
+—NovuChat, AAB1 y Segurolotengo—, así que el riesgo que arrastrábamos desde el
+jueves quedó descartado. El error *"Tu cuenta no se pudo crear"* al pedir el
+número se resolvió completando la información del portafolio nuevo: Meta se
+niega a crear activos sobre un portafolio incompleto y no lo dice.
+
+**Hallazgo 17 — el marcador del número no puede ser compartido entre demos.**
+El flujo del Demo B usaba `REEMPLAZAR_PHONE_NUMBER_ID`, el mismo del Demo A, así
+que `preparar-import.sh` le habría puesto el número del Demo A. Habría enviado
+desde el número equivocado, en silencio, fallando después con un error de
+permisos que apunta a cualquier lado menos a la causa. Ahora tiene marcador
+propio, `REEMPLAZAR_PHONE_NUMBER_ID_B`.
+
+**Hallazgo 18 — los nodos HTTP Request impedían publicar.** Los dos del Demo B
+declaraban autenticación genérica sin tipo de credencial, y n8n no publica un
+flujo con nodos así. Se conectaron a la credencial `whatsAppApi` ya existente en
+lugar de repetir el token en una cabecera: un secreto menos que custodiar.
+
+**QR subido** con el número del Demo B — el media ID queda ligado al número que
+lo sube, así que el del Demo A no habría servido. **Vence a los 30 días**: si el
+9 de septiembre estuviera vencido, se regenera con
+`./scripts/subir-qr.sh --env .env.demo-b`.
+
+## Demo B VALIDADO DE PUNTA A PUNTA (2026-08-31)
+
+Conversación completa contra WhatsApp real: lista interactiva de bienvenida,
+toma de pedido con opciones, cálculo del total desglosado, envío del QR **en su
+lugar de la conversación**, recepción del comprobante y confirmación del pedido
+con aviso al dueño.
+
+**La prohibición 3 se cumple y está verificada a ojo:** el QR llega con
+«DEMOSTRACIÓN · ESTE QR NO COBRA» impreso arriba, «SIMULACRO DE PAGO» abajo, y
+el epígrafe dice «cobro SIMULADO, no cobra ni mueve dinero». Rótulo en la
+imagen **y** en el texto. La confirmación dice «Pago verificado (SIMULADO —
+demostración, sin cobro real)» y el aviso al dueño repite que no hubo
+acreditación bancaria.
+
+Trato en tuteo boliviano, sin voseo, con emojis acotados.
+
+**Hallazgo 19 — un media ID queda LIGADO al número que lo sube.** El QR se
+había subido con el número del Demo A; enviarlo desde el Demo B devuelve
+`(#131000) Something went wrong`, un error que no menciona ni el media ni el
+número. Se comprueba consultando el media con cada token: existe para uno y no
+para el otro.
+
+**Hallazgo 20 — la URL del nodo de envío del QR no llevaba `/messages`.** Un
+carácter de diferencia con el nodo de la lista, que sí funcionaba, y el mismo
+error genérico de Meta.
+
+**Hallazgo 21 — el flujo de recordatorios leía un solo calendario.** Desde que
+cada profesional tiene el suyo, no habría visto ninguna cita y nadie habría
+recibido su recordatorio, sin error ni aviso. Corregido.
+
+**Lección de método, tercera vez en dos días:** un `sed`/`replace` que no
+coincide deja el script sin cambiar y todo parece funcionar. Pasó con el
+`--env` de `subir-qr.sh`, que aceptaba la opción y seguía usando el otro
+entorno. Verificar el efecto, no la ejecución.
+
+## Recordatorios — probados de punta a punta (2026-08-31)
+
+Flujo creado en n8n por API (`HgAc711lMs4ArbbZ`, 9 nodos) y **probado a mano
+con Execute workflow, sin publicarlo**. Recorre los tres calendarios, encuentra
+la cita, extrae el teléfono de la descripción del evento, envía el recordatorio
+y marca la cita como recordada.
+
+**Hallazgo 22 — el nodo que marca la cita actualizaba el calendario por
+defecto.** La cita vive en el de la especialista, así que devolvía «no se
+encuentra el recurso». Sin esa marca el flujo pierde su única defensa contra el
+doble envío: cada corrida volvería a encontrar la misma cita y mandaría el
+recordatorio otra vez. Ahora `Preparar recordatorios` recuerda en qué
+calendario está cada cita — en un calendario secundario, el propio evento lo
+dice en `organizer.email`.
+
+**Sigue SIN PUBLICAR, a propósito.** Al activarlo, todos los días a las 17:00
+escribe por WhatsApp a quien tenga cita al día siguiente. Es decisión de Andres
+cuándo activarlo y con qué horario.
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 - **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes

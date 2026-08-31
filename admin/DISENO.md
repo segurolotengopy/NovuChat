@@ -207,10 +207,13 @@ aislamiento de los datos, que es lo que importa.
 
 /rutasWhatsApp/{phoneNumberId}                   índice inverso número → comercio
 /plataforma/notificaciones                       destinos de correo de NovuChat
+/plataforma/cobroSimulado                        rótulos del simulacro (prohibición 3)
 
 /tenants/{tenantId}                              ficha: nombre, estado, plan,
                                                  waPhoneNumberId, waWabaId, vertical
-   /config/negocio                               lo que hoy es `Config del negocio`
+   /config/negocio                               COMÚN a cualquier comercio
+   /config/agendamiento                          solo vertical de citas
+   /config/venta                                 solo vertical de venta y cobro
    /catalogo/{itemId}                            servicios y precios
    /miembros/{uid}                               ESPEJO de los claims (no autoriza)
    /contactos/{contactoId}                       personas de referencia del comercio
@@ -1068,6 +1071,86 @@ valor con forma equivocada, porque eso falla en silencio.
 
 ---
 
+## 4sexies. Los dos verticales en una sola consola
+
+Con los dos demos operativos, el modelo ya no puede asumir agendamiento. El
+problema no es agregar campos: es **agregarlos sin que el panel se convierta en
+un formulario con la unión de todo**.
+
+### 4sexies.1 Qué es común y qué depende del rubro
+
+| | Común a cualquier comercio | Agendamiento | Venta y cobro |
+|---|---|---|---|
+| **Documento** | `/config/negocio` | `/config/agendamiento` | `/config/venta` |
+| **Contiene** | identidad, dirección, horarios, voz del asistente, mensajes fijos, política de cancelación, catálogo | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho |
+| **Colecciones propias** | catálogo, contactos, conversaciones, bitácora | funcionarios, agenda | — |
+
+El **catálogo con precios es común**: el Demo A lo usa para servicios con
+duración y el Demo B para productos. Es el mismo concepto y ya estaba modelado.
+
+### 4sexies.2 Tres documentos, no uno con la unión de todos los campos
+
+Podría haber sido un solo documento grande con todo opcional. No lo es, por tres
+razones en orden de importancia:
+
+1. **La validación queda por documento, con su propia lista blanca.** Un esquema
+   único obligaría a escribir «si el vertical es X entonces el campo Y es
+   válido» dentro de las reglas de Firestore — exactamente el tipo de condición
+   que se rompe al agregar el tercer vertical.
+2. **El comercio no puede escribir el documento que no le toca.** La regla ata el
+   documento al `vertical` de la ficha del tenant, que el comercio no escribe. Un
+   salón de belleza **no puede** fijar el recargo de flota. Eso no se logra
+   escondiendo el campo en la pantalla: esconder no protege de nada, porque la
+   petición se construye igual desde la consola del navegador.
+3. **La pantalla no necesita lógica de ramas.** Lee el documento común y el de su
+   vertical. `ConfiguracionVertical` tiene una tabla de campos por rubro y no un
+   solo `if` de negocio.
+
+Las capacidades viven en una tabla —`tieneAgenda`, `tieneCobro`— y no en
+condiciones dispersas: **agregar el vertical interno de NovuChat es tocar dos
+líneas**, no cazar condicionales por el archivo.
+
+### 4sexies.3 Los rótulos del cobro simulado NO los edita el comercio
+
+**Coincido con el criterio de Andres, y iría más lejos.** No solo no debe
+editarlos libremente: no debe poder editarlos en absoluto, y ni siquiera deben
+existir por comercio.
+
+Los rótulos —el texto impreso en el QR, el epígrafe y la confirmación— viven en
+`/plataforma/cobroSimulado`, son de NovuChat y son **los mismos para todos**.
+Ningún navegador los escribe, tampoco el del propietario. La razón: sostienen la
+prohibición 3 de `CLAUDE.md`, que es una regla del proyecto y no una preferencia
+del cliente. Un comercio podría querer sacar «SIMULACRO» porque «queda feo en la
+demo», y ese es precisamente el caso que hay que impedir — no con una advertencia
+en la pantalla, sino haciendo que el campo no exista.
+
+**Y `mediaIdQr` tampoco lo escribe el comercio**, aunque parezca un identificador
+técnico inocente. Apunta a la **imagen**, y la imagen lleva el rótulo impreso:
+quien pueda cambiarlo sube un QR sin rotular y saltea la prohibición **sin editar
+un solo texto**. Es el camino que no salta a la vista y es el que había que
+cerrar. Lo registra NovuChat, lo cual además es coherente con el hallazgo 19 —un
+media ID queda ligado al número que lo sube— y el número también lo asigna
+NovuChat.
+
+**El sistema falla hacia el rótulo.** Si el documento de plataforma faltara,
+rigen los textos de respaldo del código; una cadena vacía tampoco sirve para
+borrar un rótulo. Sin `mediaIdQr` no se envía QR, que es lo correcto: mejor no
+mandar nada que mandar una imagen sin rotular.
+
+Lo que el comercio **sí** decide es lo comercial: cuánto cobra de envío, cuánto
+recarga por flota, cuánto tarda y desde qué monto entrega.
+
+### 4sexies.4 Una consecuencia que conviene conocer
+
+El documento de venta mezcla campos del comercio con campos de NovuChat, y la
+validación usa `affectedKeys`. Por lo tanto **un `setDoc` con el objeto completo
+se rechaza**: reemplazar el documento borraría `mediaIdQr`, y borrar también es
+afectar. La pantalla usa `updateDoc`. Es deliberado — sin eso, el camino más
+natural del programador desarmaría en silencio el control de la prohibición 3— y
+hay una prueba dedicada a ese caso exacto.
+
+---
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido
@@ -1193,7 +1276,8 @@ admin/
 │       └── paginas/             Ingresar, Tenants, Configuracion,
 │                                Conversaciones, Usuarios, Contactos,
 │                                Metricas, EstadoCuenta, Reclamos,
-│                                Bitacora, Funcionarios
+│                                Bitacora, Funcionarios,
+│                                ConfiguracionVertical
 └── functions/                   Cloud Functions v2, TypeScript
     └── src/
         ├── index.ts             alta/baja, suspensión, roles, soporte, números
@@ -1230,8 +1314,9 @@ Dos trabajos con separación estricta:
 |---|---|
 | Compilación del frontend | ✅ `pnpm --filter @novuchat/admin-web build` — 72 módulos, sin errores |
 | Compilación de las Functions | ✅ `tsc -b` sin errores |
-| Pruebas de reglas con el emulador | ✅ **155 de 155, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
-| Pruebas puras (saneo, ranuras, índices) | ✅ **26 de 26**, sin emulador ni red |
+| Pruebas de reglas con el emulador | ✅ **179 de 179, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
+| Pruebas puras (saneo, ranuras, índices, rótulos) | ✅ **31 de 31**, sin emulador ni red |
+| Política de seguridad de contenido | ✅ **probada de verdad** con `pnpm csp`: el iframe de Auth se crea y no queda ninguna violación |
 | Comprobaciones del CI (grep) | ✅ corridas localmente, ambas pasan |
 | Despliegue a Firebase | ⛔ **no ejecutado.** No se creó ni modificó ningún recurso de nube |
 
@@ -1353,6 +1438,11 @@ activa de `gcloud` ni de `firebase`.
      contraseñas, límite de intentos y segundo factor para los administradores de
      comercio. Confirmar la tarifa vigente en la consola; con el volumen de
      NovuChat debería caer en el nivel gratuito, pero **no lo dé por hecho**.
+14d-bis. ⚠️ **Si aparece un proyecto nuevo o un dominio propio, agregar su
+     `authDomain` a `frame-src` en `admin/firebase.json`.** Hoy están enumerados
+     los de `-dev` y `-prod`. Si falta el del proyecto que se sirve, **el inicio
+     de sesión con Google se rompe en silencio**: el clic no hace nada. Se
+     comprueba en un minuto con `pnpm csp`.
 14e. Crear la primera cuenta de cada tipo y comprobar el vínculo en vivo: que un
      administrador de comercio que entra con Google **no vea nada**.
 

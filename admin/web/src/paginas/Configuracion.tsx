@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
+import { ConfiguracionVertical } from './ConfiguracionVertical';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -20,8 +21,16 @@ const TOPES: Record<string, number> = {
 
 export function Configuracion() {
   const { tenantId = '' } = useParams();
+  // El vertical sale de la ficha del comercio, que el comercio no escribe.
+  const [vertical, setVertical] = useState('');
   const [datos, setDatos] = useState<Record<string, string>>({});
   const [estado, setEstado] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId),
+      (d) => setVertical(String(d.get('vertical') ?? '')));
+  }, [tenantId]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -142,6 +151,11 @@ export function Configuracion() {
         <button type="submit">Guardar</button>
       </form>
       {estado && <p role="status">{estado}</p>}
+
+      {/* Solo lo del rubro de ESTE comercio. La pantalla no ofrece la puerta,
+          y las reglas además la cierran: un comercio de gastronomía no puede
+          escribir configuración de agenda ni aunque construya la petición. */}
+      <ConfiguracionVertical tenantId={tenantId} vertical={vertical} />
     </section>
   );
 }

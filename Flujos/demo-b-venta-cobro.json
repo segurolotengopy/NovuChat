@@ -7,37 +7,6 @@
   },
   "nodes": [
     {
-      "id": "nota-configuracion-b",
-      "name": "Nota Configuración B",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        -960,
-        -240
-      ],
-      "parameters": {
-        "content": "## Demo B — Venta y cobro (QR SIMULADO)\n\n**App de Meta: `NovuChat-Demo-B`, en el portafolio comercial NUEVO.**\nEl número de prueba es **uno por portafolio comercial, no por app**: por eso el Demo B\nnecesita su propio portafolio. Pasos en `GUIA-META-NOVUCHAT.md` (raíz del repo).\n\n**Antes de activar:**\n1. `WhatsApp Trigger` → **Trigger On = Messages** a mano. Al importar el JSON el parámetro\n   llega vacío. Dejá *Receive Message Status Updates* **sin valores**.\n2. Credenciales: *WhatsApp Trigger* (App ID + App Secret de `NovuChat-Demo-B`), *WhatsApp*\n   (token permanente del usuario de sistema + WABA ID del portafolio nuevo) y *Header Auth*\n   (`Authorization: Bearer <token permanente>`) para los dos nodos HTTP.\n3. Credencial *Google Gemini*; el modelo se elige **del desplegable**, nunca a mano.\n4. Completar `Config del negocio`: todo lo `REEMPLAZAR_…`. Es el ÚNICO nodo que se toca\n   para instalar un cliente nuevo.\n5. Subir `Demo-Recursos/qr-demo.png` con `POST /{{PHONE_NUMBER_ID}}/media` **desde el número\n   del Demo B** y pegar el media ID en `qrMediaId` (vale 30 días, no necesita hosting).\n   Si preferís URL pública, dejá `qrMediaId` vacío y llená `qrUrl`.\n6. `subscribed_apps`: la WABA del portafolio nuevo debe estar suscrita a esta app. **No existe\n   en la interfaz de Meta, solo por API** — `scripts/verificar-meta.sh`. Sin esto no entra nada.\n7. El carrito nativo (`order`) solo funciona si la WABA tiene catálogo. Sin catálogo el pedido\n   entra por lista + texto y el flujo funciona igual.",
-        "width": 620,
-        "height": 460
-      }
-    },
-    {
-      "id": "nota-prohibiciones-b",
-      "name": "Nota Cobro simulado",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        -960,
-        250
-      ],
-      "parameters": {
-        "content": "## Prohibición 3 — el cobro es SIMULADO (tres compuertas)\n\nNo alcanza con pedírselo al modelo: un LLM puede omitir la frase. El rótulo está\nimpuesto **por código** en tres lugares, y todos los caminos de salida pasan por ellos:\n\n1. **La imagen**: `qr-demo.png` lleva el rótulo impreso *dentro* de la imagen.\n2. **El epígrafe**: `captionQr` de `Config del negocio`, que el nodo `Enviar QR` manda\n   siempre como `caption`. No hay camino que envíe la imagen sin epígrafe.\n3. **El texto**: el nodo `Procesar respuesta` revisa CADA respuesta antes de salir. Si\n   detecta una afirmación de cobro sin la palabra 'simulado', le agrega el rótulo. Cubre\n   el camino de reintento (el cliente manda dos veces el comprobante), el mensaje suelto\n   y cualquier respuesta fuera de guion.\n\n## Prohibición 4 — el agente no niega ser una IA\nRegla explícita en el System Message **y** corrección por código en `Procesar respuesta`:\nsi la respuesta niega ser IA o afirma ser una persona, se reescribe antes de enviarse.\n\nEl campo `avisos` de la salida registra qué compuerta actuó: revisalo en las ejecuciones\ndel ensayo. Si `rotulo_generico` aparece seguido, hay que ajustar el prompt.",
-        "width": 620,
-        "height": 420,
-        "color": 3
-      }
-    },
-    {
       "id": "trigger-whatsapp",
       "name": "WhatsApp Trigger",
       "type": "n8n-nodes-base.whatsAppTrigger",
@@ -116,7 +85,7 @@
               "id": "b02",
               "name": "phoneNumberId",
               "type": "string",
-              "value": "REEMPLAZAR_PHONE_NUMBER_ID"
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_B"
             },
             {
               "id": "b03",
@@ -225,6 +194,18 @@
               "name": "textoBienvenida",
               "type": "string",
               "value": "¡Hola! 👋 Soy el asistente virtual (IA) de "
+            },
+            {
+              "id": "b21",
+              "name": "tratamiento",
+              "type": "string",
+              "value": "Tutea siempre al cliente (tu, te, ti, tuyo). NUNCA uses voseo -- nada de \"queres\", \"tenes\", \"pasame\", \"avisame\", \"dale\" ni \"che\": eso es rioplatense y suena extranjero en Bolivia. Hablas como en La Paz: cordial, cercano y respetuoso, sin modismos de otro pais."
+            },
+            {
+              "id": "b22",
+              "name": "estiloEmojis",
+              "type": "string",
+              "value": "Usa emojis con moderacion y relacionados con lo que decis: uno o dos por mensaje, nunca dentro de un precio, un total ni un horario. Repertorio: 🍔 hamburguesa · 🍟 salchipapa · 🥤 gaseosa · 🛵 delivery · 🛍️ retiro en tienda · 📖 menu · 🧾 total · ✅ pedido confirmado · 👋 saludo. Si el mensaje da una mala noticia o un problema, sin emojis alegres."
             }
           ]
         },
@@ -291,18 +272,25 @@
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
-        "authentication": "genericCredentialType",
+        "authentication": "predefinedCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.from,\n  type: 'interactive',\n  interactive: {\n    type: 'list',\n    header: { type: 'text', text: $json.nombreNegocio },\n    body: { text: $json.textoBienvenida + $json.nombreNegocio + '. ¿Cómo te ayudo hoy?' },\n    footer: { text: 'Demostración NovuChat · los cobros son simulados' },\n    action: { button: 'Ver opciones', sections: [ { title: 'Elegí una opción', rows: [\n      { id: 'delivery', title: '🛵 Pedir por Delivery' },\n      { id: 'recojo', title: '🛍️ Pasar a recoger' },\n      { id: 'menu', title: '📖 Ver Menú Completo' }\n    ] } ] }\n  }\n}) }}",
         "options": {
           "timeout": 15000
-        }
+        },
+        "nodeCredentialType": "whatsAppApi"
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 1500
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Wo3TfsweL79OWoXA",
+          "name": "WhatsApp account 2"
+        }
+      }
     },
     {
       "id": "agente-novuchat",
@@ -317,7 +305,7 @@
         "promptType": "define",
         "text": "={{ $json.userInput }}",
         "options": {
-          "systemMessage": "=Eres NovuChat, el asistente virtual de ventas de {{ $json.nombreNegocio }} (restaurante y tienda retail). Amable, conciso (máximo 3 oraciones por mensaje), español boliviano de trato informal con el cliente, moneda siempre en \"{{ $json.moneda }}\".\n\nTRANSPARENCIA (regla que no se negocia): sos un asistente con inteligencia artificial. Si te preguntan si sos un robot, un bot o una IA, decilo con naturalidad y seguí ayudando. Nunca digas que sos una persona.\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, {{ $json.zonaHoraria }}, UTC-4). Calculá con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'); nunca uses otra hora. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }} (ese es su WhatsApp registrado).\n\nHORARIO DE ATENCIÓN: {{ $json.horarioAtencion }}.\n\nREGLAS RESTAURANTE:\n1. Menú de referencia, no existe nada fuera de esto: {{ $json.menuGastronomia }}. Delivery en zona urbana: {{ $json.costoDelivery }} {{ $json.moneda }}.\n2. Al recibir un pedido o un carrito, preguntá SIEMPRE si desea agregar una nota especial (sin cebolla, sin tomate, término de la carne) antes de cobrar.\n3. MEMORIA: si el cliente ya eligió 'Delivery' o 'Pasar a recoger' (incluida la opción del menú interactivo inicial), NO vuelvas a preguntar la modalidad. Si solo pidió ver el menú, DEBÉS preguntarla antes de cobrar. Si es Delivery, pedí la dirección y sumá el envío al total.\n\nREGLAS RETAIL:\n4. Catálogo de referencia: {{ $json.catalogoRetail }}. Si falta una variante obligatoria (talla, color), pedila antes de cobrar.\n5. Envío nacional por flota (recargo de terminal {{ $json.recargoFlota }} {{ $json.moneda }}): NO entregues el QR hasta tener Nombre completo y CI. Confirmá el celular proactivamente: 'Tengo registrado este WhatsApp, ¿usamos este mismo para la guía de la flota?'.\n\nCOBRO — ES UNA DEMOSTRACIÓN, NUNCA UN COBRO REAL:\n6. Este asistente NO cobra. El QR que se envía está rotulado como simulacro en la propia imagen y en su epígrafe, y no mueve dinero. Nunca digas ni insinúes que el cobro es real, que el dinero se acreditó o que verificaste un pago en un banco.\n7. Cuando tengas todos los datos, mostrá el TOTAL desglosado (productos + envío o recargo si aplica), avisá que enviás el código QR aclarando que es de demostración, y terminá tu mensaje EXACTAMENTE con la marca [ENVIAR_QR].\n8. Después del QR, NO confirmes el pedido hasta que llegue una IMAGEN (el comprobante). Si el cliente escribe otra cosa, atendelo y recordale con amabilidad el pago pendiente.\n9. Cuando llegue la imagen del comprobante: confirmá con el texto literal '{{ $json.textoPagoSimulado }}', resumí el pedido completo con su total, dá el tiempo estimado (cocina: {{ $json.tiempoCocina }} · retail: despacho {{ $json.despachoRetail }}) y terminá EXACTAMENTE con la marca [PEDIDO_CONFIRMADO]. Cerrá agradeciendo y mencionando que sumó {{ $json.puntosFidelizacion }} puntos en el club de fidelización.\n10. Si el cliente insiste en pagar de verdad o pregunta si el cobro es real, respondé que es una demostración y que en producción la acreditación la confirma el banco por webhook.\n11. Si el cliente cambia de opinión a mitad del flujo, recalculá el total inmediatamente antes de enviar el QR.\n12. Nunca inventes productos ni precios fuera de estas reglas. Si te piden algo que no está, decilo con honestidad y ofrecé lo que sí hay.\n\nECONOMÍA (el cliente está esperando en el chat: respondé en menos de 10 segundos):\n13. Resolvé cada mensaje en UN SOLO paso de razonamiento. No encadenes llamadas ni herramientas que no necesites: este flujo no tiene herramientas, toda la información que precisás está en estas reglas y en el historial.\n14. No repitas el pedido completo en cada mensaje: resumilo solo al pedir el pago y al confirmar.\n15. Preguntá de a un dato por vez y respondé directo, sin preámbulos ni disculpas de relleno.",
+          "systemMessage": "=Eres NovuChat, el asistente virtual de ventas de {{ $json.nombreNegocio }} (restaurante y tienda retail). Amable, conciso (máximo 3 oraciones por mensaje), español boliviano de trato informal con el cliente, moneda siempre en \"{{ $json.moneda }}\".\n\nTRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}\n\nTRANSPARENCIA (regla que no se negocia): sos un asistente con inteligencia artificial. Si te preguntan si sos un robot, un bot o una IA, decilo con naturalidad y seguí ayudando. Nunca digas que sos una persona.\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, {{ $json.zonaHoraria }}, UTC-4). Calculá con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'); nunca uses otra hora. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }} (ese es su WhatsApp registrado).\n\nHORARIO DE ATENCIÓN: {{ $json.horarioAtencion }}.\n\nREGLAS RESTAURANTE:\n1. Menú de referencia, no existe nada fuera de esto: {{ $json.menuGastronomia }}. Delivery en zona urbana: {{ $json.costoDelivery }} {{ $json.moneda }}.\n2. Al recibir un pedido o un carrito, preguntá SIEMPRE si desea agregar una nota especial (sin cebolla, sin tomate, término de la carne) antes de cobrar.\n3. MEMORIA: si el cliente ya eligió 'Delivery' o 'Pasar a recoger' (incluida la opción del menú interactivo inicial), NO vuelvas a preguntar la modalidad. Si solo pidió ver el menú, DEBÉS preguntarla antes de cobrar. Si es Delivery, pedí la dirección y sumá el envío al total.\n\nREGLAS RETAIL:\n4. Catálogo de referencia: {{ $json.catalogoRetail }}. Si falta una variante obligatoria (talla, color), pedila antes de cobrar.\n5. Envío nacional por flota (recargo de terminal {{ $json.recargoFlota }} {{ $json.moneda }}): NO entregues el QR hasta tener Nombre completo y CI. Confirmá el celular proactivamente: 'Tengo registrado este WhatsApp, ¿usamos este mismo para la guía de la flota?'.\n\nCOBRO — ES UNA DEMOSTRACIÓN, NUNCA UN COBRO REAL:\n6. Este asistente NO cobra. El QR que se envía está rotulado como simulacro en la propia imagen y en su epígrafe, y no mueve dinero. Nunca digas ni insinúes que el cobro es real, que el dinero se acreditó o que verificaste un pago en un banco.\n7. Cuando tengas todos los datos, mostrá el TOTAL desglosado (productos + envío o recargo si aplica), avisá que enviás el código QR aclarando que es de demostración, y terminá tu mensaje EXACTAMENTE con la marca [ENVIAR_QR].\n8. Después del QR, NO confirmes el pedido hasta que llegue una IMAGEN (el comprobante). Si el cliente escribe otra cosa, atendelo y recordale con amabilidad el pago pendiente.\n9. Cuando llegue la imagen del comprobante: confirmá con el texto literal '{{ $json.textoPagoSimulado }}', resumí el pedido completo con su total, dá el tiempo estimado (cocina: {{ $json.tiempoCocina }} · retail: despacho {{ $json.despachoRetail }}) y terminá EXACTAMENTE con la marca [PEDIDO_CONFIRMADO]. Cerrá agradeciendo y mencionando que sumó {{ $json.puntosFidelizacion }} puntos en el club de fidelización.\n10. Si el cliente insiste en pagar de verdad o pregunta si el cobro es real, respondé que es una demostración y que en producción la acreditación la confirma el banco por webhook.\n11. Si el cliente cambia de opinión a mitad del flujo, recalculá el total inmediatamente antes de enviar el QR.\n12. Nunca inventes productos ni precios fuera de estas reglas. Si te piden algo que no está, decilo con honestidad y ofrecé lo que sí hay.\n\nECONOMÍA (el cliente está esperando en el chat: respondé en menos de 10 segundos):\n13. Resolvé cada mensaje en UN SOLO paso de razonamiento. No encadenes llamadas ni herramientas que no necesites: este flujo no tiene herramientas, toda la información que precisás está en estas reglas y en el historial.\n14. No repitas el pedido completo en cada mensaje: resumilo solo al pedir el pago y al confirmar.\n15. Preguntá de a un dato por vez y respondé directo, sin preámbulos ni disculpas de relleno.",
           "maxIterations": 5,
           "returnIntermediateSteps": false
         }
@@ -333,15 +321,15 @@
         660
       ],
       "parameters": {
-        "modelName": "models/gemini-2.5-flash",
+        "modelName": "models/gemini-3.5-flash",
         "options": {
           "temperature": 0.3,
-          "maxOutputTokens": 1024
+          "maxOutputTokens": 4096
         }
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 1000
+      "waitBetweenTries": 3000
     },
     {
       "id": "memoria-ventana",
@@ -436,18 +424,25 @@
       "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
-        "authentication": "genericCredentialType",
+        "authentication": "predefinedCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.from,\n  type: 'image',\n  image: Object.assign(\n    { caption: $json.captionQr },\n    $json.qrMediaId && !String($json.qrMediaId).startsWith('REEMPLAZAR')\n      ? { id: $json.qrMediaId }\n      : { link: $json.qrUrl }\n  )\n}) }}",
         "options": {
           "timeout": 15000
-        }
+        },
+        "nodeCredentialType": "whatsAppApi"
       },
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 1500
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "Wo3TfsweL79OWoXA",
+          "name": "WhatsApp account 2"
+        }
+      }
     },
     {
       "id": "if-confirmado",
@@ -502,22 +497,6 @@
       "maxTries": 2,
       "waitBetweenTries": 1000,
       "onError": "continueRegularOutput"
-    },
-    {
-      "id": "nota-criterios-b",
-      "name": "Nota Criterios B",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
-      "position": [
-        -960,
-        700
-      ],
-      "parameters": {
-        "content": "## Reglas de diseño de CLAUDE.md — dónde vive cada una\n\n- **Clave de sesión = número de origen** → `Memoria por teléfono`, `sessionKey` =\n  `messages[0].from`. Sin esto dos clientes comparten memoria: el defecto más grave.\n- **Filtro de eventos antes del agente** → `¿Es un mensaje?` (hay `messages` y no hay\n  `statuses`). Los acuses de estado se descartan.\n- **Normalización de entrada** → `Normalizar entrada` cubre text, interactive, button,\n  order, image, document, audio, location, sticker y cualquier otro con respuesta cortés.\n  Es el único nodo que toca `.text.body`.\n- **Fecha, hora y zona en el prompt** → `America/La_Paz` (UTC-4) inyectada con `$now`, y\n  `timezone` del flujo en la misma zona.\n- **Modelo intercambiable** → sub-nodo `Google Gemini Chat Model`. Para producción se\n  reemplaza por *Anthropic Chat Model* y no se toca nada más.\n- **Todo lo configurable por negocio en `Config del negocio`** → menú, catálogo, precios,\n  costos de envío, tiempos, horario, moneda y los textos del rótulo de demostración.\n  El System Message los lee por expresión: instalar un cliente nuevo = editar un solo nodo.\n- **Nodos Code en JavaScript** → la imagen de n8n desplegada no trae Python.\n\n## Latencia (aprendizajes del Demo A)\n`retryOnFail` en el modelo (3 intentos, 1 s) por los 503 de Gemini · `maxIterations` = 5 ·\n`executionTimeout` = 60 s en Settings · `maxOutputTokens` = 1024 · `temperature` = 0.3 ·\nreglas 13–15 del System Message (economía: un solo paso de razonamiento, sin relleno).\nMismos valores verificados en el Demo A. Objetivo: respuesta en menos de 10 segundos.",
-        "width": 620,
-        "height": 460,
-        "color": 4
-      }
     }
   ],
   "connections": {

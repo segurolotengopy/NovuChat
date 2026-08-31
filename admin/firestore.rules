@@ -184,6 +184,35 @@ service cloud.firestore {
         : '';
     }
 
+    // -------------------------------------------------------------------------
+    // VERTICAL DEL COMERCIO — qué capacidades tiene.
+    //
+    // Lo fija NovuChat al dar de alta o al asignar el número; el comercio no lo
+    // escribe. De acá cuelga qué documentos de configuración puede tocar y qué
+    // colecciones le corresponden.
+    //
+    // El objetivo no es cosmético. Un comercio de gastronomía **no puede
+    // escribir** configuración de calendario, y uno de belleza **no puede
+    // escribir** el recargo de flota — no es que la pantalla se los esconda: las
+    // reglas los rechazan. Esconder en la interfaz no protege de nada; lo que
+    // protege es que el campo no exista para ese comercio.
+    // -------------------------------------------------------------------------
+    function verticalTenant(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data.get('vertical', '')
+        : '';
+    }
+
+    // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
+    // un vertical es tocar estas dos líneas, no cazar `if` por el archivo.
+    function tieneAgenda(tenantId) {
+      return verticalTenant(tenantId) in ['agendamiento'];
+    }
+
+    function tieneCobro(tenantId) {
+      return verticalTenant(tenantId) in ['venta'];
+    }
+
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
     function tenantOperativo(tenantId) {
       return estadoTenant(tenantId) == 'activo';
@@ -324,10 +353,39 @@ service cloud.firestore {
         // Solo el admin del negocio edita la configuración, y solo el documento
         // `negocio`. La creación y el borrado los hace la Function de alta/baja:
         // así el documento nunca queda a medio formar ni desaparece por error.
+        // TRES DOCUMENTOS, NO UNO CON LA UNIÓN DE TODOS LOS CAMPOS.
+        //
+        //   `negocio`       lo COMÚN a cualquier comercio: identidad, horarios,
+        //                   voz del asistente, mensajes fijos.
+        //   `agendamiento`  solo para el vertical de citas: duración por
+        //                   defecto, anticipación mínima, recordatorios.
+        //   `venta`         solo para venta y cobro: delivery, tiempos de
+        //                   cocina y despacho, y el QR del cobro SIMULADO.
+        //
+        // POR QUÉ PARTIDO Y NO UN SOLO DOCUMENTO GRANDE. Tres razones, en orden
+        // de importancia:
+        //
+        //  1. La validación queda POR DOCUMENTO, con su propia lista blanca. Un
+        //     único esquema obligaría a escribir «si el vertical es X entonces
+        //     el campo Y es válido» dentro de las reglas, que es exactamente el
+        //     tipo de condición que se rompe al agregar el tercer vertical.
+        //  2. **El comercio no puede escribir el documento del vertical que no
+        //     le toca.** Un salón de belleza no puede fijar el recargo de flota
+        //     ni por accidente ni a propósito. Eso no se logra escondiendo el
+        //     campo en la pantalla.
+        //  3. La pantalla muestra lo que corresponde sin ninguna lógica de
+        //     ramas: lee el documento común y el de su vertical, y ya.
         allow update: if esAdmin(tenantId)
                       && tenantOperativo(tenantId)
-                      && documento == 'negocio'
-                      && configNegocioValida();
+                      && (
+                        (documento == 'negocio' && configNegocioValida())
+                        || (documento == 'agendamiento' && tieneAgenda(tenantId)
+                            && configAgendamientoValida())
+                        || (documento == 'venta' && tieneCobro(tenantId)
+                            && configVentaValida())
+                      );
+        // Los crea `altaTenant` según el vertical, para que ningún documento
+        // quede a medio formar ni exista uno que no corresponde.
         allow create, delete: if false;
 
         // =====================================================================
@@ -439,6 +497,86 @@ service cloud.firestore {
             && textoOpc(d, 'instruccionesExtra', 1500)
             && selloValido(d);
         }
+
+        // =====================================================================
+        // VERTICAL DE AGENDAMIENTO — lo que el Demo B no necesita.
+        // El calendario del comercio y los funcionarios ya viven en otro lado;
+        // acá van los parámetros de cómo se agenda.
+        // =====================================================================
+        function configAgendamientoValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'duracionPorDefectoMin', 'anticipacionMinimaMin',
+                   'anticipacionMaximaDias', 'permitirCancelacion',
+                   'horasRecordatorio', 'mensajeRecordatorio',
+                   'actualizadoPor', 'actualizadoEn'
+                 ])
+            && d.get('duracionPorDefectoMin', 30) is int
+            && d.get('duracionPorDefectoMin', 30) > 0
+            && d.get('duracionPorDefectoMin', 30) <= 480
+            // Anticipación mínima: evita que alguien reserve para dentro de dos
+            // minutos y el negocio se entere cuando el cliente ya está en la puerta.
+            && d.get('anticipacionMinimaMin', 60) is int
+            && d.get('anticipacionMinimaMin', 60) >= 0
+            && d.get('anticipacionMinimaMin', 60) <= 10080
+            && d.get('anticipacionMaximaDias', 60) is int
+            && d.get('anticipacionMaximaDias', 60) > 0
+            && d.get('anticipacionMaximaDias', 60) <= 365
+            && d.get('permitirCancelacion', true) is bool
+            && d.get('horasRecordatorio', 24) is int
+            && d.get('horasRecordatorio', 24) >= 0
+            && d.get('horasRecordatorio', 24) <= 168
+            && textoOpc(d, 'mensajeRecordatorio', 400)
+            && selloValido(d);
+        }
+
+        // =====================================================================
+        // VERTICAL DE VENTA Y COBRO — lo que el Demo A no necesita.
+        //
+        // ⚠️ ACÁ ESTÁ EL CAMPO MÁS DELICADO DEL PROYECTO. La prohibición 3 de
+        // CLAUDE.md dice que un cobro simulado NUNCA se presenta como real. Los
+        // rótulos que lo sostienen —el texto impreso en el QR, el epígrafe y la
+        // confirmación— **NO son configurables por el comercio**: viven en
+        // `/plataforma/cobroSimulado`, son de NovuChat y son iguales para todos.
+        //
+        // Y `mediaIdQr` TAMPOCO lo escribe el comercio, aunque parezca un dato
+        // técnico inocente. Es el identificador de la IMAGEN, y la imagen lleva
+        // el rótulo impreso: quien pueda cambiarlo puede subir un QR sin rótulo
+        // y saltear la prohibición por la puerta de atrás, sin tocar un solo
+        // texto. Lo carga NovuChat con `registrarQr`, que además es coherente
+        // con el hallazgo 19 de ESTADO.md — un media ID queda ligado al número
+        // que lo sube, y el número también lo asigna NovuChat.
+        //
+        // Lo que el comercio SÍ decide es lo comercial: cuánto cobra de envío,
+        // cuánto recarga por flota y cuánto tarda.
+        // =====================================================================
+        function configVentaValida() {
+          let d = request.resource.data;
+          return
+            // Lista blanca de lo que el comercio puede TOCAR. `mediaIdQr` y los
+            // rótulos no están, así que un intento de cambiarlos no coincide.
+            soloCampos([
+              'costoDelivery', 'recargoFlota', 'radioEntregaKm',
+              'tiempoCocinaMin', 'tiempoDespachoMin', 'pedidoMinimo',
+              'aceptaDelivery', 'aceptaRetiroEnLocal',
+              'actualizadoPor', 'actualizadoEn'
+            ])
+            && d.get('costoDelivery', 0) is number
+            && d.get('costoDelivery', 0) >= 0 && d.get('costoDelivery', 0) <= 1000
+            && d.get('recargoFlota', 0) is number
+            && d.get('recargoFlota', 0) >= 0 && d.get('recargoFlota', 0) <= 1000
+            && d.get('pedidoMinimo', 0) is number
+            && d.get('pedidoMinimo', 0) >= 0 && d.get('pedidoMinimo', 0) <= 100000
+            && d.get('radioEntregaKm', 5) is number
+            && d.get('radioEntregaKm', 5) > 0 && d.get('radioEntregaKm', 5) <= 100
+            && d.get('tiempoCocinaMin', 20) is int
+            && d.get('tiempoCocinaMin', 20) >= 0 && d.get('tiempoCocinaMin', 20) <= 480
+            && d.get('tiempoDespachoMin', 30) is int
+            && d.get('tiempoDespachoMin', 30) >= 0 && d.get('tiempoDespachoMin', 30) <= 480
+            && d.get('aceptaDelivery', true) is bool
+            && d.get('aceptaRetiroEnLocal', true) is bool
+            && selloValido(d);
+        }
       }
 
       // -----------------------------------------------------------------------
@@ -509,8 +647,13 @@ service cloud.firestore {
                          || esIngesta(tenantId)
                          || soporteVigente(tenantId);
 
+        // Solo el vertical de agendamiento. Una parrilla no tiene profesionales
+        // con calendario propio, y ofrecerle la pantalla sería ruido. Si algún
+        // día un vertical nuevo los necesita, se agrega a `tieneAgenda`: una
+        // línea, y por eso las capacidades están en una tabla y no dispersas.
         allow create, update: if esAdmin(tenantId)
                               && tenantOperativo(tenantId)
+                              && tieneAgenda(tenantId)
                               && funcionarioValido();
         // Baja LÓGICA con `activo: false`, no borrado: un funcionario borrado
         // dejaría citas pasadas apuntando a un identificador que ya no existe.

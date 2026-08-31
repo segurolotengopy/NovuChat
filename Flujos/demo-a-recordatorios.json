@@ -71,7 +71,13 @@
               "id": "r8",
               "name": "textoRecordatorio",
               "type": "string",
-              "value": "Hola {nombre} 👋 Te recordamos tu cita de {servicio} para mañana a las {hora}. Si necesitás cancelar o reprogramar, respondé por acá. ⏰"
+              "value": "Hola {nombre} 👋 Te recordamos tu cita de {servicio} para mañana a las {hora}. Si necesitas cancelar o reprogramar, respóndenos por aquí. ⏰"
+            },
+            {
+              "id": "r9",
+              "name": "calendariosPorServicio",
+              "type": "string",
+              "value": "{\"manicure\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"pedicure\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"corte\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"limpieza facial\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"odontologia general\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"ortodoncia\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"cirugia maxilofacial\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"diagnostico\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\"}"
             }
           ]
         },
@@ -92,7 +98,7 @@
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del recordatorio').item.json.calendarioId }}"
+          "value": "={{ $json.calendarioARevisar }}"
         },
         "returnAll": true,
         "options": {
@@ -106,7 +112,7 @@
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
       "position": [
-        400,
+        500,
         300
       ],
       "alwaysOutputData": true,
@@ -116,7 +122,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Prepara los recordatorios de las citas de manana.\n//\n// Tres cosas que el esqueleto original no contemplaba y que importan:\n//\n// 1. DOBLE ENVIO. Si el flujo corre dos veces -- reintento, prueba manual,\n//    reinicio de n8n -- el cliente recibe el recordatorio dos veces. Se marca\n//    el evento como recordado en su propia descripcion y se saltean los que ya\n//    lo tienen. La marca vive en el calendario, que es el unico estado que\n//    sobrevive a un reinicio.\n// 2. PREFIJO DE PAIS. Meta cobra segun el pais del destinatario: un evento con\n//    un telefono extranjero se saltea, igual que en el flujo conversacional.\n// 3. COMERCIO NO OPERATIVO. Un comercio suspendido no manda recordatorios.\n\nconst cfg = $('Config del recordatorio').first().json;\n\nif (String(cfg.estadoComercio ?? 'operativo') !== 'operativo') {\n  return [];\n}\n\nconst prefijos = String(cfg.prefijosPermitidos ?? '')\n  .split(',').map(p => p.trim()).filter(Boolean);\n\nconst MARCA = '[recordado]';\nconst salida = [];\n\nfor (const item of $input.all()) {\n  const ev = item.json;\n  const desc = String(ev.description ?? '');\n\n  if (desc.includes(MARCA)) continue;              // ya se le aviso\n\n  const m = desc.match(/\\b(\\d{8,15})\\b/);          // telefono en la descripcion\n  if (!m) continue;                                 // cita cargada a mano, sin telefono\n  const telefono = m[1];\n\n  if (prefijos.length && !prefijos.some(p => telefono.startsWith(p))) continue;\n\n  const inicio = ev.start?.dateTime;\n  if (!inicio) continue;                            // evento de dia completo\n\n  const hora = new Date(inicio).toLocaleTimeString('es-BO', {\n    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz',\n  });\n\n  // El titulo tiene la forma \"Cita <nombre> - <servicio>\".\n  const titulo = String(ev.summary ?? '');\n  const partes = titulo.replace(/^Cita\\s+/i, '').split(/\\s+[-\\u2014]\\s+/);\n  const nombre = (partes[0] ?? '').trim() || 'cliente';\n  const servicio = (partes[1] ?? '').trim() || 'su cita';\n\n  salida.push({ json: {\n    eventoId: ev.id,\n    telefono,\n    nombre,\n    servicio,\n    hora,\n    descripcionOriginal: desc,\n    descripcionMarcada: (desc ? desc + '\\n' : '') + MARCA + ' ' + new Date().toISOString(),\n    texto: String(cfg.textoRecordatorio ?? '')\n      .replace('{nombre}', nombre).replace('{servicio}', servicio).replace('{hora}', hora),\n  }});\n}\nreturn salida;"
+        "jsCode": "// Prepara los recordatorios de las citas de manana.\n//\n// Tres cosas que el esqueleto original no contemplaba y que importan:\n//\n// 1. DOBLE ENVIO. Si el flujo corre dos veces -- reintento, prueba manual,\n//    reinicio de n8n -- el cliente recibe el recordatorio dos veces. Se marca\n//    el evento como recordado en su propia descripcion y se saltean los que ya\n//    lo tienen. La marca vive en el calendario, que es el unico estado que\n//    sobrevive a un reinicio.\n// 2. PREFIJO DE PAIS. Meta cobra segun el pais del destinatario: un evento con\n//    un telefono extranjero se saltea, igual que en el flujo conversacional.\n// 3. COMERCIO NO OPERATIVO. Un comercio suspendido no manda recordatorios.\n\nconst cfg = $('Config del recordatorio').first().json;\n\nif (String(cfg.estadoComercio ?? 'operativo') !== 'operativo') {\n  return [];\n}\n\nconst prefijos = String(cfg.prefijosPermitidos ?? '')\n  .split(',').map(p => p.trim()).filter(Boolean);\n\nconst MARCA = '[recordado]';\nconst salida = [];\n\nfor (const item of $input.all()) {\n  const ev = item.json;\n  const desc = String(ev.description ?? '');\n\n  if (desc.includes(MARCA)) continue;              // ya se le aviso\n\n  const m = desc.match(/\\b(\\d{8,15})\\b/);          // telefono en la descripcion\n  if (!m) continue;                                 // cita cargada a mano, sin telefono\n  const telefono = m[1];\n\n  if (prefijos.length && !prefijos.some(p => telefono.startsWith(p))) continue;\n\n  const inicio = ev.start?.dateTime;\n  if (!inicio) continue;                            // evento de dia completo\n\n  const hora = new Date(inicio).toLocaleTimeString('es-BO', {\n    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz',\n  });\n\n  // El titulo tiene la forma \"Cita <nombre> - <servicio>\".\n  const titulo = String(ev.summary ?? '');\n  const partes = titulo.replace(/^Cita\\s+/i, '').split(/\\s+[-\\u2014]\\s+/);\n  const nombre = (partes[0] ?? '').trim() || 'cliente';\n  const servicio = (partes[1] ?? '').trim() || 'su cita';\n\n  salida.push({ json: {\n    eventoId: ev.id,\n    calendarioDelEvento: ev.organizer?.email || cfg.calendarioId,\n    telefono,\n    nombre,\n    servicio,\n    hora,\n    descripcionOriginal: desc,\n    descripcionMarcada: (desc ? desc + '\\n' : '') + MARCA + ' ' + new Date().toISOString(),\n    texto: String(cfg.textoRecordatorio ?? '')\n      .replace('{nombre}', nombre).replace('{servicio}', servicio).replace('{hora}', hora),\n  }});\n}\nreturn salida;"
       },
       "id": "preparar-recordatorios",
       "name": "Preparar recordatorios",
@@ -229,7 +235,7 @@
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del recordatorio').item.json.calendarioId }}"
+          "value": "={{ $('Preparar recordatorios').item.json.calendarioDelEvento }}"
         },
         "updateFields": {
           "description": "={{ $('Preparar recordatorios').item.json.descripcionMarcada }}"
@@ -246,6 +252,19 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Un item por cada calendario configurado.\n//\n// El flujo leia UN SOLO calendario, el de por defecto. Desde que cada\n// profesional tiene el suyo -- belleza y odontologia -- las citas viven en\n// calendarios distintos, asi que el recordatorio no las habria visto y el\n// cliente no habria recibido nada. Sin error, sin aviso.\nconst cfg = $('Config del recordatorio').first().json;\nlet mapa = {};\ntry { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; }\nconst calendarios = [...new Set([cfg.calendarioId, ...Object.values(mapa)].filter(Boolean))];\nreturn calendarios.map(calendarioARevisar => ({ json: { ...cfg, calendarioARevisar } }));"
+      },
+      "id": "rec-cals",
+      "name": "Calendarios del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        290,
+        300
+      ]
     }
   ],
   "connections": {
@@ -264,7 +283,7 @@
       "main": [
         [
           {
-            "node": "Citas de mañana",
+            "node": "Calendarios del negocio",
             "type": "main",
             "index": 0
           }
@@ -327,6 +346,17 @@
         [
           {
             "node": "Marcar como recordado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendarios del negocio": {
+      "main": [
+        [
+          {
+            "node": "Citas de mañana",
             "type": "main",
             "index": 0
           }

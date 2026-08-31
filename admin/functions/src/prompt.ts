@@ -228,3 +228,63 @@ export function ranurasDe(funcionarioId: string, inicio: Date, fin: Date): strin
   const cantidad = Math.ceil(minutos / MINUTOS_POR_RANURA);
   return Array.from({ length: cantidad }, (_, i) => `${funcionarioId}_${dia}_${primera + i}`);
 }
+
+/**
+ * =============================================================================
+ * VERTICALES
+ * =============================================================================
+ *
+ * Qué campos son COMUNES y cuáles dependen del vertical. La tabla vive acá y la
+ * consume tanto `configuracionFlujo` como la pantalla de configuración: si se
+ * agrega un campo en un solo lado, se nota.
+ */
+export const VERTICALES_CONOCIDOS = ['agendamiento', 'venta', 'interno'] as const;
+export type Vertical = (typeof VERTICALES_CONOCIDOS)[number];
+
+/** Qué documento de configuración específico le toca a cada vertical. */
+export function documentoDeVertical(vertical: string): string | null {
+  return vertical === 'agendamiento' ? 'agendamiento'
+    : vertical === 'venta' ? 'venta'
+    : null;
+}
+
+/**
+ * RÓTULOS DEL COBRO SIMULADO — la prohibición 3 de CLAUDE.md, en código.
+ *
+ * Estos textos NO son configurables por el comercio y ni siquiera son
+ * configurables por comercio: viven en `/plataforma/cobroSimulado`, son de
+ * NovuChat y son los mismos para todos. Acá están los valores de respaldo, por
+ * si el documento faltara: **el sistema tiene que fallar hacia el rótulo, nunca
+ * hacia el silencio**. Un QR sin rótulo es un cobro simulado presentándose como
+ * real, que es exactamente lo prohibido.
+ */
+export const ROTULOS_POR_DEFECTO = {
+  rotuloSuperior: 'DEMOSTRACION · ESTE QR NO COBRA',
+  rotuloInferior: 'SIMULACRO DE PAGO',
+  epigrafe: 'Cobro SIMULADO: no cobra ni mueve dinero.',
+  confirmacion: 'Pago verificado (SIMULADO - demostracion, sin cobro real).',
+} as const;
+
+export interface RotulosCobro {
+  rotuloSuperior: string;
+  rotuloInferior: string;
+  epigrafe: string;
+  confirmacion: string;
+}
+
+export function rotulosCobroSimulado(
+  documento: Record<string, unknown> | undefined,
+): RotulosCobro {
+  const leer = (clave: keyof typeof ROTULOS_POR_DEFECTO) => {
+    const v = documento?.[clave];
+    // Solo se acepta un texto NO VACÍO. Una cadena vacía en el documento de
+    // plataforma no puede servir para borrar el rótulo.
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : ROTULOS_POR_DEFECTO[clave];
+  };
+  return {
+    rotuloSuperior: leer('rotuloSuperior'),
+    rotuloInferior: leer('rotuloInferior'),
+    epigrafe: leer('epigrafe'),
+    confirmacion: leer('confirmacion'),
+  };
+}
