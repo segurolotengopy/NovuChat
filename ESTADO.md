@@ -482,6 +482,25 @@ coincide deja el script sin cambiar y todo parece funcionar. Pasó con el
 `--env` de `subir-qr.sh`, que aceptaba la opción y seguía usando el otro
 entorno. Verificar el efecto, no la ejecución.
 
+## Recordatorios — probados de punta a punta (2026-08-31)
+
+Flujo creado en n8n por API (`HgAc711lMs4ArbbZ`, 9 nodos) y **probado a mano
+con Execute workflow, sin publicarlo**. Recorre los tres calendarios, encuentra
+la cita, extrae el teléfono de la descripción del evento, envía el recordatorio
+y marca la cita como recordada.
+
+**Hallazgo 22 — el nodo que marca la cita actualizaba el calendario por
+defecto.** La cita vive en el de la especialista, así que devolvía «no se
+encuentra el recurso». Sin esa marca el flujo pierde su única defensa contra el
+doble envío: cada corrida volvería a encontrar la misma cita y mandaría el
+recordatorio otra vez. Ahora `Preparar recordatorios` recuerda en qué
+calendario está cada cita — en un calendario secundario, el propio evento lo
+dice en `organizer.email`.
+
+**Sigue SIN PUBLICAR, a propósito.** Al activarlo, todos los días a las 17:00
+escribe por WhatsApp a quien tenga cita al día siguiente. Es decisión de Andres
+cuándo activarlo y con qué horario.
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 - **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes
