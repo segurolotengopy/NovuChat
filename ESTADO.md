@@ -447,6 +447,41 @@ lo sube, así que el del Demo A no habría servido. **Vence a los 30 días**: si
 9 de septiembre estuviera vencido, se regenera con
 `./scripts/subir-qr.sh --env .env.demo-b`.
 
+## Demo B VALIDADO DE PUNTA A PUNTA (2026-08-31)
+
+Conversación completa contra WhatsApp real: lista interactiva de bienvenida,
+toma de pedido con opciones, cálculo del total desglosado, envío del QR **en su
+lugar de la conversación**, recepción del comprobante y confirmación del pedido
+con aviso al dueño.
+
+**La prohibición 3 se cumple y está verificada a ojo:** el QR llega con
+«DEMOSTRACIÓN · ESTE QR NO COBRA» impreso arriba, «SIMULACRO DE PAGO» abajo, y
+el epígrafe dice «cobro SIMULADO, no cobra ni mueve dinero». Rótulo en la
+imagen **y** en el texto. La confirmación dice «Pago verificado (SIMULADO —
+demostración, sin cobro real)» y el aviso al dueño repite que no hubo
+acreditación bancaria.
+
+Trato en tuteo boliviano, sin voseo, con emojis acotados.
+
+**Hallazgo 19 — un media ID queda LIGADO al número que lo sube.** El QR se
+había subido con el número del Demo A; enviarlo desde el Demo B devuelve
+`(#131000) Something went wrong`, un error que no menciona ni el media ni el
+número. Se comprueba consultando el media con cada token: existe para uno y no
+para el otro.
+
+**Hallazgo 20 — la URL del nodo de envío del QR no llevaba `/messages`.** Un
+carácter de diferencia con el nodo de la lista, que sí funcionaba, y el mismo
+error genérico de Meta.
+
+**Hallazgo 21 — el flujo de recordatorios leía un solo calendario.** Desde que
+cada profesional tiene el suyo, no habría visto ninguna cita y nadie habría
+recibido su recordatorio, sin error ni aviso. Corregido.
+
+**Lección de método, tercera vez en dos días:** un `sed`/`replace` que no
+coincide deja el script sin cambiar y todo parece funcionar. Pasó con el
+`--env` de `subir-qr.sh`, que aceptaba la opción y seguía usando el otro
+entorno. Verificar el efecto, no la ejecución.
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 - **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes
