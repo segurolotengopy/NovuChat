@@ -71,7 +71,13 @@
               "id": "r8",
               "name": "textoRecordatorio",
               "type": "string",
-              "value": "Hola {nombre} 👋 Te recordamos tu cita de {servicio} para mañana a las {hora}. Si necesitás cancelar o reprogramar, respondé por acá. ⏰"
+              "value": "Hola {nombre} 👋 Te recordamos tu cita de {servicio} para mañana a las {hora}. Si necesitas cancelar o reprogramar, respóndenos por aquí. ⏰"
+            },
+            {
+              "id": "r9",
+              "name": "calendariosPorServicio",
+              "type": "string",
+              "value": "{}"
             }
           ]
         },
@@ -92,7 +98,7 @@
         "calendar": {
           "__rl": true,
           "mode": "id",
-          "value": "={{ $('Config del recordatorio').item.json.calendarioId }}"
+          "value": "={{ $json.calendarioARevisar }}"
         },
         "returnAll": true,
         "options": {
@@ -106,7 +112,7 @@
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
       "position": [
-        400,
+        500,
         300
       ],
       "alwaysOutputData": true,
@@ -246,6 +252,19 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Un item por cada calendario configurado.\n//\n// El flujo leia UN SOLO calendario, el de por defecto. Desde que cada\n// profesional tiene el suyo -- belleza y odontologia -- las citas viven en\n// calendarios distintos, asi que el recordatorio no las habria visto y el\n// cliente no habria recibido nada. Sin error, sin aviso.\nconst cfg = $('Config del recordatorio').first().json;\nlet mapa = {};\ntry { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; }\nconst calendarios = [...new Set([cfg.calendarioId, ...Object.values(mapa)].filter(Boolean))];\nreturn calendarios.map(calendarioARevisar => ({ json: { ...cfg, calendarioARevisar } }));"
+      },
+      "id": "rec-cals",
+      "name": "Calendarios del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        290,
+        300
+      ]
     }
   ],
   "connections": {
@@ -264,7 +283,7 @@
       "main": [
         [
           {
-            "node": "Citas de mañana",
+            "node": "Calendarios del negocio",
             "type": "main",
             "index": 0
           }
@@ -327,6 +346,17 @@
         [
           {
             "node": "Marcar como recordado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendarios del negocio": {
+      "main": [
+        [
+          {
+            "node": "Citas de mañana",
             "type": "main",
             "index": 0
           }

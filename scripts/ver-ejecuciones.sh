@@ -16,7 +16,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-N=10; SOLO_ERROR=0; ID=""; NODO=""
+N=10; SOLO_ERROR=0; ID=""; NODO=""; ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,13 +24,18 @@ while [[ $# -gt 0 ]]; do
     --error) SOLO_ERROR=1; shift ;;
     --id)    ID="${2:?}"; shift 2 ;;
     --nodo)  NODO="${2:?}"; shift 2 ;;
+    --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
+    --env=*) ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
 
-[[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
-set -a; . ./.env; set +a
+[[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige --env
+. "./$ENV_FILE"
+set +a
 : "${N8N_API_KEY:?Falta N8N_API_KEY}"
 : "${N8N_BASE_URL:?Falta N8N_BASE_URL}"
 : "${N8N_WORKFLOW_ID:?Falta N8N_WORKFLOW_ID}"
