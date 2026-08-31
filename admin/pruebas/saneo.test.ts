@@ -189,3 +189,49 @@ describe('Ranuras de agenda', () => {
     expect(ranurasDe('f1', d(9, 0), d(9, 5))).toEqual(['f1_20260901_36']);
   });
 });
+
+// ===========================================================================
+// Rótulos del cobro simulado (prohibición 3)
+// ===========================================================================
+import { ROTULOS_POR_DEFECTO, documentoDeVertical, rotulosCobroSimulado }
+  from '../functions/src/prompt.ts';
+
+describe('Rótulos del cobro simulado', () => {
+  it('sin documento de plataforma, rigen los rótulos de respaldo', () => {
+    // El sistema tiene que fallar HACIA el rótulo, nunca hacia el silencio: un
+    // QR sin rotular es un cobro simulado presentándose como real.
+    expect(rotulosCobroSimulado(undefined)).toEqual(ROTULOS_POR_DEFECTO);
+    expect(rotulosCobroSimulado({})).toEqual(ROTULOS_POR_DEFECTO);
+  });
+
+  it('una cadena VACÍA no sirve para borrar un rótulo', () => {
+    // Es la vía más simple de saltear la prohibición sin escribir nada
+    // sospechoso: dejar el campo en blanco.
+    const r = rotulosCobroSimulado({ rotuloSuperior: '', rotuloInferior: '   ' });
+    expect(r.rotuloSuperior).toBe(ROTULOS_POR_DEFECTO.rotuloSuperior);
+    expect(r.rotuloInferior).toBe(ROTULOS_POR_DEFECTO.rotuloInferior);
+  });
+
+  it('un valor que no es texto tampoco', () => {
+    const r = rotulosCobroSimulado({ epigrafe: 42, confirmacion: null });
+    expect(r.epigrafe).toBe(ROTULOS_POR_DEFECTO.epigrafe);
+    expect(r.confirmacion).toBe(ROTULOS_POR_DEFECTO.confirmacion);
+  });
+
+  it('los rótulos de respaldo dicen que es simulado, no solo que es una demo', () => {
+    // Si alguien los edita alguna vez, esta prueba obliga a conservar la parte
+    // que importa: la palabra que le dice al cliente final que no hay cobro.
+    const todos = Object.values(ROTULOS_POR_DEFECTO).join(' ').toUpperCase();
+    expect(todos).toContain('NO COBRA');
+    expect(todos).toContain('SIMULA');
+  });
+});
+
+describe('Documento de configuración por vertical', () => {
+  it('cada vertical lee el suyo, y el interno no tiene ninguno', () => {
+    expect(documentoDeVertical('agendamiento')).toBe('agendamiento');
+    expect(documentoDeVertical('venta')).toBe('venta');
+    expect(documentoDeVertical('interno')).toBeNull();
+    expect(documentoDeVertical('lo-que-sea')).toBeNull();
+  });
+});

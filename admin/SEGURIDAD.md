@@ -249,6 +249,83 @@ Es el paso 8 de `DISENO.md` §11 y es donde más fácil se equivoca uno.
 
 ---
 
+## §5bis — La política de seguridad de contenido, excepción por excepción
+
+La política vive en `admin/firebase.json` y la aplica Firebase Hosting. **Tal como
+estaba, bloqueaba el inicio de sesión con Google y App Check**, con el síntoma más
+ingrato posible: se hace clic en «Ingresar con Google» y no pasa nada.
+
+### El problema de fondo: una CSP no se puede probar localmente
+
+Ni el servidor de desarrollo de Vite ni `vite preview` aplican las cabeceras de
+`firebase.json`. **Un error de CSP no se ve en el emulador: aparece recién en
+producción.** Por eso se agregó `scripts/probar-csp.mjs`, que sirve `web/dist`
+aplicando **las cabeceras leídas del archivo real**, no una copia. Leer del
+archivo es lo que impide que la prueba y la producción se separen.
+
+Y valió la pena de inmediato: la primera corrida encontró un bloqueo que **no
+estaba en la lista de problemas conocidos**. Ver más abajo.
+
+### Qué habilita cada excepción
+
+| Directiva | Origen | Qué habilita | Si se quita |
+|---|---|---|---|
+| `script-src` | `https://apis.google.com` | el cargador `gapi` que Firebase Auth usa para crear su iframe auxiliar | **el inicio de sesión con Google no arranca** |
+| `script-src` | `https://www.google.com` | el script de reCAPTCHA Enterprise que usa App Check | App Check no carga; el panel queda sin defensa contra el abuso automatizado |
+| `script-src` | `https://www.gstatic.com` | los recursos que reCAPTCHA carga a su vez | idem |
+| `style-src` | `'unsafe-inline'` | los estilos en línea que inyecta el widget de reCAPTCHA | el widget se ve roto |
+| `img-src` | `https://www.gstatic.com` | los íconos de reCAPTCHA | cosmético |
+| `connect-src` | `firestore` · `securetoken` · `identitytoolkit` · `firebaseappcheck` `.googleapis.com` | los cuatro servicios que el panel usa de verdad | no funciona nada |
+| `connect-src` | `https://www.google.com` | la verificación de reCAPTCHA | App Check falla |
+| `frame-src` | los dos `*.firebaseapp.com` de `-dev` y `-prod` | **el iframe auxiliar de Firebase Auth**, que vive en el `authDomain` del proyecto | **el clic en «Ingresar con Google» no hace nada** |
+| `frame-src` | `https://www.google.com` | el desafío visual de reCAPTCHA | el desafío no se puede mostrar |
+| `form-action` | `'self'` (antes `'none'`) | el manejador de Auth puede volver al origen con un POST en el flujo de redirección | el respaldo por redirección puede romperse |
+
+### Lo que se ENDURECIÓ en la misma pasada
+
+No todo fue abrir. La política quedó **más estricta que antes** en dos puntos:
+
+- **`connect-src` pasó del comodín `https://*.googleapis.com` a los cuatro
+  servicios enumerados.** El comodín habilitaba cientos de APIs de Google que
+  este panel no usa; cada una es un destino posible para una exfiltración.
+- **Se quitaron `https://*.firebaseio.com` y `wss://*.firebaseio.com`**, que son
+  de Realtime Database. El panel usa Firestore y nunca usó RTDB: era superficie
+  heredada de una plantilla.
+
+También se agregaron `worker-src 'self'` y `manifest-src 'self'`, que antes caían
+en `default-src 'none'` por herencia y conviene declarar.
+
+### El hallazgo que solo apareció al probarla
+
+Ni el aviso de DevSecOps ni el análisis previo mencionaban
+**`https://apis.google.com`**. El aviso señalaba `frame-src` y App Check; el
+**primer** bloqueo real fue otro:
+
+```
+Loading the script 'https://apis.google.com/js/api.js?onload=__iframe…'
+violates the following Content Security Policy directive: "script-src 'self' …"
+```
+
+Firebase Auth carga el cargador `gapi` **antes** de poder crear el iframe. Con
+`frame-src` arreglado y `apis.google.com` bloqueado, el resultado habría sido
+idéntico al problema original —el clic sin efecto— y el arreglo habría parecido
+no funcionar. **Es la diferencia entre razonar sobre una política y ejecutarla.**
+
+Verificado con `pnpm csp`: `api.js` carga, trae su propio segundo script, y el
+iframe de Auth se crea apuntando al `authDomain` correcto. Lo único que falla
+después es la clave de API ficticia, que es lo esperado sin un proyecto real.
+
+### Fragilidad conocida, dicha por adelantado
+
+**`frame-src` enumera los `authDomain` de los dos proyectos.** Si Andres despliega
+a un proyecto nuevo o pone un dominio propio, **hay que agregarlo o el inicio de
+sesión se rompe en silencio**. Un comodín `https://*.firebaseapp.com` evitaría el
+mantenimiento pero habilitaría el iframe de *cualquier* proyecto de Firebase del
+mundo, que es justo lo que no se quiere en la directiva que gobierna qué se puede
+incrustar. Se eligió el mantenimiento. Está anotado en `DISENO.md` §11.
+
+---
+
 ## §5 — Auditoría del canal de salida
 
 - **CSP restrictiva** en `firebase.json`: `default-src 'none'`, sin
@@ -1163,6 +1240,71 @@ una lectura**, lo sensible va en otro documento,
 lo operativo, que es lo que necesita para contestar.
 
 **Pruebas.** 2 en *"Funcionarios"*.
+
+---
+
+### T-33 · Un cobro simulado presentándose como real
+
+**La prohibición 3 de `CLAUDE.md`, convertida en controles.** El Demo B envía un
+QR y confirma un pago; si el rótulo de «simulacro» desaparece, un cliente final
+puede creer que pagó de verdad. No es una amenaza de seguridad informática: es
+una acusación de fraude esperando a ocurrir.
+
+**Tres caminos por los que el rótulo podría caerse, y el control de cada uno:**
+
+1. **Editando el texto.** Los rótulos —el impreso en el QR, el epígrafe y la
+   confirmación— **no son configurables por el comercio**. Ni siquiera son
+   configurables *por comercio*: viven en `/plataforma/cobroSimulado`, son de
+   NovuChat y son los mismos para todos. Ningún navegador los escribe, tampoco el
+   del propietario.
+
+2. **Cambiando la imagen.** Éste es el camino que no salta a la vista.
+   `mediaIdQr` parece un identificador técnico inocente, pero apunta a la
+   **imagen**, y la imagen lleva el rótulo impreso: quien pueda cambiarlo sube un
+   QR sin rotular y saltea la prohibición **sin editar un solo texto**. Por eso
+   `mediaIdQr` tampoco lo escribe el comercio; lo registra NovuChat. Es además
+   coherente con el hallazgo 19 de `ESTADO.md` —un media ID queda ligado al
+   número que lo sube— y el número también lo asigna NovuChat.
+
+3. **Borrándolo sin querer.** Un `setDoc` con el objeto completo reemplaza el
+   documento y **borra** `mediaIdQr`. La validación usa `affectedKeys`, y borrar
+   también es afectar, así que se rechaza. Sin eso, el camino más natural del
+   programador —escribir el objeto entero— desarmaría el control en silencio.
+   Hay una prueba dedicada a este caso.
+
+**Y el sistema falla hacia el rótulo, nunca hacia el silencio.** Si el documento
+de plataforma faltara, `rotulosCobroSimulado()` devuelve los textos de respaldo
+del código. Una cadena vacía tampoco sirve para borrar un rótulo: se descarta y
+rige el de respaldo. Hay una prueba que verifica que los textos de respaldo
+contienen «no cobra» y «simula».
+
+**Pruebas.** 5 en *"Rótulos del cobro simulado"* (reglas) y 4 puras.
+
+---
+
+### T-34 · Un comercio escribiendo la configuración del vertical ajeno
+
+**El ataque es aburrido y por eso ocurre:** un comercio de gastronomía fija un
+`calendarioId`, o uno de belleza fija un `recargoFlota`. Nadie gana nada, pero
+queda configuración inconsistente que después alguien lee y usa, y el agente
+termina afirmando algo que el negocio no ofrece.
+
+**Control.** Cada vertical tiene su propio documento de configuración y la regla
+ata el documento al `vertical` de la ficha del tenant —que el comercio no
+escribe—. Un salón de belleza **no puede** escribir `/config/venta`, ni por
+accidente ni a propósito. Lo mismo con los funcionarios: son solo del vertical de
+agendamiento.
+
+**Por qué no alcanza con esconder los campos en la pantalla.** Esconder no
+protege de nada: la petición se construye igual desde la consola del navegador.
+Lo que protege es que el campo **no exista** para ese comercio. La pantalla evita
+ofrecer una puerta que el servidor va a cerrar; el servidor es el que cierra.
+
+Las capacidades por vertical están en una tabla (`tieneAgenda`, `tieneCobro`) y
+no en condiciones dispersas: agregar un vertical es tocar dos líneas, no cazar
+`if` por el archivo.
+
+**Pruebas.** 9 en *"Configuración por vertical"*.
 
 ---
 

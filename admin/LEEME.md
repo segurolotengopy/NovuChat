@@ -15,8 +15,8 @@ nada de `Flujos/`.
 | | |
 |---|---|
 | Andamiaje | escrito y compilando |
-| Pruebas de reglas | **155 de 155 en verde**, ejecutadas contra el emulador |
-| Pruebas puras (saneo, ranuras, índices) | **26 de 26 en verde**, sin emulador |
+| Pruebas de reglas | **179 de 179 en verde**, ejecutadas contra el emulador |
+| Pruebas puras (saneo, ranuras, índices, rótulos) | **31 de 31 en verde** |
 | Prueba a mano del panel | **recorrida de punta a punta** contra los emuladores, con datos sembrados |
 | Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
 
@@ -130,6 +130,7 @@ pnpm install
 pnpm pruebas:reglas     # emulador + 164 pruebas (155 de reglas, 26 puras)
 pnpm emuladores         # Auth + Firestore para probar a mano
 pnpm sembrar            # datos de prueba (idempotente)
+pnpm csp                # sirve dist con las cabeceras REALES de Hosting
 pnpm web:build          # compila el frontend
 pnpm functions:build    # compila las Cloud Functions
 pnpm verificar          # las tres cosas
@@ -206,11 +207,18 @@ Cloud y a GitHub. Los tres que más fácil se hacen mal:
     lo local y fallar en producción. Declare la forma de consulta en
     `web/src/lib/bitacora.ts` y corra `pnpm pruebas:reglas`:
     `pruebas/indices.test.ts` le va a decir qué índice falta.
-11. **El ID de calendario se valida con 64 hexadecimales EXACTOS**, y el sufijo
+11. **La CSP no se puede probar con `pnpm web:dev`.** Vite no aplica las
+    cabeceras de `firebase.json`: un error de política aparece recién en
+    producción. Use `pnpm csp` y mire la consola del navegador — cualquier
+    «Refused to» es una violación. Si toca la política, pruébela ahí.
+12. **Los rótulos del cobro simulado y `mediaIdQr` NO los edita el comercio.**
+    Sostienen la prohibición 3 de CLAUDE.md. Viven en `/plataforma/cobroSimulado`
+    y los registra NovuChat. No los mueva a la configuración del comercio.
+13. **El ID de calendario se valida con 64 hexadecimales EXACTOS**, y el sufijo
     decide antes que la forma de correo. Las dos trampas están explicadas en
     `firestore.rules` y en `scripts/fijar-calendario.sh`. No aflojar ninguna.
-12. **Datos de prueba:** teléfonos con seis o más ceros seguidos
+14. **Datos de prueba:** teléfonos con seis o más ceros seguidos
    (`59170000001`) y correos `@ejemplo.com`. Es lo que acepta la lista de
    admitidos de `scripts/verificar-saneo.sh`.
-13. Se respeta `CONVENCIONES-REPO-PUBLICO.md`: ningún valor real de
+15. Se respeta `CONVENCIONES-REPO-PUBLICO.md`: ningún valor real de
     infraestructura en un archivo versionado.

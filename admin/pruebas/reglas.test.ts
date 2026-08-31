@@ -145,12 +145,26 @@ beforeEach(async () => {
 
     for (const [t, estado] of
          [[A, 'activo'], [B, 'activo'], [C, 'dado_de_baja'], [D, 'suspendido']] as const) {
-      await setDoc(doc(db, 'tenants', t), { nombre: t, estado, plan: 'basico' });
+      // A y C: agendamiento. B y D: venta y cobro. Así cada prueba de vertical
+      // tiene un comercio de cada tipo con el que contrastar.
+      const vertical = (t === B || t === D) ? 'venta' : 'agendamiento';
+      await setDoc(doc(db, 'tenants', t), { nombre: t, estado, plan: 'basico', vertical });
       await setDoc(doc(db, `tenants/${t}/config/negocio`), {
         nombreNegocio: t, direccion: 'Calle Falsa 100',
         tratamiento: 'usted', estiloEmojis: 'pocos',
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
       });
+      await setDoc(doc(db, `tenants/${t}/config/${vertical}`), vertical === 'venta'
+        ? { costoDelivery: 10, recargoFlota: 5, radioEntregaKm: 5,
+            tiempoCocinaMin: 20, tiempoDespachoMin: 30, pedidoMinimo: 30,
+            aceptaDelivery: true, aceptaRetiroEnLocal: true,
+            // Escritos por NovuChat, NO por el comercio.
+            mediaIdQr: '1234567890000001',
+            actualizadoPor: 'seed', actualizadoEn: Timestamp.now() }
+        : { duracionPorDefectoMin: 45, anticipacionMinimaMin: 60,
+            anticipacionMaximaDias: 60, permitirCancelacion: true,
+            horasRecordatorio: 24,
+            actualizadoPor: 'seed', actualizadoEn: Timestamp.now() });
       await setDoc(doc(db, `tenants/${t}/catalogo/item1`), {
         nombre: 'Corte', precio: 50, moneda: 'BOB', activo: true,
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
@@ -225,6 +239,14 @@ beforeEach(async () => {
     await setDoc(doc(db, `tenants/${A}/accesosSoporte/u-soporte`), { expira: enUnaHora, otorgadoPor: 'u-admin-a' });
     await setDoc(doc(db, `tenants/${A}/accesosSoporte/u-vencido`), { expira: haceUnaHora, otorgadoPor: 'u-admin-a' });
     await setDoc(doc(db, 'usuarios/u-admin-a'), { nombre: 'Ana', preferencias: {} });
+    // Rótulos del cobro simulado: de NovuChat, iguales para todos, y ningún
+    // navegador los escribe. Sostienen la prohibición 3 de CLAUDE.md.
+    await setDoc(doc(db, 'plataforma/cobroSimulado'), {
+      rotuloSuperior: 'DEMOSTRACION · ESTE QR NO COBRA',
+      rotuloInferior: 'SIMULACRO DE PAGO',
+      epigrafe: 'Cobro SIMULADO: no cobra ni mueve dinero.',
+      confirmacion: 'Pago verificado (SIMULADO - demostracion, sin cobro real).',
+    });
     await setDoc(doc(db, 'plataforma/notificaciones'), {
       // FormSubmit: el destino es una dirección (o un alias opaco), no una API
       // con credencial. Vive acá y NUNCA en el reclamo.
@@ -277,6 +299,7 @@ describe('Control de la semilla', () => {
         `tenants/${A}/accesosSoporte/u-vencido`,
         'usuarios/u-admin-a',
         'plataforma/notificaciones',
+        'plataforma/cobroSimulado',
       ];
       const faltantes: string[] = [];
       for (const ruta of rutas) {
@@ -1502,5 +1525,143 @@ describe('Agenda: candado contra la doble reserva', () => {
   it('el comercio la lee para ver su agenda; otro comercio no', async () => {
     await assertSucceeds(getDocs(collection(operA(), `tenants/${A}/agenda`)));
     await assertFails(getDocs(collection(adminA(), `tenants/${B}/agenda`)));
+  });
+});
+
+// ===========================================================================
+// 21. VERTICALES: cada comercio solo escribe lo suyo
+// ===========================================================================
+describe('Configuración por vertical', () => {
+  const cfgAgenda = (uid: string) => ({
+    duracionPorDefectoMin: 45, anticipacionMinimaMin: 120,
+    anticipacionMaximaDias: 45, permitirCancelacion: true, horasRecordatorio: 24,
+    actualizadoPor: uid, actualizadoEn: serverTimestamp(),
+  });
+  const cfgVenta = () => ({
+    costoDelivery: 12, recargoFlota: 6, radioEntregaKm: 4,
+    tiempoCocinaMin: 25, tiempoDespachoMin: 35, pedidoMinimo: 40,
+    aceptaDelivery: true, aceptaRetiroEnLocal: true,
+    actualizadoPor: 'u-admin-a', actualizadoEn: serverTimestamp(),
+  });
+
+  it('un comercio de agendamiento edita SU configuración de agenda', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      cfgAgenda('u-admin-a')));
+  });
+
+  it('un comercio de agendamiento NO puede escribir configuración de venta', async () => {
+    // No es que la pantalla se lo esconda: la regla lo rechaza. Un salón de
+    // belleza no fija el recargo de flota ni por accidente ni a propósito.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/venta`), cfgVenta()));
+  });
+
+  it('un comercio de venta NO puede escribir configuración de agenda', async () => {
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/agendamiento`),
+      cfgAgenda('u-admin-fogon')));
+  });
+
+  it('un comercio de venta edita SU configuración comercial', async () => {
+    // `updateDoc` y no `setDoc`: ver la prueba de abajo.
+    await assertSucceeds(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { ...cfgVenta(), actualizadoPor: 'u-admin-b' }));
+  });
+
+  it('un setDoc COMPLETO se rechaza porque borraría los campos de NovuChat', async () => {
+    // Consecuencia buscada de validar con `affectedKeys`: un `setDoc` reemplaza
+    // el documento entero, y eso BORRA `mediaIdQr`. Borrar también es afectar,
+    // así que la regla lo rechaza. Sin esto, el camino más natural del
+    // programador —escribir el objeto completo— desarmaría en silencio el
+    // control que sostiene la prohibición 3.
+    //
+    // La pantalla usa `updateDoc` justamente por esto.
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { ...cfgVenta(), actualizadoPor: 'u-admin-b' }));
+  });
+
+  it('lo COMÚN lo edita cualquiera de los dos', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/config/negocio`),
+      configValida('u-admin-a')));
+    await assertSucceeds(setDoc(doc(adminB(), `tenants/${B}/config/negocio`),
+      configValida('u-admin-b')));
+  });
+
+  it('los funcionarios son solo del vertical de agendamiento', async () => {
+    // Una parrilla no tiene profesionales con calendario propio.
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/funcionarios/f9`), {
+      nombre: 'Mozo', especialidad: '', calendarioId: '',
+      horarioTrabajo: {}, servicios: [], activo: true,
+      actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp(),
+    }));
+  });
+
+  it('nadie escribe el documento de un vertical inexistente', async () => {
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/interno`),
+      { algo: 1, actualizadoPor: 'u-admin-a', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('valida los rangos de la configuración de agenda', async () => {
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { ...cfgAgenda('u-admin-a'), duracionPorDefectoMin: 0 }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { ...cfgAgenda('u-admin-a'), anticipacionMaximaDias: 400 }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { ...cfgAgenda('u-admin-a'), horasRecordatorio: 200 }));
+  });
+
+  it('valida los rangos de la configuración de venta', async () => {
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { ...cfgVenta(), actualizadoPor: 'u-admin-b', costoDelivery: -1 }));
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { ...cfgVenta(), actualizadoPor: 'u-admin-b', radioEntregaKm: 0 }));
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { ...cfgVenta(), actualizadoPor: 'u-admin-b', tiempoCocinaMin: 500 }));
+  });
+});
+
+// ===========================================================================
+// 22. LA PROHIBICIÓN 3: un cobro simulado no se presenta como real
+// ===========================================================================
+describe('Rótulos del cobro simulado', () => {
+  it('el comercio NO puede tocar el media ID del QR', async () => {
+    // Parece un dato técnico inocente y no lo es: apunta a la IMAGEN, y la
+    // imagen lleva el rótulo impreso. Quien pueda cambiarlo sube un QR sin
+    // rótulo y saltea la prohibición 3 por la puerta de atrás, sin editar un
+    // solo texto.
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { mediaIdQr: '1000000000000009',
+        actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp() }));
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { costoDelivery: 10, mediaIdQr: '1000000000000009',
+        actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('el comercio NO puede meter rótulos propios en su configuración', async () => {
+    for (const campo of ['rotuloSuperior', 'rotuloInferior', 'epigrafe',
+                         'confirmacion', 'textoPagoSimulado']) {
+      await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+        { [campo]: 'Pago acreditado',
+          actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp() }));
+    }
+  });
+
+  it('los rótulos de plataforma no los escribe NADIE desde el navegador', async () => {
+    // Ni el comercio ni NovuChat. Son texto que sostiene una prohibición del
+    // proyecto, no una preferencia editable.
+    await assertFails(updateDoc(doc(propietario(), 'plataforma/cobroSimulado'),
+      { rotuloSuperior: 'PAGO REAL' }));
+    await assertFails(setDoc(doc(adminB(), 'plataforma/cobroSimulado'),
+      { rotuloSuperior: 'PAGO REAL' }));
+    await assertFails(deleteDoc(doc(propietario(), 'plataforma/cobroSimulado')));
+  });
+
+  it('ningún comercio los lee: son de plataforma', async () => {
+    await assertFails(getDoc(doc(adminB(), 'plataforma/cobroSimulado')));
+    await assertSucceeds(getDoc(doc(propietario(), 'plataforma/cobroSimulado')));
+  });
+
+  it('el comercio SÍ edita lo comercial, que es lo suyo', async () => {
+    await assertSucceeds(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { costoDelivery: 15, recargoFlota: 8,
+        actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp() }));
   });
 });

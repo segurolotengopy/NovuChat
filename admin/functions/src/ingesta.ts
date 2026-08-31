@@ -5,7 +5,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
-  resolverFuncionarios,
+  resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
 } from './prompt.js';
 
 /**
@@ -453,12 +453,24 @@ export const configuracionFlujo = onRequest(
     // facial» EN MEMORIA sobre estas listas, sin consultas adicionales: son
     // colecciones chicas (200 servicios, 50 funcionarios como tope) y traerlas
     // enteras cuesta menos que cualquier consulta con índice por servicio.
-    const [config, catalogo, funcionarios] = await Promise.all([
+    // Documento específico del vertical, si le corresponde uno. Un comercio de
+    // gastronomía no lee configuración de agenda y viceversa: no hace falta
+    // filtrar después porque directamente no se pide.
+    const docVertical = documentoDeVertical(comercio.flujo);
+
+    const [config, catalogo, funcionarios, especifica, rotulos] = await Promise.all([
       db.doc(`tenants/${comercio.tenantId}/config/negocio`).get(),
       db.collection(`tenants/${comercio.tenantId}/catalogo`)
         .where('activo', '==', true).limit(200).get(),
       db.collection(`tenants/${comercio.tenantId}/funcionarios`)
         .where('activo', '==', true).limit(50).get(),
+      docVertical
+        ? db.doc(`tenants/${comercio.tenantId}/config/${docVertical}`).get()
+        : Promise.resolve(null),
+      // Rótulos del cobro simulado: los mismos para TODOS los comercios.
+      comercio.flujo === 'venta'
+        ? db.doc('plataforma/cobroSimulado').get()
+        : Promise.resolve(null),
     ]);
 
     const negocio = (config.data() ?? {}) as Record<string, unknown>;
@@ -511,6 +523,26 @@ export const configuracionFlujo = onRequest(
       datosDelNegocio,
 
       catalogo: catalogo.docs.map((d) => ({ id: d.id, ...d.data() })),
+
+      // Configuración del vertical, en su propia clave. El flujo del Demo A no
+      // recibe `venta` y el del Demo B no recibe `agendamiento`: cada uno ve
+      // solo lo que sabe usar.
+      ...(docVertical && especifica?.exists
+        ? { [docVertical]: especifica.data() }
+        : {}),
+
+      // PROHIBICIÓN 3. Los rótulos van SIEMPRE que el vertical sea de cobro, y
+      // salen de plataforma, nunca de la configuración del comercio. Si el
+      // documento faltara, rigen los de respaldo: el sistema falla hacia el
+      // rótulo, jamás hacia el silencio.
+      ...(comercio.flujo === 'venta'
+        ? { cobroSimulado: {
+              ...rotulosCobroSimulado(rotulos?.data()),
+              // Sin media ID no hay QR que enviar, y eso es lo correcto: mejor
+              // no mandar nada que mandar una imagen sin rotular.
+              mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
+            } }
+        : {}),
 
       // Siempre al menos uno. Si el comercio no cargó ninguno, viene el
       // funcionario por defecto con el calendario del negocio: el flujo tiene un
