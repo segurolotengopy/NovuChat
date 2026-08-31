@@ -1,3 +1,4 @@
+import { REGION } from './region.js';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import {
@@ -74,7 +75,7 @@ const MAX_TEXTO_CORREO = 1000;
 export const notificarReclamo = onDocumentCreated(
   {
     document: 'tenants/{tenantId}/reclamos/{reclamoId}',
-    region: 'southamerica-east1',
+    region: REGION,
     // Sin `secrets`: FormSubmit no usa credencial. Es la ventaja que motivó la
     // decisión — un secreto menos que custodiar en un repositorio público.
     maxInstances: 5,

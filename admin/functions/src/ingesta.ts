@@ -1,3 +1,4 @@
+import { REGION } from './region.js';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
@@ -234,7 +235,7 @@ export async function registrar(tenantId: string, evento: Evento): Promise<void>
 
 export const ingesta = onRequest(
   {
-    region: 'southamerica-east1',
+    region: REGION,
     secrets: Object.values(SECRETOS_POR_NUMERO),
     // Sin CORS: este endpoint es servidor a servidor. Que un navegador no pueda
     // llamarlo elimina de raíz el abuso desde una página cualquiera.
@@ -422,7 +423,7 @@ export const ingesta = onRequest(
  */
 export const configuracionFlujo = onRequest(
   {
-    region: 'southamerica-east1',
+    region: REGION,
     secrets: Object.values(SECRETOS_POR_NUMERO),
     cors: false,
     maxInstances: 10,
