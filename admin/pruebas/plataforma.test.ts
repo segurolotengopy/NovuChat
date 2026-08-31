@@ -66,3 +66,53 @@ describe('Estilo: español boliviano sin voseo', () => {
     expect(validar(TEXTOS).join(' ')).not.toMatch(/rotulo\w+: voseo/);
   });
 });
+
+/**
+ * Las tres formas en que la carga no funciona no son defectos: son estados
+ * normales de un proyecto a medio armar. Lo que sí sería un defecto es que
+ * salgan como una traza cruda del SDK, porque eso se lee como "algo se rompió"
+ * en lugar de "falta un paso" — que fue exactamente lo que pasó la primera vez
+ * que Andres corrió el script.
+ */
+// @ts-expect-error — script .mjs sin tipos
+import { explicar } from '../scripts/cargar-plataforma.mjs';
+
+describe('Traducción de las fallas esperables', () => {
+  const P = 'novuchat-admin-dev';
+
+  it('la API apagada dice cómo encenderla, y avisa que falta un paso más', () => {
+    const e = { code: 7, message: 'Cloud Firestore API has not been used in project' };
+    const r = explicar(e, P).join('\n');
+    expect(r).toMatch(/API de Cloud Firestore esta apagada/);
+    expect(r).toMatch(/gcloud services enable firestore.googleapis.com --project=novuchat-admin-dev/);
+    expect(r).toMatch(/CREAR la base/);
+  });
+
+  it('la base inexistente advierte que la región es permanente', () => {
+    const r = explicar({ code: 5, message: 'NOT_FOUND' }, P).join('\n');
+    expect(r).toMatch(/no tiene ninguna base/);
+    expect(r).toMatch(/gcloud firestore databases create/);
+    expect(r).toMatch(/PERMANENTE/);
+  });
+
+  it('la falta de credenciales manda a application-default login', () => {
+    const r = explicar({ message: 'Could not load the default credentials' }, P).join('\n');
+    expect(r).toMatch(/gcloud auth application-default login/);
+  });
+
+  it('el permiso faltante nombra el rol', () => {
+    const r = explicar({ code: 7, message: 'PERMISSION_DENIED' }, P).join('\n');
+    expect(r).toMatch(/roles\/datastore\.user/);
+  });
+
+  it('lo no previsto se dice como no previsto, sin inventar un remedio', () => {
+    const r = explicar({ message: 'algo rarísimo' }, P);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatch(/no previsto/);
+  });
+
+  it('no confunde la API apagada con el permiso, que comparten el código 7', () => {
+    const apagada = { code: 7, message: 'Cloud Firestore API has not been used in project' };
+    expect(explicar(apagada, P).join('\n')).not.toMatch(/roles\/datastore/);
+  });
+});

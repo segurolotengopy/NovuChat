@@ -128,6 +128,40 @@ function huellaDelQr() {
 // -----------------------------------------------------------------------------
 // Ejecución
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
+// FALLAS ESPERABLES
+// -----------------------------------------------------------------------------
+// Las tres formas en que esto no funciona --API apagada, base sin crear, sin
+// credenciales-- NO son defectos: son estados normales de un proyecto que
+// todavia no se termino de armar. Escupir la traza cruda del SDK por cualquiera
+// de ellas convierte un "falta un paso" en "algo se rompio", que es justo la
+// lectura equivocada. Cada una se traduce a una linea y al comando que la
+// resuelve.
+export function explicar(e, proyecto) {
+  const texto = `${e?.code ?? ''} ${e?.message ?? e}`;
+  const det = JSON.stringify(e?.errorInfoMetadata ?? e?.details ?? '');
+
+  if (/SERVICE_DISABLED/.test(texto + det) || /has not been used in project/.test(texto)) {
+    return ['La API de Cloud Firestore esta apagada en este proyecto.',
+            `  gcloud services enable firestore.googleapis.com --project=${proyecto}`,
+            '  Despues hay que CREAR la base, que es un paso aparte.'];
+  }
+  if (/NOT_FOUND/.test(texto) || e?.code === 5) {
+    return ['El proyecto no tiene ninguna base de Firestore creada.',
+            `  gcloud firestore databases create --location=southamerica-east1 --project=${proyecto}`,
+            '  OJO: la region es PERMANENTE. Google no deja mover una base despues.'];
+  }
+  if (/UNAUTHENTICATED/.test(texto) || /Could not load the default credentials/.test(texto)) {
+    return ['No hay credenciales por defecto para el SDK Admin.',
+            '  gcloud auth application-default login'];
+  }
+  if (/PERMISSION_DENIED/.test(texto) || e?.code === 7) {
+    return ['La cuenta autenticada no puede escribir en Firestore de este proyecto.',
+            '  Hace falta el rol roles/datastore.user sobre ' + proyecto];
+  }
+  return [`Fallo no previsto: ${e?.message ?? e}`];
+}
+
 // Importado desde una prueba, este archivo NO debe ejecutar nada: solo expone
 // TEXTOS y validar(). Sin este guard, importarlo dispararia la carga entera.
 const ESTE = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
@@ -192,12 +226,21 @@ initializeApp({ projectId: destino });
 const db = getFirestore();
 
 // `merge: true` e identificador fijo: correrlo dos veces deja el mismo estado.
-await db.doc('plataforma/cobroSimulado').set(
-  { ...TEXTOS, actualizado: FieldValue.serverTimestamp() },
-  { merge: true },
-);
+let escrito;
+try {
+  await db.doc('plataforma/cobroSimulado').set(
+    { ...TEXTOS, actualizado: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+  escrito = (await db.doc('plataforma/cobroSimulado').get()).data() ?? {};
+} catch (e) {
+  const [linea, ...pasos] = explicar(e, destino);
+  console.error(`\n✗ No se escribio nada. ${linea}`);
+  for (const paso of pasos) console.error(paso);
+  console.error('\nLos textos son validos: lo unico que falta es el destino.\n');
+  process.exit(1);
+}
 
-const escrito = (await db.doc('plataforma/cobroSimulado').get()).data() ?? {};
 const iguales = Object.entries(TEXTOS).every(([k, v]) => escrito[k] === v);
 console.log(iguales
   ? '\n✓ Escrito y releído: los cuatro textos coinciden.\n'
