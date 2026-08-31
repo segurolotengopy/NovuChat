@@ -7,14 +7,21 @@
 #
 #   ./scripts/listar-plantillas.sh
 #   ./scripts/listar-plantillas.sh --env .env.demo-b
+#   ./scripts/listar-plantillas.sh --detalle   # componentes y variables
+#
+# --detalle existe para una comprobacion que la APROBACION NO HACE: que la
+# plantilla tenga exactamente los componentes y la cantidad de variables que
+# el flujo le manda. Si no calzan, Meta aprueba igual y el envio falla en
+# produccion con #132000 (number of parameters does not match).
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-ENV_FILE=".env"
+ENV_FILE=".env"; DETALLE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*) ENV_FILE="${1#*=}"; shift ;;
+    --detalle) DETALLE=1; shift ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
@@ -28,9 +35,11 @@ set +a
 : "${WABA_ID:?Falta WABA_ID}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 
+CAMPOS=""
+if [[ $DETALLE -eq 1 ]]; then CAMPOS=",components"; fi
 TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
 COD=$(curl -s --max-time 25 -o "$TMP" -w '%{http_code}' \
-  "${G}/${WABA_ID}/message_templates?limit=100&fields=name,status,category,language" \
+  "${G}/${WABA_ID}/message_templates?limit=100&fields=name,status,category,language${CAMPOS}" \
   -H "Authorization: Bearer ${WA_TOKEN}" || echo 000)
 
 if [[ "$COD" != "200" ]]; then
@@ -42,7 +51,7 @@ if [[ "$COD" != "200" ]]; then
 fi
 
 python3 - "$TMP" <<'PY'
-import json, sys, collections
+import json, re, sys, collections
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 plantillas = d.get("data", [])
 V, R, A, G, FIN = "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[0;90m", "\033[0m"
@@ -61,6 +70,23 @@ for p in sorted(plantillas, key=lambda x: (x.get("status", ""), x.get("name", ""
     c = color.get(est, A)
     print(f"  {c}{est:<10}{FIN} {p.get('name','?'):<34} "
           f"{G}{p.get('category','?')} · {p.get('language','?')}{FIN}")
+    # Con --detalle Graph devuelve `components`. Lo que interesa no es el texto
+    # sino la FORMA: que componentes exige y cuantas variables tiene el cuerpo,
+    # porque eso es lo que el nodo de n8n tiene que reproducir exactamente.
+    comps = p.get("components")
+    if comps is None:
+        continue
+    tipos, nvars = [], 0
+    for c in comps:
+        t = str(c.get("type", "?")).upper()
+        if t == "BODY":
+            nvars = len(set(re.findall(r"\{\{\s*(\d+)\s*\}\}", c.get("text", ""))))
+            tipos.append(f"BODY({nvars} var)")
+        elif t == "BUTTONS":
+            tipos.append(f"BUTTONS({len(c.get('buttons', []))})")
+        else:
+            tipos.append(t)
+    print(f"             {G}componentes: {', '.join(tipos) or 'ninguno'}{FIN}")
 
 print()
 aprobadas = por_estado.get("APPROVED", 0)
