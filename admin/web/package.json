@@ -12,7 +12,7 @@
     "servir": "vite preview --port 5230 --strictPort"
   },
   "dependencies": {
-    "firebase": "^11.10.0",
+    "firebase": "^12.17.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.0"
