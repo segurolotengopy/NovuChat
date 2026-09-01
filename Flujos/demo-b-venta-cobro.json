@@ -582,7 +582,13 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "notes": "Registra el CIERRE de venta. Solo con comprobante del cliente."
+      "notes": "Registra el CIERRE de venta. Solo con comprobante del cliente.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zTH3TH0M8mLCxHGz",
+          "name": "Cierres NovuChat"
+        }
+      }
     }
   ],
   "connections": {
