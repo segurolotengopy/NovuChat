@@ -90,7 +90,7 @@ export function Ingresar() {
         await sendEmailVerification(credencial.user);
         setAviso(
           'Su correo todavía no está verificado. Le enviamos el enlace de nuevo: ' +
-          'ábralo y vuelva a ingresar. Hasta entonces el panel no le mostrará datos.',
+          'ábrelo y vuelve a ingresar. Hasta entonces el panel no te mostrará datos.',
         );
       }
     } catch {
@@ -146,7 +146,7 @@ export function Ingresar() {
             Olvidé mi contraseña
           </button>
           <p className="text-muted">
-            Mínimo 12 caracteres. Verifique su correo antes del primer ingreso.
+            Mínimo 12 caracteres. Verifica tu correo antes del primer ingreso.
           </p>
         </form>
       ) : (

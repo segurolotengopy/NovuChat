@@ -5,7 +5,7 @@ import { useSesion } from '../lib/contexto';
  * Pantalla sin salida, CON salida.
  *
  * EL DEFECTO QUE ARREGLA. Había dos estados que dejaban a la persona encerrada:
- * «Su cuenta todavía no está asociada a ningún negocio» y «Sin permiso». Los dos
+ * «Tu cuenta todavía no está asociada a ningún negocio» y «Sin permiso». Los dos
  * se pintaban sin cabecera —o sea, sin el botón «Salir»— y sin ningún enlace.
  * La sesión quedaba abierta, así que volver a cargar la página devolvía la misma
  * pantalla, y la única forma real de probar con otra cuenta era borrar los datos
@@ -37,7 +37,7 @@ export function SinSalida({
       {children}
       {usuario?.email && (
         <p>
-          Ingresó como <strong>{usuario.email}</strong>.
+          Entraste como <strong>{usuario.email}</strong>.
         </p>
       )}
       <button type="button" onClick={salir}>

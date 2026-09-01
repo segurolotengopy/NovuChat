@@ -37,7 +37,7 @@ export function Tenants() {
               <td><TextoSeguro valor={t.nombre} maxLargo={80} /></td>
               <td><TextoSeguro valor={t.estado} maxLargo={20} /></td>
               <td><TextoSeguro valor={t.plan} maxLargo={20} /></td>
-              <td><Link to={`/negocio/${encodeURIComponent(t.id)}/configuracion`}>Abrir</Link></td>
+              <td><Link to={`/negocio/${encodeURIComponent(t.id)}/cierres`}>Ver cierres</Link></td>
             </tr>
           ))}
         </tbody>

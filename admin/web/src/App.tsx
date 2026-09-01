@@ -6,7 +6,7 @@ import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
 import { Conversaciones } from './paginas/Conversaciones';
-import { Metricas } from './paginas/Metricas';
+import { Cierres } from './paginas/Cierres';
 import { Usuarios } from './paginas/Usuarios';
 import { Contactos } from './paginas/Contactos';
 import { EstadoCuenta } from './paginas/EstadoCuenta';
@@ -50,8 +50,8 @@ function Cabecera() {
           <Link to={`/negocio/${tenantId}/contactos`}>Contactos</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/funcionarios`}>Funcionarios</Link>}
-        {tenantId && esPersona &&
-          <Link to={`/negocio/${tenantId}/uso`}>Uso</Link>}
+        {tenantId && (esPersona || permisos.propietario) &&
+          <Link to={`/negocio/${tenantId}/cierres`}>Cierres</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/cuenta`}>Cuenta</Link>}
         {tenantId && esPersona &&
@@ -91,6 +91,11 @@ function Entrada() {
  * adivinar, y para el dueño de una PyME que entra desde el celular esa
  * impresión es la que sostiene —o no— que vuelva a entrar mañana.
  */
+function DesvioAUso() {
+  const { tenantId } = useParams();
+  return <Navigate to={`/negocio/${tenantId}/cierres`} replace />;
+}
+
 function Inicio() {
   return <><Cabecera /><Tablero /></>;
 }
@@ -113,8 +118,11 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
         <Route path="/negocio/:tenantId/funcionarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
-        <Route path="/negocio/:tenantId/uso" element={
-          <Proteger requiere="miembroTenant"><><Cabecera /><Metricas /></></Proteger>} />
+        <Route path="/negocio/:tenantId/cierres" element={
+          <Proteger requiere="miembroOPropietario"><><Cabecera /><Cierres /></></Proteger>} />
+        {/* La pantalla se llamaba «Uso». El enlace viejo sigue funcionando: puede
+            estar en un correo o en un marcador de alguien. */}
+        <Route path="/negocio/:tenantId/uso" element={<DesvioAUso />} />
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={

@@ -1050,8 +1050,72 @@ service cloud.firestore {
           return request.resource.data.keys().hasOnly([
             'mensajes', 'entrantes', 'salientes',
             'personasAtendidas',   // conteo de ÚNICOS, no un incremento por mensaje
-            'citasAgendadas', 'conversaciones'
+            'citasAgendadas', 'conversaciones',
+            // LAS TRES CIFRAS DE LA OFERTA COMERCIAL. Definiciones exactas en
+            // /cierres, más abajo. Están acá porque son el agregado por período
+            // que se muestra y se factura; el detalle auditable vive en la
+            // colección, no en este contador.
+            'cierres', 'atenciones', 'interacciones'
           ]);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /cierres/{cierreId} — LA UNIDAD QUE SE COBRA.
+      //
+      // Un CIERRE es una atención de WhatsApp que TERMINÓ BIEN y quedó
+      // registrada en algún lado verificable: una cita en el calendario, una
+      // venta con su comprobante recibido, una fila escrita en la planilla.
+      //
+      // NO son cierres, y esto importa más que la definición positiva porque es
+      // lo que evita cobrar de más:
+      //   - mandar información y que el cliente no confirme nada;
+      //   - mandar el QR y que el cliente no pague;
+      //   - una conversación que quedó a medias con datos incompletos.
+      // La regla práctica: si no hay un registro externo que lo pruebe, no es
+      // un cierre. Por eso `referencia` es OBLIGATORIA y no puede ir vacía.
+      //
+      // POR QUÉ EXISTE EL DOCUMENTO Y NO SOLO EL CONTADOR. Sobre esto se
+      // factura. Un número que nadie puede desglosar no se puede discutir con
+      // un cliente que reclama, ni auditar cuando la cuenta no cierra.
+      //
+      // PRIVACIDAD. NovuChat puede leer ESTE documento para explicar una
+      // factura, y por eso acá NO hay nada del contenido de la conversación ni
+      // el teléfono completo: el número va enmascarado, igual que en la
+      // bitácora. Lo que identifica a la persona vive en `/privado`, que solo
+      // abre el administrador del negocio. Es el mismo reparto que ya usan
+      // contactos y funcionarios, y la razón es la misma: las reglas no pueden
+      // ocultar campos sueltos en una lectura.
+      // -----------------------------------------------------------------------
+      match /cierres/{cierreId} {
+        allow get, list: if esMiembro(tenantId) || esPropietario();
+        allow create: if esIngesta(tenantId) && tenantOperativo(tenantId) && cierreValido();
+        // No se corrige ni se borra un cierre: se factura sobre esto. Un error
+        // se compensa con otro asiento, no reescribiendo el original.
+        allow update, delete: if false;
+
+        function cierreValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+                   'tipo', 'ocurridoEn', 'referencia', 'telefonoEnmascarado',
+                   'monto', 'moneda', 'conversacionId'
+                 ])
+              && d.tipo in ['cita', 'venta', 'registro']
+              && d.referencia is string && d.referencia.size() > 0
+              && d.referencia.size() <= 200
+              && d.ocurridoEn is timestamp
+              // Mismo enmascarado que exige la bitácora: acá no entra un
+              // teléfono completo aunque el principal de ingesta lo tenga.
+              && d.telefonoEnmascarado is string
+              && d.telefonoEnmascarado.matches('^[0-9]{0,4}[*]{3,}[0-9]{0,4}$');
+        }
+
+        // El detalle que identifica a la persona o al servicio. Del negocio, y
+        // de nadie más: NovuChat no lo lee.
+        match /privado/{documento} {
+          allow get, list: if esAdmin(tenantId) && tenantLegible(tenantId);
+          allow create: if esIngesta(tenantId) && tenantOperativo(tenantId);
+          allow update, delete: if false;
         }
       }
 

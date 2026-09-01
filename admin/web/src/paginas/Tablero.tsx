@@ -102,9 +102,9 @@ function TableroNovuChat() {
           pie={<span className="text-muted">Es una garantía del producto, no una falta de la pantalla.</span>}
         >
           <p>
-            Desde esta cuenta se administra la cartera, pero <strong>no</strong> se
-            leen las conversaciones de los clientes de cada negocio ni su
-            configuración. Lo impiden las reglas de la base de datos, no el menú.
+            Desde esta cuenta administras la cartera, pero <strong>no</strong> se leen
+            las conversaciones de los clientes de cada negocio ni su configuración.
+            Lo impiden las reglas de la base de datos, no el menú.
           </p>
         </Tarjeta>
       </div>
@@ -121,7 +121,7 @@ function TableroNovuChat() {
             <Tarjeta
               key={n.id}
               titulo=""
-              pie={<Link to={`/negocio/${encodeURIComponent(n.id)}/configuracion`}>Abrir</Link>}
+              pie={<Link to={`/negocio/${encodeURIComponent(n.id)}/cierres`}>Ver cierres</Link>}
             >
               <p className="card-title"><TextoSeguro valor={n.nombre} maxLargo={80} /></p>
               <p>
@@ -198,7 +198,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
           {cerrado ? 'Hoy cerrado' : `Hoy abierto ${datos.horarioHoy}`}
         </p>
         <p className="text-muted">
-          Fuera de horario el asistente sigue respondiendo y avisa cuándo abren.
+          Fuera de horario el asistente sigue respondiendo y avisa cuándo abres.
         </p>
       </Tarjeta>
 
@@ -254,11 +254,11 @@ export function Tablero() {
   const ids = Object.keys(permisos.tenants);
   if (ids.length === 0) {
     return (
-      <SinSalida titulo="Su cuenta todavía no está asociada a ningún negocio">
+      <SinSalida titulo="Tu cuenta todavía no está asociada a ningún negocio">
         <p>
           Es normal si recién la crearon: alguien de NovuChat tiene que vincularla
-          a su negocio. Si ya se la vincularon, salga y vuelva a entrar para que
-          se actualicen sus permisos.
+          a tu negocio. Si ya te la vincularon, sal y vuelve a entrar para que se
+          actualicen tus permisos.
         </p>
       </SinSalida>
     );
@@ -269,7 +269,7 @@ export function Tablero() {
   // de elegir antes de saber cuál necesita atención.
   return (
     <section>
-      <h2>{ids.length === 1 ? 'Su negocio' : 'Sus negocios'}</h2>
+      <h2>{ids.length === 1 ? 'Tu negocio' : 'Tus negocios'}</h2>
       {ids.map((id) => (
         <TableroComercio key={id} tenantId={id} esAdmin={permisos.tenants[id] === 'admin'} />
       ))}
