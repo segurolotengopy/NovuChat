@@ -566,7 +566,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ tipo: 'cita', referencia: $json.eventoId, telefono: $json.telefono, detalle: $json.servicio || '', nombreCliente: $json.nombreContacto || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ tipo: 'cita', referencia: $json.eventoId, telefono: $json.from, nombreCliente: $json.nombrePerfil || '' }) }}",
         "options": {}
       },
       "id": "registrar-cierre-(cita)",
@@ -581,7 +581,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "notes": "Registra el CIERRE. Solo se llama cuando hay prueba externa.",
+      "notes": "Registra el CIERRE. El telefono se llama `from` y el nombre `nombrePerfil`: son los nombres que usa el normalizador, no `telefono`/`nombreContacto`.",
       "credentials": {
         "httpHeaderAuth": {
           "id": "zsGBHfe95mZ9oJCQ",
