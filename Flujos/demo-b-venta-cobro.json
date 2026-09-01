@@ -585,8 +585,8 @@
       "notes": "Registra el CIERRE de venta. Solo con comprobante del cliente.",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zTH3TH0M8mLCxHGz",
-          "name": "Cierres NovuChat"
+          "id": "R5rKhKMyex17MkjM",
+          "name": "Cierres NovuChat B"
         }
       }
     }
