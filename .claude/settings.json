@@ -20,7 +20,7 @@
       "Bash(gh auth token*)",
       "Bash(git tag*)",
       "Bash(curl:*)",
-      "Bash(wget:*)",
+      "Bash(wget:*)"
     ],
     "ask": [
       "Bash(git push*)",
