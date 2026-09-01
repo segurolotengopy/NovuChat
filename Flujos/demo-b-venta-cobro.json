@@ -497,6 +497,92 @@
       "maxTries": 2,
       "waitBetweenTries": 1000,
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ¿HUBO UN CIERRE DE VENTA?\n//\n// La prueba NO es que el modelo diga que el pedido está confirmado. Eso ya nos\n// costó caro en el Demo A: el marcador lo escribe el modelo, así que es una\n// afirmación, no un hecho. La prueba de que el cliente pagó es que el CLIENTE\n// MANDÓ UNA IMAGEN — el comprobante — y que sobre ese mensaje el asistente\n// respondió dando el pago por recibido.\n//\n// Las dos condiciones juntas dejan afuera exactamente lo que la oferta excluye:\n// mandar el QR y que el cliente no pague (no hay imagen), y mandar información\n// que nadie confirma (no hay imagen ni confirmación).\n//\n// La referencia es el id del mensaje de WhatsApp de esa imagen: existe fuera de\n// nosotros, es único, y permite ir a buscar el comprobante si alguien discute\n// la factura.\nconst item = $json;\nconst esImagenDelCliente = item.tipo === 'image';\nconst confirmoElPago = /SIMULADO/i.test(String(item.texto ?? ''));\nconst referencia = String(item.mensajeId ?? '');\n\nreturn [{ json: {\n  ...item,\n  hayCierre: Boolean(esImagenDelCliente && confirmoElPago && referencia),\n  referenciaCierre: referencia,\n} }];\n"
+      },
+      "id": "hay-cierre-venta",
+      "name": "¿Hay comprobante?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cv1",
+              "leftValue": "={{ $json.hayCierre }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-cierre-venta",
+      "name": "¿Registrar venta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1520,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/registrarCierre",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Config del negocio').item.json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tipo: 'venta', referencia: $json.referenciaCierre, telefono: $json.telefono, detalle: 'Pedido con comprobante recibido', nombreCliente: $json.nombreContacto || '' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "registrar-cierre-venta",
+      "name": "Registrar cierre (venta)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        640
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Registra el CIERRE de venta. Solo con comprobante del cliente."
     }
   ],
   "connections": {
@@ -613,6 +699,11 @@
             "node": "¿Pedido confirmado?",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "¿Hay comprobante?",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -634,6 +725,29 @@
         [
           {
             "node": "Avisar al dueño",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿Hay comprobante?": {
+      "main": [
+        [
+          {
+            "node": "¿Registrar venta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Registrar venta?": {
+      "main": [
+        [
+          {
+            "node": "Registrar cierre (venta)",
             "type": "main",
             "index": 0
           }

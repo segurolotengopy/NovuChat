@@ -1742,3 +1742,15 @@ describe('Contadores de la oferta comercial', () => {
       { cierres: 12, descuentoEspecial: 999 }));
   });
 });
+
+describe('Cierres · el número completo no puede colarse por otro campo', () => {
+  it('rechaza conversacionId, que vale wa_<telefono> y es el número entero', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c9`), {
+      tipo: 'cita',
+      ocurridoEn: serverTimestamp(),
+      referencia: 'evt_x',
+      telefonoEnmascarado: '5917****001',
+      conversacionId: 'wa_59170000001',
+    }));
+  });
+});

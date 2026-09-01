@@ -102,6 +102,7 @@ const marcas = leerMarcadores();
 const COMERCIOS = [
   {
     id: 'demo-agendamiento',
+    alias: 'demoA',
     nombre: 'Salón & Clínica Demo NovuChat',
     vertical: 'agendamiento',
     pnid: envA?.['WA_PHONE_ID'],
@@ -165,6 +166,7 @@ const COMERCIOS = [
   },
   {
     id: 'demo-venta',
+    alias: 'demoB',
     nombre: 'Resto & Tienda Demo NovuChat',
     vertical: 'venta',
     pnid: envB?.['WA_PHONE_ID'],
@@ -346,6 +348,11 @@ for (const c of COMERCIOS) {
   await db.doc(`rutasWhatsApp/${c.pnid}`).set({
     tenantId: c.id,
     flujo: c.vertical,
+    // Apodo del secreto HMAC de ESTE número. El nombre del secreto tiene que
+    // ser fijo en el código (`defineSecret`), y el identificador del número no
+    // puede escribirse en un repositorio público: el alias resuelve las dos
+    // cosas sin perder el secreto por número. Ver functions/src/firma.ts.
+    aliasSecreto: c.alias,
     wabaId: c.wabaId ?? '',
     estado: 'activo',
     asignadoEn: Timestamp.now(),

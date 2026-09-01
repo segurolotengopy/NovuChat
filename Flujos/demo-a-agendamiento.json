@@ -514,6 +514,80 @@
         1200,
         140
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cierre1",
+              "leftValue": "={{ $json.reservaVerificada }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-cierre-cita",
+      "name": "¿Hay cita verificada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        360
+      ],
+      "notes": "Solo cuenta como cierre si el evento existe en el calendario. Si la verificacion no trajo datos, NO se registra: sin prueba externa no se cobra."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/registrarCierre",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').item.json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tipo: 'cita', referencia: $json.eventoId, telefono: $json.telefono, detalle: $json.servicio || '', nombreCliente: $json.nombreContacto || '' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "registrar-cierre-(cita)",
+      "name": "Registrar cierre (cita)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1960,
+        360
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Registra el CIERRE. Solo se llama cuando hay prueba externa."
     }
   ],
   "connections": {
@@ -686,6 +760,11 @@
             "node": "¿Transferir a humano?",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "¿Hay cita verificada?",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -728,6 +807,18 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "¿Hay cita verificada?": {
+      "main": [
+        [
+          {
+            "node": "Registrar cierre (cita)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   }

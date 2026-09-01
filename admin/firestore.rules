@@ -1098,8 +1098,12 @@ service cloud.firestore {
           let d = request.resource.data;
           return d.keys().hasOnly([
                    'tipo', 'ocurridoEn', 'referencia', 'telefonoEnmascarado',
-                   'monto', 'moneda', 'conversacionId'
+                   'monto', 'moneda'
                  ])
+              // `conversacionId` NO esta en la lista, y es deliberado: vale
+              // `wa_<telefono>`, o sea el numero COMPLETO. Enmascarar el
+              // telefono en un campo y publicarlo entero en otro no protege
+              // nada. Va en /privado.
               && d.tipo in ['cita', 'venta', 'registro']
               && d.referencia is string && d.referencia.size() > 0
               && d.referencia.size() <= 200

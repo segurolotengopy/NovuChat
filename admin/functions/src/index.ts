@@ -11,6 +11,8 @@ initializeApp();
 setGlobalOptions({ region: REGION, maxInstances: 10 });
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
+export { registrarCierre } from './cierres.js';
+
 import { registrar } from './ingesta.js';
 export { notificarReclamo } from './reclamos.js';
 
