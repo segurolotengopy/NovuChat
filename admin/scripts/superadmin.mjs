@@ -82,15 +82,25 @@ for (const correo of correos) {
     continue;
   }
 
-  const proveedores = usuario.providerData.map((p) => p.providerId);
-  if (!QUITAR && !proveedores.includes(GOOGLE)) {
-    console.error(`\n✗ ${correo}: no entró con Google (tiene: ${proveedores.join(',') || 'ninguno'}).`);
+  // Set y no arreglo, igual que `proveedoresDe()` en functions/src/claims.ts.
+  // Dos razones. La primera es que este control existe para ser el ESPEJO de
+  // aquel, y dos espejos que se escriben distinto se separan con el tiempo.
+  //
+  // La segunda la aporto CodeQL: con `.includes()` sobre un arreglo marcaba
+  // "Incomplete URL substring sanitization", porque 'google.com' parece un
+  // dominio y `.includes` parece una busqueda de subcadena. Era falso --
+  // `Array.prototype.includes` compara elementos exactos, no subcadenas-- pero
+  // el codigo se prestaba a leerse mal, y no solo por una herramienta. `has()`
+  // sobre un Set no admite esa lectura.
+  const proveedores = new Set(usuario.providerData.map((p) => p.providerId));
+  if (!QUITAR && !proveedores.has(GOOGLE)) {
+    console.error(`\n✗ ${correo}: no entró con Google (tiene: ${[...proveedores].join(',') || 'ninguno'}).`);
     console.error('  El superadministrador exige Google: el segundo factor lo administra Google,');
     console.error('  así que no hay contraseña que adivinar ni que robar.');
     fallos++;
     continue;
   }
-  if (!QUITAR && proveedores.includes(PASSWORD)) {
+  if (!QUITAR && proveedores.has(PASSWORD)) {
     console.error(`\n✗ ${correo}: tiene también contraseña. Una identidad, un proveedor.`);
     fallos++;
     continue;
