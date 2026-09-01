@@ -21,7 +21,6 @@
       "Bash(git tag*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
-      "WebFetch"
     ],
     "ask": [
       "Bash(git push*)",
