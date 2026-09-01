@@ -2,7 +2,6 @@ import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ProveedorSesion, useSesion } from './lib/contexto';
 import { rolEn } from './lib/sesion';
 import { Proteger } from './componentes/Proteger';
-import { SinSalida } from './componentes/SinSalida';
 import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
@@ -14,6 +13,7 @@ import { EstadoCuenta } from './paginas/EstadoCuenta';
 import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
+import { Tablero } from './paginas/Tablero';
 
 /**
  * Menú, filtrado por rol.
@@ -82,27 +82,16 @@ function Entrada() {
   return <Ingresar />;
 }
 
-/** Manda al usuario a su único negocio, o al listado si administra varios. */
+/**
+ * Inicio. Ya no desvía: muestra el tablero que corresponde al rol.
+ *
+ * El desvío era correcto y no decía nada. La primera pantalla es la que decide
+ * si alguien siente que el sistema está bajo control o que se lo tiene que
+ * adivinar, y para el dueño de una PyME que entra desde el celular esa
+ * impresión es la que sostiene —o no— que vuelva a entrar mañana.
+ */
 function Inicio() {
-  const { permisos, cargando } = useSesion();
-  if (cargando) return <p>Cargando…</p>;
-  if (permisos.propietario) return <Navigate to="/negocios" replace />;
-  const ids = Object.keys(permisos.tenants);
-  if (ids.length === 1 && ids[0]) return <Navigate to={`/negocio/${ids[0]}/conversaciones`} replace />;
-  if (ids.length === 0) {
-    return (
-      <SinSalida titulo="Su cuenta todavía no está asociada a ningún negocio">
-        <p>
-          Es normal si recién la crearon: alguien de NovuChat tiene que vincularla
-          a su negocio. Si ya se la vincularon, salga y vuelva a entrar para que
-          se actualicen sus permisos.
-        </p>
-      </SinSalida>
-    );
-  }
-  return (
-    <ul>{ids.map((id) => <li key={id}><Link to={`/negocio/${id}/conversaciones`}>{id}</Link></li>)}</ul>
-  );
+  return <><Cabecera /><Tablero /></>;
 }
 
 export function App() {

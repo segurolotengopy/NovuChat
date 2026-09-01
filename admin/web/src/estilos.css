@@ -30,3 +30,74 @@ textarea { min-height: 6rem; }
 .filtros label { margin: 0; }
 .filtros input, .filtros select { width: auto; min-width: 10rem; }
 tr.alerta td { background: #c6282811; }
+
+/* -----------------------------------------------------------------------------
+   TABLERO. Estructura, no marca.
+   Todo lo visual sale de estas variables para que la propuesta de diseño se
+   aplique cambiándolas, sin volver a tocar ningún componente. Los colores son
+   deliberadamente neutros y derivados del `color-scheme`: acá NO se decide la
+   identidad visual.
+   -------------------------------------------------------------------------- */
+:root {
+  --borde: #8884;
+  --fondo-tarjeta: #8881;
+  --radio: .75rem;
+  --paso: 1rem;
+}
+
+.cuadricula {
+  display: grid;
+  /* auto-fit + minmax: una columna en el celular, las que entren en el
+     escritorio, sin una sola consulta de medios. El mínimo es 17rem porque por
+     debajo de eso el número grande y su rótulo se parten en dos líneas. */
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: var(--paso);
+  margin-bottom: calc(var(--paso) * 1.5);
+}
+
+.tarjeta {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--fondo-tarjeta);
+  padding: var(--paso);
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.tarjeta h3 { margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+.tarjeta h3:empty { display: none; }
+.tarjeta-cuerpo { flex: 1; display: flex; flex-direction: column; gap: .5rem; }
+.tarjeta-cuerpo > :first-child { margin-top: 0; }
+.tarjeta-cuerpo > :last-child { margin-bottom: 0; }
+.tarjeta-pie { padding-top: .5rem; border-top: 1px solid var(--borde); }
+
+.datos { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.dato { display: flex; flex-direction: column; }
+.dato strong { font-size: 2rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.dato span { font-size: .8rem; opacity: .7; }
+
+.titulo-negocio { font-size: 1.1rem; font-weight: 600; margin: 0; }
+
+.etiqueta {
+  display: inline-block; padding: .1rem .5rem; border-radius: 1rem;
+  font-size: .75rem; border: 1px solid var(--borde);
+}
+.etiqueta.ok { background: #2e7d3222; }
+.etiqueta.alerta { background: #c6282822; }
+
+/* El estado vacío EXPLICA. Un vacío mudo se lee como algo roto. */
+.vacio {
+  border: 1px dashed var(--borde);
+  border-radius: var(--radio);
+  padding: var(--paso);
+  opacity: .85;
+  margin: 0;
+}
+
+/* El menú se desborda en un celular angosto antes que empujar el botón Salir
+   fuera de la pantalla, que es como quedaba alguien sin poder cerrar sesión. */
+@media (max-width: 40rem) {
+  header { flex-wrap: wrap; }
+  nav { overflow-x: auto; gap: .75rem; }
+  .dato strong { font-size: 1.6rem; }
+}
