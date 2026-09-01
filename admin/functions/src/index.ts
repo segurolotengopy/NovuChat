@@ -3,11 +3,12 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2';
+import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol, type Rol } from './claims.js';
 
 initializeApp();
-setGlobalOptions({ region: 'southamerica-east1', maxInstances: 10 });
+setGlobalOptions({ region: REGION, maxInstances: 10 });
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 import { registrar } from './ingesta.js';
@@ -518,7 +519,7 @@ export const moverReclamo = onCall(async (peticion) => {
 // `instruccionesExtra` son texto del comercio y la bitácora no guarda texto.
 // ---------------------------------------------------------------------------
 export const registrarCambioConfig = onDocumentWritten(
-  { document: 'tenants/{tenantId}/config/negocio', region: 'southamerica-east1', maxInstances: 5 },
+  { document: 'tenants/{tenantId}/config/negocio', region: REGION, maxInstances: 5 },
   async (evento) => {
     const antes = (evento.data?.before.data() ?? {}) as Record<string, unknown>;
     const despues = (evento.data?.after.data() ?? {}) as Record<string, unknown>;

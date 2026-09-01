@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useSesion } from '../lib/contexto';
+import { SinSalida } from './SinSalida';
 import { esAdmin, rolEn } from '../lib/sesion';
 
 /**
@@ -30,8 +31,10 @@ export function Proteger({
 }
 
 const SinPermiso = () => (
-  <section>
-    <h2>Sin permiso</h2>
-    <p>Su cuenta no tiene acceso a esta sección. Consulte con el administrador del negocio.</p>
-  </section>
+  <SinSalida titulo="Sin permiso">
+    <p>
+      Su cuenta no tiene acceso a esta sección. Consulte con el administrador del
+      negocio, o pruebe con la cuenta que le asignaron.
+    </p>
+  </SinSalida>
 );

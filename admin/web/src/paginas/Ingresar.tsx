@@ -39,6 +39,16 @@ export function Ingresar() {
   const conGoogle = async () => {
     setError(null); setAviso(null); setOcupado(true);
     const proveedor = new GoogleAuthProvider();
+
+    // SIEMPRE preguntar con qué cuenta. Sin esto, Google reusa en silencio la
+    // única sesión abierta en el navegador y ni muestra el selector. El caso que
+    // lo vuelve necesario es el de «Salir y entrar con otra cuenta»: la persona
+    // sale porque se equivocó de cuenta, y al volver a entrar el navegador la
+    // mete en la MISMA, con lo cual el botón no sirve para nada y el sistema
+    // parece ignorarla. También cubre a quien tiene la personal y la del trabajo
+    // abiertas a la vez, que en este proyecto son Andres y Silvana.
+    proveedor.setCustomParameters({ prompt: 'select_account' });
+
     try {
       await signInWithPopup(auth, proveedor);
     } catch (error) {
