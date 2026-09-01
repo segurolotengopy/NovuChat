@@ -29,7 +29,7 @@ export function Tenants() {
     <section>
       <h2>Negocios</h2>
       {error && <p role="alert">{error}</p>}
-      <table>
+      <table className="table">
         <thead><tr><th>Negocio</th><th>Estado</th><th>Plan</th><th /></tr></thead>
         <tbody>
           {tenants.map((t) => (

@@ -101,3 +101,9 @@ tr.alerta td { background: #c6282811; }
   nav { overflow-x: auto; gap: .75rem; }
   .dato strong { font-size: 1.6rem; }
 }
+
+/* El control segmentado del sistema usa `:has(input:checked)`, que sirve para
+   radios. Acá son botones con `aria-pressed`, así que el estado activo se pinta
+   por ese atributo — mismo aspecto, semántica correcta para lo que hace. */
+.seg-opt[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
+.seg-opt[aria-pressed="true"]:hover { background: var(--color-accent-600); }

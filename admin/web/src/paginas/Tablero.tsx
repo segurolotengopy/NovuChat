@@ -37,8 +37,8 @@ function Tarjeta({ titulo, children, pie }: {
   titulo: string; children: React.ReactNode; pie?: React.ReactNode;
 }) {
   return (
-    <article className="tarjeta">
-      <h3>{titulo}</h3>
+    <article className="card elev-sm">
+      <h3 className="card-kicker">{titulo}</h3>
       <div className="tarjeta-cuerpo">{children}</div>
       {pie && <div className="tarjeta-pie">{pie}</div>}
     </article>
@@ -99,7 +99,7 @@ function TableroNovuChat() {
 
         <Tarjeta
           titulo="Lo que NovuChat no ve"
-          pie={<span className="ayuda">Es una garantía del producto, no una falta de la pantalla.</span>}
+          pie={<span className="text-muted">Es una garantía del producto, no una falta de la pantalla.</span>}
         >
           <p>
             Desde esta cuenta se administra la cartera, pero <strong>no</strong> se
@@ -123,12 +123,12 @@ function TableroNovuChat() {
               titulo=""
               pie={<Link to={`/negocio/${encodeURIComponent(n.id)}/configuracion`}>Abrir</Link>}
             >
-              <p className="titulo-negocio"><TextoSeguro valor={n.nombre} maxLargo={80} /></p>
+              <p className="card-title"><TextoSeguro valor={n.nombre} maxLargo={80} /></p>
               <p>
-                <span className={`etiqueta ${n.estado === 'activo' ? 'ok' : 'alerta'}`}>
+                <span className={`tag ${n.estado === 'activo' ? 'tag-accent' : 'tag-neutral'}`}>
                   <TextoSeguro valor={n.estado} maxLargo={20} />
                 </span>{' '}
-                <span className="etiqueta">
+                <span className="tag tag-outline">
                   <TextoSeguro valor={n.vertical} maxLargo={20} />
                 </span>
               </p>
@@ -193,11 +193,11 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
         titulo="Hoy"
         pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/conversaciones`}>Ver conversaciones</Link>}
       >
-        <p className="titulo-negocio"><TextoSeguro valor={datos.nombre} maxLargo={80} /></p>
+        <p className="card-title"><TextoSeguro valor={datos.nombre} maxLargo={80} /></p>
         <p className={`situacion ${cerrado ? 'alerta' : 'ok'}`}>
           {cerrado ? 'Hoy cerrado' : `Hoy abierto ${datos.horarioHoy}`}
         </p>
-        <p className="ayuda">
+        <p className="text-muted">
           Fuera de horario el asistente sigue respondiendo y avisa cuándo abren.
         </p>
       </Tarjeta>
@@ -229,7 +229,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
             <TextoSeguro valor={datos.estadoPago ?? 'sin datos'} maxLargo={30} />
           </p>
           {typeof datos.motivoPago === 'string' && datos.motivoPago !== '' && (
-            <p className="ayuda"><TextoSeguro valor={datos.motivoPago} maxLargo={300} /></p>
+            <p className="text-muted"><TextoSeguro valor={datos.motivoPago} maxLargo={300} /></p>
           )}
         </Tarjeta>
       )}

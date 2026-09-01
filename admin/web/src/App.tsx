@@ -35,7 +35,8 @@ function Cabecera() {
   const esPersona = rol === 'admin' || rol === 'oper';
 
   return (
-    <header>
+    <header className="nav">
+      <span className="nav-brand">NovuChat</span>
       <nav>
         {permisos.propietario && <Link to="/negocios">Negocios</Link>}
         {permisos.propietario && !tenantId && <Link to="/bitacora">Bitácora</Link>}
@@ -58,7 +59,7 @@ function Cabecera() {
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/bitacora`}>Bitácora</Link>}
       </nav>
-      <button onClick={salir}>Salir</button>
+      <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
     </header>
   );
 }
