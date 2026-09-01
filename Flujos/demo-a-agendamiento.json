@@ -584,8 +584,8 @@
       "notes": "Registra el CIERRE. Solo se llama cuando hay prueba externa.",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zTH3TH0M8mLCxHGz",
-          "name": "Cierres NovuChat"
+          "id": "zsGBHfe95mZ9oJCQ",
+          "name": "Cierres NovuChat A (auto)"
         }
       }
     }
