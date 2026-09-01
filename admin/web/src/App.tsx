@@ -2,6 +2,7 @@ import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ProveedorSesion, useSesion } from './lib/contexto';
 import { rolEn } from './lib/sesion';
 import { Proteger } from './componentes/Proteger';
+import { SinSalida } from './componentes/SinSalida';
 import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
@@ -88,7 +89,17 @@ function Inicio() {
   if (permisos.propietario) return <Navigate to="/negocios" replace />;
   const ids = Object.keys(permisos.tenants);
   if (ids.length === 1 && ids[0]) return <Navigate to={`/negocio/${ids[0]}/conversaciones`} replace />;
-  if (ids.length === 0) return <p>Su cuenta todavía no está asociada a ningún negocio.</p>;
+  if (ids.length === 0) {
+    return (
+      <SinSalida titulo="Su cuenta todavía no está asociada a ningún negocio">
+        <p>
+          Es normal si recién la crearon: alguien de NovuChat tiene que vincularla
+          a su negocio. Si ya se la vincularon, salga y vuelva a entrar para que
+          se actualicen sus permisos.
+        </p>
+      </SinSalida>
+    );
+  }
   return (
     <ul>{ids.map((id) => <li key={id}><Link to={`/negocio/${id}/conversaciones`}>{id}</Link></li>)}</ul>
   );
