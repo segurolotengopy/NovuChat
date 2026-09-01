@@ -84,8 +84,14 @@ export interface Ruta {
  */
 async function tokenValido(peticion: { get(n: string): string | undefined },
                            secreto: string): Promise<boolean> {
-  const cabecera = String(peticion.get('Authorization') ?? '');
-  const dado = cabecera.startsWith('Bearer ') ? cabecera.slice(7).trim() : '';
+  const cabecera = String(peticion.get('Authorization') ?? '').trim();
+  // Se acepta con y sin el prefijo `Bearer`. No es laxitud: el secreto es el
+  // mismo en los dos casos y no se gana nada exigiendo la palabra. Lo que se
+  // evita es una clase entera de error de configuración —pegar el valor sin el
+  // prefijo en la credencial de n8n— que se manifiesta como un 401 idéntico al
+  // de un token equivocado, o sea imposible de distinguir desde afuera. Ya nos
+  // costó una tarde.
+  const dado = (cabecera.startsWith('Bearer ') ? cabecera.slice(7) : cabecera).trim();
   if (!dado) return false;
   // Tiempo constante también acá: comparar con `===` filtra el token.
   const a = Buffer.from(dado);
