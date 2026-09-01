@@ -560,20 +560,14 @@
           "parameters": [
             {
               "name": "X-NovuChat-Numero",
-              "value": "={{ $('Normalizar entrada').item.json.phoneNumberId }}"
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ tipo: 'cita', referencia: $json.eventoId, telefono: $json.telefono, detalle: $json.servicio || '', nombreCliente: $json.nombreContacto || '' }) }}",
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          }
-        }
+        "options": {}
       },
       "id": "registrar-cierre-(cita)",
       "name": "Registrar cierre (cita)",

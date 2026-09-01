@@ -555,20 +555,14 @@
           "parameters": [
             {
               "name": "X-NovuChat-Numero",
-              "value": "={{ $('Config del negocio').item.json.phoneNumberId }}"
+              "value": "={{ $('Config del negocio').first().json.phoneNumberId }}"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ tipo: 'venta', referencia: $json.referenciaCierre, telefono: $json.telefono, detalle: 'Pedido con comprobante recibido', nombreCliente: $json.nombreContacto || '' }) }}",
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          }
-        }
+        "options": {}
       },
       "id": "registrar-cierre-venta",
       "name": "Registrar cierre (venta)",
