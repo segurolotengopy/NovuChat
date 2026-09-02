@@ -979,7 +979,15 @@ service cloud.firestore {
                    // ingesta; no está en la lista de campos de gestión, así que
                    // ninguna persona del negocio puede tocarla para inflar la
                    // métrica que se le factura.
-                   'periodoContado'
+                   'periodoContado',
+                   // Las otras dos marcas de conteo, con la misma protección y
+                   // por el mismo motivo: son la deduplicación de `atenciones` e
+                   // `interacciones`, que se facturan. `respuestasDelPeriodo`
+                   // cuenta las respuestas salientes del mes y
+                   // `periodoInteraccion` recuerda el período en que esta
+                   // conversación ya sumó su interacción, para que la tercera
+                   // respuesta no vuelva a sumarla.
+                   'respuestasDelPeriodo', 'periodoInteraccion'
                  ])
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
@@ -987,6 +995,11 @@ service cloud.firestore {
             // El resumen se recorta en origen: un mensaje entrante de 4 KB no
             // debe poder inflar cada documento del listado.
             && textoOpc(d, 'ultimoMensaje', 300)
+            // Entero y no negativo. La ingesta lo CALCULA dentro de la
+            // transacción en vez de incrementarlo, así que acá tiene que llegar
+            // un número común y corriente: cualquier otra cosa es un defecto.
+            && d.get('respuestasDelPeriodo', 0) is int
+            && d.get('respuestasDelPeriodo', 0) >= 0
             && d.get('canal', '') in ['whatsapp'];
         }
 

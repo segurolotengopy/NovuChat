@@ -189,6 +189,103 @@ export async function registrar(tenantId: string, evento: Evento): Promise<void>
   }
 }
 
+/**
+ * ===========================================================================
+ * ATENCIONES E INTERACCIONES — dos de las tres cifras de la oferta comercial
+ * ===========================================================================
+ *
+ * Las definiciones son las de `web/src/paginas/Cierres.tsx` y no se
+ * reinterpretan acá:
+ *
+ *   ATENCIÓN     una conversación iniciada con un cliente. Cuenta el arranque,
+ *                haya terminado bien o no.
+ *   INTERACCIÓN  una conversación en la que el cliente recibió MÁS DE UNA
+ *                respuesta. Mide las que pasaron de un saludo suelto a un ida y
+ *                vuelta de verdad.
+ *
+ * POR QUÉ ESTA FUNCIÓN ES PURA Y NO TOCA FIRESTORE. Sobre estos números se
+ * factura, así que un incremento de más es cobrarle de más a un cliente. La
+ * decisión de sumar o no sumar es lo único que puede equivocarse, y separada de
+ * la base se puede probar exhaustivamente sin emulador ni red: la suite recorre
+ * el mes entero de una conversación mensaje por mensaje. Quien la llama solo
+ * aplica lo que esta función decidió, dentro de la transacción.
+ *
+ * LA DEDUPLICACIÓN, que es la parte difícil. Un `FieldValue.increment(1)` no
+ * sabe deduplicar: cuenta mensajes. Se usa la misma clase de marca que ya
+ * resolvía `personasAtendidas` —un campo en el documento de la conversación, que
+ * ya está indexado por teléfono y ya se escribe en cada mensaje—, con una marca
+ * por cifra:
+ *
+ *   `periodoContado`       último período en que esta conversación ya sumó su
+ *                          atención. Si no es el actual, es el primer mensaje
+ *                          del mes: suma UNA atención y se actualiza la marca.
+ *   `respuestasDelPeriodo` cuántas respuestas salientes lleva la conversación en
+ *                          el período. Arranca de cero al cambiar de mes.
+ *   `periodoInteraccion`   último período en que esta conversación ya sumó su
+ *                          interacción. Se pone al llegar a la SEGUNDA
+ *                          respuesta, y por eso la tercera y la cuarta no suman
+ *                          nada: es exactamente el caso que cobraría de más.
+ *
+ * POR QUÉ `personasAtendidas` Y `atenciones` COMPARTEN LA MARCA. Hoy disparan
+ * con el mismo hecho —el primer mensaje del período en una conversación cuyo
+ * identificador ES el teléfono (`wa_<telefono>`)—, así que una persona y una
+ * conversación son la misma cosa y dos marcas idénticas solo podrían
+ * desincronizarse. Si algún día una persona pudiera tener más de una
+ * conversación abierta, las dos cifras dejarían de coincidir y ahí sí harían
+ * falta dos marcas: es el momento de partir esto, y no antes.
+ *
+ * NO SE CREA NINGÚN REGISTRO NUEVO DE TELÉFONOS y no se agrega ni una lectura:
+ * los tres campos viajan en el documento que la transacción ya leía y ya
+ * escribía. El costo de las dos cifras nuevas es cero lecturas y cero
+ * escrituras extra, salvo el documento de métricas que ya se escribía igual.
+ */
+export interface MarcasDeConteo {
+  periodoContado?: unknown;
+  respuestasDelPeriodo?: unknown;
+  periodoInteraccion?: unknown;
+}
+
+export interface Conteo {
+  /** ¿Este mensaje abre la conversación en este período? */
+  atencion: boolean;
+  /** ¿Con este mensaje el cliente llega a su segunda respuesta del período? */
+  interaccion: boolean;
+  /** Valor que hay que dejar guardado en la conversación. */
+  respuestasDelPeriodo: number;
+}
+
+/**
+ * Decide qué contadores mueve UN mensaje, a partir de las marcas que trae la
+ * conversación. `marcas` es lo que hay guardado; todo lo demás se deriva.
+ */
+export function contadoresDelMensaje(
+  marcas: MarcasDeConteo,
+  periodo: string,
+  direccion: 'entrante' | 'saliente',
+): Conteo {
+  const mismoPeriodo = marcas.periodoContado === periodo;
+
+  // Al cambiar de mes el contador de respuestas vuelve a cero: la definición es
+  // POR PERÍODO, y arrastrar el saldo del mes anterior haría que la primera
+  // respuesta de enero cobrara la interacción de diciembre.
+  const guardadas = marcas.respuestasDelPeriodo;
+  const previas = mismoPeriodo && typeof guardadas === 'number' && Number.isFinite(guardadas)
+    ? Math.max(0, Math.trunc(guardadas))
+    : 0;
+  const respuestasDelPeriodo = previas + (direccion === 'saliente' ? 1 : 0);
+
+  return {
+    atencion: !mismoPeriodo,
+    // La marca manda sobre el conteo. Que `respuestasDelPeriodo` llegue a tres o
+    // a treinta no vuelve a sumar: la interacción ya está anotada en este
+    // período. El `>= 2` y no `== 2` es para que un recuento manual o un
+    // arreglo de datos que dejara el contador adelantado tampoco se pierda la
+    // interacción; la marca sigue impidiendo que se cuente dos veces.
+    interaccion: marcas.periodoInteraccion !== periodo && respuestasDelPeriodo >= 2,
+    respuestasDelPeriodo,
+  };
+}
+
 export const ingesta = onRequest(
   {
     region: REGION,
@@ -281,6 +378,13 @@ export const ingesta = onRequest(
     // transacción, para que dos mensajes simultáneos de la misma persona no la
     // cuenten dos veces.
     //
+    // LAS ATENCIONES Y LAS INTERACCIONES VIAJAN EN LA MISMA TRANSACCIÓN, con
+    // marcas de la misma clase y por el mismo motivo. Quién decide qué se suma
+    // está en `contadoresDelMensaje`, arriba, que es pura y está probada aparte.
+    // Que las marcas y los contadores se muevan en una sola transacción es lo
+    // que impide que queden desfasados: si se escribiera la marca y fallara el
+    // contador, la conversación quedaría contada y la cifra que se factura, no.
+    //
     // NO SE CREA NINGÚN REGISTRO NUEVO DE TELÉFONOS. Es minimización de datos:
     // se reutiliza el identificador personal que ya existía en vez de sembrar
     // una segunda copia en la colección de métricas.
@@ -302,7 +406,9 @@ export const ingesta = onRequest(
     // -----------------------------------------------------------------------
     await db.runTransaction(async (tx) => {
       const conversacion = await tx.get(refConversacion);
-      const yaContada = conversacion.get('periodoContado') === periodo;
+      const conteo = contadoresDelMensaje(
+        (conversacion.data() ?? {}) as MarcasDeConteo, periodo, mensaje.direccion,
+      );
 
       tx.set(refConversacion, {
         telefono: mensaje.telefono,
@@ -311,6 +417,11 @@ export const ingesta = onRequest(
         ultimoEn: FieldValue.serverTimestamp(),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
+        // El contador de respuestas se calcula, no se incrementa: dentro de la
+        // transacción el valor leído es el que vale, y así el número guardado y
+        // la decisión que se tomó con él no pueden discrepar.
+        respuestasDelPeriodo: conteo.respuestasDelPeriodo,
+        ...(conteo.interaccion ? { periodoInteraccion: periodo } : {}),
         ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
       }, { merge: true });
 
@@ -325,9 +436,12 @@ export const ingesta = onRequest(
       tx.set(refMetricas, {
         mensajes: FieldValue.increment(1),
         ...(mensaje.direccion === 'entrante' ? { entrantes: FieldValue.increment(1) } : {}),
-        // El incremento de personas atendidas ocurre UNA sola vez por persona y
-        // por mes. Es el número que sostiene la facturación por uso.
-        ...(yaContada ? {} : { personasAtendidas: FieldValue.increment(1) }),
+        // Los tres incrementos ocurren UNA sola vez por conversación y por mes.
+        // Son los números que sostienen la facturación por uso.
+        ...(conteo.atencion
+          ? { personasAtendidas: FieldValue.increment(1), atenciones: FieldValue.increment(1) }
+          : {}),
+        ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
       }, { merge: true });
     });
 

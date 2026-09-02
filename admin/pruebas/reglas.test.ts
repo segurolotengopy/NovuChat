@@ -1754,3 +1754,199 @@ describe('Cierres · el número completo no puede colarse por otro campo', () =>
     }));
   });
 });
+
+// ===========================================================================
+// ATENCIONES E INTERACCIONES
+//
+// Las otras dos cifras de la oferta comercial. Acá se prueban dos cosas
+// distintas y las dos son plata:
+//
+//  a) LA DECISIÓN DE CONTAR, con la función pura `contadoresDelMensaje`. No
+//     necesita emulador: se le pasan las marcas guardadas y dice qué suma este
+//     mensaje. Se prueba mensaje por mensaje porque el error que importa —sumar
+//     de más— aparece recién en el tercero o el cuarto, y una prueba que mira
+//     un solo mensaje no lo ve.
+//  b) QUE NADIE PUEDA TOCAR LAS MARCAS desde el navegador, con las reglas. De
+//     poco sirve deduplicar bien si el comercio o NovuChat pueden borrar la
+//     marca y volver a contar.
+// ===========================================================================
+import { contadoresDelMensaje, type MarcasDeConteo } from '../functions/src/ingesta.ts';
+
+/**
+ * Reproduce una conversación mensaje por mensaje, aplicando lo que decide
+ * `contadoresDelMensaje` EXACTAMENTE como lo aplica la transacción de
+ * `ingesta.ts`: guarda el período contado, el contador de respuestas y —solo
+ * cuando corresponde— la marca de interacción.
+ *
+ * Si esto se desviara de lo que hace la ingesta, la prueba dejaría de probar el
+ * sistema y pasaría a probarse a sí misma. Es el único punto delicado del
+ * archivo y por eso está en un solo lugar.
+ */
+function reproducir(
+  direcciones: Array<'entrante' | 'saliente'>,
+  periodo = '2026-09',
+  desde: MarcasDeConteo = {},
+) {
+  let marcas: MarcasDeConteo = { ...desde };
+  let atenciones = 0;
+  let interacciones = 0;
+
+  for (const direccion of direcciones) {
+    const conteo = contadoresDelMensaje(marcas, periodo, direccion);
+    if (conteo.atencion) atenciones += 1;
+    if (conteo.interaccion) interacciones += 1;
+    marcas = {
+      periodoContado: periodo,
+      respuestasDelPeriodo: conteo.respuestasDelPeriodo,
+      periodoInteraccion: conteo.interaccion ? periodo : marcas.periodoInteraccion,
+    };
+  }
+  return { atenciones, interacciones, marcas };
+}
+
+/** Un ida y vuelta: el cliente escribe, el asistente responde. */
+const turno: Array<'entrante' | 'saliente'> = ['entrante', 'saliente'];
+
+describe('Atenciones e interacciones · la decisión de contar', () => {
+  it('un saludo suelto es una atención y NO es una interacción', async () => {
+    // Una respuesta sola no es un ida y vuelta. Es el caso más común de todos y
+    // es justo el que no se cobra como interacción.
+    expect(reproducir(turno)).toMatchObject({ atenciones: 1, interacciones: 0 });
+  });
+
+  it('la segunda respuesta convierte la conversación en interacción', async () => {
+    expect(reproducir([...turno, ...turno]))
+      .toMatchObject({ atenciones: 1, interacciones: 1 });
+  });
+
+  it('la tercera y la cuarta respuesta NO suman otra interacción', async () => {
+    // EL CASO QUE COBRARÍA DE MÁS. Una conversación larga es UNA interacción,
+    // no una por respuesta. Sin la marca `periodoInteraccion`, una consulta de
+    // cuatro idas y vueltas se facturaría tres veces.
+    const larga = reproducir([...turno, ...turno, ...turno, ...turno]);
+    expect(larga.interacciones).toBe(1);
+    expect(larga.atenciones).toBe(1);
+    expect(larga.marcas.respuestasDelPeriodo).toBe(4);
+  });
+
+  it('la segunda conversación del mismo cliente en el mes NO suma otra atención', async () => {
+    // EL OTRO CASO QUE COBRARÍA DE MÁS. El cliente vuelve a escribir el mismo
+    // mes: es la misma persona y la misma conversación (el identificador ES su
+    // teléfono), así que la atención ya está contada.
+    const primera = reproducir(turno);
+    const segunda = reproducir(turno, '2026-09', primera.marcas);
+    expect(segunda.atenciones).toBe(0);
+    // Y la interacción sí llega, porque ahora sí recibió una segunda respuesta.
+    expect(segunda.interacciones).toBe(1);
+  });
+
+  it('treinta mensajes del cliente sin ninguna respuesta no suman interacción', async () => {
+    // Lo que cuenta son las respuestas que RECIBIÓ el cliente, no lo que él
+    // escribió. Si el asistente nunca contestó, no hubo ida y vuelta.
+    const entrantes = Array<'entrante'>(30).fill('entrante');
+    expect(reproducir(entrantes)).toMatchObject({ atenciones: 1, interacciones: 0 });
+  });
+
+  it('el mes nuevo vuelve a contar la atención y no arrastra el saldo de respuestas', async () => {
+    // Si el contador de respuestas se arrastrara, la PRIMERA respuesta de
+    // octubre cobraría la interacción de septiembre.
+    const septiembre = reproducir([...turno, ...turno]);
+    expect(septiembre.interacciones).toBe(1);
+
+    const octubre = reproducir(turno, '2026-10', septiembre.marcas);
+    expect(octubre.atenciones).toBe(1);
+    expect(octubre.interacciones).toBe(0);
+    expect(octubre.marcas.respuestasDelPeriodo).toBe(1);
+  });
+
+  it('una conversación que arranca con una salida cuenta la atención igual', async () => {
+    // Un recordatorio fuera de la ventana de 24 h lo inicia el negocio. Sigue
+    // siendo el arranque de una conversación: la definición no mira quién habló
+    // primero, mira que la conversación arrancó.
+    expect(reproducir(['saliente', 'entrante', 'saliente']))
+      .toMatchObject({ atenciones: 1, interacciones: 1 });
+  });
+
+  it('la marca manda sobre el contador: un contador adelantado no vuelve a sumar', async () => {
+    // Caso de un recuento o de una corrección de datos que dejó el contador en
+    // nueve con la interacción ya anotada. Sumar de nuevo sería cobrar dos veces
+    // la misma conversación.
+    const conteo = contadoresDelMensaje(
+      { periodoContado: '2026-09', respuestasDelPeriodo: 9, periodoInteraccion: '2026-09' },
+      '2026-09', 'saliente',
+    );
+    expect(conteo).toMatchObject({ atencion: false, interaccion: false, respuestasDelPeriodo: 10 });
+  });
+
+  it('un contador corrupto no explota ni inventa una interacción', async () => {
+    // Basura en el campo guardado: se trata como cero, que es el lado seguro.
+    // El lado inseguro sería contar una interacción que nunca ocurrió.
+    for (const basura of ['siete', null, -5, Number.NaN, {}]) {
+      const conteo = contadoresDelMensaje(
+        { periodoContado: '2026-09', respuestasDelPeriodo: basura },
+        '2026-09', 'saliente',
+      );
+      expect(conteo.interaccion).toBe(false);
+      expect(conteo.respuestasDelPeriodo).toBe(1);
+    }
+  });
+});
+
+describe('Atenciones e interacciones · las marcas no las toca nadie más', () => {
+  it('la ingesta escribe las tres marcas de conteo', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), {
+      telefono: '59170000001', ultimoMensaje: 'Hola', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 4,
+      periodoContado: '2026-09', respuestasDelPeriodo: 2, periodoInteraccion: '2026-09',
+    }));
+  });
+
+  it('una persona del negocio NO puede tocar el contador ni la marca de interacción', async () => {
+    // Sería la forma más simple de inflar o de desinflar la factura sin tocar
+    // las métricas: mover la marca en la conversación y esperar al mensaje
+    // siguiente. La cifra tiene que ser inmanipulable por quien la paga y por
+    // quien la cobra, así que tampoco puede NovuChat.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/conversaciones/c1`), {
+      respuestasDelPeriodo: 0,
+    }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
+      periodoInteraccion: '1999-01',
+    }));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/conversaciones/c1`), {
+      periodoInteraccion: '1999-01',
+    }));
+  });
+
+  it('el contador de respuestas tiene que ser un entero no negativo', async () => {
+    // No es cosmética: el campo lo CALCULA la ingesta dentro de la transacción,
+    // así que cualquier otra cosa que llegue acá es un defecto, y uno que
+    // termina en una cifra que se factura.
+    const base = {
+      telefono: '59170000001', ultimoMensaje: 'Hola', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 4, periodoContado: '2026-09',
+    };
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`),
+      { ...base, respuestasDelPeriodo: -1 }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`),
+      { ...base, respuestasDelPeriodo: 'dos' }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`),
+      { ...base, respuestasDelPeriodo: 2.5 }));
+  });
+
+  it('la ingesta de un comercio no anota atenciones en otro', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-09`), {
+      atenciones: 1, interacciones: 1,
+    }));
+  });
+
+  it('un comercio suspendido deja de acumular atenciones e interacciones', async () => {
+    // Suspender corta el servicio. Si siguiera contando, se le facturaría un mes
+    // que no se prestó.
+    await assertFails(setDoc(doc(ingestaD(), `tenants/${D}/metricas/2026-09`), {
+      atenciones: 1, interacciones: 1,
+    }));
+    await assertFails(updateDoc(doc(ingestaD(), `tenants/${D}/conversaciones/c1`), {
+      respuestasDelPeriodo: 2,
+    }));
+  });
+});
