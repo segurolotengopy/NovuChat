@@ -1771,7 +1771,7 @@ describe('Cierres · el número completo no puede colarse por otro campo', () =>
 //     marca y volver a contar.
 // ===========================================================================
 import {
-  contadoresDelMensaje, esCortesia, HORAS_NUEVA_ATENCION, type MarcasDeConteo,
+  contadoresDelMensaje, esCortesia, HORAS_VENTANA_ATENCION, type MarcasDeConteo,
 } from '../functions/src/ingesta.ts';
 
 /**
@@ -1821,11 +1821,12 @@ function reproducir(
       periodoContado: periodo,
       respuestasDelPeriodo: conteo.respuestasDelPeriodo,
       periodoInteraccion: conteo.interaccion ? periodo : marcas.periodoInteraccion,
-      // Solo una CONSULTA del cliente mueve la marca, igual que en la ingesta:
-      // una cortesía no cuenta y tampoco reinicia el reloj.
-      ultimoEntranteEn: conteo.esConsulta
+      // El ancla se escribe SOLO al abrir una atención, igual que en la
+      // ingesta. Refrescarla con cada mensaje volvería deslizante una ventana
+      // que es fija, y una conversación activa no se renovaría nunca.
+      atencionDesde: conteo.atencion
         ? { toMillis: () => marcaAhora }
-        : marcas.ultimoEntranteEn,
+        : marcas.atencionDesde,
     };
   }
   return { atenciones, personas, interacciones, marcas };
@@ -1857,10 +1858,9 @@ describe('Atenciones e interacciones · la decisión de contar', () => {
   });
 
   it('el mismo teléfono que consulta tres veces son TRES atenciones y UNA persona', async () => {
-    // LA DISTINCIÓN QUE SOSTIENE LA FACTURA, y que la primera version de esto
-    // tenía mal: contaba una sola atención por teléfono y mes, igual que
-    // `personasAtendidas`. Son cifras distintas y se cobran distinto.
-    const separacion = (HORAS_NUEVA_ATENCION + 1) * HORA;
+    // LA DISTINCIÓN QUE SOSTIENE LA FACTURA: son cifras distintas y se cobran
+    // distinto. Las tres consultas caen en ventanas distintas.
+    const separacion = (HORAS_VENTANA_ATENCION + 1) * HORA;
     const tresConsultas: Mensaje[] = [
       { dir: 'entrante', tras: separacion }, 'saliente',
       { dir: 'entrante', tras: separacion }, 'saliente',
@@ -1871,15 +1871,31 @@ describe('Atenciones e interacciones · la decisión de contar', () => {
     expect(r.personas).toBe(1);
   });
 
-  it('volver a escribir enseguida NO abre otra atención: es la misma consulta', async () => {
-    // El corte tiene que separar consultas distintas, no partir una en pedazos
-    // porque alguien tardó en contestar. Justo por debajo del umbral: sigue
-    // siendo una.
+  it('todo lo que cae dentro de las 24 horas es la MISMA atención', async () => {
+    // La ventana está anclada en la primera consulta y no se mueve. Una
+    // conversación que se estira todo el día es una sola atención, por más idas
+    // y vueltas y por más pausas largas que tenga: con la regla del silencio,
+    // que fue la version anterior, esto se habría partido en varias.
     const r = reproducir([
       'entrante', 'saliente',
-      { dir: 'entrante', tras: (HORAS_NUEVA_ATENCION - 1) * HORA }, 'saliente',
+      { dir: 'entrante', tras: 8 * HORA }, 'saliente',
+      { dir: 'entrante', tras: 10 * HORA }, 'saliente',
     ]);
     expect(r.atenciones).toBe(1);
+  });
+
+  it('la ventana se ancla en la PRIMERA consulta, no se desliza', async () => {
+    // El caso que distingue una ventana fija de una deslizante. El cliente
+    // escribe a las 0, a las 20 y a las 25 horas. Con ventana fija son DOS
+    // atenciones: la de las 20 cae dentro de la primera, y la de las 25 la
+    // vence. Con ventana deslizante sería una sola para siempre, porque cada
+    // mensaje correría el límite.
+    const r = reproducir([
+      { dir: 'entrante', tras: MINUTO },
+      { dir: 'entrante', tras: 20 * HORA },
+      { dir: 'entrante', tras: 5 * HORA },
+    ]);
+    expect(r.atenciones).toBe(2);
   });
 
   it('una respuesta nuestra no abre una atención aunque pase una semana', async () => {
@@ -2080,13 +2096,16 @@ describe('Cortesías · un «gracias» no es una consulta', () => {
     const r = reproducir([
       { dir: 'entrante', tras: 5 * HORA, texto: 'quiero una cita' },
       'saliente',
-      { dir: 'entrante', tras: 3 * HORA, texto: 'gracias' },
+      { dir: 'entrante', tras: 25 * HORA, texto: 'gracias' },
       { dir: 'entrante', tras: 10 * MINUTO, texto: 'necesito cambiar la hora' },
     ]);
     expect(r.atenciones).toBe(2);
   });
 
-  it('dos horas es el umbral vigente', () => {
-    expect(HORAS_NUEVA_ATENCION).toBe(2);
+  it('la ventana vigente es de 24 horas', () => {
+    // Coincide con la ventana de atención al cliente de WhatsApp, que es la
+    // unidad con la que Meta factura. Que las dos coincidan permite comparar
+    // la factura que recibimos con la que emitimos, renglón por renglón.
+    expect(HORAS_VENTANA_ATENCION).toBe(24);
   });
 });

@@ -244,16 +244,16 @@ export interface MarcasDeConteo {
   respuestasDelPeriodo?: unknown;
   periodoInteraccion?: unknown;
   /**
-   * Marca del último mensaje ENTRANTE. Decide si hay una atención nueva.
+   * Cuándo EMPEZÓ la atención vigente. Es el ancla de la ventana de 24 horas,
+   * no la marca del último mensaje.
    *
-   * Entrante y no «último mensaje» a secas, y la diferencia importa: si contara
-   * cualquiera, un mensaje NUESTRO reiniciaría el reloj y taparía la consulta
-   * del cliente. El caso concreto es el recordatorio de las 17:00: le llega a
-   * todos los que tienen cita mañana, y quien conteste diez minutos después
-   * estaría iniciando un flujo que no se contaría por culpa de nuestro propio
-   * mensaje.
+   * La diferencia con medir el silencio entre mensajes es la que decidió
+   * Andres, y cambia la factura: con el ancla, una conversación que se estira
+   * todo el día es UNA atención por más idas y vueltas que tenga, y a las 24
+   * horas de haber empezado se renueva. Con el silencio, en cambio, una charla
+   * larga con pausas se habría partido en varias.
    */
-  ultimoEntranteEn?: { toMillis?: () => number } | unknown;
+  atencionDesde?: { toMillis?: () => number } | unknown;
 }
 
 /**
@@ -265,11 +265,22 @@ export interface MarcasDeConteo {
  * "colgar"—, así que el corte lo tiene que poner el sistema, y el único dato
  * disponible es el silencio entre mensajes.
  *
- * Dos horas, decidido por Andres. ES UN VALOR COMERCIAL, no técnico: subirlo
- * cobra menos y bajarlo cobra más, así que se cambia con él y no en una
- * revisión de código.
+ * VEINTICUATRO HORAS DESDE LA PRIMERA INTERACCIÓN, decidido por Andres.
+ *
+ * Una atención se abre con la primera consulta del cliente y dura un día
+ * entero: todo lo que pase dentro de esa ventana es la misma atención, y
+ * recién el mensaje que llega pasadas las 24 horas abre otra.
+ *
+ * No es un número arbitrario: es exactamente la ventana de atención al cliente
+ * de WhatsApp, la misma con la que Meta factura sus conversaciones. Que
+ * nuestra unidad coincida con la suya hace que la factura que recibimos y la
+ * que emitimos se puedan comparar renglón por renglón, en vez de tener que
+ * explicar por qué no coinciden.
+ *
+ * ES UN VALOR COMERCIAL: subirlo cobra menos y bajarlo cobra más, así que se
+ * cambia con Andres y no en una revisión de código.
  */
-export const HORAS_NUEVA_ATENCION = 2;
+export const HORAS_VENTANA_ATENCION = 24;
 
 /**
  * ¿Este mensaje es SOLO una cortesía?
@@ -340,18 +351,20 @@ export function contadoresDelMensaje(
   const mismoPeriodo = marcas.periodoContado === periodo;
 
   // PERSONA ATENDIDA y ATENCIÓN son cifras distintas y se cuentan distinto.
-  // Compartían marca en la primera versión de esto y estaba mal: un teléfono
-  // que consulta tres veces es UNA persona atendida y TRES atenciones.
-  const ultimo = marcas.ultimoEntranteEn as { toMillis?: () => number } | undefined;
-  const ultimoMs = typeof ultimo?.toMillis === 'function' ? ultimo.toMillis() : null;
-  const silencio = ultimoMs === null ? Infinity : ahoraMs - ultimoMs;
+  // Un teléfono que consulta tres veces es UNA persona atendida y TRES
+  // atenciones, siempre que esas tres veces caigan en ventanas distintas.
+  const ancla = marcas.atencionDesde as { toMillis?: () => number } | undefined;
+  const anclaMs = typeof ancla?.toMillis === 'function' ? ancla.toMillis() : null;
+  // Sin ancla es la primera consulta de esta conversación, así que abre.
+  const vencida = anclaMs === null
+    || ahoraMs - anclaMs >= HORAS_VENTANA_ATENCION * 60 * 60 * 1000;
 
   // Solo un mensaje ENTRANTE abre una atención. Una respuesta nuestra no inicia
   // nada: si contara, un recordatorio saliente inventaría una consulta que el
   // cliente nunca hizo, y eso es cobrar por algo que no ocurrió.
   // Una cortesía no abre nada: ver `esCortesia`.
   const consulta = direccion === 'entrante' && !esCortesia(texto);
-  const atencion = consulta && silencio > HORAS_NUEVA_ATENCION * 60 * 60 * 1000;
+  const atencion = consulta && vencida;
 
   // Al cambiar de mes el contador de respuestas vuelve a cero: la definición es
   // POR PERÍODO, y arrastrar el saldo del mes anterior haría que la primera
@@ -513,8 +526,11 @@ export const ingesta = onRequest(
         ultimoMensaje: mensaje.texto.slice(0, 300),
         ultimoEn: FieldValue.serverTimestamp(),
         // Solo lo mueve un mensaje del cliente: ver `ultimoEntranteEn` arriba.
-        ...(conteo.esConsulta
-          ? { ultimoEntranteEn: FieldValue.serverTimestamp() } : {}),
+        // El ancla se escribe SOLO al abrir una atención. Refrescarla con cada
+        // mensaje convertiría la ventana fija en una ventana deslizante, y una
+        // conversación activa nunca se renovaría: el cliente que escribe todos
+        // los días quedaría contado una sola vez, para siempre.
+        ...(conteo.atencion ? { atencionDesde: FieldValue.serverTimestamp() } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
         // El contador de respuestas se calcula, no se incrementa: dentro de la

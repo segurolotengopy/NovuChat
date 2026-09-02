@@ -988,7 +988,11 @@ service cloud.firestore {
                    // conversación ya sumó su interacción, para que la tercera
                    // respuesta no vuelva a sumarla.
                    'respuestasDelPeriodo', 'periodoInteraccion'
-                 , 'ultimoEntranteEn'])
+                 // `atencionDesde` es el ancla de la ventana de 24 horas: marca
+                 // CUANDO EMPEZO la atencion vigente, no el ultimo mensaje. Todo
+                 // lo que cae dentro de esa ventana es la misma atencion; lo que
+                 // llega despues abre otra.
+                 , 'atencionDesde'])
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
             && textoOpc(d, 'nombreContacto', 120)
