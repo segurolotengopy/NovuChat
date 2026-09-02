@@ -1,5 +1,4 @@
 import { REGION } from './region.js';
-import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
@@ -449,11 +448,22 @@ export const ingesta = onRequest(
       return;
     }
 
-    // Token efímero acotado a ESTE comercio. La escritura queda sujeta a
-    // firestore.rules, igual que la del navegador. (Ver Fase 2 en DISENO.md.)
-    await getAuth().createCustomToken(`svc_${tenantId}`, {
-      nc: { t: { [tenantId]: 'ingesta' }, v: 1 },
-    });
+    // ACÁ HABÍA UN `createCustomToken` QUE NO SERVÍA PARA NADA, con un comentario
+    // que decía que la escritura quedaba sujeta a firestore.rules «igual que la
+    // del navegador». Era falso: el token se creaba, se descartaba, y las
+    // escrituras de abajo van con el SDK Admin, que se salta las reglas por
+    // definición. O sea que el comentario describía una garantía inexistente,
+    // que es peor que no tener comentario.
+    //
+    // Además rompía el endpoint entero: la cuenta de servicio del entorno de
+    // ejecución no tiene `iam.serviceAccounts.signBlob`, así que la llamada
+    // lanzaba y devolvía 500 en TODOS los mensajes. Se descubrió probando la
+    // ingesta de verdad, no leyendo el código.
+    //
+    // Lo que protege hoy: el tenant sale de la ruta autenticada y nunca del
+    // cuerpo, y las reglas cubren a cualquier OTRO cliente. Que la ingesta
+    // escriba sujeta a reglas es la Fase 2 de DISENO.md, y cuando se haga hay
+    // que usar el token, no solo emitirlo.
 
     const idConversacion = `wa_${mensaje.telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
