@@ -140,11 +140,25 @@ export const bajaTenant = onCall(async (peticion) => {
     estado: 'dado_de_baja', bajaEn: Timestamp.now(), bajaPor: uid,
   });
 
+  // LA RUTA TAMBIÉN. Faltaba, y era un agujero de facturación: `suspenderTenant`
+  // y `reactivarTenant` propagaban el estado a /rutasWhatsApp y la baja no, así
+  // que un comercio dado de baja conservaba su ruta diciendo `activo`.
+  //
+  // Importa porque `registrarCierre` decide con `ruta.estado`: un comercio ya
+  // dado de baja podía seguir acumulando CIERRES, que es la unidad que se
+  // factura. Cobrarle a alguien que se fue es peor que cualquier error de
+  // cálculo.
+  //
+  // Va ANTES de quitar los roles: si algo fallara entre las dos operaciones,
+  // prefiero que el corte de servicio ya esté hecho y queden roles por limpiar,
+  // y no al revés.
+  await marcarRutasDelTenant(tenantId, 'dado_de_baja');
+
   const miembros = await db().collection(`tenants/${tenantId}/miembros`).get();
   for (const m of miembros.docs) {
     await asignarRol(m.id, tenantId, null, { revocarSesiones: true });
   }
-  await auditar(tenantId, 'baja_tenant', uid, { miembros: miembros.size });
+  await auditar(tenantId, 'baja_tenant', uid, { miembros: miembros.size, rutasCortadas: true });
   return { ok: true };
 });
 
