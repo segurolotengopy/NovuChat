@@ -445,6 +445,52 @@ solo lectura para el propietario de NovuChat.
 factura— se recorre `/conversaciones` filtrando por `ultimoEn` dentro del mes. Es
 caro pero puntual, y no exige haber guardado ninguna estructura extra.
 
+### 4bis.2bis Atenciones e interacciones
+
+Las otras dos cifras de la oferta comercial. Las definiciones son las de la
+cabecera de `web/src/paginas/Cierres.tsx` y no se reinterpretan en ningún lado:
+
+| Cifra | Definición | Cuándo suma |
+|---|---|---|
+| **Atención** | una conversación iniciada con un cliente, haya terminado bien o no | al primer mensaje del período en esa conversación |
+| **Interacción** | una conversación en la que el cliente recibió **más de una** respuesta | al llegar a la **segunda** respuesta saliente del período |
+
+**El problema es el mismo de §4bis.2 y la solución también.** `increment(1)`
+cuenta mensajes, no conversaciones: sin deduplicar, una consulta de ocho idas y
+vueltas se facturaría como ocho interacciones. Se usan marcas en el documento de
+la conversación, que la transacción de la ingesta **ya lee y ya escribe**, así
+que las dos cifras nuevas no cuestan ni una lectura ni una escritura extra:
+
+| Campo | Para qué |
+|---|---|
+| `periodoContado` | ya existía; ahora decide también la atención |
+| `respuestasDelPeriodo` | respuestas salientes acumuladas en el mes. Vuelve a cero al cambiar de período |
+| `periodoInteraccion` | período en que esta conversación ya sumó su interacción |
+
+**Por qué el contador se calcula y no se incrementa.** Dentro de la transacción
+el valor leído es el que vale; calcularlo garantiza que el número guardado y la
+decisión que se tomó con él no puedan discrepar. Y **todo ocurre en la misma
+transacción que ya existía**: si se escribiera la marca y fallara el contador, la
+conversación quedaría contada y la cifra que se factura no.
+
+**Por qué `personasAtendidas` y `atenciones` comparten `periodoContado`.** Hoy
+disparan con el mismo hecho, porque el identificador de la conversación **es** el
+teléfono (`wa_<telefono>`): una persona y una conversación son la misma cosa. Dos
+marcas con el mismo valor solo podrían desincronizarse. Si alguna vez una persona
+pudiera tener más de una conversación abierta, las dos cifras dejarían de
+coincidir y ahí sí harían falta dos marcas.
+
+**La decisión de contar es una función pura**, `contadoresDelMensaje` en
+`functions/src/ingesta.ts`. Sobre estas cifras se factura y lo único que puede
+equivocarse es esa decisión: aislada de Firestore se prueba el mes entero mensaje
+por mensaje, sin emulador ni red. Las pruebas que sostienen la factura son las de
+**cobrar de más**: la segunda conversación del mismo cliente en el mes no suma
+otra atención, y la tercera y la cuarta respuesta no suman otra interacción.
+
+**Quién puede tocarlo.** Los dos campos nuevos están en la lista blanca de
+`conversacionValida()` y **fuera** de los campos de gestión interna, igual que
+`periodoContado`. Ni el comercio ni NovuChat pueden mover la marca.
+
 ### 4bis.3 Habilitar y deshabilitar un comercio
 
 **Suspender no es dar de baja.** Son cosas distintas y mezclarlas sale caro:
@@ -1169,9 +1215,15 @@ los clientes juntos. Es exactamente la credencial que el encargo pide evitar.
 
 **Lo que se hace:**
 
-1. **Un secreto HMAC por número de WhatsApp**, en Secret Manager
-   (`ingesta-<phone_number_id>`) y en las credenciales de n8n. Uno por número, no
-   uno para todos. Un comercio con dos verticales tiene dos secretos.
+1. **Un secreto HMAC por número de WhatsApp**, en Secret Manager y en las
+   credenciales de n8n. Uno por número, no uno para todos. Un comercio con dos
+   verticales tiene dos secretos. El secreto **no se nombra por el número**: se
+   nombra por un **alias** (`demoA`, `demoB`) y quién es cada alias vive en
+   `/rutasWhatsApp/{numero}`. El motivo es que `defineSecret` exige un nombre
+   fijo escrito en el código y este repositorio es público, así que el nombre no
+   puede contener un `phone_number_id`. La verificación vive en
+   `functions/src/firma.ts` y la usan **los tres endpoints** de n8n: ingesta,
+   configuración y cierres.
 2. n8n firma cada petición: `HMAC-SHA256(secreto, timestamp + "." + cuerpo)`.
    **El secreto no viaja**; viaja una firma. Un `Authorization: Bearer` queda
    escrito en los logs de cualquier proxy intermedio; una firma no sirve de nada

@@ -1,9 +1,8 @@
 import { REGION } from './region.js';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
+import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
@@ -25,11 +24,13 @@ import {
  *
  * LA SALIDA, EN DOS TRAMOS
  * ------------------------
- * 1) n8n firma cada petición con HMAC-SHA256 usando un secreto POR TENANT que
- *    vive en Secret Manager (`ingesta-<phone_number_id>`) y en las credenciales
- *    de n8n.
+ * 1) n8n firma cada petición con HMAC-SHA256 usando un secreto POR NÚMERO DE
+ *    WHATSAPP que vive en Secret Manager y en las credenciales de n8n.
  *    El secreto NO viaja en la petición: viaja una firma. Un `Authorization:
  *    Bearer <clave>` quedaría en los logs del proxy inverso; una firma, no.
+ *    La verificación NO vive acá: vive en `firma.ts`, y este archivo la usa a
+ *    través de `rutaAutenticada()`. Ver ahí por qué el secreto se nombra por un
+ *    ALIAS (`demoA`) y no por el identificador del número.
  *
  * 2) El tenant se DERIVA de la clave que valida la firma, nunca del cuerpo de la
  *    petición. Este es el control anti-"diputado confundido": aunque n8n mande
@@ -52,27 +53,19 @@ import {
  * §Alternativas descartadas para la ingesta.
  */
 
-const VENTANA_MS = 5 * 60 * 1000;   // Tolerancia de reloj y de red.
-const MAX_CUERPO = 64 * 1024;
-
-// Un secreto por NÚMERO DE WHATSAPP, no por comercio.
+// LA AUTENTICACIÓN VIVE EN `firma.ts`, NO ACÁ.
 //
-// POR QUÉ CAMBIÓ EL ÍNDICE. El webhook de Meta trae `phone_number_id`, no el
-// identificador del comercio. Si el secreto se indexara por tenant, n8n tendría
-// que resolver número → comercio ANTES de poder firmar, y para resolverlo
-// necesitaría una credencial: un círculo. Indexando por número, n8n toma el
-// `phone_number_id` que ya viene en el payload, elige el secreto y firma.
+// Este archivo tenía su propia copia de todo: el mapa de secretos, la ventana de
+// tolerancia, el tope de cuerpo, la comparación en tiempo constante y la
+// verificación de la firma. Esa copia quedó INSERVIBLE: el mapa se indexaba por
+// `phone_number_id`, `defineSecret` exige un nombre fijo escrito en el código, y
+// un identificador de número no puede escribirse en un repositorio público. El
+// mapa nunca se pudo llenar, así que ningún número autenticaba y la ingesta no
+// recibía nada. `firma.ts` lo resolvió con un ALIAS guardado en
+// /rutasWhatsApp/{numero}; acá se usa esa implementación y se borra la propia.
 //
-// La propiedad que importa se conserva intacta: EL TENANT SE DERIVA DE LA CLAVE
-// QUE VALIDA LA FIRMA, nunca del cuerpo de la petición. Solo cambió el paso
-// intermedio — ahora la clave identifica un número, y el número resuelve a un
-// comercio por el índice inverso /rutasWhatsApp.
-//
-// Un comercio con dos números (por ejemplo agendamiento y venta) tiene dos
-// secretos. Comprometer uno no alcanza al otro ni a ningún otro comercio.
-const SECRETOS_POR_NUMERO: Record<string, ReturnType<typeof defineSecret>> = {
-  // '<phone_number_id>': defineSecret('INGESTA_PNID_<phone_number_id>'),
-};
+// Un comercio con dos números (por ejemplo agendamiento y venta) sigue teniendo
+// dos secretos: comprometer uno no alcanza al otro ni a ningún otro comercio.
 
 interface Entrante {
   telefono: string;
@@ -86,13 +79,6 @@ interface Entrante {
 const TIPOS = new Set([
   'text', 'interactive', 'image', 'audio', 'document', 'order', 'location', 'otro',
 ]);
-
-/** Compara en tiempo constante. Un `===` filtra el secreto por temporización. */
-function firmaValida(esperada: string, recibida: string): boolean {
-  const a = Buffer.from(esperada, 'hex');
-  const b = Buffer.from(recibida, 'hex');
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -117,54 +103,24 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(nombreContacto ? { nombreContacto } : {}) };
 }
 
+/** Forma que exige un identificador de comercio. Se comprueba ANTES de armar
+ *  ninguna ruta con él: `tenantId` viene de un documento, y un documento con un
+ *  valor raro no debe poder desviar una escritura a otra parte del árbol. */
+const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
+
 /**
- * Verifica la firma HMAC de una petición de n8n y devuelve el `phone_number_id`
- * que la clave acredita, o `null`.
+ * Estado del comercio, leído de SU FICHA y no de la copia propagada en la ruta.
  *
- * Todo lo que se devuelve de acá está AUTENTICADO por la firma. Lo que venga en
- * el cuerpo de la petición sigue siendo dato no confiable.
+ * POR QUÉ NO SE USA `ruta.estado`, que ya viene resuelto y saldría gratis. Esa
+ * copia la mantiene `marcarRutasDelTenant`, que hoy corre al SUSPENDER y al
+ * REACTIVAR, pero NO al dar de baja: una ruta de un comercio dado de baja sigue
+ * diciendo `activo`. Leer la ficha cuesta una lectura más y es la única fuente
+ * que no puede quedar desfasada. Acá se guardan datos personales de clientes
+ * finales, así que el lado seguro del error es dejar de guardarlos.
  */
-function numeroAutenticado(peticion: {
-  get(nombre: string): string | undefined;
-  rawBody?: Buffer;
-}): string | null {
-  const phoneNumberId = String(peticion.get('X-NovuChat-Numero') ?? '');
-  const marca = String(peticion.get('X-NovuChat-Timestamp') ?? '');
-  const firma = String(peticion.get('X-NovuChat-Signature') ?? '').replace(/^sha256=/, '');
-
-  // El número de la cabecera solo SELECCIONA con qué clave verificar. No
-  // autoriza nada por sí mismo: si la firma no cierra, se rechaza.
-  const secreto = SECRETOS_POR_NUMERO[phoneNumberId];
-  if (!secreto || !/^[0-9]{6,25}$/.test(phoneNumberId)) return null;
-
-  const marcaMs = Number(marca);
-  // Ventana corta: acota la reproducción de una petición capturada.
-  if (!Number.isFinite(marcaMs) || Math.abs(Date.now() - marcaMs) > VENTANA_MS) return null;
-
-  const crudo = peticion.rawBody ?? Buffer.from('');
-  if (crudo.length > MAX_CUERPO) return null;
-
-  const esperada = createHmac('sha256', secreto.value())
-    .update(`${marca}.`).update(crudo).digest('hex');
-  if (!firma || !firmaValida(esperada, firma)) return null;
-
-  return phoneNumberId;
-}
-
-/** Resuelve un número autenticado a su comercio y su flujo. */
-async function resolverComercio(phoneNumberId: string): Promise<
-  { tenantId: string; flujo: string; estado: string } | null
-> {
-  const ruta = await getFirestore().doc(`rutasWhatsApp/${phoneNumberId}`).get();
-  if (!ruta.exists) return null;
-  const tenantId = String(ruta.get('tenantId') ?? '');
-  if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(tenantId)) return null;
+async function estadoDelComercio(tenantId: string): Promise<string> {
   const tenant = await getFirestore().doc(`tenants/${tenantId}`).get();
-  return {
-    tenantId,
-    flujo: String(ruta.get('flujo') ?? 'agendamiento'),
-    estado: String(tenant.get('estado') ?? 'desconocido'),
-  };
+  return String(tenant.get('estado') ?? 'desconocido');
 }
 
 /**
@@ -233,10 +189,151 @@ export async function registrar(tenantId: string, evento: Evento): Promise<void>
   }
 }
 
+/**
+ * ===========================================================================
+ * ATENCIONES E INTERACCIONES — dos de las tres cifras de la oferta comercial
+ * ===========================================================================
+ *
+ * Las definiciones son las de `web/src/paginas/Cierres.tsx` y no se
+ * reinterpretan acá:
+ *
+ *   ATENCIÓN     una conversación iniciada con un cliente. Cuenta el arranque,
+ *                haya terminado bien o no.
+ *   INTERACCIÓN  una conversación en la que el cliente recibió MÁS DE UNA
+ *                respuesta. Mide las que pasaron de un saludo suelto a un ida y
+ *                vuelta de verdad.
+ *
+ * POR QUÉ ESTA FUNCIÓN ES PURA Y NO TOCA FIRESTORE. Sobre estos números se
+ * factura, así que un incremento de más es cobrarle de más a un cliente. La
+ * decisión de sumar o no sumar es lo único que puede equivocarse, y separada de
+ * la base se puede probar exhaustivamente sin emulador ni red: la suite recorre
+ * el mes entero de una conversación mensaje por mensaje. Quien la llama solo
+ * aplica lo que esta función decidió, dentro de la transacción.
+ *
+ * LA DEDUPLICACIÓN, que es la parte difícil. Un `FieldValue.increment(1)` no
+ * sabe deduplicar: cuenta mensajes. Se usa la misma clase de marca que ya
+ * resolvía `personasAtendidas` —un campo en el documento de la conversación, que
+ * ya está indexado por teléfono y ya se escribe en cada mensaje—, con una marca
+ * por cifra:
+ *
+ *   `periodoContado`       último período en que esta conversación ya sumó su
+ *                          atención. Si no es el actual, es el primer mensaje
+ *                          del mes: suma UNA atención y se actualiza la marca.
+ *   `respuestasDelPeriodo` cuántas respuestas salientes lleva la conversación en
+ *                          el período. Arranca de cero al cambiar de mes.
+ *   `periodoInteraccion`   último período en que esta conversación ya sumó su
+ *                          interacción. Se pone al llegar a la SEGUNDA
+ *                          respuesta, y por eso la tercera y la cuarta no suman
+ *                          nada: es exactamente el caso que cobraría de más.
+ *
+ * POR QUÉ `personasAtendidas` Y `atenciones` COMPARTEN LA MARCA. Hoy disparan
+ * con el mismo hecho —el primer mensaje del período en una conversación cuyo
+ * identificador ES el teléfono (`wa_<telefono>`)—, así que una persona y una
+ * conversación son la misma cosa y dos marcas idénticas solo podrían
+ * desincronizarse. Si algún día una persona pudiera tener más de una
+ * conversación abierta, las dos cifras dejarían de coincidir y ahí sí harían
+ * falta dos marcas: es el momento de partir esto, y no antes.
+ *
+ * NO SE CREA NINGÚN REGISTRO NUEVO DE TELÉFONOS y no se agrega ni una lectura:
+ * los tres campos viajan en el documento que la transacción ya leía y ya
+ * escribía. El costo de las dos cifras nuevas es cero lecturas y cero
+ * escrituras extra, salvo el documento de métricas que ya se escribía igual.
+ */
+export interface MarcasDeConteo {
+  periodoContado?: unknown;
+  respuestasDelPeriodo?: unknown;
+  periodoInteraccion?: unknown;
+  /**
+   * Marca del último mensaje ENTRANTE. Decide si hay una atención nueva.
+   *
+   * Entrante y no «último mensaje» a secas, y la diferencia importa: si contara
+   * cualquiera, un mensaje NUESTRO reiniciaría el reloj y taparía la consulta
+   * del cliente. El caso concreto es el recordatorio de las 17:00: le llega a
+   * todos los que tienen cita mañana, y quien conteste diez minutos después
+   * estaría iniciando un flujo que no se contaría por culpa de nuestro propio
+   * mensaje.
+   */
+  ultimoEntranteEn?: { toMillis?: () => number } | unknown;
+}
+
+/**
+ * SEPARACIÓN ENTRE UNA ATENCIÓN Y LA SIGUIENTE.
+ *
+ * Una ATENCIÓN es un inicio de flujo, no una persona ni un mes: el mismo
+ * teléfono que consulta tres veces son TRES atenciones y UNA persona atendida.
+ * Pero WhatsApp no marca dónde termina una consulta y empieza otra —no hay
+ * "colgar"—, así que el corte lo tiene que poner el sistema, y el único dato
+ * disponible es el silencio entre mensajes.
+ *
+ * Cuatro horas: un ida y vuelta de una misma consulta no se interrumpe tanto,
+ * y alguien que vuelve a la tarde por otra cosa está claramente empezando de
+ * nuevo. ES UN VALOR COMERCIAL, no técnico: subirlo cobra menos y bajarlo
+ * cobra más, así que se cambia con Andres, no en una revisión de código.
+ */
+export const HORAS_NUEVA_ATENCION = 4;
+
+export interface Conteo {
+  /** ¿Este mensaje abre una atención nueva? (inicio de flujo) */
+  atencion: boolean;
+  /** ¿Es la primera vez que esta persona escribe en el período? */
+  personaNueva: boolean;
+  /** ¿Con este mensaje el cliente llega a su segunda respuesta del período? */
+  interaccion: boolean;
+  /** Valor que hay que dejar guardado en la conversación. */
+  respuestasDelPeriodo: number;
+}
+
+/**
+ * Decide qué contadores mueve UN mensaje, a partir de las marcas que trae la
+ * conversación. `marcas` es lo que hay guardado; todo lo demás se deriva.
+ */
+export function contadoresDelMensaje(
+  marcas: MarcasDeConteo,
+  periodo: string,
+  direccion: 'entrante' | 'saliente',
+  ahoraMs: number = Date.now(),
+): Conteo {
+  const mismoPeriodo = marcas.periodoContado === periodo;
+
+  // PERSONA ATENDIDA y ATENCIÓN son cifras distintas y se cuentan distinto.
+  // Compartían marca en la primera versión de esto y estaba mal: un teléfono
+  // que consulta tres veces es UNA persona atendida y TRES atenciones.
+  const ultimo = marcas.ultimoEntranteEn as { toMillis?: () => number } | undefined;
+  const ultimoMs = typeof ultimo?.toMillis === 'function' ? ultimo.toMillis() : null;
+  const silencio = ultimoMs === null ? Infinity : ahoraMs - ultimoMs;
+
+  // Solo un mensaje ENTRANTE abre una atención. Una respuesta nuestra no inicia
+  // nada: si contara, un recordatorio saliente inventaría una consulta que el
+  // cliente nunca hizo, y eso es cobrar por algo que no ocurrió.
+  const atencion = direccion === 'entrante'
+    && silencio > HORAS_NUEVA_ATENCION * 60 * 60 * 1000;
+
+  // Al cambiar de mes el contador de respuestas vuelve a cero: la definición es
+  // POR PERÍODO, y arrastrar el saldo del mes anterior haría que la primera
+  // respuesta de enero cobrara la interacción de diciembre.
+  const guardadas = marcas.respuestasDelPeriodo;
+  const previas = mismoPeriodo && typeof guardadas === 'number' && Number.isFinite(guardadas)
+    ? Math.max(0, Math.trunc(guardadas))
+    : 0;
+  const respuestasDelPeriodo = previas + (direccion === 'saliente' ? 1 : 0);
+
+  return {
+    atencion,
+    personaNueva: !mismoPeriodo,
+    // La marca manda sobre el conteo. Que `respuestasDelPeriodo` llegue a tres o
+    // a treinta no vuelve a sumar: la interacción ya está anotada en este
+    // período. El `>= 2` y no `== 2` es para que un recuento manual o un
+    // arreglo de datos que dejara el contador adelantado tampoco se pierda la
+    // interacción; la marca sigue impidiendo que se cuente dos veces.
+    interaccion: marcas.periodoInteraccion !== periodo && respuestasDelPeriodo >= 2,
+    respuestasDelPeriodo,
+  };
+}
+
 export const ingesta = onRequest(
   {
     region: REGION,
-    secrets: Object.values(SECRETOS_POR_NUMERO),
+    secrets: Object.values(SECRETOS_POR_ALIAS),
     // Sin CORS: este endpoint es servidor a servidor. Que un navegador no pueda
     // llamarlo elimina de raíz el abuso desde una página cualquiera.
     cors: false,
@@ -245,46 +342,45 @@ export const ingesta = onRequest(
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
 
-    const phoneNumberId = numeroAutenticado(peticion);
-    if (!phoneNumberId) { respuesta.status(401).send('no autorizado'); return; }
+    // RESOLUCIÓN NÚMERO → COMERCIO, EN UN SOLO PASO. La firma (o el token) se
+    // verifica contra el secreto de ESE número y el comercio sale del índice
+    // /rutasWhatsApp, NUNCA del cuerpo: aunque n8n mandara
+    // `{"tenantId": "otro-negocio"}`, ese campo se ignora por completo.
+    const ruta = await rutaAutenticada(peticion);
+    if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
+
+    const { tenantId } = ruta;
+    // Un identificador con forma rara no arma ninguna ruta de escritura.
+    if (!ID_TENANT.test(tenantId)) { respuesta.status(404).send('numero no asignado'); return; }
 
     const mensaje = normalizar(peticion.body);
     if (!mensaje) {
       // Entrada descartada: queda registrada para poder responder «nunca nos
       // llegó» con evidencia, sin guardar lo que vino.
-      const rutaPrevia = await resolverComercio(phoneNumberId);
-      if (rutaPrevia) {
-        await registrar(rutaPrevia.tenantId, {
-          tipo: 'entrada_descartada', resultado: 'rechazado',
-          detalle: 'payload no valido',
-        });
-      }
+      await registrar(tenantId, {
+        tipo: 'entrada_descartada', resultado: 'rechazado',
+        detalle: 'payload no valido',
+      });
       respuesta.status(400).send('mensaje invalido'); return;
     }
 
     const db = getFirestore();
-
-    // RESOLUCIÓN NÚMERO → COMERCIO. El tenant sale de acá y NUNCA del cuerpo de
-    // la petición: aunque n8n mandara `{"tenantId": "otro-negocio"}`, ese campo
-    // se ignora por completo.
-    const comercio = await resolverComercio(phoneNumberId);
-    if (!comercio) { respuesta.status(404).send('numero no asignado'); return; }
-    const { tenantId } = comercio;
 
     // ESTADO DEL COMERCIO. Uno suspendido o dado de baja deja de acumular
     // conversaciones. No es solo la palanca de cobranza: es dejar de guardar
     // datos personales de terceros de un servicio que ya no se presta. El 409 le
     // dice a n8n que mande el mensaje de cortesía —neutro, sin revelar el motivo
     // comercial— y corte el turno.
-    if (comercio.estado !== 'activo') {
+    const estado = await estadoDelComercio(tenantId);
+    if (estado !== 'activo') {
       // SE REGISTRA IGUAL. La bitácora admite escrituras con el comercio
       // suspendido justamente para esto: el tramo del corte de servicio es el
       // más conflictivo y es donde la evidencia no puede tener agujeros.
-      await registrar(comercio.tenantId, {
+      await registrar(tenantId, {
         tipo: 'entrada_descartada', resultado: 'rechazado',
-        telefono: mensaje.telefono, codigo: '409', detalle: comercio.estado,
+        telefono: mensaje.telefono, codigo: '409', detalle: estado,
       });
-      respuesta.status(409).json({ estado: comercio.estado });
+      respuesta.status(409).json({ estado });
       return;
     }
 
@@ -326,6 +422,13 @@ export const ingesta = onRequest(
     // transacción, para que dos mensajes simultáneos de la misma persona no la
     // cuenten dos veces.
     //
+    // LAS ATENCIONES Y LAS INTERACCIONES VIAJAN EN LA MISMA TRANSACCIÓN, con
+    // marcas de la misma clase y por el mismo motivo. Quién decide qué se suma
+    // está en `contadoresDelMensaje`, arriba, que es pura y está probada aparte.
+    // Que las marcas y los contadores se muevan en una sola transacción es lo
+    // que impide que queden desfasados: si se escribiera la marca y fallara el
+    // contador, la conversación quedaría contada y la cifra que se factura, no.
+    //
     // NO SE CREA NINGÚN REGISTRO NUEVO DE TELÉFONOS. Es minimización de datos:
     // se reutiliza el identificador personal que ya existía en vez de sembrar
     // una segunda copia en la colección de métricas.
@@ -347,15 +450,25 @@ export const ingesta = onRequest(
     // -----------------------------------------------------------------------
     await db.runTransaction(async (tx) => {
       const conversacion = await tx.get(refConversacion);
-      const yaContada = conversacion.get('periodoContado') === periodo;
+      const conteo = contadoresDelMensaje(
+        (conversacion.data() ?? {}) as MarcasDeConteo, periodo, mensaje.direccion,
+      );
 
       tx.set(refConversacion, {
         telefono: mensaje.telefono,
         canal: 'whatsapp',
         ultimoMensaje: mensaje.texto.slice(0, 300),
         ultimoEn: FieldValue.serverTimestamp(),
+        // Solo lo mueve un mensaje del cliente: ver `ultimoEntranteEn` arriba.
+        ...(mensaje.direccion === 'entrante'
+          ? { ultimoEntranteEn: FieldValue.serverTimestamp() } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
+        // El contador de respuestas se calcula, no se incrementa: dentro de la
+        // transacción el valor leído es el que vale, y así el número guardado y
+        // la decisión que se tomó con él no pueden discrepar.
+        respuestasDelPeriodo: conteo.respuestasDelPeriodo,
+        ...(conteo.interaccion ? { periodoInteraccion: periodo } : {}),
         ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
       }, { merge: true });
 
@@ -370,9 +483,13 @@ export const ingesta = onRequest(
       tx.set(refMetricas, {
         mensajes: FieldValue.increment(1),
         ...(mensaje.direccion === 'entrante' ? { entrantes: FieldValue.increment(1) } : {}),
-        // El incremento de personas atendidas ocurre UNA sola vez por persona y
-        // por mes. Es el número que sostiene la facturación por uso.
-        ...(yaContada ? {} : { personasAtendidas: FieldValue.increment(1) }),
+        // Son los números que sostienen la facturación por uso.
+        // Se cuentan por separado, a propósito. `personasAtendidas` es una vez
+        // por teléfono y por mes; `atenciones` es una por cada consulta nueva
+        // del mismo teléfono. Ver `contadoresDelMensaje`.
+        ...(conteo.personaNueva ? { personasAtendidas: FieldValue.increment(1) } : {}),
+        ...(conteo.atencion ? { atenciones: FieldValue.increment(1) } : {}),
+        ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
       }, { merge: true });
     });
 
@@ -424,18 +541,29 @@ export const ingesta = onRequest(
 export const configuracionFlujo = onRequest(
   {
     region: REGION,
-    secrets: Object.values(SECRETOS_POR_NUMERO),
+    secrets: Object.values(SECRETOS_POR_ALIAS),
     cors: false,
     maxInstances: 10,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
 
-    const phoneNumberId = numeroAutenticado(peticion);
-    if (!phoneNumberId) { respuesta.status(401).send('no autorizado'); return; }
+    const ruta = await rutaAutenticada(peticion);
+    if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
+    if (!ID_TENANT.test(ruta.tenantId)) {
+      respuesta.status(404).send('numero no asignado'); return;
+    }
 
-    const comercio = await resolverComercio(phoneNumberId);
-    if (!comercio) { respuesta.status(404).send('numero no asignado'); return; }
+    // `flujo` cae en `agendamiento` si la ruta no lo trae. Es el vertical que ya
+    // tenían las rutas viejas, escritas antes de que hubiera un segundo: dejarlo
+    // vacío haría que el comercio no recibiera NINGUNA configuración de vertical
+    // y el flujo se quedaría sin datos sin decir por qué.
+    const phoneNumberId = ruta.phoneNumberId;
+    const comercio = {
+      tenantId: ruta.tenantId,
+      flujo: ruta.flujo || 'agendamiento',
+      estado: await estadoDelComercio(ruta.tenantId),
+    };
 
     const db = getFirestore();
 
