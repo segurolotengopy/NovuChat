@@ -583,6 +583,86 @@
           "name": "Cierres NovuChat B (auto)"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'entrante', tipo: $json.tipo || 'text', texto: $json.userInput || '', idMeta: $json.mensajeId || '', nombreContacto: $json.nombrePerfil || '' }) }}",
+        "options": {}
+      },
+      "id": "reportar-mensaje-entrante",
+      "name": "Reportar mensaje (entrante)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        660
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vfcydksbQT1mBXU2",
+          "name": "Cierres NovuChat B (auto)"
+        }
+      },
+      "notes": "Reporta el mensaje a la ingesta para contar atenciones e interacciones. Nunca corta la respuesta al cliente: onError continua."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Normalizar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'saliente', tipo: 'text', texto: $json.respuesta || '' }) }}",
+        "options": {}
+      },
+      "id": "reportar-mensaje-saliente",
+      "name": "Reportar mensaje (saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        860
+      ],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vfcydksbQT1mBXU2",
+          "name": "Cierres NovuChat B (auto)"
+        }
+      },
+      "notes": "Reporta el mensaje a la ingesta para contar atenciones e interacciones. Nunca corta la respuesta al cliente: onError continua."
     }
   ],
   "connections": {
@@ -625,6 +705,11 @@
         [
           {
             "node": "¿Saludo inicial?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reportar mensaje (entrante)",
             "type": "main",
             "index": 0
           }
@@ -702,6 +787,11 @@
           },
           {
             "node": "¿Hay comprobante?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reportar mensaje (saliente)",
             "type": "main",
             "index": 0
           }
