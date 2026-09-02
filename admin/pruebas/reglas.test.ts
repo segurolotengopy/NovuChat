@@ -1771,7 +1771,7 @@ describe('Cierres · el número completo no puede colarse por otro campo', () =>
 //     marca y volver a contar.
 // ===========================================================================
 import {
-  contadoresDelMensaje, HORAS_NUEVA_ATENCION, type MarcasDeConteo,
+  contadoresDelMensaje, esCortesia, HORAS_NUEVA_ATENCION, type MarcasDeConteo,
 } from '../functions/src/ingesta.ts';
 
 /**
@@ -1791,7 +1791,8 @@ const HORA = 60 * MINUTO;
  * Cada mensaje puede venir con el silencio que lo precede, en milisegundos.
  * Por defecto un minuto: el ritmo de una conversación de verdad.
  */
-type Mensaje = 'entrante' | 'saliente' | { dir: 'entrante' | 'saliente'; tras: number };
+type Mensaje = 'entrante' | 'saliente'
+  | { dir: 'entrante' | 'saliente'; tras?: number; texto?: string };
 
 function reproducir(
   mensajes: Mensaje[],
@@ -1806,9 +1807,10 @@ function reproducir(
 
   for (const m of mensajes) {
     const direccion = typeof m === 'string' ? m : m.dir;
-    reloj += typeof m === 'string' ? MINUTO : m.tras;
+    reloj += typeof m === 'string' ? MINUTO : (m.tras ?? MINUTO);
+    const texto = typeof m === 'string' ? 'quiero una cita' : (m.texto ?? 'quiero una cita');
 
-    const conteo = contadoresDelMensaje(marcas, periodo, direccion, reloj);
+    const conteo = contadoresDelMensaje(marcas, periodo, direccion, reloj, texto);
     if (conteo.atencion) atenciones += 1;
     if (conteo.personaNueva) personas += 1;
     if (conteo.interaccion) interacciones += 1;
@@ -1819,8 +1821,9 @@ function reproducir(
       periodoContado: periodo,
       respuestasDelPeriodo: conteo.respuestasDelPeriodo,
       periodoInteraccion: conteo.interaccion ? periodo : marcas.periodoInteraccion,
-      // Solo un mensaje del cliente mueve la marca, igual que en la ingesta.
-      ultimoEntranteEn: direccion === 'entrante'
+      // Solo una CONSULTA del cliente mueve la marca, igual que en la ingesta:
+      // una cortesía no cuenta y tampoco reinicia el reloj.
+      ultimoEntranteEn: conteo.esConsulta
         ? { toMillis: () => marcaAhora }
         : marcas.ultimoEntranteEn,
     };
@@ -2037,5 +2040,53 @@ describe('Cierres · un comercio que no está operativo no acumula', () => {
 
   it('el comercio activo sí puede, para que la prueba de arriba signifique algo', async () => {
     await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c-activo`), cierre()));
+  });
+});
+
+describe('Cortesías · un «gracias» no es una consulta', () => {
+  it('reconoce las fórmulas de cortesía, con o sin emoji, tilde o signo', () => {
+    for (const t of ['gracias', 'Gracias!', 'GRACIAS 🙏', 'ok', 'Okey', 'listo',
+                     'perfecto', 'de nada', 'muchas gracias', '👍', '  ok  ',
+                     'Ya está', 'dale', 'buenísimo']) {
+      expect(esCortesia(t), t).toBe(true);
+    }
+  });
+
+  it('NO se traga una consulta de verdad, aunque empiece con gracias', () => {
+    // El riesgo de este filtro es pasarse: tragarse consultas reales hace
+    // cobrar de menos sin que nadie se entere. Por eso es estrecho.
+    for (const t of ['gracias, quiero otra cita', 'ok pero cambiame la hora',
+                     'listo el pago, cuando me atienden?', 'hola', 'quiero una cita',
+                     'gracias por avisar, necesito reprogramar para el jueves']) {
+      expect(esCortesia(t), t).toBe(false);
+    }
+  });
+
+  it('un «gracias» después del recordatorio NO abre una atención', () => {
+    // EL CASO QUE PIDIÓ ANDRES. El recordatorio lo mandamos nosotros; si su
+    // acuse de recibo contara, cobraríamos una consulta por cada persona
+    // educada, provocada por nuestro propio mensaje.
+    const r = reproducir([
+      { dir: 'saliente', tras: 48 * HORA, texto: 'Te recordamos tu cita de mañana.' },
+      { dir: 'entrante', tras: 5 * MINUTO, texto: 'gracias!' },
+    ]);
+    expect(r.atenciones).toBe(0);
+  });
+
+  it('la cortesía no reinicia el reloj: la consulta posterior SÍ se cuenta', () => {
+    // Si el «gracias» moviera la marca de silencio, la pregunta real que llega
+    // después quedaría dentro de la misma ventana y no se contaría. El filtro
+    // terminaría haciendo PERDER atenciones en vez de evitar las falsas.
+    const r = reproducir([
+      { dir: 'entrante', tras: 5 * HORA, texto: 'quiero una cita' },
+      'saliente',
+      { dir: 'entrante', tras: 3 * HORA, texto: 'gracias' },
+      { dir: 'entrante', tras: 10 * MINUTO, texto: 'necesito cambiar la hora' },
+    ]);
+    expect(r.atenciones).toBe(2);
+  });
+
+  it('dos horas es el umbral vigente', () => {
+    expect(HORAS_NUEVA_ATENCION).toBe(2);
   });
 });

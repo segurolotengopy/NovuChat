@@ -265,16 +265,59 @@ export interface MarcasDeConteo {
  * "colgar"—, así que el corte lo tiene que poner el sistema, y el único dato
  * disponible es el silencio entre mensajes.
  *
- * Cuatro horas: un ida y vuelta de una misma consulta no se interrumpe tanto,
- * y alguien que vuelve a la tarde por otra cosa está claramente empezando de
- * nuevo. ES UN VALOR COMERCIAL, no técnico: subirlo cobra menos y bajarlo
- * cobra más, así que se cambia con Andres, no en una revisión de código.
+ * Dos horas, decidido por Andres. ES UN VALOR COMERCIAL, no técnico: subirlo
+ * cobra menos y bajarlo cobra más, así que se cambia con él y no en una
+ * revisión de código.
  */
-export const HORAS_NUEVA_ATENCION = 4;
+export const HORAS_NUEVA_ATENCION = 2;
+
+/**
+ * ¿Este mensaje es SOLO una cortesía?
+ *
+ * Un «gracias» o un «ok» después del recordatorio no es una consulta: el
+ * cliente no vino a pedir nada, está acusando recibo. Contarlo abriría una
+ * atención por cada persona educada, y encima justamente por un mensaje que
+ * provocamos nosotros. Sería cobrar por nuestra propia notificación.
+ *
+ * EL RIESGO DE ESTO ES PASARSE, no quedarse corto. Si el filtro fuera amplio se
+ * tragaría consultas reales y cobraríamos de menos sin enterarnos, que es un
+ * error invisible. Por eso es deliberadamente estrecho: el mensaje entero,
+ * quitados los emojis y los signos, tiene que ser UNA de estas fórmulas. Basta
+ * que agregue cualquier otra cosa —«gracias, quiero otra cita»— para que cuente
+ * como atención.
+ */
+const CORTESIAS = new Set([
+  'gracias', 'muchas gracias', 'mil gracias', 'gracias!', 'graciass',
+  'ok', 'oka', 'okey', 'okay', 'listo', 'listo gracias', 'perfecto',
+  'perfecto gracias', 'dale', 'bueno', 'buenisimo', 'excelente', 'genial',
+  'de nada', 'ya', 'ya esta', 'entendido', 'enterado', 'copiado',
+  'si', 'no', 'confirmado', 'buenas', 'saludos', 'chau', 'adios', 'hasta luego',
+  'ok gracias', 'ok listo', 'muy bien', 'barbaro', 'joya',
+]);
+
+export function esCortesia(texto: string): boolean {
+  const limpio = texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')          // tildes
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')        // emojis, signos y puntuación
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Un mensaje vacío tras la limpieza es un emoji suelto: un pulgar arriba.
+  if (limpio === '') return true;
+  // Corte por largo antes de mirar el diccionario: una consulta de verdad no
+  // entra en veinticinco caracteres, y esto evita que una frase larga que
+  // empiece con «gracias» se cuele por alguna coincidencia.
+  if (limpio.length > 25) return false;
+  return CORTESIAS.has(limpio);
+}
 
 export interface Conteo {
   /** ¿Este mensaje abre una atención nueva? (inicio de flujo) */
   atencion: boolean;
+  /** ¿Es un mensaje del cliente con contenido, y no una cortesía? */
+  esConsulta: boolean;
   /** ¿Es la primera vez que esta persona escribe en el período? */
   personaNueva: boolean;
   /** ¿Con este mensaje el cliente llega a su segunda respuesta del período? */
@@ -292,6 +335,7 @@ export function contadoresDelMensaje(
   periodo: string,
   direccion: 'entrante' | 'saliente',
   ahoraMs: number = Date.now(),
+  texto = '',
 ): Conteo {
   const mismoPeriodo = marcas.periodoContado === periodo;
 
@@ -305,8 +349,9 @@ export function contadoresDelMensaje(
   // Solo un mensaje ENTRANTE abre una atención. Una respuesta nuestra no inicia
   // nada: si contara, un recordatorio saliente inventaría una consulta que el
   // cliente nunca hizo, y eso es cobrar por algo que no ocurrió.
-  const atencion = direccion === 'entrante'
-    && silencio > HORAS_NUEVA_ATENCION * 60 * 60 * 1000;
+  // Una cortesía no abre nada: ver `esCortesia`.
+  const consulta = direccion === 'entrante' && !esCortesia(texto);
+  const atencion = consulta && silencio > HORAS_NUEVA_ATENCION * 60 * 60 * 1000;
 
   // Al cambiar de mes el contador de respuestas vuelve a cero: la definición es
   // POR PERÍODO, y arrastrar el saldo del mes anterior haría que la primera
@@ -319,6 +364,13 @@ export function contadoresDelMensaje(
 
   return {
     atencion,
+    /**
+     * Una cortesía tampoco mueve la marca de silencio. Si la moviera, un
+     * «gracias» dejaría la conversación como recién activa y la consulta de
+     * verdad que llegara una hora después NO se contaría — el filtro terminaría
+     * haciendo perder atenciones en vez de evitar las falsas.
+     */
+    esConsulta: consulta,
     personaNueva: !mismoPeriodo,
     // La marca manda sobre el conteo. Que `respuestasDelPeriodo` llegue a tres o
     // a treinta no vuelve a sumar: la interacción ya está anotada en este
@@ -452,6 +504,7 @@ export const ingesta = onRequest(
       const conversacion = await tx.get(refConversacion);
       const conteo = contadoresDelMensaje(
         (conversacion.data() ?? {}) as MarcasDeConteo, periodo, mensaje.direccion,
+        Date.now(), mensaje.texto,
       );
 
       tx.set(refConversacion, {
@@ -460,7 +513,7 @@ export const ingesta = onRequest(
         ultimoMensaje: mensaje.texto.slice(0, 300),
         ultimoEn: FieldValue.serverTimestamp(),
         // Solo lo mueve un mensaje del cliente: ver `ultimoEntranteEn` arriba.
-        ...(mensaje.direccion === 'entrante'
+        ...(conteo.esConsulta
           ? { ultimoEntranteEn: FieldValue.serverTimestamp() } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
