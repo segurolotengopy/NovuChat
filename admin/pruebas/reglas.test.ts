@@ -1665,3 +1665,92 @@ describe('Rótulos del cobro simulado', () => {
         actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp() }));
   });
 });
+
+/**
+ * CIERRES — la unidad que se factura.
+ *
+ * Estas pruebas cuidan dos cosas distintas y las dos son plata. La primera es
+ * que no se pueda inventar un cierre: sin una referencia externa que lo pruebe,
+ * no entra. La segunda es que el detalle de la persona no se filtre a NovuChat
+ * cuando mira una factura.
+ */
+describe('Cierres', () => {
+  const cierre = (extra: Record<string, unknown> = {}) => ({
+    tipo: 'cita',
+    ocurridoEn: serverTimestamp(),
+    referencia: 'evt_abc123',
+    telefonoEnmascarado: '5917****001',
+    ...extra,
+  });
+
+  it('la ingesta registra un cierre con su referencia externa', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c1`), cierre()));
+  });
+
+  it('rechaza un cierre sin referencia: sin prueba externa no se cobra', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c2`), cierre({ referencia: '' })));
+  });
+
+  it('rechaza un tipo que no sea cita, venta o registro', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c3`), cierre({ tipo: 'consulta' })));
+  });
+
+  it('rechaza el teléfono completo: acá solo entra enmascarado', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c4`),
+      cierre({ telefonoEnmascarado: '59170000001' })));
+  });
+
+  it('rechaza campos que no estén en la lista blanca', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c5`),
+      cierre({ textoConversacion: 'hola quiero una cita' })));
+  });
+
+  it('no se puede corregir ni borrar un cierre ya registrado', async () => {
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/c1`), { referencia: 'otro' }));
+    await assertFails(deleteDoc(doc(ingestaA(), `tenants/${A}/cierres/c1`)));
+  });
+
+  it('el negocio lee sus cierres y NovuChat también, para explicar la factura', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/cierres/c1`)));
+    await assertSucceeds(getDoc(doc(propietario(), `tenants/${A}/cierres/c1`)));
+  });
+
+  it('un comercio no ve los cierres de otro', async () => {
+    await assertFails(getDoc(doc(adminB(), `tenants/${A}/cierres/c1`)));
+  });
+
+  it('el detalle privado lo ve el negocio; NovuChat NO', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c1/privado/datos`),
+      { nombreCliente: 'Ana', servicio: 'Manicure' }));
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/cierres/c1/privado/datos`)));
+    await assertFails(getDoc(doc(propietario(), `tenants/${A}/cierres/c1/privado/datos`)));
+  });
+
+  it('el operador no entra al detalle privado, solo el administrador', async () => {
+    await assertFails(getDoc(doc(operA(), `tenants/${A}/cierres/c1/privado/datos`)));
+  });
+});
+
+describe('Contadores de la oferta comercial', () => {
+  it('la ingesta escribe cierres, atenciones e interacciones', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+      { cierres: 12, atenciones: 40, interacciones: 31, personasAtendidas: 38 }));
+  });
+
+  it('sigue rechazando un campo inventado en la colección que factura', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+      { cierres: 12, descuentoEspecial: 999 }));
+  });
+});
+
+describe('Cierres · el número completo no puede colarse por otro campo', () => {
+  it('rechaza conversacionId, que vale wa_<telefono> y es el número entero', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c9`), {
+      tipo: 'cita',
+      ocurridoEn: serverTimestamp(),
+      referencia: 'evt_x',
+      telefonoEnmascarado: '5917****001',
+      conversacionId: 'wa_59170000001',
+    }));
+  });
+});

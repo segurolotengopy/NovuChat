@@ -29,7 +29,7 @@ export function Tenants() {
     <section>
       <h2>Negocios</h2>
       {error && <p role="alert">{error}</p>}
-      <table>
+      <table className="table">
         <thead><tr><th>Negocio</th><th>Estado</th><th>Plan</th><th /></tr></thead>
         <tbody>
           {tenants.map((t) => (
@@ -37,7 +37,7 @@ export function Tenants() {
               <td><TextoSeguro valor={t.nombre} maxLargo={80} /></td>
               <td><TextoSeguro valor={t.estado} maxLargo={20} /></td>
               <td><TextoSeguro valor={t.plan} maxLargo={20} /></td>
-              <td><Link to={`/negocio/${encodeURIComponent(t.id)}/configuracion`}>Abrir</Link></td>
+              <td><Link to={`/negocio/${encodeURIComponent(t.id)}/cierres`}>Ver cierres</Link></td>
             </tr>
           ))}
         </tbody>

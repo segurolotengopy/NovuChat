@@ -2,18 +2,18 @@ import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ProveedorSesion, useSesion } from './lib/contexto';
 import { rolEn } from './lib/sesion';
 import { Proteger } from './componentes/Proteger';
-import { SinSalida } from './componentes/SinSalida';
 import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
 import { Conversaciones } from './paginas/Conversaciones';
-import { Metricas } from './paginas/Metricas';
+import { Cierres } from './paginas/Cierres';
 import { Usuarios } from './paginas/Usuarios';
 import { Contactos } from './paginas/Contactos';
 import { EstadoCuenta } from './paginas/EstadoCuenta';
 import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
+import { Tablero } from './paginas/Tablero';
 
 /**
  * Menú, filtrado por rol.
@@ -35,7 +35,8 @@ function Cabecera() {
   const esPersona = rol === 'admin' || rol === 'oper';
 
   return (
-    <header>
+    <header className="nav">
+      <span className="nav-brand">NovuChat</span>
       <nav>
         {permisos.propietario && <Link to="/negocios">Negocios</Link>}
         {permisos.propietario && !tenantId && <Link to="/bitacora">Bitácora</Link>}
@@ -49,8 +50,8 @@ function Cabecera() {
           <Link to={`/negocio/${tenantId}/contactos`}>Contactos</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/funcionarios`}>Funcionarios</Link>}
-        {tenantId && esPersona &&
-          <Link to={`/negocio/${tenantId}/uso`}>Uso</Link>}
+        {tenantId && (esPersona || permisos.propietario) &&
+          <Link to={`/negocio/${tenantId}/cierres`}>Cierres</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/cuenta`}>Cuenta</Link>}
         {tenantId && esPersona &&
@@ -58,7 +59,7 @@ function Cabecera() {
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/bitacora`}>Bitácora</Link>}
       </nav>
-      <button onClick={salir}>Salir</button>
+      <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
     </header>
   );
 }
@@ -82,27 +83,21 @@ function Entrada() {
   return <Ingresar />;
 }
 
-/** Manda al usuario a su único negocio, o al listado si administra varios. */
+/**
+ * Inicio. Ya no desvía: muestra el tablero que corresponde al rol.
+ *
+ * El desvío era correcto y no decía nada. La primera pantalla es la que decide
+ * si alguien siente que el sistema está bajo control o que se lo tiene que
+ * adivinar, y para el dueño de una PyME que entra desde el celular esa
+ * impresión es la que sostiene —o no— que vuelva a entrar mañana.
+ */
+function DesvioAUso() {
+  const { tenantId } = useParams();
+  return <Navigate to={`/negocio/${tenantId}/cierres`} replace />;
+}
+
 function Inicio() {
-  const { permisos, cargando } = useSesion();
-  if (cargando) return <p>Cargando…</p>;
-  if (permisos.propietario) return <Navigate to="/negocios" replace />;
-  const ids = Object.keys(permisos.tenants);
-  if (ids.length === 1 && ids[0]) return <Navigate to={`/negocio/${ids[0]}/conversaciones`} replace />;
-  if (ids.length === 0) {
-    return (
-      <SinSalida titulo="Su cuenta todavía no está asociada a ningún negocio">
-        <p>
-          Es normal si recién la crearon: alguien de NovuChat tiene que vincularla
-          a su negocio. Si ya se la vincularon, salga y vuelva a entrar para que
-          se actualicen sus permisos.
-        </p>
-      </SinSalida>
-    );
-  }
-  return (
-    <ul>{ids.map((id) => <li key={id}><Link to={`/negocio/${id}/conversaciones`}>{id}</Link></li>)}</ul>
-  );
+  return <><Cabecera /><Tablero /></>;
 }
 
 export function App() {
@@ -123,8 +118,11 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
         <Route path="/negocio/:tenantId/funcionarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
-        <Route path="/negocio/:tenantId/uso" element={
-          <Proteger requiere="miembroTenant"><><Cabecera /><Metricas /></></Proteger>} />
+        <Route path="/negocio/:tenantId/cierres" element={
+          <Proteger requiere="miembroOPropietario"><><Cabecera /><Cierres /></></Proteger>} />
+        {/* La pantalla se llamaba «Uso». El enlace viejo sigue funcionando: puede
+            estar en un correo o en un marcador de alguien. */}
+        <Route path="/negocio/:tenantId/uso" element={<DesvioAUso />} />
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
