@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-08-28 (sesión de tarde/noche)
+**Última actualización:** 2026-09-01 (contadores de la oferta comercial)
 
 ---
 
@@ -500,6 +500,32 @@ dice en `organizer.email`.
 **Sigue SIN PUBLICAR, a propósito.** Al activarlo, todos los días a las 17:00
 escribe por WhatsApp a quien tenga cita al día siguiente. Es decisión de Andres
 cuándo activarlo y con qué horario.
+
+## Oferta comercial: las tres cifras, completas (2026-09-01)
+
+Faltaban dos de las tres. **Cierres** ya estaba en producción; **atenciones** e
+**interacciones** se mostraban en la pantalla y estaban en la lista blanca de las
+reglas, pero nadie las escribía.
+
+- La ingesta las cuenta ahora en la **misma transacción** que ya movía
+  `personasAtendidas`, con marcas en el documento de la conversación:
+  `periodoContado` (atención), `respuestasDelPeriodo` y `periodoInteraccion`.
+  Cero lecturas y cero escrituras extra.
+- La decisión de contar salió a una función pura, `contadoresDelMensaje`, y se
+  prueba mes por mes. Los dos casos que sostienen la factura —la segunda
+  conversación del mismo cliente no suma otra atención, y la tercera y la cuarta
+  respuesta no suman otra interacción— están cubiertos.
+- **La ingesta volvió a autenticar.** `SECRETOS_POR_NUMERO` estaba vacío desde
+  siempre (un `defineSecret` exige un nombre fijo y el identificador del número
+  no puede ir en un repositorio público), así que ningún número autenticaba y la
+  ingesta no recibía nada. Pasa a usar `rutaAutenticada()` de `firma.ts`, que ya
+  resolvía eso con un alias, y que ya usaba `/cierres` en producción.
+- Suite del panel: **226 pruebas en verde** (eran 212).
+
+**Sin verificar todavía, y hace falta antes del congelamiento:** nada de esto se
+probó contra n8n, Firestore real ni un teléfono. Falta desplegar las Functions,
+mandar un mensaje de verdad y comprobar en el panel que la atención aparezca una
+sola vez y la interacción recién en la segunda respuesta.
 
 ## Riesgos vivos para el 9–10 de septiembre
 
