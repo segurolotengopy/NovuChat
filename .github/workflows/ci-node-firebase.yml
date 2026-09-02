@@ -183,7 +183,21 @@ jobs:
             echo "admin_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
 
-          archivos=$(git diff --name-only "$base" "$GITHUB_SHA")
+          # La CABEZA tambien puede faltar, y ese caso no estaba cubierto. En un
+          # pull_request, GITHUB_SHA es el commit de FUSION (refs/pull/N/merge),
+          # que no siempre esta en el clon: si la rama recibe un push mientras
+          # la corrida arranca, ese commit se reemplaza y el que quedo anotado
+          # deja de existir. `git diff` contra un objeto ausente aborta con
+          # codigo 128, y con `set -e` se lleva puesto el job entero --que fue
+          # exactamente lo que paso, y con un mensaje que no dice nada:
+          # "fatal: bad object <sha>".
+          cabeza="$GITHUB_SHA"
+          if ! git cat-file -e "${cabeza}^{commit}" 2>/dev/null; then
+            echo "La cabeza ${cabeza} no esta en el clon: se usa HEAD."
+            cabeza="$(git rev-parse HEAD)"
+          fi
+
+          archivos=$(git diff --name-only "$base" "$cabeza")
           echo "Archivos cambiados:"; echo "$archivos" | sed 's/^/  /'
           # Cambiar el propio pipeline tambien obliga a ejercitarlo entero.
           if echo "$archivos" | grep -qE "^(${RUTA}/|\.github/workflows/)"; then
