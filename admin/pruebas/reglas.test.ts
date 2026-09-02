@@ -2007,3 +2007,35 @@ describe('Atenciones e interacciones · las marcas no las toca nadie más', () =
     }));
   });
 });
+
+/**
+ * UN COMERCIO QUE YA NO ES CLIENTE NO PUEDE SEGUIR ACUMULANDO CIERRES.
+ *
+ * Esto documenta una invariante que estuvo ROTA en producción y que ninguna
+ * prueba miraba: `bajaTenant` no propagaba el estado a /rutasWhatsApp, mientras
+ * `suspenderTenant` y `reactivarTenant` sí. Como `registrarCierre` decide con
+ * `ruta.estado`, un comercio dado de baja conservaba su ruta en `activo` y podía
+ * seguir sumando la unidad que se factura.
+ *
+ * OJO CON EL ALCANCE DE ESTA PRUEBA. Cubre la capa de reglas, que es la que
+ * frena a cualquier cliente. NO cubre a `registrarCierre`, que escribe con el
+ * SDK Admin y se salta las reglas por definición: ahí la única defensa es el
+ * `ruta.estado`, y por eso la corrección de `bajaTenant` es lo que de verdad
+ * cierra el agujero. Las dos cosas hacen falta y ninguna reemplaza a la otra.
+ */
+describe('Cierres · un comercio que no está operativo no acumula', () => {
+  const cierre = () => ({
+    tipo: 'cita',
+    ocurridoEn: serverTimestamp(),
+    referencia: 'evt_baja',
+    telefonoEnmascarado: '5917****001',
+  });
+
+  it('un comercio suspendido no puede registrar un cierre', async () => {
+    await assertFails(setDoc(doc(ingestaD(), `tenants/${D}/cierres/c-susp`), cierre()));
+  });
+
+  it('el comercio activo sí puede, para que la prueba de arriba signifique algo', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c-activo`), cierre()));
+  });
+});
