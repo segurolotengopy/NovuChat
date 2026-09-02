@@ -988,7 +988,7 @@ service cloud.firestore {
                    // conversación ya sumó su interacción, para que la tercera
                    // respuesta no vuelva a sumarla.
                    'respuestasDelPeriodo', 'periodoInteraccion'
-                 ])
+                 , 'ultimoEntranteEn'])
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
             && textoOpc(d, 'nombreContacto', 120)

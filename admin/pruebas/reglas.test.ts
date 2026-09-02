@@ -1770,7 +1770,9 @@ describe('Cierres · el número completo no puede colarse por otro campo', () =>
 //     poco sirve deduplicar bien si el comercio o NovuChat pueden borrar la
 //     marca y volver a contar.
 // ===========================================================================
-import { contadoresDelMensaje, type MarcasDeConteo } from '../functions/src/ingesta.ts';
+import {
+  contadoresDelMensaje, HORAS_NUEVA_ATENCION, type MarcasDeConteo,
+} from '../functions/src/ingesta.ts';
 
 /**
  * Reproduce una conversación mensaje por mensaje, aplicando lo que decide
@@ -1782,26 +1784,48 @@ import { contadoresDelMensaje, type MarcasDeConteo } from '../functions/src/inge
  * sistema y pasaría a probarse a sí misma. Es el único punto delicado del
  * archivo y por eso está en un solo lugar.
  */
+const MINUTO = 60 * 1000;
+const HORA = 60 * MINUTO;
+
+/**
+ * Cada mensaje puede venir con el silencio que lo precede, en milisegundos.
+ * Por defecto un minuto: el ritmo de una conversación de verdad.
+ */
+type Mensaje = 'entrante' | 'saliente' | { dir: 'entrante' | 'saliente'; tras: number };
+
 function reproducir(
-  direcciones: Array<'entrante' | 'saliente'>,
+  mensajes: Mensaje[],
   periodo = '2026-09',
   desde: MarcasDeConteo = {},
 ) {
   let marcas: MarcasDeConteo = { ...desde };
   let atenciones = 0;
+  let personas = 0;
   let interacciones = 0;
+  let reloj = Date.parse('2026-09-10T12:00:00Z');
 
-  for (const direccion of direcciones) {
-    const conteo = contadoresDelMensaje(marcas, periodo, direccion);
+  for (const m of mensajes) {
+    const direccion = typeof m === 'string' ? m : m.dir;
+    reloj += typeof m === 'string' ? MINUTO : m.tras;
+
+    const conteo = contadoresDelMensaje(marcas, periodo, direccion, reloj);
     if (conteo.atencion) atenciones += 1;
+    if (conteo.personaNueva) personas += 1;
     if (conteo.interaccion) interacciones += 1;
+
+    // Se reproduce lo que escribe la transacción, incluido `ultimoEn`.
+    const marcaAhora = reloj;
     marcas = {
       periodoContado: periodo,
       respuestasDelPeriodo: conteo.respuestasDelPeriodo,
       periodoInteraccion: conteo.interaccion ? periodo : marcas.periodoInteraccion,
+      // Solo un mensaje del cliente mueve la marca, igual que en la ingesta.
+      ultimoEntranteEn: direccion === 'entrante'
+        ? { toMillis: () => marcaAhora }
+        : marcas.ultimoEntranteEn,
     };
   }
-  return { atenciones, interacciones, marcas };
+  return { atenciones, personas, interacciones, marcas };
 }
 
 /** Un ida y vuelta: el cliente escribe, el asistente responde. */
@@ -1829,15 +1853,37 @@ describe('Atenciones e interacciones · la decisión de contar', () => {
     expect(larga.marcas.respuestasDelPeriodo).toBe(4);
   });
 
-  it('la segunda conversación del mismo cliente en el mes NO suma otra atención', async () => {
-    // EL OTRO CASO QUE COBRARÍA DE MÁS. El cliente vuelve a escribir el mismo
-    // mes: es la misma persona y la misma conversación (el identificador ES su
-    // teléfono), así que la atención ya está contada.
-    const primera = reproducir(turno);
-    const segunda = reproducir(turno, '2026-09', primera.marcas);
-    expect(segunda.atenciones).toBe(0);
-    // Y la interacción sí llega, porque ahora sí recibió una segunda respuesta.
-    expect(segunda.interacciones).toBe(1);
+  it('el mismo teléfono que consulta tres veces son TRES atenciones y UNA persona', async () => {
+    // LA DISTINCIÓN QUE SOSTIENE LA FACTURA, y que la primera version de esto
+    // tenía mal: contaba una sola atención por teléfono y mes, igual que
+    // `personasAtendidas`. Son cifras distintas y se cobran distinto.
+    const separacion = (HORAS_NUEVA_ATENCION + 1) * HORA;
+    const tresConsultas: Mensaje[] = [
+      { dir: 'entrante', tras: separacion }, 'saliente',
+      { dir: 'entrante', tras: separacion }, 'saliente',
+      { dir: 'entrante', tras: separacion }, 'saliente',
+    ];
+    const r = reproducir(tresConsultas);
+    expect(r.atenciones).toBe(3);
+    expect(r.personas).toBe(1);
+  });
+
+  it('volver a escribir enseguida NO abre otra atención: es la misma consulta', async () => {
+    // El corte tiene que separar consultas distintas, no partir una en pedazos
+    // porque alguien tardó en contestar. Justo por debajo del umbral: sigue
+    // siendo una.
+    const r = reproducir([
+      'entrante', 'saliente',
+      { dir: 'entrante', tras: (HORAS_NUEVA_ATENCION - 1) * HORA }, 'saliente',
+    ]);
+    expect(r.atenciones).toBe(1);
+  });
+
+  it('una respuesta nuestra no abre una atención aunque pase una semana', async () => {
+    // Si contara, un recordatorio saliente inventaría una consulta que el
+    // cliente nunca hizo. Eso es cobrar por algo que no ocurrió.
+    const r = reproducir([{ dir: 'saliente', tras: 7 * 24 * HORA }]);
+    expect(r.atenciones).toBe(0);
   });
 
   it('treinta mensajes del cliente sin ninguna respuesta no suman interacción', async () => {
@@ -1847,24 +1893,35 @@ describe('Atenciones e interacciones · la decisión de contar', () => {
     expect(reproducir(entrantes)).toMatchObject({ atenciones: 1, interacciones: 0 });
   });
 
-  it('el mes nuevo vuelve a contar la atención y no arrastra el saldo de respuestas', async () => {
+  it('el mes nuevo vuelve a contar la PERSONA y no arrastra el saldo de respuestas', async () => {
     // Si el contador de respuestas se arrastrara, la PRIMERA respuesta de
     // octubre cobraría la interacción de septiembre.
     const septiembre = reproducir([...turno, ...turno]);
     expect(septiembre.interacciones).toBe(1);
 
     const octubre = reproducir(turno, '2026-10', septiembre.marcas);
-    expect(octubre.atenciones).toBe(1);
+    // La persona se cuenta de nuevo: `personasAtendidas` es por mes.
+    expect(octubre.personas).toBe(1);
+    // La atención NO depende del mes sino del silencio, y acá el cliente
+    // escribió un minuto después. Son cifras distintas y esto lo demuestra.
+    expect(octubre.atenciones).toBe(0);
     expect(octubre.interacciones).toBe(0);
     expect(octubre.marcas.respuestasDelPeriodo).toBe(1);
   });
 
-  it('una conversación que arranca con una salida cuenta la atención igual', async () => {
-    // Un recordatorio fuera de la ventana de 24 h lo inicia el negocio. Sigue
-    // siendo el arranque de una conversación: la definición no mira quién habló
-    // primero, mira que la conversación arrancó.
-    expect(reproducir(['saliente', 'entrante', 'saliente']))
-      .toMatchObject({ atenciones: 1, interacciones: 1 });
+  it('un recordatorio que arranca la conversación NO cuenta como atención', async () => {
+    // Lo inicia el negocio, no el cliente. Contarlo sería facturar una consulta
+    // que nadie hizo: el recordatorio de las 17:00 le llega a todos los que
+    // tienen cita mañana, y ninguno de ellos pidió nada.
+    //
+    // La atención llega recién cuando el cliente CONTESTA, y ahí sí es suya.
+    const r = reproducir([
+      { dir: 'saliente', tras: 48 * HORA },
+      { dir: 'entrante', tras: 10 * MINUTO },
+      'saliente',
+    ]);
+    expect(r.atenciones).toBe(1);
+    expect(r.interacciones).toBe(1);
   });
 
   it('la marca manda sobre el contador: un contador adelantado no vuelve a sumar', async () => {

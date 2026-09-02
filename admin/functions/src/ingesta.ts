@@ -243,11 +243,40 @@ export interface MarcasDeConteo {
   periodoContado?: unknown;
   respuestasDelPeriodo?: unknown;
   periodoInteraccion?: unknown;
+  /**
+   * Marca del último mensaje ENTRANTE. Decide si hay una atención nueva.
+   *
+   * Entrante y no «último mensaje» a secas, y la diferencia importa: si contara
+   * cualquiera, un mensaje NUESTRO reiniciaría el reloj y taparía la consulta
+   * del cliente. El caso concreto es el recordatorio de las 17:00: le llega a
+   * todos los que tienen cita mañana, y quien conteste diez minutos después
+   * estaría iniciando un flujo que no se contaría por culpa de nuestro propio
+   * mensaje.
+   */
+  ultimoEntranteEn?: { toMillis?: () => number } | unknown;
 }
 
+/**
+ * SEPARACIÓN ENTRE UNA ATENCIÓN Y LA SIGUIENTE.
+ *
+ * Una ATENCIÓN es un inicio de flujo, no una persona ni un mes: el mismo
+ * teléfono que consulta tres veces son TRES atenciones y UNA persona atendida.
+ * Pero WhatsApp no marca dónde termina una consulta y empieza otra —no hay
+ * "colgar"—, así que el corte lo tiene que poner el sistema, y el único dato
+ * disponible es el silencio entre mensajes.
+ *
+ * Cuatro horas: un ida y vuelta de una misma consulta no se interrumpe tanto,
+ * y alguien que vuelve a la tarde por otra cosa está claramente empezando de
+ * nuevo. ES UN VALOR COMERCIAL, no técnico: subirlo cobra menos y bajarlo
+ * cobra más, así que se cambia con Andres, no en una revisión de código.
+ */
+export const HORAS_NUEVA_ATENCION = 4;
+
 export interface Conteo {
-  /** ¿Este mensaje abre la conversación en este período? */
+  /** ¿Este mensaje abre una atención nueva? (inicio de flujo) */
   atencion: boolean;
+  /** ¿Es la primera vez que esta persona escribe en el período? */
+  personaNueva: boolean;
   /** ¿Con este mensaje el cliente llega a su segunda respuesta del período? */
   interaccion: boolean;
   /** Valor que hay que dejar guardado en la conversación. */
@@ -262,8 +291,22 @@ export function contadoresDelMensaje(
   marcas: MarcasDeConteo,
   periodo: string,
   direccion: 'entrante' | 'saliente',
+  ahoraMs: number = Date.now(),
 ): Conteo {
   const mismoPeriodo = marcas.periodoContado === periodo;
+
+  // PERSONA ATENDIDA y ATENCIÓN son cifras distintas y se cuentan distinto.
+  // Compartían marca en la primera versión de esto y estaba mal: un teléfono
+  // que consulta tres veces es UNA persona atendida y TRES atenciones.
+  const ultimo = marcas.ultimoEntranteEn as { toMillis?: () => number } | undefined;
+  const ultimoMs = typeof ultimo?.toMillis === 'function' ? ultimo.toMillis() : null;
+  const silencio = ultimoMs === null ? Infinity : ahoraMs - ultimoMs;
+
+  // Solo un mensaje ENTRANTE abre una atención. Una respuesta nuestra no inicia
+  // nada: si contara, un recordatorio saliente inventaría una consulta que el
+  // cliente nunca hizo, y eso es cobrar por algo que no ocurrió.
+  const atencion = direccion === 'entrante'
+    && silencio > HORAS_NUEVA_ATENCION * 60 * 60 * 1000;
 
   // Al cambiar de mes el contador de respuestas vuelve a cero: la definición es
   // POR PERÍODO, y arrastrar el saldo del mes anterior haría que la primera
@@ -275,7 +318,8 @@ export function contadoresDelMensaje(
   const respuestasDelPeriodo = previas + (direccion === 'saliente' ? 1 : 0);
 
   return {
-    atencion: !mismoPeriodo,
+    atencion,
+    personaNueva: !mismoPeriodo,
     // La marca manda sobre el conteo. Que `respuestasDelPeriodo` llegue a tres o
     // a treinta no vuelve a sumar: la interacción ya está anotada en este
     // período. El `>= 2` y no `== 2` es para que un recuento manual o un
@@ -415,6 +459,9 @@ export const ingesta = onRequest(
         canal: 'whatsapp',
         ultimoMensaje: mensaje.texto.slice(0, 300),
         ultimoEn: FieldValue.serverTimestamp(),
+        // Solo lo mueve un mensaje del cliente: ver `ultimoEntranteEn` arriba.
+        ...(mensaje.direccion === 'entrante'
+          ? { ultimoEntranteEn: FieldValue.serverTimestamp() } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
         // El contador de respuestas se calcula, no se incrementa: dentro de la
@@ -436,11 +483,12 @@ export const ingesta = onRequest(
       tx.set(refMetricas, {
         mensajes: FieldValue.increment(1),
         ...(mensaje.direccion === 'entrante' ? { entrantes: FieldValue.increment(1) } : {}),
-        // Los tres incrementos ocurren UNA sola vez por conversación y por mes.
         // Son los números que sostienen la facturación por uso.
-        ...(conteo.atencion
-          ? { personasAtendidas: FieldValue.increment(1), atenciones: FieldValue.increment(1) }
-          : {}),
+        // Se cuentan por separado, a propósito. `personasAtendidas` es una vez
+        // por teléfono y por mes; `atenciones` es una por cada consulta nueva
+        // del mismo teléfono. Ver `contadoresDelMensaje`.
+        ...(conteo.personaNueva ? { personasAtendidas: FieldValue.increment(1) } : {}),
+        ...(conteo.atencion ? { atenciones: FieldValue.increment(1) } : {}),
         ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
       }, { merge: true });
     });
