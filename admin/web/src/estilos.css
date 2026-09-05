@@ -107,3 +107,27 @@ tr.alerta td { background: #c6282811; }
    por ese atributo — mismo aspecto, semántica correcta para lo que hace. */
 .seg-opt[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
 .seg-opt[aria-pressed="true"]:hover { background: var(--color-accent-600); }
+
+/* -----------------------------------------------------------------------------
+   INGRESO. El formulario del comercio ES la pantalla; el acceso del equipo es
+   un enlace al pie, deliberadamente pequeño. No está escondido: esconder una
+   puerta no la protege. Solo deja de competir con lo que la mayoría vino a
+   hacer, y de anunciarle al cliente que hay una entrada interna del mismo
+   tamaño que la suya.
+   -------------------------------------------------------------------------- */
+.enlace-interno {
+  margin-top: 2.5rem;
+  background: none; border: 0; padding: .25rem;
+  font-size: .8rem; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  text-decoration: underline; text-underline-offset: 3px;
+  cursor: pointer;
+}
+.enlace-interno:hover { color: var(--color-text); }
+
+.interno {
+  margin-top: 2rem; padding-top: 1.25rem;
+  border-top: 1px solid var(--color-divider);
+  display: flex; flex-direction: column; gap: .75rem; align-items: center;
+  max-width: 22rem;
+}
