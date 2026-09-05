@@ -117,46 +117,53 @@ export function Ingresar() {
       <h1 className="nav-brand" style={{ fontSize: 34 }}>NovuChat</h1>
       <p className="text-muted">Panel administrativo</p>
 
-      {/* Control segmentado del sistema de diseño. Sigue siendo un par de
-          botones con `aria-pressed`, no radios: la elección no se envía con el
-          formulario, cambia qué formulario se muestra. */}
-      <nav className="seg">
-        <button type="button" className="seg-opt" aria-pressed={modo === 'comercio'}
-                onClick={() => { setModo('comercio'); setError(null); setAviso(null); }}>
-          Soy un comercio
-        </button>
-        <button type="button" className="seg-opt" aria-pressed={modo === 'novuchat'}
-                onClick={() => { setModo('novuchat'); setError(null); setAviso(null); }}>
-          Soy de NovuChat
-        </button>
-      </nav>
+      {/*
+        EL COMERCIO NO ELIGE NADA. Antes había dos pestañas del mismo tamaño
+        —«Soy un comercio» y «Soy de NovuChat»— y eso estaba mal por dos razones.
+        La primera es de uso: el 99 % de quienes entran acá son comercios, y
+        obligarlos a declarar quiénes son antes de ver el formulario es un paso
+        que no le sirve a nadie. La segunda es de imagen: un botón grande que
+        dice «Soy de NovuChat» le cuenta al cliente que hay una puerta interna,
+        del mismo tamaño que la suya.
 
-      {modo === 'comercio' ? (
-        <form onSubmit={conClave}>
-          <label className="field">Correo
-            <input className="input" type="email" required autoComplete="username" maxLength={254}
-                   value={correo} onChange={(e) => setCorreo(e.target.value)} />
-          </label>
-          <label className="field">Contraseña
-            <input className="input" type="password" required autoComplete="current-password"
-                   minLength={12} value={clave} onChange={(e) => setClave(e.target.value)} />
-          </label>
-          <button type="submit" className="btn btn-primary" disabled={ocupado}>Ingresar</button>
-          <button type="button" className="btn btn-ghost" onClick={recuperar}>
-            Olvidé mi contraseña
+        Ahora el formulario de correo y contraseña ES la pantalla, y el acceso
+        del equipo es un enlace discreto al pie. No está oculto —esconder una
+        puerta no la protege, y quien la busque la encuentra igual— pero deja de
+        competir con lo que la mayoría vino a hacer.
+      */}
+      <form onSubmit={conClave}>
+        <label className="field">Correo
+          <input className="input" type="email" required autoComplete="username" maxLength={254}
+                 value={correo} onChange={(e) => setCorreo(e.target.value)} />
+        </label>
+        <label className="field">Contraseña
+          <input className="input" type="password" required autoComplete="current-password"
+                 minLength={12} value={clave} onChange={(e) => setClave(e.target.value)} />
+        </label>
+        <button type="submit" className="btn btn-primary" disabled={ocupado}>Ingresar</button>
+        <button type="button" className="btn btn-ghost" onClick={recuperar}>
+          Olvidé mi contraseña
+        </button>
+        <p className="text-muted">
+          Mínimo 12 caracteres. Verifica tu correo antes del primer ingreso.
+        </p>
+      </form>
+
+      {modo === 'novuchat' ? (
+        <section className="interno">
+          <p className="text-muted">
+            Acceso del equipo de NovuChat. Solo con cuenta de Google: no hay
+            contraseña que robar y el segundo factor lo administra Google.
+          </p>
+          <button type="button" className="btn btn-secondary" onClick={conGoogle} disabled={ocupado}>
+            Continuar con Google
           </button>
-          <p className="text-muted">
-            Mínimo 12 caracteres. Verifica tu correo antes del primer ingreso.
-          </p>
-        </form>
+        </section>
       ) : (
-        <>
-          <button type="button" className="btn btn-primary" onClick={conGoogle} disabled={ocupado}>Ingresar con Google</button>
-          <p className="text-muted">
-            El personal de NovuChat entra únicamente con su cuenta de Google, con
-            el segundo factor activo. No hay contraseña que robar.
-          </p>
-        </>
+        <button type="button" className="enlace-interno"
+                onClick={() => { setModo('novuchat'); setError(null); setAviso(null); }}>
+          Ingreso interno
+        </button>
       )}
 
       {error && <p role="alert">{error}</p>}
