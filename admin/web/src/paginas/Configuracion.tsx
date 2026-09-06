@@ -85,7 +85,12 @@ export function Configuracion() {
 
   // Ver la nota de `AUN_NO_LLEGAN` en ConfiguracionVertical.tsx: la consola y el
   // flujo tienen hoy dos copias de la configuración y nadie las sincroniza.
-  const SIN_LLEGAR = new Set(['descripcion', 'instruccionesExtra']);
+  // `descripcion` salió de esta lista el 2026-09-06: el flujo ya la recibe y el
+  // agente la usa para entender pedidos que no nombran un servicio exacto.
+  // Queda `instruccionesExtra`, que necesita más cuidado: es texto libre del
+  // comercio y tiene que entrar al prompt DELIMITADO y rotulado como dato, que
+  // es justo lo que el texto de ayuda de esa casilla ya promete.
+  const SIN_LLEGAR = new Set(['instruccionesExtra']);
 
   const campo = (clave: string, etiqueta: string, multilinea = false) => (
     <label>
