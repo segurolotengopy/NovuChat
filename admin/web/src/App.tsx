@@ -6,7 +6,7 @@ import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
 import { Conversaciones } from './paginas/Conversaciones';
-import { Cierres } from './paginas/Cierres';
+import { Consumo } from './paginas/Consumo';
 import { Usuarios } from './paginas/Usuarios';
 import { Contactos } from './paginas/Contactos';
 import { EstadoCuenta } from './paginas/EstadoCuenta';
@@ -14,6 +14,7 @@ import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
 import { Tablero } from './paginas/Tablero';
+import { MiCuenta } from './paginas/MiCuenta';
 
 /**
  * Menú, filtrado por rol.
@@ -51,7 +52,7 @@ function Cabecera() {
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/funcionarios`}>Funcionarios</Link>}
         {tenantId && (esPersona || permisos.propietario) &&
-          <Link to={`/negocio/${tenantId}/cierres`}>Cierres</Link>}
+          <Link to={`/negocio/${tenantId}/consumo`}>Consumo</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/cuenta`}>Cuenta</Link>}
         {tenantId && esPersona &&
@@ -59,6 +60,7 @@ function Cabecera() {
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/bitacora`}>Bitácora</Link>}
       </nav>
+      <Link to="/mi-cuenta">Mi cuenta</Link>
       <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
     </header>
   );
@@ -91,9 +93,9 @@ function Entrada() {
  * adivinar, y para el dueño de una PyME que entra desde el celular esa
  * impresión es la que sostiene —o no— que vuelva a entrar mañana.
  */
-function DesvioAUso() {
+function DesvioAConsumo() {
   const { tenantId } = useParams();
-  return <Navigate to={`/negocio/${tenantId}/cierres`} replace />;
+  return <Navigate to={`/negocio/${tenantId}/consumo`} replace />;
 }
 
 function Inicio() {
@@ -106,6 +108,11 @@ export function App() {
       <Routes>
         <Route path="/ingresar" element={<Entrada />} />
         <Route path="/" element={<Proteger><Inicio /></Proteger>} />
+        {/* Mi cuenta la ve CUALQUIERA que haya entrado, sin importar el rol ni
+            si tiene un negocio asociado: hasta quien todavía no fue vinculado
+            necesita poder cambiar su contraseña. */}
+        <Route path="/mi-cuenta" element={
+          <Proteger><><Cabecera /><MiCuenta /></></Proteger>} />
         <Route path="/negocios" element={
           <Proteger requiere="propietario"><><Cabecera /><Tenants /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
@@ -118,11 +125,13 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
         <Route path="/negocio/:tenantId/funcionarios" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
-        <Route path="/negocio/:tenantId/cierres" element={
-          <Proteger requiere="miembroOPropietario"><><Cabecera /><Cierres /></></Proteger>} />
-        {/* La pantalla se llamaba «Uso». El enlace viejo sigue funcionando: puede
-            estar en un correo o en un marcador de alguien. */}
-        <Route path="/negocio/:tenantId/uso" element={<DesvioAUso />} />
+        <Route path="/negocio/:tenantId/consumo" element={
+          <Proteger requiere="miembroOPropietario"><><Cabecera /><Consumo /></></Proteger>} />
+        {/* Los dos nombres anteriores de esta pantalla —«Uso» y «Cierres»—
+            siguen funcionando. Un enlace viejo en un correo o en un marcador no
+            tiene por qué romperse porque nosotros cambiamos de vocabulario. */}
+        <Route path="/negocio/:tenantId/uso" element={<DesvioAConsumo />} />
+        <Route path="/negocio/:tenantId/cierres" element={<DesvioAConsumo />} />
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={

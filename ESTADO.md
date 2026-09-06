@@ -294,6 +294,125 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 - **Facturación de Gemini** para reducir los 503 durante los demos.
 - **Memoria persistente** (Postgres Chat Memory) para producción.
 
+### Deuda: campos quitados de la consola porque el flujo no los lee
+
+**Anotado el 2026-09-06.** Se sacaron de la interfaz, NO de las reglas ni de los
+datos: los documentos que ya los tengan los conservan. Vuelven tal cual cuando
+el flujo lea su configuración de la consola.
+
+La causa de fondo: el flujo lleva su configuración escrita adentro y la consola
+escribe en Firestore. Son dos copias que nadie sincroniza. La función que las
+uniría, `configuracionParaFlujo`, existe y está desplegada, y **ningún flujo la
+llama**. Conectarla es EL trabajo que borra toda esta deuda de una vez.
+
+**Configuración común** (`/config/negocio`)
+
+| Campo | Nota |
+|---|---|
+| `instruccionesExtra` | Tiene que volver DELIMITADA y rotulada como dato dentro del prompt: es texto libre de un tercero. El texto de ayuda que tenía ya lo prometía. |
+
+**Agenda y citas** (`/config/agendamiento`) — la sección quedó vacía y no se
+dibuja. Los cinco valores viven hoy escritos en el prompt del flujo.
+
+| Campo | Etiqueta que tenía | Valor que usa hoy el flujo |
+|---|---|---|
+| `duracionPorDefectoMin` | Duración por defecto (minutos) | 60, en el prompt |
+| `anticipacionMinimaMin` | Anticipación mínima (minutos) | sin límite |
+| `anticipacionMaximaDias` | Se puede reservar hasta (días) | sin límite |
+| `horasRecordatorio` | Recordatorio (horas antes) | 24, fijo en el flujo de recordatorios |
+| `permitirCancelacion` | Permitir cancelar desde WhatsApp | siempre permitido |
+
+**Venta y entrega** (`/config/venta`) — quedaron `costoDelivery` y
+`recargoFlota`, que sí llegan.
+
+| Campo | Etiqueta que tenía |
+|---|---|
+| `pedidoMinimo` | Pedido mínimo |
+| `radioEntregaKm` | Radio de entrega (km) |
+| `aceptaDelivery` | Acepta envíos |
+| `aceptaRetiroEnLocal` | Acepta retiro en el local |
+| `tiempoCocinaMin` | Tiempo de preparación (minutos) |
+| `tiempoDespachoMin` | Tiempo de despacho (minutos) |
+
+Los dos de tiempo además existían en el flujo con otro nombre y otro formato
+—`tiempoCocina: "25 minutos"` como texto— así que ni siquiera renombrando el
+campo se conectaban solos.
+
+**`descripcion` NO está en esta lista**: se conectó el 6 de septiembre y el
+agente ya la recibe.
+
+### Reglas de configuración que se aprendieron a los golpes
+
+**Anotadas el 2026-09-06, después de perder una mañana con cada una.**
+
+- **Los calendarios de un negocio son de UNA sola cuenta de Google.** Lo propuso
+  Andres y es correcto: una credencial de n8n solo alcanza los calendarios que
+  esa cuenta ve, así que un calendario de otra persona no falla al configurarlo
+  —falla al crear la cita, con el asistente confirmándola igual. Hay que
+  verificarlo en el alta del negocio, no cuando un cliente reclame.
+
+- **Un cliente OAuth por sistema, no uno compartido.** El cliente que Firebase
+  crea solo tenía autorizados el ingreso a la consola Y el retorno de n8n. O
+  sea que arreglar el calendario ponía a un clic de distancia dejar a los tres
+  superadministradores fuera del panel. Ahora hay uno propio para n8n; el de
+  Firebase queda solo para el ingreso.
+
+- **La pantalla de consentimiento en modo «Prueba» caduca los tokens a los 7
+  días.** Eso fue lo que rompió el calendario el 6 de septiembre: el flujo
+  funcionaba, la credencial no. Publicar la app lo resuelve. Para cada proyecto
+  nuevo hay que publicarla ANTES de la primera demostración.
+
+- **Un detector de texto atado a cómo redacta un modelo se rompe al cambiar de
+  modelo.** El cambio a Flash-Lite —hecho por una razón económica— cambió la
+  redacción de la confirmación y desactivó en silencio la compuerta de
+  verificación. Cualquier cambio de modelo obliga a revisar los detectores de
+  texto de los flujos.
+
+### Google para los comercios, no solo para NovuChat
+
+**Sugerencia de Andres del 2026-09-05. Para DESPUÉS del congelamiento del 8.**
+
+Hoy el vínculo rol↔proveedor es rígido y está verificado en las dos mitades:
+`esPropietario` exige Google, `esAdmin` y `esOperador` exigen contraseña, con
+21 menciones en `pruebas/reglas.test.ts`. La idea es permitir que un comercio
+cuyo correo ya es de Google entre con Google.
+
+**Lo que conviene conservar sin discusión.** Para el equipo de NovuChat, exigir
+Google es lo que hace que la superficie de ataque sea «comprometer la cuenta de
+Google de Andres» y no «adivinar una contraseña». Eso no se toca.
+
+**Lo que sí se puede aflojar, y por qué.** Para el comercio, la exigencia de
+contraseña protege menos de lo que parece: el estado incoherente que el
+comentario de `claims.ts` teme —un admin de comercio con `p: true`— ya lo impide
+el claim, que solo otorga `scripts/superadmin.mjs`. Lo que la regla agrega ahí
+es claridad, y tiene un costo real: a una peluquera con Gmail le pedimos
+inventar y recordar una contraseña más para algo que abre dos veces por semana.
+Esa contraseña termina anotada al lado de la caja, que es peor que Google con
+su segundo factor.
+
+**Cómo se manejaría en la consola:**
+
+1. **Al invitar, el administrador ELIGE el método**, no lo adivina el sistema.
+   Si el correo es de Gmail, la consola lo sugiere; no lo impone. Hay gente con
+   Gmail que no quiere vincular su cuenta personal al trabajo, y esa objeción es
+   legítima.
+2. **Ingreso con un solo campo primero.** Se escribe el correo y recién ahí la
+   pantalla decide qué mostrar: contraseña o botón de Google. Es el patrón que
+   usan los bancos. De paso el enlace «Ingreso interno» podría desaparecer:
+   el correo ya dice quién es.
+3. **Se mantiene UNA IDENTIDAD, UN PROVEEDOR**, decidido al invitar. Hay que
+   APAGAR el enlace automático de cuentas con el mismo correo en Firebase; si no,
+   alguien con contraseña que un día entra con Google termina con las dos y
+   vuelve el estado ambiguo que la regla evita.
+
+**Costo:** las dos mitades del vínculo (reglas y `claims.ts`), reescribir las
+pruebas que hoy afirman lo contrario, y cambiar invitación e ingreso. Medio día
+bien hecho.
+
+**Por qué NO antes del 9:** es la pieza que decide quién entra a los datos de
+los clientes, hoy funciona y está probada, y quedan cuatro días. Al ensayo se
+llega con lo que ya está verificado.
+
 ---
 
 ## Panel administrativo (pista paralela)

@@ -83,6 +83,7 @@ export function Configuracion() {
     </label>
   );
 
+
   const campo = (clave: string, etiqueta: string, multilinea = false) => (
     <label>
       {etiqueta}
@@ -140,14 +141,16 @@ export function Configuracion() {
           está activo. Conviene dejarlo preparado.
         </p>
 
-        <h3>Indicaciones</h3>
-        {campo('instruccionesExtra', 'Indicaciones para el asistente', true)}
-        <p className="ayuda">
-          Las indicaciones se le entregan al asistente como <strong>dato</strong>,
-          dentro de una sección rotulada del prompt. No reemplazan sus reglas de
-          comportamiento ni pueden cambiar su identidad: el asistente siempre
-          dice que es un asistente virtual si se lo preguntan.
-        </p>
+        {/* AQUI IBA «Indicaciones para el asistente». Se quito el 2026-09-06:
+            el texto de ayuda prometia que las indicaciones se le entregan al
+            asistente «dentro de una seccion rotulada del prompt», y el flujo NO
+            las leia. Prometer eso y no cumplirlo es peor que no ofrecer la
+            casilla, sobre todo porque es donde un negocio pondria una promocion
+            y despues no entenderia por que el asistente no la menciona.
+
+            Vuelve cuando el flujo lea su configuracion de la consola, y tiene
+            que volver DELIMITADA y rotulada como dato: es texto libre de un
+            tercero entrando al prompt. La deuda esta en ESTADO.md. */}
         <button type="submit">Guardar</button>
       </form>
       {estado && <p role="status">{estado}</p>}

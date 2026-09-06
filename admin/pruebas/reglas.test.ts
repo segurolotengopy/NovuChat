@@ -1732,9 +1732,17 @@ describe('Cierres', () => {
 });
 
 describe('Contadores de la oferta comercial', () => {
-  it('la ingesta escribe cierres, atenciones e interacciones', async () => {
+  it('la ingesta escribe conversaciones, cierres, atenciones e interacciones', async () => {
     await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
-      { cierres: 12, atenciones: 40, interacciones: 31, personasAtendidas: 38 }));
+      { conversaciones: 40, cierres: 12, interacciones: 31, personasAtendidas: 38 }));
+  });
+
+  it('sigue admitiendo el nombre viejo, para no romper los meses ya escritos', async () => {
+    // `atenciones` era como se llamaba lo que hoy es `conversaciones`. Los
+    // documentos escritos con ese nombre tienen que poder seguir existiendo:
+    // borrarles el campo seria perder el consumo de un mes.
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-08`),
+      { atenciones: 7 }));
   });
 
   it('sigue rechazando un campo inventado en la colección que factura', async () => {
@@ -2107,5 +2115,98 @@ describe('Cortesías · un «gracias» no es una consulta', () => {
     // unidad con la que Meta factura. Que las dos coincidan permite comparar
     // la factura que recibimos con la que emitimos, renglón por renglón.
     expect(HORAS_VENTANA_ATENCION).toBe(24);
+  });
+});
+
+/**
+ * LAS CONSULTAS QUE HACE CADA PANTALLA, tal cual las escribe el navegador.
+ *
+ * POR QUÉ ESTA SUITE. Las demás pruebas verifican la REGLA: quién puede leer
+ * qué. Esta verifica la PANTALLA: que la consulta concreta que el código manda
+ * —con su `orderBy`, su `limit` y su `where`— sea una que las reglas acepten.
+ *
+ * No son lo mismo, y la diferencia se paga cara. Una regla puede permitir leer
+ * una colección y aun así rechazar una consulta ordenada si el `list` está
+ * restringido; una consulta puede pedir un campo que la regla no admite. Eso no
+ * aparece en ninguna prueba de reglas escrita a mano y sale recién cuando una
+ * persona abre la pantalla y ve «no se pudo leer».
+ *
+ * Si alguien cambia una consulta en `web/src/paginas`, ESTA suite tiene que
+ * cambiar con ella. Es su único punto delicado y por eso está todo junto.
+ */
+describe('Pantallas · la consulta real de cada una', () => {
+  const meses = ['2026-09', '2026-08', '2026-07'];
+
+  it('Configuración: ficha del negocio y su config', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}`)));
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/config/negocio`)));
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/config/agendamiento`)));
+  });
+
+  it('Configuración: el operador NO la abre', async () => {
+    // La pantalla tampoco le ofrece el enlace; esto comprueba que además la
+    // regla lo niega, que es lo que vale si alguien escribe la URL a mano.
+    await assertFails(setDoc(doc(operA(), `tenants/${A}/config/negocio`), { nombreNegocio: 'X' }));
+  });
+
+  it('Consumo: cierres ordenados y métricas por período', async () => {
+    for (const quien of [adminA, operA, propietario]) {
+      await assertSucceeds(getDocs(query(
+        collection(quien(), `tenants/${A}/cierres`), orderBy('ocurridoEn', 'desc'), limit(50))));
+      await assertSucceeds(getDocs(query(
+        collection(quien(), `tenants/${A}/metricas`), where(documentId(), 'in', meses))));
+    }
+  });
+
+  it('Conversaciones: hilos ordenados y los mensajes de uno', async () => {
+    for (const quien of [adminA, operA]) {
+      await assertSucceeds(getDocs(query(
+        collection(quien(), `tenants/${A}/conversaciones`), orderBy('ultimoEn', 'desc'), limit(50))));
+      await assertSucceeds(getDocs(query(
+        collection(quien(), `tenants/${A}/conversaciones/c1/mensajes`), orderBy('ts', 'asc'), limit(300))));
+    }
+  });
+
+  it('Conversaciones: NovuChat no las lee, ni ordenadas ni sueltas', async () => {
+    await assertFails(getDocs(query(
+      collection(propietario(), `tenants/${A}/conversaciones`), orderBy('ultimoEn', 'desc'), limit(50))));
+  });
+
+  it('Funcionarios: equipo y catálogo', async () => {
+    await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/funcionarios`)));
+    await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/catalogo`)));
+  });
+
+  it('Contactos: solo el administrador', async () => {
+    await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/contactos`)));
+    await assertFails(getDocs(collection(operA(), `tenants/${A}/contactos`)));
+  });
+
+  it('Usuarios: el espejo de miembros', async () => {
+    await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/miembros`)));
+  });
+
+  it('Estado de cuenta: solo el administrador', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/cuenta/estado`)));
+    await assertFails(getDoc(doc(operA(), `tenants/${A}/cuenta/estado`)));
+  });
+
+  it('Reclamos: ordenados por fecha', async () => {
+    for (const quien of [adminA, operA]) {
+      await assertSucceeds(getDocs(query(
+        collection(quien(), `tenants/${A}/reclamos`), orderBy('creadoEn', 'desc'), limit(50))));
+    }
+  });
+
+  it('Negocios y Tablero: la cartera ordenada, solo NovuChat', async () => {
+    await assertSucceeds(getDocs(query(collection(propietario(), 'tenants'), orderBy('nombre'))));
+    await assertFails(getDocs(query(collection(adminA(), 'tenants'), orderBy('nombre'))));
+  });
+
+  it('Tablero del comercio: los tres conteos que pide al abrir', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/config/negocio`)));
+    await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/catalogo`)));
+    await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/funcionarios`)));
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/cuenta/estado`)));
   });
 });

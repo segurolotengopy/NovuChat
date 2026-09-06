@@ -73,9 +73,16 @@ for linea in open(local, encoding="utf-8"):
     else:
         tabla[clave] = valor
 
+# DEL MAS LARGO AL MAS CORTO, y no alfabetico. `texto.replace()` cambia TODAS
+# las apariciones, asi que reemplazar primero REEMPLAZAR_CALENDARIO_BELLEZA
+# pisa el prefijo de REEMPLAZAR_CALENDARIO_BELLEZA_2 y el segundo marcador
+# queda con el valor del primero. Paso de verdad el 2026-09-06: dos personas
+# distintas terminaron apuntando al mismo calendario, que es exactamente la
+# colision de citas que ese cambio venia a evitar. Y no fallo: escribio un
+# valor plausible y equivocado, que es la peor forma de fallar.
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[^"\\\s]*', texto)))
 puestos, sin_valor = [], []
-for marcador in presentes:
+for marcador in sorted(presentes, key=len, reverse=True):
     # el marcador mas largo primero evita reemplazos parciales
     clave = next((k for k in sorted(tabla, key=len, reverse=True) if marcador.startswith(k)), None)
     if clave:

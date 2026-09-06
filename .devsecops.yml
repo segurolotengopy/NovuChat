@@ -58,6 +58,7 @@ seguridad:
       creado: 2026-08-30
       vence: 2026-10-31
 
+
   # ---------------------------------------------------------------------------
   # ⏸️ RESPALDO PREPARADO, NO APLICADO — hallazgo de Gitleaks del PR #1.
   #

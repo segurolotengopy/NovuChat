@@ -1072,7 +1072,11 @@ service cloud.firestore {
             // /cierres, más abajo. Están acá porque son el agregado por período
             // que se muestra y se factura; el detalle auditable vive en la
             // colección, no en este contador.
-            'cierres', 'atenciones', 'interacciones'
+            // `conversaciones` es la unidad que se factura --ventana de 24 h,
+            // el mismo nombre que usa la pagina de precios. `atenciones` queda
+            // admitida para no romper los documentos ya escritos con ese
+            // nombre; no se escribe mas.
+            'cierres', 'conversaciones', 'atenciones', 'interacciones'
           ]);
         }
       }

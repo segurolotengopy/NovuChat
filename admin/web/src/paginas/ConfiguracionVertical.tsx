@@ -29,12 +29,6 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
   agendamiento: {
     titulo: 'Agenda y citas',
     campos: [
-      { clave: 'duracionPorDefectoMin', etiqueta: 'Duración por defecto (minutos)', tipo: 'entero' },
-      { clave: 'anticipacionMinimaMin', etiqueta: 'Anticipación mínima (minutos)', tipo: 'entero',
-        ayuda: 'Evita que alguien reserve para dentro de dos minutos y usted se entere cuando ya está en la puerta.' },
-      { clave: 'anticipacionMaximaDias', etiqueta: 'Se puede reservar hasta (días)', tipo: 'entero' },
-      { clave: 'horasRecordatorio', etiqueta: 'Recordatorio (horas antes)', tipo: 'entero' },
-      { clave: 'permitirCancelacion', etiqueta: 'Permitir cancelar desde WhatsApp', tipo: 'booleano' },
     ],
   },
   venta: {
@@ -44,15 +38,10 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
     campos: [
       { clave: 'costoDelivery', etiqueta: 'Costo de envío', tipo: 'decimal' },
       { clave: 'recargoFlota', etiqueta: 'Recargo de flota', tipo: 'decimal' },
-      { clave: 'pedidoMinimo', etiqueta: 'Pedido mínimo', tipo: 'decimal' },
-      { clave: 'radioEntregaKm', etiqueta: 'Radio de entrega (km)', tipo: 'decimal' },
-      { clave: 'tiempoCocinaMin', etiqueta: 'Tiempo de preparación (minutos)', tipo: 'entero' },
-      { clave: 'tiempoDespachoMin', etiqueta: 'Tiempo de despacho (minutos)', tipo: 'entero' },
-      { clave: 'aceptaDelivery', etiqueta: 'Acepta envíos', tipo: 'booleano' },
-      { clave: 'aceptaRetiroEnLocal', etiqueta: 'Acepta retiro en el local', tipo: 'booleano' },
     ],
   },
 };
+
 
 export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string; vertical: string }) {
   const definicion = CAMPOS[vertical];
@@ -66,7 +55,9 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
       () => setEstado('No se pudo leer la configuración del rubro.'));
   }, [tenantId, vertical, definicion]);
 
-  if (!definicion) return null;   // vertical sin configuración propia
+  // Sin campos que mostrar no se dibuja nada. Un titulo con un boton «Guardar»
+  // y ninguna casilla debajo parece una pantalla rota.
+  if (!definicion || definicion.campos.length === 0) return null;
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
