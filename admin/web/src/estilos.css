@@ -131,3 +131,14 @@ tr.alerta td { background: #c6282811; }
   display: flex; flex-direction: column; gap: .75rem; align-items: center;
   max-width: 22rem;
 }
+
+/* Marca los campos que la consola guarda pero el flujo todavía no lee. Es
+   deliberadamente visible y feo: existe para incomodar hasta que sobre. */
+.pendiente {
+  display: inline-block; margin-left: .5rem;
+  font-size: .68rem; letter-spacing: .04em; text-transform: uppercase;
+  padding: .1rem .45rem; border-radius: 1rem;
+  background: color-mix(in srgb, #c68a28 22%, transparent);
+  color: var(--color-text);
+  border: 1px solid color-mix(in srgb, #c68a28 55%, transparent);
+}

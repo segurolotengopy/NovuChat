@@ -54,6 +54,31 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
   },
 };
 
+/**
+ * CAMPOS QUE TODAVÍA NO LLEGAN AL ASISTENTE.
+ *
+ * El flujo de n8n lleva su configuración escrita adentro; la consola escribe en
+ * Firestore. Son dos copias que hoy NADIE sincroniza: la función que las uniría
+ * (`configuracionParaFlujo`) existe y está desplegada, pero ningún flujo la
+ * llama todavía.
+ *
+ * Mientras eso siga así, esta lista tiene que estar a la vista. El problema no
+ * es que falten funciones —eso se entiende y se planifica—; el problema sería
+ * que la pantalla diga que funcionan. Alguien podría poner «anticipación mínima
+ * 120 minutos», verlo guardado, y recibir igual una cita para dentro de dos
+ * minutos, que es exactamente lo que el texto de ayuda de esa casilla promete
+ * evitar.
+ *
+ * BORRAR DE ACÁ CADA CAMPO EN CUANTO EL FLUJO LO LEA. Una advertencia que
+ * sobrevive a su motivo enseña a ignorar las advertencias.
+ */
+const AUN_NO_LLEGAN = new Set([
+  'duracionPorDefectoMin', 'anticipacionMinimaMin', 'anticipacionMaximaDias',
+  'horasRecordatorio', 'permitirCancelacion',
+  'pedidoMinimo', 'radioEntregaKm', 'aceptaDelivery', 'aceptaRetiroEnLocal',
+  'tiempoCocinaMin', 'tiempoDespachoMin',
+]);
+
 export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string; vertical: string }) {
   const definicion = CAMPOS[vertical];
   const [datos, setDatos] = useState<Record<string, unknown>>({});
@@ -97,6 +122,11 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
         {definicion.campos.map((c) => (
           <label key={c.clave}>
             {c.etiqueta}
+            {AUN_NO_LLEGAN.has(c.clave) && (
+              <span className="pendiente" title="Se guarda, pero el asistente todavía no lo usa">
+                todavía no llega al asistente
+              </span>
+            )}
             {c.tipo === 'booleano' ? (
               <input type="checkbox" checked={datos[c.clave] === true}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.checked })} />

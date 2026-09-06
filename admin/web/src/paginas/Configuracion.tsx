@@ -83,9 +83,18 @@ export function Configuracion() {
     </label>
   );
 
+  // Ver la nota de `AUN_NO_LLEGAN` en ConfiguracionVertical.tsx: la consola y el
+  // flujo tienen hoy dos copias de la configuración y nadie las sincroniza.
+  const SIN_LLEGAR = new Set(['descripcion', 'instruccionesExtra']);
+
   const campo = (clave: string, etiqueta: string, multilinea = false) => (
     <label>
       {etiqueta}
+      {SIN_LLEGAR.has(clave) && (
+        <span className="pendiente" title="Se guarda, pero el asistente todavía no lo usa">
+          todavía no llega al asistente
+        </span>
+      )}
       {multilinea
         ? <textarea
             value={datos[clave] ?? ''}
