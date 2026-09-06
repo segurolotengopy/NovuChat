@@ -1531,6 +1531,109 @@ describe('Agenda: candado contra la doble reserva', () => {
 // ===========================================================================
 // 21. VERTICALES: cada comercio solo escribe lo suyo
 // ===========================================================================
+describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
+  // Política registrada el 2026-09-06 (DISENO.md §4sexies): un negocio tiene
+  // uno o más flujos, y cada flujo habilita SU documento de configuración y SU
+  // pestaña en la consola. `vertical` (valor único) queda como principal y
+  // como respaldo para las fichas viejas.
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+  const funcionario = (uid: string) => ({
+    nombre: 'Ana', especialidad: '', calendarioId: '', horarioTrabajo: {},
+    servicios: [], activo: true, ...sello(uid),
+  });
+  const conFlujos = (t: string, flujos: string[], vertical = 'agendamiento') =>
+    entorno.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'tenants', t), { nombre: t, estado: 'activo', plan: 'basico', vertical, flujos });
+      // Los documentos de configuración los crea el alta (SDK Admin), nunca el
+      // navegador: la regla tiene `allow create: if false`.
+      for (const f of flujos) {
+        await setDoc(doc(db, `tenants/${t}/config/${f}`),
+          { actualizadoPor: 'seed', actualizadoEn: Timestamp.now() }, { merge: true });
+      }
+    });
+
+  it('con reservas Y pedidos, el administrador edita las DOS configuraciones', async () => {
+    await conFlujos(A, ['agendamiento', 'venta']);
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { duracionPorDefectoMin: 45, ...sello('u-admin-a') }));
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/venta`),
+      { costoDelivery: 12, ...sello('u-admin-a') }));
+  });
+
+  it('con reservas Y pedidos, también carga funcionarios: tiene agenda', async () => {
+    await conFlujos(A, ['agendamiento', 'venta']);
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f-multi`),
+      funcionario('u-admin-a')));
+  });
+
+  it('la lista MANDA sobre el valor viejo: vertical=agendamiento con flujos=[venta] no tiene agenda', async () => {
+    // Es la trampa que la política cierra: si el valor viejo abriera la puerta,
+    // quitarle un flujo a un negocio no le quitaría nada.
+    await conFlujos(A, ['venta'], 'agendamiento');
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/funcionarios/f-x`),
+      funcionario('u-admin-a')));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { duracionPorDefectoMin: 45, ...sello('u-admin-a') }));
+    // Y lo de venta sí, aunque `vertical` diga otra cosa.
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/venta`),
+      { costoDelivery: 12, ...sello('u-admin-a') }));
+  });
+
+  it('una ficha SIN lista se sigue leyendo por el valor: lo ya cargado no cambia', async () => {
+    // B viene de la semilla con `vertical: 'venta'` y sin `flujos`.
+    await assertSucceeds(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { costoDelivery: 12, ...sello('u-admin-b') }));
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/funcionarios/f-x`),
+      funcionario('u-admin-b')));
+  });
+
+  it('un flujo que no está en la lista no abre nada, aunque exista su documento', async () => {
+    await conFlujos(A, ['agendamiento']);
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/config/venta`),
+        { costoDelivery: 1, actualizadoPor: 'seed', actualizadoEn: Timestamp.now() });
+    });
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/venta`),
+      { costoDelivery: 12, ...sello('u-admin-a') }));
+  });
+});
+
+describe('Catálogo: servicios y productos, común a todos los flujos', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+
+  it('un ítem sembrado con área se puede dar de baja desde la consola', async () => {
+    // Antes fallaba: la lista blanca evalúa el documento RESULTANTE, y `area`
+    // —que la semilla y el flujo de venta usan— no estaba en ella. Un
+    // restaurante no podía sacar un plato de la carta.
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/catalogo/con-area`), {
+        nombre: 'Salchipapa', area: 'gastronomia', precio: 20, moneda: 'BOB',
+        activo: true, actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+      });
+    });
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/catalogo/con-area`),
+      { activo: false, ...sello('u-admin-a') }));
+  });
+
+  it('el administrador crea un ítem con área y precio, y el área tiene tope', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/catalogo/nuevo`), {
+      nombre: 'Corte y lavado', area: 'belleza', precio: 60, moneda: 'BOB',
+      duracionMin: 45, activo: true, ...sello('u-admin-a'),
+    }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/nuevo2`), {
+      nombre: 'X', area: 'a'.repeat(41), precio: 60, moneda: 'BOB',
+      activo: true, ...sello('u-admin-a'),
+    }));
+  });
+
+  it('el operador lee el catálogo pero no lo escribe', async () => {
+    await assertSucceeds(getDoc(doc(operA(), `tenants/${A}/catalogo/item1`)));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/catalogo/item1`),
+      { activo: false, ...sello('u-oper-a') }));
+  });
+});
+
 describe('Configuración por vertical', () => {
   const cfgAgenda = (uid: string) => ({
     duracionPorDefectoMin: 45, anticipacionMinimaMin: 120,

@@ -195,6 +195,7 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
     estado,
     plan: estado === 'activo' ? 'basico' : 'basico',
     vertical,
+    flujos: [vertical],
     waPhoneNumberId: pnid,
     waWabaId: '100000000000001',
     creadoEn: dias(-90),

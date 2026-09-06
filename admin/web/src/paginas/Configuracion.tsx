@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
-import { ConfiguracionVertical } from './ConfiguracionVertical';
+import { useFlujos } from '../lib/flujos';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -21,16 +21,11 @@ const TOPES: Record<string, number> = {
 
 export function Configuracion() {
   const { tenantId = '' } = useParams();
-  // El vertical sale de la ficha del comercio, que el comercio no escribe.
-  const [vertical, setVertical] = useState('');
+  // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
+  // vive en su pestaña («Agenda», «Pedidos y cobro»): ver lib/flujos.ts.
+  const conAgenda = (useFlujos(tenantId) ?? []).includes('agendamiento');
   const [datos, setDatos] = useState<Record<string, string>>({});
   const [estado, setEstado] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!tenantId) return;
-    return onSnapshot(doc(db, 'tenants', tenantId),
-      (d) => setVertical(String(d.get('vertical') ?? '')));
-  }, [tenantId]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -115,7 +110,10 @@ export function Configuracion() {
         </p>
 
         {campo('numeroRecepcion', 'Número de recepción (sin +, solo dígitos)')}
-        {campo('calendarioId', 'ID del calendario de Google')}
+        {/* El calendario del negocio vive en el documento común por historia
+            (el flujo de citas lo lee de acá), pero solo tiene sentido con
+            reservas: a un restaurante no se le pide una agenda. */}
+        {conAgenda && campo('calendarioId', 'ID del calendario de Google (agenda del negocio)')}
         {campo('politicaCancelacion', 'Política de cancelación', true)}
 
         <h3>Voz del asistente</h3>
@@ -154,11 +152,6 @@ export function Configuracion() {
         <button type="submit">Guardar</button>
       </form>
       {estado && <p role="status">{estado}</p>}
-
-      {/* Solo lo del rubro de ESTE comercio. La pantalla no ofrece la puerta,
-          y las reglas además la cierran: un comercio de gastronomía no puede
-          escribir configuración de agenda ni aunque construya la petición. */}
-      <ConfiguracionVertical tenantId={tenantId} vertical={vertical} />
     </section>
   );
 }

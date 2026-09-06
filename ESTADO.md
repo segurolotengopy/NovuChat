@@ -21,7 +21,10 @@ en cero para que se llenen con lo que se haga en el ensayo.
 - **La consola** está en `consola.novuchat.site`, con el ingreso del comercio
   por delante, «Mi cuenta» para cambiar la contraseña, y ofreciendo solo lo que
   el flujo de verdad lee. Doce campos salieron de la interfaz y quedaron
-  anotados como deuda (ver «Deuda: campos quitados de la consola»).
+  anotados como deuda (ver «Deuda: campos quitados de la consola»). **Desde la
+  tarde del 6 sirve a los dos flujos**: pestañas por flujo («Agenda» con
+  reservas, «Pedidos y cobro» con venta), catálogo editable, y un negocio puede
+  tener varios flujos. Ver «Política de capas».
 - **La facturación** es por **conversación** (ventana fija de 24 h por
   teléfono), con el mismo vocabulario que `novuchat.site/precios`. Los cierres
   siguen registrándose como métrica de calidad, pero **ya no se facturan**.
@@ -316,6 +319,7 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Cliente OAuth de n8n | Propio, separado del de Firebase | 06/09 |
 | Campos de la consola sin lector en el flujo | Se quitan de la interfaz y se anotan como deuda; no se muestran «pendientes» | 06/09 |
 | Rediseño de la consola con el diseño de `novuchat.site` | Se hace DESPUÉS de las observaciones de Andres | 05/09 |
+| Política de capas | Flujos / consola / usuarios; lo común una vez, lo propio por flujo con su pestaña; un negocio tiene varios flujos (`flujos: [...]`) | 06/09 |
 
 ## Decisiones pendientes
 
@@ -886,6 +890,44 @@ golpes».
   con «cómo piensa el asistente», el del empleado sin lo del dueño, ninguno con
   lo del equipo de NovuChat, y el cambio de contraseña explicado por «Mi
   cuenta» y el correo automático. Esperan al rediseño.
+
+### Política de capas: flujos, consola y usuarios (06/09, tarde)
+
+Andres la fijó como política del producto: **FLUJOS** (n8n), **CONSOLA** y
+**USUARIOS** (negocios). Lo común no se repite por flujo; lo propio de cada
+flujo es excluyente y trae su pestaña; un negocio tiene uno o más flujos. Quedó
+escrita con su lista de control en `admin/DISENO.md` §4sexies.0 y como regla en
+`CLAUDE.md`.
+
+Lo que se encontró al revisarla contra el código, y se corrigió el mismo día:
+
+- **Un negocio tenía UN solo flujo.** `vertical` era un valor único y
+  `asignarNumero` lo sobreescribía. Ahora la ficha lleva `flujos: [...]`; las
+  reglas leen la lista (`flujosTenant`, `tieneFlujo`) y caen en `vertical` solo
+  si la lista no existe, así nada de lo ya cargado cambia. **Cuando están las
+  dos, manda la lista** (probado saboteando la regla: las dos pruebas clave
+  fallan si se ignora).
+- **Las pestañas no seguían al flujo.** «Funcionarios» se ofrecía a todo
+  administrador, incluso al de un restaurante, y el servidor le rechazaba el
+  alta. Ahora `web/src/lib/flujos.ts` es el registro: «Agenda» solo con
+  reservas, «Pedidos y cobro» solo con venta, y la etiqueta del catálogo dice
+  «Servicios», «Productos» o «Catálogo» según los flujos.
+- **No había pantalla de catálogo.** Servicios y productos solo entraban por
+  script. Ahora hay `Catalogo.tsx` (alta, baja lógica, área, precio, duración
+  solo con agenda). Se agregó `area` a la lista blanca: sin eso un ítem
+  sembrado con área no se podía ni dar de baja, porque la lista evalúa el
+  documento resultante.
+- **El alta no creaba el documento del flujo.** Las reglas prohíben crearlo
+  desde el navegador, así que un negocio nuevo de venta nunca iba a poder
+  guardar su pestaña. `altaTenant` y `asignarNumero` lo crean ahora.
+- **El QR** sigue siendo de NovuChat (prohibición 3) y la pestaña de cobro lo
+  muestra como «Cargado» o «Sin QR», con la explicación.
+- Suite: **257 pruebas** (eran 249).
+
+**Lo que la política deja pendiente**, a propósito: dos flujos en un mismo
+número (haría falta un enrutador); el QR propio del negocio con cobro real;
+y la deuda de conectar los flujos a `configuracionFlujo`, que sigue siendo la
+misma.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 

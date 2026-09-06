@@ -68,6 +68,13 @@ WhatsApp (Meta Cloud API)
   no disperso por el lienzo. Es lo que sostiene la promesa de instalar un
   cliente nuevo en 48 horas.
 - **Nodos Code en JavaScript**: la imagen de n8n desplegada no trae Python.
+- **Cada flujo nuevo se revisa contra la política de capas** de
+  `admin/DISENO.md` §4sexies: lo común (identidad, horarios, voz, catálogo,
+  usuarios) no se repite por flujo; lo propio de un flujo (agendas, QR, costos
+  de entrega) es excluyente y trae su documento `/config/{flujo}`, su línea en
+  la tabla de capacidades de las reglas y su pestaña en `web/src/lib/flujos.ts`.
+  Un negocio tiene uno o más flujos (`tenants/{id}.flujos`), y la consola
+  habilita pestañas por flujo. Nunca una consola que solo sirve a un flujo.
 
 ## Flujo de trabajo
 

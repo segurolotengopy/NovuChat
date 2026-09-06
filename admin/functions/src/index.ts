@@ -14,6 +14,7 @@ export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './cierres.js';
 
 import { registrar } from './ingesta.js';
+import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 
 const db = () => getFirestore();
@@ -79,8 +80,17 @@ export const altaTenant = onCall(async (peticion) => {
   const tenantId = texto(datos['tenantId'], 60).toLowerCase();
   const nombre = texto(datos['nombre'], 80);
   const correoAdmin = texto(datos['correoAdmin'], 254);
-  const vertical = VERTICALES.has(texto(datos['vertical'], 30))
-    ? texto(datos['vertical'], 30) : 'agendamiento';
+  // FLUJOS: una lista, no un valor. Un negocio puede tener reservas Y pedidos.
+  // `vertical` queda como el flujo principal (el primero) y como respaldo para
+  // todo lo que todavía lee el valor único. Ver DISENO.md §4sexies.
+  const flujosPedidos = Array.isArray(datos['flujos'])
+    ? (datos['flujos'] as unknown[]).map((f) => texto(f, 30)).filter((f) => VERTICALES.has(f))
+    : [];
+  const verticalPedido = texto(datos['vertical'], 30);
+  const flujos = flujosPedidos.length > 0
+    ? [...new Set(flujosPedidos)]
+    : [VERTICALES.has(verticalPedido) ? verticalPedido : 'agendamiento'];
+  const vertical = flujos[0] as string;
   if (!ID_TENANT.test(tenantId) || !nombre || !correoAdmin) {
     throw new HttpsError('invalid-argument', 'Datos incompletos.');
   }
@@ -101,7 +111,7 @@ export const altaTenant = onCall(async (peticion) => {
 
   const lote = db().batch();
   lote.create(ref, {
-    nombre, estado: 'activo', plan: 'basico', vertical,
+    nombre, estado: 'activo', plan: 'basico', vertical, flujos,
     // El número de WhatsApp se asigna aparte, con `asignarNumero`: exige
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,
@@ -114,6 +124,17 @@ export const altaTenant = onCall(async (peticion) => {
     actualizadoPor: uid,
     actualizadoEn: Timestamp.now(),
   });
+  // El documento de configuración de CADA flujo nace acá, vacío. Las reglas
+  // no dejan que el navegador lo cree (`allow create: if false`), así que si
+  // el alta no lo crea, la pestaña del flujo no puede guardar nunca. Faltaba.
+  for (const flujo of flujos) {
+    const documento = documentoDeVertical(flujo);
+    if (documento) {
+      lote.create(db().doc(`tenants/${tenantId}/config/${documento}`), {
+        actualizadoPor: uid, actualizadoEn: Timestamp.now(),
+      });
+    }
+  }
   lote.create(db().doc(`tenants/${tenantId}/miembros/${usuarioAdmin.uid}`), {
     correo: correoAdmin, rol: 'admin', estado: 'activo', desde: Timestamp.now(),
   });
@@ -301,12 +322,29 @@ export const asignarNumero = onCall(async (peticion) => {
     const tenant = await tx.get(db().doc(`tenants/${tenantId}`));
     if (!tenant.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
 
+    // Asignar un número con un flujo SUMA ese flujo al negocio; no reemplaza
+    // los que ya tenía. Antes se sobreescribía `vertical`, y un negocio con
+    // reservas y pedidos cambiaba de consola cada vez que se le asignaba un
+    // número. Y el documento de configuración del flujo nuevo se crea si no
+    // estaba: el navegador no puede crearlo. (Lecturas antes que escrituras:
+    // es lo que exige la transacción.)
+    const documento = documentoDeVertical(flujo);
+    const refConfig = documento ? db().doc(`tenants/${tenantId}/config/${documento}`) : null;
+    const config = refConfig ? await tx.get(refConfig) : null;
+
     tx.set(ref, {
       tenantId, flujo, wabaId,
       estado: tenant.get('estado') ?? 'activo',
       asignadoEn: Timestamp.now(), asignadoPor: uid,
     });
-    tx.update(tenant.ref, { waPhoneNumberId: phoneNumberId, waWabaId: wabaId, vertical: flujo });
+    tx.update(tenant.ref, {
+      waPhoneNumberId: phoneNumberId, waWabaId: wabaId,
+      vertical: tenant.get('vertical') ?? flujo,
+      flujos: FieldValue.arrayUnion(flujo),
+    });
+    if (refConfig && config && !config.exists) {
+      tx.set(refConfig, { actualizadoPor: uid, actualizadoEn: Timestamp.now() });
+    }
   });
 
   await auditar(tenantId, 'asignar_numero', uid, { phoneNumberId, wabaId, flujo });
