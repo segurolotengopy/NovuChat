@@ -14,6 +14,7 @@ import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
 import { Tablero } from './paginas/Tablero';
+import { MiCuenta } from './paginas/MiCuenta';
 
 /**
  * Menú, filtrado por rol.
@@ -59,6 +60,7 @@ function Cabecera() {
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/bitacora`}>Bitácora</Link>}
       </nav>
+      <Link to="/mi-cuenta">Mi cuenta</Link>
       <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
     </header>
   );
@@ -106,6 +108,11 @@ export function App() {
       <Routes>
         <Route path="/ingresar" element={<Entrada />} />
         <Route path="/" element={<Proteger><Inicio /></Proteger>} />
+        {/* Mi cuenta la ve CUALQUIERA que haya entrado, sin importar el rol ni
+            si tiene un negocio asociado: hasta quien todavía no fue vinculado
+            necesita poder cambiar su contraseña. */}
+        <Route path="/mi-cuenta" element={
+          <Proteger><><Cabecera /><MiCuenta /></></Proteger>} />
         <Route path="/negocios" element={
           <Proteger requiere="propietario"><><Cabecera /><Tenants /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
