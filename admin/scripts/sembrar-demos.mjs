@@ -157,10 +157,16 @@ const COMERCIOS = [
     // Dos áreas con calendario propio. NO son personas: hoy el demo reparte por
     // área, no por profesional. Se cargan con su nombre real para no sugerir un
     // equipo que no existe.
+    // DOS PERSONAS PARA LOS MISMOS SERVICIOS, cada una con su agenda. Es el
+    // caso que hace verdadera la promesa del plan Crecimiento y el único que
+    // demuestra que dos clientes no pueden quedar citados a la misma hora con
+    // la misma persona: con una sola agenda por área eso no se puede mostrar.
     funcionarios: [
-      { id: 'area-belleza', nombre: 'Área de Belleza', especialidad: 'Peluquería y estética',
+      { id: 'maria', nombre: 'María', especialidad: 'Peluquería y estética',
         marcador: 'REEMPLAZAR_CALENDARIO_BELLEZA', servicios: ['manicure', 'pedicure', 'corte', 'limpieza-facial'] },
-      { id: 'area-odontologia', nombre: 'Área de Odontología', especialidad: 'Odontología',
+      { id: 'jose', nombre: 'José', especialidad: 'Peluquería y estética',
+        marcador: 'REEMPLAZAR_CALENDARIO_BELLEZA_2', servicios: ['manicure', 'pedicure', 'corte', 'limpieza-facial'] },
+      { id: 'odontologia', nombre: 'Consultorio odontológico', especialidad: 'Odontología',
         marcador: 'REEMPLAZAR_CALENDARIO_ODONTOLOGIA', servicios: ['odontologia-general', 'ortodoncia', 'cirugia-maxilofacial', 'diagnostico'] },
     ],
   },
@@ -322,6 +328,18 @@ for (const c of COMERCIOS) {
 
   for (const item of c.catalogo) {
     await db.doc(`tenants/${c.id}/catalogo/${idDe(item.nombre)}`).set({ ...item, ...sello }, { merge: true });
+  }
+
+  // LOS QUE YA NO ESTAN EN LA LISTA SE VAN. El sembrador escribe por
+  // identificador fijo, asi que sin esto un funcionario renombrado queda
+  // DUPLICADO: el viejo y el nuevo conviviendo, los dos activos, los dos
+  // ofrecidos al cliente. Paso al pasar de «Área de Belleza» a María y José.
+  const vigentes = new Set(c.funcionarios.map((f) => f.id));
+  for (const d of (await db.collection(`tenants/${c.id}/funcionarios`).get()).docs) {
+    if (vigentes.has(d.id)) continue;
+    await d.ref.collection('privado').doc('datos').delete().catch(() => {});
+    await d.ref.delete();
+    console.log(`      − funcionario retirado: ${d.id}`);
   }
 
   for (const f of c.funcionarios) {

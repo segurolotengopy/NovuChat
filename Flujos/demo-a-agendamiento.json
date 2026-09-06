@@ -172,7 +172,7 @@
               "id": "fn1",
               "name": "funcionarios",
               "type": "string",
-              "value": "[{\"nombre\": \"Área de Belleza\", \"servicios\": [\"manicure\", \"pedicure\", \"corte\", \"limpieza facial\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_BELLEZA\"}, {\"nombre\": \"Área de Odontología\", \"servicios\": [\"odontologia general\", \"ortodoncia\", \"cirugia maxilofacial\", \"diagnostico\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\"}]"
+              "value": "[{\"nombre\": \"María\", \"servicios\": [\"manicure\", \"pedicure\", \"corte\", \"limpieza facial\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_BELLEZA\"}, {\"nombre\": \"José\", \"servicios\": [\"manicure\", \"pedicure\", \"corte\", \"limpieza facial\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_BELLEZA_2\"}, {\"nombre\": \"Consultorio odontológico\", \"servicios\": [\"odontologia general\", \"ortodoncia\", \"cirugia maxilofacial\", \"diagnostico\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\"}]"
             }
           ]
         },
