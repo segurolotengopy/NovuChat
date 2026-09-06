@@ -151,10 +151,7 @@ export function Ingresar() {
 
       {modo === 'novuchat' ? (
         <section className="interno">
-          <p className="text-muted">
-            Acceso del equipo de NovuChat. Solo con cuenta de Google: no hay
-            contraseña que robar y el segundo factor lo administra Google.
-          </p>
+          <p className="text-muted">Acceso del equipo de NovuChat.</p>
           <button type="button" className="btn btn-secondary" onClick={conGoogle} disabled={ocupado}>
             Continuar con Google
           </button>
