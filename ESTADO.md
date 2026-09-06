@@ -4,11 +4,40 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-01 (contadores de la oferta comercial)
+**Última actualización:** 2026-09-06 (cierre del día antes del ensayo)
 
 ---
 
-## Dónde estamos
+## Dónde estamos (2026-09-06)
+
+**Listo para el ensayo del 7.** `main` en 101 commits, árbol limpio, saneo en
+cero. 249 pruebas en verde, 18 Functions activas, contadores de los dos demos
+en cero para que se llenen con lo que se haga en el ensayo.
+
+- **Los tres flujos** (Demo A, Demo B, recordatorios) corren contra WhatsApp
+  real con `models/gemini-3.5-flash-lite`. El circuito comercial se verificó de
+  punta a punta en los dos demos: conversación → resultado verificable → cierre
+  con teléfono enmascarado → contador → pantalla de consumo.
+- **La consola** está en `consola.novuchat.site`, con el ingreso del comercio
+  por delante, «Mi cuenta» para cambiar la contraseña, y ofreciendo solo lo que
+  el flujo de verdad lee. Doce campos salieron de la interfaz y quedaron
+  anotados como deuda (ver «Deuda: campos quitados de la consola»).
+- **La facturación** es por **conversación** (ventana fija de 24 h por
+  teléfono), con el mismo vocabulario que `novuchat.site/precios`. Los cierres
+  siguen registrándose como métrica de calidad, pero **ya no se facturan**.
+- **Dos pendientes que solo se prueban usándolos en el ensayo:** el recordatorio
+  automático de las 17:00 con una cita nueva (el único eslabón que nunca se vio
+  correr solo) y el pedido del Demo B con comprobante, que ahora acepta foto o
+  archivo.
+- **Se espera a Andres** para dos trabajos: las observaciones sobre la consola
+  antes de rehacerla con el diseño de `novuchat.site`, y los tres manuales en
+  PDF que dependen de ese rediseño.
+
+El detalle de todo lo que cambió está en «Del 1 al 6 de septiembre», más abajo.
+
+---
+
+## Dónde estábamos el 29 de agosto (latencia del Demo A)
 
 **Demo A (Agendamiento — Belleza y Salud): REIMPORTADO, PUBLICADO Y MEDIDO
 POR PRIMERA VEZ.**
@@ -278,14 +307,28 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Visibilidad del repositorio | Público, con saneo por marcadores | 28/08 |
 | Fuente de verdad de los flujos | Los JSON de `Flujos/`; `build_flows.py` retirado | 28/08 |
 | Alcance del panel admin | Pista paralela, no bloquea las demos | 28/08 |
+| Proyecto Firebase de la consola | Un solo proyecto real de Andres, en us-east1; los `novuchat-admin-*` no se crearon | 02/09 |
+| Trato en la consola y los flujos | Tuteo, nunca voseo | 01/09 |
+| Unidad de cobro | **Conversación**: ventana fija de 24 h por teléfono desde la primera consulta no cortés. Cierres = métrica de calidad, no se facturan | 06/09 |
+| Modelo de los demos | `gemini-3.5-flash-lite` en los dos flujos (Flash perdía 144 Bs/mes en el plan Pro) | 06/09 |
+| Agendas por funcionario | Cada funcionario con su calendario; resolución funcionario → área → defecto | 06/09 |
+| Calendarios de un negocio | Todos de UNA cuenta de Google; se verifica en el alta | 06/09 |
+| Cliente OAuth de n8n | Propio, separado del de Firebase | 06/09 |
+| Campos de la consola sin lector en el flujo | Se quitan de la interfaz y se anotan como deuda; no se muestran «pendientes» | 06/09 |
+| Rediseño de la consola con el diseño de `novuchat.site` | Se hace DESPUÉS de las observaciones de Andres | 05/09 |
 
 ## Decisiones pendientes
 
-- **Proyecto Firebase del panel.** Recomendación del agente de arquitectura:
-  dos proyectos nuevos y dedicados, `novuchat-admin-dev` y `-prod`, dejando el
-  proyecto de demos como está. El argumento decisivo es que el proyecto de
-  demos ya emitió credenciales que hoy viven en la VM de OCI, una máquina con
-  co-inquilinos. **Falta la decisión de Andres.**
+- ~~**Proyecto Firebase del panel.**~~ Resuelto el 02/09: un proyecto real,
+  us-east1 (ver «Decisiones tomadas»).
+- **Observaciones de Andres sobre la consola**, antes de rehacerla con los
+  tokens de `novuchat.site` (fondo `#f7f3ec`, superficie `#fff`, texto
+  `#1c211f`, acento `#2f3a44`, acento 2 `#12c489`, Archivo 800 en títulos,
+  radios 8/16/28). Hoy la consola lleva el sistema «Modernist» importado de
+  Claude Design, que es provisional.
+- **Retención del secreto OAuth viejo.** Se creó un client secret nuevo el 06/09
+  y hay que borrar el anterior en la consola de Google una vez confirmado que
+  nada lo usa.
 - **Política de retención de conversaciones.** Hay que decidirla antes del
   primer cliente real: son datos personales de terceros que nunca consintieron
   nada ante NovuChat.
@@ -492,6 +535,12 @@ cliente. Modo `texto` o `plantilla`, conmutable desde configuración.
 Pendiente: cargar en GitHub los secretos y variables de
 `.github/DESPLIEGUE-FIREBASE.md` §5 cuando exista el remoto.
 
+**Superado el 2026-09-02:** esos dos proyectos nunca llegaron a existir. La
+consola vive en UN proyecto real de Andres, en **us-east1** (su región estándar;
+nada de regiones sudamericanas), cuyo identificador está en
+`CONFIGURACION.local.md` y en `admin/.firebaserc` (ignorados). Ver «Del 1 al 6
+de septiembre».
+
 ## Hallazgos del chat de prueba de Silvana (2026-08-29, 19:59–20:04)
 
 1. **EL AGENTE INVENTÓ UNA DIRECCIÓN.** Ante "¿dónde queda su clínica?"
@@ -646,26 +695,240 @@ probó contra n8n, Firestore real ni un teléfono. Falta desplegar las Functions
 mandar un mensaje de verdad y comprobar en el panel que la atención aparezca una
 sola vez y la interacción recién en la segunda respuesta.
 
+**Verificado el 2026-09-02 y de nuevo el 2026-09-06** con teléfono real en los
+dos demos. Ojo: la definición de las cifras cambió después de escribir esto —la
+versión vigente está en «Del 1 al 6 de septiembre → Facturación».
+
+## Del 1 al 6 de septiembre — lo que cambió
+
+Seis días, PRs #20 a #28 fusionados (#27 cerrado, superado por #28). Lo que
+sigue está agrupado por tema, no por fecha; lo del **6 de septiembre** va
+marcado.
+
+### Plataforma (Firebase)
+
+- **Un proyecto real, en us-east1.** Firestore `(default)`, 18 Cloud Functions
+  gen2 con la región en una sola constante (`functions/src/region.ts`), Hosting
+  en `consola.novuchat.site` (dominio propio agregado el 04/09) y App Check con
+  reCAPTCHA Enterprise, con los dos dominios registrados.
+- **Tres superadministradores** dados de alta con `scripts/superadmin.mjs`
+  (Andres, Silvana y la cuenta de NovuChat). Entran solo con Google.
+- **Datos reales sembrados** con `scripts/sembrar-demos.mjs`: los dos negocios
+  de los demos con su catálogo, horarios y funcionarios, y usuarios de prueba
+  por rol con `scripts/usuarios-prueba.mjs`.
+- **Tres defectos de despliegue que costaron horas:** `firebase deploy` subía
+  un `lib/` viejo (ahora hay `predeploy` que compila); el CSP apuntaba a
+  proyectos que no existían y la COOP rompía la ventana de Google (arreglado en
+  tres pasadas, después de dar por bueno algo que no lo estaba); y un
+  `createCustomToken` muerto en la ingesta devolvía 500 en CADA mensaje.
+
+### Consola
+
+- **Sistema de diseño «Modernist»** importado completo desde Claude Design
+  (`web/src/diseno.css`, Archivo alojada en `web/public/fuentes/`, tema
+  `[data-tema="oscuro"]` disponible pero no obligatorio). Es provisional: el
+  definitivo sigue a `novuchat.site` y espera observaciones.
+- **Todo el trato pasó a tuteo.** El voseo se coló varias veces en textos
+  nuevos (manual, prompts, «Mi cuenta») y se barrió con una expresión regular
+  cada vez; conviene volver a pasarla antes de publicar cualquier texto.
+- **Tablero por rol** (`Tablero.tsx`): NovuChat ve la cartera y lo que NO ve por
+  regla; el comercio ve hoy, su catálogo y su cuenta.
+- **«Consumo»** (antes «Cierres», `/consumo`, con redirecciones desde
+  `/cierres` y `/uso`) muestra conversaciones, atenciones, interacciones y
+  cierres del período. El superadministrador ve el resumen sin el teléfono
+  completo ni el contenido: lo impiden las reglas, no la pantalla.
+- **Ingreso** (`Ingresar.tsx`): el comercio no presiona nada, ve el formulario
+  directo. El acceso del equipo es un enlace discreto «Ingreso interno» que
+  recién ahí ofrece «Continuar con Google» (con selector de cuenta). Se quitó
+  la frase «Solo con cuenta de Google: no hay contraseña que robar…».
+- **«Mi cuenta»** (`/mi-cuenta`): cambio de contraseña desde adentro, mínimo 12
+  caracteres; si Firebase pide sesión reciente, se manda el enlace por correo en
+  vez de esconder el error. A las cuentas de Google se les dice que la
+  administra Google.
+- **Botón para reingresar** en las pantallas sin salida (`SinSalida.tsx`), por
+  ejemplo «Tu cuenta todavía no está asociada a ningún negocio».
+- **06/09 — se quitó lo que el flujo no lee** y se probó cada pantalla con la
+  consulta real que hace (12 pruebas nuevas, «Pantallas · la consulta real de
+  cada una», verificadas saboteando la regla). Detalle en la sección de deuda.
+- **La descripción del negocio SÍ llega al agente** desde el 06/09: es parte
+  del núcleo del producto, y quedó en el prompt del Demo A como «QUÉ ES EL
+  NEGOCIO».
+
+### Facturación: de «cierre» a «conversación», en cinco correcciones
+
+La definición se corrigió cinco veces entre el 01/09 y el 06/09, y cada una
+quedó en su PR. La vigente es la última:
+
+1. Atención = persona por mes (01/09, PR #21) →
+2. Atención = **inicio de flujo desde un teléfono**: tres consultas del mismo
+   teléfono son tres atenciones y una persona (01/09, #21 corregido) →
+3. Umbral de **2 horas**, y un «gracias» u «ok» después del recordatorio **no
+   abre** una atención (`esCortesia()`, 02/09, #24) →
+4. **Ventana FIJA de 24 h desde la primera interacción**, como la de WhatsApp:
+   mensajes a las 0, 20 y 25 horas son DOS atenciones (02/09, #25) →
+5. **06/09, #28 — la unidad que se cobra se llama CONVERSACIÓN**, igual que en
+   `novuchat.site/precios`. «Atención» pasa a ser la persona distinta. Los
+   cierres dejan de facturarse y quedan como métrica de calidad.
+
+Cómo queda en el código (`functions/src/ingesta.ts`):
+
+| Cifra | Campo | Regla |
+|---|---|---|
+| Conversaciones (se cobran) | `conversaciones` | Se abre con un mensaje entrante no cortés cuando no hay ventana abierta; ancla `atencionDesde`; `HORAS_VENTANA_ATENCION = 24`, fija |
+| Atenciones | `personasAtendidas` | Teléfonos distintos en el período |
+| Interacciones | `interacciones` | Conversaciones con ≥ 2 respuestas del asistente |
+| Cierres (calidad) | `cierres` | Solo con referencia externa verificable; ver abajo |
+
+- **Endpoint `/cierres`** (`functions/src/cierres.ts`): referencia obligatoria
+  (evento del calendario, mensaje del comprobante), identificador idempotente
+  `tipo_referencia` para que un reintento de n8n no cuente dos veces, tenant
+  tomado de la firma y nunca del cuerpo, y transacción única entre documento y
+  contador. Lo que NovuChat lee lleva el teléfono enmascarado; nombre, detalle
+  y teléfono completo van a `/privado/datos`, solo para el administrador.
+- **La ingesta autentica de verdad** con `rutaAutenticada()` (`firma.ts`),
+  acepta HMAC o token con o sin «Bearer», y los flujos le reportan **cada
+  mensaje**, entrante y saliente (02/09, #26).
+- **`bajaTenant`** ahora corta las rutas del negocio: un comercio dado de baja
+  seguía acumulando cierres (01/09, #23).
+- Suite: **249 pruebas** (eran 226), incluidas ventana de 24 h, cortesía,
+  cierres y las consultas reales de cada pantalla.
+
+### Flujos de n8n
+
+- **Cierres con prueba.** Demo A registra el cierre solo si la cita quedó en el
+  calendario (`¿Hay cita verificada?` → `Registrar cierre (cita)`); Demo B solo
+  si llegó un comprobante y la respuesta lleva «SIMULADO». Cada demo con la
+  credencial de SU número (`Cierres NovuChat A/B (auto)`, creadas por API desde
+  `.env` porque los valores pegados a mano no se podían verificar).
+- **`neverError` se quitó**: el nodo salía en verde con un 401. Y `.item` pasó a
+  `.first()` en las expresiones de cabecera.
+- **Demo B acepta el comprobante como imagen O documento** —llegó como
+  `document` en la prueba real— y lee `tipo`/`mensajeId` de `Normalizar
+  entrada`.
+- **Recordatorios**: plantilla `recordatorio_cita_manana` aprobada (es, 3
+  variables: nombre, servicio, hora), `modo: plantilla`, cron 17:00 La Paz,
+  activo. **Nunca se lo vio disparar solo**: probarlo en el ensayo con una cita
+  para el día siguiente.
+- **06/09 — modelo a `gemini-3.5-flash-lite`** en los dos flujos, por costo.
+  Margen mensual por plan, después del modelo (Bs; no incluye Meta):
+
+  | Modelo | Impulso 250 | Crecimiento 450 | Pro 850 |
+  |---|---|---|---|
+  | Gemini 3.1 Flash-Lite | +223 | +360 | +626 |
+  | **Gemini 3.5 Flash-Lite (elegido)** | +218 | +344 | +585 |
+  | Claude Haiku 4.5 con caché | +206 | +304 | +486 |
+  | Claude Sonnet 5 con caché | +150 | +116 | +15 |
+  | Gemini 3.5 Flash (el anterior) | +131 | +53 | **−144** |
+  | Sonnet 5 sin caché | +54 | −203 | −782 |
+
+  «Claude en producción» de `CLAUDE.md` sigue vigente como decisión, pero con
+  estos números es Haiku con caché, no Sonnet.
+- **06/09 — funcionarios con agenda propia.** `Config del negocio` lleva
+  `funcionarios` (`[{nombre, servicios, calendario}]`): **María** y **José**
+  para belleza, cada uno con su calendario, y el consultorio odontológico. El
+  calendario se resuelve funcionario → área → defecto en
+  `consultar_disponibilidad`, `agendar_cita` y `Calendarios a revisar`. El
+  prompt tiene el bloque «QUIÉN ATIENDE». **Lo que no hace todavía:** filtrar
+  por servicio o especialidad de cada persona; reparte por nombre.
+- **06/09 — el detector de confirmación** (`Procesar respuesta`) ya no depende
+  de cómo redacta el modelo: reconoce sustantivo + participio («Cita
+  confirmada»), tiene una guarda `NIEGA` («no se pudo…») y el prompt exige
+  «SI UNA HERRAMIENTA FALLA, NO INVENTES EL RESULTADO». Cadena verificada:
+  `agendar_cita ok · afirmaAgendo · reservaVerificada · cierre registrado`.
+- **`scripts/preparar-import.sh`** reemplazaba los marcadores en orden
+  alfabético, así que `REEMPLAZAR_CALENDARIO_BELLEZA` pisaba a
+  `..._BELLEZA_2` y José recibía el calendario de María. Ahora va del más largo
+  al más corto. **Regla:** todo marcador que sea prefijo de otro se rompe con
+  reemplazo ingenuo.
+- **`sembrar-demos.mjs`** dejaba funcionarios viejos (había 5, no 3): ahora
+  borra los que no están en la semilla.
+- Herramientas nuevas: `listar-plantillas.sh --detalle`,
+  `verificar-credencial-cierres.sh`, `ver-ejecuciones.sh --env`,
+  `probar-cierre.mjs`, `limpiar-cierres-de-prueba.mjs`.
+
+### Google OAuth del calendario (06/09)
+
+La cita con José falló con el flujo sano: el token de la credencial había
+caducado porque la pantalla de consentimiento estaba en «Prueba» (7 días).
+Después vino `invalid_client` y `access_denied`. Se resolvió publicando la app y
+creando un cliente OAuth propio para n8n, con el retorno de n8n autorizado; el
+cliente de Firebase queda solo para el ingreso a la consola. Las cuatro reglas
+que salieron de esto están en «Reglas de configuración que se aprendieron a los
+golpes».
+
+### CI y DevSecOps
+
+- PR #22: el paso que detecta cambios abortaba con `fatal: bad object` cuando
+  la cabeza no estaba en el clon; ahora se protege `GITHUB_SHA`.
+- CodeQL marcaba un `.includes` como falso positivo → `Set`.
+- `.claude/settings.json` quedó con una coma colgando al quitar `WebFetch` y era
+  JSON inválido.
+- **06/09 — CI rojo en #27 y #28.** Diagnóstico equivocado primero: se escribieron
+  seis excepciones para CVE de `tar` que Trivy **ni siquiera reportaba**. El
+  bloqueo real era `qs` (CVE-2026-82417/82562). La corrección de verdad:
+  `overrides: qs: ^6.16.0` en `admin/pnpm-workspace.yaml` —pnpm 11 ignora los
+  `overrides` de `package.json`— y las excepciones de `tar` retiradas. En
+  `.devsecops.yml` quedan solo la de `uuid` (CVE-2026-41907) y la de gitleaks.
+  **Regla:** leer el informe de Trivy antes de escribir una excepción; filtra
+  por identificador de CVE, no por paquete.
+
+### Documentos y prompts que quedaron escritos
+
+- `Preliminares/prompt-diseno-panel.md` — para pedir el diseño de la consola.
+- `Preliminares/prompt-landing-precisiones.md` — para la sesión de la landing:
+  corregir tres promesas de `/precios` (funcionarios por especialidad, variantes
+  y zonas de envío, «base de datos aislada») y aclarar en el glosario que lo
+  que se factura es la conversación. **Falta aplicarlo.**
+- `Preliminares/diseno-consola.html` — captura de `novuchat.site` que pasó
+  Andres (sin CSS; los tokens se tomaron del sitio vivo).
+- Manual de la consola, de una sola página, como artefacto de Claude. Andres
+  quiere **tres PDF separados** (superadmin, administrador, operador), cada uno
+  con «cómo piensa el asistente», el del empleado sin lo del dueño, ninguno con
+  lo del equipo de NovuChat, y el cambio de contraseña explicado por «Mi
+  cuenta» y el correo automático. Esperan al rediseño.
+
+### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
+
+- **Alta y administración de negocios por el equipo de NovuChat:** crear el
+  negocio con nombre, razón social, NIT, dueño y administrador con sus datos;
+  editarlo; asignarle período de prueba; crear administradores; asignarle un
+  plan como en `/precios`; ver y recargar el saldo de conversaciones; controlar
+  la mensualidad.
+- **Rol contador:** ingresa los depósitos por negocio (a cuántas mensualidades
+  corresponden, con descuento por pago adelantado); el superadministrador los
+  aprueba.
+- **Verificar que cada promesa de `/precios` sea factible o esté marcada
+  «próximamente»** (el prompt de la landing cubre las tres que no lo eran).
+- Google como método de ingreso para comercios (sección propia más arriba).
+- Conectar los flujos a `configuracionParaFlujo` y devolver los doce campos.
+- `firebase-tools` 15 (cierra seis avisos de Dependabot sobre `tar`, solo
+  desarrollo).
+
 ## Riesgos vivos para el 9–10 de septiembre
 
-- **Latencia del Demo A**: sigue siendo el pendiente número uno. Los ajustes
-  están aplicados pero **sin medir**. Si la ejecución de 48 s todavía figura
-  en n8n, abrirla y contar las iteraciones del agente cierra la pregunta en
-  dos minutos.
-- **Límite de portafolios de Meta**: son 2 por cuenta personal sin verificar.
-  Si ya están agotados, **la opción (a) del Demo B se cae** y hay que volver a
-  la mesa. Verificarlo antes de invertir las tres horas de trámites.
-- **`executionTimeout` de 60 s**: si vence, el cliente no recibe nada. Sesenta
-  segundos de silencio ante un prospecto son peores que una respuesta lenta:
-  el guion necesita una salida manual a los ~20 s.
-- **Agente sin herramientas en el Demo B**: algunas versiones de n8n exigen al
-  menos una para el *Tools Agent*. Si falla al importar, el reemplazo es un
-  *Basic LLM Chain* con la misma memoria, media hora.
+**Actualizado el 2026-09-06.** Los de la lista anterior (latencia, portafolios
+de Meta, agente sin herramientas, 503 de Gemini) quedaron resueltos.
+
+- **El recordatorio de las 17:00 nunca corrió solo.** Todo lo demás se vio
+  funcionar; esto se probó a mano. Si en el ensayo del 7 hay una cita para el
+  8, a las 17:00 tiene que llegar el mensaje. Si no llega, revisar la
+  ejecución con `ver-ejecuciones.sh --env` antes de tocar nada.
+- **Cambio de modelo = revisar detectores.** Ya pasó una vez en silencio. Si
+  alguien vuelve a Flash por latencia, hay que reprobar la cadena
+  `afirmaAgendo → reservaVerificada → cierre`.
+- **Credencial de Google Calendar.** La app ya está publicada, pero el ensayo
+  es la primera vez que va a pasar más de un día sin reconectarla. Si la cita
+  falla con el flujo verde, es la credencial: reconectar en n8n, no depurar el
+  flujo.
+- **`executionTimeout` de 60 s**: sigue vigente; el guion conserva la salida
+  manual a los ~20 s.
 - **Solo 5 destinatarios**: el guion contempla prestar un celular al público.
-- **503 de Gemini**: mitigado con reintentos; se cierra con facturación.
-- **Business Verification de AAB1**: no bloquea los demos, pero sin ella no
-  hay plantillas, así que **no se prometen recordatorios "24 h antes" en
-  vivo**.
+- **Congelamiento el 8.** Lo que no esté probado con teléfono real ese día no
+  entra. Incluye el rediseño de la consola y los manuales, que se posponen a
+  después de los demos si las observaciones no llegan a tiempo.
+- **Números de la consola en la demo.** Están en cero a propósito: se llenan
+  con el ensayo. Números chicos y coherentes convencen más que números grandes
+  que no cierran.
 
 ## Riesgos del repositorio público
 
@@ -685,14 +948,18 @@ sola vez y la interacción recién en la segunda respuesta.
 
 ## Próximos pasos
 
-1. Verificar el límite de portafolios de Meta. Cinco minutos, y condiciona
-   todo el Demo B.
-2. Reimportar el Demo A en n8n, publicar y **medir** con el protocolo de
-   `Analisis/04-latencia-demo-a.md`. Criterio: p50 ≤ 6 s, p90 ≤ 10 s.
-3. Decidir el proyecto Firebase del panel.
-4. Trámites de Meta del segundo número, en el orden de la guía. Los pasos 4
-   (publicar en Live) y 7 (`subscribed_apps`) fallan en silencio.
-5. Recorrer la suite A completa de `Demo-Recursos/checklist-ensayo.md`.
-6. Agregar al guion la salida manual a los ~20 s.
-7. Ensayo general 6–7/09 con Silvana; video de respaldo; Simulador al día.
-8. 8/09 congelamiento y exportación de flujos al repositorio.
+1. **07/09 — Ensayo con Silvana.** Suite A de `Demo-Recursos/checklist-ensayo.md`
+   completa, en los dos demos, con teléfono real. Dejar una cita agendada para
+   el 8 y verificar a las 17:00 que el recordatorio salga solo. Probar el pedido
+   del Demo B con comprobante como foto Y como archivo.
+2. **07/09 — Observaciones de Andres sobre la consola.** Con ellas se rehace
+   con el diseño de `novuchat.site` y recién después se hacen los tres PDF. Si
+   no llegan antes del 8, las dos cosas pasan a después de los demos.
+3. **08/09 — Congelamiento.** Exportar los tres flujos desde n8n y reemplazar
+   los JSON de `Flujos/`; confirmar que `main` es lo que corre; borrar el
+   secreto OAuth viejo si ya nada lo usa; video de respaldo.
+4. **09 y 10/09 — Demos.**
+5. **Después:** aplicar `prompt-landing-precisiones.md` en la landing;
+   alta/administración de negocios y rol contador; Google para comercios;
+   conectar `configuracionParaFlujo`; `firebase-tools` 15; sumar a Silvana como
+   revisora en GitHub (§4).
