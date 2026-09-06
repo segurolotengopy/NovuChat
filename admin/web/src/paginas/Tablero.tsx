@@ -121,7 +121,7 @@ function TableroNovuChat() {
             <Tarjeta
               key={n.id}
               titulo=""
-              pie={<Link to={`/negocio/${encodeURIComponent(n.id)}/cierres`}>Ver cierres</Link>}
+              pie={<Link to={`/negocio/${encodeURIComponent(n.id)}/consumo`}>Ver consumo</Link>}
             >
               <p className="card-title"><TextoSeguro valor={n.nombre} maxLargo={80} /></p>
               <p>

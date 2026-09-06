@@ -1732,9 +1732,17 @@ describe('Cierres', () => {
 });
 
 describe('Contadores de la oferta comercial', () => {
-  it('la ingesta escribe cierres, atenciones e interacciones', async () => {
+  it('la ingesta escribe conversaciones, cierres, atenciones e interacciones', async () => {
     await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
-      { cierres: 12, atenciones: 40, interacciones: 31, personasAtendidas: 38 }));
+      { conversaciones: 40, cierres: 12, interacciones: 31, personasAtendidas: 38 }));
+  });
+
+  it('sigue admitiendo el nombre viejo, para no romper los meses ya escritos', async () => {
+    // `atenciones` era como se llamaba lo que hoy es `conversaciones`. Los
+    // documentos escritos con ese nombre tienen que poder seguir existiendo:
+    // borrarles el campo seria perder el consumo de un mes.
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-08`),
+      { atenciones: 7 }));
   });
 
   it('sigue rechazando un campo inventado en la colección que factura', async () => {

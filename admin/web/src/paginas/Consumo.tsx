@@ -8,32 +8,33 @@ import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 
 /**
- * CIERRES — la pantalla de la oferta comercial.
+ * CONSUMO — lo que se factura, con el mismo vocabulario que la página de precios.
  *
  * =============================================================================
  * LAS TRES CIFRAS, con su definición exacta. Acá se factura, así que ninguna
  * puede quedar librada a interpretación.
  * =============================================================================
  *
- *   CIERRE       Una atención de WhatsApp que TERMINÓ BIEN y quedó registrada
- *                en algo verificable: una cita en el calendario, una venta con
- *                su comprobante recibido, una fila escrita en la planilla.
+ *   CONVERSACIÓN Todos los mensajes con un mismo cliente durante 24 horas
+ *                continuas, sin importar cuántos sean. ES LA UNIDAD QUE SE
+ *                FACTURA, y es la misma que usa Meta para cobrarnos a nosotros.
  *
- *                NO son cierres, y esto importa más que la definición positiva
- *                porque es lo que evita cobrar de más:
- *                  · mandar información y que el cliente no confirme nada;
- *                  · mandar el QR y que el cliente no pague;
- *                  · una conversación que quedó a medias, con datos incompletos.
- *                La regla práctica: si no hay un registro externo que lo pruebe,
- *                no es un cierre. Por eso cada cierre guarda su `referencia`, y
- *                las reglas rechazan uno que llegue sin ella.
+ *   ATENCIÓN     Una persona distinta atendida en el período. Si el mismo
+ *                cliente vuelve tres veces en el mes, son TRES conversaciones y
+ *                UNA atención. En el código se llama `personasAtendidas`.
  *
- *   ATENCIÓN     Una conversación iniciada con un cliente. Cuenta el arranque,
- *                haya terminado bien o no.
+ *   CIERRE       Una cita agendada o un pedido confirmado, con algo verificable
+ *                que lo pruebe. YA NO SE FACTURA: mide si el asistente está
+ *                vendiendo o solo respondiendo.
+ *
+ *                No cuentan como cierre mandar información que nadie confirmó,
+ *                mandar el QR sin que el cliente pague, ni una conversación que
+ *                quedó a medias. Cada cierre guarda su `referencia`, y las
+ *                reglas rechazan uno que llegue sin ella.
  *
  *   INTERACCIÓN  Una conversación en la que el cliente recibió MÁS DE UNA
- *                respuesta. Mide las que pasaron de un saludo suelto a un ida y
- *                vuelta de verdad.
+ *                respuesta. No está en la página de precios: es un indicador
+ *                interno para ver si la gente escribe y se va.
  *
  * Las tres se leen de un agregado por período que escribe la ruta de ingesta.
  * NADIE las escribe desde el navegador, ni el comercio ni NovuChat: la cifra
@@ -45,10 +46,17 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
 
 interface Periodo {
   id: string;
-  cierres?: number;
+  conversaciones?: number;
+  /** Nombre viejo del mismo número. Se lee para no perder los meses ya escritos. */
   atenciones?: number;
+  cierres?: number;
   interacciones?: number;
   personasAtendidas?: number;
+}
+
+/** Conversaciones del período, tolerando el nombre anterior. */
+function conversacionesDe(p: Periodo | undefined): number {
+  return p?.conversaciones ?? p?.atenciones ?? 0;
 }
 
 interface Cierre {
@@ -160,7 +168,7 @@ function DetalleCierres({ tenantId, cerrar }: { tenantId: string; cerrar: () => 
   );
 }
 
-export function Cierres() {
+export function Consumo() {
   const { tenantId = '' } = useParams();
   const { permisos } = useSesion();
   const [periodos, setPeriodos] = useState<Periodo[]>([]);
@@ -182,24 +190,30 @@ export function Cierres() {
   }, [tenantId, meses]);
 
   const actual = periodos[0];
+  const conversaciones = conversacionesDe(actual);
+  const atenciones = actual?.personasAtendidas ?? 0;
   const cierres = actual?.cierres ?? 0;
-  const atenciones = actual?.atenciones ?? 0;
-  const interacciones = actual?.interacciones ?? 0;
-  const tasa = porcentaje(cierres, atenciones);
+  const tasa = porcentaje(cierres, conversaciones);
 
   return (
     <section>
-      <h2>Cierres</h2>
+      <h2>Consumo</h2>
       {error && <p role="alert">{error}</p>}
 
       <div className="cuadricula">
         <article className="card elev-sm">
           <h3 className="card-kicker">Este mes</h3>
           <div className="datos">
-            <div className="dato"><strong>{cierres}</strong><span>cierres</span></div>
+            <div className="dato">
+              <strong>{conversaciones}</strong><span>conversaciones</span>
+            </div>
             <div className="dato"><strong>{atenciones}</strong><span>atenciones</span></div>
-            <div className="dato"><strong>{interacciones}</strong><span>interacciones</span></div>
+            <div className="dato"><strong>{cierres}</strong><span>cierres</span></div>
           </div>
+          <p className="text-muted">
+            <strong>Conversaciones</strong> es el número que se factura, y es el
+            mismo que ves acá y en tu plan.
+          </p>
           {tasa !== null && (
             <p className="text-muted">
               De cada 100 conversaciones, {tasa} terminaron en un cierre.
@@ -216,19 +230,20 @@ export function Cierres() {
           <h3 className="card-kicker">Qué cuenta cada número</h3>
           <div className="card-body">
             <p>
-              <strong>Cierre:</strong> una conversación que terminó en algo concreto
-              y verificable — una cita en el calendario, una venta con su
-              comprobante, un registro en la planilla. Es lo que se factura.
+              <strong>Conversación:</strong> todos los mensajes con un mismo
+              cliente durante 24 horas continuas, sin importar cuántos sean.
+              <strong> Es lo que se factura.</strong> Si alguien escribe a la
+              mañana y cierra su pedido a la tarde, es una sola.
             </p>
             <p>
-              <strong>No cuentan como cierre</strong> mandar información que nadie
-              confirmó, mandar el QR sin que el cliente pague, ni una conversación
-              que quedó a medias. Si no hay un registro que lo pruebe, no se cobra.
+              <strong>Atención:</strong> personas distintas del mes. El mismo
+              cliente que vuelve tres veces son tres conversaciones y una
+              atención.
             </p>
             <p>
-              <strong>Atención:</strong> una conversación iniciada.{' '}
-              <strong>Interacción:</strong> una conversación en la que el cliente
-              recibió más de una respuesta.
+              <strong>Cierre:</strong> una cita agendada o un pedido confirmado.
+              No se factura: sirve para ver si el asistente está vendiendo o solo
+              respondiendo.
             </p>
           </div>
         </article>
@@ -239,18 +254,18 @@ export function Cierres() {
         <table className="table">
           <thead>
             <tr>
-              <th>Mes</th><th>Cierres</th><th>Atenciones</th>
-              <th>Interacciones</th><th>Personas distintas</th>
+              <th>Mes</th><th>Conversaciones</th><th>Atenciones</th>
+              <th>Cierres</th><th>Interacciones</th>
             </tr>
           </thead>
           <tbody>
             {periodos.map((p) => (
               <tr key={p.id}>
                 <td>{p.id}</td>
-                <td><strong>{p.cierres ?? 0}</strong></td>
-                <td>{p.atenciones ?? 0}</td>
-                <td>{p.interacciones ?? 0}</td>
+                <td><strong>{conversacionesDe(p)}</strong></td>
                 <td>{p.personasAtendidas ?? 0}</td>
+                <td>{p.cierres ?? 0}</td>
+                <td>{p.interacciones ?? 0}</td>
               </tr>
             ))}
             {periodos.length === 0 && (

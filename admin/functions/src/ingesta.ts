@@ -563,11 +563,21 @@ export const ingesta = onRequest(
         mensajes: FieldValue.increment(1),
         ...(mensaje.direccion === 'entrante' ? { entrantes: FieldValue.increment(1) } : {}),
         // Son los números que sostienen la facturación por uso.
-        // Se cuentan por separado, a propósito. `personasAtendidas` es una vez
-        // por teléfono y por mes; `atenciones` es una por cada consulta nueva
-        // del mismo teléfono. Ver `contadoresDelMensaje`.
+        // LOS NOMBRES SON LOS DE LA PAGINA DE PRECIOS, no los de la primera
+        // versión de esto, y la diferencia importa porque el cliente lee esa
+        // página y después mira esta consola: si los dos números no se llaman
+        // igual, la discusión no es sobre la factura sino sobre el vocabulario.
+        //
+        //   CONVERSACION  = ventana de 24 h desde el primer mensaje. ES LA
+        //                   UNIDAD QUE SE FACTURA. Antes se llamaba `atenciones`
+        //                   acá adentro; el cálculo no cambió, solo el nombre.
+        //   ATENCION      = personas distintas del período. En el código sigue
+        //                   siendo `personasAtendidas`, que es más explícito y
+        //                   ya tiene datos; el rótulo se traduce en la pantalla.
+        //   CIERRE        = cita o pedido concreto. YA NO SE FACTURA: quedó como
+        //                   indicador de si el asistente vende o solo responde.
         ...(conteo.personaNueva ? { personasAtendidas: FieldValue.increment(1) } : {}),
-        ...(conteo.atencion ? { atenciones: FieldValue.increment(1) } : {}),
+        ...(conteo.atencion ? { conversaciones: FieldValue.increment(1) } : {}),
         ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
       }, { merge: true });
     });
