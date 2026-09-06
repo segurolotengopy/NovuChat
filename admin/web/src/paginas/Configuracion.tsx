@@ -83,23 +83,10 @@ export function Configuracion() {
     </label>
   );
 
-  // Ver la nota de `AUN_NO_LLEGAN` en ConfiguracionVertical.tsx: la consola y el
-  // flujo tienen hoy dos copias de la configuración y nadie las sincroniza.
-  // `descripcion` salió de esta lista el 2026-09-06: el flujo ya la recibe y el
-  // agente la usa para entender pedidos que no nombran un servicio exacto.
-  // Queda `instruccionesExtra`, que necesita más cuidado: es texto libre del
-  // comercio y tiene que entrar al prompt DELIMITADO y rotulado como dato, que
-  // es justo lo que el texto de ayuda de esa casilla ya promete.
-  const SIN_LLEGAR = new Set(['instruccionesExtra']);
 
   const campo = (clave: string, etiqueta: string, multilinea = false) => (
     <label>
       {etiqueta}
-      {SIN_LLEGAR.has(clave) && (
-        <span className="pendiente" title="Se guarda, pero el asistente todavía no lo usa">
-          todavía no llega al asistente
-        </span>
-      )}
       {multilinea
         ? <textarea
             value={datos[clave] ?? ''}
@@ -154,14 +141,16 @@ export function Configuracion() {
           está activo. Conviene dejarlo preparado.
         </p>
 
-        <h3>Indicaciones</h3>
-        {campo('instruccionesExtra', 'Indicaciones para el asistente', true)}
-        <p className="ayuda">
-          Las indicaciones se le entregan al asistente como <strong>dato</strong>,
-          dentro de una sección rotulada del prompt. No reemplazan sus reglas de
-          comportamiento ni pueden cambiar su identidad: el asistente siempre
-          dice que es un asistente virtual si se lo preguntan.
-        </p>
+        {/* AQUI IBA «Indicaciones para el asistente». Se quito el 2026-09-06:
+            el texto de ayuda prometia que las indicaciones se le entregan al
+            asistente «dentro de una seccion rotulada del prompt», y el flujo NO
+            las leia. Prometer eso y no cumplirlo es peor que no ofrecer la
+            casilla, sobre todo porque es donde un negocio pondria una promocion
+            y despues no entenderia por que el asistente no la menciona.
+
+            Vuelve cuando el flujo lea su configuracion de la consola, y tiene
+            que volver DELIMITADA y rotulada como dato: es texto libre de un
+            tercero entrando al prompt. La deuda esta en ESTADO.md. */}
         <button type="submit">Guardar</button>
       </form>
       {estado && <p role="status">{estado}</p>}

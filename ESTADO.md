@@ -294,6 +294,53 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 - **Facturación de Gemini** para reducir los 503 durante los demos.
 - **Memoria persistente** (Postgres Chat Memory) para producción.
 
+### Deuda: campos quitados de la consola porque el flujo no los lee
+
+**Anotado el 2026-09-06.** Se sacaron de la interfaz, NO de las reglas ni de los
+datos: los documentos que ya los tengan los conservan. Vuelven tal cual cuando
+el flujo lea su configuración de la consola.
+
+La causa de fondo: el flujo lleva su configuración escrita adentro y la consola
+escribe en Firestore. Son dos copias que nadie sincroniza. La función que las
+uniría, `configuracionParaFlujo`, existe y está desplegada, y **ningún flujo la
+llama**. Conectarla es EL trabajo que borra toda esta deuda de una vez.
+
+**Configuración común** (`/config/negocio`)
+
+| Campo | Nota |
+|---|---|
+| `instruccionesExtra` | Tiene que volver DELIMITADA y rotulada como dato dentro del prompt: es texto libre de un tercero. El texto de ayuda que tenía ya lo prometía. |
+
+**Agenda y citas** (`/config/agendamiento`) — la sección quedó vacía y no se
+dibuja. Los cinco valores viven hoy escritos en el prompt del flujo.
+
+| Campo | Etiqueta que tenía | Valor que usa hoy el flujo |
+|---|---|---|
+| `duracionPorDefectoMin` | Duración por defecto (minutos) | 60, en el prompt |
+| `anticipacionMinimaMin` | Anticipación mínima (minutos) | sin límite |
+| `anticipacionMaximaDias` | Se puede reservar hasta (días) | sin límite |
+| `horasRecordatorio` | Recordatorio (horas antes) | 24, fijo en el flujo de recordatorios |
+| `permitirCancelacion` | Permitir cancelar desde WhatsApp | siempre permitido |
+
+**Venta y entrega** (`/config/venta`) — quedaron `costoDelivery` y
+`recargoFlota`, que sí llegan.
+
+| Campo | Etiqueta que tenía |
+|---|---|
+| `pedidoMinimo` | Pedido mínimo |
+| `radioEntregaKm` | Radio de entrega (km) |
+| `aceptaDelivery` | Acepta envíos |
+| `aceptaRetiroEnLocal` | Acepta retiro en el local |
+| `tiempoCocinaMin` | Tiempo de preparación (minutos) |
+| `tiempoDespachoMin` | Tiempo de despacho (minutos) |
+
+Los dos de tiempo además existían en el flujo con otro nombre y otro formato
+—`tiempoCocina: "25 minutos"` como texto— así que ni siquiera renombrando el
+campo se conectaban solos.
+
+**`descripcion` NO está en esta lista**: se conectó el 6 de septiembre y el
+agente ya la recibe.
+
 ### Reglas de configuración que se aprendieron a los golpes
 
 **Anotadas el 2026-09-06, después de perder una mañana con cada una.**
