@@ -67,6 +67,22 @@ function comprobarReserva(eventos: Evento[]): Record<string, unknown> {
     }
     static override now() { return AHORA.getTime(); }
   }
+  // EXCEPCIÓN DELIBERADA a `devsecops.js-eval-prohibido`, y acotada a esta línea.
+  //
+  // La regla prohíbe la ejecución dinámica de código, y tiene toda la razón
+  // donde importa: en producción, con datos de terceros. Acá no hay nada de
+  // eso. Lo que se ejecuta es un archivo NUESTRO, versionado en el repositorio
+  // —`Flujos/demo-a-agendamiento.json`—, dentro de una prueba que no corre en
+  // ningún servidor. La alternativa sería copiar la lógica del candado a este
+  // archivo, y entonces la prueba comprobaría la copia: quedaría en verde para
+  // siempre mientras el flujo se rompe en silencio. Eso es peor.
+  //
+  // DEUDA: lo correcto a futuro es que el código del nodo viva en un `.js`
+  // versionado que se inyecte al JSON al preparar el import. Así habría una
+  // sola fuente y la prueba lo importaría sin nada dinámico. Es un cambio en la
+  // canalización de los flujos y no entra antes del congelamiento del 8.
+  //
+  // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', 'Date', codigo as string) as
     (i: unknown, c: unknown, d: unknown) => { json: Record<string, unknown> }[];
   return fn(entrada, contexto, Reloj)[0]?.json ?? {};

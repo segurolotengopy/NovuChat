@@ -1082,6 +1082,13 @@ prueba corre el código nuevo. Nueve casos, empezando por los datos reales de la
 ejecución #964. Verificado con dos sabotajes: quitar el candado rompe cuatro
 pruebas, ignorar el calendario rompe la de las dos personas distintas.
 
+**Deuda que dejó la prueba.** Para ejecutar el código del flujo, la prueba usa
+`new Function`, que la regla `js-eval-prohibido` de Semgrep bloquea con razón.
+Se documentó la excepción en la línea exacta. Lo correcto a futuro es que el
+código de los nodos Code viva en archivos `.js` versionados que se inyecten al
+JSON al preparar el import: una sola fuente, y la prueba lo importaría sin nada
+dinámico. Es un cambio en la canalización de los flujos y no entra antes del 8.
+
 **Límite conocido:** la consulta trae hasta 50 eventos por calendario en 90
 días. Un negocio con más citas que eso podría dejar una superposición sin ver.
 Hay que subir el límite o acotar la ventana antes del primer cliente grande.
