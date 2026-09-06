@@ -1688,6 +1688,23 @@ describe('Configuración por vertical', () => {
       configValida('u-admin-b')));
   });
 
+  it('el comercio NO puede escribir el QR de cobro por su cuenta', async () => {
+    // `cobroReal` lo escribe SOLO la función que valida el código: comprueba que
+    // sea un QR de cobro de verdad, reutilizable y de monto abierto. Si el
+    // navegador pudiera escribirlo, esas tres comprobaciones se saltearían
+    // armando la petición a mano, y el asistente terminaría mandándole a los
+    // clientes un código que no cobra, o que cobra a otra cuenta.
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`), {
+      cobroReal: { activo: true, cargaUtil: 'cualquier cosa', ficha: 'a'.repeat(32) },
+      actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp(),
+    }));
+    // Ni siquiera encenderlo.
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`), {
+      'cobroReal.activo': true,
+      actualizadoPor: 'u-admin-b', actualizadoEn: serverTimestamp(),
+    }));
+  });
+
   it('los funcionarios son solo del vertical de agendamiento', async () => {
     // Una parrilla no tiene profesionales con calendario propio.
     await assertFails(setDoc(doc(adminB(), `tenants/${B}/funcionarios/f9`), {

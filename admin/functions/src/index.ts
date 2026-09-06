@@ -12,6 +12,7 @@ setGlobalOptions({ region: REGION, maxInstances: 10 });
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './cierres.js';
+export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 
 import { registrar } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';

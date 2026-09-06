@@ -39,9 +39,15 @@ WhatsApp (Meta Cloud API)
    archivo del repositorio — incluidos los JSON de flujos exportados, los
    sticky notes de n8n y los ejemplos. Solo en `.env` (ignorado) y en el
    gestor de contraseñas.
-3. **NUNCA** presentar un cobro simulado como real. El QR de demostración
-   lleva el rótulo impreso en la imagen **y** en el caption, y la confirmación
-   dice "simulado". Sin webhook de acreditación bancaria no hay cobro real.
+3. **NUNCA** presentar un cobro como algo que no es. Tiene dos mitades:
+   - **Cobro simulado**: el QR de demostración lleva el rótulo impreso en la
+     imagen **y** en el caption, y la confirmación dice "simulado".
+   - **Cobro real** (QR del comercio, el dinero va a su cuenta): el asistente
+     **NUNCA** dice "pago acreditado", "pago verificado" ni "recibimos tu
+     pago". El OCR de un comprobante **no es una acreditación bancaria**: una
+     imagen se edita. Se dice que el comprobante llegó y que los datos
+     coinciden; quien confirma que entró la plata es el banco, y el negocio.
+   Los dos modos son excluyentes: nunca los dos a la vez en un mismo negocio.
 4. **NUNCA** hacer que el agente niegue ser una IA. Se presenta como asistente
    virtual y, si le preguntan, lo dice con naturalidad.
 5. **NUNCA** tocar la app de Meta `Demo SeguroLo Tengo` ni el `otp-service`:

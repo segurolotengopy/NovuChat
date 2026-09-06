@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-06 (cierre del día antes del ensayo)
+**Última actualización:** 2026-09-06 (cobro real, anulaciones y política de capas)
 
 ---
 
@@ -320,6 +320,10 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Campos de la consola sin lector en el flujo | Se quitan de la interfaz y se anotan como deuda; no se muestran «pendientes» | 06/09 |
 | Rediseño de la consola con el diseño de `novuchat.site` | Se hace DESPUÉS de las observaciones de Andres | 05/09 |
 | Política de capas | Flujos / consola / usuarios; lo común una vez, lo propio por flujo con su pestaña; un negocio tiene varios flujos (`flujos: [...]`) | 06/09 |
+| Un número por flujo | Se mantiene. El enrutador para compartir número queda pendiente, sin fecha | 06/09 |
+| Cobro real | El QR es del comercio y el dinero va a su cuenta. El OCR del comprobante **coteja**, no acredita: el asistente nunca dice «pago acreditado» | 06/09 |
+| El QR no se almacena | Se guarda el texto validado y la imagen se vuelve a dibujar en cada envío | 06/09 |
+| Anulación de citas | El Flujo A puede cancelar, con búsqueda por el teléfono del mensaje y confirmación explícita del cliente | 06/09 |
 
 ## Decisiones pendientes
 
@@ -367,7 +371,7 @@ dibuja. Los cinco valores viven hoy escritos en el prompt del flujo.
 | `anticipacionMinimaMin` | Anticipación mínima (minutos) | sin límite |
 | `anticipacionMaximaDias` | Se puede reservar hasta (días) | sin límite |
 | `horasRecordatorio` | Recordatorio (horas antes) | 24, fijo en el flujo de recordatorios |
-| `permitirCancelacion` | Permitir cancelar desde WhatsApp | siempre permitido |
+| `permitirCancelacion` | Permitir cancelar desde WhatsApp | **corregido el 06/09**: no era «siempre permitido», el flujo NO PODÍA cancelar. Ahora sí puede; falta que el campo lo gobierne |
 
 **Venta y entrega** (`/config/venta`) — quedaron `costoDelivery` y
 `recargoFlota`, que sí llegan.
@@ -924,10 +928,109 @@ Lo que se encontró al revisarla contra el código, y se corrigió el mismo día
   muestra como «Cargado» o «Sin QR», con la explicación.
 - Suite: **257 pruebas** (eran 249).
 
-**Lo que la política deja pendiente**, a propósito: dos flujos en un mismo
-número (haría falta un enrutador); el QR propio del negocio con cobro real;
-y la deuda de conectar los flujos a `configuracionFlujo`, que sigue siendo la
-misma.
+**Lo que la política deja pendiente**, a propósito: la deuda de conectar los
+flujos a `configuracionFlujo`, que sigue siendo la misma.
+
+**Decidido por Andres el 06/09:** que dos flujos de un mismo negocio usen dos
+números distintos **está bien** y no hay que cambiarlo. El **enrutador** que
+permitiría compartir un número entre flujos queda anotado como tarea pendiente,
+sin fecha. No bloquea nada: hoy cada flujo tiene su número y su secreto, que
+además es más seguro.
+
+### Cobro REAL con el QR del comercio (06/09, tarde)
+
+Andres fijó la política: el comercio sube su propio QR por la consola, declara a
+nombre de quién está la cuenta y hasta cuándo vale, y cuando el cliente paga y
+manda su comprobante, el sistema lo lee y lo coteja.
+
+**La distinción que sostiene todo lo demás:** con un QR real el dinero SÍ se
+mueve, así que la prohibición 3 no desaparece, cambia de forma. El OCR de un
+comprobante **no es una acreditación bancaria** —una imagen se edita— así que el
+asistente nunca dice «pago acreditado». Dice que recibió el comprobante y que
+los datos coinciden. Lo que esto reemplaza no es al banco: es al dueño mirando
+cincuenta capturas por día.
+
+**Se probó contra muestras REALES que pasó Andres**, y cada una destapó un
+defecto de diseño que habría llegado a producción:
+
+1. **El QR Simple boliviano NO es EMVCo.** Se implementó el estándar completo,
+   con verificación de CRC, y el QR real del BNB resultó ser **256 bytes
+   cifrados** más una etiqueta. De adentro no se lee nada. Sin esa prueba, el
+   sistema habría rechazado TODOS los QR bolivianos. Ahora se reconocen dos
+   familias: `emvco` (se comprueba todo solo) y `cifrado` (se comprueba la
+   forma, y el comercio declara cuenta, titular, vencimiento y confirma que es
+   reutilizable y de monto abierto).
+2. **El QR real vencía el mismo día en que se generó.** Si eso es lo que da la
+   aplicación por defecto, el modelo «carga tu QR una vez» no se sostiene.
+   **Hay que preguntarle al banco por el QR de comercio antes de prometerle
+   esto a un cliente.** Es una pregunta comercial abierta.
+3. **Un comprobante de tres bancos, tres formatos.** El del Banco de Crédito
+   **no muestra el nombre del destinatario**: su «A nombre de» es el de la
+   cuenta de ORIGEN. Cotejar por nombre habría rechazado todos los pagos hechos
+   desde ese banco. Se cambió el ancla a la **cuenta de destino**, que sí está
+   en los tres.
+4. **La misma cuenta, catorce dígitos en un banco y trece enmascarada en otro.**
+   Los asteriscos no reemplazan un dígito cada uno. Comparar largos rechazaba
+   pagos buenos.
+5. **El comprobante en PDF no tiene texto**: es una imagen adentro de un PDF.
+   `pdftotext` devuelve vacío. Hace falta OCR de verdad.
+
+**Lo que quedó hecho y probado:** validación de las dos familias, extracción de
+las cuentas del QR, cotejo de importe, fecha y destinatario con los formatos
+reales de los tres bancos, registro por Cloud Function —el navegador NO puede
+escribirlo—, y la pantalla «Pedidos y cobro» con las cuatro advertencias.
+**58 pruebas nuevas.**
+
+**El QR no se guarda como imagen: se vuelve a dibujar** a partir del texto
+validado. Así no puede pasar que se valide un código y se envíe otro, y el
+cliente recibe un QR limpio en vez de una foto de pantalla. El PNG lo arma el
+servidor sin bibliotecas de imágenes, y se comprobó con `zxing-cpp` —un
+decodificador independiente— que se escanea y devuelve el texto exacto.
+
+**Lo que falta, y necesita un teléfono:** los tres nodos de n8n (descargar el
+archivo de Meta, leerlo con Gemini, cotejar). El prompt de lectura y el mensaje
+al cliente —«guarda el comprobante ANTES de salir de la aplicación de tu
+banco»— están escritos en `Analisis/07-cobro-real-y-ocr.md`, listos para pegar.
+
+### Anulaciones de citas en el Flujo A (06/09, tarde)
+
+**Defecto encontrado al revisarlo a pedido de Andres:** el agente tenía dos
+herramientas de calendario —consultar y crear— y **ninguna para cancelar**. El
+prompt lo decía («NO PODÉS MOVER NI CANCELAR CITAS») pero la política del
+negocio que el mismo prompt le entrega al cliente prometía lo contrario:
+«escríbenos por este mismo chat y lo resolvemos sin costo». O sea, el asistente
+invitaba a cancelar por WhatsApp y después no podía.
+
+Se agregaron dos herramientas:
+
+- **`buscar_mi_cita`**: trae las citas FUTURAS de ese cliente. El teléfono sale
+  del mensaje, **nunca del modelo**: si lo pusiera el agente, un cliente podría
+  pedir las citas de otro número y cancelarlas. Google busca por el texto
+  «Telefono: …» que `agendar_cita` ya escribe en la descripción del evento.
+- **`cancelar_cita`**: borra por identificador, y solo el que devolvió la
+  búsqueda.
+
+El prompt ahora exige: buscar, leerle al cliente lo que se encontró, esperar su
+confirmación explícita, y recién cancelar. Para mover una cita, **cancelar antes
+de agendar**: al revés quedarían las dos.
+
+**Sin publicar.** El diagnóstico confirma que los dos nodos heredarían la
+credencial de Google Calendar por tipo, así que es un solo comando
+(`./scripts/publicar-flujo.sh --aplicar`). Falta probarlo contra un teléfono:
+agendar, pedir cancelar, confirmar, y verificar en el calendario que el evento
+desapareció.
+
+**Limitación conocida:** la búsqueda es por calendario, y el negocio tiene tres.
+Si el cliente no dice con quién era la cita, el agente se lo pregunta. Es
+natural en una peluquería, pero conviene saberlo.
+
+### Un defecto viejo que apareció de paso
+
+La consola llamaba a las Cloud Functions en `southamerica-east1` y están
+desplegadas en `us-east1`. **Invitar a un usuario nunca funcionó**, y el mensaje
+genérico de la pantalla —«No se pudo enviar la invitación»— lo hacía parecer un
+problema pasajero. La región ahora está en un solo lugar
+(`web/src/lib/firebase.ts`).
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
