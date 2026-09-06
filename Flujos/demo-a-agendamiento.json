@@ -458,7 +458,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// COMPUERTA DE VERIFICACION DE RESERVA — falla ABIERTA, a proposito.\n//\n// Historia, porque el diseño cambio por evidencia y no por gusto: la primera\n// version reemplazaba la respuesta por una disculpa cuando no podia verificar\n// la cita. Fallo cuatro veces por falso negativo, y CADA vez el daño real no lo\n// hizo la compuerta sino la reaccion en cadena: el cliente leia la disculpa,\n// insistia, y el agente volvia a llamar a agendar_cita. Asi aparecieron tres\n// pedicures, tres ortodoncias y dos pares de citas duplicadas.\n//\n// Ahora, si no puede verificar, NO toca el mensaje del cliente: avisa a\n// recepcion y sigue. El costo de equivocarse cambia de lado. Antes, un falso\n// negativo rompia una conversacion correcta y duplicaba la agenda; ahora, un\n// falso NEGATIVO solo genera un aviso de mas, y un falso POSITIVO -- el caso\n// verdaderamente malo, prometer una cita inexistente -- queda cubierto porque\n// recepcion recibe el aviso y puede resolverlo en minutos.\nconst previos = $('Procesar respuesta').all();\nconst VENTANA_MS = 5 * 60 * 1000;\nconst ahora = Date.now();\n\nconst recien = $input.all()\n  .map(i => i.json)\n  .filter(e => e && e.id)\n  .filter(e => {\n    const c = Date.parse(e.created || e.updated || '');\n    return Number.isFinite(c) && (ahora - c) >= 0 && (ahora - c) < VENTANA_MS;\n  });\n\nconst item = previos[0].json;\n\n// Duplicado: la cita existe, al cliente se le confirma igual -- negarlo seria\n// mentirle -- pero recepcion tiene que borrar la sobrante, porque un horario\n// ocupado dos veces bloquea la agenda del negocio.\nconst porTitulo = {};\nfor (const e of recien) porTitulo[e.summary || ''] = (porTitulo[e.summary || ''] || 0) + 1;\nconst repetidos = Object.entries(porTitulo).filter(([, n]) => n > 1);\n\nif (repetidos.length) {\n  return [{ json: { ...item, reservaVerificada: true, duplicados: repetidos.length,\n    transferir: true,\n    motivoTransferencia: `se crearon citas DUPLICADAS (${repetidos.map(([t, n]) => `${n}x ${t}`).join('; ')}), hay que borrar las sobrantes` } }];\n}\n\n// AVISO POR \"NO VERIFICADA\": DESACTIVADO, y hay que decir por que.\n//\n// La consulta de verificacion NUNCA ha devuelto un solo evento, ni siquiera\n// cuando la cita existia y estaba recien creada -- comprobado en las\n// ejecuciones #232, #325, #367 y #384. Mientras eso siga asi, \"no se pudo\n// verificar\" no informa nada: se dispara SIEMPRE. Un aviso que salta en todas\n// las reservas correctas no protege a nadie; entrena a recepcion a ignorarlo,\n// y el dia que avise de una cita realmente inexistente nadie lo va a mirar.\n//\n// Se deja el registro en el item para poder auditarlo, sin molestar a nadie.\n// La deteccion de duplicados de arriba queda activa: el dia que la consulta\n// funcione, vuelve a servir sola.\n//\n// Pendiente despues del congelamiento del 8 de septiembre: rehacer la consulta\n// con un nodo HTTP Request contra la API de Calendar, donde el error se ve en\n// lugar de quedar tapado por `onError: continueRegularOutput`.\nif (recien.length === 0) {\n  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true } }];\n}\n\nreturn [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id } }];"
+        "jsCode": "// COMPUERTA DE VERIFICACION DE RESERVA — y CANDADO CONTRA LA DOBLE RESERVA.\n//\n// Historia, porque el diseño cambio por evidencia y no por gusto: la primera\n// version reemplazaba la respuesta por una disculpa cuando no podia verificar\n// la cita. Fallo cuatro veces por falso negativo, y CADA vez el daño real no lo\n// hizo la compuerta sino la reaccion en cadena: el cliente leia la disculpa,\n// insistia, y el agente volvia a llamar a agendar_cita. Asi aparecieron tres\n// pedicures, tres ortodoncias y dos pares de citas duplicadas.\n//\n// Por eso, cuando NO puede verificar, no toca el mensaje: avisa a recepcion y\n// sigue. Falla ABIERTA. Un falso negativo solo genera un aviso de mas.\n//\n// ---------------------------------------------------------------------------\n// EL CANDADO (2026-09-06). Falla CERRADA, al reves que lo de arriba, y por una\n// razon distinta.\n//\n// QUE PASO. En una prueba real el agente propuso las 9:00 sin consultar el\n// calendario ni una vez -- comprobado ejecucion por ejecucion, de la #944 a la\n// #968 -- y reservo encima de una cita que ya existia. Un funcionario quedo con\n// dos citas de 9 a 10. Se corrigio el prompt, pero un prompt es una instruccion\n// y ya se rompio una vez al cambiar de modelo: dos clientes presentandose a la\n// misma hora no puede depender de que el modelo obedezca.\n//\n// COMO FUNCIONA, sin una sola consulta extra. `Verificar en el calendario` ya\n// trae TODOS los eventos de TODOS los calendarios, y cada evento viene con\n// `organizer.email`, que es el identificador del calendario donde vive. Con eso\n// alcanza: si la cita recien creada se superpone con otra del MISMO calendario,\n// hay doble reserva. Distinto calendario no es conflicto -- Maria y Jose pueden\n// atender los dos a las 10:00, que es justamente para lo que existen las\n// agendas por persona.\n//\n// QUIEN CEDE. Se borra la MAS NUEVA. Asi dos conversaciones simultaneas no se\n// borran mutuamente: la que llego primero se queda con el horario.\n//\n// LIMITE CONOCIDO: la consulta trae hasta 50 eventos por calendario en 90 dias.\n// Un negocio con mas citas que eso podria dejar una superposicion sin ver. Hay\n// que subir el limite o acotar la ventana antes del primer cliente grande.\nconst previos = $('Procesar respuesta').all();\nconst VENTANA_MS = 5 * 60 * 1000;\nconst ahora = Date.now();\n\nconst todos = $input.all().map(i => i.json).filter(e => e && e.id);\n\nconst recien = todos.filter(e => {\n  const c = Date.parse(e.created || e.updated || '');\n  return Number.isFinite(c) && (ahora - c) >= 0 && (ahora - c) < VENTANA_MS;\n});\n\nconst item = previos[0].json;\n\n// Instante de inicio y fin de un evento. Los de dia completo (`start.date`) se\n// dejan afuera a proposito: suelen ser notas del negocio -- \"feriado\", \"cerrado\n// por inventario\" -- y tomarlos como ocupacion bloquearia el dia entero.\nconst rango = (e) => {\n  const i = Date.parse(e?.start?.dateTime || '');\n  const f = Date.parse(e?.end?.dateTime || '');\n  return Number.isFinite(i) && Number.isFinite(f) ? { i, f } : null;\n};\n// Media abierta: una cita de 9 a 10 y otra de 10 a 11 NO se superponen.\nconst seSuperponen = (a, b) => a.i < b.f && b.i < a.f;\nconst creado = (e) => Date.parse(e.created || e.updated || '') || 0;\n\n// --- CANDADO ---------------------------------------------------------------\nfor (const nueva of recien) {\n  const r = rango(nueva);\n  const calendario = nueva.organizer && nueva.organizer.email;\n  if (!r || !calendario) continue;\n\n  const choque = todos.find((otro) => {\n    if (otro.id === nueva.id) return false;\n    if (!otro.organizer || otro.organizer.email !== calendario) return false;\n    const ro = rango(otro);\n    // Solo cede ante una cita ANTERIOR. Si la otra es mas nueva, la que borra\n    // es aquella y esta se queda: si las dos cedieran, dos clientes que\n    // escriben a la vez perderian los dos el horario.\n    return ro && seSuperponen(r, ro) && creado(otro) < creado(nueva);\n  });\n\n  if (choque) {\n    const aviso = String(cfgMensajeNoConfirmada() || '').trim()\n      || 'Disculpa, ese horario se ocupo justo antes de que pudiera confirmarlo. '\n       + 'No te lo agende para no dejarte con una cita que no existe. '\n       + 'Le paso tu pedido a recepcion para que te den otro horario enseguida.';\n    return [{ json: { ...item,\n      respuesta: aviso,\n      reservaVerificada: false,\n      citaSolapada: true,\n      eventoABorrar: nueva.id,\n      calendarioDelBorrado: calendario,\n      transferir: true,\n      motivoTransferencia: 'se intento agendar sobre un horario YA OCUPADO de la misma '\n        + `persona (${nueva.summary || 'sin titulo'}); la cita nueva se deshizo y el `\n        + 'cliente quedo esperando otro horario',\n    } }];\n  }\n}\n\nfunction cfgMensajeNoConfirmada() {\n  try { return $('Config del negocio').first().json.mensajeReservaNoConfirmada; }\n  catch (e) { return ''; }\n}\n\n// Duplicado por titulo: la cita existe, al cliente se le confirma igual --\n// negarlo seria mentirle -- pero recepcion tiene que borrar la sobrante.\nconst porTitulo = {};\nfor (const e of recien) porTitulo[e.summary || ''] = (porTitulo[e.summary || ''] || 0) + 1;\nconst repetidos = Object.entries(porTitulo).filter(([, n]) => n > 1);\n\nif (repetidos.length) {\n  return [{ json: { ...item, reservaVerificada: true, duplicados: repetidos.length,\n    transferir: true,\n    motivoTransferencia: `se crearon citas DUPLICADAS (${repetidos.map(([t, n]) => `${n}x ${t}`).join('; ')}), hay que borrar las sobrantes` } }];\n}\n\n// AVISO POR \"NO VERIFICADA\": DESACTIVADO. La consulta de verificacion fallaba\n// siempre cuando se escribio esto; hoy si encuentra las citas (comprobado en la\n// ejecucion #964), pero el aviso se deja apagado hasta tener mas evidencia de\n// que no genera ruido. El registro queda en el item para poder auditarlo.\nif (recien.length === 0) {\n  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true } }];\n}\n\nreturn [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id } }];\n"
       },
       "id": "gate-code",
       "name": "Comprobar reserva",
@@ -744,6 +744,79 @@
           "name": ""
         }
       }
+    },
+    {
+      "id": "if-deshacer-solapada",
+      "name": "¿Deshacer cita solapada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "solapada",
+              "leftValue": "={{ $json.citaSolapada }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cal-deshacer-solapada",
+      "name": "Deshacer cita solapada",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1760,
+        40
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.calendarioDelBorrado }}"
+        },
+        "eventId": "={{ $json.eventoABorrar }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-retomar-respuesta",
+      "name": "Retomar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        40
+      ],
+      "parameters": {
+        "jsCode": "// El nodo de Calendar devuelve el resultado del borrado, no la conversacion.\n// Se retoma el item de `Comprobar reserva` para que `Responder al cliente`\n// encuentre `respuesta`, `from` y el resto donde los espera.\nreturn [{ json: $('Comprobar reserva').first().json }];\n"
+      }
     }
   ],
   "connections": {
@@ -918,7 +991,7 @@
       "main": [
         [
           {
-            "node": "Responder al cliente",
+            "node": "¿Deshacer cita solapada?",
             "type": "main",
             "index": 0
           },
@@ -1004,6 +1077,46 @@
           {
             "node": "AI Agent (Sofía)",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Deshacer cita solapada?": {
+      "main": [
+        [
+          {
+            "node": "Deshacer cita solapada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deshacer cita solapada": {
+      "main": [
+        [
+          {
+            "node": "Retomar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
             "index": 0
           }
         ]

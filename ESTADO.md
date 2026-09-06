@@ -324,6 +324,7 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Cobro real | El QR es del comercio y el dinero va a su cuenta. El OCR del comprobante **coteja**, no acredita: el asistente nunca dice «pago acreditado» | 06/09 |
 | El QR no se almacena | Se guarda el texto validado y la imagen se vuelve a dibujar en cada envío | 06/09 |
 | Anulación de citas | El Flujo A puede cancelar, con búsqueda por el teléfono del mensaje y confirmación explícita del cliente | 06/09 |
+| Doble reserva | Candado POR CÓDIGO en `Comprobar reserva`, no por prompt. Cede la cita más nueva y no se le confirma al cliente | 06/09 |
 
 ## Decisiones pendientes
 
@@ -1031,6 +1032,59 @@ desplegadas en `us-east1`. **Invitar a un usuario nunca funcionó**, y el mensaj
 genérico de la pantalla —«No se pudo enviar la invitación»— lo hacía parecer un
 problema pasajero. La región ahora está en un solo lugar
 (`web/src/lib/firebase.ts`).
+
+### Candado por código contra la doble reserva (06/09, noche)
+
+**Cómo se descubrió.** Una prueba real de Silvana: pidió dos citas, con María y
+con José, a horarios pegados. El asistente le dijo que «se cruzarían», agendó
+una sola y le pidió que escribiera de nuevo para la otra. En el calendario,
+José quedó con **dos citas de 9 a 10**.
+
+**La causa, comprobada ejecución por ejecución en n8n (#944 a #968):
+`consultar_disponibilidad` NO se llamó ni una vez** en toda la conversación. El
+agente propuso las 9:00 sin mirar la agenda y reservó encima de una cita que ya
+existía. La agenda por persona, que se construyó justamente para esto, quedaba
+inerte porque nadie la consultaba.
+
+**Tres defectos, todos del texto del prompt:**
+
+1. La sección «economía de herramientas» planteaba la consulta como un TOPE
+   —«como máximo UNA llamada por mensaje»— justo después de decirle que cada
+   llamada demora. El modelo hizo lo lógico: no llamar. Ahora es un requisito
+   explícito, y ningún horario se propone ni se confirma sin verificar.
+2. Decía que dos citas con personas DISTINTAS se cruzan. No se cruzan.
+3. «Una vez por cita» se leyó como «una cita por conversación».
+
+**El candado, que es lo que de verdad protege.** Andres pidió que fuera por
+código antes del congelamiento, y tenía razón: un prompt ya se rompió una vez al
+cambiar de modelo, y dos clientes presentándose a la misma hora no puede
+depender de que el modelo obedezca.
+
+Vive en el nodo `Comprobar reserva` y **no cuesta ninguna consulta extra**:
+`Verificar en el calendario` ya traía todos los eventos de todos los
+calendarios, y cada evento viene con `organizer.email`, que es el identificador
+del calendario. Si la cita recién creada se superpone con otra del MISMO
+calendario, hay doble reserva; distinto calendario no es conflicto.
+
+- **Cede la más nueva.** Así dos conversaciones simultáneas no se borran
+  mutuamente: la que llegó primero se queda con el horario.
+- **Deshace la cita y NO se la confirma al cliente.** Le dice que el horario se
+  ocupó y pasa el pedido a recepción. Confirmar una cita que se acaba de borrar
+  sería el peor resultado posible.
+- No registra cierre: no hubo cita, no se factura.
+- Citas pegadas (9–10 y 10–11) no son conflicto. Los eventos de día completo
+  —«feriado»— tampoco bloquean.
+
+**Probado sobre el código que corre de verdad.** La suite
+`admin/pruebas/candado-agenda.test.ts` **extrae el código del JSON del flujo y
+lo ejecuta**, en vez de copiarlo: si alguien edita el nodo en n8n y exporta, la
+prueba corre el código nuevo. Nueve casos, empezando por los datos reales de la
+ejecución #964. Verificado con dos sabotajes: quitar el candado rompe cuatro
+pruebas, ignorar el calendario rompe la de las dos personas distintas.
+
+**Límite conocido:** la consulta trae hasta 50 eventos por calendario en 90
+días. Un negocio con más citas que eso podría dejar una superposición sin ver.
+Hay que subir el límite o acotar la ventana antes del primer cliente grande.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
