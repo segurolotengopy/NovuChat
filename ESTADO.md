@@ -294,6 +294,33 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 - **Facturación de Gemini** para reducir los 503 durante los demos.
 - **Memoria persistente** (Postgres Chat Memory) para producción.
 
+### Reglas de configuración que se aprendieron a los golpes
+
+**Anotadas el 2026-09-06, después de perder una mañana con cada una.**
+
+- **Los calendarios de un negocio son de UNA sola cuenta de Google.** Lo propuso
+  Andres y es correcto: una credencial de n8n solo alcanza los calendarios que
+  esa cuenta ve, así que un calendario de otra persona no falla al configurarlo
+  —falla al crear la cita, con el asistente confirmándola igual. Hay que
+  verificarlo en el alta del negocio, no cuando un cliente reclame.
+
+- **Un cliente OAuth por sistema, no uno compartido.** El cliente que Firebase
+  crea solo tenía autorizados el ingreso a la consola Y el retorno de n8n. O
+  sea que arreglar el calendario ponía a un clic de distancia dejar a los tres
+  superadministradores fuera del panel. Ahora hay uno propio para n8n; el de
+  Firebase queda solo para el ingreso.
+
+- **La pantalla de consentimiento en modo «Prueba» caduca los tokens a los 7
+  días.** Eso fue lo que rompió el calendario el 6 de septiembre: el flujo
+  funcionaba, la credencial no. Publicar la app lo resuelve. Para cada proyecto
+  nuevo hay que publicarla ANTES de la primera demostración.
+
+- **Un detector de texto atado a cómo redacta un modelo se rompe al cambiar de
+  modelo.** El cambio a Flash-Lite —hecho por una razón económica— cambió la
+  redacción de la confirmación y desactivó en silencio la compuerta de
+  verificación. Cualquier cambio de modelo obliga a revisar los detectores de
+  texto de los flujos.
+
 ### Google para los comercios, no solo para NovuChat
 
 **Sugerencia de Andres del 2026-09-05. Para DESPUÉS del congelamiento del 8.**
