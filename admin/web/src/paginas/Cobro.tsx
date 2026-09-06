@@ -91,6 +91,7 @@ export function Cobro() {
   const [estado, setEstado] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const archivoRef = useRef<HTMLInputElement>(null);
+  const yaRellenado = useRef(false);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -98,16 +99,18 @@ export function Cobro() {
       setHayQrDemo(String(d.get('mediaIdQr') ?? '') !== '');
       const cobro = d.get('cobroReal') as Registrado | undefined;
       setRegistrado(cobro ?? null);
-      if (cobro && nombreCuenta === '') {
+      // El formulario se rellena UNA sola vez. Sin la marca, cada cambio que
+      // llegue de la base pisaría lo que la persona está escribiendo en ese
+      // momento: se registra un QR, la escucha se dispara, y el formulario
+      // vuelve a los valores guardados mientras alguien corrige un dígito.
+      if (cobro && !yaRellenado.current) {
+        yaRellenado.current = true;
         setNombreCuenta(String(cobro.nombreCuenta ?? ''));
         setCuentaDeclarada(String((cobro.cuentas as string[] | undefined)?.[0] ?? ''));
         setBanco(String(cobro.banco ?? ''));
         setVenceEl(String(cobro.venceEl ?? ''));
       }
     }, () => setEstado('No se pudo leer la configuración de cobro.'));
-    // `nombreCuenta` a propósito fuera: rellenar el formulario es solo para la
-    // primera carga, y volver a hacerlo pisaría lo que está escribiendo alguien.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
   const enviar = async (evento: React.FormEvent) => {
