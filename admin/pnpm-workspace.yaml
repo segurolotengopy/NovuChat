@@ -1,3 +1,12 @@
+# Version forzada de `qs`. Trivy bloquea el pipeline por dos avisos de
+# denegacion de servicio en 6.15.3 --CVE-2026-82417 y CVE-2026-82562-- que
+# GitHub clasifica como media y baja pero Trivy trata como bloqueantes. Llega
+# como transitiva por varios caminos (express, body-parser, gcp-metadata) y el
+# salto a 6.16.0 es de PARCHE, asi que se arregla en vez de pedir una excepcion:
+# una dependencia parchada es mejor que una excepcion documentada.
+overrides:
+  qs: ^6.16.0
+
 packages:
   - web
   - functions
