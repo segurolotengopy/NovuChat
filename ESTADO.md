@@ -1213,10 +1213,17 @@ fusionada sin tocar ninguna.
   sería mentira y el cliente vendría un día cerrado.
 - **«70 BOB» no se le dice a nadie.** Es el código ISO; en Bolivia se dice «Bs».
 
-**Falta, y es lo de mañana:** conectar el **Demo B** y el flujo de
-**recordatorios** igual que el A, y **probar con teléfono** que cambiar un
-precio en la consola cambia lo que dice el asistente. Hasta que eso se vea, esto
-está verificado en la fusión pero no en vivo.
+**Los recordatorios también quedaron conectados**, con la misma cadena y el
+mismo respaldo. Ahí lo que más importa no es el texto: es el **estado**.
+`Preparar recordatorios` ya cortaba cuando el comercio no estaba operativo, pero
+leía un valor escrito dentro del flujo que siempre decía «operativo». O sea que
+un comercio suspendido **seguía mandando plantillas, y cada plantilla la cobra
+Meta**. Ahora suspenderlo en la consola le corta los recordatorios de verdad.
+
+**Falta, y es lo de mañana:** conectar el **Demo B** igual que el A, y **probar
+con teléfono** que cambiar un precio en la consola cambia lo que dice el
+asistente. Hasta que eso se vea, esto está verificado en la fusión pero no en
+vivo.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 

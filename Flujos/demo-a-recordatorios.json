@@ -95,12 +95,12 @@
         },
         "options": {}
       },
-      "id": "config-del-recordatorio",
-      "name": "Config del recordatorio",
+      "id": "config-base-recordatorio",
+      "name": "Config base del recordatorio",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        180,
+        220,
         300
       ]
     },
@@ -300,6 +300,57 @@
         },
         "options": {}
       }
+    },
+    {
+      "id": "http-traer-config-rec",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "zsGBHfe95mZ9oJCQ",
+          "name": "Cierres NovuChat A (auto)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 4000
+        }
+      }
+    },
+    {
+      "id": "code-fusionar-config-rec",
+      "name": "Config del recordatorio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// LA CONSOLA MANDA TAMBIEN ACA, con la misma regla que en el flujo\n// conversacional: si el panel contesta, sus valores pisan; si no, se usan los\n// de siempre. El peor caso es el comportamiento de ayer.\n//\n// LO QUE MAS IMPORTA CONECTAR EN ESTE FLUJO NO ES EL TEXTO: ES EL ESTADO.\n// `Preparar recordatorios` ya cortaba cuando el comercio no estaba operativo,\n// pero leia un valor escrito a mano dentro del flujo, que siempre decia\n// «operativo». O sea que un comercio suspendido seguia mandando plantillas, y\n// cada plantilla la cobra Meta. Con el panel conectado, suspenderlo en la\n// consola corta sus recordatorios de verdad.\n//\n// ESTE NODO SE LLAMA «Config del recordatorio» a proposito: es el nombre que\n// buscan las expresiones que ya existen en el flujo. El Set con los valores de\n// respaldo paso a llamarse «Config base del recordatorio».\nconst base = $('Config base del recordatorio').first().json;\nconst r = $input.first().json ?? {};\n\nconst util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : undefined;\nconst soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));\n\nconst contesto = r && typeof r === 'object' && !r.error && typeof r.tenantId === 'string';\nif (!contesto) {\n  return [{ json: { ...base, configDeLaConsola: false } }];\n}\n\nconst op = r.operacion ?? {};\nconst ag = r.agendamiento ?? {};\n\nconst equipo = Array.isArray(r.funcionarios) ? r.funcionarios.map((f) => ({\n  nombre: f.nombre,\n  servicios: Array.isArray(f.servicios) ? f.servicios : [],\n  calendario: f.calendario || f.calendarioId || '',\n})).filter((f) => f.nombre) : [];\n\nconst deLaConsola = soloLlenos({\n  phoneNumberId: util(r.phoneNumberId),\n  calendarioId: util(op.calendarioId),\n  funcionarios: equipo.length ? JSON.stringify(equipo) : undefined,\n  prefijosPermitidos: Array.isArray(op.prefijosPermitidos) && op.prefijosPermitidos.length\n    ? op.prefijosPermitidos.join(',') : undefined,\n  // El texto del recordatorio se puede escribir desde la consola. Si el negocio\n  // no lo cargo, queda el de respaldo: nunca un mensaje vacio.\n  textoRecordatorio: util(ag.mensajeRecordatorio),\n});\n\n// El estado SIEMPRE sale del panel. Es el unico campo que no cae al respaldo:\n// si el panel dice que el comercio no esta activo, no se manda nada.\nconst estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo' : 'suspendido';\n\nreturn [{ json: { ...base, ...deLaConsola, estadoComercio, configDeLaConsola: true } }];\n"
+      }
     }
   ],
   "connections": {
@@ -308,17 +359,6 @@
         [
           {
             "node": "Config del recordatorio",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Config del recordatorio": {
-      "main": [
-        [
-          {
-            "node": "Calendarios del negocio",
             "type": "main",
             "index": 0
           }
@@ -408,6 +448,39 @@
           }
         ],
         []
+      ]
+    },
+    "Config base del recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config del recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Calendarios del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
