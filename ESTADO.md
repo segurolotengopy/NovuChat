@@ -1474,6 +1474,44 @@ una clínica quedaría afuera. Queda escrito como capacidad por flujo en
 `admin/DISENO.md` §4sexies.3bis. **Una clínica no va a tener catálogo de
 WhatsApp, y está bien.**
 
+### Plataformas externas de catálogo: el carrito se puede editar (07/09)
+
+Analizado en `Analisis/10-catalogo-plataformas-externas.md` un segundo documento
+—GloriaFood, TakeApp, plantillas con Google Sheets, WooCommerce—. Tiene una
+lectura comercial correcta y **un agujero que puede costar dinero**.
+
+**Las cuatro opciones terminan igual:** la web del catálogo abre WhatsApp con un
+mensaje de texto ya escrito que el cliente envía con su dedo. **Ese texto es
+editable antes de mandarlo**, sin herramientas ni saber nada: se toca y se cambia
+el número. Un pedido de 350 Bs llega diciendo 35.
+
+Con el catálogo nativo de Meta eso no pasa: el mensaje `order` lo arma WhatsApp
+desde el catálogo y el cliente no puede tocarlo. **Es la diferencia entera entre
+las dos rutas**, y el documento no la menciona.
+
+**Si igual se conecta una plataforma externa, hace falta una línea de prompt
+ANTES:** el asistente debe reconocer los productos y **volver a cotizar contra su
+propio catálogo**, ignorando los precios del texto. Hoy el prompt dice «nunca
+inventes precios fuera de estas reglas», que no es lo mismo. Sin eso, el sistema
+le cobra a un negocio lo que el cliente decidió.
+
+**Y reintroducen el problema que se acaba de resolver:** los productos vivirían
+en la plataforma externa y el asistente hablaría desde el catálogo de la consola.
+Cuando difieran, el asistente cotiza uno y el carrito llega con el otro.
+
+**Recomendación:** para la rueda de negocios, **no conectar ninguna**. Al cliente
+del Setup Estándar —hasta 20 productos— lo cubre conectar la lista interactiva
+que el Flujo B ya envía con el catálogo que la consola ya tiene: **medio día**,
+sin depender de nadie y con una sola fuente de verdad. Al comercio grande le
+corresponde el Setup A Medida, y ahí el catálogo nativo de Meta.
+
+**La decisión de fondo no es técnica:** si el catálogo **es parte del producto**,
+vive en la consola y NovuChat lo publica donde haga falta —más trabajo, y es lo
+que sostiene el precio—; si **es del cliente**, se conecta lo que él tenga y
+NovuChat cobra menos por la instalación. Las dos son defendibles. Lo que no se
+sostiene es cobrar como si fuera parte del producto y conectarlo como si fuera
+del cliente.
+
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
 - **Alta y administración de negocios por el equipo de NovuChat:** crear el
