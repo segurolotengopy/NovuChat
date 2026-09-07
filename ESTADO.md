@@ -1261,7 +1261,19 @@ prohíbe. Queda el control de nodos huérfanos como parte de la revisión.
   minutos quedan huecos de 10 que no se venden y el asistente propone horarios
   como «14:50». Las catorce fichas ya cargadas cumplen; no hizo falta migrar.
 
-**Falta, y es lo de mañana:** conectar el **Demo B** igual que el A.
+**El Demo B quedó conectado el 07/09**, con la misma cadena y una diferencia que
+importa: **los rótulos del cobro simulado NO se pisan con nada que venga de
+afuera**, aunque el panel los mandara. `rotuloDemo`, `captionQr` y
+`textoPagoSimulado` se reponen después de la fusión, de modo que ninguna clave
+del panel pueda ocuparlos. Es la prohibición 3 hecha código: la garantía de que
+un cobro de demostración no se presenta como real no puede depender de un campo
+editable ni de que un endpoint conteste bien. Probado atacándolo: se corrió la
+fusión con una respuesta que traía «Pago acreditado» en ese campo y los tres
+rótulos quedaron intactos.
+
+Su catálogo se parte por **área** —carta y tienda— y no por precio como el
+Demo A, porque se ofrecen distinto. Un ítem sin precio no entra: no se puede
+cobrar lo que no tiene precio.
 
 ### Brechas de cara al primer cliente (07/09)
 
