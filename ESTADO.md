@@ -342,9 +342,12 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 - **Retención del secreto OAuth viejo.** Se creó un client secret nuevo el 06/09
   y hay que borrar el anterior en la consola de Google una vez confirmado que
   nada lo usa.
-- **Política de retención de conversaciones.** Hay que decidirla antes del
-  primer cliente real: son datos personales de terceros que nunca consintieron
-  nada ante NovuChat.
+- ~~**Política de retención de conversaciones.**~~ Decidida el 07/09:
+  **12 meses desde el último mensaje**, con purga automática. Se borra el
+  contenido y se conserva la cuenta —el cierre público, sin teléfono completo—
+  para que un comercio pueda defender una factura vieja. Escrita en
+  `admin/DISENO.md` §4septies, con las dos frases para los términos. **El código
+  de la purga va después de las demos, y antes del primer cliente real.**
 - **Silvana como segunda propietaria** de plataforma y como revisora en
   GitHub. Hoy hay un único punto de falla humano y la §4 no se puede cumplir.
 - **Facturación de Gemini** para reducir los 503 durante los demos.
@@ -1259,6 +1262,50 @@ prohíbe. Queda el control de nodos huérfanos como parte de la revisión.
   como «14:50». Las catorce fichas ya cargadas cumplen; no hizo falta migrar.
 
 **Falta, y es lo de mañana:** conectar el **Demo B** igual que el A.
+
+### Brechas de cara al primer cliente (07/09)
+
+Andrés listó seis. Auditadas contra el código, no de memoria:
+
+| | Brecha | Estado |
+|---|---|---|
+| 1 | Alias de secreto sin desplegar | **CERRADA el 07/09** |
+| 2 | Alta del administrador de un comercio real | **CERRADA el 07/09** |
+| 3 | Catálogo y reglas fuera del prompt | **CERRADA la noche del 06/09**, al conectar la consola |
+| 4 | Retención de conversaciones | **DECIDIDA el 07/09**: 12 meses. Falta el código de la purga |
+| 5 | Migrar la ingesta al rol `ingesta` | abierta, antes del segundo cliente |
+| 6 | Límite de 50 eventos en la compuerta | abierta |
+
+**La #2 era el bloqueo de verdad, no la #1.** Con el alias sin desplegar el alta
+era incómoda; sin la #2 era **imposible**: `altaTenant` e `invitarUsuario` exigen
+que la persona ya haya ingresado una vez, y la consola no tiene pantalla de
+registro. Nadie podía crearse una cuenta. Ahora `alta-comercio.mjs` crea la
+cuenta con una clave aleatoria que no se imprime ni se guarda y entrega un
+enlace de restablecimiento; completarlo marca además el correo como verificado,
+que es lo que las reglas exigen. Probado contra el proyecto real y limpiado
+después.
+
+**La #3 estaba cerrada sin que nadie lo notara.** Al conectar la consola, el
+catálogo salió del prompt: hoy el System Message no tiene ni un precio ni un
+nombre de servicio literal. Las reglas dejaron de ser «belleza/salud» y se
+parten por precio, que es lo genérico. Queda reprobar la suite A.
+
+**La #1, cerrada con veinte alias** (`cliente01`…`cliente20`), cada uno con su
+secreto propio y con **valor real desde el primer día**, no un marcador. Las dos
+razones están en `firma.ts`, y la segunda no es obvia: si el valor se creara en
+el alta sería una versión nueva del secreto, y las instancias de Functions que
+ya corren siguen con la vieja hasta reciclarse — el cliente recién dado de alta
+fallaría de forma intermitente unos minutos, que es el peor tipo de falla.
+Naciendo con su valor, en el alta no se crea ninguna versión.
+
+Se eligió veinte secretos separados y no un solo secreto con un mapa JSON
+adentro —que sería ilimitado y no necesitaría reserva— por el radio de daño: un
+mapa filtrado entrega las claves de todos los clientes de una vez. Veinte
+secretos cuestan poco más de un dólar al mes.
+
+**Verificado tras desplegar:** `configuracionFlujo` responde 200 con los dos
+demos y la ingesta sigue autenticando. El procedimiento de alta completo quedó
+en `admin/DISENO.md` §6.1.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
