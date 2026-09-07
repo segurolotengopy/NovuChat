@@ -146,8 +146,22 @@ export function Cobro() {
           + 'usarlo, avísale a NovuChat.');
         if (archivoRef.current) archivoRef.current.value = '';
       }
-    } catch {
-      setProblemas(['No se pudo guardar. Vuelve a intentar en unos minutos.']);
+    } catch (e) {
+      // EL MENSAJE GENÉRICO TAPABA LA CAUSA. El 2026-09-07 esto falló por una
+      // política de seguridad del navegador que impedía llamar a la función, y
+      // lo único que se veía era «vuelve a intentar en unos minutos»: un
+      // consejo falso, porque intentar de nuevo no iba a arreglarlo nunca. Se
+      // distinguen los casos que la persona PUEDE resolver de los que no.
+      const codigo = (e as { code?: string }).code ?? '';
+      if (codigo === 'functions/permission-denied' || codigo === 'functions/unauthenticated') {
+        setProblemas(['Tu sesión no tiene permiso para guardar el QR. Sal y vuelve a entrar; '
+          + 'si sigue igual, avísale a NovuChat.']);
+      } else if (codigo === 'functions/internal' || codigo === '') {
+        setProblemas(['No se pudo contactar al servidor. Revisa tu conexión y prueba de nuevo; '
+          + 'si vuelve a pasar, avísale a NovuChat: es un problema nuestro, no tuyo.']);
+      } else {
+        setProblemas([`No se pudo guardar (${codigo}). Avísale a NovuChat con ese código.`]);
+      }
     } finally {
       setOcupado(false);
     }
