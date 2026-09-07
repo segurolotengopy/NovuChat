@@ -60,16 +60,19 @@ bolivianos con el mensaje «esa imagen no contiene un QR de cobro».
 En la familia cifrada **el número de cuenta es obligatorio**: es lo único con lo
 que después se puede verificar un pago.
 
-### El vencimiento es un problema de producto, no de programación
+### El vencimiento: el instrumento equivocado, no el estándar
 
-El QR real que se probó **vencía el mismo día en que se generó**. Si eso es lo
-que entrega la aplicación por defecto, el modelo «carga tu QR una vez» no se
-sostiene: el comercio tendría que subir uno nuevo cada día.
+El QR real que se probó vencía el mismo día. **Eso no es una limitación del
+estándar** —lo era de la muestra—: el QR Simple boliviano deja la vigencia como
+parámetro al emitir, y la API de Banco Económico la toma como `dueDate`, con
+ejemplos a más de un año. Corregido el 07-sep tras leer la investigación de
+`~/ManejoQRSimple`; ver `Analisis/08-qr-simple-lo-que-cambia.md`.
 
-**Hay que averiguarlo con los bancos antes de prometer esto a un cliente.** Lo
-más probable es que exista un QR de comercio con vigencia larga, y que ese sea
-el que hay que pedir. La consola ya lo dice en pantalla, pero es una pregunta
-comercial abierta.
+Lo que hay que pedirle al comercio es el **QR de comercio**, no el que la
+billetera personal genera por defecto. La consola ya lo dice en pantalla.
+
+El máximo real de vigencia sigue sin conocerse y **conviene no inventarlo**: es
+una pregunta abierta al banco incluso en el proyecto que más sabe del tema.
 
 ### El QR no se guarda como imagen: se vuelve a dibujar
 

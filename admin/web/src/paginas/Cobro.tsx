@@ -238,10 +238,11 @@ export function Cobro() {
           <li><strong>Sin monto fijo.</strong> Suele figurar como «Monto: Bs. 0.00»
           o «Sin especificar». Si tiene un importe grabado, le cobraría lo mismo
           a todo el mundo, sin importar el pedido.</li>
-          <li><strong>Con la fecha de vencimiento más lejana que te permitan.</strong> Ojo
-          con esto: el QR que genera la aplicación por defecto suele vencer <strong>el
-          mismo día</strong>. Pide en tu banco el QR para comercios, que dura mucho
-          más. El día que vence, tus clientes dejan de poder pagar.</li>
+          <li><strong>Que sea el QR para COMERCIOS, no el que la aplicación te da por
+          defecto.</strong> El QR personal suele vencer el mismo día; el de comercio
+          dura mucho más, y la vigencia la eliges al generarlo. Pide la fecha más
+          lejana que te permitan: el día que vence, tus clientes dejan de poder pagar
+          y te enteras por un reclamo.</li>
           <li><strong>El número de la cuenta que recibe.</strong> Aparece como
           «Cuenta destino». Es el dato más importante de todos: es contra lo que
           se compara el comprobante que manda tu cliente.</li>
