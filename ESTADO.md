@@ -976,10 +976,15 @@ defecto de diseño que habría llegado a producción:
    familias: `emvco` (se comprueba todo solo) y `cifrado` (se comprueba la
    forma, y el comercio declara cuenta, titular, vencimiento y confirma que es
    reutilizable y de monto abierto).
-2. **El QR real vencía el mismo día en que se generó.** Si eso es lo que da la
-   aplicación por defecto, el modelo «carga tu QR una vez» no se sostiene.
-   **Hay que preguntarle al banco por el QR de comercio antes de prometerle
-   esto a un cliente.** Es una pregunta comercial abierta.
+2. ~~**El QR real vencía el mismo día en que se generó**, así que el modelo
+   «carga tu QR una vez» no se sostiene.~~ **CORREGIDO el 07/09.** Generalicé
+   desde UNA muestra —el QR que la app del BNB da por defecto a una persona— a
+   todo el ecosistema, que es el mismo error de método que ya había cometido con
+   el formato EMVCo. El estándar boliviano deja la vigencia como parámetro al
+   emitir; la API de Banco Económico la toma como `dueDate` y su propio ejemplo
+   usa `2026-12-31`. **El modelo se sostiene: lo que no sirve es el QR personal
+   de una billetera, que es el instrumento equivocado.** Detalle y consecuencias
+   en `Analisis/08-qr-simple-lo-que-cambia.md`.
 3. **Un comprobante de tres bancos, tres formatos.** El del Banco de Crédito
    **no muestra el nombre del destinatario**: su «A nombre de» es el de la
    cuenta de ORIGEN. Cotejar por nombre habría rechazado todos los pagos hechos
@@ -1447,7 +1452,18 @@ en `admin/DISENO.md` §6.1.
    - `prompt-landing-precisiones.md` en la landing; `firebase-tools` 15; sumar a
      Silvana como revisora en GitHub (§4).
 
-**Pregunta comercial abierta, y no la puede resolver el equipo técnico:**
-averiguar con el BNB si existe un QR de comercio con vigencia larga. El que
-genera la aplicación por defecto vence en días, y con eso el modelo «carga tu QR
-una vez» no se sostiene.
+**Decisión de producto pendiente, con la investigación ya hecha** (07/09, en
+`Analisis/08-qr-simple-lo-que-cambia.md`): el cobro real de NovuChat es el nivel
+**«sin API del banco»** —el comercio sube su QR y el asistente coteja el
+comprobante—, y así hay que venderlo. Existe un nivel superior, con API, donde
+el banco confirma el pago y el OCR deja de ser la prueba. `~/ManejoQRSimple` ya
+lo analizó a fondo para Banco Económico. Tres preguntas para Andres:
+
+1. ¿NovuChat integra bancos, o se queda en el primer nivel? Integrar significa
+   certificaciones, credenciales y responsabilidad sobre dinero ajeno.
+2. Si se integra, ¿se reimplementa o se reutiliza `ManejoQRSimple`? Ese proyecto
+   ya tiene los puertos y la máquina de estados pensados; hacerlo dos veces es
+   dos oportunidades de equivocarse.
+3. **OpenBCB**: el BCB anunció en oct-2025 APIs estandarizadas para pagos QR. Si
+   prospera, la integración deja de ser banco por banco. Conviene seguirla antes
+   de invertir.
