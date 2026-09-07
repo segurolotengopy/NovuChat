@@ -13,6 +13,12 @@ setGlobalOptions({ region: REGION, maxInstances: 10 });
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './cierres.js';
 export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
+// CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
+// el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
+// todo lo demás, para que exista un solo inventario de lo que se despliega.
+export {
+  enlaceCatalogo, catalogoPublico, checkoutCatalogo, fijarWebhookCarrito,
+} from './catalogoWeb.js';
 
 import { registrar } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';
