@@ -10,6 +10,14 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
 /**
  * PEDIDOS Y COBRO — la pestaña propia del flujo de venta.
  *
+ * ⚠️ EL COBRO REAL TODAVÍA NO LO EJECUTA NINGÚN FLUJO. Se puede registrar y
+ * verificar el QR —que es lo que hace esta pantalla— pero el asistente sigue
+ * enviando el de demostración: el flujo de venta no lee `cobroReal`. Por eso
+ * los textos NO invitan a hacer nada: la versión anterior decía «avísale a
+ * NovuChat para empezar a usarlo», que dejaba a la persona esperando una
+ * gestión que no existe. Cuando el flujo lo consuma, cambian estos textos y
+ * aparece el control para activarlo.
+ *
  * DOS FORMAS DE COBRAR, y la pantalla las separa a propósito:
  *
  *  - **Demostración**: el QR y sus rótulos los pone NovuChat y no mueve dinero.
@@ -142,8 +150,9 @@ export function Cobro() {
       setProblemas(data.problemas ?? []);
       setAdvertencias(data.advertencias ?? []);
       if (data.registrado) {
-        setEstado('QR guardado. Todavía NO se está cobrando con él: para empezar a '
-          + 'usarlo, avísale a NovuChat.');
+        setEstado('QR guardado y verificado. El asistente todavía envía el QR de '
+          + 'demostración: el cobro real no está habilitado. No tienes que hacer '
+          + 'nada más, te avisamos cuando lo activemos.');
         if (archivoRef.current) archivoRef.current.value = '';
       }
     } catch (e) {
@@ -194,8 +203,10 @@ export function Cobro() {
           <p className="card-body">
             {activo
               ? <><span className="tag tag-accent">Cobrando</span> El asistente envía este QR a tus clientes.</>
-              : <><span className="tag tag-neutral">Registrado, sin usar</span> El asistente todavía
-                  NO lo envía. Avísale a NovuChat cuando quieras empezar a cobrar con él.</>}
+              : <><span className="tag tag-neutral">Guardado, todavía sin cobrar</span> Está
+                  verificado y listo. El asistente sigue enviando el QR de demostración
+                  hasta que activemos el cobro real para tu negocio; cuando pase, te
+                  avisamos. <strong>No hay nada que tengas que hacer.</strong></>}
           </p>
           {typeof registrado.montoFijo === 'number' && (
             <p className="ayuda aviso-datos">

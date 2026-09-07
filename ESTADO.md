@@ -995,7 +995,28 @@ cliente recibe un QR limpio en vez de una foto de pantalla. El PNG lo arma el
 servidor sin bibliotecas de imágenes, y se comprobó con `zxing-cpp` —un
 decodificador independiente— que se escanea y devuelve el texto exacto.
 
-**Lo que falta, y necesita un teléfono:** los tres nodos de n8n (descargar el
+**LO QUE FALTA PARA QUE EL COBRO REAL EXISTA DE VERDAD**, y conviene tenerlo
+claro porque la pantalla ya parece terminada: **ningún flujo lee `cobroReal`.**
+Se puede registrar y verificar un QR —probado el 07/09 con uno real del BNB— y
+el asistente sigue enviando el de demostración. Activarlo hoy no cambiaría
+nada. Falta:
+
+1. Que el flujo de venta lea `cobroReal` y, cuando esté encendido, envíe la
+   imagen por su ficha (`/api/qr/imagen?f=…`) **sin** los rótulos de simulacro,
+   en vez del QR de demostración. Son excluyentes.
+2. Los tres nodos del OCR: descargar el archivo de Meta, leerlo con Gemini,
+   cotejar con `cotejo.ts`.
+3. El control para encender el cobro real, que hoy no existe en ninguna parte:
+   `activo` se escribe en `false` y nada lo cambia. Lo enciende NovuChat, no el
+   comercio, porque pasar de demostración a dinero de verdad es una decisión
+   comercial y no un botón.
+
+Mientras tanto los textos de la pantalla **no invitan a hacer nada**. La primera
+versión decía «avísale a NovuChat para empezar a usarlo» y dejaba a la persona
+esperando una gestión que no existe; Andrés lo encontró de inmediato al
+guardarlo: «me dijo que me avise y yo no sé qué hacer».
+
+**Lo que falta del OCR, y necesita un teléfono:** los tres nodos de n8n (descargar el
 archivo de Meta, leerlo con Gemini, cotejar). El prompt de lectura y el mensaje
 al cliente —«guarda el comprobante ANTES de salir de la aplicación de tu
 banco»— están escritos en `Analisis/07-cobro-real-y-ocr.md`, listos para pegar.
