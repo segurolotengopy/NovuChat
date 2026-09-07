@@ -339,6 +339,31 @@ service cloud.firestore {
         || calendarioValido(datos[campo]);
     }
 
+    // -------------------------------------------------------------------------
+    // URL DE IMAGEN — la única clase de dato del comercio que NO termina como
+    // texto: va a un atributo `src` del navegador de un cliente final.
+    //
+    // POR ESO SE VALIDA ACÁ Y NO SOLO EN LA PANTALLA. `javascript:` en un `src`
+    // es ejecución de código, y `http://` hace que el navegador bloquee la
+    // imagen por contenido mixto sin decir nada —que para el comercio se ve
+    // como «no se ven mis fotos» y no hay pista de por qué—. Exigir `https://`
+    // resuelve los dos de una vez.
+    //
+    // LO QUE ESTA REGLA NO PUEDE HACER, dicho para que nadie suponga de más: no
+    // comprueba que la URL exista ni que devuelva una imagen. Eso lo mira la
+    // consola al importar y, en última instancia, el ojo del comercio en la
+    // vista previa. Vacío vale: significa «este ítem no tiene foto».
+    // -------------------------------------------------------------------------
+    function urlImagenValida(datos, campo) {
+      return cadena(datos.get(campo, ''), 500)
+        && (datos.get(campo, '') == ''
+            // Sin espacios y sin comillas. No es la defensa contra la inyección
+            // —esa la da React, que escapa todo atributo— sino el filtro de las
+            // URL mal pegadas, que son el caso frecuente: una copia con un salto
+            // de línea adentro produce una imagen rota y ninguna pista.
+            || datos.get(campo, '').matches("^https://[^ '\"<>]+$"));
+    }
+
     // Sello de auditoría: quien escribe no puede mentir sobre quién es ni sobre
     // cuándo escribió. Sin esto, la pista de auditoría es decorativa.
     function selloValido(datos) {
@@ -457,6 +482,12 @@ service cloud.firestore {
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
             'instruccionesExtra',
+            // CATÁLOGO WEB PROPIO. La identidad visual del sitio público es
+            // IDENTIDAD DEL NEGOCIO —igual que el nombre y la dirección—, así
+            // que vive en el documento común y no en el de un flujo: el día que
+            // el catálogo web sirva también para reservas, no hay nada que
+            // mudar. Ver DISENO.md §4octies.
+            'catalogoWebActivo', 'logoUrl', 'colorMarca',
             // Sello
             'actualizadoPor', 'actualizadoEn'
           ];
@@ -518,6 +549,24 @@ service cloud.firestore {
             && textoOpc(d, 'mensajeComercioSuspendido', 300)
 
             && textoOpc(d, 'instruccionesExtra', 1500)
+
+            // CATÁLOGO WEB. Nace APAGADO y encenderlo es un acto deliberado del
+            // comercio: publicar los precios de alguien en una dirección
+            // pública no puede ser el valor por defecto de nada.
+            && d.get('catalogoWebActivo', false) is bool
+            && urlImagenValida(d, 'logoUrl')
+            // COLOR DE MARCA: exactamente `#rrggbb`, o vacío.
+            //
+            // No es tiquismiquis. El color termina dentro de una propiedad
+            // personalizada de CSS en la página pública, y un valor libre ahí es
+            // una inyección de CSS: `#fff;background:url(https://ajeno/…)`
+            // filtraría cada visita a un tercero sin ejecutar una línea de
+            // JavaScript. Un enumerado de seis hexadecimales elimina el problema
+            // en vez de intentar limpiarlo, que es el mismo criterio con el que
+            // la voz del asistente es un enumerado y no texto libre.
+            && (d.get('colorMarca', '') == ''
+                || d.get('colorMarca', '').matches('^#[0-9a-fA-F]{6}$'))
+
             && selloValido(d);
         }
 
@@ -620,7 +669,14 @@ service cloud.firestore {
           let d = request.resource.data;
           return d.keys().hasOnly([
                    'nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionMin',
-                   'activo', 'actualizadoPor', 'actualizadoEn'
+                   'activo', 'actualizadoPor', 'actualizadoEn',
+                   // FOTO DEL ÍTEM, POR REFERENCIA. No se guarda ninguna imagen:
+                   // se guarda una URL a la que el comercio ya tiene alojada.
+                   // Eso ahorra montar un depósito de archivos con su subida,
+                   // sus reglas y su CORS —día y medio de trabajo— y, sobre
+                   // todo, evita que NovuChat pase a custodiar archivos de
+                   // terceros. Ver Analisis/11-catalogo-web-propio.md §2.
+                   'imagenUrl'
                  ])
             && textoReq(d, 'nombre', 80)
             && textoOpc(d, 'descripcion', 300)
@@ -652,8 +708,33 @@ service cloud.firestore {
             && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
             && d.get('duracionMin', 30) % 15 == 0
             && d.get('activo', null) is bool
+            && urlImagenValida(d, 'imagenUrl')
             && selloValido(d);
         }
+      }
+
+      // -----------------------------------------------------------------------
+      // /pedidos/{pedidoId} — CARRITOS QUE LLEGARON DEL CATÁLOGO WEB.
+      //
+      // LOS ESCRIBE EL SERVIDOR Y NADIE MÁS. `checkoutCatalogo` recalcula cada
+      // precio leyendo /catalogo antes de guardar: el navegador del cliente
+      // final manda identificadores y cantidades, nunca importes. Que acá la
+      // escritura esté cerrada para TODOS —incluido el admin del comercio y
+      // NovuChat— es lo que hace que un pedido guardado sea evidencia de lo que
+      // el catálogo decía en ese momento, y no una cifra que alguien pudo tocar
+      // después. Corregir un pedido se hace hablando con el cliente, que es
+      // donde tiene que hacerse.
+      //
+      // QUIÉN LO LEE: los mismos que pueden leer conversaciones. Un pedido dice
+      // qué compró una persona identificable por su conversación; es
+      // exactamente el mismo dato personal y no merece una puerta más ancha.
+      // Por eso también el teléfono va ENMASCARADO: el completo ya está en la
+      // conversación, y repetirlo acá sería duplicar un dato personal sin
+      // ninguna razón.
+      // -----------------------------------------------------------------------
+      match /pedidos/{pedidoId} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
       }
 
       // -----------------------------------------------------------------------
@@ -1265,7 +1346,12 @@ service cloud.firestore {
                  'mensaje_entrante', 'mensaje_saliente', 'plantilla_enviada',
                  'cita_agendada', 'cita_rechazada', 'cobro_simulado',
                  'transferencia_humano', 'config_publicada', 'suspension',
-                 'reactivacion', 'error_flujo', 'entrada_descartada'
+                 'reactivacion', 'error_flujo', 'entrada_descartada',
+                 // Catálogo web: se derivó a alguien al sitio, y volvió un
+                 // carrito. Hacen falta LOS DOS para poder contestar «mandé el
+                 // enlace y no me llegó ningún pedido»: con uno solo no se
+                 // distingue «nunca se derivó» de «se derivó y nadie compró».
+                 'catalogo_enlace', 'carrito_recibido'
                ]
             && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
             && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']
@@ -1388,6 +1474,29 @@ service cloud.firestore {
       // La escribe únicamente la Function `asignarNumero`, que además garantiza
       // que un mismo phone_number_id no apunte nunca a dos comercios.
       allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // /fichasCatalogo/{ficha} — EL ENLACE DE UNA CONVERSACIÓN AL CATÁLOGO WEB.
+    //
+    // CERRADA PARA TODO EL MUNDO, y por eso está escrita: la negación final ya
+    // la cubriría, pero una colección que guarda teléfonos merece una regla que
+    // se lea, no una que se deduzca. Cuando alguien busque «quién puede leer
+    // esto», tiene que encontrar la respuesta acá y no razonando por descarte.
+    //
+    // QUÉ GUARDA: `{ tenantId, telefono, phoneNumberId, caducaEn, checkouts }`.
+    // El identificador del documento son 128 bits al azar y es lo único que
+    // viaja en la URL que recibe el cliente final: el teléfono NO va en el
+    // enlace, porque una URL termina en el historial del navegador, en el
+    // `Referer` de las imágenes alojadas por terceros y en los registros de
+    // cualquier intermediario.
+    //
+    // QUIÉN LA USA: únicamente las Cloud Functions del catálogo web, con el SDK
+    // Admin. Ni el navegador del comercio ni el del propietario tienen nada que
+    // hacer acá: el comercio ve el PEDIDO que llegó, que es lo que necesita.
+    // =========================================================================
+    match /fichasCatalogo/{ficha} {
+      allow read, write: if false;
     }
 
     // =========================================================================
