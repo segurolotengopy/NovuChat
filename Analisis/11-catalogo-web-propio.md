@@ -151,3 +151,51 @@ las demos: es trabajo de después, y compite en prioridad con la brecha del rol
    diseño de la página y el argumento de venta.
 2. ¿Qué pasa cuando el carrito llega fuera de la ventana de 24 horas? Sin eso
    resuelto, el diseño tiene un agujero que se descubre con un cliente real.
+
+---
+
+## 8. Escrito (2026-09-07)
+
+Andres decidió las dos preguntas del §7 y pidió construirlo. Quedó hecho en esta
+misma rama, sin tocar nada de los demos del 9 y 10.
+
+**Las dos decisiones:**
+
+1. **La marca es la del comercio**, con NovuChat en el pie de la página. El
+   cliente final cree —con razón— que le está escribiendo a la panadería; una
+   marca que no le presentaron, justo en el momento de pagar, es una venta menos.
+2. **Fuera de la ventana de 24 horas se manda una plantilla** de «tu carrito te
+   espera». Hay que darla de alta en Meta: es lo único de todo esto que depende
+   de un tercero y de un plazo de aprobación.
+
+**Las dos correcciones del §3 se aplicaron tal cual.** El CSV entra como formato
+de importación y la consola queda como única fuente de verdad; el enlace lleva una
+ficha por conversación —no el teléfono—, va firmado con la pieza que ya existía y
+caduca a las 72 horas.
+
+**Lo que quedó, contra el presupuesto del §5:**
+
+| | Qué | Estimado | Dónde quedó |
+|---|---|---|---|
+| A | Sitio del catálogo: lista, detalle, carrito, checkout | 1,5 días | `admin/web/src/publico/` |
+| B | Endpoint de checkout, firmado, con la ficha | medio día | `admin/functions/src/catalogoWeb.ts` |
+| C | El enlace desde el flujo: marca, ficha, caducidad | medio día | `enlaceCatalogo` + `admin/CATALOGO-WEB.md` §4.1 |
+| D | Importar CSV/Sheets, con validación de las URL | medio día a 1 | `admin/web/src/lib/csv.ts` y la pestaña de catálogo |
+| E | Entregar el carrito y despertar al flujo | medio día | `despertarFlujo` + `fijarWebhookCarrito` |
+| F | Pruebas | medio día | `admin/pruebas/catalogo-web.test.ts` (50) |
+
+**Lo que NO está hecho, y no es un olvido:**
+
+- **Los dos nodos de n8n y la plantilla de Meta.** No se tocó ningún JSON de
+  `Flujos/`: son la exportación de lo que corre en n8n y editarlos a mano los
+  separa de la realidad, además de que el congelamiento es mañana. Están
+  especificados nodo por nodo en `admin/CATALOGO-WEB.md` §4.
+- **La prueba contra un teléfono real**, que exige el proyecto de nube creado.
+- **La reentrega si el webhook del flujo falla.** El pedido queda guardado y
+  visible en la consola, marcado `entregadoAlFlujo: false`; hoy hay que mirarla.
+- **La purga de las fichas caducadas**, que entra en la retención de 12 meses
+  junto con todo lo demás.
+
+Y una consecuencia que conviene conocer: la página pública y la consola comparten
+origen. Se aceptó con argumentos en `admin/SEGURIDAD.md` T-37, junto con lo que
+hay que hacer —un segundo sitio de Hosting— antes de tener volumen real.

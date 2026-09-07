@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-07 (la consola manda: los tres flujos leen del panel)
+**Última actualización:** 2026-09-07 (catálogo web propio, escrito en `disenio/catalogo-web`)
 
 ---
 
@@ -45,6 +45,56 @@ flujo, los tres nodos del OCR y el control para encenderlo.
 **Pendiente de hoy:** la suite A completa con teléfono, y a las 17:00 confirmar
 que llegan los seis recordatorios del martes — es el único eslabón que nunca se
 vio correr solo.
+
+---
+
+## Rama aparte: el catálogo web propio (2026-09-07, tarde)
+
+**En `disenio/catalogo-web`. No toca nada de los demos** y no entra a `main`
+antes del congelamiento: es trabajo de después, como decía el §7 del análisis.
+
+**Qué es.** El comercio publica su catálogo como página web con SU marca; el
+asistente le manda el enlace a un cliente; el cliente elige y confirma, y **el
+carrito vuelve de servidor a servidor a la conversación**. El precio lo pone
+siempre el servidor leyendo `/catalogo`: el navegador manda identificadores y
+cantidades, nada más. Esa es la propiedad entera del diseño —lo que las
+plataformas externas no pueden dar, porque allá el pedido vuelve como un mensaje
+que el cliente puede editar— y por eso hay pruebas dedicadas a defenderla.
+
+**Andres decidió las dos preguntas que estaban abiertas:**
+
+1. **La marca es la del comercio**, NovuChat en el pie.
+2. **Fuera de la ventana de 24 h se manda una plantilla** «tu carrito te espera».
+
+**Qué quedó escrito:** el sitio público (`web/src/publico/`), las tres funciones
+(`functions/src/catalogoWeb.ts`), la importación de CSV/Sheets con vista previa
+(`web/src/lib/csv.ts`), las reglas de `/pedidos` y `/fichasCatalogo`, y 50
+pruebas nuevas. **403 pruebas en verde**, `pnpm web:build`, `functions:build` y
+el lint limpios.
+
+**Cambio que afecta a los flujos ya publicados, y conviene saberlo:**
+`configuracionFlujo` ahora **resume** el catálogo si tiene más de 40 ítems, en vez
+de mandarlo entero al prompt. **Solo si el comercio encendió el catálogo web**,
+que nace apagado: hoy ningún comercio lo tiene, así que el comportamiento de los
+tres flujos publicados no cambia en nada. Es el punto 7 del diseño de Andres.
+
+**Lo que falta para que funcione de punta a punta:**
+
+- **Dos nodos en n8n y una plantilla aprobada por Meta.** No se tocó ningún JSON
+  de `Flujos/`: son la exportación de lo que corre en n8n, y el congelamiento es
+  mañana. Están especificados nodo por nodo en `admin/CATALOGO-WEB.md` §4.
+- **La prueba contra un teléfono real**, que exige el proyecto de nube creado.
+- **Reentrega si el webhook del flujo falla.** El pedido queda guardado y visible
+  en la consola con `entregadoAlFlujo: false`; hoy hay que mirarla.
+- **Purga de las fichas caducadas**, que entra con la retención de 12 meses.
+
+**Dos consecuencias anotadas por adelantado**, las dos en `admin/SEGURIDAD.md`:
+
+- `img-src` de la CSP pasó a admitir cualquier `https:`, porque las fotos del
+  catálogo las aloja cada comercio donde quiere. Se intentó acotarlo por ruta y
+  no se puede en una aplicación de una sola página (§5bis).
+- La página pública y la consola comparten origen (T-37). Aceptado hoy; antes de
+  tener volumen real hay que publicar `/c/**` en un segundo sitio de Hosting.
 
 ---
 
@@ -1591,6 +1641,10 @@ del cliente.
    - Alta y administración de negocios desde la consola, y el rol contador.
    - `prompt-landing-precisiones.md` en la landing; `firebase-tools` 15; sumar a
      Silvana como revisora en GitHub (§4).
+   - **Catálogo web propio**: fusionar `disenio/catalogo-web`, agregar los dos
+     nodos de n8n, dar de alta la plantilla `carrito_te_espera` en Meta y
+     probarlo con un teléfono. Todo lo demás ya está escrito y probado; ver
+     `admin/CATALOGO-WEB.md` §5 para el orden de la puesta en marcha.
 
 **Decidido por Andres el 07/09**, sobre `Analisis/08-qr-simple-lo-que-cambia.md`:
 
