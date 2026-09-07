@@ -149,13 +149,59 @@ tener catálogo de WhatsApp, y está bien.**
 
 ---
 
+## 6bis. Cuánto cuesta el punto 3 (estimado el 07-sep, sobre el código real)
+
+**Lo que ya está hecho y no se vuelve a pagar:** el catálogo editable en la
+consola con precios, la conexión consola→flujo, y `Normalizar entrada` que ya
+entiende un carrito (`order` con `product_items`).
+
+**Lo que falta, verificado contra el repositorio:**
+
+| | Qué | Estimado |
+|---|---|---|
+| **A** | **Imágenes de producto.** No existe ninguna: el catálogo no tiene campo de imagen y **Firebase Storage no está configurado** (`firebase.json` no lo menciona y no hay `storage.rules`). Hace falta el depósito con sus reglas y CORS, subir/recortar/previsualizar/borrar en la consola, y servirlas en una dirección pública que Meta pueda leer. | **1,5 días** |
+| **B** | **El feed.** Endpoint público por comercio que emite el catálogo en el formato de Meta, leído de Firestore, con su ficha para que no se pueda recorrer la cartera. | **medio día** |
+| **C** | **El Flujo B.** Enviar el mensaje de catálogo —hoy solo sabe enviar una lista interactiva— y que el SKU sea el identificador del ítem, para que un carrito llegue con productos que el agente sabe nombrar. Más la prueba con teléfono. | **medio día** |
+| **D** | **Lado Meta.** Crear el catálogo, conectar el feed, vincularlo a la WABA. Manual y por comercio. | **1 h** el primero, **15 min** los siguientes |
+
+**Total: 2,5 a 3 días de trabajo efectivo.** El grueso es A, que nadie había
+contado porque el documento de Silvana da por hecho que el catálogo se llena con
+texto.
+
+**Por qué las imágenes no son opcionales.** Aunque Meta no las exigiera —hay que
+confirmarlo en su especificación de feeds—, un catálogo visual sin fotos no
+sirve para nada: el valor entero de la propuesta es que el cliente **navegue** en
+vez de leer. Un carrito de recuadros grises es peor que la lista de texto que ya
+existe.
+
+### El riesgo que no se acorta con más horas
+
+**Meta revisa los catálogos de comercio contra su política.** Puede tardar días y
+puede rechazar categorías enteras. Eso no es esfuerzo, es calendario: hay que
+empezarlo con margen y **no prometerle una fecha a un cliente antes de tener el
+primer catálogo aprobado**.
+
+### Un camino intermedio que cuesta medio día
+
+El Flujo B **ya envía una lista interactiva** (`action.sections`). Alimentarla
+desde el catálogo de la consola —en vez del texto fijo de hoy— da buena parte de
+la experiencia con **cero imágenes, cero feed, cero revisión de Meta**. Las listas
+de WhatsApp tienen un tope de filas que hay que verificar, así que sirve para un
+catálogo chico, que es exactamente el Setup Estándar.
+
+**Recomendación:** hacer eso primero. Cubre al cliente de 20 productos, que es el
+tramo que se está vendiendo, y deja el catálogo nativo para cuando aparezca el
+primer comercio grande — que es también cuando conviene medir el tope del §5.
+
 ## 7. Qué haría, en orden
 
 1. **Nada antes de las demos.** Esto no toca el guion del 9 y 10.
 2. **Para la rueda de negocios:** la plantilla de Google Sheets como parche
    consciente, con fecha de retiro escrita.
-3. **Después de las demos:** el endpoint del feed desde la consola, que es medio
-   día, y conectar el catálogo nativo **al Flujo B únicamente**, con el
-   SKU = identificador del ítem. El Flujo A no lo lleva ni lo va a llevar.
+3. **Después de las demos:** la lista interactiva alimentada por la consola —medio
+   día, sin Meta de por medio—, que cubre al cliente de 20 productos.
+4. **Cuando aparezca el primer comercio grande:** el catálogo nativo completo,
+   2,5 a 3 días, **al Flujo B únicamente**. El Flujo A no lo lleva ni lo va a
+   llevar. Empezar el trámite con Meta antes que el código.
 4. **Antes de venderle a un comercio grande:** medir con 20, 50 y 150 productos y
    fijar el tope con ese dato.
