@@ -88,7 +88,21 @@ temprano un comprobante que no cuadra.
 
 ---
 
-## 4. Lo que hay que decidir, y no es técnico
+## 4. Resuelto por Andres (07-sep-2026)
+
+| Pregunta | Resolución |
+|---|---|
+| ¿NovuChat integra bancos? | **Sí, pero en una etapa posterior**, cuando `ManejoQRSimple` esté listo |
+| ¿Reimplementar o reutilizar? | **Reutilizar `ManejoQRSimple`.** Sin esfuerzos duplicados |
+| OpenBCB | Se sigue: buena noticia para el mediano plazo |
+
+**Consecuencia operativa:** hablar con un banco —generar QR por pedido,
+consultar el estado de un pago, conciliar— **no se escribe en NovuChat**. Cuando
+llegue la etapa, se consume `ManejoQRSimple` por sus puertos `QrProvider` y
+`PaymentWatcher`. Código de integración bancaria apareciendo en este repositorio
+es la señal de que se está duplicando lo que esta decisión evita.
+
+### 4bis. Lo que se decidió, con el razonamiento original
 
 1. **¿NovuChat integra bancos, o se queda en el primer nivel?** Integrar es
    entrar en certificaciones, credenciales y responsabilidad sobre dinero ajeno.

@@ -337,6 +337,9 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Precio del catálogo | Opcional. Ausente significa «a consultar»; cero significa gratis y son cosas distintas | 07/09 |
 | Envío de plantillas | Por `httpRequest` con el JSON armado a mano, no por el nodo de WhatsApp, que manda `template.language` sin `code` | 06/09 |
 | Marcar como recordado | Solo con el identificador de mensaje que devuelve Meta. Un envío fallido no se marca | 06/09 |
+| Retención de conversaciones | 12 meses desde el último mensaje, con purga automática | 07/09 |
+| Integración con bancos | En una etapa posterior, cuando `~/ManejoQRSimple` esté listo. **No se escribe integración bancaria en este repositorio** | 07/09 |
+| Cobro real de NovuChat | Es el nivel «sin API del banco» y así se vende. El asistente nunca dice «pago acreditado» | 07/09 |
 
 ## Decisiones pendientes
 
@@ -1452,18 +1455,23 @@ en `admin/DISENO.md` §6.1.
    - `prompt-landing-precisiones.md` en la landing; `firebase-tools` 15; sumar a
      Silvana como revisora en GitHub (§4).
 
-**Decisión de producto pendiente, con la investigación ya hecha** (07/09, en
-`Analisis/08-qr-simple-lo-que-cambia.md`): el cobro real de NovuChat es el nivel
-**«sin API del banco»** —el comercio sube su QR y el asistente coteja el
-comprobante—, y así hay que venderlo. Existe un nivel superior, con API, donde
-el banco confirma el pago y el OCR deja de ser la prueba. `~/ManejoQRSimple` ya
-lo analizó a fondo para Banco Económico. Tres preguntas para Andres:
+**Decidido por Andres el 07/09**, sobre `Analisis/08-qr-simple-lo-que-cambia.md`:
 
-1. ¿NovuChat integra bancos, o se queda en el primer nivel? Integrar significa
-   certificaciones, credenciales y responsabilidad sobre dinero ajeno.
-2. Si se integra, ¿se reimplementa o se reutiliza `ManejoQRSimple`? Ese proyecto
-   ya tiene los puertos y la máquina de estados pensados; hacerlo dos veces es
-   dos oportunidades de equivocarse.
-3. **OpenBCB**: el BCB anunció en oct-2025 APIs estandarizadas para pagos QR. Si
-   prospera, la integración deja de ser banco por banco. Conviene seguirla antes
-   de invertir.
+1. **NovuChat SÍ se integrará a bancos, pero en una etapa posterior**, cuando
+   `~/ManejoQRSimple` esté listo. No ahora.
+2. **Se usa `ManejoQRSimple`, no se reimplementa.** Sin esfuerzos duplicados.
+3. **OpenBCB se sigue** como buena noticia para el mediano plazo.
+
+**Lo que eso fija para el cobro real de NovuChat.** Queda como el nivel **«sin
+API del banco»** —el comercio sube su QR y el asistente coteja el comprobante—
+y **así hay que venderlo**: el asistente nunca dice «pago acreditado», porque en
+este nivel no lo sabe. Es lo correcto para la mayoría de los comercios hoy, y no
+es un parche a la espera de otra cosa.
+
+**Y fija un límite de alcance que conviene respetar:** todo lo que sea hablar
+con un banco —generar QR por pedido, consultar el estado de un pago, conciliar—
+**no se escribe en este repositorio**. Cuando llegue esa etapa, NovuChat consume
+`ManejoQRSimple` a través de sus puertos (`QrProvider`, `PaymentWatcher`), que
+ya están pensados ahí. Si alguna vez aparece código de integración bancaria en
+NovuChat, es señal de que se está duplicando el esfuerzo que esta decisión
+justamente evita.
