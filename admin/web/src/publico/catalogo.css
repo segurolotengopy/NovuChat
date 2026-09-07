@@ -1,0 +1,217 @@
+/* =============================================================================
+   CATÁLOGO PÚBLICO — la hoja del sitio que ve el cliente final
+   =============================================================================
+   Se apoya en los tokens de `diseno.css` (tipografía, espaciado, escala de
+   grises) y CAMBIA UNA SOLA COSA: el acento pasa a ser el color del comercio,
+   por la propiedad `--marca`. Si el comercio no cargó ninguno, `--marca` cae en
+   el acento del sistema y la página queda sobria en vez de rota.
+
+   MÓVIL PRIMERO, Y NO COMO POSTURA. El cien por ciento del tráfico llega desde
+   un enlace de WhatsApp. El escritorio se resuelve con un ancho máximo y una
+   sola consulta de medios al final; si algo tiene que verse peor en algún lado,
+   que sea en el escritorio.
+
+   ÁREA DE TOQUE MÍNIMA DE 44 px en todo lo que se toca. Los botones de sumar y
+   restar son los que más se usan y los que más fácil se erran: un contador de
+   32 px hace que la persona agregue dos de algo sin querer y se entere al ver
+   el total.
+   ========================================================================== */
+
+.cat {
+  --marca: var(--color-accent);
+  --cat-ancho: 46rem;
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  padding-bottom: 6rem;               /* deja lugar a la barra del carrito */
+}
+
+.cat-cabecera {
+  display: flex; gap: var(--space-3); align-items: center;
+  padding: var(--space-4);
+  max-width: var(--cat-ancho); margin: 0 auto;
+  border-bottom: 2px solid var(--marca);
+}
+.cat-cabecera h1 { margin: 0; font-size: 1.35rem; line-height: 1.15; }
+.cat-sub { margin: .15rem 0 0; font-size: .82rem; opacity: .7; }
+.cat-logo {
+  width: 56px; height: 56px; object-fit: contain; flex: none;
+  background: var(--color-surface);
+}
+
+.cat-cuerpo { max-width: var(--cat-ancho); margin: 0 auto; padding: var(--space-4); }
+
+.cat-buscar {
+  width: 100%; box-sizing: border-box;
+  padding: .7rem .8rem; font-size: 1rem; font-family: inherit;
+  color: var(--color-text); background: var(--color-surface);
+  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.cat-buscar:focus-visible { border-color: var(--marca); outline: 2px solid var(--marca); }
+
+/* Las áreas se desplazan en horizontal en vez de apilarse: un comercio con diez
+   categorías empujaría el catálogo entero fuera de la primera pantalla. */
+.cat-areas {
+  display: flex; gap: .4rem; overflow-x: auto; margin: var(--space-3) 0;
+  padding-bottom: .25rem; scrollbar-width: none;
+}
+.cat-areas::-webkit-scrollbar { display: none; }
+.cat-areas button {
+  flex: none; padding: .45rem .8rem; font: inherit; font-size: .85rem;
+  cursor: pointer; white-space: nowrap;
+  background: var(--color-surface); color: var(--color-text);
+  border: 1px solid var(--color-divider); border-radius: 2rem;
+}
+.cat-areas button[aria-pressed="true"] {
+  background: var(--marca); border-color: var(--marca); color: #fff;
+}
+
+.cat-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+
+.cat-tarjeta {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-divider);
+}
+.cat-tarjeta-toque {
+  display: flex; align-items: center; gap: var(--space-3);
+  flex: 1; min-width: 0; text-align: left; cursor: pointer;
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+}
+.cat-foto {
+  width: 72px; height: 72px; flex: none; object-fit: cover;
+  background: var(--color-surface);
+}
+.cat-foto-sin { display: block; }
+.cat-datos { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.cat-datos strong { font-size: 1rem; line-height: 1.25; }
+.cat-desc {
+  font-size: .82rem; opacity: .72;
+  /* Dos líneas y corta. Una descripción larga desalinea la lista entera y
+     esconde los precios, que es lo que la persona vino a comparar. */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cat-precio { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.cat-agregar, .cat-contador button, .cat-confirmar, .cat-volver, .cat-barra {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  cursor: pointer;
+}
+.cat-agregar {
+  flex: none; min-height: 44px; padding: 0 .9rem; font-size: .85rem;
+  background: none; color: var(--marca);
+  border: 1.5px solid var(--marca); border-radius: var(--radius-md);
+}
+.cat-contador {
+  flex: none; display: flex; align-items: center; gap: .25rem;
+  border: 1.5px solid var(--marca); border-radius: var(--radius-md);
+}
+.cat-contador button {
+  width: 44px; height: 44px; font-size: 1.2rem; line-height: 1;
+  background: none; border: 0; color: var(--marca);
+}
+.cat-contador button:disabled { opacity: .4; cursor: not-allowed; }
+.cat-contador span { min-width: 1.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+
+.cat-oculto {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+/* Barra del carrito: fija abajo, con el hueco de la barra del sistema en los
+   teléfonos con gesto de inicio. Sin `env(safe-area-inset-bottom)` el botón
+   queda debajo de la barra del iPhone y no se puede tocar. */
+.cat-barra {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  width: 100%; box-sizing: border-box;
+  padding: var(--space-3) var(--space-4);
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  background: var(--marca); color: #fff; border: 0; font-size: .95rem;
+  box-shadow: var(--shadow-lg);
+}
+
+/* Hoja de detalle. Sube desde abajo, que es de donde llega el pulgar. */
+.cat-hoja { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end; }
+.cat-hoja-fondo { position: absolute; inset: 0; background: rgb(0 0 0 / .5); }
+.cat-hoja-panel {
+  position: relative; width: 100%; max-height: 86vh; overflow-y: auto;
+  max-width: var(--cat-ancho); margin: 0 auto;
+  background: var(--color-bg); padding: var(--space-4);
+  padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+.cat-hoja-panel h2 { margin: var(--space-3) 0 .25rem; }
+.cat-cerrar {
+  position: absolute; top: .5rem; right: .5rem;
+  width: 44px; height: 44px; font-size: 1.5rem; line-height: 1; cursor: pointer;
+  background: var(--color-bg); color: var(--color-text);
+  border: 1px solid var(--color-divider); border-radius: 50%;
+}
+.cat-foto-grande { width: 100%; max-height: 45vh; object-fit: cover; }
+.cat-precio-grande { font-size: 1.3rem; font-weight: 700; margin: 0 0 var(--space-3); }
+
+.cat-resumen { list-style: none; margin: 0 0 var(--space-4); padding: 0; }
+.cat-resumen li {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--color-divider);
+}
+.cat-resumen li > span:first-child { flex: 1; min-width: 0; }
+.cat-resumen strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.cat-modo { display: flex; gap: .5rem; margin: var(--space-4) 0 var(--space-3); }
+.cat-modo button {
+  flex: 1; min-height: 48px; padding: .5rem; font: inherit; cursor: pointer;
+  background: var(--color-surface); color: var(--color-text);
+  border: 1.5px solid var(--color-divider); border-radius: var(--radius-md);
+}
+.cat-modo button[aria-pressed="true"] {
+  background: var(--marca); border-color: var(--marca); color: #fff;
+}
+
+.cat-campo { display: block; margin: var(--space-3) 0; font-size: .85rem; opacity: .85; }
+.cat-campo textarea {
+  display: block; width: 100%; box-sizing: border-box; margin-top: .3rem;
+  padding: .6rem; font: inherit; font-size: 1rem; resize: vertical;
+  color: var(--color-text); background: var(--color-surface);
+  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+}
+
+.cat-total { font-size: 1.25rem; font-weight: 700; margin: var(--space-4) 0 var(--space-2); }
+.cat-confirmar {
+  width: 100%; min-height: 52px; font-size: 1rem;
+  background: var(--marca); color: #fff; border: 0; border-radius: var(--radius-md);
+}
+.cat-confirmar:disabled { opacity: .5; cursor: not-allowed; }
+
+.cat-volver { background: none; border: 0; padding: 0 0 var(--space-3); color: var(--marca); font-size: .9rem; }
+
+.cat-nota { font-size: .82rem; opacity: .75; }
+.cat-error {
+  font-size: .9rem; padding: .6rem .8rem; margin: var(--space-3) 0;
+  border-left: 3px solid var(--color-accent-600);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+.cat-vacio, .cat-aviso { padding: var(--space-6) var(--space-4); text-align: center; opacity: .8; }
+.cat-fin { text-align: center; padding-top: var(--space-8); }
+
+.cat-pie {
+  max-width: var(--cat-ancho); margin: var(--space-8) auto 0;
+  padding: var(--space-4); text-align: center;
+  font-size: .72rem; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  border-top: 1px solid var(--color-divider);
+}
+
+@media (min-width: 40rem) {
+  .cat-lista { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  .cat-tarjeta { border-bottom: 0; border: 1px solid var(--color-divider); padding: var(--space-3); }
+  .cat-hoja { align-items: center; }
+  .cat-hoja-panel { max-height: 80vh; }
+}
+
+/* Quien pidió menos movimiento no debería recibir una hoja que salta. */
+@media (prefers-reduced-motion: reduce) {
+  .cat * { animation: none !important; transition: none !important; }
+}

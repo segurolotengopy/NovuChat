@@ -40,14 +40,46 @@ if (!existsSync(DIST)) {
 
 // Las cabeceras salen del archivo REAL, no de una copia.
 const config = JSON.parse(readFileSync(join(RAIZ, 'firebase.json'), 'utf8'));
-const bloqueGeneral = config.hosting.headers.find((h) => h.source === '**');
-const CABECERAS = Object.fromEntries(
-  bloqueGeneral.headers
+
+const aMapa = (bloque) => Object.fromEntries(
+  bloque.headers
     // HSTS molesta en localhost —el navegador recuerda el origen como HTTPS— y
     // no tiene nada que ver con lo que se quiere probar acá.
     .filter((h) => h.key !== 'Strict-Transport-Security')
     .map((h) => [h.key, h.value]),
 );
+
+/**
+ * LAS CABECERAS DEPENDEN DE LA RUTA, y este script tiene que reproducir eso.
+ *
+ * Desde que existe el catálogo público, `/c/**` tiene su propia política: más
+ * cerrada en todo —ni Firebase, ni Google, ni formularios— salvo en `img-src`,
+ * que admite cualquier `https:` porque las fotos las aloja cada comercio donde
+ * quiere. Si este servidor siguiera aplicando solo el bloque `**`, estaría
+ * probando la página equivocada y diría que todo está bien.
+ *
+ * Firebase Hosting aplica TODOS los bloques que coinciden, y el último gana. Acá
+ * se recorren en el mismo orden y se van pisando, que es exactamente lo que
+ * hace Hosting: por eso el orden dentro de `firebase.json` importa.
+ */
+const aExpresion = (patron) => new RegExp('^' + patron
+  .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  .replace(/\*\*/g, 'CUALQUIER_RUTA')
+  .replace(/\*/g, '[^/]*')
+  .replace(/CUALQUIER_RUTA/g, '.*') + '$');
+
+const GLOBOS = config.hosting.headers.map((h) => ({
+  prueba: aExpresion(h.source),
+  cabeceras: aMapa(h),
+}));
+
+function cabecerasDe(ruta) {
+  let acumulado = {};
+  for (const g of GLOBOS) if (g.prueba.test(ruta)) acumulado = { ...acumulado, ...g.cabeceras };
+  return acumulado;
+}
+
+const CABECERAS = cabecerasDe('/');
 
 const TIPOS = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -66,15 +98,19 @@ createServer(async (peticion, respuesta) => {
     ? candidato
     : join(DIST, 'index.html');   // SPA: todo lo demás cae al index
 
+  // Las cabeceras se resuelven contra la ruta PEDIDA, no contra el archivo que
+  // termina sirviéndose. Es lo que hace Hosting: `/c/<ficha>` recibe la
+  // política del catálogo aunque el cuerpo sea el mismo `index.html`.
+  const cabeceras = cabecerasDe(ruta);
   try {
     const cuerpo = await readFile(destino);
     respuesta.writeHead(200, {
-      ...CABECERAS,
+      ...cabeceras,
       'Content-Type': TIPOS[extname(destino)] ?? 'application/octet-stream',
     });
     respuesta.end(cuerpo);
   } catch {
-    respuesta.writeHead(404, CABECERAS).end('no encontrado');
+    respuesta.writeHead(404, cabeceras).end('no encontrado');
   }
 }).listen(PUERTO, '127.0.0.1', () => {
   console.log(`\nSirviendo web/dist con las cabeceras de firebase.json`);
@@ -83,5 +119,8 @@ createServer(async (peticion, respuesta) => {
   for (const [k, v] of Object.entries(CABECERAS)) {
     console.log(`  ${k}: ${v.length > 90 ? v.slice(0, 90) + '…' : v}`);
   }
+  console.log(`\n  Catálogo público: http://127.0.0.1:${PUERTO}/c/${'0'.repeat(32)}`);
+  console.log('  (sin backend dice «enlace vencido»; lo que se prueba acá es que');
+  console.log('   la página cargue sin ninguna violación de la política.)');
   console.log('\nEn la consola del navegador, cualquier «Refused to» es una violación.');
 });
