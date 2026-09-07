@@ -325,6 +325,8 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | El QR no se almacena | Se guarda el texto validado y la imagen se vuelve a dibujar en cada envío | 06/09 |
 | Anulación de citas | El Flujo A puede cancelar, con búsqueda por el teléfono del mensaje y confirmación explícita del cliente | 06/09 |
 | Doble reserva | Candado POR CÓDIGO en `Comprobar reserva`, no por prompt. Cede la cita más nueva y no se le confirma al cliente | 06/09 |
+| Envío de plantillas | Por `httpRequest` con el JSON armado a mano, no por el nodo de WhatsApp, que manda `template.language` sin `code` | 06/09 |
+| Marcar como recordado | Solo con el identificador de mensaje que devuelve Meta. Un envío fallido no se marca | 06/09 |
 
 ## Decisiones pendientes
 
@@ -1115,6 +1117,42 @@ dinámico. Es un cambio en la canalización de los flujos y no entra antes del 8
 **Límite conocido:** la consulta trae hasta 50 eventos por calendario en 90
 días. Un negocio con más citas que eso podría dejar una superposición sin ver.
 Hay que subir el límite o acotar la ventana antes del primer cliente grande.
+
+### El recordatorio de las 17:00 nunca llegó, y eran TRES defectos (06/09, noche)
+
+Andrés avisó que no había recibido ni uno. El cron **sí dispara**: corre todos
+los días a las 21:00 UTC —sus 17:00— y la ejecución termina en «success». El
+problema estaba adentro, y la ejecución #1001 lo mostró entero.
+
+1. **El envío fallaba.** Meta devolvía «Bad request» con el detalle exacto:
+   `template.language` sin el campo `code`. El nodo de WhatsApp de n8n arma ese
+   objeto mal. Se comprobó contra la API que el cuerpo correcto devuelve 200 y
+   el mensaje llega, así que el nodo se reemplazó por un `httpRequest` que arma
+   el JSON a mano —el mismo camino que ya usa el Demo B para el QR.
+2. **La cita se marcaba como recordada IGUAL.** El nodo de envío tenía
+   `continueRegularOutput`, así que el error seguía de largo y `Marcar como
+   recordado` escribía `[recordado]` en el evento. Resultado: el fallo se volvía
+   permanente e invisible, porque al día siguiente esa cita ya estaba «hecha».
+   Ahora hay una compuerta que exige el identificador de mensaje que devuelve
+   Meta; sin eso, no se marca nada.
+3. **No miraba la agenda de José.** `Calendarios del negocio` armaba la lista
+   con el calendario del negocio y el mapa de servicios, pero NO con
+   `funcionarios`. La cita de las 09:00 del día siguiente vivía en la agenda de
+   José y el flujo no la veía. Es **el mismo defecto que ya se había corregido
+   en el flujo de agendamiento** (`Calendarios a revisar`) y que aquí quedó sin
+   corregir: cuando un dato se lee en dos flujos, arreglarlo en uno solo es
+   medio arreglo. Ahora revisa cuatro calendarios en vez de tres.
+
+**Verificado hasta donde se puede sin esperar al reloj:** la plantilla llega
+(Andrés recibió el mensaje de prueba), el flujo vivo arma la lista de cuatro
+calendarios incluida la de José, el envío tiene su credencial y la compuerta
+está conectada. **La corrida completa se ve mañana a las 17:00**, que procesará
+las citas del 8: son seis, así que van a llegar seis recordatorios.
+
+**Detalle útil:** `publicar-flujo.sh` toma el identificador del flujo de
+`N8N_WORKFLOW_ID`, así que para publicar este hay un `.env.recordatorios`
+—ignorado— que hereda `.env` y solo cambia esa línea:
+`./scripts/publicar-flujo.sh --env .env.recordatorios --flujo Flujos/demo-a-recordatorios.json --aplicar`
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
