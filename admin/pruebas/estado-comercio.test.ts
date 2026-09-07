@@ -49,9 +49,12 @@ function fusionar(archivo: string, fusion: string, base: string, respuesta: unkn
   );
   const entrada = { first: () => ({ json: respuesta }) };
   const contexto = () => ({ first: () => ({ json: valores }) });
-  // nosemgrep: devsecops.js-eval-prohibido -- se ejecuta el flujo versionado
-  // dentro de una prueba; copiar la lógica dejaría la prueba en verde mientras
-  // el flujo se rompe. Misma justificación que en candado-agenda.test.ts.
+  // Se ejecuta el flujo VERSIONADO dentro de una prueba; copiar la lógica
+  // dejaría la prueba en verde mientras el flujo se rompe. Misma justificación
+  // que en `candado-agenda.test.ts`. La marca va en la línea de arriba del
+  // código a propósito: `nosemgrep` solo alcanza a la línea siguiente, y
+  // ponerla más arriba no surte efecto —comprobado en el pipeline—.
+  // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', codigo) as
     (i: unknown, c: unknown) => { json: Record<string, unknown> }[];
   return { salida: fn(entrada, contexto)[0]?.json ?? {}, base: valores };
