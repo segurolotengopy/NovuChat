@@ -150,3 +150,8 @@ tr.alerta td { background: #c6282811; }
   flex-direction: row; max-width: 38rem;
 }
 .campo-casilla input { width: auto; margin-top: .2rem; }
+
+/* Fila del catálogo en modo edición: se distingue de las demás para que se vea
+   dónde está uno cuando la tabla es larga, y los campos ocupan su columna. */
+.fila-editando { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.fila-editando .input { width: 100%; min-width: 6rem; }

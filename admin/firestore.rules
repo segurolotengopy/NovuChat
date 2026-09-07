@@ -644,8 +644,13 @@ service cloud.firestore {
             // cotiza, no hay nada que denominar. Ausente vale, y por defecto es
             // la del negocio.
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
+            // EN MÚLTIPLOS DE 15 MINUTOS, decisión de Andrés del 2026-09-07.
+            // Una agenda se lee y se ofrece de a cuartos de hora: un servicio de
+            // 50 minutos deja huecos de 10 que no se pueden vender y hace que el
+            // asistente proponga horarios como «14:50», que nadie usa.
             && d.get('duracionMin', 30) is int
             && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
+            && d.get('duracionMin', 30) % 15 == 0
             && d.get('activo', null) is bool
             && selloValido(d);
         }

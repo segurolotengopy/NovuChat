@@ -1220,10 +1220,45 @@ leía un valor escrito dentro del flujo que siempre decía «operativo». O sea 
 un comercio suspendido **seguía mandando plantillas, y cada plantilla la cobra
 Meta**. Ahora suspenderlo en la consola le corta los recordatorios de verdad.
 
-**Falta, y es lo de mañana:** conectar el **Demo B** igual que el A, y **probar
-con teléfono** que cambiar un precio en la consola cambia lo que dice el
-asistente. Hasta que eso se vea, esto está verificado en la fusión pero no en
-vivo.
+**PROBADO EN VIVO el 07/09 de madrugada.** Se cambió el precio del corte de 70 a
+85 en la base, igual que lo haría la consola, y el asistente lo dijo. Pero la
+primera vez NO: contestó 70 aunque la ejecución #1176 muestra que había recibido
+`Corte 85 Bs`. La causa no era la conexión sino la **memoria de conversación**,
+que guarda ocho turnos y ya tenía su propia respuesta anterior con 70. Ante un
+conflicto entre el historial reciente y las instrucciones, el modelo se repitió.
+
+Se agregó al prompt que la lista de precios es la única válida, que está
+actualizada **al momento de este mensaje**, y que si antes dio otro precio el
+bueno es el de ahora. Con eso contestó 85. **Importa más de lo que parece:** en
+un caso real un precio no cambia a mitad de conversación, pero es exactamente lo
+que hace un cliente probando —cambia el precio, vuelve al chat abierto y
+pregunta— y si le contesta el viejo concluye que la consola no sirve.
+
+**Un tropiezo propio, y de los tontos.** Al renombrar `Config del negocio` a
+`Config base` se actualizó todo lo que SALÍA del nodo y no lo que ENTRABA:
+`¿Es un mensaje?` seguía apuntando al nombre viejo, que ahora era la fusión, y
+el flujo moría con «Node 'Config base' hasn't been executed». El chat estuvo
+caído tres minutos, de madrugada y sin tráfico real. Se publicaron dos flujos
+sin que pasara un solo mensaje por ellos, que es justo lo que `CLAUDE.md`
+prohíbe. Queda el control de nodos huérfanos como parte de la revisión.
+
+### El catálogo se edita, y la duración va de a 15 minutos (07/09)
+
+- **Editar en la propia fila.** Hasta ahora solo se podía dar de baja y volver a
+  cargar, que además cambiaba el identificador del ítem y **rompía la referencia
+  que los funcionarios guardan en `servicios`**. El nombre sigue sin editarse
+  por esa misma razón: cambiarlo dejaría a los profesionales apuntando a un
+  servicio inexistente y el asistente diría que nadie lo atiende. Para cambiar
+  el nombre hay que dar de baja y cargar de nuevo, que es lo correcto: es otro
+  servicio.
+- **Quitar el precio borra el campo, no pone cero.** Cero dice gratis; ausente
+  dice «se cotiza».
+- **Duración en múltiplos de 15**, exigido por las reglas y ofrecido como lista
+  cerrada en la pantalla. Una agenda se ofrece de a cuartos de hora: con 50
+  minutos quedan huecos de 10 que no se venden y el asistente propone horarios
+  como «14:50». Las catorce fichas ya cargadas cumplen; no hizo falta migrar.
+
+**Falta, y es lo de mañana:** conectar el **Demo B** igual que el A.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 

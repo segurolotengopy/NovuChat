@@ -358,7 +358,7 @@
       "main": [
         [
           {
-            "node": "Config del recordatorio",
+            "node": "Config base del recordatorio",
             "type": "main",
             "index": 0
           }
