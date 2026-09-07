@@ -50,7 +50,7 @@ const ev = (id: string, summary: string, cal: string,
 });
 
 /** Corre el nodo con un `$input` y un `$()` simulados, y el reloj congelado. */
-function comprobarReserva(eventos: Evento[]): Record<string, unknown> {
+function comprobarTodo(eventos: Evento[], ahora = AHORA): Record<string, unknown>[] {
   const entrada = { all: () => eventos.map((json) => ({ json })) };
   const contexto = (nombre: string) => ({
     all: () => [{ json: { respuesta: 'Cita confirmada.', from: '591700', transferir: false } }],
@@ -63,9 +63,9 @@ function comprobarReserva(eventos: Evento[]): Record<string, unknown> {
   class Reloj extends Date {
     constructor(...a: unknown[]) {
       // @ts-expect-error se reenvían los argumentos tal cual
-      if (a.length) { super(...a); } else { super(AHORA.getTime()); }
+      if (a.length) { super(...a); } else { super(ahora.getTime()); }
     }
-    static override now() { return AHORA.getTime(); }
+    static override now() { return ahora.getTime(); }
   }
   // EXCEPCIÓN DELIBERADA a `devsecops.js-eval-prohibido`, y acotada a esta línea.
   //
@@ -85,7 +85,12 @@ function comprobarReserva(eventos: Evento[]): Record<string, unknown> {
   // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', 'Date', codigo as string) as
     (i: unknown, c: unknown, d: unknown) => { json: Record<string, unknown> }[];
-  return fn(entrada, contexto, Reloj)[0]?.json ?? {};
+  return fn(entrada, contexto, Reloj).map((i) => i.json);
+}
+
+/** El primer item, que es el que decide el mensaje al cliente. */
+function comprobarReserva(eventos: Evento[]): Record<string, unknown> {
+  return comprobarTodo(eventos)[0] ?? {};
 }
 
 describe('Candado contra la doble reserva', () => {
@@ -155,6 +160,63 @@ describe('Candado contra la doble reserva', () => {
          '2026-09-07T09:30:00-04:00', '2026-09-07T10:30:00-04:00', '2026-09-06T20:16:00.000Z'),
     ]);
     expect(r['citaSolapada']).toBe(true);
+  });
+
+  it('CON LA MISMA MARCA DE TIEMPO igual cede una: el caso que se escapó', () => {
+    // EL DEFECTO REAL, ejecución #1076 del 2026-09-06. El agente agendó tres
+    // citas en un mismo mensaje y las dos que chocaban quedaron con el MISMO
+    // `created` —Google lo guarda con resolución de segundos—. La regla exigía
+    // que la otra fuera ESTRICTAMENTE anterior, ninguna cedió, y un funcionario
+    // quedó con dos citas de 9 a 10. La prueba anterior usaba marcas separadas
+    // por cuatro segundos, así que pasaba sin probar nada de esto.
+    const MISMO = '2026-09-07T00:20:52.000Z';
+    const items = comprobarTodo([
+      ev('j-padre', 'Cita Andrés A. — corte', CAL_JOSE,
+         '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+      ev('j-hijo', 'Cita Hijo de Andrés A. — corte', CAL_JOSE,
+         '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+      ev('m-esposa', 'Cita Esposa de Andrés A. — corte', CAL_MARIA,
+         '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+    ], new Date('2026-09-07T00:20:55.000Z'));
+    // Cede EXACTAMENTE una: ni las dos, que dejaría al negocio sin ninguna,
+    // ni ninguna, que es lo que pasó.
+    expect(items).toHaveLength(1);
+    expect(items[0]?.['citaSolapada']).toBe(true);
+    // Desempata el identificador: gana el menor («j-hijo» < «j-padre»), así que
+    // cede el otro. Cuál sobrevive es arbitrario; lo que importa es que sea
+    // SIEMPRE el mismo, para que dos ejecuciones no tomen decisiones opuestas.
+    expect(items[0]?.['eventoABorrar']).toBe('j-padre');
+    // Las otras dos citas son válidas, así que sigue habiendo cierre.
+    expect(items[0]?.['reservaVerificada']).toBe(true);
+    // Y el mensaje dice CUÁL cayó, no un «hubo un cruce» a secas.
+    expect(String(items[0]?.['respuesta'])).toMatch(/Andrés A\./);
+    expect(String(items[0]?.['respuesta'])).toMatch(/09:00/);
+  });
+
+  it('la cita de María a la misma hora NO cede: es otra agenda', () => {
+    const MISMO = '2026-09-07T00:20:52.000Z';
+    const items = comprobarTodo([
+      ev('j-padre', 'Cita Andrés A. — corte', CAL_JOSE,
+         '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+      ev('m-esposa', 'Cita Esposa de Andrés A. — corte', CAL_MARIA,
+         '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+    ], new Date('2026-09-07T00:20:55.000Z'));
+    expect(items).toHaveLength(1);
+    expect(items[0]?.['citaSolapada']).toBeUndefined();
+  });
+
+  it('con tres citas iguales en la misma agenda, sobrevive UNA', () => {
+    const MISMO = '2026-09-07T00:20:52.000Z';
+    const items = comprobarTodo([
+      ev('a', 'Cita Uno — corte', CAL_JOSE, '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+      ev('b', 'Cita Dos — corte', CAL_JOSE, '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+      ev('c', 'Cita Tres — corte', CAL_JOSE, '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
+    ], new Date('2026-09-07T00:20:55.000Z'));
+    // Ceden dos, queda la de identificador menor.
+    expect(items).toHaveLength(2);
+    expect(items.map((i) => i['eventoABorrar']).sort()).toEqual(['b', 'c']);
+    // Un solo aviso a recepción, no uno por cita.
+    expect(items.filter((i) => i['transferir'] === true)).toHaveLength(1);
   });
 
   it('con dos citas creadas a la vez cede UNA sola, no las dos', () => {

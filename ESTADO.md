@@ -1082,6 +1082,29 @@ prueba corre el código nuevo. Nueve casos, empezando por los datos reales de la
 ejecución #964. Verificado con dos sabotajes: quitar el candado rompe cuatro
 pruebas, ignorar el calendario rompe la de las dos personas distintas.
 
+**El candado falló en su primera prueba real, y el defecto era el desempate.**
+Ejecución #1076: el agente agendó TRES citas en un mismo mensaje —padre e hijo
+con José, esposa con María, todos a las 09:00— y las dos que chocaban quedaron
+con el MISMO `created`: `00:20:52` las dos, porque Google guarda ese campo con
+resolución de segundos. La regla exigía que la otra fuera ESTRICTAMENTE
+anterior, así que ninguna cedió y las dos sobrevivieron.
+
+La prueba que debía cubrirlo usaba marcas separadas por cuatro segundos: pasaba
+sin probar nada. Ahora, con marcas iguales, desempata el identificador —da igual
+cuál gane, mientras sea siempre el mismo—, se ceden todas las que sobran y no
+solo una, el aviso a recepción sale una sola vez, y el mensaje al cliente dice
+QUÉ cita cayó y a qué hora en vez de un «hubo un cruce» a secas. Las citas que
+no chocan siguen contando como cierre.
+
+Verificado tomando el código que corre en n8n y ejecutándolo contra los eventos
+reales de la #1076: deshace una sola cita, la correcta.
+
+**También se reforzó el prompt.** Al justificar las dos citas con José, el
+asistente dijo «como José y María tienen agendas independientes, quedaron a la
+misma hora». La independencia entre personas distintas no autoriza dos clientes
+con la MISMA persona a la misma hora, y ahora el prompt lo dice con esas
+palabras y ofrece la salida: horas distintas, o profesionales distintos.
+
 **Deuda que dejó la prueba.** Para ejecutar el código del flujo, la prueba usa
 `new Function`, que la regla `js-eval-prohibido` de Semgrep bloquea con razón.
 Se documentó la excepción en la línea exacta. Lo correcto a futuro es que el
