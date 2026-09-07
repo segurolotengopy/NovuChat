@@ -37,6 +37,10 @@
         "function": "configuracionFlujo"
       },
       {
+        "source": "/api/qr/**",
+        "function": "imagenDeCobro"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

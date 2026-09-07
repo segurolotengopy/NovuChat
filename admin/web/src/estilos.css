@@ -142,3 +142,11 @@ tr.alerta td { background: #c6282811; }
   color: var(--color-text);
   border: 1px solid color-mix(in srgb, #c68a28 55%, transparent);
 }
+
+/* Casilla de verificación con su texto al lado, en línea. El `.field` general
+   apila etiqueta y control, que para una casilla se ve como un error. */
+.campo-casilla {
+  display: flex; align-items: flex-start; gap: .5rem;
+  flex-direction: row; max-width: 38rem;
+}
+.campo-casilla input { width: auto; margin-top: .2rem; }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { httpsCallable } from 'firebase/functions';
 import { useParams } from 'react-router-dom';
-import { app, db } from '../lib/firebase';
+import { db, funciones } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 
 interface Miembro { id: string; correo?: unknown; rol?: unknown; estado?: unknown }
@@ -35,7 +35,7 @@ export function Usuarios() {
     e.preventDefault();
     setEstado(null);
     try {
-      const invitar = httpsCallable(getFunctions(app, 'southamerica-east1'), 'invitarUsuario');
+      const invitar = httpsCallable(funciones, 'invitarUsuario');
       await invitar({ tenantId, correo, rol });
       setEstado('Invitación enviada.');
       setCorreo('');

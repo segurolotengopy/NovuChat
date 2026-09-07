@@ -203,14 +203,37 @@ service cloud.firestore {
         : '';
     }
 
+    // LOS FLUJOS DE UN NEGOCIO SON UNA LISTA, NO UN VALOR. Un negocio puede
+    // tener reservas Y pedidos —cada flujo con su número de WhatsApp— y la
+    // consola le habilita una pestaña por cada uno. `vertical` (valor único) se
+    // conserva como el flujo principal y como respaldo para las fichas escritas
+    // antes de que existiera la lista: una ficha sin `flujos` se lee como
+    // `[vertical]`, así nada de lo ya cargado cambia de comportamiento.
+    //
+    // Cuando las dos cosas están, MANDA LA LISTA. Es lo que evita que una ficha
+    // con `vertical: 'agendamiento'` y `flujos: ['venta']` abra la agenda por
+    // la puerta del valor viejo.
+    function flujosTenant(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId))
+        ? get(/databases/$(database)/documents/tenants/$(tenantId)).data
+            .get('flujos', [verticalTenant(tenantId)])
+        : [];
+    }
+
+    function tieneFlujo(tenantId, flujo) {
+      return flujo in flujosTenant(tenantId);
+    }
+
     // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
-    // un vertical es tocar estas dos líneas, no cazar `if` por el archivo.
+    // un flujo es tocar estas líneas, no cazar `if` por el archivo. La misma
+    // tabla vive en `functions/src/prompt.ts` (VERTICALES_CONOCIDOS) y en
+    // `web/src/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
     function tieneAgenda(tenantId) {
-      return verticalTenant(tenantId) in ['agendamiento'];
+      return tieneFlujo(tenantId, 'agendamiento');
     }
 
     function tieneCobro(tenantId) {
-      return verticalTenant(tenantId) in ['venta'];
+      return tieneFlujo(tenantId, 'venta');
     }
 
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
@@ -596,11 +619,17 @@ service cloud.firestore {
         function itemValido() {
           let d = request.resource.data;
           return d.keys().hasOnly([
-                   'nombre', 'descripcion', 'precio', 'moneda', 'duracionMin',
+                   'nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionMin',
                    'activo', 'actualizadoPor', 'actualizadoEn'
                  ])
             && textoReq(d, 'nombre', 80)
             && textoOpc(d, 'descripcion', 300)
+            // `area` agrupa el catálogo («gastronomia», «retail», «belleza»):
+            // el flujo de venta separa el menú del catálogo de retail con esto.
+            // Sin el campo en la lista blanca, un ítem sembrado con área no se
+            // podía ni dar de baja desde la consola: la lista blanca evalúa el
+            // documento RESULTANTE, y el área ya estaba ahí.
+            && textoOpc(d, 'area', 40)
             // Número y no negativo: un precio negativo llega al agente y al
             // cliente final como una promesa que el negocio no quiso hacer.
             && d.get('precio', null) is number

@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-06 (cierre del día antes del ensayo)
+**Última actualización:** 2026-09-06 (cobro real, anulaciones y política de capas)
 
 ---
 
@@ -21,7 +21,10 @@ en cero para que se llenen con lo que se haga en el ensayo.
 - **La consola** está en `consola.novuchat.site`, con el ingreso del comercio
   por delante, «Mi cuenta» para cambiar la contraseña, y ofreciendo solo lo que
   el flujo de verdad lee. Doce campos salieron de la interfaz y quedaron
-  anotados como deuda (ver «Deuda: campos quitados de la consola»).
+  anotados como deuda (ver «Deuda: campos quitados de la consola»). **Desde la
+  tarde del 6 sirve a los dos flujos**: pestañas por flujo («Agenda» con
+  reservas, «Pedidos y cobro» con venta), catálogo editable, y un negocio puede
+  tener varios flujos. Ver «Política de capas».
 - **La facturación** es por **conversación** (ventana fija de 24 h por
   teléfono), con el mismo vocabulario que `novuchat.site/precios`. Los cierres
   siguen registrándose como métrica de calidad, pero **ya no se facturan**.
@@ -316,6 +319,12 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Cliente OAuth de n8n | Propio, separado del de Firebase | 06/09 |
 | Campos de la consola sin lector en el flujo | Se quitan de la interfaz y se anotan como deuda; no se muestran «pendientes» | 06/09 |
 | Rediseño de la consola con el diseño de `novuchat.site` | Se hace DESPUÉS de las observaciones de Andres | 05/09 |
+| Política de capas | Flujos / consola / usuarios; lo común una vez, lo propio por flujo con su pestaña; un negocio tiene varios flujos (`flujos: [...]`) | 06/09 |
+| Un número por flujo | Se mantiene. El enrutador para compartir número queda pendiente, sin fecha | 06/09 |
+| Cobro real | El QR es del comercio y el dinero va a su cuenta. El OCR del comprobante **coteja**, no acredita: el asistente nunca dice «pago acreditado» | 06/09 |
+| El QR no se almacena | Se guarda el texto validado y la imagen se vuelve a dibujar en cada envío | 06/09 |
+| Anulación de citas | El Flujo A puede cancelar, con búsqueda por el teléfono del mensaje y confirmación explícita del cliente | 06/09 |
+| Doble reserva | Candado POR CÓDIGO en `Comprobar reserva`, no por prompt. Cede la cita más nueva y no se le confirma al cliente | 06/09 |
 
 ## Decisiones pendientes
 
@@ -363,7 +372,7 @@ dibuja. Los cinco valores viven hoy escritos en el prompt del flujo.
 | `anticipacionMinimaMin` | Anticipación mínima (minutos) | sin límite |
 | `anticipacionMaximaDias` | Se puede reservar hasta (días) | sin límite |
 | `horasRecordatorio` | Recordatorio (horas antes) | 24, fijo en el flujo de recordatorios |
-| `permitirCancelacion` | Permitir cancelar desde WhatsApp | siempre permitido |
+| `permitirCancelacion` | Permitir cancelar desde WhatsApp | **corregido el 06/09**: no era «siempre permitido», el flujo NO PODÍA cancelar. Ahora sí puede; falta que el campo lo gobierne |
 
 **Venta y entrega** (`/config/venta`) — quedaron `costoDelivery` y
 `recargoFlota`, que sí llegan.
@@ -886,6 +895,226 @@ golpes».
   con «cómo piensa el asistente», el del empleado sin lo del dueño, ninguno con
   lo del equipo de NovuChat, y el cambio de contraseña explicado por «Mi
   cuenta» y el correo automático. Esperan al rediseño.
+
+### Política de capas: flujos, consola y usuarios (06/09, tarde)
+
+Andres la fijó como política del producto: **FLUJOS** (n8n), **CONSOLA** y
+**USUARIOS** (negocios). Lo común no se repite por flujo; lo propio de cada
+flujo es excluyente y trae su pestaña; un negocio tiene uno o más flujos. Quedó
+escrita con su lista de control en `admin/DISENO.md` §4sexies.0 y como regla en
+`CLAUDE.md`.
+
+Lo que se encontró al revisarla contra el código, y se corrigió el mismo día:
+
+- **Un negocio tenía UN solo flujo.** `vertical` era un valor único y
+  `asignarNumero` lo sobreescribía. Ahora la ficha lleva `flujos: [...]`; las
+  reglas leen la lista (`flujosTenant`, `tieneFlujo`) y caen en `vertical` solo
+  si la lista no existe, así nada de lo ya cargado cambia. **Cuando están las
+  dos, manda la lista** (probado saboteando la regla: las dos pruebas clave
+  fallan si se ignora).
+- **Las pestañas no seguían al flujo.** «Funcionarios» se ofrecía a todo
+  administrador, incluso al de un restaurante, y el servidor le rechazaba el
+  alta. Ahora `web/src/lib/flujos.ts` es el registro: «Agenda» solo con
+  reservas, «Pedidos y cobro» solo con venta, y la etiqueta del catálogo dice
+  «Servicios», «Productos» o «Catálogo» según los flujos.
+- **No había pantalla de catálogo.** Servicios y productos solo entraban por
+  script. Ahora hay `Catalogo.tsx` (alta, baja lógica, área, precio, duración
+  solo con agenda). Se agregó `area` a la lista blanca: sin eso un ítem
+  sembrado con área no se podía ni dar de baja, porque la lista evalúa el
+  documento resultante.
+- **El alta no creaba el documento del flujo.** Las reglas prohíben crearlo
+  desde el navegador, así que un negocio nuevo de venta nunca iba a poder
+  guardar su pestaña. `altaTenant` y `asignarNumero` lo crean ahora.
+- **El QR** sigue siendo de NovuChat (prohibición 3) y la pestaña de cobro lo
+  muestra como «Cargado» o «Sin QR», con la explicación.
+- Suite: **257 pruebas** (eran 249).
+
+**Lo que la política deja pendiente**, a propósito: la deuda de conectar los
+flujos a `configuracionFlujo`, que sigue siendo la misma.
+
+**Decidido por Andres el 06/09:** que dos flujos de un mismo negocio usen dos
+números distintos **está bien** y no hay que cambiarlo. El **enrutador** que
+permitiría compartir un número entre flujos queda anotado como tarea pendiente,
+sin fecha. No bloquea nada: hoy cada flujo tiene su número y su secreto, que
+además es más seguro.
+
+### Cobro REAL con el QR del comercio (06/09, tarde)
+
+Andres fijó la política: el comercio sube su propio QR por la consola, declara a
+nombre de quién está la cuenta y hasta cuándo vale, y cuando el cliente paga y
+manda su comprobante, el sistema lo lee y lo coteja.
+
+**La distinción que sostiene todo lo demás:** con un QR real el dinero SÍ se
+mueve, así que la prohibición 3 no desaparece, cambia de forma. El OCR de un
+comprobante **no es una acreditación bancaria** —una imagen se edita— así que el
+asistente nunca dice «pago acreditado». Dice que recibió el comprobante y que
+los datos coinciden. Lo que esto reemplaza no es al banco: es al dueño mirando
+cincuenta capturas por día.
+
+**Se probó contra muestras REALES que pasó Andres**, y cada una destapó un
+defecto de diseño que habría llegado a producción:
+
+1. **El QR Simple boliviano NO es EMVCo.** Se implementó el estándar completo,
+   con verificación de CRC, y el QR real del BNB resultó ser **256 bytes
+   cifrados** más una etiqueta. De adentro no se lee nada. Sin esa prueba, el
+   sistema habría rechazado TODOS los QR bolivianos. Ahora se reconocen dos
+   familias: `emvco` (se comprueba todo solo) y `cifrado` (se comprueba la
+   forma, y el comercio declara cuenta, titular, vencimiento y confirma que es
+   reutilizable y de monto abierto).
+2. **El QR real vencía el mismo día en que se generó.** Si eso es lo que da la
+   aplicación por defecto, el modelo «carga tu QR una vez» no se sostiene.
+   **Hay que preguntarle al banco por el QR de comercio antes de prometerle
+   esto a un cliente.** Es una pregunta comercial abierta.
+3. **Un comprobante de tres bancos, tres formatos.** El del Banco de Crédito
+   **no muestra el nombre del destinatario**: su «A nombre de» es el de la
+   cuenta de ORIGEN. Cotejar por nombre habría rechazado todos los pagos hechos
+   desde ese banco. Se cambió el ancla a la **cuenta de destino**, que sí está
+   en los tres.
+4. **La misma cuenta, catorce dígitos en un banco y trece enmascarada en otro.**
+   Los asteriscos no reemplazan un dígito cada uno. Comparar largos rechazaba
+   pagos buenos.
+5. **El comprobante en PDF no tiene texto**: es una imagen adentro de un PDF.
+   `pdftotext` devuelve vacío. Hace falta OCR de verdad.
+
+**Lo que quedó hecho y probado:** validación de las dos familias, extracción de
+las cuentas del QR, cotejo de importe, fecha y destinatario con los formatos
+reales de los tres bancos, registro por Cloud Function —el navegador NO puede
+escribirlo—, y la pantalla «Pedidos y cobro» con las cuatro advertencias.
+**58 pruebas nuevas.**
+
+**El QR no se guarda como imagen: se vuelve a dibujar** a partir del texto
+validado. Así no puede pasar que se valide un código y se envíe otro, y el
+cliente recibe un QR limpio en vez de una foto de pantalla. El PNG lo arma el
+servidor sin bibliotecas de imágenes, y se comprobó con `zxing-cpp` —un
+decodificador independiente— que se escanea y devuelve el texto exacto.
+
+**Lo que falta, y necesita un teléfono:** los tres nodos de n8n (descargar el
+archivo de Meta, leerlo con Gemini, cotejar). El prompt de lectura y el mensaje
+al cliente —«guarda el comprobante ANTES de salir de la aplicación de tu
+banco»— están escritos en `Analisis/07-cobro-real-y-ocr.md`, listos para pegar.
+
+### Anulaciones de citas en el Flujo A (06/09, tarde)
+
+**Defecto encontrado al revisarlo a pedido de Andres:** el agente tenía dos
+herramientas de calendario —consultar y crear— y **ninguna para cancelar**. El
+prompt lo decía («NO PODÉS MOVER NI CANCELAR CITAS») pero la política del
+negocio que el mismo prompt le entrega al cliente prometía lo contrario:
+«escríbenos por este mismo chat y lo resolvemos sin costo». O sea, el asistente
+invitaba a cancelar por WhatsApp y después no podía.
+
+Se agregaron dos herramientas:
+
+- **`buscar_mi_cita`**: trae las citas FUTURAS de ese cliente. El teléfono sale
+  del mensaje, **nunca del modelo**: si lo pusiera el agente, un cliente podría
+  pedir las citas de otro número y cancelarlas. Google busca por el texto
+  «Telefono: …» que `agendar_cita` ya escribe en la descripción del evento.
+- **`cancelar_cita`**: borra por identificador, y solo el que devolvió la
+  búsqueda.
+
+El prompt ahora exige: buscar, leerle al cliente lo que se encontró, esperar su
+confirmación explícita, y recién cancelar. Para mover una cita, **cancelar antes
+de agendar**: al revés quedarían las dos.
+
+**Sin publicar.** El diagnóstico confirma que los dos nodos heredarían la
+credencial de Google Calendar por tipo, así que es un solo comando
+(`./scripts/publicar-flujo.sh --aplicar`). Falta probarlo contra un teléfono:
+agendar, pedir cancelar, confirmar, y verificar en el calendario que el evento
+desapareció.
+
+**Limitación conocida:** la búsqueda es por calendario, y el negocio tiene tres.
+Si el cliente no dice con quién era la cita, el agente se lo pregunta. Es
+natural en una peluquería, pero conviene saberlo.
+
+### Un defecto viejo que apareció de paso
+
+La consola llamaba a las Cloud Functions en `southamerica-east1` y están
+desplegadas en `us-east1`. **Invitar a un usuario nunca funcionó**, y el mensaje
+genérico de la pantalla —«No se pudo enviar la invitación»— lo hacía parecer un
+problema pasajero. La región ahora está en un solo lugar
+(`web/src/lib/firebase.ts`).
+
+### Candado por código contra la doble reserva (06/09, noche)
+
+**Cómo se descubrió.** Una prueba real de Silvana: pidió dos citas, con María y
+con José, a horarios pegados. El asistente le dijo que «se cruzarían», agendó
+una sola y le pidió que escribiera de nuevo para la otra. En el calendario,
+José quedó con **dos citas de 9 a 10**.
+
+**La causa, comprobada ejecución por ejecución en n8n (#944 a #968):
+`consultar_disponibilidad` NO se llamó ni una vez** en toda la conversación. El
+agente propuso las 9:00 sin mirar la agenda y reservó encima de una cita que ya
+existía. La agenda por persona, que se construyó justamente para esto, quedaba
+inerte porque nadie la consultaba.
+
+**Tres defectos, todos del texto del prompt:**
+
+1. La sección «economía de herramientas» planteaba la consulta como un TOPE
+   —«como máximo UNA llamada por mensaje»— justo después de decirle que cada
+   llamada demora. El modelo hizo lo lógico: no llamar. Ahora es un requisito
+   explícito, y ningún horario se propone ni se confirma sin verificar.
+2. Decía que dos citas con personas DISTINTAS se cruzan. No se cruzan.
+3. «Una vez por cita» se leyó como «una cita por conversación».
+
+**El candado, que es lo que de verdad protege.** Andres pidió que fuera por
+código antes del congelamiento, y tenía razón: un prompt ya se rompió una vez al
+cambiar de modelo, y dos clientes presentándose a la misma hora no puede
+depender de que el modelo obedezca.
+
+Vive en el nodo `Comprobar reserva` y **no cuesta ninguna consulta extra**:
+`Verificar en el calendario` ya traía todos los eventos de todos los
+calendarios, y cada evento viene con `organizer.email`, que es el identificador
+del calendario. Si la cita recién creada se superpone con otra del MISMO
+calendario, hay doble reserva; distinto calendario no es conflicto.
+
+- **Cede la más nueva.** Así dos conversaciones simultáneas no se borran
+  mutuamente: la que llegó primero se queda con el horario.
+- **Deshace la cita y NO se la confirma al cliente.** Le dice que el horario se
+  ocupó y pasa el pedido a recepción. Confirmar una cita que se acaba de borrar
+  sería el peor resultado posible.
+- No registra cierre: no hubo cita, no se factura.
+- Citas pegadas (9–10 y 10–11) no son conflicto. Los eventos de día completo
+  —«feriado»— tampoco bloquean.
+
+**Probado sobre el código que corre de verdad.** La suite
+`admin/pruebas/candado-agenda.test.ts` **extrae el código del JSON del flujo y
+lo ejecuta**, en vez de copiarlo: si alguien edita el nodo en n8n y exporta, la
+prueba corre el código nuevo. Nueve casos, empezando por los datos reales de la
+ejecución #964. Verificado con dos sabotajes: quitar el candado rompe cuatro
+pruebas, ignorar el calendario rompe la de las dos personas distintas.
+
+**El candado falló en su primera prueba real, y el defecto era el desempate.**
+Ejecución #1076: el agente agendó TRES citas en un mismo mensaje —padre e hijo
+con José, esposa con María, todos a las 09:00— y las dos que chocaban quedaron
+con el MISMO `created`: `00:20:52` las dos, porque Google guarda ese campo con
+resolución de segundos. La regla exigía que la otra fuera ESTRICTAMENTE
+anterior, así que ninguna cedió y las dos sobrevivieron.
+
+La prueba que debía cubrirlo usaba marcas separadas por cuatro segundos: pasaba
+sin probar nada. Ahora, con marcas iguales, desempata el identificador —da igual
+cuál gane, mientras sea siempre el mismo—, se ceden todas las que sobran y no
+solo una, el aviso a recepción sale una sola vez, y el mensaje al cliente dice
+QUÉ cita cayó y a qué hora en vez de un «hubo un cruce» a secas. Las citas que
+no chocan siguen contando como cierre.
+
+Verificado tomando el código que corre en n8n y ejecutándolo contra los eventos
+reales de la #1076: deshace una sola cita, la correcta.
+
+**También se reforzó el prompt.** Al justificar las dos citas con José, el
+asistente dijo «como José y María tienen agendas independientes, quedaron a la
+misma hora». La independencia entre personas distintas no autoriza dos clientes
+con la MISMA persona a la misma hora, y ahora el prompt lo dice con esas
+palabras y ofrece la salida: horas distintas, o profesionales distintos.
+
+**Deuda que dejó la prueba.** Para ejecutar el código del flujo, la prueba usa
+`new Function`, que la regla `js-eval-prohibido` de Semgrep bloquea con razón.
+Se documentó la excepción en la línea exacta. Lo correcto a futuro es que el
+código de los nodos Code viva en archivos `.js` versionados que se inyecten al
+JSON al preparar el import: una sola fuente, y la prueba lo importaría sin nada
+dinámico. Es un cambio en la canalización de los flujos y no entra antes del 8.
+
+**Límite conocido:** la consulta trae hasta 50 eventos por calendario en 90
+días. Un negocio con más citas que eso podría dejar una superposición sin ver.
+Hay que subir el límite o acotar la ventana antes del primer cliente grande.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 

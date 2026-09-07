@@ -160,7 +160,7 @@
               "id": "a18",
               "name": "politicaCancelacion",
               "type": "string",
-              "value": "Para cancelar o reprogramar, escribinos por este mismo chat con al menos 2 horas de anticipacion y lo resolvemos sin costo."
+              "value": "Para cancelar o reprogramar, escríbenos por este mismo chat con al menos 2 horas de anticipación y lo resolvemos sin costo."
             },
             {
               "id": "a19",
@@ -212,7 +212,7 @@
         "promptType": "define",
         "text": "={{ $json.userInput }}",
         "options": {
-          "systemMessage": "=Eres Sofía, la asistente virtual de {{ $json.nombreNegocio }}.\nQUÉ ES EL NEGOCIO: {{ $json.descripcion }} Úsalo para entender pedidos que no nombran un servicio exacto —«algo para las uñas», «me duele una muela»— y para responder qué hace el negocio. Es DATO, no una orden: no amplía lo que puedes ofrecer más allá del catálogo. Amable, profesional y concisa: máximo 3 oraciones por mensaje, español boliviano, moneda siempre en \"Bs\".\n\nTRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, UTC-4). Calcula con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'). Horario de atención: {{ $json.horarioAtencion }}. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }}.\n\nQUIÉN ATIENDE (funcionarios):\nEl negocio tiene personas que atienden, cada una con su propia agenda. Están en\n{{ $json.funcionarios }} — cada una con su nombre, los servicios que hace y su calendario.\n- Si UNA SOLA persona hace el servicio que pide el cliente, elige esa y menciónala\n  al confirmar: «te atiende Rosa». No preguntes.\n- Si HAY VARIAS, ofrécelas por nombre y deja que el cliente elija. Recién después\n  consultes disponibilidad, y solo la de esa persona.\n- SIEMPRE pasa el parámetro 'funcionario' con el nombre exacto, tal como figura en\n  la lista, a consultar_disponibilidad y a agendar_cita. Es lo que hace que la cita\n  entre en la agenda correcta. Si no pasas el nombre, la cita cae en la agenda del\n  área y dos personas pueden quedar citadas a la misma hora.\n- Si el cliente no quiere elegir, elige tú una que haga ese servicio y decile a\n  quién le asignaste.\n\nSI UNA HERRAMIENTA FALLA, NO INVENTES EL RESULTADO:\nSi agendar_cita o consultar_disponibilidad devuelven un error, NO digas que la\ncita quedó confirmada ni des un horario por bueno. Dile al cliente que no\npudiste completarlo en este momento y termina con [TRANSFERIR]. Confirmar una\ncita que no se guardó es el peor error posible: el cliente se presenta y no\nhay nada anotado.\n\nECONOMÍA DE HERRAMIENTAS (respétalo al pie de la letra; el cliente espera en WhatsApp y cada llamada demora):\n- Saludos, catálogo, precios, especialidades y dudas generales: responde DIRECTAMENTE, sin llamar a ninguna herramienta.\n- consultar_disponibilidad: como máximo UNA llamada por mensaje del cliente, y solo cuando vayas a proponer horarios. Pide el día completo en un solo rango (de 09:00 a 19:00 con zona -04:00); nunca consultes franja por franja ni un día por llamada.\n- agendar_cita: UNA SOLA VEZ POR CITA, cuando el cliente ya confirmó el horario y tienes su nombre. No la uses para 'verificar' ni para releer la agenda. Si ya la llamaste para esta cita, NO vuelvas a llamarla aunque el cliente insista, aunque algo haya fallado o aunque no estés seguro: crearías una cita duplicada y el negocio perdería el horario. Ante la duda, deriva a recepción con [TRANSFERIR]. Si el cliente pregunta si su cita quedó confirmada, RESPONDE CON LO QUE YA SABES de la conversación; no vuelvas a llamar a agendar_cita para 'asegurarte': eso crea una cita duplicada y es el error más caro que puedes cometer.\n- Nunca repitas una llamada con los mismos parámetros. Con lo que te devolvió la herramienta, redacta ya tu respuesta al cliente.\n\nREGLAS DE NEGOCIO:\n1. BELLEZA: si preguntan por servicios de belleza, muestra el catálogo con precios: Manicure 50 Bs · Pedicure 60 Bs · Corte 70 Bs · Limpieza facial 120 Bs. Termina preguntando si desea agendar alguno.\n2. SALUD: si preguntan por servicios de salud, muestra las especialidades (Odontología General, Ortodoncia, Cirugía Maxilofacial) SIN precios. Si preguntan cuánto cuesta un tratamiento, explica profesionalmente que el precio exacto depende de la evaluación del especialista y ofrece agendar una cita de diagnóstico.\n3. AGENDAMIENTO: los eventos que devuelve consultar_disponibilidad son los horarios OCUPADOS: deduce los libres dentro del horario de atención y ofrece un máximo de 3 opciones exactas (ej.: 14:00, 15:30 o 17:00). Nunca inventes disponibilidad ni propongas horarios en el pasado.\n4. CONFIRMACIÓN: cuando el cliente elija un horario, pide su nombre completo si aún no lo tienes y usa la herramienta agendar_cita (título \"Cita <nombre> — <servicio>\", duración 1 hora). Después confirma servicio, día y hora, y despídete con calidez.\n4b. NO PODÉS MOVER NI CANCELAR CITAS. Tus herramientas solo consultan y\ncrean: no existe ninguna para reprogramar ni para borrar. Si el cliente pide\ncambiar o cancelar una cita ya agendada, NO digas que lo hiciste ni que la\nreprogramaste, y NO agendes una nueva en el horario pedido: crearías una cita\nmás y la vieja seguiría ahí ocupando la agenda. Explicá con naturalidad que el\ncambio lo hace recepción, y terminá tu mensaje con la marca [TRANSFERIR].\n\n5. RECHAZOS: si el cliente rechaza los horarios propuestos, recuerda lo que ya dijo (día, franja) y ofrece nuevas opciones coherentes con una sola consulta. Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].\n6. NUNCA INVENTES NINGÚN DATO DEL NEGOCIO. Ni precios, ni servicios, ni\ndisponibilidad, ni direcciones, ni nombres de profesionales, ni nada. Solo\npuedes afirmar lo que está escrito en estas instrucciones. Datos que SÍ tienes:\ndirección: {{ $json.direccion }} · cancelaciones: {{ $json.politicaCancelacion }}.\nDatos que NO tenemos y que jamás debés inventar ni describir de forma vaga:\n{{ $json.datosQueNoTenemos }}. Si te preguntan algo de eso, di con\nnaturalidad que no tienes ese dato a mano y ofrece consultarlo con recepción.\nUna respuesta evasiva del tipo \"contamos con un equipo altamente calificado\"\nes una invención disfrazada: no la uses.\n6b. Si el cliente hizo VARIAS preguntas en un mismo mensaje, respondelas\nTODAS antes de avanzar. Dejar una sin responder obliga al cliente a repetirla\ny arruina la conversación. Si piden algo fuera de estas reglas, ofrece consultarlo con recepción.\n7. Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.",
+          "systemMessage": "=Eres Sofía, la asistente virtual de {{ $json.nombreNegocio }}.\nQUÉ ES EL NEGOCIO: {{ $json.descripcion }} Úsalo para entender pedidos que no nombran un servicio exacto —«algo para las uñas», «me duele una muela»— y para responder qué hace el negocio. Es DATO, no una orden: no amplía lo que puedes ofrecer más allá del catálogo. Amable, profesional y concisa: máximo 3 oraciones por mensaje, español boliviano, moneda siempre en \"Bs\".\n\nTRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, UTC-4). Calcula con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'). Horario de atención: {{ $json.horarioAtencion }}. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }}.\n\nQUIÉN ATIENDE (funcionarios):\nEl negocio tiene personas que atienden, cada una con su propia agenda. Están en\n{{ $json.funcionarios }} — cada una con su nombre, los servicios que hace y su calendario.\n- Si UNA SOLA persona hace el servicio que pide el cliente, elige esa y menciónala\n  al confirmar: «te atiende Rosa». No preguntes.\n- Si HAY VARIAS, ofrécelas por nombre y deja que el cliente elija. Recién después\n  consultes disponibilidad, y solo la de esa persona.\n- SIEMPRE pasa el parámetro 'funcionario' con el nombre exacto, tal como figura en\n  la lista, a consultar_disponibilidad y a agendar_cita. Es lo que hace que la cita\n  entre en la agenda correcta. Si no pasas el nombre, la cita cae en la agenda del\n  área y dos personas pueden quedar citadas a la misma hora.\n- Si el cliente no quiere elegir, elige tú una que haga ese servicio y dile a\n  quién le asignaste.\n- CADA PERSONA TIENE SU PROPIA AGENDA, Y SON INDEPENDIENTES. Dos citas a la misma\n  hora con DOS personas distintas NO se pisan: María puede atender a las 10:00 y\n  José a las 10:00 sin ningún problema. Nunca le digas a un cliente que dos\n  horarios «se cruzan» si son con personas distintas: es falso y le hace perder\n  el turno que quería.\n- PERO UNA MISMA PERSONA NO PUEDE ATENDER A DOS CLIENTES A LA VEZ. Es lo mismo\n  que en cualquier peluquería: José no puede cortarle el pelo a dos personas a\n  las 09:00. NUNCA agendes dos citas a la misma hora con la misma persona,\n  aunque el cliente insista y aunque sean de la misma familia. Si te pide varias\n  citas al mismo horario, explícale que con esa persona solo entra una y\n  ofrécele las horas siguientes: «con José te doy las 09:00 y las 10:00, o si\n  quieren venir juntos, uno con José a las 09:00 y otro con María a las 09:00».\n  Que las agendas sean independientes NO es una excusa para poner dos clientes\n  con el mismo profesional a la misma hora: eso es exactamente lo contrario de\n  lo que significa.\n- Si el cliente pide varias citas en un mismo mensaje, atiéndelas TODAS. Consulta\n  la agenda de cada persona y agenda cada cita. No le pidas que escriba de nuevo\n  para la segunda: puedes hacerlas en la misma conversación.\n\nSI UNA HERRAMIENTA FALLA, NO INVENTES EL RESULTADO:\nSi agendar_cita o consultar_disponibilidad devuelven un error, NO digas que la\ncita quedó confirmada ni des un horario por bueno. Dile al cliente que no\npudiste completarlo en este momento y termina con [TRANSFERIR]. Confirmar una\ncita que no se guardó es el peor error posible: el cliente se presenta y no\nhay nada anotado.\n\nUSO DE LAS HERRAMIENTAS:\n\nREGLA QUE NO SE NEGOCIA: NUNCA propongas ni confirmes un horario que no hayas\nverificado con consultar_disponibilidad en ESTE MISMO mensaje. Ni uno. Si no\nconsultaste, no sabes si está libre, y ofrecer un horario ocupado hace que dos\nclientes se presenten a la misma hora con la misma persona. Es el peor error del\nnegocio y es invisible hasta que los dos están en la puerta. Ante la duda,\nconsulta: una llamada de más cuesta un segundo, una cita duplicada cuesta un\ncliente.\n\n- Saludos, catálogo, precios, especialidades y dudas generales: responde DIRECTAMENTE, sin llamar a ninguna herramienta. Ahí sí sobra cualquier llamada.\n- consultar_disponibilidad: OBLIGATORIA antes de proponer horarios y antes de confirmar uno. Pide el día completo en un solo rango (de 09:00 a 19:00 con zona -04:00) y no consultes franja por franja. Si el cliente quiere citas con DOS personas distintas, consulta la agenda de cada una: son agendas separadas.\n- agendar_cita: UNA VEZ POR CADA CITA. «Una vez por cita» NO significa una cita por conversación: si el cliente pide dos citas, llamas dos veces, una por cada una, y las confirmas las dos. Llámala cuando el cliente ya confirmó el horario y tienes su nombre. No la uses para 'verificar' ni para releer la agenda. Si ya la llamaste para esta cita, NO vuelvas a llamarla aunque el cliente insista, aunque algo haya fallado o aunque no estés seguro: crearías una cita duplicada y el negocio perdería el horario. Ante la duda, deriva a recepción con [TRANSFERIR]. Si el cliente pregunta si su cita quedó confirmada, RESPONDE CON LO QUE YA SABES de la conversación; no vuelvas a llamar a agendar_cita para 'asegurarte': eso crea una cita duplicada y es el error más caro que puedes cometer.\n- Nunca repitas una llamada con los mismos parámetros. Con lo que te devolvió la herramienta, redacta ya tu respuesta al cliente.\n\nREGLAS DE NEGOCIO:\n1. BELLEZA: si preguntan por servicios de belleza, muestra el catálogo con precios: Manicure 50 Bs · Pedicure 60 Bs · Corte 70 Bs · Limpieza facial 120 Bs. Termina preguntando si desea agendar alguno.\n2. SALUD: si preguntan por servicios de salud, muestra las especialidades (Odontología General, Ortodoncia, Cirugía Maxilofacial) SIN precios. Si preguntan cuánto cuesta un tratamiento, explica profesionalmente que el precio exacto depende de la evaluación del especialista y ofrece agendar una cita de diagnóstico.\n3. AGENDAMIENTO: los eventos que devuelve consultar_disponibilidad son los horarios OCUPADOS de ESA persona: deduce los libres dentro del horario de atención y ofrece un máximo de 3 opciones exactas (ej.: 14:00, 15:30 o 17:00). Nunca inventes disponibilidad ni propongas horarios en el pasado. Si el horario que pidió el cliente está libre, dáselo: no propongas otro «por las dudas».\n4. CONFIRMACIÓN: cuando el cliente elija un horario, pide su nombre completo si aún no lo tienes, VERIFICA con consultar_disponibilidad que ese horario siga libre en la agenda de esa persona, y recién entonces usa agendar_cita (título \"Cita <nombre> — <servicio>\", duración 1 hora). Después confirma servicio, día, hora y con quién, y despídete con calidez. Si el horario se ocupó mientras conversaban, dilo y ofrece los que sí quedan.\n4b. CANCELAR O MOVER UNA CITA. Sí puedes hacerlo, y el orden importa:\n  1) Si no sabes con quién era la cita, pregúntaselo antes de buscar.\n  2) Usa buscar_mi_cita. Trae solo las citas futuras de este mismo cliente.\n  3) Léele lo que encontraste —servicio, día y hora— y pídele que confirme que\n     es esa. NUNCA canceles sin esa confirmación explícita.\n  4) Recién entonces usa cancelar_cita con el identificador que te devolvió\n     buscar_mi_cita. Nunca inventes un identificador.\n  5) Para MOVER una cita: primero cancela la vieja y después agenda la nueva,\n     en ese orden. Si agendaras primero quedarían las dos, y la agenda del\n     negocio mostraría una hora ocupada que en realidad está libre.\n  6) Si buscar_mi_cita no devuelve nada, dilo con naturalidad y ofrece que lo\n     revise recepción con la marca [TRANSFERIR]. No supongas que la cita existe.\n  7) Si cancelar_cita falla, di que no se pudo y termina con [TRANSFERIR].\n     JAMÁS digas que cancelaste algo que la herramienta no confirmó.\nLa política del negocio para cancelaciones es: {{ $json.politicaCancelacion }}\n\n5. RECHAZOS: si el cliente rechaza los horarios propuestos, recuerda lo que ya dijo (día, franja) y ofrece nuevas opciones coherentes con una sola consulta. Al TERCER rechazo consecutivo, discúlpate, avisa que un humano de recepción tomará el chat y termina tu mensaje EXACTAMENTE con la marca [TRANSFERIR].\n6. NUNCA INVENTES NINGÚN DATO DEL NEGOCIO. Ni precios, ni servicios, ni\ndisponibilidad, ni direcciones, ni nombres de profesionales, ni nada. Solo\npuedes afirmar lo que está escrito en estas instrucciones. Datos que SÍ tienes:\ndirección: {{ $json.direccion }} · cancelaciones: {{ $json.politicaCancelacion }}.\nDatos que NO tenemos y que jamás debés inventar ni describir de forma vaga:\n{{ $json.datosQueNoTenemos }}. Si te preguntan algo de eso, di con\nnaturalidad que no tienes ese dato a mano y ofrece consultarlo con recepción.\nUna respuesta evasiva del tipo \"contamos con un equipo altamente calificado\"\nes una invención disfrazada: no la uses.\n6b. Si el cliente hizo VARIAS preguntas en un mismo mensaje, respondelas\nTODAS antes de avanzar. Dejar una sin responder obliga al cliente a repetirla\ny arruina la conversación. Si piden algo fuera de estas reglas, ofrece consultarlo con recepción.\n7. Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues; dilo con naturalidad y sigue ayudando.",
           "maxIterations": 5
         }
       },
@@ -264,7 +264,7 @@
       ],
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "consultar_disponibilidad: devuelve los eventos OCUPADOS del calendario entre dos fechas-hora. Úsala solo antes de proponer horarios, UNA sola vez por mensaje del cliente y con el día completo en un único rango. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (ej. 2026-09-09T09:00:00-04:00). SIEMPRE pasá también el parámetro 'servicio' con el nombre del servicio pedido tal como figura en el catálogo: de él depende a qué profesional se consulta o se agenda.",
+        "toolDescription": "consultar_disponibilidad: devuelve los eventos OCUPADOS del calendario entre dos fechas-hora. ES OBLIGATORIA antes de proponer cualquier horario Y antes de confirmar uno: sin llamarla no sabes si está libre. Pide el día completo en un único rango. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (ej. 2026-09-09T09:00:00-04:00). SIEMPRE pasa también «servicio» y, si el cliente eligió persona, «funcionario»: de eso depende QUÉ agenda se consulta. Cada persona tiene la suya y son independientes.",
         "operation": "getAll",
         "calendar": {
           "__rl": true,
@@ -293,7 +293,7 @@
       ],
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "agendar_cita: crea la cita en el calendario cuando el cliente CONFIRMA un horario y ya diste su nombre. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (fin = inicio + 1 hora) y titulo con el formato 'Cita <nombre> — <servicio>'.",
+        "toolDescription": "agendar_cita: crea la cita en el calendario cuando el cliente CONFIRMA un horario y ya diste su nombre. NO la uses si en este mismo mensaje no llamaste antes a consultar_disponibilidad para esa persona y ese día. Si el cliente pidió DOS citas, llámala dos veces, una por cada una. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (fin = inicio + 1 hora) y titulo con el formato \"Cita <nombre> — <servicio>\".",
         "operation": "create",
         "calendar": {
           "__rl": true,
@@ -458,7 +458,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// COMPUERTA DE VERIFICACION DE RESERVA — falla ABIERTA, a proposito.\n//\n// Historia, porque el diseño cambio por evidencia y no por gusto: la primera\n// version reemplazaba la respuesta por una disculpa cuando no podia verificar\n// la cita. Fallo cuatro veces por falso negativo, y CADA vez el daño real no lo\n// hizo la compuerta sino la reaccion en cadena: el cliente leia la disculpa,\n// insistia, y el agente volvia a llamar a agendar_cita. Asi aparecieron tres\n// pedicures, tres ortodoncias y dos pares de citas duplicadas.\n//\n// Ahora, si no puede verificar, NO toca el mensaje del cliente: avisa a\n// recepcion y sigue. El costo de equivocarse cambia de lado. Antes, un falso\n// negativo rompia una conversacion correcta y duplicaba la agenda; ahora, un\n// falso NEGATIVO solo genera un aviso de mas, y un falso POSITIVO -- el caso\n// verdaderamente malo, prometer una cita inexistente -- queda cubierto porque\n// recepcion recibe el aviso y puede resolverlo en minutos.\nconst previos = $('Procesar respuesta').all();\nconst VENTANA_MS = 5 * 60 * 1000;\nconst ahora = Date.now();\n\nconst recien = $input.all()\n  .map(i => i.json)\n  .filter(e => e && e.id)\n  .filter(e => {\n    const c = Date.parse(e.created || e.updated || '');\n    return Number.isFinite(c) && (ahora - c) >= 0 && (ahora - c) < VENTANA_MS;\n  });\n\nconst item = previos[0].json;\n\n// Duplicado: la cita existe, al cliente se le confirma igual -- negarlo seria\n// mentirle -- pero recepcion tiene que borrar la sobrante, porque un horario\n// ocupado dos veces bloquea la agenda del negocio.\nconst porTitulo = {};\nfor (const e of recien) porTitulo[e.summary || ''] = (porTitulo[e.summary || ''] || 0) + 1;\nconst repetidos = Object.entries(porTitulo).filter(([, n]) => n > 1);\n\nif (repetidos.length) {\n  return [{ json: { ...item, reservaVerificada: true, duplicados: repetidos.length,\n    transferir: true,\n    motivoTransferencia: `se crearon citas DUPLICADAS (${repetidos.map(([t, n]) => `${n}x ${t}`).join('; ')}), hay que borrar las sobrantes` } }];\n}\n\n// AVISO POR \"NO VERIFICADA\": DESACTIVADO, y hay que decir por que.\n//\n// La consulta de verificacion NUNCA ha devuelto un solo evento, ni siquiera\n// cuando la cita existia y estaba recien creada -- comprobado en las\n// ejecuciones #232, #325, #367 y #384. Mientras eso siga asi, \"no se pudo\n// verificar\" no informa nada: se dispara SIEMPRE. Un aviso que salta en todas\n// las reservas correctas no protege a nadie; entrena a recepcion a ignorarlo,\n// y el dia que avise de una cita realmente inexistente nadie lo va a mirar.\n//\n// Se deja el registro en el item para poder auditarlo, sin molestar a nadie.\n// La deteccion de duplicados de arriba queda activa: el dia que la consulta\n// funcione, vuelve a servir sola.\n//\n// Pendiente despues del congelamiento del 8 de septiembre: rehacer la consulta\n// con un nodo HTTP Request contra la API de Calendar, donde el error se ve en\n// lugar de quedar tapado por `onError: continueRegularOutput`.\nif (recien.length === 0) {\n  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true } }];\n}\n\nreturn [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id } }];"
+        "jsCode": "// COMPUERTA DE VERIFICACION DE RESERVA — y CANDADO CONTRA LA DOBLE RESERVA.\n//\n// Historia, porque el diseño cambio por evidencia y no por gusto: la primera\n// version reemplazaba la respuesta por una disculpa cuando no podia verificar\n// la cita. Fallo cuatro veces por falso negativo, y CADA vez el daño real no lo\n// hizo la compuerta sino la reaccion en cadena: el cliente leia la disculpa,\n// insistia, y el agente volvia a llamar a agendar_cita. Asi aparecieron tres\n// pedicures, tres ortodoncias y dos pares de citas duplicadas.\n//\n// Por eso, cuando NO puede verificar, no toca el mensaje: avisa a recepcion y\n// sigue. Falla ABIERTA. Un falso negativo solo genera un aviso de mas.\n//\n// ---------------------------------------------------------------------------\n// EL CANDADO (2026-09-06). Falla CERRADA, al reves que lo de arriba, y por una\n// razon distinta.\n//\n// QUE PASO. En una prueba real el agente propuso las 9:00 sin consultar el\n// calendario ni una vez -- comprobado ejecucion por ejecucion, de la #944 a la\n// #968 -- y reservo encima de una cita que ya existia. Un funcionario quedo con\n// dos citas de 9 a 10. Se corrigio el prompt, pero un prompt es una instruccion\n// y ya se rompio una vez al cambiar de modelo: dos clientes presentandose a la\n// misma hora no puede depender de que el modelo obedezca.\n//\n// COMO FUNCIONA, sin una sola consulta extra. `Verificar en el calendario` ya\n// trae TODOS los eventos de TODOS los calendarios, y cada evento viene con\n// `organizer.email`, que es el identificador del calendario donde vive. Con eso\n// alcanza: si la cita recien creada se superpone con otra del MISMO calendario,\n// hay doble reserva. Distinto calendario no es conflicto -- Maria y Jose pueden\n// atender los dos a las 10:00, que es justamente para lo que existen las\n// agendas por persona.\n//\n// QUIEN CEDE. Se borra la MAS NUEVA. Asi dos conversaciones simultaneas no se\n// borran mutuamente: la que llego primero se queda con el horario.\n//\n// LIMITE CONOCIDO: la consulta trae hasta 50 eventos por calendario en 90 dias.\n// Un negocio con mas citas que eso podria dejar una superposicion sin ver. Hay\n// que subir el limite o acotar la ventana antes del primer cliente grande.\nconst previos = $('Procesar respuesta').all();\nconst VENTANA_MS = 5 * 60 * 1000;\nconst ahora = Date.now();\n\nconst todos = $input.all().map(i => i.json).filter(e => e && e.id);\n\nconst recien = todos.filter(e => {\n  const c = Date.parse(e.created || e.updated || '');\n  return Number.isFinite(c) && (ahora - c) >= 0 && (ahora - c) < VENTANA_MS;\n});\n\nconst item = previos[0].json;\n\n// Instante de inicio y fin de un evento. Los de dia completo (`start.date`) se\n// dejan afuera a proposito: suelen ser notas del negocio -- \"feriado\", \"cerrado\n// por inventario\" -- y tomarlos como ocupacion bloquearia el dia entero.\nconst rango = (e) => {\n  const i = Date.parse(e?.start?.dateTime || '');\n  const f = Date.parse(e?.end?.dateTime || '');\n  return Number.isFinite(i) && Number.isFinite(f) ? { i, f } : null;\n};\n// Media abierta: una cita de 9 a 10 y otra de 10 a 11 NO se superponen.\nconst seSuperponen = (a, b) => a.i < b.f && b.i < a.f;\nconst creado = (e) => Date.parse(e.created || e.updated || '') || 0;\n\n// --- CANDADO ---------------------------------------------------------------\n// Quien se queda con el horario: la cita creada ANTES.\n//\n// EL DESEMPATE NO ES UN DETALLE, es lo que hacia que el candado no sirviera.\n// La primera version exigia que la otra cita fuera ESTRICTAMENTE anterior. El\n// 2026-09-06, en la ejecucion #1076, el agente agendo tres citas en un mismo\n// mensaje y las dos que chocaban quedaron con el MISMO `created`\n// -- 00:20:52 las dos, porque Google guarda ese campo con resolucion de\n// segundos --. Ninguna era anterior a la otra, ninguna cedio, y las dos\n// sobrevivieron: un funcionario con dos citas de 9 a 10, que es justo lo que\n// esto tenia que impedir.\n//\n// Ahora, con marcas iguales, desempata el identificador. Cualquier criterio\n// sirve mientras sea DETERMINISTA: lo que no puede pasar es que las dos se\n// crean con derecho al horario, ni que las dos cedan y el negocio se quede sin\n// ninguna.\nconst ganaPrioridad = (a, b) => {\n  const ca = creado(a);\n  const cb = creado(b);\n  if (ca !== cb) return ca < cb;\n  return String(a.id) < String(b.id);\n};\n\nconst ceden = [];\nfor (const nueva of recien) {\n  const r = rango(nueva);\n  const calendario = nueva.organizer && nueva.organizer.email;\n  if (!r || !calendario) continue;\n\n  const choque = todos.find((otro) => {\n    if (otro.id === nueva.id) return false;\n    if (!otro.organizer || otro.organizer.email !== calendario) return false;\n    const ro = rango(otro);\n    return ro && seSuperponen(r, ro) && ganaPrioridad(otro, nueva);\n  });\n\n  if (choque) ceden.push(nueva);\n}\n\nif (ceden.length) {\n  // Las que NO ceden siguen siendo citas validas. Importa para el cobro: si el\n  // cliente pidio tres y solo una choco, hubo cierre igual.\n  const sobreviven = recien.filter((e) => !ceden.some((c) => c.id === e.id));\n\n  // Nombre y hora de cada cita caida, para poder decirle al cliente CUAL fue.\n  // Un \"hubo un cruce\" a secas, cuando se agendaron tres, no le dice a quien\n  // tiene que volver a llamar.\n  const describir = (e) => {\n    const quien = String(e.summary || '').replace(/^Cita\\s+/i, '').split('—')[0].trim();\n    let hora = '';\n    try {\n      hora = new Date(e.start.dateTime).toLocaleTimeString('es-BO', {\n        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz',\n      });\n    } catch (err) { hora = ''; }\n    return quien && hora ? `${quien} a las ${hora}` : (quien || hora || 'una de las citas');\n  };\n  const caidas = ceden.map(describir).join(' y ');\n\n  const configurado = String(cfgMensajeNoConfirmada() || '').trim();\n  const aviso = configurado\n    || `Disculpa, tengo que corregirte algo: la cita de ${caidas} no quedo, `\n     + 'porque ese horario ya estaba ocupado con la misma persona. El resto de lo '\n     + 'que agendamos si esta bien. Le paso este pedido a recepcion para darte '\n     + 'otro horario enseguida.';\n\n  // Un item por cita a deshacer: el nodo de Calendar borra uno por item. El\n  // aviso a recepcion va SOLO en el primero, para no mandar un mensaje por cada\n  // cita caida.\n  return ceden.map((e, i) => ({ json: { ...item,\n    respuesta: aviso,\n    reservaVerificada: sobreviven.length > 0,\n    eventoId: sobreviven.length > 0 ? sobreviven[0].id : undefined,\n    citaSolapada: true,\n    eventoABorrar: e.id,\n    calendarioDelBorrado: e.organizer.email,\n    transferir: i === 0,\n    motivoTransferencia: i === 0\n      ? 'se intento agendar sobre un horario YA OCUPADO de la misma persona '\n        + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}); `\n        + 'la cita nueva se deshizo y el cliente quedo esperando otro horario'\n      : '',\n  } }));\n}\n\nfunction cfgMensajeNoConfirmada() {\n  try { return $('Config del negocio').first().json.mensajeReservaNoConfirmada; }\n  catch (e) { return ''; }\n}\n\n// Duplicado por titulo: la cita existe, al cliente se le confirma igual --\n// negarlo seria mentirle -- pero recepcion tiene que borrar la sobrante.\nconst porTitulo = {};\nfor (const e of recien) porTitulo[e.summary || ''] = (porTitulo[e.summary || ''] || 0) + 1;\nconst repetidos = Object.entries(porTitulo).filter(([, n]) => n > 1);\n\nif (repetidos.length) {\n  return [{ json: { ...item, reservaVerificada: true, duplicados: repetidos.length,\n    transferir: true,\n    motivoTransferencia: `se crearon citas DUPLICADAS (${repetidos.map(([t, n]) => `${n}x ${t}`).join('; ')}), hay que borrar las sobrantes` } }];\n}\n\n// AVISO POR \"NO VERIFICADA\": DESACTIVADO. La consulta de verificacion fallaba\n// siempre cuando se escribio esto; hoy si encuentra las citas (comprobado en la\n// ejecucion #964), pero el aviso se deja apagado hasta tener mas evidencia de\n// que no genera ruido. El registro queda en el item para poder auditarlo.\nif (recien.length === 0) {\n  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true } }];\n}\n\nreturn [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id } }];\n"
       },
       "id": "gate-code",
       "name": "Comprobar reserva",
@@ -680,6 +680,143 @@
         }
       },
       "notes": "Reporta el mensaje a la ingesta para contar atenciones e interacciones. Nunca corta la respuesta al cliente: onError continua."
+    },
+    {
+      "id": "tool-buscar-mi-cita",
+      "name": "buscar_mi_cita",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1120,
+        560
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "buscar_mi_cita: devuelve las citas FUTURAS de ESTE cliente, con su identificador. Úsala cuando el cliente quiera cancelar o mover su cita, SIEMPRE antes de cancelar nada. No le pidas el teléfono ni lo pases: se toma solo, del número desde el que escribe. Sí tienes que pasar «funcionario» o «servicio» para saber en qué agenda buscar; si no sabes con quién era la cita, pregúntaselo al cliente antes de usar esta herramienta.",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ (() => { const cfg = $('Config del negocio').first().json; const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim(); /* 1. FUNCIONARIO. Si el agente eligio una persona y esa persona tiene agenda propia, la cita va ahi. Es lo que impide que dos personas que hacen lo mismo reciban dos citas a la misma hora. */ let equipo = []; try { equipo = JSON.parse(cfg.funcionarios || '[]'); } catch (e) { equipo = []; } const quien = norm($fromAI('funcionario', 'Nombre del funcionario que va a atender, si el cliente eligio uno', 'string')); if (quien) { for (const f of equipo) { if (norm(f.nombre) === quien && f.calendario) return f.calendario; } } /* 2. SERVICIO. Sin funcionario elegido se cae al area, como antes. */ let mapa = {}; try { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; } const pedido = norm($fromAI('servicio', 'Servicio solicitado, tal como figura en el catalogo', 'string')); for (const clave of Object.keys(mapa)) { const k = norm(clave); if (k === pedido || pedido.includes(k) || k.includes(pedido)) return mapa[clave]; } /* 3. El del negocio. */ return cfg.calendarioId; })() }}"
+        },
+        "returnAll": false,
+        "limit": 10,
+        "timeMin": "={{ new Date().toISOString() }}",
+        "timeMax": "={{ new Date(Date.now() + 90*24*60*60*1000).toISOString() }}",
+        "options": {
+          "singleEvents": true,
+          "orderBy": "startTime",
+          "timeZone": "America/La_Paz",
+          "query": "={{ $('Normalizar entrada').first().json.from }}"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "id": "tool-cancelar-cita",
+      "name": "cancelar_cita",
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        560
+      ],
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "cancelar_cita: borra una cita del calendario. Úsala SOLO después de que buscar_mi_cita te haya devuelto la cita Y el cliente haya confirmado que quiere cancelar ESA. Parámetro: eventoId, tal como vino de buscar_mi_cita, sin inventarlo ni cambiarlo. Pasa también «funcionario» o «servicio», los mismos con los que la encontraste.",
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ (() => { const cfg = $('Config del negocio').first().json; const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim(); /* 1. FUNCIONARIO. Si el agente eligio una persona y esa persona tiene agenda propia, la cita va ahi. Es lo que impide que dos personas que hacen lo mismo reciban dos citas a la misma hora. */ let equipo = []; try { equipo = JSON.parse(cfg.funcionarios || '[]'); } catch (e) { equipo = []; } const quien = norm($fromAI('funcionario', 'Nombre del funcionario que va a atender, si el cliente eligio uno', 'string')); if (quien) { for (const f of equipo) { if (norm(f.nombre) === quien && f.calendario) return f.calendario; } } /* 2. SERVICIO. Sin funcionario elegido se cae al area, como antes. */ let mapa = {}; try { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; } const pedido = norm($fromAI('servicio', 'Servicio solicitado, tal como figura en el catalogo', 'string')); for (const clave of Object.keys(mapa)) { const k = norm(clave); if (k === pedido || pedido.includes(k) || k.includes(pedido)) return mapa[clave]; } /* 3. El del negocio. */ return cfg.calendarioId; })() }}"
+        },
+        "eventId": "={{ $fromAI('eventoId', 'Identificador de la cita, tal como lo devolvió buscar_mi_cita', 'string') }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "id": "if-deshacer-solapada",
+      "name": "¿Deshacer cita solapada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "solapada",
+              "leftValue": "={{ $json.citaSolapada }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cal-deshacer-solapada",
+      "name": "Deshacer cita solapada",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1760,
+        40
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.calendarioDelBorrado }}"
+        },
+        "eventId": "={{ $json.eventoABorrar }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "code-retomar-respuesta",
+      "name": "Retomar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1920,
+        40
+      ],
+      "parameters": {
+        "jsCode": "// El nodo de Calendar devuelve el resultado del borrado, no la conversacion.\n// Se retoma el item de `Comprobar reserva` para que `Responder al cliente`\n// encuentre `respuesta`, `from` y el resto donde los espera.\nreturn [{ json: $('Comprobar reserva').first().json }];\n"
+      }
     }
   ],
   "connections": {
@@ -854,7 +991,7 @@
       "main": [
         [
           {
-            "node": "Responder al cliente",
+            "node": "¿Deshacer cita solapada?",
             "type": "main",
             "index": 0
           },
@@ -921,6 +1058,68 @@
           }
         ],
         []
+      ]
+    },
+    "buscar_mi_cita": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "cancelar_cita": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent (Sofía)",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Deshacer cita solapada?": {
+      "main": [
+        [
+          {
+            "node": "Deshacer cita solapada",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deshacer cita solapada": {
+      "main": [
+        [
+          {
+            "node": "Retomar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retomar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

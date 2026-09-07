@@ -692,6 +692,13 @@ export const configuracionFlujo = onRequest(
     ]);
 
     const negocio = (config.data() ?? {}) as Record<string, unknown>;
+    const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
+    // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
+    // Un comercio a medio configurar tiene que quedar en el camino que no mueve
+    // dinero, nunca en el que sí.
+    const cobroRealActivo = cobroReal?.['activo'] === true
+      && String(cobroReal?.['ficha'] ?? '') !== ''
+      && String(cobroReal?.['cargaUtil'] ?? '') !== '';
 
     // --- CAMPOS DERIVADOS -------------------------------------------------
     // Se calculan acá y NUNCA se leen de la configuración, aunque aparecieran.
@@ -749,17 +756,41 @@ export const configuracionFlujo = onRequest(
         ? { [docVertical]: especifica.data() }
         : {}),
 
-      // PROHIBICIÓN 3. Los rótulos van SIEMPRE que el vertical sea de cobro, y
-      // salen de plataforma, nunca de la configuración del comercio. Si el
-      // documento faltara, rigen los de respaldo: el sistema falla hacia el
-      // rótulo, jamás hacia el silencio.
+      // COBRO: real o simulado, NUNCA los dos.
+      //
+      // Son excluyentes por definición: o el dinero se mueve o no se mueve, y
+      // mezclarlos produciría el peor resultado posible —un cobro real con el
+      // rótulo de simulacro, o al revés—. El cobro real manda si está
+      // encendido, y el encendido no lo hace el comercio guardando un
+      // formulario: es un acto aparte.
+      //
+      // PROHIBICIÓN 3, mientras el cobro sea simulado: los rótulos salen de
+      // plataforma, nunca de la configuración del comercio. Si el documento
+      // faltara, rigen los de respaldo. El sistema falla hacia el rótulo,
+      // jamás hacia el silencio.
       ...(comercio.flujo === 'venta'
-        ? { cobroSimulado: {
-              ...rotulosCobroSimulado(rotulos?.data()),
-              // Sin media ID no hay QR que enviar, y eso es lo correcto: mejor
-              // no mandar nada que mandar una imagen sin rotular.
-              mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
-            } }
+        ? (cobroRealActivo
+          ? { cobroReal: {
+                nombreCuenta: String(cobroReal?.['nombreCuenta'] ?? ''),
+                // Con esto el flujo coteja el comprobante del cliente.
+                cuentas: Array.isArray(cobroReal?.['cuentas'])
+                  ? (cobroReal['cuentas'] as unknown[]).slice(0, 5).map(String) : [],
+                banco: String(cobroReal?.['banco'] ?? ''),
+                venceEl: String(cobroReal?.['venceEl'] ?? ''),
+                moneda: String(cobroReal?.['moneda'] ?? 'BOB'),
+                montoFijo: typeof cobroReal?.['montoFijo'] === 'number'
+                  ? cobroReal['montoFijo'] : null,
+                // La imagen NO viaja acá: viaja su ficha. El flujo arma la
+                // dirección con su propia base, así que el dominio del panel no
+                // queda escrito en ningún lado del servidor.
+                fichaQr: String(cobroReal?.['ficha'] ?? ''),
+              } }
+          : { cobroSimulado: {
+                ...rotulosCobroSimulado(rotulos?.data()),
+                // Sin media ID no hay QR que enviar, y eso es lo correcto: mejor
+                // no mandar nada que mandar una imagen sin rotular.
+                mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
+              } })
         : {}),
 
       // Siempre al menos uno. Si el comercio no cargó ninguno, viene el

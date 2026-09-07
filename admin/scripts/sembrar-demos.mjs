@@ -293,6 +293,7 @@ for (const c of COMERCIOS) {
     estado: 'activo',
     plan: 'demostracion',
     vertical: c.vertical,
+    flujos: [c.vertical],
     waPhoneNumberId: c.pnid,
     waWabaId: c.wabaId ?? '',
     creadoEn: Timestamp.now(),

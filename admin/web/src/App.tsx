@@ -15,6 +15,9 @@ import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
 import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
+import { Catalogo } from './paginas/Catalogo';
+import { Cobro } from './paginas/Cobro';
+import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
 
 /**
  * Menú, filtrado por rol.
@@ -25,10 +28,16 @@ import { MiCuenta } from './paginas/MiCuenta';
  * permiso». Un menú que ofrece puertas cerradas hace que el sistema parezca
  * roto y entrena a la gente a ignorar los mensajes de permiso, que es
  * exactamente lo que no se quiere. Se detectó probando a mano con la siembra.
+ *
+ * PESTAÑAS POR FLUJO. Un negocio tiene uno o más flujos y cada flujo trae las
+ * suyas (`lib/flujos.ts`): «Agenda» solo con reservas, «Pedidos y cobro» solo
+ * con venta. Antes «Funcionarios» se ofrecía a todo administrador, y el de un
+ * restaurante entraba a una pantalla cuyo alta el servidor le rechazaba.
  */
 function Cabecera() {
   const { usuario, permisos, salir } = useSesion();
   const { tenantId } = useParams();
+  const flujos = useFlujos(tenantId);
   if (!usuario) return null;
 
   const rol = tenantId ? rolEn(permisos, tenantId) : null;
@@ -43,14 +52,17 @@ function Cabecera() {
         {permisos.propietario && !tenantId && <Link to="/bitacora">Bitácora</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/configuracion`}>Configuración</Link>}
+        {tenantId && esAdminDelNegocio && flujos &&
+          <Link to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</Link>}
+        {tenantId && esAdminDelNegocio && (flujos ?? []).flatMap((f) =>
+          FLUJOS[f].pestanas.map((p) =>
+            <Link key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</Link>))}
         {tenantId && esPersona &&
           <Link to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/usuarios`}>Usuarios</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/contactos`}>Contactos</Link>}
-        {tenantId && esAdminDelNegocio &&
-          <Link to={`/negocio/${tenantId}/funcionarios`}>Funcionarios</Link>}
         {tenantId && (esPersona || permisos.propietario) &&
           <Link to={`/negocio/${tenantId}/consumo`}>Consumo</Link>}
         {tenantId && esAdminDelNegocio &&
@@ -98,6 +110,11 @@ function DesvioAConsumo() {
   return <Navigate to={`/negocio/${tenantId}/consumo`} replace />;
 }
 
+function DesvioAAgenda() {
+  const { tenantId } = useParams();
+  return <Navigate to={`/negocio/${tenantId}/agenda`} replace />;
+}
+
 function Inicio() {
   return <><Cabecera /><Tablero /></>;
 }
@@ -123,8 +140,16 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Usuarios /></></Proteger>} />
         <Route path="/negocio/:tenantId/contactos" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Contactos /></></Proteger>} />
-        <Route path="/negocio/:tenantId/funcionarios" element={
+        {/* Pestañas de FLUJO. Se pintan solo si el negocio tiene ese flujo, y
+            las reglas rechazan la escritura si no lo tiene: la ruta existe
+            siempre, la puerta la cierra el servidor. */}
+        <Route path="/negocio/:tenantId/catalogo" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Catalogo /></></Proteger>} />
+        <Route path="/negocio/:tenantId/agenda" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
+        <Route path="/negocio/:tenantId/funcionarios" element={<DesvioAAgenda />} />
+        <Route path="/negocio/:tenantId/cobro" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
         <Route path="/negocio/:tenantId/consumo" element={
           <Proteger requiere="miembroOPropietario"><><Cabecera /><Consumo /></></Proteger>} />
         {/* Los dos nombres anteriores de esta pantalla —«Uso» y «Cierres»—

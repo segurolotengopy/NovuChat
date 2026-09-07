@@ -115,12 +115,17 @@ export function Funcionarios() {
 
   return (
     <section>
-      <h2>Funcionarios</h2>
+      <h2>Agenda</h2>
       <p className="ayuda">
-        Quién atiende qué, y con qué agenda. <strong>Si su negocio es una sola
-        persona no hace falta cargar ninguno</strong>: se usa el calendario del
-        comercio y todo funciona igual. Cargarlos sirve cuando hay varias
-        personas atendiendo, para que una cita de una no bloquee la de otra.
+        Quién atiende qué, y con qué agenda. <strong>Si tu negocio es una sola
+        persona no hace falta cargar a nadie</strong>: se usa el calendario del
+        negocio y todo funciona igual. Cargar a las personas sirve cuando
+        atienden varias, para que una cita de una no bloquee la de otra.
+      </p>
+      <p className="ayuda aviso-datos">
+        Todos los calendarios de un negocio tienen que ser de <strong>la misma
+        cuenta de Google</strong>. Un calendario de otra cuenta no falla al
+        cargarlo: falla al crear la cita, y el asistente la confirma igual.
       </p>
 
       <table>

@@ -7,6 +7,7 @@ import { db } from '../lib/firebase';
 import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { SinSalida } from '../componentes/SinSalida';
+import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../lib/flujos';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.
@@ -68,7 +69,7 @@ function horarioDeHoy(horarios: unknown): string {
 // -----------------------------------------------------------------------------
 // NovuChat
 // -----------------------------------------------------------------------------
-interface Negocio { id: string; nombre?: unknown; estado?: unknown; vertical?: unknown; plan?: unknown }
+interface Negocio { id: string; nombre?: unknown; estado?: unknown; vertical?: unknown; flujos?: unknown; plan?: unknown }
 
 function TableroNovuChat() {
   const [negocios, setNegocios] = useState<Negocio[] | null>(null);
@@ -128,9 +129,9 @@ function TableroNovuChat() {
                 <span className={`tag ${n.estado === 'activo' ? 'tag-accent' : 'tag-neutral'}`}>
                   <TextoSeguro valor={n.estado} maxLargo={20} />
                 </span>{' '}
-                <span className="tag tag-outline">
-                  <TextoSeguro valor={n.vertical} maxLargo={20} />
-                </span>
+                {flujosDe(n).map((f) => (
+                  <span key={f} className="tag tag-outline">{FLUJOS[f].nombre}</span>
+                ))}
               </p>
             </Tarjeta>
           ))}
@@ -149,6 +150,8 @@ interface ResumenNegocio {
 }
 
 function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
+  const flujos = useFlujos(tenantId) ?? [];
+  const nombreItems = etiquetaCatalogo(flujos).toLowerCase();
   const [datos, setDatos] = useState<ResumenNegocio | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,11 +208,11 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
       <Tarjeta
         titulo="Lo que el asistente sabe ofrecer"
         pie={esAdmin
-          ? <Link to={`/negocio/${encodeURIComponent(tenantId)}/configuracion`}>Configurar</Link>
+          ? <Link to={`/negocio/${encodeURIComponent(tenantId)}/catalogo`}>Editar {nombreItems}</Link>
           : undefined}
       >
         <div className="datos">
-          <Dato valor={datos.items} rotulo={datos.items === 1 ? 'servicio' : 'servicios'} />
+          <Dato valor={datos.items} rotulo={nombreItems} />
           {datos.agendas > 0 && <Dato valor={datos.agendas} rotulo="agendas" />}
         </div>
         {datos.items === 0 && (

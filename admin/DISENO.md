@@ -1117,19 +1117,75 @@ valor con forma equivocada, porque eso falla en silencio.
 
 ---
 
-## 4sexies. Los dos verticales en una sola consola
+## 4sexies. Flujos, consola y usuarios: la política de capas
 
 Con los dos demos operativos, el modelo ya no puede asumir agendamiento. El
 problema no es agregar campos: es **agregarlos sin que el panel se convierta en
 un formulario con la unión de todo**.
 
-### 4sexies.1 Qué es común y qué depende del rubro
+### 4sexies.0 La política (registrada el 2026-09-06, a pedido de Andres)
 
-| | Común a cualquier comercio | Agendamiento | Venta y cobro |
+El producto tiene **tres capas**:
+
+| Capa | Qué es | Dónde vive |
+|---|---|---|
+| **FLUJOS** | Lo que corre en n8n: reservas (A), pedidos y cobro (B), y los que vengan | `Flujos/*.json` |
+| **CONSOLA** | Donde el negocio carga lo que el asistente va a afirmar como verdad | `admin/web` + `firestore.rules` |
+| **USUARIOS** | Los negocios clientes, con su gente y sus roles | `/tenants/{id}`, claims |
+
+Y cuatro reglas que se aplican a **todo flujo nuevo**:
+
+1. **Un negocio tiene uno o más flujos.** Se guardan como lista en
+   `tenants/{id}.flujos`. `vertical` (valor único) queda como el flujo
+   principal y como respaldo de las fichas anteriores a la lista; cuando las
+   dos cosas están, **manda la lista**. Cada flujo del negocio corre en SU
+   número de WhatsApp (`/rutasWhatsApp`, §4bis.4): dos flujos en un mismo
+   número exigirían un enrutador que hoy no existe.
+2. **Lo común no se repite por flujo.** Identidad, dirección, horarios, voz
+   del asistente, mensajes fijos, catálogo, usuarios, contraseña, consumo,
+   conversaciones, reclamos y bitácora son de cualquier negocio, tenga el flujo
+   que tenga. Viven en `/config/negocio` y en las colecciones comunes, y sus
+   pantallas se muestran siempre.
+3. **Lo propio de un flujo es excluyente y trae su pestaña.** Reservas
+   necesita agendas por persona; pedidos necesita costos de entrega y un QR.
+   Un negocio de pedidos no ve —ni puede escribir— la agenda, y al revés. Cada
+   flujo con parámetros propios tiene: su documento `/config/{flujo}` con lista
+   blanca propia en las reglas, su línea en la tabla de capacidades
+   (`tieneAgenda`, `tieneCobro`), su entrada en `web/src/lib/flujos.ts` con las
+   pestañas que agrega, y su rama en `documentoDeVertical` (`prompt.ts`).
+4. **La consola habilita pestañas por flujo, no por negocio.** El menú se
+   arma con las pestañas comunes más las de cada flujo de la lista. Y es
+   cosmético: quien cierra la puerta es la regla, que lee la misma lista.
+
+**Cómo se revisa un flujo nuevo** (la lista de control, en orden):
+
+1. Abrir su nodo `Config del negocio` y anotar cada parámetro.
+2. Clasificar cada uno: ¿lo tendría cualquier negocio? → común, va a
+   `/config/negocio` (si no está, se agrega a SU lista blanca). ¿Solo tiene
+   sentido con este flujo? → propio.
+3. Si hay parámetros propios: documento `/config/{flujo}`, función
+   `config{Flujo}Valida()` en las reglas, línea en la tabla de capacidades,
+   `altaTenant`/`asignarNumero` crean el documento, `documentoDeVertical` lo
+   nombra, `flujos.ts` declara la pestaña, y una pantalla la dibuja.
+4. Si hay colecciones propias (como `funcionarios`), su regla exige la
+   capacidad del flujo, no el rol solo.
+5. Pruebas: el negocio CON el flujo escribe; el negocio SIN el flujo no puede,
+   ni con la petición armada a mano; un negocio con varios flujos escribe
+   todos los suyos.
+6. Semillas y `sembrar-demos.mjs` escriben `flujos`.
+7. Si el flujo todavía no lee la consola (`configuracionFlujo`), lo que se
+   muestre tiene que ser lo que el flujo usa de verdad, y el resto se anota
+   como deuda en `ESTADO.md`. Prometer un campo que el asistente ignora es
+   peor que no ofrecerlo.
+
+### 4sexies.1 Qué es común y qué depende del flujo
+
+| | Común a cualquier negocio | Reservas y citas (`agendamiento`) | Pedidos y cobro (`venta`) |
 |---|---|---|---|
 | **Documento** | `/config/negocio` | `/config/agendamiento` | `/config/venta` |
-| **Contiene** | identidad, dirección, horarios, voz del asistente, mensajes fijos, política de cancelación, catálogo | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho |
-| **Colecciones propias** | catálogo, contactos, conversaciones, bitácora | funcionarios, agenda | — |
+| **Contiene** | identidad, dirección, horarios, voz del asistente, mensajes fijos, política de cancelación, calendario del negocio (por historia) | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho, `mediaIdQr` (solo NovuChat) |
+| **Colecciones propias** | catálogo, contactos, conversaciones, bitácora, miembros | funcionarios | — |
+| **Pestañas en la consola** | Configuración, Servicios/Productos, Conversaciones, Usuarios, Contactos, Consumo, Cuenta, Reclamos, Bitácora, Mi cuenta | **Agenda** | **Pedidos y cobro** |
 
 El **catálogo con precios es común**: el Demo A lo usa para servicios con
 duración y el Demo B para productos. Es el mismo concepto y ya estaba modelado.
@@ -1144,8 +1200,8 @@ razones en orden de importancia:
    válido» dentro de las reglas de Firestore — exactamente el tipo de condición
    que se rompe al agregar el tercer vertical.
 2. **El comercio no puede escribir el documento que no le toca.** La regla ata el
-   documento al `vertical` de la ficha del tenant, que el comercio no escribe. Un
-   salón de belleza **no puede** fijar el recargo de flota. Eso no se logra
+   documento a la lista `flujos` de la ficha del tenant, que el comercio no
+   escribe. Un salón de belleza **no puede** fijar el recargo de flota. Eso no se logra
    escondiendo el campo en la pantalla: esconder no protege de nada, porque la
    petición se construye igual desde la consola del navegador.
 3. **La pantalla no necesita lógica de ramas.** Lee el documento común y el de su
