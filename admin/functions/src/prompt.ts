@@ -166,7 +166,20 @@ export function datosQueNoTenemos(config: Record<string, unknown>): string[] {
     }
   }
 
-  return faltantes;
+  // Sin repetidos y sin mayúsculas de más. El comercio suele declarar a mano
+  // algo que el sistema ya dedujo —«dirección del local» junto a «la dirección
+  // del local»— y el asistente se lo lee al cliente dos veces, que suena a
+  // error. Se compara sin acentos, sin artículos y sin distinguir mayúsculas.
+  const vistos = new Set<string>();
+  return faltantes.filter((f) => {
+    const clave = f.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/^(la|el|los|las)\s+/, '')
+      .replace(/\s+/g, ' ').trim();
+    if (vistos.has(clave)) return false;
+    vistos.add(clave);
+    return true;
+  });
 }
 
 

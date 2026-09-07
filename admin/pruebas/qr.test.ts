@@ -19,7 +19,7 @@ import {
   crc16, cuentasDelQr, pareceCifrado, separarCampos, validarQrSimple,
 } from '../functions/src/qrSimple.ts';
 import { dibujarQr, pngDeMatriz } from '../functions/src/dibujoQr.ts';
-import { horarioAtencion } from '../functions/src/prompt.ts';
+import { datosQueNoTenemos, horarioAtencion } from '../functions/src/prompt.ts';
 import {
   cotejarComprobante, cuentaCoincide, montoCoincide, nombreCoincide, normalizar,
   parsearFechaHora, parsearMonto,
@@ -525,5 +525,33 @@ describe('Cómo se le lee el horario al cliente', () => {
   it('sin horarios devuelve vacío, y no una frase inventada', () => {
     expect(horarioAtencion(null)).toBe('');
     expect(horarioAtencion({})).toBe('');
+  });
+});
+
+describe('Datos que el negocio NO tiene', () => {
+  // La lista se le lee al cliente. Si trae repetidos suena a error, y el
+  // comercio suele declarar a mano algo que el sistema ya dedujo.
+  it('no repite lo que el comercio declaró y el sistema ya había deducido', () => {
+    const r = datosQueNoTenemos({
+      direccion: '',
+      datosQueNoTenemos: ['dirección del local', 'La Dirección del Local', 'promociones'],
+    });
+    expect(r.filter((x) => /direcci/i.test(x))).toHaveLength(1);
+    expect(r).toContain('promociones');
+  });
+
+  it('deduce lo que falta sin que nadie lo declare', () => {
+    // Es el control que evita el incidente del 28 de agosto: el comercio no
+    // carga la dirección Y tampoco declara que falta.
+    expect(datosQueNoTenemos({}).some((x) => /direcci/i.test(x))).toBe(true);
+  });
+
+  it('con todo cargado no inventa faltantes', () => {
+    const r = datosQueNoTenemos({
+      direccion: 'Calle Falsa 100', numeroRecepcion: '59170000000',
+      calendarioId: 'x@group.calendar.google.com', horarios: { lun: '09:00-19:00' },
+      politicaCancelacion: 'Con 2 horas de aviso.',
+    });
+    expect(r).toEqual([]);
   });
 });

@@ -1275,6 +1275,25 @@ Su catálogo se parte por **área** —carta y tienda— y no por precio como el
 Demo A, porque se ofrecen distinto. Un ítem sin precio no entra: no se puede
 cobrar lo que no tiene precio.
 
+**Y al probarlo apareció el incidente del 28 de agosto, otra vez.** Andrés pidió
+algo y el asistente contestó «nuestra tienda está ubicada en la zona central de
+La Paz». Se la inventó: el panel tiene la dirección vacía y ya lo sabía —su
+`datosQueNoTenemos` la lista— pero el flujo del Demo B **no le pasaba ese dato
+al prompt**, y su única regla contra inventar hablaba solo de «productos y
+precios». El del Demo A tenía la regla completa desde el 28 de agosto.
+
+Es la **tercera vez en dos días** que una lección corregida en un flujo no había
+cruzado a otro: los calendarios de los funcionarios en los recordatorios, la
+regla de no inventar acá, y antes el catálogo. Vale como criterio permanente:
+**cuando se arregla algo en un flujo, hay que ir a buscar el mismo defecto en
+los otros dos**, porque comparten el origen y no la corrección.
+
+Corregido: el Demo B recibe `direccion` y `datosQueNoTenemos` del panel, y su
+regla 12 ahora prohíbe inventar cualquier dato, con el ejemplo textual de la
+dirección. Además `datosQueNoTenemos` dejó de repetir lo que el comercio declara
+a mano y el sistema ya dedujo —«dirección del local» junto a «la dirección del
+local»—, que el asistente le leía dos veces al cliente.
+
 ### Brechas de cara al primer cliente (07/09)
 
 Andrés listó seis. Auditadas contra el código, no de memoria:
