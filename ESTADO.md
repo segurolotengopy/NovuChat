@@ -4,39 +4,47 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-06 (cobro real, anulaciones y política de capas)
+**Última actualización:** 2026-09-07 (la consola manda: los tres flujos leen del panel)
 
 ---
 
-## Dónde estamos (2026-09-06)
+## Dónde estamos (2026-09-07, mañana del congelamiento)
 
-**Listo para el ensayo del 7.** `main` en 101 commits, árbol limpio, saneo en
-cero. 249 pruebas en verde, 18 Functions activas, contadores de los dos demos
-en cero para que se llenen con lo que se haga en el ensayo.
+**`main` en 124 commits, árbol limpio, saneo en cero, 336 pruebas.** Los tres
+flujos publicados y activos; consola, reglas y 20 funciones desplegadas.
 
-- **Los tres flujos** (Demo A, Demo B, recordatorios) corren contra WhatsApp
-  real con `models/gemini-3.5-flash-lite`. El circuito comercial se verificó de
-  punta a punta en los dos demos: conversación → resultado verificable → cierre
-  con teléfono enmascarado → contador → pantalla de consumo.
-- **La consola** está en `consola.novuchat.site`, con el ingreso del comercio
-  por delante, «Mi cuenta» para cambiar la contraseña, y ofreciendo solo lo que
-  el flujo de verdad lee. Doce campos salieron de la interfaz y quedaron
-  anotados como deuda (ver «Deuda: campos quitados de la consola»). **Desde la
-  tarde del 6 sirve a los dos flujos**: pestañas por flujo («Agenda» con
-  reservas, «Pedidos y cobro» con venta), catálogo editable, y un negocio puede
-  tener varios flujos. Ver «Política de capas».
-- **La facturación** es por **conversación** (ventana fija de 24 h por
-  teléfono), con el mismo vocabulario que `novuchat.site/precios`. Los cierres
-  siguen registrándose como métrica de calidad, pero **ya no se facturan**.
-- **Dos pendientes que solo se prueban usándolos en el ensayo:** el recordatorio
-  automático de las 17:00 con una cita nueva (el único eslabón que nunca se vio
-  correr solo) y el pedido del Demo B con comprobante, que ahora acepta foto o
-  archivo.
-- **Se espera a Andres** para dos trabajos: las observaciones sobre la consola
-  antes de rehacerla con el diseño de `novuchat.site`, y los tres manuales en
-  PDF que dependen de ese rediseño.
+**El cambio grande de la madrugada: la consola dejó de ser una maqueta.** Hasta
+anoche el negocio escribía su configuración en el panel y el asistente seguía
+usando la que llevaba adentro — cambiar un precio no hacía nada. Ahora los tres
+flujos leen del panel (`configuracionFlujo`) y **está probado en vivo**: se
+cambió el precio del corte en la consola y el asistente lo dijo por WhatsApp.
 
-El detalle de todo lo que cambió está en «Del 1 al 6 de septiembre», más abajo.
+- **Falla hacia atrás.** Si el panel no contesta, cada flujo usa los valores que
+  ya tenía escritos: el peor caso es el comportamiento de ayer, nunca un
+  asistente sin catálogo.
+- **`estadoComercio` sí manda siempre desde el panel**, en los tres. Es lo que
+  corta el servicio a quien dejó de pagar, y ya no depende de un valor escrito
+  dentro del flujo.
+- **Los rótulos del cobro simulado no se pisan con nada**, aunque el panel los
+  mandara. Probado atacándolo.
+
+**El alta de un cliente real ya es posible**, que hasta ayer no lo era:
+`alta-comercio.mjs` crea la cuenta sin contraseña conocida, y la reserva de 20
+alias de secreto quitó el despliegue de Functions del procedimiento.
+
+**Cuatro de las seis brechas de cara al primer cliente están cerradas.** Quedan
+el rol `ingesta`, el límite de 50 eventos de la compuerta, y el código de la
+purga de retención —la política ya está decidida—. Las tres son para después de
+las demos.
+
+**Lo que NO existe todavía, y la pantalla lo dice:** el cobro real. Se puede
+registrar y verificar el QR del comercio, pero **ningún flujo lee `cobroReal`**,
+así que el asistente sigue enviando el de demostración. Falta el consumo en el
+flujo, los tres nodos del OCR y el control para encenderlo.
+
+**Pendiente de hoy:** la suite A completa con teléfono, y a las 17:00 confirmar
+que llegan los seis recordatorios del martes — es el único eslabón que nunca se
+vio correr solo.
 
 ---
 
@@ -1378,29 +1386,23 @@ en `admin/DISENO.md` §6.1.
 
 ## Riesgos vivos para el 9–10 de septiembre
 
-**Actualizado el 2026-09-06.** Los de la lista anterior (latencia, portafolios
-de Meta, agente sin herramientas, 503 de Gemini) quedaron resueltos.
+**Actualizado el 2026-09-07.**
 
-- **El recordatorio de las 17:00 nunca corrió solo.** Todo lo demás se vio
-  funcionar; esto se probó a mano. Si en el ensayo del 7 hay una cita para el
-  8, a las 17:00 tiene que llegar el mensaje. Si no llega, revisar la
-  ejecución con `ver-ejecuciones.sh --env` antes de tocar nada.
-- **Cambio de modelo = revisar detectores.** Ya pasó una vez en silencio. Si
-  alguien vuelve a Flash por latencia, hay que reprobar la cadena
-  `afirmaAgendo → reservaVerificada → cierre`.
-- **Credencial de Google Calendar.** La app ya está publicada, pero el ensayo
-  es la primera vez que va a pasar más de un día sin reconectarla. Si la cita
-  falla con el flujo verde, es la credencial: reconectar en n8n, no depurar el
-  flujo.
-- **`executionTimeout` de 60 s**: sigue vigente; el guion conserva la salida
-  manual a los ~20 s.
+- **El recordatorio de las 17:00 sigue sin verse correr solo.** Se corrigieron
+  sus tres defectos y se verificó todo lo verificable sin esperar al reloj, pero
+  la corrida completa es hoy.
+- **Se movió mucho el 6 y el 7.** Tres funciones desplegadas, los tres flujos
+  republicados, reglas y consola. Todo verificado pieza por pieza, pero la
+  acumulación es el riesgo: conviene que la suite A pase entera antes de dar
+  nada por bueno.
+- **Cambio de modelo = revisar detectores.** Ya rompió una vez en silencio.
+- **Credencial de Google Calendar.** La app está publicada, pero si una cita
+  falla con el flujo en verde, es la credencial: reconectar, no depurar.
+- **`executionTimeout` de 60 s**: el guion conserva la salida manual a los ~20 s.
 - **Solo 5 destinatarios**: el guion contempla prestar un celular al público.
-- **Congelamiento el 8.** Lo que no esté probado con teléfono real ese día no
-  entra. Incluye el rediseño de la consola y los manuales, que se posponen a
-  después de los demos si las observaciones no llegan a tiempo.
-- **Números de la consola en la demo.** Están en cero a propósito: se llenan
-  con el ensayo. Números chicos y coherentes convencen más que números grandes
-  que no cierran.
+- **Números de la consola en la demo.** Se llenan con lo que se haga en el
+  ensayo. Números chicos y coherentes convencen más que números grandes que no
+  cierran.
 
 ## Riesgos del repositorio público
 
@@ -1420,18 +1422,32 @@ de Meta, agente sin herramientas, 503 de Gemini) quedaron resueltos.
 
 ## Próximos pasos
 
-1. **07/09 — Ensayo con Silvana.** Suite A de `Demo-Recursos/checklist-ensayo.md`
-   completa, en los dos demos, con teléfono real. Dejar una cita agendada para
-   el 8 y verificar a las 17:00 que el recordatorio salga solo. Probar el pedido
-   del Demo B con comprobante como foto Y como archivo.
-2. **07/09 — Observaciones de Andres sobre la consola.** Con ellas se rehace
-   con el diseño de `novuchat.site` y recién después se hacen los tres PDF. Si
-   no llegan antes del 8, las dos cosas pasan a después de los demos.
-3. **08/09 — Congelamiento.** Exportar los tres flujos desde n8n y reemplazar
-   los JSON de `Flujos/`; confirmar que `main` es lo que corre; borrar el
-   secreto OAuth viejo si ya nada lo usa; video de respaldo.
+1. **07/09, hoy — Ensayo con Silvana.** Suite A de
+   `Demo-Recursos/checklist-ensayo.md` completa, en los dos demos, con teléfono
+   real. Dejar una cita agendada para el 8. Probar el pedido del Demo B con
+   comprobante como foto Y como archivo.
+2. **07/09, 17:00 — Los recordatorios.** Tienen que llegar SEIS, uno por cada
+   cita del martes 8. Es lo único que nunca se vio correr solo. Si no llegan, la
+   ejecución dice por qué: desde ayer un envío fallido ya no marca la cita como
+   recordada.
+3. **08/09 — Congelamiento.** Confirmar que `main` es lo que corre; borrar el
+   secreto OAuth viejo si ya nada lo usa; video de respaldo. **No tocar nada
+   más**: en las últimas horas se desplegaron funciones, se republicaron los
+   tres flujos y cambiaron reglas y consola.
 4. **09 y 10/09 — Demos.**
-5. **Después:** aplicar `prompt-landing-precisiones.md` en la landing;
-   alta/administración de negocios y rol contador; Google para comercios;
-   conectar `configuracionParaFlujo`; `firebase-tools` 15; sumar a Silvana como
-   revisora en GitHub (§4).
+5. **Después de las demos, en este orden:**
+   - Cobro real de punta a punta: que el flujo lea `cobroReal`, los tres nodos
+     del OCR, y el control para encenderlo.
+   - Brecha 6: la compuerta de reserva con dos consultas dirigidas en vez de
+     subir el límite de 50.
+   - Brecha 5: migrar la ingesta al rol `ingesta`.
+   - La purga de retención a 12 meses.
+   - Rediseño de la consola con el diseño de `novuchat.site`, y los tres PDF.
+   - Alta y administración de negocios desde la consola, y el rol contador.
+   - `prompt-landing-precisiones.md` en la landing; `firebase-tools` 15; sumar a
+     Silvana como revisora en GitHub (§4).
+
+**Pregunta comercial abierta, y no la puede resolver el equipo técnico:**
+averiguar con el BNB si existe un QR de comercio con vigencia larga. El que
+genera la aplicación por defecto vence en días, y con eso el modelo «carga tu QR
+una vez» no se sostiene.
