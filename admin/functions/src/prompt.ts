@@ -328,3 +328,77 @@ export function rotulosCobroSimulado(
     confirmacion: leer('confirmacion'),
   };
 }
+
+// ===========================================================================
+// EL CATÁLOGO NO PUEDE CRECER DENTRO DE CADA MENSAJE
+// ===========================================================================
+//
+// `configuracionFlujo` mandaba el catálogo entero —hasta 200 ítems— en cada
+// consulta del flujo, y el flujo lo pega en el prompt. Con un salón de belleza
+// de doce servicios eso es correcto y barato. Con una ferretería de trescientos
+// productos, cada mensaje del cliente pasa a costar un prompt gigante: más
+// dinero, más latencia, y un modelo que empieza a olvidar el principio de la
+// lista justo cuando la lista importa.
+//
+// EL UMBRAL, que es el punto 7 del diseño de Andres
+// (`Analisis/11-catalogo-web-propio.md`): por debajo, el catálogo entero al
+// prompt y el asistente lo recita; por encima, solo un RESUMEN —cuántos hay,
+// qué áreas, entre qué precios— y el detalle llega por dos caminos que no
+// pasan por el prompt: el sitio del catálogo, que el cliente navega, y el JSON
+// del checkout, que vuelve con los ítems exactos.
+//
+// POR QUÉ SE DECIDE ACÁ Y NO EN n8n. La consola es la única que sabe cuántos
+// ítems tiene el comercio. Que el flujo tuviera que contar exigiría una
+// consulta más y —peor— dos lugares donde el umbral podría no coincidir.
+//
+// EL NÚMERO. Cuarenta ítems son unas dos mil palabras de catálogo en el prompt:
+// molesto pero manejable, y por encima de lo que tiene la enorme mayoría de las
+// PyMEs a las que apunta el producto. Se cambia acá, en un solo lugar.
+export const UMBRAL_CATALOGO_AL_PROMPT = 40;
+
+export interface ResumenCatalogo {
+  total: number;
+  areas: string[];
+  precioMin: number | null;
+  precioMax: number | null;
+  moneda: string;
+  hayACotizar: boolean;
+}
+
+/**
+ * Resumen de un catálogo grande: lo justo para que el asistente sepa de qué
+ * habla y no invente. NO lleva nombres de productos, y eso es deliberado: si
+ * llevara veinte nombres, el modelo los trataría como «el catálogo» y diría que
+ * no tiene el resto.
+ */
+export function resumirCatalogo(
+  items: Array<Record<string, unknown>>,
+): ResumenCatalogo {
+  const areas = new Set<string>();
+  let min: number | null = null;
+  let max: number | null = null;
+  let moneda = '';
+  let hayACotizar = false;
+
+  for (const item of items) {
+    const area = typeof item['area'] === 'string' ? item['area'].trim() : '';
+    if (area !== '') areas.add(area.slice(0, 40));
+    const precio = item['precio'];
+    if (typeof precio === 'number') {
+      min = min === null || precio < min ? precio : min;
+      max = max === null || precio > max ? precio : max;
+      if (moneda === '') moneda = item['moneda'] === 'USD' ? 'USD' : 'BOB';
+    } else {
+      hayACotizar = true;
+    }
+  }
+
+  return {
+    total: items.length,
+    areas: [...areas].sort().slice(0, 20),
+    precioMin: min,
+    precioMax: max,
+    moneda,
+    hayACotizar,
+  };
+}
