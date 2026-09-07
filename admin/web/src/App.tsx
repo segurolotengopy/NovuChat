@@ -2,6 +2,7 @@ import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { ProveedorSesion, useSesion } from './lib/contexto';
 import { rolEn } from './lib/sesion';
 import { Proteger } from './componentes/Proteger';
+import { Marca } from './componentes/Marca';
 import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
@@ -33,10 +34,19 @@ import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
  * suyas (`lib/flujos.ts`): «Agenda» solo con reservas, «Pedidos y cobro» solo
  * con venta. Antes «Funcionarios» se ofrecía a todo administrador, y el de un
  * restaurante entraba a una pantalla cuyo alta el servidor le rechazaba.
+ *
+ * EL MENÚ NO PUEDE DEPENDER SOLO DE LA RUTA. Los enlaces del negocio salían del
+ * `tenantId` de la dirección, así que en las pantallas que no lo llevan —el
+ * tablero de inicio y «Mi cuenta»— la barra quedaba vacía: se entraba y no
+ * había por dónde salir. Ahora, si la ruta no dice a qué negocio, se toma el
+ * único que la persona administra, que es el caso de casi todos los comercios.
+ * Con varios negocios no se adivina: se ofrece volver al inicio a elegir.
  */
 function Cabecera() {
   const { usuario, permisos, salir } = useSesion();
-  const { tenantId } = useParams();
+  const { tenantId: tenantDeLaRuta } = useParams();
+  const negocios = Object.keys(permisos.tenants);
+  const tenantId = tenantDeLaRuta ?? (negocios.length === 1 ? negocios[0] : undefined);
   const flujos = useFlujos(tenantId);
   if (!usuario) return null;
 
@@ -46,10 +56,13 @@ function Cabecera() {
 
   return (
     <header className="nav">
-      <span className="nav-brand">NovuChat</span>
+      <Marca />
       <nav>
         {permisos.propietario && <Link to="/negocios">Negocios</Link>}
-        {permisos.propietario && !tenantId && <Link to="/bitacora">Bitácora</Link>}
+        {permisos.propietario && <Link to="/bitacora">Bitácora</Link>}
+        {/* Con varios negocios y sin uno elegido, la salida es el inicio, que
+            los lista. Adivinar cuál quiere ver sería peor que preguntarlo. */}
+        {!tenantId && negocios.length > 1 && <Link to="/">Mis negocios</Link>}
         {tenantId && esAdminDelNegocio &&
           <Link to={`/negocio/${tenantId}/configuracion`}>Configuración</Link>}
         {tenantId && esAdminDelNegocio && flujos &&

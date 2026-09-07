@@ -1253,6 +1253,66 @@ hay una prueba dedicada a ese caso exacto.
 
 ---
 
+## 4septies. Retención de conversaciones: 12 meses
+
+**Decidido por Andres el 2026-09-07.** Era el riesgo abierto más incómodo: el
+sistema guarda mensajes de WhatsApp de clientes finales que **nunca aceptaron
+nada ante NovuChat**. Consintieron escribirle a una peluquería; nosotros somos
+la infraestructura de esa peluquería, no su contraparte.
+
+### La regla
+
+**Las conversaciones y sus mensajes se borran a los 12 MESES de su último
+mensaje.** No de su creación: una conversación que sigue viva no se corta por la
+mitad.
+
+### Qué se borra y qué no, que es donde está la decisión de verdad
+
+| Dato | Qué pasa a los 12 meses | Por qué |
+|---|---|---|
+| `conversaciones/{id}` y sus mensajes | **se borra** | es el contenido personal: lo que la persona escribió |
+| `cierres/{id}/privado/datos` | **se borra** | nombre y teléfono completo del cliente final |
+| `cierres/{id}` (público) | **se conserva** | teléfono enmascarado, importe y tipo: es el respaldo de lo que se facturó |
+| `metricas/{periodo}` | **se conserva** | son cuentas, no personas |
+| `contactos` del comercio | **no caduca** | son del negocio, no de sus clientes; los borra el comercio |
+| `bitacora` y `auditoria` | **se conserva 24 meses** | es el registro de quién cambió qué, y protege al comercio tanto como a NovuChat |
+
+La asimetría es deliberada: **se borra el contenido, se conserva la cuenta.** Un
+comercio que reclame una factura de hace ocho meses tiene con qué defenderse, y
+la persona que escribió por un corte de pelo no queda en una base para siempre.
+
+### Por qué doce y no seis ni veinticuatro
+
+Doce meses cubre el ciclo comercial completo —una discusión de facturación, una
+auditoría, un cliente que vuelve al año— y es el plazo que un comercio entiende
+sin explicación. Seis obliga a explicarle a un negocio por qué perdió el
+historial de la temporada pasada; veinticuatro acumula dos años de datos ajenos
+sin que nadie los use.
+
+### Cómo se implementa
+
+Una función programada diaria que borra por lotes lo vencido, con su registro en
+la bitácora de plataforma. **Pendiente de escribir**: la decisión es de hoy, el
+código va después de las demos del 9 y 10. Hasta entonces no hay volumen que lo
+justifique —dos comercios de demostración— pero **tiene que existir antes del
+primer cliente real**, porque a partir de ahí los datos son de terceros de
+verdad.
+
+### Lo que hay que decir en los términos
+
+Dos frases, y la segunda depende de la opción de calendario de §4:
+
+> Guardamos las conversaciones de WhatsApp durante 12 meses desde el último
+> mensaje, y después se borran automáticamente. Conservamos por más tiempo solo
+> el registro de operaciones facturadas, sin el contenido de los mensajes ni el
+> teléfono completo.
+
+> Para agendar citas, el asistente accede a la agenda de Google que el negocio
+> autoriza. Ese acceso lo concede el propio negocio desde su cuenta de Google y
+> lo puede revocar cuando quiera, sin pasar por NovuChat.
+
+---
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido
@@ -1343,9 +1403,47 @@ manual:
 3. Crea el primer administrador y **le emite el custom claim**.
 4. Escribe el evento en `/auditoria`.
 
-Queda manual, por diseño: crear el secreto HMAC del negocio en Secret Manager y
-conectar el número de WhatsApp del cliente en Meta. Ambos son pasos que exigen
-una persona.
+**Pero `altaTenant` no alcanzaba para un cliente real**, y eso se descubrió el
+2026-09-07 revisando el alta de punta a punta: la función exige que el
+administrador **ya haya ingresado una vez** (`getUserByEmail`, y si no está,
+`failed-precondition`). Un administrador de comercio entra con correo y
+contraseña, y la consola **no tiene pantalla de registro**: nadie podía crearse
+la cuenta. O sea que el alta era imposible, y el único script que creaba
+usuarios —`usuarios-prueba.mjs`— usaba contraseñas escritas en el propio
+archivo.
+
+### 6.1 El procedimiento real, paso por paso
+
+```bash
+# 1. El negocio y su administrador, con enlace para que ponga su contraseña.
+node admin/scripts/alta-comercio.mjs --proyecto <id> \
+  --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
+  --admin ana@ejemplo.com --nombre-admin "Ana Quispe" --aplicar
+
+# 2. El secreto del alias libre que sigue (cliente01, cliente02, …).
+gcloud secrets versions access latest --secret=INGESTA_CLIENTE01 --project <id>
+#    → se carga como credencial de cabecera en n8n, y NUNCA se escribe en el repo.
+
+# 3. El número de WhatsApp y su alias, con `asignarNumero` desde la consola,
+#    más `aliasSecreto: "cliente01"` en /rutasWhatsApp/{phoneNumberId}.
+```
+
+**Ni una línea de código, ni un despliegue.** Antes, cada cliente obligaba a
+editar `SECRETOS_POR_ALIAS` y desplegar Functions: un procedimiento de
+ingeniería en medio de una gestión comercial. La reserva de veinte alias
+—declarada el 2026-09-07— lo eliminó. Ver el comentario de `firma.ts` para por
+qué son veinte secretos separados y no un mapa, y por qué nacen con un valor
+real en vez de un marcador.
+
+**Cuando se acaben los veinte**, se amplía la reserva y se despliega UNA vez, no
+una por cliente. Conviene hacerlo con holgura, no con el cliente veinte ya
+firmado.
+
+### 6.2 Lo que sigue siendo manual, por diseño
+
+Conectar el número de WhatsApp del cliente en Meta: son trámites ante un tercero
+que se miden en días y no dependen de NovuChat. Ver §4bis.4 para el techo de
+crecimiento que imponen.
 
 **Los identificadores de negocio no se reutilizan jamás**, ni siquiera los dados
 de baja. Si se reutilizara `salon-x`, un claim viejo que todavía dijera
@@ -1613,7 +1711,7 @@ activa de `gcloud` ni de `firebase`.
 |---|---|---|
 | **La ingesta escribe con el SDK Admin (Fase 1)**, saltándose las reglas | un error de programación en `ingesta.ts` podría escribir en otro negocio; el aislamiento depende de una línea de código en vez de una regla | pasar a Fase 2 (token efímero + REST) antes de tener el segundo cliente. Las reglas ya están y pasan las pruebas |
 | **Ventana de hasta 1 hora del ID token** | un usuario retirado conserva permisos hasta que caduque | `revokeRefreshTokens` en cada quita, y `tenantActivo()` en las lecturas sensibles. Queda un hueco en lecturas no sensibles |
-| **Sin política de retención de conversaciones** | acumulación indefinida de datos personales de terceros que nunca consintieron nada ante NovuChat | definirla antes del primer cliente real: propuesta de 12 meses y purga automática |
+| ~~**Sin política de retención de conversaciones**~~ | RESUELTO el 2026-09-07: **12 meses y purga automática**, decidido por Andres. Ver §4septies | — |
 | **Blaze sin tope duro** | una función en bucle genera una factura desagradable | presupuesto con alerta + `maxInstances: 10` (ya configurado) |
 | **App Check exigido demasiado pronto** | deja afuera a usuarios legítimos | modo monitoreo primero, exigir después |
 | **Presupuesto de reglas** | Firestore limita a 10 accesos a documentos por petición y 20 por consulta; `tenantActivo()` + `soporteVigente()` ya usan dos | no agregar más `get()` sin medir |

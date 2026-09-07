@@ -37,6 +37,58 @@ import { getFirestore } from 'firebase-admin/firestore';
 export const SECRETOS_POR_ALIAS: Record<string, ReturnType<typeof defineSecret>> = {
   demoA: defineSecret('INGESTA_DEMOA'),
   demoB: defineSecret('INGESTA_DEMOB'),
+  // ---------------------------------------------------------------------------
+  // RESERVA DE ALIAS PARA CLIENTES, declarada el 2026-09-07.
+  //
+  // QUÉ PROBLEMA RESUELVE. `defineSecret` exige que el nombre esté escrito en el
+  // código, así que cada cliente nuevo obligaba a editar este archivo y
+  // **desplegar Functions**. Un despliegue por alta es un procedimiento de
+  // ingeniería en medio de una gestión comercial: lento, con riesgo, y
+  // dependiente de que haya alguien capaz de hacerlo. Con la reserva ya
+  // declarada, dar de alta un cliente es: tomar el valor del alias libre que
+  // sigue y escribir `aliasSecreto` en su ruta de WhatsApp. Ni una línea de
+  // código, ni un despliegue.
+  //
+  // POR QUÉ CADA UNO CON SU PROPIO SECRETO, y no un solo secreto con un mapa
+  // JSON adentro —que sería ilimitado y no necesitaría reserva—: el radio de
+  // daño. Un mapa filtrado entrega las claves de TODOS los clientes de una vez.
+  // Veinte secretos separados cuestan poco más de un dólar al mes y hacen que
+  // filtrar uno sea filtrar uno.
+  //
+  // POR QUÉ NACEN CON UN VALOR REAL Y ALEATORIO, y no con un marcador. Dos
+  // razones, y la segunda no es obvia:
+  //  1. Un marcador conocido sería una credencial válida el día que alguien
+  //     asigne ese alias y se olvide de rotarlo.
+  //  2. Si el valor se creara EN EL ALTA, sería una versión nueva del secreto, y
+  //     las instancias de Functions que ya están corriendo siguen con la versión
+  //     vieja hasta reciclarse: el cliente recién dado de alta fallaría de forma
+  //     intermitente durante unos minutos, que es el peor tipo de falla. Naciendo
+  //     con su valor, en el alta no se crea ninguna versión y no hay nada que
+  //     esperar.
+  //
+  // CUANDO SE ACABEN LOS VEINTE, hay que ampliar la reserva y desplegar UNA vez,
+  // no una por cliente. Conviene hacerlo con holgura, no con el cliente 20 ya
+  // firmado.
+  cliente01: defineSecret('INGESTA_CLIENTE01'),
+  cliente02: defineSecret('INGESTA_CLIENTE02'),
+  cliente03: defineSecret('INGESTA_CLIENTE03'),
+  cliente04: defineSecret('INGESTA_CLIENTE04'),
+  cliente05: defineSecret('INGESTA_CLIENTE05'),
+  cliente06: defineSecret('INGESTA_CLIENTE06'),
+  cliente07: defineSecret('INGESTA_CLIENTE07'),
+  cliente08: defineSecret('INGESTA_CLIENTE08'),
+  cliente09: defineSecret('INGESTA_CLIENTE09'),
+  cliente10: defineSecret('INGESTA_CLIENTE10'),
+  cliente11: defineSecret('INGESTA_CLIENTE11'),
+  cliente12: defineSecret('INGESTA_CLIENTE12'),
+  cliente13: defineSecret('INGESTA_CLIENTE13'),
+  cliente14: defineSecret('INGESTA_CLIENTE14'),
+  cliente15: defineSecret('INGESTA_CLIENTE15'),
+  cliente16: defineSecret('INGESTA_CLIENTE16'),
+  cliente17: defineSecret('INGESTA_CLIENTE17'),
+  cliente18: defineSecret('INGESTA_CLIENTE18'),
+  cliente19: defineSecret('INGESTA_CLIENTE19'),
+  cliente20: defineSecret('INGESTA_CLIENTE20'),
 };
 
 const VENTANA_MS = 5 * 60 * 1000;   // Tolerancia de reloj y de red.

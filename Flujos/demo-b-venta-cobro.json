@@ -64,13 +64,13 @@
       }
     },
     {
-      "id": "config-negocio",
-      "name": "Config del negocio",
+      "id": "config-base-b",
+      "name": "Config base",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        140,
-        280
+        220,
+        300
       ],
       "parameters": {
         "assignments": {
@@ -206,6 +206,18 @@
               "name": "estiloEmojis",
               "type": "string",
               "value": "Usa emojis con moderacion y relacionados con lo que decis: uno o dos por mensaje, nunca dentro de un precio, un total ni un horario. Repertorio: 🍔 hamburguesa · 🍟 salchipapa · 🥤 gaseosa · 🛵 delivery · 🛍️ retiro en tienda · 📖 menu · 🧾 total · ✅ pedido confirmado · 👋 saludo. Si el mensaje da una mala noticia o un problema, sin emojis alegres."
+            },
+            {
+              "id": "direccion",
+              "name": "direccion",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "datosQueNoTenemos",
+              "name": "datosQueNoTenemos",
+              "value": "la dirección del local, formas de pago reales, promociones, horarios de entrega puerta a puerta",
+              "type": "string"
             }
           ]
         },
@@ -305,7 +317,7 @@
         "promptType": "define",
         "text": "={{ $json.userInput }}",
         "options": {
-          "systemMessage": "=Eres NovuChat, el asistente virtual de ventas de {{ $json.nombreNegocio }} (restaurante y tienda retail). Amable, conciso (máximo 3 oraciones por mensaje), español boliviano de trato informal con el cliente, moneda siempre en \"{{ $json.moneda }}\".\n\nTRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}\n\nTRANSPARENCIA (regla que no se negocia): sos un asistente con inteligencia artificial. Si te preguntan si sos un robot, un bot o una IA, decilo con naturalidad y seguí ayudando. Nunca digas que sos una persona.\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, {{ $json.zonaHoraria }}, UTC-4). Calculá con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'); nunca uses otra hora. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }} (ese es su WhatsApp registrado).\n\nHORARIO DE ATENCIÓN: {{ $json.horarioAtencion }}.\n\nREGLAS RESTAURANTE:\n1. Menú de referencia, no existe nada fuera de esto: {{ $json.menuGastronomia }}. Delivery en zona urbana: {{ $json.costoDelivery }} {{ $json.moneda }}.\n2. Al recibir un pedido o un carrito, preguntá SIEMPRE si desea agregar una nota especial (sin cebolla, sin tomate, término de la carne) antes de cobrar.\n3. MEMORIA: si el cliente ya eligió 'Delivery' o 'Pasar a recoger' (incluida la opción del menú interactivo inicial), NO vuelvas a preguntar la modalidad. Si solo pidió ver el menú, DEBÉS preguntarla antes de cobrar. Si es Delivery, pedí la dirección y sumá el envío al total.\n\nREGLAS RETAIL:\n4. Catálogo de referencia: {{ $json.catalogoRetail }}. Si falta una variante obligatoria (talla, color), pedila antes de cobrar.\n5. Envío nacional por flota (recargo de terminal {{ $json.recargoFlota }} {{ $json.moneda }}): NO entregues el QR hasta tener Nombre completo y CI. Confirmá el celular proactivamente: 'Tengo registrado este WhatsApp, ¿usamos este mismo para la guía de la flota?'.\n\nCOBRO — ES UNA DEMOSTRACIÓN, NUNCA UN COBRO REAL:\n6. Este asistente NO cobra. El QR que se envía está rotulado como simulacro en la propia imagen y en su epígrafe, y no mueve dinero. Nunca digas ni insinúes que el cobro es real, que el dinero se acreditó o que verificaste un pago en un banco.\n7. Cuando tengas todos los datos, mostrá el TOTAL desglosado (productos + envío o recargo si aplica), avisá que enviás el código QR aclarando que es de demostración, y terminá tu mensaje EXACTAMENTE con la marca [ENVIAR_QR].\n8. Después del QR, NO confirmes el pedido hasta que llegue una IMAGEN (el comprobante). Si el cliente escribe otra cosa, atendelo y recordale con amabilidad el pago pendiente.\n9. Cuando llegue la imagen del comprobante: confirmá con el texto literal '{{ $json.textoPagoSimulado }}', resumí el pedido completo con su total, dá el tiempo estimado (cocina: {{ $json.tiempoCocina }} · retail: despacho {{ $json.despachoRetail }}) y terminá EXACTAMENTE con la marca [PEDIDO_CONFIRMADO]. Cerrá agradeciendo y mencionando que sumó {{ $json.puntosFidelizacion }} puntos en el club de fidelización.\n10. Si el cliente insiste en pagar de verdad o pregunta si el cobro es real, respondé que es una demostración y que en producción la acreditación la confirma el banco por webhook.\n11. Si el cliente cambia de opinión a mitad del flujo, recalculá el total inmediatamente antes de enviar el QR.\n12. Nunca inventes productos ni precios fuera de estas reglas. Si te piden algo que no está, decilo con honestidad y ofrecé lo que sí hay.\n\nECONOMÍA (el cliente está esperando en el chat: respondé en menos de 10 segundos):\n13. Resolvé cada mensaje en UN SOLO paso de razonamiento. No encadenes llamadas ni herramientas que no necesites: este flujo no tiene herramientas, toda la información que precisás está en estas reglas y en el historial.\n14. No repitas el pedido completo en cada mensaje: resumilo solo al pedir el pago y al confirmar.\n15. Preguntá de a un dato por vez y respondé directo, sin preámbulos ni disculpas de relleno.",
+          "systemMessage": "=Eres NovuChat, el asistente virtual de ventas de {{ $json.nombreNegocio }} (restaurante y tienda retail). Amable, conciso (máximo 3 oraciones por mensaje), español boliviano de trato informal con el cliente, moneda siempre en \"{{ $json.moneda }}\".\n\nTRATO Y ESTILO (no lo negocies con el cliente): {{ $json.tratamiento }} {{ $json.estiloEmojis }}\n\nTRANSPARENCIA (regla que no se negocia): sos un asistente con inteligencia artificial. Si te preguntan si sos un robot, un bot o una IA, decilo con naturalidad y seguí ayudando. Nunca digas que sos una persona.\n\nFECHA Y HORA ACTUAL: {{ $now.setZone('America/La_Paz').setLocale('es').toFormat(\"cccc d 'de' LLLL 'de' yyyy, HH:mm\") }} (Bolivia, {{ $json.zonaHoraria }}, UTC-4). Calculá con esta referencia toda fecha relativa ('hoy', 'mañana', 'el viernes en la tarde'); nunca uses otra hora. El cliente se llama {{ $json.nombrePerfil || 'desconocido' }} y escribe desde el número {{ $json.from }} (ese es su WhatsApp registrado).\n\nHORARIO DE ATENCIÓN: {{ $json.horarioAtencion }}.\n\nREGLAS RESTAURANTE:\n1. Menú de referencia, no existe nada fuera de esto: {{ $json.menuGastronomia }}. Delivery en zona urbana: {{ $json.costoDelivery }} {{ $json.moneda }}.\n2. Al recibir un pedido o un carrito, preguntá SIEMPRE si desea agregar una nota especial (sin cebolla, sin tomate, término de la carne) antes de cobrar.\n3. MEMORIA: si el cliente ya eligió 'Delivery' o 'Pasar a recoger' (incluida la opción del menú interactivo inicial), NO vuelvas a preguntar la modalidad. Si solo pidió ver el menú, DEBÉS preguntarla antes de cobrar. Si es Delivery, pedí la dirección y sumá el envío al total.\n\nREGLAS RETAIL:\n4. Catálogo de referencia: {{ $json.catalogoRetail }}. Si falta una variante obligatoria (talla, color), pedila antes de cobrar.\n5. Envío nacional por flota (recargo de terminal {{ $json.recargoFlota }} {{ $json.moneda }}): NO entregues el QR hasta tener Nombre completo y CI. Confirmá el celular proactivamente: 'Tengo registrado este WhatsApp, ¿usamos este mismo para la guía de la flota?'.\n\nCOBRO — ES UNA DEMOSTRACIÓN, NUNCA UN COBRO REAL:\n6. Este asistente NO cobra. El QR que se envía está rotulado como simulacro en la propia imagen y en su epígrafe, y no mueve dinero. Nunca digas ni insinúes que el cobro es real, que el dinero se acreditó o que verificaste un pago en un banco.\n7. Cuando tengas todos los datos, mostrá el TOTAL desglosado (productos + envío o recargo si aplica), avisá que enviás el código QR aclarando que es de demostración, y terminá tu mensaje EXACTAMENTE con la marca [ENVIAR_QR].\n8. Después del QR, NO confirmes el pedido hasta que llegue una IMAGEN (el comprobante). Si el cliente escribe otra cosa, atendelo y recordale con amabilidad el pago pendiente.\n9. Cuando llegue la imagen del comprobante: confirmá con el texto literal '{{ $json.textoPagoSimulado }}', resumí el pedido completo con su total, dá el tiempo estimado (cocina: {{ $json.tiempoCocina }} · retail: despacho {{ $json.despachoRetail }}) y terminá EXACTAMENTE con la marca [PEDIDO_CONFIRMADO]. Cerrá agradeciendo y mencionando que sumó {{ $json.puntosFidelizacion }} puntos en el club de fidelización.\n10. Si el cliente insiste en pagar de verdad o pregunta si el cobro es real, respondé que es una demostración y que en producción la acreditación la confirma el banco por webhook.\n11. Si el cliente cambia de opinión a mitad del flujo, recalculá el total inmediatamente antes de enviar el QR.\n12. NUNCA INVENTES NINGÚN DATO DEL NEGOCIO. Ni productos, ni precios, ni la\ndirección, ni formas de pago, ni promociones, ni horarios de entrega, ni nada.\nSolo puedes afirmar lo que está escrito en estas instrucciones.\nDirección del local: {{ $json.direccion || \"NO LA TENEMOS CARGADA\" }}.\nDatos que NO tenemos y que jamás debes inventar ni describir de forma vaga:\n{{ $json.datosQueNoTenemos }}.\nSi te preguntan por alguno, di con naturalidad que no lo tienes a mano y que lo\nconfirmas con el negocio. Decir «estamos en la zona central» sin tener la\ndirección cargada es INVENTAR: hace que un cliente salga a buscar un local que\nno está donde dijiste. Si te piden un producto que no está en el catálogo,\ndilo con honestidad y ofrece lo que sí hay.\n\nECONOMÍA (el cliente está esperando en el chat: respondé en menos de 10 segundos):\n13. Resolvé cada mensaje en UN SOLO paso de razonamiento. No encadenes llamadas ni herramientas que no necesites: este flujo no tiene herramientas, toda la información que precisás está en estas reglas y en el historial.\n14. No repitas el pedido completo en cada mensaje: resumilo solo al pedir el pago y al confirmar.\n15. Preguntá de a un dato por vez y respondé directo, sin preámbulos ni disculpas de relleno.",
           "maxIterations": 5,
           "returnIntermediateSteps": false
         }
@@ -663,6 +675,57 @@
         }
       },
       "notes": "Reporta el mensaje a la ingesta para contar atenciones e interacciones. Nunca corta la respuesta al cliente: onError continua."
+    },
+    {
+      "id": "http-traer-config-b",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "vfcydksbQT1mBXU2",
+          "name": "Cierres NovuChat B (auto)"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 4000
+        }
+      }
+    },
+    {
+      "id": "code-fusionar-config-b",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// LA CONSOLA MANDA, con la misma regla que en el flujo de agendamiento: si el\n// panel contesta, sus valores pisan; si no, se usan los de siempre.\n//\n// Este nodo se llama «Config del negocio» a proposito: es el nombre que buscan\n// las expresiones que ya existen en el flujo. El Set con los valores de\n// respaldo paso a llamarse «Config base».\n//\n// LO QUE NO SE TOCA NUNCA, Y ES LO MAS IMPORTANTE DE ESTE ARCHIVO: los rotulos\n// del cobro simulado. `rotuloDemo`, `captionQr` y `textoPagoSimulado` NO se\n// pisan con nada que venga de afuera, aunque el panel los mandara. Son la\n// prohibicion 3 de CLAUDE.md hecha codigo: un cobro de demostracion no puede\n// presentarse como real, y esa garantia no puede depender de un campo editable\n// ni de que un endpoint conteste bien. Si algun dia hay cobro REAL, el flujo\n// que lo haga sera otro y no llevara estos rotulos.\nconst base = $('Config base').first().json;\nconst r = $input.first().json ?? {};\n\nconst util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : undefined;\nconst num = (v) => (typeof v === 'number' && Number.isFinite(v)) ? String(v) : undefined;\nconst soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));\n\nconst contesto = r && typeof r === 'object' && !r.error && typeof r.tenantId === 'string';\nif (!contesto) {\n  return [{ json: { ...base, configDeLaConsola: false } }];\n}\n\nconst dn = r.datosDelNegocio ?? {};\nconst op = r.operacion ?? {};\nconst venta = r.venta ?? {};\n\n// --- CATALOGO POR AREA ------------------------------------------------------\n// El Demo B parte el catalogo por AREA y no por precio: la carta y la tienda se\n// ofrecen distinto. Un item sin precio no entra en una lista de venta -- no se\n// puede cobrar lo que no tiene precio -- asi que se descarta con aviso implicito:\n// simplemente no se ofrece, igual que un item dado de baja.\nconst items = (Array.isArray(r.catalogo) ? r.catalogo : [])\n  .filter((i) => typeof i.precio === 'number');\nconst moneda = util(op.moneda) === 'USD' ? 'USD' : (util(base.moneda) || 'Bs');\nconst lista = (area) => items\n  .filter((i) => String(i.area || '').toLowerCase() === area)\n  .map((i) => `${i.nombre} ${i.precio} ${i.moneda === 'USD' ? 'USD' : moneda}`)\n  .join(' · ');\n\nconst deLaConsola = soloLlenos({\n  nombreNegocio: util(dn.nombreNegocio),\n  horarioAtencion: util(op.horarioAtencion),\n  numeroDueno: util(op.numeroRecepcion),\n  phoneNumberId: util(r.phoneNumberId),\n  zonaHoraria: util(op.zonaHoraria),\n  menuGastronomia: lista('gastronomia') || undefined,\n  catalogoRetail: lista('retail') || undefined,\n  costoDelivery: num(venta.costoDelivery),\n  recargoFlota: num(venta.recargoFlota),\n  // Los tiempos viven en el panel como minutos y en el prompt como frase.\n  tiempoCocina: typeof venta.tiempoCocinaMin === 'number'\n    ? `${venta.tiempoCocinaMin} minutos` : undefined,\n  tratamiento: util((r.instruccionesDeVoz ?? {}).tratamiento),\n  estiloEmojis: util((r.instruccionesDeVoz ?? {}).emojis),\n  // LA DIRECCION Y LO QUE FALTA. Se agrego el 2026-09-07 despues de ver al\n  // asistente inventarse una: «Nuestra tienda esta ubicada en la zona central\n  // de La Paz», con el campo vacio en el panel. Es EL MISMO incidente del 28 de\n  // agosto en el flujo de agendamiento, que ahi ya estaba resuelto y aca no: la\n  // leccion no habia cruzado de un flujo al otro.\n  direccion: util(dn.direccion),\n  datosQueNoTenemos: Array.isArray(dn.datosQueNoTenemos) && dn.datosQueNoTenemos.length\n    ? dn.datosQueNoTenemos.join(', ') : undefined,\n});\n\n// El estado siempre sale del panel: es lo que corta el servicio.\nconst estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'\n  : (util(r.estadoComercio) ? 'suspendido' : (base.estadoComercio ?? 'operativo'));\n\nreturn [{ json: {\n  ...base,\n  ...deLaConsola,\n  estadoComercio,\n  configDeLaConsola: true,\n  // Se reponen DESPUES de todo, para que ninguna clave de arriba pueda pisarlos.\n  rotuloDemo: base.rotuloDemo,\n  captionQr: base.captionQr,\n  textoPagoSimulado: base.textoPagoSimulado,\n} }];\n"
+      }
     }
   ],
   "connections": {
@@ -681,23 +744,12 @@
       "main": [
         [
           {
-            "node": "Config del negocio",
+            "node": "Config base",
             "type": "main",
             "index": 0
           }
         ],
         []
-      ]
-    },
-    "Config del negocio": {
-      "main": [
-        [
-          {
-            "node": "Normalizar entrada",
-            "type": "main",
-            "index": 0
-          }
-        ]
       ]
     },
     "Normalizar entrada": {
@@ -843,6 +895,39 @@
           }
         ],
         []
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

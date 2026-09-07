@@ -109,18 +109,31 @@ const COMERCIOS = [
     wabaId: envA?.['WABA_ID'],
     recepcion: envA?.['WA_TO'],
     calendario: envA?.['CALENDAR_ID'],
-    descripcion: 'Peluquería, estética y odontología. Agenda citas por WhatsApp.',
+    // La describe para el agente: dice QUE es el negocio y COMO se atiende.
+    // Es lo primero que el asistente usa para ubicarse.
+    descripcion: 'Peluquería, estética y odontología. Se atiende con cita previa '
+      + 'y se agenda por este mismo WhatsApp.',
     horarios: {
       lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00',
       jue: '09:00-19:00', vie: '09:00-19:00', sab: '09:00-19:00', dom: 'cerrado',
     },
     // Los ocho servicios del mapa `calendariosPorServicio` del flujo, repartidos
     // en las dos áreas que tienen calendario propio.
+    // LOS PRECIOS DE BELLEZA VAN; LOS DE ODONTOLOGÍA NO, Y ES DELIBERADO.
+    //
+    // Es la regla que el negocio ya tiene en el prompt: un tratamiento dental
+    // se cotiza después de que el especialista evalúa, así que poner un número
+    // sería inventarlo. Un servicio SIN precio no es un dato faltante: es «a
+    // consultar», y así lo muestra la consola y lo dice el asistente.
+    //
+    // Faltaban los cuatro de belleza, y eso se veía: la pantalla de Servicios
+    // mostraba ocho filas con el precio en «—» mientras el asistente cotizaba
+    // «Corte 70 Bs» de memoria.
     catalogo: [
-      { nombre: 'Manicure', area: 'belleza', duracionMin: 45, activo: true },
-      { nombre: 'Pedicure', area: 'belleza', duracionMin: 45, activo: true },
-      { nombre: 'Corte', area: 'belleza', duracionMin: 45, activo: true },
-      { nombre: 'Limpieza facial', area: 'belleza', duracionMin: 60, activo: true },
+      { nombre: 'Manicure', area: 'belleza', precio: 50, moneda: 'BOB', duracionMin: 45, activo: true },
+      { nombre: 'Pedicure', area: 'belleza', precio: 60, moneda: 'BOB', duracionMin: 45, activo: true },
+      { nombre: 'Corte', area: 'belleza', precio: 70, moneda: 'BOB', duracionMin: 45, activo: true },
+      { nombre: 'Limpieza facial', area: 'belleza', precio: 120, moneda: 'BOB', duracionMin: 60, activo: true },
       { nombre: 'Odontología general', area: 'odontologia', duracionMin: 45, activo: true },
       { nombre: 'Ortodoncia', area: 'odontologia', duracionMin: 45, activo: true },
       { nombre: 'Cirugía maxilofacial', area: 'odontologia', duracionMin: 60, activo: true },

@@ -1627,6 +1627,39 @@ describe('Catálogo: servicios y productos, común a todos los flujos', () => {
     }));
   });
 
+  it('un servicio SIN precio es válido: se cotiza después de evaluar', async () => {
+    // Un tratamiento dental no tiene precio fijo. Ponerle un número sería
+    // inventarlo, y ponerle cero diría «gratis». Ausente significa «a consultar»,
+    // y es la regla de negocio que el prompt del asistente ya tenía.
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/catalogo/ortodoncia`), {
+      nombre: 'Ortodoncia', area: 'odontologia', duracionMin: 45,
+      activo: true, ...sello('u-admin-a'),
+    }));
+  });
+
+  it('pero un precio presente sigue teniendo que ser un número válido', async () => {
+    for (const malo of [-1, 2000000, 'gratis']) {
+      await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/malo`), {
+        nombre: 'X', precio: malo, moneda: 'BOB', activo: true, ...sello('u-admin-a'),
+      }));
+    }
+  });
+
+  it('la duración va en múltiplos de 15 minutos', async () => {
+    // Una agenda se ofrece de a cuartos de hora. Con 50 minutos quedan huecos
+    // de 10 que no se venden, y el asistente propone horarios como «14:50».
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/catalogo/masaje`), {
+      nombre: 'Masaje', precio: 150, moneda: 'BOB', duracionMin: 90,
+      activo: true, ...sello('u-admin-a'),
+    }));
+    for (const mala of [50, 20, 7]) {
+      await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/masaje`), {
+        nombre: 'Masaje', precio: 150, moneda: 'BOB', duracionMin: mala,
+        activo: true, ...sello('u-admin-a'),
+      }));
+    }
+  });
+
   it('el operador lee el catálogo pero no lo escribe', async () => {
     await assertSucceeds(getDoc(doc(operA(), `tenants/${A}/catalogo/item1`)));
     await assertFails(updateDoc(doc(operA(), `tenants/${A}/catalogo/item1`),

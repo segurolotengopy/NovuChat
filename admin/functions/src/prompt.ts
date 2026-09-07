@@ -55,14 +55,41 @@ const NOMBRE_DIA: Record<string, string> = {
 export function horarioAtencion(horarios: unknown): string {
   if (typeof horarios !== 'object' || horarios === null) return '';
   const h = horarios as Record<string, unknown>;
-  const partes: string[] = [];
+
+  // Se agrupan los días seguidos con el mismo horario. Sin esto sale
+  // «lunes: 09:00-19:00; martes: 09:00-19:00; miércoles: …», que es correcto y
+  // suena a máquina: el asistente se lo lee así al cliente. Un negocio dice
+  // «lunes a sábado, de 09:00 a 19:00», y esa frase es la que tiene que salir.
+  const tramos: { desde: string; hasta: string; valor: string }[] = [];
   for (const d of DIAS) {
     const v = h[d];
     if (typeof v !== 'string' || v.trim() === '') continue;
-    const texto = v.trim().slice(0, 40);
-    partes.push(`${NOMBRE_DIA[d]}: ${texto.toLowerCase() === 'cerrado' ? 'cerrado' : texto}`);
+    const valor = v.trim().slice(0, 40);
+    const ultimo = tramos[tramos.length - 1];
+    // Se extiende el tramo solo si el día es CONSECUTIVO al anterior: si el
+    // negocio cierra los miércoles, «lunes a viernes» sería mentira.
+    if (ultimo && ultimo.valor === valor && ultimo.hasta === diaPrevio(d)) {
+      ultimo.hasta = d;
+    } else {
+      tramos.push({ desde: d, hasta: d, valor });
+    }
   }
-  return partes.join('; ');
+
+  return tramos.map(({ desde, hasta, valor }) => {
+    const dias = desde === hasta
+      ? NOMBRE_DIA[desde]
+      : `${NOMBRE_DIA[desde]} a ${NOMBRE_DIA[hasta]}`;
+    if (valor.toLowerCase() === 'cerrado') return `${dias}: cerrado`;
+    // «09:00-19:00» se lee mejor como «de 09:00 a 19:00».
+    const rango = /^(\d{1,2}:\d{2})\s*[-–a]\s*(\d{1,2}:\d{2})$/.exec(valor);
+    return rango ? `${dias}, de ${rango[1]} a ${rango[2]}` : `${dias}: ${valor}`;
+  }).join('; ');
+}
+
+/** Día anterior en la semana, en el orden de `DIAS`. `null` para el primero. */
+function diaPrevio(dia: string): string | null {
+  const i = (DIAS as readonly string[]).indexOf(dia);
+  return i > 0 ? (DIAS[i - 1] as string) : null;
 }
 
 const FRASE_TRATAMIENTO: Record<string, string> = {
@@ -139,7 +166,20 @@ export function datosQueNoTenemos(config: Record<string, unknown>): string[] {
     }
   }
 
-  return faltantes;
+  // Sin repetidos y sin mayúsculas de más. El comercio suele declarar a mano
+  // algo que el sistema ya dedujo —«dirección del local» junto a «la dirección
+  // del local»— y el asistente se lo lee al cliente dos veces, que suena a
+  // error. Se compara sin acentos, sin artículos y sin distinguir mayúsculas.
+  const vistos = new Set<string>();
+  return faltantes.filter((f) => {
+    const clave = f.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/^(la|el|los|las)\s+/, '')
+      .replace(/\s+/g, ' ').trim();
+    if (vistos.has(clave)) return false;
+    vistos.add(clave);
+    return true;
+  });
 }
 
 

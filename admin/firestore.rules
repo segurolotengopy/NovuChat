@@ -630,13 +630,27 @@ service cloud.firestore {
             // podía ni dar de baja desde la consola: la lista blanca evalúa el
             // documento RESULTANTE, y el área ya estaba ahí.
             && textoOpc(d, 'area', 40)
-            // Número y no negativo: un precio negativo llega al agente y al
-            // cliente final como una promesa que el negocio no quiso hacer.
-            && d.get('precio', null) is number
-            && d.get('precio', -1) >= 0 && d.get('precio', -1) <= 1000000
-            && d.get('moneda', '') in ['BOB', 'USD']
+            // EL PRECIO PUEDE FALTAR, y no es un descuido: hay servicios que se
+            // cotizan después de evaluar —un tratamiento dental, una reforma— y
+            // ponerles un número sería inventarlo. Ausente significa «a
+            // consultar», y así lo muestra la consola y lo dice el asistente.
+            //
+            // Si ESTÁ, tiene que ser un número no negativo: un precio negativo
+            // llega al cliente final como una promesa que el negocio no hizo.
+            && (d.get('precio', null) == null || (
+                 d.get('precio', -1) is number
+                 && d.get('precio', -1) >= 0 && d.get('precio', -1) <= 1000000))
+            // La moneda solo tiene sentido junto al precio: si el servicio se
+            // cotiza, no hay nada que denominar. Ausente vale, y por defecto es
+            // la del negocio.
+            && d.get('moneda', 'BOB') in ['BOB', 'USD']
+            // EN MÚLTIPLOS DE 15 MINUTOS, decisión de Andrés del 2026-09-07.
+            // Una agenda se lee y se ofrece de a cuartos de hora: un servicio de
+            // 50 minutos deja huecos de 10 que no se pueden vender y hace que el
+            // asistente proponga horarios como «14:50», que nadie usa.
             && d.get('duracionMin', 30) is int
             && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
+            && d.get('duracionMin', 30) % 15 == 0
             && d.get('activo', null) is bool
             && selloValido(d);
         }

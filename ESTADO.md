@@ -325,6 +325,8 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | El QR no se almacena | Se guarda el texto validado y la imagen se vuelve a dibujar en cada envío | 06/09 |
 | Anulación de citas | El Flujo A puede cancelar, con búsqueda por el teléfono del mensaje y confirmación explícita del cliente | 06/09 |
 | Doble reserva | Candado POR CÓDIGO en `Comprobar reserva`, no por prompt. Cede la cita más nueva y no se le confirma al cliente | 06/09 |
+| La consola manda | Los flujos leen su configuración del panel; los valores escritos en el flujo quedan como respaldo si el panel no contesta | 07/09 |
+| Precio del catálogo | Opcional. Ausente significa «a consultar»; cero significa gratis y son cosas distintas | 07/09 |
 | Envío de plantillas | Por `httpRequest` con el JSON armado a mano, no por el nodo de WhatsApp, que manda `template.language` sin `code` | 06/09 |
 | Marcar como recordado | Solo con el identificador de mensaje que devuelve Meta. Un envío fallido no se marca | 06/09 |
 
@@ -340,9 +342,12 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 - **Retención del secreto OAuth viejo.** Se creó un client secret nuevo el 06/09
   y hay que borrar el anterior en la consola de Google una vez confirmado que
   nada lo usa.
-- **Política de retención de conversaciones.** Hay que decidirla antes del
-  primer cliente real: son datos personales de terceros que nunca consintieron
-  nada ante NovuChat.
+- ~~**Política de retención de conversaciones.**~~ Decidida el 07/09:
+  **12 meses desde el último mensaje**, con purga automática. Se borra el
+  contenido y se conserva la cuenta —el cierre público, sin teléfono completo—
+  para que un comercio pueda defender una factura vieja. Escrita en
+  `admin/DISENO.md` §4septies, con las dos frases para los términos. **El código
+  de la purga va después de las demos, y antes del primer cliente real.**
 - **Silvana como segunda propietaria** de plataforma y como revisora en
   GitHub. Hoy hay un único punto de falla humano y la §4 no se puede cumplir.
 - **Facturación de Gemini** para reducir los 503 durante los demos.
@@ -990,7 +995,28 @@ cliente recibe un QR limpio en vez de una foto de pantalla. El PNG lo arma el
 servidor sin bibliotecas de imágenes, y se comprobó con `zxing-cpp` —un
 decodificador independiente— que se escanea y devuelve el texto exacto.
 
-**Lo que falta, y necesita un teléfono:** los tres nodos de n8n (descargar el
+**LO QUE FALTA PARA QUE EL COBRO REAL EXISTA DE VERDAD**, y conviene tenerlo
+claro porque la pantalla ya parece terminada: **ningún flujo lee `cobroReal`.**
+Se puede registrar y verificar un QR —probado el 07/09 con uno real del BNB— y
+el asistente sigue enviando el de demostración. Activarlo hoy no cambiaría
+nada. Falta:
+
+1. Que el flujo de venta lea `cobroReal` y, cuando esté encendido, envíe la
+   imagen por su ficha (`/api/qr/imagen?f=…`) **sin** los rótulos de simulacro,
+   en vez del QR de demostración. Son excluyentes.
+2. Los tres nodos del OCR: descargar el archivo de Meta, leerlo con Gemini,
+   cotejar con `cotejo.ts`.
+3. El control para encender el cobro real, que hoy no existe en ninguna parte:
+   `activo` se escribe en `false` y nada lo cambia. Lo enciende NovuChat, no el
+   comercio, porque pasar de demostración a dinero de verdad es una decisión
+   comercial y no un botón.
+
+Mientras tanto los textos de la pantalla **no invitan a hacer nada**. La primera
+versión decía «avísale a NovuChat para empezar a usarlo» y dejaba a la persona
+esperando una gestión que no existe; Andrés lo encontró de inmediato al
+guardarlo: «me dijo que me avise y yo no sé qué hacer».
+
+**Lo que falta del OCR, y necesita un teléfono:** los tres nodos de n8n (descargar el
 archivo de Meta, leerlo con Gemini, cotejar). El prompt de lectura y el mensaje
 al cliente —«guarda el comprobante ANTES de salir de la aplicación de tu
 banco»— están escritos en `Analisis/07-cobro-real-y-ocr.md`, listos para pegar.
@@ -1153,6 +1179,185 @@ las citas del 8: son seis, así que van a llegar seis recordatorios.
 `N8N_WORKFLOW_ID`, así que para publicar este hay un `.env.recordatorios`
 —ignorado— que hereda `.env` y solo cambia esa línea:
 `./scripts/publicar-flujo.sh --env .env.recordatorios --flujo Flujos/demo-a-recordatorios.json --aplicar`
+
+### La consola dejó de ser una maqueta: el Demo A ya lee su configuración (07/09)
+
+Andrés lo puso en la ruta crítica con la pregunta correcta: «¿qué se necesita
+para que funcione, y que un cliente no detecte que no funciona?». La auditoría
+dio una causa única y dos sorpresas.
+
+**El diagnóstico.** Lo que la consola MUESTRA era real —conversaciones, consumo,
+métricas, bitácora: los flujos las escriben—. Lo que la consola GUARDA no lo
+leía nadie: **ningún flujo llamaba a `configuracionFlujo`**. Configuración,
+Servicios, Agenda y Pedidos eran un formulario que escribía en el vacío. El
+cliente cambiaba un precio, probaba por WhatsApp, y el asistente seguía igual.
+
+**La sorpresa que ya se veía.** Los ocho servicios del Demo A estaban cargados
+**sin precio**: el sembrador nunca los escribió. La pantalla mostraba ocho filas
+con «—» mientras el asistente cotizaba «Corte 70 Bs» de memoria. Cargados.
+
+**La segunda sorpresa.** Un tratamiento dental no tiene precio fijo, y las
+reglas EXIGÍAN un número. O sea que la consola no podía ni editar esos cuatro
+servicios. Ahora el precio es opcional —ausente significa «a consultar», que es
+la regla que el prompt ya tenía—, la moneda también, y la pantalla lo explica:
+**cero no es lo mismo que a consultar**, cero dice gratis.
+
+**Cómo quedó conectado el Demo A.** Dos nodos nuevos y un truco de nombres:
+
+```
+¿Es un mensaje? → Config base → Traer configuración → Config del negocio → Normalizar entrada
+                  (los valores    (HTTP al panel,      (fusiona: la
+                   de siempre)     4 s de tope)         consola pisa)
+```
+
+El nodo que fusiona **se llama** `Config del negocio`, que es como se llamaba el
+Set de valores escritos a mano. Así las veinte expresiones que ya lo buscaban
+por ese nombre —herramientas, prompt, nodos de salida— recogen la versión
+fusionada sin tocar ninguna.
+
+- **Falla hacia atrás, nunca hacia el silencio.** Si el panel no contesta, o
+  contesta un error, se usan los valores de siempre: el peor caso es el
+  comportamiento de ayer. `Config base` conserva el catálogo de respaldo, porque
+  sin él un panel caído dejaría al asistente sin precios.
+- **Un campo vacío en la consola no borra el de respaldo.** Un negocio a medio
+  configurar se comporta como antes, no peor.
+- **`estadoComercio` sí manda desde el panel**, siempre: es lo que corta el
+  servicio a quien dejó de pagar, y no puede depender de un valor escrito dentro
+  del flujo.
+- El prompt dejó de tener el catálogo escrito a mano. Se parte por **precio**,
+  no por rubro: lo que tiene precio se cotiza en el chat, lo que no, después de
+  evaluar.
+
+**Dos cosas que se arreglaron porque se vieron al comparar los dos lados:**
+
+- **El horario sonaba a máquina.** El panel servía «lunes: 09:00-19:00; martes:
+  09:00-19:00; …». Ahora agrupa los días seguidos: «lunes a sábado, de 09:00 a
+  19:00; domingo: cerrado». Con cinco pruebas, incluida la que impide agrupar
+  días NO consecutivos: si el negocio cierra los miércoles, «lunes a viernes»
+  sería mentira y el cliente vendría un día cerrado.
+- **«70 BOB» no se le dice a nadie.** Es el código ISO; en Bolivia se dice «Bs».
+
+**Los recordatorios también quedaron conectados**, con la misma cadena y el
+mismo respaldo. Ahí lo que más importa no es el texto: es el **estado**.
+`Preparar recordatorios` ya cortaba cuando el comercio no estaba operativo, pero
+leía un valor escrito dentro del flujo que siempre decía «operativo». O sea que
+un comercio suspendido **seguía mandando plantillas, y cada plantilla la cobra
+Meta**. Ahora suspenderlo en la consola le corta los recordatorios de verdad.
+
+**PROBADO EN VIVO el 07/09 de madrugada.** Se cambió el precio del corte de 70 a
+85 en la base, igual que lo haría la consola, y el asistente lo dijo. Pero la
+primera vez NO: contestó 70 aunque la ejecución #1176 muestra que había recibido
+`Corte 85 Bs`. La causa no era la conexión sino la **memoria de conversación**,
+que guarda ocho turnos y ya tenía su propia respuesta anterior con 70. Ante un
+conflicto entre el historial reciente y las instrucciones, el modelo se repitió.
+
+Se agregó al prompt que la lista de precios es la única válida, que está
+actualizada **al momento de este mensaje**, y que si antes dio otro precio el
+bueno es el de ahora. Con eso contestó 85. **Importa más de lo que parece:** en
+un caso real un precio no cambia a mitad de conversación, pero es exactamente lo
+que hace un cliente probando —cambia el precio, vuelve al chat abierto y
+pregunta— y si le contesta el viejo concluye que la consola no sirve.
+
+**Un tropiezo propio, y de los tontos.** Al renombrar `Config del negocio` a
+`Config base` se actualizó todo lo que SALÍA del nodo y no lo que ENTRABA:
+`¿Es un mensaje?` seguía apuntando al nombre viejo, que ahora era la fusión, y
+el flujo moría con «Node 'Config base' hasn't been executed». El chat estuvo
+caído tres minutos, de madrugada y sin tráfico real. Se publicaron dos flujos
+sin que pasara un solo mensaje por ellos, que es justo lo que `CLAUDE.md`
+prohíbe. Queda el control de nodos huérfanos como parte de la revisión.
+
+### El catálogo se edita, y la duración va de a 15 minutos (07/09)
+
+- **Editar en la propia fila.** Hasta ahora solo se podía dar de baja y volver a
+  cargar, que además cambiaba el identificador del ítem y **rompía la referencia
+  que los funcionarios guardan en `servicios`**. El nombre sigue sin editarse
+  por esa misma razón: cambiarlo dejaría a los profesionales apuntando a un
+  servicio inexistente y el asistente diría que nadie lo atiende. Para cambiar
+  el nombre hay que dar de baja y cargar de nuevo, que es lo correcto: es otro
+  servicio.
+- **Quitar el precio borra el campo, no pone cero.** Cero dice gratis; ausente
+  dice «se cotiza».
+- **Duración en múltiplos de 15**, exigido por las reglas y ofrecido como lista
+  cerrada en la pantalla. Una agenda se ofrece de a cuartos de hora: con 50
+  minutos quedan huecos de 10 que no se venden y el asistente propone horarios
+  como «14:50». Las catorce fichas ya cargadas cumplen; no hizo falta migrar.
+
+**El Demo B quedó conectado el 07/09**, con la misma cadena y una diferencia que
+importa: **los rótulos del cobro simulado NO se pisan con nada que venga de
+afuera**, aunque el panel los mandara. `rotuloDemo`, `captionQr` y
+`textoPagoSimulado` se reponen después de la fusión, de modo que ninguna clave
+del panel pueda ocuparlos. Es la prohibición 3 hecha código: la garantía de que
+un cobro de demostración no se presenta como real no puede depender de un campo
+editable ni de que un endpoint conteste bien. Probado atacándolo: se corrió la
+fusión con una respuesta que traía «Pago acreditado» en ese campo y los tres
+rótulos quedaron intactos.
+
+Su catálogo se parte por **área** —carta y tienda— y no por precio como el
+Demo A, porque se ofrecen distinto. Un ítem sin precio no entra: no se puede
+cobrar lo que no tiene precio.
+
+**Y al probarlo apareció el incidente del 28 de agosto, otra vez.** Andrés pidió
+algo y el asistente contestó «nuestra tienda está ubicada en la zona central de
+La Paz». Se la inventó: el panel tiene la dirección vacía y ya lo sabía —su
+`datosQueNoTenemos` la lista— pero el flujo del Demo B **no le pasaba ese dato
+al prompt**, y su única regla contra inventar hablaba solo de «productos y
+precios». El del Demo A tenía la regla completa desde el 28 de agosto.
+
+Es la **tercera vez en dos días** que una lección corregida en un flujo no había
+cruzado a otro: los calendarios de los funcionarios en los recordatorios, la
+regla de no inventar acá, y antes el catálogo. Vale como criterio permanente:
+**cuando se arregla algo en un flujo, hay que ir a buscar el mismo defecto en
+los otros dos**, porque comparten el origen y no la corrección.
+
+Corregido: el Demo B recibe `direccion` y `datosQueNoTenemos` del panel, y su
+regla 12 ahora prohíbe inventar cualquier dato, con el ejemplo textual de la
+dirección. Además `datosQueNoTenemos` dejó de repetir lo que el comercio declara
+a mano y el sistema ya dedujo —«dirección del local» junto a «la dirección del
+local»—, que el asistente le leía dos veces al cliente.
+
+### Brechas de cara al primer cliente (07/09)
+
+Andrés listó seis. Auditadas contra el código, no de memoria:
+
+| | Brecha | Estado |
+|---|---|---|
+| 1 | Alias de secreto sin desplegar | **CERRADA el 07/09** |
+| 2 | Alta del administrador de un comercio real | **CERRADA el 07/09** |
+| 3 | Catálogo y reglas fuera del prompt | **CERRADA la noche del 06/09**, al conectar la consola |
+| 4 | Retención de conversaciones | **DECIDIDA el 07/09**: 12 meses. Falta el código de la purga |
+| 5 | Migrar la ingesta al rol `ingesta` | abierta, antes del segundo cliente |
+| 6 | Límite de 50 eventos en la compuerta | abierta |
+
+**La #2 era el bloqueo de verdad, no la #1.** Con el alias sin desplegar el alta
+era incómoda; sin la #2 era **imposible**: `altaTenant` e `invitarUsuario` exigen
+que la persona ya haya ingresado una vez, y la consola no tiene pantalla de
+registro. Nadie podía crearse una cuenta. Ahora `alta-comercio.mjs` crea la
+cuenta con una clave aleatoria que no se imprime ni se guarda y entrega un
+enlace de restablecimiento; completarlo marca además el correo como verificado,
+que es lo que las reglas exigen. Probado contra el proyecto real y limpiado
+después.
+
+**La #3 estaba cerrada sin que nadie lo notara.** Al conectar la consola, el
+catálogo salió del prompt: hoy el System Message no tiene ni un precio ni un
+nombre de servicio literal. Las reglas dejaron de ser «belleza/salud» y se
+parten por precio, que es lo genérico. Queda reprobar la suite A.
+
+**La #1, cerrada con veinte alias** (`cliente01`…`cliente20`), cada uno con su
+secreto propio y con **valor real desde el primer día**, no un marcador. Las dos
+razones están en `firma.ts`, y la segunda no es obvia: si el valor se creara en
+el alta sería una versión nueva del secreto, y las instancias de Functions que
+ya corren siguen con la vieja hasta reciclarse — el cliente recién dado de alta
+fallaría de forma intermitente unos minutos, que es el peor tipo de falla.
+Naciendo con su valor, en el alta no se crea ninguna versión.
+
+Se eligió veinte secretos separados y no un solo secreto con un mapa JSON
+adentro —que sería ilimitado y no necesitaría reserva— por el radio de daño: un
+mapa filtrado entrega las claves de todos los clientes de una vez. Veinte
+secretos cuestan poco más de un dólar al mes.
+
+**Verificado tras desplegar:** `configuracionFlujo` responde 200 con los dos
+demos y la ingesta sigue autenticando. El procedimiento de alta completo quedó
+en `admin/DISENO.md` §6.1.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
