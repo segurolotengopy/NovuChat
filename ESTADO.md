@@ -1425,6 +1425,47 @@ que corta **antes del agente**, así un comercio suspendido no consume ni tokens
 17 casos: el 409 suspende, el aviso no menciona deudas ni pagos, el activo
 opera, y el silencio se comporta según la política de cada flujo.
 
+### Las notas de Silvana sobre el catálogo de WhatsApp (07/09)
+
+Analizadas en `Analisis/09-catalogo-nativo-de-whatsapp.md`. Sus notas quedaron en
+`Demo-Recursos/catalogo-whatsapp-notas-silvana.md`, tal como llegaron.
+
+**Lo que confirma:** el aviso del chip —no instalar WhatsApp en el número de la
+API— es correcto y caro de olvidar; el catálogo nativo es la interfaz correcta
+para una tienda con muchos productos; y el tope comercial es un buen instinto.
+
+**Lo que ya no era cierto cuando se escribió:** que lo editado en la consola no
+llega al asistente. Desde la madrugada del 7 sí llega, y está probado en vivo.
+
+**Lo que el documento no sabía:** el Flujo B **ya entiende un carrito del
+catálogo nativo** —`Normalizar entrada` tiene su rama `order` y lee
+`product_items`—. Pero al agente le llega el SKU crudo («2 x PLAN_BASE»), así que
+el punto de sincronía es que **el SKU de Meta sea el identificador del ítem en la
+consola**.
+
+**Dónde recomiendo algo distinto:** el documento propone que el cliente llene un
+Google Sheets y que Meta lo consuma como origen de datos. Funciona y es más
+rápido para la rueda de negocios, pero **crea una segunda fuente de verdad de los
+productos**, justo después de haber pasado una noche eliminando ese problema. Con
+el Sheet quedarían tres: consola, Sheet y catálogo de Meta. La ruta que aprovecha
+lo hecho es que **NovuChat publique el feed que Meta consume**, leído de la
+consola: una sola fuente, y el SKU sale bien por construcción. Medio día de
+trabajo, después de las demos. El Sheet sirve como parche, con fecha de retiro.
+
+**La corrección más útil, sobre el tope comercial:** el documento lo justifica por
+las horas de carga, y con un feed esas horas tienden a cero. El límite real es
+otro y es técnico: **el catálogo viaja dentro del prompt, en cada mensaje**, y
+crece en línea recta. Con decenas no se nota; con cientos, cada respuesta cuesta
+más, tarda más y elige peor. Para un supermercado la respuesta no es un prompt
+más grande sino catálogo nativo con búsqueda. El tope se sostiene, pero se
+explica distinto —«lo que entra en la cabeza del asistente»— y **conviene medirlo
+con 20, 50 y 150 ítems antes de fijar el número**.
+
+**Y un límite que hay que saber antes de prometerlo:** Meta exige precio en cada
+producto del catálogo, así que un servicio que se cotiza después de evaluar no se
+puede listar. **El catálogo nativo sirve para el Flujo B y no para el A.** Una
+clínica no va a tener catálogo de WhatsApp, y está bien.
+
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
 - **Alta y administración de negocios por el equipo de NovuChat:** crear el
