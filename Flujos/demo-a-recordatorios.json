@@ -78,6 +78,18 @@
               "name": "calendariosPorServicio",
               "type": "string",
               "value": "{\"manicure\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"pedicure\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"corte\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"limpieza facial\": \"REEMPLAZAR_CALENDARIO_BELLEZA\", \"odontologia general\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"ortodoncia\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"cirugia maxilofacial\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\", \"diagnostico\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\"}"
+            },
+            {
+              "id": "funcionarios",
+              "name": "funcionarios",
+              "value": "[{\"nombre\": \"María\", \"servicios\": [\"manicure\", \"pedicure\", \"corte\", \"limpieza facial\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_BELLEZA\"}, {\"nombre\": \"José\", \"servicios\": [\"manicure\", \"pedicure\", \"corte\", \"limpieza facial\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_BELLEZA_2\"}, {\"nombre\": \"Consultorio odontológico\", \"servicios\": [\"odontologia general\", \"ortodoncia\", \"cirugia maxilofacial\", \"diagnostico\"], \"calendario\": \"REEMPLAZAR_CALENDARIO_ODONTOLOGIA\"}]",
+              "type": "string"
+            },
+            {
+              "id": "waGraphVersion",
+              "name": "waGraphVersion",
+              "value": "v21.0",
+              "type": "string"
             }
           ]
         },
@@ -167,38 +179,22 @@
     },
     {
       "parameters": {
-        "phoneNumberId": "={{ $('Config del recordatorio').item.json.phoneNumberId }}",
-        "recipientPhoneNumber": "={{ $json.telefono }}",
-        "template": "={{ $('Config del recordatorio').item.json.plantilla }}",
-        "language": "={{ $('Config del recordatorio').item.json.idiomaPlantilla }}",
-        "components": {
-          "component": [
-            {
-              "type": "body",
-              "parameters": {
-                "parameter": [
-                  {
-                    "type": "text",
-                    "text": "={{ $json.nombre }}"
-                  },
-                  {
-                    "type": "text",
-                    "text": "={{ $json.servicio }}"
-                  },
-                  {
-                    "type": "text",
-                    "text": "={{ $json.hora }}"
-                  }
-                ]
-              }
-            }
-          ]
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Config del recordatorio').first().json.waGraphVersion || 'v21.0' }}/{{ $('Config del recordatorio').first().json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  to: $json.telefono,\n  type: 'template',\n  template: {\n    name: $('Config del recordatorio').first().json.plantilla,\n    language: { code: $('Config del recordatorio').first().json.idiomaPlantilla || 'es' },\n    components: [{ type: 'body', parameters: [\n      { type: 'text', text: String($json.nombre || '') },\n      { type: 'text', text: String($json.servicio || '') },\n      { type: 'text', text: String($json.hora || '') },\n    ] }],\n  },\n}) }}",
+        "options": {
+          "timeout": 15000
         }
       },
       "id": "enviar-plantilla",
       "name": "Enviar plantilla",
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1060,
         180
@@ -206,7 +202,13 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 3000,
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": ""
+        }
+      }
     },
     {
       "parameters": {
@@ -255,7 +257,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Un item por cada calendario configurado.\n//\n// El flujo leia UN SOLO calendario, el de por defecto. Desde que cada\n// profesional tiene el suyo -- belleza y odontologia -- las citas viven en\n// calendarios distintos, asi que el recordatorio no las habria visto y el\n// cliente no habria recibido nada. Sin error, sin aviso.\nconst cfg = $('Config del recordatorio').first().json;\nlet mapa = {};\ntry { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; }\nconst calendarios = [...new Set([cfg.calendarioId, ...Object.values(mapa)].filter(Boolean))];\nreturn calendarios.map(calendarioARevisar => ({ json: { ...cfg, calendarioARevisar } }));"
+        "jsCode": "// Un item por cada calendario configurado.\n//\n// El flujo leia UN SOLO calendario, el de por defecto. Desde que cada\n// profesional tiene el suyo -- belleza y odontologia -- las citas viven en\n// calendarios distintos, asi que el recordatorio no las habria visto y el\n// cliente no habria recibido nada. Sin error, sin aviso.\n//\n// FALTABAN LAS AGENDAS DE LOS FUNCIONARIOS. Se agrego el 2026-09-06, despues de\n// comprobarlo en la ejecucion #1001: se revisaron tres calendarios -- el del\n// negocio y los dos del mapa de servicios -- y el de Jose no estaba en ninguno,\n// porque vive en `funcionarios` y no en `calendariosPorServicio`. Su cita del\n// dia siguiente a las 09:00 no recibio recordatorio y nadie se entero.\n//\n// Es el MISMO defecto que ya se habia corregido en el flujo de agendamiento,\n// en `Calendarios a revisar`, y que aca quedo sin corregir. Cuando un dato se\n// lee en dos flujos, arreglarlo en uno solo es medio arreglo.\nconst cfg = $('Config del recordatorio').first().json;\n\nlet mapa = {};\ntry { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; }\n\nlet equipo = [];\ntry {\n  equipo = JSON.parse(cfg.funcionarios || '[]')\n    .map((f) => f && f.calendario).filter(Boolean);\n} catch (e) { equipo = []; }\n\nconst calendarios = [...new Set([cfg.calendarioId, ...Object.values(mapa), ...equipo].filter(Boolean))];\nreturn calendarios.map(calendarioARevisar => ({ json: { ...cfg, calendarioARevisar } }));\n"
       },
       "id": "rec-cals",
       "name": "Calendarios del negocio",
@@ -265,6 +267,39 @@
         290,
         300
       ]
+    },
+    {
+      "id": "if-envio-ok",
+      "name": "¿Se envió de verdad?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.messages ? $json.messages[0].id : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
     }
   ],
   "connections": {
@@ -334,7 +369,7 @@
       "main": [
         [
           {
-            "node": "Marcar como recordado",
+            "node": "¿Se envió de verdad?",
             "type": "main",
             "index": 0
           }
@@ -345,7 +380,7 @@
       "main": [
         [
           {
-            "node": "Marcar como recordado",
+            "node": "¿Se envió de verdad?",
             "type": "main",
             "index": 0
           }
@@ -361,6 +396,18 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "¿Se envió de verdad?": {
+      "main": [
+        [
+          {
+            "node": "Marcar como recordado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
