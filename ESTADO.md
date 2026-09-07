@@ -22,9 +22,9 @@ cambió el precio del corte en la consola y el asistente lo dijo por WhatsApp.
 - **Falla hacia atrás.** Si el panel no contesta, cada flujo usa los valores que
   ya tenía escritos: el peor caso es el comportamiento de ayer, nunca un
   asistente sin catálogo.
-- **`estadoComercio` sí manda siempre desde el panel**, en los tres. Es lo que
-  corta el servicio a quien dejó de pagar, y ya no depende de un valor escrito
-  dentro del flujo.
+- **`estadoComercio` manda desde el panel**, en los tres. Esta afirmación fue
+  FALSA entre el 06 y el 07 de septiembre y se corrigió el 07: ver «Suspender un
+  comercio no le cortaba el asistente», más abajo.
 - **Los rótulos del cobro simulado no se pisan con nada**, aunque el panel los
   mandara. Probado atacándolo.
 
@@ -1374,6 +1374,56 @@ secretos cuestan poco más de un dólar al mes.
 **Verificado tras desplegar:** `configuracionFlujo` responde 200 con los dos
 demos y la ingesta sigue autenticando. El procedimiento de alta completo quedó
 en `admin/DISENO.md` §6.1.
+
+### Suspender un comercio NO le cortaba el asistente (07/09)
+
+**Reportado por otra sesión de análisis, confirmado, y peor de lo reportado.**
+Lo grave no es el defecto: es que yo había **afirmado por escrito** que el panel
+cortaba el servicio, en `ESTADO.md` y en tres mensajes de commit, sin
+comprobarlo. La conexión del panel daba este defecto por cerrado y lo había
+dejado abierto.
+
+**La cadena, exacta.** `configuracionFlujo` contesta **409** con
+`{estado, mensajeCortesia}` y **sin `tenantId`** cuando el comercio no está
+activo. Los tres nodos de fusión exigían `tenantId` para dar la respuesta por
+buena, así que un 409 caía al respaldo — y el respaldo dice
+`estadoComercio: 'operativo'` escrito a mano. Un comercio suspendido seguía
+siendo atendido, y el flujo de recordatorios seguía enviando plantillas que
+**Meta cobra**.
+
+**La raíz: no se podía distinguir «el panel dice que está suspendido» de «el
+panel no contestó».** Los dos llegaban como un fallo. Ahora el nodo HTTP pide la
+respuesta completa —código y cuerpo— y la fusión decide con el código:
+
+| Respuesta | Qué hace |
+|---|---|
+| `200` con `tenantId` | usa la configuración del panel |
+| `409` | **suspendido**, con el aviso neutro que manda el propio panel |
+| cualquier otra | no se pudo saber → respaldo |
+
+**Y la política ante el silencio es distinta por flujo, a propósito:**
+
+- **Conversacionales (A y B): siguen atendiendo.** Hay alguien esperando; una
+  caída del panel no puede dejar sin respuesta a todos los comercios.
+- **Recordatorios: cortan.** No espera nadie en tiempo real. Saltarse los
+  recordatorios de un día se recupera; mandar plantillas que Meta cobra por un
+  comercio que quizá está suspendido, no.
+
+**Sobre `neverError`, que este proyecto prohibió el 2026-09-01:** aquel caso era
+un nodo que salía verde con un 401 y nadie miraba el resultado. Acá el código se
+examina explícitamente y lo que no se reconoce cae al respaldo dejando rastro.
+La regla real no es «nunca `neverError`»: es **«nunca ignores el código»**.
+
+**Tercer hallazgo, el que no venía en el reporte: el Demo B no tenía NINGUNA
+compuerta de estado.** Atendía siempre, cobrara o no el negocio. El Demo A la
+tenía desde el principio. Es —otra vez— la lección que no cruzó de un flujo a
+otro; van cuatro. Se agregó `¿Comercio operativo?` y `Comercio no operativo`,
+que corta **antes del agente**, así un comercio suspendido no consume ni tokens.
+
+**Probado sobre el código que corre**, en los tres flujos:
+`admin/pruebas/estado-comercio.test.ts` extrae la lógica del JSON y la ejecuta.
+17 casos: el 409 suspende, el aviso no menciona deudas ni pagos, el activo
+opera, y el silencio se comporta según la política de cada flujo.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
