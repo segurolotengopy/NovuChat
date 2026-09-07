@@ -328,7 +328,14 @@ textarea.input { min-height: 90px; resize: vertical; }
 .nav-brand {
   font-family: var(--font-heading); font-weight: var(--font-heading-weight);
   font-size: 18px; margin-right: auto;
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  color: inherit; text-decoration: none;
+  padding: var(--space-1) var(--space-2); margin-left: calc(var(--space-2) * -1);
+  border-radius: var(--radio-sm, 8px);
 }
+.nav-brand:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.nav-brand:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.nav-brand svg { display: block; color: var(--color-accent); }
 .nav a { color: inherit; text-decoration: none; font-size: 14px; }
 .nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
 
