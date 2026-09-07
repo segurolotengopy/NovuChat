@@ -117,16 +117,35 @@ tope donde se degrade, en vez de elegirlo a ojo.
 
 ---
 
-## 6. Un límite del catálogo nativo que conviene saber antes de prometerlo
+## 6. DECIDIDO: catálogo nativo solo en el Flujo B (Andres, 07-sep)
 
-**Meta exige precio en cada producto del catálogo.** Un servicio que se cotiza
-después de evaluar —ortodoncia, cirugía— **no se puede listar**. Es justamente lo
-que la consola modela desde ayer con el precio opcional y el «a consultar».
+El punto 3 de las notas —«la consola arma el catálogo de WhatsApp de forma
+invisible en el fondo»— **es el camino, y es el mismo que propone §4**: la
+diferencia está en cómo se alimenta, no en la idea. Queda adoptado.
 
-Consecuencia: **el catálogo nativo sirve para el Flujo B —bienes con precio— y no
-para el Flujo A.** Una clínica no va a tener catálogo de WhatsApp, y está bien:
-su conversación es de agenda, no de compra. Vale decirlo en la propuesta
-comercial para no prometer a un consultorio algo que no le corresponde.
+**Y queda descartado para el Flujo A**, con la razón de Andres, que es mejor que
+la técnica: **en agendamiento el catálogo es REFERENCIAL**. No es una tienda: es
+la lista que el asistente usa para saber de qué hablar y cuánto cuesta. Vive en
+la consola, entra al prompt, y ahí termina. Nadie va a poner un corte de pelo en
+un carrito de compras.
+
+La razón técnica apunta al mismo lado y conviene tenerla escrita porque cierra la
+discusión: **Meta exige precio en cada producto del catálogo**, así que un
+servicio que se cotiza después de evaluar —ortodoncia, cirugía— **no se puede
+listar**. Es justamente lo que la consola modela desde ayer con el precio
+opcional y el «a consultar». Aunque quisiéramos, la mitad del catálogo de una
+clínica no entraría.
+
+| | Flujo A — agendamiento | Flujo B — venta |
+|---|---|---|
+| Qué es el catálogo | **referencial**: de qué habla el asistente | **una tienda**: lo que el cliente compra |
+| Dónde vive | consola → prompt | consola → prompt **y** catálogo de Meta |
+| Carrito nativo | no | sí |
+| Servicios sin precio | sí, «a consultar» | no entran |
+
+Es una capacidad por flujo, igual que la agenda o el cobro: encaja sin forzar
+nada en la política de capas de `admin/DISENO.md` §4sexies. **Una clínica no va a
+tener catálogo de WhatsApp, y está bien.**
 
 ---
 
@@ -136,7 +155,7 @@ comercial para no prometer a un consultorio algo que no le corresponde.
 2. **Para la rueda de negocios:** la plantilla de Google Sheets como parche
    consciente, con fecha de retiro escrita.
 3. **Después de las demos:** el endpoint del feed desde la consola, que es medio
-   día, y conectar el catálogo nativo al Flujo B con el SKU = identificador del
-   ítem.
+   día, y conectar el catálogo nativo **al Flujo B únicamente**, con el
+   SKU = identificador del ítem. El Flujo A no lo lleva ni lo va a llevar.
 4. **Antes de venderle a un comercio grande:** medir con 20, 50 y 150 productos y
    fijar el tope con ese dato.

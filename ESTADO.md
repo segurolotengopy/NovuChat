@@ -1461,10 +1461,18 @@ más grande sino catálogo nativo con búsqueda. El tope se sostiene, pero se
 explica distinto —«lo que entra en la cabeza del asistente»— y **conviene medirlo
 con 20, 50 y 150 ítems antes de fijar el número**.
 
-**Y un límite que hay que saber antes de prometerlo:** Meta exige precio en cada
-producto del catálogo, así que un servicio que se cotiza después de evaluar no se
-puede listar. **El catálogo nativo sirve para el Flujo B y no para el A.** Una
-clínica no va a tener catálogo de WhatsApp, y está bien.
+**DECIDIDO por Andres el 07/09:** el punto 3 de las notas —la consola arma el
+catálogo de WhatsApp— **se adopta para el Flujo B**, con el feed desde la consola
+en vez del Google Sheets. Y **se descarta para el Flujo A**, con su razón, que es
+mejor que la técnica: en agendamiento el catálogo es **referencial**, la lista de
+la que el asistente habla, no una tienda. Nadie pone un corte de pelo en un
+carrito.
+
+La razón técnica apunta al mismo lado: Meta exige precio en cada producto, así
+que los servicios «a consultar» no se pueden listar y la mitad del catálogo de
+una clínica quedaría afuera. Queda escrito como capacidad por flujo en
+`admin/DISENO.md` §4sexies.3bis. **Una clínica no va a tener catálogo de
+WhatsApp, y está bien.**
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 

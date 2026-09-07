@@ -52,6 +52,11 @@ export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
     pestanas: [{ ruta: 'cobro', etiqueta: 'Pedidos y cobro' }],
     catalogo: 'Productos',
     documento: 'venta',
+    // PENDIENTE, y solo acá: publicar este catálogo como catálogo NATIVO de
+    // WhatsApp, con carrito. Decidido el 2026-09-07 que es una capacidad de
+    // venta y no de agendamiento: allá el catálogo es referencial —de qué habla
+    // el asistente— y además Meta exige precio en cada producto, así que los
+    // servicios «a consultar» no se podrían listar. Ver DISENO.md §4sexies.3bis.
   },
 };
 

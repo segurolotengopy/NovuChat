@@ -1185,6 +1185,7 @@ Y cuatro reglas que se aplican a **todo flujo nuevo**:
 | **Documento** | `/config/negocio` | `/config/agendamiento` | `/config/venta` |
 | **Contiene** | identidad, dirección, horarios, voz del asistente, mensajes fijos, política de cancelación, calendario del negocio (por historia) | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho, `mediaIdQr` (solo NovuChat) |
 | **Colecciones propias** | catálogo, contactos, conversaciones, bitácora, miembros | funcionarios | — |
+| **Catálogo nativo de WhatsApp** | — | **no**, y no es un pendiente | **sí** (pendiente) |
 | **Pestañas en la consola** | Configuración, Servicios/Productos, Conversaciones, Usuarios, Contactos, Consumo, Cuenta, Reclamos, Bitácora, Mi cuenta | **Agenda** | **Pedidos y cobro** |
 
 El **catálogo con precios es común**: el Demo A lo usa para servicios con
@@ -1241,6 +1242,25 @@ mandar nada que mandar una imagen sin rotular.
 
 Lo que el comercio **sí** decide es lo comercial: cuánto cobra de envío, cuánto
 recarga por flota, cuánto tarda y desde qué monto entrega.
+
+### 4sexies.3bis El catálogo nativo de WhatsApp es una capacidad de VENTA
+
+**Decidido el 2026-09-07.** El catálogo de productos de Meta —con carrito nativo—
+se publica **solo para el flujo de venta**. Para agendamiento no se hace, y no es
+una deuda: es una decisión.
+
+**Por qué.** En agendamiento el catálogo es **referencial**: la lista que el
+asistente usa para saber de qué hablar y cuánto cuesta, no una tienda. Nadie pone
+un corte de pelo en un carrito de compras. Y aunque se quisiera, **Meta exige
+precio en cada producto**, así que los servicios que se cotizan después de
+evaluar —los que la consola modela con el precio opcional, §catálogo— no se
+pueden listar: la mitad del catálogo de una clínica quedaría afuera.
+
+**Cómo encaja.** Es una capacidad por flujo, como la agenda o el cobro. Cuando se
+implemente, va con su línea en la tabla de capacidades y su publicación desde la
+consola —una sola fuente de verdad—, con el SKU de Meta igual al identificador
+del ítem para que un carrito llegue al asistente con productos que sabe nombrar.
+Análisis completo en `Analisis/09-catalogo-nativo-de-whatsapp.md`.
 
 ### 4sexies.4 Una consecuencia que conviene conocer
 
