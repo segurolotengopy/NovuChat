@@ -155,3 +155,52 @@ tr.alerta td { background: #c6282811; }
    dónde está uno cuando la tabla es larga, y los campos ocupan su columna. */
 .fila-editando { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
 .fila-editando .input { width: 100%; min-width: 6rem; }
+
+/* -----------------------------------------------------------------------------
+   CATÁLOGO CON FOTOS E IMPORTACIÓN EN LOTE.
+
+   La miniatura tiene tamaño FIJO y `object-fit: cover`. Las fotos que sube un
+   comercio vienen de cualquier lado y con cualquier proporción: sin esto, una
+   foto vertical de 3000 px estira su fila y la tabla deja de poder recorrerse.
+   -------------------------------------------------------------------------- */
+.fila-con-foto { display: flex; gap: .6rem; align-items: flex-start; }
+.miniatura {
+  width: 44px; height: 44px; flex: none; object-fit: cover;
+  background: var(--fondo-tarjeta); border: 1px solid var(--borde);
+}
+.miniatura-rota {
+  display: grid; place-content: center;
+  font-size: .6rem; text-transform: uppercase; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  border-style: dashed;
+}
+
+/* El importador va plegado. Es una herramienta de vez en cuando —la primera
+   carga y los cambios de temporada— y desplegada empujaría fuera de la pantalla
+   la tabla, que es a lo que se entra todos los días. */
+.importador {
+  border: 1px solid var(--borde); border-radius: var(--radio);
+  padding: .75rem 1rem; margin: 1.5rem 0;
+}
+.importador > summary { cursor: pointer; font-weight: 600; }
+.importador > summary + * { margin-top: 1rem; }
+.importador input[type="file"] { padding: .3rem; }
+
+.alerta-importar {
+  border-left: 3px solid #c62828; padding-left: .75rem;
+}
+.alerta-texto { color: #c62828; }
+
+/* -----------------------------------------------------------------------------
+   MARCA DEL CATÁLOGO WEB. El selector de color va al lado de su valor en texto:
+   un `input[type=color]` solo no dice qué se eligió, y el comercio necesita
+   poder copiar el código que le pasó su diseñador.
+   -------------------------------------------------------------------------- */
+.campo-color { display: flex; gap: .5rem; align-items: center; max-width: 22rem; }
+.campo-color input[type="color"] {
+  width: 48px; height: 40px; padding: 0; border: 1px solid var(--borde); cursor: pointer;
+}
+.enlace-catalogo {
+  display: inline-block; margin-top: .5rem; font-family: ui-monospace, monospace;
+  font-size: .85rem; word-break: break-all;
+}
