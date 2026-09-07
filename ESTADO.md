@@ -325,6 +325,8 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | El QR no se almacena | Se guarda el texto validado y la imagen se vuelve a dibujar en cada envío | 06/09 |
 | Anulación de citas | El Flujo A puede cancelar, con búsqueda por el teléfono del mensaje y confirmación explícita del cliente | 06/09 |
 | Doble reserva | Candado POR CÓDIGO en `Comprobar reserva`, no por prompt. Cede la cita más nueva y no se le confirma al cliente | 06/09 |
+| La consola manda | Los flujos leen su configuración del panel; los valores escritos en el flujo quedan como respaldo si el panel no contesta | 07/09 |
+| Precio del catálogo | Opcional. Ausente significa «a consultar»; cero significa gratis y son cosas distintas | 07/09 |
 | Envío de plantillas | Por `httpRequest` con el JSON armado a mano, no por el nodo de WhatsApp, que manda `template.language` sin `code` | 06/09 |
 | Marcar como recordado | Solo con el identificador de mensaje que devuelve Meta. Un envío fallido no se marca | 06/09 |
 
@@ -1153,6 +1155,68 @@ las citas del 8: son seis, así que van a llegar seis recordatorios.
 `N8N_WORKFLOW_ID`, así que para publicar este hay un `.env.recordatorios`
 —ignorado— que hereda `.env` y solo cambia esa línea:
 `./scripts/publicar-flujo.sh --env .env.recordatorios --flujo Flujos/demo-a-recordatorios.json --aplicar`
+
+### La consola dejó de ser una maqueta: el Demo A ya lee su configuración (07/09)
+
+Andrés lo puso en la ruta crítica con la pregunta correcta: «¿qué se necesita
+para que funcione, y que un cliente no detecte que no funciona?». La auditoría
+dio una causa única y dos sorpresas.
+
+**El diagnóstico.** Lo que la consola MUESTRA era real —conversaciones, consumo,
+métricas, bitácora: los flujos las escriben—. Lo que la consola GUARDA no lo
+leía nadie: **ningún flujo llamaba a `configuracionFlujo`**. Configuración,
+Servicios, Agenda y Pedidos eran un formulario que escribía en el vacío. El
+cliente cambiaba un precio, probaba por WhatsApp, y el asistente seguía igual.
+
+**La sorpresa que ya se veía.** Los ocho servicios del Demo A estaban cargados
+**sin precio**: el sembrador nunca los escribió. La pantalla mostraba ocho filas
+con «—» mientras el asistente cotizaba «Corte 70 Bs» de memoria. Cargados.
+
+**La segunda sorpresa.** Un tratamiento dental no tiene precio fijo, y las
+reglas EXIGÍAN un número. O sea que la consola no podía ni editar esos cuatro
+servicios. Ahora el precio es opcional —ausente significa «a consultar», que es
+la regla que el prompt ya tenía—, la moneda también, y la pantalla lo explica:
+**cero no es lo mismo que a consultar**, cero dice gratis.
+
+**Cómo quedó conectado el Demo A.** Dos nodos nuevos y un truco de nombres:
+
+```
+¿Es un mensaje? → Config base → Traer configuración → Config del negocio → Normalizar entrada
+                  (los valores    (HTTP al panel,      (fusiona: la
+                   de siempre)     4 s de tope)         consola pisa)
+```
+
+El nodo que fusiona **se llama** `Config del negocio`, que es como se llamaba el
+Set de valores escritos a mano. Así las veinte expresiones que ya lo buscaban
+por ese nombre —herramientas, prompt, nodos de salida— recogen la versión
+fusionada sin tocar ninguna.
+
+- **Falla hacia atrás, nunca hacia el silencio.** Si el panel no contesta, o
+  contesta un error, se usan los valores de siempre: el peor caso es el
+  comportamiento de ayer. `Config base` conserva el catálogo de respaldo, porque
+  sin él un panel caído dejaría al asistente sin precios.
+- **Un campo vacío en la consola no borra el de respaldo.** Un negocio a medio
+  configurar se comporta como antes, no peor.
+- **`estadoComercio` sí manda desde el panel**, siempre: es lo que corta el
+  servicio a quien dejó de pagar, y no puede depender de un valor escrito dentro
+  del flujo.
+- El prompt dejó de tener el catálogo escrito a mano. Se parte por **precio**,
+  no por rubro: lo que tiene precio se cotiza en el chat, lo que no, después de
+  evaluar.
+
+**Dos cosas que se arreglaron porque se vieron al comparar los dos lados:**
+
+- **El horario sonaba a máquina.** El panel servía «lunes: 09:00-19:00; martes:
+  09:00-19:00; …». Ahora agrupa los días seguidos: «lunes a sábado, de 09:00 a
+  19:00; domingo: cerrado». Con cinco pruebas, incluida la que impide agrupar
+  días NO consecutivos: si el negocio cierra los miércoles, «lunes a viernes»
+  sería mentira y el cliente vendría un día cerrado.
+- **«70 BOB» no se le dice a nadie.** Es el código ISO; en Bolivia se dice «Bs».
+
+**Falta, y es lo de mañana:** conectar el **Demo B** y el flujo de
+**recordatorios** igual que el A, y **probar con teléfono** que cambiar un
+precio en la consola cambia lo que dice el asistente. Hasta que eso se vea, esto
+está verificado en la fusión pero no en vivo.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 

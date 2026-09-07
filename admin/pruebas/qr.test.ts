@@ -19,6 +19,7 @@ import {
   crc16, cuentasDelQr, pareceCifrado, separarCampos, validarQrSimple,
 } from '../functions/src/qrSimple.ts';
 import { dibujarQr, pngDeMatriz } from '../functions/src/dibujoQr.ts';
+import { horarioAtencion } from '../functions/src/prompt.ts';
 import {
   cotejarComprobante, cuentaCoincide, montoCoincide, nombreCoincide, normalizar,
   parsearFechaHora, parsearMonto,
@@ -487,5 +488,42 @@ describe('Cotejo contra comprobantes REALES de tres bancos bolivianos', () => {
       nombreCuenta: 'OTRA EMPRESA SRL', fechaHora: '06/09/2026 11:08:32',
     });
     expect(r.consistente).toBe(false);
+  });
+});
+
+describe('Cómo se le lee el horario al cliente', () => {
+  // El asistente dice esta frase en voz alta. «lunes: 09:00-19:00; martes:
+  // 09:00-19:00; …» es correcto y suena a máquina; un negocio dice «lunes a
+  // sábado, de 09:00 a 19:00». Se descubrió comparando lo que serviría el panel
+  // contra lo que el flujo decía escrito a mano.
+  it('agrupa los días seguidos con el mismo horario', () => {
+    expect(horarioAtencion({
+      lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00',
+      jue: '09:00-19:00', vie: '09:00-19:00', sab: '09:00-19:00', dom: 'cerrado',
+    })).toBe('lunes a sábado, de 09:00 a 19:00; domingo: cerrado');
+  });
+
+  it('NO agrupa días que no son consecutivos', () => {
+    // Si el negocio cierra los miércoles, «lunes a viernes» sería mentira y el
+    // cliente vendría un día que está cerrado.
+    expect(horarioAtencion({
+      lun: '09:00-19:00', mar: '09:00-19:00', mie: 'cerrado',
+      jue: '09:00-19:00', vie: '09:00-19:00',
+    })).toBe('lunes a martes, de 09:00 a 19:00; miércoles: cerrado; jueves a viernes, de 09:00 a 19:00');
+  });
+
+  it('respeta los horarios distintos por día', () => {
+    expect(horarioAtencion({ lun: '09:00-19:00', mar: '10:00-14:00' }))
+      .toBe('lunes, de 09:00 a 19:00; martes, de 10:00 a 14:00');
+  });
+
+  it('deja pasar un texto que no es un rango, sin romperlo', () => {
+    expect(horarioAtencion({ sab: 'solo con cita previa' }))
+      .toBe('sábado: solo con cita previa');
+  });
+
+  it('sin horarios devuelve vacío, y no una frase inventada', () => {
+    expect(horarioAtencion(null)).toBe('');
+    expect(horarioAtencion({})).toBe('');
   });
 });

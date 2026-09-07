@@ -49,10 +49,13 @@ export function Catalogo() {
   const agregar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     setEstado(null);
+    const sinPrecio = nuevo.precio.trim() === '';
     const precio = Number(nuevo.precio);
     const duracionMin = Number(nuevo.duracionMin);
     if (!nuevo.nombre.trim()) { setEstado('El nombre es obligatorio.'); return; }
-    if (!Number.isFinite(precio) || precio < 0) { setEstado('El precio tiene que ser un número de cero para arriba.'); return; }
+    if (!sinPrecio && (!Number.isFinite(precio) || precio < 0)) {
+      setEstado('El precio tiene que ser un número de cero para arriba, o quedar vacío.'); return;
+    }
     if (conAgenda && (!Number.isInteger(duracionMin) || duracionMin <= 0 || duracionMin > 1440)) {
       setEstado('La duración va de 1 a 1440 minutos.'); return;
     }
@@ -66,7 +69,9 @@ export function Catalogo() {
         nombre: nuevo.nombre.trim(),
         ...(nuevo.descripcion.trim() ? { descripcion: nuevo.descripcion.trim() } : {}),
         ...(nuevo.area.trim() ? { area: nuevo.area.trim().toLowerCase() } : {}),
-        precio, moneda: nuevo.moneda,
+        // Sin precio se guarda SIN el campo, no con un cero. Un cero dice
+        // «gratis», que es una promesa distinta de «te lo cotizamos».
+        ...(sinPrecio ? {} : { precio, moneda: nuevo.moneda }),
         ...(conAgenda ? { duracionMin } : {}),
         activo: true, ...sello(),
       });
@@ -117,7 +122,11 @@ export function Catalogo() {
                   )}
                 </td>
                 <td><TextoSeguro valor={it.area ?? ''} maxLargo={40} /></td>
-                <td>{typeof it.precio === 'number' ? it.precio : '—'} <TextoSeguro valor={it.moneda ?? ''} maxLargo={3} /></td>
+                <td>
+                  {typeof it.precio === 'number'
+                    ? <>{it.precio} <TextoSeguro valor={it.moneda ?? ''} maxLargo={3} /></>
+                    : <span className="text-muted">A consultar</span>}
+                </td>
                 {conAgenda && <td>{typeof it.duracionMin === 'number' ? `${it.duracionMin} min` : '—'}</td>}
                 <td>{it.activo === true ? 'Se ofrece' : 'Dado de baja'}</td>
                 <td>
@@ -145,10 +154,16 @@ export function Catalogo() {
           <input className="input" maxLength={40} value={nuevo.area} placeholder="belleza, gastronomia, retail…"
                  onChange={(e) => setNuevo({ ...nuevo, area: e.target.value })} />
         </label>
-        <label className="field">Precio
-          <input className="input" required type="number" min={0} max={1000000} step="0.01" value={nuevo.precio}
+        <label className="field">Precio (déjalo vacío si se cotiza)
+          <input className="input" type="number" min={0} max={1000000} step="0.01" value={nuevo.precio}
                  onChange={(e) => setNuevo({ ...nuevo, precio: e.target.value })} />
         </label>
+        <p className="ayuda">
+          Si lo dejas vacío, el asistente dice que el precio depende de una
+          evaluación y ofrece agendar. Es lo correcto para tratamientos que no
+          tienen un precio fijo. <strong>No pongas cero</strong>: cero significa
+          gratis, y es una promesa distinta.
+        </p>
         <label className="field">Moneda
           <select className="input" value={nuevo.moneda}
                   onChange={(e) => setNuevo({ ...nuevo, moneda: e.target.value })}>
