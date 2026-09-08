@@ -18,6 +18,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 // todo lo demás, para que exista un solo inventario de lo que se despliega.
 export {
   enlaceCatalogo, catalogoPublico, checkoutCatalogo, fijarWebhookCarrito,
+  vistaPreviaCatalogo,
 } from './catalogoWeb.js';
 
 import { registrar } from './ingesta.js';
@@ -28,6 +29,10 @@ export { notificarReclamo } from './reclamos.js';
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
 // que avise en vez de bloquear está en `imagenCatalogo.ts`.
 export { comprobarImagenDelCatalogo, recomprobarImagen } from './imagenCatalogo.js';
+// MINI INVENTARIO. El descuento por venta lo hace el checkout; acá van los dos
+// movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
+// pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
+export { ajustarStock, dejarDeControlarStock } from './inventario.js';
 
 const db = () => getFirestore();
 

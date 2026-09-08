@@ -265,3 +265,17 @@ tr.alerta td { background: #c6282811; }
   background-size: 12px 12px;
   background-position: 0 0, 6px 6px;
 }
+
+/* Vista previa del catálogo: ancho de teléfono, porque es donde lo abre el
+   cliente. Mostrarlo a 1.200 píxeles da una impresión que después no se cumple. */
+.vista-previa { margin-top: var(--space-8); }
+.marco-catalogo {
+  width: 100%; max-width: 390px; height: 680px;
+  border: 1px solid var(--color-borde-control);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+/* La subida de foto: el `input[type=file]` va oculto detrás de su etiqueta, que
+   es la que se ve como botón. El control nativo no se puede peinar. */
+.subir-foto { display: inline-flex; gap: var(--space-2); margin-top: var(--space-1); }
+.subir-foto label { cursor: pointer; margin: 0; }

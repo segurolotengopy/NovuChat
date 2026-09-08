@@ -727,6 +727,50 @@ service cloud.firestore {
       // lista blanca de `itemValido()`, y desde ese momento el propio comercio
       // podría escribirse un «coincide: sí». Un sello que puede firmar el
       // verificado no vale nada.
+      // FOTO SUBIDA POR EL COMERCIO, en su propio documento y no dentro del ítem.
+      //
+      // El ítem lo leen la consola, el sitio público Y `configuracionFlujo`, que
+      // corre en la ruta de CADA MENSAJE de WhatsApp. Con la foto adentro, un
+      // catálogo de 40 ítems mandaría varios megas en cada consulta del
+      // asistente. Acá la foto se lee solo donde se muestra.
+      //
+      // El tope de 210.000 caracteres no es decorativo: un documento de
+      // Firestore admite 1 MB, y sin límite el navegador podría escribir una
+      // foto sin encoger y dejar el documento al borde. El preproceso del
+      // navegador corta en 150 KB; este número deja aire para el base64 y para
+      // el resto de los campos, y sigue muy por debajo del límite duro.
+      match /fotosCatalogo/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow create, update: if esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && fotoValida();
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
+
+        function fotoValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['datos', 'ancho', 'alto', 'bytes', 'tipo',
+                                   'actualizadoPor', 'actualizadoEn'])
+            && d.datos is string
+            && d.datos.size() > 0 && d.datos.size() <= 210000
+            // Solo imágenes en línea. Sin esto, `datos` podría ser cualquier
+            // texto y la consola lo pondría en un `src`.
+            && d.datos.matches('^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$')
+            && d.ancho is int && d.ancho > 0 && d.ancho <= 4000
+            && d.alto is int && d.alto > 0 && d.alto <= 4000
+            && d.bytes is int && d.bytes > 0 && d.bytes <= 210000
+            && d.actualizadoPor == request.auth.uid
+            && d.actualizadoEn == request.time;
+        }
+      }
+
+      // MOVIMIENTOS DE INVENTARIO. Los escribe el servidor y NADIE más: son el
+      // historial contra el que se contrasta el saldo. Si el comercio pudiera
+      // escribirlos, el reporte diría lo que el comercio quisiera que dijera.
+      match /movimientosStock/{movimientoId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
       match /comprobacionesImagen/{itemId} {
         allow get, list: if esMiembro(tenantId);
         allow write: if false;
@@ -736,9 +780,37 @@ service cloud.firestore {
 
         allow get, list: if esMiembro(tenantId);
 
-        allow create, update: if esAdmin(tenantId)
-                              && tenantOperativo(tenantId)
-                              && itemValido();
+        // Crear y editar van SEPARADOS por el stock, y solo por eso.
+        //
+        // EL COMERCIO NO ESCRIBE `stock`: tiene que pasar por `ajustarStock`,
+        // que mueve el número y anota el movimiento en la MISMA transacción. Si
+        // pudiera escribirlo a mano, el reporte diría «se vendieron 8» y el
+        // saldo diría otra cosa, y desde ahí el reporte no sirve para nada. Es
+        // la misma razón por la que el veredicto de las fotos vive donde el
+        // comercio no escribe.
+        //
+        // Al CREAR: el campo no puede venir. Al EDITAR: `affectedKeys()` es lo
+        // que hay que mirar y no las claves del documento, porque en una
+        // edición `request.resource.data` es el documento RESULTANTE y trae
+        // `stock` aunque el parche no lo mencione. Preguntar por las claves
+        // daba siempre que sí y dejaba fuera cualquier edición de un ítem con
+        // existencias: no se podía ni corregirle el precio.
+        allow create: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && itemValido()
+                      && !request.resource.data.keys().hasAny(['stock']);
+        allow update: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && itemValido()
+                      // `resource != null` no es defensa contra nadie: es que
+                      // `resource.data` sobre un documento que no existe NO da
+                      // falso, da error de evaluación, y un error de evaluación
+                      // en medio de una condición se lee como un permiso mal
+                      // escrito cuando se está depurando. Un `update` sobre algo
+                      // inexistente falla igual, pero falla diciendo qué pasó.
+                      && resource != null
+                      && !request.resource.data.diff(resource.data)
+                            .affectedKeys().hasAny(['stock']);
         allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
 
         function itemValido() {
@@ -752,7 +824,12 @@ service cloud.firestore {
                    // sus reglas y su CORS —día y medio de trabajo— y, sobre
                    // todo, evita que NovuChat pase a custodiar archivos de
                    // terceros. Ver Analisis/11-catalogo-web-propio.md §2.
-                   'imagenUrl'
+                   'imagenUrl',
+                   // EXISTENCIAS. Está en la lista porque el documento
+                   // RESULTANTE la trae cuando el ítem lleva control, y sin
+                   // esto un comercio no podría ni corregir el nombre de algo
+                   // que tiene stock. Pero NO la puede tocar: ver `stockIntacto()`.
+                   'stock'
                  ])
             && textoReq(d, 'nombre', 80)
             && textoOpc(d, 'descripcion', 300)

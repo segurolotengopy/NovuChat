@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  collection, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp,
+  collection, deleteDoc, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp,
   setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { auth, db, funciones } from '../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { etiquetaCatalogo, useFlujos } from '../lib/flujos';
+import { mensajeDeFalla, prepararFoto } from '../lib/foto';
 import {
   aCsv, idDeNombre, validarCsv, type FilaCatalogo, type FilaConProblemas,
 } from '../lib/csv';
@@ -83,6 +84,7 @@ export function Catalogo() {
   const conVenta = flujos.includes('venta');
   const [items, setItems] = useState<Item[] | null>(null);
   const [veredictos, setVeredictos] = useState<Record<string, Veredicto>>({});
+  const [fotos, setFotos] = useState<Record<string, string>>({});
   const [nuevo, setNuevo] = useState(NUEVO);
   const [estado, setEstado] = useState<string | null>(null);
   /** Identificador del ítem que se está editando en su fila, o `null`. */
@@ -96,6 +98,18 @@ export function Catalogo() {
     return onSnapshot(query(collection(db, 'tenants', tenantId, 'catalogo'), orderBy('nombre')),
       (i) => setItems(i.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setEstado('No se pudo leer el catálogo.'));
+  }, [tenantId]);
+
+  // Las fotos subidas, en su propia colección. NO viajan dentro del ítem: el
+  // ítem lo lee también `configuracionFlujo`, que corre en la ruta de CADA
+  // mensaje de WhatsApp, y un catálogo de 40 ítems mandaría varios megas por
+  // consulta.
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(collection(db, 'tenants', tenantId, 'fotosCatalogo'),
+      (s) => setFotos(Object.fromEntries(
+        s.docs.map((d) => [d.id, String((d.data() as { datos?: unknown }).datos ?? '')]))),
+      () => {});
   }, [tenantId]);
 
   // Los veredictos de las fotos, en una colección aparte que el comercio lee y
@@ -229,7 +243,7 @@ export function Catalogo() {
         de la oferta sin borrar su historial.
       </p>
 
-      <EnlaceAlCatalogoWeb conVenta={conVenta} />
+      <VistaPrevia tenantId={tenantId} conVenta={conVenta} />
 
       {items === null ? <p>Cargando…</p> : items.length === 0 ? (
         <p className="vacio">Todavía no hay nada cargado. Sin esto el asistente conversa, pero no ofrece nada concreto.</p>
@@ -282,13 +296,15 @@ export function Catalogo() {
               <tr key={it.id} className={it.activo === true ? '' : 'alerta'}>
                 <td>
                   <div className="fila-con-foto">
-                    <Miniatura url={it.imagenUrl} />
+                    <Miniatura url={fotos[it.id] || it.imagenUrl} />
                     <div>
                       <TextoSeguro valor={it.nombre} maxLargo={80} />
                       {typeof it.descripcion === 'string' && it.descripcion !== '' && (
                         <div className="text-muted"><TextoSeguro valor={it.descripcion} maxLargo={300} /></div>
                       )}
                       <EstadoFoto v={veredictos[it.id]} onRevisar={() => void revisarFoto(it.id)} />
+                      <SubirFoto tenantId={tenantId} itemId={it.id}
+                                 tieneFoto={Boolean(fotos[it.id])} onEstado={setEstado} />
                     </div>
                   </div>
                 </td>
@@ -457,6 +473,70 @@ function EstadoFoto({ v, onRevisar }: { v: Veredicto | undefined; onRevisar: () 
     );
   }
   return null;
+}
+
+/**
+ * =============================================================================
+ * SUBIR UNA FOTO
+ * =============================================================================
+ *
+ * Conviven dos caminos y no es indecisión: el ENLACE sirve al comercio que ya
+ * tiene sus fotos publicadas —una tienda con su web, un restaurante con su
+ * Instagram— y no quiere una segunda copia que después se le desactualice. La
+ * SUBIDA sirve al que saca la foto con el teléfono en ese momento, que es la
+ * mayoría. Obligar a los segundos a publicar la foto en algún lado primero era
+ * pedirles que no usaran el producto.
+ *
+ * LA FOTO SE ENCOGE EN EL NAVEGADOR ANTES DE SUBIR (`lib/foto.ts`): el archivo
+ * original nunca sale del teléfono, no se gastan los datos móviles del comercio
+ * en subir ocho megas para tirarlos, y lo que se guarda entra en un documento
+ * de Firestore con aire de sobra.
+ *
+ * SI HAY LAS DOS, MANDA LA SUBIDA. Es la que el comercio eligió último y la que
+ * no puede romperse sola: una dirección ajena deja de responder el día que el
+ * comercio reordena su sitio, y nadie se entera hasta que un cliente ve el
+ * cuadro roto.
+ */
+function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
+  tenantId: string; itemId: string; tieneFoto: boolean; onEstado: (m: string | null) => void;
+}) {
+  const [trabajando, setTrabajando] = useState(false);
+
+  const elegir = async (archivo: File | undefined) => {
+    if (!archivo) return;
+    onEstado(null);
+    setTrabajando(true);
+    try {
+      const r = await prepararFoto(archivo);
+      if (!r.ok) { onEstado(mensajeDeFalla(r.falla)); return; }
+      await setDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId), {
+        datos: r.foto.datos, ancho: r.foto.ancho, alto: r.foto.alto,
+        bytes: r.foto.bytes, tipo: r.foto.tipo,
+        actualizadoPor: auth.currentUser?.uid ?? '', actualizadoEn: serverTimestamp(),
+      });
+      onEstado(`Foto guardada (${Math.round(r.foto.bytes / 1024)} KB, `
+        + `${r.foto.ancho}×${r.foto.alto}).`);
+    } catch {
+      onEstado('No se pudo guardar la foto. Intente con otra.');
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
+  return (
+    <span className="subir-foto">
+      <label className="btn btn-secondary btn-chico">
+        {trabajando ? 'Preparando…' : tieneFoto ? 'Cambiar foto' : 'Subir foto'}
+        <input type="file" accept="image/*" disabled={trabajando} hidden
+               onChange={(e) => { void elegir(e.target.files?.[0]); e.target.value = ''; }} />
+      </label>
+      {tieneFoto && (
+        <button type="button" className="btn btn-ghost btn-chico" onClick={() => {
+          void deleteDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId));
+        }}>Quitar</button>
+      )}
+    </span>
+  );
 }
 
 function Miniatura({ url }: { url: unknown }) {
@@ -680,43 +760,74 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
 
 /**
  * =============================================================================
- * «VER EL CATÁLOGO WEB» — ANDAMIO DE DEMOSTRACIÓN, NO UNA FUNCIÓN TERMINADA
+ * VISTA PREVIA — el comercio mira su propia página antes de que la vea nadie
  * =============================================================================
  *
- * PARA QUÉ EXISTE. En una demostración, la secuencia que vende es: se muestra la
- * lista de productos en la consola y, sin cambiar de tema, se abre la página que
- * ve el cliente. Hasta ahora eso obligaba a pegar una dirección a mano delante
- * del prospecto, que es exactamente el momento en que uno no quiere estar
- * buscando una URL.
+ * REEMPLAZA UN ANDAMIO. Acá había un enlace que salía de una variable de
+ * entorno y que solo existía en la máquina donde se hacía una demostración.
+ * Servía para demostrar, no para que un comercio revisara su catálogo — y nadie
+ * publica una lista de precios sin mirar antes cómo quedó.
  *
- * POR QUÉ NO ES LA VERSIÓN DEFINITIVA, dicho acá para que nadie lo confunda con
- * una función del producto. El catálogo público **exige una ficha por
- * conversación** (`catalogoWeb.ts`): sin una conversación de WhatsApp detrás no
- * hay ficha que emitir, y emitir una desde la consola le daría al comercio una
- * llave a una página que en producción solo debería abrir un cliente derivado
- * por el asistente. Lo correcto es un endpoint de VISTA PREVIA autenticado como
- * el administrador —que no cuente como conversación ni gaste una ficha— y eso
- * todavía no existe. Está anotado en `CATALOGO-WEB.md`.
+ * ES LA PÁGINA DE VERDAD, no una imitación. Se abre la misma dirección que
+ * abriría un cliente, servida por el mismo endpoint, con los mismos filtros:
+ * sin precio no se publica, agotado no se publica. Una vista previa dibujada
+ * aparte con los datos de la consola mostraría cosas que el cliente no ve, y
+ * una vista previa que miente es peor que no tenerla.
  *
- * MIENTRAS TANTO, EL ENLACE SALE DE UNA VARIABLE DE ENTORNO Y NO DE UN CÁLCULO.
- * Sin `VITE_CATALOGO_DEMO_URL` no se pinta nada, así que la consola de un
- * cliente real no muestra ningún enlace por accidente: hay que ponerlo a
- * propósito, en la máquina donde se hace la demostración. Es la diferencia entre
- * un andamio que se ve y uno que se olvida puesto.
+ * LO ÚNICO QUE CAMBIA es que la ficha va marcada como previa: dura quince
+ * minutos, no cuenta como conversación —mirar el catálogo propio no se cobra— y
+ * el checkout la rechaza, así que probando no se puede generar un pedido falso.
  *
- * Y SOLO CON EL FLUJO DE VENTA, como todo el catálogo web (DISENO.md
- * §4octies.0bis).
+ * Va en un marco del ancho de un teléfono porque es donde lo va a abrir el
+ * cliente: mostrarlo a 1.200 píxeles da una impresión que después no se cumple.
  */
-function EnlaceAlCatalogoWeb({ conVenta }: { conVenta: boolean }) {
-  const url = import.meta.env['VITE_CATALOGO_DEMO_URL'];
-  if (!conVenta || typeof url !== 'string' || !url.startsWith('http')) return null;
+function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boolean }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pidiendo, setPidiendo] = useState(false);
+  if (!conVenta) return null;
+
+  const abrir = async () => {
+    setError(null);
+    setPidiendo(true);
+    try {
+      const r = await httpsCallable<{ tenantId: string }, { url: string }>(
+        funciones, 'vistaPreviaCatalogo')({ tenantId });
+      setUrl(r.data.url);
+    } catch {
+      setError('No se pudo abrir la vista previa. Intente en un momento.');
+    } finally {
+      setPidiendo(false);
+    }
+  };
+
   return (
-    <p>
-      {/* `noreferrer` además de `noopener`: la página del catálogo no tiene por
-          qué enterarse de desde qué dirección de la consola se la abrió. */}
-      <a href={url} target="_blank" rel="noopener noreferrer">
-        Ver el catálogo web como lo ve un cliente ↗
-      </a>
-    </p>
+    <div className="vista-previa">
+      <h3>Cómo lo ve su cliente</h3>
+      <p className="ayuda">
+        Es la página de verdad, con los mismos filtros: <strong>lo que no tiene
+        precio y lo que está agotado no se publica</strong>. Desde acá no se
+        pueden hacer pedidos — es solo para mirar.
+      </p>
+      {url === null ? (
+        <button type="button" className="btn btn-secondary" disabled={pidiendo} onClick={() => void abrir()}>
+          {pidiendo ? 'Abriendo…' : 'Ver mi catálogo'}
+        </button>
+      ) : (
+        <>
+          <iframe className="marco-catalogo" src={url} title="Vista previa del catálogo"
+                  sandbox="allow-scripts allow-same-origin" />
+          <p className="ayuda">
+            {/* `noreferrer` además de `noopener`: la página del catálogo no tiene
+                por qué enterarse de desde qué dirección de la consola se la abrió. */}
+            <a href={url} target="_blank" rel="noopener noreferrer">Abrirla en otra pestaña ↗</a>
+            {' · '}
+            <button type="button" className="enlace" onClick={() => void abrir()}>Recargar</button>
+            {' · '}vence en 15 minutos
+          </p>
+        </>
+      )}
+      {error && <p role="alert" className="ayuda">{error}</p>}
+    </div>
   );
 }

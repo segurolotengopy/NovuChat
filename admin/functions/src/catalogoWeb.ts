@@ -52,6 +52,7 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
 import { REGION } from './region.js';
+import { descontarPedido, hayParaVender } from './inventario.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
@@ -289,6 +290,7 @@ interface Ficha {
   telefono: string;
   phoneNumberId: string;
   checkouts: number;
+  previa: boolean;
   caducaEn: Timestamp;
 }
 
@@ -321,6 +323,7 @@ async function fichaVigente(id: string): Promise<Ficha | null> {
     telefono: String(doc.get('telefono') ?? ''),
     phoneNumberId: String(doc.get('phoneNumberId') ?? ''),
     checkouts: Number(doc.get('checkouts') ?? 0),
+    previa: doc.get('previa') === true,
     caducaEn,
   };
 }
@@ -525,8 +528,14 @@ export const catalogoPublico = onRequest(
       // área una lista alfabética es la única que una persona puede recorrer.
       // `localeCompare` con 'es' para que «Ñoquis» caiga entre «Nachos» y
       // «Papas», y no al final de todo como haría una comparación de bytes.
+      // Lo agotado NO SE PUBLICA, igual que lo que no tiene precio. Es la misma
+      // regla de `Analisis/19` §5: publicar en el catálogo web algo que no se
+      // puede comprar es la forma más cara de generar una conversación. Un ítem
+      // sin control de existencias se publica siempre: no saber cuántos hay no
+      // es lo mismo que saber que hay cero.
       items: catalogo.docs
-        .filter((d) => sePuedeComprar(d.data() as Record<string, unknown>))
+        .filter((d) => sePuedeComprar(d.data() as Record<string, unknown>)
+          && hayParaVender(d.data() as Record<string, unknown>))
         .map((d) => itemPublico(d.id, d.data() as Record<string, unknown>))
         .sort((a, b) => a.area.localeCompare(b.area, 'es')
           || a.nombre.localeCompare(b.nombre, 'es')),
@@ -534,6 +543,64 @@ export const catalogoPublico = onRequest(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// 2 bis) vistaPreviaCatalogo — el comercio mira su propia página
+// ---------------------------------------------------------------------------
+
+/**
+ * LO QUE REEMPLAZA. Hasta acá, ver el catálogo desde la consola era un andamio:
+ * un enlace que salía de una variable de entorno y que solo existía en la
+ * máquina donde se hacía la demostración. Servía para demostrar y no para que
+ * un comercio revisara su catálogo, que es lo que de verdad hace falta: nadie
+ * publica una lista de precios sin mirar antes cómo quedó.
+ *
+ * POR QUÉ NO SE PODÍA REUTILIZAR `enlaceCatalogo`. Ese emite una ficha atada a
+ * UNA CONVERSACIÓN de WhatsApp: se autentica con la firma de la ingesta, exige
+ * un teléfono y deja registrada una derivación. Llamarlo desde la consola
+ * habría inventado una conversación que no existe —que además se cobra— y le
+ * habría dado al comercio una llave a la página que en producción solo debería
+ * abrir un cliente derivado por el asistente.
+ *
+ * TRES DIFERENCIAS CON UNA FICHA DE VERDAD, y las tres importan:
+ *
+ *  1. `previa: true`. El checkout la RECHAZA, así que desde una vista previa no
+ *     se puede crear un pedido. Sin esto, el comercio probando su propia página
+ *     le mandaría al asistente pedidos falsos, y a sí mismo la notificación.
+ *  2. No registra nada en la bitácora de conversaciones ni toca las métricas:
+ *     mirar el propio catálogo no es una atención y no se cobra.
+ *  3. Vive quince minutos. Es para mirar ahora, no una dirección para repartir;
+ *     el enlace que se reparte es el que emite el asistente.
+ *
+ * El teléfono va vacío a propósito: no hay cliente del otro lado.
+ */
+export const vistaPreviaCatalogo = onCall({ region: REGION }, async (peticion: CallableRequest) => {
+  const uid = peticion.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Hay que iniciar sesión.');
+  const datos = (peticion.data ?? {}) as Record<string, unknown>;
+  const tenantId = typeof datos['tenantId'] === 'string' ? datos['tenantId'] : '';
+  if (!/^[a-z0-9][a-z0-9-]{2,59}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Identificador inválido.');
+  }
+  const nc = (peticion.auth?.token?.['nc'] ?? {}) as { t?: Record<string, string> };
+  if ((nc.t ?? {})[tenantId] !== 'admin') {
+    throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
+  }
+  if (!await tieneVenta(tenantId)) {
+    throw new HttpsError('failed-precondition', 'Este negocio no tiene catálogo web.');
+  }
+
+  const base = baseDelSitio();
+  if (base === '') throw new HttpsError('failed-precondition', 'Falta configurar la dirección del sitio.');
+
+  const id = randomBytes(16).toString('hex');
+  const caducaEn = Timestamp.fromMillis(Date.now() + 15 * 60_000);
+  await db().doc(`fichasCatalogo/${id}`).create({
+    tenantId, telefono: '', phoneNumberId: '', flujo: 'venta',
+    previa: true, creadaEn: Timestamp.now(), caducaEn, checkouts: 0,
+  });
+  return { url: `${base}/c/${id}`, caducaEn: caducaEn.toDate().toISOString() };
+});
 
 // ---------------------------------------------------------------------------
 // 3) checkoutCatalogo — vuelve el carrito
@@ -606,6 +673,15 @@ export const checkoutCatalogo = onRequest(
     // cliente navegaba NO entra al pedido. La alternativa —cobrarlo igual—
     // haría que el comercio se comprometa a vender algo que retiró.
     // -----------------------------------------------------------------------
+    // UNA VISTA PREVIA NO COMPRA. El comercio mirando su propia página no puede
+    // crear un pedido: se mandaría a sí mismo una notificación de una venta que
+    // no existe, y el asistente recibiría un carrito de un cliente que no hay.
+    // Se comprueba acá y no solo en la consola porque la petición se arma igual
+    // desde el navegador.
+    if (ficha.previa) {
+      respuesta.status(409).json({ error: 'vista previa: no se pueden hacer pedidos' }); return;
+    }
+
     const refs = lineas.map((l) => db().doc(`tenants/${ficha.tenantId}/catalogo/${l.id}`));
     const docs = await db().getAll(...refs);
 
@@ -628,6 +704,17 @@ export const checkoutCatalogo = onRequest(
       // comprarse por acá. Aceptarlo obligaría a arrastrar un pedido sin total,
       // que es justo lo que la regla de arriba existe para evitar.
       if (!sePuedeComprar(d)) { descartados.push(linea.id); continue; }
+
+      // SE AGOTÓ ENTRE LA VISITA Y EL CHECKOUT. Dos personas mirando el mismo
+      // catálogo compran la última unidad casi a la vez: es el caso normal, no
+      // el raro. Se descarta igual que un ítem dado de baja, y el cliente ve en
+      // el recibo qué no entró. Comprometer una venta de algo que no hay es
+      // exactamente lo que el inventario existe para evitar.
+      //
+      // Esto es una comprobación OPTIMISTA: el descuento de verdad ocurre más
+      // abajo, en una transacción. Acá solo se evita armar un pedido que ya se
+      // sabe imposible.
+      if (!hayParaVender(d, linea.cantidad)) { descartados.push(linea.id); continue; }
 
       const precio = d['precio'] as number;
       const moneda = d['moneda'] === 'USD' ? 'USD' : 'BOB';
@@ -726,6 +813,28 @@ export const checkoutCatalogo = onRequest(
     });
 
     await lote.commit();
+
+    // DESCUENTO DEL INVENTARIO, después de que el pedido quedó escrito.
+    //
+    // El orden es deliberado. Si esto falla, lo que queda es un pedido real sin
+    // su movimiento —que el reporte muestra como un descuadre a la vista— y no
+    // un stock descontado por un pedido que nunca existió. De los dos desajustes
+    // posibles, este es el que se puede arreglar mirando.
+    //
+    // Es idempotente: el movimiento se identifica con el pedido y el ítem, así
+    // que un reintento no vuelve a descontar. Y NO se le devuelve nada de esto
+    // al navegador: al cliente que ya cerró su pedido no le sirve enterarse de
+    // que el comercio quedó con menos de lo que creía. Al comercio sí, y lo ve
+    // en su reporte.
+    const faltantes = await descontarPedido(
+      ficha.tenantId, pedidoId, items as Array<{ id?: unknown; cantidad?: unknown }>, 'catalogo-web',
+    );
+    if (faltantes.length > 0) {
+      await registrar(ficha.tenantId, {
+        tipo: 'carrito_recibido', resultado: 'fallo', telefono: ficha.telefono,
+        conversacionId, detalle: `stock insuficiente: ${faltantes.map((f) => f.itemId).join(',')}`,
+      });
+    }
 
     await registrar(ficha.tenantId, {
       tipo: 'carrito_recibido', resultado: 'ok', telefono: ficha.telefono,

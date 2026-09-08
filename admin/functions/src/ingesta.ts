@@ -1,4 +1,5 @@
 import { REGION } from './region.js';
+import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
@@ -777,7 +778,19 @@ export const configuracionFlujo = onRequest(
             catalogoWeb: { activo: true, derivar: true },
           }
         : {
-            catalogo: catalogo.docs.map((d) => ({ id: d.id, ...d.data() })),
+            // `agotado` viaja para que el asistente diga «se nos acabó» en vez
+            // de «no lo tenemos». No es lo mismo para el cliente: lo primero es
+            // una venta para mañana y lo segundo es un cliente que se va. Los
+            // ítems SIN control de existencias nunca salen agotados: no saber
+            // cuántos hay no es saber que hay cero.
+            catalogo: catalogo.docs.map((d) => {
+              const datos = d.data();
+              const quedan = existencias(datos);
+              return {
+                id: d.id, ...datos,
+                ...(quedan !== null ? { agotado: quedan === 0 } : {}),
+              };
+            }),
             ...(catalogoWebActivo ? { catalogoWeb: { activo: true, derivar: false } } : {}),
           }),
 
