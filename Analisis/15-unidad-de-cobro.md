@@ -161,8 +161,8 @@ solo de costo.
 
 ### Y hay una frase que hay que corregir igual
 
-«**Sin importar cuántos sean**» deja de ser cierta el día que entre el tope de 20
-a 30 mensajes. No es un detalle de redacción: es exactamente lo que un cliente
+«**Sin importar cuántos sean**» deja de ser cierta el día que entre el tope de
+25 mensajes. No es un detalle de redacción: es exactamente lo que un cliente
 podría reclamar. Se cambie o no la unidad, **esa frase hay que reescribirla antes
 de vender**.
 
@@ -172,13 +172,13 @@ de vender**.
 
 **La conversación con tope ya es un paquete de mensajes con precio fijo.**
 
-El tope de 20 / 25 / 30 mensajes que propone el análisis de costos convierte la
-unidad actual en algo que se describe así: *hasta 20 respuestas del asistente en
-24 horas, por un precio fijo*. Eso **es** cobro por mensaje, con dos diferencias,
+El tope de 25 mensajes que proponen los análisis de costos convierte la unidad
+actual en algo que se describe así: *hasta 25 respuestas del asistente en 24
+horas, por un precio fijo*. Eso **es** cobro por mensaje, con dos diferencias,
 y las dos favorecen al cliente:
 
 1. **Se redondea hacia arriba**: el que usa 6 mensajes paga lo mismo que el que
-   usa 20. No lo castiga por conversar.
+   usa 25. No lo castiga por conversar.
 2. **El techo es conocido de antemano.** El cliente sabe el máximo por
    conversación y el máximo del mes.
 

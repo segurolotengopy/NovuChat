@@ -140,6 +140,32 @@ Ojo con la tensión: menos mensajes no puede significar peor atención. Un
 asistente seco vende menos, y eso también es un costo. **Lo que buscamos son
 mensajes más completos, no conversaciones truncadas.**
 
+### El catálogo, para los negocios de pedidos
+
+Analizamos hasta cuántos productos conviene que el asistente sepa de memoria, y
+el resultado sorprende: **el costo no es el límite**. Quinientos productos
+metidos en las instrucciones del asistente cuestan menos que un solo mensaje.
+
+Lo que sí limita es otra cosa: una lista de 40 productos en un mensaje de
+WhatsApp son 1.200 caracteres, ilegibles en un chat. Y cuanto más larga la
+lista, más probable que el asistente cite mal un precio.
+
+**La regla que proponemos:**
+
+| Cuántos productos tiene el negocio | Qué sabe el asistente |
+|---|---|
+| Hasta 40 | La lista completa con precios. Puede cotizar sin mandar a ningún lado |
+| Más de 40 | Las categorías y el rango de precios, y manda el enlace al catálogo web |
+
+Y algo importante para los guiones del Flujo B: **mandar el enlace al catálogo no
+ahorra nada si el asistente sigue conversando el pedido igual**. El ahorro
+aparece cuando el enlace reemplaza la conversación, no cuando la acompaña.
+
+En el catálogo web va todo lo que el negocio quiera vender. **Lo que no conviene
+publicar es lo que no se puede comprar por chat** —sin stock, a cotizar, a
+medida—: el cliente pregunta, el asistente no puede cerrar, y son mensajes
+pagados sin venta.
+
 ---
 
 ## 5. Lo que hay que corregir en lo que decimos
@@ -223,3 +249,48 @@ por mensaje sin importar de dónde viene.
 **No lo prometas todavía.** Está en la documentación de Meta como vigente, pero
 no lo probamos con un cliente real. Conviene medirlo con el primero que use
 anuncios y recién después ponerlo en la presentación.
+
+### Y una segunda, que sí se puede usar desde ya
+
+**Al negocio que contrata los dos flujos —reservas y pedidos— le sale más barato
+de lo que parece.** Como cada flujo usa su propio número, y Meta regala 1.000
+mensajes por número al mes, un negocio con dos flujos estrena una franquicia
+entera: unos **135 Bs al mes** que no pagamos.
+
+Eso no cambia el precio de lista, pero **es una razón real para venderlos
+juntos** en vez de uno primero y el otro después. Hoy no lo estamos usando.
+
+---
+
+## 9. Dos cosas que analizamos y decidimos NO hacer
+
+Para que no se rediscutan más adelante:
+
+**No vamos a cobrar distinto por flujo.** Parecía razonable, porque hoy el flujo
+de pedidos cuesta un 25 % más que el de reservas. Pero con el catálogo web esa
+diferencia **se da vuelta**: pedidos pasa a costar un 61 % menos. Poner hoy un
+precio distinto obligaría a quitarlo en semanas.
+
+**No vamos a cambiar la unidad de cobro.** Evaluamos cobrar por mensaje o por
+«conversación completa» en vez de por ventana de 24 horas, y conviene quedarse
+como estamos. Cobrar por mensaje le pasaría al cliente una incertidumbre que no
+puede controlar, y la conversación con tope de 25 ya funciona como un paquete de
+mensajes con precio fijo. Está analizado en `Analisis/15`, con los tres
+disparadores que obligarían a revisarlo.
+
+---
+
+## 10. Una nota sobre los tiempos de cambio
+
+Algo que conviene que sepas al prometer personalizaciones: **hoy cada cliente
+tiene su propio flujo en n8n**, porque Meta le da a cada negocio su propia
+aplicación y su propia llave, y eso obliga a una copia por cliente.
+
+Consecuencia práctica: **un cambio en los guiones no se aplica a un cliente, se
+aplica a todos, uno por uno.** Con diez clientes es una tarde; con cien no.
+
+Esto mejora bastante cuando NovuChat esté verificada ante Meta con NIT propio:
+ahí todos los clientes pueden colgar de una sola aplicación y **un solo flujo
+atiende a todos**. Es el mismo trámite que hace falta para poder ofrecer
+«conectamos tu número actual», así que hay dos motivos para empezarlo ya. Está en
+`Analisis/20`.

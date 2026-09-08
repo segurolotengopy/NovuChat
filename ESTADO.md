@@ -1444,6 +1444,7 @@ trabajo que ya está hecho en ellas.
 | `Analisis/17-resumen-ejecutivo-precios.md` | **Para Silvana.** Todo lo anterior sin tecnicismos, con lo que hay que decidir y cuándo |
 | `Analisis/18-cambios-en-sitio-y-presentacion.md` | Instrucciones exactas, archivo por archivo, para corregir `novuchat.site` y la presentación |
 | `Analisis/19-catalogo-web-y-precio-por-flujo.md` | Cuántos ítems van al prompt y al catálogo web, y si conviene cobrar distinto por flujo. Las dos respuestas: el corte no es económico, y no conviene |
+| `Analisis/20-un-flujo-para-todos-los-clientes.md` | Si un mismo flujo de n8n puede atender a todos los clientes. Sí, y el bloqueo es una credencial que se elimina con un trámite de Meta |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 
@@ -1479,6 +1480,13 @@ trabajo que ya está hecho en ellas.
 - **A quien toque un flujo:** desde octubre cada mensaje del asistente cuesta
   0,1356 Bs. **Todo cambio de flujo debería declarar cuántos mensajes agrega o
   quita**, igual que hoy declara qué prueba lo cubre.
+- **A quien piense la arquitectura de n8n:** el flujo **ya está parametrizado**
+  —los nodos eligen número y comercio por expresión, y la configuración llega
+  del panel—. Lo que obliga a un flujo por cliente es **una credencial**: la del
+  disparador, porque cada app de Meta tiene un solo webhook. **No construir el
+  nivel intermedio** de un flujo con varios disparadores: obliga a que el token
+  viaje en los datos de ejecución y se tira cuando llegue Tech Provider. Detalle
+  en `Analisis/20`.
 
 **Dos cosas que hay que hacer antes de vender, salgan de donde salgan:**
 publicar el tope de mensajes —la frase «sin importar cuántos sean» de

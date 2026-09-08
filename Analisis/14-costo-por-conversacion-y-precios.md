@@ -12,7 +12,9 @@ precios previos ya no describen nada.
 - Caché del prefijo del prompt implementada, y caché de 60 s en la lectura de
   la configuración.
 - Tope de mensajes del asistente por ventana de 24 h, parametrizado por plan:
-  del orden de 20 a 30.
+  del orden de 20 a 30. **Corregido después:** el análisis de sensibilidad de
+  `16-…` §1 mostró que el escalonado está al revés, y la recomendación vigente
+  es un **tope único de 25** para los tres planes.
 - 12 Bs por USD.
 
 Modelo reproducible: `Analisis/14-modelo-costos.py` (`python3`, sin
@@ -128,7 +130,7 @@ Con las conversaciones típicas de 10 mensajes:
 | Crecimiento | 450 Bs | 1.000 | 10.000 | 1.372 Bs | **−922 Bs** |
 | Pro | 850 Bs | 2.500 | 25.000 | 3.634 Bs | **−2.784 Bs** |
 
-El tope de 20 a 30 mensajes no cambia esta tabla: el problema no es la
+El tope de mensajes no cambia esta tabla: el problema no es la
 conversación larga, es que **1.000 conversaciones cuestan 1.372 Bs aunque todas
 sean normales**.
 
@@ -148,21 +150,28 @@ mismo. El plan grande no puede vender volumen: tiene que vender otra cosa.
 
 ## 5. Propuesta de planes
 
-Mismos precios, volúmenes que cierran, tope por plan como lo pide Andres:
+Mismos precios, volúmenes que cierran, y **un tope único de 25 mensajes** para
+los tres (corregido en `16-…` §1.4: el tope escalonado que se propuso primero
+estaba al revés, porque el plan chico es el que más barato tiene ser generoso):
 
-| Plan | Precio | Conversaciones | Tope de mensajes por conversación | Qué más incluye |
+| Plan | Precio | Conversaciones | Tope | Qué más incluye |
 |---|---|---|---|---|
-| **Impulso** | 250 Bs | **120** | 20 | Una persona, una agenda |
+| **Impulso** | 250 Bs | **120** | 25 | Una persona, una agenda |
 | **Crecimiento** | 450 Bs | **200** | 25 | Varias personas con agenda propia, recordatorio automático, pedidos |
-| **Pro** | 850 Bs | **300** | 30 | Soporte prioritario, varios números |
+| **Pro** | 850 Bs | **300** | 25 | Soporte prioritario, varios números |
 
 Margen de cada plan según cómo conversen los clientes del comercio:
 
-| Plan | Mezcla realista | Todas de 10 mensajes | Todas de 15 | Todas al tope |
+| Plan | Mezcla realista | Todas de 10 mensajes | Todas de 15 | Todas al tope de 25 |
 |---|---|---|---|---|
-| Impulso · 120 · tope 20 | 16 Bs → **94 %** | 45 Bs → 82 % | 131 Bs → 47 % | 218 Bs → 13 % |
-| Crecimiento · 200 · tope 25 | 122 Bs → **73 %** | 166 Bs → 63 % | 310 Bs → 31 % | 597 Bs → −33 % |
-| Pro · 300 · tope 30 | 273 Bs → **68 %** | 317 Bs → 63 % | 532 Bs → 37 % | 1.178 Bs → −39 % |
+| Impulso · 120 | 19 Bs → **92 %** | 45 Bs → 82 % | 131 Bs → 47 % | 304 Bs → −21 % |
+| Crecimiento · 200 | 122 Bs → **73 %** | 166 Bs → 63 % | 310 Bs → 31 % | 597 Bs → −33 % |
+| Pro · 300 | 251 Bs → **70 %** | 317 Bs → 63 % | 532 Bs → 37 % | 963 Bs → −13 % |
+
+La última columna es el escenario imposible en el que **todas** las
+conversaciones llegan al tope. No describe a ningún comercio real —la mezcla es
+la segunda columna— pero muestra que el tope solo no alcanza: **lo que sostiene
+el margen es el volumen incluido**, y por eso hay que corregirlo.
 
 Mezcla realista: 60 % cortas de 5 mensajes, 30 % típicas de 10, 10 % que llegan
 al tope. Promedio: 8 a 9 mensajes por conversación.
@@ -206,22 +215,31 @@ adelantado, y no hace falta.
 Costo marginal fuera de franquicia: **1,5 Bs por conversación**. El excedente
 actual —50 Bs por 150, 0,33 Bs cada una— está a un quinto del costo.
 
-**Propuesta: 100 Bs por 25 conversaciones** (4 Bs cada una, 2,7× el costo). O
-40 Bs por 10, que es lo mismo y es más fácil de explicar: «cada 10
-conversaciones de más, 40 Bs». Avisar al llegar al 80 %, como ya está previsto.
+**Propuesta: 110 Bs por 25 conversaciones** (4,40 Bs cada una). El precio y el
+tamaño salen del análisis de sensibilidad de `16-…` §2, que además explica por
+qué la bolsa hay que precificarla contra un largo pesimista y no contra el
+promedio. Avisar al llegar al 80 %, como ya está previsto.
 
 ---
 
 ## 6. El tope por plan: qué protege y qué no
 
-El tope de 20 / 25 / 30 mensajes del asistente por ventana **acota la
-conversación**, no el plan:
+> **Corregido en `16-…` §1.4.** Esta sección proponía un tope escalonado —20 en
+> Impulso, 25 en Crecimiento, 30 en Pro—. El análisis de sensibilidad mostró que
+> **está al revés**: ser generoso cuesta 0,8 % del precio en Impulso y 6,4 % en
+> Crecimiento, porque el plan chico vive dentro de la franquicia. Como un plan
+> caro con tope más chico es invendible, **la recomendación vigente es un tope
+> único de 25 para los tres**. Las cifras de abajo se conservan porque muestran
+> el peor caso de cada tamaño de tope.
 
-| Plan | Costo de una conversación al tope | Cuántas al tope hunden el plan |
+El tope de mensajes del asistente por ventana **acota la conversación**, no el
+plan:
+
+| Tope | Costo de una conversación al tope | Cuántas al tope hunden un plan de 200 |
 |---|---|---|
-| Impulso · tope 20 | 2,94 Bs | no se hunde: 120 al tope son 218 Bs contra 250 |
-| Crecimiento · tope 25 | 3,66 Bs | **135 de 200** (68 %) |
-| Pro · tope 30 | 4,38 Bs | **190 de 300** (63 %) |
+| 20 | 2,94 Bs | no hunde a Impulso: 120 al tope son 218 Bs contra 250 |
+| 25 | 3,66 Bs | **135 de 200** (68 %) |
+| 30 | 4,38 Bs | **190 de 300** (63 %) |
 
 Con estos topes, **un cliente abusivo no puede costar más de 4,4 Bs**, y hace
 falta que dos de cada tres conversaciones del comercio sean al tope para que el
@@ -349,6 +367,27 @@ marketing, y **eso sí es una subasta**. La página de precios lo describe como
 vigente y no aparece entre los cambios de octubre, pero **hay que medirlo con un
 cliente real antes de prometerlo**.
 
+### 7.5bis Cuántos productos van al prompt · el corte no es económico
+
+Analizado en `19-catalogo-web-y-precio-por-flujo.md`. Con la caché puesta,
+**500 ítems en el prompt cuestan 0,0585 Bs: menos que medio mensaje**. El token
+dejó de ser la restricción, así que el umbral del catálogo **no se decide por
+costo**:
+
+| Cuántos ítems | Al prompt | Al catálogo web |
+|---|---|---|
+| 1 a 40 | la lista completa con precios | todos |
+| 41 a 200 | resumen: categorías y rango de precios | todos |
+| más de 200 | resumen, y revisar si el chat es el canal | todos |
+
+Lo que fija el umbral es la legibilidad del chat —40 productos ya son 1.200
+caracteres— y la confiabilidad del modelo, que **no se puede calcular y hay que
+probar**.
+
+**Y un detalle que decide si el catálogo web ahorra o no:** mandar el enlace no
+sirve si el asistente sigue conversando el pedido igual. Ahí se pagan los dos
+caminos y el ahorro cae de 9 mensajes a 4.
+
 ### 7.6 Lo que ya no rinde
 
 **Caché del prefijo y elección de modelo.** Ahorran 0,07 y 0,10 Bs sobre 1,5.
@@ -398,9 +437,9 @@ se pensaban en agosto, y donde cada mensaje cuenta.**
 
 | Dice hoy | Qué hacer |
 |---|---|
-| 300 / 1.000 / 2.500 chats | **120 / 200 / 300 conversaciones**, con tope de 20 / 25 / 30 mensajes del asistente por conversación |
-| «1 chat equivale a 24 horas continuas de interacción» | «Una conversación son hasta N respuestas del asistente en 24 horas.» El tope hay que decirlo, no esconderlo: es lo que hace honesto el precio |
-| Excedente 50 Bs por 150 | **40 Bs por 10 conversaciones** |
+| 300 / 1.000 / 2.500 chats | **120 / 200 / 300 conversaciones**, con **tope único de 25** mensajes del asistente por conversación (corregido en `16-…` §1.4: el tope escalonado estaba al revés) |
+| «1 chat equivale a 24 horas continuas de interacción» | «Una conversación son hasta 25 respuestas del asistente en 24 horas.» El tope hay que decirlo, no esconderlo: es lo que hace honesto el precio |
+| Excedente 50 Bs por 150 | **110 Bs por 25 conversaciones** (`16-…` §2.6) |
 | «Difusión masiva por plantillas aprobadas» en Pro | **Nunca incluida.** Marketing cuesta 0,89 Bs por mensaje: 1.000 contactos son 888 Bs, más que el plan. Si se ofrece, por paquete y aparte |
 | «Procesamiento de audios», «responde audios» | No existe. Y cada audio transcrito sería además una respuesta cobrada |
 | «Validación autónoma de comprobantes por QR» | Ningún flujo la ejecuta todavía |
@@ -411,6 +450,35 @@ Y una cláusula nueva en el contrato: **el precio se revisa cuando Meta cambie
 la tarifa**, que puede ocurrir cada trimestre con un mes de aviso. Con el 94 %
 del costo en manos de Meta, comprometer un precio por un año sin esa cláusula
 es tomar el riesgo de Meta por cuenta propia.
+
+### Tres cosas que se decidieron al analizarlas, y que NO hay que hacer
+
+**No cobrar distinto por flujo** (`19-…` §7). Hoy el Flujo B cuesta 25 % más que
+el A, pero con el catálogo web pasa a costar **61 % menos**: la diferencia se da
+vuelta, y fijar precios sobre ella sería el peor momento. Además el sistema ya
+cobra distinto sin decirlo —un comercio con dos flujos tiene dos números y dos
+franquicias, **135,6 Bs menos al mes**— y la diferencia que sí existe ya está
+atada a una función, el recordatorio, que vive en el plan Crecimiento.
+**Lo que sí conviene es usarlo como argumento de venta: sumar el segundo flujo
+sale más barato de lo que parece, y hoy no lo estamos diciendo.**
+
+**No acotar el catálogo del prompt por costo** (`19-…` §2). 500 ítems cuestan
+menos que medio mensaje. El umbral existe, pero lo fijan la legibilidad y la
+confiabilidad del modelo, no el token.
+
+**No construir el nivel intermedio de la arquitectura de n8n** (`20-…` §3). Un
+solo flujo con varios disparadores es posible hoy, pero obliga a que el token
+viaje en los datos de ejecución y es trabajo que se tira cuando llegue Tech
+Provider. Saltarlo, y operar mientras tanto un flujo por cliente con la
+disciplina del `20-…` §5.
+
+### Y una consecuencia de la arquitectura sobre el costo
+
+Resuelto lo de las credenciales, el techo siguiente **no es de arquitectura sino
+de capacidad**: con 300 clientes son unas 360.000 ejecuciones al mes sobre una
+instancia Community en dos núcleos (`20-…` §6). Es plausible, pero **si hubiera
+que agrandar la VM deja de ser gratis** y los 55 USD estimados en §8 se quedan
+cortos. Medirlo antes del cliente cincuenta, no del trescientos.
 
 ---
 
@@ -432,6 +500,31 @@ es tomar el riesgo de Meta por cuenta propia.
 **Lo único que este modelo no puede confirmar desde acá:** el precio de lectura
 de caché de Flash-Lite (supuse 25 % de la entrada). Pesa 0,02 Bs por
 conversación; no cambia nada.
+
+---
+
+## 10bis. Todo lo que hay que medir, en un solo lugar
+
+Las conclusiones de esta serie descansan sobre números que hoy nadie tiene. Están
+repartidos en cinco documentos; acá están juntos, con qué decisión revisa cada
+uno. **Los seis primeros salen de datos que el sistema ya escribe.**
+
+| # | Qué medir | Con qué | Qué decisión revisa |
+|---|---|---|---|
+| 1 | **Distribución del largo de las conversaciones**, no el promedio | `respuestasDelPeriodo` de la ingesta, agrupado | El tope (`16-…` §4) y la unidad de cobro (`15-…` §8) |
+| 2 | **Qué porcentaje llega al tope** | Ídem, contra el tope vigente | Si más de un tercio, la unidad de cobro está mal elegida (`15-…` §7) |
+| 3 | **Ventanas de 24 h por asunto** | Teléfonos que reabren por el mismo motivo | Es lo único que podría rehabilitar la conversación general (`15-…` §8) |
+| 4 | **Dispersión del margen entre comercios** | Consumo por tenant | Si un comercio rinde 85 % y otro 30 %, la unidad reparte mal (`15-…` §8) |
+| 5 | **Mensajes por conversación antes y después del catálogo web** | El mismo comercio, dos meses | Si el ahorro es de 9 mensajes o solo de 4 (`19-…` §9) |
+| 6 | **Ejecuciones por minuto en n8n, con picos** | `ver-ejecuciones.sh` | Si la VM aguanta o hay que pagarla (`20-…` §6) |
+| 7 | **A partir de cuántos ítems el asistente cita mal un precio** | Catálogo real contra la suite del Demo B | Los 40 ítems del corte del prompt (`19-…` §5) |
+| 8 | **Cuántas conversaciones nacen de anuncios** | Conversaciones dentro de una ventana de punto de entrada gratuito | Si el 94 % de ahorro es real y se puede prometer (§7.5) |
+| 9 | **El cargo real de Meta del primer mes** | `pricing_analytics` contra la factura | Todo el modelo. Es la conciliación de fondo |
+
+**La primera pantalla que conviene construir** cubre los cuatro primeros de un
+solo golpe: mensajes por conversación, como distribución, por comercio y por mes.
+Es la misma que pide `15-…` §7 como condición de la decisión sobre la unidad de
+cobro.
 
 ---
 

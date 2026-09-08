@@ -181,6 +181,13 @@ número actual es posible, pero entonces dejarías de poder responder desde el
 celular con ese número, así que hoy no lo recomendamos.'
 ```
 
+> **Por qué «hoy no lo recomendamos» y no «no se puede».** Conectar el número
+> existente se vuelve razonable el día que NovuChat sea Tech Provider ante Meta,
+> porque ahí aparece la coexistencia entre la aplicación y la API
+> (`20-un-flujo-para-todos-los-clientes.md` §3). Es el mismo trámite que
+> generaliza el flujo de n8n. **La redacción propuesta no cierra esa puerta**, y
+> conviene que no la cierre.
+
 **«¿Qué pasa si no pago un mes?»** — hoy dice que se suspende el asistente y se
 conserva el acceso en modo lectura. **Verificar contra el prepago** que sea
 exactamente eso lo que ocurre, incluido el mensaje neutro al cliente final. Si
@@ -303,6 +310,37 @@ tiene la fuente escrita al lado.
 Setup A Medida: no existen como producto. **No hace falta quitarlos** —el setup a
 medida es, por definición, desarrollo— pero conviene que la lámina diga que es
 desarrollo a medida cotizado caso por caso, y no una función disponible.
+
+---
+
+---
+
+## 6bis. Lo que NO hay que cambiar, y por qué conviene saberlo
+
+Al analizar el catálogo y el precio por flujo (`19-…`) aparecieron dos cosas que
+**no generan ningún cambio de texto**, y conviene dejarlo dicho para que nadie
+las abra de nuevo:
+
+- **El tamaño del catálogo no aparece en ninguna página.** Revisado: el sitio
+  habla de «tu catálogo» sin prometer un máximo. El umbral de 40 ítems del
+  `19-…` §5 es una decisión interna de cómo se arma el prompt, **no una promesa
+  al cliente**. No hay que publicarlo ni acotarlo hacia afuera.
+- **No hay precio por flujo, y no lo va a haber.** Los planes se venden por
+  volumen y por funciones, igual que hoy. Ningún texto cambia.
+
+### Una oportunidad comercial que sí falta, y que es una decisión
+
+Un negocio que contrata **los dos flujos** usa dos números, y cada número trae
+1.000 mensajes gratis de Meta: **unos 135 Bs al mes que no pagamos** (`19-…` §7).
+
+Hoy la oferta no dice nada sobre contratar dos flujos: ni el precio ni la
+ventaja. **Es la única recomendación de esta serie que pide contenido nuevo en
+vez de una corrección**, y no la puedo redactar porque depende de una decisión
+comercial que no está tomada: **cuánto cuesta el segundo flujo**.
+
+Cuando se decida, el lugar natural es la página de precios, después de los tres
+planes, y la FAQ con una pregunta del tipo «¿puedo tener reservas y pedidos a la
+vez?».
 
 ---
 
