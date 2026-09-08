@@ -8,6 +8,7 @@ import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { SinSalida } from '../componentes/SinSalida';
 import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../lib/flujos';
+import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.
@@ -228,8 +229,13 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
           titulo="Cuenta"
           pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/cuenta`}>Ver detalle</Link>}
         >
-          <p className={`situacion ${datos.estadoPago === 'vencido' ? 'alerta' : 'ok'}`}>
-            <TextoSeguro valor={datos.estadoPago ?? 'sin datos'} maxLargo={30} />
+          {/* La etiqueta sale de `lib/cuenta`, la misma que usa «Estado de
+              cuenta». Acá se pintaba el valor crudo de la base y en la consola
+              del comercio de demostración se leía «sin_cargo». Y el color se
+              decidía por `!== 'vencido'`, así que un estado desconocido salía
+              en verde: ahora el verde lo tiene que ganar un estado conocido. */}
+          <p className={`situacion ${pagoAlDia(datos.estadoPago) ? 'ok' : 'alerta'}`}>
+            {etiquetaDePago(datos.estadoPago)}
           </p>
           {typeof datos.motivoPago === 'string' && datos.motivoPago !== '' && (
             <p className="text-muted"><TextoSeguro valor={datos.motivoPago} maxLargo={300} /></p>

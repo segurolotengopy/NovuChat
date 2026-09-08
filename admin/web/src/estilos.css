@@ -29,16 +29,61 @@
    -------------------------------------------------------------------------- */
 
 /* ── Armazón de página ──────────────────────────────────────────────────
-   El ancho máximo es del sistema (`--ancho`, 1180px). Sin esto el formulario
-   de configuración se estiraba de borde a borde de un monitor y la línea de
-   texto quedaba ilegible. */
-/* `#raiz > section` y no `section` a secas: las páginas devuelven una sección
+
+   UNA CONSOLA NO ES UNA LANDING, Y ESTE ES EL PUNTO DONDE SE SEPARAN.
+
+   `novuchat.site` corta en 1180px, y con razón: una web es texto corrido y una
+   línea de más de 75 caracteres se lee mal. La consola es otra cosa —tablas de
+   pedidos, cuadrículas de tarjetas, hilos de conversación— y ahí el ancho es
+   INFORMACIÓN: cada columna que entra es una columna que el negocio no tiene
+   que ir a buscar de costado. Con el corte en 1180 sobre un monitor de 1700,
+   las tarjetas del tablero quedaban apretadas en el medio con medio metro de
+   crema vacía al costado.
+
+   Así que acá el ancho es fluido y el tope está muy arriba (1920px, para que
+   una pantalla ultra ancha no deje filas de tabla de dos metros que obligan a
+   barrer la cabeza). Lo que SÍ conserva un tope de lectura es el texto: los
+   párrafos de ayuda por `--ancho-lectura` y los campos de formulario por su
+   propio `max-width`. Ensanchar la página no ensancha la prosa.
+
+   El respiro lateral crece con la pantalla en vez de ser un número fijo: 17.6px
+   en un celular, hasta 64px en un monitor. Un margen de 17px sobre 1900px de
+   ancho se ve como un error de maquetación.
+
+   `#raiz > section` y no `section` a secas: las páginas devuelven una sección
    al tope, pero adentro hay OTRAS secciones —el bloque «Acceso del equipo» del
    ingreso, por ejemplo— que no son páginas y no deben llevar el margen ni el
    respiro de una. Con el selector suelto, ese bloque se llevaba 64px de aire
-   abajo y se despegaba del formulario al que pertenece. */
-#raiz > section { max-width: var(--ancho); margin-inline: auto; padding: var(--space-8) var(--space-4) var(--space-16); }
+   abajo y se despegaba del formulario al que pertenece.
+
+   `#raiz` es el nodo de montaje de `index.html`, y las páginas cuelgan
+   DIRECTAMENTE de él porque las rutas las envuelven en fragmentos, que no
+   crean nodos. Verificado contra la consola desplegada. Si alguna vez una ruta
+   mete un `<div>` de por medio, la página pierde su caja y se nota al toque:
+   el contenido se va contra el borde izquierdo. */
+:root {
+  --ancho-consola: 1920px;
+  --respiro-lateral: clamp(var(--space-4), 3.5vw, var(--space-16));
+}
+#raiz > section {
+  max-width: var(--ancho-consola);
+  margin-inline: auto;
+  padding: var(--space-8) var(--respiro-lateral) var(--space-16);
+}
 #raiz > section > h2:first-child { margin-bottom: var(--space-6); }
+/* La cabecera comparte el ancho y el respiro del contenido. Si no, el nombre
+   de arriba a la izquierda no queda alineado con el título de la pantalla y se
+   lee como dos páginas superpuestas. */
+.cabecera .contenedor {
+  max-width: var(--ancho-consola);
+  padding-inline: var(--respiro-lateral);
+}
+
+/* En un celular el aire de arriba y de abajo también sobra: lo que se quiere
+   ahí es que entre contenido en la primera pantalla. */
+@media (max-width: 40rem) {
+  #raiz > section { padding-top: var(--space-6); padding-bottom: var(--space-10); }
+}
 
 /* ── Cabecera ───────────────────────────────────────────────────────────
    El menú se desborda en un celular angosto antes que empujar «Salir» fuera de
@@ -179,7 +224,9 @@
 }
 .tarjeta {
   display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--space-6);
+  /* El relleno acompaña al ancho de la pantalla: 17.6px en un celular, donde
+     cada píxel de contenido cuenta, y 26.4px de un monitor en adelante. */
+  padding: clamp(var(--space-4), 2.2vw, var(--space-6));
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
