@@ -1645,6 +1645,12 @@ del cliente.
      nodos de n8n, dar de alta la plantilla `carrito_te_espera` en Meta y
      probarlo con un teléfono. Todo lo demás ya está escrito y probado; ver
      `admin/CATALOGO-WEB.md` §5 para el orden de la puesta en marcha.
+   - **Y una condición que NO es una tarea de la lista, sino una compuerta**:
+     antes de que el primer comercio real encienda `catalogoWebActivo`, hay que
+     publicar el catálogo en un segundo sitio de Hosting. Revisado el 08/09 con
+     Andres: se acepta el origen compartido AHORA y se fija ese disparador
+     porque «antes de tener volumen real» no se puede comprobar y por lo tanto
+     no iba a pasar. El porqué del momento elegido está en `SEGURIDAD.md` T-37.
 
 **Decidido por Andres el 07/09**, sobre `Analisis/08-qr-simple-lo-que-cambia.md`:
 

@@ -1418,12 +1418,29 @@ final. El riesgo marginal frente a la consola es chico, y separar orígenes hoy
 —segundo sitio de Hosting, `.firebaserc` con destinos, cambios en el despliegue—
 es trabajo que compite con la brecha del rol `ingesta` y la purga de retención.
 
-**Lo que hay que hacer antes de tener volumen real, y está dicho acá para que no
-se descubra después.** Publicar `/c/**` en un **segundo sitio de Hosting del mismo
-proyecto** (`novuchat-catalogo-prod`), con el mismo `web/dist` y solo las
-reescrituras y cabeceras del catálogo. El costo es de configuración, no de código:
-`SITIO_PUBLICO` ya existe como parámetro justamente para que ese día cambiar el
-dominio del enlace no exija tocar una línea.
+**Lo que hay que hacer, y CUÁNDO.** Publicar `/c/**` en un **segundo sitio de
+Hosting del mismo proyecto** (`novuchat-catalogo-prod`), con el mismo `web/dist` y
+solo las reescrituras y cabeceras del catálogo. El costo es de configuración, no de
+código: `SITIO_PUBLICO` ya existe como parámetro justamente para que ese día
+cambiar el dominio del enlace no exija tocar una línea.
+
+**El disparador es comprobable, y eso es deliberado.** «Antes de tener volumen
+real» no es una condición: es una intención, y una intención sin fecha ni umbral
+se evapora. La condición es esta:
+
+> **Antes de que el PRIMER comercio que no sea de prueba encienda
+> `catalogoWebActivo`.**
+
+Se eligió ese momento y no otro porque es exactamente cuando el riesgo aparece:
+hasta ahí no hay ninguna página pública recibiendo desconocidos, y a partir de ahí
+las hay todas. Es además el único momento en que la separación todavía es barata —
+mover el dominio del enlace después obliga a que los enlaces ya repartidos sigan
+funcionando, o a romperlos.
+
+**Cómo se comprueba que no se pasó por alto:** la condición es una consulta,
+`catalogoWebActivo == true` sobre `/config/negocio` de los comercios reales. Si
+devuelve algo y el catálogo sigue en el sitio de la consola, esta amenaza está
+abierta en producción.
 
 ---
 
