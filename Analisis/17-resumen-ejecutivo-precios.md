@@ -52,13 +52,45 @@ estamos a tiempo de corregirlo sin romperle nada a nadie.
 
 ## 3. Lo que proponemos
 
+### 3.0 Los precios pasan a estar en dólares
+
+**Decisión de Andrés del 8 de septiembre.** La lista de precios se publica en
+dólares y **se cobra en bolivianos al tipo de cambio del día de pago**.
+
+El motivo es sencillo: **todo lo que nos cuesta el servicio se paga en dólares**
+—Meta, Google— y hasta ahora lo cobrábamos en bolivianos. Cada vez que el
+paralelo se movía, nuestro margen se movía con él, sin que nadie decidiera nada.
+Con la lista en dólares eso se termina.
+
+| Plan | Antes | **Ahora** | Equivale a |
+|---|---|---|---|
+| Impulso | 250 Bs | **USD 20** | 240 Bs |
+| Crecimiento | 450 Bs | **USD 40** | 480 Bs |
+| Pro | 850 Bs | **USD 70** | 840 Bs |
+| Instalación | 800 Bs | **USD 65** | 780 Bs |
+| Instalación a medida, desde | 1.500 Bs | **USD 125** | 1.500 Bs |
+
+Casi no cambia lo que paga el cliente: el único que sube es Crecimiento, un 7 %,
+a cambio de que la escalera quede en 20, 40 y 70, que se dice mucho mejor que
+250, 450 y 850.
+
+**Hay una letra chica que sí es importante, y no es de redacción.** «Al tipo de
+cambio del día» no alcanza: en Bolivia el oficial y el paralelo están muy
+separados, y un plan de USD 20 cobrado al oficial son **139 Bs en vez de 240**.
+Eso es un 42 % menos de ingreso, decidido por una ambigüedad.
+
+**Lo que proponemos es que NovuChat publique su propio tipo de cambio**, visible
+en la consola, válido para todos los pagos de ese mes. Es un número que el
+cliente puede consultar antes de pagar, no cambia día a día, y evita la
+discusión. **Esto hay que definirlo antes de firmar el primer contrato.**
+
 ### 3.1 Mismos precios, menos conversaciones
 
 | Plan | Precio | Antes | **Ahora** |
 |---|---|---|---|
-| Impulso | 250 Bs | 300 | **120** |
-| Crecimiento | 450 Bs | 1.000 | **200** |
-| Pro | 850 Bs | 2.500 | **300** |
+| Impulso | USD 20 | 300 | **120** |
+| Crecimiento | USD 40 | 1.000 | **200** |
+| Pro | USD 70 | 2.500 | **300** |
 
 Parece una rebaja fuerte, y hay que decirlo con honestidad, pero **120
 conversaciones al mes son cuatro por día**, y 300 son diez por día. Para los
@@ -96,7 +128,7 @@ Hoy el sistema de cobro tiene una bolsa de **150 conversaciones por 50 Bs**. Con
 las tarifas nuevas, **cada bolsa que vendamos nos hace perder 176 Bs**, que es
 más de lo que deja un plan Impulso entero.
 
-Proponemos **25 conversaciones por 110 Bs**. Es una compra chica, que el cliente
+Proponemos **25 conversaciones por USD 10**. Es una compra chica, que el cliente
 aprueba sin pensarlo, y mantiene una regla importante: **al que compra bolsas dos
 meses seguidos le tiene que convenir subir de plan**. Con estos números le
 conviene, que es lo que queremos.
@@ -176,9 +208,10 @@ ya estaban y conviene resolverlas ahora.
 
 | Dónde | Qué dice | Problema |
 |---|---|---|
+| Planes | 250 / 450 / 850 Bs | Pasan a **USD 20 / 40 / 70**, cobrados en bolivianos al tipo de cambio |
 | Planes | 300 / 1.000 / 2.500 chats | Cambian a 120 / 200 / 300 |
 | Planes | «1 chat equivale a 24 horas continuas de interacción» | Falta decir el tope de 25 mensajes |
-| Planes | Excedente 50 Bs por 150 | Cambia a 110 Bs por 25 |
+| Planes | Excedente 50 Bs por 150 | Cambia a **USD 10 por 25** |
 | Plan Crecimiento y lámina de solución | «Procesamiento de audios», «responde audios» | **No existe.** El sitio ya lo marca «próximamente»; la presentación lo promete |
 | Plan Corporativo | «Solución de fidelización por uso» | No existe |
 | Plan Corporativo | «Difusión masiva por plantillas» | La vía existe, pero **cada mensaje de difusión cuesta 0,89 Bs**: mandar a 1.000 contactos vale 888 Bs, más que el plan. Si se ofrece, tiene que ser aparte y por paquete |
@@ -216,12 +249,16 @@ Para que quede claro qué se mantiene, porque es la mayor parte:
 1. **Aprobar las cantidades nuevas** (120 / 200 / 300) o proponer otras. Es la
    única decisión que bloquea todo lo demás.
 2. **Aprobar el tope de 25** y cómo lo contamos.
-3. **Aprobar la bolsa** de 25 por 110 Bs.
+3. **Aprobar la bolsa** de 25 por USD 10.
+4. **Definir qué tipo de cambio se usa** y dónde se publica. Es la única de las
+   cuatro que no es de precios sino de contrato, y sin ella no se puede facturar
+   (§3.0).
 
 **Antes de firmar cualquier contrato:**
 
-4. **Corregir la presentación y el sitio** con las instrucciones del documento 18.
-5. **Incluir una cláusula de revisión de precio.** Meta puede cambiar la tarifa
+5. **Corregir la presentación y el sitio** con las instrucciones del documento 18.
+6. **Incluir dos cláusulas:** una que diga cómo se convierte el dólar a
+   bolivianos, y otra de **revisión de precio**. Meta puede cambiar la tarifa
    cada trimestre con un mes de aviso, y hoy Meta es el 94 % de lo que nos cuesta
    el servicio. Comprometer un precio por un año sin esa cláusula es tomar el
    riesgo de Meta por cuenta propia.

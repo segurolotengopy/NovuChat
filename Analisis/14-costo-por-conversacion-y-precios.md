@@ -156,9 +156,12 @@ estaba al revés, porque el plan chico es el que más barato tiene ser generoso)
 
 | Plan | Precio | Conversaciones | Tope | Qué más incluye |
 |---|---|---|---|---|
-| **Impulso** | 250 Bs | **120** | 25 | Una persona, una agenda |
-| **Crecimiento** | 450 Bs | **200** | 25 | Varias personas con agenda propia, recordatorio automático, pedidos |
-| **Pro** | 850 Bs | **300** | 25 | Soporte prioritario, varios números |
+| **Impulso** | **USD 20** | **120** | 25 | Una persona, una agenda |
+| **Crecimiento** | **USD 40** | **200** | 25 | Varias personas con agenda propia, recordatorio automático, pedidos |
+| **Pro** | **USD 70** | **300** | 25 | Soporte prioritario, varios números |
+
+**Los precios pasan a estar denominados en dólares** (decisión de Andres,
+08/09). El porqué y la letra chica, en §5ter.
 
 Margen de cada plan según cómo conversen los clientes del comercio:
 
@@ -215,10 +218,83 @@ adelantado, y no hace falta.
 Costo marginal fuera de franquicia: **1,5 Bs por conversación**. El excedente
 actual —50 Bs por 150, 0,33 Bs cada una— está a un quinto del costo.
 
-**Propuesta: 110 Bs por 25 conversaciones** (4,40 Bs cada una). El precio y el
+**Propuesta: USD 10 por 25 conversaciones** (120 Bs, 4,80 Bs cada una). El precio y el
 tamaño salen del análisis de sensibilidad de `16-…` §2, que además explica por
 qué la bolsa hay que precificarla contra un largo pesimista y no contra el
 promedio. Avisar al llegar al 80 %, como ya está previsto.
+
+---
+
+### 5ter. Los precios en dólares
+
+**Decidido el 08/09: la lista de precios se denomina en dólares y se cobra en
+bolivianos al tipo de cambio del día de pago.**
+
+Es la corrección de fondo del riesgo que este documento venía señalando: **todo
+el costo se paga en dólares y todo el ingreso se cobraba en bolivianos**. Con la
+lista en dólares, ese descalce desaparece y el margen deja de depender del
+paralelo.
+
+#### La conversión
+
+A 12 Bs por dólar, redondeando a números vendibles:
+
+| Concepto | Antes | **Ahora** | Equivale a | Contra el precio viejo |
+|---|---|---|---|---|
+| Impulso | 250 Bs | **USD 20** | 240 Bs | −4 % |
+| Crecimiento | 450 Bs | **USD 40** | 480 Bs | +7 % |
+| Pro | 850 Bs | **USD 70** | 840 Bs | −1 % |
+| Instalación estándar | 800 Bs | **USD 65** | 780 Bs | −2 % |
+| Instalación a medida, desde | 1.500 Bs | **USD 125** | 1.500 Bs | 0 % |
+| Bolsa de 25 conversaciones | 110 Bs | **USD 10** | 120 Bs | +9 % |
+
+Los márgenes con la mezcla realista quedan en **92 % / 74 % / 70 %**, y la
+escalera de precios pasa a ser ×1 / ×2 / ×3,5, que se dice más fácil que
+250 / 450 / 850.
+
+**El único que sube de verdad es Crecimiento**, un 7 %. La alternativa neutra
+sería USD 38, pero es un número que no se dice bien. Con USD 40 la escalera
+queda redonda y el aumento es menor que el error del propio tipo de cambio.
+
+#### La letra chica, y es importante
+
+**«Al tipo de cambio del día de pago» no alcanza como cláusula.** En Bolivia el
+oficial y el paralelo están muy separados, y la diferencia no es un detalle: un
+plan de USD 20 cobrado al oficial son **139 Bs en vez de 240**. El margen
+porcentual aguanta —el costo es bajo— pero **el ingreso real cae un 42 %**.
+
+Con 300 clientes eso son unos **2.500 dólares al mes de diferencia**, decididos
+por una ambigüedad de redacción.
+
+**Recomendación: que NovuChat publique su propio tipo de cambio**, visible en la
+consola, vigente para todos los pagos del mes. Tres razones:
+
+1. **Elimina la ambigüedad** sin depender de una fuente externa que en Bolivia no
+   existe de forma indiscutible para el paralelo.
+2. **Elimina el incentivo a demorar el pago** esperando que el tipo de cambio se
+   mueva, que es lo que produce un tipo de cambio «del día».
+3. **Es defendible ante el cliente**: un número publicado, estable durante el
+   mes, que puede consultar antes de pagar.
+
+La alternativa —fijar el tipo de cambio por trimestre— es más previsible para el
+cliente pero devuelve parte del riesgo a NovuChat.
+
+#### Lo que esto exige del sistema
+
+- **El prepago tiene que registrar el tipo de cambio aplicado a cada pago**, en
+  `/tenants/{t}/pagos/{id}`. Sin eso no se puede reconstruir una factura ni
+  responder un reclamo. Es un campo nuevo.
+- **La consola tiene que mostrar el precio en dólares y el importe en bolivianos**
+  del mes en curso.
+- **La factura boliviana se emite en bolivianos**, por el importe convertido. La
+  lista en dólares es la referencia, no lo que dice el papel.
+
+#### Lo que NO resuelve
+
+La cláusula de revisión por cambio de tarifa de Meta **sigue haciendo falta**.
+Son dos riesgos distintos: el cambiario lo resuelve denominar en dólares; el de
+que Meta suba la tarifa de servicio, no. Meta puede moverla cada trimestre con un
+mes de aviso, y es el 94 % del costo.
 
 ---
 
@@ -437,16 +513,18 @@ se pensaban en agosto, y donde cada mensaje cuenta.**
 
 | Dice hoy | Qué hacer |
 |---|---|
-| 300 / 1.000 / 2.500 chats | **120 / 200 / 300 conversaciones**, con **tope único de 25** mensajes del asistente por conversación (corregido en `16-…` §1.4: el tope escalonado estaba al revés) |
+| 250 / 450 / 850 Bs y 300 / 1.000 / 2.500 chats | **USD 20 / 40 / 70** y **120 / 200 / 300 conversaciones**, con **tope único de 25** mensajes del asistente por conversación (corregido en `16-…` §1.4: el tope escalonado estaba al revés) |
 | «1 chat equivale a 24 horas continuas de interacción» | «Una conversación son hasta 25 respuestas del asistente en 24 horas.» El tope hay que decirlo, no esconderlo: es lo que hace honesto el precio |
-| Excedente 50 Bs por 150 | **110 Bs por 25 conversaciones** (`16-…` §2.6) |
+| Excedente 50 Bs por 150 | **USD 10 por 25 conversaciones** (`16-…` §2.6) |
 | «Difusión masiva por plantillas aprobadas» en Pro | **Nunca incluida.** Marketing cuesta 0,89 Bs por mensaje: 1.000 contactos son 888 Bs, más que el plan. Si se ofrece, por paquete y aparte |
 | «Procesamiento de audios», «responde audios» | No existe. Y cada audio transcrito sería además una respuesta cobrada |
 | «Validación autónoma de comprobantes por QR» | Ningún flujo la ejecuta todavía |
 | «Reserva de mesas», «Colegios», «Consultas SQL», «Integración a ERPs», «Fidelización» | No existen; rotular como próximamente o quitar |
 | «El 80 % no vuelve»; «391 % más conversión» | Sin fuente la primera; la segunda contradice al sitio, que dice «siete veces» citando HBR |
 
-Y una cláusula nueva en el contrato: **el precio se revisa cuando Meta cambie
+Y **dos** cláusulas nuevas en el contrato. La primera: **los precios están en
+dólares y se cobran en bolivianos al tipo de cambio que NovuChat publica cada
+mes** (§5ter). La segunda: **el precio se revisa cuando Meta cambie
 la tarifa**, que puede ocurrir cada trimestre con un mes de aviso. Con el 94 %
 del costo en manos de Meta, comprometer un precio por un año sin esa cláusula
 es tomar el riesgo de Meta por cuenta propia.

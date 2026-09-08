@@ -340,6 +340,7 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Precio del catálogo | Opcional. Ausente significa «a consultar»; cero significa gratis y son cosas distintas | 07/09 |
 | Envío de plantillas | Por `httpRequest` con el JSON armado a mano, no por el nodo de WhatsApp, que manda `template.language` sin `code` | 06/09 |
 | Marcar como recordado | Solo con el identificador de mensaje que devuelve Meta. Un envío fallido no se marca | 06/09 |
+| **Moneda de la lista de precios** | **Dólares.** Se cobra en bolivianos al tipo de cambio del día de pago. Corrige el descalce de fondo: el costo se paga en USD y el ingreso se cobraba en Bs. USD 20 / 40 / 70, instalación USD 65, bolsa USD 10. **Falta decidir de dónde sale el tipo de cambio**: «del día» es ambiguo en Bolivia y la diferencia entre oficial y paralelo es un 42 % del ingreso. Recomendado en `Analisis/14` §5ter: que lo publique NovuChat y valga el mes | 08/09 |
 | **Unidad de cobro** | **Se sigue con la conversación de 24 h.** No se pasa a cobro por respuesta ni a conversación general. **Sujeta a revisión con los parámetros del §8 de `Analisis/15-unidad-de-cobro.md`**, a los tres meses del primer cliente pagando o antes si se dispara alguno. Condiciones de la decisión: publicar el tope de mensajes y mostrar los mensajes en la consola | 08/09 |
 
 ## Decisiones pendientes

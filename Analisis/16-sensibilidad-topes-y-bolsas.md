@@ -246,7 +246,14 @@ tiene que pasar. La bolsa es un puente, no un sustituto.
 
 ### 2.6 Recomendación sobre las bolsas
 
-**Bolsa de 25 conversaciones por 110 Bs**, en reemplazo de las 150 por 50 Bs.
+**Bolsa de 25 conversaciones por USD 10**, en reemplazo de las 150 por 50 Bs.
+
+> **Actualizado el 08/09:** los precios pasaron a estar denominados en dólares
+> (`14-…` §5ter). Los 110 Bs de este análisis equivalen a USD 9,17; se redondea
+> a **USD 10** (120 Bs), que deja **69 % de margen esperado y 24 % en el peor
+> caso** de la selección adversa — algo mejor que los 110 Bs analizados abajo.
+> El resto del análisis se conserva en bolivianos porque es donde se hicieron
+> las mediciones.
 
 - Es el tamaño que mantiene bajo el riesgo de tarifa (§2.4) y el que sobrevive a
   la selección adversa (§2.3).
@@ -277,7 +284,7 @@ que la bolsa deja de rendir con un comercio muy conversador.
 | | Está hoy en el prepago | Propuesto | Por qué |
 |---|---|---|---|
 | **Tope de mensajes** | No existe | **25, único para los tres planes** | El escalonado está al revés económicamente y es invendible al revés. §1.3 |
-| **Bolsa** | 150 conversaciones por 50 Bs | **25 conversaciones por 110 Bs** | La actual pierde 176 Bs por venta. §2.1 |
+| **Bolsa** | 150 conversaciones por 50 Bs | **25 conversaciones por USD 10** | La actual pierde 176 Bs por venta. §2.1 |
 | Vencimiento de la bolsa | No vencen | Sin cambio | Con bolsas chicas el riesgo de tarifa es tolerable. §2.4 |
 
 Los dos cambios son de datos, no de arquitectura: viven en la tabla de planes de

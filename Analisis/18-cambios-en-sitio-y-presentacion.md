@@ -19,6 +19,88 @@ copiando de ahí los textos ya aprobados.
 
 ---
 
+## 0. Antes que nada: la moneda cambia, y eso toca código
+
+**Los precios pasan a estar denominados en dólares** y se cobran en bolivianos al
+tipo de cambio (`14-…` §5ter). No es solo cambiar números: el campo se llama
+`precioBs` y está usado en nueve lugares, más el JSON-LD.
+
+### 0.1 Renombrar el campo
+
+`src/contenido/tipos.ts`, **dos interfaces**:
+
+```ts
+// interface Plan, línea 13
+precioBs: number;   →   precioUsd: number;
+// interface Instalacion / Excedente, línea 41
+precioBs: number;   →   precioUsd: number;
+```
+
+### 0.2 Los nueve usos
+
+| Archivo | Qué dice hoy | Qué debe decir |
+|---|---|---|
+| `src/pages/precios.astro:37` | `{plan.precioBs} Bs <small>/ mes</small>` | `USD {plan.precioUsd} <small>/ mes</small>` |
+| `src/pages/precios.astro:81` | `cuesta {excedente.precioBs} Bs` | `cuesta USD {excedente.precioUsd}` |
+| `src/pages/index.astro:232` | `{plan.precioBs} Bs <small>/ mes</small>` | `USD {plan.precioUsd} <small>/ mes</small>` |
+| `src/pages/soluciones/[vertical].astro:83` | `{plan.precioBs} Bs <small>/ mes</small>` | `USD {plan.precioUsd} <small>/ mes</small>` |
+| `src/pages/terminos.astro:45` | `cuesta {excedente.precioBs} Bs` | `cuesta USD {excedente.precioUsd}` |
+| `src/pages/en/index.astro:99` | `{plan.precioBs} Bs <small>/ month</small>` | `USD {plan.precioUsd} <small>/ month</small>` |
+| `src/pages/en/precios.astro:32` | `{plan.precioBs} Bs <small>/ month</small>` | `USD {plan.precioUsd} <small>/ month</small>` |
+| `src/pages/en/precios.astro:72` | `costs {excedente.precioBs} Bs` | `costs USD {excedente.precioUsd}` |
+| `src/components/DatosEstructurados.astro:64` | `price: String(plan.precioBs)` | `price: String(plan.precioUsd)` |
+
+### 0.3 La moneda del JSON-LD — no olvidar
+
+`src/components/DatosEstructurados.astro:65`:
+
+```ts
+priceCurrency: 'BOB',   →   priceCurrency: 'USD',
+```
+
+**Es el que menos se ve y el que más cuesta si se olvida**: Google publica ese
+precio en los resultados de búsqueda. Con `BOB` y el valor 20, un buscador
+anunciaría el plan a 20 bolivianos.
+
+### 0.4 La nota de conversión, que hay que agregar en tres lugares
+
+**En la página de precios**, cerca de las tarjetas:
+
+```
+Los precios están expresados en dólares estadounidenses. El cobro se realiza en
+bolivianos, al tipo de cambio vigente el día del pago, que publicamos en tu
+consola al inicio de cada mes.
+```
+
+**En los términos** (`src/pages/terminos.astro`), con más precisión, porque es
+donde se dirime un desacuerdo:
+
+```
+Los precios se expresan en dólares estadounidenses. La facturación se emite en
+bolivianos por el importe resultante de aplicar el tipo de cambio publicado por
+NovuChat, vigente al momento del pago. Ese tipo de cambio se publica en la
+consola del comercio y se mantiene durante el mes calendario.
+```
+
+**En la FAQ**, una pregunta nueva:
+
+```
+pregunta: '¿En qué moneda pago?'
+respuesta: 'Los precios están en dólares y el cobro se hace en bolivianos, al
+tipo de cambio que publicamos en tu consola al comenzar cada mes. Ese número no
+cambia durante el mes, así que sabes exactamente cuánto vas a pagar antes de
+hacerlo.'
+```
+
+> ⚠️ **Esto depende de una decisión que todavía no está tomada:** de dónde sale
+> el tipo de cambio. `14-…` §5ter recomienda que lo publique NovuChat y valga
+> todo el mes, justamente para poder escribir la cláusula de arriba. **Si se
+> decide otra cosa, los tres textos cambian.** No publicar nada hasta que esté
+> resuelto: una cláusula ambigua sobre el tipo de cambio, en Bolivia, es un 42 %
+> de ingreso en discusión.
+
+---
+
 ## 1. `src/contenido/precios.es.ts` — planes y excedente
 
 ### 1.1 Volúmenes de los tres planes
@@ -36,7 +118,16 @@ quedan incoherentes.
 | 52 | `conversaciones: 2500,` | `conversaciones: 300,` |
 | 56 | `{ texto: '2.500 conversaciones al mes' },` | `{ texto: '300 conversaciones al mes' },` |
 
-Los `precioBs` (250, 450, 850) **no se tocan**.
+Y los precios, ahora en dólares (§0.1 renombró el campo):
+
+| Línea | Antes | Después |
+|---|---|---|
+| 19 | `precioBs: 250,` | `precioUsd: 20,` |
+| 33 | `precioBs: 450,` | `precioUsd: 40,` |
+| 51 | `precioBs: 850,` | `precioUsd: 70,` |
+
+Y en `instalacion`: `estandar: 800` → `estandar: 65`; `aMedidaDesde: 1500` →
+`aMedidaDesde: 125`.
 
 ### 1.2 Excedente
 
@@ -46,7 +137,7 @@ Línea 78:
 // antes
 excedente: { precioBs: 50, conversaciones: 150 },
 // después
-excedente: { precioBs: 110, conversaciones: 25 },
+excedente: { precioUsd: 10, conversaciones: 25 },
 ```
 
 ### 1.3 El tope de mensajes, que hoy no está
@@ -124,7 +215,7 @@ avisamos al llegar al 80 %.'
 
 // después
 'Si superas las conversaciones de tu plan, cada bloque adicional de 25
-conversaciones cuesta 110 Bs y no vence. Te avisamos al llegar al 80 % de tu
+conversaciones cuesta USD 10 y no vence. Te avisamos al llegar al 80 % de tu
 plan, y nunca se te cobra sin que lo apruebes.'
 ```
 
@@ -146,14 +237,19 @@ en español.
 |---|---|
 | `conversaciones: 300 / 1000 / 2500` | `120 / 200 / 300` |
 | `'300 conversations a month'` y equivalentes | `'120 conversations a month'`, etc. |
-| `excedente: { precioBs: 50, conversaciones: 150 }` | `{ precioBs: 110, conversaciones: 25 }` |
+| `excedente: { precioBs: 50, conversaciones: 150 }` | `{ precioUsd: 10, conversaciones: 25 }` |
+| `precioBs: 250 / 450 / 850` | `precioUsd: 20 / 40 / 70` |
 
 **Primer párrafo de `comoContamos`:** quitar «no matter how many» y agregar el
 tope: `The assistant replies up to 25 times within that conversation; if more is
 needed, we let you know so someone on your team can take over.`
 
 **Glosario, entrada `Overage`:** `each additional block of 25 conversations
-costs 110 Bs and never expires.`
+costs USD 10 and never expires.`
+
+**Y la nota de conversión**, en la página de precios en inglés: `Prices are in US
+dollars. Billing is issued in bolivianos at the exchange rate NovuChat publishes
+in your console at the start of each month.`
 
 Agregar a los tres planes: `{ texto: 'Up to 25 assistant replies per
 conversation' }`.
@@ -262,10 +358,14 @@ no vuelvan a divergir.
 
 | Elemento | Antes | Después |
 |---|---|---|
+| Plan Base, precio | «250 Bs/mes» | «**USD 20**/mes» |
+| Plan Crecimiento, precio | «450 Bs/mes» | «**USD 40**/mes» |
+| Plan Corporativo, precio | «850 Bs/mes» | «**USD 70**/mes» |
+| Pie, nuevo | — | «Precios en dólares. El cobro se hace en bolivianos al tipo de cambio publicado.» |
 | Plan Base | «Hasta **300 chats**» | «Hasta **120 conversaciones**» |
 | Plan Crecimiento | «Hasta **1,000 chats**» | «Hasta **200 conversaciones**» |
 | Plan Corporativo | «Hasta **2,500 chats**» | «Hasta **300 conversaciones**» |
-| Pie | «1 chat equivale a 24 horas continuas de interacción. Paquete extra: 50 Bs / 150 chats.» | «Una conversación son 24 horas continuas con un mismo cliente, con hasta 25 respuestas del asistente. Paquete extra: 110 Bs / 25 conversaciones.» |
+| Pie | «1 chat equivale a 24 horas continuas de interacción. Paquete extra: 50 Bs / 150 chats.» | «Una conversación son 24 horas continuas con un mismo cliente, con hasta 25 respuestas del asistente. Paquete extra: USD 10 / 25 conversaciones.» |
 | Crecimiento | «+ Procesamiento de Audios» | **Quitar**, o rotular «Próximamente» |
 | Corporativo | «Solución de Fidelización (Por Uso)» | **Quitar**, o rotular «Próximamente» |
 
@@ -305,6 +405,11 @@ hecho, en dos materiales que un cliente puede ver juntos.
 tiene la fuente escrita al lado.
 
 ### Lámina 11 — Setup
+
+**Los dos precios pasan a dólares:** «800 Bs» tachado → «**USD 65**» tachado, y
+«Desde 1,500 Bs» → «**Desde USD 125**». La oferta de setup bonificado no cambia:
+sigue siendo 0.
+
 
 «Consultas SQL en tiempo real» e «Integración a ERPs/Sistemas Propios» en el
 Setup A Medida: no existen como producto. **No hace falta quitarlos** —el setup a
@@ -360,3 +465,10 @@ vez?».
       `pendientes.ts` y **no** al texto de la página: ese es el mecanismo que ya
       existe para no publicar datos sin confirmar.
 - [ ] La cláusula de revisión de precio está en el contrato, no solo en el sitio.
+- [ ] **Está decidido de dónde sale el tipo de cambio** y dónde se publica
+      (§0.4). Sin eso no se publica ninguno de los tres textos de conversión.
+- [ ] `priceCurrency` dice `USD` y no `BOB`, y ninguna página muestra un precio
+      en dólares con la palabra «Bs» al lado. `grep -rn "precioBs" src/` no
+      devuelve nada.
+- [ ] La presentación y el sitio muestran **la misma moneda**. Es el error más
+      fácil de cometer al cambiar solo uno de los dos.
