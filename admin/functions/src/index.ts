@@ -16,6 +16,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 
 import { registrar } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';
+import { TOPE_MAXIMO } from './planes.js';
 export { notificarReclamo } from './reclamos.js';
 
 const db = () => getFirestore();
@@ -429,6 +430,12 @@ export const quitarUsuario = onCall(async (peticion) => {
 // `motivoVisible` es el texto que ve EL COMERCIO. Es su relación comercial y
 // tiene derecho a conocerla. No confundir con el mensaje que recibe el CLIENTE
 // FINAL por WhatsApp, que es neutro y no menciona pagos (ver T-18).
+//
+// `topeMensajes24h` es el AJUSTE POR COMERCIO del tope de respuestas por
+// conversación (ventana de 24 h). El estándar son 25, igual para los tres
+// planes y por calidad de servicio, no por plan (ver `planes.ts`). Acá solo se
+// registra la excepción: `null` la quita y vuelve a regir el estándar;
+// ausente la deja como está.
 // ---------------------------------------------------------------------------
 const ESTADOS_PAGO = new Set(['al_dia', 'pendiente', 'vencido']);
 
@@ -443,18 +450,39 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
 
   const monto = Number(datos['montoMensual']);
   const vence = Number(datos['proximoVencimiento']);
+  const plan = texto(datos['plan'], 40) || 'basico';
+
+  // El ajuste del tope: entero entre 1 y TOPE_MAXIMO, `null` para quitarlo.
+  // Cualquier otra cosa se rechaza: un tope mal cargado no puede quedar
+  // «sin tope» ni en cero en silencio.
+  const ajuste = datos['topeMensajes24h'];
+  let topeMensajes24h: number | ReturnType<typeof FieldValue.delete> | undefined;
+  if (ajuste === null) {
+    topeMensajes24h = FieldValue.delete();
+  } else if (ajuste !== undefined) {
+    const n = Number(ajuste);
+    if (!Number.isInteger(n) || n < 1 || n > TOPE_MAXIMO) {
+      throw new HttpsError('invalid-argument', `El tope debe ser un entero entre 1 y ${TOPE_MAXIMO}.`);
+    }
+    topeMensajes24h = n;
+  }
 
   await db().doc(`tenants/${tenantId}/cuenta/estado`).set({
-    plan: texto(datos['plan'], 40) || 'basico',
+    plan,
     estadoPago,
     montoMensual: Number.isFinite(monto) && monto >= 0 ? monto : 0,
     moneda: datos['moneda'] === 'USD' ? 'USD' : 'BOB',
     ...(Number.isFinite(vence) ? { proximoVencimiento: Timestamp.fromMillis(vence) } : {}),
     motivoVisible: texto(datos['motivoVisible'], 300),
+    ...(topeMensajes24h !== undefined ? { topeMensajes24h } : {}),
     actualizadoEn: Timestamp.now(),
   }, { merge: true });
 
-  await auditar(tenantId, 'estado_cuenta', uid, { estadoPago });
+  await auditar(tenantId, 'estado_cuenta', uid, {
+    estadoPago, plan,
+    ...(typeof topeMensajes24h === 'number' ? { topeMensajes24h } : {}),
+    ...(ajuste === null ? { topeMensajes24h: 'quitado' } : {}),
+  });
   return { ok: true };
 });
 

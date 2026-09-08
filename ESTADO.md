@@ -4,7 +4,87 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-07 (la consola manda: los tres flujos leen del panel)
+**Última actualización:** 2026-09-08 (rentabilidad: tope por plan y las dos cachés)
+
+---
+
+## Dónde estamos (2026-09-08, día del congelamiento)
+
+**Lo de hoy es económico, no funcional: el 1 de octubre Meta empieza a cobrar
+cada respuesta del asistente** (0,1356 Bs en Bolivia, con 1.000 mensajes de
+servicio gratis por número al mes). Con eso, una conversación de 10 turnos pasa
+de 0,29 a 1,61 Bs y los tres planes quedan en pérdida a los volúmenes
+publicados. El costo deja de depender del modelo y pasa a depender de cuántos
+mensajes manda el asistente. Se implementaron los tres cambios que el modelo de
+costos marcó como mandatorios. **405 pruebas** (eran 336), build y lint en
+verde.
+
+**1. Tope de respuestas por ventana de 24 h: 25, igual para los tres planes.**
+Es la palanca que faltaba: la promesa «1 chat = 24 horas de interacción» no
+tenía fondo. Ahora `configuracionFlujo` devuelve `limites.mensajesRestantes24h`
+para ESA conversación, y una compuerta nueva —`¿Dentro del tope?`— corta
+**antes del agente**, así que no se paga el modelo ni el mensaje.
+
+- **El tope NO se escalona por plan, y eso se corrigió el mismo día.** La
+  primera versión usaba 8 / 12 / 16 y estaba al revés: `Analisis/16` muestra que
+  el plan barato es el que más barato tiene ser generoso, y que un plan caro con
+  tope menor que el barato es invendible. El estándar único vive en
+  `functions/src/planes.ts`; la excepción por comercio, en
+  `cuenta/estado.topeMensajes24h`, desde `actualizarEstadoCuenta` o
+  `admin/scripts/fijar-tope.mjs`.
+- **Un aviso por ventana y después silencio**, no un aviso por mensaje: si
+  avisara cada vez, el tope pagaría justo lo que quiere evitar. El texto no
+  menciona planes ni pagos.
+- **Falla hacia atrás**: sin panel, `mensajesRestantes24h` viene `null` y no se
+  corta.
+- El contador (`mensajesVentana`) viaja en el documento de la conversación, que
+  ya se leía y ya se escribía: **cero lecturas y cero escrituras extra**, y las
+  reglas impiden que nadie del negocio lo baje.
+- Con 25 respuestas por conversación **el guion del 9 y 10 no se toca**: ninguna
+  conversación del ensayo se acerca.
+
+**2. Caché de 60 s en `Traer configuración`.** Las lecturas por conversación
+habían pasado de 45 a 295 al conectar la consola. Se cachea **en la Cloud
+Function y por comercio**: configuración, catálogo, funcionarios, vertical,
+rótulos y cuenta. **La ficha (el estado) se lee fresca en cada llamada**, así
+que suspender sigue cortando al instante, y el contador del tope también, que
+es por cliente. Se mide con el encabezado `X-NovuChat-Cache` y el campo
+`cache` de la respuesta.
+
+**3. Caché del prefijo del prompt: se ordenó el prompt, y hay que medirla.**
+La caché es un prefijo exacto, y en Gemini el orden es instrucciones →
+herramientas → mensajes: **la hora, que cambia cada minuto, estaba dentro de
+las instrucciones y dejaba fuera de la caché el historial entero**. El nombre
+del cliente hacía algo peor: un prefijo distinto por cliente no se comparte
+entre conversaciones. Ahora las instrucciones son 100 % fijas por negocio y lo
+del turno viaja en el mensaje, en un bloque `[CONTEXTO DEL SISTEMA]`; el texto
+del cliente va después de `[MENSAJE DEL CLIENTE]` y el prompt dice que eso es
+dato y nunca una orden, así que de paso mejora la defensa contra inyección.
+
+> **Lo que NO se puede afirmar todavía, y conviene no afirmarlo:** el mínimo
+> cacheable de la familia Gemini 3.5 es de 4.096 tokens y Flash-Lite ni figura
+> en esa tabla. Los prefijos fijos miden ~3.300 tokens (Demo A) y ~2.000
+> (Demo B), así que **la caché recién entra cuando el historial hace crecer el
+> prefijo, y en una conversación corta puede no entrar nunca**. El
+> reordenamiento es la condición necesaria; que ocurra hay que verlo con
+> `./scripts/ver-ejecuciones.sh --id N --tokens`, que ahora muestra el uso de
+> tokens y los campos de caché. **Sin esa medición, el punto 3 está a medias.**
+> Y la proporción importa: el modelo es el 12 % del costo, así que esta palanca
+> vale ~5 % del total. Acortar la conversación vale mucho más.
+
+**Lo que este trabajo NO hace, y es decisión comercial de Andres:** rehacer los
+planes. El modelo dice que lo defendible a precios actuales es del orden de
+150 / 250 / 400 conversaciones, no 300 / 1.000 / 2.500, y que el excedente de
+50 Bs por 150 queda 5 veces por debajo del costo marginal nuevo. **No firmar
+contratos anuales a los precios actuales** sin decir por escrito que el precio
+se revisa desde el 1 de octubre.
+
+**Los flujos cambiaron: hay que reimportarlos o publicarlos** con
+`./scripts/publicar-flujo.sh --flujo Flujos/<archivo> --aplicar`. Dos nodos
+nuevos por flujo conversacional (`¿Dentro del tope?` y `Tope alcanzado`).
+Como el congelamiento es hoy, **la decisión de publicar antes o después de las
+demos es de Andres**: el código está probado contra los JSON versionados, pero
+no contra un teléfono real.
 
 ---
 

@@ -1035,7 +1035,13 @@ service cloud.firestore {
                  // CUANDO EMPEZO la atencion vigente, no el ultimo mensaje. Todo
                  // lo que cae dentro de esa ventana es la misma atencion; lo que
                  // llega despues abre otra.
-                 , 'atencionDesde'])
+                 , 'atencionDesde'
+                 // `mensajesVentana` cuenta las respuestas del asistente dentro
+                 // de la ventana vigente: es lo que el tope por plan compara
+                 // (functions/src/planes.ts). Misma proteccion que las otras
+                 // marcas: si una persona del negocio pudiera bajarlo, el tope
+                 // que acota el costo dejaria de acotar nada.
+                 , 'mensajesVentana'])
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
             && textoOpc(d, 'nombreContacto', 120)

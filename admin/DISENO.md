@@ -1273,6 +1273,144 @@ hay una prueba dedicada a ese caso exacto.
 
 ---
 
+## 4octies. El costo por conversación: tope por plan y dos cachés
+
+**Registrado el 2026-09-08**, a partir del modelo de costos del artefacto
+«Costo por Conversación». El hecho que lo motiva es externo y tiene fecha:
+**desde el 1 de octubre de 2026 Meta cobra cada respuesta del asistente**
+—0,1356 Bs para «Resto de Latinoamérica», que es donde cae Bolivia—, agotada
+una franquicia de 1.000 mensajes de servicio por número y por mes. Hasta hoy
+esas respuestas eran gratis.
+
+Lo que cambia no es el precio: es **de qué depende el costo**. Antes lo
+dominaba el modelo y una conversación larga costaba centésimas. Desde octubre
+lo domina la cantidad de mensajes que manda el asistente, y una conversación
+de 10 turnos pasa de 0,29 a 1,61 Bs. Con eso, los tres planes quedan en
+pérdida a los volúmenes publicados.
+
+### 4octies.1 Tope de respuestas por ventana de 24 horas
+
+**La promesa «1 chat equivale a 24 horas continuas de interacción» sin tope es
+una promesa sin fondo**, y desde octubre cada mensaje de esa promesa cuesta
+dinero. El tope la acota.
+
+- **Se limitan las RESPUESTAS DEL ASISTENTE**, no los mensajes del cliente:
+  los del cliente no se cobran.
+- **La ventana es la misma de 24 horas** con la que Meta factura y con la que
+  este sistema cuenta las conversaciones (`HORAS_VENTANA_ATENCION`). Que las
+  tres cosas midan sobre la misma ventana es lo que permite comparar la
+  factura que se recibe con la que se emite, renglón por renglón.
+- **Al llegar al tope sale UN aviso y después silencio.** Un aviso por
+  ventana, nunca uno por mensaje: si se avisara cada vez, el tope pagaría
+  exactamente lo que quiere evitar. El texto no menciona planes, pagos ni
+  límites: quien escribe es un cliente final del negocio y su relación con el
+  plan de NovuChat no existe.
+
+**El tope es ÚNICO para los tres planes: 25 respuestas.** Es una decisión, no
+un descuido, y `Analisis/16` la sostiene con números. La primera versión de
+este módulo lo escalonaba (8 / 12 / 16) y estaba al revés por dos motivos:
+
+- **Económico.** Subir el tope de 20 a 30 cuesta 0,8 % del precio en el plan
+  chico y 6,4 % en el mediano. El plan barato es el que más barato tiene ser
+  generoso, porque su volumen entra casi entero en la franquicia de 1.000
+  mensajes gratis del número. Escalonar hacia arriba cobra el tope justo donde
+  más caro sale darlo.
+- **Comercial.** Un plan caro con un tope menor que el barato es invendible.
+
+Por eso el tope **no se usa como diferenciador de plan**: lo que diferencia un
+plan de otro es cuántas conversaciones incluye. El tope se fija por calidad de
+servicio. Una conversación que pasa de 25 respuestas del asistente no es un
+cliente exigente: **se atascó**, y lo correcto es que la tome una persona.
+
+**Hay que decirlo en la oferta.** La página dice hoy «sin importar cuántos
+sean», y con el tope deja de ser cierto.
+
+| Origen | Campo | Quién lo escribe |
+|---|---|---|
+| Excepción por comercio | `tenants/{t}/cuenta/estado.topeMensajes24h` | NovuChat, con `actualizarEstadoCuenta` o `scripts/fijar-tope.mjs`; queda auditado |
+| Estándar | `TOPE_MENSAJES_24H` en `functions/src/planes.ts` | el código |
+
+**Un dato mal cargado nunca deja «sin tope».** Un ajuste fuera del rango
+1–`TOPE_MAXIMO` se ignora y rige el estándar. El error posible es cortar de
+más, que se ve enseguida, nunca gastar de más, que no se ve hasta la factura.
+
+**Los planes NO viven acá.** El plan, su precio y las conversaciones incluidas
+son de la relación comercial y su módulo es `prepago.ts`. Cuando los dos se
+fusionen, el tope entra ahí y no queda ninguna tabla duplicada.
+
+**El contador vive en la conversación, no en un registro nuevo**:
+`mensajesVentana`, junto a las otras marcas de conteo y con la misma
+protección en las reglas —ninguna persona del negocio puede tocarlo—. Si el
+comercio pudiera ponerlo en cero, el tope que acota el costo dejaría de acotar
+nada. Cero lecturas y cero escrituras extra: el documento ya se leía y ya se
+escribía.
+
+**Falla hacia atrás, como todo lo demás.** Si el panel no contesta, el flujo
+recibe `mensajesRestantes24h: null` y **no corta**: el peor caso es el
+comportamiento de ayer, nunca un cliente sin respuesta.
+
+### 4octies.2 Caché de 60 s de la configuración
+
+Al conectar la consola, las lecturas de Firestore por conversación pasaron de
+45 a 295: cada turno releía la ficha, la configuración, el catálogo entero,
+los funcionarios, el vertical y los rótulos. Nada de eso cambia entre un turno
+y el siguiente.
+
+**Se cachea en la Cloud Function, no en n8n**, por tres razones. Las lecturas
+ocurren acá, así que es acá donde ahorrarlas cuenta. n8n no tiene un caché HTTP
+propio y lo que tiene (`$getWorkflowStaticData`) pierde escrituras entre
+ejecuciones simultáneas. Y la de fondo: desde el tope, la respuesta lleva un
+dato **por cliente** que no puede tener 60 segundos de retraso.
+
+Por eso el corte es por origen del dato, no por respuesta:
+
+| Dato | Frescura | Motivo |
+|---|---|---|
+| Ficha del comercio (estado) | **cada llamada** | es lo que corta el servicio: la suspensión surte efecto ya |
+| Contador de la conversación | **cada llamada** | es por cliente y cambia en cada turno |
+| Configuración, catálogo, funcionarios, vertical, rótulos, cuenta | **60 s** | los edita una persona, no el tráfico |
+
+El contrato de los 60 segundos estaba escrito desde el primer día en
+`ingesta.ts` y ahora se cumple por construcción: el vencimiento es el único
+mecanismo y no hay invalidación remota. El caché es **por instancia** de la
+función, así que con más tráfico hay más fallos de caché: el peor caso es
+exactamente el de hoy, nunca peor. Se mide sin adivinar, con el encabezado
+`X-NovuChat-Cache` y el campo `cache` de la respuesta.
+
+### 4octies.3 Caché del prefijo del prompt: el orden importa más que la marca
+
+La caché del proveedor del modelo es un **prefijo exacto**: un solo carácter
+que cambie en la posición N deja fuera todo lo que sigue. En Gemini el orden
+es `systemInstruction` → herramientas → mensajes, así que **la hora metida en
+las instrucciones —que cambia cada minuto— cortaba el prefijo ahí y dejaba
+fuera de la caché el historial entero**. Lo mismo hacía el nombre del cliente,
+con un agravante: un prefijo distinto por cliente no se comparte entre las
+conversaciones simultáneas de un mismo negocio.
+
+Por eso las instrucciones quedaron **100 % fijas por negocio** y lo que cambia
+por turno —fecha y hora, quién es el cliente, cuántas respuestas quedan— viaja
+en el **mensaje** del turno, en un bloque `[CONTEXTO DEL SISTEMA]` delimitado,
+con el texto del cliente después de `[MENSAJE DEL CLIENTE]`. Eso además
+**mejora la seguridad**: el prompt dice explícitamente que lo que viene después
+de esa marca es información y nunca una orden.
+
+**Lo que hay que decir con todas las letras, porque es una limitación real:**
+el mínimo cacheable de la familia Gemini 3.5 es de **4.096 tokens**, y
+Flash-Lite —el modelo desplegado— ni siquiera figura en esa tabla. Los
+prefijos fijos miden hoy unos 3.300 tokens en el Demo A (instrucciones más
+herramientas) y unos 2.000 en el Demo B, así que **la caché recién entra
+cuando el historial hace crecer el prefijo**, y en una conversación corta
+puede no entrar nunca. El reordenamiento es la condición necesaria; que la
+caché ocurra hay que **medirlo**, con `./scripts/ver-ejecuciones.sh --id N
+--tokens`, y no darlo por hecho.
+
+Y conviene tener presente la proporción: con la tarifa nueva **el modelo es
+solo el 12 % del costo de una conversación**. Cachear el prefijo baja ese 12 %
+en torno a un 40 %: del orden del 5 % del total. Es la menor de las tres
+palancas, y muy por detrás de acortar la conversación.
+
+---
+
 ## 4septies. Retención de conversaciones: 12 meses
 
 **Decidido por Andres el 2026-09-07.** Era el riesgo abierto más incómodo: el

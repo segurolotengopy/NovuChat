@@ -120,6 +120,38 @@ evitarlo en vivo). Recomendado: **(a)**.
    sustituido por un secreto real dentro del JSON (criterio D-15 — tokens y
    claves viven solo en credenciales).
 
+## 5bis. El tope de respuestas por conversación (desde el 2026-09-08)
+
+Los dos flujos conversacionales traen dos nodos nuevos entre `¿Comercio
+operativo?` y el agente:
+
+```
+¿Comercio operativo? → ¿Dentro del tope? → (agente…)
+                              ↓ no
+                       Tope alcanzado → Responder al cliente
+                                      → Reportar mensaje (saliente)
+```
+
+- `Traer configuración` ahora manda el **teléfono del cliente** en el cuerpo:
+  sin eso la consola no puede decir cuántas respuestas quedan en ESA
+  conversación.
+- `¿Dentro del tope?` compara `mensajesRestantes24h`. **`null` no corta**: si el
+  panel no contestó, el asistente responde como siempre.
+- `Tope alcanzado` manda **un** aviso cuando el contador llega a cero y no manda
+  nada cuando ya está en negativo. El texto de respaldo está en `Config base`
+  (`mensajeTopeAlcanzado`) y no menciona planes ni pagos.
+- El tope estándar (25, igual para los tres planes) vive en la consola
+  (`admin/functions/src/planes.ts`), no en el flujo. La excepción por comercio
+  se fija con `admin/scripts/fijar-tope.mjs` y surte efecto en menos de 60 s.
+
+**El prompt del agente cambió de forma, no de contenido.** Las instrucciones ya
+no llevan la fecha ni los datos del cliente: eso viaja en el mensaje del turno,
+en un bloque `[CONTEXTO DEL SISTEMA]`, y el texto del cliente va después de
+`[MENSAJE DEL CLIENTE]`. Es lo que permite que el proveedor del modelo cachee
+el prefijo. **Si alguien vuelve a meter `$now` en el `systemMessage`, la caché
+se pierde entera**; hay una prueba que lo impide
+(`admin/pruebas/tope-y-cache-flujos.test.ts`).
+
 ## 6. Notas de compatibilidad
 
 - Los JSON usan los nodos estándar de n8n (WhatsApp Trigger, IF, Set, Code,

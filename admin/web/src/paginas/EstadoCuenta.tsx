@@ -3,6 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import { TOPE_MENSAJES_24H } from '../../../functions/src/planes';
 
 interface Cuenta {
   plan?: unknown;
@@ -11,6 +12,8 @@ interface Cuenta {
   moneda?: unknown;
   proximoVencimiento?: { toDate(): Date };
   motivoVisible?: unknown;
+  /** Ajuste por comercio del tope de respuestas por conversación (24 h). */
+  topeMensajes24h?: unknown;
 }
 
 const ETIQUETA: Record<string, string> = {
@@ -82,8 +85,24 @@ export function EstadoCuenta() {
                 : '—'}
             </td>
           </tr>
+          <tr>
+            <th>Respuestas por conversación</th>
+            <td>
+              {typeof cuenta.topeMensajes24h === 'number'
+                ? `${cuenta.topeMensajes24h} (ajuste para este negocio)`
+                : `${TOPE_MENSAJES_24H} (estándar)`}
+            </td>
+          </tr>
         </tbody>
       </table>
+
+      <p className="ayuda">
+        Cada conversación admite hasta {TOPE_MENSAJES_24H} respuestas del
+        asistente en 24 horas, igual en todos los planes. Al llegar a ese
+        número el asistente avisa una vez y deja de responder hasta que la
+        ventana se renueve. Una conversación que pasa de ahí normalmente se
+        atascó, y conviene que la tome una persona del negocio.
+      </p>
 
       {typeof cuenta.motivoVisible === 'string' && cuenta.motivoVisible.length > 0 && (
         <p className="ayuda" role="status">

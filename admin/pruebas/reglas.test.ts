@@ -837,6 +837,30 @@ describe('Personas atendidas', () => {
     }));
   });
 
+  it('la ingesta escribe el contador de la ventana de 24 h', async () => {
+    // `mensajesVentana` cuenta las respuestas del asistente dentro de la
+    // ventana vigente. Es lo que compara el tope por plan (planes.ts) para
+    // decidir si el asistente sigue respondiendo o corta.
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), {
+      telefono: '59170000001', ultimoMensaje: 'Hola', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 3, periodoContado: '2026-09',
+      mensajesVentana: 4,
+    }));
+  });
+
+  it('nadie del negocio puede bajar el contador de la ventana', async () => {
+    // Si el comercio pudiera ponerlo en cero, el tope que acota el costo de
+    // cada conversación dejaría de acotar nada: bastaría un clic para que el
+    // asistente respondiera sin límite y la factura de Meta la pagáramos
+    // nosotros. Misma protección que `periodoContado`.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/conversaciones/c1`), {
+      mensajesVentana: 0,
+    }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
+      mensajesVentana: 0,
+    }));
+  });
+
   it('nadie escribe las métricas desde el navegador', async () => {
     await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`), {
       personasAtendidas: 1, mensajes: 1,

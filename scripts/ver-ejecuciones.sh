@@ -10,13 +10,16 @@
 #   ./scripts/ver-ejecuciones.sh --n 25             # cuantas traer
 #   ./scripts/ver-ejecuciones.sh --id 123           # una, nodo por nodo
 #   ./scripts/ver-ejecuciones.sh --id 123 --nodo agendar_cita   # un nodo
+#   ./scripts/ver-ejecuciones.sh --id 123 --tokens   # uso de tokens del modelo,
+#                                                    # incluidos los cacheados, y
+#                                                    # el encabezado X-NovuChat-Cache
 #
 # NO imprime el contenido de los mensajes salvo que se pida un nodo concreto:
 # por ahi pasan conversaciones de clientes finales.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-N=10; SOLO_ERROR=0; ID=""; NODO=""; ENV_FILE=".env"
+N=10; SOLO_ERROR=0; ID=""; NODO=""; TOKENS=0; ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,9 +27,10 @@ while [[ $# -gt 0 ]]; do
     --error) SOLO_ERROR=1; shift ;;
     --id)    ID="${2:?}"; shift 2 ;;
     --nodo)  NODO="${2:?}"; shift 2 ;;
+    --tokens) TOKENS=1; shift ;;
     --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*) ENV_FILE="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
@@ -56,10 +60,42 @@ if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ HTTP %s\033[0m\n' "$COD"; head -c 300 "$TMP"; echo; exit 1
 fi
 
-ID="$ID" NODO="$NODO" python3 - "$TMP" <<'PY'
+ID="$ID" NODO="$NODO" TOKENS="$TOKENS" python3 - "$TMP" <<'PY'
 import json, os, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 uno, nodo_pedido = os.environ.get("ID", ""), os.environ.get("NODO", "")
+tokens = os.environ.get("TOKENS", "0") == "1"
+
+CLAVES_DE_USO = ("token", "cache", "usage", "x-novuchat-cache")
+
+def buscar_uso(obj, ruta="", hallados=None, prof=0):
+    """Recorre la salida de un nodo y junta todo lo que hable de tokens o de cache.
+
+    Sirve para VERIFICAR la cache del prefijo del prompt sin adivinar como
+    nombra cada proveedor el conteo (Gemini: cachedContentTokenCount /
+    cache_read; Anthropic: cache_read_input_tokens) ni como lo guarda n8n.
+    Si no aparece ningun campo de cache, es que el proveedor no lo informo o
+    n8n no lo conservo: eso tambien es un dato."""
+    if hallados is None:
+        hallados = []
+    if prof > 12:
+        return hallados
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            kl = str(k).lower()
+            if any(c in kl for c in CLAVES_DE_USO) and not isinstance(v, (dict, list)):
+                hallados.append((f"{ruta}.{k}".lstrip("."), v))
+            elif any(c in kl for c in CLAVES_DE_USO) and isinstance(v, dict):
+                for k2, v2 in v.items():
+                    if not isinstance(v2, (dict, list)):
+                        hallados.append((f"{ruta}.{k}.{k2}".lstrip("."), v2))
+                buscar_uso(v, f"{ruta}.{k}", hallados, prof + 1)
+            else:
+                buscar_uso(v, f"{ruta}.{k}", hallados, prof + 1)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj[:5]):
+            buscar_uso(v, f"{ruta}[{i}]", hallados, prof + 1)
+    return hallados
 V, R, A, G, FIN = "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[0;90m", "\033[0m"
 
 def error_de(datos):
@@ -100,6 +136,13 @@ if uno:
                 print(f"      {R}{str(err.get('message','')).splitlines()[0][:220]}{FIN}")
                 if err.get("description"):
                     print(f"      {G}{str(err['description'])[:220]}{FIN}")
+            if tokens:
+                vistos = set()
+                for ruta, v in buscar_uso(c.get("data") or {}):
+                    if (ruta, str(v)) in vistos:
+                        continue
+                    vistos.add((ruta, str(v)))
+                    print(f"      {A}{ruta} = {v}{FIN}")
             if nodo_pedido:
                 salida = ((c.get("data") or {}).get("main") or [[]])[0]
                 print(f"      {G}items de salida: {len(salida)}{FIN}")

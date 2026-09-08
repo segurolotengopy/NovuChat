@@ -6,6 +6,15 @@ import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
 } from './prompt.js';
+import {
+  HORAS_VENTANA_ATENCION, estadoDelTope, topeMensajes24h, ventanaVencida,
+  type MarcasDeTope,
+} from './planes.js';
+import { cacheConTtl } from './cache.js';
+
+// La ventana la define `planes.ts`, que es donde viven los valores comerciales;
+// se reexporta para que quien ya la importaba de acá no tenga que cambiar.
+export { HORAS_VENTANA_ATENCION };
 
 /**
  * =========================================================================
@@ -118,8 +127,13 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
  * finales, así que el lado seguro del error es dejar de guardarlos.
  */
 async function estadoDelComercio(tenantId: string): Promise<string> {
+  return (await fichaDelComercio(tenantId)).estado;
+}
+
+/** La ficha del comercio. Se lee fresca en cada llamada: es lo que corta el servicio. */
+async function fichaDelComercio(tenantId: string): Promise<{ estado: string }> {
   const tenant = await getFirestore().doc(`tenants/${tenantId}`).get();
-  return String(tenant.get('estado') ?? 'desconocido');
+  return { estado: String(tenant.get('estado') ?? 'desconocido') };
 }
 
 /**
@@ -253,6 +267,12 @@ export interface MarcasDeConteo {
    * larga con pausas se habría partido en varias.
    */
   atencionDesde?: { toMillis?: () => number } | unknown;
+  /**
+   * Respuestas del asistente enviadas dentro de la ventana vigente. Es lo que
+   * el tope por plan compara (`planes.ts`). Vuelve a cero cuando un mensaje del
+   * cliente abre una ventana nueva; no se toca en ningún otro caso.
+   */
+  mensajesVentana?: unknown;
 }
 
 /**
@@ -277,9 +297,9 @@ export interface MarcasDeConteo {
  * explicar por qué no coinciden.
  *
  * ES UN VALOR COMERCIAL: subirlo cobra menos y bajarlo cobra más, así que se
- * cambia con Andres y no en una revisión de código.
+ * cambia con Andres y no en una revisión de código. Por eso el número vive en
+ * `planes.ts`, junto con los demás valores comerciales, y acá solo se usa.
  */
-export const HORAS_VENTANA_ATENCION = 24;
 
 /**
  * ¿Este mensaje es SOLO una cortesía?
@@ -334,6 +354,12 @@ export interface Conteo {
   interaccion: boolean;
   /** Valor que hay que dejar guardado en la conversación. */
   respuestasDelPeriodo: number;
+  /**
+   * Respuestas del asistente en la ventana vigente, ya con este mensaje. Se
+   * guarda tal cual; es lo que lee el tope por plan. Cero al abrir una
+   * ventana nueva.
+   */
+  mensajesVentana: number;
 }
 
 /**
@@ -352,11 +378,9 @@ export function contadoresDelMensaje(
   // PERSONA ATENDIDA y ATENCIÓN son cifras distintas y se cuentan distinto.
   // Un teléfono que consulta tres veces es UNA persona atendida y TRES
   // atenciones, siempre que esas tres veces caigan en ventanas distintas.
-  const ancla = marcas.atencionDesde as { toMillis?: () => number } | undefined;
-  const anclaMs = typeof ancla?.toMillis === 'function' ? ancla.toMillis() : null;
   // Sin ancla es la primera consulta de esta conversación, así que abre.
-  const vencida = anclaMs === null
-    || ahoraMs - anclaMs >= HORAS_VENTANA_ATENCION * 60 * 60 * 1000;
+  // La ventana es la misma que mide el tope por plan: una sola definición.
+  const vencida = ventanaVencida(marcas as MarcasDeTope, ahoraMs);
 
   // Solo un mensaje ENTRANTE abre una atención. Una respuesta nuestra no inicia
   // nada: si contara, un recordatorio saliente inventaría una consulta que el
@@ -373,6 +397,18 @@ export function contadoresDelMensaje(
     ? Math.max(0, Math.trunc(guardadas))
     : 0;
   const respuestasDelPeriodo = previas + (direccion === 'saliente' ? 1 : 0);
+
+  // RESPUESTAS EN LA VENTANA, para el tope por plan. Se reinicia SOLO cuando
+  // este mensaje abre una atención nueva; si la ventana venció pero este
+  // mensaje no abre (una cortesía, o una respuesta nuestra sobre una ventana
+  // vieja), el contador viejo se descarta igual: lo que se mida contra el
+  // tope es siempre de la ventana vigente, nunca de la de ayer.
+  const guardadoVentana = marcas.mensajesVentana;
+  const previasVentana = !vencida && typeof guardadoVentana === 'number'
+    && Number.isFinite(guardadoVentana)
+    ? Math.max(0, Math.trunc(guardadoVentana))
+    : 0;
+  const mensajesVentana = atencion ? 0 : previasVentana + (direccion === 'saliente' ? 1 : 0);
 
   return {
     atencion,
@@ -391,6 +427,7 @@ export function contadoresDelMensaje(
     // interacción; la marca sigue impidiendo que se cuente dos veces.
     interaccion: marcas.periodoInteraccion !== periodo && respuestasDelPeriodo >= 2,
     respuestasDelPeriodo,
+    mensajesVentana,
   };
 }
 
@@ -547,6 +584,9 @@ export const ingesta = onRequest(
         // transacción el valor leído es el que vale, y así el número guardado y
         // la decisión que se tomó con él no pueden discrepar.
         respuestasDelPeriodo: conteo.respuestasDelPeriodo,
+        // Igual que el anterior: calculado dentro de la transacción, no
+        // incrementado. Es lo que el tope por plan lee en el turno siguiente.
+        mensajesVentana: conteo.mensajesVentana,
         ...(conteo.interaccion ? { periodoInteraccion: periodo } : {}),
         ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
       }, { merge: true });
@@ -608,7 +648,7 @@ export const ingesta = onRequest(
  * viene en el webhook, y recibe con qué comercio está hablando, con qué flujo y
  * con qué datos.
  *
- * TRES COSAS QUE CONVIENE ENTENDER:
+ * CUATRO COSAS QUE CONVIENE ENTENDER:
  *
  * 1. LA RESPUESTA VIENE ROTULADA. `instruccionesExtra` va en su propia clave,
  *    separada del resto, para que el flujo la inserte en una sección delimitada
@@ -624,9 +664,83 @@ export const ingesta = onRequest(
  *    tiene nada que ver con la relación comercial, y enterarlo dañaría al
  *    comercio y a NovuChat por igual.
  *
- * 3. n8n NO DEBE CACHEAR ESTO MÁS DE 60 SEGUNDOS. La suspensión es una palanca
- *    comercial y tiene que surtir efecto ya. Un caché largo la vuelve inútil.
+ * 3. LO DEL COMERCIO SE CACHEA 60 SEGUNDOS; LO DEL CLIENTE, NUNCA. La ficha
+ *    (estado) se lee fresca en cada llamada, así que la suspensión corta al
+ *    instante. Configuración, catálogo, funcionarios, vertical, rótulos y
+ *    cuenta se leen una vez por minuto por comercio (ver `cache.ts`): es lo que
+ *    baja las lecturas por conversación de ~300 a ~50. El documento de la
+ *    conversación —el contador del tope— se lee en cada turno. n8n NO debe
+ *    cachear la respuesta: ya viene cacheado lo que puede esperar, y el resto
+ *    no puede.
+ *
+ * 4. `limites` ES LA PALANCA DE COSTO. Con el teléfono del cliente en el cuerpo
+ *    (`{ telefono }`), la respuesta dice cuántas respuestas le quedan al
+ *    asistente en la ventana de 24 h de esa conversación, según el plan del
+ *    comercio (`planes.ts`). El flujo corta ANTES del modelo cuando llega a
+ *    cero: no se paga el modelo ni el mensaje de Meta. Sin teléfono (el flujo
+ *    de recordatorios) se informa el tope entero.
  */
+
+/** Vigencia de lo cacheado por comercio. ES EL CONTRATO: no más de 60 s. */
+export const CACHE_CONFIGURACION_MS = 60 * 1000;
+
+/** Todo lo que se lee de Firestore por comercio y no cambia de un turno al otro. */
+interface PaqueteDelComercio {
+  negocio: Record<string, unknown>;
+  catalogo: Array<Record<string, unknown> & { id: string }>;
+  funcionarios: Array<{ id: string; datos: Record<string, unknown> }>;
+  /** `config/{vertical}`; `null` si el flujo no tiene documento propio o no existe. */
+  especifica: Record<string, unknown> | null;
+  /** `plataforma/cobroSimulado`, solo para el flujo de venta. */
+  rotulos: Record<string, unknown> | undefined;
+  /** `cuenta/estado`: plan y ajuste del tope. */
+  cuenta: Record<string, unknown>;
+}
+
+const cacheDelComercio = cacheConTtl<PaqueteDelComercio>(CACHE_CONFIGURACION_MS);
+
+async function cargarPaquete(tenantId: string, flujo: string): Promise<PaqueteDelComercio> {
+  const db = getFirestore();
+  // Documento específico del vertical, si le corresponde uno. Un comercio de
+  // gastronomía no lee configuración de agenda y viceversa: no hace falta
+  // filtrar después porque directamente no se pide.
+  const docVertical = documentoDeVertical(flujo);
+
+  // Lecturas en paralelo. n8n resuelve «quién atiende una limpieza facial» EN
+  // MEMORIA sobre estas listas, sin consultas adicionales: son colecciones
+  // chicas (200 servicios, 50 funcionarios como tope) y traerlas enteras cuesta
+  // menos que cualquier consulta con índice por servicio.
+  const [config, catalogo, funcionarios, especifica, rotulos, cuenta] = await Promise.all([
+    db.doc(`tenants/${tenantId}/config/negocio`).get(),
+    db.collection(`tenants/${tenantId}/catalogo`).where('activo', '==', true).limit(200).get(),
+    db.collection(`tenants/${tenantId}/funcionarios`).where('activo', '==', true).limit(50).get(),
+    docVertical ? db.doc(`tenants/${tenantId}/config/${docVertical}`).get() : Promise.resolve(null),
+    // Rótulos del cobro simulado: los mismos para TODOS los comercios.
+    flujo === 'venta' ? db.doc('plataforma/cobroSimulado').get() : Promise.resolve(null),
+    db.doc(`tenants/${tenantId}/cuenta/estado`).get(),
+  ]);
+
+  return {
+    negocio: (config.data() ?? {}) as Record<string, unknown>,
+    catalogo: catalogo.docs.map((d) => ({ id: d.id, ...d.data() })),
+    funcionarios: funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
+    especifica: especifica?.exists ? (especifica.data() as Record<string, unknown>) : null,
+    rotulos: rotulos?.data(),
+    cuenta: (cuenta.data() ?? {}) as Record<string, unknown>,
+  };
+}
+
+/**
+ * El teléfono del cliente final, si n8n lo mandó. DATO NO CONFIABLE: solo se
+ * usa, validado, para leer UN documento de la propia colección del comercio.
+ * Con cualquier otra forma se ignora y se contesta como si no viniera.
+ */
+function telefonoDelCuerpo(cuerpo: unknown): string | null {
+  if (typeof cuerpo !== 'object' || cuerpo === null) return null;
+  const t = (cuerpo as Record<string, unknown>)['telefono'];
+  return typeof t === 'string' && /^[0-9]{8,15}$/.test(t) ? t : null;
+}
+
 export const configuracionFlujo = onRequest(
   {
     region: REGION,
@@ -648,17 +762,16 @@ export const configuracionFlujo = onRequest(
     // vacío haría que el comercio no recibiera NINGUNA configuración de vertical
     // y el flujo se quedaría sin datos sin decir por qué.
     const phoneNumberId = ruta.phoneNumberId;
-    const comercio = {
-      tenantId: ruta.tenantId,
-      flujo: ruta.flujo || 'agendamiento',
-      estado: await estadoDelComercio(ruta.tenantId),
-    };
+    const tenantId = ruta.tenantId;
+    const flujo = ruta.flujo || 'agendamiento';
 
-    const db = getFirestore();
+    // LA FICHA SE LEE FRESCA SIEMPRE, antes que nada y fuera del caché. Es la
+    // única lectura que no puede esperar un minuto: es la que corta el servicio.
+    const ficha = await fichaDelComercio(tenantId);
 
-    if (comercio.estado !== 'activo') {
+    if (ficha.estado !== 'activo') {
       respuesta.status(409).json({
-        estado: comercio.estado,
+        estado: ficha.estado,
         // Texto neutro. No menciona pagos, deudas ni suspensiones.
         mensajeCortesia:
           'Gracias por escribirnos. En este momento no podemos atenderle por ' +
@@ -667,32 +780,28 @@ export const configuracionFlujo = onRequest(
       return;
     }
 
-    // Tres lecturas en paralelo. n8n resuelve «quién atiende una limpieza
-    // facial» EN MEMORIA sobre estas listas, sin consultas adicionales: son
-    // colecciones chicas (200 servicios, 50 funcionarios como tope) y traerlas
-    // enteras cuesta menos que cualquier consulta con índice por servicio.
-    // Documento específico del vertical, si le corresponde uno. Un comercio de
-    // gastronomía no lee configuración de agenda y viceversa: no hace falta
-    // filtrar después porque directamente no se pide.
-    const docVertical = documentoDeVertical(comercio.flujo);
-
-    const [config, catalogo, funcionarios, especifica, rotulos] = await Promise.all([
-      db.doc(`tenants/${comercio.tenantId}/config/negocio`).get(),
-      db.collection(`tenants/${comercio.tenantId}/catalogo`)
-        .where('activo', '==', true).limit(200).get(),
-      db.collection(`tenants/${comercio.tenantId}/funcionarios`)
-        .where('activo', '==', true).limit(50).get(),
-      docVertical
-        ? db.doc(`tenants/${comercio.tenantId}/config/${docVertical}`).get()
-        : Promise.resolve(null),
-      // Rótulos del cobro simulado: los mismos para TODOS los comercios.
-      comercio.flujo === 'venta'
-        ? db.doc('plataforma/cobroSimulado').get()
+    const telefono = telefonoDelCuerpo(peticion.body);
+    const [paquete, conversacion] = await Promise.all([
+      cacheDelComercio.obtener(`${tenantId}:${flujo}`, () => cargarPaquete(tenantId, flujo)),
+      // El contador del tope, POR CLIENTE y FRESCO. Una lectura.
+      telefono
+        ? getFirestore().doc(`tenants/${tenantId}/conversaciones/wa_${telefono}`).get()
         : Promise.resolve(null),
     ]);
+    const p = paquete.valor;
+    const negocio = p.negocio;
+    const especifica = p.especifica;
 
-    const negocio = (config.data() ?? {}) as Record<string, unknown>;
-    const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
+    // --- LÍMITES DEL PLAN ---------------------------------------------------
+    // Cuántas respuestas le quedan al asistente en esta conversación. La
+    // decisión es pura (`planes.ts`) y está probada aparte; acá solo se le dan
+    // las marcas guardadas y el plan.
+    const topeResuelto = topeMensajes24h(p.cuenta['topeMensajes24h']);
+    const tope = estadoDelTope(
+      (conversacion?.data() ?? {}) as MarcasDeTope, topeResuelto.tope, Date.now(),
+    );
+
+    const cobroReal = especifica?.['cobroReal'] as Record<string, unknown> | undefined;
     // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
     // Un comercio a medio configurar tiene que quedar en el camino que no mueve
     // dinero, nunca en el que sí.
@@ -706,7 +815,7 @@ export const configuracionFlujo = onRequest(
     // vector más serio: un comercio que se fija `estadoComercio: 'activo'` y
     // sigue siendo atendido después de que lo suspendieron.
     const derivados = {
-      estadoComercio: comercio.estado,          // de la ficha del tenant
+      estadoComercio: ficha.estado,             // de la ficha del tenant
       phoneNumberId,                            // del número que validó la firma
       horarioAtencion: horarioAtencion(negocio['horarios']),
       datosQueNoTenemos: datosQueNoTenemos(negocio),
@@ -722,9 +831,16 @@ export const configuracionFlujo = onRequest(
     }
     datosDelNegocio['datosQueNoTenemos'] = derivados.datosQueNoTenemos;
 
+    const docVertical = documentoDeVertical(flujo);
+
+    // Para medir el caché desde afuera sin abrir la consola de Google: el
+    // encabezado se ve en la ejecución de n8n y el campo queda en el JSON.
+    respuesta.set('X-NovuChat-Cache', paquete.origen === 'memoria' ? 'hit' : 'miss');
+    respuesta.set('Cache-Control', 'no-store');
+
     respuesta.status(200).json({
-      tenantId: comercio.tenantId,
-      flujo: comercio.flujo,
+      tenantId,
+      flujo,
       estadoComercio: derivados.estadoComercio,
       phoneNumberId: derivados.phoneNumberId,
 
@@ -740,6 +856,23 @@ export const configuracionFlujo = onRequest(
           : [],
       },
 
+      // LÍMITES POR PLAN. `mensajesRestantes24h` es lo que el flujo compara:
+      //   > 0  el asistente responde (y con <= 3 se le avisa que cierre);
+      //   = 0  se alcanzó el tope: UN aviso de cierre, que también cuenta;
+      //   < 0  el aviso ya se mandó: silencio hasta que la ventana se renueve.
+      limites: {
+        origenTope: topeResuelto.origen,
+        topeMensajes24h: tope.tope,
+        mensajesEnVentana: tope.enviados,
+        mensajesRestantes24h: tope.restantes,
+        topeAlcanzado: tope.alcanzado,
+        ventanaVenceEn: tope.ventanaVenceEn === null
+          ? null : new Date(tope.ventanaVenceEn).toISOString(),
+        // Sin teléfono no hay conversación que mirar: el tope se informa
+        // entero. Es el caso del flujo de recordatorios.
+        porConversacion: telefono !== null,
+      },
+
       // Voz del agente: FRASES NUESTRAS, elegidas por un enumerado del comercio.
       // El valor que escribió el cliente no se interpola en ninguna parte.
       instruccionesDeVoz: instruccionesDeVoz(negocio),
@@ -747,14 +880,12 @@ export const configuracionFlujo = onRequest(
       // Todo lo que escribió el comercio, junto y rotulado.
       datosDelNegocio,
 
-      catalogo: catalogo.docs.map((d) => ({ id: d.id, ...d.data() })),
+      catalogo: p.catalogo,
 
       // Configuración del vertical, en su propia clave. El flujo del Demo A no
       // recibe `venta` y el del Demo B no recibe `agendamiento`: cada uno ve
       // solo lo que sabe usar.
-      ...(docVertical && especifica?.exists
-        ? { [docVertical]: especifica.data() }
-        : {}),
+      ...(docVertical && especifica ? { [docVertical]: especifica } : {}),
 
       // COBRO: real o simulado, NUNCA los dos.
       //
@@ -768,7 +899,7 @@ export const configuracionFlujo = onRequest(
       // plataforma, nunca de la configuración del comercio. Si el documento
       // faltara, rigen los de respaldo. El sistema falla hacia el rótulo,
       // jamás hacia el silencio.
-      ...(comercio.flujo === 'venta'
+      ...(flujo === 'venta'
         ? (cobroRealActivo
           ? { cobroReal: {
                 nombreCuenta: String(cobroReal?.['nombreCuenta'] ?? ''),
@@ -786,10 +917,10 @@ export const configuracionFlujo = onRequest(
                 fichaQr: String(cobroReal?.['ficha'] ?? ''),
               } }
           : { cobroSimulado: {
-                ...rotulosCobroSimulado(rotulos?.data()),
+                ...rotulosCobroSimulado(p.rotulos),
                 // Sin media ID no hay QR que enviar, y eso es lo correcto: mejor
                 // no mandar nada que mandar una imagen sin rotular.
-                mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
+                mediaIdQr: String(especifica?.['mediaIdQr'] ?? ''),
               } })
         : {}),
 
@@ -797,10 +928,14 @@ export const configuracionFlujo = onRequest(
       // funcionario por defecto con el calendario del negocio: el flujo tiene un
       // solo camino de código y el comercio de una sola persona no configura nada.
       funcionarios: resolverFuncionarios(
-        funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
+        p.funcionarios,
         negocio,
-        new Set(catalogo.docs.map((d) => d.id)),
+        new Set(p.catalogo.map((d) => d.id)),
       ),
+
+      // Diagnóstico del caché: de dónde salió el paquete del comercio y qué
+      // edad tiene. Sirve para comprobar el ahorro de lecturas sin adivinar.
+      cache: { origen: paquete.origen, edadMs: paquete.edadMs, vigenciaMs: CACHE_CONFIGURACION_MS },
     });
   },
 );
