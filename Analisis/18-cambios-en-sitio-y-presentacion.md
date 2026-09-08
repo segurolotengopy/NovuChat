@@ -1,5 +1,13 @@
 # Cambios en `novuchat.site` y en la presentación
 
+> ## ⛔ SUPERADO — usar `22-instrucciones-sitio-web.md`
+>
+> Este documento quedó con los precios anteriores a la propuesta de Silvana
+> (USD 20 / 40 / 70 por 120 / 200 / 300). Los definitivos son **USD 25 / 50 / 90
+> por 100 / 220 / 500**, analizados en `21-…` y escritos en `22-…`, que es el
+> documento vigente para el sitio. **Se conserva por la trazabilidad de las
+> instrucciones de la presentación, que sí se aplicaron.**
+
 **08-sep-2026.** Instrucciones exactas para aplicar las recomendaciones de
 `14-costo-por-conversacion-y-precios.md`, `15-unidad-de-cobro.md` y
 `16-sensibilidad-topes-y-bolsas.md`. El resumen para leer antes está en

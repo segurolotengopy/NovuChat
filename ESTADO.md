@@ -1447,7 +1447,8 @@ trabajo que ya está hecho en ellas.
 | `Analisis/18-cambios-en-sitio-y-presentacion.md` | Instrucciones exactas, archivo por archivo, para corregir `novuchat.site` y la presentación |
 | `Analisis/19-catalogo-web-y-precio-por-flujo.md` | Cuántos ítems van al prompt y al catálogo web, y si conviene cobrar distinto por flujo. Las dos respuestas: el corte no es económico, y no conviene |
 | `Analisis/20-un-flujo-para-todos-los-clientes.md` | Si un mismo flujo de n8n puede atender a todos los clientes. Sí, y el bloqueo es una credencial que se elimina con un trámite de Meta |
-| `Analisis/21-propuesta-de-silvana-comparada.md` | La propuesta de precios de Silvana contra este modelo. Mejor en dos de tres planes; el Corporativo necesita corrección |
+| `Analisis/21-propuesta-de-silvana-comparada.md` | La propuesta de precios de Silvana contra este modelo. **Adoptada**: USD 25 / 50 / 90 por 100 / 220 / 500 |
+| `Analisis/22-instrucciones-sitio-web.md` | Instrucciones definitivas para el sitio, con los números finales y la lista de lo que no hay que afirmar. **Reemplaza al 18** |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 
