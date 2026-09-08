@@ -89,6 +89,38 @@
    El menú se desborda en un celular angosto antes que empujar «Salir» fuera de
    la pantalla, que es como quedaba alguien sin poder cerrar sesión. */
 .cabecera nav { display: flex; gap: var(--space-4); flex: 1; align-items: center; }
+
+/* DÓNDE ESTOY PARADO.
+   El sistema pinta el enlace activo con el acento cuando lleva
+   `aria-current="page"`… y ese atributo no aparecía NUNCA, porque lo pone
+   `NavLink` y la cabecera usaba `Link`. La regla existía, no se aplicaba a
+   nada, y el menú se veía idéntico en las quince pantallas: se entraba a
+   «Productos» y nada en la barra lo decía.
+
+   El color solo no alcanza en una fila de trece enlaces del mismo tamaño, así
+   que va además una barra debajo. El borde transparente lo llevan TODOS los
+   enlaces y no solo el activo: si lo pusiera solo el activo, al cambiar de
+   pantalla la barra entera se correría dos píxeles. */
+/* `:not(.btn)` no es decorativo acá: el sistema trae `.nav a:not(.btn)` con
+   `color: inherit`, que pesa más que un `.cabecera nav a` pelado y le ganaba a
+   este color. Se vio porque el enlace en reposo seguía saliendo a tono pleno. */
+.cabecera nav a:not(.btn), .cabecera > .contenedor > a:not(.btn) {
+  padding-block: var(--space-1);
+  border-bottom: 2px solid transparent;
+  /* Los enlaces en reposo van apagados y el activo a color pleno. En el tema
+     claro el acento es la pizarra `#2f3a44`, casi el mismo tono que el texto:
+     sin este contraste el «activo» se apoyaría solo en la barra. */
+  color: color-mix(in srgb, var(--color-text) 72%, transparent);
+}
+.cabecera nav a:not(.btn):hover,
+.cabecera > .contenedor > a:not(.btn):hover { color: var(--color-text); }
+.cabecera a:not(.btn)[aria-current="page"] {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+/* NO cambia el grosor de la letra a propósito: Archivo salta de 400 a 800 y el
+   enlace activo se ensancharía, corriendo de lugar a todos los que le siguen
+   cada vez que se cambia de pantalla. */
 @media (max-width: 60rem) {
   .cabecera .nav { flex-wrap: wrap; padding-block: var(--space-2); }
   /* `flex: 0 0 100%` y no `width: 100%`: el `flex: 1` de arriba fija la base en
