@@ -23,6 +23,19 @@ type Campo = {
   etiqueta: string;
   tipo: 'entero' | 'decimal' | 'booleano';
   ayuda?: string;
+  /**
+   * Qué vale una casilla cuando el campo NO está en la base.
+   *
+   * NO es un detalle de presentación. Sin esto, un campo ausente se dibujaba
+   * SIEMPRE sin marcar, aunque el comportamiento real fuera «encendido»: la
+   * pantalla decía una cosa y el asistente hacía otra. Peor todavía, guardar el
+   * formulario escribía `false` sin que nadie lo tocara, así que corregir el
+   * costo de envío apagaba la lista de productos de paso.
+   *
+   * Lo encontró Andres el 2026-09-07 probando el interruptor de la lista: la
+   * veía apagada y la lista seguía apareciendo.
+   */
+  porDefecto?: boolean;
 };
 
 const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }> = {
@@ -42,6 +55,11 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
   },
 };
 
+
+/** Lo que vale una casilla: lo guardado si es booleano, y si no, su defecto. */
+function valorCasilla(campo: Campo, valor: unknown): boolean {
+  return typeof valor === 'boolean' ? valor : (campo.porDefecto ?? false);
+}
 
 export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string; vertical: string }) {
   const definicion = CAMPOS[vertical];
@@ -71,7 +89,7 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
       };
       for (const c of definicion.campos) {
         const v = datos[c.clave];
-        cambios[c.clave] = c.tipo === 'booleano' ? v === true : Number(v ?? 0);
+        cambios[c.clave] = c.tipo === 'booleano' ? valorCasilla(c, v) : Number(v ?? 0);
       }
       await updateDoc(doc(db, 'tenants', tenantId, 'config', vertical), cambios);
       setEstado('Guardado.');
@@ -89,7 +107,7 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
           <label key={c.clave}>
             {c.etiqueta}
             {c.tipo === 'booleano' ? (
-              <input type="checkbox" checked={datos[c.clave] === true}
+              <input type="checkbox" checked={valorCasilla(c, datos[c.clave])}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.checked })} />
             ) : (
               <input type="number" min={0}

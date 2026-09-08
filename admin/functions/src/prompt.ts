@@ -92,9 +92,27 @@ function diaPrevio(dia: string): string | null {
   return i > 0 ? (DIAS[i - 1] as string) : null;
 }
 
+/**
+ * Cómo trata el asistente al cliente.
+ *
+ * `vos` se agregó el 2026-09-07 a pedido de Andres: **en Bolivia el trato cambia
+ * por región**. En La Paz se usa usted o tú; en Santa Cruz se vosea. Un
+ * asistente que tutea a un cruceño suena de afuera, y uno que vosea a un paceño
+ * suena impostado. Es de las cosas que un cliente nota en el primer mensaje.
+ *
+ * La instrucción del voseo es más larga que las otras a propósito: un modelo que
+ * recibe «tratá de vos» tiende a mezclar —«vos puedes», «vos tienes»— y esa
+ * mezcla suena peor que cualquiera de los dos tratos puros. Por eso se le dan
+ * las formas verbales y un ejemplo.
+ */
 const FRASE_TRATAMIENTO: Record<string, string> = {
   usted: 'Trate al cliente de USTED en todo momento, sin excepción.',
   tu: 'Trate al cliente de TÚ en todo momento, sin excepción.',
+  vos: 'Trate al cliente de VOS en todo momento, como se habla en Santa Cruz. '
+    + 'Use las formas verbales del voseo y no las mezcle con las de tú: '
+    + '«vos podés» y no «vos puedes»; «tenés», «querés», «sabés», «decime», '
+    + '«mandame», «escribime». Ejemplo del tono: «¿Querés que te lo mande ahora?». '
+    + 'Nunca escriba «tú» ni «usted» cuando este trato esté activo.',
   neutro: 'Evite el trato directo: use formas impersonales en lugar de «usted» o «tú».',
 };
 

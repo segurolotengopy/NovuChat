@@ -504,7 +504,12 @@ service cloud.firestore {
             // VOZ DEL ASISTENTE — enumerados, no texto libre.
             // `tratamiento` cierra además el defecto de estilo de ESTADO.md: el
             // agente alternaba «usted» y «tú» con el mismo cliente.
-            && d.get('tratamiento', 'usted') in ['usted', 'tu', 'neutro']
+            // «vos» se agregó el 2026-09-07: en La Paz se trata de usted o de
+            // tú, y en Santa Cruz se vosea. Un asistente que tutea a un cruceño
+            // suena de afuera, y uno que vosea a un paceño suena impostado. Es
+            // una lista cerrada y no texto libre, como el resto de la voz: lo
+            // que se elige acá entra en las instrucciones del asistente.
+            && d.get('tratamiento', 'usted') in ['usted', 'tu', 'vos', 'neutro']
             && d.get('estiloEmojis', 'pocos') in ['ninguno', 'pocos', 'muchos']
 
             && d.get('mensajes', {}) is map

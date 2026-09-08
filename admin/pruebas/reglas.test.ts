@@ -1761,6 +1761,18 @@ describe('Configuración por vertical', () => {
       { ...cfgAgenda('u-admin-a'), horasRecordatorio: 200 }));
   });
 
+  it('el trato admite VOS, que es como se habla en Santa Cruz', async () => {
+    // En La Paz se usa usted o tú; en Santa Cruz se vosea. Un asistente que
+    // tutea a un cruceño suena de afuera. Lista cerrada, no texto libre: lo que
+    // se elige acá entra en las instrucciones del asistente.
+    for (const trato of ['usted', 'tu', 'vos', 'neutro']) {
+      await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/config/negocio`),
+        { ...configValida('u-admin-a'), tratamiento: trato }));
+    }
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/negocio`),
+      { ...configValida('u-admin-a'), tratamiento: 'che' }));
+  });
+
   it('valida los rangos de la configuración de venta', async () => {
     await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/venta`),
       { ...cfgVenta(), actualizadoPor: 'u-admin-b', costoDelivery: -1 }));

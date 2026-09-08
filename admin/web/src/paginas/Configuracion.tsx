@@ -118,8 +118,14 @@ export function Configuracion() {
 
         <h3>Voz del asistente</h3>
         {opcion('tratamiento', 'Cómo trata al cliente', [
-          ['usted', 'De usted'], ['tu', 'De tú'], ['neutro', 'Impersonal'],
+          ['usted', 'De usted'], ['tu', 'De tú'],
+          ['vos', 'De vos (Santa Cruz)'], ['neutro', 'Impersonal'],
         ])}
+        <p className="ayuda">
+          En Bolivia el trato cambia por región: en La Paz se usa <em>usted</em> o
+          <em> tú</em>, en Santa Cruz se vosea. Es de las cosas que tu cliente
+          nota en el primer mensaje.
+        </p>
         {opcion('estiloEmojis', 'Emojis', [
           ['ninguno', 'Ninguno'], ['pocos', 'Pocos'], ['muchos', 'Varios'],
         ])}
