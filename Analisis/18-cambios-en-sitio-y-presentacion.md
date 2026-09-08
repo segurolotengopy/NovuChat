@@ -68,8 +68,7 @@ anunciaría el plan a 20 bolivianos.
 
 ```
 Los precios están expresados en dólares estadounidenses. El cobro se realiza en
-bolivianos, al tipo de cambio vigente el día del pago, que publicamos en tu
-consola al inicio de cada mes.
+bolivianos, al Tipo de Cambio Oficial que publica el Banco Central de Bolivia.
 ```
 
 **En los términos** (`src/pages/terminos.astro`), con más precisión, porque es
@@ -77,9 +76,10 @@ donde se dirime un desacuerdo:
 
 ```
 Los precios se expresan en dólares estadounidenses. La facturación se emite en
-bolivianos por el importe resultante de aplicar el tipo de cambio publicado por
-NovuChat, vigente al momento del pago. Ese tipo de cambio se publica en la
-consola del comercio y se mantiene durante el mes calendario.
+bolivianos por el importe resultante de aplicar el Tipo de Cambio Oficial
+publicado por el Banco Central de Bolivia correspondiente al primer día hábil
+del mes facturado, que se mantiene durante todo ese mes y se muestra en la
+consola del comercio.
 ```
 
 **En la FAQ**, una pregunta nueva:
@@ -87,17 +87,21 @@ consola del comercio y se mantiene durante el mes calendario.
 ```
 pregunta: '¿En qué moneda pago?'
 respuesta: 'Los precios están en dólares y el cobro se hace en bolivianos, al
-tipo de cambio que publicamos en tu consola al comenzar cada mes. Ese número no
-cambia durante el mes, así que sabes exactamente cuánto vas a pagar antes de
-hacerlo.'
+Tipo de Cambio Oficial del Banco Central de Bolivia. Tomamos el del primer día
+hábil de cada mes y lo mantenemos todo ese mes, así que sabes exactamente cuánto
+vas a pagar antes de hacerlo, y podés verificarlo en la página del Banco
+Central.'
 ```
 
-> ⚠️ **Esto depende de una decisión que todavía no está tomada:** de dónde sale
-> el tipo de cambio. `14-…` §5ter recomienda que lo publique NovuChat y valga
-> todo el mes, justamente para poder escribir la cláusula de arriba. **Si se
-> decide otra cosa, los tres textos cambian.** No publicar nada hasta que esté
-> resuelto: una cláusula ambigua sobre el tipo de cambio, en Bolivia, es un 42 %
-> de ingreso en discusión.
+> **La fuente ya no es un problema.** Bolivia tiene régimen flexible desde el
+> 29/06/2026 y el BCB publica un **Tipo de Cambio Oficial diario** —12,60 al
+> 08/09—, así que hay una referencia pública y verificable. Los tres textos de
+> arriba la nombran, que es lo que los vuelve indiscutibles.
+>
+> ⚠️ **Lo único que falta decidir es el día:** el TCO del día de pago, o el del
+> primer día hábil del mes fijo para ese mes. Los textos de arriba están escritos
+> con la **segunda** opción, que es la recomendada en `14-…` §5ter. Si se decide
+> la otra, hay que ajustar las tres redacciones.
 
 ---
 
@@ -465,8 +469,9 @@ vez?».
       `pendientes.ts` y **no** al texto de la página: ese es el mecanismo que ya
       existe para no publicar datos sin confirmar.
 - [ ] La cláusula de revisión de precio está en el contrato, no solo en el sitio.
-- [ ] **Está decidido de dónde sale el tipo de cambio** y dónde se publica
-      (§0.4). Sin eso no se publica ninguno de los tres textos de conversión.
+- [ ] **Está decidido qué día del TCO se toma** —el de pago o el del primer día
+      del mes— y los tres textos del §0.4 dicen lo mismo. La fuente es el Banco
+      Central en los tres.
 - [ ] `priceCurrency` dice `USD` y no `BOB`, y ninguna página muestra un precio
       en dólares con la palabra «Bs» al lado. `grep -rn "precioBs" src/` no
       devuelve nada.

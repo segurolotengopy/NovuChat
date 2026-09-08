@@ -15,7 +15,12 @@ precios previos ya no describen nada.
   del orden de 20 a 30. **Corregido después:** el análisis de sensibilidad de
   `16-…` §1 mostró que el escalonado está al revés, y la recomendación vigente
   es un **tope único de 25** para los tres planes.
-- 12 Bs por USD.
+- **Los precios de venta se denominan en dólares** y se cobran en bolivianos al
+  Tipo de Cambio Oficial que publica el BCB. Bolivia pasó a **régimen flexible
+  el 29/06/2026**; el **TCO del 08/09/2026 es 12,60 Bs/USD**. Las cifras en
+  bolivianos de este documento se calcularon a **12,00**, así que quedan un 5 %
+  por debajo: **ningún margen ni ninguna cifra en dólares cambia por eso**,
+  porque precio y costo se convierten con el mismo número.
 
 Modelo reproducible: `Analisis/14-modelo-costos.py` (`python3`, sin
 dependencias). Los parámetros de conversación vienen de
@@ -237,47 +242,70 @@ paralelo.
 
 #### La conversión
 
-A 12 Bs por dólar, redondeando a números vendibles:
+Redondeando a números vendibles. La columna de bolivianos usa el **TCO del
+08/09/2026, 12,60**, y se mueve con él:
 
-| Concepto | Antes | **Ahora** | Equivale a | Contra el precio viejo |
+| Concepto | Antes | **Ahora** | Equivale a hoy | Contra el precio viejo |
 |---|---|---|---|---|
-| Impulso | 250 Bs | **USD 20** | 240 Bs | −4 % |
-| Crecimiento | 450 Bs | **USD 40** | 480 Bs | +7 % |
-| Pro | 850 Bs | **USD 70** | 840 Bs | −1 % |
-| Instalación estándar | 800 Bs | **USD 65** | 780 Bs | −2 % |
-| Instalación a medida, desde | 1.500 Bs | **USD 125** | 1.500 Bs | 0 % |
-| Bolsa de 25 conversaciones | 110 Bs | **USD 10** | 120 Bs | +9 % |
+| Impulso | 250 Bs | **USD 20** | 252 Bs | +1 % |
+| Crecimiento | 450 Bs | **USD 40** | 504 Bs | +12 % |
+| Pro | 850 Bs | **USD 70** | 882 Bs | +4 % |
+| Instalación estándar | 800 Bs | **USD 65** | 819 Bs | +2 % |
+| Instalación a medida, desde | 1.500 Bs | **USD 125** | 1.575 Bs | +5 % |
+| Bolsa de 25 conversaciones | 110 Bs | **USD 10** | 126 Bs | +15 % |
 
-Los márgenes con la mezcla realista quedan en **92 % / 74 % / 70 %**, y la
-escalera de precios pasa a ser ×1 / ×2 / ×3,5, que se dice más fácil que
-250 / 450 / 850.
+Los márgenes con la mezcla realista quedan en **92 % / 74 % / 70 %**, y **no
+dependen del tipo de cambio**: precio y costo se mueven juntos. La escalera pasa
+a ser ×1 / ×2 / ×3,5, que se dice más fácil que 250 / 450 / 850.
 
-**El único que sube de verdad es Crecimiento**, un 7 %. La alternativa neutra
-sería USD 38, pero es un número que no se dice bien. Con USD 40 la escalera
-queda redonda y el aumento es menor que el error del propio tipo de cambio.
+**Al TCO de hoy todos los planes suben un poco**, y el que más es Crecimiento, un
+12 %. Vale reconocerlo: parte de ese aumento no es una decisión de precio sino la
+devaluación que ya ocurrió, y que hasta ahora estábamos absorbiendo nosotros. La
+alternativa neutra para Crecimiento sería USD 36, pero rompe la escalera redonda.
 
-#### La letra chica, y es importante
+**Y algo que conviene tener presente al vender:** bajo régimen flexible el
+importe en bolivianos se mueve mes a mes. Un cliente que vio «USD 40» en la
+presentación puede recibir una factura distinta a la del mes anterior. Por eso la
+opción del TCO fijo del primer día del mes, que está abajo.
 
-**«Al tipo de cambio del día de pago» no alcanza como cláusula.** En Bolivia el
-oficial y el paralelo están muy separados, y la diferencia no es un detalle: un
-plan de USD 20 cobrado al oficial son **139 Bs en vez de 240**. El margen
-porcentual aguanta —el costo es bajo— pero **el ingreso real cae un 42 %**.
+#### De qué tipo de cambio hablamos
 
-Con 300 clientes eso son unos **2.500 dólares al mes de diferencia**, decididos
-por una ambigüedad de redacción.
+**Corregido el 08/09 con la fuente a la vista.** Una versión anterior de este
+documento advertía que «al tipo de cambio del día» era una cláusula ambigua,
+porque el oficial y el paralelo estaban muy separados. **Eso dejó de ser cierto.**
 
-**Recomendación: que NovuChat publique su propio tipo de cambio**, visible en la
-consola, vigente para todos los pagos del mes. Tres razones:
+Bolivia adoptó un **régimen de tipo de cambio flexible el 29 de junio de 2026**,
+que terminó con el esquema fijo vigente desde 2011. El BCB publica un **Tipo de
+Cambio Oficial (TCO) diario**, calculado como promedio ponderado de las
+operaciones reales de compra y venta entre los bancos y sus clientes. Al 8 de
+septiembre de 2026 el TCO es **12,60 Bs/USD**, y el paralelo cotiza alrededor de
+12,41: **prácticamente el mismo número**, que es justamente el efecto buscado por
+la reforma.
 
-1. **Elimina la ambigüedad** sin depender de una fuente externa que en Bolivia no
-   existe de forma indiscutible para el paralelo.
-2. **Elimina el incentivo a demorar el pago** esperando que el tipo de cambio se
-   mueva, que es lo que produce un tipo de cambio «del día».
-3. **Es defendible ante el cliente**: un número publicado, estable durante el
-   mes, que puede consultar antes de pagar.
+Eso cambia la recomendación:
 
-La alternativa —fijar el tipo de cambio por trimestre— es más previsible para el
-cliente pero devuelve parte del riesgo a NovuChat.
+- **Ya existe una fuente autoritativa, pública y verificable.** No hace falta que
+  NovuChat publique un tipo de cambio propio, y **conviene que no lo haga**: un
+  proveedor que fija el tipo de cambio con el que cobra invita a la sospecha,
+  aunque lo fije bien.
+- **El TCO se publica como un solo número**, sin desdoblar compra y venta, así
+  que tampoco hay que elegir entre las dos.
+
+**La cláusula que hay que escribir, entonces, es sencilla:** el importe en
+bolivianos resulta de aplicar el **Tipo de Cambio Oficial publicado por el Banco
+Central de Bolivia**. Nombrar la fuente es lo que la vuelve indiscutible.
+
+**Lo único que queda por decidir es qué día**, y las dos opciones son
+defendibles:
+
+| Opción | A favor | En contra |
+|---|---|---|
+| **El TCO del día de pago** | Es lo más justo y lo más simple de explicar | El cliente no sabe el importe exacto hasta que paga, y bajo flotación eso se mueve |
+| **El TCO del primer día hábil del mes**, fijo para ese mes | El cliente sabe de antemano cuánto va a pagar, y desaparece el incentivo a demorar el pago esperando que el tipo de cambio se mueva | NovuChat asume la variación dentro del mes, que bajo flotación es chica |
+
+**Recomiendo la segunda.** La diferencia económica dentro de un mes es menor, y
+comprar previsibilidad para una PyME a ese precio es un buen negocio. Y se sigue
+nombrando al BCB, que es lo que importa.
 
 #### Lo que esto exige del sistema
 

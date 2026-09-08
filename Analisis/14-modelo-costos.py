@@ -13,7 +13,15 @@ Supuestos fijados por Andres el 08/09/2026:
     domina el costo).
   - Cache de 60 s en `Traer configuracion` (la nube vuelve a ser despreciable).
   - Tope de mensajes del asistente por ventana de 24 h, por plan.
-  - 12 Bs por USD.
+  - Los precios de venta se denominan en DOLARES y se cobran en bolivianos al
+    Tipo de Cambio Oficial que publica el BCB (regimen flexible desde el
+    29/06/2026; TCO del 08/09/2026: 12,60 Bs/USD).
+
+NOTA SOBRE `BS`: las cifras en bolivianos de este modelo se calculan a 12,00
+para que coincidan con las tablas publicadas en los documentos 14 a 19. El TCO
+real es 12,60, asi que los importes en Bs quedan un 5 % por debajo. **Ningun
+margen ni ninguna cifra en dolares cambia por eso**: el precio y el costo se
+convierten con el mismo numero, asi que la razon entre ambos es invariante.
 
 Correr: python3 Analisis/14-modelo-costos.py
 """

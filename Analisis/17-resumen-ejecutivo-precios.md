@@ -62,27 +62,46 @@ El motivo es sencillo: **todo lo que nos cuesta el servicio se paga en dólares*
 paralelo se movía, nuestro margen se movía con él, sin que nadie decidiera nada.
 Con la lista en dólares eso se termina.
 
-| Plan | Antes | **Ahora** | Equivale a |
+| Plan | Antes | **Ahora** | Equivale a hoy |
 |---|---|---|---|
-| Impulso | 250 Bs | **USD 20** | 240 Bs |
-| Crecimiento | 450 Bs | **USD 40** | 480 Bs |
-| Pro | 850 Bs | **USD 70** | 840 Bs |
-| Instalación | 800 Bs | **USD 65** | 780 Bs |
-| Instalación a medida, desde | 1.500 Bs | **USD 125** | 1.500 Bs |
+| Impulso | 250 Bs | **USD 20** | 252 Bs |
+| Crecimiento | 450 Bs | **USD 40** | 504 Bs |
+| Pro | 850 Bs | **USD 70** | 882 Bs |
+| Instalación | 800 Bs | **USD 65** | 819 Bs |
+| Instalación a medida, desde | 1.500 Bs | **USD 125** | 1.575 Bs |
 
-Casi no cambia lo que paga el cliente: el único que sube es Crecimiento, un 7 %,
-a cambio de que la escalera quede en 20, 40 y 70, que se dice mucho mejor que
-250, 450 y 850.
+La columna de bolivianos usa el tipo de cambio de hoy, **12,60**, y se mueve con
+él. Al cambio de hoy todos los planes suben un poco, y el que más es Crecimiento,
+un 12 %. Conviene decirlo con todas las letras: **parte de ese aumento no es una
+decisión nuestra de precio, es la devaluación que ya ocurrió** y que hasta ahora
+estábamos absorbiendo nosotros.
 
-**Hay una letra chica que sí es importante, y no es de redacción.** «Al tipo de
-cambio del día» no alcanza: en Bolivia el oficial y el paralelo están muy
-separados, y un plan de USD 20 cobrado al oficial son **139 Bs en vez de 240**.
-Eso es un 42 % menos de ingreso, decidido por una ambigüedad.
+### De qué tipo de cambio hablamos
 
-**Lo que proponemos es que NovuChat publique su propio tipo de cambio**, visible
-en la consola, válido para todos los pagos de ese mes. Es un número que el
-cliente puede consultar antes de pagar, no cambia día a día, y evita la
-discusión. **Esto hay que definirlo antes de firmar el primer contrato.**
+**Bolivia tiene tipo de cambio flexible desde el 29 de junio de 2026.** El Banco
+Central publica todos los días un **Tipo de Cambio Oficial**, que es el promedio
+de las operaciones reales entre los bancos y sus clientes. Hoy está en **12,60**,
+y el paralelo cotiza alrededor de 12,41: prácticamente el mismo número.
+
+Eso nos simplifica mucho las cosas. **Existe una fuente pública, oficial y
+verificable**, así que la cláusula del contrato es sencilla: el importe en
+bolivianos sale de aplicar el **Tipo de Cambio Oficial del Banco Central de
+Bolivia**. Nombrar al BCB es lo que la vuelve indiscutible.
+
+Y **conviene que no publiquemos un tipo de cambio propio**, aunque podríamos: un
+proveedor que fija el tipo de cambio con el que cobra invita a la sospecha,
+aunque lo fije bien.
+
+**Lo único que queda por decidir es qué día se toma**, y hay dos opciones:
+
+- **El del día de pago.** Es lo más justo y lo más simple de explicar.
+- **El del primer día hábil del mes**, fijo para todo ese mes. El cliente sabe de
+  antemano cuánto va a pagar, y desaparece el incentivo a demorar el pago
+  esperando que el tipo de cambio se mueva.
+
+**Recomiendo la segunda**, porque bajo tipo de cambio flexible el importe en
+bolivianos se mueve mes a mes, y para una PyME saber cuánto va a pagar vale más
+que la diferencia de unos centavos.
 
 ### 3.1 Mismos precios, menos conversaciones
 
@@ -250,9 +269,9 @@ Para que quede claro qué se mantiene, porque es la mayor parte:
    única decisión que bloquea todo lo demás.
 2. **Aprobar el tope de 25** y cómo lo contamos.
 3. **Aprobar la bolsa** de 25 por USD 10.
-4. **Definir qué tipo de cambio se usa** y dónde se publica. Es la única de las
-   cuatro que no es de precios sino de contrato, y sin ella no se puede facturar
-   (§3.0).
+4. **Definir si se usa el Tipo de Cambio Oficial del día de pago o el del primer
+   día del mes.** La fuente ya está resuelta —es el del Banco Central—; falta
+   solo el día (§3.0).
 
 **Antes de firmar cualquier contrato:**
 
