@@ -319,6 +319,11 @@ export function Catalogo() {
           tienen un precio fijo. <strong>No pongas cero</strong>: cero significa
           gratis, y es una promesa distinta.
         </p>
+        <p className="ayuda">
+          Ojo si tenés el <strong>catálogo web</strong> encendido: lo que quede
+          sin precio <strong>no se publica en la página</strong>. Se sigue
+          ofreciendo por chat, donde el asistente puede cotizarlo.
+        </p>
         <label className="field">Moneda
           <select className="input" value={nuevo.moneda}
                   onChange={(e) => setNuevo({ ...nuevo, moneda: e.target.value })}>

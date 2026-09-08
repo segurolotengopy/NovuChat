@@ -334,11 +334,7 @@ export function rotulosCobroSimulado(
 // ===========================================================================
 //
 // `configuracionFlujo` mandaba el catálogo entero —hasta 200 ítems— en cada
-// consulta del flujo, y el flujo lo pega en el prompt. Con un salón de belleza
-// de doce servicios eso es correcto y barato. Con una ferretería de trescientos
-// productos, cada mensaje del cliente pasa a costar un prompt gigante: más
-// dinero, más latencia, y un modelo que empieza a olvidar el principio de la
-// lista justo cuando la lista importa.
+// consulta del flujo, y el flujo lo pega en el prompt.
 //
 // EL UMBRAL, que es el punto 7 del diseño de Andres
 // (`Analisis/11-catalogo-web-propio.md`): por debajo, el catálogo entero al
@@ -347,13 +343,41 @@ export function rotulosCobroSimulado(
 // pasan por el prompt: el sitio del catálogo, que el cliente navega, y el JSON
 // del checkout, que vuelve con los ítems exactos.
 //
+// ---------------------------------------------------------------------------
+// CORRECCIÓN DEL 08/09: EL MOTIVO NO ES EL COSTO. Este comentario decía que un
+// catálogo grande hace que «cada mensaje del cliente cueste un prompt gigante:
+// más dinero, más latencia». `Analisis/19-catalogo-web-y-precio-por-flujo.md`
+// §2 lo MIDIÓ con las tarifas de octubre y la caché de prefijo puesta:
+//
+//     500 ítems en el prompt = 5.000 tokens = 0,0585 Bs
+//                            = 0,43 mensajes del asistente
+//
+// O sea que el catálogo entero de una ferretería cuesta MENOS DE MEDIO MENSAJE.
+// El token dejó de ser la restricción el día que Meta empezó a cobrar por
+// mensaje. Justificar el umbral por costo mandaba a optimizar en la dirección
+// equivocada: quien leyera esto trataría de achicar el prompt cuando lo que hay
+// que achicar es la cantidad de mensajes.
+//
+// EL UMBRAL SOBREVIVE, POR OTRAS DOS RAZONES, las dos del mismo análisis §4:
+//
+//  1. LEGIBILIDAD. Una lista de 40 ítems son ~1.200 caracteres en un globo de
+//     chat: ilegible. Y la lista interactiva de WhatsApp admite 10 filas por
+//     sección, que es un tope del canal y no nuestro.
+//  2. CONFIABILIDAD DEL MODELO, que es la que no se puede calcular. El prompt
+//     del Demo A maneja 8 servicios y funciona; nadie probó con 100. Cuanto más
+//     larga la lista, más probable que el asistente cite mal un precio, y cada
+//     corrección es un mensaje cobrado más un riesgo de la prohibición 3.
+//
+// LOS 40 SON UNA RECOMENDACIÓN, NO UNA MEDICIÓN. El número que falta —a partir
+// de cuántos ítems el asistente empieza a equivocarse— se saca probando con un
+// catálogo real contra las suites de aceptación, no con una hoja de cálculo.
+// ---------------------------------------------------------------------------
+//
 // POR QUÉ SE DECIDE ACÁ Y NO EN n8n. La consola es la única que sabe cuántos
 // ítems tiene el comercio. Que el flujo tuviera que contar exigiría una
 // consulta más y —peor— dos lugares donde el umbral podría no coincidir.
 //
-// EL NÚMERO. Cuarenta ítems son unas dos mil palabras de catálogo en el prompt:
-// molesto pero manejable, y por encima de lo que tiene la enorme mayoría de las
-// PyMEs a las que apunta el producto. Se cambia acá, en un solo lugar.
+// Se cambia acá, en un solo lugar.
 export const UMBRAL_CATALOGO_AL_PROMPT = 40;
 
 export interface ResumenCatalogo {

@@ -181,8 +181,12 @@ export function Configuracion() {
           camino. Cada enlace sirve para una conversación y vence a los tres días.
         </p>
         <p className="ayuda">
-          Se publica lo que esté <strong>activo</strong> en la pestaña de
-          catálogo, con su foto y su precio. Lo que esté dado de baja no aparece.
+          Se publica lo que esté <strong>activo y con precio</strong> en la
+          pestaña de catálogo, con su foto. Lo que esté dado de baja no aparece,
+          y <strong>lo que quedó «a consultar» tampoco</strong>: en una página
+          con botón de comprar, un ítem sin precio genera una consulta que el
+          asistente no puede cerrar. Esos se siguen ofreciendo por chat, que es
+          donde se pueden cotizar.
         </p>
 
         {campo('logoUrl', 'Logo (dirección https de una imagen)')}

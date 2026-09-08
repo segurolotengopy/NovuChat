@@ -1436,19 +1436,61 @@ lo que hay que hacer antes de tener volumen real.
 ### 4octies.5 El umbral del catálogo al prompt (punto 7 del diseño)
 
 `configuracionFlujo` mandaba el catálogo entero —hasta 200 ítems— en cada consulta
-del flujo, y el flujo lo pega en el prompt. Con doce servicios está bien. Con
-trescientos productos, cada mensaje del cliente cuesta un prompt gigante: más
-dinero, más latencia, y un modelo que empieza a olvidar el principio de la lista.
+del flujo, y el flujo lo pega en el prompt.
 
 Desde ahora: **por debajo de 40 ítems, el catálogo entero al prompt; por encima,
 solo un resumen** —cuántos hay, qué áreas, entre qué precios— y el detalle llega
 por el sitio y por el JSON del checkout. El umbral vive en `prompt.ts`, en un
 solo lugar, porque lo usan `configuracionFlujo` y `catalogoWeb`.
 
+**Corrección del 08/09: el motivo NO es el costo, y decirlo mal mandaba a
+optimizar al revés.** Esta sección justificaba el umbral con «más dinero, más
+latencia». `Analisis/19` §2 lo midió con las tarifas de octubre y la caché de
+prefijo puesta: **500 ítems en el prompt cuestan 0,0585 Bs, o sea 0,43 mensajes
+del asistente**. El catálogo entero de una ferretería cuesta menos de medio
+mensaje; el token dejó de ser la restricción el día que Meta empezó a cobrar por
+mensaje. Lo que hay que achicar es la cantidad de MENSAJES, no el prompt.
+
+El umbral sobrevive por otras dos razones: **legibilidad** —40 ítems son ~1.200
+caracteres en un globo de chat, y la lista interactiva de WhatsApp admite 10
+filas por sección— y **confiabilidad del modelo**, que es la que no se puede
+calcular: el Demo A maneja 8 servicios y nadie probó con 100. Cada precio mal
+citado es un mensaje cobrado más un riesgo de la prohibición 3. Los 40 son una
+recomendación, no una medición: el número real se saca con un catálogo real
+contra las suites de aceptación.
+
 **Solo se resume si el comercio tiene el catálogo web encendido.** Sin sitio
 adonde derivar, resumir sería quitarle información al asistente a cambio de nada.
 Un comercio sin catálogo web se comporta exactamente como antes de este cambio,
 tenga los ítems que tenga.
+
+### 4octies.5bis Sin precio no se publica
+
+**Agregado el 08/09, contra `Analisis/19` §5.** Un ítem sin precio significa «a
+consultar»: hay que evaluar, medir, ver el stock o hablar con alguien. En la
+consola y en el prompt eso está bien —el asistente tiene que saber que el negocio
+lo ofrece, para no decir que no existe—. **En una página con botón de comprar,
+no.**
+
+> «Publicar en el catálogo web algo que no se puede comprar es la forma más cara
+> de generar una conversación: el cliente pregunta, el asistente no puede cerrar,
+> y son mensajes pagados sin venta.»
+
+Desde el 1 de octubre cada mensaje del asistente se paga, así que un ítem sin
+precio en la vitrina no es una oportunidad: es una conversación garantizada que
+no puede terminar en nada. La regla se aplica en los tres endpoints —no se
+publica, no entra al checkout, y no se manda el enlace si el catálogo entero se
+cotiza— y la consola se lo dice al comercio en las dos pantallas donde importa.
+
+**Lo que esta regla NO cubre.** El análisis nombra tres clases que tampoco
+deberían publicarse —sin stock, a medida, y lo que necesita instalación— y de las
+tres el sistema solo sabe reconocer esta. Distinguir las otras exige una marca
+por ítem en la consola, que no existe. Mientras tanto, el comercio las saca
+dándolas de baja.
+
+**Consecuencia que se aceptó:** el catálogo web deja de servir para el Flujo A
+tal como está cargado hoy, porque los servicios de salud son justamente los que
+se cotizan. Es lo correcto: un catálogo de servicios sin precio no es una tienda.
 
 ### 4octies.6 Qué se agregó a las reglas
 

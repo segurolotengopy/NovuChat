@@ -15,7 +15,14 @@ export interface ItemPublico {
   nombre: string;
   descripcion: string;
   area: string;
-  /** `null` significa «a consultar». NO es cero: cero significa gratis. */
+  /**
+   * SIEMPRE VIENE CON PRECIO. El servidor no publica los ítems «a consultar»:
+   * `Analisis/19` §5 —«publicar en el catálogo web algo que no se puede comprar
+   * es la forma más cara de generar una conversación»—. El tipo admite `null`
+   * igual, porque el navegador no puede dar por sentado lo que promete un
+   * servidor que puede estar desplegado a otra versión, y `precioTexto` lo
+   * resuelve mostrando «A consultar» en vez de romper la página.
+   */
   precio: number | null;
   moneda: string;
   imagenUrl: string;
@@ -50,7 +57,6 @@ export interface RespuestaCheckout {
   pedidoId: string;
   total: number;
   moneda: string;
-  hayACotizar: boolean;
   descartados: string[];
   /** `respuesta` = el asistente contesta ya; `notificacion` = llega un aviso. */
   siguiente: 'respuesta' | 'notificacion';

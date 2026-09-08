@@ -128,6 +128,46 @@ const HORAS_VENTANA = 24;
 const texto = (v: unknown, max: number): string =>
   typeof v === 'string' ? v.slice(0, max).trim() : '';
 
+/**
+ * =============================================================================
+ * SIN PRECIO NO SE PUBLICA
+ * =============================================================================
+ *
+ * Un ítem sin precio significa «a consultar»: hay que evaluar, medir, ver el
+ * stock o hablar con alguien antes de poder venderlo. En la consola y en el
+ * prompt del asistente eso está perfecto —el asistente tiene que saber que el
+ * negocio lo ofrece, para no decir que no existe—. En una página con botón de
+ * comprar, no.
+ *
+ * EL PORQUÉ, y es comercial antes que técnico
+ * (`Analisis/19-catalogo-web-y-precio-por-flujo.md` §5):
+ *
+ *   «Publicar en el catálogo web algo que no se puede comprar es la forma más
+ *    cara de generar una conversación: el cliente pregunta, el asistente no
+ *    puede cerrar, y son mensajes pagados sin venta.»
+ *
+ * Desde el 1 de octubre cada mensaje del asistente se paga, así que un ítem sin
+ * precio en la vitrina no es una oportunidad de venta: es una conversación
+ * garantizada que no puede terminar en nada.
+ *
+ * LO QUE ESTA REGLA NO CUBRE, dicho para que nadie suponga de más. El análisis
+ * nombra tres clases que tampoco deberían publicarse —sin stock, a medida, y lo
+ * que necesita instalación— y de las tres el sistema solo sabe reconocer esta.
+ * Distinguir las otras exige una marca por ítem en la consola, que no existe.
+ * Mientras tanto, el comercio las saca dándolas de baja.
+ */
+/*
+ * `Number.isFinite` y no `typeof === 'number'`, que fue la primera versión.
+ * En JavaScript `typeof NaN` es `'number'`, así que un precio `NaN` —de un
+ * script viejo, de una importación mal hecha— pasaba el filtro, se publicaba, y
+ * el checkout calculaba `NaN * cantidad`: un pedido con total `NaN` guardado en
+ * la base y mandado al flujo. Las reglas de Firestore ya lo rechazan por el
+ * lado de la consola (`precio >= 0` es falso para `NaN`), pero el SDK Admin se
+ * las saltea. Lo destapó escribir la prueba, no leer el código.
+ */
+export const sePuedeComprar = (d: Record<string, unknown> | undefined): boolean =>
+  Number.isFinite(d?.['precio']);
+
 // ---------------------------------------------------------------------------
 // URL DE IMAGEN — la validación que decide qué puede pintar el navegador
 // ---------------------------------------------------------------------------
@@ -281,9 +321,15 @@ export const enlaceCatalogo = onRequest(
     if (config.get('catalogoWebActivo') !== true) {
       respuesta.status(409).json({ error: 'catalogo web apagado' }); return;
     }
-    if (catalogo.empty) {
-      // Mandar a alguien a una tienda vacía es peor que no mandarlo.
-      respuesta.status(409).json({ error: 'catalogo vacio' }); return;
+    // NO ALCANZA CON QUE HAYA ÍTEMS: tiene que haber al menos uno CON PRECIO.
+    // Un salón cuyo catálogo entero se cotiza tiene ítems activos y una vitrina
+    // vacía, y mandar a alguien a una tienda vacía es peor que no mandarlo.
+    // Antes esto se comprobaba con `catalogo.empty` y se le habría mandado el
+    // enlace igual.
+    const vendibles = catalogo.docs.filter(
+      (d) => sePuedeComprar(d.data() as Record<string, unknown>)).length;
+    if (vendibles === 0) {
+      respuesta.status(409).json({ error: 'catalogo sin items vendibles' }); return;
     }
 
     const id = randomBytes(16).toString('hex');
@@ -301,13 +347,16 @@ export const enlaceCatalogo = onRequest(
 
     await registrar(ruta.tenantId, {
       tipo: 'catalogo_enlace', resultado: 'ok', telefono,
-      conversacionId: `wa_${telefono}`, detalle: `items=${catalogo.size}`,
+      conversacionId: `wa_${telefono}`, detalle: `items=${vendibles}/${catalogo.size}`,
     });
 
     respuesta.status(200).json({
       url: `${base}/c/${id}`,
       caducaEn: caducaEn.toDate().toISOString(),
-      items: catalogo.size,
+      // `items` es lo que el cliente va a VER, no lo que el comercio tiene
+      // cargado. Si el flujo dijera «tenemos 300 productos» y la página muestra
+      // 40, el asistente queda mintiendo por un dato nuestro.
+      items: vendibles,
       catalogoGrande: catalogo.size > UMBRAL_CATALOGO_AL_PROMPT,
     });
   },
@@ -410,6 +459,7 @@ export const catalogoPublico = onRequest(
       // `localeCompare` con 'es' para que «Ñoquis» caiga entre «Nachos» y
       // «Papas», y no al final de todo como haría una comparación de bytes.
       items: catalogo.docs
+        .filter((d) => sePuedeComprar(d.data() as Record<string, unknown>))
         .map((d) => itemPublico(d.id, d.data() as Record<string, unknown>))
         .sort((a, b) => a.area.localeCompare(b.area, 'es')
           || a.nombre.localeCompare(b.nombre, 'es')),
@@ -496,7 +546,6 @@ export const checkoutCatalogo = onRequest(
     const descartados: string[] = [];
     let total = 0;
     let monedaPedido = '';
-    let hayACotizar = false;
 
     for (let i = 0; i < lineas.length; i += 1) {
       const linea = lineas[i] as LineaPedida;
@@ -505,24 +554,26 @@ export const checkoutCatalogo = onRequest(
         descartados.push(linea.id); continue;
       }
       const d = doc.data() as Record<string, unknown>;
-      const precio = typeof d['precio'] === 'number' ? d['precio'] : null;
-      const moneda = precio === null ? '' : (d['moneda'] === 'USD' ? 'USD' : 'BOB');
+
+      // SE FUE EL PRECIO ENTRE LA VISITA Y EL CHECKOUT. Pasa si el comercio lo
+      // borró mientras el cliente elegía. Se trata igual que un ítem dado de
+      // baja —se descarta y se avisa— porque es lo mismo: dejó de poder
+      // comprarse por acá. Aceptarlo obligaría a arrastrar un pedido sin total,
+      // que es justo lo que la regla de arriba existe para evitar.
+      if (!sePuedeComprar(d)) { descartados.push(linea.id); continue; }
+
+      const precio = d['precio'] as number;
+      const moneda = d['moneda'] === 'USD' ? 'USD' : 'BOB';
 
       // MONEDAS MEZCLADAS NO SE SUMAN. Un total que suma bolivianos con dólares
       // es un número falso, y un número falso en un pedido es una promesa de
       // precio equivocada. Se rechaza el pedido entero, que es lo honesto.
-      if (moneda !== '') {
-        if (monedaPedido === '') monedaPedido = moneda;
-        else if (monedaPedido !== moneda) {
-          respuesta.status(409).json({ error: 'monedas mezcladas' }); return;
-        }
+      if (monedaPedido === '') monedaPedido = moneda;
+      else if (monedaPedido !== moneda) {
+        respuesta.status(409).json({ error: 'monedas mezcladas' }); return;
       }
 
-      // PRECIO AUSENTE = «a consultar», y eso NO es cero. Entra al pedido sin
-      // sumar, y el pedido queda marcado para que el asistente cotice en vez de
-      // confirmar un total que no existe.
-      if (precio === null) hayACotizar = true;
-      else total += precio * linea.cantidad;
+      total += precio * linea.cantidad;
 
       items.push({
         id: linea.id,
@@ -530,7 +581,7 @@ export const checkoutCatalogo = onRequest(
         cantidad: linea.cantidad,
         precio,
         moneda,
-        subtotal: precio === null ? null : Number((precio * linea.cantidad).toFixed(2)),
+        subtotal: Number((precio * linea.cantidad).toFixed(2)),
         ...(urlImagenValida(d['imagenUrl']) ? { imagenUrl: String(d['imagenUrl']) } : {}),
       });
     }
@@ -558,7 +609,7 @@ export const checkoutCatalogo = onRequest(
       && Date.now() - atencionDesde.toMillis() < HORAS_VENTANA * 3_600_000;
 
     const pedidoId = `cat_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`;
-    const resumen = resumenDelPedido(items, entrega, total, monedaPedido, hayACotizar);
+    const resumen = resumenDelPedido(items, entrega, total, monedaPedido);
 
     const lote = db().batch();
     lote.create(db().doc(`tenants/${ficha.tenantId}/pedidos/${pedidoId}`), {
@@ -577,7 +628,6 @@ export const checkoutCatalogo = onRequest(
       ...(direccion ? { direccion } : {}),
       ...(nota ? { nota } : {}),
       ...(descartados.length ? { descartados } : {}),
-      hayACotizar,
       estado: 'recibido',
       ventanaAbierta,
       // Segundo carrito o más con la misma ficha: puede ser un cliente que se
@@ -623,7 +673,7 @@ export const checkoutCatalogo = onRequest(
       tipo: 'carrito',
       pedidoId, conversacionId, telefono: ficha.telefono,
       items, total, moneda: monedaPedido, costoEnvio, entrega, direccion, nota,
-      hayACotizar, descartados,
+      descartados,
       ventanaAbierta,
       // Fuera de la ventana, el flujo NO puede mandar un mensaje libre. Se le
       // dice qué plantilla usar; el texto y el idioma los decide él, que es
@@ -648,7 +698,6 @@ export const checkoutCatalogo = onRequest(
       pedidoId,
       total,
       moneda: monedaPedido,
-      hayACotizar,
       descartados,
       // Lo que la página le dice al cliente. Distinto según la ventana, porque
       // la experiencia es distinta: con la ventana abierta el asistente le
@@ -665,14 +714,11 @@ export const checkoutCatalogo = onRequest(
  */
 function resumenDelPedido(
   items: Array<Record<string, unknown>>, entrega: string,
-  total: number, moneda: string, hayACotizar: boolean,
+  total: number, moneda: string,
 ): string {
   const lineas = items.map((i) => `${String(i['cantidad'])}× ${String(i['nombre'])}`);
-  const cola = hayACotizar
-    ? ' (hay ítems a cotizar)'
-    : ` — total ${total} ${moneda || 'BOB'}`;
   return `Pedido desde el catálogo web (${entrega === 'envio' ? 'envío' : 'retiro'}): `
-    + `${lineas.join(', ')}${cola}`;
+    + `${lineas.join(', ')} — total ${total} ${moneda || 'BOB'}`;
 }
 
 // ---------------------------------------------------------------------------

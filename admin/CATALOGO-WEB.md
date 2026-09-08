@@ -62,13 +62,14 @@ Respuestas de error, y qué significan de verdad:
 |---|---|---|
 | `401` | firma o token inválidos | no reintentar: está mal configurado |
 | `409 catalogo web apagado` | el comercio no lo encendió en la consola | seguir la conversación sin enlace |
-| `409 catalogo vacio` | no hay ningún ítem activo | ídem: mandar a alguien a una tienda vacía es peor que no mandarlo |
+| `409 catalogo sin items vendibles` | no hay ningún ítem activo **con precio** | ídem: mandar a alguien a una tienda vacía es peor que no mandarlo. No alcanza con que haya ítems: un salón cuyo catálogo entero se cotiza tiene ítems activos y una vitrina vacía |
 | `500 sitio no configurado` | falta `SITIO_PUBLICO` y no se pudo derivar | avisar a NovuChat |
 
 ### 2.2 `GET /api/catalogo/{ficha}` — la llama el navegador del cliente
 
 Sin sesión. La ficha es la única llave. Devuelve la marca del comercio, las
-condiciones de entrega y los ítems activos (hasta 500). `Cache-Control: no-store`:
+condiciones de entrega y los ítems **activos y con precio** (hasta 500) — ver
+§8 sobre por qué los «a consultar» se quedan afuera. `Cache-Control: no-store`:
 la respuesta está atada a una conversación y una copia guardada en un teléfono
 prestado es el catálogo —y el enlace— de otra persona.
 
@@ -89,7 +90,7 @@ Una ficha vencida, inexistente o de un comercio suspendido devuelve **el mismo
 // Respuesta 200
 {
   "ok": true, "pedidoId": "cat_m0x…", "total": 105, "moneda": "BOB",
-  "hayACotizar": false, "descartados": [],
+  "descartados": [],
   "siguiente": "respuesta"          // o "notificacion" si la ventana se cerró
 }
 ```
@@ -126,7 +127,7 @@ curioso apuntaría el webhook a un servidor suyo y se llevaría el secreto.
               "moneda": "BOB", "subtotal": 90, "imagenUrl": "https://…" }],
   "total": 105, "moneda": "BOB", "costoEnvio": 15,
   "entrega": "envio", "direccion": "…", "nota": "…",
-  "hayACotizar": false, "descartados": [],
+  "descartados": [],
   "ventanaAbierta": false,
   "accion": "plantilla_carrito_espera",   // o "responder"
   "fichaCompartida": false
@@ -177,7 +178,9 @@ registra con `fijarWebhookCarrito`. Al recibir un carrito:
 3. Si `fichaCompartida` es `true` → confirmar de quién es el pedido antes de
    despachar. El enlace pudo haberse compartido.
 4. Si `descartados` no está vacío → decir qué no entró y por qué.
-5. Si `hayACotizar` es `true` → **no confirmar un total**: cotizar.
+5. Si `descartados` trae algo, puede ser porque lo dieron de baja **o porque le
+   sacaron el precio** mientras el cliente elegía. Desde el webhook no se
+   distingue: hay que preguntarlo, no suponerlo.
 
 ### 4.3 La plantilla «tu carrito te espera»
 
@@ -225,7 +228,7 @@ español y la marca de bytes que le pone adelante.
 |---|---|---|
 | `nombre` | **sí** | de acá sale el identificador del ítem |
 | `descripcion`, `area` | no | `area` agrupa el catálogo en la página |
-| `precio` | no | **vacío = a consultar**, que NO es cero. Cero significa gratis |
+| `precio` | no | **vacío = a consultar**, que NO es cero. Cero significa gratis. Ojo: lo que quede sin precio **no se publica en el catálogo web** (§8) |
 | `moneda` | no | `BOB` (por defecto) o `USD` |
 | `duracionMin` | solo con agenda | se redondea a cuartos de hora y se avisa |
 | `imagenUrl` | no | tiene que ser `https://` |
@@ -251,6 +254,30 @@ vendería a la milésima parte del precio sin que nadie revise doscientas filas;
 una prueba dedicada a ese caso exacto.
 
 ---
+
+## 7bis. Qué NO se publica, y por qué
+
+**Los ítems sin precio no llegan al catálogo web.** Se siguen ofreciendo por
+chat, donde el asistente puede cotizarlos; en la página, no aparecen.
+
+La razón es comercial antes que técnica (`Analisis/19` §5): publicar algo que no
+se puede comprar es la forma más cara de generar una conversación — el cliente
+pregunta, el asistente no puede cerrar, y desde el 1 de octubre cada mensaje del
+asistente se paga. Un ítem sin precio en la vitrina no es una oportunidad de
+venta: es una conversación garantizada que no puede terminar en nada.
+
+Se aplica en los tres lugares, y no solo en la vitrina:
+
+- **no se publica** en `GET /api/catalogo/{ficha}`;
+- **no entra al checkout**, ni con el `id` puesto a mano. Si el comercio le sacó
+  el precio mientras el cliente elegía, el ítem cae en `descartados`, igual que
+  uno dado de baja: es lo mismo, dejó de poder comprarse por acá;
+- **no se manda el enlace** si el catálogo entero se cotiza.
+
+**Lo que esta regla no cubre.** El análisis nombra tres clases que tampoco
+deberían publicarse —sin stock, a medida, y lo que necesita instalación— y de las
+tres el sistema solo sabe reconocer esta. Para las otras, por ahora, se da de
+baja el ítem.
 
 ## 7. Las fotos son del comercio, no nuestras
 

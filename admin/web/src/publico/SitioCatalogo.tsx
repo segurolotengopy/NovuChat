@@ -304,12 +304,6 @@ function Detalle({ item, moneda, cantidad, alSumar, alCerrar }: {
         {img && <img className="cat-foto-grande" src={img} alt="" />}
         <h2>{item.nombre}</h2>
         <p className="cat-precio-grande">{precioTexto(item.precio, item.moneda || moneda)}</p>
-        {item.precio === null && (
-          <p className="cat-nota">
-            Este ítem se cotiza. Agregalo igual: al cerrar el pedido te pasamos
-            el precio por WhatsApp antes de confirmar nada.
-          </p>
-        )}
         {item.descripcion && <p>{item.descripcion}</p>}
         <Contador cantidad={cantidad} alSumar={alSumar} nombre={item.nombre} />
       </div>
@@ -388,9 +382,9 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
             <span>{i.nombre}</span>
             <Contador cantidad={carrito[i.id] ?? 0} nombre={i.nombre}
                       alSumar={(n) => alCambiar(sumar(carrito, i.id, n))} />
-            <strong>{i.precio === null
-              ? 'A cotizar'
-              : precioTexto(i.precio * (carrito[i.id] ?? 0), i.moneda || moneda)}</strong>
+            <strong>{precioTexto(
+              i.precio === null ? null : i.precio * (carrito[i.id] ?? 0),
+              i.moneda || moneda)}</strong>
           </li>
         ))}
       </ul>
@@ -422,10 +416,7 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
                   onChange={(e) => setNota(e.target.value)} />
       </label>
 
-      <p className="cat-total">
-        Total {precioTexto(totalConEnvio, moneda)}
-        {elegidos.some((i) => i.precio === null) && ' + ítems a cotizar'}
-      </p>
+      <p className="cat-total">Total {precioTexto(totalConEnvio, moneda)}</p>
 
       {/* El mínimo se avisa, no se impone acá: quien decide si acepta el pedido
           es el comercio, y el servidor lo vuelve a mirar. Frenar el botón haría
@@ -469,17 +460,16 @@ function Confirmacion({ recibo, negocio }: { recibo: RespuestaCheckout; negocio:
           <strong> Respondelo</strong> y seguimos con tu pedido desde ahí.
         </p>
       )}
+      {/* «No pudimos incluir» y no «ya no estaba disponible»: son dos causas
+          —lo dieron de baja, o le sacaron el precio mientras elegías— y desde
+          acá no se sabe cuál fue. Decir la que no era hace que el comercio
+          reciba una pregunta que no esperaba. */}
       {recibo.descartados.length > 0 && (
         <p className="cat-nota">
           {recibo.descartados.length === 1
-            ? 'Un ítem de tu pedido ya no estaba disponible y no lo incluimos.'
-            : `${recibo.descartados.length} ítems de tu pedido ya no estaban disponibles y no los incluimos.`}
+            ? 'Un ítem de tu pedido no lo pudimos incluir.'
+            : `${recibo.descartados.length} ítems de tu pedido no los pudimos incluir.`}
           {' '}Te lo aclaramos por WhatsApp.
-        </p>
-      )}
-      {recibo.hayACotizar && (
-        <p className="cat-nota">
-          Hay ítems que se cotizan: el total todavía no es definitivo.
         </p>
       )}
     </main>
@@ -562,7 +552,7 @@ function mensajeDeFallo(estado: number, codigo: unknown): string {
   if (estado === 429) return 'Ya mandaste varios pedidos con este enlace. Escribinos por WhatsApp y seguimos por ahí.';
   if (codigo === 'falta la direccion') return 'Falta la dirección de entrega.';
   if (codigo === 'nada de lo pedido sigue disponible') {
-    return 'Lo que elegiste ya no está disponible. Actualizá la página para ver el catálogo de ahora.';
+    return 'Lo que elegiste ya no se puede pedir por acá. Actualizá la página para ver el catálogo de ahora.';
   }
   if (codigo === 'monedas mezcladas') {
     return 'Tu pedido mezcla precios en bolivianos y en dólares. Separalos en dos pedidos.';

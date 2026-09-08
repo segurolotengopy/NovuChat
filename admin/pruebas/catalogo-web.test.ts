@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { colorValido, urlImagenValida } from '../functions/src/catalogoWeb.ts';
+import { colorValido, sePuedeComprar, urlImagenValida } from '../functions/src/catalogoWeb.ts';
 import { resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/prompt.ts';
 import {
   aCsv, idDeNombre, leerPrecio, partirCsv, validarCsv,
@@ -109,7 +109,41 @@ describe('El color de marca es un enumerado de seis hexadecimales', () => {
 });
 
 // ===========================================================================
-// 3) UMBRAL DEL CATÁLOGO AL PROMPT
+// 3) SIN PRECIO NO SE PUBLICA
+// ===========================================================================
+
+describe('Un ítem «a consultar» no llega al catálogo web', () => {
+  it('acepta lo que tiene precio, incluido el gratis', () => {
+    expect(sePuedeComprar({ precio: 45 })).toBe(true);
+    // Cero es GRATIS y es una promesa que el comercio puede querer hacer: una
+    // muestra, un envase, un servicio de cortesía. Se puede comprar.
+    expect(sePuedeComprar({ precio: 0 })).toBe(true);
+  });
+
+  it('rechaza el precio ausente, que significa «a consultar»', () => {
+    // La razón es comercial antes que técnica (Analisis/19 §5): publicar algo
+    // que no se puede comprar es la forma más cara de generar una conversación
+    // —el cliente pregunta, el asistente no puede cerrar, y desde el 1 de
+    // octubre cada mensaje se paga.
+    expect(sePuedeComprar({ nombre: 'Torta a pedido' })).toBe(false);
+    expect(sePuedeComprar({ precio: null })).toBe(false);
+    expect(sePuedeComprar(undefined)).toBe(false);
+  });
+
+  it('rechaza un precio que no es un número usable, venga como venga', () => {
+    // Un precio guardado como cadena por un script viejo o una importación mal
+    // hecha publicaría un ítem cuyo total el checkout no puede calcular.
+    expect(sePuedeComprar({ precio: '45' })).toBe(false);
+    // NaN ES un número para `typeof`, y esa era la primera versión del filtro:
+    // pasaba, se publicaba, y el checkout calculaba `NaN * cantidad` — un
+    // pedido con total NaN guardado en la base y mandado al flujo.
+    expect(sePuedeComprar({ precio: NaN })).toBe(false);
+    expect(sePuedeComprar({ precio: Infinity })).toBe(false);
+  });
+});
+
+// ===========================================================================
+// 4) UMBRAL DEL CATÁLOGO AL PROMPT
 // ===========================================================================
 
 describe('El resumen de un catálogo grande', () => {
@@ -141,15 +175,19 @@ describe('El resumen de un catálogo grande', () => {
   });
 
   it('el umbral sigue siendo un número chico y explícito', () => {
-    // Si alguien lo sube a 500 «para que el asistente sepa todo», vuelve el
-    // problema que este umbral existe para evitar.
+    // NO ES POR COSTO, y conviene que quede escrito acá también: Analisis/19 §2
+    // midió que 500 ítems en el prompt cuestan 0,0585 Bs, o sea 0,43 mensajes
+    // del asistente. El umbral existe por LEGIBILIDAD del chat y por
+    // CONFIABILIDAD del modelo. Si alguien lo sube a 500 «porque total es
+    // barato», el problema que vuelve no es la factura: es el asistente citando
+    // mal un precio, que además cuesta el mensaje de la corrección.
     expect(UMBRAL_CATALOGO_AL_PROMPT).toBeGreaterThan(10);
     expect(UMBRAL_CATALOGO_AL_PROMPT).toBeLessThanOrEqual(100);
   });
 });
 
 // ===========================================================================
-// 4) IMPORTACIÓN DESDE CSV
+// 5) IMPORTACIÓN DESDE CSV
 // ===========================================================================
 
 describe('Leer un precio escrito por una persona', () => {
@@ -296,7 +334,7 @@ describe('El identificador sale del nombre y es estable', () => {
 });
 
 // ===========================================================================
-// 5) REGLAS DE FIRESTORE
+// 6) REGLAS DE FIRESTORE
 // ===========================================================================
 
 const aqui = dirname(fileURLToPath(import.meta.url));

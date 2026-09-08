@@ -199,3 +199,32 @@ caduca a las 72 horas.
 Y una consecuencia que conviene conocer: la página pública y la consola comparten
 origen. Se aceptó con argumentos en `admin/SEGURIDAD.md` T-37, junto con lo que
 hay que hacer —un segundo sitio de Hosting— antes de tener volumen real.
+
+---
+
+## 9. Dos correcciones del análisis comercial (08/09)
+
+`Analisis/19-catalogo-web-y-precio-por-flujo.md` revisó este diseño con las
+tarifas de Meta del 1 de octubre y corrigió dos cosas.
+
+**1. El umbral del punto 7 sobrevive, pero el motivo era otro.** Acá se dijo que
+el umbral evita que «el catálogo deje de crecer dentro de cada mensaje», y la
+implementación lo justificó por costo y latencia. Medido: **500 ítems en el
+prompt cuestan 0,0585 Bs, o sea 0,43 mensajes del asistente.** El catálogo entero
+de una ferretería cuesta menos de medio mensaje; el token dejó de ser la
+restricción el día que Meta empezó a cobrar por mensaje. El umbral se mantiene
+por legibilidad del chat y confiabilidad del modelo, y los 40 son una
+recomendación, no una medición.
+
+**2. Los ítems «a consultar» no van al catálogo web.** No estaba dicho en ninguna
+parte de este documento y la primera implementación los publicaba, con un texto
+que invitaba a agregarlos al carrito. Publicar algo que no se puede comprar es la
+forma más cara de generar una conversación: el cliente pregunta, el asistente no
+puede cerrar, y cada mensaje se paga. Corregido en los tres endpoints.
+
+Y una tercera conclusión, que no corrige nada pero cambia la prioridad: **con el
+catálogo web el Flujo B pasa de costar 25 % más que el A a costar 61 % menos**,
+porque un pedido baja de 13 mensajes a 4. Sobre un plan de 200 conversaciones el
+margen del flujo de pedidos va de 46 % a 98 %. Eso no justifica cobrar distinto
+por flujo —la diferencia se está por invertir— pero sí prioriza poner esto en
+marcha.
