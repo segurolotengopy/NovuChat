@@ -79,6 +79,7 @@ export function Catalogo() {
   const { tenantId = '' } = useParams();
   const flujos = useFlujos(tenantId) ?? [];
   const conAgenda = flujos.includes('agendamiento');
+  const conVenta = flujos.includes('venta');
   const [items, setItems] = useState<Item[] | null>(null);
   const [nuevo, setNuevo] = useState(NUEVO);
   const [estado, setEstado] = useState<string | null>(null);
@@ -201,6 +202,8 @@ export function Catalogo() {
         {conAgenda ? ' servicios' : ' productos'}. Dar de baja un ítem lo saca
         de la oferta sin borrar su historial.
       </p>
+
+      <EnlaceAlCatalogoWeb conVenta={conVenta} />
 
       {items === null ? <p>Cargando…</p> : items.length === 0 ? (
         <p className="vacio">Todavía no hay nada cargado. Sin esto el asistente conversa, pero no ofrece nada concreto.</p>
@@ -583,5 +586,48 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
 
       {estado && <p role="status">{estado}</p>}
     </details>
+  );
+}
+
+/**
+ * =============================================================================
+ * «VER EL CATÁLOGO WEB» — ANDAMIO DE DEMOSTRACIÓN, NO UNA FUNCIÓN TERMINADA
+ * =============================================================================
+ *
+ * PARA QUÉ EXISTE. En una demostración, la secuencia que vende es: se muestra la
+ * lista de productos en la consola y, sin cambiar de tema, se abre la página que
+ * ve el cliente. Hasta ahora eso obligaba a pegar una dirección a mano delante
+ * del prospecto, que es exactamente el momento en que uno no quiere estar
+ * buscando una URL.
+ *
+ * POR QUÉ NO ES LA VERSIÓN DEFINITIVA, dicho acá para que nadie lo confunda con
+ * una función del producto. El catálogo público **exige una ficha por
+ * conversación** (`catalogoWeb.ts`): sin una conversación de WhatsApp detrás no
+ * hay ficha que emitir, y emitir una desde la consola le daría al comercio una
+ * llave a una página que en producción solo debería abrir un cliente derivado
+ * por el asistente. Lo correcto es un endpoint de VISTA PREVIA autenticado como
+ * el administrador —que no cuente como conversación ni gaste una ficha— y eso
+ * todavía no existe. Está anotado en `CATALOGO-WEB.md`.
+ *
+ * MIENTRAS TANTO, EL ENLACE SALE DE UNA VARIABLE DE ENTORNO Y NO DE UN CÁLCULO.
+ * Sin `VITE_CATALOGO_DEMO_URL` no se pinta nada, así que la consola de un
+ * cliente real no muestra ningún enlace por accidente: hay que ponerlo a
+ * propósito, en la máquina donde se hace la demostración. Es la diferencia entre
+ * un andamio que se ve y uno que se olvida puesto.
+ *
+ * Y SOLO CON EL FLUJO DE VENTA, como todo el catálogo web (DISENO.md
+ * §4octies.0bis).
+ */
+function EnlaceAlCatalogoWeb({ conVenta }: { conVenta: boolean }) {
+  const url = import.meta.env['VITE_CATALOGO_DEMO_URL'];
+  if (!conVenta || typeof url !== 'string' || !url.startsWith('http')) return null;
+  return (
+    <p>
+      {/* `noreferrer` además de `noopener`: la página del catálogo no tiene por
+          qué enterarse de desde qué dirección de la consola se la abrió. */}
+      <a href={url} target="_blank" rel="noopener noreferrer">
+        Ver el catálogo web como lo ve un cliente ↗
+      </a>
+    </p>
   );
 }

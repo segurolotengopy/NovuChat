@@ -229,6 +229,35 @@ prohibición 3 de `CLAUDE.md` gobierna igual acá.
 
 ---
 
+## 5bis. El enlace desde la consola: andamio de demostración
+
+La pestaña de catálogo puede mostrar **«Ver el catálogo web como lo ve un
+cliente»**, para que en una demostración se pase de la lista de productos a la
+página del cliente sin pegar una dirección a mano delante del prospecto.
+
+**No es una función terminada, y conviene saber por qué.** El catálogo público
+exige una **ficha por conversación**: sin una conversación de WhatsApp detrás no
+hay ficha que emitir, y emitirla desde la consola le daría al comercio una llave
+a una página que en producción solo debería abrir un cliente derivado por el
+asistente. Lo correcto es un **endpoint de vista previa autenticado como el
+administrador** —que no cuente como conversación ni gaste una ficha— y todavía no
+existe.
+
+Mientras tanto el enlace sale de una variable de compilación:
+
+```bash
+VITE_CATALOGO_DEMO_URL="http://127.0.0.1:5241/c/<ficha>" pnpm web:build
+```
+
+**Sin la variable no se pinta ningún enlace**, y la URL tampoco queda en el
+bundle: comprobado compilando de las dos maneras y buscándola en `web/dist`. O
+sea que la consola de un cliente real no puede mostrarlo por accidente — hay que
+ponerlo a propósito, en la máquina donde se hace la demostración. Es la
+diferencia entre un andamio que se ve y uno que se queda puesto.
+
+Para la demostración local, la dirección es la que imprime
+`scripts/catalogo-demo.mjs` al arrancar.
+
 ## 6. Importar un catálogo desde una planilla
 
 La pestaña de catálogo tiene «Importar o exportar en lote». Acepta CSV, TSV y lo
