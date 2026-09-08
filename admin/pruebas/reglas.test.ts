@@ -209,6 +209,13 @@ beforeEach(async () => {
         montoMensual: 350, moneda: 'BOB',
         motivoVisible: estado === 'suspendido' ? 'Factura de agosto pendiente.' : '',
       });
+      // Un pago del prepago: lo crea el flujo interno y lo confirma NovuChat,
+      // los dos por Function. Ningún navegador lo escribe.
+      await setDoc(doc(db, `tenants/${t}/pagos/p1`), {
+        tipo: 'mensualidad', plan: 'base', meses: 1, monto: 250, moneda: 'BOB',
+        descripcion: 'Plan Base · 1 mes', estado: 'esperando_comprobante',
+        canal: 'whatsapp', telefonoEnmascarado: '5917****001', creadoEn: Timestamp.now(),
+      });
       await setDoc(doc(db, `tenants/${t}/reclamos/r1`), {
         asunto: 'El asistente no responde', texto: 'Desde ayer no contesta.',
         categoria: 'falla', estado: 'nuevo',
@@ -292,6 +299,7 @@ describe('Control de la semilla', () => {
           `tenants/${t}/contactos/k1`,
           `tenants/${t}/contactos/k2`,
           `tenants/${t}/cuenta/estado`,
+          `tenants/${t}/pagos/p1`,
           `tenants/${t}/reclamos/r1`,
           `rutasWhatsApp/pnid-${t}`,
         ]),
@@ -1015,6 +1023,65 @@ describe('Estado de cuenta', () => {
 // ===========================================================================
 // 14. MÉTRICAS VISIBLES PARA EL COMERCIO
 // ===========================================================================
+// ===========================================================================
+// PAGOS DEL PREPAGO — mensualidades y bolsas
+// ===========================================================================
+//
+// El único acto que suma meses o bolsas a una cuenta es `confirmarPago`, por
+// Function y con rol de propietario. Si el comercio pudiera escribir /pagos se
+// confirmaría los suyos; si el propietario pudiera desde el navegador, no
+// quedaría auditoría. Por eso NADIE escribe desde acá.
+describe('Pagos del prepago', () => {
+  it('el admin del comercio lee los suyos: es su estado de cuenta', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/pagos/p1`)));
+    await assertSucceeds(getDocs(query(
+      collection(adminA(), `tenants/${A}/pagos`), orderBy('creadoEn', 'desc'), limit(20))));
+  });
+
+  it('y NO los de otro comercio', async () => {
+    await assertFails(getDoc(doc(adminA(), `tenants/${B}/pagos/p1`)));
+    await assertFails(getDocs(collection(adminA(), `tenants/${B}/pagos`)));
+  });
+
+  it('el operador no los ve: la situación financiera no es asunto de quien atiende', async () => {
+    await assertFails(getDoc(doc(operA(), `tenants/${A}/pagos/p1`)));
+  });
+
+  it('el propietario los lee de cualquier comercio: es quien confirma', async () => {
+    await assertSucceeds(getDoc(doc(propietario(), `tenants/${A}/pagos/p1`)));
+    await assertSucceeds(getDocs(query(
+      collection(propietario(), `tenants/${A}/pagos`), orderBy('creadoEn', 'desc'), limit(20))));
+  });
+
+  it('un comercio CORTADO sigue viendo sus pagos: necesita ver qué debe', async () => {
+    // Suspendido y cortado por prepago se leen con `tenantLegible`.
+    await assertSucceeds(getDoc(doc(adminD(), `tenants/${D}/pagos/p1`)));
+  });
+
+  it('nadie lo escribe desde el navegador: ni el comercio, ni el propietario, ni la ingesta', async () => {
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/pagos/p1`), { estado: 'confirmado' }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/pagos/p2`), { tipo: 'bolsa', estado: 'confirmado' }));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/pagos/p1`), { estado: 'confirmado' }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/pagos/p2`), { tipo: 'bolsa' }));
+    await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/pagos/p1`)));
+    await assertFails(deleteDoc(doc(propietario(), `tenants/${A}/pagos/p1`)));
+  });
+
+  it('la cuenta prepago tampoco: el saldo no lo toca ninguna de las dos partes', async () => {
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cuenta/estado`), { bolsa: 99999 }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cuenta/estado`), { periodoPagado: '2099-12' }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cuenta/estado`), { corte: null }));
+  });
+
+  it('la bitácora admite los tres eventos nuevos del prepago', async () => {
+    for (const tipo of ['corte_servicio', 'reanudacion_servicio', 'pago_registrado']) {
+      await assertSucceeds(addDoc(collection(ingestaA(), `tenants/${A}/bitacora`), {
+        ts: serverTimestamp(), tipo, resultado: 'ok', canal: 'sistema',
+      }));
+    }
+  });
+});
+
 describe('Personas atendidas, vistas por el comercio', () => {
   it('el admin del comercio ve su propio contador', async () => {
     await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`)));

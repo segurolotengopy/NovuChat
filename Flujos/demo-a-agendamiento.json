@@ -862,7 +862,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({}) }}",
+        "jsonBody": "={{ JSON.stringify({ from: Array.isArray($json.messages) && $json.messages[0] ? String($json.messages[0].from || '') : '' }) }}",
         "options": {
           "timeout": 4000,
           "response": {
@@ -872,7 +872,8 @@
             }
           }
         }
-      }
+      },
+      "notes": "Manda `from` para que el prepago pueda respetar una conversacion ya abierta (ventana de 24 h) cuando el negocio se quedo sin conversaciones. Sin `from` el corte no tiene excepcion. Ver admin/functions/src/ingesta.ts, configuracionFlujo."
     },
     {
       "id": "code-fusionar-config",

@@ -120,7 +120,33 @@ evitarlo en vivo). Recomendado: **(a)**.
    sustituido por un secreto real dentro del JSON (criterio D-15 — tokens y
    claves viven solo en credenciales).
 
-## 6. Notas de compatibilidad
+## 6. Los flujos internos de NovuChat (2026-09-07)
+
+Dos flujos que NO atienden a clientes finales: le hablan al **negocio**, desde
+el número propio de NovuChat. Análisis, lista de necesidades y procedimiento en
+`Analisis/11-prepago-y-alta-de-clientes.md`.
+
+| Archivo | Qué hace | Cuándo corre |
+|---|---|---|
+| `novuchat-cobro-prepago.json` | El negocio escribe «pagar», «bolsa» o «saldo» (o cualquier cosa) y recibe un menú: renovar su plan, cambiar a otro, bolsa de 150, saldo. Elige, recibe el **QR real de NovuChat**, manda el comprobante, y el flujo lo reenvía al celular de NovuChat. La confirmación es en la consola. | Con cada mensaje al número interno |
+| `novuchat-recordatorios-prepago.json` | Pide a `recordatoriosPrepago` qué avisos corresponden hoy (renovación a 7 y 2 días, corte por pago, corte por conversaciones) y manda la plantilla. Marca solo con el id de mensaje de Meta. | Cron `0 9,17 * * *` |
+
+**Sin agente de IA, a propósito:** cuatro opciones fijas con precio fijo y
+dinero de por medio. La lógica vive en `admin/functions/src/cobroTextos.ts`
+(puro, probado); los nodos Code del flujo se prueban desde el JSON en
+`admin/pruebas/flujos-internos.test.ts`.
+
+Credenciales: WhatsApp API (token que alcance al número interno), WhatsApp
+Trigger (App Secret de la app del número interno) y Header Auth «Cobro NovuChat
+interno (auto)» con el valor del secreto `INGESTA_CLIENTE20`. En `Config base`:
+`REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT` y `REEMPLAZAR_NUMERO_ADMIN_NOVUCHAT_SIN_+`
+(el celular al que llegan los avisos y los comprobantes).
+
+**Los flujos A y B cambiaron en una línea:** «Traer configuración» manda
+`{ from }` para que, cuando un negocio agote sus conversaciones, el cliente que
+ya está a mitad de una conversación la termine. Hay que republicarlos.
+
+## 7. Notas de compatibilidad
 
 - Los JSON usan los nodos estándar de n8n (WhatsApp Trigger, IF, Set, Code,
   AI Agent, Gemini, Window Buffer Memory, Google Calendar Tool, HTTP Request).

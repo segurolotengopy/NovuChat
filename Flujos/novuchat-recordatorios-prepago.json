@@ -1,0 +1,310 @@
+{
+  "name": "NovuChat Interno — Recordatorios prepago",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 300
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9,17 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-dos-veces",
+      "name": "Dos veces por día (09:00 y 17:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -40,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a00",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT"
+            },
+            {
+              "id": "a01",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "a02",
+              "name": "idiomaPlantilla",
+              "type": "string",
+              "value": "es"
+            },
+            {
+              "id": "a03",
+              "name": "urlRecordatorios",
+              "type": "string",
+              "value": "https://us-east1-novuchat-demo.cloudfunctions.net/recordatoriosPrepago"
+            },
+            {
+              "id": "a04",
+              "name": "urlMarcar",
+              "type": "string",
+              "value": "https://us-east1-novuchat-demo.cloudfunctions.net/marcarRecordatorioPrepago"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config-base-recordatorio",
+      "name": "Config base del recordatorio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.urlRecordatorios }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "traer-recordatorios",
+      "name": "Traer recordatorios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Cobro NovuChat interno (auto)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convierte la respuesta de `recordatoriosPrepago` en un item por envío.\n//\n// EL CÓDIGO SE MIRA: si el panel no contestó 200, no se manda nada. Es la\n// misma política que el flujo de recordatorios de citas: acá no espera nadie\n// en tiempo real, y mandar plantillas que Meta cobra sin saber a quién ni por\n// qué es peor que saltarse una corrida. La siguiente es en ocho horas.\n//\n// IDEMPOTENCIA: el servidor solo devuelve lo que NO se mandó todavía (mira\n// `cuenta.recordatorios`), y `Marcar como enviado` escribe la clave recién con\n// el identificador de mensaje de Meta. Un envío fallido queda sin marcar y\n// vuelve a salir en la corrida siguiente.\nconst cfg = $('Config base del recordatorio').first().json;\nconst r = $input.first().json ?? {};\nconst codigo = Number(r.statusCode);\nconst cuerpo = (r.body && typeof r.body === 'object') ? r.body : {};\nif (codigo !== 200 || !Array.isArray(cuerpo.recordatorios)) return [];\n\nreturn cuerpo.recordatorios\n  .filter((x) => x && /^[0-9]{8,15}$/.test(String(x.telefono || '')) && x.plantilla && x.clave)\n  .map((x) => ({ json: {\n    tenantId: String(x.tenantId),\n    negocio: String(x.negocio || ''),\n    telefono: String(x.telefono),\n    clave: String(x.clave),\n    tipo: String(x.tipo || ''),\n    plantilla: String(x.plantilla),\n    parametros: Array.isArray(x.parametros) ? x.parametros.map((p) => String(p)) : [],\n    phoneNumberId: cfg.phoneNumberId,\n    waGraphVersion: cfg.waGraphVersion,\n    idiomaPlantilla: cfg.idiomaPlantilla || 'es',\n    urlMarcar: cfg.urlMarcar,\n  } }));\n"
+      },
+      "id": "preparar-envios",
+      "name": "Preparar envíos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  to: $json.telefono,\n  type: 'template',\n  template: {\n    name: $json.plantilla,\n    language: { code: $json.idiomaPlantilla || 'es' },\n    components: [{ type: 'body', parameters: $json.parametros.map((p) => ({ type: 'text', text: String(p) })) }],\n  },\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "enviar-plantilla",
+      "name": "Enviar plantilla",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp NovuChat (numero interno)"
+        }
+      },
+      "notes": "Plantilla aprobada por Meta, por httpRequest con el JSON a mano: el nodo de WhatsApp manda template.language sin code (hallazgo del 06/09)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.messages ? $json.messages[0].id : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-enviado",
+      "name": "¿Se envió de verdad?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Preparar envíos').item.json.urlMarcar }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Preparar envíos').item.json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenantId: $('Preparar envíos').item.json.tenantId, clave: $('Preparar envíos').item.json.clave, telefono: $('Preparar envíos').item.json.telefono, idMensaje: $json.messages[0].id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "marcar-enviado",
+      "name": "Marcar como enviado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Cobro NovuChat interno (auto)"
+        }
+      },
+      "notes": "Solo con el identificador de mensaje que devolvio Meta. Un envio fallido no se marca y vuelve a salir en la corrida siguiente."
+    }
+  ],
+  "connections": {
+    "Dos veces por día (09:00 y 17:00)": {
+      "main": [
+        [
+          {
+            "node": "Config base del recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base del recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Traer recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer recordatorios": {
+      "main": [
+        [
+          {
+            "node": "Preparar envíos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar envíos": {
+      "main": [
+        [
+          {
+            "node": "Enviar plantilla",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar plantilla": {
+      "main": [
+        [
+          {
+            "node": "¿Se envió de verdad?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se envió de verdad?": {
+      "main": [
+        [
+          {
+            "node": "Marcar como enviado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

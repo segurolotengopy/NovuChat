@@ -15,8 +15,8 @@ nada de `Flujos/`.
 | | |
 |---|---|
 | Andamiaje | escrito y compilando |
-| Pruebas de reglas | **179 de 179 en verde**, ejecutadas contra el emulador |
-| Pruebas puras (saneo, ranuras, índices, rótulos) | **31 de 31 en verde** |
+| Pruebas de reglas | **223 de 223 en verde**, ejecutadas contra el emulador |
+| Pruebas puras (saneo, ranuras, índices, rótulos, QR, cotejo, prepago, cobro, flujos) | **222 en verde** |
 | Prueba a mano del panel | **recorrida de punta a punta** contra los emuladores, con datos sembrados |
 | Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
 
@@ -118,6 +118,19 @@ elige una y listo, no hace falta *Add new account*.
   el problema de inotify. Los datos de Firestore se ven en el panel.
 - `web/.env.local` lo genera `pnpm emuladores` y está en `.gitignore`.
 - `pnpm sembrar:limpio` borra lo sembrado y vuelve a empezar.
+
+## Scripts de operación (proyecto real)
+
+| Script | Qué hace |
+|---|---|
+| `scripts/alta-comercio.mjs` | Alta de un negocio con su administrador (cuenta + enlace de contraseña), ficha comercial y cuenta prepago (`--modalidad prueba/prepago/demostracion`). Exige `pnpm functions:build`. |
+| `scripts/asignar-numero.mjs` | Número de WhatsApp + flujo + alias de secreto en `/rutasWhatsApp`, con unicidad de número y de alias. |
+| `scripts/activar-cobro-novuchat.mjs` | Ficha del negocio `novuchat` y encendido de su QR de cobro real (el que envía el flujo interno). |
+| `scripts/superadmin.mjs` | Superadministradores (solo con Google). |
+| `scripts/cargar-plataforma.mjs` | Rótulos del cobro simulado. |
+| `scripts/sembrar-demos.mjs` | Los dos negocios de los demos. |
+
+Todos son secos sin `--aplicar`.
 
 ## Cómo trabajar
 

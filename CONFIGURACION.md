@@ -40,6 +40,9 @@
 | Versión | 2.36.5 (fijada) |
 | Licencia | Community registrada (no comparte flujos entre usuarios) |
 | Flujo Demo A | `NovuChat Demo A — Agendamiento (Belleza y Salud)` |
+| Flujo interno de cobro | `NovuChat Interno — Cobro prepago (planes y bolsas)` — `Flujos/novuchat-cobro-prepago.json`; número propio de NovuChat, alias `cliente20`, flujo `interno` |
+| Flujo interno de recordatorios | `NovuChat Interno — Recordatorios prepago` — `Flujos/novuchat-recordatorios-prepago.json`; cron `0 9,17 * * *` |
+| Plantillas de Meta del prepago | `nc_renovacion_pendiente`, `nc_servicio_cortado`, `nc_sin_conversaciones` (idioma `es`, categoría Utilidad; cuerpos en `admin/functions/src/prepago.ts`) |
 | Zona horaria | `America/La_Paz` |
 | Nodos Code | solo JavaScript (la imagen no trae Python) |
 | Base de datos | `pgvector/pgvector:pg16` (contenedor `n8n-db`) |

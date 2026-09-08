@@ -1,11 +1,11 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { asignarRol, type Rol } from './claims.js';
+import { asignarRol } from './claims.js';
 
 initializeApp();
 setGlobalOptions({ region: REGION, maxInstances: 10 });
@@ -17,57 +17,22 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 import { registrar } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
+export {
+  registrarPago, confirmarPago, rechazarPago, configurarCuenta, editarTenant,
+} from './cuentas.js';
+export { cobroPrepago, recordatoriosPrepago, marcarRecordatorioPrepago } from './cobroPrepago.js';
 
 const db = () => getFirestore();
 
-// --- Ayudantes de autorización del lado servidor ----------------------------
-// Las Cloud Functions NO están sujetas a firestore.rules: usan el SDK Admin y se
-// las saltan. Por eso cada función vuelve a comprobar el permiso a mano, desde
-// los claims del token que Firebase ya verificó. Confiar en que "el panel solo
-// muestra el botón al admin" sería confiar en el navegador.
-
-const claims = (p: CallableRequest) => {
-  const nc = p.auth?.token?.['nc'];
-  if (typeof nc !== 'object' || nc === null) return { p: false, t: {} as Record<string, Rol> };
-  const b = nc as Record<string, unknown>;
-  return {
-    p: b['p'] === true,
-    t: (typeof b['t'] === 'object' && b['t'] !== null ? b['t'] : {}) as Record<string, Rol>,
-  };
-};
-
-const exigirAutenticado = (p: CallableRequest): string => {
-  if (!p.auth?.uid) throw new HttpsError('unauthenticated', 'Inicie sesión.');
-  return p.auth.uid;
-};
-
-const exigirPropietario = (p: CallableRequest): string => {
-  const uid = exigirAutenticado(p);
-  if (!claims(p).p) throw new HttpsError('permission-denied', 'Solo NovuChat.');
-  return uid;
-};
-
-const exigirAdminDe = (p: CallableRequest, tenantId: string): string => {
-  const uid = exigirAutenticado(p);
-  if (claims(p).t[tenantId] !== 'admin') {
-    throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
-  }
-  return uid;
-};
-
-const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
-// `phone_number_id` de Meta: dígitos. Se valida el formato para que jamás se
-// use como parte de una ruta de Firestore un valor con barras o puntos.
-const ID_NUMERO = /^[0-9]{6,25}$/;
-// Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-const VERTICALES = new Set(['agendamiento', 'venta', 'interno']);
-const texto = (v: unknown, max: number): string =>
-  typeof v === 'string' ? v.slice(0, max).trim() : '';
-
-const auditar = (tenantId: string, accion: string, uid: string, detalle: object = {}) =>
-  db().collection(`tenants/${tenantId}/auditoria`).add({
-    accion, uid, en: Timestamp.now(), ...detalle,
-  });
+// Los ayudantes de autorización viven en `autorizacion.ts`: los comparten los
+// módulos de cuentas y de cobro, que no pueden importar a su propio importador.
+import {
+  ID_NUMERO, ID_TENANT, VERTICALES, auditar, claims, exigirAdminDe, exigirPropietario, texto,
+} from './autorizacion.js';
+import {
+  cuentaDelAdministrador, cuentaInicialDe, escribirCuenta, fichaComercialDe,
+} from './cuentas.js';
+import { PRUEBA, periodoDe } from './prepago.js';
 
 // ---------------------------------------------------------------------------
 // ALTA DE UN NEGOCIO. Es lo que sostiene la promesa de instalar un cliente en
@@ -105,14 +70,25 @@ export const altaTenant = onCall(async (peticion) => {
     throw new HttpsError('already-exists', 'Ese identificador ya se usó. Elija otro.');
   }
 
-  const usuarioAdmin = await getAuth().getUserByEmail(correoAdmin).catch(() => null);
-  if (!usuarioAdmin) {
-    throw new HttpsError('failed-precondition', 'El administrador debe haber ingresado una vez.');
-  }
+  // LA FICHA COMERCIAL Y LA CUENTA PREPAGO se validan ANTES de crear nada: un
+  // alta a medias —negocio creado, plan inválido— dejaría un identificador
+  // quemado que no se puede reutilizar.
+  const fichaComercial = fichaComercialDe(datos);
+  const inicial = cuentaInicialDe(datos);
+
+  // LA CUENTA DEL ADMINISTRADOR SE CREA ACÁ SI NO EXISTE. Hasta el 2026-09-07
+  // esta función exigía que la persona ya hubiera ingresado una vez, y la
+  // consola no tiene pantalla de registro: nadie podía darse de alta. Ahora se
+  // crea con una clave aleatoria que nadie ve y se devuelve el enlace para que
+  // ponga la suya, igual que hace `scripts/alta-comercio.mjs`.
+  const admin = await cuentaDelAdministrador(correoAdmin, texto(datos['nombreAdmin'], 120));
+  const usuarioAdmin = await getAuth().getUser(admin.uid);
 
   const lote = db().batch();
   lote.create(ref, {
-    nombre, estado: 'activo', plan: 'basico', vertical, flujos,
+    nombre, estado: 'activo', plan: inicial.plan, vertical, flujos,
+    razonSocial: '', nit: '', dueno: { nombre: '', telefono: '', correo: '' }, telefonosCobro: [],
+    ...fichaComercial,
     // El número de WhatsApp se asigna aparte, con `asignarNumero`: exige
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,
@@ -142,9 +118,32 @@ export const altaTenant = onCall(async (peticion) => {
   await lote.commit();
 
   await asignarRol(usuarioAdmin.uid, tenantId, 'admin');
-  await auditar(tenantId, 'alta_tenant', uid, { admin: usuarioAdmin.uid });
 
-  return { tenantId };
+  // LA CUENTA PREPAGO NACE CON SU MODALIDAD. Sin esto el negocio sería una
+  // demostración más: sin corte y sin cobro. Ver `prepago.ts`.
+  const periodo = periodoDe(Date.now());
+  const cuenta = await escribirCuenta(tenantId, {
+    plan: inicial.plan,
+    modalidad: inicial.modalidad,
+    ...(inicial.modalidad === 'prueba'
+      ? { periodoPrueba: periodo, bolsaPrueba: PRUEBA.conversaciones } : {}),
+    ...(inicial.modalidad === 'prepago'
+      ? { periodoPagado: inicial.primerMesPagado ? periodo : '' } : {}),
+    bolsa: 0,
+  }, uid);
+
+  await auditar(tenantId, 'alta_tenant', uid, {
+    admin: usuarioAdmin.uid, cuentaCreada: admin.creada, modalidad: inicial.modalidad, plan: inicial.plan,
+  });
+
+  return {
+    tenantId,
+    cuentaCreada: admin.creada,
+    // El enlace se muestra UNA vez, a quien hizo el alta, para que se lo pase
+    // al administrador. No se guarda en ningún lado.
+    enlaceContrasena: admin.enlace,
+    cuenta: cuenta.resumen,
+  };
 });
 
 // ---------------------------------------------------------------------------

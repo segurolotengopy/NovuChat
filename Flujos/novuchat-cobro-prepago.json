@@ -1,0 +1,616 @@
+{
+  "name": "NovuChat Interno — Cobro prepago (planes y bolsas)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 60
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ]
+      },
+      "id": "trigger-whatsapp",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        300
+      ],
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "",
+          "name": "WhatsApp Trigger NovuChat (numero interno)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Array.isArray($json.messages) ? $json.messages.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ Array.isArray($json.statuses) ? $json.statuses.length : 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-es-mensaje",
+      "name": "¿Es un mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -80,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a00",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT"
+            },
+            {
+              "id": "a01",
+              "name": "numeroAdminNovuChat",
+              "type": "string",
+              "value": "REEMPLAZAR_NUMERO_ADMIN_NOVUCHAT_SIN_+"
+            },
+            {
+              "id": "a02",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "a03",
+              "name": "urlCobro",
+              "type": "string",
+              "value": "https://us-east1-novuchat-demo.cloudfunctions.net/cobroPrepago"
+            },
+            {
+              "id": "a04",
+              "name": "urlBaseQr",
+              "type": "string",
+              "value": "https://consola.novuchat.site/api/qr?f="
+            },
+            {
+              "id": "a05",
+              "name": "mensajeErrorTemporal",
+              "type": "string",
+              "value": "Tuve un problema para consultar tu cuenta. Intenta de nuevo en un momento."
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza el payload de la Cloud API (regla «normalización de entrada» de\n// CLAUDE.md) y arrastra lo que puso `Config base`. Nunca se accede a\n// `.text.body` fuera de este nodo.\n//\n// ESTE FLUJO NO DECIDE NADA: manda lo que llegó a `cobroPrepago`, que resuelve\n// quién escribe (por el teléfono), qué contestar y qué cobrar, y devuelve todo\n// armado. La lógica vive en `admin/functions/src/cobroTextos.ts`, que es puro y\n// está probado. Acá solo se extrae y se despacha.\nconst out = [];\nfor (const item of $input.all()) {\n  const src = item.json;\n  const cfg = { ...src };\n  for (const k of ['messages', 'contacts', 'statuses', 'errors', 'metadata', 'messaging_product']) {\n    delete cfg[k];\n  }\n  const msg = Array.isArray(src.messages) ? src.messages[0] : undefined;\n  if (!msg) continue;\n\n  const tipo = String(msg.type ?? 'desconocido');\n  let texto = '';\n  let seleccionId = '';\n  let mediaId = '';\n\n  switch (tipo) {\n    case 'text':\n      texto = String(msg.text?.body ?? '');\n      break;\n    case 'interactive': {\n      const sel = msg.interactive?.list_reply ?? msg.interactive?.button_reply;\n      seleccionId = String(sel?.id ?? '');\n      texto = String(sel?.title ?? '');\n      break;\n    }\n    case 'image':\n      mediaId = String(msg.image?.id ?? '');\n      texto = String(msg.image?.caption ?? '');\n      break;\n    case 'document':\n      mediaId = String(msg.document?.id ?? '');\n      texto = String(msg.document?.caption ?? '');\n      break;\n    default:\n      texto = '';\n  }\n\n  const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;\n  out.push({ json: Object.assign({}, cfg, {\n    from: String(msg.from ?? ''),\n    tipo,\n    texto,\n    seleccionId,\n    mediaId,\n    mensajeId: String(msg.id ?? ''),\n    nombrePerfil: String(contacto?.profile?.name ?? ''),\n  }) });\n}\nreturn out;\n"
+      },
+      "id": "normalizar-entrada",
+      "name": "Normalizar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.urlCobro }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, tipo: $json.tipo, texto: $json.texto, seleccionId: $json.seleccionId, idMeta: $json.mensajeId, mediaId: $json.mediaId, nombrePerfil: $json.nombrePerfil }) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "consultar-cobro",
+      "name": "Consultar cobro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Cobro NovuChat interno (auto)"
+        }
+      },
+      "notes": "Un turno del negocio. El servidor resuelve quien escribe por el telefono y devuelve texto, menu, QR y aviso ya armados."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Traduce la respuesta de `cobroPrepago` en lo que hay que mandar. El\n// servidor ya decidió; acá se separa en texto, menú, QR y aviso.\n//\n// EMPAREJAMIENTO POR ÍNDICE, nunca `.first()`: con dos mensajes simultáneos,\n// `.first()` le pondría el teléfono del primero a todos (defecto que ya costó\n// una respuesta al teléfono equivocado en el Demo B).\n//\n// EL CÓDIGO HTTP SE MIRA. Un 200 con `respuesta` es la única respuesta buena.\n// Cualquier otra cosa —caída, 401 por credencial, 500— manda el texto de error\n// temporal y no inventa ni un menú ni un QR: acá hay dinero, y ante la duda no\n// se cobra. `neverError` en el nodo HTTP es lo que permite ver el código; la\n// regla real del proyecto no es «nunca neverError», es «nunca ignores el código».\nconst entradas = $('Normalizar entrada').all();\nconst items = $input.all();\nconst out = [];\nfor (let i = 0; i < items.length; i++) {\n  const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;\n  const r = items[i].json ?? {};\n  const codigo = Number(r.statusCode);\n  const cuerpo = (r.body && typeof r.body === 'object') ? r.body : {};\n  const ok = codigo === 200 && typeof cuerpo.respuesta === 'string' && cuerpo.respuesta.trim() !== '';\n\n  const respuesta = ok ? cuerpo.respuesta : String(ent.mensajeErrorTemporal || 'Tuve un problema para consultar tu cuenta. Intenta de nuevo en un momento.');\n  const lista = ok && cuerpo.lista && Array.isArray(cuerpo.lista.secciones) && cuerpo.lista.secciones.length ? cuerpo.lista : null;\n  const fichaQr = ok ? String(cuerpo.fichaQr || '') : '';\n  const enviarQr = ok && cuerpo.enviarQr === true && /^[0-9a-f]{32}$/.test(fichaQr);\n\n  out.push({ json: {\n    respuesta,\n    lista,\n    enviarLista: Boolean(lista),\n    enviarQr,\n    qrUrl: enviarQr ? String(ent.urlBaseQr || '') + fichaQr : '',\n    epigrafeQr: ok ? String(cuerpo.epigrafeQr || '') : '',\n    avisoAdmin: ok ? String(cuerpo.avisoAdmin || '') : '',\n    avisoMediaId: ok ? String(cuerpo.avisoMediaId || '') : '',\n    tenantId: ok ? String(cuerpo.tenantId || '') : '',\n    codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,\n    from: ent.from,\n    nombrePerfil: ent.nombrePerfil,\n    phoneNumberId: ent.phoneNumberId,\n    waGraphVersion: ent.waGraphVersion,\n    numeroAdminNovuChat: ent.numeroAdminNovuChat,\n  } });\n}\nreturn out;\n"
+      },
+      "id": "despachar",
+      "name": "Despachar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.from }}",
+        "textBody": "={{ $json.respuesta }}"
+      },
+      "id": "responder",
+      "name": "Responder al negocio",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        120
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp NovuChat (numero interno)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.enviarLista }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-lista",
+      "name": "¿Enviar menú?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.from,\n  type: 'interactive',\n  interactive: {\n    type: 'list',\n    header: { type: 'text', text: $json.lista.header },\n    body: { text: $json.lista.body },\n    footer: { text: $json.lista.footer },\n    action: {\n      button: $json.lista.boton,\n      sections: $json.lista.secciones.map((s) => ({\n        title: s.titulo,\n        rows: s.filas.map((f) => ({ id: f.id, title: f.titulo, description: f.descripcion })),\n      })),\n    },\n  },\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "enviar-lista",
+      "name": "Enviar menú interactivo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp NovuChat (numero interno)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.enviarQr }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-qr",
+      "name": "¿Enviar QR?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.from,\n  type: 'image',\n  image: { link: $json.qrUrl, caption: $json.epigrafeQr },\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "enviar-qr",
+      "name": "Enviar QR de NovuChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1500,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp NovuChat (numero interno)"
+        }
+      },
+      "notes": "QR REAL de NovuChat: el dinero va a la cuenta de NovuChat. Se dibuja desde el texto validado en la consola (imagenDeCobro). Sin rotulos de simulacro, porque no es un simulacro."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.avisoAdmin }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-aviso",
+      "name": "¿Avisar a NovuChat?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $json.numeroAdminNovuChat }}",
+        "textBody": "={{ $json.avisoAdmin }}"
+      },
+      "id": "avisar",
+      "name": "Avisar a NovuChat",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        660
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp NovuChat (numero interno)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.avisoMediaId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-reenviar",
+      "name": "¿Reenviar comprobante?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        660
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  recipient_type: 'individual',\n  to: $json.numeroAdminNovuChat,\n  type: 'image',\n  image: { id: $json.avisoMediaId, caption: 'Comprobante recibido de ' + ($json.tenantId || 'un negocio') },\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "reenviar",
+      "name": "Reenviar comprobante a NovuChat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        660
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp NovuChat (numero interno)"
+        }
+      },
+      "notes": "El media ID del comprobante que mando el negocio se reenvia tal cual al celular de NovuChat, para confirmarlo contra el banco."
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "¿Es un mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es un mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Normalizar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar entrada": {
+      "main": [
+        [
+          {
+            "node": "Consultar cobro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar cobro": {
+      "main": [
+        [
+          {
+            "node": "Despachar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Despachar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al negocio",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Enviar menú?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Enviar QR?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Avisar a NovuChat?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar menú?": {
+      "main": [
+        [
+          {
+            "node": "Enviar menú interactivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar QR?": {
+      "main": [
+        [
+          {
+            "node": "Enviar QR de NovuChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Avisar a NovuChat?": {
+      "main": [
+        [
+          {
+            "node": "Avisar a NovuChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar a NovuChat": {
+      "main": [
+        [
+          {
+            "node": "¿Reenviar comprobante?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reenviar comprobante?": {
+      "main": [
+        [
+          {
+            "node": "Reenviar comprobante a NovuChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

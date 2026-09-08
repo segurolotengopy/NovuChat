@@ -905,6 +905,30 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /pagos/{pagoId} — LOS PAGOS DEL PREPAGO: mensualidades y bolsas.
+      //
+      // Cada documento es un pago en alguno de sus estados: esperando el
+      // comprobante (el negocio eligió qué pagar por WhatsApp), comprobante
+      // recibido (mandó la foto), confirmado (NovuChat lo aprobó y se aplicó a
+      // la cuenta) o rechazado. Lo crea el flujo interno de cobro por Cloud
+      // Function, y lo mueve de estado NovuChat desde la consola, también por
+      // Function: `confirmarPago` es el único acto que suma meses o bolsas.
+      //
+      // NADIE LO ESCRIBE DESDE EL NAVEGADOR. Si el comercio pudiera, se
+      // confirmaría sus propios pagos; si el propietario pudiera, no quedaría
+      // auditoría de quién confirmó qué. Las dos cosas pasan por Function.
+      //
+      // Lo lee el administrador del comercio —es su estado de cuenta, incluido
+      // cuando está cortado, por eso `tenantLegible`— y NovuChat. El operador
+      // no: la situación financiera no es asunto de quien atiende el chat.
+      // -----------------------------------------------------------------------
+      match /pagos/{pagoId} {
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /reclamos/{reclamoId} — RECLAMOS DEL COMERCIO HACIA NOVUCHAT.
       //
       // Se guardan en Firestore ANTES de enviarse por correo. Si el proveedor de
@@ -1265,7 +1289,11 @@ service cloud.firestore {
                  'mensaje_entrante', 'mensaje_saliente', 'plantilla_enviada',
                  'cita_agendada', 'cita_rechazada', 'cobro_simulado',
                  'transferencia_humano', 'config_publicada', 'suspension',
-                 'reactivacion', 'error_flujo', 'entrada_descartada'
+                 'reactivacion', 'error_flujo', 'entrada_descartada',
+                 // Prepago: el corte automático del servicio, su levantamiento
+                 // y cada pago aplicado. Los escribe el SDK Admin; están en la
+                 // lista para que el vocabulario sea uno solo.
+                 'corte_servicio', 'reanudacion_servicio', 'pago_registrado'
                ]
             && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
             && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']

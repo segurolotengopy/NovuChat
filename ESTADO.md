@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-07 (la consola manda: los tres flujos leen del panel)
+**Última actualización:** 2026-09-07, noche (prepago, alta por consola y flujo interno de cobro)
 
 ---
 
@@ -45,6 +45,17 @@ flujo, los tres nodos del OCR y el control para encenderlo.
 **Pendiente de hoy:** la suite A completa con teléfono, y a las 17:00 confirmar
 que llegan los seis recordatorios del martes — es el único eslabón que nunca se
 vio correr solo.
+
+**A la noche, después de la reunión con Silvana, se construyó el PREPAGO
+entero** (ver la sección «Prepago, alta de clientes y flujo interno de cobro»,
+más abajo): planes, saldo por conversación, bolsas, mes de prueba, corte por
+409, recordatorios, alta con todos los datos desde la consola, y el flujo
+interno con el que un negocio le paga a NovuChat por WhatsApp. **Compila y pasa
+445 pruebas; NO está desplegado ni probado con teléfono**, y la recomendación es
+no desplegarlo antes de los demos: no los afecta (los demos no tienen
+modalidad y no se cortan), pero un despliegue la víspera no compra nada porque
+el primer corte posible es el 1 de octubre. Todo en
+`Analisis/11-prepago-y-alta-de-clientes.md`.
 
 ---
 
@@ -340,6 +351,11 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Retención de conversaciones | 12 meses desde el último mensaje, con purga automática | 07/09 |
 | Integración con bancos | En una etapa posterior, cuando `~/ManejoQRSimple` esté listo. **No se escribe integración bancaria en este repositorio** | 07/09 |
 | Cobro real de NovuChat | Es el nivel «sin API del banco» y así se vende. El asistente nunca dice «pago acreditado» | 07/09 |
+| Modelo comercial | **Prepago por mes calendario**, planes Base/Crecimiento/Corporativo (250/450/850 Bs, 300/1000/2500 conversaciones), bolsas de 150 por 50 Bs que no vencen, mes calendario de prueba con 20 conversaciones | 07/09 |
+| Corte del servicio | El 1 sin pago y al agotar conversaciones. Al cliente final, el mismo aviso neutro de la suspensión. Una cuenta **sin modalidad** es demostración y no se corta | 07/09 |
+| Recordatorios de cobro | Dos antes de fin de mes (7 y 2 días), uno el día del corte por pago; por bolsa agotada, uno al cortar y otro a los dos días. Todos dicen que sus clientes están sin atención | 07/09 |
+| Flujo interno de cobro | Sin agente de IA: menú interactivo con cuatro opciones fijas y el QR real de NovuChat. La confirmación del pago es humana, en la consola | 07/09 |
+| Número interno de NovuChat | Alias `cliente20` reservado; la reserva para clientes queda en 19 | 07/09 |
 
 ## Decisiones pendientes
 
@@ -1529,6 +1545,69 @@ del cliente.
 - `firebase-tools` 15 (cierra seis avisos de Dependabot sobre `tar`, solo
   desarrollo).
 
+### Prepago, alta de clientes y flujo interno de cobro (07/09, noche)
+
+Andres trajo nueve pedidos de la reunión con Silvana. Están todos construidos y
+probados en local; **nada desplegado, nada probado con teléfono**. El documento
+de referencia es `Analisis/11-prepago-y-alta-de-clientes.md`: modelo, supuestos
+a confirmar, lista de lo que hace falta, y el plan para el miércoles.
+
+**Lo que hay:**
+
+- **`admin/functions/src/prepago.ts`, puro.** Planes de la presentación,
+  `estadoDeServicio()`, consumo de bolsas, `aplicarPago()`,
+  `recordatoriosDebidos()` y los cuerpos de las tres plantillas. Lo usa el
+  servidor para cortar y lo importa la consola para mostrar el saldo: un solo
+  cálculo, dos lectores. 45 pruebas mes por mes.
+- **El corte es un 409.** `configuracionFlujo` e `ingesta` contestan
+  `{ estado: 'sin_pago' | 'sin_conversaciones', mensajeCortesia }`, el mismo
+  409 y el mismo texto de la suspensión. **Los tres flujos ya sabían qué hacer
+  con él**: cortan sin cambios. La ingesta decide dentro de la transacción que
+  ya leía la conversación, descuenta la bolsa que toque y anota el corte con
+  los mensajes perdidos desde entonces.
+- **La conversación abierta se respeta.** Al agotarse las conversaciones se
+  corta ABRIR nuevas; el cliente a mitad de un pedido lo termina. Exige que
+  «Traer configuración» mande `from`: está en los JSON de A y B, **falta
+  republicarlos**.
+- **Consola:** «Dar de alta un negocio» con todos los datos (crea la cuenta del
+  administrador y muestra el enlace de contraseña una vez), «Cuenta» por
+  negocio para NovuChat (ficha, plan, saldo, **pagos por confirmar**, pago
+  visto por fuera, configuración a mano), estado de cuenta del comercio con
+  saldo y cómo pagar, columna «Servicio» en la cartera. Funciones nuevas:
+  `editarTenant`, `configurarCuenta`, `registrarPago`, `confirmarPago`,
+  `rechazarPago`; `altaTenant` extendida.
+- **Flujo interno `novuchat-cobro-prepago.json`**: menú (renovar, cambiar de
+  plan, bolsa, saldo), QR real de NovuChat por su ficha, comprobante reenviado
+  al celular de NovuChat. Sin agente de IA, a propósito. La lógica está en
+  `cobroTextos.ts` (puro, 23 pruebas) y el nodo `Despachar respuesta` se prueba
+  desde el JSON: ante cualquier error del servidor, texto de error temporal y
+  nada de menú ni QR.
+- **Flujo `novuchat-recordatorios-prepago.json`**, dos veces por día, marca
+  solo con el id de mensaje de Meta.
+- **Reglas:** `/pagos` de solo lectura para el admin del comercio y NovuChat;
+  tres tipos nuevos de bitácora. **Scripts:** `alta-comercio.mjs` extendido,
+  `asignar-numero.mjs`, `activar-cobro-novuchat.mjs`.
+- **Suite: 445 pruebas** (92 nuevas). Saneo en cero.
+
+**Supuestos que conviene confirmar con Silvana** (tabla completa en el
+análisis): la bolsa no sostiene el servicio sin mensualidad; las 20 de prueba
+se pierden al contratar; un pago cubre el mes en curso si no está cubierto y si
+no el siguiente, sin prorrateo; cambiar de plan es pagar el plan nuevo.
+
+**Lo que hace falta para que exista de verdad** (detalle en el análisis §5):
+un número real de NovuChat en la Cloud API **con su propia app y webhook** (una
+app tiene una sola URL; el enrutador sigue pendiente), el negocio `novuchat`
+con su QR de comercio registrado y encendido, las tres plantillas aprobadas por
+Meta, las credenciales y los dos flujos en n8n, y el despliegue de Functions,
+reglas y consola.
+
+**Recomendación para la semana:** no desplegar antes de los demos; dar de alta a
+los primeros clientes el 9 con `alta-comercio.mjs` en **mes de prueba**
+(funciona con o sin las Functions nuevas: si el servidor viejo corre, no lee la
+cuenta y no corta); desplegar el 10 a la noche o el 11 y correr la prueba real
+del análisis §5.6; número interno, QR y plantillas la semana del 14. El primer
+corte posible es el 1 de octubre.
+
 ## Riesgos vivos para el 9–10 de septiembre
 
 **Actualizado el 2026-09-07.**
@@ -1581,6 +1660,11 @@ del cliente.
    tres flujos y cambiaron reglas y consola.
 4. **09 y 10/09 — Demos.**
 5. **Después de las demos, en este orden:**
+   - **Prepago en producción** (`Analisis/11`, §5 y §6): desplegar Functions,
+     reglas y consola; republicar A y B con el `from`; prueba real con un
+     negocio de prueba; número interno de NovuChat con su app; negocio
+     `novuchat` y su QR; plantillas en Meta; los dos flujos internos en n8n.
+     Confirmar con Silvana los supuestos del §1.2.
    - Cobro real de punta a punta: que el flujo lea `cobroReal`, los tres nodos
      del OCR, y el control para encenderlo.
    - Brecha 6: la compuerta de reserva con dos consultas dirigidas en vez de
