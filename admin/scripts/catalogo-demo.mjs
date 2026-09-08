@@ -22,6 +22,13 @@
  *
  * O sea: sirve para ver y para vender, no para probar el back.
  *
+ * LAS FOTOS SON DE PEXELS Y ESTÁN ENLAZADAS, NO ALOJADAS. Sirven para que la
+ * vista previa se vea como se va a ver, y son libres de uso; pero apuntan al
+ * CDN de Pexels, así que **no son lo que hace un comercio de verdad**. El
+ * diseño es justamente el contrario: cada comercio referencia las fotos que ya
+ * tiene publicadas donde sea que las tenga. Con `--sin-fotos` se ve la página
+ * como la va a ver un comercio que todavía no cargó ninguna.
+ *
  * USO:
  *   pnpm web:build && node scripts/catalogo-demo.mjs
  *   # abrir la dirección que imprime
@@ -60,19 +67,28 @@ if (!existsSync(DIST)) {
 // no una fuente: el daño de que se desfase es que la demostración muestre un
 // precio de la semana pasada, y por eso el script lo dice al arrancar.
 // -----------------------------------------------------------------------------
+const FOTO = 'https://images.pexels.com/photos';
+const CORTE = '?cs=tinysrgb&dpr=1&w=500';
+
 const CATALOGO_DEMO_B = [
   { nombre: 'Hamburguesa doble', area: 'gastronomia', precio: 35,
-    descripcion: 'Doble carne, queso cheddar y papas' },
+    descripcion: 'Doble carne, queso cheddar y papas',
+    foto: `${FOTO}/28966660/pexels-photo-28966660.jpeg${CORTE}` },
   { nombre: 'Hamburguesa clásica', area: 'gastronomia', precio: 28,
-    descripcion: 'Carne, lechuga, tomate y papas' },
+    descripcion: 'Carne, lechuga, tomate y papas',
+    foto: `${FOTO}/33253853/pexels-photo-33253853.jpeg${CORTE}` },
   { nombre: 'Salchipapa', area: 'gastronomia', precio: 20,
-    descripcion: 'Porción personal' },
+    descripcion: 'Porción personal',
+    foto: `${FOTO}/31533630/pexels-photo-31533630.jpeg${CORTE}` },
   { nombre: 'Gaseosa (normal o zero)', area: 'gastronomia', precio: 8,
-    descripcion: '500 ml' },
+    descripcion: '500 ml',
+    foto: `${FOTO}/36522880/pexels-photo-36522880/free-photo-of-refrescante-primer-plano-de-un-refresco-helado-con-burbujas.jpeg${CORTE}` },
   { nombre: 'Chaqueta negra (S, M, L)', area: 'retail', precio: 180,
-    descripcion: 'Indicá la talla al pedir' },
+    descripcion: 'Indicá la talla al pedir',
+    foto: `${FOTO}/33772487/pexels-photo-33772487/free-photo-of-retrato-melancolico-de-una-mujer-con-chaqueta-negra.jpeg${CORTE}` },
   { nombre: 'Audífonos inalámbricos', area: 'retail', precio: 95,
-    descripcion: 'Bluetooth, con estuche de carga' },
+    descripcion: 'Bluetooth, con estuche de carga',
+    foto: `${FOTO}/35599938/pexels-photo-35599938/free-photo-of-mano-sosteniendo-auriculares-inalambricos-en-el-estuche-de-carga.jpeg${CORTE}` },
 ];
 
 /** Mismo identificador que deriva la consola a partir del nombre. */
@@ -99,7 +115,8 @@ const RESPUESTA = {
   },
   items: CATALOGO_DEMO_B.map((i) => ({
     id: idDe(i.nombre), nombre: i.nombre, descripcion: i.descripcion,
-    area: i.area, precio: i.precio, moneda: 'BOB', imagenUrl: '',
+    area: i.area, precio: i.precio, moneda: 'BOB',
+    imagenUrl: args.includes('--sin-fotos') ? '' : i.foto,
   })),
   caducaEn: new Date(Date.now() + 72 * 3_600_000).toISOString(),
 };
