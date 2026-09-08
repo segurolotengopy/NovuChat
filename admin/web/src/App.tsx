@@ -55,7 +55,14 @@ function Cabecera() {
   const esPersona = rol === 'admin' || rol === 'oper';
 
   return (
-    <header className="nav">
+    /* La cabecera es PEGAJOSA y su contenido va dentro de `.contenedor`, igual
+       que en novuchat.site. Antes era un `<header class="nav">` a borde
+       completo: en un monitor ancho el nombre quedaba pegado al filo izquierdo
+       y «Salir» al derecho, con un metro de vacío en medio, mientras el
+       contenido de abajo sí venía centrado. Se leía como dos páginas distintas
+       una encima de la otra. */
+    <header className="cabecera">
+      <div className="contenedor nav">
       <Marca />
       <nav>
         {permisos.propietario && <Link to="/negocios">Negocios</Link>}
@@ -87,6 +94,7 @@ function Cabecera() {
       </nav>
       <Link to="/mi-cuenta">Mi cuenta</Link>
       <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
+      </div>
     </header>
   );
 }
