@@ -4,7 +4,8 @@ import {
   setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { auth, db } from '../lib/firebase';
+import { auth, db, funciones } from '../lib/firebase';
+import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { etiquetaCatalogo, useFlujos } from '../lib/flujos';
 import {
@@ -81,6 +82,7 @@ export function Catalogo() {
   const conAgenda = flujos.includes('agendamiento');
   const conVenta = flujos.includes('venta');
   const [items, setItems] = useState<Item[] | null>(null);
+  const [veredictos, setVeredictos] = useState<Record<string, Veredicto>>({});
   const [nuevo, setNuevo] = useState(NUEVO);
   const [estado, setEstado] = useState<string | null>(null);
   /** Identificador del ítem que se está editando en su fila, o `null`. */
@@ -95,6 +97,30 @@ export function Catalogo() {
       (i) => setItems(i.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setEstado('No se pudo leer el catálogo.'));
   }, [tenantId]);
+
+  // Los veredictos de las fotos, en una colección aparte que el comercio lee y
+  // no escribe. Su error NO se muestra: es información adicional, y una consola
+  // que grita porque no pudo leer un adorno distrae de lo que sí importa.
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(collection(db, 'tenants', tenantId, 'comprobacionesImagen'),
+      (s) => setVeredictos(Object.fromEntries(s.docs.map((d) => [d.id, d.data() as Veredicto]))),
+      () => {});
+  }, [tenantId]);
+
+  /**
+   * Volver a comprobar una foto. Existe porque la primera comprobación puede
+   * fallar por algo pasajero —el servidor de la foto caído un minuto— y sin
+   * esto el único modo de reintentar sería borrar la dirección y reescribirla.
+   */
+  const revisarFoto = async (itemId: string) => {
+    setEstado(null);
+    try {
+      await httpsCallable(funciones, 'recomprobarImagen')({ tenantId, itemId });
+    } catch {
+      setEstado('No se pudo volver a comprobar la foto. Intente en un momento.');
+    }
+  };
 
   const sello = () => ({ actualizadoPor: auth.currentUser?.uid ?? '', actualizadoEn: serverTimestamp() });
 
@@ -262,6 +288,7 @@ export function Catalogo() {
                       {typeof it.descripcion === 'string' && it.descripcion !== '' && (
                         <div className="text-muted"><TextoSeguro valor={it.descripcion} maxLargo={300} /></div>
                       )}
+                      <EstadoFoto v={veredictos[it.id]} onRevisar={() => void revisarFoto(it.id)} />
                     </div>
                   </div>
                 </td>
@@ -370,6 +397,68 @@ export function Catalogo() {
  * problema. La segunda: `referrerPolicy="no-referrer"`, para que el servidor
  * ajeno que aloja la foto no reciba la dirección de la consola de un cliente.
  */
+/**
+ * =============================================================================
+ * EL VEREDICTO DE LA FOTO
+ * =============================================================================
+ *
+ * Lo escribe el servidor en `comprobacionesImagen` y acá SOLO SE LEE: el
+ * comercio no puede escribirlo (`firestore.rules`), porque un sello de
+ * verificación que puede firmar el verificado no vale nada.
+ *
+ * DOS AVISOS QUE NO SON LO MISMO, y se dicen distinto a propósito:
+ *
+ *  - «No se ve la foto» es un HECHO. La dirección no responde, o no devuelve
+ *    una imagen. Se dice sin vueltas, porque el cliente vería un cuadro roto.
+ *  - «No parece corresponder» es una OPINIÓN de un modelo. Se dice como
+ *    opinión, con su motivo, y NO impide guardar. Un falso negativo —una foto
+ *    legítima de silpancho que el modelo no reconoce— no puede dejar a un
+ *    comercio sin publicar algo que está bien. Es la misma regla que con el
+ *    comprobante de pago: el OCR coteja, no acredita.
+ *
+ * Cuando todo está bien no se dice NADA. Una fila de tildes verdes en doscientos
+ * productos no informa: solo enseña a no mirar.
+ */
+const FALLAS: Record<string, string> = {
+  no_es_https: 'la dirección tiene que empezar con https://',
+  destino_privado: 'esa dirección no es pública',
+  no_responde: 'la dirección no responde',
+  no_es_imagen: 'lo que hay ahí no es una imagen',
+  demasiado_grande: 'la imagen pesa más de 4 MB',
+  demasiados_saltos: 'la dirección rebota demasiadas veces',
+};
+
+interface Veredicto {
+  cargable?: unknown; falla?: unknown;
+  parecido?: { coincide?: unknown; motivo?: unknown } | undefined;
+}
+
+function EstadoFoto({ v, onRevisar }: { v: Veredicto | undefined; onRevisar: () => void }) {
+  if (!v) return null;
+  if (v.cargable !== true) {
+    const motivo = FALLAS[String(v.falla ?? '')] ?? 'no se pudo comprobar';
+    return (
+      <p className="ayuda foto-mal">
+        <strong>No se ve la foto</strong>: {motivo}.{' '}
+        <button type="button" className="enlace" onClick={onRevisar}>Volver a comprobar</button>
+      </p>
+    );
+  }
+  if (v.parecido && v.parecido.coincide === false) {
+    return (
+      <p className="ayuda foto-dudosa">
+        <strong>Esta foto no parece corresponder</strong>
+        {typeof v.parecido.motivo === 'string' && v.parecido.motivo !== ''
+          ? <>: <TextoSeguro valor={v.parecido.motivo} maxLargo={200} /></>
+          : '.'}{' '}
+        Reviselá; si es la correcta, dejala como está.{' '}
+        <button type="button" className="enlace" onClick={onRevisar}>Volver a comprobar</button>
+      </p>
+    );
+  }
+  return null;
+}
+
 function Miniatura({ url }: { url: unknown }) {
   const [rota, setRota] = useState(false);
   const valor = typeof url === 'string' ? url : '';

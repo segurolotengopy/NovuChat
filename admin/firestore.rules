@@ -668,6 +668,17 @@ service cloud.firestore {
       // Va en subcolección, no como lista dentro de config, para que cada ítem
       // se pueda validar de verdad: las reglas no saben recorrer listas de mapas.
       // -----------------------------------------------------------------------
+      // COMPROBACIÓN DE LA FOTO DE UN ÍTEM. La escribe el servidor y NADIE más:
+      // es un sello sobre el trabajo del comercio y lo firma quien comprueba,
+      // no el comprobado. Si viviera dentro del ítem habría que ponerlo en la
+      // lista blanca de `itemValido()`, y desde ese momento el propio comercio
+      // podría escribirse un «coincide: sí». Un sello que puede firmar el
+      // verificado no vale nada.
+      match /comprobacionesImagen/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
       match /catalogo/{itemId} {
 
         allow get, list: if esMiembro(tenantId);

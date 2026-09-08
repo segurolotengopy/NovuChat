@@ -23,6 +23,11 @@ export {
 import { registrar } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
+// COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
+// altas de a una y de las importaciones de doscientas por igual, y una función
+// para reintentar cuando la primera vez falló por algo pasajero. El porqué de
+// que avise en vez de bloquear está en `imagenCatalogo.ts`.
+export { comprobarImagenDelCatalogo, recomprobarImagen } from './imagenCatalogo.js';
 
 const db = () => getFirestore();
 

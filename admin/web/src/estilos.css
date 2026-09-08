@@ -204,3 +204,18 @@ tr.alerta td { background: #c6282811; }
   display: inline-block; margin-top: .5rem; font-family: ui-monospace, monospace;
   font-size: .85rem; word-break: break-all;
 }
+
+/* Veredicto de la foto de un ítem. Dos avisos que NO son lo mismo y por eso no
+   se ven igual: «no se ve la foto» es un hecho comprobado y va en el color de
+   error; «no parece corresponder» es la opinión de un modelo y va en el de
+   advertencia. Si los dos fueran rojos, el comercio aprendería a ignorar los
+   dos. */
+.foto-mal, .foto-dudosa {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-2);
+  border-left: 3px solid currentColor;
+  font-size: 13px;
+}
+.foto-mal { color: var(--color-error); }
+.foto-dudosa { color: var(--color-aviso); }
+.foto-mal .enlace, .foto-dudosa .enlace { color: inherit; }

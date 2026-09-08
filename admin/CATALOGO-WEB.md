@@ -334,3 +334,72 @@ entienda de quién es el problema.
 Tienen que ser `https://`. Una `http://` la bloquea el navegador del cliente **sin
 decir nada**, y el síntoma —«no se ven mis fotos», sin ninguna pista— es peor que
 un rechazo al guardar. Por eso se rechaza al guardar.
+
+---
+
+## 8. La foto de un ítem: qué se comprueba y qué no
+
+El comercio pega la dirección de una foto que ya tiene publicada. **NovuChat no
+guarda ninguna imagen** (§2). Sobre esa dirección se comprueban dos cosas que
+no hay que confundir nunca.
+
+### 8.1 Que sea una imagen, y que se vea — es un hecho
+
+La dirección responde, devuelve un tipo de imagen conocido y pesa menos de
+4 MB. Determinístico: un «sí» acá es un sí, y un «no» **bloquea**, porque el
+cliente vería un cuadro roto en el catálogo.
+
+**La dirección la escribe el comercio y la visita nuestro servidor**, desde
+adentro de la red de Google. Eso es un SSRF esperando a pasar, así que:
+
+- solo `https://`;
+- la comprobación va sobre la **IP resuelta** y no sobre el texto del host,
+  porque `midominio.com` puede apuntar a `127.0.0.1`;
+- se rechazan bucle, privadas, enlace local —incluido `169.254.169.254`, el
+  servidor de metadatos de la nube, que es el blanco clásico—, CGNAT,
+  multidifusión, y las IPv4 disfrazadas de IPv6 (`::ffff:127.0.0.1`);
+- los saltos se siguen **a mano**, comprobando cada uno: con
+  `redirect: 'follow'` el primer destino puede ser público y el segundo no;
+- tiempo máximo, tope de bytes al leer (el `content-length` puede mentir).
+
+**Lo que esto NO cierra**, dicho para que nadie lo dé por cerrado: entre que se
+resuelve el nombre y se abre la conexión, el DNS puede cambiar de respuesta.
+Cerrarlo exige conectarse a la IP mandando el `Host` a mano, que con `fetch` no
+se puede. El riesgo residual es una lectura a ciegas: el contenido nunca se le
+devuelve a quien pidió la comprobación, solo un veredicto de dos campos.
+
+### 8.2 Que la foto tenga que ver con el ítem — es una opinión
+
+La mira un modelo y responde si una persona entendería que ilustra ese
+producto. **No bloquea nunca.** Es la misma familia que la PROHIBICIÓN 3 del
+proyecto: el OCR de un comprobante no es una acreditación bancaria, y acá el
+parecer de un modelo no es prueba de que la foto esté mal. Un falso negativo
+—una foto legítima de silpancho que el modelo no reconoce— dejaría a un
+comercio sin publicar algo correcto, y con un mensaje que suena a sentencia.
+
+Por eso la pantalla dice **«esta foto no parece corresponder»** con el motivo,
+y nunca «la foto es incorrecta». Cuando está todo bien **no dice nada**: una
+fila de tildes verdes en doscientos productos no informa, enseña a no mirar.
+
+El nombre y la descripción del ítem entran al pedido **delimitados y rotulados
+como dato**: los escribe el comercio, y una descripción que diga «ignora lo
+anterior» tiene que ser una descripción y no una orden.
+
+### 8.3 Dónde vive el veredicto
+
+En `tenants/{id}/comprobacionesImagen/{itemId}`, que el comercio **lee y no
+escribe**. Si viviera dentro del ítem habría que ponerlo en la lista blanca de
+`itemValido()`, y desde ese momento el propio comercio podría escribirse un
+«coincide: sí». **Un sello que puede firmar el verificado no vale nada.**
+
+### 8.4 Por qué es un disparador y no un botón
+
+Un botón «comprobar» funciona para un ítem y no existe para doscientos, y la
+importación por CSV es justamente el camino por el que entran las fotos en
+masa. El disparador cubre los dos casos, y sale enseguida si la dirección no
+cambió: editar un precio no cuesta una llamada al modelo. `recomprobarImagen`
+queda para reintentar cuando falló algo pasajero.
+
+**Pendiente antes de desplegar:** el secreto `GEMINI_API_KEY`. Sin él la
+comprobación del §8.1 corre igual y la del §8.2 queda vacía, que es la
+degradación correcta.
