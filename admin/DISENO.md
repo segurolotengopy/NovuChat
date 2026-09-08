@@ -221,7 +221,9 @@ aislamiento de los datos, que es lo que importa.
       /privado/datos                             teléfono y correo del funcionario
    /agenda/{funcId}_{aaaammdd}_{ranura}          candado contra la doble reserva
    /bitacora/{eventoId}                          registro operativo, INMUTABLE
-   /cuenta/estado                                plan y situación de pago (solo lectura)
+   /cuenta/estado                                plan, modalidad, saldo prepago y corte
+                                                 (solo lectura; §4octies)
+   /pagos/{pagoId}                               mensualidades y bolsas, con su estado
    /reclamos/{reclamoId}                         reclamos hacia NovuChat, inmutables
    /invitaciones/{id}                            hash del token, nunca el token
    /conversaciones/{convId}                      hilo: teléfono, resumen, gestión,
@@ -1471,6 +1473,70 @@ Dos frases, y la segunda depende de la opción de calendario de §4:
 
 ---
 
+## 4octies. Prepago: planes, saldo, corte y cobro por WhatsApp
+
+**Decidido con Silvana el 2026-09-07.** Análisis completo, lista de necesidades
+y plan en `Analisis/11-prepago-y-alta-de-clientes.md`. Acá, lo que fija el
+diseño.
+
+### La regla
+
+- Un negocio es **prepago**: paga el mes calendario por adelantado y recibe las
+  conversaciones incluidas de su plan (Base 300, Crecimiento 1000, Corporativo
+  2500). La unidad es la **conversación** de §4bis.2bis, la misma que factura
+  la consola; no hay otro contador.
+- **Bolsas** de 150 conversaciones que no vencen, consumidas después de las
+  incluidas. No sostienen el servicio sin mensualidad.
+- **Mes calendario de prueba**: sin mensualidad, 20 conversaciones.
+- **Corte** el 1 sin pago y al agotar conversaciones. Al cliente final, el
+  mismo aviso neutro de la suspensión (§4bis.3): nunca el motivo.
+- **Sin modalidad no hay prepago.** Una cuenta sin `modalidad` es demostración
+  y no se corta. Protege a los demos y a todo lo cargado antes.
+
+### Dónde vive cada decisión
+
+| Decisión | Dónde | Por qué ahí |
+|---|---|---|
+| Planes, saldo, consumo, pago, recordatorios | `functions/src/prepago.ts`, **puro** | Se prueba mes por mes sin emulador, y lo importa también la consola: un solo cálculo, dos lectores. |
+| El corte | `configuracionFlujo` e `ingesta` (409) | Los flujos ya manejaban el 409 de la suspensión: cortan sin cambios. La ingesta decide dentro de la transacción que ya leía la conversación. |
+| Sumar meses o bolsas | `cuentas.ts`, `aplicarPagoEnCuenta` | Única puerta. Se llega por `registrarPago` (pago visto por fuera) o `confirmarPago` (comprobante por WhatsApp), con rol de propietario y auditoría. |
+| Qué contestar al negocio que paga | `cobroTextos.ts`, **puro** | Hay dinero: se prueba. El flujo de n8n es transporte. Sin agente de IA: cuatro opciones fijas con precio fijo. |
+| Recordatorios | `recordatoriosDebidos()` + flujo n8n dos veces por día | Se marca solo con el id de mensaje de Meta (lección del 06/09). |
+
+### Lo que NO hace, y por qué
+
+- **No dice «pago acreditado».** El QR es el real de NovuChat; la foto del
+  comprobante es una foto. Lo confirma una persona en la consola después de
+  mirar el banco. Es la prohibición 3 en su mitad de cobro real.
+- **No corta una conversación abierta** al agotarse las conversaciones: ya se
+  contó y ya se pagó. Corta abrir nuevas. Exige `from` en «Traer
+  configuración» de los flujos.
+- **No toca la suspensión manual.** Son palancas independientes; la
+  suspensión pisa todo.
+
+### La cuenta y los pagos
+
+`/tenants/{t}/cuenta/estado`: `modalidad`, `plan`, `periodoPagado`,
+`periodoPrueba`, `bolsa`, `bolsaPrueba`, `corte`, `recordatorios`,
+`pagoPendienteId`, y los derivados `estadoPago`, `montoMensual`,
+`proximoVencimiento` que escribe el servidor. `/tenants/{t}/pagos/{id}`: cada
+mensualidad o bolsa con su estado (`esperando_comprobante` →
+`comprobante_recibido` → `confirmado` | `rechazado`). Los dos son de solo
+lectura desde el navegador para el administrador del comercio (también
+cortado, con `tenantLegible`) y para NovuChat; el operador no los ve.
+
+### El flujo interno y su número
+
+El número de NovuChat es una ruta más en `/rutasWhatsApp` con `flujo:
+'interno'` y alias `cliente20`, reservado. Sus endpoints (`cobroPrepago`,
+`recordatoriosPrepago`, `marcarRecordatorioPrepago`) exigen ese flujo, y
+**sí aceptan un `tenantId` en el cuerpo** —a diferencia de la ingesta—, porque
+el llamador es NovuChat y su trabajo es actuar sobre cualquier negocio. Es la
+excepción explícita a la regla de §5.2, y por eso el secreto de ese alias es
+el más sensible del sistema.
+
+---
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido
@@ -1572,18 +1638,29 @@ archivo.
 
 ### 6.1 El procedimiento real, paso por paso
 
-```bash
-# 1. El negocio y su administrador, con enlace para que ponga su contraseña.
-node admin/scripts/alta-comercio.mjs --proyecto <id> \
-  --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
-  --admin ana@ejemplo.com --nombre-admin "Ana Quispe" --aplicar
+Desde el 2026-09-07 el paso 1 también se hace desde la consola (**Negocios →
+Dar de alta un negocio**), con los mismos datos y el mismo enlace de
+contraseña. El script queda para cuando la consola no está a mano.
 
-# 2. El secreto del alias libre que sigue (cliente01, cliente02, …).
+```bash
+# 1. El negocio, su cuenta prepago y su administrador, con enlace para que
+#    ponga su contraseña. `--modalidad prueba` es el mes calendario en curso
+#    sin mensualidad y con 20 conversaciones (Analisis/11).
+cd admin && pnpm functions:build
+node scripts/alta-comercio.mjs --proyecto <id> \
+  --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
+  --admin ana@ejemplo.com --nombre-admin "Ana Quispe" \
+  --modalidad prueba --plan base --telefonos-cobro 5917XXXXXXX \
+  --razon-social "Salón Rosa SRL" --nit 1234567 --dueno "Ana Quispe" --aplicar
+
+# 2. El secreto del alias libre que sigue (cliente01 … cliente19; cliente20 es
+#    del número interno de NovuChat).
 gcloud secrets versions access latest --secret=INGESTA_CLIENTE01 --project <id>
 #    → se carga como credencial de cabecera en n8n, y NUNCA se escribe en el repo.
 
-# 3. El número de WhatsApp y su alias, con `asignarNumero` desde la consola,
-#    más `aliasSecreto: "cliente01"` en /rutasWhatsApp/{phoneNumberId}.
+# 3. El número de WhatsApp, su flujo y su alias, en una sola transacción.
+node scripts/asignar-numero.mjs --proyecto <id> --tenant salon-rosa \
+  --phone-number-id <id> --waba-id <id> --flujo agendamiento --alias cliente01 --aplicar
 ```
 
 **Ni una línea de código, ni un despliegue.** Antes, cada cliente obligaba a

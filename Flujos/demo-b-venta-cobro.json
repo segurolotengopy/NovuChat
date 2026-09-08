@@ -742,7 +742,8 @@
             }
           }
         }
-      }
+      },
+      "notes": "Manda el telefono del cliente, y hace dos cosas a la vez: el prepago respeta una conversacion ya abierta (ventana de 24 h) cuando el negocio se quedo sin conversaciones, y el tope de mensajes calcula cuantas respuestas le quedan al asistente en ESTA conversacion. Sin el, el corte del prepago no tiene excepcion y el tope informa el valor entero. El servidor acepta `telefono` y `from`. Ver admin/functions/src/ingesta.ts, configuracionFlujo."
     },
     {
       "id": "code-fusionar-config-b",

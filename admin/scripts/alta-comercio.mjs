@@ -23,7 +23,20 @@
  *
  *   node scripts/alta-comercio.mjs --proyecto <id> \
  *     --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
- *     --admin ana@ejemplo.com --nombre-admin "Ana Quispe"
+ *     --admin ana@ejemplo.com --nombre-admin "Ana Quispe" \
+ *     --modalidad prueba --plan base --telefonos-cobro 5917XXXXXXX \
+ *     --razon-social "Salón Rosa SRL" --nit 1234567 --dueno "Ana Quispe"
+ *
+ * LA CUENTA PREPAGO NACE CON EL ALTA (2026-09-07). `--modalidad` es `prueba`
+ * (mes calendario en curso, sin mensualidad, 20 conversaciones), `prepago`
+ * (con `--primer-mes-pagado` si ya pagó) o `demostracion` (sin cobro ni corte).
+ * Sin modalidad el negocio sería una demostración más. Ver
+ * `admin/functions/src/prepago.ts`. Este script hace lo mismo que la pantalla
+ * «Dar de alta un negocio» de la consola; existe para cuando la consola no está
+ * a mano o las Functions no están desplegadas.
+ *
+ * Requiere `pnpm functions:build` hecho: importa el módulo compilado de prepago
+ * para escribir los mismos campos derivados que escribe el servidor.
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
@@ -39,6 +52,16 @@ const NOMBRE = opcion('nombre');
 const ADMIN = opcion('admin');
 const NOMBRE_ADMIN = opcion('nombre-admin') ?? '';
 const FLUJOS = (opcion('flujos') ?? 'agendamiento').split(',').map((f) => f.trim()).filter(Boolean);
+const MODALIDAD = opcion('modalidad') ?? 'prueba';
+const PLAN = opcion('plan') ?? 'base';
+const PRIMER_MES_PAGADO = args.includes('--primer-mes-pagado');
+const RAZON_SOCIAL = opcion('razon-social') ?? '';
+const NIT = opcion('nit') ?? '';
+const DUENO = opcion('dueno') ?? '';
+const TELEFONO_DUENO = (opcion('telefono-dueno') ?? '').replace(/\D/g, '');
+const CORREO_DUENO = (opcion('correo-dueno') ?? '').toLowerCase();
+const TELEFONOS_COBRO = [...new Set((opcion('telefonos-cobro') ?? '').split(',')
+  .map((t) => t.replace(/\D/g, '')).filter(Boolean))];
 
 const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'interno']);
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
@@ -50,16 +73,32 @@ if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, gu
 if (!NOMBRE) problemas.push('falta --nombre');
 if (!ADMIN || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ADMIN)) problemas.push('--admin no es un correo');
 for (const f of FLUJOS) if (!FLUJOS_VALIDOS.has(f)) problemas.push(`flujo desconocido: ${f}`);
+if (!['prueba', 'prepago', 'demostracion'].includes(MODALIDAD)) problemas.push('--modalidad: prueba, prepago o demostracion');
+if (!['base', 'crecimiento', 'corporativo'].includes(PLAN)) problemas.push('--plan: base, crecimiento o corporativo');
+if (NIT && !/^[0-9]{5,15}$/.test(NIT)) problemas.push('--nit: solo dígitos');
+if (TELEFONO_DUENO && !/^[0-9]{8,15}$/.test(TELEFONO_DUENO)) problemas.push('--telefono-dueno inválido');
+for (const t of TELEFONOS_COBRO) if (!/^[0-9]{8,15}$/.test(t)) problemas.push(`teléfono de cobro inválido: ${t}`);
+if (TELEFONOS_COBRO.length > 5) problemas.push('hasta cinco teléfonos de cobro');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
   console.error('\n  node scripts/alta-comercio.mjs --proyecto <id> --tenant <id> --nombre "<nombre>" \\');
-  console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] [--aplicar]\n');
+  console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] \\');
+  console.error('      [--modalidad prueba|prepago|demostracion] [--plan base|crecimiento|corporativo] \\');
+  console.error('      [--primer-mes-pagado] [--telefonos-cobro 591...,591...] [--razon-social ..] [--nit ..] \\');
+  console.error('      [--dueno ..] [--telefono-dueno ..] [--correo-dueno ..] [--aplicar]\n');
   process.exit(2);
 }
 
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const { getAuth } = await import('firebase-admin/auth');
+// El MISMO módulo que usa el servidor para cortar y para mostrar el saldo.
+// Compilado: exige `pnpm functions:build`.
+const prepago = await import('../functions/lib/prepago.js').catch(() => null);
+if (!prepago) {
+  console.error('\n  ✗ Falta functions/lib/prepago.js: corré `pnpm functions:build` primero.\n');
+  process.exit(2);
+}
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const auth = getAuth();
@@ -69,6 +108,8 @@ const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta' };
 
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);
 console.log(`  Flujos     : ${FLUJOS.join(', ')}`);
+console.log(`  Modalidad  : ${MODALIDAD} · plan ${PLAN}${MODALIDAD === 'prepago' ? (PRIMER_MES_PAGADO ? ' · mes en curso pagado' : ' · SIN pago: queda detenido hasta registrar el pago') : ''}`);
+console.log(`  Cobro      : ${TELEFONOS_COBRO.length ? `${TELEFONOS_COBRO.length} teléfono(s)` : 'SIN teléfono de cobro (no podrá pagar por WhatsApp ni recibir recordatorios)'}`);
 console.log(`  Admin      : ${ADMIN}${NOMBRE_ADMIN ? ` (${NOMBRE_ADMIN})` : ''}`);
 console.log(`  Proyecto   : ${PROYECTO}\n`);
 
@@ -109,9 +150,29 @@ if (!usuario) {
 const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
 const lote = db.batch();
 lote.create(db.doc(`tenants/${TENANT}`), {
-  nombre: NOMBRE, estado: 'activo', plan: 'basico',
+  nombre: NOMBRE, estado: 'activo', plan: PLAN,
   vertical: FLUJOS[0], flujos: FLUJOS,
+  razonSocial: RAZON_SOCIAL, nit: NIT,
+  dueno: { nombre: DUENO, telefono: TELEFONO_DUENO, correo: CORREO_DUENO },
+  telefonosCobro: TELEFONOS_COBRO,
   waPhoneNumberId: null, waWabaId: null, ...sello,
+});
+// LA CUENTA PREPAGO, con los mismos derivados que escribe `escribirCuenta` en
+// el servidor: estado de pago, mensualidad y vencimiento salen del módulo.
+const periodo = prepago.periodoDe(Date.now());
+const cuenta = {
+  plan: PLAN, modalidad: MODALIDAD, bolsa: 0,
+  ...(MODALIDAD === 'prueba' ? { periodoPrueba: periodo, bolsaPrueba: prepago.PRUEBA.conversaciones } : {}),
+  ...(MODALIDAD === 'prepago' ? { periodoPagado: PRIMER_MES_PAGADO ? periodo : '' } : {}),
+};
+const estado = prepago.estadoDeServicio(cuenta, 0, periodo);
+lote.create(db.doc(`tenants/${TENANT}/cuenta/estado`), {
+  ...cuenta,
+  estadoPago: estado.cubierto ? 'al_dia' : 'vencido',
+  montoMensual: estado.mensualidad, moneda: prepago.MONEDA,
+  ...(estado.cubiertoHasta
+    ? { proximoVencimiento: Timestamp.fromMillis(prepago.finDelPeriodoMs(estado.cubiertoHasta)) } : {}),
+  motivoVisible: '', actualizadoEn: Timestamp.now(),
 });
 lote.create(db.doc(`tenants/${TENANT}/config/negocio`), {
   nombreNegocio: NOMBRE, zonaHoraria: 'America/La_Paz', moneda: 'BOB',
@@ -152,8 +213,10 @@ console.log('  que las reglas exigen para cualquier rol de comercio.\n');
 // --- verificación por relectura ---------------------------------------------
 const ficha = await db.doc(`tenants/${TENANT}`).get();
 const claim = ((await auth.getUser(usuario.uid)).customClaims ?? {}).nc ?? {};
+const cuentaEscrita = await db.doc(`tenants/${TENANT}/cuenta/estado`).get();
 console.log(`  Verificación: ficha ${ficha.exists ? 'sí' : 'NO'}`
   + ` · flujos ${JSON.stringify(ficha.get('flujos'))}`
-  + ` · rol ${claim.t?.[TENANT] ?? 'NO'}\n`);
+  + ` · rol ${claim.t?.[TENANT] ?? 'NO'}`
+  + ` · cuenta ${cuentaEscrita.get('modalidad') ?? 'NO'} (${estado.operativo ? 'operativa' : `detenida: ${estado.motivo}`})\n`);
 console.log('  FALTA, y no lo hace este script: asignarle su número de WhatsApp');
 console.log('  con `asignarNumero`, y cargar el secreto de su alias.\n');

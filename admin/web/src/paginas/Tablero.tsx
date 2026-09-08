@@ -8,6 +8,7 @@ import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { SinSalida } from '../componentes/SinSalida';
 import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../lib/flujos';
+import { etiquetaServicio, numero, useEstadoServicio } from '../lib/prepago';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.
@@ -223,20 +224,34 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
         )}
       </Tarjeta>
 
-      {esAdmin && (
-        <Tarjeta
-          titulo="Cuenta"
-          pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/cuenta`}>Ver detalle</Link>}
-        >
-          <p className={`situacion ${datos.estadoPago === 'vencido' ? 'alerta' : 'ok'}`}>
-            <TextoSeguro valor={datos.estadoPago ?? 'sin datos'} maxLargo={30} />
-          </p>
-          {typeof datos.motivoPago === 'string' && datos.motivoPago !== '' && (
-            <p className="text-muted"><TextoSeguro valor={datos.motivoPago} maxLargo={300} /></p>
-          )}
-        </Tarjeta>
-      )}
+      {esAdmin && <TarjetaCuenta tenantId={tenantId} motivoPago={datos.motivoPago} />}
     </div>
+  );
+}
+
+/**
+ * La tarjeta de cuenta muestra el SALDO REAL, calculado con el mismo módulo con
+ * el que el servidor corta. Antes mostraba solo `estadoPago`, que decía «al
+ * día» aunque el negocio se hubiera quedado sin conversaciones.
+ */
+function TarjetaCuenta({ tenantId, motivoPago }: { tenantId: string; motivoPago: unknown }) {
+  const { estado } = useEstadoServicio(tenantId);
+  const servicio = etiquetaServicio(estado);
+  return (
+    <Tarjeta
+      titulo="Cuenta"
+      pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/cuenta`}>Ver detalle</Link>}
+    >
+      <p className={`situacion ${servicio.ok ? 'ok' : 'alerta'}`}>{servicio.texto}</p>
+      {estado && estado.modalidad !== 'demostracion' && (
+        <div className="datos">
+          <Dato valor={numero(estado.disponibles)} rotulo="conversaciones disponibles" />
+        </div>
+      )}
+      {typeof motivoPago === 'string' && motivoPago !== '' && (
+        <p className="text-muted"><TextoSeguro valor={motivoPago} maxLargo={300} /></p>
+      )}
+    </Tarjeta>
   );
 }
 

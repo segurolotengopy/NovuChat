@@ -18,6 +18,8 @@ import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './paginas/Catalogo';
 import { Cobro } from './paginas/Cobro';
+import { AltaNegocio } from './paginas/AltaNegocio';
+import { CuentaNegocio } from './paginas/CuentaNegocio';
 import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
 
 /**
@@ -145,6 +147,13 @@ export function App() {
           <Proteger><><Cabecera /><MiCuenta /></></Proteger>} />
         <Route path="/negocios" element={
           <Proteger requiere="propietario"><><Cabecera /><Tenants /></></Proteger>} />
+        {/* Alta y cuenta prepago: lo comercial, solo para NovuChat. Las rutas van
+            bajo /negocios (plural) para no confundirlas con las pantallas del
+            negocio bajo /negocio/:tenantId, que son las que ve el comercio. */}
+        <Route path="/negocios/alta" element={
+          <Proteger requiere="propietario"><><Cabecera /><AltaNegocio /></></Proteger>} />
+        <Route path="/negocios/:tenantId/cuenta" element={
+          <Proteger requiere="propietario"><><Cabecera /><CuentaNegocio /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Configuracion /></></Proteger>} />
         <Route path="/negocio/:tenantId/conversaciones" element={
