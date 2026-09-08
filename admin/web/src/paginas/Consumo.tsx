@@ -6,6 +6,10 @@ import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import {
+  FRANQUICIA_MENSUAL, distribucionDe, proyectar, seCobra,
+} from '../../../functions/src/costos';
+import { TOPE_MENSAJES_24H } from '../../../functions/src/planes';
 
 /**
  * CONSUMO — lo que se factura, con el mismo vocabulario que la página de precios.
@@ -16,8 +20,20 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
  * =============================================================================
  *
  *   CONVERSACIÓN Todos los mensajes con un mismo cliente durante 24 horas
- *                continuas, sin importar cuántos sean. ES LA UNIDAD QUE SE
- *                FACTURA, y es la misma que usa Meta para cobrarnos a nosotros.
+ *                continuas, hasta el tope de respuestas del asistente. ES LA
+ *                UNIDAD QUE SE FACTURA, y es la misma ventana que usa Meta para
+ *                cobrarnos a nosotros.
+ *
+ *                DECÍA «sin importar cuántos sean» Y DEJÓ DE SER CIERTO el
+ *                08/09/2026, cuando se puso el tope: desde el 1 de octubre Meta
+ *                cobra cada respuesta y una conversación sin fondo no se puede
+ *                prometer. El tope se dice acá y en la página de precios, con
+ *                todas las letras. Descubierto por el cliente sería un reclamo.
+ *
+ *   MENSAJES     Lo que el asistente ENVIÓ en el mes. No es lo que se le
+ *                factura al comercio: es lo que META nos factura a nosotros,
+ *                con los primeros 1.000 gratis por número y por mes. Son dos
+ *                números distintos y hasta el 08/09 solo se veía el primero.
  *
  *   ATENCIÓN     Una persona distinta atendida en el período. Si el mismo
  *                cliente vuelve tres veces en el mes, son TRES conversaciones y
@@ -52,6 +68,24 @@ interface Periodo {
   cierres?: number;
   interacciones?: number;
   personasAtendidas?: number;
+  /** Mensajes que envió el asistente: lo que Meta factura. */
+  salientes?: number;
+  mensajes?: number;
+  entrantes?: number;
+  /** Tramos de mensajes por conversación. El promedio esconde la cola. */
+  distribucion?: Record<string, unknown>;
+}
+
+/**
+ * Mensajes enviados en el período.
+ *
+ * Se cuentan aparte desde el 08/09/2026; para los meses anteriores se derivan
+ * de (mensajes − entrantes), que es lo mejor que hay. Un mes viejo sin ninguno
+ * de los dos da cero, y cero es la respuesta correcta: no se midió.
+ */
+function salientesDe(p: Periodo | undefined): number {
+  if (typeof p?.salientes === 'number') return p.salientes;
+  return Math.max(0, (p?.mensajes ?? 0) - (p?.entrantes ?? 0));
 }
 
 /** Conversaciones del período, tolerando el nombre anterior. */
@@ -194,6 +228,11 @@ export function Consumo() {
   const atenciones = actual?.personasAtendidas ?? 0;
   const cierres = actual?.cierres ?? 0;
   const tasa = porcentaje(cierres, conversaciones);
+  // Lo que Meta factura, que no es lo mismo que lo que se le factura al
+  // comercio. Ver el encabezado de este archivo.
+  const salientes = salientesDe(actual);
+  const proyeccion = proyectar({ salientes, conversaciones }, actual?.id ?? '');
+  const distribucion = distribucionDe(actual?.distribucion);
 
   return (
     <section>
@@ -212,7 +251,8 @@ export function Consumo() {
           </div>
           <p className="text-muted">
             <strong>Conversaciones</strong> es el número que se factura, y es el
-            mismo que ves acá y en tu plan.
+            mismo que ves acá y en tu plan. Cada una admite hasta{' '}
+            {TOPE_MENSAJES_24H} respuestas del asistente en 24 horas.
           </p>
           {tasa !== null && (
             <p className="text-muted">
@@ -224,6 +264,47 @@ export function Consumo() {
               Ver el detalle
             </button>
           </div>
+        </article>
+
+        <article className="card elev-sm">
+          <h3 className="card-kicker">Mensajes del asistente</h3>
+          <div className="datos">
+            <div className="dato">
+              <strong>{salientes}</strong><span>enviados este mes</span>
+            </div>
+            <div className="dato">
+              <strong>{proyeccion.mensajesPorConversacion ?? '—'}</strong>
+              <span>por conversación</span>
+            </div>
+          </div>
+          {seCobra(actual?.id ?? '') ? (
+            <>
+              <p className="text-muted">
+                WhatsApp regala {FRANQUICIA_MENSUAL} mensajes por mes. Llevas{' '}
+                <strong>{proyeccion.porcentajeFranquicia}%</strong>
+                {proyeccion.franquiciaRestante > 0
+                  ? `, te quedan ${proyeccion.franquiciaRestante}.`
+                  : `, y ${proyeccion.facturables} pasaron de esa cuenta.`}
+              </p>
+              <p className="text-muted">
+                Cuantos menos mensajes necesite el asistente para resolver, más
+                conversaciones entran en esos {FRANQUICIA_MENSUAL}.
+              </p>
+            </>
+          ) : (
+            <p className="text-muted">
+              Hasta el 1 de octubre de 2026 estos mensajes no tienen costo.
+              Desde esa fecha, WhatsApp regala {FRANQUICIA_MENSUAL} por mes.
+            </p>
+          )}
+          {distribucion.total > 0 && (
+            <p className="text-muted">
+              De {distribucion.total} conversaciones terminadas,{' '}
+              <strong>{distribucion.cola}</strong> pasaron de 10 respuestas
+              ({distribucion.porcentajeCola}%). Son las que más cuestan y las
+              que conviene mirar.
+            </p>
+          )}
         </article>
 
         <article className="card elev-sm">

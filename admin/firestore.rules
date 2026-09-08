@@ -1149,7 +1149,12 @@ service cloud.firestore {
             // el mismo nombre que usa la pagina de precios. `atenciones` queda
             // admitida para no romper los documentos ya escritos con ese
             // nombre; no se escribe mas.
-            'cierres', 'conversaciones', 'atenciones', 'interacciones'
+            'cierres', 'conversaciones', 'atenciones', 'interacciones',
+            // `salientes` es lo que META nos factura a nosotros, y es distinto
+            // de `conversaciones`, que es lo que se le factura al comercio.
+            // `distribucion` son los tramos de mensajes por conversación: el
+            // promedio esconde la cola, que es justamente lo que cuesta.
+            'salientes', 'distribucion'
           ]);
         }
       }

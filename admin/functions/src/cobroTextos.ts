@@ -23,7 +23,7 @@
  * y el servicio se habilita cuando NovuChat confirma en la consola.
  */
 import {
-  BOLSA, PLANES, esPlan, descripcionDe, montoDe, resumenDeCuenta,
+  BOLSA, PLANES, esPlan, descripcionDe, importeBs, montoUsdDe, resumenDeCuenta,
   type EstadoServicio, type Pago, type PlanId,
 } from './prepago.js';
 
@@ -47,6 +47,16 @@ export interface Contexto {
   pagoEnCurso: PagoEnCurso | null;
   /** ¿NovuChat tiene su QR de cobro registrado y encendido? */
   qrDisponible: boolean;
+  /**
+   * Tipo de Cambio Oficial del BCB con el que se cotiza en este turno.
+   *
+   * VIAJA EN EL CONTEXTO, no en una constante: la lista está en dólares y se
+   * cobra en bolivianos, y el importe que se le dice a un negocio tiene que
+   * ser el mismo que después queda registrado en su pago. Con un valor
+   * escondido en el módulo, un cambio de tipo de cambio dejaría textos y
+   * registros discrepando sin que nadie lo note.
+   */
+  tco: number;
 }
 
 export interface Fila { id: string; titulo: string; descripcion: string }
@@ -146,7 +156,9 @@ const acotar = (texto: string, max: number): string =>
  * ≤ 72, encabezado ≤ 60, cuerpo ≤ 1024, pie ≤ 60, botón ≤ 20, título de sección ≤ 24.
  * Se recorta ACÁ: si algo llega largo, Meta rechaza el mensaje entero.
  */
-export function armarLista(estado: EstadoServicio, nombreNegocio: string, cuerpo: string): Lista {
+export function armarLista(
+  estado: EstadoServicio, nombreNegocio: string, cuerpo: string, tco: number,
+): Lista {
   const filas: Fila[] = [];
   const actual = estado.plan;
   const enPrueba = estado.enPrueba || estado.modalidad === 'prueba';
@@ -154,20 +166,20 @@ export function armarLista(estado: EstadoServicio, nombreNegocio: string, cuerpo
   filas.push({
     id: 'renovar',
     titulo: acotar(enPrueba ? `Contratar ${PLANES[actual].nombre}` : `Renovar ${PLANES[actual].nombre}`, 24),
-    descripcion: acotar(`Bs ${PLANES[actual].mensualidad} · 1 mes · ${PLANES[actual].conversaciones} conversaciones`, 72),
+    descripcion: acotar(`Bs ${importeBs(PLANES[actual].precioUsd, tco)} · 1 mes · ${PLANES[actual].conversaciones} conversaciones`, 72),
   });
   for (const id of Object.keys(PLANES) as PlanId[]) {
     if (id === actual) continue;
     const p = PLANES[id];
     filas.push({
       id: `plan_${id}`,
-      titulo: acotar(`${p.nombre.replace(/^Plan /, '')} · Bs ${p.mensualidad}`, 24),
+      titulo: acotar(`${p.nombre.replace(/^Plan /, '')} · Bs ${importeBs(p.precioUsd, tco)}`, 24),
       descripcion: acotar(`Cambiar a ${p.nombre}: ${p.conversaciones} conversaciones por mes`, 72),
     });
   }
   filas.push({
     id: 'bolsa',
-    titulo: acotar(`Bolsa ${BOLSA.conversaciones} conv · Bs ${BOLSA.precio}`, 24),
+    titulo: acotar(`Bolsa ${BOLSA.conversaciones} conv · Bs ${importeBs(BOLSA.precioUsd, tco)}`, 24),
     descripcion: acotar(`${BOLSA.conversaciones} conversaciones extra que no vencen`, 72),
   });
   filas.push({ id: 'saldo', titulo: 'Ver mi saldo', descripcion: 'Plan, vencimiento y conversaciones disponibles' });
@@ -202,8 +214,8 @@ export function decidirRespuesta(entrada: Entrada, contexto: Contexto): Decision
     return { ...nada, respuesta: TEXTOS.desconocido };
   }
   const { negocio, estado } = contexto;
-  const resumen = resumenDeCuenta(estado, negocio.nombre);
-  const menu = (cuerpo: string) => armarLista(estado, negocio.nombre, cuerpo);
+  const resumen = resumenDeCuenta(estado, negocio.nombre, contexto.tco);
+  const menu = (cuerpo: string) => armarLista(estado, negocio.nombre, cuerpo, contexto.tco);
 
   // --- Llegó una imagen o un PDF: es el comprobante, o no hay nada que cobrar ---
   if (ES_COMPROBANTE.has(entrada.tipo)) {
@@ -230,7 +242,10 @@ export function decidirRespuesta(entrada: Entrada, contexto: Contexto): Decision
   const pago = opcion ? pagoDeOpcion(opcion, estado) : null;
   if (pago) {
     const descripcion = descripcionDe(pago);
-    const monto = montoDe(pago);
+    // Lo que se le DICE al negocio es el importe en bolivianos, que es lo que va
+    // a transferir. El pago se registra además en dólares y con el TCO aplicado,
+    // que es lo que permite reconstruir la factura después (ver `cuentas.ts`).
+    const monto = importeBs(montoUsdDe(pago), contexto.tco);
     if (!contexto.qrDisponible) {
       return {
         ...nada, crearPago: pago,

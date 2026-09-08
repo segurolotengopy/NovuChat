@@ -32,9 +32,11 @@ import { registrar } from './ingesta.js';
 import { ID_TENANT, TELEFONO, texto } from './autorizacion.js';
 import { decidirRespuesta, TEXTOS, type Contexto, type Entrada } from './cobroTextos.js';
 import {
-  consumidasDe, corteDe, descripcionDe, estadoDeServicio, montoDe, periodoDe,
+  consumidasDe, corteDe, descripcionDe, estadoDeServicio, importeBs, montoUsdDe, periodoDe,
   recordatoriosDebidos, type CuentaCruda, type EstadoServicio,
 } from './prepago.js';
+import { MONEDA_COBRO, MONEDA_LISTA } from './prepago.js';
+import { tipoCambioVigente } from './tipoCambio.js';
 import { camposDerivados } from './cuentas.js';
 
 const db = () => getFirestore();
@@ -145,7 +147,13 @@ export const cobroPrepago = onRequest(OPCIONES, async (peticion, respuesta) => {
   const qrDisponible = cobro?.['activo'] === true && /^[0-9a-f]{32}$/.test(fichaQr)
     && String(cobro?.['cargaUtil'] ?? '') !== '';
 
-  const decision = decidirRespuesta(entrada, { negocio, estado, pagoEnCurso, qrDisponible });
+  // El tipo de cambio con el que se cotiza en ESTE turno. Si no hay uno
+  // válido no se cotiza: ver `tipoCambio.ts`, regla 1.
+  const tc = await tipoCambioVigente(periodo);
+
+  const decision = decidirRespuesta(
+    entrada, { negocio, estado, pagoEnCurso, qrDisponible, tco: tc.tco },
+  );
 
   // --- Efectos ---------------------------------------------------------------
   const refCuenta = db().doc(`tenants/${negocio.tenantId}/cuenta/estado`);
@@ -157,7 +165,15 @@ export const cobroPrepago = onRequest(OPCIONES, async (peticion, respuesta) => {
     lote.set(refPago, {
       tipo: pago.tipo,
       ...(pago.tipo === 'mensualidad' ? { plan: pago.plan, meses: pago.meses } : { cantidad: pago.cantidad }),
-      monto: montoDe(pago), moneda: 'BOB', descripcion: descripcionDe(pago),
+      // EL PAGO SE REGISTRA EN LAS DOS MONEDAS Y CON EL TCO APLICADO. Sin el
+      // TCO, seis meses después nadie puede reconstruir por qué se cobraron
+      // esos bolivianos, y una factura que no se puede reconstruir no sirve
+      // para dirimir nada.
+      montoUsd: montoUsdDe(pago),
+      monto: importeBs(montoUsdDe(pago), tc.tco),
+      moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
+      tcoAplicado: tc.tco, tcoFuente: tc.fuente, tcoPeriodo: tc.periodo,
+      descripcion: descripcionDe(pago),
       estado: 'esperando_comprobante', canal: 'whatsapp',
       telefonoEnmascarado: enmascarar(telefono),
       creadoEn: Timestamp.now(),
@@ -166,7 +182,7 @@ export const cobroPrepago = onRequest(OPCIONES, async (peticion, respuesta) => {
     // idea y el comprobante que llegue es del último que eligió.
     lote.set(refCuenta, { pagoPendienteId: refPago.id, actualizadoEn: Timestamp.now() }, { merge: true });
     await lote.commit();
-    epigrafeQr = TEXTOS.epigrafeQr(descripcionDe(pago), montoDe(pago));
+    epigrafeQr = TEXTOS.epigrafeQr(descripcionDe(pago), importeBs(montoUsdDe(pago), tc.tco));
   }
   if (decision.marcarComprobante && pagoEnCurso) {
     await db().doc(`tenants/${negocio.tenantId}/pagos/${pagoEnCurso.id}`).set({
@@ -214,6 +230,9 @@ export const recordatoriosPrepago = onRequest(OPCIONES, async (peticion, respues
 
   const ahoraMs = Date.now();
   const periodo = periodoDe(ahoraMs);
+  // Los recordatorios dicen un importe, así que sin TCO no salen. Es preferible
+  // a mandarle a un negocio un monto inventado: ver `tipoCambio.ts`, regla 1.
+  const tc = await tipoCambioVigente(periodo);
   const activos = await db().collection('tenants').where('estado', '==', 'activo').limit(500).get();
 
   const salida: RecordatorioParaEnviar[] = [];
@@ -247,7 +266,7 @@ export const recordatoriosPrepago = onRequest(OPCIONES, async (peticion, respues
     }
 
     const nombre = String(ficha.get('nombre') ?? '');
-    const debidos = recordatoriosDebidos(cuenta, estado, nombre, ahoraMs);
+    const debidos = recordatoriosDebidos(cuenta, estado, nombre, ahoraMs, tc.tco);
     if (debidos.length === 0) continue;
 
     const telefonos = Array.isArray(ficha.get('telefonosCobro')) ? ficha.get('telefonosCobro') as unknown[] : [];

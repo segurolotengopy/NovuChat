@@ -11,7 +11,7 @@ import {
   TEXTOS, armarLista, decidirRespuesta, normalizarComando, opcionDe, pagoDeOpcion,
   type Contexto, type Entrada,
 } from '../functions/src/cobroTextos.ts';
-import { BOLSA, PLANES, VOSEO, estadoDeServicio } from '../functions/src/prepago.ts';
+import { importeBs, BOLSA, PLANES, VOSEO, estadoDeServicio } from '../functions/src/prepago.ts';
 
 const entrada = (parte: Partial<Entrada>): Entrada => ({
   tipo: 'text', texto: '', seleccionId: '', nombrePerfil: 'Ana', ...parte,
@@ -19,8 +19,12 @@ const entrada = (parte: Partial<Entrada>): Entrada => ({
 
 const negocio = { tenantId: 'salon-rosa', nombre: 'Salón Rosa' };
 const pagado = { modalidad: 'prepago', plan: 'base', periodoPagado: '2026-09', bolsa: 0 };
+/** TCO del BCB del 08/09/2026: la lista está en dólares y se cobra en Bs. */
+const TCO = 12.60;
+
 const contexto = (parte: Partial<Contexto> = {}): Contexto => ({
-  negocio, estado: estadoDeServicio(pagado, 12, '2026-09'), pagoEnCurso: null, qrDisponible: true, ...parte,
+  negocio, estado: estadoDeServicio(pagado, 12, '2026-09'), pagoEnCurso: null,
+  qrDisponible: true, tco: TCO, ...parte,
 });
 
 /** Los textos que acompañan al QR o al comprobante no pueden sonar a «pagado». */
@@ -50,7 +54,7 @@ describe('Reconocer qué quiere el negocio', () => {
 
 describe('El menú respeta los topes de WhatsApp', () => {
   it('a lo sumo 10 filas, títulos de 24 y descripciones de 72', () => {
-    const lista = armarLista(estadoDeServicio(pagado, 0, '2026-09'), 'Un nombre de negocio bastante largo para probar el tope', 'x'.repeat(2000));
+    const lista = armarLista(estadoDeServicio(pagado, 0, '2026-09'), 'Un nombre de negocio bastante largo para probar el tope', 'x'.repeat(2000), TCO);
     const filas = lista.secciones.flatMap((s) => s.filas);
     expect(filas.length).toBeLessThanOrEqual(10);
     for (const f of filas) {
@@ -65,14 +69,14 @@ describe('El menú respeta los topes de WhatsApp', () => {
   });
 
   it('ofrece renovar el plan actual, cambiar a los otros dos, la bolsa y el saldo', () => {
-    const ids = armarLista(estadoDeServicio(pagado, 0, '2026-09'), 'Salón Rosa', 'x')
+    const ids = armarLista(estadoDeServicio(pagado, 0, '2026-09'), 'Salón Rosa', 'x', TCO)
       .secciones[0]?.filas.map((f) => f.id);
     expect(ids).toEqual(['renovar', 'plan_crecimiento', 'plan_corporativo', 'bolsa', 'saldo']);
   });
 
   it('en el mes de prueba la primera opción es CONTRATAR, no renovar', () => {
     const estado = estadoDeServicio({ modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 }, 0, '2026-09');
-    expect(armarLista(estado, 'Salón Rosa', 'x').secciones[0]?.filas[0]?.titulo).toMatch(/^Contratar/);
+    expect(armarLista(estado, 'Salón Rosa', 'x', TCO).secciones[0]?.filas[0]?.titulo).toMatch(/^Contratar/);
   });
 });
 
@@ -112,7 +116,8 @@ describe('Decidir la respuesta', () => {
     const d = decidirRespuesta(entrada({ seleccionId: 'renovar' }), contexto());
     expect(d.crearPago).toEqual({ tipo: 'mensualidad', plan: 'base', meses: 1 });
     expect(d.enviarQr).toBe(true);
-    expect(d.respuesta).toMatch(/Bs 250/);
+    // Lo que se le dice al negocio es el importe en bolivianos: USD 20 × 12,60.
+    expect(d.respuesta).toMatch(/Bs 252/);
     expect(d.respuesta).toMatch(/comprobante antes de salir/);
     expect(d.lista).toBeNull();
   });
@@ -120,13 +125,13 @@ describe('Decidir la respuesta', () => {
   it('elegir la bolsa crea el pago de la bolsa', () => {
     const d = decidirRespuesta(entrada({ texto: 'bolsa' }), contexto());
     expect(d.crearPago).toEqual({ tipo: 'bolsa', cantidad: 1 });
-    expect(d.respuesta).toMatch(new RegExp(`Bs ${BOLSA.precio}`));
+    expect(d.respuesta).toMatch(new RegExp(`Bs ${importeBs(BOLSA.precioUsd, TCO)}`));
   });
 
   it('cambiar de plan crea el pago del plan nuevo', () => {
     const d = decidirRespuesta(entrada({ seleccionId: 'plan_corporativo' }), contexto());
     expect(d.crearPago).toEqual({ tipo: 'mensualidad', plan: 'corporativo', meses: 1 });
-    expect(d.respuesta).toMatch(new RegExp(`Bs ${PLANES.corporativo.mensualidad}`));
+    expect(d.respuesta).toMatch(new RegExp(`Bs ${importeBs(PLANES.corporativo.precioUsd, TCO)}`));
   });
 
   it('sin QR cargado no se manda QR, se crea el pago igual y se avisa al equipo', () => {
@@ -138,9 +143,11 @@ describe('Decidir la respuesta', () => {
 
   it('un comprobante CON pago en curso se marca y avisa a NovuChat; nunca dice acreditado', () => {
     const d = decidirRespuesta(entrada({ tipo: 'image' }),
-      contexto({ pagoEnCurso: { id: 'p1', descripcion: 'Plan Base · 1 mes', monto: 250 } }));
+      // El pago en curso ya trae su importe en bolivianos, calculado y guardado
+      // cuando se creó, con el TCO de ese momento.
+      contexto({ pagoEnCurso: { id: 'p1', descripcion: 'Plan Base · 1 mes', monto: 252 } }));
     expect(d.marcarComprobante).toBe(true);
-    expect(d.avisoAdmin).toMatch(/Comprobante recibido · Salón Rosa \(salon-rosa\) · Plan Base · 1 mes · Bs 250/);
+    expect(d.avisoAdmin).toMatch(/Comprobante recibido · Salón Rosa \(salon-rosa\) · Plan Base · 1 mes · Bs 252/);
     expect(d.respuesta).toMatch(/Recibí tu comprobante/);
     expect(d.respuesta).not.toMatch(AFIRMA_ACREDITACION);
     expect(d.crearPago).toBeNull();

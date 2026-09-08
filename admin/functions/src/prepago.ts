@@ -15,7 +15,7 @@
  *  1. El cliente es PREPAGO. Paga el mes calendario por adelantado y recibe una
  *     cantidad de conversaciones INCLUIDAS para ese mes. Lo que no usó, no se
  *     arrastra: el mes siguiente vuelve a empezar.
- *  2. Puede comprar BOLSAS de 150 conversaciones. Las bolsas NO vencen y se
+ *  2. Puede comprar BOLSAS de conversaciones. Las bolsas NO vencen y se
  *     consumen recién cuando las incluidas del mes se acabaron.
  *  3. Si el 1 del mes no está pagado, se corta. Si se acabaron las
  *     conversaciones (incluidas + bolsas), se corta. Al cliente final le llega
@@ -45,20 +45,87 @@
 // revisión de código. Y se cambian ACÁ, en un solo lugar: la consola los lee de
 // este módulo y no tiene su propia copia.
 export const PLANES = {
-  base: { nombre: 'Plan Base', mensualidad: 250, conversaciones: 300 },
-  crecimiento: { nombre: 'Plan Crecimiento', mensualidad: 450, conversaciones: 1000 },
-  corporativo: { nombre: 'Plan Corporativo', mensualidad: 850, conversaciones: 2500 },
+  base: { nombre: 'Plan Base', precioUsd: 20, conversaciones: 120 },
+  crecimiento: { nombre: 'Plan Crecimiento', precioUsd: 40, conversaciones: 200 },
+  corporativo: { nombre: 'Plan Corporativo', precioUsd: 70, conversaciones: 300 },
 } as const;
 export type PlanId = keyof typeof PLANES;
 export const PLAN_POR_DEFECTO: PlanId = 'base';
 
-/** Paquete extra: 150 conversaciones por 50 Bs. No vence. */
-export const BOLSA = { conversaciones: 150, precio: 50 } as const;
+/** Paquete extra: 25 conversaciones por USD 10. No vence. */
+export const BOLSA = { conversaciones: 25, precioUsd: 10 } as const;
 
 /** El mes de prueba: sin mensualidad y con esta bolsa. */
 export const PRUEBA = { conversaciones: 20 } as const;
 
-export const MONEDA = 'BOB';
+/**
+ * LA LISTA SE DENOMINA EN DÓLARES Y SE COBRA EN BOLIVIANOS.
+ *
+ * Todo lo que cuesta el servicio se paga en USD —Meta, Google— y hasta el
+ * 08/09/2026 se cobraba en Bs: cada vez que se movía el tipo de cambio, el
+ * margen se movía con él sin que nadie decidiera nada. Con la lista en dólares
+ * eso se termina.
+ *
+ * EL TIPO DE CAMBIO NO LO PUBLICA NOVUCHAT. Sale del Tipo de Cambio Oficial
+ * que publica el Banco Central de Bolivia, que desde el 29/06/2026 flota y se
+ * publica a diario. Un proveedor que fija el tipo de cambio con el que cobra
+ * invita a la sospecha, aunque lo fije bien; nombrar al BCB es lo que vuelve
+ * indiscutible la cláusula del contrato.
+ */
+export const MONEDA_LISTA = 'USD';
+export const MONEDA_COBRO = 'BOB';
+
+/**
+ * EL TIPO DE CAMBIO VIGENTE, tal como se guarda en `plataforma/tipoCambio`.
+ *
+ * `periodo` es el mes al que corresponde: la política implementada es **un TCO
+ * por mes calendario, fijo para todo el mes**, que es lo recomendado en
+ * `Analisis/17` §3.0. Bajo tipo de cambio flexible el importe en bolivianos se
+ * movería mes a mes, y para una PyME saber de antemano cuánto va a pagar vale
+ * más que la diferencia de unos centavos. Si Andres decide el TCO del día de
+ * pago, se cambia acá y en quien lo lee: el resto del sistema no se entera.
+ */
+export interface TipoCambio {
+  /** Bolivianos por dólar. */
+  tco: number;
+  /** Mes al que corresponde (`aaaa-mm`). */
+  periodo: string;
+  /** De dónde salió. Se guarda para poder reconstruir una factura. */
+  fuente: string;
+}
+
+/** Cota de cordura del TCO. No es una opinión sobre el tipo de cambio: es un
+ *  seguro contra un cero de más al cargarlo a mano, que multiplicaría o
+ *  dividiría por diez lo que se le cobra a un cliente. */
+export const TCO_MINIMO = 5;
+export const TCO_MAXIMO = 40;
+
+export function esTipoCambio(v: unknown): v is TipoCambio {
+  if (typeof v !== 'object' || v === null) return false;
+  const t = v as Record<string, unknown>;
+  return typeof t['tco'] === 'number' && Number.isFinite(t['tco'])
+    && t['tco'] >= TCO_MINIMO && t['tco'] <= TCO_MAXIMO
+    && esPeriodo(t['periodo']) && typeof t['fuente'] === 'string';
+}
+
+/**
+ * Importe en bolivianos de un precio en dólares.
+ *
+ * SE REDONDEA AL BOLIVIANO. El importe termina en un QR y en un comprobante
+ * bancario, y los centavos en una transferencia son una fuente de diferencias
+ * de un centavo que después hay que conciliar a mano.
+ *
+ * NUNCA SE INVENTA UN TIPO DE CAMBIO: sin TCO válido esto lanza. Es deliberado.
+ * Cobrar con un tipo de cambio supuesto es peor que no poder cobrar, porque el
+ * error se descubre cuando el cliente ya pagó.
+ */
+export function importeBs(usd: number, tco: number): number {
+  if (!Number.isFinite(usd) || usd < 0) throw new Error(`importe invalido: ${usd}`);
+  if (!Number.isFinite(tco) || tco < TCO_MINIMO || tco > TCO_MAXIMO) {
+    throw new Error(`tipo de cambio invalido: ${tco}`);
+  }
+  return Math.round(usd * tco);
+}
 
 export const MODALIDADES = ['demostracion', 'prueba', 'prepago'] as const;
 export type Modalidad = (typeof MODALIDADES)[number];
@@ -225,7 +292,8 @@ export interface EstadoServicio {
   bolsaPrueba: number;
   /** Lo que se puede abrir todavía este mes: plan restante + bolsas vigentes. */
   disponibles: number;
-  mensualidad: number;
+  /** Precio del plan en DÓLARES. El importe en bolivianos es derivado. */
+  mensualidadUsd: number;
 }
 
 /** Conversaciones consumidas en el mes, leídas del agregado de métricas. */
@@ -252,14 +320,14 @@ export function estadoDeServicio(
 
   const base = {
     modalidad, plan, periodo, bolsa, bolsaPrueba, consumidas: usadas,
-    mensualidad: PLANES[plan].mensualidad,
+    mensualidadUsd: PLANES[plan].precioUsd,
   };
 
   if (modalidad === 'demostracion') {
     return {
       ...base, operativo: true, motivo: null, enPrueba: false, cubierto: true,
       cubiertoHasta: '', incluidas: 0, restanteDelPlan: 0, disponibles: Number.POSITIVE_INFINITY,
-      mensualidad: 0,
+      mensualidadUsd: 0,
     };
   }
 
@@ -277,7 +345,7 @@ export function estadoDeServicio(
     return {
       ...base, operativo: false, motivo: 'sin_pago', enPrueba: false, cubierto: false,
       cubiertoHasta, incluidas: 0, restanteDelPlan: 0, disponibles: 0,
-      mensualidad: modalidad === 'prueba' ? 0 : PLANES[plan].mensualidad,
+      mensualidadUsd: modalidad === 'prueba' ? 0 : PLANES[plan].precioUsd,
     };
   }
 
@@ -290,7 +358,7 @@ export function estadoDeServicio(
     ...base, enPrueba, cubierto: true, cubiertoHasta, incluidas, restanteDelPlan, disponibles,
     operativo: disponibles > 0,
     motivo: disponibles > 0 ? null : 'sin_conversaciones',
-    mensualidad: enPrueba ? 0 : PLANES[plan].mensualidad,
+    mensualidadUsd: enPrueba ? 0 : PLANES[plan].precioUsd,
   };
 }
 
@@ -321,10 +389,11 @@ export type Pago =
   | { tipo: 'mensualidad'; plan: PlanId; meses: number }
   | { tipo: 'bolsa'; cantidad: number };
 
-export function montoDe(pago: Pago): number {
+/** Lo que cuesta un pago, EN DÓLARES. El importe en bolivianos es derivado. */
+export function montoUsdDe(pago: Pago): number {
   return pago.tipo === 'mensualidad'
-    ? PLANES[pago.plan].mensualidad * Math.max(1, pago.meses)
-    : BOLSA.precio * Math.max(1, pago.cantidad);
+    ? PLANES[pago.plan].precioUsd * Math.max(1, pago.meses)
+    : BOLSA.precioUsd * Math.max(1, pago.cantidad);
 }
 
 export function descripcionDe(pago: Pago): string {
@@ -464,6 +533,8 @@ export function recordatoriosDebidos(
   estado: EstadoServicio,
   nombreNegocio: string,
   ahoraMs: number,
+  /** TCO del BCB vigente. El recordatorio dice un importe y va a un negocio. */
+  tco: number,
 ): Recordatorio[] {
   if (estado.modalidad === 'demostracion') return [];
   const enviados = (typeof cuenta.recordatorios === 'object' && cuenta.recordatorios !== null)
@@ -486,7 +557,8 @@ export function recordatoriosDebidos(
             plantilla: PLANTILLAS.renovacion.nombre,
             parametros: [
               negocio, planNombre, fechaFinDelPeriodo(estado.periodo),
-              String(PLANES[estado.plan].mensualidad),
+              // El importe va en bolivianos, que es lo que el negocio paga.
+              `Bs ${importeBs(PLANES[estado.plan].precioUsd, tco)}`,
             ],
           });
         }
@@ -509,7 +581,8 @@ export function recordatoriosDebidos(
   }
   if (estado.motivo === 'sin_conversaciones' && corte && corte.motivo === 'sin_conversaciones') {
     const base = `corte_conversaciones_${corte.desdeMs}`;
-    const parametros = [negocio, planNombre, String(corte.perdidas), String(BOLSA.precio)];
+    const parametros = [negocio, planNombre, String(corte.perdidas),
+      `Bs ${importeBs(BOLSA.precioUsd, tco)}`];
     debidos.push({ clave: `${base}_1`, tipo: 'corteConversaciones',
       plantilla: PLANTILLAS.corteConversaciones.nombre, parametros });
     if (ahoraMs - corte.desdeMs >= DIAS_SEGUNDO_AVISO_CORTE * DIA_MS) {
@@ -529,7 +602,9 @@ export function recordatoriosDebidos(
 // TEXTOS DEL FLUJO DE COBRO — lo que el negocio lee cuando le escribe a NovuChat
 // -----------------------------------------------------------------------------
 /** Resumen de la cuenta en una o dos frases, para el cuerpo del menú. */
-export function resumenDeCuenta(estado: EstadoServicio, nombreNegocio: string): string {
+export function resumenDeCuenta(
+  estado: EstadoServicio, nombreNegocio: string, tco: number,
+): string {
   const negocio = nombreNegocio.trim() || 'tu negocio';
   if (estado.modalidad === 'demostracion') {
     return `${negocio} está en modo demostración: sin mensualidad ni límite de conversaciones.`;
@@ -545,7 +620,8 @@ export function resumenDeCuenta(estado: EstadoServicio, nombreNegocio: string): 
   if (estado.motivo === 'sin_conversaciones') {
     return `${negocio}: el asistente está DETENIDO porque se agotaron las conversaciones ` +
       `del ${estado.enPrueba ? 'mes de prueba' : PLANES[estado.plan].nombre}. ` +
-      `Una bolsa de ${BOLSA.conversaciones} por Bs ${BOLSA.precio} lo reactiva al instante.`;
+      `Una bolsa de ${BOLSA.conversaciones} por Bs ${importeBs(BOLSA.precioUsd, tco)} ` +
+      'lo reactiva al instante.';
   }
   const hasta = estado.cubiertoHasta ? fechaFinDelPeriodo(estado.cubiertoHasta) : '';
   return estado.enPrueba

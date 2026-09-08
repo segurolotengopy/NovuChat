@@ -11,6 +11,7 @@ import {
   type MarcasDeTope,
 } from './planes.js';
 import { cacheConTtl } from './cache.js';
+import { tramoDe } from './costos.js';
 import {
   MENSAJE_CORTESIA, consumidasDe, consumoDeConversacion, corteDe, estadoDeServicio,
   periodoDe, type CuentaCruda, type MotivoCorte,
@@ -393,10 +394,19 @@ export interface Conteo {
   respuestasDelPeriodo: number;
   /**
    * Respuestas del asistente en la ventana vigente, ya con este mensaje. Se
-   * guarda tal cual; es lo que lee el tope por plan. Cero al abrir una
-   * ventana nueva.
+   * guarda tal cual; es lo que lee el tope. Cero al abrir una ventana nueva.
    */
   mensajesVentana: number;
+  /**
+   * Cuántas respuestas tuvo la ventana que ESTE mensaje cierra, o `null` si no
+   * cierra ninguna. Es lo que alimenta la distribución de mensajes por
+   * conversación (`costos.ts`), que es el número que `Analisis/16` pide medir y
+   * nadie tenía: el promedio esconde justamente la cola que cuesta.
+   *
+   * Sale gratis: se conoce en el mismo instante en que el contador se reinicia,
+   * sin una lectura más ni un registro nuevo.
+   */
+  ventanaCerrada: number | null;
 }
 
 /**
@@ -447,6 +457,14 @@ export function contadoresDelMensaje(
     : 0;
   const mensajesVentana = atencion ? 0 : previasVentana + (direccion === 'saliente' ? 1 : 0);
 
+  // La ventana que se cierra es la que había guardada, con su valor CRUDO: en
+  // este punto `previasVentana` ya vale cero porque la ventana venció, y lo que
+  // interesa es cuántas respuestas llegó a tener.
+  const crudoGuardado = typeof guardadoVentana === 'number' && Number.isFinite(guardadoVentana)
+    ? Math.max(0, Math.trunc(guardadoVentana)) : 0;
+  const ventanaCerrada = atencion && marcas.atencionDesde !== undefined && crudoGuardado > 0
+    ? crudoGuardado : null;
+
   return {
     atencion,
     /**
@@ -465,6 +483,7 @@ export function contadoresDelMensaje(
     interaccion: marcas.periodoInteraccion !== periodo && respuestasDelPeriodo >= 2,
     respuestasDelPeriodo,
     mensajesVentana,
+    ventanaCerrada,
   };
 }
 
@@ -759,6 +778,30 @@ export const ingesta = onRequest(
         ...(conteo.personaNueva ? { personasAtendidas: FieldValue.increment(1) } : {}),
         ...(conteo.atencion ? { conversaciones: FieldValue.increment(1) } : {}),
         ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
+
+        // LO QUE PREDICE LA FACTURA DE META, que hasta ahora no se medía.
+        //
+        // `conversaciones` es lo que se le factura al comercio; `salientes` es
+        // lo que Meta nos factura a nosotros, y son dos números distintos. Sin
+        // el segundo, la primera noticia del gasto es la factura. Se cuenta
+        // aparte en vez de derivarlo de `mensajes - entrantes` porque es la
+        // cifra sobre la que se decide hablar con un cliente, y una resta entre
+        // dos contadores que se escriben en momentos distintos puede quedar
+        // desfasada por un reintento.
+        ...(entrante.direccion === 'saliente' ? { salientes: FieldValue.increment(1) } : {}),
+
+        // LA DISTRIBUCIÓN DE MENSAJES POR CONVERSACIÓN. El promedio esconde la
+        // cola, que es justamente lo que cuesta: diez conversaciones de 4 y una
+        // de 40 promedian 7, y lo que se paga es la de 40. Se suma un tramo
+        // cuando una ventana se cierra, o sea cuando ya se sabe cuántas
+        // respuestas tuvo. Cero lecturas y cero escrituras extra: el documento
+        // de métricas ya se estaba escribiendo en este mismo mensaje.
+        ...(conteo.ventanaCerrada !== null && tramoDe(conteo.ventanaCerrada)
+          // Objeto ANIDADO, no una clave con punto: `set` con merge trata una
+          // clave con punto como un nombre literal, y quedaría un campo
+          // «distribucion.t1_2» que las reglas rechazan y nadie sabe leer.
+          ? { distribucion: { [tramoDe(conteo.ventanaCerrada) as string]: FieldValue.increment(1) } }
+          : {}),
       }, { merge: true });
     }
 

@@ -203,7 +203,7 @@ export function AltaNegocio() {
           <select value={plan} onChange={(e) => setPlan(e.target.value as PlanId)}>
             {(Object.keys(PLANES) as PlanId[]).map((id) => (
               <option key={id} value={id}>
-                {PLANES[id].nombre}: Bs {PLANES[id].mensualidad} / mes, {PLANES[id].conversaciones} conversaciones
+                {PLANES[id].nombre}: USD {PLANES[id].precioUsd} / mes, {PLANES[id].conversaciones} conversaciones
               </option>
             ))}
           </select>

@@ -93,7 +93,7 @@ export function EstadoCuenta() {
           {corte && corte.perdidas > 0 && <> Desde el {fechaCorta(corte.desdeMs)} llegaron <strong>{corte.perdidas}</strong> mensajes sin atención.</>}
           {estado.motivo === 'sin_pago'
             ? ' Se reanuda apenas NovuChat confirme el pago del mes.'
-            : ` Se reanuda apenas NovuChat confirme una bolsa de ${BOLSA.conversaciones} conversaciones (Bs ${BOLSA.precio}) o el pago del mes siguiente.`}
+            : ` Se reanuda apenas NovuChat confirme una bolsa de ${BOLSA.conversaciones} conversaciones (USD ${BOLSA.precioUsd}) o el pago del mes siguiente.`}
         </p>
       )}
 
@@ -119,7 +119,7 @@ export function EstadoCuenta() {
             <tbody>
               <tr><th>Modalidad</th><td>{ETIQUETA_MODALIDAD[estado.modalidad]}</td></tr>
               <tr><th>Plan</th><td>{plan.nombre} · {plan.conversaciones} conversaciones por mes</td></tr>
-              <tr><th>Mensualidad</th><td>{estado.enPrueba ? 'Bs 0 este mes' : `Bs ${plan.mensualidad}`}</td></tr>
+              <tr><th>Mensualidad</th><td>{estado.enPrueba ? 'Bs 0 este mes' : `USD ${plan.precioUsd}`}</td></tr>
               <tr><th>{estado.enPrueba ? 'Prueba hasta' : 'Pagado hasta'}</th>
                 <td>{estado.cubiertoHasta ? fechaFinDelPeriodo(estado.cubiertoHasta) : 'sin pagos registrados'}</td></tr>
                           <tr><th>Respuestas por conversación</th>
@@ -150,7 +150,7 @@ export function EstadoCuenta() {
               . Te llega el QR, pagas desde tu banco y mandas el comprobante por el mismo chat.
             </p>
             <p className="text-muted">
-              Escribe <strong>bolsa</strong> para sumar {BOLSA.conversaciones} conversaciones por Bs {BOLSA.precio},
+              Escribe <strong>bolsa</strong> para sumar {BOLSA.conversaciones} conversaciones por USD {BOLSA.precioUsd},
               o <strong>saldo</strong> para ver este mismo resumen. El servicio se reanuda cuando NovuChat
               confirma el pago; el asistente no lo da por acreditado solo con la foto.
             </p>

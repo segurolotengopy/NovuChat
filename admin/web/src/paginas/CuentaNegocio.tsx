@@ -230,7 +230,10 @@ function RegistrarPago({ tenantId, planActual, ocupado, ejecutar }: {
   const [meses, setMeses] = useState(1);
   const [cantidad, setCantidad] = useState(1);
   const [referencia, setReferencia] = useState('');
-  const monto = tipo === 'mensualidad' ? PLANES[plan].mensualidad * meses : BOLSA.precio * cantidad;
+  // La lista está en dólares; el importe en bolivianos lo calcula el servidor
+  // con el TCO del BCB y lo guarda con el pago. Acá se muestra la lista, que es
+  // lo que no cambia entre el momento de elegir y el de confirmar.
+  const monto = tipo === 'mensualidad' ? PLANES[plan].precioUsd * meses : BOLSA.precioUsd * cantidad;
 
   return (
     <article className="card elev-sm">
@@ -255,7 +258,7 @@ function RegistrarPago({ tenantId, planActual, ocupado, ejecutar }: {
             <label>Plan
               <select value={plan} onChange={(e) => setPlan(e.target.value as PlanId)}>
                 {(Object.keys(PLANES) as PlanId[]).map((id) => (
-                  <option key={id} value={id}>{PLANES[id].nombre} · Bs {PLANES[id].mensualidad}</option>
+                  <option key={id} value={id}>{PLANES[id].nombre} · USD {PLANES[id].precioUsd}</option>
                 ))}
               </select>
             </label>

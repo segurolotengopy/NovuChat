@@ -22,10 +22,12 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { randomBytes } from 'node:crypto';
 import { registrar } from './ingesta.js';
+import { tipoCambioVigente } from './tipoCambio.js';
 import { TELEFONO, auditar, exigirPropietario, tenantDe, texto } from './autorizacion.js';
 import {
-  MONEDA, PLAN_POR_DEFECTO, PRUEBA, aplicarPago, consumidasDe, corteDe, descripcionDe,
-  esModalidad, esPeriodo, esPlan, estadoDeServicio, finDelPeriodoMs, montoDe, periodoDe,
+  MONEDA_COBRO, MONEDA_LISTA, PLAN_POR_DEFECTO, PRUEBA, aplicarPago, consumidasDe, corteDe, descripcionDe,
+  esModalidad, esPeriodo, esPlan, estadoDeServicio, finDelPeriodoMs, importeBs, montoUsdDe, periodoDe,
+  type TipoCambio,
   type Corte, type CuentaCruda, type EstadoServicio, type Modalidad, type Pago, type PlanId,
 } from './prepago.js';
 
@@ -42,8 +44,11 @@ const db = () => getFirestore();
 export function camposDerivados(estado: EstadoServicio, corteGuardado: Corte | null): Record<string, unknown> {
   return {
     estadoPago: estado.cubierto ? 'al_dia' : 'vencido',
-    montoMensual: estado.mensualidad,
-    moneda: MONEDA,
+    // La mensualidad se guarda EN DÓLARES, que es como está la lista. El
+    // importe en bolivianos es derivado y depende del TCO del mes, así que
+    // guardarlo acá lo dejaría desactualizado sin que nadie lo note.
+    montoMensual: estado.mensualidadUsd,
+    moneda: MONEDA_LISTA,
     proximoVencimiento: estado.cubiertoHasta
       ? Timestamp.fromMillis(finDelPeriodoMs(estado.cubiertoHasta))
       : FieldValue.delete(),
@@ -68,12 +73,21 @@ export function pagoDeDocumento(d: Record<string, unknown> | undefined): Pago | 
 }
 
 /** Los campos del documento de un pago que salen de su definición. */
-function camposDePago(pago: Pago): Record<string, unknown> {
+function camposDePago(pago: Pago, tc: TipoCambio): Record<string, unknown> {
   return {
     tipo: pago.tipo,
     ...(pago.tipo === 'mensualidad' ? { plan: pago.plan, meses: pago.meses } : { cantidad: pago.cantidad }),
-    monto: montoDe(pago),
-    moneda: MONEDA,
+    // LAS DOS MONEDAS Y EL TCO APLICADO. Sin el TCO no se puede reconstruir la
+    // factura: seis meses después nadie sabe con qué tipo de cambio se
+    // convirtieron esos bolivianos, y una factura que no se puede reconstruir
+    // no sirve para dirimir nada.
+    montoUsd: montoUsdDe(pago),
+    monto: importeBs(montoUsdDe(pago), tc.tco),
+    moneda: MONEDA_COBRO,
+    monedaLista: MONEDA_LISTA,
+    tcoAplicado: tc.tco,
+    tcoFuente: tc.fuente,
+    tcoPeriodo: tc.periodo,
     descripcion: descripcionDe(pago),
   };
 }
@@ -96,6 +110,9 @@ export async function aplicarPagoEnCuenta(
   meta: { uid: string; canal: 'panel' | 'whatsapp'; pagoId?: string; referencia?: string; nota?: string },
 ): Promise<ResultadoPago> {
   const periodo = periodoDe(Date.now());
+  // El TCO con el que se convierte este pago. Se lee ANTES de la transacción y
+  // se guarda con el pago: es lo que permite reconstruir la factura.
+  const tc = await tipoCambioVigente(periodo);
   const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
   const refMetricas = db().doc(`tenants/${tenantId}/metricas/${periodo}`);
   const refFicha = db().doc(`tenants/${tenantId}`);
@@ -136,7 +153,7 @@ export async function aplicarPagoEnCuenta(
     }, { merge: true });
     tx.update(refFicha, { plan: nuevo.plan });
     tx.set(refPago, {
-      ...camposDePago(pago),
+      ...camposDePago(pago, tc),
       estado: 'confirmado',
       canal: meta.canal,
       confirmadoPor: meta.uid,
@@ -148,7 +165,8 @@ export async function aplicarPagoEnCuenta(
     }, { merge: true });
 
     return {
-      pagoId: refPago.id, descripcion: descripcionDe(pago), monto: montoDe(pago),
+      pagoId: refPago.id, descripcion: descripcionDe(pago),
+      monto: importeBs(montoUsdDe(pago), tc.tco),
       cubiertoHasta: nuevo.cubiertoHasta, operativo: estado.operativo,
       corteLevantado: corteGuardado !== null && estado.operativo,
     };

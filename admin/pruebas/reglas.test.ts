@@ -893,6 +893,29 @@ describe('Personas atendidas', () => {
     }));
   });
 
+  it('la ingesta escribe los mensajes enviados y la distribución por conversación', async () => {
+    // `salientes` es lo que META factura; `conversaciones`, lo que se le factura
+    // al comercio. Son dos números distintos y hasta el 08/09 solo estaba el
+    // segundo. `distribucion` son los tramos de mensajes por conversación: el
+    // promedio esconde la cola, que es justamente lo que cuesta.
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), {
+      mensajes: 500, entrantes: 200, salientes: 300, conversaciones: 40,
+      distribucion: { t1_2: 5, t3_5: 20, t6_10: 12, t26_mas: 3 },
+    }));
+  });
+
+  it('la lista blanca de métricas sigue cerrada: no entra un campo inventado', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), {
+      salientes: 300, costoEstimado: 42,
+    }));
+  });
+
+  it('nadie del negocio puede tocar los mensajes enviados', async () => {
+    // Es la cifra que predice la factura de Meta. Si el comercio pudiera
+    // bajarla, el control de gasto dejaría de servir para nada.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-10`), { salientes: 0 }));
+  });
+
   it('nadie borra un período de métricas', async () => {
     await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`)));
     await assertFails(deleteDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`)));
