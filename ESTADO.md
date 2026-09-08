@@ -22,9 +22,12 @@ cambió el precio del corte en la consola y el asistente lo dijo por WhatsApp.
 - **Falla hacia atrás.** Si el panel no contesta, cada flujo usa los valores que
   ya tenía escritos: el peor caso es el comportamiento de ayer, nunca un
   asistente sin catálogo.
-- **`estadoComercio` sí manda siempre desde el panel**, en los tres. Es lo que
-  corta el servicio a quien dejó de pagar, y ya no depende de un valor escrito
-  dentro del flujo.
+- **`estadoComercio` manda desde el panel cuando el panel CONTESTA**, en los
+  tres. **Corregido el 07/09 por la tarde:** se escribió acá que eso ya cortaba
+  el servicio a quien dejó de pagar, y no lo hace. Un comercio suspendido recibe
+  un 409 sin `tenantId`, que la fusión no distingue de «el panel no contestó», y
+  cae al respaldo, donde el estado dice «operativo». Ver «El estado del comercio
+  no corta nada todavía».
 - **Los rótulos del cobro simulado no se pisan con nada**, aunque el panel los
   mandara. Probado atacándolo.
 
@@ -337,9 +340,18 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Precio del catálogo | Opcional. Ausente significa «a consultar»; cero significa gratis y son cosas distintas | 07/09 |
 | Envío de plantillas | Por `httpRequest` con el JSON armado a mano, no por el nodo de WhatsApp, que manda `template.language` sin `code` | 06/09 |
 | Marcar como recordado | Solo con el identificador de mensaje que devuelve Meta. Un envío fallido no se marca | 06/09 |
+| **Unidad de cobro** | **Se sigue con la conversación de 24 h.** No se pasa a cobro por respuesta ni a conversación general. **Sujeta a revisión con los parámetros del §8 de `Analisis/15-unidad-de-cobro.md`**, a los tres meses del primer cliente pagando o antes si se dispara alguno. Condiciones de la decisión: publicar el tope de mensajes y mostrar los mensajes en la consola | 08/09 |
 
 ## Decisiones pendientes
 
+- **Revisión de la unidad de cobro**, con los parámetros del §8 de
+  `Analisis/15-unidad-de-cobro.md`: distribución del largo de las
+  conversaciones (no el promedio), ventanas de 24 h por asunto, y dispersión
+  del margen entre comercios. Los tres salen de datos que el sistema ya
+  escribe; falta ponerlos en una pantalla. **A los tres meses del primer
+  cliente pagando**, o antes si se dispara alguno. Sus dos condiciones —
+  publicar el tope de mensajes y mostrar los mensajes en la consola — son
+  trabajo previo a vender, no parte de la revisión.
 - ~~**Proyecto Firebase del panel.**~~ Resuelto el 02/09: un proyecto real,
   us-east1 (ver «Decisiones tomadas»).
 - **Observaciones de Andres sobre la consola**, antes de rehacerla con los
@@ -1229,9 +1241,10 @@ fusionada sin tocar ninguna.
   sin él un panel caído dejaría al asistente sin precios.
 - **Un campo vacío en la consola no borra el de respaldo.** Un negocio a medio
   configurar se comporta como antes, no peor.
-- **`estadoComercio` sí manda desde el panel**, siempre: es lo que corta el
-  servicio a quien dejó de pagar, y no puede depender de un valor escrito dentro
-  del flujo.
+- **`estadoComercio` se toma del panel y no del respaldo**, siempre que el panel
+  conteste. La intención era que esto cortara el servicio a quien dejó de pagar.
+  **No alcanza, y se descubrió el mismo día:** ver «El estado del comercio no
+  corta nada todavía», más abajo.
 - El prompt dejó de tener el catálogo escrito a mano. Se parte por **precio**,
   no por rubro: lo que tiene precio se cotiza en el chat, lo que no, después de
   evaluar.
@@ -1250,7 +1263,9 @@ mismo respaldo. Ahí lo que más importa no es el texto: es el **estado**.
 `Preparar recordatorios` ya cortaba cuando el comercio no estaba operativo, pero
 leía un valor escrito dentro del flujo que siempre decía «operativo». O sea que
 un comercio suspendido **seguía mandando plantillas, y cada plantilla la cobra
-Meta**. Ahora suspenderlo en la consola le corta los recordatorios de verdad.
+Meta**. Se dio por corregido al conectar el panel, y **no lo está**: el 409 de
+un comercio suspendido cae al respaldo igual que un panel caído. Ver «El estado
+del comercio no corta nada todavía».
 
 **PROBADO EN VIVO el 07/09 de madrugada.** Se cambió el precio del corte de 70 a
 85 en la base, igual que lo haría la consola, y el asistente lo dijo. Pero la
@@ -1335,6 +1350,14 @@ Andrés listó seis. Auditadas contra el código, no de memoria:
 | 4 | Retención de conversaciones | **DECIDIDA el 07/09**: 12 meses. Falta el código de la purga |
 | 5 | Migrar la ingesta al rol `ingesta` | abierta, antes del segundo cliente |
 | 6 | Límite de 50 eventos en la compuerta | abierta |
+| 7 | **El estado del comercio no corta nada** | abierta, encontrada el 07/09 por la tarde |
+| 8 | El respaldo de los flujos es el del demo | abierta; es un paso del alta, no código |
+
+Las dos últimas salieron de escribir `Analisis/13-requisitos-alta-clientes.md`,
+que es el documento de qué pedirle a un cliente y qué hace NovuChat en cada
+caso, para el flujo de reservas. Ahí están también las opciones de número, de
+Meta y de calendario con su recomendación, y los ajustes de redacción que
+necesita la landing.
 
 **La #2 era el bloqueo de verdad, no la #1.** Con el alias sin desplegar el alta
 era incómoda; sin la #2 era **imposible**: `altaTenant` e `invitarUsuario` exigen
@@ -1366,6 +1389,83 @@ secretos cuestan poco más de un dólar al mes.
 **Verificado tras desplegar:** `configuracionFlujo` responde 200 con los dos
 demos y la ingesta sigue autenticando. El procedimiento de alta completo quedó
 en `admin/DISENO.md` §6.1.
+
+### El estado del comercio no corta nada todavía (07/09, tarde)
+
+**Encontrado al escribir los requisitos de alta de clientes, leyendo el código
+que se acababa de publicar.** Esta bitácora afirmaba en tres lugares que
+conectar el panel hacía que suspender a un comercio le cortara el servicio y los
+recordatorios. **No es así**, y los tres lugares quedaron corregidos.
+
+La cadena, verificada en el flujo de reservas y en el de recordatorios:
+
+1. Para un comercio no activo, `configuracionFlujo` responde **409** con
+   `{estado, mensajeCortesia}` — y **sin `tenantId`**.
+2. `Traer configuración` tiene `onError: continueRegularOutput`, así que el 409
+   no corta el flujo.
+3. Los dos nodos de fusión exigen `typeof r.tenantId === 'string'` para dar la
+   respuesta por buena. Un 409 no lo trae, así que **caen al respaldo**.
+4. En el respaldo, `estadoComercio` vale `"operativo"`, escrito a mano.
+5. `¿Comercio operativo?` compara contra `"operativo"` y **deja pasar**.
+
+O sea que un comercio suspendido sigue siendo atendido y sigue mandando
+plantillas, que Meta cobra: exactamente el defecto que se dio por cerrado.
+
+**La causa de fondo es de diseño, no un descuido:** la fusión confunde dos
+casos que tiene que distinguir. *El panel dijo que está suspendido* y *el panel
+no dijo nada* llegan iguales, y solo el segundo debe caer al respaldo. La
+corrección es que el nodo acepte el cuerpo del 409 —hoy lo descarta como
+error— y trate una respuesta con `estado` como suspendida.
+
+**Lección, que ya es la cuarta de la misma familia:** el control se probó por el
+camino feliz. Nadie suspendió un comercio y le escribió. Un control de corte se
+prueba cortando.
+
+**No entra antes del congelamiento.** Ningún cliente paga todavía, así que no
+hay nada que cortar, y son los tres flujos a un día de las demos. Va antes del
+primer cliente que pague, junto con la advertencia comercial: la FAQ de
+`novuchat.site` promete que la falta de pago suspende el asistente, y hasta que
+esto se cierre no conviene ponerlo por escrito en un contrato.
+
+### Rama de análisis comercial: qué trae y qué le pide a las demás (08/09)
+
+Rama `claude/novuchat-client-setup-requirements-4af84e`. **Es solo análisis: no
+toca flujos, funciones, reglas ni consola.** Se registra para que las otras ramas
+la lean antes de recomendar cambios, porque tres de sus conclusiones afectan
+trabajo que ya está hecho en ellas.
+
+| Documento | Qué resuelve |
+|---|---|
+| `Analisis/13-requisitos-alta-clientes.md` | Qué pedirle a un cliente y qué hace NovuChat para activarlo: número, Meta, calendario, ficha de alta y el procedimiento paso a paso |
+| `Analisis/14-costo-por-conversacion-y-precios.md` | Costo real por conversación con las tarifas del 1-oct, margen por plan, escala a 100 y 300 comercios, y las opciones de mejora cuantificadas |
+| `Analisis/14-modelo-costos.py` | El modelo, reproducible sin dependencias |
+| `Analisis/15-unidad-de-cobro.md` | Si conviene cambiar de unidad de cobro. Decidido: no |
+
+**Lo que esta rama le pide a cada una, y por qué:**
+
+- **A `claude/novuchat-prepago-clientes-49caf7`:** la arquitectura del prepago
+  es correcta y no hay que tocarla, pero está cargada con **Base 300 /
+  Crecimiento 1.000 / Corporativo 2.500 y bolsas de 150 a 50 Bs**, que desde el
+  1 de octubre dejan los tres planes en pérdida. La propuesta conservadora es
+  **120 / 200 / 300 con excedente de 40 Bs por 10**. El arreglo es la tabla de
+  `functions/src/prepago.ts` y sus pruebas, y **conviene hacerlo antes de
+  desplegar**, para no migrar cuentas ya creadas.
+- **A `disenio/catalogo-web`:** el catálogo web deja de ser una mejora de
+  producto y pasa a ser **la mayor reducción de costo del sistema**: lleva un
+  pedido de unos 13 mensajes a 4 o 5, un 68 % menos. Vale como argumento para
+  priorizar los dos nodos de n8n y la plantilla que le faltan. Y le toca
+  renumerarse de `11-` a `12-`.
+- **A `fix/suspender-corta-de-verdad`:** confirmar que la corrección cubre los
+  **dos** caminos del 409, porque el prepago agrega el suyo (`sin_pago`,
+  `sin_conversaciones`) sobre el mismo mecanismo.
+- **A quien toque un flujo:** desde octubre cada mensaje del asistente cuesta
+  0,1356 Bs. **Todo cambio de flujo debería declarar cuántos mensajes agrega o
+  quita**, igual que hoy declara qué prueba lo cubre.
+
+**Dos cosas que hay que hacer antes de vender, salgan de donde salgan:**
+publicar el tope de mensajes —la frase «sin importar cuántos sean» de
+`novuchat.site/precios` deja de ser cierta— y mostrar los mensajes en la consola
+junto a las conversaciones.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
@@ -1436,6 +1536,8 @@ en `admin/DISENO.md` §6.1.
    tres flujos y cambiaron reglas y consola.
 4. **09 y 10/09 — Demos.**
 5. **Después de las demos, en este orden:**
+   - Brecha 7: que el 409 de un comercio suspendido corte de verdad. Es de una
+     hora y hoy la suspensión no hace nada.
    - Cobro real de punta a punta: que el flujo lea `cobroReal`, los tres nodos
      del OCR, y el control para encenderlo.
    - Brecha 6: la compuerta de reserva con dos consultas dirigidas en vez de
