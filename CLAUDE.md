@@ -139,12 +139,15 @@ America»). Antes eran gratis.
   Bolivia tiene régimen flexible desde el 29/06/2026 y el BCB publica un TCO
   diario (12,60 al 08/09/2026). **NovuChat no publica un tipo de cambio propio:**
   un proveedor que fija el tipo de cambio con el que cobra invita a la sospecha.
-- **Planes: en revisión al 08/09, no tomarlos como definitivos.** Hay dos
-  propuestas sobre la mesa —USD 20/40/70 por 120/200/300, y la de Silvana de
-  USD 25/50/90 por 100/220/500— comparadas en `Analisis/21`, que recomienda
-  adoptar la segunda con el plan grande corregido a USD 100 / 500. **Lo que sí
-  está firme:** la bolsa de **25 conversaciones por USD 10**, que no vence, y
-  que el volumen incluido de cada plan es lo que sostiene el margen.
+- **Planes: USD 25 / 50 / 90 por 100 / 220 / 500 conversaciones**, más la bolsa
+  de **25 conversaciones por USD 10**, que no vence. Instalación USD 65. Es la
+  propuesta de Silvana, analizada y adoptada en `Analisis/21`. **El plan de
+  entrada cabe exacto en la franquicia de Meta** —100 × 10 mensajes = 1.000— y
+  por eso es el más rentable y el inmune a subidas de tarifa.
+- **El volumen del plan grande no se estira más allá de 500** sin rehacer la
+  cuenta de `Analisis/21` §9.4: entre 750 y 1.000 la cartera se da vuelta.
+- **Vigilar los comercios que pasen del 70 % de su plan.** Es donde el margen se
+  erosiona, y es una conversación comercial, no un problema de precio.
 - **La unidad se llama «conversación», nunca «atención».** El glosario publicado
   dice que la atención —persona distinta en el período— **no se factura**. Usar
   «atenciones» para lo que se cobra contradice el sitio y la consola.
