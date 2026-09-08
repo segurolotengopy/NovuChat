@@ -18,7 +18,10 @@
    ========================================================================== */
 
 .cat {
+  /* Respaldo por si la paleta no llegara: la página queda sobria, no rota. */
   --marca: var(--color-accent);
+  --marca-oscura: var(--color-accent-700);
+  --marca-suave: var(--color-accent-100);
   --cat-ancho: 46rem;
   min-height: 100vh;
   background: var(--color-bg);
@@ -35,9 +38,13 @@
 }
 .cat-cabecera h1 { margin: 0; font-size: 1.35rem; line-height: 1.15; }
 .cat-sub { margin: .15rem 0 0; font-size: .82rem; opacity: .7; }
+/* `contain` y no `cover`: un logo recortado es un logo arruinado. El fondo
+   suave de la paleta rellena lo que sobra, así un logo cuadrado y uno apaisado
+   se ven los dos deliberados. */
 .cat-logo {
-  width: 56px; height: 56px; object-fit: contain; flex: none;
-  background: var(--color-surface);
+  width: 64px; height: 64px; object-fit: contain; flex: none;
+  background: var(--marca-suave);
+  padding: 4px;
 }
 
 .cat-cuerpo { max-width: var(--cat-ancho); margin: 0 auto; padding: var(--space-4); }
@@ -65,6 +72,13 @@
 }
 .cat-areas button[aria-pressed="true"] {
   background: var(--marca); border-color: var(--marca); color: #fff;
+}
+/* El chip NO presionado se tiñe con el tono suave de la paleta: es lo que hace
+   que la página se vea de la marca del comercio y no gris con un botón de
+   color. El contraste del texto sobre ese tono está medido en paletas.ts. */
+.cat-areas button:not([aria-pressed="true"]) {
+  background: var(--marca-suave);
+  border-color: color-mix(in srgb, var(--marca) 25%, transparent);
 }
 
 .cat-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
@@ -183,6 +197,8 @@
   width: 100%; min-height: 52px; font-size: 1rem;
   background: var(--marca); color: #fff; border: 0; border-radius: var(--radius-md);
 }
+.cat-confirmar:hover:not(:disabled), .cat-barra:hover { background: var(--marca-oscura); }
+.cat-modo button[aria-pressed="true"]:hover { background: var(--marca-oscura); }
 .cat-confirmar:disabled { opacity: .5; cursor: not-allowed; }
 
 .cat-volver { background: none; border: 0; padding: 0 0 var(--space-3); color: var(--marca); font-size: .9rem; }

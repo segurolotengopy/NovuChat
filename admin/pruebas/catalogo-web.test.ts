@@ -34,7 +34,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { colorValido, sePuedeComprar, urlImagenValida } from '../functions/src/catalogoWeb.ts';
+import { logoValido, paletaValida, sePuedeComprar, urlImagenValida } from '../functions/src/catalogoWeb.ts';
+import { PALETAS, PALETA_POR_DEFECTO, variablesDe, type PaletaId } from '../web/src/lib/paletas.ts';
 import { resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/prompt.ts';
 import {
   aCsv, idDeNombre, leerPrecio, partirCsv, validarCsv,
@@ -91,20 +92,132 @@ describe('Una URL de imagen es https, o no es', () => {
 // 2) COLOR DE MARCA
 // ===========================================================================
 
-describe('El color de marca es un enumerado de seis hexadecimales', () => {
-  it('acepta #rrggbb en cualquier caja', () => {
-    expect(colorValido('#1b7f4f')).toBe(true);
-    expect(colorValido('#EC3013')).toBe(true);
+/**
+ * Contraste WCAG. Se calcula acá, en la prueba, y no se copia de ninguna tabla:
+ * el punto es que si alguien agrega o retoca una paleta, esto vuelva a medir.
+ */
+function luminancia(hex: string): number {
+  const canal = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)) as
+    [number, number, number];
+  return 0.2126 * canal[0] + 0.7152 * canal[1] + 0.0722 * canal[2];
+}
+const contraste = (a: string, b: string) => {
+  const [alto, bajo] = [luminancia(a), luminancia(b)].sort((x, y) => y - x) as [number, number];
+  return (alto + 0.05) / (bajo + 0.05);
+};
+
+describe('Las cinco paletas', () => {
+  const ids = Object.keys(PALETAS) as PaletaId[];
+  const TEXTO = '#201e1d';   // --color-text del sistema de diseño
+
+  it('son exactamente cinco, y la de por defecto es una de ellas', () => {
+    expect(ids).toHaveLength(5);
+    expect(ids).toContain(PALETA_POR_DEFECTO);
   });
 
-  it('rechaza la inyección de CSS, que es la razón de esta validación', () => {
-    // Sin esto, el valor entra en `style={{ '--marca': color }}` y una visita a
-    // la página del catálogo se le anuncia a un tercero, sin JavaScript.
-    expect(colorValido('#fff;background:url(https://ajeno.tld/pixel)')).toBe(false);
-    expect(colorValido('red')).toBe(false);
-    expect(colorValido('#fff')).toBe(false);
-    expect(colorValido('rgb(0,0,0)')).toBe(false);
-    expect(colorValido('')).toBe(false);
+  // ESTA es la prueba que justifica que las paletas sean cerradas. Si alguien
+  // agrega una «porque queda linda», acá se entera de si el texto se lee.
+  it.each(Object.entries(PALETAS))('«%s» cumple WCAG AA en las tres relaciones', (_id, p) => {
+    // Texto blanco sobre el color base: es el botón «Agregar» y el de confirmar.
+    expect(contraste('#ffffff', p.base)).toBeGreaterThanOrEqual(4.5);
+    // Texto oscuro sobre el tono suave: son los chips de área.
+    expect(contraste(TEXTO, p.suave)).toBeGreaterThanOrEqual(4.5);
+    // Borde contra su propio fondo: 3:1, que es el mínimo para lo que no es texto.
+    expect(contraste(p.base, p.suave)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('el tono oscuro es más oscuro que el base, que es para lo que existe', () => {
+    // Se usa en `:hover` y en el estado presionado. Si fuera más claro, el botón
+    // se «encendería» al tocarlo en vez de hundirse, y se leería como otro botón.
+    for (const p of Object.values(PALETAS)) {
+      expect(luminancia(p.oscuro)).toBeLessThan(luminancia(p.base));
+      expect(luminancia(p.suave)).toBeGreaterThan(luminancia(p.base));
+    }
+  });
+
+  it('todas declaran los tres tonos en #rrggbb', () => {
+    for (const p of Object.values(PALETAS)) {
+      for (const c of [p.base, p.oscuro, p.suave]) expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+  });
+
+  it('cada una se ofrece con un nombre y para quién sirve', () => {
+    // Un comercio no elige «#0F766E»: elige «Océano, para consultorios».
+    for (const p of Object.values(PALETAS)) {
+      expect(p.nombre.length).toBeGreaterThan(2);
+      expect(p.sugerencia.length).toBeGreaterThan(8);
+    }
+  });
+});
+
+describe('Las variables de CSS salen de la tabla, nunca de la respuesta', () => {
+  it('traduce el nombre de la paleta a sus tres colores', () => {
+    expect(variablesDe('bosque')).toEqual({
+      '--marca': PALETAS.bosque.base,
+      '--marca-oscura': PALETAS.bosque.oscuro,
+      '--marca-suave': PALETAS.bosque.suave,
+    });
+  });
+
+  it('una paleta desconocida cae en la de por defecto y no rompe la página', () => {
+    // Es lo que hace que un despliegue con las dos mitades desincronizadas deje
+    // la página sobria en vez de sin color.
+    for (const basura of ['no-existe', '', null, 42, { base: '#000' }]) {
+      expect(variablesDe(basura)).toEqual(variablesDe(PALETA_POR_DEFECTO));
+    }
+  });
+
+  it('NO deja pasar un color venido de afuera: no hay nada que inyectar', () => {
+    // El servidor manda un NOMBRE, no un color. Aunque mandara esto, lo que
+    // termina en la propiedad de CSS sale de la tabla local.
+    const v = variablesDe('#fff;background:url(https://ajeno.tld/pixel)');
+    expect(Object.values(v).join(' ')).not.toMatch(/ajeno/);
+    expect(v).toEqual(variablesDe(PALETA_POR_DEFECTO));
+  });
+});
+
+describe('La paleta, del lado del servidor', () => {
+  it('acepta las cinco', () => {
+    for (const id of Object.keys(PALETAS)) expect(paletaValida(id)).toBe(id);
+  });
+
+  it('cualquier otra cosa cae en la de por defecto, no en un error', () => {
+    // Una paleta desconocida —de un dato viejo, de un despliegue a medias— tiene
+    // que dejar la página sobria, no devolver un 500 al cliente final.
+    for (const basura of ['#ec3013', 'rojo', '', null, 7]) {
+      expect(paletaValida(basura)).toBe(PALETA_POR_DEFECTO);
+    }
+  });
+});
+
+describe('El logo incrustado', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+  it('acepta png, jpeg y webp', () => {
+    expect(logoValido(png)).toBe(true);
+    expect(logoValido('data:image/jpeg;base64,/9j/4AAQSkZJRg==')).toBe(true);
+    expect(logoValido('data:image/webp;base64,UklGRvAPAABXRUJQ')).toBe(true);
+  });
+
+  it('RECHAZA data:image/svg+xml, que parece una imagen y no lo es', () => {
+    // Un SVG puede llevar <script> adentro. Es la razón por la que la lista de
+    // tipos es cerrada en vez de aceptar cualquier `data:image/`.
+    expect(logoValido('data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pjwvc2NyaXB0Pjwvc3ZnPg==')).toBe(false);
+  });
+
+  it('rechaza data:text/html, que en un src es ejecución', () => {
+    expect(logoValido('data:text/html;base64,PHNjcmlwdD4=')).toBe(false);
+  });
+
+  it('rechaza lo que no es base64 limpio', () => {
+    expect(logoValido('data:image/png;base64,<script>')).toBe(false);
+    expect(logoValido('https://ejemplo.com/logo.png')).toBe(false);
+    expect(logoValido('')).toBe(false);
+  });
+
+  it('rechaza lo desmedido: el campo no es un depósito de archivos', () => {
+    expect(logoValido(`data:image/png;base64,${'A'.repeat(200_001)}`)).toBe(false);
   });
 });
 
@@ -492,21 +605,20 @@ describe('La marca del catálogo web, en las reglas', () => {
     ...sello(uid),
   });
 
-  it('el admin enciende el catálogo web y pone su logo y su color', async () => {
+  it('el admin enciende el catálogo web y elige una de las cinco paletas', async () => {
     await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
-      ...base('u-admin-a'), catalogoWebActivo: true,
-      logoUrl: 'https://ejemplo.com/logo.png', colorMarca: '#1b7f4f',
+      ...base('u-admin-a'), catalogoWebActivo: true, paleta: 'bosque',
     }));
   });
 
-  it('un color que no es #rrggbb se rechaza en el servidor', async () => {
-    // La inyección de CSS del punto 3, cerrada donde tiene que estar cerrada.
-    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
-      ...base('u-admin-a'), colorMarca: '#fff;background:url(https://ajeno.tld/p)',
-    }));
-    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
-      ...base('u-admin-a'), colorMarca: 'red',
-    }));
+  it('una paleta que no está en la lista se rechaza en el servidor', async () => {
+    // La lista cerrada es lo que cierra la inyección de CSS: sin ella, esto
+    // terminaría dentro de una propiedad de estilo de la página pública.
+    for (const mala of ['#1b7f4f', 'fucsia', '#fff;background:url(https://ajeno.tld/p)', '']) {
+      await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
+        ...base('u-admin-a'), paleta: mala,
+      }));
+    }
   });
 
   it('`catalogoWebActivo` tiene que ser booleano, no la cadena "false"', async () => {
@@ -517,10 +629,59 @@ describe('La marca del catálogo web, en las reglas', () => {
     }));
   });
 
-  it('un logo http se rechaza igual que una foto http', async () => {
+  it('el logo YA NO va en /config/negocio', async () => {
+    // Vive en /config/marca porque son decenas de kilobytes y este documento lo
+    // lee `configuracionFlujo` en CADA consulta del flujo. La lista blanca lo
+    // rechaza, así que nadie lo puede volver a meter acá por comodidad.
     await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
-      ...base('u-admin-a'), logoUrl: 'http://ejemplo.com/logo.png',
+      ...base('u-admin-a'), logo: 'data:image/png;base64,iVBORw0KGgo=',
     }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
+      ...base('u-admin-a'), logoUrl: 'https://ejemplo.com/logo.png',
+    }));
+  });
+});
+
+describe('El logo, en /config/marca', () => {
+  const ruta = `tenants/${A}/config/marca`;
+  const logo = (uid: string, valor: string) => ({ logo: valor, ...sello(uid) });
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+  it('el admin lo CREA con su primer logo', async () => {
+    // El alta no puede crear este documento: nace cuando el comercio sube su
+    // primer logo, que puede ser meses después. Por eso acá `create` está
+    // permitido, a diferencia del resto de /config.
+    await assertSucceeds(setDoc(doc(adminA(), ruta), logo('u-admin-a', PNG)));
+  });
+
+  it('y lo puede quitar con la cadena vacía', async () => {
+    // El borrado del documento está cerrado, así que sin esto no habría forma
+    // de sacar un logo una vez subido.
+    await assertSucceeds(setDoc(doc(adminA(), ruta), logo('u-admin-a', '')));
+  });
+
+  it('rechaza un SVG, que parece una imagen y puede traer script adentro', async () => {
+    await assertFails(setDoc(doc(adminA(), ruta),
+      logo('u-admin-a', 'data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Pg==')));
+  });
+
+  it('rechaza data:text/html, que en un src es ejecución', async () => {
+    await assertFails(setDoc(doc(adminA(), ruta),
+      logo('u-admin-a', 'data:text/html;base64,PHNjcmlwdD4=')));
+  });
+
+  it('rechaza una dirección: acá va la imagen, no un enlace', async () => {
+    await assertFails(setDoc(doc(adminA(), ruta),
+      logo('u-admin-a', 'https://ejemplo.com/logo.png')));
+  });
+
+  it('rechaza campos de más, aunque el logo sea válido', async () => {
+    await assertFails(setDoc(doc(adminA(), ruta),
+      { ...logo('u-admin-a', PNG), tamano: 4088 }));
+  });
+
+  it('no lo escribe un operador, ni un comercio que no vende', async () => {
+    await assertFails(setDoc(doc(operA(), ruta), logo('u-oper-a', PNG)));
   });
 });
 
@@ -569,5 +730,32 @@ describe('Las fichas del catálogo están cerradas para todos', () => {
   it('no se puede enumerar la colección', async () => {
     await assertFails(getDocs(collection(adminA(), 'fichasCatalogo')));
     await assertFails(getDocs(collection(propietario(), 'fichasCatalogo')));
+  });
+});
+
+/**
+ * VA ÚLTIMA, Y NO ES CAPRICHO.
+ *
+ * Esta prueba manda 200 KB a las reglas. La escritura se rechaza —que es lo que
+ * se quiere comprobar— pero el emulador tarda lo suficiente como para que la
+ * prueba SIGUIENTE pierda su sello de tiempo: `selloValido` exige
+ * `actualizadoEn == request.time`, y con el emulador cargado el
+ * `serverTimestamp()` resuelto deja de coincidir. El efecto es una suite que
+ * falla una de cada tres corridas, en un test distinto cada vez y siempre en una
+ * escritura que debería pasar.
+ *
+ * Se midió: con esta prueba en el medio, 1 de 3 corridas fallaba; sacándola, 4
+ * de 4 limpias. Al final del archivo el retraso no le cae a nadie.
+ *
+ * NO se resolvió bajando el tope de la regla ni quitando la prueba: 200 KB es el
+ * tope correcto para un logo de 320 px, y el tope de verdad lo pone la regla, no
+ * la función. Si alguien agrega pruebas después de esta, que las ponga antes.
+ */
+describe('El tope de tamaño del logo, en las reglas', () => {
+  it('rechaza lo desmedido: el campo no es un depósito de archivos', async () => {
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/marca`), {
+      logo: `data:image/png;base64,${'A'.repeat(200_001)}`,
+      ...sello('u-admin-a'),
+    }));
   });
 });

@@ -33,7 +33,8 @@
  *   pnpm web:build && node scripts/catalogo-demo.mjs
  *   # abrir la dirección que imprime
  *
- *   node scripts/catalogo-demo.mjs --color '#1b7f4f'   # otra marca
+ *   node scripts/catalogo-demo.mjs --paleta bosque     # otra paleta
+ *   node scripts/catalogo-demo.mjs --sin-logo          # sin logo cargado
  *   PUERTO_DEMO=5250 node scripts/catalogo-demo.mjs
  */
 import { createServer } from 'node:http';
@@ -105,8 +106,13 @@ const RESPUESTA = {
     // un dato que el asistente dice no tener.
     direccion: '',
     moneda: 'BOB',
-    logoUrl: '',
-    colorMarca: leer('--color', '#c2410c'),
+    // El logo va INCRUSTADO, igual que en producción: la consola lo recorta a
+    // 320 px y lo guarda en `/config/marca`, y la página lo recibe en la misma
+    // respuesta que el catálogo. Acá se lee del archivo para no depender de la
+    // nube. Con `--sin-logo` se ve la página de un comercio que no subió
+    // ninguno.
+    logo: args.includes('--sin-logo') ? '' : logoIncrustado(),
+    paleta: leer('--paleta', 'terracota'),
   },
   // De `/config/venta` del mismo comercio sembrado.
   entrega: {
@@ -143,6 +149,19 @@ const TIPOS = {
 };
 
 const FICHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+
+/**
+ * El logo del Demo B, como lo entrega la consola: `data:image/webp;base64,…`.
+ *
+ * Se lee del archivo y no se genera acá porque Node no tiene canvas — el
+ * recorte de verdad lo hace el navegador en `Configuracion.tsx`. Este archivo
+ * salió exactamente de ese camino: un canvas de 320 px exportado a WebP.
+ */
+function logoIncrustado() {
+  const ruta = join(RAIZ, '..', 'Demo-Recursos', 'logo-demo-b.webp');
+  if (!existsSync(ruta)) return '';
+  return `data:image/webp;base64,${readFileSync(ruta).toString('base64')}`;
+}
 
 createServer(async (peticion, respuesta) => {
   const ruta = new URL(peticion.url ?? '/', 'http://x').pathname;
@@ -188,7 +207,9 @@ createServer(async (peticion, respuesta) => {
   console.log('\n  Vista previa del catálogo web · datos del Demo B\n');
   console.log(`    http://127.0.0.1:${PUERTO}/c/${FICHA}\n`);
   console.log(`  ${RESPUESTA.items.length} productos en ${new Set(RESPUESTA.items.map((i) => i.area)).size} áreas`
-    + ` · envío ${RESPUESTA.entrega.costoDelivery} Bs · marca ${RESPUESTA.negocio.colorMarca}`);
+    + ` · envío ${RESPUESTA.entrega.costoDelivery} Bs · paleta ${RESPUESTA.negocio.paleta}`
+    + ` · logo ${RESPUESTA.negocio.logo ? 'sí' : 'no'}`);
+  console.log('  Paletas: terracota · bosque · indigo · vino · oceano   (--paleta <nombre>)');
   console.log('  Los datos son una COPIA de sembrar-demos.mjs: si el catálogo del');
   console.log('  Demo B cambió, esta vista previa muestra lo de antes.');
   console.log('  El backend es simulado: no se guarda ningún pedido.\n');

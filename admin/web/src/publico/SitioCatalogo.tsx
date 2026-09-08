@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CatalogoPublico, ItemPublico, RespuestaCheckout } from './tipos';
-import { colorSeguro, imagenSegura, precioTexto } from './saneo';
+import { imagenSegura, logoSeguro, precioTexto } from './saneo';
+import { variablesDe } from '../lib/paletas';
 
 /**
  * =============================================================================
@@ -75,12 +76,16 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
   }, [datos]);
 
   /**
-   * El color de la marca entra como propiedad personalizada, ya validado. Si el
-   * comercio no cargó ninguno, no se define y el sistema de diseño usa el suyo:
-   * una página sobria es mejor que una página rota.
+   * Los tres colores de la paleta entran como propiedades personalizadas.
+   *
+   * LOS VALORES SALEN DE LA TABLA LOCAL, NO DE LA RESPUESTA. El servidor manda
+   * el NOMBRE de la paleta —`terracota`, `bosque`…— y `variablesDe` lo traduce
+   * contra `lib/paletas.ts`. Un nombre desconocido cae en la paleta por
+   * defecto. Así no hay ningún color del servidor entrando a una propiedad de
+   * CSS: no queda nada que inyectar, ni siquiera si el servidor estuviera
+   * comprometido.
    */
-  const marca = colorSeguro(datos?.negocio.colorMarca);
-  const estilo = marca ? ({ '--marca': marca } as React.CSSProperties) : undefined;
+  const estilo = variablesDe(datos?.negocio.paleta) as React.CSSProperties;
 
   if (error) return <Aviso texto={error} />;
   if (!datos) return <Aviso texto="Cargando el catálogo…" />;
@@ -141,7 +146,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
 // ---------------------------------------------------------------------------
 
 function Cabecera({ negocio }: { negocio: CatalogoPublico['negocio'] }) {
-  const logo = imagenSegura(negocio.logoUrl);
+  const logo = logoSeguro(negocio.logo);
   return (
     <header className="cat-cabecera">
       {logo && <img className="cat-logo" src={logo} alt="" loading="lazy" />}

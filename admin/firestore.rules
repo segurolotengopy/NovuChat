@@ -431,10 +431,60 @@ service cloud.firestore {
                             && configAgendamientoValida())
                         || (documento == 'venta' && tieneCobro(tenantId)
                             && configVentaValida())
+                        || (documento == 'marca' && tieneCobro(tenantId)
+                            && logoValido())
                       );
         // Los crea `altaTenant` según el vertical, para que ningún documento
         // quede a medio formar ni exista uno que no corresponde.
-        allow create, delete: if false;
+        //
+        // `marca` ES LA EXCEPCIÓN, y por una razón concreta: el alta no puede
+        // crearlo porque nace cuando el comercio sube su primer logo, que puede
+        // ser meses después. Se le permite crearlo a él, con la misma
+        // validación que la actualización.
+        allow create: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                      && documento == 'marca' && tieneCobro(tenantId) && logoValido();
+        allow delete: if false;
+
+        // =====================================================================
+        // /config/marca — EL LOGO DEL COMERCIO, EN SU PROPIO DOCUMENTO
+        //
+        // POR QUÉ NO ESTÁ EN `negocio`, que sería lo natural. Porque el logo es
+        // una imagen incrustada de decenas de kilobytes, y `/config/negocio` lo
+        // lee `configuracionFlujo` en CADA consulta del flujo de n8n. Meter el
+        // logo ahí le agregaría ese peso a cada mensaje que responde el
+        // asistente, para un dato que el asistente no usa jamás. En documento
+        // aparte, quien lo lee es solo la página del catálogo.
+        //
+        // POR QUÉ INCRUSTADO Y NO EN UN DEPÓSITO DE ARCHIVOS. Montar Firebase
+        // Storage —con su bucket, sus reglas, su CORS— para UN archivo por
+        // comercio es caro en superficie y convierte a NovuChat en custodio de
+        // archivos de terceros. Un logo recortado a 320 px entra en unas
+        // decenas de kilobytes, muy por debajo del máximo de 1 MiB de un
+        // documento. Es la misma economía que llevó a referenciar las fotos de
+        // los productos por URL en vez de alojarlas: la diferencia es que un
+        // logo es uno solo, y el comercio no siempre tiene dónde publicarlo.
+        //
+        // LO QUE VALIDA LA REGLA es que sea una imagen incrustada y que no
+        // exceda el tamaño. Que la imagen sea *válida* no se puede comprobar
+        // acá; lo hace el navegador al recortarla antes de guardar, y en última
+        // instancia el ojo del comercio en la vista previa.
+        // =====================================================================
+        function logoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['logo', 'actualizadoPor', 'actualizadoEn'])
+            // `data:image/…` y nada más. Sin esto, el campo aceptaría un
+            // `data:text/html` que la página pintaría en un `src`.
+            && d.get('logo', '') is string
+            // Vacío VALE: es como el comercio quita su logo. Sin esto no habría
+            // forma de sacarlo, porque el borrado del documento está cerrado.
+            && (d.get('logo', '') == ''
+                || d.get('logo', '').matches('^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$'))
+            // 200.000 caracteres de base64 son unos 150 KB de imagen: de sobra
+            // para un logo de 320 px y lejos del tope de 1 MiB del documento.
+            // El tope existe para que nadie use este campo como depósito.
+            && d.get('logo', '').size() <= 200000
+            && selloValido(d);
+        }
 
         // =====================================================================
         // ESQUEMA DE LA CONFIGURACIÓN DEL NEGOCIO
@@ -487,7 +537,7 @@ service cloud.firestore {
             // que vive en el documento común y no en el de un flujo: el día que
             // el catálogo web sirva también para reservas, no hay nada que
             // mudar. Ver DISENO.md §4octies.
-            'catalogoWebActivo', 'logoUrl', 'colorMarca',
+            'catalogoWebActivo', 'paleta',
             // Sello
             'actualizadoPor', 'actualizadoEn'
           ];
@@ -566,18 +616,21 @@ service cloud.firestore {
             // campo en falso, en vez de que la regla le rechace la pantalla
             // entera por un campo que no le corresponde.
             && (d.get('catalogoWebActivo', false) == false || tieneCobro(tenantId))
-            && urlImagenValida(d, 'logoUrl')
-            // COLOR DE MARCA: exactamente `#rrggbb`, o vacío.
+            // PALETA: una de cinco, y NADA más.
             //
-            // No es tiquismiquis. El color termina dentro de una propiedad
-            // personalizada de CSS en la página pública, y un valor libre ahí es
-            // una inyección de CSS: `#fff;background:url(https://ajeno/…)`
-            // filtraría cada visita a un tercero sin ejecutar una línea de
-            // JavaScript. Un enumerado de seis hexadecimales elimina el problema
-            // en vez de intentar limpiarlo, que es el mismo criterio con el que
-            // la voz del asistente es un enumerado y no texto libre.
-            && (d.get('colorMarca', '') == ''
-                || d.get('colorMarca', '').matches('^#[0-9a-fA-F]{6}$'))
+            // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa
+            // validación era el único dato del comercio que terminaba dentro de
+            // una propiedad de CSS de la página pública; el enumerado elimina el
+            // problema en vez de validarlo, que es el mismo criterio con el que
+            // la voz del asistente es una lista cerrada.
+            //
+            // Y hay una razón de diseño que pesa más: un comercio elige UN
+            // color y la página necesita TRES —el botón, su estado presionado y
+            // el fondo de los chips— que tienen que contrastar entre sí. Las
+            // cinco combinaciones están calculadas y medidas en
+            // `web/src/lib/paletas.ts`. Agregar una es tocar esta línea y esa
+            // tabla; si se toca una sola, se nota.
+            && d.get('paleta', 'indigo') in ['terracota', 'bosque', 'indigo', 'vino', 'oceano']
 
             && selloValido(d);
         }

@@ -219,3 +219,49 @@ tr.alerta td { background: #c6282811; }
 .foto-mal { color: var(--color-error); }
 .foto-dudosa { color: var(--color-aviso); }
 .foto-mal .enlace, .foto-dudosa .enlace { color: inherit; }
+
+/* -----------------------------------------------------------------------------
+   PALETA Y LOGO DEL CATÁLOGO WEB.
+
+   Las cinco opciones se muestran con sus TRES tonos, no con uno. Es lo que hace
+   que la elección sea honesta: el comercio elige la combinación que va a ver su
+   cliente —botón, botón presionado y fondo de categorías— y no un color suelto
+   del que después se deducen los otros dos a sus espaldas.
+   -------------------------------------------------------------------------- */
+.paletas { border: 1px solid var(--borde); border-radius: var(--radio); padding: .75rem 1rem; margin: 1rem 0; }
+.paletas legend { font-size: .85rem; padding: 0 .4rem; opacity: .8; }
+
+.paleta {
+  display: flex; align-items: center; gap: .75rem; margin: 0;
+  padding: .5rem; border-radius: var(--radio); cursor: pointer;
+  border: 1.5px solid transparent;
+}
+.paleta:hover { background: var(--fondo-tarjeta); }
+.paleta[aria-current="true"] { border-color: var(--color-text); background: var(--fondo-tarjeta); }
+.paleta input { width: auto; margin: 0; flex: none; }
+
+.paleta-muestra { display: flex; flex: none; border: 1px solid var(--borde); }
+.paleta-muestra span { display: block; width: 26px; height: 26px; }
+
+.paleta-texto { display: flex; flex-direction: column; line-height: 1.25; }
+.paleta-texto .text-muted { font-size: .78rem; }
+
+.campo-logo { margin: 1rem 0; }
+.campo-logo input[type="file"] { padding: .3rem; }
+
+/* El fondo a cuadros deja ver la transparencia: un logo PNG con fondo
+   transparente y uno con fondo blanco se ven distinto acá, que es justo lo que
+   el comercio necesita notar antes de publicarlo. */
+.logo-previa {
+  display: flex; align-items: center; gap: .75rem; margin: .5rem 0;
+}
+.logo-previa img {
+  width: 72px; height: 72px; object-fit: contain; padding: 4px;
+  border: 1px solid var(--borde);
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #0001 25%, transparent 25%, transparent 75%, #0001 75%),
+    linear-gradient(45deg, #0001 25%, transparent 25%, transparent 75%, #0001 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 6px 6px;
+}

@@ -295,6 +295,53 @@ una prueba dedicada a ese caso exacto.
 
 ---
 
+## 7ter. El logo y los colores
+
+**El logo se sube desde la consola**, en Configuración → Catálogo web. Un PNG o
+un JPG cualquiera: el navegador lo recorta a 320 px y baja la calidad hasta que
+entre antes de guardarlo, así que el comercio no tiene que preparar nada.
+
+**No hay depósito de archivos detrás.** El logo se guarda incrustado
+(`data:image/…;base64,…`) en `/tenants/{t}/config/marca`. Montar Firebase
+Storage —bucket, reglas, CORS— para UN archivo por comercio es mucha superficie
+nueva, y convierte a NovuChat en custodio de archivos de terceros; un logo de
+320 px entra en unas decenas de kilobytes, muy por debajo del máximo de 1 MiB de
+un documento.
+
+**Vive en `/config/marca` y no en `/config/negocio`** porque `configuracionFlujo`
+lee `negocio` en CADA consulta del flujo: el logo ahí le agregaría ese peso a
+cada mensaje que responde el asistente, para un dato que el asistente no usa.
+
+**Los tipos aceptados son PNG, JPEG y WebP. SVG no**, aunque sea una imagen: un
+SVG puede llevar `<script>` adentro, y esto termina en un `src` del navegador de
+un desconocido. Por eso la lista es cerrada en vez de aceptar cualquier
+`data:image/`.
+
+### Las cinco paletas
+
+El comercio elige una de cinco, no un color libre:
+
+| | Para |
+|---|---|
+| **Terracota** | Comida, panaderías, parrillas |
+| **Bosque** | Naturales, farmacias, veterinarias |
+| **Índigo** | Tecnología, servicios, tiendas |
+| **Vino** | Boutiques, repostería, estética |
+| **Océano** | Salud, consultorios, spa |
+
+**Por qué cinco y no un selector de color.** Dos razones, y la segunda pesa más
+que la de seguridad: la página necesita **tres** tonos que combinen —el botón, el
+botón presionado y el fondo de las categorías— y pedirle eso a alguien con un
+selector termina en texto blanco sobre amarillo. Las cinco combinaciones están
+calculadas juntas y **medidas**: las quince relaciones de contraste cumplen WCAG
+AA, y hay una prueba que las recalcula y falla si alguien agrega una que no
+llegue.
+
+La otra razón: el color terminaba dentro de una propiedad de CSS de la página
+pública. Un enumerado elimina esa clase de inyección en vez de validarla. El
+servidor manda el **nombre** de la paleta y el navegador lo traduce contra su
+propia tabla, así que no hay ningún color del servidor entrando al estilo.
+
 ## 7bis. Qué NO se publica, y por qué
 
 **Los ítems sin precio no llegan al catálogo web.** Se siguen ofreciendo por

@@ -240,17 +240,43 @@ export function urlImagenValida(valor: unknown): boolean {
 }
 
 /**
- * Color de marca del comercio. SOLO `#rrggbb`.
+ * Las cinco paletas. La tabla con los colores vive en `web/src/lib/paletas.ts`,
+ * que es donde se usan; acá solo hace falta saber cuáles son válidas.
  *
- * Se pinta metiéndolo en una propiedad personalizada de CSS, así que un valor
- * libre es una inyección de CSS: `red;} body{background:url(http://…)` filtra
- * la visita a un tercero sin ejecutar una línea de JavaScript. Un enumerado de
- * seis hexadecimales elimina el problema en vez de intentar limpiarlo, que es
- * el mismo criterio con el que la voz del asistente es un enumerado y no texto
- * libre.
+ * Que sean CINCO Y NO UN COLOR LIBRE no es una simplificación de la interfaz:
+ * el color terminaba dentro de una propiedad de CSS de la página pública, y un
+ * enumerado elimina esa clase de inyección en vez de validarla. Mismo criterio
+ * que la voz del asistente.
+ *
+ * Si el valor guardado no es una de estas, se devuelve la de por defecto y no
+ * un error: una paleta desconocida —de un despliegue a medias, de un dato
+ * viejo— tiene que dejar la página sobria, no rota.
  */
-export function colorValido(valor: unknown): boolean {
-  return typeof valor === 'string' && /^#[0-9a-fA-F]{6}$/.test(valor);
+const PALETAS = ['terracota', 'bosque', 'indigo', 'vino', 'oceano'] as const;
+const PALETA_POR_DEFECTO = 'indigo';
+
+export function paletaValida(valor: unknown): string {
+  return typeof valor === 'string' && (PALETAS as readonly string[]).includes(valor)
+    ? valor : PALETA_POR_DEFECTO;
+}
+
+/**
+ * El logo del comercio, incrustado.
+ *
+ * Vive en `/config/marca` y no en `/config/negocio` porque son decenas de
+ * kilobytes y `configuracionFlujo` lee `negocio` en CADA consulta del flujo:
+ * ahí adentro, el logo le agregaría ese peso a cada mensaje que responde el
+ * asistente, para un dato que el asistente no usa nunca.
+ *
+ * Se vuelve a validar la forma antes de publicarlo aunque la regla ya lo
+ * exija. Es el mismo criterio que el QR de cobro, que se revalida antes de
+ * dibujarlo: va a un atributo `src` del navegador de un desconocido, y un
+ * `data:text/html` ahí es ejecución.
+ */
+const LOGO = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+
+export function logoValido(valor: unknown): boolean {
+  return typeof valor === 'string' && valor.length <= 200_000 && LOGO.test(valor);
 }
 
 // ---------------------------------------------------------------------------
@@ -434,9 +460,10 @@ export const catalogoPublico = onRequest(
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
-    const [config, venta, catalogo] = await Promise.all([
+    const [config, venta, marca, catalogo] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
+      db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
       // SIN `orderBy`, Y NO ES UN DESCUIDO. Combinar un filtro de igualdad con
       // un orden por OTRO campo exige un índice compuesto en Firestore. El
       // emulador no lo exige —responde cualquier consulta— así que el fallo no
@@ -455,8 +482,6 @@ export const catalogoPublico = onRequest(
       respuesta.status(404).json({ error: 'enlace vencido' }); return;
     }
 
-    const logoUrl = config.get('logoUrl');
-    const colorMarca = config.get('colorMarca');
 
     // NADA DE CACHÉ. La respuesta está atada a una conversación: en un teléfono
     // prestado o en un proxy compartido, una copia guardada es el catálogo —y
@@ -469,8 +494,11 @@ export const catalogoPublico = onRequest(
         descripcion: texto(config.get('descripcion'), 400),
         direccion: texto(config.get('direccion'), 200),
         moneda: config.get('moneda') === 'USD' ? 'USD' : 'BOB',
-        logoUrl: urlImagenValida(logoUrl) ? String(logoUrl) : '',
-        colorMarca: colorValido(colorMarca) ? String(colorMarca) : '',
+        // El logo viaja INCRUSTADO en la respuesta, no como una dirección.
+        // Es una petición menos desde el teléfono del cliente —y una menos que
+        // pueda fallar— para el elemento que está más arriba de la página.
+        logo: logoValido(marca.get('logo')) ? String(marca.get('logo')) : '',
+        paleta: paletaValida(config.get('paleta')),
       },
       // Condiciones de entrega, si el comercio vende. Se muestran ANTES del
       // checkout: enterarse del costo de envío después de confirmar es la queja

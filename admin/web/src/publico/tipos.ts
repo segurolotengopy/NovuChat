@@ -33,8 +33,15 @@ export interface NegocioPublico {
   descripcion: string;
   direccion: string;
   moneda: string;
-  logoUrl: string;
-  colorMarca: string;
+  /**
+   * El logo INCRUSTADO (`data:image/…;base64,…`), no una dirección. Viaja en la
+   * misma respuesta que el catálogo: una petición menos desde el teléfono del
+   * cliente, y una menos que pueda fallar, para el elemento que está más arriba
+   * de la página.
+   */
+  logo: string;
+  /** Una de las cinco de `lib/paletas.ts`. Nunca un color suelto. */
+  paleta: string;
 }
 
 /** Mismos nombres que `/config/venta`: un solo vocabulario de punta a punta. */

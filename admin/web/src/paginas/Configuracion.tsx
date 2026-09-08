@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
-import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { useEffect, useRef, useState } from 'react';
+import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { useFlujos } from '../lib/flujos';
+import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -15,7 +16,6 @@ import { useFlujos } from '../lib/flujos';
 const TOPES: Record<string, number> = {
   nombreNegocio: 80, descripcion: 400, direccion: 200, numeroRecepcion: 15,
   calendarioId: 120, politicaCancelacion: 600, instruccionesExtra: 1500,
-  logoUrl: 500, colorMarca: 7,
   mensajeCierre: 300, mensajeErrorTemporal: 300,
   mensajeReservaNoConfirmada: 300, mensajeComercioSuspendido: 300,
 };
@@ -57,8 +57,7 @@ export function Configuracion() {
         mensajeReservaNoConfirmada: String(v['mensajeReservaNoConfirmada'] ?? ''),
         mensajeComercioSuspendido: String(v['mensajeComercioSuspendido'] ?? ''),
         instruccionesExtra: String(v['instruccionesExtra'] ?? ''),
-        logoUrl: String(v['logoUrl'] ?? ''),
-        colorMarca: String(v['colorMarca'] ?? ''),
+        paleta: String(v['paleta'] ?? PALETA_POR_DEFECTO),
       });
       setCatalogoWeb(v['catalogoWebActivo'] === true);
     }, () => setEstado('No se pudo leer la configuración.'));
@@ -196,20 +195,36 @@ export function Configuracion() {
             donde se pueden cotizar.
           </p>
 
-          {campo('logoUrl', 'Logo (dirección https de una imagen)')}
-          <label>
-            Color de la marca
-            <span className="campo-color">
-              <input type="color" value={datos['colorMarca'] || '#ec3013'}
-                     onChange={(e) => setDatos({ ...datos, colorMarca: e.target.value })} />
-              <input value={datos['colorMarca'] ?? ''} maxLength={7} placeholder="#000000"
-                     onChange={(e) => setDatos({ ...datos, colorMarca: e.target.value })} />
-            </span>
-          </label>
+          <LogoDelComercio tenantId={tenantId} />
+
+          <fieldset className="paletas">
+            <legend>Colores de la página</legend>
+            {(Object.keys(PALETAS) as PaletaId[]).map((id) => {
+              const p = PALETAS[id];
+              const elegida = (datos['paleta'] ?? PALETA_POR_DEFECTO) === id;
+              return (
+                <label key={id} className="paleta" aria-current={elegida}>
+                  <input type="radio" name="paleta" value={id} checked={elegida}
+                         onChange={() => setDatos({ ...datos, paleta: id })} />
+                  <span className="paleta-muestra" aria-hidden="true">
+                    <span style={{ background: p.base }} />
+                    <span style={{ background: p.oscuro }} />
+                    <span style={{ background: p.suave }} />
+                  </span>
+                  <span className="paleta-texto">
+                    <strong>{p.nombre}</strong>
+                    <span className="text-muted">{p.sugerencia}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
           <p className="ayuda">
-            Seis dígitos hexadecimales, como <code>#1b7f4f</code>. Es el único
-            formato que se acepta: cualquier otra cosa se rechaza al guardar.
-            Si lo dejás vacío, la página usa un color neutro.
+            Son cinco y no un selector de color libre, por dos razones. La página
+            necesita <strong>tres</strong> tonos que combinen —el botón, el botón
+            presionado y el fondo de las categorías—, y elegirlos de a uno termina
+            casi siempre en texto que no se lee sobre su fondo. Estas cinco están
+            medidas: en todas, lo escrito se lee.
           </p>
         </>)}
 
@@ -228,4 +243,148 @@ export function Configuracion() {
       {estado && <p role="status">{estado}</p>}
     </section>
   );
+}
+
+
+/**
+ * =============================================================================
+ * EL LOGO — se sube desde acá, y se guarda dentro del documento
+ * =============================================================================
+ *
+ * POR QUÉ NO HAY UN DEPÓSITO DE ARCHIVOS DETRÁS. Montar Firebase Storage —su
+ * bucket, sus reglas, su CORS— para UN archivo por comercio es mucha superficie
+ * nueva, y convierte a NovuChat en custodio de archivos de terceros. Un logo
+ * recortado a 320 px entra en unas decenas de kilobytes, muy por debajo del
+ * máximo de 1 MiB de un documento de Firestore. Es la misma economía que llevó
+ * a referenciar las fotos de los productos por URL en vez de alojarlas; la
+ * diferencia es que un logo es uno solo, y el comercio no siempre tiene dónde
+ * publicarlo — que era justamente el problema de pedirle una dirección.
+ *
+ * SE RECORTA EN EL NAVEGADOR, ANTES DE SUBIR. La foto que sale de un celular
+ * son tres o cuatro megas: sin recortar no entraría en el documento, y el
+ * comercio se toparía con un rechazo del servidor sin entender por qué. Acá se
+ * reduce a 320 px del lado más largo y se baja la calidad hasta que entre.
+ *
+ * VIVE EN `/config/marca`, NO EN `/config/negocio`. `configuracionFlujo` lee
+ * `negocio` en CADA consulta del flujo de n8n: el logo ahí le agregaría decenas
+ * de kilobytes a cada mensaje que responde el asistente, para un dato que el
+ * asistente no usa nunca.
+ */
+function LogoDelComercio({ tenantId }: { tenantId: string }) {
+  const [logo, setLogo] = useState('');
+  const [estado, setEstado] = useState<string | null>(null);
+  const [subiendo, setSubiendo] = useState(false);
+  const archivo = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId, 'config', 'marca'),
+      (d) => setLogo(String(d.data()?.['logo'] ?? '')),
+      () => setEstado('No se pudo leer el logo.'));
+  }, [tenantId]);
+
+  const guardar = async (valor: string) => {
+    await setDoc(doc(db, 'tenants', tenantId, 'config', 'marca'), {
+      logo: valor,
+      actualizadoPor: auth.currentUser?.uid ?? '',
+      actualizadoEn: serverTimestamp(),
+    });
+  };
+
+  const alElegir = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setEstado(null);
+    setSubiendo(true);
+    try {
+      const datos = await recortar(f);
+      await guardar(datos);
+      setEstado('Logo actualizado. Ya se ve en tu catálogo web.');
+    } catch (error) {
+      setEstado(error instanceof Error ? error.message
+        : 'No se pudo leer esa imagen. Probá con un PNG o un JPG.');
+    } finally {
+      setSubiendo(false);
+      if (archivo.current) archivo.current.value = '';
+    }
+  };
+
+  const quitar = async () => {
+    setEstado(null);
+    try {
+      await guardar('');
+      setEstado('Logo quitado.');
+    } catch { setEstado('No se pudo quitar el logo.'); }
+  };
+
+  return (
+    <div className="campo-logo">
+      <label>Logo del negocio
+        <input ref={archivo} className="input" type="file"
+               accept="image/png,image/jpeg,image/webp"
+               onChange={(e) => void alElegir(e)} disabled={subiendo} />
+      </label>
+      {logo !== '' && (
+        <div className="logo-previa">
+          {/* Es la imagen que el comercio acaba de elegir y ya está recortada
+              por este mismo código; se muestra tal cual para que vea lo que sus
+              clientes van a ver, con el mismo encuadre que usa la página. */}
+          <img src={logo} alt="Logo cargado" />
+          <button type="button" className="btn btn-ghost" onClick={() => void quitar()}>
+            Quitar
+          </button>
+        </div>
+      )}
+      <p className="ayuda">
+        Un PNG o un JPG. Se recorta solo a 320 píxeles, así que no hace falta
+        que lo prepares: subí el que tengas. Se ve arriba de todo en la página
+        que abren tus clientes.
+      </p>
+      {subiendo && <p role="status">Procesando la imagen…</p>}
+      {estado && <p role="status">{estado}</p>}
+    </div>
+  );
+}
+
+/** Tope del campo en las reglas. Acá se usa para saber cuándo seguir bajando. */
+const TOPE_LOGO = 200_000;
+
+/**
+ * Reduce la imagen a 320 px del lado más largo y devuelve `data:image/…`.
+ *
+ * BAJA LA CALIDAD HASTA QUE ENTRE, en vez de rechazar. Un logo con mucho
+ * detalle o con transparencia puede pasarse del tope incluso a 320 px; probar
+ * con calidades decrecientes resuelve el caso sin que el comercio tenga que
+ * saber qué es un kilobyte. Si aun así no entra, se lo dice con una salida.
+ */
+async function recortar(archivo: File): Promise<string> {
+  const url = URL.createObjectURL(archivo);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolver, rechazar) => {
+      const i = new Image();
+      i.onload = () => resolver(i);
+      i.onerror = () => rechazar(new Error('Ese archivo no es una imagen que podamos leer.'));
+      i.src = url;
+    });
+
+    const LADO = 320;
+    const escala = Math.min(1, LADO / Math.max(img.naturalWidth, img.naturalHeight));
+    const lienzo = document.createElement('canvas');
+    lienzo.width = Math.max(1, Math.round(img.naturalWidth * escala));
+    lienzo.height = Math.max(1, Math.round(img.naturalHeight * escala));
+    const ctx = lienzo.getContext('2d');
+    if (!ctx) throw new Error('El navegador no pudo procesar la imagen.');
+    ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+
+    // WebP primero por tamaño; si el navegador no sabe codificarlo, `toDataURL`
+    // devuelve un PNG en silencio, que la validación acepta igual.
+    for (const calidad of [0.9, 0.75, 0.6, 0.45]) {
+      const datos = lienzo.toDataURL('image/webp', calidad);
+      if (datos.length <= TOPE_LOGO) return datos;
+    }
+    throw new Error('Esa imagen es demasiado pesada incluso reducida. '
+      + 'Probá con una más simple o con menos detalle.');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

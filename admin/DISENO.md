@@ -1517,12 +1517,37 @@ dándolas de baja.
 tal como está cargado hoy, porque los servicios de salud son justamente los que
 se cotizan. Es lo correcto: un catálogo de servicios sin precio no es una tienda.
 
+### 4octies.5ter El logo se sube, y los colores se eligen de cinco
+
+**Pedido por Andres el 08/09.** Antes el logo era una URL que el comercio pegaba
+y el color un `#rrggbb` libre. Las dos cosas cambiaron.
+
+**El logo se sube desde la consola y se guarda incrustado** en
+`/tenants/{t}/config/marca`, recortado a 320 px por el navegador antes de
+guardar. No hay depósito de archivos: montar Storage —bucket, reglas, CORS— para
+UN archivo por comercio es mucha superficie, y nos volvería custodios de archivos
+ajenos. Va en documento propio y no en `/config/negocio` porque
+`configuracionFlujo` lee ese documento en cada consulta del flujo, y el logo le
+agregaría decenas de kilobytes a cada mensaje del asistente.
+
+Los tipos son **PNG, JPEG y WebP**. SVG **no**, aunque sea una imagen: puede
+llevar `<script>` adentro y esto termina en un `src`.
+
+**El color pasó a ser una de cinco paletas** (`web/src/lib/paletas.ts`). La razón
+de diseño pesa más que la de seguridad: la página necesita **tres** tonos que
+combinen y un comercio elige uno solo; pedirle los tres termina en texto que no
+se lee. Las cinco están calculadas juntas y sus quince relaciones de contraste
+cumplen WCAG AA —medido en una prueba que recalcula, no en una tabla copiada—.
+De paso, el enumerado elimina la inyección de CSS en vez de validarla: el
+servidor manda el NOMBRE y el navegador lo traduce contra su tabla.
+
 ### 4octies.6 Qué se agregó a las reglas
 
 | Ruta | Cambio |
 |---|---|
 | `/catalogo/{item}` | `imagenUrl`, validada como `https://…` por `urlImagenValida()` |
-| `/config/negocio` | `catalogoWebActivo` (booleano, nace apagado), `logoUrl`, `colorMarca` |
+| `/config/negocio` | `catalogoWebActivo` (booleano, nace apagado) y `paleta` (una de cinco) |
+| `/config/marca` | **nueva.** El logo incrustado. Es el único documento de `/config` que el comercio puede CREAR: nace cuando sube su primer logo, que puede ser meses después del alta |
 | `/pedidos/{id}` | **nueva.** La leen los mismos que las conversaciones; no la escribe ningún navegador |
 | `/fichasCatalogo/{f}` | **nueva.** Negada para todos, explícitamente y no por descarte |
 | `/bitacora` | dos tipos más: `catalogo_enlace` y `carrito_recibido` |

@@ -10,6 +10,21 @@
  * hacia no pintar nada, en vez de hacia pintar cualquier cosa.
  */
 
+/**
+ * El logo, que sí es un `data:` — pero solo de imagen.
+ *
+ * Es la excepción a la regla de abajo, y por eso está aparte en vez de aflojar
+ * aquella: `data:image/png;base64,…` es una imagen y `data:text/html,…` es
+ * ejecución, y la diferencia entre las dos es exactamente lo que comprueba esta
+ * expresión. El servidor ya lo valida; acá se repite porque es el único otro
+ * valor del comercio que no termina como texto.
+ */
+export function logoSeguro(valor: unknown): string {
+  return typeof valor === 'string' && valor.length <= 200_000
+    && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(valor)
+    ? valor : '';
+}
+
 /** `https://…` y nada más. `javascript:` y `data:` en un `src` son ejecución. */
 export function imagenSegura(url: unknown): string {
   if (typeof url !== 'string' || url.length > 500) return '';
@@ -19,19 +34,6 @@ export function imagenSegura(url: unknown): string {
   } catch {
     return '';
   }
-}
-
-/**
- * Color de marca: exactamente `#rrggbb`.
- *
- * Va a `style={{ '--marca': color }}`. React no escapa el VALOR de una
- * propiedad personalizada de CSS —no puede, porque no sabe qué significa—, así
- * que un valor libre acá es una inyección de CSS: `#fff;background:url(…)`
- * filtraría la visita a un tercero sin ejecutar JavaScript. Seis hexadecimales
- * eliminan el problema en vez de intentar limpiarlo.
- */
-export function colorSeguro(valor: unknown): string {
-  return typeof valor === 'string' && /^#[0-9a-fA-F]{6}$/.test(valor) ? valor : '';
 }
 
 /** Precio para mostrar. Sin `Intl` pesado: dos decimales solo si hacen falta. */
