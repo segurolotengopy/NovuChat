@@ -1441,6 +1441,8 @@ trabajo que ya está hecho en ellas.
 | `Analisis/14-modelo-costos.py` | El modelo, reproducible sin dependencias |
 | `Analisis/15-unidad-de-cobro.md` | Si conviene cambiar de unidad de cobro. Decidido: no |
 | `Analisis/16-sensibilidad-topes-y-bolsas.md` | Sensibilidad del tope de mensajes y de las bolsas. Dos correcciones a lo propuesto |
+| `Analisis/17-resumen-ejecutivo-precios.md` | **Para Silvana.** Todo lo anterior sin tecnicismos, con lo que hay que decidir y cuándo |
+| `Analisis/18-cambios-en-sitio-y-presentacion.md` | Instrucciones exactas, archivo por archivo, para corregir `novuchat.site` y la presentación |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 
