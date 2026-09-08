@@ -126,17 +126,22 @@ export function Contactos() {
           <input type="email" maxLength={254} value={nuevo.correo}
                  onChange={(e) => setNuevo({ ...nuevo, correo: e.target.value })} />
         </label>
-        <label>
-          <input type="checkbox" checked={nuevo.esContactoComercial}
-                 onChange={(e) => setNuevo({ ...nuevo, esContactoComercial: e.target.checked })} />
-          {' '}Es el contacto comercial
-        </label>
-        <p className="ayuda">
-          Marcando esta casilla, <strong>NovuChat podrá ver el nombre, el teléfono
-          y el correo de esta persona</strong> para asuntos de facturación. Es el
-          único contacto que vemos sin que usted nos habilite un acceso de
-          soporte. Los demás quedan solo para su negocio.
-        </p>
+        {/* La casilla y su advertencia son UNA pieza: el formulario se acomoda
+            en columnas y, sueltas, la advertencia de privacidad terminaba
+            debajo de otro campo o cruzada bajo la fila entera. */}
+        <div className="grupo">
+          <label className="campo-casilla">
+            <input type="checkbox" checked={nuevo.esContactoComercial}
+                   onChange={(e) => setNuevo({ ...nuevo, esContactoComercial: e.target.checked })} />
+            <span>Es el contacto comercial</span>
+          </label>
+          <p className="ayuda">
+            Marcando esta casilla, <strong>NovuChat podrá ver el nombre, el teléfono
+            y el correo de esta persona</strong> para asuntos de facturación. Es el
+            único contacto que vemos sin que usted nos habilite un acceso de
+            soporte. Los demás quedan solo para su negocio.
+          </p>
+        </div>
         <button type="submit">Guardar contacto</button>
       </form>
       {estado && <p role="status">{estado}</p>}

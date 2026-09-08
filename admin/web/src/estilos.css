@@ -114,6 +114,8 @@
 :where(input, select, textarea) {
   display: block;
   width: 100%;
+  /* Tope de lectura para los formularios que NO están en cuadrícula. Dentro de
+     una celda, quien acota es la celda y este número no llega a aplicar. */
   max-width: 34rem;
   min-height: 48px;
   padding: 10px 14px;
@@ -148,6 +150,68 @@
   color: color-mix(in srgb, var(--color-text) 80%, transparent);
 }
 :where(form label) > :where(input, select, textarea) { margin-top: 5px; color: var(--color-text); }
+
+/* ── Formularios en columnas ─────────────────────────────────────────────
+
+   ESTO ES LO QUE HACE QUE LA CONSOLA SEA OPERATIVA Y NO UN FOLLETO. Un
+   formulario en una sola columna sobre un monitor de 1900px es una tira de
+   campos con dos tercios de pantalla vacíos al costado: para llegar a
+   «Mensajes fijos» hay que hacer scroll por delante de todo lo demás. Con las
+   columnas, la Configuración entera entra de una sola mirada, que es lo que
+   uno quiere de una pantalla que se abre para cambiar un dato y salir.
+
+   `auto-fit` con `minmax(min(100%, 21rem), 1fr)`: el navegador pone las
+   columnas que entren de 21rem para arriba y reparte el sobrante. Una sola en
+   el celular, dos en una laptop, tres o cuatro en un monitor. No hay ni una
+   consulta de medios: el número de columnas lo decide el ancho disponible, que
+   es exactamente lo que se pidió. El `min(100%, …)` es el que evita que en una
+   pantalla más angosta que 21rem la columna desborde la página.
+
+   LO QUE MANDA SOBRE LA FILA ENTERA son los títulos y las reglas: un
+   «Voz del asistente» metido en una celda parecería el rótulo de un campo, y
+   no el comienzo de una sección. */
+#raiz > section form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  gap: 0 var(--space-8);
+  /* Sin esto las celdas de una fila se estiran a la altura de la más alta y un
+     `<select>` de una línea queda del alto de un `<textarea>`. */
+  align-items: start;
+}
+#raiz > section form > :where(h2, h3, h4, hr, table, fieldset, .ancho-total) {
+  grid-column: 1 / -1;
+}
+/* Aire ANTES de cada sección, no después. En una sola columna el salto de
+   tamaño de un `<h3>` ya se ve; repartido en cuatro columnas, el título queda
+   pegado a la fila de arriba y parece el rótulo del último campo. */
+#raiz > section form > :where(h2, h3, h4):not(:first-child) { margin-top: var(--space-6); }
+/* Un párrafo suelto dentro del formulario —un aviso general, no la ayuda de un
+   campo— cruza la fila. La ayuda de un campo NO va suelta: va dentro de su
+   `.grupo`, porque en una cuadrícula cada hijo cae en una celda distinta y la
+   advertencia terminaba debajo de otro campo. */
+#raiz > section form > p { grid-column: 1 / -1; }
+/* El envío abre fila nueva y arranca en la primera columna; lo que venga
+   después —«Cancelar»— se le pone al lado. Un botón de guardar apretado entre
+   dos campos no se lee como el final del formulario. */
+#raiz > section form > button { justify-self: start; }
+#raiz > section form > button[type="submit"] { grid-column-start: 1; }
+
+/* Un campo y su ayuda, como una sola pieza. */
+.grupo { margin-bottom: var(--space-4); }
+.grupo > label { margin-bottom: var(--space-1); }
+.grupo > .ayuda { margin-bottom: 0; }
+/* SE PROBÓ dar a los campos de texto largo una celda doble, y quedó peor: las
+   filas se volvían irregulares y con huecos, y la pantalla dejaba de leerse
+   como una grilla. Los mensajes fijos son cuatro cajas del mismo tipo y se
+   entienden mejor una al lado de la otra, todas iguales. */
+
+/* La fila de acciones. Sin esto, «Guardar» y «Cancelar» caen en dos celdas de
+   la cuadrícula y en un monitor ancho terminan separados por medio metro. */
+.acciones {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: var(--space-3);
+  margin-top: var(--space-4);
+}
 
 /* Botón pelado = botón secundario; el de envío es el principal de su
    formulario. Es la jerarquía que ya tenían las pantallas escrita en prosa. */

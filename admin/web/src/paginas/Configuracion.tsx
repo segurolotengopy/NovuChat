@@ -68,53 +68,72 @@ export function Configuracion() {
     }
   };
 
-  const opcion = (clave: string, etiqueta: string, opciones: [string, string][]) => (
-    <label>
-      {etiqueta}
-      <select value={datos[clave] ?? ''}
-              onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })}>
-        {opciones.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-      </select>
-    </label>
+  /**
+   * EL CAMPO Y SU AYUDA VIAJAN JUNTOS, dentro de un `.grupo`.
+   *
+   * No es un detalle de maquetación: el formulario se acomoda en varias
+   * columnas según el ancho de la pantalla, y en una cuadrícula cada hijo cae
+   * en una celda distinta. Con la ayuda suelta al lado del campo, la
+   * advertencia de «Dirección del local» aterrizaba debajo de OTRO campo, o
+   * cruzada de lado a lado debajo de la fila entera. Un aviso que dice «si deja
+   * este campo vacío» tiene que estar pegado al campo del que habla.
+   */
+  const grupo = (etiqueta: string, control: React.ReactNode, ayuda?: React.ReactNode) => (
+    <div className="grupo">
+      <label>
+        {etiqueta}
+        {control}
+      </label>
+      {ayuda && <p className="ayuda">{ayuda}</p>}
+    </div>
   );
 
+  const opcion = (clave: string, etiqueta: string, opciones: [string, string][],
+                  ayuda?: React.ReactNode) => grupo(etiqueta, (
+    <select value={datos[clave] ?? ''}
+            onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })}>
+      {opciones.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+    </select>
+  ), ayuda);
 
-  const campo = (clave: string, etiqueta: string, multilinea = false) => (
-    <label>
-      {etiqueta}
-      {multilinea
-        ? <textarea
-            value={datos[clave] ?? ''}
-            maxLength={TOPES[clave] ?? 200}
-            onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />
-        : <input
-            value={datos[clave] ?? ''}
-            maxLength={TOPES[clave] ?? 200}
-            onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />}
-    </label>
-  );
+  const campo = (clave: string, etiqueta: string, ayuda?: React.ReactNode,
+                 multilinea = false) => grupo(etiqueta, multilinea
+    ? <textarea
+        value={datos[clave] ?? ''}
+        maxLength={TOPES[clave] ?? 200}
+        onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />
+    : <input
+        value={datos[clave] ?? ''}
+        maxLength={TOPES[clave] ?? 200}
+        onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />,
+    ayuda);
 
   return (
     <section>
       <h2>Configuración del negocio</h2>
       <form onSubmit={guardar}>
         {campo('nombreNegocio', 'Nombre del negocio')}
-        {campo('descripcion', 'Descripción', true)}
+        {campo('descripcion', 'Descripción', undefined, true)}
 
-        {campo('direccion', 'Dirección del local')}
-        <p className="ayuda aviso-datos">
-          Si deja este campo vacío, el asistente <strong>va a decir que no tiene
-          el dato y que lo consulta con recepción</strong>. Es lo correcto: el
-          28 de agosto, sin este campo, el asistente inventó una dirección. Un
-          dato equivocado acá hace que un cliente se presente donde no debe.
-        </p>
+        {/* ESTE TEXTO LO LEE EL CLIENTE, NO NOSOTROS. Antes decía «el 28 de
+            agosto, sin este campo, el asistente inventó una dirección»: es
+            NUESTRA bitácora de un defecto NUESTRO, y en la pantalla del
+            comercio se lee como si el accidente hubiera sido en su negocio.
+            La consola no es el lugar donde contamos nuestros incidentes.
+            Lo que sí tiene que saber el comercio es qué pasa si lo deja
+            vacío, y eso queda. */}
+        {campo('direccion', 'Dirección del local',
+          <>Si lo deja vacío, el asistente <strong>dice que no tiene el dato y que
+          lo consulta con recepción</strong>: nunca inventa una dirección.
+          Conviene escribirla completa, con la zona y las referencias — un dato
+          equivocado acá hace que un cliente se presente donde no debe.</>)}
 
         {campo('numeroRecepcion', 'Número de recepción (sin +, solo dígitos)')}
         {/* El calendario del negocio vive en el documento común por historia
             (el flujo de citas lo lee de acá), pero solo tiene sentido con
             reservas: a un restaurante no se le pide una agenda. */}
         {conAgenda && campo('calendarioId', 'ID del calendario de Google (agenda del negocio)')}
-        {campo('politicaCancelacion', 'Política de cancelación', true)}
+        {campo('politicaCancelacion', 'Política de cancelación', undefined, true)}
 
         <h3>Voz del asistente</h3>
         {opcion('tratamiento', 'Cómo trata al cliente', [
@@ -122,22 +141,17 @@ export function Configuracion() {
         ])}
         {opcion('estiloEmojis', 'Emojis', [
           ['ninguno', 'Ninguno'], ['pocos', 'Pocos'], ['muchos', 'Varios'],
-        ])}
-        <p className="ayuda">
-          Son opciones cerradas y no campos de texto a propósito: lo que se elige
-          acá entra en las instrucciones del asistente, y una lista cerrada no se
-          puede usar para darle órdenes.
-        </p>
+        ], <>Son opciones cerradas y no campos de texto a propósito: lo que se
+        elige acá entra en las instrucciones del asistente, y una lista cerrada
+        no se puede usar para darle órdenes.</>)}
 
         <h3>Mensajes fijos</h3>
-        {campo('mensajeCierre', 'Al cerrar la conversación', true)}
-        {campo('mensajeErrorTemporal', 'Si algo falla temporalmente', true)}
-        {campo('mensajeReservaNoConfirmada', 'Si no se pudo confirmar una reserva', true)}
-        {campo('mensajeComercioSuspendido', 'Si el servicio está suspendido', true)}
-        <p className="ayuda">
-          El mensaje de suspensión solo se puede escribir mientras el servicio
-          está activo. Conviene dejarlo preparado.
-        </p>
+        {campo('mensajeCierre', 'Al cerrar la conversación', undefined, true)}
+        {campo('mensajeErrorTemporal', 'Si algo falla temporalmente', undefined, true)}
+        {campo('mensajeReservaNoConfirmada', 'Si no se pudo confirmar una reserva', undefined, true)}
+        {campo('mensajeComercioSuspendido', 'Si el servicio está suspendido',
+          <>Solo se puede escribir mientras el servicio está activo. Conviene
+          dejarlo preparado.</>, true)}
 
         {/* AQUI IBA «Indicaciones para el asistente». Se quito el 2026-09-06:
             el texto de ayuda prometia que las indicaciones se le entregan al
