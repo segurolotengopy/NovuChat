@@ -139,8 +139,15 @@ America»). Antes eran gratis.
   Bolivia tiene régimen flexible desde el 29/06/2026 y el BCB publica un TCO
   diario (12,60 al 08/09/2026). **NovuChat no publica un tipo de cambio propio:**
   un proveedor que fija el tipo de cambio con el que cobra invita a la sospecha.
-- Planes vigentes: **USD 20 / 40 / 70** por **120 / 200 / 300 conversaciones**.
-  Bolsa de **25 conversaciones por USD 10**, que no vence. Instalación USD 65.
+- **Planes: en revisión al 08/09, no tomarlos como definitivos.** Hay dos
+  propuestas sobre la mesa —USD 20/40/70 por 120/200/300, y la de Silvana de
+  USD 25/50/90 por 100/220/500— comparadas en `Analisis/21`, que recomienda
+  adoptar la segunda con el plan grande corregido a USD 100 / 500. **Lo que sí
+  está firme:** la bolsa de **25 conversaciones por USD 10**, que no vence, y
+  que el volumen incluido de cada plan es lo que sostiene el margen.
+- **La unidad se llama «conversación», nunca «atención».** El glosario publicado
+  dice que la atención —persona distinta en el período— **no se factura**. Usar
+  «atenciones» para lo que se cobra contradice el sitio y la consola.
 - **Al escribir código que muestre precios:** el campo se denomina en dólares, el
   importe en bolivianos es derivado, y **hay que registrar el TCO aplicado a cada
   pago** o no se puede reconstruir una factura. En el JSON-LD del sitio,
