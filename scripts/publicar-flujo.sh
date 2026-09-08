@@ -16,6 +16,13 @@
 #   ./scripts/publicar-flujo.sh --aplicar    # actualiza el flujo
 #   ./scripts/publicar-flujo.sh --flujo Flujos/demo-b-venta-cobro.json --aplicar
 #
+# EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
+# comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
+# de `--flujo`, que son dos fuentes distintas. Cada demo tiene su propio env:
+#   Demo A          -> .env             (el que se usa por defecto)
+#   Demo B          -> .env.demo-b
+#   Recordatorios   -> .env.recordatorios
+#
 # N8N_API_KEY es una credencial de ADMINISTRACION de toda la instancia: quien
 # la tenga puede leer y modificar cualquier flujo, incluidos los ajenos. Vive
 # solo en .env (ignorado, chmod 600) y en el gestor de contrasenas.
@@ -25,6 +32,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 FLUJO="Flujos/demo-a-agendamiento.json"
 APLICAR=0
+FORZAR=0
 ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --flujo)   FLUJO="${2:?--flujo necesita un archivo}"; shift 2 ;;
     --flujo=*) FLUJO="${1#*=}"; shift ;;
     --aplicar) APLICAR=1; shift ;;
+    --forzar)  FORZAR=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -79,10 +88,12 @@ if [[ "$COD" != "200" ]]; then
   exit 1
 fi
 
-APLICAR="$APLICAR" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
-import json, os, datetime
+APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
+import json, os, sys, datetime
 
-aplicar = os.environ["APLICAR"] == "1"
+aplicar  = os.environ["APLICAR"] == "1"
+forzar   = os.environ["FORZAR"] == "1"
+env_file = os.environ["ENV_FILE"]
 tmp     = os.environ["TMP"]
 flujo   = os.environ["FLUJO"]
 V, R, G, A, FIN = "\033[1;32m", "\033[1;31m", "\033[0;90m", "\033[1;33m", "\033[0m"
@@ -97,6 +108,28 @@ if webhooks:
     print(f"  webhook  : /webhook/{webhooks[0]}/webhook")
 print(f"  activo   : {vivo.get('active')}   nodos: {len(vivo.get('nodes', []))}")
 print(f"Origen     : {flujo}   nodos: {len(nuevo['nodes'])}\n")
+
+# --- CERROJO: el archivo y el flujo vivo tienen que ser EL MISMO flujo --------
+# El id del flujo sale de N8N_WORKFLOW_ID, que vive en `.env`, y el archivo se
+# elige con --flujo. Son dos fuentes distintas, asi que nada impedia pedir
+# `--flujo Flujos/demo-b-venta-cobro.json` contra el `.env` del Demo A y
+# ESCRIBIR EL DEMO B ENCIMA DEL DEMO A. El diagnostico lo mostraba —«nodo del
+# flujo vivo que ya no existe: agendar_cita», veinte veces— pero en una lista de
+# cuarenta lineas de color, arriba del todo, y con --aplicar no habria hecho
+# ninguna pregunta. Se llego a un paso de hacerlo el 08/09/2026.
+#
+# El nombre es la comprobacion correcta y no el id: el id hay que ir a buscarlo
+# a la URL del editor, el nombre esta escrito en el JSON versionado y es lo que
+# uno mira en n8n. --forzar existe para el unico caso legitimo, que es renombrar
+# un flujo a proposito.
+nombre_vivo, nombre_nuevo = vivo.get("name"), nuevo.get("name")
+if nombre_vivo and nombre_nuevo and nombre_vivo != nombre_nuevo and not forzar:
+    print(f"{R}✗ El archivo y el flujo vivo NO son el mismo flujo.{FIN}")
+    print(f"    vivo   ({env_file}): {nombre_vivo}")
+    print(f"    origen ({flujo}): {nombre_nuevo}")
+    print("  Revise --env: el id del flujo sale de ahi y el archivo de --flujo.")
+    print("  Si de verdad quiere renombrar el flujo vivo, use --forzar.")
+    sys.exit(1)
 
 # --- respaldo del flujo vivo, solo cuando se va a escribir --------------------
 # El diagnostico no deja archivos: si no toca nada, no ensucia nada.
