@@ -1443,6 +1443,7 @@ trabajo que ya está hecho en ellas.
 | `Analisis/16-sensibilidad-topes-y-bolsas.md` | Sensibilidad del tope de mensajes y de las bolsas. Dos correcciones a lo propuesto |
 | `Analisis/17-resumen-ejecutivo-precios.md` | **Para Silvana.** Todo lo anterior sin tecnicismos, con lo que hay que decidir y cuándo |
 | `Analisis/18-cambios-en-sitio-y-presentacion.md` | Instrucciones exactas, archivo por archivo, para corregir `novuchat.site` y la presentación |
+| `Analisis/19-catalogo-web-y-precio-por-flujo.md` | Cuántos ítems van al prompt y al catálogo web, y si conviene cobrar distinto por flujo. Las dos respuestas: el corte no es económico, y no conviene |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 
@@ -1466,6 +1467,12 @@ trabajo que ya está hecho en ellas.
   pedido de unos 13 mensajes a 4 o 5, un 68 % menos. Vale como argumento para
   priorizar los dos nodos de n8n y la plantilla que le faltan. Y le toca
   renumerarse de `11-` a `12-`.
+  **Y una corrección a su diseño** (`Analisis/19`): el umbral que propone —
+  catálogo chico al prompt, grande solo al checkout— es correcto, pero **no lo
+  fija el costo**. Con la caché puesta, 500 ítems en el prompt cuestan menos que
+  medio mensaje del asistente. Lo que fija el umbral es la legibilidad del chat
+  y la confiabilidad del modelo: hasta 40 ítems la lista completa, por encima un
+  resumen con categorías y rango de precios.
 - **A `fix/suspender-corta-de-verdad`:** confirmar que la corrección cubre los
   **dos** caminos del 409, porque el prepago agrega el suyo (`sin_pago`,
   `sin_conversaciones`) sobre el mismo mecanismo.
