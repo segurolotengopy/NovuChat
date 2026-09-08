@@ -1440,6 +1440,7 @@ trabajo que ya está hecho en ellas.
 | `Analisis/14-costo-por-conversacion-y-precios.md` | Costo real por conversación con las tarifas del 1-oct, margen por plan, escala a 100 y 300 comercios, y las opciones de mejora cuantificadas |
 | `Analisis/14-modelo-costos.py` | El modelo, reproducible sin dependencias |
 | `Analisis/15-unidad-de-cobro.md` | Si conviene cambiar de unidad de cobro. Decidido: no |
+| `Analisis/16-sensibilidad-topes-y-bolsas.md` | Sensibilidad del tope de mensajes y de las bolsas. Dos correcciones a lo propuesto |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 
@@ -1447,9 +1448,17 @@ trabajo que ya está hecho en ellas.
   es correcta y no hay que tocarla, pero está cargada con **Base 300 /
   Crecimiento 1.000 / Corporativo 2.500 y bolsas de 150 a 50 Bs**, que desde el
   1 de octubre dejan los tres planes en pérdida. La propuesta conservadora es
-  **120 / 200 / 300 con excedente de 40 Bs por 10**. El arreglo es la tabla de
-  `functions/src/prepago.ts` y sus pruebas, y **conviene hacerlo antes de
-  desplegar**, para no migrar cuentas ya creadas.
+  **120 / 200 / 300 conversaciones**, y **la bolsa a 25 por 110 Bs** en lugar de
+  150 por 50: la actual cobra el 22 % de lo que cuesta y **pierde 176 Bs cada vez
+  que se vende**, más que el margen entero de un plan Impulso. El arreglo es la
+  tabla de `functions/src/prepago.ts` y sus pruebas, y **conviene hacerlo antes
+  de desplegar**, para no migrar cuentas ya creadas. El detalle y la
+  sensibilidad, en `Analisis/16-sensibilidad-topes-y-bolsas.md`.
+- **Sobre el tope de mensajes:** el escalonado por plan (20 / 25 / 30) está al
+  revés. Ser generoso cuesta 0,8 % del precio en Impulso y 6,4 % en Crecimiento,
+  porque el plan chico vive dentro de la franquicia de Meta. Pero un plan caro
+  con tope más chico es invendible, así que **la recomendación es un tope único
+  de 25 para los tres**, fijado por calidad de servicio y no por plan.
 - **A `disenio/catalogo-web`:** el catálogo web deja de ser una mejora de
   producto y pasa a ser **la mayor reducción de costo del sistema**: lleva un
   pedido de unos 13 mensajes a 4 o 5, un 68 % menos. Vale como argumento para
