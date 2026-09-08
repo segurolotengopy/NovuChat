@@ -32,8 +32,13 @@
    El ancho máximo es del sistema (`--ancho`, 1180px). Sin esto el formulario
    de configuración se estiraba de borde a borde de un monitor y la línea de
    texto quedaba ilegible. */
-section { max-width: var(--ancho); margin-inline: auto; padding: var(--space-8) var(--space-4) var(--space-16); }
-section > h2:first-child { margin-bottom: var(--space-6); }
+/* `#raiz > section` y no `section` a secas: las páginas devuelven una sección
+   al tope, pero adentro hay OTRAS secciones —el bloque «Acceso del equipo» del
+   ingreso, por ejemplo— que no son páginas y no deben llevar el margen ni el
+   respiro de una. Con el selector suelto, ese bloque se llevaba 64px de aire
+   abajo y se despegaba del formulario al que pertenece. */
+#raiz > section { max-width: var(--ancho); margin-inline: auto; padding: var(--space-8) var(--space-4) var(--space-16); }
+#raiz > section > h2:first-child { margin-bottom: var(--space-6); }
 
 /* ── Cabecera ───────────────────────────────────────────────────────────
    El menú se desborda en un celular angosto antes que empujar «Salir» fuera de
@@ -53,7 +58,7 @@ section > h2:first-child { margin-bottom: var(--space-6); }
    incluidos, y no se entendía qué se estaba moviendo. Así, la que se desliza
    es la tabla y nada más. */
 @media (max-width: 48rem) {
-  section > table, section > .table {
+  #raiz > section > table, #raiz > section > .table {
     display: block; overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
 }
@@ -278,6 +283,12 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
    la protege. Solo deja de competir con lo que la mayoría vino a hacer. */
 .centrado { display: grid; place-content: center; min-height: 100vh; text-align: center; gap: var(--space-2); padding: var(--space-6); }
 .centrado input { max-width: 22rem; margin-inline: auto; }
+/* La marca del ingreso es la PRIMERA pantalla que ve un cliente. Llevaba solo
+   el nombre en texto; ahora trae el isotipo, centrado (el `margin-right: auto`
+   de `.nav-brand` sirve en la cabecera y acá lo corría a la izquierda). */
+.marca-ingreso { margin: 0 0 var(--space-1); justify-content: center; font-size: 34px; }
+.marca-ingreso svg { color: var(--pizarra); }
+[data-tema="oscuro"] .marca-ingreso svg { color: var(--color-text); }
 .enlace-interno {
   margin-top: var(--space-10);
   min-height: 0; padding: var(--space-1); border: 0; background: none;

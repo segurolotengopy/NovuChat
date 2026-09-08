@@ -4,6 +4,7 @@ import {
   signInWithEmailAndPassword, signInWithPopup, signInWithRedirect,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import { Isotipo } from '../componentes/Marca';
 
 /**
  * INGRESO CON AUTENTICACIÓN MIXTA POR ROL.
@@ -114,7 +115,7 @@ export function Ingresar() {
 
   return (
     <main className="centrado">
-      <h1 className="nav-brand" style={{ fontSize: 34 }}>NovuChat</h1>
+      <h1 className="nav-brand marca-ingreso"><Isotipo tamano={44} />NovuChat</h1>
       <p className="text-muted">Panel administrativo</p>
 
       {/*
