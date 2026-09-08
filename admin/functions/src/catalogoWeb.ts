@@ -165,6 +165,38 @@ const texto = (v: unknown, max: number): string =>
  * lado de la consola (`precio >= 0` es falso para `NaN`), pero el SDK Admin se
  * las saltea. Lo destapó escribir la prueba, no leer el código.
  */
+/**
+ * =============================================================================
+ * EL CATÁLOGO WEB ES UNA CAPACIDAD DE VENTA, Y SOLO DE VENTA
+ * =============================================================================
+ *
+ * **Decidido por Andres el 08/09.** Un catálogo web con carrito y checkout es
+ * una tienda. El flujo de agendamiento no vende: su catálogo es REFERENCIAL —la
+ * lista que el asistente usa para saber de qué hablar y cuánto cuesta— y sus
+ * ítems son en buena parte «a consultar», que además desde hoy no se publican.
+ * Un salón que encendiera esto obtendría una vitrina medio vacía con un botón de
+ * comprar que no compra nada.
+ *
+ * ES LA MISMA DECISIÓN QUE SE TOMÓ PARA EL CATÁLOGO NATIVO DE META
+ * (`DISENO.md` §4sexies.3bis), y por las mismas razones. Que las dos cosas
+ * caigan del mismo lado no es casualidad: las dos son tiendas.
+ *
+ * SE COMPRUEBA EN EL SERVIDOR, no en la pantalla. La consola deja de ofrecer la
+ * casilla a quien no vende, pero esconder no protege: la petición se construye
+ * igual desde la consola del navegador. Lo que cierra la puerta es esto y la
+ * regla de `/config/negocio`.
+ */
+async function tieneVenta(tenantId: string): Promise<boolean> {
+  const tenant = await db().doc(`tenants/${tenantId}`).get();
+  if (!tenant.exists) return false;
+  const flujos = tenant.get('flujos');
+  // Igual que en las reglas y en `flujos.ts`: manda la lista, y una ficha
+  // anterior a la lista se lee por `vertical`. Así nada de lo ya cargado
+  // cambia de comportamiento.
+  if (Array.isArray(flujos)) return flujos.includes('venta');
+  return tenant.get('vertical') === 'venta';
+}
+
 export const sePuedeComprar = (d: Record<string, unknown> | undefined): boolean =>
   Number.isFinite(d?.['precio']);
 
@@ -252,6 +284,10 @@ async function fichaVigente(id: string): Promise<Ficha | null> {
 
   const tenant = await db().doc(`tenants/${tenantId}`).get();
   if (!tenant.exists || tenant.get('estado') !== 'activo') return null;
+  // Solo venta. Una ficha emitida antes de esta regla, o para un comercio al
+  // que le quitaron el flujo, deja de abrir la página: es lo correcto, porque
+  // lo que abriría es una tienda de alguien que no vende por acá.
+  if (!await tieneVenta(tenantId)) return null;
 
   return {
     id,
@@ -295,6 +331,9 @@ export const enlaceCatalogo = onRequest(
     if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
     if (!ID_TENANT.test(ruta.tenantId)) { respuesta.status(404).send('numero no asignado'); return; }
     if (ruta.estado !== 'activo') { respuesta.status(409).json({ estado: ruta.estado }); return; }
+    if (!await tieneVenta(ruta.tenantId)) {
+      respuesta.status(409).json({ error: 'el catalogo web es solo para venta' }); return;
+    }
 
     const cuerpo = (peticion.body ?? {}) as Record<string, unknown>;
     const telefono = texto(cuerpo['telefono'], 20).replace(/\D/g, '');

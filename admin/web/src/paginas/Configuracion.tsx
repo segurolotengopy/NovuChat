@@ -24,7 +24,13 @@ export function Configuracion() {
   const { tenantId = '' } = useParams();
   // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
   // vive en su pestaña («Agenda», «Pedidos y cobro»): ver lib/flujos.ts.
-  const conAgenda = (useFlujos(tenantId) ?? []).includes('agendamiento');
+  const flujos = useFlujos(tenantId) ?? [];
+  const conAgenda = flujos.includes('agendamiento');
+  const conVenta = flujos.includes('venta');
+  // El catálogo web es una capacidad de VENTA y solo de venta (DISENO.md
+  // §4octies.0bis). Es cosmético: quien cierra la puerta es la regla, que lee
+  // la misma lista. Lo que esto evita es ofrecerle a un salón una casilla que
+  // el servidor le va a rechazar.
   const [datos, setDatos] = useState<Record<string, string>>({});
   // `catalogoWebActivo` es un booleano y `datos` guarda solo cadenas, así que
   // va aparte. Convertirlo a 'si'/'no' para que entrara ahí habría hecho que un
@@ -165,45 +171,47 @@ export function Configuracion() {
             duda en el momento de pagar es una venta perdida. NovuChat va en el
             pie de la página, chico y visible.
             ================================================================== */}
-        <h3>Catálogo web</h3>
-        <label className="campo-casilla">
-          <input type="checkbox" checked={catalogoWeb}
-                 onChange={(e) => setCatalogoWeb(e.target.checked)} />
-          <span>
-            Publicar mi catálogo como página web, para que el asistente pueda
-            mandarle el enlace a un cliente.
-          </span>
-        </label>
-        <p className="ayuda">
-          El cliente navega, elige y confirma en la página, y{' '}
-          <strong>el pedido vuelve solo a la conversación de WhatsApp</strong>:
-          no tiene que copiar ni pegar nada, y no puede cambiar los precios en el
-          camino. Cada enlace sirve para una conversación y vence a los tres días.
-        </p>
-        <p className="ayuda">
-          Se publica lo que esté <strong>activo y con precio</strong> en la
-          pestaña de catálogo, con su foto. Lo que esté dado de baja no aparece,
-          y <strong>lo que quedó «a consultar» tampoco</strong>: en una página
-          con botón de comprar, un ítem sin precio genera una consulta que el
-          asistente no puede cerrar. Esos se siguen ofreciendo por chat, que es
-          donde se pueden cotizar.
-        </p>
+        {conVenta && (<>
+          <h3>Catálogo web</h3>
+          <label className="campo-casilla">
+            <input type="checkbox" checked={catalogoWeb}
+                   onChange={(e) => setCatalogoWeb(e.target.checked)} />
+            <span>
+              Publicar mi catálogo como página web, para que el asistente pueda
+              mandarle el enlace a un cliente.
+            </span>
+          </label>
+          <p className="ayuda">
+            El cliente navega, elige y confirma en la página, y{' '}
+            <strong>el pedido vuelve solo a la conversación de WhatsApp</strong>:
+            no tiene que copiar ni pegar nada, y no puede cambiar los precios en el
+            camino. Cada enlace sirve para una conversación y vence a los tres días.
+          </p>
+          <p className="ayuda">
+            Se publica lo que esté <strong>activo y con precio</strong> en la
+            pestaña de catálogo, con su foto. Lo que esté dado de baja no aparece,
+            y <strong>lo que quedó «a consultar» tampoco</strong>: en una página
+            con botón de comprar, un ítem sin precio genera una consulta que el
+            asistente no puede cerrar. Esos se siguen ofreciendo por chat, que es
+            donde se pueden cotizar.
+          </p>
 
-        {campo('logoUrl', 'Logo (dirección https de una imagen)')}
-        <label>
-          Color de la marca
-          <span className="campo-color">
-            <input type="color" value={datos['colorMarca'] || '#ec3013'}
-                   onChange={(e) => setDatos({ ...datos, colorMarca: e.target.value })} />
-            <input value={datos['colorMarca'] ?? ''} maxLength={7} placeholder="#000000"
-                   onChange={(e) => setDatos({ ...datos, colorMarca: e.target.value })} />
-          </span>
-        </label>
-        <p className="ayuda">
-          Seis dígitos hexadecimales, como <code>#1b7f4f</code>. Es el único
-          formato que se acepta: cualquier otra cosa se rechaza al guardar.
-          Si lo dejás vacío, la página usa un color neutro.
-        </p>
+          {campo('logoUrl', 'Logo (dirección https de una imagen)')}
+          <label>
+            Color de la marca
+            <span className="campo-color">
+              <input type="color" value={datos['colorMarca'] || '#ec3013'}
+                     onChange={(e) => setDatos({ ...datos, colorMarca: e.target.value })} />
+              <input value={datos['colorMarca'] ?? ''} maxLength={7} placeholder="#000000"
+                     onChange={(e) => setDatos({ ...datos, colorMarca: e.target.value })} />
+            </span>
+          </label>
+          <p className="ayuda">
+            Seis dígitos hexadecimales, como <code>#1b7f4f</code>. Es el único
+            formato que se acepta: cualquier otra cosa se rechaza al guardar.
+            Si lo dejás vacío, la página usa un color neutro.
+          </p>
+        </>)}
 
         {/* AQUI IBA «Indicaciones para el asistente». Se quito el 2026-09-06:
             el texto de ayuda prometia que las indicaciones se le entregan al

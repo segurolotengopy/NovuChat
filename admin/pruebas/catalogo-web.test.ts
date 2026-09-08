@@ -431,6 +431,61 @@ describe('La foto del ítem, en las reglas', () => {
   });
 });
 
+describe('El catálogo web es solo del flujo de VENTA', () => {
+  // Decidido por Andres el 08/09. Un catálogo con carrito y checkout es una
+  // tienda; el flujo de agendamiento no vende. Misma decisión que el catálogo
+  // nativo de Meta (DISENO.md §4sexies.3bis) y por las mismas razones.
+  const AGENDA = 'tenant-solo-agenda';
+
+  beforeEach(async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, 'tenants', AGENDA), {
+        nombre: AGENDA, estado: 'activo', plan: 'basico',
+        vertical: 'agendamiento', flujos: ['agendamiento'],
+      });
+      await setDoc(doc(db, `tenants/${AGENDA}/config/negocio`), {
+        nombreNegocio: 'Salón Demo', tratamiento: 'usted', estiloEmojis: 'pocos',
+        actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+      });
+    });
+  });
+
+  const adminAgenda = () =>
+    entorno.authenticatedContext('u-admin-agenda',
+      claims({ [AGENDA]: 'admin' })).firestore();
+
+  const base = (uid: string) => ({
+    nombreNegocio: 'Salón Demo', tratamiento: 'usted', estiloEmojis: 'pocos',
+    ...sello(uid),
+  });
+
+  it('un salón NO puede encenderlo, ni construyendo la petición a mano', async () => {
+    await assertFails(updateDoc(doc(adminAgenda(), `tenants/${AGENDA}/config/negocio`), {
+      ...base('u-admin-agenda'), catalogoWebActivo: true,
+    }));
+  });
+
+  it('pero sí puede guardar el resto de su configuración', async () => {
+    // La regla es una implicación, no una prohibición del campo: si rechazara
+    // la escritura entera, un salón no podría guardar su pantalla de
+    // configuración por un campo que no le corresponde.
+    await assertSucceeds(updateDoc(doc(adminAgenda(), `tenants/${AGENDA}/config/negocio`), {
+      ...base('u-admin-agenda'), catalogoWebActivo: false,
+    }));
+    await assertSucceeds(updateDoc(doc(adminAgenda(), `tenants/${AGENDA}/config/negocio`), {
+      ...base('u-admin-agenda'), direccion: 'Av. Siempre Viva 100',
+    }));
+  });
+
+  it('un comercio de venta sí puede encenderlo', async () => {
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/negocio`), {
+      nombreNegocio: 'Panadería Demo', tratamiento: 'usted', estiloEmojis: 'pocos',
+      ...sello('u-admin-a'), catalogoWebActivo: true,
+    }));
+  });
+});
+
 describe('La marca del catálogo web, en las reglas', () => {
   const base = (uid: string) => ({
     nombreNegocio: 'Panadería Demo', tratamiento: 'usted', estiloEmojis: 'pocos',

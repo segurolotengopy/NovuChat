@@ -554,6 +554,18 @@ service cloud.firestore {
             // comercio: publicar los precios de alguien en una dirección
             // pública no puede ser el valor por defecto de nada.
             && d.get('catalogoWebActivo', false) is bool
+            // SOLO CON EL FLUJO DE VENTA, decidido el 08/09. Un catálogo web
+            // con carrito y checkout es una tienda; el flujo de agendamiento no
+            // vende, su catálogo es referencial y sus ítems son en buena parte
+            // «a consultar», que ni siquiera se publican. Es la misma decisión
+            // que se tomó para el catálogo nativo de Meta (§4sexies.3bis) y por
+            // las mismas razones.
+            //
+            // Se escribe como implicación —o está apagado, o el negocio vende—
+            // para que un salón pueda seguir guardando su configuración con el
+            // campo en falso, en vez de que la regla le rechace la pantalla
+            // entera por un campo que no le corresponde.
+            && (d.get('catalogoWebActivo', false) == false || tieneCobro(tenantId))
             && urlImagenValida(d, 'logoUrl')
             // COLOR DE MARCA: exactamente `#rrggbb`, o vacío.
             //

@@ -14,6 +14,17 @@
 
 ---
 
+## 0. Solo para el flujo de venta
+
+**Decidido el 08/09.** Un catálogo con carrito y checkout es una tienda, y el
+flujo de agendamiento no vende: su catálogo es referencial y sus ítems son en
+buena parte «a consultar», que ni siquiera se publican (§7bis). Es la misma
+decisión que se tomó para el catálogo nativo de Meta.
+
+Un comercio sin el flujo `venta` **no puede encender el catálogo web** —lo
+rechazan las reglas—, no recibe ficha y, si tuviera una emitida antes, deja de
+abrir la página. Ver `DISENO.md` §4octies.0bis.
+
 ## 1. La garantía, dicha primero
 
 **El navegador del cliente nunca manda precios.** El checkout viaja con

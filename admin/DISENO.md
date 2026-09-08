@@ -1365,6 +1365,31 @@ pasar por el teléfono del cliente.
    responde (o plantilla)
 ```
 
+### 4octies.0bis Solo para el flujo de VENTA
+
+**Decidido por Andres el 08/09.** Un catálogo web con carrito y checkout es una
+tienda. El flujo de agendamiento **no vende**: su catálogo es referencial —la
+lista que el asistente usa para saber de qué hablar y cuánto cuesta— y sus ítems
+son en buena parte «a consultar», que desde §4octies.5bis ni siquiera se
+publican. Un salón que encendiera esto obtendría una vitrina medio vacía con un
+botón de comprar que no compra nada.
+
+**Es la misma decisión que se tomó para el catálogo nativo de Meta**
+(§4sexies.3bis) y por las mismas razones. Que las dos caigan del mismo lado no
+es casualidad: las dos son tiendas.
+
+Se comprueba en tres lugares, y el que manda es el segundo:
+
+| Dónde | Qué hace |
+|---|---|
+| `firestore.rules` | `catalogoWebActivo` solo se puede poner en `true` con `tieneCobro`. Escrito como implicación —o está apagado, o el negocio vende— para que un salón pueda seguir guardando el resto de su configuración |
+| `catalogoWeb.ts` | `enlaceCatalogo` no emite ficha, y `fichaVigente` no abre ninguna, si el comercio no tiene `venta`. Una ficha emitida antes de esta regla deja de servir |
+| `Configuracion.tsx` | la sección no se le ofrece a quien no vende. **Es cosmético**: esconder no protege, la petición se construye igual desde la consola del navegador |
+
+**Consecuencia:** el punto de la tabla comparativa del análisis que decía «vale
+para el Flujo A, si algún día hace falta» queda cerrado. No es una deuda: es una
+decisión.
+
 ### 4octies.1 Las dos correcciones del análisis, aplicadas
 
 **§3.1 — El CSV es un formato de IMPORTACIÓN, no una fuente de verdad.** El
