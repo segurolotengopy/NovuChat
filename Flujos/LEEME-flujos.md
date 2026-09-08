@@ -153,6 +153,22 @@ el prefijo. **Si alguien vuelve a meter `$now` en el `systemMessage`, la caché
 se pierde entera**; hay una prueba que lo impide
 (`admin/pruebas/tope-y-cache-flujos.test.ts`).
 
+## 5ter. Menos mensajes por conversación (2026-09-08)
+
+Desde el 1 de octubre de 2026 cada mensaje que envía el asistente cuesta, así que
+**todo cambio de flujo declara cuántos mensajes agrega o quita** (`CLAUDE.md`,
+Base comercial §1). Estos dos quitan:
+
+- **Demo B, mostrar el catálogo: de dos mensajes a uno.** `Procesar respuesta` ya
+  no va directo a `Responder al cliente`: pasa por `¿Mostrar catálogo?`, y si hay
+  catálogo sale **solo** la lista interactiva, con el texto del agente como
+  cuerpo. Una lista ya lleva su propio cuerpo, así que el mensaje de texto
+  aparte no agregaba nada.
+- **Los dos prompts: se quitó «máximo 3 oraciones por mensaje».** Un mensaje
+  largo y completo es más barato que dos cortos. En su lugar hay una sección
+  «ECONOMÍA DE LA CONVERSACIÓN». Si alguien vuelve a poner un límite de
+  oraciones, hay una prueba que lo detecta.
+
 ## 6. Los flujos internos de NovuChat (2026-09-07)
 
 Dos flujos que NO atienden a clientes finales: le hablan al **negocio**, desde

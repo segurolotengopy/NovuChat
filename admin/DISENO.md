@@ -1351,6 +1351,90 @@ escribía.
 recibe `mensajesRestantes24h: null` y **no corta**: el peor caso es el
 comportamiento de ayer, nunca un cliente sin respuesta.
 
+### 4octies.1bis Lo que se mide para no gastar de más
+
+**La consola mostraba conversaciones, que es lo que se le factura al comercio, y
+no mostraba mensajes, que es lo que Meta nos factura a nosotros.** Son dos
+números distintos y el segundo es el que se paga. Sin él, la primera noticia del
+gasto es la factura.
+
+Se agregaron dos cifras al agregado mensual, las dos **sin una sola lectura ni
+escritura extra**: el documento de métricas ya se escribía en el mismo mensaje.
+
+| Campo | Qué es | Para qué |
+|---|---|---|
+| `salientes` | mensajes que envió el asistente en el mes | contra los 1.000 gratis del número, predice la factura de Meta |
+| `distribucion` | tramos de mensajes por conversación | mide **la cola**, que es lo que cuesta |
+
+**Por qué una distribución y no un promedio.** El promedio esconde justamente lo
+que se paga: diez conversaciones de 4 mensajes y una de 40 promedian 7, que
+parece sano, y lo que cuesta es la de 40. `Analisis/16` lo llama «la cola», dice
+que pesa más que el tope y que **nadie la tenía medida**. Ahora se mide: cuando
+una ventana se cierra ya se sabe cuántas respuestas tuvo, así que el tramo se
+suma en ese mismo instante.
+
+Las dos cifras están en la lista blanca de `metricas` y **ninguna persona del
+negocio puede tocarlas**: si el comercio pudiera bajar `salientes`, el control de
+gasto dejaría de servir.
+
+Se ven en tres lados: la pantalla de Consumo del comercio, `scripts/control-gasto.mjs`
+para NovuChat, y `costos.ts` para cualquier código que las necesite. Las tarifas
+de Meta viven **solo** en `costos.ts`: cuando Meta las cambie —puede hacerlo el 1
+de enero, abril, julio u octubre con aviso previo—, se cambian ahí y en ningún
+otro lado.
+
+### 4octies.1ter Menos mensajes por conversación
+
+Es **la palanca más grande que queda**, y es de producto, no de precio: bajar de
+10 a 6 respuestas no ahorra un 38 %, además **duplica cuántas conversaciones
+entran en la franquicia** de 1.000 mensajes. Dos cambios concretos:
+
+- **Se quitó «máximo 3 oraciones por mensaje» de los dos prompts.** Se escribió
+  para que el asistente no fuera pesado, y desde que Meta cobra cada mensaje
+  juega en contra: **un mensaje largo y completo es más barato Y más útil que
+  tres cortos**. En su lugar hay una sección de economía que pide juntar los
+  datos en un mensaje, ofrecer todo junto, no repreguntar y cerrar en el mismo
+  mensaje en que se confirma. En el Demo B había además una instrucción opuesta
+  —«preguntá de a un dato por vez»— que multiplicaba el costo de la misma
+  conversación; se quitó.
+- **Mostrar el catálogo pasó de costar dos mensajes a costar uno.** Salían el
+  texto del agente y la lista interactiva por separado, y una lista ya lleva su
+  propio cuerpo. Ahora el cuerpo de la lista es lo que dijo el agente. El
+  catálogo se muestra varias veces por conversación, así que el ahorro se
+  multiplica.
+
+**La regla que queda para adelante:** menos mensajes no puede significar peor
+atención. Un asistente seco vende menos, y eso también es un costo. Lo que se
+busca son mensajes **más completos**, nunca conversaciones truncadas. Está dicho
+así dentro del propio prompt, y hay pruebas que lo protegen.
+
+### 4octies.1quater Precios en dólares, cobro en bolivianos
+
+**Todo lo que cuesta el servicio se paga en dólares —Meta, Google— y se cobraba
+en bolivianos.** Cada vez que se movía el tipo de cambio, el margen se movía con
+él sin que nadie decidiera nada. La lista pasó a dólares y el cobro sigue en
+bolivianos, al **Tipo de Cambio Oficial del BCB**, que desde el 29/06/2026 flota
+y se publica a diario.
+
+- **NovuChat no publica un tipo de cambio propio.** Un proveedor que fija el tipo
+  de cambio con el que cobra invita a la sospecha, aunque lo fije bien. Nombrar
+  al BCB es lo que vuelve indiscutible la cláusula del contrato.
+- **El sistema nunca inventa un tipo de cambio.** Sale de `plataforma/tipoCambio`
+  y si falta o es inválido, `tipoCambio.ts` lanza. Cobrar con uno supuesto es
+  peor que no poder cobrar: el error se descubre cuando el cliente ya pagó.
+- **Cada pago guarda el TCO aplicado, su fuente y su período**, además del monto
+  en las dos monedas. Sin eso no se puede reconstruir una factura, y una factura
+  que no se puede reconstruir no sirve para dirimir nada.
+- **La política implementada es un TCO por mes, fijo para todo el mes.** Es lo
+  recomendado en `Analisis/17` §3.0: bajo tipo de cambio flexible el importe en
+  bolivianos se movería mes a mes, y para una PyME saber de antemano cuánto va a
+  pagar vale más que la diferencia de unos centavos. Si se decide el TCO del día
+  de pago, se cambia en un solo lugar.
+- **Los volúmenes se corrigieron con el modelo de costos:** 120 / 200 / 300
+  conversaciones por USD 20 / 40 / 70, y la bolsa pasó de 150 por 50 Bs a 25 por
+  USD 10. La bolsa vieja **perdía 176 Bs cada vez que se vendía**, más de lo que
+  deja un plan entero.
+
 ### 4octies.2 Caché de 60 s de la configuración
 
 Al conectar la consola, las lecturas de Firestore por conversación pasaron de

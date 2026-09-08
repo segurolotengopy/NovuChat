@@ -234,4 +234,64 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
       expect(prompt).toMatch(/no anuncies ningún límite|no hables de planes/i);
     });
   });
+
+  describe(`${archivo} · el prompt empuja a gastar menos mensajes`, () => {
+    const f = flujo(archivo);
+    const prompt = nodo(f, agente).parameters.options!.systemMessage!;
+
+    it('ya no limita las ORACIONES por mensaje', () => {
+      // La regla vieja de «máximo 3 oraciones por mensaje» se escribió para que
+      // el asistente no fuera pesado. Desde que Meta cobra cada mensaje juega en
+      // contra: un mensaje completo es más barato que dos cortos. Si alguien la
+      // reintroduce, el costo sube sin que nadie lo note.
+      expect(prompt).not.toMatch(/máximo \d+ oraciones/i);
+      expect(prompt).toMatch(/NO HAY LÍMITE DE ORACIONES POR MENSAJE/);
+    });
+
+    it('pide juntar los datos en un mensaje, y no se contradice', () => {
+      expect(prompt).toMatch(/PIDE DE UNA VEZ TODO LO QUE TE FALTE/);
+      // La instrucción opuesta multiplicaría el costo de la misma conversación.
+      expect(prompt).not.toMatch(/de a un dato por vez/i);
+    });
+
+    it('dice que menos mensajes no es peor atención', () => {
+      // Sin esta línea, la optimización se lee como «sé escueto», y un
+      // asistente seco vende menos: eso también cuesta.
+      expect(prompt).toMatch(/nunca\s+conversaciones truncadas|NO significa peor atención/i);
+    });
+  });
 }
+
+describe('demo-b-venta-cobro.json · mostrar el catálogo cuesta UN mensaje, no dos', () => {
+  const f = flujo('demo-b-venta-cobro.json');
+
+  it('el texto del agente y la lista salen en el mismo mensaje', () => {
+    // Antes salían dos: el texto por un lado y la lista por otro. Una lista
+    // interactiva ya lleva su propio cuerpo, así que el segundo no agregaba
+    // nada y desde el 1 de octubre cuesta cada vez. El catálogo se muestra
+    // varias veces por conversación, así que el ahorro se multiplica.
+    const cuerpo = (nodo(f, 'Enviar lista de productos').parameters as { jsonBody?: string }).jsonBody!;
+    expect(cuerpo).toContain('$json.respuesta');
+    // Y conserva un respaldo: un body vacío hace que Meta rechace el mensaje.
+    expect(cuerpo).toMatch(/\|\|\s*'Toca un producto/);
+  });
+
+  it('la compuerta reparte: o la lista, o el texto suelto, nunca los dos', () => {
+    const salidas = f.connections['Procesar respuesta']!.main[0]!.map((c) => c.node);
+    expect(salidas).not.toContain('Responder al cliente');
+    expect(salidas).toContain('¿Mostrar catálogo?');
+
+    const gate = f.connections['¿Mostrar catálogo?']!.main;
+    expect(gate[0]!.map((c) => c.node)).toEqual(['Enviar lista de productos']);
+    expect(gate[1]!.map((c) => c.node)).toEqual(['Responder al cliente']);
+  });
+
+  it('el aviso del tope y el del comercio suspendido siguen llegando', () => {
+    // Los dos cuelgan de `Responder al cliente` por su cuenta, así que el
+    // recableado de arriba no puede haberlos dejado sin salida.
+    expect(f.connections['Tope alcanzado']!.main[0]!.map((c) => c.node))
+      .toContain('Responder al cliente');
+    expect(f.connections['Comercio no operativo']!.main[0]!.map((c) => c.node))
+      .toContain('Responder al cliente');
+  });
+});

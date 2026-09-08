@@ -4,7 +4,82 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-08 (rentabilidad: tope por plan y las dos cachés)
+**Última actualización:** 2026-09-08 (rentabilidad: tope, cachés, precios en dólares y control de gasto)
+
+---
+
+## Las tres ramas se fusionaron, y los números quedaron corregidos (08/09, tarde)
+
+**Había tres ramas sin fusionar describiendo tres sistemas distintos**, y una
+tenía un defecto que costaba dinero desde la primera venta. Quedaron en una sola,
+con **529 pruebas** (eran 336 esta mañana), build, tipos y lint en verde.
+
+| Rama | Qué traía | Cómo quedó |
+|---|---|---|
+| análisis comercial | `Analisis/13` a `20` y la base comercial de `CLAUDE.md` | fusionada; fija los números |
+| prepago | saldo, corte, alta por consola, flujo interno de cobro | fusionada, **con los números corregidos** |
+| esta | tope, cachés, prefijo del prompt | fusionada |
+
+**Lo que estaba mal y se corrigió:**
+
+- **El tope no va escalonado por plan.** Lo tenía en 8 / 12 / 16 y está al
+  revés: el plan barato es el que más barato tiene ser generoso, porque su
+  volumen entra casi entero en la franquicia. Y un plan caro que corta antes que
+  el barato es invendible. **Tope único de 25**, por calidad de servicio.
+- **Los planes del prepago daban pérdida.** 300 / 1.000 / 2.500 conversaciones
+  pasaron a **120 / 200 / 300**, y los precios a **USD 20 / 40 / 70**.
+- **La bolsa perdía 176 Bs cada venta.** 150 conversaciones por 50 Bs pasaron a
+  **25 por USD 10**.
+- **La consola prometía «sin importar cuántos sean».** Con el tope dejó de ser
+  cierto y ya lo dice.
+
+**Lo que se integró, que es donde estaba el trabajo:** el prepago y el tope
+cortan los dos y los dos miraban la conversación del cliente. Ahora **una sola
+lectura sirve para las dos cosas**, la cuenta y el consumo del mes entran en el
+caché de 60 s con el período en la clave, y **la ventana de 24 h tiene una sola
+definición**: tenerla dos veces era pedir que un día el prepago cortara con un
+criterio y el tope con otro.
+
+**Precios en dólares, cobro en bolivianos al TCO del BCB.** El sistema nunca
+inventa un tipo de cambio: sale de `plataforma/tipoCambio` y si falta, lanza.
+**Cada pago guarda el TCO aplicado**, sin lo cual no se puede reconstruir una
+factura. Se carga con `scripts/fijar-tipo-cambio.mjs`.
+
+### Las herramientas de control, que es lo que no existía
+
+**La consola mostraba lo que se le factura al comercio y no lo que Meta nos
+factura a nosotros.** Ahora se mide, sin una lectura ni una escritura extra:
+
+- **`salientes`**: mensajes que envió el asistente en el mes, contra los 1.000
+  gratis del número. Es la cifra que predice la factura.
+- **`distribucion`**: tramos de mensajes por conversación. El promedio esconde
+  la cola —diez conversaciones de 4 y una de 40 promedian 7, y lo que se paga es
+  la de 40—, y `Analisis/16` dice que la cola pesa más que el tope y que nadie
+  la tenía medida.
+- **`scripts/control-gasto.mjs`**: por comercio, mensajes contra la franquicia,
+  mensajes por conversación, cuánto se paga y la distribución. Avisa de los que
+  pasaron el 70 % de su franquicia.
+- **La pantalla de Consumo** muestra lo mismo al comercio, y dice el tope.
+
+### Menos mensajes por conversación: dos cambios que se declaran
+
+`CLAUDE.md` pide que todo cambio de flujo declare cuántos mensajes agrega o
+quita. Estos dos **quitan**:
+
+1. **Mostrar el catálogo pasó de dos mensajes a uno.** Salían el texto del agente
+   y la lista interactiva por separado; una lista ya lleva su propio cuerpo, así
+   que ahora el cuerpo es lo que dijo el agente. **−1 mensaje cada vez que se
+   muestra el catálogo**, y se muestra varias veces por conversación.
+2. **Se quitó «máximo 3 oraciones por mensaje» de los dos prompts**, y del Demo B
+   la instrucción opuesta «preguntá de a un dato por vez». En su lugar hay una
+   sección de economía: juntar los datos en un mensaje, ofrecer todo junto, no
+   repreguntar, cerrar y despedirse en el mismo mensaje. El ahorro no se puede
+   contar de antemano porque depende del modelo; **hay que medirlo** con la
+   distribución, que para eso está.
+
+**Lo que hay que vigilar de esto:** menos mensajes no puede volverse peor
+atención. El prompt lo dice explícitamente y hay pruebas que lo protegen, pero el
+juez es el ensayo con un teléfono real.
 
 ---
 
