@@ -1489,6 +1489,12 @@ trabajo que ya está hecho en ellas.
   viaje en los datos de ejecución y se tira cuando llegue Tech Provider. Detalle
   en `Analisis/20`.
 
+**La base comercial quedó en `CLAUDE.md`**, sección «Base comercial — el dinero
+de cada decisión técnica», para que las sesiones y los agentes la tengan sin
+leer los siete documentos: cuánto cuesta cada mensaje, el tope de 25, los
+precios en dólares con el TCO del BCB, qué tiene que mostrar la consola, el
+corte del catálogo en 40 ítems, y lo que no hay que hacer.
+
 **Dos cosas que hay que hacer antes de vender, salgan de donde salgan:**
 publicar el tope de mensajes —la frase «sin importar cuántos sean» de
 `novuchat.site/precios` deja de ser cierta— y mostrar los mensajes en la consola
