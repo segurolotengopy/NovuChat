@@ -129,6 +129,12 @@ cambió el precio del corte en la consola y el asistente lo dijo por WhatsApp.
 - **`estadoComercio` manda desde el panel**, en los tres. Esta afirmación fue
   FALSA entre el 06 y el 07 de septiembre y se corrigió el 07: ver «Suspender un
   comercio no le cortaba el asistente», más abajo.
+- **`estadoComercio` manda desde el panel cuando el panel CONTESTA**, en los
+  tres. **Corregido el 07/09 por la tarde:** se escribió acá que eso ya cortaba
+  el servicio a quien dejó de pagar, y no lo hace. Un comercio suspendido recibe
+  un 409 sin `tenantId`, que la fusión no distingue de «el panel no contestó», y
+  cae al respaldo, donde el estado dice «operativo». Ver «El estado del comercio
+  no corta nada todavía».
 - **Los rótulos del cobro simulado no se pisan con nada**, aunque el panel los
   mandara. Probado atacándolo.
 
@@ -445,9 +451,20 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Retención de conversaciones | 12 meses desde el último mensaje, con purga automática | 07/09 |
 | Integración con bancos | En una etapa posterior, cuando `~/ManejoQRSimple` esté listo. **No se escribe integración bancaria en este repositorio** | 07/09 |
 | Cobro real de NovuChat | Es el nivel «sin API del banco» y así se vende. El asistente nunca dice «pago acreditado» | 07/09 |
+| **Planes y volúmenes** | **USD 25 / 50 / 90 por 100 / 220 / 500 conversaciones**, propuesta de Silvana, analizada y adoptada en `Analisis/21`. El plan de entrada cabe exacto en la franquicia de Meta. El plan grande rinde menos en porcentaje pero **más en dólares en todo el rango realista de uso**, porque el límite del plan no genera conversaciones: las genera la clientela del comercio. **No estirar el volumen más allá de 500** sin rehacer la cuenta del §9.4 | 08/09 |
+| **Moneda de la lista de precios** | **Dólares.** Se cobra en bolivianos al **Tipo de Cambio Oficial del BCB**. Corrige el descalce de fondo: el costo se paga en USD y el ingreso se cobraba en Bs. USD 20 / 40 / 70, instalación USD 65, bolsa USD 10. Bolivia tiene **régimen flexible desde el 29/06/2026** y el BCB publica un TCO diario (12,60 al 08/09), así que la fuente es pública y verificable y **NovuChat no debe publicar un tipo de cambio propio**. Falta decidir solo **qué día**: el de pago o el del primer día hábil del mes, fijo para ese mes. Recomendado el segundo, en `Analisis/14` §5ter | 08/09 |
+| **Unidad de cobro** | **Se sigue con la conversación de 24 h.** No se pasa a cobro por respuesta ni a conversación general. **Sujeta a revisión con los parámetros del §8 de `Analisis/15-unidad-de-cobro.md`**, a los tres meses del primer cliente pagando o antes si se dispara alguno. Condiciones de la decisión: publicar el tope de mensajes y mostrar los mensajes en la consola | 08/09 |
 
 ## Decisiones pendientes
 
+- **Revisión de la unidad de cobro**, con los parámetros del §8 de
+  `Analisis/15-unidad-de-cobro.md`: distribución del largo de las
+  conversaciones (no el promedio), ventanas de 24 h por asunto, y dispersión
+  del margen entre comercios. Los tres salen de datos que el sistema ya
+  escribe; falta ponerlos en una pantalla. **A los tres meses del primer
+  cliente pagando**, o antes si se dispara alguno. Sus dos condiciones —
+  publicar el tope de mensajes y mostrar los mensajes en la consola — son
+  trabajo previo a vender, no parte de la revisión.
 - ~~**Proyecto Firebase del panel.**~~ Resuelto el 02/09: un proyecto real,
   us-east1 (ver «Decisiones tomadas»).
 - ~~**Observaciones de Andres sobre la consola.**~~ Resuelto el 08/09: la
@@ -1343,9 +1360,10 @@ fusionada sin tocar ninguna.
   sin él un panel caído dejaría al asistente sin precios.
 - **Un campo vacío en la consola no borra el de respaldo.** Un negocio a medio
   configurar se comporta como antes, no peor.
-- **`estadoComercio` sí manda desde el panel**, siempre: es lo que corta el
-  servicio a quien dejó de pagar, y no puede depender de un valor escrito dentro
-  del flujo.
+- **`estadoComercio` se toma del panel y no del respaldo**, siempre que el panel
+  conteste. La intención era que esto cortara el servicio a quien dejó de pagar.
+  **No alcanza, y se descubrió el mismo día:** ver «El estado del comercio no
+  corta nada todavía», más abajo.
 - El prompt dejó de tener el catálogo escrito a mano. Se parte por **precio**,
   no por rubro: lo que tiene precio se cotiza en el chat, lo que no, después de
   evaluar.
@@ -1364,7 +1382,9 @@ mismo respaldo. Ahí lo que más importa no es el texto: es el **estado**.
 `Preparar recordatorios` ya cortaba cuando el comercio no estaba operativo, pero
 leía un valor escrito dentro del flujo que siempre decía «operativo». O sea que
 un comercio suspendido **seguía mandando plantillas, y cada plantilla la cobra
-Meta**. Ahora suspenderlo en la consola le corta los recordatorios de verdad.
+Meta**. Se dio por corregido al conectar el panel, y **no lo está**: el 409 de
+un comercio suspendido cae al respaldo igual que un panel caído. Ver «El estado
+del comercio no corta nada todavía».
 
 **PROBADO EN VIVO el 07/09 de madrugada.** Se cambió el precio del corte de 70 a
 85 en la base, igual que lo haría la consola, y el asistente lo dijo. Pero la
@@ -1449,6 +1469,14 @@ Andrés listó seis. Auditadas contra el código, no de memoria:
 | 4 | Retención de conversaciones | **DECIDIDA el 07/09**: 12 meses. Falta el código de la purga |
 | 5 | Migrar la ingesta al rol `ingesta` | abierta, antes del segundo cliente |
 | 6 | Límite de 50 eventos en la compuerta | abierta |
+| 7 | **El estado del comercio no corta nada** | abierta, encontrada el 07/09 por la tarde |
+| 8 | El respaldo de los flujos es el del demo | abierta; es un paso del alta, no código |
+
+Las dos últimas salieron de escribir `Analisis/13-requisitos-alta-clientes.md`,
+que es el documento de qué pedirle a un cliente y qué hace NovuChat en cada
+caso, para el flujo de reservas. Ahí están también las opciones de número, de
+Meta y de calendario con su recomendación, y los ajustes de redacción que
+necesita la landing.
 
 **La #2 era el bloqueo de verdad, no la #1.** Con el alias sin desplegar el alta
 era incómoda; sin la #2 era **imposible**: `altaTenant` e `invitarUsuario` exigen
@@ -1617,6 +1645,125 @@ que sostiene el precio—; si **es del cliente**, se conecta lo que él tenga y
 NovuChat cobra menos por la instalación. Las dos son defendibles. Lo que no se
 sostiene es cobrar como si fuera parte del producto y conectarlo como si fuera
 del cliente.
+### El estado del comercio no corta nada todavía (07/09, tarde)
+
+**Encontrado al escribir los requisitos de alta de clientes, leyendo el código
+que se acababa de publicar.** Esta bitácora afirmaba en tres lugares que
+conectar el panel hacía que suspender a un comercio le cortara el servicio y los
+recordatorios. **No es así**, y los tres lugares quedaron corregidos.
+
+La cadena, verificada en el flujo de reservas y en el de recordatorios:
+
+1. Para un comercio no activo, `configuracionFlujo` responde **409** con
+   `{estado, mensajeCortesia}` — y **sin `tenantId`**.
+2. `Traer configuración` tiene `onError: continueRegularOutput`, así que el 409
+   no corta el flujo.
+3. Los dos nodos de fusión exigen `typeof r.tenantId === 'string'` para dar la
+   respuesta por buena. Un 409 no lo trae, así que **caen al respaldo**.
+4. En el respaldo, `estadoComercio` vale `"operativo"`, escrito a mano.
+5. `¿Comercio operativo?` compara contra `"operativo"` y **deja pasar**.
+
+O sea que un comercio suspendido sigue siendo atendido y sigue mandando
+plantillas, que Meta cobra: exactamente el defecto que se dio por cerrado.
+
+**La causa de fondo es de diseño, no un descuido:** la fusión confunde dos
+casos que tiene que distinguir. *El panel dijo que está suspendido* y *el panel
+no dijo nada* llegan iguales, y solo el segundo debe caer al respaldo. La
+corrección es que el nodo acepte el cuerpo del 409 —hoy lo descarta como
+error— y trate una respuesta con `estado` como suspendida.
+
+**Lección, que ya es la cuarta de la misma familia:** el control se probó por el
+camino feliz. Nadie suspendió un comercio y le escribió. Un control de corte se
+prueba cortando.
+
+**No entra antes del congelamiento.** Ningún cliente paga todavía, así que no
+hay nada que cortar, y son los tres flujos a un día de las demos. Va antes del
+primer cliente que pague, junto con la advertencia comercial: la FAQ de
+`novuchat.site` promete que la falta de pago suspende el asistente, y hasta que
+esto se cierre no conviene ponerlo por escrito en un contrato.
+
+### Rama de análisis comercial: qué trae y qué le pide a las demás (08/09)
+
+Rama `claude/novuchat-client-setup-requirements-4af84e`. **Es solo análisis: no
+toca flujos, funciones, reglas ni consola.** Se registra para que las otras ramas
+la lean antes de recomendar cambios, porque tres de sus conclusiones afectan
+trabajo que ya está hecho en ellas.
+
+| Documento | Qué resuelve |
+|---|---|
+| `Analisis/13-requisitos-alta-clientes.md` | Qué pedirle a un cliente y qué hace NovuChat para activarlo: número, Meta, calendario, ficha de alta y el procedimiento paso a paso |
+| `Analisis/14-costo-por-conversacion-y-precios.md` | Costo real por conversación con las tarifas del 1-oct, margen por plan, escala a 100 y 300 comercios, y las opciones de mejora cuantificadas |
+| `Analisis/14-modelo-costos.py` | El modelo, reproducible sin dependencias |
+| `Analisis/15-unidad-de-cobro.md` | Si conviene cambiar de unidad de cobro. Decidido: no |
+| `Analisis/16-sensibilidad-topes-y-bolsas.md` | Sensibilidad del tope de mensajes y de las bolsas. Dos correcciones a lo propuesto |
+| `Analisis/17-resumen-ejecutivo-precios.md` | **Para Silvana.** Todo lo anterior sin tecnicismos, con lo que hay que decidir y cuándo |
+| `Analisis/18-cambios-en-sitio-y-presentacion.md` | Instrucciones exactas, archivo por archivo, para corregir `novuchat.site` y la presentación |
+| `Analisis/19-catalogo-web-y-precio-por-flujo.md` | Cuántos ítems van al prompt y al catálogo web, y si conviene cobrar distinto por flujo. Las dos respuestas: el corte no es económico, y no conviene |
+| `Analisis/20-un-flujo-para-todos-los-clientes.md` | Si un mismo flujo de n8n puede atender a todos los clientes. Sí, y el bloqueo es una credencial que se elimina con un trámite de Meta |
+| `Analisis/21-propuesta-de-silvana-comparada.md` | La propuesta de precios de Silvana contra este modelo. **Adoptada**: USD 25 / 50 / 90 por 100 / 220 / 500 |
+| `Analisis/22-instrucciones-sitio-web.md` | Instrucciones definitivas para el sitio, con los números finales y la lista de lo que no hay que afirmar. **Reemplaza al 18** |
+| `Analisis/23-bolsa-a-033.md` | Bajar la bolsa a 0,333 USD por conversación. Viable: **USD 10 por 30**, y el tope de mensajes fija el precio mínimo de la bolsa |
+| `Analisis/24-agendas-por-plan.md` | Cuántas agendas por plan. 1 y 5 sin problema; **20 choca con la latencia**, no con el diseño |
+
+**Lo que esta rama le pide a cada una, y por qué:**
+
+- **A `claude/novuchat-prepago-clientes-49caf7`:** la arquitectura del prepago
+  es correcta y no hay que tocarla, pero está cargada con **Base 300 /
+  Crecimiento 1.000 / Corporativo 2.500 y bolsas de 150 a 50 Bs**, que desde el
+  1 de octubre dejan los tres planes en pérdida. La propuesta conservadora es
+  **120 / 200 / 300 conversaciones**, y **la bolsa a 25 por 110 Bs** en lugar de
+  150 por 50: la actual cobra el 22 % de lo que cuesta y **pierde 176 Bs cada vez
+  que se vende**, más que el margen entero de un plan Impulso. El arreglo es la
+  tabla de `functions/src/prepago.ts` y sus pruebas, y **conviene hacerlo antes
+  de desplegar**, para no migrar cuentas ya creadas. El detalle y la
+  sensibilidad, en `Analisis/16-sensibilidad-topes-y-bolsas.md`.
+- **Sobre el tope de mensajes:** el escalonado por plan (20 / 25 / 30) está al
+  revés. Ser generoso cuesta 0,8 % del precio en Impulso y 6,4 % en Crecimiento,
+  porque el plan chico vive dentro de la franquicia de Meta. Pero un plan caro
+  con tope más chico es invendible, así que **la recomendación es un tope único
+  de 25 para los tres**, fijado por calidad de servicio y no por plan.
+- **A `disenio/catalogo-web`:** el catálogo web deja de ser una mejora de
+  producto y pasa a ser **la mayor reducción de costo del sistema**: lleva un
+  pedido de unos 13 mensajes a 4 o 5, un 68 % menos. Vale como argumento para
+  priorizar los dos nodos de n8n y la plantilla que le faltan. Y le toca
+  renumerarse de `11-` a `12-`.
+  **Y una corrección a su diseño** (`Analisis/19`): el umbral que propone —
+  catálogo chico al prompt, grande solo al checkout— es correcto, pero **no lo
+  fija el costo**. Con la caché puesta, 500 ítems en el prompt cuestan menos que
+  medio mensaje del asistente. Lo que fija el umbral es la legibilidad del chat
+  y la confiabilidad del modelo: hasta 40 ítems la lista completa, por encima un
+  resumen con categorías y rango de precios.
+- **A `fix/suspender-corta-de-verdad`:** confirmar que la corrección cubre los
+  **dos** caminos del 409, porque el prepago agrega el suyo (`sin_pago`,
+  `sin_conversaciones`) sobre el mismo mecanismo.
+- **A quien toque un flujo:** desde octubre cada mensaje del asistente cuesta
+  0,1356 Bs. **Todo cambio de flujo debería declarar cuántos mensajes agrega o
+  quita**, igual que hoy declara qué prueba lo cubre.
+- **A quien piense la arquitectura de n8n:** el flujo **ya está parametrizado**
+  —los nodos eligen número y comercio por expresión, y la configuración llega
+  del panel—. Lo que obliga a un flujo por cliente es **una credencial**: la del
+  disparador, porque cada app de Meta tiene un solo webhook. **No construir el
+  nivel intermedio** de un flujo con varios disparadores: obliga a que el token
+  viaje en los datos de ejecución y se tira cuando llegue Tech Provider. Detalle
+  en `Analisis/20`.
+
+**La base comercial quedó en `CLAUDE.md`**, sección «Base comercial — el dinero
+de cada decisión técnica», para que las sesiones y los agentes la tengan sin
+leer los siete documentos: cuánto cuesta cada mensaje, el tope de 25, los
+precios en dólares con el TCO del BCB, qué tiene que mostrar la consola, el
+corte del catálogo en 40 ítems, y lo que no hay que hacer.
+
+**Y una regla de implementación quedó en `CLAUDE.md` §7 de la base comercial:**
+todo límite comercial —agendas por plan, conversaciones incluidas, tope de
+mensajes, ítems del catálogo— **se hace cumplir en el servidor, no en la
+pantalla**. Un límite que solo existe en la consola no existe: la petición se
+arma igual desde el navegador. Con la tabla de dónde va cada uno y cuáles
+todavía no están.
+
+**Dos cosas que hay que hacer antes de vender, salgan de donde salgan:**
+publicar el tope de mensajes —la frase «sin importar cuántos sean» de
+`novuchat.site/precios` deja de ser cierta— y mostrar los mensajes en la consola
+junto a las conversaciones.
 
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
@@ -1687,6 +1834,8 @@ del cliente.
    tres flujos y cambiaron reglas y consola.
 4. **09 y 10/09 — Demos.**
 5. **Después de las demos, en este orden:**
+   - Brecha 7: que el 409 de un comercio suspendido corte de verdad. Es de una
+     hora y hoy la suspensión no hace nada.
    - Cobro real de punta a punta: que el flujo lea `cobroReal`, los tres nodos
      del OCR, y el control para encenderlo.
    - Brecha 6: la compuerta de reserva con dos consultas dirigidas en vez de
