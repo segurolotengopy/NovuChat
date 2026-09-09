@@ -156,11 +156,11 @@ export function Funcionarios() {
       <form onSubmit={guardar}>
         <h3>Agregar</h3>
         <label>Nombre
-          <input required maxLength={120} value={nuevo.nombre}
+          <input required maxLength={120} placeholder="Rosa Mamani" value={nuevo.nombre}
                  onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} />
         </label>
         <label>Especialidad
-          <input maxLength={80} value={nuevo.especialidad}
+          <input maxLength={80} placeholder="Colorimetría" value={nuevo.especialidad}
                  onChange={(e) => setNuevo({ ...nuevo, especialidad: e.target.value })} />
         </label>
         {/* El campo, su error y su ayuda son UNA pieza. El formulario se
@@ -168,7 +168,8 @@ export function Funcionarios() {
             debajo de «Servicios que atiende». */}
         <div className="grupo">
           <label>ID del calendario de Google (opcional)
-            <input maxLength={140} value={nuevo.calendarioId}
+            <input maxLength={140} placeholder="algo@group.calendar.google.com"
+                   value={nuevo.calendarioId}
                    aria-invalid={errorCalendario !== null}
                    onChange={(e) => setNuevo({ ...nuevo, calendarioId: e.target.value.trim() })} />
           </label>

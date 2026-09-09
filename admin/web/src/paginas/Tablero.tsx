@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  collection, doc, getCountFromServer, getDoc, onSnapshot, orderBy, query,
+  Timestamp, collection, doc, getCountFromServer, getDoc, limit, onSnapshot,
+  orderBy, query, where,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useSesion } from '../lib/contexto';
@@ -9,6 +10,7 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
 import { SinSalida } from '../componentes/SinSalida';
 import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../lib/flujos';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
+import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.
@@ -99,16 +101,21 @@ function TableroNovuChat() {
           </div>
         </Tarjeta>
 
-        <Tarjeta
-          titulo="Lo que NovuChat no ve"
-          pie={<span className="text-muted">Es una garantía del producto, no una falta de la pantalla.</span>}
-        >
-          <p>
-            Desde esta cuenta administras la cartera, pero <strong>no</strong> se leen
-            las conversaciones de los clientes de cada negocio ni su configuración.
-            Lo impiden las reglas de la base de datos, no el menú.
-          </p>
-        </Tarjeta>
+        {/* ACÁ HABÍA UNA TARJETA, «Lo que NovuChat no ve», que prometía que desde
+            esta cuenta no se leen las conversaciones de los clientes. Se quitó
+            el 2026-09-08 y el motivo importa más que el texto.
+
+            Era cierta PARA ESTA CUENTA —las reglas de la base la limitan— y
+            falsa como promesa, porque la promesa que el cliente entiende es
+            «NovuChat no lee mis conversaciones», sin la letra chica. Y lo
+            primero que pide un comercio cuando algo no le anda es «entren con
+            mi usuario y fíjense»: en ese momento vemos todo, con su permiso, y
+            la pantalla queda desmentida por nuestro propio soporte.
+
+            Una garantía escrita en un cartel que la operación normal contradice
+            es peor que no escribir nada: enseña a no creerle a los carteles.
+            Lo que sí se sostiene está en el producto y no en un texto: el
+            acceso de soporte lo otorga el comercio y queda en la bitácora. */}
       </div>
 
       <h3>Negocios</h3>
@@ -143,6 +150,110 @@ function TableroNovuChat() {
 }
 
 // -----------------------------------------------------------------------------
+// ACTIVIDAD POR PERÍODO
+// -----------------------------------------------------------------------------
+
+/**
+ * DE DÓNDE SALEN LOS NÚMEROS, y por qué no de `metricas`.
+ *
+ * Los contadores de `metricas/{aaaa-mm}` son MENSUALES: sirven para facturar y
+ * no para responder «¿cómo viene hoy?». La bitácora sí tiene una marca de
+ * tiempo por evento, está indexada por `ts` y ya vive bajo el comercio, así
+ * que un rango de fechas es una consulta y no una migración.
+ *
+ * EL TOPE DE 1.500 EVENTOS NO ES UN ADORNO. Sin él, un comercio con mucho
+ * movimiento se descarga miles de documentos en el celular cada vez que abre
+ * el inicio. Con tope, el mes de un comercio muy activo puede quedar
+ * incompleto — y entonces la pantalla lo DICE, en vez de mostrar un gráfico
+ * que parece completo y no lo es.
+ */
+const TOPE_EVENTOS = 1500;
+
+export type Periodo = 'hoy' | 'semana' | 'mes';
+
+const DIAS_DE: Record<Periodo, number> = { hoy: 1, semana: 7, mes: 30 };
+
+/** Medianoche boliviana de hace `dias-1` días. UTC−4 fijo, como todo el proyecto. */
+function desdeHace(dias: number): Date {
+  const ahora = new Date();
+  const boliviano = new Date(ahora.getTime() - 4 * 3_600_000);
+  boliviano.setUTCHours(0, 0, 0, 0);
+  return new Date(boliviano.getTime() - (dias - 1) * 86_400_000 + 4 * 3_600_000);
+}
+
+/** `aaaa-mm-dd` del día boliviano al que pertenece una fecha. */
+function diaBoliviano(f: Date): string {
+  return new Date(f.getTime() - 4 * 3_600_000).toISOString().slice(0, 10);
+}
+
+interface Actividad {
+  dias: DiaDeGrafico[];
+  entrantes: number;
+  salientes: number;
+  personas: number;
+  errores: number;
+  incompleto: boolean;
+}
+
+function useActividad(tenantId: string, periodo: Periodo, activo: boolean): Actividad | null {
+  const [datos, setDatos] = useState<Actividad | null>(null);
+  useEffect(() => {
+    if (!tenantId || !activo) { setDatos(null); return; }
+    const desde = desdeHace(DIAS_DE[periodo]);
+    return onSnapshot(
+      query(collection(db, 'tenants', tenantId, 'bitacora'),
+        where('ts', '>=', Timestamp.fromDate(desde)),
+        orderBy('ts', 'asc'), limit(TOPE_EVENTOS)),
+      (s) => {
+        const porDia = new Map<string, { entrantes: number; salientes: number }>();
+        // Los días sin actividad TIENEN que aparecer, con cero. Un gráfico que
+        // omite los días vacíos comprime el tiempo y hace parecer constante
+        // algo que tuvo un fin de semana muerto en el medio.
+        for (let i = 0; i < DIAS_DE[periodo]; i += 1) {
+          porDia.set(diaBoliviano(new Date(desde.getTime() + i * 86_400_000)),
+            { entrantes: 0, salientes: 0 });
+        }
+        const telefonos = new Set<string>();
+        let entrantes = 0; let salientes = 0; let errores = 0;
+        for (const d of s.docs) {
+          const tipo = String(d.get('tipo') ?? '');
+          const ts = d.get('ts') as { toDate?: () => Date } | undefined;
+          const dia = typeof ts?.toDate === 'function' ? diaBoliviano(ts.toDate()) : '';
+          const casilla = porDia.get(dia);
+          if (tipo === 'mensaje_entrante') {
+            entrantes += 1; if (casilla) casilla.entrantes += 1;
+            const t = d.get('telefono'); if (typeof t === 'string' && t !== '') telefonos.add(t);
+          } else if (tipo === 'mensaje_saliente') {
+            salientes += 1; if (casilla) casilla.salientes += 1;
+          } else if (tipo === 'error_flujo' || d.get('resultado') === 'fallo') {
+            errores += 1;
+          }
+        }
+        setDatos({
+          dias: [...porDia.entries()].map(([dia, v]) => ({ dia, ...v })),
+          entrantes, salientes, personas: telefonos.size, errores,
+          incompleto: s.size >= TOPE_EVENTOS,
+        });
+      },
+      () => setDatos(null));
+  }, [tenantId, periodo, activo]);
+  return datos;
+}
+
+function SelectorDePeriodo({ valor, onCambio }:
+{ valor: Periodo; onCambio: (p: Periodo) => void }) {
+  const opciones: [Periodo, string][] = [['hoy', 'Hoy'], ['semana', '7 días'], ['mes', '30 días']];
+  return (
+    <div className="periodos seg" role="group" aria-label="Período">
+      {opciones.map(([v, t]) => (
+        <button key={v} type="button" className="seg-opt"
+                aria-pressed={valor === v} onClick={() => onCambio(v)}>{t}</button>
+      ))}
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
 // Comercio
 // -----------------------------------------------------------------------------
 interface ResumenNegocio {
@@ -155,6 +266,10 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
   const nombreItems = etiquetaCatalogo(flujos).toLowerCase();
   const [datos, setDatos] = useState<ResumenNegocio | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [periodo, setPeriodo] = useState<Periodo>('semana');
+  // La bitácora la leen el administrador y NovuChat, no el operador: para él
+  // esta parte no se pide y no se dibuja, en vez de pedirla y mostrar un error.
+  const actividad = useActividad(tenantId, periodo, esAdmin);
 
   useEffect(() => {
     let vivo = true;
@@ -192,6 +307,46 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
   const cerrado = datos.horarioHoy === '' || datos.horarioHoy === 'cerrado';
 
   return (
+    <>
+    {esAdmin && (
+      <>
+        <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />
+        <div className="cuadricula">
+          <Tarjeta titulo="Mensajes del asistente">
+            {/* LA CIFRA QUE PREDICE LA FACTURA. Desde el 01/10/2026 Meta cobra
+                cada mensaje que ENVÍA el asistente, con 1.000 gratis por número
+                y por mes. Es el número que el comercio necesita mirar y el que
+                hasta hoy la consola no mostraba. */}
+            <div className="datos">
+              <Dato valor={actividad?.salientes ?? 0} rotulo="enviados" />
+              <Dato valor={actividad?.entrantes ?? 0} rotulo="recibidos" />
+              <Dato valor={actividad?.personas ?? 0} rotulo="personas" />
+            </div>
+          </Tarjeta>
+          <Tarjeta titulo="Fallas">
+            <p className={`situacion ${(actividad?.errores ?? 0) === 0 ? 'ok' : 'alerta'}`}>
+              {(actividad?.errores ?? 0) === 0 ? 'Sin fallas' : `${actividad?.errores} con falla`}
+            </p>
+            <p className="text-muted">
+              Mensajes que el asistente no pudo responder o entregar en el período.
+            </p>
+          </Tarjeta>
+        </div>
+
+        <div className="tarjeta">
+          <GraficoDias titulo="Mensajes por día"
+                       datos={actividad?.dias ?? ([] as DiaDeGrafico[])} />
+          {actividad?.incompleto === true && (
+            <p className="ayuda aviso-datos">
+              El período tiene más movimiento del que esta pantalla trae de una
+              vez, así que el gráfico muestra solo el principio. Los totales
+              para facturar salen de «Consumo», que no tiene este tope.
+            </p>
+          )}
+        </div>
+      </>
+    )}
+
     <div className="cuadricula">
       <Tarjeta
         titulo="Hoy"
@@ -243,6 +398,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
         </Tarjeta>
       )}
     </div>
+    </>
   );
 }
 

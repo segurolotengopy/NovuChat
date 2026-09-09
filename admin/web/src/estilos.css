@@ -172,6 +172,51 @@
 :where(input[type="file"]) { padding: 10px 14px; border-radius: var(--radius-md); }
 :where(input[type="color"]) { width: 56px; padding: 4px; }
 
+/* ── El ancho del campo dice qué se espera adentro ──────────────────────
+   Todos los campos medían lo mismo: una caja de 34rem para «Recargo de flota»,
+   donde va un 10, se lee como si faltara algo. El ancho es la primera pista de
+   qué se espera, y darla mal es peor que no darla.
+
+   Va por selector de ELEMENTO, con el tipo del control, y no con una clase por
+   campo: `type="number"` y `inputMode="numeric"` ya declaran que lo que entra
+   es un número, así que la pista sale sola en cada campo nuevo. */
+:where(input[type="number"], input[inputmode="numeric"]) {
+  max-width: 11rem;
+  /* Alineado a la derecha: es como se leen y se comparan los números en
+     cualquier planilla, y hace que las unidades y los decimales queden en la
+     misma columna cuando hay varios campos uno debajo del otro. */
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+:where(input[type="date"], input[type="time"]) { max-width: 11rem; }
+:where(input[type="tel"]) { max-width: 16rem; }
+/* Un desplegable no necesita más ancho que su opción más larga. «Bs (BOB)» en
+   una caja de 34rem era el caso más visible. */
+:where(select) { max-width: 18rem; }
+:where(select[multiple]) { max-width: 26rem; }
+
+/* El ejemplo en gris. Es una PISTA, no una etiqueta: desaparece al escribir,
+   así que nunca puede llevar información que haga falta después. Lo que el
+   campo significa vive en su rótulo; acá va cómo se ve una respuesta buena. */
+:where(input, textarea)::placeholder {
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  opacity: 1;   /* Firefox lo baja a .54 por su cuenta y queda ilegible. */
+}
+
+/* ── Campo de dinero ────────────────────────────────────────────────────
+   La moneda va DENTRO del campo, a la izquierda, y el número pegado a la
+   derecha. Fuera del campo —como rótulo o como texto al lado— se lee como una
+   palabra más de la frase; adentro se lee como parte del número, que es lo que
+   es. Y evita la duda de si el 7 son bolivianos o dólares en un panel donde
+   conviven los dos. */
+.con-moneda { display: inline-flex; align-items: center; position: relative; }
+.con-moneda .moneda {
+  position: absolute; left: 14px;
+  font-size: 14px; pointer-events: none;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+.con-moneda input { padding-left: 44px; }
+
 /* La etiqueta envuelve al control: `<label>Texto <input/></label>`. El texto
    toma el tamaño chico del sistema y el control recupera el suyo, porque si no
    heredaría los 13px de la etiqueta. */
@@ -461,3 +506,59 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 .fila-editando :where(input, select) { min-width: 6rem; max-width: none; min-height: 38px; padding: 6px 12px; }
 
 @keyframes latido { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }
+
+/* ── Gráficos ───────────────────────────────────────────────────────────
+   LAS DOS SERIES NO SE ELIGIERON A OJO. Son un par categórico validado contra
+   la superficie de la tarjeta: banda de luminosidad, piso de croma, separación
+   para daltonismo y contraste. Los tonos de oscuro NO son los de claro
+   «aclarados» —así es como se rompen las paletas en oscuro— sino los dos
+   escalones que pasan las mismas comprobaciones contra el fondo oscuro.
+
+   El verde queda para el asistente: es el color de la acción en esta marca, y
+   además es la serie que cuesta plata (cada mensaje que envía el asistente se
+   cobra desde el 01/10/2026). El azul, para lo que escribe el cliente. */
+:root {
+  --serie-entrantes: #1c7ed6;
+  --serie-salientes: #0b855c;
+}
+[data-tema="oscuro"] {
+  --serie-entrantes: #3d82ea;
+  --serie-salientes: #0ea975;
+}
+
+.grafico { margin: 0; }
+.grafico figcaption {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.grafico-titulo {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 15px; margin-right: auto;
+}
+.leyenda { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: 13px; }
+.llave { display: inline-flex; align-items: center; gap: 6px; }
+/* La marca de color va AL LADO del texto, nunca pintando el texto: el rótulo
+   lleva tinta de texto y el color lo carga el cuadradito. */
+.marca { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.marca-entrantes { background: var(--serie-entrantes); }
+.marca-salientes { background: var(--serie-salientes); }
+
+.grafico-lienzo { position: relative; }
+.grafico svg { width: 100%; height: auto; display: block; overflow: visible; }
+.barra { transition: opacity .12s; }
+.barra-entrantes { fill: var(--serie-entrantes); }
+.barra-salientes { fill: var(--serie-salientes); }
+/* Al pasar por encima se apaga el resto, no se enciende la barra: subir el
+   brillo de una sola cambia el color que la leyenda dice que es. */
+.grafico-lienzo:has(.barra-encima) .barra:not(.barra-encima) { opacity: .45; }
+/* La grilla acompaña y no compite: si se ve más que los datos, sobra. */
+.grafico-guia { stroke: var(--color-divider); stroke-width: 1; }
+.grafico-eje {
+  font-size: 10px; font-family: var(--font-body);
+  fill: color-mix(in srgb, var(--color-text) 65%, transparent);
+}
+.grafico-detalle { margin: var(--space-1) 0 0; font-size: 13px; }
+
+/* El selector de período va en UNA fila encima de los gráficos, no en un menú:
+   es el control que más se toca en esta pantalla. */
+.periodos { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }

@@ -12,6 +12,35 @@ import { useFlujos } from '../lib/flujos';
  * La validación del navegador es cortesía para el usuario; la que manda es la
  * del servidor. Nunca al revés.
  */
+/**
+ * EL EJEMPLO EN GRIS DE CADA CAMPO.
+ *
+ * Es una PISTA, no una etiqueta: desaparece al escribir, así que nunca puede
+ * llevar información que haga falta después. Lo que el campo significa vive en
+ * su rótulo; acá va cómo se ve una respuesta buena, que es lo que resuelve la
+ * duda de «¿y esto qué pongo?» sin obligar a leer un párrafo.
+ *
+ * Están escritos con datos bolivianos a propósito —una zona de La Paz, un
+ * número que empieza con 591—: un ejemplo genérico no le dice a nadie con qué
+ * formato espera el campo su respuesta.
+ *
+ * EL TELÉFONO LLEVA CEROS Y NO DÍGITOS «REALISTAS» a propósito: `verificar-saneo.sh`
+ * marca cualquier secuencia de diez o más dígitos, y con razón —es la red que
+ * atrapa un número de verdad copiado sin querer—. Los ejemplos con ceros están
+ * en su lista de permitidos y se leen igual de claro. */
+const EJEMPLOS: Record<string, string> = {
+  nombreNegocio: 'Salón Aurora',
+  descripcion: 'Peluquería y estética. Cortes, color y tratamientos.',
+  direccion: 'Calacoto, Av. Ballivián 1035, entre calles 17 y 18',
+  numeroRecepcion: '59170000000',
+  calendarioId: 'algo@group.calendar.google.com',
+  politicaCancelacion: 'Se puede cancelar hasta 2 horas antes sin costo.',
+  mensajeCierre: '¡Gracias por escribirnos! Que tenga buen día.',
+  mensajeErrorTemporal: 'Disculpe, tuvimos un problema. ¿Puede intentar en unos minutos?',
+  mensajeReservaNoConfirmada: 'No pude confirmar la reserva. Le escribe recepción en un momento.',
+  mensajeComercioSuspendido: 'Por ahora no estamos atendiendo por este medio.',
+};
+
 const TOPES: Record<string, number> = {
   nombreNegocio: 80, descripcion: 400, direccion: 200, numeroRecepcion: 15,
   calendarioId: 120, politicaCancelacion: 600, instruccionesExtra: 1500,
@@ -101,10 +130,13 @@ export function Configuracion() {
     ? <textarea
         value={datos[clave] ?? ''}
         maxLength={TOPES[clave] ?? 200}
+        placeholder={EJEMPLOS[clave]}
         onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />
     : <input
         value={datos[clave] ?? ''}
         maxLength={TOPES[clave] ?? 200}
+        placeholder={EJEMPLOS[clave]}
+        inputMode={clave === 'numeroRecepcion' ? 'numeric' : undefined}
         onChange={(e) => setDatos({ ...datos, [clave]: e.target.value })} />,
     ayuda);
 

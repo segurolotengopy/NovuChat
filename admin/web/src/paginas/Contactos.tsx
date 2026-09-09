@@ -109,7 +109,7 @@ export function Contactos() {
       <form onSubmit={guardar}>
         <h3>Agregar</h3>
         <label>Nombre
-          <input required maxLength={120} value={nuevo.nombre}
+          <input required maxLength={120} value={nuevo.nombre} placeholder="María Quispe"
                  onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} />
         </label>
         <label>Rol en el negocio
@@ -119,11 +119,12 @@ export function Contactos() {
           </select>
         </label>
         <label>Teléfono (sin +, solo dígitos)
-          <input required maxLength={15} pattern="[0-9]{8,15}" value={nuevo.telefono}
+          <input required maxLength={15} pattern="[0-9]{8,15}" inputMode="numeric"
+                 placeholder="59170000000" value={nuevo.telefono}
                  onChange={(e) => setNuevo({ ...nuevo, telefono: e.target.value })} />
         </label>
         <label>Correo (opcional)
-          <input type="email" maxLength={254} value={nuevo.correo}
+          <input type="email" maxLength={254} placeholder="maria@ejemplo.com" value={nuevo.correo}
                  onChange={(e) => setNuevo({ ...nuevo, correo: e.target.value })} />
         </label>
         {/* La casilla y su advertencia son UNA pieza: el formulario se acomoda
@@ -135,11 +136,15 @@ export function Contactos() {
                    onChange={(e) => setNuevo({ ...nuevo, esContactoComercial: e.target.checked })} />
             <span>Es el contacto comercial</span>
           </label>
+          {/* Antes esto terminaba diciendo que era «el único contacto que vemos
+              sin que usted nos habilite un acceso de soporte». Se quitó esa
+              mitad: es una promesa sobre lo que NovuChat ve, y el soporte la
+              contradice el día que el comercio nos pide entrar con su usuario.
+              Lo que el comercio necesita saber —para qué sirve marcarla— queda. */}
           <p className="ayuda">
-            Marcando esta casilla, <strong>NovuChat podrá ver el nombre, el teléfono
-            y el correo de esta persona</strong> para asuntos de facturación. Es el
-            único contacto que vemos sin que usted nos habilite un acceso de
-            soporte. Los demás quedan solo para su negocio.
+            Es la persona con la que NovuChat se comunica por <strong>facturación
+            y avisos del servicio</strong>. Marque a quien corresponda; si no
+            marca a nadie, escribimos al administrador de la cuenta.
           </p>
         </div>
         <button type="submit">Guardar contacto</button>
