@@ -8,6 +8,38 @@
 
 ---
 
+## Pendiente grande: «Pedidos y cobro» son TRES pantallas (09/09)
+
+Andres, mirando la consola: la sección está mal armada. Hoy se llama «Pedidos y
+cobro» y en realidad **configura el QR**: no lista un solo pedido ni un solo
+cobro. Especificación completa en `admin/DISENO.md` §4nonies.
+
+- **Pedidos** — la ve el admin **y el operador**, que puede ser el cocinero o el
+  repartidor. Listado con fecha y hora, todos los ítems, el detalle tal como lo
+  pidió el cliente («sin cebolla», «L»), la modalidad de entrega, el monto y el
+  comprobante. Es la única pantalla de la consola que se mira con las manos
+  ocupadas.
+- **Cobros** — solo admin. Tablero corto de pagos, montos y verificaciones por
+  día, semana, mes o entre fechas; listado de cobros por QR; modal con ítems,
+  detalle y comprobante; y un botón para marcar el pago como comprobado contra
+  el banco. Ese botón lo aprieta una PERSONA, nunca el sistema: es la
+  PROHIBICIÓN 3, y el registro guarda quién y cuándo.
+- **Configuración de QR** — lo que hoy existe, con su nombre real.
+
+**NO SE PUEDE EMPEZAR POR LA PANTALLA.** Faltan dos datos que las dos necesitan:
+
+1. **El comprobante no se guarda.** Del mensaje quedan `tipo`, `texto` y el id
+   de Meta, pero no el `media id`: no hay de dónde traer la imagen. Es el mismo
+   hueco por el que hoy «Conversaciones» solo marca el adjunto.
+2. **Un pedido por WhatsApp no se guarda como pedido.** La colección `pedidos`
+   está completa —ítems, total, entrega, dirección, nota— pero solo la escribe
+   el carrito web. Conversando se registra un `cierre`, que no lleva ítems.
+
+Primero esos dos, después las pantallas. Al revés se construye contra datos que
+no llegan y se descubre cuando lo ve un cliente.
+
+---
+
 ## 2026-09-08 (cierre) — todo consolidado en `main`
 
 Se ejecutaron las recomendaciones de la consolidación, una por una.

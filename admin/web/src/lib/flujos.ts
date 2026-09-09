@@ -51,6 +51,14 @@ export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
     nombre: 'Pedidos y cobro',
     // «Inventario» es de VENTA y de nadie más: un salón no descuenta cortes
     // de pelo de un depósito. Es la política de capas de DISENO.md §4sexies.
+    //
+    // PENDIENTE (09/09): «Pedidos y cobro» se parte en TRES —Pedidos, Cobros y
+    // Configuración de QR— y «Pedidos» va a ser la primera pestaña de flujo que
+    // también vea el OPERADOR, lo que obliga a tocar la compuerta de roles de
+    // la cabecera, que hoy da por sentado que pestaña de flujo = administrador.
+    // La especificación está en `admin/DISENO.md` §4nonies, y antes hay que
+    // guardar dos datos que todavía no existen: el `media id` del comprobante y
+    // el pedido tomado por WhatsApp. No se empieza por la pantalla.
     pestanas: [
       { ruta: 'cobro', etiqueta: 'Pedidos y cobro' },
       { ruta: 'inventario', etiqueta: 'Inventario' },
