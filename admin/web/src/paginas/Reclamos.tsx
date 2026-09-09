@@ -107,11 +107,14 @@ export function Reclamos() {
           </select>
         </label>
         <label>Asunto
-          <input required maxLength={120} value={asunto}
+          <input required maxLength={120} placeholder="El asistente dio un precio equivocado"
+                 value={asunto}
                  onChange={(e) => setAsunto(e.target.value)} />
         </label>
         <label>Qué pasó
-          <textarea required maxLength={4000} value={texto}
+          <textarea required maxLength={4000}
+                    placeholder="Qué pasó, cuándo, y qué esperaba que pasara."
+                    value={texto}
                     onChange={(e) => setTexto(e.target.value)} />
         </label>
         <p className="ayuda aviso-datos">

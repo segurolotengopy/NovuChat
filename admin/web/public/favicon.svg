@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="NovuChat">
+  <!--
+    Isotipo de NovuChat, el mismo archivo que sirve novuchat.site. Burbuja de
+    conversación en pizarra con anillo interior hueco y los tres puntos en
+    verde menta.
+
+    El hueco entre el aro y el disco se deja TRANSPARENTE a propósito: así el
+    fondo de la pestaña se ve a través y el logotipo sirve igual en tema claro
+    y en oscuro. No se usan variables CSS aquí porque un SVG cargado como
+    favicon no ve las hojas de estilo del documento.
+  -->
+  <g fill="none" fill-rule="evenodd">
+    <!-- Cola de la burbuja -->
+    <path fill="#2f3a44" d="M97 79 112.5 112.5 83 93z" />
+    <!-- Aro exterior -->
+    <circle cx="60" cy="56" r="47.5" stroke="#2f3a44" stroke-width="9" />
+    <!-- Disco interior -->
+    <circle cx="60" cy="56" r="36" fill="#2f3a44" />
+    <!-- Los tres puntos -->
+    <g fill="#35e2a0">
+      <circle cx="43.5" cy="56" r="6.6" />
+      <circle cx="60" cy="56" r="6.6" />
+      <circle cx="76.5" cy="56" r="6.6" />
+    </g>
+  </g>
+</svg>

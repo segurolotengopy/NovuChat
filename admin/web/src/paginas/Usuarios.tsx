@@ -63,7 +63,7 @@ export function Usuarios() {
       <form onSubmit={invitar}>
         <h3>Invitar</h3>
         <label>Correo
-          <input type="email" required value={correo} maxLength={254}
+          <input type="email" required placeholder="persona@ejemplo.com" value={correo} maxLength={254}
                  onChange={(e) => setCorreo(e.target.value)} />
         </label>
         <label>Rol
