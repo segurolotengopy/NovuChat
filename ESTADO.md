@@ -1500,6 +1500,13 @@ leer los siete documentos: cuánto cuesta cada mensaje, el tope de 25, los
 precios en dólares con el TCO del BCB, qué tiene que mostrar la consola, el
 corte del catálogo en 40 ítems, y lo que no hay que hacer.
 
+**Y una regla de implementación quedó en `CLAUDE.md` §7 de la base comercial:**
+todo límite comercial —agendas por plan, conversaciones incluidas, tope de
+mensajes, ítems del catálogo— **se hace cumplir en el servidor, no en la
+pantalla**. Un límite que solo existe en la consola no existe: la petición se
+arma igual desde el navegador. Con la tabla de dónde va cada uno y cuáles
+todavía no están.
+
 **Dos cosas que hay que hacer antes de vender, salgan de donde salgan:**
 publicar el tope de mensajes —la frase «sin importar cuántos sean» de
 `novuchat.site/precios` deja de ser cierta— y mostrar los mensajes en la consola

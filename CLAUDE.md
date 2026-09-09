@@ -197,6 +197,34 @@ America»). Antes eran gratis.
 - **No prometer la ventana de punto de entrada gratuito** —conversaciones que
   nacen de un anuncio— hasta medirla con un cliente real.
 
+### 7. Todo límite comercial se hace cumplir en el SERVIDOR
+
+**Un límite que solo existe en la pantalla no existe.** La consola arma la
+petición desde el navegador: esconder un campo, deshabilitar un botón o no
+dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
+§4sexies.2 ya aplica a la política de capas, ahora extendido a lo comercial.
+
+**Dónde va cada límite:**
+
+| Límite | Se hace cumplir en | Estado |
+|---|---|---|
+| **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope |
+| **Conversaciones incluidas** (100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta | Hecho en la rama de prepago |
+| **Tope de 25 mensajes por conversación** | El flujo de n8n, antes de llamar al modelo | No existe todavía |
+| **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
+
+**La regla al agregar cualquier límite nuevo:**
+
+1. **La regla del servidor es la que manda**, y es la que se prueba. Una prueba
+   que solo verifica que el botón está deshabilitado no prueba nada.
+2. **La pantalla acompaña**, para que el comercio no descubra el límite con un
+   error rojo: avisa antes, explica por qué, y ofrece subir de plan.
+3. **La prueba se escribe negando**: el negocio con el plan chico **no puede**
+   crear la agenda número 2, ni construyendo la petición a mano. Es el patrón
+   que `pruebas/reglas.test.ts` ya usa para el aislamiento entre comercios.
+4. **Y el límite se lee del plan, no se escribe en el código.** Los números de
+   esta sección cambian; la regla que los aplica, no.
+
 ## Flujo de trabajo
 
 - Los JSON de `Flujos/` son la fuente de verdad versionada. Tras editar en la
