@@ -154,10 +154,13 @@ function TableroNovuChat() {
 // -----------------------------------------------------------------------------
 
 /**
- * DE DÓNDE SALEN LOS NÚMEROS, y por qué no de `metricas`.
+ * DE DÓNDE SALEN LOS NÚMEROS DE ESTE HOOK, y por qué no de `metricas`.
  *
- * Los contadores de `metricas/{aaaa-mm}` son MENSUALES: sirven para facturar y
- * no para responder «¿cómo viene hoy?». La bitácora sí tiene una marca de
+ * Ojo con la división, que es la que se equivocó una vez: los contadores de
+ * `metricas/{aaaa-mm}` son MENSUALES y son LA FUENTE de lo que se factura —las
+ * conversaciones—, así que la tarjeta que muestra esa cifra los lee tal cual y
+ * no pasa por acá. Este hook responde otra pregunta, «¿cómo viene hoy?», y para
+ * eso los contadores mensuales no sirven. La bitácora sí tiene una marca de
  * tiempo por evento, está indexada por `ts` y ya vive bajo el comercio, así
  * que un rango de fechas es una consulta y no una migración.
  *
@@ -191,8 +194,6 @@ interface Actividad {
   entrantes: number;
   salientes: number;
   personas: number;
-  /** La unidad que se factura: ventana de 24 h por teléfono. */
-  conversaciones: number;
   /** Veces que el asistente pasó el chat a una persona. NO es una falla. */
   derivaciones: number;
   incompleto: boolean;
@@ -222,8 +223,19 @@ function useActividad(tenantId: string, periodo: Periodo, activo: boolean): Acti
         // existe— el tablero mostraba «0 personas» al lado de 72 mensajes
         // recibidos, que es la clase de número que hace desconfiar de todos los
         // demás de la pantalla. Lo vio Andres el 09/09.
+        // ACÁ NO SE CUENTAN CONVERSACIONES, Y ES LA CORRECCIÓN IMPORTANTE.
+        // Se contaban como «persona × día natural», y esa NO es la unidad que
+        // se factura: la de verdad es una ventana de 24 h que arranca con el
+        // primer mensaje, su ancla vive en el documento de la conversación —no
+        // en la bitácora— y el contador lo escribe el servidor en `metricas`.
+        // Con la aproximación, el tablero decía 4 en siete días y Consumo 3 en
+        // todo el mes: imposible, porque los siete días caben dentro del mes.
+        // El comercio tenía dos números distintos para la misma palabra, y uno
+        // de ellos era el que le facturamos. Lo vio Andres el 09/09.
+        //
+        // La regla es la misma del catálogo y del CSV: de un dato que se
+        // factura hay UNA fuente. El tablero muestra la del servidor.
         const personasVistas = new Set<string>();
-        const conversacionesVistas = new Set<string>();
         let entrantes = 0; let salientes = 0; let derivaciones = 0;
         for (const d of s.docs) {
           const tipo = String(d.get('tipo') ?? '');
@@ -233,10 +245,6 @@ function useActividad(tenantId: string, periodo: Periodo, activo: boolean): Acti
           const conv = d.get('conversacionId');
           if (typeof conv === 'string' && conv !== '') {
             personasVistas.add(conv);
-            // UNA CONVERSACIÓN ES LA VENTANA DE 24 H, la unidad que se factura.
-            // Se aproxima por persona y día: dos días distintos del mismo
-            // teléfono son dos conversaciones.
-            if (dia !== '') conversacionesVistas.add(`${conv}|${dia}`);
           }
           if (tipo === 'mensaje_entrante') {
             entrantes += 1; if (casilla) casilla.entrantes += 1;
@@ -248,8 +256,7 @@ function useActividad(tenantId: string, periodo: Periodo, activo: boolean): Acti
         }
         setDatos({
           dias: [...porDia.entries()].map(([dia, v]) => ({ dia, ...v })),
-          entrantes, salientes, personas: personasVistas.size,
-          conversaciones: conversacionesVistas.size, derivaciones,
+          entrantes, salientes, personas: personasVistas.size, derivaciones,
           incompleto: s.size >= TOPE_EVENTOS,
         });
       },
@@ -285,9 +292,24 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
   const [datos, setDatos] = useState<ResumenNegocio | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [periodo, setPeriodo] = useState<Periodo>('semana');
+  const [conversacionesDelMes, setConversacionesDelMes] = useState<number | null>(null);
   // La bitácora la leen el administrador y NovuChat, no el operador: para él
   // esta parte no se pide y no se dibuja, en vez de pedirla y mostrar un error.
   const actividad = useActividad(tenantId, periodo, esAdmin);
+
+  // EL CONTADOR DEL SERVIDOR, tal cual. `metricas/{aaaa-mm}.conversaciones` es
+  // lo que se factura y lo que muestra «Consumo»; el tablero lo LEE, no lo
+  // recalcula. `atenciones` es el nombre viejo del mismo campo y se acepta
+  // para que una ficha anterior al cambio no muestre un cero.
+  useEffect(() => {
+    if (!tenantId || !esAdmin) return;
+    const mes = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 7);
+    return onSnapshot(doc(db, 'tenants', tenantId, 'metricas', mes),
+      (d) => setConversacionesDelMes(
+        (d.get('conversaciones') as number | undefined)
+        ?? (d.get('atenciones') as number | undefined) ?? 0),
+      () => setConversacionesDelMes(null));
+  }, [tenantId, esAdmin]);
 
   useEffect(() => {
     let vivo = true;
@@ -330,31 +352,32 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
       <>
         <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />
         <div className="cuadricula">
-          {/* LA CONVERSACIÓN VA PRIMERA Y SOLA, porque es LA cifra: es la
-              unidad que se factura y la que el comercio compara contra su plan.
-              Estaba ausente del tablero, que mostraba mensajes y personas
-              —dos números que NO se facturan— y dejaba fuera el único que
-              contesta «¿cuánto llevo gastado del plan?». */}
+          {/* LA CIFRA QUE SE FACTURA SALE DEL CONTADOR DEL SERVIDOR, y por eso
+              dice «este mes» aunque arriba haya un selector de período: es el
+              mismo número exacto que muestra «Consumo», no una segunda cuenta
+              hecha acá. El rótulo lo aclara porque un número que no reacciona
+              al selector, sin explicación, se lee como que está congelado. */}
           <Tarjeta
             titulo="Conversaciones"
             pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/consumo`}>Ver el consumo</Link>}
           >
             <div className="datos">
-              <Dato valor={actividad?.conversaciones ?? 0} rotulo="en el período" />
-              <Dato valor={actividad?.personas ?? 0} rotulo="personas" />
+              <Dato valor={conversacionesDelMes ?? 0} rotulo="este mes" />
             </div>
             <p className="text-muted">
-              Una conversación son todos los mensajes con un mismo cliente en 24
-              horas. <strong>Es lo que se factura.</strong>
+              Todos los mensajes con un mismo cliente en 24 horas.{' '}
+              <strong>Es lo que se factura</strong>, y va por mes: no cambia con
+              el período de arriba.
             </p>
           </Tarjeta>
           <Tarjeta titulo="Mensajes del asistente">
             {/* La cifra que predice la factura de Meta: desde el 01/10/2026
                 cobra cada mensaje que ENVÍA el asistente, con 1.000 gratis por
-                número y por mes. */}
+                número y por mes. Esta SÍ es del período. */}
             <div className="datos">
               <Dato valor={actividad?.salientes ?? 0} rotulo="enviados" />
               <Dato valor={actividad?.entrantes ?? 0} rotulo="recibidos" />
+              <Dato valor={actividad?.personas ?? 0} rotulo="personas" />
             </div>
           </Tarjeta>
           {/* SE LLAMABA «FALLAS» Y CONTABA ERRORES, y estaba mal en las dos
