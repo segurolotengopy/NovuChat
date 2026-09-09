@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "consola",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "admin/web", "run", "servir"],
+      "port": 5230
+    }
+  ]
+}

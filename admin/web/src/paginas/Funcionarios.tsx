@@ -156,35 +156,43 @@ export function Funcionarios() {
       <form onSubmit={guardar}>
         <h3>Agregar</h3>
         <label>Nombre
-          <input required maxLength={120} value={nuevo.nombre}
+          <input required maxLength={120} placeholder="Rosa Mamani" value={nuevo.nombre}
                  onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} />
         </label>
         <label>Especialidad
-          <input maxLength={80} value={nuevo.especialidad}
+          <input maxLength={80} placeholder="Colorimetría" value={nuevo.especialidad}
                  onChange={(e) => setNuevo({ ...nuevo, especialidad: e.target.value })} />
         </label>
-        <label>ID del calendario de Google (opcional)
-          <input maxLength={140} value={nuevo.calendarioId}
-                 aria-invalid={errorCalendario !== null}
-                 onChange={(e) => setNuevo({ ...nuevo, calendarioId: e.target.value.trim() })} />
-        </label>
-        {errorCalendario && <p role="alert" className="ayuda aviso-datos">{errorCalendario}</p>}
-        <p className="ayuda">
-          Péguelo tal cual desde Google Calendar, sin recortar. Un carácter de
-          menos hace que la agenda falle <strong>en silencio</strong> y que el
-          asistente termine inventando horarios. Si lo deja vacío, esta persona
-          usa el calendario del comercio.
-        </p>
-        <label>Servicios que atiende
-          <select multiple size={5} value={nuevo.servicios}
-                  onChange={(e) => setNuevo({ ...nuevo,
-                    servicios: [...e.target.selectedOptions].map((o) => o.value) })}>
-            {servicios.map((s) => (
-              <option key={s.id} value={s.id}>{String(s.nombre ?? s.id)}</option>
-            ))}
-          </select>
-        </label>
-        <p className="ayuda">Sin selección, se entiende que atiende todo el catálogo.</p>
+        {/* El campo, su error y su ayuda son UNA pieza. El formulario se
+            acomoda en columnas, y sueltos el aviso del calendario aterrizaba
+            debajo de «Servicios que atiende». */}
+        <div className="grupo">
+          <label>ID del calendario de Google (opcional)
+            <input maxLength={140} placeholder="algo@group.calendar.google.com"
+                   value={nuevo.calendarioId}
+                   aria-invalid={errorCalendario !== null}
+                   onChange={(e) => setNuevo({ ...nuevo, calendarioId: e.target.value.trim() })} />
+          </label>
+          {errorCalendario && <p role="alert" className="ayuda aviso-datos">{errorCalendario}</p>}
+          <p className="ayuda">
+            Péguelo tal cual desde Google Calendar, sin recortar. Un carácter de
+            menos hace que la agenda falle <strong>en silencio</strong> y que el
+            asistente termine inventando horarios. Si lo deja vacío, esta persona
+            usa el calendario del comercio.
+          </p>
+        </div>
+        <div className="grupo">
+          <label>Servicios que atiende
+            <select multiple size={5} value={nuevo.servicios}
+                    onChange={(e) => setNuevo({ ...nuevo,
+                      servicios: [...e.target.selectedOptions].map((o) => o.value) })}>
+              {servicios.map((s) => (
+                <option key={s.id} value={s.id}>{String(s.nombre ?? s.id)}</option>
+              ))}
+            </select>
+          </label>
+          <p className="ayuda">Sin selección, se entiende que atiende todo el catálogo.</p>
+        </div>
         <button type="submit">Agregar funcionario</button>
       </form>
       {estado && <p role="status">{estado}</p>}

@@ -114,12 +114,17 @@ export function MiCuenta() {
             palabras juntas— es más segura y más fácil que una palabra con
             símbolos raros.
           </p>
-          <button type="submit" className="btn btn-primary" disabled={ocupado}>
-            Cambiar contraseña
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={enviarEnlace}>
-            Prefiero recibir un enlace por correo
-          </button>
+          {/* Los dos botones van juntos en una fila. Sueltos, la cuadrícula
+              del formulario los manda a dos celdas distintas y en un monitor
+              ancho quedan separados por media pantalla. */}
+          <div className="acciones">
+            <button type="submit" className="btn btn-primary" disabled={ocupado}>
+              Cambiar contraseña
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={enviarEnlace}>
+              Prefiero recibir un enlace por correo
+            </button>
+          </div>
         </form>
       )}
 

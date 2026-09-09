@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { CampoMonto } from '../componentes/CampoMonto';
 
 /**
  * Configuración ESPECÍFICA DEL VERTICAL.
@@ -21,8 +22,22 @@ import { auth, db } from '../lib/firebase';
 type Campo = {
   clave: string;
   etiqueta: string;
-  tipo: 'entero' | 'decimal' | 'booleano';
+  /** `monto` es un `decimal` que además se ve como plata: moneda adentro. */
+  tipo: 'entero' | 'decimal' | 'monto' | 'booleano';
   ayuda?: string;
+  /**
+   * Qué vale una casilla cuando el campo NO está en la base.
+   *
+   * NO es un detalle de presentación. Sin esto, un campo ausente se dibujaba
+   * SIEMPRE sin marcar, aunque el comportamiento real fuera «encendido»: la
+   * pantalla decía una cosa y el asistente hacía otra. Peor todavía, guardar el
+   * formulario escribía `false` sin que nadie lo tocara, así que corregir el
+   * costo de envío apagaba la lista de productos de paso.
+   *
+   * Lo encontró Andres el 2026-09-07 probando el interruptor de la lista: la
+   * veía apagada y la lista seguía apareciendo.
+   */
+  porDefecto?: boolean;
 };
 
 const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }> = {
@@ -36,12 +51,19 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
     nota: 'Los rótulos del cobro simulado y la imagen del QR los administra NovuChat: '
         + 'son los que garantizan que un cobro de demostración nunca se presente como real.',
     campos: [
-      { clave: 'costoDelivery', etiqueta: 'Costo de envío', tipo: 'decimal' },
-      { clave: 'recargoFlota', etiqueta: 'Recargo de flota', tipo: 'decimal' },
+      { clave: 'costoDelivery', etiqueta: 'Costo de envío', tipo: 'monto',
+        ayuda: 'Lo que se suma al pedido cuando el cliente pide envío.' },
+      { clave: 'recargoFlota', etiqueta: 'Recargo de flota', tipo: 'monto',
+        ayuda: 'Se suma al costo de envío en las zonas que lo necesitan.' },
     ],
   },
 };
 
+
+/** Lo que vale una casilla: lo guardado si es booleano, y si no, su defecto. */
+function valorCasilla(campo: Campo, valor: unknown): boolean {
+  return typeof valor === 'boolean' ? valor : (campo.porDefecto ?? false);
+}
 
 export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string; vertical: string }) {
   const definicion = CAMPOS[vertical];
@@ -71,7 +93,7 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
       };
       for (const c of definicion.campos) {
         const v = datos[c.clave];
-        cambios[c.clave] = c.tipo === 'booleano' ? v === true : Number(v ?? 0);
+        cambios[c.clave] = c.tipo === 'booleano' ? valorCasilla(c, v) : Number(v ?? 0);
       }
       await updateDoc(doc(db, 'tenants', tenantId, 'config', vertical), cambios);
       setEstado('Guardado.');
@@ -89,11 +111,18 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
           <label key={c.clave}>
             {c.etiqueta}
             {c.tipo === 'booleano' ? (
-              <input type="checkbox" checked={datos[c.clave] === true}
+              <input type="checkbox" checked={valorCasilla(c, datos[c.clave])}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.checked })} />
+            ) : c.tipo === 'monto' ? (
+              // El costo de envío y el recargo son PLATA, y se ven como plata:
+              // la moneda adentro del campo y el número a la derecha.
+              <CampoMonto value={String(datos[c.clave] ?? '')}
+                          placeholder="0.00"
+                          onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.value })} />
             ) : (
               <input type="number" min={0}
                      step={c.tipo === 'entero' ? 1 : 0.01}
+                     placeholder={c.tipo === 'entero' ? '0' : '0.00'}
                      value={String(datos[c.clave] ?? '')}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.value })} />
             )}

@@ -4,7 +4,111 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-07 (la consola manda: los tres flujos leen del panel)
+**Última actualización:** 2026-09-08 (día del congelamiento: el Demo B queda en texto y la consola toma el sistema gráfico del sitio)
+
+---
+
+## 2026-09-08 (noche) — consolidación de los worktrees
+
+Se revisaron, validaron y consolidaron las seis ramas vivas. **Nadie va a volver
+a tocar los worktrees**, así que lo primero fue rescatar lo que estaba suelto.
+
+### Lo que estaba por perderse
+
+- **446 líneas de diseño** del ayudante de configuración con IA (`DISENO.md`
+  §4septies), sin confirmar en `ai-config-helper`, sobre una rama con CERO
+  commits. Confirmadas en `8efb8d6`.
+- **850 líneas** del lector de `.xlsx` escrito a mano, con sus 321 de pruebas,
+  sin confirmar en el worktree del catálogo. Confirmadas en `a33d16b`.
+
+Las dos aparecieron mientras trabajaba otra sesión en el mismo árbol. La lección
+operativa: **en estos worktrees no se usa `git add -A`**, y antes de dar por
+cerrada una rama se mira su `git status`.
+
+### Lo que quedó consolidado y verde
+
+| Rama | Pruebas | Estado |
+|---|---|---|
+| `integracion/consolidado` | 354 | Los cuatro cambios YA DESPLEGADOS. Listo para `main` |
+| `disenio/catalogo-web` | 531 | Base consolidada adentro. Sin trabajo pendiente |
+| `integracion/prepago-sobre-flujos-vivos` | 495 de 530 | **Bloqueada**: ver abajo |
+| `claude/optimistic-fermi-a6a02d` | 529 | Intacta, como referencia |
+
+### El nudo, y es uno solo
+
+`optimistic-fermi` se abrió ANTES de que el Demo B se quedara solo con texto.
+Sus `Flujos/*.json` traen la lista tocable y no traen la regla de un mensaje
+completo. **Fusionarlos deshace las dos decisiones.**
+
+La fusión se resolvió con los flujos VIVOS, y eso deja **35 pruebas en rojo,
+todas en `pruebas/tope-y-cache-flujos.test.ts`**, porque comprueban tres cosas
+que viven solo en la versión vieja del flujo: el tope de 25 respuestas por
+ventana, el prefijo del prompt cacheable, y que mostrar el catálogo cueste un
+mensaje y no dos.
+
+**No se fusionan: hay que volver a aplicarlas nodo por nodo sobre el flujo vivo,
+publicar y probar contra un teléfono.** Media jornada, después de los demos.
+
+### Dos defectos encontrados al validar
+
+1. **La base comercial de `CLAUDE.md` cambió después de que se ramificó el
+   prepago.** Los planes pasaron de 20/40/70 por 120/200/300 a **25/50/90 por
+   100/220/500**, y la bolsa de 25 a **30 conversaciones por USD 10**. El código
+   de planes de `optimistic-fermi` implementa los números VIEJOS. Hay que
+   reconciliar antes de cobrarle a nadie. Los cuatro commits que faltan están en
+   `claude/novuchat-client-setup-requirements-4af84e`.
+2. **`admin/pruebas/` no se comprueba con `tsc`.** `npm run verificar` compila
+   `web` y `functions` y corre las pruebas, pero no las TIPA: hay un error de
+   tipos en `reglas.test.ts` que ninguna compuerta ve.
+
+### Ramas que se pueden borrar
+
+`novuchat-prepago-clientes`, `fix/suspender-corta-de-verdad`,
+`ingreso/comercio-por-defecto`, `notas/google-para-comercios` y
+`worktree-agent-a3b4d8f049ef765ec`: cero commits propios fuera de lo ya
+integrado.
+
+---
+
+## 2026-09-08 — el día del congelamiento
+
+Dos cosas, y las dos son de RESTAR.
+
+**El Demo B se quedó sin listas tocables.** Andres: «Quita la opción de
+despliegue de listados, está siendo una locura, solamente texto». Fueron once
+cambios al mismo flujo en un día y los últimos cinco fueron arreglar lo que
+habían roto los cuatro anteriores. El flujo pasó de 26 nodos a 22: **quedó más
+chico que antes de que empezáramos con la función**. Se conservan las
+cantidades, el pedido de varios productos y la modalidad de entrega al cerrar.
+Si alguien toca una lista vieja que le quedó en el chat, se lee como texto y no
+se rompe nada.
+
+La lección, que ya es la cuarta vez: *una regla del prompt no es una garantía*.
+Lo que se sostiene es un nodo o el texto del turno.
+
+**La consola pasó al sistema gráfico de `novuchat.site`.** Andres, mirando las
+dos pantallas lado a lado: «la consola aún se ve diferente del sitio web».
+Se veía distinta porque era distinta — traía la paleta «Modernist» con fondo
+gris, acento rojo y los tres radios en `0px`.
+
+- **Los tokens no se estimaron de una captura**: se leyeron de los estilos ya
+  calculados del sitio, en los dos temas. Es lo único que evita que dentro de un
+  mes los dos productos se hayan separado solos.
+- **El arreglo grande no era la paleta, era el marcado desnudo.** Las páginas
+  escriben `<input>`, `<label>`, `<button>` y `<table>` a secas: la consola se
+  veía a dos estilos, el 80 % con los controles por defecto del navegador y el
+  20 % con el diseño. Se resolvió por selector de ELEMENTO dentro de `:where()`
+  —especificidad cero, así que donde hay clase gana la clase—, y no yendo a
+  poner una clase a mano en diecinueve páginas: una clase se olvida.
+- Tres defectos que solo aparecieron al probarlo: el menú no bajaba de línea en
+  un celular (`flex: 1` fija la base en 0 y le gana al `width: 100%`), la tabla
+  del catálogo arrastraba la página entera de costado, y la situación del
+  tablero se estiraba como una banda en vez de leerse como una pastilla.
+- El isotipo de la cabecera y del ingreso es ahora el mismo dibujo del sitio.
+
+PR [#44](https://github.com/segurolotengopy/NovuChat/pull/44) y
+[#45](https://github.com/segurolotengopy/NovuChat/pull/45). Hosting desplegado;
+**no se tocaron reglas, funciones ni flujos** en el segundo.
 
 ---
 
@@ -326,7 +430,8 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 | Calendarios de un negocio | Todos de UNA cuenta de Google; se verifica en el alta | 06/09 |
 | Cliente OAuth de n8n | Propio, separado del de Firebase | 06/09 |
 | Campos de la consola sin lector en el flujo | Se quitan de la interfaz y se anotan como deuda; no se muestran «pendientes» | 06/09 |
-| Rediseño de la consola con el diseño de `novuchat.site` | Se hace DESPUÉS de las observaciones de Andres | 05/09 |
+| Rediseño de la consola con el diseño de `novuchat.site` | **Hecho el 08/09.** Los tokens no se estiman de una captura: se leen de los estilos calculados del sitio, en los dos temas | 08/09 |
+| Marcado desnudo de la consola | El sistema se aplica por selector de ELEMENTO dentro de `:where()`, no yendo a poner una clase en cada página. Especificidad cero: donde hay clase, gana la clase | 08/09 |
 | Política de capas | Flujos / consola / usuarios; lo común una vez, lo propio por flujo con su pestaña; un negocio tiene varios flujos (`flujos: [...]`) | 06/09 |
 | Un número por flujo | Se mantiene. El enrutador para compartir número queda pendiente, sin fecha | 06/09 |
 | Cobro real | El QR es del comercio y el dinero va a su cuenta. El OCR del comprobante **coteja**, no acredita: el asistente nunca dice «pago acreditado» | 06/09 |
@@ -345,11 +450,12 @@ remoto y sin push**. El verificador de saneo da 0 hallazgos.
 
 - ~~**Proyecto Firebase del panel.**~~ Resuelto el 02/09: un proyecto real,
   us-east1 (ver «Decisiones tomadas»).
-- **Observaciones de Andres sobre la consola**, antes de rehacerla con los
-  tokens de `novuchat.site` (fondo `#f7f3ec`, superficie `#fff`, texto
-  `#1c211f`, acento `#2f3a44`, acento 2 `#12c489`, Archivo 800 en títulos,
-  radios 8/16/28). Hoy la consola lleva el sistema «Modernist» importado de
-  Claude Design, que es provisional.
+- ~~**Observaciones de Andres sobre la consola.**~~ Resuelto el 08/09: la
+  consola pasó al sistema gráfico de `novuchat.site` (fondo `#f7f3ec`,
+  superficie `#fff`, texto `#1c211f`, acento de interfaz `#2f3a44`, acento de
+  acción `#35e2a0`, Archivo 800 en títulos, radios 8/16/28 y píldora 999).
+  Salió el sistema «Modernist» importado de Claude Design, que era provisional
+  y venía con fondo gris, acento rojo y los tres radios en `0px`.
 - **Retención del secreto OAuth viejo.** Se creó un client secret nuevo el 06/09
   y hay que borrar el anterior en la consola de Google una vez confirmado que
   nada lo usa.
