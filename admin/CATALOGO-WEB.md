@@ -264,15 +264,88 @@ La pestaña de catálogo tiene «Importar o exportar en lote». Acepta CSV, TSV 
 que se copie de una planilla; entiende el punto y coma que exporta Excel en
 español y la marca de bytes que le pone adelante.
 
-| Columna | Obligatoria | Notas |
-|---|---|---|
-| `nombre` | **sí** | de acá sale el identificador del ítem |
-| `descripcion`, `area` | no | `area` agrupa el catálogo en la página |
-| `precio` | no | **vacío = a consultar**, que NO es cero. Cero significa gratis. Ojo: lo que quede sin precio **no se publica en el catálogo web** (§8) |
-| `moneda` | no | `BOB` (por defecto) o `USD` |
-| `duracionMin` | solo con agenda | se redondea a cuartos de hora y se avisa |
-| `imagenUrl` | no | tiene que ser `https://` |
-| `activo` | no | `si`/`no`; por defecto activo |
+### El formato
+
+La **primera fila son los encabezados**. El orden de las columnas no importa;
+el nombre sí.
+
+| Columna | Obligatoria | Qué va | Ejemplo |
+|---|---|---|---|
+| `nombre` | **sí** | de acá sale el identificador del ítem | `Hamburguesa doble` |
+| `descripcion` | no | una línea, hasta 300 caracteres | `Doble carne, queso cheddar y papas` |
+| `area` | no | agrupa el catálogo en la página | `gastronomia` |
+| `precio` | no | **vacío = a consultar**, que NO es cero. Lo que quede sin precio **no se publica** (§7bis) | `35` · `1.234,50` · `Bs 45` |
+| `duracionMin` | solo con agenda | se redondea a cuartos de hora y se avisa | `30` |
+| `imagenUrl` | no | **tiene que ser `https://`** | `https://misitio.com/burger.jpg` |
+| `activo` | no | `si`/`no`; por defecto activo | `si` |
+| `cantidad` | no | unidades que hay. **Vacío = no lleva stock** y se puede vender siempre; **cero = agotado** | `24` |
+
+Ejemplo mínimo, que es lo que hay que copiar si se arma la planilla de cero:
+
+| nombre | precio | area | imagenUrl |
+|---|---|---|---|
+| Hamburguesa doble | 35 | gastronomia | https://misitio.com/doble.jpg |
+| Salchipapa | 20 | gastronomia | |
+| Chaqueta negra | 180 | retail | https://misitio.com/chaqueta.jpg |
+
+**Vacío y cero no son lo mismo en `cantidad`.** Vacío significa que ese ítem no
+lleva control de existencias —un servicio, algo que se hace al momento, o un
+negocio que no quiere llevar la cuenta— y el asistente lo ofrece siempre. Cero
+significa agotado y el asistente deja de ofrecerlo. Confundirlos deja al comercio
+con el catálogo entero agotado, o con el asistente vendiendo lo que no hay.
+
+La cantidad **no se escribe desde el navegador**: `firestore.rules` se lo
+prohíbe, porque si la consola pudiera fijar el saldo, ese número y su historial
+de movimientos discreparían. La importación llama a `ajustarStock`, que mueve el
+número y anota el movimiento en la misma transacción — y solo cuando la cantidad
+del archivo difiere de la que ya hay, para no ensuciar el historial con
+movimientos de cero.
+
+**No hay columna de moneda.** La moneda es un parámetro del NEGOCIO —vive en
+`/config/negocio`— y no una propiedad de cada producto: una panadería no vende el
+pan en bolivianos y la torta en dólares. Si el archivo trae esa columna, se
+ignora **y se avisa**, porque alguien que puso «USD» en veinte filas tiene que
+enterarse de que no sirvió, no descubrirlo por el precio que le dice el asistente
+a un cliente.
+
+### Qué archivos acepta
+
+**El `.xlsx` de Excel directamente**, sin convertirlo a nada, además de CSV, TSV
+y lo que se copie de una planilla. Se mira el **contenido** y no la extensión: un
+`.xlsx` renombrado a `.csv` se detecta igual, que pasa más de lo que uno cree
+cuando alguien usa «guardar como».
+
+Del Excel se lee **la primera hoja**, con sus cadenas compartidas, el texto en
+línea y **el valor calculado de las fórmulas** —una columna de precios con
+`=B2*1,1` entra como el número—. No se leen otras hojas, ni las celdas
+combinadas, ni el formato viejo `.xls`, que no es un `.xlsx` con otro nombre sino
+otro formato entero.
+
+**Las celdas vacías del medio se respetan.** Excel no las escribe en el archivo,
+así que un lector ingenuo corre las columnas a la izquierda y mete la foto en la
+columna del área: el catálogo entra entero y mal, sin ningún error. Hay una
+prueba dedicada a ese caso.
+
+### Las fotos pegadas dentro del Excel SÍ se importan
+
+Cada foto va **al producto de la fila donde está pegada**. Un `.xlsx` es un ZIP:
+la imagen no vive en la celda sino flotando sobre la hoja, y `xl/drawings/` dice
+desde qué fila arranca. Esa fila es la que la ata a su producto.
+
+Se usa el **borde superior** del ancla y no el centro de la imagen: una foto alta
+se derrama sobre la fila de abajo, y tomar el centro la asignaría al producto
+siguiente — el peor modo de fallo, porque el catálogo entra completo con las
+fotos corridas un lugar y nadie las revisa una por una.
+
+**Pasan por el mismo camino que una foto subida a mano**: se encogen a 900 px, se
+convierten a WebP —o JPEG si el navegador no sabe— y se cortan en 150 KB, y se
+guardan en `fotosCatalogo/{itemId}`. No es un atajo: guardar los bytes crudos del
+Excel dejaría ítems con fotos de varios megas que la carga manual jamás habría
+aceptado.
+
+**Lo que no se importa, y se dice:** una foto anclada al encabezado o a una fila
+vacía no pertenece a ningún producto. Cuenta igual en el aviso —«trae 3 fotos
+pegadas, 2 quedaron atadas a un producto»— para que el número no mienta.
 
 Se entienden los sinónimos que la gente usa de verdad: `producto`, `servicio`,
 `categoría`, `costo`, `foto`, `disponible`.
@@ -365,6 +438,38 @@ Se aplica en los tres lugares, y no solo en la vitrina:
 deberían publicarse —sin stock, a medida, y lo que necesita instalación— y de las
 tres el sistema solo sabe reconocer esta. Para las otras, por ahora, se da de
 baja el ítem.
+
+## 7quater. Las imágenes incrustadas en Excel: se pueden leer, y por qué no se guardan
+
+**La respuesta corta: leerlas sí; alojarlas es otra cosa.**
+
+Un `.xlsx` es un ZIP. Las imágenes pegadas viven en `xl/media/` y su posición
+—a qué fila corresponde cada una— está en `xl/drawings/`. Extraerlas es trabajo
+mecánico y el lector ya las cuenta.
+
+**El problema no es sacarlas: es dónde ponerlas.** El diseño referencia las fotos
+por URL y no las guarda, y esa decisión ahorró montar un depósito de archivos con
+su subida, sus reglas y su CORS. Se hizo UNA excepción, para el logo, porque es
+**un** archivo por comercio de unas decenas de kilobytes. Las fotos de los
+productos son otra escala:
+
+| | Logo | Fotos de productos |
+|---|---|---|
+| Cuántas | 1 por comercio | hasta 500 |
+| Dónde entran | un documento de `/config/marca` | 500 × 30 KB = **15 MB** por comercio |
+| Cómo llegan a la página | incrustadas en la misma respuesta | harían esa respuesta ilegible |
+
+Guardarlas incrustadas en los ítems reventaría la respuesta del catálogo; en
+documentos aparte, son 500 documentos y 500 lecturas más. **La forma correcta de
+soportarlo es Firebase Storage**, y eso vuelve a NovuChat custodio de archivos de
+terceros: reglas, CORS, cuota, purga cuando un comercio se va, y las preguntas de
+propiedad y derechos de esas imágenes.
+
+**Recomendación:** no importarlas por ahora. La importación avisa cuántas venían
+y le dice al comercio que la columna `imagenUrl` es el camino. Si más adelante se
+decide alojarlas, es una tarea con nombre propio —no un detalle de la
+importación— y conviene decidirla junto con el segundo sitio de Hosting de T-37,
+porque las dos tocan lo mismo.
 
 ## 7. Las fotos son del comercio, no nuestras
 

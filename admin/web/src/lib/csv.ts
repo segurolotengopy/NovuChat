@@ -33,10 +33,26 @@ export interface FilaCatalogo {
   area: string;
   /** Vacío = «a consultar». NO es cero: cero significa gratis. */
   precio: number | null;
+  /**
+   * NO viene del archivo: sale de la moneda del NEGOCIO. Se conserva en el ítem
+   * para que el catálogo público y el checkout no tengan que leer la
+   * configuración por cada producto.
+   */
   moneda: 'BOB' | 'USD';
   duracionMin: number;
   imagenUrl: string;
   activo: boolean;
+  /**
+   * Cuántas unidades hay. `null` significa **que no aplica**: el ítem no lleva
+   * control de existencias y se puede vender siempre.
+   *
+   * No es lo mismo que cero. Cero es «se me acabó» y el asistente deja de
+   * ofrecerlo; `null` es un servicio, o un producto que se hace al momento, o
+   * simplemente un negocio que no quiere llevar la cuenta. Confundir los dos
+   * deja al comercio con el catálogo entero agotado o con el asistente vendiendo
+   * lo que no hay, según hacia qué lado se equivoque el valor por defecto.
+   */
+  cantidad: number | null;
 }
 
 export interface FilaConProblemas {
@@ -48,10 +64,18 @@ export interface FilaConProblemas {
   advertencias: string[];
 }
 
-/** Las columnas que se entienden. El orden no importa; el nombre sí. */
+/**
+ * Las columnas que se entienden. El orden no importa; el nombre sí.
+ *
+ * `moneda` NO ESTÁ, y es deliberado. La moneda es un parámetro del NEGOCIO
+ * —vive en `/config/negocio`— y no una propiedad de cada producto: una
+ * panadería no vende el pan en bolivianos y la torta en dólares. Pedirla por
+ * fila es pedir un dato que ya se tiene, y cada dato que se pide de más es una
+ * columna que alguien llena mal. Si el archivo la trae, se ignora y se avisa.
+ */
 export const COLUMNAS = [
-  'nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionmin',
-  'imagenurl', 'activo',
+  'nombre', 'descripcion', 'area', 'precio', 'duracionmin',
+  'imagenurl', 'activo', 'cantidad',
 ] as const;
 
 /**
@@ -70,6 +94,8 @@ const SINONIMOS: Record<string, string> = {
   duracion: 'duracionmin', 'duración': 'duracionmin', minutos: 'duracionmin',
   imagen: 'imagenurl', foto: 'imagenurl', url_imagen: 'imagenurl',
   'imagen_url': 'imagenurl', 'url': 'imagenurl',
+  stock: 'cantidad', existencias: 'cantidad', unidades: 'cantidad',
+  inventario: 'cantidad',
   disponible: 'activo', publicado: 'activo',
 };
 
@@ -183,10 +209,24 @@ const FALSOS = new Set(['no', 'false', '0', 'inactivo', 'baja', 'falso']);
  * Esa vista previa no es cortesía. Una importación que escribe primero y avisa
  * después obliga a deshacer a mano doscientas filas, y no hay ningún «deshacer».
  */
-export function validarCsv(texto: string, conAgenda: boolean): {
-  filas: FilaConProblemas[]; error: string | null; columnas: string[];
-} {
-  const bruto = partirCsv(texto);
+export function validarCsv(
+  texto: string, conAgenda: boolean, moneda: 'BOB' | 'USD' = 'BOB',
+): { filas: FilaConProblemas[]; error: string | null; columnas: string[] } {
+  return validarFilas(partirCsv(texto), conAgenda, moneda);
+}
+
+/**
+ * La validación, sobre filas ya partidas.
+ *
+ * Se separó del CSV cuando apareció la importación de Excel: las dos entradas
+ * producen la misma matriz de celdas y de ahí en adelante todo es idéntico. Que
+ * compartan ESTA función y no solo el formato es lo que garantiza que un `.xlsx`
+ * y su exportación a `.csv` den exactamente el mismo resultado — incluida la
+ * lectura del precio, que es donde más caro sale una diferencia.
+ */
+export function validarFilas(
+  bruto: string[][], conAgenda: boolean, moneda: 'BOB' | 'USD' = 'BOB',
+): { filas: FilaConProblemas[]; error: string | null; columnas: string[] } {
   if (bruto.length < 2) {
     return { filas: [], columnas: [], error: 'El archivo no tiene encabezado y al menos una fila.' };
   }
@@ -237,13 +277,20 @@ export function validarCsv(texto: string, conAgenda: boolean): {
         + 'Si querías «a consultar», dejá la celda vacía');
     }
 
-    const monedaCruda = celda(f, 'moneda').toUpperCase();
-    const moneda: 'BOB' | 'USD' = monedaCruda === 'USD' || monedaCruda === '$' ? 'USD' : 'BOB';
-
     let duracionMin = 30;
     if (conAgenda) {
-      const d = Number(celda(f, 'duracionmin').replace(/[^\d]/g, ''));
-      duracionMin = Number.isFinite(d) && d > 0 ? d : 30;
+      // SE LEE CON `leerPrecio`, NO QUITANDO LO QUE NO SEA DÍGITO.
+      //
+      // Esa era la primera versión y tenía un defecto que solo apareció con un
+      // archivo de Excel de verdad: Excel guarda los números enteros como
+      // «45.0», y quitar todo lo que no fuera dígito lo convertía en «450».
+      // Cuatrocientos cincuenta minutos son siete horas y media, es múltiplo de
+      // 15 —así que ni siquiera saltaba la advertencia de redondeo— y el
+      // servicio entraba al catálogo con esa duración sin un solo error.
+      // Es el mismo criterio que el precio, y por eso comparte la función.
+      const leido = leerPrecio(celda(f, 'duracionmin'));
+      const d = leido === null ? 0 : Math.round(leido);
+      duracionMin = d > 0 ? d : 30;
       if (duracionMin % 15 !== 0) {
         // Se redondea y se avisa. Rechazar la fila por esto haría fallar una
         // importación entera por un dato que se puede arreglar bien.
@@ -260,6 +307,26 @@ export function validarCsv(texto: string, conAgenda: boolean): {
         : 'la imagen no es una dirección https válida');
     }
 
+    // CANTIDAD. Vacío = no aplica; un número = esas unidades.
+    const cantidadCruda = celda(f, 'cantidad');
+    let cantidad: number | null = null;
+    if (cantidadCruda !== '') {
+      const leida = leerPrecio(cantidadCruda);
+      if (leida === null) {
+        problemas.push('la cantidad no es un número (dejala vacía si no llevás stock)');
+      } else if (leida < 0) {
+        problemas.push('la cantidad no puede ser negativa');
+      } else {
+        cantidad = Math.round(leida);
+        if (cantidad === 0) {
+          // No es un problema —un comercio puede querer marcar algo agotado—
+          // pero sí algo que conviene que vea antes de subirlo.
+          advertencias.push('cantidad cero: el asistente lo va a dar por AGOTADO. '
+            + 'Si no llevás stock de este ítem, dejá la celda vacía');
+        }
+      }
+    }
+
     const activoCrudo = celda(f, 'activo').toLowerCase();
     const activo = activoCrudo === '' ? true
       : VERDADEROS.has(activoCrudo) ? true
@@ -274,7 +341,7 @@ export function validarCsv(texto: string, conAgenda: boolean): {
         nombre,
         descripcion: celda(f, 'descripcion').slice(0, 300),
         area: celda(f, 'area').toLowerCase().slice(0, 40),
-        precio, moneda, duracionMin, imagenUrl, activo,
+        precio, moneda, duracionMin, imagenUrl, activo, cantidad,
       },
       problemas, advertencias,
     });
@@ -289,7 +356,13 @@ export function validarCsv(texto: string, conAgenda: boolean): {
   return { filas, error: null, columnas: encabezados.filter((c) => c !== '') };
 }
 
-/** El catálogo, de vuelta a CSV. Con comillas siempre: nunca hay que pensar. */
+/**
+ * El catálogo, de vuelta a CSV. Con comillas siempre: nunca hay que pensar.
+ *
+ * NO EXPORTA `moneda`, por la misma razón por la que no se importa: exportar una
+ * columna que la importación ignora es una invitación a llenarla y a que el
+ * comercio crea que sirve.
+ */
 export function aCsv(filas: FilaCatalogo[]): string {
   const escapar = (v: string | number | boolean) => `"${String(v).replace(/"/g, '""')}"`;
   const lineas = [COLUMNAS.map(escapar).join(',')];
@@ -297,8 +370,10 @@ export function aCsv(filas: FilaCatalogo[]): string {
     lineas.push([
       f.nombre, f.descripcion, f.area,
       f.precio === null ? '' : f.precio,
-      f.precio === null ? '' : f.moneda,
       f.duracionMin, f.imagenUrl, f.activo ? 'si' : 'no',
+      // Vacío si no lleva control: exportar un cero diría «agotado» y al
+      // reimportar el archivo el catálogo entero quedaría sin nada que vender.
+      f.cantidad === null ? '' : f.cantidad,
     ].map(escapar).join(','));
   }
   // Con BOM, para que Excel abra las tildes bien. Sin esto, «Depilación» sale

@@ -279,3 +279,7 @@ tr.alerta td { background: #c6282811; }
    es la que se ve como botón. El control nativo no se puede peinar. */
 .subir-foto { display: inline-flex; gap: var(--space-2); margin-top: var(--space-1); }
 .subir-foto label { cursor: pointer; margin: 0; }
+
+/* El resultado de una importación: el ✓ se distingue del rojo de un rechazo
+   sin depender solo del color, porque el símbolo va delante. */
+.ok-texto { color: #2e7d32; }

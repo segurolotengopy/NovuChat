@@ -369,6 +369,21 @@ describe('Validar antes de escribir', () => {
     expect(r.filas).toEqual([]);
   });
 
+  it('IGNORA una columna de moneda: la moneda es del negocio, no del ítem', () => {
+    // Una panadería no vende el pan en bolivianos y la torta en dólares. La
+    // moneda vive en /config/negocio; pedirla por fila es pedir un dato que ya
+    // se tiene, y una columna más para llenar mal.
+    const r = validarCsv('nombre,precio,moneda\nPizza,45,USD', false, 'BOB');
+    expect(r.filas[0]?.fila.moneda).toBe('BOB');
+    // Se informa que venía, para que la consola pueda avisarlo.
+    expect(r.columnas).toContain('moneda');
+  });
+
+  it('usa la moneda del negocio cuando es USD', () => {
+    expect(validarCsv('nombre,precio\nPizza,45', false, 'USD')
+      .filas[0]?.fila.moneda).toBe('USD');
+  });
+
   it('entiende los encabezados que la gente usa de verdad', () => {
     const r = validarCsv('Producto;Precio;Categoría;Foto\nPizza;45;Gastronomía;https://e.com/p.jpg', false);
     expect(r.error).toBe(null);
@@ -400,10 +415,64 @@ describe('Validar antes de escribir', () => {
     expect(r.filas[0]?.fila.precio).toBe(null);
   });
 
+  it('lee «45.0» como 45 minutos y no como 450', () => {
+    // EL DEFECTO QUE ENCONTRÓ EL SEGUNDO ARCHIVO DE EXCEL REAL. Excel guarda los
+    // enteros como «45.0», y la primera versión quitaba todo lo que no fuera
+    // dígito: 450 minutos. Siete horas y media, múltiplo de 15 —así que ni
+    // siquiera saltaba la advertencia de redondeo— y el servicio entraba con esa
+    // duración sin un solo error.
+    const r = validarCsv('nombre,duracionMin\nManicure,45.0', true);
+    expect(r.filas[0]?.fila.duracionMin).toBe(45);
+    expect(r.filas[0]?.advertencias).toEqual([]);
+  });
+
+  it('acepta la duración con coma decimal, como la escribe una persona', () => {
+    expect(validarCsv('nombre,duracionMin\nCorte,30,0', true)
+      .filas[0]?.fila.duracionMin).toBe(30);
+  });
+
   it('redondea la duración a cuartos de hora y lo avisa', () => {
     const r = validarCsv('nombre,duracionMin\nCorte,50', true);
     expect(r.filas[0]?.fila.duracionMin).toBe(45);
     expect(r.filas[0]?.advertencias.join(' ')).toMatch(/ajustada/);
+  });
+
+  it('la cantidad vacía significa «no lleva stock», no cero', () => {
+    // Es la distinción entera de la columna. Vacío = el ítem se puede vender
+    // siempre; cero = agotado y el asistente deja de ofrecerlo. Confundirlos
+    // deja el catálogo entero agotado, o vendiendo lo que no hay.
+    const r = validarCsv('nombre,cantidad\nManicure,\nHamburguesa,24\nTorta,0', false);
+    expect(r.filas[0]?.fila.cantidad).toBe(null);
+    expect(r.filas[1]?.fila.cantidad).toBe(24);
+    expect(r.filas[2]?.fila.cantidad).toBe(0);
+  });
+
+  it('avisa —sin rechazar— que un cero deja el ítem AGOTADO', () => {
+    const r = validarCsv('nombre,cantidad\nTorta,0', false);
+    expect(r.filas[0]?.problemas).toEqual([]);
+    expect(r.filas[0]?.advertencias.join(' ')).toMatch(/AGOTADO/);
+  });
+
+  it('rechaza una cantidad negativa o que no es número', () => {
+    expect(validarCsv('nombre,cantidad\nTorta,-3', false)
+      .filas[0]?.problemas.join(' ')).toMatch(/negativa/);
+    expect(validarCsv('nombre,cantidad\nTorta,varias', false)
+      .filas[0]?.problemas.join(' ')).toMatch(/no es un número/);
+  });
+
+  it('entiende «stock», «existencias» y «unidades» como cantidad', () => {
+    for (const encabezado of ['stock', 'existencias', 'unidades', 'inventario']) {
+      const r = validarCsv(`nombre,${encabezado}\nTorta,12`, false);
+      expect(r.columnas).toContain('cantidad');
+      expect(r.filas[0]?.fila.cantidad).toBe(12);
+    }
+  });
+
+  it('lee «24.0», que es como Excel guarda un entero', () => {
+    // Mismo defecto que tenía la duración: quitar lo que no fuera dígito
+    // convertía «24.0» en 240.
+    expect(validarCsv('nombre,cantidad\nTorta,24.0', false)
+      .filas[0]?.fila.cantidad).toBe(24);
   });
 
   it('informa qué columnas traía el archivo', () => {
@@ -420,13 +489,14 @@ describe('Exportar', () => {
     const csv = aCsv([{
       nombre: 'Pizza "grande"', descripcion: 'Con, coma', area: 'gastronomia',
       precio: 45.5, moneda: 'BOB', duracionMin: 30,
-      imagenUrl: 'https://e.com/p.jpg', activo: true,
+      imagenUrl: 'https://e.com/p.jpg', activo: true, cantidad: 7,
     }]);
     const vuelta = validarCsv(csv, false);
     expect(vuelta.error).toBe(null);
     expect(vuelta.filas[0]?.fila.nombre).toBe('Pizza "grande"');
     expect(vuelta.filas[0]?.fila.descripcion).toBe('Con, coma');
     expect(vuelta.filas[0]?.fila.precio).toBe(45.5);
+    expect(vuelta.filas[0]?.fila.cantidad).toBe(7);
   });
 
   it('lleva la marca de bytes para que Excel no rompa las tildes', () => {
