@@ -4,7 +4,6 @@ import {
 } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
-import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 
 /**
@@ -170,7 +169,6 @@ function DetalleCierres({ tenantId, cerrar }: { tenantId: string; cerrar: () => 
 
 export function Consumo() {
   const { tenantId = '' } = useParams();
-  const { permisos } = useSesion();
   const [periodos, setPeriodos] = useState<Periodo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [verDetalle, setVerDetalle] = useState(false);
@@ -280,13 +278,10 @@ export function Consumo() {
         </table>
       </div>
 
-      {permisos.propietario && (
-        <p className="text-muted">
-          Como cuenta de NovuChat ves el conteo y el detalle de los cierres para
-          poder explicar una factura. No ves las conversaciones ni los datos de
-          los clientes de este negocio.
-        </p>
-      )}
+      {/* Se quitó la aclaración de que desde esta cuenta «no se ven las
+          conversaciones». Ver el comentario de `Tablero.tsx`: es una promesa
+          que el soporte contradice el día que el comercio nos pide entrar con
+          su usuario, y una garantía desmentida enseña a no creer en las demás. */}
 
       {verDetalle && <DetalleCierres tenantId={tenantId} cerrar={() => setVerDetalle(false)} />}
     </section>

@@ -751,6 +751,21 @@ export const configuracionFlujo = onRequest(
       // Voz del agente: FRASES NUESTRAS, elegidas por un enumerado del comercio.
       // El valor que escribió el cliente no se interpola en ninguna parte.
       instruccionesDeVoz: instruccionesDeVoz(negocio),
+      // LAS MISMAS FRASES, PERO ROTULADAS. `instruccionesDeVoz` es un arreglo
+      // —frase del trato, frase de los emojis— y los flujos las necesitan por
+      // separado para poder pisar cada una en su propio campo. Leerlas por
+      // posición sería frágil: agregar una tercera frase mañana cambiaría el
+      // significado de las dos primeras sin que nadie lo note.
+      //
+      // Se descubrió el 2026-09-07: las fusiones de los dos flujos leían
+      // `instruccionesDeVoz.tratamiento` sobre un ARREGLO, así que siempre daba
+      // `undefined` y **el trato elegido en la consola nunca llegaba al
+      // asistente**. No se notó porque el valor de respaldo del flujo era el
+      // correcto, que es la peor forma de no notarlo.
+      voz: {
+        tratamiento: instruccionesDeVoz(negocio)[0] ?? '',
+        emojis: instruccionesDeVoz(negocio)[1] ?? '',
+      },
 
       // Todo lo que escribió el comercio, junto y rotulado.
       datosDelNegocio,

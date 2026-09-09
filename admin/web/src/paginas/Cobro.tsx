@@ -249,50 +249,63 @@ export function Cobro() {
         </ol>
       </div>
 
-      <form onSubmit={enviar} style={{ maxWidth: '38rem' }}>
-        <label className="field">Imagen del QR
-          <input className="input" type="file" ref={archivoRef}
-                 accept="image/png,image/jpeg,image/webp" required />
-        </label>
-        <p className="ayuda">
-          Mejor una captura de pantalla de la aplicación de tu banco que una foto:
-          se lee siempre. La imagen no se guarda, solo el código que contiene.
-        </p>
+      {/* SIN `maxWidth` FIJO. Tenía 38rem escritas a mano, así que en un monitor
+          el formulario quedaba en una tira angosta contra el borde izquierdo
+          por más ancho que hubiera. Ahora lo acomoda la cuadrícula. */}
+      <form onSubmit={enviar}>
+        <div className="grupo">
+          <label className="field">Imagen del QR
+            <input className="input" type="file" ref={archivoRef}
+            accept="image/png,image/jpeg,image/webp" required />
+          </label>
+          <p className="ayuda">
+            Mejor una captura de pantalla de la aplicación de tu banco que una foto:
+            se lee siempre. La imagen no se guarda, solo el código que contiene.
+          </p>
+        </div>
 
-        <label className="field">¿A nombre de quién está la cuenta?
-          <input className="input" required maxLength={120} value={nombreCuenta}
-                 placeholder="Como figura en tu banco"
-                 onChange={(e) => setNombreCuenta(e.target.value)} />
-        </label>
-        <p className="ayuda">
-          Tal como lo escribe el banco. Puede ser una persona o el nombre del
-          negocio; lo importante es que sea el mismo que va a aparecer en el
-          comprobante de tu cliente.
-        </p>
+        <div className="grupo">
+          <label className="field">¿A nombre de quién está la cuenta?
+            <input className="input" required maxLength={120} value={nombreCuenta}
+            placeholder="Como figura en tu banco"
+            onChange={(e) => setNombreCuenta(e.target.value)} />
+          </label>
+          <p className="ayuda">
+            Tal como lo escribe el banco. Puede ser una persona o el nombre del
+            negocio; lo importante es que sea el mismo que va a aparecer en el
+            comprobante de tu cliente.
+          </p>
+        </div>
 
-        <label className="field">Número de la cuenta que recibe el dinero
-          <input className="input" required maxLength={30} value={cuentaDeclarada}
-                 inputMode="numeric" placeholder="Cuenta destino, tal como figura junto al QR"
-                 onChange={(e) => setCuentaDeclarada(e.target.value)} />
-        </label>
-        <p className="ayuda">
-          Es con lo que verificamos cada pago. Cópialo con cuidado: si está mal,
-          ningún comprobante va a poder confirmarse.
-        </p>
+        <div className="grupo">
+          <label className="field">Número de la cuenta que recibe el dinero
+            <input className="input" required maxLength={30} value={cuentaDeclarada}
+            inputMode="numeric" placeholder="Cuenta destino, tal como figura junto al QR"
+            onChange={(e) => setCuentaDeclarada(e.target.value)} />
+          </label>
+          <p className="ayuda">
+            Es con lo que verificamos cada pago. Cópialo con cuidado: si está mal,
+            ningún comprobante va a poder confirmarse.
+          </p>
+        </div>
 
-        <label className="field">Banco (opcional)
-          <input className="input" maxLength={80} value={banco}
-                 onChange={(e) => setBanco(e.target.value)} />
-        </label>
+        <div className="grupo">
+          <label className="field">Banco (opcional)
+            <input className="input" maxLength={80} value={banco}
+            onChange={(e) => setBanco(e.target.value)} />
+          </label>
+        </div>
 
-        <label className="field">¿Qué día vence el QR?
-          <input className="input" type="date" required value={venceEl}
-                 onChange={(e) => setVenceEl(e.target.value)} />
-        </label>
-        <p className="ayuda">
-          Lo dice la aplicación de tu banco al generarlo. Te vamos a avisar antes
-          de que venza.
-        </p>
+        <div className="grupo">
+          <label className="field">¿Qué día vence el QR?
+            <input className="input" type="date" required value={venceEl}
+            onChange={(e) => setVenceEl(e.target.value)} />
+          </label>
+          <p className="ayuda">
+            Lo dice la aplicación de tu banco al generarlo. Te vamos a avisar antes
+            de que venza.
+          </p>
+        </div>
 
         <label className="field campo-casilla">
           <input type="checkbox" checked={confirmaReutilizable}
