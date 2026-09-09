@@ -38,6 +38,7 @@
  */
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
@@ -46,23 +47,23 @@ import { REGION } from './region.js';
 /**
  * Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n.
  *
- * SE LEE DEL ENTORNO Y NO SE DECLARA COMO SECRETO OBLIGATORIO, y la diferencia
- * decide si el resto del catálogo se puede desplegar. `defineSecret` + `secrets:
- * [...]` hace que el despliegue FALLE si el secreto no existe todavía, y arrastra
- * con él a todo lo que viaja en el mismo despliegue: el catálogo web, el mini
- * inventario, la vista previa y el importador. Cuatro cosas terminadas
- * esperando una clave que solo Andres puede poner.
+ * SE DECLARA COMO SECRETO Y SE LEE DEL ENTORNO, las dos cosas. `defineSecret`
+ * es lo que hace que Cloud Functions la inyecte desde Secret Manager; leerla de
+ * `process.env` en vez de con `.value()` es lo que hace que la ausencia
+ * degrade en lugar de romper.
  *
- * Así, si la clave no está, la comprobación de que la foto SE VE sigue
- * corriendo igual —es determinística y no usa modelo— y la de si la foto
- * CORRESPONDE queda vacía, que es la degradación correcta: se deja de opinar,
- * no se empieza a mentir.
+ * POR QUÉ IMPORTA ESA MEZCLA. Con `defineSecret` a secas, un despliegue hecho
+ * antes de crear el secreto FALLA ENTERO y se lleva puesto todo lo que viajaba
+ * con él: el 09/09 fueron el catálogo web, el mini inventario, la vista previa
+ * y el importador, cuatro cosas terminadas esperando una clave. Así, el día que
+ * alguien reconstruya el proyecto sin el secreto todavía cargado, lo único que
+ * deja de funcionar es esta comprobación.
  *
- * PARA ENCENDERLA:
- *     cd admin && npx firebase-tools functions:secrets:set GEMINI_API_KEY
- *     # y después volver a poner `secrets: [CLAVE_GEMINI]` en las dos funciones
- *     # de abajo, para que Cloud Functions la inyecte.
+ * Y SI LA CLAVE NO ESTÁ, la comprobación de que la foto SE VE corre igual —es
+ * determinística y no usa modelo— y la de si la foto CORRESPONDE queda vacía:
+ * se deja de opinar, no se empieza a mentir.
  */
+export const CLAVE_GEMINI = defineSecret('GEMINI_API_KEY');
 export const claveGemini = (): string => process.env['GEMINI_API_KEY'] ?? '';
 
 /** El mismo modelo que usa el asistente, para no sostener dos criterios. */
@@ -315,7 +316,7 @@ async function guardar(tenantId: string, itemId: string, url: string, c: Comprob
  * modelo.
  */
 export const comprobarImagenDelCatalogo = onDocumentWritten(
-  { document: 'tenants/{tenantId}/catalogo/{itemId}', region: REGION },
+  { document: 'tenants/{tenantId}/catalogo/{itemId}', region: REGION, secrets: [CLAVE_GEMINI] },
   async (evento) => {
     const antes = evento.data?.before.data() ?? {};
     const ahora = evento.data?.after.data();
@@ -343,7 +344,7 @@ export const comprobarImagenDelCatalogo = onDocumentWritten(
  * el único modo de reintentar sería borrar la dirección y volver a escribirla.
  */
 export const recomprobarImagen = onCall(
-  { region: REGION },
+  { region: REGION, secrets: [CLAVE_GEMINI] },
   async (peticion: CallableRequest) => {
     if (!peticion.auth?.uid) throw new HttpsError('unauthenticated', 'Hay que iniciar sesión.');
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
