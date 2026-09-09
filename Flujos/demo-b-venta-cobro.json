@@ -429,6 +429,15 @@
                 "operation": "true",
                 "singleValue": true
               }
+            },
+            {
+              "id": "p2",
+              "leftValue": "={{ $json.numeroDueno }}",
+              "rightValue": "={{ $json.from }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
             }
           ],
           "combinator": "and"

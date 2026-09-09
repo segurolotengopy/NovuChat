@@ -206,3 +206,31 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
  * Una prueba que describe una función retirada no protege nada: solo obliga a
  * mantener viva la función para que la prueba pase.
  */
+
+describe('demo-b-venta-cobro.json · a nadie se le avisa de su propio mensaje', () => {
+  const f = flujo('demo-b-venta-cobro.json');
+
+  /**
+   * EL AVISO AL DUEÑO REPETÍA EL MENSAJE QUE EL CLIENTE ACABABA DE RECIBIR.
+   *
+   * En un comercio real el número del dueño y el del cliente son distintos y no
+   * pasa nada. En las demostraciones son EL MISMO —Andres prueba desde su
+   * teléfono, que también figura como dueño— así que recibía la respuesta del
+   * asistente y, un segundo después, un aviso que empezaba con «Resumen enviado
+   * al cliente:» y copiaba el texto entero. Se veía como si el asistente
+   * contestara dos veces. Lo reportó el 08/09 probando el Demo B.
+   *
+   * Y ADEMÁS CUESTA: desde el 01/10/2026 Meta cobra cada mensaje que envía el
+   * asistente. Un aviso duplicado es un mensaje pagado que no le dice nada
+   * nuevo a nadie.
+   */
+  it('el aviso al dueño no sale si el dueño es quien escribió', () => {
+    const gate = nodo(f, '¿Pedido confirmado?');
+    const cs = (gate.parameters as { conditions?: { conditions?: Array<Record<string, unknown>> } })
+      .conditions?.conditions ?? [];
+    const guarda = cs.find((c) => String(c['leftValue']).includes('numeroDueno'));
+    expect(guarda, 'falta la guarda contra el autoaviso').toBeDefined();
+    expect(String(guarda!['rightValue'])).toContain('$json.from');
+    expect((guarda!['operator'] as { operation?: string }).operation).toBe('notEquals');
+  });
+});
