@@ -8,6 +8,68 @@
 
 ---
 
+## 2026-09-08 (noche) — consolidación de los worktrees
+
+Se revisaron, validaron y consolidaron las seis ramas vivas. **Nadie va a volver
+a tocar los worktrees**, así que lo primero fue rescatar lo que estaba suelto.
+
+### Lo que estaba por perderse
+
+- **446 líneas de diseño** del ayudante de configuración con IA (`DISENO.md`
+  §4septies), sin confirmar en `ai-config-helper`, sobre una rama con CERO
+  commits. Confirmadas en `8efb8d6`.
+- **850 líneas** del lector de `.xlsx` escrito a mano, con sus 321 de pruebas,
+  sin confirmar en el worktree del catálogo. Confirmadas en `a33d16b`.
+
+Las dos aparecieron mientras trabajaba otra sesión en el mismo árbol. La lección
+operativa: **en estos worktrees no se usa `git add -A`**, y antes de dar por
+cerrada una rama se mira su `git status`.
+
+### Lo que quedó consolidado y verde
+
+| Rama | Pruebas | Estado |
+|---|---|---|
+| `integracion/consolidado` | 354 | Los cuatro cambios YA DESPLEGADOS. Listo para `main` |
+| `disenio/catalogo-web` | 531 | Base consolidada adentro. Sin trabajo pendiente |
+| `integracion/prepago-sobre-flujos-vivos` | 495 de 530 | **Bloqueada**: ver abajo |
+| `claude/optimistic-fermi-a6a02d` | 529 | Intacta, como referencia |
+
+### El nudo, y es uno solo
+
+`optimistic-fermi` se abrió ANTES de que el Demo B se quedara solo con texto.
+Sus `Flujos/*.json` traen la lista tocable y no traen la regla de un mensaje
+completo. **Fusionarlos deshace las dos decisiones.**
+
+La fusión se resolvió con los flujos VIVOS, y eso deja **35 pruebas en rojo,
+todas en `pruebas/tope-y-cache-flujos.test.ts`**, porque comprueban tres cosas
+que viven solo en la versión vieja del flujo: el tope de 25 respuestas por
+ventana, el prefijo del prompt cacheable, y que mostrar el catálogo cueste un
+mensaje y no dos.
+
+**No se fusionan: hay que volver a aplicarlas nodo por nodo sobre el flujo vivo,
+publicar y probar contra un teléfono.** Media jornada, después de los demos.
+
+### Dos defectos encontrados al validar
+
+1. **La base comercial de `CLAUDE.md` cambió después de que se ramificó el
+   prepago.** Los planes pasaron de 20/40/70 por 120/200/300 a **25/50/90 por
+   100/220/500**, y la bolsa de 25 a **30 conversaciones por USD 10**. El código
+   de planes de `optimistic-fermi` implementa los números VIEJOS. Hay que
+   reconciliar antes de cobrarle a nadie. Los cuatro commits que faltan están en
+   `claude/novuchat-client-setup-requirements-4af84e`.
+2. **`admin/pruebas/` no se comprueba con `tsc`.** `npm run verificar` compila
+   `web` y `functions` y corre las pruebas, pero no las TIPA: hay un error de
+   tipos en `reglas.test.ts` que ninguna compuerta ve.
+
+### Ramas que se pueden borrar
+
+`novuchat-prepago-clientes`, `fix/suspender-corta-de-verdad`,
+`ingreso/comercio-por-defecto`, `notas/google-para-comercios` y
+`worktree-agent-a3b4d8f049ef765ec`: cero commits propios fuera de lo ya
+integrado.
+
+---
+
 ## 2026-09-08 — el día del congelamiento
 
 Dos cosas, y las dos son de RESTAR.
