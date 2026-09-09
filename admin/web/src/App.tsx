@@ -19,6 +19,7 @@ import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './paginas/Catalogo';
 import { Cobro } from './paginas/Cobro';
+import { Inventario } from './paginas/Inventario';
 import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
 import type { FlujoId } from './lib/flujos';
 
@@ -213,6 +214,8 @@ export function App() {
         <Route path="/negocio/:tenantId/agenda" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
         <Route path="/negocio/:tenantId/funcionarios" element={<DesvioAAgenda />} />
+        <Route path="/negocio/:tenantId/inventario" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Inventario /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
         <Route path="/negocio/:tenantId/consumo" element={

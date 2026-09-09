@@ -503,6 +503,135 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 /* Fila del catálogo en edición: se distingue de las demás para que se vea
    dónde está uno cuando la tabla es larga. */
 .fila-editando { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.fila-editando .input { width: 100%; min-width: 6rem; }
+
+/* -----------------------------------------------------------------------------
+   CATÁLOGO CON FOTOS E IMPORTACIÓN EN LOTE.
+
+   La miniatura tiene tamaño FIJO y `object-fit: cover`. Las fotos que sube un
+   comercio vienen de cualquier lado y con cualquier proporción: sin esto, una
+   foto vertical de 3000 px estira su fila y la tabla deja de poder recorrerse.
+   -------------------------------------------------------------------------- */
+.fila-con-foto { display: flex; gap: .6rem; align-items: flex-start; }
+.miniatura {
+  width: 44px; height: 44px; flex: none; object-fit: cover;
+  background: var(--fondo-tarjeta); border: 1px solid var(--borde);
+}
+.miniatura-rota {
+  display: grid; place-content: center;
+  font-size: .6rem; text-transform: uppercase; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  border-style: dashed;
+}
+
+/* El importador va plegado. Es una herramienta de vez en cuando —la primera
+   carga y los cambios de temporada— y desplegada empujaría fuera de la pantalla
+   la tabla, que es a lo que se entra todos los días. */
+.importador {
+  border: 1px solid var(--borde); border-radius: var(--radio);
+  padding: .75rem 1rem; margin: 1.5rem 0;
+}
+.importador > summary { cursor: pointer; font-weight: 600; }
+.importador > summary + * { margin-top: 1rem; }
+.importador input[type="file"] { padding: .3rem; }
+
+.alerta-importar {
+  border-left: 3px solid #c62828; padding-left: .75rem;
+}
+.alerta-texto { color: #c62828; }
+
+/* -----------------------------------------------------------------------------
+   MARCA DEL CATÁLOGO WEB. El selector de color va al lado de su valor en texto:
+   un `input[type=color]` solo no dice qué se eligió, y el comercio necesita
+   poder copiar el código que le pasó su diseñador.
+   -------------------------------------------------------------------------- */
+.campo-color { display: flex; gap: .5rem; align-items: center; max-width: 22rem; }
+.campo-color input[type="color"] {
+  width: 48px; height: 40px; padding: 0; border: 1px solid var(--borde); cursor: pointer;
+}
+.enlace-catalogo {
+  display: inline-block; margin-top: .5rem; font-family: ui-monospace, monospace;
+  font-size: .85rem; word-break: break-all;
+}
+
+/* Veredicto de la foto de un ítem. Dos avisos que NO son lo mismo y por eso no
+   se ven igual: «no se ve la foto» es un hecho comprobado y va en el color de
+   error; «no parece corresponder» es la opinión de un modelo y va en el de
+   advertencia. Si los dos fueran rojos, el comercio aprendería a ignorar los
+   dos. */
+.foto-mal, .foto-dudosa {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-2);
+  border-left: 3px solid currentColor;
+  font-size: 13px;
+}
+.foto-mal { color: var(--color-error); }
+.foto-dudosa { color: var(--color-aviso); }
+.foto-mal .enlace, .foto-dudosa .enlace { color: inherit; }
+
+/* -----------------------------------------------------------------------------
+   PALETA Y LOGO DEL CATÁLOGO WEB.
+
+   Las cinco opciones se muestran con sus TRES tonos, no con uno. Es lo que hace
+   que la elección sea honesta: el comercio elige la combinación que va a ver su
+   cliente —botón, botón presionado y fondo de categorías— y no un color suelto
+   del que después se deducen los otros dos a sus espaldas.
+   -------------------------------------------------------------------------- */
+.paletas { border: 1px solid var(--borde); border-radius: var(--radio); padding: .75rem 1rem; margin: 1rem 0; }
+.paletas legend { font-size: .85rem; padding: 0 .4rem; opacity: .8; }
+
+.paleta {
+  display: flex; align-items: center; gap: .75rem; margin: 0;
+  padding: .5rem; border-radius: var(--radio); cursor: pointer;
+  border: 1.5px solid transparent;
+}
+.paleta:hover { background: var(--fondo-tarjeta); }
+.paleta[aria-current="true"] { border-color: var(--color-text); background: var(--fondo-tarjeta); }
+.paleta input { width: auto; margin: 0; flex: none; }
+
+.paleta-muestra { display: flex; flex: none; border: 1px solid var(--borde); }
+.paleta-muestra span { display: block; width: 26px; height: 26px; }
+
+.paleta-texto { display: flex; flex-direction: column; line-height: 1.25; }
+.paleta-texto .text-muted { font-size: .78rem; }
+
+.campo-logo { margin: 1rem 0; }
+.campo-logo input[type="file"] { padding: .3rem; }
+
+/* El fondo a cuadros deja ver la transparencia: un logo PNG con fondo
+   transparente y uno con fondo blanco se ven distinto acá, que es justo lo que
+   el comercio necesita notar antes de publicarlo. */
+.logo-previa {
+  display: flex; align-items: center; gap: .75rem; margin: .5rem 0;
+}
+.logo-previa img {
+  width: 72px; height: 72px; object-fit: contain; padding: 4px;
+  border: 1px solid var(--borde);
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #0001 25%, transparent 25%, transparent 75%, #0001 75%),
+    linear-gradient(45deg, #0001 25%, transparent 25%, transparent 75%, #0001 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 6px 6px;
+}
+
+/* Vista previa del catálogo: ancho de teléfono, porque es donde lo abre el
+   cliente. Mostrarlo a 1.200 píxeles da una impresión que después no se cumple. */
+.vista-previa { margin-top: var(--space-8); }
+.marco-catalogo {
+  width: 100%; max-width: 390px; height: 680px;
+  border: 1px solid var(--color-borde-control);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+/* La subida de foto: el `input[type=file]` va oculto detrás de su etiqueta, que
+   es la que se ve como botón. El control nativo no se puede peinar. */
+.subir-foto { display: inline-flex; gap: var(--space-2); margin-top: var(--space-1); }
+.subir-foto label { cursor: pointer; margin: 0; }
+
+/* El resultado de una importación: el ✓ se distingue del rojo de un rechazo
+   sin depender solo del color, porque el símbolo va delante. */
+.ok-texto { color: #2e7d32; }
 .fila-editando :where(input, select) { min-width: 6rem; max-width: none; min-height: 38px; padding: 6px 12px; }
 
 @keyframes latido { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }

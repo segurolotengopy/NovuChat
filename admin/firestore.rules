@@ -339,6 +339,31 @@ service cloud.firestore {
         || calendarioValido(datos[campo]);
     }
 
+    // -------------------------------------------------------------------------
+    // URL DE IMAGEN — la única clase de dato del comercio que NO termina como
+    // texto: va a un atributo `src` del navegador de un cliente final.
+    //
+    // POR ESO SE VALIDA ACÁ Y NO SOLO EN LA PANTALLA. `javascript:` en un `src`
+    // es ejecución de código, y `http://` hace que el navegador bloquee la
+    // imagen por contenido mixto sin decir nada —que para el comercio se ve
+    // como «no se ven mis fotos» y no hay pista de por qué—. Exigir `https://`
+    // resuelve los dos de una vez.
+    //
+    // LO QUE ESTA REGLA NO PUEDE HACER, dicho para que nadie suponga de más: no
+    // comprueba que la URL exista ni que devuelva una imagen. Eso lo mira la
+    // consola al importar y, en última instancia, el ojo del comercio en la
+    // vista previa. Vacío vale: significa «este ítem no tiene foto».
+    // -------------------------------------------------------------------------
+    function urlImagenValida(datos, campo) {
+      return cadena(datos.get(campo, ''), 500)
+        && (datos.get(campo, '') == ''
+            // Sin espacios y sin comillas. No es la defensa contra la inyección
+            // —esa la da React, que escapa todo atributo— sino el filtro de las
+            // URL mal pegadas, que son el caso frecuente: una copia con un salto
+            // de línea adentro produce una imagen rota y ninguna pista.
+            || datos.get(campo, '').matches("^https://[^ '\"<>]+$"));
+    }
+
     // Sello de auditoría: quien escribe no puede mentir sobre quién es ni sobre
     // cuándo escribió. Sin esto, la pista de auditoría es decorativa.
     function selloValido(datos) {
@@ -406,10 +431,60 @@ service cloud.firestore {
                             && configAgendamientoValida())
                         || (documento == 'venta' && tieneCobro(tenantId)
                             && configVentaValida())
+                        || (documento == 'marca' && tieneCobro(tenantId)
+                            && logoValido())
                       );
         // Los crea `altaTenant` según el vertical, para que ningún documento
         // quede a medio formar ni exista uno que no corresponde.
-        allow create, delete: if false;
+        //
+        // `marca` ES LA EXCEPCIÓN, y por una razón concreta: el alta no puede
+        // crearlo porque nace cuando el comercio sube su primer logo, que puede
+        // ser meses después. Se le permite crearlo a él, con la misma
+        // validación que la actualización.
+        allow create: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                      && documento == 'marca' && tieneCobro(tenantId) && logoValido();
+        allow delete: if false;
+
+        // =====================================================================
+        // /config/marca — EL LOGO DEL COMERCIO, EN SU PROPIO DOCUMENTO
+        //
+        // POR QUÉ NO ESTÁ EN `negocio`, que sería lo natural. Porque el logo es
+        // una imagen incrustada de decenas de kilobytes, y `/config/negocio` lo
+        // lee `configuracionFlujo` en CADA consulta del flujo de n8n. Meter el
+        // logo ahí le agregaría ese peso a cada mensaje que responde el
+        // asistente, para un dato que el asistente no usa jamás. En documento
+        // aparte, quien lo lee es solo la página del catálogo.
+        //
+        // POR QUÉ INCRUSTADO Y NO EN UN DEPÓSITO DE ARCHIVOS. Montar Firebase
+        // Storage —con su bucket, sus reglas, su CORS— para UN archivo por
+        // comercio es caro en superficie y convierte a NovuChat en custodio de
+        // archivos de terceros. Un logo recortado a 320 px entra en unas
+        // decenas de kilobytes, muy por debajo del máximo de 1 MiB de un
+        // documento. Es la misma economía que llevó a referenciar las fotos de
+        // los productos por URL en vez de alojarlas: la diferencia es que un
+        // logo es uno solo, y el comercio no siempre tiene dónde publicarlo.
+        //
+        // LO QUE VALIDA LA REGLA es que sea una imagen incrustada y que no
+        // exceda el tamaño. Que la imagen sea *válida* no se puede comprobar
+        // acá; lo hace el navegador al recortarla antes de guardar, y en última
+        // instancia el ojo del comercio en la vista previa.
+        // =====================================================================
+        function logoValido() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['logo', 'actualizadoPor', 'actualizadoEn'])
+            // `data:image/…` y nada más. Sin esto, el campo aceptaría un
+            // `data:text/html` que la página pintaría en un `src`.
+            && d.get('logo', '') is string
+            // Vacío VALE: es como el comercio quita su logo. Sin esto no habría
+            // forma de sacarlo, porque el borrado del documento está cerrado.
+            && (d.get('logo', '') == ''
+                || d.get('logo', '').matches('^data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$'))
+            // 200.000 caracteres de base64 son unos 150 KB de imagen: de sobra
+            // para un logo de 320 px y lejos del tope de 1 MiB del documento.
+            // El tope existe para que nadie use este campo como depósito.
+            && d.get('logo', '').size() <= 200000
+            && selloValido(d);
+        }
 
         // =====================================================================
         // ESQUEMA DE LA CONFIGURACIÓN DEL NEGOCIO
@@ -457,6 +532,12 @@ service cloud.firestore {
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
             'instruccionesExtra',
+            // CATÁLOGO WEB PROPIO. La identidad visual del sitio público es
+            // IDENTIDAD DEL NEGOCIO —igual que el nombre y la dirección—, así
+            // que vive en el documento común y no en el de un flujo: el día que
+            // el catálogo web sirva también para reservas, no hay nada que
+            // mudar. Ver DISENO.md §4octies.
+            'catalogoWebActivo', 'paleta',
             // Sello
             'actualizadoPor', 'actualizadoEn'
           ];
@@ -523,6 +604,39 @@ service cloud.firestore {
             && textoOpc(d, 'mensajeComercioSuspendido', 300)
 
             && textoOpc(d, 'instruccionesExtra', 1500)
+
+            // CATÁLOGO WEB. Nace APAGADO y encenderlo es un acto deliberado del
+            // comercio: publicar los precios de alguien en una dirección
+            // pública no puede ser el valor por defecto de nada.
+            && d.get('catalogoWebActivo', false) is bool
+            // SOLO CON EL FLUJO DE VENTA, decidido el 08/09. Un catálogo web
+            // con carrito y checkout es una tienda; el flujo de agendamiento no
+            // vende, su catálogo es referencial y sus ítems son en buena parte
+            // «a consultar», que ni siquiera se publican. Es la misma decisión
+            // que se tomó para el catálogo nativo de Meta (§4sexies.3bis) y por
+            // las mismas razones.
+            //
+            // Se escribe como implicación —o está apagado, o el negocio vende—
+            // para que un salón pueda seguir guardando su configuración con el
+            // campo en falso, en vez de que la regla le rechace la pantalla
+            // entera por un campo que no le corresponde.
+            && (d.get('catalogoWebActivo', false) == false || tieneCobro(tenantId))
+            // PALETA: una de cinco, y NADA más.
+            //
+            // Antes esto era un `colorMarca` en `#rrggbb`. Aun con esa
+            // validación era el único dato del comercio que terminaba dentro de
+            // una propiedad de CSS de la página pública; el enumerado elimina el
+            // problema en vez de validarlo, que es el mismo criterio con el que
+            // la voz del asistente es una lista cerrada.
+            //
+            // Y hay una razón de diseño que pesa más: un comercio elige UN
+            // color y la página necesita TRES —el botón, su estado presionado y
+            // el fondo de los chips— que tienen que contrastar entre sí. Las
+            // cinco combinaciones están calculadas y medidas en
+            // `web/src/lib/paletas.ts`. Agregar una es tocar esta línea y esa
+            // tabla; si se toca una sola, se nota.
+            && d.get('paleta', 'indigo') in ['terracota', 'bosque', 'indigo', 'vino', 'oceano']
+
             && selloValido(d);
         }
 
@@ -612,20 +726,115 @@ service cloud.firestore {
       // Va en subcolección, no como lista dentro de config, para que cada ítem
       // se pueda validar de verdad: las reglas no saben recorrer listas de mapas.
       // -----------------------------------------------------------------------
+      // COMPROBACIÓN DE LA FOTO DE UN ÍTEM. La escribe el servidor y NADIE más:
+      // es un sello sobre el trabajo del comercio y lo firma quien comprueba,
+      // no el comprobado. Si viviera dentro del ítem habría que ponerlo en la
+      // lista blanca de `itemValido()`, y desde ese momento el propio comercio
+      // podría escribirse un «coincide: sí». Un sello que puede firmar el
+      // verificado no vale nada.
+      // FOTO SUBIDA POR EL COMERCIO, en su propio documento y no dentro del ítem.
+      //
+      // El ítem lo leen la consola, el sitio público Y `configuracionFlujo`, que
+      // corre en la ruta de CADA MENSAJE de WhatsApp. Con la foto adentro, un
+      // catálogo de 40 ítems mandaría varios megas en cada consulta del
+      // asistente. Acá la foto se lee solo donde se muestra.
+      //
+      // El tope de 210.000 caracteres no es decorativo: un documento de
+      // Firestore admite 1 MB, y sin límite el navegador podría escribir una
+      // foto sin encoger y dejar el documento al borde. El preproceso del
+      // navegador corta en 150 KB; este número deja aire para el base64 y para
+      // el resto de los campos, y sigue muy por debajo del límite duro.
+      match /fotosCatalogo/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow create, update: if esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && fotoValida();
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
+
+        function fotoValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['datos', 'ancho', 'alto', 'bytes', 'tipo',
+                                   'actualizadoPor', 'actualizadoEn'])
+            && d.datos is string
+            && d.datos.size() > 0 && d.datos.size() <= 210000
+            // Solo imágenes en línea. Sin esto, `datos` podría ser cualquier
+            // texto y la consola lo pondría en un `src`.
+            && d.datos.matches('^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$')
+            && d.ancho is int && d.ancho > 0 && d.ancho <= 4000
+            && d.alto is int && d.alto > 0 && d.alto <= 4000
+            && d.bytes is int && d.bytes > 0 && d.bytes <= 210000
+            && d.actualizadoPor == request.auth.uid
+            && d.actualizadoEn == request.time;
+        }
+      }
+
+      // MOVIMIENTOS DE INVENTARIO. Los escribe el servidor y NADIE más: son el
+      // historial contra el que se contrasta el saldo. Si el comercio pudiera
+      // escribirlos, el reporte diría lo que el comercio quisiera que dijera.
+      match /movimientosStock/{movimientoId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
+      match /comprobacionesImagen/{itemId} {
+        allow get, list: if esMiembro(tenantId);
+        allow write: if false;
+      }
+
       match /catalogo/{itemId} {
 
         allow get, list: if esMiembro(tenantId);
 
-        allow create, update: if esAdmin(tenantId)
-                              && tenantOperativo(tenantId)
-                              && itemValido();
+        // Crear y editar van SEPARADOS por el stock, y solo por eso.
+        //
+        // EL COMERCIO NO ESCRIBE `stock`: tiene que pasar por `ajustarStock`,
+        // que mueve el número y anota el movimiento en la MISMA transacción. Si
+        // pudiera escribirlo a mano, el reporte diría «se vendieron 8» y el
+        // saldo diría otra cosa, y desde ahí el reporte no sirve para nada. Es
+        // la misma razón por la que el veredicto de las fotos vive donde el
+        // comercio no escribe.
+        //
+        // Al CREAR: el campo no puede venir. Al EDITAR: `affectedKeys()` es lo
+        // que hay que mirar y no las claves del documento, porque en una
+        // edición `request.resource.data` es el documento RESULTANTE y trae
+        // `stock` aunque el parche no lo mencione. Preguntar por las claves
+        // daba siempre que sí y dejaba fuera cualquier edición de un ítem con
+        // existencias: no se podía ni corregirle el precio.
+        allow create: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && itemValido()
+                      && !request.resource.data.keys().hasAny(['stock']);
+        allow update: if esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && itemValido()
+                      // `resource != null` no es defensa contra nadie: es que
+                      // `resource.data` sobre un documento que no existe NO da
+                      // falso, da error de evaluación, y un error de evaluación
+                      // en medio de una condición se lee como un permiso mal
+                      // escrito cuando se está depurando. Un `update` sobre algo
+                      // inexistente falla igual, pero falla diciendo qué pasó.
+                      && resource != null
+                      && !request.resource.data.diff(resource.data)
+                            .affectedKeys().hasAny(['stock']);
         allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
 
         function itemValido() {
           let d = request.resource.data;
           return d.keys().hasOnly([
                    'nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionMin',
-                   'activo', 'actualizadoPor', 'actualizadoEn'
+                   'activo', 'actualizadoPor', 'actualizadoEn',
+                   // FOTO DEL ÍTEM, POR REFERENCIA. No se guarda ninguna imagen:
+                   // se guarda una URL a la que el comercio ya tiene alojada.
+                   // Eso ahorra montar un depósito de archivos con su subida,
+                   // sus reglas y su CORS —día y medio de trabajo— y, sobre
+                   // todo, evita que NovuChat pase a custodiar archivos de
+                   // terceros. Ver Analisis/11-catalogo-web-propio.md §2.
+                   'imagenUrl',
+                   // EXISTENCIAS. Está en la lista porque el documento
+                   // RESULTANTE la trae cuando el ítem lleva control, y sin
+                   // esto un comercio no podría ni corregir el nombre de algo
+                   // que tiene stock. Pero NO la puede tocar: ver `stockIntacto()`.
+                   'stock'
                  ])
             && textoReq(d, 'nombre', 80)
             && textoOpc(d, 'descripcion', 300)
@@ -657,8 +866,33 @@ service cloud.firestore {
             && d.get('duracionMin', 30) > 0 && d.get('duracionMin', 30) <= 1440
             && d.get('duracionMin', 30) % 15 == 0
             && d.get('activo', null) is bool
+            && urlImagenValida(d, 'imagenUrl')
             && selloValido(d);
         }
+      }
+
+      // -----------------------------------------------------------------------
+      // /pedidos/{pedidoId} — CARRITOS QUE LLEGARON DEL CATÁLOGO WEB.
+      //
+      // LOS ESCRIBE EL SERVIDOR Y NADIE MÁS. `checkoutCatalogo` recalcula cada
+      // precio leyendo /catalogo antes de guardar: el navegador del cliente
+      // final manda identificadores y cantidades, nunca importes. Que acá la
+      // escritura esté cerrada para TODOS —incluido el admin del comercio y
+      // NovuChat— es lo que hace que un pedido guardado sea evidencia de lo que
+      // el catálogo decía en ese momento, y no una cifra que alguien pudo tocar
+      // después. Corregir un pedido se hace hablando con el cliente, que es
+      // donde tiene que hacerse.
+      //
+      // QUIÉN LO LEE: los mismos que pueden leer conversaciones. Un pedido dice
+      // qué compró una persona identificable por su conversación; es
+      // exactamente el mismo dato personal y no merece una puerta más ancha.
+      // Por eso también el teléfono va ENMASCARADO: el completo ya está en la
+      // conversación, y repetirlo acá sería duplicar un dato personal sin
+      // ninguna razón.
+      // -----------------------------------------------------------------------
+      match /pedidos/{pedidoId} {
+        allow get, list: if puedeLeerConversaciones(tenantId);
+        allow create, update, delete: if false;
       }
 
       // -----------------------------------------------------------------------
@@ -1270,7 +1504,12 @@ service cloud.firestore {
                  'mensaje_entrante', 'mensaje_saliente', 'plantilla_enviada',
                  'cita_agendada', 'cita_rechazada', 'cobro_simulado',
                  'transferencia_humano', 'config_publicada', 'suspension',
-                 'reactivacion', 'error_flujo', 'entrada_descartada'
+                 'reactivacion', 'error_flujo', 'entrada_descartada',
+                 // Catálogo web: se derivó a alguien al sitio, y volvió un
+                 // carrito. Hacen falta LOS DOS para poder contestar «mandé el
+                 // enlace y no me llegó ningún pedido»: con uno solo no se
+                 // distingue «nunca se derivó» de «se derivó y nadie compró».
+                 'catalogo_enlace', 'carrito_recibido'
                ]
             && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
             && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']
@@ -1393,6 +1632,29 @@ service cloud.firestore {
       // La escribe únicamente la Function `asignarNumero`, que además garantiza
       // que un mismo phone_number_id no apunte nunca a dos comercios.
       allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // /fichasCatalogo/{ficha} — EL ENLACE DE UNA CONVERSACIÓN AL CATÁLOGO WEB.
+    //
+    // CERRADA PARA TODO EL MUNDO, y por eso está escrita: la negación final ya
+    // la cubriría, pero una colección que guarda teléfonos merece una regla que
+    // se lea, no una que se deduzca. Cuando alguien busque «quién puede leer
+    // esto», tiene que encontrar la respuesta acá y no razonando por descarte.
+    //
+    // QUÉ GUARDA: `{ tenantId, telefono, phoneNumberId, caducaEn, checkouts }`.
+    // El identificador del documento son 128 bits al azar y es lo único que
+    // viaja en la URL que recibe el cliente final: el teléfono NO va en el
+    // enlace, porque una URL termina en el historial del navegador, en el
+    // `Referer` de las imágenes alojadas por terceros y en los registros de
+    // cualquier intermediario.
+    //
+    // QUIÉN LA USA: únicamente las Cloud Functions del catálogo web, con el SDK
+    // Admin. Ni el navegador del comercio ni el del propietario tienen nada que
+    // hacer acá: el comercio ve el PEDIDO que llegó, que es lo que necesita.
+    // =========================================================================
+    match /fichasCatalogo/{ficha} {
+      allow read, write: if false;
     }
 
     // =========================================================================

@@ -1,10 +1,12 @@
 import { REGION } from './region.js';
+import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
+  resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT,
 } from './prompt.js';
 
 /**
@@ -140,7 +142,12 @@ type TipoEvento =
   | 'mensaje_entrante' | 'mensaje_saliente' | 'plantilla_enviada'
   | 'cita_agendada' | 'cita_rechazada' | 'cobro_simulado'
   | 'transferencia_humano' | 'config_publicada' | 'suspension'
-  | 'reactivacion' | 'error_flujo' | 'entrada_descartada';
+  | 'reactivacion' | 'error_flujo' | 'entrada_descartada'
+  // CATÁLOGO WEB. Dos eventos, y los dos hacen falta para poder contestar la
+  // pregunta que un comercio va a hacer tarde o temprano: «mandé el enlace y no
+  // me llegó ningún pedido, ¿se rompió?». Con solo uno de los dos no se puede
+  // distinguir «nunca se derivó a nadie» de «se derivó y nadie compró».
+  | 'catalogo_enlace' | 'carrito_recibido';
 
 interface Evento {
   tipo: TipoEvento;
@@ -692,6 +699,7 @@ export const configuracionFlujo = onRequest(
     ]);
 
     const negocio = (config.data() ?? {}) as Record<string, unknown>;
+    const catalogoWebActivo = negocio['catalogoWebActivo'] === true;
     const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
     // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
     // Un comercio a medio configurar tiene que quedar en el camino que no mueve
@@ -762,7 +770,44 @@ export const configuracionFlujo = onRequest(
       // Todo lo que escribió el comercio, junto y rotulado.
       datosDelNegocio,
 
-      catalogo: catalogo.docs.map((d) => ({ id: d.id, ...d.data() })),
+      // -------------------------------------------------------------------
+      // CATÁLOGO: ENTERO SI ES CHICO, RESUMIDO SI ES GRANDE.
+      //
+      // Es el punto 7 del diseño del catálogo web
+      // (`Analisis/11-catalogo-web-propio.md`), y el umbral vive en `prompt.ts`
+      // porque también lo usa `catalogoWeb.ts`: la consola es la única que sabe
+      // cuántos ítems hay, así que decide acá y el flujo no cuenta nada.
+      //
+      // SOLO SE RESUME SI EL COMERCIO TIENE EL CATÁLOGO WEB ENCENDIDO. Sin
+      // sitio adonde derivar, resumir sería quitarle información al asistente a
+      // cambio de nada: seguiría siendo el único lugar de donde saca los
+      // precios. Un comercio sin catálogo web se comporta exactamente como
+      // antes de este cambio, tenga los ítems que tenga.
+      ...(catalogoWebActivo && catalogo.size > UMBRAL_CATALOGO_AL_PROMPT
+        ? {
+            catalogo: [],
+            catalogoResumen: resumirCatalogo(
+              catalogo.docs.map((d) => d.data() as Record<string, unknown>)),
+            // Con esto el flujo sabe que tiene que derivar al sitio en vez de
+            // intentar recitar una lista que no recibió.
+            catalogoWeb: { activo: true, derivar: true },
+          }
+        : {
+            // `agotado` viaja para que el asistente diga «se nos acabó» en vez
+            // de «no lo tenemos». No es lo mismo para el cliente: lo primero es
+            // una venta para mañana y lo segundo es un cliente que se va. Los
+            // ítems SIN control de existencias nunca salen agotados: no saber
+            // cuántos hay no es saber que hay cero.
+            catalogo: catalogo.docs.map((d) => {
+              const datos = d.data();
+              const quedan = existencias(datos);
+              return {
+                id: d.id, ...datos,
+                ...(quedan !== null ? { agotado: quedan === 0 } : {}),
+              };
+            }),
+            ...(catalogoWebActivo ? { catalogoWeb: { activo: true, derivar: false } } : {}),
+          }),
 
       // Configuración del vertical, en su propia clave. El flujo del Demo A no
       // recibe `venta` y el del Demo B no recibe `agendamiento`: cada uno ve

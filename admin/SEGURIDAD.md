@@ -315,6 +315,34 @@ Verificado con `pnpm csp`: `api.js` carga, trae su propio segundo script, y el
 iframe de Auth se crea apuntando al `authDomain` correcto. Lo único que falla
 después es la clave de API ficticia, que es lo esperado sin un proyecto real.
 
+### El catálogo público tiene su propia política, y `img-src` se ensanchó
+
+Con el catálogo web propio aparecieron **dos páginas con necesidades opuestas** en
+el mismo sitio, y por eso hay dos bloques de cabeceras.
+
+**`/c/**` — el catálogo que ve un cliente final.** Es la política más cerrada del
+proyecto: `default-src 'none'`, `script-src 'self'` (ni Google, ni gapi, ni
+reCAPTCHA), `connect-src 'self'` (solo su propia función pública),
+`form-action 'none'` (la página no envía ningún formulario: manda un `fetch` con
+JSON). Puede ser tan estricta porque **esa página no inicia sesión con nadie**:
+no carga el SDK de Firebase, y `main.tsx` lo garantiza cargando un trozo distinto
+según la ruta. Lo único que se abre es `img-src https:`, que es el punto
+siguiente.
+
+**`img-src` pasó a admitir cualquier `https:`, en las dos páginas.** Es la única
+excepción que se AGREGÓ, y conviene decir qué cuesta:
+
+| | |
+|---|---|
+| **Qué habilita** | que las fotos del catálogo se vean. El diseño no guarda imágenes: las referencia por URL desde donde el comercio ya las tiene (`Analisis/11-catalogo-web-propio.md` §2), y eso ahorra montar un depósito de archivos con su subida, sus reglas y su CORS |
+| **Qué cuesta** | `img-src` es un canal de salida: una URL de imagen fabricada puede filtrar información en su propio texto. Para usarlo hace falta **inyectar HTML**, y esa vía está cerrada por React y por el paso «Prohibiciones de renderizado» del CI |
+| **Por qué no se acotó por ruta** | se intentó. Las cabeceras de Hosting se aplican según la ruta PEDIDA, y en una aplicación de una sola página la navegación interna no vuelve a pedir el documento: la pantalla del catálogo de la consola heredaría la política de la pantalla por la que se entró, y las fotos se verían o no según de dónde venga la persona. Un fallo intermitente e inexplicable es peor que una directiva más ancha y documentada |
+| **Por qué el comercio necesita verlas** | está por publicar esas fotos a sus clientes. Que las vea antes es la única manera de que descubra que la URL dejó de servir |
+
+`scripts/probar-csp.mjs` aplica **el bloque que corresponde a cada ruta**, no solo
+el general: probar `/c/<ficha>` con la política de la consola diría que todo está
+bien y estaría probando la página equivocada.
+
 ### Fragilidad conocida, dicha por adelantado
 
 **`frame-src` enumera los `authDomain` de los dos proyectos.** Si Andres despliega
@@ -1305,6 +1333,114 @@ no en condiciones dispersas: agregar un vertical es tocar dos líneas, no cazar
 `if` por el archivo.
 
 **Pruebas.** 9 en *"Configuración por vertical"*.
+
+---
+
+### T-35 · El carrito falsificado (la amenaza que decidió el diseño entero)
+
+**El ataque.** El cliente final arma un pedido en el sitio del catálogo, abre las
+herramientas del navegador y cambia el precio antes de confirmar. Un pedido de
+350 Bs llega diciendo 35. El comercio despacha y pierde la diferencia.
+
+**Por qué importa más que las demás de esta lista.** No es hipotética: es
+exactamente lo que pasa hoy con GloriaFood, TakeApp y cualquier carrito de
+plantilla, donde el pedido vuelve como **un mensaje de WhatsApp que el cliente
+puede editar antes de mandarlo**. Es el defecto que hizo descartar ese camino
+(`Analisis/10-catalogo-plataformas-externas.md`), y evitarlo es la razón por la
+que se escribió el catálogo propio en vez de adoptar uno gratis.
+
+**La defensa, y por qué es estructural y no una validación.** `checkoutCatalogo`
+**no lee ningún precio del cuerpo de la petición**. El navegador manda
+identificadores de ítem y cantidades; la función vuelve a leer cada ítem de
+`/tenants/{t}/catalogo` y calcula el total con esos valores. No hay nada que
+validar porque no hay nada del cliente en lo que confiar: aunque mandara
+`{"precio": 1}`, ese campo no se lee en ninguna línea del checkout.
+
+Tres consecuencias que salen gratis del mismo diseño:
+
+- **Un ítem dado de baja mientras el cliente navegaba no entra al pedido.** Se
+  descarta y se le avisa. La alternativa —cobrarlo igual— comprometería al
+  comercio a vender algo que retiró.
+- **El costo de envío también sale del servidor** (`/config/venta.costoDelivery`).
+- **Un pedido con precios en dos monedas se rechaza entero.** Sumar bolivianos
+  con dólares da un total falso, y un total falso es una promesa de precio.
+
+**Y el pedido guardado es inmutable.** `/tenants/{t}/pedidos` no admite escritura
+de NINGÚN navegador —ni el del admin del comercio, ni el de NovuChat—. Eso es lo
+que hace que un pedido sea evidencia de lo que el catálogo decía en ese momento.
+
+**Probado.** `pruebas/catalogo-web.test.ts`, sección de reglas: el admin no puede
+crear, actualizar ni borrar un pedido.
+
+---
+
+### T-36 · El enlace reenviado: el carrito de un desconocido en la conversación de otro
+
+**El ataque, que casi siempre no es un ataque.** El enlace del catálogo se manda
+por WhatsApp, y por WhatsApp se reenvía sin pensarlo. Alguien lo comparte en un
+grupo; tres personas arman pedidos; los tres llegan a la conversación de quien
+recibió el enlace original. El comercio ve pedidos a nombre de alguien que no los
+hizo, y llama a la persona equivocada.
+
+**Por qué el enlace no puede llevar el teléfono.** Sería lo más fácil —
+`/c/?tel=591…`— y sería el error. Una URL termina en el historial del navegador,
+en la cabecera `Referer` de cada imagen alojada por un tercero y en los registros
+de cualquier intermediario. El enlace lleva una **ficha**: 128 bits al azar que no
+dicen nada por sí mismos y que solo la función sabe traducir a una conversación.
+
+**Tres controles, y ninguno alcanza solo:**
+
+| Control | Qué acota |
+|---|---|
+| **La ficha caduca a las 72 horas** | un enlace reenviado tiene fecha de vencimiento. No son 24 —eso mataría el caso del cliente que vuelve al día siguiente, que es el que motivó la plantilla de «tu carrito te espera»— ni una semana |
+| **Cinco carritos por ficha, y no uno** | uno solo convertiría «me arrepentí y pedí de nuevo» en «el enlace ya no funciona», que el cliente le atribuye al comercio. Cinco cubre el uso legítimo y frena al grupo |
+| **`fichaCompartida` a partir del segundo** | el pedido viaja marcado y el asistente lo confirma antes de despachar. Es lo que convierte un dato incierto en una pregunta, en vez de en un despacho equivocado |
+
+**Lo que NO se hizo, y por qué.** Atar la ficha a la dirección IP o al navegador:
+una persona que abre el enlace con datos móviles y confirma con el wifi de su casa
+cambia de IP en el medio, y el sistema le diría que su carrito no existe. La
+protección habría fallado del lado que hace perder ventas legítimas.
+
+---
+
+### T-37 · La página pública y la consola en el mismo origen
+
+**El riesgo.** El catálogo público y la consola se sirven desde el mismo sitio de
+Hosting, o sea el mismo origen del navegador. Una ejecución de código en la página
+pública quedaría en el origen donde el SDK de Firebase guarda las sesiones de
+administrador (IndexedDB es por origen).
+
+**Por qué se aceptó hoy.** La página pública muestra exactamente los mismos datos
+del comercio que la consola ya muestra, con el mismo React que los escapa, sin
+ninguna vía de inyección de HTML (el CI lo verifica), y sin cargar el SDK de
+Firebase: el código de sesión **no existe** en el trozo que descarga un cliente
+final. El riesgo marginal frente a la consola es chico, y separar orígenes hoy
+—segundo sitio de Hosting, `.firebaserc` con destinos, cambios en el despliegue—
+es trabajo que compite con la brecha del rol `ingesta` y la purga de retención.
+
+**Lo que hay que hacer, y CUÁNDO.** Publicar `/c/**` en un **segundo sitio de
+Hosting del mismo proyecto** (`novuchat-catalogo-prod`), con el mismo `web/dist` y
+solo las reescrituras y cabeceras del catálogo. El costo es de configuración, no de
+código: `SITIO_PUBLICO` ya existe como parámetro justamente para que ese día
+cambiar el dominio del enlace no exija tocar una línea.
+
+**El disparador es comprobable, y eso es deliberado.** «Antes de tener volumen
+real» no es una condición: es una intención, y una intención sin fecha ni umbral
+se evapora. La condición es esta:
+
+> **Antes de que el PRIMER comercio que no sea de prueba encienda
+> `catalogoWebActivo`.**
+
+Se eligió ese momento y no otro porque es exactamente cuando el riesgo aparece:
+hasta ahí no hay ninguna página pública recibiendo desconocidos, y a partir de ahí
+las hay todas. Es además el único momento en que la separación todavía es barata —
+mover el dominio del enlace después obliga a que los enlaces ya repartidos sigan
+funcionando, o a romperlos.
+
+**Cómo se comprueba que no se pasó por alto:** la condición es una consulta,
+`catalogoWebActivo == true` sobre `/config/negocio` de los comercios reales. Si
+devuelve algo y el catálogo sigue en el sitio de la consola, esta amenaza está
+abierta en producción.
 
 ---
 

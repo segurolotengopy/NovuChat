@@ -49,7 +49,12 @@ export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
   },
   venta: {
     nombre: 'Pedidos y cobro',
-    pestanas: [{ ruta: 'cobro', etiqueta: 'Pedidos y cobro' }],
+    // «Inventario» es de VENTA y de nadie más: un salón no descuenta cortes
+    // de pelo de un depósito. Es la política de capas de DISENO.md §4sexies.
+    pestanas: [
+      { ruta: 'cobro', etiqueta: 'Pedidos y cobro' },
+      { ruta: 'inventario', etiqueta: 'Inventario' },
+    ],
     catalogo: 'Productos',
     documento: 'venta',
     // PENDIENTE, y solo acá: publicar este catálogo como catálogo NATIVO de

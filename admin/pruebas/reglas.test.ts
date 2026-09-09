@@ -30,7 +30,7 @@ import {
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs,
   query, orderBy, limit, where, documentId, collectionGroup,
-  serverTimestamp, Timestamp, addDoc,
+  serverTimestamp, Timestamp, addDoc, deleteField,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -1596,6 +1596,91 @@ describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
     });
     await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/venta`),
       { costoDelivery: 12, ...sello('u-admin-a') }));
+  });
+});
+
+describe('Mini inventario: el saldo y su historia no pueden discrepar', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+
+  it('el comercio NO puede escribir `stock` al crear un ítem', async () => {
+    // Si pudiera, el número existiría sin ningún movimiento que lo explique y
+    // el reporte arrancaría descuadrado desde el primer ítem.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/con-stock`), {
+      nombre: 'Torta', precio: 90, moneda: 'BOB', activo: true, stock: 12,
+      ...sello('u-admin-a'),
+    }));
+  });
+
+  it('el comercio NO puede cambiar el `stock` de un ítem que ya lo tiene', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/catalogo/con-saldo`), {
+        nombre: 'Torta', precio: 90, moneda: 'BOB', activo: true, stock: 5,
+        actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+      });
+    });
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/catalogo/con-saldo`),
+      { stock: 500, ...sello('u-admin-a') }));
+    // Tampoco por la puerta de atrás: borrarlo es dejar de controlar, y eso
+    // también pasa por la función.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/catalogo/con-saldo`),
+      { stock: deleteField(), ...sello('u-admin-a') }));
+  });
+
+  it('pero SÍ puede editar lo demás de un ítem que lleva stock', async () => {
+    // Siembra propia: `clearFirestore()` corre antes de CADA prueba, así que
+    // apoyarse en lo que sembró la prueba anterior es apoyarse en nada. Se
+    // descubrió acá: el ítem no existía, `resource.data` daba error de
+    // evaluación y el fallo parecía de la regla y no de la prueba.
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/catalogo/con-saldo`), {
+        nombre: 'Torta', precio: 90, moneda: 'BOB', activo: true, stock: 5,
+        actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+      });
+    });
+    // La lista blanca evalúa el documento RESULTANTE: sin `stock` en la lista,
+    // un comercio no podría ni corregir el precio de algo que tiene existencias.
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/catalogo/con-saldo`),
+      { precio: 95, ...sello('u-admin-a') }));
+  });
+
+  it('los movimientos los lee el negocio y NO los escribe nadie desde el navegador', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/movimientosStock/m1`), {
+        itemId: 'con-saldo', delta: -1, motivo: 'venta', saldo: 4,
+      });
+    });
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/movimientosStock/m1`)));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/movimientosStock/m2`),
+      { itemId: 'con-saldo', delta: 999, motivo: 'venta', saldo: 999 }));
+  });
+});
+
+describe('Foto subida: en su documento, y acotada', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+  const foto = (datos: string) => ({
+    datos, ancho: 900, alto: 675, bytes: 1000, tipo: 'image/webp', ...sello('u-admin-a'),
+  });
+
+  it('el administrador guarda una foto en línea', async () => {
+    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/fotosCatalogo/item1`),
+      foto('data:image/webp;base64,AAAABBBB')));
+  });
+
+  it('lo que no es una imagen en línea se rechaza: `datos` va a un atributo src', async () => {
+    for (const malo of ['javascript:alert(1)', 'https://ajeno.bo/a.png',
+      'data:text/html;base64,AAAA', 'data:image/svg+xml;base64,AAAA', '']) {
+      await assertFails(setDoc(doc(adminA(), `tenants/${A}/fotosCatalogo/malo`), foto(malo)));
+    }
+  });
+
+  it('una foto sin encoger no entra: el documento de Firestore tiene 1 MB', async () => {
+    const enorme = `data:image/webp;base64,${'A'.repeat(210001)}`;
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/fotosCatalogo/enorme`), foto(enorme)));
+  });
+
+  it('el operador no sube fotos: el catálogo es del administrador', async () => {
+    await assertFails(setDoc(doc(operA(), `tenants/${A}/fotosCatalogo/item1`),
+      foto('data:image/webp;base64,AAAABBBB')));
   });
 });
 

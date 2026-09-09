@@ -346,3 +346,101 @@ export function rotulosCobroSimulado(
     confirmacion: leer('confirmacion'),
   };
 }
+
+// ===========================================================================
+// EL CATÁLOGO NO PUEDE CRECER DENTRO DE CADA MENSAJE
+// ===========================================================================
+//
+// `configuracionFlujo` mandaba el catálogo entero —hasta 200 ítems— en cada
+// consulta del flujo, y el flujo lo pega en el prompt.
+//
+// EL UMBRAL, que es el punto 7 del diseño de Andres
+// (`Analisis/11-catalogo-web-propio.md`): por debajo, el catálogo entero al
+// prompt y el asistente lo recita; por encima, solo un RESUMEN —cuántos hay,
+// qué áreas, entre qué precios— y el detalle llega por dos caminos que no
+// pasan por el prompt: el sitio del catálogo, que el cliente navega, y el JSON
+// del checkout, que vuelve con los ítems exactos.
+//
+// ---------------------------------------------------------------------------
+// CORRECCIÓN DEL 08/09: EL MOTIVO NO ES EL COSTO. Este comentario decía que un
+// catálogo grande hace que «cada mensaje del cliente cueste un prompt gigante:
+// más dinero, más latencia». `Analisis/19-catalogo-web-y-precio-por-flujo.md`
+// §2 lo MIDIÓ con las tarifas de octubre y la caché de prefijo puesta:
+//
+//     500 ítems en el prompt = 5.000 tokens = 0,0585 Bs
+//                            = 0,43 mensajes del asistente
+//
+// O sea que el catálogo entero de una ferretería cuesta MENOS DE MEDIO MENSAJE.
+// El token dejó de ser la restricción el día que Meta empezó a cobrar por
+// mensaje. Justificar el umbral por costo mandaba a optimizar en la dirección
+// equivocada: quien leyera esto trataría de achicar el prompt cuando lo que hay
+// que achicar es la cantidad de mensajes.
+//
+// EL UMBRAL SOBREVIVE, POR OTRAS DOS RAZONES, las dos del mismo análisis §4:
+//
+//  1. LEGIBILIDAD. Una lista de 40 ítems son ~1.200 caracteres en un globo de
+//     chat: ilegible. Y la lista interactiva de WhatsApp admite 10 filas por
+//     sección, que es un tope del canal y no nuestro.
+//  2. CONFIABILIDAD DEL MODELO, que es la que no se puede calcular. El prompt
+//     del Demo A maneja 8 servicios y funciona; nadie probó con 100. Cuanto más
+//     larga la lista, más probable que el asistente cite mal un precio, y cada
+//     corrección es un mensaje cobrado más un riesgo de la prohibición 3.
+//
+// LOS 40 SON UNA RECOMENDACIÓN, NO UNA MEDICIÓN. El número que falta —a partir
+// de cuántos ítems el asistente empieza a equivocarse— se saca probando con un
+// catálogo real contra las suites de aceptación, no con una hoja de cálculo.
+// ---------------------------------------------------------------------------
+//
+// POR QUÉ SE DECIDE ACÁ Y NO EN n8n. La consola es la única que sabe cuántos
+// ítems tiene el comercio. Que el flujo tuviera que contar exigiría una
+// consulta más y —peor— dos lugares donde el umbral podría no coincidir.
+//
+// Se cambia acá, en un solo lugar.
+export const UMBRAL_CATALOGO_AL_PROMPT = 40;
+
+export interface ResumenCatalogo {
+  total: number;
+  areas: string[];
+  precioMin: number | null;
+  precioMax: number | null;
+  moneda: string;
+  hayACotizar: boolean;
+}
+
+/**
+ * Resumen de un catálogo grande: lo justo para que el asistente sepa de qué
+ * habla y no invente. NO lleva nombres de productos, y eso es deliberado: si
+ * llevara veinte nombres, el modelo los trataría como «el catálogo» y diría que
+ * no tiene el resto.
+ */
+export function resumirCatalogo(
+  items: Array<Record<string, unknown>>,
+): ResumenCatalogo {
+  const areas = new Set<string>();
+  let min: number | null = null;
+  let max: number | null = null;
+  let moneda = '';
+  let hayACotizar = false;
+
+  for (const item of items) {
+    const area = typeof item['area'] === 'string' ? item['area'].trim() : '';
+    if (area !== '') areas.add(area.slice(0, 40));
+    const precio = item['precio'];
+    if (typeof precio === 'number') {
+      min = min === null || precio < min ? precio : min;
+      max = max === null || precio > max ? precio : max;
+      if (moneda === '') moneda = item['moneda'] === 'USD' ? 'USD' : 'BOB';
+    } else {
+      hayACotizar = true;
+    }
+  }
+
+  return {
+    total: items.length,
+    areas: [...areas].sort().slice(0, 20),
+    precioMin: min,
+    precioMax: max,
+    moneda,
+    hayACotizar,
+  };
+}
