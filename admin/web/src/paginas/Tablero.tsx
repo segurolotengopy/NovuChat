@@ -191,7 +191,10 @@ interface Actividad {
   entrantes: number;
   salientes: number;
   personas: number;
-  errores: number;
+  /** La unidad que se factura: ventana de 24 h por teléfono. */
+  conversaciones: number;
+  /** Veces que el asistente pasó el chat a una persona. NO es una falla. */
+  derivaciones: number;
   incompleto: boolean;
 }
 
@@ -213,25 +216,40 @@ function useActividad(tenantId: string, periodo: Periodo, activo: boolean): Acti
           porDia.set(diaBoliviano(new Date(desde.getTime() + i * 86_400_000)),
             { entrantes: 0, salientes: 0 });
         }
-        const telefonos = new Set<string>();
-        let entrantes = 0; let salientes = 0; let errores = 0;
+        // LAS PERSONAS SE CUENTAN POR `conversacionId`, no por `telefono`. La
+        // bitácora nunca guarda el número crudo: guarda `destinoEnmascarado` y
+        // el identificador de la conversación. Leyendo `telefono` —que no
+        // existe— el tablero mostraba «0 personas» al lado de 72 mensajes
+        // recibidos, que es la clase de número que hace desconfiar de todos los
+        // demás de la pantalla. Lo vio Andres el 09/09.
+        const personasVistas = new Set<string>();
+        const conversacionesVistas = new Set<string>();
+        let entrantes = 0; let salientes = 0; let derivaciones = 0;
         for (const d of s.docs) {
           const tipo = String(d.get('tipo') ?? '');
           const ts = d.get('ts') as { toDate?: () => Date } | undefined;
           const dia = typeof ts?.toDate === 'function' ? diaBoliviano(ts.toDate()) : '';
           const casilla = porDia.get(dia);
+          const conv = d.get('conversacionId');
+          if (typeof conv === 'string' && conv !== '') {
+            personasVistas.add(conv);
+            // UNA CONVERSACIÓN ES LA VENTANA DE 24 H, la unidad que se factura.
+            // Se aproxima por persona y día: dos días distintos del mismo
+            // teléfono son dos conversaciones.
+            if (dia !== '') conversacionesVistas.add(`${conv}|${dia}`);
+          }
           if (tipo === 'mensaje_entrante') {
             entrantes += 1; if (casilla) casilla.entrantes += 1;
-            const t = d.get('telefono'); if (typeof t === 'string' && t !== '') telefonos.add(t);
           } else if (tipo === 'mensaje_saliente') {
             salientes += 1; if (casilla) casilla.salientes += 1;
-          } else if (tipo === 'error_flujo' || d.get('resultado') === 'fallo') {
-            errores += 1;
+          } else if (tipo === 'transferencia_humano') {
+            derivaciones += 1;
           }
         }
         setDatos({
           dias: [...porDia.entries()].map(([dia, v]) => ({ dia, ...v })),
-          entrantes, salientes, personas: telefonos.size, errores,
+          entrantes, salientes, personas: personasVistas.size,
+          conversaciones: conversacionesVistas.size, derivaciones,
           incompleto: s.size >= TOPE_EVENTOS,
         });
       },
@@ -312,23 +330,45 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
       <>
         <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />
         <div className="cuadricula">
+          {/* LA CONVERSACIÓN VA PRIMERA Y SOLA, porque es LA cifra: es la
+              unidad que se factura y la que el comercio compara contra su plan.
+              Estaba ausente del tablero, que mostraba mensajes y personas
+              —dos números que NO se facturan— y dejaba fuera el único que
+              contesta «¿cuánto llevo gastado del plan?». */}
+          <Tarjeta
+            titulo="Conversaciones"
+            pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/consumo`}>Ver el consumo</Link>}
+          >
+            <div className="datos">
+              <Dato valor={actividad?.conversaciones ?? 0} rotulo="en el período" />
+              <Dato valor={actividad?.personas ?? 0} rotulo="personas" />
+            </div>
+            <p className="text-muted">
+              Una conversación son todos los mensajes con un mismo cliente en 24
+              horas. <strong>Es lo que se factura.</strong>
+            </p>
+          </Tarjeta>
           <Tarjeta titulo="Mensajes del asistente">
-            {/* LA CIFRA QUE PREDICE LA FACTURA. Desde el 01/10/2026 Meta cobra
-                cada mensaje que ENVÍA el asistente, con 1.000 gratis por número
-                y por mes. Es el número que el comercio necesita mirar y el que
-                hasta hoy la consola no mostraba. */}
+            {/* La cifra que predice la factura de Meta: desde el 01/10/2026
+                cobra cada mensaje que ENVÍA el asistente, con 1.000 gratis por
+                número y por mes. */}
             <div className="datos">
               <Dato valor={actividad?.salientes ?? 0} rotulo="enviados" />
               <Dato valor={actividad?.entrantes ?? 0} rotulo="recibidos" />
-              <Dato valor={actividad?.personas ?? 0} rotulo="personas" />
             </div>
           </Tarjeta>
-          <Tarjeta titulo="Fallas">
-            <p className={`situacion ${(actividad?.errores ?? 0) === 0 ? 'ok' : 'alerta'}`}>
-              {(actividad?.errores ?? 0) === 0 ? 'Sin fallas' : `${actividad?.errores} con falla`}
-            </p>
+          {/* SE LLAMABA «FALLAS» Y CONTABA ERRORES, y estaba mal en las dos
+              mitades. Una derivación a una persona NO es una falla: es el
+              asistente haciendo lo correcto cuando algo lo excede, y es lo que
+              el comercio quiere mirar para saber cuánto trabajo le llega.
+              Contarlo como falla enseñaba a leer el tablero al revés. */}
+          <Tarjeta titulo="Derivaciones a operador">
+            <div className="datos">
+              <Dato valor={actividad?.derivaciones ?? 0} rotulo="en el período" />
+            </div>
             <p className="text-muted">
-              Mensajes que el asistente no pudo responder o entregar en el período.
+              Veces que el asistente pasó el chat a una persona del negocio. No
+              es una falla: es cuando decide que algo lo excede.
             </p>
           </Tarjeta>
         </div>

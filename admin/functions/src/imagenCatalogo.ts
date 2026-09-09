@@ -38,14 +38,32 @@
  */
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { REGION } from './region.js';
 
-/** Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n. */
-export const CLAVE_GEMINI = defineSecret('GEMINI_API_KEY');
+/**
+ * Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n.
+ *
+ * SE LEE DEL ENTORNO Y NO SE DECLARA COMO SECRETO OBLIGATORIO, y la diferencia
+ * decide si el resto del catálogo se puede desplegar. `defineSecret` + `secrets:
+ * [...]` hace que el despliegue FALLE si el secreto no existe todavía, y arrastra
+ * con él a todo lo que viaja en el mismo despliegue: el catálogo web, el mini
+ * inventario, la vista previa y el importador. Cuatro cosas terminadas
+ * esperando una clave que solo Andres puede poner.
+ *
+ * Así, si la clave no está, la comprobación de que la foto SE VE sigue
+ * corriendo igual —es determinística y no usa modelo— y la de si la foto
+ * CORRESPONDE queda vacía, que es la degradación correcta: se deja de opinar,
+ * no se empieza a mentir.
+ *
+ * PARA ENCENDERLA:
+ *     cd admin && npx firebase-tools functions:secrets:set GEMINI_API_KEY
+ *     # y después volver a poner `secrets: [CLAVE_GEMINI]` en las dos funciones
+ *     # de abajo, para que Cloud Functions la inyecte.
+ */
+export const claveGemini = (): string => process.env['GEMINI_API_KEY'] ?? '';
 
 /** El mismo modelo que usa el asistente, para no sostener dos criterios. */
 const MODELO = 'gemini-3.5-flash-lite';
@@ -272,7 +290,7 @@ export async function comprobarFoto(
   const bajada = await bajarImagen(url);
   if (!bajada.ok) return { cargable: false, falla: bajada.falla };
   // Sin descripción no hay contra qué comparar, y no se gasta una llamada.
-  const parecido = descripcion.trim() === '' && nombre.trim() === ''
+  const parecido = clave === '' || (descripcion.trim() === '' && nombre.trim() === '')
     ? undefined
     : await opinarSobreLaFoto(bajada.bytes, bajada.tipo, nombre, descripcion, clave);
   return { cargable: true, tipo: bajada.tipo, bytes: bajada.bytes.length, ...(parecido ? { parecido } : {}) };
@@ -297,7 +315,7 @@ async function guardar(tenantId: string, itemId: string, url: string, c: Comprob
  * modelo.
  */
 export const comprobarImagenDelCatalogo = onDocumentWritten(
-  { document: 'tenants/{tenantId}/catalogo/{itemId}', region: REGION, secrets: [CLAVE_GEMINI] },
+  { document: 'tenants/{tenantId}/catalogo/{itemId}', region: REGION },
   async (evento) => {
     const antes = evento.data?.before.data() ?? {};
     const ahora = evento.data?.after.data();
@@ -313,7 +331,7 @@ export const comprobarImagenDelCatalogo = onDocumentWritten(
       return;
     }
     const c = await comprobarFoto(
-      url, texto(ahora['nombre'], 120), texto(ahora['descripcion'], 400), CLAVE_GEMINI.value(),
+      url, texto(ahora['nombre'], 120), texto(ahora['descripcion'], 400), claveGemini(),
     );
     await guardar(tenantId, itemId, url, c);
   },
@@ -325,7 +343,7 @@ export const comprobarImagenDelCatalogo = onDocumentWritten(
  * el único modo de reintentar sería borrar la dirección y volver a escribirla.
  */
 export const recomprobarImagen = onCall(
-  { region: REGION, secrets: [CLAVE_GEMINI] },
+  { region: REGION },
   async (peticion: CallableRequest) => {
     if (!peticion.auth?.uid) throw new HttpsError('unauthenticated', 'Hay que iniciar sesión.');
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
@@ -344,7 +362,7 @@ export const recomprobarImagen = onCall(
     const url = texto(d['imagenUrl'], 2000);
     if (url === '') throw new HttpsError('failed-precondition', 'Ese ítem no tiene foto.');
     const c = await comprobarFoto(
-      url, texto(d['nombre'], 120), texto(d['descripcion'], 400), CLAVE_GEMINI.value(),
+      url, texto(d['nombre'], 120), texto(d['descripcion'], 400), claveGemini(),
     );
     await guardar(tenantId, itemId, url, c);
     return c;

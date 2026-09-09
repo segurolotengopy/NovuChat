@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { useSesion } from '../lib/contexto';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import { descargarCsv } from '../lib/exportar';
 import {
   construirConsulta, POR_PAGINA, RESULTADOS, TIPOS, tenantDe,
   type Filtros, type Resultado, type Tipo,
@@ -121,6 +122,29 @@ export function Bitacora() {
       </form>
 
       {error && <p role="alert">{error}</p>}
+
+      {/* EXPORTAR LO QUE SE ESTÁ VIENDO, no la bitácora entera. Es lo honesto:
+          la pantalla trae páginas, así que un botón que dijera «exportar todo»
+          bajaría en silencio miles de documentos o —peor— exportaría solo la
+          primera página haciendo creer que es todo. Acá el archivo tiene
+          exactamente las filas que están en pantalla, con los filtros puestos. */}
+      <div className="acciones">
+        <button type="button" className="btn btn-secondary" disabled={filas.length === 0}
+                onClick={() => descargarCsv(
+                  'bitacora',
+                  ['Fecha y hora', ...(esVistaPlataforma ? ['Comercio'] : []),
+                    'Tipo', 'Resultado', 'Destino', 'Código', 'Detalle', 'Latencia (s)'],
+                  filas.map((f) => [
+                    f.ts?.toDate ? f.ts.toDate().toLocaleString('es-BO') : '',
+                    ...(esVistaPlataforma ? [f.tenant] : []),
+                    String(f.tipo ?? '').replace(/_/g, ' '), f.resultado,
+                    f.destinoEnmascarado, f.codigo, f.detalle,
+                    typeof f.latenciaMs === 'number' ? (f.latenciaMs / 1000).toFixed(1) : '',
+                  ]),
+                )}>
+          Exportar {filas.length > 0 ? `(${filas.length})` : ''}
+        </button>
+      </div>
 
       <table>
         <thead>
