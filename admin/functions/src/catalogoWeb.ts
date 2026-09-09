@@ -453,13 +453,45 @@ function itemPublico(id: string, d: Record<string, unknown>): ItemPublico {
   };
 }
 
+/**
+ * El identificador de la ficha, buscado en la URL entera.
+ *
+ * Mira `originalUrl`, `url` y `path` en ese orden porque las tres existen según
+ * por dónde entre la petición —reescritura de Hosting, llamada directa a Cloud
+ * Run, emulador— y ninguna es fiable sola. Se queda con el tramo que tiene
+ * forma de ficha, no con el último: así da igual si el prefijo `/api/catalogo`
+ * viene o no.
+ */
+function idDeLaRuta(peticion: { path?: string; url?: string; originalUrl?: string }): string {
+  const rutas = [peticion.originalUrl, peticion.url, peticion.path];
+  for (const ruta of rutas) {
+    if (typeof ruta !== 'string' || ruta === '') continue;
+    const tramos = ruta.split('?')[0]?.split('/').filter(Boolean) ?? [];
+    const encontrado = tramos.find((t) => FICHA.test(t));
+    if (encontrado) return encontrado;
+  }
+  return '';
+}
+
 export const catalogoPublico = onRequest(
   { region: REGION, cors: false, maxInstances: 20 },
   async (peticion, respuesta) => {
     if (peticion.method !== 'GET') { respuesta.status(405).send('metodo'); return; }
 
-    // La ficha viene en el último segmento: /api/catalogo/<ficha>
-    const id = String(peticion.path.split('/').filter(Boolean).pop() ?? '');
+    // LA FICHA SE BUSCA EN TODA LA URL, no en el último segmento de `path`.
+    //
+    // Se leía `peticion.path` y se tomaba el último tramo. Detrás de una
+    // reescritura de Firebase Hosting eso NO es fiable: según cómo llegue la
+    // petición, `path` puede ser `/api/catalogo/<ficha>`, `/<ficha>` o
+    // directamente `/`, y en el último caso el identificador quedaba vacío y la
+    // función respondía «enlace vencido» a una ficha perfectamente válida. Era
+    // lo que rompía la vista previa del catálogo: se creaba bien, no vencía, y
+    // aun así la página decía que el enlace ya no estaba disponible.
+    //
+    // Ahora se toman todos los tramos de la URL completa y se elige el que
+    // TIENE FORMA de ficha. No hay ambigüedad posible: son 32 hexadecimales, y
+    // ningún otro tramo de estas rutas se le parece.
+    const id = idDeLaRuta(peticion);
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
@@ -481,8 +513,20 @@ export const catalogoPublico = onRequest(
         .where('activo', '==', true).limit(500).get(),
     ]);
 
+    // UN CATÁLOGO APAGADO NO ES UN ENLACE VENCIDO, y decirlo así cuesta caro.
+    //
+    // Esta rama devolvía el MISMO error que una ficha caducada. El 09/09 la
+    // vista previa de la consola mostró «este enlace ya no está disponible»
+    // para un catálogo recién creado, y se fueron veinte minutos revisando la
+    // ficha, la ruta y el reloj —todo estaba bien— porque el mensaje señalaba
+    // al lugar equivocado. Un error que nombra una causa que no es, es peor que
+    // un error genérico: manda a buscar donde no hay nada.
+    //
+    // Ahora tiene su propio código. El sitio público lo traduce a algo que un
+    // CLIENTE entienda, y la consola —que sabe que quien mira es el comercio—
+    // puede decirle que lo encienda en Configuración.
     if (config.get('catalogoWebActivo') !== true) {
-      respuesta.status(404).json({ error: 'enlace vencido' }); return;
+      respuesta.status(409).json({ error: 'catalogo web apagado' }); return;
     }
 
 
@@ -640,9 +684,9 @@ export const checkoutCatalogo = onRequest(
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
 
-    // /api/catalogo/<ficha>/checkout
-    const partes = peticion.path.split('/').filter(Boolean);
-    const ficha = await fichaVigente(String(partes[partes.length - 2] ?? ''));
+    // /api/catalogo/<ficha>/checkout — mismo problema que en `catalogoPublico`:
+    // contar tramos desde el final falla si la reescritura no manda el prefijo.
+    const ficha = await fichaVigente(idDeLaRuta(peticion));
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
     if (ficha.checkouts >= MAX_CHECKOUTS_POR_FICHA) {

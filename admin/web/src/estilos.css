@@ -143,6 +143,18 @@
 /* ── Controles de formulario ────────────────────────────────────────────
    El aspecto es el de `.input` del sistema; ver el punto 1 de la cabecera para
    por qué se aplica por elemento y dentro de `:where()`. */
+/* EL ATRIBUTO `hidden` TIENE QUE GANAR, y no gana solo.
+   `[hidden] { display: none }` vive en la hoja del NAVEGADOR, y cualquier regla
+   de autor le gana por más baja que sea su especificidad —hasta un `:where()`,
+   que vale cero—. Así que la regla de abajo, que le pone `display: block` a
+   todo `input`, hacía visible el `<input type="file">` que la subida de fotos
+   esconde detrás de su botón: en «Productos» se veía el botón «Subir foto» Y al
+   lado el «Seleccionar archivo / Ningún archivo seleccionado» del sistema, en
+   cada fila. Lo vio Andres el 09/09.
+   El `!important` es de los pocos justificados que hay: `hidden` significa «no
+   está», y ninguna regla de presentación puede opinar sobre eso. */
+[hidden] { display: none !important; }
+
 :where(input, select, textarea) {
   display: block;
   width: 100%;

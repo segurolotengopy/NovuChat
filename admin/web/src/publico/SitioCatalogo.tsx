@@ -47,14 +47,22 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
     fetch(`${RUTA_API}/${ficha}`, { headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: CatalogoPublico) => { if (vivo) setDatos(d); })
-      .catch(() => {
-        if (vivo) {
-          // El enlace vencido y el enlace inexistente dan el MISMO mensaje. El
-          // servidor tampoco los distingue: decir «este existía pero venció» le
-          // confirma a quien prueba fichas al azar que acertó una.
-          setError('Este enlace ya no está disponible. Escribinos por WhatsApp '
+      .catch((e: Error) => {
+        if (!vivo) return;
+        // El enlace vencido y el inexistente dan el MISMO mensaje, a propósito:
+        // el servidor tampoco los distingue, y decir «este existía pero venció»
+        // le confirma a quien prueba fichas al azar que acertó una.
+        //
+        // EL CATÁLOGO APAGADO SÍ ES OTRA COSA (409) y por eso lo dice distinto.
+        // No es una fuga: quien abre el enlace ya sabe de qué negocio es. Y
+        // mandarlo a «escribinos por WhatsApp y te damos otro» cuando ningún
+        // enlace nuevo va a funcionar es hacerle perder el tiempo a un cliente
+        // y una conversación pagada al comercio.
+        setError(e.message === '409'
+          ? 'Este negocio todavía no publicó su catálogo. Escribinos por '
+            + 'WhatsApp y te atendemos por ahí.'
+          : 'Este enlace ya no está disponible. Escribinos por WhatsApp '
             + 'y te mandamos uno nuevo.');
-        }
       });
     return () => { vivo = false; };
   }, [ficha]);

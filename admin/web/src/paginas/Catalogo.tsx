@@ -3,7 +3,7 @@ import {
   collection, deleteDoc, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp,
   setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { auth, db, funciones } from '../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../componentes/TextoSeguro';
@@ -1072,9 +1072,18 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
  * cliente: mostrarlo a 1.200 píxeles da una impresión que después no se cumple.
  */
 function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boolean }) {
+  const [catalogoWebActivo, setCatalogoWebActivo] = useState<boolean | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pidiendo, setPidiendo] = useState(false);
+
+  useEffect(() => {
+    if (!tenantId || !conVenta) return;
+    return onSnapshot(doc(db, 'tenants', tenantId, 'config', 'negocio'),
+      (d) => setCatalogoWebActivo(d.get('catalogoWebActivo') === true),
+      () => setCatalogoWebActivo(null));
+  }, [tenantId, conVenta]);
+
   if (!conVenta) return null;
 
   const abrir = async () => {
@@ -1099,6 +1108,17 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
         precio y lo que está agotado no se publica</strong>. Desde acá no se
         pueden hacer pedidos — es solo para mirar.
       </p>
+      {/* AVISO ANTES DE ABRIR, y no una vista previa que se explica sola. Si el
+          catálogo está apagado, el marco muestra el mensaje que vería un
+          CLIENTE —«este negocio todavía no publicó su catálogo»—, que al
+          comercio no le dice qué hacer. Acá sí. */}
+      {catalogoWebActivo === false && (
+        <p className="ayuda aviso-datos">
+          Tu catálogo web está <strong>apagado</strong>: nadie puede abrirlo
+          todavía, ni siquiera vos desde acá. Se enciende en{' '}
+          <Link to={`/negocio/${encodeURIComponent(tenantId)}/configuracion`}>Configuración</Link>.
+        </p>
+      )}
       {url === null ? (
         <button type="button" className="btn btn-secondary" disabled={pidiendo} onClick={() => void abrir()}>
           {pidiendo ? 'Abriendo…' : 'Ver mi catálogo'}
