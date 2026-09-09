@@ -52,19 +52,31 @@ const TCO = 12.60;
 
 describe('Los planes son los de la presentación comercial', () => {
   it('tres planes, con las cifras de la diapositiva', () => {
-    // Los volúmenes se corrigieron el 08/09 con el modelo de costos: los
-    // viejos (300/1000/2500) daban pérdida con la tarifa de Meta del 1 de
-    // octubre, y la bolsa vieja (150 por 50 Bs) perdía 176 Bs cada venta.
-    expect(PLANES.base).toMatchObject({ precioUsd: 20, conversaciones: 120 });
-    expect(PLANES.crecimiento).toMatchObject({ precioUsd: 40, conversaciones: 200 });
-    expect(PLANES.corporativo).toMatchObject({ precioUsd: 70, conversaciones: 300 });
-    expect(BOLSA).toEqual({ conversaciones: 25, precioUsd: 10 });
+    // Los volúmenes se corrigieron DOS VECES. Primero el 08/09 con el modelo
+    // de costos: los originales (300/1000/2500) daban pérdida con la tarifa de
+    // Meta del 1 de octubre. Y esa misma noche otra vez, al comparar la
+    // propuesta de Silvana contra el modelo (`Analisis/21`): ganó ella en los
+    // tres escalones, y el código se había quedado con los intermedios
+    // (20/40/70 por 120/200/300) una semana.
+    //
+    // Esta prueba existe para que la tercera vez se note: si alguien cambia la
+    // tabla sin cambiar la «Base comercial» de CLAUDE.md, o al revés, acá se
+    // rompe.
+    expect(PLANES.base).toMatchObject({ precioUsd: 25, conversaciones: 100 });
+    expect(PLANES.crecimiento).toMatchObject({ precioUsd: 50, conversaciones: 220 });
+    expect(PLANES.corporativo).toMatchObject({ precioUsd: 90, conversaciones: 500 });
+    expect(BOLSA).toEqual({ conversaciones: 30, precioUsd: 10 });
+
+    // EL PLAN BASE CABE EXACTO EN LA FRANQUICIA DE META, y es la propiedad que
+    // lo hace el más rentable: 100 conversaciones × 10 mensajes = 1.000, los
+    // mensajes de servicio gratis por número y por mes.
+    expect(PLANES.base.conversaciones * 10).toBe(1000);
     expect(PRUEBA.conversaciones).toBe(20);
   });
 
   it('el monto de un pago sale de la tabla, nunca del cliente', () => {
-    expect(montoUsdDe({ tipo: 'mensualidad', plan: 'crecimiento', meses: 1 })).toBe(40);
-    expect(montoUsdDe({ tipo: 'mensualidad', plan: 'base', meses: 3 })).toBe(60);
+    expect(montoUsdDe({ tipo: 'mensualidad', plan: 'crecimiento', meses: 1 })).toBe(50);
+    expect(montoUsdDe({ tipo: 'mensualidad', plan: 'base', meses: 3 })).toBe(75);
     expect(montoUsdDe({ tipo: 'bolsa', cantidad: 2 })).toBe(20);
     // Cero o negativo se toma como uno: nunca un pago gratis.
     expect(montoUsdDe({ tipo: 'bolsa', cantidad: 0 })).toBe(10);
@@ -127,8 +139,8 @@ describe('Estado del servicio · prepago', () => {
 
   it('con el mes pagado y conversaciones, opera', () => {
     const e = estadoDeServicio(pagado, 10, '2026-09');
-    expect(e).toMatchObject({ operativo: true, motivo: null, cubierto: true, incluidas: 120,
-      consumidas: 10, restanteDelPlan: 110, disponibles: 110, mensualidadUsd: 20 });
+    expect(e).toMatchObject({ operativo: true, motivo: null, cubierto: true, incluidas: 100,
+      consumidas: 10, restanteDelPlan: 90, disponibles: 90, mensualidadUsd: 25 });
   });
 
   it('el 1 del mes siguiente sin pagar, se corta por falta de pago', () => {
@@ -143,12 +155,12 @@ describe('Estado del servicio · prepago', () => {
   });
 
   it('al agotar las incluidas se corta, salvo que haya bolsa', () => {
-    expect(estadoDeServicio(pagado, 120, '2026-09'))
+    expect(estadoDeServicio(pagado, 100, '2026-09'))
       .toMatchObject({ operativo: false, motivo: 'sin_conversaciones', disponibles: 0 });
-    expect(estadoDeServicio({ ...pagado, bolsa: 25 }, 120, '2026-09'))
-      .toMatchObject({ operativo: true, restanteDelPlan: 0, disponibles: 25 });
-    expect(estadoDeServicio({ ...pagado, bolsa: 25 }, 200, '2026-09'))
-      .toMatchObject({ operativo: true, disponibles: 25 });
+    expect(estadoDeServicio({ ...pagado, bolsa: 30 }, 100, '2026-09'))
+      .toMatchObject({ operativo: true, restanteDelPlan: 0, disponibles: 30 });
+    expect(estadoDeServicio({ ...pagado, bolsa: 30 }, 200, '2026-09'))
+      .toMatchObject({ operativo: true, disponibles: 30 });
   });
 
   it('las bolsas NO sostienen el servicio si el mes no está pagado', () => {
@@ -162,7 +174,7 @@ describe('Estado del servicio · prepago', () => {
   it('un plan desconocido cae al plan base, nunca a ilimitado', () => {
     const e = estadoDeServicio({ ...pagado, plan: 'oro' }, 0, '2026-09');
     expect(e.plan).toBe('base');
-    expect(e.incluidas).toBe(120);
+    expect(e.incluidas).toBe(100);
   });
 
   it('valores basura en los saldos cuentan como cero', () => {
@@ -195,7 +207,7 @@ describe('Estado del servicio · mes de prueba', () => {
     // Con el mes siguiente pagado, lo que queda de la prueba ya no cuenta.
     const e = estadoDeServicio({ ...prueba, periodoPagado: '2026-10', plan: 'base' }, 0, '2026-10');
     expect(e.enPrueba).toBe(false);
-    expect(e.disponibles).toBe(120);
+    expect(e.disponibles).toBe(100);
   });
 });
 
@@ -272,7 +284,8 @@ describe('Aplicar un pago', () => {
   it('una bolsa suma sus conversaciones y no toca el período pagado ni el plan', () => {
     const r = aplicarPago({ modalidad: 'prepago', plan: 'base', periodoPagado: '2026-09', bolsa: 20 },
       { tipo: 'bolsa', cantidad: 2 }, '2026-09');
-    expect(r).toMatchObject({ bolsa: 70, periodoPagado: '2026-09', plan: 'base' });
+    // 20 que tenía + 2 bolsas de 30 = 80.
+    expect(r).toMatchObject({ bolsa: 80, periodoPagado: '2026-09', plan: 'base' });
   });
 
   it('un pago nunca deja un período cubierto MENOR que el que había', () => {
@@ -300,8 +313,8 @@ describe('Recordatorios', () => {
     const a7 = recordatoriosDebidos(pagado, estadoEl(pagado, 0, '2026-09'), 'Salón Rosa', bo('2026-09-23 09:00'), TCO);
     expect(a7.map((r) => r.clave)).toEqual(['renovacion_2026-10_1']);
     expect(a7[0]).toMatchObject({ plantilla: PLANTILLAS.renovacion.nombre,
-      // El importe en bolivianos, con el TCO del BCB: USD 20 × 12,60.
-      parametros: ['Salón Rosa', 'Plan Base', '30/09/2026', 'Bs 252'] });
+      // El importe en bolivianos, con el TCO del BCB: USD 25 × 12,60.
+      parametros: ['Salón Rosa', 'Plan Base', '30/09/2026', 'Bs 315'] });
 
     const a2 = recordatoriosDebidos(pagado, estadoEl(pagado, 0, '2026-09'), 'Salón Rosa', bo('2026-09-28 17:00'), TCO);
     expect(a2.map((r) => r.clave)).toEqual(['renovacion_2026-10_1', 'renovacion_2026-10_2']);
@@ -389,7 +402,7 @@ describe('Los textos que lee el negocio', () => {
   it('el resumen de cuenta dice lo que corresponde a cada estado', () => {
     const pagado = { modalidad: 'prepago', plan: 'base', periodoPagado: '2026-09', bolsa: 25 };
     expect(resumenDeCuenta(estadoDeServicio(pagado, 10, '2026-09'), 'Salón Rosa', TCO))
-      .toMatch(/Plan Base, pagado hasta el 30\/09\/2026\. Te quedan 135 conversaciones/);
+      .toMatch(/Plan Base, pagado hasta el 30\/09\/2026\. Te quedan 115 conversaciones/);
     expect(resumenDeCuenta(estadoDeServicio(pagado, 0, '2026-10'), 'Salón Rosa', TCO)).toMatch(/DETENIDO.*no está pagado/);
     expect(resumenDeCuenta(estadoDeServicio({ ...pagado, bolsa: 0 }, 300, '2026-09'), 'Salón Rosa', TCO))
       .toMatch(/DETENIDO.*agotaron/);

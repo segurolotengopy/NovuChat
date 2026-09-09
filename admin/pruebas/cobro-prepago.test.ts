@@ -117,7 +117,7 @@ describe('Decidir la respuesta', () => {
     expect(d.crearPago).toEqual({ tipo: 'mensualidad', plan: 'base', meses: 1 });
     expect(d.enviarQr).toBe(true);
     // Lo que se le dice al negocio es el importe en bolivianos: USD 20 × 12,60.
-    expect(d.respuesta).toMatch(/Bs 252/);
+    expect(d.respuesta).toMatch(/Bs 315/);
     expect(d.respuesta).toMatch(/comprobante antes de salir/);
     expect(d.lista).toBeNull();
   });

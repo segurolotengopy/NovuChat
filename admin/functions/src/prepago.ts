@@ -44,16 +44,42 @@
 // contigo». Son VALORES COMERCIALES: se cambian con Andres y Silvana, no en una
 // revisión de código. Y se cambian ACÁ, en un solo lugar: la consola los lee de
 // este módulo y no tiene su propia copia.
+/**
+ * LOS PLANES VIGENTES, adoptados el 08/09/2026 (`Analisis/21`).
+ *
+ * Son la propuesta de Silvana comparada contra el modelo de costos, y ganó ella
+ * en los tres escalones. Antes de esa comparación acá decía 20/40/70 por
+ * 120/200/300, que es lo que este código implementó hasta hoy: los números
+ * cambiaron en el análisis y el código se quedó atrás una semana. Si se vuelven
+ * a mover, se mueven ACÁ y en la «Base comercial» de `CLAUDE.md`, juntos.
+ *
+ * EL PLAN BASE CABE EXACTO EN LA FRANQUICIA DE META, y no es casualidad:
+ * 100 conversaciones × 10 mensajes = 1.000, que son justo los mensajes de
+ * servicio gratuitos por número y por mes. Por eso es el más rentable de los
+ * tres (79 % de margen) y el único inmune a una subida de tarifa de Meta.
+ *
+ * EL CORPORATIVO NO SE ESTIRA MÁS ALLÁ DE 500 sin rehacer la cuenta de
+ * `Analisis/21` §9.4: entre 750 y 1.000 conversaciones la cartera se da vuelta.
+ */
 export const PLANES = {
-  base: { nombre: 'Plan Base', precioUsd: 20, conversaciones: 120 },
-  crecimiento: { nombre: 'Plan Crecimiento', precioUsd: 40, conversaciones: 200 },
-  corporativo: { nombre: 'Plan Corporativo', precioUsd: 70, conversaciones: 300 },
+  base: { nombre: 'Plan Base', precioUsd: 25, conversaciones: 100 },
+  crecimiento: { nombre: 'Plan Crecimiento', precioUsd: 50, conversaciones: 220 },
+  corporativo: { nombre: 'Plan Corporativo', precioUsd: 90, conversaciones: 500 },
 } as const;
 export type PlanId = keyof typeof PLANES;
 export const PLAN_POR_DEFECTO: PlanId = 'base';
 
-/** Paquete extra: 25 conversaciones por USD 10. No vence. */
-export const BOLSA = { conversaciones: 25, precioUsd: 10 } as const;
+/**
+ * Paquete extra: 30 conversaciones por USD 10 (0,333 cada una). No vence.
+ *
+ * EL TOPE DE MENSAJES FIJA EL PRECIO MÍNIMO DE LA BOLSA. Con el tope en 25
+ * respuestas, el mínimo para no perder plata nunca —ni con la conversación más
+ * larga posible— es 0,3632 USD por conversación, y a 0,333 se vende apenas por
+ * debajo a propósito: la conversación promedio está muy lejos del tope.
+ * `Analisis/23`. **Si el tope sube, hay que recalcular esto**, y ese es el
+ * único acoplamiento entre `TOPE_MENSAJES_24H` y el precio.
+ */
+export const BOLSA = { conversaciones: 30, precioUsd: 10 } as const;
 
 /** El mes de prueba: sin mensualidad y con esta bolsa. */
 export const PRUEBA = { conversaciones: 20 } as const;
