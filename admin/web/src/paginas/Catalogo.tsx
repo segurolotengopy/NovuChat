@@ -395,7 +395,7 @@ export function Catalogo() {
           gratis, y es una promesa distinta.
         </p>
         <p className="ayuda">
-          Ojo si tenés el <strong>catálogo web</strong> encendido: lo que quede
+          Ojo si tienes el <strong>catálogo web</strong> encendido: lo que quede
           sin precio <strong>no se publica en la página</strong>. Se sigue
           ofreciendo por chat, donde el asistente puede cotizarlo.
         </p>
@@ -496,7 +496,7 @@ function EstadoFoto({ v, onRevisar }: { v: Veredicto | undefined; onRevisar: () 
         {typeof v.parecido.motivo === 'string' && v.parecido.motivo !== ''
           ? <>: <TextoSeguro valor={v.parecido.motivo} maxLargo={200} /></>
           : '.'}{' '}
-        Reviselá; si es la correcta, dejala como está.{' '}
+        Revísala; si es la correcta, déjala como está.{' '}
         <button type="button" className="enlace" onClick={onRevisar}>Volver a comprobar</button>
       </p>
     );
@@ -898,7 +898,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
               // sí se sabe con certeza, sin inventar una causa.
               salida.set(f.linea, {
                 estado: 'rechazada',
-                motivo: 'el servidor rechazó esta fila. Revisá el precio, la '
+                motivo: 'el servidor rechazó esta fila. Revisa el precio, la '
                   + 'duración y la dirección de la foto.',
               });
             }
@@ -919,7 +919,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
       setTexto('');
       if (archivo.current) archivo.current.value = '';
     } catch {
-      setEstado('No se pudo completar la importación. Revisá tu conexión y probá de nuevo.');
+      setEstado('No se pudo completar la importación. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setImportando(false);
     }
@@ -955,7 +955,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
       <summary>Importar o exportar en lote (Excel, CSV o Sheets)</summary>
 
       <p className="ayuda">
-        Subí <strong>el archivo de Excel que ya tenés</strong> —no hace falta
+        Sube <strong>el archivo de Excel que ya tienes</strong> —no hace falta
         convertirlo a nada— o un CSV. La única columna obligatoria es
         <strong> nombre</strong>; también se entienden <em>descripcion, area,
         precio{conAgenda ? ', duracionMin' : ''}, imagenUrl, cantidad</em> y
@@ -966,12 +966,13 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
         un archivo sin columna de precios actualiza el resto y deja los precios
         como están.
       </p>
-      <p className="ayuda">
-        <strong>No lleva columna de moneda.</strong> La moneda es de todo el
-        negocio —hoy, {moneda === 'USD' ? 'dólares' : 'bolivianos'}— y se cambia
-        en Configuración. Pedirla por producto sería pedir un dato que ya
-        tenemos, y una columna más para llenar mal.
-      </p>
+      {/* ACÁ SE ANUNCIABA UNA COLUMNA QUE NO EXISTE —«no lleva columna de
+          moneda»— Y SE EXPLICABA POR QUÉ NO EXISTE. Las dos cosas están mal.
+          Nombrar lo que no hay le planta al comercio la idea de que debería
+          haberlo, y el porqué de una decisión de diseño es una conversación
+          entre nosotros: no algo que el negocio tenga que leer para cargar su
+          catálogo. La lista de columnas de arriba ya dice cuáles se entienden, y
+          quien traiga una de moneda recibe el aviso puntual al importar. */}
 
       <div className="filtros">
         <label>Archivo
@@ -985,7 +986,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
         </button>
       </div>
 
-      <label className="field">…o pegá acá las celdas copiadas de tu planilla
+      <label className="field">…o pega aquí las celdas copiadas de tu planilla
         <textarea className="input" rows={4} value={texto}
                   placeholder="nombre,precio,imagenUrl&#10;Pizza muzzarella,45,https://…"
                   onChange={(e) => analizar(e.target.value)} />
@@ -1140,7 +1141,7 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
       {catalogoWebActivo === false && (
         <p className="ayuda aviso-datos">
           Tu catálogo web está <strong>apagado</strong>: nadie puede abrirlo
-          todavía, ni siquiera vos desde acá. Se enciende en{' '}
+          todavía, ni siquiera tú desde aquí. Se enciende en{' '}
           <Link to={`/negocio/${encodeURIComponent(tenantId)}/configuracion`}>Configuración</Link>.
         </p>
       )}

@@ -71,13 +71,13 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
         //
         // EL CATÁLOGO APAGADO SÍ ES OTRA COSA (409) y por eso lo dice distinto.
         // No es una fuga: quien abre el enlace ya sabe de qué negocio es. Y
-        // mandarlo a «escribinos por WhatsApp y te damos otro» cuando ningún
+        // mandarlo a «escríbenos por WhatsApp y te damos otro» cuando ningún
         // enlace nuevo va a funcionar es hacerle perder el tiempo a un cliente
         // y una conversación pagada al comercio.
         setError(e.message === '409'
-          ? 'Este negocio todavía no publicó su catálogo. Escribinos por '
+          ? 'Este negocio todavía no publicó su catálogo. Escríbenos por '
             + 'WhatsApp y te atendemos por ahí.'
-          : 'Este enlace ya no está disponible. Escribinos por WhatsApp '
+          : 'Este enlace ya no está disponible. Escríbenos por WhatsApp '
             + 'y te mandamos uno nuevo.');
       });
     return () => { vivo = false; };
@@ -243,7 +243,7 @@ function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }:
       )}
 
       {visibles.length === 0 ? (
-        <p className="cat-vacio">No encontramos nada con eso. Probá con otra palabra.</p>
+        <p className="cat-vacio">No encontramos nada con eso. Intenta con otra palabra.</p>
       ) : (
         <ul className="cat-lista">
           {visibles.map((i) => (
@@ -396,7 +396,7 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
       }
       alConfirmar(cuerpo as RespuestaCheckout);
     } catch {
-      setFallo('No pudimos enviar el pedido. Revisá tu conexión y probá de nuevo.');
+      setFallo('No pudimos enviar el pedido. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setEnviando(false);
     }
@@ -579,8 +579,8 @@ function guardarCarrito(ficha: string, carrito: Carrito): void {
  * ese vocabulario técnico no se filtre a la pantalla de un cliente final.
  */
 function mensajeDeFallo(estado: number, codigo: unknown): string {
-  if (estado === 404) return 'Este enlace ya no está disponible. Escribinos por WhatsApp.';
-  if (estado === 429) return 'Ya mandaste varios pedidos con este enlace. Escribinos por WhatsApp y seguimos por ahí.';
+  if (estado === 404) return 'Este enlace ya no está disponible. Escríbenos por WhatsApp.';
+  if (estado === 429) return 'Ya enviaste varios pedidos con este enlace. Escríbenos por WhatsApp y seguimos por ahí.';
   if (codigo === 'falta la direccion') return 'Falta la dirección de entrega.';
   if (codigo === 'nada de lo pedido sigue disponible') {
     return 'Lo que elegiste ya no se puede pedir por acá. Actualizá la página para ver el catálogo de ahora.';
@@ -588,5 +588,5 @@ function mensajeDeFallo(estado: number, codigo: unknown): string {
   if (codigo === 'monedas mezcladas') {
     return 'Tu pedido mezcla precios en bolivianos y en dólares. Separalos en dos pedidos.';
   }
-  return 'No pudimos registrar el pedido. Probá de nuevo en un momento.';
+  return 'No pudimos registrar el pedido. Inténtalo de nuevo en un momento.';
 }

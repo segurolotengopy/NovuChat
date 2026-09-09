@@ -158,10 +158,13 @@ function DetalleCierres({ tenantId, cerrar }: { tenantId: string; cerrar: () => 
               </table>
             </div>
           )}
+          {/* Se quitó «este detalle existe para poder explicar una factura, no
+              para mirar la actividad del negocio»: es la justificación de una
+              decisión nuestra, y el comercio no la pidió. Lo que sí le sirve
+              saber —que el teléfono va enmascarado— se queda. */}
           <p className="text-muted">
-            El teléfono va enmascarado y no se muestra nada de la conversación.
-            Este detalle existe para poder explicar una factura, no para mirar
-            la actividad del negocio.
+            El teléfono va enmascarado y no se muestra el contenido de las
+            conversaciones.
           </p>
         </div>
         <div className="dialog-actions">

@@ -95,8 +95,7 @@ export function Pedidos() {
           §4nonies.3. */}
       <p className="ayuda aviso-datos">
         Por ahora aparecen los pedidos hechos desde el <strong>catálogo web</strong>.
-        Los que el asistente toma conversando todavía no se guardan con su
-        detalle, así que no se listan acá: están en «Conversaciones».
+        Los que el asistente toma conversando están en «Conversaciones».
       </p>
 
       {pedidos === null && <p>Cargando…</p>}
