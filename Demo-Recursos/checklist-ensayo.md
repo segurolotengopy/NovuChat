@@ -15,6 +15,12 @@
 
 ## Suite Demo A — Agendamiento (Belleza y Salud)
 
+> Para correrla con el telefono en la mano hay una hoja aparte:
+> `suite-a-hoja-de-marcado.md`. Trae el resultado esperado de cada caso,
+> el caso A9 —cambiar un precio en la consola y preguntarlo por WhatsApp— y
+> **la columna de cuantos mensajes tardo el asistente**, que desde el 1 de
+> octubre es lo que decide el margen. Esta lista sigue siendo la corta.
+
 - [ ] A1 · "Hola, ¿qué servicios tienen y cuánto cuestan?" → catálogo de
       belleza CON precios en Bs + pregunta de cierre ("¿Te gustaría agendar?")
 - [ ] A2 · "Quiero agendar un corte para el viernes en la tarde" → propone
