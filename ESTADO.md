@@ -1450,6 +1450,7 @@ trabajo que ya está hecho en ellas.
 | `Analisis/21-propuesta-de-silvana-comparada.md` | La propuesta de precios de Silvana contra este modelo. **Adoptada**: USD 25 / 50 / 90 por 100 / 220 / 500 |
 | `Analisis/22-instrucciones-sitio-web.md` | Instrucciones definitivas para el sitio, con los números finales y la lista de lo que no hay que afirmar. **Reemplaza al 18** |
 | `Analisis/23-bolsa-a-033.md` | Bajar la bolsa a 0,333 USD por conversación. Viable: **USD 10 por 30**, y el tope de mensajes fija el precio mínimo de la bolsa |
+| `Analisis/24-agendas-por-plan.md` | Cuántas agendas por plan. 1 y 5 sin problema; **20 choca con la latencia**, no con el diseño |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 

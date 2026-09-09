@@ -152,6 +152,12 @@ America»). Antes eran gratis.
   cuenta de `Analisis/21` §9.4: entre 750 y 1.000 la cartera se da vuelta.
 - **Vigilar los comercios que pasen del 70 % de su plan.** Es donde el margen se
   erosiona, y es una conversación comercial, no un problema de precio.
+- **Agendas por plan: 1 / 5 / hasta 10.** `Analisis/24`. El techo NO es el número
+  de personas: es que el candado contra la doble reserva hace **una llamada a
+  Google Calendar por cada calendario configurado**, y con 20 se rompe el
+  criterio de latencia. **No prometer «hasta 20» sin hacer antes el arreglo del
+  §4** —que la verificación revise solo el calendario que recibió la cita—, que
+  además acelera a todos los negocios.
 - **La unidad se llama «conversación», nunca «atención».** El glosario publicado
   dice que la atención —persona distinta en el período— **no se factura**. Usar
   «atenciones» para lo que se cobra contradice el sitio y la consola.
