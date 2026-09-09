@@ -1,157 +1,564 @@
-:root { font-family: system-ui, sans-serif; color-scheme: light dark; }
-body { margin: 0; }
-header { display: flex; gap: 1rem; padding: .75rem 1rem; border-bottom: 1px solid #8884; }
-nav { display: flex; gap: 1rem; flex: 1; }
-section { padding: 1rem; }
-table { border-collapse: collapse; width: 100%; }
-th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; }
-label { display: block; margin: .5rem 0; }
-input, textarea, select { display: block; width: 100%; max-width: 40rem; }
-textarea { min-height: 6rem; }
-.centrado { display: grid; place-content: center; min-height: 100vh; text-align: center; gap: .5rem; }
-.dos-columnas { display: grid; grid-template-columns: minmax(14rem, 22rem) 1fr; gap: 1rem; }
-.lista-hilos { list-style: none; margin: 0; padding: 0; }
-.lista-hilos button { display: grid; text-align: left; width: 100%; padding: .5rem; gap: .2rem; }
-.hilo { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
-.hilo li { padding: .5rem .75rem; border-radius: .5rem; max-width: 42rem; }
-.hilo .entrante { background: #8882; justify-self: start; }
-.hilo .saliente { background: #4a90d922; justify-self: end; }
-.hilo time { display: block; font-size: .75rem; opacity: .6; }
-.ayuda { font-size: .85rem; opacity: .8; max-width: 40rem; }
+/* =============================================================================
+   ESTRUCTURA DE LA CONSOLA — lo que el sistema de `diseno.css` no cubre
+   =============================================================================
+   Acá NO se decide la identidad visual: todo sale de los tokens del sistema.
+   Esta hoja hace dos cosas.
 
-.pestanas { display: flex; gap: .5rem; justify-content: center; margin: .5rem 0 1rem; }
-.pestanas button[aria-pressed="true"] { font-weight: 700; text-decoration: underline; }
-.enlace { background: none; border: 0; text-decoration: underline; cursor: pointer; padding: 0; }
-.situacion { font-size: 1.2rem; padding: .5rem .75rem; border-radius: .5rem; display: inline-block; }
-.situacion.ok { background: #2e7d3222; }
-.situacion.alerta { background: #c6282822; }
-.aviso-datos { border-left: 3px solid #c68a28; padding-left: .75rem; opacity: 1; }
-.filtros { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; }
-.filtros label { margin: 0; }
-.filtros input, .filtros select { width: auto; min-width: 10rem; }
-tr.alerta td { background: #c6282811; }
+   1. LE DA EL ASPECTO DEL SISTEMA AL MARCADO DESNUDO. Las páginas escriben
+      `<input>`, `<label>`, `<button>` y `<table>` a secas en la mayoría de los
+      formularios: de las que existen, solo unas pocas llevan `class="input"`.
+      Antes eso significaba que el 80 % de la consola se veía con los controles
+      por defecto del navegador —cuadrados, con la tipografía del sistema, el
+      textarea en monoespaciada— y el otro 20 % con el diseño. Un panel a dos
+      estilos parece a medio terminar, que es exactamente lo que un cliente no
+      tiene que pensar al mirarlo.
 
-/* -----------------------------------------------------------------------------
-   TABLERO. Estructura, no marca.
-   Todo lo visual sale de estas variables para que la propuesta de diseño se
-   aplique cambiándolas, sin volver a tocar ningún componente. Los colores son
-   deliberadamente neutros y derivados del `color-scheme`: acá NO se decide la
-   identidad visual.
+      Se resuelve por selector de ELEMENTO, no yendo a poner una clase en las
+      diecinueve páginas. Dos razones, y la segunda es la que importa:
+      a) faltan horas para el congelamiento y tocar CSS no puede romper una
+         llamada a Firestore;
+      b) una clase se olvida. Un `<input>` nuevo escrito el mes que viene sale
+         bien peinado solo, sin que nadie se acuerde de nada.
+
+      Todas esas reglas van dentro de `:where(…)`, que aporta especificidad
+      CERO. Así, donde una página SÍ puso `class="input"` o `class="btn"`, gana
+      la clase. El elemento pelado es el piso, nunca el techo.
+
+   2. Define lo que es propio de un panel y no de una web: el tablero de
+      tarjetas, el hilo de conversación, los filtros, la tabla del catálogo.
    -------------------------------------------------------------------------- */
+
+/* ── Armazón de página ──────────────────────────────────────────────────
+
+   UNA CONSOLA NO ES UNA LANDING, Y ESTE ES EL PUNTO DONDE SE SEPARAN.
+
+   `novuchat.site` corta en 1180px, y con razón: una web es texto corrido y una
+   línea de más de 75 caracteres se lee mal. La consola es otra cosa —tablas de
+   pedidos, cuadrículas de tarjetas, hilos de conversación— y ahí el ancho es
+   INFORMACIÓN: cada columna que entra es una columna que el negocio no tiene
+   que ir a buscar de costado. Con el corte en 1180 sobre un monitor de 1700,
+   las tarjetas del tablero quedaban apretadas en el medio con medio metro de
+   crema vacía al costado.
+
+   Así que acá el ancho es fluido y el tope está muy arriba (1920px, para que
+   una pantalla ultra ancha no deje filas de tabla de dos metros que obligan a
+   barrer la cabeza). Lo que SÍ conserva un tope de lectura es el texto: los
+   párrafos de ayuda por `--ancho-lectura` y los campos de formulario por su
+   propio `max-width`. Ensanchar la página no ensancha la prosa.
+
+   El respiro lateral crece con la pantalla en vez de ser un número fijo: 17.6px
+   en un celular, hasta 64px en un monitor. Un margen de 17px sobre 1900px de
+   ancho se ve como un error de maquetación.
+
+   `#raiz > section` y no `section` a secas: las páginas devuelven una sección
+   al tope, pero adentro hay OTRAS secciones —el bloque «Acceso del equipo» del
+   ingreso, por ejemplo— que no son páginas y no deben llevar el margen ni el
+   respiro de una. Con el selector suelto, ese bloque se llevaba 64px de aire
+   abajo y se despegaba del formulario al que pertenece.
+
+   `#raiz` es el nodo de montaje de `index.html`, y las páginas cuelgan
+   DIRECTAMENTE de él porque las rutas las envuelven en fragmentos, que no
+   crean nodos. Verificado contra la consola desplegada. Si alguna vez una ruta
+   mete un `<div>` de por medio, la página pierde su caja y se nota al toque:
+   el contenido se va contra el borde izquierdo. */
 :root {
-  --borde: #8884;
-  --fondo-tarjeta: #8881;
-  --radio: .75rem;
-  --paso: 1rem;
+  --ancho-consola: 1920px;
+  --respiro-lateral: clamp(var(--space-4), 3.5vw, var(--space-16));
+}
+#raiz > section {
+  max-width: var(--ancho-consola);
+  margin-inline: auto;
+  padding: var(--space-8) var(--respiro-lateral) var(--space-16);
+}
+#raiz > section > h2:first-child { margin-bottom: var(--space-6); }
+/* La cabecera comparte el ancho y el respiro del contenido. Si no, el nombre
+   de arriba a la izquierda no queda alineado con el título de la pantalla y se
+   lee como dos páginas superpuestas. */
+.cabecera .contenedor {
+  max-width: var(--ancho-consola);
+  padding-inline: var(--respiro-lateral);
 }
 
+/* En un celular el aire de arriba y de abajo también sobra: lo que se quiere
+   ahí es que entre contenido en la primera pantalla. */
+@media (max-width: 40rem) {
+  #raiz > section { padding-top: var(--space-6); padding-bottom: var(--space-10); }
+}
+
+/* ── Cabecera ───────────────────────────────────────────────────────────
+   El menú se desborda en un celular angosto antes que empujar «Salir» fuera de
+   la pantalla, que es como quedaba alguien sin poder cerrar sesión. */
+.cabecera nav { display: flex; gap: var(--space-4); flex: 1; align-items: center; }
+
+/* DÓNDE ESTOY PARADO.
+   El sistema pinta el enlace activo con el acento cuando lleva
+   `aria-current="page"`… y ese atributo no aparecía NUNCA, porque lo pone
+   `NavLink` y la cabecera usaba `Link`. La regla existía, no se aplicaba a
+   nada, y el menú se veía idéntico en las quince pantallas: se entraba a
+   «Productos» y nada en la barra lo decía.
+
+   El color solo no alcanza en una fila de trece enlaces del mismo tamaño, así
+   que va además una barra debajo. El borde transparente lo llevan TODOS los
+   enlaces y no solo el activo: si lo pusiera solo el activo, al cambiar de
+   pantalla la barra entera se correría dos píxeles. */
+/* `:not(.btn)` no es decorativo acá: el sistema trae `.nav a:not(.btn)` con
+   `color: inherit`, que pesa más que un `.cabecera nav a` pelado y le ganaba a
+   este color. Se vio porque el enlace en reposo seguía saliendo a tono pleno. */
+.cabecera nav a:not(.btn), .cabecera > .contenedor > a:not(.btn) {
+  padding-block: var(--space-1);
+  border-bottom: 2px solid transparent;
+  /* Los enlaces en reposo van apagados y el activo a color pleno. En el tema
+     claro el acento es la pizarra `#2f3a44`, casi el mismo tono que el texto:
+     sin este contraste el «activo» se apoyaría solo en la barra. */
+  color: color-mix(in srgb, var(--color-text) 72%, transparent);
+}
+.cabecera nav a:not(.btn):hover,
+.cabecera > .contenedor > a:not(.btn):hover { color: var(--color-text); }
+.cabecera a:not(.btn)[aria-current="page"] {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+/* NO cambia el grosor de la letra a propósito: Archivo salta de 400 a 800 y el
+   enlace activo se ensancharía, corriendo de lugar a todos los que le siguen
+   cada vez que se cambia de pantalla. */
+@media (max-width: 60rem) {
+  .cabecera .nav { flex-wrap: wrap; padding-block: var(--space-2); }
+  /* `flex: 0 0 100%` y no `width: 100%`: el `flex: 1` de arriba fija la base en
+     0 y le gana al ancho, así que el menú NO bajaba de línea — se quedaba
+     apretado al lado de «Salir» y los últimos enlaces salían de la pantalla,
+     inalcanzables en un celular. Se vio a 390px. */
+  .cabecera nav { order: 3; flex: 0 0 100%; overflow-x: auto; gap: var(--space-3); padding-bottom: 2px; }
+}
+
+/* Una tabla de seis columnas no entra en un celular. Antes desbordaba la
+   página entera: se arrastraba TODO de costado, con el formulario y el título
+   incluidos, y no se entendía qué se estaba moviendo. Así, la que se desliza
+   es la tabla y nada más. */
+@media (max-width: 48rem) {
+  #raiz > section > table, #raiz > section > .table {
+    display: block; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Controles de formulario ────────────────────────────────────────────
+   El aspecto es el de `.input` del sistema; ver el punto 1 de la cabecera para
+   por qué se aplica por elemento y dentro de `:where()`. */
+:where(input, select, textarea) {
+  display: block;
+  width: 100%;
+  /* Tope de lectura para los formularios que NO están en cuadrícula. Dentro de
+     una celda, quien acota es la celda y este número no llega a aplicar. */
+  max-width: 34rem;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-borde-control);
+  border-radius: var(--radius-pildora);
+  background: var(--color-surface);
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.4;
+}
+:where(input, select, textarea):hover { border-color: var(--color-accent); }
+:where(input, select, textarea):focus-visible { border-color: var(--color-accent); }
+:where(textarea) { min-height: 96px; border-radius: var(--radius-md); resize: vertical; }
+/* Las casillas y los radios no son cajas de texto: se les devuelve su tamaño
+   natural, que la regla de arriba les había quitado. */
+:where(input[type="checkbox"], input[type="radio"]) {
+  width: auto; min-height: 0; padding: 0; display: inline-block;
+  accent-color: var(--color-accent);
+}
+:where(input[type="file"]) { padding: 10px 14px; border-radius: var(--radius-md); }
+:where(input[type="color"]) { width: 56px; padding: 4px; }
+
+/* ── El ancho del campo dice qué se espera adentro ──────────────────────
+   Todos los campos medían lo mismo: una caja de 34rem para «Recargo de flota»,
+   donde va un 10, se lee como si faltara algo. El ancho es la primera pista de
+   qué se espera, y darla mal es peor que no darla.
+
+   Va por selector de ELEMENTO, con el tipo del control, y no con una clase por
+   campo: `type="number"` y `inputMode="numeric"` ya declaran que lo que entra
+   es un número, así que la pista sale sola en cada campo nuevo. */
+:where(input[type="number"], input[inputmode="numeric"]) {
+  max-width: 11rem;
+  /* Alineado a la derecha: es como se leen y se comparan los números en
+     cualquier planilla, y hace que las unidades y los decimales queden en la
+     misma columna cuando hay varios campos uno debajo del otro. */
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+:where(input[type="date"], input[type="time"]) { max-width: 11rem; }
+:where(input[type="tel"]) { max-width: 16rem; }
+/* Un desplegable no necesita más ancho que su opción más larga. «Bs (BOB)» en
+   una caja de 34rem era el caso más visible. */
+:where(select) { max-width: 18rem; }
+:where(select[multiple]) { max-width: 26rem; }
+
+/* El ejemplo en gris. Es una PISTA, no una etiqueta: desaparece al escribir,
+   así que nunca puede llevar información que haga falta después. Lo que el
+   campo significa vive en su rótulo; acá va cómo se ve una respuesta buena. */
+:where(input, textarea)::placeholder {
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  opacity: 1;   /* Firefox lo baja a .54 por su cuenta y queda ilegible. */
+}
+
+/* ── Campo de dinero ────────────────────────────────────────────────────
+   La moneda va DENTRO del campo, a la izquierda, y el número pegado a la
+   derecha. Fuera del campo —como rótulo o como texto al lado— se lee como una
+   palabra más de la frase; adentro se lee como parte del número, que es lo que
+   es. Y evita la duda de si el 7 son bolivianos o dólares en un panel donde
+   conviven los dos. */
+.con-moneda { display: inline-flex; align-items: center; position: relative; }
+.con-moneda .moneda {
+  position: absolute; left: 14px;
+  font-size: 14px; pointer-events: none;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+.con-moneda input { padding-left: 44px; }
+
+/* La etiqueta envuelve al control: `<label>Texto <input/></label>`. El texto
+   toma el tamaño chico del sistema y el control recupera el suyo, porque si no
+   heredaría los 13px de la etiqueta. */
+:where(form label, .campo) {
+  display: block;
+  margin: 0 0 var(--space-4);
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+:where(form label) > :where(input, select, textarea) { margin-top: 5px; color: var(--color-text); }
+
+/* ── Formularios en columnas ─────────────────────────────────────────────
+
+   ESTO ES LO QUE HACE QUE LA CONSOLA SEA OPERATIVA Y NO UN FOLLETO. Un
+   formulario en una sola columna sobre un monitor de 1900px es una tira de
+   campos con dos tercios de pantalla vacíos al costado: para llegar a
+   «Mensajes fijos» hay que hacer scroll por delante de todo lo demás. Con las
+   columnas, la Configuración entera entra de una sola mirada, que es lo que
+   uno quiere de una pantalla que se abre para cambiar un dato y salir.
+
+   `auto-fit` con `minmax(min(100%, 21rem), 1fr)`: el navegador pone las
+   columnas que entren de 21rem para arriba y reparte el sobrante. Una sola en
+   el celular, dos en una laptop, tres o cuatro en un monitor. No hay ni una
+   consulta de medios: el número de columnas lo decide el ancho disponible, que
+   es exactamente lo que se pidió. El `min(100%, …)` es el que evita que en una
+   pantalla más angosta que 21rem la columna desborde la página.
+
+   LO QUE MANDA SOBRE LA FILA ENTERA son los títulos y las reglas: un
+   «Voz del asistente» metido en una celda parecería el rótulo de un campo, y
+   no el comienzo de una sección. */
+#raiz > section form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr));
+  gap: 0 var(--space-8);
+  /* Sin esto las celdas de una fila se estiran a la altura de la más alta y un
+     `<select>` de una línea queda del alto de un `<textarea>`. */
+  align-items: start;
+}
+#raiz > section form > :where(h2, h3, h4, hr, table, fieldset, .ancho-total) {
+  grid-column: 1 / -1;
+}
+/* Aire ANTES de cada sección, no después. En una sola columna el salto de
+   tamaño de un `<h3>` ya se ve; repartido en cuatro columnas, el título queda
+   pegado a la fila de arriba y parece el rótulo del último campo. */
+#raiz > section form > :where(h2, h3, h4):not(:first-child) { margin-top: var(--space-6); }
+/* Un párrafo suelto dentro del formulario —un aviso general, no la ayuda de un
+   campo— cruza la fila. La ayuda de un campo NO va suelta: va dentro de su
+   `.grupo`, porque en una cuadrícula cada hijo cae en una celda distinta y la
+   advertencia terminaba debajo de otro campo. */
+#raiz > section form > p { grid-column: 1 / -1; }
+/* El envío abre fila nueva y arranca en la primera columna; lo que venga
+   después —«Cancelar»— se le pone al lado. Un botón de guardar apretado entre
+   dos campos no se lee como el final del formulario. */
+#raiz > section form > button { justify-self: start; }
+#raiz > section form > button[type="submit"] { grid-column-start: 1; }
+
+/* Un campo y su ayuda, como una sola pieza. */
+.grupo { margin-bottom: var(--space-4); }
+.grupo > label { margin-bottom: var(--space-1); }
+.grupo > .ayuda { margin-bottom: 0; }
+/* SE PROBÓ dar a los campos de texto largo una celda doble, y quedó peor: las
+   filas se volvían irregulares y con huecos, y la pantalla dejaba de leerse
+   como una grilla. Los mensajes fijos son cuatro cajas del mismo tipo y se
+   entienden mejor una al lado de la otra, todas iguales. */
+
+/* La fila de acciones. Sin esto, «Guardar» y «Cancelar» caen en dos celdas de
+   la cuadrícula y en un monitor ancho terminan separados por medio metro. */
+.acciones {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* Botón pelado = botón secundario; el de envío es el principal de su
+   formulario. Es la jerarquía que ya tenían las pantallas escrita en prosa. */
+:where(button) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; padding: var(--space-2) calc(var(--space-4) * 1.1);
+  border: 1px solid var(--color-borde-control);
+  border-radius: var(--radius-pildora);
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-heading); font-size: 15px; font-weight: var(--font-heading-weight);
+  line-height: 1.2; cursor: pointer;
+  transition: background-color .16s, color .16s;
+}
+:where(button):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+:where(button):disabled { opacity: .45; cursor: not-allowed; }
+:where(button[type="submit"]) {
+  margin-top: var(--space-4);
+  border-color: transparent;
+  background: var(--color-accent); color: var(--color-on-accent);
+}
+:where(button[type="submit"]):hover { background: var(--color-accent-600); }
+
+:where(table) { width: 100%; border-collapse: collapse; font-size: 15px; }
+:where(th) {
+  padding: var(--space-2); text-align: left;
+  border-bottom: 2px solid var(--color-divider);
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+  font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+}
+:where(td) { padding: var(--space-2); border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent); }
+
+/* ── Textos de ayuda ────────────────────────────────────────────────────
+   La consola explica mucho a propósito: quien la usa es el dueño de una PyME,
+   no un operador entrenado. */
+.ayuda {
+  max-width: var(--ancho-lectura);
+  font-size: 14px;
+  color: color-mix(in srgb, var(--color-text) 75%, transparent);
+}
+/* Aviso con consecuencia real: se marca con el color de advertencia del
+   sistema, no con un gris más. */
+.aviso-datos {
+  border-left: 3px solid var(--color-aviso);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: color-mix(in srgb, var(--color-aviso) 8%, transparent);
+  color: var(--color-text);
+}
+
+/* Marca los campos que la consola guarda pero el flujo todavía no lee. Es
+   deliberadamente visible: existe para incomodar hasta que sobre. */
+.pendiente {
+  display: inline-block; margin-left: var(--space-2);
+  padding: 2px 10px; border-radius: var(--radius-pildora);
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  background: color-mix(in srgb, var(--color-aviso) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-aviso) 50%, transparent);
+  color: var(--color-text);
+}
+
+/* ── Tablero ────────────────────────────────────────────────────────────
+   Las tarjetas del tablero son las del sistema: superficie blanca, radio
+   grande y sombra corta. Antes eran un borde gris de 1px sobre el mismo fondo,
+   que es lo que las hacía ver como una hoja de cálculo. */
 .cuadricula {
   display: grid;
   /* auto-fit + minmax: una columna en el celular, las que entren en el
      escritorio, sin una sola consulta de medios. El mínimo es 17rem porque por
      debajo de eso el número grande y su rótulo se parten en dos líneas. */
   grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
-  gap: var(--paso);
-  margin-bottom: calc(var(--paso) * 1.5);
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
 }
-
 .tarjeta {
-  border: 1px solid var(--borde);
-  border-radius: var(--radio);
-  background: var(--fondo-tarjeta);
-  padding: var(--paso);
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  /* El relleno acompaña al ancho de la pantalla: 17.6px en un celular, donde
+     cada píxel de contenido cuenta, y 26.4px de un monitor en adelante. */
+  padding: clamp(var(--space-4), 2.2vw, var(--space-6));
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
-.tarjeta h3 { margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+.tarjeta h3 {
+  margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+}
 .tarjeta h3:empty { display: none; }
-.tarjeta-cuerpo { flex: 1; display: flex; flex-direction: column; gap: .5rem; }
+.tarjeta-cuerpo { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); }
 .tarjeta-cuerpo > :first-child { margin-top: 0; }
 .tarjeta-cuerpo > :last-child { margin-bottom: 0; }
-.tarjeta-pie { padding-top: .5rem; border-top: 1px solid var(--borde); }
+.tarjeta-pie { padding-top: var(--space-2); border-top: 1px solid var(--color-divider); }
 
-.datos { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.datos { display: flex; flex-wrap: wrap; gap: var(--space-6); }
 .dato { display: flex; flex-direction: column; }
-.dato strong { font-size: 2rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.dato span { font-size: .8rem; opacity: .7; }
-
-.titulo-negocio { font-size: 1.1rem; font-weight: 600; margin: 0; }
-
-.etiqueta {
-  display: inline-block; padding: .1rem .5rem; border-radius: 1rem;
-  font-size: .75rem; border: 1px solid var(--borde);
+.dato strong {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 2.2rem; line-height: 1.05; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
 }
-.etiqueta.ok { background: #2e7d3222; }
-.etiqueta.alerta { background: #c6282822; }
+.dato span { font-size: 13px; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+@media (max-width: 40rem) { .dato strong { font-size: 1.8rem; } }
+
+.titulo-negocio { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 20px; margin: 0; }
 
 /* El estado vacío EXPLICA. Un vacío mudo se lee como algo roto. */
 .vacio {
-  border: 1px dashed var(--borde);
-  border-radius: var(--radio);
-  padding: var(--paso);
-  opacity: .85;
-  margin: 0;
+  margin: 0; padding: var(--space-6);
+  border: 1px dashed var(--color-borde-control);
+  border-radius: var(--radius-lg);
+  background: var(--fondo-alterno);
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
 }
 
-/* El menú se desborda en un celular angosto antes que empujar el botón Salir
-   fuera de la pantalla, que es como quedaba alguien sin poder cerrar sesión. */
-@media (max-width: 40rem) {
-  header { flex-wrap: wrap; }
-  nav { overflow-x: auto; gap: .75rem; }
-  .dato strong { font-size: 1.6rem; }
+/* ── Estados ────────────────────────────────────────────────────────────
+   Los tres colores salen de los tokens con nombre (`--color-ok`, `--color-error`),
+   así que el tema oscuro los cambia sin tocar nada de acá. */
+.etiqueta {
+  display: inline-block; padding: 3px 12px; border-radius: var(--radius-pildora);
+  font-size: 12px; border: 1px solid var(--color-borde-control);
 }
+.etiqueta.ok { background: color-mix(in srgb, var(--color-ok) 14%, transparent); border-color: color-mix(in srgb, var(--color-ok) 45%, transparent); }
+.etiqueta.alerta { background: color-mix(in srgb, var(--color-error) 12%, transparent); border-color: color-mix(in srgb, var(--color-error) 45%, transparent); }
+.situacion {
+  /* `align-self` y no solo `inline-block`: la situación vive dentro de una
+     tarjeta que es `flex` en columna, y ahí un `inline-block` se estira hasta
+     el ancho completo. Se veía como una banda, no como una pastilla. */
+  display: inline-block; align-self: start; width: fit-content;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pildora); font-size: 18px;
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+}
+.situacion.ok { background: color-mix(in srgb, var(--color-ok) 14%, transparent); color: var(--verde-texto); }
+.situacion.alerta { background: color-mix(in srgb, var(--color-error) 12%, transparent); color: var(--color-error); }
+tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent); }
 
-/* El control segmentado del sistema usa `:has(input:checked)`, que sirve para
-   radios. Acá son botones con `aria-pressed`, así que el estado activo se pinta
-   por ese atributo — mismo aspecto, semántica correcta para lo que hace. */
-.seg-opt[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
-.seg-opt[aria-pressed="true"]:hover { background: var(--color-accent-600); }
+/* ── Conversaciones ─────────────────────────────────────────────────────
+   Burbujas: la entrante en la superficie del sistema, la saliente en el verde
+   suave de la marca. Antes eran dos grises indistinguibles a contraluz. */
+.dos-columnas { display: grid; grid-template-columns: minmax(14rem, 22rem) 1fr; gap: var(--space-6); }
+@media (max-width: 52rem) { .dos-columnas { grid-template-columns: 1fr; } }
+.lista-hilos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.lista-hilos button {
+  display: grid; width: 100%; text-align: left; justify-items: start;
+  gap: 2px; padding: var(--space-2) var(--space-3);
+  border-color: transparent; border-radius: var(--radius-md);
+  font-family: var(--font-body); font-weight: 400;
+}
+.lista-hilos button:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+.hilo { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.hilo li { max-width: 42rem; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); }
+.hilo .entrante { background: var(--color-surface); border: 1px solid var(--color-divider); justify-self: start; }
+.hilo .saliente { background: var(--color-accent-2-100); color: var(--color-accent-2-900); justify-self: end; }
+[data-tema="oscuro"] .hilo .saliente { background: var(--color-accent-100); color: var(--color-text); }
+.hilo time { display: block; font-size: 12px; opacity: .65; }
 
-/* -----------------------------------------------------------------------------
-   INGRESO. El formulario del comercio ES la pantalla; el acceso del equipo es
-   un enlace al pie, deliberadamente pequeño. No está escondido: esconder una
-   puerta no la protege. Solo deja de competir con lo que la mayoría vino a
-   hacer, y de anunciarle al cliente que hay una entrada interna del mismo
-   tamaño que la suya.
-   -------------------------------------------------------------------------- */
+/* ── Filtros y pestañas ─────────────────────────────────────────────── */
+.filtros { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: end; margin-bottom: var(--space-6); }
+.filtros label { margin: 0; }
+.filtros input, .filtros select { width: auto; min-width: 10rem; }
+.pestanas { display: flex; gap: var(--space-2); flex-wrap: wrap; margin: 0 0 var(--space-6); }
+.pestanas button[aria-pressed="true"] {
+  background: var(--color-accent); color: var(--color-on-accent); border-color: transparent;
+}
+.pestanas button[aria-pressed="true"]:hover { background: var(--color-accent-600); }
+
+/* Enlace disfrazado de botón: se usa donde la acción es de texto, dentro de
+   una frase. Se le quita todo lo de botón que la regla de elemento le puso. */
+.enlace {
+  display: inline; min-height: 0; padding: 0;
+  background: none; border: 0; border-radius: 0;
+  font: inherit; color: var(--color-accent);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.enlace:hover { background: none; color: var(--color-accent-600); }
+
+/* ── Ingreso ────────────────────────────────────────────────────────────
+   El formulario del comercio ES la pantalla; el acceso del equipo es un enlace
+   al pie, deliberadamente pequeño. No está escondido: esconder una puerta no
+   la protege. Solo deja de competir con lo que la mayoría vino a hacer. */
+.centrado { display: grid; place-content: center; min-height: 100vh; text-align: center; gap: var(--space-2); padding: var(--space-6); }
+.centrado input { max-width: 22rem; margin-inline: auto; }
+/* La marca del ingreso es la PRIMERA pantalla que ve un cliente. Llevaba solo
+   el nombre en texto; ahora trae el isotipo, centrado (el `margin-right: auto`
+   de `.nav-brand` sirve en la cabecera y acá lo corría a la izquierda). */
+.marca-ingreso { margin: 0 0 var(--space-1); justify-content: center; font-size: 34px; }
+.marca-ingreso svg { color: var(--pizarra); }
+[data-tema="oscuro"] .marca-ingreso svg { color: var(--color-text); }
 .enlace-interno {
-  margin-top: 2.5rem;
-  background: none; border: 0; padding: .25rem;
-  font-size: .8rem; letter-spacing: .04em;
-  color: color-mix(in srgb, var(--color-text) 45%, transparent);
-  text-decoration: underline; text-underline-offset: 3px;
-  cursor: pointer;
+  margin-top: var(--space-10);
+  min-height: 0; padding: var(--space-1); border: 0; background: none;
+  font-family: var(--font-body); font-size: 13px; font-weight: 400; letter-spacing: .04em;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
 }
-.enlace-interno:hover { color: var(--color-text); }
-
+.enlace-interno:hover { background: none; color: var(--color-text); }
 .interno {
-  margin-top: 2rem; padding-top: 1.25rem;
+  margin-top: var(--space-8); padding-top: var(--space-4);
   border-top: 1px solid var(--color-divider);
-  display: flex; flex-direction: column; gap: .75rem; align-items: center;
+  display: flex; flex-direction: column; gap: var(--space-3); align-items: center;
   max-width: 22rem;
 }
 
-/* Marca los campos que la consola guarda pero el flujo todavía no lee. Es
-   deliberadamente visible y feo: existe para incomodar hasta que sobre. */
-.pendiente {
-  display: inline-block; margin-left: .5rem;
-  font-size: .68rem; letter-spacing: .04em; text-transform: uppercase;
-  padding: .1rem .45rem; border-radius: 1rem;
-  background: color-mix(in srgb, #c68a28 22%, transparent);
-  color: var(--color-text);
-  border: 1px solid color-mix(in srgb, #c68a28 55%, transparent);
-}
-
-/* Casilla de verificación con su texto al lado, en línea. El `.field` general
-   apila etiqueta y control, que para una casilla se ve como un error. */
+/* ── Casillas y tabla del catálogo ───────────────────────────────────── */
+/* Casilla con su texto al lado, en línea. Apilar etiqueta y control —lo normal
+   en un campo— para una casilla se ve como un error. */
 .campo-casilla {
-  display: flex; align-items: flex-start; gap: .5rem;
+  display: flex; align-items: flex-start; gap: var(--space-2);
   flex-direction: row; max-width: 38rem;
 }
-.campo-casilla input { width: auto; margin-top: .2rem; }
-
-/* Fila del catálogo en modo edición: se distingue de las demás para que se vea
-   dónde está uno cuando la tabla es larga, y los campos ocupan su columna. */
+.campo-casilla input { width: auto; margin-top: .25rem; }
+/* Fila del catálogo en edición: se distingue de las demás para que se vea
+   dónde está uno cuando la tabla es larga. */
 .fila-editando { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
-.fila-editando .input { width: 100%; min-width: 6rem; }
+.fila-editando :where(input, select) { min-width: 6rem; max-width: none; min-height: 38px; padding: 6px 12px; }
+
+@keyframes latido { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }
+
+/* ── Gráficos ───────────────────────────────────────────────────────────
+   LAS DOS SERIES NO SE ELIGIERON A OJO. Son un par categórico validado contra
+   la superficie de la tarjeta: banda de luminosidad, piso de croma, separación
+   para daltonismo y contraste. Los tonos de oscuro NO son los de claro
+   «aclarados» —así es como se rompen las paletas en oscuro— sino los dos
+   escalones que pasan las mismas comprobaciones contra el fondo oscuro.
+
+   El verde queda para el asistente: es el color de la acción en esta marca, y
+   además es la serie que cuesta plata (cada mensaje que envía el asistente se
+   cobra desde el 01/10/2026). El azul, para lo que escribe el cliente. */
+:root {
+  --serie-entrantes: #1c7ed6;
+  --serie-salientes: #0b855c;
+}
+[data-tema="oscuro"] {
+  --serie-entrantes: #3d82ea;
+  --serie-salientes: #0ea975;
+}
+
+.grafico { margin: 0; }
+.grafico figcaption {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.grafico-titulo {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 15px; margin-right: auto;
+}
+.leyenda { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: 13px; }
+.llave { display: inline-flex; align-items: center; gap: 6px; }
+/* La marca de color va AL LADO del texto, nunca pintando el texto: el rótulo
+   lleva tinta de texto y el color lo carga el cuadradito. */
+.marca { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.marca-entrantes { background: var(--serie-entrantes); }
+.marca-salientes { background: var(--serie-salientes); }
+
+.grafico-lienzo { position: relative; }
+.grafico svg { width: 100%; height: auto; display: block; overflow: visible; }
+.barra { transition: opacity .12s; }
+.barra-entrantes { fill: var(--serie-entrantes); }
+.barra-salientes { fill: var(--serie-salientes); }
+/* Al pasar por encima se apaga el resto, no se enciende la barra: subir el
+   brillo de una sola cambia el color que la leyenda dice que es. */
+.grafico-lienzo:has(.barra-encima) .barra:not(.barra-encima) { opacity: .45; }
+/* La grilla acompaña y no compite: si se ve más que los datos, sobra. */
+.grafico-guia { stroke: var(--color-divider); stroke-width: 1; }
+.grafico-eje {
+  font-size: 10px; font-family: var(--font-body);
+  fill: color-mix(in srgb, var(--color-text) 65%, transparent);
+}
+.grafico-detalle { margin: var(--space-1) 0 0; font-size: 13px; }
+
+/* El selector de período va en UNA fila encima de los gráficos, no en un menú:
+   es el control que más se toca en esta pantalla. */
+.periodos { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }

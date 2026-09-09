@@ -3,6 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 
 interface Cuenta {
   plan?: unknown;
@@ -12,12 +13,6 @@ interface Cuenta {
   proximoVencimiento?: { toDate(): Date };
   motivoVisible?: unknown;
 }
-
-const ETIQUETA: Record<string, string> = {
-  al_dia: 'Al día',
-  pendiente: 'Pago pendiente',
-  vencido: 'Vencido',
-};
 
 /**
  * Estado de cuenta, visible para el administrador del comercio.
@@ -50,8 +45,8 @@ export function EstadoCuenta() {
   if (error) return <section><p role="alert">{error}</p></section>;
   if (!cuenta) return <section><p>Cargando…</p></section>;
 
-  const situacion = ETIQUETA[String(cuenta.estadoPago)] ?? 'Sin información';
-  const alDia = cuenta.estadoPago === 'al_dia';
+  const situacion = etiquetaDePago(cuenta.estadoPago);
+  const alDia = pagoAlDia(cuenta.estadoPago);
 
   return (
     <section>

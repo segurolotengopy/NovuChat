@@ -1,4 +1,5 @@
-import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
 import { ProveedorSesion, useSesion } from './lib/contexto';
 import { rolEn } from './lib/sesion';
 import { Proteger } from './componentes/Proteger';
@@ -19,6 +20,7 @@ import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './paginas/Catalogo';
 import { Cobro } from './paginas/Cobro';
 import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
+import type { FlujoId } from './lib/flujos';
 
 /**
  * Menú, filtrado por rol.
@@ -42,12 +44,54 @@ import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
  * único que la persona administra, que es el caso de casi todos los comercios.
  * Con varios negocios no se adivina: se ofrece volver al inicio a elegir.
  */
+/**
+ * TÍTULO DE LA PESTAÑA DEL NAVEGADOR, por página.
+ *
+ * Decía «NovuChat · Panel administrativo» en las quince pantallas. Quien deja
+ * la consola abierta al lado del correo y de WhatsApp Web —que es exactamente
+ * cómo la usa el dueño de un negocio— no tiene forma de saber cuál de sus
+ * pestañas es cuál, ni de volver a la que estaba. Con dos pestañas de la
+ * consola abiertas, menos.
+ *
+ * El nombre sale del último tramo de la RUTA y no de un rótulo que cada página
+ * escriba por su cuenta: así una pantalla nueva ya sale con título y no hay dos
+ * listas de nombres que se separen con el tiempo. La única que no es literal es
+ * el catálogo, que se llama «Servicios» o «Productos» según los flujos del
+ * negocio, igual que su pestaña del menú.
+ */
+const TITULOS: Record<string, string> = {
+  '': 'Inicio',
+  negocios: 'Negocios',
+  bitacora: 'Bitácora',
+  'mi-cuenta': 'Mi cuenta',
+  configuracion: 'Configuración',
+  conversaciones: 'Conversaciones',
+  usuarios: 'Usuarios',
+  contactos: 'Contactos',
+  agenda: 'Agenda',
+  cobro: 'Pedidos y cobro',
+  consumo: 'Consumo',
+  cuenta: 'Cuenta',
+  reclamos: 'Reclamos',
+  ingresar: 'Ingresar',
+};
+
+function useTituloDePagina(flujos: FlujoId[] | null): void {
+  const { pathname } = useLocation();
+  const tramo = pathname.replace(/\/+$/, '').split('/').pop() ?? '';
+  const nombre = tramo === 'catalogo' ? etiquetaCatalogo(flujos ?? []) : TITULOS[tramo];
+  useEffect(() => {
+    document.title = nombre ? `${nombre} · NovuChat` : 'NovuChat · Panel administrativo';
+  }, [nombre]);
+}
+
 function Cabecera() {
   const { usuario, permisos, salir } = useSesion();
   const { tenantId: tenantDeLaRuta } = useParams();
   const negocios = Object.keys(permisos.tenants);
   const tenantId = tenantDeLaRuta ?? (negocios.length === 1 ? negocios[0] : undefined);
   const flujos = useFlujos(tenantId);
+  useTituloDePagina(flujos);
   if (!usuario) return null;
 
   const rol = tenantId ? rolEn(permisos, tenantId) : null;
@@ -55,38 +99,46 @@ function Cabecera() {
   const esPersona = rol === 'admin' || rol === 'oper';
 
   return (
-    <header className="nav">
+    /* La cabecera es PEGAJOSA y su contenido va dentro de `.contenedor`, igual
+       que en novuchat.site. Antes era un `<header class="nav">` a borde
+       completo: en un monitor ancho el nombre quedaba pegado al filo izquierdo
+       y «Salir» al derecho, con un metro de vacío en medio, mientras el
+       contenido de abajo sí venía centrado. Se leía como dos páginas distintas
+       una encima de la otra. */
+    <header className="cabecera">
+      <div className="contenedor nav">
       <Marca />
       <nav>
-        {permisos.propietario && <Link to="/negocios">Negocios</Link>}
-        {permisos.propietario && <Link to="/bitacora">Bitácora</Link>}
+        {permisos.propietario && <NavLink to="/negocios">Negocios</NavLink>}
+        {permisos.propietario && <NavLink to="/bitacora">Bitácora</NavLink>}
         {/* Con varios negocios y sin uno elegido, la salida es el inicio, que
             los lista. Adivinar cuál quiere ver sería peor que preguntarlo. */}
-        {!tenantId && negocios.length > 1 && <Link to="/">Mis negocios</Link>}
+        {!tenantId && negocios.length > 1 && <NavLink to="/" end>Mis negocios</NavLink>}
         {tenantId && esAdminDelNegocio &&
-          <Link to={`/negocio/${tenantId}/configuracion`}>Configuración</Link>}
+          <NavLink to={`/negocio/${tenantId}/configuracion`}>Configuración</NavLink>}
         {tenantId && esAdminDelNegocio && flujos &&
-          <Link to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</Link>}
+          <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</NavLink>}
         {tenantId && esAdminDelNegocio && (flujos ?? []).flatMap((f) =>
           FLUJOS[f].pestanas.map((p) =>
-            <Link key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</Link>))}
+            <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>))}
         {tenantId && esPersona &&
-          <Link to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</Link>}
+          <NavLink to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</NavLink>}
         {tenantId && esAdminDelNegocio &&
-          <Link to={`/negocio/${tenantId}/usuarios`}>Usuarios</Link>}
+          <NavLink to={`/negocio/${tenantId}/usuarios`}>Usuarios</NavLink>}
         {tenantId && esAdminDelNegocio &&
-          <Link to={`/negocio/${tenantId}/contactos`}>Contactos</Link>}
+          <NavLink to={`/negocio/${tenantId}/contactos`}>Contactos</NavLink>}
         {tenantId && (esPersona || permisos.propietario) &&
-          <Link to={`/negocio/${tenantId}/consumo`}>Consumo</Link>}
+          <NavLink to={`/negocio/${tenantId}/consumo`}>Consumo</NavLink>}
         {tenantId && esAdminDelNegocio &&
-          <Link to={`/negocio/${tenantId}/cuenta`}>Cuenta</Link>}
+          <NavLink to={`/negocio/${tenantId}/cuenta`}>Cuenta</NavLink>}
         {tenantId && esPersona &&
-          <Link to={`/negocio/${tenantId}/reclamos`}>Reclamos</Link>}
+          <NavLink to={`/negocio/${tenantId}/reclamos`}>Reclamos</NavLink>}
         {tenantId && esAdminDelNegocio &&
-          <Link to={`/negocio/${tenantId}/bitacora`}>Bitácora</Link>}
+          <NavLink to={`/negocio/${tenantId}/bitacora`}>Bitácora</NavLink>}
       </nav>
-      <Link to="/mi-cuenta">Mi cuenta</Link>
+      <NavLink to="/mi-cuenta">Mi cuenta</NavLink>
       <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
+      </div>
     </header>
   );
 }

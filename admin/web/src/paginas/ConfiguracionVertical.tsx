@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { CampoMonto } from '../componentes/CampoMonto';
 
 /**
  * Configuración ESPECÍFICA DEL VERTICAL.
@@ -21,7 +22,8 @@ import { auth, db } from '../lib/firebase';
 type Campo = {
   clave: string;
   etiqueta: string;
-  tipo: 'entero' | 'decimal' | 'booleano';
+  /** `monto` es un `decimal` que además se ve como plata: moneda adentro. */
+  tipo: 'entero' | 'decimal' | 'monto' | 'booleano';
   ayuda?: string;
   /**
    * Qué vale una casilla cuando el campo NO está en la base.
@@ -49,8 +51,10 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
     nota: 'Los rótulos del cobro simulado y la imagen del QR los administra NovuChat: '
         + 'son los que garantizan que un cobro de demostración nunca se presente como real.',
     campos: [
-      { clave: 'costoDelivery', etiqueta: 'Costo de envío', tipo: 'decimal' },
-      { clave: 'recargoFlota', etiqueta: 'Recargo de flota', tipo: 'decimal' },
+      { clave: 'costoDelivery', etiqueta: 'Costo de envío', tipo: 'monto',
+        ayuda: 'Lo que se suma al pedido cuando el cliente pide envío.' },
+      { clave: 'recargoFlota', etiqueta: 'Recargo de flota', tipo: 'monto',
+        ayuda: 'Se suma al costo de envío en las zonas que lo necesitan.' },
     ],
   },
 };
@@ -109,9 +113,16 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
             {c.tipo === 'booleano' ? (
               <input type="checkbox" checked={valorCasilla(c, datos[c.clave])}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.checked })} />
+            ) : c.tipo === 'monto' ? (
+              // El costo de envío y el recargo son PLATA, y se ven como plata:
+              // la moneda adentro del campo y el número a la derecha.
+              <CampoMonto value={String(datos[c.clave] ?? '')}
+                          placeholder="0.00"
+                          onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.value })} />
             ) : (
               <input type="number" min={0}
                      step={c.tipo === 'entero' ? 1 : 0.01}
+                     placeholder={c.tipo === 'entero' ? '0' : '0.00'}
                      value={String(datos[c.clave] ?? '')}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.value })} />
             )}

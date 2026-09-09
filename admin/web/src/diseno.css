@@ -1,27 +1,47 @@
 /* =============================================================================
-   SISTEMA DE DISEÑO «Modernist» — importado del entregable de Claude Design
+   SISTEMA GRÁFICO DE NOVUCHAT — el mismo que `novuchat.site`
    =============================================================================
-   Fuente: artefacto «Mobile app para admin/web». Esta hoja es la FUENTE DE
-   VERDAD de la apariencia: tokens, tipografía y clases de componente. Para
-   retocar el look se cambia acá, no en los componentes.
+   Esta hoja es la FUENTE DE VERDAD de la apariencia de la consola: tokens,
+   tipografía y clases de componente. Para retocar el look se cambia acá, no en
+   los componentes.
 
-   DOS CAMBIOS RESPECTO DEL ENTREGABLE, los dos obligados por este proyecto:
+   DE DÓNDE SALEN LOS VALORES. No se estimaron mirando una captura: se leyeron
+   de los estilos ya calculados de `https://novuchat.site` el 2026-09-08. Cada
+   token de abajo tiene el valor exacto que el sitio sirve hoy, en los dos
+   temas. Antes había acá una paleta distinta —«Modernist», fondo gris y acento
+   rojo— y la consola se veía como otro producto: el cliente entra desde la
+   web, hace clic en «Consola» y tiene que llegar a algo que reconoce.
 
-   1. Las tres fuentes Archivo se sirven desde `/fuentes/`, no desde Google.
-      La CSP de `admin/firebase.json` declara `font-src 'self'`: una fuente
-      remota se bloquea y el panel cae a la tipografía del sistema sin avisar.
-      Son un archivo por subconjunto (latin, latin-ext, vietnamese) y los tres
-      se declaran en los pesos 400, 600 y 800 porque Archivo es una fuente
-      VARIABLE: el mismo archivo cubre todo el eje de peso.
+   LAS TRES DECISIONES QUE DEFINEN EL PARECIDO, y que antes estaban al revés:
 
-   2. El tema oscuro es EL DEL SISTEMA (`[data-tema="oscuro"]`), no uno propio.
-      El entregable lo trae y lo activa con un control; acá además se enciende
-      solo siguiendo la preferencia del navegador, en `tema.ts`. Se corrigió el
-      fondo del `body`, que venía como literal y no seguía al token: en oscuro
-      dejaba fondo claro con texto claro.
+   1. FONDO CREMA, SUPERFICIE BLANCA. El sitio no usa gris: el papel es
+      `#f7f3ec` y lo que se levanta encima es blanco puro. Una consola gris
+      sobre gris no tiene profundidad y se lee como un formulario interno.
+
+   2. TODO REDONDEADO. El radio de píldora (`999px`) en botones, campos y
+      pastillas es lo primero que se nota. La paleta anterior traía los tres
+      radios en `0px`: cuadrado de punta a punta. Es el cambio que más mueve la
+      aguja aunque no se sepa nombrar.
+
+   3. DOS ACENTOS CON PAPELES DISTINTOS. La pizarra `#2f3a44` es el acento de
+      interfaz —enlaces, foco, estado activo— y el verde menta `#35e2a0` es el
+      de la ACCIÓN, y solo eso. Mezclarlos hace que nada resalte.
+
+   DOS COSAS QUE SE APARTAN DEL SITIO, las dos obligadas por este panel:
+
+   a. Las fuentes Archivo se sirven desde `/fuentes/`, no desde Google. La CSP
+      de `admin/firebase.json` declara `font-src 'self'`: una fuente remota se
+      bloquea y el panel cae a la tipografía del sistema sin avisar. Son un
+      archivo por subconjunto (latin, latin-ext, vietnamese) y los tres se
+      declaran en 400, 600 y 800 porque Archivo es una fuente VARIABLE: el
+      mismo archivo cubre todo el eje de peso.
+
+   b. El tema oscuro se enciende solo siguiendo la preferencia del navegador,
+      en `tema.ts`, y con la misma clave (`novuchat.tema`) y el mismo atributo
+      (`data-tema="oscuro"`) que usa el sitio. Quien tenga el sistema en oscuro
+      ve los dos productos en oscuro.
    ========================================================================== */
 
-/* Modernist — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
 /* vietnamese */
 @font-face {
   font-family: 'Archivo';
@@ -112,312 +132,405 @@
   src: url("/fuentes/archivo-latin.woff2") format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
-
-
-:root {
-  --color-bg: #f3f2f2;
-  --color-surface: #eae9e9;
-  --color-text: #201e1d;
-  --color-accent: #ec3013;
-  --color-accent-2: #e15b47;
-  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
-
-  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
-     same step of any role matches the others in visual value. */
-  --color-neutral-100: #f8f4f4;
-  --color-neutral-200: #eae7e7;
-  --color-neutral-300: #d7d3d3;
-  --color-neutral-400: #bab6b6;
-  --color-neutral-500: #9b9797;
-  --color-neutral-600: #7d7979;
-  --color-neutral-700: #605d5d;
-  --color-neutral-800: #444141;
-  --color-neutral-900: #2d2b2b;
-
-  --color-accent-100: #fff2ef;
-  --color-accent-200: #ffe0d9;
-  --color-accent-300: #ffc4b8;
-  --color-accent-400: #ff9783;
-  --color-accent-500: #ff563c;
-  --color-accent-600: #dd2b0f;
-  --color-accent-700: #ae1800;
-  --color-accent-800: #7c1405;
-  --color-accent-900: #4d170e;
-
-  --color-accent-2-100: #fff2ef;
-  --color-accent-2-200: #ffe0da;
-  --color-accent-2-300: #ffc4b9;
-  --color-accent-2-400: #ff9784;
-  --color-accent-2-500: #ef6853;
-  --color-accent-2-600: #c94b39;
-  --color-accent-2-700: #9e3526;
-  --color-accent-2-800: #71261b;
-  --color-accent-2-900: #471d16;
-
-  --font-heading: "Archivo", system-ui, sans-serif;
-  --font-heading-weight: 800;
-  --font-body: "Archivo", system-ui, sans-serif;
-
-  --space-1: 4.0px;
-  --space-2: 8.0px;
-  --space-3: 12.0px;
-  --space-4: 16.0px;
-  --space-6: 24.0px;
-  --space-8: 32.0px;
-
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-
-  /* Elevation — derived from the ground: soft ink-tinted shadows on a
-     light theme, a hairline edge + ambient darkness on a dark one. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
-  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
-}
-
-body {
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-body);
-}
-h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
-
-.grayscale{filter:grayscale(1) contrast(1.08)}
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Components — built with the tokens above. Plain CSS
-   on plain HTML: no JavaScript, no build step. Each class is documented in
-   readme.md and demonstrated in foundations/ and components/.
+   TOKENS — valores leídos de novuchat.site. Tema claro.
+   ══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --color-bg: #f7f3ec;
+  --color-surface: #ffffff;
+  --fondo-alterno: #fffdfa;
+  --color-text: #1c211f;
+  --color-divider: #1c211f29;
+  --color-borde-control: #1c211f6b;
+
+  /* Acento de INTERFAZ: enlaces, foco, estado activo, encabezados de tabla. */
+  --color-accent: #2f3a44;
+  --color-on-accent: #ffffff;
+  --color-accent-100: #eef1f4;
+  --color-accent-200: #d8dee4;
+  --color-accent-300: #b3bec8;
+  --color-accent-400: #7d8b98;
+  --color-accent-500: #2f3a44;
+  --color-accent-600: #27303a;
+  --color-accent-700: #1f2731;
+  --color-accent-800: #181f27;
+  --color-accent-900: #11171d;
+
+  /* Acento de ACCIÓN: el verde solo se usa para lo que el negocio quiere que
+     se toque, y para «esto salió bien». Si se lo reparte por toda la pantalla
+     deja de significar nada. */
+  --color-accent-2: #12c489;
+  --color-accent-2-100: #e4faf1;
+  --color-accent-2-200: #bff3de;
+  --color-accent-2-300: #8aeac4;
+  --color-accent-2-400: #35e2a0;
+  --color-accent-2-500: #12c489;
+  --color-accent-2-600: #0ea975;
+  --color-accent-2-700: #0b855c;
+  --color-accent-2-800: #086546;
+  --color-accent-2-900: #064733;
+  --cta-bg: #35e2a0;
+  --cta-bg-hover: #12c489;
+  --cta-fg: #0f1a16;
+  --verde-texto: #0b855c;
+
+  /* Neutros cálidos: la rampa acompaña al fondo crema, no al gris. */
+  --color-neutral-100: #f9f4ed;
+  --color-neutral-200: #eee7db;
+  --color-neutral-300: #dcd3c4;
+  --color-neutral-400: #c0b6a5;
+  --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-neutral-800: #474238;
+  --color-neutral-900: #2e2b25;
+
+  /* Estados. Se nombran por lo que significan, no por el color, para que el
+     tema oscuro pueda cambiarlos sin que ningún componente se entere. */
+  --color-ok: #0b855c;
+  --color-aviso: #b26a00;
+  --color-error: #b3261e;
+
+  --banda: #1b2430;
+  --banda-texto: #f2f7f5;
+  --pizarra: #2f3a44;
+
+  --font-heading: "Archivo", system-ui, -apple-system, sans-serif;
+  --font-heading-weight: 800;
+  --font-body: "Archivo", system-ui, -apple-system, sans-serif;
+  --tipo-cuerpo: 16.5px;
+  --tipo-h1: clamp(32px, 4.6vw, 52px);
+  --tipo-h2: clamp(25px, 3.2vw, 36px);
+  --tipo-h3: 22px;
+
+  /* La escala de espacio del sitio no es de 4 en 4: parte de 4.4px. Se copia
+     tal cual para que un bloque trasplantado de la web calce sin retoques. */
+  --space-1: 4.4px;
+  --space-2: 8.8px;
+  --space-3: 13.2px;
+  --space-4: 17.6px;
+  --space-6: 26.4px;
+  --space-8: 35.2px;
+  --space-10: 44px;
+  --space-16: 64px;
+  --space-24: 96px;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+  --radius-pildora: 999px;
+
+  --shadow-sm: 0 2px 10px #1c211f0f;
+  --shadow-md: 0 12px 34px #1c211f17;
+  --shadow-lg: 0 34px 80px #1c211f24;
+
+  --ancho: 1180px;
+  --ancho-lectura: 68ch;
+  --alto-cabecera: 64px;
+  --anillo-foco: 2px solid #2f3a44;
+}
+
+/* ── Tema oscuro. Los valores también salen del sitio ────────────────────
+   Notar que en oscuro el acento de interfaz PASA A SER el verde menta: la
+   pizarra sobre un fondo casi negro no se distingue. Es la clase de cosa que
+   se rompe sola si se duplica la paleta a mano en dos productos, y por eso se
+   copia de una sola lectura. */
+[data-tema="oscuro"] {
+  --color-bg: #101614;
+  --color-surface: #18201d;
+  --fondo-alterno: #131a18;
+  --color-text: #eef5f1;
+  --color-divider: #eef5f124;
+  --color-borde-control: #eef5f166;
+
+  --color-accent: #35e2a0;
+  --color-on-accent: #0f1a16;
+  --color-accent-100: #1d2a26;
+  --color-accent-500: #35e2a0;
+  --color-accent-600: #12c489;
+  --color-accent-700: #0ea975;
+  --color-accent-800: #0b855c;
+
+  --color-ok: #35e2a0;
+  --color-aviso: #f2b544;
+  --color-error: #ff8a80;
+  --verde-texto: #7ee7bd;
+
+  --banda: #18201d;
+  --banda-texto: #eef5f1;
+
+  --shadow-sm: 0 2px 10px #00000059;
+  --shadow-md: 0 12px 34px #00000073;
+  --shadow-lg: 0 34px 80px #0000008c;
+  --anillo-foco: 2px solid #35e2a0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BASE — tipografía y elementos. Las mismas reglas que sirve el sitio.
    ══════════════════════════════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; font-size: 15px; line-height: 1.55; font-weight: 400; }
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 var(--space-2);
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--tipo-cuerpo);
+  font-weight: 400;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
-h1 { font-size: 42px; }
-h2 { font-size: 32px; }
-h3 { font-size: 25px; }
-h4 { font-size: 20px; }
+/* En un celular el cuerpo sube medio punto: la consola se usa de pie, en la
+   calle, con una mano. Es la misma regla del sitio. */
+@media (max-width: 640px) { body { font-size: 17px; } }
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+h1 { font-size: var(--tipo-h1); line-height: 1.05; }
+h2 { font-size: var(--tipo-h2); }
+h3 { font-size: var(--tipo-h3); }
+h4 { font-size: 18px; }
 h5 { font-size: 16px; }
-h6 { font-size: 13px; }
-h6 { letter-spacing: 0.08em; text-transform: uppercase; }
+h6 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+
 p { margin: 0 0 var(--space-3); }
 a { color: var(--color-accent); text-underline-offset: 3px; }
+a:hover { color: var(--color-accent-600); }
 img { display: block; max-width: 100%; }
 figure { margin: 0; }
-figcaption {
-  font-size: 11px; margin-top: var(--space-1);
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+
+.text-muted, .texto-apagado { color: color-mix(in srgb, var(--color-text) 72%, transparent); }
+
 :focus { outline: none; }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+:focus-visible { outline: var(--anillo-foco); outline-offset: 2px; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
 
-/* — rules — */
-.hr {
-  height: 2px; border: 0; margin: var(--space-4) 0;
-  background: var(--color-divider);
+.contenedor {
+  width: 100%;
+  max-width: var(--ancho);
+  margin-inline: auto;
+  padding-inline: var(--space-4);
 }
 
-/* — buttons — */
+.hr { height: 2px; border: 0; margin: var(--space-4) 0; background: var(--color-divider); }
+
+/* ── Botones ─────────────────────────────────────────────────────────────
+   Píldora, 44px de alto mínimo. Los 44 no son estéticos: son el objetivo
+   táctil mínimo que recomienda Apple y que WCAG 2.2 pide para no fallar el
+   criterio 2.5.8. La consola se usa desde el teléfono. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  cursor: pointer; text-decoration: none;
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 14px; line-height: 1.2; color: var(--color-text); /* matches the .input's 14px —
-     the pair sits side by side in sign-up rows */
-  background: transparent; border: 1px solid transparent;
-  padding: var(--space-2) calc(var(--space-3) * 1.2);
-  border-radius: var(--radius-md);
+  min-height: 44px;
+  padding: var(--space-2) calc(var(--space-4) * 1.1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pildora);
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: var(--font-heading-weight);
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color .16s, color .16s;
 }
+.btn:hover { text-decoration: none; }
 .btn svg { display: block; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-primary { background: var(--color-accent); color: var(--color-bg); }
-.btn-primary:hover { background: var(--color-accent-600); }
-.btn-primary:active { background: var(--color-accent-700); }
-.btn-secondary { border-color: var(--color-divider); }
-.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
-.btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
-.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
-.btn-ghost:active { background: color-mix(in srgb, var(--color-accent) 18%, transparent); }
-.btn-icon { width: 36px; height: 36px; padding: 0; }
-.btn-block { width: 100%; margin-top: var(--space-2); justify-content: flex-start; text-align: left; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
 
-/* — forms — */
+.btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+.btn-primary:hover { background: var(--color-accent-600); color: var(--color-on-accent); }
+.btn-primary:active { background: var(--color-accent-700); }
+
+/* El verde es la llamada a la acción, y hay UNA por pantalla. */
+.btn-cta { background: var(--cta-bg); color: var(--cta-fg); }
+.btn-cta:hover { background: var(--cta-bg-hover); color: var(--cta-fg); }
+
+.btn-secondary { border-color: var(--color-borde-control); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); color: var(--color-text); }
+.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+
+.btn-ghost { padding-inline: var(--space-2); color: var(--color-accent); }
+.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+
+/* Acciones destructivas. No estaban en el sistema y la consola las tiene —dar
+   de baja un producto, quitar un usuario—; se pintaban igual que «Guardar». */
+.btn-peligro { color: var(--color-error); border-color: color-mix(in srgb, var(--color-error) 45%, transparent); }
+.btn-peligro:hover { background: color-mix(in srgb, var(--color-error) 10%, transparent); color: var(--color-error); }
+
+.btn-icon { width: 44px; min-height: 44px; padding: 0; }
+.btn-block { width: 100%; margin-top: var(--space-2); }
+.btn-grande { min-height: 52px; padding-inline: var(--space-6); font-size: 16px; }
+@media (min-width: 900px) { .btn-grande { min-height: 48px; } }
+/* Botón de una fila de tabla: la píldora de 44px no entra en una celda. */
+.btn-chico { min-height: 34px; padding: 4px 14px; font-size: 14px; }
+
+/* ── Formularios ─────────────────────────────────────────────────────── */
+.field { display: block; margin-bottom: var(--space-3); }
 .field > label {
-  display: block; font-size: 12px; margin-bottom: 5px;
-  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  display: block; margin-bottom: 5px; font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
 }
 .input {
-  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
-  font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
+  width: 100%; min-height: 48px; padding: 10px 14px;
+  border: 1px solid var(--color-borde-control);
+  border-radius: var(--radius-pildora);
   background: var(--color-surface);
-  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  font: inherit; font-size: 15px;
 }
-.input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
+.input:hover { border-color: var(--color-accent); }
 .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
-textarea.input { min-height: 90px; resize: vertical; }
-.radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
-.radio input, .seg-opt input {
-  position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
-}
-.radio .dot {
-  width: 16px; height: 16px; flex: none; border-radius: 50%;
-  border: 1.5px solid var(--color-divider);
-}
+/* Lo multilínea NO es una píldora: un texto largo dentro de un óvalo se lee
+   torcido en la primera y la última línea. */
+textarea.input { min-height: 96px; border-radius: var(--radius-md); resize: vertical; }
+.field-error, .campo-error { margin-top: 5px; font-size: 13px; color: var(--color-error); }
+.field-pista { margin-top: 5px; font-size: 13px; color: color-mix(in srgb, var(--color-text) 78%, transparent); }
+
+.radio { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 15px; }
+.radio input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.radio .dot { width: 18px; height: 18px; flex: none; border-radius: 50%; border: 1.5px solid var(--color-borde-control); }
 .radio:hover .dot { border-color: var(--color-accent); }
 .radio input:checked + .dot {
   border-color: var(--color-accent); background: var(--color-accent);
-  box-shadow: inset 0 0 0 4px var(--color-bg);
+  box-shadow: inset 0 0 0 4px var(--color-surface);
 }
-.radio input:focus-visible + .dot { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.radio input:focus-visible + .dot { outline: var(--anillo-foco); outline-offset: 2px; }
+
 .seg {
-  display: inline-flex; overflow: hidden;
-  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+  display: inline-flex; flex-wrap: wrap; overflow: hidden;
+  border: 1px solid var(--color-borde-control);
+  border-radius: var(--radius-pildora);
 }
 .seg-opt {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; font-size: 13px; cursor: pointer;
+  min-height: 44px; padding: 8px 18px;
+  border: 0; background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-heading); font-size: 15px; font-weight: var(--font-heading-weight);
+  text-decoration: none; cursor: pointer;
 }
-.seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
-.seg-opt:has(input:checked) { background: var(--color-accent); color: var(--color-bg); }
-.seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-.seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.seg-opt + .seg-opt { border-left: 1px solid var(--color-borde-control); }
+.seg-opt:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); color: var(--color-text); }
+.seg-opt[aria-current="page"], .seg-opt[aria-pressed="true"], .seg-opt:has(input:checked) {
+  background: var(--color-accent); color: var(--color-on-accent);
+}
+.seg-opt[aria-current="page"]:hover, .seg-opt[aria-pressed="true"]:hover {
+  background: var(--color-accent-600); color: var(--color-on-accent);
+}
 
-/* — cards — */
+/* ── Tarjetas ────────────────────────────────────────────────────────── */
 .card {
   display: flex; flex-direction: column; gap: var(--space-2);
-  padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface);
+  /* Igual que `.tarjeta`: el relleno se encoge en un celular. El sitio puede
+     permitirse 26.4px fijos porque sus tarjetas son de texto; acá adentro hay
+     números y botones y 26 por lado se comen la mitad de un teléfono. */
+  padding: clamp(var(--space-4), 2.2vw, var(--space-6));
+  border-radius: calc(var(--radius-lg) * 1.15);
+  background: var(--color-surface);
 }
-.card-kicker { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-accent); }
-.card-title {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 17px; line-height: 1.2;
-}
-.card-body { margin: 0; font-size: 13px; opacity: 0.8; flex: 1; }
-.card-meta {
-  display: flex; align-items: center; gap: 6px; font-size: 11px;
-  color: color-mix(in srgb, var(--color-text) 50%, transparent);
-}
+.card-kicker { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--verde-texto); }
+.card-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 18px; line-height: 1.2; }
+.card-body { flex: 1; margin: 0; font-size: 15px; opacity: .82; }
+.card-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 72%, transparent); }
 .elev-sm { box-shadow: var(--shadow-sm); }
 .elev-md { box-shadow: var(--shadow-md); }
 .elev-lg { box-shadow: var(--shadow-lg); }
 
-/* — tags — */
+/* ── Pastillas ───────────────────────────────────────────────────────── */
 .tag {
-  display: inline-flex; align-items: center; font-size: 11px;
-  letter-spacing: 0.02em; padding: 3px 10px;
-  border-radius: calc(var(--radius-md) * 0.75);
+  display: inline-flex; align-items: center;
+  padding: 4px 12px; border-radius: var(--radius-pildora);
+  font-size: 12px; letter-spacing: .02em;
 }
 .tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
 .tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
-.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
+/* El sitio usa `neutral-100` acá, pero lo pinta sobre tarjetas blancas. En la
+   consola el fondo de página ES crema (`#f7f3ec`) y un `#f9f4ed` encima no se
+   distingue: la pastilla desaparecía. Un escalón más de la misma rampa. */
+.tag-neutral { background: var(--color-neutral-200); color: var(--color-neutral-800); }
 .tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
 
-/* — navigation — */
-.nav {
-  display: flex; align-items: center; gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 2px solid var(--color-divider);
+.chip {
+  display: inline-flex; align-items: center; min-height: 36px; padding: 6px 14px;
+  border: 1px solid var(--color-borde-control); border-radius: var(--radius-pildora);
+  background: transparent; color: var(--color-text); font: inherit; font-size: 14px;
+  cursor: pointer;
 }
-.nav-brand {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 18px; margin-right: auto;
-  display: inline-flex; align-items: center; gap: var(--space-2);
-  color: inherit; text-decoration: none;
-  padding: var(--space-1) var(--space-2); margin-left: calc(var(--space-2) * -1);
-  border-radius: var(--radio-sm, 8px);
-}
-.nav-brand:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-.nav-brand:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.nav-brand svg { display: block; color: var(--color-accent); }
-.nav a { color: inherit; text-decoration: none; font-size: 14px; }
-.nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
+.chip:hover { border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
 
-/* — tables — */
-.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+/* ── Cabecera y navegación ───────────────────────────────────────────── */
+.cabecera {
+  position: sticky; top: 0; z-index: 40;
+  border-bottom: 2px solid var(--color-divider);
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+}
+.nav { display: flex; align-items: center; gap: var(--space-4); min-height: var(--alto-cabecera); }
+.nav-brand {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  margin-right: auto;
+  color: var(--color-text); text-decoration: none;
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 18px;
+}
+.nav-brand:hover { color: var(--color-text); text-decoration: none; }
+.nav-brand svg { display: block; }
+/* El isotipo va en la pizarra de la marca, igual que en el sitio. En oscuro la
+   pizarra sobre casi negro no se distingue, así que ahí toma el color del
+   texto. Los tres puntos verdes viven dentro del SVG y no cambian nunca. */
+.nav-brand svg { color: var(--pizarra); }
+[data-tema="oscuro"] .nav-brand svg { color: var(--color-text); }
+.nav a:not(.btn) { color: inherit; font-size: 15px; text-decoration: none; white-space: nowrap; }
+.nav a:not(.btn):hover, .nav a:not(.btn)[aria-current="page"] { color: var(--color-accent); }
+
+/* ── Tablas ──────────────────────────────────────────────────────────── */
+.table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .table th {
-  text-align: left; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-text) 60%, transparent);
-  padding: var(--space-2); border-bottom: 2px solid var(--color-divider);
+  padding: var(--space-2); text-align: left;
+  border-bottom: 2px solid var(--color-divider);
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+  font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
 }
-.table td {
-  padding: var(--space-2);
-  border-bottom: 1px solid var(--color-divider);
-}
+.table td { padding: var(--space-2); border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent); }
 .table tbody tr:hover { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
 
-/* — dialog — */
+/* ── Banda de aviso ──────────────────────────────────────────────────── */
+.aviso {
+  padding-block: var(--space-2); text-align: center; font-size: 14px;
+  background: var(--color-accent-2-100); color: var(--color-accent-2-900);
+}
+[data-tema="oscuro"] .aviso { background: var(--color-accent-100); color: var(--color-text); }
+
+/* ── Diálogo ─────────────────────────────────────────────────────────── */
 .dialog-backdrop {
-  position: fixed; inset: 0; display: grid; place-items: center;
-  padding: var(--space-4);
-  background: color-mix(in srgb, var(--color-neutral-900) 50%, transparent);
+  position: fixed; inset: 0; display: grid; place-items: center; padding: var(--space-4);
+  background: color-mix(in srgb, #11171d 55%, transparent);
 }
 .dialog {
-  width: min(440px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
-  padding: var(--space-4); border-radius: var(--radius-lg);
+  width: min(460px, 100%); display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-6); border-radius: var(--radius-lg);
   background: var(--color-surface); box-shadow: var(--shadow-lg);
 }
-.dialog-title {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 20px;
-}
-.dialog-body { font-size: 14px; opacity: 0.85; }
+.dialog-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 22px; }
+.dialog-body { font-size: 15px; opacity: .85; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
 
-
-
-  /* CORRECCIÓN AL ENTREGABLE: venía `background: #e4e2e1` literal. El tema
-   oscuro del propio sistema redefine `--color-bg`, pero el body no lo miraba,
-   así que en oscuro quedaba un fondo claro con texto claro encima. */
-  body { margin: 0; background: var(--color-bg); color: var(--color-text); }
-  :root {
-    --color-accent: #3d4753;
-    --color-on-accent: #ffffff;
-    --color-accent-100: #e7eaed; --color-accent-200: #ced4da; --color-accent-300: #aab3bd;
-    --color-accent-400: #7b8794; --color-accent-500: #3d4753; --color-accent-600: #343d47;
-    --color-accent-700: #2b333b; --color-accent-800: #212830; --color-accent-900: #171c22;
-    --color-accent-2: #12c489;
-    --color-accent-2-100: #ddf9ee; --color-accent-2-200: #b5f2da; --color-accent-2-300: #7ee7bd;
-    --color-accent-2-400: #35e2a0; --color-accent-2-500: #12c489; --color-accent-2-600: #0ea975;
-    --color-accent-2-700: #0b855c; --color-accent-2-800: #086546; --color-accent-2-900: #064733;
-  }
-  [data-tema="oscuro"] {
-    --color-bg: #171615;
-    --color-surface: #211f1e;
-    --color-text: #f3f2f2;
-    --color-accent: #35e2a0;
-    --color-on-accent: #16211d;
-    --color-accent-500: #35e2a0; --color-accent-600: #12c489;
-    --color-divider: color-mix(in srgb, #f3f2f2 45%, transparent);
-    --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
-    --shadow-md: 0 3px 12px rgba(0,0,0,.55);
-    --shadow-lg: 0 14px 36px rgba(0,0,0,.6);
-  }
-  [data-tema="oscuro"] .tag-accent { background: #2b333b; color: #cfd6dd; }
-  [data-tema="oscuro"] .tag-accent-2 { background: #0b3a2b; color: #7ee7bd; }
-  [data-tema="oscuro"] .tag-neutral { background: #2d2b2b; color: #eae7e7; }
-  [data-tema="oscuro"] .btn-primary { color: #171615; }
-  @keyframes latido { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
-  a { color: var(--color-accent); }
-  a:hover { color: var(--color-accent-600); }
-
-
-/* -----------------------------------------------------------------------------
-   ACCESIBILIDAD — dos cosas que el entregable no cubre y este panel exige.
-   -------------------------------------------------------------------------- */
-
-/* Foco visible. El sistema define `:focus-visible` solo en algunos controles, y
-   sin una regla general quien navega con teclado no sabe dónde está parado. Se
-   usa el acento, que tiene contraste garantizado contra el fondo en los dos
-   temas del sistema. */
+/* ── Accesibilidad ───────────────────────────────────────────────────────
+   Foco visible en TODO lo enfocable. El sistema del sitio lo define en unos
+   pocos controles; sin una regla general, quien navega con teclado no sabe
+   dónde está parado. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 3px solid var(--color-accent);
+  outline: var(--anillo-foco);
   outline-offset: 2px;
 }
 
