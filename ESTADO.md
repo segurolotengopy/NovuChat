@@ -4,7 +4,8 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-06 (cobro real, anulaciones y política de capas)
+**Última actualización:** 2026-09-06 (cobro real, anulaciones, política de capas
+y diseño del ayudante de configuración)
 
 ---
 
@@ -1154,6 +1155,72 @@ las citas del 8: son seis, así que van a llegar seis recordatorios.
 —ignorado— que hereda `.env` y solo cambia esa línea:
 `./scripts/publicar-flujo.sh --env .env.recordatorios --flujo Flujos/demo-a-recordatorios.json --aplicar`
 
+### Ayudante de configuración con IA (NovuChat-Helper): diseño, no código (06/09, noche)
+
+Pedido de Andres: un chat amigable dentro de la consola, para la persona que
+conoce su negocio pero no se lleva bien con un formulario de veinte casillas.
+Lee la configuración que dejó NovuChat, sabe quién entró, explica los campos,
+propone valores, cierra con un resumen y aplica **solo** con dos aprobaciones.
+Prestación de plan, no producto base.
+
+**Se escribió el diseño y NO se escribió código, a propósito.** Una Function que
+llama a un modelo, con clave de API nueva en producción y un camino hacia la
+configuración, es exactamente lo que el congelamiento del 8 tiene que frenar: no
+hay forma de probarlo con un comercio real antes de los demos. Queda en
+`admin/DISENO.md` §4septies, completo, para programarlo después del 10.
+
+**Las cuatro decisiones que sostienen el resto:**
+
+1. **El modelo propone; el navegador escribe.** La aplicación de un cambio es el
+   mismo `updateDoc` que ya hace la pantalla de configuración, con el token del
+   mismo administrador, así que pasa por `firestore.rules` sin tocar una línea.
+   La Function del ayudante **no escribe la configuración nunca**. De ahí sale la
+   propiedad que hace defendible la prestación: *el radio de daño del ayudante es
+   el del formulario que ya existe*. Escribir con el SDK Admin habría creado un
+   segundo camino que esquiva la lista blanca, los topes y la protección de
+   `mediaIdQr` — o sea, todo §4sexies.3.
+2. **Dos aprobaciones.** Aprobar el resumen escribe una **propuesta** inmutable
+   en `/tenants/{id}/propuestas/{id}`; aceptar la aplicación la vuelca a
+   `/config`. Aprobar es leer, aplicar es operar, y entre las dos cosas hay un
+   momento en que el cambio está escrito y todavía no pasó nada. Si la regla
+   rechaza al aplicar, la propuesta queda aprobada y sin aplicar.
+3. **Sin base vectorial.** El corpus entero —identidad, configuración actual,
+   catálogo de campos, reglas de la casa— son unos 6.000 tokens y entran en el
+   prompt. Un índice de embeddings agregaría ingesta, almacén, troceo y un paso
+   de recuperación que puede fallar, para recuperar algo que cabe entero. Se
+   revisa cuando entren los tres manuales en PDF.
+4. **El plan es un control comercial, no de seguridad.** Quien saltee la
+   verificación de plan no consigue escribir nada que no pudiera escribir desde
+   el formulario: consigue gastarnos tokens. Por eso vive en la Function y en la
+   cuota, y **no** en las reglas, donde cada `get()` se paga y hay tope de diez.
+
+**Planes:** Crecimiento y Pro (Impulso 250 no, es el de margen más ajustado).
+Cuota de 6 y 20 sesiones por mes. Costo estimado por sesión de 15 turnos con
+caché de prompt: ~$0,36 con `claude-opus-5`, ~$0,14 con `claude-sonnet-5`.
+Contra 344 y 585 Bs de margen, entre el 4 % y el 9 %: **el ayudante no es donde
+se juega el margen** —al revés que el flujo de WhatsApp, donde el volumen es de
+miles de conversaciones y por eso se eligió Gemini Flash-Lite—, así que conviene
+el modelo bueno. La elección final del modelo es de Andres.
+
+**Los avisos de mala configuración los calcula el código, no el modelo**, y
+salen de las cicatrices del proyecto: dirección vacía (el incidente del 28/08),
+`mensajeComercioSuspendido` vacío, número de recepción mal escrito, catálogo sin
+precios, horarios sin días, calendario faltante con reservas. El ayudante los
+explica; si los inventara, faltarían unos y sobrarían otros sin que se note.
+
+**Y una regla que hereda de §4sexies.7:** el ayudante **solo ofrece campos que el
+flujo lee de verdad** (`loLeeElFlujo` en el catálogo). Los doce campos de la
+deuda no los ofrece. Prometer conversando algo que el asistente después ignora
+es peor que no ofrecerlo, porque conversando se parece a una promesa.
+
+**Lo que hay que hacer antes de programarlo** (todo ya estaba en la lista de
+después del congelamiento, salvo el paquete compartido): razón social y NIT en
+la ficha; `plan` normalizado a los nombres comerciales; el cargo de la persona
+en `/miembros`; `configuracionFlujo` conectado; el paquete `admin/comun` con el
+catálogo de campos como fuente única —hoy la lista vive en cuatro lugares y el
+ayudante sería el quinto—; clave de Anthropic en Secret Manager con presupuesto
+y alerta.
+
 ### Para después del congelamiento (pedidos de Andres del 05 y 06/09)
 
 - **Alta y administración de negocios por el equipo de NovuChat:** crear el
@@ -1170,6 +1237,9 @@ las citas del 8: son seis, así que van a llegar seis recordatorios.
 - Conectar los flujos a `configuracionParaFlujo` y devolver los doce campos.
 - `firebase-tools` 15 (cierra seis avisos de Dependabot sobre `tar`, solo
   desarrollo).
+- **Ayudante de configuración con IA (NovuChat-Helper)**, diseñado en
+  `admin/DISENO.md` §4septies y sin programar. Depende del alta de negocios
+  (razón social y NIT), del `plan` normalizado y de `configuracionFlujo`.
 
 ## Riesgos vivos para el 9–10 de septiembre
 
@@ -1228,5 +1298,6 @@ de Meta, agente sin herramientas, 503 de Gemini) quedaron resueltos.
 4. **09 y 10/09 — Demos.**
 5. **Después:** aplicar `prompt-landing-precisiones.md` en la landing;
    alta/administración de negocios y rol contador; Google para comercios;
-   conectar `configuracionParaFlujo`; `firebase-tools` 15; sumar a Silvana como
-   revisora en GitHub (§4).
+   conectar `configuracionParaFlujo`; el ayudante de configuración (§4septies de
+   `admin/DISENO.md`); `firebase-tools` 15; sumar a Silvana como revisora en
+   GitHub (§4).
