@@ -8,6 +8,53 @@
 
 ---
 
+## 2026-09-08 (cierre) — todo consolidado en `main`
+
+Se ejecutaron las recomendaciones de la consolidación, una por una.
+
+| Paso | Resultado |
+|---|---|
+| 1. Base consolidada (#48) | Fusionada. `main` = producción |
+| 2. Análisis comercial 13–24 (#49) | Fusionado. El discurso queda alineado |
+| 3. Precios del código | Reconciliados con los adoptados |
+| 4. Catálogo web (#43) | Fusionado |
+| 5. Flujos: tope y prefijo cacheable | **NO se hizo, a propósito. Ver abajo** |
+| 6. Limpieza | Cinco ramas y tres worktrees borrados |
+
+**`main`: 531 pruebas en verde, saneo en cero.**
+
+### Estado de lo que se muestra mañana
+
+- Los tres flujos **activos y coincidiendo con el repositorio**: Demo A 30
+  nodos, Demo B 22, Recordatorios 12.
+- Las últimas diez ejecuciones, todas `success`.
+- Canal de Meta: cuatro comprobaciones en verde.
+- Consola desplegada.
+
+### `main` ya NO es igual a producción, y hay que saberlo
+
+El catálogo web entró a `main` pero **no está desplegado**, y no se puede
+desplegar todavía: `imagenCatalogo.ts` declara el secreto `GEMINI_API_KEY`, que
+no existe, y un despliegue de Functions sin él falla.
+
+**Si mañana hace falta un arreglo urgente de la consola, se parte de la rama
+`produccion/consola-2026-09-08`**, que es exactamente lo que hay servido.
+Desplegar desde `main` subiría el catálogo web sin probar.
+
+### Por qué NO se tocaron los flujos
+
+El tope de 25 respuestas y el prefijo cacheable siguen sin aplicarse sobre los
+flujos vivos. Es media jornada de trabajo y **no se hace la noche anterior a un
+demo**, por una razón concreta: el prefijo cacheable saca la fecha y la hora de
+las instrucciones y las manda en el texto del turno. Si eso se degrada, el
+asistente calcula mal «mañana en la tarde», que es el centro del Demo A.
+
+Y no urge: el tope empieza a importar el **01/10**, cuando Meta empieza a
+cobrar; la caché ahorra 0,07 Bs por conversación. El trabajo está preparado en
+`integracion/prepago-sobre-flujos-vivos`, con las 35 pruebas que lo esperan.
+
+---
+
 ## 2026-09-08 (noche) — consolidación de los worktrees
 
 Se revisaron, validaron y consolidaron las seis ramas vivas. **Nadie va a volver
