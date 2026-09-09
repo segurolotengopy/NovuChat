@@ -140,10 +140,14 @@ America»). Antes eran gratis.
   diario (12,60 al 08/09/2026). **NovuChat no publica un tipo de cambio propio:**
   un proveedor que fija el tipo de cambio con el que cobra invita a la sospecha.
 - **Planes: USD 25 / 50 / 90 por 100 / 220 / 500 conversaciones**, más la bolsa
-  de **25 conversaciones por USD 10**, que no vence. Instalación USD 65. Es la
+  de **30 conversaciones por USD 10**, que no vence. Instalación USD 65. Es la
   propuesta de Silvana, analizada y adoptada en `Analisis/21`. **El plan de
   entrada cabe exacto en la franquicia de Meta** —100 × 10 mensajes = 1.000— y
   por eso es el más rentable y el inmune a subidas de tarifa.
+- **Bolsa: USD 10 por 30 conversaciones** (0,333 cada una), que no vencen.
+  `Analisis/23`. **El tope de mensajes fija el precio mínimo de la bolsa:** con
+  tope 25 el mínimo para no perder nunca es 0,3632 USD/conv. **Si el tope sube,
+  hay que recalcular la bolsa.**
 - **El volumen del plan grande no se estira más allá de 500** sin rehacer la
   cuenta de `Analisis/21` §9.4: entre 750 y 1.000 la cartera se da vuelta.
 - **Vigilar los comercios que pasen del 70 % de su plan.** Es donde el margen se

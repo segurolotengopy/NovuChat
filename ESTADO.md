@@ -1449,6 +1449,7 @@ trabajo que ya está hecho en ellas.
 | `Analisis/20-un-flujo-para-todos-los-clientes.md` | Si un mismo flujo de n8n puede atender a todos los clientes. Sí, y el bloqueo es una credencial que se elimina con un trámite de Meta |
 | `Analisis/21-propuesta-de-silvana-comparada.md` | La propuesta de precios de Silvana contra este modelo. **Adoptada**: USD 25 / 50 / 90 por 100 / 220 / 500 |
 | `Analisis/22-instrucciones-sitio-web.md` | Instrucciones definitivas para el sitio, con los números finales y la lista de lo que no hay que afirmar. **Reemplaza al 18** |
+| `Analisis/23-bolsa-a-033.md` | Bajar la bolsa a 0,333 USD por conversación. Viable: **USD 10 por 30**, y el tope de mensajes fija el precio mínimo de la bolsa |
 
 **Lo que esta rama le pide a cada una, y por qué:**
 

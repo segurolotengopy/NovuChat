@@ -21,7 +21,7 @@ analizó y adoptó. La presentación ya está actualizada en
 | **Conversaciones al mes** | **100** | **220** | **500** |
 | Tope de respuestas por conversación | 25 | 25 | 25 |
 
-**Paquete adicional:** USD 10 por 25 conversaciones, no vencen.
+**Paquete adicional:** USD 10 por **30** conversaciones, no vencen (`Analisis/23`).
 **Instalación:** USD 65 estándar (bonificada en la Rueda), desde USD 125 a medida.
 **Moneda:** precios en dólares, cobro en bolivianos al Tipo de Cambio Oficial del
 Banco Central de Bolivia.
@@ -85,7 +85,7 @@ priceCurrency: 'BOB',   →   priceCurrency: 'USD',
 | 51 | `precioBs: 850,` | `precioUsd: 90,` |
 | 52 | `conversaciones: 2500,` | `conversaciones: 500,` |
 | 56 | `{ texto: '2.500 conversaciones al mes' },` | `{ texto: '500 conversaciones al mes' },` |
-| 78 | `excedente: { precioBs: 50, conversaciones: 150 },` | `excedente: { precioUsd: 10, conversaciones: 25 },` |
+| 78 | `excedente: { precioBs: 50, conversaciones: 150 },` | `excedente: { precioUsd: 10, conversaciones: 30 },` |
 
 **Hay dos lugares por plan** —el campo que alimenta el JSON-LD y la línea que ve
 el visitante—. Cambiar los dos o quedan incoherentes.
@@ -132,7 +132,7 @@ menos.'
 respuestas del asistente. Es la unidad que se factura.'`
 
 **«Excedente»** → `'Si superas las conversaciones de tu plan, cada bloque
-adicional de 25 conversaciones cuesta USD 10 y no vence. Te avisamos al llegar al
+adicional de 30 conversaciones cuesta USD 10 y no vence. Te avisamos al llegar al
 80 % de tu plan.'`
 
 > ⚠️ **Quitar de esa definición la frase «No se corta el servicio».** El sistema
@@ -156,13 +156,13 @@ en inglés.
 | `precioBs: 250 / 450 / 850` | `precioUsd: 25 / 50 / 90` |
 | `conversaciones: 300 / 1000 / 2500` | `100 / 220 / 500` |
 | `'300 conversations a month'`, etc. | `'100 conversations a month'`, etc. |
-| `excedente: { precioBs: 50, conversaciones: 150 }` | `{ precioUsd: 10, conversaciones: 25 }` |
+| `excedente: { precioBs: 50, conversaciones: 150 }` | `{ precioUsd: 10, conversaciones: 30 }` |
 
 **Primer párrafo de `comoContamos`:** quitar «no matter how many» y agregar
 `The assistant replies up to 25 times within that conversation; if more is
 needed, we let you know so someone on your team can take over.`
 
-**Glosario, `Overage`:** `each additional block of 25 conversations costs USD 10
+**Glosario, `Overage`:** `each additional block of 30 conversations costs USD 10
 and never expires.`
 
 **Y en los tres planes:** `{ texto: 'Up to 25 assistant replies per conversation' }`.
