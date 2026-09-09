@@ -34,6 +34,22 @@ const RUTA_API = '/api/catalogo';
 /** El carrito: identificador del ítem -> cantidad. Nada más. */
 type Carrito = Record<string, number>;
 
+/**
+ * La dirección de la imagen de un ítem, venga de donde venga.
+ *
+ * Dos orígenes y un orden: la foto SUBIDA gana sobre el enlace. Es la que el
+ * comercio eligió último y la única que no puede romperse sola —una dirección
+ * ajena deja de responder el día que reordenan su sitio, y nadie se entera
+ * hasta que un cliente ve el cuadro roto—.
+ *
+ * La subida se pide por su propia dirección, colgada de la ficha: así caduca
+ * con ella y el navegador puede cachear cada foto por separado.
+ */
+function fotoDelItem(item: ItemPublico, ficha: string): string {
+  if (item.tieneFoto === true) return `${RUTA_API}/${ficha}/foto/${encodeURIComponent(item.id)}`;
+  return imagenSegura(item.imagenUrl);
+}
+
 export function SitioCatalogo({ ficha }: { ficha: string }) {
   const [datos, setDatos] = useState<CatalogoPublico | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,8 +136,9 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
         />
       ) : (
         <Catalogo
+          ficha={ficha}
           items={items} carrito={carrito} moneda={datos.negocio.moneda}
-          conFotos={items.some((i) => imagenSegura(i.imagenUrl) !== '')}
+          conFotos={items.some((i) => fotoDelItem(i, ficha) !== '')}
           alSumar={(id, n) => setCarrito((c) => sumar(c, id, n))}
           alAbrir={setDetalle}
         />
@@ -129,6 +146,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
 
       {detalle && (
         <Detalle
+          ficha={ficha}
           item={detalle} moneda={datos.negocio.moneda}
           cantidad={carrito[detalle.id] ?? 0}
           alSumar={(n) => setCarrito((c) => sumar(c, detalle.id, n))}
@@ -171,8 +189,8 @@ function Cabecera({ negocio }: { negocio: CatalogoPublico['negocio'] }) {
 // Lista, con buscador y filtro por área
 // ---------------------------------------------------------------------------
 
-function Catalogo({ items, carrito, moneda, conFotos, alSumar, alAbrir }: {
-  items: ItemPublico[]; carrito: Carrito; moneda: string;
+function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }: {
+  items: ItemPublico[]; ficha: string; carrito: Carrito; moneda: string;
   /**
    * Si NINGÚN ítem del catálogo tiene foto, no se reserva la casilla.
    *
@@ -229,7 +247,7 @@ function Catalogo({ items, carrito, moneda, conFotos, alSumar, alAbrir }: {
       ) : (
         <ul className="cat-lista">
           {visibles.map((i) => (
-            <Tarjeta key={i.id} item={i} moneda={moneda} conFotos={conFotos}
+            <Tarjeta key={i.id} item={i} ficha={ficha} moneda={moneda} conFotos={conFotos}
                      cantidad={carrito[i.id] ?? 0}
                      alSumar={(n) => alSumar(i.id, n)}
                      alAbrir={() => alAbrir(i)} />
@@ -240,11 +258,11 @@ function Catalogo({ items, carrito, moneda, conFotos, alSumar, alAbrir }: {
   );
 }
 
-function Tarjeta({ item, moneda, cantidad, conFotos, alSumar, alAbrir }: {
-  item: ItemPublico; moneda: string; cantidad: number; conFotos: boolean;
+function Tarjeta({ item, ficha, moneda, cantidad, conFotos, alSumar, alAbrir }: {
+  item: ItemPublico; ficha: string; moneda: string; cantidad: number; conFotos: boolean;
   alSumar: (n: number) => void; alAbrir: () => void;
 }) {
-  const img = imagenSegura(item.imagenUrl);
+  const img = fotoDelItem(item, ficha);
   return (
     <li className="cat-tarjeta">
       <button type="button" className="cat-tarjeta-toque" onClick={alAbrir}>
@@ -296,11 +314,11 @@ function Contador({ cantidad, alSumar, nombre }: {
 // Detalle
 // ---------------------------------------------------------------------------
 
-function Detalle({ item, moneda, cantidad, alSumar, alCerrar }: {
-  item: ItemPublico; moneda: string; cantidad: number;
+function Detalle({ item, ficha, moneda, cantidad, alSumar, alCerrar }: {
+  item: ItemPublico; ficha: string; moneda: string; cantidad: number;
   alSumar: (n: number) => void; alCerrar: () => void;
 }) {
-  const img = imagenSegura(item.imagenUrl);
+  const img = fotoDelItem(item, ficha);
   // Escape cierra. En un teléfono no hay teclado, pero en un escritorio la
   // hoja sin salida por teclado es una trampa de accesibilidad.
   useEffect(() => {

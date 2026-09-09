@@ -69,7 +69,25 @@ const NUEVO = {
  * el servidor; esto existe para que el error se vea al escribir y no después de
  * un rechazo genérico. Ver `urlImagenValida` en `firestore.rules`.
  */
-const imagenValida = (url: string) => url === '' || /^https:\/\/[^ '"<>]+$/.test(url);
+/**
+ * Una dirección de foto que el navegador puede pintar y la CSP admite.
+ *
+ * DOS FORMAS, y las dos hacen falta: `https://` para la foto POR REFERENCIA que
+ * el comercio ya tiene publicada, y `data:image/...` para la que SUBIÓ, que se
+ * guarda incrustada en `fotosCatalogo`.
+ *
+ * Faltaba la segunda, y por eso una foto recién subida no se veía en NINGÚN
+ * lado aunque estuviera guardada: el botón pasaba a decir «Cambiar foto» —o
+ * sea, el documento existía— y la miniatura devolvía `null` sin decir por qué.
+ * Un dato guardado que no se muestra es peor que uno que falla: no hay nada que
+ * mirar para entender qué pasó. Lo vio Andres el 09/09.
+ *
+ * `http://` sigue fuera a propósito: el navegador del cliente lo bloquea por
+ * contenido mixto y la foto no se vería igual, pero sin ningún aviso.
+ */
+const imagenValida = (url: string) => url === ''
+  || /^https:\/\/[^ '"<>]+$/.test(url)
+  || /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(url);
 
 /**
  * Duraciones posibles: múltiplos de 15 minutos, hasta cuatro horas.

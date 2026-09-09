@@ -454,6 +454,45 @@ function itemPublico(id: string, d: Record<string, unknown>): ItemPublico {
 }
 
 /**
+ * LA FOTO SUBIDA NO VIAJA DENTRO DEL CATÁLOGO, y esa es la decisión.
+ *
+ * Lo natural sería meter el `data:` incrustado en el JSON junto al ítem, y con
+ * seis productos funcionaría. Con doscientos son treinta megas en UNA respuesta,
+ * que el cliente descarga entera antes de ver la primera foto —con datos
+ * móviles, parado en la calle—. Y no se puede cachear por separado: cambiar un
+ * precio invalidaría las doscientas fotos.
+ *
+ * Así, el catálogo dice cuáles ítems TIENEN foto y cada una se pide por su
+ * propia dirección: el navegador las trae de a poco, solo las que se ven, y las
+ * guarda en su caché por separado. Las direcciones cuelgan de la ficha, así que
+ * caducan con ella y no quedan fotos accesibles para siempre.
+ */
+export const fotoDeCatalogo = onRequest(
+  { region: REGION, cors: false, maxInstances: 20 },
+  async (peticion, respuesta) => {
+    if (peticion.method !== 'GET') { respuesta.status(405).send('metodo'); return; }
+    const ficha = await fichaVigente(idDeLaRuta(peticion));
+    if (!ficha) { respuesta.status(404).send('enlace vencido'); return; }
+
+    const itemId = String(peticion.path.split('/').filter(Boolean).pop() ?? '');
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(itemId)) { respuesta.status(400).send('item'); return; }
+
+    const foto = await db().doc(`tenants/${ficha.tenantId}/fotosCatalogo/${itemId}`).get();
+    const datos = String(foto.get('datos') ?? '');
+    const m = /^data:(image\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(datos);
+    if (!m) { respuesta.status(404).send('sin foto'); return; }
+
+    // Cacheable un rato: la foto no cambia sola, y la dirección caduca con la
+    // ficha de todos modos. `private` porque el enlace es de una conversación:
+    // no tiene por qué quedar en un proxy compartido.
+    respuesta.set('Cache-Control', 'private, max-age=900');
+    respuesta.set('X-Content-Type-Options', 'nosniff');
+    respuesta.type(m[1] as string);
+    respuesta.send(Buffer.from(m[2] as string, 'base64'));
+  },
+);
+
+/**
  * El identificador de la ficha, buscado en la URL entera.
  *
  * Mira `originalUrl`, `url` y `path` en ese orden porque las tres existen según
@@ -495,7 +534,7 @@ export const catalogoPublico = onRequest(
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
-    const [config, venta, marca, catalogo] = await Promise.all([
+    const [config, venta, marca, catalogo, fotos] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
@@ -511,7 +550,13 @@ export const catalogoPublico = onRequest(
       // cada escritura— a una colección que el comercio edita todas las semanas.
       db().collection(`tenants/${ficha.tenantId}/catalogo`)
         .where('activo', '==', true).limit(500).get(),
+      // Solo los IDENTIFICADORES de las fotos: `select()` sin campos trae los
+      // documentos vacíos, así que se sabe cuáles existen sin descargar un solo
+      // byte de imagen. Sin esto, saber qué ítems tienen foto costaría bajarlas
+      // todas para después tirarlas.
+      db().collection(`tenants/${ficha.tenantId}/fotosCatalogo`).select().get(),
     ]);
+    const conFoto = new Set(fotos.docs.map((d) => d.id));
 
     // UN CATÁLOGO APAGADO NO ES UN ENLACE VENCIDO, y decirlo así cuesta caro.
     //
@@ -580,7 +625,11 @@ export const catalogoPublico = onRequest(
       items: catalogo.docs
         .filter((d) => sePuedeComprar(d.data() as Record<string, unknown>)
           && hayParaVender(d.data() as Record<string, unknown>))
-        .map((d) => itemPublico(d.id, d.data() as Record<string, unknown>))
+        .map((d) => ({
+          ...itemPublico(d.id, d.data() as Record<string, unknown>),
+          // Solo el SÍ o el NO: la imagen se pide aparte, por su dirección.
+          tieneFoto: conFoto.has(d.id),
+        }))
         .sort((a, b) => a.area.localeCompare(b.area, 'es')
           || a.nombre.localeCompare(b.nombre, 'es')),
       caducaEn: ficha.caducaEn.toDate().toISOString(),
