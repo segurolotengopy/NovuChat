@@ -89,14 +89,52 @@ export function tipoDeDataUrl(url: string): string {
   return /^data:([^;,]+)/.exec(url)?.[1] ?? '';
 }
 
-function cargarImagen(archivo: File): Promise<HTMLImageElement> {
-  return new Promise((resolver, rechazar) => {
-    const url = URL.createObjectURL(archivo);
-    const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolver(img); };
-    img.onerror = () => { URL.revokeObjectURL(url); rechazar(new Error('no_se_pudo_leer')); };
-    img.src = url;
+/** Lo que se puede dibujar en un lienzo, con sus medidas reales. */
+interface Decodificada { fuente: CanvasImageSource; ancho: number; alto: number }
+
+/**
+ * Decodifica el archivo SIN pasar por una URL, y esa es la corrección.
+ *
+ * Antes se hacía `URL.createObjectURL(archivo)` y se cargaba en un `<img>`. Eso
+ * NO funciona en esta consola: la CSP declara `img-src 'self' data: https:` y
+ * **no incluye `blob:`**, así que el navegador bloqueaba la carga y la promesa
+ * caía siempre en `onerror`. El síntoma era el peor posible: se elegía la foto,
+ * el diálogo se cerraba y no pasaba absolutamente nada. Andres lo reportó tres
+ * veces —«sigo sin poder cargar fotos»— y las dos primeras se buscó en el
+ * `hidden` y en las reglas, que también estaban mal pero no eran esto.
+ *
+ * `createImageBitmap` recibe el `File` directamente. No hay URL, así que la CSP
+ * no participa; además evita tener el archivo entero como texto en memoria, que
+ * es lo que costaría la otra salida (leerlo como `data:`, que sí está
+ * permitido). El respaldo con `FileReader` queda para un navegador que no lo
+ * tenga, y usa `data:` justamente porque es el esquema que la CSP sí admite.
+ *
+ * NO SE ARREGLÓ AGREGANDO `blob:` A LA CSP, aunque hubiera sido una línea. Un
+ * permiso se agrega cuando hace falta, y acá no hacía falta: el mismo trabajo
+ * se hace sin ampliar lo que el navegador puede cargar.
+ */
+async function cargarImagen(archivo: File): Promise<Decodificada> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(archivo);
+      return { fuente: bitmap, ancho: bitmap.width, alto: bitmap.height };
+    } catch {
+      // Un formato que el navegador no sabe decodificar así (HEIC en algunos
+      // casos): se intenta por el otro camino antes de darse por vencido.
+    }
+  }
+  const img = await new Promise<HTMLImageElement>((resolver, rechazar) => {
+    const lector = new FileReader();
+    lector.onerror = () => rechazar(new Error('no_se_pudo_leer'));
+    lector.onload = () => {
+      const i = new Image();
+      i.onload = () => resolver(i);
+      i.onerror = () => rechazar(new Error('no_se_pudo_leer'));
+      i.src = String(lector.result);
+    };
+    lector.readAsDataURL(archivo);
   });
+  return { fuente: img, ancho: img.naturalWidth, alto: img.naturalHeight };
 }
 
 /**
@@ -114,19 +152,20 @@ Promise<{ ok: true; foto: FotoLista } | { ok: false; falla: FallaFoto }> {
   }
   if (archivo.size > TOPE_ORIGINAL) return { ok: false, falla: 'original_enorme' };
 
-  let img: HTMLImageElement;
+  let img: Decodificada;
   try { img = await cargarImagen(archivo); } catch { return { ok: false, falla: 'no_se_pudo_leer' }; }
+  if (img.ancho < 1 || img.alto < 1) return { ok: false, falla: 'no_se_pudo_leer' };
 
   const lienzo = document.createElement('canvas');
   const pincel = lienzo.getContext('2d');
   if (!pincel) return { ok: false, falla: 'no_se_pudo_leer' };
 
   for (const lado of [LADO_MAXIMO, 700, 520, 400]) {
-    const m = medidaDestino(img.naturalWidth, img.naturalHeight, lado);
+    const m = medidaDestino(img.ancho, img.alto, lado);
     lienzo.width = m.ancho;
     lienzo.height = m.alto;
     pincel.clearRect(0, 0, m.ancho, m.alto);
-    pincel.drawImage(img, 0, 0, m.ancho, m.alto);
+    pincel.drawImage(img.fuente, 0, 0, m.ancho, m.alto);
 
     for (const calidad of [0.78, 0.68, 0.58, 0.45]) {
       let datos = lienzo.toDataURL('image/webp', calidad);

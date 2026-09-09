@@ -512,14 +512,16 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
   tenantId: string; itemId: string; tieneFoto: boolean; onEstado: (m: string | null) => void;
 }) {
   const [trabajando, setTrabajando] = useState(false);
+  const [problema, setProblema] = useState<string | null>(null);
 
   const elegir = async (archivo: File | undefined) => {
     if (!archivo) return;
     onEstado(null);
+    setProblema(null);
     setTrabajando(true);
     try {
       const r = await prepararFoto(archivo);
-      if (!r.ok) { onEstado(mensajeDeFalla(r.falla)); return; }
+      if (!r.ok) { setProblema(mensajeDeFalla(r.falla)); return; }
       await setDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId), {
         datos: r.foto.datos, ancho: r.foto.ancho, alto: r.foto.alto,
         bytes: r.foto.bytes, tipo: r.foto.tipo,
@@ -528,7 +530,7 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
       onEstado(`Foto guardada (${Math.round(r.foto.bytes / 1024)} KB, `
         + `${r.foto.ancho}×${r.foto.alto}).`);
     } catch {
-      onEstado('No se pudo guardar la foto. Intente con otra.');
+      setProblema('El servidor rechazó la foto. Intente con otra.');
     } finally {
       setTrabajando(false);
     }
@@ -541,6 +543,11 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
         <input type="file" accept="image/*" disabled={trabajando} hidden
                onChange={(e) => { void elegir(e.target.files?.[0]); e.target.value = ''; }} />
       </label>
+      {/* EL ERROR SE DICE ACÁ, al lado del botón que se apretó. Antes iba al
+          `estado` de la pantalla, que se pinta al final de una tabla de veinte
+          filas: se elegía una foto, fallaba, y no pasaba nada visible. Un
+          mensaje que hay que ir a buscar es un mensaje que no existe. */}
+      {problema && <span className="foto-mal">{problema}</span>}
       {tieneFoto && (
         <button type="button" className="btn btn-ghost btn-chico" onClick={() => {
           void deleteDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId));

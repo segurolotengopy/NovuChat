@@ -774,3 +774,35 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 .dialog-ancho { width: min(1100px, 100%); max-height: 88vh; }
 .dialog-ancho .dialog-body { overflow: auto; flex: 1; min-height: 0; }
 .dialog-ancho .table td, .dialog-ancho .table th { white-space: nowrap; }
+
+/* ── Pedidos: la pantalla que se mira con las manos ocupadas ─────────────
+   Fichas anchas y todo desplegado. Nada de tabla: una fila de tabla obliga a
+   leer de izquierda a derecha buscando la columna, y acá lo que hay que ver de
+   un golpe es qué preparar y si sale a la calle. */
+.pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.pedido { gap: var(--space-2); }
+.pedido-cabecera { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
+.pedido-total {
+  margin-left: auto; font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight); font-size: 18px;
+}
+/* La entrega, grande: al que prepara le importa más que el monto. */
+.pedido-entrega { margin: 0; font-size: 16px; font-weight: 600; }
+.pedido-direccion { margin: 0; font-size: 15px; }
+.pedido-items { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.pedido-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); font-size: 16px; }
+.pedido-cantidad {
+  min-width: 2.2rem; font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight); font-variant-numeric: tabular-nums;
+}
+/* EL DETALLE DEL CLIENTE ES LO QUE MÁS SE EQUIVOCA: va destacado, no en gris.
+   «Sin cebolla» perdido en un tono claro es un plato que vuelve. */
+.pedido-detalle {
+  padding: 1px 10px; border-radius: var(--radius-pildora);
+  background: color-mix(in srgb, var(--color-aviso) 18%, transparent);
+  font-style: normal; font-size: 14px;
+}
+.pedido-nota {
+  margin: var(--space-2) 0 0; padding-left: var(--space-2);
+  border-left: 3px solid var(--color-borde-control); font-size: 15px;
+}

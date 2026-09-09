@@ -180,7 +180,11 @@ export function Cobro() {
 
   return (
     <section>
-      <h2>Pedidos y cobro</h2>
+      {/* SE LLAMABA «PEDIDOS Y COBRO» Y NO LISTABA NI UNO NI OTRO: configuraba
+          el QR. El nombre prometía dos pantallas que ahora sí existen —«Pedidos»
+          y «Cobros»— y esta se queda con lo que de verdad hace. Ver
+          `DISENO.md` §4nonies. */}
+      <h2>Configuración de QR</h2>
       <p className="ayuda">
         El asistente toma el pedido de tu catálogo de{' '}
         <Link to={`/negocio/${encodeURIComponent(tenantId)}/catalogo`}>productos</Link>,
