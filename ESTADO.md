@@ -4,19 +4,42 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-12 (la PR #51 trae a `main` lo que ya estaba en producción)
+**Última actualización:** 2026-09-12 (el despliegue automático nunca funcionó: se despliega a mano, y siempre desde `main`)
 
 ---
 
-## 2026-09-12 — `main` vuelve a coincidir con producción (PR #51)
+## 2026-09-12 — EL DESPLIEGUE ES MANUAL, y siempre desde `main`
 
-Las tres pantallas, el arreglo de las fotos y el tuteo **se desplegaron desde
-ramas sin PR** mientras se arreglaba la subida de fotos (09/09). Hasta fusionar
-la #51, un despliegue desde `main` o una etiqueta `v*` los habría borrado de
-producción. La #51 los reúne con las nueve observaciones de la consola.
+**El pipeline de CI/CD nunca desplegó nada.** Se descubrió al fusionar la #51:
+la CI de `main` falló en `desplegar-staging` porque la autenticación con GCP
+llegó sin proveedor de identidad.
 
-**Regla que sale de esto:** nada se despliega desde una rama que no tenga PR
-abierta hacia `main`.
+| Lo verificado | Resultado |
+|---|---|
+| Secretos del repositorio | **ninguno** |
+| Secretos de los entornos `staging`, `production` y `production-rollback` | **ninguno**: faltan `GCP_WIF_PROVIDER` y las cuentas `GCP_SA_DEPLOY_*` |
+| Ejecuciones disparadas por una etiqueta `v*` | **ninguna** en el historial |
+| Pushes a `main` que tocan `admin/` | fallan todos (#43, #48, #51); los que solo tocan documentos pasan porque el despliegue se omite |
+
+**Consecuencias:**
+
+- **Todo lo que está en producción se desplegó a mano** con `firebase deploy`
+  desde una copia local. «Producción solo se despliega con etiquetas `v*`» es
+  el diseño, no lo que pasa.
+- **Nada garantiza que `main` y producción coincidan.** Hoy coinciden porque la
+  #51 los alineó a mano: las tres pantallas, el arreglo de las fotos y el tuteo
+  se habían desplegado desde ramas sin PR (09/09).
+- **Una etiqueta `v*` hoy no despliega**: fallaría en la autenticación igual
+  que staging. No sirve como vía de emergencia.
+
+**Regla mientras tanto:** se despliega a mano **solo desde `main` actualizado**
+(`git switch main && git pull`), nunca desde una rama. Si hace falta desplegar
+algo que no está en `main`, primero se fusiona su PR.
+
+**PENDIENTE (decisión de Andres):** configurar la federación de identidad de
+GitHub con GCP —proveedor, cuentas de despliegue y secretos por entorno—, y
+averiguar antes si existe un proyecto de staging para la consola. Si no existe,
+apagar `desplegar-staging` en vez de dejar `main` en rojo.
 
 ## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
 
