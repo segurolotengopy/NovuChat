@@ -48,8 +48,11 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
   },
   venta: {
     titulo: 'Venta, entrega y cobro',
-    nota: 'Los rótulos del cobro simulado y la imagen del QR los administra NovuChat: '
-        + 'son los que garantizan que un cobro de demostración nunca se presente como real.',
+      // SIN NOTA. Decía que «los rótulos del cobro simulado y la imagen del QR
+      // los administra NovuChat: son los que garantizan que un cobro de
+      // demostración nunca se presente como real». Es una decisión NUESTRA
+      // explicada al comercio, y sobre cosas que él no puede tocar: no le dice
+      // qué hacer con esta pantalla, solo por qué la hicimos así.
     campos: [
       { clave: 'costoDelivery', etiqueta: 'Costo de envío', tipo: 'monto',
         ayuda: 'Lo que se suma al pedido cuando el cliente pide envío.' },

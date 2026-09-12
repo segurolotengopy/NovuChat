@@ -18,7 +18,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 // todo lo demás, para que exista un solo inventario de lo que se despliega.
 export {
   enlaceCatalogo, catalogoPublico, checkoutCatalogo, fijarWebhookCarrito,
-  vistaPreviaCatalogo,
+  vistaPreviaCatalogo, fotoDeCatalogo,
 } from './catalogoWeb.js';
 
 import { registrar } from './ingesta.js';

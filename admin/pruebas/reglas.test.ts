@@ -1599,6 +1599,54 @@ describe('Un negocio con VARIOS flujos: la lista manda, no el valor', () => {
   });
 });
 
+describe('Comprobar un cobro: lo firma una persona, y una sola vez', () => {
+  const sello = (uid: string) => ({ comprobadoPor: uid, comprobadoEn: serverTimestamp() });
+  const cierre = {
+    tipo: 'venta', ocurridoEn: Timestamp.now(), referencia: 'wamid.PRUEBA',
+    telefonoEnmascarado: '591****339', monto: 72, moneda: 'BOB',
+  };
+
+  it('el administrador marca el cobro como comprobado', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cierres/c1`), cierre);
+    });
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/cierres/c1`), sello('u-admin-a')));
+  });
+
+  it('NO se puede desmarcar: borrar el sello borra el rastro de quién afirmó qué', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cierres/c2`),
+        { ...cierre, comprobadoPor: 'u-admin-a', comprobadoEn: Timestamp.now() });
+    });
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/c2`),
+      { comprobadoPor: deleteField(), comprobadoEn: deleteField() }));
+    // Ni volver a marcarlo con otra persona: el primer sello es el que vale.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/c2`), sello('u-admin-a')));
+  });
+
+  it('el sello no puede firmarse a nombre de otro', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cierres/c3`), cierre);
+    });
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/c3`), sello('otro-uid')));
+  });
+
+  it('el operador NO comprueba cobros: es plata, y la mira el administrador', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cierres/c4`), cierre);
+    });
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/cierres/c4`), sello('u-oper-a')));
+  });
+
+  it('marcar no deja cambiar el monto de paso', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/cierres/c5`), cierre);
+    });
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/c5`),
+      { ...sello('u-admin-a'), monto: 7200 }));
+  });
+});
+
 describe('Mini inventario: el saldo y su historia no pueden discrepar', () => {
   const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
 
