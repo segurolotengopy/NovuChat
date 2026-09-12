@@ -36,10 +36,13 @@ llegó sin proveedor de identidad.
 (`git switch main && git pull`), nunca desde una rama. Si hace falta desplegar
 algo que no está en `main`, primero se fusiona su PR.
 
-**PENDIENTE (decisión de Andres):** configurar la federación de identidad de
-GitHub con GCP —proveedor, cuentas de despliegue y secretos por entorno—, y
-averiguar antes si existe un proyecto de staging para la consola. Si no existe,
-apagar `desplegar-staging` en vez de dejar `main` en rojo.
+**PENDIENTE (lo ejecuta Andres):** configurar la federación de identidad de
+GitHub con GCP —proveedor, cuenta de despliegue y secretos por entorno—. Los
+pasos y los permisos exactos están en `.github/DESPLIEGUE-FIREBASE.md`,
+«Estado real». Averiguado el 12/09: **no existe proyecto de staging**, así que
+`desplegar-staging` se omite mientras no se configure uno, y `main` deja de
+quedar en rojo. Ojo con las dos variables nuevas: `SITIO_PUBLICO` —sin ella el
+despliegue falla a propósito— y las `VITE_*`.
 
 ## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
 

@@ -760,7 +760,16 @@ jobs:
   desplegar-staging:
     name: desplegar-staging
     needs: [calidad, seguridad-estatica, construir]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Sin proyecto de staging configurado, el job se OMITE en vez de fallar
+    # (2026-09-12). No existe un proyecto de staging para la consola: cada push
+    # a main que tocaba admin/ fallaba al autenticar y dejaba main en rojo sin
+    # probar nada. Al omitirse, dast-y-humo —que depende de este job— también
+    # se omite. Si algún día se crea staging: cargar vars.GCP_PROJECT_ID_STAGING
+    # y agregar a su paso de despliegue la escritura de functions/.env que hace
+    # el de producción (SITIO_PUBLICO).
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -1048,8 +1057,22 @@ jobs:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
           URL_PROD: ${{ vars.PROD_URL }}
+          SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
         run: |
           set -euo pipefail
+          # Los parámetros de las Functions (`defineString`) se leen de
+          # functions/.env, que está en .gitignore: el repositorio es público y
+          # ningún valor de infraestructura se versiona. Se escribe acá desde
+          # una variable de GitHub.
+          # FALLA si falta, a propósito: SITIO_PUBLICO tiene default vacío, y sin
+          # él los enlaces del catálogo pasarían en silencio a <proyecto>.web.app
+          # en vez del dominio propio. Un despliegue que cambia algo sin avisar
+          # es peor que uno que no arranca.
+          if [[ "$SOLO" == *functions* ]]; then
+            [[ -n "$SITIO_PUBLICO" ]] \
+              || { echo "::error::Falta vars.SITIO_PUBLICO (ver .github/DESPLIEGUE-FIREBASE.md, «Estado real»)"; exit 1; }
+            printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+          fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
             --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})"
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"

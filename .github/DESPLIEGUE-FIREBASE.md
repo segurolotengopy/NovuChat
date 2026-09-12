@@ -12,6 +12,37 @@ Cuentas: GitHub `segurolotengopy` · Firebase y GCP con `${GOOGLE_ACCOUNT_PANEL}
 > a un archivo versionado: van a *Secrets* y *Variables* de GitHub y a
 > `CONFIGURACION.local.md`. Ver `CONVENCIONES-REPO-PUBLICO.md`.
 
+## Estado real (2026-09-12) — manda sobre el resto de este archivo
+
+Lo de abajo se escribió antes de que existiera un proyecto Firebase y supone
+dos proyectos nuevos, `novuchat-admin-dev` y `novuchat-admin-prod`. **La
+consola no vive en ninguno de los dos**, y ninguno aparece en la cuenta dueña
+del proyecto de producción. Lo que hay:
+
+- **Producción** es el proyecto `${GCP_PROJECT_ID}` de `CONFIGURACION.local.md`,
+  el mismo de `admin/.firebaserc`, con la consola en `consola.novuchat.site`.
+  Donde abajo diga `novuchat-admin-prod`, léase ese.
+- **No hay proyecto de staging.** `desplegar-staging` se omite mientras
+  `vars.GCP_PROJECT_ID_STAGING` esté vacía, en vez de fallar en cada push.
+- **Hasta hoy nada se desplegó por CI:** no había secretos. Todo lo que está en
+  producción se desplegó a mano (ver `ESTADO.md`, «el despliegue es manual»).
+- La **federación** acepta solo los Environments `production` y
+  `production-rollback` —no `dev` ni `staging`, que no tienen proyecto—.
+- La cuenta de despliegue necesita, además de los roles de §2.2,
+  **`roles/eventarc.admin`**, porque la consola tiene Functions disparadas por
+  Firestore. Y dos permisos **acotados** en vez de a nivel proyecto:
+  `iam.serviceAccountUser` solo sobre la cuenta con la que corren las
+  Functions, y `secretmanager.admin` solo sobre los tres secretos que usa el
+  código (`GEMINI_API_KEY`, `INGESTA_DEMOA`, `INGESTA_DEMOB`).
+- Dos variables de GitHub que §5.3 no lista:
+  - **`SITIO_PUBLICO`**: el job de producción escribe con ella
+    `functions/.env`, que está ignorado. Sin la variable, **el despliegue falla a
+    propósito**: si no, los enlaces del catálogo pasarían en silencio a
+    `<proyecto>.web.app`. Se carga sin mostrar el valor:
+    `gh variable set -f admin/functions/.env`.
+  - Las **`VITE_*`** salen de `admin/web/.env.local`, que ya apunta a
+    producción: `gh variable set -f admin/web/.env.local`.
+
 ---
 
 ## 0. Antes de empezar: dos cosas que van a fallar en el navegador

@@ -15,13 +15,16 @@ componentes:
     ruta: ./admin
     stack: node
     proveedor: firebase
+    # Estado real (2026-09-12): la consola en producción vive en el proyecto
+    # que CONFIGURACION.local.md registra —no en «novuchat-admin-prod», que no
+    # aparece en la cuenta dueña de producción— y NO hay proyecto de staging
+    # para la consola. El ID va como
+    # marcador: el repositorio es público (CONVENCIONES-REPO-PUBLICO.md). El
+    # pipeline no lee este bloque; toma el proyecto de vars.GCP_PROJECT_ID_PROD.
     ambientes:
-      staging:
-        proyecto: novuchat-admin-staging
-        url: https://novuchat-admin-staging.web.app
       production:
-        proyecto: novuchat-admin-prod
-        url: https://novuchat-admin-prod.web.app
+        proyecto: ${GCP_PROJECT_ID}
+        url: https://consola.novuchat.site
 seguridad:
   dast: true
   zap_reglas: .github/zap-rules.tsv
