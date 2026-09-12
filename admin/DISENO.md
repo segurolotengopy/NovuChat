@@ -1578,6 +1578,12 @@ valor por defecto de nada.
 
 ## 4nonies. Pedidos y cobros: tres pantallas, no una
 
+> **Estado (2026-09-12): las tres pantallas están construidas y en producción**
+> (commit `45d130d`, PR #51). Se hicieron **antes** que los dos datos de
+> §4nonies.3, por decisión de Andres del 09/09. Por eso cada una dice en
+> pantalla lo que todavía no puede mostrar, en vez de aparecer vacía. **Los dos
+> datos siguen pendientes**, y son lo próximo de esta sección.
+
 **Pedido de Andres, 2026-09-09.** Hoy «Pedidos y cobro» es UNA pantalla que en
 realidad configura el QR: no lista un solo pedido ni un solo cobro. El nombre
 promete dos cosas que no están.
@@ -1653,17 +1659,19 @@ existen todavía**, y sin ellos saldría una pantalla que miente.
    necesita. Lo tiene que escribir el flujo al confirmar, con la misma forma que
    ya usa el carrito: una sola forma de pedido, no dos.
 
-**El orden de ejecución es ese**: primero los dos datos, después las pantallas.
-Al revés se construye una pantalla contra datos que no llegan, y se descubre
-cuando la ve un cliente.
+**El orden recomendado era ese**: primero los dos datos, después las pantallas,
+porque al revés se construye contra datos que no llegan. Se invirtió el 09/09
+para tener las pantallas a la vista, con esta condición: **mientras falten los
+dos datos, cada pantalla lo dice.** Pedidos avisa que los pedidos de WhatsApp
+todavía no se listan, y dónde verlos; Cobros avisa que el comprobante está en
+la conversación. Esos avisos se quitan cuando llegue el dato, no antes.
 
-### 4nonies.4 Lo que cambia en el registro de flujos
+### 4nonies.4 Lo que cambia en el registro de flujos — hecho
 
-`web/src/lib/flujos.ts` pasa a declarar tres pestañas para `venta` en lugar de
-dos, y «Pedidos» es la primera que tiene `oper` entre sus roles —hasta hoy todas
-las pestañas de flujo eran solo de administrador—. Eso obliga a tocar también la
-compuerta de roles de la cabecera, que hoy da por sentado que una pestaña de
-flujo implica administrador.
+`web/src/lib/flujos.ts` declara para `venta` las pestañas Pedidos, Cobros,
+Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre sus
+roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
+suponer que una pestaña de flujo implica administrador.
 
 ## 5. Integración con n8n
 
