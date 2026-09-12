@@ -3,7 +3,7 @@ import {
   collection, deleteDoc, deleteField, doc, onSnapshot, orderBy, query, serverTimestamp,
   setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { auth, db, funciones } from '../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../componentes/TextoSeguro';
@@ -69,7 +69,25 @@ const NUEVO = {
  * el servidor; esto existe para que el error se vea al escribir y no después de
  * un rechazo genérico. Ver `urlImagenValida` en `firestore.rules`.
  */
-const imagenValida = (url: string) => url === '' || /^https:\/\/[^ '"<>]+$/.test(url);
+/**
+ * Una dirección de foto que el navegador puede pintar y la CSP admite.
+ *
+ * DOS FORMAS, y las dos hacen falta: `https://` para la foto POR REFERENCIA que
+ * el comercio ya tiene publicada, y `data:image/...` para la que SUBIÓ, que se
+ * guarda incrustada en `fotosCatalogo`.
+ *
+ * Faltaba la segunda, y por eso una foto recién subida no se veía en NINGÚN
+ * lado aunque estuviera guardada: el botón pasaba a decir «Cambiar foto» —o
+ * sea, el documento existía— y la miniatura devolvía `null` sin decir por qué.
+ * Un dato guardado que no se muestra es peor que uno que falla: no hay nada que
+ * mirar para entender qué pasó. Lo vio Andres el 09/09.
+ *
+ * `http://` sigue fuera a propósito: el navegador del cliente lo bloquea por
+ * contenido mixto y la foto no se vería igual, pero sin ningún aviso.
+ */
+const imagenValida = (url: string) => url === ''
+  || /^https:\/\/[^ '"<>]+$/.test(url)
+  || /^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(url);
 
 /**
  * Duraciones posibles: múltiplos de 15 minutos, hasta cuatro horas.
@@ -377,7 +395,7 @@ export function Catalogo() {
           gratis, y es una promesa distinta.
         </p>
         <p className="ayuda">
-          Ojo si tenés el <strong>catálogo web</strong> encendido: lo que quede
+          Ojo si tienes el <strong>catálogo web</strong> encendido: lo que quede
           sin precio <strong>no se publica en la página</strong>. Se sigue
           ofreciendo por chat, donde el asistente puede cotizarlo.
         </p>
@@ -478,7 +496,7 @@ function EstadoFoto({ v, onRevisar }: { v: Veredicto | undefined; onRevisar: () 
         {typeof v.parecido.motivo === 'string' && v.parecido.motivo !== ''
           ? <>: <TextoSeguro valor={v.parecido.motivo} maxLargo={200} /></>
           : '.'}{' '}
-        Reviselá; si es la correcta, dejala como está.{' '}
+        Revísala; si es la correcta, déjala como está.{' '}
         <button type="button" className="enlace" onClick={onRevisar}>Volver a comprobar</button>
       </p>
     );
@@ -512,14 +530,16 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
   tenantId: string; itemId: string; tieneFoto: boolean; onEstado: (m: string | null) => void;
 }) {
   const [trabajando, setTrabajando] = useState(false);
+  const [problema, setProblema] = useState<string | null>(null);
 
   const elegir = async (archivo: File | undefined) => {
     if (!archivo) return;
     onEstado(null);
+    setProblema(null);
     setTrabajando(true);
     try {
       const r = await prepararFoto(archivo);
-      if (!r.ok) { onEstado(mensajeDeFalla(r.falla)); return; }
+      if (!r.ok) { setProblema(mensajeDeFalla(r.falla)); return; }
       await setDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId), {
         datos: r.foto.datos, ancho: r.foto.ancho, alto: r.foto.alto,
         bytes: r.foto.bytes, tipo: r.foto.tipo,
@@ -528,7 +548,7 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
       onEstado(`Foto guardada (${Math.round(r.foto.bytes / 1024)} KB, `
         + `${r.foto.ancho}×${r.foto.alto}).`);
     } catch {
-      onEstado('No se pudo guardar la foto. Intente con otra.');
+      setProblema('El servidor rechazó la foto. Intente con otra.');
     } finally {
       setTrabajando(false);
     }
@@ -541,6 +561,11 @@ function SubirFoto({ tenantId, itemId, tieneFoto, onEstado }: {
         <input type="file" accept="image/*" disabled={trabajando} hidden
                onChange={(e) => { void elegir(e.target.files?.[0]); e.target.value = ''; }} />
       </label>
+      {/* EL ERROR SE DICE ACÁ, al lado del botón que se apretó. Antes iba al
+          `estado` de la pantalla, que se pinta al final de una tabla de veinte
+          filas: se elegía una foto, fallaba, y no pasaba nada visible. Un
+          mensaje que hay que ir a buscar es un mensaje que no existe. */}
+      {problema && <span className="foto-mal">{problema}</span>}
       {tieneFoto && (
         <button type="button" className="btn btn-ghost btn-chico" onClick={() => {
           void deleteDoc(doc(db, 'tenants', tenantId, 'fotosCatalogo', itemId));
@@ -873,7 +898,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
               // sí se sabe con certeza, sin inventar una causa.
               salida.set(f.linea, {
                 estado: 'rechazada',
-                motivo: 'el servidor rechazó esta fila. Revisá el precio, la '
+                motivo: 'el servidor rechazó esta fila. Revisa el precio, la '
                   + 'duración y la dirección de la foto.',
               });
             }
@@ -894,7 +919,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
       setTexto('');
       if (archivo.current) archivo.current.value = '';
     } catch {
-      setEstado('No se pudo completar la importación. Revisá tu conexión y probá de nuevo.');
+      setEstado('No se pudo completar la importación. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setImportando(false);
     }
@@ -930,7 +955,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
       <summary>Importar o exportar en lote (Excel, CSV o Sheets)</summary>
 
       <p className="ayuda">
-        Subí <strong>el archivo de Excel que ya tenés</strong> —no hace falta
+        Sube <strong>el archivo de Excel que ya tienes</strong> —no hace falta
         convertirlo a nada— o un CSV. La única columna obligatoria es
         <strong> nombre</strong>; también se entienden <em>descripcion, area,
         precio{conAgenda ? ', duracionMin' : ''}, imagenUrl, cantidad</em> y
@@ -941,12 +966,13 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
         un archivo sin columna de precios actualiza el resto y deja los precios
         como están.
       </p>
-      <p className="ayuda">
-        <strong>No lleva columna de moneda.</strong> La moneda es de todo el
-        negocio —hoy, {moneda === 'USD' ? 'dólares' : 'bolivianos'}— y se cambia
-        en Configuración. Pedirla por producto sería pedir un dato que ya
-        tenemos, y una columna más para llenar mal.
-      </p>
+      {/* ACÁ SE ANUNCIABA UNA COLUMNA QUE NO EXISTE —«no lleva columna de
+          moneda»— Y SE EXPLICABA POR QUÉ NO EXISTE. Las dos cosas están mal.
+          Nombrar lo que no hay le planta al comercio la idea de que debería
+          haberlo, y el porqué de una decisión de diseño es una conversación
+          entre nosotros: no algo que el negocio tenga que leer para cargar su
+          catálogo. La lista de columnas de arriba ya dice cuáles se entienden, y
+          quien traiga una de moneda recibe el aviso puntual al importar. */}
 
       <div className="filtros">
         <label>Archivo
@@ -960,7 +986,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
         </button>
       </div>
 
-      <label className="field">…o pegá acá las celdas copiadas de tu planilla
+      <label className="field">…o pega aquí las celdas copiadas de tu planilla
         <textarea className="input" rows={4} value={texto}
                   placeholder="nombre,precio,imagenUrl&#10;Pizza muzzarella,45,https://…"
                   onChange={(e) => analizar(e.target.value)} />
@@ -1072,9 +1098,18 @@ function ImportarCatalogo({ tenantId, conAgenda, items }: {
  * cliente: mostrarlo a 1.200 píxeles da una impresión que después no se cumple.
  */
 function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boolean }) {
+  const [catalogoWebActivo, setCatalogoWebActivo] = useState<boolean | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pidiendo, setPidiendo] = useState(false);
+
+  useEffect(() => {
+    if (!tenantId || !conVenta) return;
+    return onSnapshot(doc(db, 'tenants', tenantId, 'config', 'negocio'),
+      (d) => setCatalogoWebActivo(d.get('catalogoWebActivo') === true),
+      () => setCatalogoWebActivo(null));
+  }, [tenantId, conVenta]);
+
   if (!conVenta) return null;
 
   const abrir = async () => {
@@ -1099,6 +1134,17 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
         precio y lo que está agotado no se publica</strong>. Desde acá no se
         pueden hacer pedidos — es solo para mirar.
       </p>
+      {/* AVISO ANTES DE ABRIR, y no una vista previa que se explica sola. Si el
+          catálogo está apagado, el marco muestra el mensaje que vería un
+          CLIENTE —«este negocio todavía no publicó su catálogo»—, que al
+          comercio no le dice qué hacer. Acá sí. */}
+      {catalogoWebActivo === false && (
+        <p className="ayuda aviso-datos">
+          Tu catálogo web está <strong>apagado</strong>: nadie puede abrirlo
+          todavía, ni siquiera tú desde aquí. Se enciende en{' '}
+          <Link to={`/negocio/${encodeURIComponent(tenantId)}/configuracion`}>Configuración</Link>.
+        </p>
+      )}
       {url === null ? (
         <button type="button" className="btn btn-secondary" disabled={pidiendo} onClick={() => void abrir()}>
           {pidiendo ? 'Abriendo…' : 'Ver mi catálogo'}

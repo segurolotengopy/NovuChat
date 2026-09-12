@@ -49,6 +49,10 @@
         "function": "checkoutCatalogo"
       },
       {
+        "source": "/api/catalogo/*/foto/*",
+        "function": "fotoDeCatalogo"
+      },
+      {
         "source": "/api/catalogo/**",
         "function": "catalogoPublico"
       },

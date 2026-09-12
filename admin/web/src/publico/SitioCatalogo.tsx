@@ -34,6 +34,22 @@ const RUTA_API = '/api/catalogo';
 /** El carrito: identificador del ítem -> cantidad. Nada más. */
 type Carrito = Record<string, number>;
 
+/**
+ * La dirección de la imagen de un ítem, venga de donde venga.
+ *
+ * Dos orígenes y un orden: la foto SUBIDA gana sobre el enlace. Es la que el
+ * comercio eligió último y la única que no puede romperse sola —una dirección
+ * ajena deja de responder el día que reordenan su sitio, y nadie se entera
+ * hasta que un cliente ve el cuadro roto—.
+ *
+ * La subida se pide por su propia dirección, colgada de la ficha: así caduca
+ * con ella y el navegador puede cachear cada foto por separado.
+ */
+function fotoDelItem(item: ItemPublico, ficha: string): string {
+  if (item.tieneFoto === true) return `${RUTA_API}/${ficha}/foto/${encodeURIComponent(item.id)}`;
+  return imagenSegura(item.imagenUrl);
+}
+
 export function SitioCatalogo({ ficha }: { ficha: string }) {
   const [datos, setDatos] = useState<CatalogoPublico | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,14 +63,22 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
     fetch(`${RUTA_API}/${ficha}`, { headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((d: CatalogoPublico) => { if (vivo) setDatos(d); })
-      .catch(() => {
-        if (vivo) {
-          // El enlace vencido y el enlace inexistente dan el MISMO mensaje. El
-          // servidor tampoco los distingue: decir «este existía pero venció» le
-          // confirma a quien prueba fichas al azar que acertó una.
-          setError('Este enlace ya no está disponible. Escribinos por WhatsApp '
+      .catch((e: Error) => {
+        if (!vivo) return;
+        // El enlace vencido y el inexistente dan el MISMO mensaje, a propósito:
+        // el servidor tampoco los distingue, y decir «este existía pero venció»
+        // le confirma a quien prueba fichas al azar que acertó una.
+        //
+        // EL CATÁLOGO APAGADO SÍ ES OTRA COSA (409) y por eso lo dice distinto.
+        // No es una fuga: quien abre el enlace ya sabe de qué negocio es. Y
+        // mandarlo a «escríbenos por WhatsApp y te damos otro» cuando ningún
+        // enlace nuevo va a funcionar es hacerle perder el tiempo a un cliente
+        // y una conversación pagada al comercio.
+        setError(e.message === '409'
+          ? 'Este negocio todavía no publicó su catálogo. Escríbenos por '
+            + 'WhatsApp y te atendemos por ahí.'
+          : 'Este enlace ya no está disponible. Escríbenos por WhatsApp '
             + 'y te mandamos uno nuevo.');
-        }
       });
     return () => { vivo = false; };
   }, [ficha]);
@@ -112,8 +136,9 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
         />
       ) : (
         <Catalogo
+          ficha={ficha}
           items={items} carrito={carrito} moneda={datos.negocio.moneda}
-          conFotos={items.some((i) => imagenSegura(i.imagenUrl) !== '')}
+          conFotos={items.some((i) => fotoDelItem(i, ficha) !== '')}
           alSumar={(id, n) => setCarrito((c) => sumar(c, id, n))}
           alAbrir={setDetalle}
         />
@@ -121,6 +146,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
 
       {detalle && (
         <Detalle
+          ficha={ficha}
           item={detalle} moneda={datos.negocio.moneda}
           cantidad={carrito[detalle.id] ?? 0}
           alSumar={(n) => setCarrito((c) => sumar(c, detalle.id, n))}
@@ -163,8 +189,8 @@ function Cabecera({ negocio }: { negocio: CatalogoPublico['negocio'] }) {
 // Lista, con buscador y filtro por área
 // ---------------------------------------------------------------------------
 
-function Catalogo({ items, carrito, moneda, conFotos, alSumar, alAbrir }: {
-  items: ItemPublico[]; carrito: Carrito; moneda: string;
+function Catalogo({ items, ficha, carrito, moneda, conFotos, alSumar, alAbrir }: {
+  items: ItemPublico[]; ficha: string; carrito: Carrito; moneda: string;
   /**
    * Si NINGÚN ítem del catálogo tiene foto, no se reserva la casilla.
    *
@@ -217,11 +243,11 @@ function Catalogo({ items, carrito, moneda, conFotos, alSumar, alAbrir }: {
       )}
 
       {visibles.length === 0 ? (
-        <p className="cat-vacio">No encontramos nada con eso. Probá con otra palabra.</p>
+        <p className="cat-vacio">No encontramos nada con eso. Intenta con otra palabra.</p>
       ) : (
         <ul className="cat-lista">
           {visibles.map((i) => (
-            <Tarjeta key={i.id} item={i} moneda={moneda} conFotos={conFotos}
+            <Tarjeta key={i.id} item={i} ficha={ficha} moneda={moneda} conFotos={conFotos}
                      cantidad={carrito[i.id] ?? 0}
                      alSumar={(n) => alSumar(i.id, n)}
                      alAbrir={() => alAbrir(i)} />
@@ -232,11 +258,11 @@ function Catalogo({ items, carrito, moneda, conFotos, alSumar, alAbrir }: {
   );
 }
 
-function Tarjeta({ item, moneda, cantidad, conFotos, alSumar, alAbrir }: {
-  item: ItemPublico; moneda: string; cantidad: number; conFotos: boolean;
+function Tarjeta({ item, ficha, moneda, cantidad, conFotos, alSumar, alAbrir }: {
+  item: ItemPublico; ficha: string; moneda: string; cantidad: number; conFotos: boolean;
   alSumar: (n: number) => void; alAbrir: () => void;
 }) {
-  const img = imagenSegura(item.imagenUrl);
+  const img = fotoDelItem(item, ficha);
   return (
     <li className="cat-tarjeta">
       <button type="button" className="cat-tarjeta-toque" onClick={alAbrir}>
@@ -288,11 +314,11 @@ function Contador({ cantidad, alSumar, nombre }: {
 // Detalle
 // ---------------------------------------------------------------------------
 
-function Detalle({ item, moneda, cantidad, alSumar, alCerrar }: {
-  item: ItemPublico; moneda: string; cantidad: number;
+function Detalle({ item, ficha, moneda, cantidad, alSumar, alCerrar }: {
+  item: ItemPublico; ficha: string; moneda: string; cantidad: number;
   alSumar: (n: number) => void; alCerrar: () => void;
 }) {
-  const img = imagenSegura(item.imagenUrl);
+  const img = fotoDelItem(item, ficha);
   // Escape cierra. En un teléfono no hay teclado, pero en un escritorio la
   // hoja sin salida por teclado es una trampa de accesibilidad.
   useEffect(() => {
@@ -370,7 +396,7 @@ function Pedido({ ficha, items, carrito, entrega, moneda, total, alCambiar, alVo
       }
       alConfirmar(cuerpo as RespuestaCheckout);
     } catch {
-      setFallo('No pudimos enviar el pedido. Revisá tu conexión y probá de nuevo.');
+      setFallo('No pudimos enviar el pedido. Revisa tu conexión e inténtalo de nuevo.');
     } finally {
       setEnviando(false);
     }
@@ -553,8 +579,8 @@ function guardarCarrito(ficha: string, carrito: Carrito): void {
  * ese vocabulario técnico no se filtre a la pantalla de un cliente final.
  */
 function mensajeDeFallo(estado: number, codigo: unknown): string {
-  if (estado === 404) return 'Este enlace ya no está disponible. Escribinos por WhatsApp.';
-  if (estado === 429) return 'Ya mandaste varios pedidos con este enlace. Escribinos por WhatsApp y seguimos por ahí.';
+  if (estado === 404) return 'Este enlace ya no está disponible. Escríbenos por WhatsApp.';
+  if (estado === 429) return 'Ya enviaste varios pedidos con este enlace. Escríbenos por WhatsApp y seguimos por ahí.';
   if (codigo === 'falta la direccion') return 'Falta la dirección de entrega.';
   if (codigo === 'nada de lo pedido sigue disponible') {
     return 'Lo que elegiste ya no se puede pedir por acá. Actualizá la página para ver el catálogo de ahora.';
@@ -562,5 +588,5 @@ function mensajeDeFallo(estado: number, codigo: unknown): string {
   if (codigo === 'monedas mezcladas') {
     return 'Tu pedido mezcla precios en bolivianos y en dólares. Separalos en dos pedidos.';
   }
-  return 'No pudimos registrar el pedido. Probá de nuevo en un momento.';
+  return 'No pudimos registrar el pedido. Inténtalo de nuevo en un momento.';
 }

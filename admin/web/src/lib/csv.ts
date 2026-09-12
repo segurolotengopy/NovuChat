@@ -274,7 +274,7 @@ export function validarFilas(
     }
     if (precio === 0) {
       advertencias.push('precio cero: el asistente lo va a ofrecer como GRATIS. '
-        + 'Si querías «a consultar», dejá la celda vacía');
+        + 'Si querías «a consultar», deja la celda vacía');
     }
 
     let duracionMin = 30;
@@ -313,7 +313,7 @@ export function validarFilas(
     if (cantidadCruda !== '') {
       const leida = leerPrecio(cantidadCruda);
       if (leida === null) {
-        problemas.push('la cantidad no es un número (dejala vacía si no llevás stock)');
+        problemas.push('la cantidad no es un número (déjala vacía si no llevas stock)');
       } else if (leida < 0) {
         problemas.push('la cantidad no puede ser negativa');
       } else {
@@ -322,7 +322,7 @@ export function validarFilas(
           // No es un problema —un comercio puede querer marcar algo agotado—
           // pero sí algo que conviene que vea antes de subirlo.
           advertencias.push('cantidad cero: el asistente lo va a dar por AGOTADO. '
-            + 'Si no llevás stock de este ítem, dejá la celda vacía');
+            + 'Si no llevas stock de este ítem, deja la celda vacía');
         }
       }
     }

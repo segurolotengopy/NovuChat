@@ -1576,6 +1576,103 @@ valor por defecto de nada.
 
 ---
 
+## 4nonies. Pedidos y cobros: tres pantallas, no una
+
+> **Estado (2026-09-12): las tres pantallas están construidas y en producción**
+> (commit `45d130d`, PR #51). Se hicieron **antes** que los dos datos de
+> §4nonies.3, por decisión de Andres del 09/09. Por eso cada una dice en
+> pantalla lo que todavía no puede mostrar, en vez de aparecer vacía. **Los dos
+> datos siguen pendientes**, y son lo próximo de esta sección.
+
+**Pedido de Andres, 2026-09-09.** Hoy «Pedidos y cobro» es UNA pantalla que en
+realidad configura el QR: no lista un solo pedido ni un solo cobro. El nombre
+promete dos cosas que no están.
+
+Se parte en tres, y la división no es de menú: **cada una la mira una persona
+distinta, en un momento distinto, para decidir algo distinto.**
+
+| Pantalla | Quién | Para qué |
+|---|---|---|
+| **Pedidos** | admin y **operador** | Preparar y entregar lo que se pidió |
+| **Cobros** | admin | Ver la plata y confirmar contra el banco |
+| **Configuración de QR** | admin | Lo que hoy existe, con su nombre real |
+
+### 4nonies.1 Pedidos — la pantalla del cocinero y del repartidor
+
+**Es la única pantalla de la consola que se mira con las manos ocupadas.** Quien
+la abre no está analizando el negocio: está por cocinar o por salir a repartir.
+Eso manda sobre todo lo demás — poco texto, lo importante grande, y nada que
+obligue a abrir un modal para saber qué hacer.
+
+Listado de pedidos con **fecha y hora**, y por cada uno:
+
+- **Todos los ítems** y sus cantidades.
+- **El detalle de cada ítem tal como lo pidió el cliente** —«sin cebolla», «L»—.
+  Es lo que más se equivoca y lo que más caro sale equivocar.
+- **La modalidad de entrega**: si va a envío o se retira en el local, con la
+  dirección cuando corresponde.
+- **El monto**.
+- **El comprobante de pago que subió el cliente.**
+
+**El operador ve esta pantalla y NO ve Cobros.** No es jerarquía: el cocinero no
+necesita saber cuánto facturó el negocio, y cada dato de más en una pantalla
+operativa es un dato que hay que saltear para llegar al que importa.
+
+### 4nonies.2 Cobros — la pantalla de la plata
+
+Arriba, un tablero corto: **pagos, montos y verificaciones**, por día, semana,
+mes **o entre dos fechas**. Abajo, el listado de los cobros hechos con QR, con
+fecha, hora y monto de cada uno.
+
+De cada cobro se puede abrir un modal con **los ítems, el detalle de la compra y
+el comprobante**. Modal y no columna: acá lo que se recorre son montos, y el
+detalle es la excepción que se consulta, no la regla.
+
+**Y un botón para marcar el pago como comprobado**, después de que la persona lo
+verificó con su banco.
+
+**ESE BOTÓN ES DE UNA PERSONA Y NUNCA DEL SISTEMA, y ahí está la PROHIBICIÓN 3.**
+El OCR coteja un comprobante; no acredita nada. Quien afirma que la plata entró
+es el comercio mirando su cuenta. Por eso el registro tiene que guardar **quién**
+marcó y **cuándo**, igual que cualquier otro sello de la consola, y por eso la
+etiqueta dice «comprobado por el negocio» y no «pago acreditado». Si algún día
+el asistente usa ese estado para contestarle a un cliente, tiene que decir que
+lo confirmó el negocio, no NovuChat.
+
+### 4nonies.3 Lo que falta para poder construirlas
+
+No se puede empezar por la pantalla: **dos datos que las dos necesitan no
+existen todavía**, y sin ellos saldría una pantalla que miente.
+
+1. **EL COMPROBANTE NO SE GUARDA.** Del mensaje se guardan `tipo`, `texto` y el
+   identificador de Meta, pero **no el `media id`**, así que no hay de dónde
+   traer la imagen. Hacen falta tres cosas, en orden: guardarlo en la ingesta,
+   una función que baje el archivo con el token y lo sirva desde nuestro propio
+   origen —nunca un enlace a Meta, que caduca—, y el permiso de lectura. Es el
+   mismo hueco que hoy hace que en «Conversaciones» solo se marque el adjunto.
+
+2. **LOS PEDIDOS POR WHATSAPP NO SE GUARDAN COMO PEDIDOS.** La colección
+   `pedidos` ya tiene ítems, total, entrega, dirección y nota —está completa—
+   pero **solo la escribe el carrito web**. Un pedido tomado conversando registra
+   un `cierre`, que es un número para facturar y no lleva ítems. Mientras siga
+   así, la pantalla de Pedidos estaría vacía justo para el flujo que la
+   necesita. Lo tiene que escribir el flujo al confirmar, con la misma forma que
+   ya usa el carrito: una sola forma de pedido, no dos.
+
+**El orden recomendado era ese**: primero los dos datos, después las pantallas,
+porque al revés se construye contra datos que no llegan. Se invirtió el 09/09
+para tener las pantallas a la vista, con esta condición: **mientras falten los
+dos datos, cada pantalla lo dice.** Pedidos avisa que los pedidos de WhatsApp
+todavía no se listan, y dónde verlos; Cobros avisa que el comprobante está en
+la conversación. Esos avisos se quitan cuando llegue el dato, no antes.
+
+### 4nonies.4 Lo que cambia en el registro de flujos — hecho
+
+`web/src/lib/flujos.ts` declara para `venta` las pestañas Pedidos, Cobros,
+Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre sus
+roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
+suponer que una pestaña de flujo implica administrador.
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido

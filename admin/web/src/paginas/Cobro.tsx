@@ -180,7 +180,11 @@ export function Cobro() {
 
   return (
     <section>
-      <h2>Pedidos y cobro</h2>
+      {/* SE LLAMABA «PEDIDOS Y COBRO» Y NO LISTABA NI UNO NI OTRO: configuraba
+          el QR. El nombre prometía dos pantallas que ahora sí existen —«Pedidos»
+          y «Cobros»— y esta se queda con lo que de verdad hace. Ver
+          `DISENO.md` §4nonies. */}
+      <h2>Configuración de QR</h2>
       <p className="ayuda">
         El asistente toma el pedido de tu catálogo de{' '}
         <Link to={`/negocio/${encodeURIComponent(tenantId)}/catalogo`}>productos</Link>,
@@ -190,9 +194,15 @@ export function Cobro() {
 
       {/* ------------------------------------------------------------------ */}
       <h3>Tu QR de cobro</h3>
+      {/* LAS DOS PIEZAS DE ARRIBA VAN LADO A LADO cuando hay lugar. Tenían un
+          `maxWidth: 38rem` escrito a mano, así que en un monitor quedaban en
+          una tira angosta contra el borde izquierdo con media pantalla vacía a
+          la derecha: el bloque de las cuatro comprobaciones, que es largo,
+          empujaba el formulario tan abajo que había que bajar dos pantallas
+          para llegar a los campos. Lo vio Andres el 09/09. */}
 
       {registrado ? (
-        <div className="card elev-sm" style={{ maxWidth: '38rem' }}>
+        <div className="card elev-sm">
           <h4 className="card-kicker">Registrado</h4>
           <p className="card-body">
             A nombre de <strong><TextoSeguro valor={registrado.nombreCuenta} maxLargo={120} /></strong>
@@ -225,7 +235,7 @@ export function Cobro() {
       {/* ------------------------------------------------------------------ */}
       <h3>{registrado ? 'Cambiar el QR' : 'Cargar mi QR'}</h3>
 
-      <div className="aviso-datos ayuda" style={{ maxWidth: '38rem' }}>
+      <div className="aviso-datos ayuda">
         <p><strong>Abre la aplicación de tu banco y mira estas cuatro cosas junto
         al QR.</strong> La mayoría de los QR bolivianos vienen cifrados: nosotros
         podemos comprobar que sea un código de cobro de un banco, pero <strong>no
@@ -334,13 +344,13 @@ export function Cobro() {
       </form>
 
       {problemas.length > 0 && (
-        <div role="alert" className="aviso-datos" style={{ maxWidth: '38rem' }}>
+        <div role="alert" className="aviso-datos">
           <p><strong>No se pudo guardar:</strong></p>
           <ul>{problemas.map((p) => <li key={p}>{p}</li>)}</ul>
         </div>
       )}
       {advertencias.length > 0 && (
-        <div role="status" className="ayuda aviso-datos" style={{ maxWidth: '38rem' }}>
+        <div role="status" className="ayuda aviso-datos">
           <p><strong>Tenlo en cuenta:</strong></p>
           <ul>{advertencias.map((a) => <li key={a}>{a}</li>)}</ul>
         </div>

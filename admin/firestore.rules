@@ -1395,14 +1395,42 @@ service cloud.firestore {
         allow create: if esIngesta(tenantId) && tenantOperativo(tenantId) && cierreValido();
         // No se corrige ni se borra un cierre: se factura sobre esto. Un error
         // se compensa con otro asiento, no reescribiendo el original.
-        allow update, delete: if false;
+        allow delete: if false;
+
+        // LA ÚNICA ESCRITURA PERMITIDA SOBRE UN CIERRE: el sello de que una
+        // persona del negocio comprobó el pago contra su banco.
+        //
+        // ES LA PROHIBICIÓN 3 EN LAS REGLAS. El cotejo automático mira un
+        // comprobante, y un comprobante es una imagen que se edita: quien
+        // afirma que la plata entró es el comercio mirando su cuenta. Por eso
+        // este sello NO lo puede poner la ingesta —el servidor no sabe si el
+        // dinero llegó— y sí el administrador, con su uid y la hora del
+        // servidor, igual que cualquier otro sello de la consola.
+        //
+        // SE MARCA UNA VEZ Y NO SE DESMARCA. Un cierre ya comprobado no admite
+        // otra escritura: borrar el sello borraría el rastro de que alguien
+        // afirmó algo, y ese rastro es justo lo que sirve el día que el cobro
+        // se discute. Si se marcó por error, se corrige con un reclamo, que
+        // deja su propio registro.
+        allow update: if esAdmin(tenantId)
+                      && !('comprobadoPor' in resource.data)
+                      && request.resource.data.diff(resource.data).affectedKeys()
+                           .hasOnly(['comprobadoPor', 'comprobadoEn'])
+                      && request.resource.data.comprobadoPor == request.auth.uid
+                      && request.resource.data.comprobadoEn == request.time;
 
         function cierreValido() {
           let d = request.resource.data;
           return d.keys().hasOnly([
                    'tipo', 'ocurridoEn', 'referencia', 'telefonoEnmascarado',
-                   'monto', 'moneda'
+                   'monto', 'moneda',
+                   // El sello del comprobante. La INGESTA no lo puede escribir
+                   // —está en la lista para que el documento resultante lo
+                   // admita, no para que ella lo ponga— y su regla de
+                   // actualización es la de arriba.
+                   'comprobadoPor', 'comprobadoEn'
                  ])
+              && !('comprobadoPor' in d)
               // `conversacionId` NO esta en la lista, y es deliberado: vale
               // `wa_<telefono>`, o sea el numero COMPLETO. Enmascarar el
               // telefono en un campo y publicarlo entero en otro no protege

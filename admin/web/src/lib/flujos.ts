@@ -27,7 +27,21 @@ import { db } from './firebase';
  */
 export type FlujoId = 'agendamiento' | 'venta';
 
-export interface Pestana { ruta: string; etiqueta: string }
+export interface Pestana {
+  ruta: string;
+  etiqueta: string;
+  /**
+   * Quién la ve. Ausente significa SOLO ADMINISTRADOR, que era lo único que
+   * había hasta el 09/09: toda pestaña de flujo se daba por administrativa.
+   *
+   * «Pedidos» rompe esa regla y por eso el campo existe. La mira el cocinero o
+   * el repartidor —gente con rol `oper`— y es la única pantalla de la consola
+   * que se usa con las manos ocupadas. Dejarla solo para el admin obligaría al
+   * dueño a leerle los pedidos a su cocinero, que es exactamente el trabajo que
+   * este producto viene a sacar del medio.
+   */
+  roles?: ('admin' | 'oper')[];
+}
 
 export interface DefinicionFlujo {
   /** Nombre comercial del flujo, como lo ve el negocio. */
@@ -51,9 +65,24 @@ export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
     nombre: 'Pedidos y cobro',
     // «Inventario» es de VENTA y de nadie más: un salón no descuenta cortes
     // de pelo de un depósito. Es la política de capas de DISENO.md §4sexies.
+    //
+    // «Pedidos» es la primera pestaña de flujo que también ve el OPERADOR; la
+    // compuerta de roles de la cabecera (`App.tsx`) lee `roles` por eso.
+    // PENDIENTE: dos datos que las pantallas ya esperan y todavía no llegan
+    // —el `media id` del comprobante y el pedido tomado por WhatsApp—. Ver
+    // `admin/DISENO.md` §4nonies.3.
     pestanas: [
-      { ruta: 'cobro', etiqueta: 'Pedidos y cobro' },
+      // TRES PANTALLAS Y NO UNA (`DISENO.md` §4nonies). «Pedidos y cobro» era un
+      // nombre que prometía dos cosas que no estaban: la pantalla configuraba el
+      // QR y no listaba ni un pedido ni un cobro.
+      //
+      // El orden es el de la jornada de un comercio: primero lo que hay que
+      // preparar, después la plata, y al final lo que se toca una vez y no se
+      // vuelve a mirar.
+      { ruta: 'pedidos', etiqueta: 'Pedidos', roles: ['admin', 'oper'] },
+      { ruta: 'cobros', etiqueta: 'Cobros' },
       { ruta: 'inventario', etiqueta: 'Inventario' },
+      { ruta: 'cobro', etiqueta: 'Configuración de QR' },
     ],
     catalogo: 'Productos',
     documento: 'venta',

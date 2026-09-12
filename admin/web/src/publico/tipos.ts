@@ -26,6 +26,13 @@ export interface ItemPublico {
   precio: number | null;
   moneda: string;
   imagenUrl: string;
+  /**
+   * ¿El comercio subió una foto para este ítem? La imagen NO viaja acá: se pide
+   * a `/api/catalogo/<ficha>/foto/<id>`. Ver `catalogoWeb.ts`: doscientas fotos
+   * incrustadas serían treinta megas en una sola respuesta, que además no se
+   * podría cachear por separado.
+   */
+  tieneFoto?: boolean;
 }
 
 export interface NegocioPublico {

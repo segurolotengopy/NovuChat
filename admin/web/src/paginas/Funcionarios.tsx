@@ -182,16 +182,41 @@ export function Funcionarios() {
           </p>
         </div>
         <div className="grupo">
-          <label>Servicios que atiende
-            <select multiple size={5} value={nuevo.servicios}
-                    onChange={(e) => setNuevo({ ...nuevo,
-                      servicios: [...e.target.selectedOptions].map((o) => o.value) })}>
-              {servicios.map((s) => (
-                <option key={s.id} value={s.id}>{String(s.nombre ?? s.id)}</option>
-              ))}
-            </select>
-          </label>
-          <p className="ayuda">Sin selección, se entiende que atiende todo el catálogo.</p>
+          {/* CASILLAS, NO UN `select multiple`.
+              El desplegable múltiple es de los peores controles que hay: hay
+              que adivinar que se elige con Ctrl, un clic sin Ctrl BORRA todo lo
+              elegido sin avisar, en el celular abre una lista del sistema que
+              no se parece en nada, y con más de cinco servicios queda una
+              cajita con barra de desplazamiento donde no se ve qué está
+              marcado. Se veía en la captura del 09/09: seis servicios en una
+              ventanita de cinco líneas.
+              Las casillas no tienen ninguno de esos problemas y muestran TODO
+              lo elegido a la vez, que es la pregunta que uno le hace a esta
+              pantalla. */}
+          <fieldset className="casillero">
+            <legend>Servicios que atiende</legend>
+            {servicios.length === 0 && (
+              <p className="ayuda">
+                Todavía no hay servicios cargados. Cárguelos en su pestaña y
+                vuelva: sin catálogo no hay nada que asignar.
+              </p>
+            )}
+            {servicios.map((s) => {
+              const id = String(s.id);
+              const marcado = nuevo.servicios.includes(id);
+              return (
+                <label key={id} className="campo-casilla">
+                  <input type="checkbox" checked={marcado}
+                         onChange={(e) => setNuevo({ ...nuevo,
+                           servicios: e.target.checked
+                             ? [...nuevo.servicios, id]
+                             : nuevo.servicios.filter((x) => x !== id) })} />
+                  <span>{String(s.nombre ?? s.id)}</span>
+                </label>
+              );
+            })}
+          </fieldset>
+          <p className="ayuda">Sin ninguna marcada, se entiende que atiende todo el catálogo.</p>
         </div>
         <button type="submit">Agregar funcionario</button>
       </form>

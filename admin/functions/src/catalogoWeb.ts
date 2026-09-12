@@ -453,17 +453,88 @@ function itemPublico(id: string, d: Record<string, unknown>): ItemPublico {
   };
 }
 
+/**
+ * LA FOTO SUBIDA NO VIAJA DENTRO DEL CATÁLOGO, y esa es la decisión.
+ *
+ * Lo natural sería meter el `data:` incrustado en el JSON junto al ítem, y con
+ * seis productos funcionaría. Con doscientos son treinta megas en UNA respuesta,
+ * que el cliente descarga entera antes de ver la primera foto —con datos
+ * móviles, parado en la calle—. Y no se puede cachear por separado: cambiar un
+ * precio invalidaría las doscientas fotos.
+ *
+ * Así, el catálogo dice cuáles ítems TIENEN foto y cada una se pide por su
+ * propia dirección: el navegador las trae de a poco, solo las que se ven, y las
+ * guarda en su caché por separado. Las direcciones cuelgan de la ficha, así que
+ * caducan con ella y no quedan fotos accesibles para siempre.
+ */
+export const fotoDeCatalogo = onRequest(
+  { region: REGION, cors: false, maxInstances: 20 },
+  async (peticion, respuesta) => {
+    if (peticion.method !== 'GET') { respuesta.status(405).send('metodo'); return; }
+    const ficha = await fichaVigente(idDeLaRuta(peticion));
+    if (!ficha) { respuesta.status(404).send('enlace vencido'); return; }
+
+    const itemId = String(peticion.path.split('/').filter(Boolean).pop() ?? '');
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(itemId)) { respuesta.status(400).send('item'); return; }
+
+    const foto = await db().doc(`tenants/${ficha.tenantId}/fotosCatalogo/${itemId}`).get();
+    const datos = String(foto.get('datos') ?? '');
+    const m = /^data:(image\/(?:webp|jpeg|png));base64,([A-Za-z0-9+/=]+)$/.exec(datos);
+    if (!m) { respuesta.status(404).send('sin foto'); return; }
+
+    // Cacheable un rato: la foto no cambia sola, y la dirección caduca con la
+    // ficha de todos modos. `private` porque el enlace es de una conversación:
+    // no tiene por qué quedar en un proxy compartido.
+    respuesta.set('Cache-Control', 'private, max-age=900');
+    respuesta.set('X-Content-Type-Options', 'nosniff');
+    respuesta.type(m[1] as string);
+    respuesta.send(Buffer.from(m[2] as string, 'base64'));
+  },
+);
+
+/**
+ * El identificador de la ficha, buscado en la URL entera.
+ *
+ * Mira `originalUrl`, `url` y `path` en ese orden porque las tres existen según
+ * por dónde entre la petición —reescritura de Hosting, llamada directa a Cloud
+ * Run, emulador— y ninguna es fiable sola. Se queda con el tramo que tiene
+ * forma de ficha, no con el último: así da igual si el prefijo `/api/catalogo`
+ * viene o no.
+ */
+function idDeLaRuta(peticion: { path?: string; url?: string; originalUrl?: string }): string {
+  const rutas = [peticion.originalUrl, peticion.url, peticion.path];
+  for (const ruta of rutas) {
+    if (typeof ruta !== 'string' || ruta === '') continue;
+    const tramos = ruta.split('?')[0]?.split('/').filter(Boolean) ?? [];
+    const encontrado = tramos.find((t) => FICHA.test(t));
+    if (encontrado) return encontrado;
+  }
+  return '';
+}
+
 export const catalogoPublico = onRequest(
   { region: REGION, cors: false, maxInstances: 20 },
   async (peticion, respuesta) => {
     if (peticion.method !== 'GET') { respuesta.status(405).send('metodo'); return; }
 
-    // La ficha viene en el último segmento: /api/catalogo/<ficha>
-    const id = String(peticion.path.split('/').filter(Boolean).pop() ?? '');
+    // LA FICHA SE BUSCA EN TODA LA URL, no en el último segmento de `path`.
+    //
+    // Se leía `peticion.path` y se tomaba el último tramo. Detrás de una
+    // reescritura de Firebase Hosting eso NO es fiable: según cómo llegue la
+    // petición, `path` puede ser `/api/catalogo/<ficha>`, `/<ficha>` o
+    // directamente `/`, y en el último caso el identificador quedaba vacío y la
+    // función respondía «enlace vencido» a una ficha perfectamente válida. Era
+    // lo que rompía la vista previa del catálogo: se creaba bien, no vencía, y
+    // aun así la página decía que el enlace ya no estaba disponible.
+    //
+    // Ahora se toman todos los tramos de la URL completa y se elige el que
+    // TIENE FORMA de ficha. No hay ambigüedad posible: son 32 hexadecimales, y
+    // ningún otro tramo de estas rutas se le parece.
+    const id = idDeLaRuta(peticion);
     const ficha = await fichaVigente(id);
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
-    const [config, venta, marca, catalogo] = await Promise.all([
+    const [config, venta, marca, catalogo, fotos] = await Promise.all([
       db().doc(`tenants/${ficha.tenantId}/config/negocio`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/venta`).get(),
       db().doc(`tenants/${ficha.tenantId}/config/marca`).get(),
@@ -479,10 +550,28 @@ export const catalogoPublico = onRequest(
       // cada escritura— a una colección que el comercio edita todas las semanas.
       db().collection(`tenants/${ficha.tenantId}/catalogo`)
         .where('activo', '==', true).limit(500).get(),
+      // Solo los IDENTIFICADORES de las fotos: `select()` sin campos trae los
+      // documentos vacíos, así que se sabe cuáles existen sin descargar un solo
+      // byte de imagen. Sin esto, saber qué ítems tienen foto costaría bajarlas
+      // todas para después tirarlas.
+      db().collection(`tenants/${ficha.tenantId}/fotosCatalogo`).select().get(),
     ]);
+    const conFoto = new Set(fotos.docs.map((d) => d.id));
 
+    // UN CATÁLOGO APAGADO NO ES UN ENLACE VENCIDO, y decirlo así cuesta caro.
+    //
+    // Esta rama devolvía el MISMO error que una ficha caducada. El 09/09 la
+    // vista previa de la consola mostró «este enlace ya no está disponible»
+    // para un catálogo recién creado, y se fueron veinte minutos revisando la
+    // ficha, la ruta y el reloj —todo estaba bien— porque el mensaje señalaba
+    // al lugar equivocado. Un error que nombra una causa que no es, es peor que
+    // un error genérico: manda a buscar donde no hay nada.
+    //
+    // Ahora tiene su propio código. El sitio público lo traduce a algo que un
+    // CLIENTE entienda, y la consola —que sabe que quien mira es el comercio—
+    // puede decirle que lo encienda en Configuración.
     if (config.get('catalogoWebActivo') !== true) {
-      respuesta.status(404).json({ error: 'enlace vencido' }); return;
+      respuesta.status(409).json({ error: 'catalogo web apagado' }); return;
     }
 
 
@@ -536,7 +625,11 @@ export const catalogoPublico = onRequest(
       items: catalogo.docs
         .filter((d) => sePuedeComprar(d.data() as Record<string, unknown>)
           && hayParaVender(d.data() as Record<string, unknown>))
-        .map((d) => itemPublico(d.id, d.data() as Record<string, unknown>))
+        .map((d) => ({
+          ...itemPublico(d.id, d.data() as Record<string, unknown>),
+          // Solo el SÍ o el NO: la imagen se pide aparte, por su dirección.
+          tieneFoto: conFoto.has(d.id),
+        }))
         .sort((a, b) => a.area.localeCompare(b.area, 'es')
           || a.nombre.localeCompare(b.nombre, 'es')),
       caducaEn: ficha.caducaEn.toDate().toISOString(),
@@ -640,9 +733,9 @@ export const checkoutCatalogo = onRequest(
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
 
-    // /api/catalogo/<ficha>/checkout
-    const partes = peticion.path.split('/').filter(Boolean);
-    const ficha = await fichaVigente(String(partes[partes.length - 2] ?? ''));
+    // /api/catalogo/<ficha>/checkout — mismo problema que en `catalogoPublico`:
+    // contar tramos desde el final falla si la reescritura no manda el prefijo.
+    const ficha = await fichaVigente(idDeLaRuta(peticion));
     if (!ficha) { respuesta.status(404).json({ error: 'enlace vencido' }); return; }
 
     if (ficha.checkouts >= MAX_CHECKOUTS_POR_FICHA) {

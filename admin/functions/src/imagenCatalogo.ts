@@ -44,8 +44,27 @@ import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { REGION } from './region.js';
 
-/** Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n. */
+/**
+ * Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n.
+ *
+ * SE DECLARA COMO SECRETO Y SE LEE DEL ENTORNO, las dos cosas. `defineSecret`
+ * es lo que hace que Cloud Functions la inyecte desde Secret Manager; leerla de
+ * `process.env` en vez de con `.value()` es lo que hace que la ausencia
+ * degrade en lugar de romper.
+ *
+ * POR QUÉ IMPORTA ESA MEZCLA. Con `defineSecret` a secas, un despliegue hecho
+ * antes de crear el secreto FALLA ENTERO y se lleva puesto todo lo que viajaba
+ * con él: el 09/09 fueron el catálogo web, el mini inventario, la vista previa
+ * y el importador, cuatro cosas terminadas esperando una clave. Así, el día que
+ * alguien reconstruya el proyecto sin el secreto todavía cargado, lo único que
+ * deja de funcionar es esta comprobación.
+ *
+ * Y SI LA CLAVE NO ESTÁ, la comprobación de que la foto SE VE corre igual —es
+ * determinística y no usa modelo— y la de si la foto CORRESPONDE queda vacía:
+ * se deja de opinar, no se empieza a mentir.
+ */
 export const CLAVE_GEMINI = defineSecret('GEMINI_API_KEY');
+export const claveGemini = (): string => process.env['GEMINI_API_KEY'] ?? '';
 
 /** El mismo modelo que usa el asistente, para no sostener dos criterios. */
 const MODELO = 'gemini-3.5-flash-lite';
@@ -272,7 +291,7 @@ export async function comprobarFoto(
   const bajada = await bajarImagen(url);
   if (!bajada.ok) return { cargable: false, falla: bajada.falla };
   // Sin descripción no hay contra qué comparar, y no se gasta una llamada.
-  const parecido = descripcion.trim() === '' && nombre.trim() === ''
+  const parecido = clave === '' || (descripcion.trim() === '' && nombre.trim() === '')
     ? undefined
     : await opinarSobreLaFoto(bajada.bytes, bajada.tipo, nombre, descripcion, clave);
   return { cargable: true, tipo: bajada.tipo, bytes: bajada.bytes.length, ...(parecido ? { parecido } : {}) };
@@ -313,7 +332,7 @@ export const comprobarImagenDelCatalogo = onDocumentWritten(
       return;
     }
     const c = await comprobarFoto(
-      url, texto(ahora['nombre'], 120), texto(ahora['descripcion'], 400), CLAVE_GEMINI.value(),
+      url, texto(ahora['nombre'], 120), texto(ahora['descripcion'], 400), claveGemini(),
     );
     await guardar(tenantId, itemId, url, c);
   },
@@ -344,7 +363,7 @@ export const recomprobarImagen = onCall(
     const url = texto(d['imagenUrl'], 2000);
     if (url === '') throw new HttpsError('failed-precondition', 'Ese ítem no tiene foto.');
     const c = await comprobarFoto(
-      url, texto(d['nombre'], 120), texto(d['descripcion'], 400), CLAVE_GEMINI.value(),
+      url, texto(d['nombre'], 120), texto(d['descripcion'], 400), claveGemini(),
     );
     await guardar(tenantId, itemId, url, c);
     return c;

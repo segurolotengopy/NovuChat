@@ -4,7 +4,49 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-08 (día del congelamiento: el Demo B queda en texto y la consola toma el sistema gráfico del sitio)
+**Última actualización:** 2026-09-12 (la PR #51 trae a `main` lo que ya estaba en producción)
+
+---
+
+## 2026-09-12 — `main` vuelve a coincidir con producción (PR #51)
+
+Las tres pantallas, el arreglo de las fotos y el tuteo **se desplegaron desde
+ramas sin PR** mientras se arreglaba la subida de fotos (09/09). Hasta fusionar
+la #51, un despliegue desde `main` o una etiqueta `v*` los habría borrado de
+producción. La #51 los reúne con las nueve observaciones de la consola.
+
+**Regla que sale de esto:** nada se despliega desde una rama que no tenga PR
+abierta hacia `main`.
+
+## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
+
+Andres, mirando la consola (09/09): la sección se llamaba «Pedidos y cobro» y en
+realidad **configuraba el QR**. Especificación en `admin/DISENO.md` §4nonies.
+**Las tres pantallas ya están en producción**, cada una avisando lo que todavía
+no puede mostrar. Lo que sigue son los dos datos de abajo.
+
+- **Pedidos** — la ve el admin **y el operador**, que puede ser el cocinero o el
+  repartidor. Listado con fecha y hora, todos los ítems, el detalle tal como lo
+  pidió el cliente («sin cebolla», «L»), la modalidad de entrega, el monto y el
+  comprobante. Es la única pantalla de la consola que se mira con las manos
+  ocupadas.
+- **Cobros** — solo admin. Tablero corto de pagos, montos y verificaciones por
+  día, semana, mes o entre fechas; listado de cobros por QR; modal con ítems,
+  detalle y comprobante; y un botón para marcar el pago como comprobado contra
+  el banco. Ese botón lo aprieta una PERSONA, nunca el sistema: es la
+  PROHIBICIÓN 3, y el registro guarda quién y cuándo.
+- **Configuración de QR** — lo que hoy existe, con su nombre real.
+
+**PENDIENTE — los dos datos que las pantallas ya esperan:**
+
+1. **El comprobante no se guarda.** Del mensaje quedan `tipo`, `texto` y el id
+   de Meta, pero no el `media id`: no hay de dónde traer la imagen. Es el mismo
+   hueco por el que hoy «Conversaciones» solo marca el adjunto.
+2. **Un pedido por WhatsApp no se guarda como pedido.** La colección `pedidos`
+   está completa —ítems, total, entrega, dirección, nota— pero solo la escribe
+   el carrito web. Conversando se registra un `cierre`, que no lleva ítems.
+
+Cuando llegue cada uno, se quita el aviso correspondiente de Pedidos o de Cobros.
 
 ---
 

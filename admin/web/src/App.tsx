@@ -20,6 +20,8 @@ import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './paginas/Catalogo';
 import { Cobro } from './paginas/Cobro';
 import { Inventario } from './paginas/Inventario';
+import { Pedidos } from './paginas/Pedidos';
+import { Cobros } from './paginas/Cobros';
 import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
 import type { FlujoId } from './lib/flujos';
 
@@ -119,9 +121,19 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/configuracion`}>Configuración</NavLink>}
         {tenantId && esAdminDelNegocio && flujos &&
           <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</NavLink>}
-        {tenantId && esAdminDelNegocio && (flujos ?? []).flatMap((f) =>
-          FLUJOS[f].pestanas.map((p) =>
-            <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>))}
+        {/* LA COMPUERTA DE ROLES YA NO DA POR SENTADO QUE PESTAÑA DE FLUJO =
+            ADMINISTRADOR. Lo era hasta el 09/09, y «Pedidos» rompe la regla: la
+            mira el cocinero o el repartidor. Cada pestaña declara sus roles en
+            `lib/flujos.ts`; sin declararlos, sigue siendo solo del admin, que es
+            el comportamiento que ya había.
+            Esto es COSMÉTICO, como todo el menú: quien autoriza es
+            `firestore.rules`. Lo que evita es ofrecerle a un operador una puerta
+            que el servidor le va a cerrar. */}
+        {tenantId && (flujos ?? []).flatMap((f) =>
+          FLUJOS[f].pestanas
+            .filter((p) => (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper'))
+            .map((p) =>
+              <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>))}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</NavLink>}
         {tenantId && esAdminDelNegocio &&
@@ -216,6 +228,12 @@ export function App() {
         <Route path="/negocio/:tenantId/funcionarios" element={<DesvioAAgenda />} />
         <Route path="/negocio/:tenantId/inventario" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Inventario /></></Proteger>} />
+        {/* PEDIDOS la ve también el OPERADOR: es la pantalla del cocinero y del
+            repartidor. Es la única ruta de flujo que no exige administrador. */}
+        <Route path="/negocio/:tenantId/pedidos" element={
+          <Proteger requiere="miembroTenant"><><Cabecera /><Pedidos /></></Proteger>} />
+        <Route path="/negocio/:tenantId/cobros" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Cobros /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
         <Route path="/negocio/:tenantId/consumo" element={

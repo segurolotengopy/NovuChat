@@ -194,9 +194,7 @@ export function Configuracion() {
         </p>
         {opcion('estiloEmojis', 'Emojis', [
           ['ninguno', 'Ninguno'], ['pocos', 'Pocos'], ['muchos', 'Varios'],
-        ], <>Son opciones cerradas y no campos de texto a propósito: lo que se
-        elige acá entra en las instrucciones del asistente, y una lista cerrada
-        no se puede usar para darle órdenes.</>)}
+        ])}
 
         <h3>Mensajes fijos</h3>
         {campo('mensajeCierre', 'Al cerrar la conversación', undefined, true)}
@@ -354,7 +352,7 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
       setEstado('Logo actualizado. Ya se ve en tu catálogo web.');
     } catch (error) {
       setEstado(error instanceof Error ? error.message
-        : 'No se pudo leer esa imagen. Probá con un PNG o un JPG.');
+        : 'No se pudo leer esa imagen. Intenta con un PNG o un JPG.');
     } finally {
       setSubiendo(false);
       if (archivo.current) archivo.current.value = '';
@@ -389,7 +387,7 @@ function LogoDelComercio({ tenantId }: { tenantId: string }) {
       )}
       <p className="ayuda">
         Un PNG o un JPG. Se recorta solo a 320 píxeles, así que no hace falta
-        que lo prepares: subí el que tengas. Se ve arriba de todo en la página
+        que lo prepares: sube el que tengas. Se ve arriba de todo en la página
         que abren tus clientes.
       </p>
       {subiendo && <p role="status">Procesando la imagen…</p>}
@@ -435,7 +433,7 @@ async function recortar(archivo: File): Promise<string> {
       if (datos.length <= TOPE_LOGO) return datos;
     }
     throw new Error('Esa imagen es demasiado pesada incluso reducida. '
-      + 'Probá con una más simple o con menos detalle.');
+      + 'Intenta con una más simple o con menos detalle.');
   } finally {
     URL.revokeObjectURL(url);
   }

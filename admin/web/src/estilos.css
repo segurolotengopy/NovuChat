@@ -143,6 +143,18 @@
 /* ── Controles de formulario ────────────────────────────────────────────
    El aspecto es el de `.input` del sistema; ver el punto 1 de la cabecera para
    por qué se aplica por elemento y dentro de `:where()`. */
+/* EL ATRIBUTO `hidden` TIENE QUE GANAR, y no gana solo.
+   `[hidden] { display: none }` vive en la hoja del NAVEGADOR, y cualquier regla
+   de autor le gana por más baja que sea su especificidad —hasta un `:where()`,
+   que vale cero—. Así que la regla de abajo, que le pone `display: block` a
+   todo `input`, hacía visible el `<input type="file">` que la subida de fotos
+   esconde detrás de su botón: en «Productos» se veía el botón «Subir foto» Y al
+   lado el «Seleccionar archivo / Ningún archivo seleccionado» del sistema, en
+   cada fila. Lo vio Andres el 09/09.
+   El `!important` es de los pocos justificados que hay: `hidden` significa «no
+   está», y ninguna regla de presentación puede opinar sobre eso. */
+[hidden] { display: none !important; }
+
 :where(input, select, textarea) {
   display: block;
   width: 100%;
@@ -431,13 +443,44 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 .dos-columnas { display: grid; grid-template-columns: minmax(14rem, 22rem) 1fr; gap: var(--space-6); }
 @media (max-width: 52rem) { .dos-columnas { grid-template-columns: 1fr; } }
 .lista-hilos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+/* CADA HILO ES UNA FICHA, y volvió a serlo. Al pasar la consola al sistema
+   gráfico les puse `border-color: transparent` para que no se vieran como
+   botones, y el resultado fue peor: una lista de teléfonos y frases sueltas,
+   sin nada que dijera dónde empieza y termina cada conversación. Lo vio Andres
+   el 09/09 («se han perdido los recuadros»). Ahora son fichas de verdad
+   —superficie propia, borde y sombra corta— y la abierta se marca con el
+   acento, no solo con un fondo apenas distinto. */
 .lista-hilos button {
   display: grid; width: 100%; text-align: left; justify-items: start;
-  gap: 2px; padding: var(--space-2) var(--space-3);
-  border-color: transparent; border-radius: var(--radius-md);
+  gap: 2px; padding: var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
   font-family: var(--font-body); font-weight: 400;
 }
-.lista-hilos button:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+.lista-hilos button:hover { border-color: var(--color-accent); background: var(--color-surface); }
+.lista-hilos button[aria-current="true"] {
+  border-color: var(--color-accent);
+  box-shadow: inset 3px 0 0 var(--color-accent), var(--shadow-sm);
+}
+/* La frase de vista previa, en una línea: sin esto un mensaje largo hace crecer
+   la ficha y la lista deja de poder recorrerse de un vistazo. */
+.lista-hilos button > :last-child {
+  display: block; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; color: color-mix(in srgb, var(--color-text) 72%, transparent);
+}
+
+/* Marca de adjunto dentro de una burbuja. Va ARRIBA del texto y no al lado:
+   es lo primero que hay que ver cuando se busca un comprobante en un hilo
+   largo. */
+.adjunto {
+  display: inline-block; margin-bottom: 4px;
+  padding: 2px 10px; border-radius: var(--radius-pildora);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  font-size: 12px;
+}
 .hilo { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .hilo li { max-width: 42rem; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); }
 .hilo .entrante { background: var(--color-surface); border: 1px solid var(--color-divider); justify-self: start; }
@@ -691,3 +734,75 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 /* El selector de período va en UNA fila encima de los gráficos, no en un menú:
    es el control que más se toca en esta pantalla. */
 .periodos { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }
+
+/* Casillero: varias casillas como UN campo. Reemplaza al `select multiple`, que
+   obliga a adivinar que se elige con Ctrl y borra la selección con un clic
+   suelto. Va en columnas cuando hay lugar: veinte servicios en una sola fila
+   vertical obligan a bajar la pantalla para ver si falta marcar alguno. */
+.casillero {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  columns: 16rem;
+  column-gap: var(--space-6);
+}
+.casillero legend {
+  padding: 0 var(--space-2);
+  font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+.casillero .campo-casilla { margin-bottom: var(--space-2); break-inside: avoid; }
+
+/* Pedidos y cobro: la ficha del QR y las cuatro comprobaciones, una al lado de
+   la otra. Son dos bloques de LECTURA, no un formulario, así que se acotan por
+   ancho de lectura y no por celdas iguales: el de la derecha es largo y el de
+   la izquierda corto, y forzarlos al mismo tamaño deja un hueco en uno de los
+   dos. */
+#raiz > section > .card,
+#raiz > section > .aviso-datos { max-width: var(--ancho-lectura); }
+@media (min-width: 68rem) {
+  #raiz > section > .card + h3 { margin-top: var(--space-6); }
+}
+
+/* Diálogo ANCHO, para los que llevan una tabla. El del sistema mide 440px, que
+   alcanza para una confirmación y no para cinco columnas: la referencia de Meta
+   se partía en seis renglones y el botón de cerrar quedaba fuera de la
+   pantalla. Y el cuerpo se desplaza SOLO —no la página— para que los botones
+   sigan a la vista por larga que sea la tabla. */
+.dialog-ancho { width: min(1100px, 100%); max-height: 88vh; }
+.dialog-ancho .dialog-body { overflow: auto; flex: 1; min-height: 0; }
+.dialog-ancho .table td, .dialog-ancho .table th { white-space: nowrap; }
+
+/* ── Pedidos: la pantalla que se mira con las manos ocupadas ─────────────
+   Fichas anchas y todo desplegado. Nada de tabla: una fila de tabla obliga a
+   leer de izquierda a derecha buscando la columna, y acá lo que hay que ver de
+   un golpe es qué preparar y si sale a la calle. */
+.pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.pedido { gap: var(--space-2); }
+.pedido-cabecera { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); }
+.pedido-total {
+  margin-left: auto; font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight); font-size: 18px;
+}
+/* La entrega, grande: al que prepara le importa más que el monto. */
+.pedido-entrega { margin: 0; font-size: 16px; font-weight: 600; }
+.pedido-direccion { margin: 0; font-size: 15px; }
+.pedido-items { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.pedido-items li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); font-size: 16px; }
+.pedido-cantidad {
+  min-width: 2.2rem; font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight); font-variant-numeric: tabular-nums;
+}
+/* EL DETALLE DEL CLIENTE ES LO QUE MÁS SE EQUIVOCA: va destacado, no en gris.
+   «Sin cebolla» perdido en un tono claro es un plato que vuelve. */
+.pedido-detalle {
+  padding: 1px 10px; border-radius: var(--radius-pildora);
+  background: color-mix(in srgb, var(--color-aviso) 18%, transparent);
+  font-style: normal; font-size: 14px;
+}
+.pedido-nota {
+  margin: var(--space-2) 0 0; padding-left: var(--space-2);
+  border-left: 3px solid var(--color-borde-control); font-size: 15px;
+}

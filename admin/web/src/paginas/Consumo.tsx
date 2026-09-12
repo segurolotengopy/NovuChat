@@ -5,6 +5,7 @@ import {
 import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import { descargarCsv } from '../lib/exportar';
 
 /**
  * CONSUMO — lo que se factura, con el mismo vocabulario que la página de precios.
@@ -118,8 +119,12 @@ function DetalleCierres({ tenantId, cerrar }: { tenantId: string; cerrar: () => 
 
   return (
     <div className="dialog-backdrop" onClick={cerrar}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label="Detalle de cierres"
-           onClick={(e) => e.stopPropagation()}>
+      {/* `dialog-ancho`: el diálogo del sistema mide 440px, que alcanza para una
+          confirmación y no para una tabla de cinco columnas. Lo que se veía el
+          09/09 era la referencia de Meta partida en seis renglones y el botón
+          de cerrar empujado fuera de la pantalla. */}
+      <div className="dialog dialog-ancho" role="dialog" aria-modal="true"
+           aria-label="Detalle de cierres" onClick={(e) => e.stopPropagation()}>
         <h3 className="dialog-title">Cierres registrados</h3>
         <div className="dialog-body">
           {error && <p role="alert">{error}</p>}
@@ -153,13 +158,29 @@ function DetalleCierres({ tenantId, cerrar }: { tenantId: string; cerrar: () => 
               </table>
             </div>
           )}
+          {/* Se quitó «este detalle existe para poder explicar una factura, no
+              para mirar la actividad del negocio»: es la justificación de una
+              decisión nuestra, y el comercio no la pidió. Lo que sí le sirve
+              saber —que el teléfono va enmascarado— se queda. */}
           <p className="text-muted">
-            El teléfono va enmascarado y no se muestra nada de la conversación.
-            Este detalle existe para poder explicar una factura, no para mirar
-            la actividad del negocio.
+            El teléfono va enmascarado y no se muestra el contenido de las
+            conversaciones.
           </p>
         </div>
         <div className="dialog-actions">
+          {cierres && cierres.length > 0 && (
+            <button type="button" className="btn btn-secondary" onClick={() => descargarCsv(
+              'cierres',
+              ['Cuándo', 'Tipo', 'Cliente', 'Referencia', 'Monto', 'Moneda'],
+              cierres.map((c) => [
+                c.ocurridoEn?.toDate?.().toLocaleString('es-BO') ?? '',
+                NOMBRE_TIPO[String(c.tipo)] ?? c.tipo,
+                c.telefonoEnmascarado, c.referencia,
+                typeof c.monto === 'number' ? c.monto : '',
+                typeof c.moneda === 'string' ? c.moneda : '',
+              ]),
+            )}>Exportar</button>
+          )}
           <button type="button" className="btn btn-primary" onClick={cerrar}>Cerrar</button>
         </div>
       </div>
@@ -208,13 +229,21 @@ export function Consumo() {
             <div className="dato"><strong>{atenciones}</strong><span>atenciones</span></div>
             <div className="dato"><strong>{cierres}</strong><span>cierres</span></div>
           </div>
-          <p className="text-muted">
-            <strong>Conversaciones</strong> es el número que se factura, y es el
-            mismo que ves acá y en tu plan.
-          </p>
+          {/* ACÁ HABÍA DOS FRASES COMERCIALES y las dos se van.
+              «Es el número que se factura, y es el mismo que ves acá y en tu
+              plan» es argumento de venta, no información de una pantalla de
+              consumo: quien la abre ya compró.
+              Y la otra estaba directamente MAL: «de cada 100 conversaciones,
+              267 terminaron en un cierre» —lo que se veía el 09/09— porque la
+              tasa divide cierres entre conversaciones sin ningún tope, y un
+              mismo cliente puede cerrar varias veces dentro de la misma
+              ventana de 24 h. Un número imposible en la primera tarjeta hace
+              dudar de todos los demás. La relación cierres/conversaciones
+              sigue estando, sin disfrazarla de porcentaje. */}
           {tasa !== null && (
             <p className="text-muted">
-              De cada 100 conversaciones, {tasa} terminaron en un cierre.
+              {cierres} {cierres === 1 ? 'cierre' : 'cierres'} sobre {conversaciones}{' '}
+              {conversaciones === 1 ? 'conversación' : 'conversaciones'}.
             </p>
           )}
           <div className="tarjeta-pie">
@@ -224,6 +253,10 @@ export function Consumo() {
           </div>
         </article>
 
+        {/* La tarjeta de definiciones se queda: es un GLOSARIO y no una venta.
+            Un comercio que ve tres números sin saber qué mide cada uno no puede
+            revisar su factura. Lo que se sacó de acá fueron las frases que
+            argumentan; las que definen quedan. */}
         <article className="card elev-sm">
           <h3 className="card-kicker">Qué cuenta cada número</h3>
           <div className="card-body">

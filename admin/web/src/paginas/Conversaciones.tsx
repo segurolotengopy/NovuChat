@@ -4,8 +4,50 @@ import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 
-interface Mensaje { id: string; direccion?: unknown; texto?: unknown; ts?: { toDate(): Date } }
+interface Mensaje {
+  id: string; direccion?: unknown; texto?: unknown; tipo?: unknown; ts?: { toDate(): Date };
+}
 interface Conversacion { id: string; telefono?: unknown; ultimoMensaje?: unknown }
+
+/**
+ * =============================================================================
+ * LO QUE LLEGÓ Y NO ERA TEXTO
+ * =============================================================================
+ *
+ * EL COMPROBANTE DE PAGO ES LO MÁS IMPORTANTE DE UNA CONVERSACIÓN DE VENTA, y
+ * era justo lo que no se veía: el hilo pintaba `texto` y nada más, así que una
+ * imagen aparecía como la frase que el flujo escribe en su lugar —«el cliente
+ * envió una IMAGEN»— mezclada con los mensajes normales, sin ninguna marca. El
+ * comercio no podía distinguir de un vistazo dónde está el comprobante.
+ *
+ * LO QUE ESTO HACE Y LO QUE NO, dicho para que nadie suponga de más:
+ *
+ *   SÍ   marca el mensaje como adjunto, con su tipo, para que se encuentre.
+ *   NO   muestra la imagen. NovuChat no la guarda: el archivo vive en los
+ *        servidores de Meta y se baja con el token de la cuenta, desde el
+ *        servidor y nunca desde el navegador. Y hoy ni siquiera se guarda el
+ *        identificador del archivo, así que no hay de dónde traerla.
+ *
+ * VER LA IMAGEN DE VERDAD son tres cosas, en este orden: guardar el `media id`
+ * que manda Meta, una función que la baje con el token y la sirva desde nuestro
+ * propio origen —nunca un enlace a Meta, que caduca— y el permiso para leerla.
+ * Está anotado en ESTADO.md. Prometerlo con una miniatura rota sería peor que
+ * decir que no está.
+ */
+const ADJUNTOS: Record<string, string> = {
+  image: '🧾 Imagen — puede ser el comprobante',
+  document: '📄 Documento — puede ser el comprobante',
+  audio: '🎤 Audio',
+  location: '📍 Ubicación',
+  order: '🛒 Pedido del catálogo',
+  interactive: '👆 Respuesta a una lista o botón',
+};
+
+function Adjunto({ tipo }: { tipo: unknown }) {
+  const rotulo = ADJUNTOS[String(tipo ?? '')];
+  if (!rotulo) return null;
+  return <span className="adjunto">{rotulo}</span>;
+}
 
 /**
  * Visor de conversaciones. Todo lo que se pinta acá lo escribió un desconocido:
@@ -60,10 +102,14 @@ export function Conversaciones() {
       <ol className="hilo">
         {mensajes.map((m) => (
           <li key={m.id} className={m.direccion === 'entrante' ? 'entrante' : 'saliente'}>
+            <Adjunto tipo={m.tipo} />
             <TextoSeguro valor={m.texto} />
             <time>{m.ts?.toDate ? m.ts.toDate().toLocaleString('es-BO') : ''}</time>
           </li>
         ))}
+        {abierta && mensajes.length === 0 && (
+          <li className="vacio">Esta conversación todavía no tiene mensajes guardados.</li>
+        )}
       </ol>
     </section>
   );
