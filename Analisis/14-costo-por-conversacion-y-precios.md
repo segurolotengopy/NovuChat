@@ -1,5 +1,11 @@
 # Costos y precios de NovuChat desde el 1 de octubre de 2026
 
+> **Nota del 13/09/2026.** Los planes que este documento propone (USD 20/40/70
+> por 120/200/300 conversaciones, bolsa de 25) fueron **superados el mismo
+> 08/09 por `Analisis/21`** (USD 25/50/90 por 100/220/500) y `Analisis/23`
+> (bolsa de 30 por USD 10). Los costos, la estructura y las conclusiones siguen
+> vigentes; `14-modelo-costos.py` conserva los planes de esta versión.
+
 **08-sep-2026.** Análisis completo con las **hojas de tarifas oficiales de Meta
 vigentes desde el 1 de octubre de 2026** (tarifas y niveles de volumen, en USD),
 decodificadas de los archivos que pasó Andres. Reemplaza todas las versiones
@@ -551,8 +557,10 @@ se pensaban en agosto, y donde cada mensaje cuenta.**
 | «El 80 % no vuelve»; «391 % más conversión» | Sin fuente la primera; la segunda contradice al sitio, que dice «siete veces» citando HBR |
 
 Y **dos** cláusulas nuevas en el contrato. La primera: **los precios están en
-dólares y se cobran en bolivianos al tipo de cambio que NovuChat publica cada
-mes** (§5ter). La segunda: **el precio se revisa cuando Meta cambie
+dólares y se cobran en bolivianos al Tipo de Cambio Oficial que publica el
+Banco Central de Bolivia** (§5ter: NovuChat no publica un tipo de cambio
+propio; queda por decidir si se toma el del día de pago o el del primer día
+hábil del mes). La segunda: **el precio se revisa cuando Meta cambie
 la tarifa**, que puede ocurrir cada trimestre con un mes de aviso. Con el 94 %
 del costo en manos de Meta, comprometer un precio por un año sin esa cláusula
 es tomar el riesgo de Meta por cuenta propia.

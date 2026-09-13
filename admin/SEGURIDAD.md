@@ -1446,13 +1446,24 @@ abierta en producción.
 
 ## Resultado real de las pruebas
 
+Corrida del 13/09/2026 sobre `main` (la primera versión de esta sección, del
+29/08, registraba 164):
+
 ```
 $ pnpm pruebas:reglas
- ✓ pruebas/reglas.test.ts   (155 tests)
- ✓ pruebas/saneo.test.ts    ( 22 tests)
- ✓ pruebas/indices.test.ts  (  4 tests)
-   Test Files  3 passed (3)
-        Tests  164 passed (164)
+ ✓ pruebas/reglas.test.ts           (229 tests)   ← contra el emulador
+ ✓ pruebas/catalogo-web.test.ts     ( 90 tests)
+ ✓ pruebas/qr.test.ts               ( 63 tests)
+ ✓ pruebas/imagen-catalogo.test.ts  ( 46 tests)
+ ✓ pruebas/saneo.test.ts            ( 27 tests)
+ ✓ pruebas/xlsx.test.ts             ( 18 tests)
+ ✓ pruebas/estado-comercio.test.ts  ( 17 tests)
+ ✓ pruebas/plataforma.test.ts       ( 15 tests)
+ ✓ pruebas/inventario.test.ts       ( 15 tests)
+ ✓ pruebas/candado-agenda.test.ts   ( 12 tests)
+ ✓ pruebas/indices.test.ts          (  4 tests)
+   Test Files  11 passed (11)
+        Tests  536 passed (536)
 ```
 
 `saneo.test.ts` e `indices.test.ts` **no usan el emulador**: son puras. La
@@ -1557,7 +1568,19 @@ Dos advertencias de operación:
 
 ## Lo que queda pendiente de verificar en la nube
 
-Nada de esto se puede probar sin los proyectos creados, y **no se creó ninguno**:
+> **Estado real (2026-09-13).** Al escribirse esta lista no existía ningún
+> proyecto; desde el 02/09 hay uno real en producción (`ESTADO.md`). De la
+> lista, ya se comprobó en la nube: los custom claims llegan al token (el alta
+> de un comercio real con `alta-comercio.mjs` se probó contra el proyecto real
+> el 07/09, y tres superadministradores entran con Google), las reglas
+> desplegadas sirven a la consola en producción, y la federación OIDC rechazó
+> un `sub` que no coincidía (12/09: la condición por nombres falló y se pasó a
+> identificadores inmutables). **Siguen sin comprobarse** el rechazo a un fork
+> real, `sign_in_provider` para un administrador de comercio que intente entrar
+> con Google, el tiempo de propagación de `email_verified`, y que el correo de
+> FormSubmit llegue de verdad.
+
+La lista original, para que quede claro qué se pidió verificar:
 
 - Que los custom claims lleguen efectivamente al token en un despliegue real.
 - Que App Check no bloquee a usuarios legítimos (por eso: modo monitoreo primero).

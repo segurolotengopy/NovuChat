@@ -50,7 +50,7 @@ duerme."* Anunciar que todo lo que verán es **en vivo, sobre WhatsApp real**.
 | 4:00 | Enviar una foto cualquiera (comprobante) | **Momento clave:** suena el **celular del dueño** con el resumen — "su cocina se entera sola; usted no tocó nada" |
 | 5:00 | "¿Tienen chaquetas?" → "Talla M, ¿envían a Oruro?" | Vertical retail: variantes obligatorias + regla dura: sin Nombre y CI no hay QR para flota — "las reglas de SU logística, cumplidas siempre" |
 | 6:30 | "¿Eres un robot?" (plantado o del público) | Transparencia con gracia: es IA y no lo esconde — coherente con vender "IA real vs. árboles de botones" |
-| 7:30 | — | Cierre comercial: planes 150/250/350 Bs, instalación en 48 h, oferta de la rueda (instalación bonificada a los primeros 10) |
+| 7:30 | — | Cierre comercial: planes en dólares **USD 25 / 50 / 90 por 100 / 220 / 500 conversaciones** (`Analisis/21`; los 150/250/350 Bs del pitch de agosto quedaron superados el 08/09), instalación en 48 h, oferta de la rueda (instalación bonificada a los primeros 10) |
 
 ## Participación del público (si el ambiente lo permite)
 

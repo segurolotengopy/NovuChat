@@ -381,9 +381,16 @@ exactamente lo que la regla del congelamiento evita.
 | «Recordatorio automático 24 horas antes» | Funciona; exige plantilla aprobada en la WABA del cliente y método de pago. Se le corrigieron tres defectos el 06/09 y la corrida completa se ve hoy a las 17:00. | Ofrecerlo solo con Crecimiento y confirmarlo en la entrega con una cita real. |
 | «Instalación en 48 horas desde que tenemos tu información» | Realista con la ficha completa y la sesión de Meta el primer día. | Entregar la ficha en la reunión de análisis y contar las 48 horas desde que vuelve completa. |
 | «Nadie de NovuChat lee tus conversaciones sin que tú abras el acceso» | Cierto para la consola. Con la opción G2 de calendario, la cuenta de NovuChat sí ve los eventos de la agenda. | Decirlo y dejarlo elegir entre G1 y G2. |
-| «Se suspende el asistente, pero conservas tus datos» (falta de pago) | **Hoy no se suspende**: ver la brecha 6. | No prometerlo por escrito hasta cerrar la brecha 6. Es de una hora de trabajo y ningún cliente paga todavía. |
+| «Se suspende el asistente, pero conservas tus datos» (falta de pago) | **Cerrado el 07/09 por la tarde**: los tres flujos deciden por el código 409 del panel y cortan antes del agente (17 pruebas). Al escribirse esta fila, esa misma mañana, no se suspendía. | Se puede prometer. Queda confirmar el segundo camino del 409 (`sin_pago`) al reaplicar el prepago. |
 
 **Recomendación por plan para el flujo de reservas:**
+
+> **Precios superados (13/09/2026).** Las cifras en bolivianos de este bloque
+> son las de la oferta del 07/09. Desde el 08/09 la lista es en dólares:
+> **USD 25 / 50 / 90 por 100 / 220 / 500 conversaciones**, instalación USD 65,
+> bolsa de 30 por USD 10, agendas 1 / 5 / hasta 10 (`Analisis/21`, `23`, `24`;
+> `CLAUDE.md` «Base comercial»). La recomendación de qué plan conviene a cada
+> tipo de negocio sigue valiendo.
 
 - **Impulso (250 Bs, 300 conversaciones):** una persona, un calendario, sin
   recordatorio automático. Chip incluido.

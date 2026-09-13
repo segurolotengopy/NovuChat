@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """Modelo de costos de NovuChat DESDE EL 1 DE OCTUBRE DE 2026.
 
+NOTA (13/09/2026): las tablas de planes de este script corresponden a la
+propuesta de Analisis/14 (USD 20/40/70 por 120/200/300). Los planes vigentes
+son los de Analisis/21 (USD 25/50/90 por 100/220/500) y la bolsa de
+Analisis/23 (30 por USD 10). Los costos unitarios no cambian.
+
 Fuentes:
   - Hojas de tarifas oficiales de Meta en USD, vigentes desde el 01/10/2026
     (tarifas y niveles de volumen), fila "Rest of Latin America" (+591).

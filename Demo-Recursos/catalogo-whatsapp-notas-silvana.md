@@ -4,6 +4,10 @@
 > y la estrategia comercial de instalación. Se conservan **tal como llegaron**.
 > El análisis contra lo que el sistema hace hoy está en
 > `Analisis/09-catalogo-nativo-de-whatsapp.md`.
+> **Los precios que figuran abajo (250 / 450 / 850 Bs y los setups de 800 y
+> 1.500 Bs) son los de esa fecha y quedaron superados el 08/09** por la lista
+> en dólares de `Analisis/21` (USD 25 / 50 / 90) e instalación USD 65 / desde
+> 125 (`Analisis/22`). Se conservan porque el documento no se edita.
 
 ---
 

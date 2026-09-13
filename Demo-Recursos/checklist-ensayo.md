@@ -7,10 +7,10 @@
 ## Preparación (una sola vez, antes de ensayar)
 
 - [ ] Los 5 números registrados en el número de prueba de la app A (y de la B)
-- [ ] Flujo activado en n8n y webhook **en verde** (Bloque 6 de la guía Meta)
+- [ ] Flujo activado en n8n y webhook **en verde** (Bloque 9 de `GUIA-META-NOVUCHAT.md`)
 - [ ] Calendario "NovuChat Demo A" creado, con `calendario-demo-relleno.ics`
       importado y su ID cargado en `Config del negocio`
-- [ ] `qr-demo.png` alojado en URL pública y cargada en `Config del negocio` (Demo B)
+- [ ] `qr-demo.png` subido a la Cloud API con `scripts/subir-qr.sh` y su **media ID** (vigencia 30 días) cargado en el nodo «Enviar QR (imagen DEMO)» (Demo B; Bloque 10 de la guía)
 - [ ] Celular "del dueño" definido y cargado en `numeroDueno` (Demo B)
 
 ## Suite Demo A — Agendamiento (Belleza y Salud)

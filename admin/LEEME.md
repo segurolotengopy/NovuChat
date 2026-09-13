@@ -15,10 +15,9 @@ nada de `Flujos/`.
 | | |
 |---|---|
 | Andamiaje | escrito y compilando |
-| Pruebas de reglas | **179 de 179 en verde**, ejecutadas contra el emulador |
-| Pruebas puras (saneo, ranuras, índices, rótulos) | **31 de 31 en verde** |
+| Pruebas (13/09/2026, `pnpm pruebas:reglas`) | **536 en verde en `main`**: 229 de reglas contra el emulador y 307 puras (catálogo web, QR, imágenes, saneo, XLSX, candado de agenda, estado del comercio, plataforma, inventario, índices). Con la rama `cobro/bloques-de-25`, 551 |
 | Prueba a mano del panel | **recorrida de punta a punta** contra los emuladores, con datos sembrados |
-| Recursos de nube | **ninguno creado.** Ver `DISENO.md` §11 |
+| Recursos de nube | **En producción** desde el 02/09/2026 en un proyecto real (us-east1), consola en `consola.novuchat.site`; desplegada por CI desde `v0.1.4` (13/09). Ver `DISENO.md` §11 «Estado real» y `.github/DESPLIEGUE-FIREBASE.md` |
 
 ## Probar el panel a mano (secuencia completa y probada)
 
@@ -127,7 +126,7 @@ Requiere Node 24, pnpm y un JDK (para el emulador de Firestore).
 cd admin
 pnpm install
 
-pnpm pruebas:reglas     # emulador + 164 pruebas (155 de reglas, 26 puras)
+pnpm pruebas:reglas     # emulador + las 536 pruebas (229 de reglas, 307 puras)
 pnpm emuladores         # Auth + Firestore para probar a mano
 pnpm sembrar            # datos de prueba (idempotente)
 pnpm csp                # sirve dist con las cabeceras REALES de Hosting
