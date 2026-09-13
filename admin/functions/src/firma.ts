@@ -68,7 +68,18 @@ export const SECRETOS_POR_ALIAS: Record<string, ReturnType<typeof defineSecret>>
   //
   // CUANDO SE ACABEN LOS VEINTE, hay que ampliar la reserva y desplegar UNA vez,
   // no una por cliente. Conviene hacerlo con holgura, no con el cliente 20 ya
-  // firmado.
+  // firmado. El procedimiento, en este orden (2026-09-13):
+  //  1. Crear cada secreto nuevo con un valor aleatorio, con el prefijo
+  //     INGESTA_ —la cuenta de despliegue ve solo los INGESTA_* y GEMINI_API_KEY,
+  //     por una condición de IAM—.
+  //  2. Dar `roles/secretmanager.secretAccessor` sobre cada secreto nuevo a la
+  //     cuenta con la que corren las Functions. ESTE PASO ES A MANO, a
+  //     propósito: la cuenta de despliegue ya no puede cambiar accesos a
+  //     secretos, para que no pueda darse permiso de leerlos. Si se olvida, el
+  //     despliegue falla antes de publicar —no toca producción—, pero la
+  //     simulación (`--dry-run`) NO lo detecta: solo avisa «will be granted».
+  //  3. Recién entonces, agregar los defineSecret acá y desplegar con etiqueta.
+  //  Detalle en .github/DESPLIEGUE-FIREBASE.md, «Estado real».
   cliente01: defineSecret('INGESTA_CLIENTE01'),
   cliente02: defineSecret('INGESTA_CLIENTE02'),
   cliente03: defineSecret('INGESTA_CLIENTE03'),

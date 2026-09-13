@@ -53,15 +53,35 @@ del proyecto de producción. Lo que hay:
     Function corre como esta última, pero `firebase deploy` exige el permiso
     antes de desplegar Functions y falla con *«Missing permissions required for
     functions deploy… iam.serviceAccounts.ActAs»* (segundo intento, 2026-09-12).
-  - `secretmanager.admin` sobre **cada secreto que declaran las Functions**:
-    hoy **23** —`GEMINI_API_KEY`, `INGESTA_DEMOA`, `INGESTA_DEMOB` y
-    `INGESTA_CLIENTE01` a `20`—. Al principio se dio sobre tres, tomados de
-    una búsqueda en el código que no aceptaba dígitos, y `firebase deploy`
-    falló con *«Permission 'secretmanager.secrets.get' denied on …
-    INGESTA_CLIENTE01»* (`v0.1.3`, 2026-09-12). **La lista se saca del
-    manifiesto de las Functions, nunca de una búsqueda:** es lo mismo que lee
-    Firebase. **Cada secreto nuevo** —un cliente más— **necesita este permiso
-    antes del siguiente despliegue**, o el despliegue falla en ese punto.
+  - Sobre los secretos, **el rol a medida `desplegadorSecretos`, NO
+    `secretmanager.admin`** (2026-09-13). Tiene cuatro permisos:
+    `secrets.get`, `versions.get`, `versions.list` y `secrets.getIamPolicy`.
+    **No lee el contenido** (`versions.access`) **ni cambia accesos**
+    (`secrets.setIamPolicy`). Lo segundo importa tanto como lo primero: con
+    `setIamPolicy` la cuenta de despliegue podría darse permiso de lectura a sí
+    misma. Con `secretmanager.admin`, que se usó hasta el 13/09, **la cuenta que
+    despliega podía leer las claves de ingesta de todos los clientes**.
+    Verificado en el código de firebase-tools 15.28.1: el despliegue lee los
+    datos de cada secreto y de sus versiones (`params.ts`, `validate.ts`), y
+    en `ensure.ts` solo cambia accesos si a la cuenta de las Functions le
+    falta alguno. Hoy la cuenta de las Functions tiene acceso a los 23.
+  - Se otorga **una sola vez, con una condición de IAM**:
+    `resource.name.startsWith("projects/<número>/secrets/INGESTA_") ||
+    resource.name.startsWith("projects/<número>/secrets/GEMINI_API_KEY")`. Así
+    los secretos nuevos de la reserva quedan cubiertos solos. **La lista de
+    secretos se saca del manifiesto de las Functions, nunca de una búsqueda**:
+    el 12/09 una búsqueda que no aceptaba dígitos dejó 20 de los 23 afuera, y
+    `firebase deploy` falló con *«Permission 'secretmanager.secrets.get'
+    denied on … INGESTA_CLIENTE01»* (`v0.1.3`).
+  - **Ojo con `gcloud`:** desde que el proyecto tiene un permiso con condición,
+    `gcloud projects add-iam-policy-binding` y `remove-iam-policy-binding`
+    **exigen `--condition=None`**, o la condición correspondiente.
+  - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
+    dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions.
+    La cuenta de despliegue ya no puede hacerlo. Si se olvida, el despliegue
+    falla antes de publicar, pero **la simulación no lo detecta**: solo avisa
+    «will be granted». El procedimiento está en `admin/functions/src/firma.ts`.
+    Dar de alta un cliente **no** crea secretos: usa uno libre de la reserva.
 - **El `predeploy` de las Functions no recompila en el CI.** En la máquina de
   quien despliega a mano recompila siempre, que es lo que evita subir un `lib/`
   viejo. En el CI se salta si ya está el `lib/` compilado y probado en el job
