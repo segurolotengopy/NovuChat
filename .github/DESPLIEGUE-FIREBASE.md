@@ -56,6 +56,13 @@ del proyecto de producción. Lo que hay:
   `construir`: el job de despliegue no instala dependencias, y recompilar ahí
   fallaba (tercer intento, 2026-09-12) y además desplegaría algo distinto de lo
   probado.
+- **Pero el job de despliegue SÍ instala las dependencias de runtime de
+  `functions/`**, sin compilar. `firebase deploy` carga `lib/index.js` para
+  descubrir qué Functions hay, y sin `functions/node_modules` falla con
+  *«Couldn't find firebase-functions package… An unexpected error has
+  occurred»* (`v0.1.1`, 2026-09-12). Se instala con `npm ci --omit=dev
+  --ignore-scripts` desde el `package-lock.json` del artefacto, el mismo que usa
+  Cloud Build. `node_modules` no se sube: `firebase.json` lo excluye.
 - **PENDIENTE — la cuenta de las Functions tiene rol Editor.** Las dos cuentas
   por defecto del proyecto (cómputo y App Engine) tienen `roles/editor`, así que
   poder *actuar como* ellas equivale a casi todo el proyecto. Hoy lo contienen
