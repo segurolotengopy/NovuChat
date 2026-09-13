@@ -633,13 +633,13 @@ jobs:
         run: |
           set -euo pipefail
           [[ -f functions/package.json ]] || exit 0
-          # --package-lock-only: resuelve el arbol y escribe el lockfile sin
-          # instalar nada. Queda dentro de functions/, que es lo unico que
-          # firebase sube, y hace que Cloud Build use `npm ci` en vez de
-          # `npm install` sin lock.
-          ( cd functions && npm install --package-lock-only --no-audit --no-fund )
-          test -f functions/package-lock.json
-          echo "package-lock.json generado para Cloud Build."
+          # El lockfile queda dentro de functions/, que es lo unico que firebase
+          # sube, y hace que Cloud Build use `npm ci` en vez de `npm install`
+          # sin lock. Se genera en una carpeta APARTE y se verifica: correrlo
+          # aca, sobre el node_modules de pnpm, escribia las dependencias como
+          # enlaces y `npm ci` instalaba 3 paquetes sin firebase-functions
+          # (v0.1.2, 2026-09-12). El porque completo esta en el script.
+          bash scripts/lockfile-functions.sh
 
       - name: Localizar el directorio construido
         id: dist
