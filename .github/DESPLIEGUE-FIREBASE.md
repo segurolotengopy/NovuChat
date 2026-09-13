@@ -24,8 +24,13 @@ del proyecto de producción. Lo que hay:
   Donde abajo diga `novuchat-admin-prod`, léase ese.
 - **No hay proyecto de staging.** `desplegar-staging` se omite mientras
   `vars.GCP_PROJECT_ID_STAGING` esté vacía, en vez de fallar en cada push.
-- **Hasta hoy nada se desplegó por CI:** no había secretos. Todo lo que está en
-  producción se desplegó a mano (ver `ESTADO.md`, «el despliegue es manual»).
+- **El primer despliegue por CI fue `v0.1.4` (2026-09-13).** Hasta el 12/09 no
+  había secretos y todo se desplegaba a mano. Llegar ahí destapó seis piezas que
+  faltaban; están en la tabla de `ESTADO.md` y, una por una, en esta sección.
+- **El job `post-despliegue` no hace checkout**, así que no puede fijar
+  `working-directory: admin/`: con eso el runner no podía ni arrancar bash, el
+  health check no corría y el despliegue sano de `v0.1.4` quedó registrado como
+  fallido. Sus pasos no usan archivos del repositorio.
 - La **federación** acepta solo los Environments `production` y
   `production-rollback` —no `dev` ni `staging`, que no tienen proyecto—.
 - **Este repositorio usa sujetos INMUTABLES, y la condición de §2.1 NO sirve

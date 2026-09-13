@@ -1141,9 +1141,13 @@ jobs:
       contents: read
       id-token: write
       deployments: write
-    defaults:
-      run:
-        working-directory: ${{ env.RUTA_COMPONENTE }}
+    # SIN `defaults.run.working-directory`, a propósito. Este job no hace
+    # checkout, así que admin/ no existe: con el working-directory en admin/
+    # el runner no podía ni arrancar bash («An error occurred trying to start
+    # process '/usr/bin/bash' with working directory …/admin. No such file or
+    # directory»), el health check no corría y el despliegue sano de v0.1.4
+    # (2026-09-13) quedó registrado como fallido. Ninguno de sus pasos usa
+    # archivos del repositorio: curl y `firebase hosting:clone --project`.
     steps:
       - name: Health check de producción (10 intentos, 15 s)
         id: salud
