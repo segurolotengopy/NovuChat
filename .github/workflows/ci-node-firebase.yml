@@ -1057,6 +1057,27 @@ jobs:
             --non-interactive >/dev/null 2>&1 || true
           firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"
 
+      - name: Cloud Functions — dependencias para que firebase deploy lea el código
+        # `firebase deploy` no solo SUBE functions/: antes CARGA lib/index.js
+        # para descubrir qué Functions declara, y para eso necesita
+        # functions/node_modules con firebase-functions. Sin él falla con
+        # «Couldn't find firebase-functions package… An unexpected error has
+        # occurred» (v0.1.1, 2026-09-12). Se instala con el package-lock.json del
+        # artefacto —el mismo con el que Cloud Build hará `npm ci`, así que no
+        # cambia ninguna versión—, solo dependencias de runtime y sin scripts de
+        # instalación (riesgo S-9 del estándar). node_modules NO se sube:
+        # firebase.json lo excluye. El lib/ tampoco se toca: sigue siendo el
+        # compilado y probado en `construir`.
+        env:
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOLO" == *functions* ]]; then
+            ( cd functions && npm ci --omit=dev --ignore-scripts --no-audit --no-fund )
+            test -f functions/node_modules/firebase-functions/package.json
+            echo "Dependencias de runtime de functions/ instaladas desde el lockfile del artefacto."
+          fi
+
       - name: Desplegar hosting + reglas (producción)
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
