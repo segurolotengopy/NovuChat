@@ -1,5 +1,12 @@
 # Precios y oferta desde el 1 de octubre — resumen ejecutivo
 
+> **Nota del 13/09/2026.** Los planes propuestos acá (USD 20/40/70 por
+> 120/200/300, bolsa de 25) quedaron **superados la misma tarde por la
+> propuesta de Silvana**, adoptada en `Analisis/21`: **USD 25 / 50 / 90 por
+> 100 / 220 / 500**, bolsa de 30 por USD 10 (`Analisis/23`). Todo lo demás
+> —por qué el costo cambió, qué prometer y qué no, las cláusulas del contrato—
+> sigue vigente.
+
 **Para Silvana. 8 de septiembre de 2026.**
 
 Este documento resume, sin tecnicismos, lo que encontramos al analizar los

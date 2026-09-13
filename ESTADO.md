@@ -4,7 +4,113 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-12 (el despliegue automático nunca funcionó: se despliega a mano, y siempre desde `main`)
+**Última actualización:** 2026-09-13 (la unidad de cobro pasa a bloques de 25 respuestas: `Analisis/27`, rama `cobro/bloques-de-25`)
+
+---
+
+## 2026-09-13 — la conversación pasa a ser un bloque de 25 respuestas (`Analisis/27`)
+
+**Decisión de Andres:** una conversación es **hasta 25 respuestas del asistente
+a un mismo teléfono dentro de la ventana de 24 h**. La respuesta 26 del mismo
+día abre un bloque nuevo y factura otra conversación; a las 24 h la cuenta
+vuelve a cero. Reemplaza al tope con corte del 08/09: el asistente ya no deja
+de responder a las 25.
+
+**Lo que dice el análisis** (`Analisis/27-modelo-bloques.md`, modelo en `.py`):
+
+- En dinero es casi neutro: con una cola del 10 % de ventanas largas, entre
+  −0,4 y +8,6 USD por comercio y mes según cuánto se pasen de 25. Lo que gana
+  es **continuidad del servicio** —ningún cliente queda a medias— y lo que
+  pierde es el **techo de costo por ventana**: 200 respuestas en un día cuestan
+  2,40 USD y facturan 8 conversaciones. Hace falta un **tope de seguridad de
+  100 respuestas por ventana** en el flujo, que no es comercial.
+- El plan cubre menos ventanas reales que las que dice (9 % menos con cola del
+  10 %), y el comercio lo va a notar como «me cobraron dos por un cliente». La
+  consola lo explica en la misma tarjeta.
+- El precio mínimo de la bolsa no cambia: un bloque lleno cuesta lo mismo que
+  costaba una conversación en el tope.
+
+**Hecho, sin confirmar todavía, en la rama `cobro/bloques-de-25` (NovuChat y
+Novuchat-site):**
+
+- `ingesta.ts`: `RESPUESTAS_POR_CONVERSACION = 25`, contador `mensajesVentana`
+  en la conversación (mismo nombre que en la rama del prepago), y en el
+  agregado del mes `conversaciones` suma también por bloque y
+  `bloquesAdicionales` dice cuántas vinieron de ahí. 15 pruebas puras en
+  `pruebas/conteo-bloques.test.ts`.
+- Consola «Consumo»: glosario nuevo y una línea que explica los bloques solo
+  cuando hubo alguno.
+- Sitio: `precios.es.ts` (párrafo que también lee `/terminos`), `precios.astro`,
+  `tipos.ts` y `CLAUDE.md` del sitio.
+- `CLAUDE.md` «Base comercial» §2 y la tabla del §7.
+
+**Pendiente:**
+
+- **Flujo n8n:** aviso a recepción al empezar el bloque 2 y tope de seguridad
+  de 100 respuestas por ventana. `configuracionFlujo` todavía no devuelve
+  `mensajesVentana`; el diseño está en la rama del prepago (`estadoDelTope`).
+- **Rama del prepago:** al reaplicarla, `consumoDeConversacion` tiene que
+  descontar saldo también en `bloqueNuevo`, y el corte por `sin_conversaciones`
+  no puede rechazar un saliente ya enviado: hay que decidir el bloque 2 en
+  `configuracionFlujo`, antes de llamar al modelo.
+- **Propuesta de Q'Taco** (`Analisis/25` §4): reescribir «al llegar al tope una
+  respuesta fija» con la definición nueva antes de firmar.
+- Desplegar: el cambio de ingesta es compatible hacia atrás (los documentos sin
+  `mensajesVentana` arrancan en cero) y no toca los flujos.
+
+---
+
+## 2026-09-13 — resumen integral para análisis externo (`Analisis/26`)
+
+Se escribió `Analisis/26-resumen-proyecto-para-analisis-externo.md`: síntesis
+de toda la documentación al 13/09 (arquitectura, flujos, consola, modelo
+comercial, Q' Taco, estado, riesgos, inconsistencias documentales y preguntas
+por perfil de revisor), con referencia a cada documento interno. Lo acompaña
+el paquete `~/Documentos/NovuChat/NovuChat-analisis-externo-2026-09-13.zip`
+(132 archivos, fuera del repo) con **todos** los documentos citados, incluidos
+`Preliminares/` y la planilla `Analisis/06`, que no se versionan. El paquete
+se verificó contra los valores reales locales (`verificar-saneo.sh --exacto`
+y un escaneo equivalente sobre el ZIP, con el texto de los `.docx` y `.xlsx`
+extraído): 0 hallazgos. Al prepararlo aparecieron nueve inconsistencias entre
+documentos, **corregidas el mismo día** (rama `docs/inconsistencias-13sep`):
+`admin/DISENO.md` §9 y §11, `admin/SEGURIDAD.md` y `admin/LEEME.md` decían
+«nada desplegado» y traían cifras de pruebas viejas (hoy: **536 en verde en
+`main`**, 229 de reglas y 307 puras; 551 con la rama de bloques); la brecha
+«suspender no corta» figuraba cerrada y abierta a la vez (está cerrada desde el
+07/09); «Remoto de GitHub» decía «nunca se hizo push»; había un fragmento de
+tabla sin encabezado en el asiento del 29/08; «Riesgos vivos» y «Próximos
+pasos» seguían fechados al 07/09; `Analisis/14` §9 y la versión inglesa de
+`18` hablaban de un tipo de cambio «que NovuChat publica» en vez del TCO del
+BCB; el checklist de ensayo citaba «QR en URL pública» y «Bloque 6»; y los
+precios viejos (150/250/350 Bs, 250/450/800 Bs, USD 20/40/70) quedaron
+rotulados como superados en cada documento que los conserva.
+
+## 2026-09-13 — primer cliente real: Q' Taco (`Analisis/25`)
+
+Hay una propuesta del 11/09 a punto de cerrarse: restaurante mexicano, un solo
+número, reservas de mesa + pedidos con cobro + campañas de Facebook, USD 125 de
+instalación y USD 40/mes por 200 conversaciones. Las recomendaciones de puesta
+en producción están en `Analisis/25-puesta-en-produccion-qtaco.md`. Lo que
+cambia respecto de los demos, en cuatro líneas:
+
+- **Un flujo de n8n, no tres**: copia del B con reserva de mesas (versión 1:
+  registrar y avisar; una persona confirma) y **cobro real** sin rótulos. El
+  borrador de prompt de Silvana dice «¡Pago confirmado!»: se corrige antes de
+  llegar a un nodo (prohibición 3).
+- **Dos defectos que solo aparecen con un cliente real:** los avisos al dueño
+  salen como texto libre y fuera de la ventana de 24 h Meta los rechaza
+  (van por plantilla utility), y nada descarta un webhook reenviado por id de
+  mensaje.
+- **Un número está atado a un flujo** (`rutasWhatsApp.flujo`); Q'Taco es el
+  primer caso de dos capacidades en un número. Se resuelve como capacidad del
+  flujo `venta` (documento `/config/reservas` y pestaña), no cambiando el modelo.
+- **Antes del primer cobro:** el conteo de 25 en el flujo (hoy, bloques: ver el
+  asiento de `Analisis/27`). El corte por suspensión **ya está**: se corrigió el
+  07/09 en los tres flujos (commit `2e251f9`, 17 pruebas en
+  `estado-comercio.test.ts`) y se republicó esa noche; lo que queda es
+  confirmar el segundo camino del 409 (`sin_pago`, `sin_conversaciones`) cuando
+  se reaplique la rama del prepago. A USD 0,20 por conversación el margen
+  depende de los mensajes por conversación, y hay que medirlo el primer mes.
 
 ---
 
@@ -518,7 +624,13 @@ cualquier nodo con la referencia vacía, exista o no en la instancia.
 alcanza, hay que cargar saldo. Presupuesto de alerta en 20 USD acotado a los
 dos proyectos de NovuChat.
 
----|---|---|
+**Primera tanda de mediciones del 29/08 (madrugada), antes de la corrección
+del calendario y de la cuota:** es la evidencia de la que partió todo lo
+anterior; se conserva para comparar con la tabla de la tanda buena
+(p50 ≈ 3,8 s).
+
+| Hora | Mensaje | Respuesta |
+|---|---|---|
 | 01:24 | hola | 7,958 s |
 | 01:33 | hola | 19,042 s |
 | 01:37 | hola | 16,925 s |
@@ -949,7 +1061,9 @@ diagnóstico exigía que una persona abriera n8n y sacara una captura.
 ## Remoto de GitHub
 
 `https://github.com/segurolotengopy/NovuChat.git`, configurado como `origin`.
-Repositorio **público y vacío**: nunca se hizo push.
+Repositorio **público**. Al escribirse esto (29/08) estaba vacío; **superado**:
+desde el 30/08 todo el trabajo pasa por pull requests a `main` (61 al 13/09) y
+el despliegue sale por etiquetas `v*` (ver «el despliegue por CI funciona»).
 
 ## Demo B — canal completo (2026-08-30)
 
@@ -1684,7 +1798,7 @@ Andrés listó seis. Auditadas contra el código, no de memoria:
 | 4 | Retención de conversaciones | **DECIDIDA el 07/09**: 12 meses. Falta el código de la purga |
 | 5 | Migrar la ingesta al rol `ingesta` | abierta, antes del segundo cliente |
 | 6 | Límite de 50 eventos en la compuerta | abierta |
-| 7 | **El estado del comercio no corta nada** | abierta, encontrada el 07/09 por la tarde |
+| 7 | **El estado del comercio no corta nada** | encontrada el 07/09 por la tarde y **CERRADA el mismo día** (commit `2e251f9`, 17 pruebas; ver «Suspender un comercio NO le cortaba el asistente»). Queda confirmar el segundo camino del 409 al reaplicar el prepago |
 | 8 | El respaldo de los flujos es el del demo | abierta; es un paso del alta, no código |
 
 Las dos últimas salieron de escribir `Analisis/13-requisitos-alta-clientes.md`,
@@ -1997,25 +2111,39 @@ junto a las conversaciones.
 - `firebase-tools` 15 (cierra seis avisos de Dependabot sobre `tar`, solo
   desarrollo).
 
-## Riesgos vivos para el 9–10 de septiembre
+## Riesgos vivos
 
-**Actualizado el 2026-09-07.**
+**Actualizado el 2026-09-13.** Los demos del 9 y 10 ya pasaron; esta lista mira
+al primer cliente pagador y al 01/10, cuando Meta empieza a cobrar. (La versión
+del 07/09, orientada a los demos, quedó en el historial de git.)
 
-- **El recordatorio de las 17:00 sigue sin verse correr solo.** Se corrigieron
-  sus tres defectos y se verificó todo lo verificable sin esperar al reloj, pero
-  la corrida completa es hoy.
-- **Se movió mucho el 6 y el 7.** Tres funciones desplegadas, los tres flujos
-  republicados, reglas y consola. Todo verificado pieza por pieza, pero la
-  acumulación es el riesgo: conviene que la suite A pase entera antes de dar
-  nada por bueno.
+- **El conteo de 25 respuestas no está en los flujos vivos.** Desde el 01/10
+  cada mensaje del asistente cuesta 0,1356 Bs; la ingesta ya cuenta bloques en
+  la rama `cobro/bloques-de-25`, pero el flujo todavía no avisa a recepción al
+  empezar el bloque 2 ni tiene el tope de seguridad de 100 respuestas.
+- **El cobro real no existe en n8n.** La consola coteja y dibuja; el flujo no
+  descarga el comprobante ni lo lee. Y el borrador de prompt de Q'Taco dice
+  «pago confirmado», que la prohibición 3 no permite.
+- **El respaldo del flujo B es el del demo.** Si el panel no contesta, un
+  cliente real recibiría un QR simulado. Es un paso del alta, no código.
+- **Avisos al negocio fuera de la ventana de 24 h.** Salen como texto libre y
+  Meta los rechaza (`131047`); hacen falta plantillas utility. Y nada descarta
+  un webhook reenviado por id: dos avisos, dos comprobantes.
+- **La ingesta escribe con el SDK Admin.** El aislamiento depende de una línea
+  de código. Migrar al rol `ingesta` antes del segundo cliente.
+- **Compuerta de reserva por recencia, con límite de 50 eventos** (brecha 6).
+- **Purga de retención a 12 meses sin código.**
 - **Cambio de modelo = revisar detectores.** Ya rompió una vez en silencio.
-- **Credencial de Google Calendar.** La app está publicada, pero si una cita
-  falla con el flujo en verde, es la credencial: reconectar, no depurar.
-- **`executionTimeout` de 60 s**: el guion conserva la salida manual a los ~20 s.
-- **Solo 5 destinatarios**: el guion contempla prestar un celular al público.
-- **Números de la consola en la demo.** Se llenan con lo que se haga en el
-  ensayo. Números chicos y coherentes convencen más que números grandes que no
-  cierran.
+- **Los recordatorios no tienen registrada acá una corrida autónoma.** Se
+  probaron a mano el 31/08 y se corrigieron el 06/09; la corrida de las 17:00 del
+  07/09 no quedó asentada.
+- **Media ID del QR de demostración vence a los 30 días** de subido (30/08).
+- **Cuenta de las Functions con rol Editor**; ruta UUID del webhook sin rotar;
+  Silvana sin rol de revisora en GitHub.
+- **El catálogo web está en `main` sin probar con teléfono**, y comparte origen
+  con la consola (T-37) hasta que el primer comercio real lo encienda.
+- **El resultado de los demos del 9 y 10/09 no está asentado** en esta
+  bitácora. No es un riesgo técnico, pero un lector externo lo va a buscar.
 
 ## Riesgos del repositorio público
 
@@ -2035,42 +2163,46 @@ junto a las conversaciones.
 
 ## Próximos pasos
 
-1. **07/09, hoy — Ensayo con Silvana.** Suite A de
-   `Demo-Recursos/checklist-ensayo.md` completa, en los dos demos, con teléfono
-   real. Dejar una cita agendada para el 8. Probar el pedido del Demo B con
-   comprobante como foto Y como archivo.
-2. **07/09, 17:00 — Los recordatorios.** Tienen que llegar SEIS, uno por cada
-   cita del martes 8. Es lo único que nunca se vio correr solo. Si no llegan, la
-   ejecución dice por qué: desde ayer un envío fallido ya no marca la cita como
-   recordada.
-3. **08/09 — Congelamiento.** Confirmar que `main` es lo que corre; borrar el
-   secreto OAuth viejo si ya nada lo usa; video de respaldo. **No tocar nada
-   más**: en las últimas horas se desplegaron funciones, se republicaron los
-   tres flujos y cambiaron reglas y consola.
-4. **09 y 10/09 — Demos.**
-5. **Después de las demos, en este orden:**
-   - Brecha 7: que el 409 de un comercio suspendido corte de verdad. Es de una
-     hora y hoy la suspensión no hace nada.
-   - Cobro real de punta a punta: que el flujo lea `cobroReal`, los tres nodos
-     del OCR, y el control para encenderlo.
-   - Brecha 6: la compuerta de reserva con dos consultas dirigidas en vez de
-     subir el límite de 50.
-   - Brecha 5: migrar la ingesta al rol `ingesta`.
-   - La purga de retención a 12 meses.
-   - Rediseño de la consola con el diseño de `novuchat.site`, y los tres PDF.
-   - Alta y administración de negocios desde la consola, y el rol contador.
-   - `prompt-landing-precisiones.md` en la landing; `firebase-tools` 15; sumar a
-     Silvana como revisora en GitHub (§4).
-   - **Catálogo web propio**: fusionar `disenio/catalogo-web`, agregar los dos
-     nodos de n8n, dar de alta la plantilla `carrito_te_espera` en Meta y
-     probarlo con un teléfono. Todo lo demás ya está escrito y probado; ver
-     `admin/CATALOGO-WEB.md` §5 para el orden de la puesta en marcha.
-   - **Y una condición que NO es una tarea de la lista, sino una compuerta**:
-     antes de que el primer comercio real encienda `catalogoWebActivo`, hay que
-     publicar el catálogo en un segundo sitio de Hosting. Revisado el 08/09 con
-     Andres: se acepta el origen compartido AHORA y se fija ese disparador
-     porque «antes de tener volumen real» no se puede comprobar y por lo tanto
-     no iba a pasar. El porqué del momento elegido está en `SEGURIDAD.md` T-37.
+**Actualizado el 2026-09-13.** Lo que ya se hizo de la lista del 07/09: la
+brecha 7 (el 409 corta, 07/09), el rediseño de la consola (08/09),
+`firebase-tools` 15 (13/09), el catálogo web fusionado a `main` (08/09) y el
+despliegue por CI (13/09). Lo que sigue, en orden:
+
+1. **Asentar el resultado de los demos del 9 y 10/09** en esta bitácora: qué
+   se mostró, qué falló, qué prometió Silvana.
+2. **Q'Taco** (`Analisis/25` §5): corregir propuesta y contrato (definición de
+   conversación con la regla de bloques, USD al TCO del BCB, quién confirma
+   los pagos, retención de 12 meses); chip, portafolio, app y WABA del cliente;
+   `Flujos/qtaco-restaurante.json` a partir del flujo B con reservas v1;
+   plantillas utility `nuevo_pedido`, `nueva_reserva` y
+   `comprobante_recibido`; descarte por id de mensaje.
+3. **Antes del 01/10 — el conteo en los flujos vivos**: desplegar la ingesta de
+   bloques (`cobro/bloques-de-25`), aviso a recepción al empezar el bloque 2,
+   tope de seguridad de 100 respuestas por ventana, y confirmar que el
+   segundo camino del 409 del prepago (`sin_pago`, `sin_conversaciones`)
+   corta igual que la suspensión.
+4. **Cobro real de punta a punta** (`Analisis/07` §4): que el flujo lea
+   `cobroReal`, los tres nodos del OCR, el control para encenderlo, y guardar
+   el `media id` del comprobante y el pedido conversado como `pedido`.
+5. **Consola — lo que la base comercial exige** (`CLAUDE.md` §4): mensajes del
+   asistente en el mes contra los 1.000 gratis del número, distribución de
+   mensajes por conversación, precio en USD e importe del mes en Bs con el TCO
+   aplicado registrado en cada pago.
+6. **Sitio `novuchat.site`**: aplicar `Analisis/22` con la regla de bloques
+   (`Analisis/27`): moneda, planes, vocabulario, promesas que no existen.
+7. **Catálogo web**: los dos nodos de n8n, la plantilla `carrito_te_espera`,
+   prueba con teléfono, y el segundo sitio de Hosting **antes** de que el
+   primer comercio real encienda `catalogoWebActivo` (T-37).
+8. **Límites en el servidor** (`CLAUDE.md` §7): agendas por plan en
+   `firestore.rules`; corte del catálogo por plan en `configuracionFlujo`.
+9. **Seguridad**: cuenta propia para las Functions sin rol Editor; migrar la
+   ingesta al rol `ingesta` (brecha 5); rotar la ruta UUID del webhook; sumar a
+   Silvana como revisora en GitHub (§4).
+10. **Brecha 6** (compuerta de reserva con consultas dirigidas en vez de subir
+    el límite de 50), **purga de retención** a 12 meses, alta y administración
+    de negocios desde la consola con el rol contador.
+11. **Tech Provider**: empezar el trámite de verificación de NovuChat con NIT
+    propio (`Analisis/20`), sin condicionarlo a ningún cliente.
 
 **Decidido por Andres el 07/09**, sobre `Analisis/08-qr-simple-lo-que-cambia.md`:
 

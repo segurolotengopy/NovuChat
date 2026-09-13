@@ -1891,11 +1891,11 @@ Dos trabajos con separación estricta:
 |---|---|
 | Compilación del frontend | ✅ `pnpm --filter @novuchat/admin-web build` — 72 módulos, sin errores |
 | Compilación de las Functions | ✅ `tsc -b` sin errores |
-| Pruebas de reglas con el emulador | ✅ **179 de 179, ejecutadas de verdad** contra `cloud-firestore-emulator-v1.22.0` |
-| Pruebas puras (saneo, ranuras, índices, rótulos) | ✅ **31 de 31**, sin emulador ni red |
+| Pruebas de reglas con el emulador | ✅ **229**, ejecutadas de verdad contra el emulador (13/09/2026; eran 179 al escribirse esta sección) |
+| Pruebas puras (saneo, ranuras, índices, rótulos, catálogo web, QR, imágenes, XLSX, candado, estado del comercio) | ✅ **307**, sin emulador ni red (13/09/2026; eran 31). Total en `main`: **536** |
 | Política de seguridad de contenido | ✅ **probada de verdad** con `pnpm csp`: el iframe de Auth se crea y no queda ninguna violación |
 | Comprobaciones del CI (grep) | ✅ corridas localmente, ambas pasan |
-| Despliegue a Firebase | ⛔ **no ejecutado.** No se creó ni modificó ningún recurso de nube |
+| Despliegue a Firebase | ✅ **En producción.** Al escribirse esta sección (29/08) no existía ningún recurso de nube; desde el 02/09 hay un proyecto real (us-east1) con la consola en `consola.novuchat.site`, desplegado a mano hasta el 12/09 y **por CI desde `v0.1.4` (13/09)**. Detalle en `ESTADO.md` y en `.github/DESPLIEGUE-FIREBASE.md` «Estado real» |
 
 Dos hallazgos del entorno, documentados para que no cuesten tiempo después:
 
@@ -1955,8 +1955,9 @@ Dos hallazgos del entorno, documentados para que no cuesten tiempo después:
 - **Envío de mensajes desde el panel.** El visor es de solo lectura. Escribir a un
   cliente desde acá exigiría que el panel llame a la Cloud API de Meta, con las
   reglas de ventana de 24 horas y plantillas aprobadas. Es un proyecto propio.
-- **Retención y borrado de conversaciones.** No hay política definida. Hay que
-  decidirla antes de tener clientes reales (ver §12).
+- **Retención y borrado de conversaciones.** Política **decidida** el
+  07/09/2026 (12 meses y purga automática, §4septies), pero **la purga no está
+  escrita**: hoy nada borra.
 - **Exportación de datos del cliente.** Un negocio que se va debería poder
   llevarse sus conversaciones.
 - **Cambio de dueño de un negocio.** Hoy se hace con dos llamadas
@@ -1966,8 +1967,21 @@ Dos hallazgos del entorno, documentados para que no cuesten tiempo después:
 
 ## 11. Lo que Andres tiene que crear en la nube
 
-Nada de esto se hizo: el agente no crea recursos de nube y no usó ninguna sesión
-activa de `gcloud` ni de `firebase`.
+> **Estado real (2026-09-13).** Esta lista se escribió el 29/08, cuando no
+> existía ningún recurso de nube, y se conserva como instructivo. Lo que hay
+> hoy, según `ESTADO.md`: **un solo proyecto real** (no los dos `dev`/`prod`
+> que la lista propone; no hay staging), en `us-east1`, con Auth (Google y
+> contraseña), Firestore, Hosting en `consola.novuchat.site`, 30 Functions,
+> App Check con reCAPTCHA Enterprise, tres superadministradores, los secretos
+> `INGESTA_*` de la reserva de 20, y la federación OIDC con condición por
+> identificadores inmutables (la condición por nombres de §2.1 del instructivo
+> de CI no sirvió; ver `.github/DESPLIEGUE-FIREBASE.md` «Estado real»). El
+> primer despliegue por CI fue `v0.1.4` el 13/09. **Siguen pendientes** de esta
+> lista: Identity Platform, la activación manual de FormSubmit con un reclamo
+> de prueba (15e), la verificación de negocio en Meta, y una cuenta propia para
+> las Functions sin rol Editor.
+
+Lo que sigue es el instructivo original:
 
 **Google Cloud / Firebase** (cuenta `${GOOGLE_ACCOUNT}`)
 

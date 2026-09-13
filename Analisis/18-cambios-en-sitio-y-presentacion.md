@@ -260,8 +260,11 @@ needed, we let you know so someone on your team can take over.`
 costs USD 10 and never expires.`
 
 **Y la nota de conversión**, en la página de precios en inglés: `Prices are in US
-dollars. Billing is issued in bolivianos at the exchange rate NovuChat publishes
-in your console at the start of each month.`
+dollars. Billing is issued in bolivianos at the official exchange rate published
+by the Central Bank of Bolivia (BCB).` *(Corregido el 13/09: la versión
+anterior decía «the exchange rate NovuChat publishes», que contradice la
+decisión de no publicar un tipo de cambio propio; `Analisis/22` trae el texto
+definitivo.)*
 
 Agregar a los tres planes: `{ texto: 'Up to 25 assistant replies per
 conversation' }`.
