@@ -48,8 +48,15 @@ del proyecto de producción. Lo que hay:
     Function corre como esta última, pero `firebase deploy` exige el permiso
     antes de desplegar Functions y falla con *«Missing permissions required for
     functions deploy… iam.serviceAccounts.ActAs»* (segundo intento, 2026-09-12).
-  - `secretmanager.admin` solo sobre los tres secretos que usa el código
-    (`GEMINI_API_KEY`, `INGESTA_DEMOA`, `INGESTA_DEMOB`).
+  - `secretmanager.admin` sobre **cada secreto que declaran las Functions**:
+    hoy **23** —`GEMINI_API_KEY`, `INGESTA_DEMOA`, `INGESTA_DEMOB` y
+    `INGESTA_CLIENTE01` a `20`—. Al principio se dio sobre tres, tomados de
+    una búsqueda en el código que no aceptaba dígitos, y `firebase deploy`
+    falló con *«Permission 'secretmanager.secrets.get' denied on …
+    INGESTA_CLIENTE01»* (`v0.1.3`, 2026-09-12). **La lista se saca del
+    manifiesto de las Functions, nunca de una búsqueda:** es lo mismo que lee
+    Firebase. **Cada secreto nuevo** —un cliente más— **necesita este permiso
+    antes del siguiente despliegue**, o el despliegue falla en ese punto.
 - **El `predeploy` de las Functions no recompila en el CI.** En la máquina de
   quien despliega a mano recompila siempre, que es lo que evita subir un `lib/`
   viejo. En el CI se salta si ya está el `lib/` compilado y probado en el job
@@ -75,6 +82,14 @@ del proyecto de producción. Lo que hay:
   dentro de los rangos de `package.json`, no copia las versiones de
   `pnpm-lock.yaml` —igual que en cada despliegue manual—; si una dependencia
   directa sale distinta de la que probó pnpm, el script avisa.
+- **Cada despliegue simula antes de publicar**, dentro de la misma
+  aprobación: `firebase deploy --dry-run` sobre reglas, índices y Functions, y
+  solo si pasa, el despliegue real. `--dry-run` corre predeploy y prepare
+  —permisos, secretos, dependencias, descubrimiento—, que es donde fallaron los
+  cuatro primeros intentos, y no publica nada. **Hosting queda fuera de la
+  simulación:** su prepare crea una versión en el sitio aun en dry-run y
+  dejaría versiones huérfanas. **Límite:** la simulación no ejerce la
+  publicación (Cloud Build, Cloud Run, Eventarc).
 - **PENDIENTE — la cuenta de las Functions tiene rol Editor.** Las dos cuentas
   por defecto del proyecto (cómputo y App Engine) tienen `roles/editor`, así que
   poder *actuar como* ellas equivale a casi todo el proyecto. Hoy lo contienen
