@@ -667,6 +667,11 @@ jobs:
 
       # Se despliega lo que se probo: el `lib/` compilado y el lockfile viajan
       # como artefacto, no se reconstruyen en el job de despliegue.
+      # El `predeploy` de admin/firebase.json respeta esto: con CI=true y el
+      # `lib/index.js` presente NO recompila. Antes recompilaba siempre, y en el
+      # job de despliegue —que no instala dependencias— `tsc` fallaba con
+      # «Cannot find module 'firebase-functions/...'» (v0.1.0, 2026-09-12).
+      # En la maquina de quien despliega a mano sigue recompilando siempre.
       - name: Guardar functions/ (lib compilado + package-lock)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

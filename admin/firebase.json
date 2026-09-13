@@ -7,7 +7,7 @@
     {
       "source": "functions",
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run build"
+        "[ -n \"$CI\" ] && [ -f \"$RESOURCE_DIR/lib/index.js\" ] && echo \"CI: se despliega el lib/ compilado y probado en el job construir, sin recompilar\" || npm --prefix \"$RESOURCE_DIR\" run build"
       ],
       "codebase": "admin",
       "runtime": "nodejs22",
