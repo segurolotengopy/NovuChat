@@ -63,6 +63,18 @@ del proyecto de producción. Lo que hay:
   occurred»* (`v0.1.1`, 2026-09-12). Se instala con `npm ci --omit=dev
   --ignore-scripts` desde el `package-lock.json` del artefacto, el mismo que usa
   Cloud Build. `node_modules` no se sube: `firebase.json` lo excluye.
+- **Ese `package-lock.json` se genera en una carpeta aparte**
+  (`admin/scripts/lockfile-functions.sh`). Generado dentro de `functions/`,
+  sobre el `node_modules` de pnpm, npm respondía «up to date» y escribía las
+  dependencias directas como **enlaces** a rutas locales: en el despliegue
+  `npm ci` instalaba 3 paquetes sin `firebase-functions` (`v0.1.2`,
+  2026-09-12). **Era un defecto latente peor que el fallo:** Cloud Build instala
+  con ese mismo lockfile, así que un despliegue que hubiera pasado habría subido
+  Functions sin dependencias. El script verifica que el lockfile no traiga
+  enlaces y que estén todas las dependencias directas. **Límite:** npm resuelve
+  dentro de los rangos de `package.json`, no copia las versiones de
+  `pnpm-lock.yaml` —igual que en cada despliegue manual—; si una dependencia
+  directa sale distinta de la que probó pnpm, el script avisa.
 - **PENDIENTE — la cuenta de las Functions tiene rol Editor.** Las dos cuentas
   por defecto del proyecto (cómputo y App Engine) tienen `roles/editor`, así que
   poder *actuar como* ellas equivale a casi todo el proyecto. Hoy lo contienen
