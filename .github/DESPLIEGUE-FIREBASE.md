@@ -54,8 +54,10 @@ del proyecto de producción. Lo que hay:
     permiso aunque ninguna Function corra como ella y falla sin él con
     *«Missing permissions required for functions deploy…
     iam.serviceAccounts.ActAs»* (segundo intento, 2026-09-12); y **la de
-    cómputo**, con la que corrían antes. Esta última se revoca en la fase C
-    (ver abajo).
+    cómputo**, que desde la fase C solo construye las Functions. Este permiso
+    **se conserva**: hace falta para lanzar la construcción con ella, y como ya
+    no tiene Editor, no abre ningún camino al resto del proyecto (ver fase C,
+    abajo).
   - Sobre los secretos, **el rol a medida `desplegadorSecretos`, NO
     `secretmanager.admin`** (2026-09-13). Tiene cuatro permisos:
     `secrets.get`, `versions.get`, `versions.list` y `secrets.getIamPolicy`.
@@ -139,11 +141,33 @@ del proyecto de producción. Lo que hay:
     disparador existente no hace que `firebase deploy` lea la política del
     proyecto: `ensureServiceAgentRoles` solo actúa ante un tipo de servicio
     **nuevo** (`checkIam.ts`, firebase-tools 15.28.1).
-  - **C — pendiente**, tras unos días sin errores: dar a Cloud Build una cuenta
-    propia (hoy construye con la de cómputo), quitar `roles/editor` a las
-    cuentas de cómputo y App Engine, y revocar el `iam.serviceAccountUser` de la
-    cuenta de despliegue sobre la de cómputo. La cuenta `…@cloudservices`
-    también tiene Editor y **no se toca**: la administra Google.
+  - **C — hecha (2026-09-13).** Antes se midió qué dependía de las dos cuentas
+    con Editor: no hay App Engine, Scheduler, Tasks ni Compute Engine, y los 30
+    servicios de Cloud Run corren con `sa-functions`. La de **App Engine** no la
+    usa nadie; la de **cómputo** solo **construye** las Functions: Cloud Build la
+    usa por defecto en cada despliegue.
+    - **Cómputo:** `roles/editor`, `eventarc.eventReceiver` y `run.invoker` →
+      **solo `roles/cloudbuild.builds.builder`** (leer el código fuente de
+      `gcf-v2-sources-…`, subir la imagen a `gcf-artifacts`, escribir logs). Se
+      le quitaron además los `secretAccessor` que Firebase le había dado en los
+      23 secretos cuando las Functions corrían con ella: **hoy solo
+      `sa-functions` puede leerlos**.
+    - **App Engine:** `roles/editor` → **ninguno**. `firebase deploy` sigue
+      exigiendo poder *actuar como* ella, pero eso no depende de sus roles.
+    - **El `iam.serviceAccountUser` de la cuenta de despliegue sobre la de
+      cómputo se conserva, a propósito:** hace falta para lanzar la construcción
+      con ella, y sin Editor ya no abre ningún camino al resto del proyecto.
+    - **Verificado:** Policy Troubleshooter (la de cómputo puede lo que la
+      construcción necesita, y NO puede cambiar permisos, escribir en
+      Firestore, redesplegar, leer secretos ni actuar como `sa-functions`) y
+      **una construcción real**: se repitió la de `v0.1.5` por la API de Cloud
+      Build (`builds/{id}:retry`) y terminó en SUCCESS, con `PUSH` incluido, sin
+      desplegar nada. `gcloud builds retry` no existe en el SDK instalado.
+    - La cuenta `…@cloudservices` también tiene Editor y **no se toca**: la
+      administra Google.
+    - **Si una construcción futura falla por permisos**, se revierte al instante
+      devolviendo `roles/editor` a la cuenta de cómputo (`--condition=None`),
+      sin etiqueta nueva, y se corrige con calma.
 - Dos variables de GitHub que §5.3 no lista:
   - **`SITIO_PUBLICO`**: el job de producción escribe con ella
     `functions/.env`, que está ignorado. Sin la variable, **el despliegue falla a
