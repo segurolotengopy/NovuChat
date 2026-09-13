@@ -28,9 +28,18 @@ ejecutó. Se corrige en la PR siguiente. Mientras tanto se verificó a mano:
 **Regla desde hoy:** se despliega con una etiqueta `v*` sobre `main` y la
 aprobación en `production`. Cada despliegue simula antes de publicar. El
 despliegue manual queda solo para emergencias, y siempre desde `main`
-actualizado. **Cada secreto nuevo** —un cliente más— necesita su permiso para
-la cuenta de despliegue antes del siguiente despliegue (ver
-`.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
+actualizado.
+
+**13/09 — la cuenta de despliegue ya no puede leer los secretos.** Tenía
+`secretmanager.admin` sobre los 23, y ese rol lee el contenido: **podía leer las
+claves de ingesta de todos los clientes**. Ahora tiene un rol a medida
+(`desplegadorSecretos`) que solo ve los datos de los secretos y quién tiene
+acceso: no lee el contenido ni puede darse permiso a sí misma. Se otorga con
+una condición por prefijo (`INGESTA_*` y `GEMINI_API_KEY`). Dar de alta un
+cliente no crea secretos, porque usa la reserva de 20. **Ampliar la reserva**
+exige dar a mano el acceso de lectura a la cuenta de las Functions (ver
+`admin/functions/src/firma.ts` y `.github/DESPLIEGUE-FIREBASE.md`, «Estado
+real»).
 
 ## 2026-09-12 — EL DESPLIEGUE ERA MANUAL, y siempre desde `main` (superado el 13/09, ver arriba)
 
