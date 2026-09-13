@@ -73,7 +73,10 @@ export const SECRETOS_POR_ALIAS: Record<string, ReturnType<typeof defineSecret>>
   //     INGESTA_ —la cuenta de despliegue ve solo los INGESTA_* y GEMINI_API_KEY,
   //     por una condición de IAM—.
   //  2. Dar `roles/secretmanager.secretAccessor` sobre cada secreto nuevo a la
-  //     cuenta con la que corren las Functions. ESTE PASO ES A MANO, a
+  //     cuenta con la que corren las Functions, `sa-functions` (ver
+  //     `setGlobalOptions` en index.ts), secreto por secreto y no con una
+  //     condición de IAM: `firebase deploy` mira la política DE CADA SECRETO.
+  //     ESTE PASO ES A MANO, a
   //     propósito: la cuenta de despliegue ya no puede cambiar accesos a
   //     secretos, para que no pueda darse permiso de leerlos. Si se olvida, el
   //     despliegue falla antes de publicar —no toca producción—, pero la

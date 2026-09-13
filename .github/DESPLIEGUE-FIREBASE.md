@@ -48,11 +48,14 @@ del proyecto de producción. Lo que hay:
 - La cuenta de despliegue necesita, además de los roles de §2.2,
   **`roles/eventarc.admin`**, porque la consola tiene Functions disparadas por
   Firestore. Y permisos **acotados** en vez de a nivel proyecto:
-  - `iam.serviceAccountUser` sobre **dos** cuentas: la de cómputo, con la que
-    corren las Functions, **y la de App Engine (`<proyecto>@appspot`)**. Ninguna
-    Function corre como esta última, pero `firebase deploy` exige el permiso
-    antes de desplegar Functions y falla con *«Missing permissions required for
-    functions deploy… iam.serviceAccounts.ActAs»* (segundo intento, 2026-09-12).
+  - `iam.serviceAccountUser` sobre **tres** cuentas, y solo esas:
+    **`sa-functions`**, con la que corren las Functions desde el 13/09; **la de
+    App Engine (`<proyecto>@appspot`)**, porque `firebase deploy` exige el
+    permiso aunque ninguna Function corra como ella y falla sin él con
+    *«Missing permissions required for functions deploy…
+    iam.serviceAccounts.ActAs»* (segundo intento, 2026-09-12); y **la de
+    cómputo**, con la que corrían antes. Esta última se revoca en la fase C
+    (ver abajo).
   - Sobre los secretos, **el rol a medida `desplegadorSecretos`, NO
     `secretmanager.admin`** (2026-09-13). Tiene cuatro permisos:
     `secrets.get`, `versions.get`, `versions.list` y `secrets.getIamPolicy`.
@@ -77,7 +80,8 @@ del proyecto de producción. Lo que hay:
     `gcloud projects add-iam-policy-binding` y `remove-iam-policy-binding`
     **exigen `--condition=None`**, o la condición correspondiente.
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
-    dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions.
+    dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
+    **`sa-functions`**, secreto por secreto.
     La cuenta de despliegue ya no puede hacerlo. Si se olvida, el despliegue
     falla antes de publicar, pero **la simulación no lo detecta**: solo avisa
     «will be granted». El procedimiento está en `admin/functions/src/firma.ts`.
@@ -115,12 +119,31 @@ del proyecto de producción. Lo que hay:
   simulación:** su prepare crea una versión en el sitio aun en dry-run y
   dejaría versiones huérfanas. **Límite:** la simulación no ejerce la
   publicación (Cloud Build, Cloud Run, Eventarc).
-- **PENDIENTE — la cuenta de las Functions tiene rol Editor.** Las dos cuentas
-  por defecto del proyecto (cómputo y App Engine) tienen `roles/editor`, así que
-  poder *actuar como* ellas equivale a casi todo el proyecto. Hoy lo contienen
-  la condición de la federación y el revisor obligatorio de `production`. La
-  solución de fondo: una cuenta propia para las Functions, con solo Firestore y
-  los tres secretos, y quitarles el Editor a las cuentas por defecto.
+- **Las Functions corren con una cuenta propia, `sa-functions`, sin rol
+  Editor** (2026-09-13). Antes corrían con la cuenta de cómputo por defecto,
+  que tiene `roles/editor`: quien lograra ejecutar código en una Function tenía
+  casi todo el proyecto. Se hizo en tres fases:
+  - **A — hecha.** `sa-functions` con **solo** `datastore.user`,
+    `firebaseauth.admin`, `eventarc.eventReceiver`, `run.invoker` y
+    `logging.logWriter` a nivel proyecto, y `secretmanager.secretAccessor`
+    **sobre cada uno** de los 23 secretos. Tiene que ser secreto por secreto y no
+    con una condición: `firebase deploy` revisa la política **de cada secreto**,
+    y si la cuenta no figura ahí intenta agregarla, cosa que la cuenta de
+    despliegue ya no puede hacer. Verificado con Policy Troubleshooter: puede
+    todo eso, y **no** puede cambiar permisos del proyecto, redesplegar
+    Functions, publicar en Hosting, crear buckets, cambiar accesos a secretos
+    ni hacerse pasar por la cuenta de cómputo.
+  - **B — hecha.** `setGlobalOptions({ serviceAccount: 'sa-functions@…' })` en
+    `admin/functions/src/index.ts`. El manifiesto declara `sa-functions` en las
+    30 Functions, incluidos los tres disparadores. Cambiar la cuenta de un
+    disparador existente no hace que `firebase deploy` lea la política del
+    proyecto: `ensureServiceAgentRoles` solo actúa ante un tipo de servicio
+    **nuevo** (`checkIam.ts`, firebase-tools 15.28.1).
+  - **C — pendiente**, tras unos días sin errores: dar a Cloud Build una cuenta
+    propia (hoy construye con la de cómputo), quitar `roles/editor` a las
+    cuentas de cómputo y App Engine, y revocar el `iam.serviceAccountUser` de la
+    cuenta de despliegue sobre la de cómputo. La cuenta `…@cloudservices`
+    también tiene Editor y **no se toca**: la administra Google.
 - Dos variables de GitHub que §5.3 no lista:
   - **`SITIO_PUBLICO`**: el job de producción escribe con ella
     `functions/.env`, que está ignorado. Sin la variable, **el despliegue falla a

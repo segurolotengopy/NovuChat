@@ -8,7 +8,23 @@ import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol, type Rol } from './claims.js';
 
 initializeApp();
-setGlobalOptions({ region: REGION, maxInstances: 10 });
+
+// CUENTA PROPIA, NO LA DE CÓMPUTO POR DEFECTO (2026-09-13). La de cómputo tiene
+// rol Editor: quien lograra ejecutar código en una Function tendría casi todo
+// el proyecto. `sa-functions` tiene solo lo que las Functions usan —Firestore,
+// Auth (getUserByEmail, setCustomUserClaims, revokeRefreshTokens), lectura de
+// sus secretos, los disparadores de Firestore y logs— y NO puede cambiar
+// permisos, redesplegar ni hacerse pasar por otra cuenta; verificado con Policy
+// Troubleshooter. Permisos y procedimiento en .github/DESPLIEGUE-FIREBASE.md,
+// «Estado real». El correo va escrito: los de cuenta de servicio están
+// exceptuados de la convención de repositorio público.
+// Un secreto nuevo necesita `secretAccessor` para ESTA cuenta, uno por uno
+// (ver `firma.ts`, «CUANDO SE ACABEN LOS VEINTE»).
+setGlobalOptions({
+  region: REGION,
+  maxInstances: 10,
+  serviceAccount: 'sa-functions@novuchat-demo.iam.gserviceaccount.com',
+});
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './cierres.js';
