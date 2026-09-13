@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-12 (el despliegue automático nunca funcionó: se despliega a mano, y siempre desde `main`)
+**Última actualización:** 2026-09-13 (despliegue por CI funcionando; la cuenta de despliegue ya no lee secretos; las Functions pasan a `sa-functions`, sin Editor)
 
 ---
 
@@ -37,7 +37,8 @@ claves de ingesta de todos los clientes**. Ahora tiene un rol a medida
 acceso: no lee el contenido ni puede darse permiso a sí misma. Se otorga con
 una condición por prefijo (`INGESTA_*` y `GEMINI_API_KEY`). Dar de alta un
 cliente no crea secretos, porque usa la reserva de 20. **Ampliar la reserva**
-exige dar a mano el acceso de lectura a la cuenta de las Functions (ver
+exige dar a mano el acceso de lectura a la cuenta de las Functions,
+`sa-functions`, secreto por secreto (ver
 `admin/functions/src/firma.ts` y `.github/DESPLIEGUE-FIREBASE.md`, «Estado
 real»).
 
@@ -91,8 +92,13 @@ que faltaba:
 Desde la PR de la simulación, **cada despliegue simula (`--dry-run`) antes de
 publicar**, en la misma aprobación. **Siguiente:** una etiqueta nueva, `v0.1.4`.
 
-**PENDIENTE:** una cuenta propia para las Functions, sin rol Editor (ver «Estado
-real»).
+**13/09 — las Functions dejan la cuenta con rol Editor.** Pasan a correr con
+`sa-functions`, que tiene solo lo que usan: Firestore, Auth, lectura de sus 23
+secretos, los disparadores de Firestore y logs. Fase A (la cuenta y sus
+permisos, verificados con Policy Troubleshooter) y fase B (una línea en
+`index.ts`) hechas. **PENDIENTE — fase C**, tras unos días sin errores: Cloud
+Build con cuenta propia y quitar `roles/editor` a las cuentas por defecto (ver
+`.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
 
 ## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
 
