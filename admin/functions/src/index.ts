@@ -22,6 +22,7 @@ export {
 } from './catalogoWeb.js';
 
 import { registrar } from './ingesta.js';
+import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -460,6 +461,34 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   const monto = Number(datos['montoMensual']);
   const vence = Number(datos['proximoVencimiento']);
 
+  // UMBRALES DE ATENCIÓN POR EMPRESA (`Analisis/27`): a cuántas respuestas en
+  // la ventana de 24 h el asistente pasa al operador y a cuántas deja de
+  // responder. Son OPCIONALES: ausentes, no se tocan; `null`, se borran y
+  // vuelven a regir los de respaldo; presentes, se aceptan solo si forman una
+  // pareja coherente (`umbralesDeAtencion`), igual que los lee el servidor. Lo
+  // que la ingesta no aceptaría, no se guarda.
+  const umbrales: Record<string, unknown> = {};
+  for (const clave of ['umbralOperador', 'umbralBloqueo'] as const) {
+    if (!(clave in datos)) continue;
+    const v = datos[clave];
+    if (v === null) { umbrales[clave] = FieldValue.delete(); continue; }
+    if (!umbralValido(v)) throw new HttpsError('invalid-argument', `${clave} inválido.`);
+    umbrales[clave] = v;
+  }
+  if (Object.keys(umbrales).length > 0) {
+    const actual = (await db().doc(`tenants/${tenantId}/cuenta/estado`).get()).data() ?? {};
+    const combinados: Record<string, unknown> = { ...actual };
+    for (const [k, v] of Object.entries(umbrales)) {
+      if (v instanceof FieldValue) delete combinados[k]; else combinados[k] = v;
+    }
+    const resultado = umbralesDeAtencion(combinados);
+    const cargados = ['umbralOperador', 'umbralBloqueo'].some((k) => combinados[k] !== undefined);
+    if (cargados && resultado.origen !== 'cuenta') {
+      throw new HttpsError('invalid-argument',
+        'El umbral de bloqueo tiene que ser mayor que el de operador.');
+    }
+  }
+
   await db().doc(`tenants/${tenantId}/cuenta/estado`).set({
     plan: texto(datos['plan'], 40) || 'basico',
     estadoPago,
@@ -467,10 +496,17 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     moneda: datos['moneda'] === 'USD' ? 'USD' : 'BOB',
     ...(Number.isFinite(vence) ? { proximoVencimiento: Timestamp.fromMillis(vence) } : {}),
     motivoVisible: texto(datos['motivoVisible'], 300),
+    ...umbrales,
     actualizadoEn: Timestamp.now(),
   }, { merge: true });
 
-  await auditar(tenantId, 'estado_cuenta', uid, { estadoPago });
+  await auditar(tenantId, 'estado_cuenta', uid, {
+    estadoPago,
+    ...(Object.keys(umbrales).length > 0
+      ? { umbrales: Object.fromEntries(Object.entries(umbrales)
+          .map(([k, v]) => [k, v instanceof FieldValue ? null : v])) }
+      : {}),
+  });
   return { ok: true };
 });
 
