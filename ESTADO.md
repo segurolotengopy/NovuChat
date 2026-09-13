@@ -8,7 +8,31 @@
 
 ---
 
-## 2026-09-12 — EL DESPLIEGUE ES MANUAL, y siempre desde `main`
+## 2026-09-13 — el despliegue por CI funciona: `v0.1.4` está en producción
+
+**Primer despliegue por CI completo.** La simulación (`--dry-run`) y la
+publicación pasaron: reglas de Firestore, índices, **las 30 Functions**
+(«Successful update operation» cada una) y Hosting. Producción es hoy `v0.1.4`.
+
+El chequeo de salud posterior **no llegó a correr** por un defecto del workflow
+—el job `post-despliegue` apuntaba a `admin/` sin hacer checkout— y el
+despliegue sano quedó registrado como fallido; el rollback, correctamente, no se
+ejecutó. Se corrige en la PR siguiente. Mientras tanto se verificó a mano:
+
+- la consola carga sin errores en el navegador;
+- las Functions responden detrás de Hosting (el catálogo público con un id
+  inexistente devuelve su error JSON controlado, no la página de la app);
+- el bundle **compilado en el CI** trae el proyecto, el dominio de Auth y la
+  clave de App Check correctos, sin `apiKey` vacía.
+
+**Regla desde hoy:** se despliega con una etiqueta `v*` sobre `main` y la
+aprobación en `production`. Cada despliegue simula antes de publicar. El
+despliegue manual queda solo para emergencias, y siempre desde `main`
+actualizado. **Cada secreto nuevo** —un cliente más— necesita su permiso para
+la cuenta de despliegue antes del siguiente despliegue (ver
+`.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
+
+## 2026-09-12 — EL DESPLIEGUE ERA MANUAL, y siempre desde `main` (superado el 13/09, ver arriba)
 
 **El pipeline de CI/CD nunca desplegó nada.** Se descubrió al fusionar la #51:
 la CI de `main` falló en `desplegar-staging` porque la autenticación con GCP
