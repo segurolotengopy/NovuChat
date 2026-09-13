@@ -58,8 +58,8 @@ seguridad:
         uuid.v4() en teeny-request, verificado sobre node_modules. No es
         alcanzable. Se revisa cuando firebase-admin actualice gaxios.
       aprobado_por: Andres Alberdi
-      creado: 2026-08-30
-      vence: 2026-10-31
+      creado: "2026-08-30"
+      vence: "2026-10-31"
 
 
   # ---------------------------------------------------------------------------
@@ -87,5 +87,5 @@ seguridad:
         cruza el salto de linea, capturando VITE_USAR_EMULADORES=true como si
         fuera el secreto. No hay ninguna credencial en ese archivo.
       aprobado_por: Andres Alberdi
-      creado: 2026-08-30
-      vence: 2026-10-31
+      creado: "2026-08-30"
+      vence: "2026-10-31"
