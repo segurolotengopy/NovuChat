@@ -36,13 +36,21 @@ llegó sin proveedor de identidad.
 (`git switch main && git pull`), nunca desde una rama. Si hace falta desplegar
 algo que no está en `main`, primero se fusiona su PR.
 
-**PENDIENTE (lo ejecuta Andres):** configurar la federación de identidad de
-GitHub con GCP —proveedor, cuenta de despliegue y secretos por entorno—. Los
-pasos y los permisos exactos están en `.github/DESPLIEGUE-FIREBASE.md`,
-«Estado real». Averiguado el 12/09: **no existe proyecto de staging**, así que
-`desplegar-staging` se omite mientras no se configure uno, y `main` deja de
-quedar en rojo. Ojo con las dos variables nuevas: `SITIO_PUBLICO` —sin ella el
-despliegue falla a propósito— y las `VITE_*`.
+**12/09 — federación configurada.** Proveedor, cuenta de despliegue con
+permisos acotados, secretos y variables en GitHub, y revisor obligatorio en
+`production`. Detalle y permisos exactos en `.github/DESPLIEGUE-FIREBASE.md`,
+«Estado real». **No existe proyecto de staging**, así que `desplegar-staging`
+se omite y `main` deja de quedar en rojo.
+
+La primera etiqueta, `v0.1.0`, falló tres veces **sin tocar producción**, y
+cada fallo destapó una pieza que faltaba: el `sub` inmutable de GitHub, el
+permiso sobre la cuenta de App Engine y el `predeploy` que recompilaba en el
+CI. Las dos primeras se corrigieron en GCP; la tercera en esta rama.
+**Siguiente:** una etiqueta nueva, `v0.1.1`, porque `v0.1.0` apunta a un commit
+sin el arreglo.
+
+**PENDIENTE:** una cuenta propia para las Functions, sin rol Editor (ver «Estado
+real»).
 
 ## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
 

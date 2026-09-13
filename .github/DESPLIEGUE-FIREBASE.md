@@ -28,12 +28,40 @@ del proyecto de producción. Lo que hay:
   producción se desplegó a mano (ver `ESTADO.md`, «el despliegue es manual»).
 - La **federación** acepta solo los Environments `production` y
   `production-rollback` —no `dev` ni `staging`, que no tienen proyecto—.
+- **Este repositorio usa sujetos INMUTABLES, y la condición de §2.1 NO sirve
+  tal como está escrita.** GitHub arma el `sub` con los identificadores
+  numéricos, no con los nombres:
+  `repo:segurolotengopy@<id-dueño>/NovuChat@<id-repo>:environment:production`.
+  Con la condición de §2.1 el canje falla con *«The given credential is
+  rejected by the attribute condition»* (costó un intento el 2026-09-12). Se
+  consulta con `gh api repos/segurolotengopy/NovuChat/actions/oidc/customization/sub`
+  (`sub_claim_prefix`). La condición vigente compara
+  `assertion.repository_id`, `assertion.repository_owner_id` y ese `sub`, y los
+  bindings `principal://…/subject/<sub>` de §2.2 usan el mismo sujeto. Comparar
+  identificadores es además más fuerte que comparar nombres: resiste un cambio
+  de nombre o una transferencia del repositorio.
 - La cuenta de despliegue necesita, además de los roles de §2.2,
   **`roles/eventarc.admin`**, porque la consola tiene Functions disparadas por
-  Firestore. Y dos permisos **acotados** en vez de a nivel proyecto:
-  `iam.serviceAccountUser` solo sobre la cuenta con la que corren las
-  Functions, y `secretmanager.admin` solo sobre los tres secretos que usa el
-  código (`GEMINI_API_KEY`, `INGESTA_DEMOA`, `INGESTA_DEMOB`).
+  Firestore. Y permisos **acotados** en vez de a nivel proyecto:
+  - `iam.serviceAccountUser` sobre **dos** cuentas: la de cómputo, con la que
+    corren las Functions, **y la de App Engine (`<proyecto>@appspot`)**. Ninguna
+    Function corre como esta última, pero `firebase deploy` exige el permiso
+    antes de desplegar Functions y falla con *«Missing permissions required for
+    functions deploy… iam.serviceAccounts.ActAs»* (segundo intento, 2026-09-12).
+  - `secretmanager.admin` solo sobre los tres secretos que usa el código
+    (`GEMINI_API_KEY`, `INGESTA_DEMOA`, `INGESTA_DEMOB`).
+- **El `predeploy` de las Functions no recompila en el CI.** En la máquina de
+  quien despliega a mano recompila siempre, que es lo que evita subir un `lib/`
+  viejo. En el CI se salta si ya está el `lib/` compilado y probado en el job
+  `construir`: el job de despliegue no instala dependencias, y recompilar ahí
+  fallaba (tercer intento, 2026-09-12) y además desplegaría algo distinto de lo
+  probado.
+- **PENDIENTE — la cuenta de las Functions tiene rol Editor.** Las dos cuentas
+  por defecto del proyecto (cómputo y App Engine) tienen `roles/editor`, así que
+  poder *actuar como* ellas equivale a casi todo el proyecto. Hoy lo contienen
+  la condición de la federación y el revisor obligatorio de `production`. La
+  solución de fondo: una cuenta propia para las Functions, con solo Firestore y
+  los tres secretos, y quitarles el Editor a las cuentas por defecto.
 - Dos variables de GitHub que §5.3 no lista:
   - **`SITIO_PUBLICO`**: el job de producción escribe con ella
     `functions/.env`, que está ignorado. Sin la variable, **el despliegue falla a
