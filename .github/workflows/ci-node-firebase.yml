@@ -1099,6 +1099,21 @@ jobs:
               || { echo "::error::Falta vars.SITIO_PUBLICO (ver .github/DESPLIEGUE-FIREBASE.md, «Estado real»)"; exit 1; }
             printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
           fi
+          # SIMULACIÓN PRIMERO (2026-09-12). `--dry-run` corre predeploy y
+          # prepare —permisos, secretos, dependencias, descubrimiento de las
+          # Functions— y se salta deploy, release y postdeploy (firebase-tools
+          # 15.28.1, src/deploy/index.ts). Ahí fallaron los cuatro primeros
+          # intentos de v0.1.x. Si la simulación falla, no se publica NADA.
+          # Hosting queda FUERA a propósito: su prepare crea una versión en el
+          # sitio aunque sea dry-run (src/deploy/hosting/prepare.ts,
+          # api.createVersion) y cada simulación dejaría una versión huérfana.
+          # Límite: la simulación no ejerce la publicación (Cloud Build, Cloud
+          # Run, Eventarc).
+          SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
+          if [[ -n "$SIMULAR" ]]; then
+            echo "Simulando: $SIMULAR"
+            firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive --dry-run
+          fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
             --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})"
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"

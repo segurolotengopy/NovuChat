@@ -42,12 +42,21 @@ permisos acotados, secretos y variables en GitHub, y revisor obligatorio en
 «Estado real». **No existe proyecto de staging**, así que `desplegar-staging`
 se omite y `main` deja de quedar en rojo.
 
-La primera etiqueta, `v0.1.0`, falló tres veces **sin tocar producción**, y
-cada fallo destapó una pieza que faltaba: el `sub` inmutable de GitHub, el
-permiso sobre la cuenta de App Engine y el `predeploy` que recompilaba en el
-CI. Las dos primeras se corrigieron en GCP; la tercera en esta rama.
-**Siguiente:** una etiqueta nueva, `v0.1.1`, porque `v0.1.0` apunta a un commit
-sin el arreglo.
+Las etiquetas `v0.1.0` a `v0.1.3` fallaron **sin tocar producción** —el canal
+en vivo y las 30 Functions siguen como el 09/09—, y cada fallo destapó una pieza
+que faltaba:
+
+| Intento | Qué faltaba | Dónde se corrigió |
+|---|---|---|
+| `v0.1.0` | el `sub` inmutable de GitHub en la condición | GCP |
+| `v0.1.0` | permiso sobre la cuenta de App Engine | GCP |
+| `v0.1.0` | el `predeploy` recompilaba en el CI | PR #55 |
+| `v0.1.1` | dependencias de `functions/` en el job de despliegue | PR #56 |
+| `v0.1.2` | **el lockfile eran enlaces**: Cloud Build habría subido Functions sin dependencias | PR #57 |
+| `v0.1.3` | acceso a 20 de los 23 secretos | GCP |
+
+Desde la PR de la simulación, **cada despliegue simula (`--dry-run`) antes de
+publicar**, en la misma aprobación. **Siguiente:** una etiqueta nueva, `v0.1.4`.
 
 **PENDIENTE:** una cuenta propia para las Functions, sin rol Editor (ver «Estado
 real»).
