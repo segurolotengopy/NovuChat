@@ -259,6 +259,11 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 
 ## Flujo de trabajo
 
+- **Alta de un cliente:** seguir `docs/alta-cliente/RUNBOOK.md`. El flujo
+  guardado `/alta-cliente` lo recorre por etapas con los agentes `alta-cliente`,
+  `meta-whatsapp`, `plataforma` y `flujos-n8n`. Los agentes ejecutan lo que
+  escribe en producción, en Meta o en GitHub **solo con confirmación humana**
+  (`.claude/hooks/acciones-sensibles.sh`), y nunca leen el valor de un secreto.
 - Los JSON de `Flujos/` son la fuente de verdad versionada. Tras editar en la
   interfaz de n8n, **exportar** (⋯ → Download) y reemplazar el archivo.
 - En n8n cada cambio exige volver a pulsar **Publish** para que llegue a
