@@ -314,7 +314,7 @@
         400
       ],
       "parameters": {
-        "jsCode": "// Separa las marcas [ENVIAR_QR] / [PEDIDO_CONFIRMADO] y — sobre todo —\n// APLICA POR CÓDIGO las prohibiciones 3 y 4 de CLAUDE.md.\n//\n// Por qué acá y no solo en el prompt: un modelo puede omitir una frase del\n// system message (por temperatura, por truncado o por un reintento). Las dos\n// prohibiciones no pueden depender de la buena voluntad del LLM, así que este\n// nodo es la última compuerta antes de que cualquier texto salga a WhatsApp.\n// Todos los caminos de salida al cliente pasan por acá.\n\nconst entradas = $('Normalizar entrada').all();\n\n// Frases que, si aparecen sin la palabra \"simulad…\", harían pasar el cobro por real.\nconst AFIRMA_COBRO = /((pago|cobro|transferencia|dep[oó]sito|abono)\\s+(\\S+\\s+){0,3}(verificad|confirmad|recibid|acreditad|procesad|aprobad|realizad|efectuad|exitos)|ya\\s+(recibimos|se\\s+acredit|te\\s+cobr|se\\s+cobr)|(pago|cobro)\\s+(\\S+\\s+){0,2}(real|de\\s+verdad))/i;\nconst DICE_SIMULADO = /(simulad|simulacr|demostraci[oó]n|\\bdemo\\b|no\\s+cobra)/i;\n// Negaciones de ser IA (prohibición 4).\nconst NIEGA_IA = /(no\\s+soy\\s+(un[ao]?\\s+)?(bot|robot|m[aá]quina|programa|inteligencia\\s+artificial|\\bia\\b|asistente\\s+virtual|autom[aá]tic[ao])|soy\\s+(un[ao]?\\s+)?(persona|humano|humana|ser\\s+humano)|habl(as|[aá]s|a)\\s+con\\s+(un[ao]?\\s+)?(persona|humano|humana))/i;\n\nconst out = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const item = $input.all()[i];\n  // Emparejamiento por índice: nunca .first(), que le pondría el teléfono del\n  // primer mensaje a todos los items si llegaran dos a la vez.\n  const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;\n\n  const bruto = String(item.json.output ?? item.json.text ?? '').trim();\n  const enviarQr = /\\[ENVIAR_QR\\]/i.test(bruto);\n  const pedidoConfirmado = /\\[PEDIDO_CONFIRMADO\\]/i.test(bruto);\n\n  // Quita las marcas conocidas y cualquier otra marca en corchetes que el\n  // modelo se haya inventado, para que el cliente nunca las vea.\n  let texto = bruto\n    .replace(/\\[ENVIAR_QR\\]/gi, '')\n    .replace(/\\[PEDIDO_CONFIRMADO\\]/gi, '')\n    .replace(/\\[[A-ZÁÉÍÓÚÑ_ ]{3,30}\\]/g, '')\n    .trim();\n\n  const avisos = [];\n\n  // --- Prohibición 4: el agente no niega ser una IA ---------------------\n  if (NIEGA_IA.test(texto)) {\n    texto = texto.replace(NIEGA_IA, 'sí, soy un asistente virtual con inteligencia artificial');\n    avisos.push('correccion_ia');\n  }\n\n  // --- Prohibición 3: ningún cobro simulado se presenta como real -------\n  // (a) Si sale el QR, el texto que lo acompaña dice que es demostración.\n  if (enviarQr && !DICE_SIMULADO.test(texto)) {\n    texto = (texto ? texto + '\\n\\n' : '') + ent.rotuloDemo;\n    avisos.push('rotulo_qr');\n  }\n  // (b) Si se confirma el pedido, la confirmación dice \"simulado\".\n  if (pedidoConfirmado && !DICE_SIMULADO.test(texto)) {\n    texto = (texto ? texto + '\\n\\n' : '') + ent.textoPagoSimulado;\n    avisos.push('rotulo_confirmacion');\n  }\n  // (c) Red de seguridad para CUALQUIER otro camino —reintento del cliente,\n  //     mensaje suelto, respuesta fuera de guion— en el que el agente afirme\n  //     un cobro sin decir que es simulado.\n  if (AFIRMA_COBRO.test(texto) && !DICE_SIMULADO.test(texto)) {\n    texto = texto + '\\n\\n' + ent.rotuloDemo;\n    avisos.push('rotulo_generico');\n  }\n\n  if (!texto) {\n    texto = 'Disculpá, no pude generar la respuesta. ¿Me lo repetís?';\n    avisos.push('respuesta_vacia');\n  }\n\n  out.push({ json: {\n    respuesta: texto,\n    enviarQr,\n    pedidoConfirmado,\n    avisos,                       // queda en la ejecución para auditar el ensayo\n    from: ent.from,\n    nombrePerfil: ent.nombrePerfil,\n    // Config arrastrada: los nodos de salida leen $json y no dependen del\n    // emparejamiento de items hacia atrás, que se rompe después de un Code.\n    phoneNumberId: ent.phoneNumberId,\n    numeroDueno: ent.numeroDueno,\n    waGraphVersion: ent.waGraphVersion,\n    qrMediaId: ent.qrMediaId,\n    qrUrl: ent.qrUrl,\n    rotuloDemo: ent.rotuloDemo,\n    captionQr: ent.captionQr,\n    nombreNegocio: ent.nombreNegocio,\n  }});\n}\n\nreturn out;\n"
+        "jsCode": "// Separa las marcas [ENVIAR_QR] / [PEDIDO_CONFIRMADO] y — sobre todo —\n// APLICA POR CÓDIGO las prohibiciones 3 y 4 de CLAUDE.md.\n//\n// Por qué acá y no solo en el prompt: un modelo puede omitir una frase del\n// system message (por temperatura, por truncado o por un reintento). Las dos\n// prohibiciones no pueden depender de la buena voluntad del LLM, así que este\n// nodo es la última compuerta antes de que cualquier texto salga a WhatsApp.\n// Todos los caminos de salida al cliente pasan por acá.\n\nconst entradas = $('Normalizar entrada').all();\n\n// Frases que, si aparecen sin la palabra \"simulad…\", harían pasar el cobro por real.\nconst AFIRMA_COBRO = /((pago|cobro|transferencia|dep[oó]sito|abono)\\s+(\\S+\\s+){0,3}(verificad|confirmad|recibid|acreditad|procesad|aprobad|realizad|efectuad|exitos)|ya\\s+(recibimos|se\\s+acredit|te\\s+cobr|se\\s+cobr)|(pago|cobro)\\s+(\\S+\\s+){0,2}(real|de\\s+verdad))/i;\nconst DICE_SIMULADO = /(simulad|simulacr|demostraci[oó]n|\\bdemo\\b|no\\s+cobra)/i;\n// Negaciones de ser IA (prohibición 4).\nconst NIEGA_IA = /(no\\s+soy\\s+(un[ao]?\\s+)?(bot|robot|m[aá]quina|programa|inteligencia\\s+artificial|\\bia\\b|asistente\\s+virtual|autom[aá]tic[ao])|soy\\s+(un[ao]?\\s+)?(persona|humano|humana|ser\\s+humano)|habl(as|[aá]s|a)\\s+con\\s+(un[ao]?\\s+)?(persona|humano|humana))/i;\n\nconst out = [];\n\nfor (let i = 0; i < $input.all().length; i++) {\n  const item = $input.all()[i];\n  // Emparejamiento por índice: nunca .first(), que le pondría el teléfono del\n  // primer mensaje a todos los items si llegaran dos a la vez.\n  const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;\n\n  const bruto = String(item.json.output ?? item.json.text ?? '').trim();\n  const enviarQr = /\\[ENVIAR_QR\\]/i.test(bruto);\n  const pedidoConfirmado = /\\[PEDIDO_CONFIRMADO\\]/i.test(bruto);\n\n  // Quita las marcas conocidas y cualquier otra marca en corchetes que el\n  // modelo se haya inventado, para que el cliente nunca las vea.\n  let texto = bruto\n    .replace(/\\[ENVIAR_QR\\]/gi, '')\n    .replace(/\\[PEDIDO_CONFIRMADO\\]/gi, '')\n    .replace(/\\[[A-ZÁÉÍÓÚÑ_ ]{3,30}\\]/g, '')\n    .trim();\n\n  const avisos = [];\n\n  // --- Prohibición 4: el agente no niega ser una IA ---------------------\n  if (NIEGA_IA.test(texto)) {\n    texto = texto.replace(NIEGA_IA, 'sí, soy un asistente virtual con inteligencia artificial');\n    avisos.push('correccion_ia');\n  }\n\n  // --- Prohibición 3: ningún cobro simulado se presenta como real -------\n  // (a) Si sale el QR, el texto que lo acompaña dice que es demostración.\n  if (enviarQr && !DICE_SIMULADO.test(texto)) {\n    texto = (texto ? texto + '\\n\\n' : '') + ent.rotuloDemo;\n    avisos.push('rotulo_qr');\n  }\n  // (b) Si se confirma el pedido, la confirmación dice \"simulado\".\n  if (pedidoConfirmado && !DICE_SIMULADO.test(texto)) {\n    texto = (texto ? texto + '\\n\\n' : '') + ent.textoPagoSimulado;\n    avisos.push('rotulo_confirmacion');\n  }\n  // (c) Red de seguridad para CUALQUIER otro camino —reintento del cliente,\n  //     mensaje suelto, respuesta fuera de guion— en el que el agente afirme\n  //     un cobro sin decir que es simulado.\n  if (AFIRMA_COBRO.test(texto) && !DICE_SIMULADO.test(texto)) {\n    texto = texto + '\\n\\n' + ent.rotuloDemo;\n    avisos.push('rotulo_generico');\n  }\n\n  if (!texto) {\n    texto = 'Disculpa, no pude generar la respuesta. ¿Me lo repites?';\n    avisos.push('respuesta_vacia');\n  }\n\n  out.push({ json: {\n    respuesta: texto,\n    enviarQr,\n    pedidoConfirmado,\n    avisos,                       // queda en la ejecución para auditar el ensayo\n    from: ent.from,\n    nombrePerfil: ent.nombrePerfil,\n    // Config arrastrada: los nodos de salida leen $json y no dependen del\n    // emparejamiento de items hacia atrás, que se rompe después de un Code.\n    phoneNumberId: ent.phoneNumberId,\n    numeroDueno: ent.numeroDueno,\n    waGraphVersion: ent.waGraphVersion,\n    qrMediaId: ent.qrMediaId,\n    qrUrl: ent.qrUrl,\n    rotuloDemo: ent.rotuloDemo,\n    captionQr: ent.captionQr,\n    nombreNegocio: ent.nombreNegocio,\n  }});\n}\n\nreturn out;\n"
       }
     },
     {
@@ -449,7 +449,7 @@
         "operation": "send",
         "phoneNumberId": "={{ $json.phoneNumberId }}",
         "recipientPhoneNumber": "={{ $json.numeroDueno }}",
-        "textBody": "=🚨 NUEVO PEDIDO CONFIRMADO — DEMOSTRACIÓN\n⚠️ Cobro SIMULADO: no hay acreditación bancaria, no entró dinero.\n\nCliente: {{ $json.nombrePerfil || 'sin nombre de perfil' }} ({{ $json.from }})\n\nResumen enviado al cliente:\n{{ $json.respuesta }}"
+        "textBody": "={{ $json.textoAviso || ('🚨 NUEVO PEDIDO CONFIRMADO — DEMOSTRACIÓN\\n⚠️ Cobro SIMULADO: no hay acreditación bancaria, no entró dinero.\\n\\nCliente: ' + ($json.nombrePerfil || 'sin nombre de perfil') + ' (' + $json.from + ')\\n\\nResumen enviado al cliente:\\n' + $json.respuesta) }}"
       },
       "retryOnFail": true,
       "maxTries": 2,
@@ -560,7 +560,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'entrante', tipo: $json.tipo || 'text', texto: $json.userInput || '', idMeta: $json.mensajeId || '', nombreContacto: $json.nombrePerfil || '' }) }}",
-        "options": {}
+        "options": {
+          "timeout": 4000
+        }
       },
       "id": "reportar-mensaje-entrante",
       "name": "Reportar mensaje (entrante)",
@@ -568,12 +570,12 @@
       "typeVersion": 4.2,
       "position": [
         560,
-        660
+        140
       ],
       "onError": "continueRegularOutput",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "vfcydksbQT1mBXU2",
@@ -654,7 +656,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({}) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
         "options": {
           "timeout": 4000,
           "response": {
@@ -676,7 +678,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "// LA CONSOLA MANDA, con la misma regla que en el flujo de agendamiento: si el\n// panel contesta, sus valores pisan; si no, se usan los de siempre.\n//\n// Este nodo se llama «Config del negocio» a proposito: es el nombre que buscan\n// las expresiones que ya existen en el flujo. El Set con los valores de\n// respaldo paso a llamarse «Config base».\n//\n// LO QUE NO SE TOCA NUNCA, Y ES LO MAS IMPORTANTE DE ESTE ARCHIVO: los rotulos\n// del cobro simulado. `rotuloDemo`, `captionQr` y `textoPagoSimulado` NO se\n// pisan con nada que venga de afuera, aunque el panel los mandara. Son la\n// prohibicion 3 de CLAUDE.md hecha codigo: un cobro de demostracion no puede\n// presentarse como real, y esa garantia no puede depender de un campo editable\n// ni de que un endpoint conteste bien. Si algun dia hay cobro REAL, el flujo\n// que lo haga sera otro y no llevara estos rotulos.\nconst base = $('Config base').first().json;\n\n// ---------------------------------------------------------------------------\n// EL 409 NO ES UN FALLO: ES LA RESPUESTA QUE CORTA EL SERVICIO.\n//\n// EL DEFECTO QUE ESTO ARREGLA (reportado el 2026-09-07, y confirmado en los\n// TRES flujos). `configuracionFlujo` contesta 409 con `{estado, mensajeCortesia}`\n// y SIN `tenantId` cuando el comercio no esta activo. La version anterior de\n// este nodo exigia `tenantId` para dar la respuesta por buena, asi que un 409\n// caia al respaldo... y el respaldo dice `estadoComercio: 'operativo'` escrito a\n// mano. Resultado: **un comercio suspendido seguia siendo atendido**, y en el\n// flujo de recordatorios seguia enviando plantillas que Meta cobra. Era\n// exactamente el defecto que conectar el panel daba por cerrado, y yo lo habia\n// afirmado por escrito sin comprobarlo.\n//\n// LA RAIZ ERA NO PODER DISTINGUIR «el panel dice que esta suspendido» de «el\n// panel no contesto». Los dos se veian igual: un fallo. Ahora el nodo HTTP\n// devuelve la respuesta completa -codigo y cuerpo- y aca se decide con el\n// codigo:\n//\n//   200 + tenantId  -> configuracion del panel\n//   409             -> SUSPENDIDO. Es una respuesta valida, no un error.\n//   cualquier otra  -> no se pudo saber -> respaldo\n//\n// SOBRE `neverError`, QUE ESTE PROYECTO PROHIBIO EL 2026-09-01: aquel caso era\n// un nodo que salia VERDE con un 401 y nadie miraba el resultado. Aca el codigo\n// se examina explicitamente y lo que no se reconoce cae al respaldo dejando\n// rastro. La regla real no es «nunca neverError», es «nunca ignores el codigo».\n\nconst respuesta = $input.first().json ?? {};\nconst codigo = Number(respuesta.statusCode);\nconst cuerpo = (respuesta.body ?? {});\n\nconst util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : undefined;\nconst num = (v) => (typeof v === 'number' && Number.isFinite(v)) ? String(v) : undefined;\nconst soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));\n\nif (codigo === 409) {\n  return [{ json: { ...base,\n    estadoComercio: 'suspendido',\n    // El texto neutro lo pone el panel: no menciona pagos ni deudas, porque el\n    // cliente final no tiene por que enterarse de que el negocio debe dinero.\n    mensajeComercioSuspendido: util(cuerpo.mensajeCortesia)\n      || base.mensajeComercioSuspendido,\n    configDeLaConsola: false,\n    panelDice: 'no operativo',\n  } }];\n}\n\nconst contesto = codigo === 200 && cuerpo && typeof cuerpo.tenantId === 'string';\nif (!contesto) {\n// Sin respuesta no se corta: una caida del panel no puede dejar sin asistente a\n// todos los comercios. Un cliente escribiendo merece una respuesta.\n  return [{ json: { ...base,\n    estadoComercio: base.estadoComercio ?? 'operativo',\n    configDeLaConsola: false,\n    panelSinRespuesta: true,\n    codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,\n  } }];\n}\n\nconst r = cuerpo;\n\nconst dn = r.datosDelNegocio ?? {};\nconst op = r.operacion ?? {};\nconst venta = r.venta ?? {};\n\n// --- CATALOGO POR AREA ------------------------------------------------------\n// El Demo B parte el catalogo por AREA y no por precio: la carta y la tienda se\n// ofrecen distinto. Un item sin precio no entra en una lista de venta -- no se\n// puede cobrar lo que no tiene precio -- asi que se descarta con aviso implicito:\n// simplemente no se ofrece, igual que un item dado de baja.\nconst items = (Array.isArray(r.catalogo) ? r.catalogo : [])\n  .filter((i) => typeof i.precio === 'number');\nconst moneda = util(op.moneda) === 'USD' ? 'USD' : (util(base.moneda) || 'Bs');\nconst lista = (area) => items\n  .filter((i) => String(i.area || '').toLowerCase() === area)\n  .map((i) => `${i.nombre} ${i.precio} ${i.moneda === 'USD' ? 'USD' : moneda}`)\n  .join(' · ');\n\nconst deLaConsola = soloLlenos({\n  nombreNegocio: util(dn.nombreNegocio),\n  horarioAtencion: util(op.horarioAtencion),\n  numeroDueno: util(op.numeroRecepcion),\n  phoneNumberId: util(r.phoneNumberId),\n  zonaHoraria: util(op.zonaHoraria),\n  menuGastronomia: lista('gastronomia') || undefined,\n  catalogoRetail: lista('retail') || undefined,\n  costoDelivery: num(venta.costoDelivery),\n  recargoFlota: num(venta.recargoFlota),\n  // Los tiempos viven en el panel como minutos y en el prompt como frase.\n  tiempoCocina: typeof venta.tiempoCocinaMin === 'number'\n    ? `${venta.tiempoCocinaMin} minutos` : undefined,\n  // La voz sale ROTULADA del panel (`voz`), no del arreglo\n  // `instruccionesDeVoz`: leerlo por posicion se rompe el dia que\n  // aparezca una tercera frase.\n  tratamiento: util((r.voz ?? {}).tratamiento),\n  estiloEmojis: util((r.voz ?? {}).emojis),\n  // LA DIRECCION Y LO QUE FALTA. Se agrego el 2026-09-07 despues de ver al\n  // asistente inventarse una: «Nuestra tienda esta ubicada en la zona central\n  // de La Paz», con el campo vacio en el panel. Es EL MISMO incidente del 28 de\n  // agosto en el flujo de agendamiento, que ahi ya estaba resuelto y aca no: la\n  // leccion no habia cruzado de un flujo al otro.\n  direccion: util(dn.direccion),\n  datosQueNoTenemos: Array.isArray(dn.datosQueNoTenemos) && dn.datosQueNoTenemos.length\n    ? dn.datosQueNoTenemos.join(', ') : undefined,\n});\n\n// El estado siempre sale del panel: es lo que corta el servicio.\nconst estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'\n  : (util(r.estadoComercio) ? 'suspendido' : (base.estadoComercio ?? 'operativo'));\n\nreturn [{ json: {\n  ...base,\n  ...deLaConsola,\n  estadoComercio,\n  configDeLaConsola: true,\n  // Se reponen DESPUES de todo, para que ninguna clave de arriba pueda pisarlos.\n  rotuloDemo: base.rotuloDemo,\n  captionQr: base.captionQr,\n  textoPagoSimulado: base.textoPagoSimulado,\n} }];\n"
+        "jsCode": "// LA CONSOLA MANDA, con la misma regla que en el flujo de agendamiento: si el\n// panel contesta, sus valores pisan; si no, se usan los de siempre.\n//\n// Este nodo se llama «Config del negocio» a proposito: es el nombre que buscan\n// las expresiones que ya existen en el flujo. El Set con los valores de\n// respaldo paso a llamarse «Config base».\n//\n// LO QUE NO SE TOCA NUNCA, Y ES LO MAS IMPORTANTE DE ESTE ARCHIVO: los rotulos\n// del cobro simulado. `rotuloDemo`, `captionQr` y `textoPagoSimulado` NO se\n// pisan con nada que venga de afuera, aunque el panel los mandara. Son la\n// prohibicion 3 de CLAUDE.md hecha codigo: un cobro de demostracion no puede\n// presentarse como real, y esa garantia no puede depender de un campo editable\n// ni de que un endpoint conteste bien. Si algun dia hay cobro REAL, el flujo\n// que lo haga sera otro y no llevara estos rotulos.\nconst base = $('Config base').first().json;\n\n// ---------------------------------------------------------------------------\n// EL 409 NO ES UN FALLO: ES LA RESPUESTA QUE CORTA EL SERVICIO.\n//\n// EL DEFECTO QUE ESTO ARREGLA (reportado el 2026-09-07, y confirmado en los\n// TRES flujos). `configuracionFlujo` contesta 409 con `{estado, mensajeCortesia}`\n// y SIN `tenantId` cuando el comercio no esta activo. La version anterior de\n// este nodo exigia `tenantId` para dar la respuesta por buena, asi que un 409\n// caia al respaldo... y el respaldo dice `estadoComercio: 'operativo'` escrito a\n// mano. Resultado: **un comercio suspendido seguia siendo atendido**, y en el\n// flujo de recordatorios seguia enviando plantillas que Meta cobra. Era\n// exactamente el defecto que conectar el panel daba por cerrado, y yo lo habia\n// afirmado por escrito sin comprobarlo.\n//\n// LA RAIZ ERA NO PODER DISTINGUIR «el panel dice que esta suspendido» de «el\n// panel no contesto». Los dos se veian igual: un fallo. Ahora el nodo HTTP\n// devuelve la respuesta completa -codigo y cuerpo- y aca se decide con el\n// codigo:\n//\n//   200 + tenantId  -> configuracion del panel\n//   409             -> SUSPENDIDO. Es una respuesta valida, no un error.\n//   cualquier otra  -> no se pudo saber -> respaldo\n//\n// SOBRE `neverError`, QUE ESTE PROYECTO PROHIBIO EL 2026-09-01: aquel caso era\n// un nodo que salia VERDE con un 401 y nadie miraba el resultado. Aca el codigo\n// se examina explicitamente y lo que no se reconoce cae al respaldo dejando\n// rastro. La regla real no es «nunca neverError», es «nunca ignores el codigo».\n\nconst respuesta = $input.first().json ?? {};\nconst codigo = Number(respuesta.statusCode);\nconst cuerpo = (respuesta.body ?? {});\n\nconst util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : undefined;\nconst num = (v) => (typeof v === 'number' && Number.isFinite(v)) ? String(v) : undefined;\nconst soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));\n\n// ---------------------------------------------------------------------------\n// ESTADO DE ATENCION DEL TELEFONO: los umbrales de uso extendido\n// (`Analisis/27` §5, decididos el 13/09/2026).\n//\n// `Traer configuracion` manda el telefono que escribio, y el panel contesta en\n// `atencion` cuantas respuestas lleva ese cliente en su ventana de 24 h y que\n// hacer con ESTE turno:\n//   normal    -> al modelo, como siempre.\n//   operador  -> paso el umbral de operador (50 por defecto): NO se llama al\n//                modelo; se responde un aviso fijo y, la primera vez, se avisa\n//                al negocio para que una persona tome la conversacion.\n//   bloqueado -> paso el umbral de bloqueo (100 por defecto): no se envia nada\n//                hasta que la ventana se renueve.\n// Los umbrales los fija NovuChat por empresa en el panel. El flujo no cuenta\n// nada: obedece. Quien decide es el servidor (`atencion.ts`).\n//\n// ANTE LA DUDA, NORMAL. Si el panel no contesta, contesta 409 o manda un\n// estado que no se reconoce, el estado es `normal`: el mismo criterio de\n// arriba, una caida del panel no puede dejar sin respuesta a un cliente. El\n// techo de costo lo vuelve a poner el servidor en el primer turno que conteste.\n// ---------------------------------------------------------------------------\nconst at = (codigo === 200 && cuerpo && typeof cuerpo.atencion === 'object' && cuerpo.atencion)\n  ? cuerpo.atencion : {};\nconst atencion = {\n  atencionEstado: ['normal', 'operador', 'bloqueado'].includes(at.estado) ? at.estado : 'normal',\n  // El texto lo pone el panel; este es el respaldo, identico al del servidor\n  // (`MENSAJE_USO_EXTENDIDO` en atencion.ts). Neutro: no habla de limites, de\n  // mensajes ni de dinero, porque quien lo lee es un tercero.\n  atencionMensajeFijo: util(at.mensajeFijo)\n    || 'Gracias por su paciencia. Para atenderle mejor, una persona del equipo va a continuar esta conversación en breve.',\n  atencionAvisarRecepcion: ['operador', 'bloqueado'].includes(at.avisarRecepcion) ? at.avisarRecepcion : '',\n  atencionRespuestas: (typeof at.respuestasEnVentana === 'number' && Number.isFinite(at.respuestasEnVentana))\n    ? at.respuestasEnVentana : 0,\n  atencionVenceEn: util(at.ventanaVenceEn) || '',\n};\n\nif (codigo === 409) {\n  return [{ json: { ...base, ...atencion,\n    estadoComercio: 'suspendido',\n    // El texto neutro lo pone el panel: no menciona pagos ni deudas, porque el\n    // cliente final no tiene por que enterarse de que el negocio debe dinero.\n    mensajeComercioSuspendido: util(cuerpo.mensajeCortesia)\n      || base.mensajeComercioSuspendido,\n    configDeLaConsola: false,\n    panelDice: 'no operativo',\n  } }];\n}\n\nconst contesto = codigo === 200 && cuerpo && typeof cuerpo.tenantId === 'string';\nif (!contesto) {\n// Sin respuesta no se corta: una caida del panel no puede dejar sin asistente a\n// todos los comercios. Un cliente escribiendo merece una respuesta.\n  return [{ json: { ...base, ...atencion,\n    estadoComercio: base.estadoComercio ?? 'operativo',\n    configDeLaConsola: false,\n    panelSinRespuesta: true,\n    codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,\n  } }];\n}\n\nconst r = cuerpo;\n\nconst dn = r.datosDelNegocio ?? {};\nconst op = r.operacion ?? {};\nconst venta = r.venta ?? {};\n\n// --- CATALOGO POR AREA ------------------------------------------------------\n// El Demo B parte el catalogo por AREA y no por precio: la carta y la tienda se\n// ofrecen distinto. Un item sin precio no entra en una lista de venta -- no se\n// puede cobrar lo que no tiene precio -- asi que se descarta con aviso implicito:\n// simplemente no se ofrece, igual que un item dado de baja.\nconst items = (Array.isArray(r.catalogo) ? r.catalogo : [])\n  .filter((i) => typeof i.precio === 'number');\nconst moneda = util(op.moneda) === 'USD' ? 'USD' : (util(base.moneda) || 'Bs');\nconst lista = (area) => items\n  .filter((i) => String(i.area || '').toLowerCase() === area)\n  .map((i) => `${i.nombre} ${i.precio} ${i.moneda === 'USD' ? 'USD' : moneda}`)\n  .join(' · ');\n\nconst deLaConsola = soloLlenos({\n  nombreNegocio: util(dn.nombreNegocio),\n  horarioAtencion: util(op.horarioAtencion),\n  numeroDueno: util(op.numeroRecepcion),\n  phoneNumberId: util(r.phoneNumberId),\n  zonaHoraria: util(op.zonaHoraria),\n  menuGastronomia: lista('gastronomia') || undefined,\n  catalogoRetail: lista('retail') || undefined,\n  costoDelivery: num(venta.costoDelivery),\n  recargoFlota: num(venta.recargoFlota),\n  // Los tiempos viven en el panel como minutos y en el prompt como frase.\n  tiempoCocina: typeof venta.tiempoCocinaMin === 'number'\n    ? `${venta.tiempoCocinaMin} minutos` : undefined,\n  // La voz sale ROTULADA del panel (`voz`), no del arreglo\n  // `instruccionesDeVoz`: leerlo por posicion se rompe el dia que\n  // aparezca una tercera frase.\n  tratamiento: util((r.voz ?? {}).tratamiento),\n  estiloEmojis: util((r.voz ?? {}).emojis),\n  // LA DIRECCION Y LO QUE FALTA. Se agrego el 2026-09-07 despues de ver al\n  // asistente inventarse una: «Nuestra tienda esta ubicada en la zona central\n  // de La Paz», con el campo vacio en el panel. Es EL MISMO incidente del 28 de\n  // agosto en el flujo de agendamiento, que ahi ya estaba resuelto y aca no: la\n  // leccion no habia cruzado de un flujo al otro.\n  direccion: util(dn.direccion),\n  datosQueNoTenemos: Array.isArray(dn.datosQueNoTenemos) && dn.datosQueNoTenemos.length\n    ? dn.datosQueNoTenemos.join(', ') : undefined,\n});\n\n// El estado siempre sale del panel: es lo que corta el servicio.\nconst estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'\n  : (util(r.estadoComercio) ? 'suspendido' : (base.estadoComercio ?? 'operativo'));\n\nreturn [{ json: {\n  ...base,\n  ...atencion,\n  ...deLaConsola,\n  estadoComercio,\n  configDeLaConsola: true,\n  // Se reponen DESPUES de todo, para que ninguna clave de arriba pueda pisarlos.\n  rotuloDemo: base.rotuloDemo,\n  captionQr: base.captionQr,\n  textoPagoSimulado: base.textoPagoSimulado,\n} }];\n"
       }
     },
     {
@@ -723,6 +725,121 @@
       "parameters": {
         "jsCode": "// El comercio no esta operativo (suspendido o dado de baja).\n//\n// FALTABA POR COMPLETO EN ESTE FLUJO, y se descubrio el 2026-09-07 revisando el\n// defecto del 409: el Demo B no tenia NINGUNA compuerta de estado, asi que\n// atendia siempre, cobrara o no el negocio. El Demo A la tenia desde el\n// principio; la leccion no habia cruzado, que es el mismo patron ya anotado.\n//\n// PROHIBIDO REVELAR EL MOTIVO: el cliente final no tiene por que enterarse de\n// que el negocio debe dinero. El texto es neutro y sale de la configuracion.\n//\n// Se corta ANTES del agente, asi que un comercio suspendido no consume ni\n// tokens ni llamadas a ninguna herramienta.\nconst cfg = $('Config del negocio').first().json;\nconst aviso = String(cfg.mensajeComercioSuspendido ?? '').trim()\n  || 'En este momento no podemos atenderte por este medio. Gracias por escribirnos.';\n\nreturn $input.all().map((i) => ({ json: {\n  respuesta: aviso,\n  comercioSuspendido: true,\n  estadoComercio: cfg.estadoComercio,\n  from: i.json.from,\n  nombrePerfil: i.json.nombrePerfil,\n  phoneNumberId: i.json.phoneNumberId,\n} }));\n"
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b-if-atencion-normal-c1",
+              "leftValue": "={{ !['operador', 'bloqueado'].includes($json.atencionEstado) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b-if-atencion-normal",
+      "name": "¿Atención normal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// USO EXTENDIDO: el cliente paso el umbral de operador o el de bloqueo\n// (`Analisis/27` §5). El estado lo decide el panel; ver `Config del negocio`.\n//\n// NO SE LLAMA AL MODELO en ninguno de los dos casos: este nodo cuelga de la\n// rama falsa de `¿Atención normal?`, antes del agente. Es lo que pone techo al\n// costo de una ventana: pasado el umbral de operador cada consulta cuesta un\n// mensaje fijo, y pasado el de bloqueo no cuesta nada.\n//\n//   operador  -> se responde el aviso fijo, y se reporta como saliente: cuenta\n//                y se factura como cualquier respuesta. La PRIMERA vez que se\n//                entra en este estado se avisa al negocio.\n//   bloqueado -> no se responde nada. La primera vez se avisa al negocio.\n//\n// El aviso al negocio sale por `Avisar al dueño`, que ya existe: con\n// `textoAviso` manda este texto; sin el, el del pedido confirmado de siempre.\n// No se crea otro envio porque un nodo de WhatsApp nuevo no recibiria la\n// credencial al publicar (publicar-flujo.sh la injerta por NOMBRE de nodo).\n//\n// «EN SU VENTANA DE 24 HORAS» y no «hoy»: la ventana arranca con el primer\n// mensaje del cliente y no coincide con el dia calendario.\nconst FIJO = 'Gracias por su paciencia. Para atenderle mejor, una persona del equipo va a continuar esta conversación en breve.';\n\n// «hasta mañana» si no se sabe cuando vence; «hasta el <dia y hora>» si se sabe.\nconst hasta = (iso) => {\n  if (!iso) return 'mañana';\n  try {\n    return 'el ' + new Date(iso).toLocaleString('es-BO', {\n      timeZone: 'America/La_Paz', weekday: 'long', hour: '2-digit', minute: '2-digit',\n    });\n  } catch (e) {\n    return 'el ' + iso;\n  }\n};\n\nreturn $input.all().map((i) => {\n  const j = i.json;\n  const estado = j.atencionEstado === 'bloqueado' ? 'bloqueado' : 'operador';\n  const avisar = j.atencionAvisarRecepcion === 'operador' || j.atencionAvisarRecepcion === 'bloqueado';\n  const n = Number(j.atencionRespuestas) || 0;\n  const cliente = `${j.nombrePerfil || 'sin nombre de perfil'} (${j.from})`;\n  return { json: {\n    from: j.from,\n    nombrePerfil: j.nombrePerfil,\n    phoneNumberId: j.phoneNumberId,\n    numeroDueno: j.numeroDueno,\n    atencionEstado: estado,\n    responder: estado === 'operador',\n    respuesta: estado === 'operador' ? (String(j.atencionMensajeFijo ?? '').trim() || FIJO) : '',\n    avisar,\n    textoAviso: estado === 'operador'\n      ? `🔔 NovuChat: el cliente ${cliente} lleva ${n} respuestas del asistente en su ventana de 24 horas. ` +\n        'El asistente dejó de responder con IA y le avisó que lo atiende una persona del equipo. ' +\n        'Tome la conversación.'\n      : `🔔 NovuChat: el cliente ${cliente} llegó a ${n} respuestas del asistente en su ventana de 24 horas. ` +\n        `El asistente no le responde más hasta ${hasta(j.atencionVenceEn)}. ` +\n        'Si hace falta, escríbale directamente.',\n  } };\n});\n"
+      },
+      "id": "b-code-uso-extendido",
+      "name": "Uso extendido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b-if-responder-uso-c1",
+              "leftValue": "={{ $json.responder === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b-if-responder-uso",
+      "name": "¿Responder uso extendido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1420,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b-if-avisar-uso-c1",
+              "leftValue": "={{ $json.avisar === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b-if-avisar-uso",
+      "name": "¿Avisar uso extendido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1420,
+        100
+      ]
     }
   ],
   "connections": {
@@ -913,7 +1030,7 @@
       "main": [
         [
           {
-            "node": "AI Agent NovuChat",
+            "node": "¿Atención normal?",
             "type": "main",
             "index": 0
           }
@@ -932,6 +1049,67 @@
         [
           {
             "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Atención normal?": {
+      "main": [
+        [
+          {
+            "node": "AI Agent NovuChat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Uso extendido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Responder uso extendido?": {
+      "main": [
+        [
+          {
+            "node": "Responder al cliente",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uso extendido": {
+      "main": [
+        [
+          {
+            "node": "¿Responder uso extendido?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Avisar uso extendido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Avisar uso extendido?": {
+      "main": [
+        [
+          {
+            "node": "Avisar al dueño",
             "type": "main",
             "index": 0
           }

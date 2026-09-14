@@ -4,7 +4,60 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-14 (Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`; antes, 2026-09-13: la unidad de cobro pasa a bloques de 25 respuestas con umbrales de operador y bloqueo: `Analisis/27`, PR #64; las Functions corren con `sa-functions`, `v0.1.5`; fase C: ninguna cuenta del proyecto tiene Editor)
+**Última actualización:** 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor)
+
+---
+
+## 2026-09-14 — revisión del #66: el aviso al negocio no salía nunca (corregido)
+
+**Fusionados con el OK de Andres en el chat:** AndresAlberdi/SeguridadGeneral#25
+(`6b878c0`, la fuente del estándar) y NovuChat #67 (`9c5a82d`), en ese orden.
+Las alertas #53 y #54 quedaron **cerradas** en `main`.
+
+**El defecto.** Una revisión independiente del #66 encontró algo que sus 42
+pruebas no veían. Los flujos corren con `executionOrder: v1`: n8n termina una
+rama entera antes de empezar la siguiente, de arriba hacia abajo en el lienzo.
+`Reportar mensaje (entrante)` estaba abajo de todo, así que la respuesta se
+reportaba ANTES que el mensaje del cliente que la provocó. Dos consecuencias:
+
+- La marca `atencionEstado` ya estaba puesta al empezar el turno siguiente, y
+  **el aviso al negocio no salía nunca**, ni en operador ni en bloqueado.
+- **La primera respuesta de cada ventana no se contaba**: los umbrales y los
+  bloques quedaban corridos en uno.
+
+**La corrección**, en la misma rama:
+
+- `Reportar mensaje (entrante)` sube en el lienzo por encima de
+  `¿Comercio operativo?`. Como ahora corre antes de responder, lleva tope de
+  4 s y un solo reintento de 1 s (antes: sin tope y dos reintentos de 2 s).
+  Con la ingesta caída el cliente espera como mucho unos 9 s, y la respuesta
+  sale igual (`onError: continueRegularOutput`).
+- Textos del aviso: «en su ventana de 24 horas» en vez de «hoy», y «hasta
+  mañana» / «hasta el <día y hora>» en vez de «hasta el mañana».
+- Demo B, `Procesar respuesta`: «Disculpá… ¿Me lo repetís?» pasa a «Disculpa…
+  ¿Me lo repites?». Era voseo que llegaba al cliente, anterior al #66.
+- 17 pruebas nuevas (59 en `pruebas/flujos-umbrales.test.ts`): el orden por
+  posición, la cadena `Config del negocio` → `Normalizar entrada` → `Uso
+  extendido`, la alcanzabilidad del agente, y una simulación turno a turno con
+  las funciones reales del servidor. **Contra los flujos sin corregir fallan
+  7; con la corrección pasan todas.** La regla quedó en `CLAUDE.md`.
+
+**Consecuencia para el pase.** La ingesta de `v0.2.0` cuenta bien solo con
+este orden. Si `v0.2.0` se despliega con los flujos viejos todavía publicados,
+cada ventana pierde su primera respuesta en el conteo —se cobra de menos,
+nunca de más— y los avisos no salen. **Publicar los flujos del #66
+inmediatamente después del despliegue.**
+
+**Sin resolver, anotado:**
+
+- Dos mensajes casi simultáneos al cruzar un umbral pueden producir dos avisos:
+  las dos ejecuciones leen la marca antes de que alguna reporte su entrante. Se
+  cierra si `configuracionFlujo` anota la marca, en una transacción, cuando
+  devuelve el aviso.
+- `Avisar a recepción` (A) no tiene `onError: continueRegularOutput`: si Meta
+  rechaza el texto libre (fuera de la ventana de 24 h del número de recepción),
+  la ejecución termina en error, visible en n8n. Con el nuevo orden ya no
+  impide contar el entrante.
 
 ---
 
@@ -30,6 +83,55 @@ requerido «Semgrep OSS» del #66 falla.
   `main` llegue sin esos resultados, Code Scanning las cierra solo. El #66 lo
   recibe al volver a correr su CI después de la fusión.
 - Mensajes de WhatsApp: no cambia ninguno (no toca flujos).
+
+---
+
+## 2026-09-13 — los flujos obedecen los umbrales de uso extendido (rama `flujos/umbrales-atencion`)
+
+**#64 y #46 fusionados** con el OK de Andres en el chat (NovuChat `4482181`;
+sitio `474add1`, con squash, el único método que usa ese repositorio).
+**Fusionar no desplegó nada:** no hay proyecto de staging, así que
+`desplegar-staging` se omite siempre. Producción sale de las etiquetas firmadas
+`v0.2.0` (NovuChat) y `v0.3.5` (sitio), que crea una persona.
+
+**Los dos flujos de atención ya obedecen los umbrales**, en el JSON versionado:
+
+- `Traer configuración` manda `telefono`, tomado del webhook
+  (`messages[0].from`): corre antes de `Normalizar entrada`.
+- `Config del negocio` baja `atencionEstado`, `atencionMensajeFijo`,
+  `atencionAvisarRecepcion`, `atencionRespuestas` y `atencionVenceEn`. Ante la
+  duda —panel caído, 409, estado desconocido— el estado es `normal`.
+- Compuerta nueva `¿Atención normal?` entre `¿Comercio operativo?` y el agente.
+  La rama falsa va a `Uso extendido`: en operador responde el aviso fijo por
+  `Responder al cliente` y lo reporta como saliente; en bloqueado no envía
+  nada. El aviso al negocio reutiliza `¿Transferir a humano?` → `Avisar a
+  recepción` (A) y `Avisar al dueño` (B, con `textoAviso`; sin él manda el
+  aviso de pedido de siempre, idéntico).
+- **Ningún nodo de WhatsApp nuevo**, a propósito: `publicar-flujo.sh` injerta
+  las credenciales por NOMBRE de nodo, y uno nuevo quedaría sin credencial.
+- Nodos: A de 30 a 33, B de 22 a 26. 42 pruebas nuevas en
+  `pruebas/flujos-umbrales.test.ts`, que ejecutan el código y las expresiones
+  del JSON versionado.
+
+**Mensajes que agrega o quita:** ninguno en el camino normal. Entre el umbral
+de operador y el de bloqueo, un mensaje fijo por consulta en lugar de la
+respuesta del modelo; desde el bloqueo, cero. Más hasta dos avisos al negocio
+por ventana, uno por umbral.
+
+**Pendiente, en este orden:**
+
+1. Etiqueta `v0.2.0` y aprobación en `production`. Sin las Functions nuevas,
+   `configuracionFlujo` no devuelve `atencion` y el flujo publicado se comporta
+   exactamente como hoy.
+2. Regenerar los `.local.json` con `preparar-import.sh` —el script de
+   publicación usa ESE archivo si existe— y publicar con `publicar-flujo.sh`,
+   primero sin `--aplicar` (solo diagnostica), un flujo por vez con su `--env`.
+3. Probar contra un teléfono real: cargar umbrales bajos en el negocio de demo
+   con `actualizarEstadoCuenta` (por ejemplo 3 y 5), recorrer normal → operador
+   → bloqueado, y devolverlos a los de respaldo (`null`).
+4. El aviso al negocio sale como texto libre: fuera de la ventana de 24 h del
+   número de recepción, Meta lo rechaza (`Analisis/25` §3.1). Es el mismo
+   defecto que los avisos de pedido, y se resuelve con la plantilla utility.
 
 ---
 

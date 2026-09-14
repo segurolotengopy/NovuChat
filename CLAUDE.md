@@ -74,6 +74,14 @@ WhatsApp (Meta Cloud API)
   no disperso por el lienzo. Es lo que sostiene la promesa de instalar un
   cliente nuevo en 48 horas.
 - **Nodos Code en JavaScript**: la imagen de n8n desplegada no trae Python.
+- **El orden de las ramas es el del lienzo.** Los flujos corren con
+  `executionOrder: v1`: n8n termina una rama entera antes de empezar la
+  siguiente, de arriba hacia abajo (a igual altura, la de la izquierda). Mover
+  un nodo cambia el comportamiento. En particular, **`Reportar mensaje
+  (entrante)` va arriba de la rama del agente**: si la respuesta se reporta
+  antes que el mensaje que la provocó, el aviso de uso extendido no sale nunca
+  y la primera respuesta de cada ventana no se cuenta (revisión del PR #66,
+  `pruebas/flujos-umbrales.test.ts` lo verifica por posición).
 - **Cada mensaje que envía el flujo cuesta dinero** desde el 01/10/2026. Un
   cambio que agregue un mensaje por conversación cuesta 0,0113 USD por
   conversación en todos los clientes. Ver «Base comercial» §1: todo cambio de
@@ -234,7 +242,7 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 | **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope |
 | **Conversaciones incluidas** (100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta | Hecho en la rama de prepago |
 | **Bloque de 25 respuestas por conversación** (la 26 factura otra) | `ingesta.ts`, en la misma transacción que cuenta (`mensajesVentana`, `bloquesAdicionales`) | **Hecho el 13/09** en `cobro/bloques-de-25`, con `pruebas/conteo-bloques.test.ts` |
-| **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Decidido en el servidor el 13/09** (`cobro/bloques-de-25`, `pruebas/umbrales-atencion.test.ts`). **El flujo todavía no obedece**: hay que mandar `telefono` y bifurcar antes del agente |
+| **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
 
 **La regla al agregar cualquier límite nuevo:**
