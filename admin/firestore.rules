@@ -463,9 +463,14 @@ service cloud.firestore {
         // crea vacío, pero el propietario puede crearlo si falta —el tenant
         // `novuchat` pudo darse de alta antes de que existiera el flujo—. Nunca
         // en un tenant que no tiene el flujo en su lista.
+        //
+        // Y SOLO CON EL COMERCIO OPERATIVO, como todas las demás escrituras de
+        // config: un tenant suspendido o dado de baja no se reconfigura, ni
+        // siquiera por el propietario (observación de la revisión del 14/09).
         allow create, update: if documento == 'onboarding'
                               && esPropietario()
                               && tieneOnboarding(tenantId)
+                              && tenantOperativo(tenantId)
                               && configOnboardingValida();
 
         // =====================================================================

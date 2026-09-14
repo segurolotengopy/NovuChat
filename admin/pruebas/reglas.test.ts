@@ -74,6 +74,8 @@ const adminB    = () => entorno.authenticatedContext('u-admin-b', claims({ [B]: 
 const adminC    = () => entorno.authenticatedContext('u-admin-c', claims({ [C]: 'admin' })).firestore();
 const adminD    = () => entorno.authenticatedContext('u-admin-d', claims({ [D]: 'admin' })).firestore();
 const adminE    = () => entorno.authenticatedContext('u-admin-e', claims({ [E]: 'admin' })).firestore();
+const operE     = () => entorno.authenticatedContext('u-oper-e',  claims({ [E]: 'oper'  })).firestore();
+const ingestaE  = () => entorno.authenticatedContext('svc-e',     claims({ [E]: 'ingesta' }, false, 'custom')).firestore();
 const operD     = () => entorno.authenticatedContext('u-oper-d',  claims({ [D]: 'oper'  })).firestore();
 const ingestaD  = () => entorno.authenticatedContext('svc-d',     claims({ [D]: 'ingesta' }, false, 'custom')).firestore();
 const ingestaA  = () => entorno.authenticatedContext('svc-a',     claims({ [A]: 'ingesta' }, false, 'custom')).firestore();
@@ -2602,6 +2604,42 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
   it('un campo fuera de la lista no entra, ni siquiera un token de CRM', async () => {
     // Los secretos viven en las credenciales de n8n (prohibición 2 de CLAUDE.md).
     await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { tokenCrm: 'pat-na1-xxxx' })));
+  });
+
+  it('ni el operador ni el principal de ingesta del tenant lo leen', async () => {
+    await assertFails(getDoc(doc(operE(), ruta)));
+    await assertFails(getDoc(doc(ingestaE(), ruta)));
+  });
+
+  it('listar la colección de config no lo expone a los miembros', async () => {
+    // La regla de lectura depende del documento: un listado sin filtro de toda la
+    // colección no se puede demostrar seguro y se rechaza entero.
+    await assertFails(getDocs(collection(adminE(), `tenants/${E}/config`)));
+    // Leer documento por documento, como hacen las pantallas, sigue funcionando.
+    await assertSucceeds(getDoc(doc(adminE(), `tenants/${E}/config/negocio`)));
+  });
+
+  it('nadie lo borra, ni el propietario', async () => {
+    await assertFails(deleteDoc(doc(propietario(), ruta)));
+    await assertFails(deleteDoc(doc(adminE(), ruta)));
+  });
+
+  it('un administrador ajeno no lo escribe', async () => {
+    await assertFails(setDoc(doc(adminA(), ruta), cfg('u-admin-a')));
+  });
+
+  it('el mensaje para el cliente actual tiene tope de 600 caracteres', async () => {
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { mensajeClienteActual: 'x'.repeat(601) })));
+    await assertSucceeds(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { mensajeClienteActual: 'x'.repeat(600) })));
+  });
+
+  it('con el comercio suspendido no se reconfigura, ni por el propietario', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'tenants', E), { estado: 'suspendido' });
+    });
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat'), { merge: true }));
+    // Leerlo sí puede: la lectura no depende del estado, como en el resto de config.
+    await assertSucceeds(getDoc(doc(propietario(), ruta)));
   });
 
   it('el sello tiene que ser del que escribe', async () => {
