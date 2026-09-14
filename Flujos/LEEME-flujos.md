@@ -155,16 +155,18 @@ de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
    registrando empresa, contacto, rubro, flujos de interés, personalización y
    NIT (marcas `[LEAD]…[/LEAD]`). Con los cuatro obligatorios, cierra (`[CIERRE]`):
    botón a un asesor y aviso interno con la plantilla `solicitud_contacto`.
-4. **Topes.** En la respuesta 25 (fin del primer bloque) ofrece un asesor con un
-   botón y sigue. La respuesta 50 es una despedida fija, con aviso interno, y
-   después silencio hasta que pasen 24 horas. Los dos valores se editan en la
-   consola, pestaña «Captación» (solo el propietario).
+4. **Topes.** En la respuesta 25 (fin del primer bloque, editable en la pestaña
+   «Captación») ofrece un asesor con un botón y sigue. **El techo de costo es el
+   del servidor**, igual que en A y B: al umbral de operador de la cuenta (50)
+   responde un mensaje fijo y avisa; al de bloqueo (100) no responde nada. Los
+   dos se obedecen antes de llamar al modelo.
 5. **Idempotencia.** Un reenvío de Meta con el mismo id de mensaje no se
    responde dos veces.
 
 **Mensajes que declara:** 1 por turno al cliente, siempre, en el único nodo
 `Enviar a WhatsApp` (o su respaldo en texto si Meta rechaza el interactivo,
-nunca los dos). Más **1 plantilla utility** por prospecto cerrado y 1 por corte.
+nunca los dos); ninguno con el teléfono bloqueado. Más **1 plantilla utility**
+por prospecto cerrado y 1 por cada umbral que marca el servidor.
 
 ### Credenciales (todas nuevas, propias de la app `NovuChat-Asistente`)
 
@@ -203,10 +205,13 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
 
 ### Límites conocidos
 
-- El estado de cada conversación (etapa, contador, datos del prospecto) vive en
-  los datos estáticos del flujo. n8n los guarda **solo en ejecuciones de
+- La etapa y los datos del prospecto viven en los datos estáticos del flujo. n8n los guarda **solo en ejecuciones de
   producción**: probando desde el editor, cada ejecución arranca de cero.
-- Dos mensajes del mismo teléfono en el mismo instante pueden contar una
-  respuesta de menos. Para un techo de costo es aceptable.
+- **El mensaje del cliente se reporta antes que la respuesta**: el nodo
+  `Reportar mensaje (entrante)` está más arriba en el lienzo y el flujo corre con
+  `executionOrder: v1`. Si se mueve debajo, el aviso de los umbrales no sale
+  (defecto encontrado en el #66). Una prueba lo vigila.
+- Si el panel no contesta, no hay estado de atención y el flujo atiende sin
+  techo, igual que A y B: una caída del panel no deja sin respuesta a nadie.
 - `crmUrl` vacío: el CRM todavía no existe. Los prospectos quedan en la consola
   (Conversaciones del tenant `novuchat`) y en el aviso interno.

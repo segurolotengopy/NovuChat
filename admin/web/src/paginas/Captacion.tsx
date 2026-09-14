@@ -15,9 +15,14 @@ import { auth, db } from '../lib/firebase';
  * `novuchat` lee este documento— y lo repite la ruta. Esconder la pestaña es
  * cosmético: quien cierra la puerta es `firestore.rules`.
  *
+ * EL TECHO DE COSTO NO SE EDITA ACÁ. Son los umbrales de operador y de bloqueo
+ * de la cuenta (`cuenta/estado`), los mismos para todos los flujos
+ * (`atencion.ts`). Acá solo está el fin del primer bloque, que es propio de
+ * este flujo: en esa respuesta el asistente ofrece un asesor y sigue.
+ *
  * TODO LO QUE SE MUESTRA LO USA EL FLUJO (DISENO.md §4sexies.0, punto 7). Un
- * campo vacío o ausente no apaga nada: el flujo usa su valor de respaldo de
- * `Config base`, que es el mismo que se muestra acá como sugerencia.
+ * campo ausente no apaga nada: el flujo usa su valor de respaldo de
+ * `Config base`, que es el mismo que se muestra acá.
  *
  * SE GUARDA CON `setDoc` Y `merge`. El documento entero es de NovuChat, así que
  * no hay campos de otro dueño que un reemplazo pudiera borrar; con `merge`,
@@ -31,7 +36,6 @@ const RESPALDO = {
     'pantalla. Si necesitas ayuda de una persona, toca el botón.',
   enlaceConsola: 'https://consola.novuchat.site',
   topeAviso: 25,
-  topeDuro: 50,
   plantillaAviso: 'solicitud_contacto',
 };
 
@@ -39,7 +43,6 @@ type Datos = {
   mensajeClienteActual: string;
   enlaceConsola: string;
   topeAviso: string;
-  topeDuro: string;
   plantillaAviso: string;
 };
 
@@ -60,7 +63,6 @@ export function Captacion() {
           mensajeClienteActual: texto(v['mensajeClienteActual'], RESPALDO.mensajeClienteActual),
           enlaceConsola: texto(v['enlaceConsola'], RESPALDO.enlaceConsola),
           topeAviso: texto(v['topeAviso'], RESPALDO.topeAviso),
-          topeDuro: texto(v['topeDuro'], RESPALDO.topeDuro),
           plantillaAviso: texto(v['plantillaAviso'], RESPALDO.plantillaAviso),
         });
       },
@@ -71,18 +73,15 @@ export function Captacion() {
   if (!datos) return <section><h2>Captación de clientes</h2>{estado && <p role="status">{estado}</p>}</section>;
 
   const aviso = Number(datos.topeAviso);
-  const duro = Number(datos.topeDuro);
   // La pantalla avisa antes, para no descubrir el límite con un error rojo;
   // la regla es la que manda y rechaza lo mismo.
   const problema = !Number.isInteger(aviso) || aviso < 3 || aviso > 100
     ? 'El fin del primer bloque tiene que ser un número entero entre 3 y 100.'
-    : !Number.isInteger(duro) || duro > 200 || duro <= aviso
-      ? 'El corte tiene que ser un número entero mayor que el fin del primer bloque, y como mucho 200.'
-      : !/^[a-z0-9_]{1,64}$/.test(datos.plantillaAviso)
-        ? 'El nombre de la plantilla va en minúsculas, números y guion bajo, igual que en Meta.'
-        : datos.enlaceConsola !== '' && !/^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._~/?#=&%-]*)?$/.test(datos.enlaceConsola)
-          ? 'El enlace a la consola tiene que empezar con https://.'
-          : null;
+    : !/^[a-z0-9_]{1,64}$/.test(datos.plantillaAviso)
+      ? 'El nombre de la plantilla va en minúsculas, números y guion bajo, igual que en Meta.'
+      : datos.enlaceConsola !== '' && !/^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._~/?#=&%-]*)?$/.test(datos.enlaceConsola)
+        ? 'El enlace a la consola tiene que empezar con https://.'
+        : null;
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
@@ -93,7 +92,6 @@ export function Captacion() {
         mensajeClienteActual: datos.mensajeClienteActual.trim().slice(0, 600),
         enlaceConsola: datos.enlaceConsola.trim(),
         topeAviso: aviso,
-        topeDuro: duro,
         plantillaAviso: datos.plantillaAviso.trim(),
         actualizadoPor: auth.currentUser?.uid ?? '',
         actualizadoEn: serverTimestamp(),
@@ -124,9 +122,8 @@ export function Captacion() {
           <textarea rows={4} maxLength={600} value={datos.mensajeClienteActual}
                     onChange={cambiar('mensajeClienteActual')} />
           <span className="ayuda">
-            Se envía una sola vez, con un botón para hablar con una persona, y el
-            asistente no sigue la conversación. No incluyas contraseñas ni códigos:
-            lo lee cualquiera que diga ser cliente.
+            Se envía una sola vez, con un botón para hablar con una persona. No
+            incluyas contraseñas ni códigos: lo lee cualquiera que diga ser cliente.
           </span>
         </label>
         <label>
@@ -138,17 +135,10 @@ export function Captacion() {
           <input type="number" min={3} max={100} step={1} value={datos.topeAviso}
                  onChange={cambiar('topeAviso')} />
           <span className="ayuda">
-            En esa respuesta el asistente ofrece hablar con un especialista, con un
-            botón, y la conversación sigue.
-          </span>
-        </label>
-        <label>
-          Corte de la conversación (respuestas)
-          <input type="number" min={4} max={200} step={1} value={datos.topeDuro}
-                 onChange={cambiar('topeDuro')} />
-          <span className="ayuda">
-            Al llegar, el asistente se despide, avisa a una persona y no vuelve a
-            responder hasta pasadas 24 horas. Es el techo de costo de una conversación.
+            En esa respuesta el asistente ofrece hablar con un asesor, con un botón,
+            y la conversación sigue. El techo de costo no se fija acá: son los
+            umbrales de operador y de bloqueo de la cuenta, iguales para todos los
+            flujos.
           </span>
         </label>
         <label>

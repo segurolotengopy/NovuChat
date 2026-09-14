@@ -248,7 +248,7 @@ beforeEach(async () => {
       nombreNegocio: 'NovuChat', actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
     });
     await setDoc(doc(db, `tenants/${E}/config/onboarding`), {
-      topeAviso: 25, topeDuro: 50, plantillaAviso: 'solicitud_contacto',
+      topeAviso: 25, plantillaAviso: 'solicitud_contacto',
       actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
     });
     // Acceso de soporte: uno vigente sobre A, uno ya vencido sobre A.
@@ -2538,7 +2538,7 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
   const cfg = (uid: string, extra: Record<string, unknown> = {}) => ({
     mensajeClienteActual: 'Entra a la consola con tu correo.',
     enlaceConsola: 'https://consola.novuchat.site',
-    topeAviso: 25, topeDuro: 50, plantillaAviso: 'solicitud_contacto',
+    topeAviso: 25, plantillaAviso: 'solicitud_contacto',
     actualizadoPor: uid, actualizadoEn: serverTimestamp(), ...extra,
   });
 
@@ -2556,7 +2556,7 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
   it('el administrador del propio tenant NO lo lee ni lo escribe', async () => {
     await assertFails(getDoc(doc(adminE(), ruta)));
     await assertFails(setDoc(doc(adminE(), ruta), cfg('u-admin-e')));
-    await assertFails(updateDoc(doc(adminE(), ruta), { topeDuro: 500,
+    await assertFails(updateDoc(doc(adminE(), ruta), { topeAviso: 30,
       actualizadoPor: 'u-admin-e', actualizadoEn: serverTimestamp() }));
   });
 
@@ -2579,12 +2579,17 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
     await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/onboarding`), cfg('u-admin-a')));
   });
 
-  it('el corte tiene que ser mayor que el fin del primer bloque', async () => {
-    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 25, topeDuro: 25 })));
-    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 30, topeDuro: 20 })));
+  it('el fin del primer bloque es un entero entre 3 y 100', async () => {
     await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 2 })));
-    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeDuro: 500 })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 101 })));
     await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 25.5 })));
+    await assertSucceeds(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 10 })));
+  });
+
+  it('el techo de costo no se escribe acá: es el umbral de la cuenta', async () => {
+    // Los umbrales de operador y de bloqueo viven en `cuenta/estado` y rigen para
+    // todos los flujos (`atencion.ts`). Un segundo techo acá podría contradecirlos.
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeDuro: 50 })));
   });
 
   it('valida el enlace y el nombre de la plantilla', async () => {

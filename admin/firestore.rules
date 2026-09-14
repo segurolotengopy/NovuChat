@@ -751,15 +751,16 @@ service cloud.firestore {
         // afectadas. NINGÚN SECRETO: el token del CRM y el de Meta viven en las
         // credenciales de n8n, y un campo que no está en la lista no entra.
         //
-        // Los topes son la palanca de costo del flujo: al de aviso termina el
-        // primer bloque de respuestas y sale el botón a una persona; al duro se
-        // despide y no llama más al modelo. El duro tiene que ser mayor que el
-        // de aviso, o el aviso no llegaría nunca.
+        // `topeAviso` es propio de este flujo: en esa respuesta el asistente
+        // ofrece un asesor con un botón y la conversación sigue. EL TECHO DE
+        // COSTO NO VIVE ACÁ: son los umbrales de operador y de bloqueo de
+        // `cuenta/estado`, los mismos para todos los flujos (`atencion.ts`). Un
+        // segundo techo en este documento podría contradecirlos, y no se admite.
         // =====================================================================
         function configOnboardingValida() {
           let d = request.resource.data;
           return d.keys().hasOnly([
-              'mensajeClienteActual', 'enlaceConsola', 'topeAviso', 'topeDuro',
+              'mensajeClienteActual', 'enlaceConsola', 'topeAviso',
               'plantillaAviso', 'actualizadoPor', 'actualizadoEn'
             ])
             && d.get('mensajeClienteActual', '') is string
@@ -770,9 +771,6 @@ service cloud.firestore {
                 || d.get('enlaceConsola', '').matches('https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/?#=&%-]*)?'))
             && d.get('topeAviso', 25) is int
             && d.get('topeAviso', 25) >= 3 && d.get('topeAviso', 25) <= 100
-            && d.get('topeDuro', 50) is int
-            && d.get('topeDuro', 50) <= 200
-            && d.get('topeDuro', 50) > d.get('topeAviso', 25)
             && d.get('plantillaAviso', 'solicitud_contacto') is string
             && d.get('plantillaAviso', 'solicitud_contacto').matches('[a-z0-9_]{1,64}')
             && selloValido(d);

@@ -11,8 +11,8 @@
  * modelo:
  *
  *   - la compuerta inicial y la rama del cliente actual, sin modelo;
- *   - los dos topes: el fin del primer bloque (botón a un asesor) y el corte
- *     (despedida fija, aviso, silencio hasta que pasen 24 horas);
+ *   - el fin del primer bloque (botón a un asesor) y la obediencia a los
+ *     umbrales del servidor (operador y bloqueo), antes del modelo;
  *   - la idempotencia ante los reenvíos de Meta;
  *   - la extracción de datos del prospecto y el cierre, que exige los datos;
  *   - la prohibición 4 y el tuteo sin voseo;
@@ -66,16 +66,17 @@ function correr(nombre: string, items: J[], contexto: Record<string, J | J[]> = 
   return fn(entrada, $, () => estatico).map((x) => x.json);
 }
 
-const PANEL = (onboarding: J = {}): J => ({
+const PANEL = (onboarding: J = {}, atencion?: J): J => ({
   statusCode: 200,
   body: {
+    ...(atencion ? { atencion } : {}),
     tenantId: 'novuchat', flujo: 'onboarding', estadoComercio: 'activo',
     phoneNumberId: '1000000003391',
     operacion: { numeroRecepcion: '+591 7000-0000', horarioAtencion: 'lunes a viernes, de 09:00 a 18:00' },
     datosDelNegocio: { nombreNegocio: 'NovuChat' },
     voz: {},
     onboarding: {
-      topeAviso: 10, topeDuro: 20, plantillaAviso: 'solicitud_contacto',
+      topeAviso: 10, plantillaAviso: 'solicitud_contacto',
       mensajeClienteActual: 'Entra a la consola con tu correo.',
       enlaceConsola: 'https://consola.novuchat.site',
       ...onboarding,
@@ -105,21 +106,26 @@ describe('Config del negocio', () => {
     const c = config();
     expect(c['estadoComercio']).toBe('operativo');
     expect(c['topeAviso']).toBe(10);
-    expect(c['topeDuro']).toBe(20);
+    expect(c['topeDuro']).toBeUndefined();
     expect(c['plantillaAviso']).toBe('solicitud_contacto');
     // Solo dígitos: es el destino de la plantilla y del botón a una persona.
     expect(c['numeroRecepcion']).toBe('59170000000');
   });
 
-  it('un par de topes incoherente cae al respaldo, que sí lo es', () => {
-    const c = config(PANEL({ topeAviso: 30, topeDuro: 20 }));
-    expect([c['topeAviso'], c['topeDuro']]).toEqual([25, 50]);
+  it('un fin de bloque fuera de rango cae al respaldo', () => {
+    expect(config(PANEL({ topeAviso: 500 }))['topeAviso']).toBe(25);
+    expect(config(PANEL({ topeAviso: 2 }))['topeAviso']).toBe(25);
   });
 
-  it('un tope fuera de rango se descarta y el techo sigue existiendo', () => {
-    const c = config(PANEL({ topeDuro: 5000 }));
-    expect(c['topeDuro']).toBeLessThanOrEqual(200);
-    expect(c['topeDuro']).toBeGreaterThan(c['topeAviso']);
+  it('lee el estado de atención del servidor, y lo desconocido vale normal', () => {
+    const c = config(PANEL({}, { estado: 'operador', avisarRecepcion: 'operador', respuestasEnVentana: 50,
+      ventanaVenceEn: '2026-09-15T12:00:00.000Z' }));
+    expect(c['atencionEstado']).toBe('operador');
+    expect(c['atencionAvisarRecepcion']).toBe('operador');
+    expect(c['atencionRespuestas']).toBe(50);
+    const raro = config(PANEL({}, { estado: 'lo-que-sea', avisarRecepcion: 'x', respuestasEnVentana: 'diez' }));
+    expect([raro['atencionEstado'], raro['atencionAvisarRecepcion'], raro['atencionRespuestas']])
+      .toEqual(['normal', '', null]);
   });
 
   it('un enlace sin https o una plantilla con mal nombre no se usan', () => {
@@ -132,7 +138,8 @@ describe('Config del negocio', () => {
     const c = config({ statusCode: 500, body: {} });
     expect(c['estadoComercio']).toBe('operativo');
     expect(c['configDeLaConsola']).toBe(false);
-    expect(typeof c['topeDuro']).toBe('number');
+    expect(c['atencionEstado']).toBe('normal');
+    expect(typeof c['topeAviso']).toBe('number');
   });
 });
 
@@ -210,20 +217,35 @@ describe('Estado de la conversación', () => {
     expect(sd['conversaciones'][TEL]['respuestas']).toBe(1);
   });
 
-  it('los topes: fin del primer bloque, despedida como respuesta N y después silencio', () => {
+  it('en operador el agente no se alcanza: uso extendido, aunque sea un saludo', () => {
+    const cfg = config(PANEL({}, { estado: 'operador', avisarRecepcion: 'operador', respuestasEnVentana: 50 }));
+    for (const m of ['hola', 'otra pregunta']) {
+      expect(estado(normalizar(texto(m), cfg), {})[0]!['accion']).toBe('uso_extendido');
+    }
+  });
+
+  it('bloqueado: con aviso pendiente se avisa sin responder; sin aviso, no se hace nada', () => {
+    const conAviso = config(PANEL({}, { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 100 }));
+    expect(estado(normalizar(texto('hola?'), conAviso), {})[0]!['accion']).toBe('uso_extendido');
+    const yaAvisado = config(PANEL({}, { estado: 'bloqueado', respuestasEnVentana: 101 }));
+    expect(estado(normalizar(texto('hola??'), yaAvisado), {})).toHaveLength(0);
+  });
+
+  it('el fin del primer bloque usa el conteo del SERVIDOR', () => {
+    const en = (n: number) => estado(normalizar(texto('una consulta'),
+      config(PANEL({ topeAviso: 25 }, { estado: 'normal', respuestasEnVentana: n }))), {})[0]!;
+    expect(en(24)['finBloque']).toBe(true);          // la que se envía ahora es la 25
+    expect(en(24)['mensajeDelTurno']).toMatch(/ofrece hablar con un asesor/);
+    expect(en(23)['finBloque']).toBe(false);
+    expect(en(25)['finBloque']).toBe(false);
+  });
+
+  it('sin conteo del servidor, el propio sirve de respaldo', () => {
     const sd: J = {};
-    const cfg = config(PANEL({ topeAviso: 3, topeDuro: 5 }));
-    const turno = () => estado(normalizar(texto('otra consulta'), cfg), sd)[0];
-    const r1 = turno(); const r2 = turno(); const r3 = turno(); const r4 = turno(); const r5 = turno();
-    expect([r1, r2, r3, r4].map((r) => r!['accion'])).toEqual(['agente', 'agente', 'agente', 'agente']);
-    expect(r3!['finBloque']).toBe(true);
-    expect(r3!['mensajeDelTurno']).toMatch(/ofrece hablar con un asesor/);
-    expect([r1, r2, r4].some((r) => r!['finBloque'])).toBe(false);
-    // Con corte 5, la QUINTA respuesta es la despedida: no hay una sexta.
-    expect(r5!['accion']).toBe('tope_duro');
-    expect(r5!['respuestasEnVentana']).toBe(5);
-    expect(turno()).toBeUndefined();          // silencio
-    expect(turno()).toBeUndefined();
+    const cfg = config(PANEL({ topeAviso: 3 }));
+    const r = [1, 2, 3, 4].map(() => estado(normalizar(texto('otra consulta'), cfg), sd)[0]!);
+    expect(r.map((x) => x['finBloque'])).toEqual([false, false, true, false]);
+    expect(r.every((x) => x['accion'] === 'agente')).toBe(true);
   });
 
   it('a las 24 horas de empezada, la ventana se renueva y el silencio termina', () => {
@@ -306,7 +328,7 @@ describe('Procesar respuesta', () => {
 
   it('al terminar el primer bloque la respuesta lleva el botón, sin cerrar', () => {
     const sd: J = {};
-    const cfg = config(PANEL({ topeAviso: 3, topeDuro: 10 }));
+    const cfg = config(PANEL({ topeAviso: 3 }));
     entrada(sd, cfg); entrada(sd, cfg);
     const tercera = entrada(sd, cfg);
     expect(tercera['finBloque']).toBe(true);
@@ -342,15 +364,25 @@ describe('Ramas sin modelo', () => {
     expect(r['cuerpoMeta']).toBeUndefined();
   });
 
-  it('el corte avisa a una persona', () => {
-    const r = correr('Despedida por tope', [ent()])[0]!;
+  it('uso extendido en operador: mensaje fijo y aviso la primera vez', () => {
+    const r = correr('Uso extendido', [{ ...ent(), atencionEstado: 'operador', atencionAvisarRecepcion: 'operador' }])[0]!;
+    expect(r['responder']).toBe(true);
+    expect(r['respuesta']).toMatch(/una persona del equipo/);
     expect(r['avisar']).toBe(true);
-    expect(r['estadoAviso']).toBe('límite de respuestas alcanzado');
+    const sin = correr('Uso extendido', [{ ...ent(), atencionEstado: 'operador', atencionAvisarRecepcion: '' }])[0]!;
+    expect(sin['avisar']).toBe(false);
+  });
+
+  it('uso extendido bloqueado: al cliente no le sale nada', () => {
+    const r = correr('Uso extendido', [{ ...ent(), atencionEstado: 'bloqueado', atencionAvisarRecepcion: 'bloqueado' }])[0]!;
+    expect(r['responder']).toBe(false);
+    expect(r['respuesta']).toBe('');
+    expect(r['avisar']).toBe(true);
   });
 
   it('ningún texto fijo usa voseo', () => {
-    for (const n of ['Bienvenida', 'Cliente actual', 'Despedida por tope']) {
-      const r = correr(n, [ent()])[0]!;
+    for (const n of ['Bienvenida', 'Cliente actual', 'Uso extendido']) {
+      const r = correr(n, [{ ...ent(), atencionEstado: 'operador' }])[0]!;
       expect(`${r['respuesta']} ${r['textoRespaldo'] ?? ''}`).not.toMatch(VOSEO);
     }
   });
@@ -399,6 +431,13 @@ describe('Salida: una sola compuerta y un solo mensaje', () => {
     expect(r['guardar']).toBe(true);
     expect(r['cuerpoCrm']).toMatchObject({ origen: 'whatsapp', telefono: TEL, empresa: 'X' });
     expect(salir({ respuesta: 'ok', guardarLead: true, crmUrl: 'http://crm.ejemplo' })['guardar']).toBe(false);
+  });
+
+  it('con el teléfono bloqueado no sale nada al cliente', () => {
+    const r = salir({ respuesta: '', responder: false, avisar: true, estadoAviso: 'x' });
+    expect(r['responder']).toBe(false);
+    expect(r['respuesta']).toBe('');
+    expect(r['avisar']).toBe(true);
   });
 
   it('el respaldo siempre es texto', () => {
@@ -454,14 +493,43 @@ describe('Estructura del flujo', () => {
   });
 
   it('todo lo que sale al cliente pasa por «Salida»', () => {
-    for (const rama of ['Bienvenida', 'Cliente actual', 'Despedida por tope', 'Procesar respuesta', 'Comercio no operativo']) {
+    for (const rama of ['Bienvenida', 'Cliente actual', 'Uso extendido', 'Procesar respuesta', 'Comercio no operativo']) {
       expect(flujo.connections[rama]?.['main']?.[0]?.map((c) => c.node)).toEqual(['Salida']);
     }
     const aGraph = flujo.nodes.filter((n) => String(n.parameters['url'] ?? '').includes('graph.facebook.com'));
     expect(aGraph.map((n) => n.name).sort()).toEqual(['Avisar a NovuChat', 'Enviar a WhatsApp', 'Enviar texto de respaldo']);
-    expect(entradas('Enviar a WhatsApp')).toEqual(['Salida']);
+    expect(entradas('¿Responder?')).toEqual(['Salida']);
+    expect(entradas('Enviar a WhatsApp')).toEqual(['¿Responder?']);
     expect(entradas('Enviar texto de respaldo')).toEqual(['¿Falló el interactivo?']);
     expect(entradas('¿Falló el interactivo?')).toEqual(['Enviar a WhatsApp']);
+  });
+
+  it('en operador o bloqueado el agente NO es alcanzable', () => {
+    // La rama verdadera de «¿Uso extendido?» no llega al agente por ningún camino.
+    const alcanzables = new Set<string>();
+    const pendientes = (flujo.connections['¿Uso extendido?']?.['main']?.[0] ?? []).map((c) => c.node);
+    while (pendientes.length) {
+      const n = pendientes.pop() as string;
+      if (alcanzables.has(n)) continue;
+      alcanzables.add(n);
+      for (const salida of flujo.connections[n]?.['main'] ?? []) pendientes.push(...salida.map((c) => c.node));
+    }
+    expect(alcanzables.has('AI Agent NovuChat')).toBe(false);
+    expect(nodo('¿Uso extendido?').parameters['conditions']['conditions'][0]['rightValue']).toBe('uso_extendido');
+  });
+
+  it('pide la configuración CON el teléfono, para recibir el estado de atención', () => {
+    expect(nodo('Traer configuración').parameters['jsonBody']).toMatch(/telefono/);
+  });
+
+  it('el mensaje del cliente se reporta ANTES que la respuesta (orden v1, defecto del #66)', () => {
+    // Con `executionOrder: v1` n8n corre las ramas de arriba hacia abajo en el
+    // lienzo. Si la respuesta se reportara primero, la marca que evita el doble
+    // aviso ya estaría puesta y el aviso de los umbrales no saldría nunca.
+    expect((flujo as unknown as J)['settings']['executionOrder']).toBe('v1');
+    const y = (n: string) => ((nodo(n) as unknown as J)['position'] as number[])[1]!;
+    expect(entradas('Reportar mensaje (entrante)')).toEqual(['Normalizar entrada']);
+    expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
   });
 
   it('la rama falsa de «¿Comercio operativo?» va al aviso neutro, nunca al agente', () => {
