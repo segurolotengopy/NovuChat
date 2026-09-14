@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
+import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../lib/atencion';
 
 interface Cuenta {
   plan?: unknown;
@@ -12,6 +13,9 @@ interface Cuenta {
   moneda?: unknown;
   proximoVencimiento?: { toDate(): Date };
   motivoVisible?: unknown;
+  /** Umbrales de atención propios del comercio. Ausentes = rigen los de respaldo. */
+  umbralOperador?: unknown;
+  umbralBloqueo?: unknown;
 }
 
 /**
@@ -47,6 +51,9 @@ export function EstadoCuenta() {
 
   const situacion = etiquetaDePago(cuenta.estadoPago);
   const alDia = pagoAlDia(cuenta.estadoPago);
+  // Los mismos que aplica el servidor, con la misma función: si el documento
+  // trae una pareja incoherente, acá también se ven los de respaldo.
+  const umbrales = umbralesDeAtencion(cuenta as Record<string, unknown>);
 
   return (
     <section>
@@ -75,6 +82,21 @@ export function EstadoCuenta() {
               {cuenta.proximoVencimiento?.toDate
                 ? cuenta.proximoVencimiento.toDate().toLocaleDateString('es-BO')
                 : '—'}
+            </td>
+          </tr>
+          {/* Los límites que rigen para ESTE comercio, en las mismas palabras
+              que la página de precios. Se muestran siempre, sean propios o de
+              respaldo: un comercio tiene que poder saber a cuántas respuestas
+              su cliente pasa a una persona sin llamar a nadie. */}
+          <tr>
+            <th>Límites de atención</th>
+            <td>
+              Una conversación son hasta {RESPUESTAS_POR_CONVERSACION} respuestas del
+              asistente a un mismo cliente en 24 horas. A las {umbrales.operador} respuestas
+              en el día la conversación pasa a una persona de su equipo; a las{' '}
+              {umbrales.bloqueo} el asistente deja de responder a ese cliente hasta el día
+              siguiente.
+              {umbrales.origen === 'cuenta' && ' Estos límites son propios de su cuenta.'}
             </td>
           </tr>
         </tbody>

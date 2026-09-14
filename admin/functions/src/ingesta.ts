@@ -4,6 +4,13 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import {
+  HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
+  estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
+} from './atencion.js';
+// Los valores comerciales viven en `atencion.ts` (puro, compartido con la
+// consola). Se reexportan para que quien ya los importaba de acá no cambie.
+export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
+import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT,
@@ -147,7 +154,12 @@ type TipoEvento =
   // pregunta que un comercio va a hacer tarde o temprano: «mandé el enlace y no
   // me llegó ningún pedido, ¿se rompió?». Con solo uno de los dos no se puede
   // distinguir «nunca se derivó a nadie» de «se derivó y nadie compró».
-  | 'catalogo_enlace' | 'carrito_recibido';
+  | 'catalogo_enlace' | 'carrito_recibido'
+  // UMBRALES DE ATENCIÓN (`Analisis/27` §5). Una ventana que pasó al operador
+  // por uso extendido, y una que llegó al bloqueo. Quedan en la bitácora del
+  // comercio porque son el hecho que explica un reclamo: «el asistente dejó de
+  // contestarle a mi cliente».
+  | 'derivacion_operador' | 'bloqueo_ventana';
 
 interface Evento {
   tipo: TipoEvento;
@@ -260,7 +272,42 @@ export interface MarcasDeConteo {
    * larga con pausas se habría partido en varias.
    */
   atencionDesde?: { toMillis?: () => number } | unknown;
+  /**
+   * Respuestas del asistente enviadas dentro de la ventana vigente. Es lo que
+   * decide cuándo empieza un bloque nuevo (`RESPUESTAS_POR_CONVERSACION`).
+   * Vuelve a cero cuando un mensaje del cliente abre una ventana nueva; no se
+   * toca en ningún otro caso. Mismo nombre que en la rama del prepago, para
+   * que al reaplicarla el dato ya esté escrito.
+   */
+  mensajesVentana?: unknown;
+  /**
+   * Último estado de atención que la ingesta dejó anotado (`normal`,
+   * `operador`, `bloqueado`). Es la marca que evita avisar dos veces a
+   * recepción por el mismo umbral en la misma ventana. Ver `atencion.ts`.
+   */
+  atencionEstado?: unknown;
 }
+
+/**
+ * CUÁNTAS RESPUESTAS DEL ASISTENTE ENTRAN EN UNA CONVERSACIÓN.
+ *
+ * Decidido por Andres el 13/09/2026 (`Analisis/27`): la conversación es un
+ * BLOQUE de hasta 25 respuestas del asistente a un mismo teléfono dentro de la
+ * ventana de 24 horas. La respuesta 26 abre un bloque nuevo y se factura OTRA
+ * conversación; a las 24 horas la ventana se renueva y el conteo vuelve a
+ * cero. Un cliente con 26 respuestas en el día son dos conversaciones; uno con
+ * 20 hoy y 2 mañana, también dos —pero por dos ventanas, no por el bloque—.
+ *
+ * Reemplaza al tope de 25 con corte: el asistente ya no deja de responder al
+ * llegar a 25, sigue, y lo que sigue se cobra. El costo de un bloque lleno es
+ * el mismo que tenía una conversación en el tope (0,3051 USD), así que el
+ * precio mínimo de la bolsa de `Analisis/23` no cambia.
+ *
+ * ES UN VALOR COMERCIAL: subirlo cobra menos y bajarlo cobra más. Se cambia
+ * con Andres y Silvana, junto con la «Base comercial» de `CLAUDE.md` y con
+ * `novuchat.site/precios`, que lo publica. El número vive en `atencion.ts`,
+ * junto con los umbrales de corte que lo acompañan (`UMBRALES_ATENCION`).
+ */
 
 /**
  * SEPARACIÓN ENTRE UNA ATENCIÓN Y LA SIGUIENTE.
@@ -284,9 +331,8 @@ export interface MarcasDeConteo {
  * explicar por qué no coinciden.
  *
  * ES UN VALOR COMERCIAL: subirlo cobra menos y bajarlo cobra más, así que se
- * cambia con Andres y no en una revisión de código.
+ * cambia con Andres y no en una revisión de código. Vive en `atencion.ts`.
  */
-export const HORAS_VENTANA_ATENCION = 24;
 
 /**
  * ¿Este mensaje es SOLO una cortesía?
@@ -341,6 +387,25 @@ export interface Conteo {
   interaccion: boolean;
   /** Valor que hay que dejar guardado en la conversación. */
   respuestasDelPeriodo: number;
+  /**
+   * Respuestas del asistente en la ventana vigente, ya contando este mensaje.
+   * Se guarda tal cual. Cero al abrir una ventana nueva.
+   */
+  mensajesVentana: number;
+  /**
+   * ¿Esta respuesta es la primera de un bloque nuevo dentro de la ventana
+   * vigente? Ocurre con la respuesta 26, la 51, la 76… Solo un mensaje
+   * SALIENTE puede abrir un bloque, y solo dentro de una ventana abierta: una
+   * respuesta sobre una ventana vencida —un recordatorio, la respuesta a una
+   * cortesía tardía— no abre nada, igual que no abre una atención.
+   */
+  bloqueNuevo: boolean;
+  /**
+   * ¿Este mensaje suma UNA conversación facturada? Es `atencion || bloqueNuevo`:
+   * la ventana que se abre y cada bloque de 25 que se excede. Es lo único que
+   * mueve el contador `conversaciones` del agregado del mes.
+   */
+  conversacion: boolean;
 }
 
 /**
@@ -359,11 +424,10 @@ export function contadoresDelMensaje(
   // PERSONA ATENDIDA y ATENCIÓN son cifras distintas y se cuentan distinto.
   // Un teléfono que consulta tres veces es UNA persona atendida y TRES
   // atenciones, siempre que esas tres veces caigan en ventanas distintas.
-  const ancla = marcas.atencionDesde as { toMillis?: () => number } | undefined;
-  const anclaMs = typeof ancla?.toMillis === 'function' ? ancla.toMillis() : null;
-  // Sin ancla es la primera consulta de esta conversación, así que abre.
-  const vencida = anclaMs === null
-    || ahoraMs - anclaMs >= HORAS_VENTANA_ATENCION * 60 * 60 * 1000;
+  // Sin ancla es la primera consulta de esta conversación, así que abre. Una
+  // sola definición de la ventana, en `atencion.ts`: tenerla dos veces es
+  // pedir que un día el bloque corte con un criterio y los umbrales con otro.
+  const vencida = ventanaVencida(marcas, ahoraMs);
 
   // Solo un mensaje ENTRANTE abre una atención. Una respuesta nuestra no inicia
   // nada: si contara, un recordatorio saliente inventaría una consulta que el
@@ -381,8 +445,32 @@ export function contadoresDelMensaje(
     : 0;
   const respuestasDelPeriodo = previas + (direccion === 'saliente' ? 1 : 0);
 
+  // RESPUESTAS EN LA VENTANA, para el bloque. Se reinicia SOLO cuando este
+  // mensaje abre una atención nueva. Si la ventana venció pero este mensaje no
+  // abre (una cortesía, o una respuesta nuestra sobre una ventana vieja), el
+  // contador viejo se descarta igual: lo que se mida contra el bloque es
+  // siempre de la ventana vigente, nunca de la de ayer.
+  const guardadoVentana = marcas.mensajesVentana;
+  const previasVentana = !vencida && typeof guardadoVentana === 'number'
+    && Number.isFinite(guardadoVentana)
+    ? Math.max(0, Math.trunc(guardadoVentana))
+    : 0;
+  const mensajesVentana = atencion ? 0 : previasVentana + (direccion === 'saliente' ? 1 : 0);
+
+  // EL BLOQUE NUEVO. La respuesta que hace 26 (o 51, o 76…) dentro de una
+  // ventana abierta se factura como otra conversación. Se mira `previasVentana`
+  // y no el valor guardado crudo: sobre una ventana vencida `previasVentana`
+  // es cero y ninguna respuesta abre bloque, que es lo correcto, porque sin
+  // consulta del cliente no hay conversación que cobrar. El `%` y no `===`
+  // cubre el bloque tercero y los siguientes con la misma regla.
+  const bloqueNuevo = direccion === 'saliente' && !vencida
+    && previasVentana > 0 && previasVentana % RESPUESTAS_POR_CONVERSACION === 0;
+
   return {
     atencion,
+    mensajesVentana,
+    bloqueNuevo,
+    conversacion: atencion || bloqueNuevo,
     /**
      * Una cortesía tampoco mueve la marca de silencio. Si la moviera, un
      * «gracias» dejaría la conversación como recién activa y la consulta de
@@ -530,14 +618,35 @@ export const ingesta = onRequest(
     // `ultimoEn` dentro del mes. Es caro pero puntual, y no exige haber guardado
     // ninguna estructura extra.
     // -----------------------------------------------------------------------
-    await db.runTransaction(async (tx) => {
-      const conversacion = await tx.get(refConversacion);
-      const conteo = contadoresDelMensaje(
-        (conversacion.data() ?? {}) as MarcasDeConteo, periodo, mensaje.direccion,
-        Date.now(), mensaje.texto,
-      );
+    // -----------------------------------------------------------------------
+    // EL ESTADO DE ATENCIÓN VIAJA EN LA MISMA TRANSACCIÓN. Con la conversación
+    // se lee `cuenta/estado` (los umbrales del comercio) y se decide en qué
+    // estado queda el teléfono —normal, operador o bloqueado— con lo que YA se
+    // envió. El estado se anota en la conversación: es la marca que permite
+    // avisar a recepción una sola vez por umbral y por ventana. Una lectura
+    // más por mensaje; a la tarifa de Firestore, nada.
+    // -----------------------------------------------------------------------
+    const refCuenta = db.doc(`tenants/${tenantId}/cuenta/estado`);
+    const ahoraMs = Date.now();
+
+    const veredicto = await db.runTransaction(async (tx) => {
+      const [conversacion, cuentaDoc] = await Promise.all([
+        tx.get(refConversacion), tx.get(refCuenta),
+      ]);
+      const marcas = (conversacion.data() ?? {}) as MarcasDeConteo;
+      const conteo = contadoresDelMensaje(marcas, periodo, mensaje.direccion, ahoraMs, mensaje.texto);
+
+      // Se mira lo guardado ANTES de aplicar este mensaje: el estado describe
+      // qué hacer con la consulta que acaba de llegar, no con la siguiente.
+      const umbrales = umbralesDeAtencion(cuentaDoc.data());
+      const atencion = estadoDeAtencion(marcas, umbrales, ahoraMs);
+      const aviso = mensaje.direccion === 'entrante'
+        ? avisoDeTransicion(marcas.atencionEstado, atencion.estado) : null;
 
       tx.set(refConversacion, {
+        // La marca del estado se escribe con cada mensaje: cuando la ventana se
+        // renueva vuelve a `normal` sola, y el próximo umbral vuelve a avisar.
+        atencionEstado: atencion.estado,
         telefono: mensaje.telefono,
         canal: 'whatsapp',
         ultimoMensaje: mensaje.texto.slice(0, 300),
@@ -554,6 +663,9 @@ export const ingesta = onRequest(
         // transacción el valor leído es el que vale, y así el número guardado y
         // la decisión que se tomó con él no pueden discrepar.
         respuestasDelPeriodo: conteo.respuestasDelPeriodo,
+        // Igual que el anterior: calculado dentro de la transacción, no
+        // incrementado. Es lo que decide el bloque en el mensaje siguiente.
+        mensajesVentana: conteo.mensajesVentana,
         ...(conteo.interaccion ? { periodoInteraccion: periodo } : {}),
         ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
       }, { merge: true });
@@ -575,18 +687,34 @@ export const ingesta = onRequest(
         // página y después mira esta consola: si los dos números no se llaman
         // igual, la discusión no es sobre la factura sino sobre el vocabulario.
         //
-        //   CONVERSACION  = ventana de 24 h desde el primer mensaje. ES LA
-        //                   UNIDAD QUE SE FACTURA. Antes se llamaba `atenciones`
-        //                   acá adentro; el cálculo no cambió, solo el nombre.
+        //   CONVERSACION  = bloque de hasta 25 respuestas del asistente dentro
+        //                   de la ventana de 24 h desde el primer mensaje. ES LA
+        //                   UNIDAD QUE SE FACTURA. Suma una al abrir la ventana
+        //                   y otra por cada bloque de 25 que se excede
+        //                   (`RESPUESTAS_POR_CONVERSACION`). Antes se llamaba
+        //                   `atenciones` acá adentro.
+        //   BLOQUES ADIC. = de esas conversaciones, cuántas vinieron de exceder
+        //                   los 25 en una misma ventana. Es lo que le permite al
+        //                   comercio ver por qué `conversaciones` es mayor que
+        //                   la cantidad de clientes que le escribieron, y a
+        //                   NovuChat medir la cola larga que pide `Analisis/16`.
         //   ATENCION      = personas distintas del período. En el código sigue
         //                   siendo `personasAtendidas`, que es más explícito y
         //                   ya tiene datos; el rótulo se traduce en la pantalla.
         //   CIERRE        = cita o pedido concreto. YA NO SE FACTURA: quedó como
         //                   indicador de si el asistente vende o solo responde.
         ...(conteo.personaNueva ? { personasAtendidas: FieldValue.increment(1) } : {}),
-        ...(conteo.atencion ? { conversaciones: FieldValue.increment(1) } : {}),
+        ...(conteo.conversacion ? { conversaciones: FieldValue.increment(1) } : {}),
+        ...(conteo.bloqueNuevo ? { bloquesAdicionales: FieldValue.increment(1) } : {}),
         ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
+        //   DERIVADAS      = ventanas que pasaron al operador por uso extendido.
+        //   BLOQUEADAS     = ventanas que llegaron al bloqueo. Las dos son la
+        //                    cola larga que `Analisis/16` pide medir, ya contada.
+        ...(aviso === 'operador' ? { derivadasAOperador: FieldValue.increment(1) } : {}),
+        ...(aviso === 'bloqueado' ? { bloqueadas: FieldValue.increment(1) } : {}),
       }, { merge: true });
+
+      return { atencion, aviso };
     });
 
     await registrar(tenantId, {
@@ -600,8 +728,27 @@ export const ingesta = onRequest(
           && typeof (peticion.body as Record<string, unknown>)['latenciaMs'] === 'number'
         ? { latenciaMs: (peticion.body as Record<string, number>)['latenciaMs'] } : {}),
     });
+    if (veredicto.aviso) {
+      // Queda en la bitácora del comercio: es el hecho que explica por qué una
+      // persona tuvo que tomar la conversación, o por qué un teléfono dejó de
+      // recibir respuestas hasta el día siguiente.
+      await registrar(tenantId, {
+        tipo: veredicto.aviso === 'operador' ? 'derivacion_operador' : 'bloqueo_ventana',
+        resultado: 'ok', telefono: mensaje.telefono, conversacionId: idConversacion,
+      });
+    }
 
-    respuesta.status(204).send('');
+    // Antes era un 204 vacío. Ahora viaja el estado de atención, para que un
+    // flujo que reporte el entrante ANTES de llamar al modelo pueda decidir con
+    // él. El flujo vivo ignora el cuerpo y sigue funcionando igual.
+    respuesta.status(200).json({
+      atencion: {
+        ...veredicto.atencion,
+        ventanaVenceEn: veredicto.atencion.ventanaVenceEn === null
+          ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
+      },
+      avisarRecepcion: veredicto.aviso,
+    });
   },
 );
 
@@ -663,6 +810,17 @@ export const configuracionFlujo = onRequest(
 
     const db = getFirestore();
 
+    // EL TELÉFONO DEL CLIENTE ES OPCIONAL, y con él viaja el estado de atención
+    // del teléfono (`atencion`): cuántas respuestas lleva en la ventana, en qué
+    // bloque va y si el flujo tiene que pasar al operador o callar. El flujo lo
+    // manda en el cuerpo (`telefono`); sin él, la respuesta es la de siempre y
+    // el flujo no puede aplicar los umbrales, que es exactamente el estado de
+    // un flujo viejo.
+    const cuerpo = (typeof peticion.body === 'object' && peticion.body !== null
+      ? peticion.body : {}) as Record<string, unknown>;
+    const telefonoCrudo = typeof cuerpo['telefono'] === 'string' ? cuerpo['telefono'].trim() : '';
+    const telefono = /^[0-9]{8,15}$/.test(telefonoCrudo) ? telefonoCrudo : null;
+
     if (comercio.estado !== 'activo') {
       respuesta.status(409).json({
         estado: comercio.estado,
@@ -683,7 +841,7 @@ export const configuracionFlujo = onRequest(
     // filtrar después porque directamente no se pide.
     const docVertical = documentoDeVertical(comercio.flujo);
 
-    const [config, catalogo, funcionarios, especifica, rotulos] = await Promise.all([
+    const [config, catalogo, funcionarios, especifica, rotulos, conversacion, cuenta] = await Promise.all([
       db.doc(`tenants/${comercio.tenantId}/config/negocio`).get(),
       db.collection(`tenants/${comercio.tenantId}/catalogo`)
         .where('activo', '==', true).limit(200).get(),
@@ -696,7 +854,35 @@ export const configuracionFlujo = onRequest(
       comercio.flujo === 'venta'
         ? db.doc('plataforma/cobroSimulado').get()
         : Promise.resolve(null),
+      // Solo con teléfono hay conversación que mirar. Y la cuenta, por los
+      // umbrales del comercio: sin ella rigen los de respaldo.
+      telefono
+        ? db.doc(`tenants/${comercio.tenantId}/conversaciones/wa_${telefono}`).get()
+        : Promise.resolve(null),
+      telefono
+        ? db.doc(`tenants/${comercio.tenantId}/cuenta/estado`).get()
+        : Promise.resolve(null),
     ]);
+
+    // EL ESTADO DE ATENCIÓN DEL TELÉFONO, si vino. Se calcula con la misma
+    // función que la ingesta, sobre lo que la ingesta dejó guardado con el
+    // último saliente. `avisarRecepcion` se deduce de la marca que la ingesta
+    // anota con cada mensaje: como el flujo reporta el entrante en este mismo
+    // turno, la marca queda actualizada para el siguiente y no se avisa dos
+    // veces. La decisión de callar o de pasar al operador se toma ACÁ, antes
+    // del modelo: un saliente ya enviado no se puede rechazar.
+    const atencion = telefono && conversacion
+      ? (() => {
+          const marcas = (conversacion.data() ?? {}) as Record<string, unknown>;
+          const estado = estadoDeAtencion(marcas, umbralesDeAtencion(cuenta?.data()), Date.now());
+          return {
+            ...estado,
+            ventanaVenceEn: estado.ventanaVenceEn === null
+              ? null : new Date(estado.ventanaVenceEn).toISOString(),
+            avisarRecepcion: avisoDeTransicion(marcas['atencionEstado'], estado.estado),
+          };
+        })()
+      : null;
 
     const negocio = (config.data() ?? {}) as Record<string, unknown>;
     const catalogoWebActivo = negocio['catalogoWebActivo'] === true;
@@ -735,6 +921,15 @@ export const configuracionFlujo = onRequest(
       flujo: comercio.flujo,
       estadoComercio: derivados.estadoComercio,
       phoneNumberId: derivados.phoneNumberId,
+
+      // Estado de atención del teléfono que escribió (`null` si el flujo no
+      // mandó `telefono`). Lo que el flujo tiene que hacer con este turno:
+      //   estado = 'normal'    → al modelo, como siempre.
+      //   estado = 'operador'  → NO llamar al modelo: responder `mensajeFijo`
+      //                          (o el texto del negocio) y, si
+      //                          `avisarRecepcion` viene, avisar a recepción.
+      //   estado = 'bloqueado' → NO enviar nada hasta `ventanaVenceEn`.
+      atencion,
 
       // Operación: valores estructurados, sin texto libre.
       operacion: {

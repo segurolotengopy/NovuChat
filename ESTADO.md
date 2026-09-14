@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-14 (número de NovuChat en Meta, verificado; flujo de captación, consola y pruebas escritos)
+**Última actualización:** 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
 
@@ -33,9 +33,11 @@ verdes; el del webhook se omite hasta que exista el flujo):
 - **Flujo `Flujos/novuchat-onboarding.json`** (30 nodos): botones de bienvenida,
   rama de cliente actual **sin código de acceso**, asistente con el corpus del
   sitio, extracción de datos del prospecto, cierre con botón a un asesor y aviso
-  por plantilla, topes 25/50 y descarte de reenvíos de Meta. El estado de cada
-  conversación vive en los datos estáticos del flujo, no en `ingesta.ts`: el
-  conteo que factura lo está rehaciendo otra sesión (`cobro/bloques-de-25`).
+  por plantilla, fin del primer bloque en la respuesta 25 y descarte de
+  reenvíos de Meta. **El techo de costo es el del servidor** (#64 y #66):
+  umbrales de operador (50) y de bloqueo (100) de la cuenta, obedecidos antes
+  del modelo igual que en A y B. El flujo solo guarda en sus datos estáticos
+  la etapa y los datos del prospecto, que el servidor no tiene.
 - **Consola:** el vertical reservado `interno` pasa a llamarse `onboarding`;
   documento `/config/onboarding` que **solo** el propietario lee y escribe (ni
   el administrador del propio tenant); pestaña «Captación» solo para el
@@ -80,6 +82,273 @@ Function del sitio, CRM, modelo inicial, nombre del portafolio.
 
 **Ningún código escrito todavía.** Siguiente: las tareas 4, 5 y 7 del §6 (consola,
 flujo y scripts) en este worktree, en paralelo con el chip y Meta.
+
+---
+
+## 2026-09-14 — revisión del #66: el aviso al negocio no salía nunca (corregido)
+
+**Fusionados con el OK de Andres en el chat:** AndresAlberdi/SeguridadGeneral#25
+(`6b878c0`, la fuente del estándar) y NovuChat #67 (`9c5a82d`), en ese orden.
+Las alertas #53 y #54 quedaron **cerradas** en `main`.
+
+**El defecto.** Una revisión independiente del #66 encontró algo que sus 42
+pruebas no veían. Los flujos corren con `executionOrder: v1`: n8n termina una
+rama entera antes de empezar la siguiente, de arriba hacia abajo en el lienzo.
+`Reportar mensaje (entrante)` estaba abajo de todo, así que la respuesta se
+reportaba ANTES que el mensaje del cliente que la provocó. Dos consecuencias:
+
+- La marca `atencionEstado` ya estaba puesta al empezar el turno siguiente, y
+  **el aviso al negocio no salía nunca**, ni en operador ni en bloqueado.
+- **La primera respuesta de cada ventana no se contaba**: los umbrales y los
+  bloques quedaban corridos en uno.
+
+**La corrección**, en la misma rama:
+
+- `Reportar mensaje (entrante)` sube en el lienzo por encima de
+  `¿Comercio operativo?`. Como ahora corre antes de responder, lleva tope de
+  4 s y un solo reintento de 1 s (antes: sin tope y dos reintentos de 2 s).
+  Con la ingesta caída el cliente espera como mucho unos 9 s, y la respuesta
+  sale igual (`onError: continueRegularOutput`).
+- Textos del aviso: «en su ventana de 24 horas» en vez de «hoy», y «hasta
+  mañana» / «hasta el <día y hora>» en vez de «hasta el mañana».
+- Demo B, `Procesar respuesta`: «Disculpá… ¿Me lo repetís?» pasa a «Disculpa…
+  ¿Me lo repites?». Era voseo que llegaba al cliente, anterior al #66.
+- 17 pruebas nuevas (59 en `pruebas/flujos-umbrales.test.ts`): el orden por
+  posición, la cadena `Config del negocio` → `Normalizar entrada` → `Uso
+  extendido`, la alcanzabilidad del agente, y una simulación turno a turno con
+  las funciones reales del servidor. **Contra los flujos sin corregir fallan
+  7; con la corrección pasan todas.** La regla quedó en `CLAUDE.md`.
+
+**Consecuencia para el pase.** La ingesta de `v0.2.0` cuenta bien solo con
+este orden. Si `v0.2.0` se despliega con los flujos viejos todavía publicados,
+cada ventana pierde su primera respuesta en el conteo —se cobra de menos,
+nunca de más— y los avisos no salen. **Publicar los flujos del #66
+inmediatamente después del despliegue.**
+
+**Sin resolver, anotado:**
+
+- Dos mensajes casi simultáneos al cruzar un umbral pueden producir dos avisos:
+  las dos ejecuciones leen la marca antes de que alguna reporte su entrante. Se
+  cierra si `configuracionFlujo` anota la marca, en una transacción, cuando
+  devuelve el aviso.
+- `Avisar a recepción` (A) no tiene `onError: continueRegularOutput`: si Meta
+  rechaza el texto libre (fuera de la ventana de 24 h del número de recepción),
+  la ejecución termina en error, visible en n8n. Con el nuevo orden ya no
+  impide contar el entrante.
+
+---
+
+## 2026-09-14 — Semgrep: las excepciones `nosemgrep` dejan de abrir alertas
+
+Semgrep saca del JSON (el que decide el bloqueo) lo exceptuado con
+`// nosemgrep: <id>`, pero lo deja en el SARIF con
+`suppressions: [{"kind": "inSource"}]`, y Code Scanning no lee esa marca. Por
+eso seguían abiertas las alertas **#53 y #54** en `main` y el PR #66 abrió la
+**#69 y la #70**, todas de `js-eval-prohibido` sobre las pruebas que ejecutan a
+propósito el código de los flujos con `new Function`. Además, el check no
+requerido «Semgrep OSS» del #66 falla.
+
+- `_reusable-security.yml` (v2.3) filtra esos resultados antes de subir el
+  SARIF y guarda el completo como artifact en todos los modos. El bloqueo no
+  cambia.
+- **El workflow sale del estándar**: la fuente es
+  `~/SeguridadGeneral/02-pipelines/workflows/_reusable-security.yml`
+  (repo `AndresAlberdi/SeguridadGeneral`), que `bootstrap-repo.sh` copia. El
+  cambio va en los dos lados, idéntico: si no, la próxima actualización lo
+  borra. PR del estándar: AndresAlberdi/SeguridadGeneral#25.
+- **No se descartó ninguna alerta a mano.** Cuando el siguiente análisis de
+  `main` llegue sin esos resultados, Code Scanning las cierra solo. El #66 lo
+  recibe al volver a correr su CI después de la fusión.
+- Mensajes de WhatsApp: no cambia ninguno (no toca flujos).
+
+---
+
+## 2026-09-13 — los flujos obedecen los umbrales de uso extendido (rama `flujos/umbrales-atencion`)
+
+**#64 y #46 fusionados** con el OK de Andres en el chat (NovuChat `4482181`;
+sitio `474add1`, con squash, el único método que usa ese repositorio).
+**Fusionar no desplegó nada:** no hay proyecto de staging, así que
+`desplegar-staging` se omite siempre. Producción sale de las etiquetas firmadas
+`v0.2.0` (NovuChat) y `v0.3.5` (sitio), que crea una persona.
+
+**Los dos flujos de atención ya obedecen los umbrales**, en el JSON versionado:
+
+- `Traer configuración` manda `telefono`, tomado del webhook
+  (`messages[0].from`): corre antes de `Normalizar entrada`.
+- `Config del negocio` baja `atencionEstado`, `atencionMensajeFijo`,
+  `atencionAvisarRecepcion`, `atencionRespuestas` y `atencionVenceEn`. Ante la
+  duda —panel caído, 409, estado desconocido— el estado es `normal`.
+- Compuerta nueva `¿Atención normal?` entre `¿Comercio operativo?` y el agente.
+  La rama falsa va a `Uso extendido`: en operador responde el aviso fijo por
+  `Responder al cliente` y lo reporta como saliente; en bloqueado no envía
+  nada. El aviso al negocio reutiliza `¿Transferir a humano?` → `Avisar a
+  recepción` (A) y `Avisar al dueño` (B, con `textoAviso`; sin él manda el
+  aviso de pedido de siempre, idéntico).
+- **Ningún nodo de WhatsApp nuevo**, a propósito: `publicar-flujo.sh` injerta
+  las credenciales por NOMBRE de nodo, y uno nuevo quedaría sin credencial.
+- Nodos: A de 30 a 33, B de 22 a 26. 42 pruebas nuevas en
+  `pruebas/flujos-umbrales.test.ts`, que ejecutan el código y las expresiones
+  del JSON versionado.
+
+**Mensajes que agrega o quita:** ninguno en el camino normal. Entre el umbral
+de operador y el de bloqueo, un mensaje fijo por consulta en lugar de la
+respuesta del modelo; desde el bloqueo, cero. Más hasta dos avisos al negocio
+por ventana, uno por umbral.
+
+**Pendiente, en este orden:**
+
+1. Etiqueta `v0.2.0` y aprobación en `production`. Sin las Functions nuevas,
+   `configuracionFlujo` no devuelve `atencion` y el flujo publicado se comporta
+   exactamente como hoy.
+2. Regenerar los `.local.json` con `preparar-import.sh` —el script de
+   publicación usa ESE archivo si existe— y publicar con `publicar-flujo.sh`,
+   primero sin `--aplicar` (solo diagnostica), un flujo por vez con su `--env`.
+3. Probar contra un teléfono real: cargar umbrales bajos en el negocio de demo
+   con `actualizarEstadoCuenta` (por ejemplo 3 y 5), recorrer normal → operador
+   → bloqueado, y devolverlos a los de respaldo (`null`).
+4. El aviso al negocio sale como texto libre: fuera de la ventana de 24 h del
+   número de recepción, Meta lo rechaza (`Analisis/25` §3.1). Es el mismo
+   defecto que los avisos de pedido, y se resuelve con la plantilla utility.
+
+---
+
+## 2026-09-13 — la conversación pasa a ser un bloque de 25 respuestas (`Analisis/27`)
+
+**Decisión de Andres:** una conversación es **hasta 25 respuestas del asistente
+a un mismo teléfono dentro de la ventana de 24 h**. La respuesta 26 del mismo
+día abre un bloque nuevo y factura otra conversación; a las 24 h la cuenta
+vuelve a cero. Reemplaza al tope con corte del 08/09: el asistente ya no deja
+de responder a las 25.
+
+**Lo que dice el análisis** (`Analisis/27-modelo-bloques.md`, modelo en `.py`):
+
+- En dinero es casi neutro: con una cola del 10 % de ventanas largas, entre
+  −0,4 y +8,6 USD por comercio y mes según cuánto se pasen de 25. Lo que gana
+  es **continuidad del servicio** —ningún cliente queda a medias— y lo que
+  pierde es el **techo de costo por ventana**: 200 respuestas en un día cuestan
+  2,40 USD y facturan 8 conversaciones. Hace falta un **tope de seguridad de
+  100 respuestas por ventana** en el flujo, que no es comercial.
+- El plan cubre menos ventanas reales que las que dice (9 % menos con cola del
+  10 %), y el comercio lo va a notar como «me cobraron dos por un cliente». La
+  consola lo explica en la misma tarjeta.
+- El precio mínimo de la bolsa no cambia: un bloque lleno cuesta lo mismo que
+  costaba una conversación en el tope.
+
+**Hecho, sin confirmar todavía, en la rama `cobro/bloques-de-25` (NovuChat y
+Novuchat-site):**
+
+- `ingesta.ts`: `RESPUESTAS_POR_CONVERSACION = 25`, contador `mensajesVentana`
+  en la conversación (mismo nombre que en la rama del prepago), y en el
+  agregado del mes `conversaciones` suma también por bloque y
+  `bloquesAdicionales` dice cuántas vinieron de ahí. 15 pruebas puras en
+  `pruebas/conteo-bloques.test.ts`.
+- Consola «Consumo»: glosario nuevo y una línea que explica los bloques solo
+  cuando hubo alguno.
+- Sitio: `precios.es.ts` (párrafo que también lee `/terminos`), `precios.astro`,
+  `tipos.ts` y `CLAUDE.md` del sitio.
+- `CLAUDE.md` «Base comercial» §2 y la tabla del §7.
+
+**Segunda decisión del día: dos umbrales de corte, parametrizables por
+empresa** (`Analisis/27` §5). A las 50 respuestas en la ventana el asistente
+pasa la conversación a un operador con un aviso fijo de uso extendido; a las
+100 deja de responder a ese teléfono hasta que la ventana se renueve. Techo de
+costo por ventana: 1,17 USD. Hecho en el servidor, en la misma rama:
+
+- `functions/src/atencion.ts`, módulo **puro** compartido con la consola
+  (`web/src/lib/atencion.ts`): la ventana, el bloque, `umbralesDeAtencion`
+  (lee `cuenta/estado.umbralOperador` / `umbralBloqueo`, respaldo 50/100, la
+  pareja se acepta entera o ninguna), `estadoDeAtencion` y `avisoDeTransicion`.
+  22 pruebas puras en `pruebas/umbrales-atencion.test.ts`.
+- La ingesta lee `cuenta/estado` en la transacción, anota `atencionEstado` en
+  la conversación, cuenta `derivadasAOperador` y `bloqueadas` en el mes,
+  registra `derivacion_operador` / `bloqueo_ventana` en la bitácora y responde
+  200 con `atencion` (antes 204 vacío; el flujo vivo ignora el cuerpo).
+- `configuracionFlujo` acepta `telefono` en el cuerpo y devuelve `atencion`
+  (`estado`, `respuestasEnVentana`, `bloque`, `umbrales`, `mensajeFijo`,
+  `avisarRecepcion`). Sin `telefono`, responde como siempre.
+- `actualizarEstadoCuenta` acepta `umbralOperador` y `umbralBloqueo` (`null`
+  los borra); rechaza una pareja incoherente. No hay pantalla del propietario
+  para cargarlos todavía.
+- Consola: «Estado de cuenta» muestra los límites que rigen; «Consumo» dice
+  cuántas conversaciones del mes pasaron al operador o se bloquearon.
+
+**Tercer pedido del día, SOLO ANÁLISIS (Andres pidió no implementar):**
+agrupar «Conversaciones» por teléfono y por conversación facturada (bloque de
+25 o menos), con búsqueda por celular. El análisis está en `Analisis/27` §8:
+sellar cada mensaje con `ventana` / `bloque` / `respuestaN` en la misma
+transacción que factura (gratis), una subcolección `ventanas` con dos
+escrituras por ventana, búsqueda por prefijo sobre `documentId()` (el id ya es
+el teléfono), reglas de solo lectura y unas dos jornadas de trabajo. Regla de
+oro: la pantalla nunca decide dónde empieza una conversación, lo lee.
+
+**Pendiente:**
+
+- **Flujo n8n:** mandar `telefono` en «Traer configuración», bifurcar sobre
+  `atencion.estado` antes del agente (normal → modelo; operador → aviso fijo y,
+  si `avisarRecepcion`, aviso a recepción; bloqueado → no enviar nada). Hasta
+  que se haga, los umbrales se cuentan pero **no cortan**.
+- **Rama del prepago:** al reaplicarla, `consumoDeConversacion` tiene que
+  descontar saldo también en `bloqueNuevo`, y el corte por `sin_conversaciones`
+  no puede rechazar un saliente ya enviado: hay que decidir el bloque 2 en
+  `configuracionFlujo`, antes de llamar al modelo.
+- **Propuesta de Q'Taco** (`Analisis/25` §4): reescribir «al llegar al tope una
+  respuesta fija» con la definición nueva antes de firmar.
+- Desplegar: el cambio de ingesta es compatible hacia atrás (los documentos sin
+  `mensajesVentana` arrancan en cero) y no toca los flujos.
+
+---
+
+## 2026-09-13 — resumen integral para análisis externo (`Analisis/26`)
+
+Se escribió `Analisis/26-resumen-proyecto-para-analisis-externo.md`: síntesis
+de toda la documentación al 13/09 (arquitectura, flujos, consola, modelo
+comercial, Q' Taco, estado, riesgos, inconsistencias documentales y preguntas
+por perfil de revisor), con referencia a cada documento interno. Lo acompaña
+el paquete `~/Documentos/NovuChat/NovuChat-analisis-externo-2026-09-13.zip`
+(132 archivos, fuera del repo) con **todos** los documentos citados, incluidos
+`Preliminares/` y la planilla `Analisis/06`, que no se versionan. El paquete
+se verificó contra los valores reales locales (`verificar-saneo.sh --exacto`
+y un escaneo equivalente sobre el ZIP, con el texto de los `.docx` y `.xlsx`
+extraído): 0 hallazgos. Al prepararlo aparecieron nueve inconsistencias entre
+documentos, **corregidas el mismo día** (rama `docs/inconsistencias-13sep`):
+`admin/DISENO.md` §9 y §11, `admin/SEGURIDAD.md` y `admin/LEEME.md` decían
+«nada desplegado» y traían cifras de pruebas viejas (hoy: **536 en verde en
+`main`**, 229 de reglas y 307 puras; 551 con la rama de bloques); la brecha
+«suspender no corta» figuraba cerrada y abierta a la vez (está cerrada desde el
+07/09); «Remoto de GitHub» decía «nunca se hizo push»; había un fragmento de
+tabla sin encabezado en el asiento del 29/08; «Riesgos vivos» y «Próximos
+pasos» seguían fechados al 07/09; `Analisis/14` §9 y la versión inglesa de
+`18` hablaban de un tipo de cambio «que NovuChat publica» en vez del TCO del
+BCB; el checklist de ensayo citaba «QR en URL pública» y «Bloque 6»; y los
+precios viejos (150/250/350 Bs, 250/450/800 Bs, USD 20/40/70) quedaron
+rotulados como superados en cada documento que los conserva.
+
+## 2026-09-13 — primer cliente real: Q' Taco (`Analisis/25`)
+
+Hay una propuesta del 11/09 a punto de cerrarse: restaurante mexicano, un solo
+número, reservas de mesa + pedidos con cobro + campañas de Facebook, USD 125 de
+instalación y USD 40/mes por 200 conversaciones. Las recomendaciones de puesta
+en producción están en `Analisis/25-puesta-en-produccion-qtaco.md`. Lo que
+cambia respecto de los demos, en cuatro líneas:
+
+- **Un flujo de n8n, no tres**: copia del B con reserva de mesas (versión 1:
+  registrar y avisar; una persona confirma) y **cobro real** sin rótulos. El
+  borrador de prompt de Silvana dice «¡Pago confirmado!»: se corrige antes de
+  llegar a un nodo (prohibición 3).
+- **Dos defectos que solo aparecen con un cliente real:** los avisos al dueño
+  salen como texto libre y fuera de la ventana de 24 h Meta los rechaza
+  (van por plantilla utility), y nada descarta un webhook reenviado por id de
+  mensaje.
+- **Un número está atado a un flujo** (`rutasWhatsApp.flujo`); Q'Taco es el
+  primer caso de dos capacidades en un número. Se resuelve como capacidad del
+  flujo `venta` (documento `/config/reservas` y pestaña), no cambiando el modelo.
+- **Antes del primer cobro:** el conteo de 25 en el flujo (hoy, bloques: ver el
+  asiento de `Analisis/27`). El corte por suspensión **ya está**: se corrigió el
+  07/09 en los tres flujos (commit `2e251f9`, 17 pruebas en
+  `estado-comercio.test.ts`) y se republicó esa noche; lo que queda es
+  confirmar el segundo camino del 409 (`sin_pago`, `sin_conversaciones`) cuando
+  se reaplique la rama del prepago. A USD 0,20 por conversación el margen
+  depende de los mensajes por conversación, y hay que medirlo el primer mes.
 
 ---
 
@@ -171,9 +440,17 @@ publicar**, en la misma aprobación. **Siguiente:** una etiqueta nueva, `v0.1.4`
 `sa-functions`, que tiene solo lo que usan: Firestore, Auth, lectura de sus 23
 secretos, los disparadores de Firestore y logs. Fase A (la cuenta y sus
 permisos, verificados con Policy Troubleshooter) y fase B (una línea en
-`index.ts`) hechas. **PENDIENTE — fase C**, tras unos días sin errores: Cloud
-Build con cuenta propia y quitar `roles/editor` a las cuentas por defecto (ver
-`.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
+`index.ts`, desplegada en `v0.1.5`: 30 de 30 Functions y 3 de 3 disparadores
+con `sa-functions`, sin errores en producción) hechas.
+
+**13/09 — fase C: ninguna cuenta del proyecto tiene Editor**, salvo la que
+administra Google (`…@cloudservices`). La de cómputo, que solo construye, quedó
+con `cloudbuild.builds.builder`; la de App Engine, que no usa nada, sin roles.
+También se le quitó a la de cómputo el acceso a los 23 secretos: hoy solo
+`sa-functions` los lee. **Probado con una construcción real** —la de `v0.1.5`,
+repetida por la API sin desplegar— que terminó bien. Si una construcción futura
+fallara por permisos, se revierte devolviendo Editor a la cuenta de cómputo, sin
+etiqueta nueva (ver `.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
 
 ## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
 

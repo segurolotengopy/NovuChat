@@ -74,6 +74,14 @@ WhatsApp (Meta Cloud API)
   no disperso por el lienzo. Es lo que sostiene la promesa de instalar un
   cliente nuevo en 48 horas.
 - **Nodos Code en JavaScript**: la imagen de n8n desplegada no trae Python.
+- **El orden de las ramas es el del lienzo.** Los flujos corren con
+  `executionOrder: v1`: n8n termina una rama entera antes de empezar la
+  siguiente, de arriba hacia abajo (a igual altura, la de la izquierda). Mover
+  un nodo cambia el comportamiento. En particular, **`Reportar mensaje
+  (entrante)` va arriba de la rama del agente**: si la respuesta se reporta
+  antes que el mensaje que la provocó, el aviso de uso extendido no sale nunca
+  y la primera respuesta de cada ventana no se cuenta (revisión del PR #66,
+  `pruebas/flujos-umbrales.test.ts` lo verifica por posición).
 - **Cada mensaje que envía el flujo cuesta dinero** desde el 01/10/2026. Un
   cambio que agregue un mensaje por conversación cuesta 0,0113 USD por
   conversación en todos los clientes. Ver «Base comercial» §1: todo cambio de
@@ -118,18 +126,41 @@ America»). Antes eran gratis.
 - **La elección de modelo puede tomarse por calidad.** Pasar a Claude Haiku con
   caché sube el costo total un 7 %.
 
-### 2. La unidad de cobro, y su tope
+### 2. La unidad de cobro: un bloque de 25 respuestas en 24 h
 
-- Se cobra la **conversación**: ventana fija de 24 h por teléfono. **No se cobra
-  por mensaje ni por «asunto»**, y está analizado y decidido en `Analisis/15`.
-- **Tope de 25 respuestas del asistente por conversación, igual en los tres
-  planes.** No escalonado por plan: económicamente el plan chico es el que más
-  barato tiene ser generoso, y un plan caro con tope menor es invendible.
-- Al llegar al tope: **una** respuesta fija, aviso a recepción, y **ninguna
-  llamada más al modelo** hasta que abra una ventana nueva. Ese último mensaje
-  también se cobra.
-- El tope **hay que decirlo en la oferta**. «Sin importar cuántos sean» dejó de
-  ser cierto.
+**Decidido el 13/09/2026 (`Analisis/27`), reemplaza al tope con corte del 08/09.**
+
+- Se cobra la **conversación**: **hasta 25 respuestas del asistente a un mismo
+  teléfono dentro de la ventana fija de 24 h**. La respuesta 26 del mismo día
+  abre un bloque nuevo y se factura **otra** conversación; a las 24 h de la
+  primera consulta la ventana se renueva y el conteo vuelve a cero. 26
+  respuestas en un día = 2 conversaciones; 20 hoy y 2 mañana = 2 también, por
+  dos ventanas. **No se cobra por mensaje suelto ni por «asunto»**
+  (`Analisis/15`).
+- **El asistente no se corta a las 25.** Sigue atendiendo, y lo que sigue se
+  cobra. El corte a las 25 con respuesta fija queda sin efecto; lo que sí se
+  conserva es el **aviso a recepción** al empezar el segundo bloque, porque una
+  conversación que pasa de 25 casi siempre es una que se atascó.
+- **Igual en los tres planes.** El bloque no se usa como diferenciador de plan
+  (`Analisis/16` §1.3: un plan caro con bloque menor es invendible).
+- **La cifra la escribe el servidor** (`ingesta.ts`, `RESPUESTAS_POR_CONVERSACION`,
+  contador `mensajesVentana` en la conversación; `conversaciones` y
+  `bloquesAdicionales` en el agregado del mes). n8n no cuenta nada.
+- **Un bloque lleno cuesta lo mismo que costaba una conversación en el tope**
+  (0,3051 USD), así que el precio mínimo de la bolsa (`Analisis/23`) no cambia.
+- **Dos umbrales de corte, en la misma unidad y parametrizables por empresa**
+  (`cuenta/estado`: `umbralOperador`, `umbralBloqueo`; respaldo 50 / 100 en
+  `atencion.ts`): a las **50** respuestas en la ventana el asistente deja de
+  llamar al modelo, responde con un aviso fijo de uso extendido y avisa a
+  recepción; a las **100** no envía nada más a ese teléfono hasta que la
+  ventana se renueve. Con eso el techo de costo de una ventana es 1,17 USD
+  (`Analisis/27` §5). Entre los dos umbrales cada consulta cuesta un mensaje
+  fijo y se factura como respuesta: es el precio de no dejar en silencio al
+  cliente que espera a la persona. Los umbrales **no son un diferenciador de
+  plan** y no hace falta publicarlos: se muestran en «Estado de cuenta».
+- El bloque **hay que decirlo en la oferta y en el contrato**, y se dice: el
+  sitio, la consola y la propuesta de Q'Taco (`Analisis/25` §4) tienen que
+  usar la misma frase.
 
 ### 3. Precios en dólares, cobro en bolivianos
 
@@ -210,7 +241,8 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 |---|---|---|
 | **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope |
 | **Conversaciones incluidas** (100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta | Hecho en la rama de prepago |
-| **Tope de 25 mensajes por conversación** | El flujo de n8n, antes de llamar al modelo | No existe todavía |
+| **Bloque de 25 respuestas por conversación** (la 26 factura otra) | `ingesta.ts`, en la misma transacción que cuenta (`mensajesVentana`, `bloquesAdicionales`) | **Hecho el 13/09** en `cobro/bloques-de-25`, con `pruebas/conteo-bloques.test.ts` |
+| **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
 
 **La regla al agregar cualquier límite nuevo:**
