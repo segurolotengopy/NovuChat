@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-13 (los flujos A y B obedecen los umbrales de uso extendido: rama `flujos/umbrales-atencion`; #64 y #46 fusionados, producción pendiente de `v0.2.0`)
+**Última actualización:** 2026-09-13 (los flujos A y B obedecen los umbrales de uso extendido: rama `flujos/umbrales-atencion`; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor)
 
 ---
 
@@ -285,9 +285,17 @@ publicar**, en la misma aprobación. **Siguiente:** una etiqueta nueva, `v0.1.4`
 `sa-functions`, que tiene solo lo que usan: Firestore, Auth, lectura de sus 23
 secretos, los disparadores de Firestore y logs. Fase A (la cuenta y sus
 permisos, verificados con Policy Troubleshooter) y fase B (una línea en
-`index.ts`) hechas. **PENDIENTE — fase C**, tras unos días sin errores: Cloud
-Build con cuenta propia y quitar `roles/editor` a las cuentas por defecto (ver
-`.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
+`index.ts`, desplegada en `v0.1.5`: 30 de 30 Functions y 3 de 3 disparadores
+con `sa-functions`, sin errores en producción) hechas.
+
+**13/09 — fase C: ninguna cuenta del proyecto tiene Editor**, salvo la que
+administra Google (`…@cloudservices`). La de cómputo, que solo construye, quedó
+con `cloudbuild.builds.builder`; la de App Engine, que no usa nada, sin roles.
+También se le quitó a la de cómputo el acceso a los 23 secretos: hoy solo
+`sa-functions` los lee. **Probado con una construcción real** —la de `v0.1.5`,
+repetida por la API sin desplegar— que terminó bien. Si una construcción futura
+fallara por permisos, se revierte devolviendo Editor a la cuenta de cómputo, sin
+etiqueta nueva (ver `.github/DESPLIEGUE-FIREBASE.md`, «Estado real»).
 
 ## «Pedidos y cobro» son TRES pantallas — construidas; faltan dos datos
 
