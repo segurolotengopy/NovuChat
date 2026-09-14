@@ -4,7 +4,58 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor)
+**Última actualización:** 2026-09-14 (los flujos vivos corrían la rama `flujos/prefijo-cacheable` sin fusionar: se reconcilian en `flujos/prefijo-y-umbrales`; `v0.2.0` etiquetada, despliegue esperando aprobación; antes: revisión del #66, #67 y SeguridadGeneral#25, #64 y #46)
+
+---
+
+## 2026-09-14 — los flujos vivos corrían una rama sin fusionar: se reconcilian (rama `flujos/prefijo-y-umbrales`)
+
+**`v0.2.0` etiquetada** por Andres (firmada, sobre `3a63680`). El despliegue a
+producción espera la aprobación de `segurolotengopy` en el entorno
+`production`.
+
+**El hallazgo, al preparar la publicación.** El diagnóstico de
+`publicar-flujo.sh` mostró que los flujos vivos de n8n tienen cambios que NO
+están en `main`: los dos commits de la rama `flujos/prefijo-cacheable`, que
+nunca tuvo PR y se publicó el 08/09 a las 21:15.
+
+- `15e4d2d` — el prefijo del prompt deja de cambiar en cada turno: la fecha, la
+  hora y el cliente pasan de las instrucciones al texto del turno, y el
+  mensaje del cliente queda después de una marca, como información.
+- `268286f` — al dueño no se le avisa de su propio mensaje (Demo B).
+
+Publicar `main` tal cual los habría deshecho en producción, incluida la forma
+en que la fecha y la hora llegan hoy al modelo.
+
+**La reconciliación.** `flujos/prefijo-y-umbrales` = `main` + la rama
+`flujos/prefijo-cacheable`, fusionada sin conflictos. Con ella, lo único que
+difiere del flujo vivo es el trabajo de los umbrales, verificado pieza por
+pieza contra el archivo preparado del 08/09 21:15, que es lo publicado:
+`Config del negocio` es el código vivo más el bloque de atención, y
+`Procesar respuesta` (B) difiere solo en la corrección de voseo. El
+diagnóstico de publicación lo confirma. `pruebas/prefijo-cacheable.test.ts`
+(21 pruebas) entra con la rama y pasa.
+
+**La lección es de proceso: se publica solo lo que está en `main`.** Una rama
+publicada sin fusionar deja al repositorio describiendo algo que no es
+producción, y el próximo que publique desde `main` la borra sin saberlo.
+
+**Anotado, sin tocar:**
+
+- El texto del turno usa `$json.mensajesRestantes24h`, pensado para el tope
+  viejo, que hoy nadie envía: esa línea no aparece nunca. Podría conectarse al
+  umbral de operador, para que el modelo cierre lo esencial antes de pasar la
+  conversación a una persona.
+- Las instrucciones del Demo B tienen voseo («Respondé», «Calculá», «pedilos»),
+  anterior a este trabajo. El tratamiento configurado pide tutear: conviene
+  alinearlas.
+- Los preparados anteriores quedaron respaldados en
+  `Flujos/antes-umbrales-*.local.json` (ignorados por git).
+
+**Pendiente, en este orden:** OK de Andres para fusionar el PR; publicar A y B
+con `publicar-flujo.sh --aplicar` (el diagnóstico ya está corrido y limpio);
+aprobar el despliegue de `v0.2.0`; prueba contra un teléfono real; etiqueta
+`v0.3.5` del sitio.
 
 ---
 
