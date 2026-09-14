@@ -4,7 +4,56 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-13 (la unidad de cobro pasa a bloques de 25 respuestas con umbrales de operador y bloqueo: `Analisis/27`, rama `cobro/bloques-de-25`; las Functions pasan a `sa-functions`, sin Editor, `v0.1.5`)
+**Última actualización:** 2026-09-13 (los flujos A y B obedecen los umbrales de uso extendido: rama `flujos/umbrales-atencion`; #64 y #46 fusionados, producción pendiente de `v0.2.0`)
+
+---
+
+## 2026-09-13 — los flujos obedecen los umbrales de uso extendido (rama `flujos/umbrales-atencion`)
+
+**#64 y #46 fusionados** con el OK de Andres en el chat (NovuChat `4482181`;
+sitio `474add1`, con squash, el único método que usa ese repositorio).
+**Fusionar no desplegó nada:** no hay proyecto de staging, así que
+`desplegar-staging` se omite siempre. Producción sale de las etiquetas firmadas
+`v0.2.0` (NovuChat) y `v0.3.5` (sitio), que crea una persona.
+
+**Los dos flujos de atención ya obedecen los umbrales**, en el JSON versionado:
+
+- `Traer configuración` manda `telefono`, tomado del webhook
+  (`messages[0].from`): corre antes de `Normalizar entrada`.
+- `Config del negocio` baja `atencionEstado`, `atencionMensajeFijo`,
+  `atencionAvisarRecepcion`, `atencionRespuestas` y `atencionVenceEn`. Ante la
+  duda —panel caído, 409, estado desconocido— el estado es `normal`.
+- Compuerta nueva `¿Atención normal?` entre `¿Comercio operativo?` y el agente.
+  La rama falsa va a `Uso extendido`: en operador responde el aviso fijo por
+  `Responder al cliente` y lo reporta como saliente; en bloqueado no envía
+  nada. El aviso al negocio reutiliza `¿Transferir a humano?` → `Avisar a
+  recepción` (A) y `Avisar al dueño` (B, con `textoAviso`; sin él manda el
+  aviso de pedido de siempre, idéntico).
+- **Ningún nodo de WhatsApp nuevo**, a propósito: `publicar-flujo.sh` injerta
+  las credenciales por NOMBRE de nodo, y uno nuevo quedaría sin credencial.
+- Nodos: A de 30 a 33, B de 22 a 26. 42 pruebas nuevas en
+  `pruebas/flujos-umbrales.test.ts`, que ejecutan el código y las expresiones
+  del JSON versionado.
+
+**Mensajes que agrega o quita:** ninguno en el camino normal. Entre el umbral
+de operador y el de bloqueo, un mensaje fijo por consulta en lugar de la
+respuesta del modelo; desde el bloqueo, cero. Más hasta dos avisos al negocio
+por ventana, uno por umbral.
+
+**Pendiente, en este orden:**
+
+1. Etiqueta `v0.2.0` y aprobación en `production`. Sin las Functions nuevas,
+   `configuracionFlujo` no devuelve `atencion` y el flujo publicado se comporta
+   exactamente como hoy.
+2. Regenerar los `.local.json` con `preparar-import.sh` —el script de
+   publicación usa ESE archivo si existe— y publicar con `publicar-flujo.sh`,
+   primero sin `--aplicar` (solo diagnostica), un flujo por vez con su `--env`.
+3. Probar contra un teléfono real: cargar umbrales bajos en el negocio de demo
+   con `actualizarEstadoCuenta` (por ejemplo 3 y 5), recorrer normal → operador
+   → bloqueado, y devolverlos a los de respaldo (`null`).
+4. El aviso al negocio sale como texto libre: fuera de la ventana de 24 h del
+   número de recepción, Meta lo rechaza (`Analisis/25` §3.1). Es el mismo
+   defecto que los avisos de pedido, y se resuelve con la plantilla utility.
 
 ---
 
