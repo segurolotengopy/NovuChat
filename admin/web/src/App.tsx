@@ -22,6 +22,7 @@ import { Cobro } from './paginas/Cobro';
 import { Inventario } from './paginas/Inventario';
 import { Pedidos } from './paginas/Pedidos';
 import { Cobros } from './paginas/Cobros';
+import { Captacion } from './paginas/Captacion';
 import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
 import type { FlujoId } from './lib/flujos';
 
@@ -131,7 +132,9 @@ function Cabecera() {
             que el servidor le va a cerrar. */}
         {tenantId && (flujos ?? []).flatMap((f) =>
           FLUJOS[f].pestanas
-            .filter((p) => (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper'))
+            .filter((p) => p.soloPropietario
+              ? permisos.propietario
+              : (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper'))
             .map((p) =>
               <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>))}
         {tenantId && esPersona &&
@@ -236,6 +239,10 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Cobros /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
+        {/* CAPTACIÓN: el flujo propio de NovuChat. Solo el propietario, igual
+            que la regla de su documento. */}
+        <Route path="/negocio/:tenantId/captacion" element={
+          <Proteger requiere="propietario"><><Cabecera /><Captacion /></></Proteger>} />
         <Route path="/negocio/:tenantId/consumo" element={
           <Proteger requiere="miembroOPropietario"><><Cabecera /><Consumo /></></Proteger>} />
         {/* Los dos nombres anteriores de esta pantalla —«Uso» y «Cierres»—

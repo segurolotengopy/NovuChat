@@ -25,7 +25,7 @@ import { db } from './firebase';
  * no puede escribir funcionarios ni construyendo la petición a mano. Lo que
  * esta tabla evita es ofrecer una puerta que el servidor va a cerrar.
  */
-export type FlujoId = 'agendamiento' | 'venta';
+export type FlujoId = 'agendamiento' | 'venta' | 'onboarding';
 
 export interface Pestana {
   ruta: string;
@@ -41,6 +41,13 @@ export interface Pestana {
    * este producto viene a sacar del medio.
    */
   roles?: ('admin' | 'oper')[];
+  /**
+   * Solo la ve el PROPIETARIO de NovuChat (sesión de Google), nunca la gente
+   * del comercio. Es el caso del flujo de captación: su documento es de
+   * NovuChat y `firestore.rules` le niega la lectura hasta al administrador
+   * del propio tenant `novuchat`. Si está, `roles` no se mira.
+   */
+  soloPropietario?: boolean;
 }
 
 export interface DefinicionFlujo {
@@ -91,6 +98,16 @@ export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
     // venta y no de agendamiento: allá el catálogo es referencial —de qué habla
     // el asistente— y además Meta exige precio en cada producto, así que los
     // servicios «a consultar» no se podrían listar. Ver DISENO.md §4sexies.3bis.
+  },
+  onboarding: {
+    // EL FLUJO PROPIO DE NOVUCHAT: capta y atiende a quien quiere contratar el
+    // servicio, por el número de NovuChat. No se le vende a ningún comercio,
+    // así que su pestaña es solo del propietario. Especificación de Silvana
+    // del 13/09/2026, en `CLIENTES/NOVUCHAT/`.
+    nombre: 'Captación de clientes',
+    pestanas: [{ ruta: 'captacion', etiqueta: 'Captación', soloPropietario: true }],
+    catalogo: 'Catálogo',
+    documento: 'onboarding',
   },
 };
 

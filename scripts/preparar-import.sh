@@ -13,13 +13,20 @@
 #
 #   ./scripts/preparar-import.sh                                  # Demo A
 #   ./scripts/preparar-import.sh Flujos/demo-b-venta-cobro.json   # Demo B
+#   ./scripts/preparar-import.sh Flujos/novuchat-onboarding.json .env.novuchat
+#
+# EL SEGUNDO ARGUMENTO ES EL ENTORNO, y para un flujo que no es el Demo A hay
+# que pasarlo. De `.env` sale la ruta del webhook que se fija en el disparador:
+# sin el segundo argumento, un flujo nuevo recibia la ruta del DEMO A y los dos
+# flujos quedaban peleando por la misma URL. Con el entorno del cliente -- que
+# todavia no tiene ruta registrada -- n8n crea una nueva, que es lo correcto.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 
 FLUJO="${1:-Flujos/demo-a-agendamiento.json}"
 LOCAL="CONFIGURACION.local.md"
-ENV_FILE=".env"
+ENV_FILE="${2:-.env}"
 
 [[ -f "$FLUJO" ]] || { echo "✗ No existe $FLUJO"; exit 1; }
 [[ -f "$LOCAL" ]] || { echo "✗ No existe $LOCAL — sin el no hay valores"; exit 1; }
@@ -52,7 +59,8 @@ if len(uuids) == 1 and disparadores:
         n["webhookId"] = uuids[0]
     webhook = f"{VERDE}+{FIN} webhookId fijado en: " + ", ".join(n["name"] for n in disparadores)
 elif not uuids:
-    webhook = f"{ROJO}✗{FIN} N8N_WEBHOOK_PATH no tiene un UUID — n8n va a inventar una ruta nueva"
+    webhook = (f"{GRIS}·{FIN} {env_file} no tiene ruta de webhook registrada: n8n crea una nueva "
+               f"(correcto para un flujo nuevo; despues se anota en N8N_WEBHOOK_PATH)")
 else:
     webhook = f"{ROJO}✗{FIN} la ruta tiene {len(uuids)} UUID: reviselo a mano"
 

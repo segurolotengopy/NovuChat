@@ -240,6 +240,11 @@ reales de WhatsApp **no llegan nunca** a n8n, y el panel no muestra ningún
 error: simplemente no pasa nada. Se ve exactamente igual que un webhook mal
 configurado, y se pierde la tarde buscando en el lugar equivocado.
 
+> **Actualización del 2026-09-14.** En las apps creadas por caso de uso ya no
+> hay interruptor: el paso a Live se llama **Publicar** y está en el **menú
+> izquierdo** de la app. Pide los mismos datos (privacidad, eliminación de
+> datos, categoría, ícono) y muestra la lista de requisitos antes de confirmar.
+
 1. Panel de la app → arriba, junto al nombre, hay un **interruptor
    Desarrollo / Activo (Live)**.
 2. Al intentar moverlo, Meta pide dos cosas:

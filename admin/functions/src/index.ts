@@ -93,7 +93,7 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 // use como parte de una ruta de Firestore un valor con barras o puntos.
 const ID_NUMERO = /^[0-9]{6,25}$/;
 // Un flujo por vertical. Ver DISENO.md §Varios flujos y varios números.
-const VERTICALES = new Set(['agendamiento', 'venta', 'interno']);
+const VERTICALES = new Set(['agendamiento', 'venta', 'onboarding']);
 const texto = (v: unknown, max: number): string =>
   typeof v === 'string' ? v.slice(0, max).trim() : '';
 
