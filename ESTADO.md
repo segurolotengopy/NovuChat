@@ -4,7 +4,32 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-13 (los flujos A y B obedecen los umbrales de uso extendido: rama `flujos/umbrales-atencion`; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor)
+**Última actualización:** 2026-09-14 (Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67; antes, 2026-09-13: los flujos A y B obedecen los umbrales de uso extendido, rama `flujos/umbrales-atencion`; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor)
+
+---
+
+## 2026-09-14 — Semgrep: las excepciones `nosemgrep` dejan de abrir alertas
+
+Semgrep saca del JSON (el que decide el bloqueo) lo exceptuado con
+`// nosemgrep: <id>`, pero lo deja en el SARIF con
+`suppressions: [{"kind": "inSource"}]`, y Code Scanning no lee esa marca. Por
+eso seguían abiertas las alertas **#53 y #54** en `main` y el PR #66 abrió la
+**#69 y la #70**, todas de `js-eval-prohibido` sobre las pruebas que ejecutan a
+propósito el código de los flujos con `new Function`. Además, el check no
+requerido «Semgrep OSS» del #66 falla.
+
+- `_reusable-security.yml` (v2.3) filtra esos resultados antes de subir el
+  SARIF y guarda el completo como artifact en todos los modos. El bloqueo no
+  cambia.
+- **El workflow sale del estándar**: la fuente es
+  `~/SeguridadGeneral/02-pipelines/workflows/_reusable-security.yml`
+  (repo `AndresAlberdi/SeguridadGeneral`), que `bootstrap-repo.sh` copia. El
+  cambio va en los dos lados, idéntico: si no, la próxima actualización lo
+  borra. PR del estándar: AndresAlberdi/SeguridadGeneral#25.
+- **No se descartó ninguna alerta a mano.** Cuando el siguiente análisis de
+  `main` llegue sin esos resultados, Code Scanning las cierra solo. El #66 lo
+  recibe al volver a correr su CI después de la fusión.
+- Mensajes de WhatsApp: no cambia ninguno (no toca flujos).
 
 ---
 

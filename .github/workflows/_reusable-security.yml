@@ -1,6 +1,6 @@
 # =============================================================================
 # _reusable-security.yml — Fase 2 "seguridad-estatica" (workflow reutilizable)
-# Versión: 2.2 | Fecha: 2026-09-12
+# Versión: 2.3 | Fecha: 2026-09-14
 # -----------------------------------------------------------------------------
 # Propósito: concentrar en un solo lugar todas las comprobaciones de seguridad
 # estática que corren en TODOS los modos (A público, B privado con licencias,
@@ -457,6 +457,8 @@ jobs:
   # sast: Semgrep CE dentro del contenedor oficial (returntocorp/semgrep-action
   # está archivada). Genera SARIF completo y falla únicamente si hay hallazgos
   # de severidad ERROR (los WARNING quedan registrados pero no bloquean).
+  # A Code Scanning sube el SARIF sin los hallazgos exceptuados con nosemgrep;
+  # el completo va siempre al artifact.
   # `security-events: write` es necesario solo cuando subir_sarif = true; los
   # permisos de un job no pueden condicionarse por input, así que se declara
   # siempre (el caller lo acota en Modo B0 si lo desea).
@@ -512,19 +514,65 @@ jobs:
           sys.exit(1 if errores else 0)
           PY
 
+      # Semgrep omite del JSON los hallazgos exceptuados con `nosemgrep: <id>`,
+      # pero los deja en el SARIF marcados con suppressions[].kind = "inSource",
+      # y Code Scanning no lee esa marca: abre la alerta igual. A Code Scanning
+      # va una copia sin ellos; el SARIF completo, que sí los registra, queda en
+      # el artifact para auditoría. El bloqueo no cambia: lo decide el JSON.
+      - name: Quitar del SARIF los hallazgos exceptuados con nosemgrep
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ ! -f semgrep.sarif ]; then
+            echo "::warning::No hay semgrep.sarif: el escaneo no llegó a escribirlo."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json
+
+          # Exceptuado: alguna supresión inSource y ninguna rechazada o en
+          # revisión (SARIF 2.1.0). Semgrep no escribe `status`.
+          def exceptuado(r):
+              sup = r.get("suppressions") or []
+              return (any(s.get("kind") == "inSource" for s in sup)
+                      and not any(s.get("status") in ("rejected", "underReview") for s in sup))
+
+          with open("semgrep.sarif", encoding="utf-8") as f:
+              sarif = json.load(f)
+          quitados = []
+          for run in sarif.get("runs") or []:
+              resultados = run.get("results") or []
+              quitados += [r for r in resultados if exceptuado(r)]
+              if "results" in run:
+                  run["results"] = [r for r in resultados if not exceptuado(r)]
+          with open("semgrep-code-scanning.sarif", "w", encoding="utf-8") as f:
+              json.dump(sarif, f)
+          print(f"SARIF: {len(quitados)} hallazgos exceptuados con nosemgrep no van a Code Scanning")
+          for r in quitados:
+              fisica = ((r.get("locations") or [{}])[0]).get("physicalLocation") or {}
+              uri = (fisica.get("artifactLocation") or {}).get("uri")
+              linea = (fisica.get("region") or {}).get("startLine")
+              print(f"  {r.get('ruleId')} {uri}:{linea}")
+          PY
+
       - name: Subir SARIF a Code Scanning (Modo A/B)
         if: inputs.subir_sarif && always()
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
-          sarif_file: semgrep.sarif
+          # Sin los exceptuados con nosemgrep (paso anterior).
+          sarif_file: semgrep-code-scanning.sarif
           category: semgrep${{ needs.preparar.outputs.sufijo_sarif }}
 
-      - name: Guardar SARIF como artifact (Modo B0)
-        if: inputs.subir_sarif == false && always()
+      # En todos los modos: en B0 es la única salida del escaneo, y en A/B es
+      # la constancia de lo exceptuado, que Code Scanning ya no muestra.
+      - name: Guardar SARIF completo como artifact (auditoría; única salida en B0)
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: sarif-semgrep-${{ needs.preparar.outputs.slug }}
-          path: semgrep.sarif
+          path: |
+            semgrep.sarif
+            semgrep-code-scanning.sarif
           retention-days: 30
 
   # ---------------------------------------------------------------------------
