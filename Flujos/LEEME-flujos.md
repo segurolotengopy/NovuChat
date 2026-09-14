@@ -135,3 +135,78 @@ evitarlo en vivo). Recomendado: **(a)**.
 - Si el nodo WhatsApp diera problemas con la imagen del QR en el número de
   prueba, el fallback es replicar el patrón del nodo HTTP de la lista
   interactiva con `type: "image"` y `link` (contingencia 4 del plan 03).
+
+---
+
+## 7. Flujo de captación de NovuChat (`novuchat-onboarding.json`)
+
+**El primer flujo de un cliente real en producción: el propio NovuChat**
+(14/09/2026). Atiende el número de NovuChat, que no es de prueba. Especificación
+de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
+
+### Qué hace
+
+1. **Compuerta inicial, sin modelo.** A un «hola» suelto le responde con dos
+   botones: «Soy cliente actual» y «Soy cliente nuevo». Quien ya escribió lo que
+   quiere («hola, ¿cuánto cuesta?») pasa directo al asistente.
+2. **Cliente actual, sin modelo.** Un mensaje con el enlace a la consola, cómo
+   recuperar la contraseña y un botón a una persona. **Sin código de acceso.**
+3. **Cliente nuevo.** El asistente responde con la información del sitio y va
+   registrando empresa, contacto, rubro, flujos de interés, personalización y
+   NIT (marcas `[LEAD]…[/LEAD]`). Con los cuatro obligatorios, cierra (`[CIERRE]`):
+   botón a un asesor y aviso interno con la plantilla `solicitud_contacto`.
+4. **Topes.** En la respuesta 25 (fin del primer bloque) ofrece un asesor con un
+   botón y sigue. La respuesta 50 es una despedida fija, con aviso interno, y
+   después silencio hasta que pasen 24 horas. Los dos valores se editan en la
+   consola, pestaña «Captación» (solo el propietario).
+5. **Idempotencia.** Un reenvío de Meta con el mismo id de mensaje no se
+   responde dos veces.
+
+**Mensajes que declara:** 1 por turno al cliente, siempre, en el único nodo
+`Enviar a WhatsApp` (o su respaldo en texto si Meta rechaza el interactivo,
+nunca los dos). Más **1 plantilla utility** por prospecto cerrado y 1 por corte.
+
+### Credenciales (todas nuevas, propias de la app `NovuChat-Asistente`)
+
+| Credencial | Tipo | Nodos |
+|---|---|---|
+| WhatsApp Trigger | WhatsApp Trigger API (App ID + App Secret de `NovuChat-Asistente`) | `WhatsApp Trigger` |
+| Graph WhatsApp NovuChat (Bearer) | Header Auth: `Authorization` = `Bearer <token permanente>` | `Enviar a WhatsApp`, `Enviar texto de respaldo`, `Avisar a NovuChat` |
+| NovuChat ingesta (alias del número) | Header Auth, el secreto del alias `clienteNN` | `Traer configuración`, `Reportar mensaje (entrante/saliente)` |
+| CRM de prospectos (cabecera) | Header Auth | `Guardar prospecto` (solo si `crmUrl` no está vacío) |
+| Google Gemini | la compartida | `Google Gemini Chat Model` |
+
+### Importar
+
+```bash
+./scripts/preparar-import.sh Flujos/novuchat-onboarding.json .env.novuchat
+```
+
+**El segundo argumento es obligatorio para este flujo.** Sin él, el script toma
+la ruta de webhook del Demo A y los dos flujos pelearían por la misma URL. Con
+`.env.novuchat`, que todavía no tiene ruta, n8n crea una nueva.
+
+Los marcadores de `Config base` (`REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT`,
+`REEMPLAZAR_NUMERO_RECEPCION_NOVUCHAT`, `REEMPLAZAR_HORARIO_ATENCION_NOVUCHAT`)
+son el **respaldo** si la consola no contesta: los valores de verdad salen del
+tenant `novuchat` en la consola. Después: `Trigger On` = Messages, credenciales,
+**Publish**, y la URL de Production al webhook de la app `NovuChat-Asistente`.
+
+### La base de conocimiento es una copia con alarma
+
+El nodo `Conocimiento del sitio` lleva el corpus del RAG de novuchat.site con su
+huella. `admin/pruebas/onboarding-flujo.test.ts` falla si el sitio regeneró su
+índice y la huella ya no coincide. Para actualizarlo, se vuelve a copiar
+`FRAGMENTOS`, `HUELLA` y `GENERADO` desde
+`Novuchat-site/functions/src/rag/indice.json`. Se retira cuando el sitio exponga
+la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.md`).
+
+### Límites conocidos
+
+- El estado de cada conversación (etapa, contador, datos del prospecto) vive en
+  los datos estáticos del flujo. n8n los guarda **solo en ejecuciones de
+  producción**: probando desde el editor, cada ejecución arranca de cero.
+- Dos mensajes del mismo teléfono en el mismo instante pueden contar una
+  respuesta de menos. Para un techo de costo es aceptable.
+- `crmUrl` vacío: el CRM todavía no existe. Los prospectos quedan en la consola
+  (Conversaciones del tenant `novuchat`) y en el aviso interno.

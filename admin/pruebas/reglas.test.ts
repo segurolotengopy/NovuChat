@@ -42,6 +42,8 @@ const A = 'tenant-a-salon';
 const B = 'tenant-b-restaurante';
 const C = 'tenant-c-baja';
 const D = 'tenant-d-suspendido';
+/** El tenant PROPIO de NovuChat, con el flujo de captación (`onboarding`). */
+const E = 'tenant-e-novuchat';
 
 let entorno: RulesTestEnvironment;
 
@@ -71,6 +73,7 @@ const operA     = () => entorno.authenticatedContext('u-oper-a',  claims({ [A]: 
 const adminB    = () => entorno.authenticatedContext('u-admin-b', claims({ [B]: 'admin' })).firestore();
 const adminC    = () => entorno.authenticatedContext('u-admin-c', claims({ [C]: 'admin' })).firestore();
 const adminD    = () => entorno.authenticatedContext('u-admin-d', claims({ [D]: 'admin' })).firestore();
+const adminE    = () => entorno.authenticatedContext('u-admin-e', claims({ [E]: 'admin' })).firestore();
 const operD     = () => entorno.authenticatedContext('u-oper-d',  claims({ [D]: 'oper'  })).firestore();
 const ingestaD  = () => entorno.authenticatedContext('svc-d',     claims({ [D]: 'ingesta' }, false, 'custom')).firestore();
 const ingestaA  = () => entorno.authenticatedContext('svc-a',     claims({ [A]: 'ingesta' }, false, 'custom')).firestore();
@@ -235,6 +238,19 @@ beforeEach(async () => {
         tenantId: t, flujo: 'agendamiento', wabaId: 'waba-1', estado,
       });
     }
+    // E: el tenant PROPIO de NovuChat, con el flujo de captación. Su documento
+    // `onboarding` es de NovuChat y no del comercio.
+    await setDoc(doc(db, 'tenants', E), {
+      nombre: E, estado: 'activo', plan: 'basico',
+      vertical: 'onboarding', flujos: ['onboarding'],
+    });
+    await setDoc(doc(db, `tenants/${E}/config/negocio`), {
+      nombreNegocio: 'NovuChat', actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+    });
+    await setDoc(doc(db, `tenants/${E}/config/onboarding`), {
+      topeAviso: 25, topeDuro: 50, plantillaAviso: 'solicitud_contacto',
+      actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+    });
     // Acceso de soporte: uno vigente sobre A, uno ya vencido sobre A.
     await setDoc(doc(db, `tenants/${A}/accesosSoporte/u-soporte`), { expira: enUnaHora, otorgadoPor: 'u-admin-a' });
     await setDoc(doc(db, `tenants/${A}/accesosSoporte/u-vencido`), { expira: haceUnaHora, otorgadoPor: 'u-admin-a' });
@@ -2506,5 +2522,84 @@ describe('Pantallas · la consulta real de cada una', () => {
     await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/catalogo`)));
     await assertSucceeds(getDocs(collection(adminA(), `tenants/${A}/funcionarios`)));
     await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/cuenta/estado`)));
+  });
+});
+
+// ===========================================================================
+// EL FLUJO DE CAPTACIÓN DE NOVUCHAT: su configuración es solo del propietario
+// ===========================================================================
+//
+// Especificación de Silvana (13/09/2026): la pestaña del flujo propio de
+// NovuChat la ven y la editan SOLO los superadministradores, con Google. Las
+// pruebas se escriben negando, como el aislamiento entre comercios: que el
+// botón no aparezca en la consola no prueba nada.
+describe('Captación de NovuChat: la configuración es solo del propietario', () => {
+  const ruta = `tenants/${E}/config/onboarding`;
+  const cfg = (uid: string, extra: Record<string, unknown> = {}) => ({
+    mensajeClienteActual: 'Entra a la consola con tu correo.',
+    enlaceConsola: 'https://consola.novuchat.site',
+    topeAviso: 25, topeDuro: 50, plantillaAviso: 'solicitud_contacto',
+    actualizadoPor: uid, actualizadoEn: serverTimestamp(), ...extra,
+  });
+
+  it('control: el documento existe en la semilla', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      expect((await getDoc(doc(ctx.firestore(), ruta))).exists()).toBe(true);
+    });
+  });
+
+  it('el propietario, con Google, lo lee y lo edita', async () => {
+    await assertSucceeds(getDoc(doc(propietario(), ruta)));
+    await assertSucceeds(setDoc(doc(propietario(), ruta), cfg('u-novuchat'), { merge: true }));
+  });
+
+  it('el administrador del propio tenant NO lo lee ni lo escribe', async () => {
+    await assertFails(getDoc(doc(adminE(), ruta)));
+    await assertFails(setDoc(doc(adminE(), ruta), cfg('u-admin-e')));
+    await assertFails(updateDoc(doc(adminE(), ruta), { topeDuro: 500,
+      actualizadoPor: 'u-admin-e', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('pero sí edita lo común de su negocio', async () => {
+    await assertSucceeds(setDoc(doc(adminE(), `tenants/${E}/config/negocio`),
+      configValida('u-admin-e')));
+  });
+
+  it('un propietario que entró con contraseña no puede: el claim queda inerte', async () => {
+    await assertFails(getDoc(doc(propietarioConPassword(), ruta)));
+    await assertFails(setDoc(doc(propietarioConPassword(), ruta), cfg('u-novuchat')));
+  });
+
+  it('un comercio ajeno no lo lee', async () => {
+    await assertFails(getDoc(doc(adminA(), ruta)));
+  });
+
+  it('un comercio SIN el flujo no tiene documento de captación, ni lo crea el propietario', async () => {
+    await assertFails(setDoc(doc(propietario(), `tenants/${A}/config/onboarding`), cfg('u-novuchat')));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/onboarding`), cfg('u-admin-a')));
+  });
+
+  it('el corte tiene que ser mayor que el fin del primer bloque', async () => {
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 25, topeDuro: 25 })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 30, topeDuro: 20 })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 2 })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeDuro: 500 })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { topeAviso: 25.5 })));
+  });
+
+  it('valida el enlace y el nombre de la plantilla', async () => {
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { enlaceConsola: 'http://consola.novuchat.site' })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { enlaceConsola: 'javascript:alert(1)' })));
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { plantillaAviso: 'Solicitud Contacto' })));
+    await assertSucceeds(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { enlaceConsola: '' })));
+  });
+
+  it('un campo fuera de la lista no entra, ni siquiera un token de CRM', async () => {
+    // Los secretos viven en las credenciales de n8n (prohibición 2 de CLAUDE.md).
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { tokenCrm: 'pat-na1-xxxx' })));
+  });
+
+  it('el sello tiene que ser del que escribe', async () => {
+    await assertFails(setDoc(doc(propietario(), ruta), cfg('otra-persona')));
   });
 });

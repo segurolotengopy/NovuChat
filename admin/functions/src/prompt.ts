@@ -296,13 +296,19 @@ export function ranurasDe(funcionarioId: string, inicio: Date, fin: Date): strin
  * consume tanto `configuracionFlujo` como la pantalla de configuración: si se
  * agrega un campo en un solo lado, se nota.
  */
-export const VERTICALES_CONOCIDOS = ['agendamiento', 'venta', 'interno'] as const;
+// `onboarding` es el flujo PROPIO de NovuChat: capta y atiende a quien quiere
+// contratar el servicio, por el número de NovuChat. Reemplaza al `interno` que
+// estaba reservado para esto y que nadie usaba. Su documento es de NovuChat y
+// no del comercio: solo lo lee y lo escribe el propietario (`tieneOnboarding`
+// en firestore.rules). Ver `CLIENTES/NOVUCHAT/01-…` §3.
+export const VERTICALES_CONOCIDOS = ['agendamiento', 'venta', 'onboarding'] as const;
 export type Vertical = (typeof VERTICALES_CONOCIDOS)[number];
 
 /** Qué documento de configuración específico le toca a cada vertical. */
 export function documentoDeVertical(vertical: string): string | null {
   return vertical === 'agendamiento' ? 'agendamiento'
     : vertical === 'venta' ? 'venta'
+    : vertical === 'onboarding' ? 'onboarding'
     : null;
 }
 

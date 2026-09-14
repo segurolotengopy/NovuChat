@@ -4,7 +4,82 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-13 (despliegue por CI funcionando; la cuenta de despliegue ya no lee secretos; las Functions pasan a `sa-functions`, sin Editor)
+**Última actualización:** 2026-09-14 (número de NovuChat en Meta, verificado; flujo de captación, consola y pruebas escritos)
+
+---
+
+## 2026-09-14 — el número de NovuChat está en Meta, y el flujo de captación está escrito
+
+**Meta, hecho y verificado** (`verificar-meta.sh --env .env.novuchat`: tres
+verdes; el del webhook se omite hasta que exista el flujo):
+
+- Número real **+591 7856 7326** en una **WABA propia** («NovuChat»), dentro del
+  portafolio renombrado **«NovuChat Produccion»**. La app `NovuChat-Asistente`
+  se había colgado de la WABA del Demo B y se corrigió creando una WABA nueva.
+- App **publicada** (en las apps nuevas, «Live» se llama **Publicar**, en el
+  menú izquierdo). `subscribed_apps` con solo `NovuChat-Asistente`. Token de
+  usuario de sistema **Empleado** (sin verificar, el portafolio admite un solo
+  administrador de sistema y es el del Demo B), sin vencimiento. PIN de dos
+  pasos fijado. Método de pago cargado.
+- El chip tenía cuenta de WhatsApp como cuenta *agregada* en el ZTE, que solo
+  ofrecía «Cerrar sesión». Se borró registrándolo en **WhatsApp Business**.
+- Plantilla del aviso interno **`solicitud_contacto`**, en revisión. Meta
+  clasificaba la primera redacción como Marketing por el vocabulario.
+- **PENDIENTE:** el nombre visible sigue «NovuChat Produccion»; Meta no deja
+  cambiarlo (se diagnostica con la API, ver `CLIENTES/NOVUCHAT/01-…` §9).
+
+**Código, en `claude/novuchat-client-flow-c009af`:**
+
+- **Flujo `Flujos/novuchat-onboarding.json`** (30 nodos): botones de bienvenida,
+  rama de cliente actual **sin código de acceso**, asistente con el corpus del
+  sitio, extracción de datos del prospecto, cierre con botón a un asesor y aviso
+  por plantilla, topes 25/50 y descarte de reenvíos de Meta. El estado de cada
+  conversación vive en los datos estáticos del flujo, no en `ingesta.ts`: el
+  conteo que factura lo está rehaciendo otra sesión (`cobro/bloques-de-25`).
+- **Consola:** el vertical reservado `interno` pasa a llamarse `onboarding`;
+  documento `/config/onboarding` que **solo** el propietario lee y escribe (ni
+  el administrador del propio tenant); pestaña «Captación» solo para el
+  propietario.
+- **Pruebas:** 48 nuevas del flujo, 11 de reglas escritas negando, y el flujo
+  sumado a las de suspensión. Reglas 240/240, pruebas sin emulador 110/110,
+  tipos de consola y Functions sin errores, saneo sin hallazgos.
+- **Scripts:** `configurar-cliente.sh` (entorno de cualquier cliente, comparando
+  contra todos los demás) y `preparar-import.sh` con el entorno como segundo
+  argumento: sin él, un flujo nuevo recibía la ruta de webhook del Demo A.
+
+**Decisiones de Andres (14/09):** sin código para el cliente actual;
+administrador del tenant `novuchat` con contraseña sobre una casilla de
+NovuChat; prospectos a la colección `leads` del sitio.
+
+**Siguiente:** PR y despliegue de reglas y consola; alta del tenant `novuchat`;
+importar y publicar el flujo; webhook; suite de aceptación con dos teléfonos.
+**Deuda:** el corpus del sitio va copiado con alarma de huella, y el CRM espera
+dos Functions del sitio (`CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.md`).
+
+## 2026-09-13 (tarde) — NovuChat es el primer cliente real: número propio y flujo de onboarding
+
+Andres fijó que **cada cliente tiene su directorio en `CLIENTES/<MAYUSCULAS>/`**
+(`CLIENTES/NOVUCHAT/`, `CLIENTES/QTACO/`), fuera del genérico de `Flujos/` y
+`admin/`. **Está dentro del repo público**: hay que decidir si se ignora en git o
+va a un repo privado antes de que tenga datos reales.
+
+**Primer cliente real en producción: NovuChat mismo**, con el flujo de captación
+que especificó Silvana (`CLIENTES/NOVUCHAT/00-especificacion-…`). Las
+instrucciones completas —chip reciclado, Meta con app y WABA nuevas en el
+portafolio de NovuChat, flujo `onboarding` en la consola solo para propietarios,
+la Function `conocimiento` del sitio, el flujo nodo por nodo y la suite de
+aceptación— están en `CLIENTES/NOVUCHAT/01-instrucciones-alta-numero-y-flujo-onboarding.md`.
+
+Lo que la especificación pide y **no se hace como está escrito**: el «código de
+consola» fijo para quien diga ser cliente (la consola no tiene código; sería una
+filtración por diseño), y la lista interactiva (van botones de respuesta). Los
+topes 25/50 se leen con `Analisis/27`: 25 es fin del primer bloque con aviso y
+botón a persona; 50 es tope de seguridad. **Siete decisiones quedan para Andres**
+(§8 del documento): `CLIENTES/` en git, código de consola, tenant `novuchat`,
+Function del sitio, CRM, modelo inicial, nombre del portafolio.
+
+**Ningún código escrito todavía.** Siguiente: las tareas 4, 5 y 7 del §6 (consola,
+flujo y scripts) en este worktree, en paralelo con el chip y Meta.
 
 ---
 

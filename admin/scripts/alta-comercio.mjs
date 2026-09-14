@@ -40,7 +40,7 @@ const ADMIN = opcion('admin');
 const NOMBRE_ADMIN = opcion('nombre-admin') ?? '';
 const FLUJOS = (opcion('flujos') ?? 'agendamiento').split(',').map((f) => f.trim()).filter(Boolean);
 
-const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'interno']);
+const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 
@@ -65,7 +65,7 @@ const db = getFirestore();
 const auth = getAuth();
 
 // Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
-const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta' };
+const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);
 console.log(`  Flujos     : ${FLUJOS.join(', ')}`);

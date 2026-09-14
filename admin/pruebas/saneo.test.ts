@@ -228,9 +228,11 @@ describe('Rótulos del cobro simulado', () => {
 });
 
 describe('Documento de configuración por vertical', () => {
-  it('cada vertical lee el suyo, y el interno no tiene ninguno', () => {
+  it('cada vertical lee el suyo, incluido el de captación de NovuChat', () => {
     expect(documentoDeVertical('agendamiento')).toBe('agendamiento');
     expect(documentoDeVertical('venta')).toBe('venta');
+    expect(documentoDeVertical('onboarding')).toBe('onboarding');
+    // `interno` estaba reservado para el flujo propio y se retiró: no lee nada.
     expect(documentoDeVertical('interno')).toBeNull();
     expect(documentoDeVertical('lo-que-sea')).toBeNull();
   });

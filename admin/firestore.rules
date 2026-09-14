@@ -236,6 +236,14 @@ service cloud.firestore {
       return tieneFlujo(tenantId, 'venta');
     }
 
+    // El flujo PROPIO de NovuChat: capta y atiende a quien quiere contratar el
+    // servicio. Su documento `/config/onboarding` es de NovuChat, no del
+    // comercio: lo lee y lo escribe SOLO el propietario de la plataforma, con
+    // sesión de Google. Ni el administrador del propio tenant `novuchat` entra.
+    function tieneOnboarding(tenantId) {
+      return tieneFlujo(tenantId, 'onboarding');
+    }
+
     // Habilita ESCRITURA y la ingesta desde n8n. Solo 'activo'.
     function tenantOperativo(tenantId) {
       return estadoTenant(tenantId) == 'activo';
@@ -396,7 +404,13 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /config/{documento} {
 
-        allow get, list: if esMiembro(tenantId);
+        // Todo documento de configuración lo lee la gente del comercio, SALVO
+        // `onboarding`, que es de NovuChat. `list` no se rompe: ninguna
+        // pantalla lista la colección entera, se lee documento por documento, y
+        // la consulta de `cobro.ts` va con el SDK Admin, que no pasa por acá.
+        allow get, list: if (documento != 'onboarding' && esMiembro(tenantId))
+                         || (documento == 'onboarding' && esPropietario()
+                             && tieneOnboarding(tenantId));
 
         // Solo el admin del negocio edita la configuración, y solo el documento
         // `negocio`. La creación y el borrado los hace la Function de alta/baja:
@@ -444,6 +458,15 @@ service cloud.firestore {
         allow create: if esAdmin(tenantId) && tenantOperativo(tenantId)
                       && documento == 'marca' && tieneCobro(tenantId) && logoValido();
         allow delete: if false;
+
+        // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN: SOLO EL PROPIETARIO. El alta lo
+        // crea vacío, pero el propietario puede crearlo si falta —el tenant
+        // `novuchat` pudo darse de alta antes de que existiera el flujo—. Nunca
+        // en un tenant que no tiene el flujo en su lista.
+        allow create, update: if documento == 'onboarding'
+                              && esPropietario()
+                              && tieneOnboarding(tenantId)
+                              && configOnboardingValida();
 
         // =====================================================================
         // /config/marca — EL LOGO DEL COMERCIO, EN SU PROPIO DOCUMENTO
@@ -717,6 +740,41 @@ service cloud.firestore {
             && d.get('tiempoDespachoMin', 30) >= 0 && d.get('tiempoDespachoMin', 30) <= 480
             && d.get('aceptaDelivery', true) is bool
             && d.get('aceptaRetiroEnLocal', true) is bool
+            && selloValido(d);
+        }
+
+        // =====================================================================
+        // /config/onboarding — EL FLUJO DE CAPTACIÓN DE NOVUCHAT
+        //
+        // El documento entero es de NovuChat, así que la lista blanca va sobre
+        // las CLAVES (sirve para crear y para actualizar), no sobre las
+        // afectadas. NINGÚN SECRETO: el token del CRM y el de Meta viven en las
+        // credenciales de n8n, y un campo que no está en la lista no entra.
+        //
+        // Los topes son la palanca de costo del flujo: al de aviso termina el
+        // primer bloque de respuestas y sale el botón a una persona; al duro se
+        // despide y no llama más al modelo. El duro tiene que ser mayor que el
+        // de aviso, o el aviso no llegaría nunca.
+        // =====================================================================
+        function configOnboardingValida() {
+          let d = request.resource.data;
+          return d.keys().hasOnly([
+              'mensajeClienteActual', 'enlaceConsola', 'topeAviso', 'topeDuro',
+              'plantillaAviso', 'actualizadoPor', 'actualizadoEn'
+            ])
+            && d.get('mensajeClienteActual', '') is string
+            && d.get('mensajeClienteActual', '').size() <= 600
+            && d.get('enlaceConsola', '') is string
+            && d.get('enlaceConsola', '').size() <= 200
+            && (d.get('enlaceConsola', '') == ''
+                || d.get('enlaceConsola', '').matches('https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/?#=&%-]*)?'))
+            && d.get('topeAviso', 25) is int
+            && d.get('topeAviso', 25) >= 3 && d.get('topeAviso', 25) <= 100
+            && d.get('topeDuro', 50) is int
+            && d.get('topeDuro', 50) <= 200
+            && d.get('topeDuro', 50) > d.get('topeAviso', 25)
+            && d.get('plantillaAviso', 'solicitud_contacto') is string
+            && d.get('plantillaAviso', 'solicitud_contacto').matches('[a-z0-9_]{1,64}')
             && selloValido(d);
         }
       }

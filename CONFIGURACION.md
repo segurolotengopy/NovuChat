@@ -32,6 +32,20 @@
 > `Demo SeguroLo Tengo`, ID `${OTRA_APP_ID}`). Los mensajes de prueba llegan
 > también a su webhook. No modificar esa app.
 
+### 1.b NovuChat en producción (primer cliente real, 14/09/2026)
+
+| Parámetro | Valor |
+|---|---|
+| Portafolio | `NovuChat Produccion` (el que fue del Demo B) |
+| App | `NovuChat-Asistente` · App ID `${WA_APP_ID_NOVUCHAT}` · publicada |
+| WABA | propia, `NovuChat` · `${WABA_ID_NOVUCHAT}` (distinta de la del Demo B) |
+| Número | real, `${WA_NUMBER_NOVUCHAT}` · `PHONE_NUMBER_ID` `${WA_PHONE_ID_NOVUCHAT}` |
+| Usuario de sistema | rol **Empleado** (sin verificar, el portafolio admite un solo administrador de sistema) |
+| Plantilla del aviso interno | `solicitud_contacto` (utility, es, sin botones) |
+| Entorno local | `.env.novuchat`, escrito por `scripts/configurar-cliente.sh --cliente NOVUCHAT` |
+
+> Número real: **no** tiene la lista de 5 destinatarios del número de prueba.
+
 ## 2. n8n
 
 | Parámetro | Valor |
@@ -40,6 +54,7 @@
 | Versión | 2.36.5 (fijada) |
 | Licencia | Community registrada (no comparte flujos entre usuarios) |
 | Flujo Demo A | `NovuChat Demo A — Agendamiento (Belleza y Salud)` |
+| Flujo de captación | `NovuChat — Captación de clientes (onboarding)` |
 | Zona horaria | `America/La_Paz` |
 | Nodos Code | solo JavaScript (la imagen no trae Python) |
 | Base de datos | `pgvector/pgvector:pg16` (contenedor `n8n-db`) |
