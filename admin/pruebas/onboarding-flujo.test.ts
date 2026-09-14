@@ -506,7 +506,10 @@ describe('Estructura del flujo', () => {
     for (const rama of ['Bienvenida', 'Cliente actual', 'Uso extendido', 'Procesar respuesta', 'Comercio no operativo']) {
       expect(flujo.connections[rama]?.['main']?.[0]?.map((c) => c.node)).toEqual(['Salida']);
     }
-    const aGraph = flujo.nodes.filter((n) => String(n.parameters['url'] ?? '').includes('graph.facebook.com'));
+    // El comienzo EXACTO de la URL, no «contiene»: una comparación por
+    // subcadena también aceptaría un host arbitrario que la mencione (CodeQL).
+    const META = /^=?https:\/\/graph\.facebook\.com\//;
+    const aGraph = flujo.nodes.filter((n) => META.test(String(n.parameters['url'] ?? '')));
     expect(aGraph.map((n) => n.name).sort()).toEqual(['Avisar a NovuChat', 'Enviar a WhatsApp', 'Enviar texto de respaldo']);
     expect(entradas('¿Responder?')).toEqual(['Salida']);
     expect(entradas('Enviar a WhatsApp')).toEqual(['¿Responder?']);
