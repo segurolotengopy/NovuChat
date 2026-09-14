@@ -1784,8 +1784,14 @@ node admin/scripts/alta-comercio.mjs --proyecto <id> \
 gcloud secrets versions access latest --secret=INGESTA_CLIENTE01 --project <id>
 #    → se carga como credencial de cabecera en n8n, y NUNCA se escribe en el repo.
 
-# 3. El número de WhatsApp y su alias, con `asignarNumero` desde la consola,
-#    más `aliasSecreto: "cliente01"` en /rutasWhatsApp/{phoneNumberId}.
+# 3. El número de WhatsApp y su alias. NO hay camino desde la consola: ninguna
+#    pantalla llama a `asignarNumero`, las reglas prohíben escribir
+#    /rutasWhatsApp desde un navegador, y la Function no escribe `aliasSecreto`
+#    (descubierto el 2026-09-14, alta de NovuChat). Se hace con el SDK Admin:
+node admin/scripts/asignar-numero.mjs --proyecto <id> --listar     # alias libres
+node admin/scripts/asignar-numero.mjs --proyecto <id> --tenant salon-rosa \
+  --numero <phone_number_id> --waba <waba_id> --flujo agendamiento \
+  --alias cliente01 --aplicar
 ```
 
 **Ni una línea de código, ni un despliegue.** Antes, cada cliente obligaba a
