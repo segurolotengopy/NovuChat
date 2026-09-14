@@ -15,9 +15,13 @@ import { descargarCsv } from '../lib/exportar';
  * puede quedar librada a interpretación.
  * =============================================================================
  *
- *   CONVERSACIÓN Todos los mensajes con un mismo cliente durante 24 horas
- *                continuas, sin importar cuántos sean. ES LA UNIDAD QUE SE
- *                FACTURA, y es la misma que usa Meta para cobrarnos a nosotros.
+ *   CONVERSACIÓN Un bloque de hasta 25 respuestas del asistente a un mismo
+ *                cliente dentro de 24 horas continuas. ES LA UNIDAD QUE SE
+ *                FACTURA. La respuesta 26 dentro del mismo día abre otra;
+ *                pasadas las 24 horas la cuenta vuelve a cero. Del total, la
+ *                ingesta anota aparte cuántas vinieron de exceder los 25
+ *                (`bloquesAdicionales`), para que el comercio pueda ver por qué
+ *                el número es mayor que la cantidad de clientes que escribió.
  *
  *   ATENCIÓN     Una persona distinta atendida en el período. Si el mismo
  *                cliente vuelve tres veces en el mes, son TRES conversaciones y
@@ -49,6 +53,12 @@ interface Periodo {
   conversaciones?: number;
   /** Nombre viejo del mismo número. Se lee para no perder los meses ya escritos. */
   atenciones?: number;
+  /** De las conversaciones, cuántas vinieron de exceder 25 respuestas en un día. */
+  bloquesAdicionales?: number;
+  /** Ventanas que pasaron a una persona por uso extendido. */
+  derivadasAOperador?: number;
+  /** Ventanas en las que el asistente dejó de responder hasta el día siguiente. */
+  bloqueadas?: number;
   cierres?: number;
   interacciones?: number;
   personasAtendidas?: number;
@@ -210,6 +220,9 @@ export function Consumo() {
 
   const actual = periodos[0];
   const conversaciones = conversacionesDe(actual);
+  const bloquesAdicionales = actual?.bloquesAdicionales ?? 0;
+  const derivadas = actual?.derivadasAOperador ?? 0;
+  const bloqueadas = actual?.bloqueadas ?? 0;
   const atenciones = actual?.personasAtendidas ?? 0;
   const cierres = actual?.cierres ?? 0;
   const tasa = porcentaje(cierres, conversaciones);
@@ -240,6 +253,24 @@ export function Consumo() {
               ventana de 24 h. Un número imposible en la primera tarjeta hace
               dudar de todos los demás. La relación cierres/conversaciones
               sigue estando, sin disfrazarla de porcentaje. */}
+          {/* Se dice SOLO cuando pasó: un comercio cuyos clientes nunca superan
+              las 25 respuestas no tiene por qué leer una regla que no lo tocó.
+              Cuando sí pasó, es la explicación de por qué «conversaciones» es
+              mayor que la cantidad de clientes que escribieron ese mes. */}
+          {bloquesAdicionales > 0 && (
+            <p className="text-muted">
+              {bloquesAdicionales === 1
+                ? 'Una de ellas se contó porque un cliente superó las 25 respuestas en un mismo día.'
+                : `${bloquesAdicionales} de ellas se contaron porque un cliente superó las 25 respuestas en un mismo día.`}
+            </p>
+          )}
+          {(derivadas > 0 || bloqueadas > 0) && (
+            <p className="text-muted">
+              {derivadas > 0 && `${derivadas} ${derivadas === 1 ? 'conversación pasó' : 'conversaciones pasaron'} a una persona de su equipo por uso extendido.`}
+              {derivadas > 0 && bloqueadas > 0 && ' '}
+              {bloqueadas > 0 && `En ${bloqueadas} el asistente dejó de responder hasta el día siguiente.`}
+            </p>
+          )}
           {tasa !== null && (
             <p className="text-muted">
               {cierres} {cierres === 1 ? 'cierre' : 'cierres'} sobre {conversaciones}{' '}
@@ -261,10 +292,13 @@ export function Consumo() {
           <h3 className="card-kicker">Qué cuenta cada número</h3>
           <div className="card-body">
             <p>
-              <strong>Conversación:</strong> todos los mensajes con un mismo
-              cliente durante 24 horas continuas, sin importar cuántos sean.
+              <strong>Conversación:</strong> hasta 25 respuestas del asistente
+              a un mismo cliente en 24 horas continuas.
               <strong> Es lo que se factura.</strong> Si alguien escribe a la
-              mañana y cierra su pedido a la tarde, es una sola.
+              mañana y cierra su pedido a la tarde, es una sola. Si un mismo
+              cliente necesita más de 25 respuestas en el día, el asistente
+              sigue atendiéndolo y desde la respuesta 26 se cuenta otra; a las
+              24 horas la cuenta vuelve a cero.
             </p>
             <p>
               <strong>Atención:</strong> personas distintas del mes. El mismo
