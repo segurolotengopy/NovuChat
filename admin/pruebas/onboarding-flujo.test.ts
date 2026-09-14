@@ -433,6 +433,16 @@ describe('Salida: una sola compuerta y un solo mensaje', () => {
     expect(salir({ respuesta: 'ok', guardarLead: true, crmUrl: 'http://crm.ejemplo' })['guardar']).toBe(false);
   });
 
+  it('a nadie se le avisa de su propio mensaje (misma regla que el Demo B, #68)', () => {
+    // Quien prueba desde el número de recepción recibiría el aviso de su propio
+    // mensaje: un mensaje pagado que no dice nada nuevo.
+    const propio = salir({ from: '59170000000', respuesta: 'ok', avisar: true, estadoAviso: 'datos completos' });
+    expect(propio['avisar']).toBe(false);
+    expect(propio['cuerpoAviso']).toBeNull();
+    const ajeno = salir({ respuesta: 'ok', avisar: true, estadoAviso: 'datos completos' });
+    expect(ajeno['avisar']).toBe(true);
+  });
+
   it('con el teléfono bloqueado no sale nada al cliente', () => {
     const r = salir({ respuesta: '', responder: false, avisar: true, estadoAviso: 'x' });
     expect(r['responder']).toBe(false);
