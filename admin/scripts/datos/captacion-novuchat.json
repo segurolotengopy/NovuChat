@@ -81,8 +81,8 @@
       "texto": "Una cita agendada o un pedido confirmado. Es lo que mide si el asistente está vendiendo, no solo respondiendo."
     },
     {
-      "tema": "Si me paso del plan (excedente)",
-      "texto": "Si superas las conversaciones de tu plan, cada bloque adicional de hasta 30 conversaciones cuesta USD 10 y no vence. Te avisamos al llegar al 80 % de tu plan, y nunca se te cobra sin que lo apruebes."
+      "tema": "Si me paso del plan (bolsa)",
+      "texto": "Si superas las conversaciones de tu plan, puedes sumar una bolsa de 30 conversaciones por USD 10, que no vence. Te avisamos al llegar al 80 % de tu plan, y nunca se te cobra sin que lo apruebes."
     },
     {
       "tema": "Conversación muy larga",
@@ -98,7 +98,7 @@
     },
     {
       "tema": "Qué incluye el precio",
-      "texto": "El consumo del modelo de inteligencia artificial y las conversaciones de WhatsApp están incluidos en tu plan. Lo único que se cobra aparte son los excedentes, si superas las conversaciones incluidas, y te avisamos antes de llegar. Tampoco te cobramos por cada mensaje que responde el asistente, aunque a nosotros WhatsApp nos los cobre."
+      "texto": "El consumo del modelo de inteligencia artificial y las conversaciones de WhatsApp están incluidos en tu plan. Lo único que se cobra aparte son las bolsas de conversaciones, si superas las incluidas, y te avisamos antes de llegar. Tampoco te cobramos por cada mensaje que responde el asistente, aunque a nosotros WhatsApp nos los cobre."
     },
     {
       "tema": "Agendas y catálogo por plan",

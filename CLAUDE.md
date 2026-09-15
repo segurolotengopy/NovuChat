@@ -181,8 +181,15 @@ America»). Antes eran gratis.
   hay que recalcular la bolsa.**
 - **El volumen del plan grande no se estira más allá de 500** sin rehacer la
   cuenta de `Analisis/21` §9.4: entre 750 y 1.000 la cartera se da vuelta.
-- **Vigilar los comercios que pasen del 70 % de su plan.** Es donde el margen se
-  erosiona, y es una conversación comercial, no un problema de precio.
+- **Aviso de consumo al 80 % del plan, para todos** (decisión de Andres,
+  15/09/2026; antes decía 70 % como vigilancia interna). Es lo que promete el
+  sitio: al llegar al 80 % de las conversaciones incluidas, se avisa al comercio
+  y NovuChat lo ve. Es donde el margen se erosiona, y es una conversación
+  comercial, no un problema de precio. Lo marca el servidor, no la pantalla.
+- **La bolsa se llama «bolsa»**, nunca «excedente» (decisión del 15/09): 30
+  conversaciones por USD 10, que no vencen.
+- **Productos del catálogo por plan: 20 / 100 / 500** (lo promete el sitio). La
+  consola tiene que permitir buscar, filtrar y ordenar hasta 500.
 - **Agendas por plan: 1 / 5 / hasta 10.** `Analisis/24`. El techo NO es el número
   de personas: es que el candado contra la doble reserva hace **una llamada a
   Google Calendar por cada calendario configurado**, y con 20 se rompe el
@@ -244,6 +251,8 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 | **Bloque de 25 respuestas por conversación** (la 26 factura otra) | `ingesta.ts`, en la misma transacción que cuenta (`mensajesVentana`, `bloquesAdicionales`) | **Hecho el 13/09** en `cobro/bloques-de-25`, con `pruebas/conteo-bloques.test.ts` |
 | **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
+| **Productos del catálogo por plan** (20 / 100 / 500) | `firestore.rules` al crear un producto, con un contador; la importación en lote por Function | **En construcción desde el 15/09** |
+| **Aviso de consumo al 80 %** de las conversaciones del plan | `ingesta.ts`, en la transacción que ya cuenta | **En construcción desde el 15/09** |
 
 **La regla al agregar cualquier límite nuevo:**
 
