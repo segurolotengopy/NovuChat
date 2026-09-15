@@ -88,6 +88,7 @@ Credenciales **en una carpeta propia**, para no pisar las de otras sesiones
 (las corre una persona, con la cuenta dueña del proyecto):
 
 ```bash
+unset CLOUDSDK_ACTIVE_CONFIG_NAME   # si vale "default", gcloud no crea la configuración en la carpeta nueva
 export CLOUDSDK_CONFIG="$HOME/.config/gcloud-novuchat-prod" GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud-novuchat-prod/application_default_credentials.json"
 gcloud auth login && gcloud auth application-default login && gcloud auth application-default set-quota-project <proyecto>
 ```
