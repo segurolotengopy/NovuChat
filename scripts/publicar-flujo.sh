@@ -88,6 +88,12 @@ if [[ "$COD" != "200" ]]; then
   exit 1
 fi
 
+# --- 1b. las credenciales de la instancia: nombre, tipo e id, nunca valores ----
+# Sirven para asignar a cada nodo la credencial que el JSON versionado NOMBRA.
+# Si la API no las lista, se sigue como antes (heredando del flujo vivo).
+curl -s --max-time 30 -o "$TMP/credenciales.json" \
+     -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/credentials?limit=250" || true
+
 APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
 import json, os, sys, datetime
 
@@ -154,6 +160,7 @@ for v in vivo.get("nodes", []):
             cred_por_tipo.setdefault(tipo, ref)
 
 heredadas_por_tipo = []
+declaradas = {n["name"]: dict(n.get("credentials") or {}) for n in nuevo["nodes"]}
 for n in nuevo["nodes"]:
     par = por_nombre.get(n["name"])
     if par is None:
@@ -177,6 +184,39 @@ for n in nuevo["nodes"]:
             n["credentials"][tipo] = cred_por_tipo[tipo]
             heredadas_por_tipo.append((n["name"], tipo))
 
+# Asignacion por NOMBRE: gana la credencial que el JSON versionado nombra.
+# Heredar del flujo vivo copiaba cualquier error hecho en la interfaz: el
+# 15/09/2026, al importar el flujo de NovuChat, n8n puso la unica credencial
+# Header Auth que existia (la de ingesta) en todos los nodos Header Auth,
+# incluidos los que envian a Meta. Meta respondia 190 y el diagnostico lo
+# informaba en verde como «credenciales heredadas».
+try:
+    lista_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8")).get("data")
+except Exception:
+    lista_cred = None
+corregidas, faltantes, ambiguas = [], [], []
+if isinstance(lista_cred, list):
+    indice = {}
+    for c in lista_cred:
+        indice.setdefault((c.get("type"), c.get("name")), []).append(c)
+    for n in nuevo["nodes"]:
+        for tipo, ref in (declaradas.get(n["name"]) or {}).items():
+            nombre = (ref or {}).get("name")
+            if not nombre:
+                continue
+            halladas = indice.get((tipo, nombre), [])
+            if len(halladas) == 1:
+                actual = (n.get("credentials") or {}).get(tipo) or {}
+                if actual.get("id") != halladas[0].get("id"):
+                    corregidas.append((n["name"], actual.get("name") or "ninguna", nombre))
+                n.setdefault("credentials", {})[tipo] = {"id": halladas[0]["id"], "name": nombre}
+            elif len(halladas) > 1:
+                ambiguas.append((n["name"], nombre, len(halladas)))
+            else:
+                faltantes.append((n["name"], nombre))
+else:
+    print(f"  {A}!{FIN} la API no listo las credenciales: se heredan del flujo vivo sin comprobar el nombre")
+
 for nombre in por_nombre:
     if nombre not in {n["name"] for n in nuevo["nodes"]}:
         sin_par.append(nombre)
@@ -186,6 +226,12 @@ for c in nuevos:   print(f"  {A}!{FIN} nodo nuevo, sin par en el flujo vivo: {c}
 for nodo, tipo in heredadas_por_tipo:
     print(f"  {V}+{FIN} credencial heredada POR TIPO ({tipo}): {nodo}")
 for c in sin_par:  print(f"  {A}!{FIN} nodo del flujo vivo que ya no existe: {c}")
+for nodo, antes, despues in corregidas:
+    print(f"  {A}~{FIN} credencial corregida: {nodo}: vivo «{antes}» -> «{despues}»")
+for nodo, nombre in faltantes:
+    print(f"  {R}✗{FIN} {nodo}: la credencial «{nombre}» no existe en n8n (creela con ese nombre exacto); queda la del flujo vivo")
+for nodo, nombre, cuantas in ambiguas:
+    print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; queda la del flujo vivo")
 
 if not con_cred:
     print(f"\n  {R}Ningun nodo heredo credenciales.{FIN} Revise que el ID sea el del")
@@ -285,7 +331,7 @@ if config_dif:
         aviso = f"  {R}<- longitud distinta{FIN}" if la != lb else ""
         print(f"    {A}~{FIN} {nodo} · {campo}: vivo {la} car. -> origen {lb} car.{aviso}")
 
-if not perdidos and not cambiados and not config_dif:
+if not perdidos and not cambiados and not config_dif and not corregidas:
     print(f"\n  {V}El flujo vivo coincide con el origen: no hay nada que reponer.{FIN}")
 
 # --- cuerpo para el PUT: la API rechaza campos de solo lectura ---------------
