@@ -504,6 +504,16 @@ export const ingesta = onRequest(
     // llamarlo elimina de raíz el abuso desde una página cualquiera.
     cors: false,
     maxInstances: 10,
+    // UNA INSTANCIA SIEMPRE DESPIERTA (decisión de Andres, 15/09/2026). Sin ella,
+    // el primer mensaje después de un rato sin tráfico esperaba el arranque en
+    // frío de esta Function y de la otra que el flujo llama en serie
+    // (`configuracionFlujo` → `ingesta`): 8 a 12 s de los ~20 que tardaba la
+    // primera respuesta. Costo medido en el catálogo de Google (us-east1,
+    // facturación por pedido, instancia mínima inactiva): 2,5e-6 USD por
+    // vCPU·s y por GiB·s → ~8,1 USD al mes por Function con 1 vCPU y 256 MiB,
+    // compartidos por todos los comercios. `pruebas/instancias-minimas.test.ts`
+    // impide que se pierda sin querer.
+    minInstances: 1,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
@@ -836,6 +846,16 @@ export const configuracionFlujo = onRequest(
     secrets: Object.values(SECRETOS_POR_ALIAS),
     cors: false,
     maxInstances: 10,
+    // UNA INSTANCIA SIEMPRE DESPIERTA (decisión de Andres, 15/09/2026). Sin ella,
+    // el primer mensaje después de un rato sin tráfico esperaba el arranque en
+    // frío de esta Function y de la otra que el flujo llama en serie
+    // (`configuracionFlujo` → `ingesta`): 8 a 12 s de los ~20 que tardaba la
+    // primera respuesta. Costo medido en el catálogo de Google (us-east1,
+    // facturación por pedido, instancia mínima inactiva): 2,5e-6 USD por
+    // vCPU·s y por GiB·s → ~8,1 USD al mes por Function con 1 vCPU y 256 MiB,
+    // compartidos por todos los comercios. `pruebas/instancias-minimas.test.ts`
+    // impide que se pierda sin querer.
+    minInstances: 1,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
