@@ -49,10 +49,13 @@
 - Archivo para importar generado (`Flujos/novuchat-onboarding.local.json`,
   ignorado). Faltan dos respaldos de `Config base`: número de recepción y
   horario.
-- **Espera a Andres:** credenciales de producción en carpeta propia y alta del
-  comercio; el enlace para poner la contraseña no pasa por ningún chat.
-  Después: número y alias (agente `plataforma`, con confirmación), credenciales
-  y publicación en n8n, webhook, y aceptación con dos teléfonos en
+- **Alta del comercio hecha (15/09):** tenant `novuchat` con su administrador
+  de contraseña (el enlace no pasó por ningún chat) y número …3391 asignado con
+  el alias `cliente01` y el flujo `onboarding`, verificado por relectura. El
+  login en la carpeta propia pidió antes `unset CLOUDSDK_ACTIVE_CONFIG_NAME`
+  (runbook corregido).
+- **Sigue:** número de recepción y horario en la consola, credenciales y
+  publicación en n8n, webhook, y aceptación con dos teléfonos en
   `CLIENTES/NOVUCHAT/aceptacion.md`.
 
 **Siguiente cliente:** arranca con `/alta-cliente`, fase `preparar`, y el

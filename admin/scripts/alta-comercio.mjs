@@ -76,7 +76,7 @@ console.log(`  Proyecto   : ${PROYECTO}\n`);
 // viejo que todavía diga {"salon-x": "admin"} le daría al dueño anterior acceso
 // al negocio nuevo. Es la misma regla que aplica `altaTenant`.
 if ((await db.doc(`tenants/${TENANT}`).get()).exists) {
-  console.error(`  ✗ El identificador «${TENANT}» ya se usó. Elegí otro.\n`);
+  console.error(`  ✗ El identificador «${TENANT}» ya se usó. Elige otro.\n`);
   process.exit(1);
 }
 
@@ -87,7 +87,7 @@ if (yaExiste) {
 }
 
 if (!APLICAR) {
-  console.log('  Seco: no se escribió nada. Agregá --aplicar.\n');
+  console.log('  Seco: no se escribió nada. Agrega --aplicar.\n');
   process.exit(0);
 }
 
@@ -155,5 +155,6 @@ const claim = ((await auth.getUser(usuario.uid)).customClaims ?? {}).nc ?? {};
 console.log(`  Verificación: ficha ${ficha.exists ? 'sí' : 'NO'}`
   + ` · flujos ${JSON.stringify(ficha.get('flujos'))}`
   + ` · rol ${claim.t?.[TENANT] ?? 'NO'}\n`);
-console.log('  FALTA, y no lo hace este script: asignarle su número de WhatsApp');
-console.log('  con `asignarNumero`, y cargar el secreto de su alias.\n');
+console.log('  SIGUE (docs/alta-cliente/RUNBOOK.md, etapa 4): asignarle su número y su');
+console.log('  alias de ingesta con `node scripts/asignar-numero.mjs --listar` y después');
+console.log('  `--tenant ... --numero ... --waba ... --flujo ... --alias clienteNN`.\n');
