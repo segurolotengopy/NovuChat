@@ -431,6 +431,13 @@ jobs:
       # ---------------------------------------------------------------------
       - name: Pruebas de reglas de Storage (emuladores Firestore + Storage)
         if: needs.preparar.outputs.script_reglas != ''
+        # TIEMPO LÍMITE PROPIO. Si el emulador se cuelga al arrancar (ya pasó
+        # en local, el 15/09), sin esto el paso se come el tiempo del job
+        # entero antes de fallar. En local la suite tarda ~10 s con los
+        # emuladores ya descargados; el primer arranque en un runner baja el
+        # jar del motor de reglas. El script además corta `emulators:exec`
+        # con `timeout` (TIMEOUT_EMULADORES, 300 s por defecto).
+        timeout-minutes: 8
         env:
           PM: ${{ needs.preparar.outputs.pm }}
         run: |

@@ -87,8 +87,21 @@ export STORAGE_EMULATOR_PORT="$PUERTO_ST"
 export FIRESTORE_EMULATOR_PORT="$PUERTO_FS"
 
 cd "$RAIZ"
-"$FIREBASE" emulators:exec \
+# TIEMPO LÍMITE. El 15/09 un agente quedó 10 minutos esperando a que el
+# emulador arrancara. `timeout` corta el CLI (y, con --kill-after, lo mata si
+# no responde al TERM); el `emulators:exec` apaga sus emuladores al recibir la
+# señal. Sale con 124 si se venció: se distingue de una prueba que falla.
+LIMITE="${TIMEOUT_EMULADORES:-300}"
+set +e
+timeout --kill-after=15s "$LIMITE" "$FIREBASE" emulators:exec \
   --config "$TMP/firebase.json" \
   --project "$PROYECTO" \
   --only firestore,storage \
   "npx vitest run pruebas/storage-reglas.test.ts $*"
+CODIGO=$?
+set -e
+if [[ "$CODIGO" -eq 124 || "$CODIGO" -eq 137 ]]; then
+  echo "✗ Los emuladores no terminaron en ${LIMITE} s (código ${CODIGO}): se cortó." >&2
+  echo "  Mire que no quede un java huérfano en los puertos ${PUERTO_FS}/${PUERTO_ST}." >&2
+fi
+exit "$CODIGO"
