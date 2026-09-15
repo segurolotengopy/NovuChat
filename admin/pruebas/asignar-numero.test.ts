@@ -13,7 +13,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'asignar-numero.mjs');
+// La variable permite correr esta suite contra otra versión del script (así se
+// comprobó que la prueba del bloqueo falla con la versión que lanzaba).
+const SCRIPT = process.env['ASIGNAR_NUMERO_SCRIPT'] ?? join(aqui, '..', 'scripts', 'asignar-numero.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;
@@ -115,4 +117,26 @@ describe('asignar-numero.mjs', () => {
     expect(r.codigo).not.toBe(0);
     expect(r.salida).toMatch(/No existe el comercio/);
   });
+
+  // UN RECHAZO NO DEJA BLOQUEOS. Antes el script lanzaba dentro de la
+  // transacción y salía con `process.exit` antes de que el rollback (que el SDK
+  // manda sin esperar) llegara: la ruta y la ficha que había leído quedaban
+  // bloqueadas ~67 s en el emulador, y la escritura siguiente sobre ellas
+  // esperaba ese tiempo o fallaba con `Transaction lock timeout`. Ahora el
+  // rechazo se devuelve y la transacción cierra limpia. Si vuelve a lanzar,
+  // esta prueba excede su tiempo y falla.
+  it('después de un rechazo, la ruta y la ficha que leyó se escriben al instante', async () => {
+    const r = asignar('cliente03', ['--aplicar'], NUM_OTRO);
+    expect(r.codigo).not.toBe(0);
+    expect(r.salida).toMatch(/ya está asignado a OTRO comercio/);
+    const inicio = Date.now();
+    await db.runTransaction(async (tx) => {
+      const [ruta, ficha] = await Promise.all([
+        tx.get(db.doc(`rutasWhatsApp/${NUM_OTRO}`)), tx.get(db.doc(`tenants/${T}`)),
+      ]);
+      tx.update(ruta.ref, { revisadoEn: Date.now() });
+      tx.update(ficha.ref, { revisadoEn: Date.now() });
+    });
+    expect(Date.now() - inicio).toBeLessThan(10_000);
+  }, 20_000);
 });
