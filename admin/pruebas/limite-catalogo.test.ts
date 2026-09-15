@@ -350,6 +350,23 @@ describe('importarCatalogo: crea hasta donde deja el plan', () => {
     expect(await contadorDe(T)).toMatchObject({ items: 2, ultimoItem: 'sin-columna' });
   });
 
+  // Arreglo de integración (b): la consola, sin contador, llama a la callable
+  // con `items: []` antes de la primera BAJA. El contador que queda tiene que
+  // dejar pasar esa baja por las reglas (el alta ya se prueba arriba, en «el
+  // contador que crea importarCatalogo lo aceptan después las reglas…»).
+  it('el contador que crea importarCatalogo deja pasar después una baja de a una', async () => {
+    await sembrar(EQ, { productos: 3, contador: false });
+    await llamar({ tenantId: EQ, items: [] }, comoAdmin(EQ));
+    const fs = entorno.authenticatedContext('u-admin-eq', tokenPersona({ [EQ]: 'admin' })).firestore();
+    const lote = writeBatch(fs);
+    lote.delete(doc(fs, `tenants/${EQ}/catalogo/p2`));
+    lote.update(doc(fs, `tenants/${EQ}/contadores/catalogo`),
+      { items: increment(-1), ultimoItem: 'p2', actualizadoEn: serverTimestamp() });
+    await expect(lote.commit()).resolves.toBeUndefined();
+    expect(await contadorDe(EQ)).toMatchObject({ items: 2, ultimoItem: 'p2' });
+    expect(await cuantos(EQ)).toBe(2);
+  });
+
   it('dos filas con el mismo id: entra la primera y la segunda se rechaza', async () => {
     await sembrar(T);
     const r = await llamar({ tenantId: T, items: [item('Pan'), item('pan', { precio: 20 })] }, comoAdmin(T));

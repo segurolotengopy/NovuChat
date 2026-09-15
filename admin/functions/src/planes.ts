@@ -152,6 +152,19 @@ export function limitesDe(plan: unknown): Limites {
   return { conversaciones: p.conversaciones, productos: p.productos, agendas: p.agendas };
 }
 
+/**
+ * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
+ * con su copia de límites y la versión del catálogo. Lo usan `altaTenant`
+ * (index.ts), `scripts/alta-comercio.mjs` y el sembrador local, para que las
+ * tres altas escriban lo mismo. Antes escribían `plan: 'basico'`, que no es un
+ * plan del catálogo y no traía copia: el comercio caía en el respaldo sin que
+ * nadie lo supiera. Subir de plan después es `asignar-plan.mjs` o
+ * `actualizarEstadoCuenta`.
+ */
+export function cuentaInicial(): { plan: IdPlanVendible; limites: Limites; catalogoPlanes: string } {
+  return { plan: PLAN_POR_DEFECTO, limites: limitesDe(PLAN_POR_DEFECTO), catalogoPlanes: CATALOGO_PLANES };
+}
+
 const limiteValido = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LIMITE_MAXIMO;
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  collection, deleteDoc, deleteField, doc, documentId, getDocs, increment, onSnapshot, orderBy,
+  collection, deleteDoc, deleteField, doc, documentId, getDoc, getDocs, increment, onSnapshot, orderBy,
   query, serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
@@ -327,13 +327,16 @@ function codigoDe(e: unknown): string {
 
 /**
  * El contador que la regla exige tocar junto con cada alta y cada baja. Si no
- * existe, el lote falla con `not-found`: es un problema de la cuenta, no de lo
- * que escribió el comercio, y se dice así.
+ * existe, NO SE MUESTRA UN ERROR: antes de la primera alta o baja se le pide a
+ * `importarCatalogo` con `items: []`, que lo crea CONTANDO lo que hay (ver
+ * `asegurarContador`). Solo si eso falla se dice que falta, y se dice como un
+ * problema de la cuenta, no de lo que escribió el comercio.
  */
 const contadorDe = (tenantId: string) => doc(db, 'tenants', tenantId, 'contadores', 'catalogo');
 
-const SIN_CONTADOR = 'Falta el contador que lleva la cuenta de tu catálogo. No es un '
-  + 'problema de tus datos: avísanos desde Reclamos y lo arreglamos.';
+const SIN_CONTADOR = 'No se pudo preparar la cuenta de tu catálogo (el contador del plan). '
+  + 'No es un problema de tus datos: inténtalo de nuevo en un momento y, si sigue, '
+  + 'avísanos desde Reclamos.';
 
 /* =============================================================================
    USO DEL PLAN
@@ -414,6 +417,8 @@ export function Catalogo() {
   });
   const [cuenta, setCuenta] = useState<Record<string, unknown> | null>(null);
   const [contador, setContador] = useState<number | null>(null);
+  /** `false` si el contador no existe; `null` si todavía no se sabe. */
+  const [contadorExiste, setContadorExiste] = useState<boolean | null>(null);
   const [params, setParams] = useSearchParams();
   const filtro = leerFiltro(params);
 
@@ -439,7 +444,8 @@ export function Catalogo() {
     return onSnapshot(contadorDe(tenantId), (d) => {
       const n = d.get('items');
       setContador(typeof n === 'number' ? n : null);
-    }, () => setContador(null));
+      setContadorExiste(d.exists());
+    }, () => { setContador(null); setContadorExiste(null); });
   }, [tenantId]);
 
   const todos = useMemo(() => items ?? [], [items]);
@@ -520,6 +526,26 @@ export function Catalogo() {
 
   const sello = () => ({ actualizadoPor: auth.currentUser?.uid ?? '', actualizadoEn: serverTimestamp() });
 
+  /**
+   * SIN CONTADOR, SE CREA ANTES DE LA PRIMERA ALTA O BAJA; no se muestra un
+   * error. Las reglas niegan crear o borrar un producto sin
+   * `contadores/catalogo` (no pueden saber cuántos hay), y el navegador no
+   * puede crearlo. `importarCatalogo` con `items: []` sí: lo crea CONTANDO lo
+   * que hay, con el mismo permiso que la regla de alta. Le pasa a un comercio
+   * dado de alta antes del límite por plan si nadie corrió
+   * `contar-catalogo.mjs`, y es la red para cualquier otro caso.
+   *
+   * Si el `onSnapshot` ya dijo que existe, no cuesta nada. Si dijo que no, o
+   * todavía no respondió, se mira una vez más con `getDoc` antes de llamar:
+   * la callable es idempotente, pero no hace falta pagarla de gusto.
+   */
+  const asegurarContador = async () => {
+    if (contadorExiste === true) return;
+    if ((await getDoc(contadorDe(tenantId))).exists()) return;
+    await httpsCallable<{ tenantId: string; items: never[] }, unknown>(funciones, 'importarCatalogo')(
+      { tenantId, items: [] });
+  };
+
   const agregar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     setEstadoAlta(null);
@@ -553,6 +579,7 @@ export function Catalogo() {
       setEstadoAlta('Ya hay un ítem con ese nombre (o con uno que se escribe casi igual). '
         + 'Para cambiarlo, usa «Editar» en su fila.'); return;
     }
+    try { await asegurarContador(); } catch { setEstadoAlta(SIN_CONTADOR); return; }
     try {
       const lote = writeBatch(db);
       lote.set(doc(db, 'tenants', tenantId, 'catalogo', id), {
@@ -599,6 +626,7 @@ export function Catalogo() {
   const eliminar = async (it: Item) => {
     setEstado(null);
     setConfirmando(null);
+    try { await asegurarContador(); } catch { setEstado(SIN_CONTADOR); return; }
     try {
       const lote = writeBatch(db);
       lote.delete(doc(db, 'tenants', tenantId, 'catalogo', it.id));

@@ -39,7 +39,9 @@ export {
 
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
-import { CATALOGO_PLANES, PLANES_ASIGNABLES, esIdPlan, limitesDe, type IdPlan } from './planes.js';
+import {
+  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, type IdPlan,
+} from './planes.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -148,9 +150,20 @@ export const altaTenant = onCall(async (peticion) => {
     throw new HttpsError('failed-precondition', 'El administrador debe haber ingresado una vez.');
   }
 
+  // El plan inicial es el más chico, con su copia de límites (`cuentaInicial`,
+  // planes.ts). Antes se escribía `plan: 'basico'`, que no es del catálogo.
+  const cuenta = cuentaInicial();
   const lote = db().batch();
+  lote.create(db().doc(`tenants/${tenantId}/cuenta/estado`), {
+    ...cuenta, actualizadoEn: Timestamp.now(),
+  });
+  // El contador del catálogo nace en cero: sin él las reglas no dejan dar de
+  // alta ni de baja un producto. Exactamente estos tres campos.
+  lote.create(db().doc(`tenants/${tenantId}/contadores/catalogo`), {
+    items: 0, ultimoItem: '', actualizadoEn: Timestamp.now(),
+  });
   lote.create(ref, {
-    nombre, estado: 'activo', plan: 'basico', vertical, flujos,
+    nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
     // El número de WhatsApp se asigna aparte, con `asignarNumero`: exige
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,

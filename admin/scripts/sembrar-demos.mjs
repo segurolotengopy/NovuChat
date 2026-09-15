@@ -377,8 +377,14 @@ for (const c of COMERCIOS) {
     }, { merge: true });
   }
 
+  // El plan de los demos, CON su copia de límites y la versión del catálogo
+  // (`functions/src/planes.ts`): quien hace cumplir un límite lee la copia.
+  // `set` con `merge` reemplaza `limites` entero, como `asignar-plan.mjs`.
+  const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/planes.ts');
   await db.doc(`tenants/${c.id}/cuenta/estado`).set({
     plan: 'demostracion',
+    limites: limitesDe('demostracion'),
+    catalogoPlanes: CATALOGO_PLANES,
     estadoPago: 'sin_cargo',
     montoMensual: 0,
     moneda: 'BOB',
