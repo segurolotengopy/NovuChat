@@ -20,7 +20,9 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 
 const T = 'cuenta-parcial';
-const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true } } };
+const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' } } };
+// El mismo claim con una sesión de contraseña no es el propietario (T-19).
+const PROPIETARIO_CON_CONTRASENA = { uid: 'prop-2', token: { nc: { p: true }, firebase: { sign_in_provider: 'password' } } };
 const ADMIN_DEL_COMERCIO = { uid: 'adm-1', token: { nc: { t: { [T]: 'admin' } } } };
 
 type Peticion = Parameters<typeof actualizarEstadoCuenta.run>[0];
@@ -55,6 +57,10 @@ describe('Quién puede llamarla', () => {
   it('el administrador del comercio NO puede, ni sobre su propio comercio', async () => {
     await rechaza(llamar({ tenantId: T, plan: 'pro' }, ADMIN_DEL_COMERCIO), 'permission-denied');
     expect(await cuenta()).toMatchObject({ plan: 'crecimiento' });
+  });
+
+  it('el claim de propietario con una sesión de CONTRASEÑA no alcanza (T-19)', async () => {
+    await rechaza(llamar({ tenantId: T, plan: 'pro' }, PROPIETARIO_CON_CONTRASENA), 'permission-denied');
   });
 
   it('sin sesión, NO', async () => {

@@ -81,9 +81,18 @@ const exigirAutenticado = (p: CallableRequest): string => {
   return p.auth.uid;
 };
 
+// VÍNCULO ROL ↔ PROVEEDOR, igual que `esPropietario()` en firestore.rules (T-19):
+// el claim de propietario solo vale con una sesión de Google. Sin esto, un `nc.p`
+// puesto por error en una cuenta de contraseña quedaba inerte en las reglas pero
+// ACTIVO en las Functions, que cambian planes y límites (revisión de seguridad
+// del 15/09/2026, MEDIUM preexistente).
 const exigirPropietario = (p: CallableRequest): string => {
   const uid = exigirAutenticado(p);
-  if (!claims(p).p) throw new HttpsError('permission-denied', 'Solo NovuChat.');
+  const proveedor = (p.auth?.token?.['firebase'] as { sign_in_provider?: unknown } | undefined)
+    ?.sign_in_provider;
+  if (!claims(p).p || proveedor !== 'google.com') {
+    throw new HttpsError('permission-denied', 'Solo NovuChat.');
+  }
   return uid;
 };
 

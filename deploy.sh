@@ -760,10 +760,17 @@ desplegar_firebase() {
   # `emulators` no cuenta): sin ella, `firebase deploy --only storage` no
   # tendría qué desplegar. Requiere el bucket por defecto creado y el rol del
   # agente de Storage (docs/seguridad/reglas-storage.md, «Despliegue»).
-  if [[ -f "$C_RUTA/storage.rules" ]] && python3 -c \
-      'import json, sys; sys.exit(0 if "storage" in json.load(open(sys.argv[1])) else 1)' \
-      "$C_RUTA/firebase.json" 2>/dev/null; then
+  # OPT-IN: solo con DESPLEGAR_STORAGE=1. Detectarlo por el archivo desplegaba
+  # Storage apenas existía storage.rules, aunque el proyecto todavía no tuviera
+  # bucket ni el rol del agente de Storage (revisión de seguridad del 15/09).
+  if [[ "${DESPLEGAR_STORAGE:-0}" == "1" ]]; then
+    command -v python3 >/dev/null || die 7 "DESPLEGAR_STORAGE=1 exige python3 para leer firebase.json"
+    [[ -f "$C_RUTA/storage.rules" ]] || die 7 "DESPLEGAR_STORAGE=1 pero no existe $C_RUTA/storage.rules"
+    python3 -c 'import json, sys; sys.exit(0 if "storage" in json.load(open(sys.argv[1])) else 1)' \
+      "$C_RUTA/firebase.json" || die 7 "DESPLEGAR_STORAGE=1 pero firebase.json no tiene la sección storage"
     objetivos="${objetivos},storage"
+  elif [[ -f "$C_RUTA/storage.rules" ]]; then
+    log_info "storage.rules existe pero no se despliega (DESPLEGAR_STORAGE=1 para incluirlo)"
   fi
   # Antes de tocar `live` se guarda la versión actual en el canal `previa`
   # (procedimiento único de rollback del estándar; no existe ningún subcomando

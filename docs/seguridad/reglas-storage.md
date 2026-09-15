@@ -82,7 +82,7 @@ temporal y puertos propios. Sin `STORAGE_EMULATOR_PORT`, la suite se salta: así
 Nada de esto lo hace un agente: lo hace una persona, con la cuenta dueña del
 proyecto, en el orden de abajo. **Verificado en el código de firebase-tools
 15.29.0** (la versión que fija `admin/pnpm-lock.yaml`; se cita la copia de
-`~/NovuChat/admin/node_modules/.pnpm/firebase-tools@15.29.0…/node_modules/firebase-tools/`,
+`admin/node_modules/.pnpm/firebase-tools@15.29.0…/node_modules/firebase-tools/`,
 y en 14.27.0 las mismas funciones están en las mismas líneas salvo que se
 indique).
 
@@ -224,8 +224,9 @@ reglas nuevas revertidas, los contadores quedan como datos inertes.
 - El `contentType` es declarado: la regla no ve el contenido. La defensa del
   contenido es la comprobación del servidor y la de la consola.
 - La URL con token no se vence sola: un archivo que no debería estar se borra.
-- No hay App Check en Storage todavía (sí en Firestore y Functions): un
-  administrador con sesión válida es quien puede subir, igual.
+- No hay App Check exigido en Storage ni en las Functions callables (ninguna
+  declara `enforceAppCheck`): un administrador con sesión válida es quien puede
+  subir o llamarlas. Exigirlo es un cambio aparte, para todas a la vez.
 
 ---
 
