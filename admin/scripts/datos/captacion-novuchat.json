@@ -1,0 +1,112 @@
+{
+  "_fuente": "novuchat.site: src/contenido/precios.es.ts, verticales.es.ts y faq.es.ts (15/09/2026). Las frases son las del sitio. El rubro Educación todavía no existe en el sitio: se pidió en CLIENTES/NOVUCHAT/03-pedido-sesion-sitio-educacion.md. Se carga con admin/scripts/cargar-captacion.mjs.",
+  "nombreAsistente": "Kenji",
+  "rubros": [
+    {
+      "id": "salud-belleza",
+      "nombre": "Salud y Belleza",
+      "solucion": "Agenda sola, recuerda las citas y libera a tu equipo del teléfono. Cada profesional con su propia agenda, sin citas superpuestas, y recordatorio 24 horas antes. En belleza el asistente da precios; en salud no los inventa: la valoración la hace el profesional.",
+      "flujoSugerido": "agendamiento"
+    },
+    {
+      "id": "gastronomia",
+      "nombre": "Gastronomía",
+      "solucion": "Toma el pedido desde tu carta, calcula el total con el envío, manda el QR y avisa a la cocina. Recibe el comprobante; quien confirma que entró la plata es tu banco, no el asistente.",
+      "flujoSugerido": "venta"
+    },
+    {
+      "id": "comercio",
+      "nombre": "Comercio y Retail",
+      "solucion": "Responde por tu catálogo a cualquier hora, toma los datos de envío y cierra la venta con el QR. No inventa nada que no esté en tu catálogo, y pide nombre y carnet para la guía de envío antes de mandar el QR.",
+      "flujoSugerido": "venta"
+    },
+    {
+      "id": "educacion",
+      "nombre": "Educación",
+      "solucion": "Agenda clases, tutorías o visitas en tu Google Calendar, sin horarios superpuestos, y recuerda la cita 24 horas antes. Responde a padres y alumnos sobre inscripciones, horarios y costos con la información que carga el colegio; lo que no está cargado no lo inventa y lo deriva a una persona.",
+      "flujoSugerido": "agendamiento"
+    },
+    {
+      "id": "otro",
+      "nombre": "Otro / a medida",
+      "solucion": "Cuéntanos cómo atiendes y vemos si encaja en citas o en ventas. Si necesitas integración con tu ERP o tu sistema propio, consultas a tus sistemas en tiempo real o flujos entre varios departamentos, es desarrollo a medida, cotizado caso por caso.",
+      "flujoSugerido": "a_medida"
+    }
+  ],
+  "planes": [
+    {
+      "nombre": "Impulso",
+      "precioUsd": 25,
+      "periodo": "mes",
+      "incluye": "Asistente con IA que entiende lenguaje natural, 24 horas; 100 conversaciones al mes; Consola para ver todo desde el celular; Canal oficial de WhatsApp Business"
+    },
+    {
+      "nombre": "Crecimiento",
+      "precioUsd": 50,
+      "periodo": "mes",
+      "incluye": "Asistente con IA que entiende lenguaje natural, 24 horas; 220 conversaciones al mes; Consola para ver todo desde el celular; Canal oficial de WhatsApp Business"
+    },
+    {
+      "nombre": "Pro",
+      "precioUsd": 90,
+      "periodo": "mes",
+      "incluye": "Asistente con IA que entiende lenguaje natural, 24 horas; 500 conversaciones al mes; Consola para ver todo desde el celular; Canal oficial de WhatsApp Business; Soporte técnico prioritario"
+    }
+  ],
+  "cargosUnicos": [
+    {
+      "nombre": "Instalación estándar",
+      "precioUsd": 65,
+      "desde": false,
+      "detalle": "Pago único, por adelantado. Llave en mano: verificación de tu número ante Meta, carga de tus servicios, precios, horarios y tono, conexión con Google Calendar y pruebas con casos reales."
+    },
+    {
+      "nombre": "Instalación a medida",
+      "precioUsd": 125,
+      "desde": true,
+      "detalle": "Integración con tu ERP o tu sistema propio, consultas a tus sistemas en tiempo real o flujos complejos entre varios departamentos. Desarrollo a medida, cotizado caso por caso."
+    }
+  ],
+  "aclaraciones": [
+    {
+      "tema": "Qué es una conversación",
+      "texto": "Una conversación son hasta 25 respuestas del asistente a un mismo cliente dentro de 24 horas continuas. Si alguien te escribe a las nueve de la mañana, sigue preguntando al mediodía y cierra su pedido a las seis de la tarde, eso es una sola conversación. Si un mismo cliente necesita más de 25 respuestas en el día, el asistente sigue atendiéndolo y a partir de la respuesta 26 se cuenta una conversación nueva. Pasadas las 24 horas desde su primer mensaje, la cuenta vuelve a empezar. Es la unidad que se factura."
+    },
+    {
+      "tema": "Atención",
+      "texto": "Una persona distinta atendida en el período. Si el mismo cliente vuelve tres veces en el mes, son tres conversaciones y una sola atención. No se factura: es un dato para que sepas a cuánta gente distinta llegaste."
+    },
+    {
+      "tema": "Cierre",
+      "texto": "Una cita agendada o un pedido confirmado. Es lo que mide si el asistente está vendiendo, no solo respondiendo."
+    },
+    {
+      "tema": "Si me paso del plan (excedente)",
+      "texto": "Si superas las conversaciones de tu plan, cada bloque adicional de hasta 30 conversaciones cuesta USD 10 y no vence. Te avisamos al llegar al 80 % de tu plan, y nunca se te cobra sin que lo apruebes."
+    },
+    {
+      "tema": "Conversación muy larga",
+      "texto": "Si un cliente necesita más de 25 respuestas, el asistente sigue atendiéndolo y desde la respuesta 26 se cuenta una conversación nueva. Como una charla tan larga casi siempre es porque algo se trabó, además te avisamos al número que nos des para que alguien de tu equipo la mire, con todo el contexto de lo que ya se habló."
+    },
+    {
+      "tema": "Cuándo se paga (prepago)",
+      "texto": "Todo es prepago. Cada mes del plan se paga por adelantado, y la instalación es un pago único que también se hace por adelantado, al inicio del servicio. No hay contratos largos ni permanencia."
+    },
+    {
+      "tema": "Moneda y tipo de cambio",
+      "texto": "Los precios están en dólares y el cobro se hace en bolivianos, al Tipo de Cambio Oficial del Banco Central de Bolivia. Tomamos el del primer día hábil de cada mes y lo mantenemos todo ese mes, así que sabes exactamente cuánto vas a pagar antes de hacerlo, y puedes verificarlo en la página del Banco Central."
+    },
+    {
+      "tema": "Qué incluye el precio",
+      "texto": "El consumo del modelo de inteligencia artificial y las conversaciones de WhatsApp están incluidos en tu plan. Lo único que se cobra aparte son los excedentes, si superas las conversaciones incluidas, y te avisamos antes de llegar. Tampoco te cobramos por cada mensaje que responde el asistente, aunque a nosotros WhatsApp nos los cobre."
+    },
+    {
+      "tema": "Agendas y catálogo por plan",
+      "texto": "Cada plan trae UNO de dos caminos, citas o ventas. Impulso: 1 agenda conectada a tu Google Calendar, o catálogo de hasta 20 productos. Crecimiento: hasta 5 agendas, una por persona, o catálogo de hasta 100 productos. Pro: hasta 10 agendas, una por persona o por sucursal, o catálogo de hasta 500 productos. Las agendas traen recordatorio automático 24 horas antes. Si un negocio necesita los dos caminos, contrata un plan para cada uno, cada uno en su propio número de WhatsApp."
+    },
+    {
+      "tema": "Cambio de plan",
+      "texto": "Se puede cambiar de plan en cualquier momento. El cambio se aplica el mes siguiente, sin recalcular el mes en curso."
+    }
+  ]
+}
