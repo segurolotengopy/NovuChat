@@ -1816,7 +1816,15 @@ service cloud.firestore {
                  // carrito. Hacen falta LOS DOS para poder contestar «mandé el
                  // enlace y no me llegó ningún pedido»: con uno solo no se
                  // distingue «nunca se derivó» de «se derivó y nadie compró».
-                 'catalogo_enlace', 'carrito_recibido'
+                 'catalogo_enlace', 'carrito_recibido',
+                 // Umbrales de atención (`Analisis/27` §5): la ventana pasó al
+                 // operador, o llegó al bloqueo. Explican «el asistente dejó de
+                 // contestarle a mi cliente». Faltaban desde el 13/09.
+                 'derivacion_operador', 'bloqueo_ventana',
+                 // Aviso de consumo al 80 % del plan (15/09), una vez por mes.
+                 'aviso_consumo'
+                 // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
+                 // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]
             && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
             && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']
