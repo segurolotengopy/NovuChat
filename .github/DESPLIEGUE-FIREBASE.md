@@ -354,6 +354,15 @@ for R in roles/firebasehosting.admin \
     --member="serviceAccount:${SA}" --role="$R" --condition=None
 done
 
+# Solo si además despliega las reglas de Storage (`storage` en
+# FIREBASE_DEPLOY_ONLY). firebase-tools lee el bucket por defecto
+# (firebasestorage.defaultBucket.get) antes de publicar las reglas; las reglas
+# en sí ya las cubre roles/firebaserules.admin. Verificar con Policy
+# Troubleshooter antes del primer despliegue: docs/seguridad/reglas-storage.md
+# §Despliegue.
+gcloud projects add-iam-policy-binding "$PROYECTO" \
+  --member="serviceAccount:${SA}" --role="roles/firebasestorage.viewer" --condition=None
+
 # Solo si además despliega Cloud Functions (Gen2 = Cloud Run + Cloud Build)
 for R in roles/cloudfunctions.developer \
          roles/run.admin \

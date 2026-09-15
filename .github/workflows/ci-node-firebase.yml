@@ -614,6 +614,11 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          # El bucket del archivo de planes de Captación (lib/firebase.ts). Sin
+          # esta línea la variable del repositorio no llega al bundle: la
+          # consola compila igual, pero con Storage apagado y «Subir»
+          # deshabilitado. Ver docs/seguridad/reglas-storage.md §Despliegue.
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_APPCHECK_SITE_KEY: ${{ vars.VITE_APPCHECK_SITE_KEY }}
         run: |
           set -euo pipefail
