@@ -105,7 +105,10 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   Google del propietario. El enlace para ponerla no se pega en ningún chat.
 - El secreto del alias va a n8n como Header Auth `Authorization` = `Bearer <valor>`,
   y lo lee **una persona**: `gcloud secrets versions access latest --secret=INGESTA_CLIENTENN --project <proyecto>`.
-- En la consola, con el administrador: número de recepción, horario, catálogo.
+- En la consola, con el administrador: número de recepción, horario, catálogo y
+  **«Cómo trata al cliente»** (tú, usted, vos o impersonal). Lo que dice la
+  consola gana sobre el respaldo del flujo: NovuChat quedó en «Impersonal» y el
+  asistente hablaba como un formulario («Se registra el nombre…»).
 
 ## 5 · Flujo
 

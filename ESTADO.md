@@ -54,9 +54,25 @@
   el alias `cliente01` y el flujo `onboarding`, verificado por relectura. El
   login en la carpeta propia pidió antes `unset CLOUDSDK_ACTIVE_CONFIG_NAME`
   (runbook corregido).
-- **Sigue:** número de recepción y horario en la consola, credenciales y
-  publicación en n8n, webhook, y aceptación con dos teléfonos en
-  `CLIENTES/NOVUCHAT/aceptacion.md`.
+- **Canal y flujo en producción (15/09):** flujo importado y publicado en n8n,
+  webhook de la app con cuatro verdes en `verificar-meta.sh`. Plantilla
+  `solicitud_contacto` **aprobada**.
+- **Primera aceptación con dos teléfonos:** bienvenida, cierre y datos del
+  prospecto funcionan; memoria separada por teléfono. Hallazgos, todos
+  corregidos el mismo día:
+  - n8n asignó la credencial de ingesta a los nodos que envían a Meta (190):
+    `publicar-flujo.sh` ahora asigna cada credencial por el nombre del JSON;
+  - `preparar-import.sh` llenaba marcadores por prefijo (Phone ID del Demo A
+    como respaldo): ahora solo por coincidencia exacta;
+  - el modelo guardó rubro «Pendiente» y repetía la pregunta: el flujo
+    descarta rellenos y el prompt ya no insiste;
+  - ids de nodo repetidos impedían actualizar el flujo por la API.
+- **Falta:** voz «De tú» en la consola (quedó «Impersonal»), comprobar que el
+  aviso llega a recepción, y las pruebas de cliente actual, sticker, ráfaga y
+  «¿integran con Odoo?». Deudas: la bienvenida se marca antes de confirmar el
+  envío; un texto rechazado por Meta no marca la ejecución como fallida; rotar
+  `INGESTA_CLIENTE01` en el próximo despliegue (llegó a Meta en tres pedidos
+  rechazados).
 
 **Siguiente cliente:** arranca con `/alta-cliente`, fase `preparar`, y el
 runbook. El nombre visible se decide **antes** de agregar el número.
