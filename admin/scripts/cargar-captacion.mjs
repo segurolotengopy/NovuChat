@@ -220,18 +220,24 @@ console.log(`  Archivo   : ${ARCHIVO}`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
 let plan;
+// El rechazo se DEVUELVE, no se lanza dentro de la transacción: lanzar ahí hace
+// que el proceso termine antes de que llegue el rollback, y el emulador retiene
+// los bloqueos unos 67 s (el mismo defecto que se corrigió en asignar-numero.mjs
+// y asignar-plan.mjs; causaba «Transaction lock timeout» en otras pruebas).
+let rechazo = null;
 try {
   await db.runTransaction(async (tx) => {
     const [tenant, negocio, onb] = await Promise.all([tx.get(refTenant), tx.get(refNegocio), tx.get(refOnb)]);
-    if (!tenant.exists) throw new Error(`No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`);
+    if (!tenant.exists) { rechazo = `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`; return; }
     const flujos = tenant.get('flujos') ?? [tenant.get('vertical')].filter(Boolean);
     if (!flujos.includes('onboarding')) {
-      throw new Error(`«${TENANT}» no tiene el flujo onboarding (flujos: ${JSON.stringify(flujos)}). `
-        + 'La captación se carga solo en un comercio con ese flujo.');
+      rechazo = `«${TENANT}» no tiene el flujo onboarding (flujos: ${JSON.stringify(flujos)}). `
+        + 'La captación se carga solo en un comercio con ese flujo.';
+      return;
     }
     // Como las reglas: un comercio suspendido o dado de baja no se reconfigura.
     const estado = tenant.get('estado') ?? 'activo';
-    if (estado !== 'activo') throw new Error(`«${TENANT}» está ${estado}: no se reconfigura.`);
+    if (estado !== 'activo') { rechazo = `«${TENANT}» está ${estado}: no se reconfigura.`; return; }
 
     const actual = onb.exists ? onb.data() : {};
     plan = {
@@ -264,6 +270,10 @@ try {
   });
 } catch (e) {
   console.error(`  ✗ ${e.message}\n`);
+  process.exit(1);
+}
+if (rechazo) {
+  console.error(`  ✗ ${rechazo}\n`);
   process.exit(1);
 }
 
