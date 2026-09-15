@@ -20,7 +20,7 @@
  *   - que la base de conocimiento sea la del sitio, con alarma si diverge.
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -479,6 +479,18 @@ describe('Estructura del flujo', () => {
   const entradas = (destino: string) => Object.entries(flujo.connections)
     .flatMap(([origen, tipos]) => Object.values(tipos).flat().flat()
       .filter((c) => c.node === destino).map(() => origen));
+
+  // La API de n8n rechaza un flujo con dos nodos del mismo `id` (HTTP 400,
+  // duplicate_node_id); la importación por la interfaz, en cambio, los reasigna
+  // sin avisar. Pasó el 15/09: el flujo se importó bien a mano y
+  // `publicar-flujo.sh --aplicar` no lo pudo actualizar.
+  it('ningún flujo versionado repite el `id` de un nodo', () => {
+    const dir = join(aqui, '../../Flujos');
+    for (const archivo of readdirSync(dir).filter((f) => f.endsWith('.json') && !f.endsWith('.local.json'))) {
+      const ids = (JSON.parse(readFileSync(join(dir, archivo), 'utf8')) as Flujo).nodes.map((n) => (n as { id?: string }).id);
+      expect(ids.filter((id, i) => ids.indexOf(id) !== i), archivo).toEqual([]);
+    }
+  });
 
   it('el disparador solo escucha mensajes, y antes de todo filtra los acuses', () => {
     expect(nodo('WhatsApp Trigger').parameters['updates']).toEqual(['messages']);
