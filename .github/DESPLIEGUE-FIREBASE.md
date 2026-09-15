@@ -514,7 +514,7 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 | `STAGING_URL` | igual que `DEV_URL` | |
 | `PROD_URL` | `https://novuchat-admin-prod.web.app` | |
 | `FIREBASE_DEPLOY_ONLY_DEV` | `hosting,firestore:rules,firestore:indexes` | agregar `,functions` **solo con Blaze** |
-| `FIREBASE_DEPLOY_ONLY` | `hosting,firestore:rules,firestore:indexes,functions` | staging y producción |
+| `FIREBASE_DEPLOY_ONLY` | `hosting,firestore:rules,firestore:indexes,functions,storage` | staging y producción. `storage` **solo después** de crear el bucket por defecto y conceder el rol del agente de Storage: ver `docs/seguridad/reglas-storage.md` §Despliegue |
 | `FIREBASE_SITE_ID` | no crear salvo sitio de Hosting con nombre propio | por omisión usa `GCP_PROJECT_ID_PROD` |
 | `HEALTH_PATH` | `/` | el panel es una SPA, no expone `/healthz` |
 | `FIREBASE_PREVIEW` | no crear | encenderla exige tocar la condición OIDC |

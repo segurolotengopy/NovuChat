@@ -10,6 +10,7 @@
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "pruebas:reglas": "bash pruebas/correr.sh",
+    "pruebas:reglas:storage": "bash pruebas/correr-storage.sh",
     "web:dev": "pnpm --filter @novuchat/admin-web dev",
     "web:build": "pnpm --filter @novuchat/admin-web build",
     "functions:build": "pnpm --filter @novuchat/admin-functions build",

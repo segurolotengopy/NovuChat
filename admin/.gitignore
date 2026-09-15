@@ -10,5 +10,8 @@ dist/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+storage-debug.log
+# Configuración temporal de pruebas/correr-storage.sh (se borra al salir).
+pruebas/.emu-storage.*/
 coverage/
 *.tsbuildinfo

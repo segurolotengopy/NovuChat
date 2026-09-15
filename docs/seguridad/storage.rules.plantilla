@@ -1,0 +1,124 @@
+rules_version = '2';
+
+// =============================================================================
+// PLANTILLA — Reglas de Cloud Storage for Firebase, multi-tenant.
+//
+// Cómo usarla: copiar como `storage.rules` junto a `firestore.rules`, reemplazar
+// los marcadores <ASÍ> y borrar lo que no aplique. El patrón completo, y el
+// porqué de cada decisión, está en docs/seguridad/reglas-storage.md.
+//
+// Supuestos (cámbielos si su proyecto usa otros):
+//   · la pertenencia y el rol viajan en custom claims:
+//       { <ns>: { p: true, t: { "<tenantId>": "admin" | "oper" } } }
+//   · el propietario de la plataforma entra SOLO con Google, las personas del
+//     tenant SOLO con usuario y contraseña (vínculo rol ↔ proveedor);
+//   · la ficha del tenant vive en Firestore en /tenants/{tenantId} con
+//     `estado` ('activo' | ...) y la lista de capacidades `flujos`.
+//
+// Las funciones de identidad TIENEN QUE SER COPIA de las de firestore.rules.
+// Si difieren, un mismo usuario tiene dos criterios de acceso según pida un
+// documento o un archivo.
+// =============================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // --- Identidad (copia de firestore.rules) --------------------------------
+    function autenticado() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function claims() {
+      return request.auth.token.get('<ns>', {});
+    }
+
+    function proveedor() {
+      return request.auth.token.get('firebase', {}).get('sign_in_provider', '');
+    }
+
+    function correoVerificado() {
+      return request.auth.token.get('email_verified', false) == true;
+    }
+
+    function esPropietario() {
+      return autenticado()
+        && claims().get('p', false) == true
+        && proveedor() == 'google.com';
+    }
+
+    // Cadena vacía, nunca null: comparar null lanza error en vez de dar falso.
+    function rolEn(tenantId) {
+      return claims().get('t', {}).get(tenantId, '');
+    }
+
+    function esAdmin(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'admin'
+        && proveedor() == 'password'
+        && correoVerificado();
+    }
+
+    function esMiembro(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) in ['admin', 'oper']
+        && proveedor() == 'password'
+        && correoVerificado();
+    }
+
+    // --- Lectura cruzada de Firestore ----------------------------------------
+    // Cada firestore.get() es UNA lectura facturada por evaluación. Una sola
+    // por evaluación (la ficha entra como parámetro) y SIEMPRE después de la
+    // identidad, para que `&&` corte antes de gastarla.
+    // Requiere, una vez por proyecto, el rol roles/firebaserules.firestoreServiceAgent
+    // para service-<número>@gcp-sa-firebasestorage.iam.gserviceaccount.com.
+    function fichaTenant(tenantId) {
+      return firestore.get(/databases/(default)/documents/tenants/$(tenantId));
+    }
+
+    function fichaPermite(ficha, capacidad) {
+      return ficha != null
+        && ficha.data.get('estado', '') == 'activo'
+        && capacidad in ficha.data.get('flujos', []);
+    }
+
+    // --- UN camino por caso de uso -------------------------------------------
+    // <CASO>: qué archivo es, quién lo sube, quién lo lee y por qué.
+    // Si el archivo se comparte con un tercero mediante la URL de descarga con
+    // token, dígalo acá: esa URL no pasa por estas reglas (quien la tiene, lee),
+    // así que nada privado puede subirse a este camino.
+    match /tenants/{tenantId}/<carpeta>/{archivo} {
+
+      // Nombres FIJOS: un archivo nuevo reemplaza al anterior.
+      function nombreValido() {
+        return archivo in ['<nombre>.pdf', '<nombre>.png'];
+      }
+
+      // Tipo y tamaño ATADOS a la extensión. Tope mínimo > 0.
+      function contenidoValido() {
+        let r = request.resource;
+        return r.size > 0
+          && ((archivo == '<nombre>.pdf'
+                && r.contentType == 'application/pdf'
+                && r.size <= <MB_PDF> * 1024 * 1024)
+              || (archivo == '<nombre>.png'
+                && r.contentType == 'image/png'
+                && r.size <= <MB_IMAGEN> * 1024 * 1024));
+      }
+
+      function puedeEscribir() {
+        return (esAdmin(tenantId) || esPropietario())
+          && fichaPermite(fichaTenant(tenantId), '<capacidad>');
+      }
+
+      allow get: if nombreValido() && (esMiembro(tenantId) || esPropietario());
+      allow list: if false;
+      allow create, update: if nombreValido() && contenidoValido() && puedeEscribir();
+      allow delete: if nombreValido() && puedeEscribir();
+    }
+
+    // --- NEGACIÓN FINAL: no borrar -------------------------------------------
+    match /{todo=**} {
+      allow read, write: if false;
+    }
+  }
+}

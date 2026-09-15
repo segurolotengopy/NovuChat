@@ -754,6 +754,17 @@ desplegar_firebase() {
   if [[ -f "$C_RUTA/firestore.rules" ]] && grep -q '"firestore"' "$C_RUTA/firebase.json" 2>/dev/null; then
     objetivos="hosting,firestore:rules"
   fi
+  # Reglas de Storage: se despliegan en el MISMO comando que las de Firestore,
+  # para que las dos mitades del control de acceso nunca queden desfasadas.
+  # Se mira la clave `storage` de PRIMER nivel de firebase.json (la del bloque
+  # `emulators` no cuenta): sin ella, `firebase deploy --only storage` no
+  # tendría qué desplegar. Requiere el bucket por defecto creado y el rol del
+  # agente de Storage (docs/seguridad/reglas-storage.md, «Despliegue»).
+  if [[ -f "$C_RUTA/storage.rules" ]] && python3 -c \
+      'import json, sys; sys.exit(0 if "storage" in json.load(open(sys.argv[1])) else 1)' \
+      "$C_RUTA/firebase.json" 2>/dev/null; then
+    objetivos="${objetivos},storage"
+  fi
   # Antes de tocar `live` se guarda la versión actual en el canal `previa`
   # (procedimiento único de rollback del estándar; no existe ningún subcomando
   # de rollback en firebase-tools). Rollback:
