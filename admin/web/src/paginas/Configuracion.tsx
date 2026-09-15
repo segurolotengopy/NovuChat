@@ -49,6 +49,82 @@ const TOPES: Record<string, number> = {
   mensajeReservaNoConfirmada: 300, mensajeComercioSuspendido: 300,
 };
 
+/**
+ * =============================================================================
+ * HORARIO DE ATENCIÓN
+ * =============================================================================
+ *
+ * EL FORMATO GUARDADO ES EL QUE YA LEEN LOS DEMÁS, sin cambiar nada: un mapa
+ * `horarios` con claves `lun … dom` y valores `'HH:MM-HH:MM'` o `'cerrado'`.
+ * Lo leen `horarioAtencion()` (functions/src/prompt.ts), que arma la frase que
+ * el asistente le dice al cliente, y `horarioDeHoy()` en el Tablero.
+ *
+ * UN DÍA SIN DATOS NO SE GUARDA. No es lo mismo que «cerrado»: «cerrado» es un
+ * dato que el asistente dice; un día sin clave es un día del que no sabemos
+ * nada, y la frase lo omite. Si no hay ningún día, `datosQueNoTenemos()` avisa
+ * al asistente que no tiene el horario, y no lo inventa.
+ *
+ * LA REGLA DE `firestore.rules` REPITE ESTA VALIDACIÓN (`horarioDiaValido`), y
+ * es la que manda: acá solo se evita que el comercio descubra el formato con un
+ * rechazo del servidor.
+ */
+const DIAS_SEMANA = [
+  ['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'],
+  ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo'],
+] as const;
+
+type DiaHorario = {
+  cerrado: boolean;
+  desde: string;
+  hasta: string;
+  /** Lo que había guardado y no se pudo leer, para decírselo al comercio. */
+  ilegible?: string;
+};
+
+const RANGO_HORARIO = /^(([01]\d|2[0-3]):[0-5]\d)-(([01]\d|2[0-3]):[0-5]\d)$/;
+const DIA_VACIO: DiaHorario = { cerrado: false, desde: '', hasta: '' };
+
+function leerHorarios(valor: unknown): Record<string, DiaHorario> {
+  const crudo = (typeof valor === 'object' && valor !== null)
+    ? valor as Record<string, unknown> : {};
+  const salida: Record<string, DiaHorario> = {};
+  for (const [clave] of DIAS_SEMANA) {
+    const v = crudo[clave];
+    if (v === undefined) { salida[clave] = DIA_VACIO; continue; }
+    if (v === 'cerrado') { salida[clave] = { ...DIA_VACIO, cerrado: true }; continue; }
+    const rango = typeof v === 'string' ? RANGO_HORARIO.exec(v) : null;
+    salida[clave] = rango
+      ? { cerrado: false, desde: rango[1]!, hasta: rango[3]! }
+      // Un valor viejo con otro formato (cargado por script, antes de que la
+      // regla lo cerrara) se muestra vacío y se avisa: guardarlo tal cual haría
+      // que el servidor rechazara TODO el formulario sin decir por qué.
+      : { ...DIA_VACIO, ilegible: String(v).slice(0, 40) };
+  }
+  return salida;
+}
+
+/** `null` si el día está bien (o sin datos). Si no, qué corregir. */
+function errorDelDia(d: DiaHorario): string | null {
+  if (d.cerrado) return null;
+  if (d.desde === '' && d.hasta === '') return null;
+  if (d.desde === '') return 'Falta la hora de apertura.';
+  if (d.hasta === '') return 'Falta la hora de cierre.';
+  // Se compara como texto: con «HH:MM» de largo fijo da el mismo orden que
+  // las horas. Es la misma comparación que hace la regla.
+  if (d.desde >= d.hasta) return 'La hora de apertura tiene que ser anterior a la de cierre.';
+  return null;
+}
+
+function escribirHorarios(h: Record<string, DiaHorario>): Record<string, string> {
+  const salida: Record<string, string> = {};
+  for (const [clave] of DIAS_SEMANA) {
+    const d = h[clave] ?? DIA_VACIO;
+    if (d.cerrado) salida[clave] = 'cerrado';
+    else if (d.desde !== '' && d.hasta !== '') salida[clave] = `${d.desde}-${d.hasta}`;
+  }
+  return salida;
+}
+
 export function Configuracion() {
   const { tenantId = '' } = useParams();
   // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
@@ -66,6 +142,9 @@ export function Configuracion() {
   // día alguien lo guardara como la cadena 'false', que en JavaScript es
   // verdadera: el catálogo quedaría publicado creyendo que está apagado.
   const [catalogoWeb, setCatalogoWeb] = useState(false);
+  // El horario tampoco cabe en `datos`: son siete días con tres piezas cada
+  // uno, y se arma como texto recién al guardar.
+  const [horarios, setHorarios] = useState<Record<string, DiaHorario>>(() => leerHorarios({}));
   const [estado, setEstado] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,15 +168,31 @@ export function Configuracion() {
         paleta: String(v['paleta'] ?? PALETA_POR_DEFECTO),
       });
       setCatalogoWeb(v['catalogoWebActivo'] === true);
+      setHorarios(leerHorarios(v['horarios']));
     }, () => setEstado('No se pudo leer la configuración.'));
   }, [tenantId]);
+
+  const cambiarDia = (clave: string, cambio: Partial<DiaHorario>) =>
+    setHorarios((h) => ({
+      ...h,
+      // Cualquier cambio en el día descarta el aviso de «no se pudo leer»:
+      // el comercio ya lo está corrigiendo.
+      [clave]: { ...(h[clave] ?? DIA_VACIO), ...cambio, ilegible: undefined },
+    }));
 
   const guardar = async (evento: React.FormEvent) => {
     evento.preventDefault();
     setEstado(null);
+    if (DIAS_SEMANA.some(([clave]) => errorDelDia(horarios[clave] ?? DIA_VACIO) !== null)) {
+      setEstado('Revisa el horario de atención: hay un día con las horas incompletas o al revés.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), {
         ...datos,
+        // El mapa se reemplaza entero: un día que se vació desaparece del
+        // documento, en vez de quedar con el horario viejo.
+        horarios: escribirHorarios(horarios),
         catalogoWebActivo: catalogoWeb,
         zonaHoraria: 'America/La_Paz',
         moneda: 'BOB',
@@ -181,6 +276,61 @@ export function Configuracion() {
             reservas: a un restaurante no se le pide una agenda. */}
         {conAgenda && campo('calendarioId', 'ID del calendario de Google (agenda del negocio)')}
         {campo('politicaCancelacion', 'Política de cancelación', undefined, true)}
+
+        <h3>Horario de atención</h3>
+        <p className="ayuda">
+          El asistente usa este horario para responder «¿a qué hora atienden?».
+          Marca <strong>Cerrado</strong> los días que no abres; un día que dejas
+          sin datos no se menciona. Si no cargas ningún día, el asistente dice
+          que no tiene el dato, en vez de inventarlo.
+          {conAgenda && <> Si en «Agenda» no cargaste a nadie, las citas también
+          se ofrecen dentro de este horario.</>}
+        </p>
+        <fieldset className="horario">
+          <legend>Días y horas</legend>
+          {DIAS_SEMANA.map(([clave, nombre]) => {
+            const d = horarios[clave] ?? DIA_VACIO;
+            const error = errorDelDia(d);
+            return (
+              <div key={clave} className="horario-dia">
+                <strong>{nombre}</strong>
+                <label className="campo-casilla">
+                  <input type="checkbox" checked={d.cerrado}
+                         onChange={(e) => cambiarDia(clave, { cerrado: e.target.checked })} />
+                  <span>Cerrado</span>
+                </label>
+                <div className="horario-horas">
+                  {/* Paso de 15 minutos: nadie abre a las 9:07. Las horas se
+                      conservan al marcar «Cerrado», para que desmarcarlo no
+                      obligue a escribirlas de nuevo. */}
+                  <label>desde
+                    <input type="time" step={900} value={d.desde} disabled={d.cerrado}
+                           aria-label={`${nombre}, desde`} aria-invalid={error !== null}
+                           onChange={(e) => cambiarDia(clave, { desde: e.target.value })} />
+                  </label>
+                  <label>hasta
+                    <input type="time" step={900} value={d.hasta} disabled={d.cerrado}
+                           aria-label={`${nombre}, hasta`} aria-invalid={error !== null}
+                           onChange={(e) => cambiarDia(clave, { hasta: e.target.value })} />
+                  </label>
+                </div>
+                {error && <p role="alert" className="ayuda aviso-datos">{error}</p>}
+                {d.ilegible !== undefined && (
+                  <p role="alert" className="ayuda aviso-datos">
+                    Lo que había guardado («{d.ilegible}») no tiene un formato que el
+                    asistente pueda leer. Vuelve a cargar este día; si guardas sin
+                    tocarlo, queda sin datos.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </fieldset>
+        <p className="ayuda">
+          Un horario que pasa la medianoche (por ejemplo, de 18:00 a 02:00) todavía
+          no se puede cargar. Por ahora, carga el cierre a las 23:45 y aclara el
+          horario real en la descripción del negocio.
+        </p>
 
         <h3>Voz del asistente</h3>
         {opcion('tratamiento', 'Cómo trata al cliente', [

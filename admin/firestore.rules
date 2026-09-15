@@ -545,6 +545,29 @@ service cloud.firestore {
         //     `configuracionFlujo` leyendo la ficha del tenant. Que NO estén en
         //     la lista blanca es una defensa, no un olvido: ver más abajo.
         // =====================================================================
+        // HORARIO DE UN DÍA: 'cerrado', o 'HH:MM-HH:MM' con «desde» antes que
+        // «hasta». Un día AUSENTE también pasa (el valor por defecto es
+        // 'cerrado'): la consola no escribe la clave de un día sin datos, y
+        // `horarioAtencion()` (functions/src/prompt.ts) lo omite de la frase.
+        //
+        // POR QUÉ UN FORMATO CERRADO Y NO TEXTO LIBRE. El valor entra tal cual
+        // en la frase que el asistente le lee al cliente, y en el Tablero. «9 a
+        // 7» obliga al modelo a adivinar si son las 7 de la tarde; un texto
+        // libre de 40 caracteres es, además, una puerta de inyección al prompt.
+        //
+        // POR QUÉ «desde < hasta» TAMBIÉN ACÁ. La pantalla lo valida, y un
+        // límite que solo existe en la pantalla no existe (CLAUDE.md, base
+        // comercial §7). Consecuencia buscada: un horario que cruza la
+        // medianoche (18:00-02:00) no se puede expresar hoy. Se compara como
+        // texto, y funciona porque las dos horas tienen el mismo largo fijo.
+        function horarioDiaValido(h, dia) {
+          let v = h.get(dia, 'cerrado');
+          return v == 'cerrado'
+            || (v is string
+                && v.matches('^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$')
+                && v.split('-')[0] < v.split('-')[1]);
+        }
+
         function configNegocioValida() {
           let d = request.resource.data;
           let clavesPermitidas = [
@@ -596,7 +619,18 @@ service cloud.firestore {
             // Misma validación estricta que para los funcionarios: un ID mal
             // pegado acá tiene exactamente las mismas consecuencias.
             && calendarioValidoOpcional(d, 'calendarioId')
+            // HORARIOS. Solo los siete días, y cada uno con formato válido. Las
+            // reglas no recorren mapas, así que cada día se nombra a mano.
             && d.get('horarios', {}) is map
+            && d.get('horarios', {}).keys().hasOnly(
+                 ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'])
+            && horarioDiaValido(d.get('horarios', {}), 'lun')
+            && horarioDiaValido(d.get('horarios', {}), 'mar')
+            && horarioDiaValido(d.get('horarios', {}), 'mie')
+            && horarioDiaValido(d.get('horarios', {}), 'jue')
+            && horarioDiaValido(d.get('horarios', {}), 'vie')
+            && horarioDiaValido(d.get('horarios', {}), 'sab')
+            && horarioDiaValido(d.get('horarios', {}), 'dom')
 
             && textoOpc(d, 'politicaCancelacion', 600)
 
