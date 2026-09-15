@@ -127,12 +127,40 @@ export function esDestinoPublico(ip: string): boolean {
       || d.startsWith('fea') || d.startsWith('feb')) return false;   // enlace local
     if (d.startsWith('fc') || d.startsWith('fd')) return false;      // única local
     if (d.startsWith('ff')) return false;                            // multidifusión
-    // `::ffff:127.0.0.1` es una IPv4 disfrazada: se juzga por su parte IPv4.
-    const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(d);
-    if (m) return esDestinoPublico(m[1] as string);
+    // IPv4 DISFRAZADAS DE IPv6: se juzgan por la IPv4 que llevan adentro. La
+    // forma con puntos (`::ffff:127.0.0.1`) no alcanza: `new URL()` normaliza el
+    // host a hexadecimal (`::ffff:7f00:1`), y esa forma pasaba el filtro y
+    // llegaba al propio servidor (revisión de seguridad del 15/09/2026).
+    const conPuntos = /^::(ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(d);
+    if (conPuntos) return esDestinoPublico(conPuntos[2] as string);
+    const h = expandirIPv6(d);
+    if (!h) return false;                                            // lo que no se entiende no se visita
+    const v4 = (a: number, b: number) =>
+      `${h[a]! >> 8}.${h[a]! & 255}.${h[b]! >> 8}.${h[b]! & 255}`;
+    if (h.slice(0, 5).every((x) => x === 0) && (h[5] === 0xffff || h[5] === 0)) {
+      return esDestinoPublico(v4(6, 7));                             // ::ffff:0:0/96 y ::/96
+    }
+    if (h[0] === 0x64 && h[1] === 0xff9b && h.slice(2, 6).every((x) => x === 0)) {
+      return esDestinoPublico(v4(6, 7));                             // NAT64, 64:ff9b::/96
+    }
+    if (h[0] === 0x2002) return esDestinoPublico(v4(1, 2));          // 6to4, 2002::/16
     return true;
   }
   return false;
+}
+
+/** Los ocho grupos de 16 bits de una IPv6 en texto, o `null` si no se entiende. */
+function expandirIPv6(d: string): number[] | null {
+  if (!/^[0-9a-f:]+$/.test(d) || (d.match(/::/g) ?? []).length > 1) return null;
+  const [izq, der] = d.includes('::') ? d.split('::') as [string, string] : [d, null];
+  const partes = (t: string) => (t === '' ? [] : t.split(':'));
+  const a = partes(izq);
+  const b = der === null ? [] : partes(der);
+  const faltan = 8 - a.length - b.length;
+  if (der === null ? faltan !== 0 : faltan < 1) return null;
+  const grupos = [...a, ...Array(der === null ? 0 : faltan).fill('0'), ...b];
+  if (grupos.some((g) => g.length === 0 || g.length > 4)) return null;
+  return grupos.map((g) => parseInt(g, 16));
 }
 
 /** `https://` y nada más: `http` lo bloquea el navegador del cliente por contenido mixto. */
@@ -145,7 +173,10 @@ export function urlUtilizable(url: string): { ok: true; u: URL } | { ok: false; 
 
 async function destinoPermitido(u: URL): Promise<boolean> {
   const host = u.hostname.replace(/^\[|\]$/g, '');
-  if (isIP(host)) return esDestinoPublico(host);
+  // Un comercio publica sus archivos con un NOMBRE de dominio. Una IP literal en
+  // la URL no tiene uso legítimo acá y es la vía más corta a una dirección
+  // interna: se rechaza sin juzgarla. Las IP que devuelve el DNS sí se juzgan.
+  if (isIP(host)) return false;
   try {
     const direcciones = await lookup(host, { all: true });
     // TODAS tienen que ser públicas: alcanza una privada para descartar el host.

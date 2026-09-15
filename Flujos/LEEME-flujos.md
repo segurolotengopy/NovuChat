@@ -148,6 +148,14 @@ de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
 el asistente ofrece sale de la consola, no del JSON. NovuChat es su primer
 usuario, con el asistente «Kenji».
 
+> **Todavía no se publica para otro comercio.** El prompt, el mensaje de uso
+> extendido, el botón de cliente actual y la base de conocimiento (el corpus de
+> novuchat.site, con el teléfono de contacto de NovuChat) nombran a NovuChat a
+> mano. Publicado para un comercio X, sus prospectos recibirían la oferta y el
+> contacto de NovuChat. Antes del segundo comercio: esos textos pasan por
+> `nombreNegocio` y `enlaceConsola`, y el corpus se condiciona al tenant
+> `novuchat` (revisión de seguridad del 15/09, LOW-2).
+
 ### Qué hace
 
 1. **Compuerta inicial, sin modelo.** A un «hola» suelto le responde con dos

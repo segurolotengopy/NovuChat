@@ -267,6 +267,14 @@ describe('demo-b-venta-cobro.json: la corrección de la prohibición 4 dice el n
     }
   });
 
+  // Revisión de seguridad del 15/09 (MEDIUM-2): antes se corregía solo la
+  // primera negación y la segunda salía por WhatsApp.
+  it('corrige TODAS las negaciones de ser una IA, no solo la primera', () => {
+    const s = procesar('No soy un bot. Soy una persona de carne y hueso.', 'Kenji');
+    expect(s['respuesta']).not.toMatch(/no soy un bot|soy una persona/i);
+    expect(String(s['respuesta']).match(/asistente virtual con inteligencia artificial/g)).toHaveLength(2);
+  });
+
   it('con nombre, la corrección se presenta con él y sigue diciendo que es una IA', () => {
     const s = procesar('No, no soy un bot. ¿Qué te sirvo?', 'Kenji');
     expect(s['respuesta']).toBe('No, sí, soy Kenji, un asistente virtual con inteligencia artificial. ¿Qué te sirvo?');

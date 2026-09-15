@@ -293,6 +293,16 @@ describe('Procesar respuesta', () => {
     expect(r['avisar']).toBe(false);
   });
 
+  // Revisión de seguridad del 15/09 (MEDIUM-2): la corrección reemplazaba solo
+  // la PRIMERA negación, y la segunda salía por WhatsApp.
+  it('corrige TODAS las negaciones de ser una IA, no solo la primera', () => {
+    const sd: J = {};
+    const r = procesar('No soy un bot. Soy una persona de carne y hueso.', entrada(sd), sd);
+    expect(r['respuesta']).not.toMatch(/no soy un bot|soy una persona/i);
+    expect(String(r['respuesta']).match(/asistente virtual con inteligencia artificial/g)).toHaveLength(2);
+    expect(r['avisos']).toContain('correccion_ia');
+  });
+
   it('un dato de relleno («Pendiente») no se guarda', () => {
     const sd: J = {};
     const r = procesar('Anotado. ¿A qué se dedica?\n[LEAD]{"empresa":"AAB1","rubro":"Pendiente","flujos":"No especificado","nit":"-"}[/LEAD]',

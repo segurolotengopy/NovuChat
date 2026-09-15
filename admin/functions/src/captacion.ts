@@ -28,7 +28,7 @@
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { REGION } from './region.js';
-import { textoPlano, textoConSaltos } from './saneo.js';
+import { textoPlano, textoConSaltos, sinMarcas } from './saneo.js';
 import { pedirConFrenos, tipoDeContenido, type MotivoFalla } from './imagenCatalogo.js';
 
 // ---------------------------------------------------------------------------
@@ -108,19 +108,19 @@ const lista = (v: unknown, tope: number): unknown[] => Array.isArray(v) ? v.slic
 export function sanearRubro(v: unknown): Rubro | null {
   if (!esObjeto(v)) return null;
   const id = typeof v['id'] === 'string' && ID_RUBRO.test(v['id']) ? v['id'] : null;
-  const nombre = textoPlano(v['nombre'], 40);
+  const nombre = sinMarcas(textoPlano(v['nombre'], 40));
   const flujoSugerido = de(FLUJOS_SUGERIDOS, v['flujoSugerido']);
   if (id === null || nombre === '' || flujoSugerido === null) return null;
-  return { id, nombre, solucion: textoPlano(v['solucion'], 300), flujoSugerido };
+  return { id, nombre, solucion: sinMarcas(textoPlano(v['solucion'], 300)), flujoSugerido };
 }
 
 export function sanearPlan(v: unknown): Plan | null {
   if (!esObjeto(v)) return null;
-  const nombre = textoPlano(v['nombre'], 40);
+  const nombre = sinMarcas(textoPlano(v['nombre'], 40));
   const precioUsd = precio(v['precioUsd']);
   const periodo = de(PERIODOS, v['periodo']);
   if (nombre === '' || precioUsd === null || periodo === null) return null;
-  return { nombre, precioUsd, periodo, incluye: textoPlano(v['incluye'], 200) };
+  return { nombre, precioUsd, periodo, incluye: sinMarcas(textoPlano(v['incluye'], 200)) };
 }
 
 /**
@@ -129,16 +129,16 @@ export function sanearPlan(v: unknown): Plan | null {
  */
 export function sanearCargoUnico(v: unknown): CargoUnico | null {
   if (!esObjeto(v)) return null;
-  const nombre = textoPlano(v['nombre'], 60);
+  const nombre = sinMarcas(textoPlano(v['nombre'], 60));
   const precioUsd = precio(v['precioUsd']);
   if (nombre === '' || precioUsd === null || typeof v['desde'] !== 'boolean') return null;
-  return { nombre, precioUsd, desde: v['desde'], detalle: textoPlano(v['detalle'], 200) };
+  return { nombre, precioUsd, desde: v['desde'], detalle: sinMarcas(textoPlano(v['detalle'], 200)) };
 }
 
 export function sanearAclaracion(v: unknown): Aclaracion | null {
   if (!esObjeto(v)) return null;
-  const tema = textoPlano(v['tema'], 60);
-  const texto = textoPlano(v['texto'], 600);
+  const tema = sinMarcas(textoPlano(v['tema'], 60));
+  const texto = sinMarcas(textoPlano(v['texto'], 600));
   if (tema === '' || texto === '') return null;
   return { tema, texto };
 }
@@ -159,7 +159,7 @@ export function sanearArchivoPlanes(v: unknown): ArchivoPlanes | null {
   } catch {
     return null;
   }
-  return { url, tipo, nombreArchivo: textoPlano(v['nombreArchivo'], 80) };
+  return { url, tipo, nombreArchivo: sinMarcas(textoPlano(v['nombreArchivo'], 80)) };
 }
 
 /**

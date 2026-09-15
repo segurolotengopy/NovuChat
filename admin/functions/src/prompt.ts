@@ -30,7 +30,7 @@
  *    marcada como DATO. Nunca concatenada por delante de las reglas de
  *    comportamiento del agente.
  */
-import { textoPlano } from './saneo.js';
+import { textoPlano, sinMarcas } from './saneo.js';
 
 /** Campos de texto libre del comercio que llegan al prompt. La lista es cerrada. */
 export const CAMPOS_LIBRES_AL_PROMPT = [
@@ -155,7 +155,7 @@ export function vozFija(config: Record<string, unknown>): {
 } {
   const nivel = config['estiloEmojis'];
   return {
-    nombreAsistente: textoPlano(config['nombreAsistente'], 40),
+    nombreAsistente: sinMarcas(textoPlano(config['nombreAsistente'], 40)),
     nivelEmojis: (NIVELES_EMOJIS as readonly unknown[]).includes(nivel)
       ? nivel as NivelEmojis : 'pocos',
   };

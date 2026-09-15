@@ -82,6 +82,18 @@ export function recortar(texto: string, maxLargo: number): string {
  * El salto se convierte en espacio ANTES de barrer los controles, por la misma
  * razón que en `neutralizarEncabezado`: si no, «Plan\nPro» quedaría «PlanPro».
  */
+/**
+ * Quita lo que en un prompt puede fingir una marca o un bloque del sistema:
+ * corchetes (`[CIERRE]`, `[ENVIAR_QR]`), llaves y ángulos, y los delimitadores
+ * `<<<`/`>>>` que rodean el corpus. Para textos del comercio que van al prompt
+ * o a un mensaje fijo (nombre del asistente, oferta de captación). Hasta el
+ * 15/09 lo hacía cada flujo por su cuenta; un flujo que se olvidara dejaba pasar
+ * la marca (revisión de seguridad, LOW-1).
+ */
+export function sinMarcas(s: string): string {
+  return s.replace(/<<<|>>>/g, '').replace(/[[\]{}<>]/g, '').replace(/ {2,}/g, ' ').trim();
+}
+
 export function textoPlano(valor: unknown, maxLargo: number): string {
   if (typeof valor !== 'string') return '';
   const limpio = valor
