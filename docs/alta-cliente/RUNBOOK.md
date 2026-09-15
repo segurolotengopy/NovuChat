@@ -117,6 +117,10 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
    ejecuta), queda saneado (`REEMPLAZAR_*`) y pasa `verificar-saneo.sh`.
 3. `./scripts/preparar-import.sh Flujos/<flujo>.json .env.<cliente>` — **con**
    el segundo argumento: sin él, el flujo se lleva la ruta de webhook del Demo A.
+   Cada marcador `REEMPLAZAR_*` del flujo necesita **su fila exacta** en la tabla
+   de `CONFIGURACION.local.md` (Phone ID, recepción y horario del cliente). Antes
+   del 15/09 el script aceptaba una fila de otro cliente cuyo nombre fuera
+   prefijo del marcador, y NovuChat salió con el Phone ID del Demo A.
 4. En n8n: importar, credenciales, `Trigger On` = Messages, **Publish**. URL de
    Production al webhook de la app del cliente. Completar `N8N_WEBHOOK_*` y
    `N8N_WORKFLOW_ID` en `.env.<cliente>`: `verificar-meta.sh` con cuatro verdes.

@@ -90,12 +90,18 @@ for linea in open(local, encoding="utf-8"):
 # valor plausible y equivocado, que es la peor forma de fallar.
 presentes = sorted(set(re.findall(r'REEMPLAZAR_[^"\\\s]*', texto)))
 puestos, sin_valor = [], []
+# COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo
+# nombre fuera el comienzo del marcador, y el 2026-09-15 el respaldo de NovuChat
+# (REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT, sin fila propia) salio con el Phone ID
+# del Demo A, tomado de REEMPLAZAR_PHONE_NUMBER_ID, informado en verde. Un
+# marcador sin su fila exacta queda sin valor y el script lo dice.
+# Y el reemplazo exige que despues del marcador no siga otra letra, digito o
+# guion bajo, para no tocar el comienzo de un marcador mas largo sin fila.
 for marcador in sorted(presentes, key=len, reverse=True):
-    # el marcador mas largo primero evita reemplazos parciales
-    clave = next((k for k in sorted(tabla, key=len, reverse=True) if marcador.startswith(k)), None)
-    if clave:
-        texto = texto.replace(clave, tabla[clave])
-        puestos.append(clave)
+    if marcador in tabla:
+        valor = tabla[marcador]
+        texto = re.sub(re.escape(marcador) + r'(?![A-Za-z0-9_])', lambda _m: valor, texto)
+        puestos.append(marcador)
     else:
         sin_valor.append(marcador)
 
