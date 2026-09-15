@@ -992,7 +992,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       sd['conversaciones'][TEL]['lead'] = { empresa: 'Salón Rosa' };      // falta todo lo demás
       const r = correr('Traspaso a un asesor', [e], {}, sd)[0]!;
       expect(r['respuesta']).toBe('¡Anotado! 📋 Ya le pasé tus datos a nuestro equipo. Un especialista de NovuChat '
-        + 'te escribirá por este mismo medio en horario de atención (lunes a viernes, de 09:00 a 18:00).'
+        + 'te escribirá a este mismo número en horario de atención (lunes a viernes, de 09:00 a 18:00).'
         + ' ¡Que tengas un excelente día!');
       expect(r['avisar']).toBe(true);
       expect(r['guardarLead']).toBe(true);
@@ -1059,12 +1059,12 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const c = config(PANEL(OFERTA, undefined, { operacion: { numeroRecepcion: '+591 7000-0000', horarioAtencion: '' } }),
         respaldoConHorario);
       const r = correr('Traspaso a un asesor', [{ ...c, from: TEL }], {}, {})[0]!;
-      expect(r['respuesta']).toContain('te escribirá por este mismo medio lo antes posible.');
+      expect(r['respuesta']).toContain('te escribirá a este mismo número lo antes posible.');
       expect(r['respuesta']).not.toMatch(/horario/i);
       const s = instrucciones(c);
       // Lo que el negocio escribe; el corpus del sitio va aparte, al final.
       expect(s.slice(0, s.indexOf('DATOS DE NOVUCHAT.'))).not.toMatch(/horario/i);
-      expect(s).toContain('le escribirá por este mismo medio lo antes posible');
+      expect(s).toContain('le escribirá a este mismo número lo antes posible');
     });
   });
 
@@ -1078,7 +1078,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
 
     it('para planes, precios y rubros manda la consola; el corpus para lo demás', () => {
       const s = instrucciones(cfgCon());
-      expect(s).toMatch(/Si DATOS DE NOVUCHAT dice otra cosa sobre planes o precios, gana la consola/);
+      expect(s).toMatch(/Si DATOS DE NOVUCHAT dice otra cosa sobre planes, precios o sobre un tema de las ACLARACIONES DE LA OFERTA .*gana la consola/);
       expect(s).toContain('Impulso (USD 25/mes): Hasta 100 conversaciones');
       expect(s).toContain('1. Salud y belleza - solución: Agenda sola y recuerda las citas.');
       expect(s).toMatch(/cobran en bolivianos al tipo de cambio oficial del BCB/);

@@ -92,7 +92,7 @@ const FLUJOS = [
     hoy: 'Eres Sofía, la asistente virtual de Un Negocio.\n',
     conNombre: 'Eres Kenji, el asistente virtual de Un Negocio.'
       + ' Cuando te presentes, di: «Soy Kenji, el asistente virtual de Un Negocio».\n',
-    identidad: ['Eres una asistente con inteligencia artificial: si te lo preguntan, no lo niegues'],
+    identidad: ['Eres asistente virtual con inteligencia artificial: si te lo preguntan, no lo niegues'],
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
