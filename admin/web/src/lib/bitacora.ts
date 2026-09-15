@@ -41,11 +41,22 @@ import {
  * no de un campo que alguien pudiera escribir.
  */
 
+/**
+ * LOS TIPOS QUE SE PUEDEN FILTRAR: todos los que la ingesta puede escribir
+ * (`TipoEvento` de `functions/src/ingesta.ts`), en el mismo orden. Un tipo que
+ * falta acá existe en la bitácora pero no se puede buscar: el comercio que
+ * pregunta «¿por qué el asistente dejó de contestarle a mi cliente?» no
+ * encontraría la derivación al operador. `pruebas/bitacora-tipos.test.ts`
+ * compara esta lista con la de la ingesta y con la de `firestore.rules`.
+ */
 export const TIPOS = [
   'mensaje_entrante', 'mensaje_saliente', 'plantilla_enviada',
   'cita_agendada', 'cita_rechazada', 'cobro_simulado',
   'transferencia_humano', 'config_publicada', 'suspension',
   'reactivacion', 'error_flujo', 'entrada_descartada',
+  'catalogo_enlace', 'carrito_recibido',
+  'derivacion_operador', 'bloqueo_ventana',
+  'aviso_consumo',
 ] as const;
 
 export const RESULTADOS = ['ok', 'fallo', 'rechazado', 'reintento'] as const;

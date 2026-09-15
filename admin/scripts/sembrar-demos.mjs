@@ -343,6 +343,15 @@ for (const c of COMERCIOS) {
   for (const item of c.catalogo) {
     await db.doc(`tenants/${c.id}/catalogo/${idDe(item.nombre)}`).set({ ...item, ...sello }, { merge: true });
   }
+  // CONTADOR DEL CATÁLOGO (límite de productos por plan, firestore.rules). El
+  // SDK Admin se salta las reglas, así que el contador lo deja este script: con
+  // lo que HAY en la colección, que por el `merge` puede ser más que lo de la
+  // lista. Mismo criterio que scripts/contar-catalogo.mjs.
+  await db.doc(`tenants/${c.id}/contadores/catalogo`).set({
+    items: (await db.collection(`tenants/${c.id}/catalogo`).select().get()).size,
+    ultimoItem: '',
+    actualizadoEn: FieldValue.serverTimestamp(),
+  });
 
   // LOS QUE YA NO ESTAN EN LA LISTA SE VAN. El sembrador escribe por
   // identificador fijo, asi que sin esto un funcionario renombrado queda
@@ -368,8 +377,14 @@ for (const c of COMERCIOS) {
     }, { merge: true });
   }
 
+  // El plan de los demos, CON su copia de límites y la versión del catálogo
+  // (`functions/src/planes.ts`): quien hace cumplir un límite lee la copia.
+  // `set` con `merge` reemplaza `limites` entero, como `asignar-plan.mjs`.
+  const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/planes.ts');
   await db.doc(`tenants/${c.id}/cuenta/estado`).set({
     plan: 'demostracion',
+    limites: limitesDe('demostracion'),
+    catalogoPlanes: CATALOGO_PLANES,
     estadoPago: 'sin_cargo',
     montoMensual: 0,
     moneda: 'BOB',

@@ -215,6 +215,9 @@ aislamiento de los datos, que es lo que importa.
    /config/agendamiento                          solo vertical de citas
    /config/venta                                 solo vertical de venta y cobro
    /catalogo/{itemId}                            servicios y precios
+   /contadores/catalogo                          cuántos productos hay: se mueve en el
+                                                 mismo lote que el alta o la baja (límite
+                                                 por plan, §4ter.2)
    /miembros/{uid}                               ESPEJO de los claims (no autoriza)
    /contactos/{contactoId}                       personas de referencia del comercio
    /funcionarios/{funcionarioId}                 quién atiende, con su calendario
@@ -698,7 +701,23 @@ que escale a la plataforma. No es lo ideal, pero está acotado y dicho.
 ### 4ter.2 Estado de cuenta visible para el comercio
 
 `/tenants/{t}/cuenta/estado`: plan, situación de pago, monto, próximo
-vencimiento y `motivoVisible`.
+vencimiento y `motivoVisible`. Desde el 15/09, además, la **copia de los
+límites** del plan (`limites`: conversaciones, productos, agendas) y la versión
+del catálogo con que se asignó (`catalogoPlanes`), y el aviso de consumo del mes
+(`avisoConsumo`).
+
+- **El catálogo de planes vive en código** (`functions/src/planes.ts`: Impulso,
+  Crecimiento, Pro y el interno `demostracion`); el plan de cada comercio vive
+  acá, con su copia. **Quien hace cumplir un límite lee la copia**, no el
+  catálogo de hoy: las reglas (productos del catálogo, con el contador
+  `contadores/catalogo`), `importarCatalogo` y la ingesta (aviso al 80 %) usan
+  la misma función, `limitesDeCuenta`. Sin copia rige el plan; con un plan que
+  no es del catálogo (el viejo `'basico'`), el más chico. `tenants/{t}.plan` es
+  solo un espejo para la cartera: ningún límite lo lee.
+- El alta (`altaTenant`, `alta-comercio.mjs`) deja Impulso con su copia y el
+  contador en 0; el plan se cambia con `actualizarEstadoCuenta` o
+  `scripts/asignar-plan.mjs`, que escriben plan, copia, espejo y auditoría en
+  una transacción.
 
 - **Solo lectura para el comercio.** Lo escribe NovuChat con
   `actualizarEstadoCuenta`, y queda auditado. Si el comercio pudiera escribirlo

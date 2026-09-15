@@ -30,7 +30,7 @@ import {
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs,
   query, orderBy, limit, where, documentId, collectionGroup,
-  serverTimestamp, Timestamp, addDoc, deleteField,
+  serverTimestamp, Timestamp, addDoc, deleteField, writeBatch, increment,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +105,44 @@ const customConClaimPropietario = () =>
   entorno.authenticatedContext('u-colado2', claims({}, true, 'custom')).firestore();
 const anonimo   = () => entorno.unauthenticatedContext().firestore();
 
+type Fs = ReturnType<typeof adminA>;
+
+/**
+ * ALTA DE UN PRODUCTO COMO LA TIENE QUE HACER LA CONSOLA desde el 15/09: el
+ * producto y el contador en UN lote. `contador` permite armar a propósito los
+ * lotes tramposos de las pruebas que niegan; `null` es «sin tocar el contador».
+ *
+ * Toda prueba de catálogo que CREA pasa por acá, también las que esperan un
+ * rechazo por la forma del ítem: si no, fallarían por el contador y pasarían en
+ * vacío sin estar probando la forma.
+ */
+const altaProducto = (
+  fs: Fs, t: string, id: string, datos: Record<string, unknown>,
+  contador: Record<string, unknown> | null = { items: increment(1), ultimoItem: id },
+) => {
+  const lote = writeBatch(fs);
+  lote.set(doc(fs, `tenants/${t}/catalogo/${id}`), datos);
+  if (contador) {
+    lote.update(doc(fs, `tenants/${t}/contadores/catalogo`),
+      { ...contador, actualizadoEn: serverTimestamp() });
+  }
+  return lote.commit();
+};
+
+/** Baja de un producto: el borrado y el contador −1, en un lote. */
+const bajaProducto = (
+  fs: Fs, t: string, id: string,
+  contador: Record<string, unknown> | null = { items: increment(-1), ultimoItem: id },
+) => {
+  const lote = writeBatch(fs);
+  lote.delete(doc(fs, `tenants/${t}/catalogo/${id}`));
+  if (contador) {
+    lote.update(doc(fs, `tenants/${t}/contadores/catalogo`),
+      { ...contador, actualizadoEn: serverTimestamp() });
+  }
+  return lote.commit();
+};
+
 const configValida = (uid: string) => ({
   nombreNegocio: 'Salón Demo',
   descripcion: 'Peluquería y estética',
@@ -173,6 +211,10 @@ beforeEach(async () => {
       await setDoc(doc(db, `tenants/${t}/catalogo/item1`), {
         nombre: 'Corte', precio: 50, moneda: 'BOB', activo: true,
         actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+      });
+      // El contador del catálogo, coherente con el único producto sembrado.
+      await setDoc(doc(db, `tenants/${t}/contadores/catalogo`), {
+        items: 1, ultimoItem: 'item1', actualizadoEn: Timestamp.now(),
       });
       await setDoc(doc(db, `tenants/${t}/miembros/u-admin-${t}`), { rol: 'admin' });
       await setDoc(doc(db, `tenants/${t}/metricas/2026-09`), { conversaciones: 3, mensajes: 42 });
@@ -296,6 +338,7 @@ describe('Control de la semilla', () => {
           `tenants/${t}`,
           `tenants/${t}/config/negocio`,
           `tenants/${t}/catalogo/item1`,
+          `tenants/${t}/contadores/catalogo`,
           `tenants/${t}/metricas/2026-09`,
           `tenants/${t}/auditoria/e1`,
           `tenants/${t}/funcionarios/f1`,
@@ -429,7 +472,7 @@ describe('Aislamiento entre tenants', () => {
 
   it('el admin del tenant A NO escribe en el tenant B', async () => {
     await assertFails(setDoc(doc(adminA(), `tenants/${B}/config/negocio`), configValida('u-admin-a')));
-    await assertFails(setDoc(doc(adminA(), `tenants/${B}/catalogo/nuevo`), {
+    await assertFails(altaProducto(adminA(), B, 'nuevo', {
       nombre: 'X', precio: 1, moneda: 'BOB', activo: true,
       actualizadoPor: 'u-admin-a', actualizadoEn: serverTimestamp(),
     }));
@@ -1762,9 +1805,14 @@ describe('Mini inventario: el saldo y su historia no pueden discrepar', () => {
   it('el comercio NO puede escribir `stock` al crear un ítem', async () => {
     // Si pudiera, el número existiría sin ningún movimiento que lo explique y
     // el reporte arrancaría descuadrado desde el primer ítem.
-    await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/con-stock`), {
+    await assertFails(altaProducto(adminA(), A, 'con-stock', {
       nombre: 'Torta', precio: 90, moneda: 'BOB', activo: true, stock: 12,
       ...sello('u-admin-a'),
+    }));
+    // Control: el mismo lote sin `stock` pasa. Sin esto, el rechazo de arriba
+    // podría venir de cualquier otra cosa.
+    await assertSucceeds(altaProducto(adminA(), A, 'con-stock', {
+      nombre: 'Torta', precio: 90, moneda: 'BOB', activo: true, ...sello('u-admin-a'),
     }));
   });
 
@@ -1859,11 +1907,11 @@ describe('Catálogo: servicios y productos, común a todos los flujos', () => {
   });
 
   it('el administrador crea un ítem con área y precio, y el área tiene tope', async () => {
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/catalogo/nuevo`), {
+    await assertSucceeds(altaProducto(adminA(), A, 'nuevo', {
       nombre: 'Corte y lavado', area: 'belleza', precio: 60, moneda: 'BOB',
       duracionMin: 45, activo: true, ...sello('u-admin-a'),
     }));
-    await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/nuevo2`), {
+    await assertFails(altaProducto(adminA(), A, 'nuevo2', {
       nombre: 'X', area: 'a'.repeat(41), precio: 60, moneda: 'BOB',
       activo: true, ...sello('u-admin-a'),
     }));
@@ -1873,7 +1921,7 @@ describe('Catálogo: servicios y productos, común a todos los flujos', () => {
     // Un tratamiento dental no tiene precio fijo. Ponerle un número sería
     // inventarlo, y ponerle cero diría «gratis». Ausente significa «a consultar»,
     // y es la regla de negocio que el prompt del asistente ya tenía.
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/catalogo/ortodoncia`), {
+    await assertSucceeds(altaProducto(adminA(), A, 'ortodoncia', {
       nombre: 'Ortodoncia', area: 'odontologia', duracionMin: 45,
       activo: true, ...sello('u-admin-a'),
     }));
@@ -1881,7 +1929,7 @@ describe('Catálogo: servicios y productos, común a todos los flujos', () => {
 
   it('pero un precio presente sigue teniendo que ser un número válido', async () => {
     for (const malo of [-1, 2000000, 'gratis']) {
-      await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/malo`), {
+      await assertFails(altaProducto(adminA(), A, 'malo', {
         nombre: 'X', precio: malo, moneda: 'BOB', activo: true, ...sello('u-admin-a'),
       }));
     }
@@ -1890,7 +1938,7 @@ describe('Catálogo: servicios y productos, común a todos los flujos', () => {
   it('la duración va en múltiplos de 15 minutos', async () => {
     // Una agenda se ofrece de a cuartos de hora. Con 50 minutos quedan huecos
     // de 10 que no se venden, y el asistente propone horarios como «14:50».
-    await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/catalogo/masaje`), {
+    await assertSucceeds(altaProducto(adminA(), A, 'masaje', {
       nombre: 'Masaje', precio: 150, moneda: 'BOB', duracionMin: 90,
       activo: true, ...sello('u-admin-a'),
     }));
@@ -2912,5 +2960,225 @@ describe('Nombre del asistente (config/negocio)', () => {
 
   it('el operador no lo escribe', async () => {
     await assertFails(setDoc(doc(operA(), ruta), { ...configValida('u-oper-a'), nombreAsistente: 'Kenji' }));
+  });
+});
+
+// ===========================================================================
+// LÍMITE DE PRODUCTOS POR PLAN (decisión del 15/09/2026: 20 / 100 / 500)
+// ===========================================================================
+//
+// CLAUDE.md, base comercial §7: el límite se hace cumplir en el SERVIDOR y se
+// prueba NEGANDO. El comercio con el plan chico NO puede crear el producto 21,
+// ni armando el lote a mano, ni inflando o desinflando el contador suelto.
+// A tiene `cuenta/estado.plan = 'basico'`, que no es un plan conocido: rige el
+// respaldo de 20, el menor.
+describe('Límite de productos por plan: el catálogo no pasa del plan', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+  const producto = (nombre: string, uid = 'u-admin-a') =>
+    ({ nombre, precio: 10, moneda: 'BOB', activo: true, ...sello(uid) });
+  const rutaContador = (t: string) => `tenants/${t}/contadores/catalogo`;
+
+  /** Deja al comercio con `n` productos (item1 + p2..pn) y el contador en `n`. */
+  const llenar = async (t: string, n: number, cuenta?: Record<string, unknown> | null) => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      const fs = ctx.firestore();
+      const lote = writeBatch(fs);
+      for (let i = 2; i <= n; i++) {
+        lote.set(doc(fs, `tenants/${t}/catalogo/p${i}`), {
+          nombre: `P${i}`, precio: i, moneda: 'BOB', activo: true,
+          actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+        });
+      }
+      lote.set(doc(fs, rutaContador(t)),
+        { items: n, ultimoItem: n > 1 ? `p${n}` : 'item1', actualizadoEn: Timestamp.now() });
+      if (cuenta === null) lote.delete(doc(fs, `tenants/${t}/cuenta/estado`));
+      else if (cuenta) lote.set(doc(fs, `tenants/${t}/cuenta/estado`), cuenta);
+      await lote.commit();
+    });
+  };
+
+  const leer = async (ruta: string) => {
+    let datos: Record<string, unknown> | undefined;
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      datos = (await getDoc(doc(ctx.firestore(), ruta))).data();
+    });
+    return datos;
+  };
+
+  it('con 19 productos entra el 20, y el contador queda en 20 nombrándolo', async () => {
+    await llenar(A, 19);
+    await assertSucceeds(altaProducto(adminA(), A, 'p20', producto('P20')));
+    expect(await leer(rutaContador(A))).toMatchObject({ items: 20, ultimoItem: 'p20' });
+  });
+
+  it('con 20 productos el 21 NO se crea, ni con el lote correcto ni con el valor a mano', async () => {
+    await llenar(A, 20);
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21'), { items: 21, ultimoItem: 'p21' }));
+    expect(await leer(`tenants/${A}/catalogo/p21`)).toBeUndefined();
+    expect(await leer(rutaContador(A))).toMatchObject({ items: 20 });
+  });
+
+  it('crear SIN tocar el contador se rechaza, aunque haya cupo', async () => {
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/catalogo/nuevo`), producto('Nuevo')));
+    await assertFails(altaProducto(adminA(), A, 'nuevo', producto('Nuevo'), null));
+  });
+
+  it('el contador +2 con un solo producto se rechaza', async () => {
+    await assertFails(altaProducto(adminA(), A, 'nuevo', producto('Nuevo'),
+      { items: increment(2), ultimoItem: 'nuevo' }));
+  });
+
+  it('el contador +1 sin un producto nuevo se rechaza', async () => {
+    for (const ultimoItem of ['fantasma', 'item1']) {
+      await assertFails(updateDoc(doc(adminA(), rutaContador(A)),
+        { items: increment(1), ultimoItem, actualizadoEn: serverTimestamp() }));
+    }
+  });
+
+  it('el contador −1 sin borrar nada se rechaza', async () => {
+    await assertFails(updateDoc(doc(adminA(), rutaContador(A)),
+      { items: increment(-1), ultimoItem: 'item1', actualizadoEn: serverTimestamp() }));
+    await assertFails(updateDoc(doc(adminA(), rutaContador(A)),
+      { items: increment(-1), ultimoItem: 'fantasma', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('`ultimoItem` de un producto que ya existía se rechaza', async () => {
+    // Reescribir item1 (que existe) es una EDICIÓN: no puede sumar al contador.
+    await assertFails(altaProducto(adminA(), A, 'item1', producto('Corte')));
+    // Y un alta real que nombra a otro producto en el contador, tampoco.
+    await assertFails(altaProducto(adminA(), A, 'nuevo', producto('Nuevo'),
+      { items: increment(1), ultimoItem: 'item1' }));
+  });
+
+  it('dos productos con un solo +1 se rechaza: cada alta exige que el contador la nombre', async () => {
+    const fs = adminA();
+    const lote = writeBatch(fs);
+    lote.set(doc(fs, `tenants/${A}/catalogo/x`), producto('X'));
+    lote.set(doc(fs, `tenants/${A}/catalogo/y`), producto('Y'));
+    lote.update(doc(fs, rutaContador(A)),
+      { items: increment(1), ultimoItem: 'x', actualizadoEn: serverTimestamp() });
+    await assertFails(lote.commit());
+    expect(await leer(`tenants/${A}/catalogo/x`)).toBeUndefined();
+  });
+
+  it('borrar sin bajar el contador se rechaza; con −1 que lo nombra, pasa', async () => {
+    await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/catalogo/item1`)));
+    await assertFails(bajaProducto(adminA(), A, 'item1', { items: increment(-1), ultimoItem: 'otro' }));
+    await assertFails(bajaProducto(adminA(), A, 'item1', { items: increment(-2), ultimoItem: 'item1' }));
+    await assertSucceeds(bajaProducto(adminA(), A, 'item1'));
+    expect(await leer(rutaContador(A))).toMatchObject({ items: 0, ultimoItem: 'item1' });
+  });
+
+  it('el operador NO crea ni borra productos, ni toca el contador', async () => {
+    await assertFails(altaProducto(operA(), A, 'nuevo', producto('Nuevo', 'u-oper-a')));
+    await assertFails(bajaProducto(operA(), A, 'item1'));
+  });
+
+  it('el admin de OTRO comercio no crea en este, aunque arme bien el lote', async () => {
+    await assertFails(altaProducto(adminB(), A, 'nuevo', producto('Nuevo', 'u-admin-b')));
+    await assertFails(bajaProducto(adminB(), A, 'item1'));
+    // Control: en el suyo sí.
+    await assertSucceeds(altaProducto(adminB(), B, 'nuevo', producto('Nuevo', 'u-admin-b')));
+  });
+
+  it('un comercio SUSPENDIDO o DADO DE BAJA no crea ni borra', async () => {
+    await assertFails(altaProducto(adminD(), D, 'nuevo', producto('Nuevo', 'u-admin-d')));
+    await assertFails(bajaProducto(adminD(), D, 'item1'));
+    await assertFails(altaProducto(adminC(), C, 'nuevo', producto('Nuevo', 'u-admin-c')));
+  });
+
+  it('con `limites.productos: 500` en la cuenta, el 21 SÍ se crea', async () => {
+    await llenar(A, 20, { plan: 'impulso', limites: { productos: 500 } });
+    await assertSucceeds(altaProducto(adminA(), A, 'p21', producto('P21')));
+  });
+
+  it('`limites.productos` MANDA sobre el plan: por debajo de lo que ya tiene, no crea pero sí borra', async () => {
+    await llenar(A, 20, { plan: 'pro', limites: { productos: 5 } });
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));
+    await assertSucceeds(bajaProducto(adminA(), A, 'p20'));
+  });
+
+  it('sin `limites`, el respaldo por plan: impulso 20, crecimiento 100, pro y demostración 500', async () => {
+    for (const [plan, pasa] of [
+      ['crecimiento', true], ['pro', true], ['demostracion', true],
+      ['impulso', false], ['basico', false], ['inventado', false],
+    ] as const) {
+      await llenar(A, 20, { plan });
+      const intento = altaProducto(adminA(), A, `p21-${plan}`, producto('P21'));
+      await (pasa ? assertSucceeds(intento) : assertFails(intento));
+    }
+  });
+
+  it('un `limites.productos` mal tipado no vale: rige el del plan', async () => {
+    await llenar(A, 20, { plan: 'impulso', limites: { productos: '500' } });
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));
+    await llenar(A, 20, { plan: 'crecimiento', limites: { productos: 5.5 } });
+    await assertSucceeds(altaProducto(adminA(), A, 'p21-b', producto('P21')));
+  });
+
+  // El mismo rango que `limitesDeCuenta` de planes.ts (1..LIMITE_MAXIMO): un
+  // cero de más en la copia no deja a un comercio sin techo, y un 0 corrupto
+  // no lo deja sin catálogo. `limite-catalogo.test.ts` compara el rango.
+  it('un `limites.productos` fuera de 1..100000 no vale: rige el del plan', async () => {
+    await llenar(A, 20, { plan: 'impulso', limites: { productos: 100001 } });
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));
+    await llenar(A, 20, { plan: 'impulso', limites: { productos: 100000 } });
+    await assertSucceeds(altaProducto(adminA(), A, 'p21-tope', producto('P21')));
+    await llenar(A, 20, { plan: 'crecimiento', limites: { productos: 0 } });
+    await assertSucceeds(altaProducto(adminA(), A, 'p21-cero', producto('P21')));
+  });
+
+  it('sin `cuenta/estado`, 20: ante la duda, el plan más chico', async () => {
+    await llenar(A, 20, null);
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));
+    // Control: con 19 contados, uno más entra. Id nuevo: `p20` quedó de arriba,
+    // y reescribirlo sería una edición, que el contador (con razón) no suma.
+    await llenar(A, 19, null);
+    await assertSucceeds(altaProducto(adminA(), A, 'p20-b', producto('P20')));
+  });
+
+  it('SIN CONTADOR no se crea ni se borra: las reglas no pueden saber cuántos hay', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), rutaContador(A)));
+    });
+    await assertFails(altaProducto(adminA(), A, 'nuevo', producto('Nuevo')));
+    await assertFails(bajaProducto(adminA(), A, 'item1'));
+    // Y no se lo puede fabricar: si pudiera crearlo en cero, se regalaría el cupo.
+    await assertFails(setDoc(doc(adminA(), rutaContador(A)),
+      { items: 0, ultimoItem: 'item1', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('nadie crea ni borra el contador desde el navegador, ni NovuChat', async () => {
+    await assertFails(deleteDoc(doc(adminA(), rutaContador(A))));
+    await assertFails(deleteDoc(doc(propietario(), rutaContador(A))));
+    await assertFails(setDoc(doc(propietario(), rutaContador(A)),
+      { items: 0, ultimoItem: 'item1', actualizadoEn: serverTimestamp() }));
+    // Otro contador que no es el del catálogo tampoco existe para el navegador.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/contadores/otro`), { items: 0 }));
+  });
+
+  it('el contador no acepta campos de más ni un sello de hora falso', async () => {
+    await assertFails(altaProducto(adminA(), A, 'nuevo', producto('Nuevo'),
+      { items: increment(1), ultimoItem: 'nuevo', trampa: true }));
+    const fs = adminA();
+    const lote = writeBatch(fs);
+    lote.set(doc(fs, `tenants/${A}/catalogo/nuevo`), producto('Nuevo'));
+    lote.update(doc(fs, rutaContador(A)),
+      { items: increment(1), ultimoItem: 'nuevo', actualizadoEn: Timestamp.fromMillis(0) });
+    await assertFails(lote.commit());
+  });
+
+  it('lo válido pasa: el lote con el valor explícito en vez de increment también', async () => {
+    await assertSucceeds(altaProducto(adminA(), A, 'nuevo', producto('Nuevo'), { items: 2, ultimoItem: 'nuevo' }));
+    expect(await leer(rutaContador(A))).toMatchObject({ items: 2, ultimoItem: 'nuevo' });
+  });
+
+  it('el contador lo leen las personas del comercio y NovuChat; otro comercio y la ingesta, no', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), rutaContador(A))));
+    await assertSucceeds(getDoc(doc(operA(), rutaContador(A))));
+    await assertSucceeds(getDoc(doc(propietario(), rutaContador(A))));
+    await assertFails(getDoc(doc(adminB(), rutaContador(A))));
+    await assertFails(getDoc(doc(ingestaA(), rutaContador(A))));
   });
 });

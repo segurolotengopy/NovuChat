@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { deleteField, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { useParams } from 'react-router-dom';
-import { auth, db, funciones } from '../lib/firebase';
+import { auth, db, funciones, storage } from '../lib/firebase';
+import {
+  ACEPTA, EXTENSIONES, esDelDeposito, mensajeDeFallaStorage, nombreParaProspecto,
+  rutaArchivoPlanes, validarArchivoPlanes, type ExtensionPlanes,
+} from '../lib/archivoPlanes';
 import { useFlujos } from '../lib/flujos';
 import { idDeNombre } from '../lib/csv';
 import { CampoMonto } from '../componentes/CampoMonto';
@@ -49,7 +54,23 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
  * flujo. Las listas se escriben enteras (un `merge` no mezcla listas: las
  * reemplaza), y el archivo de planes se BORRA con `deleteField()` cuando se
  * vacía, porque un mapa sí se mezclaría y dejaría el enlace viejo.
+ *
+ * EL ARCHIVO SE SUBE O SE ENLAZA (15/09). Con Storage, «Subir PDF o imagen»
+ * lo guarda en `tenants/{id}/captacion/planes.{pdf|jpg|png}` (nombre fijo:
+ * subir otro reemplaza) y escribe en `archivoPlanes.url` la dirección de
+ * `getDownloadURL`, que es la que descarga Meta. El enlace pegado a mano sigue
+ * siendo la alternativa. La subida GUARDA LA PANTALLA ENTERA al terminar, como
+ * «Comprobar archivo»: al reemplazar el objeto, el enlace guardado antes deja
+ * de servir, así que dejar la dirección nueva sin guardar dejaría al asistente
+ * con una rota. Por eso, antes de gastar datos en subir, se revisa que el resto
+ * de la pantalla se pueda guardar. Los tipos y tamaños los valida
+ * `lib/archivoPlanes.ts` en el navegador; la que manda es `storage.rules`.
  */
+
+/** Sin bucket configurado la consola funciona igual, pero no puede subir. */
+const SIN_DEPOSITO = 'La subida de archivos no está disponible en esta instalación de la '
+  + 'consola: falta configurar el depósito de archivos. Mientras tanto, pega un enlace '
+  + 'público más abajo, o avísale a NovuChat.';
 
 const RESPALDO = {
   mensajeClienteActual:
@@ -253,6 +274,17 @@ export function Captacion() {
   const [guardando, setGuardando] = useState(false);
   const [comprobando, setComprobando] = useState(false);
   const [comprobacion, setComprobacion] = useState<{ ok: boolean; motivo: string } | null>(null);
+  /** Porcentaje de la subida en curso, o `null` si no hay ninguna. */
+  const [subida, setSubida] = useState<number | null>(null);
+  const [quitando, setQuitando] = useState(false);
+  /** Lo que salió mal al subir o al quitar: se dice al lado de esos botones. */
+  const [avisoArchivo, setAvisoArchivo] = useState<string | null>(null);
+  /**
+   * El borrador VIGENTE. Una subida tarda; al terminar se guarda lo que hay en
+   * pantalla en ese momento, no lo que había cuando se eligió el archivo.
+   */
+  const ultimo = useRef<Datos | null>(null);
+  useEffect(() => { ultimo.current = datos; }, [datos]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -285,34 +317,40 @@ export function Captacion() {
   // la regla es la que manda y rechaza lo mismo.
   const problema = problemaDe(datos);
 
-  const guardar = async (): Promise<boolean> => {
+  /**
+   * Guarda el borrador `d` (por defecto, el de pantalla). Recibe el borrador
+   * como parámetro porque la subida y «Quitar» guardan uno que todavía no llegó
+   * al estado de React.
+   */
+  const guardar = async (d: Datos = datos): Promise<boolean> => {
     setEstado(null);
-    if (problema) { setEstado(problema); return false; }
-    const ids = idsDeRubros(datos.rubros);
-    const url = datos.archivo.url.trim();
+    const p = problemaDe(d);
+    if (p) { setEstado(p); return false; }
+    const ids = idsDeRubros(d.rubros);
+    const url = d.archivo.url.trim();
     setGuardando(true);
     try {
       await setDoc(doc(db, 'tenants', tenantId, 'config', 'onboarding'), {
-        mensajeClienteActual: datos.mensajeClienteActual.trim().slice(0, 600),
-        enlaceConsola: datos.enlaceConsola.trim(),
-        topeAviso: Number(datos.topeAviso),
-        plantillaAviso: datos.plantillaAviso.trim(),
-        rubros: datos.rubros.map((r, i) => ({
+        mensajeClienteActual: d.mensajeClienteActual.trim().slice(0, 600),
+        enlaceConsola: d.enlaceConsola.trim(),
+        topeAviso: Number(d.topeAviso),
+        plantillaAviso: d.plantillaAviso.trim(),
+        rubros: d.rubros.map((r, i) => ({
           id: ids[i] as string, nombre: r.nombre.trim(), solucion: r.solucion.trim(),
           flujoSugerido: r.flujoSugerido,
         })),
-        planes: datos.planes.map((p) => ({
-          nombre: p.nombre.trim(), precioUsd: Number(p.precioUsd), periodo: p.periodo,
-          incluye: p.incluye.trim(),
+        planes: d.planes.map((pl) => ({
+          nombre: pl.nombre.trim(), precioUsd: Number(pl.precioUsd), periodo: pl.periodo,
+          incluye: pl.incluye.trim(),
         })),
-        cargosUnicos: datos.cargosUnicos.map((c) => ({
+        cargosUnicos: d.cargosUnicos.map((c) => ({
           nombre: c.nombre.trim(), precioUsd: Number(c.precioUsd), desde: c.desde,
           detalle: c.detalle.trim(),
         })),
-        aclaraciones: datos.aclaraciones.map((a) => ({ tema: a.tema.trim(), texto: a.texto.trim() })),
+        aclaraciones: d.aclaraciones.map((a) => ({ tema: a.tema.trim(), texto: a.texto.trim() })),
         archivoPlanes: url === ''
           ? deleteField()
-          : { url, tipo: datos.archivo.tipo, nombreArchivo: datos.archivo.nombreArchivo.trim() },
+          : { url, tipo: d.archivo.tipo, nombreArchivo: d.archivo.nombreArchivo.trim() },
         actualizadoPor: auth.currentUser?.uid ?? '',
         actualizadoEn: serverTimestamp(),
       }, { merge: true });
@@ -335,6 +373,11 @@ export function Captacion() {
   const comprobar = async () => {
     setComprobacion(null);
     if (!(await guardar())) return;
+    await pedirComprobacion();
+  };
+
+  /** Le pide al servidor que descargue lo GUARDADO. Llamarla después de guardar. */
+  const pedirComprobacion = async () => {
     setComprobando(true);
     try {
       const r = await httpsCallable<{ tenantId: string }, { ok?: unknown; motivo?: unknown }>(
@@ -359,6 +402,108 @@ export function Captacion() {
     }
   };
 
+  /**
+   * Borra del depósito las extensiones dadas. «No existe» cuenta como éxito:
+   * se borran a ciegas los nombres posibles, así que lo normal es que falten.
+   */
+  const borrarDelDeposito = async (exts: ExtensionPlanes[]): Promise<boolean> => {
+    const s = storage;
+    if (!s) return true;
+    const r = await Promise.allSettled(
+      exts.map((e) => deleteObject(ref(s, rutaArchivoPlanes(tenantId, e)))));
+    return r.every((x) => x.status === 'fulfilled'
+      || (x.reason as { code?: string } | null)?.code === 'storage/object-not-found');
+  };
+
+  /**
+   * «Subir PDF o imagen». El orden importa:
+   *  1. valida en el navegador (extensión, primeros bytes, tamaño) y que el
+   *     resto de la pantalla se pueda guardar, ANTES de gastar datos;
+   *  2. sube a la ruta fija con su `contentType`, mostrando el avance;
+   *  3. guarda la pantalla con la dirección nueva;
+   *  4. RECIÉN AHÍ borra el archivo anterior de otra extensión: si se borrara
+   *     antes y el guardado fallara, lo guardado apuntaría a un archivo que ya
+   *     no existe;
+   *  5. pide la comprobación, como «Comprobar archivo».
+   */
+  const subir = async (archivo: File | undefined) => {
+    setAvisoArchivo(null);
+    setComprobacion(null);
+    if (!archivo) return;
+    const s = storage;
+    if (!s) { setAvisoArchivo(SIN_DEPOSITO); return; }
+    const v = await validarArchivoPlanes(archivo);
+    if (!v.ok) { setAvisoArchivo(v.motivo); return; }
+    const nombreArchivo = nombreParaProspecto(archivo.name, v.ext);
+    const antes = problemaDe({
+      ...(ultimo.current ?? datos),
+      archivo: { url: 'https://archivo', tipo: v.formato.tipo, nombreArchivo },
+    });
+    if (antes) {
+      setAvisoArchivo(`Antes de subir, corrige esto: ${antes} Al terminar de subir se `
+        + 'guarda toda la pantalla, y con ese problema el servidor no lo aceptaría.');
+      return;
+    }
+
+    const destino = ref(s, rutaArchivoPlanes(tenantId, v.ext));
+    let url: string;
+    setSubida(0);
+    try {
+      const tarea = uploadBytesResumable(destino, archivo, { contentType: v.formato.contentType });
+      tarea.on('state_changed', (paso) => {
+        if (paso.totalBytes > 0) setSubida(Math.round((paso.bytesTransferred / paso.totalBytes) * 100));
+      }, () => { /* el error lo atrapa el `await` de abajo */ });
+      await tarea;
+      url = await getDownloadURL(destino);
+    } catch (e) {
+      setAvisoArchivo(mensajeDeFallaStorage((e as { code?: string } | null)?.code ?? ''));
+      return;
+    } finally {
+      setSubida(null);
+    }
+
+    const final: Datos = {
+      ...(ultimo.current ?? datos),
+      archivo: { url, tipo: v.formato.tipo, nombreArchivo },
+    };
+    setDatos(final);
+    if (!(await guardar(final))) {
+      setAvisoArchivo('El archivo se subió, pero la configuración no se pudo guardar. Corrige '
+        + 'lo que dice abajo y toca Guardar: hasta entonces el asistente sigue con el enlace '
+        + 'anterior, que puede haber dejado de funcionar.');
+      return;
+    }
+    await borrarDelDeposito(EXTENSIONES.filter((e) => e !== v.ext));
+    await pedirComprobacion();
+  };
+
+  /**
+   * «Quitar archivo». Primero se guarda sin el campo y después se borra del
+   * depósito, por la misma razón que en la subida. Con más de cinco planes no
+   * se deja: la regla lo rechazaría, y acá se avisa antes.
+   */
+  const quitar = async () => {
+    setAvisoArchivo(null);
+    setComprobacion(null);
+    const base = ultimo.current ?? datos;
+    if (base.planes.length > PLANES_SIN_ARCHIVO) {
+      setAvisoArchivo(`Con ${base.planes.length} planes el archivo es obligatorio: el asistente `
+        + `lo manda en vez de listar más de ${PLANES_SIN_ARCHIVO}. Sube otro en su lugar (reemplaza `
+        + `al actual), o deja ${PLANES_SIN_ARCHIVO} planes o menos y guarda antes de quitarlo.`);
+      return;
+    }
+    setQuitando(true);
+    try {
+      if (!(await guardar({ ...base, archivo: { url: '', tipo: 'pdf', nombreArchivo: '' } }))) return;
+      setEstado(await borrarDelDeposito(EXTENSIONES)
+        ? 'Archivo quitado. El asistente ya no lo manda.'
+        : 'El asistente ya no manda el archivo, pero no se pudo borrar la copia guardada: quien '
+          + 'ya recibió el enlace todavía podría abrirla. Avísale a NovuChat para que la borre.');
+    } finally {
+      setQuitando(false);
+    }
+  };
+
   const cambiar = (clave: CampoTexto) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setDatos({ ...datos, [clave]: e.target.value });
@@ -369,6 +514,9 @@ export function Captacion() {
 
   const cantidadPlanes = datos.planes.length;
   const urlArchivo = datos.archivo.url.trim();
+  const ocupado = guardando || comprobando || quitando || subida !== null;
+  const sinSubir = storage === null || ocupado;
+  const archivoObligatorio = cantidadPlanes > PLANES_SIN_ARCHIVO;
 
   return (
     <section>
@@ -579,26 +727,58 @@ export function Captacion() {
           )}
         </EditorLista>
 
-        <h3>Archivo de planes</h3>
+        <h3>Archivo de planes {archivoObligatorio ? '(obligatorio)' : '(opcional)'}</h3>
+        <p className="ayuda">
+          Tus planes en un PDF o una imagen, para que el asistente los mande de
+          una vez. Es obligatorio con más de {PLANES_SIN_ARCHIVO} planes.{' '}
+          <strong>Es parte de tu oferta pública</strong>: lo recibe cualquier
+          prospecto que le escriba a tu número, así que no pongas nada privado
+          —costos internos, datos de clientes, contraseñas—.
+        </p>
+        <div className="acciones">
+          <label className="btn btn-secondary" aria-disabled={sinSubir}>
+            {subida !== null ? `Subiendo… ${subida} %` : 'Subir PDF o imagen'}
+            <input type="file" accept={ACEPTA} hidden disabled={sinSubir}
+                   onChange={(e) => { void subir(e.target.files?.[0]); e.target.value = ''; }} />
+          </label>
+          {urlArchivo !== '' && (
+            <button type="button" className="btn btn-ghost" disabled={ocupado || archivoObligatorio}
+                    onClick={() => void quitar()}>
+              {quitando ? 'Quitando…' : 'Quitar archivo'}
+            </button>
+          )}
+        </div>
+        {subida !== null && (
+          <progress max={100} value={subida} aria-label="Avance de la subida del archivo de planes" />
+        )}
+        <p className="ayuda">
+          PDF hasta 10 MB, o imagen JPG o PNG hasta 5 MB, que es lo más que
+          WhatsApp acepta en una imagen. Subir otro archivo reemplaza al anterior.
+          Al terminar se guarda la pantalla y se comprueba que el asistente lo
+          pueda mandar.
+          {urlArchivo !== '' && archivoObligatorio
+            && ` Con más de ${PLANES_SIN_ARCHIVO} planes no se puede quitar: sube otro en su lugar.`}
+        </p>
+        {storage === null && <p className="ayuda aviso-datos">{SIN_DEPOSITO}</p>}
+        {avisoArchivo && <p className="ayuda aviso-datos" role="alert">{avisoArchivo}</p>}
         <div className="grupo">
           <label>
-            Enlace al archivo {cantidadPlanes > PLANES_SIN_ARCHIVO ? '(obligatorio)' : '(opcional)'}
+            O pega un enlace público
             <input type="url" maxLength={500} value={datos.archivo.url} placeholder="https://…"
-                   aria-invalid={cantidadPlanes > PLANES_SIN_ARCHIVO && urlArchivo === ''}
+                   aria-invalid={archivoObligatorio && urlArchivo === ''}
                    onChange={(e) => cambiarArchivo({ url: e.target.value })} />
           </label>
           <p className="ayuda">
-            Tus planes en un PDF o una imagen, para que el asistente los mande de
-            una vez. <strong>NovuChat no guarda el archivo</strong>: carga el
-            enlace público <code>https://</code> donde ya está publicado —tu web,
-            un Drive con enlace público—. Si lo borras de allá, el asistente deja
-            de poder mandarlo. Es obligatorio con más de {PLANES_SIN_ARCHIVO} planes.
+            Si el archivo ya está publicado —tu web, un Drive con enlace público—,
+            pega el enlace <code>https://</code>. Si lo borras de allá, el
+            asistente deja de poder mandarlo. Cuando subes un archivo, este campo
+            se llena solo.
           </p>
         </div>
         <div className="grupo">
           <label>
             Tipo
-            <select value={datos.archivo.tipo}
+            <select value={datos.archivo.tipo} disabled={esDelDeposito(urlArchivo)}
                     onChange={(e) => cambiarArchivo({ tipo: deLaLista(e.target.value, TIPOS_ARCHIVO, 'pdf') })}>
               {TIPOS_ARCHIVO.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
             </select>

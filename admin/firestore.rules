@@ -931,6 +931,81 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // -----------------------------------------------------------------------
+      // LÍMITE DE PRODUCTOS DEL CATÁLOGO POR PLAN (decisión del 15/09/2026).
+      //
+      // POR QUÉ UN CONTADOR Y NO CONTAR. Las reglas no pueden contar los
+      // documentos de una colección: solo leen documentos sueltos. Por eso el
+      // conteo vive en `/contadores/catalogo` y se mueve EN EL MISMO LOTE que
+      // el alta o la baja del producto. Las dos reglas se exigen entre sí:
+      //
+      //   crear un producto  → el contador sube exactamente 1, nombra a ESTE
+      //                        producto en `ultimoItem` y no pasa del límite;
+      //   borrar un producto → el contador baja exactamente 1 y lo nombra;
+      //   tocar el contador  → +1 o −1, y `ultimoItem` tiene que ser un
+      //                        producto que nace (o muere) en ese mismo lote.
+      //
+      // `ultimoItem` es lo que impide colar DOS productos con un solo +1: cada
+      // alta exige que el contador la nombre a ella, y el contador nombra uno.
+      // Un lote crea o borra, entonces, un producto a la vez. La importación
+      // masiva va por `importarCatalogo` (functions/src/limiteCatalogo.ts), que
+      // cuenta en una transacción con el SDK Admin.
+      //
+      // SIN CONTADOR NO SE CREA NI SE BORRA desde el navegador. Las reglas no
+      // pueden saber si un comercio sin contador tiene cero productos o
+      // doscientos, y tratar la ausencia como cero regalaría el cupo entero a
+      // quien ya lo tiene lleno. Por eso: el contador lo crea
+      // `scripts/contar-catalogo.mjs` ANTES de desplegar estas reglas, y para
+      // un comercio nuevo lo crea `importarCatalogo` (con `items: []` basta),
+      // que sí puede contar. Nadie lo crea ni lo borra desde el navegador.
+      // -----------------------------------------------------------------------
+      function rutaContadorCatalogo() {
+        return /databases/$(database)/documents/tenants/$(tenantId)/contadores/catalogo;
+      }
+
+      // EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO (CLAUDE.md, base comercial §7).
+      //
+      // Primero `cuenta/estado.limites.productos`, la copia que escribe
+      // NovuChat al asignar el plan (`actualizarEstadoCuenta`,
+      // `scripts/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
+      // (`LIMITE_MAXIMO` de `planes.ts`): fuera de ese rango es un dato
+      // corrupto y rige el plan, igual que en `limitesDeCuenta()`. Si no está,
+      // la TABLA DE RESPALDO de abajo según `cuenta/estado.plan`; y si el plan
+      // no se conoce, el más chico: ante la duda se falla hacia el plan más
+      // chico, nunca hacia el más grande.
+      //
+      // ESTA TABLA ES SOLO EL RESPALDO. La fuente de los números es
+      // `functions/src/planes.ts` (`PLANES_ASIGNABLES`); las reglas no pueden
+      // importar TypeScript, así que acá van escritos a mano y
+      // `pruebas/limite-catalogo.test.ts` compara esta línea, el rango y el
+      // mínimo con aquel archivo. Si se toca uno solo, se nota.
+      // RESPALDO-PRODUCTOS-POR-PLAN
+      function limiteProductos() {
+        let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
+        let cuenta = exists(ruta) ? get(ruta).data : {};
+        let limites = cuenta.get('limites', {});
+        let propio = limites is map ? limites.get('productos', null) : null;
+        return propio is int && propio >= 1 && propio <= 100000
+          ? propio
+          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'demostracion': 500}
+              .get(cuenta.get('plan', ''), 20);
+      }
+
+      function altaContada(itemId) {
+        let ruta = rutaContadorCatalogo();
+        return exists(ruta)
+          && getAfter(ruta).data.get('ultimoItem', '') == itemId
+          && getAfter(ruta).data.get('items', -1) == get(ruta).data.get('items', -1) + 1
+          && getAfter(ruta).data.get('items', -1) <= limiteProductos();
+      }
+
+      function bajaContada(itemId) {
+        let ruta = rutaContadorCatalogo();
+        return exists(ruta)
+          && getAfter(ruta).data.get('ultimoItem', '') == itemId
+          && getAfter(ruta).data.get('items', -1) == get(ruta).data.get('items', -1) - 1;
+      }
+
       match /catalogo/{itemId} {
 
         allow get, list: if esMiembro(tenantId);
@@ -950,10 +1025,16 @@ service cloud.firestore {
         // `stock` aunque el parche no lo mencione. Preguntar por las claves
         // daba siempre que sí y dejaba fuera cualquier edición de un ítem con
         // existencias: no se podía ni corregirle el precio.
+        //
+        // LÍMITE DE PRODUCTOS POR PLAN (decisión del 15/09: 20 / 100 / 500).
+        // Crear exige que EN EL MISMO LOTE el contador suba exactamente uno,
+        // nombre a ESTE ítem y no pase del límite del plan. Ver
+        // `altaContada()` y el bloque `/contadores/{contador}` más abajo.
         allow create: if esAdmin(tenantId)
                       && tenantOperativo(tenantId)
                       && itemValido()
-                      && !request.resource.data.keys().hasAny(['stock']);
+                      && !request.resource.data.keys().hasAny(['stock'])
+                      && altaContada(itemId);
         allow update: if esAdmin(tenantId)
                       && tenantOperativo(tenantId)
                       && itemValido()
@@ -966,7 +1047,11 @@ service cloud.firestore {
                       && resource != null
                       && !request.resource.data.diff(resource.data)
                             .affectedKeys().hasAny(['stock']);
-        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId);
+        // Borrar exige que en el mismo lote el contador BAJE uno y nombre a
+        // este ítem: sin eso, cada baja dejaría el contador inflado y el
+        // comercio perdería cupo que pagó.
+        allow delete: if esAdmin(tenantId) && tenantOperativo(tenantId)
+                      && bajaContada(itemId);
 
         function itemValido() {
           let d = request.resource.data;
@@ -1018,6 +1103,50 @@ service cloud.firestore {
             && d.get('activo', null) is bool
             && urlImagenValida(d, 'imagenUrl')
             && selloValido(d);
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // /contadores/{contador} — CUÁNTOS HAY, PARA LOS LÍMITES DEL PLAN.
+      //
+      // Hoy uno solo: `catalogo = { items, ultimoItem, actualizadoEn }`. Lo
+      // leen las personas del comercio (la consola muestra «8 de 20») y
+      // NovuChat. Lo mueve el administrador SOLO en el mismo lote que un alta
+      // o una baja de producto; ver el bloque del límite, arriba de
+      // `/catalogo`. Ni se crea ni se borra desde el navegador: sin él no hay
+      // cómo saber cuánto cupo queda, y la regla del producto niega.
+      // -----------------------------------------------------------------------
+      match /contadores/{contador} {
+        allow get, list: if (esPersonaDelNegocio(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+
+        allow update: if contador == 'catalogo'
+                      && esAdmin(tenantId)
+                      && tenantOperativo(tenantId)
+                      && contadorCatalogoValido();
+        allow create, delete: if false;
+
+        function rutaItem(id) {
+          return /databases/$(database)/documents/tenants/$(tenantId)/catalogo/$(id);
+        }
+
+        function contadorCatalogoValido() {
+          let antes = resource.data;
+          let d = request.resource.data;
+          let id = d.get('ultimoItem', '');
+          return d.keys().hasOnly(['items', 'ultimoItem', 'actualizadoEn'])
+            && antes.get('items', null) is int
+            && d.get('items', null) is int
+            && d.get('items', -1) >= 0
+            && id is string
+            && id.matches('^[^/]{1,200}$')
+            && d.get('actualizadoEn', null) == request.time
+            // +1: el producto que nombra NO existía y existe al terminar el lote.
+            && ((d.get('items', -1) == antes.get('items', 0) + 1
+                  && !exists(rutaItem(id)) && existsAfter(rutaItem(id)))
+            // −1: el producto que nombra existía y deja de existir.
+                || (d.get('items', -1) == antes.get('items', 0) - 1
+                  && exists(rutaItem(id)) && !existsAfter(rutaItem(id))));
         }
       }
 
@@ -1687,7 +1816,15 @@ service cloud.firestore {
                  // carrito. Hacen falta LOS DOS para poder contestar «mandé el
                  // enlace y no me llegó ningún pedido»: con uno solo no se
                  // distingue «nunca se derivó» de «se derivó y nadie compró».
-                 'catalogo_enlace', 'carrito_recibido'
+                 'catalogo_enlace', 'carrito_recibido',
+                 // Umbrales de atención (`Analisis/27` §5): la ventana pasó al
+                 // operador, o llegó al bloqueo. Explican «el asistente dejó de
+                 // contestarle a mi cliente». Faltaban desde el 13/09.
+                 'derivacion_operador', 'bloqueo_ventana',
+                 // Aviso de consumo al 80 % del plan (15/09), una vez por mes.
+                 'aviso_consumo'
+                 // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
+                 // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]
             && d.get('resultado', '') in ['ok', 'fallo', 'rechazado', 'reintento']
             && d.get('canal', 'whatsapp') in ['whatsapp', 'panel', 'sistema']
