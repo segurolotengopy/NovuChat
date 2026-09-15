@@ -236,10 +236,11 @@ service cloud.firestore {
       return tieneFlujo(tenantId, 'venta');
     }
 
-    // El flujo PROPIO de NovuChat: capta y atiende a quien quiere contratar el
-    // servicio. Su documento `/config/onboarding` es de NovuChat, no del
-    // comercio: lo lee y lo escribe SOLO el propietario de la plataforma, con
-    // sesión de Google. Ni el administrador del propio tenant `novuchat` entra.
+    // El flujo de CAPTACIÓN: capta y atiende a quien quiere contratar lo que
+    // vende el comercio. Nació como el flujo propio de NovuChat y desde el
+    // 15/09 es un flujo GENÉRICO, igual que agendamiento y venta: su documento
+    // `/config/onboarding` lo leen los miembros del comercio y lo escribe su
+    // administrador, además del propietario de la plataforma.
     function tieneOnboarding(tenantId) {
       return tieneFlujo(tenantId, 'onboarding');
     }
@@ -404,11 +405,11 @@ service cloud.firestore {
       // -----------------------------------------------------------------------
       match /config/{documento} {
 
-        // Todo documento de configuración lo lee la gente del comercio, SALVO
-        // `onboarding`, que es de NovuChat. `list` no se rompe: ninguna
-        // pantalla lista la colección entera, se lee documento por documento, y
-        // la consulta de `cobro.ts` va con el SDK Admin, que no pasa por acá.
-        allow get, list: if (documento != 'onboarding' && esMiembro(tenantId))
+        // Todo documento de configuración lo lee la gente del comercio,
+        // `onboarding` incluido desde que la captación es un flujo genérico
+        // (15/09). El propietario lee además el de captación, como antes: es
+        // quien configura el de NovuChat.
+        allow get, list: if esMiembro(tenantId)
                          || (documento == 'onboarding' && esPropietario()
                              && tieneOnboarding(tenantId));
 
@@ -447,6 +448,10 @@ service cloud.firestore {
                             && configVentaValida())
                         || (documento == 'marca' && tieneCobro(tenantId)
                             && logoValido())
+                        // Captación: igual que los otros documentos de flujo,
+                        // solo con la capacidad. El operador no escribe.
+                        || (documento == 'onboarding' && tieneOnboarding(tenantId)
+                            && configOnboardingValida())
                       );
         // Los crea `altaTenant` según el vertical, para que ningún documento
         // quede a medio formar ni exista uno que no corresponde.
@@ -459,10 +464,12 @@ service cloud.firestore {
                       && documento == 'marca' && tieneCobro(tenantId) && logoValido();
         allow delete: if false;
 
-        // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN: SOLO EL PROPIETARIO. El alta lo
-        // crea vacío, pero el propietario puede crearlo si falta —el tenant
-        // `novuchat` pudo darse de alta antes de que existiera el flujo—. Nunca
-        // en un tenant que no tiene el flujo en su lista.
+        // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN, POR EL PROPIETARIO. Además del
+        // administrador (arriba, solo `update`, como todo documento de flujo),
+        // lo escribe el propietario. El alta lo crea vacío, pero el propietario
+        // puede crearlo si falta —el tenant `novuchat` pudo darse de alta antes
+        // de que existiera el flujo—. Nunca en un tenant que no tiene el flujo
+        // en su lista.
         //
         // Y SOLO CON EL COMERCIO OPERATIVO, como todas las demás escrituras de
         // config: un tenant suspendido o dado de baja no se reconfigura, ni
@@ -577,8 +584,8 @@ service cloud.firestore {
             // Operación
             'horarios', 'politicaCancelacion', 'prefijosPermitidos',
             'datosQueNoTenemos',
-            // Voz del asistente (enumerados)
-            'tratamiento', 'estiloEmojis',
+            // Voz del asistente (enumerados, y el nombre)
+            'tratamiento', 'estiloEmojis', 'nombreAsistente',
             // Mensajes fijos
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
@@ -654,6 +661,13 @@ service cloud.firestore {
             // que se elige acá entra en las instrucciones del asistente.
             && d.get('tratamiento', 'usted') in ['usted', 'tu', 'vos', 'neutro']
             && d.get('estiloEmojis', 'pocos') in ['ninguno', 'pocos', 'muchos']
+            // EL NOMBRE DEL ASISTENTE («Kenji»), para TODOS los flujos del
+            // negocio: es identidad, capa común. Texto libre, así que corto y de
+            // UNA línea: los flujos lo interpolan en textos fijos que no pasan
+            // por el modelo, y un salto de línea ahí rompe el mensaje. El
+            // servidor lo vuelve a sanear antes de mandarlo (`vozFija`).
+            && textoOpc(d, 'nombreAsistente', 40)
+            && d.get('nombreAsistente', '').matches('[^\\r\\n]*')
 
             && d.get('mensajes', {}) is map
             && textoOpc(d, 'mensajeCierre', 300)
@@ -783,12 +797,25 @@ service cloud.firestore {
         }
 
         // =====================================================================
-        // /config/onboarding — EL FLUJO DE CAPTACIÓN DE NOVUCHAT
+        // /config/onboarding — EL FLUJO DE CAPTACIÓN (genérico desde el 15/09)
         //
-        // El documento entero es de NovuChat, así que la lista blanca va sobre
-        // las CLAVES (sirve para crear y para actualizar), no sobre las
-        // afectadas. NINGÚN SECRETO: el token del CRM y el de Meta viven en las
-        // credenciales de n8n, y un campo que no está en la lista no entra.
+        // La lista blanca va sobre las CLAVES (sirve para crear y para
+        // actualizar), no sobre las afectadas. NINGÚN SECRETO: el token del CRM
+        // y el de Meta viven en las credenciales de n8n, y un campo que no está
+        // en la lista no entra.
+        //
+        // LA OFERTA DEL COMERCIO: `rubros`, `planes`, `cargosUnicos`,
+        // `aclaraciones` y `archivoPlanes`. Las reglas NO recorren elementos de
+        // una lista: acá se comprueba el tipo y el tope de cada una; la forma
+        // de cada elemento la valida y recorta `sanearCaptacion`
+        // (functions/src/captacion.ts) antes de mandarla al flujo, y descarta
+        // lo que no cumple. Mismo reparto que `datosQueNoTenemos` (T-27).
+        //
+        // MÁS DE CINCO PLANES EXIGEN EL ARCHIVO. Recitar veinte planes por chat
+        // es un mensaje larguísimo que nadie lee (y varios en la factura de
+        // Meta): se manda el PDF o la imagen. La condición vive ACÁ y no solo en
+        // la pantalla, porque un límite que solo existe en la pantalla no
+        // existe (CLAUDE.md, base comercial §7).
         //
         // `topeAviso` es propio de este flujo: en esa respuesta el asistente
         // ofrece un asesor con un botón y la conversación sigue. EL TECHO DE
@@ -800,8 +827,23 @@ service cloud.firestore {
           let d = request.resource.data;
           return d.keys().hasOnly([
               'mensajeClienteActual', 'enlaceConsola', 'topeAviso',
-              'plantillaAviso', 'actualizadoPor', 'actualizadoEn'
+              'plantillaAviso',
+              'rubros', 'planes', 'cargosUnicos', 'aclaraciones', 'archivoPlanes',
+              'actualizadoPor', 'actualizadoEn'
             ])
+            && d.get('rubros', []) is list
+            && d.get('rubros', []).size() <= 8
+            && d.get('planes', []) is list
+            && d.get('planes', []).size() <= 20
+            && d.get('cargosUnicos', []) is list
+            && d.get('cargosUnicos', []).size() <= 5
+            && d.get('aclaraciones', []) is list
+            && d.get('aclaraciones', []).size() <= 15
+            // Ausente o `null` es «sin archivo»; si está, con su forma.
+            && (d.get('archivoPlanes', null) == null
+                || archivoPlanesValido(d.get('archivoPlanes', null)))
+            && (d.get('planes', []).size() <= 5
+                || d.get('archivoPlanes', null) is map)
             && d.get('mensajeClienteActual', '') is string
             && d.get('mensajeClienteActual', '').size() <= 600
             && d.get('enlaceConsola', '') is string
@@ -813,6 +855,19 @@ service cloud.firestore {
             && d.get('plantillaAviso', 'solicitud_contacto') is string
             && d.get('plantillaAviso', 'solicitud_contacto').matches('[a-z0-9_]{1,64}')
             && selloValido(d);
+        }
+
+        // El archivo de planes: una dirección `https://` que el asistente manda
+        // por WhatsApp. Que responda y sea del tipo y del tamaño que acepta
+        // Meta no se puede ver desde acá: lo comprueba `comprobarArchivoPlanes`.
+        function archivoPlanesValido(a) {
+          return a is map
+            && a.keys().hasOnly(['url', 'tipo', 'nombreArchivo'])
+            && a.keys().hasAll(['url', 'tipo'])
+            && cadena(a.get('url', null), 500)
+            && a.get('url', '').matches("^https://[^ '\"<>]+$")
+            && a.get('tipo', '') in ['pdf', 'imagen']
+            && cadena(a.get('nombreArchivo', ''), 80);
         }
       }
 

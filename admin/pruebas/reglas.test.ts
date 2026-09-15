@@ -2619,14 +2619,17 @@ describe('Pantallas · la consulta real de cada una', () => {
 });
 
 // ===========================================================================
-// EL FLUJO DE CAPTACIÓN DE NOVUCHAT: su configuración es solo del propietario
+// EL FLUJO DE CAPTACIÓN: del propietario Y del administrador del comercio
 // ===========================================================================
 //
 // Especificación de Silvana (13/09/2026): la pestaña del flujo propio de
-// NovuChat la ven y la editan SOLO los superadministradores, con Google. Las
-// pruebas se escriben negando, como el aislamiento entre comercios: que el
+// NovuChat la veían y la editaban SOLO los superadministradores, con Google.
+// CAMBIÓ A PROPÓSITO el 15/09 (decisión de Andres): la captación es un tercer
+// flujo GENÉRICO, y su documento lo leen los miembros del comercio y lo
+// escribe su administrador, como los de agendamiento y venta. El propietario
+// conserva lo que tenía. Las pruebas se siguen escribiendo negando: que el
 // botón no aparezca en la consola no prueba nada.
-describe('Captación de NovuChat: la configuración es solo del propietario', () => {
+describe('Captación: la configuración es del propietario y del administrador', () => {
   const ruta = `tenants/${E}/config/onboarding`;
   const cfg = (uid: string, extra: Record<string, unknown> = {}) => ({
     mensajeClienteActual: 'Entra a la consola con tu correo.',
@@ -2646,11 +2649,15 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
     await assertSucceeds(setDoc(doc(propietario(), ruta), cfg('u-novuchat'), { merge: true }));
   });
 
-  it('el administrador del propio tenant NO lo lee ni lo escribe', async () => {
-    await assertFails(getDoc(doc(adminE(), ruta)));
-    await assertFails(setDoc(doc(adminE(), ruta), cfg('u-admin-e')));
-    await assertFails(updateDoc(doc(adminE(), ruta), { topeAviso: 30,
+  it('el administrador del propio tenant lo lee y lo edita (cambio del 15/09)', async () => {
+    await assertSucceeds(getDoc(doc(adminE(), ruta)));
+    await assertSucceeds(setDoc(doc(adminE(), ruta), cfg('u-admin-e')));
+    await assertSucceeds(updateDoc(doc(adminE(), ruta), { topeAviso: 30,
       actualizadoPor: 'u-admin-e', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('pero con el sello de otro no escribe', async () => {
+    await assertFails(setDoc(doc(adminE(), ruta), cfg('u-novuchat')));
   });
 
   it('pero sí edita lo común de su negocio', async () => {
@@ -2697,17 +2704,21 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
     await assertFails(setDoc(doc(propietario(), ruta), cfg('u-novuchat', { tokenCrm: 'pat-na1-xxxx' })));
   });
 
-  it('ni el operador ni el principal de ingesta del tenant lo leen', async () => {
-    await assertFails(getDoc(doc(operE(), ruta)));
-    await assertFails(getDoc(doc(ingestaE(), ruta)));
+  it('el operador y el principal de ingesta lo leen, como todo config, pero no lo escriben', async () => {
+    await assertSucceeds(getDoc(doc(operE(), ruta)));
+    await assertSucceeds(getDoc(doc(ingestaE(), ruta)));
+    await assertFails(setDoc(doc(operE(), ruta), cfg('u-oper-e')));
+    await assertFails(updateDoc(doc(operE(), ruta), { topeAviso: 30,
+      actualizadoPor: 'u-oper-e', actualizadoEn: serverTimestamp() }));
+    await assertFails(setDoc(doc(ingestaE(), ruta), cfg('svc-e')));
   });
 
-  it('listar la colección de config no lo expone a los miembros', async () => {
-    // La regla de lectura depende del documento: un listado sin filtro de toda la
-    // colección no se puede demostrar seguro y se rechaza entero.
-    await assertFails(getDocs(collection(adminE(), `tenants/${E}/config`)));
-    // Leer documento por documento, como hacen las pantallas, sigue funcionando.
-    await assertSucceeds(getDoc(doc(adminE(), `tenants/${E}/config/negocio`)));
+  it('listar la colección de config es de los miembros, captación incluida', async () => {
+    // Antes se rechazaba entero: la lectura dependía del documento. Ahora todo
+    // documento de config es de los miembros, y el listado se puede demostrar.
+    await assertSucceeds(getDocs(collection(adminE(), `tenants/${E}/config`)));
+    // Uno ajeno, no.
+    await assertFails(getDocs(collection(adminA(), `tenants/${E}/config`)));
   });
 
   it('nadie lo borra, ni el propietario', async () => {
@@ -2735,5 +2746,171 @@ describe('Captación de NovuChat: la configuración es solo del propietario', ()
 
   it('el sello tiene que ser del que escribe', async () => {
     await assertFails(setDoc(doc(propietario(), ruta), cfg('otra-persona')));
+  });
+});
+
+// ===========================================================================
+// CAPTACIÓN GENÉRICA: LA OFERTA QUE CONFIGURA EL ADMINISTRADOR
+// ===========================================================================
+//
+// Rubros, planes, cargos únicos, aclaraciones y el archivo de planes. Las
+// reglas comprueban el TIPO y el TOPE de cada lista, las claves del archivo y
+// que más de cinco planes traigan archivo. La forma de cada elemento la valida
+// el servidor (`captacion.ts`, con sus pruebas en `captacion.test.ts`): las
+// reglas no recorren listas.
+describe('Captación genérica: la oferta del comercio', () => {
+  const ruta = `tenants/${E}/config/onboarding`;
+  const rubro = (i: number) => ({
+    id: `rubro-${i}`, nombre: `Rubro ${i}`, solucion: 'Agenda por WhatsApp.',
+    flujoSugerido: 'agendamiento',
+  });
+  const plan = (i: number) => ({
+    nombre: `Plan ${i}`, precioUsd: 25, periodo: 'mes', incluye: '100 conversaciones',
+  });
+  const cargo = (i: number) => ({
+    nombre: `Cargo ${i}`, precioUsd: 65, desde: false, detalle: 'Única vez.',
+  });
+  const aclaracion = (i: number) => ({
+    tema: `Tema ${i}`, texto: 'Una conversación son hasta 25 respuestas en 24 horas.',
+  });
+  const n = <T,>(k: number, f: (i: number) => T): T[] => Array.from({ length: k }, (_, i) => f(i + 1));
+  const archivo = { url: 'https://novuchat.site/planes.pdf', tipo: 'pdf', nombreArchivo: 'Planes.pdf' };
+  const oferta = (uid: string, extra: Record<string, unknown> = {}) => ({
+    mensajeClienteActual: 'Entra a la consola con tu correo.',
+    enlaceConsola: 'https://consola.novuchat.site',
+    topeAviso: 25, plantillaAviso: 'solicitud_contacto',
+    rubros: [rubro(1), { id: 'otro', nombre: 'Otro / a medida', solucion: 'Lo armamos juntos.',
+      flujoSugerido: 'a_medida' }],
+    planes: n(3, plan),
+    cargosUnicos: [cargo(1), { nombre: 'A medida', precioUsd: 125, desde: true, detalle: '' }],
+    aclaraciones: [aclaracion(1)],
+    actualizadoPor: uid, actualizadoEn: serverTimestamp(), ...extra,
+  });
+  const escribe = (extra: Record<string, unknown>) =>
+    setDoc(doc(adminE(), ruta), oferta('u-admin-e', extra));
+
+  it('lo válido pasa: el administrador guarda la oferta completa', async () => {
+    await assertSucceeds(escribe({}));
+    await assertSucceeds(escribe({ archivoPlanes: archivo }));
+    await assertSucceeds(escribe({ archivoPlanes: { url: archivo.url, tipo: 'imagen' } }));
+    // `null` es «sin archivo», igual que ausente.
+    await assertSucceeds(escribe({ archivoPlanes: null }));
+    // El propietario, igual.
+    await assertSucceeds(setDoc(doc(propietario(), ruta), oferta('u-novuchat')));
+  });
+
+  it('el operador NO escribe la oferta', async () => {
+    await assertFails(setDoc(doc(operE(), ruta), oferta('u-oper-e')));
+    await assertFails(updateDoc(doc(operE(), ruta), { planes: n(2, plan),
+      actualizadoPor: 'u-oper-e', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('un administrador de OTRO comercio no la lee ni la escribe', async () => {
+    await assertFails(getDoc(doc(adminA(), ruta)));
+    await assertFails(setDoc(doc(adminA(), ruta), oferta('u-admin-a')));
+    await assertFails(updateDoc(doc(adminA(), ruta), { planes: n(2, plan),
+      actualizadoPor: 'u-admin-a', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('el administrador de un comercio SIN captación no escribe, aunque el documento exista', async () => {
+    // El documento se siembra a mano: sin él, la escritura fallaría por no
+    // existir y la prueba pasaría en vacío. Así falla por la capacidad.
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await setDoc(doc(ctx.firestore(), `tenants/${A}/config/onboarding`), {
+        topeAviso: 25, actualizadoPor: 'seed', actualizadoEn: Timestamp.now(),
+      });
+    });
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/onboarding`), oferta('u-admin-a')));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/onboarding`), { topeAviso: 30,
+      actualizadoPor: 'u-admin-a', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('con el comercio suspendido, el administrador no escribe (pero lee)', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), 'tenants', E), { estado: 'suspendido' });
+    });
+    await assertFails(escribe({}));
+    await assertSucceeds(getDoc(doc(adminE(), ruta)));
+  });
+
+  it('el administrador no lo CREA: lo crea el alta, como todo documento de flujo', async () => {
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await deleteDoc(doc(ctx.firestore(), ruta));
+    });
+    await assertFails(escribe({}));
+    // El propietario sí puede recrearlo.
+    await assertSucceeds(setDoc(doc(propietario(), ruta), oferta('u-novuchat')));
+  });
+
+  it('cada lista tiene su tope: 8 rubros, 20 planes, 5 cargos, 15 aclaraciones', async () => {
+    await assertFails(escribe({ rubros: n(9, rubro) }));
+    await assertFails(escribe({ planes: n(21, plan), archivoPlanes: archivo }));
+    await assertFails(escribe({ cargosUnicos: n(6, cargo) }));
+    await assertFails(escribe({ aclaraciones: n(16, aclaracion) }));
+    // En el tope, pasan.
+    await assertSucceeds(escribe({
+      rubros: n(8, rubro), planes: n(20, plan), archivoPlanes: archivo,
+      cargosUnicos: n(5, cargo), aclaraciones: n(15, aclaracion),
+    }));
+  });
+
+  it('una lista que no es lista no entra', async () => {
+    await assertFails(escribe({ rubros: 'peluquerías' }));
+    await assertFails(escribe({ planes: { a: plan(1) } }));
+    await assertFails(escribe({ aclaraciones: 3 }));
+  });
+
+  it('más de cinco planes exigen el archivo de planes', async () => {
+    await assertFails(escribe({ planes: n(6, plan) }));
+    await assertFails(escribe({ planes: n(6, plan), archivoPlanes: null }));
+    await assertSucceeds(escribe({ planes: n(6, plan), archivoPlanes: archivo }));
+    await assertSucceeds(escribe({ planes: n(5, plan) }));
+    // Ni con `update` se saltea: agregar el sexto plan a un documento sin archivo.
+    await assertFails(updateDoc(doc(adminE(), ruta), { planes: n(6, plan),
+      actualizadoPor: 'u-admin-e', actualizadoEn: serverTimestamp() }));
+  });
+
+  it('el archivo: https, sus claves, su tipo y sus largos', async () => {
+    await assertFails(escribe({ archivoPlanes: { ...archivo, url: 'http://novuchat.site/planes.pdf' } }));
+    await assertFails(escribe({ archivoPlanes: { ...archivo, url: 'javascript:alert(1)' } }));
+    await assertFails(escribe({ archivoPlanes: { ...archivo, extra: 'x' } }));
+    await assertFails(escribe({ archivoPlanes: { ...archivo, tipo: 'docx' } }));
+    await assertFails(escribe({ archivoPlanes: { url: archivo.url } }));
+    await assertFails(escribe({ archivoPlanes: { ...archivo, url: `https://novuchat.site/${'a'.repeat(480)}` } }));
+    await assertFails(escribe({ archivoPlanes: { ...archivo, nombreArchivo: 'x'.repeat(81) } }));
+    await assertFails(escribe({ archivoPlanes: 'https://novuchat.site/planes.pdf' }));
+  });
+
+  it('un campo fuera de la lista blanca sigue sin entrar', async () => {
+    await assertFails(escribe({ precios: [] }));
+  });
+});
+
+// ===========================================================================
+// EL NOMBRE DEL ASISTENTE, EN LA CAPA COMÚN
+// ===========================================================================
+describe('Nombre del asistente (config/negocio)', () => {
+  const ruta = `tenants/${A}/config/negocio`;
+  const conNombre = (nombreAsistente: unknown) =>
+    setDoc(doc(adminA(), ruta), { ...configValida('u-admin-a'), nombreAsistente });
+
+  it('lo válido pasa, en cualquier flujo: vacío, corto y de 40 caracteres', async () => {
+    await assertSucceeds(conNombre('Kenji'));
+    await assertSucceeds(conNombre(''));
+    await assertSucceeds(conNombre('x'.repeat(40)));
+    // Un comercio de venta también: es capa común.
+    await assertSucceeds(setDoc(doc(adminB(), `tenants/${B}/config/negocio`),
+      { ...configValida('u-admin-b'), nombreAsistente: 'Kenji' }));
+  });
+
+  it('41 caracteres, un salto de línea o algo que no es texto, no', async () => {
+    await assertFails(conNombre('x'.repeat(41)));
+    await assertFails(conNombre('Ken\nji'));
+    await assertFails(conNombre('Kenji\r'));
+    await assertFails(conNombre(7));
+  });
+
+  it('el operador no lo escribe', async () => {
+    await assertFails(setDoc(doc(operA(), ruta), { ...configValida('u-oper-a'), nombreAsistente: 'Kenji' }));
   });
 });
