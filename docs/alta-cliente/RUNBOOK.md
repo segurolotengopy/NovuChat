@@ -107,6 +107,18 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   y lo lee **una persona**: `gcloud secrets versions access latest --secret=INGESTA_CLIENTENN --project <proyecto>`.
   Si ese valor se expone, se da de baja el cliente o se reasigna el alias, se rota:
   `docs/produccion/rotar-secreto-ingesta.md` (una versión nueva no rige hasta redesplegar).
+- **Si el comercio tiene el flujo de captación (`onboarding`)**, su contenido
+  —nombre del asistente, rubros, planes en dólares, cargos únicos y
+  aclaraciones— se carga desde la pestaña «Captación» o de una vez desde un JSON
+  versionado, también primero en seco:
+
+  ```bash
+  node admin/scripts/cargar-captacion.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/captacion-<id>.json
+  ```
+
+  El script rechaza lo que no cumple el contrato (más de 8 rubros, un precio
+  negativo, más de 5 planes sin `archivoPlanes`) y un comercio sin `onboarding`
+  en `flujos`. El de NovuChat es `admin/scripts/datos/captacion-novuchat.json`.
 - En la consola, con el administrador: número de recepción, horario, catálogo y
   **«Cómo trata al cliente»** (tú, usted, vos o impersonal). Lo que dice la
   consola gana sobre el respaldo del flujo: NovuChat quedó en «Impersonal» y el

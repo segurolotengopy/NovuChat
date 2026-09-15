@@ -144,6 +144,10 @@ evitarlo en vivo). Recomendado: **(a)**.
 (14/09/2026). Atiende el número de NovuChat, que no es de prueba. Especificación
 de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
 
+**Desde el 15/09 es un flujo genérico** (`admin/DISENO.md` §4sexies.5): lo que
+el asistente ofrece sale de la consola, no del JSON. NovuChat es su primer
+usuario, con el asistente «Kenji».
+
 ### Qué hace
 
 1. **Compuerta inicial, sin modelo.** A un «hola» suelto le responde con dos
@@ -182,6 +186,39 @@ lee lo que contestó Meta y
   envío fallido dejaba a ese teléfono sin botones para siempre.
 
 No agrega ni quita mensajes a Meta: no hace ninguna llamada.
+
+### Configuración por consola
+
+El flujo trae la oferta de la consola en cada turno (`Traer configuración`), y
+lo que dice la consola manda sobre el corpus del sitio y sobre el respaldo de
+`Config base`:
+
+| Qué | Dónde | Cómo lo usa el asistente |
+|---|---|---|
+| Nombre del asistente | `config/negocio.nombreAsistente` (común) | Se presenta con él; si le preguntan, dice que es una IA |
+| Rubros | `config/onboarding.rubros` | Reconoce el rubro del prospecto, le ofrece la solución de ese rubro y el flujo sugerido |
+| Planes | `config/onboarding.planes` | **Hasta 5, en texto** dentro de la respuesta. **Desde 6, el archivo** de `archivoPlanes` (PDF o imagen), que es obligatorio en ese caso |
+| Cargos únicos | `config/onboarding.cargosUnicos` | Instalación y demás; `desde: true` se dice «desde» |
+| Aclaraciones | `config/onboarding.aclaraciones` | **Solo si le preguntan** (qué es una conversación, la bolsa, el prepago, la moneda) |
+| Horario de atención | `config/negocio` | **Opcional.** Si está, lo usa para decir cuándo contesta una persona; si no, no promete un horario |
+
+Precios siempre en dólares: el asistente no calcula bolivianos (se cobra al
+Tipo de Cambio Oficial del BCB, Base comercial §3).
+
+**Botón «Hablar con un asesor».** Es la salida hacia una persona: la ofrece al
+cerrar (con los datos obligatorios del prospecto), en la respuesta del aviso
+(`topeAviso`) y cuando el prospecto pide hablar con alguien. Va como botón
+dentro de la misma respuesta, no como un mensaje aparte.
+
+**Mensajes:** la configuración no agrega mensajes. El archivo de planes tiene
+que salir **en lugar** del texto de ese turno (documento o imagen con el texto
+en el pie), nunca además: si saliera aparte, sumaría 1 mensaje por cada
+conversación que pregunte por planes.
+
+**Carga inicial:** desde la pestaña «Captación», o con
+`node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
+(primero en seco). El contenido de NovuChat está en
+`admin/scripts/datos/captacion-novuchat.json`, copiado del sitio.
 
 ### Credenciales (todas nuevas, propias de la app `NovuChat-Asistente`)
 
