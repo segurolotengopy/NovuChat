@@ -287,6 +287,24 @@ describe('Procesar respuesta', () => {
     expect(r['avisar']).toBe(false);
   });
 
+  it('un dato de relleno («Pendiente») no se guarda', () => {
+    const sd: J = {};
+    const r = procesar('Anotado. ¿A qué se dedica?\n[LEAD]{"empresa":"AAB1","rubro":"Pendiente","flujos":"No especificado","nit":"-"}[/LEAD]',
+      entrada(sd), sd);
+    expect(sd['conversaciones'][TEL]['lead']).toEqual({ empresa: 'AAB1' });
+    expect(r['avisar']).toBe(false);
+  });
+
+  it('con «Pendiente» en el rubro, un [CIERRE] no cierra', () => {
+    const sd: J = {};
+    const ent = entrada(sd);
+    procesar('Gracias.\n[LEAD]{"empresa":"AAB1","contacto":"Ana","flujos":"citas"}[/LEAD]', ent, sd);
+    const r = procesar('Te escribirá un asesor.\n[LEAD]{"rubro":"Pendiente"}[/LEAD] [CIERRE]', ent, sd);
+    expect(r['avisar']).toBe(false);
+    expect(r['avisos']).toContain('cierre_sin_datos');
+    expect(sd['conversaciones'][TEL]['lead']['rubro']).toBeUndefined();
+  });
+
   it('un [CIERRE] sin los datos obligatorios NO avisa ni cierra', () => {
     const sd: J = {};
     const r = procesar('Te escribirá un asesor. [CIERRE]', entrada(sd), sd);
