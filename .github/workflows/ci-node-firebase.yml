@@ -20,7 +20,7 @@
 # Variables: MODO, APROBADORES_PROD, TAG_FIRMADO_REQUERIDO, GCP_PROJECT_ID_STAGING,
 #            GCP_PROJECT_ID_PROD, STAGING_URL, PROD_URL, HEALTH_PATH,
 #            NODE_VERSION (22), COVERAGE_MIN (70), GHAS_ENABLED, BLOQUEAR_EN,
-#            FIREBASE_DEPLOY_ONLY ('hosting,firestore:rules'),
+#            FIREBASE_DEPLOY_ONLY ('hosting,firestore:rules,firestore:indexes,functions,storage'),
 #            FIREBASE_SITE_ID, FIREBASE_PREVIEW ('true' para canales de PR)
 # =============================================================================
 name: CI/CD Node → Firebase
@@ -292,6 +292,12 @@ jobs:
           grep -q 'match /{documento=\*\*} {' firestore.rules
           grep -q 'allow read, write: if false;' firestore.rules
           echo "La negacion final esta presente."
+          # Mismo control para Storage: un camino nuevo tiene que nacer cerrado.
+          if [[ -f storage.rules ]]; then
+            grep -q 'match /{todo=\*\*} {' storage.rules
+            grep -q 'allow read, write: if false;' storage.rules
+            echo "La negacion final de storage.rules esta presente."
+          fi
 
       - name: Habilitar corepack
         if: needs.preparar.outputs.pm != 'npm'
@@ -406,6 +412,37 @@ jobs:
         run: |
           set -euo pipefail
           "$PM" run "$SCRIPT"
+
+      # ---------------------------------------------------------------------
+      # CONTROL 3b — Pruebas de las reglas de Storage (storage.rules).
+      #
+      # A diferencia de Firestore, el emulador de Storage solo arranca con el
+      # CLI (firebase emulators:exec), y tiene que correr JUNTO al de Firestore:
+      # las reglas leen la ficha del comercio con firestore.get() y el emulador
+      # la resuelve contra el Firestore del mismo proceso. Lo hace
+      # admin/pruebas/correr-storage.sh con una configuración y puertos
+      # propios. Usa el firebase-tools del lockfile (ya instalado arriba) y el
+      # Java del paso "Java para el emulador de Firestore": el motor de reglas
+      # de Storage también es un jar, que el CLI descarga si falta.
+      #
+      # Si existe storage.rules y no hay script de pruebas, FALLA: unas reglas
+      # de acceso sin pruebas son exactamente lo que este job existe para
+      # impedir.
+      # ---------------------------------------------------------------------
+      - name: Pruebas de reglas de Storage (emuladores Firestore + Storage)
+        if: needs.preparar.outputs.script_reglas != ''
+        env:
+          PM: ${{ needs.preparar.outputs.pm }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f storage.rules ]]; then
+            echo "Sin storage.rules: nada que probar."; exit 0
+          fi
+          if ! jq -e '.scripts["pruebas:reglas:storage"]' package.json >/dev/null; then
+            echo "::error::Existe storage.rules pero falta el script pruebas:reglas:storage en package.json."
+            exit 1
+          fi
+          "$PM" run pruebas:reglas:storage
 
   # ---------------------------------------------------------------------------
   # Fase 2 — seguridad-estatica: reusable OSS (todos los modos).
@@ -833,7 +870,7 @@ jobs:
       - name: Desplegar hosting + reglas (staging)
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
-          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_STAGING: ${{ vars.STAGING_URL }}
         run: |
           set -euo pipefail
@@ -1069,7 +1106,7 @@ jobs:
         # firebase.json lo excluye. El lib/ tampoco se toca: sigue siendo el
         # compilado y probado en `construir`.
         env:
-          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
         run: |
           set -euo pipefail
           if [[ "$SOLO" == *functions* ]]; then
@@ -1081,7 +1118,7 @@ jobs:
       - name: Desplegar hosting + reglas (producción)
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
-          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions' }}
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_PROD: ${{ vars.PROD_URL }}
           SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
         run: |

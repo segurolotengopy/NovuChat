@@ -1,0 +1,257 @@
+rules_version = '2';
+
+// =============================================================================
+// NovuChat — Panel administrativo multi-tenant
+// Reglas de seguridad de Cloud Storage for Firebase
+// =============================================================================
+//
+// PARA QUÉ EXISTE ESTE ARCHIVO. El proyecto no tuvo depósito de archivos hasta
+// el 15/09: el logo y las fotos del catálogo viven incrustados en Firestore
+// justamente para no custodiar archivos de terceros (ver firestore.rules,
+// /config/marca). El flujo de CAPTACIÓN cambió eso por una sola razón: el PDF o
+// la imagen con los planes del comercio pesa megas y Meta tiene que poder
+// descargarlo desde una URL para mandarlo por WhatsApp. Ese caso, y NINGÚN
+// otro, es lo que este archivo habilita. El patrón replicable está en
+// docs/seguridad/reglas-storage.md.
+//
+// PRINCIPIOS (los mismos de firestore.rules, adaptados a archivos):
+//
+//  1. NEGAR POR DEFECTO. La última regla del archivo deniega todo. Un camino
+//     nuevo nace inaccesible; habilitarlo exige escribirlo acá y probarlo.
+//
+//  2. UN CAMINO POR CASO DE USO, CON NOMBRES FIJOS. No hay carpetas donde el
+//     comercio suba «lo que quiera»: hay tres nombres exactos. Así un archivo
+//     nuevo reemplaza al anterior (no se acumulan versiones que nadie borra),
+//     el nombre no es un canal para inyectar nada, y la extensión decide el
+//     tipo y el tamaño admitidos.
+//
+//  3. EL TENANT VIVE EN LA RUTA. `tenantId` sale del path y se compara con el
+//     token; jamás de un metadato que el navegador elige.
+//
+//  4. LA IDENTIDAD ES LA DE FIRESTORE, NO UNA PARECIDA. Las funciones de abajo
+//     son copia de las de firestore.rules: mismos claims `nc.p` / `nc.t`, mismo
+//     vínculo rol ↔ proveedor de sesión, mismo correo verificado. Si una de las
+//     dos cambia sin la otra, el comercio tendría dos criterios de quién es
+//     administrador según pida un documento o un archivo.
+//
+//  5. LO QUE DEPENDE DEL ESTADO DEL COMERCIO SE LEE DE FIRESTORE, en el momento.
+//     La capacidad (`flujos`) y el estado (`activo` / `suspendido`) viven en la
+//     ficha del tenant. Se leen con `firestore.get()`, que CUESTA UNA LECTURA de
+//     Firestore por evaluación (se factura como cualquier lectura) y compra lo
+//     mismo que en firestore.rules: una suspensión corta la escritura AL
+//     INSTANTE, no cuando vence el ID token.
+//
+//  6. NADA ES PÚBLICO POR REGLAS. Meta no descarga el archivo a través de estas
+//     reglas: usa la URL de descarga con token que da `getDownloadURL`, y ese
+//     token NO pasa por acá. Ver el bloque de la captación.
+// =============================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // -------------------------------------------------------------------------
+    // Ayudantes de identidad — EQUIVALENTES a los de firestore.rules.
+    //
+    // Si se toca uno, se toca el otro: son el mismo control en dos servicios.
+    // Las pruebas de los dos archivos usan los mismos claims simulados.
+    // -------------------------------------------------------------------------
+    function autenticado() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    // Forma: { nc: { p: true, t: { "<tenantId>": "admin" | "oper" | "ingesta" }, v: 3 } }
+    function nc() {
+      return request.auth.token.get('nc', {});
+    }
+
+    // VÍNCULO ROL ↔ PROVEEDOR DE IDENTIDAD (firestore.rules, T-19):
+    //   propietario de NovuChat         → SOLO cuenta de Google
+    //   administrador / operador         → SOLO usuario y contraseña
+    //   principal de ingesta (n8n)       → SOLO token personalizado
+    // Un claim puesto por error queda INERTE si la sesión no es del proveedor
+    // que corresponde a ese rol.
+    function proveedor() {
+      return request.auth.token.get('firebase', {}).get('sign_in_provider', '');
+    }
+
+    function correoVerificado() {
+      return request.auth.token.get('email_verified', false) == true;
+    }
+
+    function esPropietario() {
+      return autenticado()
+        && nc().get('p', false) == true
+        && proveedor() == 'google.com';
+    }
+
+    // Cadena vacía (y no null) cuando no hay rol: comparar null lanza error de
+    // evaluación en vez de dar falso (el defecto documentado en firestore.rules).
+    function rolEn(tenantId) {
+      return nc().get('t', {}).get(tenantId, '');
+    }
+
+    function esAdmin(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'admin'
+        && proveedor() == 'password'
+        && correoVerificado();
+    }
+
+    function esOperador(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'oper'
+        && proveedor() == 'password'
+        && correoVerificado();
+    }
+
+    function esIngesta(tenantId) {
+      return autenticado()
+        && rolEn(tenantId) == 'ingesta'
+        && proveedor() == 'custom';
+    }
+
+    function esPersonaDelNegocio(tenantId) {
+      return esAdmin(tenantId) || esOperador(tenantId);
+    }
+
+    function esMiembro(tenantId) {
+      return esPersonaDelNegocio(tenantId) || esIngesta(tenantId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Ficha del comercio, leída de Firestore (LECTURA CRUZADA).
+    //
+    // COSTO: cada `firestore.get()` es una lectura de Firestore facturada, por
+    // evaluación de la regla. Por eso:
+    //   · se hace UNA sola vez por evaluación: la ficha entra como PARÁMETRO a
+    //     las funciones de abajo, en vez de pedirla en cada una (en Firestore,
+    //     `get()` repetido sobre el mismo documento se cachea dentro de la
+    //     petición; en la lectura cruzada desde Storage no conviene suponerlo);
+    //   · se pide DESPUÉS de la identidad y del archivo: con `&&` en cortocircuito,
+    //     un anónimo, un operador o un archivo mal nombrado se rechazan sin
+    //     gastar la lectura.
+    //
+    // Sobre un tenant INEXISTENTE, `firestore.get()` devuelve null. Las
+    // funciones de abajo lo comprueban (`ficha != null`) para NEGAR POR LA
+    // CONDICIÓN y no por un «Null value error» de evaluación: el resultado es el
+    // mismo, pero un error de evaluación se confunde con una regla mal escrita
+    // al depurar (el mismo criterio que `rolEn` en firestore.rules). Lo
+    // destapó la prueba del tenant inexistente.
+    //
+    // REQUISITO DE DESPLIEGUE (una sola vez por proyecto): la cuenta de servicio
+    // de Storage (`service-<número>@gcp-sa-firebasestorage.iam.gserviceaccount.com`)
+    // necesita el rol `roles/firebaserules.firestoreServiceAgent`. Sin él, toda
+    // regla que llama a `firestore.get()` DENIEGA. firebase-tools solo ofrece
+    // concederlo en un despliegue INTERACTIVO; con `--non-interactive`, como
+    // despliega el CI, se lo saltea (rulesDeploy.js, `checkStorageRulesIamPermissions`).
+    // Ver docs/seguridad/reglas-storage.md §Despliegue.
+    // -------------------------------------------------------------------------
+    function fichaTenant(tenantId) {
+      return firestore.get(/databases/(default)/documents/tenants/$(tenantId));
+    }
+
+    // Misma lógica que `flujosTenant` en firestore.rules: MANDA LA LISTA
+    // `flujos`; una ficha sin lista se lee como `[vertical]`.
+    function tieneOnboardingEn(ficha) {
+      return ficha != null
+        && 'onboarding' in ficha.data.get('flujos', [ficha.data.get('vertical', '')]);
+    }
+
+    // Misma lógica que `tenantOperativo`: solo 'activo' habilita escritura.
+    function operativoEn(ficha) {
+      return ficha != null && ficha.data.get('estado', '') == 'activo';
+    }
+
+    // =========================================================================
+    // /tenants/{tenantId}/captacion/{archivo} — EL ARCHIVO DE PLANES
+    //
+    // Lo sube el administrador del comercio desde la consola; su URL de
+    // descarga queda en `/config/onboarding.archivoPlanes` y el asistente la
+    // manda por WhatsApp cuando el comercio tiene más de cinco planes.
+    //
+    // NOMBRES, TIPOS Y TAMAÑOS ATADOS:
+    //   planes.pdf  → application/pdf, hasta 10 MB
+    //   planes.jpg  → image/jpeg,      hasta 5 MB
+    //   planes.png  → image/png,       hasta 5 MB  (5 MB es el tope de imagen
+    //                                               de WhatsApp Cloud API)
+    // El `contentType` lo declara el navegador, así que atarlo a la extensión no
+    // prueba que el contenido sea un PDF: impide que se suba un HTML con nombre
+    // de PDF y que Storage lo sirva como `text/html`. Que el archivo responda y
+    // sea lo que dice lo comprueba el servidor (`comprobarArchivoPlanes`).
+    //
+    // LA URL CON TOKEN ES UNA CAPACIDAD. Quien tiene la URL de `getDownloadURL`
+    // lee el archivo, sin sesión y sin pasar por estas reglas: así la descarga
+    // Meta. Consecuencias, y hay que tenerlas presentes:
+    //   · el PDF de planes es OFERTA PÚBLICA del comercio. Nunca se sube acá
+    //     nada que no pueda publicarse (listas de clientes, contratos, datos
+    //     personales). Por eso el camino admite tres nombres y ninguno más;
+    //   · la URL viaja a Meta y queda en el historial de WhatsApp del prospecto;
+    //   · revocarla es revocar el token desde la consola de Firebase, o borrar
+    //     el archivo. Reemplazarlo por uno nuevo es la operación normal.
+    //
+    // QUIÉN, igual que `/config/onboarding` en firestore.rules:
+    //   leer por el SDK  → miembros del comercio, y el propietario si el
+    //                      comercio tiene el flujo (mismo criterio de lectura)
+    //   escribir/borrar  → el ADMIN del comercio o el PROPIETARIO, siempre con el
+    //                      flujo `onboarding` en la ficha y el comercio 'activo'
+    //   listar           → nadie: los nombres son fijos y no hay nada que buscar
+    // El operador lee pero no escribe: tampoco escribe `/config/onboarding`.
+    // =========================================================================
+    match /tenants/{tenantId}/captacion/{archivo} {
+
+      function nombreValido() {
+        return archivo in ['planes.pdf', 'planes.jpg', 'planes.png'];
+      }
+
+      // Tipo y tamaño que corresponden a ESTE nombre. `size > 0` evita dejar un
+      // archivo vacío que Meta rechazaría en medio de una conversación.
+      function contenidoValido() {
+        let r = request.resource;
+        return r.size > 0
+          && ((archivo == 'planes.pdf'
+                && r.contentType == 'application/pdf'
+                && r.size <= 10 * 1024 * 1024)
+              || (archivo == 'planes.jpg'
+                && r.contentType == 'image/jpeg'
+                && r.size <= 5 * 1024 * 1024)
+              || (archivo == 'planes.png'
+                && r.contentType == 'image/png'
+                && r.size <= 5 * 1024 * 1024));
+      }
+
+      // Quién puede escribir o borrar. La identidad va PRIMERO para no gastar
+      // la lectura cruzada en quien no tiene rol (ver `fichaTenant`).
+      function puedeEscribir() {
+        return (esAdmin(tenantId) || esPropietario())
+          && fichaPermiteEscribir(fichaTenant(tenantId));
+      }
+
+      function fichaPermiteEscribir(ficha) {
+        return tieneOnboardingEn(ficha) && operativoEn(ficha);
+      }
+
+      allow get: if nombreValido()
+                 && (esMiembro(tenantId)
+                     || (esPropietario() && tieneOnboardingEn(fichaTenant(tenantId))));
+
+      allow list: if false;
+
+      // `create` es la primera subida; `update` es reemplazar el archivo (o sus
+      // metadatos). Las dos exigen el mismo tipo y tamaño.
+      allow create, update: if nombreValido()
+                            && contenidoValido()
+                            && puedeEscribir();
+
+      allow delete: if nombreValido() && puedeEscribir();
+    }
+
+    // =========================================================================
+    // NEGACIÓN FINAL. Todo lo que no coincidió arriba queda prohibido: otros
+    // caminos, otros nombres, carpetas ajenas del mismo comercio, rutas con
+    // `..`. Es la red de seguridad del archivo. No borrarla.
+    // =========================================================================
+    match /{todo=**} {
+      allow read, write: if false;
+    }
+  }
+}
