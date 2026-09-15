@@ -242,6 +242,14 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
   for (const [i, item] of catalogo.entries()) {
     await db.doc(`tenants/${id}/catalogo/item-${i + 1}`).set({ ...item, ...sello });
   }
+  // CONTADOR DEL CATÁLOGO (límite de productos por plan, firestore.rules). Sin
+  // él la consola no puede dar de alta ni de baja. Se escribe con lo que HAY y
+  // no con lo sembrado: sin --limpiar pueden quedar ítems de una prueba a mano.
+  await db.doc(`tenants/${id}/contadores/catalogo`).set({
+    items: (await db.collection(`tenants/${id}/catalogo`).select().get()).size,
+    ultimoItem: '',
+    actualizadoEn: FieldValue.serverTimestamp(),
+  });
 
   // --- Personas de referencia del comercio ---
   await db.doc(`tenants/${id}/contactos/k1`).set({
