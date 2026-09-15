@@ -346,9 +346,14 @@ serializado = json.dumps(cuerpo, ensure_ascii=False)
 # Defensa dura: nunca escribir marcadores encima de la configuracion real de
 # produccion. Un `Config del negocio` con REEMPLAZAR_* deja el flujo sin
 # calendario ni telefonos, y el sintoma aparece recien con el primer cliente.
-if "REEMPLAZAR_" in serializado:
-    import re as _re
-    marcas = sorted(set(_re.findall(r'REEMPLAZAR_[^"\\\s]*', serializado)))
+import re as _re
+# UN MARCADOR EMPIEZA CON MAYÚSCULA DESPUÉS DE «REEMPLAZAR_» (REEMPLAZAR_PHONE_NUMBER_ID,
+# REEMPLAZAR_ID_CALENDARIO@group.calendar.google.com, REEMPLAZAR_NUMERO_DUENO_SIN_+).
+# Antes se aceptaba cualquier cosa después de «REEMPLAZAR_», y el flujo de captación,
+# que menciona el prefijo en su propio código para reconocer un respaldo sin llenar,
+# se leía como dos marcadores falsos y publicar-flujo.sh abortaba (15/09/2026).
+marcas = sorted(set(_re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', serializado)))
+if marcas:
     print(f"\n{R}✗ ABORTADO: el archivo todavia tiene marcadores sin reponer.{FIN}")
     for m in marcas:
         print(f"    {m}")
