@@ -31,6 +31,7 @@
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { REGION } from './region.js';
+import { PLANES, PLANES_ASIGNABLES, PLAN_POR_DEFECTO, limitesDeCuenta } from './planes.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -38,23 +39,22 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_ITEM = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 
 /**
- * RESPALDO del límite de productos por plan. LA FUENTE ES `planes.ts` (la
- * escribe el trabajo de planes y límites de `cuenta/estado`); mientras no
- * exista en esta rama, esta tabla y la de `firestore.rules`
- * (`limiteProductos()`) tienen que coincidir, y la prueba lo exige.
+ * RESPALDO del límite de productos por plan, DERIVADO de `planes.ts`, que es
+ * la fuente: acá no hay ningún número escrito. Existe como tabla porque las
+ * reglas de Firestore no importan TypeScript y llevan la suya en
+ * `limiteProductos()`; `pruebas/limite-catalogo.test.ts` compara aquella línea
+ * con esta tabla, o sea con `planes.ts`.
  *
- * `demostracion` es el plan de los comercios de demostración de NovuChat
- * (`scripts/sembrar-demos.mjs`): 500, para que una demo nunca choque.
+ * Incluye `demostracion` (`PLANES_ASIGNABLES`), el plan de los demos de
+ * NovuChat (`scripts/sembrar-demos.mjs`): los límites de Pro, para que una
+ * demo nunca choque.
  */
-export const PRODUCTOS_POR_PLAN_RESPALDO: Readonly<Record<string, number>> = Object.freeze({
-  impulso: 20,
-  crecimiento: 100,
-  pro: 500,
-  demostracion: 500,
-});
+export const PRODUCTOS_POR_PLAN_RESPALDO: Readonly<Record<string, number>> = Object.freeze(
+  Object.fromEntries(Object.entries(PLANES_ASIGNABLES).map(([id, p]) => [id, p.productos])),
+);
 
 /** Sin `limites` y con un plan desconocido: el plan más chico. Fallar hacia abajo. */
-export const PRODUCTOS_SIN_PLAN = 20;
+export const PRODUCTOS_SIN_PLAN = PLANES[PLAN_POR_DEFECTO].productos;
 
 /**
  * Tope de ítems por llamada. Una transacción de Firestore se hace pesada muy
@@ -63,18 +63,15 @@ export const PRODUCTOS_SIN_PLAN = 20;
  */
 export const MAX_ITEMS_POR_LLAMADA = 400;
 
-/** El límite de productos de un comercio, leído de su `cuenta/estado`. */
+/**
+ * El límite de productos de un comercio, leído de su `cuenta/estado`. Es
+ * `limitesDeCuenta` de `planes.ts`, la función de todos los límites: la copia
+ * `limites.productos` si es un entero de 1 a `LIMITE_MAXIMO`; si no, la del
+ * plan; si el plan no es del catálogo, la del más chico. La regla
+ * `limiteProductos()` aplica el mismo rango, y la prueba lo compara.
+ */
 export function limiteDeProductos(cuenta: Record<string, unknown> | undefined): number {
-  const limites = cuenta?.['limites'];
-  if (typeof limites === 'object' && limites !== null && !Array.isArray(limites)) {
-    const propio = (limites as Record<string, unknown>)['productos'];
-    if (typeof propio === 'number' && Number.isInteger(propio) && propio >= 0) return propio;
-  }
-  const plan = cuenta?.['plan'];
-  if (typeof plan === 'string' && Object.hasOwn(PRODUCTOS_POR_PLAN_RESPALDO, plan)) {
-    return PRODUCTOS_POR_PLAN_RESPALDO[plan] as number;
-  }
-  return PRODUCTOS_SIN_PLAN;
+  return limitesDeCuenta(cuenta).productos;
 }
 
 /**

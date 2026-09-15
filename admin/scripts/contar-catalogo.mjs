@@ -29,10 +29,12 @@
  * en el entorno escribe en el emulador (así lo prueba
  * `pruebas/limite-catalogo.test.ts`).
  *
- * EL LÍMITE SE LEE DE `functions/src/limiteCatalogo.ts`, no de una copia: el
- * mismo criterio que usa `importarCatalogo`.
+ * EL LÍMITE SE LEE DE `functions/src/planes.ts`, no de una copia: es
+ * `limitesDeCuenta`, la misma función que usa `importarCatalogo`. Node 22.18+
+ * carga TypeScript sin compilar (igual que `asignar-plan.mjs`), y `planes.ts`
+ * es puro a propósito.
  */
-import { readFileSync } from 'node:fs';
+const { LIMITE_MAXIMO, esIdPlan, limitesDeCuenta } = await import('../functions/src/planes.ts');
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -41,23 +43,18 @@ const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 
-const fuente = readFileSync(new URL('../functions/src/limiteCatalogo.ts', import.meta.url), 'utf8');
-const tabla = fuente.match(/PRODUCTOS_POR_PLAN_RESPALDO[^{]*\{([^}]*)\}/);
-const sinPlan = fuente.match(/PRODUCTOS_SIN_PLAN\s*=\s*(\d+)/);
-if (!tabla || !sinPlan) {
-  console.error('\n  ✗ No se pudo leer la tabla de límites de functions/src/limiteCatalogo.ts.\n');
-  process.exit(2);
-}
-const POR_PLAN = Object.fromEntries([...tabla[1].matchAll(/(\w+):\s*(\d+)/g)].map((m) => [m[1], Number(m[2])]));
-const SIN_PLAN = Number(sinPlan[1]);
-
-/** Mismo criterio que `limiteDeProductos` de limiteCatalogo.ts y `limiteProductos()` de las reglas. */
+/**
+ * El límite y de dónde sale, para el informe. El número es siempre el de
+ * `limitesDeCuenta`; el origen solo lo explica.
+ */
 function limiteDe(cuenta) {
+  const limite = limitesDeCuenta(cuenta).productos;
   const propio = cuenta?.limites?.productos;
-  if (Number.isInteger(propio) && propio >= 0) return { limite: propio, origen: 'limites.productos' };
   const plan = cuenta?.plan;
-  if (typeof plan === 'string' && Object.hasOwn(POR_PLAN, plan)) return { limite: POR_PLAN[plan], origen: `plan ${plan}` };
-  return { limite: SIN_PLAN, origen: `sin plan conocido${plan ? ` (${plan})` : ''}` };
+  const origen = Number.isInteger(propio) && propio >= 1 && propio <= LIMITE_MAXIMO
+    ? 'limites.productos'
+    : esIdPlan(plan) ? `plan ${plan}` : `sin plan conocido${plan ? ` (${plan})` : ''}`;
+  return { limite, origen };
 }
 
 if (!PROYECTO) {

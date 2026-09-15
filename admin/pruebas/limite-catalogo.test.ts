@@ -48,6 +48,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const db = getFirestore();
 
 const L = await import('../functions/src/limiteCatalogo.ts');
+const P = await import('../functions/src/planes.ts');
 
 // ===========================================================================
 // 1) UNA SOLA FUENTE PARA LOS NÚMEROS
@@ -57,50 +58,48 @@ describe('Los números del límite: una sola fuente', () => {
   const desde = reglas.indexOf('function limiteProductos()');
   const funcion = reglas.slice(desde, reglas.indexOf('function altaContada', desde));
 
-  it('la tabla de respaldo de las reglas es la de limiteCatalogo.ts, con el mismo mínimo', () => {
+  // LA FUENTE ES `planes.ts`. Antes de integrar la rama de planes esta prueba
+  // se saltaba si el archivo no existía; ahora es obligatoria, y compara la
+  // regla con `PLANES_ASIGNABLES` directamente (no con una copia intermedia).
+  it('la tabla de respaldo de las reglas es la de planes.ts, con el mismo mínimo', () => {
     const m = funcion.match(/\{('[^}]*)\}\s*\.get\(cuenta\.get\('plan', ''\),\s*(\d+)\)/);
     expect(m, 'no se encontró la tabla en limiteProductos() de firestore.rules').not.toBeNull();
     const tabla = Object.fromEntries([...m![1]!.matchAll(/'(\w+)':\s*(\d+)/g)]
       .map((x) => [x[1], Number(x[2])]));
-    expect(tabla).toEqual({ ...L.PRODUCTOS_POR_PLAN_RESPALDO });
-    expect(Number(m![2])).toBe(L.PRODUCTOS_SIN_PLAN);
+    const dePlanes = Object.fromEntries(Object.entries(P.PLANES_ASIGNABLES).map(([id, p]) => [id, p.productos]));
+    // Todos los planes asignables, demostración incluida, y ninguno de más.
+    expect(tabla).toEqual(dePlanes);
+    expect(Number(m![2])).toBe(P.PLANES[P.PLAN_POR_DEFECTO].productos);
+    // Y la tabla derivada de la función, que usa `importarCatalogo`.
+    expect({ ...L.PRODUCTOS_POR_PLAN_RESPALDO }).toEqual(dePlanes);
+    expect(L.PRODUCTOS_SIN_PLAN).toBe(P.PLANES[P.PLAN_POR_DEFECTO].productos);
+  });
+
+  it('la regla acepta la copia en el MISMO rango que limitesDeCuenta (1..LIMITE_MAXIMO)', () => {
+    const r = funcion.match(/propio is int && propio >= (\d+) && propio <= (\d+)/);
+    expect(r, 'la regla no acota limites.productos').not.toBeNull();
+    expect(Number(r![1])).toBe(1);
+    expect(Number(r![2])).toBe(P.LIMITE_MAXIMO);
   });
 
   it('son los de la decisión del 15/09: 20 / 100 / 500, y el mínimo es el menor', () => {
     expect(L.PRODUCTOS_POR_PLAN_RESPALDO).toMatchObject({ impulso: 20, crecimiento: 100, pro: 500 });
-    expect(L.PRODUCTOS_SIN_PLAN).toBe(Math.min(...Object.values(L.PRODUCTOS_POR_PLAN_RESPALDO)));
+    const vendibles = Object.values(P.PLANES).map((p) => p.productos);
+    expect(L.PRODUCTOS_SIN_PLAN).toBe(Math.min(...vendibles));
+    // El plan de demostración no se vende, pero existe para las reglas.
+    expect(L.PRODUCTOS_POR_PLAN_RESPALDO['demostracion']).toBe(P.PLANES.pro.productos);
   });
 
-  // `planes.ts` lo escribe el trabajo de planes y límites de `cuenta/estado`.
-  // Si todavía no está en esta rama, la prueba se salta —y lo dice el
-  // informe—; el día que llegue, tiene que traer `productos` por plan y
-  // coincidir, o esto falla.
-  const planes = join(aqui, '..', 'functions', 'src', 'planes.ts');
-  it.skipIf(!existsSync(planes))('y coincide con functions/src/planes.ts, que es la fuente', async () => {
-    const modulo = await import(/* @vite-ignore */ pathToFileURL(planes).href) as Record<string, unknown>;
-    const productosDe = (plan: string): number | null => {
-      const visitados = new Set<unknown>();
-      const buscarProductos = (v: unknown, prof: number): number | null => {
-        if (prof > 4 || typeof v !== 'object' || v === null || visitados.has(v)) return null;
-        visitados.add(v);
-        const o = v as Record<string, unknown>;
-        if (typeof o['productos'] === 'number') return o['productos'];
-        for (const x of Object.values(o)) { const r = buscarProductos(x, prof + 1); if (r !== null) return r; }
-        return null;
-      };
-      const buscarPlan = (v: unknown, prof: number): number | null => {
-        if (prof > 4 || typeof v !== 'object' || v === null) return null;
-        const o = v as Record<string, unknown>;
-        if (plan in o && !Array.isArray(o)) { const r = buscarProductos(o[plan], 0); if (r !== null) return r; }
-        if (['id', 'clave', 'plan'].some((k) => o[k] === plan)) { const r = buscarProductos(o, 0); if (r !== null) return r; }
-        for (const x of Object.values(o)) { const r = buscarPlan(x, prof + 1); if (r !== null) return r; }
-        return null;
-      };
-      return buscarPlan(modulo, 0);
-    };
-    for (const plan of ['impulso', 'crecimiento', 'pro']) {
-      expect(productosDe(plan), `planes.ts no expone «productos» del plan ${plan}`)
-        .toBe(L.PRODUCTOS_POR_PLAN_RESPALDO[plan]);
+  it('la función del catálogo es limitesDeCuenta: mismo número en los casos del borde', () => {
+    for (const cuenta of [
+      undefined, {}, { plan: 'basico' }, { plan: 'toString' }, { plan: 'demostracion' },
+      { plan: 'pro', limites: { productos: 0 } }, { plan: 'pro', limites: { productos: -3 } },
+      { plan: 'impulso', limites: { productos: P.LIMITE_MAXIMO } },
+      { plan: 'impulso', limites: { productos: P.LIMITE_MAXIMO + 1 } },
+      { plan: 'crecimiento', limites: { productos: 12.5 } }, { plan: 'crecimiento', limites: [] },
+      { plan: 'impulso', limites: { productos: 500 } },
+    ] as Array<Record<string, unknown> | undefined>) {
+      expect(L.limiteDeProductos(cuenta), JSON.stringify(cuenta)).toBe(P.limitesDeCuenta(cuenta).productos);
     }
   });
 

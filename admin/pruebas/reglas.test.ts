@@ -3117,6 +3117,18 @@ describe('Límite de productos por plan: el catálogo no pasa del plan', () => {
     await assertSucceeds(altaProducto(adminA(), A, 'p21-b', producto('P21')));
   });
 
+  // El mismo rango que `limitesDeCuenta` de planes.ts (1..LIMITE_MAXIMO): un
+  // cero de más en la copia no deja a un comercio sin techo, y un 0 corrupto
+  // no lo deja sin catálogo. `limite-catalogo.test.ts` compara el rango.
+  it('un `limites.productos` fuera de 1..100000 no vale: rige el del plan', async () => {
+    await llenar(A, 20, { plan: 'impulso', limites: { productos: 100001 } });
+    await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));
+    await llenar(A, 20, { plan: 'impulso', limites: { productos: 100000 } });
+    await assertSucceeds(altaProducto(adminA(), A, 'p21-tope', producto('P21')));
+    await llenar(A, 20, { plan: 'crecimiento', limites: { productos: 0 } });
+    await assertSucceeds(altaProducto(adminA(), A, 'p21-cero', producto('P21')));
+  });
+
   it('sin `cuenta/estado`, 20: ante la duda, el plan más chico', async () => {
     await llenar(A, 20, null);
     await assertFails(altaProducto(adminA(), A, 'p21', producto('P21')));

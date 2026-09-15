@@ -965,22 +965,27 @@ service cloud.firestore {
 
       // EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO (CLAUDE.md, base comercial §7).
       //
-      // Primero `cuenta/estado.limites.productos`, que escribe NovuChat por
-      // Function. Si no está, la TABLA DE RESPALDO de abajo según
-      // `cuenta/estado.plan`; y si el plan no se conoce, 20: ante la duda se
-      // falla hacia el plan más chico, nunca hacia el más grande.
+      // Primero `cuenta/estado.limites.productos`, la copia que escribe
+      // NovuChat al asignar el plan (`actualizarEstadoCuenta`,
+      // `scripts/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
+      // (`LIMITE_MAXIMO` de `planes.ts`): fuera de ese rango es un dato
+      // corrupto y rige el plan, igual que en `limitesDeCuenta()`. Si no está,
+      // la TABLA DE RESPALDO de abajo según `cuenta/estado.plan`; y si el plan
+      // no se conoce, el más chico: ante la duda se falla hacia el plan más
+      // chico, nunca hacia el más grande.
       //
       // ESTA TABLA ES SOLO EL RESPALDO. La fuente de los números es
-      // `functions/src/planes.ts`; las reglas no pueden importar TypeScript,
-      // así que acá van escritos a mano y `pruebas/limite-catalogo.test.ts`
-      // compara esta línea con aquel archivo. Si se toca uno solo, se nota.
+      // `functions/src/planes.ts` (`PLANES_ASIGNABLES`); las reglas no pueden
+      // importar TypeScript, así que acá van escritos a mano y
+      // `pruebas/limite-catalogo.test.ts` compara esta línea, el rango y el
+      // mínimo con aquel archivo. Si se toca uno solo, se nota.
       // RESPALDO-PRODUCTOS-POR-PLAN
       function limiteProductos() {
         let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
         let cuenta = exists(ruta) ? get(ruta).data : {};
         let limites = cuenta.get('limites', {});
         let propio = limites is map ? limites.get('productos', null) : null;
-        return propio is int && propio >= 0
+        return propio is int && propio >= 1 && propio <= 100000
           ? propio
           : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'demostracion': 500}
               .get(cuenta.get('plan', ''), 20);
