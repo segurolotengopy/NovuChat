@@ -11,6 +11,8 @@ import { SinSalida } from '../componentes/SinSalida';
 import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../lib/flujos';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
+import { avisoConsumoVigente, type AvisoConsumo as Aviso } from '../lib/planes';
+import { AvisoConsumo } from '../componentes/AvisoConsumo';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.
@@ -297,6 +299,8 @@ function SelectorDePeriodo({ valor, onCambio }:
 interface ResumenNegocio {
   nombre: unknown; descripcion: unknown; horarioHoy: string; sinHorario: boolean;
   items: number; agendas: number; estadoPago: unknown; motivoPago: unknown;
+  /** Aviso del 80 % de ESTE mes, si el servidor lo marcó. Solo el administrador. */
+  avisoConsumo: Aviso | null;
 }
 
 function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boolean }) {
@@ -347,6 +351,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
           agendas: agendas.data().count,
           estadoPago: cuenta?.get('estadoPago'),
           motivoPago: cuenta?.get('motivoVisible'),
+          avisoConsumo: avisoConsumoVigente(cuenta?.data()),
         });
       } catch {
         if (vivo) setError('No se pudo leer el resumen del negocio.');
@@ -362,6 +367,10 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
 
   return (
     <>
+    {/* ARRIBA DE TODO, antes del selector: es lo único de esta pantalla que
+        pide una decisión, y el comercio tiene que verlo antes de pasarse, no
+        descubrirlo en la factura. */}
+    {esAdmin && datos.avisoConsumo && <AvisoConsumo aviso={datos.avisoConsumo} />}
     {esAdmin && (
       <>
         <SelectorDePeriodo valor={periodo} onCambio={setPeriodo} />
