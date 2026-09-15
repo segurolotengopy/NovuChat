@@ -40,7 +40,8 @@ un secreto: eso lo hace una persona.
 
 - Copiar `docs/alta-cliente/plantilla-ficha.md` a `CLIENTES/<NOMBRE>/ficha.md`.
 - Decidir con el cliente: **un flujo por número** (agendamiento, venta,
-  onboarding), chip nuevo **a nombre del cliente**, portafolio **del cliente**.
+  onboarding), chip nuevo **a nombre del cliente**, portafolio **del cliente**
+  y el **nombre visible definitivo**, que es el nombre del portafolio.
 - Pedir con anticipación: cuenta personal de Facebook del dueño, datos completos
   del negocio (nombre, dirección, correo, web o red social), foto cuadrada,
   método de pago, y el celular de recepción (una persona que atiende).
@@ -70,7 +71,7 @@ un secreto: eso lo hace una persona.
 | `subscribed_apps` | No tiene pantalla: `verificar-meta.sh --suscribir` |
 | Método de pago | En la WABA, con alerta de gasto: desde el 01/10 Meta cobra cada mensaje |
 | Plantilla del aviso interno | Utilidad, redactada como **aviso de una solicitud existente** (sin «prospecto», «interés», «atención»); **sin botones** (Meta prohíbe `wa.me` en botones); validez personalizada al máximo |
-| Nombre visible | Toma el del portafolio; se cambia en el Administrador de WhatsApp y Meta lo revisa |
+| Nombre visible | **Decidirlo antes de agregar el número**: sale del nombre del portafolio, y cambiarlo después tiene cupo mensual (NovuChat lo agotó reintentando). Se pide **una vez y no se reintenta**: la pantalla sigue mostrando el viejo con «Editar» gris aunque Meta ya aprobó el nuevo. El estado real lo da `verificar-meta.sh` (nombre vigente y cambio pedido) |
 
 ## 3 · Canal
 
@@ -87,6 +88,7 @@ Credenciales **en una carpeta propia**, para no pisar las de otras sesiones
 (las corre una persona, con la cuenta dueña del proyecto):
 
 ```bash
+unset CLOUDSDK_ACTIVE_CONFIG_NAME   # si vale "default", gcloud no crea la configuración en la carpeta nueva
 export CLOUDSDK_CONFIG="$HOME/.config/gcloud-novuchat-prod" GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud-novuchat-prod/application_default_credentials.json"
 gcloud auth login && gcloud auth application-default login && gcloud auth application-default set-quota-project <proyecto>
 ```
@@ -103,7 +105,10 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   Google del propietario. El enlace para ponerla no se pega en ningún chat.
 - El secreto del alias va a n8n como Header Auth `Authorization` = `Bearer <valor>`,
   y lo lee **una persona**: `gcloud secrets versions access latest --secret=INGESTA_CLIENTENN --project <proyecto>`.
-- En la consola, con el administrador: número de recepción, horario, catálogo.
+- En la consola, con el administrador: número de recepción, horario, catálogo y
+  **«Cómo trata al cliente»** (tú, usted, vos o impersonal). Lo que dice la
+  consola gana sobre el respaldo del flujo: NovuChat quedó en «Impersonal» y el
+  asistente hablaba como un formulario («Se registra el nombre…»).
 
 ## 5 · Flujo
 
@@ -115,6 +120,10 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
    ejecuta), queda saneado (`REEMPLAZAR_*`) y pasa `verificar-saneo.sh`.
 3. `./scripts/preparar-import.sh Flujos/<flujo>.json .env.<cliente>` — **con**
    el segundo argumento: sin él, el flujo se lleva la ruta de webhook del Demo A.
+   Cada marcador `REEMPLAZAR_*` del flujo necesita **su fila exacta** en la tabla
+   de `CONFIGURACION.local.md` (Phone ID, recepción y horario del cliente). Antes
+   del 15/09 el script aceptaba una fila de otro cliente cuyo nombre fuera
+   prefijo del marcador, y NovuChat salió con el Phone ID del Demo A.
 4. En n8n: importar, credenciales, `Trigger On` = Messages, **Publish**. URL de
    Production al webhook de la app del cliente. Completar `N8N_WEBHOOK_*` y
    `N8N_WORKFLOW_ID` en `.env.<cliente>`: `verificar-meta.sh` con cuatro verdes.
