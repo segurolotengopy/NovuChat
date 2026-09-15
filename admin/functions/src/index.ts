@@ -728,6 +728,8 @@ export const moverReclamo = onCall(async (peticion) => {
   return { ok: true };
 });
 
+export { importarCatalogo } from './limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
+
 // ---------------------------------------------------------------------------
 // CONSTANCIA DE LOS CAMBIOS DE CONFIGURACIÓN
 //
