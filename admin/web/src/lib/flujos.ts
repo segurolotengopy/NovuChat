@@ -42,12 +42,19 @@ export interface Pestana {
    */
   roles?: ('admin' | 'oper')[];
   /**
-   * Solo la ve el PROPIETARIO de NovuChat (sesión de Google), nunca la gente
-   * del comercio. Es el caso del flujo de captación: su documento es de
-   * NovuChat y `firestore.rules` le niega la lectura hasta al administrador
-   * del propio tenant `novuchat`. Si está, `roles` no se mira.
+   * La ve TAMBIÉN el propietario de NovuChat (sesión de Google), además de los
+   * roles de arriba. Es el caso de «Captación»: la configura el administrador
+   * del comercio, y el propietario entra a instalarla y a darle soporte.
+   *
+   * HASTA EL 15/09 ESTE CAMPO SE LLAMABA `soloPropietario` y excluía a la gente
+   * del comercio. La captación era el flujo propio de NovuChat, su documento
+   * era de NovuChat y la regla le negaba la lectura hasta al administrador del
+   * tenant `novuchat`. Ese día Andres decidió que es un TERCER FLUJO GENÉRICO,
+   * como reservas y pedidos: cualquier comercio que capte prospectos lo
+   * contrata y lo configura él. Ya no hay pestañas que el comercio no pueda
+   * ver en su propio negocio.
    */
-  soloPropietario?: boolean;
+  tambienPropietario?: boolean;
 }
 
 export interface DefinicionFlujo {
@@ -100,12 +107,19 @@ export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
     // servicios «a consultar» no se podrían listar. Ver DISENO.md §4sexies.3bis.
   },
   onboarding: {
-    // EL FLUJO PROPIO DE NOVUCHAT: capta y atiende a quien quiere contratar el
-    // servicio, por el número de NovuChat. No se le vende a ningún comercio,
-    // así que su pestaña es solo del propietario. Especificación de Silvana
-    // del 13/09/2026, en `CLIENTES/NOVUCHAT/`.
+    // CAPTACIÓN DE PROSPECTOS: el asistente se presenta, distingue cliente
+    // nuevo de cliente actual, deduce el rubro del prospecto, le muestra los
+    // planes y cargos del comercio y lo pasa a un asesor.
+    //
+    // Nació el 13/09 como el flujo PROPIO de NovuChat (especificación de
+    // Silvana, en `CLIENTES/NOVUCHAT/`) y por eso su pestaña era solo del
+    // propietario. Desde el 15/09 es un flujo genérico —decisión de Andres—:
+    // la pestaña la ve y la edita el ADMINISTRADOR de cualquier comercio que lo
+    // tenga en `flujos`, igual que «Agenda» o «Cobros», y el propietario la
+    // sigue viendo para instalarla. El operador no: como las demás pestañas de
+    // configuración de un flujo, es trabajo del administrador.
     nombre: 'Captación de clientes',
-    pestanas: [{ ruta: 'captacion', etiqueta: 'Captación', soloPropietario: true }],
+    pestanas: [{ ruta: 'captacion', etiqueta: 'Captación', tambienPropietario: true }],
     catalogo: 'Catálogo',
     documento: 'onboarding',
   },

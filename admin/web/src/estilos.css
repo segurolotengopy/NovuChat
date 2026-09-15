@@ -849,3 +849,60 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
   margin: var(--space-2) 0 0; padding-left: var(--space-2);
   border-left: 3px solid var(--color-borde-control); font-size: 15px;
 }
+
+/* «Sin horario fijo» en el tablero: no es una alerta ni un «abierto». El
+   horario es opcional, y pintar de rojo a quien no tiene uno lo castiga por
+   una decisión válida. */
+.situacion.neutro {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  color: var(--color-text);
+}
+
+/* ── Editor de listas (Captación: rubros, planes, cargos, aclaraciones) ──
+   Cada fila es una FICHA con sus campos en cuadrícula y las acciones —subir,
+   bajar, quitar— a la derecha. No es una tabla: un plan lleva un texto de 200
+   caracteres y una aclaración uno de 600, y en una celda de tabla eso se
+   vuelve una tira ilegible. El contador «3 de 8» va en la leyenda, al lado
+   del nombre de la lista, porque es lo que se mira antes de agregar. */
+.lista-editable {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-6);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+}
+.lista-editable > legend {
+  padding: 0 var(--space-2);
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  font-size: 15px;
+}
+.lista-contador {
+  margin-left: var(--space-2);
+  font-family: var(--font-body); font-weight: 400; font-size: 13px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.lista-filas { list-style: none; margin: var(--space-3) 0; padding: 0; display: grid; gap: var(--space-3); }
+.lista-fila {
+  display: grid; grid-template-columns: 1fr auto; gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.lista-fila-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0 var(--space-4);
+}
+.lista-fila-campos .ancho-total { grid-column: 1 / -1; }
+.lista-fila-campos label { margin-bottom: var(--space-2); }
+.lista-fila-acciones { display: flex; flex-direction: column; gap: var(--space-1); }
+.lista-fila-acciones button { min-height: 36px; padding: 4px 12px; font-size: 14px; }
+/* «USD» es más ancho que «Bs»: sin esto el número se monta sobre la moneda. */
+.lista-fila .con-moneda input { padding-left: 52px; }
+@media (max-width: 34rem) {
+  .lista-fila { grid-template-columns: 1fr; }
+  .lista-fila-acciones { flex-direction: row; }
+}

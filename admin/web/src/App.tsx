@@ -74,6 +74,7 @@ const TITULOS: Record<string, string> = {
   contactos: 'Contactos',
   agenda: 'Agenda',
   cobro: 'Pedidos y cobro',
+  captacion: 'Captación',
   consumo: 'Consumo',
   cuenta: 'Cuenta',
   reclamos: 'Reclamos',
@@ -132,9 +133,8 @@ function Cabecera() {
             que el servidor le va a cerrar. */}
         {tenantId && (flujos ?? []).flatMap((f) =>
           FLUJOS[f].pestanas
-            .filter((p) => p.soloPropietario
-              ? permisos.propietario
-              : (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper'))
+            .filter((p) => (p.tambienPropietario === true && permisos.propietario)
+              || (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper'))
             .map((p) =>
               <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>))}
         {tenantId && esPersona &&
@@ -239,10 +239,15 @@ export function App() {
           <Proteger requiere="adminTenant"><><Cabecera /><Cobros /></></Proteger>} />
         <Route path="/negocio/:tenantId/cobro" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Cobro /></></Proteger>} />
-        {/* CAPTACIÓN: el flujo propio de NovuChat. Solo el propietario, igual
-            que la regla de su documento. */}
+        {/* CAPTACIÓN: hasta el 15/09 era el flujo propio de NovuChat y la ruta
+            pedía propietario, igual que la regla de su documento. Desde ese
+            día es un flujo genérico: la edita el administrador del comercio
+            que lo tiene, y el propietario sigue entrando para instalarlo. El
+            operador no, como en las demás pestañas de configuración de flujo.
+            Si el negocio no tiene el flujo, la pantalla lo dice y la regla
+            rechaza la lectura: la puerta la cierra el servidor. */}
         <Route path="/negocio/:tenantId/captacion" element={
-          <Proteger requiere="propietario"><><Cabecera /><Captacion /></></Proteger>} />
+          <Proteger requiere="adminOPropietario"><><Cabecera /><Captacion /></></Proteger>} />
         <Route path="/negocio/:tenantId/consumo" element={
           <Proteger requiere="miembroOPropietario"><><Cabecera /><Consumo /></></Proteger>} />
         {/* Los dos nombres anteriores de esta pantalla —«Uso» y «Cierres»—
