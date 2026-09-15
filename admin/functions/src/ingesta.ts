@@ -3,6 +3,8 @@ import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
+import { sanearCaptacion } from './captacion.js';
+import { vozFija } from './prompt.js';
 import {
   HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
@@ -957,9 +959,15 @@ export const configuracionFlujo = onRequest(
       // `undefined` y **el trato elegido en la consola nunca llegaba al
       // asistente**. No se notó porque el valor de respaldo del flujo era el
       // correcto, que es la peor forma de no notarlo.
+      //
+      // `nombreAsistente` y `nivelEmojis` son para los TEXTOS FIJOS de los
+      // flujos, los que no pasan por el modelo: el nombre saneado (una línea,
+      // 40 caracteres, '' si no hay) y el enumerado crudo del emoji. Valen
+      // para todos los flujos: son de la capa común (`vozFija`, prompt.ts).
       voz: {
         tratamiento: instruccionesDeVoz(negocio)[0] ?? '',
         emojis: instruccionesDeVoz(negocio)[1] ?? '',
+        ...vozFija(negocio),
       },
 
       // Todo lo que escribió el comercio, junto y rotulado.
@@ -1007,9 +1015,18 @@ export const configuracionFlujo = onRequest(
       // Configuración del vertical, en su propia clave. El flujo del Demo A no
       // recibe `venta` y el del Demo B no recibe `agendamiento`: cada uno ve
       // solo lo que sabe usar.
-      ...(docVertical && especifica?.exists
-        ? { [docVertical]: especifica.data() }
-        : {}),
+      //
+      // LA CAPTACIÓN VA SANEADA, NO CRUDA. Desde que es un flujo genérico la
+      // escribe el administrador de cada comercio, y sus listas (rubros,
+      // planes, cargos, aclaraciones) las reglas no las pueden recorrer:
+      // `sanearCaptacion` descarta cada elemento que no cumple su forma antes
+      // de que el asistente lo diga. Sale siempre, aunque falte el documento,
+      // con valores por defecto y listas vacías: el flujo tiene un solo camino.
+      ...(docVertical === 'onboarding'
+        ? { onboarding: sanearCaptacion(especifica?.exists ? especifica.data() : {}) }
+        : docVertical && especifica?.exists
+          ? { [docVertical]: especifica.data() }
+          : {}),
 
       // COBRO: real o simulado, NUNCA los dos.
       //

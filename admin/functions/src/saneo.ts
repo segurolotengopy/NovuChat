@@ -58,6 +58,59 @@ export function neutralizarEncabezado(valor: unknown, maxLargo: number): string 
   return neutralizar(valor.replace(RE_ENCABEZADO, ' '), maxLargo).trim();
 }
 
+/** Separadores de línea y tabulación: en un texto de una sola línea, valen espacio. */
+const RE_SEPARADORES = /[\r\n\t\u2028\u2029]+/g;
+/** Todos los controles C0/C1, incluidos el salto de línea y la tabulación. */
+const RE_TODO_CONTROL = /[\u0000-\u001F\u007F-\u009F]/g;
+
+/**
+ * Recorta por CARACTERES y no por unidades de UTF-16: `slice` a secas puede
+ * partir un emoji por la mitad y dejar un sustituto suelto, que WhatsApp pinta
+ * como un rombo con signo de pregunta.
+ */
+export function recortar(texto: string, maxLargo: number): string {
+  const c = Array.from(texto);
+  return c.length <= maxLargo ? texto : c.slice(0, maxLargo).join('');
+}
+
+/**
+ * Texto de UNA línea, para lo que el asistente o un flujo repiten tal cual: sin
+ * saltos de línea, sin caracteres de control ni marcas bidireccionales, con los
+ * espacios colapsados y recortado a su largo. No escapa marcado: el destino es
+ * WhatsApp o el prompt, no un HTML (para eso está `neutralizar`).
+ *
+ * El salto se convierte en espacio ANTES de barrer los controles, por la misma
+ * razón que en `neutralizarEncabezado`: si no, «Plan\nPro» quedaría «PlanPro».
+ */
+export function textoPlano(valor: unknown, maxLargo: number): string {
+  if (typeof valor !== 'string') return '';
+  const limpio = valor
+    .replace(RE_SEPARADORES, ' ')
+    .replace(RE_TODO_CONTROL, '')
+    .replace(RE_BIDI, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+  return recortar(limpio, maxLargo).trim();
+}
+
+/**
+ * Texto de VARIAS líneas (un mensaje fijo que sale por WhatsApp tal cual):
+ * conserva el salto de línea, que ahí es formato, y barre el resto de los
+ * controles. Más de una línea en blanco seguida se colapsa en una.
+ */
+export function textoConSaltos(valor: unknown, maxLargo: number): string {
+  if (typeof valor !== 'string') return '';
+  const limpio = valor
+    .replace(/\r\n?|[\u2028\u2029]/g, '\n')
+    .replace(/\t/g, ' ')
+    .replace(RE_CONTROLES, '')
+    .replace(RE_BIDI, '')
+    .replace(/[ ]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return recortar(limpio, maxLargo).trim();
+}
+
 /**
  * Correo con forma válida. Lista blanca de caracteres, DELIBERADAMENTE MÁS
  * ESTRICTA QUE EL RFC.

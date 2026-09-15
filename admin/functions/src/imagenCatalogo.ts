@@ -169,8 +169,8 @@ async function destinoPermitido(u: URL): Promise<boolean> {
  * a ciegas: el contenido NUNCA se le devuelve a quien pidió la comprobación,
  * solo un veredicto de dos campos.
  */
-export async function bajarImagen(url: string): Promise<
-  { ok: true; bytes: Uint8Array; tipo: string } | { ok: false; falla: MotivoFalla }> {
+export async function pedirConFrenos(url: string, accept: string): Promise<
+  { ok: true; r: Response } | { ok: false; falla: MotivoFalla }> {
   let actual = url;
   for (let salto = 0; salto <= SALTOS_MAXIMOS; salto++) {
     const v = urlUtilizable(actual);
@@ -180,7 +180,7 @@ export async function bajarImagen(url: string): Promise<
     const corte = AbortSignal.timeout(TIEMPO_MAXIMO_MS);
     let r: Response;
     try {
-      r = await fetch(v.u, { redirect: 'manual', signal: corte, headers: { accept: 'image/*' } });
+      r = await fetch(v.u, { redirect: 'manual', signal: corte, headers: { accept } });
     } catch {
       return { ok: false, falla: 'no_responde' };
     }
@@ -192,22 +192,35 @@ export async function bajarImagen(url: string): Promise<
       continue;
     }
     if (!r.ok) return { ok: false, falla: 'no_responde' };
-
-    const tipo = (r.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
-    if (!TIPOS_ACEPTADOS.includes(tipo)) return { ok: false, falla: 'no_es_imagen' };
-
-    // El `content-length` puede mentir o faltar, así que además se cuenta al
-    // leer y se corta. Sin esto, una dirección que sirve un archivo infinito
-    // mantiene la función corriendo hasta que se le acabe el tiempo.
-    const declarado = Number(r.headers.get('content-length') ?? '0');
-    if (declarado > TOPE_BYTES) return { ok: false, falla: 'demasiado_grande' };
-
-    const buffer = await r.arrayBuffer().catch(() => null);
-    if (!buffer) return { ok: false, falla: 'no_responde' };
-    if (buffer.byteLength > TOPE_BYTES) return { ok: false, falla: 'demasiado_grande' };
-    return { ok: true, bytes: new Uint8Array(buffer), tipo };
+    return { ok: true, r };
   }
   return { ok: false, falla: 'demasiados_saltos' };
+}
+
+/** Tipo de contenido sin parámetros (`image/png; charset=…` → `image/png`). */
+export function tipoDeContenido(r: Response): string {
+  return (r.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
+export async function bajarImagen(url: string): Promise<
+  { ok: true; bytes: Uint8Array; tipo: string } | { ok: false; falla: MotivoFalla }> {
+  const pedido = await pedirConFrenos(url, 'image/*');
+  if (!pedido.ok) return pedido;
+  const r = pedido.r;
+
+  const tipo = tipoDeContenido(r);
+  if (!TIPOS_ACEPTADOS.includes(tipo)) return { ok: false, falla: 'no_es_imagen' };
+
+  // El `content-length` puede mentir o faltar, así que además se cuenta al
+  // leer y se corta. Sin esto, una dirección que sirve un archivo infinito
+  // mantiene la función corriendo hasta que se le acabe el tiempo.
+  const declarado = Number(r.headers.get('content-length') ?? '0');
+  if (declarado > TOPE_BYTES) return { ok: false, falla: 'demasiado_grande' };
+
+  const buffer = await r.arrayBuffer().catch(() => null);
+  if (!buffer) return { ok: false, falla: 'no_responde' };
+  if (buffer.byteLength > TOPE_BYTES) return { ok: false, falla: 'demasiado_grande' };
+  return { ok: true, bytes: new Uint8Array(buffer), tipo };
 }
 
 // ---------------------------------------------------------------------------
