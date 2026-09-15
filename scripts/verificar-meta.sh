@@ -90,6 +90,17 @@ if echo "$NUM" | grep -q '"id"'; then
 else
   p_fail "no se pudo leer el número ${WA_PHONE_ID}"
 fi
+# El nombre visible: WhatsApp Manager puede mostrar el viejo mientras Meta ya
+# aprobó el nuevo (pasó con NovuChat el 15/09). Lo que vale es lo que dice la API.
+NOMBRE=$(curl -s --max-time 20 "${G}/${WA_PHONE_ID}?fields=verified_name,name_status,new_name_status,new_display_name" \
+  -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+echo "$NOMBRE" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+print("     nombre visible: %s · estado %s" % (d.get("verified_name", "?"), d.get("name_status", "?")))
+if d.get("new_display_name") or d.get("new_name_status"):
+    print("     cambio pedido: %s · estado %s" % (d.get("new_display_name", "?"), d.get("new_name_status", "?")))
+' 2>/dev/null || true
 
 echo "== 4. El webhook de n8n responde el desafío =="
 if [[ -n "${N8N_WEBHOOK_URL:-}" ]]; then

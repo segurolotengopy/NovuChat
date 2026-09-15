@@ -40,7 +40,8 @@ un secreto: eso lo hace una persona.
 
 - Copiar `docs/alta-cliente/plantilla-ficha.md` a `CLIENTES/<NOMBRE>/ficha.md`.
 - Decidir con el cliente: **un flujo por número** (agendamiento, venta,
-  onboarding), chip nuevo **a nombre del cliente**, portafolio **del cliente**.
+  onboarding), chip nuevo **a nombre del cliente**, portafolio **del cliente**
+  y el **nombre visible definitivo**, que es el nombre del portafolio.
 - Pedir con anticipación: cuenta personal de Facebook del dueño, datos completos
   del negocio (nombre, dirección, correo, web o red social), foto cuadrada,
   método de pago, y el celular de recepción (una persona que atiende).
@@ -70,7 +71,7 @@ un secreto: eso lo hace una persona.
 | `subscribed_apps` | No tiene pantalla: `verificar-meta.sh --suscribir` |
 | Método de pago | En la WABA, con alerta de gasto: desde el 01/10 Meta cobra cada mensaje |
 | Plantilla del aviso interno | Utilidad, redactada como **aviso de una solicitud existente** (sin «prospecto», «interés», «atención»); **sin botones** (Meta prohíbe `wa.me` en botones); validez personalizada al máximo |
-| Nombre visible | Toma el del portafolio; se cambia en el Administrador de WhatsApp y Meta lo revisa |
+| Nombre visible | **Decidirlo antes de agregar el número**: sale del nombre del portafolio, y cambiarlo después tiene cupo mensual (NovuChat lo agotó reintentando). Se pide **una vez y no se reintenta**: la pantalla sigue mostrando el viejo con «Editar» gris aunque Meta ya aprobó el nuevo. El estado real lo da `verificar-meta.sh` (nombre vigente y cambio pedido) |
 
 ## 3 · Canal
 

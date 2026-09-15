@@ -4,9 +4,59 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
+
+## 2026-09-15 — v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino
+
+**Fusionado y desplegado (14/09, noche):**
+
+- **#69:** flujo de captación, reglas de `/config/onboarding` y pestaña
+  «Captación».
+- **#70:** arreglos LOW de la revisión de seguridad (`tenantOperativo` en la
+  escritura de `/config/onboarding`, seis pruebas negando), acta
+  `docs/produccion/acta-v0.3.0.md` y `Analisis/28` (DAST y prueba de humo:
+  opciones A y B, **pendientes de decisión**).
+- **`v0.3.0` desplegada** con la aprobación de Andres: reglas, 30 Functions y
+  consola. Salud en verde y la pestaña «Captación» en el paquete publicado.
+- **#71:** `admin/scripts/asignar-numero.mjs`. El paso 3 del alta no tenía
+  camino: ninguna pantalla asigna el número y la Function no escribía el alias
+  de ingesta.
+- **#72:** el alta de un cliente por etapas. `docs/alta-cliente/RUNBOOK.md`,
+  plantilla de ficha, cuatro agentes (`alta-cliente`, `meta-whatsapp`,
+  `plataforma`, `flujos-n8n`), flujo guardado `/alta-cliente` y el control
+  `.claude/hooks/acciones-sensibles.sh`, que pide confirmación humana para lo
+  que escribe en producción, en Meta o en GitHub (decisión de Andres, 14/09).
+
+**Meta (15/09):**
+
+- **Nombre visible.** El Administrador de WhatsApp sigue mostrando «NovuChat
+  Produccion», con «Editar» deshabilitado, y Meta avisó por correo que aprobó
+  «NovuChat». No se contradicen: la API da `verified_name` = «NovuChat
+  Produccion» y `new_display_name` = «NovuChat», los dos
+  `AVAILABLE_WITHOUT_REVIEW`. El cambio está aprobado y falta que se aplique.
+  Los reintentos agotaron el cupo de cambios del mes: **no volver a pedirlo**.
+  `verificar-meta.sh` muestra ahora el nombre vigente y el cambio pedido.
+- Plantilla `solicitud_contacto`: sigue en revisión.
+- `verificar-meta.sh --env .env.novuchat`: tres verdes (token de la app
+  …8849, WABA …1048 suscrita, número conectado).
+
+**Alta de NovuChat, dónde está:**
+
+- El flujo está al día con `main`: nada cambió en `Flujos/` ni en las
+  Functions desde el #69. Pruebas del flujo, umbrales y saneo: 143/143.
+- Archivo para importar generado (`Flujos/novuchat-onboarding.local.json`,
+  ignorado). Faltan dos respaldos de `Config base`: número de recepción y
+  horario.
+- **Espera a Andres:** credenciales de producción en carpeta propia y alta del
+  comercio; el enlace para poner la contraseña no pasa por ningún chat.
+  Después: número y alias (agente `plataforma`, con confirmación), credenciales
+  y publicación en n8n, webhook, y aceptación con dos teléfonos en
+  `CLIENTES/NOVUCHAT/aceptacion.md`.
+
+**Siguiente cliente:** arranca con `/alta-cliente`, fase `preparar`, y el
+runbook. El nombre visible se decide **antes** de agregar el número.
 
 ## 2026-09-14 — el número de NovuChat está en Meta, y el flujo de captación está escrito
 
