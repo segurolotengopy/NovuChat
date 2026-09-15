@@ -30,6 +30,7 @@
  *    marcada como DATO. Nunca concatenada por delante de las reglas de
  *    comportamiento del agente.
  */
+import { textoPlano, sinMarcas } from './saneo.js';
 
 /** Campos de texto libre del comercio que llegan al prompt. La lista es cerrada. */
 export const CAMPOS_LIBRES_AL_PROMPT = [
@@ -130,6 +131,34 @@ export function instruccionesDeVoz(config: Record<string, unknown>): string[] {
     FRASE_TRATAMIENTO[tratamiento] ?? FRASE_TRATAMIENTO['usted']!,
     FRASE_EMOJIS[emojis] ?? FRASE_EMOJIS['pocos']!,
   ];
+}
+
+export const NIVELES_EMOJIS = ['ninguno', 'pocos', 'muchos'] as const;
+export type NivelEmojis = typeof NIVELES_EMOJIS[number];
+
+/**
+ * LO QUE LOS FLUJOS NECESITAN PARA LOS TEXTOS FIJOS, los que NO pasan por el
+ * modelo (el aviso de uso extendido, el saludo del menú, la despedida). Vale
+ * para TODOS los flujos: el nombre del asistente es identidad del negocio, no
+ * de un flujo (`admin/DISENO.md` §4sexies, capa común).
+ *
+ * `nivelEmojis` sale CRUDO porque es un enumerado cerrado: no hay texto del
+ * comercio que interpolar, solo cuál de tres valores eligió. Todo lo que no
+ * sea uno de los tres cae en 'pocos', que es el valor por defecto de la regla.
+ *
+ * `nombreAsistente` sí es texto del comercio, así que sale saneado: una línea,
+ * sin controles, 40 caracteres como mucho. Vacío significa «sin nombre propio»,
+ * y el flujo usa su frase genérica.
+ */
+export function vozFija(config: Record<string, unknown>): {
+  nombreAsistente: string; nivelEmojis: NivelEmojis;
+} {
+  const nivel = config['estiloEmojis'];
+  return {
+    nombreAsistente: sinMarcas(textoPlano(config['nombreAsistente'], 40)),
+    nivelEmojis: (NIVELES_EMOJIS as readonly unknown[]).includes(nivel)
+      ? nivel as NivelEmojis : 'pocos',
+  };
 }
 
 /** Etiquetas legibles de los datos que el comercio no cargó. */

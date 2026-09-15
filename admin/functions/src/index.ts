@@ -50,6 +50,10 @@ export { comprobarImagenDelCatalogo, recomprobarImagen } from './imagenCatalogo.
 // movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
 // pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
 export { ajustarStock, dejarDeControlarStock } from './inventario.js';
+// FLUJO DE CAPTACIÓN. Comprueba, a pedido de la consola, que el archivo de
+// planes que el asistente manda por WhatsApp se pueda mandar: responde, es del
+// tipo declarado y cabe en los límites de Meta. El porqué en `captacion.ts`.
+export { comprobarArchivoPlanes } from './captacion.js';
 
 const db = () => getFirestore();
 

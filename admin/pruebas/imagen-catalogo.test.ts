@@ -41,6 +41,16 @@ describe('Destinos que el servidor NO puede visitar', () => {
     ['ff02::1', 'multidifusión IPv6'],
     ['::ffff:127.0.0.1', 'IPv4 de bucle DISFRAZADA de IPv6'],
     ['::ffff:169.254.169.254', 'metadatos disfrazados de IPv6'],
+    // Las mismas, en la forma en que las deja `new URL()`: así llegan de verdad.
+    [new URL('https://[::ffff:127.0.0.1]/').hostname.replace(/^\[|\]$/g, ''), 'bucle disfrazado, normalizado por URL'],
+    [new URL('https://[::ffff:169.254.169.254]/').hostname.replace(/^\[|\]$/g, ''), 'metadatos disfrazados, normalizados por URL'],
+    ['::ffff:7f00:1', 'bucle disfrazado en hexadecimal'],
+    ['::ffff:a9fe:a9fe', 'metadatos disfrazados en hexadecimal'],
+    ['::7f00:1', 'IPv4 compatible (::/96) de bucle'],
+    ['::127.0.0.1', 'IPv4 compatible con puntos'],
+    ['64:ff9b::a9fe:a9fe', 'metadatos por NAT64'],
+    ['2002:7f00:1::1', 'bucle por 6to4'],
+    ['1:2:3:4:5:6:7:8:9', 'IPv6 mal formada'],
     ['no-es-una-ip', 'lo que no se entiende no se visita'],
     ['', 'vacío'],
   ];

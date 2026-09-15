@@ -68,7 +68,7 @@ repo Git).
 | WhatsApp envío | WhatsApp API | Nodos "Responder…", "Avisar…", "Enviar QR" | **Token permanente de usuario de sistema** (Bloque 5 de `WhatsApp-Modular/docs/12`), nunca el temporal de 24 h |
 | Google Gemini | Google Gemini (PaLM) API | Sub-nodo del modelo | API key de Google AI Studio; en el desplegable del nodo elegir el modelo **flash vigente** (el JSON trae `gemini-2.5-flash` como valor inicial: cambiarlo si el desplegable ofrece un flash más nuevo) |
 | Google Calendar | Google Calendar OAuth2 | Tools del Demo A | OAuth2 de la cuenta que posee el calendario del demo |
-| Header Auth para Graph API | Header Auth | Nodo "Lista interactiva de bienvenida" (Demo B) | Nombre `Authorization`, valor `Bearer <token permanente>` |
+| Header Auth para Graph API | Header Auth | Nodos `Enviar a WhatsApp`, `Enviar texto de respaldo` y `Avisar a NovuChat` (captación). El Demo B ya no la usa: su nodo «Lista interactiva de bienvenida» se retiró el 07/09 | Nombre `Authorization`, valor `Bearer <token permanente>`. **Nunca** la credencial de ingesta: al importar, n8n asigna la única Header Auth que exista a todos los nodos de ese tipo (pasó el 15/09) |
 
 ## 3. Completar el nodo `Config del negocio` de cada flujo
 
@@ -144,6 +144,18 @@ evitarlo en vivo). Recomendado: **(a)**.
 (14/09/2026). Atiende el número de NovuChat, que no es de prueba. Especificación
 de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
 
+**Desde el 15/09 es un flujo genérico** (`admin/DISENO.md` §4sexies.5): lo que
+el asistente ofrece sale de la consola, no del JSON. NovuChat es su primer
+usuario, con el asistente «Kenji».
+
+> **Todavía no se publica para otro comercio.** El prompt, el mensaje de uso
+> extendido, el botón de cliente actual y la base de conocimiento (el corpus de
+> novuchat.site, con el teléfono de contacto de NovuChat) nombran a NovuChat a
+> mano. Publicado para un comercio X, sus prospectos recibirían la oferta y el
+> contacto de NovuChat. Antes del segundo comercio: esos textos pasan por
+> `nombreNegocio` y `enlaceConsola`, y el corpus se condiciona al tenant
+> `novuchat` (revisión de seguridad del 15/09, LOW-2).
+
 ### Qué hace
 
 1. **Compuerta inicial, sin modelo.** A un «hola» suelto le responde con dos
@@ -151,16 +163,28 @@ de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
    quiere («hola, ¿cuánto cuesta?») pasa directo al asistente.
 2. **Cliente actual, sin modelo.** Un mensaje con el enlace a la consola, cómo
    recuperar la contraseña y un botón a una persona. **Sin código de acceso.**
-3. **Cliente nuevo.** El asistente responde con la información del sitio y va
-   registrando empresa, contacto, rubro, flujos de interés, personalización y
-   NIT (marcas `[LEAD]…[/LEAD]`). Con los cuatro obligatorios, cierra (`[CIERRE]`):
-   botón a un asesor y aviso interno con la plantilla `solicitud_contacto`.
-4. **Topes.** En la respuesta 25 (fin del primer bloque, editable en la pestaña
-   «Captación») ofrece un asesor con un botón y sigue. **El techo de costo es el
+3. **Cliente nuevo** (guion de Silvana, 15/09). El asistente se presenta con el
+   nombre de la consola («Kenji» en NovuChat) y pide **en una sola pregunta** el
+   nombre de la persona y el de su empresa. **Deduce el rubro** solo si el nombre
+   de la empresa trae una palabra del oficio, y lo dice de forma que el cliente
+   pueda corregirlo; si no, muestra la lista numerada de rubros de la consola
+   (marca `[RUBROS]`) y el número se resuelve por código. Después, en el mismo
+   mensaje, la solución de ese rubro y los planes y cargos únicos armados por
+   código con los precios exactos de la consola (marca `[PLANES]`), con el botón
+   de respuesta **«Hablar con un asesor»**. Registra empresa, contacto, rubro,
+   personalización y consulta (`[LEAD]…[/LEAD]`); **ya no pide el NIT**. Con
+   empresa, contacto y rubro cierra (`[CIERRE]`) y avisa por la plantilla
+   `solicitud_contacto`; en ese cierre completo no va botón.
+4. **Traspaso, sin modelo.** Tocar «Hablar con un asesor» (o escribir que quiere
+   un asesor) responde «Ya le pasé tus datos a nuestro equipo…», avisa una sola
+   vez por la plantilla (nunca al propio número de recepción) y cierra la etapa.
+   Con horario de atención dice cuándo; sin horario, «lo antes posible».
+5. **Topes.** En la respuesta 25 (fin del primer bloque, editable en la pestaña
+   «Captación») ofrece un asesor con el mismo botón y sigue. **El techo de costo es el
    del servidor**, igual que en A y B: al umbral de operador de la cuenta (50)
    responde un mensaje fijo y avisa; al de bloqueo (100) no responde nada. Los
    dos se obedecen antes de llamar al modelo.
-5. **Idempotencia.** Un reenvío de Meta con el mismo id de mensaje no se
+6. **Idempotencia.** Un reenvío de Meta con el mismo id de mensaje no se
    responde dos veces.
 
 **Mensajes que declara:** 1 por turno al cliente, siempre, en el único nodo
@@ -182,6 +206,40 @@ lee lo que contestó Meta y
   envío fallido dejaba a ese teléfono sin botones para siempre.
 
 No agrega ni quita mensajes a Meta: no hace ninguna llamada.
+
+### Configuración por consola
+
+El flujo trae la oferta de la consola en cada turno (`Traer configuración`), y
+lo que dice la consola manda sobre el corpus del sitio y sobre el respaldo de
+`Config base`:
+
+| Qué | Dónde | Cómo lo usa el asistente |
+|---|---|---|
+| Nombre del asistente | `config/negocio.nombreAsistente` (común) | Se presenta con él; si le preguntan, dice que es una IA |
+| Rubros | `config/onboarding.rubros` | Reconoce el rubro del prospecto, le ofrece la solución de ese rubro y el flujo sugerido |
+| Planes | `config/onboarding.planes` | **Hasta 5, en texto** dentro de la respuesta. **Desde 6, el archivo** de `archivoPlanes` (PDF o imagen), que es obligatorio en ese caso |
+| Cargos únicos | `config/onboarding.cargosUnicos` | Instalación y demás; `desde: true` se dice «desde» |
+| Aclaraciones | `config/onboarding.aclaraciones` | **Solo si le preguntan** (qué es una conversación, la bolsa, el prepago, la moneda) |
+| Horario de atención | `config/negocio` | **Opcional.** Si está, lo usa para decir cuándo contesta una persona; si no, no promete un horario |
+
+Precios siempre en dólares: el asistente no calcula bolivianos (se cobra al
+Tipo de Cambio Oficial del BCB, Base comercial §3).
+
+**Botón «Hablar con un asesor».** Es la salida hacia una persona. Va dentro de
+la misma respuesta, nunca como un mensaje aparte: con los planes, al final del
+primer bloque (`topeAviso`) y en un `[CIERRE]` al que le faltan datos. En el
+cierre completo no va, porque la persona ya fue avisada y el botón solo
+invitaría a un mensaje pagado que repite el traspaso.
+
+**Mensajes:** la configuración no agrega mensajes. El archivo de planes tiene
+que salir **en lugar** del texto de ese turno (documento o imagen con el texto
+en el pie), nunca además: si saliera aparte, sumaría 1 mensaje por cada
+conversación que pregunte por planes.
+
+**Carga inicial:** desde la pestaña «Captación», o con
+`node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
+(primero en seco). El contenido de NovuChat está en
+`admin/scripts/datos/captacion-novuchat.json`, copiado del sitio.
 
 ### Credenciales (todas nuevas, propias de la app `NovuChat-Asistente`)
 

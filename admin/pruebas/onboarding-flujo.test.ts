@@ -68,7 +68,7 @@ function correr(nombre: string, items: J[], contexto: Record<string, J | J[]> = 
   return fn(entrada, $, () => estatico).map((x) => x.json);
 }
 
-const PANEL = (onboarding: J = {}, atencion?: J): J => ({
+const PANEL = (onboarding: J = {}, atencion?: J, cuerpo: J = {}): J => ({
   statusCode: 200,
   body: {
     ...(atencion ? { atencion } : {}),
@@ -83,10 +83,11 @@ const PANEL = (onboarding: J = {}, atencion?: J): J => ({
       enlaceConsola: 'https://consola.novuchat.site',
       ...onboarding,
     },
+    ...cuerpo,
   },
 });
-const config = (respuesta: J = PANEL()) =>
-  correr('Config del negocio', [respuesta], { 'Config base': base() })[0]!;
+const config = (respuesta: J = PANEL(), respaldo: J = base()) =>
+  correr('Config del negocio', [respuesta], { 'Config base': respaldo })[0]!;
 
 let secuencia = 0;
 const TEL = '59100000001';
@@ -292,6 +293,16 @@ describe('Procesar respuesta', () => {
     expect(r['avisar']).toBe(false);
   });
 
+  // Revisión de seguridad del 15/09 (MEDIUM-2): la corrección reemplazaba solo
+  // la PRIMERA negación, y la segunda salía por WhatsApp.
+  it('corrige TODAS las negaciones de ser una IA, no solo la primera', () => {
+    const sd: J = {};
+    const r = procesar('No soy un bot. Soy una persona de carne y hueso.', entrada(sd), sd);
+    expect(r['respuesta']).not.toMatch(/no soy un bot|soy una persona/i);
+    expect(String(r['respuesta']).match(/asistente virtual con inteligencia artificial/g)).toHaveLength(2);
+    expect(r['avisos']).toContain('correccion_ia');
+  });
+
   it('un dato de relleno («Pendiente») no se guarda', () => {
     const sd: J = {};
     const r = procesar('Anotado. ¿A qué se dedica?\n[LEAD]{"empresa":"AAB1","rubro":"Pendiente","flujos":"No especificado","nit":"-"}[/LEAD]',
@@ -318,17 +329,18 @@ describe('Procesar respuesta', () => {
     expect(r['respuesta']).not.toContain('[CIERRE]');
   });
 
-  it('con los datos, el cierre avisa UNA vez y sale con el botón a un asesor', () => {
+  it('con empresa, contacto y rubro, el cierre avisa UNA vez, sin botón ni enlace', () => {
     const sd: J = {};
     const ent = entrada(sd);
-    const datos = '[LEAD]{"empresa":"Salón Rosa","contacto":"Ana","rubro":"belleza","flujos":["Citas"]}[/LEAD]';
-    const r = procesar(`Listo, Ana: un asesor te escribirá. ${datos}[CIERRE]`, ent, sd);
+    // Sin `flujos`: ya no es obligatorio, se deduce del rubro.
+    const datos = '[LEAD]{"empresa":"Salón Rosa","contacto":"Ana","rubro":"belleza"}[/LEAD]';
+    const r = procesar(`Listo, Ana: un especialista te escribirá. ${datos}[CIERRE]`, ent, sd);
     expect(r['avisar']).toBe(true);
     expect(r['estadoLead']).toBe('cerrado');
-    expect(r['cuerpoMeta']['interactive']['type']).toBe('cta_url');
-    const boton = r['cuerpoMeta']['interactive']['action']['parameters'];
-    expect(boton['url']).toMatch(/^https:\/\/wa\.me\/59170000000\?text=/);
-    expect(String(boton['display_text']).length).toBeLessThanOrEqual(20);
+    // La persona ya fue avisada: un botón solo invitaría a un mensaje pagado
+    // que repite el traspaso. Y el enlace a wa.me ya no existe.
+    expect(r['cuerpoMeta']).toBeUndefined();
+    expect(JSON.stringify(r)).not.toContain('wa.me');
     expect(sd['conversaciones'][TEL]['etapa']).toBe('cerrado');
     // Un segundo [CIERRE] no vuelve a avisar: la plantilla se cobra.
     const r2 = procesar('Gracias de nuevo. [CIERRE]', entrada(sd), sd);
@@ -349,15 +361,19 @@ describe('Procesar respuesta', () => {
     expect(r['avisos']).toContain('correccion_ia');
   });
 
-  it('al terminar el primer bloque la respuesta lleva el botón, sin cerrar', () => {
+  it('al terminar el primer bloque la respuesta lleva el botón de respuesta «asesor», sin cerrar', () => {
     const sd: J = {};
     const cfg = config(PANEL({ topeAviso: 3 }));
     entrada(sd, cfg); entrada(sd, cfg);
     const tercera = entrada(sd, cfg);
     expect(tercera['finBloque']).toBe(true);
     const r = procesar('Te respondo esto. ¿Quieres hablar con un asesor?', tercera, sd);
-    expect(r['cuerpoMeta']['interactive']['type']).toBe('cta_url');
+    expect(r['cuerpoMeta']['interactive']['type']).toBe('button');
+    expect(r['cuerpoMeta']['interactive']['action']['buttons']).toEqual([
+      { type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } }]);
     expect(r['avisar']).toBe(false);
+    // Si Meta rechaza el interactivo, el texto dice cómo pedirlo sin botón.
+    expect(r['textoRespaldo']).toContain('«asesor»');
   });
 });
 
@@ -370,7 +386,7 @@ describe('Ramas sin modelo', () => {
     const botones = r['cuerpoMeta']['interactive']['action']['buttons'] as J[];
     expect(botones.map((b) => b['reply']['id'])).toEqual(['cliente_actual', 'cliente_nuevo']);
     for (const b of botones) expect(String(b['reply']['title']).length).toBeLessThanOrEqual(20);
-    expect(r['respuesta']).toMatch(/inteligencia artificial/);
+    expect(r['respuesta']).toMatch(/inteligencia artificial/i);
   });
 
   it('cliente actual: enlace a la consola, botón a una persona y NINGÚN código', () => {
@@ -404,7 +420,7 @@ describe('Ramas sin modelo', () => {
   });
 
   it('ningún texto fijo usa voseo', () => {
-    for (const n of ['Bienvenida', 'Cliente actual', 'Uso extendido']) {
+    for (const n of ['Bienvenida', 'Cliente actual', 'Uso extendido', 'Traspaso a un asesor']) {
       const r = correr(n, [{ ...ent(), atencionEstado: 'operador' }])[0]!;
       expect(`${r['respuesta']} ${r['textoRespaldo'] ?? ''}`).not.toMatch(VOSEO);
     }
@@ -644,7 +660,8 @@ describe('Estructura del flujo', () => {
   });
 
   it('todo lo que sale al cliente pasa por «Salida»', () => {
-    for (const rama of ['Bienvenida', 'Cliente actual', 'Uso extendido', 'Procesar respuesta', 'Comercio no operativo']) {
+    for (const rama of ['Bienvenida', 'Cliente actual', 'Uso extendido', 'Traspaso a un asesor',
+      'Procesar respuesta', 'Comercio no operativo']) {
       expect(flujo.connections[rama]?.['main']?.[0]?.map((c) => c.node)).toEqual(['Salida']);
     }
     // El comienzo EXACTO de la URL, no «contiene»: una comparación por
@@ -730,6 +747,403 @@ describe('Estructura del flujo', () => {
 
   it('no arrastra nada del cobro de los demos', () => {
     expect(TEXTO_FLUJO).not.toMatch(/ENVIAR_QR|PEDIDO_CONFIRMADO|rotuloDemo|qrMediaId/);
+  });
+});
+
+// ===========================================================================
+// El guion de Silvana del 15/09 con las correcciones de Andres: nombre del
+// asistente y emojis desde la consola, rubro deducido o por número, planes
+// armados por código, botón «Hablar con un asesor» y traspaso sin modelo, sin
+// NIT, horario opcional y aclaraciones rotuladas.
+describe('Captación con la oferta de la consola (guion del 15/09)', () => {
+  const RUBROS = [
+    { id: 'a_medida', nombre: 'Otro rubro (a medida)', solucion: 'Un asesor arma tu asistente a medida.', flujoSugerido: '' },
+    { id: 'belleza', nombre: 'Salud y belleza', solucion: 'Agenda sola y recuerda las citas.', flujoSugerido: 'citas' },
+    { id: 'gastronomia', nombre: 'Gastronomía', solucion: 'Toma el pedido y calcula el envío.', flujoSugerido: 'ventas' },
+  ];
+  const PLANES = [
+    { nombre: 'Impulso', precioUsd: 25, periodo: 'mes', incluye: 'Hasta 100 conversaciones' },
+    { nombre: 'Crecimiento', precioUsd: 50, periodo: 'mes', incluye: 'Hasta 220 conversaciones.' },
+    { nombre: 'Pro', precioUsd: 90, periodo: 'mes', incluye: 'Hasta 500 conversaciones' },
+  ];
+  const CARGOS = [
+    { nombre: 'Instalación', precioUsd: 65, desde: false, detalle: '' },
+    { nombre: 'Desarrollo a medida', precioUsd: 125, desde: true, detalle: 'Integración con tu sistema' },
+  ];
+  const ARCHIVO = { url: 'https://novuchat.site/planes.pdf', tipo: 'pdf', nombreArchivo: 'Planes NovuChat.pdf' };
+  const OFERTA = { rubros: RUBROS, planes: PLANES, cargosUnicos: CARGOS, aclaraciones: [
+    { tema: 'Qué es una conversación', texto: 'Hasta 25 respuestas a un mismo teléfono en 24 horas.' }] };
+  const cfgCon = (onboarding: J = OFERTA, cuerpo: J = {}) => config(PANEL(onboarding, undefined, cuerpo));
+  const turnoCon = (msg: J, sd: J, cfg: J) => estado(normalizar(msg, cfg), sd)[0]!;
+  const procesar = (salidaAgente: string, ent: J, sd: J) =>
+    correr('Procesar respuesta', [{ output: salidaAgente }], { 'Estado de la conversación': ent }, sd)[0]!;
+  const EMOJI = /\p{Extended_Pictographic}/gu;
+  const botonAsesor = (r: J) => (r['cuerpoMeta']?.['interactive']?.['action']?.['buttons'] ?? []) as J[];
+  const BOTON = { type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } };
+
+  /** Las instrucciones del agente, con las expresiones evaluadas como en n8n. */
+  const instrucciones = (cfg: J): string => {
+    const s = (nodo('AI Agent NovuChat').parameters['options']['systemMessage'] as string).replace(/^=/, '');
+    const $ = (n: string) => ({ first: () => ({ json: n === 'Config del negocio' ? cfg : { conocimiento: 'CORPUS' } }) });
+    // nosemgrep: devsecops.js-eval-prohibido
+    return s.replace(/\{\{([\s\S]*?)\}\}/g, (_m, expr: string) => String(new Function('$', `return (${expr});`)($)));
+  };
+
+  describe('nombre del asistente y emojis, desde la consola', () => {
+    const bienvenida = (voz: J) => correr('Bienvenida', [{ ...cfgCon(OFERTA, { voz }), from: TEL }])[0]!;
+
+    it('con nombre se presenta con él; sin nombre, como el asistente virtual del negocio', () => {
+      expect(bienvenida({ nombreAsistente: 'Kenji' })['respuesta'])
+        .toMatch(/^¡Hola!.*Soy Kenji, el asistente virtual de NovuChat, impulsado por Inteligencia Artificial\./u);
+      const sin = bienvenida({ nombreAsistente: '' })['respuesta'] as string;
+      expect(sin).toContain('Soy el asistente virtual de NovuChat, impulsado por Inteligencia Artificial.');
+      expect(sin).toContain('¿ya eres parte de la familia NovuChat o eres un cliente nuevo');
+      // Los dos botones de siempre.
+      expect((bienvenida({})['cuerpoMeta']['interactive']['action']['buttons'] as J[]).map((b) => b['reply']['id']))
+        .toEqual(['cliente_actual', 'cliente_nuevo']);
+    });
+
+    it('el nombre del asistente también llega a las instrucciones del agente', () => {
+      expect(instrucciones(cfgCon(OFERTA, { voz: { nombreAsistente: 'Kenji' } })))
+        .toMatch(/^Eres Kenji, el asistente virtual de NovuChat, impulsado por inteligencia artificial/);
+      expect(instrucciones(cfgCon())).toMatch(/^Eres el asistente virtual de NovuChat,/);
+    });
+
+    it('ninguno: sin emojis; pocos: uno como mucho; muchos: los del guion', () => {
+      const cuenta = (nivel: string) => (String(bienvenida({ nivelEmojis: nivel })['respuesta']).match(EMOJI) ?? []).length;
+      expect(cuenta('ninguno')).toBe(0);
+      expect(cuenta('pocos')).toBe(1);
+      expect(cuenta('muchos')).toBe(2);
+      // Sin emojis no quedan espacios dobles donde estaban.
+      expect(bienvenida({ nivelEmojis: 'ninguno' })['respuesta']).toMatch(/^¡Hola! Soy /);
+      // Un nivel desconocido cae al respaldo, que es «pocos».
+      expect(cfgCon(OFERTA, { voz: { nivelEmojis: 'todos' } })['nivelEmojis']).toBe('pocos');
+    });
+
+    it('el traspaso también obedece el nivel de emojis', () => {
+      const traspaso = (nivel: string) => correr('Traspaso a un asesor',
+        [{ ...cfgCon(OFERTA, { voz: { nivelEmojis: nivel } }), from: TEL }], {}, {})[0]!['respuesta'] as string;
+      expect(traspaso('ninguno').match(EMOJI)).toBeNull();
+      expect(traspaso('pocos').match(EMOJI)).toHaveLength(1);
+      expect(traspaso('muchos').match(EMOJI)).toHaveLength(2);
+    });
+  });
+
+  describe('planes armados por código', () => {
+    const conPlanes = (onboarding: J, salidaAgente = 'Para tu salón, esto te sirve: agenda sola.\n[PLANES]') => {
+      const sd: J = {};
+      const ent = turnoCon(texto('Hola, quiero info'), sd, cfgCon(onboarding));
+      return procesar(salidaAgente, ent, sd);
+    };
+
+    it('3 planes y 2 cargos: precios exactos, «desde» donde corresponde, y el botón', () => {
+      const r = conPlanes(OFERTA);
+      const t = r['respuesta'] as string;
+      expect(t).toContain([
+        '*Planes*',
+        'Impulso (USD 25/mes): Hasta 100 conversaciones.',
+        'Crecimiento (USD 50/mes): Hasta 220 conversaciones.',
+        'Pro (USD 90/mes): Hasta 500 conversaciones.',
+        '',
+        '*Cargos únicos*',
+        'Instalación (pago único): USD 65.',
+        'Desarrollo a medida (pago único): desde USD 125. Integración con tu sistema.',
+        '',
+        'Precios en dólares; se cobran en bolivianos al tipo de cambio oficial del BCB.',
+      ].join('\n'));
+      expect(t).toMatch(/^Para tu salón, esto te sirve: agenda sola\./);
+      expect(t).not.toContain('[PLANES]');
+      // Termina con la pregunta por el especialista, aunque el modelo no la haya puesto.
+      expect(t).toMatch(/especialista\?$/);
+      expect(r['cuerpoMeta']['interactive']['type']).toBe('button');
+      expect(r['cuerpoMeta']['interactive']['header']).toBeUndefined();
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      expect(String(BOTON.reply.title).length).toBeLessThanOrEqual(20);
+      // Cabe en el cuerpo de un interactivo (1024): sale con el botón.
+      expect(correr('Salida', [{ ...r, from: TEL }])[0]!['esInteractivo']).toBe(true);
+    });
+
+    it('los precios del modelo no pasan: ni un emoji dentro de un precio, y un precio con centavos sale exacto', () => {
+      const r = conPlanes({ ...OFERTA, planes: [{ nombre: 'Básico', precioUsd: 12.5, periodo: 'anio', incluye: '' }],
+        cargosUnicos: [] });
+      expect(r['respuesta']).toContain('Básico (USD 12,50/año).');
+      for (const l of String(r['respuesta']).split('\n').filter((x) => /USD/.test(x))) expect(l).not.toMatch(EMOJI);
+    });
+
+    it('si el modelo escribe un precio que la consola no tiene, queda anotado', () => {
+      const r = conPlanes(OFERTA, 'El plan cuesta USD 30 al mes.\n[PLANES]');
+      expect(r['avisos']).toContain('precio_fuera_de_la_consola');
+      expect(conPlanes(OFERTA, 'El Impulso cuesta USD 25.\n[PLANES]')['avisos']).not.toContain('precio_fuera_de_la_consola');
+    });
+
+    it('con 6 planes en archivo: interactivo con encabezado de documento, sin la lista', () => {
+      const seis = [...PLANES, ...PLANES.map((p) => ({ ...p, nombre: `${p.nombre} anual`, periodo: 'anio' }))];
+      const r = conPlanes({ ...OFERTA, planes: seis, planesEnArchivo: true, archivoPlanes: ARCHIVO });
+      const i = r['cuerpoMeta']['interactive'];
+      expect(i['type']).toBe('button');
+      expect(i['header']).toEqual({ type: 'document',
+        document: { link: 'https://novuchat.site/planes.pdf', filename: 'Planes NovuChat.pdf' } });
+      expect(i['body']['text']).not.toMatch(/USD/);
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      // Si Meta rechaza el interactivo, el texto lleva el enlace al archivo.
+      expect(r['textoRespaldo']).toContain('https://novuchat.site/planes.pdf');
+      const img = conPlanes({ ...OFERTA, planes: seis, planesEnArchivo: true,
+        archivoPlanes: { ...ARCHIVO, tipo: 'imagen', url: 'https://novuchat.site/planes.png' } });
+      expect(img['cuerpoMeta']['interactive']['header']).toEqual({ type: 'image', image: { link: 'https://novuchat.site/planes.png' } });
+    });
+
+    it('un archivo sin https no se usa: los planes se listan', () => {
+      const r = conPlanes({ ...OFERTA, planesEnArchivo: true, archivoPlanes: { ...ARCHIVO, url: 'http://x.y/p.pdf' } });
+      expect(r['cuerpoMeta']['interactive']['header']).toBeUndefined();
+      expect(r['respuesta']).toContain('Impulso (USD 25/mes)');
+    });
+
+    it('sin planes cargados no hay precios: se ofrece al asesor', () => {
+      const r = conPlanes({ ...OFERTA, planes: [], cargosUnicos: [] });
+      expect(r['respuesta']).not.toMatch(/USD|\$|\d+\s*(Bs|bolivianos)/);
+      expect(r['respuesta']).toMatch(/asesor/);
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      // Y el prompt tampoco trae precios de la consola.
+      expect(instrucciones(cfgCon({ ...OFERTA, planes: [], cargosUnicos: [] }))).toMatch(/no hay planes cargados: no des ningún precio/);
+    });
+
+    it('con la consola caída, el respaldo no inventa planes', () => {
+      const c = config({ statusCode: 500, body: {} });
+      expect([c['planes'], c['rubros'], c['cargosUnicos'], c['aclaraciones']]).toEqual([[], [], [], []]);
+      expect(c['nombreAsistente']).toBe('');
+      expect(c['planesEnArchivo']).toBe(false);
+    });
+
+    it('la oferta de la consola se limpia: nada de corchetes que finjan una marca', () => {
+      const c = cfgCon({ ...OFERTA, planes: [{ nombre: 'Pro [CIERRE]', precioUsd: 90, periodo: 'mes', incluye: 'x' },
+        { nombre: 'Sin precio', precioUsd: 'noventa', periodo: 'mes' }, { nombre: 'Sin periodo', precioUsd: 5 }] });
+      expect((c['planes'] as J[]).map((p) => p['nombre'])).toEqual(['Pro CIERRE']);
+    });
+  });
+
+  describe('rubro: deducido o por número', () => {
+    it('las instrucciones piden deducir solo con una palabra del oficio, sin «90 % seguro», y dejan corregir', () => {
+      const s = instrucciones(cfgCon());
+      expect(s).toMatch(/palabra del oficio \(pastelería, odontología, colegio, boutique/);
+      expect(s).toMatch(/si me equivoqué, dime/);
+      expect(s).not.toMatch(/90\s*%/);
+      expect(s).toMatch(/UNA SOLA PREGUNTA, su nombre y el de su empresa/);
+    });
+
+    it('[RUBROS] muestra la lista de la consola numerada, con el rubro a medida al final', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      const ent = turnoCon(texto('Soy Ana, de Inversiones AAB'), sd, cfg);
+      const r = procesar('Gracias, Ana. ¿A qué rubro pertenece Inversiones AAB?\n[RUBROS]\nRespóndeme con el número.'
+        + '\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]', ent, sd);
+      expect(r['respuesta']).toContain('1. Salud y belleza\n2. Gastronomía\n3. Otro rubro (a medida)');
+      expect(r['respuesta']).not.toContain('[RUBROS]');
+      // El siguiente «2» es un rubro, resuelto por código antes del modelo.
+      const dos = turnoCon(texto('2'), sd, cfg);
+      expect(dos['leadConocido']).toMatchObject({ rubro: 'Gastronomía', flujos: 'ventas' });
+      expect(dos['mensajeDelTurno']).toMatch(/eligió de la lista el rubro 2: «Gastronomía»/);
+      expect(dos['mensajeDelTurno']).toMatch(/Faltan: ninguno/);
+      // Un número fuera de la lista no registra nada.
+      const sd2: J = {};
+      procesar('Elige:\n[RUBROS]', turnoCon(texto('hola, info'), sd2, cfg), sd2);
+      const nueve = turnoCon(texto('9'), sd2, cfg);
+      expect(nueve['leadConocido']['rubro']).toBeUndefined();
+      expect(nueve['mensajeDelTurno']).toMatch(/no está en la lista de rubros: pídele que elija un número de 1 a 3/);
+    });
+
+    it('un «2» sin lista mostrada es un mensaje más, no un rubro', () => {
+      expect(turnoCon(texto('2'), {}, cfgCon())['leadConocido']['rubro']).toBeUndefined();
+    });
+
+    it('el rubro deducido por el modelo trae sus flujos de la lista', () => {
+      const sd: J = {};
+      procesar('Veo que es un salón; si me equivoqué, dime.\n[PLANES]\n[LEAD]{"rubro":"salud y belleza"}[/LEAD]',
+        turnoCon(texto('Soy Ana, de Salón Rosa'), sd, cfgCon()), sd);
+      expect(sd['conversaciones'][TEL]['lead']).toMatchObject({ rubro: 'salud y belleza', flujos: 'citas' });
+    });
+  });
+
+  describe('el botón «Hablar con un asesor» y el traspaso sin modelo', () => {
+    const tocar = () => ({ type: 'interactive', interactive: { type: 'button_reply',
+      button_reply: { id: 'asesor', title: 'Hablar con un asesor' } } });
+
+    it('tocarlo (o escribirlo) decide el traspaso antes del modelo', () => {
+      expect(normalizar(tocar())['eleccion']).toBe('asesor');
+      expect(normalizar(texto('Quiero hablar con un asesor'))['eleccion']).toBe('asesor');
+      expect(normalizar(texto('asesor'))['eleccion']).toBe('asesor');
+      expect(normalizar(texto('¿el asesor me llama hoy?'))['eleccion']).toBe('');
+      expect(turnoCon(tocar(), {}, cfgCon())['accion']).toBe('asesor');
+      // El servidor manda: en operador, gana el uso extendido.
+      const op = config(PANEL(OFERTA, { estado: 'operador', avisarRecepcion: 'operador', respuestasEnVentana: 50 }));
+      expect(turnoCon(tocar(), {}, op)['accion']).toBe('uso_extendido');
+    });
+
+    it('en el lienzo, «¿Asesor?» lleva al traspaso, y desde ahí el agente no es alcanzable', () => {
+      const salidas = flujo.connections['¿Asesor?']?.['main'] ?? [];
+      expect((salidas[0] ?? []).map((c) => c.node)).toEqual(['Traspaso a un asesor']);
+      expect((salidas[1] ?? []).map((c) => c.node)).toEqual(['AI Agent NovuChat']);
+      expect((flujo.connections['¿Uso extendido?']?.['main']?.[1] ?? []).map((c) => c.node)).toEqual(['¿Asesor?']);
+      const alcanzables = new Set<string>();
+      const pendientes = ['Traspaso a un asesor'];
+      while (pendientes.length) {
+        const n = pendientes.pop() as string;
+        if (alcanzables.has(n)) continue;
+        alcanzables.add(n);
+        for (const s of flujo.connections[n]?.['main'] ?? []) pendientes.push(...s.map((c) => c.node));
+      }
+      expect(alcanzables.has('AI Agent NovuChat')).toBe(false);
+      expect(nodo('¿Asesor?').parameters['conditions']['conditions'][0]['rightValue']).toBe('asesor');
+    });
+
+    it('el traspaso avisa UNA vez, con los datos que haya, guarda y cierra', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      const e = turnoCon(tocar(), sd, cfg);
+      sd['conversaciones'][TEL]['lead'] = { empresa: 'Salón Rosa' };      // falta todo lo demás
+      const r = correr('Traspaso a un asesor', [e], {}, sd)[0]!;
+      expect(r['respuesta']).toBe('¡Anotado! 📋 Ya le pasé tus datos a nuestro equipo. Un especialista de NovuChat '
+        + 'te escribirá a este mismo número en horario de atención (lunes a viernes, de 09:00 a 18:00).'
+        + ' ¡Que tengas un excelente día!');
+      expect(r['avisar']).toBe(true);
+      expect(r['guardarLead']).toBe(true);
+      expect(r['estadoLead']).toBe('cerrado');
+      expect(sd['conversaciones'][TEL]['etapa']).toBe('cerrado');
+      const s = correr('Salida', [{ ...r, crmUrl: 'https://crm.ejemplo/leads' }])[0]!;
+      const vars = (s['cuerpoAviso']['template']['components'][0]['parameters'] as J[]).map((p) => p['text']);
+      expect(vars.slice(0, 3)).toEqual(['pidió hablar con un asesor', 'Salón Rosa', 'Ana']);
+      expect(s['cuerpoCrm']).toMatchObject({ estado: 'cerrado', empresa: 'Salón Rosa' });
+      expect(s['esInteractivo']).toBe(false);
+      // Un segundo toque responde, pero no vuelve a avisar: la plantilla se cobra.
+      const otra = correr('Traspaso a un asesor', [turnoCon(tocar(), sd, cfg)], {}, sd)[0]!;
+      expect(otra['avisar']).toBe(false);
+    });
+
+    it('a nadie se le avisa de su propio toque: desde el número de recepción no hay plantilla', () => {
+      const r = correr('Traspaso a un asesor', [{ ...turnoCon(tocar(), {}, cfgCon()), from: '59170000000' }], {}, {})[0]!;
+      const s = correr('Salida', [r])[0]!;
+      expect(s['avisar']).toBe(false);
+      expect(s['cuerpoAviso']).toBeNull();
+      expect(s['respuesta']).toMatch(/^¡Anotado!/);
+    });
+
+    it('un [CIERRE] sin los datos no avisa, pero deja el botón para pasar con lo que haya', () => {
+      const sd: J = {};
+      const r = procesar('Claro, te paso con alguien. [CIERRE]', turnoCon(texto('quiero que me llamen'), sd, cfgCon()), sd);
+      expect(r['avisar']).toBe(false);
+      expect(botonAsesor(r)).toEqual([BOTON]);
+    });
+  });
+
+  describe('datos del prospecto', () => {
+    it('el NIT ya no se guarda, ni el que quedó de antes', () => {
+      const sd: J = { conversaciones: { [TEL]: { desde: Date.now(), ultimo: Date.now(), respuestas: 1,
+        etapa: 'cliente_nuevo', bienvenida: true, avisado: false, lead: { empresa: 'Salón Rosa', nit: '1234567' } } } };
+      const ent = turnoCon(texto('mi NIT es 7654321'), sd, cfgCon());
+      expect(ent['leadConocido']['nit']).toBeUndefined();
+      const r = procesar('Gracias.\n[LEAD]{"nit":"7654321","consulta":"agenda para su salón","personalizacion":"recordatorio por SMS"}[/LEAD]',
+        ent, sd);
+      expect(sd['conversaciones'][TEL]['lead']).toEqual({ empresa: 'Salón Rosa', consulta: 'agenda para su salón',
+        personalizacion: 'recordatorio por SMS' });
+      const s = correr('Salida', [{ ...r, crmUrl: 'https://crm.ejemplo/leads', lead: { ...r['lead'], nit: '1' } }])[0]!;
+      expect(s['cuerpoCrm']['nit']).toBeUndefined();
+      // Las instrucciones ya no piden NIT.
+      expect(instrucciones(cfgCon())).not.toMatch(/\bNIT\b|\bnit\b/);
+    });
+  });
+
+  describe('horario opcional', () => {
+    const respaldoConHorario = { ...base(), horarioAtencion: 'lunes a sábado, de 08:00 a 20:00' };
+
+    it('si la consola contesta con el horario vacío, manda: no cae al respaldo', () => {
+      const c = config(PANEL(OFERTA, undefined, { operacion: { numeroRecepcion: '+591 7000-0000', horarioAtencion: '' } }),
+        respaldoConHorario);
+      expect(c['horarioAtencion']).toBe('');
+      expect(c['fraseContacto']).toBe('lo antes posible');
+      // Con el panel caído, sí vale el respaldo.
+      expect(config({ statusCode: 500, body: {} }, respaldoConHorario)['horarioAtencion']).toBe('lunes a sábado, de 08:00 a 20:00');
+      // Un marcador sin llenar no es un horario.
+      expect(config({ statusCode: 500, body: {} })['horarioAtencion']).toBe('');
+    });
+
+    it('con horario vacío, ni el traspaso ni las instrucciones mencionan horarios', () => {
+      const c = config(PANEL(OFERTA, undefined, { operacion: { numeroRecepcion: '+591 7000-0000', horarioAtencion: '' } }),
+        respaldoConHorario);
+      const r = correr('Traspaso a un asesor', [{ ...c, from: TEL }], {}, {})[0]!;
+      expect(r['respuesta']).toContain('te escribirá a este mismo número lo antes posible.');
+      expect(r['respuesta']).not.toMatch(/horario/i);
+      const s = instrucciones(c);
+      // Lo que el negocio escribe; el corpus del sitio va aparte, al final.
+      expect(s.slice(0, s.indexOf('DATOS DE NOVUCHAT.'))).not.toMatch(/horario/i);
+      expect(s).toContain('le escribirá a este mismo número lo antes posible');
+    });
+  });
+
+  describe('instrucciones del agente', () => {
+    it('las aclaraciones van rotuladas, para usarlas solo si preguntan', () => {
+      const s = instrucciones(cfgCon());
+      expect(s).toContain('ACLARACIONES DE LA OFERTA: úsalas solo si el cliente pregunta por ese tema. '
+        + 'No las recites por tu cuenta.\n'
+        + '- Qué es una conversación: Hasta 25 respuestas a un mismo teléfono en 24 horas.');
+    });
+
+    it('para planes, precios y rubros manda la consola; el corpus para lo demás', () => {
+      const s = instrucciones(cfgCon());
+      expect(s).toMatch(/Si DATOS DE NOVUCHAT dice otra cosa sobre planes, precios o sobre un tema de las ACLARACIONES DE LA OFERTA .*gana la consola/);
+      expect(s).toContain('Impulso (USD 25/mes): Hasta 100 conversaciones');
+      expect(s).toContain('1. Salud y belleza - solución: Agenda sola y recuerda las citas.');
+      expect(s).toMatch(/cobran en bolivianos al tipo de cambio oficial del BCB/);
+      // La oferta va antes del corpus, y el corpus sigue al final.
+      expect(s.indexOf('OFERTA DE LA CONSOLA')).toBeLessThan(s.indexOf('DATOS DE NOVUCHAT.'));
+      expect(s).toMatch(/<<<\nCORPUS\n>>>$/);
+    });
+  });
+
+  describe('mensajes por conversación', () => {
+    /** Un turno completo por los nodos versionados; el modelo, simulado. */
+    const turno = (msg: J, sd: J, cfg: J, salidaAgente = ''): J => {
+      const e = turnoCon(msg, sd, cfg);
+      const rama = e['accion'] === 'bienvenida' ? correr('Bienvenida', [e])[0]!
+        : e['accion'] === 'asesor' ? correr('Traspaso a un asesor', [e], {}, sd)[0]!
+        : procesar(salidaAgente, e, sd);
+      const s = correr('Salida', [rama])[0]!;
+      if (e['accion'] === 'bienvenida') {
+        correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 } }, sd);
+      }
+      return s;
+    };
+    const nuevo = { type: 'interactive', interactive: { button_reply: { id: 'cliente_nuevo', title: 'Soy cliente nuevo' } } };
+    const asesor = { type: 'interactive', interactive: { button_reply: { id: 'asesor', title: 'Hablar con un asesor' } } };
+
+    it('rubro obvio: 4 mensajes al cliente y 1 plantilla', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      const salen = [
+        turno(texto('hola'), sd, cfg),
+        turno(nuevo, sd, cfg, 'NovuChat pone un asistente con IA en tu WhatsApp. ¿Cómo te llamas y cómo se llama tu empresa?'),
+        turno(texto('Ana, de Salón Rosa'), sd, cfg, 'Gracias, Ana. Veo que Salón Rosa es de belleza; si me equivoqué, dime. '
+          + 'Tu asistente agenda solo.\n[PLANES]\n[LEAD]{"empresa":"Salón Rosa","contacto":"Ana","rubro":"Salud y belleza"}[/LEAD]'),
+        turno(asesor, sd, cfg),
+      ];
+      expect(salen.every((s) => s['responder'] === true)).toBe(true);
+      expect(salen.filter((s) => s['avisar']).length).toBe(1);
+      expect(salen[3]!['cuerpoAviso']['template']['components'][0]['parameters'][3]['text']).toBe('Salud y belleza');
+    });
+
+    it('rubro ambiguo: 5 mensajes al cliente y 1 plantilla', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      const salen = [
+        turno(texto('hola'), sd, cfg),
+        turno(nuevo, sd, cfg, '¿Cómo te llamas y cómo se llama tu empresa?'),
+        turno(texto('Ana, de Inversiones AAB'), sd, cfg, 'Gracias, Ana. ¿En qué rubro está?\n[RUBROS]\n'
+          + '[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]'),
+        turno(texto('2'), sd, cfg, 'Para gastronomía, tu asistente toma el pedido.\n[PLANES]'),
+        turno(asesor, sd, cfg),
+      ];
+      expect(salen).toHaveLength(5);
+      expect(salen.filter((s) => s['avisar']).length).toBe(1);
+      expect(sd['conversaciones'][TEL]['lead']).toMatchObject({ rubro: 'Gastronomía', flujos: 'ventas' });
+    });
   });
 });
 

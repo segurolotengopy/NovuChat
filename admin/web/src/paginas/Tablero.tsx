@@ -69,6 +69,19 @@ function horarioDeHoy(horarios: unknown): string {
   return typeof valor === 'string' ? valor : '';
 }
 
+/**
+ * ¿El comercio cargó ALGÚN día? El horario es opcional: quien no tiene horario
+ * fijo —un servicio a domicilio, un negocio que atiende por WhatsApp a
+ * cualquier hora— deja los siete días vacíos y el asistente no menciona
+ * horarios. A ese comercio decirle «Hoy cerrado» todos los días es falso y
+ * alarma. Si cargó días y hoy no está entre ellos, sí es «Hoy cerrado».
+ */
+function tieneHorario(horarios: unknown): boolean {
+  if (typeof horarios !== 'object' || horarios === null) return false;
+  const h = horarios as Record<string, unknown>;
+  return DIAS.some((d) => typeof h[d] === 'string' && h[d] !== '');
+}
+
 // -----------------------------------------------------------------------------
 // NovuChat
 // -----------------------------------------------------------------------------
@@ -282,7 +295,7 @@ function SelectorDePeriodo({ valor, onCambio }:
 // Comercio
 // -----------------------------------------------------------------------------
 interface ResumenNegocio {
-  nombre: unknown; descripcion: unknown; horarioHoy: string;
+  nombre: unknown; descripcion: unknown; horarioHoy: string; sinHorario: boolean;
   items: number; agendas: number; estadoPago: unknown; motivoPago: unknown;
 }
 
@@ -329,6 +342,7 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
           nombre: negocio.get('nombreNegocio'),
           descripcion: negocio.get('descripcion'),
           horarioHoy: horarioDeHoy(negocio.get('horarios')),
+          sinHorario: !tieneHorario(negocio.get('horarios')),
           items: items.data().count,
           agendas: agendas.data().count,
           estadoPago: cuenta?.get('estadoPago'),
@@ -416,12 +430,24 @@ function TableroComercio({ tenantId, esAdmin }: { tenantId: string; esAdmin: boo
         pie={<Link to={`/negocio/${encodeURIComponent(tenantId)}/conversaciones`}>Ver conversaciones</Link>}
       >
         <p className="card-title"><TextoSeguro valor={datos.nombre} maxLargo={80} /></p>
-        <p className={`situacion ${cerrado ? 'alerta' : 'ok'}`}>
-          {cerrado ? 'Hoy cerrado' : `Hoy abierto ${datos.horarioHoy}`}
-        </p>
-        <p className="text-muted">
-          Fuera de horario el asistente sigue respondiendo y avisa cuándo abres.
-        </p>
+        {datos.sinHorario ? (
+          <>
+            <p className="situacion neutro">Sin horario fijo</p>
+            <p className="text-muted">
+              No cargaste un horario de atención, así que el asistente responde
+              sin mencionar horarios. Si tienes uno, cárgalo en Configuración.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className={`situacion ${cerrado ? 'alerta' : 'ok'}`}>
+              {cerrado ? 'Hoy cerrado' : `Hoy abierto ${datos.horarioHoy}`}
+            </p>
+            <p className="text-muted">
+              Fuera de horario el asistente sigue respondiendo y avisa cuándo abres.
+            </p>
+          </>
+        )}
       </Tarjeta>
 
       <Tarjeta

@@ -145,6 +145,13 @@ export function Configuracion() {
   // El horario tampoco cabe en `datos`: son siete días con tres piezas cada
   // uno, y se arma como texto recién al guardar.
   const [horarios, setHorarios] = useState<Record<string, DiaHorario>>(() => leerHorarios({}));
+  // NOMBRE DEL ASISTENTE, aparte de `datos` por una razón de despliegue: solo
+  // se escribe si tiene texto o si el documento ya lo tenía (para poder
+  // vaciarlo). Así un comercio que nunca lo usa guarda su configuración igual
+  // aunque la consola llegue a producción antes que la regla que admite el
+  // campo, y no descubre el desfase con un «el servidor rechazó el cambio».
+  const [nombreAsistente, setNombreAsistente] = useState('');
+  const [teniaNombreAsistente, setTeniaNombreAsistente] = useState(false);
   const [estado, setEstado] = useState<string | null>(null);
 
   useEffect(() => {
@@ -169,6 +176,8 @@ export function Configuracion() {
       });
       setCatalogoWeb(v['catalogoWebActivo'] === true);
       setHorarios(leerHorarios(v['horarios']));
+      setNombreAsistente(typeof v['nombreAsistente'] === 'string' ? v['nombreAsistente'] : '');
+      setTeniaNombreAsistente(Object.prototype.hasOwnProperty.call(v, 'nombreAsistente'));
     }, () => setEstado('No se pudo leer la configuración.'));
   }, [tenantId]);
 
@@ -187,9 +196,17 @@ export function Configuracion() {
       setEstado('Revisa el horario de atención: hay un día con las horas incompletas o al revés.');
       return;
     }
+    // Una sola línea y hasta 40 caracteres, igual que la regla. El salto de
+    // línea no llega desde un `<input>`, pero sí pegando texto: se aplana.
+    const nombre = nombreAsistente.replace(/[\r\n]+/g, ' ').trim();
+    if (nombre.length > 40) {
+      setEstado('El nombre del asistente puede tener hasta 40 caracteres.');
+      return;
+    }
     try {
       await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), {
         ...datos,
+        ...(nombre !== '' || teniaNombreAsistente ? { nombreAsistente: nombre } : {}),
         // El mapa se reemplaza entero: un día que se vació desaparece del
         // documento, en vez de quedar con el horario viejo.
         horarios: escribirHorarios(horarios),
@@ -277,12 +294,13 @@ export function Configuracion() {
         {conAgenda && campo('calendarioId', 'ID del calendario de Google (agenda del negocio)')}
         {campo('politicaCancelacion', 'Política de cancelación', undefined, true)}
 
-        <h3>Horario de atención</h3>
+        <h3>Horario de atención (opcional)</h3>
         <p className="ayuda">
           El asistente usa este horario para responder «¿a qué hora atienden?».
           Marca <strong>Cerrado</strong> los días que no abres; un día que dejas
-          sin datos no se menciona. Si no cargas ningún día, el asistente dice
-          que no tiene el dato, en vez de inventarlo.
+          sin datos no se menciona. <strong>Es opcional</strong>: si no tienes
+          horario fijo, deja todos los días vacíos y el asistente no mencionará
+          horarios.
           {conAgenda && <> Si en «Agenda» no cargaste a nadie, las citas también
           se ofrecen dentro de este horario.</>}
         </p>
@@ -333,6 +351,17 @@ export function Configuracion() {
         </p>
 
         <h3>Voz del asistente</h3>
+        {/* CAPA COMÚN: el nombre vale para TODOS los flujos del negocio
+            (reservas, pedidos, captación), por eso vive acá y no en la pestaña
+            de un flujo. NovuChat usa «Kenji». */}
+        {grupo('Nombre del asistente (opcional)', (
+          <input value={nombreAsistente} maxLength={40} placeholder="Sofía"
+                 onChange={(e) => setNombreAsistente(e.target.value.replace(/[\r\n]+/g, ' '))} />
+        ), <>Es el nombre con el que se presenta en todas tus conversaciones. Si
+          lo dejas vacío, se presenta como «el asistente virtual
+          de {(datos['nombreNegocio'] ?? '').trim() || 'tu negocio'}». Ponerle
+          nombre no lo hace pasar por una persona: el asistente siempre dice que
+          es una inteligencia artificial.</>)}
         {opcion('tratamiento', 'Cómo trata al cliente', [
           ['usted', 'De usted'], ['tu', 'De tú'],
           ['vos', 'De vos (Santa Cruz)'], ['neutro', 'Impersonal'],

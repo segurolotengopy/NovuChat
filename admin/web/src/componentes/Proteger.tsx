@@ -15,7 +15,8 @@ export function Proteger({
   requiere,
 }: {
   children: ReactNode;
-  requiere?: 'propietario' | 'adminTenant' | 'miembroTenant' | 'miembroOPropietario';
+  requiere?: 'propietario' | 'adminTenant' | 'miembroTenant' | 'miembroOPropietario'
+    | 'adminOPropietario';
 }) {
   const { usuario, permisos, cargando } = useSesion();
   const { tenantId } = useParams();
@@ -32,6 +33,11 @@ export function Proteger({
   // permiso habilita y la interfaz niega.
   if (requiere === 'miembroOPropietario'
       && !(permisos.propietario || (tenantId && rolEn(permisos, tenantId) !== null))) return <SinPermiso />;
+  // Captación: la configura el administrador del comercio y la instala
+  // NovuChat. El operador no entra, igual que a las demás pantallas de
+  // configuración de un flujo.
+  if (requiere === 'adminOPropietario'
+      && !(permisos.propietario || (tenantId && esAdmin(permisos, tenantId)))) return <SinPermiso />;
 
   return <>{children}</>;
 }
