@@ -168,6 +168,21 @@ de Silvana y decisiones de Andres en `CLIENTES/NOVUCHAT/` (carpeta local).
 nunca los dos); ninguno con el teléfono bloqueado. Más **1 plantilla utility**
 por prospecto cerrado y 1 por cada umbral que marca el servidor.
 
+**Solo se da por hecho lo que Meta aceptó** (desde la aceptación del
+15/09/2026). `Confirmar envío` es el hijo más bajo de `Salida` y corre último:
+lee lo que contestó Meta y
+
+- si rechazó el texto, o el interactivo **y** su respaldo, **termina la
+  ejecución en error** con el código y el mensaje de Meta (sin el texto ni el
+  teléfono del cliente): `./scripts/ver-ejecuciones.sh --env .env.novuchat --error`
+  lo encuentra. Antes, un texto rechazado terminaba en «success»;
+- reporta a la ingesta como saliente **solo lo que salió**. Antes el reporte
+  colgaba de `¿Responder?` y un mensaje rechazado se contaba como respuesta;
+- marca la bienvenida recién cuando salió. Antes se marcaba al decidirla, y un
+  envío fallido dejaba a ese teléfono sin botones para siempre.
+
+No agrega ni quita mensajes a Meta: no hace ninguna llamada.
+
 ### Credenciales (todas nuevas, propias de la app `NovuChat-Asistente`)
 
 | Credencial | Tipo | Nodos |

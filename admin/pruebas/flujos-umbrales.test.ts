@@ -327,6 +327,28 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
       // Si la ingesta falla, el cliente igual recibe su respuesta.
       expect(r.onError).toBe('continueRegularOutput');
     });
+
+    it('la respuesta se reporta DESPUÉS de enviarla, y un envío rechazado corta antes del reporte', () => {
+      // Cada saliente cuenta como respuesta del bloque (`ingesta.ts`). El nodo
+      // oficial de WhatsApp lanza el error de Meta y, sin `onError`, la
+      // ejecución termina en ERROR antes de llegar al reporte, que cuelga más
+      // abajo: un mensaje rechazado no se cuenta y la falla se ve en n8n. Es la
+      // garantía que la captación tuvo que construir con «Confirmar envío»
+      // porque su envío usa `neverError` (aceptación del 15/09/2026).
+      const envio = nodo(f, 'Responder al cliente');
+      expect(envio.type).toBe('n8n-nodes-base.whatsApp');
+      expect(envio.onError ?? 'stopWorkflow').toBe('stopWorkflow');
+      const padres = origenes(f, 'Reportar mensaje (saliente)');
+      expect(padres.length).toBeGreaterThan(0);
+      for (const padre of padres) {
+        for (const hermano of destinos(f, padre)) {
+          if (hermano === 'Reportar mensaje (saliente)') continue;
+          if (hermano === 'Responder al cliente' || alcanzables(f, hermano).has('Responder al cliente')) {
+            expect(y(hermano), `${padre} → ${hermano}`).toBeLessThan(y('Reportar mensaje (saliente)'));
+          }
+        }
+      }
+    });
   });
 });
 

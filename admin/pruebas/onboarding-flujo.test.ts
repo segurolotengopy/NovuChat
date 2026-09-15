@@ -56,7 +56,9 @@ function correr(nombre: string, items: J[], contexto: Record<string, J | J[]> = 
   const $ = (n: string) => {
     const v = contexto[n];
     const lista = Array.isArray(v) ? v : [v ?? {}];
-    return { first: () => ({ json: lista[0] }), all: () => lista.map((json) => ({ json })) };
+    // `isExecuted`, como en n8n: un nodo que no está en el contexto no corrió.
+    return { first: () => ({ json: lista[0] }), all: () => lista.map((json) => ({ json })),
+      isExecuted: n in contexto };
   };
   // Se ejecuta el flujo VERSIONADO; copiar la lógica dejaría la prueba en verde
   // mientras el flujo se rompe. Misma justificación que `candado-agenda.test.ts`.
@@ -188,6 +190,9 @@ describe('Estado de la conversación', () => {
   it('un «hola» suelto recibe los botones, UNA sola vez', () => {
     const sd: J = {};
     expect(estado(normalizar(texto('hola')), sd)[0]!['accion']).toBe('bienvenida');
+    // La bienvenida queda dada cuando Meta acepta el envío (ver «Confirmar envío»).
+    correr('Confirmar envío', [{ from: TEL, accion: 'bienvenida', responder: true, esInteractivo: true }],
+      { 'Enviar a WhatsApp': { statusCode: 200 } }, sd);
     // Vuelve a saludar sin elegir: no se le repiten los botones.
     expect(estado(normalizar(texto('hola')), sd)[0]!['accion']).toBe('agente');
   });
@@ -475,6 +480,112 @@ describe('Salida: una sola compuerta y un solo mensaje', () => {
 });
 
 // ===========================================================================
+// Aceptación real del 15/09/2026: Meta respondió 190 (credencial mal asignada).
+// La bienvenida ya estaba marcada y ese teléfono no volvió a recibir los
+// botones; y un texto rechazado terminaba la ejecución en «success».
+describe('Confirmar envío: solo se da por hecho lo que Meta aceptó', () => {
+  const RECHAZO_190 = { statusCode: 401, body: { error: {
+    message: 'Error validating access token: The session is invalid.', type: 'OAuthException',
+    code: 190, fbtrace_id: 'AbCdEf' } } };
+  const ACEPTADO = { statusCode: 200, body: { messages: [{ id: 'wamid.aceptado' }] } };
+
+  const confirmar = (salida: J[], envio?: J | J[], respaldo?: J | J[], sd: J = {}) => {
+    const ctx: Record<string, J | J[]> = {};
+    if (envio !== undefined) ctx['Enviar a WhatsApp'] = envio;
+    if (respaldo !== undefined) ctx['Enviar texto de respaldo'] = respaldo;
+    return correr('Confirmar envío', salida, ctx, sd);
+  };
+  const error = (f: () => unknown): string => {
+    try { f(); } catch (err) { return (err as Error).message; }
+    return '';
+  };
+  /** Un turno por los nodos versionados: Normalizar → Estado → rama → Salida. */
+  const turno = (msg: J, sd: J) => {
+    const e = estado(normalizar(msg), sd)[0]!;
+    const rama = e['accion'] === 'bienvenida'
+      ? correr('Bienvenida', [e])[0]!
+      : { ...e, respuesta: 'Tu cita es el martes, Ana.' };
+    return correr('Salida', [rama])[0]!;
+  };
+
+  it('(a) si Meta rechaza la bienvenida, el siguiente «hola» vuelve a recibir los botones', () => {
+    const sd: J = {};
+    const s = turno(texto('hola'), sd);
+    expect(s['accion']).toBe('bienvenida');
+    expect(s['esInteractivo']).toBe(true);
+    expect(error(() => confirmar([s], RECHAZO_190, RECHAZO_190, sd))).toMatch(/código 190/);
+    expect(sd['conversaciones'][TEL]['bienvenida']).toBe(false);
+    expect(turno(texto('hola'), sd)['accion']).toBe('bienvenida');
+  });
+
+  it('(a) con la bienvenida aceptada, un segundo «hola» ya no repite los botones', () => {
+    const sd: J = {};
+    const s = turno(texto('hola'), sd);
+    expect(confirmar([s], ACEPTADO, undefined, sd)).toHaveLength(1);
+    expect(sd['conversaciones'][TEL]['bienvenida']).toBe(true);
+    expect(turno(texto('hola'), sd)['accion']).toBe('agente');
+  });
+
+  it('(a) si el interactivo falla pero el respaldo en texto sale, la bienvenida cuenta como dada', () => {
+    const sd: J = {};
+    const s = turno(texto('hola'), sd);
+    const r = confirmar([s], { statusCode: 400, body: { error: { code: 131009, message: 'Parameter value is not valid' } } },
+      ACEPTADO, sd);
+    // Se reporta lo que de verdad salió: el texto de respaldo, como texto.
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ from: TEL, esInteractivo: false, porRespaldo: true });
+    expect(r[0]!['respuesta']).toBe(s['cuerpoRespaldo']['text']['body']);
+    expect(r[0]!['respuesta']).toContain('Escríbeme «soy cliente»');
+    expect(turno(texto('hola'), sd)['accion']).toBe('agente');
+  });
+
+  it('(b) un TEXTO rechazado termina la ejecución en error, con el código de Meta y sin datos del cliente', () => {
+    const s = turno(texto('Hola, quiero agendar'), {});
+    expect(s['esInteractivo']).toBe(false);
+    const m = error(() => confirmar([s], { statusCode: 400, body: { error: {
+      code: 131030, type: 'OAuthException', fbtrace_id: 'Xyz',
+      message: `(#131030) Recipient phone number ${TEL} not in allowed list` } } }));
+    expect(m).toMatch(/^Meta rechazó el mensaje al cliente: HTTP 400, código 131030, OAuthException/);
+    expect(m).toMatch(/\(texto, turno agente\)/);
+    // Ni el teléfono ni lo que se le iba a decir: el error queda en n8n.
+    expect(m).not.toContain(TEL);
+    expect(m).not.toContain('martes');
+    expect(m).not.toContain('\n');
+  });
+
+  it('(b) si también se rechaza el texto de respaldo, termina en error con los dos códigos', () => {
+    const s = turno(texto('hola'), {});
+    const m = error(() => confirmar([s], { statusCode: 400, body: { error: { code: 131009, message: 'bad param' } } },
+      RECHAZO_190));
+    expect(m).toMatch(/HTTP 401, código 190/);
+    expect(m).toMatch(/respaldo en texto, turno bienvenida; antes el interactivo: HTTP 400, código 131009/);
+  });
+
+  it('(b) un envío que ni llegó a Meta (tiempo agotado) también es un error', () => {
+    const s = turno(texto('Hola, quiero agendar'), {});
+    const m = error(() => confirmar([s], { error: { message: 'timeout of 15000ms exceeded' } }));
+    expect(m).toMatch(/sin respuesta HTTP: timeout of 15000ms exceeded/);
+  });
+
+  it('(b) lo que no salió no llega al reporte; lo que salió se reporta como saliente, con su texto', () => {
+    const s = turno(texto('Hola, quiero agendar'), {});
+    // Rechazado: el nodo corta, y «Reportar mensaje (saliente)» no recibe nada.
+    expect(error(() => confirmar([s], RECHAZO_190))).not.toBe('');
+    const [ok] = confirmar([s], ACEPTADO);
+    const cuerpo = nodo('Reportar mensaje (saliente)').parameters['jsonBody'] as string;
+    // Se evalúa la expresión VERSIONADA del reporte con lo que sale de «Confirmar envío».
+    // nosemgrep: devsecops.js-eval-prohibido
+    const armar = new Function('$json', `return (${/^=\{\{([\s\S]*)\}\}$/.exec(cuerpo)![1]});`) as (j: J) => string;
+    expect(JSON.parse(armar(ok!))).toEqual({
+      telefono: TEL, direccion: 'saliente', tipo: 'text', texto: 'Tu cita es el martes, Ana.' });
+  });
+
+  it('con el teléfono bloqueado no se envió nada: no hay nada que confirmar ni que reportar', () => {
+    expect(confirmar([{ from: TEL, responder: false, avisar: true }])).toEqual([]);
+  });
+});
+
+// ===========================================================================
 describe('Estructura del flujo', () => {
   const entradas = (destino: string) => Object.entries(flujo.connections)
     .flatMap(([origen, tipos]) => Object.values(tipos).flat().flat()
@@ -584,6 +695,29 @@ describe('Estructura del flujo', () => {
     for (const n of ['Avisar a NovuChat', 'Guardar prospecto', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)']) {
       expect((nodo(n) as unknown as J)['onError']).toBe('continueRegularOutput');
     }
+  });
+
+  it('la respuesta se reporta SOLO si Meta la aceptó: el saliente cuelga de «Confirmar envío»', () => {
+    // El servidor cuenta cada saliente como respuesta del bloque (`ingesta.ts`):
+    // colgado de «¿Responder?», un mensaje rechazado se facturaba igual.
+    expect(entradas('Reportar mensaje (saliente)')).toEqual(['Confirmar envío']);
+    expect(entradas('Confirmar envío')).toEqual(['Salida']);
+    // Ni el envío ni su respaldo cortan el flujo; el veredicto es de «Confirmar
+    // envío», que SÍ corta: sin `onError`, su error es el de la ejecución.
+    for (const n of ['Enviar a WhatsApp', 'Enviar texto de respaldo']) {
+      expect((nodo(n) as unknown as J)['onError']).toBe('continueRegularOutput');
+      expect(nodo(n).parameters['options']['response']['response']).toMatchObject({ fullResponse: true, neverError: true });
+    }
+    expect((nodo('Confirmar envío') as unknown as J)['onError']).toBeUndefined();
+  });
+
+  it('«Confirmar envío» corre ÚLTIMO: es el hijo más bajo de «Salida» (orden v1)', () => {
+    // Si corriera antes que la rama del envío, leería un envío que no ocurrió;
+    // y su error cortaría el aviso interno y el CRM.
+    const y = (n: string) => ((nodo(n) as unknown as J)['position'] as number[])[1]!;
+    const hijos = (flujo.connections['Salida']?.['main']?.[0] ?? []).map((c) => c.node);
+    expect(hijos).toContain('Confirmar envío');
+    for (const h of hijos.filter((x) => x !== 'Confirmar envío')) expect(y(h)).toBeLessThan(y('Confirmar envío'));
   });
 
   it('está saneado: marcadores, ninguna credencial con id y ningún token', () => {
