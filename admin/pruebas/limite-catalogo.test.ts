@@ -318,17 +318,36 @@ describe('importarCatalogo: crea hasta donde deja el plan', () => {
       item('A', { precio: -1 }),
       item('B', { stock: 5 }),
       item('C', { duracionMin: 50 }),
-      { nombre: 'D', precio: 1 },
+      item('D', { activo: 'si' }),
       item('E', { trampa: 1 }),
       'no es un objeto',
       item('F', { imagenUrl: 'javascript:alert(1)' }),
       item('G', { id: '../otro-comercio' }),
+      item('H', { activo: null }),
     ] }, comoAdmin(T));
     expect(r.creados).toEqual([]);
     expect(r.rechazados.map((x) => x.motivo)).toEqual(
-      ['id_invalido', 'forma', 'forma', 'forma', 'forma', 'forma', 'forma', 'forma', 'id_invalido']);
+      ['id_invalido', 'forma', 'forma', 'forma', 'forma', 'forma', 'forma', 'forma', 'id_invalido', 'forma']);
     expect(await cuantos(T)).toBe(1);
     expect(await contadorDe(T)).toMatchObject({ items: 1 });
+  });
+
+  // Arreglo de integración (a): la consola manda `activo` en las altas porque
+  // `csv.ts` lo supone verdadero sin la columna, pero la callable es una API
+  // del servidor y no puede depender de eso. Solo se suple la AUSENCIA, y solo
+  // en un ítem NUEVO: una edición sin `activo` no reactiva uno dado de baja.
+  it('un ítem NUEVO sin `activo` nace activo; uno existente sin `activo` conserva el suyo', async () => {
+    await sembrar(T, { productos: 1 });
+    await db.doc(`tenants/${T}/catalogo/p1`).update({ activo: false });
+    const r = await llamar({ tenantId: T, items: [
+      { nombre: 'Sin columna', precio: 1, moneda: 'BOB' },
+      { id: 'p1', nombre: 'P1', precio: 2 },
+    ] }, comoAdmin(T));
+    expect(r.creados).toEqual(['sin-columna']);
+    expect(r.actualizados).toEqual(['p1']);
+    expect(await producto(T, 'sin-columna')).toMatchObject({ activo: true });
+    expect(await producto(T, 'p1')).toMatchObject({ activo: false, precio: 2 });
+    expect(await contadorDe(T)).toMatchObject({ items: 2, ultimoItem: 'sin-columna' });
   });
 
   it('dos filas con el mismo id: entra la primera y la segunda se rechaza', async () => {

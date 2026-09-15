@@ -331,7 +331,15 @@ export const importarCatalogo = onCall({ region: REGION }, async (peticion: Call
         actualizados.push(p.id);
         return;
       }
-      const nuevo = resultante({}, p.cambios);
+      // UN ÍTEM NUEVO SIN `activo` NACE ACTIVO. Es lo que hace la consola al
+      // leer un archivo sin esa columna (`web/src/lib/csv.ts`) y lo que
+      // espera quien importa: una planilla de productos es una lista de lo que
+      // se ofrece. El valor se pone ANTES de validar, así que la forma que se
+      // exige sigue siendo la de la regla de `create` (que pide `activo`
+      // booleano) y la prueba de equivalencia no cambia. Un `activo` que viene
+      // mal tipado se rechaza igual: solo se suple la AUSENCIA. En una
+      // actualización no se suple nada: el ítem ya tiene el suyo.
+      const nuevo = resultante('activo' in p.cambios ? {} : { activo: true }, p.cambios);
       if (!formaDeAltaValida(nuevo)) {
         rechazados.push({ indice: p.indice, id: p.id, motivo: 'forma' });
         return;
