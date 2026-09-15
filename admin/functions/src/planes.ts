@@ -195,6 +195,17 @@ export function limitesDeCuenta(cuenta: Record<string, unknown> | null | undefin
 // EL AVISO DE CONSUMO
 // -----------------------------------------------------------------------------
 
+/**
+ * EL PERÍODO del conteo mensual, `AAAA-MM`: el id del agregado
+ * `metricas/{periodo}` y el `mes` del aviso de consumo. Es el mes en UTC, como
+ * lo calculó siempre la ingesta. Está acá para que la consola compare el aviso
+ * con EL MISMO período con que lo marcó el servidor: con otro cálculo (UTC−4)
+ * el aviso se escondía, o se mostraba vencido, cuatro horas por mes.
+ */
+export function periodoDe(ahoraMs: number = Date.now()): string {
+  return new Date(ahoraMs).toISOString().slice(0, 7);
+}
+
 /** Lo que se anota en `cuenta/estado.avisoConsumo` (más `en`, que pone el servidor). */
 export interface AvisoConsumo {
   /** Mes del aviso, `AAAA-MM`, el mismo período que el agregado de métricas. */

@@ -13,7 +13,7 @@ import {
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
-import { avisoConsumoPendiente, avisoDeConsumo } from './planes.js';
+import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './planes.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
@@ -569,7 +569,9 @@ export const ingesta = onRequest(
 
     const idConversacion = `wa_${mensaje.telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
-    const periodo = new Date().toISOString().slice(0, 7);   // 'aaaa-mm'
+    // 'aaaa-mm' en UTC. `periodoDe` (planes.ts) es la misma cuenta que usa la
+    // consola para saber si el aviso de consumo es de este período.
+    const periodo = periodoDe();
     const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodo}`);
 
     // -----------------------------------------------------------------------
