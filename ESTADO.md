@@ -4,9 +4,64 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
+
+## 2026-09-15 — cierre del cobro por bloques: lo publicado, lo que quedó atrás y lo que falta
+
+**Lo que se completó después de la entrada del 14/09 «los flujos vivos corrían
+una rama sin fusionar»:**
+
+- **#68 fusionado** (`e7ff4a6`) con el OK de Andres: `main` tiene el prefijo
+  cacheable y los umbrales juntos.
+- **Flujos A y B publicados en n8n el 14/09 a las 10:21** con
+  `publicar-flujo.sh`, desde el contenido de `main`. A pasó de 30 a 33 nodos y
+  B de 22 a 26, y el diagnóstico posterior dio «coincide con el origen». El
+  script guardó el flujo vivo anterior en `Flujos/respaldo-*-20260914-1021*.local.json`
+  (ignorados por git, en la carpeta principal).
+- **`v0.2.0` desplegada**: la corrida terminó con éxito el 14/09 a las 14:42
+  (UTC). Después vino `v0.3.0` (entrada de abajo).
+- **Tráfico real por los nodos nuevos:** el Demo B tiene ejecuciones del 15/09
+  a las 14:36, todas con éxito. El Demo A no tiene ejecuciones desde el 11/09.
+
+**Lo que quedó atrás, verificado el 15/09 con el diagnóstico de solo lectura
+desde `main`:**
+
+- **Los flujos vivos A y B ya no coinciden con `main`.** El 15/09 se fusionaron
+  tres cambios en esos flujos que no se publicaron: `91b03b4` (el asistente se
+  presenta con el nombre que eligió la empresa), `24b00f7` (ajustes de la
+  consolidación de captación) y `0fe218e` (hallazgos de la revisión de
+  seguridad). El diagnóstico muestra distintos las instrucciones del agente,
+  `Config del negocio`, `Procesar respuesta` (B) y dos campos nuevos de
+  `Config base` (`nivelEmojis`, `nombreAsistente`). Es la otra mitad del
+  problema del 14/09: allá una rama publicada sin fusionar, acá una fusión sin
+  publicar. **Publicarlos lo autoriza Andres.**
+- **El sitio sigue en `v0.3.4`.** La etiqueta `v0.3.5`, con la definición de la
+  conversación como bloque de 25 respuestas (novuchat-site#46, fusionado), no
+  se creó. La página de precios publicada todavía dice la regla vieja del tope
+  con corte, y el servidor ya cobra por bloques: contradice la «Base
+  comercial» §2, que exige que la oferta diga el bloque.
+
+**Pendiente, en este orden:**
+
+1. Etiqueta `v0.3.5` del sitio y su aprobación en `production`.
+2. Publicar A y B desde `main`: el diagnóstico está corrido.
+3. Probar los umbrales contra un teléfono real, con umbrales bajos en el
+   negocio de demo (por ejemplo 3 y 5) y devueltos a los de respaldo después.
+4. Lo anotado el 14/09 y sin resolver: posible doble aviso con dos mensajes
+   simultáneos al cruzar un umbral; `Avisar a recepción` (A) sin
+   `onError: continueRegularOutput`; el aviso en texto libre que Meta rechaza
+   fuera de la ventana de 24 h; el campo `mensajesRestantes24h` que nadie
+   envía; el voseo en las instrucciones del Demo B.
+
+**Dos archivos locales sin versionar que conviene resolver:** en la carpeta
+principal, `Analisis/28-agendamiento-agendapro-y-canales-meta.md` y
+`CLIENTES/` no están en ninguna rama. El número 28 ya lo usa
+`Analisis/28-dast-y-prueba-de-humo.md` en `main`, así que ese análisis necesita
+otro número si se versiona. `CLIENTES/` guarda material de clientes; antes de
+versionar algo de ahí, revisar que no lleve datos que el repositorio público no
+puede tener.
 
 ## 2026-09-15 — v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino
 
@@ -198,10 +253,8 @@ producción, y el próximo que publique desde `main` la borra sin saberlo.
 - Los preparados anteriores quedaron respaldados en
   `Flujos/antes-umbrales-*.local.json` (ignorados por git).
 
-**Pendiente, en este orden:** OK de Andres para fusionar el PR; publicar A y B
-con `publicar-flujo.sh --aplicar` (el diagnóstico ya está corrido y limpio);
-aprobar el despliegue de `v0.2.0`; prueba contra un teléfono real; etiqueta
-`v0.3.5` del sitio.
+**Pendiente:** cumplido el 14/09 salvo la prueba contra un teléfono real y la
+etiqueta `v0.3.5` del sitio. Ver la entrada de cierre del 15/09.
 
 ---
 
