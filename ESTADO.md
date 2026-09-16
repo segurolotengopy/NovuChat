@@ -4,7 +4,59 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+
+## 2026-09-15 (noche) — `v0.4.0` en producción: la captación genérica, Kenji y el guion de Silvana
+
+**Desplegado y verificado.** Etiqueta `v0.4.0` sobre `54ce90f`, aprobada por Andres en el
+Environment `production`; acta en `docs/produccion/acta-v0.4.0.md`. Incluye la captación como
+tercer flujo genérico (#78), el horario en la consola (#74), el envío confirmado (#75) y la
+rotación documentada (#76). Todo lo de producción lo ejecutó Claude; Andres solo autorizó.
+
+- **Rotación de `INGESTA_CLIENTE01`** a la versión 2: las cinco Functions quedaron fijadas en ella
+  y n8n recibió la misma clave con `scripts/rotar-ingesta.sh`, **sin que el valor apareciera nunca
+  en pantalla**. El modo `probar` del script hace el mismo pedido que el flujo y confirmó de punta
+  a punta que el servidor la acepta.
+- **Datos de NovuChat cargados** con `cargar-captacion.mjs`: «Kenji», tuteo y emojis moderados
+  (la voz estaba en «impersonal» y por eso el asistente hablaba como un formulario), 5 rubros con
+  Educación, 3 planes, 2 cargos únicos y 10 aclaraciones.
+- **Flujo de Silvana publicado** y probado con teléfono: bienvenida con los dos botones, planes con
+  el botón «Hablar con un asesor», traspaso, y **aviso a recepción aceptado por Meta** con la
+  plantilla ya aprobada.
+- **Storage:** bucket por defecto `novuchat-demo.firebasestorage.app` creado en **us-east1**
+  (la región no se puede cambiar; es de las tres con uso sin costo y la misma de las Functions),
+  más `roles/firebaserules.firestoreServiceAgent` al agente de Storage y
+  `roles/firebasestorage.viewer` a la cuenta de despliegue.
+
+**Regla de trabajo que Andres pidió (y que se había incumplido):** él autoriza, Claude opera.
+Quedó en `CLAUDE.md`, en `~/.claude/CLAUDE.md` y en la memoria. Si una salvaguarda impide un paso
+—no leer el valor de un secreto, no editar el estado de n8n desde un comando suelto—, se convierte
+en una opción de un script revisado (`rotar-ingesta.sh`, `publicar-flujo.sh --reiniciar-estado`) y
+lo corre Claude con confirmación.
+
+**Defectos encontrados en el camino, todos corregidos:** marcadores que se llenaban por prefijo
+(el flujo salía con el Phone ID del Demo A); n8n asignando la credencial de ingesta a los nodos que
+envían a Meta; SSRF por IPv6 con una IPv4 adentro; la corrección de «no soy una IA» que solo
+reemplazaba la primera negación; el botón perdido por el límite de 1024 de un mensaje interactivo;
+el aviso a una persona marcado sin que Meta lo aceptara; la ventana de 24 h que no reiniciaba la
+conversación; el mes del aviso de consumo calculado en dos zonas horarias distintas; y la consola
+que iba a salir sin el bucket configurado.
+
+**En `main`, esperando `v0.5.0`:** planes por comercio con sus límites, productos por plan
+(20/100/500) con contador en las reglas, catálogo hasta 500 con búsqueda y filtros, aviso de
+consumo al 80 %, reglas de Storage con su guía replicable, y **una instancia siempre despierta**
+en `ingesta` y `configuracionFlujo` (~16 USD al mes) porque la primera respuesta tras un rato sin
+tráfico tardaba unos 20 s por arranque en frío.
+
+**Siguiente:**
+1. Fusionar y publicar #84 (al achicar un mensaje se recorta primero el texto y último los precios).
+2. `v0.5.0`: crear `VITE_FIREBASE_STORAGE_BUCKET`, agregar `storage` a `FIREBASE_DEPLOY_ONLY`, y
+   desplegar en el orden de `docs/seguridad/reglas-storage.md` §3.5 (Functions → contadores y
+   planes → consola y reglas juntas).
+3. Sesión del sitio: «bolsa» en lugar de «excedente» y el rubro Educación
+   (`CLIENTES/NOVUCHAT/03-pedido-sesion-sitio-educacion.md`); después, recopiar el corpus.
+4. Flujo de errores que avise cuando una ejecución falle: hoy solo se ve entrando a n8n.
 
 ---
 
