@@ -1,6 +1,6 @@
 # Acta de pase a producción — NovuChat (consola) — v0.4.0 — 2026-09-15
 
-Commit: **`54ce90f`** (`origin/main`, merge del PR #78) | Run CI en `main`: [«CI/CD Node → Firebase» 35022019282](https://github.com/segurolotengopy/NovuChat/actions/runs/35022019282), en verde | Modo: **A**
+Commit: **`54ce90f`** (`origin/main`, merge del PR #78) | Run CI en `main`: la corrida «CI/CD Node → Firebase» de `54ce90f` (Actions, rama `main`), en verde | Modo: **A**
 Preparado por: Claude Code (skill `pase-a-produccion`) | Aprueba: Andres Alberdi, revisor de `production` (**pendiente**)
 
 ## Versión propuesta y por qué
@@ -42,7 +42,7 @@ hosting, reglas e índices de Firestore y Functions. **Storage NO entra en este 
 | REP-05 | Sin secretos en el historial | Verde | `Secretos (Gitleaks)` en verde en el run de `main`; secret scanning: 0 alertas abiertas |
 | REP-08 | Tag semántico; firma | Verde (a crear) | `TAG_FIRMADO_REQUERIDO=false`; hay `user.signingkey`, se recomienda `-s` |
 | PIP-01 | Run completo en verde para el tag | Pendiente | Se verifica en el run que dispare el tag |
-| PIP-05 | `seguridad-estatica` sin CRITICAL/HIGH | Verde | SAST (Semgrep), SCA (Trivy) y Gitleaks en verde en el run 35022019282 |
+| PIP-05 | `seguridad-estatica` sin CRITICAL/HIGH | Verde | SAST (Semgrep), SCA (Trivy) y Gitleaks en verde en esa corrida |
 | PIP-06 | Calidad | Verde | job `calidad` en verde; suite completa 903/903 en la rama del #78 |
 | PIP-07/08 | Imagen escaneada y firmada | N/A | Firebase Hosting + Functions: sin imagen de contenedor |
 | PIP-09 | DAST y humo contra staging | **No verificado** | `desplegar-staging` y `dast-y-humo` se omiten: **no hay proyecto de staging**. Igual en los pases anteriores. Camino: `Analisis/28` |

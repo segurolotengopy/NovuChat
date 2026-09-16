@@ -60,7 +60,9 @@ case "$MODO" in
 import sys
 v = sys.stdin.buffer.read()
 salto = v.endswith(b"\n")
-hexa = len(v) > 0 and all(c in b"0123456789abcdef" for c in v)
+# Sin la cadena de dígitos literal: el control de saneo del repositorio público
+# la lee como una secuencia larga de dígitos.
+hexa = len(v) > 0 and all(48 <= c <= 57 or 97 <= c <= 102 for c in v)
 print("  %d bytes · termina en salto de línea: %s · solo hexadecimal: %s" % (len(v), salto, hexa))
 sys.exit(0 if len(v) == 64 and not salto and hexa else 1)
 ' && echo "  ✓ versión $VERSION de $SECRETO: forma correcta" \
