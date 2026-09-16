@@ -118,7 +118,14 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   reglas mientras falte.
 
 - El administrador del comercio entra con **contraseña**, nunca con la cuenta de
-  Google del propietario. El enlace para ponerla no se pega en ningún chat.
+  Google del propietario. **El enlace para ponerla no se imprime**: desde el
+  15/09/2026 `alta-comercio.mjs` lo escribe en `~/enlace-admin-<tenant>.txt` con
+  permisos 600, fuera de todo repositorio, y la salida solo dice dónde quedó.
+  Quien tenga ese enlace fija la contraseña de la cuenta administradora, así que
+  no se pega en ningún chat ni se reenvía, y el archivo se borra al usarlo. Si
+  alguna vez queda a la vista, se invalida cambiando la contraseña de esa cuenta
+  con el SDK Admin (`updateUser` con una clave aleatoria, más
+  `revokeRefreshTokens`) y se emite uno nuevo.
 - El secreto del alias va a n8n como Header Auth `Authorization` = `Bearer <valor>`,
   y lo lee **una persona**: `gcloud secrets versions access latest --secret=INGESTA_CLIENTENN --project <proyecto>`.
   Si ese valor se expone, se da de baja el cliente o se reasigna el alias, se rota:
@@ -135,10 +142,46 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   El script rechaza lo que no cumple el contrato (más de 8 rubros, un precio
   negativo, más de 5 planes sin `archivoPlanes`) y un comercio sin `onboarding`
   en `flujos`. El de NovuChat es `admin/scripts/datos/captacion-novuchat.json`.
-- En la consola, con el administrador: número de recepción, horario, catálogo y
-  **«Cómo trata al cliente»** (tú, usted, vos o impersonal). Lo que dice la
-  consola gana sobre el respaldo del flujo: NovuChat quedó en «Impersonal» y el
-  asistente hablaba como un formulario («Se registra el nombre…»).
+- **La configuración del comercio —negocio, horario, catálogo y agendas— se
+  carga de una vez desde un JSON versionado**, después de `alta-comercio.mjs` y
+  antes de entrar a la consola (la consola no tiene pantalla para el horario, y
+  cargar tres pestañas a mano no se puede repetir). El archivo es
+  `admin/scripts/datos/negocio-<id>.json` (el de Clínica Platinum,
+  `negocio-platinum.json`, sale de `CLIENTES/PLATINUM/conocimiento-asistente.md`
+  §2 y §4) y **no lleva el número de recepción ni los calendarios**: lleva
+  marcadores (`numeroRecepcionMarcador`, `calendarioMarcador`) que el script
+  resuelve desde la tabla de `CONFIGURACION.local.md`. Esa tabla la completa
+  **una persona, a mano** —`configurar-cliente.sh` escribe los marcadores
+  `${WA_…_<CLIENTE>}` del canal, no estos— con una fila por marcador, en el
+  mismo formato que las demás filas de la tabla:
+
+  ```
+  | `REEMPLAZAR_NUMERO_RECEPCION_<CLIENTE>` | 591… | recepción de <Cliente> |
+  | `REEMPLAZAR_CALENDARIO_<CLIENTE>_1` | <64 hex>@group.calendar.google.com | agenda 1 |
+  ```
+
+  Primero en seco (desde un worktree, `--local` apunta a la tabla de la carpeta
+  principal):
+
+  ```bash
+  node admin/scripts/cargar-negocio.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/negocio-<id>.json --local "$HOME/NovuChat/CONFIGURACION.local.md"
+  ```
+
+  Valida con el mismo contrato que `firestore.rules` (largos, enumerados de
+  voz, los siete días del horario, teléfono, calendario de 64 hexadecimales
+  exactos, servicios de cada agenda presentes en el catálogo del archivo),
+  rechaza claves fuera del contrato y exige el comercio activo y con
+  `agendamiento` en `flujos` para las agendas. Un marcador que falta en la
+  tabla se avisa en rojo en seco y **niega** el `--aplicar`. Escribe en una
+  transacción `config/negocio`, `config/agendamiento`, `catalogo/{id}` y
+  `funcionarios/{id}` (con el horario del negocio) con sello
+  `cargar-negocio`, deja auditoría y relee todo como evidencia. Lo que ya
+  existía y el archivo no nombra queda como está y se informa.
+- En la consola, con el administrador: revisar lo cargado, número de recepción,
+  horario, catálogo y **«Cómo trata al cliente»** (tú, usted, vos o impersonal).
+  Lo que dice la consola gana sobre el respaldo del flujo: NovuChat quedó en
+  «Impersonal» y el asistente hablaba como un formulario («Se registra el
+  nombre…»).
 
 ## 5 · Flujo
 

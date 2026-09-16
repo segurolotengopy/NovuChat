@@ -288,3 +288,64 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
   techo, igual que A y B: una caída del panel no deja sin respuesta a nadie.
 - `crmUrl` vacío: el CRM todavía no existe. Los prospectos quedan en la consola
   (Conversaciones del tenant `novuchat`) y en el aviso interno.
+
+---
+
+## 8. Flujo de reservas de Clínica Platinum (`platinum-agendamiento.json`)
+
+**Primer cliente con el flujo de agendamiento** (15/09/2026; demo el 16/09).
+Clínica dental y de estética facial en Santa Cruz. Es una copia del Demo A
+vigente —33 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
+candado contra la doble reserva— con los datos del cliente y **un solo mecanismo
+nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
+`instruccionesExtra` (el texto libre de hasta 1.500 caracteres que el comercio
+escribe en su consola) **delimitado y rotulado como dato**, después de las
+reglas de comportamiento y de las herramientas; si contradice una regla, manda
+la regla. `Config del negocio` toma el de la consola si viene con contenido y,
+si no, el respaldo de `Config base` (misma regla que los demás textos). La
+fuente de los textos es `CLIENTES/PLATINUM/conocimiento-asistente.md`, carpeta
+local: si cambia ahí, cambia en `Config base` y en la consola.
+
+Lo demás que difiere del Demo A: trato de **usted** y pocos emojis (repertorio
+dental), dos agendas —«Dr. Christyan Sandoval» y «Dr. Juan Pérez», nombre
+provisional hasta que la clínica lo confirme— cada una con su calendario, los
+ejemplos del prompt en clave dental, la **duración por servicio** en el prompt y
+en `agendar_cita` (60 minutos el blanqueamiento, 30 la valoración clínica y
+cualquier otro), el rótulo del aviso a recepción, y las credenciales con nombre
+propio e id vacío: «NovuChat ingesta (Clínica Platinum)» en los cuatro nodos
+HTTP y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp.
+`publicar-flujo.sh` asigna por ese nombre y avisa si no existe.
+
+**Mensajes por conversación: los mismos que el Demo A.** No agrega ni quita
+ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de
+siempre (tres rechazos, reserva no verificada, umbrales del servidor).
+
+Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
+compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los
+umbrales, el orden del lienzo y la elección de agenda por odontólogo). Además
+recorre las suites comunes `flujos-umbrales`, `prefijo-cacheable` y
+`estado-comercio`.
+
+### Marcadores e importación
+
+Cada marcador necesita **su fila exacta** en la tabla de `CONFIGURACION.local.md`
+(`preparar-import.sh` no acepta una fila de otro cliente por prefijo):
+
+| Marcador | Qué va |
+|---|---|
+| `REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM` | ID del número de WhatsApp de la clínica (no el número) |
+| `REEMPLAZAR_NUMERO_RECEPCION_PLATINUM` | Celular que recibe los avisos, sin `+` (para el demo, el de Andres; debe escribir primero al número) |
+| `REEMPLAZAR_CALENDARIO_PLATINUM_1` | Calendario del Dr. Sandoval; también es el del negocio y el de los tres servicios sin persona elegida |
+| `REEMPLAZAR_CALENDARIO_PLATINUM_2` | Calendario del Dr. Juan Pérez |
+| `REEMPLAZAR_HORARIO_ATENCION_PLATINUM` | Horario de atención (no consta en las fuentes: confirmar con la clínica). Es el respaldo si la consola no contesta |
+
+```bash
+./scripts/preparar-import.sh Flujos/platinum-agendamiento.json .env.platinum
+```
+
+**Con el segundo argumento**, siempre: sin él el flujo se lleva la ruta de
+webhook del Demo A. Después, en n8n: importar, credenciales (WhatsApp Trigger de
+la app de la clínica, «WhatsApp Clínica Platinum (envío)» con el token
+permanente, «NovuChat ingesta (Clínica Platinum)» con el secreto del alias, la
+Google Calendar OAuth2 que tenga acceso a los DOS calendarios), `Trigger On` =
+Messages, **Publish**, y la URL de Production al webhook de la app.

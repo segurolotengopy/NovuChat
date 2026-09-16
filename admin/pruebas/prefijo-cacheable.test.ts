@@ -51,6 +51,9 @@ const flujo = (archivo: string) => JSON.parse(
 const FLUJOS = [
   { archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
   { archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat', trasElTope: '¿Saludo inicial?' },
+  // Reservas de Clínica Platinum: el Demo A con una sección más en el prompt
+  // (`instruccionesExtra`), que es texto del negocio y no cambia entre turnos.
+  { archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
 ] as const;
 
 const nodo = (f: Flujo, nombre: string) => {

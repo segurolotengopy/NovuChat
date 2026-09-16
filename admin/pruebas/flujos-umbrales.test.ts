@@ -137,6 +137,13 @@ const FLUJOS = [
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
     campoTexto: 'textoAviso',
   },
+  // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
+  // cliente: obedece los umbrales por los mismos nodos.
+  {
+    archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
+    compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
+    campoTexto: 'motivoTransferencia',
+  },
 ] as const;
 
 describe('El mensaje fijo de uso extendido', () => {

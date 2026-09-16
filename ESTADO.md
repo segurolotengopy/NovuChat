@@ -4,7 +4,60 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-15 (noche) — alta de PLATINUM preparada para el demo del 16/09 (rama `claude/platinum-novuchat-setup-58d3d0`)
+
+Tercer cliente: **Clínica Platinum** (clínica dental, Santa Cruz), flujo de
+reservas, número nuevo +591 7893 3727, dos agendas de Google Calendar (una por
+odontólogo). Andres presenta el demo el 16/09. Todo lo del cliente está en
+`CLIENTES/PLATINUM/` (no versionado): `conocimiento-asistente.md` (datos,
+decisiones, objeciones del XLSX revisadas y los textos definitivos: es la única
+fuente de lo que va a `Config base` y a la consola), `ficha.md`, `estado.md`,
+`guia-meta.md`, `guion-demo.md` y `aceptacion.md`.
+
+**En esta rama, listo para PR:**
+
+- `Flujos/platinum-agendamiento.json` (33 nodos, copia del Demo A de `main`):
+  `Config base` de la clínica con marcadores `REEMPLAZAR_*_PLATINUM*`, trato de
+  usted, dos funcionarios, y **un mecanismo nuevo que el Demo A no tenía**: el
+  campo `instruccionesExtra` de la consola (≤ 1.500 caracteres, ya existía en
+  las reglas y en `configuracionFlujo`) entra al prompt en una sección
+  delimitada como dato del negocio; la consola pisa el respaldo solo si viene
+  con contenido. Cero mensajes de diferencia por conversación. Suite
+  `admin/pruebas/platinum-flujo.test.ts` (42) y el flujo sumado a las suites
+  comunes de umbrales, prefijo cacheable y estado del comercio.
+- `admin/scripts/cargar-negocio.mjs` + `admin/scripts/datos/negocio-platinum.json`
+  + `admin/pruebas/cargar-negocio.test.ts` (15, escritas negando): carga de una
+  vez `config/negocio`, `config/agendamiento`, catálogo y agendas de un comercio
+  desde un JSON versionado, con el contrato de las reglas, marcadores resueltos
+  desde `CONFIGURACION.local.md`, seco por defecto. Cierra el hueco de que el
+  horario no tiene pantalla y de que la configuración de un cliente no se podía
+  repetir. Runbook etapa 4 actualizado.
+- Pruebas: 1001/1002 en la corrida completa; la única falla es previa y ajena
+  (`onboarding-flujo` contra el índice del sitio, fuera del repo). Saneo 0.
+
+**Hallazgo:** `${GCP_PROJECT_ID}` de `CONFIGURACION.local.md` es el proyecto de
+los demos, sin Firestore; el de la consola es el `quota_project_id` de las
+credenciales de `~/.config/gcloud-novuchat-prod`. El runbook dice «<proyecto>»
+sin aclararlo. Simulado en seco contra el correcto: `platinum` libre, siguiente
+alias `cliente02`.
+
+**Pendiente, en orden (todo con confirmación de Andres):** filas
+`REEMPLAZAR_NUMERO_RECEPCION_PLATINUM`, `_CALENDARIO_PLATINUM_1/_2`,
+`_HORARIO_ATENCION_PLATINUM` y `_PHONE_NUMBER_ID_PLATINUM` en la tabla local;
+`alta-comercio.mjs --aplicar`; `cargar-negocio.mjs --aplicar`; Meta (app y WABA
+«Platinum» en NovuChat Produccion, según `guia-meta.md`); `configurar-cliente.sh`;
+`asignar-numero.mjs` con `cliente02`; `preparar-import.sh … .env.platinum`;
+importar y Publish; aceptación con dos teléfonos. **Decidido por Andres el 15/09 (noche):** se procede con 500 Bs de campaña sobre
+600 regular y con el horario supuesto; el segundo odontólogo es el Dr. Juan
+Pérez; el portafolio del demo es «NovuChat Produccion» (opción (a) de
+`guia-meta.md`); administrador `platinum@novuchat.site`; recepción del demo, el
+celular …1250. Queda por confirmar con la clínica el horario real y qué servicios
+hace cada odontólogo (`CLIENTES/PLATINUM/estado.md`).
+
 
 
 ## 2026-09-15 (noche) — `v0.4.0` en producción: la captación genérica, Kenji y el guion de Silvana
