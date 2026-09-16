@@ -268,6 +268,15 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 
 ## Flujo de trabajo
 
+- **Andres autoriza; Claude opera** (pedido una y otra vez; 15/09/2026). Todo
+  paso de un procedimiento —despliegues, etiquetas, scripts con `--aplicar`,
+  IAM, rotación de secretos, n8n, variables de GitHub— lo ejecuta Claude después
+  del OK de Andres en el chat. Nunca se le pasan comandos para que los corra, ni
+  con marcadores para reemplazar. Si una salvaguarda impide un paso (no leer el
+  valor de un secreto), se automatiza en un script revisado del repositorio que
+  lo hace sin mostrar el valor (`scripts/rotar-ingesta.sh`), y lo corre Claude
+  con confirmación. Lo único de Andres es lo que el sistema exige a una persona:
+  aprobar el Environment `production`, Meta, un teléfono.
 - **Alta de un cliente:** seguir `docs/alta-cliente/RUNBOOK.md`. El flujo
   guardado `/alta-cliente` lo recorre por etapas con los agentes `alta-cliente`,
   `meta-whatsapp`, `plataforma` y `flujos-n8n`. Los agentes ejecutan lo que
