@@ -102,7 +102,14 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
 ```
 
 - El administrador del comercio entra con **contraseña**, nunca con la cuenta de
-  Google del propietario. El enlace para ponerla no se pega en ningún chat.
+  Google del propietario. **El enlace para ponerla no se imprime**: desde el
+  15/09/2026 `alta-comercio.mjs` lo escribe en `~/enlace-admin-<tenant>.txt` con
+  permisos 600, fuera de todo repositorio, y la salida solo dice dónde quedó.
+  Quien tenga ese enlace fija la contraseña de la cuenta administradora, así que
+  no se pega en ningún chat ni se reenvía, y el archivo se borra al usarlo. Si
+  alguna vez queda a la vista, se invalida cambiando la contraseña de esa cuenta
+  con el SDK Admin (`updateUser` con una clave aleatoria, más
+  `revokeRefreshTokens`) y se emite uno nuevo.
 - El secreto del alias va a n8n como Header Auth `Authorization` = `Bearer <valor>`,
   y lo lee **una persona**: `gcloud secrets versions access latest --secret=INGESTA_CLIENTENN --project <proyecto>`.
   Si ese valor se expone, se da de baja el cliente o se reasigna el alias, se rota:

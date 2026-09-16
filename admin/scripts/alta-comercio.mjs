@@ -12,7 +12,8 @@
  *
  * CÓMO SE RESUELVE LA CONTRASEÑA. No se elige ninguna. Se crea la cuenta con una
  * clave aleatoria de 32 bytes que **no se imprime, no se guarda y nadie ve**, y
- * se genera un enlace de restablecimiento para que la persona ponga la suya. Es
+ * se genera un enlace de restablecimiento para que la persona ponga la suya, que
+ * NO se imprime: se escribe en `~/enlace-admin-<tenant>.txt` con permisos 600. Es
  * la diferencia entre «te mando tu contraseña por WhatsApp» y un alta seria.
  *
  * Y RESUELVE ADEMÁS EL CORREO VERIFICADO, que las reglas exigen para cualquier
@@ -28,6 +29,9 @@
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
 import { randomBytes } from 'node:crypto';
+import { chmodSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -143,9 +147,29 @@ await auth.setCustomUserClaims(usuario.uid, {
 console.log('  ✓ rol de administrador');
 
 // --- 4. el enlace -----------------------------------------------------------
+//
+// EL ENLACE NO SE IMPRIME, Y ESO NO ES PRUDENCIA DE MÁS. Quien tenga el
+// `oobCode` de este enlace FIJA la contraseña de la cuenta administradora del
+// comercio: es, por unas horas, la credencial misma. El runbook ya decía «no se
+// pega en ningún chat», pero el script lo escribía en su salida estándar, así
+// que bastaba con que lo corriera un agente —o con que alguien pegara la salida
+// para pedir ayuda— para publicarlo. Pasó el 15/09/2026 en el alta de Clínica
+// Platinum: el enlace quedó a la vista en una conversación, y hubo que rotar la
+// contraseña para invalidarlo.
+//
+// Va a un archivo del `$HOME` con permisos 600, FUERA de cualquier repositorio:
+// el `CLIENTES/<NOMBRE>/` del proyecto está dentro del repo público y un
+// `git add` distraído lo subiría. La salida dice dónde quedó, nunca qué dice.
 const enlace = await auth.generatePasswordResetLink(ADMIN);
-console.log('\n  Enlace para que ponga su contraseña (vence en unas horas):\n');
-console.log(`  ${enlace}\n`);
+const destino = join(homedir(), `enlace-admin-${TENANT}.txt`);
+writeFileSync(destino,
+  `Enlace para que ${ADMIN} ponga su contrasena en la consola de NovuChat.\n`
+  + `Comercio: ${TENANT}. Un solo uso, vence en unas horas.\n`
+  + `NO lo pegue en ningun chat ni lo reenvie: quien lo tenga fija esa contrasena.\n`
+  + `Borre este archivo apenas lo use.\n\n${enlace}\n`, 'utf8');
+chmodSync(destino, 0o600);
+console.log('\n  Enlace para que ponga su contraseña (vence en unas horas), escrito en:');
+console.log(`  ${destino}   (solo para usted; no se muestra acá)\n`);
 console.log('  Al completarlo, Firebase marca el correo como verificado, que es lo');
 console.log('  que las reglas exigen para cualquier rol de comercio.\n');
 
