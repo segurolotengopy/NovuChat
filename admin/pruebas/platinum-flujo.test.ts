@@ -356,7 +356,7 @@ describe('(d) El prompt inserta la información del negocio como dato, sin resto
 
   it('los ejemplos son dentales y nombran a los dos odontólogos', () => {
     expect(p).toContain('«lo atiende el Dr. Christyan Sandoval»');
-    expect(p).toContain('el Dr. Christyan Sandoval puede\n  atender a las 10:00 y el segundo odontólogo a las 10:00');
+    expect(p).toContain('el Dr. Christyan Sandoval puede\n  atender a las 10:00 y el Dr. Juan Pérez a las 10:00');
     expect(p).toContain('un odontólogo no puede hacer dos blanqueamientos');
     expect(p).toContain('ofrece agendar una valoración clínica.');
   });
@@ -499,7 +499,7 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
 
   it('Config base declara dos funcionarios, cada uno con su marcador de calendario', () => {
     expect(equipo).toHaveLength(2);
-    expect(equipo.map((f) => f.nombre)).toEqual(['Dr. Christyan Sandoval', 'Segundo odontólogo']);
+    expect(equipo.map((f) => f.nombre)).toEqual(['Dr. Christyan Sandoval', 'Dr. Juan Pérez']);
     expect(equipo.map((f) => f.calendario)).toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
     expect(equipo[0]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica', 'estetica facial']);
     expect(equipo[1]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
@@ -516,7 +516,7 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
     '%s elige la agenda de la persona que atiende, o la del servicio si no se eligió', (herramienta) => {
       const calendario = nodo(flujo, herramienta).parameters['calendar'].value;
       const elegir = (deLaIA: J) => expresion(calendario, {}, { 'Config del negocio': base }, deLaIA);
-      expect(elegir({ funcionario: 'Segundo odontólogo', servicio: 'blanqueamiento dental profesional' }))
+      expect(elegir({ funcionario: 'Dr. Juan Pérez', servicio: 'blanqueamiento dental profesional' }))
         .toBe('REEMPLAZAR_CALENDARIO_PLATINUM_2');
       expect(elegir({ funcionario: 'Dr. Christyan Sandoval', servicio: 'valoración clínica' }))
         .toBe('REEMPLAZAR_CALENDARIO_PLATINUM_1');

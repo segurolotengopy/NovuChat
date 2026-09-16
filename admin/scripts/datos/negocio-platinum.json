@@ -82,8 +82,8 @@
       "activo": true
     },
     {
-      "id": "odontologo-2",
-      "nombre": "Segundo odontólogo",
+      "id": "juan-perez",
+      "nombre": "Dr. Juan Pérez",
       "especialidad": "Odontología general",
       "calendarioMarcador": "REEMPLAZAR_CALENDARIO_PLATINUM_2",
       "servicios": ["blanqueamiento-dental-profesional", "valoracion-clinica"],

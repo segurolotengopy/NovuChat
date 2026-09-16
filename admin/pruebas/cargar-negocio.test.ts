@@ -123,7 +123,7 @@ describe('cargar-negocio.mjs', () => {
     const salidaSeco = `${seco.stdout}${seco.stderr}`;
     expect(seco.status, salidaSeco).toBe(0);
     expect(salidaSeco).toMatch(/sin resolver.*negocio\.numeroRecepcion: el marcador REEMPLAZAR_NUMERO_RECEPCION_PLATINUM no está/);
-    expect(salidaSeco).toMatch(/funcionarios\/odontologo-2\.calendarioId: el marcador REEMPLAZAR_CALENDARIO_PLATINUM_2 no está/);
+    expect(salidaSeco).toMatch(/funcionarios\/juan-perez\.calendarioId: el marcador REEMPLAZAR_CALENDARIO_PLATINUM_2 no está/);
     expect(salidaSeco).toMatch(/Seco: no se escribió nada/);
 
     const aplicar = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', LOCAL_VACIA, '--aplicar'],
@@ -281,7 +281,7 @@ describe('cargar-negocio.mjs', () => {
     expect(f1['horarioTrabajo']['_nota']).toBeUndefined();
     expect(f1['id']).toBeUndefined();
     expect(f1['calendarioMarcador']).toBeUndefined();
-    const f2 = (await doc(`${T}/funcionarios/odontologo-2`)) ?? {};
+    const f2 = (await doc(`${T}/funcionarios/juan-perez`)) ?? {};
     expect(f2).toMatchObject({ calendarioId: CALENDARIO_2, servicios: ['blanqueamiento-dental-profesional', 'valoracion-clinica'] });
 
     const auditoria = await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'cargar_negocio').get();

@@ -51,9 +51,12 @@ alias `cliente02`.
 `alta-comercio.mjs --aplicar`; `cargar-negocio.mjs --aplicar`; Meta (app y WABA
 «Platinum» en NovuChat Produccion, según `guia-meta.md`); `configurar-cliente.sh`;
 `asignar-numero.mjs` con `cliente02`; `preparar-import.sh … .env.platinum`;
-importar y Publish; aceptación con dos teléfonos. Las suposiciones que el
-cliente tiene que confirmar (500 sobre 600, horario, nombre del segundo
-odontólogo, recepción) están en `CLIENTES/PLATINUM/estado.md`.
+importar y Publish; aceptación con dos teléfonos. **Decidido por Andres el 15/09 (noche):** se procede con 500 Bs de campaña sobre
+600 regular y con el horario supuesto; el segundo odontólogo es el Dr. Juan
+Pérez; el portafolio del demo es «NovuChat Produccion» (opción (a) de
+`guia-meta.md`); administrador `platinum@novuchat.site`; recepción del demo, el
+celular …1250. Queda por confirmar con la clínica el horario real y qué servicios
+hace cada odontólogo (`CLIENTES/PLATINUM/estado.md`).
 
 ---
 

@@ -307,7 +307,7 @@ fuente de los textos es `CLIENTES/PLATINUM/conocimiento-asistente.md`, carpeta
 local: si cambia ahí, cambia en `Config base` y en la consola.
 
 Lo demás que difiere del Demo A: trato de **usted** y pocos emojis (repertorio
-dental), dos agendas —«Dr. Christyan Sandoval» y «Segundo odontólogo», nombre
+dental), dos agendas —«Dr. Christyan Sandoval» y «Dr. Juan Pérez», nombre
 provisional hasta que la clínica lo confirme— cada una con su calendario, los
 ejemplos del prompt en clave dental, la **duración por servicio** en el prompt y
 en `agendar_cita` (60 minutos el blanqueamiento, 30 la valoración clínica y
@@ -336,7 +336,7 @@ Cada marcador necesita **su fila exacta** en la tabla de `CONFIGURACION.local.md
 | `REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM` | ID del número de WhatsApp de la clínica (no el número) |
 | `REEMPLAZAR_NUMERO_RECEPCION_PLATINUM` | Celular que recibe los avisos, sin `+` (para el demo, el de Andres; debe escribir primero al número) |
 | `REEMPLAZAR_CALENDARIO_PLATINUM_1` | Calendario del Dr. Sandoval; también es el del negocio y el de los tres servicios sin persona elegida |
-| `REEMPLAZAR_CALENDARIO_PLATINUM_2` | Calendario del segundo odontólogo |
+| `REEMPLAZAR_CALENDARIO_PLATINUM_2` | Calendario del Dr. Juan Pérez |
 | `REEMPLAZAR_HORARIO_ATENCION_PLATINUM` | Horario de atención (no consta en las fuentes: confirmar con la clínica). Es el respaldo si la consola no contesta |
 
 ```bash
