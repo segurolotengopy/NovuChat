@@ -131,7 +131,7 @@ comercio. Conviene tener las dos cosas separadas en la cabeza.
 | Verificación de correo antes del primer acceso | ✅ **cubierto de verdad** | `correoVerificado()` en las reglas: sin verificar, **el servidor niega los datos**. No es un aviso de interfaz que se saltee recargando. Gratis |
 | Recuperación de contraseña | ✅ cubierto | `sendPasswordResetEmail`. Gratis |
 | No confirmar qué correos están registrados | ✅ cubierto | protección de enumeración de Firebase + mensajes de error genéricos en el ingreso. Gratis |
-| Longitud mínima real de contraseña | ⚠️ **parcial** | Firebase Auth impone 6. El formulario pide 12, **pero eso es del navegador y se saltea**. Una política real exige **Identity Platform** |
+| Longitud mínima real de contraseña | ⚠️ **parcial** | Firebase Auth impone 6. La consola pide **8** al cambiarla (`web/src/lib/contrasena.ts`), **pero eso es del navegador y se saltea**. Una política real —y el bloqueo de contraseñas comunes— exige **Identity Platform** |
 | Límite de intentos / bloqueo | ⚠️ **parcial** | hay anti-abuso por IP, no configurable ni garantizado. Un límite por cuenta exige **Identity Platform**. Mitigación gratuita: **App Check con reCAPTCHA Enterprise** en el ingreso |
 | Segundo factor para cuentas de contraseña | ❌ **no cubierto** | exige **Identity Platform**. Los superadministradores sí lo tienen: su MFA la administra Google |
 
@@ -146,10 +146,31 @@ después: es de las cosas que se vuelven incómodas con clientes ya adentro.
 
 **El riesgo residual, dicho con todas las letras.** Mientras no se active, una
 contraseña de administrador de comercio —sin segundo factor, con política de 6
-caracteres— protege las conversaciones de **un** comercio. Lo que impide que ese
+caracteres del lado del servidor— protege las conversaciones de **un** comercio. Lo que impide que ese
 riesgo escale es el aislamiento multi-tenant (T-1), y lo que impide que llegue a
 la plataforma es el vínculo con el proveedor (T-19). No es lo ideal, pero está
 acotado, y las dos barreras que lo acotan tienen pruebas.
+
+**El mínimo de la consola, y por qué 8.** Desde el 16/09/2026 la consola pide
+**8 caracteres**, no 12, y los pide **solo al crear o cambiar** la contraseña
+(«Mi cuenta»), no al usarla: el formulario de ingreso ya no lleva `minLength`.
+El criterio es el de **NIST SP 800-63B** —mínimo 8, contraseñas largas
+admitidas (sin `maxLength`), **sin composición obligatoria** de mayúsculas,
+números ni símbolos, y **sin expiración periódica**—, y el motivo de urgencia
+fue un caso real: la pantalla de restablecimiento que sirve Firebase aceptó una
+contraseña de 11 caracteres y el ingreso de la consola la rechazó, dejando a un
+administrador con una credencial válida y una pantalla que no lo dejaba pasar,
+sin explicar nada. Un `minLength` en el ingreso no le agrega dificultad a quien
+adivina contraseñas —no las escribe más cortas— y sí bloquea a quien la tiene
+bien. El número está una sola vez, en `web/src/lib/contrasena.ts`, con la
+prueba `pruebas/contrasena-minimo.test.ts` que verifica que las dos pantallas lo
+usen.
+
+**Lo que queda pendiente, y es configuración, no código:** activar la *password
+policy* de Firebase Auth (longitud mínima 8 y **bloqueo de contraseñas comunes o
+comprometidas**, sin reglas de composición). Es lo único que hace cumplir el
+mínimo **en la pantalla de restablecimiento de Firebase**, que hoy acepta desde
+6, y forma parte de Identity Platform. Paso 14c-bis de `DISENO.md` §11.
 
 ---
 
