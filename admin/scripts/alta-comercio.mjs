@@ -106,12 +106,27 @@ if (!usuario) {
 }
 
 // --- 2. la ficha del negocio ------------------------------------------------
+// EL PLAN INICIAL SALE DE `functions/src/planes.ts` (`cuentaInicial`): Impulso,
+// con su copia de límites y la versión del catálogo, lo mismo que `altaTenant`.
+// Antes se escribía `plan: 'basico'`, que no es un plan del catálogo. Si el
+// comercio contrató otro plan, se asigna después con `asignar-plan.mjs`.
+const { cuentaInicial } = await import('../functions/src/planes.ts');
+const cuenta = cuentaInicial();
 const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
 const lote = db.batch();
 lote.create(db.doc(`tenants/${TENANT}`), {
-  nombre: NOMBRE, estado: 'activo', plan: 'basico',
+  nombre: NOMBRE, estado: 'activo', plan: cuenta.plan,
   vertical: FLUJOS[0], flujos: FLUJOS,
   waPhoneNumberId: null, waWabaId: null, ...sello,
+});
+lote.create(db.doc(`tenants/${TENANT}/cuenta/estado`), {
+  ...cuenta, actualizadoEn: Timestamp.now(),
+});
+// EL CONTADOR DEL CATÁLOGO NACE EN CERO. Sin él, las reglas no dejan dar de
+// alta ni de baja un producto (no pueden saber cuántos hay). Exactamente estos
+// tres campos: es lo único que la regla del contador acepta después.
+lote.create(db.doc(`tenants/${TENANT}/contadores/catalogo`), {
+  items: 0, ultimoItem: '', actualizadoEn: Timestamp.now(),
 });
 lote.create(db.doc(`tenants/${TENANT}/config/negocio`), {
   nombreNegocio: NOMBRE, zonaHoraria: 'America/La_Paz', moneda: 'BOB',
@@ -155,6 +170,9 @@ const claim = ((await auth.getUser(usuario.uid)).customClaims ?? {}).nc ?? {};
 console.log(`  Verificación: ficha ${ficha.exists ? 'sí' : 'NO'}`
   + ` · flujos ${JSON.stringify(ficha.get('flujos'))}`
   + ` · rol ${claim.t?.[TENANT] ?? 'NO'}\n`);
-console.log('  SIGUE (docs/alta-cliente/RUNBOOK.md, etapa 4): asignarle su número y su');
-console.log('  alias de ingesta con `node scripts/asignar-numero.mjs --listar` y después');
+console.log(`  Plan       : ${cuenta.plan} (${cuenta.limites.productos} productos,`
+  + ` ${cuenta.limites.conversaciones} conversaciones) · contador del catálogo en 0\n`);
+console.log('  SIGUE (docs/alta-cliente/RUNBOOK.md, etapa 4): si contrató otro plan,');
+console.log('  `node scripts/asignar-plan.mjs --tenant ... --plan <plan>`; después, su número');
+console.log('  y su alias de ingesta con `node scripts/asignar-numero.mjs --listar` y');
 console.log('  `--tenant ... --numero ... --waba ... --flujo ... --alias clienteNN`.\n');

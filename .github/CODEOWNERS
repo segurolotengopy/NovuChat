@@ -42,6 +42,10 @@
 # seguridad: nunca deben fusionarse sin revisión.
 /admin/                             @segurolotengopy
 /admin/firestore.rules              @segurolotengopy
+# Reglas de Storage: el mismo control, en el otro servicio (estándar:
+# /storage.rules @ORG/seguridad). Van juntas: la identidad es la misma.
+/admin/storage.rules                @segurolotengopy
+/docs/seguridad/                    @segurolotengopy
 /admin/firebase.json                @segurolotengopy
 /admin/package.json                 @segurolotengopy
 /admin/pnpm-lock.yaml               @segurolotengopy

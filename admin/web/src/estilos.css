@@ -906,3 +906,75 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
   .lista-fila { grid-template-columns: 1fr; }
   .lista-fila-acciones { flex-direction: row; }
 }
+
+/* ── Catálogo de hasta 500: uso del plan, filtros y páginas ──────────────
+   El uso del plan va ARRIBA de la tabla y no al lado del botón «Agregar»: es
+   lo que decide si tiene sentido ponerse a cargar algo. Tres estados con tres
+   colores de los tokens del sistema: neutro, aviso al 90 % y error en el tope.
+   El color nunca va solo: cada estado trae su frase. */
+.uso-plan {
+  max-width: var(--ancho-lectura);
+  margin: var(--space-6) 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.uso-plan > p { margin: var(--space-1) 0; }
+.uso-plan-cifra { font-variant-numeric: tabular-nums; }
+.uso-plan-barra {
+  height: 8px; margin: var(--space-2) 0;
+  border-radius: var(--radius-pildora);
+  background: color-mix(in srgb, var(--color-text) 10%, transparent);
+  overflow: hidden;
+}
+.uso-plan-barra > span {
+  display: block; height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+.uso-plan-cerca { border-color: color-mix(in srgb, var(--color-aviso) 55%, transparent); }
+.uso-plan-cerca .uso-plan-barra > span { background: var(--color-aviso); }
+.uso-plan-lleno { border-color: color-mix(in srgb, var(--color-error) 55%, transparent); }
+.uso-plan-lleno .uso-plan-barra > span { background: var(--color-error); }
+
+/* Los filtros del catálogo son muchos: el buscador se lleva el ancho que
+   sobre y los rangos de precio van angostos, porque ahí entra un número. */
+.filtros-catalogo { margin-bottom: var(--space-3); }
+.filtros-catalogo label:first-child { flex: 1 1 16rem; }
+.filtros-catalogo label:first-child input { width: 100%; max-width: 28rem; }
+.filtros-catalogo input[type="number"] { min-width: 0; width: 8rem; }
+
+/* «Mostrando 1–50 de 237» y las páginas, en una fila encima de la tabla. */
+.catalogo-barra {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--space-2) var(--space-4); margin-bottom: var(--space-3);
+}
+.catalogo-contador {
+  margin: 0; font-size: 14px; font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--color-text) 78%, transparent);
+}
+.paginador {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin: var(--space-3) 0; font-size: 14px; font-variant-numeric: tabular-nums;
+}
+.catalogo-barra .paginador { margin: 0; }
+
+/* La confirmación de «Eliminar» ocupa la celda de acciones: se lee como una
+   pregunta, no como dos botones más. */
+.confirmar-baja {
+  display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2);
+  font-size: 13px; color: var(--color-error);
+}
+
+/* Aviso de consumo del 80 %: el del sistema (`.aviso-datos`) con un poco más
+   de aire, porque encabeza la pantalla. */
+.aviso-consumo { margin: 0 0 var(--space-6); max-width: var(--ancho-lectura); }
+
+/* Marca del 80 % en la cartera del propietario. */
+.tag-aviso {
+  background: color-mix(in srgb, var(--color-aviso) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-aviso) 50%, transparent);
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}

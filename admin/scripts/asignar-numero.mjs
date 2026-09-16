@@ -113,51 +113,75 @@ console.log(`  Flujo     : ${FLUJO}`);
 console.log(`  Alias     : ${ALIAS} (secreto ${secreto})`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
+// UN RECHAZO NO SE LANZA DENTRO DE LA TRANSACCIÓN: se devuelve. Si el callback
+// lanza, el SDK manda el rollback SIN esperarlo («best effort»,
+// `@google-cloud/firestore` transaction.js), y este script termina enseguida con
+// `process.exit`: el rollback no llega a salir y los documentos leídos (la ruta,
+// la ficha y la consulta por alias) quedan BLOQUEADOS hasta que el bloqueo
+// vence. En el emulador eso son ~67 s, y cualquier escritura sobre esos
+// documentos espera: era la causa de los `Transaction lock timeout`
+// intermitentes de `catalogo-web.test.ts`. En producción, el mismo bloqueo
+// frenaría la ingesta de ese número mientras dura. Devolviendo el rechazo, la
+// transacción cierra sin escrituras y libera todo. Es lo mismo que ya hace
+// `asignar-plan.mjs`.
 let plan;
-await db.runTransaction(async (tx) => {
-  // Lecturas antes que escrituras, como exige la transacción.
-  const [ruta, tenant, config, conAlias] = await Promise.all([
-    tx.get(refRuta), tx.get(refTenant),
-    refConfig ? tx.get(refConfig) : Promise.resolve(null),
-    tx.get(db.collection('rutasWhatsApp').where('aliasSecreto', '==', ALIAS).limit(5)),
-  ]);
+try {
+  plan = await db.runTransaction(async (tx) => {
+    // Lecturas antes que escrituras, como exige la transacción.
+    const [ruta, tenant, config, conAlias] = await Promise.all([
+      tx.get(refRuta), tx.get(refTenant),
+      refConfig ? tx.get(refConfig) : Promise.resolve(null),
+      tx.get(db.collection('rutasWhatsApp').where('aliasSecreto', '==', ALIAS).limit(5)),
+    ]);
 
-  if (!tenant.exists) throw new Error(`No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`);
-  if (ruta.exists && ruta.get('tenantId') !== TENANT) {
-    throw new Error('Ese número ya está asignado a OTRO comercio. Libérelo primero.');
-  }
-  const otro = conAlias.docs.find((d) => d.id !== NUMERO);
-  if (otro) {
-    throw new Error(`El alias ${ALIAS} ya lo usa el número ${cola(otro.id)} (${otro.get('tenantId')}). `
-      + 'Use el siguiente libre: --listar.');
-  }
+    if (!tenant.exists) return { error: `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.` };
+    if (ruta.exists && ruta.get('tenantId') !== TENANT) {
+      return { error: 'Ese número ya está asignado a OTRO comercio. Libérelo primero.' };
+    }
+    const otro = conAlias.docs.find((d) => d.id !== NUMERO);
+    if (otro) {
+      return {
+        error: `El alias ${ALIAS} ya lo usa el número ${cola(otro.id)} (${otro.get('tenantId')}). `
+          + 'Use el siguiente libre: --listar.',
+      };
+    }
 
-  plan = {
-    rutaNueva: !ruta.exists,
-    configNueva: Boolean(refConfig && config && !config.exists),
-    estado: tenant.get('estado') ?? 'activo',
-    flujosAntes: tenant.get('flujos') ?? [tenant.get('vertical')].filter(Boolean),
-  };
-  if (!APLICAR) return;
+    const resumen = {
+      rutaNueva: !ruta.exists,
+      configNueva: Boolean(refConfig && config && !config.exists),
+      estado: tenant.get('estado') ?? 'activo',
+      flujosAntes: tenant.get('flujos') ?? [tenant.get('vertical')].filter(Boolean),
+    };
+    if (!APLICAR) return resumen;
 
-  tx.set(refRuta, {
-    tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS,
-    estado: plan.estado,
-    asignadoEn: Timestamp.now(), asignadoPor: 'asignar-numero',
-  }, { merge: true });
-  tx.update(refTenant, {
-    waPhoneNumberId: NUMERO, waWabaId: WABA,
-    vertical: tenant.get('vertical') ?? FLUJO,
-    flujos: FieldValue.arrayUnion(FLUJO),
+    tx.set(refRuta, {
+      tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS,
+      estado: resumen.estado,
+      asignadoEn: Timestamp.now(), asignadoPor: 'asignar-numero',
+    }, { merge: true });
+    tx.update(refTenant, {
+      waPhoneNumberId: NUMERO, waWabaId: WABA,
+      vertical: tenant.get('vertical') ?? FLUJO,
+      flujos: FieldValue.arrayUnion(FLUJO),
+    });
+    if (resumen.configNueva) {
+      tx.set(refConfig, { actualizadoPor: 'asignar-numero', actualizadoEn: Timestamp.now() });
+    }
+    tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
+      accion: 'asignar_numero', uid: 'asignar-numero', en: Timestamp.now(),
+      phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS,
+    });
+    return resumen;
   });
-  if (plan.configNueva) {
-    tx.set(refConfig, { actualizadoPor: 'asignar-numero', actualizadoEn: Timestamp.now() });
-  }
-  tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-    accion: 'asignar_numero', uid: 'asignar-numero', en: Timestamp.now(),
-    phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS,
-  });
-});
+} catch (e) {
+  // Un error de verdad (red, permisos): ese sí sale del SDK, que ya cerró.
+  console.error(`  ✗ ${e instanceof Error ? e.message : String(e)}\n`);
+  process.exit(1);
+}
+if (plan.error) {
+  console.error(`  ✗ ${plan.error}\n`);
+  process.exit(1);
+}
 
 console.log(`  Ruta      : ${plan.rutaNueva ? 'se crea' : 'ya existía, se actualiza'}`);
 console.log(`  Ficha     : flujos ${JSON.stringify(plan.flujosAntes)} + ${FLUJO} · estado ${plan.estado}`);

@@ -39,6 +39,9 @@ export {
 
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
+import {
+  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, type IdPlan,
+} from './planes.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -78,9 +81,18 @@ const exigirAutenticado = (p: CallableRequest): string => {
   return p.auth.uid;
 };
 
+// VÍNCULO ROL ↔ PROVEEDOR, igual que `esPropietario()` en firestore.rules (T-19):
+// el claim de propietario solo vale con una sesión de Google. Sin esto, un `nc.p`
+// puesto por error en una cuenta de contraseña quedaba inerte en las reglas pero
+// ACTIVO en las Functions, que cambian planes y límites (revisión de seguridad
+// del 15/09/2026, MEDIUM preexistente).
 const exigirPropietario = (p: CallableRequest): string => {
   const uid = exigirAutenticado(p);
-  if (!claims(p).p) throw new HttpsError('permission-denied', 'Solo NovuChat.');
+  const proveedor = (p.auth?.token?.['firebase'] as { sign_in_provider?: unknown } | undefined)
+    ?.sign_in_provider;
+  if (!claims(p).p || proveedor !== 'google.com') {
+    throw new HttpsError('permission-denied', 'Solo NovuChat.');
+  }
   return uid;
 };
 
@@ -147,9 +159,20 @@ export const altaTenant = onCall(async (peticion) => {
     throw new HttpsError('failed-precondition', 'El administrador debe haber ingresado una vez.');
   }
 
+  // El plan inicial es el más chico, con su copia de límites (`cuentaInicial`,
+  // planes.ts). Antes se escribía `plan: 'basico'`, que no es del catálogo.
+  const cuenta = cuentaInicial();
   const lote = db().batch();
+  lote.create(db().doc(`tenants/${tenantId}/cuenta/estado`), {
+    ...cuenta, actualizadoEn: Timestamp.now(),
+  });
+  // El contador del catálogo nace en cero: sin él las reglas no dejan dar de
+  // alta ni de baja un producto. Exactamente estos tres campos.
+  lote.create(db().doc(`tenants/${tenantId}/contadores/catalogo`), {
+    items: 0, ultimoItem: '', actualizadoEn: Timestamp.now(),
+  });
   lote.create(ref, {
-    nombre, estado: 'activo', plan: 'basico', vertical, flujos,
+    nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
     // El número de WhatsApp se asigna aparte, con `asignarNumero`: exige
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,
@@ -466,20 +489,68 @@ export const quitarUsuario = onCall(async (peticion) => {
 // `motivoVisible` es el texto que ve EL COMERCIO. Es su relación comercial y
 // tiene derecho a conocerla. No confundir con el mensaje que recibe el CLIENTE
 // FINAL por WhatsApp, que es neutro y no menciona pagos (ver T-18).
+//
+// ESCRITURA PARCIAL (15/09/2026, `Analisis/29` §2.4). Antes escribía
+// `plan: 'basico'`, `montoMensual: 0`, `moneda: 'BOB'` y `motivoVisible: ''` en
+// CADA llamada, vinieran o no, y exigía `estadoPago` siempre: una llamada para
+// ajustar solo los umbrales le devolvía el plan a 'basico' a un comercio real y
+// le dejaba la mensualidad en cero. Ahora cada campo se toca SOLO si viene en
+// la petición, y lo que viene mal se RECHAZA en vez de cambiarse por un valor
+// por defecto: el valor por defecto silencioso es exactamente cómo se pisaba
+// el plan.
+//
+// EL PLAN ES CERRADO: tiene que ser un identificador de `planes.ts`. Al
+// asignarlo se escribe en la cuenta una COPIA de sus límites (`limites`) y la
+// versión del catálogo (`catalogoPlanes`), que es lo que leen quienes hacen
+// cumplir un límite. `tenants/{t}.plan` es un ESPEJO para pintar la lista: se
+// escribe acá, en la misma transacción, y ninguna regla ni ningún límite lo lee.
+// El cambio de plan queda en la auditoría con el antes y el después.
 // ---------------------------------------------------------------------------
 const ESTADOS_PAGO = new Set(['al_dia', 'pendiente', 'vencido']);
 
 export const actualizarEstadoCuenta = onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
-  const datos = peticion.data as Record<string, unknown>;
+  const datos = (peticion.data ?? {}) as Record<string, unknown>;
   const tenantId = texto(datos['tenantId'], 60);
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
 
-  const estadoPago = texto(datos['estadoPago'], 20);
-  if (!ESTADOS_PAGO.has(estadoPago)) throw new HttpsError('invalid-argument', 'Estado de pago inválido.');
+  const viene = (clave: string) => Object.prototype.hasOwnProperty.call(datos, clave);
+  const cambios: Record<string, unknown> = {};
 
-  const monto = Number(datos['montoMensual']);
-  const vence = Number(datos['proximoVencimiento']);
+  if (viene('estadoPago')) {
+    const estadoPago = datos['estadoPago'];
+    if (typeof estadoPago !== 'string' || !ESTADOS_PAGO.has(estadoPago)) {
+      throw new HttpsError('invalid-argument', 'Estado de pago inválido.');
+    }
+    cambios['estadoPago'] = estadoPago;
+  }
+  if (viene('montoMensual')) {
+    const monto = datos['montoMensual'];
+    if (typeof monto !== 'number' || !Number.isFinite(monto) || monto < 0) {
+      throw new HttpsError('invalid-argument', 'Monto mensual inválido.');
+    }
+    cambios['montoMensual'] = monto;
+  }
+  if (viene('moneda')) {
+    const moneda = datos['moneda'];
+    if (moneda !== 'USD' && moneda !== 'BOB') {
+      throw new HttpsError('invalid-argument', 'Moneda inválida: USD o BOB.');
+    }
+    cambios['moneda'] = moneda;
+  }
+  if (viene('proximoVencimiento')) {
+    const vence = datos['proximoVencimiento'];
+    if (vence === null) cambios['proximoVencimiento'] = FieldValue.delete();
+    else if (typeof vence === 'number' && Number.isFinite(vence)) {
+      cambios['proximoVencimiento'] = Timestamp.fromMillis(vence);
+    } else throw new HttpsError('invalid-argument', 'Vencimiento inválido.');
+  }
+  if (viene('motivoVisible')) {
+    if (typeof datos['motivoVisible'] !== 'string') {
+      throw new HttpsError('invalid-argument', 'Motivo visible inválido.');
+    }
+    cambios['motivoVisible'] = texto(datos['motivoVisible'], 300);
+  }
 
   // UMBRALES DE ATENCIÓN POR EMPRESA (`Analisis/27`): a cuántas respuestas en
   // la ventana de 24 h el asistente pasa al operador y a cuántas deja de
@@ -489,45 +560,93 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   // que la ingesta no aceptaría, no se guarda.
   const umbrales: Record<string, unknown> = {};
   for (const clave of ['umbralOperador', 'umbralBloqueo'] as const) {
-    if (!(clave in datos)) continue;
+    if (!viene(clave)) continue;
     const v = datos[clave];
     if (v === null) { umbrales[clave] = FieldValue.delete(); continue; }
     if (!umbralValido(v)) throw new HttpsError('invalid-argument', `${clave} inválido.`);
     umbrales[clave] = v;
   }
-  if (Object.keys(umbrales).length > 0) {
-    const actual = (await db().doc(`tenants/${tenantId}/cuenta/estado`).get()).data() ?? {};
-    const combinados: Record<string, unknown> = { ...actual };
-    for (const [k, v] of Object.entries(umbrales)) {
-      if (v instanceof FieldValue) delete combinados[k]; else combinados[k] = v;
-    }
-    const resultado = umbralesDeAtencion(combinados);
-    const cargados = ['umbralOperador', 'umbralBloqueo'].some((k) => combinados[k] !== undefined);
-    if (cargados && resultado.origen !== 'cuenta') {
+
+  let plan: IdPlan | null = null;
+  if (viene('plan')) {
+    const pedido = datos['plan'];
+    if (!esIdPlan(pedido)) {
       throw new HttpsError('invalid-argument',
-        'El umbral de bloqueo tiene que ser mayor que el de operador.');
+        `Plan desconocido. Tiene que ser uno del catálogo: ${Object.keys(PLANES_ASIGNABLES).join(', ')}.`);
     }
+    plan = pedido;
   }
 
-  await db().doc(`tenants/${tenantId}/cuenta/estado`).set({
-    plan: texto(datos['plan'], 40) || 'basico',
-    estadoPago,
-    montoMensual: Number.isFinite(monto) && monto >= 0 ? monto : 0,
-    moneda: datos['moneda'] === 'USD' ? 'USD' : 'BOB',
-    ...(Number.isFinite(vence) ? { proximoVencimiento: Timestamp.fromMillis(vence) } : {}),
-    motivoVisible: texto(datos['motivoVisible'], 300),
-    ...umbrales,
-    actualizadoEn: Timestamp.now(),
-  }, { merge: true });
+  const otros = [...Object.keys(cambios), ...Object.keys(umbrales)].sort();
+  if (otros.length === 0 && plan === null) {
+    throw new HttpsError('invalid-argument', 'Nada que actualizar.');
+  }
 
-  await auditar(tenantId, 'estado_cuenta', uid, {
-    estadoPago,
-    ...(Object.keys(umbrales).length > 0
-      ? { umbrales: Object.fromEntries(Object.entries(umbrales)
-          .map(([k, v]) => [k, v instanceof FieldValue ? null : v])) }
-      : {}),
+  const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
+  const refFicha = db().doc(`tenants/${tenantId}`);
+  const refAuditoria = db().collection(`tenants/${tenantId}/auditoria`);
+
+  // UNA TRANSACCIÓN: la cuenta, el espejo de la ficha y la auditoría se
+  // escriben juntos o no se escribe nada. Lecturas antes que escrituras.
+  const limites = await db().runTransaction(async (tx) => {
+    const [cuentaDoc, ficha] = await Promise.all([tx.get(refCuenta), tx.get(refFicha)]);
+    if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    const actual = cuentaDoc.data() ?? {};
+    const ahora = Timestamp.now();
+
+    if (Object.keys(umbrales).length > 0) {
+      const combinados: Record<string, unknown> = { ...actual };
+      for (const [k, v] of Object.entries(umbrales)) {
+        if (v instanceof FieldValue) delete combinados[k]; else combinados[k] = v;
+      }
+      const resultado = umbralesDeAtencion(combinados);
+      const cargados = ['umbralOperador', 'umbralBloqueo'].some((k) => combinados[k] !== undefined);
+      if (cargados && resultado.origen !== 'cuenta') {
+        throw new HttpsError('invalid-argument',
+          'El umbral de bloqueo tiene que ser mayor que el de operador.');
+      }
+    }
+
+    const escritura: Record<string, unknown> = { ...cambios, ...umbrales, actualizadoEn: ahora };
+    const nuevos = plan ? limitesDe(plan) : null;
+    if (plan && nuevos) {
+      escritura['plan'] = plan;
+      escritura['limites'] = nuevos;
+      escritura['catalogoPlanes'] = CATALOGO_PLANES;
+      tx.update(refFicha, { plan });
+      tx.create(refAuditoria.doc(), {
+        accion: 'cambiar_plan', uid, en: ahora,
+        planAntes: actual['plan'] ?? null, planDespues: plan,
+        limitesAntes: actual['limites'] ?? null, limitesDespues: nuevos,
+        catalogoPlanes: CATALOGO_PLANES,
+      });
+    }
+
+    // `update` y no `set` con `merge`: reemplaza `limites` ENTERO en vez de
+    // mezclarlo con una copia vieja. Si la cuenta no existía, se crea sin los
+    // borrados (no hay nada que borrar).
+    if (cuentaDoc.exists) tx.update(refCuenta, escritura);
+    else {
+      tx.set(refCuenta, Object.fromEntries(
+        Object.entries(escritura).filter(([, v]) => !(v instanceof FieldValue))));
+    }
+
+    if (otros.length > 0) {
+      // El registro lleva QUÉ campos cambiaron y el valor de los que no son
+      // texto libre. `motivoVisible` va solo por nombre: es texto.
+      const valor = (v: unknown) => v instanceof FieldValue ? null
+        : v instanceof Timestamp ? v.toMillis() : v;
+      tx.create(refAuditoria.doc(), {
+        accion: 'estado_cuenta', uid, en: ahora, campos: otros,
+        valores: Object.fromEntries(otros
+          .filter((k) => k !== 'motivoVisible')
+          .map((k) => [k, valor(k in cambios ? cambios[k] : umbrales[k])])),
+      });
+    }
+    return nuevos;
   });
-  return { ok: true };
+
+  return { ok: true, ...(plan && limites ? { plan, limites } : {}) };
 });
 
 // ---------------------------------------------------------------------------
@@ -630,6 +749,8 @@ export const moverReclamo = onCall(async (peticion) => {
   await auditar(tenantId, 'mover_reclamo', uid, { reclamoId, estado });
   return { ok: true };
 });
+
+export { importarCatalogo } from './limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
 
 // ---------------------------------------------------------------------------
 // CONSTANCIA DE LOS CAMBIOS DE CONFIGURACIÓN

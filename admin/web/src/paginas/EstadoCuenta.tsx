@@ -5,6 +5,8 @@ import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../lib/atencion';
+import { avisoConsumoVigente, limiteDeProductos, nombreDePlan } from '../lib/planes';
+import { AvisoConsumo } from '../componentes/AvisoConsumo';
 
 interface Cuenta {
   plan?: unknown;
@@ -54,6 +56,8 @@ export function EstadoCuenta() {
   // Los mismos que aplica el servidor, con la misma función: si el documento
   // trae una pareja incoherente, acá también se ven los de respaldo.
   const umbrales = umbralesDeAtencion(cuenta as Record<string, unknown>);
+  const aviso = avisoConsumoVigente(cuenta as Record<string, unknown>);
+  const plan = nombreDePlan(cuenta.plan);
 
   return (
     <section>
@@ -63,11 +67,20 @@ export function EstadoCuenta() {
         <strong>{situacion}</strong>
       </p>
 
+      {aviso && <AvisoConsumo aviso={aviso} />}
+
       <table>
         <tbody>
           <tr>
             <th>Plan</th>
-            <td><TextoSeguro valor={cuenta.plan} maxLargo={40} /></td>
+            {/* El nombre del plan, no el identificador de la base: «pro» en
+                minúscula se lee como un dato a medio terminar. Uno que no
+                conocemos se muestra tal cual, pasado por `TextoSeguro`. */}
+            <td>{plan ?? <TextoSeguro valor={cuenta.plan} maxLargo={40} />}</td>
+          </tr>
+          <tr>
+            <th>Productos del catálogo</th>
+            <td>Hasta {limiteDeProductos(cuenta as Record<string, unknown>)}</td>
           </tr>
           <tr>
             <th>Mensualidad</th>

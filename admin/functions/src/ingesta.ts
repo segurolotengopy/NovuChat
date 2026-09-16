@@ -12,6 +12,8 @@ import {
 // Los valores comerciales viven en `atencion.ts` (puro, compartido con la
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
+// El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
+import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './planes.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
@@ -161,7 +163,10 @@ type TipoEvento =
   // por uso extendido, y una que llegó al bloqueo. Quedan en la bitácora del
   // comercio porque son el hecho que explica un reclamo: «el asistente dejó de
   // contestarle a mi cliente».
-  | 'derivacion_operador' | 'bloqueo_ventana';
+  | 'derivacion_operador' | 'bloqueo_ventana'
+  // AVISO DE CONSUMO (15/09/2026): las conversaciones del mes llegaron al 80 %
+  // de las incluidas en el plan. Una vez por mes. No manda ningún WhatsApp.
+  | 'aviso_consumo';
 
 interface Evento {
   tipo: TipoEvento;
@@ -499,6 +504,16 @@ export const ingesta = onRequest(
     // llamarlo elimina de raíz el abuso desde una página cualquiera.
     cors: false,
     maxInstances: 10,
+    // UNA INSTANCIA SIEMPRE DESPIERTA (decisión de Andres, 15/09/2026). Sin ella,
+    // el primer mensaje después de un rato sin tráfico esperaba el arranque en
+    // frío de esta Function y de la otra que el flujo llama en serie
+    // (`configuracionFlujo` → `ingesta`): 8 a 12 s de los ~20 que tardaba la
+    // primera respuesta. Costo medido en el catálogo de Google (us-east1,
+    // facturación por pedido, instancia mínima inactiva): 2,5e-6 USD por
+    // vCPU·s y por GiB·s → ~8,1 USD al mes por Function con 1 vCPU y 256 MiB,
+    // compartidos por todos los comercios. `pruebas/instancias-minimas.test.ts`
+    // impide que se pierda sin querer.
+    minInstances: 1,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
@@ -564,7 +579,9 @@ export const ingesta = onRequest(
 
     const idConversacion = `wa_${mensaje.telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
-    const periodo = new Date().toISOString().slice(0, 7);   // 'aaaa-mm'
+    // 'aaaa-mm' en UTC. `periodoDe` (planes.ts) es la misma cuenta que usa la
+    // consola para saber si el aviso de consumo es de este período.
+    const periodo = periodoDe();
     const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodo}`);
 
     // -----------------------------------------------------------------------
@@ -640,10 +657,30 @@ export const ingesta = onRequest(
 
       // Se mira lo guardado ANTES de aplicar este mensaje: el estado describe
       // qué hacer con la consulta que acaba de llegar, no con la siguiente.
-      const umbrales = umbralesDeAtencion(cuentaDoc.data());
+      const cuenta = cuentaDoc.data();
+      const umbrales = umbralesDeAtencion(cuenta);
       const atencion = estadoDeAtencion(marcas, umbrales, ahoraMs);
       const aviso = mensaje.direccion === 'entrante'
         ? avisoDeTransicion(marcas.atencionEstado, atencion.estado) : null;
+
+      // AVISO DE CONSUMO AL 80 % (decisión de Andres, 15/09/2026). Cuando las
+      // conversaciones del mes llegan al 80 % de las incluidas en el plan
+      // (`cuenta.limites.conversaciones`, o las del plan si la cuenta es vieja,
+      // `planes.ts`), se anota `avisoConsumo` en la cuenta UNA vez por mes. La
+      // consola lo muestra; NO se manda ningún WhatsApp: 0 mensajes agregados.
+      //
+      // CUÁNTO CUESTA. La cuenta ya se leía en esta transacción (umbrales). El
+      // agregado del mes no: se lee SOLO si este mensaje suma una conversación
+      // Y el aviso del mes todavía no salió. O sea, una lectura por conversación
+      // facturada (no por mensaje) hasta el día del aviso, y cero después.
+      // Leerlo dentro de la transacción es lo que impide que dos conversaciones
+      // simultáneas avisen dos veces: la segunda se reintenta y ve la marca.
+      const metricasDoc = conteo.conversacion && avisoConsumoPendiente(cuenta, periodo)
+        ? await tx.get(refMetricas) : null;
+      const previasDelMes = Number(metricasDoc?.get('conversaciones'));
+      const avisoConsumo = metricasDoc
+        ? avisoDeConsumo(cuenta, (Number.isFinite(previasDelMes) ? previasDelMes : 0) + 1, periodo)
+        : null;
 
       tx.set(refConversacion, {
         // La marca del estado se escribe con cada mensaje: cuando la ventana se
@@ -716,7 +753,20 @@ export const ingesta = onRequest(
         ...(aviso === 'bloqueado' ? { bloqueadas: FieldValue.increment(1) } : {}),
       }, { merge: true });
 
-      return { atencion, aviso };
+      // La marca del aviso y su constancia en la auditoría van en la MISMA
+      // transacción que cuenta la conversación: si una se escribe, la otra
+      // también. La auditoría la lee el propietario para el historial del
+      // comercio; la bitácora recibe el hecho más abajo, como los demás eventos.
+      if (avisoConsumo) {
+        tx.set(refCuenta, {
+          avisoConsumo: { ...avisoConsumo, en: FieldValue.serverTimestamp() },
+        }, { merge: true });
+        tx.create(db.collection(`tenants/${tenantId}/auditoria`).doc(), {
+          accion: 'aviso_consumo', uid: 'ingesta', en: Timestamp.now(), ...avisoConsumo,
+        });
+      }
+
+      return { atencion, aviso, avisoConsumo };
     });
 
     await registrar(tenantId, {
@@ -737,6 +787,13 @@ export const ingesta = onRequest(
       await registrar(tenantId, {
         tipo: veredicto.aviso === 'operador' ? 'derivacion_operador' : 'bloqueo_ventana',
         resultado: 'ok', telefono: mensaje.telefono, conversacionId: idConversacion,
+      });
+    }
+    if (veredicto.avisoConsumo) {
+      // Sin teléfono: el aviso es del comercio, no de quien escribió.
+      await registrar(tenantId, {
+        tipo: 'aviso_consumo', resultado: 'ok', canal: 'sistema',
+        detalle: `${veredicto.avisoConsumo.conversaciones}/${veredicto.avisoConsumo.limite}`,
       });
     }
 
@@ -789,6 +846,16 @@ export const configuracionFlujo = onRequest(
     secrets: Object.values(SECRETOS_POR_ALIAS),
     cors: false,
     maxInstances: 10,
+    // UNA INSTANCIA SIEMPRE DESPIERTA (decisión de Andres, 15/09/2026). Sin ella,
+    // el primer mensaje después de un rato sin tráfico esperaba el arranque en
+    // frío de esta Function y de la otra que el flujo llama en serie
+    // (`configuracionFlujo` → `ingesta`): 8 a 12 s de los ~20 que tardaba la
+    // primera respuesta. Costo medido en el catálogo de Google (us-east1,
+    // facturación por pedido, instancia mínima inactiva): 2,5e-6 USD por
+    // vCPU·s y por GiB·s → ~8,1 USD al mes por Function con 1 vCPU y 256 MiB,
+    // compartidos por todos los comercios. `pruebas/instancias-minimas.test.ts`
+    // impide que se pierda sin querer.
+    minInstances: 1,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
