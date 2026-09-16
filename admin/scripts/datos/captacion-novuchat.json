@@ -1,6 +1,8 @@
 {
   "_fuente": "novuchat.site: src/contenido/precios.es.ts, verticales.es.ts y faq.es.ts (15/09/2026). Las frases son las del sitio. El rubro Educación todavía no existe en el sitio: se pidió en CLIENTES/NOVUCHAT/03-pedido-sesion-sitio-educacion.md. Se carga con admin/scripts/cargar-captacion.mjs.",
   "nombreAsistente": "Kenji",
+  "tratamiento": "tu",
+  "estiloEmojis": "muchos",
   "rubros": [
     {
       "id": "salud-belleza",

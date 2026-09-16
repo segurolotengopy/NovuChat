@@ -10,6 +10,11 @@
 #   ./scripts/rotar-ingesta.sh verificar --secreto INGESTA_CLIENTE01 --version 2
 #       Largo del valor y si termina en salto de línea (debe ser 64 y sin salto).
 #
+#   ./scripts/rotar-ingesta.sh probar --secreto INGESTA_CLIENTE01 --version 2 --env .env.novuchat
+#       Hace el MISMO pedido que el nodo «Traer configuración» del flujo, con esa
+#       clave: comprueba de punta a punta que el servidor la acepta y qué oferta
+#       devuelve. No escribe nada. Solo informa conteos, nunca el valor.
+#
 #   ./scripts/rotar-ingesta.sh n8n --secreto INGESTA_CLIENTE01 --version 2 \
 #       --credencial "NovuChat ingesta (alias del número)" --env .env.novuchat [--aplicar]
 #       Carga `Bearer <valor>` en esa credencial Header Auth de n8n por la API.
@@ -61,10 +66,47 @@ sys.exit(0 if len(v) == 64 and not salto and hexa else 1)
 ' && echo "  ✓ versión $VERSION de $SECRETO: forma correcta" \
       || { echo "  ✗ versión $VERSION de $SECRETO: forma incorrecta (hay que crear otra versión, ver el procedimiento §Paso 3-4)"; exit 1; }
     ;;
+  probar)
+    [[ -f "$ENV_FILE" ]] || { echo "✗ no existe $ENV_FILE" >&2; exit 1; }
+    set -a
+    # shellcheck disable=SC1090  # ruta variable: la elige --env
+    . "./$ENV_FILE"
+    set +a
+    : "${WA_PHONE_ID:?Falta WA_PHONE_ID en el entorno}"
+    URL="${URL_CONFIG:-https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo}"
+    leer_valor | URL="$URL" python3 -c '
+import json, os, sys, urllib.request, urllib.error
+valor = sys.stdin.buffer.read().decode().strip()
+cuerpo = json.dumps({"telefono": ""}).encode()
+req = urllib.request.Request(os.environ["URL"], data=cuerpo, method="POST", headers={
+    "Authorization": "Bearer " + valor,
+    "X-NovuChat-Numero": os.environ["WA_PHONE_ID"],
+    "Content-Type": "application/json",
+})
+del valor
+try:
+    r = urllib.request.urlopen(req, timeout=60)
+    d = json.load(r)
+except urllib.error.HTTPError as e:
+    print("  ✗ el servidor respondió %s: la clave no sirve o el número no está asignado" % e.code)
+    sys.exit(1)
+onb = d.get("onboarding") or {}
+voz = d.get("voz") or {}
+print("  ✓ el servidor aceptó la clave (HTTP %s), comercio %s, flujo %s" % (r.status, d.get("tenantId"), d.get("flujo")))
+print("    nombre del asistente: %r · emojis: %r" % (voz.get("nombreAsistente"), voz.get("nivelEmojis")))
+print("    oferta: %d rubros · %d planes · %d cargos únicos · %d aclaraciones · archivo: %s"
+      % (len(onb.get("rubros") or []), len(onb.get("planes") or []), len(onb.get("cargosUnicos") or []),
+         len(onb.get("aclaraciones") or []), bool(onb.get("archivoPlanes"))))
+print("    claves de onboarding: %s" % sorted(onb.keys()))
+'
+    ;;
   n8n)
     [[ -n "$CREDENCIAL" ]] || { echo "✗ falta --credencial" >&2; exit 2; }
     [[ -f "$ENV_FILE" ]] || { echo "✗ no existe $ENV_FILE" >&2; exit 1; }
-    set -a; . "./$ENV_FILE"; set +a
+    set -a
+    # shellcheck disable=SC1090  # ruta variable: la elige --env
+    . "./$ENV_FILE"
+    set +a
     : "${N8N_API_KEY:?Falta N8N_API_KEY}"; : "${N8N_BASE_URL:?Falta N8N_BASE_URL}"
     # En modo diagnóstico no se lee el secreto: solo se busca la credencial.
     if [[ $APLICAR -eq 1 ]]; then FUENTE=leer_valor; else FUENTE=true; fi
