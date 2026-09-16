@@ -40,19 +40,19 @@
       "nombre": "Impulso",
       "precioUsd": 25,
       "periodo": "mes",
-      "incluye": "Asistente con IA que entiende lenguaje natural, 24 horas; 100 conversaciones al mes; Consola para ver todo desde el celular; Canal oficial de WhatsApp Business"
+      "incluye": "100 conversaciones al mes; hasta 20 productos en el catálogo"
     },
     {
       "nombre": "Crecimiento",
       "precioUsd": 50,
       "periodo": "mes",
-      "incluye": "Asistente con IA que entiende lenguaje natural, 24 horas; 220 conversaciones al mes; Consola para ver todo desde el celular; Canal oficial de WhatsApp Business"
+      "incluye": "220 conversaciones al mes; hasta 100 productos en el catálogo"
     },
     {
       "nombre": "Pro",
       "precioUsd": 90,
       "periodo": "mes",
-      "incluye": "Asistente con IA que entiende lenguaje natural, 24 horas; 500 conversaciones al mes; Consola para ver todo desde el celular; Canal oficial de WhatsApp Business; Soporte técnico prioritario"
+      "incluye": "500 conversaciones al mes; hasta 500 productos; soporte prioritario"
     }
   ],
   "cargosUnicos": [
@@ -60,13 +60,13 @@
       "nombre": "Instalación estándar",
       "precioUsd": 65,
       "desde": false,
-      "detalle": "Pago único, por adelantado. Llave en mano: verificación de tu número ante Meta, carga de tus servicios, precios, horarios y tono, conexión con Google Calendar y pruebas con casos reales."
+      "detalle": "Pago único y por adelantado, llave en mano: alta ante Meta, carga de tu catálogo o agenda y pruebas."
     },
     {
       "nombre": "Instalación a medida",
       "precioUsd": 125,
       "desde": true,
-      "detalle": "Integración con tu ERP o tu sistema propio, consultas a tus sistemas en tiempo real o flujos complejos entre varios departamentos. Desarrollo a medida, cotizado caso por caso."
+      "detalle": "Integración con tu sistema propio o flujos complejos; se cotiza caso por caso."
     }
   ],
   "aclaraciones": [
