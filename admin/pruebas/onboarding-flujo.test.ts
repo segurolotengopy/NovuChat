@@ -342,6 +342,9 @@ describe('Procesar respuesta', () => {
     expect(r['cuerpoMeta']).toBeUndefined();
     expect(JSON.stringify(r)).not.toContain('wa.me');
     expect(sd['conversaciones'][TEL]['etapa']).toBe('cerrado');
+    // El aviso queda dado cuando Meta acepta la plantilla (ver «El aviso a una persona»).
+    correr('Confirmar envío', [correr('Salida', [r])[0]!],
+      { 'Enviar a WhatsApp': { statusCode: 200 }, 'Avisar a NovuChat': { statusCode: 200 } }, sd);
     // Un segundo [CIERRE] no vuelve a avisar: la plantilla se cobra.
     const r2 = procesar('Gracias de nuevo. [CIERRE]', entrada(sd), sd);
     expect(r2['avisar']).toBe(false);
@@ -598,6 +601,176 @@ describe('Confirmar envío: solo se da por hecho lo que Meta aceptó', () => {
 
   it('con el teléfono bloqueado no se envió nada: no hay nada que confirmar ni que reportar', () => {
     expect(confirmar([{ from: TEL, responder: false, avisar: true }])).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// Primera prueba con teléfonos reales, 15/09/2026. El cierre marcó `avisado`
+// por su cuenta, pero la plantilla `solicitud_contacto` estaba todavía en
+// revisión y Meta rechazó el envío (132001, ejecución 2349): los cuatro
+// prospectos quedaron «avisados», sin botón y sin que nadie los llamara.
+describe('El aviso a una persona: solo se da por hecho si Meta lo aceptó', () => {
+  const RECHAZO_132001 = { statusCode: 400, body: { error: {
+    message: 'Template name (solicitud_contacto) does not exist in es', type: 'OAuthException',
+    code: 132001, error_subcode: 2494010, fbtrace_id: 'Zz9' } } };
+  const ACEPTADO = { statusCode: 200, body: { messages: [{ id: 'wamid.aviso' }] } };
+  const BOTON = [{ type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } }];
+  const DATOS = '[LEAD]{"empresa":"Salón Rosa","contacto":"Ana","rubro":"belleza"}[/LEAD]';
+
+  const procesar = (salidaAgente: string, ent: J, sd: J) =>
+    correr('Procesar respuesta', [{ output: salidaAgente }], { 'Estado de la conversación': ent }, sd)[0]!;
+  /** Un turno de cierre completo: Estado → Procesar respuesta → Salida. */
+  const cerrar = (sd: J) => {
+    const e = estado(normalizar(texto('quiero que me llamen')), sd)[0]!;
+    return correr('Salida', [procesar(`Listo, Ana: un asesor te escribirá. ${DATOS}[CIERRE]`, e, sd)])[0]!;
+  };
+  const confirmar = (s: J, aviso: J, sd: J) => correr('Confirmar envío', [s],
+    { 'Enviar a WhatsApp': { statusCode: 200, body: { messages: [{ id: 'wamid.ok' }] } },
+      'Avisar a NovuChat': aviso }, sd);
+
+  it('la plantilla rechazada NO marca «avisado» y queda anotada, sin el teléfono del cliente', () => {
+    const sd: J = {};
+    const s = cerrar(sd);
+    expect(s['avisar']).toBe(true);
+    const [reportado] = confirmar(s, RECHAZO_132001, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(false);
+    // Se ve en los datos de la ejecución y en el estado de la conversación.
+    expect(String(reportado!['avisos'])).toMatch(/^aviso_rechazado: HTTP 400, código 132001/);
+    expect(String(sd['conversaciones'][TEL]['avisoFalla'])).toContain('subcódigo 2494010');
+    expect(String(reportado!['avisos'])).not.toContain(TEL);
+    // Y la respuesta al cliente, que sí salió, se reporta igual: el servidor la cuenta.
+    expect(reportado!['respuesta']).toBeTruthy();
+  });
+
+  it('la plantilla aceptada sí lo marca, y no se vuelve a avisar', () => {
+    const sd: J = {};
+    confirmar(cerrar(sd), ACEPTADO, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(true);
+    expect(sd['conversaciones'][TEL]['avisoFalla']).toBeUndefined();
+    expect(cerrar(sd)['avisar']).toBe(false);
+  });
+
+  it('cerrado y sin aviso, el botón «Hablar con un asesor» sigue saliendo (en el mismo mensaje)', () => {
+    const sd: J = {};
+    confirmar(cerrar(sd), RECHAZO_132001, sd);
+    expect(sd['conversaciones'][TEL]['etapa']).toBe('cerrado');
+    const e = estado(normalizar(texto('¿y cuánto sale?')), sd)[0]!;
+    expect(e['mensajeDelTurno']).toMatch(/el aviso al asesor NO salió/);
+    const r = procesar('El plan de entrada arranca en 25 dólares al mes.', e, sd);
+    expect(r['cuerpoMeta']['interactive']['action']['buttons']).toEqual(BOTON);
+    const s = correr('Salida', [r])[0]!;
+    expect(s['esInteractivo']).toBe(true);
+    // No agrega un mensaje: el botón va dentro de la misma respuesta.
+    expect(s['avisar']).toBe(false);
+    expect(s['cuerpoAviso']).toBeNull();
+  });
+
+  it('cerrado y con el aviso aceptado, no vuelve a ofrecer el botón', () => {
+    const sd: J = {};
+    confirmar(cerrar(sd), ACEPTADO, sd);
+    const e = estado(normalizar(texto('¿y cuánto sale?')), sd)[0]!;
+    expect(e['mensajeDelTurno']).toMatch(/Ya se avisó a un asesor/);
+    expect(procesar('El plan de entrada arranca en 25 dólares al mes.', e, sd)['cuerpoMeta']).toBeUndefined();
+  });
+
+  it('el traspaso sin modelo reintenta el aviso que Meta rechazó, y deja de hacerlo cuando sale', () => {
+    const sd: J = {};
+    const tocar = { type: 'interactive', interactive: { button_reply: { id: 'asesor', title: 'Hablar con un asesor' } } };
+    const traspaso = () => correr('Salida',
+      [correr('Traspaso a un asesor', [estado(normalizar(tocar), sd)[0]!], {}, sd)[0]!])[0]!;
+    const primero = traspaso();
+    expect(primero['avisar']).toBe(true);
+    confirmar(primero, RECHAZO_132001, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(false);
+    // Un mensaje que Meta rechaza no se cobra: reintentarlo no suma costo.
+    const segundo = traspaso();
+    expect(segundo['avisar']).toBe(true);
+    confirmar(segundo, ACEPTADO, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(true);
+    expect(traspaso()['avisar']).toBe(false);
+  });
+
+  it('con el teléfono bloqueado no sale nada al cliente, pero el aviso igual se verifica', () => {
+    const sd: J = {};
+    const cfg = config(PANEL({}, { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 100 }));
+    const e = estado(normalizar(texto('otra más'), cfg), sd)[0]!;
+    const s = correr('Salida', [correr('Uso extendido', [e])[0]!])[0]!;
+    expect([s['responder'], s['avisar']]).toEqual([false, true]);
+    expect(correr('Confirmar envío', [s], { 'Avisar a NovuChat': ACEPTADO }, sd)).toEqual([]);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(true);
+  });
+
+  it('un CRM que rechaza el prospecto queda anotado y no marca nada', () => {
+    const sd: J = {};
+    const e = estado(normalizar(texto('Hola, quiero info')), sd)[0]!;
+    const r = procesar('Gracias, Ana. [LEAD]{"empresa":"Salón Rosa"}[/LEAD]', e, sd);
+    const s = correr('Salida', [{ ...r, crmUrl: 'https://crm.ejemplo/leads' }])[0]!;
+    expect(s['guardar']).toBe(true);
+    const [reportado] = correr('Confirmar envío', [s],
+      { 'Enviar a WhatsApp': { statusCode: 200 }, 'Guardar prospecto': { statusCode: 503, body: {} } }, sd);
+    expect(String(reportado!['avisos'])).toMatch(/^crm_rechazado: HTTP 503/);
+  });
+
+  it('los dos nodos internos responden completo, para que haya veredicto que leer', () => {
+    for (const n of ['Avisar a NovuChat', 'Guardar prospecto']) {
+      expect(nodo(n).parameters['options']['response']['response'])
+        .toMatchObject({ fullResponse: true, neverError: true });
+      expect((nodo(n) as unknown as J)['onError']).toBe('continueRegularOutput');
+    }
+  });
+});
+
+// ===========================================================================
+// A las 24 h el servidor abre otra ventana y factura otra conversación. Lo que
+// el flujo recuerda del turno tiene que vencer con ella: el 15/09 un prospecto
+// que volvía seguía «cerrado y avisado», sin bienvenida y sin botón.
+describe('Una ventana nueva es una conversación nueva', () => {
+  const LEAD = { empresa: 'Salón Rosa', contacto: 'Ana', rubro: 'belleza' };
+  const vencida = (): J => ({ conversaciones: { [TEL]: {
+    desde: Date.now() - 25 * 3_600_000, ultimo: Date.now() - 25 * 3_600_000, respuestas: 12,
+    etapa: 'cerrado', bienvenida: true, avisado: true, esperaRubro: true,
+    avisoFalla: 'aviso_rechazado: HTTP 400, código 132001', lead: { ...LEAD } } } });
+
+  it('al vencer se reinician etapa, bienvenida y aviso; los datos del prospecto se conservan', () => {
+    const sd = vencida();
+    const r = estado(normalizar(texto('hola')), sd)[0]!;
+    // Vuelve a ser recibido como la primera vez: +1 mensaje por ventana nueva.
+    expect(r['accion']).toBe('bienvenida');
+    const c = sd['conversaciones'][TEL];
+    expect([c['etapa'], c['bienvenida'], c['avisado'], c['esperaRubro'], c['respuestas']])
+      .toEqual(['', false, false, false, 1]);
+    expect(c['avisoFalla']).toBeUndefined();
+    expect(c['lead']).toEqual(LEAD);
+    // Y el prompt sigue sabiendo lo que ya dijo: no se lo vuelve a preguntar.
+    expect(r['mensajeDelTurno']).toContain('"empresa":"Salón Rosa"');
+    expect(r['mensajeDelTurno']).toContain('Faltan: ninguno');
+    expect(r['mensajeDelTurno']).not.toMatch(/Ya se avisó|NO salió/);
+  });
+
+  it('la bienvenida de la ventana nueva es UNA sola: dentro de la ventana no se repite', () => {
+    const sd = vencida();
+    const primero = correr('Salida', [correr('Bienvenida', [estado(normalizar(texto('hola')), sd)[0]!])[0]!])[0]!;
+    correr('Confirmar envío', [primero], { 'Enviar a WhatsApp': { statusCode: 200 } }, sd);
+    expect(estado(normalizar(texto('hola')), sd)[0]!['accion']).toBe('agente');
+  });
+
+  it('dentro de la ventana no se reinicia nada', () => {
+    const sd: J = { conversaciones: { [TEL]: { desde: Date.now() - 3_600_000, ultimo: Date.now() - 60_000,
+      respuestas: 3, etapa: 'cerrado', bienvenida: true, avisado: true, lead: { ...LEAD } } } };
+    expect(estado(normalizar(texto('hola')), sd)[0]!['accion']).toBe('agente');
+    const c = sd['conversaciones'][TEL];
+    expect([c['etapa'], c['bienvenida'], c['avisado']]).toEqual(['cerrado', true, true]);
+  });
+
+  it('el prospecto que vuelve y pide otra vez una persona genera un aviso nuevo', () => {
+    const sd = vencida();
+    estado(normalizar(texto('hola')), sd);
+    const e = estado(normalizar(texto('quiero que me llamen')), sd)[0]!;
+    const r = correr('Procesar respuesta', [{ output: 'Claro, un asesor te escribirá. [CIERRE]' }],
+      { 'Estado de la conversación': e }, sd)[0]!;
+    // Cierra con los datos que ya tenía, y avisa: es otra conversación facturada.
+    expect(r['avisar']).toBe(true);
+    expect(correr('Salida', [r])[0]!['cuerpoAviso']['template']['name']).toBe('solicitud_contacto');
   });
 });
 
@@ -1153,6 +1326,9 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(vars.slice(0, 3)).toEqual(['pidió hablar con un asesor', 'Salón Rosa', 'Ana']);
       expect(s['cuerpoCrm']).toMatchObject({ estado: 'cerrado', empresa: 'Salón Rosa' });
       expect(s['esInteractivo']).toBe(false);
+      // Meta acepta la plantilla: recién ahí el aviso queda dado.
+      correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 },
+        'Avisar a NovuChat': { statusCode: 200 } }, sd);
       // Un segundo toque responde, pero no vuelve a avisar: la plantilla se cobra.
       const otra = correr('Traspaso a un asesor', [turnoCon(tocar(), sd, cfg)], {}, sd)[0]!;
       expect(otra['avisar']).toBe(false);
