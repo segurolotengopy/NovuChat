@@ -37,6 +37,8 @@ const FLUJOS = [
   // El flujo de captación de NovuChat: si se suspende el tenant `novuchat`, deja
   // de atender igual que el de cualquier cliente.
   { archivo: 'novuchat-onboarding.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
+  // Reservas de Clínica Platinum: mismo nodo de fusión que el Demo A.
+  { archivo: 'platinum-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
 ] as const;
 
 /** Ejecuta el nodo de fusión con una respuesta HTTP simulada. */
@@ -133,6 +135,7 @@ describe('La compuerta que aplica el estado', () => {
     ['demo-a-agendamiento.json'],
     ['demo-b-venta-cobro.json'],
     ['novuchat-onboarding.json'],
+    ['platinum-agendamiento.json'],
   ])('%s corta ANTES del agente', (archivo) => {
     // El Demo B no tenía ninguna compuerta: atendía siempre, cobrara o no el
     // negocio. Cortar antes del agente además evita gastar tokens.
