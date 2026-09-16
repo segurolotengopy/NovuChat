@@ -1120,6 +1120,19 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
     /** Lo que de verdad sale a Meta, con la degradación de «Salida» aplicada. */
     const salida = (r: J) => correr('Salida', [{ ...r, from: TEL }])[0]!;
     const PRECIOS = ['(USD 25/mes)', '(USD 50/mes)', '(USD 90/mes)', 'USD 65', 'desde USD 125'];
+    /** La oferta REAL de NovuChat: un `incluye` de una línea por plan (bloque de 645). */
+    const MEDIO = [
+      'Hasta 100 conversaciones al mes, catálogo de 20 productos, una agenda conectada a Google Calendar y soporte por WhatsApp.',
+      'Hasta 220 conversaciones al mes, catálogo de 100 productos, hasta 5 agendas conectadas e informes de uso en la consola.',
+      'Hasta 500 conversaciones al mes, catálogo de 500 productos, hasta 10 agendas conectadas e informes de uso en la consola.',
+    ];
+    const OFERTA_MEDIA = { ...OFERTA, planes: PLANES.map((p, i) => ({ ...p, incluye: MEDIO[i] })) };
+    /** El texto del turno sin el límite: lo que el modelo y el bloque miden juntos. */
+    const sinLimite = (onboarding: J, salidaAgente: string) => {
+      const sd: J = {};
+      const cfg = { ...cfgCon(onboarding), limiteInteractivo: 4096 };
+      return procesar(salidaAgente, turnoCon(texto('Hola, ¿cuánto vale?'), sd, cfg), sd);
+    };
 
     it('el límite de Meta se declara en la configuración; quien lo usa lo lee, no lo repite', () => {
       // El valor vive en `Config base` y se valida en `Config del negocio`
@@ -1143,6 +1156,46 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(salida(r)['esInteractivo']).toBe(true);
     });
 
+    // EL CASO REAL (producción, ejecución 2536 del 15/09/2026): el modelo
+    // escribió unos 380 caracteres y el bloque de planes, unos 650; el mensaje
+    // quedó en 1030, SEIS caracteres por encima del límite. Compactando primero
+    // el bloque, el cliente recibió «Impulso (USD 25/mes). Crecimiento (USD
+    // 50/mes). Pro (USD 90/mes).» —sin las conversaciones incluidas, que es
+    // justo lo que se compara al elegir— y le sobró media pantalla. Seis
+    // caracteres se resuelven quitando dos palabras del envoltorio.
+    it('(a bis) seis caracteres de más se resuelven recortando el texto, NO los planes', () => {
+      const PRE = '¡Qué bueno que preguntes! En NovuChat armamos el asistente de tu negocio para que '
+        + 'atienda por WhatsApp, agende las citas y responda precios sin que tengas que soltar lo que '
+        + 'estás haciendo. Lo instalamos nosotros y en 48 horas queda funcionando con tu número y tu '
+        + 'catálogo. Los tres traen las mismas funciones; cambia el volumen:';
+      const POST = '¿Te muestro cómo funciona con un ejemplo de tu rubro?';
+      // 381 caracteres del modelo y 645 del bloque: 1030 en total.
+      expect(PRE.length + POST.length).toBe(381);
+      const salidaAgente = `${PRE}\n[PLANES]\n${POST}`;
+      const libre = sinLimite(OFERTA_MEDIA, salidaAgente);
+      expect(String(libre['respuesta']).length).toBe(LIMITE + 6);
+      expect(libre['avisos']).toEqual([]);
+
+      const r = turnoPlanes(OFERTA_MEDIA, salidaAgente);
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      // Se recortó el envoltorio, y NADA más: el bloque llega entero.
+      expect(r['avisos']).toEqual(['texto_recortado']);
+      for (const p of PRECIOS) expect(t).toContain(p);
+      for (const i of MEDIO) expect(t).toContain(i);
+      expect(t).toContain('Integración con tu sistema.');
+      expect(t).toContain('Precios en dólares; se cobran en bolivianos al tipo de cambio oficial del BCB.');
+      // Del texto del modelo se pierden las últimas palabras del enganche, no
+      // el mensaje: la pregunta del final queda, y el recorte se ve.
+      expect(t.startsWith(PRE.slice(0, 300))).toBe(true);
+      expect(t).toContain('…');
+      expect(t.trim().endsWith(POST)).toBe(true);
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      const s = salida(r);
+      expect(s['esInteractivo']).toBe(true);
+      expect(s['avisos']).not.toContain('boton_perdido_por_largo');
+    });
+
     it('(a) con los planes largos, se compacta la oferta y el botón se conserva', () => {
       const r = turnoPlanes(OFERTA_LARGA, 'Para tu salón, esto te sirve: la agenda se maneja sola.\n[PLANES]');
       const t = cuerpo(r);
@@ -1160,11 +1213,68 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(s['avisos']).not.toContain('boton_perdido_por_largo');
     });
 
-    it('(b) si ni compactando entra, se recorta el texto del modelo y los precios quedan enteros', () => {
+    it('(a ter) con un texto corto y una oferta enorme, lo que cede es el bloque', () => {
+      // 20 planes largos cargados en la consola (la configuración conserva 12).
+      const veinte = Array.from({ length: 20 }, (_, i) => ({
+        nombre: `Plan ${i + 1}`, precioUsd: 20 + i, periodo: 'mes', incluye: INCLUYE }));
+      const r = turnoPlanes({ ...OFERTA, planes: veinte, cargosUnicos: [] },
+        'Estos son nuestros planes.\n[PLANES]');
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      // El texto del modelo no llega ni al piso: no hay nada que recortarle, y
+      // el único que puede ceder es el bloque. Lo hace una sola vez.
+      expect(r['avisos']).toEqual(['planes_compactados']);
+      expect(t).toContain('Estos son nuestros planes.');
+      expect(t).not.toContain('…');
+      expect(t).not.toContain('catálogo de 20 productos');
+      expect(t).toContain('Plan 1 (USD 20/mes).');
+      expect(t).toContain('Plan 12 (USD 31/mes).');
+      expect(t).not.toContain('Plan 13');
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    // EL PISO DEL RECORTE. Recortar el texto del modelo hasta que no diga nada
+    // no salva ningún botón que no salve resumir el bloque, y deja un mensaje
+    // sin sentido. Por debajo de 150 caracteres se deja de recortar y cede el
+    // bloque, que aun resumido conserva todos los precios.
+    it('el piso: el texto del modelo no se recorta hasta dejarlo mudo; antes cede el bloque', () => {
+      const CINCO = [...MEDIO.map((incluye, i) => ({ ...PLANES[i], incluye })),
+        { nombre: 'Emprende', precioUsd: 15, periodo: 'mes',
+          incluye: 'Hasta 50 conversaciones al mes, catálogo de 10 productos y una agenda conectada a Google Calendar.' },
+        { nombre: 'Corporativo', precioUsd: 150, periodo: 'mes',
+          incluye: 'Conversaciones a medida, catálogo sin tope, agendas para todo el equipo y atención prioritaria.' }];
+      const TEXTO = 'Con gusto. Estos son los planes y lo que incluye cada uno; todos traen el mismo '
+        + 'asistente y la misma unidad de cobro. Si te queda la duda de cuál te conviene, la vemos juntos.';
+      const salidaAgente = `${TEXTO}\n[PLANES]`;
+      const oferta = { ...OFERTA, planes: CINCO };
+      const entero = String(sinLimite(oferta, salidaAgente)['respuesta']).length;
+      expect(TEXTO.length).toBeGreaterThan(150);
+      // El bloque entero deja menos de los 150 caracteres del piso: recortar el
+      // texto, aunque llegara al piso, no alcanzaría…
+      expect(entero - TEXTO.length).toBeGreaterThan(LIMITE - 150);
+      // …pero con un texto más corto sí habría entrado, y es exactamente lo que
+      // el piso prohíbe: un mensaje mudo con la oferta intacta.
+      expect(entero - TEXTO.length).toBeLessThan(LIMITE);
+
+      const r = turnoPlanes(oferta, salidaAgente);
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      expect(r['avisos']).toEqual(['planes_compactados']);
+      // El texto del modelo llega COMPLETO, sin «…».
+      expect(t).toContain(TEXTO);
+      expect(t).not.toContain('…');
+      expect(t).toContain('Emprende (USD 15/mes).');
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('(b) si ni recortando entra, se resume además el bloque, y los precios quedan enteros', () => {
       const r = turnoPlanes(OFERTA_LARGA, `${relleno(16)}\n[PLANES]\n¿Te muestro cómo funciona?`);
       const t = cuerpo(r);
       expect(t.length).toBeLessThanOrEqual(LIMITE);
-      expect(r['avisos']).toEqual(['planes_compactados', 'texto_recortado']);
+      // Los avisos, EN EL ORDEN EN QUE SE APLICARON: primero el envoltorio.
+      expect(r['avisos']).toEqual(['texto_recortado', 'planes_compactados']);
       // El recorte es por palabras y se nota; los precios NO se recortan.
       expect(t).toContain('…');
       expect(t).not.toMatch(/\wtrabaj…/);
@@ -1172,6 +1282,9 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(t).toContain('Precios en dólares; se cobran en bolivianos al tipo de cambio oficial del BCB.');
       // Se recorta el enganche, que es lo largo: la pregunta del final se queda.
       expect(t.trim().endsWith('¿Te muestro cómo funciona?')).toBe(true);
+      // Y el recorte se rehace contra el bloque ya resumido: lo que el resumen
+      // libera se le devuelve al modelo, muy por encima del piso de 150.
+      expect(t.slice(0, t.indexOf('*Planes*')).trim().length).toBeGreaterThan(600);
       expect(salida(r)['esInteractivo']).toBe(true);
     });
 
@@ -1202,7 +1315,9 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(tercera['finBloque']).toBe(true);
       const fin = procesar(relleno(22), tercera, sd);
       expect(cuerpo(fin).length).toBeLessThanOrEqual(LIMITE);
-      expect(fin['avisos']).toContain('texto_recortado');
+      // Mismo orden que con los planes: se recorta el texto, y como acá no hay
+      // bloque que resumir, no aparece `planes_compactados`.
+      expect(fin['avisos']).toEqual(['texto_recortado']);
       expect(botonAsesor(fin)).toEqual([BOTON]);
       expect(salida(fin)['esInteractivo']).toBe(true);
 
