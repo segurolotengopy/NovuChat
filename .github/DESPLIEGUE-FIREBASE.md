@@ -354,6 +354,15 @@ for R in roles/firebasehosting.admin \
     --member="serviceAccount:${SA}" --role="$R" --condition=None
 done
 
+# Solo si además despliega las reglas de Storage (`storage` en
+# FIREBASE_DEPLOY_ONLY). firebase-tools lee el bucket por defecto
+# (firebasestorage.defaultBucket.get) antes de publicar las reglas; las reglas
+# en sí ya las cubre roles/firebaserules.admin. Verificar con Policy
+# Troubleshooter antes del primer despliegue: docs/seguridad/reglas-storage.md
+# §Despliegue.
+gcloud projects add-iam-policy-binding "$PROYECTO" \
+  --member="serviceAccount:${SA}" --role="roles/firebasestorage.viewer" --condition=None
+
 # Solo si además despliega Cloud Functions (Gen2 = Cloud Run + Cloud Build)
 for R in roles/cloudfunctions.developer \
          roles/run.admin \
@@ -514,7 +523,7 @@ conviene cargarlos en el Environment `production`, no a nivel repositorio.
 | `STAGING_URL` | igual que `DEV_URL` | |
 | `PROD_URL` | `https://novuchat-admin-prod.web.app` | |
 | `FIREBASE_DEPLOY_ONLY_DEV` | `hosting,firestore:rules,firestore:indexes` | agregar `,functions` **solo con Blaze** |
-| `FIREBASE_DEPLOY_ONLY` | `hosting,firestore:rules,firestore:indexes,functions` | staging y producción |
+| `FIREBASE_DEPLOY_ONLY` | `hosting,firestore:rules,firestore:indexes,functions,storage` | staging y producción. `storage` **solo después** de crear el bucket por defecto y conceder el rol del agente de Storage: ver `docs/seguridad/reglas-storage.md` §Despliegue |
 | `FIREBASE_SITE_ID` | no crear salvo sitio de Hosting con nombre propio | por omisión usa `GCP_PROJECT_ID_PROD` |
 | `HEALTH_PATH` | `/` | el panel es una SPA, no expone `/healthz` |
 | `FIREBASE_PREVIEW` | no crear | encenderla exige tocar la condición OIDC |

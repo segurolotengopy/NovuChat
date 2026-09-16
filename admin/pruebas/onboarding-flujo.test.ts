@@ -342,6 +342,9 @@ describe('Procesar respuesta', () => {
     expect(r['cuerpoMeta']).toBeUndefined();
     expect(JSON.stringify(r)).not.toContain('wa.me');
     expect(sd['conversaciones'][TEL]['etapa']).toBe('cerrado');
+    // El aviso queda dado cuando Meta acepta la plantilla (ver «El aviso a una persona»).
+    correr('Confirmar envío', [correr('Salida', [r])[0]!],
+      { 'Enviar a WhatsApp': { statusCode: 200 }, 'Avisar a NovuChat': { statusCode: 200 } }, sd);
     // Un segundo [CIERRE] no vuelve a avisar: la plantilla se cobra.
     const r2 = procesar('Gracias de nuevo. [CIERRE]', entrada(sd), sd);
     expect(r2['avisar']).toBe(false);
@@ -598,6 +601,176 @@ describe('Confirmar envío: solo se da por hecho lo que Meta aceptó', () => {
 
   it('con el teléfono bloqueado no se envió nada: no hay nada que confirmar ni que reportar', () => {
     expect(confirmar([{ from: TEL, responder: false, avisar: true }])).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// Primera prueba con teléfonos reales, 15/09/2026. El cierre marcó `avisado`
+// por su cuenta, pero la plantilla `solicitud_contacto` estaba todavía en
+// revisión y Meta rechazó el envío (132001, ejecución 2349): los cuatro
+// prospectos quedaron «avisados», sin botón y sin que nadie los llamara.
+describe('El aviso a una persona: solo se da por hecho si Meta lo aceptó', () => {
+  const RECHAZO_132001 = { statusCode: 400, body: { error: {
+    message: 'Template name (solicitud_contacto) does not exist in es', type: 'OAuthException',
+    code: 132001, error_subcode: 2494010, fbtrace_id: 'Zz9' } } };
+  const ACEPTADO = { statusCode: 200, body: { messages: [{ id: 'wamid.aviso' }] } };
+  const BOTON = [{ type: 'reply', reply: { id: 'asesor', title: 'Hablar con un asesor' } }];
+  const DATOS = '[LEAD]{"empresa":"Salón Rosa","contacto":"Ana","rubro":"belleza"}[/LEAD]';
+
+  const procesar = (salidaAgente: string, ent: J, sd: J) =>
+    correr('Procesar respuesta', [{ output: salidaAgente }], { 'Estado de la conversación': ent }, sd)[0]!;
+  /** Un turno de cierre completo: Estado → Procesar respuesta → Salida. */
+  const cerrar = (sd: J) => {
+    const e = estado(normalizar(texto('quiero que me llamen')), sd)[0]!;
+    return correr('Salida', [procesar(`Listo, Ana: un asesor te escribirá. ${DATOS}[CIERRE]`, e, sd)])[0]!;
+  };
+  const confirmar = (s: J, aviso: J, sd: J) => correr('Confirmar envío', [s],
+    { 'Enviar a WhatsApp': { statusCode: 200, body: { messages: [{ id: 'wamid.ok' }] } },
+      'Avisar a NovuChat': aviso }, sd);
+
+  it('la plantilla rechazada NO marca «avisado» y queda anotada, sin el teléfono del cliente', () => {
+    const sd: J = {};
+    const s = cerrar(sd);
+    expect(s['avisar']).toBe(true);
+    const [reportado] = confirmar(s, RECHAZO_132001, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(false);
+    // Se ve en los datos de la ejecución y en el estado de la conversación.
+    expect(String(reportado!['avisos'])).toMatch(/^aviso_rechazado: HTTP 400, código 132001/);
+    expect(String(sd['conversaciones'][TEL]['avisoFalla'])).toContain('subcódigo 2494010');
+    expect(String(reportado!['avisos'])).not.toContain(TEL);
+    // Y la respuesta al cliente, que sí salió, se reporta igual: el servidor la cuenta.
+    expect(reportado!['respuesta']).toBeTruthy();
+  });
+
+  it('la plantilla aceptada sí lo marca, y no se vuelve a avisar', () => {
+    const sd: J = {};
+    confirmar(cerrar(sd), ACEPTADO, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(true);
+    expect(sd['conversaciones'][TEL]['avisoFalla']).toBeUndefined();
+    expect(cerrar(sd)['avisar']).toBe(false);
+  });
+
+  it('cerrado y sin aviso, el botón «Hablar con un asesor» sigue saliendo (en el mismo mensaje)', () => {
+    const sd: J = {};
+    confirmar(cerrar(sd), RECHAZO_132001, sd);
+    expect(sd['conversaciones'][TEL]['etapa']).toBe('cerrado');
+    const e = estado(normalizar(texto('¿y cuánto sale?')), sd)[0]!;
+    expect(e['mensajeDelTurno']).toMatch(/el aviso al asesor NO salió/);
+    const r = procesar('El plan de entrada arranca en 25 dólares al mes.', e, sd);
+    expect(r['cuerpoMeta']['interactive']['action']['buttons']).toEqual(BOTON);
+    const s = correr('Salida', [r])[0]!;
+    expect(s['esInteractivo']).toBe(true);
+    // No agrega un mensaje: el botón va dentro de la misma respuesta.
+    expect(s['avisar']).toBe(false);
+    expect(s['cuerpoAviso']).toBeNull();
+  });
+
+  it('cerrado y con el aviso aceptado, no vuelve a ofrecer el botón', () => {
+    const sd: J = {};
+    confirmar(cerrar(sd), ACEPTADO, sd);
+    const e = estado(normalizar(texto('¿y cuánto sale?')), sd)[0]!;
+    expect(e['mensajeDelTurno']).toMatch(/Ya se avisó a un asesor/);
+    expect(procesar('El plan de entrada arranca en 25 dólares al mes.', e, sd)['cuerpoMeta']).toBeUndefined();
+  });
+
+  it('el traspaso sin modelo reintenta el aviso que Meta rechazó, y deja de hacerlo cuando sale', () => {
+    const sd: J = {};
+    const tocar = { type: 'interactive', interactive: { button_reply: { id: 'asesor', title: 'Hablar con un asesor' } } };
+    const traspaso = () => correr('Salida',
+      [correr('Traspaso a un asesor', [estado(normalizar(tocar), sd)[0]!], {}, sd)[0]!])[0]!;
+    const primero = traspaso();
+    expect(primero['avisar']).toBe(true);
+    confirmar(primero, RECHAZO_132001, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(false);
+    // Un mensaje que Meta rechaza no se cobra: reintentarlo no suma costo.
+    const segundo = traspaso();
+    expect(segundo['avisar']).toBe(true);
+    confirmar(segundo, ACEPTADO, sd);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(true);
+    expect(traspaso()['avisar']).toBe(false);
+  });
+
+  it('con el teléfono bloqueado no sale nada al cliente, pero el aviso igual se verifica', () => {
+    const sd: J = {};
+    const cfg = config(PANEL({}, { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 100 }));
+    const e = estado(normalizar(texto('otra más'), cfg), sd)[0]!;
+    const s = correr('Salida', [correr('Uso extendido', [e])[0]!])[0]!;
+    expect([s['responder'], s['avisar']]).toEqual([false, true]);
+    expect(correr('Confirmar envío', [s], { 'Avisar a NovuChat': ACEPTADO }, sd)).toEqual([]);
+    expect(sd['conversaciones'][TEL]['avisado']).toBe(true);
+  });
+
+  it('un CRM que rechaza el prospecto queda anotado y no marca nada', () => {
+    const sd: J = {};
+    const e = estado(normalizar(texto('Hola, quiero info')), sd)[0]!;
+    const r = procesar('Gracias, Ana. [LEAD]{"empresa":"Salón Rosa"}[/LEAD]', e, sd);
+    const s = correr('Salida', [{ ...r, crmUrl: 'https://crm.ejemplo/leads' }])[0]!;
+    expect(s['guardar']).toBe(true);
+    const [reportado] = correr('Confirmar envío', [s],
+      { 'Enviar a WhatsApp': { statusCode: 200 }, 'Guardar prospecto': { statusCode: 503, body: {} } }, sd);
+    expect(String(reportado!['avisos'])).toMatch(/^crm_rechazado: HTTP 503/);
+  });
+
+  it('los dos nodos internos responden completo, para que haya veredicto que leer', () => {
+    for (const n of ['Avisar a NovuChat', 'Guardar prospecto']) {
+      expect(nodo(n).parameters['options']['response']['response'])
+        .toMatchObject({ fullResponse: true, neverError: true });
+      expect((nodo(n) as unknown as J)['onError']).toBe('continueRegularOutput');
+    }
+  });
+});
+
+// ===========================================================================
+// A las 24 h el servidor abre otra ventana y factura otra conversación. Lo que
+// el flujo recuerda del turno tiene que vencer con ella: el 15/09 un prospecto
+// que volvía seguía «cerrado y avisado», sin bienvenida y sin botón.
+describe('Una ventana nueva es una conversación nueva', () => {
+  const LEAD = { empresa: 'Salón Rosa', contacto: 'Ana', rubro: 'belleza' };
+  const vencida = (): J => ({ conversaciones: { [TEL]: {
+    desde: Date.now() - 25 * 3_600_000, ultimo: Date.now() - 25 * 3_600_000, respuestas: 12,
+    etapa: 'cerrado', bienvenida: true, avisado: true, esperaRubro: true,
+    avisoFalla: 'aviso_rechazado: HTTP 400, código 132001', lead: { ...LEAD } } } });
+
+  it('al vencer se reinician etapa, bienvenida y aviso; los datos del prospecto se conservan', () => {
+    const sd = vencida();
+    const r = estado(normalizar(texto('hola')), sd)[0]!;
+    // Vuelve a ser recibido como la primera vez: +1 mensaje por ventana nueva.
+    expect(r['accion']).toBe('bienvenida');
+    const c = sd['conversaciones'][TEL];
+    expect([c['etapa'], c['bienvenida'], c['avisado'], c['esperaRubro'], c['respuestas']])
+      .toEqual(['', false, false, false, 1]);
+    expect(c['avisoFalla']).toBeUndefined();
+    expect(c['lead']).toEqual(LEAD);
+    // Y el prompt sigue sabiendo lo que ya dijo: no se lo vuelve a preguntar.
+    expect(r['mensajeDelTurno']).toContain('"empresa":"Salón Rosa"');
+    expect(r['mensajeDelTurno']).toContain('Faltan: ninguno');
+    expect(r['mensajeDelTurno']).not.toMatch(/Ya se avisó|NO salió/);
+  });
+
+  it('la bienvenida de la ventana nueva es UNA sola: dentro de la ventana no se repite', () => {
+    const sd = vencida();
+    const primero = correr('Salida', [correr('Bienvenida', [estado(normalizar(texto('hola')), sd)[0]!])[0]!])[0]!;
+    correr('Confirmar envío', [primero], { 'Enviar a WhatsApp': { statusCode: 200 } }, sd);
+    expect(estado(normalizar(texto('hola')), sd)[0]!['accion']).toBe('agente');
+  });
+
+  it('dentro de la ventana no se reinicia nada', () => {
+    const sd: J = { conversaciones: { [TEL]: { desde: Date.now() - 3_600_000, ultimo: Date.now() - 60_000,
+      respuestas: 3, etapa: 'cerrado', bienvenida: true, avisado: true, lead: { ...LEAD } } } };
+    expect(estado(normalizar(texto('hola')), sd)[0]!['accion']).toBe('agente');
+    const c = sd['conversaciones'][TEL];
+    expect([c['etapa'], c['bienvenida'], c['avisado']]).toEqual(['cerrado', true, true]);
+  });
+
+  it('el prospecto que vuelve y pide otra vez una persona genera un aviso nuevo', () => {
+    const sd = vencida();
+    estado(normalizar(texto('hola')), sd);
+    const e = estado(normalizar(texto('quiero que me llamen')), sd)[0]!;
+    const r = correr('Procesar respuesta', [{ output: 'Claro, un asesor te escribirá. [CIERRE]' }],
+      { 'Estado de la conversación': e }, sd)[0]!;
+    // Cierra con los datos que ya tenía, y avisa: es otra conversación facturada.
+    expect(r['avisar']).toBe(true);
+    expect(correr('Salida', [r])[0]!['cuerpoAviso']['template']['name']).toBe('solicitud_contacto');
   });
 });
 
@@ -921,6 +1094,261 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
     });
   });
 
+  // El 15/09, en la primera prueba con un teléfono real, el mensaje de planes
+  // llegó a 1411 caracteres: como el cuerpo de un mensaje con botones admite
+  // 1024, «Salida» lo bajó a texto y el cliente se quedó SIN el botón «Hablar
+  // con un asesor», que es la única salida hacia una persona. La ejecución
+  // figuró «success» y nadie se enteró. El flujo no puede depender de que el
+  // contenido que carga el comercio sea corto.
+  describe('el botón sobrevive al límite de 1024', () => {
+    const LIMITE = 1024;
+    // Un `incluye` como los que permite la consola (hasta 200 caracteres).
+    const INCLUYE = 'Hasta 100 conversaciones al mes, catálogo de 20 productos, una agenda conectada a '
+      + 'Google Calendar, informes de uso en la consola y soporte por WhatsApp en horario de oficina.';
+    const DETALLE = 'Incluye la configuración del número con Meta, la carga del catálogo, las pruebas '
+      + 'con tu equipo y el acompañamiento de la primera semana de uso.';
+    const LARGOS = PLANES.map((p) => ({ ...p, incluye: INCLUYE }));
+    const CARGOS_LARGOS = CARGOS.map((c) => ({ ...c, detalle: DETALLE }));
+    const OFERTA_LARGA = { ...OFERTA, planes: LARGOS, cargosUnicos: CARGOS_LARGOS };
+    const relleno = (veces: number) => 'Tu asistente atiende y agenda solo mientras tú trabajas. '.repeat(veces).trim();
+    const cuerpo = (r: J) => String(r['cuerpoMeta']?.['interactive']?.['body']?.['text'] ?? '');
+    const turnoPlanes = (onboarding: J, salidaAgente: string) => {
+      const sd: J = {};
+      const ent = turnoCon(texto('Hola, ¿cuánto vale?'), sd, cfgCon(onboarding));
+      return procesar(salidaAgente, ent, sd);
+    };
+    /** Lo que de verdad sale a Meta, con la degradación de «Salida» aplicada. */
+    const salida = (r: J) => correr('Salida', [{ ...r, from: TEL }])[0]!;
+    const PRECIOS = ['(USD 25/mes)', '(USD 50/mes)', '(USD 90/mes)', 'USD 65', 'desde USD 125'];
+    /** La oferta REAL de NovuChat: un `incluye` de una línea por plan (bloque de 645). */
+    const MEDIO = [
+      'Hasta 100 conversaciones al mes, catálogo de 20 productos, una agenda conectada a Google Calendar y soporte por WhatsApp.',
+      'Hasta 220 conversaciones al mes, catálogo de 100 productos, hasta 5 agendas conectadas e informes de uso en la consola.',
+      'Hasta 500 conversaciones al mes, catálogo de 500 productos, hasta 10 agendas conectadas e informes de uso en la consola.',
+    ];
+    const OFERTA_MEDIA = { ...OFERTA, planes: PLANES.map((p, i) => ({ ...p, incluye: MEDIO[i] })) };
+    /** El texto del turno sin el límite: lo que el modelo y el bloque miden juntos. */
+    const sinLimite = (onboarding: J, salidaAgente: string) => {
+      const sd: J = {};
+      const cfg = { ...cfgCon(onboarding), limiteInteractivo: 4096 };
+      return procesar(salidaAgente, turnoCon(texto('Hola, ¿cuánto vale?'), sd, cfg), sd);
+    };
+
+    it('el límite de Meta se declara en la configuración; quien lo usa lo lee, no lo repite', () => {
+      // El valor vive en `Config base` y se valida en `Config del negocio`
+      // (mismo patrón que `topeAviso`). Los nodos que lo aplican lo reciben:
+      // dos números distintos serían un mensaje compactado que igual no entra.
+      for (const n of ['Procesar respuesta', 'Salida']) {
+        const js = nodo(n).parameters.jsCode as string;
+        expect(js).toContain('limiteInteractivo');
+        expect(js.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')).not.toContain('1024');
+      }
+      expect(config()['limiteInteractivo']).toBe(LIMITE);
+      // Un valor fuera de rango o roto no deja al flujo sin límite.
+      const roto = base(); roto['limiteInteractivo'] = 'mil';
+      expect(config(PANEL(), roto)['limiteInteractivo']).toBe(LIMITE);
+    });
+
+    it('un mensaje que entra no cambia en nada: ni se compacta ni se recorta', () => {
+      const r = turnoPlanes(OFERTA, 'Para tu salón, esto te sirve.\n[PLANES]');
+      expect(r['respuesta']).toContain('Impulso (USD 25/mes): Hasta 100 conversaciones.');
+      expect(r['avisos']).toEqual([]);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    // EL CASO REAL (producción, ejecución 2536 del 15/09/2026): el modelo
+    // escribió unos 380 caracteres y el bloque de planes, unos 650; el mensaje
+    // quedó en 1030, SEIS caracteres por encima del límite. Compactando primero
+    // el bloque, el cliente recibió «Impulso (USD 25/mes). Crecimiento (USD
+    // 50/mes). Pro (USD 90/mes).» —sin las conversaciones incluidas, que es
+    // justo lo que se compara al elegir— y le sobró media pantalla. Seis
+    // caracteres se resuelven quitando dos palabras del envoltorio.
+    it('(a bis) seis caracteres de más se resuelven recortando el texto, NO los planes', () => {
+      const PRE = '¡Qué bueno que preguntes! En NovuChat armamos el asistente de tu negocio para que '
+        + 'atienda por WhatsApp, agende las citas y responda precios sin que tengas que soltar lo que '
+        + 'estás haciendo. Lo instalamos nosotros y en 48 horas queda funcionando con tu número y tu '
+        + 'catálogo. Los tres traen las mismas funciones; cambia el volumen:';
+      const POST = '¿Te muestro cómo funciona con un ejemplo de tu rubro?';
+      // 381 caracteres del modelo y 645 del bloque: 1030 en total.
+      expect(PRE.length + POST.length).toBe(381);
+      const salidaAgente = `${PRE}\n[PLANES]\n${POST}`;
+      const libre = sinLimite(OFERTA_MEDIA, salidaAgente);
+      expect(String(libre['respuesta']).length).toBe(LIMITE + 6);
+      expect(libre['avisos']).toEqual([]);
+
+      const r = turnoPlanes(OFERTA_MEDIA, salidaAgente);
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      // Se recortó el envoltorio, y NADA más: el bloque llega entero.
+      expect(r['avisos']).toEqual(['texto_recortado']);
+      for (const p of PRECIOS) expect(t).toContain(p);
+      for (const i of MEDIO) expect(t).toContain(i);
+      expect(t).toContain('Integración con tu sistema.');
+      expect(t).toContain('Precios en dólares; se cobran en bolivianos al tipo de cambio oficial del BCB.');
+      // Del texto del modelo se pierden las últimas palabras del enganche, no
+      // el mensaje: la pregunta del final queda, y el recorte se ve.
+      expect(t.startsWith(PRE.slice(0, 300))).toBe(true);
+      expect(t).toContain('…');
+      expect(t.trim().endsWith(POST)).toBe(true);
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      const s = salida(r);
+      expect(s['esInteractivo']).toBe(true);
+      expect(s['avisos']).not.toContain('boton_perdido_por_largo');
+    });
+
+    it('(a) con los planes largos, se compacta la oferta y el botón se conserva', () => {
+      const r = turnoPlanes(OFERTA_LARGA, 'Para tu salón, esto te sirve: la agenda se maneja sola.\n[PLANES]');
+      const t = cuerpo(r);
+      // Sin compactar, el mensaje se pasaba del límite y perdía el botón.
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      expect(r['avisos']).toContain('planes_compactados');
+      expect(r['avisos']).not.toContain('texto_recortado');
+      // Los precios, completos; lo que incluye cada plan es lo que se resigna.
+      for (const p of PRECIOS) expect(t).toContain(p);
+      expect(t).not.toContain('catálogo de 20 productos');
+      expect(t).toContain('Para tu salón, esto te sirve: la agenda se maneja sola.');
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      const s = salida(r);
+      expect(s['esInteractivo']).toBe(true);
+      expect(s['avisos']).not.toContain('boton_perdido_por_largo');
+    });
+
+    it('(a ter) con un texto corto y una oferta enorme, lo que cede es el bloque', () => {
+      // 20 planes largos cargados en la consola (la configuración conserva 12).
+      const veinte = Array.from({ length: 20 }, (_, i) => ({
+        nombre: `Plan ${i + 1}`, precioUsd: 20 + i, periodo: 'mes', incluye: INCLUYE }));
+      const r = turnoPlanes({ ...OFERTA, planes: veinte, cargosUnicos: [] },
+        'Estos son nuestros planes.\n[PLANES]');
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      // El texto del modelo no llega ni al piso: no hay nada que recortarle, y
+      // el único que puede ceder es el bloque. Lo hace una sola vez.
+      expect(r['avisos']).toEqual(['planes_compactados']);
+      expect(t).toContain('Estos son nuestros planes.');
+      expect(t).not.toContain('…');
+      expect(t).not.toContain('catálogo de 20 productos');
+      expect(t).toContain('Plan 1 (USD 20/mes).');
+      expect(t).toContain('Plan 12 (USD 31/mes).');
+      expect(t).not.toContain('Plan 13');
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    // EL PISO DEL RECORTE. Recortar el texto del modelo hasta que no diga nada
+    // no salva ningún botón que no salve resumir el bloque, y deja un mensaje
+    // sin sentido. Por debajo de 150 caracteres se deja de recortar y cede el
+    // bloque, que aun resumido conserva todos los precios.
+    it('el piso: el texto del modelo no se recorta hasta dejarlo mudo; antes cede el bloque', () => {
+      const CINCO = [...MEDIO.map((incluye, i) => ({ ...PLANES[i], incluye })),
+        { nombre: 'Emprende', precioUsd: 15, periodo: 'mes',
+          incluye: 'Hasta 50 conversaciones al mes, catálogo de 10 productos y una agenda conectada a Google Calendar.' },
+        { nombre: 'Corporativo', precioUsd: 150, periodo: 'mes',
+          incluye: 'Conversaciones a medida, catálogo sin tope, agendas para todo el equipo y atención prioritaria.' }];
+      const TEXTO = 'Con gusto. Estos son los planes y lo que incluye cada uno; todos traen el mismo '
+        + 'asistente y la misma unidad de cobro. Si te queda la duda de cuál te conviene, la vemos juntos.';
+      const salidaAgente = `${TEXTO}\n[PLANES]`;
+      const oferta = { ...OFERTA, planes: CINCO };
+      const entero = String(sinLimite(oferta, salidaAgente)['respuesta']).length;
+      expect(TEXTO.length).toBeGreaterThan(150);
+      // El bloque entero deja menos de los 150 caracteres del piso: recortar el
+      // texto, aunque llegara al piso, no alcanzaría…
+      expect(entero - TEXTO.length).toBeGreaterThan(LIMITE - 150);
+      // …pero con un texto más corto sí habría entrado, y es exactamente lo que
+      // el piso prohíbe: un mensaje mudo con la oferta intacta.
+      expect(entero - TEXTO.length).toBeLessThan(LIMITE);
+
+      const r = turnoPlanes(oferta, salidaAgente);
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      expect(r['avisos']).toEqual(['planes_compactados']);
+      // El texto del modelo llega COMPLETO, sin «…».
+      expect(t).toContain(TEXTO);
+      expect(t).not.toContain('…');
+      expect(t).toContain('Emprende (USD 15/mes).');
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('(b) si ni recortando entra, se resume además el bloque, y los precios quedan enteros', () => {
+      const r = turnoPlanes(OFERTA_LARGA, `${relleno(16)}\n[PLANES]\n¿Te muestro cómo funciona?`);
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      // Los avisos, EN EL ORDEN EN QUE SE APLICARON: primero el envoltorio.
+      expect(r['avisos']).toEqual(['texto_recortado', 'planes_compactados']);
+      // El recorte es por palabras y se nota; los precios NO se recortan.
+      expect(t).toContain('…');
+      expect(t).not.toMatch(/\wtrabaj…/);
+      for (const p of PRECIOS) expect(t).toContain(p);
+      expect(t).toContain('Precios en dólares; se cobran en bolivianos al tipo de cambio oficial del BCB.');
+      // Se recorta el enganche, que es lo largo: la pregunta del final se queda.
+      expect(t.trim().endsWith('¿Te muestro cómo funciona?')).toBe(true);
+      // Y el recorte se rehace contra el bloque ya resumido: lo que el resumen
+      // libera se le devuelve al modelo, muy por encima del piso de 150.
+      expect(t.slice(0, t.indexOf('*Planes*')).trim().length).toBeGreaterThan(600);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('(c) con una oferta que ni compacta entra, el mensaje sale entero y la pérdida del botón queda anotada', () => {
+      const doce = Array.from({ length: 12 }, (_, i) => ({
+        nombre: `Plan ${'Empresarial'.slice(0, 9)} ${i + 1} para comercios`, precioUsd: 25 + i, periodo: 'mes', incluye: INCLUYE }));
+      const seis = Array.from({ length: 6 }, (_, i) => ({
+        nombre: `Servicio de instalación ${i + 1}`, precioUsd: 60 + i, desde: true, detalle: DETALLE }));
+      const r = turnoPlanes({ ...OFERTA, planes: doce, cargosUnicos: seis }, 'Estos son los planes.\n[PLANES]');
+      // Ni compactado entra: recortar no salvaría el botón, así que el cliente
+      // recibe el mensaje COMPLETO, con lo que incluye cada plan.
+      expect(String(r['respuesta']).length).toBeGreaterThan(LIMITE);
+      expect(r['avisos']).toEqual([]);
+      expect(r['respuesta']).toContain('catálogo de 20 productos');
+      const s = salida(r);
+      expect(s['esInteractivo']).toBe(false);
+      expect(s['cuerpoMeta']['type']).toBe('text');
+      expect(s['avisos']).toContain('boton_perdido_por_largo');
+      // Sin botón, el texto sigue diciendo cómo pedir una persona.
+      expect(s['cuerpoMeta']['text']['body']).toContain('«asesor»');
+    });
+
+    it('el fin del primer bloque y un [CIERRE] sin datos también conservan el botón', () => {
+      const sd: J = {};
+      const cfg = cfgCon({ ...OFERTA, topeAviso: 3 });
+      turnoCon(texto('hola'), sd, cfg); turnoCon(texto('cuéntame'), sd, cfg);
+      const tercera = turnoCon(texto('sigo'), sd, cfg);
+      expect(tercera['finBloque']).toBe(true);
+      const fin = procesar(relleno(22), tercera, sd);
+      expect(cuerpo(fin).length).toBeLessThanOrEqual(LIMITE);
+      // Mismo orden que con los planes: se recorta el texto, y como acá no hay
+      // bloque que resumir, no aparece `planes_compactados`.
+      expect(fin['avisos']).toEqual(['texto_recortado']);
+      expect(botonAsesor(fin)).toEqual([BOTON]);
+      expect(salida(fin)['esInteractivo']).toBe(true);
+
+      const sd2: J = {};
+      const cierre = procesar(`${relleno(22)} [CIERRE]`, turnoCon(texto('llámenme'), sd2, cfgCon()), sd2);
+      expect(cierre['avisar']).toBe(false);
+      expect(cierre['avisos']).toEqual(['cierre_sin_datos', 'texto_recortado']);
+      expect(cuerpo(cierre).length).toBeLessThanOrEqual(LIMITE);
+      expect(salida(cierre)['esInteractivo']).toBe(true);
+    });
+
+    it('con los planes en archivo no hay nada que compactar: se recorta el texto, no la frase del archivo', () => {
+      const r = turnoPlanes({ ...OFERTA, planes: [LARGOS[0]], planesEnArchivo: true, archivoPlanes: ARCHIVO },
+        `${relleno(20)}\n[PLANES]`);
+      expect(cuerpo(r)).toContain('Te comparto los planes y sus precios en el archivo de arriba.');
+      expect(cuerpo(r)).not.toMatch(/USD/);
+      expect(r['avisos']).toEqual(['texto_recortado']);
+      expect(r['cuerpoMeta']['interactive']['header']['type']).toBe('document');
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('compactar no agrega ni quita mensajes: sigue siendo UNO por turno', () => {
+      for (const oferta of [OFERTA, OFERTA_LARGA]) {
+        const s = salida(turnoPlanes(oferta, `${relleno(16)}\n[PLANES]`));
+        expect(s['responder']).toBe(true);
+        expect(s['avisar']).toBe(false);
+        expect(s['cuerpoAviso']).toBeNull();
+      }
+    });
+  });
+
   describe('rubro: deducido o por número', () => {
     it('las instrucciones piden deducir solo con una palabra del oficio, sin «90 % seguro», y dejan corregir', () => {
       const s = instrucciones(cfgCon());
@@ -1013,6 +1441,9 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(vars.slice(0, 3)).toEqual(['pidió hablar con un asesor', 'Salón Rosa', 'Ana']);
       expect(s['cuerpoCrm']).toMatchObject({ estado: 'cerrado', empresa: 'Salón Rosa' });
       expect(s['esInteractivo']).toBe(false);
+      // Meta acepta la plantilla: recién ahí el aviso queda dado.
+      correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 },
+        'Avisar a NovuChat': { statusCode: 200 } }, sd);
       // Un segundo toque responde, pero no vuelve a avisar: la plantilla se cobra.
       const otra = correr('Traspaso a un asesor', [turnoCon(tocar(), sd, cfg)], {}, sd)[0]!;
       expect(otra['avisar']).toBe(false);

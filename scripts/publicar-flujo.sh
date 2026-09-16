@@ -14,6 +14,8 @@
 #
 #   ./scripts/publicar-flujo.sh              # diagnostico, no toca nada
 #   ./scripts/publicar-flujo.sh --aplicar    # actualiza el flujo
+#   ./scripts/publicar-flujo.sh --env .env.novuchat --reiniciar-estado [--aplicar]
+#       borra el estado por telefono que guarda n8n (etapa, bienvenida, aviso)
 #   ./scripts/publicar-flujo.sh --flujo Flujos/demo-b-venta-cobro.json --aplicar
 #
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
@@ -33,6 +35,7 @@ cd "$(dirname "$0")/.." || exit 1
 FLUJO="Flujos/demo-a-agendamiento.json"
 APLICAR=0
 FORZAR=0
+REINICIAR=0
 ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --flujo)   FLUJO="${2:?--flujo necesita un archivo}"; shift 2 ;;
     --flujo=*) FLUJO="${1#*=}"; shift ;;
     --aplicar) APLICAR=1; shift ;;
+    --reiniciar-estado) REINICIAR=1; shift ;;
     --forzar)  FORZAR=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
@@ -93,6 +97,62 @@ fi
 # Si la API no las lista, se sigue como antes (heredando del flujo vivo).
 curl -s --max-time 30 -o "$TMP/credenciales.json" \
      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/credentials?limit=250" || true
+
+# --- 1b. reiniciar el estado guardado (opcional) ------------------------------
+# n8n guarda por flujo unos datos estaticos (`staticData`): en la captacion, el
+# estado de cada telefono (etapa, si ya se dio la bienvenida, si ya se aviso a
+# una persona, y los datos del prospecto). La API los DEVUELVE al leer el flujo
+# y los acepta al escribirlo, pero no hay ninguna pantalla para borrarlos.
+#
+# Hace falta despues de una prueba: el 15/09/2026 los cuatro telefonos de prueba
+# quedaron en `etapa: cerrado` y `avisado: true` --este ultimo por un aviso que
+# Meta habia rechazado--, y en ese estado el flujo ya no ofrece el boton hacia
+# una persona ni vuelve a avisar. Sin esto, probar exige un telefono nuevo.
+#
+# Solo toca `staticData`: los nodos, las conexiones y los ajustes se reescriben
+# TAL CUAL estan publicados, no desde el archivo. Guarda antes una copia.
+if [[ $REINICIAR -eq 1 ]]; then
+  APLICAR="$APLICAR" TMP="$TMP" python3 - <<'PY'
+import json, os, datetime
+tmp = os.environ["TMP"]
+vivo = json.load(open(f"{tmp}/vivo.json", encoding="utf-8"))
+conv = ((vivo.get("staticData") or {}).get("global") or {}).get("conversaciones") or {}
+print(f"Flujo vivo : {vivo.get('name')}")
+print(f"  telefonos con estado guardado: {len(conv)}")
+for tel, c in list(conv.items())[:20]:
+    print(f"    …{tel[-4:]}  etapa={c.get('etapa')!r} bienvenida={c.get('bienvenida')} "
+          f"avisado={c.get('avisado')} respuestas={c.get('respuestas')}")
+if os.environ["APLICAR"] != "1":
+    print("\nDiagnostico solamente. Nada se escribio. Para borrarlo: --reiniciar-estado --aplicar")
+    raise SystemExit(0)
+sello = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+respaldo = f"Flujos/respaldo-estado-{vivo.get('id','sinid')}-{sello}.local.json"
+json.dump(vivo.get("staticData"), open(respaldo, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+print(f"  respaldo del estado: {respaldo}")
+cuerpo = {
+    "name": vivo["name"],
+    "nodes": vivo["nodes"],
+    "connections": vivo["connections"],
+    "settings": vivo.get("settings", {}),
+    "staticData": {"global": {"conversaciones": {}}},
+}
+open(f"{tmp}/cuerpo.json", "w", encoding="utf-8").write(json.dumps(cuerpo, ensure_ascii=False))
+PY
+  [[ $APLICAR -eq 1 ]] || exit 0
+  COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
+        -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+  if [[ "$COD" == "200" ]]; then
+    RESTAN=$(curl -s --max-time 30 -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}" \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(((d.get("staticData") or {}).get("global") or {}).get("conversaciones") or {}))')
+    printf '\033[1;32m✓ Estado reiniciado (HTTP 200). Telefonos con estado ahora: %s\033[0m\n' "$RESTAN"
+  else
+    printf '\033[1;31m✗ No se pudo reiniciar: HTTP %s\033[0m\n' "$COD"
+    head -c 300 "$TMP/rta.json" 2>/dev/null || true
+    exit 1
+  fi
+  exit 0
+fi
 
 APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
 import json, os, sys, datetime
@@ -346,9 +406,14 @@ serializado = json.dumps(cuerpo, ensure_ascii=False)
 # Defensa dura: nunca escribir marcadores encima de la configuracion real de
 # produccion. Un `Config del negocio` con REEMPLAZAR_* deja el flujo sin
 # calendario ni telefonos, y el sintoma aparece recien con el primer cliente.
-if "REEMPLAZAR_" in serializado:
-    import re as _re
-    marcas = sorted(set(_re.findall(r'REEMPLAZAR_[^"\\\s]*', serializado)))
+import re as _re
+# UN MARCADOR EMPIEZA CON MAYÚSCULA DESPUÉS DE «REEMPLAZAR_» (REEMPLAZAR_PHONE_NUMBER_ID,
+# REEMPLAZAR_ID_CALENDARIO@group.calendar.google.com, REEMPLAZAR_NUMERO_DUENO_SIN_+).
+# Antes se aceptaba cualquier cosa después de «REEMPLAZAR_», y el flujo de captación,
+# que menciona el prefijo en su propio código para reconocer un respaldo sin llenar,
+# se leía como dos marcadores falsos y publicar-flujo.sh abortaba (15/09/2026).
+marcas = sorted(set(_re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', serializado)))
+if marcas:
     print(f"\n{R}✗ ABORTADO: el archivo todavia tiene marcadores sin reponer.{FIN}")
     for m in marcas:
         print(f"    {m}")

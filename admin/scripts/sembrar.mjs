@@ -29,6 +29,9 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
+// El plan inicial de las altas (Impulso con su copia de límites), el mismo que
+// escriben `altaTenant` y `alta-comercio.mjs`. Node 22.18+ carga TypeScript.
+import { cuentaInicial } from '../functions/src/planes.ts';
 
 // -----------------------------------------------------------------------------
 // Salvaguardas
@@ -193,7 +196,7 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
   await db.doc(`tenants/${id}`).set({
     nombre,
     estado,
-    plan: estado === 'activo' ? 'basico' : 'basico',
+    plan: cuentaInicial().plan,
     vertical,
     flujos: [vertical],
     waPhoneNumberId: pnid,
@@ -242,6 +245,14 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
   for (const [i, item] of catalogo.entries()) {
     await db.doc(`tenants/${id}/catalogo/item-${i + 1}`).set({ ...item, ...sello });
   }
+  // CONTADOR DEL CATÁLOGO (límite de productos por plan, firestore.rules). Sin
+  // él la consola no puede dar de alta ni de baja. Se escribe con lo que HAY y
+  // no con lo sembrado: sin --limpiar pueden quedar ítems de una prueba a mano.
+  await db.doc(`tenants/${id}/contadores/catalogo`).set({
+    items: (await db.collection(`tenants/${id}/catalogo`).select().get()).size,
+    ultimoItem: '',
+    actualizadoEn: FieldValue.serverTimestamp(),
+  });
 
   // --- Personas de referencia del comercio ---
   await db.doc(`tenants/${id}/contactos/k1`).set({
@@ -304,7 +315,8 @@ async function sembrarComercio({ id, nombre, estado, vertical, telefono, pnid, c
 
   // --- Estado de cuenta ---
   await db.doc(`tenants/${id}/cuenta/estado`).set({
-    plan: 'basico',
+    // Plan, copia de límites y versión del catálogo, como un alta real.
+    ...cuentaInicial(),
     estadoPago: estado === 'activo' ? 'al_dia' : 'vencido',
     montoMensual: 350,
     moneda: 'BOB',

@@ -9,7 +9,8 @@
  * copiado del sitio), y cargarlo entero en una operación que se puede repetir.
  *
  * QUÉ ESCRIBE, en UNA transacción:
- *   - `config/negocio.nombreAsistente` (merge: no toca el resto de lo común);
+ *   - los campos COMUNES de `config/negocio` que traiga el JSON —nombre del
+ *     asistente, trato y nivel de emojis— (merge: no toca el resto de lo común);
  *   - en `config/onboarding`, SOLO los campos que trae el JSON, cada uno
  *     reemplazado entero (`mergeFields`: una lista vieja no se mezcla con la
  *     nueva), más el sello `actualizadoPor: 'cargar-captacion'`;
@@ -59,7 +60,12 @@ const CAMPOS_ONBOARDING = [
   'rubros', 'planes', 'cargosUnicos', 'aclaraciones', 'archivoPlanes',
   'mensajeClienteActual', 'enlaceConsola', 'topeAviso', 'plantillaAviso',
 ];
-const CLAVES = new Set(['nombreAsistente', ...CAMPOS_ONBOARDING]);
+// Campos COMUNES (`config/negocio`): identidad y voz del asistente. Valen para
+// todos los flujos del comercio, no solo para la captación.
+const CAMPOS_NEGOCIO = ['nombreAsistente', 'tratamiento', 'estiloEmojis'];
+const TRATAMIENTOS = new Set(['usted', 'tu', 'vos', 'neutro']);
+const ESTILOS_EMOJIS = new Set(['ninguno', 'pocos', 'muchos']);
+const CLAVES = new Set([...CAMPOS_NEGOCIO, ...CAMPOS_ONBOARDING]);
 
 const esTexto = (v, max, { vacio = false } = {}) =>
   typeof v === 'string' && v.length <= max && (vacio || v.trim().length > 0);
@@ -91,6 +97,15 @@ function validar(d) {
 
   if ('nombreAsistente' in d && !esTexto(d.nombreAsistente, 40)) {
     p.push('nombreAsistente: texto de 1 a 40 caracteres');
+  }
+  // Los enumerados son los mismos de la consola y de `prompt.ts`: el servidor
+  // traduce cada uno a una frase fija, así que un valor inventado dejaría al
+  // asistente con la voz de respaldo sin que nadie lo note.
+  if ('tratamiento' in d && !TRATAMIENTOS.has(d.tratamiento)) {
+    p.push(`tratamiento: uno de ${[...TRATAMIENTOS].join(', ')}`);
+  }
+  if ('estiloEmojis' in d && !ESTILOS_EMOJIS.has(d.estiloEmojis)) {
+    p.push(`estiloEmojis: uno de ${[...ESTILOS_EMOJIS].join(', ')}`);
   }
 
   const idsRubro = new Set();
@@ -183,7 +198,8 @@ if (problemas.length) {
   process.exit(2);
 }
 const camposOnb = CAMPOS_ONBOARDING.filter((k) => k in datos);
-if (!camposOnb.length && !('nombreAsistente' in datos)) {
+const camposNeg = CAMPOS_NEGOCIO.filter((k) => k in datos);
+if (!camposOnb.length && !camposNeg.length) {
   console.error('\n  ✗ El archivo no trae ningún campo que cargar.\n');
   process.exit(2);
 }
@@ -220,24 +236,29 @@ console.log(`  Archivo   : ${ARCHIVO}`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
 let plan;
+// El rechazo se DEVUELVE, no se lanza dentro de la transacción: lanzar ahí hace
+// que el proceso termine antes de que llegue el rollback, y el emulador retiene
+// los bloqueos unos 67 s (el mismo defecto que se corrigió en asignar-numero.mjs
+// y asignar-plan.mjs; causaba «Transaction lock timeout» en otras pruebas).
+let rechazo = null;
 try {
   await db.runTransaction(async (tx) => {
     const [tenant, negocio, onb] = await Promise.all([tx.get(refTenant), tx.get(refNegocio), tx.get(refOnb)]);
-    if (!tenant.exists) throw new Error(`No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`);
+    if (!tenant.exists) { rechazo = `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`; return; }
     const flujos = tenant.get('flujos') ?? [tenant.get('vertical')].filter(Boolean);
     if (!flujos.includes('onboarding')) {
-      throw new Error(`«${TENANT}» no tiene el flujo onboarding (flujos: ${JSON.stringify(flujos)}). `
-        + 'La captación se carga solo en un comercio con ese flujo.');
+      rechazo = `«${TENANT}» no tiene el flujo onboarding (flujos: ${JSON.stringify(flujos)}). `
+        + 'La captación se carga solo en un comercio con ese flujo.';
+      return;
     }
     // Como las reglas: un comercio suspendido o dado de baja no se reconfigura.
     const estado = tenant.get('estado') ?? 'activo';
-    if (estado !== 'activo') throw new Error(`«${TENANT}» está ${estado}: no se reconfigura.`);
+    if (estado !== 'activo') { rechazo = `«${TENANT}» está ${estado}: no se reconfigura.`; return; }
 
     const actual = onb.exists ? onb.data() : {};
     plan = {
       onbNuevo: !onb.exists,
-      nombre: 'nombreAsistente' in datos
-        ? { antes: negocio.get('nombreAsistente') ?? null, despues: datos.nombreAsistente } : null,
+      negocio: camposNeg.map((k) => ({ k, antes: negocio.get(k) ?? null, despues: datos[k] })),
       campos: camposOnb.map((k) => ({
         k, estado: !(k in actual) ? 'nuevo' : igual(actual[k], datos[k]) ? 'igual' : 'cambia',
       })),
@@ -248,8 +269,9 @@ try {
 
     const ahora = Timestamp.now();
     const sello = { actualizadoPor: 'cargar-captacion', actualizadoEn: ahora };
-    if (plan.nombre) {
-      tx.set(refNegocio, { nombreAsistente: datos.nombreAsistente, ...sello }, { merge: true });
+    if (camposNeg.length) {
+      const comunes = Object.fromEntries(camposNeg.map((k) => [k, datos[k]]));
+      tx.set(refNegocio, { ...comunes, ...sello }, { merge: true });
     }
     if (camposOnb.length) {
       const escribir = Object.fromEntries(camposOnb.map((k) => [k, datos[k]]));
@@ -257,7 +279,7 @@ try {
     }
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
       accion: 'cargar_captacion', uid: 'cargar-captacion', en: ahora,
-      campos: [...(plan.nombre ? ['nombreAsistente'] : []), ...camposOnb],
+      campos: [...camposNeg, ...camposOnb],
       conteos: Object.fromEntries(['rubros', 'planes', 'cargosUnicos', 'aclaraciones']
         .filter((k) => k in datos).map((k) => [k, datos[k].length])),
     });
@@ -266,10 +288,13 @@ try {
   console.error(`  ✗ ${e.message}\n`);
   process.exit(1);
 }
+if (rechazo) {
+  console.error(`  ✗ ${rechazo}\n`);
+  process.exit(1);
+}
 
-if (plan.nombre) {
-  const { antes, despues } = plan.nombre;
-  console.log(`  config/negocio.nombreAsistente : ${antes === despues ? `igual («${despues}»)` : `«${antes ?? '—'}» → «${despues}»`}`);
+for (const { k, antes, despues } of plan.negocio) {
+  console.log(`  config/negocio.${k.padEnd(16)}: ${antes === despues ? `igual («${despues}»)` : `«${antes ?? '—'}» → «${despues}»`}`);
 }
 console.log(`  config/onboarding${plan.onbNuevo ? ' (se crea)' : ''}:`);
 for (const { k, estado } of plan.campos) {
@@ -278,7 +303,7 @@ for (const { k, estado } of plan.campos) {
 if (plan.archivoHuerfano) {
   console.log('  ! config/onboarding ya tiene archivoPlanes y este archivo no lo trae: queda como está.');
 }
-const sinCambios = plan.campos.every((c) => c.estado === 'igual') && (!plan.nombre || plan.nombre.antes === plan.nombre.despues);
+const sinCambios = plan.campos.every((c) => c.estado === 'igual') && plan.negocio.every((c) => c.antes === c.despues);
 if (sinCambios) console.log('\n  Sin cambios de contenido (se renovaría solo el sello).');
 
 if (!APLICAR) {
@@ -289,10 +314,10 @@ if (!APLICAR) {
 // --- verificación por relectura ---------------------------------------------
 const [negocio, onb] = await Promise.all([refNegocio.get(), refOnb.get()]);
 const fallas = [
-  ...(plan.nombre && negocio.get('nombreAsistente') !== datos.nombreAsistente ? ['nombreAsistente'] : []),
+  ...camposNeg.filter((k) => negocio.get(k) !== datos[k]),
   ...camposOnb.filter((k) => !igual(onb.get(k), datos[k])),
   ...(onb.get('actualizadoPor') === 'cargar-captacion' ? [] : ['sello']),
 ];
 console.log(`\n  ${fallas.length ? '✗' : '✓'} Verificación: ${fallas.length
-  ? `no coincide ${fallas.join(', ')}` : `${camposOnb.length} campo(s) de captación y el nombre del asistente releídos`}\n`);
+  ? `no coincide ${fallas.join(', ')}` : `${camposOnb.length} campo(s) de captación y ${camposNeg.length} común(es) releídos`}\n`);
 if (fallas.length) process.exit(1);

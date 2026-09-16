@@ -13,6 +13,7 @@ import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-ch
 import { getAuth, connectAuthEmulator, type Auth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator, type Firestore } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator, type Functions } from 'firebase/functions';
+import { getStorage, connectStorageEmulator, type FirebaseStorage } from 'firebase/storage';
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -52,6 +53,24 @@ export const db: Firestore = getFirestore(app);
 export const REGION_FUNCIONES = 'us-east1';
 export const funciones: Functions = getFunctions(app, REGION_FUNCIONES);
 
+/**
+ * STORAGE ES OPCIONAL, Y ESO ES A PROPÓSITO.
+ *
+ * Lo usa una sola cosa: el archivo de planes de «Captación». El bucket llega
+ * por `VITE_FIREBASE_STORAGE_BUCKET`, una variable nueva del repositorio en
+ * GitHub. Si una compilación sale sin ella, la consola NO se cae: `storage`
+ * queda en `null`, la pantalla deshabilita «Subir» y dice por qué, y el enlace
+ * pegado a mano sigue funcionando. Romper toda la consola por un botón sería
+ * cambiar un defecto chico por uno grande.
+ *
+ * El nombre se acepta con o sin `gs://`, porque la consola de Firebase lo
+ * muestra de las dos formas. En emuladores, si falta, se usa el bucket por
+ * defecto del proyecto ficticio: `scripts/emuladores.sh` todavía no la escribe.
+ */
+const bucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? '').trim().replace(/^gs:\/\//, '')
+  || (enEmuladores ? `${config.projectId}.appspot.com` : '');
+export const storage: FirebaseStorage | null = bucket ? getStorage(app, `gs://${bucket}`) : null;
+
 if (enEmuladores) {
   // Puertos configurables para que el entorno de trabajo a mano y el de las
   // pruebas puedan convivir sin pisarse. Los valores por defecto son los que
@@ -62,4 +81,10 @@ if (enEmuladores) {
   connectFirestoreEmulator(db, '127.0.0.1', puertoFirestore);
   connectFunctionsEmulator(funciones, '127.0.0.1',
     Number(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT ?? 5231));
+  // 9199 es el puerto por defecto del emulador de Storage; el que fije
+  // `firebase.json` → `emulators.storage` se pasa por esta variable.
+  if (storage) {
+    connectStorageEmulator(storage, '127.0.0.1',
+      Number(import.meta.env.VITE_STORAGE_EMULATOR_PORT ?? 9199));
+  }
 }

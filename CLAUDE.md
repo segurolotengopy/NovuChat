@@ -246,13 +246,13 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 
 | Límite | Se hace cumplir en | Estado |
 |---|---|---|
-| **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope |
+| **Agendas por plan** (1 / 5 / hasta 10) | `firestore.rules`, al crear un funcionario: contar los activos y leer el plan de `cuenta/estado` | **No existe todavía.** Hoy se pueden cargar sin tope. El número ya viaja en la copia `cuenta/estado.limites.agendas` (`planes.ts`); falta la regla, con un contador como el del catálogo |
 | **Conversaciones incluidas** (100 / 220 / 500) | `ingesta.ts`, dentro de la transacción que ya cuenta | Hecho en la rama de prepago |
 | **Bloque de 25 respuestas por conversación** (la 26 factura otra) | `ingesta.ts`, en la misma transacción que cuenta (`mensajesVentana`, `bloquesAdicionales`) | **Hecho el 13/09** en `cobro/bloques-de-25`, con `pruebas/conteo-bloques.test.ts` |
 | **Umbrales de operador y bloqueo** (50 / 100, por empresa) | `atencion.ts` decide; la ingesta anota `atencionEstado` y cuenta; `configuracionFlujo` devuelve `atencion.estado` si el flujo manda `telefono` | **Servidor en `main` desde el 13/09** (`pruebas/umbrales-atencion.test.ts`). **Flujos A y B obedecen en el JSON versionado** (`flujos/umbrales-atencion`, `pruebas/flujos-umbrales.test.ts`): `Traer configuración` manda `telefono` y `¿Atención normal?` bifurca antes del agente. **Falta publicarlos**, después de `v0.2.0`, y probarlos contra un teléfono real |
 | **Ítems del catálogo** que van al prompt | `configuracionFlujo`, al armar la respuesta | Hoy hay `limit(200)`, sin corte por plan |
-| **Productos del catálogo por plan** (20 / 100 / 500) | `firestore.rules` al crear un producto, con un contador; la importación en lote por Function | **En construcción desde el 15/09** |
-| **Aviso de consumo al 80 %** de las conversaciones del plan | `ingesta.ts`, en la transacción que ya cuenta | **En construcción desde el 15/09** |
+| **Productos del catálogo por plan** (20 / 100 / 500) | `firestore.rules` al crear o borrar un producto, en el mismo lote que el contador `contadores/catalogo`; la importación en lote por la callable `importarCatalogo` (`limiteCatalogo.ts`). El número es `limitesDeCuenta` de `planes.ts`: la copia `cuenta/estado.limites.productos` y, sin copia, el plan | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/reglas.test.ts` («Límite de productos por plan») y `pruebas/limite-catalogo.test.ts`. **Falta desplegarlo**, y el contador va ANTES que las reglas: `docs/seguridad/reglas-storage.md` §Despliegue |
+| **Aviso de consumo al 80 %** de las conversaciones del plan | `ingesta.ts`, en la transacción que ya cuenta: marca `cuenta/estado.avisoConsumo` una vez por mes. La consola lo muestra (tablero, estado de cuenta, cartera) y no lo calcula | **Hecho el 15/09** en `consolidado/planes-catalogo-storage`, con `pruebas/aviso-consumo.test.ts` (la ingesta real) y `pruebas/planes.test.ts`. Falta desplegar Functions |
 
 **La regla al agregar cualquier límite nuevo:**
 
@@ -268,6 +268,15 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
 
 ## Flujo de trabajo
 
+- **Andres autoriza; Claude opera** (pedido una y otra vez; 15/09/2026). Todo
+  paso de un procedimiento —despliegues, etiquetas, scripts con `--aplicar`,
+  IAM, rotación de secretos, n8n, variables de GitHub— lo ejecuta Claude después
+  del OK de Andres en el chat. Nunca se le pasan comandos para que los corra, ni
+  con marcadores para reemplazar. Si una salvaguarda impide un paso (no leer el
+  valor de un secreto), se automatiza en un script revisado del repositorio que
+  lo hace sin mostrar el valor (`scripts/rotar-ingesta.sh`), y lo corre Claude
+  con confirmación. Lo único de Andres es lo que el sistema exige a una persona:
+  aprobar el Environment `production`, Meta, un teléfono.
 - **Alta de un cliente:** seguir `docs/alta-cliente/RUNBOOK.md`. El flujo
   guardado `/alta-cliente` lo recorre por etapas con los agentes `alta-cliente`,
   `meta-whatsapp`, `plataforma` y `flujos-n8n`. Los agentes ejecutan lo que

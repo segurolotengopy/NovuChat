@@ -97,9 +97,25 @@ Después, siempre **primero en seco** y luego con `--aplicar`:
 
 ```bash
 node admin/scripts/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>"
+node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --tenant <id> --plan <impulso|crecimiento|pro>
+node admin/scripts/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
 node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
 ```
+
+- **El plan y el contador del catálogo.** `alta-comercio.mjs` deja al comercio
+  en **Impulso**, con la copia de sus límites en `cuenta/estado.limites` (lo que
+  leen las reglas y las Functions) y el contador `contadores/catalogo` en 0. Si
+  contrató **Crecimiento** o **Pro**, `asignar-plan.mjs` (en seco y después con
+  `--aplicar`) cambia el plan, la copia, el espejo de la ficha y deja la
+  auditoría. El plan sale del catálogo de `admin/functions/src/planes.ts`: no
+  hay texto libre. Los demos llevan `demostracion`, que no se vende.
+- `contar-catalogo.mjs` en seco **comprueba** que el contador exista y coincida
+  con los productos. Un comercio nuevo no lo necesita con `--aplicar`; uno dado
+  de alta **antes del 15/09** sí, una vez, antes de desplegar las reglas del
+  límite de productos: sin contador, la consola lo crea sola en la primera alta
+  o baja (`importarCatalogo`), pero ningún producto se crea ni se borra por las
+  reglas mientras falte.
 
 - El administrador del comercio entra con **contraseña**, nunca con la cuenta de
   Google del propietario. **El enlace para ponerla no se imprime**: desde el

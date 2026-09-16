@@ -88,7 +88,12 @@ for linea in open(local, encoding="utf-8"):
 # distintas terminaron apuntando al mismo calendario, que es exactamente la
 # colision de citas que ese cambio venia a evitar. Y no fallo: escribio un
 # valor plausible y equivocado, que es la peor forma de fallar.
-presentes = sorted(set(re.findall(r'REEMPLAZAR_[^"\\\s]*', texto)))
+# UN MARCADOR EMPIEZA CON MAYÚSCULA DESPUÉS DE «REEMPLAZAR_» (REEMPLAZAR_PHONE_NUMBER_ID,
+# REEMPLAZAR_ID_CALENDARIO@group.calendar.google.com, REEMPLAZAR_NUMERO_DUENO_SIN_+).
+# Antes se aceptaba cualquier cosa después de «REEMPLAZAR_», y el flujo de captación,
+# que menciona el prefijo en su propio código para reconocer un respaldo sin llenar,
+# se leía como dos marcadores falsos y publicar-flujo.sh abortaba (15/09/2026).
+presentes = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', texto)))
 puestos, sin_valor = [], []
 # COINCIDENCIA EXACTA, nunca por prefijo. Antes se aceptaba una fila cuyo
 # nombre fuera el comienzo del marcador, y el 2026-09-15 el respaldo de NovuChat
