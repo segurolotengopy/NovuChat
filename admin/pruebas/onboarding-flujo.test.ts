@@ -921,6 +921,146 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
     });
   });
 
+  // El 15/09, en la primera prueba con un teléfono real, el mensaje de planes
+  // llegó a 1411 caracteres: como el cuerpo de un mensaje con botones admite
+  // 1024, «Salida» lo bajó a texto y el cliente se quedó SIN el botón «Hablar
+  // con un asesor», que es la única salida hacia una persona. La ejecución
+  // figuró «success» y nadie se enteró. El flujo no puede depender de que el
+  // contenido que carga el comercio sea corto.
+  describe('el botón sobrevive al límite de 1024', () => {
+    const LIMITE = 1024;
+    // Un `incluye` como los que permite la consola (hasta 200 caracteres).
+    const INCLUYE = 'Hasta 100 conversaciones al mes, catálogo de 20 productos, una agenda conectada a '
+      + 'Google Calendar, informes de uso en la consola y soporte por WhatsApp en horario de oficina.';
+    const DETALLE = 'Incluye la configuración del número con Meta, la carga del catálogo, las pruebas '
+      + 'con tu equipo y el acompañamiento de la primera semana de uso.';
+    const LARGOS = PLANES.map((p) => ({ ...p, incluye: INCLUYE }));
+    const CARGOS_LARGOS = CARGOS.map((c) => ({ ...c, detalle: DETALLE }));
+    const OFERTA_LARGA = { ...OFERTA, planes: LARGOS, cargosUnicos: CARGOS_LARGOS };
+    const relleno = (veces: number) => 'Tu asistente atiende y agenda solo mientras tú trabajas. '.repeat(veces).trim();
+    const cuerpo = (r: J) => String(r['cuerpoMeta']?.['interactive']?.['body']?.['text'] ?? '');
+    const turnoPlanes = (onboarding: J, salidaAgente: string) => {
+      const sd: J = {};
+      const ent = turnoCon(texto('Hola, ¿cuánto vale?'), sd, cfgCon(onboarding));
+      return procesar(salidaAgente, ent, sd);
+    };
+    /** Lo que de verdad sale a Meta, con la degradación de «Salida» aplicada. */
+    const salida = (r: J) => correr('Salida', [{ ...r, from: TEL }])[0]!;
+    const PRECIOS = ['(USD 25/mes)', '(USD 50/mes)', '(USD 90/mes)', 'USD 65', 'desde USD 125'];
+
+    it('el límite de Meta se declara en la configuración; quien lo usa lo lee, no lo repite', () => {
+      // El valor vive en `Config base` y se valida en `Config del negocio`
+      // (mismo patrón que `topeAviso`). Los nodos que lo aplican lo reciben:
+      // dos números distintos serían un mensaje compactado que igual no entra.
+      for (const n of ['Procesar respuesta', 'Salida']) {
+        const js = nodo(n).parameters.jsCode as string;
+        expect(js).toContain('limiteInteractivo');
+        expect(js.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n')).not.toContain('1024');
+      }
+      expect(config()['limiteInteractivo']).toBe(LIMITE);
+      // Un valor fuera de rango o roto no deja al flujo sin límite.
+      const roto = base(); roto['limiteInteractivo'] = 'mil';
+      expect(config(PANEL(), roto)['limiteInteractivo']).toBe(LIMITE);
+    });
+
+    it('un mensaje que entra no cambia en nada: ni se compacta ni se recorta', () => {
+      const r = turnoPlanes(OFERTA, 'Para tu salón, esto te sirve.\n[PLANES]');
+      expect(r['respuesta']).toContain('Impulso (USD 25/mes): Hasta 100 conversaciones.');
+      expect(r['avisos']).toEqual([]);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('(a) con los planes largos, se compacta la oferta y el botón se conserva', () => {
+      const r = turnoPlanes(OFERTA_LARGA, 'Para tu salón, esto te sirve: la agenda se maneja sola.\n[PLANES]');
+      const t = cuerpo(r);
+      // Sin compactar, el mensaje se pasaba del límite y perdía el botón.
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      expect(r['avisos']).toContain('planes_compactados');
+      expect(r['avisos']).not.toContain('texto_recortado');
+      // Los precios, completos; lo que incluye cada plan es lo que se resigna.
+      for (const p of PRECIOS) expect(t).toContain(p);
+      expect(t).not.toContain('catálogo de 20 productos');
+      expect(t).toContain('Para tu salón, esto te sirve: la agenda se maneja sola.');
+      expect(botonAsesor(r)).toEqual([BOTON]);
+      const s = salida(r);
+      expect(s['esInteractivo']).toBe(true);
+      expect(s['avisos']).not.toContain('boton_perdido_por_largo');
+    });
+
+    it('(b) si ni compactando entra, se recorta el texto del modelo y los precios quedan enteros', () => {
+      const r = turnoPlanes(OFERTA_LARGA, `${relleno(16)}\n[PLANES]\n¿Te muestro cómo funciona?`);
+      const t = cuerpo(r);
+      expect(t.length).toBeLessThanOrEqual(LIMITE);
+      expect(r['avisos']).toEqual(['planes_compactados', 'texto_recortado']);
+      // El recorte es por palabras y se nota; los precios NO se recortan.
+      expect(t).toContain('…');
+      expect(t).not.toMatch(/\wtrabaj…/);
+      for (const p of PRECIOS) expect(t).toContain(p);
+      expect(t).toContain('Precios en dólares; se cobran en bolivianos al tipo de cambio oficial del BCB.');
+      // Se recorta el enganche, que es lo largo: la pregunta del final se queda.
+      expect(t.trim().endsWith('¿Te muestro cómo funciona?')).toBe(true);
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('(c) con una oferta que ni compacta entra, el mensaje sale entero y la pérdida del botón queda anotada', () => {
+      const doce = Array.from({ length: 12 }, (_, i) => ({
+        nombre: `Plan ${'Empresarial'.slice(0, 9)} ${i + 1} para comercios`, precioUsd: 25 + i, periodo: 'mes', incluye: INCLUYE }));
+      const seis = Array.from({ length: 6 }, (_, i) => ({
+        nombre: `Servicio de instalación ${i + 1}`, precioUsd: 60 + i, desde: true, detalle: DETALLE }));
+      const r = turnoPlanes({ ...OFERTA, planes: doce, cargosUnicos: seis }, 'Estos son los planes.\n[PLANES]');
+      // Ni compactado entra: recortar no salvaría el botón, así que el cliente
+      // recibe el mensaje COMPLETO, con lo que incluye cada plan.
+      expect(String(r['respuesta']).length).toBeGreaterThan(LIMITE);
+      expect(r['avisos']).toEqual([]);
+      expect(r['respuesta']).toContain('catálogo de 20 productos');
+      const s = salida(r);
+      expect(s['esInteractivo']).toBe(false);
+      expect(s['cuerpoMeta']['type']).toBe('text');
+      expect(s['avisos']).toContain('boton_perdido_por_largo');
+      // Sin botón, el texto sigue diciendo cómo pedir una persona.
+      expect(s['cuerpoMeta']['text']['body']).toContain('«asesor»');
+    });
+
+    it('el fin del primer bloque y un [CIERRE] sin datos también conservan el botón', () => {
+      const sd: J = {};
+      const cfg = cfgCon({ ...OFERTA, topeAviso: 3 });
+      turnoCon(texto('hola'), sd, cfg); turnoCon(texto('cuéntame'), sd, cfg);
+      const tercera = turnoCon(texto('sigo'), sd, cfg);
+      expect(tercera['finBloque']).toBe(true);
+      const fin = procesar(relleno(22), tercera, sd);
+      expect(cuerpo(fin).length).toBeLessThanOrEqual(LIMITE);
+      expect(fin['avisos']).toContain('texto_recortado');
+      expect(botonAsesor(fin)).toEqual([BOTON]);
+      expect(salida(fin)['esInteractivo']).toBe(true);
+
+      const sd2: J = {};
+      const cierre = procesar(`${relleno(22)} [CIERRE]`, turnoCon(texto('llámenme'), sd2, cfgCon()), sd2);
+      expect(cierre['avisar']).toBe(false);
+      expect(cierre['avisos']).toEqual(['cierre_sin_datos', 'texto_recortado']);
+      expect(cuerpo(cierre).length).toBeLessThanOrEqual(LIMITE);
+      expect(salida(cierre)['esInteractivo']).toBe(true);
+    });
+
+    it('con los planes en archivo no hay nada que compactar: se recorta el texto, no la frase del archivo', () => {
+      const r = turnoPlanes({ ...OFERTA, planes: [LARGOS[0]], planesEnArchivo: true, archivoPlanes: ARCHIVO },
+        `${relleno(20)}\n[PLANES]`);
+      expect(cuerpo(r)).toContain('Te comparto los planes y sus precios en el archivo de arriba.');
+      expect(cuerpo(r)).not.toMatch(/USD/);
+      expect(r['avisos']).toEqual(['texto_recortado']);
+      expect(r['cuerpoMeta']['interactive']['header']['type']).toBe('document');
+      expect(salida(r)['esInteractivo']).toBe(true);
+    });
+
+    it('compactar no agrega ni quita mensajes: sigue siendo UNO por turno', () => {
+      for (const oferta of [OFERTA, OFERTA_LARGA]) {
+        const s = salida(turnoPlanes(oferta, `${relleno(16)}\n[PLANES]`));
+        expect(s['responder']).toBe(true);
+        expect(s['avisar']).toBe(false);
+        expect(s['cuerpoAviso']).toBeNull();
+      }
+    });
+  });
+
   describe('rubro: deducido o por número', () => {
     it('las instrucciones piden deducir solo con una palabra del oficio, sin «90 % seguro», y dejan corregir', () => {
       const s = instrucciones(cfgCon());
