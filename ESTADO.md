@@ -53,6 +53,28 @@ imprimía por stdout (#82 lo pasa a `~/enlace-admin-<tenant>.txt`, 600). Y
 consola es el `quota_project_id` de `~/.config/gcloud-novuchat-prod` (los
 nombres difieren en un guion).
 
+**Tarde del 17/09, y es lo que más importa de la jornada.** Segundo
+sobreagendamiento del día en Platinum: el modelo agendó a las 10:00 dentro de
+una cita de 10:00 a 11:00 que acababa de recibir de `consultar_disponibilidad`,
+con la regla de intervalos ya publicada, en cuanto la paciente insistió. Y el
+candado no corrió, porque se disparaba por lo que el modelo DECÍA y dijo «he
+reprogramado». Andres fijó una **regla mandatoria**, escrita en las reglas de
+flujos de `CLAUDE.md` (#98): nunca una cita encima de otra con un cliente real;
+el prompt no es una barrera. Mecanismo en #97 y #99, publicado en **los dos
+flujos** (Platinum y Demo A, 33 → 38 nodos): el candado se dispara si
+`agendar_cita` se ejecutó (`intermediateSteps` del agente e `isExecuted`, en OR
+con el detector de texto ampliado); tras un cruce, un agente aparte que solo
+puede consultar ofrece alternativas; la consola registra lo enviado y no lo que
+dijo el modelo; la negrita se normaliza por código. 416 pruebas. **Falta la
+prueba real de insistencia** antes de darlo por bueno.
+
+**Audios e imágenes** (la clínica dice que son frecuentes): análisis en
+`CLIENTES/PLATINUM/analisis-audio-e-imagen.md`. Hoy una foto con caption
+«quiero más información» hizo que el asistente inventara «gracias por el
+comprobante». Recomendación: transcribir el audio y responder por texto;
+clasificar la imagen sin que el agente la vea; sin voz de salida; reenvío a un
+celular solo para el comprobante y por la consola. Cero mensajes agregados.
+
 **Pendiente:** probar en la consola, con el administrador de Platinum, alta y
 baja de un producto, el límite del plan y la subida de un archivo; después
 endurecer el bucket (acceso uniforme, prevención de acceso público). Subir el
