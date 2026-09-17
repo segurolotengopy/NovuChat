@@ -22,7 +22,11 @@
  *   (f) obedece los umbrales del servidor antes del modelo;
  *   (g) el mensaje del cliente se reporta ANTES que la respuesta (orden v1);
  *   (h) dos odontólogos, cada uno con su calendario, y las herramientas eligen
- *       la agenda correcta.
+ *       la agenda correcta;
+ *   (i) 17/09/2026, ejecución #2867: la consola registra lo que el paciente
+ *       recibió y no lo que el modelo dijo; tras deshacer una cita solapada hay
+ *       UN reintento que ofrece alternativas; y el prompt dice que un evento
+ *       ocupa desde su start hasta su end. Se prueba sobre los DOS flujos.
  *
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
  * en las suites comunes, que recorren este flujo junto con los demás.
@@ -133,7 +137,7 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
     'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
   ];
 
-  it('tiene el nombre del cliente y los 33 nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
+  it('tiene el nombre del cliente y los mismos nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
     expect(flujo.name).toBe('NovuChat — Clínica Platinum (Reservas)');
     expect(flujo.nodes).toHaveLength(demoA.nodes.length);
     const forma = (f: Flujo) => f.nodes.map((n) => [n.id, n.name, n.type, n.typeVersion, n.position, n.onError ?? null,
@@ -618,5 +622,354 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
       [{ from: '59170000001' }], { 'Config del negocio': [base] });
     expect(items.map((i) => i['calendarioARevisar']).sort())
       .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (i) 17/09/2026, ejecución #2867: consola veraz, reintento tras cruce, intervalos
+// ---------------------------------------------------------------------------
+/**
+ * EL CASO REAL. Un paciente pidió «una cita con el Dr Cristian sandobal a las
+ * 2.30 de la tarde hoy». `consultar_disponibilidad` devolvió una cita de 14:00
+ * a 15:00 en esa agenda y el modelo agendó igual a las 14:30 y escribió
+ * «¡Listo, Ruben! Quedó agendada tu cita… a las 14:30». El candado deshizo la
+ * cita y el paciente recibió el texto fijo con transferencia. Tres defectos:
+ *
+ *   1. la consola mostró «Quedó agendada» —lo que el modelo dijo— mientras el
+ *      teléfono recibió «no pude confirmar»: el saliente se reportaba desde
+ *      `Procesar respuesta`, ANTES del candado;
+ *   2. el paciente no recibió ninguna alternativa («no ofrece un calendario
+ *      alternativo», dijo la clínica);
+ *   3. el modelo agendó dentro de un intervalo ocupado que tenía delante.
+ *
+ * Los tres arreglos van con el MISMO mecanismo en Platinum y en el Demo A, del
+ * que se copian los clientes nuevos: un cliente con una regla distinta es el
+ * defecto de «un cambio a todos o a ninguno». Por eso este bloque recorre los
+ * dos flujos.
+ */
+describe.each([
+  ['platinum-agendamiento.json', flujo],
+  ['demo-a-agendamiento.json', demoA],
+])('(i) %s · lo que enseñó la ejecución #2867', (_archivo, f) => {
+  const destinos = (desde: string, salida = 0) =>
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+  const origenes = (hacia: string) => Object.entries(f.connections)
+    .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
+    .map(([origen]) => origen);
+  const subNodos = (desde: string, tipo: string) => (f.connections[desde]?.[tipo]?.[0] ?? []).map((x) => x.node);
+  const alcanzables = (desde: string): Set<string> => {
+    const vistos = new Set<string>();
+    const pendientes = [desde];
+    while (pendientes.length) {
+      const actual = pendientes.pop() as string;
+      for (const salida of f.connections[actual]?.['main'] ?? []) {
+        for (const x of salida) if (!vistos.has(x.node)) { vistos.add(x.node); pendientes.push(x.node); }
+      }
+    }
+    return vistos;
+  };
+  const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
+  const x = (nombre: string) => nodo(f, nombre).position[0];
+  const y = (nombre: string) => nodo(f, nombre).position[1];
+  const cfg = configBase(f);
+  const equipo = JSON.parse(String(cfg['funcionarios'])) as { nombre: string; calendario: string }[];
+  const persona = equipo[0]!;
+
+  /** Los dos eventos del caso: la cita que ya estaba y la que el modelo metió encima. */
+  const eventosDelCaso = () => {
+    const recien = new Date(Date.now() - 1000).toISOString();
+    return [
+      { id: 'existente', summary: 'Cita ANDRES', organizer: { email: persona.calendario },
+        start: { dateTime: '2026-09-17T14:00:00-04:00' }, end: { dateTime: '2026-09-17T15:00:00-04:00' },
+        created: '2026-09-15T12:00:00.000Z' },
+      { id: 'nueva', summary: 'Cita Ruben — blanqueamiento dental profesional', organizer: { email: persona.calendario },
+        start: { dateTime: '2026-09-17T14:30:00-04:00' }, end: { dateTime: '2026-09-17T15:30:00-04:00' },
+        created: recien },
+    ];
+  };
+  const DIJO_EL_MODELO = '¡Listo, Ruben! Quedó agendada tu cita de blanqueamiento dental profesional para hoy a las 14:30.';
+  const procesada = { respuesta: DIJO_EL_MODELO, transferir: false, afirmaAgendo: true, from: '59170000001', nombrePerfil: 'Ruben' };
+  const PIDIO_EL_PACIENTE = 'una cita con el Dr Cristian sandobal a las 2.30 de la tarde hoy';
+
+  /** `Comprobar reserva` sobre los eventos del caso: el item que sigue al candado. */
+  const candado = () => ejecutar(codigo('Comprobar reserva'), eventosDelCaso(),
+    { 'Procesar respuesta': [procesada], 'Config del negocio': [cfg] })[0]!;
+  /** `Retomar respuesta` después del borrado, con el resultado que da el nodo de Calendar. */
+  const retomar = (borrado: J) => ejecutar(codigo('Retomar respuesta'), [borrado],
+    { 'Comprobar reserva': [candado()], 'Normalizar entrada': [{ userInput: PIDIO_EL_PACIENTE }] })[0]!;
+  /** `Procesar reintento` con lo que devolvió el segundo turno del modelo. */
+  const reintento = (salidaDelModelo: J) => ejecutar(codigo('Procesar reintento'), [salidaDelModelo],
+    { 'Retomar respuesta': [retomar({ success: true })] })[0]!;
+  /** Lo que la consola recibe por un item que llegó a «Mensaje a enviar». */
+  const reportado = (item: J) => {
+    const enviado = ejecutar(codigo('Mensaje a enviar'), [item])[0]!;
+    return JSON.parse(String(expresion(nodo(f, 'Reportar mensaje (saliente)').parameters['jsonBody'],
+      { messages: [{ id: 'wamid.ENVIADO' }] }, { 'Mensaje a enviar': enviado }))) as J;
+  };
+
+  describe('1. la consola registra lo que el paciente recibió, no lo que el modelo dijo', () => {
+    it('«Reportar mensaje (saliente)» cuelga SOLO de «Responder al cliente», ya no de «Procesar respuesta»', () => {
+      expect(origenes('Reportar mensaje (saliente)')).toEqual(['Responder al cliente']);
+      expect(destinos('Procesar respuesta')).toEqual(['¿Afirma que agendó?']);
+      expect(destinos('¿Responder uso extendido?', 0)).toEqual(['Mensaje a enviar']);
+    });
+
+    it('todo camino al cliente pasa por «Mensaje a enviar», la ÚNICA entrada del envío', () => {
+      expect(origenes('Responder al cliente')).toEqual(['Mensaje a enviar']);
+      expect(destinos('Mensaje a enviar')).toEqual(['Responder al cliente']);
+      expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+      expect(origenes('Mensaje a enviar').sort()).toEqual([
+        'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
+        '¿Reintentar tras cruce?', '¿Responder uso extendido?',
+      ].sort());
+      // Las ramas verdaderas de los IF siguen yendo a donde iban.
+      expect(destinos('¿Afirma que agendó?', 0)).toEqual(['Calendarios a revisar']);
+      expect(destinos('¿Deshacer cita solapada?', 0)).toEqual(['Deshacer cita solapada']);
+      expect(destinos('¿Afirma que agendó?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
+    });
+
+    it('«Mensaje a enviar» es de paso: no cambia el texto, el destinatario ni la transferencia', () => {
+      expect(ejecutar(codigo('Mensaje a enviar'), [{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]))
+        .toEqual([{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]);
+    });
+
+    it('el cuerpo del reporte lleva el texto y el teléfono de «Mensaje a enviar», y el id que devolvió Meta', () => {
+      expect(reportado({ from: '59170000001', respuesta: 'Disculpe, no pude confirmar.' })).toEqual({
+        telefono: '59170000001', direccion: 'saliente', tipo: 'text',
+        texto: 'Disculpe, no pude confirmar.', idMeta: 'wamid.ENVIADO',
+      });
+      const cuerpo = String(nodo(f, 'Reportar mensaje (saliente)').parameters['jsonBody']);
+      expect(cuerpo).not.toContain('$json.respuesta');
+      expect(cuerpo).not.toContain('$json.from');
+    });
+
+    it('EL CASO #2867 de punta a punta: el candado deshace, y lo reportado es lo que salió', () => {
+      const c = candado();
+      expect(c['citaSolapada']).toBe(true);
+      expect(c['eventoABorrar']).toBe('nueva');
+      expect(c['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+      // El camino viejo (texto fijo, si el reintento no sale):
+      const fijo = reintento({ error: 'Gemini 503' });
+      expect(reportado(fijo)['texto']).toBe(cfg['mensajeReservaNoConfirmada']);
+      expect(String(reportado(fijo)['texto'])).not.toContain('Quedó agendada');
+      // El camino nuevo (alternativas):
+      const alternativas = reintento({ output: 'Ese horario ya estaba ocupado y su cita no quedó registrada. Puedo ofrecerle 15:00, 16:00 o 17:30 de hoy. ¿Cuál prefiere?' });
+      expect(reportado(alternativas)['texto']).toBe('Ese horario ya estaba ocupado y su cita no quedó registrada. Puedo ofrecerle 15:00, 16:00 o 17:30 de hoy. ¿Cuál prefiere?');
+    });
+
+    it('un envío rechazado por Meta sigue cortando ANTES del reporte: el envío no lleva onError', () => {
+      expect(nodo(f, 'Responder al cliente').onError ?? 'stopWorkflow').toBe('stopWorkflow');
+      expect(nodo(f, 'Reportar mensaje (saliente)').onError).toBe('continueRegularOutput');
+    });
+
+    it('CERO mensajes de WhatsApp agregados: los mismos dos nodos de envío de siempre', () => {
+      expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name))
+        .toEqual(['Responder al cliente', 'Avisar a recepción']);
+    });
+  });
+
+  describe('2. tras deshacer una cita solapada, UN reintento que ofrece alternativas', () => {
+    it('la cadena: Deshacer → Retomar → ¿Reintentar? → Olvidar → Reintento → Procesar → Mensaje a enviar', () => {
+      expect(destinos('Deshacer cita solapada')).toEqual(['Retomar respuesta']);
+      expect(destinos('Retomar respuesta')).toEqual(['¿Reintentar tras cruce?']);
+      expect(destinos('¿Reintentar tras cruce?', 0)).toEqual(['Olvidar turno fallido']);
+      expect(destinos('¿Reintentar tras cruce?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
+      expect(destinos('Olvidar turno fallido')).toEqual(['Reintento tras cruce']);
+      expect(destinos('Reintento tras cruce')).toEqual(['Procesar reintento']);
+      expect(destinos('Procesar reintento')).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
+    });
+
+    it('el reintento comparte modelo y memoria con Sofía, y SOLO tiene consultar_disponibilidad', () => {
+      // Con la misma memoria el modelo sabe qué pidió el cliente y con quién;
+      // sin agendar_cita no puede repetir el error por construcción, que es la
+      // inmunidad que la historia de `Comprobar reserva` exige: la primera
+      // versión del candado produjo citas duplicadas porque el agente volvía a
+      // llamar a agendar_cita.
+      expect(subNodos('Google Gemini Chat Model', 'ai_languageModel')).toEqual([AGENTE, 'Reintento tras cruce']);
+      expect(subNodos('Memoria por teléfono', 'ai_memory')).toEqual([AGENTE, 'Olvidar turno fallido', 'Reintento tras cruce']);
+      expect(subNodos('consultar_disponibilidad', 'ai_tool')).toEqual([AGENTE, 'Reintento tras cruce']);
+      for (const h of ['agendar_cita', 'cancelar_cita', 'buscar_mi_cita']) {
+        expect(subNodos(h, 'ai_tool'), h).toEqual([AGENTE]);
+      }
+      const r = nodo(f, 'Reintento tras cruce');
+      expect(r.type).toBe(nodo(f, AGENTE).type);
+      expect(r.typeVersion).toBe(nodo(f, AGENTE).typeVersion);
+    });
+
+    it('a lo sumo UNA vez: desde el reintento no se vuelve a ningún agente, al candado ni a sí mismo', () => {
+      const a = alcanzables('Reintento tras cruce');
+      for (const n of [AGENTE, 'Reintento tras cruce', 'Procesar respuesta', '¿Afirma que agendó?', 'Calendarios a revisar',
+        'Verificar en el calendario', 'Comprobar reserva', 'Deshacer cita solapada', 'Olvidar turno fallido', 'Retomar respuesta']) {
+        expect(a.has(n), n).toBe(false);
+      }
+      expect([...a].sort()).toEqual(['Avisar a recepción', 'Mensaje a enviar', 'Procesar reintento',
+        'Reportar mensaje (saliente)', 'Responder al cliente', '¿Transferir a humano?'].sort());
+      // Y el agente principal sigue teniendo una sola entrada.
+      expect(origenes(AGENTE)).toEqual(['¿Atención normal?']);
+    });
+
+    it('la memoria olvida el turno que NO se envió: los últimos 2 mensajes, y no corta nada si falla', () => {
+      const m = nodo(f, 'Olvidar turno fallido');
+      expect(m.type).toBe('@n8n/n8n-nodes-langchain.memoryManager');
+      expect(m.parameters).toEqual({ mode: 'delete', deleteMode: 'lastMessages', lastMessagesCount: 2 });
+      expect(m.onError).toBe('continueRegularOutput');
+      expect((m as unknown as { alwaysOutputData?: boolean }).alwaysOutputData).toBe(true);
+      expect(nodo(f, 'Reintento tras cruce').onError).toBe('continueRegularOutput');
+    });
+
+    it('Comprobar reserva ya no transfiere por sí mismo: deja el motivo y QUIÉN y CUÁNDO chocó', () => {
+      const c = candado();
+      expect(c['transferir']).toBe(false);
+      expect(c['motivoTransferencia']).toBe('');
+      expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
+      const caidas = c['citasCaidas'] as J[];
+      expect(caidas).toHaveLength(1);
+      expect(caidas[0]).toMatchObject({ hora: '14:30', persona: persona.nombre, servicio: 'blanqueamiento dental profesional' });
+      expect(String(caidas[0]!['fecha'])).toContain('17 de septiembre');
+      // La rama directa a la transferencia sigue para los otros casos del candado.
+      expect(destinos('Comprobar reserva')).toEqual(['¿Deshacer cita solapada?', '¿Transferir a humano?', '¿Hay cita verificada?']);
+    });
+
+    it('Retomar respuesta: con el borrado bien hecho pide el reintento y NO transfiere todavía', () => {
+      const r = retomar({ success: true });
+      expect(r['reintentar']).toBe(true);
+      expect(r['transferir']).toBe(false);
+      expect(r['userInput']).toBe(PIDIO_EL_PACIENTE);
+      expect(String(r['notaCruce'])).toBe(`el horario de las 14:30 del ${(r['citasCaidas'] as J[])[0]!['fecha']} con ${persona.nombre} ya estaba ocupado`);
+      expect(r['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+    });
+
+    it('Retomar respuesta: si el borrado FALLÓ no hay reintento: la cita fantasma sigue en la agenda', () => {
+      const r = retomar({ error: 'Google 403' });
+      expect(r['reintentar']).toBe(false);
+      expect(r['transferir']).toBe(true);
+      expect(String(r['motivoTransferencia'])).toContain('NO SE PUDO DESHACER');
+      expect(r['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+      const condicion = nodo(f, '¿Reintentar tras cruce?').parameters['conditions'].conditions[0].leftValue;
+      expect(expresion(condicion, { reintentar: true })).toBe(true);
+      expect(expresion(condicion, { reintentar: false })).toBe(false);
+      expect(expresion(condicion, {})).toBe(false);
+    });
+
+    it('el mensaje del reintento lleva la hora real, el aviso del cruce y el texto del cliente AL FINAL', () => {
+      const texto = String(nodo(f, 'Reintento tras cruce').parameters['text']);
+      expect(texto).toContain("$now.setZone('America/La_Paz')");
+      expect(texto).toContain('[AVISO DEL SISTEMA]');
+      expect(texto).toContain("$('Retomar respuesta').first().json.notaCruce");
+      expect(texto).toContain('NO puedes agendar ni confirmar nada');
+      expect(texto.indexOf('[MENSAJE DEL CLIENTE]')).toBeGreaterThan(texto.indexOf('[AVISO DEL SISTEMA]'));
+      expect(texto.trimEnd().endsWith("{{ $('Retomar respuesta').first().json.userInput }}")).toBe(true);
+    });
+
+    it('las instrucciones del reintento: estáticas, prohíben agendar, piden UN mensaje y no traen datos del negocio', () => {
+      const p = String(nodo(f, 'Reintento tras cruce').parameters['options'].systemMessage);
+      for (const v of ['$now', '$json.from', 'nombrePerfil', 'mensajesRestantes24h', 'userInput']) expect(p, v).not.toContain(v);
+      expect(p).toContain('NO debes decir que agendaste, registraste ni confirmaste nada');
+      expect(p).toContain('TODO EN UN SOLO MENSAJE');
+      expect(p).toContain('HASTA 3 horas exactas y libres');
+      expect(p).toContain('Un evento ocupa desde su start hasta su end');
+      expect(p).toContain('EXACTAMENTE con la marca [TRANSFERIR]');
+      expect(p).not.toMatch(/Sandoval|Pérez|Platinum|María|José|blanqueamiento|salón/);
+      // Lo que sí necesita lo lee de la configuración, como todo lo demás.
+      for (const campo of ['tratamiento', 'estiloEmojis', 'horarioAtencion', 'funcionarios', 'catalogoConPrecio']) {
+        expect(p, campo).toContain(`$('Config del negocio').first().json.${campo}`);
+      }
+      expect(p).toContain("const c = $('Config del negocio').first().json;");
+      expect(p).toContain('c.nombreAsistente');
+      expect(p).toContain('c.nombreNegocio');
+      // Es idéntico en los dos flujos: no es un nodo declarado como distinto.
+      expect(p).toBe(String(nodo(demoA, 'Reintento tras cruce').parameters['options'].systemMessage));
+    });
+
+    it('Procesar reintento: con alternativas, ese texto sale y NO se transfiere ni se avisa', () => {
+      const r = reintento({ output: 'El horario de las 14:30 ya está reservado. Puedo ofrecerle las 15:00 o las 16:00 con el mismo odontólogo, ¿cuál prefiere?' });
+      expect(r['reintentoTrasCruce']).toBe('ok');
+      expect(r['transferir']).toBe(false);
+      expect(r['motivoTransferencia']).toBe('');
+      expect(String(r['respuesta'])).toContain('Puedo ofrecerle las 15:00');
+    });
+
+    it.each([
+      ['vuelve a afirmar que agendó', { output: '¡Listo! Su cita quedó agendada para las 15:00 con el odontólogo.' }, 'afirmo-agendar'],
+      ['afirma al final aunque niegue al principio', { output: 'Ese horario no quedó registrado. Ahora sí: quedó agendada su cita a las 15:00.' }, 'afirmo-agendar'],
+      ['el modelo falla', { error: 'Gemini 503' }, 'fallo'],
+      ['no hay salida', {}, 'fallo'],
+      ['devuelve vacío', { output: '   ' }, 'vacio'],
+    ])('Procesar reintento cae al texto fijo con transferencia y aviso cuando %s', (_, salida, marca) => {
+      const r = reintento(salida);
+      expect(r['reintentoTrasCruce']).toBe(marca);
+      expect(r['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+      expect(r['transferir']).toBe(true);
+      expect(String(r['motivoTransferencia'])).toContain('YA OCUPADO');
+      expect(String(r['motivoTransferencia'])).toContain('quedo esperando otro horario');
+    });
+
+    it('un [TRANSFERIR] del reintento sale sin la marca y transfiere', () => {
+      const r = reintento({ output: 'No pude revisar la agenda en este momento; recepción le escribe para darle otro horario. [TRANSFERIR]' });
+      expect(r['reintentoTrasCruce']).toBe('ok');
+      expect(String(r['respuesta'])).not.toContain('[TRANSFERIR]');
+      expect(r['transferir']).toBe(true);
+      expect(String(r['motivoTransferencia'])).toContain('pidio atencion humana');
+    });
+
+    it('los detectores del reintento son letra por letra los de Procesar respuesta', () => {
+      const detectores = (c: string) => (c.match(/^\s*const (CONFIRMA|NIEGA|YA_EXISTE) = .*$/gm) ?? []).map((l) => l.trim());
+      expect(detectores(codigo('Procesar reintento'))).toHaveLength(3);
+      expect(detectores(codigo('Procesar reintento'))).toEqual(detectores(codigo('Procesar respuesta')));
+    });
+  });
+
+  describe('3. el prompt: un evento ocupa desde su start hasta su end', () => {
+    const REGLA = 'CADA EVENTO OCUPA DESDE SU start HASTA SU end, y cualquier hora dentro de ese rango está ocupada: un evento de 14:00 a 15:00 ocupa también las 14:30.';
+
+    const seccion3 = (p: string) => p.slice(p.indexOf('3. AGENDAMIENTO:'), p.indexOf('4. CONFIRMACIÓN:'));
+
+    it('está en REGLAS DE NEGOCIO §3, antes de deducir los libres', () => {
+      const p = String(nodo(f, AGENTE).parameters['options'].systemMessage);
+      expect(p.indexOf('3. AGENDAMIENTO:')).toBeGreaterThan(p.indexOf('REGLAS DE NEGOCIO:'));
+      const regla3 = seccion3(p);
+      expect(regla3).toContain(REGLA);
+      expect(regla3).toContain('comprueba que no caiga dentro de ningún evento de esa persona');
+      expect(regla3).toContain('termine antes del start del evento siguiente');
+      expect(regla3.indexOf(REGLA)).toBeLessThan(regla3.indexOf('Deduce los libres'));
+      // Es la misma regla en los dos flujos, y sin datos de la clínica.
+      expect(regla3).toBe(seccion3(String(nodo(demoA, AGENTE).parameters['options'].systemMessage)));
+      expect(regla3).not.toMatch(/Sandoval|Pérez|Platinum|blanqueamiento|María|José/);
+    });
+
+    it('y en la descripción de consultar_disponibilidad, que es lo primero que lee el modelo', () => {
+      const d = String(nodo(f, 'consultar_disponibilidad').parameters['toolDescription']);
+      expect(d).toContain('Cada evento ocupa desde su start hasta su end: cualquier hora entre los dos está ocupada');
+      expect(d).toBe(String(nodo(demoA, 'consultar_disponibilidad').parameters['toolDescription']));
+    });
+  });
+
+  describe('4. el orden del lienzo sigue siendo el que exige la suite de umbrales', () => {
+    it('el entrante sigue arriba de la rama del agente', () => {
+      expect(f.settings['executionOrder']).toBe('v1');
+      expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
+      expect(y('Reportar mensaje (entrante)')).toBeLessThan(y(AGENTE));
+    });
+
+    it('en cada bifurcación que responde Y avisa, el envío al cliente va arriba del aviso', () => {
+      const bifurcan = Object.keys(f.connections).filter((n) => (f.connections[n]?.['main'] ?? [])
+        .some((s) => s.some((c) => c.node === 'Mensaje a enviar') && s.some((c) => c.node === '¿Transferir a humano?')));
+      expect(bifurcan.sort()).toEqual(['Procesar reintento', '¿Afirma que agendó?', '¿Reintentar tras cruce?'].sort());
+      expect(y('Mensaje a enviar')).toBeLessThan(y('¿Transferir a humano?'));
+      expect(y('¿Responder uso extendido?')).toBeLessThan(y('¿Transferir a humano?'));
+    });
+
+    it('envío y reporte van en la misma fila, a la derecha del punto de salida, y el reporte al final', () => {
+      expect(y('Responder al cliente')).toBe(y('Mensaje a enviar'));
+      expect(y('Reportar mensaje (saliente)')).toBe(y('Responder al cliente'));
+      expect(x('Mensaje a enviar')).toBeLessThan(x('Responder al cliente'));
+      expect(x('Responder al cliente')).toBeLessThan(x('Reportar mensaje (saliente)'));
+    });
+
+    it('los ids nuevos son nombres cortos, sin UUID', () => {
+      for (const n of ['Mensaje a enviar', '¿Reintentar tras cruce?', 'Olvidar turno fallido', 'Reintento tras cruce', 'Procesar reintento']) {
+        expect(nodo(f, n).id).toMatch(/^[a-z0-9()-]+$/);
+      }
+    });
   });
 });

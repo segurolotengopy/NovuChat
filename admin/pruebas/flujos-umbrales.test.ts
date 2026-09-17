@@ -126,23 +126,30 @@ const activo = (atencion: unknown) => ({
   },
 });
 
+/**
+ * `salidaAlCliente`: en los flujos de agendamiento, desde el 17/09/2026 todo
+ * lo que se envía pasa por «Mensaje a enviar» y el reporte saliente cuelga
+ * DESPUÉS de «Responder al cliente» (la consola mostraba lo que el modelo
+ * dijo y no lo que el cliente recibió, ejecución #2867 de Platinum). El Demo B
+ * conserva el cableado anterior: no tiene candado que reescriba el texto.
+ */
 const FLUJOS = [
   {
     archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
-    campoTexto: 'textoAviso',
+    campoTexto: 'textoAviso', salidaAlCliente: null,
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
   {
     archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
   },
 ] as const;
 
@@ -152,7 +159,7 @@ describe('El mensaje fijo de uso extendido', () => {
   });
 });
 
-describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto }) => {
+describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente }) => {
   const f = flujo(archivo);
 
   describe('Traer configuración', () => {
@@ -274,8 +281,16 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
 
     it('la respuesta fija sale al cliente y se reporta como saliente, porque cuenta', () => {
       expect(destinos(f, 'Uso extendido')).toContain('¿Responder uso extendido?');
-      expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
-        .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);
+      if (salidaAlCliente) {
+        // Un solo punto de salida, y el reporte cuelga DESPUÉS del envío: se
+        // reporta lo que salió, no lo que se pensaba mandar.
+        expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente]);
+        expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
+        expect(destinos(f, 'Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+      } else {
+        expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
+          .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);
+      }
       const condicion = (nodo(f, '¿Responder uso extendido?').parameters['conditions'] as
         { conditions: { leftValue: string }[] }).conditions[0]?.leftValue;
       expect(expresion(condicion, { responder: true })).toBe(true);
@@ -347,6 +362,16 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
       expect(envio.onError ?? 'stopWorkflow').toBe('stopWorkflow');
       const padres = origenes(f, 'Reportar mensaje (saliente)');
       expect(padres.length).toBeGreaterThan(0);
+      if (salidaAlCliente) {
+        // Agendamiento (17/09/2026): el ÚNICO padre del reporte es el envío, y
+        // el cuerpo lee el texto del nodo por el que pasó todo lo enviado, no
+        // el `$json` de quien lo generó. Así la consola no puede volver a
+        // mostrar la confirmación que el candado deshizo.
+        expect(padres).toEqual(['Responder al cliente']);
+        const cuerpo = String(nodo(f, 'Reportar mensaje (saliente)').parameters['jsonBody']);
+        expect(cuerpo).toContain(`$('${salidaAlCliente}').item.json.respuesta`);
+        expect(cuerpo).not.toContain('$json.respuesta');
+      }
       for (const padre of padres) {
         for (const hermano of destinos(f, padre)) {
           if (hermano === 'Reportar mensaje (saliente)') continue;
