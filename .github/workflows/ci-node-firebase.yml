@@ -1133,6 +1133,10 @@ jobs:
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_PROD: ${{ vars.PROD_URL }}
           SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+          # Ver el bloque «LA FACTURA MÍNIMA» más abajo. Vacía por defecto: la
+          # protección de firebase-tools queda puesta salvo que se la levante a
+          # propósito para un despliegue concreto.
+          FORZAR_FACTURA: ${{ vars.FIREBASE_DEPLOY_FORCE }}
         run: |
           set -euo pipefail
           # Los parámetros de las Functions (`defineString`) se leen de
@@ -1158,12 +1162,41 @@ jobs:
           # api.createVersion) y cada simulación dejaría una versión huérfana.
           # Límite: la simulación no ejerce la publicación (Cloud Build, Cloud
           # Run, Eventarc).
+          # EL MISMO `--force` VA EN LA SIMULACIÓN, y por eso se decide ACÁ ARRIBA.
+          # `--dry-run` corre el prepare completo, así que choca con la misma
+          # protección de la factura mínima y corta antes de publicar: en el
+          # segundo intento de v0.5.x el parámetro estaba solo en el comando de
+          # publicación y la corrida falló igual, en la simulación. Si la
+          # simulación no acepta lo que el despliegue va a aceptar, no está
+          # simulando el despliegue.
+          FORZAR=""
+          if [[ -n "${FORZAR_FACTURA:-}" ]]; then
+            FORZAR="--force"
+            echo "::warning::vars.FIREBASE_DEPLOY_FORCE activa: se acepta subir el piso de la factura y --force borra Functions que ya no estén en el código."
+          fi
           SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
           if [[ -n "$SIMULAR" ]]; then
             echo "Simulando: $SIMULAR"
-            firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive --dry-run
+            firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive $FORZAR --dry-run
           fi
-          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
+          # LA FACTURA MÍNIMA (2026-09-17). firebase-tools se NIEGA a desplegar
+          # Functions que suben el piso de la factura —`minInstances` mayor que
+          # cero— y corta con «Pass the --force option to deploy functions that
+          # increase the minimum bill». Así falló el primer intento de v0.5.0,
+          # que llevaba una instancia siempre despierta en `ingesta` y
+          # `configuracionFlujo` para que la primera respuesta del asistente no
+          # pague el arranque en frío. Nada se desplegó: la protección corta
+          # antes de publicar.
+          #
+          # POR QUÉ NO SE PONE `--force` FIJO. `--force` no solo acepta el costo:
+          # también borra sin preguntar las Functions desplegadas que ya no
+          # están en el código. Dejarlo puesto convertiría cada despliegue en
+          # uno que puede borrar producción en silencio. Por eso vive en una
+          # variable del repositorio, vacía salvo cuando se decide subir el
+          # piso, y se apaga después. Antes de encenderla hay que comparar las
+          # Functions desplegadas con las que exporta el código: si alguna sobra
+          # en la nube, `--force` la borra.
+          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
             --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})"
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"
 
