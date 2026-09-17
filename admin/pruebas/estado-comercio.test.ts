@@ -39,6 +39,8 @@ const FLUJOS = [
   { archivo: 'novuchat-onboarding.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
   // Reservas de Clínica Platinum: mismo nodo de fusión que el Demo A.
   { archivo: 'platinum-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
+  // Reservas del Dr. Bellido: mismo nodo de fusión que el Demo A.
+  { archivo: 'bellido-agendamiento.json', fusion: 'Config del negocio', base: 'Config base', cortaSinRespuesta: false },
 ] as const;
 
 /** Ejecuta el nodo de fusión con una respuesta HTTP simulada. */
