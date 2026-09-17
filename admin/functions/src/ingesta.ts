@@ -18,7 +18,7 @@ import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './planes.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
-  resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT,
+  resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
 } from './prompt.js';
 
 /**
@@ -1090,6 +1090,13 @@ export const configuracionFlujo = onRequest(
       if (negocio[clave] !== undefined) datosDelNegocio[clave] = negocio[clave];
     }
     datosDelNegocio['datosQueNoTenemos'] = derivados.datosQueNoTenemos;
+    // EL ENLACE DE GOOGLE MAPS es un dato del negocio, pero NO texto libre: el
+    // asistente lo reenvía tal cual al cliente, así que solo viaja si es de un
+    // dominio de mapas (segunda barrera; la primera son las reglas). Sin
+    // enlace válido el campo no va, y el flujo da la dirección sola. Va en el
+    // MISMO mensaje que la confirmación: cero mensajes nuevos (Analisis/34 §2).
+    const direccionMaps = enlaceDeMapaValido(negocio['direccionMaps']);
+    if (direccionMaps) datosDelNegocio['direccionMaps'] = direccionMaps;
 
     // El renglón de este turno, con el comercio adentro. Ver el bloque
     // «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO» más arriba: el flujo
@@ -1143,6 +1150,10 @@ export const configuracionFlujo = onRequest(
         prefijosPermitidos: Array.isArray(negocio['prefijosPermitidos'])
           ? (negocio['prefijosPermitidos'] as unknown[]).slice(0, 10)
           : [],
+        // Coordenadas del pin nativo de WhatsApp, o `null` si el comercio no
+        // las cargó. El flujo las usa SOLO cuando el cliente pide la ubicación
+        // (un mensaje más, solo en ese caso). Nunca van al texto del prompt.
+        ubicacion: ubicacionDe(negocio['ubicacion']),
       },
 
       // Voz del agente: FRASES NUESTRAS, elegidas por un enumerado del comercio.
