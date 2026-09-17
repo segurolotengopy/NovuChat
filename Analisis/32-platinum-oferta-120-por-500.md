@@ -156,3 +156,27 @@ justifica cobrar la instalación a medida en 250–350 y no las 10 jornadas.
    los seguimientos).
 8. **Escalón**: si pasa de 800 conversaciones dos meses seguidos, opción de
    USD 180 por 1.000.
+
+### 4.1 Nota del 17/09/2026: lo que la construcción precisa en el contrato
+
+Al construir los bloques 1 a 5 (`ESTADO.md` del 17/09) tres cláusulas quedaron
+más precisas de lo que dice el §4, y conviene escribirlas así:
+
+- **Cláusula 6, la seña.** La retención del horario es un parámetro del
+  comercio (`senaMinutosRetencion`, 30 por defecto), no una cifra fija del
+  contrato: «retenido N minutos, 30 salvo que la clínica pida otro valor». Y
+  hay que decir qué pasa cuando el comprobante **no cuadra** o **es
+  ilegible**: el horario sigue retenido, una persona de la clínica lo revisa
+  y decide; el asistente no acepta ni rechaza el pago en ningún caso. Vencido
+  el plazo, la cita se libera **sin aviso al paciente** (es lo que ya decía
+  `Analisis/30` §6.4).
+- **Cláusula 2, «un recordatorio por lead».** Es **uno por solicitud**: o el
+  texto a las 2–4 h si la ventana sigue abierta, o la plantilla de utilidad a
+  las 24–48 h, nunca los dos. No se manda a quien pidió que no le escriban, a
+  quien pasó a una persona ni a un teléfono que ya pasó al operador. El
+  texto en ventana sí cuenta como respuesta de la conversación (bloque de
+  25); la plantilla no abre conversación.
+- **Nada nuevo en dinero.** El pin de ubicación nativo (bloque 1) es un
+  mensaje más solo cuando el paciente lo pide; el QR de la seña es el único
+  mensaje que la seña agrega por reserva. Ninguna de las dos cosas cambia el
+  precio ni la unidad de cobro.
