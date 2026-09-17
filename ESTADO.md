@@ -4,7 +4,72 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-17 (Platinum en producción; `v0.5.4` desplegado tras cuatro etiquetas; #82 a #101; el comportamiento del asistente se verifica antes de aplicarse, migración corrida, `v0.5.5` sin etiquetar). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 (cierre) — `v0.5.5` en producción, y lo que le queda a la próxima sesión
+
+**Desplegado y verificado.** `v0.5.5` sobre `185a551`: 26 Functions
+actualizadas, `verificarComportamiento` creada, reglas de Firestore, índices,
+reglas de Storage y consola publicadas. Seis minutos de punta a punta, tres de
+ellos el despliegue mismo. `configuracionFlujo` e `ingesta` conservan la
+instancia mínima en uno, así que el arranque en frío de ocho segundos no
+volvió. Antes de etiquetar: 1.468 pruebas en verde con el emulador.
+
+Con esto, el «comportamiento del asistente» ya funciona entero en producción:
+el comercio escribe su texto en la consola, la Function lo revisa antes de
+aplicarlo y solo lo aprobado llega al prompt. Es la respuesta a las tres reglas
+del 17/09 (multi-tenant estricto; lo instruido por chat se ve en la consola; el
+pseudo-prompt se verifica por seguridad antes de aplicarse).
+
+**Fusionado hoy, además:** #95 (bitácora), #96 (los mensajes fijos de Platinum
+en tuteo, que una recarga desde `main` había devuelto a usted), #100 y #101
+(comportamiento verificado), #102 (`CLIENTES/` se ignora: el repositorio es
+público y esa carpeta guarda datos reales de cada comercio).
+
+**Lo que sigue, en orden, y todo con el desarrollo terminado primero.** Andres
+decidió hacer las pruebas reales cuando el desarrollo esté completo, no ahora.
+
+1. **Demo B tiene el cableado viejo del reporte saliente.** `Reportar mensaje
+   (saliente)` cuelga de `Procesar respuesta`, así que la consola registra lo
+   que dijo el modelo y no lo que se envió. En A y en Platinum ya cuelga de
+   `Responder al cliente` (#97). Demo B tampoco tiene el candado por hecho.
+   Mismo arreglo, mismo patrón.
+2. **El Demo A no tiene el bloque conversacional de #90**, y de él se copian
+   los clientes nuevos: el próximo cliente nacería sin la calidez que Platinum
+   ya tiene. Verificado hoy comparando los dos JSON.
+3. **Audio e imagen** (la clínica dice que son frecuentes). Análisis y
+   recomendación en `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`: transcribir
+   el audio y responder por texto, clasificar la imagen sin que el agente la
+   vea, sin voz de salida. Falta el arreglo mínimo, que es barato: leer el
+   `caption` de la imagen y decir con naturalidad que no puede verla. Hoy una
+   foto con caption hizo que el asistente inventara «gracias por el
+   comprobante».
+4. **Agendas por plan en las reglas** (1 / 5 / hasta 10). Es el único límite
+   comercial de la tabla del §7 que todavía no existe en el servidor.
+5. **Endurecer el bucket** (acceso uniforme y prevención de acceso público),
+   después de que alguien suba un archivo desde la consola. El acceso uniforme
+   solo se revierte dentro de 90 días.
+6. **Pruebas reales pendientes**, cuando el desarrollo esté cerrado: el candado
+   insistiendo sobre una hora ocupada desde un teléfono; la consola con el
+   administrador de Platinum (alta y baja de producto, límite del plan, subir
+   archivo); y el comportamiento del asistente de punta a punta (escribir el
+   texto, ver la revisión, comprobar que el asistente usa lo vigente).
+7. **Preguntas abiertas con la clínica:** quién es la odontóloga que valora
+   («Dra. Fernanda» no es ninguna de las dos agendas configuradas), cómo se
+   cobra la reserva de 50 Bs, y cuál documento manda, porque el Excel corregido
+   todavía trae seis de las siete afirmaciones clínicas prohibidas.
+
+**Una fricción de proceso, para no repetirla.** La etiqueta la tuvo que crear
+Andres: `.claude/settings.json` tiene `Bash(git tag*)` en la lista `deny`, que
+es un no absoluto y no admite confirmación. Consultado hoy, decidió dejar la
+regla como está.
+
+**Ramas cerradas por superadas que siguen en el remoto:**
+`platinum/ajustes-de-conversacion` (#86) y `platinum/objeciones-comerciales`
+(#88); su contenido entró por #89 y #90. `#63` (documentos del 13/09) sigue
+abierto y no es de esta línea de trabajo.
 
 ---
 
