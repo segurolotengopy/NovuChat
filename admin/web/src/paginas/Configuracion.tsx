@@ -3,6 +3,7 @@ import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/fi
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { useFlujos } from '../lib/flujos';
+import { TextoSeguro } from '../componentes/TextoSeguro';
 import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
 
 /**
@@ -125,6 +126,89 @@ function escribirHorarios(h: Record<string, DiaHorario>): Record<string, string>
   return salida;
 }
 
+/**
+ * =============================================================================
+ * COMPORTAMIENTO DEL ASISTENTE — tres campos, un escritor por campo
+ * =============================================================================
+ *
+ * `instruccionesExtra` existía en las reglas (≤ 1.500), la pantalla lo leía y
+ * lo guardaba, y NO LO DIBUJABA. A Clínica Platinum se le cargó por script un
+ * texto con su campaña, sus precios y sus objeciones, y la clínica no lo veía
+ * en su consola. Regla de Andres (17/09): lo que NovuChat configura por script
+ * TIENE que verse en la consola.
+ *
+ * El contrato de datos, fijado el 17/09 (lo implementa el servidor):
+ *
+ *  - `instruccionesExtra` (string ≤ 1.500): lo PROPUESTO por el comercio. Lo
+ *    escribe esta pantalla, como escribe los demás campos: viaja en `datos`.
+ *  - `instruccionesVigentes` (string ≤ 1.500): lo que el asistente usa. SOLO
+ *    LO ESCRIBE EL SERVIDOR; acá se muestra.
+ *  - `instruccionesRevision` ({ estado, motivo?, revisadoEn, hash }): el
+ *    veredicto del servidor sobre el propuesto. SOLO SERVIDOR; acá se muestra.
+ *    `hash` es un sha256 corto del texto revisado.
+ *
+ * El servidor revisa el propuesto por seguridad en segundos y, si lo aprueba,
+ * lo copia a vigentes. Si lo rechaza, vigentes no cambia.
+ *
+ * POR QUÉ LA PANTALLA NO ESCRIBE NUNCA LOS DOS CAMPOS DEL SERVIDOR. La regla
+ * los va a negar, y un `updateDoc` rechazado deja el formulario ENTERO en
+ * «el servidor rechazó el cambio»: el comercio no podría guardar ni su
+ * dirección. Por eso viven en estados propios (`vigentes`, `revision`) y no en
+ * `datos`, que es lo que se guarda. `pruebas/comportamiento-pantalla.test.ts`
+ * lo verifica leyendo esta fuente.
+ *
+ * CÓMO SABE LA PANTALLA SI LA REVISIÓN ES DEL TEXTO QUE VE. Calcula el sha256
+ * del texto GUARDADO con `crypto.subtle` y lo compara con `revision.hash`
+ * como prefijo: si no coincide, el servidor todavía no revisó lo último que se
+ * guardó, y se muestra «Guardado, pendiente de revisión» aunque el veredicto
+ * anterior haya sido «aprobado». Sin esto, un texto recién guardado heredaría
+ * el «Aprobado» del anterior durante los segundos que tarda la revisión, que
+ * es exactamente el momento en que el comercio mira la pantalla.
+ */
+type EstadoRevision = 'pendiente' | 'aprobado' | 'rechazado';
+
+interface Revision {
+  estado: EstadoRevision;
+  motivo: string;
+  revisadoEn: Date | null;
+  hash: string;
+}
+
+const TOPE_INSTRUCCIONES = TOPES['instruccionesExtra'] ?? 1500;
+
+/** El mapa `instruccionesRevision` tal como lo deja el servidor; `null` si no hay o no se entiende. */
+function leerRevision(valor: unknown): Revision | null {
+  if (typeof valor !== 'object' || valor === null) return null;
+  const v = valor as Record<string, unknown>;
+  const estado = v['estado'];
+  if (estado !== 'pendiente' && estado !== 'aprobado' && estado !== 'rechazado') return null;
+  const fecha = v['revisadoEn'] as { toDate?: () => Date } | undefined;
+  return {
+    estado,
+    motivo: typeof v['motivo'] === 'string' ? v['motivo'] : '',
+    revisadoEn: typeof fecha?.toDate === 'function' ? fecha.toDate() : null,
+    hash: typeof v['hash'] === 'string' ? v['hash'].trim().toLowerCase() : '',
+  };
+}
+
+/** sha256 en hexadecimal del texto, o `null` si el navegador no lo puede calcular. */
+async function sha256Hex(texto: string): Promise<string | null> {
+  if (typeof crypto === 'undefined' || !crypto.subtle) return null;
+  const resumen = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+  return [...new Uint8Array(resumen)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * ¿La revisión es del texto cuyo sha256 es `hex`? El servidor guarda un sha256
+ * CORTO, así que se compara como prefijo del completo. Con menos de 8
+ * caracteres no se acepta: sería demasiado fácil que coincidiera por azar.
+ * Si el navegador no pudo calcular el hash (`null`), se confía en el servidor.
+ */
+function revisionCorresponde(revision: Revision, hex: string | null): boolean {
+  if (hex === null) return true;
+  return revision.hash.length >= 8 && hex.startsWith(revision.hash);
+}
+
 export function Configuracion() {
   const { tenantId = '' } = useParams();
   // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
@@ -153,6 +237,17 @@ export function Configuracion() {
   const [nombreAsistente, setNombreAsistente] = useState('');
   const [teniaNombreAsistente, setTeniaNombreAsistente] = useState(false);
   const [estado, setEstado] = useState<string | null>(null);
+  // COMPORTAMIENTO DEL ASISTENTE. Lo propuesto se edita en `datos` (y se
+  // guarda con el resto); lo que sigue es del servidor y NO entra en `datos`:
+  //  - `instruccionesGuardadas`: el propuesto tal como está en el documento,
+  //    para distinguir «hay cambios sin guardar» de «guardado, pendiente».
+  //  - `vigentes` y `revision`: solo lectura, ver el encabezado de arriba.
+  //  - `hashGuardadas`: el sha256 del texto guardado, junto con el texto del
+  //    que se calculó, para no comparar el hash de un texto con otro texto.
+  const [instruccionesGuardadas, setInstruccionesGuardadas] = useState('');
+  const [vigentes, setVigentes] = useState('');
+  const [revision, setRevision] = useState<Revision | null>(null);
+  const [hashGuardadas, setHashGuardadas] = useState<{ texto: string; hex: string | null } | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -178,8 +273,19 @@ export function Configuracion() {
       setHorarios(leerHorarios(v['horarios']));
       setNombreAsistente(typeof v['nombreAsistente'] === 'string' ? v['nombreAsistente'] : '');
       setTeniaNombreAsistente(Object.prototype.hasOwnProperty.call(v, 'nombreAsistente'));
+      setInstruccionesGuardadas(String(v['instruccionesExtra'] ?? ''));
+      setVigentes(typeof v['instruccionesVigentes'] === 'string' ? v['instruccionesVigentes'] : '');
+      setRevision(leerRevision(v['instruccionesRevision']));
     }, () => setEstado('No se pudo leer la configuración.'));
   }, [tenantId]);
+
+  useEffect(() => {
+    let vigente = true;
+    void sha256Hex(instruccionesGuardadas).then((hex) => {
+      if (vigente) setHashGuardadas({ texto: instruccionesGuardadas, hex });
+    });
+    return () => { vigente = false; };
+  }, [instruccionesGuardadas]);
 
   const cambiarDia = (clave: string, cambio: Partial<DiaHorario>) =>
     setHorarios((h) => ({
@@ -218,7 +324,9 @@ export function Configuracion() {
         actualizadoPor: auth.currentUser?.uid ?? '',
         actualizadoEn: serverTimestamp(),
       });
-      setEstado('Guardado.');
+      setEstado((datos['instruccionesExtra'] ?? '') !== instruccionesGuardadas
+        ? 'Guardado. Las indicaciones para el asistente se revisan en unos segundos; esta pantalla se actualiza sola.'
+        : 'Guardado.');
     } catch {
       setEstado('El servidor rechazó el cambio. Revise los datos.');
     }
@@ -375,6 +483,111 @@ export function Configuracion() {
           ['ninguno', 'Ninguno'], ['pocos', 'Pocos'], ['muchos', 'Varios'],
         ])}
 
+        {/* ==================================================================
+            COMPORTAMIENTO DEL ASISTENTE. Es la casilla «Indicaciones para el
+            asistente» que se quitó el 2026-09-06 porque el flujo no la leía.
+            Vuelve porque ahora sí: `configuracionFlujo` la entrega en su
+            propia clave y el flujo la inserta DELIMITADA y rotulada como dato
+            del negocio (Platinum, 16/09), y porque el servidor la revisa
+            antes de aplicarla. Ver el encabezado `COMPORTAMIENTO DEL
+            ASISTENTE` arriba para el contrato de los tres campos.
+
+            Ocupa la fila entera: 1.500 caracteres no se leen en una celda de
+            21rem, y el estado de la revisión tiene que quedar pegado al
+            texto del que habla.
+            ================================================================== */}
+        <div className="ancho-total">
+          <h3>Comportamiento del asistente</h3>
+          {(() => {
+            const propuesto = datos['instruccionesExtra'] ?? '';
+            const sinGuardar = propuesto !== instruccionesGuardadas;
+            // `undefined` mientras se calcula el hash del texto guardado.
+            const hex = hashGuardadas?.texto === instruccionesGuardadas ? hashGuardadas.hex : undefined;
+            const revisada = revision !== null && hex !== undefined && revisionCorresponde(revision, hex);
+            return (<>
+              {grupo('Indicaciones para el asistente (opcional)', (
+                <textarea
+                  value={propuesto}
+                  maxLength={TOPE_INSTRUCCIONES}
+                  rows={8}
+                  aria-describedby="instrucciones-ayuda"
+                  placeholder="Campaña de septiembre: limpieza dental a 150 Bs hasta el 30. Ortodoncia solo con valoración previa, que no tiene costo. Si preguntan por implantes, el precio se da en consulta."
+                  onChange={(e) => setDatos({ ...datos, instruccionesExtra: e.target.value })} />
+              ), <span className="text-muted">{propuesto.length} de {TOPE_INSTRUCCIONES} caracteres</span>)}
+              <p className="ayuda" id="instrucciones-ayuda">
+                Acá va lo que el asistente tiene que saber de tu negocio <strong>hoy</strong>:
+                la campaña vigente, precios y condiciones, cómo responder las dudas
+                más comunes de tus clientes y lo que <strong>no</strong> debe afirmar
+                (por ejemplo, un resultado garantizado o un precio que se da solo en
+                consulta). No cambia cómo se comporta el asistente ni sus reglas, y no
+                puede referirse a otros negocios.
+              </p>
+              <p className="ayuda">
+                <strong>Lo que escribas acá se revisa automáticamente antes de que el
+                asistente lo use.</strong> Si algo no corresponde, te decimos qué, y el
+                asistente sigue con la versión anterior mientras tanto.
+              </p>
+
+              {sinGuardar && (
+                <p className="ayuda aviso-datos" role="status">
+                  Hay cambios sin guardar. Se revisan recién cuando guardes.
+                </p>
+              )}
+              {!sinGuardar && instruccionesGuardadas === '' && revision === null && (
+                <p className="ayuda">Todavía no cargaste indicaciones.</p>
+              )}
+              {instruccionesGuardadas !== '' && hex !== undefined && !revisada && (
+                <p className="ayuda" role="status">
+                  <span className="etiqueta">Guardado, pendiente de revisión</span>{' '}
+                  La revisión tarda unos segundos; esta pantalla se actualiza sola.
+                </p>
+              )}
+              {revisada && revision.estado === 'pendiente' && (
+                <p className="ayuda" role="status">
+                  <span className="etiqueta">Pendiente de revisión</span>{' '}
+                  La revisión tarda unos segundos; esta pantalla se actualiza sola.
+                </p>
+              )}
+              {revisada && revision.estado === 'aprobado' && (
+                <p className="ayuda" role="status">
+                  <span className="etiqueta ok">Aprobado y en uso</span>{' '}
+                  {revision.revisadoEn
+                    ? <>desde el {revision.revisadoEn.toLocaleString('es-BO')}.</>
+                    : <>El asistente ya lo usa.</>}
+                </p>
+              )}
+              {revisada && revision.estado === 'rechazado' && (
+                <p className="ayuda aviso-datos" role="status">
+                  <span className="etiqueta alerta">Rechazado</span>{' '}
+                  {revision.motivo !== ''
+                    ? <><TextoSeguro valor={revision.motivo} maxLargo={600} />{' '}</>
+                    : <>No se indicó el motivo. </>}
+                  <strong>El asistente sigue usando la versión anterior.</strong> Corrige
+                  el texto y vuelve a guardar para que se revise de nuevo.
+                </p>
+              )}
+
+              {/* Lo que el asistente USA HOY, cuando no es lo que está en
+                  pantalla: mientras la revisión no aprueba lo nuevo, el comercio
+                  tiene que poder ver qué está diciendo su asistente. */}
+              {vigentes !== propuesto && (vigentes === ''
+                ? <p className="ayuda">
+                    Hoy el asistente no usa ninguna indicación adicional
+                    {instruccionesGuardadas !== '' && <>: la que guardaste todavía no fue aprobada</>}.
+                  </p>
+                : <details className="plegable">
+                    <summary>Lo que el asistente usa hoy</summary>
+                    <p className="ayuda">
+                      Es la última versión aprobada. Cambia cuando lo que guardes
+                      arriba pase la revisión.
+                    </p>
+                    <p><TextoSeguro valor={vigentes} maxLargo={TOPE_INSTRUCCIONES} /></p>
+                  </details>
+              )}
+            </>);
+          })()}
+        </div>
+
         <h3>Mensajes fijos</h3>
         {campo('mensajeCierre', 'Al cerrar la conversación', undefined, true)}
         {campo('mensajeErrorTemporal', 'Si algo falla temporalmente', undefined, true)}
@@ -457,16 +670,9 @@ export function Configuracion() {
           </p>
         </>)}
 
-        {/* AQUI IBA «Indicaciones para el asistente». Se quito el 2026-09-06:
-            el texto de ayuda prometia que las indicaciones se le entregan al
-            asistente «dentro de una seccion rotulada del prompt», y el flujo NO
-            las leia. Prometer eso y no cumplirlo es peor que no ofrecer la
-            casilla, sobre todo porque es donde un negocio pondria una promocion
-            y despues no entenderia por que el asistente no la menciona.
-
-            Vuelve cuando el flujo lea su configuracion de la consola, y tiene
-            que volver DELIMITADA y rotulada como dato: es texto libre de un
-            tercero entrando al prompt. La deuda esta en ESTADO.md. */}
+        {/* «Indicaciones para el asistente» estuvo acá hasta el 2026-09-06 y
+            volvió el 17/09 como «Comportamiento del asistente», arriba de los
+            mensajes fijos: ahora el flujo la lee y el servidor la revisa. */}
         <button type="submit">Guardar</button>
       </form>
       {estado && <p role="status">{estado}</p>}
