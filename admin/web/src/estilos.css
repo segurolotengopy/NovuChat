@@ -570,12 +570,14 @@ tr.alerta td { background: color-mix(in srgb, var(--color-error) 7%, transparent
 /* El importador va plegado. Es una herramienta de vez en cuando —la primera
    carga y los cambios de temporada— y desplegada empujaría fuera de la pantalla
    la tabla, que es a lo que se entra todos los días. */
-.importador {
+.importador, .plegable {
   border: 1px solid var(--borde); border-radius: var(--radio);
   padding: .75rem 1rem; margin: 1.5rem 0;
 }
-.importador > summary { cursor: pointer; font-weight: 600; }
-.importador > summary + * { margin-top: 1rem; }
+.importador > summary, .plegable > summary { cursor: pointer; font-weight: 600; }
+.importador > summary + *, .plegable > summary + * { margin-top: 1rem; }
+/* «Lo que el asistente usa hoy» (Configuración): mismo plegable, texto largo. */
+.plegable > p { max-width: var(--ancho-lectura); }
 .importador input[type="file"] { padding: .3rem; }
 
 .alerta-importar {
