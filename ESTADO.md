@@ -4,7 +4,61 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-17 (Platinum en producción; `v0.5.4` desplegado tras cuatro etiquetas; #82 a #94). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum en producción, `v0.5.4` desplegado, y cuatro etiquetas para llegar
+
+**Clínica Platinum atiende desde su número** (`Flujos/platinum-agendamiento.json`,
+flujo activo en n8n, cuatro verdes en `verificar-meta.sh`). Probado con tres
+teléfonos reales: dos citas agendadas en la agenda correcta, sin cruce. La
+clínica evaluó y corrigió: pasó a tuteo con más emojis, dio los precios que
+faltaban (reserva de 50 Bs a cuenta de los 500; valoración 200 Bs solo si no
+se hace el tratamiento) y **prohibió cuatro afirmaciones clínicas** que salían
+de su propio material (desensibilizantes, oxígeno, esmalte intacto, 1 a 2
+años). El prompt aprendió a conversar sin gastar un mensaje más (#90). Todo en
+`CLIENTES/PLATINUM/`. Plan Pro asignado. Sigue abierto: quién es la odontóloga
+que valora, y cómo se cobra la reserva.
+
+**Fusionado hoy:** #82 (alta: flujo, `cargar-negocio.mjs`, suites), #87
+(mínimo de contraseña a 8, exigido solo al cambiarla), #89 (datos de la
+clínica), #90 (prompt), #91 y #92 (piso de factura en CI), #93 (**el contador
+del catálogo viaja en la transacción de `cargar-negocio.mjs`**, y registros
+estructurados con `tenantId` en `ingesta` y `configuracionFlujo`), #94 (Storage
+por destino). Cerrados por superados: #86 y #88.
+
+**Producción, `v0.5.4` (`33f6839`):** consola, reglas de Firestore, índices y
+reglas de Storage publicadas a las 12:58Z, verificadas idénticas a `main`;
+`v0.5.2` ya había desplegado Functions con **instancias mínimas en uno**: la
+primera respuesta pasó de ~8 s (arranque en frío de dos Functions en serie) a
+~0,3 s. Contadores de catálogo sembrados en los cuatro comercios; planes
+asignados (Platinum: Pro; NovuChat: demostración). Variables definitivas:
+`FIREBASE_DEPLOY_ONLY` completo con `storage`, `VITE_FIREBASE_STORAGE_BUCKET`
+creada, `FIREBASE_DEPLOY_FORCE` borrada.
+
+**Las tres etiquetas que no desplegaron, y por qué**, todas en la simulación y
+sin tocar producción (acta `docs/produccion/acta-v0.5.0.md`):
+- `v0.5.0`: firebase-tools se niega a subir el piso de factura sin `--force`.
+- `v0.5.1`: el `--force` estaba solo en la publicación, no en el `--dry-run`.
+- `v0.5.3`: «Firebase Storage has not been set up» es un **404** de
+  `GET defaultBucket` con la identidad federada, aunque el bucket exista, el
+  dueño reciba 200 y Policy Troubleshooter diga GRANTED. Se resolvió declarando
+  Storage como lista con destino `principal` en `firebase.json` y resolviéndolo
+  con `target:apply` en el workflow: así firebase-tools no consulta esa API.
+
+**Dos hallazgos de proceso.** El enlace de contraseña del administrador se
+imprimía por stdout (#82 lo pasa a `~/enlace-admin-<tenant>.txt`, 600). Y
+`${GCP_PROJECT_ID}` de la tabla local es el proyecto de los **demos**; el de la
+consola es el `quota_project_id` de `~/.config/gcloud-novuchat-prod` (los
+nombres difieren en un guion).
+
+**Pendiente:** probar en la consola, con el administrador de Platinum, alta y
+baja de un producto, el límite del plan y la subida de un archivo; después
+endurecer el bucket (acceso uniforme, prevención de acceso público). Subir el
+bloque conversacional de #90 al Demo A, del que se copian los clientes nuevos.
+La prueba con la clínica del 18/09 a las 09:00 con las tres escenas que
+propusieron.
 
 ---
 
