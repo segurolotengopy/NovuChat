@@ -2964,6 +2964,91 @@ describe('Nombre del asistente (config/negocio)', () => {
 });
 
 // ===========================================================================
+// DÓNDE QUEDA EL LOCAL: enlace de Google Maps y coordenadas del pin
+// (Analisis/34 §2, bloque 1 del plan de Platinum)
+// ===========================================================================
+//
+// `direccionMaps` es el único texto del comercio que el asistente REENVÍA TAL
+// CUAL a un cliente final: en la confirmación de cada cita. Un texto libre acá
+// sería un enlace a cualquier sitio, firmado con el nombre del negocio, en el
+// WhatsApp de un tercero. Por eso se escribe NEGANDO: `http://`, otro dominio,
+// un dominio que empieza como el de mapas, no entran ni armando la petición a
+// mano. `ubicacion` va aparte y estructurada: con una sola coordenada, con
+// texto o fuera de rango, el pin saldría en el mar y Meta lo cobraría igual.
+describe('Dónde queda el local (config/negocio): enlace de mapa y coordenadas', () => {
+  const ruta = `tenants/${A}/config/negocio`;
+  const guardar = (extra: Record<string, unknown>) =>
+    setDoc(doc(adminA(), ruta), { ...configValida('u-admin-a'), ...extra });
+
+  it('el administrador guarda un enlace de Google Maps, o lo deja vacío', async () => {
+    for (const direccionMaps of [
+      'https://maps.app.goo.gl/AbCdEf123',
+      'https://goo.gl/maps/AbCdEf123',
+      'https://www.google.com/maps/place/Cl%C3%ADnica+X/@-17.78,-63.18,17z/data=!3m1!4b1',
+      'https://www.google.com/maps?q=-17.78,-63.18',
+      'https://google.com/maps/place/algo',
+      'https://maps.google.com/?q=-17.78,-63.18',
+      '',
+    ]) {
+      await assertSucceeds(guardar({ direccionMaps }));
+    }
+    // Un comercio de venta también: es capa común, como la dirección.
+    await assertSucceeds(setDoc(doc(adminB(), `tenants/${B}/config/negocio`),
+      { ...configValida('u-admin-b'), direccionMaps: 'https://maps.app.goo.gl/AbCdEf123' }));
+  });
+
+  it('NO guarda http://, otro dominio, un dominio que empieza como el de mapas, ni más de 200 caracteres', async () => {
+    for (const direccionMaps of [
+      'http://maps.app.goo.gl/AbCdEf123',
+      'https://ejemplo.com/maps/AbCdEf123',
+      'https://maps.app.goo.gl.ejemplo.com/AbC',
+      'https://maps.app.goo.gl@ejemplo.com/AbC',
+      'https://www.google.com/search?q=mapa',
+      'https://maps.app.goo.gl/Ab C',
+      'javascript:alert(1)',
+      'Radial 26, tercer anillo',
+      'https://maps.app.goo.gl/' + 'a'.repeat(200),
+      7,
+    ]) {
+      await assertFails(guardar({ direccionMaps }));
+    }
+  });
+
+  it('las coordenadas entran con lat y lng numéricos en rango, y se pueden quitar', async () => {
+    await assertSucceeds(guardar({ ubicacion: { lat: -17.7833, lng: -63.1821 } }));
+    await assertSucceeds(guardar({ ubicacion: { lat: 90, lng: -180 } }));
+    await assertSucceeds(guardar({ ubicacion: { lat: 0, lng: 0 } }));
+    // Sin el campo: no hay pin, y el asistente da la dirección en texto.
+    await assertSucceeds(guardar({}));
+  });
+
+  it('NO entran con una sola coordenada, con texto, con claves de más, fuera de rango ni como texto suelto', async () => {
+    for (const ubicacion of [
+      { lat: -17.7833 },
+      { lng: -63.1821 },
+      { lat: '-17.7833', lng: '-63.1821' },
+      { lat: -17.7833, lng: -63.1821, piso: 2 },
+      { lat: 91, lng: 0 },
+      { lat: -91, lng: 0 },
+      { lat: 0, lng: 181 },
+      { lat: 0, lng: -181 },
+      '-17.7833,-63.1821',
+      [-17.7833, -63.1821],
+      null,
+    ]) {
+      await assertFails(guardar({ ubicacion }));
+    }
+  });
+
+  it('el operador no escribe ninguno de los dos', async () => {
+    await assertFails(setDoc(doc(operA(), ruta),
+      { ...configValida('u-oper-a'), direccionMaps: 'https://maps.app.goo.gl/AbCdEf123' }));
+    await assertFails(setDoc(doc(operA(), ruta),
+      { ...configValida('u-oper-a'), ubicacion: { lat: -17.7833, lng: -63.1821 } }));
+  });
+});
+
+// ===========================================================================
 // LÍMITE DE PRODUCTOS POR PLAN (decisión del 15/09/2026: 20 / 100 / 500)
 // ===========================================================================
 //
