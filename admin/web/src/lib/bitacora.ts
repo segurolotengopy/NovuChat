@@ -57,6 +57,9 @@ export const TIPOS = [
   'catalogo_enlace', 'carrito_recibido',
   'derivacion_operador', 'bloqueo_ventana',
   'aviso_consumo',
+  // Seña por QR (bloque 2, 17/09): comprobante cotejado por el servidor y
+  // retención vencida sin comprobante. Los escribe `functions/src/sena.ts`.
+  'cobro_cotejado', 'sena_vencida',
 ] as const;
 
 export const RESULTADOS = ['ok', 'fallo', 'rechazado', 'reintento'] as const;

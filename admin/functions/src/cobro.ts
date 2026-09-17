@@ -65,6 +65,19 @@ export const registrarQrDeCobro = onCall({ region: REGION }, async (peticion: Ca
     throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
   }
 
+  // EN QUÉ DOCUMENTO VA EL QR: en el del flujo que cobra (política de capas,
+  // DISENO §4sexies). Un comercio con venta cobra por venta y el QR va a
+  // `config/venta`, tenga o no reservas; uno que solo agenda cobra la SEÑA de
+  // la reserva (bloque 2) y el QR va a `config/agendamiento`. Uno sin ninguno
+  // de los dos no tiene con qué cobrar, y registrarle un QR sería guardar un
+  // instrumento de cobro que ningún flujo va a leer. Se lee la FICHA y no el
+  // cuerpo de la petición: qué flujos tiene un comercio lo decide NovuChat.
+  const documento = documentoQueCobra(await db().doc(`tenants/${tenantId}`).get());
+  if (!documento) {
+    throw new HttpsError('failed-precondition',
+      'Este comercio no tiene un flujo que cobre (venta o agendamiento con seña).');
+  }
+
   const cargaUtil = texto(datos['cargaUtil'], 1200);
   const nombreCuenta = texto(datos['nombreCuenta'], 120);
   const banco = texto(datos['banco'], 80);
@@ -111,10 +124,11 @@ export const registrarQrDeCobro = onCall({ region: REGION }, async (peticion: Ca
     return { registrado: false, problemas, advertencias };
   }
 
-  // Ficha aparte en `/config/venta`, que el comercio NO puede escribir desde el
-  // navegador: la lista blanca de las reglas no incluye `cobroReal`. La única
-  // puerta es esta función, que es la que valida.
-  await db().doc(`tenants/${tenantId}/config/venta`).set({
+  // Ficha aparte en `/config/{documento}`, que el comercio NO puede escribir
+  // desde el navegador: la lista blanca de las reglas —de `venta` y de
+  // `agendamiento`— no incluye `cobroReal`. La única puerta es esta función,
+  // que es la que valida.
+  await db().doc(`tenants/${tenantId}/config/${documento}`).set({
     cobroReal: {
       // Se registra APAGADO. Encenderlo es un acto aparte y deliberado: entre
       // registrar un QR y empezar a cobrar de verdad con él tiene que haber
@@ -142,11 +156,29 @@ export const registrarQrDeCobro = onCall({ region: REGION }, async (peticion: Ca
 
   await db().collection(`tenants/${tenantId}/auditoria`).add({
     accion: 'registrar_qr_cobro', uid, en: Timestamp.now(),
-    nombreCuenta, venceEl, banco,
+    nombreCuenta, venceEl, banco, documento,
   });
 
-  return { registrado: true, problemas: [], advertencias, datos: resultado.datos };
+  return { registrado: true, problemas: [], advertencias, datos: resultado.datos, documento };
 });
+
+/**
+ * El documento de configuración donde vive el QR de un comercio, según sus
+ * flujos: `venta` gana, después `agendamiento`; sin ninguno, `null`.
+ *
+ * `flujos` es la lista (DISENO §4sexies); `vertical` es el valor único de las
+ * fichas anteriores a la lista y se mira solo si la lista no está, igual que
+ * hace `flujosTenant()` en las reglas.
+ */
+export function documentoQueCobra(
+  ficha: { get(campo: string): unknown },
+): 'venta' | 'agendamiento' | null {
+  const lista = ficha.get('flujos');
+  const flujos = Array.isArray(lista) ? lista.map(String) : [String(ficha.get('vertical') ?? '')];
+  if (flujos.includes('venta')) return 'venta';
+  if (flujos.includes('agendamiento')) return 'agendamiento';
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // LA IMAGEN — la pide WhatsApp, no una persona
