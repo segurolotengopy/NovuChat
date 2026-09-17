@@ -856,6 +856,80 @@ describe('Historial de mensajes', () => {
 });
 
 // ===========================================================================
+// 7bis. NO CONTACTAR Y LA SOLICITUD PENDIENTE (bloque 4, `Analisis/31` §4)
+//
+// La lista de no molestar es el único campo de gestión que CAMBIA LO QUE EL
+// SISTEMA HACE: con `noContactar: true` el barrido de seguimientos deja de
+// considerar ese teléfono. Por eso se prueba negando, campo por campo, igual
+// que el aislamiento entre comercios: que el operador pueda encenderlo, que no
+// pueda aprovecharlo para tocar nada más, que no acepte un valor que no sea
+// booleano, y que la etapa `horarios` de la solicitud entre por la ingesta.
+// ===========================================================================
+describe('No contactar y la solicitud pendiente', () => {
+  it('una persona del negocio enciende y apaga «No contactar»', async () => {
+    await assertSucceeds(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: true }));
+    await assertSucceeds(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: false }));
+  });
+
+  it('pero NO le sirve de puerta para tocar otro campo en la misma escritura', async () => {
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
+      noContactar: true, ultimoMensaje: 'falsificado',
+    }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
+      noContactar: true, solicitud: { etapa: 'agendada' },
+    }));
+  });
+
+  it('`noContactar` tiene que ser booleano: una cadena no pasa', async () => {
+    // En JavaScript `'no'` es verdadero. Si la regla no exigiera el tipo, un
+    // defecto de la pantalla dejaría a un paciente sin seguimientos para
+    // siempre, y nadie lo notaría.
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: 'no' }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: 1 }));
+  });
+
+  it('el operador del tenant A no la enciende en el tenant B', async () => {
+    await assertFails(updateDoc(doc(operA(), `tenants/${B}/conversaciones/c1`), { noContactar: true }));
+  });
+
+  it('la ingesta escribe la solicitud en etapa `horarios`, con su marca de seguimiento', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c4`), {
+      telefono: '59170000004', ultimoMensaje: 'Y el jueves?', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 3, noContactar: false,
+      solicitud: {
+        etapa: 'horarios', desde: Timestamp.now(), qrEnviadoEn: null, evento: null,
+        cotejos: 0, seguimientos: 0, seguimientoEn: null, reactivadaEn: null,
+      },
+    }));
+  });
+
+  it('una etapa inventada de la solicitud se rechaza', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c5`), {
+      telefono: '59170000005', ultimoMensaje: 'x', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 1,
+      solicitud: { etapa: 'en_duda', desde: Timestamp.now(), seguimientos: 0 },
+    }));
+  });
+
+  it('el agregado del mes acepta `seguimientos` y `reactivadas`, y nada inventado', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), {
+      mensajes: increment(1), seguimientos: increment(1), reactivadas: increment(1),
+    }, { merge: true }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), {
+      seguimientosDeMarketing: increment(1),
+    }, { merge: true }));
+  });
+
+  it('la bitácora acepta `seguimiento_enviado` con el modo en `codigo`', async () => {
+    await assertSucceeds(addDoc(collection(ingestaA(), `tenants/${A}/bitacora`), {
+      ts: Timestamp.now(), tipo: 'seguimiento_enviado', resultado: 'ok',
+      canal: 'whatsapp', codigo: 'plantilla', conversacionId: 'wa_59170000001',
+      destinoEnmascarado: '5917****0001',
+    }));
+  });
+});
+
+// ===========================================================================
 // 8. NEGACIÓN POR DEFECTO
 // ===========================================================================
 describe('Negación por defecto', () => {
