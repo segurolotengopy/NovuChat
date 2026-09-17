@@ -1,0 +1,393 @@
+{
+  "name": "NovuChat — Clínica Platinum (Señas vencidas)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 300
+  },
+  "nodes": [
+    {
+      "id": "sv-cada-10-min",
+      "name": "Cada 10 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -40,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 * * * *"
+            }
+          ]
+        }
+      },
+      "notes": "Barrido de citas retenidas por seña (bloque 2, Analisis/30 §4). CERO mensajes: este flujo no escribe a WhatsApp."
+    },
+    {
+      "id": "sv-config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        180,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "sv1",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM"
+            },
+            {
+              "id": "sv2",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "sv3",
+              "name": "senaMinutosRetencion",
+              "type": "string",
+              "value": "30"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "Solo el identificador del número (para que el panel sepa de qué comercio se trata) y el respaldo de los minutos. Todo lo demás —si la seña está activa, los minutos, los calendarios— sale del panel; sin panel no se borra nada."
+    },
+    {
+      "id": "sv-traer-config",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Clínica Platinum)"
+        }
+      }
+    },
+    {
+      "id": "sv-config-sena",
+      "name": "Config de la seña",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// LA CONSOLA MANDA, Y SI NO CONTESTA NO SE BORRA NADA.\n//\n// Este flujo BORRA citas del calendario, asi que corre con la regla del flujo\n// de recordatorios y no con la del conversacional: cuando no se sabe, no se\n// hace nada. Diez minutos despues vuelve a intentar. Se sigue solo si el\n// panel contesto 200 con el comercio activo Y la seña esta activa\n// (`sena.activa`): sin seña no hay citas retenidas que vencer, y si un\n// comercio la apago, lo que quedo pendiente lo resuelve una persona.\n//\n// Los minutos de retencion salen del panel (`sena.minutosRetencion`, 5..180),\n// con el respaldo de `Config base` si viniera mal. Los calendarios a revisar\n// son los mismos que mira el flujo de reservas: el del negocio y el de cada\n// funcionario. Un calendario que no se mira es una cita retenida que nunca\n// vence, y un horario perdido para siempre.\nconst base = $('Config base').first().json;\nconst respuesta = $input.first().json ?? {};\nconst codigo = Number(respuesta.statusCode);\nconst cuerpo = (respuesta.body ?? {});\n\nconst contesto = codigo === 200 && cuerpo && typeof cuerpo.tenantId === 'string';\nconst activo = contesto && String(cuerpo.estadoComercio || '') === 'activo';\nconst sena = (contesto && cuerpo.sena && typeof cuerpo.sena === 'object') ? cuerpo.sena : {};\nif (!activo || sena.activa !== true) {\n  // Ningun item = ninguna rama corre: ni consulta ni borrado.\n  return [];\n}\n\nconst minutosCrudo = sena.minutosRetencion;\nconst respaldo = Number(base.senaMinutosRetencion);\nconst minutosRetencion = (typeof minutosCrudo === 'number' && Number.isInteger(minutosCrudo)\n  && minutosCrudo >= 5 && minutosCrudo <= 180) ? minutosCrudo\n  : (Number.isInteger(respaldo) && respaldo >= 5 && respaldo <= 180 ? respaldo : 30);\n\nconst op = cuerpo.operacion ?? {};\nconst equipo = Array.isArray(cuerpo.funcionarios) ? cuerpo.funcionarios\n  .map((f) => (f && (f.calendario || f.calendarioId)) || '').filter(Boolean) : [];\nconst calendarios = [...new Set([String(op.calendarioId || ''), ...equipo].filter(Boolean))];\nif (!calendarios.length) return [];\n\nreturn [{ json: {\n  phoneNumberId: String(cuerpo.phoneNumberId || base.phoneNumberId || ''),\n  minutosRetencion,\n  calendarios,\n  senaActiva: 'si',\n  configDeLaConsola: true,\n} }];"
+      }
+    },
+    {
+      "id": "sv-calendarios",
+      "name": "Calendarios del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Un item por cada calendario configurado: el nodo de Calendar corre una vez\n// por item, asi se revisan TODAS las agendas (la del negocio y la de cada\n// funcionario), igual que en «Calendarios a revisar» del flujo de reservas.\nconst cfg = $input.first().json;\nconst calendarios = Array.isArray(cfg.calendarios) ? cfg.calendarios : [];\nreturn calendarios.map((calendarioARevisar) => ({ json: { ...cfg, calendarioARevisar } }));"
+      }
+    },
+    {
+      "id": "sv-citas-pendientes",
+      "name": "Citas pendientes de seña",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1000,
+        300
+      ],
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.calendarioARevisar }}"
+        },
+        "returnAll": true,
+        "options": {
+          "query": "PENDIENTE DE SEÑA",
+          "timeMin": "={{ $now.minus({ days: 1 }).toISO() }}",
+          "timeMax": "={{ $now.plus({ days: 90 }).toISO() }}",
+          "singleEvents": true
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "notes": "Solo las citas que Google encuentra con el texto del prefijo; «Vencidas» vuelve a exigir que el TÍTULO empiece con él. Un calendario que falle no frena a los demás."
+    },
+    {
+      "id": "sv-vencidas",
+      "name": "Vencidas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// QUE CITAS RETENIDAS VENCIERON.\n//\n// Llegan los eventos de todos los calendarios (la consulta ya filtro por el\n// texto «PENDIENTE DE SEÑA», pero Google busca en todo el evento, asi que se\n// vuelve a mirar el TITULO: solo cuenta la cita cuyo titulo EMPIEZA con el\n// prefijo que pone `agendar_cita`). Vence la que se creo hace mas de\n// `minutosRetencion` minutos: `created` es la marca de Google, que no depende\n// del reloj del flujo ni de lo que dijo el modelo.\n//\n// El telefono sale de la descripcion (`Telefono: 591…`, que escribe\n// `agendar_cita`): sin el no se puede reportar al servidor, y entonces\n// tampoco se borra: una cita con el prefijo y sin telefono no la creo este\n// sistema, la mira una persona.\n//\n// SALE UN ITEM POR CITA VENCIDA, y el servidor decide (`senaVencida`): recien\n// con su respuesta se borra. Nunca un mensaje al paciente: esto no escribe a\n// WhatsApp, y no tiene con que hacerlo.\nconst cfg = $('Config de la seña').first().json;\nconst minutos = Number(cfg.minutosRetencion) || 30;\nconst ahora = Date.now();\nconst PREFIJO = /^PENDIENTE DE SEÑA · /;\n\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json;\n  if (!e || !e.id || !PREFIJO.test(String(e.summary || ''))) continue;\n  const creado = Date.parse(e.created || '');\n  if (!Number.isFinite(creado) || (ahora - creado) < minutos * 60 * 1000) continue;\n  const m = /Telefono:\\s*\\+?([0-9]{8,15})/i.exec(String(e.description || ''));\n  if (!m) continue;\n  out.push({ json: {\n    eventoId: String(e.id),\n    calendarioDelEvento: String((e.organizer && e.organizer.email) || ''),\n    telefono: m[1],\n    titulo: String(e.summary || ''),\n    creadoEn: String(e.created || ''),\n    minutosRetencion: minutos,\n  } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "sv-reportar-vencida",
+      "name": "Reportar seña vencida",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/senaVencida",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Config de la seña').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, referencia: $json.eventoId }) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Clínica Platinum)"
+        }
+      },
+      "notes": "PRIMERO se le dice al servidor (`senaVencida`, idempotente) y recién con su respuesta se borra: si contesta `ya_agendada` (el comprobante cuadró y el título no se pudo corregir) la cita NO se toca. Nunca manda nada al paciente."
+    },
+    {
+      "id": "sv-if-borrar",
+      "name": "¿Borrar la cita?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "svb1",
+              "leftValue": "={{ Number($json.statusCode) === 200 && (($json.body || {}).registrado === true || ($json.body || {}).repetido === true || ($json.body || {}).motivo === 'sin_sena_pendiente') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Se borra si el servidor la dio por vencida (`registrado`), si ya la tenía vencida de un barrido anterior (`repetido`) o si no la conoce (`sin_sena_pendiente`: el QR nunca salió o la solicitud fue reemplazada). Con `ya_agendada`, o sin respuesta del servidor, no se borra nada."
+    },
+    {
+      "id": "sv-borrar-cita",
+      "name": "Borrar cita vencida",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        1800,
+        300
+      ],
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Vencidas').item.json.calendarioDelEvento }}"
+        },
+        "eventId": "={{ $('Vencidas').item.json.eventoId }}",
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "notes": "Libera el horario. Si el borrado falla, el próximo barrido la vuelve a encontrar y el servidor contesta `repetido`: se vuelve a intentar."
+    }
+  ],
+  "connections": {
+    "Cada 10 minutos": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config de la seña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config de la seña": {
+      "main": [
+        [
+          {
+            "node": "Calendarios del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendarios del negocio": {
+      "main": [
+        [
+          {
+            "node": "Citas pendientes de seña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Citas pendientes de seña": {
+      "main": [
+        [
+          {
+            "node": "Vencidas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vencidas": {
+      "main": [
+        [
+          {
+            "node": "Reportar seña vencida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar seña vencida": {
+      "main": [
+        [
+          {
+            "node": "¿Borrar la cita?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Borrar la cita?": {
+      "main": [
+        [
+          {
+            "node": "Borrar cita vencida",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  }
+}

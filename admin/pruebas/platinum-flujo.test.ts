@@ -34,6 +34,11 @@
  *   (k) Analisis/34 §2: la dirección va con el enlace de Google Maps en el
  *       MISMO mensaje (0 mensajes nuevos) y el pin nativo sale SOLO si el
  *       cliente lo pide y hay coordenadas (+1 en ese caso). Sobre los DOS flujos.
+ *   (l) bloque 2 (Analisis/30 §4, Analisis/07 §4): seña por QR con cotejo del
+ *       comprobante. El QR sale DESPUÉS del texto (+1 mensaje solo al
+ *       reservar con seña activa); la foto o el PDF que sigue no va al modelo:
+ *       se lee y lo coteja el SERVIDOR; la respuesta es un mensaje fijo que
+ *       nunca afirma un pago (prohibición 3). Sobre los DOS flujos.
  *
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
  * en las suites comunes, que recorren este flujo junto con los demás.
@@ -149,6 +154,11 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
     'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
     // El pin a pedido (Analisis/34 §2): envío a Graph e ingesta del saliente.
     'Enviar ubicación', 'Reportar ubicación (saliente)',
+    // La seña por QR (bloque 2): el QR y su reporte, la descarga del
+    // comprobante desde Meta y el cotejo en el servidor. Los de Gemini y los
+    // de Calendar van sin nombre: se asignan por tipo, como el modelo del agente.
+    'Enviar QR de la seña', 'Reportar QR (saliente)', 'Obtener URL del medio', 'Descargar comprobante',
+    'Cotejar en el servidor',
   ];
 
   it('tiene el nombre del cliente y los mismos nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
@@ -193,10 +203,11 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
       }
     }
     for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre (cita)',
-      'Reportar ubicación (saliente)']) {
+      'Reportar ubicación (saliente)', 'Reportar QR (saliente)', 'Cotejar en el servidor']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name).toBe('NovuChat ingesta (Clínica Platinum)');
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación',
+      'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name).toBe('WhatsApp Clínica Platinum (envío)');
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -551,10 +562,11 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
     expect(JSON.parse(String(cuerpo))).toEqual({ telefono: '59170000001' });
   });
 
-  it('«¿Atención normal?» está antes del agente, y es su ÚNICA entrada', () => {
+  it('«¿Atención normal?» está antes del agente, y su rama verdadera es la ÚNICA entrada (por «¿Es un comprobante?», bloque l)', () => {
     expect(destinos('¿Comercio operativo?', 0)).toEqual(['¿Atención normal?']);
-    expect(origenes(AGENTE)).toEqual(['¿Atención normal?']);
-    expect(destinos('¿Atención normal?', 0)).toEqual([AGENTE]);
+    expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
+    expect(destinos('¿Es un comprobante?', 1)).toEqual([AGENTE]);
+    expect(origenes(AGENTE)).toEqual(['¿Es un comprobante?']);
     expect(destinos('¿Atención normal?', 1)).toEqual(['Uso extendido']);
   });
 
@@ -738,6 +750,7 @@ describe.each([
       expect(origenes('Mensaje a enviar').sort()).toEqual([
         'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
         '¿Reintentar tras cruce?', '¿Responder uso extendido?',
+        'Mensaje de la seña', // la respuesta fija al comprobante (bloque l)
       ].sort());
       // Las ramas verdaderas de los IF siguen yendo a donde iban.
       expect(destinos('¿Afirma que agendó?', 0)).toEqual(['Calendarios a revisar']);
@@ -779,14 +792,18 @@ describe.each([
       expect(nodo(f, 'Reportar mensaje (saliente)').onError).toBe('continueRegularOutput');
     });
 
-    it('CERO mensajes de WhatsApp agregados: los mismos dos nodos de envío de siempre, y el pin solo detrás de su compuerta', () => {
-      expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name))
+    it('CERO mensajes de WhatsApp agregados en este bloque: los mismos dos nodos de envío de siempre, y el pin y el QR solo detrás de su compuerta', () => {
+      // El nodo oficial de WhatsApp también sirve para leer un medio (bloque
+      // l): solo cuentan como envío los que tienen la operación `send`.
+      expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send').map((n) => n.name))
         .toEqual(['Responder al cliente', 'Avisar a recepción']);
-      // El único envío por HTTP a Graph es el pin a pedido (bloque k), y no
-      // corre si la compuerta no lo deja pasar.
+      // Los envíos por HTTP a Graph son el pin a pedido (bloque k) y el QR de
+      // la seña (bloque l), y ninguno corre si su compuerta no lo deja pasar.
       const aGraph = f.nodes.filter((n) => /graph\.facebook\.com/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
-      expect(aGraph).toEqual(['Enviar ubicación']);
+      expect(aGraph.sort()).toEqual(['Enviar QR de la seña', 'Enviar ubicación'].sort());
       expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
+      expect(origenes('Enviar QR de la seña')).toEqual(['Preparar seña']);
+      expect(origenes('Preparar seña')).toEqual(['¿Enviar QR de la seña?']);
     });
   });
 
@@ -829,7 +846,7 @@ describe.each([
         // Cuelgan del envío (bloque k); desde el reintento la compuerta no pasa.
         '¿Enviar ubicación?', 'Enviar ubicación', 'Reportar ubicación (saliente)'].sort());
       // Y el agente principal sigue teniendo una sola entrada.
-      expect(origenes(AGENTE)).toEqual(['¿Atención normal?']);
+      expect(origenes(AGENTE)).toEqual(['¿Es un comprobante?']);
     });
 
     it('la memoria olvida el turno que NO se envió: los últimos 2 mensajes, y no corta nada si falla', () => {
@@ -851,7 +868,8 @@ describe.each([
       expect(caidas[0]).toMatchObject({ hora: '14:30', persona: persona.nombre, servicio: 'blanqueamiento dental profesional' });
       expect(String(caidas[0]!['fecha'])).toContain('17 de septiembre');
       // La rama directa a la transferencia sigue para los otros casos del candado.
-      expect(destinos('Comprobar reserva')).toEqual(['¿Deshacer cita solapada?', '¿Transferir a humano?', '¿Hay cita verificada?']);
+      expect(destinos('Comprobar reserva')).toEqual(['¿Deshacer cita solapada?', '¿Transferir a humano?', '¿Hay cita verificada?',
+        '¿Enviar QR de la seña?']); // el QR (bloque l) cuelga al final y más abajo
     });
 
     it('Retomar respuesta: con el borrado bien hecho pide el reintento y NO transfiere todavía', () => {
@@ -981,7 +999,7 @@ describe.each([
     it('en cada bifurcación que responde Y avisa, el envío al cliente va arriba del aviso', () => {
       const bifurcan = Object.keys(f.connections).filter((n) => (f.connections[n]?.['main'] ?? [])
         .some((s) => s.some((c) => c.node === 'Mensaje a enviar') && s.some((c) => c.node === '¿Transferir a humano?')));
-      expect(bifurcan.sort()).toEqual(['Procesar reintento', '¿Afirma que agendó?', '¿Reintentar tras cruce?'].sort());
+      expect(bifurcan.sort()).toEqual(['Procesar reintento', '¿Afirma que agendó?', '¿Reintentar tras cruce?', 'Mensaje de la seña'].sort());
       expect(y('Mensaje a enviar')).toBeLessThan(y('¿Transferir a humano?'));
       expect(y('¿Responder uso extendido?')).toBeLessThan(y('¿Transferir a humano?'));
     });
@@ -1304,7 +1322,7 @@ describe.each([
 
   describe('5. cero mensajes agregados; el mismo mecanismo en los dos flujos', () => {
     it('los mismos dos nodos de envío, y la compuerta y el candado siguen donde estaban', () => {
-      expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name))
+      expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send').map((n) => n.name))
         .toEqual(['Responder al cliente', 'Avisar a recepción']);
       expect(destinos('Procesar respuesta')).toEqual(['¿Afirma que agendó?']);
       expect(destinos('¿Afirma que agendó?', 0)).toEqual(['Calendarios a revisar']);
@@ -1625,6 +1643,731 @@ describe.each([
       expect(String(nodo(f, '¿Enviar ubicación?').notes)).toContain('0 mensajes agregados');
       expect(String(envio.notes)).toContain('+1 mensaje por conversación SOLO cuando el cliente pide la ubicación');
       expect(String(reporte.notes)).toContain('DEBAJO del reporte del texto');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (l) Seña por QR con cotejo del comprobante (bloque 2)
+// ---------------------------------------------------------------------------
+/**
+ * LO QUE HAY QUE PROTEGER ACÁ, en orden de importancia:
+ *
+ * 1. PROHIBICIÓN 3 CON DINERO REAL. El QR es el del comercio y el dinero va a
+ *    su cuenta. Ni el prompt, ni el caption del QR, ni los textos fijos del
+ *    comprobante, ni la corrección de `Procesar respuesta` dicen «acreditado»,
+ *    «verificado» ni «recibimos tu pago». Se dice que el comprobante llegó y
+ *    que los datos coinciden; la cita queda «sujeta a la verificación del pago
+ *    por la clínica». Y nada de «simulado» en este camino: es real.
+ * 2. QUIÉN COTEJA ES EL SERVIDOR. El flujo lee el comprobante con el modelo y
+ *    manda lo leído a `cotejarComprobante`; no compara nada.
+ * 3. LA CITA SE RETIENE POR HECHO: el prefijo PENDIENTE DE SEÑA lo pone la
+ *    expresión de `agendar_cita`, no el modelo; se lo quita
+ *    `Confirmar cita retenida` cuando cuadra.
+ * 4. LO QUE CUESTA: +1 mensaje (el QR) solo en las conversaciones que llegan a
+ *    reservar con la seña activa; la respuesta al comprobante es UN mensaje
+ *    fijo; sin seña no cambia nada.
+ * 5. EL COMPROBANTE NO SE GUARDA: ningún nodo escribe la imagen a ningún lado.
+ */
+describe.each([
+  ['platinum-agendamiento.json', flujo],
+  ['demo-a-agendamiento.json', demoA],
+])('(l) %s · seña por QR con cotejo del comprobante', (_archivo, f) => {
+  const destinos = (desde: string, salida = 0) =>
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+  const origenes = (hacia: string) => Object.entries(f.connections)
+    .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
+    .map(([origen]) => origen);
+  const alcanzables = (desde: string): Set<string> => {
+    const vistos = new Set<string>();
+    const pendientes = [desde];
+    while (pendientes.length) {
+      const actual = pendientes.pop() as string;
+      for (const salida of f.connections[actual]?.['main'] ?? []) {
+        for (const x of salida) if (!vistos.has(x.node)) { vistos.add(x.node); pendientes.push(x.node); }
+      }
+    }
+    return vistos;
+  };
+  const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
+  const x = (nombre: string) => nodo(f, nombre).position[0];
+  const y = (nombre: string) => nodo(f, nombre).position[1];
+  const cfg = configBase(f);
+  const p = String(nodo(f, AGENTE).parameters['options'].systemMessage);
+  const equipo = JSON.parse(String(cfg['funcionarios'])) as { nombre: string; calendario: string }[];
+  const persona = equipo[0]!;
+  const AFIRMA_PAGO = /acreditad|verificad|recibimos (tu|su) pago|pago confirmado/i;
+
+  /** Renderiza una plantilla de n8n con `$json` y con `$('Nodo').first().json`. */
+  const plantillaCon = (texto: unknown, $json: J, referencias: Record<string, J> = {}): string => {
+    const t = String(texto);
+    if (!t.startsWith('=')) throw new Error('no es una plantilla de n8n');
+    const $ = (n: string) => ({ first: () => ({ json: referencias[n] ?? {} }), item: { json: referencias[n] ?? {} } });
+    return t.slice(1).replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
+      // nosemgrep: devsecops.js-eval-prohibido
+      const v = (new Function('$json', '$', `return (${expr});`) as (j: unknown, r: unknown) => unknown)($json, $);
+      return v === undefined || v === null ? '' : String(v);
+    });
+  };
+
+  const QR = 'https://us-east1-un-proyecto.cloudfunctions.net/imagenDeCobro?f=abc123';
+  const SENA_DEL_PANEL = {
+    activa: true, importe: 100, moneda: 'BOB', minutosRetencion: 45,
+    qr: { url: QR, nombreCuenta: 'Clinica Ejemplo SRL', banco: 'Banco Ejemplo' },
+    pendiente: false, evento: null, qrEnviadoEn: null,
+  };
+  const panelDe = (sena: unknown, extra: J = {}) => ({
+    statusCode: 200,
+    body: {
+      tenantId: 'un-negocio', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
+      operacion: { moneda: 'BOB', horarioAtencion: 'lunes a viernes, de 09:00 a 19:00' },
+      datosDelNegocio: { nombreNegocio: 'Un Negocio', direccion: 'Calle 1, zona Sur' },
+      catalogo: [], funcionarios: [], voz: {},
+      ...(sena === undefined ? {} : { sena }), ...extra,
+    },
+  });
+  const fusionarEn = (respuesta: unknown): J => ejecutar(codigo('Config del negocio'),
+    [respuesta as J], { 'Config base': [cfg] })[0] ?? {};
+  /** La configuración de un negocio con la seña activa (100 Bs, 45 minutos). */
+  const CON_SENA: J = {
+    ...cfg, senaActiva: 'si', senaImporte: '100', senaMoneda: 'Bs', senaMinutosRetencion: '45', senaQrUrl: QR,
+    senaNombreCuenta: 'Clinica Ejemplo SRL', senaBanco: 'Banco Ejemplo', nombreNegocio: 'Un Negocio', direccion: 'Calle 1, zona Sur',
+  };
+  const ENTRADA = { from: '59170000001', nombrePerfil: 'Ana', mensajeId: 'wamid.COMPROBANTE', mediaId: 'media-1', mimeType: 'image/jpeg' };
+  /** La cita retenida como la devuelve Google. */
+  const CITA_RETENIDA = {
+    id: 'ev-retenido', summary: 'PENDIENTE DE SEÑA · Cita Ana — valoración clínica', organizer: { email: persona.calendario },
+    start: { dateTime: '2026-09-18T10:00:00-04:00' }, end: { dateTime: '2026-09-18T10:30:00-04:00' },
+    created: new Date(Date.now() - 1000).toISOString(), description: 'Cliente: Ana\nTelefono: 59170000001\nAgendado por NovuChat.\nSeña pendiente: 100 Bs',
+  };
+
+  describe('1. Config base y Config del negocio', () => {
+    it('Config base lleva los respaldos de la seña vacíos (inactiva) y la versión de Graph', () => {
+      expect(cfg).toMatchObject({
+        senaActiva: '', senaImporte: '', senaMoneda: 'Bs', senaMinutosRetencion: '30', senaQrUrl: '',
+        senaNombreCuenta: '', senaBanco: '', senaPendiente: '', senaEventoId: '', senaEventoCalendario: '', waGraphVersion: 'v26.0',
+      });
+    });
+
+    it('toma `sena` del panel, como texto: activa, importe, minutos, el QR y su cuenta', () => {
+      expect(fusionarEn(panelDe(SENA_DEL_PANEL))).toMatchObject({
+        senaActiva: 'si', senaImporte: '100', senaMoneda: 'Bs', senaMinutosRetencion: '45', senaQrUrl: QR,
+        senaNombreCuenta: 'Clinica Ejemplo SRL', senaBanco: 'Banco Ejemplo', senaPendiente: '', senaEventoId: '', senaEventoCalendario: '',
+      });
+    });
+
+    it('con un QR pendiente para ESTE teléfono baja `pendiente` y la cita retenida', () => {
+      const s = fusionarEn(panelDe({ ...SENA_DEL_PANEL, pendiente: true, evento: { id: 'ev-1', calendario: persona.calendario } }));
+      expect(s).toMatchObject({ senaPendiente: 'si', senaEventoId: 'ev-1', senaEventoCalendario: persona.calendario });
+    });
+
+    it('inactiva en el panel (importe 0, qr nulo), sin `sena`, con el panel caído o suspendido: queda inactiva', () => {
+      const inactiva = { activa: false, importe: 0, moneda: 'BOB', minutosRetencion: 30, qr: null, pendiente: false, evento: null, qrEnviadoEn: null };
+      for (const r of [panelDe(inactiva), panelDe(undefined), panelDe(null), panelDe('si'),
+        { statusCode: 409, body: { estado: 'suspendido' } }, { statusCode: 500, body: {} }, {}]) {
+        const s = fusionarEn(r);
+        expect(s['senaActiva'], JSON.stringify(r).slice(0, 60)).toBe('');
+        expect(s['senaQrUrl']).toBe('');
+        expect(s['senaImporte']).toBe('');
+      }
+    });
+
+    it('no se activa con un QR que no sea https, ni con un importe que no sea número: es lo que se reenvía tal cual', () => {
+      expect(fusionarEn(panelDe({ ...SENA_DEL_PANEL, qr: { ...SENA_DEL_PANEL.qr, url: 'http://inseguro/qr.png' } }))['senaActiva']).toBe('');
+      expect(fusionarEn(panelDe({ ...SENA_DEL_PANEL, importe: '100' }))['senaActiva']).toBe('');
+      expect(fusionarEn(panelDe({ ...SENA_DEL_PANEL, minutosRetencion: 999 }))['senaMinutosRetencion']).toBe('30');
+    });
+  });
+
+  describe('2. el prompt: el bloque SEÑA PARA RESERVAR solo con la seña activa, y nunca afirma un pago', () => {
+    const FRASE = 'para confirmar una cita el paciente paga una seña de';
+
+    it('con la seña activa el bloque va después de la regla 4, con el importe y los minutos del negocio', () => {
+      const r = plantilla(p, CON_SENA);
+      expect(r).toContain('SEÑA PARA RESERVAR (aplica a la regla 4): ' + FRASE + ' 100 Bs por QR');
+      expect(r).toContain('RESERVADO por 45 minutos a la espera de la seña');
+      expect(r).toContain('NO digas que la cita quedó confirmada');
+      expect(r).toContain('antes de salir de la aplicación del banco');
+      expect(r.indexOf('4. CONFIRMACIÓN')).toBeLessThan(r.indexOf('SEÑA PARA RESERVAR (aplica'));
+      expect(r.indexOf('SEÑA PARA RESERVAR (aplica')).toBeLessThan(r.indexOf('4b. CANCELAR'));
+      // La regla 4 remite al bloque.
+      expect(r).toContain('Si hay seña activa (bloque SEÑA PARA RESERVAR, más abajo), sigue ese bloque y NO digas que la cita quedó confirmada.');
+    });
+
+    it('sin la seña el bloque no aparece: el prompt es el de siempre', () => {
+      const r = plantilla(p, cfg);
+      expect(r).not.toContain(FRASE);
+      expect(r).not.toContain('SEÑA PARA RESERVAR (aplica');
+      expect(r).toContain('4b. CANCELAR');
+    });
+
+    it('el bloque nunca escribe «acreditado», «verificado» ni «recibido» sobre un pago (prohibición 3)', () => {
+      const r = plantilla(p, CON_SENA);
+      const bloque = r.slice(r.indexOf('SEÑA PARA RESERVAR (aplica'), r.indexOf('4b. CANCELAR'));
+      expect(bloque).not.toMatch(/acreditad|verificad|recibid|recibimos|simulad/i);
+      expect(bloque).toMatch(/eso lo confirma Un Negocio mirando su banco/);
+      expect(bloque).toMatch(/pídele la foto o el PDF del comprobante/);
+    });
+
+    it('sigue siendo cacheable: solo datos por negocio, nada por turno', () => {
+      for (const v of ['$now', '$json.from', 'nombrePerfil', 'mensajesRestantes24h', 'userInput', 'senaPendiente', 'senaEventoId']) {
+        expect(p, v).not.toContain(v);
+      }
+    });
+  });
+
+  describe('3. agendar_cita: el prefijo PENDIENTE DE SEÑA lo pone el nodo, solo con la seña activa', () => {
+    const tool = nodo(f, 'agendar_cita');
+    const titulo = (config: J) => expresion(tool.parameters['additionalFields'].summary, {}, { 'Config del negocio': config },
+      { titulo: 'Cita Ana — valoración clínica' });
+
+    it('con la seña activa antepone el prefijo; sin ella, el título es el del modelo', () => {
+      expect(titulo(CON_SENA)).toBe('PENDIENTE DE SEÑA · Cita Ana — valoración clínica');
+      expect(titulo(cfg)).toBe('Cita Ana — valoración clínica');
+      expect(titulo({ ...cfg, senaActiva: 'no' })).toBe('Cita Ana — valoración clínica');
+    });
+
+    it('la descripción suma «Seña pendiente: N Bs» solo con la seña activa, y sigue con el teléfono', () => {
+      const con = plantillaCon(tool.parameters['additionalFields'].description, {}, { 'Config del negocio': CON_SENA, 'Normalizar entrada': ENTRADA });
+      expect(con).toBe('Cliente: Ana\nTelefono: 59170000001\nAgendado por NovuChat.\nSeña pendiente: 100 Bs');
+      const sin = plantillaCon(tool.parameters['additionalFields'].description, {}, { 'Config del negocio': cfg, 'Normalizar entrada': ENTRADA });
+      expect(sin).toBe('Cliente: Ana\nTelefono: 59170000001\nAgendado por NovuChat.');
+    });
+  });
+
+  describe('4. Normalizar entrada: el comprobante SOLO con seña pendiente y tipo image/document', () => {
+    const normalizar = (msg: J, config: J = cfg) => ejecutar(codigo('Normalizar entrada'), [{
+      ...config, messages: [{ from: '59170000001', id: 'wamid.X', ...msg }], contacts: [{ profile: { name: 'Ana' } }],
+    }])[0] ?? {};
+
+    it('una foto con QR pendiente es un comprobante: no va al modelo, y viajan los ids del mensaje y del medio', () => {
+      const s = normalizar({ type: 'image', image: { id: 'media-1', mime_type: 'image/jpeg' } }, { ...cfg, senaPendiente: 'si' });
+      expect(s).toMatchObject({ esComprobante: true, mediaId: 'media-1', mimeType: 'image/jpeg', mensajeId: 'wamid.X', tipo: 'image', from: '59170000001' });
+      expect(String(s['userInput'])).toContain('no va al modelo');
+    });
+
+    it('un PDF con QR pendiente también', () => {
+      const s = normalizar({ type: 'document', document: { id: 'media-2', mime_type: 'application/pdf', filename: 'comprobante.pdf' } },
+        { ...cfg, senaPendiente: 'si' });
+      expect(s).toMatchObject({ esComprobante: true, mediaId: 'media-2', mimeType: 'application/pdf' });
+    });
+
+    it('sin QR pendiente una imagen es una imagen (el aviso de siempre al modelo), y un texto nunca es comprobante', () => {
+      const foto = normalizar({ type: 'image', image: { id: 'media-1', mime_type: 'image/jpeg' } });
+      expect(foto['esComprobante']).toBe(false);
+      expect(String(foto['userInput'])).toContain('el cliente envió una imagen');
+      const texto = normalizar({ type: 'text', text: { body: 'ya pagué' } }, { ...cfg, senaPendiente: 'si' });
+      expect(texto).toMatchObject({ esComprobante: false, userInput: 'ya pagué', mediaId: '', mimeType: '', mensajeId: 'wamid.X' });
+    });
+
+    it('el reporte entrante manda el id del mensaje, que ahora viaja lleno', () => {
+      const s = normalizar({ type: 'image', image: { id: 'media-1', mime_type: 'image/jpeg' } }, { ...cfg, senaPendiente: 'si' });
+      const cuerpo = JSON.parse(String(expresion(nodo(f, 'Reportar mensaje (entrante)').parameters['jsonBody'], s))) as J;
+      expect(cuerpo).toMatchObject({ telefono: '59170000001', direccion: 'entrante', tipo: 'image', idMeta: 'wamid.X' });
+    });
+  });
+
+  describe('5. el cableado del comprobante: con `esComprobante` el agente NO es alcanzable; sin él, sigue siendo la única entrada', () => {
+    const NODOS_COTEJO = ['Obtener URL del medio', 'Descargar comprobante', '¿Es PDF?', 'Leer comprobante (PDF)', 'Leer comprobante (imagen)',
+      'Interpretar lectura', 'Cotejar en el servidor', 'Respuesta de la seña', '¿Cuadró la seña?', 'Leer cita retenida',
+      'Confirmar cita retenida', 'Mensaje de la seña'];
+
+    it('«¿Es un comprobante?» está entre «¿Atención normal?» y el agente, y solo pasa con true', () => {
+      expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
+      expect(origenes('¿Es un comprobante?')).toEqual(['¿Atención normal?']);
+      expect(destinos('¿Es un comprobante?', 0)).toEqual(['Obtener URL del medio']);
+      expect(destinos('¿Es un comprobante?', 1)).toEqual([AGENTE]);
+      expect(origenes(AGENTE)).toEqual(['¿Es un comprobante?']);
+      const condicion = nodo(f, '¿Es un comprobante?').parameters['conditions'].conditions[0].leftValue;
+      expect(expresion(condicion, { esComprobante: true })).toBe(true);
+      for (const v of [false, 'true', 1, undefined]) expect(expresion(condicion, { esComprobante: v }), String(v)).toBe(false);
+    });
+
+    it('desde la rama del comprobante no se llega al agente, al reintento ni al candado; sí al envío y al aviso', () => {
+      const a = alcanzables('Obtener URL del medio');
+      for (const n of [AGENTE, 'Reintento tras cruce', 'Procesar respuesta', '¿Afirma que agendó?', 'Comprobar reserva', 'Registrar cierre (cita)',
+        '¿Enviar QR de la seña?', 'Enviar QR de la seña']) {
+        expect(a.has(n), n).toBe(false);
+      }
+      for (const n of [...NODOS_COTEJO.slice(1), 'Mensaje a enviar', 'Responder al cliente', 'Reportar mensaje (saliente)',
+        '¿Transferir a humano?', 'Avisar a recepción']) {
+        expect(a.has(n), n).toBe(true);
+      }
+      // Y desde «Uso extendido» tampoco se llega a nada de esto.
+      const u = alcanzables('Uso extendido');
+      for (const n of [AGENTE, ...NODOS_COTEJO]) expect(u.has(n), n).toBe(false);
+    });
+
+    it('la cadena: URL → descarga → ¿PDF? → lectura → interpretar → cotejar → respuesta → ¿cuadró? → (leer → confirmar) → mensaje → salida', () => {
+      expect(destinos('Obtener URL del medio')).toEqual(['Descargar comprobante']);
+      expect(destinos('Descargar comprobante')).toEqual(['¿Es PDF?']);
+      expect(destinos('¿Es PDF?', 0)).toEqual(['Leer comprobante (PDF)']);
+      expect(destinos('¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
+      expect(destinos('Leer comprobante (PDF)')).toEqual(['Interpretar lectura']);
+      expect(destinos('Leer comprobante (imagen)')).toEqual(['Interpretar lectura']);
+      expect(destinos('Interpretar lectura')).toEqual(['Cotejar en el servidor']);
+      expect(destinos('Cotejar en el servidor')).toEqual(['Respuesta de la seña']);
+      expect(destinos('Respuesta de la seña')).toEqual(['¿Cuadró la seña?']);
+      expect(destinos('¿Cuadró la seña?', 0)).toEqual(['Leer cita retenida']);
+      expect(destinos('¿Cuadró la seña?', 1)).toEqual(['Mensaje de la seña']);
+      expect(destinos('Leer cita retenida', 0)).toEqual(['Confirmar cita retenida']);
+      expect(destinos('Leer cita retenida', 1)).toEqual(['Mensaje de la seña']);
+      expect(nodo(f, 'Leer cita retenida').onError).toBe('continueErrorOutput');
+      expect(destinos('Confirmar cita retenida')).toEqual(['Mensaje de la seña']);
+      expect(destinos('Mensaje de la seña')).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
+      // Todos los caminos terminan en el punto único de salida.
+      for (const n of NODOS_COTEJO) expect(alcanzables(n).has('Mensaje a enviar'), n).toBe(true);
+    });
+
+    it('«¿Es PDF?» decide por el mime del mensaje; los dos lectores llevan el mismo modelo del agente y el prompt de lectura', () => {
+      const condicion = nodo(f, '¿Es PDF?').parameters['conditions'].conditions[0].leftValue;
+      expect(expresion(condicion, {}, { 'Normalizar entrada': { mimeType: 'application/pdf' } })).toBe(true);
+      expect(expresion(condicion, {}, { 'Normalizar entrada': { mimeType: 'image/jpeg' } })).toBe(false);
+      expect(expresion(condicion, {}, { 'Normalizar entrada': {} })).toBe(false);
+      const modelo = nodo(f, 'Google Gemini Chat Model').parameters['modelName'];
+      for (const [nombre, recurso] of [['Leer comprobante (PDF)', 'document'], ['Leer comprobante (imagen)', 'image']] as const) {
+        const g = nodo(f, nombre);
+        expect(g.type).toBe('@n8n/n8n-nodes-langchain.googleGemini');
+        expect(g.parameters).toMatchObject({ resource: recurso, operation: 'analyze', inputType: 'binary', binaryPropertyName: 'data', simplify: true });
+        expect(g.parameters['modelId']).toEqual({ __rl: true, mode: 'id', value: modelo });
+        expect(g.parameters['options']?.maxOutputTokens).toBeLessThanOrEqual(400);
+        const texto = String(g.parameters['text']);
+        expect(texto).toContain('Devuelve SOLO\nun objeto JSON');
+        expect(texto).toContain('NO lo deduzcas ni lo inventes');
+        expect(texto).toContain('«Bs 5.00» son cinco');
+        expect(texto).toContain('sin quitar asteriscos ni guiones');
+        expect(g.onError).toBe('continueRegularOutput');
+      }
+    });
+
+    it('el medio se pide a Meta por su id y se baja CON el token, como archivo binario `data`; nadie lo guarda', () => {
+      const u = nodo(f, 'Obtener URL del medio');
+      expect(u.type).toBe('n8n-nodes-base.whatsApp');
+      expect(u.parameters).toMatchObject({ resource: 'media', operation: 'mediaUrlGet', mediaGetId: '={{ $json.mediaId }}' });
+      const d = nodo(f, 'Descargar comprobante');
+      expect(d.parameters).toMatchObject({ method: 'GET', url: '={{ $json.url }}', authentication: 'predefinedCredentialType', nodeCredentialType: 'whatsAppApi' });
+      expect(d.parameters['options']?.response?.response).toEqual({ responseFormat: 'file', outputPropertyName: 'data' });
+      // Ningún nodo del flujo sube un binario ni escribe a un almacén.
+      for (const n of f.nodes) {
+        expect(n.type, n.name).not.toMatch(/googleDrive|awsS3|firestore|ftp|writeBinaryFile|readWriteFile/i);
+        expect(JSON.stringify(n.parameters), n.name).not.toMatch(/sendBinaryData|inputDataFieldName/);
+      }
+    });
+  });
+
+  describe('6. Preparar seña: el caption del QR con el resumen, el importe y la instrucción del comprobante', () => {
+    const item = { from: '59170000001', nombrePerfil: 'Ana', reservaVerificada: true, eventoId: 'ev-retenido', senaActiva: 'si',
+      eventosCreados: [{ id: 'ev-retenido', calendario: persona.calendario, inicio: '2026-09-18T10:00:00-04:00', titulo: CITA_RETENIDA.summary }] };
+    const preparar = (config: J = CON_SENA, eventos: J[] = [CITA_RETENIDA], it: J = item) => ejecutar(codigo('Preparar seña'), [it],
+      { 'Config del negocio': [config], 'Verificar en el calendario': eventos })[0]!;
+
+    it('lleva servicio, día, hora y persona (por el calendario de la cita), la seña y los minutos de retención', () => {
+      const s = preparar();
+      const c = String(s['captionQr']);
+      expect(c).toContain('Reserva: valoración clínica · viernes, 18 de septiembre 10:00 · ' + persona.nombre);
+      expect(c).toContain('Seña: 100 Bs (se descuenta del tratamiento)');
+      expect(c).toContain('ANTES de salir de la app');
+      expect(c).toContain('comprobante');
+      expect(c).toMatch(/como foto o PDF/);
+      expect(c).toContain('El horario queda reservado 45 minutos');
+      expect(c.length).toBeLessThanOrEqual(1024);
+      expect(c).not.toMatch(/simulad|acreditad|verificad|recibimos/i);
+      expect(s).toMatchObject({ eventoId: 'ev-retenido', calendarioDelEvento: persona.calendario, senaQrUrl: QR, from: '59170000001', waGraphVersion: 'v26.0' });
+    });
+
+    it('trata como manda la configuración: usted con Platinum, tuteo con el Demo A', () => {
+      const c = String(preparar()['captionQr']);
+      if (/usted/i.test(String(cfg['tratamiento']))) {
+        expect(c).toContain('Escanee el QR con la app de su banco');
+        expect(c).toContain('Cuando termine, guarde o comparta el comprobante');
+        expect(c).not.toMatch(/\b(mandámelo|escaneá|guardá)\b/i);
+      } else {
+        expect(c).toContain('Escaneá el QR con la app de tu banco');
+        expect(c).toContain('mandámelo por acá');
+      }
+    });
+
+    it('si el calendario no devolvió la cita, el QR sale igual con lo que devolvió la herramienta; sin nada, con un resumen genérico', () => {
+      const conHerramienta = String(preparar(CON_SENA, [])['captionQr']);
+      expect(conHerramienta).toContain('valoración clínica · viernes, 18 de septiembre 10:00 · ' + persona.nombre);
+      const sinNada = preparar(CON_SENA, [], { ...item, eventosCreados: [] });
+      expect(String(sinNada['captionQr'])).toMatch(/Reserva: (su|tu) cita\n/);
+      expect(String(sinNada['captionQr'])).toContain('Seña: 100 Bs');
+      expect(sinNada['calendarioDelEvento']).toBe('');
+    });
+
+    it('con el nivel de emojis en «ninguno» el caption no lleva ninguno', () => {
+      const c = String(preparar({ ...CON_SENA, nivelEmojis: 'ninguno' })['captionQr']);
+      expect(c).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
+      expect(c.startsWith('Reserva: ')).toBe(true);
+    });
+  });
+
+  describe('7. Procesar respuesta: la red de la prohibición 3 con cobro real, y lo que arrastra', () => {
+    const procesar = (output: string, config: J = CON_SENA, pasos: J[] = []): J => ejecutar(codigo('Procesar respuesta'),
+      [{ output, userInput: 'hola', intermediateSteps: pasos }],
+      { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Ana' }], 'Config del negocio': [config] })[0] ?? {};
+
+    it('«pago acreditado» se reemplaza por la oración de que el comprobante lo revisa el negocio, y queda anotado', () => {
+      const s = procesar('¡Listo, Ana! Tu pago fue acreditado. Te espero el viernes a las 10:00.');
+      expect(String(s['respuesta'])).toBe('¡Listo, Ana! El comprobante lo revisa Un Negocio y ellos confirman el pago. Te espero el viernes a las 10:00.');
+      expect(s['avisos']).toEqual(['correccion_cobro']);
+      expect(String(s['respuesta'])).not.toMatch(AFIRMA_PAGO);
+    });
+
+    it.each([
+      ['Ya recibimos tu pago, gracias.'],
+      ['Tu transferencia fue verificada ✅'],
+      ['**Pago confirmado**, quedas agendada.'],
+      ['El cobro ya se acreditó en nuestra cuenta.'],
+    ])('también corrige «%s»', (frase) => {
+      const s = procesar(frase);
+      expect(String(s['respuesta'])).toContain('El comprobante lo revisa Un Negocio y ellos confirman el pago.');
+      expect(s['avisos']).toEqual(['correccion_cobro']);
+    });
+
+    it('deja pasar lo que NO afirma un pago: «el comprobante lo revisa la clínica», «mandá el comprobante»', () => {
+      for (const frase of ['El comprobante lo revisa la clínica y ellos confirman el pago.',
+        'Cuando pagues, mandame el comprobante por acá antes de salir de la app del banco.',
+        'El horario queda reservado 45 minutos a la espera de la seña.']) {
+        const s = procesar(frase);
+        expect(String(s['respuesta']), frase).toBe(frase);
+        expect(s['avisos']).toEqual([]);
+      }
+    });
+
+    it('sin la seña activa la red no corre: el texto del modelo sale tal cual (no hay cobro real que proteger)', () => {
+      const s = procesar('Tu pago fue acreditado.', cfg);
+      expect(String(s['respuesta'])).toBe('Tu pago fue acreditado.');
+      expect(s['avisos']).toEqual([]);
+      expect(s['senaActiva']).toBe('');
+    });
+
+    it('arrastra al item lo que el QR necesita, y el calendario del evento que la herramienta devolvió', () => {
+      const s = procesar('Listo, quedó reservado.', CON_SENA, [{ action: { tool: 'agendar_cita' }, observation: JSON.stringify([CITA_RETENIDA]) }]);
+      expect(s).toMatchObject({
+        senaActiva: 'si', senaImporte: '100', senaMoneda: 'Bs', senaMinutosRetencion: '45', senaQrUrl: QR,
+        senaNombreCuenta: 'Clinica Ejemplo SRL', senaBanco: 'Banco Ejemplo', nombreNegocio: 'Un Negocio', direccion: 'Calle 1, zona Sur',
+        phoneNumberId: cfg['phoneNumberId'], waGraphVersion: 'v26.0', calendarioDelEvento: persona.calendario, ejecutoAgendar: true,
+      });
+      expect(JSON.parse(String(s['funcionarios']))).toEqual(equipo);
+    });
+  });
+
+  describe('8. Interpretar lectura, Cotejar en el servidor y Respuesta de la seña', () => {
+    const interpretar = (salidaGemini: J): J => ejecutar(codigo('Interpretar lectura'), [salidaGemini],
+      { 'Normalizar entrada': [ENTRADA], 'Config del negocio': [CON_SENA] })[0]!;
+    const LEIDO = { monto: 'Bs 100.00', cuentaDestino: '****1234', nombreCuenta: 'Clinica Ejemplo SRL', fecha: '18/09/2026', hora: '09:41', banco: 'Banco Ejemplo' };
+
+    it('saca el JSON del texto de Gemini (con o sin ```json), en la forma simplificada `content.parts[].text`', () => {
+      const s = interpretar({ content: { role: 'model', parts: [{ text: '```json\n' + JSON.stringify(LEIDO) + '\n```' }] } });
+      expect(s).toMatchObject({ telefono: '59170000001', legible: true, leido: LEIDO, idMeta: 'wamid.COMPROBANTE', from: '59170000001' });
+      // Y en las otras formas conocidas.
+      expect(interpretar({ candidates: [{ content: { parts: [{ text: JSON.stringify(LEIDO) }] } }] })['legible']).toBe(true);
+      expect(interpretar({ text: 'Aquí va: ' + JSON.stringify({ monto: 100, cuentaDestino: '' }) })).toMatchObject({ legible: true, leido: { monto: 100, cuentaDestino: '' } });
+    });
+
+    it('sin JSON, con JSON vacío, o con monto y cuenta vacíos: ilegible (legible false), sin romper nada', () => {
+      for (const salida of [{ content: { parts: [{ text: 'No puedo leer esto' }] } }, { content: { parts: [{ text: '{}' }] } },
+        { content: { parts: [{ text: '{"monto": "", "cuentaDestino": "", "banco": "X"}' }] } }, { error: 'timeout' }, {}]) {
+        const s = interpretar(salida);
+        expect(s['legible'], JSON.stringify(salida)).toBe(false);
+        expect(s['telefono']).toBe('59170000001');
+      }
+    });
+
+    it('«Cotejar en el servidor» manda exactamente lo que el contrato pide y lee la respuesta completa, sin reintento', () => {
+      const c = nodo(f, 'Cotejar en el servidor');
+      expect(c.parameters['url']).toBe('https://us-east1-novuchat-demo.cloudfunctions.net/cotejarComprobante');
+      expect(c.parameters['headerParameters']).toEqual(nodo(f, 'Reportar mensaje (saliente)').parameters['headerParameters']);
+      expect(c.parameters['options']).toMatchObject({ timeout: 8000, response: { response: { fullResponse: true, neverError: true } } });
+      expect(c.retryOnFail ?? false).toBe(false);
+      const s = interpretar({ content: { parts: [{ text: JSON.stringify(LEIDO) }] } });
+      expect(JSON.parse(String(expresion(c.parameters['jsonBody'], s)))).toEqual({ telefono: '59170000001', legible: true, leido: LEIDO, idMeta: 'wamid.COMPROBANTE' });
+    });
+
+    const previo = { from: '59170000001', nombrePerfil: 'Ana', telefono: '59170000001', legible: true, leido: LEIDO, idMeta: 'wamid.COMPROBANTE' };
+    const responder = (respuestaDelServidor: J, config: J = CON_SENA): J => ejecutar(codigo('Respuesta de la seña'), [respuestaDelServidor],
+      { 'Interpretar lectura': [previo], 'Config del negocio': [config] })[0]!;
+    const OK = (cuerpo: J) => ({ statusCode: 200, body: { importe: 100, moneda: 'BOB', cierreId: 'cita_ev-retenido',
+      evento: { id: 'ev-retenido', calendario: persona.calendario }, diferencias: [], ...cuerpo } });
+
+    it('cuadra: la cita queda reservada SUJETA a la verificación del pago; transfiere con el motivo de cita pagada', () => {
+      const s = responder(OK({ resultado: 'cuadra' }));
+      const r = String(s['respuesta']);
+      expect(r).toMatch(/Recibí (su|tu) comprobante y los datos coinciden con (su|tu) reserva/);
+      expect(r).toContain('queda reservada, sujeta a la verificación del pago por Un Negocio');
+      expect(r).toContain('Ya avisé a recepción');
+      expect(r).toContain('Calle 1, zona Sur');
+      expect(s).toMatchObject({ transferir: true, resultadoSena: 'cuadra', confirmarCita: true, eventoId: 'ev-retenido',
+        calendarioDelEvento: persona.calendario, from: '59170000001', nombrePerfil: 'Ana' });
+      expect(String(s['motivoTransferencia'])).toContain('mensaje de NovuChat por cita pagada');
+      expect(String(s['motivoTransferencia'])).toContain('confirmar en el banco');
+    });
+
+    it('no cuadra: dice cuál dato no coincide, lo revisa una persona y el horario sigue reservado', () => {
+      const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El monto leído (40) no es el de la seña (100).', 'Otra.'] }));
+      const r = String(s['respuesta']);
+      expect(r).toMatch(/Recibí (su|tu) comprobante\. Hay un dato que no me coincide \(El monto leído \(40\) no es el de la seña \(100\)\)/);
+      expect(r).toContain('una persona de Un Negocio');
+      expect(r).toMatch(/(Su|Tu) horario sigue reservado/);
+      expect(s).toMatchObject({ transferir: true, resultadoSena: 'no_cuadra', confirmarCita: false });
+      expect(String(s['motivoTransferencia'])).toContain('comprobante con diferencia');
+      expect(String(s['motivoTransferencia'])).toContain('Otra.');
+    });
+
+    it('ilegible: pide que lo reenvíe, más nítido o como PDF', () => {
+      const s = responder(OK({ resultado: 'ilegible', diferencias: ['No se pudo leer el comprobante.'] }));
+      expect(String(s['respuesta'])).toMatch(/no pude leerlo bien\. ¿Me lo manda(s|́s)? de nuevo, más nítido o como PDF/);
+      expect(s).toMatchObject({ transferir: true, confirmarCita: false });
+      expect(String(s['motivoTransferencia'])).toContain('ilegible');
+    });
+
+    it('409 (sin seña pendiente o seña inactiva), 500 o el panel caído: lo revisa una persona, nunca silencio', () => {
+      for (const r of [{ statusCode: 409, body: { error: 'sin_sena_pendiente' } }, { statusCode: 409, body: { error: 'sena_inactiva' } },
+        { statusCode: 500, body: {} }, {}, { error: 'timeout' }]) {
+        const s = responder(r);
+        expect(String(s['respuesta']), JSON.stringify(r)).toMatch(/Recibí (su|tu) comprobante\. Lo revisa una persona de Un Negocio/);
+        expect(s).toMatchObject({ transferir: true, resultadoSena: 'sin_cotejo', confirmarCita: false });
+        expect(String(s['motivoTransferencia'])).toContain('sin poder cotejar');
+      }
+      expect(String(responder({ statusCode: 409, body: { error: 'sena_inactiva' } })['motivoTransferencia'])).toContain('sena_inactiva');
+    });
+
+    it('NINGÚN texto al paciente afirma un pago (prohibición 3), y ninguno dice «simulado»', () => {
+      for (const r of [OK({ resultado: 'cuadra' }), OK({ resultado: 'no_cuadra', diferencias: ['x'] }), OK({ resultado: 'ilegible' }),
+        { statusCode: 409, body: { error: 'sin_sena_pendiente' } }, {}]) {
+        for (const config of [CON_SENA, { ...CON_SENA, tratamiento: 'Tutea siempre al cliente.' }]) {
+          const s = responder(r, config);
+          expect(String(s['respuesta'])).not.toMatch(AFIRMA_PAGO);
+          expect(String(s['respuesta'])).not.toMatch(/simulad/i);
+          expect(s['transferir']).toBe(true);
+        }
+      }
+    });
+
+    it('trata de usted o tutea según la configuración, en los cuatro textos', () => {
+      const usted = responder(OK({ resultado: 'cuadra' }), { ...CON_SENA, tratamiento: 'Trate al cliente de USTED en todo momento.' });
+      expect(String(usted['respuesta'])).toContain('Recibí su comprobante');
+      const tu = responder(OK({ resultado: 'ilegible' }), { ...CON_SENA, tratamiento: 'Tutea siempre al cliente (tu, te, ti).' });
+      expect(String(tu['respuesta'])).toContain('¿Me lo mandás de nuevo');
+    });
+
+    it('cuadra sin evento en la respuesta: no hay qué confirmar en el calendario, y lo dice el motivo', () => {
+      const s = responder(OK({ resultado: 'cuadra', evento: null }));
+      expect(s['confirmarCita']).toBe(false);
+      expect(expresion(nodo(f, '¿Cuadró la seña?').parameters['conditions'].conditions[0].leftValue, s)).toBe(false);
+      expect(expresion(nodo(f, '¿Cuadró la seña?').parameters['conditions'].conditions[0].leftValue, responder(OK({ resultado: 'cuadra' })))).toBe(true);
+    });
+
+    describe('Leer, confirmar y el mensaje final', () => {
+      const base = responder(OK({ resultado: 'cuadra' }));
+      const mensaje = (refs: Record<string, J[]>): J => ejecutar(codigo('Mensaje de la seña'), [{}],
+        { 'Respuesta de la seña': [base], 'Config del negocio': [CON_SENA], ...refs })[0]!;
+
+      it('«Leer cita retenida» y «Confirmar cita retenida» apuntan a la cita que devolvió el servidor, y el título pierde el prefijo', () => {
+        const leer = nodo(f, 'Leer cita retenida');
+        expect(leer.parameters['operation']).toBe('get');
+        expect(expresion(leer.parameters['calendar'].value, base)).toBe(persona.calendario);
+        expect(expresion(leer.parameters['eventId'], base)).toBe('ev-retenido');
+        const confirmar = nodo(f, 'Confirmar cita retenida');
+        expect(confirmar.parameters['operation']).toBe('update');
+        expect(expresion(confirmar.parameters['calendar'].value, {}, { 'Respuesta de la seña': base })).toBe(persona.calendario);
+        expect(expresion(confirmar.parameters['eventId'], {}, { 'Respuesta de la seña': base })).toBe('ev-retenido');
+        expect(expresion(confirmar.parameters['updateFields'].summary, CITA_RETENIDA)).toBe('Cita Ana — valoración clínica');
+        expect(expresion(confirmar.parameters['updateFields'].summary, { summary: 'Cita Ana — valoración clínica' })).toBe('Cita Ana — valoración clínica');
+        expect(confirmar.onError).toBe('continueRegularOutput');
+      });
+
+      it('con la cita leída y el título corregido, el mensaje nombra servicio, día, hora y persona', () => {
+        const s = mensaje({ 'Leer cita retenida': [CITA_RETENIDA], 'Confirmar cita retenida': [{ ...CITA_RETENIDA, summary: 'Cita Ana — valoración clínica' }] });
+        const r = String(s['respuesta']);
+        expect(r).toMatch(/(Su|Tu) cita de valoración clínica queda reservada para el viernes, 18 de septiembre a las 10:00 con /);
+        expect(r).toContain(persona.nombre + ', sujeta a la verificación del pago por Un Negocio');
+        expect(r).not.toMatch(AFIRMA_PAGO);
+        expect(s).toMatchObject({ transferir: true, tituloCorregido: true });
+        expect(String(s['motivoTransferencia'])).toContain('mensaje de NovuChat por cita pagada');
+        expect(String(s['motivoTransferencia'])).not.toContain('quitarlo a mano');
+      });
+
+      it('si no se pudo leer la cita, el texto sale sin fecha (nunca inventada) y recepción lo sabe', () => {
+        const s = mensaje({});
+        expect(String(s['respuesta'])).toContain('queda reservada, sujeta a la verificación del pago por Un Negocio');
+        expect(String(s['motivoTransferencia'])).toContain('no pude leer la cita retenida');
+        expect(String(s['motivoTransferencia'])).toContain('quitarlo a mano');
+        expect(s['tituloCorregido']).toBe(false);
+      });
+
+      it('si el título no se pudo corregir, el aviso a recepción pide quitar el prefijo a mano', () => {
+        const s = mensaje({ 'Leer cita retenida': [CITA_RETENIDA], 'Confirmar cita retenida': [{ error: 'falló' }] });
+        expect(String(s['motivoTransferencia'])).toContain('sigue con el prefijo PENDIENTE DE SEÑA');
+        expect(s['tituloCorregido']).toBe(false);
+      });
+
+      it('con no_cuadra o ilegible el mensaje pasa tal cual (no hubo lectura de la cita)', () => {
+        const nc = responder(OK({ resultado: 'no_cuadra', diferencias: ['x'] }));
+        const s = ejecutar(codigo('Mensaje de la seña'), [{}], { 'Respuesta de la seña': [nc], 'Config del negocio': [CON_SENA] })[0]!;
+        expect(s['respuesta']).toBe(nc['respuesta']);
+        expect(s['motivoTransferencia']).toBe(nc['motivoTransferencia']);
+        expect(s['transferir']).toBe(true);
+      });
+    });
+  });
+
+  describe('9. con la seña activa no se registra el cierre al agendar: lo crea el servidor al cotejar', () => {
+    const condiciones = nodo(f, '¿Hay cita verificada?').parameters['conditions'].conditions as { leftValue: string }[];
+    const pasa = (item: J) => condiciones.every((c) => expresion(c.leftValue, item) === true);
+
+    it('sin seña: cita verificada → cierre; con seña activa: NO', () => {
+      expect(pasa({ reservaVerificada: true, senaActiva: '' })).toBe(true);
+      expect(pasa({ reservaVerificada: true })).toBe(true);
+      expect(pasa({ reservaVerificada: true, senaActiva: 'si' })).toBe(false);
+      expect(pasa({ reservaVerificada: false, senaActiva: '' })).toBe(false);
+      expect(nodo(f, '¿Hay cita verificada?').parameters['conditions'].combinator).toBe('and');
+      expect(destinos('¿Hay cita verificada?', 0)).toEqual(['Registrar cierre (cita)']);
+    });
+  });
+
+  describe('10. la rama del QR: después del candado, y DEBAJO del envío del texto en el lienzo', () => {
+    it('«¿Enviar QR de la seña?» cuelga de «Comprobar reserva» y solo pasa con cita verificada, seña activa, sin cruce y con evento', () => {
+      expect(origenes('¿Enviar QR de la seña?')).toEqual(['Comprobar reserva']);
+      const condicion = nodo(f, '¿Enviar QR de la seña?').parameters['conditions'].conditions[0].leftValue;
+      const base = { reservaVerificada: true, senaActiva: 'si', eventoId: 'ev-1' };
+      expect(expresion(condicion, base)).toBe(true);
+      expect(expresion(condicion, { ...base, citaSolapada: true })).toBe(false);
+      expect(expresion(condicion, { ...base, senaActiva: '' })).toBe(false);
+      expect(expresion(condicion, { ...base, reservaVerificada: false })).toBe(false);
+      expect(expresion(condicion, { ...base, eventoId: '' })).toBe(false);
+      expect(expresion(condicion, { ...base, eventoId: undefined })).toBe(false);
+    });
+
+    it('la cadena: ¿Enviar QR? → Preparar seña → Enviar QR → Reportar QR; el rechazo de Meta va a «QR no enviado» → aviso', () => {
+      expect(destinos('¿Enviar QR de la seña?', 0)).toEqual(['Preparar seña']);
+      expect(destinos('¿Enviar QR de la seña?', 1)).toEqual([]);
+      expect(destinos('Preparar seña')).toEqual(['Enviar QR de la seña']);
+      expect(destinos('Enviar QR de la seña', 0)).toEqual(['Reportar QR (saliente)']);
+      expect(destinos('Enviar QR de la seña', 1)).toEqual(['QR no enviado']);
+      expect(nodo(f, 'Enviar QR de la seña').onError).toBe('continueErrorOutput');
+      expect(destinos('QR no enviado')).toEqual(['¿Transferir a humano?']);
+      expect(destinos('Reportar QR (saliente)')).toEqual([]);
+      // Desde la rama del QR no se vuelve al agente, al envío del texto ni al candado.
+      expect([...alcanzables('¿Enviar QR de la seña?')].sort()).toEqual(['Preparar seña', 'Enviar QR de la seña', 'Reportar QR (saliente)',
+        'QR no enviado', '¿Transferir a humano?', 'Avisar a recepción'].sort());
+    });
+
+    it('en el lienzo va DEBAJO del envío y del reporte del texto, y debajo de las otras salidas del candado (orden v1: el texto primero)', () => {
+      expect(f.settings['executionOrder']).toBe('v1');
+      for (const n of ['Responder al cliente', 'Reportar mensaje (saliente)', 'Mensaje a enviar', '¿Deshacer cita solapada?', '¿Hay cita verificada?', '¿Transferir a humano?']) {
+        expect(y('¿Enviar QR de la seña?'), n).toBeGreaterThan(y(n));
+      }
+      for (const n of ['Preparar seña', 'Enviar QR de la seña', 'Reportar QR (saliente)']) expect(y(n)).toBe(y('¿Enviar QR de la seña?'));
+      expect(x('¿Enviar QR de la seña?')).toBeLessThan(x('Preparar seña'));
+      expect(x('Preparar seña')).toBeLessThan(x('Enviar QR de la seña'));
+      expect(x('Enviar QR de la seña')).toBeLessThan(x('Reportar QR (saliente)'));
+      expect(x('¿Enviar QR de la seña?')).toBeGreaterThan(x('Comprobar reserva'));
+      // Y es la última salida del candado en la lista de conexiones.
+      expect(destinos('Comprobar reserva').at(-1)).toBe('¿Enviar QR de la seña?');
+    });
+
+    it('«QR no enviado» transfiere con el motivo, sin reportar nada', () => {
+      const s = ejecutar(codigo('QR no enviado'), [{ error: { message: 'Invalid parameter' } }],
+        { 'Preparar seña': [{ from: '59170000001', nombrePerfil: 'Ana', eventoId: 'ev-1' }] })[0]!;
+      expect(s).toMatchObject({ transferir: true, qrNoEnviado: true, from: '59170000001', nombrePerfil: 'Ana' });
+      expect(String(s['motivoTransferencia'])).toContain('no se pudo enviar el QR de la seña');
+      expect(String(s['motivoTransferencia'])).toContain('Invalid parameter');
+    });
+  });
+
+  describe('11. credenciales: por nombre con id vacío, y nunca la de ingesta en los nodos de Meta, Gemini o Calendar', () => {
+    const DE_META = ['Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante'];
+    const DE_GEMINI = ['Leer comprobante (PDF)', 'Leer comprobante (imagen)'];
+    const DE_CALENDAR = ['Leer cita retenida', 'Confirmar cita retenida'];
+    const DE_INGESTA = ['Reportar QR (saliente)', 'Cotejar en el servidor'];
+
+    it('cada nodo nuevo lleva el tipo de credencial que le corresponde, y ningún otro', () => {
+      for (const n of DE_META) expect(Object.keys(nodo(f, n).credentials ?? {}), n).toEqual(['whatsAppApi']);
+      for (const n of DE_GEMINI) expect(Object.keys(nodo(f, n).credentials ?? {}), n).toEqual(['googlePalmApi']);
+      for (const n of DE_CALENDAR) expect(Object.keys(nodo(f, n).credentials ?? {}), n).toEqual(['googleCalendarOAuth2Api']);
+      for (const n of DE_INGESTA) expect(Object.keys(nodo(f, n).credentials ?? {}), n).toEqual(['httpHeaderAuth']);
+      for (const n of ['Enviar QR de la seña', 'Descargar comprobante']) {
+        expect(nodo(f, n).parameters['authentication']).toBe('predefinedCredentialType');
+        expect(nodo(f, n).parameters['nodeCredentialType']).toBe('whatsAppApi');
+      }
+    });
+
+    it('los de ingesta llevan la misma credencial que «Reportar mensaje (saliente)»; los de Meta, la misma que «Enviar ubicación»', () => {
+      for (const n of DE_INGESTA) expect(nodo(f, n).credentials?.['httpHeaderAuth'], n).toEqual(nodo(f, 'Reportar mensaje (saliente)').credentials?.['httpHeaderAuth']);
+      for (const n of DE_META) expect(nodo(f, n).credentials?.['whatsAppApi'], n).toEqual(nodo(f, 'Enviar ubicación').credentials?.['whatsAppApi']);
+      // Gemini y Calendar: sin nombre, con id vacío: `publicar-flujo.sh` los asigna por tipo.
+      for (const n of [...DE_GEMINI, ...DE_CALENDAR]) {
+        for (const c of Object.values(nodo(f, n).credentials ?? {})) expect(c, n).toEqual({ id: '', name: '' });
+      }
+    });
+
+    it('los ids de los nodos nuevos son nombres cortos, sin UUID', () => {
+      for (const n of [...DE_META, ...DE_GEMINI, ...DE_CALENDAR, ...DE_INGESTA, '¿Enviar QR de la seña?', 'Preparar seña', 'QR no enviado',
+        '¿Es un comprobante?', '¿Es PDF?', 'Interpretar lectura', 'Respuesta de la seña', '¿Cuadró la seña?', 'Mensaje de la seña']) {
+        expect(nodo(f, n).id, n).toMatch(/^[a-z0-9()-]+$/);
+      }
+    });
+  });
+
+  describe('12. mensajes: +1 (el QR) en la rama de la reserva; en la del comprobante, solo el de siempre', () => {
+    const preparado = { from: '59170000001', captionQr: 'Reserva: valoración clínica\nSeña: 100 Bs', senaQrUrl: QR,
+      eventoId: 'ev-retenido', calendarioDelEvento: persona.calendario, phoneNumberId: '1000000001', waGraphVersion: 'v26.0' };
+
+    it('el QR es un mensaje de imagen a Graph, con el enlace del QR del comercio y el caption, al teléfono del paciente', () => {
+      const envio = nodo(f, 'Enviar QR de la seña');
+      expect(envio.type).toBe('n8n-nodes-base.httpRequest');
+      expect(envio.parameters['method']).toBe('POST');
+      expect(plantilla(envio.parameters['url'], preparado)).toBe('https://graph.facebook.com/v26.0/1000000001/messages');
+      expect(JSON.parse(String(expresion(envio.parameters['jsonBody'], preparado)))).toEqual({
+        messaging_product: 'whatsapp', recipient_type: 'individual', to: '59170000001', type: 'image',
+        image: { link: QR, caption: 'Reserva: valoración clínica\nSeña: 100 Bs' },
+      });
+      expect(envio.retryOnFail).toBe(true);
+      expect(envio.maxTries).toBeLessThanOrEqual(3);
+      expect(envio.parameters['options']?.timeout).toBeLessThanOrEqual(15000);
+      expect(JSON.stringify(envio.parameters)).not.toMatch(/simulad|REEMPLAZAR/i);
+    });
+
+    it('el reporte cuenta el QR como saliente `image` con `evento: qr_enviado`, la cita retenida y su calendario', () => {
+      const reporte = nodo(f, 'Reportar QR (saliente)');
+      expect(reporte.parameters['url']).toBe(nodo(f, 'Reportar mensaje (saliente)').parameters['url']);
+      expect(reporte.parameters['headerParameters']).toEqual(nodo(f, 'Reportar mensaje (saliente)').parameters['headerParameters']);
+      expect(reporte.onError).toBe('continueRegularOutput');
+      const cuerpo = JSON.parse(String(expresion(reporte.parameters['jsonBody'], { messages: [{ id: 'wamid.QR' }] }, { 'Preparar seña': preparado }))) as J;
+      expect(cuerpo).toEqual({
+        telefono: '59170000001', direccion: 'saliente', tipo: 'image', texto: 'Reserva: valoración clínica\nSeña: 100 Bs', idMeta: 'wamid.QR',
+        evento: 'qr_enviado', referencia: 'ev-retenido', calendario: persona.calendario,
+      });
+    });
+
+    it('en la rama del comprobante no hay ningún envío fuera de «Responder al cliente» y del aviso a recepción', () => {
+      const a = alcanzables('Obtener URL del medio');
+      const envian = f.nodes.filter((n) => a.has(n.name) && ((n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send')
+        || /graph\.facebook\.com/.test(String(n.parameters['url'] ?? '')))).map((n) => n.name);
+      // «Enviar ubicación» cuelga del envío del texto (bloque k) y se alcanza
+      // por el grafo, pero su compuerta no abre: el item del comprobante no
+      // lleva `enviarUbicacion`.
+      expect(envian.sort()).toEqual(['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación'].sort());
+      const item = ejecutar(codigo('Mensaje de la seña'), [{}], { 'Respuesta de la seña': [{ respuesta: 'x', resultadoSena: 'ilegible' }], 'Config del negocio': [CON_SENA] })[0]!;
+      expect(expresion(nodo(f, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue, {}, { 'Mensaje a enviar': item })).toBe(false);
+    });
+
+    it('las notas declaran el costo: +1 solo al reservar con seña; el comprobante se contesta en UN mensaje fijo', () => {
+      expect(String(nodo(f, 'Enviar QR de la seña').notes)).toContain('+1 mensaje por conversación SOLO cuando se reserva con la seña activa');
+      expect(String(nodo(f, '¿Enviar QR de la seña?').notes)).toContain('Sin seña: 0 mensajes agregados');
+      expect(codigo('Respuesta de la seña')).toContain('1 mensaje al paciente (fijo, sin modelo)');
+      expect(String(nodo(f, '¿Hay cita verificada?').notes)).toContain('NO se registra el cierre al agendar');
+    });
+
+    it('nada de lo nuevo trae «simulado», datos de la clínica ni un secreto', () => {
+      const sinComentarios = (c: string) => c.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+      for (const n of ['Preparar seña', 'QR no enviado', 'Interpretar lectura', 'Respuesta de la seña', 'Mensaje de la seña']) {
+        expect(sinComentarios(codigo(n)), n).not.toMatch(/simulad|Sandoval|Pérez|Platinum|blanqueamiento|Bearer|EAA[A-Za-z0-9]{20}/);
+        expect(codigo(n), n).toBe(String(nodo(demoA, n).parameters['jsCode']));
+      }
     });
   });
 });

@@ -127,6 +127,12 @@ const activo = (atencion: unknown) => ({
 });
 
 /**
+ * `antesDelAgente`: en los flujos de agendamiento, desde el bloque 2 (seña
+ * por QR) la rama verdadera de «¿Atención normal?» pasa por «¿Es un
+ * comprobante?» antes del agente: la foto o el PDF de un teléfono con un QR
+ * pendiente se lee y se coteja sin modelo. La propiedad que se conserva es la
+ * misma: el agente tiene UNA entrada, y desde «Uso extendido» no se llega.
+ *
  * `salidaAlCliente`: en los flujos de agendamiento, desde el 17/09/2026 todo
  * lo que se envía pasa por «Mensaje a enviar» y el reporte saliente cuelga
  * DESPUÉS de «Responder al cliente» (la consola mostraba lo que el modelo
@@ -137,19 +143,19 @@ const FLUJOS = [
   {
     archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar', antesDelAgente: '¿Es un comprobante?',
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
-    campoTexto: 'textoAviso', salidaAlCliente: null,
+    campoTexto: 'textoAviso', salidaAlCliente: null, antesDelAgente: null,
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
   {
     archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar', antesDelAgente: '¿Es un comprobante?',
   },
 ] as const;
 
@@ -159,7 +165,7 @@ describe('El mensaje fijo de uso extendido', () => {
   });
 });
 
-describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente }) => {
+describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente, antesDelAgente }) => {
   const f = flujo(archivo);
 
   describe('Traer configuración', () => {
@@ -215,8 +221,17 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
     });
 
     it('el agente SOLO es alcanzable desde la rama verdadera de «¿Atención normal?»', () => {
-      expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
-      expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
+      if (antesDelAgente) {
+        // Con un IF en el medio la propiedad es la misma: una sola entrada al
+        // agente, y esa entrada solo se alcanza desde la rama verdadera.
+        expect(destinos(f, '¿Atención normal?', 0)).toEqual([antesDelAgente]);
+        expect(origenes(f, antesDelAgente)).toEqual(['¿Atención normal?']);
+        expect(origenes(f, agente)).toEqual([antesDelAgente]);
+        expect(destinos(f, antesDelAgente, 1)).toEqual([agente]);
+      } else {
+        expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
+        expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
+      }
       expect(destinos(f, '¿Atención normal?', 1)).toEqual(['Uso extendido']);
     });
 
