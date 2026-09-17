@@ -2513,15 +2513,37 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
       }
     });
 
-    it('LO QUE LA EXPRESIÓN NO CUBRE, escrito para que se vea', () => {
-      // «borrame» sin tilde NO coincide, y es una forma que un boliviano
-      // escribe todos los días. Queda anotado a propósito en vez de dejarlo
-      // como una sorpresa: la salida para estos casos es el interruptor
-      // «No contactar» de la consola, que una persona enciende cuando el
-      // cliente se lo pide. Si alguien amplía la expresión, esta prueba
-      // falla y se actualiza a conciencia.
+    it('cubre las formas que un boliviano escribe de verdad, con tilde y sin tilde', () => {
+      // La primera versión solo reconocía «bórrame» con tilde y «quitame de»,
+      // y dejaba afuera lo que la gente escribe todos los días. Un pedido de
+      // no ser contactado que el flujo no reconoce es un seguimiento que sale
+      // igual: es la clase de defecto que se descubre cuando el paciente se
+      // enoja. La lista se amplió y esta prueba la fija.
+      const PIDEN_QUE_NO = [
+        'borrame de la lista', 'bórrame por favor', 'quítame de la lista',
+        'quitame de ahi', 'stop', 'deja de escribirme', 'dejá de escribir',
+        'dejen de escribirme', 'no me escriban más', 'no me mandes más mensajes',
+        'no me molesten', 'no quiero mas mensajes', 'dame de baja',
+        'no me llames', 'no me contacten',
+      ];
       for (const [quien, f] of LOS_DOS) {
-        for (const texto of ['borrame de la lista', 'quítame de la lista', 'stop', 'baja']) {
+        for (const texto of PIDEN_QUE_NO) {
+          expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
+            `${quien}: ${texto}`).toBe('no_contactar');
+        }
+      }
+    });
+
+    it('LO QUE SIGUE SIN CUBRIR, escrito para que se vea', () => {
+      // Formas indirectas: no dicen «no me escribas», dicen que ya no les
+      // interesa. Reconocerlas exigiría interpretar, y una expresión que
+      // interpreta apaga conversaciones vivas por error —«ya no me interesa
+      // ese horario» no es un pedido de baja—. La salida para estos casos es
+      // el interruptor «No contactar» de la consola, que enciende una
+      // persona. Si alguien amplía la expresión, esta prueba falla y se
+      // actualiza a conciencia.
+      for (const [quien, f] of LOS_DOS) {
+        for (const texto of ['ya no me interesa', 'baja', 'olvidalo', 'déjenme en paz']) {
           expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
             `${quien}: ${texto}`).toBeUndefined();
         }
