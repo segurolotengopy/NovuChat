@@ -2371,3 +2371,193 @@ describe.each([
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// (n) Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4)
+//
+// El flujo conversacional aporta DOS HECHOS al servidor, y nada más: qué turno
+// dejó al paciente con horarios sin elegir (`horarios_ofrecidos`) y quién no
+// quiere que le escriban (`no_contactar`). Con eso el barrido de
+// `agendamiento-seguimientos.json` sabe a quién le toca el recordatorio.
+//
+// LOS HECHOS SE DECIDEN POR LO QUE PASÓ, NO POR LO QUE EL MODELO ESCRIBIÓ:
+// `horarios_ofrecidos` sale de que `consultar_disponibilidad` corrió y
+// `agendar_cita` no —los mismos campos que ya sostienen el candado contra la
+// doble reserva—, y `no_contactar` de que el turno terminó transferido o de una
+// expresión regular fija sobre el texto DEL CLIENTE. Un detector atado a la
+// redacción del modelo se rompe al cambiar de modelo (ejecución #2936).
+//
+// MENSAJES: 0 en este flujo. Los dos campos viajan dentro de reportes que ya
+// se hacían; el +1 lo paga el flujo de seguimientos, y solo en las
+// conversaciones que quedaron a medio camino.
+//
+// Sobre los DOS flujos, que tienen que seguir idénticos en estos nodos.
+// ---------------------------------------------------------------------------
+describe('(n) Seguimiento de solicitud pendiente', () => {
+  const cuerpoSaliente = (deMensajeAEnviar: J, respuestaDeMeta: J = { messages: [{ id: 'wamid.X' }] }) =>
+    (f: Flujo) => JSON.parse(String(expresion(
+      nodo(f, 'Reportar mensaje (saliente)').parameters['jsonBody'],
+      respuestaDeMeta, { 'Mensaje a enviar': deMensajeAEnviar }))) as J;
+
+  const cuerpoEntrante = (normalizado: J) => (f: Flujo) => JSON.parse(String(expresion(
+    nodo(f, 'Reportar mensaje (entrante)').parameters['jsonBody'], normalizado))) as J;
+
+  /** Un turno como lo deja `Procesar respuesta` y lo arrastra `Mensaje a enviar`. */
+  const turno = (extra: J = {}): J => ({
+    from: '59170000001', respuesta: 'Tengo el jueves a las 10:00 y el viernes a las 16:00.',
+    transferir: false, herramientas: [], ejecutoAgendar: false, ...extra,
+  });
+
+  const LOS_DOS: [string, Flujo][] = [['Platinum', flujo], ['Demo A', demoA]];
+
+  describe('1. los dos flujos son idénticos en los nodos que reportan', () => {
+    it('`Reportar mensaje (entrante)` y `(saliente)` tienen los MISMOS parámetros', () => {
+      for (const n of ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)']) {
+        expect(nodo(flujo, n).parameters, n).toEqual(nodo(demoA, n).parameters);
+      }
+    });
+
+    it('no se tocó ningún otro nodo para esto', () => {
+      // `Normalizar entrada`, `Procesar respuesta` y la rama del comprobante
+      // quedan intactas: los campos que hacen falta (`herramientas`,
+      // `ejecutoAgendar`, `transferir`) ya los producía `Procesar respuesta`
+      // para el candado, y `Mensaje a enviar` los arrastra con `...i.json`.
+      const js = (n: string) => String(nodo(flujo, n).parameters['jsCode']);
+      expect(js('Procesar respuesta')).toContain('const ejecutoAgendar =');
+      expect(js('Procesar respuesta')).toContain('herramientas,');
+      expect(js('Mensaje a enviar')).toContain('...i.json');
+      // Y siguen siendo LOS MISMOS que el Demo A: no se editó ninguno.
+      for (const n of ['Normalizar entrada', 'Procesar respuesta', 'Mensaje a enviar']) {
+        expect(js(n), n).toBe(String(nodo(demoA, n).parameters['jsCode']));
+      }
+    });
+  });
+
+  describe('2. `horarios_ofrecidos`: consultó disponibilidad y NO agendó', () => {
+    it('el turno que ofreció horarios y no agendó lo reporta', () => {
+      for (const [quien, f] of LOS_DOS) {
+        const cuerpo = cuerpoSaliente(turno({ herramientas: ['consultar_disponibilidad'] }))(f);
+        expect(cuerpo['evento'], quien).toBe('horarios_ofrecidos');
+        // Y lo que ya reportaba sigue igual.
+        expect(cuerpo, quien).toMatchObject({
+          telefono: '59170000001', direccion: 'saliente', tipo: 'text', idMeta: 'wamid.X',
+        });
+      }
+    });
+
+    it('si además agendó, NO lo reporta: esa conversación ya no está a medio camino', () => {
+      for (const [quien, f] of LOS_DOS) {
+        expect(cuerpoSaliente(turno({
+          herramientas: ['consultar_disponibilidad', 'agendar_cita'], ejecutoAgendar: true,
+        }))(f)['evento'], quien).toBeUndefined();
+        // `ejecutoAgendar` manda aunque `herramientas` no lo liste: en la
+        // ejecución #2936 la herramienta corrió y no figuraba en los pasos.
+        expect(cuerpoSaliente(turno({
+          herramientas: ['consultar_disponibilidad'], ejecutoAgendar: true,
+        }))(f)['evento'], quien).toBeUndefined();
+      }
+    });
+
+    it('un turno que no consultó disponibilidad no reporta nada', () => {
+      for (const [quien, f] of LOS_DOS) {
+        expect(cuerpoSaliente(turno())(f)['evento'], quien).toBeUndefined();
+        expect(cuerpoSaliente(turno({ herramientas: ['buscar_mi_cita'] }))(f)['evento'], quien).toBeUndefined();
+        // Y los caminos que no vienen de `Procesar respuesta` —texto fijo,
+        // comercio no operativo, uso extendido— tampoco: no traen el campo.
+        expect(cuerpoSaliente({ from: '59170000001', respuesta: 'Estamos cerrados.' })(f)['evento'], quien)
+          .toBeUndefined();
+      }
+    });
+  });
+
+  describe('3. `no_contactar`: el paciente lo pidió, o el turno pasó a una persona', () => {
+    it('transferir a una persona saca a ese teléfono del barrido', () => {
+      for (const [quien, f] of LOS_DOS) {
+        expect(cuerpoSaliente(turno({ transferir: true }))(f)['evento'], quien).toBe('no_contactar');
+        // Y gana sobre `horarios_ofrecidos`: es el hecho más fuerte de los dos.
+        expect(cuerpoSaliente(turno({
+          transferir: true, herramientas: ['consultar_disponibilidad'],
+        }))(f)['evento'], quien).toBe('no_contactar');
+      }
+    });
+
+    it('el TEXTO DEL CLIENTE que pide que no le escriban, en sus formas reales', () => {
+      const PIDEN = [
+        'no me escriban más por favor', 'No me escribas', 'no me manden mensajes',
+        'no me molesten', 'no me contacten', 'dejen de escribir', 'deje de escribirme',
+        'no quiero más mensajes', 'no quiero mas mensajes', 'bórrame de la lista',
+        'bórreme de su lista', 'quitame de sus mensajes',
+      ];
+      for (const [quien, f] of LOS_DOS) {
+        for (const texto of PIDEN) {
+          const cuerpo = cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f);
+          expect(cuerpo['evento'], `${quien}: ${texto}`).toBe('no_contactar');
+          expect(cuerpo['texto'], quien).toBe(texto);
+        }
+      }
+    });
+
+    it('una conversación normal NO lo dispara', () => {
+      const NORMALES = [
+        'Hola, quiero una cita', 'no tengo tiempo el jueves', '¿Cuánto cuesta la limpieza?',
+        'gracias, ahí te escribo', 'no puedo ese día', 'mándame la dirección',
+        'no me acuerdo de la hora', 'no sé si voy a poder',
+      ];
+      for (const [quien, f] of LOS_DOS) {
+        for (const texto of NORMALES) {
+          expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
+            `${quien}: ${texto}`).toBeUndefined();
+        }
+        // Sin texto —una imagen, un audio— tampoco.
+        expect(cuerpoEntrante({ from: '59170000001', tipo: 'image' })(f)['evento'], quien).toBeUndefined();
+      }
+    });
+
+    it('LO QUE LA EXPRESIÓN NO CUBRE, escrito para que se vea', () => {
+      // «borrame» sin tilde NO coincide, y es una forma que un boliviano
+      // escribe todos los días. Queda anotado a propósito en vez de dejarlo
+      // como una sorpresa: la salida para estos casos es el interruptor
+      // «No contactar» de la consola, que una persona enciende cuando el
+      // cliente se lo pide. Si alguien amplía la expresión, esta prueba
+      // falla y se actualiza a conciencia.
+      for (const [quien, f] of LOS_DOS) {
+        for (const texto of ['borrame de la lista', 'quítame de la lista', 'stop', 'baja']) {
+          expect(cuerpoEntrante({ from: '59170000001', userInput: texto, tipo: 'text' })(f)['evento'],
+            `${quien}: ${texto}`).toBeUndefined();
+        }
+      }
+    });
+
+    it('el reporte entrante sigue mandando lo de siempre', () => {
+      for (const [quien, f] of LOS_DOS) {
+        expect(cuerpoEntrante({
+          from: '59170000001', userInput: 'Hola', tipo: 'text',
+          mensajeId: 'wamid.E1', nombrePerfil: 'Ana',
+        })(f), quien).toEqual({
+          telefono: '59170000001', direccion: 'entrante', tipo: 'text', texto: 'Hola',
+          idMeta: 'wamid.E1', nombreContacto: 'Ana',
+        });
+      }
+    });
+  });
+
+  describe('4. mensajes: cero agregados por este bloque', () => {
+    it('los dos hechos viajan dentro de reportes que ya existían', () => {
+      // Ningún nodo nuevo, ninguna rama nueva, ningún envío nuevo: lo único
+      // que cambió son dos `jsonBody`. El +1 del recordatorio lo paga el flujo
+      // programado `agendamiento-seguimientos.json`, y solo a quien quedó a
+      // medio camino.
+      expect(flujo.nodes).toHaveLength(demoA.nodes.length);
+      expect(flujo.connections).toEqual(demoA.connections);
+      for (const n of ['Reportar mensaje (entrante)', 'Reportar mensaje (saliente)']) {
+        expect(String(nodo(flujo, n).parameters['url'])).toMatch(/\/ingesta$/);
+        expect(nodo(flujo, n).onError, n).toBe('continueRegularOutput');
+      }
+    });
+
+    it('las notas dicen qué hecho manda cada reporte', () => {
+      expect(String(nodo(flujo, 'Reportar mensaje (entrante)').notes)).toContain('no_contactar');
+      expect(String(nodo(flujo, 'Reportar mensaje (saliente)').notes)).toContain('horarios_ofrecidos');
+    });
+  });
+});
