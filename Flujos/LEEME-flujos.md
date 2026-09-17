@@ -320,6 +320,14 @@ HTTP y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp.
 ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de
 siempre (tres rechazos, reserva no verificada, umbrales del servidor).
 
+**El candado revisa solo la agenda que recibió la cita** (17/09/2026, en
+Platinum y en el Demo A por igual): `Calendarios a revisar` emite el calendario
+de cada evento que `agendar_cita` devolvió en la vuelta (`eventosCreados` de
+`Procesar respuesta`, el `organizer.email` del evento) y, si no lo sabe, todos
+los configurados, como antes —nunca cero—. Una llamada a Google por cita en vez
+de una por agenda: el número de agendas deja de pesar en el turno que agenda
+(`Analisis/24` §4). Mensajes por conversación: cero.
+
 Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
 compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los
 umbrales, el orden del lienzo y la elección de agenda por odontólogo). Además
