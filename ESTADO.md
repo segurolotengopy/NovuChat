@@ -8,6 +8,64 @@
 
 ---
 
+## 2026-09-17 (noche) — alta del Dr. Andrés Bellido, pediatra: el flujo listo y probado
+
+**Cliente nuevo, urgente: tiene que atender el 18/09 a las 09:00.** Consultorio
+de pediatría, neonatología y nutrición infantil en La Paz. Una sola agenda, un
+solo profesional. Asistente **Dante**, tuteo, pocos emojis. Todo en
+`CLIENTES/BELLIDO/` (no versionado): ficha, conocimiento del asistente, guía de
+Meta, estado y lista de aceptación.
+
+**PR #109**, rama `claude/bellido-appointment-chatbot-98b307`: el flujo
+(`Flujos/bellido-agendamiento.json`, el Demo A con los datos del consultorio),
+sus datos (`admin/scripts/datos/negocio-bellido.json`), su suite (57 pruebas) y
+`scripts/marcador-local.sh`. 595 pruebas en verde, saneo con 0 hallazgos.
+
+**Esto resuelve el punto 2 de la lista del cierre anterior para este cliente:**
+el Demo A no tenía el bloque conversacional de #90 **ni el bloque delimitado
+`INFORMACIÓN DEL NEGOCIO`**, y los dos se portaron al flujo nuevo. **El Demo A
+sigue sin ellos**: el próximo cliente que se copie de él vuelve a nacer sin la
+calidez de Platinum y, peor, sin que `instruccionesExtra` llegue al asistente.
+Arreglarlo en el Demo A mismo sigue pendiente.
+
+**Cinco defectos que la suite encontró en el borrador**, todos corregidos antes
+de subir. El primero es el que importa para el proyecto entero, porque lo
+hereda cualquier cliente copiado del Demo A:
+
+1. **El prompt leía `{{ $json.instruccionesExtra }}` y `Config del negocio` no
+   lo fusionaba.** Todo lo escrito para el consultorio —urgencias, prohibición
+   de dar dosis, precios— nunca habría llegado al asistente, y lo que el
+   comercio escribiera en la consola no habría hecho nada. Es la otra mitad de
+   #90, y en el Demo A todavía falta.
+2. **Los cuatro nodos HTTP traían el id REAL de la credencial del Demo A**
+   (`Cierres NovuChat A`): un cliente real habría reportado su tráfico contra el
+   alias del demo. `verificar-saneo.sh` no detecta un id de credencial.
+3. Los dos nodos de envío salían sin credencial de WhatsApp.
+4. El aviso interno decía «NovuChat (demo agendamiento)».
+5. `mensajeComercioSuspendido` decía «comunicate» —voseo— en un texto que ve el
+   paciente.
+
+**Tres decisiones sobre el guion que entregó el cliente**, con su motivo en
+`CLIENTES/BELLIDO/conocimiento-asistente.md` §8: **no se promete el recordatorio
+de 24 h** (el flujo de recordatorios es otro, no está publicado para él, y cada
+recordatorio es una plantilla que Meta cobra: prometerlo sería presentar algo
+como lo que no es); la derivación **no publica el celular de recepción**; y las
+redes van **dentro** del mensaje de confirmación, no en uno aparte. Mensajes por
+conversación: **los mismos que el Demo A**, ni uno más.
+
+**`scripts/marcador-local.sh`** cierra el único paso del alta que el RUNBOOK
+dejaba «a mano»: agrega o comprueba una fila de la tabla de marcadores de
+`CONFIGURACION.local.md` sin leer ni imprimir jamás un valor. Ya cargó tres de
+los cuatro marcadores de Bellido.
+
+**Nada se escribió en producción, en Meta ni en n8n.** Lo que bloquea las 09:00,
+en orden: (1) **el calendario del doctor no está compartido con la cuenta que
+usa n8n** —es el paso más barato y el más fácil de olvidar—; (2) Meta entero;
+(3) el alta en Firebase, diagnosticada en seco y lista (tenant `bellido` libre,
+alias `cliente03`, plan **Impulso**); (4) la importación en n8n.
+
+---
+
 ## 2026-09-17 (cierre) — `v0.5.5` en producción, y lo que le queda a la próxima sesión
 
 **Desplegado y verificado.** `v0.5.5` sobre `185a551`: 26 Functions
