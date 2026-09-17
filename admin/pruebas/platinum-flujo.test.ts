@@ -27,6 +27,10 @@
  *       recibió y no lo que el modelo dijo; tras deshacer una cita solapada hay
  *       UN reintento que ofrece alternativas; y el prompt dice que un evento
  *       ocupa desde su start hasta su end. Se prueba sobre los DOS flujos.
+ *   (j) 17/09/2026, ejecución #2936: el candado se dispara por lo que el modelo
+ *       HIZO (agendar_cita se ejecutó) y no solo por lo que DIJO; CONFIRMA
+ *       cubre reprogramar/reagendar/mover/anotar/cambiar; y la negrita de
+ *       Markdown sale como negrita de WhatsApp por construcción. DOS flujos.
  *
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
  * en las suites comunes, que recorren este flujo junto con los demás.
@@ -64,12 +68,17 @@ const configBase = (f: Flujo): J => Object.fromEntries(
     .map((a) => [a.name, a.value]),
 );
 
-/** Ejecuta un nodo Code; `$(nombre)` devuelve los items de `referencias[nombre]`. */
+/**
+ * Ejecuta un nodo Code; `$(nombre)` devuelve los items de `referencias[nombre]`.
+ * `isExecuted` es como en n8n: un nodo que no está en el contexto no corrió
+ * (mismo simulador que `onboarding-flujo.test.ts`).
+ */
 function ejecutar(codigo: string, items: J[], referencias: Record<string, J[]> = {}): J[] {
   const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };
   const $ = (n: string) => ({
     first: () => ({ json: referencias[n]?.[0] ?? {} }),
     all: () => (referencias[n] ?? []).map((json) => ({ json })),
+    isExecuted: n in referencias,
   });
   // Se ejecuta el flujo VERSIONADO; copiar la lógica dejaría la prueba en verde
   // mientras el flujo se rompe. Misma justificación que `candado-agenda.test.ts`.
@@ -728,7 +737,7 @@ describe.each([
       expect(destinos('¿Afirma que agendó?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
     });
 
-    it('«Mensaje a enviar» es de paso: no cambia el texto, el destinatario ni la transferencia', () => {
+    it('«Mensaje a enviar» es de paso: no cambia el destinatario, la transferencia ni el texto (salvo la negrita de Markdown, bloque j)', () => {
       expect(ejecutar(codigo('Mensaje a enviar'), [{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]))
         .toEqual([{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]);
     });
@@ -912,10 +921,13 @@ describe.each([
       expect(String(r['motivoTransferencia'])).toContain('pidio atencion humana');
     });
 
-    it('los detectores del reintento son letra por letra los de Procesar respuesta', () => {
-      const detectores = (c: string) => (c.match(/^\s*const (CONFIRMA|NIEGA|YA_EXISTE) = .*$/gm) ?? []).map((l) => l.trim());
-      expect(detectores(codigo('Procesar reintento'))).toHaveLength(3);
+    it('los detectores del reintento son letra por letra los de Procesar respuesta, y la negrita también', () => {
+      const detectores = (c: string) => (c.match(/^\s*const (CONFIRMA|NIEGA|YA_EXISTE|NEGRITA_MD) = .*$/gm) ?? []).map((l) => l.trim());
+      expect(detectores(codigo('Procesar reintento'))).toHaveLength(4);
       expect(detectores(codigo('Procesar reintento'))).toEqual(detectores(codigo('Procesar respuesta')));
+      const negrita = (c: string) => (c.match(/^\s*const NEGRITA_MD = .*$/m) ?? [''])[0].trim();
+      expect(negrita(codigo('Mensaje a enviar'))).not.toBe('');
+      expect(negrita(codigo('Mensaje a enviar'))).toBe(negrita(codigo('Procesar respuesta')));
     });
   });
 
@@ -969,6 +981,332 @@ describe.each([
     it('los ids nuevos son nombres cortos, sin UUID', () => {
       for (const n of ['Mensaje a enviar', '¿Reintentar tras cruce?', 'Olvidar turno fallido', 'Reintento tras cruce', 'Procesar reintento']) {
         expect(nodo(f, n).id).toMatch(/^[a-z0-9()-]+$/);
+      }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (j) 17/09/2026, ejecución #2936: el candado se dispara por lo que el modelo HIZO
+// ---------------------------------------------------------------------------
+/**
+ * EL CASO REAL, DESPUÉS de publicar la regla de intervalos (PR #97, 15:16Z).
+ * Tres ejecuciones de una misma paciente:
+ *
+ *   #2930 (15:29Z) agendó hoy 15:00–15:30. El candado corrió y verificó.
+ *   #2933 (15:30Z) «no voy a poder ese día»: buscar_mi_cita, cancelar_cita y
+ *         consultar_disponibilidad para mañana, que devolvió una cita de
+ *         10:00–11:00. Ofreció 09:00, 12:00 y 15:00: bien, sin las 10:00.
+ *   #2936 (15:31Z) «A las 10 no tienes?»: volvió a consultar, volvió a recibir
+ *         la cita de 10:00–11:00, y llamó a agendar_cita a las 10:00–10:30
+ *         igual. Respondió «¡Listo! He reprogramado tu cita…». `afirmaAgendo`
+ *         dio false —CONFIRMA no cubría «reprogramado»—, el candado NO corrió
+ *         y la cita quedó encima de otra. Se borró a mano.
+ *
+ * Dos lecciones, y las dos son de diseño:
+ *   1. El prompt no es una barrera. La regla estaba publicada y el modelo la
+ *      ignoró cuando la paciente insistió. `CLAUDE.md` §7 lo dice para lo
+ *      comercial y vale acá: el límite se hace cumplir en el mecanismo.
+ *   2. El candado se disparaba por lo que el modelo DICE, y tiene que
+ *      dispararse por lo que HIZO. Un verbo no listado —o un modelo nuevo con
+ *      otra redacción— dejaba pasar una cita sin verificar.
+ *
+ * Desde acá la compuerta abre si agendar_cita SE EJECUTÓ, por dos vías que no
+ * dependen de la redacción, O si el texto afirma que agendó (el regex queda
+ * como red adicional):
+ *   - los pasos intermedios del agente (`returnIntermediateSteps`): por item,
+ *     con el `id` del evento creado, que el candado usa como ancla;
+ *   - `$('agendar_cita').isExecuted`: n8n lo responde con la presencia del nodo
+ *     en los datos de la ejecución; en la #2936 real `agendar_cita` figura en
+ *     `runData` con su salida bajo `ai_tool`, y en la #2933 no figura. El
+ *     flujo de captación ya usa `isExecuted` en un nodo Code desde el 15/09.
+ *
+ * Mensajes por conversación: CERO más. Los mismos dos nodos de envío; el
+ * candado ya existía y sus salidas son las mismas.
+ */
+describe.each([
+  ['platinum-agendamiento.json', flujo],
+  ['demo-a-agendamiento.json', demoA],
+])('(j) %s · lo que enseñó la ejecución #2936', (_archivo, f) => {
+  const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
+  const destinos = (desde: string, salida = 0) =>
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+  const cfg = configBase(f);
+  const equipo = JSON.parse(String(cfg['funcionarios'])) as { nombre: string; calendario: string }[];
+  const persona = equipo[0]!;
+
+  const ENTRADA = [{ from: '59170000001', nombrePerfil: 'Paciente', userInput: 'A las 10 no tienes?' }];
+  const CONFIG = [cfg];
+
+  /** La cita que agendar_cita creó en la #2936, tal como la devuelve Google. */
+  const eventoCreado = {
+    id: 'ev-nuevo', kind: 'calendar#event', summary: 'Cita Paciente — estética facial',
+    organizer: { email: persona.calendario },
+    start: { dateTime: '2026-09-18T10:00:00-04:00' }, end: { dateTime: '2026-09-18T10:30:00-04:00' },
+    created: '2026-09-17T15:31:05.000Z',
+  };
+  /** La que ya estaba de 10:00 a 11:00 en la misma agenda. */
+  const yaEstaba = {
+    id: 'existente', summary: 'Cita OTRA PACIENTE — valoración', organizer: { email: persona.calendario },
+    start: { dateTime: '2026-09-18T10:00:00-04:00' }, end: { dateTime: '2026-09-18T11:00:00-04:00' },
+    created: '2026-09-15T12:00:00.000Z',
+  };
+  const DIJO = `¡Listo! He reprogramado tu cita de **estética facial** para mañana a las 10:00 con ${persona.nombre}.`;
+  /**
+   * Los pasos intermedios como los entrega n8n: `action.tool` es el nombre del
+   * nodo herramienta y `observation` es el JSON (texto) de lo que devolvió.
+   */
+  const pasos = (observacionDeAgendar: unknown = JSON.stringify([eventoCreado])) => [
+    { action: { tool: 'consultar_disponibilidad', toolInput: { inicio: '2026-09-18T09:00:00-04:00', fin: '2026-09-18T19:00:00-04:00' } },
+      observation: JSON.stringify([yaEstaba]) },
+    { action: { tool: 'agendar_cita', toolInput: { inicio: '2026-09-18T10:00:00-04:00', fin: '2026-09-18T10:30:00-04:00' } },
+      observation: observacionDeAgendar },
+  ];
+  const procesar = (salida: J, contexto: Record<string, J[]> = {}) =>
+    ejecutar(codigo('Procesar respuesta'), [salida], { 'Normalizar entrada': ENTRADA, 'Config del negocio': CONFIG, ...contexto })[0]!;
+  const compuerta = (item: J) =>
+    expresion(nodo(f, '¿Afirma que agendó?').parameters['conditions'].conditions[0].leftValue, item);
+  const candado = (previa: J, eventos: J[]) =>
+    ejecutar(codigo('Comprobar reserva'), eventos, { 'Procesar respuesta': [previa], 'Config del negocio': CONFIG })[0]!;
+  const reintento = (salida: J) => ejecutar(codigo('Procesar reintento'), [salida],
+    { 'Retomar respuesta': [{ respuesta: cfg['mensajeReservaNoConfirmada'], motivoCruce: 'cruce', from: '59170000001' }] })[0]!;
+  const enviar = (respuesta: string) => String(ejecutar(codigo('Mensaje a enviar'), [{ from: '59170000001', respuesta }])[0]!['respuesta']);
+
+  describe('1. la compuerta abre por lo que el modelo HIZO', () => {
+    it('el agente devuelve los pasos intermedios; el reintento no los necesita porque no puede agendar', () => {
+      expect(nodo(f, AGENTE).parameters['options'].returnIntermediateSteps).toBe(true);
+      expect(nodo(f, 'Reintento tras cruce').parameters['options'].returnIntermediateSteps).toBeUndefined();
+    });
+
+    it('la compuerta lee `verificarReserva`, que es ejecutó O afirma', () => {
+      expect(compuerta({ verificarReserva: true })).toBe(true);
+      expect(compuerta({ verificarReserva: false })).toBe(false);
+      // Sin el campo, la expresión da undefined y el operador booleano del IF
+      // (validación laxa) lo toma como falso: `afirmaAgendo` solo ya no abre.
+      expect(compuerta({ afirmaAgendo: true })).toBeFalsy();
+      expect(compuerta({})).toBeFalsy();
+    });
+
+    it('EL CASO #2936: «He reprogramado» + agendar_cita ejecutada: se dispara, con el evento que devolvió', () => {
+      const r = procesar({ output: DIJO, intermediateSteps: pasos() }, { agendar_cita: [{ response: [eventoCreado] }] });
+      expect(r['ejecutoAgendar']).toBe(true);
+      expect(r['verificarReserva']).toBe(true);
+      expect(compuerta(r)).toBe(true);
+      expect(r['herramientas']).toEqual(['consultar_disponibilidad', 'agendar_cita']);
+      expect(r['eventosCreados']).toEqual([{
+        id: 'ev-nuevo', calendario: persona.calendario, inicio: '2026-09-18T10:00:00-04:00',
+        fin: '2026-09-18T10:30:00-04:00', titulo: 'Cita Paciente — estética facial',
+      }]);
+      expect(r['falloModelo']).toBe(false);
+      expect(r['transferir']).toBe(false);
+    });
+
+    it('con una redacción que NINGÚN regex cubre igual se dispara: manda la herramienta, no el verbo', () => {
+      const r = procesar({ output: 'Perfecto, ya está todo listo para mañana a las 10:00. ¡Nos vemos!', intermediateSteps: pasos() });
+      expect(r['afirmaAgendo']).toBe(false);
+      expect(r['ejecutoAgendar']).toBe(true);
+      expect(compuerta(r)).toBe(true);
+    });
+
+    it('por los pasos intermedios solos (sin isExecuted): la vía que no depende del proxy $()', () => {
+      const r = procesar({ output: 'Ya está todo listo.', intermediateSteps: pasos() });
+      expect(r['ejecutoAgendar']).toBe(true);
+      expect(r['eventosCreados']).toHaveLength(1);
+    });
+
+    it('por isExecuted solo (sin pasos intermedios): si la opción del agente no viniera, la segunda vía alcanza', () => {
+      const r = procesar({ output: 'Ya está todo listo.' }, { agendar_cita: [{ response: [eventoCreado] }] });
+      expect(r['ejecutoAgendar']).toBe(true);
+      expect(r['herramientas']).toEqual([]);
+      expect(r['eventosCreados']).toEqual([]);
+      expect(compuerta(r)).toBe(true);
+    });
+
+    it('el modelo falló DESPUÉS de agendar: sale la disculpa, pero la cita que creó se verifica igual', () => {
+      const r = procesar({ error: 'Gemini 503' }, { agendar_cita: [{ response: [eventoCreado] }] });
+      expect(r['falloModelo']).toBe(true);
+      expect(r['afirmaAgendo']).toBe(false);
+      expect(r['ejecutoAgendar']).toBe(true);
+      expect(compuerta(r)).toBe(true);
+    });
+
+    it('EL CASO INVERSO: afirma que agendó pero la herramienta no corrió: sigue disparando por el regex', () => {
+      const r = procesar({ output: 'Su cita quedó agendada para mañana a las 10:00.' });
+      expect(r['afirmaAgendo']).toBe(true);
+      expect(r['ejecutoAgendar']).toBe(false);
+      expect(r['verificarReserva']).toBe(true);
+      expect(compuerta(r)).toBe(true);
+    });
+
+    it('ni ejecutó ni afirma: no se dispara; y una negación tampoco', () => {
+      for (const texto of [
+        'Para mañana tengo 09:00, 12:00 y 15:00. ¿Cuál prefiere?',
+        'No pude reprogramar su cita: ese horario ya está ocupado.',
+        'Ya tiene una cita agendada para mañana a las 10:00.',
+      ]) {
+        const r = procesar({ output: texto, intermediateSteps: [pasos()[0]] });
+        expect(r['ejecutoAgendar'], texto).toBe(false);
+        expect(r['verificarReserva'], texto).toBe(false);
+        expect(compuerta(r), texto).toBe(false);
+      }
+    });
+
+    it('una observación que no es JSON (la herramienta falló) dispara igual, sin evento y sin romper nada', () => {
+      const r = procesar({ output: 'No pude registrar su cita.', intermediateSteps: pasos('Error during node execution: 403') });
+      expect(r['ejecutoAgendar']).toBe(true);
+      expect(r['eventosCreados']).toEqual([]);
+      expect(compuerta(r)).toBe(true);
+    });
+
+    it('la observación como objeto, o como un evento solo, también sirve', () => {
+      expect(procesar({ output: 'Listo.', intermediateSteps: pasos([eventoCreado]) })['eventosCreados']).toHaveLength(1);
+      expect(procesar({ output: 'Listo.', intermediateSteps: pasos(JSON.stringify(eventoCreado)) })['eventosCreados']).toHaveLength(1);
+      expect(procesar({ output: 'Listo.', intermediateSteps: 'no es una lista' })['ejecutoAgendar']).toBe(false);
+    });
+  });
+
+  describe('2. el candado ancla en el evento que la herramienta devolvió', () => {
+    it('#2936 DE PUNTA A PUNTA: la de 10:00–10:30 cede ante la de 10:00–11:00, aunque `created` esté fuera de la ventana', () => {
+      // `created` es de las 15:31Z del 17/09: en cualquier corrida posterior
+      // queda fuera de los cinco minutos. Solo el id de la herramienta la ancla.
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const c = candado(previa, [yaEstaba, eventoCreado]);
+      expect(c['citaSolapada']).toBe(true);
+      expect(c['eventoABorrar']).toBe('ev-nuevo');
+      expect(c['calendarioDelBorrado']).toBe(persona.calendario);
+      expect(c['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+      expect(c['reservaVerificada']).toBe(false);
+      expect((c['citasCaidas'] as J[])[0]).toMatchObject({ hora: '10:00', persona: persona.nombre, servicio: 'estética facial' });
+      expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
+    });
+
+    it('sin el id (la opción del agente no vino) el candado sigue con la ventana de cinco minutos, como antes', () => {
+      const previa = procesar({ output: DIJO }, { agendar_cita: [{}] });
+      const recien = { ...eventoCreado, created: new Date(Date.now() - 1000).toISOString() };
+      expect(candado(previa, [yaEstaba, recien])['eventoABorrar']).toBe('ev-nuevo');
+      expect(candado(previa, [yaEstaba, eventoCreado])['verificacionSinDatos']).toBe(true);
+    });
+
+    it('sin choque, la cita verificada es la que devolvió la herramienta y llega al cierre', () => {
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const libre = { ...yaEstaba, start: { dateTime: '2026-09-18T11:00:00-04:00' }, end: { dateTime: '2026-09-18T12:00:00-04:00' } };
+      const c = candado(previa, [libre, eventoCreado]);
+      expect(c['reservaVerificada']).toBe(true);
+      expect(c['eventoId']).toBe('ev-nuevo');
+      expect(c['citaSolapada']).toBeUndefined();
+      expect(c['citaCreadaNoEncontrada']).toBe(false);
+      expect(c['respuesta']).toBe(previa['respuesta']);
+      expect(expresion(nodo(f, '¿Hay cita verificada?').parameters['conditions'].conditions[0].leftValue, c)).toBe(true);
+    });
+
+    it('si el calendario no devuelve el evento que la herramienta dijo crear, queda anotado y el texto no cambia', () => {
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const c = candado(previa, [yaEstaba]);
+      expect(c['verificacionSinDatos']).toBe(true);
+      expect(c['citaCreadaNoEncontrada']).toBe(true);
+      expect(c['reservaVerificada']).toBe(false);
+      expect(c['respuesta']).toBe(previa['respuesta']);
+      expect(c['transferir']).toBe(false);
+    });
+  });
+
+  describe('3. CONFIRMA cubre reprogramar, reagendar, mover, anotar y cambiar (defensa secundaria)', () => {
+    it.each([
+      'He reprogramado tu cita para mañana a las 10:00.',
+      'Reprogramé su cita para el jueves a las 15:00.',
+      'Su cita fue reagendada para el viernes.',
+      'Listo, tu cita quedó reprogramada.',
+      'Cita reprogramada para mañana a las 10:00 ✅',
+      'Moví tu cita a las 11:00.',
+      'He movido su cita al martes.',
+      'Te anoté para el jueves a las 10:00.',
+      'Le anotamos para mañana a las 9:00.',
+      'Cambié tu cita para mañana a las 10:00.',
+      'Hemos agendado su valoración para el lunes.',
+      'Queda anotada su cita para el martes.',
+    ])('dispara con «%s»', (frase) => {
+      expect(procesar({ output: frase })['afirmaAgendo']).toBe(true);
+    });
+
+    it.each([
+      '¿Desea reprogramar su cita?',
+      'Puedo reprogramar su cita si lo desea, ¿qué día le conviene?',
+      'Para mover su cita necesito saber el nuevo horario.',
+      'No pude reprogramar su cita: ese horario está ocupado.',
+      'Ya tiene una cita agendada para mañana.',
+      'Con gusto agendamos su cita, ¿qué día prefiere?',
+    ])('NO dispara con «%s»', (frase) => {
+      expect(procesar({ output: frase })['afirmaAgendo']).toBe(false);
+    });
+
+    it('juzga el texto SIN marcas de formato: «quedó *agendada*» y «**He reprogramado**» cuentan', () => {
+      expect(procesar({ output: 'Su cita quedó **agendada** para mañana.' })['afirmaAgendo']).toBe(true);
+      expect(procesar({ output: '**He reprogramado** tu cita.' })['afirmaAgendo']).toBe(true);
+    });
+
+    it('el reintento, con los mismos detectores, también cae al texto fijo con los verbos nuevos', () => {
+      const r = reintento({ output: 'Ese horario estaba ocupado. Su cita fue reprogramada para las 15:00.' });
+      expect(r['reintentoTrasCruce']).toBe('afirmo-agendar');
+      expect(r['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+      expect(r['transferir']).toBe(true);
+    });
+  });
+
+  describe('4. la negrita de Markdown sale como negrita de WhatsApp, por construcción', () => {
+    const CASOS: [string, string][] = [
+      ['**estética facial**', '*estética facial*'],
+      ['Su cita de **blanqueamiento** es a las **10:00**.', 'Su cita de *blanqueamiento* es a las *10:00*.'],
+      ['**a**, **b** y **c**', '*a*, *b* y *c*'],
+      ['- **Lunes:** 9 a 12\n- **Martes:** cerrado', '- *Lunes:* 9 a 12\n- *Martes:* cerrado'],
+      ['***muy importante***', '*_muy importante_*'],
+      // Bordes que NO se tocan: viñetas, aritmética, un asterisco ya correcto, sin cierre.
+      ['* valoración\n* limpieza', '* valoración\n* limpieza'],
+      ['2 * 3 = 6', '2 * 3 = 6'],
+      ['ya *en negrita* queda igual', 'ya *en negrita* queda igual'],
+      ['**sin cierre', '**sin cierre'],
+      // Límite conocido: negrita con cursiva adentro no se convierte (queda como vino).
+      ['**a *b* c**', '**a *b* c**'],
+    ];
+
+    it.each(CASOS)('Procesar respuesta: «%s» → «%s»', (entrada, esperado) => {
+      expect(procesar({ output: entrada })['respuesta']).toBe(esperado);
+    });
+
+    it.each(CASOS)('Procesar reintento: «%s» → «%s»', (entrada, esperado) => {
+      expect(reintento({ output: entrada })['respuesta']).toBe(esperado);
+    });
+
+    it.each(CASOS)('Mensaje a enviar (también los textos fijos de la consola): «%s» → «%s»', (entrada, esperado) => {
+      expect(enviar(entrada)).toBe(esperado);
+    });
+
+    it('la marca [TRANSFERIR] se quita ANTES de convertir, y la conversión no la resucita', () => {
+      const r = procesar({ output: 'Le paso con **recepción**. [TRANSFERIR]' });
+      expect(r['respuesta']).toBe('Le paso con *recepción*.');
+      expect(r['transferir']).toBe(true);
+    });
+  });
+
+  describe('5. cero mensajes agregados; el mismo mecanismo en los dos flujos', () => {
+    it('los mismos dos nodos de envío, y la compuerta y el candado siguen donde estaban', () => {
+      expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name))
+        .toEqual(['Responder al cliente', 'Avisar a recepción']);
+      expect(destinos('Procesar respuesta')).toEqual(['¿Afirma que agendó?']);
+      expect(destinos('¿Afirma que agendó?', 0)).toEqual(['Calendarios a revisar']);
+      expect(destinos('¿Afirma que agendó?', 1)).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
+    });
+
+    it('el código de los cuatro nodos tocados es idéntico en Platinum y en el Demo A', () => {
+      for (const n of ['Procesar respuesta', 'Procesar reintento', 'Mensaje a enviar', 'Comprobar reserva']) {
+        expect(codigo(n), n).toBe(String(nodo(demoA, n).parameters['jsCode']));
+      }
+      expect(nodo(f, '¿Afirma que agendó?').parameters).toEqual(nodo(demoA, '¿Afirma que agendó?').parameters);
+    });
+
+    it('nada de lo nuevo trae datos de la clínica ni un secreto (los comentarios cuentan la historia, el código no)', () => {
+      const sinComentarios = (c: string) => c.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+      for (const n of ['Procesar respuesta', 'Procesar reintento', 'Mensaje a enviar', 'Comprobar reserva']) {
+        expect(sinComentarios(codigo(n)), n).not.toMatch(/Sandoval|Pérez|Platinum|blanqueamiento|Bearer|EAA[A-Za-z0-9]{20}/);
       }
     });
   });
