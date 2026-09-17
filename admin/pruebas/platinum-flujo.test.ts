@@ -27,6 +27,9 @@
  *       recibió y no lo que el modelo dijo; tras deshacer una cita solapada hay
  *       UN reintento que ofrece alternativas; y el prompt dice que un evento
  *       ocupa desde su start hasta su end. Se prueba sobre los DOS flujos.
+ *   (j) Analisis/34 §2: la dirección va con el enlace de Google Maps en el
+ *       MISMO mensaje (0 mensajes nuevos) y el pin nativo sale SOLO si el
+ *       cliente lo pide y hay coordenadas (+1 en ese caso). Sobre los DOS flujos.
  *
  * Los umbrales, el prefijo cacheable y el estado del comercio se prueban además
  * en las suites comunes, que recorren este flujo junto con los demás.
@@ -42,7 +45,7 @@ type J = Record<string, any>;
 interface Nodo {
   id: string; name: string; type: string; typeVersion: number; position: [number, number];
   parameters: J; credentials?: Record<string, { id: string; name: string }>;
-  onError?: string; retryOnFail?: boolean; maxTries?: number;
+  onError?: string; retryOnFail?: boolean; maxTries?: number; notes?: string;
 }
 interface Flujo {
   name: string; settings: J; nodes: Nodo[];
@@ -135,6 +138,8 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
   const CREDENCIALES_PROPIAS = [
     'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)',
     'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
+    // El pin a pedido (Analisis/34 §2): envío a Graph e ingesta del saliente.
+    'Enviar ubicación', 'Reportar ubicación (saliente)',
   ];
 
   it('tiene el nombre del cliente y los mismos nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
@@ -178,10 +183,11 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
         expect(c.name).not.toMatch(/Demo|NovuChat A/);
       }
     }
-    for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre (cita)']) {
+    for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre (cita)',
+      'Reportar ubicación (saliente)']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name).toBe('NovuChat ingesta (Clínica Platinum)');
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name).toBe('WhatsApp Clínica Platinum (envío)');
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -717,7 +723,9 @@ describe.each([
     it('todo camino al cliente pasa por «Mensaje a enviar», la ÚNICA entrada del envío', () => {
       expect(origenes('Responder al cliente')).toEqual(['Mensaje a enviar']);
       expect(destinos('Mensaje a enviar')).toEqual(['Responder al cliente']);
-      expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+      // El reporte del texto primero y, debajo, la compuerta del pin a pedido
+      // (bloque j): en el camino normal no pasa nada por ahí.
+      expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
       expect(origenes('Mensaje a enviar').sort()).toEqual([
         'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
         '¿Reintentar tras cruce?', '¿Responder uso extendido?',
@@ -762,9 +770,14 @@ describe.each([
       expect(nodo(f, 'Reportar mensaje (saliente)').onError).toBe('continueRegularOutput');
     });
 
-    it('CERO mensajes de WhatsApp agregados: los mismos dos nodos de envío de siempre', () => {
+    it('CERO mensajes de WhatsApp agregados: los mismos dos nodos de envío de siempre, y el pin solo detrás de su compuerta', () => {
       expect(f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name))
         .toEqual(['Responder al cliente', 'Avisar a recepción']);
+      // El único envío por HTTP a Graph es el pin a pedido (bloque j), y no
+      // corre si la compuerta no lo deja pasar.
+      const aGraph = f.nodes.filter((n) => /graph\.facebook\.com/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
+      expect(aGraph).toEqual(['Enviar ubicación']);
+      expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
     });
   });
 
@@ -803,7 +816,9 @@ describe.each([
         expect(a.has(n), n).toBe(false);
       }
       expect([...a].sort()).toEqual(['Avisar a recepción', 'Mensaje a enviar', 'Procesar reintento',
-        'Reportar mensaje (saliente)', 'Responder al cliente', '¿Transferir a humano?'].sort());
+        'Reportar mensaje (saliente)', 'Responder al cliente', '¿Transferir a humano?',
+        // Cuelgan del envío (bloque j); desde el reintento la compuerta no pasa.
+        '¿Enviar ubicación?', 'Enviar ubicación', 'Reportar ubicación (saliente)'].sort());
       // Y el agente principal sigue teniendo una sola entrada.
       expect(origenes(AGENTE)).toEqual(['¿Atención normal?']);
     });
@@ -970,6 +985,308 @@ describe.each([
       for (const n of ['Mensaje a enviar', '¿Reintentar tras cruce?', 'Olvidar turno fallido', 'Reintento tras cruce', 'Procesar reintento']) {
         expect(nodo(f, n).id).toMatch(/^[a-z0-9()-]+$/);
       }
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (j) Dirección con enlace a Maps y pin a pedido (Analisis/34 §2, bloque 1)
+// ---------------------------------------------------------------------------
+/**
+ * LO QUE CUESTA, QUE ES LO QUE MÁS IMPORTA. El enlace de Google Maps va en el
+ * MISMO mensaje que la confirmación de la cita y que la respuesta a «¿dónde
+ * quedan?»: cero mensajes nuevos por conversación. El pin nativo de WhatsApp
+ * (`type: location`) sale SOLO si el cliente pide expresamente la ubicación
+ * —el modelo termina con [ENVIAR_UBICACION]— Y el comercio cargó coordenadas:
+ * +1 mensaje, solo en ese caso, y se reporta como saliente `location` para que
+ * se cuente. Sin la marca no se toca nada; sin coordenadas la marca se quita y
+ * no se manda nada, porque el texto ya lleva la dirección y el enlace.
+ *
+ * El enlace es lo único que el asistente REENVÍA TAL CUAL a un cliente: por
+ * eso `Config del negocio` lo vuelve a filtrar por dominio aunque el servidor
+ * ya lo hizo (dos barreras). Se prueba sobre los DOS flujos, por la misma
+ * razón que el bloque (i).
+ */
+describe.each([
+  ['platinum-agendamiento.json', flujo],
+  ['demo-a-agendamiento.json', demoA],
+])('(j) %s · dirección con enlace a Maps y pin a pedido', (_archivo, f) => {
+  const destinos = (desde: string, salida = 0) =>
+    (f.connections[desde]?.['main']?.[salida] ?? []).map((x) => x.node);
+  const origenes = (hacia: string) => Object.entries(f.connections)
+    .filter(([, c]) => (c['main'] ?? []).some((s) => s.some((x) => x.node === hacia)))
+    .map(([origen]) => origen);
+  const alcanzables = (desde: string): Set<string> => {
+    const vistos = new Set<string>();
+    const pendientes = [desde];
+    while (pendientes.length) {
+      const actual = pendientes.pop() as string;
+      for (const salida of f.connections[actual]?.['main'] ?? []) {
+        for (const x of salida) if (!vistos.has(x.node)) { vistos.add(x.node); pendientes.push(x.node); }
+      }
+    }
+    return vistos;
+  };
+  const codigo = (nombre: string) => String(nodo(f, nombre).parameters['jsCode']);
+  const x = (nombre: string) => nodo(f, nombre).position[0];
+  const y = (nombre: string) => nodo(f, nombre).position[1];
+  const cfg = configBase(f);
+  const p = String(nodo(f, AGENTE).parameters['options'].systemMessage);
+
+  const MAPA = 'https://maps.app.goo.gl/AbCdEf123';
+  const PIN = { lat: -17.7833, lng: -63.1821 };
+
+  /** `Config del negocio` de ESTE flujo con la respuesta del panel. */
+  const fusionarEn = (respuesta: unknown): J => ejecutar(codigo('Config del negocio'),
+    [respuesta as J], { 'Config base': [cfg] })[0] ?? {};
+  const panelDe = (dn: J = {}, op: J = {}) => ({
+    statusCode: 200,
+    body: {
+      tenantId: 'un-negocio', flujo: 'agendamiento', estadoComercio: 'activo', phoneNumberId: '1000000001',
+      operacion: { moneda: 'BOB', horarioAtencion: 'lunes a viernes, de 09:00 a 19:00', ...op },
+      datosDelNegocio: { nombreNegocio: 'Un Negocio', direccion: 'Calle 1, zona Sur', ...dn },
+      catalogo: [], funcionarios: [], voz: {},
+    },
+  });
+  /** `Procesar respuesta` con lo que devolvió el modelo y la configuración dada. */
+  const procesar = (output: string, extra: J = {}): J => ejecutar(codigo('Procesar respuesta'),
+    [{ output, userInput: 'hola' }],
+    { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Ana' }], 'Config del negocio': [{ ...cfg, ...extra }] })[0] ?? {};
+  const CON_PIN = { ubicacionLat: String(PIN.lat), ubicacionLng: String(PIN.lng), direccion: 'Calle 1, zona Sur', nombreNegocio: 'Un Negocio' };
+  const PIDE = 'Quedamos en Calle 1, zona Sur. Le mando la ubicación. [ENVIAR_UBICACION]';
+
+  describe('1. Config base y Config del negocio', () => {
+    it('Config base lleva los respaldos vacíos y la versión de Graph, sin ningún valor real', () => {
+      expect(cfg['direccionMaps']).toBe('');
+      expect(cfg['ubicacionLat']).toBe('');
+      expect(cfg['ubicacionLng']).toBe('');
+      expect(cfg['waGraphVersion']).toBe('v26.0');
+    });
+
+    it('toma del panel el enlace (datosDelNegocio) y las coordenadas (operacion.ubicacion), como texto', () => {
+      const s = fusionarEn(panelDe({ direccionMaps: MAPA }, { ubicacion: PIN }));
+      expect(s['direccionMaps']).toBe(MAPA);
+      expect(s['ubicacionLat']).toBe('-17.7833');
+      expect(s['ubicacionLng']).toBe('-63.1821');
+      expect(s['direccion']).toBe('Calle 1, zona Sur');
+      expect(s['configDeLaConsola']).toBe(true);
+    });
+
+    it.each([
+      ['http://maps.app.goo.gl/AbC'],
+      ['https://ejemplo.com/maps/AbC'],
+      ['https://maps.app.goo.gl.ejemplo.com/AbC'],
+      ['https://maps.app.goo.gl@ejemplo.com/AbC'],
+      ['Radial 26, tercer anillo'],
+      ['https://maps.app.goo.gl/' + 'a'.repeat(200)],
+    ])('NO deja pasar al prompt un enlace que no sea de Google Maps, aunque el panel lo mande: %s', (enlace) => {
+      // Segunda barrera: es lo único que el asistente reenvía tal cual.
+      expect(fusionarEn(panelDe({ direccionMaps: enlace }))['direccionMaps']).toBe('');
+    });
+
+    it.each([
+      ['una sola coordenada', { lat: -17.7833 }, '-17.7833', ''],
+      ['coordenadas como texto', { lat: '-17.7833', lng: '-63.1821' }, '', ''],
+      ['latitud fuera de rango', { lat: 91, lng: -63.1821 }, '', '-63.1821'],
+      ['un texto suelto', '-17.7833,-63.1821', '', ''],
+      ['null', null, '', ''],
+    ])('con %s del panel queda el respaldo vacío en lo que falla', (_, ubicacion, lat, lng) => {
+      const s = fusionarEn(panelDe({}, { ubicacion }));
+      expect(s['ubicacionLat']).toBe(lat);
+      expect(s['ubicacionLng']).toBe(lng);
+    });
+
+    it('con el panel caído, sin respuesta o suspendido, no hay enlace ni coordenadas', () => {
+      for (const r of [{ statusCode: 500, body: {} }, {}, { statusCode: 409, body: { estado: 'suspendido' } }]) {
+        const s = fusionarEn(r);
+        expect(s['direccionMaps']).toBe('');
+        expect(s['ubicacionLat']).toBe('');
+        expect(s['ubicacionLng']).toBe('');
+      }
+    });
+  });
+
+  describe('2. el prompt: la dirección con el mapa, y la regla de la marca', () => {
+    const seccion6 = p.slice(p.indexOf('6. NUNCA INVENTES'), p.indexOf('6b.'));
+    const regla6c = p.slice(p.indexOf('6c.'), p.indexOf('7. Eres asistente'));
+
+    it('en §6, junto a la dirección, va el enlace del mapa (o «sin enlace»)', () => {
+      expect(seccion6).toContain("dirección: {{ $json.direccion }} · mapa: {{ $json.direccionMaps || 'sin enlace' }} · cancelaciones: {{ $json.politicaCancelacion }}.");
+      expect(plantilla(p, cfg)).toContain('mapa: sin enlace');
+      expect(plantilla(p, { ...cfg, direccionMaps: MAPA })).toContain(`mapa: ${MAPA}`);
+    });
+
+    it('la regla 6c: confirmación con dirección y enlace en el MISMO mensaje, «¿dónde quedan?», y la marca solo a pedido', () => {
+      expect(p.indexOf('6c.')).toBeGreaterThan(p.indexOf('6b.'));
+      expect(p.indexOf('6c.')).toBeLessThan(p.indexOf('7. Eres asistente'));
+      expect(regla6c).toContain('Al confirmar una cita, incluye en el MISMO mensaje la dirección y, si existe, el enlace del mapa');
+      expect(regla6c).toContain('Ante «¿dónde quedan?» o «¿cómo llego?», responde con la dirección y el enlace en ese mismo mensaje.');
+      expect(regla6c).toContain('Si el cliente pide EXPRESAMENTE la ubicación, el pin o que le mandes la ubicación, respóndele en el mismo mensaje con la dirección y termina EXACTAMENTE con la marca [ENVIAR_UBICACION]');
+      expect(regla6c).toContain('no uses esa marca en ningún otro caso ni la menciones');
+      // Y §4 CONFIRMACIÓN pide el «dónde» dentro del mismo mensaje de cierre.
+      expect(p).toContain('con quién y dónde —la dirección y, si existe, el enlace del mapa—, y despídete con calidez, todo en el mismo mensaje.');
+      expect(p).not.toContain('Después confirma servicio, día, hora y con quién, y despídete con calidez.');
+    });
+
+    it('nada de esto es volátil: el prompt sigue siendo cacheable, y la regla es la misma en los dos flujos', () => {
+      for (const v of ['$now', '$json.from', 'nombrePerfil', 'mensajesRestantes24h', 'userInput']) expect(p, v).not.toContain(v);
+      const otro = String(nodo(f === flujo ? demoA : flujo, AGENTE).parameters['options'].systemMessage);
+      expect(regla6c).toBe(otro.slice(otro.indexOf('6c.'), otro.indexOf('7. Eres asistente')));
+    });
+  });
+
+  describe('3. Procesar respuesta: la marca se quita siempre; el pin solo con coordenadas', () => {
+    it('con la marca Y coordenadas: texto limpio, enviarUbicacion y lo que el envío necesita', () => {
+      const s = procesar(PIDE, CON_PIN);
+      expect(s['respuesta']).toBe('Quedamos en Calle 1, zona Sur. Le mando la ubicación.');
+      expect(s['enviarUbicacion']).toBe(true);
+      expect(s).toMatchObject({
+        ubicacionLat: PIN.lat, ubicacionLng: PIN.lng, direccion: 'Calle 1, zona Sur', nombreNegocio: 'Un Negocio',
+        phoneNumberId: cfg['phoneNumberId'], waGraphVersion: 'v26.0', from: '59170000001', transferir: false,
+      });
+    });
+
+    it('con la marca y SIN coordenadas: la marca se quita y no se manda nada (el texto ya lleva la dirección)', () => {
+      const s = procesar(PIDE);
+      expect(s['respuesta']).toBe('Quedamos en Calle 1, zona Sur. Le mando la ubicación.');
+      expect(s['enviarUbicacion']).toBe(false);
+      expect(s['ubicacionLat']).toBeNull();
+      expect(s['ubicacionLng']).toBeNull();
+    });
+
+    it.each([
+      ['una sola coordenada', { ubicacionLat: '-17.7833', ubicacionLng: '' }],
+      ['texto en vez de número', { ubicacionLat: 'sur', ubicacionLng: '-63.1821' }],
+      ['latitud fuera de rango', { ubicacionLat: '91', ubicacionLng: '-63.1821' }],
+      ['longitud fuera de rango', { ubicacionLat: '-17.7833', ubicacionLng: '181' }],
+    ])('con %s tampoco se manda, aunque venga la marca', (_, extra) => {
+      const s = procesar(PIDE, { ...CON_PIN, ...extra });
+      expect(s['enviarUbicacion']).toBe(false);
+      expect(String(s['respuesta'])).not.toContain('[');
+    });
+
+    it('SIN la marca, con coordenadas cargadas: no se toca nada (el camino normal es el de siempre)', () => {
+      const s = procesar('Su cita quedó confirmada para mañana a las 10:00 en Calle 1, zona Sur.', CON_PIN);
+      expect(s['enviarUbicacion']).toBe(false);
+      expect(s['respuesta']).toBe('Su cita quedó confirmada para mañana a las 10:00 en Calle 1, zona Sur.');
+      expect(s['afirmaAgendo']).toBe(true);
+      expect(s['transferir']).toBe(false);
+    });
+
+    it('la marca se reconoce en minúsculas y convive con [TRANSFERIR]; ninguna llega al cliente', () => {
+      const s = procesar('Calle 1, zona Sur. [enviar_ubicacion] No pude revisar la agenda. [TRANSFERIR]', CON_PIN);
+      expect(s['respuesta']).toBe('Calle 1, zona Sur.  No pude revisar la agenda.');
+      expect(s['enviarUbicacion']).toBe(true);
+      expect(s['transferir']).toBe(true);
+    });
+
+    it('cualquier otra marca en corchetes que el modelo invente se quita, como en el Demo B', () => {
+      const s = procesar('Estamos en Calle 1. [UBICACION] [MAPA ENVIADO]', CON_PIN);
+      expect(s['respuesta']).toBe('Estamos en Calle 1.');
+      expect(s['enviarUbicacion']).toBe(false);
+    });
+
+    it('si el modelo escribió SOLO la marca, sale el texto de error y no el pin: nunca un pin sin dirección', () => {
+      const s = procesar('[ENVIAR_UBICACION]', CON_PIN);
+      expect(s['respuesta']).toBe(cfg['mensajeErrorTemporal']);
+      expect(s['respuestaVacia']).toBe(true);
+      expect(s['enviarUbicacion']).toBe(false);
+    });
+  });
+
+  describe('4. el cableado: cuelga del envío, debajo del reporte del texto, y no toca el camino normal', () => {
+    it('«¿Enviar ubicación?» cuelga SOLO de «Responder al cliente», después del reporte del texto', () => {
+      expect(origenes('¿Enviar ubicación?')).toEqual(['Responder al cliente']);
+      expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
+      expect(destinos('¿Enviar ubicación?', 0)).toEqual(['Enviar ubicación']);
+      expect(destinos('¿Enviar ubicación?', 1)).toEqual([]);
+      expect(destinos('Enviar ubicación', 0)).toEqual(['Reportar ubicación (saliente)']);
+      // La salida de error del envío no va a ningún lado: un pin rechazado por
+      // Meta no se reporta ni corta nada. El texto ya salió y ya se contó.
+      expect(destinos('Enviar ubicación', 1)).toEqual([]);
+      expect(nodo(f, 'Enviar ubicación').onError).toBe('continueErrorOutput');
+      expect(destinos('Reportar ubicación (saliente)')).toEqual([]);
+    });
+
+    it('en el lienzo va DEBAJO del reporte del texto (orden v1: el texto se reporta primero) y en su propia fila', () => {
+      expect(f.settings['executionOrder']).toBe('v1');
+      expect(y('¿Enviar ubicación?')).toBeGreaterThan(y('Reportar mensaje (saliente)'));
+      expect(y('Enviar ubicación')).toBe(y('¿Enviar ubicación?'));
+      expect(y('Reportar ubicación (saliente)')).toBe(y('¿Enviar ubicación?'));
+      expect(x('¿Enviar ubicación?')).toBeLessThan(x('Enviar ubicación'));
+      expect(x('Enviar ubicación')).toBeLessThan(x('Reportar ubicación (saliente)'));
+    });
+
+    it('la compuerta lee `enviarUbicacion` de «Mensaje a enviar» (el $json del envío es la respuesta de Meta) y solo pasa con true', () => {
+      const condicion = nodo(f, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue;
+      expect(String(condicion)).toContain("$('Mensaje a enviar').item.json.enviarUbicacion");
+      expect(expresion(condicion, { enviarUbicacion: true }, { 'Mensaje a enviar': { enviarUbicacion: true } })).toBe(true);
+      for (const v of [false, 'true', 1, undefined]) {
+        expect(expresion(condicion, {}, { 'Mensaje a enviar': v === undefined ? {} : { enviarUbicacion: v } }), String(v)).toBe(false);
+      }
+    });
+
+    it('desde los nodos nuevos no se vuelve a ningún lado: ni al agente, ni al envío de texto, ni al candado', () => {
+      expect([...alcanzables('¿Enviar ubicación?')].sort()).toEqual(['Enviar ubicación', 'Reportar ubicación (saliente)']);
+    });
+
+    it('los ids son nombres cortos, sin UUID', () => {
+      for (const n of ['¿Enviar ubicación?', 'Enviar ubicación', 'Reportar ubicación (saliente)']) {
+        expect(nodo(f, n).id).toMatch(/^[a-z0-9()-]+$/);
+      }
+    });
+  });
+
+  describe('5. el envío del pin y su reporte', () => {
+    const envio = nodo(f, 'Enviar ubicación');
+    const reporte = nodo(f, 'Reportar ubicación (saliente)');
+    const item = { from: '59170000001', ubicacionLat: PIN.lat, ubicacionLng: PIN.lng, nombreNegocio: 'Un Negocio',
+      direccion: 'Calle 1, zona Sur', waGraphVersion: 'v26.0', phoneNumberId: '1000000001' };
+
+    it('es un POST a Graph con la credencial de WhatsApp por tipo, con tope de tiempo y a lo sumo un reintento', () => {
+      expect(envio.type).toBe('n8n-nodes-base.httpRequest');
+      expect(envio.parameters['method']).toBe('POST');
+      expect(String(envio.parameters['url'])).toMatch(/^=https:\/\/graph\.facebook\.com\//);
+      expect(String(envio.parameters['url'])).toContain("$('Mensaje a enviar').item.json.phoneNumberId");
+      expect(String(envio.parameters['url'])).toContain("$('Mensaje a enviar').item.json.waGraphVersion");
+      expect(envio.parameters['authentication']).toBe('predefinedCredentialType');
+      expect(envio.parameters['nodeCredentialType']).toBe('whatsAppApi');
+      expect(envio.credentials?.['whatsAppApi']).toBeDefined();
+      expect(envio.credentials?.['whatsAppApi']?.id).toBe('');
+      expect(envio.parameters['options']?.timeout).toBeLessThanOrEqual(15000);
+      expect(envio.retryOnFail).toBe(true);
+      expect(envio.maxTries ?? 1).toBeLessThanOrEqual(2);
+    });
+
+    it('el cuerpo es un `location` con latitud, longitud, el nombre del negocio y la dirección, al teléfono del cliente', () => {
+      const cuerpo = JSON.parse(String(expresion(envio.parameters['jsonBody'], {}, { 'Mensaje a enviar': item }))) as J;
+      expect(cuerpo).toEqual({
+        messaging_product: 'whatsapp', recipient_type: 'individual', to: '59170000001', type: 'location',
+        location: { latitude: PIN.lat, longitude: PIN.lng, name: 'Un Negocio', address: 'Calle 1, zona Sur' },
+      });
+      // Nunca del $json de Meta ni de «Procesar respuesta»: el item que pasó por
+      // el punto único de salida es el que se envió.
+      expect(String(envio.parameters['jsonBody'])).not.toContain('$json.');
+      expect(String(envio.parameters['jsonBody'])).not.toContain("$('Procesar respuesta')");
+    });
+
+    it('el reporte cuenta el pin como saliente `location`, con el id que devolvió Meta, a la misma ingesta que el texto', () => {
+      const texto = nodo(f, 'Reportar mensaje (saliente)');
+      expect(reporte.parameters['url']).toBe(texto.parameters['url']);
+      expect(reporte.parameters['headerParameters']).toEqual(texto.parameters['headerParameters']);
+      expect(reporte.credentials?.['httpHeaderAuth']?.name).toBe(texto.credentials?.['httpHeaderAuth']?.name);
+      expect(reporte.onError).toBe('continueRegularOutput');
+      const cuerpo = JSON.parse(String(expresion(reporte.parameters['jsonBody'],
+        { messages: [{ id: 'wamid.PIN' }] }, { 'Mensaje a enviar': item }))) as J;
+      expect(cuerpo).toEqual({
+        telefono: '59170000001', direccion: 'saliente', tipo: 'location', texto: 'Ubicación: Calle 1, zona Sur', idMeta: 'wamid.PIN',
+      });
+    });
+
+    it('las notas de los nodos declaran el costo: 0 en el camino normal, +1 solo a pedido', () => {
+      expect(String(nodo(f, '¿Enviar ubicación?').notes)).toContain('0 mensajes agregados');
+      expect(String(envio.notes)).toContain('+1 mensaje por conversación SOLO cuando el cliente pide la ubicación');
+      expect(String(reporte.notes)).toContain('DEBAJO del reporte del texto');
     });
   });
 });
