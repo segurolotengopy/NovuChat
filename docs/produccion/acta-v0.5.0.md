@@ -176,3 +176,11 @@ El workflow se lee del ref de la etiqueta, así que `v0.5.0` seguiría usando el
 4. Verificar `minInstances: 1` y volver a medir la primera respuesta.
 5. **Apagar `FIREBASE_DEPLOY_FORCE`.**
 6. Contadores del catálogo, y recién entonces restaurar `FIREBASE_DEPLOY_ONLY` a `hosting,firestore:rules,firestore:indexes,functions` para desplegar consola y reglas.
+
+### Segundo intento (`v0.5.1`): falló por un descuido en el arreglo
+
+La corrida volvió a cortar con el mismo mensaje, pero **en la simulación, no en la publicación**. El arreglo anterior había puesto `--force` solo en el comando que publica, y el paso previo `--dry-run` corre el `prepare` completo: choca con la misma protección y corta antes de llegar a publicar.
+
+Dicho de otro modo: si la simulación no acepta lo que el despliegue va a aceptar, no está simulando el despliegue. La decisión de `--force` pasó a tomarse antes de simular, y el parámetro va en los dos comandos.
+
+Producción siguió sin tocarse, igual que en el primer intento. `v0.5.1` queda también como etiqueta sin despliegue; el siguiente intento es `v0.5.2`.
