@@ -152,4 +152,22 @@ describe('La compuerta que aplica el estado', () => {
     expect((salidas[1] ?? []).map((x) => x.node)).toEqual(['Comercio no operativo']);
     expect((salidas[0] ?? []).map((x) => x.node).join()).not.toBe('Comercio no operativo');
   });
+
+  it.each([
+    ['demo-a-agendamiento.json'],
+    ['platinum-agendamiento.json'],
+  ])('%s: el aviso neutro sale por el punto único de salida y se reporta DESPUÉS de enviarlo', (archivo) => {
+    // Desde el 17/09/2026 la consola registra lo que el cliente recibió: el
+    // aviso de comercio no operativo también pasa por «Mensaje a enviar» y el
+    // reporte cuelga del envío. La ingesta le contesta 409 a un comercio
+    // suspendido —igual que al entrante— y el nodo continúa; en la bitácora
+    // queda la evidencia de que el flujo mandó la cortesía.
+    const conexiones = (JSON.parse(
+      readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8'),
+    ) as { connections: Record<string, { main?: { node: string }[][] }> }).connections;
+    const destinos = (n: string) => (conexiones[n]?.main?.[0] ?? []).map((x) => x.node);
+    expect(destinos('Comercio no operativo')).toEqual(['Mensaje a enviar']);
+    expect(destinos('Mensaje a enviar')).toEqual(['Responder al cliente']);
+    expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+  });
 });

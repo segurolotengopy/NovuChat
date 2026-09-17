@@ -58,6 +58,21 @@ WhatsApp (Meta Cloud API)
 
 ## Reglas de diseño de los flujos n8n
 
+- **NUNCA una cita encima de otra con un cliente real. Es una regla
+  mandatoria de Andres (17/09/2026), no una preferencia.** El candado contra
+  la doble reserva se dispara **por lo que el modelo HIZO, no por lo que
+  DIJO**: si `agendar_cita` se ejecutó en la vuelta, se verifica en el
+  calendario y, si hay cruce, se deshace; el detector de texto («quedó
+  agendada», «agendé»…) es solo una red secundaria. El 17/09 el modelo agendó
+  dos veces dentro de un intervalo que acababa de recibir de
+  `consultar_disponibilidad`, con la regla de intervalos ya publicada en el
+  prompt, y la segunda vez el candado no corrió porque dijo «he reprogramado»
+  y esa forma no estaba en la lista. **El prompt no es una barrera**: una
+  instrucción se ignora bajo insistencia y cambia con cada modelo. Ningún
+  flujo de reservas se publica sin este disparador, su suite reproduce el
+  caso «verbo no previsto y la herramienta sí corrió», y todo cambio del
+  candado se prueba contra un teléfono real insistiendo sobre una hora
+  ocupada.
 - **Memoria con clave de sesión explícita** = número de origen
   (`messages[0].from`). Sin esto, dos clientes comparten memoria. Es el
   defecto más grave que puede tener uno de estos flujos.

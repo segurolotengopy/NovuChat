@@ -50,13 +50,16 @@ const ev = (id: string, summary: string, cal: string,
 });
 
 /** Corre el nodo con un `$input` y un `$()` simulados, y el reloj congelado. */
-function comprobarTodo(eventos: Evento[], ahora = AHORA): Record<string, unknown>[] {
+function comprobarTodo(
+  eventos: Evento[], ahora = AHORA,
+  config: Record<string, unknown> = { mensajeReservaNoConfirmada: '' },
+): Record<string, unknown>[] {
   const entrada = { all: () => eventos.map((json) => ({ json })) };
   const contexto = (nombre: string) => ({
     all: () => [{ json: { respuesta: 'Cita confirmada.', from: '591700', transferir: false } }],
     first: () => ({
       json: nombre === 'Config del negocio'
-        ? { mensajeReservaNoConfirmada: '' }
+        ? config
         : { respuesta: 'Cita confirmada.', from: '591700' },
     }),
   });
@@ -125,7 +128,47 @@ describe('Candado contra la doble reserva', () => {
     ]);
     expect(String(r['respuesta'])).not.toMatch(/confirmad/i);
     expect(r['reservaVerificada']).toBe(false);   // no se registra cierre facturable
-    expect(r['transferir']).toBe(true);           // recepción se entera
+    // Recepción se entera, pero YA NO desde acá (17/09/2026): el motivo viaja
+    // en `motivoCruce` y la transferencia la deciden «Retomar respuesta» y
+    // «Procesar reintento», después de darle al modelo UN turno para ofrecer
+    // alternativas. Si el flujo transfiriera acá, el aviso saldría también
+    // cuando el reintento resolvió, y diría algo falso («necesita atención
+    // humana») por un mensaje pagado.
+    expect(r['transferir']).toBe(false);
+    expect(r['motivoTransferencia']).toBe('');
+    expect(String(r['motivoCruce'])).toContain('YA OCUPADO');
+    expect(String(r['motivoCruce'])).toContain('Cita Sil — corte');
+  });
+
+  it('dice QUIÉN y CUÁNDO chocó, para que el reintento pueda ofrecer alternativas', () => {
+    // La persona sale del calendario donde vivía la cita, cruzado con los
+    // funcionarios de la configuración: el título solo trae el nombre del
+    // cliente. La hora y la fecha van en la zona de Bolivia.
+    const items = comprobarTodo([
+      ev('j1', 'Cita Andrés A. — corte', CAL_JOSE,
+         '2026-09-07T14:00:00-04:00', '2026-09-07T15:00:00-04:00', '2026-09-06T06:22:34.000Z'),
+      ev('j2', 'Cita Ruben — corte', CAL_JOSE,
+         '2026-09-07T14:30:00-04:00', '2026-09-07T15:30:00-04:00', '2026-09-06T20:16:00.000Z'),
+    ], AHORA, {
+      mensajeReservaNoConfirmada: '',
+      funcionarios: JSON.stringify([{ nombre: 'José', servicios: ['corte'], calendario: CAL_JOSE }]),
+    });
+    expect(items).toHaveLength(1);
+    const caidas = items[0]?.['citasCaidas'] as { hora: string; fecha: string; persona: string; servicio: string }[];
+    expect(caidas).toHaveLength(1);
+    expect(caidas[0]).toMatchObject({ hora: '14:30', persona: 'José', servicio: 'corte' });
+    expect(caidas[0]?.fecha).toContain('7 de septiembre');
+  });
+
+  it('sin funcionarios en la configuración, la persona queda vacía y nada se rompe', () => {
+    const r = comprobarReserva([
+      ev('j1', 'Cita Ana — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T06:00:00.000Z'),
+      ev('j2', 'Cita Sil — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T20:16:00.000Z'),
+    ]);
+    const caidas = r['citasCaidas'] as { hora: string; persona: string }[];
+    expect(caidas[0]).toMatchObject({ hora: '09:00', persona: '' });
   });
 
   it('DOS PERSONAS DISTINTAS a la misma hora NO son conflicto', () => {
@@ -215,8 +258,12 @@ describe('Candado contra la doble reserva', () => {
     // Ceden dos, queda la de identificador menor.
     expect(items).toHaveLength(2);
     expect(items.map((i) => i['eventoABorrar']).sort()).toEqual(['b', 'c']);
-    // Un solo aviso a recepción, no uno por cita.
-    expect(items.filter((i) => i['transferir'] === true)).toHaveLength(1);
+    // Ningún item transfiere desde acá: el aviso —uno solo, nunca uno por
+    // cita— lo decide «Procesar reintento» sobre el primer item que retoma
+    // «Retomar respuesta». Las dos citas caídas viajan juntas en `citasCaidas`.
+    expect(items.every((i) => i['transferir'] === false)).toBe(true);
+    expect((items[0]?.['citasCaidas'] as unknown[]).length).toBe(2);
+    expect(String(items[0]?.['motivoCruce'])).toContain('Cita Dos — corte; Cita Tres — corte');
   });
 
   it('con dos citas creadas a la vez cede UNA sola, no las dos', () => {

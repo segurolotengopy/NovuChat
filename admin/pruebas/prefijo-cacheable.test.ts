@@ -194,6 +194,43 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
   });
 }
 
+/**
+ * EL REINTENTO TRAS UN CRUCE (17/09/2026, ejecución #2867 de Platinum) es un
+ * segundo agente en los flujos de agendamiento, y juega con las mismas reglas:
+ * instrucciones estáticas —cacheables y compartidas por todas las
+ * conversaciones del negocio— y lo volátil en el mensaje del turno. Agrega
+ * UNA llamada al modelo (el 6 % del costo) y CERO mensajes de WhatsApp: el
+ * cliente recibe un solo mensaje, con alternativas en vez de un texto fijo.
+ */
+for (const { archivo } of FLUJOS.filter((x) => x.archivo !== 'demo-b-venta-cobro.json')) {
+  describe(`${archivo} · el reintento tras cruce también es cacheable`, () => {
+    const f = flujo(archivo);
+    const n = nodo(f, 'Reintento tras cruce');
+    const prompt = n.parameters.options!.systemMessage!;
+    const texto = (n.parameters as { text?: string }).text!;
+
+    it('las instrucciones no llevan nada volátil ni propio del cliente', () => {
+      for (const v of ['$now', '$json.from', 'nombrePerfil', 'mensajesRestantes24h', 'userInput', 'notaCruce']) {
+        expect(prompt, `${v} rompe el prefijo cacheable`).not.toContain(v);
+      }
+    });
+
+    it('el mensaje del turno lleva la hora, el aviso del cruce y el texto del cliente al final', () => {
+      expect(texto).toContain('[CONTEXTO DEL SISTEMA]');
+      expect(texto).toContain('$now');
+      expect(texto).toContain('[AVISO DEL SISTEMA]');
+      expect(texto).toContain('notaCruce');
+      expect(texto.trimEnd().endsWith("{{ $('Retomar respuesta').first().json.userInput }}")).toBe(true);
+    });
+
+    it('pide UN solo mensaje con hasta 3 alternativas: cero mensajes agregados por conversación', () => {
+      expect(prompt).toContain('TODO EN UN SOLO MENSAJE');
+      expect(prompt).toContain('HASTA 3 horas');
+      expect(prompt).not.toMatch(/(envía|manda|agrega)[^.]{0,40}(otro|un segundo|nuevo) mensaje/i);
+    });
+  });
+}
+
 /*
  * ACÁ HABÍA TRES PRUEBAS, «mostrar el catálogo cuesta UN mensaje, no dos», que
  * comprobaban que la lista tocable de WhatsApp saliera junto al texto del
