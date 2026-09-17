@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-17 (Platinum en producción; `v0.5.4` desplegado tras cuatro etiquetas; #82 a #94). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-17 (Platinum en producción; `v0.5.4` desplegado tras cuatro etiquetas; #82 a #101; el comportamiento del asistente se verifica antes de aplicarse, migración corrida, `v0.5.5` sin etiquetar). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
 
@@ -84,7 +84,7 @@ propusieron.
 
 ---
 
-## 2026-09-17 — el comportamiento general se verifica en el servidor antes de aplicarse (rama `consola/comportamiento-verificado-servidor`, sin fusionar ni desplegar)
+## 2026-09-17 — el comportamiento general se verifica en el servidor antes de aplicarse (#100 y #101 fusionados; migración aplicada; falta la etiqueta `v0.5.5`)
 
 Reglas de Andres del 17/09: multi-tenant estricto; el «comportamiento general»
 (`config/negocio.instruccionesExtra`) es un pseudo-prompt por empresa y **se
@@ -111,11 +111,26 @@ ve en la consola. Diseño completo en `admin/DISENO.md` §4quater.5.
   instrucciones. El JSON de Platinum ya no lleva comillas angulares.
 - **Emojis:** `FRASE_EMOJIS.muchos` pasó a imperativo («Use uno, dos o tres
   emojis en cada mensaje…»): con «Varios», 6 de 15 respuestas salían sin emoji.
-- **Pendiente en la nube, en este orden:** (1) `migrar-instrucciones.mjs`
-  --aplicar contra producción; (2) desplegar reglas de Firestore; (3) desplegar
-  Functions (`configuracionFlujo`, `verificarComportamiento`, con
-  `GEMINI_API_KEY` ya accesible para `sa-functions`); (4) probar contra un
-  teléfono real. La pantalla de la consola la hace otra rama.
+- **Hecho en la nube:** `migrar-instrucciones.mjs --aplicar` corrió contra
+  producción antes de desplegar nada. Platinum quedó con lo vigente igual a lo
+  propuesto, aprobado por la capa de patrones, 1.489 caracteres, sin comillas
+  angulares. **Falta la etiqueta `v0.5.5`**, que lleva reglas de Firestore y
+  Functions; después, la prueba contra un teléfono real: escribir el
+  comportamiento en la consola, ver la revisión y comprobar que el asistente usa
+  lo vigente.
+- **La pantalla ya está fusionada:** #100 (sección «Comportamiento del
+  asistente» con su estado de revisión) y #101 (la verificación del servidor).
+
+**Una regresión propia, y de dónde salió.** Al recargar la configuración de
+Platinum desde `main` con `cargar-negocio.mjs --aplicar`, los cinco mensajes
+fijos volvieron a usted en producción: #96, que los pasaba a tuteo, nunca se
+había fusionado, así que `main` tenía la versión vieja del JSON del cliente. Se
+arregló fusionando la rama con `main` —conflicto resuelto a mano: contenido de
+`main` más los cinco mensajes—, fusionando #96 y recargando. Verificado leyendo
+Firestore. **La lección es la misma que ya está escrita para publicar flujos, y
+ahora vale también para la configuración:** una carga desde `main` pisa lo que
+un PR sin fusionar dejó en producción, y el diagnóstico en seco se lee entero
+antes de `--aplicar`.
 
 ## 2026-09-15 (noche) — alta de PLATINUM preparada para el demo del 16/09 (rama `claude/platinum-novuchat-setup-58d3d0`)
 
