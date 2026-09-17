@@ -62,6 +62,15 @@ interface Periodo {
   cierres?: number;
   interacciones?: number;
   personasAtendidas?: number;
+  /**
+   * Señas de reserva (`DISENO.md` §4duodecies): QR enviados, comprobantes
+   * cotejados (con cualquier resultado) y retenciones que vencieron sin
+   * comprobante. Las escribe el servidor; no se facturan, pero explican por qué
+   * un mes tiene más mensajes que conversaciones y cuántas reservas se caen.
+   */
+  senasEnviadas?: number;
+  senasCotejadas?: number;
+  senasVencidas?: number;
 }
 
 /** Conversaciones del período, tolerando el nombre anterior. */
@@ -226,6 +235,12 @@ export function Consumo() {
   const atenciones = actual?.personasAtendidas ?? 0;
   const cierres = actual?.cierres ?? 0;
   const tasa = porcentaje(cierres, conversaciones);
+  const senas = {
+    enviadas: actual?.senasEnviadas ?? 0,
+    cotejadas: actual?.senasCotejadas ?? 0,
+    vencidas: actual?.senasVencidas ?? 0,
+  };
+  const haySenas = senas.enviadas > 0 || senas.cotejadas > 0 || senas.vencidas > 0;
 
   return (
     <section>
@@ -275,6 +290,15 @@ export function Consumo() {
             <p className="text-muted">
               {cierres} {cierres === 1 ? 'cierre' : 'cierres'} sobre {conversaciones}{' '}
               {conversaciones === 1 ? 'conversación' : 'conversaciones'}.
+            </p>
+          )}
+          {/* Solo cuando el mes trae señas: un negocio de pedidos, o uno de
+              reservas sin seña, no tiene por qué leer una línea en cero. */}
+          {haySenas && (
+            <p className="text-muted">
+              Señas: {senas.enviadas} {senas.enviadas === 1 ? 'enviada' : 'enviadas'}
+              {' · '}{senas.cotejadas} {senas.cotejadas === 1 ? 'cotejada' : 'cotejadas'}
+              {' · '}{senas.vencidas} {senas.vencidas === 1 ? 'vencida' : 'vencidas'}.
             </p>
           )}
           <div className="tarjeta-pie">

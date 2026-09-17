@@ -73,7 +73,11 @@ const TITULOS: Record<string, string> = {
   usuarios: 'Usuarios',
   contactos: 'Contactos',
   agenda: 'Agenda',
-  cobro: 'Pedidos y cobro',
+  cobros: 'Cobros',
+  // Decía «Pedidos y cobro», el nombre viejo de la pestaña (§4nonies). Desde el
+  // 17/09 la abre también un negocio de reservas para su seña, y «pedidos» ahí
+  // no significa nada.
+  cobro: 'Configuración de QR',
   captacion: 'Captación',
   consumo: 'Consumo',
   cuenta: 'Cuenta',
@@ -134,9 +138,15 @@ function Cabecera() {
         {tenantId && (flujos ?? []).flatMap((f) =>
           FLUJOS[f].pestanas
             .filter((p) => (p.tambienPropietario === true && permisos.propietario)
-              || (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper'))
-            .map((p) =>
-              <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>))}
+              || (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper')))
+          // UNA PESTAÑA POR RUTA, aunque la declaren dos flujos. Desde el 17/09
+          // reservas y venta comparten «Cobros» y «Configuración de QR» (la
+          // seña, `lib/flujos.ts`): un negocio con los dos flujos las veía
+          // repetidas, y React se quejaba de la clave duplicada. Se queda la
+          // primera, que es la del flujo que va antes en la lista.
+          .filter((p, i, todas) => todas.findIndex((q) => q.ruta === p.ruta) === i)
+          .map((p) =>
+            <NavLink key={p.ruta} to={`/negocio/${tenantId}/${p.ruta}`}>{p.etiqueta}</NavLink>)}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/conversaciones`}>Conversaciones</NavLink>}
         {tenantId && esAdminDelNegocio &&

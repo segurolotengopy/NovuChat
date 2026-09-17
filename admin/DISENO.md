@@ -1236,10 +1236,14 @@ Y cuatro reglas que se aplican a **todo flujo nuevo**:
 | | Común a cualquier negocio | Reservas y citas (`agendamiento`) | Pedidos y cobro (`venta`) | Captación de clientes (`onboarding`) |
 |---|---|---|---|---|
 | **Documento** | `/config/negocio` | `/config/agendamiento` | `/config/venta` | `/config/onboarding` |
-| **Contiene** | identidad, dirección, horarios, voz del asistente, **nombre del asistente** (`nombreAsistente`), mensajes fijos, política de cancelación, calendario del negocio (por historia) | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho, `mediaIdQr` (solo NovuChat) | rubros, planes, cargos únicos, aclaraciones de la oferta, archivo de planes, mensaje al cliente actual, enlace a la consola, respuesta del aviso y su plantilla (§4sexies.5) |
+| **Contiene** | identidad, dirección, horarios, voz del asistente, **nombre del asistente** (`nombreAsistente`), mensajes fijos, política de cancelación, calendario del negocio (por historia) | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación, **seña** (`senaImporte`, `senaMinutosRetencion`) y, si el negocio no vende, el QR propio (`cobroReal`, solo por `registrarQrDeCobro`) — §4duodecies | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho, `mediaIdQr` (solo NovuChat), QR propio (`cobroReal`, solo por `registrarQrDeCobro`) | rubros, planes, cargos únicos, aclaraciones de la oferta, archivo de planes, mensaje al cliente actual, enlace a la consola, respuesta del aviso y su plantilla (§4sexies.5) |
 | **Colecciones propias** | catálogo, contactos, conversaciones, bitácora, miembros | funcionarios | — | — |
 | **Catálogo nativo de WhatsApp** | — | **no**, y no es un pendiente | **sí** (pendiente) | no |
-| **Pestañas en la consola** | Configuración, Servicios/Productos, Conversaciones, Usuarios, Contactos, Consumo, Cuenta, Reclamos, Bitácora, Mi cuenta | **Agenda** | **Pedidos y cobro** | **Captación** |
+| **Pestañas en la consola** | Configuración, Servicios/Productos, Conversaciones, Usuarios, Contactos, Consumo, Cuenta, Reclamos, Bitácora, Mi cuenta | **Agenda**, **Cobros**, **Configuración de QR** (las dos últimas desde el 17/09, por la seña: §4duodecies) | **Pedidos**, **Cobros**, **Inventario**, **Configuración de QR** (§4nonies) | **Captación** |
+
+«Cobros» y «Configuración de QR» las declaran dos flujos con la misma ruta;
+la cabecera pinta cada ruta una sola vez, y la pantalla decide qué documento
+lee por la lista de flujos (`venta` gana, §4duodecies.2).
 
 El **catálogo con precios es común**: el Demo A lo usa para servicios con
 duración y el Demo B para productos. Es el mismo concepto y ya estaba modelado.
@@ -1783,12 +1787,109 @@ dos datos, cada pantalla lo dice.** Pedidos avisa que los pedidos de WhatsApp
 todavía no se listan, y dónde verlos; Cobros avisa que el comprobante está en
 la conversación. Esos avisos se quitan cuando llegue el dato, no antes.
 
+> **Revisión del 17/09 (§4duodecies): el `media id` del comprobante YA NO HACE
+> FALTA guardarlo.** La seña por QR resolvió el punto 1 por otro camino: el
+> comprobante **no se guarda, se coteja**. El flujo lo baja de Meta con el
+> token, un modelo lo lee, y al servidor llega solo el JSON leído (monto,
+> cuenta, fecha, hora, banco); la imagen y el PDF no van a Storage ni a
+> Firestore, y en el cierre queda `cotejo` con lo leído y el resultado. Cobros
+> muestra eso, y sigue diciendo que la imagen está en la conversación: no
+> como deuda, sino como decisión. Un comprobante guardado es un dato personal
+> más que custodiar, y lo que la persona necesita para mirar su banco —monto,
+> banco, hora— ya está en el cotejo. El punto 2 (los pedidos por WhatsApp
+> como pedidos) sigue pendiente.
+
 ### 4nonies.4 Lo que cambia en el registro de flujos — hecho
 
 `web/src/lib/flujos.ts` declara para `venta` las pestañas Pedidos, Cobros,
 Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre sus
 roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
 suponer que una pestaña de flujo implica administrador.
+
+## 4duodecies. Seña por QR en reservas
+
+> **Decidido el 17/09/2026** (`Analisis/30` §4, `Analisis/07` §4; rama
+> `flujos/sena-por-qr`). El flujo de reservas cobra una **seña** por QR para
+> retener el horario. Es la primera vez que el flujo de agendamiento cobra, y
+> por eso esta sección toca las tres capas: el documento del flujo, dos
+> pantallas que hasta ahora eran solo de venta, y una Function nueva que
+> coteja. **Prohibición 3 de `CLAUDE.md` en cada texto**: nadie —ni el
+> asistente, ni la consola, ni el servidor— dice «pago acreditado», «pago
+> verificado» ni «recibimos tu pago». Se dice que el comprobante llegó y que
+> los datos coinciden; quien confirma que entró la plata es el negocio en su
+> banco.
+
+### 4duodecies.1 Las decisiones, en orden
+
+1. **La seña es un parámetro del flujo de agendamiento** (§4sexies): vive en
+   `/config/agendamiento` como `senaImporte` (entero en la moneda del negocio;
+   `0` = sin seña) y `senaMinutosRetencion` (entero, 5..180, respaldo 30). Un
+   restaurante no retiene horarios: no va a `/config/negocio`.
+2. **El QR del comercio (`cobroReal`) vive en el documento del flujo que
+   cobra.** `/config/venta` si el negocio vende; `/config/agendamiento` si solo
+   reserva. `registrarQrDeCobro` elige leyendo `tenants/{t}.flujos` (venta
+   gana; sin ninguno de los dos, rechaza) y devuelve `documento`. Un negocio
+   con los dos flujos tiene UN QR, en venta, y los dos flujos mandan el mismo.
+   `cobroReal` lo escribe solo la callable, como hasta ahora: no entra en la
+   lista blanca del navegador en ninguno de los dos documentos.
+3. **Quien coteja es el servidor** (§7 de `CLAUDE.md`): la Function
+   `cotejarComprobante` recibe lo que un modelo leyó del comprobante y
+   devuelve `cuadra | no_cuadra | ilegible`. El flujo no compara nada, y el
+   modelo tampoco decide: solo transcribe.
+4. **La cita se retiene por hecho, no por dicho.** `agendar_cita` la crea con
+   el título `PENDIENTE DE SEÑA · …` cuando la seña está activa (lo pone la
+   expresión del nodo, no el modelo). Al cotejo `cuadra` el flujo quita el
+   prefijo. Un flujo programado borra las pendientes con más de
+   `senaMinutosRetencion` minutos, sin escribirle al cliente, y lo reporta.
+5. **El cierre con seña lo crea el servidor al cotejar**, con `monto` y
+   `cotejo`. Con seña activa el flujo no registra cierre al agendar: una cita
+   pendiente que vence no es un cierre. Sin seña, todo sigue como hoy.
+6. **Los comprobantes no se guardan.** Ni la imagen ni el PDF van a Storage ni
+   a Firestore: solo el JSON leído y el resultado. Ver la revisión al cierre de
+   §4nonies.3.
+7. **Mensajes por conversación**: +1 (el QR, imagen con caption) en las que
+   llegan a reservar. La confirmación del comprobante es un mensaje fijo, sin
+   modelo. El aviso a recepción por cita pagada, con diferencia o ilegible lo
+   paga NovuChat y no se cuenta al comercio.
+
+### 4duodecies.2 Los campos
+
+| Dónde | Campo | Tipo | Quién escribe | Qué pantalla lo muestra |
+|---|---|---|---|---|
+| `config/agendamiento` | `senaImporte` | int 0..10000 (0 = sin seña) | admin del negocio, con `tieneAgenda` (`configAgendamientoValida()`) | **Configuración de QR**, bloque «Seña para reservar» (`ConfiguracionVertical`, `CAMPOS.agendamiento`) |
+| `config/agendamiento` | `senaMinutosRetencion` | int 5..180 (respaldo 30) | ídem | ídem |
+| `config/venta` o `config/agendamiento` | `cobroReal` | map (`activo`, `cargaUtil`, `cuentas`, `nombreCuenta`, `banco`, `ficha`, …) | solo `registrarQrDeCobro` (Admin SDK) | **Configuración de QR**: lee el documento que le toca por `flujos` |
+| `conversaciones/wa_{tel}` | `solicitud` (`etapa`, `desde`, `qrEnviadoEn`, `evento`, `cotejos`, `seguimientos`) | map | la ingesta y `cotejarComprobante` | ninguna todavía |
+| `cierres/cita_<eventoId>` | `monto`, `moneda`, `cotejo` (`resultado`, `diferencias`, `montoLeido`, `banco`, `idMeta`, `intentos`, `en`) | number, string, map | `cotejarComprobante` | **Cobros**: columna «Comprobante» y el detalle (diferencias, monto leído, banco, intentos, fecha) |
+| `metricas/{aaaa-mm}` | `senasEnviadas`, `senasCotejadas`, `senasVencidas` | int | la ingesta, `cotejarComprobante`, `senaVencida` | **Consumo**: «Señas: N enviadas · M cotejadas · K vencidas», solo si el mes trae alguna |
+
+### 4duodecies.3 Lo que muestra cada pantalla, y lo que no
+
+- **Configuración de QR** (`Cobro.tsx`) es una sola pantalla para los dos
+  flujos que cobran. Decide el documento por la lista de flujos, igual que el
+  servidor; explica por flujo qué hace el asistente con el QR; y monta al pie
+  los parámetros propios de cada flujo en SU documento (§4sexies.2): costos de
+  entrega a `venta`, seña a `agendamiento`. El QR de demostración solo se
+  muestra a un negocio con venta: en reservas la seña va siempre por el camino
+  real, y los dos modos no conviven (prohibición 3).
+- **Cobros** (`Cobros.tsx`) gana la columna **«Comprobante»** —«Datos
+  coinciden», «Hay una diferencia», «Ilegible», o nada— al lado de «Estado».
+  Parecen la misma y no lo son: la primera es lo que leyó el servidor; la
+  segunda, lo que afirmó una persona contra su banco. **Un cotejo que cuadra
+  no comprueba nada**, y por eso el botón «Comprobar» sigue al lado de un
+  cotejo que cuadra, y la ayuda lo dice: NovuChat coteja datos, no confirma
+  dinero.
+- **Consumo** (`Consumo.tsx`) agrega una línea con las tres cifras de señas,
+  solo cuando el mes trae alguna: no se facturan, pero explican por qué un mes
+  tiene más mensajes que conversaciones y cuántas reservas se caen.
+- **Lo que ninguna pantalla muestra**: la imagen del comprobante (no se
+  guarda) y la `solicitud` de la conversación (es estado del flujo, no un dato
+  del negocio; si algún día hace falta, va en «Conversaciones»).
+
+### 4duodecies.4 Lo que este bloque NO hace
+
+Imágenes y PDF que no son comprobante, audio, seguimientos de la solicitud, y
+el candado con un solo calendario: son los bloques 3, 4 y 5 de `Analisis/30`.
 
 ## 5. Integración con n8n
 
