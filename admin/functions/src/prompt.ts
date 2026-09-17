@@ -32,7 +32,14 @@
  */
 import { textoPlano, sinMarcas } from './saneo.js';
 
-/** Campos de texto libre del comercio que llegan al prompt. La lista es cerrada. */
+/**
+ * Campos de texto libre del comercio que llegan al prompt. La lista es cerrada.
+ *
+ * `instruccionesExtra` es el NOMBRE con el que el flujo recibe el comportamiento
+ * general; el VALOR lo pone `configuracionFlujo` desde `instruccionesVigentes`
+ * —lo aprobado por la verificación del servidor, `comportamiento.ts`—, nunca
+ * desde lo que el comercio acaba de escribir.
+ */
 export const CAMPOS_LIBRES_AL_PROMPT = [
   'nombreNegocio', 'descripcion', 'direccion', 'politicaCancelacion',
   'datosQueNoTenemos', 'instruccionesExtra',
@@ -117,10 +124,17 @@ const FRASE_TRATAMIENTO: Record<string, string> = {
   neutro: 'Evite el trato directo: use formas impersonales en lugar de «usted» o «tú».',
 };
 
+// LA ESCALA ES IMPERATIVA EN LOS TRES NIVELES. «Puede usar emojis con soltura»
+// (hasta el 17/09) era una licencia, y el modelo la tomaba como opcional: con la
+// consola en «Varios», 6 de 15 respuestas salieron sin ningún emoji. Con
+// «muchos» el comercio pidió que SE USEN, así que se ordena, con cantidad y con
+// dos exclusiones —un emoji dentro de un precio o de un horario los vuelve
+// ilegibles y el flujo los lee de la respuesta—. «pocos» ya era imperativo.
 const FRASE_EMOJIS: Record<string, string> = {
   ninguno: 'No use emojis.',
   pocos: 'Use como mucho un emoji por mensaje, y solo cuando aporte.',
-  muchos: 'Puede usar emojis con soltura, sin pasar de tres por mensaje.',
+  muchos: 'Use uno, dos o tres emojis en cada mensaje, relacionados con lo que dice; '
+    + 'nunca dentro de un precio ni de un horario.',
 };
 
 /** Instrucciones de voz. Salen de nuestras frases, nunca del texto del cliente. */

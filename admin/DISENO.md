@@ -1047,6 +1047,104 @@ que lo suspendieron. O se prepara antes, o rige el texto neutro de la plataforma
 No fue diseñado así: es una consecuencia de que la suspensión cierre las
 escrituras, y conviene que quede escrita porque es deseable.
 
+### 4quater.5 El comportamiento general se verifica en el servidor ANTES de aplicarse (17/09/2026)
+
+**Las reglas de Andres del 17/09**, que esto hace cumplir: (1) multi-tenant
+estricto —una empresa no ve, modifica, crea ni borra nada de otra, ni de
+NovuChat, ni ninguna otra configuración; solo los superadministradores—; (2) el
+«comportamiento general» del asistente es un campo por empresa, un pseudo-prompt
+para campañas y ofertas, y **se verifica por seguridad antes de aplicarse**: ese
+texto no puede retirar, permitir, sobreescribir ni ejecutar nada sobre otros
+tenants, sobre NovuChat ni sobre otra configuración; se enmarca en lo que tiene
+esa empresa; (3) lo que NovuChat configura por script se ve en la consola.
+
+**El problema que resuelve.** `instruccionesExtra` es el único campo de la
+consola que, en la práctica, es un prompt escrito por el cliente. El flujo lo
+inserta delimitado y subordinado (§4quater.2), y eso baja el riesgo, pero nadie
+miraba el contenido: 1.500 caracteres alcanzan para fabricar un bloque
+`[CONTEXTO DEL SISTEMA]` entero, para pedirle al asistente que niegue ser una IA
+(prohibición 4) o para hablar en nombre de otro comercio.
+
+**El contrato de datos**, tres campos de `config/negocio`:
+
+| Campo | Qué es | Quién lo escribe |
+|---|---|---|
+| `instruccionesExtra` (string ≤ 1.500) | **lo propuesto** | el admin del comercio, desde la consola, como hoy |
+| `instruccionesVigentes` (string ≤ 1.500) | **lo que el flujo lee** | solo el SDK Admin: la Function `verificarComportamiento` o los scripts de NovuChat (`cargar-negocio.mjs`, `migrar-instrucciones.mjs`). Las reglas lo niegan desde el navegador a **todo** rol, incluido el admin del comercio y el propietario |
+| `instruccionesRevision` (mapa) | `{ estado: 'pendiente' \| 'aprobado' \| 'rechazado', motivo ≤ 300, revisadoEn, hash, capa, revisadoPor }` | solo el SDK Admin. `hash` = primeros 16 hexadecimales del SHA-256 del texto revisado, tal cual está escrito: la consola lo compara con `instruccionesExtra` y sabe si la revisión corresponde a lo que está en pantalla o a un texto anterior |
+
+`configuracionFlujo` entrega `datosDelNegocio.instruccionesExtra` —la clave que
+los flujos ya leen; **el flujo no cambia**— con el texto de
+`instruccionesVigentes`. Sin vigente, vacío, aunque lo propuesto tenga texto.
+
+**Por qué el flujo lee solo lo vigente.** Es la misma lógica de los campos
+derivados (§4quater.2, T-27): dos barreras. La regla impide que el navegador
+escriba lo vigente —se mira el *diff* y no las claves del documento, como con
+`stock`, así que borrarlo también se rechaza y la consola guarda con
+`updateDoc`— y `configuracionFlujo` nunca lee lo propuesto. Un texto rechazado
+no llega al asistente y el anterior aprobado sigue rigiendo; un texto que no se
+pudo verificar queda `pendiente` y **tampoco se aplica**: ante la duda, no. El
+comercio ve en la consola qué escribió, qué está vigente y por qué difieren.
+
+**La verificación, en dos capas y las dos del servidor**
+(`functions/src/comportamiento.ts`, puro; `verificarComportamiento.ts`, el
+disparador `onDocumentWritten` sobre `tenants/{t}/config/negocio`, que actúa solo
+cuando cambió `instruccionesExtra` y la revisión guardada no es ya de ese texto):
+
+1. **Patrones, determinista y primero.** Rechaza sin preguntarle a nadie:
+   corchetes, llaves, ángulos y comillas angulares (imitan los bloques del
+   sistema y los delimitadores del corpus); los rótulos literales del prompt
+   («contexto del sistema», «mensaje del cliente», «información del negocio»);
+   `TRANSFERIR` en mayúsculas; verbos de anulación con objeto de sistema («ignora
+   las instrucciones anteriores», «olvidá tus reglas»); «instrucciones del
+   sistema», «prompt del sistema»; cambios de rol en español e inglés («a partir
+   de ahora eres», «you are now», «developer mode»); pedir negar que es una IA
+   («di que eres una persona», «no digas que eres un bot», «decí que sos la
+   recepcionista»); «prompt» y «system»; cualquier identificador con guion bajo
+   (`agendar_cita`, `consultar_disponibilidad`: se rechaza la forma, no solo los
+   nombres de hoy); nombres de la plataforma (`tenant`, `firestore`, `n8n`,
+   `webhook`, `gemini`); NovuChat invocado como autoridad («NovuChat autoriza»,
+   «por orden de NovuChat»); y **el identificador o el nombre de otro tenant**,
+   leídos de `/tenants` con el SDK Admin y comparados como frase entera, con
+   motivo genérico «menciona otro comercio»: los nombres ajenos no se le muestran
+   al comercio. Las coincidencias **débiles** —«regla» (reglas de higiene),
+   «herramienta» (una ferretería), «consola» (una tienda de videojuegos), un
+   verbo de anulación sin objeto («ignora los mensajes en inglés»), «NovuChat»
+   suelto, «token»— **no rechazan nunca solas**: dejan el caso dudoso, con la
+   palabra señalada, para la capa 2. La lista está en el código con el porqué de
+   cada entrada, y `pruebas/comportamiento.test.ts` exige que cada patrón tenga
+   un texto que lo dispare.
+2. **Modelo, segundo.** Una llamada a Gemini (`GEMINI_API_KEY`, el mismo secreto
+   que la comprobación de fotos) con temperatura 0 y respuesta cerrada: APROBADO
+   o RECHAZADO y una línea de motivo. El texto va como dato delimitado y con la
+   orden de no obedecerlo; la capa 1 ya garantizó que no contiene `<` ni `>`.
+   Si el modelo no responde, divaga o la clave no está, el estado queda
+   `pendiente` con motivo «no se pudo verificar» y **no se aprueba por defecto**.
+
+Resultado: se escribe `instruccionesRevision` siempre; `instruccionesVigentes`
+solo si aprobó. Vacío aprueba sin llamar al modelo (vigente vacío). Todo queda
+en `/auditoria` (`revisar_comportamiento`: estado, capa, hash, motivo, cantidad
+de caracteres; nunca el texto). La escritura es una transacción condicionada a
+que lo propuesto siga siendo el texto revisado: si el comercio guardó otra vez
+mientras el modelo pensaba, el veredicto viejo no se escribe.
+
+**Lo que carga NovuChat ya está revisado.** `cargar-negocio.mjs` escribe
+propuesto, vigente y revisión aprobada (`revisadoPor: 'cargar-negocio'`) en la
+misma transacción, y la Function no revisa dos veces porque ve el hash. Antes de
+escribir pasa el texto por la misma capa de patrones y **niega** si no la pasa:
+lo que NovuChat carga tiene que poder editarse después desde la consola sin que
+la verificación lo rechace por un carácter que puso NovuChat (el JSON de Platinum
+tenía «cuánto dura» con comillas angulares; ya no). `migrar-instrucciones.mjs`
+(seco por defecto) copia lo propuesto a vigente, una vez, en los comercios
+anteriores al contrato: sin eso, al desplegar, Platinum se quedaba sin sus
+precios y objeciones en silencio.
+
+**Lo que esto NO hace, dicho ahora.** No sanea: rechaza. Un texto rechazado
+vuelve al comercio con el motivo, y la consola le muestra qué está vigente
+mientras tanto. Tampoco reemplaza la delimitación del flujo ni la lista blanca de
+claves: es una tercera barrera sobre el único campo que las otras dos no podían
+cerrar del todo.
+
 ---
 
 ## 4quinquies. Funcionarios y agenda por persona

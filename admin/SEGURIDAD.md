@@ -205,7 +205,16 @@ le toca a este diseño:
   - La regla `configNegocioValida()` acepta **solo una lista blanca de claves**.
     Un campo `promptSistema` es rechazado por el servidor. Hay una prueba
     específica: *"rechaza claves no previstas (p. ej. un prompt de sistema)"*.
-  - `instruccionesExtra` tiene un tope de 1500 caracteres.
+  - `instruccionesExtra` tiene un tope de 1500 caracteres, **y desde el
+    17/09/2026 no llega al flujo sin verificarse en el servidor**: es lo
+    PROPUESTO; el flujo lee `instruccionesVigentes`, que solo escribe el SDK
+    Admin después de dos capas —patrones deterministas (marcas de bloque,
+    rótulos del prompt, anular instrucciones, negar ser una IA, herramientas,
+    plataforma, otro comercio, NovuChat como orden) y una pregunta cerrada al
+    modelo—. Ante la duda no se aplica. Las reglas niegan `instruccionesVigentes`
+    e `instruccionesRevision` desde el navegador a todo rol, mirando el diff.
+    `DISENO.md` §4quater.5; pruebas en *"Comportamiento general: lo vigente lo
+    escribe solo el servidor"* y `pruebas/comportamiento.test.ts`.
   - **El prompt base del agente no es editable desde el panel**: vive en el flujo
     de n8n. Desde el panel se aportan datos, no comportamiento.
   - `configuracionParaFlujo` devuelve los campos **separados y rotulados** para

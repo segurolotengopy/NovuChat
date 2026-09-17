@@ -84,6 +84,39 @@ propusieron.
 
 ---
 
+## 2026-09-17 — el comportamiento general se verifica en el servidor antes de aplicarse (rama `consola/comportamiento-verificado-servidor`, sin fusionar ni desplegar)
+
+Reglas de Andres del 17/09: multi-tenant estricto; el «comportamiento general»
+(`config/negocio.instruccionesExtra`) es un pseudo-prompt por empresa y **se
+verifica por seguridad antes de aplicarse**; lo que NovuChat carga por script se
+ve en la consola. Diseño completo en `admin/DISENO.md` §4quater.5.
+
+- **Contrato:** `instruccionesExtra` = lo propuesto (lo escribe el admin del
+  comercio); `instruccionesVigentes` = lo que el flujo lee (solo SDK Admin);
+  `instruccionesRevision` = `{estado, motivo, hash, capa, revisadoPor,
+  revisadoEn}` (solo SDK Admin). `configuracionFlujo` entrega
+  `instruccionesExtra` al flujo desde lo vigente; **el flujo no cambia**.
+- **Reglas:** lo vigente y la revisión no se escriben desde el navegador con
+  ningún rol (diff, como `stock`); 5 pruebas nuevas negando en `reglas.test.ts`.
+- **Function `verificarComportamiento`** (`onDocumentWritten` sobre
+  `config/negocio`): capa 1 de patrones determinista (lista con el porqué en
+  `comportamiento.ts`; «regla», «herramienta», «consola» y «NovuChat» sueltos
+  son dudosos, no rechazo) y capa 2 con Gemini a temperatura 0 y respuesta
+  cerrada; sin respuesta queda `pendiente` y no se aplica. Reusa el secreto
+  `GEMINI_API_KEY`.
+- **Scripts:** `cargar-negocio.mjs` deja vigente y revisión aprobada (y niega
+  lo que la capa 1 rechazaría); `migrar-instrucciones.mjs` (seco por defecto)
+  copia lo propuesto a vigente en los comercios anteriores: **hay que correrlo
+  antes de desplegar `configuracionFlujo`** o Platinum se queda sin
+  instrucciones. El JSON de Platinum ya no lleva comillas angulares.
+- **Emojis:** `FRASE_EMOJIS.muchos` pasó a imperativo («Use uno, dos o tres
+  emojis en cada mensaje…»): con «Varios», 6 de 15 respuestas salían sin emoji.
+- **Pendiente en la nube, en este orden:** (1) `migrar-instrucciones.mjs`
+  --aplicar contra producción; (2) desplegar reglas de Firestore; (3) desplegar
+  Functions (`configuracionFlujo`, `verificarComportamiento`, con
+  `GEMINI_API_KEY` ya accesible para `sa-functions`); (4) probar contra un
+  teléfono real. La pantalla de la consola la hace otra rama.
+
 ## 2026-09-15 (noche) — alta de PLATINUM preparada para el demo del 16/09 (rama `claude/platinum-novuchat-setup-58d3d0`)
 
 Tercer cliente: **Clínica Platinum** (clínica dental, Santa Cruz), flujo de
