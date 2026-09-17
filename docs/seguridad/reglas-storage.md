@@ -77,6 +77,18 @@ temporal y puertos propios. Sin `STORAGE_EMULATOR_PORT`, la suite se salta: así
 
 ---
 
+> **Aviso del 17/09/2026, tras dos intentos fallidos de `v0.5.3`.** El
+> despliegue de reglas de Storage por CI **no** puede depender del bucket por
+> defecto del proyecto: con la identidad federada de la cuenta de despliegue,
+> `GET /v1alpha/projects/{p}/defaultBucket` responde 404 aunque el bucket
+> exista, el dueño reciba 200 y el verificador de políticas diga que
+> `firebasestorage.defaultBucket.get` está concedido. firebase-tools lo
+> traduce a «Firebase Storage has not been set up», que apunta a la causa
+> equivocada. Por eso `firebase.json` declara las reglas sobre el destino
+> `principal` y el workflow lo resuelve con `firebase target:apply storage
+> principal <bucket>` desde `vars.VITE_FIREBASE_STORAGE_BUCKET` antes de
+> simular. Con un destino explícito firebase-tools no consulta esa API.
+
 ## 3. Despliegue
 
 Nada de esto lo hace un agente: lo hace una persona, con la cuenta dueña del
