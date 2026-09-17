@@ -575,6 +575,21 @@ service cloud.firestore {
                 && v.split('-')[0] < v.split('-')[1]);
         }
 
+        // LO VIGENTE Y SU REVISIÓN NO SE TOCAN DESDE EL NAVEGADOR, con ningún
+        // rol: ni el admin del comercio, ni el propietario, ni la ingesta. Se
+        // mira el DIFF y no las claves del documento, por la misma razón que
+        // con `stock`: en una edición `request.resource.data` es el documento
+        // resultante y trae lo vigente aunque el parche no lo mencione; mirar
+        // las claves negaría toda edición de un comercio con texto aprobado.
+        // Borrar también es afectar: un `setDoc` con el documento entero que
+        // omita `instruccionesVigentes` se rechaza, y la consola usa
+        // `updateDoc` por eso. Ver DISENO.md §4quater.5.
+        function instruccionesVerificadasIntactas() {
+          return resource != null
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                  .hasAny(['instruccionesVigentes', 'instruccionesRevision']);
+        }
+
         function configNegocioValida() {
           let d = request.resource.data;
           let clavesPermitidas = [
@@ -590,6 +605,16 @@ service cloud.firestore {
             'mensajes', 'mensajeCierre', 'mensajeErrorTemporal',
             'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido',
             'instruccionesExtra',
+            // COMPORTAMIENTO GENERAL VERIFICADO EN EL SERVIDOR (17/09/2026).
+            // `instruccionesExtra` es lo PROPUESTO y lo escribe el admin del
+            // comercio. `instruccionesVigentes` (lo que el flujo lee) e
+            // `instruccionesRevision` (estado, motivo, hash) los escribe SOLO
+            // el SDK Admin: la Function `verificarComportamiento` o los scripts
+            // de NovuChat. Están en la lista porque el documento RESULTANTE de
+            // una edición los trae; que el navegador no los toque lo garantiza
+            // `instruccionesVerificadasIntactas()`, igual que `stock` en el
+            // catálogo. Ver DISENO.md §4quater.5.
+            'instruccionesVigentes', 'instruccionesRevision',
             // CATÁLOGO WEB PROPIO. La identidad visual del sitio público es
             // IDENTIDAD DEL NEGOCIO —igual que el nombre y la dirección—, así
             // que vive en el documento común y no en el de un flujo: el día que
@@ -680,6 +705,7 @@ service cloud.firestore {
             && textoOpc(d, 'mensajeComercioSuspendido', 300)
 
             && textoOpc(d, 'instruccionesExtra', 1500)
+            && instruccionesVerificadasIntactas()
 
             // CATÁLOGO WEB. Nace APAGADO y encenderlo es un acto deliberado del
             // comercio: publicar los precios de alguien en una dirección
