@@ -14,6 +14,10 @@
  *   (b) `Config base` no lleva ningún valor real, y ningún marcador del Demo A;
  *   (c) `instruccionesExtra` de la consola pisa al respaldo solo si viene lleno;
  *   (d) el prompt inserta esa sección delimitada, sin restos del salón;
+ *   (d2) `CÓMO CONVERSAS`: recibe sin leer una ficha, no cierra toda respuesta
+ *        invitando a agendar, distingue la duración de la sesión de la de los
+ *        resultados, y esa calidez cabe en UN mensaje (0 mensajes más por
+ *        conversación);
  *   (e) trata de usted;
  *   (f) obedece los umbrales del servidor antes del modelo;
  *   (g) el mensaje del cliente se reporta ANTES que la respuesta (orden v1);
@@ -398,6 +402,90 @@ describe('(d) El prompt inserta la información del negocio como dato, sin resto
     for (const v of ['$now', '$json.from', 'nombrePerfil', 'mensajesRestantes24h', 'userInput']) {
       expect(p).not.toContain(v);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// (d2) Cómo conversa: calidez, foco y cierre — y ni un mensaje más
+// ---------------------------------------------------------------------------
+/**
+ * La clínica probó el asistente el 16/09/2026 y escribió tres reproches: frío
+ * («precio + ¿agendamos?» suena a ficha), repetitivo (toda respuesta termina
+ * invitando a agendar) e impreciso al interpretar la pregunta («¿cuánto dura?»
+ * contestado como duración de los RESULTADOS cuando podían preguntar por la
+ * SESIÓN). El bloque `CÓMO CONVERSAS` responde a eso, y estas pruebas lo fijan.
+ *
+ * LO QUE MÁS IMPORTA ACÁ NO ES LA CALIDEZ: es que la calidez no se pague. Cada
+ * mensaje cuesta 0,0113 USD y el plan de entrada cabe exacto en la franquicia
+ * de Meta con 10 mensajes por conversación (CLAUDE.md, «Base comercial» §1).
+ * Por eso se verifica que la instrucción sea «dentro del mismo mensaje» y que
+ * la pregunta de descubrimiento REEMPLACE a la de cierre, no se sume.
+ */
+describe('(d2) El prompt enseña a conversar sin agregar mensajes', () => {
+  const p = prompt();
+  const bloque = p.slice(p.indexOf('CÓMO CONVERSAS'), p.indexOf('TRATO Y ESTILO'));
+
+  it('el bloque está entre la economía de la conversación y el trato, y la economía queda intacta', () => {
+    // El bloque de ECONOMÍA es el del Demo A, palabra por palabra: la calidez se
+    // agrega DESPUÉS y subordinada a él, nunca reescribiéndolo.
+    const a = nodo(demoA, AGENTE).parameters['options'].systemMessage as string;
+    const economia = (s: string) => s.slice(s.indexOf('ECONOMÍA DE LA CONVERSACIÓN'), s.indexOf('CÓMO CONVERSAS') > 0
+      ? s.indexOf('CÓMO CONVERSAS') : s.indexOf('TRATO Y ESTILO')).trim();
+    expect(economia(p)).toBe(economia(a));
+    expect(bloque.length).toBeGreaterThan(500);
+    expect(p.indexOf('CÓMO CONVERSAS')).toBeGreaterThan(p.indexOf('ECONOMÍA DE LA CONVERSACIÓN'));
+    expect(p.indexOf('CÓMO CONVERSAS')).toBeLessThan(p.indexOf('REGLAS DE NEGOCIO:'));
+  });
+
+  it('la calidez va DENTRO del mismo mensaje: ni un saludo aparte, ni un mensaje más', () => {
+    expect(p).toContain('CÓMO CONVERSAS (la calidez va DENTRO del mismo mensaje, nunca en uno aparte):');
+    expect(bloque).toContain('Un saludo en mensaje propio es un mensaje\n  pagado que no informa nada');
+    expect(bloque).toContain('la calidez no agrega mensajes, cambia cómo está\n  escrito el que ya ibas a enviar');
+    expect(bloque).toMatch(/TODO ESTO ENTRA EN UN SOLO MENSAJE/);
+    // Nada del bloque puede leerse como «mandá otro mensaje».
+    expect(bloque).not.toMatch(/(envía|manda|mandá|agrega)[^.]{0,40}(otro|un segundo|nuevo) mensaje/i);
+  });
+
+  it('no toda respuesta termina invitando a agendar, y hay cuatro momentos distintos', () => {
+    expect(bloque).toContain('NO TODA RESPUESTA TERMINA INVITANDO A AGENDAR.');
+    for (const momento of ['· INFORMAR —', '· GENERAR CONFIANZA —', '· MANEJAR UNA OBJECIÓN —', '· CERRAR —']) {
+      expect(bloque, momento).toContain(momento);
+    }
+    expect(bloque).toMatch(/CERRAR[\s\S]{0,260}recién ahí propón agendar/);
+    // La regla 1 del catálogo ya no obliga a cerrar SIEMPRE con la invitación:
+    // era la fuente de la repetición que reportó la clínica.
+    expect(p).not.toContain('Termina preguntando si desea agendar alguno.');
+    expect(p).toContain('Después de mostrarla NO\ncierres automáticamente invitando a agendar');
+  });
+
+  it('la pregunta de descubrimiento REEMPLAZA a la de cierre: nunca se suman ni se parten en dos mensajes', () => {
+    expect(bloque).toContain('CUANDO NO TOQUE CERRAR, PREGUNTA PARA ENTENDER, NO PARA VENDER.');
+    expect(bloque).toContain('REEMPLAZA a la pregunta de cierre en ese mensaje: nunca van las dos, nunca va\n  en un mensaje aparte, y es UNA sola.');
+  });
+
+  it('distingue la duración de la SESIÓN de la de los RESULTADOS y, si es ambiguo, contesta las dos en un mensaje', () => {
+    expect(bloque).toMatch(/cuánto dura LA\s+SESIÓN/);
+    expect(bloque).toMatch(/cuánto duran LOS\s+RESULTADOS/);
+    expect(bloque).toContain('RESPONDE LAS DOS LECTURAS EN EL MISMO MENSAJE');
+    expect(bloque).toMatch(/PRIMERO ENTIENDE QUÉ ESTÁN PREGUNTANDO/);
+    // Cubrir las dos lecturas es lo BARATO: contestar la que no era obliga a
+    // repreguntar, y esa repregunta es un mensaje pagado.
+    expect(bloque).toMatch(/obliga a repreguntar: otro mensaje\s+pagado/);
+  });
+
+  it('aporta antes de derivar al especialista, en vez de cortar la conversación', () => {
+    expect(bloque).toContain('NO CORTES LA CONVERSACIÓN CON «eso lo define el especialista».');
+    expect(p).toContain('ofrece agendar una valoración clínica. Antes de derivar, di lo que SÍ puede decirse');
+  });
+
+  it('el bloque dice CÓMO conversar, no QUÉ vende la clínica: eso viaja por la consola', () => {
+    // Es capa de producto. Precios, objeciones y nombres de profesionales
+    // entran por `instruccionesExtra`; si aparecieran acá, cambiar el precio
+    // obligaría a reeditar el flujo de cada cliente.
+    expect(bloque).not.toMatch(/\d/);
+    expect(bloque).not.toMatch(/Bs|Sandoval|Pérez|blanqueamiento|Platinum/i);
+    // Y no fija el trato: tú o usted lo decide la consola (`tratamiento`).
+    expect(bloque).not.toMatch(/\b(usted|tutea|tuteá|de vos)\b/i);
   });
 });
 
