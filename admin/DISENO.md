@@ -1900,8 +1900,88 @@ suponer que una pestaña de flujo implica administrador.
 
 ### 4duodecies.4 Lo que este bloque NO hace
 
-Imágenes y PDF que no son comprobante, audio, seguimientos de la solicitud, y
-el candado con un solo calendario: son los bloques 3, 4 y 5 de `Analisis/30`.
+Imágenes y PDF que no son comprobante, audio y el candado con un solo
+calendario: son los bloques 3 y 5 de `Analisis/30`. El seguimiento de la
+solicitud pendiente es el bloque 4, y está en §4terdecies.
+
+## 4terdecies. Recordatorio de solicitud pendiente
+
+**17/09/2026, `Analisis/31` §4.** De cada diez personas que le escriben a la
+clínica, cuatro no terminan de reservar. **Un** recordatorio recupera a una
+parte. Dos, o uno a quien pidió que lo dejen en paz, cuestan el número de
+WhatsApp del comercio, que es su canal entero. Por eso todo lo de acá está
+escrito en forma de negación.
+
+### 4terdecies.1 Quién entra, y quién no
+
+La decisión es una función pura del servidor —`esPendienteDeSeguimiento`, en
+`functions/src/seguimientos.ts`— y se prueba caso por caso en
+`pruebas/seguimientos.test.ts`. Entra la conversación que cumple **todas**:
+
+| Condición | Por qué |
+|---|---|
+| `solicitud.etapa` es `horarios` o `qr_enviado` | Son las dos etapas a medio camino. `agendada` y `vencida` están cerradas: **nunca a quien ya agendó** |
+| `solicitud.seguimientos === 0` | **Nunca dos veces a la misma solicitud.** El cero tiene que estar escrito: un campo ausente o con otro tipo no entra |
+| `noContactar !== true` | **Nunca a quien pidió que no le escriban**, ni a quien pasó a una persona |
+| `atencionEstado` no es `operador` ni `bloqueado` | Esa conversación ya la atiende alguien, o el asistente dejó de responder por uso extendido. Un recordatorio automático encima sería el peor mensaje posible |
+| `ultimoEn` entre 2 y 4 h → **texto**; entre 24 y 48 h → **plantilla** | Entre las 4 y las 24 no se manda nada: la ventana está por vencer o recién venció, el texto ya no entra y la plantilla llegaría de madrugada. Después de las 48 un recordatorio ya no es una actualización, es publicidad |
+
+Tope de 50 por corrida. La consulta va por `ultimoEn` entre 2 y 48 horas atrás
+—acotada por construcción— y el resto se filtra en memoria: consultar por
+`solicitud.etapa` devolvería un conjunto que crece sin techo, porque una
+solicitud en `horarios` que nadie retoma se queda ahí para siempre. **No hace
+falta ningún índice compuesto**: es un campo con dos extremos de rango y el
+orden sobre ese mismo campo.
+
+### 4terdecies.2 La marca va ANTES del envío
+
+El flujo llama primero a `seguimientoEnviado` y recién después manda. Si el
+envío falla, la solicitud queda marcada y nadie reintenta: **un seguimiento
+perdido es mejor que dos**, porque el segundo es el que hace que la persona
+bloquee el número. `seguimientoEnviado` es idempotente dentro de una
+transacción, así que dos corridas simultáneas no pueden mandar dos. El nodo
+`¿Se marcó?` del flujo no deja pasar nada que el servidor no haya marcado en
+esa corrida.
+
+Es la misma forma que §4duodecies usa para las retenciones vencidas: **primero
+se lo digo al servidor, después actúo**.
+
+### 4terdecies.3 De dónde salen los dos hechos
+
+Los escribe el flujo conversacional dentro de reportes que ya existían —**cero
+mensajes agregados**—, y siempre por lo que PASÓ, no por lo que el modelo
+escribió:
+
+- **`horarios_ofrecidos`** (reporte del saliente): `consultar_disponibilidad`
+  corrió en el turno y `agendar_cita` no. Son los mismos campos que sostienen
+  el candado contra la doble reserva.
+- **`no_contactar`**: el turno terminó transferido a una persona
+  (`transferir === true`, en el saliente), **o** el texto del cliente coincide
+  con una expresión regular fija, en el reporte del entrante. Lo que esa
+  expresión no cubre —«borrame» sin tilde, «stop»— lo resuelve el interruptor
+  **No contactar** de la pantalla de conversaciones, que una persona del
+  negocio enciende cuando el cliente se lo pide. La regla de Firestore deja
+  escribir ese campo, y solo ese, con un valor booleano.
+
+### 4terdecies.4 Qué cuesta y qué se mide
+
+El de modo `texto` cae dentro de la ventana: **+1 mensaje, solo en las
+conversaciones que quedaron a medio camino**. El de modo `plantilla` cae fuera,
+y la ingesta no cuenta un saliente sobre ventana vencida como conversación: al
+comercio no se le factura nada. **La respuesta del paciente sí** abre una
+conversación nueva, y es exactamente lo que se busca.
+
+Dos contadores del mes, y los dos hacen falta juntos: `seguimientos` (los que
+salieron) y `reactivadas` (en cuántos el paciente volvió a escribir dentro de
+las 24 h). Los enviados solos no dicen nada. La consola los muestra en
+«Consumo» solo cuando el período los trae.
+
+### 4terdecies.5 Lo que este bloque NO hace
+
+No manda plantillas de **marketing** ni reactivación de base: eso es un paquete
+aparte, nunca incluido en el plan (`Analisis/31` §4). No le escribe a nadie que
+no haya escrito primero. Y no mide de dónde vino el lead —la ventana gratuita
+de 72 h de los anuncios sigue pendiente desde `Analisis/25` §1.4.
 
 ## 5. Integración con n8n
 

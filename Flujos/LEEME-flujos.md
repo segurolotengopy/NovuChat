@@ -476,3 +476,89 @@ propio `.env`:
 
 Después se actualiza como los demás:
 `./scripts/publicar-flujo.sh --env .env.platinum-senas --flujo Flujos/agendamiento-senas-vencidas.json`.
+
+### Seguimientos (`agendamiento-seguimientos.json`)
+
+Flujo programado, **el único de la clínica que le escribe a alguien que no
+escribió primero**. Cada hora al minuto 15 (`15 * * * *`, para no pisar al
+barrido de señas vencidas, que corre en punto) pide la configuración al panel
+(`REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM`, el único marcador) y, **solo si el
+comercio está activo**, le pregunta al servidor a quién le toca el recordatorio
+de solicitud pendiente.
+
+**El flujo no decide a quién se le escribe.** Lo decide
+`seguimientosPendientes` (`admin/functions/src/seguimientos.ts`, regla completa
+en `admin/DISENO.md` §4terdecies): una sola vez por solicitud, nunca a quien
+pidió que no le escriban, nunca a un teléfono en operador o bloqueado, nunca a
+quien ya agendó, y solo entre 2 y 4 h (texto en ventana) o entre 24 y 48 h
+(plantilla de utilidad). Tope de 50 por corrida.
+
+**La marca va ANTES del envío**: `Marcar seguimiento` → `seguimientoEnviado`, y
+`¿Se marcó?` no deja pasar nada que el servidor no haya marcado en esa corrida.
+Si el envío falla después, ese recordatorio se pierde y nadie lo reintenta: un
+seguimiento perdido es mejor que dos, porque el segundo es el que hace que la
+persona bloquee el número.
+
+Los nodos, en orden: `Cada hora` → `Config base` → `Traer configuración` →
+`Pendientes` → `Un item por solicitud` → `Marcar seguimiento` → `¿Se marcó?` →
+`¿En ventana?` → `Enviar texto` / `Enviar plantilla` → `Reportar seguimiento
+(saliente)`.
+
+**Mensajes: +1 en las conversaciones que quedaron a medio camino** (el de modo
+texto, dentro de la ventana). El de modo plantilla cae sobre una ventana
+vencida y la ingesta no lo cuenta como conversación, así que al comercio no se
+le factura nada; la respuesta del paciente sí abre una conversación nueva, que
+es justamente lo que se busca. Suite:
+`admin/pruebas/agendamiento-seguimientos.test.ts`.
+
+Se crea igual que el de señas vencidas, con su propio `.env`:
+
+```bash
+./scripts/preparar-import.sh Flujos/agendamiento-seguimientos.json .env.platinum
+./scripts/publicar-flujo.sh --crear --env .env.platinum \
+    --flujo Flujos/agendamiento-seguimientos.json \
+    --activar --env-nuevo .env.platinum-seguimientos     # primero sin --aplicar: diagnóstico
+```
+
+Después se actualiza como los demás:
+`./scripts/publicar-flujo.sh --env .env.platinum-seguimientos --flujo Flujos/agendamiento-seguimientos.json`.
+
+**No activarlo antes de que la plantilla esté aprobada:** sin ella el modo
+`plantilla` falla en Meta, y la solicitud ya quedó marcada.
+
+#### La plantilla `solicitud_cita_sin_confirmar`
+
+Categoría **UTILITY**, idioma `es`, **sin botones**, sin precio y sin
+vocabulario comercial: el clasificador de Meta lee las palabras, no la
+intención (memoria «meta-plantillas-restricciones», 14/09). Se redacta como el
+**estado de una solicitud que la persona hizo**, no como una invitación.
+
+```bash
+./scripts/crear-plantilla.sh --env .env.platinum \
+    --nombre solicitud_cita_sin_confirmar --idioma es \
+    --cuerpo 'Se registró tu solicitud de cita en {{1}} para {{2}}. Estado: sin confirmar. Responde este mensaje si quieres retomarla.' \
+    --ejemplos 'Clínica Platinum|el sábado 20 a las 10:00'     # sin --aplicar: solo muestra la carga útil
+```
+
+Con `--aplicar` la envía a revisión, que **tarda días**. Después:
+`./scripts/listar-plantillas.sh --env .env.platinum --detalle`. La crea Claude
+con el OK de Andres; los dos parámetros son, en orden, el **nombre del negocio**
+(`{{1}}`) y la **fecha de la solicitud** (`{{2}}`), y los arma
+`Un item por solicitud` desde lo que devuelve el panel.
+
+#### Los dos hechos que aporta el flujo conversacional
+
+`platinum-agendamiento.json` y `demo-a-agendamiento.json` cambian **solo dos
+`jsonBody`**, y **no agregan ningún mensaje**:
+
+- `Reportar mensaje (saliente)` suma `evento: 'horarios_ofrecidos'` cuando
+  `consultar_disponibilidad` corrió en el turno y `agendar_cita` no, y
+  `evento: 'no_contactar'` cuando el turno terminó transferido a una persona
+  (gana sobre el anterior).
+- `Reportar mensaje (entrante)` suma `evento: 'no_contactar'` cuando el texto
+  del cliente coincide con una expresión regular fija («no me escriban», «no me
+  molesten», «dejen de escribir», «no quiero más mensajes», «bórrame de»,
+  «quitame de»). Lo que la expresión no cubre —«borrame» sin tilde, «stop»— lo
+  resuelve el interruptor **No contactar** de la pantalla de conversaciones.
+
+Se cubren en `admin/pruebas/platinum-flujo.test.ts`, bloque **(n)**.
