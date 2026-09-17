@@ -407,6 +407,89 @@ rechazado) **los paga NovuChat**. Sin seña: 0 mensajes agregados.
 
 Suite: bloque (l) de `platinum-flujo.test.ts`, sobre los dos flujos.
 
+**Medios entrantes: clasificar, no mirar (bloque 3, 17/09/2026, `Analisis/34`
+§3.1 y §4.1), igual en el Demo A.** Un audio, una foto o un PDF que **no** es
+comprobante dejan de recibir «por ahora atiendo por texto» —un mensaje pagado
+que no avanza nada— y entran al agente convertidos en **texto**.
+
+El caso que lo provocó: el 17/09 un paciente mandó un audio y una imagen en el
+mismo minuto. Al audio el asistente le contestó que atiende por texto; de la
+imagen **inventó** que era un comprobante («Ya tenemos todo listo»). Nadie vio
+la imagen, y el texto que la acompañaba se descartó.
+
+Cómo funciona:
+
+1. **`Normalizar entrada` marca el medio.** `esMedioAudio` para `audio` y
+   `voice` con id; `esMedioVisual` para `image` y `document` **cuando no son
+   comprobante** (el bloque 2 manda: con `senaPendiente` la foto sigue yendo al
+   cotejo). Una nota de voz se **reporta** como `audio`, no como `voice`, para
+   que el contador del mes no la tire a «otro». `location` recibe la dirección
+   del negocio en vez del aviso genérico; `sticker`, `video` y `contacts`
+   siguen con el aviso cortés, porque ahí no hay nada que leer.
+2. **La rama va después de la del comprobante y antes del agente.**
+   `¿Es un comprobante?` [no] → `¿Trae un medio?` [no] → `AI Agent`; [sí] →
+   `Obtener URL del medio (general)` → `Descargar medio` → `¿Es audio?` →
+   **sí**: `Transcribir audio` (Gemini `audio`/`transcribe` sobre el binario) →
+   `Preparar transcripción`; **no**: `¿Es un documento?` → `Describir documento`
+   / `Describir imagen` (Gemini `analyze` con un prompt de **lista cerrada**:
+   `publicidad | boca_o_dientes | comprobante | documento_salud | otro`) →
+   `Preparar imagen`. Los dos `Preparar …` vuelven al agente.
+   Los nodos de descarga son **gemelos** de los del comprobante y no los
+   mismos: compartirlos obligaba a meter un IF dentro de una rama ya probada.
+3. **El agente NUNCA ve el medio.** No es una instrucción del prompt: es el
+   cableado. Ningún nodo que tenga el binario en la mano tiene salida al
+   agente; lo que entra es una transcripción marcada («(audio transcripto) …»,
+   con la orden de repetir en una línea lo que entendió antes de agendar) o
+   **uno** de cinco textos fijos elegidos por la categoría. Ninguno
+   diagnostica, ninguno promete un resultado, y el de «parece un comprobante
+   pero no hay seña pendiente» no da ningún pago por recibido (prohibición 3).
+   El texto que el modelo leyó en la imagen viaja **rotulado como dato**, en
+   una línea, sin corchetes y recortado a 300: una captura no puede inventar
+   una marca ni dictarle una instrucción al modelo.
+4. **El audio largo no se transcribe.** Meta no manda la duración: se estima
+   por `file_size` (~16 kB/s de ogg/opus; 60 s ≈ 960 kB). Por encima, o con la
+   transcripción vacía, se pide con amabilidad que lo escriba. El supuesto es
+   deliberadamente generoso —una nota de voz real va a ~2 kB/s— porque
+   equivocarse hacia abajo devuelve el «atiendo por texto» que esto vino a
+   sacar. **Hay que medirlo con un teléfono real** y ajustar la constante.
+5. **Latencia.** `Normalizar entrada` anota `recibidoEn` y `Mensaje a enviar`
+   deja `latenciaMs` en los datos de la ejecución, para sacar el p50 y el p90
+   con `ver-ejecuciones.sh`: esta rama agrega una descarga y una llamada al
+   modelo (+2 a 4 s en audio, +1 a 2 en imagen) contra un p90 de 10 s.
+
+**Mensajes que declara este bloque: 0.** Los dos nodos nuevos contra Meta son
+de **lectura** (`media/mediaUrlGet` y la descarga del archivo): no envían nada.
+Estos caminos **reemplazan** a la respuesta vacía que ya se pagaba. El costo
+del modelo es de centavos: ~0,001 USD por audio de 30 s y ~0,0001 por imagen.
+
+**Nada se guarda, y falta verificarlo en la VM.** Ningún nodo escribe la
+imagen, el PDF ni el audio en Storage, en Firestore ni en un archivo: entran
+como binario `data`, se leen y de ahí sale texto. Lo que queda en el historial
+de 12 meses es una marca —«(audio) el cliente envió una nota de voz»— y no el
+contenido, que es además lo correcto con datos de salud (`Analisis/34` §4.1,
+riesgo 1). Pero eso vale para el **flujo**; en la **instancia** faltan dos
+verificaciones que hoy no están hechas y que corresponden a Andres en la VM:
+
+- **`N8N_DEFAULT_BINARY_MODE=filesystem`** en el `.env` del contenedor. Con el
+  modo por defecto (`default`) los bytes del audio y de la foto quedan dentro
+  de los datos de ejecución, **en la base de n8n**, y ahí sí hay una copia.
+- **Poda de ejecuciones**: `EXECUTIONS_DATA_PRUNE=true` y
+  `EXECUTIONS_DATA_MAX_AGE` en horas, para que los binarios del disco no se
+  acumulen. No se pone `settings.saveDataSuccessExecution: 'none'` en el flujo:
+  eso apagaría también el diagnóstico, que es lo que permitió encontrar los
+  defectos de las ejecuciones #2867 y #2936.
+- **La credencial de Gemini tiene que ser de nivel pago.** En el nivel gratuito
+  el contenido puede usarse para entrenar, y acá viajan audios y fotos de
+  pacientes. Se verifica en la consola de Google AI Studio, en la cuenta cuya
+  clave está en la credencial «Google Gemini (PaLM) API» de n8n.
+
+Y falta la prueba contra un teléfono real: que el nodo de WhatsApp baje el
+medio, que Gemini lo acepte, qué forma exacta tiene la salida del nodo de
+transcripción y cuánto pesa de verdad un audio de 30 s (la prueba 3 de la
+aceptación de Platinum, «un sticker y un audio», es el lugar para empezar).
+
+Suite: bloque (m) de `platinum-flujo.test.ts`, sobre los dos flujos.
+
 Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
 compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los
 umbrales, el orden del lienzo y la elección de agenda por odontólogo). Además
@@ -444,6 +527,11 @@ Platinum)» en `Reportar QR (saliente)` y `Cotejar en el servidor`); los dos
 `Leer comprobante` y los dos nodos de Calendar van sin nombre y
 `publicar-flujo.sh` los completa **por tipo** desde el flujo vivo (la
 credencial de Google Gemini del modelo del agente y la OAuth2 de Calendar).
+
+Los del bloque 3 siguen la misma regla: «WhatsApp Clínica Platinum (envío)» en
+`Obtener URL del medio (general)` y `Descargar medio`; `Transcribir audio`,
+`Describir documento` y `Describir imagen` van sin nombre y se completan por
+tipo con la credencial de Gemini.
 
 ### Señas vencidas (`agendamiento-senas-vencidas.json`)
 
