@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { deleteField, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { useFlujos } from '../lib/flujos';
@@ -33,6 +33,7 @@ const EJEMPLOS: Record<string, string> = {
   nombreNegocio: 'Salón Aurora',
   descripcion: 'Peluquería y estética. Cortes, color y tratamientos.',
   direccion: 'Calacoto, Av. Ballivián 1035, entre calles 17 y 18',
+  direccionMaps: 'https://maps.app.goo.gl/AbCdEfGh12',
   numeroRecepcion: '59170000000',
   calendarioId: 'algo@group.calendar.google.com',
   politicaCancelacion: 'Se puede cancelar hasta 2 horas antes sin costo.',
@@ -43,11 +44,65 @@ const EJEMPLOS: Record<string, string> = {
 };
 
 const TOPES: Record<string, number> = {
-  nombreNegocio: 80, descripcion: 400, direccion: 200, numeroRecepcion: 15,
+  nombreNegocio: 80, descripcion: 400, direccion: 200, direccionMaps: 200, numeroRecepcion: 15,
   calendarioId: 120, politicaCancelacion: 600, instruccionesExtra: 1500,
   mensajeCierre: 300, mensajeErrorTemporal: 300,
   mensajeReservaNoConfirmada: 300, mensajeComercioSuspendido: 300,
 };
+
+/**
+ * =============================================================================
+ * DÓNDE QUEDA EL LOCAL: enlace de Google Maps y coordenadas del pin
+ * (Analisis/34 §2)
+ * =============================================================================
+ *
+ * EL ENLACE ES LO ÚNICO QUE EL ASISTENTE REENVÍA TAL CUAL a un cliente final,
+ * dentro de la confirmación de cada cita. Por eso no es texto libre: solo
+ * `https://` de un dominio de mapas de Google. La regla de `firestore.rules`
+ * (`enlaceDeMapaValido`) y el servidor (`prompt.ts`) usan la MISMA lista; acá
+ * se repite para que el comercio no descubra el rechazo con un error rojo. Va
+ * en el mismo mensaje que la dirección: no agrega mensajes.
+ *
+ * LAS COORDENADAS SE GUARDAN COMO NÚMEROS, NUNCA COMO TEXTO, y por eso no caben
+ * en `datos` (que guarda solo cadenas): van aparte, como el horario. Con una
+ * sola de las dos no se guarda nada: un pin con media coordenada cae en el
+ * mar, y Meta lo cobra igual. Solo se usan cuando el cliente pide el pin, que
+ * es un mensaje más y solo en ese caso.
+ */
+const ENLACE_DE_MAPA =
+  /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+
+type Coordenadas = { lat: string; lng: string };
+const SIN_COORDENADAS: Coordenadas = { lat: '', lng: '' };
+
+function leerUbicacion(valor: unknown): Coordenadas {
+  if (typeof valor !== 'object' || valor === null) return SIN_COORDENADAS;
+  const { lat, lng } = valor as Record<string, unknown>;
+  return (typeof lat === 'number' && typeof lng === 'number')
+    ? { lat: String(lat), lng: String(lng) } : SIN_COORDENADAS;
+}
+
+/**
+ * `null` si está bien: las dos vacías (no hay pin) o las dos en rango. Si no,
+ * qué corregir. Devuelve también el par numérico listo para guardar.
+ */
+function leerCoordenadas(c: Coordenadas): { error: string | null; ubicacion: { lat: number; lng: number } | null } {
+  const lat = c.lat.trim();
+  const lng = c.lng.trim();
+  if (lat === '' && lng === '') return { error: null, ubicacion: null };
+  if (lat === '' || lng === '') {
+    return { error: 'Cargue la latitud y la longitud juntas, o deje las dos vacías.', ubicacion: null };
+  }
+  const nLat = Number(lat);
+  const nLng = Number(lng);
+  if (!Number.isFinite(nLat) || !Number.isFinite(nLng)) {
+    return { error: 'La latitud y la longitud tienen que ser números, con punto decimal (por ejemplo -17.7833).', ubicacion: null };
+  }
+  if (Math.abs(nLat) > 90 || Math.abs(nLng) > 180) {
+    return { error: 'La latitud va de -90 a 90 y la longitud de -180 a 180.', ubicacion: null };
+  }
+  return { error: null, ubicacion: { lat: nLat, lng: nLng } };
+}
 
 /**
  * =============================================================================
@@ -145,6 +200,14 @@ export function Configuracion() {
   // El horario tampoco cabe en `datos`: son siete días con tres piezas cada
   // uno, y se arma como texto recién al guardar.
   const [horarios, setHorarios] = useState<Record<string, DiaHorario>>(() => leerHorarios({}));
+  // Las coordenadas del pin tampoco caben en `datos`: se guardan como NÚMEROS
+  // dentro de un mapa `ubicacion`, y `datos` escribe cadenas. Ver arriba.
+  const [coordenadas, setCoordenadas] = useState<Coordenadas>(SIN_COORDENADAS);
+  // Y, como con el nombre del asistente, los dos se escriben solo si traen
+  // valor o si el documento ya los tenía (para poder vaciarlos): así un
+  // comercio que no los usa guarda su configuración igual aunque la consola
+  // llegue a producción antes que la regla que admite los campos.
+  const [teniaUbicacion, setTeniaUbicacion] = useState({ direccionMaps: false, ubicacion: false });
   // NOMBRE DEL ASISTENTE, aparte de `datos` por una razón de despliegue: solo
   // se escribe si tiene texto o si el documento ya lo tenía (para poder
   // vaciarlo). Así un comercio que nunca lo usa guarda su configuración igual
@@ -162,6 +225,7 @@ export function Configuracion() {
         nombreNegocio: String(v['nombreNegocio'] ?? ''),
         descripcion: String(v['descripcion'] ?? ''),
         direccion: String(v['direccion'] ?? ''),
+        direccionMaps: String(v['direccionMaps'] ?? ''),
         numeroRecepcion: String(v['numeroRecepcion'] ?? ''),
         calendarioId: String(v['calendarioId'] ?? ''),
         politicaCancelacion: String(v['politicaCancelacion'] ?? ''),
@@ -176,6 +240,11 @@ export function Configuracion() {
       });
       setCatalogoWeb(v['catalogoWebActivo'] === true);
       setHorarios(leerHorarios(v['horarios']));
+      setCoordenadas(leerUbicacion(v['ubicacion']));
+      setTeniaUbicacion({
+        direccionMaps: Object.prototype.hasOwnProperty.call(v, 'direccionMaps'),
+        ubicacion: Object.prototype.hasOwnProperty.call(v, 'ubicacion'),
+      });
       setNombreAsistente(typeof v['nombreAsistente'] === 'string' ? v['nombreAsistente'] : '');
       setTeniaNombreAsistente(Object.prototype.hasOwnProperty.call(v, 'nombreAsistente'));
     }, () => setEstado('No se pudo leer la configuración.'));
@@ -203,9 +272,26 @@ export function Configuracion() {
       setEstado('El nombre del asistente puede tener hasta 40 caracteres.');
       return;
     }
+    // El enlace del mapa: la misma lista de dominios que la regla. El `pattern`
+    // del campo ya lo frena en el navegador; esto es para decir POR QUÉ, en vez
+    // de un «el servidor rechazó el cambio».
+    const direccionMaps = (datos['direccionMaps'] ?? '').trim();
+    if (direccionMaps !== '' && !ENLACE_DE_MAPA.test(direccionMaps)) {
+      setEstado('El enlace del mapa tiene que ser el que da Google Maps al tocar Compartir → Copiar enlace (empieza con https://maps.app.goo.gl/ o https://www.google.com/maps/). No se aceptan enlaces a otros sitios: el asistente se lo manda a sus clientes.');
+      return;
+    }
+    const { error: errorCoordenadas, ubicacion } = leerCoordenadas(coordenadas);
+    if (errorCoordenadas !== null) {
+      setEstado(errorCoordenadas);
+      return;
+    }
     try {
       await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), {
         ...datos,
+        ...(direccionMaps !== '' || teniaUbicacion.direccionMaps ? { direccionMaps } : {}),
+        // NÚMEROS en un mapa, o el campo se quita: nunca la cadena vacía, que
+        // la regla rechaza, ni un par a medias.
+        ...(ubicacion ? { ubicacion } : teniaUbicacion.ubicacion ? { ubicacion: deleteField() } : {}),
         ...(nombre !== '' || teniaNombreAsistente ? { nombreAsistente: nombre } : {}),
         // El mapa se reemplaza entero: un día que se vació desaparece del
         // documento, en vez de quedar con el horario viejo.
@@ -286,6 +372,34 @@ export function Configuracion() {
           lo consulta con recepción</strong>: nunca inventa una dirección.
           Conviene escribirla completa, con la zona y las referencias — un dato
           equivocado acá hace que un cliente se presente donde no debe.</>)}
+
+        {/* EL ENLACE Y EL PIN, DEBAJO DE LA DIRECCIÓN. El enlace va en el MISMO
+            mensaje que la confirmación de la cita: no cuesta un mensaje más.
+            El pin sí (uno, y solo cuando el cliente lo pide), y se le dice. */}
+        {grupo('Enlace de Google Maps (opcional)', (
+          <input value={datos['direccionMaps'] ?? ''} maxLength={TOPES['direccionMaps']}
+                 placeholder={EJEMPLOS['direccionMaps']} inputMode="url"
+                 pattern="https://(maps\.app\.goo\.gl|goo\.gl/maps|www\.google\.com/maps|google\.com/maps|maps\.google\.com)([/?].*)?"
+                 title="El enlace que da Google Maps al tocar Compartir → Copiar enlace"
+                 onChange={(e) => setDatos({ ...datos, direccionMaps: e.target.value })} />
+        ), <>Se incluye, junto con la dirección, <strong>en la confirmación de cada
+          cita</strong> y cuando un cliente pregunta dónde quedan. Para obtenerlo:
+          busque su local en Google Maps, toque <strong>Compartir → Copiar
+          enlace</strong> y péguelo acá. Solo se aceptan enlaces de Google Maps.</>)}
+        {grupo('Latitud (opcional)', (
+          <input type="number" step="any" min={-90} max={90} inputMode="decimal"
+                 placeholder="-17.7833" value={coordenadas.lat}
+                 onChange={(e) => setCoordenadas({ ...coordenadas, lat: e.target.value })} />
+        ))}
+        {grupo('Longitud (opcional)', (
+          <input type="number" step="any" min={-180} max={180} inputMode="decimal"
+                 placeholder="-63.1821" value={coordenadas.lng}
+                 onChange={(e) => setCoordenadas({ ...coordenadas, lng: e.target.value })} />
+        ), <>Solo se usan cuando un cliente pide <strong>que le manden la
+          ubicación</strong>: el asistente le envía el pin de WhatsApp, que es un
+          mensaje más y se cuenta como tal. Para obtenerlas: en Google Maps, clic
+          derecho sobre su local y copie las coordenadas (el primer número es la
+          latitud). Las dos juntas o ninguna.</>)}
 
         {campo('numeroRecepcion', 'Número de recepción (sin +, solo dígitos)')}
         {/* El calendario del negocio vive en el documento común por historia
