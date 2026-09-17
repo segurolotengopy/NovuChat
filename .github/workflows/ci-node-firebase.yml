@@ -884,8 +884,16 @@ jobs:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_STAGING: ${{ vars.STAGING_URL }}
+          BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET_STAGING }}
         run: |
           set -euo pipefail
+          # Mismo criterio que en producción: el destino «principal» se resuelve
+          # desde la variable; ver el bloque «EL BUCKET DE STORAGE SE DECLARA».
+          if [[ "$SOLO" == *storage* ]]; then
+            [[ -n "${BUCKET_STORAGE:-}" ]] \
+              || { echo "::error::Falta vars.VITE_FIREBASE_STORAGE_BUCKET_STAGING y el despliegue incluye storage"; exit 1; }
+            firebase target:apply storage principal "${BUCKET_STORAGE#gs://}" --project "$PROYECTO"
+          fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
             --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
           echo "### Staging desplegado: $URL_STAGING" >> "$GITHUB_STEP_SUMMARY"
@@ -1137,6 +1145,7 @@ jobs:
           # protección de firebase-tools queda puesta salvo que se la levante a
           # propósito para un despliegue concreto.
           FORZAR_FACTURA: ${{ vars.FIREBASE_DEPLOY_FORCE }}
+          BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
         run: |
           set -euo pipefail
           # Los parámetros de las Functions (`defineString`) se leen de
@@ -1151,6 +1160,26 @@ jobs:
             [[ -n "$SITIO_PUBLICO" ]] \
               || { echo "::error::Falta vars.SITIO_PUBLICO (ver .github/DESPLIEGUE-FIREBASE.md, «Estado real»)"; exit 1; }
             printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+          fi
+          # EL BUCKET DE STORAGE SE DECLARA, NO SE ADIVINA (2026-09-17).
+          # firebase.json apunta las reglas de Storage al destino «principal» y
+          # acá se resuelve ese destino al bucket real, desde la misma variable
+          # con la que se compila la consola. Con un destino explícito
+          # firebase-tools NO llama a GET /v1alpha/projects/{p}/defaultBucket
+          # (deploy/storage/prepare.js: solo lo hace cuando `storage` no es una
+          # lista), y esa llamada es la que hundió v0.5.3 dos veces: con la
+          # identidad federada de la cuenta de despliegue la API responde 404
+          # aunque el bucket por defecto exista, el dueño reciba 200 y el
+          # verificador de políticas diga que el permiso está concedido.
+          # firebase-tools traduce ese 404 a «Firebase Storage has not been set
+          # up», que apunta a la causa equivocada. Sin la variable, se corta
+          # antes de simular: un despliegue de Storage sin bucket no tiene
+          # sentido, y fallar acá es más barato que descubrirlo tras la
+          # aprobación del entorno.
+          if [[ "$SOLO" == *storage* ]]; then
+            [[ -n "${BUCKET_STORAGE:-}" ]] \
+              || { echo "::error::Falta vars.VITE_FIREBASE_STORAGE_BUCKET y el despliegue incluye storage"; exit 1; }
+            firebase target:apply storage principal "${BUCKET_STORAGE#gs://}" --project "$PROYECTO"
           fi
           # SIMULACIÓN PRIMERO (2026-09-12). `--dry-run` corre predeploy y
           # prepare —permisos, secretos, dependencias, descubrimiento de las

@@ -675,7 +675,7 @@ El ataque concreto que esto impide está en `SEGURIDAD.md`, T-19.
 | **Verificación de correo antes del primer acceso** | ✅ **sí, y de verdad** | `correoVerificado()` en las reglas: sin verificar, el servidor niega los datos. No es un aviso de la interfaz que se saltee recargando. Gratis. |
 | **Recuperación de contraseña** | ✅ sí | `sendPasswordResetEmail`. Gratis. |
 | **Protección contra enumeración de usuarios** | ✅ sí | opción de Firebase Auth, activada por defecto en proyectos nuevos, más mensajes de error genéricos en la pantalla de ingreso. Gratis. |
-| **Longitud mínima de contraseña** | ⚠️ parcial | Firebase Auth impone **6 caracteres**. El formulario pide 12, pero **eso es del navegador y se saltea**. Una política real —longitud, tipos de carácter, contraseñas filtradas— es *password policy*, y eso **exige Identity Platform**. |
+| **Longitud mínima de contraseña** | ⚠️ parcial | Firebase Auth impone **6 caracteres**. La consola pide **8** al cambiarla (`web/src/lib/contrasena.ts`), pero **eso es del navegador y se saltea**. Una política real —longitud, tipos de carácter, contraseñas filtradas— es *password policy*, y eso **exige Identity Platform**. |
 | **Límite de intentos / bloqueo de cuenta** | ⚠️ parcial | Firebase Auth tiene protección anti-abuso por IP, **no configurable y no documentada como garantía**. Un límite real por cuenta **exige Identity Platform**. Mitigación gratuita mientras tanto: **App Check con reCAPTCHA Enterprise** en el flujo de ingreso. |
 | **Segundo factor para cuentas de contraseña** | ❌ **no** | MFA **exige Identity Platform**. Los superadministradores sí lo tienen, porque el segundo factor de su cuenta de Google lo administra Google. |
 
@@ -693,10 +693,44 @@ un proyecto es un cambio que conviene hacer al crear `novuchat-admin-prod`, no
 después.** Es de las cosas que se vuelven incómodas con clientes ya adentro.
 
 **Mientras no se active**, el riesgo residual concreto es: una contraseña de
-administrador de comercio, sin segundo factor y con política de 6 caracteres,
+administrador de comercio, sin segundo factor y con política de 6 caracteres
+del lado del servidor,
 protege las conversaciones de **un** comercio. El aislamiento multi-tenant es lo
 que evita que ese riesgo escale, y el vínculo con el proveedor es lo que evita
 que escale a la plataforma. No es lo ideal, pero está acotado y dicho.
+
+##### El mínimo que pide la consola: 8, y solo al cambiar la contraseña
+
+**Decidido el 16/09/2026, después de que costara un alta.** Al dar de alta al
+administrador de un cliente nuevo, la persona puso once caracteres en la
+**pantalla de restablecimiento que sirve Firebase** —que los aceptó, porque la
+política de Firebase admite desde seis— y después **el formulario de ingreso de
+la consola la rechazó**, porque pedía doce. Quedó con una contraseña válida en
+el sistema de identidad y bloqueada por la pantalla, sin ningún mensaje que lo
+explicara: el bloqueo lo hacía el navegador. Hubo que rotar la clave y emitir
+otro enlace.
+
+Las dos cosas que cambian, y el porqué:
+
+1. **El mínimo pasa a 8 caracteres**, alineado con **NIST SP 800-63B**, que es
+   lo vigente: mínimo ocho, se admiten contraseñas largas (al menos 64, por eso
+   los campos de contraseña **no llevan `maxLength`**), **sin composición
+   obligatoria** de mayúsculas, números ni símbolos —la consola no impone
+   ninguna y no hay que agregarla, porque producen «Verano2026!» y nada más— y
+   **sin expiración periódica**. Lo que sí hay que bloquear son las contraseñas
+   comunes o comprometidas, y eso no lo puede hacer el navegador: es la
+   *password policy* de Firebase Auth, o sea Identity Platform (paso 14d de §11).
+2. **La longitud se exige donde se ELIGE la contraseña, no donde se USA.** «Mi
+   cuenta» la revisa; el ingreso ya no, y solo informa el mínimo. En el ingreso
+   la contraseña ya existe: un `minLength` no le agrega ninguna dificultad a
+   quien intenta adivinarla, y sí deja afuera a quien la tiene bien.
+
+**El número vive en un solo lugar**, `web/src/lib/contrasena.ts`
+(`MINIMO_CONTRASENA`), y `pruebas/contrasena-minimo.test.ts` verifica que las
+dos pantallas lo usen en vez de volver a escribirlo. Mientras Firebase siga con
+su política de seis, **la pantalla de restablecimiento va a aceptar menos que
+la consola**: eso es lo que cierra el paso 14d, y hasta entonces es un hueco
+conocido, no una sorpresa.
 
 ### 4ter.2 Estado de cuenta visible para el comercio
 
@@ -2099,6 +2133,14 @@ activa de `gcloud` ni de `firebase`.
 
 14b. Habilitar **dos** proveedores en Auth: *Google* y *Correo/contraseña*.
 14c. Comprobar que la **protección contra enumeración de correos** esté activa.
+14c-bis. Configurar la **política de contraseñas** de Firebase Auth (*password
+     policy*): longitud mínima **8** —la misma que pide la consola en
+     `web/src/lib/contrasena.ts`— y **bloqueo de contraseñas comunes o
+     comprometidas**, sin reglas de composición. Es lo único que hace cumplir el
+     mínimo **también en la pantalla de restablecimiento que sirve Firebase**,
+     que hoy acepta desde 6 y ya dejó a un administrador con una contraseña que
+     la consola no le aceptaba (§4ter.1). Va junto con el paso 14d: la política
+     forma parte de Identity Platform.
 14d. Decidir sobre **Identity Platform** (§4ter.1). Si se activa, hacerlo **al
      crear `novuchat-admin-prod`**, no después: es lo que habilita política de
      contraseñas, límite de intentos y segundo factor para los administradores de
@@ -2181,7 +2223,7 @@ activa de `gcloud` ni de `firebase`.
 | **La suspensión depende de que n8n respete el 409** | si n8n cachea la configuración o ignora el 409, un comercio suspendido sigue atendido | TTL de caché de 60 s como requisito del flujo; la ingesta igual queda cerrada por reglas, así que el daño se acota a respuestas sin registro |
 | **`personasAtendidas` sostiene la facturación** | un error en la transacción de conteo se traduce en una factura mal emitida | la marca `periodoContado` no la puede tocar ninguna persona; hay procedimiento de recuento; conviene contrastar contra el conteo real el primer mes |
 | **Contactos: datos de terceros sin consentimiento** | se guardan nombre, teléfono y correo de personas que no son usuarias del panel | roles cerrados, notas topeadas a 500 caracteres, operador excluido, y la política de retención pendiente los debe cubrir |
-| **Sin segundo factor ni política de contraseñas para los comercios** | una contraseña de 6 caracteres protege las conversaciones de un comercio | App Check en el ingreso, correo verificado obligatorio, mensajes de error genéricos. Se cierra activando Identity Platform (§4ter.1) |
+| **Sin segundo factor ni política de contraseñas para los comercios** | el servidor acepta una contraseña de 6 caracteres —la consola pide 8, pero eso es del navegador— y esa contraseña protege las conversaciones de un comercio | App Check en el ingreso, correo verificado obligatorio, mensajes de error genéricos. Se cierra activando Identity Platform (§4ter.1) |
 | **Primera dependencia externa: el correo** | si FormSubmit cae o deja de entregar, NovuChat deja de enterarse de los reclamos | el reclamo se guarda en Firestore igual y se ve en el panel; la columna "Aviso" muestra los no notificados. Conviene una alerta si se acumulan pendientes |
 | **FormSubmit sin activar** | los reclamos se pierden **en silencio**: la función no falla y el panel se ve bien | paso 15e de §11: confirmar con un reclamo de prueba que el correo LLEGA, no que la función no dio error |
 | **El texto del reclamo viaja a un tercero sin contrato** | un reclamo puede traer datos del comercio y hasta de sus clientes finales | tope de 1000 caracteres hacia el correo, guía en la pantalla sobre qué no escribir, y el registro completo solo en Firestore. Se cierra al pasar a Resend con dominio propio (T-22) |

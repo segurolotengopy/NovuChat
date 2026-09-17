@@ -126,6 +126,13 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   alguna vez queda a la vista, se invalida cambiando la contraseña de esa cuenta
   con el SDK Admin (`updateUser` con una clave aleatoria, más
   `revokeRefreshTokens`) y se emite uno nuevo.
+  **Decirle el mínimo antes de que elija:** la consola pide **8 caracteres** y
+  admite frases largas, pero la pantalla del enlace la sirve Firebase con su
+  propia política, que hoy acepta desde 6. El 16/09/2026 una persona puso 11,
+  Firebase se los aceptó, la consola vieja le pedía 12 y quedó bloqueada con una
+  contraseña válida: hubo que rotarla y emitir otro enlace. El mínimo de la
+  consola bajó a 8 por eso; el hueco se cierra recién cuando se configure la
+  *password policy* de Firebase Auth (`admin/DISENO.md` §11, paso 14c-bis).
 - El secreto del alias va a n8n como Header Auth `Authorization` = `Bearer <valor>`,
   y lo lee **una persona**: `gcloud secrets versions access latest --secret=INGESTA_CLIENTENN --project <proyecto>`.
   Si ese valor se expone, se da de baja el cliente o se reasigna el alias, se rota:

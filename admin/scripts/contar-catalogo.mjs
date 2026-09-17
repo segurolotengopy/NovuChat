@@ -32,9 +32,16 @@
  * EL LÍMITE SE LEE DE `functions/src/planes.ts`, no de una copia: es
  * `limitesDeCuenta`, la misma función que usa `importarCatalogo`. Node 22.18+
  * carga TypeScript sin compilar (igual que `asignar-plan.mjs`), y `planes.ts`
- * es puro a propósito.
+ * es puro a propósito. El acceso va por `lib/contador-catalogo.mjs`, que es
+ * donde vive el criterio de conteo compartido.
  */
-const { LIMITE_MAXIMO, esIdPlan, limitesDeCuenta } = await import('../functions/src/planes.ts');
+// EL CRITERIO DE CONTEO, EL LÍMITE Y LA FORMA DEL DOCUMENTO viven en
+// `lib/contador-catalogo.mjs`, que comparte con `cargar-negocio.mjs` (que
+// también mueve el contador, en la misma transacción en la que carga el
+// catálogo) y con `importarCatalogo`. Tener el criterio dos veces es pedir que
+// un día uno cuente los activos y el otro los documentos.
+const { contadorAlDia, contarProductos, escribirContador, limiteDe } =
+  await import('./lib/contador-catalogo.mjs');
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -42,20 +49,6 @@ const APLICAR = args.includes('--aplicar');
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
-
-/**
- * El límite y de dónde sale, para el informe. El número es siempre el de
- * `limitesDeCuenta`; el origen solo lo explica.
- */
-function limiteDe(cuenta) {
-  const limite = limitesDeCuenta(cuenta).productos;
-  const propio = cuenta?.limites?.productos;
-  const plan = cuenta?.plan;
-  const origen = Number.isInteger(propio) && propio >= 1 && propio <= LIMITE_MAXIMO
-    ? 'limites.productos'
-    : esIdPlan(plan) ? `plan ${plan}` : `sin plan conocido${plan ? ` (${plan})` : ''}`;
-  return { limite, origen };
-}
 
 if (!PROYECTO) {
   console.error('\n  ✗ falta --proyecto');
@@ -68,7 +61,7 @@ if (TENANT && !ID_TENANT.test(TENANT)) {
 }
 
 const { initializeApp } = await import('firebase-admin/app');
-const { getFirestore, FieldValue } = await import('firebase-admin/firestore');
+const { getFirestore } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
@@ -87,7 +80,6 @@ if (TENANT) {
   ids = (await db.collection('tenants').select().get()).docs.map((d) => d.id);
 }
 
-const CLAVES = ['items', 'ultimoItem', 'actualizadoEn'];
 const escritos = [];
 let excedidos = 0;
 let pendientes = 0;
@@ -101,16 +93,13 @@ for (const t of ids) {
   // medio, la transacción se reintenta y cuenta de nuevo.
   const r = await db.runTransaction(async (tx) => {
     const [contador, cuenta] = await tx.getAll(refContador, refCuenta);
-    const productos = (await tx.get(coleccion.select())).size;
+    const productos = await contarProductos(tx, coleccion);
     const antes = contador.exists ? contador.get('items') : null;
     // «Coincide» es también tener SOLO los tres campos: con uno de más, la
     // regla del contador rechazaría todo cambio y el comercio quedaría trabado.
-    const coincide = contador.exists && antes === productos
-      && Object.keys(contador.data() ?? {}).every((k) => CLAVES.includes(k));
+    const coincide = contadorAlDia(contador, productos);
     if (APLICAR && !coincide) {
-      const ultimo = contador.exists && typeof contador.get('ultimoItem') === 'string'
-        ? contador.get('ultimoItem') : '';
-      tx.set(refContador, { items: productos, ultimoItem: ultimo, actualizadoEn: FieldValue.serverTimestamp() });
+      escribirContador(tx, refContador, { items: productos, ultimoItem: contador.get('ultimoItem') });
     }
     return { productos, antes, coincide, ...limiteDe(cuenta.exists ? cuenta.data() : undefined) };
   });
@@ -132,9 +121,18 @@ for (const t of ids) {
 console.log(`\n  Comercios: ${ids.length} · ${APLICAR ? 'escritos' : 'por escribir'}: ${pendientes}`
   + `${excedidos ? ` · por encima del límite: ${excedidos}` : ''}`);
 
+// CERRAR EL CLIENTE ANTES DE SALIR, Y NO ES CORTESÍA. Con `process.exit()` la
+// conexión se corta de golpe y el emulador conserva los bloqueos de la última
+// transacción —esta consulta un rango entero— hasta que vencen (medido el
+// 17/09: 60 s). La suite que corre después se queda esperando y falla con
+// «Transaction lock timeout», que es un diagnóstico que no lleva a ninguna
+// parte. `terminate()` cierra el cliente y libera todo; contra Firestore de
+// verdad es igual de correcto.
+const salir = async (codigo) => { await db.terminate().catch(() => {}); process.exit(codigo); };
+
 if (!APLICAR) {
   console.log('\n  Seco: no se escribió nada. Agregue --aplicar.\n');
-  process.exit(0);
+  await salir(0);
 }
 
 // Verificación por relectura: no basta con que la transacción no falle.
@@ -147,4 +145,4 @@ for (const { t, productos } of escritos) {
   }
 }
 console.log(`\n  ${mal ? '✗' : '✓'} Verificación: ${escritos.length - mal} de ${escritos.length} contadores releídos.\n`);
-if (mal) process.exit(1);
+await salir(mal ? 1 : 0);

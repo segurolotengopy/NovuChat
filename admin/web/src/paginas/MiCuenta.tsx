@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { sendPasswordResetEmail, updatePassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useSesion } from '../lib/contexto';
+import { MINIMO_CONTRASENA } from '../lib/contrasena';
 
 /**
  * MI CUENTA — cambiar la contraseña desde adentro.
@@ -22,9 +23,14 @@ import { useSesion } from '../lib/contexto';
  * NO APLICA AL EQUIPO DE NOVUCHAT. Esas cuentas entran con Google y no tienen
  * contraseña en este sistema; la administra Google, con su segundo factor. La
  * pantalla lo dice en vez de mostrar un formulario que iba a fallar.
+ *
+ * ESTA ES LA PANTALLA QUE SÍ EXIGE EL MÍNIMO. La longitud se revisa al ELEGIR
+ * la contraseña, que es cuando se decide cuánto aguanta; el formulario de
+ * ingreso no la revisa, porque ahí la contraseña ya existe y el único efecto
+ * sería dejar afuera a quien la tiene bien (ver `lib/contrasena.ts`). El número
+ * vive en un solo lugar, `MINIMO_CONTRASENA`, junto con el porqué del valor y
+ * de los criterios de NIST SP 800-63B que sigue.
  */
-const MINIMO = 12;
-
 export function MiCuenta() {
   const { usuario } = useSesion();
   const [nueva, setNueva] = useState('');
@@ -52,8 +58,8 @@ export function MiCuenta() {
     evento.preventDefault();
     setError(null); setEstado(null);
 
-    if (nueva.length < MINIMO) {
-      setError(`La contraseña necesita al menos ${MINIMO} caracteres.`); return;
+    if (nueva.length < MINIMO_CONTRASENA) {
+      setError(`La contraseña necesita al menos ${MINIMO_CONTRASENA} caracteres.`); return;
     }
     if (nueva !== repetida) {
       setError('Las dos contraseñas no son iguales. Revísalas.'); return;
@@ -100,17 +106,17 @@ export function MiCuenta() {
         <form onSubmit={cambiar} style={{ maxWidth: '28rem' }}>
           <h3>Cambiar mi contraseña</h3>
           <label className="field">Contraseña nueva
-            <input className="input" type="password" required minLength={MINIMO}
+            <input className="input" type="password" required minLength={MINIMO_CONTRASENA}
                    autoComplete="new-password"
                    value={nueva} onChange={(e) => setNueva(e.target.value)} />
           </label>
           <label className="field">Repetirla
-            <input className="input" type="password" required minLength={MINIMO}
+            <input className="input" type="password" required minLength={MINIMO_CONTRASENA}
                    autoComplete="new-password"
                    value={repetida} onChange={(e) => setRepetida(e.target.value)} />
           </label>
           <p className="text-muted">
-            Al menos {MINIMO} caracteres. Una frase que recuerdes —tres o cuatro
+            Al menos {MINIMO_CONTRASENA} caracteres. Una frase que recuerdes —tres o cuatro
             palabras juntas— es más segura y más fácil que una palabra con
             símbolos raros.
           </p>

@@ -184,3 +184,26 @@ La corrida volvió a cortar con el mismo mensaje, pero **en la simulación, no e
 Dicho de otro modo: si la simulación no acepta lo que el despliegue va a aceptar, no está simulando el despliegue. La decisión de `--force` pasó a tomarse antes de simular, y el parámetro va en los dos comandos.
 
 Producción siguió sin tocarse, igual que en el primer intento. `v0.5.1` queda también como etiqueta sin despliegue; el siguiente intento es `v0.5.2`.
+
+### `v0.5.3`, la pasada de consola, reglas y Storage: falló dos veces por el bucket por defecto
+
+Con la variable del bucket creada y el alcance ampliado, la simulación cortó con:
+
+```
+Error: Firebase Storage has not been set up on project '…'
+```
+
+El mensaje apunta a la causa equivocada. firebase-tools solo lo emite cuando `GET /v1alpha/projects/{p}/defaultBucket` responde **404** (`lib/gcp/storage.js`). Verificado:
+
+| Comprobación | Resultado |
+|---|---|
+| El bucket por defecto existe y es el correcto, consultado como dueño | 200 |
+| La cuenta de despliegue tiene `firebasestorage.defaultBucket.get` según el verificador de políticas | GRANTED |
+| Reintento del mismo job, sin cambios | mismo 404 |
+| Reproducir la llamada como la cuenta de despliegue | no fue posible: el dueño no tiene permiso para suplantarla |
+
+La cuenta de despliegue entra por identidad federada. Con esa identidad la API responde 404 a una llamada que al dueño le responde 200, y ningún verificador lo explica. No se siguió probando a ciegas.
+
+**La salida:** `firebase.json` declara las reglas de Storage sobre el destino `principal`, y el workflow resuelve ese destino al bucket real con `firebase target:apply`, desde la misma variable con la que se compila la consola. Con `storage` como lista firebase-tools **no llama** a `defaultBucket` (`deploy/storage/prepare.js`), así que la API que respondía 404 deja de estar en el camino. Sin la variable, el despliegue corta antes de simular.
+
+Producción no se tocó en ninguno de los dos intentos. `v0.5.3` queda como etiqueta sin despliegue; el siguiente intento es `v0.5.4`.
