@@ -127,11 +127,15 @@ const activo = (atencion: unknown) => ({
 });
 
 /**
- * `antesDelAgente`: en los flujos de agendamiento, desde el bloque 2 (seña
- * por QR) la rama verdadera de «¿Atención normal?» pasa por «¿Es un
- * comprobante?» antes del agente: la foto o el PDF de un teléfono con un QR
- * pendiente se lee y se coteja sin modelo. La propiedad que se conserva es la
- * misma: el agente tiene UNA entrada, y desde «Uso extendido» no se llega.
+ * `antesDelAgente`: en los flujos de agendamiento, la rama verdadera de
+ * «¿Atención normal?» pasa por una CADENA de compuertas antes del agente.
+ * «¿Es un comprobante?» (bloque 2): la foto o el PDF de un teléfono con un QR
+ * pendiente se lee y se coteja sin modelo. «¿Trae un medio?» (bloque 3):
+ * cualquier otro audio, imagen o PDF se convierte en TEXTO antes de entrar.
+ * La propiedad que se conserva es la misma: al agente se entra por un solo
+ * lugar efectivo, lo que entra es texto, y desde «Uso extendido» no se llega.
+ * `entradasAlAgente` son las conexiones que quedan: la salida falsa de la
+ * última compuerta y los dos nodos que ya convirtieron el medio en texto.
  *
  * `salidaAlCliente`: en los flujos de agendamiento, desde el 17/09/2026 todo
  * lo que se envía pasa por «Mensaje a enviar» y el reporte saliente cuelga
@@ -143,19 +147,23 @@ const FLUJOS = [
   {
     archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar', antesDelAgente: '¿Es un comprobante?',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
-    campoTexto: 'textoAviso', salidaAlCliente: null, antesDelAgente: null,
+    campoTexto: 'textoAviso', salidaAlCliente: null, antesDelAgente: null, entradasAlAgente: null,
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
   {
     archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar', antesDelAgente: '¿Es un comprobante?',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
 ] as const;
 
@@ -165,7 +173,7 @@ describe('El mensaje fijo de uso extendido', () => {
   });
 });
 
-describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente, antesDelAgente }) => {
+describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente, antesDelAgente, entradasAlAgente }) => {
   const f = flujo(archivo);
 
   describe('Traer configuración', () => {
@@ -221,13 +229,22 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
     });
 
     it('el agente SOLO es alcanzable desde la rama verdadera de «¿Atención normal?»', () => {
-      if (antesDelAgente) {
-        // Con un IF en el medio la propiedad es la misma: una sola entrada al
-        // agente, y esa entrada solo se alcanza desde la rama verdadera.
-        expect(destinos(f, '¿Atención normal?', 0)).toEqual([antesDelAgente]);
-        expect(origenes(f, antesDelAgente)).toEqual(['¿Atención normal?']);
-        expect(origenes(f, agente)).toEqual([antesDelAgente]);
-        expect(destinos(f, antesDelAgente, 1)).toEqual([agente]);
+      if (antesDelAgente && entradasAlAgente) {
+        // Con una CADENA de IF en el medio la propiedad es la misma: al agente
+        // se entra por un solo lugar efectivo, y ese lugar solo se alcanza
+        // desde la rama verdadera. Cada compuerta cae en la siguiente por su
+        // salida FALSA: lo que atrapa, lo resuelve sin modelo.
+        const ultima = antesDelAgente[antesDelAgente.length - 1] as string;
+        expect(destinos(f, '¿Atención normal?', 0)).toEqual([antesDelAgente[0]]);
+        expect(origenes(f, antesDelAgente[0] as string)).toEqual(['¿Atención normal?']);
+        for (let i = 1; i < antesDelAgente.length; i++) {
+          expect(destinos(f, antesDelAgente[i - 1] as string, 1)).toEqual([antesDelAgente[i]]);
+          expect(origenes(f, antesDelAgente[i] as string)).toEqual([antesDelAgente[i - 1]]);
+        }
+        expect(destinos(f, ultima, 1)).toEqual([agente]);
+        // Las demás entradas son los nodos que YA convirtieron el medio en
+        // texto: ningún nodo con un binario le habla al agente.
+        expect(origenes(f, agente).sort()).toEqual([...entradasAlAgente].sort());
       } else {
         expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
         expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
