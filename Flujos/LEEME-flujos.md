@@ -295,9 +295,9 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
 
 **Primer cliente con el flujo de agendamiento** (15/09/2026; demo el 16/09).
 Clínica dental y de estética facial en Santa Cruz. Es una copia del Demo A
-vigente —33 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
-candado contra la doble reserva— con los datos del cliente y **un solo mecanismo
-nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
+vigente —41 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
+candado contra la doble reserva, dirección con enlace a Maps— con los datos del
+cliente y **un solo mecanismo nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
 `instruccionesExtra` (el texto libre de hasta 1.500 caracteres que el comercio
 escribe en su consola) **delimitado y rotulado como dato**, después de las
 reglas de comportamiento y de las herramientas; si contradice una regla, manda
@@ -312,13 +312,30 @@ provisional hasta que la clínica lo confirme— cada una con su calendario, los
 ejemplos del prompt en clave dental, la **duración por servicio** en el prompt y
 en `agendar_cita` (60 minutos el blanqueamiento, 30 la valoración clínica y
 cualquier otro), el rótulo del aviso a recepción, y las credenciales con nombre
-propio e id vacío: «NovuChat ingesta (Clínica Platinum)» en los cuatro nodos
-HTTP y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp.
-`publicar-flujo.sh` asigna por ese nombre y avisa si no existe.
+propio e id vacío: «NovuChat ingesta (Clínica Platinum)» en los cinco nodos
+HTTP de ingesta y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp y
+en `Enviar ubicación`. `publicar-flujo.sh` asigna por ese nombre y avisa si no
+existe.
 
 **Mensajes por conversación: los mismos que el Demo A.** No agrega ni quita
 ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de
 siempre (tres rechazos, reserva no verificada, umbrales del servidor).
+
+**Dirección con enlace a Maps y pin a pedido (17/09/2026, `Analisis/34` §2),
+igual en el Demo A.** `Config del negocio` toma `direccionMaps` de la consola
+(validado por dominio: solo Google Maps, porque es lo único que el asistente
+reenvía tal cual) y las coordenadas de `operacion.ubicacion`; el prompt pone el
+enlace junto a la dirección en §6, pide dirección y enlace dentro de la
+confirmación (§4) y ante «¿dónde quedan?» (6c): **0 mensajes nuevos**. Solo si
+el paciente pide expresamente la ubicación, el modelo termina con
+`[ENVIAR_UBICACION]` y, si el comercio cargó coordenadas, `¿Enviar ubicación?`
+→ `Enviar ubicación` (HTTP a Graph, `type: location`) → `Reportar ubicación
+(saliente)` (tipo `location`): **+1 mensaje, solo en ese caso**, contado como
+cualquier saliente. Cuelgan de `Responder al cliente`, debajo del reporte del
+texto (orden v1: el texto se reporta primero). Sin coordenadas la marca se quita
+y no se manda nada. Un pin rechazado por Meta sale por la salida de error del
+nodo y no se reporta. Suite: bloque (j) de `platinum-flujo.test.ts`, sobre los
+dos flujos.
 
 Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
 compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los

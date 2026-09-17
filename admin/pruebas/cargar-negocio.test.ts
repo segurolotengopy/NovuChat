@@ -207,6 +207,33 @@ describe('cargar-negocio.mjs', () => {
     }
   });
 
+  it('NO acepta un enlace de mapa que no sea https:// de Google Maps, ni una ubicación incompleta o fuera de rango', () => {
+    // El asistente reenvía el enlace tal cual al cliente: un dominio ajeno es
+    // un enlace a cualquier sitio firmado con el nombre de la clínica.
+    for (const enlace of ['http://maps.app.goo.gl/AbC', 'https://ejemplo.com/maps', 'https://maps.app.goo.gl.ejemplo.com/AbC']) {
+      const r = correr(T, archivo('mapa', con((d) => { d.negocio.direccionMaps = enlace; })), '--aplicar');
+      expect(r.codigo, enlace).toBe(2);
+      expect(r.salida).toMatch(/negocio\.direccionMaps: vacío o un enlace https:\/\/ de Google Maps/);
+      expect(r.salida).toMatch(/No se escribió nada/);
+    }
+    for (const ubicacion of [{ lat: -17.78 }, { lat: '-17.78', lng: '-63.18' }, { lat: 91, lng: -63.18 }, { lat: -17.78, lng: -63.18, piso: 2 }, '-17.78,-63.18']) {
+      const r = correr(T, archivo('pin', con((d) => { d.negocio.ubicacion = ubicacion; })), '--aplicar');
+      expect(r.codigo, JSON.stringify(ubicacion)).toBe(2);
+      expect(r.salida).toMatch(/negocio\.ubicacion: objeto con exactamente lat \(-90 a 90\) y lng \(-180 a 180\)/);
+    }
+  });
+
+  it('SÍ acepta un enlace de Google Maps y coordenadas en rango, y en seco los resume sin pegar el enlace entero', () => {
+    const r = correr(T, archivo('mapa-ok', con((d) => {
+      d.negocio.direccionMaps = 'https://maps.app.goo.gl/AbCdEf123';
+      d.negocio.ubicacion = { _nota: 'de prueba', lat: -17.7833, lng: -63.1821 };
+    })));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/direccionMaps\s+enlace de maps\.app\.goo\.gl/);
+    expect(r.salida).not.toContain('AbCdEf123');
+    expect(r.salida).toMatch(/ubicacion\s+lat -17\.7833, lng -63\.1821/);
+  });
+
   it('NO acepta un funcionario con un servicio que no está en el catálogo del archivo', () => {
     const r = correr(T, archivo('servicio', con((d) => { d.funcionarios[1].servicios.push('implantes'); })), '--aplicar');
     expect(r.codigo).toBe(2);

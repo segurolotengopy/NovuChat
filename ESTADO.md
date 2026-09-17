@@ -4,7 +4,37 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-17 (Platinum, bloque 1: dirección con enlace a Maps en la confirmación de la cita; pin nativo solo a pedido). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum, bloque 1: la dirección va con el enlace de Google Maps (rama `flujos/direccion-maps`)
+
+`Analisis/34` §2. Campo `direccionMaps` en `config/negocio` (solo `https://` de
+un dominio de Google Maps: validado en las reglas, en `prompt.ts` y otra vez
+en `Config del negocio`, porque es lo único que el asistente reenvía tal cual)
+y `ubicacion {lat, lng}` (estructurado, opcional). La consola los pide en
+Configuración; `cargar-negocio.mjs` los acepta con el mismo contrato;
+`negocio-platinum.json` lleva el enlace vacío **hasta que lo dé la clínica**
+(pedido anotado en `CLIENTES/PLATINUM/ficha.md`).
+
+En los dos flujos de agendamiento (Demo A y Platinum, 41 nodos cada uno): el
+prompt incluye la dirección y el enlace en el mismo mensaje de confirmación y
+en «¿dónde quedan?»; si el paciente pide expresamente la ubicación o el pin,
+el modelo termina con `[ENVIAR_UBICACION]` y tres nodos nuevos, debajo del
+reporte del texto, mandan el mensaje `location` nativo y lo reportan como
+saliente `location`. Sin coordenadas cargadas, la marca se quita y no sale
+nada.
+
+**Mensajes por conversación: 0 en el camino normal; +1 solo cuando el
+paciente pide el pin y hay coordenadas.** Suite: 1500 en verde (33 archivos),
+`platinum-flujo.test.ts` (k) sobre los dos flujos, `direccion-maps.test.ts`
+(34, puras), reglas negando. Saneo 0.
+
+**Falta:** desplegar reglas y Functions; publicar los dos flujos desde `main`
+con `publicar-flujo.sh` (los nodos nuevos toman la credencial por tipo);
+probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anotar en
+`CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
 
 ---
 

@@ -286,7 +286,10 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
         // reporta lo que salió, no lo que se pensaba mandar.
         expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente]);
         expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
-        expect(destinos(f, 'Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+        // Del envío cuelgan el reporte del texto y, DEBAJO, la compuerta del
+        // pin (Analisis/34 §2): con orden v1 el texto se reporta primero, y
+        // la compuerta no pasa nada en el camino normal.
+        expect(destinos(f, 'Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
       } else {
         expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
           .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);

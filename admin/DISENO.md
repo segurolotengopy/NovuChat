@@ -986,12 +986,14 @@ donde entra lo que el asistente va a afirmar como verdad ante un cliente final**
 y la validación deja de ser higiene para ser el único punto donde se puede frenar
 un dato antes de que salga por WhatsApp.
 
-**Tres clases de campo, y la diferencia importa:**
+**Cinco clases de campo, y la diferencia importa:**
 
 | Clase | Campos | Por qué |
 |---|---|---|
 | **Enumerados** | `tratamiento`, `estiloEmojis`, `zonaHoraria`, `moneda` | lista cerrada; el código los traduce a una frase fija |
 | **Texto libre al prompt** | `nombreNegocio`, `descripcion`, `direccion`, `politicaCancelacion`, `datosQueNoTenemos`, `instruccionesExtra`, `mensajeCierre`, `mensajeErrorTemporal`, `mensajeReservaNoConfirmada`, `mensajeComercioSuspendido` | topeados y entregados en una sección rotulada |
+| **Texto validado, no libre** | `direccionMaps` | el enlace de Google Maps del local: vacío, o `https://` de un dominio de mapas de Google y nada más (`enlaceDeMapaValido`, la misma lista en las reglas, en `prompt.ts` y en el flujo). Es el único texto del comercio que el asistente **reenvía tal cual** a un cliente final, en la confirmación de cada cita; texto libre acá sería un enlace a cualquier sitio firmado con el nombre del negocio. Va en el mismo mensaje que la dirección: cero mensajes nuevos (`Analisis/34` §2) |
+| **Estructurados** | `horarios`, `ubicacion` | mapas de forma fija: `horarios` con los siete días; `ubicacion` con exactamente `lat` y `lng` numéricos en rango. `ubicacion` nunca entra al texto del prompt: sale en `operacion` y el flujo la usa solo para el pin nativo de WhatsApp cuando el cliente lo pide (un mensaje más, solo en ese caso) |
 | **Derivados, NO almacenados** | `horarioAtencion`, `estadoComercio`, `phoneNumberId` | los calcula `configuracionFlujo` |
 
 **Los enumerados son la decisión más fuerte de este bloque.** `tratamiento` y
@@ -1027,6 +1029,16 @@ defecto posible: un cliente podría presentarse en un lugar que no existe.
 cualquier cosa para poder guardar, y un dato inventado por el comercio hace el
 mismo daño que uno inventado por el modelo. **Vacía significa «no la tenemos»**,
 que es una respuesta correcta y verificable.
+
+**El enlace del mapa y el pin acompañan a la dirección; no la reemplazan**
+(`Analisis/34` §2, 17/09/2026). `direccionMaps` vacío significa «sin enlace»: el
+asistente da la dirección sola y no menciona ningún mapa. No entra en
+`datosQueNoTenemos`: la falta del enlace no es un dato que el cliente pida, y
+anunciarla lo invitaría a pedirlo. Y sin `ubicacion` la marca `[ENVIAR_UBICACION]`
+se quita del texto y no se manda nada: la respuesta ya lleva la dirección y el
+enlace, que es lo que el cliente necesita para llegar. Un pin sin dirección
+cargada no existe por construcción: el flujo lo arma con `direccion` y la
+regla 6c prohíbe la marca cuando la dirección no está definida.
 
 **`datosQueNoTenemos` se calcula, no se declara.** `configuracionFlujo` la computa
 desde los campos que están efectivamente vacíos —dirección, teléfono de
