@@ -2,6 +2,7 @@ import { REGION } from './region.js';
 import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
+import { logger } from 'firebase-functions';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import { sanearCaptacion } from './captacion.js';
 import { vozFija } from './prompt.js';
@@ -148,6 +149,76 @@ export function enmascarar(telefono: unknown): string {
   if (t.length < 7) return '****';
   return `${t.slice(0, 4)}****${t.slice(-3)}`;
 }
+
+/**
+ * Los ÚLTIMOS CUATRO dígitos del teléfono, y nada más. Es lo único del cliente
+ * final que puede viajar al registro de ejecución (Cloud Logging).
+ *
+ * POR QUÉ NO SE REUSA `enmascarar()`, que ya existe. Esa función es para la
+ * BITÁCORA del comercio, cuya regla EXIGE el patrón `5917****001`, o sea el
+ * prefijo más los últimos tres: siete dígitos. Cloud Logging es otra cosa —lo
+ * lee NovuChat, no el comercio, y se retiene por meses— así que ahí va MENOS,
+ * no lo mismo: cuatro dígitos alcanzan para reconocer dos renglones de la misma
+ * conversación en una investigación y no alcanzan para reconstruir el número.
+ * Un número boliviano tiene ocho dígitos: con el prefijo y los últimos tres ya
+ * quedarían solo dos por adivinar.
+ */
+export function ultimos4(telefono: unknown): string {
+  const t = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
+  return t.length < 4 ? '****' : t.slice(-4);
+}
+
+/**
+ * ===========================================================================
+ * REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO — tráfico y costo por cliente
+ * ===========================================================================
+ *
+ * EL PROBLEMA, del 17/09/2026. La pregunta «cuánto tráfico y cuánto costo
+ * generó cada cliente» no se podía contestar mirando los registros: las dos
+ * Functions que atienden a n8n escribían solo lo que imprime el envoltorio de
+ * Cloud Run —método, ruta, latencia—, sin decir de qué comercio era el mensaje.
+ * Con un flujo por cliente y un número por flujo, la única forma de atribuir
+ * era leer Firestore comercio por comercio.
+ *
+ * Desde ahora cada ejecución deja UN renglón estructurado. `logger.info` con un
+ * objeto y no texto concatenado: en Cloud Logging el objeto queda en
+ * `jsonPayload` y se puede filtrar y agrupar por campo. Un texto armado con
+ * plantillas obliga a expresiones regulares sobre el mensaje, que es
+ * exactamente lo que hace que nadie consulte los registros.
+ *
+ * NO CUESTA NI UN MENSAJE MÁS. Un renglón de registro no envía nada por
+ * WhatsApp: el cambio agrega CERO mensajes por conversación (CLAUDE.md, base
+ * comercial §1, que obliga a declararlo).
+ *
+ * QUÉ CONSULTAS CONTESTA (Cloud Logging, `jsonPayload.…`):
+ *
+ *   MENSAJES DEL ASISTENTE EN EL MES POR COMERCIO — la cifra que predice la
+ *   factura de Meta y que la consola todavía no muestra (base comercial §4):
+ *     evento="ingesta_mensaje" AND direccion="saliente"  → agrupar por tenantId
+ *   y contrastarla con los 1.000 mensajes gratis del número de cada comercio.
+ *
+ *   CONVERSACIONES FACTURADAS POR COMERCIO — la unidad de cobro:
+ *     evento="ingesta_mensaje" AND conversacion=true     → agrupar por tenantId
+ *   y, dentro de esas, `bloqueNuevo=true` son las que vinieron de exceder las
+ *   25 respuestas de una misma ventana.
+ *
+ *   MENSAJES POR CONVERSACIÓN COMO DISTRIBUCIÓN, no como promedio (§4):
+ *     el histograma de `mensajesVentana` sobre los salientes.
+ *
+ *   TURNOS QUE COSTARON MODELO PERO NO TERMINARON EN MENSAJE:
+ *     `configuracion_flujo` por comercio contra `ingesta_mensaje` saliente.
+ *
+ * QUÉ NO VA, Y POR QUÉ ESOS CAMPOS Y NO OTROS. Cada campo está porque alguna de
+ * esas preguntas lo necesita para agrupar o para medir. NUNCA el texto del
+ * mensaje, el teléfono completo, el nombre del contacto, el identificador de
+ * conversación (`wa_<telefono>`, que ES el teléfono), el `phoneNumberId` del
+ * comercio ni ningún secreto: el registro es para contar, no para leer
+ * conversaciones, y vale el mismo criterio que la bitácora —si llevara el
+ * contenido sería una puerta trasera a lo que T-5 impide—. El teléfono va solo
+ * por sus últimos cuatro dígitos (`ultimos4`).
+ */
+const EVENTO_INGESTA = 'ingesta_mensaje';
+const EVENTO_CONFIGURACION = 'configuracion_flujo';
 
 type TipoEvento =
   | 'mensaje_entrante' | 'mensaje_saliente' | 'plantilla_enviada'
@@ -766,7 +837,38 @@ export const ingesta = onRequest(
         });
       }
 
-      return { atencion, aviso, avisoConsumo };
+      return { atencion, aviso, avisoConsumo, conteo };
+    });
+
+    // El renglón que permite atribuir tráfico y costo a este comercio. Ver el
+    // bloque «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO», arriba.
+    logger.info('ingesta: mensaje contado', {
+      evento: EVENTO_INGESTA,
+      // A QUIÉN se le atribuye. Es el campo que faltaba.
+      tenantId,
+      // Un comercio puede tener más de un flujo, y cada flujo tiene su propio
+      // número: la franquicia de 1.000 mensajes gratis de Meta es POR NÚMERO,
+      // así que el costo se mira por flujo, no solo por comercio.
+      flujo: ruta.flujo || 'agendamiento',
+      // El mismo corte mensual que usa la facturación (`periodoDe`).
+      periodo,
+      // 'saliente' es lo que Meta cobra a 0,0113 USD; 'entrante' no.
+      direccion: mensaje.direccion,
+      tipo: mensaje.tipo,
+      telefonoUlt4: ultimos4(mensaje.telefono),
+      // Lo que ya se contaba de esta ventana, para no volver a calcularlo al
+      // consultar: respuestas del asistente en la ventana vigente, si este
+      // mensaje facturó una conversación, y si esa conversación vino de
+      // exceder el bloque de 25.
+      mensajesVentana: veredicto.conteo.mensajesVentana,
+      conversacion: veredicto.conteo.conversacion,
+      bloqueNuevo: veredicto.conteo.bloqueNuevo,
+      // El estado con el que se juzgó esta consulta: entre los umbrales de
+      // operador y bloqueo cada consulta cuesta un mensaje fijo y se factura
+      // igual, y eso explica una ventana cara sin ninguna venta.
+      atencionEstado: veredicto.atencion.estado,
+      // El TAMAÑO del texto, nunca el texto.
+      tamanoTexto: mensaje.texto.length,
     });
 
     await registrar(tenantId, {
@@ -955,6 +1057,10 @@ export const configuracionFlujo = onRequest(
 
     const negocio = (config.data() ?? {}) as Record<string, unknown>;
     const catalogoWebActivo = negocio['catalogoWebActivo'] === true;
+    // Se calcula una sola vez: decide qué se manda al prompt y, además, se
+    // registra (un catálogo resumido cambia cómo conversa el asistente, y por
+    // lo tanto cuántos mensajes hace falta para cerrar).
+    const catalogoResumido = catalogoWebActivo && catalogo.size > UMBRAL_CATALOGO_AL_PROMPT;
     const cobroReal = especifica?.get('cobroReal') as Record<string, unknown> | undefined;
     // Encendido Y con código: si falta cualquiera de los dos, se cobra simulado.
     // Un comercio a medio configurar tiene que quedar en el camino que no mueve
@@ -984,6 +1090,33 @@ export const configuracionFlujo = onRequest(
       if (negocio[clave] !== undefined) datosDelNegocio[clave] = negocio[clave];
     }
     datosDelNegocio['datosQueNoTenemos'] = derivados.datosQueNoTenemos;
+
+    // El renglón de este turno, con el comercio adentro. Ver el bloque
+    // «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO» más arriba: el flujo
+    // llama acá UNA vez por turno, antes del modelo, así que contarlos por
+    // comercio dice cuántos turnos se atendieron, y contrastarlos con los
+    // `ingesta_mensaje` salientes dice cuántos terminaron en un mensaje
+    // cobrado. No agrega ningún mensaje al cliente.
+    logger.info('configuracionFlujo: turno servido', {
+      evento: EVENTO_CONFIGURACION,
+      tenantId: comercio.tenantId,
+      flujo: comercio.flujo,
+      // Un comercio suspendido no llega hasta acá, pero el campo permite
+      // separar por estado sin cruzar con Firestore.
+      estadoComercio: comercio.estado,
+      // Nunca el teléfono entero: el flujo lo manda para los umbrales.
+      telefonoUlt4: telefono ? ultimos4(telefono) : null,
+      // Lo que ya se contaba de esta ventana, sin recalcular nada: en qué
+      // estado está el teléfono y cuántas respuestas lleva. Es lo que explica
+      // un turno que no llamó al modelo.
+      atencionEstado: atencion?.estado ?? null,
+      mensajesVentana: atencion?.respuestasEnVentana ?? null,
+      bloque: atencion?.bloque ?? null,
+      // Cuántos ítems viajaron al prompt y si fueron resumidos: es lo que
+      // vuelve comparable el costo de dos comercios con catálogos distintos.
+      catalogoItems: catalogo.size,
+      catalogoResumido,
+    });
 
     respuesta.status(200).json({
       tenantId: comercio.tenantId,
@@ -1053,7 +1186,7 @@ export const configuracionFlujo = onRequest(
       // cambio de nada: seguiría siendo el único lugar de donde saca los
       // precios. Un comercio sin catálogo web se comporta exactamente como
       // antes de este cambio, tenga los ítems que tenga.
-      ...(catalogoWebActivo && catalogo.size > UMBRAL_CATALOGO_AL_PROMPT
+      ...(catalogoResumido
         ? {
             catalogo: [],
             catalogoResumen: resumirCatalogo(
