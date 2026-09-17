@@ -4,7 +4,33 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-17 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita (rama `flujos/candado-un-calendario`)
+
+`Analisis/24` §4, opción A. `Calendarios a revisar` (Demo A y Platinum, código
+idéntico) emite solo los calendarios de `eventosCreados` —lo que #99 ya
+guarda de la salida real de `agendar_cita`, con `organizer.email`—, uno por
+cita y deduplicados. **Respaldo obligatorio:** sin evento, sin calendario o
+con un dato raro, emite todos como antes; nunca cero items, porque el candado
+no puede dejar de correr por no saber la agenda. `Comprobar reserva` no cambió.
+
+Llamadas a Google en el turno que agenda: Platinum pasa de 2 a 1 por cita;
+con 7 odontólogos, de 7 a 1 (unos 1,8–2,4 s menos por turno, a 0,3–0,4 s por
+llamada según `Analisis/24` §2.4). El número de agendas deja de pesar en la
+latencia, que era lo que fijaba el techo «hasta 10» de la Base comercial §3.
+
+Suite: `candado-agenda.test.ts` con 11 casos nuevos (una cita → un
+calendario; dos citas en agendas distintas → dos; sin dato → todos; el cruce
+del mismo odontólogo se detecta revisando solo su agenda; dos odontólogos a la
+misma hora no es cruce) y (h) de `platinum-flujo.test.ts` reescrita. Las
+pruebas nuevas fallan con el nodo viejo (comprobado). 1399 en verde. Saneo 0.
+
+**Mensajes por conversación: cero.** **Falta:** publicar desde `main` y
+cronometrar el turno que agenda antes y después (fila 43 de la aceptación),
+más el caso mandatorio de la insistencia sobre una hora ocupada.
 
 ---
 
