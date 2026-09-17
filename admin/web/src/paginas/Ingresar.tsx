@@ -4,6 +4,7 @@ import {
   signInWithEmailAndPassword, signInWithPopup, signInWithRedirect,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import { MINIMO_CONTRASENA } from '../lib/contrasena';
 import { Isotipo } from '../componentes/Marca';
 
 /**
@@ -137,16 +138,37 @@ export function Ingresar() {
           <input className="input" type="email" required autoComplete="username" maxLength={254}
                  value={correo} onChange={(e) => setCorreo(e.target.value)} />
         </label>
+        {/*
+          ESTE CAMPO NO EXIGE UN LARGO MÍNIMO, A PROPÓSITO. Una longitud mínima
+          es una regla del momento de ELEGIR la contraseña, no del momento de
+          USARLA: acá la contraseña ya existe, y pedirle doce caracteres no le
+          agrega ninguna dificultad a quien intenta adivinarla —no la escribe
+          más corta— pero sí deja afuera a quien la tiene bien.
+
+          No es hipotético. El 16/09/2026 el administrador de un cliente nuevo
+          puso once caracteres en la pantalla de restablecimiento que sirve
+          Firebase, que los aceptó (su política admite desde seis), y después
+          ESTA pantalla no lo dejó entrar. Peor todavía: el bloqueo lo hacía el
+          navegador con su globo genérico, sin decir qué faltaba, así que la
+          persona no tenía forma de entender que su contraseña era correcta y el
+          formulario el que sobraba. Hubo que rotarle la clave y emitir otro
+          enlace.
+
+          El mínimo se exige donde corresponde —`MiCuenta.tsx`, al cambiarla— y
+          acá solo se informa, abajo. Quien tenga una contraseña más corta que
+          la política de hoy entra igual y la cambia desde adentro.
+        */}
         <label className="field">Contraseña
           <input className="input" type="password" required autoComplete="current-password"
-                 minLength={12} value={clave} onChange={(e) => setClave(e.target.value)} />
+                 value={clave} onChange={(e) => setClave(e.target.value)} />
         </label>
         <button type="submit" className="btn btn-primary" disabled={ocupado}>Ingresar</button>
         <button type="button" className="btn btn-ghost" onClick={recuperar}>
           Olvidé mi contraseña
         </button>
         <p className="text-muted">
-          Mínimo 12 caracteres. Verifica tu correo antes del primer ingreso.
+          Las contraseñas tienen al menos {MINIMO_CONTRASENA} caracteres. Verifica
+          tu correo antes del primer ingreso.
         </p>
       </form>
 
