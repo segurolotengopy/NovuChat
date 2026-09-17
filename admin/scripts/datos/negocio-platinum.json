@@ -13,7 +13,9 @@
     "estiloEmojis": "pocos",
     "nombreAsistente": "",
     "politicaCancelacion": "Para cancelar o reprogramar, escríbanos por este mismo chat con al menos 2 horas de anticipación y lo resolvemos sin costo.",
-    "prefijosPermitidos": ["591"],
+    "prefijosPermitidos": [
+      "591"
+    ],
     "datosQueNoTenemos": [
       "formas de pago",
       "promociones distintas a la publicada",
@@ -23,7 +25,7 @@
       "garantías por escrito",
       "cantidad de sesiones"
     ],
-    "instruccionesExtra": "CAMPAÑA VIGENTE: blanqueamiento dental profesional de consultorio, 45 a 60 min, precio de campaña 500 Bs (precio regular 600 Bs). Lo realizan los odontólogos de la clínica; el Dr. Christyan Sandoval es el especialista en estética dental. Toda cita empieza con una valoración clínica que descarta caries, fisuras o gingivitis.\nOBJECIONES (responda así y ofrezca agendar en el mismo mensaje):\n- Sensibilidad o dolor: usamos geles de última generación con agentes desensibilizantes, protegemos las encías y controlamos los tiempos; si aparece sensibilidad, es leve y pasajera. No prometa «cero dolor».\n- Desgaste del esmalte: no desgasta, no lima ni debilita el esmalte; el oxígeno disuelve las manchas desde adentro y la estructura queda intacta. No diga «garantizado» ni «100 %».\n- Cuánto dura: en general 1 a 2 años con buena higiene; café, vino tinto y tabaco lo acortan; después bastan sesiones cortas de mantenimiento.\n- Más barato en spas o centros no dentales: la diferencia es la seguridad: diagnóstico previo, productos adecuados y aislamiento de las encías; en centros no especializados hay riesgo de quemaduras o daño al esmalte. No nombre competidores.\n- Apto para mí, embarazo, carillas o coronas, anestesia, cantidad de sesiones: lo define el odontólogo en la valoración; usted no diagnostica ni promete resultados.\nNO INVENTE formas de pago, otras promociones, seguros, estacionamiento ni precios de otros tratamientos: diga que recepción lo confirma.",
+    "instruccionesExtra": "CAMPAÑA: blanqueamiento de consultorio. La SESIÓN dura 45-60 min; el RESULTADO, 1 a 2 años. Si preguntan «cuánto dura», cubra las dos. 500 Bs de campaña (regular 600). Lo hacen el Dr. Christyan Sandoval y el Dr. Juan Pérez. Toda cita empieza con valoración clínica.\nNO SE INVENTA: si la valoración tiene costo o va incluida —NUNCA diga que es gratis, que está incluida ni que el especialista fija su precio; diga que recepción lo confirma, y responda siempre igual—, precio del mantenimiento, pagos, seguros, otras promociones, precios de otros tratamientos.\nOBJECIONES (responda la duda primero; ofrezca la cita si hay interés, no en cada mensaje):\n- Dolor: es el temor más común. Geles con desensibilizantes, encías protegidas, tiempos controlados; si aparece, es leve y pasajera. Nunca prometa «sin dolor».\n- Esmalte: no lo desgasta ni lo lima; actúa sobre las manchas. Sin «garantizado» ni «100 %».\n- ¿Una sesión basta?: suele verse cambio desde la primera, pero depende del tono inicial y del odontólogo. Puede preguntar si busca aclarar el tono o le preocupa una mancha.\n- ¿Por qué 500? / caro / lo pensaré: es normal comparar. Es precio de campaña sobre 600 y lo hace un odontólogo con diagnóstico previo. No presione: pregunte qué le falta para decidir.\n- Otra clínica o un spa: la diferencia es el diagnóstico y el aislamiento de encías; sin eso hay riesgo de quemaduras. Nunca critique a un competidor.\n- Aptitud, embarazo, carillas, anestesia, cuántas sesiones: lo define el odontólogo.",
     "mensajeCierre": "Gracias por escribirnos. Si necesita algo más, escríbanos por acá.",
     "mensajeErrorTemporal": "Disculpe, tuve un problema técnico momentáneo. ¿Me repite lo último?",
     "mensajeReservaNoConfirmada": "Disculpe, no pude confirmar el registro de su cita en la agenda. Lo paso con una persona de recepción para que lo resuelva ahora mismo.",
@@ -78,7 +80,11 @@
       "nombre": "Dr. Christyan Sandoval",
       "especialidad": "Estética dental",
       "calendarioMarcador": "REEMPLAZAR_CALENDARIO_PLATINUM_1",
-      "servicios": ["blanqueamiento-dental-profesional", "valoracion-clinica", "estetica-facial"],
+      "servicios": [
+        "blanqueamiento-dental-profesional",
+        "valoracion-clinica",
+        "estetica-facial"
+      ],
       "activo": true
     },
     {
@@ -86,7 +92,10 @@
       "nombre": "Dr. Juan Pérez",
       "especialidad": "Odontología general",
       "calendarioMarcador": "REEMPLAZAR_CALENDARIO_PLATINUM_2",
-      "servicios": ["blanqueamiento-dental-profesional", "valoracion-clinica"],
+      "servicios": [
+        "blanqueamiento-dental-profesional",
+        "valoracion-clinica"
+      ],
       "activo": true
     }
   ]
