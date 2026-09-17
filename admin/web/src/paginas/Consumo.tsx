@@ -71,6 +71,14 @@ interface Periodo {
   senasEnviadas?: number;
   senasCotejadas?: number;
   senasVencidas?: number;
+  /**
+   * Recordatorio de solicitud pendiente (`Analisis/31` §4). `seguimientos` son
+   * los que salieron —uno por solicitud como máximo— y `reactivadas`, en
+   * cuántos de ellos el paciente volvió a escribir dentro de las 24 h. Ninguno
+   * se factura: los dos juntos dicen si el recordatorio recupera a alguien.
+   */
+  seguimientos?: number;
+  reactivadas?: number;
 }
 
 /** Conversaciones del período, tolerando el nombre anterior. */
@@ -241,6 +249,8 @@ export function Consumo() {
     vencidas: actual?.senasVencidas ?? 0,
   };
   const haySenas = senas.enviadas > 0 || senas.cotejadas > 0 || senas.vencidas > 0;
+  const seguimientos = actual?.seguimientos ?? 0;
+  const reactivadas = actual?.reactivadas ?? 0;
 
   return (
     <section>
@@ -299,6 +309,18 @@ export function Consumo() {
               Señas: {senas.enviadas} {senas.enviadas === 1 ? 'enviada' : 'enviadas'}
               {' · '}{senas.cotejadas} {senas.cotejadas === 1 ? 'cotejada' : 'cotejadas'}
               {' · '}{senas.vencidas} {senas.vencidas === 1 ? 'vencida' : 'vencidas'}.
+            </p>
+          )}
+          {/* Solo cuando el período los trae. Un comercio sin recordatorios no
+              tiene por qué leer una línea en cero, y el que sí los tiene
+              necesita las DOS cifras juntas: los enviados solos no dicen nada,
+              y lo que se quiere saber es si el recordatorio trae gente de
+              vuelta (`Analisis/31` §6). No se facturan. */}
+          {seguimientos > 0 && (
+            <p className="text-muted">
+              Seguimientos: {seguimientos} {seguimientos === 1 ? 'enviado' : 'enviados'}
+              {' · '}{reactivadas}{' '}
+              {reactivadas === 1 ? 'conversación reactivada' : 'conversaciones reactivadas'}.
             </p>
           )}
           <div className="tarjeta-pie">
