@@ -21,10 +21,32 @@
  *     `sembrar-demos.mjs`);
  *   - cada funcionario en `funcionarios/{id}`, con `horarioTrabajo` = los
  *     horarios del negocio del mismo archivo;
+ *   - `contadores/catalogo`, EN LA MISMA TRANSACCIÓN que el catálogo (ver
+ *     abajo);
  *   - el sello `actualizadoPor: 'cargar-negocio'` en todo, y una entrada en
  *     `auditoria`.
  *   Los ítems y funcionarios que ya existen y el archivo no nombra NO se tocan:
  *   se informan. Retirar es una decisión de la consola, no de una carga.
+ *
+ * EL CONTADOR DEL CATÁLOGO VIAJA CON EL CATÁLOGO. Corregido el 17/09/2026.
+ * Este script escribía los ítems con el SDK Admin y NO tocaba
+ * `tenants/{t}/contadores/catalogo`, que es lo que hace cumplir el límite de
+ * productos por plan (CLAUDE.md, base comercial §7). Las reglas NIEGAN crear y
+ * borrar productos desde el navegador si ese contador falta o no cuadra, así
+ * que todo comercio cargado con este script nacía descuadrado y había que
+ * arreglarlo después a mano con `contar-catalogo.mjs`: pasó con los cuatro
+ * comercios que ya estaban cargados. Ahora, cuando el archivo trae la sección
+ * `catalogo`, la misma transacción que escribe los ítems deja el contador en
+ * el número REAL de productos del comercio —los documentos de la colección,
+ * que es lo que cuentan las reglas, no los que tienen `activo: true`— con el
+ * criterio compartido de `lib/contador-catalogo.mjs`. Sin sección `catalogo`
+ * no se toca: esta carga no cambió cuántos productos hay, y reconciliar un
+ * contador ajeno es trabajo de `contar-catalogo.mjs`.
+ *
+ * NO BORRA NADA si el comercio queda por encima del límite de su plan: se
+ * informa y el contador queda en la verdad, igual que en `contar-catalogo.mjs`.
+ * Un contador mentiroso hacia abajo le regalaría cupo; hacia arriba se lo
+ * quitaría.
  *
  * EL SDK ADMIN SE SALTA LAS REGLAS. Por eso este script valida el JSON con el
  * MISMO contrato que `firestore.rules` (`configNegocioValida`,
@@ -411,14 +433,28 @@ if (sinResolver.length) {
 // --- Firestore ---------------------------------------------------------------
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = await import('firebase-admin/firestore');
+// El criterio del contador del catálogo, compartido con `contar-catalogo.mjs`.
+const { CLAVES_CONTADOR, contarProductos, escribirContador, limiteDe } =
+  await import('./lib/contador-catalogo.mjs');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
+
+// CERRAR EL CLIENTE ANTES DE SALIR, Y NO ES CORTESÍA. Con `process.exit()` a
+// secas la conexión se corta de golpe y el emulador conserva los bloqueos de
+// la última transacción hasta que vencen (medido el 17/09: 60 s). La suite que
+// corre después se queda esperando y falla con «Transaction lock timeout», que
+// es un diagnóstico que no lleva a ninguna parte. `terminate()` cierra el
+// cliente y libera todo; contra Firestore de verdad es igual de correcto.
+const salir = async (codigo) => { await db.terminate().catch(() => {}); process.exit(codigo); };
 
 const refTenant = db.doc(`tenants/${TENANT}`);
 const refNegocio = db.doc(`tenants/${TENANT}/config/negocio`);
 const refAgend = db.doc(`tenants/${TENANT}/config/agendamiento`);
 const refItem = (id) => db.doc(`tenants/${TENANT}/catalogo/${id}`);
 const refFunc = (id) => db.doc(`tenants/${TENANT}/funcionarios/${id}`);
+const refContador = db.doc(`tenants/${TENANT}/contadores/catalogo`);
+const refCuenta = db.doc(`tenants/${TENANT}/cuenta/estado`);
+const colCatalogo = db.collection(`tenants/${TENANT}/catalogo`);
 
 // Comparación que no depende del orden de las claves: Firestore no lo conserva.
 const canonico = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && !Array.isArray(x)
@@ -465,10 +501,11 @@ try {
     // que la propia transacción leyó.
     const refsItems = (catalogo ?? []).map((it) => refItem(it.id));
     const refsFunc = (funcionarios ?? []).map((f) => refFunc(f.id));
-    const leidos = await tx.getAll(refTenant, refNegocio, refAgend, ...refsItems, ...refsFunc);
-    const [tenant, docNegocio, docAgend] = leidos;
-    const docsItems = leidos.slice(3, 3 + refsItems.length);
-    const docsFunc = leidos.slice(3 + refsItems.length);
+    const leidos = await tx.getAll(refTenant, refNegocio, refAgend, refContador, refCuenta,
+                                   ...refsItems, ...refsFunc);
+    const [tenant, docNegocio, docAgend, docContador, docCuenta] = leidos;
+    const docsItems = leidos.slice(5, 5 + refsItems.length);
+    const docsFunc = leidos.slice(5 + refsItems.length);
     if (!tenant.exists) throw new Error(`No existe el comercio «${TENANT}». Primero alta-comercio.mjs.`);
     // Como las reglas: un comercio suspendido o dado de baja no se reconfigura.
     const estado = tenant.get('estado') ?? 'activo';
@@ -483,7 +520,34 @@ try {
       throw new Error(`«${TENANT}» no tiene el flujo venta: catalogoWebActivo no puede ser true.`);
     }
 
+    // EL CONTADOR, CONTADO ANTES DE ESCRIBIR. La consulta de colección es una
+    // LECTURA de la transacción y por eso va acá, antes de todo `tx.set`:
+    // devuelve cuántos productos había, y los que esta carga está por crear se
+    // suman aparte (son los que `tx.getAll` trajo inexistentes). Si alguien da
+    // un alta desde la consola en el medio, la transacción se reintenta y
+    // vuelve a contar.
+    //
+    // Se cuentan los DOCUMENTOS, no los `activo: true`: es lo que cuentan las
+    // reglas (`altaContada()` suma uno por documento que nace, mire o no
+    // `activo`), y un producto dado de baja sigue ocupando cupo del plan.
+    let contador = null;
+    if (catalogo) {
+      const antes = await contarProductos(tx, colCatalogo);
+      const nuevos = catalogo.filter((_, i) => !docsItems[i].exists);
+      const previo = docContador.get('ultimoItem');
+      contador = {
+        antes: docContador.exists ? docContador.get('items') : null,
+        items: antes + nuevos.length,
+        nuevos: nuevos.length,
+        // El último que nace en ESTA carga; si no nace ninguno, se conserva lo
+        // que decía. Ver `escribirContador` en la librería.
+        ultimoItem: nuevos.at(-1)?.id ?? (typeof previo === 'string' ? previo : ''),
+        ...limiteDe(docCuenta.exists ? docCuenta.data() : undefined),
+      };
+    }
+
     plan = {
+      contador,
       flujos,
       negocio: negocio && {
         nuevo: !docNegocio.exists,
@@ -522,6 +586,12 @@ try {
       if (!('precio' in doc) || doc.precio === null) { doc.precio = FieldValue.delete(); doc.moneda = FieldValue.delete(); }
       tx.set(refItem(it.id), doc, { merge: true });
     }
+    // En la MISMA transacción que los ítems: si una se escribe, la otra
+    // también. Se reescribe aunque no nazca ningún producto —la carga puede
+    // haber caído sobre un comercio sin contador, que es justamente el caso
+    // que trababa la consola— y `set` sin `merge` limpia cualquier clave de
+    // más, que la regla del contador no perdona.
+    if (contador) escribirContador(tx, refContador, contador);
     for (const f of funcionarios ?? []) {
       tx.set(refFunc(f.id), { ...f.datos, ...sello }, { merge: true });
     }
@@ -540,7 +610,7 @@ try {
   });
 } catch (e) {
   console.error(`  ✗ ${e.message}\n`);
-  process.exit(1);
+  await salir(1);
 }
 
 // --- el plan, en seco y en aplicado ------------------------------------------
@@ -558,6 +628,15 @@ if (plan.catalogo) {
       + `${d.duracionMin ? ` · ${d.duracionMin} min` : ''} · ${d.activo ? 'activo' : 'inactivo'}`);
   }
   if (plan.catalogo.ajenos.length) console.log(`    ! ${plan.catalogo.ajenos.length} ítem(s) existente(s) que el archivo no nombra quedan como están: ${plan.catalogo.ajenos.join(', ')}`);
+  // El contador que hace cumplir el límite por plan. Sin él, la consola no
+  // puede dar de alta ni de baja un producto: las reglas lo niegan.
+  const c = plan.contador;
+  console.log(`    contador: ${c.antes === null ? 'FALTA' : c.antes} → ${c.items}`
+    + ` (${c.nuevos} ítem(s) nuevo(s)) · límite ${c.limite} (${c.origen})`);
+  if (c.items > c.limite) {
+    console.log(`    ${rojo('⚠')} por encima del límite: el comercio no puede crear productos hasta bajar de ${c.limite}.`
+      + ' No se borra nada; el contador queda en la verdad.');
+  }
 }
 if (plan.funcionarios) {
   console.log(`\n  funcionarios (${plan.funcionarios.items.length} agenda(s)):`);
@@ -574,7 +653,7 @@ if (todoIgual) console.log('\n  Sin cambios de contenido (se renovaría solo el 
 
 if (!APLICAR) {
   console.log('\n  Seco: no se escribió nada. Agregue --aplicar.\n');
-  process.exit(0);
+  await salir(0);
 }
 
 // --- verificación por relectura ---------------------------------------------
@@ -597,15 +676,25 @@ for (const it of catalogo ?? []) {
   if (typeof precio === 'number' && moneda && doc.get('moneda') !== moneda) fallas.push(`catalogo/${it.id}.moneda`);
 }
 for (const f of funcionarios ?? []) await revisarDoc(refFunc(f.id), f.datos, `funcionarios/${f.id}`);
+if (plan.contador) {
+  // Se relee el contador como todo lo demás, y se mira también la FORMA: con
+  // una clave de más, la regla del contador rechaza cualquier cambio posterior
+  // y el comercio queda trabado sin poder tocar su catálogo.
+  const doc = await refContador.get();
+  if (doc.get('items') !== plan.contador.items) fallas.push(`contadores/catalogo.items (dice ${doc.get('items')})`);
+  if (!Object.keys(doc.data() ?? {}).every((k) => CLAVES_CONTADOR.includes(k))) fallas.push('contadores/catalogo.claves');
+}
 
 const releidos = [
   negocio && `config/negocio (${Object.keys(negocio).length} campos)`,
   agendamiento && `config/agendamiento (${Object.keys(agendamiento).length} campos)`,
   catalogo && `${catalogo.length} ítem(s) del catálogo`,
   funcionarios && `${funcionarios.length} agenda(s)`,
+  plan.contador && `contador del catálogo (${plan.contador.items})`,
 ].filter(Boolean).join(' · ');
 console.log(`\n  ${fallas.length ? '✗' : '✓'} Verificación: ${fallas.length ? `no coincide ${fallas.join(', ')}` : `releídos ${releidos}`}\n`);
-if (fallas.length) process.exit(1);
+if (fallas.length) await salir(1);
 console.log('  SIGUE (docs/alta-cliente/RUNBOOK.md, etapa 4): revisar en la consola, con el');
 console.log('  administrador del comercio, que la pantalla muestre lo cargado; y compartir cada');
 console.log('  calendario con la cuenta de Google de la credencial de n8n.\n');
+await salir(0);

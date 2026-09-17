@@ -31,6 +31,8 @@ const db = getFirestore(app);
 const T = 'neg-platinum';
 const SIN_AGENDA = 'neg-sin-agenda';
 const SUSPENDIDO = 'neg-suspendido';
+/** Comercio propio para el contador del catálogo: se lo llena y se lo vacía a voluntad. */
+const CONTADOR = 'neg-contador';
 
 // Datos de prueba con la forma que exige el repositorio público: teléfono con
 // seis ceros seguidos, calendario generado y no escrito.
@@ -68,8 +70,10 @@ const con = (retoque: (d: any) => void) => { const d = structuredClone(base); re
 const doc = async (ruta: string) => (await db.doc(`tenants/${ruta}`).get()).data();
 
 beforeAll(async () => {
-  for (const t of [T, SIN_AGENDA, SUSPENDIDO]) {
-    for (const d of ['config/negocio', 'config/agendamiento']) await db.doc(`tenants/${t}/${d}`).delete();
+  for (const t of [T, SIN_AGENDA, SUSPENDIDO, CONTADOR]) {
+    for (const d of ['config/negocio', 'config/agendamiento', 'contadores/catalogo', 'cuenta/estado']) {
+      await db.doc(`tenants/${t}/${d}`).delete();
+    }
     for (const col of ['catalogo', 'funcionarios', 'auditoria']) {
       for (const x of (await db.collection(`tenants/${t}/${col}`).get()).docs) await x.ref.delete();
     }
@@ -80,6 +84,9 @@ beforeAll(async () => {
   await db.doc(`tenants/${T}/config/agendamiento`).set({ actualizadoPor: 'alta-comercio' });
   await db.doc(`tenants/${SIN_AGENDA}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
   await db.doc(`tenants/${SUSPENDIDO}`).set({ nombre: 'Susp', estado: 'suspendido', vertical: 'agendamiento', flujos: ['agendamiento'] });
+  // Un comercio de VENTA sin contador y sin cuenta: es como nace uno nuevo, y
+  // es el caso que dejaba trabada la consola.
+  await db.doc(`tenants/${CONTADOR}`).set({ nombre: 'Tienda', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
 });
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -96,7 +103,12 @@ describe('cargar-negocio.mjs', () => {
     expect(r.salida).toMatch(/Seco: no se escribió nada/);
     expect(r.salida).toMatch(/config\/negocio:/);
     expect(r.salida).toMatch(/igual\s+nombreNegocio\s+«Clínica Platinum»/);
-    expect(r.salida).toMatch(/nuevo\s+tratamiento\s+usted/);
+    // El valor sale del ARCHIVO, no de un literal. Esta prueba comprueba que el
+    // script informa lo que el archivo dice; escribir «usted» acá la ataba a una
+    // decisión del cliente, y el 17/09 Clínica Platinum pasó a tutear: el CI se
+    // puso en rojo por un cambio de configuración que no toca una sola línea de
+    // código. Lo que se verifica es el mecanismo, no la preferencia del comercio.
+    expect(r.salida).toMatch(new RegExp(`nuevo\\s+tratamiento\\s+${base.negocio.tratamiento}`));
     expect(r.salida).toMatch(/nuevo\s+horarios\s+lun 09:00-19:00 .* sab 09:00-13:00 · dom cerrado/);
     expect(r.salida).toMatch(/numeroRecepcion\s+termina en …0001/);
     expect(r.salida).toMatch(/catalogo \(3 ítem\(s\)\)/);
@@ -245,7 +257,13 @@ describe('cargar-negocio.mjs', () => {
 
     const negocio = (await doc(`${T}/config/negocio`)) ?? {};
     expect(negocio).toMatchObject({
-      nombreNegocio: 'Clínica Platinum', tratamiento: 'usted', estiloEmojis: 'pocos', nombreAsistente: '',
+      // Igual que arriba: los campos que el script copia tal cual se comparan con el
+      // archivo; los que transforma (la recepción y el calendario, que en el archivo
+      // son marcadores) se comparan con el valor ya resuelto, que es lo que importa.
+      nombreNegocio: base.negocio.nombreNegocio,
+      tratamiento: base.negocio.tratamiento,
+      estiloEmojis: base.negocio.estiloEmojis,
+      nombreAsistente: base.negocio.nombreAsistente ?? '',
       zonaHoraria: 'America/La_Paz', moneda: 'BOB', prefijosPermitidos: ['591'],
       numeroRecepcion: RECEPCION, calendarioId: CALENDARIO_1,
       horarios: { lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00', jue: '09:00-19:00', vie: '09:00-19:00', sab: '09:00-13:00', dom: 'cerrado' },
@@ -284,6 +302,10 @@ describe('cargar-negocio.mjs', () => {
     const f2 = (await doc(`${T}/funcionarios/juan-perez`)) ?? {};
     expect(f2).toMatchObject({ calendarioId: CALENDARIO_2, servicios: ['blanqueamiento-dental-profesional', 'valoracion-clinica'] });
 
+    // El contador que hace cumplir el límite de productos por plan: sin él, la
+    // consola del comercio no puede dar de alta ni de baja un producto.
+    expect(await doc(`${T}/contadores/catalogo`)).toMatchObject({ items: 3 });
+
     const auditoria = await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'cargar_negocio').get();
     expect(auditoria.size).toBe(1);
     expect(auditoria.docs[0]!.get('conteos')).toEqual({ catalogo: 3, funcionarios: 2 });
@@ -307,5 +329,105 @@ describe('cargar-negocio.mjs', () => {
     expect(blanq['precio']).toBeUndefined();
     expect(blanq['moneda']).toBeUndefined();
     expect(await doc(`${T}/catalogo/ortodoncia`)).toEqual({ nombre: 'Ortodoncia', activo: true });
+    // El ítem ajeno también ocupa cupo: el contador queda en 4, no en los 3
+    // que nombra el archivo.
+    expect(await doc(`${T}/contadores/catalogo`)).toMatchObject({ items: 4 });
+  });
+});
+
+/**
+ * EL CONTADOR DEL CATÁLOGO (`tenants/{t}/contadores/catalogo`).
+ *
+ * Es lo que hace cumplir el límite de productos por plan (CLAUDE.md, base
+ * comercial §7): las reglas no pueden contar una colección, así que NIEGAN
+ * crear y borrar productos desde el navegador si el contador falta o no cuadra.
+ * Hasta el 17/09/2026 este script escribía el catálogo con el SDK Admin y no lo
+ * tocaba, así que todo comercio cargado con él nacía trabado y había que
+ * arreglarlo aparte con `contar-catalogo.mjs`.
+ *
+ * Se prueba negando y contra el emulador: sin `--aplicar` no aparece; con
+ * `--aplicar` queda en el número REAL de productos —los documentos de la
+ * colección, incluidos los que el archivo no nombra y los que están en `activo:
+ * false`, porque las reglas cuentan documentos—; y repetir la carga no lo
+ * descuadra.
+ */
+describe('cargar-negocio.mjs y el contador del catálogo', () => {
+  const contador = async () => (await db.doc(`tenants/${CONTADOR}/contadores/catalogo`).get()).data();
+  const cuantos = async () => (await db.collection(`tenants/${CONTADOR}/catalogo`).get()).size;
+  /** Un archivo con SOLO la sección catálogo: es lo único que mueve el contador. */
+  const soloCatalogo = (nombre: string, items: unknown[]) => archivo(nombre, { catalogo: items });
+  const DOS = [
+    { nombre: 'Taza de cerámica', precio: 35, moneda: 'BOB', activo: true },
+    // Uno INACTIVO a propósito: ocupa cupo igual, y por eso se cuenta.
+    { nombre: 'Vaso de vidrio', precio: 20, moneda: 'BOB', activo: false },
+  ];
+
+  it('en seco dice qué contador dejaría y NO lo crea', async () => {
+    const r = correr(CONTADOR, soloCatalogo('dos', DOS));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/contador: FALTA → 2 \(2 ítem\(s\) nuevo\(s\)\) · límite 20 \(sin plan conocido\)/);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
+    expect(await contador()).toBeUndefined();
+    expect(await cuantos()).toBe(0);
+  });
+
+  it('con --aplicar lo deja en el número de productos del comercio, con sus tres claves', async () => {
+    const r = correr(CONTADOR, soloCatalogo('dos', DOS), '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/contador: FALTA → 2/);
+    expect(r.salida).toMatch(/✓ Verificación: .*contador del catálogo \(2\)/);
+    expect(await cuantos()).toBe(2);
+    expect(await contador()).toMatchObject({ items: 2, ultimoItem: 'vaso-de-vidrio' });
+    // Con una clave de más, la regla del contador rechazaría todo cambio
+    // posterior y el comercio quedaría sin poder tocar su catálogo.
+    expect(Object.keys((await contador())!).sort()).toEqual(['actualizadoEn', 'items', 'ultimoItem']);
+  });
+
+  it('repetir la misma carga NO lo descuadra', async () => {
+    const r = correr(CONTADOR, soloCatalogo('dos', DOS), '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/contador: 2 → 2 \(0 ítem\(s\) nuevo\(s\)\)/);
+    expect(await cuantos()).toBe(2);
+    expect(await contador()).toMatchObject({ items: 2 });
+  });
+
+  it('cuenta también los productos que el archivo no nombra', async () => {
+    // Como si el comercio lo hubiera creado desde la consola entre dos cargas.
+    await db.doc(`tenants/${CONTADOR}/catalogo/plato-hondo`).set({ nombre: 'Plato hondo', activo: true });
+    const r = correr(CONTADOR, soloCatalogo('dos', DOS), '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/contador: 2 → 3 \(0 ítem\(s\) nuevo\(s\)\)/);
+    expect(await contador()).toMatchObject({ items: 3 });
+  });
+
+  it('un contador desajustado o con claves de más queda corregido y limpio', async () => {
+    await db.doc(`tenants/${CONTADOR}/contadores/catalogo`)
+      .set({ items: 9, ultimoItem: 'taza-de-ceramica', trampa: 1, actualizadoEn: new Date() });
+    const r = correr(CONTADOR, soloCatalogo('dos', DOS), '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/contador: 9 → 3/);
+    expect(await contador()).toMatchObject({ items: 3 });
+    expect(Object.keys((await contador())!).sort()).toEqual(['actualizadoEn', 'items', 'ultimoItem']);
+  });
+
+  it('un archivo SIN sección catálogo no toca el contador', async () => {
+    const r = correr(CONTADOR, archivo('solo-negocio', { negocio: { nombreNegocio: 'Tienda', moneda: 'BOB' } }), '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).not.toMatch(/contador:/);
+    // Esta carga no cambió cuántos productos hay: reconciliar es trabajo de
+    // `contar-catalogo.mjs`.
+    expect(await contador()).toMatchObject({ items: 3 });
+  });
+
+  it('por encima del límite del plan: avisa y NO borra nada', async () => {
+    // La copia del plan manda sobre el plan (`limitesDeCuenta`).
+    await db.doc(`tenants/${CONTADOR}/cuenta/estado`).set({ plan: 'impulso', limites: { productos: 2 } });
+    const r = correr(CONTADOR, soloCatalogo('dos', DOS), '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/límite 2 \(limites\.productos\)/);
+    expect(r.salida).toMatch(/por encima del límite: el comercio no puede crear productos hasta bajar de 2/);
+    expect(r.salida).toMatch(/No se borra nada/);
+    expect(await cuantos()).toBe(3);
+    expect(await contador()).toMatchObject({ items: 3 });
   });
 });
