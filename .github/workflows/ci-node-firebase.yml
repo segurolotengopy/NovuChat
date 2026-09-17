@@ -1162,10 +1162,22 @@ jobs:
           # api.createVersion) y cada simulación dejaría una versión huérfana.
           # Límite: la simulación no ejerce la publicación (Cloud Build, Cloud
           # Run, Eventarc).
+          # EL MISMO `--force` VA EN LA SIMULACIÓN, y por eso se decide ACÁ ARRIBA.
+          # `--dry-run` corre el prepare completo, así que choca con la misma
+          # protección de la factura mínima y corta antes de publicar: en el
+          # segundo intento de v0.5.x el parámetro estaba solo en el comando de
+          # publicación y la corrida falló igual, en la simulación. Si la
+          # simulación no acepta lo que el despliegue va a aceptar, no está
+          # simulando el despliegue.
+          FORZAR=""
+          if [[ -n "${FORZAR_FACTURA:-}" ]]; then
+            FORZAR="--force"
+            echo "::warning::vars.FIREBASE_DEPLOY_FORCE activa: se acepta subir el piso de la factura y --force borra Functions que ya no estén en el código."
+          fi
           SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
           if [[ -n "$SIMULAR" ]]; then
             echo "Simulando: $SIMULAR"
-            firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive --dry-run
+            firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive $FORZAR --dry-run
           fi
           # LA FACTURA MÍNIMA (2026-09-17). firebase-tools se NIEGA a desplegar
           # Functions que suben el piso de la factura —`minInstances` mayor que
@@ -1184,11 +1196,6 @@ jobs:
           # piso, y se apaga después. Antes de encenderla hay que comparar las
           # Functions desplegadas con las que exporta el código: si alguna sobra
           # en la nube, `--force` la borra.
-          FORZAR=""
-          if [[ -n "${FORZAR_FACTURA:-}" ]]; then
-            FORZAR="--force"
-            echo "::warning::vars.FIREBASE_DEPLOY_FORCE activa: se acepta subir el piso de la factura y --force borra Functions que ya no estén en el código."
-          fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
             --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})"
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"
