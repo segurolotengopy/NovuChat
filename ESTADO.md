@@ -42,10 +42,9 @@ decidió hacer las pruebas reales cuando el desarrollo esté completo, no ahora.
 3. **Audio e imagen** (la clínica dice que son frecuentes). Análisis y
    recomendación en `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`: transcribir
    el audio y responder por texto, clasificar la imagen sin que el agente la
-   vea, sin voz de salida. Falta el arreglo mínimo, que es barato: leer el
-   `caption` de la imagen y decir con naturalidad que no puede verla. Hoy una
-   foto con caption hizo que el asistente inventara «gracias por el
-   comprobante».
+   vea, sin voz de salida. **Ojo: ya hay una sesión construyéndolo** en
+   `flujos/medios-entrantes` (ver más abajo). Antes de empezarlo de cero, mirar
+   esa rama.
 4. **Agendas por plan en las reglas** (1 / 5 / hasta 10). Es el único límite
    comercial de la tabla del §7 que todavía no existe en el servidor.
 5. **Endurecer el bucket** (acceso uniforme y prevención de acceso público),
@@ -65,6 +64,24 @@ decidió hacer las pruebas reales cuando el desarrollo esté completo, no ahora.
 Andres: `.claude/settings.json` tiene `Bash(git tag*)` en la lista `deny`, que
 es un no absoluto y no admite confirmación. Consultado hoy, decidió dejar la
 regla como está.
+
+**Trabajo en vuelo en otros worktrees, y NADA de esto está en el remoto.**
+Al cerrar esta sesión quedan seis ramas con commits solo en el disco de Andres,
+cada una en su propio worktree y con su propia sesión. Quien retome tiene que
+mirarlas antes de construir nada de la lista de arriba, porque se solapan:
+
+| Rama | Commits sin subir | Qué trae |
+|---|---|---|
+| `flujos/medios-entrantes` | 18 | El audio, la imagen y el PDF entran al agente **como texto**; «clasificar, no mirar» documentado en `LEEME` §8 y `DISENO` §4terdecies |
+| `flujos/seguimiento-pendiente` | 19 | Barrido de seguimientos, el recordatorio de solicitud pendiente decidido por el servidor, «No contactar» en la consola, entrantes por tipo en Consumo |
+| `flujos/sena-por-qr` | 15 | Seña por QR con cotejo del comprobante en el servidor y retención del horario; la cita queda en solicitud y el cierre nace del cotejo |
+| `flujos/direccion-maps` | 8 | La dirección viaja con el enlace de Maps en el mismo mensaje; `direccionMaps` y `ubicacion` en la consola y en `cargar-negocio` |
+| `platinum/umbrales-publicados` | 4 | `Analisis/32` §4.1, lo que la construcción necesita del contrato de Platinum |
+| `flujos/candado-un-calendario` | 2 | El candado revisa solo la agenda que recibió la cita: es lo que `CLAUDE.md` §3 exige antes de prometer más agendas por plan |
+
+Ninguna de las seis se tocó desde esta sesión. **Subirlas y abrir su PR le toca
+a la sesión dueña de cada worktree**; hasta entonces son trabajo que existe en
+un solo disco.
 
 **Ramas cerradas por superadas que siguen en el remoto:**
 `platinum/ajustes-de-conversacion` (#86) y `platinum/objeciones-comerciales`
