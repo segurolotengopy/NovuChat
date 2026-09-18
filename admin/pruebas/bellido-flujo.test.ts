@@ -1154,6 +1154,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).toMatch(/RECIÉN NACIDO/);
       expect(reglas).toMatch(/NIÑO SANO/);
       expect(reglas).toMatch(/PASADO MAÑANA/);   // ni hoy ni mañana (Andres, 18/09)
+      expect(reglas).toMatch(/NÚMERO SUELTO ES UNA HORA/);   // «2» son las 14:00, no la segunda opción (prueba del 18/09)
       expect(reglas).toMatch(/sin explicar/i);   // el bloqueo del mediodía no se le cuenta al paciente
     });
 
