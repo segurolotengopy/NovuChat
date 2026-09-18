@@ -181,6 +181,9 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
   const CREDENCIALES_PROPIAS = [
     'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)',
     'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
+    // Bloque 1 (dirección con Maps): el pin nativo sale por Graph con la
+    // credencial de envío del cliente, y se reporta con la de ingesta.
+    'Enviar ubicación', 'Reportar ubicación (saliente)',
   ];
 
   it('lleva el nombre del cliente y los mismos nodos del Demo A: ids, tipos, versiones y posiciones', () => {
@@ -260,7 +263,7 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
       'Reportar mensaje (saliente)', 'Registrar cierre (cita)']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name, nombre).toMatch(/Bellido/);
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name, nombre).toMatch(/Bellido/);
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -569,7 +572,9 @@ describe.skipIf(!HAY_JSON)('(g) Orden v1: el entrante se reporta antes, y el sal
     // antes del candado. Lo que se registra es lo que el cliente RECIBIÓ.
     expect(origenes('Reportar mensaje (saliente)')).toEqual(['Responder al cliente']);
     expect(destinos('Procesar respuesta')).toEqual(['¿Afirma que agendó?']);
-    expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+    // Después del texto, y solo si el cliente pidió el pin, cuelga también
+    // `¿Enviar ubicación?` (bloque 1); el reporte del texto sigue primero.
+    expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
   });
 
   it('todo camino al cliente pasa por `Mensaje a enviar`, la única entrada del envío', () => {

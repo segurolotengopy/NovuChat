@@ -31,8 +31,22 @@ paciente pide el pin y hay coordenadas.** Suite: 1500 en verde (33 archivos),
 `platinum-flujo.test.ts` (k) sobre los dos flujos, `direccion-maps.test.ts`
 (34, puras), reglas negando. Saneo 0.
 
-**Falta:** desplegar reglas y Functions; publicar los dos flujos desde `main`
-con `publicar-flujo.sh` (los nodos nuevos toman la credencial por tipo);
+**Bellido en paridad (18/09).** `main` trajo el alta del Dr. Bellido con una
+suite que exige que su flujo sea el Demo A nodo por nodo, así que cada bloque
+que toca el Demo A tiene que llevar también `Flujos/bellido-agendamiento.json`.
+Dos scripts nuevos lo hacen repetible: `admin/scripts/sincronizar-flujo-cliente.mjs`
+(repone en el cliente los nodos, conexiones, código y credenciales por tipo
+del vertical; conserva sus nodos propios y agrega a `Config base` las
+asignaciones nuevas) y `admin/scripts/portar-prompt-cliente.py` (aplica al
+prompt y a las herramientas del cliente las mismas operaciones por línea que
+cambiaron en el vertical, con sustitución de subcadena donde el cliente tiene
+texto propio). La rama fusiona además el PR #110 (Demo A al día), que
+resolvía el mismo nodo `Config del negocio`. Bellido: 41 nodos, su suite en
+verde con las mismas tres excepciones que Platinum.
+
+**Falta:** desplegar reglas y Functions; publicar los TRES flujos desde `main`
+con `publicar-flujo.sh` (Demo A, Platinum y Bellido; los nodos nuevos toman la
+credencial por tipo);
 probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anotar en
 `CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
 
