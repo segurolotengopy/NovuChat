@@ -170,7 +170,9 @@ const FLUJOS = [
   {
     archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
-    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar', antesDelAgente: '¿Es un comprobante?',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
 ] as const;
 

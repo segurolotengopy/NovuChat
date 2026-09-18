@@ -48,6 +48,15 @@ del nodo de transcripción y la relación tamaño ↔ duración del audio.
 poda de ejecuciones y la credencial de Gemini en nivel pago. Sin eso, «nada se
 guarda» vale para el flujo pero no para la instancia.
 
+**Bellido en paridad (18/09).** La rama fusiona el bloque 2 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` lleva los 10 nodos de medios a
+`Flujos/bellido-agendamiento.json` (69 nodos); el prompt no cambia en este
+bloque, así que no hay nada que portar. El comentario de `Preparar imagen`
+dejaba el nombre de la clínica en el vertical, y la suite de Bellido lo
+prohíbe con razón: ahora dice «de la carpeta del cliente». Suites de Bellido y
+`flujos-umbrales` con las dos compuertas de medios y las tres entradas de
+texto al agente. 1978 en verde (43 archivos), saneo 0, builds y lint.
+
 ---
 
 ## 2026-09-17 — Platinum, bloque 2: seña por QR con cotejo del comprobante (rama `flujos/sena-por-qr`, sobre el bloque 1)
