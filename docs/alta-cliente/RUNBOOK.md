@@ -184,6 +184,19 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   `funcionarios/{id}` (con el horario del negocio) con sello
   `cargar-negocio`, deja auditoría y relee todo como evidencia. Lo que ya
   existía y el archivo no nombra queda como está y se informa.
+  **El comportamiento general (`instruccionesExtra`) queda APROBADO y VIGENTE
+  en la misma carga** (desde el 17/09/2026): el script escribe también
+  `instruccionesVigentes` —que es lo único que el flujo lee— e
+  `instruccionesRevision` aprobada con `revisadoPor: 'cargar-negocio'`, porque
+  ese texto lo revisó NovuChat. Antes lo pasa por la misma capa de patrones que
+  la Function `verificarComportamiento` y **niega** si no la pasa (corchetes,
+  comillas angulares, nombres de herramientas, pedir negar que es una IA…):
+  lo que NovuChat carga tiene que poder editarse después desde la consola sin
+  que la verificación lo rechace. Lo que el comercio escriba después en ese
+  campo pasa por las dos capas del servidor y recién entonces rige
+  (`admin/DISENO.md` §4quater.5). Comercios cargados ANTES del 17/09: una vez,
+  `node admin/scripts/migrar-instrucciones.mjs --proyecto <proyecto>` en seco y
+  con `--aplicar`, antes de desplegar `configuracionFlujo`.
 - En la consola, con el administrador: revisar lo cargado, número de recepción,
   horario, catálogo y **«Cómo trata al cliente»** (tú, usted, vos o impersonal).
   Lo que dice la consola gana sobre el respaldo del flujo: NovuChat quedó en

@@ -26,6 +26,13 @@ id_ed25519
 # --- Material original de terceros, no saneado ---------------------------
 Preliminares/
 
+# --- Carpetas de clientes (datos reales de un comercio) ------------------
+# Llevan precios, agendas, teléfonos, capturas y los identificadores del
+# cliente. Nada de eso va a un repositorio público: lo versionado del cliente
+# es su JSON de configuración en admin/scripts/datos/, ya saneado con
+# marcadores. Sin esta línea, un `git add -A` los publica.
+CLIENTES/
+
 # --- Ruido ---------------------------------------------------------------
 *.log
 .DS_Store
