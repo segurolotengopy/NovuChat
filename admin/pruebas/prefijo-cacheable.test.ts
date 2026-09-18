@@ -54,6 +54,9 @@ const FLUJOS = [
   // Reservas de Clínica Platinum: el Demo A con una sección más en el prompt
   // (`instruccionesExtra`), que es texto del negocio y no cambia entre turnos.
   { archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
+  // Reservas del Dr. Bellido: mismo prompt, con `instruccionesExtra` y el bloque
+  // conversacional, los dos texto fijo del negocio entre turnos.
+  { archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
 ] as const;
 
 const nodo = (f: Flujo, nombre: string) => {
