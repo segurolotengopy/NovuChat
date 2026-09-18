@@ -48,7 +48,6 @@ done
 if [ "$MODO" = "alta-meta" ]; then
   [ -n "$WH" ] && [ -n "$ENV_CLIENTE" ] && [ -f "$ENV_CLIENTE" ] || { echo "Uso: --alta-meta --webhook-id <uuid> --env-cliente <.env.x>" >&2; exit 2; }
   [ -f "$ENV_N8N" ] || { echo "✗ Falta $ENV_N8N" >&2; exit 1; }
-  # shellcheck source=/dev/null
   set -a; . "$ENV_N8N"; . "$ENV_CLIENTE"; set +a
   : "${N8N_BASE_URL:?}" "${WA_APP_ID:?}" "${WA_APP_SECRET:?}"
   VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
@@ -74,7 +73,6 @@ if 'error' in d: print('  ERROR:', d['error'].get('message'))"
 fi
 [ -n "$MODO" ] && [ -n "$WH" ] || { echo "Uso: --preparar|--cerrar|--probar --webhook-id <uuid> [--flujo-id <id>]" >&2; exit 2; }
 [ -f "$ENV_N8N" ] || { echo "✗ Falta $ENV_N8N" >&2; exit 1; }
-# shellcheck source=/dev/null
 set -a; . "$ENV_N8N"; set +a
 : "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}"
 BASE="${N8N_BASE_URL%/}"; API="$BASE/api/v1"

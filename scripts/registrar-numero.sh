@@ -31,8 +31,10 @@ done
 [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || { echo "✗ Falta --env <archivo> (p. ej. .env.bellido)" >&2; exit 2; }
 [ -n "$MODO" ] || { echo "✗ Falta --estado o --registrar" >&2; exit 2; }
 
-# shellcheck source=/dev/null
-set -a; . "$ENV_FILE"; set +a
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige un argumento
+source "$ENV_FILE"
+set +a
 : "${WA_TOKEN:?WA_TOKEN no está en $ENV_FILE}"
 : "${WA_PHONE_ID:?WA_PHONE_ID no está en $ENV_FILE}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
