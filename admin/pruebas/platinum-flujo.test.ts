@@ -143,7 +143,8 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
   /** Los únicos nodos cuyos parámetros cambian, y por qué. */
   const PARAMETROS_DISTINTOS = [
     'Config base',          // los datos de la clínica y el campo nuevo instruccionesExtra
-    'Config del negocio',   // instruccionesExtra de la consola pisa al respaldo
+    // `Config del negocio` ya NO difiere: desde #110 el vertical fusiona
+    // instruccionesExtra, y el bloque 2 lo repuso letra por letra.
     AGENTE,                 // ejemplos dentales, duración por servicio y la sección de información
     'agendar_cita',         // fin = inicio + duración del servicio (60 / 30 min)
     'Avisar a recepción',   // el rótulo del aviso nombra a la clínica, no al demo

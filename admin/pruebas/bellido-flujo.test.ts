@@ -184,6 +184,10 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // Bloque 1 (dirección con Maps): el pin nativo sale por Graph con la
     // credencial de envío del cliente, y se reporta con la de ingesta.
     'Enviar ubicación', 'Reportar ubicación (saliente)',
+    // Bloque 2 (seña por QR): el QR sale por Graph con la credencial de envío,
+    // el medio se pide a Meta con la misma, y el reporte del QR y el cotejo van
+    // a la ingesta. Gemini y Calendar quedan sin nombre: se heredan por tipo.
+    'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante', 'Reportar QR (saliente)', 'Cotejar en el servidor',
   ];
 
   it('lleva el nombre del cliente y los mismos nodos del Demo A: ids, tipos, versiones y posiciones', () => {
@@ -260,17 +264,20 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
       }
     }
     for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)',
-      'Reportar mensaje (saliente)', 'Registrar cierre (cita)']) {
+      'Reportar mensaje (saliente)', 'Registrar cierre (cita)', 'Reportar QR (saliente)', 'Cotejar en el servidor']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name, nombre).toMatch(/Bellido/);
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name, nombre).toMatch(/Bellido/);
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
   });
 
   it('CERO mensajes de WhatsApp agregados o quitados: los mismos dos nodos de envío del Demo A', () => {
-    const envios = (f: Flujo) => f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name);
+    // El nodo de WhatsApp que PIDE la URL de un medio (bloque 2) no envía nada:
+    // se filtra por `resource`, como en la suite de Platinum.
+    const envios = (f: Flujo) => f.nodes
+      .filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['resource'] !== 'media').map((n) => n.name);
     expect(envios(flujo)).toEqual(['Responder al cliente', 'Avisar a recepción']);
     expect(envios(flujo)).toEqual(envios(demoA));
   });
@@ -517,10 +524,11 @@ describe.skipIf(!HAY_JSON)('(f) Obedece los umbrales del servidor antes de llama
       .toEqual({ telefono: '' });
   });
 
-  it('`¿Atención normal?` está ANTES del agente, y es su ÚNICA entrada', () => {
+  it('`¿Atención normal?` está ANTES del agente, y su rama verdadera es la ÚNICA entrada (por `¿Es un comprobante?`, bloque 2)', () => {
     expect(destinos('¿Comercio operativo?', 0)).toEqual(['¿Atención normal?']);
-    expect(origenes(AGENTE)).toEqual(['¿Atención normal?']);
-    expect(destinos('¿Atención normal?', 0)).toEqual([AGENTE]);
+    expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
+    expect(destinos('¿Es un comprobante?', 1)).toEqual([AGENTE]);
+    expect(origenes(AGENTE)).toEqual(['¿Es un comprobante?']);
     expect(destinos('¿Atención normal?', 1)).toEqual(['Uso extendido']);
   });
 
@@ -583,6 +591,7 @@ describe.skipIf(!HAY_JSON)('(g) Orden v1: el entrante se reporta antes, y el sal
     expect(origenes('Mensaje a enviar').sort()).toEqual([
       'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
       '¿Reintentar tras cruce?', '¿Responder uso extendido?',
+      'Mensaje de la seña', // la respuesta fija al comprobante (bloque 2)
     ].sort());
   });
 
