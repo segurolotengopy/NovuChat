@@ -44,6 +44,13 @@ con `crear-plantilla.sh` (tarda días, conviene apenas se autorice); crear el
 flujo con `publicar-flujo.sh --crear`, **que no se activa hasta que Meta
 apruebe la plantilla**; y probar con teléfono (filas 40–42 de la aceptación).
 
+**Bellido en paridad (18/09).** La rama fusiona el bloque 3 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` repone en `Flujos/bellido-agendamiento.json`
+los dos nodos de reporte que este bloque cambia (`Reportar mensaje (entrante)`
+y `(saliente)`); el prompt no cambia. Con esto los cuatro bloques de flujo
+(1 a 4) y el 5 llevan a Bellido nodo por nodo. 2057 en verde (45 archivos),
+saneo 0, builds y lint.
+
 ---
 
 ## 2026-09-17 — Platinum, bloque 3: el audio, la imagen y el PDF entran como TEXTO al agente (rama `flujos/medios-entrantes`, sobre el bloque 2)
