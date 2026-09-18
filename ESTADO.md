@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-17 (Platinum, bloques 3 y 4: medios entrantes como texto, y recordatorio de solicitud pendiente una sola vez por lead). Antes, el mismo día: 2026-09-17 (Platinum, bloque 2: seña por QR con cotejo del comprobante, sin publicar). Antes, el mismo día: 2026-09-17 (Platinum, bloque 1: dirección con enlace a Maps en la confirmación de la cita; pin nativo solo a pedido). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 con Bellido en paridad). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto al asistente; sobre el bloque 2 con Bellido en paridad). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante, con Bellido en paridad; sin publicar). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace a Maps, PR #110 fusionado y Bellido en paridad con dos scripts de sincronización). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; alta del Dr. Bellido en PR). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado). Antes: 2026-09-14 (flujo de captación de NovuChat en PR; número de NovuChat en Meta, verificado; revisión del #66; Semgrep y `nosemgrep`, #67). Antes: 2026-09-13 (flujos A y B con umbrales de uso extendido; #64 y #46 fusionados).
 
 ---
 
@@ -86,6 +86,15 @@ del nodo de transcripción y la relación tamaño ↔ duración del audio.
 poda de ejecuciones y la credencial de Gemini en nivel pago. Sin eso, «nada se
 guarda» vale para el flujo pero no para la instancia.
 
+**Bellido en paridad (18/09).** La rama fusiona el bloque 2 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` lleva los 10 nodos de medios a
+`Flujos/bellido-agendamiento.json` (69 nodos); el prompt no cambia en este
+bloque, así que no hay nada que portar. El comentario de `Preparar imagen`
+dejaba el nombre de la clínica en el vertical, y la suite de Bellido lo
+prohíbe con razón: ahora dice «de la carpeta del cliente». Suites de Bellido y
+`flujos-umbrales` con las dos compuertas de medios y las tres entradas de
+texto al agente. 1978 en verde (43 archivos), saneo 0, builds y lint.
+
 ---
 
 ## 2026-09-17 — Platinum, bloque 2: seña por QR con cotejo del comprobante (rama `flujos/sena-por-qr`, sobre el bloque 1)
@@ -146,6 +155,20 @@ paquetes de n8n 2.36.5, no ejecutados). **Verificar en la VM antes de
 recibir comprobantes reales:** credencial de Gemini en nivel pago y poda de
 binarios de las ejecuciones de n8n (`analisis-audio-e-imagen.md`).
 
+**Bellido en paridad (18/09).** El bloque entra en `Flujos/bellido-agendamiento.json`
+con los dos scripts del bloque 1: `sincronizar-flujo-cliente.mjs` (59 nodos,
+las 18 conexiones nuevas, credenciales por tipo) y `portar-prompt-cliente.py`
+(el bloque SEÑA del prompt, la regla 4 y el prefijo `PENDIENTE DE SEÑA ·` en
+`agendar_cita`, sobre el texto propio del consultorio). Al portar, `Config
+del negocio` del Demo A quedó con un bloque mal anclado (sintaxis rota, y
+copiada a Bellido); se reconstruyó desde el bloque 1 más el tramo de la seña,
+y ahora es LETRA POR LETRA el mismo en Demo A, Platinum y Bellido: la suite
+de Platinum deja de declararlo distinto. Suites de Bellido, Platinum y
+`flujos-umbrales` declaran `¿Es un comprobante?` como la única entrada al
+agente y las cuatro credenciales nuevas del cliente. 1890 pruebas en verde,
+saneo, builds y lint. Lección para los bloques 3 a 5: después de portar,
+verificar cada nodo Code con `new Function` antes de sincronizar al cliente.
+
 ---
 
 ## 2026-09-17 — Platinum, bloque 1: la dirección va con el enlace de Google Maps (rama `flujos/direccion-maps`)
@@ -171,12 +194,290 @@ paciente pide el pin y hay coordenadas.** Suite: 1500 en verde (33 archivos),
 `platinum-flujo.test.ts` (k) sobre los dos flujos, `direccion-maps.test.ts`
 (34, puras), reglas negando. Saneo 0.
 
-**Falta:** desplegar reglas y Functions; publicar los dos flujos desde `main`
-con `publicar-flujo.sh` (los nodos nuevos toman la credencial por tipo);
+**Bellido en paridad (18/09).** `main` trajo el alta del Dr. Bellido con una
+suite que exige que su flujo sea el Demo A nodo por nodo, así que cada bloque
+que toca el Demo A tiene que llevar también `Flujos/bellido-agendamiento.json`.
+Dos scripts nuevos lo hacen repetible: `admin/scripts/sincronizar-flujo-cliente.mjs`
+(repone en el cliente los nodos, conexiones, código y credenciales por tipo
+del vertical; conserva sus nodos propios y agrega a `Config base` las
+asignaciones nuevas) y `admin/scripts/portar-prompt-cliente.py` (aplica al
+prompt y a las herramientas del cliente las mismas operaciones por línea que
+cambiaron en el vertical, con sustitución de subcadena donde el cliente tiene
+texto propio). La rama fusiona además el PR #110 (Demo A al día), que
+resolvía el mismo nodo `Config del negocio`. Bellido: 41 nodos, su suite en
+verde con las mismas tres excepciones que Platinum.
+
+**Falta:** desplegar reglas y Functions; publicar los TRES flujos desde `main`
+con `publicar-flujo.sh` (Demo A, Platinum y Bellido; los nodos nuevos toman la
+credencial por tipo);
 probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anotar en
 `CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
 
 ---
+
+## 2026-09-17 (noche) — alta del Dr. Andrés Bellido, pediatra: el flujo listo y probado
+
+**Cliente nuevo, urgente: tiene que atender el 18/09 a las 09:00.** Consultorio
+de pediatría, neonatología y nutrición infantil en La Paz. Una sola agenda, un
+solo profesional. Asistente **Dante**, tuteo, pocos emojis. Todo en
+`CLIENTES/BELLIDO/` (no versionado): ficha, conocimiento del asistente, guía de
+Meta, estado y lista de aceptación.
+
+**PR #109**, rama `claude/bellido-appointment-chatbot-98b307`: el flujo
+(`Flujos/bellido-agendamiento.json`, el Demo A con los datos del consultorio),
+sus datos (`admin/scripts/datos/negocio-bellido.json`), su suite (57 pruebas) y
+`scripts/marcador-local.sh`. 595 pruebas en verde, saneo con 0 hallazgos.
+
+**Esto resuelve el punto 2 de la lista del cierre anterior para este cliente:**
+el Demo A no tenía el bloque conversacional de #90 **ni el bloque delimitado
+`INFORMACIÓN DEL NEGOCIO`**, y los dos se portaron al flujo nuevo. **El Demo A
+sigue sin ellos**: el próximo cliente que se copie de él vuelve a nacer sin la
+calidez de Platinum y, peor, sin que `instruccionesExtra` llegue al asistente.
+Arreglarlo en el Demo A mismo sigue pendiente.
+
+**Cinco defectos que la suite encontró en el borrador**, todos corregidos antes
+de subir. El primero es el que importa para el proyecto entero, porque lo
+hereda cualquier cliente copiado del Demo A:
+
+1. **El prompt leía `{{ $json.instruccionesExtra }}` y `Config del negocio` no
+   lo fusionaba.** Todo lo escrito para el consultorio —urgencias, prohibición
+   de dar dosis, precios— nunca habría llegado al asistente, y lo que el
+   comercio escribiera en la consola no habría hecho nada. Es la otra mitad de
+   #90, y en el Demo A todavía falta.
+2. **Los cuatro nodos HTTP traían el id REAL de la credencial del Demo A**
+   (`Cierres NovuChat A`): un cliente real habría reportado su tráfico contra el
+   alias del demo. `verificar-saneo.sh` no detecta un id de credencial.
+3. Los dos nodos de envío salían sin credencial de WhatsApp.
+4. El aviso interno decía «NovuChat (demo agendamiento)».
+5. `mensajeComercioSuspendido` decía «comunicate» —voseo— en un texto que ve el
+   paciente.
+
+**Tres decisiones sobre el guion que entregó el cliente**, con su motivo en
+`CLIENTES/BELLIDO/conocimiento-asistente.md` §8: **no se promete el recordatorio
+de 24 h** (el flujo de recordatorios es otro, no está publicado para él, y cada
+recordatorio es una plantilla que Meta cobra: prometerlo sería presentar algo
+como lo que no es); la derivación **no publica el celular de recepción**; y las
+redes van **dentro** del mensaje de confirmación, no en uno aparte. Mensajes por
+conversación: **los mismos que el Demo A**, ni uno más.
+
+**`scripts/marcador-local.sh`** cierra el único paso del alta que el RUNBOOK
+dejaba «a mano»: agrega o comprueba una fila de la tabla de marcadores de
+`CONFIGURACION.local.md` sin leer ni imprimir jamás un valor. Ya cargó tres de
+los cuatro marcadores de Bellido.
+
+**Nada se escribió en producción, en Meta ni en n8n.** Lo que bloquea las 09:00,
+en orden: (1) **el calendario del doctor no está compartido con la cuenta que
+usa n8n** —es el paso más barato y el más fácil de olvidar—; (2) Meta entero;
+(3) el alta en Firebase, diagnosticada en seco y lista (tenant `bellido` libre,
+alias `cliente03`, plan **Impulso**); (4) la importación en n8n.
+
+---
+
+## 2026-09-17 (cierre) — `v0.5.5` en producción, y lo que le queda a la próxima sesión
+
+**Desplegado y verificado.** `v0.5.5` sobre `185a551`: 26 Functions
+actualizadas, `verificarComportamiento` creada, reglas de Firestore, índices,
+reglas de Storage y consola publicadas. Seis minutos de punta a punta, tres de
+ellos el despliegue mismo. `configuracionFlujo` e `ingesta` conservan la
+instancia mínima en uno, así que el arranque en frío de ocho segundos no
+volvió. Antes de etiquetar: 1.468 pruebas en verde con el emulador.
+
+Con esto, el «comportamiento del asistente» ya funciona entero en producción:
+el comercio escribe su texto en la consola, la Function lo revisa antes de
+aplicarlo y solo lo aprobado llega al prompt. Es la respuesta a las tres reglas
+del 17/09 (multi-tenant estricto; lo instruido por chat se ve en la consola; el
+pseudo-prompt se verifica por seguridad antes de aplicarse).
+
+**Fusionado hoy, además:** #95 (bitácora), #96 (los mensajes fijos de Platinum
+en tuteo, que una recarga desde `main` había devuelto a usted), #100 y #101
+(comportamiento verificado), #102 (`CLIENTES/` se ignora: el repositorio es
+público y esa carpeta guarda datos reales de cada comercio).
+
+**Lo que sigue, en orden, y todo con el desarrollo terminado primero.** Andres
+decidió hacer las pruebas reales cuando el desarrollo esté completo, no ahora.
+
+1. **Demo B tiene el cableado viejo del reporte saliente.** `Reportar mensaje
+   (saliente)` cuelga de `Procesar respuesta`, así que la consola registra lo
+   que dijo el modelo y no lo que se envió. En A y en Platinum ya cuelga de
+   `Responder al cliente` (#97). Demo B tampoco tiene el candado por hecho.
+   Mismo arreglo, mismo patrón.
+2. **El Demo A no tiene el bloque conversacional de #90**, y de él se copian
+   los clientes nuevos: el próximo cliente nacería sin la calidez que Platinum
+   ya tiene. Verificado hoy comparando los dos JSON.
+3. **Audio e imagen** (la clínica dice que son frecuentes). Análisis y
+   recomendación en `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`: transcribir
+   el audio y responder por texto, clasificar la imagen sin que el agente la
+   vea, sin voz de salida. **Ojo: ya hay una sesión construyéndolo** en
+   `flujos/medios-entrantes` (ver más abajo). Antes de empezarlo de cero, mirar
+   esa rama.
+4. **Agendas por plan en las reglas** (1 / 5 / hasta 10). Es el único límite
+   comercial de la tabla del §7 que todavía no existe en el servidor.
+5. **Endurecer el bucket** (acceso uniforme y prevención de acceso público),
+   después de que alguien suba un archivo desde la consola. El acceso uniforme
+   solo se revierte dentro de 90 días.
+6. **Pruebas reales pendientes**, cuando el desarrollo esté cerrado: el candado
+   insistiendo sobre una hora ocupada desde un teléfono; la consola con el
+   administrador de Platinum (alta y baja de producto, límite del plan, subir
+   archivo); y el comportamiento del asistente de punta a punta (escribir el
+   texto, ver la revisión, comprobar que el asistente usa lo vigente).
+7. **Preguntas abiertas con la clínica:** quién es la odontóloga que valora
+   («Dra. Fernanda» no es ninguna de las dos agendas configuradas), cómo se
+   cobra la reserva de 50 Bs, y cuál documento manda, porque el Excel corregido
+   todavía trae seis de las siete afirmaciones clínicas prohibidas.
+
+**Una fricción de proceso, para no repetirla.** La etiqueta la tuvo que crear
+Andres: `.claude/settings.json` tiene `Bash(git tag*)` en la lista `deny`, que
+es un no absoluto y no admite confirmación. Consultado hoy, decidió dejar la
+regla como está.
+
+**Trabajo en vuelo en otros worktrees, y NADA de esto está en el remoto.**
+Al cerrar esta sesión quedan seis ramas con commits solo en el disco de Andres,
+cada una en su propio worktree y con su propia sesión. Quien retome tiene que
+mirarlas antes de construir nada de la lista de arriba, porque se solapan:
+
+| Rama | Commits sin subir | Qué trae |
+|---|---|---|
+| `flujos/medios-entrantes` | 18 | El audio, la imagen y el PDF entran al agente **como texto**; «clasificar, no mirar» documentado en `LEEME` §8 y `DISENO` §4terdecies |
+| `flujos/seguimiento-pendiente` | 19 | Barrido de seguimientos, el recordatorio de solicitud pendiente decidido por el servidor, «No contactar» en la consola, entrantes por tipo en Consumo |
+| `flujos/sena-por-qr` | 15 | Seña por QR con cotejo del comprobante en el servidor y retención del horario; la cita queda en solicitud y el cierre nace del cotejo |
+| `flujos/direccion-maps` | 8 | La dirección viaja con el enlace de Maps en el mismo mensaje; `direccionMaps` y `ubicacion` en la consola y en `cargar-negocio` |
+| `platinum/umbrales-publicados` | 4 | `Analisis/32` §4.1, lo que la construcción necesita del contrato de Platinum |
+| `flujos/candado-un-calendario` | 2 | El candado revisa solo la agenda que recibió la cita: es lo que `CLAUDE.md` §3 exige antes de prometer más agendas por plan |
+
+Ninguna de las seis se tocó desde esta sesión. **Subirlas y abrir su PR le toca
+a la sesión dueña de cada worktree**; hasta entonces son trabajo que existe en
+un solo disco.
+
+**Ramas cerradas por superadas que siguen en el remoto:**
+`platinum/ajustes-de-conversacion` (#86) y `platinum/objeciones-comerciales`
+(#88); su contenido entró por #89 y #90. `#63` (documentos del 13/09) sigue
+abierto y no es de esta línea de trabajo.
+
+---
+
+## 2026-09-17 — Platinum en producción, `v0.5.4` desplegado, y cuatro etiquetas para llegar
+
+**Clínica Platinum atiende desde su número** (`Flujos/platinum-agendamiento.json`,
+flujo activo en n8n, cuatro verdes en `verificar-meta.sh`). Probado con tres
+teléfonos reales: dos citas agendadas en la agenda correcta, sin cruce. La
+clínica evaluó y corrigió: pasó a tuteo con más emojis, dio los precios que
+faltaban (reserva de 50 Bs a cuenta de los 500; valoración 200 Bs solo si no
+se hace el tratamiento) y **prohibió cuatro afirmaciones clínicas** que salían
+de su propio material (desensibilizantes, oxígeno, esmalte intacto, 1 a 2
+años). El prompt aprendió a conversar sin gastar un mensaje más (#90). Todo en
+`CLIENTES/PLATINUM/`. Plan Pro asignado. Sigue abierto: quién es la odontóloga
+que valora, y cómo se cobra la reserva.
+
+**Fusionado hoy:** #82 (alta: flujo, `cargar-negocio.mjs`, suites), #87
+(mínimo de contraseña a 8, exigido solo al cambiarla), #89 (datos de la
+clínica), #90 (prompt), #91 y #92 (piso de factura en CI), #93 (**el contador
+del catálogo viaja en la transacción de `cargar-negocio.mjs`**, y registros
+estructurados con `tenantId` en `ingesta` y `configuracionFlujo`), #94 (Storage
+por destino). Cerrados por superados: #86 y #88.
+
+**Producción, `v0.5.4` (`33f6839`):** consola, reglas de Firestore, índices y
+reglas de Storage publicadas a las 12:58Z, verificadas idénticas a `main`;
+`v0.5.2` ya había desplegado Functions con **instancias mínimas en uno**: la
+primera respuesta pasó de ~8 s (arranque en frío de dos Functions en serie) a
+~0,3 s. Contadores de catálogo sembrados en los cuatro comercios; planes
+asignados (Platinum: Pro; NovuChat: demostración). Variables definitivas:
+`FIREBASE_DEPLOY_ONLY` completo con `storage`, `VITE_FIREBASE_STORAGE_BUCKET`
+creada, `FIREBASE_DEPLOY_FORCE` borrada.
+
+**Las tres etiquetas que no desplegaron, y por qué**, todas en la simulación y
+sin tocar producción (acta `docs/produccion/acta-v0.5.0.md`):
+- `v0.5.0`: firebase-tools se niega a subir el piso de factura sin `--force`.
+- `v0.5.1`: el `--force` estaba solo en la publicación, no en el `--dry-run`.
+- `v0.5.3`: «Firebase Storage has not been set up» es un **404** de
+  `GET defaultBucket` con la identidad federada, aunque el bucket exista, el
+  dueño reciba 200 y Policy Troubleshooter diga GRANTED. Se resolvió declarando
+  Storage como lista con destino `principal` en `firebase.json` y resolviéndolo
+  con `target:apply` en el workflow: así firebase-tools no consulta esa API.
+
+**Dos hallazgos de proceso.** El enlace de contraseña del administrador se
+imprimía por stdout (#82 lo pasa a `~/enlace-admin-<tenant>.txt`, 600). Y
+`${GCP_PROJECT_ID}` de la tabla local es el proyecto de los **demos**; el de la
+consola es el `quota_project_id` de `~/.config/gcloud-novuchat-prod` (los
+nombres difieren en un guion).
+
+**Tarde del 17/09, y es lo que más importa de la jornada.** Segundo
+sobreagendamiento del día en Platinum: el modelo agendó a las 10:00 dentro de
+una cita de 10:00 a 11:00 que acababa de recibir de `consultar_disponibilidad`,
+con la regla de intervalos ya publicada, en cuanto la paciente insistió. Y el
+candado no corrió, porque se disparaba por lo que el modelo DECÍA y dijo «he
+reprogramado». Andres fijó una **regla mandatoria**, escrita en las reglas de
+flujos de `CLAUDE.md` (#98): nunca una cita encima de otra con un cliente real;
+el prompt no es una barrera. Mecanismo en #97 y #99, publicado en **los dos
+flujos** (Platinum y Demo A, 33 → 38 nodos): el candado se dispara si
+`agendar_cita` se ejecutó (`intermediateSteps` del agente e `isExecuted`, en OR
+con el detector de texto ampliado); tras un cruce, un agente aparte que solo
+puede consultar ofrece alternativas; la consola registra lo enviado y no lo que
+dijo el modelo; la negrita se normaliza por código. 416 pruebas. **Falta la
+prueba real de insistencia** antes de darlo por bueno.
+
+**Audios e imágenes** (la clínica dice que son frecuentes): análisis en
+`CLIENTES/PLATINUM/analisis-audio-e-imagen.md`. Hoy una foto con caption
+«quiero más información» hizo que el asistente inventara «gracias por el
+comprobante». Recomendación: transcribir el audio y responder por texto;
+clasificar la imagen sin que el agente la vea; sin voz de salida; reenvío a un
+celular solo para el comprobante y por la consola. Cero mensajes agregados.
+
+**Pendiente:** probar en la consola, con el administrador de Platinum, alta y
+baja de un producto, el límite del plan y la subida de un archivo; después
+endurecer el bucket (acceso uniforme, prevención de acceso público). Subir el
+bloque conversacional de #90 al Demo A, del que se copian los clientes nuevos.
+La prueba con la clínica del 18/09 a las 09:00 con las tres escenas que
+propusieron.
+
+---
+
+## 2026-09-17 — el comportamiento general se verifica en el servidor antes de aplicarse (#100 y #101 fusionados; migración aplicada; falta la etiqueta `v0.5.5`)
+
+Reglas de Andres del 17/09: multi-tenant estricto; el «comportamiento general»
+(`config/negocio.instruccionesExtra`) es un pseudo-prompt por empresa y **se
+verifica por seguridad antes de aplicarse**; lo que NovuChat carga por script se
+ve en la consola. Diseño completo en `admin/DISENO.md` §4quater.5.
+
+- **Contrato:** `instruccionesExtra` = lo propuesto (lo escribe el admin del
+  comercio); `instruccionesVigentes` = lo que el flujo lee (solo SDK Admin);
+  `instruccionesRevision` = `{estado, motivo, hash, capa, revisadoPor,
+  revisadoEn}` (solo SDK Admin). `configuracionFlujo` entrega
+  `instruccionesExtra` al flujo desde lo vigente; **el flujo no cambia**.
+- **Reglas:** lo vigente y la revisión no se escriben desde el navegador con
+  ningún rol (diff, como `stock`); 5 pruebas nuevas negando en `reglas.test.ts`.
+- **Function `verificarComportamiento`** (`onDocumentWritten` sobre
+  `config/negocio`): capa 1 de patrones determinista (lista con el porqué en
+  `comportamiento.ts`; «regla», «herramienta», «consola» y «NovuChat» sueltos
+  son dudosos, no rechazo) y capa 2 con Gemini a temperatura 0 y respuesta
+  cerrada; sin respuesta queda `pendiente` y no se aplica. Reusa el secreto
+  `GEMINI_API_KEY`.
+- **Scripts:** `cargar-negocio.mjs` deja vigente y revisión aprobada (y niega
+  lo que la capa 1 rechazaría); `migrar-instrucciones.mjs` (seco por defecto)
+  copia lo propuesto a vigente en los comercios anteriores: **hay que correrlo
+  antes de desplegar `configuracionFlujo`** o Platinum se queda sin
+  instrucciones. El JSON de Platinum ya no lleva comillas angulares.
+- **Emojis:** `FRASE_EMOJIS.muchos` pasó a imperativo («Use uno, dos o tres
+  emojis en cada mensaje…»): con «Varios», 6 de 15 respuestas salían sin emoji.
+- **Hecho en la nube:** `migrar-instrucciones.mjs --aplicar` corrió contra
+  producción antes de desplegar nada. Platinum quedó con lo vigente igual a lo
+  propuesto, aprobado por la capa de patrones, 1.489 caracteres, sin comillas
+  angulares. **Falta la etiqueta `v0.5.5`**, que lleva reglas de Firestore y
+  Functions; después, la prueba contra un teléfono real: escribir el
+  comportamiento en la consola, ver la revisión y comprobar que el asistente usa
+  lo vigente.
+- **La pantalla ya está fusionada:** #100 (sección «Comportamiento del
+  asistente» con su estado de revisión) y #101 (la verificación del servidor).
+
+**Una regresión propia, y de dónde salió.** Al recargar la configuración de
+Platinum desde `main` con `cargar-negocio.mjs --aplicar`, los cinco mensajes
+fijos volvieron a usted en producción: #96, que los pasaba a tuteo, nunca se
+había fusionado, así que `main` tenía la versión vieja del JSON del cliente. Se
+arregló fusionando la rama con `main` —conflicto resuelto a mano: contenido de
+`main` más los cinco mensajes—, fusionando #96 y recargando. Verificado leyendo
+Firestore. **La lección es la misma que ya está escrita para publicar flujos, y
+ahora vale también para la configuración:** una carga desde `main` pisa lo que
+un PR sin fusionar dejó en producción, y el diagnóstico en seco se lee entero
+antes de `--aplicar`.
 
 ## 2026-09-15 (noche) — alta de PLATINUM preparada para el demo del 16/09 (rama `claude/platinum-novuchat-setup-58d3d0`)
 

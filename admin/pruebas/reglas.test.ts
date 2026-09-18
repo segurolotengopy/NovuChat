@@ -1498,6 +1498,109 @@ describe('Bitácora', () => {
 // ===========================================================================
 // 18. CONFIGURACIÓN COMO FUENTE DE VERDAD
 // ===========================================================================
+// ===========================================================================
+// COMPORTAMIENTO GENERAL VERIFICADO EN EL SERVIDOR (reglas de Andres, 17/09/2026)
+//
+// `instruccionesExtra` es lo PROPUESTO y lo escribe el admin del comercio.
+// `instruccionesVigentes` (lo que el flujo lee) e `instruccionesRevision` los
+// escribe SOLO el SDK Admin: la Function `verificarComportamiento` o los scripts
+// de NovuChat. Desde el navegador nadie los toca, con ningún rol, ni armando la
+// petición a mano. Ver DISENO.md §4quater.5.
+// ===========================================================================
+describe('Comportamiento general: lo vigente lo escribe solo el servidor', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+  const negocioA = (fs: Fs) => doc(fs, `tenants/${A}/config/negocio`);
+  const negocioB = (fs: Fs) => doc(fs, `tenants/${B}/config/negocio`);
+  /** Como lo deja la Function o `cargar-negocio.mjs`: propuesto, vigente y revisión. */
+  const sembrarVerificado = (t = A) => entorno.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), `tenants/${t}/config/negocio`), {
+      instruccionesExtra: 'propuesto', instruccionesVigentes: 'vigente aprobado',
+      instruccionesRevision: { estado: 'aprobado', motivo: 'ok', hash: 'hash-de-prueba-abc', revisadoEn: Timestamp.now() },
+    });
+  });
+  const leerA = async (): Promise<Record<string, unknown>> => {
+    let datos: Record<string, unknown> = {};
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      datos = (await getDoc(doc(ctx.firestore(), `tenants/${A}/config/negocio`))).data() ?? {};
+    });
+    return datos;
+  };
+
+  it('el admin del comercio SÍ escribe lo propuesto, antes y después de que haya un vigente', async () => {
+    await assertSucceeds(updateDoc(negocioA(adminA()), { instruccionesExtra: 'Promo 2x1 los martes', ...sello('u-admin-a') }));
+    await sembrarVerificado();
+    await assertSucceeds(updateDoc(negocioA(adminA()), { instruccionesExtra: 'otra promo', ...sello('u-admin-a') }));
+    await assertSucceeds(updateDoc(negocioA(adminA()), { instruccionesExtra: '', ...sello('u-admin-a') }));
+    // Y con el documento entero, siempre que lo vigente y su revisión viajen SIN cambios.
+    const actual = await leerA();
+    await assertSucceeds(setDoc(negocioA(adminA()), {
+      ...configValida('u-admin-a'),
+      instruccionesVigentes: actual['instruccionesVigentes'], instruccionesRevision: actual['instruccionesRevision'],
+    }));
+  });
+
+  it('el admin del comercio NO escribe instruccionesVigentes: ni al crearlo, ni al cambiarlo, ni al borrarlo', async () => {
+    await assertFails(updateDoc(negocioA(adminA()), { instruccionesVigentes: 'me apruebo solo', ...sello('u-admin-a') }));
+    await assertFails(setDoc(negocioA(adminA()), { ...configValida('u-admin-a'), instruccionesVigentes: 'me apruebo solo' }));
+    await sembrarVerificado();
+    await assertFails(updateDoc(negocioA(adminA()), { instruccionesVigentes: 'otro', ...sello('u-admin-a') }));
+    await assertFails(updateDoc(negocioA(adminA()), { instruccionesVigentes: deleteField(), ...sello('u-admin-a') }));
+    // Un `setDoc` con el documento entero que OMITE lo vigente lo borraría, y
+    // borrar también es afectar. Por eso la consola usa `updateDoc`.
+    await assertFails(setDoc(negocioA(adminA()), configValida('u-admin-a')));
+    // Escribir lo propuesto con el mismo texto que lo vigente tampoco copia nada.
+    await assertSucceeds(updateDoc(negocioA(adminA()), { instruccionesExtra: 'vigente aprobado', ...sello('u-admin-a') }));
+    const despues = await leerA();
+    expect(despues['instruccionesVigentes']).toBe('vigente aprobado');
+    expect(despues['instruccionesRevision']).toMatchObject({ estado: 'aprobado', hash: 'hash-de-prueba-abc' });
+  });
+
+  it('el admin del comercio NO escribe instruccionesRevision: no se aprueba a sí mismo', async () => {
+    const revision = { estado: 'aprobado', motivo: 'yo digo que sí', hash: 'hash-de-prueba-abc', revisadoEn: Timestamp.now() };
+    await assertFails(updateDoc(negocioA(adminA()), { instruccionesRevision: revision, ...sello('u-admin-a') }));
+    await assertFails(setDoc(negocioA(adminA()), { ...configValida('u-admin-a'), instruccionesRevision: revision }));
+    await sembrarVerificado();
+    // Por campo anidado, con un valor DISTINTO del sembrado: escribir el mismo
+    // valor no afecta ninguna clave y la regla, con razón, no tiene qué negar.
+    await assertFails(updateDoc(negocioA(adminA()), { 'instruccionesRevision.motivo': 'lo cambio yo', ...sello('u-admin-a') }));
+    await assertFails(updateDoc(negocioA(adminA()), { instruccionesRevision: { ...revision, estado: 'rechazado' }, ...sello('u-admin-a') }));
+    await assertFails(updateDoc(negocioA(adminA()), { instruccionesRevision: deleteField(), ...sello('u-admin-a') }));
+    // Tampoco escondido detrás de un cambio legítimo de lo propuesto.
+    await assertFails(updateDoc(negocioA(adminA()), {
+      instruccionesExtra: 'promo', instruccionesVigentes: 'promo', instruccionesRevision: revision, ...sello('u-admin-a'),
+    }));
+  });
+
+  it('el admin de A NO escribe NADA en tenants/B/config/negocio: ni lo propuesto ni lo vigente', async () => {
+    await sembrarVerificado(B);
+    await assertFails(updateDoc(negocioB(adminA()), { instruccionesExtra: 'promo ajena', ...sello('u-admin-a') }));
+    await assertFails(updateDoc(negocioB(adminA()), { instruccionesVigentes: 'vigente ajeno', ...sello('u-admin-a') }));
+    await assertFails(updateDoc(negocioB(adminA()), {
+      instruccionesRevision: { estado: 'rechazado', motivo: 'x', hash: 'hash-de-prueba-abc', revisadoEn: Timestamp.now() },
+      ...sello('u-admin-a'),
+    }));
+    await assertFails(setDoc(negocioB(adminA()), { ...configValida('u-admin-a'), instruccionesExtra: 'promo ajena' }));
+    await assertFails(getDoc(negocioB(adminA())));
+    // Y B, en su documento, sigue pudiendo escribir lo suyo.
+    await assertSucceeds(updateDoc(negocioB(adminB()), { instruccionesExtra: 'promo propia', ...sello('u-admin-b') }));
+  });
+
+  it('ningún otro rol escribe lo vigente desde el navegador: propietario, operador, ingesta, anónimo', async () => {
+    await sembrarVerificado();
+    for (const [fs, uid] of [
+      [propietario(), 'u-novuchat'], [operA(), 'u-oper-a'], [ingestaA(), 'svc-a'], [anonimo(), 'nadie'],
+    ] as const) {
+      await assertFails(updateDoc(negocioA(fs), { instruccionesVigentes: 'x', ...sello(uid) }));
+      await assertFails(updateDoc(negocioA(fs), {
+        instruccionesRevision: { estado: 'aprobado', motivo: 'x', hash: 'hash-de-prueba-abc', revisadoEn: Timestamp.now() },
+        ...sello(uid),
+      }));
+      // El operador tampoco escribe lo propuesto: la configuración es del admin.
+      await assertFails(updateDoc(negocioA(fs), { instruccionesExtra: 'x', ...sello(uid) }));
+    }
+  });
+});
+
 describe('Configuración del negocio como fuente de verdad', () => {
   it('acepta el conjunto completo de campos del flujo', async () => {
     await assertSucceeds(setDoc(doc(adminA(), `tenants/${A}/config/negocio`),
