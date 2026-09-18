@@ -134,6 +134,9 @@ const prompt = (): string => nodo(flujo, AGENTE).parameters['options'].systemMes
 // ---------------------------------------------------------------------------
 // (a) Es el Demo A, salvo lo declarado
 // ---------------------------------------------------------------------------
+/** Un envío a Graph se reconoce por el COMIENZO de la URL, nunca por subcadena. */
+const META = /^=?https:\/\/graph\.facebook\.com\//;
+
 describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados', () => {
   /** Los únicos nodos cuyos parámetros cambian, y por qué. */
   const PARAMETROS_DISTINTOS = [
@@ -784,7 +787,10 @@ describe.each([
         .toEqual(['Responder al cliente', 'Avisar a recepción']);
       // El único envío por HTTP a Graph es el pin a pedido (bloque k), y no
       // corre si la compuerta no lo deja pasar.
-      const aGraph = f.nodes.filter((n) => /graph\.facebook\.com/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
+      // La regex va ANCLADA al comienzo: reconocer un host por subcadena es
+      // lo que CodeQL marca (js/regex/missing-regexp-anchor), y con razón:
+      // `graph.facebook.com.ejemplo.net` pasaría el filtro.
+      const aGraph = f.nodes.filter((n) => META.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
       expect(aGraph).toEqual(['Enviar ubicación']);
       expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
     });
