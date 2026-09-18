@@ -244,7 +244,7 @@
               "id": "b_mensajeMenu",
               "name": "mensajeMenu",
               "type": "string",
-              "value": "¡Hola! 👋 Soy Dante, el asistente virtual del Dr. Andrés Bellido, pediatra. Estoy para ayudarte a cuidar lo más valioso que tienes. ¿Qué necesitas hoy?\n\n• *Niño sano*: control de crecimiento y desarrollo.\n• *Recién nacido*: control del bebé en sus primeras semanas.\n• *Emergencia*: te comunico ahora mismo con una persona."
+              "value": "¡Hola! 👋 Bienvenido al consultorio del *Dr. Bellido, Pediatra*. Soy Dante, su asistente virtual, y estoy para ayudarte a cuidar lo más valioso que tienes.\n\n¿Quieres una cita? Elige una de las opciones:\n• *Niño sano*: control de crecimiento y desarrollo.\n• *Recién nacido*: control del bebé en sus primeras semanas.\n• *Emergencia*: te comunico ahora mismo con una persona."
             },
             {
               "id": "b_mensajeContactoRecepcion",
@@ -274,7 +274,7 @@
               "id": "b_reglasAgenda",
               "name": "reglasAgenda",
               "type": "string",
-              "value": "REGLAS DE AGENDA DE ESTE CONSULTORIO (mandan sobre cualquier otra): (a) los turnos empiezan SOLO en punto o y media (09:00, 09:30, 10:00…), duran 30 minutos y nunca se agenda uno que empiece a otra hora; (b) el ÚLTIMO turno del día empieza a las 17:30 (sábado a las 11:30): nunca ofrezcas ni agendes después; (c) NUNCA ofrezcas ni agendes turnos que empiecen entre las 13:00 y las 13:59, aunque el calendario los muestre libres y aunque el cliente los pida: di simplemente que a esa hora no hay turno y ofrece el siguiente libre, sin explicar por qué; (d) RECIÉN NACIDO: ofrece los PRIMEROS turnos libres, hoy o mañana si los hay, porque un bebé de días no espera; (e) NIÑO SANO (control de crecimiento): ofrece turnos A PARTIR DE LA SEMANA SIGUIENTE, salvo que el papá pida antes o haya un motivo; (f) si no sabes si es recién nacido o niño sano, pregúntalo con naturalidad junto con el nombre."
+              "value": "REGLAS DE AGENDA DE ESTE CONSULTORIO (mandan sobre cualquier otra): (a) los turnos empiezan SOLO en punto o y media (09:00, 09:30, 10:00…), duran 30 minutos y nunca se agenda uno que empiece a otra hora; (b) el ÚLTIMO turno del día empieza a las 17:30 (sábado a las 11:30): nunca ofrezcas ni agendes después; (c) NUNCA ofrezcas ni agendes turnos que empiecen entre las 13:00 y las 13:59, aunque el calendario los muestre libres y aunque el cliente los pida: di simplemente que a esa hora no hay turno y ofrece el siguiente libre, sin explicar por qué; (d) RECIÉN NACIDO: ofrece los PRIMEROS turnos libres, hoy o mañana si los hay, porque un bebé de días no espera; (e) NIÑO SANO (control de crecimiento): NO ofrezcas turnos de hoy ni de mañana; ofrece A PARTIR DE PASADO MAÑANA, salvo que el papá insista en antes y haya hueco; (f) si no sabes si es recién nacido o niño sano, pregúntalo con naturalidad junto con el nombre."
             }
           ]
         },
@@ -1311,7 +1311,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// EMERGENCIA: boton a Maria Rene + aviso al doctor, sin modelo. Se responde\n// primero al cliente; el aviso al doctor sale por `Avisar al doctor` con el\n// telefono de origen y lo que la persona escribio. MENSAJES: +1 (el aviso).\nreturn $input.all().map((it, i) => {\n  const e = it.json;\n  const recepcion = String(e.numeroRecepcion || '').replace(/\\D/g, '');\n  const cuerpo = String(e.mensajeEmergencia || '').trim()\n    || 'Si es una emergencia, comunícate ahora con una persona del consultorio tocando el botón.';\n  const url = recepcion ? 'https://wa.me/' + recepcion + '?text=' + encodeURIComponent('EMERGENCIA: escribo desde el asistente del Dr. Bellido.') : '';\n  const escrito = String(e.tipo === 'text' ? e.userInput : '').trim().replace(/\\s+/g, ' ').slice(0, 300);\n  const alertaDoctor = '🚨 EMERGENCIA en el asistente\\n'\n    + 'Paciente: ' + (e.nombrePerfil || 'sin nombre') + ' · +' + String(e.from || '')\n    + (escrito ? '\\nEscribió: «' + escrito + '»' : '\\nTocó el botón de emergencia sin escribir nada.')\n    + '\\nSe le indicó comunicarse con María René.';\n  const doctor = String(e.numeroDoctor || '').replace(/\\D/g, '');\n  return { json: { ...e,\n    respuesta: cuerpo,\n    cuerpoMeta: url ? {\n      messaging_product: 'whatsapp', recipient_type: 'individual', to: e.from,\n      type: 'interactive',\n      interactive: {\n        type: 'cta_url',\n        body: { text: cuerpo.slice(0, 1024) },\n        action: { name: 'cta_url', parameters: { display_text: 'Escribir a María René', url } },\n      },\n    } : undefined,\n    textoRespaldo: url ? cuerpo + '\\n\\nEscríbele aquí: ' + url : cuerpo,\n    avisarDoctor: doctor !== '' && doctor !== String(e.from || '').replace(/\\D/g, ''),\n    alertaDoctor,\n    numeroDoctorDigitos: doctor,\n  }, pairedItem: { item: i } };\n});\n"
+        "jsCode": "// EMERGENCIA: boton a Maria Rene + aviso al doctor, sin modelo. Se responde\n// primero al cliente; el aviso al doctor sale por `Avisar al doctor` con el\n// telefono de origen y lo que la persona escribio. MENSAJES: +1 (el aviso).\nreturn $input.all().map((it, i) => {\n  const e = it.json;\n  const recepcion = String(e.numeroRecepcion || '').replace(/\\D/g, '');\n  const cuerpo = String(e.mensajeEmergencia || '').trim()\n    || 'Si es una emergencia, comunícate ahora con una persona del consultorio tocando el botón.';\n  const url = recepcion ? 'https://wa.me/' + recepcion + '?text=' + encodeURIComponent('EMERGENCIA: escribo desde el asistente del Dr. Bellido.') : '';\n  const escrito = String(e.tipo === 'text' ? e.userInput : '').trim().replace(/\\s+/g, ' ').slice(0, 300);\n  const alertaDoctor = '🚨 EMERGENCIA en el asistente\\n'\n    + 'Paciente: ' + (e.nombrePerfil || 'sin nombre') + ' · +' + String(e.from || '')\n    + (escrito ? '\\nEscribió: «' + escrito + '»' : '\\nTocó el botón de emergencia sin escribir nada.')\n    + '\\nSe le indicó comunicarse con María René.';\n  const doctor = String(e.numeroDoctor || '').replace(/\\D/g, '');\n  // Una variable de plantilla no admite saltos de linea ni mas de cuatro\n  // espacios seguidos, y no puede ir vacia: Meta rechaza el envio entero.\n  const variable = (v, max = 200) => { const t = String(v ?? '').replace(/[\\r\\n\\t]+/g, ' · ').replace(/\\s{2,}/g, ' ').trim(); return (t || 'no indicado').slice(0, max); };\n  const cuerpoAlerta = doctor ? {\n    messaging_product: 'whatsapp', recipient_type: 'individual', to: doctor,\n    type: 'template',\n    template: { name: 'alerta_emergencia', language: { code: 'es' }, components: [{ type: 'body', parameters: [\n      { type: 'text', text: variable(e.nombrePerfil || 'sin nombre', 60) },\n      { type: 'text', text: variable(String(e.from || ''), 20) },\n      { type: 'text', text: variable(escrito || 'tocó el botón de emergencia sin escribir nada') },\n    ] }] },\n  } : undefined;\n  return { json: { ...e,\n    respuesta: cuerpo,\n    cuerpoMeta: url ? {\n      messaging_product: 'whatsapp', recipient_type: 'individual', to: e.from,\n      type: 'interactive',\n      interactive: {\n        type: 'cta_url',\n        body: { text: cuerpo.slice(0, 1024) },\n        action: { name: 'cta_url', parameters: { display_text: 'Escribir a María René', url } },\n      },\n    } : undefined,\n    textoRespaldo: url ? cuerpo + '\\n\\nEscríbele aquí: ' + url : cuerpo,\n    avisarDoctor: doctor !== '' && doctor !== String(e.from || '').replace(/\\D/g, ''),\n    alertaDoctor,\n    numeroDoctorDigitos: doctor,\n    cuerpoAlerta,\n  }, pairedItem: { item: i } };\n});\n"
       },
       "id": "emerg-01",
       "name": "Emergencia",
@@ -1489,29 +1489,6 @@
     },
     {
       "parameters": {
-        "operation": "send",
-        "phoneNumberId": "={{ $('Config del negocio').item.json.phoneNumberId }}",
-        "recipientPhoneNumber": "={{ $json.numeroDoctorDigitos }}",
-        "textBody": "={{ $json.alertaDoctor }}"
-      },
-      "id": "avisar-doc-01",
-      "name": "Avisar al doctor",
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1,
-      "position": [
-        2100,
-        -360
-      ],
-      "credentials": {
-        "whatsAppApi": {
-          "id": "",
-          "name": "WhatsApp Consultorio Bellido (envío)"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -1600,6 +1577,97 @@
         "httpHeaderAuth": {
           "id": "",
           "name": "NovuChat ingesta (Bellido)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoAlerta) }}",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "avisar-doc-pl-01",
+      "name": "Avisar al doctor (plantilla)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        -360
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Bellido (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Number($json.statusCode) }}",
+              "rightValue": 400,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-fallo-doc-01",
+      "name": "¿Falló la plantilla al doctor?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2300,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $('Config del negocio').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $('Emergencia').item.json.numeroDoctorDigitos }}",
+        "textBody": "={{ $('Emergencia').item.json.alertaDoctor }}"
+      },
+      "id": "avisar-doc-tx-01",
+      "name": "Avisar al doctor (texto)",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        2500,
+        -360
+      ],
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp Consultorio Bellido (envío)"
         }
       },
       "onError": "continueRegularOutput"
@@ -2185,7 +2253,7 @@
       "main": [
         [
           {
-            "node": "Avisar al doctor",
+            "node": "Avisar al doctor (plantilla)",
             "type": "main",
             "index": 0
           }
@@ -2263,6 +2331,29 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Avisar al doctor (plantilla)": {
+      "main": [
+        [
+          {
+            "node": "¿Falló la plantilla al doctor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló la plantilla al doctor?": {
+      "main": [
+        [
+          {
+            "node": "Avisar al doctor (texto)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   }

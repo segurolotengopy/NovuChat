@@ -183,8 +183,8 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)',
     'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
     // Los del 18/09: menú, contacto directo, emergencia y despedida en dos.
-    'Enviar interactivo', 'Reportar interactivo (saliente)', 'Avisar al doctor',
-    'Redes del doctor', 'Reportar redes (saliente)',
+    'Enviar interactivo', 'Reportar interactivo (saliente)', 'Avisar al doctor (plantilla)',
+    'Avisar al doctor (texto)', 'Redes del doctor', 'Reportar redes (saliente)',
   ];
   /**
    * LOS NODOS QUE BELLIDO AGREGA AL DEMO A (18/09/2026), con su tipo. Todo lo
@@ -207,7 +207,9 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     'Confirmar interactivo': 'n8n-nodes-base.code',
     'Reportar interactivo (saliente)': 'n8n-nodes-base.httpRequest',
     '¿Avisar al doctor?': 'n8n-nodes-base.if',
-    'Avisar al doctor': 'n8n-nodes-base.whatsApp',
+    'Avisar al doctor (plantilla)': 'n8n-nodes-base.httpRequest',
+    '¿Falló la plantilla al doctor?': 'n8n-nodes-base.if',
+    'Avisar al doctor (texto)': 'n8n-nodes-base.whatsApp',
     '¿Enviar redes?': 'n8n-nodes-base.if',
     'Redes del doctor': 'n8n-nodes-base.whatsApp',
     'Reportar redes (saliente)': 'n8n-nodes-base.httpRequest',
@@ -306,9 +308,11 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // la cita quedó verificada. Ningún otro nodo de envío.
     const envios = (f: Flujo) => f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name).sort();
     expect(envios(demoA)).toEqual(['Avisar a recepción', 'Responder al cliente']);
-    expect(envios(flujo)).toEqual(['Avisar a recepción', 'Avisar al doctor', 'Redes del doctor', 'Responder al cliente']);
+    expect(envios(flujo)).toEqual(['Avisar a recepción', 'Avisar al doctor (texto)', 'Redes del doctor', 'Responder al cliente']);
+    // Por la Graph API salen los interactivos y la PLANTILLA al doctor (el
+    // texto es solo su respaldo, cuando Meta rechaza la plantilla).
     const http = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/.test(String(n.parameters['url'])));
-    expect(http.map((n) => n.name)).toEqual(['Enviar interactivo']);
+    expect(http.map((n) => n.name).sort()).toEqual(['Avisar al doctor (plantilla)', 'Enviar interactivo']);
   });
 
   it('el aviso a recepción nombra al consultorio y conserva el cuerpo del Demo A', () => {
@@ -987,6 +991,13 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
   });
 
   describe('Los mensajes fijos, sin modelo', () => {
+    it('el menú abre con la bienvenida al consultorio del Dr. Bellido, Pediatra, y pregunta si quiere una cita', () => {
+      const texto = String(configBase(flujo)['mensajeMenu']);
+      expect(texto).toMatch(/Dr\. Bellido, Pediatra/);
+      expect(texto).toMatch(/cita\?/);
+      expect(texto.indexOf('Bienvenido')).toBeLessThan(texto.indexOf('Niño sano'));
+    });
+
     it('el menú son TRES botones de respuesta con los ids que lee el estado, títulos de hasta 20 caracteres', () => {
       const r = ejecutar(codigo(flujo, 'Menú inicial'), [{ ...base(), accion: 'menu' }])[0]!;
       const meta = r['cuerpoMeta'] as J;
@@ -1026,6 +1037,13 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(String(r['alertaDoctor'])).toContain(TELEFONO);
       expect(String(r['alertaDoctor'])).toContain('mi bebé no respira bien');
       expect(String(r['alertaDoctor'])).toContain('Ana');
+      // El cuerpo de la plantilla: tres variables sin saltos de línea, al doctor.
+      const pl = r['cuerpoAlerta'] as J;
+      expect(pl['to']).toBe('59170000008');
+      expect(pl['template']['name']).toBe('alerta_emergencia');
+      const vars = (pl['template']['components'][0]['parameters'] as { text: string }[]).map((p) => p.text);
+      expect(vars).toEqual(['Ana', TELEFONO, 'mi bebé no respira bien']);
+      for (const v of vars) expect(v).not.toMatch(/[\r\n\t]/);
     });
 
     it('al propio doctor no se le avisa de su mensaje, y sin texto el aviso lo dice', () => {
@@ -1034,16 +1052,25 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(String(r['alertaDoctor'])).toContain('sin escribir nada');
     });
 
-    it('el aviso al doctor y las redes salen por el nodo de envío de WhatsApp del cliente', () => {
-      const doc = nodo(flujo, 'Avisar al doctor').parameters;
-      expect(doc['recipientPhoneNumber']).toBe('={{ $json.numeroDoctorDigitos }}');
-      expect(doc['textBody']).toBe('={{ $json.alertaDoctor }}');
-      expect(destinos('¿Avisar al doctor?', 0)).toEqual(['Avisar al doctor']);
+    it('el aviso al doctor sale como PLANTILLA de utilidad y, si Meta la rechaza, como texto; las redes por el envío del cliente', () => {
+      // Fuera de la ventana de 24 h solo llega una plantilla aprobada
+      // (`alerta_emergencia`, creada con plantillas-cliente.sh). Mientras esté
+      // en revisión, o si Meta la rechaza, sale el texto libre (llega solo si
+      // el doctor escribió al número en las últimas 24 h) y no se corta nada.
+      expect(destinos('¿Avisar al doctor?', 0)).toEqual(['Avisar al doctor (plantilla)']);
+      expect(String(nodo(flujo, 'Avisar al doctor (plantilla)').parameters['jsonBody'])).toContain('$json.cuerpoAlerta');
+      expect(nodo(flujo, 'Avisar al doctor (plantilla)').onError).toBe('continueRegularOutput');
+      expect(destinos('Avisar al doctor (plantilla)')).toEqual(['¿Falló la plantilla al doctor?']);
+      expect(destinos('¿Falló la plantilla al doctor?', 0)).toEqual(['Avisar al doctor (texto)']);
+      expect(destinos('¿Falló la plantilla al doctor?', 1)).toEqual([]);
+      const doc = nodo(flujo, 'Avisar al doctor (texto)').parameters;
+      expect(doc['recipientPhoneNumber']).toBe("={{ $('Emergencia').item.json.numeroDoctorDigitos }}");
+      expect(doc['textBody']).toBe("={{ $('Emergencia').item.json.alertaDoctor }}");
       expect(expresion((nodo(flujo, '¿Avisar al doctor?').parameters['conditions'] as J).conditions[0].leftValue, { avisarDoctor: true })).toBe(true);
       const redes = nodo(flujo, 'Redes del doctor').parameters;
       expect(String(redes['textBody'])).toContain('mensajeRedes');
       expect(String(redes['recipientPhoneNumber'])).toContain("$('Mensaje a enviar').item.json.from");
-      for (const n of ['Avisar al doctor', 'Redes del doctor']) expect(nodo(flujo, n).onError).toBe('continueRegularOutput');
+      for (const n of ['Avisar al doctor (texto)', 'Redes del doctor']) expect(nodo(flujo, n).onError).toBe('continueRegularOutput');
     });
   });
 
@@ -1109,6 +1136,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).toMatch(/y media/i);
       expect(reglas).toMatch(/RECIÉN NACIDO/);
       expect(reglas).toMatch(/NIÑO SANO/);
+      expect(reglas).toMatch(/PASADO MAÑANA/);   // ni hoy ni mañana (Andres, 18/09)
       expect(reglas).toMatch(/sin explicar/i);   // el bloqueo del mediodía no se le cuenta al paciente
     });
 

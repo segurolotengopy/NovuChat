@@ -75,16 +75,22 @@ else:
         if cod not in (200, 201): print(f"{ROJO}✗ POST /credentials → {cod}: {rta.get('message', rta)}{FIN}"); sys.exit(1)
         por_nombre[nombre_graph] = {"id": rta["id"], "name": nombre_graph, "type": "httpHeaderAuth"}
 
+por_tipo = {}
+for c in lista: por_tipo.setdefault(c["type"], []).append(c)
+
 flujo = json.load(open(ruta, encoding="utf-8"))
 faltan = []; resueltos = 0
 for n in flujo["nodes"]:
     for tipo, c in (n.get("credentials") or {}).items():
         if c.get("id"): continue
         nombre = c.get("name", "")
-        e = por_nombre.get(nombre)
+        e = por_nombre.get(nombre) if nombre else None
+        # Sin nombre (las compartidas: Calendar, Gemini) se resuelve por TIPO,
+        # solo si en la instancia hay exactamente una de ese tipo.
+        if not nombre and len(por_tipo.get(tipo, [])) == 1: e = por_tipo[tipo][0]
         if not e or e["type"] != tipo: faltan.append(f"{n['name']} → {tipo} «{nombre}»"); continue
-        c["id"] = e["id"]; resueltos += 1
-        print(f"  {n['name']:<32} ← {nombre}  (id resuelto)")
+        c["id"] = e["id"]; c["name"] = e["name"]; resueltos += 1
+        print(f"  {n['name']:<32} ← {e['name']}  (id resuelto)")
 if faltan:
     print(f"{ROJO}✗ Sin credencial en la instancia:{FIN}"); [print("   ", f) for f in faltan]; sys.exit(1)
 if aplicar:
