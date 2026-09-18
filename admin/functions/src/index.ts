@@ -62,6 +62,11 @@ export { ajustarStock, dejarDeControlarStock } from './inventario.js';
 // planes que el asistente manda por WhatsApp se pueda mandar: responde, es del
 // tipo declarado y cabe en los límites de Meta. El porqué en `captacion.ts`.
 export { comprobarArchivoPlanes } from './captacion.js';
+// COMPORTAMIENTO GENERAL DEL ASISTENTE, VERIFICADO ANTES DE APLICARSE (reglas de
+// Andres del 17/09/2026). Lo propuesto (`instruccionesExtra`) pasa por dos capas
+// del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
+// único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
+export { verificarComportamiento } from './verificarComportamiento.js';
 
 const db = () => getFirestore();
 
@@ -784,10 +789,16 @@ export const registrarCambioConfig = onDocumentWritten(
       .sort();
     if (cambiados.length === 0) return;
 
+    // Lo vigente y su revisión los escribe SOLO el servidor (la Function
+    // `verificarComportamiento` o un script de NovuChat): las reglas se lo
+    // niegan al navegador. Si eso es lo único que cambió, el canal es
+    // `sistema`, no el panel. Ver `comportamiento.ts`.
+    const soloDelServidor = cambiados.every((k) => k === 'instruccionesVigentes' || k === 'instruccionesRevision');
+
     await registrar(evento.params.tenantId, {
       tipo: 'config_publicada',
       resultado: 'ok',
-      canal: 'panel',
+      canal: soloDelServidor ? 'sistema' : 'panel',
       // Solo los NOMBRES de los campos, recortados al tope de `detalle`.
       detalle: cambiados.join(','),
     });

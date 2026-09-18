@@ -24,7 +24,14 @@
  *   - `contadores/catalogo`, EN LA MISMA TRANSACCIÓN que el catálogo (ver
  *     abajo);
  *   - el sello `actualizadoPor: 'cargar-negocio'` en todo, y una entrada en
- *     `auditoria`.
+ *     `auditoria`;
+ *   - si la sección `negocio` trae `instruccionesExtra`, TAMBIÉN
+ *     `instruccionesVigentes` (el mismo texto) e `instruccionesRevision`
+ *     aprobada con `revisadoPor: 'cargar-negocio'`: ese texto lo revisó
+ *     NovuChat, y el flujo solo lee lo vigente (`functions/src/comportamiento.ts`).
+ *     Antes de escribirlo pasa por la MISMA capa de patrones que la Function:
+ *     lo que NovuChat carga tiene que poder editarse después desde la consola
+ *     sin que la capa 1 lo rechace por un carácter que puso NovuChat.
  *   Los ítems y funcionarios que ya existen y el archivo no nombra NO se tocan:
  *   se informan. Retirar es una decisión de la consola, no de una carga.
  *
@@ -83,6 +90,10 @@ import { readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
+
+// El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
+// módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
+const { hashCorto, verificarPatrones } = await import('../functions/src/comportamiento.ts');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
@@ -252,6 +263,10 @@ function validar(d) {
       }
       for (const k of ['mensajeCierre', 'mensajeErrorTemporal', 'mensajeReservaNoConfirmada', 'mensajeComercioSuspendido']) texto(n, k, 300, 'negocio');
       texto(n, 'instruccionesExtra', 1500, 'negocio');
+      if (typeof n.instruccionesExtra === 'string') {
+        const patrones = verificarPatrones(n.instruccionesExtra);
+        if (patrones.nivel === 'rechazado') p.push(`negocio.instruccionesExtra: ${patrones.motivo}`);
+      }
       if ('catalogoWebActivo' in n && typeof n.catalogoWebActivo !== 'boolean') p.push('negocio.catalogoWebActivo: true o false');
       if ('paleta' in n && !PALETAS.has(n.paleta)) p.push(`negocio.paleta: una de ${[...PALETAS].join(', ')}`);
     }
@@ -510,6 +525,7 @@ const resumen = {
   // dice si es de mapas, que es lo que se valida.
   direccionMaps: (v) => (v ? `enlace de ${new URL(v).host}` : '(vacío: el asistente da la dirección sin mapa)'),
   ubicacion: (v) => `lat ${v.lat}, lng ${v.lng} (pin de WhatsApp, solo si el cliente lo pide)`,
+  instruccionesExtra: (v) => `${v.length} caracteres · queda VIGENTE y aprobado (revisado por NovuChat)`,
 };
 const mostrar = (k, v) => (resumen[k] ? resumen[k](v)
   : typeof v === 'string' ? `${v.length} caracteres`
@@ -603,7 +619,23 @@ try {
     const sello = { actualizadoPor: 'cargar-negocio', actualizadoEn: FieldValue.serverTimestamp() };
     const selloCampos = ['actualizadoPor', 'actualizadoEn'];
     if (negocio) {
-      tx.set(refNegocio, { ...negocio, ...sello }, { mergeFields: [...Object.keys(negocio), ...selloCampos] });
+      // EL COMPORTAMIENTO GENERAL QUEDA APROBADO EN LA MISMA ESCRITURA. El flujo
+      // lee `instruccionesVigentes`, no `instruccionesExtra`; sin esto, el
+      // comercio quedaría con el texto en la consola y el asistente sin él.
+      // La Function ve la revisión con el hash del texto y no vuelve a
+      // revisar (`hayQueRevisar`, verificarComportamiento.ts).
+      const verificadas = typeof negocio.instruccionesExtra === 'string'
+        ? {
+            instruccionesVigentes: negocio.instruccionesExtra,
+            instruccionesRevision: {
+              estado: 'aprobado', motivo: 'texto cargado y revisado por NovuChat',
+              hash: hashCorto(negocio.instruccionesExtra), capa: 'patrones',
+              revisadoPor: 'cargar-negocio', revisadoEn: ahora,
+            },
+          }
+        : {};
+      tx.set(refNegocio, { ...negocio, ...verificadas, ...sello },
+        { mergeFields: [...Object.keys(negocio), ...Object.keys(verificadas), ...selloCampos] });
     }
     if (agendamiento) {
       tx.set(refAgend, { ...agendamiento, ...sello }, { mergeFields: [...Object.keys(agendamiento), ...selloCampos] });
@@ -697,7 +729,16 @@ const revisarDoc = async (ref, esperado, donde) => {
   for (const k of Object.keys(esperado)) if (!igual(doc.get(k), esperado[k])) fallas.push(`${donde}.${k}`);
   if (doc.get('actualizadoPor') !== 'cargar-negocio') fallas.push(`${donde}.sello`);
 };
-if (negocio) await revisarDoc(refNegocio, negocio, 'config/negocio');
+if (negocio) {
+  await revisarDoc(refNegocio, negocio, 'config/negocio');
+  if (typeof negocio.instruccionesExtra === 'string') {
+    // Lo vigente y la revisión, releídos como todo lo demás: es lo que lee el flujo.
+    const doc = await refNegocio.get();
+    if (doc.get('instruccionesVigentes') !== negocio.instruccionesExtra) fallas.push('config/negocio.instruccionesVigentes');
+    const rev = doc.get('instruccionesRevision') ?? {};
+    if (rev.estado !== 'aprobado' || rev.hash !== hashCorto(negocio.instruccionesExtra)) fallas.push('config/negocio.instruccionesRevision');
+  }
+}
 if (agendamiento) await revisarDoc(refAgend, agendamiento, 'config/agendamiento');
 for (const it of catalogo ?? []) {
   const { precio, moneda, ...resto } = it.datos;
