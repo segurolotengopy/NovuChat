@@ -32,7 +32,6 @@ done
 [ -n "$MODO" ] || { echo "✗ Falta --estado o --registrar" >&2; exit 2; }
 
 # shellcheck source=/dev/null
-
 set -a; . "$ENV_FILE"; set +a
 : "${WA_TOKEN:?WA_TOKEN no está en $ENV_FILE}"
 : "${WA_PHONE_ID:?WA_PHONE_ID no está en $ENV_FILE}"

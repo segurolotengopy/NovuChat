@@ -48,8 +48,8 @@ done
 if [ "$MODO" = "alta-meta" ]; then
   [ -n "$WH" ] && [ -n "$ENV_CLIENTE" ] && [ -f "$ENV_CLIENTE" ] || { echo "Uso: --alta-meta --webhook-id <uuid> --env-cliente <.env.x>" >&2; exit 2; }
   [ -f "$ENV_N8N" ] || { echo "✗ Falta $ENV_N8N" >&2; exit 1; }
-    # shellcheck source=/dev/null
-    set -a; . "$ENV_N8N"; . "$ENV_CLIENTE"; set +a
+  # shellcheck source=/dev/null
+  set -a; . "$ENV_N8N"; . "$ENV_CLIENTE"; set +a
   : "${N8N_BASE_URL:?}" "${WA_APP_ID:?}" "${WA_APP_SECRET:?}"
   VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
   URL="${N8N_BASE_URL%/}/webhook/$WH/webhook"
