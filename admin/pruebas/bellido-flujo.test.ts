@@ -311,7 +311,7 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     expect(envios(flujo)).toEqual(['Avisar a recepción', 'Avisar al doctor (texto)', 'Redes del doctor', 'Responder al cliente']);
     // Por la Graph API salen los interactivos y la PLANTILLA al doctor (el
     // texto es solo su respaldo, cuando Meta rechaza la plantilla).
-    const http = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /graph\.facebook\.com/.test(String(n.parameters['url'])));
+    const http = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'])));
     expect(http.map((n) => n.name).sort()).toEqual(['Avisar al doctor (plantilla)', 'Enviar interactivo']);
   });
 
