@@ -205,7 +205,16 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     for (const n of distintos) {
       expect(PARAMETROS_QUE_PUEDEN_CAMBIAR, `${n} se separó del vertical`).toContain(n);
     }
-    for (const n of ['Config base', 'Config del negocio', AGENTE]) {
+    // `Config del negocio` SÍ solía estar acá: el borrador de este flujo salió de
+    // un Demo A que no fusionaba `instruccionesExtra`, y hubo que arreglarlo
+    // cliente por cliente. Desde que el Demo A quedó al día, el nodo es idéntico
+    // y tiene que seguir siéndolo: si vuelve a diferir, alguien le hizo a este
+    // cliente un arreglo que el vertical no tiene.
+    expect(
+      JSON.stringify(nodo(flujo, 'Config del negocio').parameters),
+      'Config del negocio se separó del Demo A',
+    ).toBe(JSON.stringify(nodo(demoA, 'Config del negocio').parameters));
+    for (const n of ['Config base', AGENTE]) {
       expect(distintos, n).toContain(n);
     }
   });
