@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-17 (Platinum, bloque 4: recordatorio de solicitud pendiente, una sola vez por lead). Antes, el mismo día: 2026-09-17 (Platinum, bloque 2: seña por QR con cotejo del comprobante, sin publicar). Antes, el mismo día: 2026-09-17 (Platinum, bloque 1: dirección con enlace a Maps en la confirmación de la cita; pin nativo solo a pedido). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-17 (Platinum, bloques 3 y 4: medios entrantes como texto, y recordatorio de solicitud pendiente una sola vez por lead). Antes, el mismo día: 2026-09-17 (Platinum, bloque 2: seña por QR con cotejo del comprobante, sin publicar). Antes, el mismo día: 2026-09-17 (Platinum, bloque 1: dirección con enlace a Maps en la confirmación de la cita; pin nativo solo a pedido). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
 
@@ -43,6 +43,48 @@ paciente sí. Suite: 1786 en verde (38 archivos). Saneo 0.
 con `crear-plantilla.sh` (tarda días, conviene apenas se autorice); crear el
 flujo con `publicar-flujo.sh --crear`, **que no se activa hasta que Meta
 apruebe la plantilla**; y probar con teléfono (filas 40–42 de la aceptación).
+
+---
+
+## 2026-09-17 — Platinum, bloque 3: el audio, la imagen y el PDF entran como TEXTO al agente (rama `flujos/medios-entrantes`, sobre el bloque 2)
+
+`Analisis/34` §3.1 y §4.1, y la síntesis de `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`:
+**clasificar, no mirar.** Hasta hoy un audio o una foto recibían «por ahora
+atiendo por texto», un mensaje pagado que no avanza nada y que pierde al
+paciente en el primer intento; y el 17/09 el asistente llegó a inventar que
+una imagen era un comprobante.
+
+- **El agente NUNCA ve el medio.** Un paso previo lo convierte en texto: el
+  audio se transcribe con Gemini (tope de 60 s estimado por tamaño; más largo,
+  se pide que lo escriban) y entra marcado «(audio transcripto)» con la orden
+  de repetir en una línea lo entendido antes de agendar. La imagen y el PDF
+  pasan por un clasificador de **lista cerrada** (publicidad, boca o dientes,
+  comprobante, documento de salud, otro) y el agente recibe uno de cinco
+  textos fijos: la foto de dientes se agradece y queda para la valoración,
+  **sin opinar ni diagnosticar**; la captura de una promoción se responde con
+  los precios de la consola, nunca con los de la imagen; la orden médica se
+  deriva sin interpretarla.
+- **Nada se guarda.** Ni la imagen, ni el PDF, ni el audio: ni en Storage, ni
+  en Firestore, ni en el historial de mensajes. El reporte a la consola lleva
+  una marca del tipo («el cliente envió una nota de voz»), no el contenido:
+  de una foto de dientes o de una orden médica no queda nada escrito.
+- **Contador de entrantes por tipo** en el agregado del mes (`entrantesPorTipo`),
+  mostrado en «Consumo». Es el dato que hoy no existe y que dice cuántos leads
+  llegan en voz o en imagen.
+
+**Mensajes por conversación: cero.** Estos caminos reemplazan la respuesta
+vacía que ya se pagaba; los dos nodos nuevos contra Meta son de lectura, y una
+prueba fija que los nodos que envían siguen siendo cuatro. Los flujos pasan de
+59 a 69 nodos (Demo A y Platinum, con paridad). Suite: 1795 en verde (37
+archivos), bloque (m) de `platinum-flujo.test.ts` sobre los dos flujos. Saneo 0.
+
+**Falta:** fusionar, desplegar, publicar y probar con teléfono (filas 35–39 de
+la aceptación), midiendo la latencia del turno con audio contra p50 ≤ 6 s y
+p90 ≤ 10 s. **Supuestos que solo un teléfono confirma:** la forma de la salida
+del nodo de transcripción y la relación tamaño ↔ duración del audio.
+**Y en la VM, antes de recibir medios reales:** `N8N_DEFAULT_BINARY_MODE=filesystem`,
+poda de ejecuciones y la credencial de Gemini en nivel pago. Sin eso, «nada se
+guarda» vale para el flujo pero no para la instancia.
 
 ---
 

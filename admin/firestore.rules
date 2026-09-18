@@ -1760,8 +1760,26 @@ service cloud.firestore {
             // esos, en cuántos el paciente volvió a escribir dentro de las 24 h.
             // Con los dos se sabe si el recordatorio recupera a alguien o solo
             // cuesta; ninguno de los dos se factura.
-            'seguimientos', 'reactivadas'
-          ]);
+            'seguimientos', 'reactivadas',
+            // ENTRANTES POR TIPO (bloque 3, 17/09). Mapa `{ audio: 4, image: 2,
+            // ... }` con los mensajes que mandó el cliente, por clase. Es un
+            // mapa y no un campo por tipo porque los tipos los fija Meta; por
+            // eso las claves se validan abajo, una por una: si el principal de
+            // ingesta quedara comprometido, un mapa libre sería exactamente el
+            // campo arbitrario que esta lista blanca existe para impedir.
+            'entrantesPorTipo'
+          ]) && entrantesPorTipoValido();
+        }
+
+        /** El mapa, si viene, trae SOLO los tipos que la ingesta normaliza
+         *  (`TIPOS` de `ingesta.ts`): cualquier otro ya cayó en `otro`. */
+        function entrantesPorTipoValido() {
+          return !('entrantesPorTipo' in request.resource.data)
+            || (request.resource.data.entrantesPorTipo is map
+                && request.resource.data.entrantesPorTipo.keys().hasOnly([
+                     'text', 'interactive', 'image', 'audio',
+                     'document', 'order', 'location', 'otro'
+                   ]));
         }
       }
 

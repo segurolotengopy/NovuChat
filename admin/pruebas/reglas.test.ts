@@ -2278,6 +2278,45 @@ describe('Contadores de la oferta comercial', () => {
     await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
       { cierres: 12, descuentoEspecial: 999 }));
   });
+
+  /**
+   * ENTRANTES POR TIPO (bloque 3, 17/09/2026), NEGANDO.
+   *
+   * El mapa cuenta los mensajes del cliente por clase (audio, imagen, PDF…).
+   * Lo escribe la ingesta y nadie más, y sus claves son las que `ingesta.ts`
+   * normaliza: un mapa de claves libres dentro de la colección que factura
+   * sería justo el campo arbitrario que la lista blanca existe para impedir.
+   */
+  describe('Entrantes por tipo', () => {
+    it('la ingesta escribe el mapa con los tipos que normaliza', async () => {
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantes: 9, entrantesPorTipo: { text: 5, audio: 2, image: 1, document: 1 } },
+        { merge: true }));
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { interactive: 1, location: 1, order: 1, otro: 1 } }, { merge: true }));
+    });
+
+    it('un tipo que la ingesta no normaliza NO entra: tendría que haber caído en «otro»', async () => {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { sticker: 3 } }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { text: 1, loQueSea: 1 } }, { merge: true }));
+    });
+
+    it('no es un mapa: no entra', async () => {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: 7 }, { merge: true }));
+    });
+
+    it('ni el negocio ni el propietario lo tocan, ni la ingesta de otro comercio', async () => {
+      await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { audio: 99 } }, { merge: true }));
+      await assertFails(setDoc(doc(propietario(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { audio: 0 } }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-09`),
+        { entrantesPorTipo: { audio: 1 } }, { merge: true }));
+    });
+  });
 });
 
 /**
