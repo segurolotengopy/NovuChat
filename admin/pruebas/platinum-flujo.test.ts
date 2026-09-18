@@ -144,6 +144,9 @@ const prompt = (): string => nodo(flujo, AGENTE).parameters['options'].systemMes
 // ---------------------------------------------------------------------------
 // (a) Es el Demo A, salvo lo declarado
 // ---------------------------------------------------------------------------
+/** Un envío a Graph se reconoce por el COMIENZO de la URL, nunca por subcadena. */
+const META = /^=?https:\/\/graph\.facebook\.com\//;
+
 describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados', () => {
   /** Los únicos nodos cuyos parámetros cambian, y por qué. */
   const PARAMETROS_DISTINTOS = [
@@ -815,7 +818,10 @@ describe.each([
         .toEqual(['Responder al cliente', 'Avisar a recepción']);
       // Los envíos por HTTP a Graph son el pin a pedido (bloque k) y el QR de
       // la seña (bloque l), y ninguno corre si su compuerta no lo deja pasar.
-      const aGraph = f.nodes.filter((n) => /graph\.facebook\.com/.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
+      // La regex va ANCLADA al comienzo: reconocer un host por subcadena es
+      // lo que CodeQL marca (js/regex/missing-regexp-anchor), y con razón:
+      // `graph.facebook.com.ejemplo.net` pasaría el filtro.
+      const aGraph = f.nodes.filter((n) => META.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
       expect(aGraph.sort()).toEqual(['Enviar QR de la seña', 'Enviar ubicación'].sort());
       expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
       expect(origenes('Enviar QR de la seña')).toEqual(['Preparar seña']);
@@ -2368,7 +2374,7 @@ describe.each([
     it('en la rama del comprobante no hay ningún envío fuera de «Responder al cliente» y del aviso a recepción', () => {
       const a = alcanzables('Obtener URL del medio');
       const envian = f.nodes.filter((n) => a.has(n.name) && ((n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send')
-        || /graph\.facebook\.com/.test(String(n.parameters['url'] ?? '')))).map((n) => n.name);
+        || META.test(String(n.parameters['url'] ?? '')))).map((n) => n.name);
       // «Enviar ubicación» cuelga del envío del texto (bloque k) y se alcanza
       // por el grafo, pero su compuerta no abre: el item del comprobante no
       // lleva `enviarUbicacion`.
