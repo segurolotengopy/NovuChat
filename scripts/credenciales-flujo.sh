@@ -18,7 +18,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -f "$ENV_FILE" ] || { echo "✗ Falta $ENV_FILE" >&2; exit 1; }
-# shellcheck disable=SC1090
+# shellcheck source=/dev/null
 set -a; . "$ENV_FILE"; set +a
 : "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}"
 FID="${FID:-${N8N_WORKFLOW_ID:?Falta --flujo-id o N8N_WORKFLOW_ID}}"

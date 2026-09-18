@@ -53,7 +53,8 @@ done
 [[ "$FLUJO" == *.local.json ]] || { echo "✗ El flujo tiene que ser el .local.json preparado, no el versionado" >&2; exit 1; }
 [ -f "$ENV_N8N" ] && [ -f "$ENV_CLIENTE" ] || { echo "✗ Falta $ENV_N8N o $ENV_CLIENTE" >&2; exit 1; }
 
-# shellcheck disable=SC1090
+# shellcheck source=/dev/null
+
 set -a; . "$ENV_N8N"; . "$ENV_CLIENTE"; set +a
 : "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}" "${WA_APP_ID:?}" "${WA_TOKEN:?}" "${WABA_ID:?}"
 [ -n "${WA_APP_SECRET:-}" ] || { echo "✗ WA_APP_SECRET no está en $ENV_CLIENTE: el disparador lo necesita" >&2; exit 1; }
