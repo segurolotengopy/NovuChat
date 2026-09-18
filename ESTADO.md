@@ -32,6 +32,11 @@ pruebas nuevas fallan con el nodo viejo (comprobado). 1399 en verde. Saneo 0.
 cronometrar el turno que agenda antes y después (fila 43 de la aceptación),
 más el caso mandatorio de la insistencia sobre una hora ocupada.
 
+**Bellido en paridad (18/09).** La rama fusiona `main` con el alta del Dr.
+Bellido, cuya suite exige el Demo A nodo por nodo: `Calendarios a revisar`
+de `Flujos/bellido-agendamiento.json` lleva el mismo código. 1581 en verde
+(38 archivos), saneo 0.
+
 ---
 
 ## 2026-09-17 (noche) — alta del Dr. Andrés Bellido, pediatra: el flujo listo y probado
