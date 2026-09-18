@@ -928,6 +928,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       const sd: J = {};
       const r = turno({ userInput: 'hola, quiero cita para mi bebé' }, sd);
       expect(r['accion']).toBe('menu');
+      expect(String(r['contextoTurno'])).not.toContain('presentarte');
       expect(sd['conversaciones'][TELEFONO]['primerMensaje']).toBe('hola, quiero cita para mi bebé');
       expect(sd['conversaciones'][TELEFONO]['menu']).toBe(false);   // lo marca Confirmar interactivo
     });
@@ -940,6 +941,8 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(String(r['contextoTurno'])).toContain('recién nacido');
       expect(String(r['contextoTurno'])).toContain('quiero cita para mi bebé');
       expect(sd['conversaciones'][TELEFONO]['menu']).toBe(true);
+      // Después del menú el modelo no vuelve a presentarse (ejecución #3031).
+      expect(String(r['contextoTurno'])).toContain('NO vuelvas a presentarte');
       // El turno siguiente ya no repite lo escrito antes, pero sí el tipo.
       const r2 = turno({ userInput: 'mañana en la tarde' }, sd);
       expect(r2['accion']).toBe('agente');
@@ -1013,13 +1016,16 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
 
     it('el contacto directo es un botón cta_url a la persona; el número NO va en el texto', () => {
       for (const [accion, numero, boton] of [
-        ['contacto_recepcion', '59170000009', 'Escribir a María René'],
+        ['contacto_recepcion', '59170000009', 'Escribir a María'],
         ['contacto_doctor', '59170000008', 'Escribir al doctor'],
       ] as const) {
         const r = ejecutar(codigo(flujo, 'Contacto directo'), [{ ...base(), accion }])[0]!;
         const meta = r['cuerpoMeta'] as J;
         expect(meta['interactive']['type']).toBe('cta_url');
         expect(meta['interactive']['action']['parameters']['display_text']).toBe(boton);
+        // Meta admite 20 caracteres en el texto del botón: «Escribir a María René»
+        // tenía 21 y lo rechazó (#131009, ejecución #3025, 18/09).
+        expect(String(meta['interactive']['action']['parameters']['display_text']).length).toBeLessThanOrEqual(20);
         expect(String(meta['interactive']['action']['parameters']['url'])).toMatch(new RegExp('^https://wa\\.me/' + numero + '\\?text='));
         expect(String(meta['interactive']['body']['text'])).not.toMatch(/[0-9]{6,}/);
         expect(String(r['textoRespaldo'])).toContain('https://wa.me/' + numero);
@@ -1031,6 +1037,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       const meta = r['cuerpoMeta'] as J;
       expect(meta['interactive']['type']).toBe('cta_url');
       expect(String(meta['interactive']['action']['parameters']['url'])).toContain('wa.me/59170000009');
+      expect(String(meta['interactive']['action']['parameters']['display_text']).length).toBeLessThanOrEqual(20);
       expect(r['avisarDoctor']).toBe(true);
       expect(r['numeroDoctorDigitos']).toBe('59170000008');
       expect(String(r['alertaDoctor'])).toContain('EMERGENCIA');
@@ -1079,24 +1086,34 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: false, ultimo: Date.now() } } };
       const prev = [{ ...base(), accion: 'menu', respuesta: 'texto del menú' }];
       const ok = conEstado('Confirmar interactivo', [{ statusCode: 200, body: { messages: [{ id: 'wamid.MENU' }] } }], sd,
-        { 'Enviar interactivo': prev, '¿Menú inicial?': prev })[0]!;
+        { 'Enviar interactivo': prev, 'Menú inicial': prev })[0]!;
       expect(ok).toMatchObject({ from: TELEFONO, respuesta: 'texto del menú', tipo: 'interactive', idMeta: 'wamid.MENU', ok: true });
       expect(sd['conversaciones'][TELEFONO]['menu']).toBe(true);
 
       const sd2: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: false, ultimo: Date.now() } } };
       const mal = conEstado('Confirmar interactivo', [{ statusCode: 400, body: { error: { code: 131009 } } }], sd2,
-        { 'Enviar interactivo': prev, '¿Menú inicial?': prev })[0]!;
+        { 'Enviar interactivo': prev, 'Menú inicial': prev })[0]!;
       expect(mal['ok']).toBe(false);
       expect(sd2['conversaciones'][TELEFONO]['menu']).toBe(false);
     });
 
     it('el respaldo en texto lleva el mismo contenido con el enlace adentro, por «Mensaje a enviar»', () => {
+      // El origen es el nodo Code que corrió (acá, el contacto directo por la rama
+      // FALSA del menú): leer `$('¿Menú inicial?').all()` devolvía la rama verdadera,
+      // vacía, y el paciente se quedaba sin respuesta (ejecución #3025, 18/09).
       const prev = [{ ...base(), accion: 'contacto_recepcion', respuesta: 'cuerpo', textoRespaldo: 'cuerpo\n\nEscríbele aquí: https://wa.me/59170000009' }];
-      const r = ejecutar(codigo(flujo, 'Texto de respaldo'), [{ statusCode: 400 }], { '¿Menú inicial?': prev })[0]!;
+      const r = ejecutar(codigo(flujo, 'Texto de respaldo'), [{ statusCode: 400 }], { 'Contacto directo': prev })[0]!;
       expect(r['respuesta']).toContain('https://wa.me/59170000009');
       expect(r['from']).toBe(TELEFONO);
       const condicion = (nodo(flujo, '¿Falló el interactivo?').parameters['conditions'] as J).conditions[0].leftValue;
       expect(expresion(condicion, { statusCode: 400 })).toBe(400);
+    });
+
+    it('la confirmación de un CONTACTO directo también encuentra su origen (rama falsa del menú)', () => {
+      const prev = [{ ...base(), accion: 'contacto_doctor', respuesta: 'cuerpo del contacto' }];
+      const r = conEstado('Confirmar interactivo', [{ statusCode: 200, body: { messages: [{ id: 'wamid.CTA' }] } }], {},
+        { 'Enviar interactivo': prev, 'Contacto directo': prev })[0]!;
+      expect(r).toMatchObject({ from: TELEFONO, respuesta: 'cuerpo del contacto', idMeta: 'wamid.CTA', ok: true });
     });
 
     it('el reporte del interactivo dice lo que salió, como saliente', () => {
