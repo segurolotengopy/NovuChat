@@ -151,6 +151,13 @@ const FLUJOS = [
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
   },
+  // Reservas del consultorio del Dr. Bellido: también es el Demo A con los datos
+  // del cliente, y obedece los umbrales por los mismos nodos.
+  {
+    archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)',
+    compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
+    campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+  },
 ] as const;
 
 describe('El mensaje fijo de uso extendido', () => {

@@ -27,11 +27,11 @@
       "garantías por escrito",
       "cantidad de sesiones"
     ],
-    "instruccionesExtra": "PRECIOS: blanqueamiento 500 Bs de campaña (regular 600). Para agendar se cobra una RESERVA de 50 Bs que se descuenta de los 500. La valoración con la odontóloga cuesta 200 Bs SOLO si al final no se realiza el tratamiento. No inventes otros montos, descuentos ni formas de pago.\nNO AFIRMES NADA CLÍNICO que no esté acá. PROHIBIDO decir que el gel lleva agentes desensibilizantes, que el oxígeno disuelve las manchas desde adentro, que el esmalte queda intacto, o que el resultado dura uno o dos años. Cuánto se mantiene depende del cuidado y la higiene de cada paciente: nunca des un tiempo fijo. Nada de beneficios clínicos improvisados; lo que requiere criterio profesional lo define la odontóloga.\nDURACIÓN: la sesión toma 45-60 min. Ante «cuánto dura», distingue la sesión del resultado y cubre las dos.\nOBJECIONES (responde la duda primero; ofrece la cita si hay interés, no en cada mensaje):\n- Dolor: es la consulta más común. Lo hace una odontóloga y tu caso se evalúa antes de empezar. Nunca prometas que no va a doler ni describas el producto.\n- Esmalte: no expliques efectos sobre el esmalte. Es un procedimiento odontológico con evaluación previa.\n- Caro, por qué 500, lo pensaré: es normal comparar. Es precio de campaña sobre 600. No presiones: pregunta qué le falta saber para decidir.\n- Otra clínica o un spa: acá lo hace una odontóloga con evaluación previa. Nunca critiques a otros.\n- Aptitud, embarazo, carillas, cuántas sesiones: lo define la odontóloga en la valoración.",
-    "mensajeCierre": "Gracias por escribirnos. Si necesita algo más, escríbanos por acá.",
-    "mensajeErrorTemporal": "Disculpe, tuve un problema técnico momentáneo. ¿Me repite lo último?",
-    "mensajeReservaNoConfirmada": "Disculpe, no pude confirmar el registro de su cita en la agenda. Lo paso con una persona de recepción para que lo resuelva ahora mismo.",
-    "mensajeComercioSuspendido": "En este momento no podemos atenderle por este medio. Por favor comuníquese directamente con la clínica. Gracias por escribirnos.",
+    "instruccionesExtra": "PRECIOS: blanqueamiento 500 Bs de campaña (regular 600). Para agendar se cobra una RESERVA de 50 Bs que se descuenta de los 500. La valoración con la odontóloga cuesta 200 Bs SOLO si al final no se realiza el tratamiento. No inventes otros montos, descuentos ni formas de pago.\nNO AFIRMES NADA CLÍNICO que no esté acá. PROHIBIDO decir que el gel lleva agentes desensibilizantes, que el oxígeno disuelve las manchas desde adentro, que el esmalte queda intacto, o que el resultado dura uno o dos años. Cuánto se mantiene depende del cuidado y la higiene de cada paciente: nunca des un tiempo fijo. Nada de beneficios clínicos improvisados; lo que requiere criterio profesional lo define la odontóloga.\nDURACIÓN: la sesión toma 45-60 min. Ante \"cuánto dura\", distingue la sesión del resultado y cubre las dos.\nOBJECIONES (responde la duda primero; ofrece la cita si hay interés, no en cada mensaje):\n- Dolor: es la consulta más común. Lo hace una odontóloga y tu caso se evalúa antes de empezar. Nunca prometas que no va a doler ni describas el producto.\n- Esmalte: no expliques efectos sobre el esmalte. Es un procedimiento odontológico con evaluación previa.\n- Caro, por qué 500, lo pensaré: es normal comparar. Es precio de campaña sobre 600. No presiones: pregunta qué le falta saber para decidir.\n- Otra clínica o un spa: acá lo hace una odontóloga con evaluación previa. Nunca critiques a otros.\n- Aptitud, embarazo, carillas, cuántas sesiones: lo define la odontóloga en la valoración.",
+    "mensajeCierre": "Gracias por escribirnos. Si necesitas algo más, escríbeme por acá.",
+    "mensajeErrorTemporal": "Disculpa, tuve un problema técnico momentáneo. ¿Me repites lo último?",
+    "mensajeReservaNoConfirmada": "Disculpa, ese horario ya estaba tomado y no pude dejar tu cita registrada. Te paso con una persona de recepción para que lo resuelva contigo ahora mismo.",
+    "mensajeComercioSuspendido": "En este momento no podemos atenderte por este medio. Por favor comunícate directamente con la clínica. Gracias por escribirnos.",
     "horarios": {
       "_nota": "SUPUESTO: no consta en ninguna fuente. Confirmar con la clínica (y si atienden sábado).",
       "lun": "09:00-19:00",
@@ -49,7 +49,7 @@
     "anticipacionMaximaDias": 60,
     "permitirCancelacion": true,
     "horasRecordatorio": 24,
-    "mensajeRecordatorio": "Le recordamos su cita de mañana en Clínica Platinum. Si necesita cancelar o reprogramar, escríbanos por este mismo chat."
+    "mensajeRecordatorio": "Te recordamos tu cita de mañana en Clínica Platinum. Si necesitas cancelar o reprogramar, escríbenos por este mismo chat."
   },
   "catalogo": [
     {

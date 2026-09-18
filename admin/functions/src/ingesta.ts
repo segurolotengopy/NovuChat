@@ -1097,6 +1097,17 @@ export const configuracionFlujo = onRequest(
     // MISMO mensaje que la confirmación: cero mensajes nuevos (Analisis/34 §2).
     const direccionMaps = enlaceDeMapaValido(negocio['direccionMaps']);
     if (direccionMaps) datosDelNegocio['direccionMaps'] = direccionMaps;
+    // EL COMPORTAMIENTO GENERAL SALE DE LO VIGENTE, NUNCA DE LO PROPUESTO
+    // (17/09/2026). `instruccionesExtra` es lo que el comercio escribió y
+    // todavía puede estar sin revisar o rechazado; `instruccionesVigentes` es lo
+    // último que aprobó la verificación del servidor (`comportamiento.ts`) o lo
+    // que cargó NovuChat. El flujo sigue recibiendo la clave `instruccionesExtra`
+    // —no cambia—, pero con el texto vigente adentro; sin vigente, vacío, aunque
+    // lo propuesto tenga texto. Es la segunda barrera, igual que con los campos
+    // derivados: las reglas impiden que el navegador escriba lo vigente, y acá
+    // no se lee lo propuesto ni por accidente.
+    datosDelNegocio['instruccionesExtra'] = typeof negocio['instruccionesVigentes'] === 'string'
+      ? negocio['instruccionesVigentes'] : '';
 
     // El renglón de este turno, con el comercio adentro. Ver el bloque
     // «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO» más arriba: el flujo
