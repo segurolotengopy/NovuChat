@@ -4,7 +4,68 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum, bloque 1: la dirección va con el enlace de Google Maps (rama `flujos/direccion-maps`)
+
+`Analisis/34` §2. Campo `direccionMaps` en `config/negocio` (solo `https://` de
+un dominio de Google Maps: validado en las reglas, en `prompt.ts` y otra vez
+en `Config del negocio`, porque es lo único que el asistente reenvía tal cual)
+y `ubicacion {lat, lng}` (estructurado, opcional). La consola los pide en
+Configuración; `cargar-negocio.mjs` los acepta con el mismo contrato;
+`negocio-platinum.json` lleva el enlace vacío **hasta que lo dé la clínica**
+(pedido anotado en `CLIENTES/PLATINUM/ficha.md`).
+
+En los dos flujos de agendamiento (Demo A y Platinum, 41 nodos cada uno): el
+prompt incluye la dirección y el enlace en el mismo mensaje de confirmación y
+en «¿dónde quedan?»; si el paciente pide expresamente la ubicación o el pin,
+el modelo termina con `[ENVIAR_UBICACION]` y tres nodos nuevos, debajo del
+reporte del texto, mandan el mensaje `location` nativo y lo reportan como
+saliente `location`. Sin coordenadas cargadas, la marca se quita y no sale
+nada.
+
+**Mensajes por conversación: 0 en el camino normal; +1 solo cuando el
+paciente pide el pin y hay coordenadas.** Suite: 1500 en verde (33 archivos),
+`platinum-flujo.test.ts` (k) sobre los dos flujos, `direccion-maps.test.ts`
+(34, puras), reglas negando. Saneo 0.
+
+**Bellido en paridad (18/09).** `main` trajo el alta del Dr. Bellido con una
+suite que exige que su flujo sea el Demo A nodo por nodo, así que cada bloque
+que toca el Demo A tiene que llevar también `Flujos/bellido-agendamiento.json`.
+Dos scripts nuevos lo hacen repetible: `admin/scripts/sincronizar-flujo-cliente.mjs`
+(repone en el cliente los nodos, conexiones, código y credenciales por tipo
+del vertical; conserva sus nodos propios y agrega a `Config base` las
+asignaciones nuevas) y `admin/scripts/portar-prompt-cliente.py` (aplica al
+prompt y a las herramientas del cliente las mismas operaciones por línea que
+cambiaron en el vertical, con sustitución de subcadena donde el cliente tiene
+texto propio). La rama fusiona además el PR #110 (Demo A al día), que
+resolvía el mismo nodo `Config del negocio`. Bellido: 41 nodos, su suite en
+verde con las mismas tres excepciones que Platinum.
+
+**Y el consultorio se volvió un cliente con nodos propios (18/09, tarde).**
+`main` trajo el Bellido de producción: 57 nodos, 19 suyos (menú inicial,
+contacto directo, emergencia con aviso al doctor, despedida en dos) empalmados
+al Demo A en dos puntos. El sincronizador los habría borrado, así que aprendió
+`--base <ref>`: con la versión del vertical desde la que se armó el cliente
+distingue lo que el cliente AGREGÓ de lo que el vertical quitó, conserva sus
+nodos y recompone sus dos formas de empalme —un destino que cuelga de una
+salida que ya existía, y un nodo intercalado DELANTE de otro, que pasa a
+recibir todas las entradas de aquel, también las que el vertical agregue
+después—. El reemplazo toca solo el cableado `main`: la primera versión
+redirigió también el sub-nodo del modelo y dejó al agente sin Gemini, y la
+suite lo atrapó. Bellido queda en 60 nodos. De `main` entran además dos
+cambios del vertical, fusionados a tres bandas sobre el código: el fallo
+CERRADO de `Comprobar reserva` cuando el calendario no contesta (ejecución
+#2976: el modelo dijo «quedó agendada» con la credencial de Google caída) y
+los textos del menú en `Config del negocio`. 1714 en verde, saneo 0.
+
+**Falta:** desplegar reglas y Functions; publicar los TRES flujos desde `main`
+con `publicar-flujo.sh` (Demo A, Platinum y Bellido; los nodos nuevos toman la
+credencial por tipo);
+probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anotar en
+`CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
 
 ---
 

@@ -170,6 +170,8 @@ describe('La compuerta que aplica el estado', () => {
     const destinos = (n: string) => (conexiones[n]?.main?.[0] ?? []).map((x) => x.node);
     expect(destinos('Comercio no operativo')).toEqual(['Mensaje a enviar']);
     expect(destinos('Mensaje a enviar')).toEqual(['Responder al cliente']);
-    expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+    // El reporte del texto primero; la compuerta del pin (Analisis/34 §2) va
+    // debajo y no pasa nada en el aviso neutro.
+    expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
   });
 });

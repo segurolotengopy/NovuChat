@@ -182,6 +182,9 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
   const CREDENCIALES_PROPIAS = [
     'Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)',
     'Registrar cierre (cita)', 'Responder al cliente', 'Avisar a recepción',
+    // Bloque 1 (dirección con Maps): el pin nativo sale por Graph con la
+    // credencial de envío del cliente, y se reporta con la de ingesta.
+    'Enviar ubicación', 'Reportar ubicación (saliente)',
     // Los del 18/09: menú, contacto directo, emergencia y despedida en dos.
     'Enviar interactivo', 'Reportar interactivo (saliente)', 'Avisar al doctor (plantilla)',
     'Avisar al doctor (texto)', 'Redes del doctor', 'Reportar redes (saliente)',
@@ -248,7 +251,16 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     for (const n of distintos) {
       expect(PARAMETROS_QUE_PUEDEN_CAMBIAR, `${n} se separó del vertical`).toContain(n);
     }
-    for (const n of ['Config base', 'Config del negocio', AGENTE]) {
+    // `Config del negocio` SÍ solía estar acá: el borrador de este flujo salió de
+    // un Demo A que no fusionaba `instruccionesExtra`, y hubo que arreglarlo
+    // cliente por cliente. Desde que el Demo A quedó al día, el nodo es idéntico
+    // y tiene que seguir siéndolo: si vuelve a diferir, alguien le hizo a este
+    // cliente un arreglo que el vertical no tiene.
+    expect(
+      JSON.stringify(nodo(flujo, 'Config del negocio').parameters),
+      'Config del negocio se separó del Demo A',
+    ).toBe(JSON.stringify(nodo(demoA, 'Config del negocio').parameters));
+    for (const n of ['Config base', AGENTE]) {
       expect(distintos, n).toContain(n);
     }
   });
@@ -294,13 +306,13 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
       'Reportar mensaje (saliente)', 'Registrar cierre (cita)']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name, nombre).toMatch(/Bellido/);
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name, nombre).toMatch(/Bellido/);
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
   });
 
-  it('MENSAJES DECLARADOS: los dos envíos del Demo A, más el aviso al doctor (+1 por emergencia) y las redes (+1 por cita)', () => {
+  it('MENSAJES DECLARADOS: los dos envíos del Demo A, más el aviso al doctor (+1 por emergencia), las redes (+1 por cita) y el pin a pedido (bloque 1)', () => {
     // Base comercial §1: todo cambio de flujo declara cuántos mensajes agrega.
     // El menú y los contactos directos REEMPLAZAN a la respuesta del turno (0
     // extra; salen por «Enviar interactivo»). Lo que sí suma: el aviso al
@@ -311,8 +323,9 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     expect(envios(flujo)).toEqual(['Avisar a recepción', 'Avisar al doctor (texto)', 'Redes del doctor', 'Responder al cliente']);
     // Por la Graph API salen los interactivos y la PLANTILLA al doctor (el
     // texto es solo su respaldo, cuando Meta rechaza la plantilla).
+    // Y el pin del bloque 1, que solo sale si el paciente lo pide expresamente.
     const http = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'])));
-    expect(http.map((n) => n.name).sort()).toEqual(['Avisar al doctor (plantilla)', 'Enviar interactivo']);
+    expect(http.map((n) => n.name).sort()).toEqual(['Avisar al doctor (plantilla)', 'Enviar interactivo', 'Enviar ubicación']);
   });
 
   it('el aviso a recepción nombra al consultorio y conserva el cuerpo del Demo A', () => {
@@ -627,9 +640,10 @@ describe.skipIf(!HAY_JSON)('(g) Orden v1: el entrante se reporta antes, y el sal
     // antes del candado. Lo que se registra es lo que el cliente RECIBIÓ.
     expect(origenes('Reportar mensaje (saliente)')).toEqual(['Responder al cliente']);
     expect(destinos('Procesar respuesta')).toEqual(['¿Afirma que agendó?']);
-    // Del envío cuelgan el reporte y, para la despedida en dos, la compuerta
-    // del segundo mensaje: el reporte PRIMERO en el lienzo (orden v1).
-    expect(destinos('Responder al cliente').sort()).toEqual(['Reportar mensaje (saliente)', '¿Enviar redes?'].sort());
+    // Del envío cuelgan el reporte, la compuerta del pin (bloque 1) y la del
+    // segundo mensaje: el reporte PRIMERO en el lienzo (orden v1).
+    expect(destinos('Responder al cliente')).toEqual(
+      ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar redes?']);
     expect(y('Reportar mensaje (saliente)')).toBeLessThan(y('¿Enviar redes?'));
   });
 

@@ -308,6 +308,44 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // ENLACE DE GOOGLE MAPS (`direccionMaps`, Analisis/34 §2).
+    //
+    // Es el único texto del comercio que el asistente REENVÍA TAL CUAL a un
+    // cliente final, dentro de la confirmación de la cita y ante «¿dónde
+    // quedan?». Un texto libre acá sería un enlace a cualquier sitio, firmado
+    // con el nombre del negocio, en el WhatsApp de un tercero. Por eso no es
+    // texto libre: vacío, o `https://` de un dominio de mapas de Google y nada
+    // más. El servidor (`enlaceDeMapaValido`, prompt.ts) lo vuelve a comprobar
+    // antes de mandarlo al flujo: dos barreras, a propósito, como con los
+    // derivados. El punto se escribe `[.]`, como en `calendarioValido`.
+    // -------------------------------------------------------------------------
+    function enlaceDeMapaValido(datos, campo) {
+      return textoOpc(datos, campo, 200)
+        && (datos.get(campo, '') == ''
+            || datos.get(campo, '').matches(
+                 '^https://(maps[.]app[.]goo[.]gl|goo[.]gl/maps|www[.]google[.]com/maps|google[.]com/maps|maps[.]google[.]com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$'));
+    }
+
+    // -------------------------------------------------------------------------
+    // COORDENADAS DEL LOCAL (`ubicacion`): exactamente `lat` y `lng`, números
+    // dentro del rango de la Tierra. Solo se usan para el mensaje `location`
+    // nativo de WhatsApp cuando el cliente pide el pin (un mensaje más, y solo
+    // en ese caso). Ausente = no hay pin: el flujo manda la dirección en texto.
+    // Con una sola de las dos, o con texto adentro, el pin saldría en el mar o
+    // Meta lo rechazaría después de haberlo contado: se frena acá.
+    // -------------------------------------------------------------------------
+    function ubicacionValida(datos) {
+      return !('ubicacion' in datos)
+        || (datos.ubicacion is map
+            && datos.ubicacion.keys().hasOnly(['lat', 'lng'])
+            && datos.ubicacion.keys().hasAll(['lat', 'lng'])
+            && datos.ubicacion.lat is number
+            && datos.ubicacion.lng is number
+            && datos.ubicacion.lat >= -90 && datos.ubicacion.lat <= 90
+            && datos.ubicacion.lng >= -180 && datos.ubicacion.lng <= 180);
+    }
+
+    // -------------------------------------------------------------------------
     // ID DE CALENDARIO DE GOOGLE — el dato que más caro salió en este proyecto.
     //
     // Un ID pegado a mano con UN carácter de menos hizo que Google devolviera 404
@@ -596,6 +634,9 @@ service cloud.firestore {
             // Identidad y contacto
             'nombreNegocio', 'descripcion', 'direccion', 'numeroRecepcion',
             'zonaHoraria', 'moneda', 'calendarioId',
+            // Dónde queda: el enlace de Google Maps y las coordenadas del pin
+            // (Analisis/34 §2). Capa común, como la dirección.
+            'direccionMaps', 'ubicacion',
             // Operación
             'horarios', 'politicaCancelacion', 'prefijosPermitidos',
             'datosQueNoTenemos',
@@ -642,6 +683,11 @@ service cloud.firestore {
             // automáticamente a `datosQueNoTenemos` para que el agente responda
             // que la va a consultar. Ver DISENO.md §4quater.3.
             && textoOpc(d, 'direccion', 200)
+            // El enlace del mapa acompaña a la dirección en el MISMO mensaje
+            // (cero mensajes nuevos); las coordenadas solo salen como pin
+            // cuando el cliente lo pide. Validados arriba, no texto libre.
+            && enlaceDeMapaValido(d, 'direccionMaps')
+            && ubicacionValida(d)
 
             && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
             && d.get('moneda', 'BOB') in ['BOB', 'USD']

@@ -307,9 +307,13 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
         // reporta lo que salió, no lo que se pensaba mandar.
         expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente]);
         expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
-        // Del envío puede colgar, además del reporte, un segundo mensaje
-        // (la despedida en dos de Bellido); el reporte siempre está.
-        expect(destinos(f, 'Responder al cliente')).toContain('Reportar mensaje (saliente)');
+        // Del envío cuelgan el reporte del texto y, DEBAJO, lo que cada flujo
+        // agregue: la compuerta del pin (Analisis/34 §2) y, en Bellido, la de
+        // su segundo mensaje. Con orden v1 el texto se reporta PRIMERO.
+        expect(destinos(f, 'Responder al cliente')[0]).toBe('Reportar mensaje (saliente)');
+        for (const d of destinos(f, 'Responder al cliente').slice(1)) {
+          expect(d, d).toMatch(/^¿Enviar /);
+        }
       } else {
         expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
           .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);
