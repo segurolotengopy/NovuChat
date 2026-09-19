@@ -2309,6 +2309,190 @@ describe('Contadores de la oferta comercial', () => {
   });
 });
 
+/**
+ * SEÑA POR QR EN LAS RESERVAS (bloque 2, 17/09/2026) — las reglas, negando.
+ *
+ * Tres documentos y un contador. Lo que se cuida acá es plata y prohibición 3:
+ *  - `config/agendamiento`: el admin fija el importe de la seña dentro del
+ *    rango, y NADIE escribe `cobroReal` desde el navegador —ni lo enciende, ni
+ *    lo borra con un `setDoc`—: lo escribe solo `registrarQrDeCobro`.
+ *  - `cierres`: la ingesta crea el cierre con su `cotejo` bien formado, y el
+ *    resultado es uno de tres, ninguno llamado «pagado». Otro comprobante
+ *    reescribe SOLO el cotejo.
+ *  - `conversaciones.solicitud` y las tres métricas nuevas: solo la ingesta.
+ */
+describe('Seña por QR en las reglas', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+  const cotejo = (extra: Record<string, unknown> = {}) => ({
+    resultado: 'cuadra', diferencias: [], montoLeido: 50, banco: 'BNB',
+    idMeta: 'wamid.abc', intentos: 1, en: serverTimestamp(), ...extra,
+  });
+  const cierreConSena = (extra: Record<string, unknown> = {}) => ({
+    tipo: 'cita', ocurridoEn: serverTimestamp(), referencia: 'evt_sena',
+    telefonoEnmascarado: '591****001', monto: 50, moneda: 'BOB', cotejo: cotejo(), ...extra,
+  });
+
+  it('el admin del comercio con agenda fija la seña y la retención dentro del rango', async () => {
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 50, senaMinutosRetencion: 30, ...sello('u-admin-a') }));
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 0, senaMinutosRetencion: 180, ...sello('u-admin-a') }));
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 10000, senaMinutosRetencion: 5, ...sello('u-admin-a') }));
+  });
+
+  it('NO puede fijar 10001, un negativo, un decimal ni un texto', async () => {
+    for (const senaImporte of [10001, -1, 12.5, '50', null]) {
+      await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+        { senaImporte, ...sello('u-admin-a') }));
+    }
+  });
+
+  it('NO puede fijar una retención de 4 ni de 181 minutos', async () => {
+    for (const senaMinutosRetencion of [4, 181, 30.5, '30']) {
+      await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+        { senaMinutosRetencion, ...sello('u-admin-a') }));
+    }
+  });
+
+  it('un comercio SIN agendamiento no puede escribir la seña', async () => {
+    // B es de venta: no tiene documento de agenda ni puede crearlo.
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/agendamiento`),
+      { senaImporte: 50, ...sello('u-admin-b') }));
+    // Y en su propio documento el campo no existe.
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { senaImporte: 50, ...sello('u-admin-b') }));
+  });
+
+  it('el operador NO fija la seña', async () => {
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 50, ...sello('u-oper-a') }));
+  });
+
+  it('NADIE escribe `cobroReal` en el documento de agenda desde el navegador', async () => {
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`), {
+      cobroReal: { activo: true, cargaUtil: 'cualquier cosa', ficha: 'a'.repeat(32) },
+      ...sello('u-admin-a'),
+    }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`), {
+      'cobroReal.activo': true, ...sello('u-admin-a'),
+    }));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/config/agendamiento`), {
+      cobroReal: { activo: true }, ...sello('u-novuchat'),
+    }));
+  });
+
+  it('con el QR ya registrado, el admin sigue editando su agenda y NO puede borrar el QR', async () => {
+    // El QR lo escribió la Function (Admin SDK). Desde ese momento el
+    // documento tiene una clave que el navegador no controla.
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `tenants/${A}/config/agendamiento`), {
+        cobroReal: { activo: true, cargaUtil: 'qr', ficha: 'b'.repeat(32), cuentas: ['1000000890'] },
+      });
+    });
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { duracionPorDefectoMin: 60, senaImporte: 80, ...sello('u-admin-a') }));
+    // Un `setDoc` completo BORRARÍA `cobroReal`: borrar también es afectar.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/agendamiento`), {
+      duracionPorDefectoMin: 45, anticipacionMinimaMin: 60, anticipacionMaximaDias: 60,
+      permitirCancelacion: true, horasRecordatorio: 24, senaImporte: 80, ...sello('u-admin-a'),
+    }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { cobroReal: deleteField(), ...sello('u-admin-a') }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { 'cobroReal.activo': false, ...sello('u-admin-a') }));
+  });
+
+  it('la ingesta crea un cierre de cita con su cotejo bien formado', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena`), cierreConSena()));
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      cierreConSena({ cotejo: cotejo({ resultado: 'no_cuadra', diferencias: ['El comprobante dice 40 y el pedido es de 50.'], montoLeido: 40 }) })));
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena3`),
+      cierreConSena({ cotejo: cotejo({ resultado: 'ilegible', diferencias: ['No se pudo leer el comprobante.'], montoLeido: null }) })));
+  });
+
+  it('NO acepta un resultado fuera del enumerado: ni «pagado» ni «acreditado»', async () => {
+    for (const resultado of ['pagado', 'acreditado', 'verificado', 'ok', '', 1, true]) {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`),
+        cierreConSena({ cotejo: cotejo({ resultado }) })));
+    }
+  });
+
+  it('NO acepta un cotejo con claves de más, tipos cambiados o un intento en cero', async () => {
+    for (const malo of [
+      cotejo({ imagen: 'data:image/png;base64,AAAA' }),
+      cotejo({ diferencias: 'texto suelto' }),
+      cotejo({ montoLeido: '50' }),
+      cotejo({ banco: 'x'.repeat(81) }),
+      cotejo({ idMeta: 'x'.repeat(121) }),
+      cotejo({ intentos: 0 }),
+      cotejo({ intentos: 1.5 }),
+      cotejo({ en: 'ayer' }),
+      'no es un mapa',
+    ]) {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ cotejo: malo })));
+    }
+  });
+
+  it('NO acepta un importe negativo, no numérico ni una moneda larga', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ monto: -50 })));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ monto: '50' })));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ moneda: 'bolivianos' })));
+  });
+
+  it('un cierre sin seña sigue entrando como antes, sin cotejo ni importe', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sin_sena`), {
+      tipo: 'cita', ocurridoEn: serverTimestamp(), referencia: 'evt_x', telefonoEnmascarado: '5917****001',
+    }));
+  });
+
+  it('otro comprobante reescribe SOLO el cotejo; la referencia y el importe, no', async () => {
+    // El `beforeEach` limpia Firestore: el cierre se crea acá mismo. Si no
+    // existiera, los `assertFails` de abajo pasarían en vacío.
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      cierreConSena({ cotejo: cotejo({ resultado: 'no_cuadra', diferencias: ['El comprobante dice 40 y el pedido es de 50.'], montoLeido: 40 }) })));
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'cuadra', intentos: 2, idMeta: 'wamid.def' }) }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ intentos: 3 }), monto: 500 }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ intentos: 3 }), referencia: 'otra' }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'pagado', intentos: 3 }) }));
+    // Ni el admin ni NovuChat tocan el cotejo: es del servidor.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'cuadra', intentos: 3 }) }));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'cuadra', intentos: 3 }) }));
+    // La ingesta sigue sin poder poner el sello de la clínica.
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { comprobadoPor: 'svc-a', comprobadoEn: serverTimestamp() }));
+  });
+
+  it('la solicitud de la seña la escribe SOLO la ingesta, con una etapa del enumerado', async () => {
+    const solicitud = (etapa: unknown) => ({
+      etapa, desde: serverTimestamp(), qrEnviadoEn: serverTimestamp(),
+      evento: { id: 'evt_1', calendario: 'cal@ejemplo.com' }, cotejos: 0, seguimientos: 0,
+    });
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('qr_enviado') }));
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('agendada') }));
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('vencida') }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('pagada') }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: 'qr_enviado' }));
+    // Una persona del negocio no la mueve: si pudiera, marcaría «agendada» sin comprobante.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('agendada') }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('agendada') }));
+  });
+
+  it('las tres métricas de la seña las escribe la ingesta, y nadie más', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+      { senasEnviadas: 3, senasCotejadas: 2, senasVencidas: 1 }, { merge: true }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`), { senasCotejadas: 99 }, { merge: true }));
+    await assertFails(setDoc(doc(propietario(), `tenants/${A}/metricas/2026-09`), { senasVencidas: 0 }, { merge: true }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-09`), { senasEnviadas: 1 }, { merge: true }));
+  });
+});
+
 describe('Cierres · el número completo no puede colarse por otro campo', () => {
   it('rechaza conversacionId, que vale wa_<telefono> y es el número entero', async () => {
     await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/c9`), {

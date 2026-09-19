@@ -795,12 +795,42 @@ service cloud.firestore {
         // =====================================================================
         function configAgendamientoValida() {
           let d = request.resource.data;
-          return d.keys().hasOnly([
-                   'duracionPorDefectoMin', 'anticipacionMinimaMin',
-                   'anticipacionMaximaDias', 'permitirCancelacion',
-                   'horasRecordatorio', 'mensajeRecordatorio',
-                   'actualizadoPor', 'actualizadoEn'
-                 ])
+          return
+            // Lista blanca sobre las claves AFECTADAS, como en `venta`, y no
+            // sobre todas las del documento. Desde la seña por QR (bloque 2,
+            // 17/09) este documento también lleva `cobroReal`, que lo escribe
+            // SOLO `registrarQrDeCobro` con el SDK Admin: si la lista fuera
+            // sobre `keys()`, el día que el comercio registra su QR ya no
+            // podría guardar ni la duración de la cita, porque el documento
+            // tendría una clave que la lista no admite. Con `affectedKeys`,
+            // `cobroReal` queda fuera del alcance del navegador —ni escribirlo,
+            // ni encenderlo, ni borrarlo con un `setDoc`— y el resto se edita.
+            soloCampos([
+              'duracionPorDefectoMin', 'anticipacionMinimaMin',
+              'anticipacionMaximaDias', 'permitirCancelacion',
+              'horasRecordatorio', 'mensajeRecordatorio',
+              // SEÑA PARA RESERVAR (`Analisis/30` §4). El importe en la moneda
+              // del negocio; 0 = sin seña. Y cuántos minutos queda retenido el
+              // horario a la espera del comprobante. Son parámetros del flujo
+              // de agendamiento (política de capas, DISENO §4sexies), por eso
+              // viven acá y no en `negocio`.
+              'senaImporte', 'senaMinutosRetencion',
+              'actualizadoPor', 'actualizadoEn'
+            ])
+            // Entero y con techo: una seña es una fracción del tratamiento, no
+            // un importe libre. Diez mil cubre cualquier tratamiento dental del
+            // país; un decimal no entra porque el cotejo compara centavos
+            // contra lo leído del comprobante y un importe con decimales es un
+            // rechazo asegurado por redondeo.
+            && d.get('senaImporte', 0) is int
+            && d.get('senaImporte', 0) >= 0
+            && d.get('senaImporte', 0) <= 10000
+            // Menos de cinco minutos no le da tiempo al paciente ni de abrir la
+            // aplicación del banco; más de tres horas es un horario bloqueado
+            // para todos los demás por un pago que probablemente no llega.
+            && d.get('senaMinutosRetencion', 30) is int
+            && d.get('senaMinutosRetencion', 30) >= 5
+            && d.get('senaMinutosRetencion', 30) <= 180
             && d.get('duracionPorDefectoMin', 30) is int
             && d.get('duracionPorDefectoMin', 30) > 0
             && d.get('duracionPorDefectoMin', 30) <= 480
@@ -1625,7 +1655,18 @@ service cloud.firestore {
                  // CUANDO EMPEZO la atencion vigente, no el ultimo mensaje. Todo
                  // lo que cae dentro de esa ventana es la misma atencion; lo que
                  // llega despues abre otra.
-                 , 'atencionDesde'])
+                 , 'atencionDesde'
+                 // `solicitud` es la SEÑA EN CURSO de este teléfono (bloque 2):
+                 // en qué etapa va (`qr_enviado`, `agendada`, `vencida`), desde
+                 // cuándo, qué cita del calendario está retenida y cuántos
+                 // comprobantes llegaron. La escriben la ingesta (al reportar
+                 // el QR enviado) y `cotejarComprobante`/`senaVencida`, nunca
+                 // una persona: es lo que decide si el próximo archivo que
+                 // manda el paciente se lee como comprobante o no.
+                 , 'solicitud'])
+            && (!d.keys().hasAny(['solicitud'])
+                || (d.solicitud is map
+                    && d.solicitud.get('etapa', '') in ['qr_enviado', 'agendada', 'vencida']))
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
             && textoOpc(d, 'nombreContacto', 120)
@@ -1709,7 +1750,14 @@ service cloud.firestore {
             // el mismo nombre que usa la pagina de precios. `atenciones` queda
             // admitida para no romper los documentos ya escritos con ese
             // nombre; no se escribe mas.
-            'cierres', 'conversaciones', 'atenciones', 'interacciones'
+            'cierres', 'conversaciones', 'atenciones', 'interacciones',
+            // SEÑA POR QR (bloque 2, 17/09). Las tres cuentan el embudo de la
+            // reserva con seña: QR enviados, comprobantes cotejados —cualquiera
+            // sea el resultado— y retenciones que vencieron sin comprobante.
+            // Con las tres la consola puede decir cuántos horarios se bloquean
+            // por pagos que no llegan, que es lo que decide si la retención de
+            // 30 minutos es corta o larga.
+            'senasEnviadas', 'senasCotejadas', 'senasVencidas'
           ]);
         }
       }
@@ -1763,12 +1811,59 @@ service cloud.firestore {
         // afirmó algo, y ese rastro es justo lo que sirve el día que el cobro
         // se discute. Si se marcó por error, se corrige con un reclamo, que
         // deja su propio registro.
-        allow update: if esAdmin(tenantId)
-                      && !('comprobadoPor' in resource.data)
-                      && request.resource.data.diff(resource.data).affectedKeys()
-                           .hasOnly(['comprobadoPor', 'comprobadoEn'])
-                      && request.resource.data.comprobadoPor == request.auth.uid
-                      && request.resource.data.comprobadoEn == request.time;
+        allow update: if (esAdmin(tenantId)
+                          && !('comprobadoPor' in resource.data)
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['comprobadoPor', 'comprobadoEn'])
+                          && request.resource.data.comprobadoPor == request.auth.uid
+                          && request.resource.data.comprobadoEn == request.time)
+                      // LA SEGUNDA ESCRITURA: otro comprobante para la misma
+                      // cita. Cuando el primero no cuadró o no se pudo leer, el
+                      // paciente manda otro y el cotejo se reescribe con el
+                      // intento siguiente. SOLO `cotejo`: la referencia, el
+                      // importe y el teléfono del cierre no se corrigen por
+                      // esta vía, porque sobre eso se factura.
+                      || (esIngesta(tenantId) && tenantOperativo(tenantId)
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['cotejo'])
+                          && cotejoValido(request.resource.data));
+
+        // EL COTEJO DEL COMPROBANTE DE LA SEÑA (bloque 2, 17/09): lo que el
+        // servidor comparó y con qué resultado. Es un mapa dentro del cierre y
+        // no un documento aparte porque se lee siempre junto con él —la
+        // pantalla de cobros muestra el importe y al lado si los datos
+        // coinciden— y porque nace en la misma transacción.
+        //
+        // `resultado` es un enumerado de TRES valores y ninguno se llama
+        // «pagado» ni «acreditado»: `cuadra` dice que lo leído coincide con lo
+        // esperado, y nada más. Quien confirma que el dinero entró es el
+        // comercio, con el sello de arriba. Prohibición 3 de CLAUDE.md.
+        //
+        // `diferencias` es una lista de frases cortas del servidor
+        // (`cotejo.ts`), `montoLeido` lo que el modelo leyó (o nulo), `banco`
+        // el de destino tal como figura, `idMeta` el identificador del mensaje
+        // con el comprobante —la prueba externa de que llegó— e `intentos`
+        // cuántos comprobantes se cotejaron para esta cita. LA IMAGEN NO SE
+        // GUARDA en ninguna parte: solo estos datos.
+        function cotejoValido(d) {
+          return !d.keys().hasAny(['cotejo'])
+            || (d.cotejo is map
+                && d.cotejo.keys().hasOnly([
+                     'resultado', 'diferencias', 'montoLeido', 'banco',
+                     'idMeta', 'intentos', 'en'
+                   ])
+                && d.cotejo.get('resultado', '') in ['cuadra', 'no_cuadra', 'ilegible']
+                && d.cotejo.get('diferencias', []) is list
+                && d.cotejo.get('diferencias', []).size() <= 10
+                && (d.cotejo.get('montoLeido', null) == null
+                    || d.cotejo.get('montoLeido', 0) is number)
+                && textoOpc(d.cotejo, 'banco', 80)
+                && textoOpc(d.cotejo, 'idMeta', 120)
+                && d.cotejo.get('intentos', 1) is int
+                && d.cotejo.get('intentos', 1) >= 1
+                && d.cotejo.get('intentos', 1) <= 100
+                && d.cotejo.get('en', null) is timestamp);
+        }
 
         function cierreValido() {
           let d = request.resource.data;
@@ -1779,9 +1874,20 @@ service cloud.firestore {
                    // —está en la lista para que el documento resultante lo
                    // admita, no para que ella lo ponga— y su regla de
                    // actualización es la de arriba.
-                   'comprobadoPor', 'comprobadoEn'
+                   'comprobadoPor', 'comprobadoEn',
+                   // El cotejo de la seña, opcional: un cierre sin seña no lo
+                   // trae. Su forma la valida `cotejoValido`.
+                   'cotejo'
                  ])
               && !('comprobadoPor' in d)
+              // El importe, si viene, es un número no negativo con techo. Un
+              // cierre de venta puede no traerlo; el de una seña lo trae
+              // siempre, porque es lo que se cotejó.
+              && d.get('monto', 0) is number
+              && d.get('monto', 0) >= 0
+              && d.get('monto', 0) <= 1000000
+              && textoOpc(d, 'moneda', 8)
+              && cotejoValido(d)
               // `conversacionId` NO esta en la lista, y es deliberado: vale
               // `wa_<telefono>`, o sea el numero COMPLETO. Enmascarar el
               // telefono en un campo y publicarlo entero en otro no protege
@@ -1894,7 +2000,11 @@ service cloud.firestore {
                  // contestarle a mi cliente». Faltaban desde el 13/09.
                  'derivacion_operador', 'bloqueo_ventana',
                  // Aviso de consumo al 80 % del plan (15/09), una vez por mes.
-                 'aviso_consumo'
+                 'aviso_consumo',
+                 // Seña por QR (bloque 2, 17/09): llegó un comprobante y el
+                 // servidor lo cotejó (el resultado va en `codigo`), y una
+                 // retención que venció sin comprobante y cuya cita se borró.
+                 'cobro_cotejado', 'sena_vencida'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]

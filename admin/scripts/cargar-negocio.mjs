@@ -145,6 +145,10 @@ const CLAVES_NEGOCIO = new Set([
 const CLAVES_AGENDAMIENTO = new Set([
   'duracionPorDefectoMin', 'anticipacionMinimaMin', 'anticipacionMaximaDias',
   'permitirCancelacion', 'horasRecordatorio', 'mensajeRecordatorio',
+  // Seña por QR (bloque 2): importe entero (0 = sin seña) y minutos de
+  // retención del horario. Mismos rangos que `configAgendamientoValida`.
+  // `cobroReal` NO está: lo escribe solo `registrarQrDeCobro`, desde la consola.
+  'senaImporte', 'senaMinutosRetencion',
 ]);
 const CLAVES_ITEM = new Set(['nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionMin', 'activo', 'imagenUrl']);
 const CLAVES_FUNCIONARIO = new Set(['id', 'nombre', 'especialidad', 'calendarioId', 'calendarioMarcador', 'servicios', 'activo']);
@@ -280,6 +284,8 @@ function validar(d) {
       if ('permitirCancelacion' in a && typeof a.permitirCancelacion !== 'boolean') p.push('agendamiento.permitirCancelacion: true o false');
       if ('horasRecordatorio' in a && !esEntero(a.horasRecordatorio, 0, 168)) p.push('agendamiento.horasRecordatorio: entero de 0 a 168');
       texto(a, 'mensajeRecordatorio', 400, 'agendamiento');
+      if ('senaImporte' in a && !esEntero(a.senaImporte, 0, 10000)) p.push('agendamiento.senaImporte: entero de 0 a 10000 (0 = sin seña)');
+      if ('senaMinutosRetencion' in a && !esEntero(a.senaMinutosRetencion, 5, 180)) p.push('agendamiento.senaMinutosRetencion: entero de 5 a 180');
     }
   }
 

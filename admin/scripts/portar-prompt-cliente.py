@@ -61,6 +61,11 @@ def sustituir(vieja, nueva, linea):
     vm, nm = vieja[len(p):len(vieja) - len(s)], nueva[len(p):len(nueva) - len(s)]
     if nm and nm in linea:          # ya portado: no se repite
         return linea
+    if not vm:                      # inserción pura: va delante del mismo sufijo
+        if s and linea.endswith(s):
+            return linea[:len(linea) - len(s)] + nm + s
+        if not s:
+            return linea + nm
     if not vm or vm not in linea:
         raise SystemExit(f'✗ No se puede portar (el cliente no tiene el tramo que cambió):\n    vertical: {vieja[:90]}\n    cliente : {linea[:90]}')
     return linea.replace(vm, nm, 1)

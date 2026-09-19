@@ -295,8 +295,8 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
 
 **Primer cliente con el flujo de agendamiento** (15/09/2026; demo el 16/09).
 Clínica dental y de estética facial en Santa Cruz. Es una copia del Demo A
-vigente —41 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
-candado contra la doble reserva, dirección con enlace a Maps— con los datos del
+vigente —59 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
+candado contra la doble reserva, dirección con enlace a Maps, seña por QR— con los datos del
 cliente y **un solo mecanismo nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
 `instruccionesExtra` (el texto libre de hasta 1.500 caracteres que el comercio
 escribe en su consola) **delimitado y rotulado como dato**, después de las
@@ -337,6 +337,76 @@ y no se manda nada. Un pin rechazado por Meta sale por la salida de error del
 nodo y no se reporta. Suite: bloque (j) de `platinum-flujo.test.ts`, sobre los
 dos flujos.
 
+**Seña por QR con cotejo del comprobante (bloque 2, `Analisis/30` §4,
+`Analisis/07` §4), igual en el Demo A.** La clínica pierde horarios con
+pacientes que reservan y no van; la seña —una fracción del tratamiento, pagada
+por QR al reservar— los filtra. Es **cobro real**: el QR es el del comercio
+(`registrarQrDeCobro`, pestaña «Configuración de QR» de agendamiento) y el
+dinero va a su cuenta, así que rige la prohibición 3 de CLAUDE.md en cada texto.
+Se enciende desde la consola con `senaImporte` (0 = sin seña) y
+`senaMinutosRetencion` (5..180) en `config/agendamiento`; el panel se lo cuenta
+al flujo en `configuracionFlujo.sena`, y sin seña **no cambia nada**.
+
+Cómo funciona, de punta a punta:
+
+1. **La cita se retiene por hecho.** Con la seña activa, `agendar_cita` crea la
+   cita con el título `PENDIENTE DE SEÑA · Cita <nombre> — <servicio>` y suma
+   `Seña pendiente: N Bs` a la descripción: lo pone la expresión del nodo, no
+   el modelo. El prompt lleva el bloque `SEÑA PARA RESERVAR` solo con la seña
+   activa (importe y minutos interpolados por negocio: sigue siendo cacheable)
+   y le dice al modelo que **no** confirme la cita: el horario queda reservado
+   N minutos a la espera de la seña, y el comprobante se manda por este chat
+   antes de salir de la app del banco. `Procesar respuesta` suma la red de la
+   prohibición 3 con cobro real: si el modelo escribe «pago acreditado»,
+   «recibimos tu pago» o similar, esa oración se reemplaza por «El comprobante
+   lo revisa <negocio> y ellos confirman el pago» y queda `correccion_cobro`
+   en `avisos`.
+2. **El QR sale después del texto.** De `Comprobar reserva` cuelga, **debajo
+   de todas sus otras salidas**, `¿Enviar QR de la seña?` (cita verificada, seña
+   activa, sin cruce) → `Preparar seña` (caption con servicio, día, hora, quién
+   atiende, la seña, la instrucción de guardar el comprobante antes de salir de
+   la app y los minutos de retención; ≤ 1.024 caracteres; usted o tuteo según
+   la configuración) → `Enviar QR de la seña` (HTTP a Graph, `type: image` con
+   el `link` del QR del panel) → `Reportar QR (saliente)` (ingesta, tipo
+   `image`, `evento: qr_enviado` con la cita retenida y su calendario: desde
+   ahí el servidor sabe que la próxima foto o PDF de ese teléfono es el
+   comprobante). Si Meta rechaza el QR, sale por la salida de error a `QR no
+   enviado` → aviso a recepción, y no se reporta. Con la seña activa `¿Hay cita
+   verificada?` **no** registra el cierre: lo crea el servidor al cotejar.
+3. **El comprobante no va al modelo.** `Normalizar entrada` marca
+   `esComprobante` cuando llega una foto o un PDF y el panel dijo que ese
+   teléfono tiene un QR pendiente (`senaPendiente`); guarda `mensajeId`,
+   `mediaId` y `mimeType`. `¿Es un comprobante?` va entre `¿Atención normal?` y
+   el agente (que sigue teniendo una sola entrada): `Obtener URL del medio`
+   (nodo WhatsApp, `media` → `mediaUrlGet`) → `Descargar comprobante` (HTTP con
+   el token, como archivo binario `data`; el PDF del banco es una imagen
+   adentro de un PDF) → `¿Es PDF?` → `Leer comprobante (PDF)` /
+   `Leer comprobante (imagen)` (nodo Google Gemini, `analyze`, el mismo modelo
+   del agente, el prompt de `Analisis/07` §4.3 tal cual) → `Interpretar lectura`
+   (saca el JSON del texto; `legible` = hay monto o cuenta) →
+   `Cotejar en el servidor` (`cotejarComprobante`: **quien compara es el
+   servidor**, contra el importe de la seña y las cuentas del QR) →
+   `Respuesta de la seña` (UN mensaje fijo por resultado: cuadra → «los datos
+   coinciden… la cita queda reservada, sujeta a la verificación del pago por
+   la clínica»; no cuadra → qué dato no coincide y lo revisa una persona;
+   ilegible → que lo reenvíe; 409 o panel caído → lo revisa una persona) →
+   `¿Cuadró la seña?` → `Leer cita retenida` → `Confirmar cita retenida` (le
+   quita el prefijo al título) → `Mensaje de la seña` (completa día, hora y
+   persona con la cita leída; si el título no se pudo corregir, lo dice en el
+   aviso) → `Mensaje a enviar` y `¿Transferir a humano?`. **Siempre se avisa a
+   recepción**: es la clínica la que confirma que el dinero entró, mirando su
+   banco. **El comprobante no se guarda**: ningún nodo lo escribe a ningún lado.
+4. **Las retenciones vencidas las limpia un flujo aparte**
+   (`agendamiento-senas-vencidas.json`, abajo).
+
+**Mensajes que declara este bloque:** **+1 por conversación** (el QR, imagen
+con caption) **solo en las que llegan a reservar con la seña activa**; la
+respuesta al comprobante es **1 mensaje fijo** (sin modelo), que reemplaza al
+turno del agente. Los avisos a recepción (cita pagada, diferencia, ilegible, QR
+rechazado) **los paga NovuChat**. Sin seña: 0 mensajes agregados.
+
+Suite: bloque (l) de `platinum-flujo.test.ts`, sobre los dos flujos.
+
 Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
 compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los
 umbrales, el orden del lienzo y la elección de agenda por odontólogo). Además
@@ -366,3 +436,43 @@ la app de la clínica, «WhatsApp Clínica Platinum (envío)» con el token
 permanente, «NovuChat ingesta (Clínica Platinum)» con el secreto del alias, la
 Google Calendar OAuth2 que tenga acceso a los DOS calendarios), `Trigger On` =
 Messages, **Publish**, y la URL de Production al webhook de la app.
+
+Los nodos nuevos de la seña llevan las mismas credenciales por nombre
+(«WhatsApp Clínica Platinum (envío)» en `Enviar QR de la seña`,
+`Obtener URL del medio` y `Descargar comprobante`; «NovuChat ingesta (Clínica
+Platinum)» en `Reportar QR (saliente)` y `Cotejar en el servidor`); los dos
+`Leer comprobante` y los dos nodos de Calendar van sin nombre y
+`publicar-flujo.sh` los completa **por tipo** desde el flujo vivo (la
+credencial de Google Gemini del modelo del agente y la OAuth2 de Calendar).
+
+### Señas vencidas (`agendamiento-senas-vencidas.json`)
+
+Flujo programado, **sin disparador de webhook y sin ningún nodo de WhatsApp**:
+cada 10 minutos (`*/10 * * * *`) pide la configuración al panel
+(`Traer configuración` con `REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM`, el único
+marcador) y, **solo si el comercio está activo y la seña está activa**, revisa
+todas las agendas (`Citas pendientes de seña`, `q: PENDIENTE DE SEÑA`, de ayer
+a 90 días), se queda con las citas cuyo **título empieza** con el prefijo y
+cuyo `created` es anterior a los minutos de retención (`Vencidas`; el teléfono
+sale de la descripción que escribe `agendar_cita`), **primero se lo reporta
+al servidor** (`Reportar seña vencida` → `senaVencida`, idempotente) y recién
+con su respuesta borra (`¿Borrar la cita?` → `Borrar cita vencida`): con
+`registrado`, `repetido` o `sin_sena_pendiente` se borra; con `ya_agendada`
+—el comprobante cuadró y el título no se pudo corregir— **no se toca**. Con el
+panel caído, el comercio suspendido o la seña inactiva no sale ningún item y no
+se borra nada. Nunca le escribe al paciente: un mensaje por retención vencida
+costaría 0,0113 USD y provocaría el reclamo que se quiere evitar.
+**Mensajes: 0.** Suite: `admin/pruebas/senas-vencidas.test.ts`.
+
+Se crea por la API, con las credenciales resueltas por nombre y por tipo desde
+el flujo conversacional de la clínica (el de `.env.platinum`), y queda con su
+propio `.env`:
+
+```bash
+./scripts/preparar-import.sh Flujos/agendamiento-senas-vencidas.json .env.platinum
+./scripts/publicar-flujo.sh --env .env.platinum --flujo Flujos/agendamiento-senas-vencidas.json \
+    --crear --activar --env-nuevo .env.platinum-senas          # primero sin --aplicar: diagnóstico
+```
+
+Después se actualiza como los demás:
+`./scripts/publicar-flujo.sh --env .env.platinum-senas --flujo Flujos/agendamiento-senas-vencidas.json`.

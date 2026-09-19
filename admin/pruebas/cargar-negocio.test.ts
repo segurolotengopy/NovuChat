@@ -278,6 +278,34 @@ describe('cargar-negocio.mjs', () => {
     }
   });
 
+  it('NO acepta una seña de 10001, negativa, decimal ni de texto, ni una retención fuera de 5..180', () => {
+    for (const [senaImporte, senaMinutosRetencion] of [[10001, 30], [-1, 30], [12.5, 30], ['50', 30], [50, 4], [50, 181], [50, 30.5]] as const) {
+      const r = correr(T, archivo('sena-mal', con((d) => {
+        d.agendamiento.senaImporte = senaImporte;
+        d.agendamiento.senaMinutosRetencion = senaMinutosRetencion;
+      })), '--aplicar');
+      expect(r.codigo, `${senaImporte} / ${senaMinutosRetencion}`).toBe(2);
+      expect(r.salida).toMatch(/agendamiento\.sena(Importe: entero de 0 a 10000|MinutosRetencion: entero de 5 a 180)/);
+    }
+  });
+
+  it('NO acepta `cobroReal` en el archivo: el QR lo registra solo la consola', () => {
+    const r = correr(T, archivo('sena-qr', con((d) => { d.agendamiento.cobroReal = { activo: true }; })), '--aplicar');
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toMatch(/agendamiento: clave desconocida «cobroReal»/);
+  });
+
+  it('acepta la seña y la retención dentro del rango, y en seco las muestra', () => {
+    const r = correr(T, archivo('sena-bien', con((d) => {
+      d.agendamiento.senaImporte = 50;
+      d.agendamiento.senaMinutosRetencion = 30;
+    })));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/senaImporte\s+50/);
+    expect(r.salida).toMatch(/senaMinutosRetencion\s+30/);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
+  });
+
   it('NO carga agendamiento ni funcionarios en un comercio sin el flujo agendamiento', async () => {
     const r = correr(SIN_AGENDA, PLATINUM, '--aplicar');
     expect(r.codigo).toBe(1);

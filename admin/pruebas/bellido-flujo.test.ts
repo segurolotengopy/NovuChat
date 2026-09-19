@@ -185,6 +185,10 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // Bloque 1 (dirección con Maps): el pin nativo sale por Graph con la
     // credencial de envío del cliente, y se reporta con la de ingesta.
     'Enviar ubicación', 'Reportar ubicación (saliente)',
+    // Bloque 2 (seña por QR): el QR sale por Graph con la credencial de envío,
+    // el medio se pide a Meta con la misma, y el reporte del QR y el cotejo van
+    // a la ingesta. Gemini y Calendar quedan sin nombre: se heredan por tipo.
+    'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante', 'Reportar QR (saliente)', 'Cotejar en el servidor',
     // Los del 18/09: menú, contacto directo, emergencia y despedida en dos.
     'Enviar interactivo', 'Reportar interactivo (saliente)', 'Avisar al doctor (plantilla)',
     'Avisar al doctor (texto)', 'Redes del doctor', 'Reportar redes (saliente)',
@@ -235,8 +239,15 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // Empalme 1: la rama verdadera de «¿Atención normal?» ya no va directo al
     // agente sino al estado de la conversación (y de ahí, sin modelo, al agente).
     // Empalme 2: del envío cuelga además la compuerta del segundo mensaje.
+    // Deshacer el empalme 1 es devolver al agente TODA entrada que el cliente
+    // desvió a su estado de la conversación, venga de donde venga: el vertical
+    // puede haber puesto compuertas nuevas delante (bloque 2).
     const sinEmpalmes = JSON.parse(JSON.stringify(flujo.connections)) as Flujo['connections'];
-    sinEmpalmes['¿Atención normal?']!['main']![0] = [{ node: AGENTE, type: 'main', index: 0 }];
+    for (const salidas of Object.values(sinEmpalmes)) {
+      for (const rama of salidas['main'] ?? []) {
+        for (const x of rama ?? []) if (x.node === 'Estado de la conversación') x.node = AGENTE;
+      }
+    }
     sinEmpalmes['Responder al cliente']!['main']![0] =
       sinEmpalmes['Responder al cliente']!['main']![0]!.filter((x) => x.node !== '¿Enviar redes?');
     for (const [origen, c] of Object.entries(demoA.connections)) {
@@ -303,29 +314,34 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
       }
     }
     for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)',
-      'Reportar mensaje (saliente)', 'Registrar cierre (cita)']) {
+      'Reportar mensaje (saliente)', 'Registrar cierre (cita)', 'Reportar QR (saliente)', 'Cotejar en el servidor']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name, nombre).toMatch(/Bellido/);
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name, nombre).toMatch(/Bellido/);
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
   });
 
-  it('MENSAJES DECLARADOS: los dos envíos del Demo A, más el aviso al doctor (+1 por emergencia), las redes (+1 por cita) y el pin a pedido (bloque 1)', () => {
+  it('MENSAJES DECLARADOS: los dos envíos del Demo A, más el aviso al doctor (+1 por emergencia), las redes (+1 por cita), el pin a pedido (bloque 1) y el QR de la seña (bloque 2)', () => {
     // Base comercial §1: todo cambio de flujo declara cuántos mensajes agrega.
     // El menú y los contactos directos REEMPLAZAN a la respuesta del turno (0
     // extra; salen por «Enviar interactivo»). Lo que sí suma: el aviso al
     // doctor en una emergencia, y el segundo mensaje de la despedida cuando
     // la cita quedó verificada. Ningún otro nodo de envío.
-    const envios = (f: Flujo) => f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp').map((n) => n.name).sort();
+    // El nodo de WhatsApp que PIDE la URL de un medio (bloque 2) no envía
+    // nada: se filtra por `resource`, como en la suite de Platinum.
+    const envios = (f: Flujo) => f.nodes
+      .filter((n) => n.type === 'n8n-nodes-base.whatsApp' && n.parameters['resource'] !== 'media')
+      .map((n) => n.name).sort();
     expect(envios(demoA)).toEqual(['Avisar a recepción', 'Responder al cliente']);
     expect(envios(flujo)).toEqual(['Avisar a recepción', 'Avisar al doctor (texto)', 'Redes del doctor', 'Responder al cliente']);
     // Por la Graph API salen los interactivos y la PLANTILLA al doctor (el
-    // texto es solo su respaldo, cuando Meta rechaza la plantilla).
-    // Y el pin del bloque 1, que solo sale si el paciente lo pide expresamente.
+    // texto es solo su respaldo, cuando Meta rechaza la plantilla), el pin a
+    // pedido del bloque 1 y el QR de la seña del bloque 2.
     const http = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'])));
-    expect(http.map((n) => n.name).sort()).toEqual(['Avisar al doctor (plantilla)', 'Enviar interactivo', 'Enviar ubicación']);
+    expect(http.map((n) => n.name).sort()).toEqual(
+      ['Avisar al doctor (plantilla)', 'Enviar QR de la seña', 'Enviar interactivo', 'Enviar ubicación']);
   });
 
   it('el aviso a recepción nombra al consultorio y conserva el cuerpo del Demo A', () => {
@@ -577,19 +593,20 @@ describe.skipIf(!HAY_JSON)('(f) Obedece los umbrales del servidor antes de llama
       .toEqual({ telefono: '' });
   });
 
-  it('`¿Atención normal?` está ANTES del agente, y el agente entra por un solo lugar', () => {
+  it('`¿Atención normal?` está ANTES del agente, y el agente entra por un solo lugar, detrás de la compuerta del comprobante (bloque 2)', () => {
     expect(destinos('¿Comercio operativo?', 0)).toEqual(['¿Atención normal?']);
+    expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
+    expect(destinos('¿Es un comprobante?', 1)).toEqual(['Estado de la conversación']);
     expect(destinos('¿Atención normal?', 1)).toEqual(['Uso extendido']);
-    // La rama verdadera va al estado de la conversación; de ahí, tres
+    // Del comprobante, si no lo es, al estado de la conversación; de ahí, tres
     // compuertas sin modelo; el agente SOLO entra por la última, y ninguna de
     // las cuatro es alcanzable desde «Uso extendido».
-    expect(destinos('¿Atención normal?', 0)).toEqual(['Estado de la conversación']);
     expect(destinos('Estado de la conversación')).toEqual(['¿Menú inicial?']);
     expect(destinos('¿Menú inicial?', 1)).toEqual(['¿Contacto directo?']);
     expect(destinos('¿Contacto directo?', 1)).toEqual(['¿Emergencia?']);
     expect(destinos('¿Emergencia?', 1)).toEqual([AGENTE]);
     expect(origenes(AGENTE)).toEqual(['¿Emergencia?']);
-    expect(origenes('Estado de la conversación')).toEqual(['¿Atención normal?']);
+    expect(origenes('Estado de la conversación')).toEqual(['¿Es un comprobante?']);
   });
 
   it.each([['operador'], ['bloqueado']])('con estado %s NO se llama al modelo', (estado) => {
@@ -653,6 +670,7 @@ describe.skipIf(!HAY_JSON)('(g) Orden v1: el entrante se reporta antes, y el sal
     expect(origenes('Mensaje a enviar').sort()).toEqual([
       'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
       '¿Reintentar tras cruce?', '¿Responder uso extendido?',
+      'Mensaje de la seña',  // la respuesta fija al comprobante (bloque 2)
       'Texto de respaldo',   // el interactivo que Meta rechazó sale como texto por el mismo camino
     ].sort());
   });

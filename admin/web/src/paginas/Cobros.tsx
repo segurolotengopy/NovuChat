@@ -26,7 +26,26 @@ import { descargarCsv } from '../lib/exportar';
  *  - se guarda QUIÉN lo marcó y CUÁNDO, como cualquier otro sello de la consola;
  *  - marcar es un solo sentido. Desmarcar borraría el rastro de que alguien
  *    afirmó algo, y ese rastro es el que sirve el día que un cobro se discute.
+ *
+ * DESDE EL 17/09 HAY DOS COLUMNAS QUE PARECEN LA MISMA Y NO LO SON. La seña de
+ * una reserva (`DISENO.md` §4duodecies) trae un `cotejo`: el servidor leyó el
+ * comprobante y comparó monto, cuenta y hora con lo esperado. Eso es
+ * «Comprobante: datos coinciden». La columna «Estado» sigue siendo la de la
+ * persona: «comprobado por el negocio» contra su banco. Un cotejo que cuadra NO
+ * comprueba nada —una imagen se edita— y por eso el botón «Comprobar» sigue
+ * apareciendo al lado de un cotejo que cuadra. Se dice en pantalla, en la
+ * ayuda y en la cabecera de la columna.
  */
+
+/** Lo que el servidor leyó del comprobante y contra qué lo comparó. */
+interface Cotejo {
+  resultado?: unknown;
+  diferencias?: unknown;
+  montoLeido?: unknown;
+  banco?: unknown;
+  intentos?: unknown;
+  en?: { toDate?: () => Date };
+}
 
 interface Cobro {
   id: string;
@@ -40,6 +59,21 @@ interface Cobro {
   comprobadoEn?: { toDate(): Date };
   items?: unknown;
   nota?: unknown;
+  cotejo?: Cotejo;
+}
+
+/**
+ * Etiqueta del cotejo. `null` cuando el cierre no trae uno: un pedido, o una
+ * cita sin seña. Los rótulos hablan de DATOS, nunca de dinero: «coinciden» y
+ * no «acreditado» (prohibición 3).
+ */
+function etiquetaCotejo(c: Cobro): { texto: string; clase: string } | null {
+  switch (c.cotejo?.resultado) {
+    case 'cuadra': return { texto: 'Datos coinciden', clase: 'tag tag-accent' };
+    case 'no_cuadra': return { texto: 'Hay una diferencia', clase: 'tag tag-aviso' };
+    case 'ilegible': return { texto: 'Ilegible', clase: 'tag tag-neutral' };
+    default: return null;
+  }
 }
 
 type Rango = 'hoy' | 'semana' | 'mes' | 'entre';
@@ -112,7 +146,10 @@ export function Cobros() {
       <p className="ayuda">
         Los pagos que pasaron por el QR. <strong>Comprobar un pago lo hace usted
         mirando su cuenta</strong>: el comprobante que manda el cliente es una
-        imagen, y una imagen no es una acreditación del banco.
+        imagen, y una imagen no es una acreditación del banco. En las señas de
+        reserva, NovuChat coteja los datos del comprobante —monto, cuenta y
+        hora— y lo dice en la columna «Comprobante»; eso no confirma que el
+        dinero entró.
       </p>
 
       <div className="filtros">
@@ -166,12 +203,13 @@ export function Cobros() {
           <div className="acciones">
             <button type="button" className="btn btn-secondary" onClick={() => descargarCsv(
               'cobros',
-              ['Fecha', 'Hora', 'Cliente', 'Monto', 'Moneda', 'Referencia', 'Comprobado'],
+              ['Fecha', 'Hora', 'Cliente', 'Monto', 'Moneda', 'Referencia', 'Comprobante', 'Comprobado'],
               visibles.map((c) => {
                 const f = c.ocurridoEn?.toDate?.();
                 return [
                   f?.toLocaleDateString('es-BO') ?? '', f?.toLocaleTimeString('es-BO') ?? '',
                   c.telefonoEnmascarado, c.monto, c.moneda, c.referencia,
+                  etiquetaCotejo(c)?.texto ?? '',
                   typeof c.comprobadoPor === 'string' ? 'sí' : 'no',
                 ];
               }),
@@ -180,12 +218,19 @@ export function Cobros() {
 
           <table className="table">
             <thead>
-              <tr><th>Fecha</th><th>Hora</th><th>Cliente</th><th>Monto</th><th>Estado</th><th /></tr>
+              <tr>
+                <th>Fecha</th><th>Hora</th><th>Cliente</th><th>Monto</th>
+                {/* «Comprobante» es lo que leyó el servidor; «Estado» es lo que
+                    afirmó una persona. Van una al lado de la otra a propósito:
+                    la diferencia entre las dos es la prohibición 3. */}
+                <th>Comprobante</th><th>Estado</th><th />
+              </tr>
             </thead>
             <tbody>
               {visibles.map((c) => {
                 const f = c.ocurridoEn?.toDate?.();
                 const listo = typeof c.comprobadoPor === 'string';
+                const cotejo = etiquetaCotejo(c);
                 return (
                   <tr key={c.id}>
                     <td>{f?.toLocaleDateString('es-BO') ?? '—'}</td>
@@ -196,6 +241,7 @@ export function Cobros() {
                         ? <>{c.monto} <TextoSeguro valor={c.moneda ?? ''} maxLargo={3} /></>
                         : '—'}
                     </td>
+                    <td>{cotejo ? <span className={cotejo.clase}>{cotejo.texto}</span> : '—'}</td>
                     <td>
                       {listo
                         ? <span className="tag tag-accent-2">Comprobado por el negocio</span>
@@ -230,6 +276,10 @@ function DetalleCobro({ cobro, cerrar }: { cobro: Cobro; cerrar: () => void }) {
   }, [cerrar]);
 
   const items = Array.isArray(cobro.items) ? cobro.items as Record<string, unknown>[] : [];
+  const cotejo = etiquetaCotejo(cobro);
+  const diferencias = Array.isArray(cobro.cotejo?.diferencias)
+    ? (cobro.cotejo.diferencias as unknown[]).filter((d): d is string => typeof d === 'string')
+    : [];
   return (
     <div className="dialog-backdrop" onClick={cerrar}>
       <div className="dialog dialog-ancho" role="dialog" aria-modal="true" aria-label="Detalle del cobro"
@@ -258,18 +308,66 @@ function DetalleCobro({ cobro, cerrar }: { cobro: Cobro; cerrar: () => void }) {
                 </li>
               ))}
             </ul>
+          ) : cobro.tipo === 'cita' ? (
+            // Una seña no tiene ítems: es una cita. Decir «no tiene el detalle
+            // guardado» haría buscar un dato que nunca existió.
+            <p className="text-muted">
+              Seña de una reserva · cita <TextoSeguro valor={cobro.referencia} maxLargo={60} />
+            </p>
           ) : (
             <p className="text-muted">Este cobro no tiene el detalle de los ítems guardado.</p>
           )}
 
-          {/* EL COMPROBANTE TODAVÍA NO SE PUEDE MOSTRAR, y se dice en vez de
-              dejar un hueco. NovuChat no guarda la imagen: vive en los
-              servidores de Meta, se baja con el token desde el servidor, y hoy
-              ni siquiera se guarda su identificador. Ver `DISENO.md` §4nonies.3.
-              Un recuadro vacío haría pensar que la foto se perdió. */}
+          {/* EL COTEJO DEL SERVIDOR, cuando lo hay (señas de reserva, `DISENO.md`
+              §4duodecies). Se muestra lo que se leyó y contra qué se comparó,
+              para que la persona que va a mirar su banco sepa qué buscar. Lo
+              que NO se muestra es la imagen: el comprobante no se guarda, se
+              coteja; solo queda lo leído y el resultado. */}
+          {cotejo && (
+            <div className="aviso-datos">
+              <p>
+                <strong>Comprobante:</strong>{' '}
+                <span className={cotejo.clase}>{cotejo.texto}</span>
+                {cobro.cotejo?.en?.toDate && (
+                  <>{' · '}cotejado el {cobro.cotejo.en.toDate().toLocaleString('es-BO')}</>
+                )}
+              </p>
+              <p>
+                Monto leído:{' '}
+                <strong>
+                  {typeof cobro.cotejo?.montoLeido === 'number' ? cobro.cotejo.montoLeido : '—'}
+                </strong>
+                {typeof cobro.cotejo?.banco === 'string' && cobro.cotejo.banco !== '' && (
+                  <>{' · '}Banco: <TextoSeguro valor={cobro.cotejo.banco} maxLargo={80} /></>
+                )}
+                {typeof cobro.cotejo?.intentos === 'number' && (
+                  <>{' · '}{cobro.cotejo.intentos === 1
+                    ? 'un comprobante recibido'
+                    : `${cobro.cotejo.intentos} comprobantes recibidos`}</>
+                )}
+              </p>
+              {diferencias.length > 0 && (
+                <ul>
+                  {diferencias.map((d, n) => <li key={n}><TextoSeguro valor={d} maxLargo={200} /></li>)}
+                </ul>
+              )}
+              <p className="ayuda">
+                NovuChat cotejó los datos del comprobante con la seña esperada.
+                Eso no confirma que el dinero entró: mírelo en su banco y, si
+                está, márquelo como comprobado.
+              </p>
+            </div>
+          )}
+
+          {/* EL COMPROBANTE NO SE PUEDE MOSTRAR, y se dice en vez de dejar un
+              hueco. NovuChat no guarda la imagen: vive en los servidores de
+              Meta y se baja con el token desde el servidor solo para cotejarla.
+              Ver `DISENO.md` §4nonies.3 y §4duodecies. Un recuadro vacío haría
+              pensar que la foto se perdió. */}
           <p className="ayuda aviso-datos">
-            El comprobante que mandó el cliente está en su conversación. Todavía
-            no se puede ver desde acá: NovuChat no guarda la imagen.
+            El comprobante que mandó el cliente está en su conversación. No se
+            puede ver desde acá: NovuChat no guarda la imagen
+            {cotejo ? ', solo lo que leyó de ella' : ''}.
           </p>
 
           {typeof cobro.comprobadoPor === 'string' && (

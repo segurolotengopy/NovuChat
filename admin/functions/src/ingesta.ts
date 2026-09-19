@@ -87,11 +87,27 @@ interface Entrante {
   texto: string;
   idMeta?: string;
   nombreContacto?: string;
+  /**
+   * HECHO DEL FLUJO que acompaña al mensaje, además del mensaje en sí. Hoy el
+   * único es `qr_enviado` —el flujo de reservas mandó el QR de la seña—, y
+   * con él viajan `referencia` (el evento del calendario que quedó retenido)
+   * y `calendario` (en cuál). Se reporta en la MISMA petición que el mensaje
+   * saliente del QR para que el estado de la seña y el conteo del mensaje se
+   * escriban en la misma transacción: si uno entra, el otro también. El
+   * bloque 4 (seguimientos) agrega más eventos acá.
+   */
+  evento?: 'qr_enviado';
+  referencia?: string;
+  calendario?: string;
 }
 
 const TIPOS = new Set([
   'text', 'interactive', 'image', 'audio', 'document', 'order', 'location', 'otro',
 ]);
+
+/** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
+ *  el mensaje se cuenta igual y el campo no se guarda. */
+const EVENTOS = new Set(['qr_enviado']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -111,9 +127,88 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const idMeta = typeof c['idMeta'] === 'string' ? c['idMeta'].slice(0, 120) : undefined;
   const nombreContacto = typeof c['nombreContacto'] === 'string'
     ? c['nombreContacto'].slice(0, 120) : undefined;
+  // El hecho del flujo y sus identificadores. Los dos son datos que n8n copia
+  // de la respuesta de Google Calendar; igual se recortan y no se interpolan.
+  const evento = typeof c['evento'] === 'string' && EVENTOS.has(c['evento'])
+    ? (c['evento'] as Entrante['evento']) : undefined;
+  const referencia = typeof c['referencia'] === 'string'
+    ? c['referencia'].trim().slice(0, 200) : '';
+  const calendario = typeof c['calendario'] === 'string'
+    ? c['calendario'].trim().slice(0, 200) : '';
 
   return { telefono, direccion, tipo, texto, ...(idMeta ? { idMeta } : {}),
-           ...(nombreContacto ? { nombreContacto } : {}) };
+           ...(nombreContacto ? { nombreContacto } : {}),
+           ...(evento ? { evento } : {}),
+           ...(referencia ? { referencia } : {}),
+           ...(calendario ? { calendario } : {}) };
+}
+
+/**
+ * ===========================================================================
+ * LA SEÑA EN CURSO DE UN TELÉFONO — `solicitud` en la conversación
+ * ===========================================================================
+ *
+ * Es el estado que le dice al flujo qué hacer con el próximo archivo que manda
+ * el paciente: si hay un QR enviado y sin comprobante, una imagen o un PDF se
+ * lee como comprobante y se coteja; si no, es una imagen cualquiera. Y es lo
+ * que `senaVencida` mira para saber qué cita borrar.
+ *
+ * Vive en el documento de la conversación —que ya está indexado por teléfono
+ * y ya se escribe con cada mensaje— por la misma razón que las marcas de
+ * conteo: no crea ningún registro nuevo de teléfonos y se escribe en la
+ * transacción que ya existe. Cero lecturas y cero escrituras extra.
+ *
+ * ETAPAS: `qr_enviado` (retenida, esperando el comprobante), `agendada` (el
+ * comprobante cuadró), `vencida` (pasaron los minutos de retención sin
+ * comprobante y la cita se borró). El bloque 4 agrega `horarios`.
+ */
+export interface Solicitud {
+  etapa: 'qr_enviado' | 'agendada' | 'vencida';
+  /** Cuándo entró en esta etapa. */
+  desde: Timestamp;
+  qrEnviadoEn: Timestamp | null;
+  /** La cita retenida en el calendario: su identificador y en qué calendario. */
+  evento: { id: string; calendario: string } | null;
+  /** Comprobantes recibidos para esta solicitud. */
+  cotejos: number;
+  /** Bloque 4; acá nace en 0. */
+  seguimientos: number;
+}
+
+/**
+ * Qué `solicitud` queda guardada después de este mensaje. `null` = no se toca.
+ *
+ * ES PURA Y ESTÁ PROBADA APARTE, como `contadoresDelMensaje`: sobre esto se
+ * decide si el próximo archivo del paciente se coteja como pago, y la
+ * decisión separada de la base se prueba sin emulador.
+ *
+ * `previa` es lo que hay guardado. Hoy un `qr_enviado` SIEMPRE abre una
+ * solicitud nueva, aunque hubiera una: el flujo manda el QR cuando acaba de
+ * retener una cita, y esa cita nueva es la que hay que seguir, no la de hace
+ * dos días que venció o ya se pagó. `previa` queda en la firma para el bloque
+ * 4, que sí acumula (`seguimientos`) sobre la solicitud vigente.
+ */
+export function solicitudTras(
+  previa: unknown,
+  evento: string | undefined,
+  ahoraMs: number,
+  datos: { referencia?: string; calendario?: string },
+): Solicitud | null {
+  void previa;
+  if (evento !== 'qr_enviado') return null;
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  const id = (datos.referencia ?? '').trim();
+  return {
+    etapa: 'qr_enviado',
+    desde: ahora,
+    qrEnviadoEn: ahora,
+    // Sin identificador de la cita no hay cita que seguir: el cotejo igual
+    // corre (el cierre se referencia con el mensaje del comprobante), pero
+    // `senaVencida` no tiene qué borrar. El flujo siempre lo manda.
+    evento: id ? { id, calendario: (datos.calendario ?? '').trim() } : null,
+    cotejos: 0,
+    seguimientos: 0,
+  };
 }
 
 /** Forma que exige un identificador de comercio. Se comprueba ANTES de armar
@@ -220,6 +315,81 @@ export function ultimos4(telefono: unknown): string {
 const EVENTO_INGESTA = 'ingesta_mensaje';
 const EVENTO_CONFIGURACION = 'configuracion_flujo';
 
+/**
+ * ===========================================================================
+ * LA SEÑA, COMO LA RECIBE EL FLUJO DE RESERVAS (`configuracionFlujo.sena`)
+ * ===========================================================================
+ *
+ * `activa` exige LAS DOS cosas: un importe mayor que cero en
+ * `config/agendamiento` Y el QR del comercio registrado y encendido
+ * (`cobroReal`, el mismo criterio que el cobro real de venta: activo, con
+ * ficha y con código). Un importe sin QR no puede cobrar; un QR sin importe no
+ * tiene qué cobrar. En cualquiera de los dos casos el flujo agenda como
+ * siempre, sin seña, y no manda ningún mensaje de más.
+ *
+ * Cuando NO está activa se devuelve igual el objeto, con `importe` 0 y
+ * `qr` nulo, y no `null`: así el flujo distingue «este comercio no cobra
+ * seña» de «el panel no contestó», que es lo que lo manda al respaldo.
+ *
+ * `pendiente`, `evento` y `qrEnviadoEn` son de la SOLICITUD del teléfono que
+ * escribió, si el flujo mandó `telefono`: le dicen si el próximo archivo se
+ * lee como comprobante y qué cita está retenida. Sin teléfono, van vacíos.
+ */
+export const MINUTOS_RETENCION_POR_DEFECTO = 30;
+export const IMPORTE_SENA_MAXIMO = 10000;
+
+export interface SenaParaElFlujo {
+  activa: boolean;
+  importe: number;
+  moneda: string;
+  minutosRetencion: number;
+  qr: { url: string; nombreCuenta: string; banco: string } | null;
+  pendiente: boolean;
+  evento: { id: string; calendario: string } | null;
+  qrEnviadoEn: string | null;
+}
+
+export function senaParaElFlujo(
+  agendamiento: Record<string, unknown> | undefined,
+  cobroRealActivo: boolean,
+  moneda: string,
+  urlDelQr: (ficha: string) => string,
+  solicitud: unknown,
+): SenaParaElFlujo {
+  const importeCrudo = agendamiento?.['senaImporte'];
+  const importe = typeof importeCrudo === 'number' && Number.isInteger(importeCrudo)
+    && importeCrudo > 0 && importeCrudo <= IMPORTE_SENA_MAXIMO ? importeCrudo : 0;
+  const minutosCrudo = agendamiento?.['senaMinutosRetencion'];
+  const minutosRetencion = typeof minutosCrudo === 'number' && Number.isInteger(minutosCrudo)
+    && minutosCrudo >= 5 && minutosCrudo <= 180 ? minutosCrudo : MINUTOS_RETENCION_POR_DEFECTO;
+  const cobroReal = (agendamiento?.['cobroReal'] ?? {}) as Record<string, unknown>;
+  const activa = importe > 0 && cobroRealActivo;
+
+  const s = (typeof solicitud === 'object' && solicitud !== null ? solicitud : {}) as Record<string, unknown>;
+  const ev = s['evento'] as Record<string, unknown> | null | undefined;
+  const enviado = s['qrEnviadoEn'] as { toMillis?: () => number } | null | undefined;
+  return {
+    activa,
+    importe: activa ? importe : 0,
+    moneda,
+    minutosRetencion,
+    qr: activa
+      ? {
+          // La imagen no viaja: viaja su dirección pública, que el flujo pone
+          // tal cual en el `link` del mensaje de imagen de WhatsApp.
+          url: urlDelQr(String(cobroReal['ficha'] ?? '')),
+          nombreCuenta: String(cobroReal['nombreCuenta'] ?? ''),
+          banco: String(cobroReal['banco'] ?? ''),
+        }
+      : null,
+    pendiente: s['etapa'] === 'qr_enviado',
+    evento: ev && typeof ev['id'] === 'string' && ev['id'] !== ''
+      ? { id: ev['id'], calendario: String(ev['calendario'] ?? '') } : null,
+    qrEnviadoEn: typeof enviado?.toMillis === 'function'
+      ? new Date(enviado.toMillis()).toISOString() : null,
+  };
+}
+
 type TipoEvento =
   | 'mensaje_entrante' | 'mensaje_saliente' | 'plantilla_enviada'
   | 'cita_agendada' | 'cita_rechazada' | 'cobro_simulado'
@@ -237,7 +407,13 @@ type TipoEvento =
   | 'derivacion_operador' | 'bloqueo_ventana'
   // AVISO DE CONSUMO (15/09/2026): las conversaciones del mes llegaron al 80 %
   // de las incluidas en el plan. Una vez por mes. No manda ningún WhatsApp.
-  | 'aviso_consumo';
+  | 'aviso_consumo'
+  // SEÑA POR QR (bloque 2, 17/09). Llegó un comprobante y el servidor lo
+  // cotejó —`codigo` lleva el resultado: cuadra, no_cuadra, ilegible— y una
+  // retención que venció sin comprobante, cuya cita el flujo borró. Los
+  // escribe `sena.ts`. Son el hecho que explica «mandé el comprobante y me
+  // dijeron que no coincidía» y «mi horario desapareció».
+  | 'cobro_cotejado' | 'sena_vencida';
 
 interface Evento {
   tipo: TipoEvento;
@@ -753,6 +929,13 @@ export const ingesta = onRequest(
         ? avisoDeConsumo(cuenta, (Number.isFinite(previasDelMes) ? previasDelMes : 0) + 1, periodo)
         : null;
 
+      // LA SEÑA EN CURSO, si este mensaje trae un hecho del flujo (el QR de la
+      // seña recién enviado). Va en la misma transacción que el conteo: un QR
+      // contado sin solicitud dejaría al paciente mandando un comprobante que
+      // nadie lee, y una solicitud sin QR contado sería un mensaje regalado.
+      const solicitud = solicitudTras(conversacion.get('solicitud'), mensaje.evento, ahoraMs,
+        { referencia: mensaje.referencia, calendario: mensaje.calendario });
+
       tx.set(refConversacion, {
         // La marca del estado se escribe con cada mensaje: cuando la ventana se
         // renueva vuelve a `normal` sola, y el próximo umbral vuelve a avisar.
@@ -778,6 +961,9 @@ export const ingesta = onRequest(
         mensajesVentana: conteo.mensajesVentana,
         ...(conteo.interaccion ? { periodoInteraccion: periodo } : {}),
         ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
+        // Se escribe ENTERA, no con merge campo a campo: una solicitud nueva
+        // reemplaza a la anterior con todos sus contadores en cero.
+        ...(solicitud ? { solicitud } : {}),
       }, { merge: true });
 
       tx.create(refConversacion.collection('mensajes').doc(), {
@@ -822,6 +1008,10 @@ export const ingesta = onRequest(
         //                    cola larga que `Analisis/16` pide medir, ya contada.
         ...(aviso === 'operador' ? { derivadasAOperador: FieldValue.increment(1) } : {}),
         ...(aviso === 'bloqueado' ? { bloqueadas: FieldValue.increment(1) } : {}),
+        //   SEÑAS ENVIADAS = QR de seña que salieron. Con `senasCotejadas` y
+        //                    `senasVencidas` (que escribe `sena.ts`) es el
+        //                    embudo de la reserva con seña.
+        ...(solicitud ? { senasEnviadas: FieldValue.increment(1) } : {}),
       }, { merge: true });
 
       // La marca del aviso y su constancia en la auditoría van en la MISMA
@@ -1285,6 +1475,23 @@ export const configuracionFlujo = onRequest(
                 // no mandar nada que mandar una imagen sin rotular.
                 mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
               } })
+        : {}),
+
+      // SEÑA PARA RESERVAR, solo para el flujo de agendamiento (bloque 2). El
+      // QR es el mismo `cobroReal` que registra la consola, en el documento
+      // de ESTE flujo (`config/agendamiento`), porque el QR es del flujo que
+      // cobra (política de capas). La dirección de la imagen se arma acá con
+      // la región y el proyecto de esta Function: el flujo no sabe dónde
+      // vive el panel, y no tiene por qué saberlo.
+      ...(comercio.flujo === 'agendamiento'
+        ? { sena: senaParaElFlujo(
+              especifica?.exists ? (especifica.data() as Record<string, unknown>) : undefined,
+              cobroRealActivo,
+              String(negocio['moneda'] ?? 'BOB'),
+              (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
+                + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
+              conversacion?.get('solicitud'),
+            ) }
         : {}),
 
       // Siempre al menos uno. Si el comercio no cargó ninguno, viene el
