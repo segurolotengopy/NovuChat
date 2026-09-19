@@ -71,7 +71,21 @@ export interface DefinicionFlujo {
 export const FLUJOS: Record<FlujoId, DefinicionFlujo> = {
   agendamiento: {
     nombre: 'Reservas y citas',
-    pestanas: [{ ruta: 'agenda', etiqueta: 'Agenda' }],
+    // «COBROS» Y «CONFIGURACIÓN DE QR» TAMBIÉN SON DE RESERVAS desde el 17/09
+    // (DISENO.md §4duodecies): el flujo de agendamiento cobra una SEÑA por QR
+    // para retener el horario. Por la política de capas (§4sexies) el QR es
+    // del flujo que cobra, no del negocio: un comercio que solo reserva tiene
+    // su `cobroReal` en `/config/agendamiento`, junto con `senaImporte` y
+    // `senaMinutosRetencion`; uno que además vende lo tiene en `/config/venta`
+    // y el mismo QR sirve para las dos cosas (`registrarQrDeCobro` elige el
+    // documento). Las dos pantallas son las mismas que usa venta y se dibujan
+    // según el documento que corresponda; la cabecera (`App.tsx`) no repite
+    // una pestaña que dos flujos declaran con la misma ruta.
+    pestanas: [
+      { ruta: 'agenda', etiqueta: 'Agenda' },
+      { ruta: 'cobros', etiqueta: 'Cobros' },
+      { ruta: 'cobro', etiqueta: 'Configuración de QR' },
+    ],
     catalogo: 'Servicios',
     documento: 'agendamiento',
   },

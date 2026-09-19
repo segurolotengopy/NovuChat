@@ -4,7 +4,302 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-18 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con el Bellido de producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum, bloque 4: recordatorio de solicitud pendiente (rama `flujos/seguimiento-pendiente`, sobre el bloque 2)
+
+`Analisis/31` §4 y §5. Al paciente que pidió horarios o recibió el QR y no
+volvió se le escribe **una sola vez**: a las 2–4 h un texto, si la ventana
+sigue abierta; a las 24–48 h la plantilla de utilidad «solicitud de cita sin
+confirmar». Con 16–32 leads sin cita al mes son 3 a 6 citas recuperadas, que
+es lo que hace visible el valor de NovuChat en el primer mes.
+
+- **Quién entra y quién no lo decide el servidor** (§7), no la pantalla:
+  `seguimientosPendientes` devuelve solo las solicitudes en etapa `horarios` o
+  `qr_enviado`, sin seguimiento previo, sin `noContactar`, sin umbral de
+  operador o bloqueo, y dentro de las dos ventanas de tiempo.
+  `seguimientoEnviado` marca **antes** de enviar: un envío perdido es mejor
+  que dos recordatorios. La etapa la escribe la ingesta desde hechos, no desde
+  lo que el modelo dijo: `horarios_ofrecidos` (corrió `consultar_disponibilidad`
+  y no `agendar_cita`), `no_contactar` (el paciente lo pidió o pasó a una
+  persona) y la cita registrada, que cierra la solicitud.
+- **El pedido de no ser contactado se reconoce como lo escribe la gente**:
+  «borrame» sin tilde, «quítame», «stop», «deja de escribirme», «dame de
+  baja», «no me llames». Las formas indirectas («ya no me interesa») quedan
+  fuera a propósito y para eso está el interruptor «No contactar» de la
+  consola, que enciende una persona.
+- **Flujo programado nuevo** `Flujos/agendamiento-seguimientos.json` (11 nodos,
+  cada hora al minuto 15 para no pisar al de señas vencidas). Contadores
+  `seguimientos` y `reactivadas` en el mes, mostrados en «Consumo».
+
+**Mensajes por conversación: +1 solo en las conversaciones que quedaron a
+medio camino** (el texto en ventana). El seguimiento por plantilla cae sobre
+una ventana vencida y **no se factura como conversación**; la respuesta del
+paciente sí. Suite: 1786 en verde (38 archivos). Saneo 0.
+
+**Falta:** fusionar y desplegar; **mandar la plantilla a revisión de Meta**
+con `crear-plantilla.sh` (tarda días, conviene apenas se autorice); crear el
+flujo con `publicar-flujo.sh --crear`, **que no se activa hasta que Meta
+apruebe la plantilla**; y probar con teléfono (filas 40–42 de la aceptación).
+
+**Bellido en paridad (18/09).** La rama fusiona el bloque 3 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` repone en `Flujos/bellido-agendamiento.json`
+los dos nodos de reporte que este bloque cambia (`Reportar mensaje (entrante)`
+y `(saliente)`); el prompt no cambia. Con esto los cuatro bloques de flujo
+(1 a 4) y el 5 llegan al consultorio. Con el Bellido de producción (18/09,
+tarde) son 88 nodos: los 69 del vertical y los 19 suyos, y este bloque solo
+repone sus dos nodos de reporte. 2089 en verde (45 archivos), saneo 0,
+builds y lint.
+
+---
+
+## 2026-09-17 — Platinum, bloque 3: el audio, la imagen y el PDF entran como TEXTO al agente (rama `flujos/medios-entrantes`, sobre el bloque 2)
+
+`Analisis/34` §3.1 y §4.1, y la síntesis de `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`:
+**clasificar, no mirar.** Hasta hoy un audio o una foto recibían «por ahora
+atiendo por texto», un mensaje pagado que no avanza nada y que pierde al
+paciente en el primer intento; y el 17/09 el asistente llegó a inventar que
+una imagen era un comprobante.
+
+- **El agente NUNCA ve el medio.** Un paso previo lo convierte en texto: el
+  audio se transcribe con Gemini (tope de 60 s estimado por tamaño; más largo,
+  se pide que lo escriban) y entra marcado «(audio transcripto)» con la orden
+  de repetir en una línea lo entendido antes de agendar. La imagen y el PDF
+  pasan por un clasificador de **lista cerrada** (publicidad, boca o dientes,
+  comprobante, documento de salud, otro) y el agente recibe uno de cinco
+  textos fijos: la foto de dientes se agradece y queda para la valoración,
+  **sin opinar ni diagnosticar**; la captura de una promoción se responde con
+  los precios de la consola, nunca con los de la imagen; la orden médica se
+  deriva sin interpretarla.
+- **Nada se guarda.** Ni la imagen, ni el PDF, ni el audio: ni en Storage, ni
+  en Firestore, ni en el historial de mensajes. El reporte a la consola lleva
+  una marca del tipo («el cliente envió una nota de voz»), no el contenido:
+  de una foto de dientes o de una orden médica no queda nada escrito.
+- **Contador de entrantes por tipo** en el agregado del mes (`entrantesPorTipo`),
+  mostrado en «Consumo». Es el dato que hoy no existe y que dice cuántos leads
+  llegan en voz o en imagen.
+
+**Mensajes por conversación: cero.** Estos caminos reemplazan la respuesta
+vacía que ya se pagaba; los dos nodos nuevos contra Meta son de lectura, y una
+prueba fija que los nodos que envían siguen siendo cuatro. Los flujos pasan de
+59 a 69 nodos (Demo A y Platinum, con paridad). Suite: 1795 en verde (37
+archivos), bloque (m) de `platinum-flujo.test.ts` sobre los dos flujos. Saneo 0.
+
+**Falta:** fusionar, desplegar, publicar y probar con teléfono (filas 35–39 de
+la aceptación), midiendo la latencia del turno con audio contra p50 ≤ 6 s y
+p90 ≤ 10 s. **Supuestos que solo un teléfono confirma:** la forma de la salida
+del nodo de transcripción y la relación tamaño ↔ duración del audio.
+**Y en la VM, antes de recibir medios reales:** `N8N_DEFAULT_BINARY_MODE=filesystem`,
+poda de ejecuciones y la credencial de Gemini en nivel pago. Sin eso, «nada se
+guarda» vale para el flujo pero no para la instancia.
+
+**Bellido en paridad (18/09).** La rama fusiona el bloque 2 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` lleva los 10 nodos de medios a
+`Flujos/bellido-agendamiento.json` (69 nodos); el prompt no cambia en este
+bloque, así que no hay nada que portar. El comentario de `Preparar imagen`
+dejaba el nombre de la clínica en el vertical, y la suite de Bellido lo
+prohíbe con razón: ahora dice «de la carpeta del cliente». Suites de Bellido y
+`flujos-umbrales` con las dos compuertas de medios y las tres entradas de
+texto al agente.
+
+**Con el Bellido de producción (18/09, tarde).** Sus 19 nodos propios se
+conservan y las dos compuertas de medios quedan DELANTE de su estado de la
+conversación: el audio y la imagen se convierten en texto antes de entrar a
+su menú, y lo que ya es texto entra por donde entra cualquier turno suyo, no
+directo al agente. Bellido: 88 nodos. La prueba común pasó a declarar por
+flujo la CADENA de eslabones sin modelo y las entradas efectivas al agente.
+2010 en verde (43 archivos), saneo 0, builds y lint.
+
+---
+
+## 2026-09-17 — Platinum, bloque 2: seña por QR con cotejo del comprobante (rama `flujos/sena-por-qr`, sobre el bloque 1)
+
+`Analisis/30` §4 y `Analisis/07` §4. Contrato de diseño en `admin/DISENO.md`
+§4duodecies. Lo decidido:
+
+- **La seña es del flujo de agendamiento**: `config/agendamiento.senaImporte`
+  (0 = sin seña) y `senaMinutosRetencion`. **El QR del comercio vive en el
+  documento del flujo que cobra**: `registrarQrDeCobro` escribe `cobroReal` en
+  `config/venta` si el negocio vende y, si no, en `config/agendamiento`. Las
+  pestañas «Cobros» y «Configuración de QR» aparecen también en reservas.
+- **Quien coteja es el servidor** (§7): la Function nueva `cotejarComprobante`
+  recibe lo que leyó Gemini, lo compara con `cotejo.ts` contra el importe
+  fijo y las cuentas del QR, crea o actualiza `cierres/cita_<evento>` con
+  `cotejo {cuadra | no_cuadra | ilegible}` y la conversación pasa a
+  `solicitud.etapa = agendada`. `senaVencida` marca la retención vencida.
+  `configuracionFlujo` devuelve `sena` (activa, importe, `qr.url` de
+  `imagenDeCobro`, pendiente, evento).
+- **La cita se retiene por hecho**: `agendar_cita` la crea como «PENDIENTE
+  DE SEÑA · …» cuando la seña está activa (lo pone el nodo, no el modelo). Al
+  cotejo `cuadra` el flujo le quita el prefijo. El flujo programado nuevo
+  `Flujos/agendamiento-senas-vencidas.json` (cada 10 min) borra las vencidas
+  **sin escribirle al paciente**, y reporta primero: si el servidor dice
+  `ya_agendada`, no borra.
+- **Prohibición 3 en tres barreras**: el prompt, la red de `Procesar
+  respuesta` (reemplaza «pago acreditado» por «el comprobante lo revisa la
+  clínica y ellos confirman el pago») y los textos fijos del cotejo, que
+  ninguna prueba deja pasar con «acreditado / verificado / recibimos».
+- **Los comprobantes no se guardan**: solo el JSON leído y el resultado.
+- El flujo conversacional pasa de 41 a 59 nodos (Demo A y Platinum, mismos
+  cambios). `publicar-flujo.sh --crear` (nuevo) da de alta un flujo por la
+  API con las credenciales por nombre o por tipo; `crear-plantilla.sh`
+  (nuevo) manda una plantilla de utilidad a revisión comprobando las reglas
+  aprendidas el 14/09.
+
+**Mensajes por conversación: +1 (el QR, imagen con el resumen en el pie)
+solo en las conversaciones que reservan con seña activa; la confirmación
+del comprobante y de la cita es UN mensaje fijo; los avisos a recepción los
+paga NovuChat. Sin seña, 0.** Suite: 1708 en verde (36 archivos): puras del
+cotejo (21), Functions reales contra el emulador (23), reglas negando (14),
+`platinum-flujo.test.ts` (l) sobre los dos flujos (60 × 2),
+`senas-vencidas.test.ts` (22). Saneo 0.
+
+**Falta, y en este orden:** (1) PR y fusión; (2) desplegar reglas y
+Functions (`cotejarComprobante`, `senaVencida` son nuevas: `v0.6.0`);
+(3) publicar los flujos desde `main` y crear el de señas vencidas con
+`publicar-flujo.sh --crear --env .env.platinum --flujo
+Flujos/agendamiento-senas-vencidas.json --activar --env-nuevo
+.env.platinum-senas`; (4) que la clínica registre su QR real en la consola
+y ponga la seña en 50; (5) la prueba real con comprobantes de dos bancos
+(filas 29–34 de `CLIENTES/PLATINUM/aceptacion.md`). **Supuestos que solo
+un teléfono confirma:** la forma de la salida simplificada del nodo Gemini
+(`content.parts[].text`; si viniera distinta, todo cae a «ilegible» y
+recepción se entera), que la descarga del medio mande el token a
+`lookaside.fbsbx.com`, y los esquemas de los nodos nuevos (armados desde los
+paquetes de n8n 2.36.5, no ejecutados). **Verificar en la VM antes de
+recibir comprobantes reales:** credencial de Gemini en nivel pago y poda de
+binarios de las ejecuciones de n8n (`analisis-audio-e-imagen.md`).
+
+**Bellido en paridad (18/09).** El bloque entra en `Flujos/bellido-agendamiento.json`
+con los dos scripts del bloque 1: `sincronizar-flujo-cliente.mjs` (59 nodos,
+las 18 conexiones nuevas, credenciales por tipo) y `portar-prompt-cliente.py`
+(el bloque SEÑA del prompt, la regla 4 y el prefijo `PENDIENTE DE SEÑA ·` en
+`agendar_cita`, sobre el texto propio del consultorio). Al portar, `Config
+del negocio` del Demo A quedó con un bloque mal anclado (sintaxis rota, y
+copiada a Bellido); se reconstruyó desde el bloque 1 más el tramo de la seña,
+y ahora es LETRA POR LETRA el mismo en Demo A, Platinum y Bellido: la suite
+de Platinum deja de declararlo distinto. Suites de Bellido, Platinum y
+`flujos-umbrales` declaran `¿Es un comprobante?` como la única entrada al
+agente y las cuatro credenciales nuevas del cliente. 1890 pruebas en verde,
+saneo, builds y lint. Lección para los bloques 3 a 5: después de portar,
+verificar cada nodo Code con `new Function` antes de sincronizar al cliente.
+
+**Y con el Bellido de producción (18/09, tarde).** Su flujo trae 19 nodos
+propios y dos empalmes; el sincronizador con `--base` los conserva y los
+recompone, de modo que la compuerta del comprobante queda DELANTE del estado
+de la conversación del consultorio: el medio se desvía antes de entrar a su
+menú. Bellido: 78 nodos. La prueba de las conexiones deshace el empalme
+devolviendo al agente toda entrada desviada, venga de donde venga, así el
+vertical puede seguir poniendo compuertas delante. 1922 en verde, saneo 0.
+
+---
+
+## 2026-09-17 — Platinum, bloque 1: la dirección va con el enlace de Google Maps (rama `flujos/direccion-maps`)
+
+`Analisis/34` §2. Campo `direccionMaps` en `config/negocio` (solo `https://` de
+un dominio de Google Maps: validado en las reglas, en `prompt.ts` y otra vez
+en `Config del negocio`, porque es lo único que el asistente reenvía tal cual)
+y `ubicacion {lat, lng}` (estructurado, opcional). La consola los pide en
+Configuración; `cargar-negocio.mjs` los acepta con el mismo contrato;
+`negocio-platinum.json` lleva el enlace vacío **hasta que lo dé la clínica**
+(pedido anotado en `CLIENTES/PLATINUM/ficha.md`).
+
+En los dos flujos de agendamiento (Demo A y Platinum, 41 nodos cada uno): el
+prompt incluye la dirección y el enlace en el mismo mensaje de confirmación y
+en «¿dónde quedan?»; si el paciente pide expresamente la ubicación o el pin,
+el modelo termina con `[ENVIAR_UBICACION]` y tres nodos nuevos, debajo del
+reporte del texto, mandan el mensaje `location` nativo y lo reportan como
+saliente `location`. Sin coordenadas cargadas, la marca se quita y no sale
+nada.
+
+**Mensajes por conversación: 0 en el camino normal; +1 solo cuando el
+paciente pide el pin y hay coordenadas.** Suite: 1500 en verde (33 archivos),
+`platinum-flujo.test.ts` (k) sobre los dos flujos, `direccion-maps.test.ts`
+(34, puras), reglas negando. Saneo 0.
+
+**Bellido en paridad (18/09).** `main` trajo el alta del Dr. Bellido con una
+suite que exige que su flujo sea el Demo A nodo por nodo, así que cada bloque
+que toca el Demo A tiene que llevar también `Flujos/bellido-agendamiento.json`.
+Dos scripts nuevos lo hacen repetible: `admin/scripts/sincronizar-flujo-cliente.mjs`
+(repone en el cliente los nodos, conexiones, código y credenciales por tipo
+del vertical; conserva sus nodos propios y agrega a `Config base` las
+asignaciones nuevas) y `admin/scripts/portar-prompt-cliente.py` (aplica al
+prompt y a las herramientas del cliente las mismas operaciones por línea que
+cambiaron en el vertical, con sustitución de subcadena donde el cliente tiene
+texto propio). La rama fusiona además el PR #110 (Demo A al día), que
+resolvía el mismo nodo `Config del negocio`. Bellido: 41 nodos, su suite en
+verde con las mismas tres excepciones que Platinum.
+
+**Y el consultorio se volvió un cliente con nodos propios (18/09, tarde).**
+`main` trajo el Bellido de producción: 57 nodos, 19 suyos (menú inicial,
+contacto directo, emergencia con aviso al doctor, despedida en dos) empalmados
+al Demo A en dos puntos. El sincronizador los habría borrado, así que aprendió
+`--base <ref>`: con la versión del vertical desde la que se armó el cliente
+distingue lo que el cliente AGREGÓ de lo que el vertical quitó, conserva sus
+nodos y recompone sus dos formas de empalme —un destino que cuelga de una
+salida que ya existía, y un nodo intercalado DELANTE de otro, que pasa a
+recibir todas las entradas de aquel, también las que el vertical agregue
+después—. El reemplazo toca solo el cableado `main`: la primera versión
+redirigió también el sub-nodo del modelo y dejó al agente sin Gemini, y la
+suite lo atrapó. Bellido queda en 60 nodos. De `main` entran además dos
+cambios del vertical, fusionados a tres bandas sobre el código: el fallo
+CERRADO de `Comprobar reserva` cuando el calendario no contesta (ejecución
+#2976: el modelo dijo «quedó agendada» con la credencial de Google caída) y
+los textos del menú en `Config del negocio`. 1714 en verde, saneo 0.
+
+**Falta:** desplegar reglas y Functions; publicar los TRES flujos desde `main`
+con `publicar-flujo.sh` (Demo A, Platinum y Bellido; los nodos nuevos toman la
+credencial por tipo);
+probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anotar en
+`CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
+
+---
+
+## 2026-09-17 — Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita (rama `flujos/candado-un-calendario`)
+
+`Analisis/24` §4, opción A. `Calendarios a revisar` (Demo A y Platinum, código
+idéntico) emite solo los calendarios de `eventosCreados` —lo que #99 ya
+guarda de la salida real de `agendar_cita`, con `organizer.email`—, uno por
+cita y deduplicados. **Respaldo obligatorio:** sin evento, sin calendario o
+con un dato raro, emite todos como antes; nunca cero items, porque el candado
+no puede dejar de correr por no saber la agenda. `Comprobar reserva` no cambió.
+
+Llamadas a Google en el turno que agenda: Platinum pasa de 2 a 1 por cita;
+con 7 odontólogos, de 7 a 1 (unos 1,8–2,4 s menos por turno, a 0,3–0,4 s por
+llamada según `Analisis/24` §2.4). El número de agendas deja de pesar en la
+latencia, que era lo que fijaba el techo «hasta 10» de la Base comercial §3.
+
+Suite: `candado-agenda.test.ts` con 11 casos nuevos (una cita → un
+calendario; dos citas en agendas distintas → dos; sin dato → todos; el cruce
+del mismo odontólogo se detecta revisando solo su agenda; dos odontólogos a la
+misma hora no es cruce) y (h) de `platinum-flujo.test.ts` reescrita. Las
+pruebas nuevas fallan con el nodo viejo (comprobado). 1399 en verde. Saneo 0.
+
+**Mensajes por conversación: cero.** **Falta:** publicar desde `main` y
+cronometrar el turno que agenda antes y después (fila 43 de la aceptación),
+más el caso mandatorio de la insistencia sobre una hora ocupada.
+
+**Bellido en paridad (18/09).** La rama fusiona `main` con el alta del Dr.
+Bellido, cuya suite exige el Demo A nodo por nodo: `Calendarios a revisar`
+de `Flujos/bellido-agendamiento.json` lleva el mismo código.
+
+Con el Bellido de producción (18/09, tarde) su flujo son 57 nodos —38 del
+vertical y 19 suyos— y el nodo del candado sigue siendo el del vertical,
+letra por letra. 1613 en verde (38 archivos), saneo 0.
+
+**La fusión final, ensayada (19/09).** Las dos cadenas (bloques 1→2→3→4 por
+un lado, bloque 5 por el otro) se fusionan con tres conflictos y ninguno es de
+código: `ESTADO.md`, `Flujos/LEEME-flujos.md` y el JSON de Bellido, que Git
+marca entero porque los dos lados mueven nodos. **La receta, probada:** tomar
+el lado de los bloques 1 a 4 en los dos archivos de flujos
+(`git checkout --theirs`) y volver a correr el sincronizador contra el Demo A
+ya fusionado, **con `--base flujos/seguimiento-pendiente`**: la base tiene que
+ser el vertical del que salió ESE archivo de cliente, no `origin/main`; con la
+base equivocada el empalme del consultorio no se reconoce y su menú queda
+desconectado (la suite lo atrapa). Ensayado entero: 2101 pruebas en verde, y
+el ensayo se descartó.
 
 ---
 

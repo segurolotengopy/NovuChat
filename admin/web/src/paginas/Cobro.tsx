@@ -4,19 +4,32 @@ import { httpsCallable } from 'firebase/functions';
 import { Link, useParams } from 'react-router-dom';
 import jsQR from 'jsqr';
 import { db, funciones } from '../lib/firebase';
+import { useFlujos } from '../lib/flujos';
 import { ConfiguracionVertical } from './ConfiguracionVertical';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 
 /**
- * PEDIDOS Y COBRO — la pestaña propia del flujo de venta.
+ * CONFIGURACIÓN DE QR — el QR propio del comercio, para el flujo que cobra.
  *
- * ⚠️ EL COBRO REAL TODAVÍA NO LO EJECUTA NINGÚN FLUJO. Se puede registrar y
- * verificar el QR —que es lo que hace esta pantalla— pero el asistente sigue
- * enviando el de demostración: el flujo de venta no lee `cobroReal`. Por eso
- * los textos NO invitan a hacer nada: la versión anterior decía «avísale a
- * NovuChat para empezar a usarlo», que dejaba a la persona esperando una
- * gestión que no existe. Cuando el flujo lo consuma, cambian estos textos y
- * aparece el control para activarlo.
+ * DOS FLUJOS COBRAN CON EL MISMO QR, y la pantalla es una sola:
+ *
+ *  - **Venta** (pedidos): ⚠️ EL COBRO REAL TODAVÍA NO LO EJECUTA ESE FLUJO. Se
+ *    puede registrar y verificar el QR, pero el asistente sigue enviando el de
+ *    demostración: el flujo de venta no lee `cobroReal`. Por eso sus textos NO
+ *    invitan a hacer nada: la versión anterior decía «avísale a NovuChat para
+ *    empezar a usarlo», que dejaba a la persona esperando una gestión que no
+ *    existe. Cuando el flujo lo consuma, cambian esos textos.
+ *  - **Reservas** (agendamiento), desde el 17/09 (`DISENO.md` §4duodecies): el
+ *    flujo manda este QR con el resumen de la cita cuando la SEÑA está activa,
+ *    y retiene el horario unos minutos a la espera del comprobante. El
+ *    comprobante lo coteja el servidor; la verificación del dinero la hace el
+ *    negocio en su banco. Los dos parámetros de la seña se editan al pie.
+ *
+ * EL DOCUMENTO LO DECIDE LA LISTA DE FLUJOS, igual que en el servidor
+ * (`registrarQrDeCobro`): `/config/venta` si el negocio vende, y si solo
+ * reserva, `/config/agendamiento`. Es la política de capas (§4sexies): el QR es
+ * del flujo que cobra, y un negocio con los dos flujos lo tiene una sola vez,
+ * en el de venta, para que los dos manden el mismo.
  *
  * DOS FORMAS DE COBRAR, y la pantalla las separa a propósito:
  *
@@ -84,6 +97,14 @@ async function leerCodigo(archivo: File): Promise<string | null> {
 
 export function Cobro() {
   const { tenantId = '' } = useParams();
+  const flujos = useFlujos(tenantId);
+  const tieneVenta = (flujos ?? []).includes('venta');
+  const tieneAgenda = (flujos ?? []).includes('agendamiento');
+  // `null` mientras no se sabe qué flujos tiene: no se escucha ningún
+  // documento hasta entonces, para no leer `venta` y después saltar a
+  // `agendamiento` con el formulario ya rellenado con lo del otro.
+  const documento: 'venta' | 'agendamiento' | null =
+    flujos === null ? null : tieneVenta ? 'venta' : tieneAgenda ? 'agendamiento' : null;
   const [hayQrDemo, setHayQrDemo] = useState<boolean | null>(null);
   const [registrado, setRegistrado] = useState<Registrado | null>(null);
 
@@ -102,8 +123,8 @@ export function Cobro() {
   const yaRellenado = useRef(false);
 
   useEffect(() => {
-    if (!tenantId) return;
-    return onSnapshot(doc(db, 'tenants', tenantId, 'config', 'venta'), (d) => {
+    if (!tenantId || documento === null) return;
+    return onSnapshot(doc(db, 'tenants', tenantId, 'config', documento), (d) => {
       setHayQrDemo(String(d.get('mediaIdQr') ?? '') !== '');
       const cobro = d.get('cobroReal') as Registrado | undefined;
       setRegistrado(cobro ?? null);
@@ -119,7 +140,7 @@ export function Cobro() {
         setVenceEl(String(cobro.venceEl ?? ''));
       }
     }, () => setEstado('No se pudo leer la configuración de cobro.'));
-  }, [tenantId]);
+  }, [tenantId, documento]);
 
   const enviar = async (evento: React.FormEvent) => {
     evento.preventDefault();
@@ -142,6 +163,7 @@ export function Cobro() {
       }
       const registrar = httpsCallable<unknown, {
         registrado: boolean; problemas: string[]; advertencias: string[];
+        documento?: 'venta' | 'agendamiento';
       }>(funciones, 'registrarQrDeCobro');
       const { data } = await registrar({
         tenantId, cargaUtil, nombreCuenta, cuentaDeclarada, banco, venceEl,
@@ -150,9 +172,15 @@ export function Cobro() {
       setProblemas(data.problemas ?? []);
       setAdvertencias(data.advertencias ?? []);
       if (data.registrado) {
-        setEstado('QR guardado y verificado. El asistente todavía envía el QR de '
-          + 'demostración: el cobro real no está habilitado. No tienes que hacer '
-          + 'nada más, te avisamos cuando lo activemos.');
+        // El servidor dice en qué documento lo guardó; si no lo dice (versión
+        // anterior de la función), vale lo que esta pantalla dedujo.
+        setEstado((data.documento ?? documento) === 'agendamiento'
+          ? 'QR guardado y verificado. Cuando NovuChat lo active y la seña tenga '
+            + 'un importe, el asistente lo manda con el resumen de cada cita. No '
+            + 'tienes que hacer nada más, te avisamos cuando lo activemos.'
+          : 'QR guardado y verificado. El asistente todavía envía el QR de '
+            + 'demostración: el cobro real no está habilitado. No tienes que hacer '
+            + 'nada más, te avisamos cuando lo activemos.');
         if (archivoRef.current) archivoRef.current.value = '';
       }
     } catch (e) {
@@ -178,6 +206,21 @@ export function Cobro() {
 
   const activo = registrado?.activo === true;
 
+  // Sin un flujo que cobre no se ofrece el formulario: `registrarQrDeCobro` lo
+  // rechazaría, y ofrecer una puerta que el servidor cierra es lo que la
+  // consola evita en todas partes (`lib/flujos.ts`).
+  if (flujos !== null && documento === null) {
+    return (
+      <section>
+        <h2>Configuración de QR</h2>
+        <p className="vacio">
+          Este negocio no tiene ningún flujo que cobre por QR: ni pedidos ni
+          reservas con seña.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section>
       {/* SE LLAMABA «PEDIDOS Y COBRO» Y NO LISTABA NI UNO NI OTRO: configuraba
@@ -185,13 +228,27 @@ export function Cobro() {
           y «Cobros»— y esta se queda con lo que de verdad hace. Ver
           `DISENO.md` §4nonies. */}
       <h2>Configuración de QR</h2>
-      <p className="ayuda">
-        El asistente toma el pedido de tu catálogo de{' '}
-        <Link to={`/negocio/${encodeURIComponent(tenantId)}/catalogo`}>productos</Link>,
-        suma la entrega, confirma el total y envía el QR. Después del QR no da el
-        pedido por confirmado hasta que el cliente manda su comprobante.
-      </p>
-
+      {/* UN PÁRRAFO POR FLUJO QUE COBRA, y no uno solo con «pedido o cita»: un
+          negocio que solo reserva no tiene que leer qué hace el asistente con
+          un pedido. Con los dos flujos se leen los dos. */}
+      {tieneVenta && (
+        <p className="ayuda">
+          El asistente toma el pedido de tu catálogo de{' '}
+          <Link to={`/negocio/${encodeURIComponent(tenantId)}/catalogo`}>productos</Link>,
+          suma la entrega, confirma el total y envía el QR. Después del QR no da el
+          pedido por confirmado hasta que el cliente manda su comprobante.
+        </p>
+      )}
+      {tieneAgenda && (
+        <p className="ayuda">
+          Cuando la seña está activa, el asistente manda este QR con el resumen
+          de la cita y retiene el horario unos minutos a la espera del
+          comprobante. <strong>El comprobante lo coteja el servidor</strong>:
+          revisa que el monto, la cuenta y la hora coincidan. La verificación del
+          dinero la haces tú en tu banco: el asistente le dice al cliente que los
+          datos coinciden, nunca que el pago entró.
+        </p>
+      )}
       {/* ------------------------------------------------------------------ */}
       <h3>Tu QR de cobro</h3>
       {/* LAS DOS PIEZAS DE ARRIBA VAN LADO A LADO cuando hay lugar. Tenían un
@@ -212,11 +269,18 @@ export function Cobro() {
           </p>
           <p className="card-body">
             {activo
-              ? <><span className="tag tag-accent">Cobrando</span> El asistente envía este QR a tus clientes.</>
+              ? <><span className="tag tag-accent">Cobrando</span>{' '}
+                  {documento === 'agendamiento'
+                    ? 'El asistente manda este QR con el resumen de la cita cuando la seña tiene un importe.'
+                    : 'El asistente envía este QR a tus clientes.'}</>
               : <><span className="tag tag-neutral">Guardado, todavía sin cobrar</span> Está
-                  verificado y listo. El asistente sigue enviando el QR de demostración
-                  hasta que activemos el cobro real para tu negocio; cuando pase, te
-                  avisamos. <strong>No hay nada que tengas que hacer.</strong></>}
+                  verificado y listo.{' '}
+                  {documento === 'agendamiento'
+                    ? 'El asistente no pide seña hasta que activemos el cobro real para tu negocio; '
+                      + 'cuando pase, te avisamos. '
+                    : 'El asistente sigue enviando el QR de demostración hasta que activemos el '
+                      + 'cobro real para tu negocio; cuando pase, te avisamos. '}
+                  <strong>No hay nada que tengas que hacer.</strong></>}
           </p>
           {typeof registrado.montoFijo === 'number' && (
             <p className="ayuda aviso-datos">
@@ -227,8 +291,9 @@ export function Cobro() {
         </div>
       ) : (
         <p className="vacio">
-          Todavía no cargaste ningún QR propio. Sin él, el asistente puede tomar
-          pedidos pero no cobrarlos.
+          Todavía no cargaste ningún QR propio. Sin él, el asistente puede{' '}
+          {documento === 'agendamiento' ? 'agendar citas pero no pedir la seña'
+            : 'tomar pedidos pero no cobrarlos'}.
         </p>
       )}
 
@@ -240,7 +305,7 @@ export function Cobro() {
         al QR.</strong> La mayoría de los QR bolivianos vienen cifrados: nosotros
         podemos comprobar que sea un código de cobro de un banco, pero <strong>no
         podemos ver lo que dice adentro</strong>. Lo que escribas acá es lo que
-        vamos a usar para verificar los pagos de tus clientes.</p>
+        vamos a usar para cotejar los comprobantes de tus clientes.</p>
         <ol>
           <li><strong>Que se pueda usar muchas veces.</strong> Los bancos ofrecen
           QR «de un solo uso» para un cobro puntual. Ese no sirve: el asistente
@@ -294,8 +359,8 @@ export function Cobro() {
             onChange={(e) => setCuentaDeclarada(e.target.value)} />
           </label>
           <p className="ayuda">
-            Es con lo que verificamos cada pago. Cópialo con cuidado: si está mal,
-            ningún comprobante va a poder confirmarse.
+            Es con lo que se coteja cada comprobante. Cópialo con cuidado: si
+            está mal, ningún comprobante va a coincidir.
           </p>
         </div>
 
@@ -358,17 +423,31 @@ export function Cobro() {
       {estado && <p role="status">{estado}</p>}
 
       {/* ------------------------------------------------------------------ */}
-      <h3>QR de demostración</h3>
-      <p className="ayuda">
-        {hayQrDemo === null ? 'Cargando…' : hayQrDemo
-          ? 'Hay un QR de demostración cargado. No cobra ni mueve dinero, y lleva '
-            + 'impreso que es un simulacro. Se usa en las presentaciones.'
-          : 'No hay ningún QR de demostración cargado.'}
-        {' '}Lo administra NovuChat: los rótulos que dicen que el cobro es simulado
-        no se pueden quitar.
-      </p>
+      {/* SOLO PARA VENTA. El QR de demostración (`mediaIdQr`) vive en
+          `/config/venta` y lo manda el flujo de pedidos en las presentaciones.
+          En reservas la seña va SIEMPRE por el camino real: un cobro simulado y
+          uno real no conviven en un mismo negocio (prohibición 3), y a un
+          negocio que solo reserva no se le habla de un simulacro que no tiene. */}
+      {tieneVenta && (
+        <>
+          <h3>QR de demostración</h3>
+          <p className="ayuda">
+            {hayQrDemo === null ? 'Cargando…' : hayQrDemo
+              ? 'Hay un QR de demostración cargado. No cobra ni mueve dinero, y lleva '
+                + 'impreso que es un simulacro. Se usa en las presentaciones.'
+              : 'No hay ningún QR de demostración cargado.'}
+            {' '}Lo administra NovuChat: los rótulos que dicen que el cobro es simulado
+            no se pueden quitar.
+          </p>
+        </>
+      )}
 
-      <ConfiguracionVertical tenantId={tenantId} vertical="venta" />
+      {/* Cada flujo trae sus parámetros propios y CADA UNO va a SU documento
+          (§4sexies.2): los costos de entrega a `venta`, la seña a
+          `agendamiento`. Un negocio con los dos flujos ve los dos bloques; la
+          seña no se muda a `venta` aunque el QR viva ahí. */}
+      {tieneVenta && <ConfiguracionVertical tenantId={tenantId} vertical="venta" />}
+      {tieneAgenda && <ConfiguracionVertical tenantId={tenantId} vertical="agendamiento" />}
     </section>
   );
 }

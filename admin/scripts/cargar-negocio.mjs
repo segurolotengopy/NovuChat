@@ -125,12 +125,17 @@ const TELEFONO = /^[0-9]{8,15}$/;
 const RANGO_HORA = /^([01][0-9]|2[0-3]):[0-5][0-9]-([01][0-9]|2[0-3]):[0-5][0-9]$/;
 // `urlImagenValida`: https y nada más.
 const URL_HTTPS = /^https:\/\/[A-Za-z0-9.-]+(\/[A-Za-z0-9._~/?#=&%-]*)?$/;
+// `enlaceDeMapaValido`: la MISMA lista cerrada de dominios de mapas de Google
+// que las reglas y que `prompt.ts`. El asistente reenvía este enlace tal cual
+// al cliente, por eso no es texto libre (Analisis/34 §2).
+const ENLACE_MAPA = /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
 
 // Claves que este script acepta en cada sección. Las de marcador se resuelven
 // al campo real antes de escribir; el sello lo pone el script y por eso NO se
 // acepta en el archivo.
 const CLAVES_NEGOCIO = new Set([
-  'nombreNegocio', 'descripcion', 'direccion', 'numeroRecepcion', 'numeroRecepcionMarcador',
+  'nombreNegocio', 'descripcion', 'direccion', 'direccionMaps', 'ubicacion',
+  'numeroRecepcion', 'numeroRecepcionMarcador',
   'zonaHoraria', 'moneda', 'calendarioId', 'calendarioMarcador',
   'horarios', 'politicaCancelacion', 'prefijosPermitidos', 'datosQueNoTenemos',
   'tratamiento', 'estiloEmojis', 'nombreAsistente',
@@ -140,6 +145,10 @@ const CLAVES_NEGOCIO = new Set([
 const CLAVES_AGENDAMIENTO = new Set([
   'duracionPorDefectoMin', 'anticipacionMinimaMin', 'anticipacionMaximaDias',
   'permitirCancelacion', 'horasRecordatorio', 'mensajeRecordatorio',
+  // Seña por QR (bloque 2): importe entero (0 = sin seña) y minutos de
+  // retención del horario. Mismos rangos que `configAgendamientoValida`.
+  // `cobroReal` NO está: lo escribe solo `registrarQrDeCobro`, desde la consola.
+  'senaImporte', 'senaMinutosRetencion',
 ]);
 const CLAVES_ITEM = new Set(['nombre', 'descripcion', 'area', 'precio', 'moneda', 'duracionMin', 'activo', 'imagenUrl']);
 const CLAVES_FUNCIONARIO = new Set(['id', 'nombre', 'especialidad', 'calendarioId', 'calendarioMarcador', 'servicios', 'activo']);
@@ -197,6 +206,21 @@ function validar(d) {
       texto(n, 'nombreNegocio', 80, 'negocio', { vacio: false });
       texto(n, 'descripcion', 400, 'negocio');
       texto(n, 'direccion', 200, 'negocio');
+      // `enlaceDeMapaValido`: vacío, o https:// de un dominio de mapas de Google.
+      if ('direccionMaps' in n && !(typeof n.direccionMaps === 'string' && n.direccionMaps.length <= 200
+          && (n.direccionMaps === '' || ENLACE_MAPA.test(n.direccionMaps)))) {
+        p.push('negocio.direccionMaps: vacío o un enlace https:// de Google Maps (maps.app.goo.gl, goo.gl/maps, google.com/maps, maps.google.com), hasta 200 caracteres');
+      }
+      // `ubicacionValida`: exactamente lat y lng, números en rango. Las notas
+      // (`_…`) se toleran y no se escriben, como en `horarios`.
+      if ('ubicacion' in n) {
+        const u = n.ubicacion;
+        const claves = esObjeto(u) ? Object.keys(u).filter((k) => !k.startsWith('_')).sort() : null;
+        const coordenada = (v, max) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= max;
+        if (!(claves && claves.join(',') === 'lat,lng' && coordenada(u.lat, 90) && coordenada(u.lng, 180))) {
+          p.push('negocio.ubicacion: objeto con exactamente lat (-90 a 90) y lng (-180 a 180), como números');
+        }
+      }
       if ('numeroRecepcion' in n && 'numeroRecepcionMarcador' in n) p.push('negocio: numeroRecepcion y numeroRecepcionMarcador a la vez; uno solo');
       if ('numeroRecepcion' in n && !(typeof n.numeroRecepcion === 'string' && TELEFONO.test(n.numeroRecepcion))) p.push('negocio.numeroRecepcion: solo dígitos, 8 a 15, sin «+»');
       marcador(n, 'numeroRecepcionMarcador', 'negocio');
@@ -260,6 +284,8 @@ function validar(d) {
       if ('permitirCancelacion' in a && typeof a.permitirCancelacion !== 'boolean') p.push('agendamiento.permitirCancelacion: true o false');
       if ('horasRecordatorio' in a && !esEntero(a.horasRecordatorio, 0, 168)) p.push('agendamiento.horasRecordatorio: entero de 0 a 168');
       texto(a, 'mensajeRecordatorio', 400, 'agendamiento');
+      if ('senaImporte' in a && !esEntero(a.senaImporte, 0, 10000)) p.push('agendamiento.senaImporte: entero de 0 a 10000 (0 = sin seña)');
+      if ('senaMinutosRetencion' in a && !esEntero(a.senaMinutosRetencion, 5, 180)) p.push('agendamiento.senaMinutosRetencion: entero de 5 a 180');
     }
   }
 
@@ -395,6 +421,7 @@ function resolver(nombre, donde) {
 const negocio = 'negocio' in datos ? sinNotas(datos.negocio) : null;
 if (negocio) {
   if ('horarios' in negocio) negocio.horarios = sinNotas(negocio.horarios);
+  if ('ubicacion' in negocio) negocio.ubicacion = sinNotas(negocio.ubicacion);
   if ('numeroRecepcionMarcador' in negocio) {
     negocio.numeroRecepcion = resolver(negocio.numeroRecepcionMarcador, 'negocio.numeroRecepcion');
     delete negocio.numeroRecepcionMarcador;
@@ -494,6 +521,10 @@ const resumen = {
   tratamiento: (v) => v, estiloEmojis: (v) => v, zonaHoraria: (v) => v, moneda: (v) => v, paleta: (v) => v,
   nombreNegocio: (v) => `«${v}»`,
   nombreAsistente: (v) => (v ? `«${v}»` : '(vacío: el flujo usa su nombre genérico)'),
+  // El enlace no es secreto, pero tampoco hace falta pegarlo entero: el dominio
+  // dice si es de mapas, que es lo que se valida.
+  direccionMaps: (v) => (v ? `enlace de ${new URL(v).host}` : '(vacío: el asistente da la dirección sin mapa)'),
+  ubicacion: (v) => `lat ${v.lat}, lng ${v.lng} (pin de WhatsApp, solo si el cliente lo pide)`,
   instruccionesExtra: (v) => `${v.length} caracteres · queda VIGENTE y aprobado (revisado por NovuChat)`,
 };
 const mostrar = (k, v) => (resumen[k] ? resumen[k](v)

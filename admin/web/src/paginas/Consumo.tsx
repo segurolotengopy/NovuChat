@@ -62,6 +62,56 @@ interface Periodo {
   cierres?: number;
   interacciones?: number;
   personasAtendidas?: number;
+  /**
+   * Señas de reserva (`DISENO.md` §4duodecies): QR enviados, comprobantes
+   * cotejados (con cualquier resultado) y retenciones que vencieron sin
+   * comprobante. Las escribe el servidor; no se facturan, pero explican por qué
+   * un mes tiene más mensajes que conversaciones y cuántas reservas se caen.
+   */
+  senasEnviadas?: number;
+  senasCotejadas?: number;
+  senasVencidas?: number;
+  /**
+   * Recordatorio de solicitud pendiente (`Analisis/31` §4). `seguimientos` son
+   * los que salieron —uno por solicitud como máximo— y `reactivadas`, en
+   * cuántos de ellos el paciente volvió a escribir dentro de las 24 h. Ninguno
+   * se factura: los dos juntos dicen si el recordatorio recupera a alguien.
+   */
+  seguimientos?: number;
+  reactivadas?: number;
+  /**
+   * Mensajes que MANDÓ el cliente, por clase (bloque 3). No se facturan —Meta
+   * cobra lo que sale, no lo que entra—, pero dicen por qué medio le escribe
+   * la gente al negocio: si llegan muchos audios o muchas fotos, el asistente
+   * tiene que entenderlos, y si no llega ninguno no hay nada que construir.
+   * Lo escribe la ingesta con las claves que normaliza (`ingesta.ts`).
+   */
+  entrantesPorTipo?: Record<string, number>;
+}
+
+/** Cómo se lee cada tipo de Meta en la pantalla. */
+const NOMBRE_ENTRANTE: Record<string, string> = {
+  text: 'texto',
+  audio: 'audio',
+  image: 'imagen',
+  document: 'documento',
+  interactive: 'botones',
+  location: 'ubicación',
+  order: 'pedido',
+  otro: 'otros',
+};
+
+/**
+ * El desglose de entrantes, ordenado de mayor a menor y con el nombre en
+ * castellano. Los tipos en cero no se muestran: una lista con seis ceros no
+ * informa nada. Un tipo que la pantalla no conozca se muestra con su nombre
+ * crudo antes que desaparecer de la suma.
+ */
+function entrantesDe(p: Periodo | undefined): { tipo: string; cantidad: number }[] {
+  return Object.entries(p?.entrantesPorTipo ?? {})
+    .map(([tipo, cantidad]) => ({ tipo: NOMBRE_ENTRANTE[tipo] ?? tipo, cantidad: Number(cantidad) || 0 }))
+    .filter((e) => e.cantidad > 0)
+    .sort((a, b) => b.cantidad - a.cantidad || a.tipo.localeCompare(b.tipo));
 }
 
 /** Conversaciones del período, tolerando el nombre anterior. */
@@ -226,6 +276,15 @@ export function Consumo() {
   const atenciones = actual?.personasAtendidas ?? 0;
   const cierres = actual?.cierres ?? 0;
   const tasa = porcentaje(cierres, conversaciones);
+  const senas = {
+    enviadas: actual?.senasEnviadas ?? 0,
+    cotejadas: actual?.senasCotejadas ?? 0,
+    vencidas: actual?.senasVencidas ?? 0,
+  };
+  const haySenas = senas.enviadas > 0 || senas.cotejadas > 0 || senas.vencidas > 0;
+  const seguimientos = actual?.seguimientos ?? 0;
+  const reactivadas = actual?.reactivadas ?? 0;
+  const entrantes = entrantesDe(actual);
 
   return (
     <section>
@@ -275,6 +334,38 @@ export function Consumo() {
             <p className="text-muted">
               {cierres} {cierres === 1 ? 'cierre' : 'cierres'} sobre {conversaciones}{' '}
               {conversaciones === 1 ? 'conversación' : 'conversaciones'}.
+            </p>
+          )}
+          {/* POR QUÉ MEDIO LE ESCRIBEN (bloque 3). Solo si el período trae el
+              desglose: los meses anteriores al 17/09 no lo tienen, y una línea
+              vacía haría dudar del resto de la tarjeta. No se factura —Meta
+              cobra lo que sale— pero es lo que dice si vale la pena que el
+              asistente entienda audios y fotos en este negocio. */}
+          {entrantes.length > 0 && (
+            <p className="text-muted">
+              Mensajes recibidos:{' '}
+              {entrantes.map((e) => `${e.cantidad} ${e.tipo}`).join(' · ')}.
+            </p>
+          )}
+          {/* Solo cuando el mes trae señas: un negocio de pedidos, o uno de
+              reservas sin seña, no tiene por qué leer una línea en cero. */}
+          {haySenas && (
+            <p className="text-muted">
+              Señas: {senas.enviadas} {senas.enviadas === 1 ? 'enviada' : 'enviadas'}
+              {' · '}{senas.cotejadas} {senas.cotejadas === 1 ? 'cotejada' : 'cotejadas'}
+              {' · '}{senas.vencidas} {senas.vencidas === 1 ? 'vencida' : 'vencidas'}.
+            </p>
+          )}
+          {/* Solo cuando el período los trae. Un comercio sin recordatorios no
+              tiene por qué leer una línea en cero, y el que sí los tiene
+              necesita las DOS cifras juntas: los enviados solos no dicen nada,
+              y lo que se quiere saber es si el recordatorio trae gente de
+              vuelta (`Analisis/31` §6). No se facturan. */}
+          {seguimientos > 0 && (
+            <p className="text-muted">
+              Seguimientos: {seguimientos} {seguimientos === 1 ? 'enviado' : 'enviados'}
+              {' · '}{reactivadas}{' '}
+              {reactivadas === 1 ? 'conversación reactivada' : 'conversaciones reactivadas'}.
             </p>
           )}
           <div className="tarjeta-pie">

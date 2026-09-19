@@ -17,6 +17,13 @@
 #   ./scripts/publicar-flujo.sh --env .env.novuchat --reiniciar-estado [--aplicar]
 #       borra el estado por telefono que guarda n8n (etapa, bienvenida, aviso)
 #   ./scripts/publicar-flujo.sh --flujo Flujos/demo-b-venta-cobro.json --aplicar
+#   ./scripts/publicar-flujo.sh --env .env.platinum --flujo Flujos/agendamiento-senas-vencidas.json \
+#       --crear [--activar] [--env-nuevo .env.platinum-senas] [--aplicar]
+#       CREA un flujo nuevo (POST) tomando las credenciales POR NOMBRE de la
+#       instancia y, si el nombre no existe, POR TIPO del flujo de referencia
+#       (el N8N_WORKFLOW_ID de --env). Con --activar lo publica; con --env-nuevo
+#       escribe un .env igual al de --env con el id nuevo, sin mostrar valores.
+#       Se niega si ya hay un flujo con ese nombre (--forzar lo permite).
 #
 # EL ARCHIVO Y EL FLUJO VIVO TIENEN QUE SER EL MISMO FLUJO, y el script lo
 # comprueba por el nombre antes de escribir: el id sale de `--env` y el archivo
@@ -36,6 +43,9 @@ FLUJO="Flujos/demo-a-agendamiento.json"
 APLICAR=0
 FORZAR=0
 REINICIAR=0
+CREAR=0
+ACTIVAR=0
+ENV_NUEVO=""
 ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
@@ -44,10 +54,14 @@ while [[ $# -gt 0 ]]; do
     --flujo=*) FLUJO="${1#*=}"; shift ;;
     --aplicar) APLICAR=1; shift ;;
     --reiniciar-estado) REINICIAR=1; shift ;;
+    --crear)   CREAR=1; shift ;;
+    --activar) ACTIVAR=1; shift ;;
+    --env-nuevo) ENV_NUEVO="${2:?--env-nuevo necesita una ruta}"; shift 2 ;;
+    --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
     --env)     ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*)   ENV_FILE="${1#*=}"; shift ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
@@ -97,6 +111,146 @@ fi
 # Si la API no las lista, se sigue como antes (heredando del flujo vivo).
 curl -s --max-time 30 -o "$TMP/credenciales.json" \
      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/credentials?limit=250" || true
+
+# --- crear un flujo NUEVO ------------------------------------------------------
+# Hasta el 17/09/2026 un flujo nuevo solo entraba por la interfaz: importar el
+# archivo, conectar las credenciales a mano y publicar. Eso es una persona
+# operando, que es justo lo que este proyecto no quiere (CLAUDE.md, «Andres
+# autoriza; Claude opera»), y ademas es donde n8n asigno sola la credencial de
+# ingesta a los nodos de Meta el 15/09. Aca el flujo se crea por la API con las
+# credenciales resueltas igual que al actualizar: por NOMBRE (lo que el JSON
+# versionado nombra, con id vacio) y, si ese nombre no existe, por TIPO desde
+# el flujo de referencia de --env (el conversacional del mismo cliente), que
+# ya tiene conectadas las de Meta, Google y la ingesta de ese comercio.
+#
+# Los flujos programados de un cliente (senas vencidas, seguimientos) nacen
+# asi: mismo --env que su flujo conversacional, --crear, y --env-nuevo para
+# dejar escrito el id nuevo en un .env propio, con el que despues se actualizan
+# con el camino normal del script.
+if [[ $CREAR -eq 1 ]]; then
+  curl -s --max-time 30 -o "$TMP/lista.json" \
+       -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows?limit=250" || true
+  APLICAR="$APLICAR" FORZAR="$FORZAR" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
+import json, os, re, sys
+aplicar = os.environ["APLICAR"] == "1"
+forzar  = os.environ["FORZAR"] == "1"
+tmp, flujo = os.environ["TMP"], os.environ["FLUJO"]
+V, R, G, A, FIN = "\033[1;32m", "\033[1;31m", "\033[0;90m", "\033[1;33m", "\033[0m"
+
+referencia = json.load(open(f"{tmp}/vivo.json", encoding="utf-8"))
+nuevo = json.load(open(flujo, encoding="utf-8"))
+print(f"Referencia : {referencia.get('name')}   nodos: {len(referencia.get('nodes', []))}")
+print(f"Nuevo      : {nuevo.get('name')}   ({flujo}, nodos: {len(nuevo['nodes'])})\n")
+
+# El nombre tiene que ser unico en la instancia: dos flujos con el mismo nombre
+# es exactamente lo que el cerrojo de la actualizacion no puede distinguir.
+try:
+    lista = json.load(open(f"{tmp}/lista.json", encoding="utf-8")).get("data") or []
+except Exception:
+    lista = []
+repetidos = [w for w in lista if w.get("name") == nuevo.get("name")]
+if repetidos and not forzar:
+    print(f"{R}✗ Ya existe un flujo llamado «{nuevo.get('name')}» (id {repetidos[0].get('id')}).{FIN}")
+    print("  Para actualizarlo use el camino normal con su .env; --forzar crea otro igual.")
+    sys.exit(1)
+
+cred_por_tipo = {}
+for v in referencia.get("nodes", []):
+    for tipo, ref in (v.get("credentials") or {}).items():
+        if ref.get("id"):
+            cred_por_tipo.setdefault(tipo, ref)
+try:
+    lista_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8")).get("data") or []
+except Exception:
+    lista_cred = []
+indice = {}
+for c in lista_cred:
+    indice.setdefault((c.get("type"), c.get("name")), []).append(c)
+
+por_nombre, por_tipo, faltantes = [], [], []
+for n in nuevo["nodes"]:
+    for tipo, ref in list((n.get("credentials") or {}).items()):
+        nombre = (ref or {}).get("name") or ""
+        halladas = indice.get((tipo, nombre), []) if nombre else []
+        if len(halladas) == 1:
+            n["credentials"][tipo] = {"id": halladas[0]["id"], "name": nombre}
+            por_nombre.append((n["name"], nombre))
+        elif tipo in cred_por_tipo:
+            n["credentials"][tipo] = cred_por_tipo[tipo]
+            por_tipo.append((n["name"], tipo, cred_por_tipo[tipo].get("name", "")))
+        else:
+            faltantes.append((n["name"], tipo, nombre))
+
+for nodo, nombre in por_nombre: print(f"  {V}+{FIN} credencial por nombre: {nodo} <- «{nombre}»")
+for nodo, tipo, nombre in por_tipo: print(f"  {A}+{FIN} credencial por TIPO ({tipo}): {nodo} <- «{nombre}» (de la referencia)")
+for nodo, tipo, nombre in faltantes: print(f"  {R}✗{FIN} {nodo}: sin credencial {tipo} («{nombre}») ni por nombre ni en la referencia")
+if faltantes:
+    print(f"\n{R}✗ ABORTADO: n8n no publica un flujo con un nodo sin credencial.{FIN}")
+    sys.exit(1)
+
+# Un disparador con webhook necesita una ruta propia: n8n la inventa al crear.
+# Un scheduleTrigger no tiene ruta. Nada que injertar en ninguno de los dos.
+cuerpo = {
+    "name": nuevo["name"],
+    "nodes": nuevo["nodes"],
+    "connections": nuevo["connections"],
+    "settings": nuevo.get("settings", {}),
+}
+serializado = json.dumps(cuerpo, ensure_ascii=False)
+marcas = sorted(set(re.findall(r'REEMPLAZAR_[A-Z][^"\\\s]*', serializado)))
+if marcas:
+    print(f"\n{R}✗ ABORTADO: el archivo todavia tiene marcadores sin reponer.{FIN}")
+    for m in marcas: print(f"    {m}")
+    print(f"{G}  Corra primero:  ./scripts/preparar-import.sh {flujo} <env>{FIN}")
+    sys.exit(2)
+open(f"{tmp}/cuerpo.json", "w", encoding="utf-8").write(serializado)
+print()
+if not aplicar:
+    print(f"{A}Diagnostico solamente. Nada se creo.{FIN}")
+    print(f"{G}Para crearlo:  agregue --aplicar (y --activar para publicarlo){FIN}")
+PY
+  [[ $APLICAR -eq 1 ]] || exit 0
+
+  COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X POST \
+        -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows" || echo 000)
+  if [[ "$COD" != "200" && "$COD" != "201" ]]; then
+    printf '\033[1;31m✗ No se pudo crear: HTTP %s\033[0m\n' "$COD"
+    head -c 500 "$TMP/rta.json" 2>/dev/null || true; echo
+    exit 1
+  fi
+  NUEVO_ID=$(python3 -c "import json; print(json.load(open('$TMP/rta.json')).get('id',''))")
+  printf '\033[1;32m✓ Flujo creado (HTTP %s): id %s\033[0m\n' "$COD" "$NUEVO_ID"
+  [[ -n "$NUEVO_ID" ]] || { echo "  La respuesta no trajo id."; exit 1; }
+
+  if [[ $ACTIVAR -eq 1 ]]; then
+    COD=$(curl -s --max-time 60 -o "$TMP/act.json" -w '%{http_code}' -X POST \
+          -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${NUEVO_ID}/activate" || echo 000)
+    if [[ "$COD" == "200" ]]; then
+      printf '\033[1;32m✓ Flujo activado (publicado).\033[0m\n'
+    else
+      printf '\033[1;31m✗ Creado pero NO activado: HTTP %s\033[0m\n' "$COD"
+      head -c 500 "$TMP/act.json" 2>/dev/null || true; echo
+      exit 1
+    fi
+  fi
+
+  # El .env nuevo: copia del de --env con el id nuevo. Se escribe, no se
+  # muestra: la clave de la API no pasa por la pantalla ni por el chat.
+  if [[ -n "$ENV_NUEVO" ]]; then
+    if [[ -e "$ENV_NUEVO" && $FORZAR -ne 1 ]]; then
+      echo "  ✗ Ya existe $ENV_NUEVO: no se pisa (use --forzar). Ponga a mano N8N_WORKFLOW_ID=$NUEVO_ID"
+      exit 1
+    fi
+    umask 077
+    { grep -v -E '^(N8N_WORKFLOW_ID|N8N_WEBHOOK_PATH|N8N_WEBHOOK_URL)=' "$ENV_FILE"
+      echo "N8N_WORKFLOW_ID=$NUEVO_ID"; } > "$ENV_NUEVO"
+    chmod 600 "$ENV_NUEVO"
+    echo "  ✓ $ENV_NUEVO escrito con el id nuevo (sin ruta de webhook: el flujo es programado)."
+    echo "    De ahora en mas: ./scripts/publicar-flujo.sh --env $ENV_NUEVO --flujo $FLUJO"
+  fi
+  exit 0
+fi
 
 # --- 1b. reiniciar el estado guardado (opcional) ------------------------------
 # n8n guarda por flujo unos datos estaticos (`staticData`): en la captacion, el

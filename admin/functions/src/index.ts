@@ -29,6 +29,14 @@ setGlobalOptions({
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './cierres.js';
 export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
+// SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
+// servidor —el flujo manda lo que leyó el modelo y recibe `cuadra`,
+// `no_cuadra` o `ilegible`— y la retención vencida se anota sin mandarle nada
+// al paciente. El porqué de cada decisión está en `sena.ts`.
+export { cotejarComprobante, senaVencida } from './sena.js';
+// Recordatorio de solicitud pendiente (bloque 4, `Analisis/31` §4): el
+// barrido de la hora pregunta a quién le toca y marca ANTES de enviar.
+export { seguimientosPendientes, seguimientoEnviado } from './seguimientos.js';
 // CATÁLOGO WEB PROPIO. Tres endpoints públicos y una función de configuración;
 // el porqué de cada uno está en `catalogoWeb.ts`. Se exportan desde acá, como
 // todo lo demás, para que exista un solo inventario de lo que se despliega.

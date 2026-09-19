@@ -295,9 +295,9 @@ la Function `conocimiento` (pedido en `CLIENTES/NOVUCHAT/02-pedido-sesion-sitio.
 
 **Primer cliente con el flujo de agendamiento** (15/09/2026; demo el 16/09).
 Clínica dental y de estética facial en Santa Cruz. Es una copia del Demo A
-vigente —33 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
-candado contra la doble reserva— con los datos del cliente y **un solo mecanismo
-nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
+vigente —59 nodos, umbrales del servidor, prefijo cacheable, `nombreAsistente`,
+candado contra la doble reserva, dirección con enlace a Maps, seña por QR— con los datos del
+cliente y **un solo mecanismo nuevo**: la sección `INFORMACIÓN DEL NEGOCIO` del prompt, que inserta
 `instruccionesExtra` (el texto libre de hasta 1.500 caracteres que el comercio
 escribe en su consola) **delimitado y rotulado como dato**, después de las
 reglas de comportamiento y de las herramientas; si contradice una regla, manda
@@ -312,13 +312,183 @@ provisional hasta que la clínica lo confirme— cada una con su calendario, los
 ejemplos del prompt en clave dental, la **duración por servicio** en el prompt y
 en `agendar_cita` (60 minutos el blanqueamiento, 30 la valoración clínica y
 cualquier otro), el rótulo del aviso a recepción, y las credenciales con nombre
-propio e id vacío: «NovuChat ingesta (Clínica Platinum)» en los cuatro nodos
-HTTP y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp.
-`publicar-flujo.sh` asigna por ese nombre y avisa si no existe.
+propio e id vacío: «NovuChat ingesta (Clínica Platinum)» en los cinco nodos
+HTTP de ingesta y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp y
+en `Enviar ubicación`. `publicar-flujo.sh` asigna por ese nombre y avisa si no
+existe.
 
 **Mensajes por conversación: los mismos que el Demo A.** No agrega ni quita
 ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de
 siempre (tres rechazos, reserva no verificada, umbrales del servidor).
+
+**Dirección con enlace a Maps y pin a pedido (17/09/2026, `Analisis/34` §2),
+igual en el Demo A.** `Config del negocio` toma `direccionMaps` de la consola
+(validado por dominio: solo Google Maps, porque es lo único que el asistente
+reenvía tal cual) y las coordenadas de `operacion.ubicacion`; el prompt pone el
+enlace junto a la dirección en §6, pide dirección y enlace dentro de la
+confirmación (§4) y ante «¿dónde quedan?» (6c): **0 mensajes nuevos**. Solo si
+el paciente pide expresamente la ubicación, el modelo termina con
+`[ENVIAR_UBICACION]` y, si el comercio cargó coordenadas, `¿Enviar ubicación?`
+→ `Enviar ubicación` (HTTP a Graph, `type: location`) → `Reportar ubicación
+(saliente)` (tipo `location`): **+1 mensaje, solo en ese caso**, contado como
+cualquier saliente. Cuelgan de `Responder al cliente`, debajo del reporte del
+texto (orden v1: el texto se reporta primero). Sin coordenadas la marca se quita
+y no se manda nada. Un pin rechazado por Meta sale por la salida de error del
+nodo y no se reporta. Suite: bloque (j) de `platinum-flujo.test.ts`, sobre los
+dos flujos.
+
+**Seña por QR con cotejo del comprobante (bloque 2, `Analisis/30` §4,
+`Analisis/07` §4), igual en el Demo A.** La clínica pierde horarios con
+pacientes que reservan y no van; la seña —una fracción del tratamiento, pagada
+por QR al reservar— los filtra. Es **cobro real**: el QR es el del comercio
+(`registrarQrDeCobro`, pestaña «Configuración de QR» de agendamiento) y el
+dinero va a su cuenta, así que rige la prohibición 3 de CLAUDE.md en cada texto.
+Se enciende desde la consola con `senaImporte` (0 = sin seña) y
+`senaMinutosRetencion` (5..180) en `config/agendamiento`; el panel se lo cuenta
+al flujo en `configuracionFlujo.sena`, y sin seña **no cambia nada**.
+
+Cómo funciona, de punta a punta:
+
+1. **La cita se retiene por hecho.** Con la seña activa, `agendar_cita` crea la
+   cita con el título `PENDIENTE DE SEÑA · Cita <nombre> — <servicio>` y suma
+   `Seña pendiente: N Bs` a la descripción: lo pone la expresión del nodo, no
+   el modelo. El prompt lleva el bloque `SEÑA PARA RESERVAR` solo con la seña
+   activa (importe y minutos interpolados por negocio: sigue siendo cacheable)
+   y le dice al modelo que **no** confirme la cita: el horario queda reservado
+   N minutos a la espera de la seña, y el comprobante se manda por este chat
+   antes de salir de la app del banco. `Procesar respuesta` suma la red de la
+   prohibición 3 con cobro real: si el modelo escribe «pago acreditado»,
+   «recibimos tu pago» o similar, esa oración se reemplaza por «El comprobante
+   lo revisa <negocio> y ellos confirman el pago» y queda `correccion_cobro`
+   en `avisos`.
+2. **El QR sale después del texto.** De `Comprobar reserva` cuelga, **debajo
+   de todas sus otras salidas**, `¿Enviar QR de la seña?` (cita verificada, seña
+   activa, sin cruce) → `Preparar seña` (caption con servicio, día, hora, quién
+   atiende, la seña, la instrucción de guardar el comprobante antes de salir de
+   la app y los minutos de retención; ≤ 1.024 caracteres; usted o tuteo según
+   la configuración) → `Enviar QR de la seña` (HTTP a Graph, `type: image` con
+   el `link` del QR del panel) → `Reportar QR (saliente)` (ingesta, tipo
+   `image`, `evento: qr_enviado` con la cita retenida y su calendario: desde
+   ahí el servidor sabe que la próxima foto o PDF de ese teléfono es el
+   comprobante). Si Meta rechaza el QR, sale por la salida de error a `QR no
+   enviado` → aviso a recepción, y no se reporta. Con la seña activa `¿Hay cita
+   verificada?` **no** registra el cierre: lo crea el servidor al cotejar.
+3. **El comprobante no va al modelo.** `Normalizar entrada` marca
+   `esComprobante` cuando llega una foto o un PDF y el panel dijo que ese
+   teléfono tiene un QR pendiente (`senaPendiente`); guarda `mensajeId`,
+   `mediaId` y `mimeType`. `¿Es un comprobante?` va entre `¿Atención normal?` y
+   el agente (que sigue teniendo una sola entrada): `Obtener URL del medio`
+   (nodo WhatsApp, `media` → `mediaUrlGet`) → `Descargar comprobante` (HTTP con
+   el token, como archivo binario `data`; el PDF del banco es una imagen
+   adentro de un PDF) → `¿Es PDF?` → `Leer comprobante (PDF)` /
+   `Leer comprobante (imagen)` (nodo Google Gemini, `analyze`, el mismo modelo
+   del agente, el prompt de `Analisis/07` §4.3 tal cual) → `Interpretar lectura`
+   (saca el JSON del texto; `legible` = hay monto o cuenta) →
+   `Cotejar en el servidor` (`cotejarComprobante`: **quien compara es el
+   servidor**, contra el importe de la seña y las cuentas del QR) →
+   `Respuesta de la seña` (UN mensaje fijo por resultado: cuadra → «los datos
+   coinciden… la cita queda reservada, sujeta a la verificación del pago por
+   la clínica»; no cuadra → qué dato no coincide y lo revisa una persona;
+   ilegible → que lo reenvíe; 409 o panel caído → lo revisa una persona) →
+   `¿Cuadró la seña?` → `Leer cita retenida` → `Confirmar cita retenida` (le
+   quita el prefijo al título) → `Mensaje de la seña` (completa día, hora y
+   persona con la cita leída; si el título no se pudo corregir, lo dice en el
+   aviso) → `Mensaje a enviar` y `¿Transferir a humano?`. **Siempre se avisa a
+   recepción**: es la clínica la que confirma que el dinero entró, mirando su
+   banco. **El comprobante no se guarda**: ningún nodo lo escribe a ningún lado.
+4. **Las retenciones vencidas las limpia un flujo aparte**
+   (`agendamiento-senas-vencidas.json`, abajo).
+
+**Mensajes que declara este bloque:** **+1 por conversación** (el QR, imagen
+con caption) **solo en las que llegan a reservar con la seña activa**; la
+respuesta al comprobante es **1 mensaje fijo** (sin modelo), que reemplaza al
+turno del agente. Los avisos a recepción (cita pagada, diferencia, ilegible, QR
+rechazado) **los paga NovuChat**. Sin seña: 0 mensajes agregados.
+
+Suite: bloque (l) de `platinum-flujo.test.ts`, sobre los dos flujos.
+
+**Medios entrantes: clasificar, no mirar (bloque 3, 17/09/2026, `Analisis/34`
+§3.1 y §4.1), igual en el Demo A.** Un audio, una foto o un PDF que **no** es
+comprobante dejan de recibir «por ahora atiendo por texto» —un mensaje pagado
+que no avanza nada— y entran al agente convertidos en **texto**.
+
+El caso que lo provocó: el 17/09 un paciente mandó un audio y una imagen en el
+mismo minuto. Al audio el asistente le contestó que atiende por texto; de la
+imagen **inventó** que era un comprobante («Ya tenemos todo listo»). Nadie vio
+la imagen, y el texto que la acompañaba se descartó.
+
+Cómo funciona:
+
+1. **`Normalizar entrada` marca el medio.** `esMedioAudio` para `audio` y
+   `voice` con id; `esMedioVisual` para `image` y `document` **cuando no son
+   comprobante** (el bloque 2 manda: con `senaPendiente` la foto sigue yendo al
+   cotejo). Una nota de voz se **reporta** como `audio`, no como `voice`, para
+   que el contador del mes no la tire a «otro». `location` recibe la dirección
+   del negocio en vez del aviso genérico; `sticker`, `video` y `contacts`
+   siguen con el aviso cortés, porque ahí no hay nada que leer.
+2. **La rama va después de la del comprobante y antes del agente.**
+   `¿Es un comprobante?` [no] → `¿Trae un medio?` [no] → `AI Agent`; [sí] →
+   `Obtener URL del medio (general)` → `Descargar medio` → `¿Es audio?` →
+   **sí**: `Transcribir audio` (Gemini `audio`/`transcribe` sobre el binario) →
+   `Preparar transcripción`; **no**: `¿Es un documento?` → `Describir documento`
+   / `Describir imagen` (Gemini `analyze` con un prompt de **lista cerrada**:
+   `publicidad | boca_o_dientes | comprobante | documento_salud | otro`) →
+   `Preparar imagen`. Los dos `Preparar …` vuelven al agente.
+   Los nodos de descarga son **gemelos** de los del comprobante y no los
+   mismos: compartirlos obligaba a meter un IF dentro de una rama ya probada.
+3. **El agente NUNCA ve el medio.** No es una instrucción del prompt: es el
+   cableado. Ningún nodo que tenga el binario en la mano tiene salida al
+   agente; lo que entra es una transcripción marcada («(audio transcripto) …»,
+   con la orden de repetir en una línea lo que entendió antes de agendar) o
+   **uno** de cinco textos fijos elegidos por la categoría. Ninguno
+   diagnostica, ninguno promete un resultado, y el de «parece un comprobante
+   pero no hay seña pendiente» no da ningún pago por recibido (prohibición 3).
+   El texto que el modelo leyó en la imagen viaja **rotulado como dato**, en
+   una línea, sin corchetes y recortado a 300: una captura no puede inventar
+   una marca ni dictarle una instrucción al modelo.
+4. **El audio largo no se transcribe.** Meta no manda la duración: se estima
+   por `file_size` (~16 kB/s de ogg/opus; 60 s ≈ 960 kB). Por encima, o con la
+   transcripción vacía, se pide con amabilidad que lo escriba. El supuesto es
+   deliberadamente generoso —una nota de voz real va a ~2 kB/s— porque
+   equivocarse hacia abajo devuelve el «atiendo por texto» que esto vino a
+   sacar. **Hay que medirlo con un teléfono real** y ajustar la constante.
+5. **Latencia.** `Normalizar entrada` anota `recibidoEn` y `Mensaje a enviar`
+   deja `latenciaMs` en los datos de la ejecución, para sacar el p50 y el p90
+   con `ver-ejecuciones.sh`: esta rama agrega una descarga y una llamada al
+   modelo (+2 a 4 s en audio, +1 a 2 en imagen) contra un p90 de 10 s.
+
+**Mensajes que declara este bloque: 0.** Los dos nodos nuevos contra Meta son
+de **lectura** (`media/mediaUrlGet` y la descarga del archivo): no envían nada.
+Estos caminos **reemplazan** a la respuesta vacía que ya se pagaba. El costo
+del modelo es de centavos: ~0,001 USD por audio de 30 s y ~0,0001 por imagen.
+
+**Nada se guarda, y falta verificarlo en la VM.** Ningún nodo escribe la
+imagen, el PDF ni el audio en Storage, en Firestore ni en un archivo: entran
+como binario `data`, se leen y de ahí sale texto. Lo que queda en el historial
+de 12 meses es una marca —«(audio) el cliente envió una nota de voz»— y no el
+contenido, que es además lo correcto con datos de salud (`Analisis/34` §4.1,
+riesgo 1). Pero eso vale para el **flujo**; en la **instancia** faltan dos
+verificaciones que hoy no están hechas y que corresponden a Andres en la VM:
+
+- **`N8N_DEFAULT_BINARY_MODE=filesystem`** en el `.env` del contenedor. Con el
+  modo por defecto (`default`) los bytes del audio y de la foto quedan dentro
+  de los datos de ejecución, **en la base de n8n**, y ahí sí hay una copia.
+- **Poda de ejecuciones**: `EXECUTIONS_DATA_PRUNE=true` y
+  `EXECUTIONS_DATA_MAX_AGE` en horas, para que los binarios del disco no se
+  acumulen. No se pone `settings.saveDataSuccessExecution: 'none'` en el flujo:
+  eso apagaría también el diagnóstico, que es lo que permitió encontrar los
+  defectos de las ejecuciones #2867 y #2936.
+- **La credencial de Gemini tiene que ser de nivel pago.** En el nivel gratuito
+  el contenido puede usarse para entrenar, y acá viajan audios y fotos de
+  pacientes. Se verifica en la consola de Google AI Studio, en la cuenta cuya
+  clave está en la credencial «Google Gemini (PaLM) API» de n8n.
+
+Y falta la prueba contra un teléfono real: que el nodo de WhatsApp baje el
+medio, que Gemini lo acepte, qué forma exacta tiene la salida del nodo de
+transcripción y cuánto pesa de verdad un audio de 30 s (la prueba 3 de la
+aceptación de Platinum, «un sticker y un audio», es el lugar para empezar).
+
+Suite: bloque (m) de `platinum-flujo.test.ts`, sobre los dos flujos.
 
 Suite: `admin/pruebas/platinum-flujo.test.ts` (ejecuta el JSON versionado:
 compara nodo por nodo con el Demo A, prueba `instruccionesExtra`, el prompt, los
@@ -349,3 +519,134 @@ la app de la clínica, «WhatsApp Clínica Platinum (envío)» con el token
 permanente, «NovuChat ingesta (Clínica Platinum)» con el secreto del alias, la
 Google Calendar OAuth2 que tenga acceso a los DOS calendarios), `Trigger On` =
 Messages, **Publish**, y la URL de Production al webhook de la app.
+
+Los nodos nuevos de la seña llevan las mismas credenciales por nombre
+(«WhatsApp Clínica Platinum (envío)» en `Enviar QR de la seña`,
+`Obtener URL del medio` y `Descargar comprobante`; «NovuChat ingesta (Clínica
+Platinum)» en `Reportar QR (saliente)` y `Cotejar en el servidor`); los dos
+`Leer comprobante` y los dos nodos de Calendar van sin nombre y
+`publicar-flujo.sh` los completa **por tipo** desde el flujo vivo (la
+credencial de Google Gemini del modelo del agente y la OAuth2 de Calendar).
+
+Los del bloque 3 siguen la misma regla: «WhatsApp Clínica Platinum (envío)» en
+`Obtener URL del medio (general)` y `Descargar medio`; `Transcribir audio`,
+`Describir documento` y `Describir imagen` van sin nombre y se completan por
+tipo con la credencial de Gemini.
+
+### Señas vencidas (`agendamiento-senas-vencidas.json`)
+
+Flujo programado, **sin disparador de webhook y sin ningún nodo de WhatsApp**:
+cada 10 minutos (`*/10 * * * *`) pide la configuración al panel
+(`Traer configuración` con `REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM`, el único
+marcador) y, **solo si el comercio está activo y la seña está activa**, revisa
+todas las agendas (`Citas pendientes de seña`, `q: PENDIENTE DE SEÑA`, de ayer
+a 90 días), se queda con las citas cuyo **título empieza** con el prefijo y
+cuyo `created` es anterior a los minutos de retención (`Vencidas`; el teléfono
+sale de la descripción que escribe `agendar_cita`), **primero se lo reporta
+al servidor** (`Reportar seña vencida` → `senaVencida`, idempotente) y recién
+con su respuesta borra (`¿Borrar la cita?` → `Borrar cita vencida`): con
+`registrado`, `repetido` o `sin_sena_pendiente` se borra; con `ya_agendada`
+—el comprobante cuadró y el título no se pudo corregir— **no se toca**. Con el
+panel caído, el comercio suspendido o la seña inactiva no sale ningún item y no
+se borra nada. Nunca le escribe al paciente: un mensaje por retención vencida
+costaría 0,0113 USD y provocaría el reclamo que se quiere evitar.
+**Mensajes: 0.** Suite: `admin/pruebas/senas-vencidas.test.ts`.
+
+Se crea por la API, con las credenciales resueltas por nombre y por tipo desde
+el flujo conversacional de la clínica (el de `.env.platinum`), y queda con su
+propio `.env`:
+
+```bash
+./scripts/preparar-import.sh Flujos/agendamiento-senas-vencidas.json .env.platinum
+./scripts/publicar-flujo.sh --env .env.platinum --flujo Flujos/agendamiento-senas-vencidas.json \
+    --crear --activar --env-nuevo .env.platinum-senas          # primero sin --aplicar: diagnóstico
+```
+
+Después se actualiza como los demás:
+`./scripts/publicar-flujo.sh --env .env.platinum-senas --flujo Flujos/agendamiento-senas-vencidas.json`.
+
+### Seguimientos (`agendamiento-seguimientos.json`)
+
+Flujo programado, **el único de la clínica que le escribe a alguien que no
+escribió primero**. Cada hora al minuto 15 (`15 * * * *`, para no pisar al
+barrido de señas vencidas, que corre en punto) pide la configuración al panel
+(`REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM`, el único marcador) y, **solo si el
+comercio está activo**, le pregunta al servidor a quién le toca el recordatorio
+de solicitud pendiente.
+
+**El flujo no decide a quién se le escribe.** Lo decide
+`seguimientosPendientes` (`admin/functions/src/seguimientos.ts`, regla completa
+en `admin/DISENO.md` §4quaterdecies): una sola vez por solicitud, nunca a quien
+pidió que no le escriban, nunca a un teléfono en operador o bloqueado, nunca a
+quien ya agendó, y solo entre 2 y 4 h (texto en ventana) o entre 24 y 48 h
+(plantilla de utilidad). Tope de 50 por corrida.
+
+**La marca va ANTES del envío**: `Marcar seguimiento` → `seguimientoEnviado`, y
+`¿Se marcó?` no deja pasar nada que el servidor no haya marcado en esa corrida.
+Si el envío falla después, ese recordatorio se pierde y nadie lo reintenta: un
+seguimiento perdido es mejor que dos, porque el segundo es el que hace que la
+persona bloquee el número.
+
+Los nodos, en orden: `Cada hora` → `Config base` → `Traer configuración` →
+`Pendientes` → `Un item por solicitud` → `Marcar seguimiento` → `¿Se marcó?` →
+`¿En ventana?` → `Enviar texto` / `Enviar plantilla` → `Reportar seguimiento
+(saliente)`.
+
+**Mensajes: +1 en las conversaciones que quedaron a medio camino** (el de modo
+texto, dentro de la ventana). El de modo plantilla cae sobre una ventana
+vencida y la ingesta no lo cuenta como conversación, así que al comercio no se
+le factura nada; la respuesta del paciente sí abre una conversación nueva, que
+es justamente lo que se busca. Suite:
+`admin/pruebas/agendamiento-seguimientos.test.ts`.
+
+Se crea igual que el de señas vencidas, con su propio `.env`:
+
+```bash
+./scripts/preparar-import.sh Flujos/agendamiento-seguimientos.json .env.platinum
+./scripts/publicar-flujo.sh --crear --env .env.platinum \
+    --flujo Flujos/agendamiento-seguimientos.json \
+    --activar --env-nuevo .env.platinum-seguimientos     # primero sin --aplicar: diagnóstico
+```
+
+Después se actualiza como los demás:
+`./scripts/publicar-flujo.sh --env .env.platinum-seguimientos --flujo Flujos/agendamiento-seguimientos.json`.
+
+**No activarlo antes de que la plantilla esté aprobada:** sin ella el modo
+`plantilla` falla en Meta, y la solicitud ya quedó marcada.
+
+#### La plantilla `solicitud_cita_sin_confirmar`
+
+Categoría **UTILITY**, idioma `es`, **sin botones**, sin precio y sin
+vocabulario comercial: el clasificador de Meta lee las palabras, no la
+intención (memoria «meta-plantillas-restricciones», 14/09). Se redacta como el
+**estado de una solicitud que la persona hizo**, no como una invitación.
+
+```bash
+./scripts/crear-plantilla.sh --env .env.platinum \
+    --nombre solicitud_cita_sin_confirmar --idioma es \
+    --cuerpo 'Se registró tu solicitud de cita en {{1}} para {{2}}. Estado: sin confirmar. Responde este mensaje si quieres retomarla.' \
+    --ejemplos 'Clínica Platinum|el sábado 20 a las 10:00'     # sin --aplicar: solo muestra la carga útil
+```
+
+Con `--aplicar` la envía a revisión, que **tarda días**. Después:
+`./scripts/listar-plantillas.sh --env .env.platinum --detalle`. La crea Claude
+con el OK de Andres; los dos parámetros son, en orden, el **nombre del negocio**
+(`{{1}}`) y la **fecha de la solicitud** (`{{2}}`), y los arma
+`Un item por solicitud` desde lo que devuelve el panel.
+
+#### Los dos hechos que aporta el flujo conversacional
+
+`platinum-agendamiento.json` y `demo-a-agendamiento.json` cambian **solo dos
+`jsonBody`**, y **no agregan ningún mensaje**:
+
+- `Reportar mensaje (saliente)` suma `evento: 'horarios_ofrecidos'` cuando
+  `consultar_disponibilidad` corrió en el turno y `agendar_cita` no, y
+  `evento: 'no_contactar'` cuando el turno terminó transferido a una persona
+  (gana sobre el anterior).
+- `Reportar mensaje (entrante)` suma `evento: 'no_contactar'` cuando el texto
+  del cliente coincide con una expresión regular fija («no me escriban», «no me
+  molesten», «dejen de escribir», «no quiero más mensajes», «bórrame de»,
+  «quitame de»). Lo que la expresión no cubre —«borrame» sin tilde, «stop»— lo
+  resuelve el interruptor **No contactar** de la pantalla de conversaciones.
+
+Se cubren en `admin/pruebas/platinum-flujo.test.ts`, bloque **(n)**.

@@ -30,6 +30,7 @@ const flujo = JSON.parse(
 ) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
 
 const codigo = flujo.nodes.find((n) => n.name === 'Comprobar reserva')?.parameters.jsCode;
+const codigoCalendarios = flujo.nodes.find((n) => n.name === 'Calendarios a revisar')?.parameters.jsCode;
 
 const CAL_JOSE = 'aaaa000000aaaa@group.calendar.google.com';
 const CAL_MARIA = 'bbbb000000bbbb@group.calendar.google.com';
@@ -49,19 +50,19 @@ const ev = (id: string, summary: string, cal: string,
   start: { dateTime: ini }, end: { dateTime: fin }, created: creado,
 });
 
+/** El item que `Procesar respuesta` deja antes del candado, cuando no importa. */
+const PREVIA: Record<string, unknown> = { respuesta: 'Cita confirmada.', from: '591700', transferir: false };
+
 /** Corre el nodo con un `$input` y un `$()` simulados, y el reloj congelado. */
 function comprobarTodo(
   eventos: Evento[], ahora = AHORA,
   config: Record<string, unknown> = { mensajeReservaNoConfirmada: '' },
+  previa: Record<string, unknown> = PREVIA,
 ): Record<string, unknown>[] {
   const entrada = { all: () => eventos.map((json) => ({ json })) };
   const contexto = (nombre: string) => ({
-    all: () => [{ json: { respuesta: 'Cita confirmada.', from: '591700', transferir: false } }],
-    first: () => ({
-      json: nombre === 'Config del negocio'
-        ? config
-        : { respuesta: 'Cita confirmada.', from: '591700' },
-    }),
+    all: () => [{ json: previa }],
+    first: () => ({ json: nombre === 'Config del negocio' ? config : previa }),
   });
   class Reloj extends Date {
     constructor(...a: unknown[]) {
@@ -94,6 +95,27 @@ function comprobarTodo(
 /** El primer item, que es el que decide el mensaje al cliente. */
 function comprobarReserva(eventos: Evento[]): Record<string, unknown> {
   return comprobarTodo(eventos)[0] ?? {};
+}
+
+/**
+ * Corre `Calendarios a revisar` con el item de `Procesar respuesta` y la
+ * configuración del negocio, y devuelve los calendarios que emite, en orden.
+ * Misma ejecución del JSON versionado, y misma excepción a
+ * `devsecops.js-eval-prohibido`, por la misma razón que arriba.
+ */
+function calendariosARevisar(
+  previa: Record<string, unknown>, config: Record<string, unknown>,
+): { calendarios: string[]; items: Record<string, unknown>[] } {
+  const entrada = { first: () => ({ json: previa }), all: () => [{ json: previa }] };
+  const contexto = (nombre: string) => ({
+    first: () => ({ json: nombre === 'Config del negocio' ? config : previa }),
+    all: () => [{ json: nombre === 'Config del negocio' ? config : previa }],
+  });
+  // nosemgrep: devsecops.js-eval-prohibido
+  const fn = new Function('$input', '$', codigoCalendarios as string) as
+    (i: unknown, c: unknown) => { json: Record<string, unknown> }[];
+  const items = fn(entrada, contexto).map((i) => i.json);
+  return { calendarios: items.map((i) => String(i['calendarioARevisar'])), items };
 }
 
 describe('Candado contra la doble reserva', () => {
@@ -344,5 +366,169 @@ describe('Candado contra la doble reserva', () => {
     ]);
     expect(r['citaSolapada']).toBeUndefined();
     expect(r['verificacionSinDatos']).toBe(true);
+  });
+});
+
+/**
+ * `Calendarios a revisar` decide CUÁNTAS llamadas a Google hace el turno que
+ * agenda: el nodo de Calendar corre una vez por item. Hasta el 17/09/2026
+ * emitía un item por cada calendario configurado, y `Comprobar reserva`
+ * descartaba los eventos de los calendarios distintos al de la cita nueva: con
+ * 7 odontólogos, 7 llamadas para tirar 6. Ese costo lineal es lo que ponía
+ * techo a las agendas por plan (`Analisis/24` §2.4 y §4).
+ *
+ * Ahora emite SOLO el calendario donde `agendar_cita` escribió, que
+ * `Procesar respuesta` trae en `eventosCreados[].calendario` (el
+ * `organizer.email` del evento devuelto). Y si no lo sabe, TODOS, como antes:
+ * nunca cero, porque el candado no puede dejar de correr.
+ */
+describe('Calendarios a revisar: solo el que recibió la cita', () => {
+  const CAL_DR1 = 'cccc000000cccc@group.calendar.google.com';
+  const CAL_DR2 = 'dddd000000dddd@group.calendar.google.com';
+  /** La forma de Platinum: dos odontólogos con agenda propia; la del negocio es la 1. */
+  const PLATINUM: Record<string, unknown> = {
+    mensajeReservaNoConfirmada: '',
+    calendarioId: CAL_DR1,
+    calendariosPorServicio: JSON.stringify({ 'blanqueamiento dental profesional': CAL_DR1, 'valoracion clinica': CAL_DR1 }),
+    funcionarios: JSON.stringify([
+      { nombre: 'Dr. Christyan Sandoval', servicios: ['blanqueamiento dental profesional', 'valoracion clinica'], calendario: CAL_DR1 },
+      { nombre: 'Dr. Juan Pérez', servicios: ['blanqueamiento dental profesional', 'valoracion clinica'], calendario: CAL_DR2 },
+    ]),
+  };
+  const creado = (id: string, calendario: string, inicio = '2026-09-07T10:00:00-04:00', fin = '2026-09-07T10:30:00-04:00') =>
+    ({ id, calendario, inicio, fin, titulo: `Cita ${id}` });
+  const previaCon = (eventosCreados: unknown): Record<string, unknown> =>
+    ({ ...PREVIA, ejecutoAgendar: true, verificarReserva: true, eventosCreados });
+  /** Lo que `Verificar en el calendario` traería: solo los eventos de los calendarios emitidos. */
+  const traidosDe = (calendarios: string[], eventos: Evento[]) =>
+    eventos.filter((e) => calendarios.includes(e.organizer.email));
+
+  it('el nodo existe y trae código', () => {
+    expect(typeof codigoCalendarios).toBe('string');
+    expect(codigoCalendarios).toContain('eventosCreados');
+  });
+
+  it('una cita en el calendario 2 → UN item, el 2', () => {
+    const { calendarios, items } = calendariosARevisar(previaCon([creado('c1', CAL_DR2)]), PLATINUM);
+    expect(calendarios).toEqual([CAL_DR2]);
+    expect(items[0]?.['revisionAcotada']).toBe(true);
+    // El item conserva lo que venía de `Procesar respuesta`.
+    expect(items[0]?.['from']).toBe('591700');
+  });
+
+  it('dos citas en calendarios distintos → dos items, uno por calendario', () => {
+    const { calendarios } = calendariosARevisar(
+      previaCon([creado('c1', CAL_DR1), creado('c2', CAL_DR2, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00')]),
+      PLATINUM);
+    expect([...calendarios].sort()).toEqual([CAL_DR1, CAL_DR2].sort());
+  });
+
+  it('dos citas en el MISMO calendario → un solo item: una llamada, no dos', () => {
+    const { calendarios } = calendariosARevisar(
+      previaCon([creado('c1', CAL_DR2), creado('c2', CAL_DR2, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00')]),
+      PLATINUM);
+    expect(calendarios).toEqual([CAL_DR2]);
+  });
+
+  it('RESPALDO: sin `eventosCreados` se revisan TODOS, como antes (los 2 de Platinum)', () => {
+    // La verificación pudo abrirse por el texto del modelo, o por `isExecuted`
+    // sin observación: no se sabe dónde quedó la cita, se mira en todos lados.
+    for (const previa of [
+      PREVIA,                                              // sin el campo
+      previaCon([]),                                       // vacío
+      previaCon([{ id: 'x', calendario: '' }]),            // sin calendario
+      previaCon([{ id: 'x' }]),                            // sin el campo calendario
+      previaCon('no es una lista'),                        // de otro tipo
+      previaCon([null, undefined, 'x']),                   // basura
+    ]) {
+      const { calendarios, items } = calendariosARevisar(previa, PLATINUM);
+      expect([...calendarios].sort(), JSON.stringify(previa['eventosCreados'])).toEqual([CAL_DR1, CAL_DR2].sort());
+      expect(items.every((i) => i['revisionAcotada'] === false)).toBe(true);
+    }
+  });
+
+  it('NUNCA cero items: aunque la configuración no tenga calendarios, si el evento trae uno se revisa ese', () => {
+    const { calendarios } = calendariosARevisar(previaCon([creado('c1', CAL_DR2)]), { mensajeReservaNoConfirmada: '' });
+    expect(calendarios).toEqual([CAL_DR2]);
+  });
+
+  it('el calendario del evento se revisa aunque NO figure en la configuración: es donde la herramienta escribió', () => {
+    const OTRO = 'eeee000000eeee@group.calendar.google.com';
+    const { calendarios } = calendariosARevisar(previaCon([creado('c1', OTRO)]), PLATINUM);
+    expect(calendarios).toEqual([OTRO]);
+  });
+
+  it('LA MEDIDA: con 7 odontólogos, 7 llamadas antes y 1 después', () => {
+    // Antes: un item por calendario configurado. Después: uno por cita. El
+    // número de agendas del negocio deja de pesar en el turno que agenda.
+    const equipo = Array.from({ length: 7 }, (_, i) =>
+      ({ nombre: `Dr. ${i + 1}`, servicios: ['valoracion clinica'], calendario: `odonto${i + 1}000000@group.calendar.google.com` }));
+    const clinica = { ...PLATINUM, calendarioId: equipo[0]!.calendario,
+      calendariosPorServicio: JSON.stringify({ 'valoracion clinica': equipo[0]!.calendario }),
+      funcionarios: JSON.stringify(equipo) };
+    expect(calendariosARevisar(PREVIA, clinica).calendarios).toHaveLength(7);
+    expect(calendariosARevisar(previaCon([creado('c1', equipo[4]!.calendario)]), clinica).calendarios)
+      .toEqual([equipo[4]!.calendario]);
+  });
+
+  it('EL CASO MANDATORIO: dos citas del mismo odontólogo a la misma hora → el candado la deshace, revisando SOLO su agenda', () => {
+    // La paciente insistió, el modelo agendó a las 10:00 dentro de la cita de
+    // 10:00 a 11:00 del Dr. 1. `created` de la nueva cae fuera de la ventana
+    // de cinco minutos: la ancla es el id que devolvió la herramienta.
+    const yaEstaba = ev('existente', 'Cita OTRA PACIENTE — valoración', CAL_DR1,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T11:00:00-04:00', '2026-09-05T12:00:00.000Z');
+    const nueva = ev('ev-nuevo', 'Cita Paciente — valoración', CAL_DR1,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00', '2026-09-06T19:00:00.000Z');
+    const enLaOtraAgenda = ev('dr2', 'Cita Alguien — blanqueamiento', CAL_DR2,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T11:00:00-04:00', '2026-09-05T12:00:00.000Z');
+    const previa = previaCon([creado('ev-nuevo', CAL_DR1)]);
+
+    const { calendarios } = calendariosARevisar(previa, PLATINUM);
+    expect(calendarios).toEqual([CAL_DR1]);
+    const traidos = traidosDe(calendarios, [yaEstaba, nueva, enLaOtraAgenda]);
+    expect(traidos.map((e) => e.id)).toEqual(['existente', 'ev-nuevo']);   // la otra agenda ni se consulta
+
+    const items = comprobarTodo(traidos, AHORA, PLATINUM, previa);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.['citaSolapada']).toBe(true);
+    expect(items[0]?.['eventoABorrar']).toBe('ev-nuevo');
+    expect(items[0]?.['calendarioDelBorrado']).toBe(CAL_DR1);
+    expect(items[0]?.['reservaVerificada']).toBe(false);
+    expect((items[0]?.['citasCaidas'] as { persona: string; hora: string }[])[0])
+      .toMatchObject({ persona: 'Dr. Christyan Sandoval', hora: '10:00' });
+  });
+
+  it('dos odontólogos DISTINTOS a la misma hora → no es cruce, y la agenda del otro ni se consulta', () => {
+    const delDr1 = ev('existente', 'Cita OTRA PACIENTE — valoración', CAL_DR1,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T11:00:00-04:00', '2026-09-05T12:00:00.000Z');
+    const nuevaDr2 = ev('ev-nuevo', 'Cita Paciente — valoración', CAL_DR2,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00', '2026-09-06T19:00:00.000Z');
+    const previa = previaCon([creado('ev-nuevo', CAL_DR2)]);
+
+    const { calendarios } = calendariosARevisar(previa, PLATINUM);
+    expect(calendarios).toEqual([CAL_DR2]);
+    const traidos = traidosDe(calendarios, [delDr1, nuevaDr2]);
+    expect(traidos.map((e) => e.id)).toEqual(['ev-nuevo']);
+
+    const r = comprobarTodo(traidos, AHORA, PLATINUM, previa)[0] ?? {};
+    expect(r['citaSolapada']).toBeUndefined();
+    expect(r['reservaVerificada']).toBe(true);
+    expect(r['eventoId']).toBe('ev-nuevo');
+    expect(r['citaCreadaNoEncontrada']).toBe(false);
+  });
+
+  it('con el respaldo (sin dato) el candado sigue viendo el cruce en cualquiera de las agendas', () => {
+    // Si el modelo dijo «quedó agendada» sin que se sepa dónde, se revisan
+    // todas y el cruce se detecta por la ventana de cinco minutos, como antes.
+    const yaEstaba = ev('existente', 'Cita OTRA — valoración', CAL_DR2,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T11:00:00-04:00', '2026-09-05T12:00:00.000Z');
+    const nueva = ev('n', 'Cita Paciente — valoración', CAL_DR2,
+      '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00', '2026-09-06T20:15:30.000Z');
+    const { calendarios } = calendariosARevisar(PREVIA, PLATINUM);
+    const traidos = traidosDe(calendarios, [yaEstaba, nueva]);
+    expect(traidos).toHaveLength(2);
+    const r = comprobarTodo(traidos, AHORA, PLATINUM, PREVIA)[0] ?? {};
+    expect(r['citaSolapada']).toBe(true);
+    expect(r['eventoABorrar']).toBe('n');
   });
 });

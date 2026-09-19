@@ -22,9 +22,25 @@ import { CampoMonto } from '../componentes/CampoMonto';
 type Campo = {
   clave: string;
   etiqueta: string;
-  /** `monto` es un `decimal` que además se ve como plata: moneda adentro. */
-  tipo: 'entero' | 'decimal' | 'monto' | 'booleano';
+  /**
+   * `monto` es un `decimal` que además se ve como plata: moneda adentro.
+   * `montoEntero` es plata SIN centavos: la seña de una reserva se dice en
+   * bolivianos redondos («50 Bs», no «50,00»), y la regla del servidor la exige
+   * entera (`configAgendamientoValida()`), así que el campo no deja escribir
+   * decimales en vez de rechazarlos al guardar.
+   */
+  tipo: 'entero' | 'decimal' | 'monto' | 'montoEntero' | 'booleano';
   ayuda?: string;
+  /** Tope inferior y superior del número, los mismos que aplica la regla. */
+  min?: number;
+  max?: number;
+  /**
+   * Lo que se guarda cuando el campo numérico está vacío. Sin esto se guarda
+   * 0, y hay campos en los que 0 no es válido: los minutos de retención de la
+   * seña van de 5 a 180, y un 0 los rechazaría el servidor con un mensaje que
+   * no dice cuál campo fue.
+   */
+  valorPorDefecto?: number;
   /**
    * Qué vale una casilla cuando el campo NO está en la base.
    *
@@ -42,8 +58,27 @@ type Campo = {
 
 const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }> = {
   agendamiento: {
-    titulo: 'Agenda y citas',
+    // SEÑA PARA RESERVAR (DISENO.md §4duodecies, 17/09). Es un parámetro del
+    // flujo de reservas y por eso vive acá y no en `/config/negocio`: un
+    // restaurante no retiene horarios. Se dibuja al pie de «Configuración de
+    // QR» porque sin QR propio no hay seña que cobrar; los dos números los
+    // valida la regla `configAgendamientoValida()` con los mismos topes.
+    titulo: 'Seña para reservar',
+    nota: 'Cuando la seña está activa, el asistente manda tu QR con el resumen '
+      + 'de la cita y retiene el horario los minutos que digas acá, a la espera '
+      + 'del comprobante. El comprobante lo coteja el servidor: revisa que el '
+      + 'monto, la cuenta y la hora coincidan. La verificación del dinero la '
+      + 'haces tú en tu banco; el asistente nunca le dice al cliente que el '
+      + 'pago entró.',
     campos: [
+      { clave: 'senaImporte', etiqueta: 'Importe de la seña', tipo: 'montoEntero',
+        min: 0, max: 10000, valorPorDefecto: 0,
+        ayuda: 'En bolivianos redondos. Con 0 no se pide seña: el asistente agenda '
+          + 'la cita directamente, como hasta ahora.' },
+      { clave: 'senaMinutosRetencion', etiqueta: 'Minutos que se retiene el horario',
+        tipo: 'entero', min: 5, max: 180, valorPorDefecto: 30,
+        ayuda: 'Entre 5 y 180. Pasado ese tiempo sin comprobante, la cita retenida '
+          + 'se libera sola y el horario vuelve a estar disponible.' },
     ],
   },
   venta: {
@@ -66,6 +101,22 @@ const CAMPOS: Record<string, { titulo: string; campos: Campo[]; nota?: string }>
 /** Lo que vale una casilla: lo guardado si es booleano, y si no, su defecto. */
 function valorCasilla(campo: Campo, valor: unknown): boolean {
   return typeof valor === 'boolean' ? valor : (campo.porDefecto ?? false);
+}
+
+const esEntero = (c: Campo): boolean => c.tipo === 'entero' || c.tipo === 'montoEntero';
+
+/**
+ * Lo que se guarda de un campo numérico. Vacío → su defecto (o 0). Los enteros
+ * se redondean: el campo ya no deja escribir decimales (`step` 1), pero un
+ * valor pegado con coma o un `1e1` pasan el control del navegador, y la regla
+ * del servidor exige `is int` sin decir en cuál campo falló.
+ */
+function valorNumero(campo: Campo, valor: unknown): number {
+  const crudo = valor === '' || valor === undefined || valor === null
+    ? (campo.valorPorDefecto ?? 0)
+    : Number(valor);
+  const n = Number.isFinite(crudo) ? crudo : (campo.valorPorDefecto ?? 0);
+  return esEntero(campo) ? Math.round(n) : n;
 }
 
 export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string; vertical: string }) {
@@ -96,7 +147,7 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
       };
       for (const c of definicion.campos) {
         const v = datos[c.clave];
-        cambios[c.clave] = c.tipo === 'booleano' ? valorCasilla(c, v) : Number(v ?? 0);
+        cambios[c.clave] = c.tipo === 'booleano' ? valorCasilla(c, v) : valorNumero(c, v);
       }
       await updateDoc(doc(db, 'tenants', tenantId, 'config', vertical), cambios);
       setEstado('Guardado.');
@@ -116,16 +167,20 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
             {c.tipo === 'booleano' ? (
               <input type="checkbox" checked={valorCasilla(c, datos[c.clave])}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.checked })} />
-            ) : c.tipo === 'monto' ? (
-              // El costo de envío y el recargo son PLATA, y se ven como plata:
-              // la moneda adentro del campo y el número a la derecha.
+            ) : c.tipo === 'monto' || c.tipo === 'montoEntero' ? (
+              // El costo de envío, el recargo y la seña son PLATA, y se ven como
+              // plata: la moneda adentro del campo y el número a la derecha.
+              // `step` 1 en la seña: el navegador no deja guardar centavos.
               <CampoMonto value={String(datos[c.clave] ?? '')}
-                          placeholder="0.00"
+                          placeholder={esEntero(c) ? '0' : '0.00'}
+                          step={esEntero(c) ? 1 : 0.01}
+                          min={c.min ?? 0} max={c.max}
                           onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.value })} />
             ) : (
-              <input type="number" min={0}
-                     step={c.tipo === 'entero' ? 1 : 0.01}
-                     placeholder={c.tipo === 'entero' ? '0' : '0.00'}
+              <input type="number" min={c.min ?? 0} max={c.max}
+                     step={esEntero(c) ? 1 : 0.01}
+                     placeholder={c.valorPorDefecto !== undefined ? String(c.valorPorDefecto)
+                       : esEntero(c) ? '0' : '0.00'}
                      value={String(datos[c.clave] ?? '')}
                      onChange={(e) => setDatos({ ...datos, [c.clave]: e.target.value })} />
             )}
