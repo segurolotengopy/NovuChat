@@ -229,8 +229,11 @@ describe('3. Un solo envío por item, y el flujo no recalcula a quién le toca',
     expect(destinos('Enviar texto')).not.toContain('Enviar plantilla');
     expect(destinos('Enviar plantilla')).not.toContain('Enviar texto');
     // Y hay exactamente dos nodos que escriben al cliente.
+    // El host se reconoce por el COMIENZO de la URL: `includes` acepta
+    // graph.facebook.com.ejemplo.net, y CodeQL lo marca con razón.
+    const META = /^=?https:\/\/graph\.facebook\.com\//;
     const envian = f.nodes.filter((n) => n.type.endsWith('.whatsApp')
-      || (n.type.endsWith('.httpRequest') && String(n.parameters['url']).includes('graph.facebook.com')));
+      || (n.type.endsWith('.httpRequest') && META.test(String(n.parameters['url']))));
     expect(envian.map((n) => n.name).sort()).toEqual(['Enviar plantilla', 'Enviar texto']);
   });
 
