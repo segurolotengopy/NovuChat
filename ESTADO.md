@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
 
@@ -300,6 +300,49 @@ ser el vertical del que salió ESE archivo de cliente, no `origin/main`; con la
 base equivocada el empalme del consultorio no se reconoce y su menú queda
 desconectado (la suite lo atrapa). Ensayado entero: 2101 pruebas en verde, y
 el ensayo se descartó.
+
+---
+
+## 2026-09-17 — Platinum, bloque 0: los umbrales YA están en el flujo vivo; falta la prueba con teléfono (rama `platinum/umbrales-publicados`)
+
+Sesión de construcción sobre `Analisis/30` a `34` (entran al repositorio con
+esta rama: estaban sin versionar en la carpeta principal). Orden de trabajo:
+bloque 0 umbrales → 1 dirección con Maps → 2 seña por QR → 3 medios entrantes →
+4 seguimiento de solicitud pendiente → 5 candado con un solo calendario. Una
+rama y un PR por bloque; cada uno declara sus mensajes por conversación.
+
+**Lo verificado (bloque 0):**
+
+- `Flujos/platinum-agendamiento.json` en `main` trae los umbrales del servidor:
+  `Traer configuración` manda `telefono` a `configuracionFlujo`, y
+  `¿Atención normal?` bifurca a `Uso extendido` antes del agente (38 nodos,
+  `executionOrder: v1`).
+- **El flujo vivo `HoBogb6UMf3skcfQ` coincide con `main`.** Diagnóstico de solo
+  lectura de `publicar-flujo.sh --env .env.platinum` el 17/09: 38 nodos contra
+  38, los 14 nodos con credencial emparejados por nombre, y las únicas
+  diferencias son los seis marcadores `REEMPLAZAR_*_PLATINUM` de `Config base`
+  contra sus valores reales (el script informa longitud, no valor). Es lo que
+  dejó la publicación de #97 del 17/09 a las 11:16. **No hay nada que publicar.**
+- **El comercio `platinum` rige con los umbrales de respaldo (50 / 100)**,
+  comprobado en seco contra producción con el script nuevo.
+
+**Lo construido:** `admin/scripts/fijar-umbrales.mjs` +
+`pruebas/fijar-umbrales.test.ts` (7, contra el emulador, negando). La
+aceptación 24a decía «en la consola, bajar los umbrales» y ninguna pantalla lo
+hace (`Analisis/29`): el script escribe la pareja en `cuenta/estado` con la
+misma validación del servidor (`umbralesDeAtencion`), `--restaurar` los borra,
+deja auditoría `cambiar_umbrales`, no toca plan ni mensualidad, y en seco no
+escribe.
+
+**Bloqueado en la persona: la prueba 24a–24c con un teléfono real.** Cada paso
+lo corre Claude con el «sí» de Andres: (1) `fijar-umbrales.mjs --tenant
+platinum --operador 3 --bloqueo 5 --aplicar`; (2) Andres escribe desde un
+celular hasta pasar de 3 y de 5 respuestas en la ventana, y el resultado real
+se anota en `CLIENTES/PLATINUM/aceptacion.md`; (3) `--restaurar --aplicar`.
+**Antes del 1 de octubre** (`Analisis/27` §5.4.3): el techo existe en el
+código y en el flujo, y no está probado con tráfico.
+
+**Mensajes por conversación:** sin cambios en este bloque.
 
 ---
 
