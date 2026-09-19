@@ -40,15 +40,17 @@ Con el Bellido de producción (18/09, tarde) su flujo son 57 nodos —38 del
 vertical y 19 suyos— y el nodo del candado sigue siendo el del vertical,
 letra por letra. 1613 en verde (38 archivos), saneo 0.
 
-**La fusión final, ensayada (18/09).** Las dos cadenas (bloques 1→2→3→4 por
+**La fusión final, ensayada (19/09).** Las dos cadenas (bloques 1→2→3→4 por
 un lado, bloque 5 por el otro) se fusionan con tres conflictos y ninguno es de
 código: `ESTADO.md`, `Flujos/LEEME-flujos.md` y el JSON de Bellido, que Git
 marca entero porque los dos lados mueven nodos. **La receta, probada:** tomar
 el lado de los bloques 1 a 4 en los dos archivos de flujos
-(`git checkout --theirs`) y volver a correr
-`admin/scripts/sincronizar-flujo-cliente.mjs` contra el Demo A ya fusionado;
-así Bellido recibe los 69 nodos Y el candado, porque el nodo sale del vertical.
-Ensayado entero: 2069 pruebas en verde, y el ensayo se descartó.
+(`git checkout --theirs`) y volver a correr el sincronizador contra el Demo A
+ya fusionado, **con `--base flujos/seguimiento-pendiente`**: la base tiene que
+ser el vertical del que salió ESE archivo de cliente, no `origin/main`; con la
+base equivocada el empalme del consultorio no se reconoce y su menú queda
+desconectado (la suite lo atrapa). Ensayado entero: 2101 pruebas en verde, y
+el ensayo se descartó.
 
 ---
 
