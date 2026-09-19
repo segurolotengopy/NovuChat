@@ -127,11 +127,15 @@ const activo = (atencion: unknown) => ({
 });
 
 /**
- * `antesDelAgente`: en los flujos de agendamiento, desde el bloque 2 (seña
- * por QR) la rama verdadera de «¿Atención normal?» pasa por «¿Es un
- * comprobante?» antes del agente: la foto o el PDF de un teléfono con un QR
- * pendiente se lee y se coteja sin modelo. La propiedad que se conserva es la
- * misma: el agente tiene UNA entrada, y desde «Uso extendido» no se llega.
+ * `antesDelAgente`: en los flujos de agendamiento, la rama verdadera de
+ * «¿Atención normal?» pasa por una CADENA de compuertas antes del agente.
+ * «¿Es un comprobante?» (bloque 2): la foto o el PDF de un teléfono con un QR
+ * pendiente se lee y se coteja sin modelo. «¿Trae un medio?» (bloque 3):
+ * cualquier otro audio, imagen o PDF se convierte en TEXTO antes de entrar.
+ * La propiedad que se conserva es la misma: al agente se entra por un solo
+ * lugar efectivo, lo que entra es texto, y desde «Uso extendido» no se llega.
+ * `entradasAlAgente` son las conexiones que quedan: la salida falsa de la
+ * última compuerta y los dos nodos que ya convirtieron el medio en texto.
  *
  * `salidaAlCliente`: en los flujos de agendamiento, desde el 17/09/2026 todo
  * lo que se envía pasa por «Mensaje a enviar» y el reporte saliente cuelga
@@ -144,7 +148,8 @@ const FLUJOS = [
     archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
-    antesDelAgente: ['¿Es un comprobante?'],
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
@@ -157,7 +162,8 @@ const FLUJOS = [
     archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
-    antesDelAgente: ['¿Es un comprobante?'],
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   // Reservas del consultorio del Dr. Bellido: también es el Demo A con los datos
   // del cliente, y obedece los umbrales por los mismos nodos. Desde el 18/09
@@ -168,8 +174,11 @@ const FLUJOS = [
     archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
-    antesDelAgente: ['¿Es un comprobante?', 'Estado de la conversación', '¿Menú inicial?',
-      '¿Contacto directo?', '¿Emergencia?'],
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?', 'Estado de la conversación',
+      '¿Menú inicial?', '¿Contacto directo?', '¿Emergencia?'],
+    // En el consultorio, lo que convirtió el medio en texto no le habla al
+    // agente: entra por su estado de la conversación, como cualquier turno.
+    entradasAlAgente: ['¿Emergencia?'],
   },
 ] as const;
 
@@ -236,23 +245,27 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
     });
 
     it('el agente SOLO es alcanzable desde la rama verdadera de «¿Atención normal?»', () => {
-      // Entre la compuerta y el agente puede haber eslabones sin modelo (las
-      // compuertas de medios del vertical, y en Bellido el estado de la
-      // conversación y su menú); lo que no cambia es que la cadena ARRANCA en
-      // la rama verdadera y que el agente entra por un solo lugar.
-      const antes = ('antesDelAgente' in entrada ? entrada.antesDelAgente : []) as readonly string[];
-      const cadena = [...antes, agente];
-      expect(destinos(f, '¿Atención normal?', 0)).toEqual([cadena[0]]);
-      expect(destinos(f, '¿Atención normal?', 1)).toEqual(['Uso extendido']);
-      for (let i = 0; i < cadena.length - 1; i++) {
-        expect(alcanzables(f, cadena[i]!).has(cadena[i + 1]!), `${cadena[i]} → ${cadena[i + 1]}`).toBe(true);
+      // Entre la compuerta y el agente hay una CADENA de eslabones sin modelo:
+      // las compuertas de medios del vertical (bloques 2 y 3) y, en el
+      // consultorio, su estado de la conversación y su menú. Lo que no cambia
+      // es que la cadena ARRANCA en la rama verdadera, que cada eslabón lleva
+      // al siguiente, y que al agente se entra por los lugares DECLARADOS: los
+      // que ya convirtieron el medio en TEXTO, nunca uno con un binario.
+      const antes = ('antesDelAgente' in entrada ? entrada.antesDelAgente : null) as readonly string[] | null;
+      if (antes) {
+        const cadena = [...antes, agente];
+        expect(destinos(f, '¿Atención normal?', 0)).toEqual([cadena[0]]);
+        expect(origenes(f, cadena[0]!)).toEqual(['¿Atención normal?']);
+        for (let i = 0; i < cadena.length - 1; i++) {
+          expect(alcanzables(f, cadena[i]!).has(cadena[i + 1]!), `${cadena[i]} → ${cadena[i + 1]}`).toBe(true);
+        }
+        const entradas = (entrada as { entradasAlAgente?: readonly string[] }).entradasAlAgente ?? [antes[antes.length - 1]!];
+        expect(origenes(f, agente).sort()).toEqual([...entradas].sort());
+      } else {
+        expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
+        expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
       }
-      expect(origenes(f, agente)).toEqual([cadena.length > 1 ? cadena[cadena.length - 2] : '¿Atención normal?']);
       expect(destinos(f, '¿Atención normal?', 1)).toEqual(['Uso extendido']);
-      for (let i = 0; i < cadena.length - 1; i++) {
-        expect(alcanzables(f, cadena[i]!).has(cadena[i + 1]!), `${cadena[i]} → ${cadena[i + 1]}`).toBe(true);
-      }
-      expect(origenes(f, agente)).toEqual([cadena.length > 1 ? cadena[cadena.length - 2] : '¿Atención normal?']);
     });
 
     it('desde «Uso extendido» no se llega al agente por NINGÚN camino', () => {

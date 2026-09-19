@@ -2000,6 +2000,80 @@ suponer que una pestaña de flujo implica administrador.
 
 Imágenes y PDF que no son comprobante, audio, seguimientos de la solicitud, y
 el candado con un solo calendario: son los bloques 3, 4 y 5 de `Analisis/30`.
+El primero de esos tres está hecho: §4terdecies.
+
+## 4terdecies. Medios entrantes: clasificar, no mirar
+
+> **Decidido el 17/09/2026** (`Analisis/34` §3.1 y §4.1;
+> `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`; rama
+> `flujos/medios-entrantes`). Un audio, una foto o un PDF que **no** es
+> comprobante entran al asistente convertidos en **texto**. Es el bloque 3 de
+> `Analisis/30`, y la continuación natural de §4duodecies: los nodos que bajan
+> y leen un medio ya existían para el comprobante; acá se usan para todo lo
+> demás.
+
+**El problema, con fecha.** El 17/09 un paciente mandó un audio y una imagen en
+el mismo minuto. Al audio el asistente contestó que atiende por texto —un
+mensaje que **se paga** desde el 01/10 y que no avanza nada, y una parte de esa
+gente no vuelve a escribir— y de la imagen **inventó** que era un comprobante:
+«Ya tenemos todo listo». Nadie vio la imagen. Eso roza la prohibición 3.
+
+**Las dos reglas que sostienen todo lo demás:**
+
+1. **El asistente NUNCA ve el medio.** No es una instrucción del prompt —«te
+   mando la foto pero no diagnostiques»—, es el **cableado**: ningún nodo que
+   tenga el binario en la mano tiene salida al agente. Del audio sale una
+   transcripción marcada; de la imagen o del PDF, **una categoría de una lista
+   cerrada** (`publicidad | boca_o_dientes | comprobante | documento_salud |
+   otro`) que el flujo traduce a uno de cinco textos fijos. Así la prohibición
+   de la clínica —no diagnosticar, no prometer resultados— se cumple **por
+   construcción**. La clínica ya vio al asistente repetir afirmaciones de su
+   propio material: pedirle que se contenga no alcanza.
+2. **Nada se guarda.** Ni la imagen, ni el PDF, ni el audio: entran como
+   binario, se leen y de ahí sale texto. No van a Storage ni a Firestore, y el
+   enlace de Meta caduca en cinco minutos. Es la misma decisión que §4nonies.3
+   tomó para el comprobante, por el mismo motivo: **un medio guardado es un
+   dato personal más que custodiar**, y acá muchos son datos de salud. Lo que
+   queda en el historial de 12 meses es una marca —«(audio) el cliente envió
+   una nota de voz»— y no el contenido. Lo que el paciente dijo se lee igual en
+   la conversación, porque el asistente **repite en una línea lo que entendió**
+   antes de ofrecer horarios (`Analisis/34` §3.1: es la red contra una
+   transcripción errada de una hora o de un monto).
+
+   Esa promesa vale para el **flujo**. En la **instancia** hay que apagar dos
+   cosas en la VM y todavía no está hecho: `N8N_DEFAULT_BINARY_MODE=filesystem`
+   (con el modo por defecto los bytes quedan en la base de n8n) y la poda de
+   ejecuciones (`EXECUTIONS_DATA_PRUNE`, `EXECUTIONS_DATA_MAX_AGE`). Y la
+   credencial de Gemini tiene que ser de **nivel pago**: en el gratuito el
+   contenido puede usarse para entrenar.
+
+**Lo que cuesta: nada en mensajes.** Cero agregados. Los dos nodos nuevos
+contra Meta son de lectura (`media/mediaUrlGet` y la descarga del archivo) y
+estos caminos **reemplazan** a la respuesta vacía que ya se pagaba. El modelo
+cuesta centavos: ~0,001 USD por audio de 30 s, ~0,0001 por imagen. Lo que sí
+cuesta es **latencia** (+2 a 4 s en audio, +1 a 2 en imagen sobre un p90 de
+10 s), y por eso `Normalizar entrada` anota `recibidoEn` y `Mensaje a enviar`
+deja `latenciaMs` en los datos de la ejecución: se mide con
+`ver-ejecuciones.sh`, no se supone.
+
+**El dato que faltaba, en la consola.** `metricas/{aaaa-mm}` gana
+`entrantesPorTipo` —un mapa `{ text, interactive, image, audio, document,
+location, order, otro }` que escribe la ingesta con `FieldValue.increment`
+sobre la clave anidada, en la misma transacción que `entrantes`— y **Consumo**
+muestra «Mensajes recibidos: N texto · M audio · K imagen …», solo si el
+período lo trae. Es un mapa y no un campo por tipo porque los tipos los fija
+Meta; la clave es el tipo **ya normalizado**, así que uno desconocido cae en
+`otro` y las reglas lo vuelven a exigir (§7 de `CLAUDE.md`: el límite se hace
+cumplir en el servidor). No se factura —Meta cobra lo que sale— pero es lo que
+dice si vale la pena que el asistente entienda audios y fotos en este negocio.
+
+**Lo que este bloque NO hace:** responder en voz (`Analisis/34` §3.2: no hay
+evidencia de que convierta, un audio no se copia ni se escanea, y tienta a
+mandar texto **y** audio, que duplica la parte cara), guardar el medio para que
+una persona lo mire (eso sería un depósito de medios en la consola, que no
+existe), ni reenviarlo al celular de recepción (§4.1 del mismo análisis: se
+pierde con la ventana cerrada y deja datos de salud en un teléfono sin
+retención).
 
 ## 5. Integración con n8n
 

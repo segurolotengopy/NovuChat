@@ -189,6 +189,9 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // el medio se pide a Meta con la misma, y el reporte del QR y el cotejo van
     // a la ingesta. Gemini y Calendar quedan sin nombre: se heredan por tipo.
     'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante', 'Reportar QR (saliente)', 'Cotejar en el servidor',
+    // Bloque 3 (medios entrantes): los mismos dos pasos contra Meta, gemelos
+    // de los del comprobante. Los tres nodos de Gemini van sin nombre.
+    'Obtener URL del medio (general)', 'Descargar medio',
     // Los del 18/09: menú, contacto directo, emergencia y despedida en dos.
     'Enviar interactivo', 'Reportar interactivo (saliente)', 'Avisar al doctor (plantilla)',
     'Avisar al doctor (texto)', 'Redes del doctor', 'Reportar redes (saliente)',
@@ -317,7 +320,8 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
       'Reportar mensaje (saliente)', 'Registrar cierre (cita)', 'Reportar QR (saliente)', 'Cotejar en el servidor']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name, nombre).toMatch(/Bellido/);
     }
-    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante']) {
+    for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante',
+      'Obtener URL del medio (general)', 'Descargar medio']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name, nombre).toMatch(/Bellido/);
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -550,21 +554,37 @@ describe.skipIf(!HAY_JSON)('(e) La normalización cubre text, interactive, order
     expect(String(boton['userInput'])).toContain('Horarios');
   });
 
-  it('pedido (`order`) y cualquier otro tipo: respuesta cortés, nunca una excepción ni un texto vacío', () => {
-    for (const tipo of ['order', 'audio', 'document', 'location', 'sticker', 'contacts', 'video']) {
+  it('pedido (`order`) y lo que no se puede leer: respuesta cortés, nunca una excepción ni un texto vacío', () => {
+    for (const tipo of ['order', 'sticker', 'contacts', 'video']) {
       const item = normalizar({ type: tipo })[0]!;
       expect(item, tipo).toBeDefined();
       expect(String(item['userInput']), tipo).toContain('AVISO_SISTEMA');
       expect(String(item['userInput']), tipo).toContain(tipo);
       expect(String(item['userInput']).length, tipo).toBeGreaterThan(20);
       expect(item['tipo'], tipo).toBe(tipo);
+      expect(item, tipo).toMatchObject({ esMedioAudio: false, esMedioVisual: false });
     }
   });
 
-  it('imagen: se agradece y se sigue, sin inventar que se leyó nada', () => {
-    const item = normalizar({ type: 'image', image: { id: 'media-1' } })[0]!;
-    expect(String(item['userInput'])).toContain('AVISO_SISTEMA');
-    expect(String(item['userInput'])).toMatch(/imagen/i);
+  it('audio, imagen y PDF se marcan como medio (bloque 3): el agente los recibe como texto, nunca como binario', () => {
+    expect(normalizar({ type: 'audio', audio: { id: 'media-au', mime_type: 'audio/ogg' } })[0])
+      .toMatchObject({ tipo: 'audio', esMedioAudio: true, esMedioVisual: false, esComprobante: false, mediaId: 'media-au' });
+    expect(normalizar({ type: 'image', image: { id: 'media-im', mime_type: 'image/jpeg' } })[0])
+      .toMatchObject({ tipo: 'image', esMedioVisual: true, esMedioAudio: false, esComprobante: false, mediaId: 'media-im' });
+    expect(normalizar({ type: 'document', document: { id: 'media-do', mime_type: 'application/pdf' } })[0])
+      .toMatchObject({ tipo: 'document', esMedioVisual: true, esComprobante: false, mimeType: 'application/pdf' });
+    // Sin id de medio no hay nada que bajar: se agradece y se sigue, sin inventar que se leyó nada.
+    const sinId = normalizar({ type: 'image' })[0]!;
+    expect(sinId).toMatchObject({ esMedioVisual: false, mediaId: '' });
+    expect(String(sinId['userInput'])).toContain('AVISO_SISTEMA');
+    expect(String(sinId['userInput'])).toMatch(/imagen/i);
+  });
+
+  it('la ubicación recibe la dirección del consultorio, no el aviso genérico', () => {
+    const s = normalizar({ type: 'location', location: { latitude: -17.7, longitude: -63.1 } })[0]!;
+    expect(s).toMatchObject({ tipo: 'location', esMedioAudio: false, esMedioVisual: false });
+    expect(String(s['userInput'])).toContain('ubicación');
+    expect(String(s['userInput'])).not.toMatch(/undefined|null/);
   });
 
   it('un mensaje sin `type` no rompe nada', () => {
@@ -593,20 +613,23 @@ describe.skipIf(!HAY_JSON)('(f) Obedece los umbrales del servidor antes de llama
       .toEqual({ telefono: '' });
   });
 
-  it('`¿Atención normal?` está ANTES del agente, y el agente entra por un solo lugar, detrás de la compuerta del comprobante (bloque 2)', () => {
+  it('`¿Atención normal?` está ANTES del agente, detrás de las dos compuertas de medios (bloques 2 y 3) y del estado de la conversación del consultorio', () => {
     expect(destinos('¿Comercio operativo?', 0)).toEqual(['¿Atención normal?']);
     expect(destinos('¿Atención normal?', 0)).toEqual(['¿Es un comprobante?']);
-    expect(destinos('¿Es un comprobante?', 1)).toEqual(['Estado de la conversación']);
+    // Dos compuertas en cadena y recién después lo del consultorio: el medio
+    // se desvía ANTES de entrar a su menú, y lo que llega trae TEXTO.
+    expect(destinos('¿Es un comprobante?', 1)).toEqual(['¿Trae un medio?']);
+    expect(destinos('¿Trae un medio?', 1)).toEqual(['Estado de la conversación']);
+    expect(origenes('Estado de la conversación').sort()).toEqual(
+      ['Preparar imagen', 'Preparar transcripción', '¿Trae un medio?'].sort());
     expect(destinos('¿Atención normal?', 1)).toEqual(['Uso extendido']);
-    // Del comprobante, si no lo es, al estado de la conversación; de ahí, tres
-    // compuertas sin modelo; el agente SOLO entra por la última, y ninguna de
-    // las cuatro es alcanzable desde «Uso extendido».
+    // Y de ahí, tres compuertas sin modelo: el agente SOLO entra por la
+    // última, y ninguna de las cuatro es alcanzable desde «Uso extendido».
     expect(destinos('Estado de la conversación')).toEqual(['¿Menú inicial?']);
     expect(destinos('¿Menú inicial?', 1)).toEqual(['¿Contacto directo?']);
     expect(destinos('¿Contacto directo?', 1)).toEqual(['¿Emergencia?']);
     expect(destinos('¿Emergencia?', 1)).toEqual([AGENTE]);
     expect(origenes(AGENTE)).toEqual(['¿Emergencia?']);
-    expect(origenes('Estado de la conversación')).toEqual(['¿Es un comprobante?']);
   });
 
   it.each([['operador'], ['bloqueado']])('con estado %s NO se llama al modelo', (estado) => {

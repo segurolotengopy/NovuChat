@@ -4,7 +4,66 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum, bloque 3: el audio, la imagen y el PDF entran como TEXTO al agente (rama `flujos/medios-entrantes`, sobre el bloque 2)
+
+`Analisis/34` §3.1 y §4.1, y la síntesis de `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`:
+**clasificar, no mirar.** Hasta hoy un audio o una foto recibían «por ahora
+atiendo por texto», un mensaje pagado que no avanza nada y que pierde al
+paciente en el primer intento; y el 17/09 el asistente llegó a inventar que
+una imagen era un comprobante.
+
+- **El agente NUNCA ve el medio.** Un paso previo lo convierte en texto: el
+  audio se transcribe con Gemini (tope de 60 s estimado por tamaño; más largo,
+  se pide que lo escriban) y entra marcado «(audio transcripto)» con la orden
+  de repetir en una línea lo entendido antes de agendar. La imagen y el PDF
+  pasan por un clasificador de **lista cerrada** (publicidad, boca o dientes,
+  comprobante, documento de salud, otro) y el agente recibe uno de cinco
+  textos fijos: la foto de dientes se agradece y queda para la valoración,
+  **sin opinar ni diagnosticar**; la captura de una promoción se responde con
+  los precios de la consola, nunca con los de la imagen; la orden médica se
+  deriva sin interpretarla.
+- **Nada se guarda.** Ni la imagen, ni el PDF, ni el audio: ni en Storage, ni
+  en Firestore, ni en el historial de mensajes. El reporte a la consola lleva
+  una marca del tipo («el cliente envió una nota de voz»), no el contenido:
+  de una foto de dientes o de una orden médica no queda nada escrito.
+- **Contador de entrantes por tipo** en el agregado del mes (`entrantesPorTipo`),
+  mostrado en «Consumo». Es el dato que hoy no existe y que dice cuántos leads
+  llegan en voz o en imagen.
+
+**Mensajes por conversación: cero.** Estos caminos reemplazan la respuesta
+vacía que ya se pagaba; los dos nodos nuevos contra Meta son de lectura, y una
+prueba fija que los nodos que envían siguen siendo cuatro. Los flujos pasan de
+59 a 69 nodos (Demo A y Platinum, con paridad). Suite: 1795 en verde (37
+archivos), bloque (m) de `platinum-flujo.test.ts` sobre los dos flujos. Saneo 0.
+
+**Falta:** fusionar, desplegar, publicar y probar con teléfono (filas 35–39 de
+la aceptación), midiendo la latencia del turno con audio contra p50 ≤ 6 s y
+p90 ≤ 10 s. **Supuestos que solo un teléfono confirma:** la forma de la salida
+del nodo de transcripción y la relación tamaño ↔ duración del audio.
+**Y en la VM, antes de recibir medios reales:** `N8N_DEFAULT_BINARY_MODE=filesystem`,
+poda de ejecuciones y la credencial de Gemini en nivel pago. Sin eso, «nada se
+guarda» vale para el flujo pero no para la instancia.
+
+**Bellido en paridad (18/09).** La rama fusiona el bloque 2 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` lleva los 10 nodos de medios a
+`Flujos/bellido-agendamiento.json` (69 nodos); el prompt no cambia en este
+bloque, así que no hay nada que portar. El comentario de `Preparar imagen`
+dejaba el nombre de la clínica en el vertical, y la suite de Bellido lo
+prohíbe con razón: ahora dice «de la carpeta del cliente». Suites de Bellido y
+`flujos-umbrales` con las dos compuertas de medios y las tres entradas de
+texto al agente.
+
+**Con el Bellido de producción (18/09, tarde).** Sus 19 nodos propios se
+conservan y las dos compuertas de medios quedan DELANTE de su estado de la
+conversación: el audio y la imagen se convierten en texto antes de entrar a
+su menú, y lo que ya es texto entra por donde entra cualquier turno suyo, no
+directo al agente. Bellido: 88 nodos. La prueba común pasó a declarar por
+flujo la CADENA de eslabones sin modelo y las entradas efectivas al agente.
+2010 en verde (43 archivos), saneo 0, builds y lint.
 
 ---
 

@@ -976,7 +976,32 @@ export const ingesta = onRequest(
 
       tx.set(refMetricas, {
         mensajes: FieldValue.increment(1),
-        ...(mensaje.direccion === 'entrante' ? { entrantes: FieldValue.increment(1) } : {}),
+        // ENTRANTES POR TIPO (bloque 3, 17/09/2026). `entrantes` ya decía
+        // cuántos mensajes mandaron los clientes; no decía DE QUÉ CLASE. La
+        // clínica sostiene que en la vida real llegan muchos audios e
+        // imágenes, y hasta hoy no había ninguna cifra para confirmarlo o
+        // desmentirlo: el flujo contestaba «por ahora atiendo por texto» —un
+        // mensaje pagado que no avanza nada— y nadie sabía cuántas veces.
+        //
+        // Es un MAPA y no siete campos sueltos porque los tipos los fija Meta
+        // y pueden crecer: un campo nuevo por tipo obligaría a tocar las
+        // reglas, la consola y esta lista cada vez. La clave es el tipo YA
+        // NORMALIZADO (`TIPOS`, arriba), así que un tipo desconocido cae en
+        // `otro` y nunca siembra una clave arbitraria; las reglas lo vuelven
+        // a exigir, porque un límite que solo existe acá no existe.
+        //
+        // `FieldValue.increment` sobre la clave anidada: con `merge: true` un
+        // objeto anidado se fusiona campo por campo, así que esto suma 1 a
+        // `entrantesPorTipo.<tipo>` sin pisar los demás tipos y sin una
+        // lectura previa. Va en la MISMA transacción que `entrantes`: si uno
+        // sube y el otro no, la suma de los tipos deja de dar el total y la
+        // consola miente.
+        ...(mensaje.direccion === 'entrante'
+          ? {
+            entrantes: FieldValue.increment(1),
+            entrantesPorTipo: { [mensaje.tipo]: FieldValue.increment(1) },
+          }
+          : {}),
         // Son los números que sostienen la facturación por uso.
         // LOS NOMBRES SON LOS DE LA PAGINA DE PRECIOS, no los de la primera
         // versión de esto, y la diferencia importa porque el cliente lee esa
