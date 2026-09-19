@@ -7,7 +7,7 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import { sanearCaptacion } from './captacion.js';
 import { vozFija } from './prompt.js';
 import {
-  HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
+  HORAS_VENTANA_ATENCION, MS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
 } from './atencion.js';
 // Los valores comerciales viven en `atencion.ts` (puro, compartido con la
@@ -93,10 +93,22 @@ interface Entrante {
    * con él viajan `referencia` (el evento del calendario que quedó retenido)
    * y `calendario` (en cuál). Se reporta en la MISMA petición que el mensaje
    * saliente del QR para que el estado de la seña y el conteo del mensaje se
-   * escriban en la misma transacción: si uno entra, el otro también. El
-   * bloque 4 (seguimientos) agrega más eventos acá.
+   * escriban en la misma transacción: si uno entra, el otro también.
+   *
+   * BLOQUE 4 (seguimientos, `Analisis/31` §4) agrega dos hechos más:
+   *  - `horarios_ofrecidos` (saliente): en este turno corrió
+   *    `consultar_disponibilidad` y NO corrió `agendar_cita`. Es el paciente
+   *    que recibió horarios y todavía no eligió: abre (o mantiene) la
+   *    solicitud en etapa `horarios`, que es lo que el flujo de seguimientos
+   *    busca. Por hecho, no por lo que el modelo escribió.
+   *  - `no_contactar` (entrante o saliente): el paciente pidió que no le
+   *    escriban (regex fija en el flujo sobre su texto, en el reporte del
+   *    entrante) o el turno terminó pasando a una persona (`transferir`, en
+   *    el reporte del saliente). Marca `noContactar: true` en la conversación
+   *    y desde ahí ningún seguimiento automático le llega. Es UN solo hecho
+   *    con dos orígenes; la dirección del mensaje que lo trae no importa.
    */
-  evento?: 'qr_enviado';
+  evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar';
   referencia?: string;
   calendario?: string;
 }
@@ -107,7 +119,7 @@ const TIPOS = new Set([
 
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
-const EVENTOS = new Set(['qr_enviado']);
+const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -158,12 +170,16 @@ function normalizar(cuerpo: unknown): Entrante | null {
  * conteo: no crea ningún registro nuevo de teléfonos y se escribe en la
  * transacción que ya existe. Cero lecturas y cero escrituras extra.
  *
- * ETAPAS: `qr_enviado` (retenida, esperando el comprobante), `agendada` (el
- * comprobante cuadró), `vencida` (pasaron los minutos de retención sin
- * comprobante y la cita se borró). El bloque 4 agrega `horarios`.
+ * ETAPAS: `horarios` (bloque 4: el asistente ofreció horarios y el paciente
+ * no eligió), `qr_enviado` (retenida, esperando el comprobante), `agendada`
+ * (el comprobante cuadró, o `registrarCierre` registró la cita), `vencida`
+ * (pasaron los minutos de retención sin comprobante y la cita se borró).
+ *
+ * Las dos PENDIENTES son `horarios` y `qr_enviado`: sobre ellas corre el
+ * recordatorio de solicitud pendiente (`seguimientos.ts`), una sola vez.
  */
 export interface Solicitud {
-  etapa: 'qr_enviado' | 'agendada' | 'vencida';
+  etapa: 'horarios' | 'qr_enviado' | 'agendada' | 'vencida';
   /** Cuándo entró en esta etapa. */
   desde: Timestamp;
   qrEnviadoEn: Timestamp | null;
@@ -171,22 +187,65 @@ export interface Solicitud {
   evento: { id: string; calendario: string } | null;
   /** Comprobantes recibidos para esta solicitud. */
   cotejos: number;
-  /** Bloque 4; acá nace en 0. */
+  /** Seguimientos enviados sobre ESTA solicitud. El tope es uno (bloque 4). */
   seguimientos: number;
+  /** Cuándo salió el seguimiento; `null` mientras no salió. */
+  seguimientoEn: Timestamp | null;
+  /**
+   * Cuándo el paciente volvió a escribir dentro de las 24 h del seguimiento;
+   * `null` si no volvió. Es la marca que hace que `reactivadas` cuente UNA
+   * vez por solicitud y no una por cada mensaje que siga.
+   */
+  reactivadaEn: Timestamp | null;
+}
+
+export const ETAPAS_PENDIENTES: ReadonlySet<string> = new Set(['horarios', 'qr_enviado']);
+
+/** Milisegundos de un Timestamp (o de algo que se le parezca), o `null`. */
+export function milisegundosDe(v: unknown): number | null {
+  const t = v as { toMillis?: () => number; seconds?: unknown } | null | undefined;
+  if (typeof t?.toMillis === 'function') return t.toMillis();
+  if (typeof t?.seconds === 'number') return t.seconds * 1000;
+  return null;
+}
+
+/** Una solicitud nueva, con todos los contadores y marcas en cero. */
+function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud {
+  return {
+    etapa, desde: ahora, qrEnviadoEn: null, evento: null, cotejos: 0, seguimientos: 0,
+    seguimientoEn: null, reactivadaEn: null,
+  };
 }
 
 /**
  * Qué `solicitud` queda guardada después de este mensaje. `null` = no se toca.
  *
  * ES PURA Y ESTÁ PROBADA APARTE, como `contadoresDelMensaje`: sobre esto se
- * decide si el próximo archivo del paciente se coteja como pago, y la
- * decisión separada de la base se prueba sin emulador.
+ * decide si el próximo archivo del paciente se coteja como pago y si le llega
+ * un recordatorio, y la decisión separada de la base se prueba sin emulador.
  *
- * `previa` es lo que hay guardado. Hoy un `qr_enviado` SIEMPRE abre una
- * solicitud nueva, aunque hubiera una: el flujo manda el QR cuando acaba de
- * retener una cita, y esa cita nueva es la que hay que seguir, no la de hace
- * dos días que venció o ya se pagó. `previa` queda en la firma para el bloque
- * 4, que sí acumula (`seguimientos`) sobre la solicitud vigente.
+ * `previa` es lo que hay guardado. Por evento:
+ *
+ *  - `qr_enviado` SIEMPRE abre una solicitud nueva, aunque hubiera una: el
+ *    flujo manda el QR cuando acaba de retener una cita, y esa cita nueva es
+ *    la que hay que seguir, no la de hace dos días que venció o ya se pagó.
+ *  - `horarios_ofrecidos` abre una solicitud `horarios` SOLO si no hay
+ *    ninguna, o si la que hay está cerrada (`agendada` o `vencida`) desde hace
+ *    más de 24 h: el paciente que agendó ayer y hoy pregunta por otro horario
+ *    no es una solicitud pendiente nueva, es el mismo asunto. Sobre una
+ *    `horarios` ya abierta NO cambia `desde` ni los contadores —si cambiara,
+ *    cada turno con horarios reiniciaría el reloj del seguimiento y el
+ *    recordatorio no saldría nunca—, y sobre un `qr_enviado` no toca nada: la
+ *    seña pendiente manda.
+ *  - `cita_agendada` (lo llama `registrarCierre` tipo cita, con la cita ya en
+ *    el calendario) cierra la solicitud pendiente como `agendada`. Sin
+ *    solicitud, la crea ya `agendada`: así un `horarios_ofrecidos` de la
+ *    misma conversación en las 24 h siguientes no abre una pendiente que no
+ *    existe. Sobre una `agendada` no mueve nada (idempotente).
+ *
+ * `merge: true` de Firestore fusiona los mapas campo a campo, así que una
+ * solicitud nueva escribe TODOS sus campos, incluidos los nulos: si no, el
+ * `seguimientoEn` de la solicitud anterior sobreviviría en la nueva.
  */
 export function solicitudTras(
   previa: unknown,
@@ -194,21 +253,57 @@ export function solicitudTras(
   ahoraMs: number,
   datos: { referencia?: string; calendario?: string },
 ): Solicitud | null {
-  void previa;
-  if (evento !== 'qr_enviado') return null;
   const ahora = Timestamp.fromMillis(ahoraMs);
-  const id = (datos.referencia ?? '').trim();
-  return {
-    etapa: 'qr_enviado',
-    desde: ahora,
-    qrEnviadoEn: ahora,
-    // Sin identificador de la cita no hay cita que seguir: el cotejo igual
-    // corre (el cierre se referencia con el mensaje del comprobante), pero
-    // `senaVencida` no tiene qué borrar. El flujo siempre lo manda.
-    evento: id ? { id, calendario: (datos.calendario ?? '').trim() } : null,
-    cotejos: 0,
-    seguimientos: 0,
-  };
+  const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
+  const etapaPrevia = typeof p?.etapa === 'string' ? p.etapa : '';
+
+  if (evento === 'qr_enviado') {
+    const id = (datos.referencia ?? '').trim();
+    return {
+      ...solicitudNueva('qr_enviado', ahora),
+      qrEnviadoEn: ahora,
+      // Sin identificador de la cita no hay cita que seguir: el cotejo igual
+      // corre (el cierre se referencia con el mensaje del comprobante), pero
+      // `senaVencida` no tiene qué borrar. El flujo siempre lo manda.
+      evento: id ? { id, calendario: (datos.calendario ?? '').trim() } : null,
+    };
+  }
+
+  if (evento === 'horarios_ofrecidos') {
+    if (!p || etapaPrevia === '') return solicitudNueva('horarios', ahora);
+    if (ETAPAS_PENDIENTES.has(etapaPrevia)) return null;
+    const desdeMs = milisegundosDe(p.desde);
+    const cerradaHaceMas24h = desdeMs === null || ahoraMs - desdeMs >= MS_VENTANA_ATENCION;
+    return cerradaHaceMas24h ? solicitudNueva('horarios', ahora) : null;
+  }
+
+  if (evento === 'cita_agendada') {
+    if (etapaPrevia === 'agendada') return null;
+    if (!p || etapaPrevia === '') return solicitudNueva('agendada', ahora);
+    return { ...solicitudNueva('agendada', ahora), ...p, etapa: 'agendada', desde: ahora };
+  }
+
+  return null;
+}
+
+/**
+ * ¿Este mensaje REACTIVA una solicitud que recibió seguimiento? Sí cuando es
+ * del cliente, hay un seguimiento enviado hace menos de 24 h y es el primer
+ * mensaje suyo después de ese seguimiento (`reactivadaEn` todavía vacío).
+ * Cuenta `reactivadas` en el mes: es la cifra que dice si el recordatorio
+ * recupera a alguien o solo cuesta (`Analisis/31` §6). Pura, probada aparte.
+ */
+export function reactivaTras(
+  previa: unknown, direccion: 'entrante' | 'saliente', ahoraMs: number,
+): boolean {
+  if (direccion !== 'entrante') return false;
+  const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
+  if (!p) return false;
+  const seguimientoMs = milisegundosDe(p.seguimientoEn);
+  if (seguimientoMs === null) return false;
+  if (milisegundosDe(p.reactivadaEn) !== null) return false;
+  const transcurrido = ahoraMs - seguimientoMs;
+  return transcurrido >= 0 && transcurrido < MS_VENTANA_ATENCION;
 }
 
 /** Forma que exige un identificador de comercio. Se comprueba ANTES de armar
@@ -413,7 +508,17 @@ type TipoEvento =
   // retención que venció sin comprobante, cuya cita el flujo borró. Los
   // escribe `sena.ts`. Son el hecho que explica «mandé el comprobante y me
   // dijeron que no coincidía» y «mi horario desapareció».
-  | 'cobro_cotejado' | 'sena_vencida';
+  | 'cobro_cotejado' | 'sena_vencida'
+  // SEGUIMIENTO DE SOLICITUD PENDIENTE (bloque 4, `Analisis/31` §4): salió el
+  // recordatorio único a un paciente que recibió horarios o el QR y no
+  // siguió. `codigo` lleva el modo (`texto` en ventana, `plantilla` fuera).
+  // Lo escribe `seguimientos.ts`. Explica «me llegó un mensaje que no pedí».
+  //
+  // NINGÚN PUNTO Y COMA EN ESTOS COMENTARIOS. `pruebas/bitacora-tipos.test.ts`
+  // lee esta unión hasta el primero que encuentra, así que uno escrito acá
+  // arriba corta la lista y deja tipos fuera del control que compara la
+  // ingesta con las reglas y con la consola. Costó una corrida el 17/09.
+  | 'seguimiento_enviado';
 
 interface Evento {
   tipo: TipoEvento;
@@ -933,8 +1038,13 @@ export const ingesta = onRequest(
       // seña recién enviado). Va en la misma transacción que el conteo: un QR
       // contado sin solicitud dejaría al paciente mandando un comprobante que
       // nadie lee, y una solicitud sin QR contado sería un mensaje regalado.
-      const solicitud = solicitudTras(conversacion.get('solicitud'), mensaje.evento, ahoraMs,
+      const solicitudPrevia = conversacion.get('solicitud');
+      const solicitud = solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
         { referencia: mensaje.referencia, calendario: mensaje.calendario });
+      // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
+      // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
+      // la misma transacción que cuenta el mensaje. Cero lecturas extra.
+      const reactivada = reactivaTras(solicitudPrevia, mensaje.direccion, ahoraMs);
 
       tx.set(refConversacion, {
         // La marca del estado se escribe con cada mensaje: cuando la ventana se
@@ -961,9 +1071,15 @@ export const ingesta = onRequest(
         mensajesVentana: conteo.mensajesVentana,
         ...(conteo.interaccion ? { periodoInteraccion: periodo } : {}),
         ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
-        // Se escribe ENTERA, no con merge campo a campo: una solicitud nueva
-        // reemplaza a la anterior con todos sus contadores en cero.
-        ...(solicitud ? { solicitud } : {}),
+        // Una solicitud nueva trae TODOS sus campos (los nulos también): con
+        // `merge: true` los mapas se fusionan campo a campo, y un campo que no
+        // viniera sobreviviría de la solicitud anterior.
+        ...(solicitud ? { solicitud }
+          : reactivada ? { solicitud: { reactivadaEn: Timestamp.fromMillis(ahoraMs) } } : {}),
+        // NO CONTACTAR (bloque 4): el paciente pidió que no le escriban, o el
+        // turno pasó a una persona. Solo se ENCIENDE desde acá; apagarlo es un
+        // acto de una persona del negocio, desde la consola.
+        ...(mensaje.evento === 'no_contactar' ? { noContactar: true } : {}),
       }, { merge: true });
 
       tx.create(refConversacion.collection('mensajes').doc(), {
@@ -1036,7 +1152,12 @@ export const ingesta = onRequest(
         //   SEÑAS ENVIADAS = QR de seña que salieron. Con `senasCotejadas` y
         //                    `senasVencidas` (que escribe `sena.ts`) es el
         //                    embudo de la reserva con seña.
-        ...(solicitud ? { senasEnviadas: FieldValue.increment(1) } : {}),
+        ...(mensaje.evento === 'qr_enviado' ? { senasEnviadas: FieldValue.increment(1) } : {}),
+        //   REACTIVADAS   = conversaciones en las que el paciente volvió a
+        //                   escribir dentro de las 24 h de un seguimiento
+        //                   (bloque 4). Con `seguimientos` (que escribe
+        //                   `seguimientoEnviado`) es la tasa del recordatorio.
+        ...(reactivada ? { reactivadas: FieldValue.increment(1) } : {}),
       }, { merge: true });
 
       // La marca del aviso y su constancia en la auditoría van en la MISMA

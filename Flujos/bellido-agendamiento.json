@@ -814,7 +814,7 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1000,
-      "notes": "Reporta el mensaje a la ingesta para contar atenciones e interacciones. Nunca corta la respuesta al cliente: onError continua.",
+      "notes": "Reporta el mensaje a la ingesta para contar atenciones e interacciones. Con `evento: no_contactar` cuando el TEXTO DEL CLIENTE pide que no le escriban (regex fija, bloque 4): desde ahi no le sale ningun seguimiento automatico. Nunca corta la respuesta al cliente: onError continua.",
       "parameters": {
         "method": "POST",
         "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
@@ -831,7 +831,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'entrante', tipo: $json.tipo || 'text', texto: $json.userInput || '', idMeta: $json.mensajeId || '', nombreContacto: $json.nombrePerfil || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.from, direccion: 'entrante', tipo: $json.tipo || 'text', texto: $json.userInput || '', idMeta: $json.mensajeId || '', nombreContacto: $json.nombrePerfil || '', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String($json.userInput || '')) ? 'no_contactar' : undefined }) }}",
         "options": {
           "timeout": 4000
         }
@@ -856,7 +856,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "notes": "Reporta lo que SE ENVIO: cuelga de «Responder al cliente» y lee el texto de «Mensaje a enviar», no de «Procesar respuesta» (17/09/2026: la consola mostraba la respuesta que el candado deshizo). Nunca corta nada: onError continua.",
+      "notes": "Reporta lo que SE ENVIO: cuelga de «Responder al cliente» y lee el texto de «Mensaje a enviar», no de «Procesar respuesta» (17/09/2026: la consola mostraba la respuesta que el candado deshizo). Ademas manda el HECHO del turno (bloque 4): `no_contactar` si se transfirio a una persona, o `horarios_ofrecidos` si corrio consultar_disponibilidad y NO se agendo. Nunca corta nada: onError continua.",
       "parameters": {
         "method": "POST",
         "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
@@ -873,7 +873,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: $('Mensaje a enviar').item.json.from, direccion: 'saliente', tipo: 'text', texto: $('Mensaje a enviar').item.json.respuesta || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Mensaje a enviar').item.json.from, direccion: 'saliente', tipo: 'text', texto: $('Mensaje a enviar').item.json.respuesta || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '', evento: $('Mensaje a enviar').item.json.transferir === true ? 'no_contactar' : ((Array.isArray($('Mensaje a enviar').item.json.herramientas) ? $('Mensaje a enviar').item.json.herramientas : []).indexOf('consultar_disponibilidad') >= 0 && $('Mensaje a enviar').item.json.ejecutoAgendar !== true) ? 'horarios_ofrecidos' : undefined }) }}",
         "options": {}
       },
       "credentials": {

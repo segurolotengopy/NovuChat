@@ -1,0 +1,517 @@
+{
+  "name": "NovuChat — Clínica Platinum (Seguimientos)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 300
+  },
+  "nodes": [
+    {
+      "id": "sg-cada-hora",
+      "name": "Cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -40,
+        300
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 * * * *"
+            }
+          ]
+        }
+      },
+      "notes": "Barrido del recordatorio de solicitud pendiente (bloque 4, Analisis/31 §4). Al minuto 15 para no pisar al barrido de señas vencidas, que corre en punto. MENSAJES: +1 solo en las conversaciones que quedaron a medio camino."
+    },
+    {
+      "id": "sg-config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        180,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "sg1",
+              "name": "phoneNumberId",
+              "type": "string",
+              "value": "REEMPLAZAR_PHONE_NUMBER_ID_PLATINUM"
+            },
+            {
+              "id": "sg2",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "sg3",
+              "name": "plantilla",
+              "type": "string",
+              "value": "solicitud_cita_sin_confirmar"
+            },
+            {
+              "id": "sg4",
+              "name": "idiomaPlantilla",
+              "type": "string",
+              "value": "es"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "El identificador del número (para que el panel sepa de qué comercio se trata) y el nombre de la plantilla de utilidad. Ningún dato del negocio: el nombre, el estado y todo lo demás sale del panel."
+    },
+    {
+      "id": "sg-traer-config",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Clínica Platinum)"
+        }
+      },
+      "notes": "Sin `telefono`: este barrido no es el turno de nadie. De acá salen el estado del comercio y el nombre del negocio, que es lo único del mensaje que no escribe el flujo."
+    },
+    {
+      "id": "sg-pendientes",
+      "name": "Pendientes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        620,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/seguimientosPendientes",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Config base').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Clínica Platinum)"
+        }
+      },
+      "notes": "El SERVIDOR decide a quién le toca: una sola vez por solicitud, nunca a `noContactar`, nunca en operador o bloqueado, nunca a quien ya agendó, y solo entre 2 y 4 h (texto) o entre 24 y 48 h (plantilla). Tope 50 por corrida. El flujo no filtra nada."
+    },
+    {
+      "id": "sg-un-item",
+      "name": "Un item por solicitud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        840,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// A QUIEN LE TOCA EL RECORDATORIO, ITEM POR ITEM.\n//\n// ESTE NODO NO DECIDE A QUIEN SE LE ESCRIBE. La decision --una sola vez por\n// solicitud, nunca a `noContactar`, nunca en operador o bloqueado, nunca a\n// quien ya agendo, y solo entre 2 y 4 h o entre 24 y 48 h-- la toma el\n// SERVIDOR (`seguimientos.ts`, `esPendienteDeSeguimiento`), que es donde se\n// puede probar negando. Aca solo se arma el mensaje.\n//\n// Y CUANDO NO SE SABE, NO SE ESCRIBE. Misma regla que el flujo de señas\n// vencidas: si el panel no contesto 200, si el comercio no esta activo o si\n// el listado no vino bien, salen CERO items y no corre ninguna rama. Una hora\n// despues se vuelve a intentar; un recordatorio perdido no le cuesta nada a\n// nadie, uno mandado de mas cuesta el numero de WhatsApp del cliente.\nconst base = $('Config base').first().json;\nconst cfg = $('Traer configuración').first().json ?? {};\nconst cuerpoCfg = cfg.body ?? {};\nconst panelContesto = Number(cfg.statusCode) === 200 && typeof cuerpoCfg.tenantId === 'string';\nif (!panelContesto || String(cuerpoCfg.estadoComercio || '') !== 'activo') return [];\n\nconst lista = $input.first().json ?? {};\nif (Number(lista.statusCode) !== 200) return [];\nconst pendientes = Array.isArray((lista.body || {}).pendientes) ? lista.body.pendientes : [];\nif (!pendientes.length) return [];\n\nconst negocio = String(((cuerpoCfg.datosDelNegocio || {}).nombreNegocio) || '').trim() || 'la clínica';\nconst phoneNumberId = String(cuerpoCfg.phoneNumberId || base.phoneNumberId || '');\n\n// America/La_Paz es UTC-4 FIJO (CLAUDE.md): no hay horario de verano, asi que\n// restar cuatro horas al instante en UTC da la fecha local, sin depender de la\n// zona del contenedor de n8n.\nconst MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',\n  'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\nconst fechaEnLaPaz = (iso) => {\n  const ms = Date.parse(String(iso || ''));\n  if (!Number.isFinite(ms)) return 'los últimos días';\n  const d = new Date(ms - 4 * 3600000);\n  return `el ${d.getUTCDate()} de ${MESES[d.getUTCMonth()]}`;\n};\n\nconst out = [];\nfor (const p of pendientes) {\n  const telefono = String((p && p.telefono) || '').replace(/[^0-9]/g, '');\n  const modo = String((p && p.modo) || '');\n  if (!/^[0-9]{8,15}$/.test(telefono) || (modo !== 'texto' && modo !== 'plantilla')) continue;\n\n  // El nombre lo escribio el cliente en su perfil de WhatsApp: DATO NO\n  // CONFIABLE. Se recorta y se le quitan los saltos de linea antes de entrar\n  // en un mensaje; nunca se interpola entero.\n  const nombre = String((p && p.nombreContacto) || '').replace(/\\s+/g, ' ').trim().slice(0, 40);\n  const saludo = nombre ? `Hola ${nombre} 👋` : 'Hola 👋';\n  const etapa = String((p && p.etapa) || '');\n  const fechaSolicitud = fechaEnLaPaz(p && p.ultimoEn);\n\n  // EL TEXTO NO LLEVA NINGUN PRECIO, y es deliberado: el importe de la seña\n  // llega en `importe` y NO se escribe. Un recordatorio con una cifra se lee\n  // como una oferta --que es justo lo que Meta clasifica como marketing-- y\n  // el paciente ya tiene el monto en el caption del QR que recibio.\n  const texto = etapa === 'qr_enviado'\n    ? `${saludo} Tu solicitud de cita en ${negocio} quedó a la espera de la seña. Si ya la pagaste, mándame el comprobante por acá y lo reviso; si prefieres otro horario, dime y lo vemos.`\n    : `${saludo} Te pasé los horarios disponibles en ${negocio} y no alcanzamos a confirmar tu cita. Si todavía te sirve alguno, dime cuál y lo reservo.`;\n\n  // Lo que se reporta a la ingesta cuando el modo es plantilla: el cuerpo de\n  // `solicitud_cita_sin_confirmar` ya resuelto, para que la consola muestre lo\n  // que la persona recibio y no el nombre de una plantilla.\n  const textoPlantilla = `Se registró tu solicitud de cita en ${negocio} para ${fechaSolicitud}. Estado: sin confirmar. Responde este mensaje si quieres retomarla.`;\n\n  out.push({ json: {\n    telefono,\n    nombre,\n    etapa,\n    modo,\n    nombreNegocio: negocio,\n    fechaSolicitud,\n    phoneNumberId,\n    waGraphVersion: String(base.waGraphVersion || 'v26.0'),\n    plantilla: String(base.plantilla || ''),\n    idiomaPlantilla: String(base.idiomaPlantilla || 'es'),\n    // `texto` es lo que se ENVIA en modo texto; `textoReportado` es lo que se\n    // le cuenta a la ingesta en los dos modos.\n    texto,\n    textoReportado: modo === 'plantilla' ? textoPlantilla : texto,\n  } });\n}\nreturn out;"
+      },
+      "notes": "Arma el mensaje de cada pendiente. Con el panel caído, el comercio no operativo o el listado sin responder, devuelve CERO items y no se manda nada."
+    },
+    {
+      "id": "sg-marcar",
+      "name": "Marcar seguimiento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/seguimientoEnviado",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Un item por solicitud').item.json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, modo: $json.modo }) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Clínica Platinum)"
+        }
+      },
+      "notes": "LA MARCA VA ANTES DEL ENVÍO, y es deliberado. Si el envío falla después de marcar, ese recordatorio se pierde y nadie lo reintenta: un seguimiento perdido es mejor que dos, porque el segundo es el que hace que la persona bloquee el número. Es idempotente: una segunda llamada contesta `repetido` y no deja mandar otra vez."
+    },
+    {
+      "id": "sg-if-marcado",
+      "name": "¿Se marcó?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sgm1",
+              "leftValue": "={{ Number($json.statusCode) === 200 && (($json.body || {}).marcado === true) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Se envía SOLO si el servidor marcó esta solicitud en esta corrida. Con `repetido` (otra corrida se adelantó), con `sin_solicitud` o sin respuesta, no se manda nada: es la mitad del candado que impide dos recordatorios a la misma solicitud."
+    },
+    {
+      "id": "sg-if-ventana",
+      "name": "¿En ventana?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "sgv1",
+              "leftValue": "={{ $('Un item por solicitud').item.json.modo }}",
+              "rightValue": "texto",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "El modo lo decidió el servidor con el reloj: `texto` cuando la ventana de 24 h sigue abierta (2–4 h), `plantilla` cuando venció (24–48 h). El flujo no vuelve a calcularlo."
+    },
+    {
+      "id": "sg-enviar-texto",
+      "name": "Enviar texto",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        200
+      ],
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "={{ $('Un item por solicitud').item.json.phoneNumberId }}",
+        "recipientPhoneNumber": "={{ $('Un item por solicitud').item.json.telefono }}",
+        "textBody": "={{ $('Un item por solicitud').item.json.texto }}"
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp Clínica Platinum (envío)"
+        }
+      },
+      "notes": "Dentro de la ventana de 24 h: texto libre. +1 mensaje en esa conversación (CLAUDE.md §1), solo en las que quedaron a medio camino."
+    },
+    {
+      "id": "sg-enviar-plantilla",
+      "name": "Enviar plantilla",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Un item por solicitud').item.json.waGraphVersion }}/{{ $('Un item por solicitud').item.json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "whatsAppApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  to: $('Un item por solicitud').item.json.telefono,\n  type: 'template',\n  template: {\n    name: $('Un item por solicitud').item.json.plantilla,\n    language: { code: $('Un item por solicitud').item.json.idiomaPlantilla || 'es' },\n    components: [{ type: 'body', parameters: [\n      { type: 'text', text: String($('Un item por solicitud').item.json.nombreNegocio || '') },\n      { type: 'text', text: String($('Un item por solicitud').item.json.fechaSolicitud || '') },\n    ] }],\n  },\n}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp Clínica Platinum (envío)"
+        }
+      },
+      "notes": "Fuera de la ventana: plantilla de UTILIDAD `solicitud_cita_sin_confirmar`, dos parámetros (negocio y fecha de la solicitud), sin botones, sin precio y sin lenguaje comercial. La ingesta NO cuenta un saliente sobre ventana vencida como conversación: al comercio no se le factura nada (Analisis/31 §2)."
+    },
+    {
+      "id": "sg-reportar",
+      "name": "Reportar seguimiento (saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1940,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Un item por solicitud').item.json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $('Un item por solicitud').item.json.telefono, direccion: 'saliente', tipo: 'text', texto: $('Un item por solicitud').item.json.textoReportado || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }) }}",
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Clínica Platinum)"
+        }
+      },
+      "notes": "El recordatorio se cuenta como cualquier otro mensaje del asistente: dentro de la ventana suma una respuesta al bloque de 25; fuera, la ingesta no abre ninguna conversación. La consola muestra el texto que la persona recibió, no el nombre de la plantilla."
+    }
+  ],
+  "connections": {
+    "Cada hora": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Pendientes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pendientes": {
+      "main": [
+        [
+          {
+            "node": "Un item por solicitud",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Un item por solicitud": {
+      "main": [
+        [
+          {
+            "node": "Marcar seguimiento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar seguimiento": {
+      "main": [
+        [
+          {
+            "node": "¿Se marcó?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se marcó?": {
+      "main": [
+        [
+          {
+            "node": "¿En ventana?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿En ventana?": {
+      "main": [
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar plantilla",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar texto": {
+      "main": [
+        [
+          {
+            "node": "Reportar seguimiento (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar plantilla": {
+      "main": [
+        [
+          {
+            "node": "Reportar seguimiento (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
