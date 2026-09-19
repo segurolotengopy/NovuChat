@@ -2,6 +2,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from './region.js';
 import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from './firma.js';
+import { solicitudTras } from './ingesta.js';
 
 /**
  * =============================================================================
@@ -108,9 +109,26 @@ export const registrarCierre = onRequest(
     // Transacción: el documento y el contador se mueven juntos o no se mueve
     // ninguno. Si se escribiera el cierre y fallara el contador, la pantalla
     // mostraría un número y el detalle mostraría otro, y sobre eso se factura.
+    // LA SOLICITUD PENDIENTE DEL TELÉFONO SE CIERRA CON LA CITA (bloque 4).
+    // Un cierre tipo `cita` con teléfono marca `solicitud.etapa = 'agendada'`
+    // en la conversación: es lo que saca a ese paciente del barrido de
+    // seguimientos («nunca a quien ya agendó»). Va en la MISMA transacción que
+    // el cierre, y solo la primera vez: un reintento de n8n no toca nada.
+    const telefonoLimpio = telefono.replace(/\D/g, '');
+    const refConversacion = tipo === 'cita' && /^[0-9]{8,15}$/.test(telefonoLimpio)
+      ? db.doc(`tenants/${tenantId}/conversaciones/wa_${telefonoLimpio}`) : null;
+    const ahoraMs = Date.now();
+
     const yaEstaba = await db.runTransaction(async (t) => {
-      const previo = await t.get(refCierre);
+      // Todas las lecturas antes de la primera escritura: lo exige Firestore.
+      const [previo, conversacion] = await Promise.all([
+        t.get(refCierre), refConversacion ? t.get(refConversacion) : Promise.resolve(null),
+      ]);
       if (previo.exists) return true;     // reintento de n8n: no se cuenta dos veces
+
+      const solicitud = conversacion?.exists
+        ? solicitudTras(conversacion.get('solicitud'), 'cita_agendada', ahoraMs, {}) : null;
+      if (refConversacion && solicitud) t.set(refConversacion, { solicitud }, { merge: true });
 
       t.set(refCierre, {
         tipo,

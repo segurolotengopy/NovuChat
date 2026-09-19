@@ -1,0 +1,388 @@
+import { onRequest } from 'firebase-functions/v2/https';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { REGION } from './region.js';
+import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from './firma.js';
+import {
+  cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido,
+} from './cotejo.js';
+import { registrar, type Solicitud } from './ingesta.js';
+import { documentoDeVertical } from './prompt.js';
+import { periodoDe } from './planes.js';
+
+/**
+ * =============================================================================
+ * SEÑA POR QR EN LAS RESERVAS — el cotejo del comprobante y la retención vencida
+ * =============================================================================
+ *
+ * EL PROBLEMA QUE RESUELVE (`Analisis/30` §4). Una clínica pierde horarios con
+ * pacientes que reservan y no van. La seña —una fracción del tratamiento,
+ * pagada por QR al reservar— los filtra. Pero introduce dinero real en el
+ * chat, y con el dinero real entra la prohibición 3 de CLAUDE.md: el
+ * asistente NUNCA dice que un pago está acreditado, verificado ni recibido.
+ * Un comprobante es una imagen, y una imagen se edita.
+ *
+ * QUIÉN DECIDE QUÉ, y por qué está repartido así:
+ *
+ *  - EL FLUJO lee el comprobante con el modelo y manda acá lo leído (importe,
+ *    cuenta, nombre, fecha, hora, banco). No compara nada. Si comparara, la
+ *    regla viviría en un nodo de n8n que nadie prueba y que se edita a mano.
+ *  - EL SERVIDOR (esta Function) compara con lo esperado —el importe de la
+ *    seña, las cuentas del QR del comercio, la hora en que se envió el QR— y
+ *    devuelve uno de tres resultados: `cuadra`, `no_cuadra`, `ilegible`.
+ *    Ninguno se llama «pagado». Es la regla de CLAUDE.md §7: todo límite se
+ *    hace cumplir en el servidor.
+ *  - LA CLÍNICA confirma que el dinero entró, mirando su banco, con el sello
+ *    `comprobadoPor` del cierre (regla `/cierres`). Ni el flujo ni este código
+ *    pueden ponerlo.
+ *
+ * QUÉ SE GUARDA Y QUÉ NO. El JSON leído y el resultado, en el cierre. NUNCA la
+ * imagen ni el PDF: no van a Storage ni a Firestore. Guardar comprobantes
+ * bancarios de terceros es acumular datos financieros que NovuChat no
+ * necesita para nada.
+ *
+ * LA RETENCIÓN VENCIDA (`senaVencida`) es el otro extremo: pasaron los
+ * minutos sin comprobante, el flujo programado borró la cita del calendario y
+ * lo reporta acá. Esta Function NO manda nada al paciente —ni mensaje ni
+ * plantilla—: un mensaje costaría 0,0113 USD por retención vencida y además
+ * provocaría el reclamo que se quiere evitar. Solo anota el estado y cuenta.
+ */
+
+/** Recorta y normaliza un texto que vino de afuera. Igual que en `cierres.ts`. */
+function texto(valor: unknown, maxLargo: number): string {
+  return typeof valor === 'string' ? valor.trim().slice(0, maxLargo) : '';
+}
+
+/**
+ * Identificador del cierre a partir de la referencia externa. ES LA MISMA
+ * CUENTA que `idDesdeReferencia` de `cierres.ts` —tipo, guion bajo, referencia
+ * saneada a `[a-zA-Z0-9_-]` y recortada— y tiene que seguir siéndolo: el
+ * cierre de una cita con seña y el que registraría `registrarCierre` para la
+ * misma cita tienen que caer en el MISMO documento, o la cita se contaría dos
+ * veces. `pruebas/sena-cotejo.test.ts` compara las dos.
+ */
+export function idDeCierreDeCita(referencia: string): string {
+  return `cita_${referencia.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120)}`;
+}
+
+export type ResultadoCotejo = 'cuadra' | 'no_cuadra' | 'ilegible';
+
+/** Lo que se le dice al flujo y lo que queda en el cierre. */
+export interface Veredicto {
+  resultado: ResultadoCotejo;
+  diferencias: string[];
+}
+
+export const MINUTOS_TOLERANCIA_RELOJ = 10;
+export const NO_SE_PUDO_LEER = 'No se pudo leer el comprobante.';
+
+/**
+ * De lo que leyó el modelo y lo que comparó `cotejo.ts`, el veredicto.
+ *
+ * ES PURA. Sobre esto se le dice a un paciente si su reserva quedó o no, y se
+ * le avisa a la clínica que revise el banco: la decisión se prueba sin
+ * emulador, resultado por resultado, y se comprueba con una expresión regular
+ * que ninguna frase que sale de acá afirme un pago (prohibición 3).
+ *
+ * `legible` es falso cuando el modelo no devolvió un objeto, o lo devolvió
+ * vacío. Un comprobante ilegible NO es un comprobante que no cuadra: al
+ * paciente se le pide que lo mande de nuevo, no se le dice que hay un dato
+ * distinto. Por eso son tres resultados y no dos.
+ */
+export function resultadoDelCotejo(legible: boolean, cotejo: Cotejo | null): Veredicto {
+  if (!legible || cotejo === null) {
+    return { resultado: 'ilegible', diferencias: [NO_SE_PUDO_LEER] };
+  }
+  if (cotejo.consistente) return { resultado: 'cuadra', diferencias: [] };
+  return { resultado: 'no_cuadra', diferencias: cotejo.diferencias.slice(0, 10) };
+}
+
+/**
+ * Lo que se ESPERA del comprobante, armado desde la configuración y la
+ * solicitud. Pura, para poder probar que el importe es el de la seña —y no el
+ * del tratamiento— y que la ventana de fechas va desde el envío del QR hasta
+ * la llegada del comprobante, con los minutos de gracia de reloj.
+ */
+export function esperadoDeLaSena(
+  senaImporte: number,
+  cobroReal: Record<string, unknown> | undefined,
+  qrEnviadoEnMs: number,
+  ahoraMs: number,
+): Esperado {
+  const cuentas = Array.isArray(cobroReal?.['cuentas'])
+    ? (cobroReal['cuentas'] as unknown[]).slice(0, 5).map(String) : [];
+  return {
+    monto: senaImporte,
+    nombreCuenta: String(cobroReal?.['nombreCuenta'] ?? ''),
+    cuentas,
+    qrEnviadoEn: qrEnviadoEnMs,
+    comprobanteRecibidoEn: ahoraMs,
+    toleranciaMin: MINUTOS_TOLERANCIA_RELOJ,
+  };
+}
+
+/**
+ * Lo que leyó el modelo, saneado. TODO es dato no confiable: lo produjo un
+ * modelo a partir de una imagen que mandó un cliente final. Se recorta, se
+ * tipa y se compara; nunca se interpola ni se guarda entero.
+ */
+export function leidoDelCuerpo(crudo: unknown): Leido {
+  const l = (typeof crudo === 'object' && crudo !== null ? crudo : {}) as Record<string, unknown>;
+  const monto = typeof l['monto'] === 'number' && Number.isFinite(l['monto'])
+    ? l['monto'] : texto(l['monto'], 40);
+  return {
+    monto,
+    cuentaDestino: texto(l['cuentaDestino'], 60),
+    nombreCuenta: texto(l['nombreCuenta'], 120),
+    fecha: texto(l['fecha'], 40),
+    hora: texto(l['hora'], 20),
+  };
+}
+
+/** La frase del detalle privado del cierre, por resultado. Sin «acreditado». */
+export function detalleDeLaSena(importe: number, moneda: string, resultado: ResultadoCotejo): string {
+  const palabra = resultado === 'cuadra' ? 'los datos coinciden'
+    : resultado === 'no_cuadra' ? 'con una diferencia' : 'ilegible';
+  return `Seña de ${importe} ${moneda === 'BOB' ? 'Bs' : moneda}, comprobante ${palabra}`;
+}
+
+const TELEFONO = /^[0-9]{8,15}$/;
+
+/** La forma mínima de la solicitud que estas Functions miran. */
+type SolicitudGuardada = Partial<Solicitud> & { qrEnviadoEn?: { toMillis?: () => number } | null };
+
+function solicitudDe(conversacion: { get(campo: string): unknown }): SolicitudGuardada | null {
+  const s = conversacion.get('solicitud');
+  return typeof s === 'object' && s !== null ? (s as SolicitudGuardada) : null;
+}
+
+// ---------------------------------------------------------------------------
+// COTEJAR EL COMPROBANTE
+// ---------------------------------------------------------------------------
+
+export const cotejarComprobante = onRequest(
+  {
+    region: REGION,
+    secrets: Object.values(SECRETOS_POR_ALIAS),
+    // Servidor a servidor, como la ingesta: sin CORS.
+    cors: false,
+    maxInstances: 10,
+  },
+  async (peticion, respuesta) => {
+    if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
+
+    // El comercio sale de la firma o del token del número, NUNCA del cuerpo.
+    const ruta = await rutaAutenticada(peticion);
+    if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
+    if (ruta.estado !== 'activo') { respuesta.status(409).json({ estado: ruta.estado }); return; }
+
+    const cuerpo = (typeof peticion.body === 'object' && peticion.body !== null
+      ? peticion.body : {}) as Record<string, unknown>;
+    const telefono = texto(cuerpo['telefono'], 25);
+    if (!TELEFONO.test(telefono)) { respuesta.status(400).json({ error: 'telefono invalido' }); return; }
+    const legible = cuerpo['legible'] === true;
+    const leido = leidoDelCuerpo(cuerpo['leido']);
+    const idMeta = texto(cuerpo['idMeta'], 120);
+    const banco = texto((cuerpo['leido'] as Record<string, unknown> | undefined)?.['banco'], 80);
+
+    const db = getFirestore();
+    const { tenantId } = ruta;
+    const docVertical = documentoDeVertical(ruta.flujo || 'agendamiento') ?? 'agendamiento';
+    const idConversacion = `wa_${telefono}`;
+    const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
+    const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
+    const ahoraMs = Date.now();
+
+    // La configuración se lee fuera de la transacción: no cambia con el cotejo
+    // y leerla adentro solo alargaría el bloqueo de la conversación.
+    const [especifica, negocio] = await Promise.all([
+      db.doc(`tenants/${tenantId}/config/${docVertical}`).get(),
+      db.doc(`tenants/${tenantId}/config/negocio`).get(),
+    ]);
+    const importeCrudo = especifica.get('senaImporte');
+    const importe = typeof importeCrudo === 'number' && Number.isInteger(importeCrudo) && importeCrudo > 0
+      ? importeCrudo : 0;
+    const moneda = String(negocio.get('moneda') ?? 'BOB');
+    const cobroReal = especifica.get('cobroReal') as Record<string, unknown> | undefined;
+
+    // TODO EN UNA TRANSACCIÓN: el cierre, su detalle privado, el contador del
+    // mes y la solicitud. Si se escribiera el cierre y fallara la solicitud, el
+    // paciente vería «los datos coinciden» y el siguiente archivo que mandara
+    // se volvería a cotejar como pago. Y al revés, una solicitud cerrada sin
+    // cierre es una seña que la clínica nunca ve en su pantalla de cobros.
+    const salida = await db.runTransaction(async (tx) => {
+      const conversacion = await tx.get(refConversacion);
+      const solicitud = solicitudDe(conversacion);
+      if (!conversacion.exists || solicitud?.etapa !== 'qr_enviado') {
+        // Sin QR pendiente no hay con qué comparar: la imagen es una imagen.
+        return { codigo: 409 as const, cuerpo: { error: 'sin_sena_pendiente' } };
+      }
+      if (importe <= 0) {
+        // La seña se apagó entre el QR y el comprobante. No se coteja contra
+        // cero: se le dice al flujo que no hay seña, y lo resuelve una persona.
+        return { codigo: 409 as const, cuerpo: { error: 'sena_inactiva' } };
+      }
+
+      const eventoId = String(solicitud.evento?.id ?? '').trim();
+      // La referencia externa del cierre: la cita retenida; si no la hubiera,
+      // el mensaje del comprobante, que también es una prueba verificable
+      // (`cierres.ts`, defensa 1). Sin ninguna de las dos no hay cierre.
+      const referencia = eventoId || idMeta;
+      if (!referencia) return { codigo: 400 as const, cuerpo: { error: 'falta referencia' } };
+
+      const qrEnviadoEn = typeof solicitud.qrEnviadoEn?.toMillis === 'function'
+        ? solicitud.qrEnviadoEn.toMillis() : ahoraMs;
+      const cotejo = legible
+        ? cotejar(esperadoDeLaSena(importe, cobroReal, qrEnviadoEn, ahoraMs), leido)
+        : null;
+      const veredicto = resultadoDelCotejo(legible, cotejo);
+      const intentos = (typeof solicitud.cotejos === 'number' ? solicitud.cotejos : 0) + 1;
+
+      const idCierre = idDeCierreDeCita(referencia);
+      const refCierre = db.doc(`tenants/${tenantId}/cierres/${idCierre}`);
+      const previo = await tx.get(refCierre);
+
+      // Lo leído, como número, para que la pantalla de cobros muestre «dice
+      // 40 y la seña es 50» sin volver a interpretar el texto del banco.
+      const montoLeido = legible ? parsearMonto(String(leido.monto ?? '')) : null;
+      const registroCotejo = {
+        resultado: veredicto.resultado,
+        diferencias: veredicto.diferencias,
+        montoLeido,
+        banco,
+        idMeta,
+        intentos,
+        en: Timestamp.fromMillis(ahoraMs),
+      };
+
+      if (previo.exists) {
+        // Segundo comprobante para la misma cita: se reescribe el cotejo y
+        // nada más. El cierre ya se contó; no se cuenta dos veces.
+        tx.update(refCierre, { cotejo: registroCotejo });
+      } else {
+        tx.set(refCierre, {
+          tipo: 'cita',
+          ocurridoEn: Timestamp.fromMillis(ahoraMs),
+          referencia,
+          telefonoEnmascarado: enmascarar(telefono),
+          monto: importe,
+          moneda,
+          cotejo: registroCotejo,
+        });
+        // El detalle que identifica a la persona: del negocio, y de nadie más.
+        // `conversacionId` es el teléfono completo y por eso va acá y no arriba.
+        const nombre = texto(conversacion.get('nombreContacto'), 120);
+        tx.set(refCierre.collection('privado').doc('datos'), {
+          telefono,
+          conversacionId: idConversacion,
+          ...(nombre ? { nombreCliente: nombre } : {}),
+          detalle: detalleDeLaSena(importe, moneda, veredicto.resultado),
+        });
+      }
+
+      tx.set(refMetricas, {
+        senasCotejadas: FieldValue.increment(1),
+        ...(previo.exists ? {} : { cierres: FieldValue.increment(1) }),
+      }, { merge: true });
+
+      // La solicitud avanza SOLO si cuadra. Si no cuadra o es ilegible sigue
+      // en `qr_enviado`: el próximo archivo se vuelve a cotejar, y la
+      // retención sigue corriendo para `senaVencida`.
+      tx.set(refConversacion, {
+        solicitud: {
+          ...solicitud,
+          cotejos: intentos,
+          ...(veredicto.resultado === 'cuadra'
+            ? { etapa: 'agendada', desde: Timestamp.fromMillis(ahoraMs) } : {}),
+        },
+      }, { merge: true });
+
+      return {
+        codigo: 200 as const,
+        cuerpo: {
+          resultado: veredicto.resultado,
+          diferencias: veredicto.diferencias,
+          importe,
+          moneda,
+          evento: solicitud.evento ?? null,
+          cierreId: idCierre,
+        },
+      };
+    });
+
+    if (salida.codigo === 200) {
+      await registrar(tenantId, {
+        tipo: 'cobro_cotejado', resultado: 'ok', telefono, conversacionId: idConversacion,
+        codigo: salida.cuerpo.resultado,
+      });
+    }
+    respuesta.status(salida.codigo).json(salida.cuerpo);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// LA RETENCIÓN VENCIÓ
+// ---------------------------------------------------------------------------
+
+export const senaVencida = onRequest(
+  {
+    region: REGION,
+    secrets: Object.values(SECRETOS_POR_ALIAS),
+    cors: false,
+    maxInstances: 10,
+  },
+  async (peticion, respuesta) => {
+    if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
+
+    const ruta = await rutaAutenticada(peticion);
+    if (!ruta) { respuesta.status(401).send('no autorizado'); return; }
+    if (ruta.estado !== 'activo') { respuesta.status(409).json({ estado: ruta.estado }); return; }
+
+    const cuerpo = (typeof peticion.body === 'object' && peticion.body !== null
+      ? peticion.body : {}) as Record<string, unknown>;
+    const telefono = texto(cuerpo['telefono'], 25);
+    const referencia = texto(cuerpo['referencia'], 200);
+    if (!TELEFONO.test(telefono) || !referencia) {
+      respuesta.status(400).json({ error: 'faltan telefono o referencia' }); return;
+    }
+
+    const db = getFirestore();
+    const { tenantId } = ruta;
+    const idConversacion = `wa_${telefono}`;
+    const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
+    const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
+    const ahoraMs = Date.now();
+
+    // IDEMPOTENTE POR CONSTRUCCIÓN: el flujo programado corre cada diez
+    // minutos y puede reportar dos veces la misma cita si el borrado falló a
+    // medias. Solo la PRIMERA vez mueve algo; la segunda ve `vencida` y
+    // contesta `repetido`, sin contar de nuevo.
+    const salida = await db.runTransaction(async (tx) => {
+      const conversacion = await tx.get(refConversacion);
+      const solicitud = solicitudDe(conversacion);
+      const mismaCita = String(solicitud?.evento?.id ?? '') === referencia;
+      if (!conversacion.exists || !solicitud || !mismaCita) {
+        return { registrado: false, repetido: false, motivo: 'sin_sena_pendiente' };
+      }
+      if (solicitud.etapa === 'vencida') return { registrado: false, repetido: true };
+      if (solicitud.etapa !== 'qr_enviado') {
+        // Ya se agendó (el comprobante cuadró): no hay nada que vencer, y el
+        // flujo NO debería haber borrado la cita. Se contesta con el motivo
+        // para que quede a la vista en el registro de n8n.
+        return { registrado: false, repetido: false, motivo: 'ya_agendada' };
+      }
+      tx.set(refConversacion, {
+        solicitud: { ...solicitud, etapa: 'vencida', desde: Timestamp.fromMillis(ahoraMs) },
+      }, { merge: true });
+      tx.set(refMetricas, { senasVencidas: FieldValue.increment(1) }, { merge: true });
+      return { registrado: true, repetido: false };
+    });
+
+    if (salida.registrado) {
+      await registrar(tenantId, {
+        tipo: 'sena_vencida', resultado: 'ok', telefono, conversacionId: idConversacion,
+      });
+    }
+    // NUNCA se manda nada al paciente desde acá: ni mensaje ni plantilla.
+    respuesta.status(200).json(salida);
+  },
+);

@@ -228,6 +228,33 @@ describe('cargar-negocio.mjs', () => {
     }
   });
 
+  it('NO acepta un enlace de mapa que no sea https:// de Google Maps, ni una ubicación incompleta o fuera de rango', () => {
+    // El asistente reenvía el enlace tal cual al cliente: un dominio ajeno es
+    // un enlace a cualquier sitio firmado con el nombre de la clínica.
+    for (const enlace of ['http://maps.app.goo.gl/AbC', 'https://ejemplo.com/maps', 'https://maps.app.goo.gl.ejemplo.com/AbC']) {
+      const r = correr(T, archivo('mapa', con((d) => { d.negocio.direccionMaps = enlace; })), '--aplicar');
+      expect(r.codigo, enlace).toBe(2);
+      expect(r.salida).toMatch(/negocio\.direccionMaps: vacío o un enlace https:\/\/ de Google Maps/);
+      expect(r.salida).toMatch(/No se escribió nada/);
+    }
+    for (const ubicacion of [{ lat: -17.78 }, { lat: '-17.78', lng: '-63.18' }, { lat: 91, lng: -63.18 }, { lat: -17.78, lng: -63.18, piso: 2 }, '-17.78,-63.18']) {
+      const r = correr(T, archivo('pin', con((d) => { d.negocio.ubicacion = ubicacion; })), '--aplicar');
+      expect(r.codigo, JSON.stringify(ubicacion)).toBe(2);
+      expect(r.salida).toMatch(/negocio\.ubicacion: objeto con exactamente lat \(-90 a 90\) y lng \(-180 a 180\)/);
+    }
+  });
+
+  it('SÍ acepta un enlace de Google Maps y coordenadas en rango, y en seco los resume sin pegar el enlace entero', () => {
+    const r = correr(T, archivo('mapa-ok', con((d) => {
+      d.negocio.direccionMaps = 'https://maps.app.goo.gl/AbCdEf123';
+      d.negocio.ubicacion = { _nota: 'de prueba', lat: -17.7833, lng: -63.1821 };
+    })));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/direccionMaps\s+enlace de maps\.app\.goo\.gl/);
+    expect(r.salida).not.toContain('AbCdEf123');
+    expect(r.salida).toMatch(/ubicacion\s+lat -17\.7833, lng -63\.1821/);
+  });
+
   it('NO acepta un funcionario con un servicio que no está en el catálogo del archivo', () => {
     const r = correr(T, archivo('servicio', con((d) => { d.funcionarios[1].servicios.push('implantes'); })), '--aplicar');
     expect(r.codigo).toBe(2);
@@ -249,6 +276,34 @@ describe('cargar-negocio.mjs', () => {
       /catalogo\[2\]\.nombre: texto de 1 a 80/, /negocio\.numeroRecepcionMarcador: un marcador REEMPLAZAR_/]) {
       expect(r.salida).toMatch(m);
     }
+  });
+
+  it('NO acepta una seña de 10001, negativa, decimal ni de texto, ni una retención fuera de 5..180', () => {
+    for (const [senaImporte, senaMinutosRetencion] of [[10001, 30], [-1, 30], [12.5, 30], ['50', 30], [50, 4], [50, 181], [50, 30.5]] as const) {
+      const r = correr(T, archivo('sena-mal', con((d) => {
+        d.agendamiento.senaImporte = senaImporte;
+        d.agendamiento.senaMinutosRetencion = senaMinutosRetencion;
+      })), '--aplicar');
+      expect(r.codigo, `${senaImporte} / ${senaMinutosRetencion}`).toBe(2);
+      expect(r.salida).toMatch(/agendamiento\.sena(Importe: entero de 0 a 10000|MinutosRetencion: entero de 5 a 180)/);
+    }
+  });
+
+  it('NO acepta `cobroReal` en el archivo: el QR lo registra solo la consola', () => {
+    const r = correr(T, archivo('sena-qr', con((d) => { d.agendamiento.cobroReal = { activo: true }; })), '--aplicar');
+    expect(r.codigo).toBe(2);
+    expect(r.salida).toMatch(/agendamiento: clave desconocida «cobroReal»/);
+  });
+
+  it('acepta la seña y la retención dentro del rango, y en seco las muestra', () => {
+    const r = correr(T, archivo('sena-bien', con((d) => {
+      d.agendamiento.senaImporte = 50;
+      d.agendamiento.senaMinutosRetencion = 30;
+    })));
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/senaImporte\s+50/);
+    expect(r.salida).toMatch(/senaMinutosRetencion\s+30/);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
   });
 
   it('NO carga agendamiento ni funcionarios en un comercio sin el flujo agendamiento', async () => {

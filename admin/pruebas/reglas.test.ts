@@ -856,6 +856,80 @@ describe('Historial de mensajes', () => {
 });
 
 // ===========================================================================
+// 7bis. NO CONTACTAR Y LA SOLICITUD PENDIENTE (bloque 4, `Analisis/31` §4)
+//
+// La lista de no molestar es el único campo de gestión que CAMBIA LO QUE EL
+// SISTEMA HACE: con `noContactar: true` el barrido de seguimientos deja de
+// considerar ese teléfono. Por eso se prueba negando, campo por campo, igual
+// que el aislamiento entre comercios: que el operador pueda encenderlo, que no
+// pueda aprovecharlo para tocar nada más, que no acepte un valor que no sea
+// booleano, y que la etapa `horarios` de la solicitud entre por la ingesta.
+// ===========================================================================
+describe('No contactar y la solicitud pendiente', () => {
+  it('una persona del negocio enciende y apaga «No contactar»', async () => {
+    await assertSucceeds(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: true }));
+    await assertSucceeds(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: false }));
+  });
+
+  it('pero NO le sirve de puerta para tocar otro campo en la misma escritura', async () => {
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
+      noContactar: true, ultimoMensaje: 'falsificado',
+    }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), {
+      noContactar: true, solicitud: { etapa: 'agendada' },
+    }));
+  });
+
+  it('`noContactar` tiene que ser booleano: una cadena no pasa', async () => {
+    // En JavaScript `'no'` es verdadero. Si la regla no exigiera el tipo, un
+    // defecto de la pantalla dejaría a un paciente sin seguimientos para
+    // siempre, y nadie lo notaría.
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: 'no' }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { noContactar: 1 }));
+  });
+
+  it('el operador del tenant A no la enciende en el tenant B', async () => {
+    await assertFails(updateDoc(doc(operA(), `tenants/${B}/conversaciones/c1`), { noContactar: true }));
+  });
+
+  it('la ingesta escribe la solicitud en etapa `horarios`, con su marca de seguimiento', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c4`), {
+      telefono: '59170000004', ultimoMensaje: 'Y el jueves?', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 3, noContactar: false,
+      solicitud: {
+        etapa: 'horarios', desde: Timestamp.now(), qrEnviadoEn: null, evento: null,
+        cotejos: 0, seguimientos: 0, seguimientoEn: null, reactivadaEn: null,
+      },
+    }));
+  });
+
+  it('una etapa inventada de la solicitud se rechaza', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c5`), {
+      telefono: '59170000005', ultimoMensaje: 'x', canal: 'whatsapp',
+      ultimoEn: serverTimestamp(), mensajesTotal: 1,
+      solicitud: { etapa: 'en_duda', desde: Timestamp.now(), seguimientos: 0 },
+    }));
+  });
+
+  it('el agregado del mes acepta `seguimientos` y `reactivadas`, y nada inventado', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), {
+      mensajes: increment(1), seguimientos: increment(1), reactivadas: increment(1),
+    }, { merge: true }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-10`), {
+      seguimientosDeMarketing: increment(1),
+    }, { merge: true }));
+  });
+
+  it('la bitácora acepta `seguimiento_enviado` con el modo en `codigo`', async () => {
+    await assertSucceeds(addDoc(collection(ingestaA(), `tenants/${A}/bitacora`), {
+      ts: Timestamp.now(), tipo: 'seguimiento_enviado', resultado: 'ok',
+      canal: 'whatsapp', codigo: 'plantilla', conversacionId: 'wa_59170000001',
+      destinoEnmascarado: '5917****0001',
+    }));
+  });
+});
+
+// ===========================================================================
 // 8. NEGACIÓN POR DEFECTO
 // ===========================================================================
 describe('Negación por defecto', () => {
@@ -2307,6 +2381,229 @@ describe('Contadores de la oferta comercial', () => {
     await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
       { cierres: 12, descuentoEspecial: 999 }));
   });
+
+  /**
+   * ENTRANTES POR TIPO (bloque 3, 17/09/2026), NEGANDO.
+   *
+   * El mapa cuenta los mensajes del cliente por clase (audio, imagen, PDF…).
+   * Lo escribe la ingesta y nadie más, y sus claves son las que `ingesta.ts`
+   * normaliza: un mapa de claves libres dentro de la colección que factura
+   * sería justo el campo arbitrario que la lista blanca existe para impedir.
+   */
+  describe('Entrantes por tipo', () => {
+    it('la ingesta escribe el mapa con los tipos que normaliza', async () => {
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantes: 9, entrantesPorTipo: { text: 5, audio: 2, image: 1, document: 1 } },
+        { merge: true }));
+      await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { interactive: 1, location: 1, order: 1, otro: 1 } }, { merge: true }));
+    });
+
+    it('un tipo que la ingesta no normaliza NO entra: tendría que haber caído en «otro»', async () => {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { sticker: 3 } }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { text: 1, loQueSea: 1 } }, { merge: true }));
+    });
+
+    it('no es un mapa: no entra', async () => {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: 7 }, { merge: true }));
+    });
+
+    it('ni el negocio ni el propietario lo tocan, ni la ingesta de otro comercio', async () => {
+      await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { audio: 99 } }, { merge: true }));
+      await assertFails(setDoc(doc(propietario(), `tenants/${A}/metricas/2026-09`),
+        { entrantesPorTipo: { audio: 0 } }, { merge: true }));
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-09`),
+        { entrantesPorTipo: { audio: 1 } }, { merge: true }));
+    });
+  });
+});
+
+/**
+ * SEÑA POR QR EN LAS RESERVAS (bloque 2, 17/09/2026) — las reglas, negando.
+ *
+ * Tres documentos y un contador. Lo que se cuida acá es plata y prohibición 3:
+ *  - `config/agendamiento`: el admin fija el importe de la seña dentro del
+ *    rango, y NADIE escribe `cobroReal` desde el navegador —ni lo enciende, ni
+ *    lo borra con un `setDoc`—: lo escribe solo `registrarQrDeCobro`.
+ *  - `cierres`: la ingesta crea el cierre con su `cotejo` bien formado, y el
+ *    resultado es uno de tres, ninguno llamado «pagado». Otro comprobante
+ *    reescribe SOLO el cotejo.
+ *  - `conversaciones.solicitud` y las tres métricas nuevas: solo la ingesta.
+ */
+describe('Seña por QR en las reglas', () => {
+  const sello = (uid: string) => ({ actualizadoPor: uid, actualizadoEn: serverTimestamp() });
+  const cotejo = (extra: Record<string, unknown> = {}) => ({
+    resultado: 'cuadra', diferencias: [], montoLeido: 50, banco: 'BNB',
+    idMeta: 'wamid.abc', intentos: 1, en: serverTimestamp(), ...extra,
+  });
+  const cierreConSena = (extra: Record<string, unknown> = {}) => ({
+    tipo: 'cita', ocurridoEn: serverTimestamp(), referencia: 'evt_sena',
+    telefonoEnmascarado: '591****001', monto: 50, moneda: 'BOB', cotejo: cotejo(), ...extra,
+  });
+
+  it('el admin del comercio con agenda fija la seña y la retención dentro del rango', async () => {
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 50, senaMinutosRetencion: 30, ...sello('u-admin-a') }));
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 0, senaMinutosRetencion: 180, ...sello('u-admin-a') }));
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 10000, senaMinutosRetencion: 5, ...sello('u-admin-a') }));
+  });
+
+  it('NO puede fijar 10001, un negativo, un decimal ni un texto', async () => {
+    for (const senaImporte of [10001, -1, 12.5, '50', null]) {
+      await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+        { senaImporte, ...sello('u-admin-a') }));
+    }
+  });
+
+  it('NO puede fijar una retención de 4 ni de 181 minutos', async () => {
+    for (const senaMinutosRetencion of [4, 181, 30.5, '30']) {
+      await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+        { senaMinutosRetencion, ...sello('u-admin-a') }));
+    }
+  });
+
+  it('un comercio SIN agendamiento no puede escribir la seña', async () => {
+    // B es de venta: no tiene documento de agenda ni puede crearlo.
+    await assertFails(setDoc(doc(adminB(), `tenants/${B}/config/agendamiento`),
+      { senaImporte: 50, ...sello('u-admin-b') }));
+    // Y en su propio documento el campo no existe.
+    await assertFails(updateDoc(doc(adminB(), `tenants/${B}/config/venta`),
+      { senaImporte: 50, ...sello('u-admin-b') }));
+  });
+
+  it('el operador NO fija la seña', async () => {
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/config/agendamiento`),
+      { senaImporte: 50, ...sello('u-oper-a') }));
+  });
+
+  it('NADIE escribe `cobroReal` en el documento de agenda desde el navegador', async () => {
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`), {
+      cobroReal: { activo: true, cargaUtil: 'cualquier cosa', ficha: 'a'.repeat(32) },
+      ...sello('u-admin-a'),
+    }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`), {
+      'cobroReal.activo': true, ...sello('u-admin-a'),
+    }));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/config/agendamiento`), {
+      cobroReal: { activo: true }, ...sello('u-novuchat'),
+    }));
+  });
+
+  it('con el QR ya registrado, el admin sigue editando su agenda y NO puede borrar el QR', async () => {
+    // El QR lo escribió la Function (Admin SDK). Desde ese momento el
+    // documento tiene una clave que el navegador no controla.
+    await entorno.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(ctx.firestore(), `tenants/${A}/config/agendamiento`), {
+        cobroReal: { activo: true, cargaUtil: 'qr', ficha: 'b'.repeat(32), cuentas: ['1000000890'] },
+      });
+    });
+    await assertSucceeds(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { duracionPorDefectoMin: 60, senaImporte: 80, ...sello('u-admin-a') }));
+    // Un `setDoc` completo BORRARÍA `cobroReal`: borrar también es afectar.
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/config/agendamiento`), {
+      duracionPorDefectoMin: 45, anticipacionMinimaMin: 60, anticipacionMaximaDias: 60,
+      permitirCancelacion: true, horasRecordatorio: 24, senaImporte: 80, ...sello('u-admin-a'),
+    }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { cobroReal: deleteField(), ...sello('u-admin-a') }));
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/config/agendamiento`),
+      { 'cobroReal.activo': false, ...sello('u-admin-a') }));
+  });
+
+  it('la ingesta crea un cierre de cita con su cotejo bien formado', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena`), cierreConSena()));
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      cierreConSena({ cotejo: cotejo({ resultado: 'no_cuadra', diferencias: ['El comprobante dice 40 y el pedido es de 50.'], montoLeido: 40 }) })));
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena3`),
+      cierreConSena({ cotejo: cotejo({ resultado: 'ilegible', diferencias: ['No se pudo leer el comprobante.'], montoLeido: null }) })));
+  });
+
+  it('NO acepta un resultado fuera del enumerado: ni «pagado» ni «acreditado»', async () => {
+    for (const resultado of ['pagado', 'acreditado', 'verificado', 'ok', '', 1, true]) {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`),
+        cierreConSena({ cotejo: cotejo({ resultado }) })));
+    }
+  });
+
+  it('NO acepta un cotejo con claves de más, tipos cambiados o un intento en cero', async () => {
+    for (const malo of [
+      cotejo({ imagen: 'data:image/png;base64,AAAA' }),
+      cotejo({ diferencias: 'texto suelto' }),
+      cotejo({ montoLeido: '50' }),
+      cotejo({ banco: 'x'.repeat(81) }),
+      cotejo({ idMeta: 'x'.repeat(121) }),
+      cotejo({ intentos: 0 }),
+      cotejo({ intentos: 1.5 }),
+      cotejo({ en: 'ayer' }),
+      'no es un mapa',
+    ]) {
+      await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ cotejo: malo })));
+    }
+  });
+
+  it('NO acepta un importe negativo, no numérico ni una moneda larga', async () => {
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ monto: -50 })));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ monto: '50' })));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_mal`), cierreConSena({ moneda: 'bolivianos' })));
+  });
+
+  it('un cierre sin seña sigue entrando como antes, sin cotejo ni importe', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sin_sena`), {
+      tipo: 'cita', ocurridoEn: serverTimestamp(), referencia: 'evt_x', telefonoEnmascarado: '5917****001',
+    }));
+  });
+
+  it('otro comprobante reescribe SOLO el cotejo; la referencia y el importe, no', async () => {
+    // El `beforeEach` limpia Firestore: el cierre se crea acá mismo. Si no
+    // existiera, los `assertFails` de abajo pasarían en vacío.
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      cierreConSena({ cotejo: cotejo({ resultado: 'no_cuadra', diferencias: ['El comprobante dice 40 y el pedido es de 50.'], montoLeido: 40 }) })));
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'cuadra', intentos: 2, idMeta: 'wamid.def' }) }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ intentos: 3 }), monto: 500 }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ intentos: 3 }), referencia: 'otra' }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'pagado', intentos: 3 }) }));
+    // Ni el admin ni NovuChat tocan el cotejo: es del servidor.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'cuadra', intentos: 3 }) }));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/cierres/cita_sena2`),
+      { cotejo: cotejo({ resultado: 'cuadra', intentos: 3 }) }));
+    // La ingesta sigue sin poder poner el sello de la clínica.
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/cierres/cita_sena2`),
+      { comprobadoPor: 'svc-a', comprobadoEn: serverTimestamp() }));
+  });
+
+  it('la solicitud de la seña la escribe SOLO la ingesta, con una etapa del enumerado', async () => {
+    const solicitud = (etapa: unknown) => ({
+      etapa, desde: serverTimestamp(), qrEnviadoEn: serverTimestamp(),
+      evento: { id: 'evt_1', calendario: 'cal@ejemplo.com' }, cotejos: 0, seguimientos: 0,
+    });
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('qr_enviado') }));
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('agendada') }));
+    await assertSucceeds(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('vencida') }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('pagada') }));
+    await assertFails(updateDoc(doc(ingestaA(), `tenants/${A}/conversaciones/c1`), { solicitud: 'qr_enviado' }));
+    // Una persona del negocio no la mueve: si pudiera, marcaría «agendada» sin comprobante.
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('agendada') }));
+    await assertFails(updateDoc(doc(operA(), `tenants/${A}/conversaciones/c1`), { solicitud: solicitud('agendada') }));
+  });
+
+  it('las tres métricas de la seña las escribe la ingesta, y nadie más', async () => {
+    await assertSucceeds(setDoc(doc(ingestaA(), `tenants/${A}/metricas/2026-09`),
+      { senasEnviadas: 3, senasCotejadas: 2, senasVencidas: 1 }, { merge: true }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/metricas/2026-09`), { senasCotejadas: 99 }, { merge: true }));
+    await assertFails(setDoc(doc(propietario(), `tenants/${A}/metricas/2026-09`), { senasVencidas: 0 }, { merge: true }));
+    await assertFails(setDoc(doc(ingestaA(), `tenants/${B}/metricas/2026-09`), { senasEnviadas: 1 }, { merge: true }));
+  });
 });
 
 describe('Cierres · el número completo no puede colarse por otro campo', () => {
@@ -3063,6 +3360,91 @@ describe('Nombre del asistente (config/negocio)', () => {
 
   it('el operador no lo escribe', async () => {
     await assertFails(setDoc(doc(operA(), ruta), { ...configValida('u-oper-a'), nombreAsistente: 'Kenji' }));
+  });
+});
+
+// ===========================================================================
+// DÓNDE QUEDA EL LOCAL: enlace de Google Maps y coordenadas del pin
+// (Analisis/34 §2, bloque 1 del plan de Platinum)
+// ===========================================================================
+//
+// `direccionMaps` es el único texto del comercio que el asistente REENVÍA TAL
+// CUAL a un cliente final: en la confirmación de cada cita. Un texto libre acá
+// sería un enlace a cualquier sitio, firmado con el nombre del negocio, en el
+// WhatsApp de un tercero. Por eso se escribe NEGANDO: `http://`, otro dominio,
+// un dominio que empieza como el de mapas, no entran ni armando la petición a
+// mano. `ubicacion` va aparte y estructurada: con una sola coordenada, con
+// texto o fuera de rango, el pin saldría en el mar y Meta lo cobraría igual.
+describe('Dónde queda el local (config/negocio): enlace de mapa y coordenadas', () => {
+  const ruta = `tenants/${A}/config/negocio`;
+  const guardar = (extra: Record<string, unknown>) =>
+    setDoc(doc(adminA(), ruta), { ...configValida('u-admin-a'), ...extra });
+
+  it('el administrador guarda un enlace de Google Maps, o lo deja vacío', async () => {
+    for (const direccionMaps of [
+      'https://maps.app.goo.gl/AbCdEf123',
+      'https://goo.gl/maps/AbCdEf123',
+      'https://www.google.com/maps/place/Cl%C3%ADnica+X/@-17.78,-63.18,17z/data=!3m1!4b1',
+      'https://www.google.com/maps?q=-17.78,-63.18',
+      'https://google.com/maps/place/algo',
+      'https://maps.google.com/?q=-17.78,-63.18',
+      '',
+    ]) {
+      await assertSucceeds(guardar({ direccionMaps }));
+    }
+    // Un comercio de venta también: es capa común, como la dirección.
+    await assertSucceeds(setDoc(doc(adminB(), `tenants/${B}/config/negocio`),
+      { ...configValida('u-admin-b'), direccionMaps: 'https://maps.app.goo.gl/AbCdEf123' }));
+  });
+
+  it('NO guarda http://, otro dominio, un dominio que empieza como el de mapas, ni más de 200 caracteres', async () => {
+    for (const direccionMaps of [
+      'http://maps.app.goo.gl/AbCdEf123',
+      'https://ejemplo.com/maps/AbCdEf123',
+      'https://maps.app.goo.gl.ejemplo.com/AbC',
+      'https://maps.app.goo.gl@ejemplo.com/AbC',
+      'https://www.google.com/search?q=mapa',
+      'https://maps.app.goo.gl/Ab C',
+      'javascript:alert(1)',
+      'Radial 26, tercer anillo',
+      'https://maps.app.goo.gl/' + 'a'.repeat(200),
+      7,
+    ]) {
+      await assertFails(guardar({ direccionMaps }));
+    }
+  });
+
+  it('las coordenadas entran con lat y lng numéricos en rango, y se pueden quitar', async () => {
+    await assertSucceeds(guardar({ ubicacion: { lat: -17.7833, lng: -63.1821 } }));
+    await assertSucceeds(guardar({ ubicacion: { lat: 90, lng: -180 } }));
+    await assertSucceeds(guardar({ ubicacion: { lat: 0, lng: 0 } }));
+    // Sin el campo: no hay pin, y el asistente da la dirección en texto.
+    await assertSucceeds(guardar({}));
+  });
+
+  it('NO entran con una sola coordenada, con texto, con claves de más, fuera de rango ni como texto suelto', async () => {
+    for (const ubicacion of [
+      { lat: -17.7833 },
+      { lng: -63.1821 },
+      { lat: '-17.7833', lng: '-63.1821' },
+      { lat: -17.7833, lng: -63.1821, piso: 2 },
+      { lat: 91, lng: 0 },
+      { lat: -91, lng: 0 },
+      { lat: 0, lng: 181 },
+      { lat: 0, lng: -181 },
+      '-17.7833,-63.1821',
+      [-17.7833, -63.1821],
+      null,
+    ]) {
+      await assertFails(guardar({ ubicacion }));
+    }
+  });
+
+  it('el operador no escribe ninguno de los dos', async () => {
+    await assertFails(setDoc(doc(operA(), ruta),
+      { ...configValida('u-oper-a'), direccionMaps: 'https://maps.app.goo.gl/AbCdEf123' }));
+    await assertFails(setDoc(doc(operA(), ruta),
+      { ...configValida('u-oper-a'), ubicacion: { lat: -17.7833, lng: -63.1821 } }));
   });
 });
 

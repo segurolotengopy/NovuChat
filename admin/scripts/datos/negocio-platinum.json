@@ -5,6 +5,8 @@
     "nombreNegocio": "Clínica Platinum",
     "descripcion": "Clínica dental y de estética facial en Santa Cruz. Campaña vigente: blanqueamiento dental profesional de consultorio. Se atiende con cita previa y se agenda por este mismo WhatsApp; la primera visita incluye una valoración clínica con el odontólogo.",
     "direccion": "Radial 26, entre 2do y 3er anillo, calle Nataniel Aguirre N.º 65, Santa Cruz de la Sierra",
+    "_notaDireccionMaps": "SUPUESTO: el enlace de Google Maps del local no consta en ninguna fuente; lo tiene que dar la clínica (Compartir → Copiar enlace, en Google Maps). Vacío = el asistente da la dirección sin mapa. Sin `ubicacion` (coordenadas del pin) hasta que la clínica las confirme: con ellas el asistente puede mandar el pin nativo cuando el paciente lo pide, un mensaje más solo en ese caso.",
+    "direccionMaps": "",
     "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_PLATINUM",
     "calendarioMarcador": "REEMPLAZAR_CALENDARIO_PLATINUM_1",
     "zonaHoraria": "America/La_Paz",

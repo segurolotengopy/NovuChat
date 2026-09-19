@@ -986,12 +986,14 @@ donde entra lo que el asistente va a afirmar como verdad ante un cliente final**
 y la validación deja de ser higiene para ser el único punto donde se puede frenar
 un dato antes de que salga por WhatsApp.
 
-**Tres clases de campo, y la diferencia importa:**
+**Cinco clases de campo, y la diferencia importa:**
 
 | Clase | Campos | Por qué |
 |---|---|---|
 | **Enumerados** | `tratamiento`, `estiloEmojis`, `zonaHoraria`, `moneda` | lista cerrada; el código los traduce a una frase fija |
 | **Texto libre al prompt** | `nombreNegocio`, `descripcion`, `direccion`, `politicaCancelacion`, `datosQueNoTenemos`, `instruccionesExtra`, `mensajeCierre`, `mensajeErrorTemporal`, `mensajeReservaNoConfirmada`, `mensajeComercioSuspendido` | topeados y entregados en una sección rotulada |
+| **Texto validado, no libre** | `direccionMaps` | el enlace de Google Maps del local: vacío, o `https://` de un dominio de mapas de Google y nada más (`enlaceDeMapaValido`, la misma lista en las reglas, en `prompt.ts` y en el flujo). Es el único texto del comercio que el asistente **reenvía tal cual** a un cliente final, en la confirmación de cada cita; texto libre acá sería un enlace a cualquier sitio firmado con el nombre del negocio. Va en el mismo mensaje que la dirección: cero mensajes nuevos (`Analisis/34` §2) |
+| **Estructurados** | `horarios`, `ubicacion` | mapas de forma fija: `horarios` con los siete días; `ubicacion` con exactamente `lat` y `lng` numéricos en rango. `ubicacion` nunca entra al texto del prompt: sale en `operacion` y el flujo la usa solo para el pin nativo de WhatsApp cuando el cliente lo pide (un mensaje más, solo en ese caso) |
 | **Derivados, NO almacenados** | `horarioAtencion`, `estadoComercio`, `phoneNumberId` | los calcula `configuracionFlujo` |
 
 **Los enumerados son la decisión más fuerte de este bloque.** `tratamiento` y
@@ -1027,6 +1029,16 @@ defecto posible: un cliente podría presentarse en un lugar que no existe.
 cualquier cosa para poder guardar, y un dato inventado por el comercio hace el
 mismo daño que uno inventado por el modelo. **Vacía significa «no la tenemos»**,
 que es una respuesta correcta y verificable.
+
+**El enlace del mapa y el pin acompañan a la dirección; no la reemplazan**
+(`Analisis/34` §2, 17/09/2026). `direccionMaps` vacío significa «sin enlace»: el
+asistente da la dirección sola y no menciona ningún mapa. No entra en
+`datosQueNoTenemos`: la falta del enlace no es un dato que el cliente pida, y
+anunciarla lo invitaría a pedirlo. Y sin `ubicacion` la marca `[ENVIAR_UBICACION]`
+se quita del texto y no se manda nada: la respuesta ya lleva la dirección y el
+enlace, que es lo que el cliente necesita para llegar. Un pin sin dirección
+cargada no existe por construcción: el flujo lo arma con `direccion` y la
+regla 6c prohíbe la marca cuando la dirección no está definida.
 
 **`datosQueNoTenemos` se calcula, no se declara.** `configuracionFlujo` la computa
 desde los campos que están efectivamente vacíos —dirección, teléfono de
@@ -1334,10 +1346,14 @@ Y cuatro reglas que se aplican a **todo flujo nuevo**:
 | | Común a cualquier negocio | Reservas y citas (`agendamiento`) | Pedidos y cobro (`venta`) | Captación de clientes (`onboarding`) |
 |---|---|---|---|---|
 | **Documento** | `/config/negocio` | `/config/agendamiento` | `/config/venta` | `/config/onboarding` |
-| **Contiene** | identidad, dirección, horarios, voz del asistente, **nombre del asistente** (`nombreAsistente`), mensajes fijos, política de cancelación, calendario del negocio (por historia) | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho, `mediaIdQr` (solo NovuChat) | rubros, planes, cargos únicos, aclaraciones de la oferta, archivo de planes, mensaje al cliente actual, enlace a la consola, respuesta del aviso y su plantilla (§4sexies.5) |
+| **Contiene** | identidad, dirección, horarios, voz del asistente, **nombre del asistente** (`nombreAsistente`), mensajes fijos, política de cancelación, calendario del negocio (por historia) | duración por defecto, anticipación mínima y máxima, recordatorios, cancelación, **seña** (`senaImporte`, `senaMinutosRetencion`) y, si el negocio no vende, el QR propio (`cobroReal`, solo por `registrarQrDeCobro`) — §4duodecies | costo de envío, recargo de flota, pedido mínimo, radio, tiempos de cocina y despacho, `mediaIdQr` (solo NovuChat), QR propio (`cobroReal`, solo por `registrarQrDeCobro`) | rubros, planes, cargos únicos, aclaraciones de la oferta, archivo de planes, mensaje al cliente actual, enlace a la consola, respuesta del aviso y su plantilla (§4sexies.5) |
 | **Colecciones propias** | catálogo, contactos, conversaciones, bitácora, miembros | funcionarios | — | — |
 | **Catálogo nativo de WhatsApp** | — | **no**, y no es un pendiente | **sí** (pendiente) | no |
-| **Pestañas en la consola** | Configuración, Servicios/Productos, Conversaciones, Usuarios, Contactos, Consumo, Cuenta, Reclamos, Bitácora, Mi cuenta | **Agenda** | **Pedidos y cobro** | **Captación** |
+| **Pestañas en la consola** | Configuración, Servicios/Productos, Conversaciones, Usuarios, Contactos, Consumo, Cuenta, Reclamos, Bitácora, Mi cuenta | **Agenda**, **Cobros**, **Configuración de QR** (las dos últimas desde el 17/09, por la seña: §4duodecies) | **Pedidos**, **Cobros**, **Inventario**, **Configuración de QR** (§4nonies) | **Captación** |
+
+«Cobros» y «Configuración de QR» las declaran dos flujos con la misma ruta;
+la cabecera pinta cada ruta una sola vez, y la pantalla decide qué documento
+lee por la lista de flujos (`venta` gana, §4duodecies.2).
 
 El **catálogo con precios es común**: el Demo A lo usa para servicios con
 duración y el Demo B para productos. Es el mismo concepto y ya estaba modelado.
@@ -1881,12 +1897,261 @@ dos datos, cada pantalla lo dice.** Pedidos avisa que los pedidos de WhatsApp
 todavía no se listan, y dónde verlos; Cobros avisa que el comprobante está en
 la conversación. Esos avisos se quitan cuando llegue el dato, no antes.
 
+> **Revisión del 17/09 (§4duodecies): el `media id` del comprobante YA NO HACE
+> FALTA guardarlo.** La seña por QR resolvió el punto 1 por otro camino: el
+> comprobante **no se guarda, se coteja**. El flujo lo baja de Meta con el
+> token, un modelo lo lee, y al servidor llega solo el JSON leído (monto,
+> cuenta, fecha, hora, banco); la imagen y el PDF no van a Storage ni a
+> Firestore, y en el cierre queda `cotejo` con lo leído y el resultado. Cobros
+> muestra eso, y sigue diciendo que la imagen está en la conversación: no
+> como deuda, sino como decisión. Un comprobante guardado es un dato personal
+> más que custodiar, y lo que la persona necesita para mirar su banco —monto,
+> banco, hora— ya está en el cotejo. El punto 2 (los pedidos por WhatsApp
+> como pedidos) sigue pendiente.
+
 ### 4nonies.4 Lo que cambia en el registro de flujos — hecho
 
 `web/src/lib/flujos.ts` declara para `venta` las pestañas Pedidos, Cobros,
 Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre sus
 roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
 suponer que una pestaña de flujo implica administrador.
+
+## 4duodecies. Seña por QR en reservas
+
+> **Decidido el 17/09/2026** (`Analisis/30` §4, `Analisis/07` §4; rama
+> `flujos/sena-por-qr`). El flujo de reservas cobra una **seña** por QR para
+> retener el horario. Es la primera vez que el flujo de agendamiento cobra, y
+> por eso esta sección toca las tres capas: el documento del flujo, dos
+> pantallas que hasta ahora eran solo de venta, y una Function nueva que
+> coteja. **Prohibición 3 de `CLAUDE.md` en cada texto**: nadie —ni el
+> asistente, ni la consola, ni el servidor— dice «pago acreditado», «pago
+> verificado» ni «recibimos tu pago». Se dice que el comprobante llegó y que
+> los datos coinciden; quien confirma que entró la plata es el negocio en su
+> banco.
+
+### 4duodecies.1 Las decisiones, en orden
+
+1. **La seña es un parámetro del flujo de agendamiento** (§4sexies): vive en
+   `/config/agendamiento` como `senaImporte` (entero en la moneda del negocio;
+   `0` = sin seña) y `senaMinutosRetencion` (entero, 5..180, respaldo 30). Un
+   restaurante no retiene horarios: no va a `/config/negocio`.
+2. **El QR del comercio (`cobroReal`) vive en el documento del flujo que
+   cobra.** `/config/venta` si el negocio vende; `/config/agendamiento` si solo
+   reserva. `registrarQrDeCobro` elige leyendo `tenants/{t}.flujos` (venta
+   gana; sin ninguno de los dos, rechaza) y devuelve `documento`. Un negocio
+   con los dos flujos tiene UN QR, en venta, y los dos flujos mandan el mismo.
+   `cobroReal` lo escribe solo la callable, como hasta ahora: no entra en la
+   lista blanca del navegador en ninguno de los dos documentos.
+3. **Quien coteja es el servidor** (§7 de `CLAUDE.md`): la Function
+   `cotejarComprobante` recibe lo que un modelo leyó del comprobante y
+   devuelve `cuadra | no_cuadra | ilegible`. El flujo no compara nada, y el
+   modelo tampoco decide: solo transcribe.
+4. **La cita se retiene por hecho, no por dicho.** `agendar_cita` la crea con
+   el título `PENDIENTE DE SEÑA · …` cuando la seña está activa (lo pone la
+   expresión del nodo, no el modelo). Al cotejo `cuadra` el flujo quita el
+   prefijo. Un flujo programado borra las pendientes con más de
+   `senaMinutosRetencion` minutos, sin escribirle al cliente, y lo reporta.
+5. **El cierre con seña lo crea el servidor al cotejar**, con `monto` y
+   `cotejo`. Con seña activa el flujo no registra cierre al agendar: una cita
+   pendiente que vence no es un cierre. Sin seña, todo sigue como hoy.
+6. **Los comprobantes no se guardan.** Ni la imagen ni el PDF van a Storage ni
+   a Firestore: solo el JSON leído y el resultado. Ver la revisión al cierre de
+   §4nonies.3.
+7. **Mensajes por conversación**: +1 (el QR, imagen con caption) en las que
+   llegan a reservar. La confirmación del comprobante es un mensaje fijo, sin
+   modelo. El aviso a recepción por cita pagada, con diferencia o ilegible lo
+   paga NovuChat y no se cuenta al comercio.
+
+### 4duodecies.2 Los campos
+
+| Dónde | Campo | Tipo | Quién escribe | Qué pantalla lo muestra |
+|---|---|---|---|---|
+| `config/agendamiento` | `senaImporte` | int 0..10000 (0 = sin seña) | admin del negocio, con `tieneAgenda` (`configAgendamientoValida()`) | **Configuración de QR**, bloque «Seña para reservar» (`ConfiguracionVertical`, `CAMPOS.agendamiento`) |
+| `config/agendamiento` | `senaMinutosRetencion` | int 5..180 (respaldo 30) | ídem | ídem |
+| `config/venta` o `config/agendamiento` | `cobroReal` | map (`activo`, `cargaUtil`, `cuentas`, `nombreCuenta`, `banco`, `ficha`, …) | solo `registrarQrDeCobro` (Admin SDK) | **Configuración de QR**: lee el documento que le toca por `flujos` |
+| `conversaciones/wa_{tel}` | `solicitud` (`etapa`, `desde`, `qrEnviadoEn`, `evento`, `cotejos`, `seguimientos`) | map | la ingesta y `cotejarComprobante` | ninguna todavía |
+| `cierres/cita_<eventoId>` | `monto`, `moneda`, `cotejo` (`resultado`, `diferencias`, `montoLeido`, `banco`, `idMeta`, `intentos`, `en`) | number, string, map | `cotejarComprobante` | **Cobros**: columna «Comprobante» y el detalle (diferencias, monto leído, banco, intentos, fecha) |
+| `metricas/{aaaa-mm}` | `senasEnviadas`, `senasCotejadas`, `senasVencidas` | int | la ingesta, `cotejarComprobante`, `senaVencida` | **Consumo**: «Señas: N enviadas · M cotejadas · K vencidas», solo si el mes trae alguna |
+
+### 4duodecies.3 Lo que muestra cada pantalla, y lo que no
+
+- **Configuración de QR** (`Cobro.tsx`) es una sola pantalla para los dos
+  flujos que cobran. Decide el documento por la lista de flujos, igual que el
+  servidor; explica por flujo qué hace el asistente con el QR; y monta al pie
+  los parámetros propios de cada flujo en SU documento (§4sexies.2): costos de
+  entrega a `venta`, seña a `agendamiento`. El QR de demostración solo se
+  muestra a un negocio con venta: en reservas la seña va siempre por el camino
+  real, y los dos modos no conviven (prohibición 3).
+- **Cobros** (`Cobros.tsx`) gana la columna **«Comprobante»** —«Datos
+  coinciden», «Hay una diferencia», «Ilegible», o nada— al lado de «Estado».
+  Parecen la misma y no lo son: la primera es lo que leyó el servidor; la
+  segunda, lo que afirmó una persona contra su banco. **Un cotejo que cuadra
+  no comprueba nada**, y por eso el botón «Comprobar» sigue al lado de un
+  cotejo que cuadra, y la ayuda lo dice: NovuChat coteja datos, no confirma
+  dinero.
+- **Consumo** (`Consumo.tsx`) agrega una línea con las tres cifras de señas,
+  solo cuando el mes trae alguna: no se facturan, pero explican por qué un mes
+  tiene más mensajes que conversaciones y cuántas reservas se caen.
+- **Lo que ninguna pantalla muestra**: la imagen del comprobante (no se
+  guarda) y la `solicitud` de la conversación (es estado del flujo, no un dato
+  del negocio; si algún día hace falta, va en «Conversaciones»).
+
+### 4duodecies.4 Lo que este bloque NO hace
+
+Imágenes y PDF que no son comprobante, audio, seguimientos de la solicitud, y
+el candado con un solo calendario: son los bloques 3, 4 y 5 de `Analisis/30`.
+Los dos primeros están hechos: §4terdecies (medios) y §4quaterdecies (seguimiento).
+
+## 4terdecies. Medios entrantes: clasificar, no mirar
+
+> **Decidido el 17/09/2026** (`Analisis/34` §3.1 y §4.1;
+> `CLIENTES/PLATINUM/analisis-audio-e-imagen.md`; rama
+> `flujos/medios-entrantes`). Un audio, una foto o un PDF que **no** es
+> comprobante entran al asistente convertidos en **texto**. Es el bloque 3 de
+> `Analisis/30`, y la continuación natural de §4duodecies: los nodos que bajan
+> y leen un medio ya existían para el comprobante; acá se usan para todo lo
+> demás.
+
+**El problema, con fecha.** El 17/09 un paciente mandó un audio y una imagen en
+el mismo minuto. Al audio el asistente contestó que atiende por texto —un
+mensaje que **se paga** desde el 01/10 y que no avanza nada, y una parte de esa
+gente no vuelve a escribir— y de la imagen **inventó** que era un comprobante:
+«Ya tenemos todo listo». Nadie vio la imagen. Eso roza la prohibición 3.
+
+**Las dos reglas que sostienen todo lo demás:**
+
+1. **El asistente NUNCA ve el medio.** No es una instrucción del prompt —«te
+   mando la foto pero no diagnostiques»—, es el **cableado**: ningún nodo que
+   tenga el binario en la mano tiene salida al agente. Del audio sale una
+   transcripción marcada; de la imagen o del PDF, **una categoría de una lista
+   cerrada** (`publicidad | boca_o_dientes | comprobante | documento_salud |
+   otro`) que el flujo traduce a uno de cinco textos fijos. Así la prohibición
+   de la clínica —no diagnosticar, no prometer resultados— se cumple **por
+   construcción**. La clínica ya vio al asistente repetir afirmaciones de su
+   propio material: pedirle que se contenga no alcanza.
+2. **Nada se guarda.** Ni la imagen, ni el PDF, ni el audio: entran como
+   binario, se leen y de ahí sale texto. No van a Storage ni a Firestore, y el
+   enlace de Meta caduca en cinco minutos. Es la misma decisión que §4nonies.3
+   tomó para el comprobante, por el mismo motivo: **un medio guardado es un
+   dato personal más que custodiar**, y acá muchos son datos de salud. Lo que
+   queda en el historial de 12 meses es una marca —«(audio) el cliente envió
+   una nota de voz»— y no el contenido. Lo que el paciente dijo se lee igual en
+   la conversación, porque el asistente **repite en una línea lo que entendió**
+   antes de ofrecer horarios (`Analisis/34` §3.1: es la red contra una
+   transcripción errada de una hora o de un monto).
+
+   Esa promesa vale para el **flujo**. En la **instancia** hay que apagar dos
+   cosas en la VM y todavía no está hecho: `N8N_DEFAULT_BINARY_MODE=filesystem`
+   (con el modo por defecto los bytes quedan en la base de n8n) y la poda de
+   ejecuciones (`EXECUTIONS_DATA_PRUNE`, `EXECUTIONS_DATA_MAX_AGE`). Y la
+   credencial de Gemini tiene que ser de **nivel pago**: en el gratuito el
+   contenido puede usarse para entrenar.
+
+**Lo que cuesta: nada en mensajes.** Cero agregados. Los dos nodos nuevos
+contra Meta son de lectura (`media/mediaUrlGet` y la descarga del archivo) y
+estos caminos **reemplazan** a la respuesta vacía que ya se pagaba. El modelo
+cuesta centavos: ~0,001 USD por audio de 30 s, ~0,0001 por imagen. Lo que sí
+cuesta es **latencia** (+2 a 4 s en audio, +1 a 2 en imagen sobre un p90 de
+10 s), y por eso `Normalizar entrada` anota `recibidoEn` y `Mensaje a enviar`
+deja `latenciaMs` en los datos de la ejecución: se mide con
+`ver-ejecuciones.sh`, no se supone.
+
+**El dato que faltaba, en la consola.** `metricas/{aaaa-mm}` gana
+`entrantesPorTipo` —un mapa `{ text, interactive, image, audio, document,
+location, order, otro }` que escribe la ingesta con `FieldValue.increment`
+sobre la clave anidada, en la misma transacción que `entrantes`— y **Consumo**
+muestra «Mensajes recibidos: N texto · M audio · K imagen …», solo si el
+período lo trae. Es un mapa y no un campo por tipo porque los tipos los fija
+Meta; la clave es el tipo **ya normalizado**, así que uno desconocido cae en
+`otro` y las reglas lo vuelven a exigir (§7 de `CLAUDE.md`: el límite se hace
+cumplir en el servidor). No se factura —Meta cobra lo que sale— pero es lo que
+dice si vale la pena que el asistente entienda audios y fotos en este negocio.
+
+**Lo que este bloque NO hace:** responder en voz (`Analisis/34` §3.2: no hay
+evidencia de que convierta, un audio no se copia ni se escanea, y tienta a
+mandar texto **y** audio, que duplica la parte cara), guardar el medio para que
+una persona lo mire (eso sería un depósito de medios en la consola, que no
+existe), ni reenviarlo al celular de recepción (§4.1 del mismo análisis: se
+pierde con la ventana cerrada y deja datos de salud en un teléfono sin
+retención).
+## 4quaterdecies. Recordatorio de solicitud pendiente
+
+**17/09/2026, `Analisis/31` §4.** De cada diez personas que le escriben a la
+clínica, cuatro no terminan de reservar. **Un** recordatorio recupera a una
+parte. Dos, o uno a quien pidió que lo dejen en paz, cuestan el número de
+WhatsApp del comercio, que es su canal entero. Por eso todo lo de acá está
+escrito en forma de negación.
+
+### 4terdecies.1 Quién entra, y quién no
+
+La decisión es una función pura del servidor —`esPendienteDeSeguimiento`, en
+`functions/src/seguimientos.ts`— y se prueba caso por caso en
+`pruebas/seguimientos.test.ts`. Entra la conversación que cumple **todas**:
+
+| Condición | Por qué |
+|---|---|
+| `solicitud.etapa` es `horarios` o `qr_enviado` | Son las dos etapas a medio camino. `agendada` y `vencida` están cerradas: **nunca a quien ya agendó** |
+| `solicitud.seguimientos === 0` | **Nunca dos veces a la misma solicitud.** El cero tiene que estar escrito: un campo ausente o con otro tipo no entra |
+| `noContactar !== true` | **Nunca a quien pidió que no le escriban**, ni a quien pasó a una persona |
+| `atencionEstado` no es `operador` ni `bloqueado` | Esa conversación ya la atiende alguien, o el asistente dejó de responder por uso extendido. Un recordatorio automático encima sería el peor mensaje posible |
+| `ultimoEn` entre 2 y 4 h → **texto**; entre 24 y 48 h → **plantilla** | Entre las 4 y las 24 no se manda nada: la ventana está por vencer o recién venció, el texto ya no entra y la plantilla llegaría de madrugada. Después de las 48 un recordatorio ya no es una actualización, es publicidad |
+
+Tope de 50 por corrida. La consulta va por `ultimoEn` entre 2 y 48 horas atrás
+—acotada por construcción— y el resto se filtra en memoria: consultar por
+`solicitud.etapa` devolvería un conjunto que crece sin techo, porque una
+solicitud en `horarios` que nadie retoma se queda ahí para siempre. **No hace
+falta ningún índice compuesto**: es un campo con dos extremos de rango y el
+orden sobre ese mismo campo.
+
+### 4terdecies.2 La marca va ANTES del envío
+
+El flujo llama primero a `seguimientoEnviado` y recién después manda. Si el
+envío falla, la solicitud queda marcada y nadie reintenta: **un seguimiento
+perdido es mejor que dos**, porque el segundo es el que hace que la persona
+bloquee el número. `seguimientoEnviado` es idempotente dentro de una
+transacción, así que dos corridas simultáneas no pueden mandar dos. El nodo
+`¿Se marcó?` del flujo no deja pasar nada que el servidor no haya marcado en
+esa corrida.
+
+Es la misma forma que §4duodecies usa para las retenciones vencidas: **primero
+se lo digo al servidor, después actúo**.
+
+### 4terdecies.3 De dónde salen los dos hechos
+
+Los escribe el flujo conversacional dentro de reportes que ya existían —**cero
+mensajes agregados**—, y siempre por lo que PASÓ, no por lo que el modelo
+escribió:
+
+- **`horarios_ofrecidos`** (reporte del saliente): `consultar_disponibilidad`
+  corrió en el turno y `agendar_cita` no. Son los mismos campos que sostienen
+  el candado contra la doble reserva.
+- **`no_contactar`**: el turno terminó transferido a una persona
+  (`transferir === true`, en el saliente), **o** el texto del cliente coincide
+  con una expresión regular fija, en el reporte del entrante. Lo que esa
+  expresión no cubre —«borrame» sin tilde, «stop»— lo resuelve el interruptor
+  **No contactar** de la pantalla de conversaciones, que una persona del
+  negocio enciende cuando el cliente se lo pide. La regla de Firestore deja
+  escribir ese campo, y solo ese, con un valor booleano.
+
+### 4terdecies.4 Qué cuesta y qué se mide
+
+El de modo `texto` cae dentro de la ventana: **+1 mensaje, solo en las
+conversaciones que quedaron a medio camino**. El de modo `plantilla` cae fuera,
+y la ingesta no cuenta un saliente sobre ventana vencida como conversación: al
+comercio no se le factura nada. **La respuesta del paciente sí** abre una
+conversación nueva, y es exactamente lo que se busca.
+
+Dos contadores del mes, y los dos hacen falta juntos: `seguimientos` (los que
+salieron) y `reactivadas` (en cuántos el paciente volvió a escribir dentro de
+las 24 h). Los enviados solos no dicen nada. La consola los muestra en
+«Consumo» solo cuando el período los trae.
+
+### 4terdecies.5 Lo que este bloque NO hace
+
+No manda plantillas de **marketing** ni reactivación de base: eso es un paquete
+aparte, nunca incluido en el plan (`Analisis/31` §4). No le escribe a nadie que
+no haya escrito primero. Y no mide de dónde vino el lead —la ventana gratuita
+de 72 h de los anuncios sigue pendiente desde `Analisis/25` §1.4.
 
 ## 5. Integración con n8n
 

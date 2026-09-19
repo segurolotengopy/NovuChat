@@ -47,6 +47,44 @@ export const CAMPOS_LIBRES_AL_PROMPT = [
   'mensajeComercioSuspendido',
 ] as const;
 
+/**
+ * =============================================================================
+ * DÓNDE QUEDA EL LOCAL: el enlace de Google Maps y las coordenadas
+ * (Analisis/34 §2, bloque 1 del plan de Platinum)
+ * =============================================================================
+ *
+ * `direccionMaps` es el único texto del comercio que el asistente REENVÍA TAL
+ * CUAL a un cliente final —en la confirmación de la cita y ante «¿dónde
+ * quedan?»—, así que no viaja como texto libre: solo pasa si es `https://` de
+ * un dominio de mapas de Google. Las reglas ya lo exigen al guardar; acá se
+ * vuelve a comprobar antes de mandarlo al flujo, como con los derivados: dos
+ * barreras. Cualquier otra cosa se descarta en silencio y el asistente da la
+ * dirección sola, que sigue siendo verdad.
+ *
+ * `ubicacion` son las coordenadas del pin nativo de WhatsApp, que el flujo
+ * manda SOLO cuando el cliente lo pide (un mensaje más, y solo en ese caso).
+ * Salen estructuradas en `operacion`, nunca en el texto del prompt.
+ */
+export const ENLACE_DE_MAPA =
+  /^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$/;
+
+/** El enlace si es de un dominio de mapas y cabe en el tope; si no, `''`. */
+export function enlaceDeMapaValido(v: unknown): string {
+  if (typeof v !== 'string') return '';
+  const t = v.trim();
+  return t.length <= 200 && ENLACE_DE_MAPA.test(t) ? t : '';
+}
+
+/** `{ lat, lng }` si los dos son números finitos en rango; si no, `null`. */
+export function ubicacionDe(v: unknown): { lat: number; lng: number } | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const { lat, lng } = v as Record<string, unknown>;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
 const DIAS = ['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'] as const;
 const NOMBRE_DIA: Record<string, string> = {
   lun: 'lunes', mar: 'martes', mie: 'miércoles', jue: 'jueves',

@@ -308,6 +308,44 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------------
+    // ENLACE DE GOOGLE MAPS (`direccionMaps`, Analisis/34 §2).
+    //
+    // Es el único texto del comercio que el asistente REENVÍA TAL CUAL a un
+    // cliente final, dentro de la confirmación de la cita y ante «¿dónde
+    // quedan?». Un texto libre acá sería un enlace a cualquier sitio, firmado
+    // con el nombre del negocio, en el WhatsApp de un tercero. Por eso no es
+    // texto libre: vacío, o `https://` de un dominio de mapas de Google y nada
+    // más. El servidor (`enlaceDeMapaValido`, prompt.ts) lo vuelve a comprobar
+    // antes de mandarlo al flujo: dos barreras, a propósito, como con los
+    // derivados. El punto se escribe `[.]`, como en `calendarioValido`.
+    // -------------------------------------------------------------------------
+    function enlaceDeMapaValido(datos, campo) {
+      return textoOpc(datos, campo, 200)
+        && (datos.get(campo, '') == ''
+            || datos.get(campo, '').matches(
+                 '^https://(maps[.]app[.]goo[.]gl|goo[.]gl/maps|www[.]google[.]com/maps|google[.]com/maps|maps[.]google[.]com)([/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*)?$'));
+    }
+
+    // -------------------------------------------------------------------------
+    // COORDENADAS DEL LOCAL (`ubicacion`): exactamente `lat` y `lng`, números
+    // dentro del rango de la Tierra. Solo se usan para el mensaje `location`
+    // nativo de WhatsApp cuando el cliente pide el pin (un mensaje más, y solo
+    // en ese caso). Ausente = no hay pin: el flujo manda la dirección en texto.
+    // Con una sola de las dos, o con texto adentro, el pin saldría en el mar o
+    // Meta lo rechazaría después de haberlo contado: se frena acá.
+    // -------------------------------------------------------------------------
+    function ubicacionValida(datos) {
+      return !('ubicacion' in datos)
+        || (datos.ubicacion is map
+            && datos.ubicacion.keys().hasOnly(['lat', 'lng'])
+            && datos.ubicacion.keys().hasAll(['lat', 'lng'])
+            && datos.ubicacion.lat is number
+            && datos.ubicacion.lng is number
+            && datos.ubicacion.lat >= -90 && datos.ubicacion.lat <= 90
+            && datos.ubicacion.lng >= -180 && datos.ubicacion.lng <= 180);
+    }
+
+    // -------------------------------------------------------------------------
     // ID DE CALENDARIO DE GOOGLE — el dato que más caro salió en este proyecto.
     //
     // Un ID pegado a mano con UN carácter de menos hizo que Google devolviera 404
@@ -596,6 +634,9 @@ service cloud.firestore {
             // Identidad y contacto
             'nombreNegocio', 'descripcion', 'direccion', 'numeroRecepcion',
             'zonaHoraria', 'moneda', 'calendarioId',
+            // Dónde queda: el enlace de Google Maps y las coordenadas del pin
+            // (Analisis/34 §2). Capa común, como la dirección.
+            'direccionMaps', 'ubicacion',
             // Operación
             'horarios', 'politicaCancelacion', 'prefijosPermitidos',
             'datosQueNoTenemos',
@@ -642,6 +683,11 @@ service cloud.firestore {
             // automáticamente a `datosQueNoTenemos` para que el agente responda
             // que la va a consultar. Ver DISENO.md §4quater.3.
             && textoOpc(d, 'direccion', 200)
+            // El enlace del mapa acompaña a la dirección en el MISMO mensaje
+            // (cero mensajes nuevos); las coordenadas solo salen como pin
+            // cuando el cliente lo pide. Validados arriba, no texto libre.
+            && enlaceDeMapaValido(d, 'direccionMaps')
+            && ubicacionValida(d)
 
             && d.get('zonaHoraria', 'America/La_Paz') in ['America/La_Paz']
             && d.get('moneda', 'BOB') in ['BOB', 'USD']
@@ -749,12 +795,42 @@ service cloud.firestore {
         // =====================================================================
         function configAgendamientoValida() {
           let d = request.resource.data;
-          return d.keys().hasOnly([
-                   'duracionPorDefectoMin', 'anticipacionMinimaMin',
-                   'anticipacionMaximaDias', 'permitirCancelacion',
-                   'horasRecordatorio', 'mensajeRecordatorio',
-                   'actualizadoPor', 'actualizadoEn'
-                 ])
+          return
+            // Lista blanca sobre las claves AFECTADAS, como en `venta`, y no
+            // sobre todas las del documento. Desde la seña por QR (bloque 2,
+            // 17/09) este documento también lleva `cobroReal`, que lo escribe
+            // SOLO `registrarQrDeCobro` con el SDK Admin: si la lista fuera
+            // sobre `keys()`, el día que el comercio registra su QR ya no
+            // podría guardar ni la duración de la cita, porque el documento
+            // tendría una clave que la lista no admite. Con `affectedKeys`,
+            // `cobroReal` queda fuera del alcance del navegador —ni escribirlo,
+            // ni encenderlo, ni borrarlo con un `setDoc`— y el resto se edita.
+            soloCampos([
+              'duracionPorDefectoMin', 'anticipacionMinimaMin',
+              'anticipacionMaximaDias', 'permitirCancelacion',
+              'horasRecordatorio', 'mensajeRecordatorio',
+              // SEÑA PARA RESERVAR (`Analisis/30` §4). El importe en la moneda
+              // del negocio; 0 = sin seña. Y cuántos minutos queda retenido el
+              // horario a la espera del comprobante. Son parámetros del flujo
+              // de agendamiento (política de capas, DISENO §4sexies), por eso
+              // viven acá y no en `negocio`.
+              'senaImporte', 'senaMinutosRetencion',
+              'actualizadoPor', 'actualizadoEn'
+            ])
+            // Entero y con techo: una seña es una fracción del tratamiento, no
+            // un importe libre. Diez mil cubre cualquier tratamiento dental del
+            // país; un decimal no entra porque el cotejo compara centavos
+            // contra lo leído del comprobante y un importe con decimales es un
+            // rechazo asegurado por redondeo.
+            && d.get('senaImporte', 0) is int
+            && d.get('senaImporte', 0) >= 0
+            && d.get('senaImporte', 0) <= 10000
+            // Menos de cinco minutos no le da tiempo al paciente ni de abrir la
+            // aplicación del banco; más de tres horas es un horario bloqueado
+            // para todos los demás por un pago que probablemente no llega.
+            && d.get('senaMinutosRetencion', 30) is int
+            && d.get('senaMinutosRetencion', 30) >= 5
+            && d.get('senaMinutosRetencion', 30) <= 180
             && d.get('duracionPorDefectoMin', 30) is int
             && d.get('duracionPorDefectoMin', 30) > 0
             && d.get('duracionPorDefectoMin', 30) <= 480
@@ -1552,7 +1628,14 @@ service cloud.firestore {
                           && conversacionValida())
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
-                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna'])
+                          // `noContactar` es la lista de no molestar (bloque 4): una
+                          // persona del negocio la enciende o la apaga desde la
+                          // consola. Es el ÚNICO campo de gestión que cambia lo que
+                          // el sistema hace —saca al teléfono del barrido de
+                          // seguimientos— y por eso se valida su tipo abajo.
+                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna',
+                                         'noContactar'])
+                          && request.resource.data.get('noContactar', false) is bool
                           && textoOpc(request.resource.data, 'notaInterna', 1000));
 
         function conversacionValida() {
@@ -1579,7 +1662,33 @@ service cloud.firestore {
                  // CUANDO EMPEZO la atencion vigente, no el ultimo mensaje. Todo
                  // lo que cae dentro de esa ventana es la misma atencion; lo que
                  // llega despues abre otra.
-                 , 'atencionDesde'])
+                 , 'atencionDesde'
+                 // `solicitud` es la SEÑA EN CURSO de este teléfono (bloque 2):
+                 // en qué etapa va (`qr_enviado`, `agendada`, `vencida`), desde
+                 // cuándo, qué cita del calendario está retenida y cuántos
+                 // comprobantes llegaron. La escriben la ingesta (al reportar
+                 // el QR enviado) y `cotejarComprobante`/`senaVencida`, nunca
+                 // una persona: es lo que decide si el próximo archivo que
+                 // manda el paciente se lee como comprobante o no.
+                 , 'solicitud'
+                 // `noContactar` es la LISTA DE NO MOLESTAR (bloque 4,
+                 // `Analisis/31` §4): el paciente pidió que no le escriban, o el
+                 // turno pasó a una persona. La enciende la ingesta con
+                 // `evento: 'no_contactar'` y la apaga —o la enciende a mano— una
+                 // persona del negocio desde la consola. Mientras esté en `true`
+                 // no le sale ningún seguimiento automático.
+                 , 'noContactar'])
+            && (!d.keys().hasAny(['solicitud'])
+                || (d.solicitud is map
+                    // `horarios` es la etapa del bloque 4: el asistente ofreció
+                    // horarios y el paciente no eligió. Junto con `qr_enviado` son
+                    // las dos etapas PENDIENTES, las únicas que el barrido mira.
+                    && d.solicitud.get('etapa', '') in ['horarios', 'qr_enviado',
+                                                        'agendada', 'vencida']))
+            // Si viene, es booleano: un `noContactar: 'no'` —que en JavaScript es
+            // verdadero— dejaría a un paciente sin seguimientos por un defecto de
+            // tipo, y al revés. Se valida acá y no en la pantalla.
+            && d.get('noContactar', false) is bool
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
             && textoOpc(d, 'nombreContacto', 120)
@@ -1663,8 +1772,40 @@ service cloud.firestore {
             // el mismo nombre que usa la pagina de precios. `atenciones` queda
             // admitida para no romper los documentos ya escritos con ese
             // nombre; no se escribe mas.
-            'cierres', 'conversaciones', 'atenciones', 'interacciones'
-          ]);
+            'cierres', 'conversaciones', 'atenciones', 'interacciones',
+            // SEÑA POR QR (bloque 2, 17/09). Las tres cuentan el embudo de la
+            // reserva con seña: QR enviados, comprobantes cotejados —cualquiera
+            // sea el resultado— y retenciones que vencieron sin comprobante.
+            // Con las tres la consola puede decir cuántos horarios se bloquean
+            // por pagos que no llegan, que es lo que decide si la retención de
+            // 30 minutos es corta o larga.
+            'senasEnviadas', 'senasCotejadas', 'senasVencidas',
+            // SEGUIMIENTO DE SOLICITUD PENDIENTE (bloque 4, 17/09).
+            // `seguimientos` = recordatorios que salieron (uno por solicitud como
+            // máximo, lo hace cumplir `seguimientoEnviado`). `reactivadas` = de
+            // esos, en cuántos el paciente volvió a escribir dentro de las 24 h.
+            // Con los dos se sabe si el recordatorio recupera a alguien o solo
+            // cuesta; ninguno de los dos se factura.
+            'seguimientos', 'reactivadas',
+            // ENTRANTES POR TIPO (bloque 3, 17/09). Mapa `{ audio: 4, image: 2,
+            // ... }` con los mensajes que mandó el cliente, por clase. Es un
+            // mapa y no un campo por tipo porque los tipos los fija Meta; por
+            // eso las claves se validan abajo, una por una: si el principal de
+            // ingesta quedara comprometido, un mapa libre sería exactamente el
+            // campo arbitrario que esta lista blanca existe para impedir.
+            'entrantesPorTipo'
+          ]) && entrantesPorTipoValido();
+        }
+
+        /** El mapa, si viene, trae SOLO los tipos que la ingesta normaliza
+         *  (`TIPOS` de `ingesta.ts`): cualquier otro ya cayó en `otro`. */
+        function entrantesPorTipoValido() {
+          return !('entrantesPorTipo' in request.resource.data)
+            || (request.resource.data.entrantesPorTipo is map
+                && request.resource.data.entrantesPorTipo.keys().hasOnly([
+                     'text', 'interactive', 'image', 'audio',
+                     'document', 'order', 'location', 'otro'
+                   ]));
         }
       }
 
@@ -1717,12 +1858,59 @@ service cloud.firestore {
         // afirmó algo, y ese rastro es justo lo que sirve el día que el cobro
         // se discute. Si se marcó por error, se corrige con un reclamo, que
         // deja su propio registro.
-        allow update: if esAdmin(tenantId)
-                      && !('comprobadoPor' in resource.data)
-                      && request.resource.data.diff(resource.data).affectedKeys()
-                           .hasOnly(['comprobadoPor', 'comprobadoEn'])
-                      && request.resource.data.comprobadoPor == request.auth.uid
-                      && request.resource.data.comprobadoEn == request.time;
+        allow update: if (esAdmin(tenantId)
+                          && !('comprobadoPor' in resource.data)
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['comprobadoPor', 'comprobadoEn'])
+                          && request.resource.data.comprobadoPor == request.auth.uid
+                          && request.resource.data.comprobadoEn == request.time)
+                      // LA SEGUNDA ESCRITURA: otro comprobante para la misma
+                      // cita. Cuando el primero no cuadró o no se pudo leer, el
+                      // paciente manda otro y el cotejo se reescribe con el
+                      // intento siguiente. SOLO `cotejo`: la referencia, el
+                      // importe y el teléfono del cierre no se corrigen por
+                      // esta vía, porque sobre eso se factura.
+                      || (esIngesta(tenantId) && tenantOperativo(tenantId)
+                          && request.resource.data.diff(resource.data).affectedKeys()
+                               .hasOnly(['cotejo'])
+                          && cotejoValido(request.resource.data));
+
+        // EL COTEJO DEL COMPROBANTE DE LA SEÑA (bloque 2, 17/09): lo que el
+        // servidor comparó y con qué resultado. Es un mapa dentro del cierre y
+        // no un documento aparte porque se lee siempre junto con él —la
+        // pantalla de cobros muestra el importe y al lado si los datos
+        // coinciden— y porque nace en la misma transacción.
+        //
+        // `resultado` es un enumerado de TRES valores y ninguno se llama
+        // «pagado» ni «acreditado»: `cuadra` dice que lo leído coincide con lo
+        // esperado, y nada más. Quien confirma que el dinero entró es el
+        // comercio, con el sello de arriba. Prohibición 3 de CLAUDE.md.
+        //
+        // `diferencias` es una lista de frases cortas del servidor
+        // (`cotejo.ts`), `montoLeido` lo que el modelo leyó (o nulo), `banco`
+        // el de destino tal como figura, `idMeta` el identificador del mensaje
+        // con el comprobante —la prueba externa de que llegó— e `intentos`
+        // cuántos comprobantes se cotejaron para esta cita. LA IMAGEN NO SE
+        // GUARDA en ninguna parte: solo estos datos.
+        function cotejoValido(d) {
+          return !d.keys().hasAny(['cotejo'])
+            || (d.cotejo is map
+                && d.cotejo.keys().hasOnly([
+                     'resultado', 'diferencias', 'montoLeido', 'banco',
+                     'idMeta', 'intentos', 'en'
+                   ])
+                && d.cotejo.get('resultado', '') in ['cuadra', 'no_cuadra', 'ilegible']
+                && d.cotejo.get('diferencias', []) is list
+                && d.cotejo.get('diferencias', []).size() <= 10
+                && (d.cotejo.get('montoLeido', null) == null
+                    || d.cotejo.get('montoLeido', 0) is number)
+                && textoOpc(d.cotejo, 'banco', 80)
+                && textoOpc(d.cotejo, 'idMeta', 120)
+                && d.cotejo.get('intentos', 1) is int
+                && d.cotejo.get('intentos', 1) >= 1
+                && d.cotejo.get('intentos', 1) <= 100
+                && d.cotejo.get('en', null) is timestamp);
+        }
 
         function cierreValido() {
           let d = request.resource.data;
@@ -1733,9 +1921,20 @@ service cloud.firestore {
                    // —está en la lista para que el documento resultante lo
                    // admita, no para que ella lo ponga— y su regla de
                    // actualización es la de arriba.
-                   'comprobadoPor', 'comprobadoEn'
+                   'comprobadoPor', 'comprobadoEn',
+                   // El cotejo de la seña, opcional: un cierre sin seña no lo
+                   // trae. Su forma la valida `cotejoValido`.
+                   'cotejo'
                  ])
               && !('comprobadoPor' in d)
+              // El importe, si viene, es un número no negativo con techo. Un
+              // cierre de venta puede no traerlo; el de una seña lo trae
+              // siempre, porque es lo que se cotejó.
+              && d.get('monto', 0) is number
+              && d.get('monto', 0) >= 0
+              && d.get('monto', 0) <= 1000000
+              && textoOpc(d, 'moneda', 8)
+              && cotejoValido(d)
               // `conversacionId` NO esta en la lista, y es deliberado: vale
               // `wa_<telefono>`, o sea el numero COMPLETO. Enmascarar el
               // telefono en un campo y publicarlo entero en otro no protege
@@ -1848,7 +2047,15 @@ service cloud.firestore {
                  // contestarle a mi cliente». Faltaban desde el 13/09.
                  'derivacion_operador', 'bloqueo_ventana',
                  // Aviso de consumo al 80 % del plan (15/09), una vez por mes.
-                 'aviso_consumo'
+                 'aviso_consumo',
+                 // Seña por QR (bloque 2, 17/09): llegó un comprobante y el
+                 // servidor lo cotejó (el resultado va en `codigo`), y una
+                 // retención que venció sin comprobante y cuya cita se borró.
+                 'cobro_cotejado', 'sena_vencida',
+                 // Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4):
+                 // salió el recordatorio único; `codigo` lleva el modo (`texto`
+                 // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
+                 'seguimiento_enviado'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]
