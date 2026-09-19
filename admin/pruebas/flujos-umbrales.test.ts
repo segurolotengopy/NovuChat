@@ -152,11 +152,15 @@ const FLUJOS = [
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
   },
   // Reservas del consultorio del Dr. Bellido: también es el Demo A con los datos
-  // del cliente, y obedece los umbrales por los mismos nodos.
+  // del cliente, y obedece los umbrales por los mismos nodos. Desde el 18/09
+  // tiene, ENTRE la compuerta y el agente, el estado de la conversación y las
+  // tres compuertas sin modelo (menú, contacto directo, emergencia): el agente
+  // sigue siendo alcanzable SOLO desde la rama verdadera de «¿Atención normal?».
   {
     archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    antesDelAgente: ['Estado de la conversación', '¿Menú inicial?', '¿Contacto directo?', '¿Emergencia?'],
   },
 ] as const;
 
@@ -166,7 +170,8 @@ describe('El mensaje fijo de uso extendido', () => {
   });
 });
 
-describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente }) => {
+describe.each(FLUJOS)('$archivo', (entrada) => {
+  const { archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente } = entrada;
   const f = flujo(archivo);
 
   describe('Traer configuración', () => {
@@ -222,9 +227,18 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
     });
 
     it('el agente SOLO es alcanzable desde la rama verdadera de «¿Atención normal?»', () => {
-      expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
-      expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
+      // Entre la compuerta y el agente puede haber eslabones sin modelo (el
+      // estado de la conversación y las compuertas del menú, en Bellido); lo
+      // que no cambia es que la cadena ARRANCA en la rama verdadera y que el
+      // agente entra por un solo lugar.
+      const antes = ('antesDelAgente' in entrada ? entrada.antesDelAgente : []) as readonly string[];
+      const cadena = [...antes, agente];
+      expect(destinos(f, '¿Atención normal?', 0)).toEqual([cadena[0]]);
       expect(destinos(f, '¿Atención normal?', 1)).toEqual(['Uso extendido']);
+      for (let i = 0; i < cadena.length - 1; i++) {
+        expect(alcanzables(f, cadena[i]!).has(cadena[i + 1]!), `${cadena[i]} → ${cadena[i + 1]}`).toBe(true);
+      }
+      expect(origenes(f, agente)).toEqual([cadena.length > 1 ? cadena[cadena.length - 2] : '¿Atención normal?']);
     });
 
     it('desde «Uso extendido» no se llega al agente por NINGÚN camino', () => {
@@ -293,7 +307,9 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
         // reporta lo que salió, no lo que se pensaba mandar.
         expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente]);
         expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
-        expect(destinos(f, 'Responder al cliente')).toEqual(['Reportar mensaje (saliente)']);
+        // Del envío puede colgar, además del reporte, un segundo mensaje
+        // (la despedida en dos de Bellido); el reporte siempre está.
+        expect(destinos(f, 'Responder al cliente')).toContain('Reportar mensaje (saliente)');
       } else {
         expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
           .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);
