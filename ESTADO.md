@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
 
@@ -254,6 +254,52 @@ con `publicar-flujo.sh` (Demo A, Platinum y Bellido; los nodos nuevos toman la
 credencial por tipo);
 probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anotar en
 `CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
+
+---
+
+## 2026-09-17 — Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita (rama `flujos/candado-un-calendario`)
+
+`Analisis/24` §4, opción A. `Calendarios a revisar` (Demo A y Platinum, código
+idéntico) emite solo los calendarios de `eventosCreados` —lo que #99 ya
+guarda de la salida real de `agendar_cita`, con `organizer.email`—, uno por
+cita y deduplicados. **Respaldo obligatorio:** sin evento, sin calendario o
+con un dato raro, emite todos como antes; nunca cero items, porque el candado
+no puede dejar de correr por no saber la agenda. `Comprobar reserva` no cambió.
+
+Llamadas a Google en el turno que agenda: Platinum pasa de 2 a 1 por cita;
+con 7 odontólogos, de 7 a 1 (unos 1,8–2,4 s menos por turno, a 0,3–0,4 s por
+llamada según `Analisis/24` §2.4). El número de agendas deja de pesar en la
+latencia, que era lo que fijaba el techo «hasta 10» de la Base comercial §3.
+
+Suite: `candado-agenda.test.ts` con 11 casos nuevos (una cita → un
+calendario; dos citas en agendas distintas → dos; sin dato → todos; el cruce
+del mismo odontólogo se detecta revisando solo su agenda; dos odontólogos a la
+misma hora no es cruce) y (h) de `platinum-flujo.test.ts` reescrita. Las
+pruebas nuevas fallan con el nodo viejo (comprobado). 1399 en verde. Saneo 0.
+
+**Mensajes por conversación: cero.** **Falta:** publicar desde `main` y
+cronometrar el turno que agenda antes y después (fila 43 de la aceptación),
+más el caso mandatorio de la insistencia sobre una hora ocupada.
+
+**Bellido en paridad (18/09).** La rama fusiona `main` con el alta del Dr.
+Bellido, cuya suite exige el Demo A nodo por nodo: `Calendarios a revisar`
+de `Flujos/bellido-agendamiento.json` lleva el mismo código.
+
+Con el Bellido de producción (18/09, tarde) su flujo son 57 nodos —38 del
+vertical y 19 suyos— y el nodo del candado sigue siendo el del vertical,
+letra por letra. 1613 en verde (38 archivos), saneo 0.
+
+**La fusión final, ensayada (19/09).** Las dos cadenas (bloques 1→2→3→4 por
+un lado, bloque 5 por el otro) se fusionan con tres conflictos y ninguno es de
+código: `ESTADO.md`, `Flujos/LEEME-flujos.md` y el JSON de Bellido, que Git
+marca entero porque los dos lados mueven nodos. **La receta, probada:** tomar
+el lado de los bloques 1 a 4 en los dos archivos de flujos
+(`git checkout --theirs`) y volver a correr el sincronizador contra el Demo A
+ya fusionado, **con `--base flujos/seguimiento-pendiente`**: la base tiene que
+ser el vertical del que salió ESE archivo de cliente, no `origin/main`; con la
+base equivocada el empalme del consultorio no se reconoce y su menú queda
+desconectado (la suite lo atrapa). Ensayado entero: 2101 pruebas en verde, y
+el ensayo se descartó.
 
 ---
 

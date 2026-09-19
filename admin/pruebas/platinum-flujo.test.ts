@@ -663,11 +663,35 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
     },
   );
 
-  it('la verificación de reserva revisa los DOS calendarios: el candado mira una agenda por persona', () => {
-    const items = ejecutar(String(nodo(flujo, 'Calendarios a revisar').parameters['jsCode']),
-      [{ from: '59170000001' }], { 'Config del negocio': [base] });
-    expect(items.map((i) => i['calendarioARevisar']).sort())
-      .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+  it('la verificación de reserva revisa SOLO el calendario donde agendar_cita escribió: una llamada por cita, no una por agenda', () => {
+    // `Analisis/24` §4: `Comprobar reserva` descarta los eventos de los otros
+    // calendarios, así que consultarlos era trabajo tirado, y lineal en el
+    // número de agendas. `Procesar respuesta` trae el calendario del evento
+    // creado (`organizer.email`) y el nodo emite ese y ninguno más.
+    const revisar = (eventosCreados?: unknown) => ejecutar(String(nodo(flujo, 'Calendarios a revisar').parameters['jsCode']),
+      [{ from: '59170000001', ...(eventosCreados === undefined ? {} : { eventosCreados }) }], { 'Config del negocio': [base] })
+      .map((i) => i['calendarioARevisar']).sort();
+    expect(revisar([{ id: 'ev', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_2' }]))
+      .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+    expect(revisar([{ id: 'ev', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_1' }]))
+      .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1']);
+    // Dos citas en agendas distintas en la misma vuelta: las dos, sin repetir.
+    expect(revisar([
+      { id: 'a', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_1' },
+      { id: 'b', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_2' },
+      { id: 'c', calendario: 'REEMPLAZAR_CALENDARIO_PLATINUM_2' },
+    ])).toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+  });
+
+  it('y sin saber dónde quedó la cita revisa los DOS: el candado nunca deja de correr', () => {
+    // Se abrió por el texto del modelo o por `isExecuted` sin observación: no
+    // hay evento con calendario. Respaldo obligatorio: todos, nunca cero.
+    for (const eventosCreados of [undefined, [], [{ id: 'ev', calendario: '' }], 'basura']) {
+      const items = ejecutar(String(nodo(flujo, 'Calendarios a revisar').parameters['jsCode']),
+        [{ from: '59170000001', ...(eventosCreados === undefined ? {} : { eventosCreados }) }], { 'Config del negocio': [base] });
+      expect(items.map((i) => i['calendarioARevisar']).sort(), JSON.stringify(eventosCreados))
+        .toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
+    }
   });
 });
 
