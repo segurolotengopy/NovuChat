@@ -11,7 +11,6 @@
 # QUE COMPRUEBA ANTES DE ETIQUETAR (y aborta si algo no cuadra):
 #   - que la version tenga forma vX.Y.Z y que no exista ya, ni local ni en el
 #     remoto: reetiquetar es la forma mas rapida de desplegar otra cosa;
-#   - que el arbol de trabajo este limpio;
 #   - que `origin/main` este al dia y que la etiqueta apunte EXACTAMENTE al
 #     commit que se le pide (por defecto, la punta de `origin/main`);
 #   - que ese commit sea el que esta publicado, no uno local sin subir;
@@ -55,10 +54,10 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
-# --- El arbol, limpio -------------------------------------------------------
-[[ -z "$(git status --porcelain)" ]] \
-  || { rojo "✗ Hay cambios sin confirmar. Una etiqueta se pone sobre algo publicado."; git status --short; exit 1; }
-
+# EL ARBOL LOCAL NO IMPORTA, a proposito: se etiqueta un commit PUBLICADO en
+# `origin/main`, no lo que haya en la carpeta. En `~/NovuChat` trabajan varias
+# sesiones a la vez y casi siempre hay algo a medio hacer; exigir un arbol
+# limpio habria hecho fallar el unico comando de la persona sin ninguna razon.
 git fetch --quiet origin --tags
 
 # --- La etiqueta, nueva -----------------------------------------------------
