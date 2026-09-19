@@ -4,7 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-17 (Platinum, bloque 1: dirección con enlace a Maps en la confirmación de la cita; pin nativo solo a pedido). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor Antes (main): 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
 
 ---
 
@@ -44,6 +44,23 @@ texto propio). La rama fusiona además el PR #110 (Demo A al día), que
 resolvía el mismo nodo `Config del negocio`. Bellido: 41 nodos, su suite en
 verde con las mismas tres excepciones que Platinum.
 
+**Y el consultorio se volvió un cliente con nodos propios (18/09, tarde).**
+`main` trajo el Bellido de producción: 57 nodos, 19 suyos (menú inicial,
+contacto directo, emergencia con aviso al doctor, despedida en dos) empalmados
+al Demo A en dos puntos. El sincronizador los habría borrado, así que aprendió
+`--base <ref>`: con la versión del vertical desde la que se armó el cliente
+distingue lo que el cliente AGREGÓ de lo que el vertical quitó, conserva sus
+nodos y recompone sus dos formas de empalme —un destino que cuelga de una
+salida que ya existía, y un nodo intercalado DELANTE de otro, que pasa a
+recibir todas las entradas de aquel, también las que el vertical agregue
+después—. El reemplazo toca solo el cableado `main`: la primera versión
+redirigió también el sub-nodo del modelo y dejó al agente sin Gemini, y la
+suite lo atrapó. Bellido queda en 60 nodos. De `main` entran además dos
+cambios del vertical, fusionados a tres bandas sobre el código: el fallo
+CERRADO de `Comprobar reserva` cuando el calendario no contesta (ejecución
+#2976: el modelo dijo «quedó agendada» con la credencial de Google caída) y
+los textos del menú en `Config del negocio`. 1714 en verde, saneo 0.
+
 **Falta:** desplegar reglas y Functions; publicar los TRES flujos desde `main`
 con `publicar-flujo.sh` (Demo A, Platinum y Bellido; los nodos nuevos toman la
 credencial por tipo);
@@ -51,6 +68,48 @@ probar con un teléfono «¿dónde quedan?» y «mándame la ubicación» y anot
 `CLIENTES/PLATINUM/aceptacion.md`; que la clínica entregue el enlace.
 
 ---
+
+## 2026-09-18 (tarde) — Bellido atendiendo en producción: menú, contacto directo, emergencia, despedida en dos y reglas de agenda
+
+**El doctor atiende desde las 09:00 con el flujo del PR #109 (fusionado), y a
+las 13:30 se le publicó lo que pidió al mediodía** (PR #114, sobre #113): menú
+de tres botones al primer mensaje de cada ventana, contacto directo por palabra
+clave (vacunas/cremas → recepción; consulta virtual → doctor), emergencia con
+aviso al doctor, despedida en dos mensajes (confirmación con vista previa de
+Maps, y las redes aparte) y reglas de agenda (cada 30 min, último 17:30, nunca
+13:00–13:59 sin decirlo, niño sano desde pasado mañana). **Mensajes:** +1 por
+emergencia y +1 por cita verificada; el menú y los contactos reemplazan la
+respuesta del turno.
+
+**Dos rondas de prueba real el mismo día.** La primera falló por tres cosas que
+la suite no podía ver: un botón de 21 caracteres (Meta admite 20), el respaldo
+de texto buscando su origen con `$('IF').all()` (devuelve solo la rama
+verdadera) y una doble presentación tras el menú; y una cuarta de
+interpretación («2» leído como opción de la lista y no como las 14:00). Las
+cuatro corregidas y republicadas. La segunda ronda salió limpia y está
+confirmada en las ejecuciones: botones con HTTP 200, cita reprogramada a las
+14:00 **verificada en el calendario** y redes en el segundo mensaje. Falta
+probar la emergencia con un teléfono real.
+
+**Regla nueva del candado, en los tres flujos (#113):** si el calendario no se
+puede consultar, `Comprobar reserva` **cierra**: avisa que la cita no quedó
+registrada y transfiere, en vez de dejar pasar la confirmación del modelo. El
+18/09 a la mañana el modelo dio por agendada una cita con la credencial de
+Calendar caída (`invalid_client`: el Client Secret se había sobreescrito en
+n8n; se reemplazó y se volvió a firmar).
+
+**Scripts nuevos del alta** (todos corren sin mostrar un valor):
+`registrar-numero.sh` (estado y registro del número con PIN),
+`webhook-meta.sh` (alta del webhook por la Graph API, que la UI rechaza con
+`#1004`), `importar-flujo-cliente.sh`, `credenciales-cliente.sh` (resuelve por
+nombre las credenciales de los nodos nuevos antes de publicar),
+`credenciales-flujo.sh` y `plantillas-cliente.sh` (plantillas de utilidad;
+`alerta_emergencia` y `solicitud_cita` **en revisión** en Meta).
+
+**Pendiente:** fusionar #110 (Demo A al día), #113 y #114 con el OK de Andres;
+probar la emergencia; aprobación de las plantillas; el doctor como
+administrador del portafolio; borrar la app/WABA huérfana `AndresBellido-Asistente`
+en NovuChat Produccion; alerta de gasto en la WABA; verificación de negocio.
 
 ## 2026-09-17 (noche) — alta del Dr. Andrés Bellido, pediatra: el flujo listo y probado
 
