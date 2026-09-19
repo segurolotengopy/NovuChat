@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
@@ -7,7 +7,9 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
 interface Mensaje {
   id: string; direccion?: unknown; texto?: unknown; tipo?: unknown; ts?: { toDate(): Date };
 }
-interface Conversacion { id: string; telefono?: unknown; ultimoMensaje?: unknown }
+interface Conversacion {
+  id: string; telefono?: unknown; ultimoMensaje?: unknown; noContactar?: unknown;
+}
 
 /**
  * =============================================================================
@@ -64,6 +66,28 @@ export function Conversaciones() {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const conversacionAbierta = conversaciones.find((c) => c.id === abierta) ?? null;
+
+  /**
+   * Enciende o apaga la lista de no molestar de ESTA conversación.
+   *
+   * LA PANTALLA ACOMPAÑA, NO ES EL LÍMITE (`CLAUDE.md` §7). Quien de verdad
+   * deja de escribirle a este teléfono es el servidor: `seguimientosPendientes`
+   * descarta toda conversación con `noContactar === true`, y la regla de
+   * Firestore solo deja que una persona del negocio toque este campo —y solo
+   * este— con un valor booleano. Si el interruptor no existiera, el sistema se
+   * comportaría igual; lo que agrega es que una persona pueda apagarlo cuando
+   * el cliente se lo pide por teléfono.
+   */
+  async function cambiarNoContactar(id: string, valor: boolean) {
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'conversaciones', id), { noContactar: valor });
+    } catch {
+      setError('No se pudo cambiar «No contactar». Vuelva a intentarlo.');
+    }
+  }
+
   useEffect(() => {
     if (!tenantId) return;
     return onSnapshot(
@@ -99,6 +123,27 @@ export function Conversaciones() {
         ))}
       </ul>
 
+      <div className="hilo-columna">
+        {/* El interruptor vive junto al hilo abierto y no en cada renglón de la
+            lista: es una decisión sobre UNA persona, y hay que estar mirando lo
+            que esa persona escribió para tomarla. */}
+        {conversacionAbierta && (
+          <div className="hilo-cabecera">
+            <label>
+              <input
+                type="checkbox"
+                checked={conversacionAbierta.noContactar === true}
+                onChange={(e) => cambiarNoContactar(conversacionAbierta.id, e.target.checked)}
+              />
+              {' '}No contactar
+            </label>
+            <p className="text-muted">
+              Con esto encendido, el asistente no le manda recordatorios
+              automáticos a este cliente. Sigue contestándole cuando él escriba:
+              lo que se apaga son los mensajes que salen sin que él los pida.
+            </p>
+          </div>
+        )}
       <ol className="hilo">
         {mensajes.map((m) => (
           <li key={m.id} className={m.direccion === 'entrante' ? 'entrante' : 'saliente'}>
@@ -111,6 +156,7 @@ export function Conversaciones() {
           <li className="vacio">Esta conversación todavía no tiene mensajes guardados.</li>
         )}
       </ol>
+      </div>
     </section>
   );
 }

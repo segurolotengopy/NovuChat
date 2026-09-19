@@ -1628,7 +1628,14 @@ service cloud.firestore {
                           && conversacionValida())
                       || (esPersonaDelNegocio(tenantId)
                           && tenantOperativo(tenantId)
-                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna'])
+                          // `noContactar` es la lista de no molestar (bloque 4): una
+                          // persona del negocio la enciende o la apaga desde la
+                          // consola. Es el ÚNICO campo de gestión que cambia lo que
+                          // el sistema hace —saca al teléfono del barrido de
+                          // seguimientos— y por eso se valida su tipo abajo.
+                          && soloCampos(['etiquetas', 'atendidaPor', 'notaInterna',
+                                         'noContactar'])
+                          && request.resource.data.get('noContactar', false) is bool
                           && textoOpc(request.resource.data, 'notaInterna', 1000));
 
         function conversacionValida() {
@@ -1663,10 +1670,25 @@ service cloud.firestore {
                  // el QR enviado) y `cotejarComprobante`/`senaVencida`, nunca
                  // una persona: es lo que decide si el próximo archivo que
                  // manda el paciente se lee como comprobante o no.
-                 , 'solicitud'])
+                 , 'solicitud'
+                 // `noContactar` es la LISTA DE NO MOLESTAR (bloque 4,
+                 // `Analisis/31` §4): el paciente pidió que no le escriban, o el
+                 // turno pasó a una persona. La enciende la ingesta con
+                 // `evento: 'no_contactar'` y la apaga —o la enciende a mano— una
+                 // persona del negocio desde la consola. Mientras esté en `true`
+                 // no le sale ningún seguimiento automático.
+                 , 'noContactar'])
             && (!d.keys().hasAny(['solicitud'])
                 || (d.solicitud is map
-                    && d.solicitud.get('etapa', '') in ['qr_enviado', 'agendada', 'vencida']))
+                    // `horarios` es la etapa del bloque 4: el asistente ofreció
+                    // horarios y el paciente no eligió. Junto con `qr_enviado` son
+                    // las dos etapas PENDIENTES, las únicas que el barrido mira.
+                    && d.solicitud.get('etapa', '') in ['horarios', 'qr_enviado',
+                                                        'agendada', 'vencida']))
+            // Si viene, es booleano: un `noContactar: 'no'` —que en JavaScript es
+            // verdadero— dejaría a un paciente sin seguimientos por un defecto de
+            // tipo, y al revés. Se valida acá y no en la pantalla.
+            && d.get('noContactar', false) is bool
             && d.get('telefono', '') is string
             && d.get('telefono', '').matches('^[0-9]{8,15}$')
             && textoOpc(d, 'nombreContacto', 120)
@@ -1758,6 +1780,13 @@ service cloud.firestore {
             // por pagos que no llegan, que es lo que decide si la retención de
             // 30 minutos es corta o larga.
             'senasEnviadas', 'senasCotejadas', 'senasVencidas',
+            // SEGUIMIENTO DE SOLICITUD PENDIENTE (bloque 4, 17/09).
+            // `seguimientos` = recordatorios que salieron (uno por solicitud como
+            // máximo, lo hace cumplir `seguimientoEnviado`). `reactivadas` = de
+            // esos, en cuántos el paciente volvió a escribir dentro de las 24 h.
+            // Con los dos se sabe si el recordatorio recupera a alguien o solo
+            // cuesta; ninguno de los dos se factura.
+            'seguimientos', 'reactivadas',
             // ENTRANTES POR TIPO (bloque 3, 17/09). Mapa `{ audio: 4, image: 2,
             // ... }` con los mensajes que mandó el cliente, por clase. Es un
             // mapa y no un campo por tipo porque los tipos los fija Meta; por
@@ -2022,7 +2051,11 @@ service cloud.firestore {
                  // Seña por QR (bloque 2, 17/09): llegó un comprobante y el
                  // servidor lo cotejó (el resultado va en `codigo`), y una
                  // retención que venció sin comprobante y cuya cita se borró.
-                 'cobro_cotejado', 'sena_vencida'
+                 'cobro_cotejado', 'sena_vencida',
+                 // Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4):
+                 // salió el recordatorio único; `codigo` lleva el modo (`texto`
+                 // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
+                 'seguimiento_enviado'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]

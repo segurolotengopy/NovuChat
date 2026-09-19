@@ -4,7 +4,54 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-17 — Platinum, bloque 4: recordatorio de solicitud pendiente (rama `flujos/seguimiento-pendiente`, sobre el bloque 2)
+
+`Analisis/31` §4 y §5. Al paciente que pidió horarios o recibió el QR y no
+volvió se le escribe **una sola vez**: a las 2–4 h un texto, si la ventana
+sigue abierta; a las 24–48 h la plantilla de utilidad «solicitud de cita sin
+confirmar». Con 16–32 leads sin cita al mes son 3 a 6 citas recuperadas, que
+es lo que hace visible el valor de NovuChat en el primer mes.
+
+- **Quién entra y quién no lo decide el servidor** (§7), no la pantalla:
+  `seguimientosPendientes` devuelve solo las solicitudes en etapa `horarios` o
+  `qr_enviado`, sin seguimiento previo, sin `noContactar`, sin umbral de
+  operador o bloqueo, y dentro de las dos ventanas de tiempo.
+  `seguimientoEnviado` marca **antes** de enviar: un envío perdido es mejor
+  que dos recordatorios. La etapa la escribe la ingesta desde hechos, no desde
+  lo que el modelo dijo: `horarios_ofrecidos` (corrió `consultar_disponibilidad`
+  y no `agendar_cita`), `no_contactar` (el paciente lo pidió o pasó a una
+  persona) y la cita registrada, que cierra la solicitud.
+- **El pedido de no ser contactado se reconoce como lo escribe la gente**:
+  «borrame» sin tilde, «quítame», «stop», «deja de escribirme», «dame de
+  baja», «no me llames». Las formas indirectas («ya no me interesa») quedan
+  fuera a propósito y para eso está el interruptor «No contactar» de la
+  consola, que enciende una persona.
+- **Flujo programado nuevo** `Flujos/agendamiento-seguimientos.json` (11 nodos,
+  cada hora al minuto 15 para no pisar al de señas vencidas). Contadores
+  `seguimientos` y `reactivadas` en el mes, mostrados en «Consumo».
+
+**Mensajes por conversación: +1 solo en las conversaciones que quedaron a
+medio camino** (el texto en ventana). El seguimiento por plantilla cae sobre
+una ventana vencida y **no se factura como conversación**; la respuesta del
+paciente sí. Suite: 1786 en verde (38 archivos). Saneo 0.
+
+**Falta:** fusionar y desplegar; **mandar la plantilla a revisión de Meta**
+con `crear-plantilla.sh` (tarda días, conviene apenas se autorice); crear el
+flujo con `publicar-flujo.sh --crear`, **que no se activa hasta que Meta
+apruebe la plantilla**; y probar con teléfono (filas 40–42 de la aceptación).
+
+**Bellido en paridad (18/09).** La rama fusiona el bloque 3 (con Bellido) y
+`sincronizar-flujo-cliente.mjs` repone en `Flujos/bellido-agendamiento.json`
+los dos nodos de reporte que este bloque cambia (`Reportar mensaje (entrante)`
+y `(saliente)`); el prompt no cambia. Con esto los cuatro bloques de flujo
+(1 a 4) y el 5 llegan al consultorio. Con el Bellido de producción (18/09,
+tarde) son 88 nodos: los 69 del vertical y los 19 suyos, y este bloque solo
+repone sus dos nodos de reporte. 2089 en verde (45 archivos), saneo 0,
+builds y lint.
 
 ---
 
