@@ -140,6 +140,48 @@ describe('Candado contra la doble reserva', () => {
     expect(String(r['motivoCruce'])).toContain('Cita Sil — corte');
   });
 
+  it('CON EL CALENDARIO CAÍDO no deja pasar una cita inventada: Bellido, ejecución #2976 (18/09)', () => {
+    // La credencial de Google falló («Client authentication failed»),
+    // consultar_disponibilidad y agendar_cita devolvieron ERROR, y el modelo
+    // igual escribió «Quedó agendada tu consulta… lunes 21 a las 11:00», con
+    // dirección y redes. `Verificar en el calendario` salió por
+    // continueRegularOutput con un único item {error}, y el candado —que falla
+    // ABIERTO ante un falso negativo— lo dejó pasar. Con el calendario
+    // inaccesible NO puede existir cita nueva: este caso falla CERRADO.
+    const r = comprobarTodo([
+      { error: 'Client authentication failed (e.g., unknown client, no client authentication included, or unsupported authentication method).' } as unknown as Evento,
+    ])[0] ?? {};
+    expect(String(r['respuesta'])).not.toMatch(/quedó agendada|confirmad/i);
+    expect(String(r['respuesta'])).toMatch(/recepci/i);
+    expect(r['reservaVerificada']).toBe(false);      // no se registra cierre facturable
+    expect(r['verificacionFallo']).toBe(true);
+    expect(r['transferir']).toBe(true);              // alguien tiene que ir a arreglar la credencial
+    expect(String(r['motivoTransferencia'])).toContain('no se pudo consultar el calendario');
+    expect(String(r['motivoTransferencia'])).toContain('Client authentication failed');
+    expect(String(r['motivoTransferencia'])).toContain('NO quedo registrada');
+  });
+
+  it('con el calendario caído usa el texto que configuró el negocio, si lo hay', () => {
+    const r = comprobarTodo([{ error: 'x' } as unknown as Evento], AHORA,
+      { mensajeReservaNoConfirmada: 'Texto del consultorio.' })[0] ?? {};
+    expect(r['respuesta']).toBe('Texto del consultorio.');
+    expect(r['transferir']).toBe(true);
+  });
+
+  it('un item de error JUNTO a eventos reales no es «calendario caído»: decide el candado normal', () => {
+    // Solo cuenta como caído cuando NO vino ningún evento. Si hay eventos, la
+    // consulta funcionó y el error es de otro calendario u otra cosa: se sigue
+    // el camino de siempre, que en este caso confirma la cita recién creada.
+    const r = comprobarTodo([
+      { error: 'x' } as unknown as Evento,
+      ev('j1', 'Cita Ana — control', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T09:30:00-04:00', '2026-09-06T20:16:00.000Z'),
+    ])[0] ?? {};
+    expect(r['verificacionFallo']).toBeUndefined();
+    expect(r['reservaVerificada']).toBe(true);
+    expect(r['eventoId']).toBe('j1');
+  });
+
   it('dice QUIÉN y CUÁNDO chocó, para que el reintento pueda ofrecer alternativas', () => {
     // La persona sale del calendario donde vivía la cita, cruzado con los
     // funcionarios de la configuración: el título solo trae el nombre del

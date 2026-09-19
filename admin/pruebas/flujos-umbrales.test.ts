@@ -154,7 +154,7 @@ const FLUJOS = [
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
-    campoTexto: 'textoAviso', salidaAlCliente: null, antesDelAgente: null, entradasAlAgente: null,
+    campoTexto: 'textoAviso', salidaAlCliente: null,
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
@@ -166,13 +166,19 @@ const FLUJOS = [
     entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   // Reservas del consultorio del Dr. Bellido: también es el Demo A con los datos
-  // del cliente, y obedece los umbrales por los mismos nodos.
+  // del cliente, y obedece los umbrales por los mismos nodos. Desde el 18/09
+  // tiene, ENTRE la compuerta y el agente, el estado de la conversación y las
+  // tres compuertas sin modelo (menú, contacto directo, emergencia): el agente
+  // sigue siendo alcanzable SOLO desde la rama verdadera de «¿Atención normal?».
   {
     archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
-    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
-    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?', 'Estado de la conversación',
+      '¿Menú inicial?', '¿Contacto directo?', '¿Emergencia?'],
+    // En el consultorio, lo que convirtió el medio en texto no le habla al
+    // agente: entra por su estado de la conversación, como cualquier turno.
+    entradasAlAgente: ['¿Emergencia?'],
   },
 ] as const;
 
@@ -182,7 +188,8 @@ describe('El mensaje fijo de uso extendido', () => {
   });
 });
 
-describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente, antesDelAgente, entradasAlAgente }) => {
+describe.each(FLUJOS)('$archivo', (entrada) => {
+  const { archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente } = entrada;
   const f = flujo(archivo);
 
   describe('Traer configuración', () => {
@@ -238,22 +245,22 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
     });
 
     it('el agente SOLO es alcanzable desde la rama verdadera de «¿Atención normal?»', () => {
-      if (antesDelAgente && entradasAlAgente) {
-        // Con una CADENA de IF en el medio la propiedad es la misma: al agente
-        // se entra por un solo lugar efectivo, y ese lugar solo se alcanza
-        // desde la rama verdadera. Cada compuerta cae en la siguiente por su
-        // salida FALSA: lo que atrapa, lo resuelve sin modelo.
-        const ultima = antesDelAgente[antesDelAgente.length - 1] as string;
-        expect(destinos(f, '¿Atención normal?', 0)).toEqual([antesDelAgente[0]]);
-        expect(origenes(f, antesDelAgente[0] as string)).toEqual(['¿Atención normal?']);
-        for (let i = 1; i < antesDelAgente.length; i++) {
-          expect(destinos(f, antesDelAgente[i - 1] as string, 1)).toEqual([antesDelAgente[i]]);
-          expect(origenes(f, antesDelAgente[i] as string)).toEqual([antesDelAgente[i - 1]]);
+      // Entre la compuerta y el agente hay una CADENA de eslabones sin modelo:
+      // las compuertas de medios del vertical (bloques 2 y 3) y, en el
+      // consultorio, su estado de la conversación y su menú. Lo que no cambia
+      // es que la cadena ARRANCA en la rama verdadera, que cada eslabón lleva
+      // al siguiente, y que al agente se entra por los lugares DECLARADOS: los
+      // que ya convirtieron el medio en TEXTO, nunca uno con un binario.
+      const antes = ('antesDelAgente' in entrada ? entrada.antesDelAgente : null) as readonly string[] | null;
+      if (antes) {
+        const cadena = [...antes, agente];
+        expect(destinos(f, '¿Atención normal?', 0)).toEqual([cadena[0]]);
+        expect(origenes(f, cadena[0]!)).toEqual(['¿Atención normal?']);
+        for (let i = 0; i < cadena.length - 1; i++) {
+          expect(alcanzables(f, cadena[i]!).has(cadena[i + 1]!), `${cadena[i]} → ${cadena[i + 1]}`).toBe(true);
         }
-        expect(destinos(f, ultima, 1)).toEqual([agente]);
-        // Las demás entradas son los nodos que YA convirtieron el medio en
-        // texto: ningún nodo con un binario le habla al agente.
-        expect(origenes(f, agente).sort()).toEqual([...entradasAlAgente].sort());
+        const entradas = (entrada as { entradasAlAgente?: readonly string[] }).entradasAlAgente ?? [antes[antes.length - 1]!];
+        expect(origenes(f, agente).sort()).toEqual([...entradas].sort());
       } else {
         expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
         expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
@@ -327,10 +334,13 @@ describe.each(FLUJOS)('$archivo', ({ archivo, agente, compuertaAviso, campoAviso
         // reporta lo que salió, no lo que se pensaba mandar.
         expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente]);
         expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
-        // Del envío cuelgan el reporte del texto y, DEBAJO, la compuerta del
-        // pin (Analisis/34 §2): con orden v1 el texto se reporta primero, y
-        // la compuerta no pasa nada en el camino normal.
-        expect(destinos(f, 'Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
+        // Del envío cuelgan el reporte del texto y, DEBAJO, lo que cada flujo
+        // agregue: la compuerta del pin (Analisis/34 §2) y, en Bellido, la de
+        // su segundo mensaje. Con orden v1 el texto se reporta PRIMERO.
+        expect(destinos(f, 'Responder al cliente')[0]).toBe('Reportar mensaje (saliente)');
+        for (const d of destinos(f, 'Responder al cliente').slice(1)) {
+          expect(d, d).toMatch(/^¿Enviar /);
+        }
       } else {
         expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
           .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);
