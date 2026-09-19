@@ -4,7 +4,59 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-19 — los seis bloques de Platinum en `main`, y el despliegue esperando la etiqueta
+
+**Fusionados los seis**, en orden: 1 → 2 → 3 → 4 encadenados (#106, #108,
+#111, #112), después el candado (#107) y los umbrales (#105). `main` quedó con
+**2108 pruebas en verde**, saneo 0, builds y lint. Dos tropiezos que conviene
+recordar: al reapuntar la base de un PR **GitHub le borra los checks**, y la
+compuerta de rama los exige, así que cada rama se puso al día con `main` para
+que el CI volviera a correr; y CodeQL marcó otra regex de URL sin ancla, esta
+vez en la suite del flujo de seguimientos.
+
+**El consultorio del Dr. Bellido dejó de ser una copia exacta del Demo A.** Su
+flujo de producción son los nodos del vertical **más 19 suyos** (menú inicial,
+contacto directo, emergencia con aviso al doctor, redes), empalmados en dos
+puntos. `sincronizar-flujo-cliente.mjs` aprendió `--base <ref>`: distingue lo
+que el cliente AGREGÓ de lo que el vertical QUITÓ, conserva sus nodos y
+recompone sus empalmes sobre el vertical de cada bloque, de modo que las
+compuertas de medios quedan DELANTE de su menú —el audio y la imagen se
+vuelven texto antes de entrar ahí— y lo que ya es texto entra por donde entra
+cualquier turno suyo. **La base es el vertical del que salió ESE archivo de
+cliente**, no siempre `origin/main`: con la base equivocada el empalme no se
+reconoce y su menú queda desconectado. El reemplazo toca solo el cableado
+`main`: redirigir también los `ai_*` deja al agente sin modelo, y la suite lo
+atrapó.
+
+**`scripts/etiquetar-version.sh`** (#115, #116): un solo comando para el pase.
+`git tag` es de una persona por decisión del 15/09, pero tampoco van comandos
+sueltos: el script comprueba forma de la versión, que no exista, que sea
+posterior a la última y que el commit esté publicado; sube la etiqueta, sigue
+la corrida e indica el segundo paso, aprobar el entorno. **No exige un árbol
+limpio**: se etiqueta lo publicado en `origin/main`, y `~/NovuChat` la comparten
+varias sesiones.
+
+**La plantilla de Meta ya está en revisión** (`solicitud_cita_sin_confirmar`,
+UTILITY, es, validez 12 h, PENDING). Se adelantó porque es lo único que depende
+de un tercero y tarda días. El flujo de seguimientos NO se activa hasta que
+Meta la apruebe.
+
+**Diagnosticado en seco y listo para aplicar** apenas estén las Functions: Demo
+A 38 → 69 nodos, Platinum 38 → 69, Bellido 57 → 88, todas las credenciales
+resueltas (por nombre o por tipo), y los dos flujos programados por crear
+(señas vencidas, 10 nodos; seguimientos, 11). El entorno de Bellido **no tenía
+anotado `N8N_WORKFLOW_ID`** y el script no podía ni diagnosticarlo: se buscó por
+la API y quedó anotado.
+
+**Falta, y en este orden:** la etiqueta `v0.6.0` y la aprobación del entorno
+(los dos pasos de Andres); publicar los tres flujos desde `main`; crear los dos
+programados; las pruebas con teléfono (filas 24 a 43 de la aceptación, las de
+umbrales antes del 01/10); y que la clínica entregue el enlace de Maps, el QR
+real y el modo de cobro, que siguen como «(supuesto)» en la ficha.
 
 ---
 
