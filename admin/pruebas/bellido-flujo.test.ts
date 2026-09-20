@@ -192,6 +192,8 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // Bloque 3 (medios entrantes): los mismos dos pasos contra Meta, gemelos
     // de los del comprobante. Los tres nodos de Gemini van sin nombre.
     'Obtener URL del medio (general)', 'Descargar medio',
+    // El botón para escribirle a recepción (19/09), que ahora es del vertical.
+    'Enviar contacto', 'Reportar contacto (saliente)',
     // Los del 18/09: menú, contacto directo, emergencia y despedida en dos.
     'Enviar interactivo', 'Reportar interactivo (saliente)', 'Avisar al doctor (plantilla)',
     'Avisar al doctor (texto)', 'Redes del doctor', 'Reportar redes (saliente)',
@@ -317,11 +319,12 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
       }
     }
     for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)',
-      'Reportar mensaje (saliente)', 'Registrar cierre (cita)', 'Reportar QR (saliente)', 'Cotejar en el servidor']) {
+      'Reportar mensaje (saliente)', 'Registrar cierre (cita)', 'Reportar QR (saliente)', 'Cotejar en el servidor',
+      'Reportar contacto (saliente)']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name, nombre).toMatch(/Bellido/);
     }
     for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante',
-      'Obtener URL del medio (general)', 'Descargar medio']) {
+      'Obtener URL del medio (general)', 'Descargar medio', 'Enviar contacto']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name, nombre).toMatch(/Bellido/);
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -345,7 +348,8 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     // pedido del bloque 1 y el QR de la seña del bloque 2.
     const http = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'])));
     expect(http.map((n) => n.name).sort()).toEqual(
-      ['Avisar al doctor (plantilla)', 'Enviar QR de la seña', 'Enviar interactivo', 'Enviar ubicación']);
+      ['Avisar al doctor (plantilla)', 'Enviar QR de la seña', 'Enviar contacto',
+        'Enviar interactivo', 'Enviar ubicación']);
   });
 
   it('el aviso a recepción nombra al consultorio y conserva el cuerpo del Demo A', () => {
@@ -683,7 +687,7 @@ describe.skipIf(!HAY_JSON)('(g) Orden v1: el entrante se reporta antes, y el sal
     // Del envío cuelgan el reporte, la compuerta del pin (bloque 1) y la del
     // segundo mensaje: el reporte PRIMERO en el lienzo (orden v1).
     expect(destinos('Responder al cliente')).toEqual(
-      ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar redes?']);
+      ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?', '¿Enviar redes?']);
     expect(y('Reportar mensaje (saliente)')).toBeLessThan(y('¿Enviar redes?'));
   });
 

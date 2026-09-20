@@ -99,13 +99,13 @@ describe('El QR que el comercio sube', () => {
     // solo el primero puede pagar.
     const r = validarQrSimple(UN_USO, { nombreDeclarado: TITULAR });
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/UN SOLO USO/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/UN SOLO USO/);
   });
 
   it('RECHAZA un QR con el monto cerrado, salvo que el comercio lo confirme', () => {
     const r = validarQrSimple(MONTO_CERRADO, { nombreDeclarado: TITULAR });
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/importe fijo/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/importe fijo/);
 
     const conAviso = validarQrSimple(MONTO_CERRADO, { nombreDeclarado: TITULAR, aceptaMontoFijo: true });
     expect(conAviso.valido).toBe(true);
@@ -122,7 +122,7 @@ describe('El QR que el comercio sube', () => {
   it('RECHAZA el QR de un enlace y lo dice con esas palabras', () => {
     const r = validarQrSimple('https://www.bancox.com.bo/pagar/123');
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/página web/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/página web/);
   });
 
   it('RECHAZA un código al que le cambiaron un dígito: el CRC no cierra', () => {
@@ -130,19 +130,19 @@ describe('El QR que el comercio sube', () => {
     const alterado = BUENO.replace('01101000000890', '01101000000891');
     const r = validarQrSimple(alterado);
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/verificación/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/verificación/);
   });
 
   it('RECHAZA un código sin cuenta asociada: no cobraría a nadie', () => {
     const r = validarQrSimple(SIN_CUENTA, { nombreDeclarado: TITULAR });
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/ninguna cuenta/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/ninguna cuenta/);
   });
 
   it('RECHAZA cuando el nombre declarado no es el del QR', () => {
     const r = validarQrSimple(BUENO, { nombreDeclarado: 'María López' });
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/PEREZ GOMEZ JUAN CARLOS/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/PEREZ GOMEZ JUAN CARLOS/);
   });
 
   it('acepta el nombre desordenado y con acentos, que es como lo escribe la gente', () => {
@@ -332,6 +332,30 @@ describe('El PNG del QR que se le manda al cliente', () => {
   });
 });
 
+describe('Cada problema dice a qué campo pertenece (política de la consola)', () => {
+  // `admin/DISENO.md` §4quindecies: ningún mensaje genérico. Si un problema no
+  // trae su campo, la pantalla no puede resaltar nada y la persona adivina.
+  const CAMPOS = ['imagen', 'nombreCuenta', 'cuentaDeclarada', 'venceEl',
+    'confirmaReutilizable', 'confirmaMontoAbierto', 'aceptaMontoFijo'];
+
+  it('las dos confirmaciones de un QR cifrado apuntan a SU casilla, no a un texto suelto', () => {
+    const r = validarQrSimple(CIFRADO, { cuentaDeclarada: '170000221' });
+    const campos = r.problemas.map((p) => p.campo);
+    expect(campos).toContain('confirmaReutilizable');
+    expect(campos).toContain('confirmaMontoAbierto');
+  });
+
+  it('TODO problema, de cualquier QR, trae un campo conocido', () => {
+    const casos = ['', 'https://ejemplo.com/pagar', 'no es un qr', CIFRADO];
+    for (const caso of casos) {
+      for (const p of validarQrSimple(caso).problemas) {
+        expect(CAMPOS, `${caso.slice(0, 20)} → ${p.texto.slice(0, 40)}`).toContain(p.campo);
+        expect(p.texto.length).toBeGreaterThan(10);
+      }
+    }
+  });
+});
+
 describe('QR bancario CIFRADO — la familia que se usa de verdad en Bolivia', () => {
   // ESTE BLOQUE EXISTE PORQUE SE PROBÓ CON UN QR REAL. El 2026-09-06 se
   // decodificó uno del BNB y resultó NO ser EMVCo: son 256 bytes cifrados más
@@ -354,7 +378,7 @@ describe('QR bancario CIFRADO — la familia que se usa de verdad en Bolivia', (
   it('EXIGE el número de cuenta: sin él no hay con qué verificar un pago', () => {
     const r = validarQrSimple(CIFRADO, { ...DECLARADO, cuentaDeclarada: '' });
     expect(r.valido).toBe(false);
-    expect(r.problemas.join(' ')).toMatch(/número de la cuenta/);
+    expect(r.problemas.map((p) => p.texto).join(' ')).toMatch(/número de la cuenta/);
   });
 
   it('EXIGE las dos confirmaciones que no se pueden leer del código', () => {

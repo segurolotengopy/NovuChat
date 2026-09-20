@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { deleteField, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { funciones } from '../lib/firebase';
 import { useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { useFlujos } from '../lib/flujos';
@@ -386,10 +388,29 @@ export function Configuracion() {
       setEstado('El enlace del mapa tiene que ser el que da Google Maps al tocar Compartir → Copiar enlace (empieza con https://maps.app.goo.gl/ o https://www.google.com/maps/). No se aceptan enlaces a otros sitios: el asistente se lo manda a sus clientes.');
       return;
     }
-    const { error: errorCoordenadas, ubicacion } = leerCoordenadas(coordenadas);
+    // LAS COORDENADAS SE SACAN DEL ENLACE, no se le piden a nadie. El navegador
+    // no puede seguir la redirección del enlace corto —es otro origen—, así que
+    // lo hace una Function acotada a los dominios de Google (`mapa.ts`).
+    const { error: errorCoordenadas } = leerCoordenadas(coordenadas);
+    let { ubicacion } = leerCoordenadas(coordenadas);
     if (errorCoordenadas !== null) {
       setEstado(errorCoordenadas);
       return;
+    }
+    if (direccionMaps !== '' && !ubicacion) {
+      try {
+        const resolver = httpsCallable<{ url: string }, {
+          ubicacion: { lat: number; lng: number } | null; motivo: string | null;
+        }>(funciones, 'ubicacionDeEnlace');
+        const { data } = await resolver({ url: direccionMaps });
+        if (data.ubicacion) {
+          ubicacion = data.ubicacion;
+          setCoordenadas({ lat: String(data.ubicacion.lat), lng: String(data.ubicacion.lng) });
+        }
+      } catch {
+        // Que no se pueda resolver NO impide guardar el enlace: el asistente
+        // lo usa como respaldo. Se avisa abajo, con el enlace ya guardado.
+      }
     }
     try {
       await updateDoc(doc(db, 'tenants', tenantId, 'config', 'negocio'), {
@@ -494,20 +515,25 @@ export function Configuracion() {
           cita</strong> y cuando un cliente pregunta dónde quedan. Para obtenerlo:
           busque su local en Google Maps, toque <strong>Compartir → Copiar
           enlace</strong> y péguelo acá. Solo se aceptan enlaces de Google Maps.</>)}
-        {grupo('Latitud (opcional)', (
-          <input type="number" step="any" min={-90} max={90} inputMode="decimal"
-                 placeholder="-17.7833" value={coordenadas.lat}
-                 onChange={(e) => setCoordenadas({ ...coordenadas, lat: e.target.value })} />
-        ))}
-        {grupo('Longitud (opcional)', (
-          <input type="number" step="any" min={-180} max={180} inputMode="decimal"
-                 placeholder="-63.1821" value={coordenadas.lng}
-                 onChange={(e) => setCoordenadas({ ...coordenadas, lng: e.target.value })} />
-        ), <>Solo se usan cuando un cliente pide <strong>que le manden la
-          ubicación</strong>: el asistente le envía el pin de WhatsApp, que es un
-          mensaje más y se cuenta como tal. Para obtenerlas: en Google Maps, clic
-          derecho sobre su local y copie las coordenadas (el primer número es la
-          latitud). Las dos juntas o ninguna.</>)}
+        {/* LAS COORDENADAS NO SE PIDEN. Salían en dos campos, con la
+            instrucción de hacer clic derecho en Google Maps y copiar números:
+            nadie iba a hacerlo (Andres, 19/09/2026), y sin coordenadas al
+            cliente le llega el enlace, que en Android muere con «Invalid
+            Dynamic Link». Se sacan del mismo enlace que el comercio ya pegó. */}
+        {coordenadas.lat !== '' && (
+          <p className="ayuda" role="status">
+            <strong>Ubicación detectada</strong> del enlace: el asistente puede
+            mandar el pin de WhatsApp cuando un cliente pregunte dónde quedan.
+            Es un mensaje más, y solo sale si lo piden.
+          </p>
+        )}
+        {coordenadas.lat === '' && (datos['direccionMaps'] ?? '') !== '' && (
+          <p className="ayuda" role="status">
+            De ese enlace no se pudieron sacar las coordenadas. Vuelva a
+            copiarlo desde <strong>Compartir → Copiar enlace</strong> en Google
+            Maps, sobre el punto exacto de su local.
+          </p>
+        )}
 
         {campo('numeroRecepcion', 'Número de recepción (sin +, solo dígitos)')}
         {/* El calendario del negocio vive en el documento común por historia

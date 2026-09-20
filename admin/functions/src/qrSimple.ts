@@ -180,11 +180,28 @@ export interface DatosQr {
   cuentas: string[];
 }
 
+/**
+ * EL CAMPO DE LA PANTALLA AL QUE PERTENECE CADA PROBLEMA. Sin esto, la consola
+ * solo puede escribir una lista suelta debajo del botón, y la persona tiene que
+ * adivinar cuál de los ocho controles es el que está mal: pasó el 19/09/2026
+ * con las dos confirmaciones de un QR cifrado. Política de la consola: ningún
+ * mensaje genérico, y el campo que falta se resalta (`admin/DISENO.md` §4quindecies).
+ * `null` es para lo que no corresponde a un control: el código en sí.
+ */
+export type CampoDeLaPantalla = 'imagen' | 'nombreCuenta' | 'cuentaDeclarada' | 'venceEl'
+  | 'confirmaReutilizable' | 'confirmaMontoAbierto' | 'aceptaMontoFijo';
+
+export interface ProblemaQr {
+  /** El control de la pantalla que hay que tocar para resolverlo. */
+  campo: CampoDeLaPantalla;
+  texto: string;
+}
+
 export interface ResultadoQr {
   valido: boolean;
   familia: FamiliaQr | null;
   /** Motivos por los que NO se acepta. Si hay alguno, `valido` es falso. */
-  problemas: string[];
+  problemas: ProblemaQr[];
   /** Cosas que conviene que el comercio sepa, pero no impiden guardarlo. */
   advertencias: string[];
   datos: DatosQr | null;
@@ -260,24 +277,24 @@ export function pareceCifrado(cadena: string): boolean {
  * sea: un pago del monto correcto a la cuenta de otro pasaría por bueno.
  */
 function validarCifrado(cadena: string, opciones: OpcionesQr): ResultadoQr {
-  const problemas: string[] = [];
+  const problemas: ProblemaQr[] = [];
   const advertencias: string[] = [];
   const cuenta = (opciones.cuentaDeclarada ?? '').replace(/\D/g, '');
 
   if (cuenta.length < 6 || cuenta.length > 25) {
-    problemas.push('Falta el número de la cuenta que recibe el dinero, o no es válido. '
+    problemas.push({ campo: 'cuentaDeclarada', texto: 'Falta el número de la cuenta que recibe el dinero, o no es válido. '
       + 'Lo dice la aplicación de tu banco junto al QR, como «Cuenta destino». '
-      + 'Sin ese número no podemos verificar los pagos de tus clientes.');
+      + 'Sin ese número no podemos verificar los pagos de tus clientes.' });
   }
   if (opciones.confirmaReutilizable !== true) {
-    problemas.push('Tienes que confirmar que tu QR se puede usar muchas veces. '
+    problemas.push({ campo: 'confirmaReutilizable', texto: 'Tienes que confirmar que tu QR se puede usar muchas veces. '
       + 'Este tipo de código viene cifrado y no podemos comprobarlo por dentro: '
-      + 'míralo en tu banco antes de marcarlo.');
+      + 'míralo en tu banco antes de marcarlo.' });
   }
   if (opciones.confirmaMontoAbierto !== true && opciones.aceptaMontoFijo !== true) {
-    problemas.push('Tienes que confirmar que tu QR NO tiene un importe fijo grabado. '
+    problemas.push({ campo: 'confirmaMontoAbierto', texto: 'Tienes que confirmar que tu QR NO tiene un importe fijo grabado. '
       + 'En la aplicación de tu banco suele figurar como «Monto: Bs. 0.00» o '
-      + '«Sin especificar». Míralo antes de marcarlo.');
+      + '«Sin especificar». Míralo antes de marcarlo.' });
   }
 
   advertencias.push('Este código viene cifrado por tu banco, así que lo que declaraste '
@@ -309,14 +326,14 @@ function validarCifrado(cadena: string, opciones: OpcionesQr): ResultadoQr {
  * intentando cobrar y no le sirve un código de error.
  */
 export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): ResultadoQr {
-  const problemas: string[] = [];
+  const problemas: ProblemaQr[] = [];
   const advertencias: string[] = [];
   const limpia = (cadena ?? '').trim();
 
   if (limpia === '') {
     return {
       valido: false, familia: null,
-      problemas: ['No se pudo leer ningún código en la imagen.'], advertencias, datos: null,
+      problemas: [{ campo: 'imagen', texto: 'No se pudo leer ningún código en la imagen.' }], advertencias, datos: null,
     };
   }
 
@@ -325,8 +342,8 @@ export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): Resu
   if (/^https?:\/\//i.test(limpia)) {
     return {
       valido: false, familia: null,
-      problemas: ['Ese QR lleva a una página web, no es un QR de cobro. '
-        + 'Descarga el QR desde la aplicación de tu banco.'],
+      problemas: [{ campo: 'imagen', texto: 'Ese QR lleva a una página web, no es un QR de cobro. '
+        + 'Descarga el QR desde la aplicación de tu banco.' }],
       advertencias, datos: null,
     };
   }
@@ -337,9 +354,9 @@ export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): Resu
     if (pareceCifrado(limpia)) return validarCifrado(limpia, opciones);
     return {
       valido: false, familia: null,
-      problemas: ['Esa imagen no contiene un QR de cobro. Puede ser una foto, '
+      problemas: [{ campo: 'imagen', texto: 'Esa imagen no contiene un QR de cobro. Puede ser una foto, '
         + 'una captura borrosa o el QR de otra cosa. Descarga el QR desde '
-        + 'la aplicación de tu banco y súbelo sin recortar.'],
+        + 'la aplicación de tu banco y súbelo sin recortar.' }],
       advertencias, datos: null,
     };
   }
@@ -351,19 +368,19 @@ export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): Resu
   const ultimo = campos[campos.length - 1];
   const crcDeclarado = buscar(campos, ID_CRC);
   if (crcDeclarado === null || ultimo?.id !== ID_CRC) {
-    problemas.push('Al código le falta su verificación final. Está incompleto o recortado.');
+    problemas.push({ campo: 'imagen', texto: 'Al código le falta su verificación final. Está incompleto o recortado.' });
   } else {
     const hasta = limpia.length - 4;
     const esperado = crc16(limpia.slice(0, hasta));
     if (esperado.toUpperCase() !== crcDeclarado.toUpperCase()) {
-      problemas.push('El código no pasa su propia verificación: está dañado o '
-        + 'la imagen se leyó mal. Vuelve a descargarlo del banco.');
+      problemas.push({ campo: 'imagen', texto: 'El código no pasa su propia verificación: está dañado o '
+        + 'la imagen se leyó mal. Vuelve a descargarlo del banco.' });
     }
   }
 
   // --- La cuenta --------------------------------------------------------
   if (!tieneCuenta(campos)) {
-    problemas.push('El código no lleva ninguna cuenta asociada, así que no cobraría a nadie.');
+    problemas.push({ campo: 'imagen', texto: 'El código no lleva ninguna cuenta asociada, así que no cobraría a nadie.' });
   }
 
   // --- Un solo uso ------------------------------------------------------
@@ -372,9 +389,9 @@ export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): Resu
   const metodo = buscar(campos, ID_METODO_INICIO) ?? '11';
   const reutilizable = metodo !== '12';
   if (!reutilizable) {
-    problemas.push('Ese QR es de UN SOLO USO: sirve para un cobro y después queda '
+    problemas.push({ campo: 'imagen', texto: 'Ese QR es de UN SOLO USO: sirve para un cobro y después queda '
       + 'muerto. El asistente lo enviaría a todos tus clientes y solo el primero '
-      + 'podría pagar. Genera uno reutilizable en tu banco.');
+      + 'podría pagar. Genera uno reutilizable en tu banco.' });
   }
 
   // --- Monto cerrado ----------------------------------------------------
@@ -385,15 +402,15 @@ export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): Resu
   const montoBruto = montoTexto !== null && montoTexto.trim() !== '' ? Number(montoTexto) : null;
   const montoFijo = montoBruto === 0 ? null : montoBruto;
   if (montoFijo !== null && !Number.isFinite(montoFijo)) {
-    problemas.push('El importe grabado en el código no se entiende.');
+    problemas.push({ campo: 'imagen', texto: 'El importe grabado en el código no se entiende.' });
   } else if (montoFijo !== null) {
     if (opciones.aceptaMontoFijo) {
       advertencias.push(`Este QR cobra siempre ${montoFijo}. Confirmaste que todos tus `
         + 'cobros son de ese importe: si algún día cobras otro monto, hay que cambiarlo.');
     } else {
-      problemas.push(`Ese QR tiene el importe fijo en ${montoFijo}: cobraría eso a `
+      problemas.push({ campo: 'aceptaMontoFijo', texto: `Ese QR tiene el importe fijo en ${montoFijo}: cobraría eso a `
         + 'todos, sin importar el pedido. Genera uno de monto abierto, salvo que '
-        + 'todos tus cobros sean exactamente de ese importe.');
+        + 'todos tus cobros sean exactamente de ese importe.' });
     }
   }
 
@@ -412,9 +429,9 @@ export function validarQrSimple(cadena: string, opciones: OpcionesQr = {}): Resu
   const nombreEnElQr = (buscar(campos, ID_NOMBRE_COMERCIO) ?? '').trim();
   const declarado = (opciones.nombreDeclarado ?? '').trim();
   if (declarado !== '' && nombreEnElQr !== '' && !nombreCoincide(declarado, nombreEnElQr)) {
-    problemas.push(`El QR está a nombre de «${nombreEnElQr}» y escribiste `
+    problemas.push({ campo: 'nombreCuenta', texto: `El QR está a nombre de «${nombreEnElQr}» y escribiste `
       + `«${declarado}». Tienen que ser la misma cuenta: el comprobante que mande `
-      + 'tu cliente va a decir el nombre del QR, y si no coincide no se puede verificar.');
+      + 'tu cliente va a decir el nombre del QR, y si no coincide no se puede verificar.' });
   }
   if (nombreEnElQr === '') {
     advertencias.push('El código no trae el nombre de la cuenta, así que no se '
