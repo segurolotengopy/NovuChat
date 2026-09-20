@@ -18,3 +18,4 @@ las fichas, no los copian.
 | `prepago-estricto.md` | Prepago estricto: pago por consola, por el WhatsApp interno y por carga manual; uno a seis meses; cobranza y cortes | `Analisis/36`, `29`, y la rama del prepago |
 | `cobrador-contrato-para-consumidores.md` | **Para la sesión del proyecto de cobros por QR**: contrato para proyectos consumidores (crear, consultar, anular, aviso firmado) | `Analisis/36` §1.2 |
 | `modularizacion-flujos.md` | Sacar el código y los prompts de los nodos de `Flujos/*.json` a módulos versionados con un ensamblador | memorias `modularizacion-*`, `Analisis/20` §5, `Flujos/LEEME-flujos.md` §0 |
+| `prepago-y-modularizacion-en-paralelo.md` | **Coordinadora**: prepago estricto (A) y modularización (B) a la vez, el contrato del cobrador (C) encolado en su proyecto, mapa de archivos, cola de fusión y la compuerta del demo | `Analisis/36`, los prompts de A, B y C |
