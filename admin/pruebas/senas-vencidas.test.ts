@@ -167,7 +167,13 @@ describe('Config de la seña: la consola manda, y sin ella no se borra nada', ()
     expect(c.parameters['operation']).toBe('getAll');
     expect(c.parameters['returnAll']).toBe(true);
     expect(expresion(c.parameters['calendar'].value, { calendarioARevisar: CAL_2 })).toBe(CAL_2);
-    expect(c.parameters['options']).toMatchObject({ query: 'PENDIENTE DE SEÑA', singleEvents: true });
+    // SIN búsqueda por texto: con `query: 'PENDIENTE DE SEÑA'` Google devolvía
+    // CERO resultados aunque las citas existieran con ese título exacto
+    // (19/09/2026, seis corridas seguidas), así que ninguna seña vencía y el
+    // flujo terminaba «bien». El filtro por título vive en «Vencidas», que es
+    // nuestro y es exacto. Si alguien vuelve a poner `query`, esto lo atrapa.
+    expect(c.parameters['options']).toMatchObject({ singleEvents: true });
+    expect(c.parameters['options']).not.toHaveProperty('query');
     expect(String(c.parameters['options'].timeMin)).toContain("minus({ days: 1 })");
     expect(String(c.parameters['options'].timeMax)).toContain('plus({ days: 90 })');
     expect(c.onError).toBe('continueRegularOutput');
