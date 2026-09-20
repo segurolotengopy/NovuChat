@@ -203,7 +203,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, referencia: $json.eventoId }) }}",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, referencia: $json.eventoId, creadoEn: $json.creadoEn, minutosRetencion: $json.minutosRetencion }) }}",
         "options": {
           "timeout": 8000,
           "response": {
@@ -221,7 +221,7 @@
           "name": "NovuChat ingesta (Clínica Platinum)"
         }
       },
-      "notes": "PRIMERO se le dice al servidor (`senaVencida`, idempotente) y recién con su respuesta se borra: si contesta `ya_agendada` (el comprobante cuadró y el título no se pudo corregir) la cita NO se toca. Nunca manda nada al paciente."
+      "notes": "Le pide permiso al servidor para liberar la cita. Manda tambien CUANDO se creo y los minutos de retencion: el servidor no se fia de que el flujo haya filtrado bien, y vuelve a exigir que el tiempo haya pasado antes de autorizar un borrado."
     },
     {
       "id": "sv-if-borrar",

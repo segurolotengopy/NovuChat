@@ -5,7 +5,7 @@ import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from './firma.js';
 import {
   cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido,
 } from './cotejo.js';
-import { registrar, type Solicitud } from './ingesta.js';
+import { registrar, MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';
 import { periodoDe } from './planes.js';
 
@@ -344,12 +344,21 @@ export const senaVencida = onRequest(
     if (!TELEFONO.test(telefono) || !referencia) {
       respuesta.status(400).json({ error: 'faltan telefono o referencia' }); return;
     }
+    // CUÁNDO SE CREÓ LA CITA, según Google, y cuánto se retiene. El flujo ya
+    // filtró por tiempo, pero esto se vuelve a exigir acá: un límite que solo
+    // vive en el flujo no existe (CLAUDE.md §7), y lo que se autoriza es
+    // BORRAR la cita de un cliente.
+    const creadoEnMs = Date.parse(texto(cuerpo['creadoEn'], 40));
+    const minutosPedidos = Number(cuerpo['minutosRetencion']);
+    const minutosRetencion = Number.isInteger(minutosPedidos)
+      && minutosPedidos >= 5 && minutosPedidos <= 180 ? minutosPedidos : MINUTOS_RETENCION_POR_DEFECTO;
 
     const db = getFirestore();
     const { tenantId } = ruta;
     const idConversacion = `wa_${telefono}`;
     const refConversacion = db.doc(`tenants/${tenantId}/conversaciones/${idConversacion}`);
     const refMetricas = db.doc(`tenants/${tenantId}/metricas/${periodoDe()}`);
+    const refCierreDeLaCita = db.doc(`tenants/${tenantId}/cierres/${idDeCierreDeCita(referencia)}`);
     const ahoraMs = Date.now();
 
     // IDEMPOTENTE POR CONSTRUCCIÓN: el flujo programado corre cada diez
@@ -361,7 +370,31 @@ export const senaVencida = onRequest(
       const solicitud = solicitudDe(conversacion);
       const mismaCita = String(solicitud?.evento?.id ?? '') === referencia;
       if (!conversacion.exists || !solicitud || !mismaCita) {
-        return { registrado: false, repetido: false, motivo: 'sin_sena_pendiente' };
+        // --- LA CITA HUÉRFANA (decisión de Andres, 20/09/2026) --------------
+        // Una cita con el rótulo «PENDIENTE DE SEÑA» y SIN seña pendiente en
+        // el servidor es un horario bloqueado que nadie va a pagar: pasa
+        // cuando el QR no llegó a salir, que es justo lo que ocurrió el 20/09.
+        // Antes se dejaba ahí para siempre, porque el servidor no autorizaba
+        // borrarla y el flujo obedece.
+        //
+        // PERO NO SE BORRA A CIEGAS. Si esa cita YA SE PAGÓ y lo que falló fue
+        // quitarle el rótulo, borrarla destruiría una cita paga: por eso se
+        // mira el cierre. Con un cotejo que cuadró, NO se autoriza y queda
+        // dicho por qué, para que lo vea una persona.
+        const cierre = await tx.get(refCierreDeLaCita);
+        const cotejo = cierre.get('cotejo') as { resultado?: unknown } | undefined;
+        if (cotejo?.resultado === 'cuadra') {
+          return { registrado: false, repetido: false, motivo: 'cita_pagada' };
+        }
+        // Y el tiempo se exige acá también: sin saber cuándo se creó, o si
+        // todavía no pasó la retención, no se autoriza nada.
+        const vencioDeVerdad = Number.isFinite(creadoEnMs)
+          && (ahoraMs - creadoEnMs) >= minutosRetencion * 60 * 1000;
+        if (!vencioDeVerdad) {
+          return { registrado: false, repetido: false, motivo: 'sin_sena_pendiente' };
+        }
+        tx.set(refMetricas, { senasHuerfanas: FieldValue.increment(1) }, { merge: true });
+        return { registrado: true, repetido: false, motivo: 'huerfana' };
       }
       if (solicitud.etapa === 'vencida') return { registrado: false, repetido: true };
       if (solicitud.etapa !== 'qr_enviado') {
@@ -380,6 +413,17 @@ export const senaVencida = onRequest(
     if (salida.registrado) {
       await registrar(tenantId, {
         tipo: 'sena_vencida', resultado: 'ok', telefono, conversacionId: idConversacion,
+        // Una huérfana se libera igual, pero queda dicho que lo era: no hubo
+        // nadie esperando para pagar, y eso explica el horario recuperado.
+        ...(salida.motivo === 'huerfana' ? { codigo: 'huerfana' } : {}),
+      });
+    }
+    // Y lo que NO se autorizó porque la cita ya estaba paga se anota también:
+    // es un rótulo que quedó puesto de más, y alguien tiene que mirarlo.
+    if (!salida.registrado && salida.motivo === 'cita_pagada') {
+      await registrar(tenantId, {
+        tipo: 'sena_vencida', resultado: 'rechazado', telefono, conversacionId: idConversacion,
+        codigo: 'cita_pagada_con_rotulo',
       });
     }
     // NUNCA se manda nada al paciente desde acá: ni mensaje ni plantilla.
