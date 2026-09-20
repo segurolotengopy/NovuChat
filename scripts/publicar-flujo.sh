@@ -17,6 +17,10 @@
 #   ./scripts/publicar-flujo.sh --env .env.novuchat --reiniciar-estado [--aplicar]
 #       borra el estado por telefono que guarda n8n (etapa, bienvenida, aviso)
 #   ./scripts/publicar-flujo.sh --flujo Flujos/demo-b-venta-cobro.json --aplicar
+#   ./scripts/publicar-flujo.sh --env .env.platinum-seguimientos --encender [--aplicar]
+#       ENCIENDE (o --apagar) un flujo QUE YA EXISTE, el de N8N_WORKFLOW_ID.
+#       No toca el contenido. Muestra el nombre antes de escribir, porque el id
+#       sale de un .env y encender el flujo equivocado le escribe a clientes.
 #   ./scripts/publicar-flujo.sh --env .env.platinum --flujo Flujos/agendamiento-senas-vencidas.json \
 #       --crear [--activar] [--env-nuevo .env.platinum-senas] [--aplicar]
 #       CREA un flujo nuevo (POST) tomando las credenciales POR NOMBRE de la
@@ -45,6 +49,8 @@ FORZAR=0
 REINICIAR=0
 CREAR=0
 ACTIVAR=0
+ENCENDER=0
+APAGAR=0
 ENV_NUEVO=""
 ENV_FILE=".env"
 
@@ -56,6 +62,8 @@ while [[ $# -gt 0 ]]; do
     --reiniciar-estado) REINICIAR=1; shift ;;
     --crear)   CREAR=1; shift ;;
     --activar) ACTIVAR=1; shift ;;
+    --encender) ENCENDER=1; shift ;;
+    --apagar)   ENCENDER=0; APAGAR=1; shift ;;
     --env-nuevo) ENV_NUEVO="${2:?--env-nuevo necesita una ruta}"; shift 2 ;;
     --env-nuevo=*) ENV_NUEVO="${1#*=}"; shift ;;
     --forzar)  FORZAR=1; shift ;;
@@ -104,6 +112,39 @@ if [[ "$COD" != "200" ]]; then
   esac
   head -c 300 "$TMP/vivo.json" 2>/dev/null || true
   exit 1
+fi
+
+# --- ENCENDER O APAGAR UN FLUJO QUE YA EXISTE ---------------------------------
+# `--activar` solo servia al CREAR: un flujo ya creado y apagado no se podia
+# encender desde aca, y habia que hacerlo a mano en la interfaz. Eso contradice
+# «Andres autoriza, Claude opera» (CLAUDE.md) y, peor, deja un paso de
+# produccion sin registro. Esto es ese paso, con el nombre a la vista para que
+# nadie encienda el flujo equivocado.
+if [[ $ENCENDER -eq 1 || $APAGAR -eq 1 ]]; then
+  # La ruta de la API es en INGLES (`activate` / `deactivate`); el verbo en
+  # castellano es solo para el mensaje. Ponerlo en la URL da un 405 confuso.
+  RUTA=$([[ $APAGAR -eq 1 ]] && echo deactivate || echo activate)
+  QUE=$([[ $APAGAR -eq 1 ]] && echo apagar || echo encender)
+  NOMBRE=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('name',''))" "$TMP/vivo.json")
+  ESTABA=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('active'))" "$TMP/vivo.json")
+  echo
+  echo "  Flujo  : $NOMBRE"
+  echo "  Estado : activo=$ESTABA  ->  $([[ $APAGAR -eq 1 ]] && echo False || echo True)"
+  echo
+  if [[ $APLICAR -eq 0 ]]; then
+    printf '\033[0;90m  Seco: no se escribio nada. Agregue --aplicar.\033[0m\n\n'
+    exit 0
+  fi
+  COD=$(curl -s --max-time 30 -o "$TMP/estado.json" -w '%{http_code}' -X POST \
+        -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}" || echo 000)
+  if [[ "$COD" != "200" ]]; then
+    printf '\033[1;31m✗ HTTP %s al %s el flujo\033[0m\n' "$COD" "$QUE"
+    head -c 300 "$TMP/estado.json" 2>/dev/null || true
+    exit 1
+  fi
+  AHORA=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('active'))" "$TMP/estado.json")
+  printf '\033[1;32m✓ %s: activo=%s\033[0m\n\n' "$NOMBRE" "$AHORA"
+  exit 0
 fi
 
 # --- 1b. las credenciales de la instancia: nombre, tipo e id, nunca valores ----
