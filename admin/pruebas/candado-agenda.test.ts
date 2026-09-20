@@ -532,3 +532,189 @@ describe('Calendarios a revisar: solo el que recibió la cita', () => {
     expect(r['eventoABorrar']).toBe('n');
   });
 });
+
+/**
+ * EL CANDADO DE HORARIO — que el asistente no agende cuando el negocio no abre.
+ *
+ * POR QUÉ EXISTE. El 20/09/2026 el asistente de Clínica Platinum agendó una
+ * consulta un DOMINGO, con la clínica cerrada. El horario estaba bien cargado en
+ * la consola y le llegaba al modelo como frase —«lunes a viernes, de 09:00 a
+ * 19:00; sábado, de 09:00 a 13:00; domingo: cerrado»—, pero eso es una
+ * instrucción, no una barrera. En el código no había nada que lo impidiera:
+ * `consultar_disponibilidad` devuelve lo OCUPADO, así que un domingo vacío se ve
+ * libre, y el candado de arriba solo mira superposiciones, que un día cerrado no
+ * tiene. Es el mismo aprendizaje del candado de doble reserva, en otro eje.
+ *
+ * Se prueba sobre el JSON versionado, por la misma razón y con la misma
+ * excepción a `devsecops.js-eval-prohibido` que el resto del archivo.
+ */
+describe('Candado de horario: no se agenda cuando el negocio no atiende', () => {
+  // El horario real de Clínica Platinum, tal como está hoy en producción.
+  const HORARIO = {
+    lun: '09:00-19:00', mar: '09:00-19:00', mie: '09:00-19:00', jue: '09:00-19:00',
+    vie: '09:00-19:00', sab: '09:00-13:00', dom: 'cerrado',
+  };
+  const CON_HORARIO = {
+    mensajeReservaNoConfirmada: '',
+    funcionarios: JSON.stringify([
+      { nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
+    ]),
+  };
+  /** Una cita creada recién, sola en la agenda: lo único que la puede tumbar es el horario. */
+  const soloEsta = (ini: string, fin: string, cfg = CON_HORARIO) => comprobarTodo(
+    [ev('nueva', 'Cita Silvana — consulta', CAL_JOSE, ini, fin, '2026-09-06T20:16:00.000Z')],
+    AHORA, cfg,
+  );
+
+  it('EL CASO REAL: la cita del domingo se deshace, con la clínica cerrada', () => {
+    const items = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00');
+    expect(items).toHaveLength(1);
+    expect(items[0]?.['citaSolapada']).toBe(true);
+    expect(items[0]?.['eventoABorrar']).toBe('nueva');
+    expect(items[0]?.['causaDeLaCaida']).toBe('horario');
+  });
+
+  it('y NO le dice al cliente que el horario estaba ocupado, porque no lo estaba', () => {
+    const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00')[0] ?? {};
+    expect(String(r['respuesta'])).toContain('ese dia no atendemos');
+    expect(String(r['respuesta'])).not.toContain('ocupado');
+    expect(String(r['motivoCruce'])).toContain('FUERA DEL HORARIO');
+  });
+
+  it('un lunes a las 10:00 NO se toca: es un horario bueno', () => {
+    const items = soloEsta('2026-09-21T10:00:00-04:00', '2026-09-21T11:00:00-04:00');
+    expect(items[0]?.['citaSolapada']).toBeUndefined();
+    expect(items[0]?.['reservaVerificada']).toBe(true);
+  });
+
+  it('una cita que TERMINA después del cierre se deshace', () => {
+    // Sábado: se atiende hasta las 13:00. Una consulta de 12:30 a 13:30 deja al
+    // paciente media hora dentro de un consultorio cerrado.
+    const r = soloEsta('2026-09-26T12:30:00-04:00', '2026-09-26T13:30:00-04:00')[0] ?? {};
+    expect(r['citaSolapada']).toBe(true);
+    expect(String(r['respuesta'])).toContain('fuera de nuestro horario');
+  });
+
+  it('terminar JUSTO en la hora de cierre sí entra', () => {
+    const r = soloEsta('2026-09-26T12:00:00-04:00', '2026-09-26T13:00:00-04:00')[0] ?? {};
+    expect(r['citaSolapada']).toBeUndefined();
+  });
+
+  it('antes de abrir también se deshace', () => {
+    const r = soloEsta('2026-09-21T08:00:00-04:00', '2026-09-21T09:00:00-04:00')[0] ?? {};
+    expect(r['citaSolapada']).toBe(true);
+  });
+
+  it('respeta el corte del mediodía: «09:00-12:00, 14:00-19:00»', () => {
+    const partido = {
+      mensajeReservaNoConfirmada: '',
+      funcionarios: JSON.stringify([{
+        nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE,
+        horario: { ...HORARIO, lun: '09:00-12:00, 14:00-19:00' },
+      }]),
+    };
+    const almuerzo = soloEsta('2026-09-21T12:30:00-04:00', '2026-09-21T13:30:00-04:00', partido)[0] ?? {};
+    expect(almuerzo['citaSolapada']).toBe(true);
+    const tarde = soloEsta('2026-09-21T15:00:00-04:00', '2026-09-21T16:00:00-04:00', partido)[0] ?? {};
+    expect(tarde['citaSolapada']).toBeUndefined();
+  });
+
+  it('CADA PERSONA CON SU HORARIO: el domingo del que sí trabaja no se toca', () => {
+    // Una guardia de fin de semana es legítima. El candado mira el horario de
+    // LA PERSONA que atiende, no un horario único del negocio.
+    const dosPersonas = {
+      mensajeReservaNoConfirmada: '',
+      funcionarios: JSON.stringify([
+        { nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE, horario: HORARIO },
+        { nombre: 'Dra. Guardia', servicios: [], calendario: CAL_MARIA,
+          horario: { ...HORARIO, dom: '09:00-13:00' } },
+      ]),
+    };
+    const deGuardia = comprobarTodo([ev('g', 'Cita Ana — urgencia', CAL_MARIA,
+      '2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', '2026-09-06T20:16:00.000Z')],
+      AHORA, dosPersonas)[0] ?? {};
+    expect(deGuardia['citaSolapada']).toBeUndefined();
+  });
+
+  it('FALLA ABIERTA sin horario cargado: no se cancela por una configuración incompleta', () => {
+    // Al revés que el candado de solapes, y a propósito: allá el dato es firme
+    // —dos citas que existen—; acá, borrar por falta de dato sería quitarle al
+    // cliente una cita buena.
+    const sinDato = {
+      mensajeReservaNoConfirmada: '',
+      funcionarios: JSON.stringify([{ nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE }]),
+    };
+    const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', sinDato)[0] ?? {};
+    expect(r['citaSolapada']).toBeUndefined();
+  });
+
+  it('un horario ilegible («a convenir») tampoco cancela nada', () => {
+    const raro = {
+      mensajeReservaNoConfirmada: '',
+      funcionarios: JSON.stringify([{
+        nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE,
+        horario: { ...HORARIO, dom: 'a convenir' },
+      }]),
+    };
+    const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', raro)[0] ?? {};
+    expect(r['citaSolapada']).toBeUndefined();
+  });
+
+  it('el CRUCE manda sobre el horario cuando se dan los dos', () => {
+    // Si además de estar fuera de horario choca con otra cita, al cliente se le
+    // explica el cruce: es lo que el reintento puede resolver ofreciendo horas.
+    const items = comprobarTodo([
+      ev('vieja', 'Cita Ana — consulta', CAL_JOSE,
+         '2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', '2026-09-06T06:00:00.000Z'),
+      ev('nueva', 'Cita Sil — consulta', CAL_JOSE,
+         '2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00', '2026-09-06T20:16:00.000Z'),
+    ], AHORA, CON_HORARIO);
+    expect(items[0]?.['eventoABorrar']).toBe('nueva');
+    expect(items[0]?.['causaDeLaCaida']).toBe('cruce');
+    expect(String(items[0]?.['respuesta'])).toContain('ocupado');
+  });
+
+  it('la causa llega a `citasCaidas`, que es lo que lee el reintento', () => {
+    const r = soloEsta('2026-09-27T10:00:00-04:00', '2026-09-27T11:00:00-04:00')[0] ?? {};
+    const caidas = r['citasCaidas'] as { causa: string; persona: string }[];
+    expect(caidas[0]).toMatchObject({ causa: 'cerrado', persona: 'Dr. Sandoval' });
+  });
+
+  it('los tres flujos llevan el MISMO candado de horario', () => {
+    // Un cliente con el candado viejo es un defecto que nadie nota hasta que
+    // agenda un domingo (CLAUDE.md: se aplica a todos o a ninguno).
+    for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+      const otro = JSON.parse(readFileSync(
+        join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8'),
+      ) as { nodes: { name: string; parameters: { jsCode?: string } }[] };
+      const suyo = otro.nodes.find((n) => n.name === 'Comprobar reserva')?.parameters.jsCode;
+      expect(suyo, cliente).toBe(codigo);
+    }
+  });
+});
+
+describe('El aviso no le dice al cliente que quedó algo cuando no quedó nada', () => {
+  it('una sola cita, y es la que cae: sin «el resto de lo que agendamos»', () => {
+    const r = comprobarReserva([
+      ev('vieja', 'Cita Ana — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T06:00:00.000Z'),
+      ev('nueva', 'Cita Sil — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T20:16:00.000Z'),
+    ]);
+    expect(String(r['respuesta'])).not.toContain('El resto');
+    expect(r['reservaVerificada']).toBe(false);
+  });
+
+  it('pero con dos citas y una sobreviviente, sí lo dice: es verdad', () => {
+    const r = comprobarTodo([
+      ev('vieja', 'Cita Ana — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T06:00:00.000Z'),
+      ev('choca', 'Cita Sil — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T20:16:00.000Z'),
+      ev('buena', 'Cita Sil — color', CAL_MARIA,
+         '2026-09-07T11:00:00-04:00', '2026-09-07T12:00:00-04:00', '2026-09-06T20:16:01.000Z'),
+    ])[0] ?? {};
+    expect(String(r['respuesta'])).toContain('El resto de lo que agendamos si esta bien');
+    expect(r['reservaVerificada']).toBe(true);
+  });
+});
