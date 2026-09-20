@@ -2171,6 +2171,26 @@ describe.each([
       expect(String(s['motivoTransferencia'])).toContain('confirmar en el banco');
     });
 
+    it('con el pin cargado, el pie NO lleva el enlace de Maps: en Android muere', () => {
+      // Este pie es texto FIJO del flujo, así que la regla del prompt no lo
+      // alcanza: seguía mandando el enlace corto, que Android reescribe a la
+      // forma vieja de Dynamic Links y responde «Invalid Dynamic Link»
+      // (comprobado con un teléfono el 19/09/2026).
+      const conPin = { ...CON_SENA, direccionMaps: 'https://maps.app.goo.gl/AbCdEfGh12',
+        ubicacionLat: '-17.763381', ubicacionLng: '-63.188263' };
+      const r = String(responder(OK({ resultado: 'cuadra' }), conPin)['respuesta']);
+      expect(r).toContain('Calle 1, zona Sur');
+      expect(r).not.toContain('maps.app.goo.gl');
+      expect(r).not.toContain('http');
+    });
+
+    it('sin pin cargado el enlace SIGUE yendo: es el único «dónde» que tiene ese negocio', () => {
+      const sinPin = { ...CON_SENA, direccionMaps: 'https://maps.app.goo.gl/AbCdEfGh12' };
+      const r = String(responder(OK({ resultado: 'cuadra' }), sinPin)['respuesta']);
+      expect(r).toContain('Calle 1, zona Sur');
+      expect(r).toContain('https://maps.app.goo.gl/AbCdEfGh12');
+    });
+
     it('no cuadra: dice cuál dato no coincide, lo revisa una persona y el horario sigue reservado', () => {
       const s = responder(OK({ resultado: 'no_cuadra', diferencias: ['El monto leído (40) no es el de la seña (100).', 'Otra.'] }));
       const r = String(s['respuesta']);
