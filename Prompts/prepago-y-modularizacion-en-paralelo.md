@@ -35,8 +35,10 @@ mañana hay un demo con un cliente.
 2. Los análisis y los prompts de este frente están en la rama
    **`analisis/prepago-y-prompts`**, en el worktree
    `.claude/worktrees/prepago-prompts` (creado desde `origin/main` de hoy,
-   `8d2c0de`). Empieza por `git fetch` y comprueba que `origin/main` no se
-   movió; si se movió, trae los cambios a esa rama antes de abrir nada.
+   `8d2c0de`). **Todas las rutas `Prompts/…` y `Analisis/35` y `36` de este
+   prompt se resuelven en ese worktree, no en la copia principal.** Empieza
+   por `git fetch` y comprueba que `origin/main` no se movió; si se movió,
+   trae los cambios a esa rama antes de abrir nada.
 3. Cada frente trabaja en **su propio worktree dentro de `.claude/worktrees/`**,
    creado desde esa rama. Nunca una carpeta hermana en `~/`.
 
