@@ -265,7 +265,26 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
         expect(origenes(f, agente)).toEqual(['¿Atención normal?']);
         expect(destinos(f, '¿Atención normal?', 0)).toEqual([agente]);
       }
-      expect(destinos(f, '¿Atención normal?', 1)).toEqual(['Uso extendido']);
+      // LA RAMA FALSA NUNCA LLEGA A UN MODELO DE CONVERSACIÓN. Antes esto se
+      // afirmaba por su FORMA —«la salida falsa va directo a Uso extendido»— y
+      // la forma cambió el 20/09/2026: un comprobante con seña pendiente se
+      // desvía al cotejo, porque en uso extendido se ignoraba un pago real
+      // (prueba con teléfono). Lo que importa es lo que la forma protegía, y se
+      // afirma directo: desde la rama falsa, por NINGÚN camino se alcanza un
+      // agente. Es más fuerte que la versión anterior —cubre cualquier desvío
+      // futuro, no solo el de hoy— y mira TODOS los agentes, incluido el del
+      // reintento tras un cruce, que también llama al modelo.
+      const desdeLaRamaFalsa = new Set<string>();
+      for (const d of destinos(f, '¿Atención normal?', 1)) {
+        desdeLaRamaFalsa.add(d);
+        for (const x of alcanzables(f, d)) desdeLaRamaFalsa.add(x);
+      }
+      const agentes = f.nodes.filter((n) => n.type.endsWith('.agent')).map((n) => n.name);
+      expect(agentes.length).toBeGreaterThan(0);
+      for (const a of agentes) {
+        expect(desdeLaRamaFalsa.has(a), `la rama falsa alcanza «${a}»`).toBe(false);
+      }
+      expect(desdeLaRamaFalsa.has('Uso extendido')).toBe(true);
     });
 
     it('desde «Uso extendido» no se llega al agente por NINGÚN camino', () => {

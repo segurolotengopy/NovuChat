@@ -1050,6 +1050,40 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a-if-comprobante-uso-extendido-c1",
+              "leftValue": "={{ $json.esComprobante === true && $json.atencionEstado === 'operador' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a-if-comprobante-uso-extendido",
+      "name": "¿Comprobante en uso extendido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        770,
+        -80
+      ]
+    },
+    {
+      "parameters": {
         "jsCode": "// USO EXTENDIDO: el cliente paso el umbral de operador o el de bloqueo\n// (`Analisis/27` §5). El estado lo decide el panel; ver `Config del negocio`.\n//\n// NO SE LLAMA AL MODELO en ninguno de los dos casos: este nodo cuelga de la\n// rama falsa de `¿Atención normal?`, antes del agente. Es lo que pone techo al\n// costo de una ventana: pasado el umbral de operador cada consulta cuesta un\n// mensaje fijo, y pasado el de bloqueo no cuesta nada.\n//\n//   operador  -> se responde el aviso fijo, y se reporta como saliente: cuenta\n//                y se factura como cualquier respuesta. La PRIMERA vez que se\n//                entra en este estado se avisa a recepcion.\n//   bloqueado -> no se responde nada. La primera vez se avisa a recepcion.\n//\n// `transferir` y `motivoTransferencia` son los campos que ya leen\n// `¿Transferir a humano?` y `Avisar a recepción`: se reutilizan esos nodos en\n// vez de crear otro envio, porque un nodo de WhatsApp nuevo no recibiria la\n// credencial al publicar (publicar-flujo.sh la injerta por NOMBRE de nodo).\n//\n// «EN SU VENTANA DE 24 HORAS» y no «hoy»: la ventana arranca con el primer\n// mensaje del cliente y no coincide con el dia calendario.\nconst FIJO = 'Gracias por su paciencia. Para atenderle mejor, una persona del equipo va a continuar esta conversación en breve.';\n\n// «hasta mañana» si no se sabe cuando vence; «hasta el <dia y hora>» si se sabe.\nconst hasta = (iso) => {\n  if (!iso) return 'mañana';\n  try {\n    return 'el ' + new Date(iso).toLocaleString('es-BO', {\n      timeZone: 'America/La_Paz', weekday: 'long', hour: '2-digit', minute: '2-digit',\n    });\n  } catch (e) {\n    return 'el ' + iso;\n  }\n};\n\nreturn $input.all().map((i) => {\n  const j = i.json;\n  const estado = j.atencionEstado === 'bloqueado' ? 'bloqueado' : 'operador';\n  const aviso = j.atencionAvisarRecepcion === 'operador' || j.atencionAvisarRecepcion === 'bloqueado';\n  const n = Number(j.atencionRespuestas) || 0;\n  return { json: {\n    from: j.from,\n    nombrePerfil: j.nombrePerfil,\n    atencionEstado: estado,\n    responder: estado === 'operador',\n    respuesta: estado === 'operador' ? (String(j.atencionMensajeFijo ?? '').trim() || FIJO) : '',\n    transferir: aviso,\n    motivoTransferencia: estado === 'operador'\n      ? `uso extendido: ${n} respuestas del asistente en su ventana de 24 horas. El asistente dejó de responder con IA y le avisó que lo atiende una persona`\n      : `llegó a ${n} respuestas del asistente en su ventana de 24 horas. El asistente no le responde más hasta ${hasta(j.atencionVenceEn)}; si hace falta, escríbale directamente`,\n  } };\n});\n"
       },
       "id": "a-code-uso-extendido",
@@ -2625,7 +2659,7 @@
         ],
         [
           {
-            "node": "Uso extendido",
+            "node": "¿Comprobante en uso extendido?",
             "type": "main",
             "index": 0
           }
@@ -3180,6 +3214,24 @@
         [
           {
             "node": "Enviar QR de la seña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprobante en uso extendido?": {
+      "main": [
+        [
+          {
+            "node": "Obtener URL del medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Uso extendido",
             "type": "main",
             "index": 0
           }

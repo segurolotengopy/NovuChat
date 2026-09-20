@@ -625,7 +625,50 @@ describe('(f) Obedece los umbrales del servidor antes del modelo', () => {
     expect(destinos('¿Trae un medio?', 1)).toEqual([AGENTE]);
     expect(origenes(AGENTE).sort()).toEqual(
       ['Preparar imagen', 'Preparar transcripción', '¿Trae un medio?'].sort());
-    expect(destinos('¿Atención normal?', 1)).toEqual(['Uso extendido']);
+    // En uso extendido, un COMPROBANTE con seña pendiente se desvía al cotejo
+    // (20/09/2026: se ignoraba un pago real); todo lo demás va al aviso fijo.
+    // Que por ahí no se llegue a ningún agente lo prueba `flujos-umbrales`.
+    expect(destinos('¿Atención normal?', 1)).toEqual(['¿Comprobante en uso extendido?']);
+    expect(destinos('¿Comprobante en uso extendido?', 0)).toEqual(['Obtener URL del medio']);
+    expect(destinos('¿Comprobante en uso extendido?', 1)).toEqual(['Uso extendido']);
+  });
+
+  describe('el comprobante no espera a que se renueve la ventana (20/09/2026)', () => {
+    // Prueba real con el teléfono: la conversación cruzó las 50 respuestas, el
+    // paciente mandó el comprobante de su seña y NO SE LEYÓ: la rama del cotejo
+    // colgaba solo de la salida normal. El horario retenido se liberaba y el
+    // paciente perdía la cita que había pagado.
+    const cond = () => nodo(flujo, '¿Comprobante en uso extendido?').parameters['conditions'].conditions[0].leftValue;
+    const pasa = (j: J) => expresion(cond(), j);
+
+    it('en OPERADOR, un comprobante con seña pendiente va al cotejo', () => {
+      expect(pasa({ esComprobante: true, atencionEstado: 'operador' })).toBe(true);
+    });
+    it('en operador, un mensaje que NO es comprobante sigue yendo al aviso fijo', () => {
+      expect(pasa({ esComprobante: false, atencionEstado: 'operador' })).toBe(false);
+    });
+    it('en BLOQUEADO no se desvía: la regla comercial es no enviar nada', () => {
+      expect(pasa({ esComprobante: true, atencionEstado: 'bloqueado' })).toBe(false);
+    });
+    it('una imagen SIN seña pendiente no es comprobante, y no se desvía', () => {
+      // `esComprobante` exige seña pendiente (`Normalizar entrada`): la foto de
+      // un diente en uso extendido no dispara ningún cotejo.
+      const norm = String(nodo(flujo, 'Normalizar entrada').parameters['jsCode']);
+      expect(norm).toContain("['image', 'document'].includes(tipo) && config.senaPendiente === 'si'");
+    });
+    it('el desvío entra a la rama del cotejo y esa rama no pasa por el agente', () => {
+      const vistos = new Set<string>();
+      const pendientes = ['Obtener URL del medio'];
+      while (pendientes.length) {
+        const a = pendientes.pop() as string;
+        for (const r of flujo.connections[a]?.['main'] ?? []) {
+          for (const x of r) if (!vistos.has(x.node)) { vistos.add(x.node); pendientes.push(x.node); }
+        }
+      }
+      expect(vistos.has('Cotejar en el servidor')).toBe(true);
+      expect(vistos.has(AGENTE)).toBe(false);
+      expect(vistos.has('Reintento tras cruce')).toBe(false);
+    });
   });
 
   it.each([['operador'], ['bloqueado']])('con estado %s NO va al modelo', (estado) => {
