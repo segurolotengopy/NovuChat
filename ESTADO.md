@@ -4,7 +4,42 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-19 (noche) — `v0.6.0` en producción, y los cinco flujos publicados
+
+**Desplegado.** `v0.6.0` sobre `af37c77`, con la aprobación del entorno: consola,
+reglas e índices de Firestore, Functions y Storage. Las cuatro Functions nuevas
+quedaron activas —`cotejarComprobante`, `senaVencida`, `seguimientosPendientes`,
+`seguimientoEnviado`—, y con ellas la ingesta, `configuracionFlujo` y
+`registrarCierre` actualizadas. El chequeo posterior pasó.
+
+**Publicados los tres flujos de atención**, desde `main` y con el diagnóstico en
+seco leído entero antes de cada `--aplicar`: Demo A 38 → **69 nodos**, Clínica
+Platinum 38 → **69**, Dr. Bellido 57 → **88**. Todas las credenciales se
+resolvieron solas: por nombre las que ya existían, por tipo las de los nodos
+nuevos (Graph, Gemini, Calendar, ingesta). Los tres siguen activos.
+
+**Creados los dos programados de Platinum:** «Señas vencidas» (10 nodos, cada
+10 minutos) quedó **activo**, y ya corrió solo a las 23:50 sin errores, que es
+la primera prueba real de `senaVencida` contra producción. «Seguimientos» (11
+nodos) quedó **creado y apagado a propósito**: no se enciende hasta que Meta
+apruebe la plantilla `solicitud_cita_sin_confirmar`, que sigue en PENDING. Sus
+entornos quedaron en `.env.platinum-senas` y `.env.platinum-seguimientos`.
+
+**Falta, y en este orden:** que Meta apruebe la plantilla para encender el flujo
+de seguimientos; las pruebas con teléfono (filas 24 a 43 de la aceptación, las
+de umbrales antes del 01/10); y que la clínica entregue el enlace de Maps, el QR
+real con nombre de cuenta y banco, y el tiempo de retención del horario. Hasta
+que eso llegue, la seña y el pin quedan apagados por configuración: el asistente
+se comporta como antes, sin error visible para el paciente.
+
+**Los worktrees volvieron adentro del proyecto.** Estaban como carpetas hermanas
+en `~/`, que es el directorio de proyectos: parecían siete proyectos y eran
+ramas de uno. Van en `.claude/worktrees/`, ignorada por git, y nada se crea en
+`~/` sin autorización de Andres.
 
 ---
 
