@@ -46,7 +46,7 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **encolado detrás de B-1 fusionado** | `Flujos/src/` (módulo), nunca el JSON a mano | — |
 | **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` (`be135da`, worktree `agent-a073cd5409c381cca`) | ocho plantillas de utilidad redactadas | **redacción cerrada (20/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
 | **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0 | **cerrado (20/09)**: ver «Diagnóstico B» abajo | ninguno | — |
-| **B-1 · ensamblador** | `flujos/ensamblador` | ayudante compartido de pruebas, ensamblador + `extraer`, vertical de reservas (Demo A + Platinum, misma huella), prueba de identidad byte a byte, LEEME §0 | **en curso (20/09)**: no modifica ningún JSON ni `scripts/` | `Flujos/src/`, `Flujos/prompts/`, `admin/scripts/ensamblar-flujo.mjs`, `admin/pruebas/lib/`, `Flujos/LEEME-flujos.md` §0 | PR cuando la identidad pase en los 8 JSON |
+| **B-1 · ensamblador** | `flujos/ensamblador` (4 commits, `c477aef`…`b9a6cac`, worktree `agent-ad32890c0b62ce13b`) | ensamblador + `extraer` + `verificar`, 18 módulos (5 `comun/`, 13 `reservas/`), 5 prompts, 2 manifiestos, ayudante `admin/pruebas/lib/flujo.ts`, LEEME §0 reescrito | **construido (20/09, noche)**: identidad byte a byte en los 8 JSON, suite 2242 → 2287 casos (+45, la suite nueva), saneo por patrones 0; **en revisión de `seguridad`**; después, pedir a Andres el OK para subir y abrir PR | `Flujos/src/`, `Flujos/prompts/`, `Flujos/manifiestos/`, `admin/scripts/ensamblar-flujo.mjs`, `admin/pruebas/lib/flujo.ts`, `admin/pruebas/ensamblador.test.ts`, `Flujos/LEEME-flujos.md`; `scripts/` y `.pre-commit-config.yaml` sin diff | correr el saneo en modo exacto desde una copia con `CONFIGURACION.local.md` antes de fusionar |
 | **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 **y de que los flujos fusionados sin publicar se publiquen** (tras el demo) | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
 | **B-3 · corpus del sitio** | por definir | el corpus fuera del nodo Code | encolado detrás de B-1 fusionado | flujo de captación, Function que lo sirve | — |
 | **B-4 · procedimiento** | por definir | RUNBOOK etapa 5, agente `flujos-n8n`, gancho de pre-commit | encolado detrás de B-2 | `docs/alta-cliente/RUNBOOK.md`, `.claude/agents/flujos-n8n.md`, `.githooks/` | — |
@@ -145,6 +145,16 @@ presentar a Meta, y cuándo encender el corte)
 
 ## Bitácora
 
+- **20/09/2026 (noche)** — B-1 construido. Deja para B-2: prompt en capas (`base.md` +
+  variables por tenant: 23 líneas de 191 difieren, todas nombres y ejemplos del rubro),
+  un tercer tipo de punto de inyección (parámetro de texto de un nodo cualquiera:
+  `agendar_cita.end`, `Avisar a recepción.textBody`), `sincronizar-flujo-cliente.mjs`
+  se simplifica (solo topología y `--base`), `portar-prompt-cliente.py` se reemplaza
+  por el prompt en capas, Bellido = manifiesto del Demo A + 6 Code propios. Para B-4:
+  acotar el patrón de `verificar-saneo.sh` (hoy alcanza `Flujos/manifiestos/*.json`),
+  migrar las otras siete suites al ayudante. `new Function` se queda en las pruebas
+  (el cuerpo de un nodo Code no es un módulo ES importable; envolverlo rompería la
+  identidad).
 - **20/09/2026 (noche)** — Diseño A y A-5 cerrados. `admin/DISENO.md` §4undecies escrito
   en la rama de coordinación; la §4undecies.5 del agente describía un contrato inventado
   (centavos, `ENVIADO`, `403`) porque terminó antes de recibir el aviso, y se reescribió
