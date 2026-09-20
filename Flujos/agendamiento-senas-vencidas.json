@@ -8,7 +8,7 @@
   "nodes": [
     {
       "id": "sv-cada-10-min",
-      "name": "Cada 10 minutos",
+      "name": "Cada 5 minutos",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -20,12 +20,12 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "*/10 * * * *"
+              "expression": "*/5 * * * *"
             }
           ]
         }
       },
-      "notes": "Barrido de citas retenidas por seña (bloque 2, Analisis/30 §4). CERO mensajes: este flujo no escribe a WhatsApp."
+      "notes": "Cada 5 minutos, no 10 (19/09/2026). Con el reloj a 10, una seña de 15 minutos se liberaba entre los 15 y los 25: al paciente se le dice 15. Juega a favor de quien paga tarde, nunca en contra, pero la diferencia era el doble de la retención más corta que admite la consola (5 minutos), y eso ya no es un redondeo."
     },
     {
       "id": "sv-config-base",
@@ -288,17 +288,6 @@
     }
   ],
   "connections": {
-    "Cada 10 minutos": {
-      "main": [
-        [
-          {
-            "node": "Config base",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Config base": {
       "main": [
         [
@@ -386,6 +375,17 @@
           }
         ],
         []
+      ]
+    },
+    "Cada 5 minutos": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   }

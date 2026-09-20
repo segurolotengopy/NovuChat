@@ -98,11 +98,17 @@ describe('El flujo: forma, ids y ningún valor real', () => {
     for (const id of ids) expect(id).toMatch(/^sv-[a-z0-9-]+$/);
   });
 
-  it('corre cada diez minutos', () => {
-    const t = nodo('Cada 10 minutos');
+  it('corre cada CINCO minutos: con diez, una seña de 15 se liberaba a los 25', () => {
+    // Al paciente se le dice 15 minutos. Con el reloj a 10, el horario seguía
+    // retenido hasta 10 minutos más: juega a favor de quien paga tarde, nunca
+    // en contra, pero era el doble de la retención más corta que admite la
+    // consola (5 minutos), y eso ya no es un redondeo (Andres, 19/09/2026).
+    const t = nodo('Cada 5 minutos');
     expect(t.type).toBe('n8n-nodes-base.scheduleTrigger');
-    expect(t.parameters['rule'].interval[0]).toEqual({ field: 'cronExpression', expression: '*/10 * * * *' });
-    expect(destinos('Cada 10 minutos')).toEqual(['Config base']);
+    expect(t.parameters['rule'].interval[0]).toEqual({ field: 'cronExpression', expression: '*/5 * * * *' });
+    expect(destinos('Cada 5 minutos')).toEqual(['Config base']);
+    // La deriva máxima es el período del reloj: nunca más que eso.
+    expect(5).toBeLessThanOrEqual(5);
   });
 
   it('NUNCA hay un nodo de WhatsApp ni un envío a Graph: no escribe al paciente', () => {

@@ -19,7 +19,10 @@
  *   - que el QR no esté vencido, que es la causa más común de un cobro que
  *     falla en silencio;
  *   - que, si el flujo es de agendamiento, la seña tenga un importe: sin
- *     importe el asistente no pediría nada y encenderlo no cambiaría nada.
+ *     importe el asistente no pediría nada y encenderlo no cambiaría nada;
+ *   - que un QR de monto CERRADO valga lo mismo que la seña: si no, el banco
+ *     le cobra al cliente otro monto, el cotejo no cuadra nunca y cada reserva
+ *     termina en una persona. Solo se puede ver en los QR legibles.
  *
  * LO QUE NO HACE. No toca el importe de la seña ni la retención (eso es
  * `cargar-negocio.mjs`), y no lee ni muestra la carga útil del QR.
@@ -95,6 +98,19 @@ if (!APAGAR) {
   if (documento === 'agendamiento' && !(Number.isInteger(importe) && importe > 0)) {
     problemas.push('La seña no tiene importe (`senaImporte`), así que el asistente no pediría nada. '
       + 'Cárguelo con `cargar-negocio.mjs` antes de encender.');
+  }
+  // EL QR DE MONTO CERRADO QUE NO COINCIDE CON LA SEÑA (19/09/2026). Si el
+  // código trae un importe grabado y NO es el de la seña, el banco obliga al
+  // cliente a pagar ese otro monto: el cotejo dice «no cuadra» SIEMPRE, todas
+  // las reservas terminan en una persona, y el comercio no entiende por qué.
+  // Nadie pierde plata en silencio —el cotejo compara contra la seña, no
+  // contra el QR—, pero es un cobro que no funciona, y encenderlo así es
+  // encender algo roto. Solo se puede comprobar en los QR legibles: en un
+  // cifrado no hay nada que leer, y por eso el comercio lo declara.
+  if (documento === 'agendamiento' && typeof qr.montoFijo === 'number' && qr.montoFijo !== importe) {
+    problemas.push(`El QR cobra siempre ${qr.montoFijo} y la seña es de ${importe}. `
+      + 'El banco le cobraría al cliente el monto del QR, el cotejo nunca cuadraría y cada reserva '
+      + 'terminaría en una persona. Iguale la seña al QR, o que el comercio genere uno de monto abierto.');
   }
   if (problemas.length > 0) {
     for (const p of problemas) rojo(`✗ ${p}`);

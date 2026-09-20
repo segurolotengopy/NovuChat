@@ -2536,8 +2536,9 @@ describe.each([
     ejecutar(codigo('Preparar transcripción'), [salida], {
       'Normalizar entrada': [entrada], 'Obtener URL del medio (general)': [{ file_size: tamano }],
     })[0] ?? {};
-  const clasificar = (salida: J, entrada: J = normalizar(FOTO)) =>
-    ejecutar(codigo('Preparar imagen'), [salida], { 'Normalizar entrada': [entrada] })[0] ?? {};
+  const clasificar = (salida: J, entrada: J = normalizar(FOTO), config: J = cfg) =>
+    ejecutar(codigo('Preparar imagen'), [salida],
+      { 'Normalizar entrada': [entrada], 'Config del negocio': [config] })[0] ?? {};
 
   // -------------------------------------------------------------------------
   describe('1. Normalizar entrada: cada tipo cae en su rama', () => {
@@ -2834,6 +2835,42 @@ describe.each([
       // Prohibición 3 de CLAUDE.md: acá no se acredita nada.
       expect(t).not.toMatch(/acreditad|verificad|recibimos (tu|su) pago|pago confirmado/i);
       expect(t).not.toMatch(DIAGNOSTICA);
+    });
+
+    it('un comprobante de una seña QUE YA VENCIÓ: se dice la verdad y pasa a una persona', () => {
+      // El caso con plata de por medio: no pagó a tiempo, el horario se liberó,
+      // y DESPUÉS pagó. Preguntarle «a qué corresponde» sería lo peor que se le
+      // puede decir a alguien que acaba de pagar lo que este asistente le pidió.
+      const s = clasificar(gemini(JSON.stringify({ categoria: 'comprobante', texto: 'Bs 1,00' })),
+        normalizar(FOTO), { ...cfg, senaVencidaHaceMin: '7' });
+      const t = String(s['userInput']);
+      expect(t).toContain('YA VENCIÓ');
+      expect(t).toContain('el horario se liberó');
+      expect(t).toContain('una persona del negocio lo resuelve');
+      // PROHIBICIÓN 3, en el texto que recibe el modelo.
+      expect(t).toContain('NO digas que el pago llegó');
+      expect(t).toMatch(/ni que se acreditó/);
+      // Y no se le promete ninguna cita: el horario puede estar tomado.
+      expect(t).toContain('NO le confirmes ninguna cita');
+      // La transferencia NO se le pide al modelo: se fuerza.
+      expect(s['forzarTransferencia']).toBe(true);
+      expect(String(s['motivoForzado'])).toContain('DESPUES de que el horario se liberara');
+    });
+
+    it('sin seña vencida reciente, el comprobante suelto sigue con el texto de siempre', () => {
+      const s = clasificar(gemini(JSON.stringify({ categoria: 'comprobante', texto: 'Bs 1,00' })));
+      expect(String(s['userInput'])).toContain('no hay ninguna seña pendiente suya');
+      expect(s['forzarTransferencia']).toBeUndefined();
+    });
+
+    it('la transferencia forzada llega hasta el aviso a recepción, sin depender del modelo', () => {
+      const salida = ejecutar(codigo('Procesar respuesta'),
+        [{ output: 'Recibí tu comprobante. El horario se liberó y te ayuda una persona.' }],
+        { 'Normalizar entrada': [{ from: '59170000001', forzarTransferencia: true,
+          motivoForzado: 'pago de seña recibido DESPUES de que el horario se liberara' }],
+          'Config del negocio': [cfg] })[0] ?? {};
+      expect(salida['transferir']).toBe(true);
+      expect(String(salida['motivoTransferencia'])).toContain('DESPUES de que el horario se liberara');
     });
 
     it('lo que no entra en la lista cerrada cae en «otro»: el modelo no puede abrir un camino nuevo', () => {

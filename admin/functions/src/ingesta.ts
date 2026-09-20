@@ -433,6 +433,9 @@ const EVENTO_CONFIGURACION = 'configuracion_flujo';
 export const MINUTOS_RETENCION_POR_DEFECTO = 30;
 export const IMPORTE_SENA_MAXIMO = 10000;
 
+/** Un día, en minutos: la ventana en la que un pago tardío sigue siendo ESTE caso. */
+const MINUTOS_DE_UN_DIA = 24 * 60;
+
 export interface SenaParaElFlujo {
   activa: boolean;
   importe: number;
@@ -442,6 +445,19 @@ export interface SenaParaElFlujo {
   pendiente: boolean;
   evento: { id: string; calendario: string } | null;
   qrEnviadoEn: string | null;
+  /**
+   * MINUTOS DESDE QUE SE LIBERÓ EL HORARIO por falta de pago, o `null`.
+   *
+   * Existe por un caso que solo aparece con dinero de por medio (19/09/2026):
+   * el paciente no paga a tiempo, el horario se libera, y DESPUÉS paga. Hasta
+   * ahora el flujo no distinguía eso de un comprobante caído del cielo y le
+   * preguntaba «¿a qué corresponde?», que es lo peor que se le puede decir a
+   * alguien que acaba de pagar lo que el asistente le pidió. Con esto el flujo
+   * sabe que hubo una seña de ESE teléfono que venció recién, y puede decir la
+   * verdad: llegó el comprobante, el horario ya se había liberado, lo resuelve
+   * una persona. La ventana es de un día: más allá, es otra conversación.
+   */
+  vencidaHaceMin: number | null;
 }
 
 export function senaParaElFlujo(
@@ -482,6 +498,13 @@ export function senaParaElFlujo(
       ? { id: ev['id'], calendario: String(ev['calendario'] ?? '') } : null,
     qrEnviadoEn: typeof enviado?.toMillis === 'function'
       ? new Date(enviado.toMillis()).toISOString() : null,
+    vencidaHaceMin: (() => {
+      if (s['etapa'] !== 'vencida') return null;
+      const desde = s['desde'] as { toMillis?: () => number } | null | undefined;
+      if (typeof desde?.toMillis !== 'function') return null;
+      const min = Math.floor((Date.now() - desde.toMillis()) / 60000);
+      return min >= 0 && min <= MINUTOS_DE_UN_DIA ? min : null;
+    })(),
   };
 }
 

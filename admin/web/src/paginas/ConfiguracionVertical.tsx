@@ -156,10 +156,38 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
     }
   };
 
+  /**
+   * EL QR DE MONTO CERRADO QUE NO COINCIDE CON LA SEÑA (19/09/2026). Si el
+   * código trae un importe grabado y la seña es otra, el banco le cobra al
+   * cliente el monto del QR: el cotejo dice «no cuadra» SIEMPRE y cada reserva
+   * termina en una persona. Nadie pierde plata —el cotejo compara contra la
+   * seña, no contra el QR—, pero es un cobro que no funciona y el comercio no
+   * tiene cómo saber por qué. Solo se ve en los QR legibles: en un cifrado no
+   * hay nada que leer. La pantalla avisa; quien lo impide de verdad es el paso
+   * de encender el cobro (`admin/scripts/activar-cobro-real.mjs`), como manda
+   * CLAUDE.md §7: un límite que solo vive en la pantalla no existe.
+   */
+  const cobro = (datos['cobroReal'] ?? {}) as { montoFijo?: unknown };
+  const montoDelQr = typeof cobro.montoFijo === 'number' ? cobro.montoFijo : null;
+  const importeSena = Number(datos['senaImporte']);
+  const chocaConElQr = montoDelQr !== null && Number.isFinite(importeSena)
+    && importeSena > 0 && importeSena !== montoDelQr;
+
   return (
     <section>
       <h3>{definicion.titulo}</h3>
       {definicion.nota && <p className="ayuda">{definicion.nota}</p>}
+      {chocaConElQr && (
+        <div role="alert" className="ayuda aviso-datos">
+          <p>
+            <strong>Tu QR cobra siempre {montoDelQr} y la seña dice {importeSena}.</strong>{' '}
+            El banco le va a cobrar a tu cliente {montoDelQr}, así que el comprobante
+            nunca va a coincidir con la seña y cada reserva va a terminar con una
+            persona revisándola. Pon la seña en {montoDelQr}, o genera en tu banco
+            un QR de monto abierto y vuelve a cargarlo.
+          </p>
+        </div>
+      )}
       <form onSubmit={guardar}>
         {definicion.campos.map((c) => (
           <label key={c.clave}>
