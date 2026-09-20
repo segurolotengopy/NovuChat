@@ -19,6 +19,15 @@
 > 4. **`seguimientos.ts` ya existe** para los recordatorios de leads: los de
 >    cobranza del §3 deberían salir de ahí y no de una pieza nueva.
 >
+> 5. **(20/09, noche) El contrato del cobrador ya existe.** Lo que §1.2 dice que
+>    «falta» —identidad por consumidor, referencia externa idempotente, teléfono
+>    opcional— está **fusionado** en el proyecto de cobros (PR #38); el aviso
+>    de confirmación está en curso en una rama. Lo que cambia para §4: la
+>    referencia externa no admite `/` (letras, números y `: _ . -`), el monto
+>    va como texto decimal (`"150.50"`) y no en centavos, y el QR llega como
+>    imagen PNG en base64, no como texto. Detalle en la nota de estado de
+>    `Prompts/cobrador-contrato-para-consumidores.md`.
+>
 > Lo que **no** cambia: el modelo de prepago (§2), el calendario de cobranza
 > (§3), los tres caminos de pago (§4) y la economía (§5), que no dependen de
 > nada de lo anterior.

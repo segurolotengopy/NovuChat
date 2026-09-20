@@ -50,7 +50,7 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 **y de que los flujos fusionados sin publicar se publiquen** (tras el demo) | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
 | **B-3 · corpus del sitio** | por definir | el corpus fuera del nodo Code | encolado detrás de B-1 fusionado | flujo de captación, Function que lo sirve | — |
 | **B-4 · procedimiento** | por definir | RUNBOOK etapa 5, agente `flujos-n8n`, gancho de pre-commit | encolado detrás de B-2 | `docs/alta-cliente/RUNBOOK.md`, `.claude/agents/flujos-n8n.md`, `.githooks/` | — |
-| **C · contrato del cobrador** | otro proyecto (`$HOME/ManejoQRSimple/`), otra sesión | — | **encolado**: se abre con `Prompts/cobrador-contrato-para-consumidores.md` cuando Andres quiera | nada de NovuChat | la fila con el contrato exacto se completa al cerrar Diseño A |
+| **C · contrato del cobrador** | otro proyecto (`$HOME/ManejoQRSimple/`), otra sesión ya activa | bloque 2 (aviso) en `feat/aviso-de-confirmacion`; doc en `docs/estado-pr-38` | **bloques 0 y 1 fusionados (PR #38, 20/09); 2 en curso; 3 y 4 pendientes** — verificado por la coordinadora a pedido de Andres | nada de NovuChat | ver «Lo que A-2 le pide a C» abajo |
 
 ## Diagnóstico B (bloque 0, cerrado el 20/09/2026)
 
@@ -85,6 +85,37 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
   JSON y conviene correrlo con disco y n8n alineados. Es un matiz respecto de la
   lectura literal de la memoria; queda para que Andres lo confirme o lo revierta.
 
+## Lo que A-2 le pide a C (contrato real, verificado el 20/09/2026)
+
+**Lo que ya está y A-2 consume tal cual** (`main` del proyecto de cobros, PR #38):
+`Authorization: Bearer <CONSUMIDOR_TOKEN_NOVUCHAT>`; `POST /api/v1/cobros`
+`{referenciaExterna, concepto, monto:"150.50", horasDeVigencia}` → 201/200 con
+`cobro{id:"cons-<sha256>", referenciaExterna, estado, monto, moneda:"BOB", concepto,
+creadoEn, qr{version, venceEn, imagenDisponible}, pago}` e `imagenQrBase64`; `GET
+/api/v1/cobros/:id` y `/por-referencia/:ref`; `POST /api/v1/cobros/:id/anular` →
+`200 ANULADO` | `409 PAGADO_NO_SE_ANULA` | `409 PAGO_TARDIO_EN_REVISION`; `GET
+/api/v1/cobros?desde&hasta&limite`; `GET /api/v1/cobros/:id/qr`. Estados:
+`BORRADOR`, `QR_ACTIVO`, `PAGO_DETECTADO`, `CONFIRMADO`, `EN_REVISION`, `VENCIDO`,
+`ANULADO`, `RECHAZADO`; **solo `CONFIRMADO` es pagado**. Idempotencia por referencia;
+`409 IMPORTE_DISTINTO_CON_MISMA_REFERENCIA`; una referencia no se recicla. Errores
+`{error:{codigo, mensaje}}`. Cupo 60 QR/hora por consumidor.
+
+**Lo que A-2 le pide al bloque 2 (aviso), para que el doble y el receptor coincidan:**
+`POST` a una URL de NovuChat con el cuerpo `AvisoDeConfirmacion` tal como ya está
+en la rama (`evento:"cobro.confirmado"`, `idEvento`, `consumidorId`, `cobroId`,
+`referenciaExterna`, `montoCentavos`, `confirmadoEn`, `ocurridoEn`, `riel`), más
+**firma HMAC-SHA256** del cuerpo canónico con un secreto por consumidor
+(`CONSUMIDOR_AVISO_SECRETO_<ID>`), en cabeceras `X-Firma` y `X-Marca-Tiempo`
+(ISO 8601, tolerancia de 5 minutos), y respuesta `200` idempotente por `idEvento`
+del lado de NovuChat. **El aviso no es fuente de verdad:** NovuChat siempre
+reconcilia por `estadoCobro` (barrido horario). Si C elige otro esquema de firma,
+A-2 cambia una función; el resto no se toca.
+
+**Lo que A-2 necesita de los bloques 3 y 4:** una cuenta de cobro `novuchat`
+atribuida por consumidor (hoy todos los cobros van a la cuenta del proceso) y una
+URL pública de la API (hoy corre como proceso local). Hasta entonces el ensayo de
+punta a punta queda «listo pero sin ejecutar».
+
 ## Cola de fusión a `main`
 
 ```
@@ -107,6 +138,11 @@ presentar a Meta, y cuándo encender el corte)
 
 ## Bitácora
 
+- **20/09/2026 (noche)** — A pedido de Andres se verificó el prompt de C contra el
+  proyecto de cobros: **el contrato ya existe** (bloques 0 y 1 fusionados, PR #38;
+  bloque 2 en curso en otra sesión). Se corrigió la nota de estado del prompt de C,
+  la nota del 20/09 de `Analisis/36` y la fila de C. A-2 se construye contra el
+  contrato real, no contra uno inventado.
 - **20/09/2026 (noche)** — Diagnóstico B cerrado; B-1 lanzado (`flujos-n8n`,
   rama `flujos/ensamblador`). Los worktrees de los agentes nacen de `main`, no de la
   rama de coordinación: cada agente hace `git fetch` y crea su rama desde
