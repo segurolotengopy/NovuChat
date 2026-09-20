@@ -38,13 +38,13 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | Frente | Rama | Bloque en curso | Estado | Archivos que toca | Próximo paso |
 |---|---|---|---|---|---|
 | **Coordinación** | `claude/prepago-modularizacion-paralelo-e0d10c` (worktree `novuchat-modularization-0fc59d`) | tablero, integración | en curso | `Prompts/COORDINACION.md`, `ESTADO.md`, `admin/DISENO.md` (solo agrega) | integrar Diseño A y Diagnóstico B |
-| **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño: `pagos`, contrato del cobrador, modo observación, plan de reaplicación | en curso (20/09) | ninguno; entrega texto para `admin/DISENO.md` §4undecies | fila de C con el contrato exacto |
-| **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro reaplicado sobre la ingesta de hoy, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación | encolado detrás de Diseño A | `admin/functions/src/prepago.ts` (nuevo), `ingesta.ts`, `index.ts`, `planes.ts`, `admin/pruebas/` | — |
+| **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño | **cerrado (20/09)**: `admin/DISENO.md` §4undecies en la rama de coordinación (`bb07890`), con la §4undecies.5 reescrita contra el contrato real | `admin/DISENO.md` | — |
+| **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro reaplicado sobre la ingesta de hoy, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación, `cobranza.ts` | **en curso (20/09, noche)** | `admin/functions/src/prepago.ts`, `cobranza.ts` (nuevos), `ingesta.ts`, `index.ts`, `firestore.rules` (tipos de bitácora), `web/src/lib/`, `admin/pruebas/` | PR con las pruebas negativas |
 | **A-1 · pagos** | `prepago/pagos-y-carga-manual` | colección `pagos` con TCO, `registrarPagoManual`, auditoría, fase 0 de `Analisis/29` | encolado detrás de A-0 | `index.ts`, `firestore.rules`, `admin/pruebas/` | — |
-| **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del cobrador contra el doble `admin/pruebas/dobles/cobrador.ts` | encolado detrás de Diseño A (contrato) | `admin/functions/src/cobrador.ts` (nuevo), `admin/pruebas/dobles/` | integra con C cuando exista |
+| **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del contrato real + `crearCobroPrepago`, `avisoCobrador`, `barridoCobros`, `imagenDePago`, contra el doble | **en curso (20/09, noche)**, contra un stub de A-1 | `admin/functions/src/cobrador.ts`, `cobroPrepago.ts` (nuevos), `firma.ts` (dos exports), `admin/pruebas/dobles/` | integra con A-1 en `main`; el aviso se ajusta cuando C cierre su bloque 2 |
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **encolado detrás de B-1 fusionado** | `Flujos/src/` (módulo), nunca el JSON a mano | — |
-| **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` | redacción de las cinco plantillas de utilidad | pendiente de lanzar (20/09) | documento de plantillas del repo | **la presentación a Meta espera la compuerta del demo** |
+| **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` (`be135da`, worktree `agent-a073cd5409c381cca`) | ocho plantillas de utilidad redactadas | **redacción cerrada (20/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
 | **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0 | **cerrado (20/09)**: ver «Diagnóstico B» abajo | ninguno | — |
 | **B-1 · ensamblador** | `flujos/ensamblador` | ayudante compartido de pruebas, ensamblador + `extraer`, vertical de reservas (Demo A + Platinum, misma huella), prueba de identidad byte a byte, LEEME §0 | **en curso (20/09)**: no modifica ningún JSON ni `scripts/` | `Flujos/src/`, `Flujos/prompts/`, `admin/scripts/ensamblar-flujo.mjs`, `admin/pruebas/lib/`, `Flujos/LEEME-flujos.md` §0 | PR cuando la identidad pase en los 8 JSON |
 | **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 **y de que los flujos fusionados sin publicar se publiquen** (tras el demo) | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
@@ -129,7 +129,14 @@ C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
 
 ## En espera de la compuerta del demo
 
-(vacío al 20/09/2026; acá se anota cada bloque que llegue a una acción vedada)
+- **A-5:** presentar a Meta las ocho plantillas de `docs/plantillas-cobranza.md` §7
+  (antes, ampliar `crear-plantilla.sh` con encabezado de imagen, pie y botón de
+  respuesta rápida, y subir la imagen de muestra por la Resumable Upload API).
+- **A-2:** crear los secretos `COBRADOR_TOKEN` y `COBRADOR_AVISO_SECRETO` en Secret
+  Manager, `secretAccessor` a `sa-functions`, ampliar la condición de IAM de despliegue
+  (`COBRADOR_`), habilitar Cloud Scheduler para `barridoCobros`.
+- **Flujos fusionados sin publicar** (#119 a #127): publicar desde `main` con el
+  diagnóstico en seco leído entero; hasta entonces B-2 espera.
 
 ## Lo que espera a Andres después del demo
 
@@ -138,6 +145,11 @@ presentar a Meta, y cuándo encender el corte)
 
 ## Bitácora
 
+- **20/09/2026 (noche)** — Diseño A y A-5 cerrados. `admin/DISENO.md` §4undecies escrito
+  en la rama de coordinación; la §4undecies.5 del agente describía un contrato inventado
+  (centavos, `ENVIADO`, `403`) porque terminó antes de recibir el aviso, y se reescribió
+  contra el real. Los nombres de plantillas se unificaron con `docs/plantillas-cobranza.md`.
+  Lanzados A-0 y A-2 en paralelo.
 - **20/09/2026 (noche)** — A pedido de Andres se verificó el prompt de C contra el
   proyecto de cobros: **el contrato ya existe** (bloques 0 y 1 fusionados, PR #38;
   bloque 2 en curso en otra sesión). Se corrigió la nota de estado del prompt de C,
