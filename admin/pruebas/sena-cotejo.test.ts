@@ -156,7 +156,7 @@ describe('senaParaElFlujo: lo que recibe el flujo de reservas', () => {
     expect(senaParaElFlujo(cfg(), true, 'BOB', url, undefined)).toEqual({
       activa: true, importe: 50, moneda: 'BOB', minutosRetencion: 45,
       qr: { url: `https://panel/imagenDeCobro?f=${'f'.repeat(32)}`, nombreCuenta: 'Clínica Platinum SRL', banco: 'BNB' },
-      pendiente: false, evento: null, qrEnviadoEn: null,
+      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null,
     });
   });
 
@@ -186,6 +186,23 @@ describe('senaParaElFlujo: lo que recibe el flujo de reservas', () => {
     const agendada = senaParaElFlujo(cfg(), true, 'BOB', url, { ...solicitud, etapa: 'agendada' });
     expect(agendada.pendiente).toBe(false);
     expect(agendada.evento).toEqual({ id: 'evt1', calendario: 'cal' });
+  });
+
+  it('una seña VENCIDA se informa con cuánto hace, y solo dentro del día', () => {
+    // El pago tardío (19/09/2026): sin esto, el flujo no puede distinguir «un
+    // comprobante de la nada» de «pagó justo después de que se liberara el
+    // horario», y le pregunta «¿a qué corresponde?» a alguien que acaba de
+    // pagar lo que el asistente le pidió.
+    const vencidaHace = (min: number) => senaParaElFlujo(cfg(), true, 'BOB', url,
+      { etapa: 'vencida', desde: { toMillis: () => Date.now() - min * 60 * 1000 } });
+    expect(vencidaHace(7).vencidaHaceMin).toBe(7);
+    expect(vencidaHace(23 * 60).vencidaHaceMin).toBe(23 * 60);
+    // Más de un día: ya es otra conversación, y no se arrastra para siempre.
+    expect(vencidaHace(25 * 60).vencidaHaceMin).toBeNull();
+    // Y una seña que NO venció no informa nada.
+    const pendiente = solicitudTras(undefined, 'qr_enviado', T0, { referencia: 'evt1' });
+    expect(senaParaElFlujo(cfg(), true, 'BOB', url, pendiente).vencidaHaceMin).toBeNull();
+    expect(senaParaElFlujo(cfg(), true, 'BOB', url, undefined).vencidaHaceMin).toBeNull();
   });
 
   it('la solicitud se informa aunque la seña se haya apagado después del QR', () => {
