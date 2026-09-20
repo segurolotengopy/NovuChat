@@ -141,6 +141,41 @@ const panel = (datosDelNegocio: J = {}, extra: J = {}) => ({
 const AGENTE = 'AI Agent (Sofía)';
 const prompt = (): string => nodo(flujo, AGENTE).parameters['options'].systemMessage;
 
+/**
+ * EL HORARIO DE CADA PERSONA TIENE QUE LLEGAR AL FLUJO (2026-09-20).
+ *
+ * El 20/09 el asistente agendó un DOMINGO con la clínica cerrada. El servidor
+ * ya mandaba `horarioTrabajo` por funcionario —propio, o el del negocio— y
+ * `Config del negocio` lo tiraba: se quedaba con nombre, servicios y
+ * calendario. Sin ese dato el modelo no sabe qué días trabaja cada quien, y el
+ * candado de `Comprobar reserva` no tiene contra qué comprobar.
+ */
+describe('El horario de trabajo llega al prompt y al candado', () => {
+  const HORARIO = { lun: '09:00-19:00', sab: '09:00-13:00', dom: 'cerrado' };
+  const conEquipo = (f: J[]) => fusionar(panel({}, { funcionarios: f }));
+
+  it('`Config del negocio` conserva el horario de cada funcionario', () => {
+    const c = conEquipo([{ nombre: 'Dr. Sandoval', servicios: [], calendarioId: 'cal1',
+      horarioTrabajo: HORARIO }]);
+    const equipo = JSON.parse(String(c['funcionarios'])) as { horario: unknown }[];
+    expect(equipo[0]?.horario).toEqual(HORARIO);
+  });
+
+  it('sin horario del servidor queda un objeto vacío, y el candado falla abierto', () => {
+    const c = conEquipo([{ nombre: 'Dr. Sandoval', servicios: [], calendarioId: 'cal1' }]);
+    const equipo = JSON.parse(String(c['funcionarios'])) as { horario: unknown }[];
+    expect(equipo[0]?.horario).toEqual({});
+  });
+
+  it('el prompt le dice que una agenda vacía NO es una agenda abierta', () => {
+    const p = prompt();
+    expect(p).toContain('EL HORARIO MANDA Y NO SE NEGOCIA');
+    expect(p).toContain('QUE LA AGENDA ESTÉ VACÍA NO QUIERE DECIR QUE ESTÉ ABIERTA');
+    // Y la lista de funcionarios, que es donde viaja el horario, sigue en el prompt.
+    expect(p).toContain('$json.funcionarios');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // (a) Es el Demo A, salvo lo declarado
 // ---------------------------------------------------------------------------
@@ -941,6 +976,27 @@ describe.each([
       expect(r['userInput']).toBe(PIDIO_EL_PACIENTE);
       expect(String(r['notaCruce'])).toBe(`el horario de las 14:30 del ${(r['citasCaidas'] as J[])[0]!['fecha']} con ${persona.nombre} ya estaba ocupado`);
       expect(r['respuesta']).toBe(cfg['mensajeReservaNoConfirmada']);
+    });
+
+    it('Retomar respuesta: si la cita cayó POR HORARIO, la nota no dice «ocupado»', () => {
+      // 20/09/2026: se agendó un domingo con la clínica cerrada. Si la nota le
+      // dice al modelo que el horario «ya estaba ocupado», se lo repite al
+      // paciente —que es falso— y le ofrece otra hora del mismo día cerrado.
+      const base = { ...candado(), causaDeLaCaida: 'horario',
+        citasCaidas: [{ hora: '10:00', fecha: 'domingo, 27 de septiembre',
+          persona: persona.nombre, servicio: 'consulta', causa: 'cerrado' }] };
+      const r = ejecutar(codigo('Retomar respuesta'), [{ success: true }],
+        { 'Comprobar reserva': [base], 'Normalizar entrada': [{ userInput: PIDIO_EL_PACIENTE }] })[0]!;
+      expect(r['reintentar']).toBe(true);
+      expect(String(r['notaCruce'])).toContain('fuera del horario de atencion');
+      expect(String(r['notaCruce'])).not.toContain('ocupado');
+    });
+
+    it('el prompt del reintento le dice al modelo la causa REAL, y que no ofrezca horas de un día cerrado', () => {
+      const p = String(nodo(f, 'Reintento tras cruce').parameters['options']['systemMessage']);
+      expect(p).toContain("$json.causaDeLaCaida === 'horario'");
+      expect(p).toContain('FUERA DEL HORARIO DE ATENCIÓN');
+      expect(p).toContain('no ofrezcas ninguna hora de ese día');
     });
 
     it('Retomar respuesta: si el borrado FALLÓ no hay reintento: la cita fantasma sigue en la agenda', () => {
@@ -3360,6 +3416,15 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       const s = procesar('Tu horario queda reservado por 15 minutos a la espera de la seña de 50 Bs.', 'a la 1');
       expect(String(s['respuesta'])).toContain('la seña de 1 Bs');
       expect(String(s['respuesta'])).not.toContain('50 Bs');
+    });
+
+    it('y NO se come el punto final de la oración', () => {
+      // La versión anterior capturaba «Bs.» entero —con el punto— y lo
+      // reemplazaba por «1 Bs», sin él: la oración salía sin terminar, y el
+      // cliente leía «…a la espera de la seña de 1 Bs» pegado a lo que siguiera.
+      const s = procesar('Te espero con la seña de 50 Bs. Cualquier cosa me avisas.', 'a la 1');
+      expect(String(s['respuesta'])).toContain('la seña de 1 Bs.');
+      expect(String(s['respuesta'])).toContain('Cualquier cosa me avisas.');
     });
 
     it('y NO toca el precio del tratamiento, que está en otra oración', () => {
