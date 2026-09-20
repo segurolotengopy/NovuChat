@@ -45,12 +45,45 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **encolado detrás de B-1 fusionado** | `Flujos/src/` (módulo), nunca el JSON a mano | — |
 | **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` | redacción de las cinco plantillas de utilidad | pendiente de lanzar (20/09) | documento de plantillas del repo | **la presentación a Meta espera la compuerta del demo** |
-| **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0: medir flujos, duplicación, suites con `new Function`, LEEME §0, qué hay en vuelo | en curso (20/09) | ninguno | decide si B empieza |
-| **B-1 · ensamblador** | por definir | ensamblador + `extraer` + un vertical, prueba de identidad byte a byte | encolado detrás de Diagnóstico B | `Flujos/src/`, `Flujos/prompts/`, `Flujos/LEEME-flujos.md` §0, `package.json` de pruebas | — |
-| **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
+| **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0 | **cerrado (20/09)**: ver «Diagnóstico B» abajo | ninguno | — |
+| **B-1 · ensamblador** | `flujos/ensamblador` | ayudante compartido de pruebas, ensamblador + `extraer`, vertical de reservas (Demo A + Platinum, misma huella), prueba de identidad byte a byte, LEEME §0 | **en curso (20/09)**: no modifica ningún JSON ni `scripts/` | `Flujos/src/`, `Flujos/prompts/`, `admin/scripts/ensamblar-flujo.mjs`, `admin/pruebas/lib/`, `Flujos/LEEME-flujos.md` §0 | PR cuando la identidad pase en los 8 JSON |
+| **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 **y de que los flujos fusionados sin publicar se publiquen** (tras el demo) | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
 | **B-3 · corpus del sitio** | por definir | el corpus fuera del nodo Code | encolado detrás de B-1 fusionado | flujo de captación, Function que lo sirve | — |
 | **B-4 · procedimiento** | por definir | RUNBOOK etapa 5, agente `flujos-n8n`, gancho de pre-commit | encolado detrás de B-2 | `docs/alta-cliente/RUNBOOK.md`, `.claude/agents/flujos-n8n.md`, `.githooks/` | — |
 | **C · contrato del cobrador** | otro proyecto (`$HOME/ManejoQRSimple/`), otra sesión | — | **encolado**: se abre con `Prompts/cobrador-contrato-para-consumidores.md` cuando Andres quiera | nada de NovuChat | la fila con el contrato exacto se completa al cerrar Diseño A |
+
+## Diagnóstico B (bloque 0, cerrado el 20/09/2026)
+
+- **El problema subió, no bajó:** 1 277 207 bytes de JavaScript dentro de los 8 JSON
+  (+3,5 % en un día), 85 nodos Code, 10 suites con `new Function`, cada una con su
+  propio extractor. Los 18 nodos Code comunes de Demo A, Platinum y Bellido son
+  **idénticos byte a byte** (Demo A y Platinum tienen la misma huella MD5); el PR #127
+  creció tres veces, +14 448 / +14 452 / +14 452 bytes, por copiar a mano.
+- **Lo que difiere por tenant** son cuatro nodos (`Config base`, `AI Agent (Sofía)`,
+  `agendar_cita`, `Avisar a recepción`; cinco en Bellido) y el `name` del flujo. Los
+  19 nodos propios de Bellido existen tal cual (6 son Code).
+- **Reproducir byte a byte es trivial:** los 8 archivos son exactamente
+  `JSON.stringify(obj, null, 2) + "\n"`, sin `id`, `versionId`, `meta`, `pinData`
+  ni `webhookId` (los inyecta `preparar-import.sh`). El orden de claves de primer
+  nivel difiere en `demo-a-recordatorios.json`: se muta en sitio, no se reconstruye.
+- **Los `REEMPLAZAR_*` viven en el nodo `set` `Config base`** (una excepción:
+  `Config del negocio` en captación): el ensamblador no los toca y
+  `verificar-saneo.sh` sigue igual.
+- **Sticky notes: cero.** `LEEME-flujos.md:8` y `CLAUDE.md:40` están desactualizados.
+- **`sembrar-demos.mjs` no lee `Flujos/`**: la memoria y el prompt de B lo listan
+  por error entre los scripts que buscan nodos por nombre.
+- **El corpus del sitio** (`Conocimiento del sitio`, 826 782 bytes, el 65 % del
+  JavaScript del repositorio) tiene una alarma de huella en
+  `onboarding-flujo.test.ts:1583` que es `it.skipIf(!existsSync(indice))`: **no
+  corre en CI**. Se arregla antes de moverlo (B-3).
+- **Nadie empezó nada parecido** en ninguna rama.
+- **¿B empieza?** No hay ninguna etiqueta esperando aprobación. **Sí hay siete
+  commits de flujos fusionados en `main` sin registro de publicación** (ver «en
+  vuelo»). Decisión de la coordinadora: **B-1 arranca**, porque por contrato no
+  modifica ningún JSON (identidad byte a byte) ni `scripts/`; **B-2 espera** a que
+  esos flujos se publiquen después del demo, porque es el bloque que reescribe los
+  JSON y conviene correrlo con disco y n8n alineados. Es un matiz respecto de la
+  lectura literal de la memoria; queda para que Andres lo confirme o lo revierta.
 
 ## Cola de fusión a `main`
 
@@ -74,6 +107,10 @@ presentar a Meta, y cuándo encender el corte)
 
 ## Bitácora
 
+- **20/09/2026 (noche)** — Diagnóstico B cerrado; B-1 lanzado (`flujos-n8n`,
+  rama `flujos/ensamblador`). Los worktrees de los agentes nacen de `main`, no de la
+  rama de coordinación: cada agente hace `git fetch` y crea su rama desde
+  `origin/main`, que ya trae `Prompts/`.
 - **20/09/2026** — Arranque. `origin/main` había avanzado (PR #127) desde que se creó
   `analisis/prepago-y-prompts`; se fusionó localmente. Mientras se leía, se
   fusionaron #128 y #130 y la rama de análisis quedó dentro de `main`: la rama de
