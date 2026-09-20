@@ -23,30 +23,9 @@
  *      negocio sirve para todas sus conversaciones a la vez.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const aqui = dirname(fileURLToPath(import.meta.url));
-
-interface Nodo {
-  name: string;
-  type: string;
-  parameters: {
-    jsCode?: string;
-    jsonBody?: string;
-    options?: { systemMessage?: string };
-    assignments?: { assignments: { name: string; value: unknown }[] };
-    conditions?: { conditions: { leftValue: string }[] };
-  };
-}
-interface Flujo {
-  nodes: Nodo[];
-  connections: Record<string, { main: { node: string }[][] }>;
-}
-const flujo = (archivo: string) => JSON.parse(
-  readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8'),
-) as Flujo;
+import {
+  type Flujo, configBase, correr, expresion, leerFlujo as flujo, nodo,
+} from './lib/flujo.ts';
 
 const FLUJOS = [
   { archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
@@ -59,35 +38,9 @@ const FLUJOS = [
   { archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)', trasElTope: 'AI Agent (Sofía)' },
 ] as const;
 
-const nodo = (f: Flujo, nombre: string) => {
-  const n = f.nodes.find((x) => x.name === nombre);
-  if (!n) throw new Error(`sin nodo ${nombre}`);
-  return n;
-};
-
-/** Evalúa una expresión de n8n `={{ ... }}` que solo usa `$json`. */
-function expresion(texto: string, $json: unknown): unknown {
-  const m = /^=\{\{([\s\S]*)\}\}$/.exec(texto.trim());
-  if (!m) throw new Error(`no es una expresión simple: ${texto.slice(0, 60)}`);
-  // Mismo criterio que en las otras suites: se ejecuta el flujo versionado.
-  // nosemgrep: devsecops.js-eval-prohibido
-  return (new Function('$json', `return (${m[1]});`) as (j: unknown) => unknown)($json);
-}
-
-/** Ejecuta un nodo Code con `$input.all()` y `$('Nombre').first()`. */
-function correr(codigo: string, items: unknown[], contexto: Record<string, unknown>) {
-  const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };
-  const $ = (nombre: string) => ({ first: () => ({ json: contexto[nombre] ?? {} }) });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', codigo) as (i: unknown, c: unknown) => { json: Record<string, unknown> }[];
-  return fn(entrada, $);
-}
-
 function fusionar(f: Flujo, respuesta: unknown) {
-  const base = Object.fromEntries(
-    nodo(f, 'Config base').parameters.assignments!.assignments.map((a) => [a.name, a.value]),
-  );
-  return correr(nodo(f, 'Config del negocio').parameters.jsCode!, [respuesta], { 'Config base': base })[0]!.json;
+  return correr(nodo(f, 'Config del negocio').parameters.jsCode!, [respuesta as Record<string, unknown>],
+    { 'Config base': configBase(f) })[0]!.json;
 }
 
 const ACTIVO = (limites?: unknown) => ({
