@@ -10,10 +10,28 @@ flujo, no se recarga configuración, no se corre ningún `--aplicar` y no se pre
 nada a Meta. Se puede escribir código, pruebas y documentos, commitear en ramas y,
 con su «sí», subir ramas y abrir PR. Fusionar a `main` tampoco despliega.
 
-**Base de trabajo:** rama `analisis/prepago-y-prompts` (worktree
-`.claude/worktrees/prepago-prompts`), puesta al día con `origin/main` (`3078e34`,
-PR #127) el 20/09/2026. La copia principal `~/NovuChat` está en `742eaf7`, muy
-atrás de `origin/main`: **no se opera nada desde ahí**.
+**Base de trabajo:** `origin/main` en `8e51238` (20/09/2026, noche): los análisis 35 y
+36 y la carpeta `Prompts/` ya están en `main` (PR #130), así que la rama
+`analisis/prepago-y-prompts` cumplió su función. Cada frente nace de `origin/main`
+en un worktree dentro de `.claude/worktrees/`. La copia principal `~/NovuChat` está
+en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
+
+**Lo que hay en vuelo al 20/09 (noche), y le importa a la compuerta:**
+
+- Última etiqueta: **`v0.6.4`** sobre `ceaceb9` (PR #125). `ESTADO.md` de `main` no
+  registra nada después de `v0.6.0`: las etiquetas `v0.6.1` a `v0.6.4` y los PR
+  #119 a #127 (todos del 20/09) **no tienen entrada en la bitácora**.
+- Después de `v0.6.0` cambiaron los tres flujos de agendamiento (Demo A, Platinum,
+  Bellido) y el de señas vencidas (#119, #122, #124, #125, #126, #127). **No hay
+  registro de que se hayan publicado en n8n** después de esos PR. Es el caso
+  «fusión sin publicar» de la memoria `publicar-solo-desde-main`, y es un riesgo
+  para el demo del 21/09: se le pregunta a Andres, no se toca.
+- PR **#129** abierto (`flujos/encender-flujo-existente`, worktree `release`, otra
+  sesión): toca `scripts/publicar-flujo.sh`, que es zona de B. B-1 no modifica ese
+  script (su prompt lo prohíbe), pero B-4 y cualquier gancho lo leen: **B espera a
+  que #129 cierre antes de tocar `scripts/`**.
+- Dieciséis PR de Dependabot abiertos (#2 a #52) y #63 (docs): no se mezclan con
+  ningún bloque.
 
 ## Tablero
 
@@ -57,5 +75,12 @@ presentar a Meta, y cuándo encender el corte)
 ## Bitácora
 
 - **20/09/2026** — Arranque. `origin/main` había avanzado (PR #127) desde que se creó
-  `analisis/prepago-y-prompts`; se fusionó localmente (`186a51c`). Lanzados en
-  paralelo Diseño A y Diagnóstico B.
+  `analisis/prepago-y-prompts`; se fusionó localmente. Mientras se leía, se
+  fusionaron #128 y #130 y la rama de análisis quedó dentro de `main`: la rama de
+  coordinación se rebasó sobre `8e51238`. Lanzados en paralelo Diseño A
+  (`Plan`), Diagnóstico B (`Explore`) y A-5 plantillas (`meta-whatsapp`, solo
+  redacción). La lectura del proyecto de cobros quedó limitada a su ficha del
+  registro: el clasificador de la sesión bloqueó leer sus `docs/` (datos
+  personales); el documento `docs/10-contrato-consumidores.md` que la ficha cita
+  **no existe** en `$HOME/ManejoQRSimple/`, así que A-2 se construye contra el
+  contrato del prompt de C, que es el vigente.
