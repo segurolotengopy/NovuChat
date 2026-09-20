@@ -1287,11 +1287,43 @@ describe.each([
       expect(expresion(nodo(f, '¿Hay cita verificada?').parameters['conditions'].conditions[0].leftValue, c)).toBe(true);
     });
 
-    it('si el calendario no devuelve el evento que la herramienta dijo crear, queda anotado y el texto no cambia', () => {
+    it('si el calendario todavía no lista la cita recién creada, el candado la ve IGUAL y detecta el cruce', () => {
+      // CAMBIO DELIBERADO (20/09/2026), por un caso real: `agendar_cita` creó
+      // la cita y Google la devolvió con su id, su calendario y su horario;
+      // segundos después `events.list` sobre ESE calendario no la trajo, porque
+      // la lista es de consistencia eventual. Antes eso era «no pude verificar»
+      // y se fallaba ABIERTO: la cita quedaba encima de otra sin que nadie lo
+      // notara, y con seña activa el QR no salía (le pasó a una clienta el
+      // 20/09: recibió «te llega el QR» y no le llegó nada).
+      //
+      // La respuesta de la herramienta es un hecho de Google, no algo que dijo
+      // el modelo, así que cuenta. Y acá se ve la ganancia real: este cruce
+      // —la nueva de 10:00 a 10:30 contra una de 10:00 a 11:00 en la MISMA
+      // agenda— antes no se detectaba, porque la nueva no estaba en la lista.
       const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
       const c = candado(previa, [yaEstaba]);
-      expect(c['verificacionSinDatos']).toBe(true);
-      expect(c['citaCreadaNoEncontrada']).toBe(true);
+      expect(c['citaSolapada']).toBe(true);
+      expect(c['reservaVerificada']).toBe(false);   // cedió la nueva: no sobrevive
+      expect(c['respuesta']).not.toBe(previa['respuesta']);
+    });
+
+    it('sin cruce, la cita que la herramienta creó queda VERIFICADA aunque la lista no la traiga', () => {
+      // El caso de la clienta: la agenda tenía citas de otros días, la suya no
+      // aparecía todavía, y no choca con ninguna. Antes: sin verificar y sin
+      // QR. Ahora: verificada, y el QR sale.
+      const otroDia = { ...yaEstaba, id: 'otro-dia',
+        start: { dateTime: '2026-09-25T09:00:00-04:00' }, end: { dateTime: '2026-09-25T10:00:00-04:00' } };
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const c = candado(previa, [otroDia]);
+      expect(c['reservaVerificada']).toBe(true);
+      expect(c['eventoId']).toBe('ev-nuevo');
+      expect(c['citaSolapada']).toBeUndefined();
+      expect(c['respuesta']).toBe(previa['respuesta']);
+    });
+
+    it('sin id de la herramienta NO se inventa nada: sigue sin verificar y falla ABIERTO', () => {
+      const previa = procesar({ output: DIJO });
+      const c = candado(previa, [yaEstaba]);
       expect(c['reservaVerificada']).toBe(false);
       expect(c['respuesta']).toBe(previa['respuesta']);
       expect(c['transferir']).toBe(false);
@@ -1460,9 +1492,16 @@ describe.each([
     },
   });
   /** `Procesar respuesta` con lo que devolvió el modelo y la configuración dada. */
-  const procesar = (output: string, extra: J = {}): J => ejecutar(codigo('Procesar respuesta'),
-    [{ output, userInput: 'hola' }],
-    { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Ana' }], 'Config del negocio': [{ ...cfg, ...extra }] })[0] ?? {};
+  /**
+   * `pregunto` es lo que ESCRIBIÓ el cliente. Desde el 20/09/2026 el pin exige
+   * que haya preguntado por la ubicación: el modelo puso la marca en una
+   * confirmación de cita, sin que nadie la pidiera, y salió un mensaje pagado
+   * de más en cada reserva.
+   */
+  const procesar = (output: string, extra: J = {}, pregunto = '¿dónde quedan?'): J =>
+    ejecutar(codigo('Procesar respuesta'), [{ output, userInput: pregunto }],
+      { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Ana', userInput: pregunto }],
+        'Config del negocio': [{ ...cfg, ...extra }] })[0] ?? {};
   const CON_PIN = { ubicacionLat: String(PIN.lat), ubicacionLng: String(PIN.lng), direccion: 'Calle 1, zona Sur', nombreNegocio: 'Un Negocio' };
   const PIDE = 'Quedamos en Calle 1, zona Sur. Le mando la ubicación. [ENVIAR_UBICACION]';
 
@@ -1530,7 +1569,9 @@ describe.each([
     it('la regla 6c: el PIN reemplaza al enlace, que en Android muere; el enlace queda de respaldo', () => {
       expect(p.indexOf('6c.')).toBeGreaterThan(p.indexOf('6b.'));
       expect(p.indexOf('6c.')).toBeLessThan(p.indexOf('7. Eres asistente'));
-      expect(regla6c).toContain('Al confirmar una cita, incluye en el MISMO mensaje la dirección escrita');
+      expect(regla6c).toContain('Al confirmar una cita SIN seña, incluye en el MISMO mensaje la dirección');
+      // Con seña, ese mensaje va corto y la dirección va después (Silvana, 20/09).
+      expect(regla6c).toContain('si la cita quedó a la espera de una seña, NO la pongas');
       // CON pin cargado: ningún enlace, y la marca ante cualquier pregunta por
       // la ubicación. El enlace corto se reescribe en Android a la forma vieja
       // de Dynamic Links, apagada por Google, y muere con «Invalid Dynamic
@@ -3280,5 +3321,82 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       expect(p).toContain('6d. HABLAR CON UNA PERSONA');
       expect(p).toContain('NO escribas el número en el texto');
       expect(p).toContain('[CONTACTO_RECEPCION]');
+    });
+  });
+
+// ---------------------------------------------------------------------------
+// (p) Lo que enseñó la prueba de Silvana, 00:56 del 20/09/2026
+// ---------------------------------------------------------------------------
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+  '(p) %s · la reserva con seña, como la vio una clienta', (_archivo, f) => {
+    const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
+    const CON_SENA_1 = { senaActiva: 'si', senaImporte: '1', senaMoneda: 'Bs', nombreNegocio: 'Un Negocio',
+      ubicacionLat: '-17.763381', ubicacionLng: '-63.188263', direccion: 'Calle 1' };
+    const procesar = (output: string, escribio: string, config: J = CON_SENA_1): J =>
+      ejecutar(cod('Procesar respuesta'), [{ output }],
+        { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Sil', userInput: escribio }],
+          'Config del negocio': [config] })[0] ?? {};
+
+    it('EL MONTO DE LA SEÑA NO LO ESCRIBE EL MODELO: dijo 50 con la seña en 1', () => {
+      // Caso real: la seña estaba en 1 Bs y el asistente escribió «la seña de
+      // 50 Bs». El prompt ya le inyectaba el importe exacto: el prompt no es
+      // una barrera (CLAUDE.md), y esto es plata que una clienta leyó.
+      const s = procesar('Tu horario queda reservado por 15 minutos a la espera de la seña de 50 Bs.', 'a la 1');
+      expect(String(s['respuesta'])).toContain('la seña de 1 Bs');
+      expect(String(s['respuesta'])).not.toContain('50 Bs');
+    });
+
+    it('y NO toca el precio del tratamiento, que está en otra oración', () => {
+      const s = procesar('La seña es de 40 Bs. El blanqueamiento cuesta 500 Bs en campaña.', 'cuánto sale');
+      expect(String(s['respuesta'])).toContain('500 Bs');
+      expect(String(s['respuesta'])).toContain('1 Bs');
+    });
+
+    it('sin seña activa no se corrige ningún monto: no hay nada que corregir', () => {
+      const s = procesar('La consulta cuesta 50 Bs.', 'cuánto sale', { nombreNegocio: 'Un Negocio' });
+      expect(String(s['respuesta'])).toContain('50 Bs');
+    });
+
+    it('EL PIN NO SALE SI NADIE LO PIDIÓ: el modelo puso la marca en una confirmación', () => {
+      // Caso real: la clienta escribió «A la 1 ta bien» y le llegó el pin.
+      // Un mensaje pagado de más en cada reserva.
+      const confirmando = procesar('Listo, tu horario queda reservado. [ENVIAR_UBICACION]', 'A la 1 ta bien');
+      expect(confirmando['enviarUbicacion']).toBe(false);
+      expect(String(confirmando['respuesta'])).not.toContain('ENVIAR_UBICACION');
+      // Y cuando sí pregunta, sale.
+      for (const pregunta of ['¿dónde quedan?', 'cómo llego', 'mándame la ubicación', 'cuál es la direccion']) {
+        expect(procesar('Estamos en Calle 1. [ENVIAR_UBICACION]', pregunta)['enviarUbicacion'], pregunta).toBe(true);
+      }
+    });
+
+    it('LA CITA RECIÉN CREADA VALE AUNQUE LA LISTA NO LA TRAIGA: sin eso no sale el QR', () => {
+      // Caso real: Google creó la cita y su propia lista no la devolvió unos
+      // segundos después. La reserva quedaba sin verificar y el QR no salía:
+      // la clienta leyó «a continuación te llega el QR» y no le llegó nada.
+      const creado = { id: 'ev-sil', summary: 'PENDIENTE DE SEÑA · Cita Sil', organizer: { email: 'cal-uno' },
+        start: { dateTime: '2026-09-27T13:00:00-04:00' }, end: { dateTime: '2026-09-27T14:00:00-04:00' } };
+      const previa = ejecutar(cod('Procesar respuesta'),
+        [{ output: 'Tu horario queda reservado.', intermediateSteps: [
+          { action: { tool: 'agendar_cita' }, observation: JSON.stringify([creado]) }] }],
+        { 'Normalizar entrada': [{ from: '59170000001', userInput: 'a la 1' }],
+          'Config del negocio': [CON_SENA_1] })[0]!;
+      // La lista trae OTRA cita, de otro día: la nueva todavía no está.
+      const otra = { id: 'otra', organizer: { email: 'cal-uno' },
+        start: { dateTime: '2026-09-25T09:00:00-04:00' }, end: { dateTime: '2026-09-25T10:00:00-04:00' },
+        created: '2026-09-10T10:00:00.000Z' };
+      const c = ejecutar(cod('Comprobar reserva'), [otra],
+        { 'Procesar respuesta': [previa], 'Config del negocio': [CON_SENA_1] })[0]!;
+      expect(c['reservaVerificada']).toBe(true);
+      expect(c['eventoId']).toBe('ev-sil');
+      // Y con eso la compuerta del QR abre.
+      const cond = nodo(f, '¿Enviar QR de la seña?').parameters['conditions'].conditions[0].leftValue;
+      expect(expresion(cond, { ...c, senaActiva: 'si' })).toBe(true);
+    });
+
+    it('el prompt pide un mensaje CORTO: sin repetir el monto y sin la dirección', () => {
+      const p = String(nodo(f, AGENTE).parameters['options'].systemMessage);
+      expect(p).toContain('Ese mensaje va CORTO');
+      expect(p).toContain('NO repitas el monto de la seña');
+      expect(p).toContain('NO pongas la dirección');
     });
   });
