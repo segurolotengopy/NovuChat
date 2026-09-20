@@ -115,12 +115,42 @@ if [[ -z "$ID" || "$ID" == "null" ]]; then
   gris "  No aparecio todavia. Mirela en: https://github.com/$REPO/actions"
   exit 0
 fi
-echo "  Corrida : https://github.com/$REPO/actions/runs/$ID"
-echo
-verde "  ⏸  DE ACA EN ADELANTE EL PIPELINE NO AVANZA SOLO: ESPERA POR USTED."
-verde "  SU SEGUNDO Y ULTIMO PASO: aprobar el entorno «production» cuando el"
-verde "  pipeline lo pida, en ese mismo enlace (boton «Review deployments»)."
-echo
-gh run watch "$ID" --exit-status && verde "✓ Despliegue terminado." || {
-  rojo "✗ La corrida no termino bien. El enlace de arriba tiene el detalle."; exit 1;
-}
+# EL ENLACE SE IMPRIME AL FINAL, Y UNA SOLA LINEA SE REESCRIBE MIENTRAS TANTO.
+# `gh run watch` volcaba cientos de lineas de cada job: el enlace quedaba
+# sepultado arriba, la terminal no dejaba subir a buscarlo, y no se distinguia
+# «sigue corriendo» de «se colgo» (Andres, 20/09/2026, dos veces).
+ENLACE="https://github.com/$REPO/actions/runs/$ID"
+avisado=""
+while :; do
+  ESTADO=$(gh run view "$ID" --json status,conclusion --jq '"\(.status)/\(.conclusion // "")"' 2>/dev/null || echo "?")
+  case "$ESTADO" in
+    completed/success)
+      printf '\r%-78s\n' " "
+      verde "✓ Despliegue terminado y en verde."
+      echo "  $ENLACE"
+      exit 0 ;;
+    completed/*)
+      printf '\r%-78s\n' " "
+      rojo "✗ La corrida no termino bien ($ESTADO)."
+      echo "  $ENLACE"
+      exit 1 ;;
+  esac
+  PENDIENTE=$(gh api "repos/$REPO/actions/runs/$ID/pending_deployments" --jq 'length' 2>/dev/null || echo 0)
+  if [[ "$PENDIENTE" != "0" && "$avisado" != "espera" ]]; then
+    printf '\r%-78s\n' " "
+    echo
+    verde "  ⏸  EL PIPELINE PASO Y AHORA LO ESPERA A USTED."
+    verde "  Apruebe el entorno «production» acá (boton «Review deployments»):"
+    echo
+    echo "      $ENLACE"
+    echo
+    gris "  Esta pantalla solo mira: puede cerrarla con Ctrl+C cuando quiera."
+    avisado=espera
+  elif [[ "$PENDIENTE" == "0" && "$avisado" == "espera" ]]; then
+    printf '\r%-78s\n' " "
+    verde "  ▶  Aprobado: desplegando..."
+    avisado=desplegando
+  fi
+  printf '\r  %s · %s ' "$(date +%H:%M:%S)" "$ESTADO"
+  sleep 10
+done
