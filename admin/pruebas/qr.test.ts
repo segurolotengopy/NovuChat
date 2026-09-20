@@ -579,3 +579,44 @@ describe('Datos que el negocio NO tiene', () => {
     expect(r).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// La revalidación al SERVIR la imagen (19/09/2026)
+// ---------------------------------------------------------------------------
+describe('Servir la imagen revalida con lo que se guardó, no con menos', () => {
+  /**
+   * EL DEFECTO. `imagenDeCobro` revalidaba el código antes de dibujarlo, pero
+   * sin los datos que el comercio declaró al registrarlo. Un QR CIFRADO no se
+   * puede leer por dentro: sin la cuenta declarada y sin las dos
+   * confirmaciones, la validación da SIEMPRE inválido. La imagen respondía
+   * 409, Meta no podía descargarla, y el cliente no recibía ningún QR sin que
+   * apareciera un solo error: el flujo terminaba «bien».
+   */
+  const COMO_SE_REGISTRO = {
+    aceptaMontoFijo: true, confirmaReutilizable: true, confirmaMontoAbierto: true,
+    cuentaDeclarada: '170000221',
+  };
+
+  it('con los datos del registro, un QR cifrado guardado SIGUE siendo válido', () => {
+    expect(validarQrSimple(CIFRADO, COMO_SE_REGISTRO).valido).toBe(true);
+  });
+
+  it('y sin ellos no lo es: esa era exactamente la llamada que rompía la imagen', () => {
+    expect(validarQrSimple(CIFRADO, { aceptaMontoFijo: true }).valido).toBe(false);
+  });
+
+  it('lo que esta compuerta NO puede hacer, y hay que saberlo: un cifrado alterado pasa', () => {
+    // Un código cifrado por el banco no se puede verificar por dentro: no hay
+    // CRC que comprobar ni campos que leer. Cambiarle caracteres NO se detecta.
+    // Por eso la compuerta de acá vale para lo que vale —que el documento siga
+    // teniendo un código con forma de QR de cobro— y la barrera de verdad está
+    // antes: solo `registrarQrDeCobro` escribe ese campo, y las reglas no
+    // dejan que el comercio lo toque desde el navegador.
+    const alterado = `${CIFRADO.slice(0, -6)}AAAAAA`;
+    expect(validarQrSimple(alterado, COMO_SE_REGISTRO).valido).toBe(true);
+    // Lo que sí se rechaza: lo que deja de tener forma de QR de cobro.
+    for (const basura of ['', 'https://ejemplo.com/pagar', 'hola']) {
+      expect(validarQrSimple(basura, COMO_SE_REGISTRO).valido, basura).toBe(false);
+    }
+  });
+});

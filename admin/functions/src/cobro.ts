@@ -206,7 +206,7 @@ export const imagenDeCobro = onRequest(
     const encontrados = await db().collectionGroup('config')
       .where('cobroReal.ficha', '==', ficha).limit(1).get();
     const cobro = encontrados.docs[0]?.get('cobroReal') as
-      { cargaUtil?: string; activo?: boolean } | undefined;
+      { cargaUtil?: string; activo?: boolean; cuentas?: string[] } | undefined;
     if (!cobro?.cargaUtil || cobro.activo !== true) {
       respuesta.status(404).send('no encontrado'); return;
     }
@@ -214,7 +214,23 @@ export const imagenDeCobro = onRequest(
     // Se vuelve a validar antes de dibujar. Es redundante —se validó al
     // registrarlo— y va igual: es la última compuerta antes de que una persona
     // le transfiera dinero a alguien, y el costo es de microsegundos.
-    if (!validarQrSimple(cobro.cargaUtil, { aceptaMontoFijo: true }).valido) {
+    //
+    // PERO SE VALIDA CON LO QUE YA SE SABE, no con menos (19/09/2026). Un QR
+    // CIFRADO no se puede leer por dentro: al registrarlo, el comercio declara
+    // el número de cuenta y confirma que se puede usar muchas veces y que no
+    // tiene importe fijo, y eso quedó guardado. Acá no hay quién vuelva a
+    // declararlo, así que revalidar sin esos datos daba SIEMPRE inválido: la
+    // imagen respondía 409, Meta no podía descargarla y el cliente no recibía
+    // ningún QR, sin un solo error a la vista. Lo que se comprueba acá es que
+    // el CÓDIGO siga siendo el que se guardó, no que el comercio vuelva a
+    // declarar lo que ya declaró.
+    const comoSeRegistro = {
+      aceptaMontoFijo: true,
+      confirmaReutilizable: true,
+      confirmaMontoAbierto: true,
+      cuentaDeclarada: (cobro.cuentas ?? [])[0] ?? '',
+    };
+    if (!validarQrSimple(cobro.cargaUtil, comoSeRegistro).valido) {
       respuesta.status(409).send('el codigo guardado ya no es valido'); return;
     }
 
