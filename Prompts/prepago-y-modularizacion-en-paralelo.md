@@ -16,10 +16,13 @@ más **un tercero que espera en cola** en otro proyecto:
   los JSON de `Flujos/` a módulos versionados con un ensamblador.
   Prompt: `Prompts/modularizacion-flujos.md`.
 - **C · Contrato del cobrador para consumidores** — en el proyecto de cobros
-  por QR, `$HOME/ManejoQRSimple/`. **No se trabaja desde esta
-  sesión**: es otro proyecto y lo abre otra sesión con
-  `Prompts/cobrador-contrato-para-consumidores.md`. Acá se **encola** y se
-  consume su contrato.
+  por QR, `$HOME/ManejoQRSimple/`. **Su bloque 1 ya existe** (PR #38 de ese
+  proyecto, fusionado el 20/09/2026; `docs/10-contrato-consumidores.md`):
+  `/api/v1/cobros` con token por consumidor, `referenciaExterna` idempotente,
+  `estadoCobro`, `anularCobro`, `listarCobros` y el QR. **Falta el aviso de
+  confirmación (su bloque 2)**. No se trabaja desde esta sesión: lo sigue una
+  sesión de ese proyecto. Acá se **consume** lo que existe y se **encola** lo
+  que falta.
 
 Tu trabajo es que A y B avancen sin pisarse, que C quede encolado con todo lo
 que necesita, y que **nada toque producción hasta que Andres lo diga**, porque
@@ -131,7 +134,7 @@ reutiliza, no rehace:
 | `Flujos/*.json`, `Flujos/src/`, `Flujos/prompts/`, `Flujos/LEEME-flujos.md`, `scripts/publicar-flujo.sh`, `preparar-import.sh`, `verificar-saneo.sh`, `.claude/agents/flujos-n8n.md`, `docs/alta-cliente/RUNBOOK.md` | **B** | A-4 necesita el flujo del WhatsApp interno | **A-4 se encola detrás de B-1** y se escribe como módulo |
 | `ESTADO.md`, `admin/DISENO.md`, `CLAUDE.md` §7, `Prompts/LEEME.md` | compartidos | A y B | **Solo se agrega, nunca se reescribe** lo del otro; una sección o entrada por frente, con fecha; los conflictos los resuelve la coordinadora conservando ambos lados |
 | `Prompts/COORDINACION.md` (nuevo) | coordinadora | cada frente su fila | El tablero: frente · rama · bloque en curso · estado (en curso / encolado detrás de … / en espera de la compuerta del demo / listo para fusionar) · archivos que toca · próximo paso |
-| El proyecto de cobros | **C** (otra sesión) | A-2 lo consume | A-2 se construye contra un doble que implementa **exactamente** el contrato del prompt de C; se integra cuando C exista |
+| El proyecto de cobros | **C** (otra sesión) | A-2 lo consume | A-2 se construye contra el contrato **real** de `docs/10-contrato-consumidores.md` (bloque 1, ya fusionado); el doble de prueba cubre solo lo que falta, el aviso de confirmación, y mientras tanto A-2 **sondea** `estadoCobro` |
 
 ## Cómo repartir el trabajo entre agentes
 
@@ -144,7 +147,7 @@ Revisión de `seguridad` antes de pedir el OK de fusión de cada PR.
 | **Diseño A** | `Plan` | Lo que pide `Prompts/prepago-estricto.md` para el agente de diseño, **más** la lectura de la ingesta de hoy (ya reabierta por la seña y los seguimientos), el mapa de qué se reutiliza de `dibujoQr`/`firma`/`seguimientos`, y la bandera de modo observación | Primero |
 | **Diagnóstico B** | `Explore` | El bloque 0 del prompt de B: cuántos flujos, cuánto JavaScript duplicado, y si `Flujos/LEEME-flujos.md` §0 sigue diciendo lo mismo. **Si hay un despliegue acoplado a publicar flujos, B no empieza** | Primero, en paralelo con Diseño A |
 | **A · servidor** | `general-purpose` | Bloques A-0 y A-1: el módulo puro reaplicado sobre la ingesta de hoy, gracia de 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`; colección de pagos con TCO, `registrarPagoManual`, auditoría, fase 0 de `Analisis/29` | Tras Diseño A |
-| **A · cobrador** | `general-purpose` | Bloque A-2 contra el **doble** del contrato de C: crear, consultar, anular, aviso firmado, idempotencia por referencia, barrido horario | En paralelo con A-servidor, sobre el contrato de la ficha de diseño |
+| **A · cobrador** | `general-purpose` | Bloque A-2 contra el contrato **real** de C (`/api/v1/cobros`, token `CONSUMIDOR_TOKEN_NOVUCHAT` en Secret Manager, `referenciaExterna`, `estadoCobro`, `anularCobro`); el aviso firmado, contra un doble hasta que C lo tenga; sondeo de `estadoCobro` mientras haya un cobro pendiente | En paralelo con A-servidor |
 | **A · consola** | `general-purpose` | Bloque A-3: «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | Con A-1 fusionado |
 | **B · ensamblador** | `flujos-n8n` | Bloques B-1 y B-2 del prompt de B, con la prueba de identidad JSON a JSON | Tras Diagnóstico B, si no hay despliegue acoplado |
 | **A · WhatsApp interno** | `flujos-n8n` | Bloque A-4 **como módulo del esquema de B** | **Encolado detrás de B-1 fusionado** |
@@ -160,7 +163,7 @@ Diseño A ─┐
 A-2 (doble) ──────────────────────► integra con C ┤
 Diagnóstico B ─► B-1 ─► B-2 ─► B-3 ─► B-4        ├─► etiqueta (Andres, tras el demo)
                  └──► A-4 (módulo) ──────────────┘
-C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
+C-1 (hecho, PR #38 del cobrador) ──► A-2 consume ya · C-2 (aviso) ──► A-2 deja de sondear
 ```
 
 Regla de integración, y es dura:
@@ -185,21 +188,27 @@ tres precisiones que el prompt no tenía:
 
 - **A-0** se hace sobre la ingesta de hoy: primero leerla entera, después
   reaplicar. Es integración, no trasplante.
-- **A-2** consume el contrato de `Prompts/cobrador-contrato-para-consumidores.md`
-  literalmente: mismas operaciones, mismos campos, misma firma del aviso. El
-  doble de prueba vive en `admin/pruebas/dobles/cobrador.ts` y se descarta
-  cuando C exista.
+- **A-2** consume `docs/10-contrato-consumidores.md` del proyecto de cobros
+  **literalmente**: `referenciaExterna` = `tenant/periodo/pagoId` (opaca para
+  el cobrador; sin nombres ni teléfonos), `concepto` sin datos del comercio
+  (lo ve quien paga en su banco), monto como texto decimal, `estadoCobro` por
+  referencia, y **solo `CONFIRMADO` es pagado** (`PAGO_DETECTADO` no lo es).
+  El doble de prueba en `admin/pruebas/dobles/cobrador.ts` imita ese
+  contrato y agrega el aviso firmado que todavía no existe; se descarta
+  cuando C-2 exista.
 - **A-4** es un módulo en `Flujos/src/`, no una edición del JSON.
 
 Los bloques de B son los de `Prompts/modularizacion-flujos.md` (0 a 4), sin
 cambio.
 
 **C se encola así:** al terminar Diseño A, escribe en `Prompts/COORDINACION.md`
-la fila de C con el contrato exacto que A-2 espera (operaciones, campos,
-firma, cuenta de cobro `novuchat`) y avisa a Andres que **una sesión en
-`$HOME/ManejoQRSimple/` puede abrirse con
-`Prompts/cobrador-contrato-para-consumidores.md`** cuando él quiera; esa
-sesión copia el prompt a su propio `Prompts/` como primera tarea.
+la fila de C con **lo que A-2 ya consume** (bloque 1, existente) y **lo que
+espera** (bloque 2: la forma exacta del aviso firmado que el doble imita), y
+avisa a Andres que la sesión del proyecto de cobros puede seguir con ese
+bloque cuando él quiera. Lo que falta del lado de NovuChat para conectar de
+verdad: el token `CONSUMIDOR_TOKEN_NOVUCHAT` en Secret Manager (lo emite el
+dueño del cobrador; nunca pasa por el chat) y la cuenta de cobro de NovuChat
+en ese proyecto.
 
 ### Lo que NO se construye
 - Nada bancario en NovuChat; nada que confirme un pago sin el banco o el

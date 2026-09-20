@@ -5,14 +5,14 @@
 > primer consumidor; **cópialo a `Prompts/` de ese proyecto** como primera
 > tarea, y de ahí en adelante mantenlo allá.
 
-Eres una sesión dedicada a abrir el sistema de cobros por QR a **proyectos
-consumidores**. **La API ya existe** —`/api/cobros` crea, lista, consulta,
-entrega el QR, envía, renueva, anula, registra comprobantes y verifica— pero
-autentica al **dueño de la consola**, no a un tercero. Lo que falta es lo que
-convierte esa API en un contrato para otro producto —NovuChat es el primero,
-y habrá más—: identidad y alcance por consumidor, referencia externa con
-idempotencia, un aviso de confirmación, y que el teléfono del pagador sea
-opcional. **No se reescribe lo que hay; se le agrega lo que falta.**
+Eres una sesión dedicada a completar el contrato del sistema de cobros por QR
+para **proyectos consumidores**. **El bloque 1 ya está hecho** (PR #38,
+fusionado el 20/09/2026; `docs/10-contrato-consumidores.md`, ADR-008): la
+superficie `/api/v1/cobros` con token por consumidor, `referenciaExterna`
+idempotente y atómica, `estadoCobro` por id o referencia, `anularCobro` con
+sus tres desenlaces, `listarCobros` y la imagen del QR. **Lo que sigue es el
+bloque 2 —el aviso de confirmación— y el pase a producción.** No se reescribe
+lo que hay.
 
 Lee primero, en este orden: el `CLAUDE.md` del proyecto (las reglas de negocio
 inviolables, en especial que solo la consulta autenticada confirma un pago),
@@ -59,13 +59,13 @@ contra el banco, solo en el modo de prueba controlada y con montos mínimos.
 
 ## Qué construir, por bloques
 
-### Bloque 0 — Inventario de lo que ya hay (media jornada)
+### Bloque 0 — Inventario de lo que ya hay · **HECHO** (`docs/10-contrato-consumidores.md`)
 Antes de escribir: leer `packages/functions/src/api/enrutador.ts`,
 `esquemas.ts` y `handlers.ts`, y `auth.ts`. Dejar escrito en `docs/` qué
 operaciones existen, qué cuerpo aceptan y quién puede llamarlas. Es la mitad
 del contrato, y ya está.
 
-### Bloque 1 — El contrato (1 jornada)
+### Bloque 1 — El contrato · **HECHO el 20/09/2026** (PR #38)
 Sobre las operaciones que ya existen, cuatro agregados, sin tocar `qr-core`:
 
 - **Identidad del consumidor**: un verificador más al lado de los dos de
@@ -94,7 +94,7 @@ Las operaciones, ya existentes o completadas así:
 referencia devuelven el mismo cobro, no dos QR. Es lo que impide que un
 consumidor con un reintento le cobre dos veces a su cliente.
 
-### Bloque 2 — El aviso de confirmación (1 jornada)
+### Bloque 2 — El aviso de confirmación (1 jornada) · **es el que sigue**
 Hoy no hay salida hacia nadie: la confirmación queda en el estado del cobro
 y se lee por `GET`. Cuando un cobro pasa a confirmado, avisar al consumidor: **firmado**, con
 marca de tiempo, con reintentos y sin datos sensibles. El aviso es un
