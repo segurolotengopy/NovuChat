@@ -794,7 +794,7 @@ describe.each([
       // El reporte del texto primero y, debajo, la compuerta del pin a pedido
       // (bloque k): en el camino normal no pasa nada por ahí.
       expect(destinos('Responder al cliente')).toEqual(
-        ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?']);
+        ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?']);
       expect(origenes('Mensaje a enviar').sort()).toEqual([
         'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
         '¿Reintentar tras cruce?', '¿Responder uso extendido?',
@@ -853,7 +853,10 @@ describe.each([
       const aGraph = f.nodes.filter((n) => META.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
       expect(aGraph.sort()).toEqual(['Enviar QR de la seña', 'Enviar ubicación', 'Enviar contacto'].sort());
       expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
-      expect(origenes('Enviar QR de la seña')).toEqual(['Preparar seña']);
+      // Dos caminos mandan la MISMA imagen: la reserva nueva y el reenvío a
+      // pedido (20/09). Los dos pasan por su compuerta.
+      expect(origenes('Enviar QR de la seña').sort())
+        .toEqual(['Preparar seña', 'Preparar reenvío del QR'].sort());
       expect(origenes('Preparar seña')).toEqual(['¿Enviar QR de la seña?']);
     });
   });
@@ -897,7 +900,11 @@ describe.each([
         // Cuelgan del envío (bloque k y el contacto de recepción); desde el
         // reintento ninguna de las dos compuertas deja pasar nada.
         '¿Enviar ubicación?', 'Enviar ubicación', 'Reportar ubicación (saliente)',
-        '¿Enviar contacto?', 'Enviar contacto', 'Reportar contacto (saliente)'].sort());
+        '¿Enviar contacto?', 'Enviar contacto', 'Reportar contacto (saliente)',
+        // El reenvío del QR cuelga del mismo envío y comparte el nodo que manda
+        // la imagen; desde el reintento su compuerta tampoco pasa nada.
+        '¿Reenviar el QR?', 'Preparar reenvío del QR', 'Enviar QR de la seña',
+        'Reportar QR (saliente)', 'QR no enviado'].sort());
       // Y al agente principal se entra por UN solo lugar efectivo: la compuerta
       // de medios, directamente o después de convertir el medio en texto.
       expect(origenes(AGENTE).sort()).toEqual(
@@ -1656,7 +1663,7 @@ describe.each([
     it('«¿Enviar ubicación?» cuelga SOLO de «Responder al cliente», después del reporte del texto', () => {
       expect(origenes('¿Enviar ubicación?')).toEqual(['Responder al cliente']);
       expect(destinos('Responder al cliente')).toEqual(
-        ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?']);
+        ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?']);
       expect(destinos('¿Enviar ubicación?', 0)).toEqual(['Enviar ubicación']);
       expect(destinos('¿Enviar ubicación?', 1)).toEqual([]);
       expect(destinos('Enviar ubicación', 0)).toEqual(['Reportar ubicación (saliente)']);
@@ -1993,9 +2000,15 @@ describe.each([
     it('desde la rama del comprobante no se llega al agente, al reintento ni al candado; sí al envío y al aviso', () => {
       const a = alcanzables('Obtener URL del medio');
       for (const n of [AGENTE, 'Reintento tras cruce', 'Procesar respuesta', '¿Afirma que agendó?', 'Comprobar reserva', 'Registrar cierre (cita)',
-        '¿Enviar QR de la seña?', 'Enviar QR de la seña']) {
+        '¿Enviar QR de la seña?']) {
         expect(a.has(n), n).toBe(false);
       }
+      // `Enviar QR de la seña` SÍ se alcanza desde acá: el reenvío a pedido
+      // (20/09) cuelga del envío y comparte ese nodo. No manda nada en esta
+      // rama —su compuerta pide `reenviarQr`, que el comprobante no trae—,
+      // y eso se comprueba abajo, evaluando la condición.
+      expect(expresion(nodo(f, '¿Reenviar el QR?').parameters['conditions'].conditions[0].leftValue,
+        {}, { 'Mensaje a enviar': { respuesta: 'x' } })).toBe(false);
       for (const n of [...NODOS_COTEJO.slice(1), 'Mensaje a enviar', 'Responder al cliente', 'Reportar mensaje (saliente)',
         '¿Transferir a humano?', 'Avisar a recepción']) {
         expect(a.has(n), n).toBe(true);
@@ -2477,10 +2490,13 @@ describe.each([
       // «Enviar ubicación» y «Enviar contacto» cuelgan del envío del texto y se
       // alcanzan por el grafo, pero sus compuertas no abren: el item del
       // comprobante no lleva `enviarUbicacion` ni `enviarContacto`.
+      // Y «Enviar QR de la seña», que desde el 20/09 comparte el nodo con el
+      // reenvío a pedido: mismo caso, su compuerta tampoco abre acá.
       expect(envian.sort()).toEqual(
-        ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar contacto'].sort());
+        ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar contacto',
+          'Enviar QR de la seña'].sort());
       const item = ejecutar(codigo('Mensaje de la seña'), [{}], { 'Respuesta de la seña': [{ respuesta: 'x', resultadoSena: 'ilegible' }], 'Config del negocio': [CON_SENA] })[0]!;
-      for (const compuerta of ['¿Enviar ubicación?', '¿Enviar contacto?']) {
+      for (const compuerta of ['¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?']) {
         expect(expresion(nodo(f, compuerta).parameters['conditions'].conditions[0].leftValue,
           {}, { 'Mensaje a enviar': item }), compuerta).toBe(false);
       }
@@ -3398,5 +3414,92 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       expect(p).toContain('Ese mensaje va CORTO');
       expect(p).toContain('NO repitas el monto de la seña');
       expect(p).toContain('NO pongas la dirección');
+    });
+  });
+
+// ---------------------------------------------------------------------------
+// (q) Reenviar el QR, y el botón de recepción solo a pedido (20/09/2026)
+// ---------------------------------------------------------------------------
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+  '(q) %s · lo que faltaba cuando el QR se pierde', (_archivo, f) => {
+    const cod = (n: string) => String(nodo(f, n).parameters['jsCode']);
+    const PENDIENTE = { senaActiva: 'si', senaPendiente: 'si', senaImporte: '1', senaMoneda: 'Bs',
+      senaQrUrl: 'https://panel/imagenDeCobro?f=abc', senaQrEnviadoEn: '2026-09-20T03:15:00.000Z',
+      senaMinutosRetencion: '15', zonaHoraria: 'America/La_Paz', numeroRecepcion: '59170000002' };
+    const procesar = (output: string, escribio: string, config: J = PENDIENTE): J =>
+      ejecutar(cod('Procesar respuesta'), [{ output }],
+        { 'Normalizar entrada': [{ from: '59170000001', userInput: escribio }],
+          'Config del negocio': [config] })[0] ?? {};
+
+    it('con una seña pendiente, el QR se reenvía: la marca no llega al cliente', () => {
+      // Caso real: una clienta escribió «con el QR por favor» y el asistente
+      // contestó que «el sistema automático de pagos por QR no está
+      // disponible». Era mentira: lo inventó porque no había forma de
+      // reenviarlo, y encima la empujó a otro canal.
+      const s = procesar('Te lo mando de nuevo. [REENVIAR_QR]', 'no me llegó el qr');
+      expect(s['reenviarQr']).toBe(true);
+      expect(String(s['respuesta'])).not.toContain('REENVIAR_QR');
+      expect(s['transferir']).toBe(false);
+    });
+
+    it('sin seña pendiente NO se reenvía nada, y lo resuelve una persona', () => {
+      // El modelo ya dijo «te lo mando»: si no hay nada que mandar, alguien
+      // tiene que mirarlo. No se le pide al modelo que lo decida.
+      const s = procesar('Te lo mando de nuevo. [REENVIAR_QR]', 'no me llegó el qr',
+        { ...PENDIENTE, senaPendiente: '' });
+      expect(s['reenviarQr']).toBe(false);
+      expect(s['transferir']).toBe(true);
+      expect(String(s['motivoTransferencia'])).toContain('no hay ninguna pendiente');
+    });
+
+    it('el pie del reenvío dice el importe, el comprobante y hasta qué hora, sin hablar de pagos recibidos', () => {
+      const item = { from: '59170000001', phoneNumberId: '1000000001' };
+      const s = ejecutar(cod('Preparar reenvío del QR'), [item],
+        { 'Config del negocio': [PENDIENTE], 'Mensaje a enviar': [item] })[0]!;
+      const pie = String(s['captionQr']);
+      expect(pie).toContain('1 Bs');
+      expect(pie).toMatch(/comprobante/i);
+      // 03:15 UTC + 15 min = 23:30 en La Paz.
+      expect(pie).toContain('23:30');
+      // PROHIBICIÓN 3: ni una palabra sobre un pago recibido o acreditado.
+      expect(pie).not.toMatch(/acreditad|verificad|recibimos|pago (entró|recibido)|simulad/i);
+      expect(s['senaQrUrl']).toBe(PENDIENTE.senaQrUrl);
+    });
+
+    it('sin saber cuándo salió el primer QR, no se inventa una hora', () => {
+      const item = { from: '59170000001' };
+      const s = ejecutar(cod('Preparar reenvío del QR'), [item],
+        { 'Config del negocio': [{ ...PENDIENTE, senaQrEnviadoEn: '' }], 'Mensaje a enviar': [item] })[0]!;
+      expect(String(s['captionQr'])).toContain('15 minutos');
+      expect(String(s['captionQr'])).not.toMatch(/hasta las \d/);
+    });
+
+    it('la compuerta del reenvío abre solo con `reenviarQr`, y cuelga del envío del texto', () => {
+      const cond = nodo(f, '¿Reenviar el QR?').parameters['conditions'].conditions[0].leftValue;
+      expect(expresion(cond, {}, { 'Mensaje a enviar': { reenviarQr: true } })).toBe(true);
+      expect(expresion(cond, {}, { 'Mensaje a enviar': { reenviarQr: false } })).toBe(false);
+      expect(expresion(cond, {}, { 'Mensaje a enviar': {} })).toBe(false);
+    });
+
+    it('EL BOTÓN DE RECEPCIÓN solo si el cliente lo pidió: salía mientras confirmaba una reserva', () => {
+      // Caso real: el modelo lo disparó solo, en medio de una confirmación de
+      // cita y también para deshacerse de una pregunta que no supo resolver.
+      const enMedioDeUnaReserva = procesar(
+        'Entendido, quedó reservado a las 10:00. [CONTACTO_RECEPCION]', '(audio) el cliente envió una nota de voz');
+      expect(enMedioDeUnaReserva['enviarContacto']).toBe(false);
+      const pidiendoElQr = procesar('No puedo. [CONTACTO_RECEPCION]', 'Con el qr por favor');
+      expect(pidiendoElQr['enviarContacto']).toBe(false);
+      for (const pide of ['me das el telefono', 'quiero hablar con una persona',
+        'cómo me comunico con ustedes', 'dame el numero de recepcion']) {
+        expect(procesar('Te paso el contacto. [CONTACTO_RECEPCION]', pide)['enviarContacto'], pide).toBe(true);
+      }
+    });
+
+    it('el prompt no promete lo que no sabe, y sigue siendo cacheable', () => {
+      const p = String(nodo(f, AGENTE).parameters['options'].systemMessage);
+      expect(p).toContain('[REENVIAR_QR]');
+      expect(p).toContain('NUNCA digas que el QR o el sistema de pagos no está disponible');
+      // El prefijo se cachea: nada que cambie de un turno a otro.
+      for (const v of ['senaPendiente', 'senaQrEnviadoEn', '$json.from']) expect(p, v).not.toContain(v);
     });
   });

@@ -687,7 +687,7 @@ describe.skipIf(!HAY_JSON)('(g) Orden v1: el entrante se reporta antes, y el sal
     // Del envío cuelgan el reporte, la compuerta del pin (bloque 1) y la del
     // segundo mensaje: el reporte PRIMERO en el lienzo (orden v1).
     expect(destinos('Responder al cliente')).toEqual(
-      ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?', '¿Enviar redes?']);
+      ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?', '¿Enviar redes?']);
     expect(y('Reportar mensaje (saliente)')).toBeLessThan(y('¿Enviar redes?'));
   });
 
