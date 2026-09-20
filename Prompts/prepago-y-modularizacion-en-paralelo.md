@@ -16,7 +16,7 @@ más **un tercero que espera en cola** en otro proyecto:
   los JSON de `Flujos/` a módulos versionados con un ensamblador.
   Prompt: `Prompts/modularizacion-flujos.md`.
 - **C · Contrato del cobrador para consumidores** — en el proyecto de cobros
-  por QR, `/home/andres-alberdi/ManejoQRSimple/`. **No se trabaja desde esta
+  por QR, `$HOME/ManejoQRSimple/`. **No se trabaja desde esta
   sesión**: es otro proyecto y lo abre otra sesión con
   `Prompts/cobrador-contrato-para-consumidores.md`. Acá se **encola** y se
   consume su contrato.
@@ -197,7 +197,7 @@ cambio.
 **C se encola así:** al terminar Diseño A, escribe en `Prompts/COORDINACION.md`
 la fila de C con el contrato exacto que A-2 espera (operaciones, campos,
 firma, cuenta de cobro `novuchat`) y avisa a Andres que **una sesión en
-`/home/andres-alberdi/ManejoQRSimple/` puede abrirse con
+`$HOME/ManejoQRSimple/` puede abrirse con
 `Prompts/cobrador-contrato-para-consumidores.md`** cuando él quiera; esa
 sesión copia el prompt a su propio `Prompts/` como primera tarea.
 
