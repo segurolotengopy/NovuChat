@@ -30,6 +30,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 import { REGION } from './region.js';
 import { validarQrSimple } from './qrSimple.js';
+import type { ProblemaQr } from './qrSimple.js';
 import { dibujarQr } from './dibujoQr.js';
 
 const db = () => getFirestore();
@@ -96,14 +97,14 @@ export const registrarQrDeCobro = onCall({ region: REGION }, async (peticion: Ca
   // --- Vencimiento -------------------------------------------------------
   // Un QR vencido no cobra, y el modo de fallo es el peor posible: el cliente
   // intenta pagar, no puede, y el negocio se entera por un reclamo.
-  const problemas: string[] = [];
+  const problemas: ProblemaQr[] = [];
   const advertencias: string[] = [];
   const vence = finDelDiaBoliviano(venceEl);
   const ahora = Date.now();
   if (vence === null) {
-    problemas.push('Falta la fecha de vencimiento del QR, o no tiene el formato aaaa-mm-dd.');
+    problemas.push({ campo: 'venceEl', texto: 'Falta la fecha de vencimiento del QR, o no tiene el formato aaaa-mm-dd.' });
   } else if (vence <= ahora) {
-    problemas.push('Ese QR ya venció. Genera uno nuevo en tu banco, con la fecha más lejana que te permita.');
+    problemas.push({ campo: 'venceEl', texto: 'Ese QR ya venció. Genera uno nuevo en tu banco, con la fecha más lejana que te permita.' });
   } else if (vence - ahora < 30 * DIAS) {
     advertencias.push('Ese QR vence en menos de un mes. Cuando venza, tus clientes no '
       + 'van a poder pagar. Conviene generar uno con la fecha más lejana que permita tu banco.');

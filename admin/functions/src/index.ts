@@ -34,6 +34,9 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 // `no_cuadra` o `ilegible`— y la retención vencida se anota sin mandarle nada
 // al paciente. El porqué de cada decisión está en `sena.ts`.
 export { cotejarComprobante, senaVencida } from './sena.js';
+// Las coordenadas del pin salen del enlace de Maps que pega el comercio: nadie
+// carga latitud y longitud a mano (19/09/2026).
+export { ubicacionDeEnlace } from './mapa.js';
 // Recordatorio de solicitud pendiente (bloque 4, `Analisis/31` §4): el
 // barrido de la hora pregunta a quién le toca y marca ANTES de enviar.
 export { seguimientosPendientes, seguimientoEnviado } from './seguimientos.js';

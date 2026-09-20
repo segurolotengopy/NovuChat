@@ -2153,6 +2153,38 @@ aparte, nunca incluido en el plan (`Analisis/31` §4). No le escribe a nadie que
 no haya escrito primero. Y no mide de dónde vino el lead —la ventana gratuita
 de 72 h de los anuncios sigue pendiente desde `Analisis/25` §1.4.
 
+## 4quindecies. La consola nunca da un mensaje genérico: resalta el campo
+
+**Política, decidida el 19/09/2026 por Andres**, después de que un
+administrador con todo lo demás bien no pudiera guardar su QR: la pantalla le
+escribía una lista suelta debajo del botón —«Tienes que confirmar que…»— y él
+tenía que adivinar cuál de los ocho controles era. Dos de esos controles eran
+casillas que ni siquiera se veían sin bajar.
+
+**La regla, para toda la consola:**
+
+1. **Todo problema sabe a qué campo pertenece.** El servidor no devuelve
+   cadenas sueltas: devuelve `{ campo, texto }`. Si un problema no corresponde
+   a ningún control —se cayó la red, falta permiso— no se mezcla con los
+   demás: va aparte, al pie, porque no hay nada que el usuario pueda tocar.
+2. **El campo se resalta**, con `aria-invalid` y el mensaje debajo del control
+   (`.campo-error`, `aria-describedby`), no solo en un resumen lejano.
+3. **El foco va al primer campo que falta**, y se desplaza hasta él: en un
+   formulario largo, un aviso fuera de la pantalla no existe.
+4. **El resumen de arriba nombra el campo**, con el mismo rótulo que se ve en
+   la pantalla: «Se puede usar muchas veces: tienes que confirmar…».
+
+Cubierto por `pruebas/qr.test.ts` («Cada problema dice a qué campo pertenece»),
+que exige que TODO problema de cualquier QR traiga un campo conocido: un
+mensaje nuevo sin campo rompe la suite, que es como se sostiene una política.
+
+Lo mismo vale al revés: **no se le pide al comercio un dato que se puede
+deducir**. Las coordenadas del pin se pedían en dos campos, con la instrucción
+de hacer clic derecho en Google Maps; nadie iba a hacerlo. Se sacan del enlace
+que el comercio ya pega (`functions/src/mapa.ts`), y la pantalla solo informa
+si quedaron detectadas.
+
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido

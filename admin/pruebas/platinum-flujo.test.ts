@@ -172,6 +172,9 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
     // contra Meta, gemelos de los de arriba. Los tres nodos de Gemini de esa
     // rama van sin nombre, como los dos lectores del comprobante.
     'Obtener URL del medio (general)', 'Descargar medio',
+    // El botón para escribirle a recepción (19/09): el interactivo sale por
+    // Graph con la credencial de envío, y su reporte va a la ingesta.
+    'Enviar contacto', 'Reportar contacto (saliente)',
   ];
 
   it('tiene el nombre del cliente y los mismos nodos del Demo A, con los mismos ids, tipos y posiciones', () => {
@@ -216,12 +219,13 @@ describe('(a) Es el Demo A vigente, nodo por nodo, salvo los cambios declarados'
       }
     }
     for (const nombre of ['Traer configuración', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre (cita)',
-      'Reportar ubicación (saliente)', 'Reportar QR (saliente)', 'Cotejar en el servidor']) {
+      'Reportar ubicación (saliente)', 'Reportar QR (saliente)', 'Cotejar en el servidor',
+      'Reportar contacto (saliente)']) {
       expect(nodo(flujo, nombre).credentials?.['httpHeaderAuth']?.name).toBe('NovuChat ingesta (Clínica Platinum)');
     }
     for (const nombre of ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación',
       'Enviar QR de la seña', 'Obtener URL del medio', 'Descargar comprobante',
-      'Obtener URL del medio (general)', 'Descargar medio']) {
+      'Obtener URL del medio (general)', 'Descargar medio', 'Enviar contacto']) {
       expect(nodo(flujo, nombre).credentials?.['whatsAppApi']?.name).toBe('WhatsApp Clínica Platinum (envío)');
     }
     expect(TEXTO).not.toContain('Cierres NovuChat A');
@@ -789,7 +793,8 @@ describe.each([
       expect(destinos('Mensaje a enviar')).toEqual(['Responder al cliente']);
       // El reporte del texto primero y, debajo, la compuerta del pin a pedido
       // (bloque k): en el camino normal no pasa nada por ahí.
-      expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
+      expect(destinos('Responder al cliente')).toEqual(
+        ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?']);
       expect(origenes('Mensaje a enviar').sort()).toEqual([
         'Comercio no operativo', 'Procesar reintento', '¿Afirma que agendó?', '¿Deshacer cita solapada?',
         '¿Reintentar tras cruce?', '¿Responder uso extendido?',
@@ -846,7 +851,7 @@ describe.each([
       // lo que CodeQL marca (js/regex/missing-regexp-anchor), y con razón:
       // `graph.facebook.com.ejemplo.net` pasaría el filtro.
       const aGraph = f.nodes.filter((n) => META.test(String(n.parameters['url'] ?? ''))).map((n) => n.name);
-      expect(aGraph.sort()).toEqual(['Enviar QR de la seña', 'Enviar ubicación'].sort());
+      expect(aGraph.sort()).toEqual(['Enviar QR de la seña', 'Enviar ubicación', 'Enviar contacto'].sort());
       expect(origenes('Enviar ubicación')).toEqual(['¿Enviar ubicación?']);
       expect(origenes('Enviar QR de la seña')).toEqual(['Preparar seña']);
       expect(origenes('Preparar seña')).toEqual(['¿Enviar QR de la seña?']);
@@ -889,8 +894,10 @@ describe.each([
       }
       expect([...a].sort()).toEqual(['Avisar a recepción', 'Mensaje a enviar', 'Procesar reintento',
         'Reportar mensaje (saliente)', 'Responder al cliente', '¿Transferir a humano?',
-        // Cuelgan del envío (bloque k); desde el reintento la compuerta no pasa.
-        '¿Enviar ubicación?', 'Enviar ubicación', 'Reportar ubicación (saliente)'].sort());
+        // Cuelgan del envío (bloque k y el contacto de recepción); desde el
+        // reintento ninguna de las dos compuertas deja pasar nada.
+        '¿Enviar ubicación?', 'Enviar ubicación', 'Reportar ubicación (saliente)',
+        '¿Enviar contacto?', 'Enviar contacto', 'Reportar contacto (saliente)'].sort());
       // Y al agente principal se entra por UN solo lugar efectivo: la compuerta
       // de medios, directamente o después de convertir el medio en texto.
       expect(origenes(AGENTE).sort()).toEqual(
@@ -1520,12 +1527,18 @@ describe.each([
       expect(plantilla(p, { ...cfg, direccionMaps: MAPA })).toContain(`mapa: ${MAPA}`);
     });
 
-    it('la regla 6c: confirmación con dirección y enlace en el MISMO mensaje, «¿dónde quedan?», y la marca solo a pedido', () => {
+    it('la regla 6c: el PIN reemplaza al enlace, que en Android muere; el enlace queda de respaldo', () => {
       expect(p.indexOf('6c.')).toBeGreaterThan(p.indexOf('6b.'));
       expect(p.indexOf('6c.')).toBeLessThan(p.indexOf('7. Eres asistente'));
-      expect(regla6c).toContain('Al confirmar una cita, incluye en el MISMO mensaje la dirección y, si existe, el enlace del mapa');
-      expect(regla6c).toContain('Ante «¿dónde quedan?» o «¿cómo llego?», responde con la dirección y el enlace en ese mismo mensaje.');
-      expect(regla6c).toContain('Si el cliente pide EXPRESAMENTE la ubicación, el pin o que le mandes la ubicación, respóndele en el mismo mensaje con la dirección y termina EXACTAMENTE con la marca [ENVIAR_UBICACION]');
+      expect(regla6c).toContain('Al confirmar una cita, incluye en el MISMO mensaje la dirección escrita');
+      // CON pin cargado: ningún enlace, y la marca ante cualquier pregunta por
+      // la ubicación. El enlace corto se reescribe en Android a la forma vieja
+      // de Dynamic Links, apagada por Google, y muere con «Invalid Dynamic
+      // Link» (comprobado con un teléfono el 19/09/2026).
+      expect(regla6c).toContain('NO mandes ningún enlace de mapa');
+      expect(regla6c).toContain('termina EXACTAMENTE con la marca [ENVIAR_UBICACION]');
+      // SIN pin cargado: el enlace sigue siendo el respaldo, y no hay marca.
+      expect(regla6c).toContain('Si NO tiene el pin cargado, usa en su lugar el enlace del mapa cuando exista');
       expect(regla6c).toContain('no uses esa marca en ningún otro caso ni la menciones');
       // Y §4 CONFIRMACIÓN pide el «dónde» dentro del mismo mensaje de cierre.
       expect(p).toContain('con quién y dónde —la dirección y, si existe, el enlace del mapa—, y despídete con calidez, todo en el mismo mensaje.');
@@ -1601,7 +1614,8 @@ describe.each([
   describe('4. el cableado: cuelga del envío, debajo del reporte del texto, y no toca el camino normal', () => {
     it('«¿Enviar ubicación?» cuelga SOLO de «Responder al cliente», después del reporte del texto', () => {
       expect(origenes('¿Enviar ubicación?')).toEqual(['Responder al cliente']);
-      expect(destinos('Responder al cliente')).toEqual(['Reportar mensaje (saliente)', '¿Enviar ubicación?']);
+      expect(destinos('Responder al cliente')).toEqual(
+        ['Reportar mensaje (saliente)', '¿Enviar ubicación?', '¿Enviar contacto?']);
       expect(destinos('¿Enviar ubicación?', 0)).toEqual(['Enviar ubicación']);
       expect(destinos('¿Enviar ubicación?', 1)).toEqual([]);
       expect(destinos('Enviar ubicación', 0)).toEqual(['Reportar ubicación (saliente)']);
@@ -2399,12 +2413,16 @@ describe.each([
       const a = alcanzables('Obtener URL del medio');
       const envian = f.nodes.filter((n) => a.has(n.name) && ((n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send')
         || META.test(String(n.parameters['url'] ?? '')))).map((n) => n.name);
-      // «Enviar ubicación» cuelga del envío del texto (bloque k) y se alcanza
-      // por el grafo, pero su compuerta no abre: el item del comprobante no
-      // lleva `enviarUbicacion`.
-      expect(envian.sort()).toEqual(['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación'].sort());
+      // «Enviar ubicación» y «Enviar contacto» cuelgan del envío del texto y se
+      // alcanzan por el grafo, pero sus compuertas no abren: el item del
+      // comprobante no lleva `enviarUbicacion` ni `enviarContacto`.
+      expect(envian.sort()).toEqual(
+        ['Responder al cliente', 'Avisar a recepción', 'Enviar ubicación', 'Enviar contacto'].sort());
       const item = ejecutar(codigo('Mensaje de la seña'), [{}], { 'Respuesta de la seña': [{ respuesta: 'x', resultadoSena: 'ilegible' }], 'Config del negocio': [CON_SENA] })[0]!;
-      expect(expresion(nodo(f, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue, {}, { 'Mensaje a enviar': item })).toBe(false);
+      for (const compuerta of ['¿Enviar ubicación?', '¿Enviar contacto?']) {
+        expect(expresion(nodo(f, compuerta).parameters['conditions'].conditions[0].leftValue,
+          {}, { 'Mensaje a enviar': item }), compuerta).toBe(false);
+      }
     });
 
     it('las notas declaran el costo: +1 solo al reservar con seña; el comprobante se contesta en UN mensaje fijo', () => {
@@ -2633,7 +2651,8 @@ describe.each([
           && String(n.parameters['resource'] ?? 'message') === 'message')
         || (n.type === 'n8n-nodes-base.httpRequest' && String(n.parameters['url'] ?? '').includes('/messages'));
       expect(f.nodes.filter(envia).map((n) => n.name).sort()).toEqual(
-        ['Avisar a recepción', 'Enviar QR de la seña', 'Enviar ubicación', 'Responder al cliente'].sort());
+        ['Avisar a recepción', 'Enviar QR de la seña', 'Enviar ubicación', 'Enviar contacto',
+          'Responder al cliente'].sort());
       for (const n of RAMA) expect(envia(nodo(f, n)), n).toBe(false);
       expect(nodo(f, 'Obtener URL del medio (general)').parameters['resource']).toBe('media');
     });
@@ -3128,3 +3147,81 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// (o) El número de recepción sale en un BOTÓN, no escrito en el texto
+// ---------------------------------------------------------------------------
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA]])(
+  '(o) %s · contacto de recepción con botón', (_archivo, f) => {
+    const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
+    /** Un turno como lo deja el agente, con la marca que escribe el modelo. */
+    const procesar = (salida: string, cfg: J = {}) => ejecutar(codigoDe('Procesar respuesta'),
+      [{ output: salida }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: 'dame el número' }],
+        'Config del negocio': [{ numeroRecepcion: '59170000002', nombreNegocio: 'Un Negocio', ...cfg }] })[0] ?? {};
+
+    it('la marca NO llega nunca al cliente, y enciende el botón', () => {
+      const s = procesar('Te paso el contacto de recepción. [CONTACTO_RECEPCION]');
+      expect(String(s['respuesta'])).not.toContain('CONTACTO_RECEPCION');
+      expect(String(s['respuesta'])).not.toContain('[');
+      expect(s['enviarContacto']).toBe(true);
+    });
+
+    it('sin número cargado NO se manda nada: el texto ya dice que atiende una persona', () => {
+      expect(procesar('Te paso el contacto. [CONTACTO_RECEPCION]', { numeroRecepcion: '' })['enviarContacto']).toBe(false);
+    });
+
+    it('sin la marca no se manda: es un mensaje pagado y solo sale a pedido', () => {
+      expect(procesar('El horario es de 09:00 a 19:00.')['enviarContacto']).toBe(false);
+    });
+
+    it('si la respuesta quedó vacía tampoco sale: nunca un botón suelto sin texto', () => {
+      expect(procesar('[CONTACTO_RECEPCION]')['enviarContacto']).toBe(false);
+    });
+
+    it('el número viaja en el BOTÓN, y el cuerpo del mensaje no lo escribe', () => {
+      const cuerpo = JSON.parse(String(expresion(
+        nodo(f, 'Enviar contacto').parameters['jsonBody'], {},
+        { 'Mensaje a enviar': { from: '59170000001', numeroRecepcion: '59170000002',
+          nombreNegocio: 'Un Negocio', phoneNumberId: '1000000001', waGraphVersion: 'v26.0' } },
+      ))) as J;
+      expect(cuerpo['type']).toBe('interactive');
+      expect((cuerpo['interactive'] as J)['type']).toBe('cta_url');
+      const accion = ((cuerpo['interactive'] as J)['action'] as J)['parameters'] as J;
+      expect(String(accion['url'])).toContain('https://wa.me/59170000002');
+      expect(String(((cuerpo['interactive'] as J)['body'] as J)['text'])).not.toContain('59170000002');
+    });
+
+    it('la compuerta solo abre con `enviarContacto`, y cuelga del envío del texto', () => {
+      const salidas = (desde: string, salida = 0) =>
+        ((f.connections[desde]?.['main'] ?? [])[salida] ?? []).map((x) => x.node);
+      const entradas = (hacia: string) => Object.entries(f.connections)
+        .filter(([, c]) => (c['main'] ?? []).some((r) => (r ?? []).some((x) => x.node === hacia)))
+        .map(([n]) => n);
+      const cond = nodo(f, '¿Enviar contacto?').parameters['conditions'].conditions[0].leftValue;
+      expect(expresion(cond, {}, { 'Mensaje a enviar': { enviarContacto: true } })).toBe(true);
+      expect(expresion(cond, {}, { 'Mensaje a enviar': { enviarContacto: false } })).toBe(false);
+      expect(salidas('¿Enviar contacto?', 0)).toEqual(['Enviar contacto']);
+      expect(salidas('¿Enviar contacto?', 1)).toEqual([]);
+      expect(entradas('¿Enviar contacto?')).toEqual(['Responder al cliente']);
+      expect(salidas('Enviar contacto')).toEqual(['Reportar contacto (saliente)']);
+    });
+
+    it('el interactivo se cuenta como saliente: es un mensaje pagado igual que cualquiera', () => {
+      const cuerpo = JSON.parse(String(expresion(
+        nodo(f, 'Reportar contacto (saliente)').parameters['jsonBody'],
+        { messages: [{ id: 'wamid.BTN' }] },
+        { 'Mensaje a enviar': { from: '59170000001' } },
+      ))) as J;
+      expect(cuerpo).toMatchObject({ telefono: '59170000001', direccion: 'saliente',
+        tipo: 'interactive', idMeta: 'wamid.BTN' });
+      expect(String(cuerpo['texto'])).not.toMatch(/\d{6,}/);
+    });
+
+    it('la regla 6d del prompt: el número NO se escribe, se manda el botón', () => {
+      const p = String(nodo(f, AGENTE).parameters['options'].systemMessage);
+      expect(p).toContain('6d. HABLAR CON UNA PERSONA');
+      expect(p).toContain('NO escribas el número en el texto');
+      expect(p).toContain('[CONTACTO_RECEPCION]');
+    });
+  });
