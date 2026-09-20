@@ -1124,6 +1124,40 @@
       }
     },
     {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a-if-comprobante-uso-extendido-c1",
+              "leftValue": "={{ $json.esComprobante === true && $json.atencionEstado === 'operador' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a-if-comprobante-uso-extendido",
+      "name": "¿Comprobante en uso extendido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        770,
+        -80
+      ]
+    },
+    {
       "id": "a-code-uso-extendido",
       "name": "Uso extendido",
       "type": "n8n-nodes-base.code",
@@ -3201,7 +3235,7 @@
         ],
         [
           {
-            "node": "Uso extendido",
+            "node": "¿Comprobante en uso extendido?",
             "type": "main",
             "index": 0
           }
@@ -3971,6 +4005,24 @@
         [
           {
             "node": "Enviar QR de la seña",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comprobante en uso extendido?": {
+      "main": [
+        [
+          {
+            "node": "Obtener URL del medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Uso extendido",
             "type": "main",
             "index": 0
           }

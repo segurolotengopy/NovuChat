@@ -626,7 +626,12 @@ describe.skipIf(!HAY_JSON)('(f) Obedece los umbrales del servidor antes de llama
     expect(destinos('¿Trae un medio?', 1)).toEqual(['Estado de la conversación']);
     expect(origenes('Estado de la conversación').sort()).toEqual(
       ['Preparar imagen', 'Preparar transcripción', '¿Trae un medio?'].sort());
-    expect(destinos('¿Atención normal?', 1)).toEqual(['Uso extendido']);
+    // En uso extendido, un COMPROBANTE con seña pendiente se desvía al cotejo
+    // (20/09/2026: se ignoraba un pago real); todo lo demás va al aviso fijo.
+    // Que por ahí no se llegue a ningún agente lo prueba `flujos-umbrales`.
+    expect(destinos('¿Atención normal?', 1)).toEqual(['¿Comprobante en uso extendido?']);
+    expect(destinos('¿Comprobante en uso extendido?', 0)).toEqual(['Obtener URL del medio']);
+    expect(destinos('¿Comprobante en uso extendido?', 1)).toEqual(['Uso extendido']);
     // Y de ahí, tres compuertas sin modelo: el agente SOLO entra por la
     // última, y ninguna de las cuatro es alcanzable desde «Uso extendido».
     expect(destinos('Estado de la conversación')).toEqual(['¿Menú inicial?']);
