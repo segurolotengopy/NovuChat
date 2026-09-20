@@ -102,6 +102,8 @@ fi
 command -v gh >/dev/null || { gris "  (sin gh: siga la corrida en GitHub)"; exit 0; }
 REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo '')
 gris "  Esperando a que arranque la corrida..."
+gris "  (esto NO se cuelga: el pipeline corre en GitHub y este proceso solo mira;"
+gris "   puede cortarlo con Ctrl+C cuando quiera, la etiqueta ya esta subida)"
 ID=""
 for _ in $(seq 1 30); do
   ID=$(gh run list --workflow ci-node-firebase.yml --event push --limit 20 \
@@ -115,6 +117,7 @@ if [[ -z "$ID" || "$ID" == "null" ]]; then
 fi
 echo "  Corrida : https://github.com/$REPO/actions/runs/$ID"
 echo
+verde "  ⏸  DE ACA EN ADELANTE EL PIPELINE NO AVANZA SOLO: ESPERA POR USTED."
 verde "  SU SEGUNDO Y ULTIMO PASO: aprobar el entorno «production» cuando el"
 verde "  pipeline lo pida, en ese mismo enlace (boton «Review deployments»)."
 echo
