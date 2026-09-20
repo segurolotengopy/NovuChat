@@ -92,12 +92,23 @@ corte con período de gracia (hoy corta el 1).
 | **Varias cuentas de cobro**, cada una con alias, credenciales y datos | ESTADO 16/09/2026 |
 | API HTTP y consola del comerciante (demo), Firestore como estado | `packages/functions`, `demo-web` |
 
-Lo que **falta** ahí, y no es de NovuChat: el pase a producción formal
-(la cuenta de pruebas del banco, A4; la comisión por abono, C9, **ya
-respondida: no hay comisión**), y un
-**contrato para consumidores**: hoy la API es la del demo. Para NovuChat hace
-falta `crearCobro` con referencia externa y un **aviso firmado** cuando el
-cobro pasa a `CONFIRMADO`. El envío del QR por WhatsApp que ManejoQRSimple
+**Lo que la API ya tiene** (verificado el 20/09 en `packages/functions/src/api/`):
+`POST /api/cobros` (teléfono del cliente, concepto, monto, horas de vigencia),
+`GET /api/cobros` y `/api/cobros/{id}`, `GET …/qr`, y las acciones `enviar`,
+`renovar`, `anular`, `comprobante`, `verificar`, `resolver`, `buscar-abono` y
+`sondear-anulacion`. **Crear, consultar, anular y ver el QR ya existen.**
+
+Lo que **falta** para que otro producto la consuma, y no es de NovuChat:
+(a) **identidad del consumidor**: la API autentica al dueño de la consola (un
+token fijo o un ID token de Firebase), no a un tercero, y no acota lo que ve a
+una cuenta de cobro —la cuenta se elige por proceso, no por petición—;
+(b) **referencia externa e idempotencia por esa referencia**: hoy dos `POST`
+iguales crean dos cobros; (c) **aviso al consumidor** cuando el cobro pasa a
+`CONFIRMADO`: no hay salida, se consulta por `GET`; (d) que `telefonoCliente`
+sea **opcional**: para el prepago no hay un «cliente» con teléfono que
+mandar al cobrador, y mandarlo sería un dato personal que el cobrador no
+necesita. Y el pase a producción formal (la cuenta de pruebas del banco, A4;
+la comisión, C9, **ya respondida: no hay**). El envío del QR por WhatsApp que ManejoQRSimple
 delega en otro proyecto **no se usa**: NovuChat manda el QR desde su propio
 número.
 
