@@ -339,7 +339,9 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
         // su segundo mensaje. Con orden v1 el texto se reporta PRIMERO.
         expect(destinos(f, 'Responder al cliente')[0]).toBe('Reportar mensaje (saliente)');
         for (const d of destinos(f, 'Responder al cliente').slice(1)) {
-          expect(d, d).toMatch(/^¿Enviar /);
+          // Todo lo que cuelga debajo del reporte es una COMPUERTA que solo
+          // pasa a pedido: el pin, el contacto, el reenvío del QR, las redes.
+          expect(d, d).toMatch(/^¿(Enviar|Reenviar) /);
         }
       } else {
         expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())

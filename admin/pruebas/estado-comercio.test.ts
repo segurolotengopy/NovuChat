@@ -174,6 +174,7 @@ describe('La compuerta que aplica el estado', () => {
     // (Analisis/34 §2) y del contacto de recepción, y en el aviso neutro no
     // pasa nada por ninguna de las dos.
     expect(destinos('Responder al cliente')[0]).toBe('Reportar mensaje (saliente)');
-    expect(destinos('Responder al cliente').slice(1)).toEqual(['¿Enviar ubicación?', '¿Enviar contacto?']);
+    expect(destinos('Responder al cliente').slice(1)).toEqual(
+      ['¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?']);
   });
 });
