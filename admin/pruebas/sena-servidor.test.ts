@@ -46,6 +46,7 @@ const T_NADA = 'sena-sin-cobro';    // solo captación: no tiene con qué cobrar
 const NUMERO = '1000000097';
 const TEL_1 = '59170000001';
 const TEL_2 = '59170000002';
+const TEL_3 = '59170000003';   // sin ninguna seña pendiente: el caso de la cita huérfana
 const MES = new Date().toISOString().slice(0, 7);
 
 // QR Simple reutilizable, de monto abierto, a nombre de PEREZ GOMEZ JUAN CARLOS,
@@ -343,7 +344,12 @@ describe('4. cotejarComprobante', () => {
 });
 
 describe('5. senaVencida', () => {
-  const vencida = (telefono: string, referencia: string) => llamar(senaVencida, { telefono, referencia });
+  const vencida = (telefono: string, referencia: string, extra: Record<string, unknown> = {}) =>
+    llamar(senaVencida, { telefono, referencia, ...extra });
+  /** Una cita creada hace `min` minutos, como la reporta el flujo. */
+  const creadaHace = (min: number) => ({
+    creadoEn: new Date(Date.now() - min * 60 * 1000).toISOString(), minutosRetencion: 15,
+  });
 
   it('sin referencia es 400', async () => {
     expect((await vencida(TEL_2, '')).codigo).toBe(400);
@@ -386,6 +392,52 @@ describe('5. senaVencida', () => {
     const r = await comprobante(TEL_2, { monto: '50' });
     expect(r.codigo).toBe(409);
     expect(r.cuerpo).toEqual({ error: 'sin_sena_pendiente' });
+  });
+
+  // --- LA CITA HUÉRFANA (decisión de Andres, 20/09/2026) --------------------
+  // Un horario con el rótulo «PENDIENTE DE SEÑA» y SIN seña pendiente en el
+  // servidor es un horario bloqueado que nadie va a pagar: pasa cuando el QR no
+  // llegó a salir, que es lo que ocurrió el 20/09 con una clienta real. Antes
+  // quedaba ahí para siempre, porque el servidor no autorizaba borrarla.
+
+  it('una huérfana vencida SÍ se autoriza a borrar, y queda contada y anotada', async () => {
+    const r = await vencida(TEL_3, 'evt_huerfana', creadaHace(40));
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo).toEqual({ registrado: true, repetido: false, motivo: 'huerfana' });
+    expect((await metricas())['senasHuerfanas']).toBe(1);
+    const renglones = await bitacora('sena_vencida');
+    expect(renglones.some((x) => x['codigo'] === 'huerfana')).toBe(true);
+  });
+
+  it('una huérfana que TODAVÍA no cumplió la retención NO se borra', async () => {
+    const r = await vencida(TEL_3, 'evt_huerfana_nueva', creadaHace(3));
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_sena_pendiente' });
+  });
+
+  it('sin saber cuándo se creó tampoco se borra: no se autoriza a ciegas', async () => {
+    const r = await vencida(TEL_3, 'evt_huerfana_sin_fecha');
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_sena_pendiente' });
+  });
+
+  it('una cita YA PAGADA con el rótulo puesto NO se borra: eso destruiría una cita paga', async () => {
+    // El caso peligroso: el comprobante cuadró y lo que falló fue quitarle el
+    // rótulo. El cierre con `cuadra` es la prueba de que alguien pagó.
+    await db.doc(`tenants/${T}/cierres/cita_evt_pagada`).set({
+      tipo: 'cita', referencia: 'evt_pagada', cotejo: { resultado: 'cuadra' },
+    });
+    const r = await vencida(TEL_3, 'evt_pagada', creadaHace(90));
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'cita_pagada' });
+    // Y queda anotado para que una persona lo mire.
+    const renglones = await bitacora('sena_vencida');
+    expect(renglones.some((x) => x['codigo'] === 'cita_pagada_con_rotulo' && x['resultado'] === 'rechazado')).toBe(true);
+  });
+
+  it('un cotejo que NO cuadró no protege a la cita: sigue siendo huérfana', async () => {
+    await db.doc(`tenants/${T}/cierres/cita_evt_nocuadra`).set({
+      tipo: 'cita', referencia: 'evt_nocuadra', cotejo: { resultado: 'no_cuadra' },
+    });
+    const r = await vencida(TEL_3, 'evt_nocuadra', creadaHace(90));
+    expect(r.cuerpo).toEqual({ registrado: true, repetido: false, motivo: 'huerfana' });
   });
 
   it('un QR nuevo para el mismo teléfono abre otra solicitud desde cero', async () => {

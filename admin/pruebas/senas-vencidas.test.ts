@@ -111,6 +111,16 @@ describe('El flujo: forma, ids y ningún valor real', () => {
     expect(5).toBeLessThanOrEqual(5);
   });
 
+  it('el reporte al servidor manda CUÁNDO se creó la cita y cuánto se retiene', () => {
+    // El servidor vuelve a exigir el tiempo antes de autorizar un borrado: un
+    // límite que solo vive en el flujo no existe (CLAUDE.md §7), y acá lo que
+    // se autoriza es borrar la cita de un cliente.
+    const cuerpo = String(nodo('Reportar seña vencida').parameters['jsonBody']);
+    for (const campo of ['telefono', 'referencia', 'creadoEn', 'minutosRetencion']) {
+      expect(cuerpo, campo).toContain(campo);
+    }
+  });
+
   it('NUNCA hay un nodo de WhatsApp ni un envío a Graph: no escribe al paciente', () => {
     for (const n of f.nodes) {
       expect(n.type, n.name).not.toMatch(/whatsApp/i);
@@ -239,7 +249,12 @@ describe('Reportar y recién entonces borrar', () => {
     expect(r.parameters['options']).toMatchObject({ response: { response: { fullResponse: true, neverError: true } } });
     expect(r.onError).toBe('continueRegularOutput');
     const v = vencidas([cita({})])[0]!;
-    expect(JSON.parse(String(expresion(r.parameters['jsonBody'], v)))).toEqual({ telefono: '59170000001', referencia: 'ev-1' });
+    expect(JSON.parse(String(expresion(r.parameters['jsonBody'], v)))).toMatchObject({
+      telefono: '59170000001', referencia: 'ev-1', minutosRetencion: expect.any(Number),
+    });
+    // `creadoEn` viaja tal cual lo dio Google: el servidor lo vuelve a exigir
+    // antes de autorizar que se borre la cita de un cliente.
+    expect(JSON.parse(String(expresion(r.parameters['jsonBody'], v)))['creadoEn']).toBe(v['creadoEn']);
     expect(expresion(r.parameters['headerParameters'].parameters[0].value, {}, { 'Config de la seña': { phoneNumberId: '1000000001' } })).toBe('1000000001');
   });
 
