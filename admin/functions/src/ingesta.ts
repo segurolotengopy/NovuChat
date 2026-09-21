@@ -16,6 +16,14 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './planes.js';
+// EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
+// saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
+// aplica lo que decidió, dentro de la transacción que ya existía.
+import {
+  camposDerivados, consumidasDe, consumoDeConversacion, corteAplicable, corteDe, estadoDeServicio,
+  mensajeCortesia, modalidadDe, rechazoPorPrepago, type CuentaCruda, type EstadoServicio,
+  type MotivoCorte,
+} from './prepago.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
@@ -636,7 +644,13 @@ type TipoEvento =
   // lee esta unión hasta el primero que encuentra, así que uno escrito acá
   // arriba corta la lista y deja tipos fuera del control que compara la
   // ingesta con las reglas y con la consola. Costó una corrida el 17/09.
-  | 'seguimiento_enviado';
+  | 'seguimiento_enviado'
+  // PREPAGO (bloque A-0, 20/09, `DISENO.md` §4undecies): el servicio se cortó
+  // por falta de pago o de conversaciones (`codigo` lleva el motivo), volvió,
+  // y entró un pago. El corte y la reanudación los escribe la ingesta, y el
+  // pago los bloques A-1 y A-2. En modo observación no sale `corte_servicio`:
+  // el corte observado va a la auditoría, no a la bitácora que lee el comercio.
+  | 'corte_servicio' | 'reanudacion_servicio' | 'pago_registrado';
 
 interface Evento {
   tipo: TipoEvento;
@@ -1116,11 +1130,16 @@ export const ingesta = onRequest(
     // más por mensaje; a la tarifa de Firestore, nada.
     // -----------------------------------------------------------------------
     const refCuenta = db.doc(`tenants/${tenantId}/cuenta/estado`);
+    // La bandera global del modo observación del prepago (`DISENO.md`
+    // §4undecies.4). Se lee en la misma transacción, +1 lectura por mensaje:
+    // más barato que un caché cuya invalidación habría que probar.
+    const refPlataformaPrepago = db.doc('plataforma/prepago');
+    const refAuditoria = db.collection(`tenants/${tenantId}/auditoria`);
     const ahoraMs = Date.now();
 
     const veredicto = await db.runTransaction(async (tx) => {
-      const [conversacion, cuentaDoc] = await Promise.all([
-        tx.get(refConversacion), tx.get(refCuenta),
+      const [conversacion, cuentaDoc, plataformaDoc] = await Promise.all([
+        tx.get(refConversacion), tx.get(refCuenta), tx.get(refPlataformaPrepago),
       ]);
       const marcas = (conversacion.data() ?? {}) as MarcasDeConteo;
       const conteo = contadoresDelMensaje(marcas, periodo, mensaje.direccion, ahoraMs, mensaje.texto);
@@ -1128,6 +1147,7 @@ export const ingesta = onRequest(
       // Se mira lo guardado ANTES de aplicar este mensaje: el estado describe
       // qué hacer con la consulta que acaba de llegar, no con la siguiente.
       const cuenta = cuentaDoc.data();
+      const cuentaCruda = (cuenta ?? {}) as CuentaCruda;
       const umbrales = umbralesDeAtencion(cuenta);
       const atencion = estadoDeAtencion(marcas, umbrales, ahoraMs);
       const aviso = mensaje.direccion === 'entrante'
@@ -1141,16 +1161,153 @@ export const ingesta = onRequest(
       //
       // CUÁNTO CUESTA. La cuenta ya se leía en esta transacción (umbrales). El
       // agregado del mes no: se lee SOLO si este mensaje suma una conversación
-      // Y el aviso del mes todavía no salió. O sea, una lectura por conversación
-      // facturada (no por mensaje) hasta el día del aviso, y cero después.
+      // Y (el aviso del mes todavía no salió O la cuenta tiene modalidad de
+      // prepago, porque solo un mensaje que ABRIRÍA una conversación puede
+      // chocar con `sin_conversaciones`). Para un demo es exactamente lo de
+      // antes: una lectura por conversación facturada hasta el día del aviso.
       // Leerlo dentro de la transacción es lo que impide que dos conversaciones
-      // simultáneas avisen dos veces: la segunda se reintenta y ve la marca.
-      const metricasDoc = conteo.conversacion && avisoConsumoPendiente(cuenta, periodo)
-        ? await tx.get(refMetricas) : null;
+      // simultáneas avisen (o corten) dos veces: la segunda se reintenta y ve
+      // la marca.
+      const conModalidad = modalidadDe(cuentaCruda) !== 'demostracion';
+      const corteGuardado = corteDe(cuentaCruda);
+      // Con un corte guardado también se lee: hay que saber con exactitud si
+      // sigue vigente para borrarlo o no, y sin el agregado `sin_conversaciones`
+      // no se puede juzgar.
+      const necesitaMetricas = (conteo.conversacion
+        && (avisoConsumoPendiente(cuenta, periodo) || conModalidad))
+        || (conModalidad && corteGuardado !== null);
+      const metricasDoc = necesitaMetricas ? await tx.get(refMetricas) : null;
       const previasDelMes = Number(metricasDoc?.get('conversaciones'));
       const avisoConsumo = metricasDoc
         ? avisoDeConsumo(cuenta, (Number.isFinite(previasDelMes) ? previasDelMes : 0) + 1, periodo)
         : null;
+
+      // -------------------------------------------------------------------
+      // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.3). Sin modalidad, o
+      // en demostración, `servicio` es operativo, `rechazo` es nulo y nada de
+      // este bloque escribe: los contadores son idénticos a los de hoy, y
+      // `pruebas/prepago-ingesta.test.ts` lo exige negando.
+      //
+      // `sin_pago` rechaza todo; `sin_conversaciones` rechaza solo lo que
+      // ABRIRÍA una conversación (una ventana ya abierta se atiende hasta el
+      // final: ya se pagó). Y el rechazo SE APLICA solo si la bandera del modo
+      // observación está encendida (`corteAplicable`): apagada, se calcula, se
+      // anota con `aplicado: false`, se cuenta lo que se habría perdido, y se
+      // atiende igual. Encenderla es una decisión de Andres.
+      // -------------------------------------------------------------------
+      const servicio: EstadoServicio = estadoDeServicio(cuentaCruda, consumidasDe(metricasDoc?.data()), ahoraMs);
+      const aplica = corteAplicable(cuentaCruda, plataformaDoc.data());
+      const rechazo: MotivoCorte | null = rechazoPorPrepago(servicio.motivo, conteo.atencion);
+      const cortado = rechazo !== null && aplica;
+      const derivados = () => {
+        const d = camposDerivados(servicio, cuentaCruda);
+        return {
+          estadoPago: d.estadoPago, montoMensual: d.montoMensual, moneda: d.moneda,
+          proximoVencimiento: d.proximoVencimientoMs === null
+            ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs),
+        };
+      };
+      // Lo que esta transacción decidió sobre el corte, para la bitácora de
+      // afuera: `nuevo` = empezó (o cambió de modo) con este mensaje.
+      const corte = { nuevo: false, aplicado: cortado, reanudado: false, motivo: rechazo };
+
+      if (rechazo !== null) {
+        // UN CORTE ES NUEVO si no había ninguno, si cambió el motivo, o si
+        // cambió de observado a aplicado (o al revés): la fecha «desde» y las
+        // pérdidas describen ESE corte. Al pasar de observación a corte real,
+        // «desde» es ahora —desde ahora se deja de atender de verdad— y las
+        // pérdidas observadas no se mezclan con las reales.
+        const esNuevo = corteGuardado === null || corteGuardado.motivo !== rechazo
+          || corteGuardado.aplicado !== aplica;
+        const desdeMs = !esNuevo ? corteGuardado!.desdeMs
+          : corteGuardado?.motivo === rechazo ? ahoraMs
+          : (servicio.corteDesdeMs ?? ahoraMs);
+        // PERDIDAS = teléfonos distintos que CONSULTARON durante este corte:
+        // la marca `corteVisto` en la conversación (cero lecturas extra) hace
+        // que cada teléfono cuente una vez por corte. MENSAJES PERDIDOS = cada
+        // entrante.
+        const yaVisto = conversacion.get('corteVisto') === desdeMs;
+        const perdida = mensaje.direccion === 'entrante' && conteo.esConsulta && !yaVisto ? 1 : 0;
+        const perdidoMsj = mensaje.direccion === 'entrante' ? 1 : 0;
+        tx.set(refCuenta, {
+          corte: esNuevo
+            ? { motivo: rechazo, desde: Timestamp.fromMillis(desdeMs), aplicado: aplica,
+                perdidas: perdida, mensajesPerdidos: perdidoMsj }
+            : { perdidas: FieldValue.increment(perdida), mensajesPerdidos: FieldValue.increment(perdidoMsj) },
+          ...derivados(),
+        }, { merge: true });
+        if (esNuevo) {
+          // La auditoría la lee el propietario; en observación es la ÚNICA
+          // constancia del corte (la bitácora, que lee el comercio, no recibe
+          // un corte que no se aplicó).
+          tx.create(refAuditoria.doc(), {
+            accion: aplica ? 'corte_servicio' : 'corte_observado', uid: 'ingesta', en: Timestamp.now(),
+            motivo: rechazo, desde: Timestamp.fromMillis(desdeMs), aplicado: aplica,
+          });
+        }
+        corte.nuevo = esNuevo;
+        // La marca del teléfono va en la conversación, se aplique o no el corte.
+        tx.set(refConversacion, { corteVisto: desdeMs }, { merge: true });
+      } else if (corteGuardado !== null && servicio.operativo) {
+        // El servicio volvió a estar operativo (pagó, compró una bolsa, o
+        // cambió el mes): el corte se borra. Se mira `servicio.operativo` y no
+        // «no hubo rechazo»: un mensaje dentro de una ventana abierta no se
+        // rechaza por `sin_conversaciones`, y no por eso el corte terminó. La
+        // reanudación se avisa solo si el corte era real.
+        tx.set(refCuenta, { corte: FieldValue.delete(), ...derivados() }, { merge: true });
+        corte.reanudado = corteGuardado.aplicado;
+      }
+
+      // EL MENSAJE SE GUARDA SIEMPRE, también cortado: el comercio tiene que
+      // ver QUIÉN le escribió mientras el asistente no atendía.
+      const escribirMensaje = () => tx.create(refConversacion.collection('mensajes').doc(), {
+        direccion: mensaje.direccion,
+        tipo: mensaje.tipo,
+        texto: mensaje.texto,
+        ts: Timestamp.now(),
+        ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
+      });
+
+      if (cortado) {
+        // CORTE APLICADO: se escribe el mensaje y lo mínimo de la conversación
+        // para listarla (quién y cuándo), y NINGÚN contador de facturación:
+        // ni marcas de ventana, ni métricas, ni aviso. La respuesta a n8n es
+        // 200 con `servicio.estado: 'cortado'`; el 409 de esta Function
+        // significa «ficha no activa», que es otra cosa.
+        tx.set(refConversacion, {
+          telefono: mensaje.telefono,
+          canal: 'whatsapp',
+          ultimoMensaje: mensaje.texto.slice(0, 300),
+          ultimoEn: FieldValue.serverTimestamp(),
+          ...(mensaje.nombreContacto ? { nombreContacto: mensaje.nombreContacto } : {}),
+        }, { merge: true });
+        escribirMensaje();
+        return { atencion, aviso: null, avisoConsumo: null, conteo, servicio, corte, cortado: true, conModalidad };
+      }
+
+      // LA BOLSA (§4undecies.3, punto 6): abrir una conversación con las
+      // incluidas agotadas descuenta una de la bolsa (o de la de prueba), y si
+      // con esta se acaba el saldo, el corte por conversaciones queda anotado
+      // desde ya —este mensaje SÍ se atiende—. Solo con modalidad.
+      if (conteo.atencion && conModalidad) {
+        const consumo = consumoDeConversacion(servicio);
+        if (consumo.campoBolsa) {
+          tx.set(refCuenta, { [consumo.campoBolsa]: FieldValue.increment(-1) }, { merge: true });
+        }
+        if (consumo.cortaDespues && corteGuardado?.motivo !== 'sin_conversaciones') {
+          tx.set(refCuenta, {
+            corte: { motivo: 'sin_conversaciones', desde: Timestamp.fromMillis(ahoraMs), aplicado: aplica,
+                     perdidas: 0, mensajesPerdidos: 0 },
+          }, { merge: true });
+          tx.create(refAuditoria.doc(), {
+            accion: aplica ? 'corte_servicio' : 'corte_observado', uid: 'ingesta', en: Timestamp.now(),
+            motivo: 'sin_conversaciones', desde: Timestamp.fromMillis(ahoraMs), aplicado: aplica,
+          });
+          corte.nuevo = true;
+          corte.aplicado = aplica;
+          corte.motivo = 'sin_conversaciones';
+        }
+      }
 
       // LA SEÑA EN CURSO, si este mensaje trae un hecho del flujo (el QR de la
       // seña recién enviado). Va en la misma transacción que el conteo: un QR
@@ -1200,13 +1357,7 @@ export const ingesta = onRequest(
         ...(mensaje.evento === 'no_contactar' ? { noContactar: true } : {}),
       }, { merge: true });
 
-      tx.create(refConversacion.collection('mensajes').doc(), {
-        direccion: mensaje.direccion,
-        tipo: mensaje.tipo,
-        texto: mensaje.texto,
-        ts: Timestamp.now(),
-        ...(mensaje.idMeta ? { idMeta: mensaje.idMeta } : {}),
-      });
+      escribirMensaje();
 
       tx.set(refMetricas, {
         mensajes: FieldValue.increment(1),
@@ -1291,8 +1442,23 @@ export const ingesta = onRequest(
         });
       }
 
-      return { atencion, aviso, avisoConsumo, conteo };
+      return { atencion, aviso, avisoConsumo, conteo, servicio, corte, cortado: false, conModalidad };
     });
+
+    // Lo que viaja a n8n y al registro sobre el prepago: el estado del
+    // servicio con el que se juzgó ESTE mensaje. `cortado` = no se atendió;
+    // `observado` = debería estar cortado pero se atendió (modo observación, o
+    // ventana abierta con `sin_conversaciones`); `operativo` = todo en orden.
+    // `disponibles` no va: solo es exacto cuando se leyó el agregado, y el
+    // flujo no decide con él.
+    const servicio = {
+      estado: veredicto.cortado ? 'cortado' as const
+        : veredicto.servicio.operativo ? 'operativo' as const : 'observado' as const,
+      motivo: veredicto.servicio.motivo,
+      fase: veredicto.servicio.fase,
+      graciaHasta: veredicto.servicio.graciaHasta === null
+        ? null : new Date(veredicto.servicio.graciaHasta).toISOString(),
+    };
 
     // El renglón que permite atribuir tráfico y costo a este comercio. Ver el
     // bloque «REGISTRO DE EJECUCIÓN CON EL COMERCIO ADENTRO», arriba.
@@ -1321,13 +1487,21 @@ export const ingesta = onRequest(
       // operador y bloqueo cada consulta cuesta un mensaje fijo y se factura
       // igual, y eso explica una ventana cara sin ninguna venta.
       atencionEstado: veredicto.atencion.estado,
+      // El prepago: si este mensaje se atendió, se cortó, o se habría cortado
+      // (modo observación). Es lo que permite mirar un ciclo entero antes de
+      // encender el corte.
+      servicio: servicio.estado,
+      servicioMotivo: servicio.motivo,
       // El TAMAÑO del texto, nunca el texto.
       tamanoTexto: mensaje.texto.length,
     });
 
     await registrar(tenantId, {
       tipo: mensaje.direccion === 'entrante' ? 'mensaje_entrante' : 'mensaje_saliente',
-      resultado: 'ok',
+      // Durante un corte aplicado el mensaje queda registrado como RECHAZADO
+      // con `codigo: 'cortado'`: es la evidencia de que llegó y no se atendió.
+      resultado: veredicto.cortado ? 'rechazado' : 'ok',
+      ...(veredicto.cortado ? { codigo: 'cortado' } : {}),
       telefono: mensaje.telefono,
       conversacionId: idConversacion,
       // El TAMAÑO del texto, nunca el texto.
@@ -1336,6 +1510,18 @@ export const ingesta = onRequest(
           && typeof (peticion.body as Record<string, unknown>)['latenciaMs'] === 'number'
         ? { latenciaMs: (peticion.body as Record<string, number>)['latenciaMs'] } : {}),
     });
+    if (veredicto.corte.nuevo && veredicto.corte.aplicado) {
+      // El comercio ve en su bitácora que el asistente dejó de atender, y por
+      // qué (`codigo`). Un corte solo observado NO llega acá: para el comercio
+      // no existe (queda en la auditoría, que lee NovuChat).
+      await registrar(tenantId, {
+        tipo: 'corte_servicio', resultado: 'ok', canal: 'sistema',
+        codigo: veredicto.corte.motivo ?? undefined,
+      });
+    }
+    if (veredicto.corte.reanudado) {
+      await registrar(tenantId, { tipo: 'reanudacion_servicio', resultado: 'ok', canal: 'sistema' });
+    }
     if (veredicto.aviso) {
       // Queda en la bitácora del comercio: es el hecho que explica por qué una
       // persona tuvo que tomar la conversación, o por qué un teléfono dejó de
@@ -1363,6 +1549,13 @@ export const ingesta = onRequest(
           ? null : new Date(veredicto.atencion.ventanaVenceEn).toISOString(),
       },
       avisarRecepcion: veredicto.aviso,
+      // El prepago (bloque A-0): `cortado` si este mensaje no se atendió. El
+      // flujo vivo ignora el cuerpo; el corte real entra por el 409 de
+      // `configuracionFlujo`, que los tres flujos ya obedecen. SOLO con
+      // modalidad: para una demostración, y para los comercios de hoy, la
+      // respuesta es byte a byte la de siempre (lo exigen `aviso-consumo` y
+      // `entrantes-por-tipo`, y es la negativa de este bloque).
+      ...(veredicto.conModalidad ? { servicio } : {}),
     });
   },
 );
@@ -1446,18 +1639,23 @@ export const configuracionFlujo = onRequest(
     const telefonoCrudo = typeof cuerpo['telefono'] === 'string' ? cuerpo['telefono'].trim() : '';
     const telefono = /^[0-9]{8,15}$/.test(telefonoCrudo) ? telefonoCrudo : null;
 
+    // `config/negocio` se lee ANTES de decidir el 409: la cortesía lleva el
+    // teléfono de recepción del comercio (`Analisis/36` §3.2), también cuando
+    // el comercio está suspendido.
+    const config = await db.doc(`tenants/${comercio.tenantId}/config/negocio`).get();
+    const negocio = (config.data() ?? {}) as Record<string, unknown>;
+    const cortesia = mensajeCortesia(negocio['numeroRecepcion']);
+
     if (comercio.estado !== 'activo') {
       respuesta.status(409).json({
         estado: comercio.estado,
         // Texto neutro. No menciona pagos, deudas ni suspensiones.
-        mensajeCortesia:
-          'Gracias por escribirnos. En este momento no podemos atenderle por ' +
-          'este medio. Le pedimos comunicarse directamente con el negocio.',
+        mensajeCortesia: cortesia,
       });
       return;
     }
 
-    // Tres lecturas en paralelo. n8n resuelve «quién atiende una limpieza
+    // Lecturas en paralelo. n8n resuelve «quién atiende una limpieza
     // facial» EN MEMORIA sobre estas listas, sin consultas adicionales: son
     // colecciones chicas (200 servicios, 50 funcionarios como tope) y traerlas
     // enteras cuesta menos que cualquier consulta con índice por servicio.
@@ -1465,29 +1663,60 @@ export const configuracionFlujo = onRequest(
     // gastronomía no lee configuración de agenda y viceversa: no hace falta
     // filtrar después porque directamente no se pide.
     const docVertical = documentoDeVertical(comercio.flujo);
+    const ahoraMs = Date.now();
 
-    const [config, catalogo, funcionarios, especifica, rotulos, conversacion, cuenta] = await Promise.all([
-      db.doc(`tenants/${comercio.tenantId}/config/negocio`).get(),
-      db.collection(`tenants/${comercio.tenantId}/catalogo`)
-        .where('activo', '==', true).limit(200).get(),
-      db.collection(`tenants/${comercio.tenantId}/funcionarios`)
-        .where('activo', '==', true).limit(50).get(),
-      docVertical
-        ? db.doc(`tenants/${comercio.tenantId}/config/${docVertical}`).get()
-        : Promise.resolve(null),
-      // Rótulos del cobro simulado: los mismos para TODOS los comercios.
-      comercio.flujo === 'venta'
-        ? db.doc('plataforma/cobroSimulado').get()
-        : Promise.resolve(null),
-      // Solo con teléfono hay conversación que mirar. Y la cuenta, por los
-      // umbrales del comercio: sin ella rigen los de respaldo.
-      telefono
-        ? db.doc(`tenants/${comercio.tenantId}/conversaciones/wa_${telefono}`).get()
-        : Promise.resolve(null),
-      telefono
-        ? db.doc(`tenants/${comercio.tenantId}/cuenta/estado`).get()
-        : Promise.resolve(null),
-    ]);
+    const [catalogo, funcionarios, especifica, rotulos, conversacion, cuenta, metricas, plataformaPrepago] =
+      await Promise.all([
+        db.collection(`tenants/${comercio.tenantId}/catalogo`)
+          .where('activo', '==', true).limit(200).get(),
+        db.collection(`tenants/${comercio.tenantId}/funcionarios`)
+          .where('activo', '==', true).limit(50).get(),
+        docVertical
+          ? db.doc(`tenants/${comercio.tenantId}/config/${docVertical}`).get()
+          : Promise.resolve(null),
+        // Rótulos del cobro simulado: los mismos para TODOS los comercios.
+        comercio.flujo === 'venta'
+          ? db.doc('plataforma/cobroSimulado').get()
+          : Promise.resolve(null),
+        // Solo con teléfono hay conversación que mirar.
+        telefono
+          ? db.doc(`tenants/${comercio.tenantId}/conversaciones/wa_${telefono}`).get()
+          : Promise.resolve(null),
+        // LA CUENTA, EL AGREGADO DEL MES Y LA BANDERA DEL PREPAGO SE LEEN SIEMPRE
+        // (bloque A-0): el corte por falta de pago o de conversaciones se decide
+        // acá, ANTES del modelo, con o sin teléfono. La cuenta trae además los
+        // umbrales del comercio; sin ella rigen los de respaldo.
+        db.doc(`tenants/${comercio.tenantId}/cuenta/estado`).get(),
+        db.doc(`tenants/${comercio.tenantId}/metricas/${periodoDe(ahoraMs)}`).get(),
+        db.doc('plataforma/prepago').get(),
+      ]);
+
+    // -------------------------------------------------------------------------
+    // EL CORTE DEL PREPAGO REUTILIZA EL 409 (`DISENO.md` §4undecies.3). Los tres
+    // flujos ya tratan un 409 de acá como «no operativo» y mandan la cortesía
+    // sin llamar al modelo: cero cambios en `Flujos/`, cero mensajes nuevos.
+    // Se corta SOLO si la bandera del modo observación está encendida
+    // (`corteAplicable`): apagada, se responde 200 y la ingesta observa. Una
+    // demostración nunca llega al 409. Y `sin_conversaciones` no corta una
+    // ventana ya abierta: esa conversación ya se pagó, se atiende hasta el
+    // final. El 409 no toca `atencion.estado`: el corte entra por «¿Comercio
+    // operativo?», que en los flujos está antes.
+    // -------------------------------------------------------------------------
+    const cuentaCruda = (cuenta.data() ?? {}) as CuentaCruda;
+    const servicio = estadoDeServicio(cuentaCruda, consumidasDe(metricas.data()), ahoraMs);
+    const corteAplica = corteAplicable(cuentaCruda, plataformaPrepago.data());
+    const ventanaAbierta = telefono !== null && conversacion !== null
+      && !ventanaVencida((conversacion.data() ?? {}) as MarcasDeConteo, ahoraMs);
+    if (!servicio.operativo && corteAplica
+        && !(servicio.motivo === 'sin_conversaciones' && ventanaAbierta)) {
+      logger.info('configuracionFlujo: turno cortado por prepago', {
+        evento: EVENTO_CONFIGURACION, tenantId: comercio.tenantId, flujo: comercio.flujo,
+        estadoComercio: comercio.estado, telefonoUlt4: telefono ? ultimos4(telefono) : null,
+        servicio: 'cortado', servicioMotivo: servicio.motivo,
+      });
+      respuesta.status(409).json({ estado: servicio.motivo, mensajeCortesia: cortesia });
+      return;
+    }
 
     // EL ESTADO DE ATENCIÓN DEL TELÉFONO, si vino. Se calcula con la misma
     // función que la ingesta, sobre lo que la ingesta dejó guardado con el
@@ -1509,7 +1738,6 @@ export const configuracionFlujo = onRequest(
         })()
       : null;
 
-    const negocio = (config.data() ?? {}) as Record<string, unknown>;
     const catalogoWebActivo = negocio['catalogoWebActivo'] === true;
     // Se calcula una sola vez: decide qué se manda al prompt y, además, se
     // registra (un catálogo resumido cambia cómo conversa el asistente, y por
@@ -1604,6 +1832,20 @@ export const configuracionFlujo = onRequest(
       //                          `avisarRecepcion` viene, avisar a recepción.
       //   estado = 'bloqueado' → NO enviar nada hasta `ventanaVenceEn`.
       atencion,
+
+      // EL PREPAGO, para mirar (bloque A-0): modalidad, fase (cubierto,
+      // gracia, cortado), motivo, hasta cuándo dura la gracia, cuántas
+      // conversaciones quedan y si el corte está aplicado. NINGÚN flujo decide
+      // con esto: el corte real es el 409 de arriba. `disponibles` es `null` en
+      // demostración (no hay tope).
+      prepago: {
+        modalidad: servicio.modalidad,
+        fase: servicio.fase,
+        motivo: servicio.motivo,
+        graciaHasta: servicio.graciaHasta === null ? null : new Date(servicio.graciaHasta).toISOString(),
+        disponibles: Number.isFinite(servicio.disponibles) ? servicio.disponibles : null,
+        corteAplicado: corteAplica && !servicio.operativo,
+      },
 
       // Operación: valores estructurados, sin texto libre.
       operacion: {

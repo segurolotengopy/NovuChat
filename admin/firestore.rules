@@ -2055,7 +2055,12 @@ service cloud.firestore {
                  // Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4):
                  // salió el recordatorio único; `codigo` lleva el modo (`texto`
                  // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
-                 'seguimiento_enviado'
+                 'seguimiento_enviado',
+                 // Prepago (bloque A-0, 20/09, DISENO §4undecies): el servicio
+                 // se cortó por falta de pago o de conversaciones (`codigo`
+                 // lleva el motivo), volvió, y entró un pago. Un corte solo
+                 // observado NO llega acá: queda en la auditoría.
+                 'corte_servicio', 'reanudacion_servicio', 'pago_registrado'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]
