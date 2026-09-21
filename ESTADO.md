@@ -4,7 +4,106 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-21 — Prepago, bloque A-1: los pagos con su TCO, y la carga manual del propietario
+
+**Rama `prepago/pagos-y-carga-manual`, sobre `prepago/modulo-y-cortes` (A-0).
+Sin desplegar, sin publicar, sin tocar `Flujos/` ni `scripts/`, ningún
+`--aplicar`.** Es el bloque 1 del frente Prepago estricto
+(`Prompts/prepago-estricto.md`; diseño en `admin/DISENO.md` §4undecies.1,
+§4undecies.2 y §4undecies.7). **Costo: 0 mensajes.**
+
+**Qué hay.** `functions/src/pagos.ts`: la colección `/tenants/{t}/pagos` y
+**la única puerta que suma meses o bolsas**, `aplicarPagoEnTransaccion(tx, refs,
+pago, confirmacion)`, con la firma exacta que A-2 escribió en su
+`pagos-stub.ts` (síncrona, sin lecturas, una escritura por documento, lanza si
+el pago no está `pendiente`, `confirmacion.ademas` se suma a la misma
+escritura); `camposDerivadosDeCuenta(cuenta, corteGuardado, ahoraMs)` (y su
+alias `camposDerivados`, el nombre con el que A-2 la llama por
+`puertaDePagos`), que envuelve `camposDerivados(estado, cuenta)` de A-0;
+`aplicacionDe`, la misma aritmética que usa el manual para **nacer
+confirmado** en un solo `create`. Cuatro callables: `registrarPagoManual`
+(solo propietario con Google; `tipo`, `plan`/`meses` o `cantidad`, `medio`
+efectivo o transferencia, `referencia`, `tcoAplicado`/`tcoFuente`/`tcoFecha`,
+`montoRecibidoBs`, `motivoDiferencia` si difiere del importe de lista,
+`evidencia` obligatoria en transferencia **comprobando con el SDK Admin que el
+objeto existe en Storage**; cierra el pendiente vivo antes o aborta; escribe
+el pago `confirmado` con `confirmadoPor: { origen: 'propietario', uid }`,
+aplica, auditoría `pago_manual`, bitácora `pago_registrado` y
+`reanudacion_servicio` si había corte aplicado), `anularPagoPendiente`
+(admin del comercio o propietario; un confirmado no se anula),
+`consultarPagoPendiente` (admin o propietario; con el cliente del cobrador
+inyectado consulta antes) y `fijarTelefonosPago` (admin o propietario; ≤ 5,
+solo dígitos, auditada con los últimos 4). La anulación en el cobrador y la
+consulta son **inyecciones** (`Deps.anular`, `Deps.consultar`) que A-2
+enchufa con `anularCobroVivo` y `consultarYAplicar`; sin ellas, un pendiente
+**con QR emitido aborta** la carga manual (`qr_vivo_sin_cliente`) y una
+reserva sin QR se cierra acá. `functions/src/tipoCambio.ts`: `tipoCambioDe`
+(pura) y `tipoCambioDelDia()` sobre `plataforma/tipoCambio { tco, fecha,
+fuente }`, con `SinTipoDeCambio`; reutiliza `tipoCambioVigente` de A-0.
+`functions/src/autorizacion.ts`: `exigirPropietario`, `exigirAdminDe` (ahora
+exige `sign_in_provider === 'password'` y `email_verified`, como `esAdmin()` de
+las reglas) y `exigirAdminOPropietario`, compartidos por `index.ts` y
+`pagos.ts`. `scripts/fijar-tipo-cambio.mjs`: seco por defecto, `--por`
+obligatorio, historial; **no se corrió**.
+
+**`cuenta/estado` se deriva de los pagos (§4undecies.2).** `suspenderTenant` y
+`reactivarTenant` ya no escriben `estadoPago`. `actualizarEstadoCuenta`
+**rechaza** `estadoPago`, `montoMensual`, `moneda` y `proximoVencimiento` con
+`invalid-argument` («se deriva de los pagos») y **recalcula los derivados en
+cada llamada**. Consecuencia que hay que tener presente: un comercio SIN
+modalidad es demostración para el módulo y, al tocarle cualquier cosa por esa
+callable, deriva `sin_cargo` con monto cero. Por eso la migración
+(`scripts/migrar-prepago.mjs`) le da su modalidad a cada comercio real
+**antes** de la primera llamada y del primer pago; está probado en
+`estado-cuenta.test.ts`.
+
+**Reglas.** `firestore.rules`: `/tenants/{t}/pagos` (lee el admin legible o el
+propietario; nadie escribe) y `/cobrosPendientes`, `/cobrosResueltos` negados
+enteros, **con el texto literal de A-2** para que la fusión sea limpia.
+`storage.rules`: `/tenants/{t}/pagos/{pagoId}/{qr.png|evidencia.jpg|png|pdf}`:
+`get` para el admin legible (también suspendido) o el propietario; `create`/
+`update` de `evidencia.*` **solo propietario**, con tipo y tamaño (≤ 5 MB
+imagen, ≤ 10 MB PDF); `list`/`delete` nadie; `qr.png` solo el SDK Admin;
+`pagoId` con la forma de 22 caracteres. `web/src/lib/cuenta.ts`: `pendiente`
+= «En gracia / cobro pendiente».
+
+**Decisión de este bloque que A-3 tiene que saber:** en el manual con
+evidencia, **el `pagoId` lo elige la consola** (22 caracteres de `base64url`
+con `crypto.getRandomValues`), porque la evidencia se sube a
+`tenants/{t}/pagos/{pagoId}/evidencia.*` ANTES de llamar a
+`registrarPagoManual({ …, pagoId, evidencia: 'evidencia.pdf' })`; el servidor
+exige la forma, arma la ruta él mismo y `tx.create` falla si ya existe. Sin
+evidencia (efectivo) el id lo genera el servidor.
+
+**Pruebas (todas negando).** `pruebas/pagos.test.ts` (callables reales):
+el admin no registra ni en su comercio; propietario con contraseña no; sin
+TCO válido no; transferencia sin evidencia no; evidencia declarada que no
+existe no; importe distinto sin motivo no; `qr` como medio no; un confirmado
+no se anula; QR emitido sin cliente → aborta; el cobrador dice pagado → se
+rechaza el manual; el pendiente se relee en la transacción sin confiar en
+`anular`; `anularPagoPendiente` del admin de B sobre A → `permission-denied`
+(y admin con Google, sin verificar o solo con el claim); `suspenderTenant` y
+`reactivarTenant` no tocan `estadoPago`; `fijarTelefonosPago` rechaza > 5 y
+formatos malos; `exigirAdminDe` exige proveedor. `reglas.test.ts` sección
+«Pagos del prepago» (la de A-2, literal). `storage-reglas.test.ts` sección
+«Evidencia de pagos» (admin no sube, operador no lee, tenant B no lee, PDF de
+11 MB no, `qr.png` nadie sube, nadie lista ni borra). `tipo-cambio.test.ts`.
+`estado-cuenta.test.ts`: los casos que aceptaban los derivados ahora
+rechazan. El resultado real está en el mensaje del último commit de la rama.
+
+**Lo que queda.** Para A-2 al integrar: reemplazar `pagos-stub.ts` por
+`pagos.ts` (mismos nombres, salvo `tipoCambioDelDia`, que acá lee Firestore y
+es `async`; la pura con `(datos, ahoraMs)` se llama `tipoCambioDe`), y
+enchufar `anularCobroVivo` y `consultarYAplicar` en las fábricas
+`crearRegistrarPagoManual`, `crearAnularPagoPendiente` y
+`crearConsultarPagoPendiente`. Para A-3: la consola de «Pagar», el historial
+de `/pagos`, la carga manual con subida de evidencia (con el `pagoId`
+elegido por la consola) y `telefonosPago` editable. La migración de los
+comercios reales sigue pendiente y va antes del primer pago.
 
 ---
 
