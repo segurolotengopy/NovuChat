@@ -54,12 +54,10 @@ obligatorio, historial; **no se corrió**.
 `reactivarTenant` ya no escriben `estadoPago`. `actualizarEstadoCuenta`
 **rechaza** `estadoPago`, `montoMensual`, `moneda` y `proximoVencimiento` con
 `invalid-argument` («se deriva de los pagos») y **recalcula los derivados en
-cada llamada**. Consecuencia que hay que tener presente: un comercio SIN
-modalidad es demostración para el módulo y, al tocarle cualquier cosa por esa
-callable, deriva `sin_cargo` con monto cero. Por eso la migración
-(`scripts/migrar-prepago.mjs`) le da su modalidad a cada comercio real
-**antes** de la primera llamada y del primer pago; está probado en
-`estado-cuenta.test.ts`.
+cada llamada**, salvo a un comercio sin migrar (sin modalidad y con plan del
+catálogo), al que no le escribe derivados (LOW 8, abajo). Por eso la
+migración (`scripts/migrar-prepago.mjs`) le da su modalidad a cada comercio
+real **antes** de desplegar A-1; está probado en `estado-cuenta.test.ts`.
 
 **Reglas.** `firestore.rules`: `/tenants/{t}/pagos` (lee el admin legible o el
 propietario; nadie escribe) y `/cobrosPendientes`, `/cobrosResueltos` negados
@@ -71,13 +69,15 @@ imagen, ≤ 10 MB PDF); `list`/`delete` nadie; `qr.png` solo el SDK Admin;
 `pagoId` con la forma de 22 caracteres. `web/src/lib/cuenta.ts`: `pendiente`
 = «En gracia / cobro pendiente».
 
-**Decisión de este bloque que A-3 tiene que saber:** en el manual con
-evidencia, **el `pagoId` lo elige la consola** (22 caracteres de `base64url`
+**Decisión de este bloque que A-3 tiene que saber:** en todo manual, **el
+`pagoId` lo elige la consola**, una vez por formulario y reusado en los
+reintentos (es la clave de idempotencia); con evidencia, además (22 caracteres de `base64url`
 con `crypto.getRandomValues`), porque la evidencia se sube a
 `tenants/{t}/pagos/{pagoId}/evidencia.*` ANTES de llamar a
 `registrarPagoManual({ …, pagoId, evidencia: 'evidencia.pdf' })`; el servidor
-exige la forma, arma la ruta él mismo y `tx.create` falla si ya existe. Sin
-evidencia (efectivo) el id lo genera el servidor.
+exige la forma, arma la ruta él mismo y `tx.create` falla si ya existe. Y
+`registrarPagoManual` exige una sesión de hace ≤ 30 min: la pantalla tiene
+que pedir `reauthenticateWithPopup` ante `unauthenticated`.
 
 **Pruebas (todas negando).** `pruebas/pagos.test.ts` (callables reales):
 el admin no registra ni en su comercio; propietario con contraseña no; sin
@@ -94,6 +94,41 @@ formatos malos; `exigirAdminDe` exige proveedor. `reglas.test.ts` sección
 11 MB no, `qr.png` nadie sube, nadie lista ni borra). `tipo-cambio.test.ts`.
 `estado-cuenta.test.ts`: los casos que aceptaban los derivados ahora
 rechazan. El resultado real está en el mensaje del último commit de la rama.
+
+**Revisión de seguridad de A-1 (21/09): apta con cambios, aplicados en commits
+propios, cada uno con su prueba negativa.** MEDIUM 1: `pagoId` obligatorio en
+todo registro manual (la consola lo genera una vez por formulario y lo reusa
+al reintentar; `tx.create` es la clave). MEDIUM 2: la evidencia no se
+reemplaza una vez que el pago existe (`storage.rules`, `!firestore.exists`),
+y el pago y la auditoría guardan `evidenciaMeta { generation, md5Hash, size,
+contentType }`. LOW 3: `confirmacion.ademas` con lista cerrada (`pago.cobro`,
+`cuenta.confirmacionesPendientes`), esparcida antes de los campos propios;
+`aplicacionDe` privada. LOW 4: el `pagoId` se mira antes de anular el QR.
+LOW 5: el TCO declarado se contrasta con el vigente (> 0,01 exige motivo;
+`tcoReferencia` en el pago); `tcoFecha` ≤ 31 días. LOW 6: sesión de hace ≤
+30 min (`auth_time`) para registrar. LOW 7: `fijarTelefonosPago` no acepta un
+comercio dado de baja. LOW 8: sin modalidad y con plan del catálogo **no se
+escriben derivados**. LOW 9: si el banco confirmó un QR que no se aplicó, se
+ofrece `confirmarPendiente` sobre ese mismo pago, con motivo y auditoría
+`pago_manual_confirma_qr`.
+
+**PRECONDICIÓN DE DESPLIEGUE DE A-1:** correr `scripts/migrar-prepago.mjs`
+(seco primero, `--aplicar` con el OK de Andres) en **cada comercio real antes
+de desplegar**. Con LOW 8 un comercio sin migrar ya no cambia de aspecto,
+pero tampoco se le recalculan los derivados hasta que tenga su modalidad.
+
+**Precondición de A-4 (anotada, no hecha):** `fijarTelefonosPago` no
+verifica que el teléfono sea de un titular del comercio, ni que no esté en
+`telefonosPago` de otro comercio. El pago por WhatsApp resuelve un teléfono a
+un comercio: antes de construirlo hay que verificar el titular (un código por
+WhatsApp) y decidir la unicidad o el «elegir comercio» de §4undecies.7.
+
+**No verificado (a probar en el ensayo):** el permiso `storage.objects.get` de
+`sa-functions` sobre el bucket por defecto. Es la primera vez que las
+Functions usan Storage con el SDK Admin (`registrarPagoManual` lee los
+metadatos de la evidencia; A-2 además escribe `qr.png`, que pide
+`storage.objects.create`). Las pruebas inyectan Storage; el emulador no mira
+IAM.
 
 **Lo que queda.** Para A-2 al integrar: reemplazar `pagos-stub.ts` por
 `pagos.ts` (mismos nombres, salvo `tipoCambioDelDia`, que acá lee Firestore y
