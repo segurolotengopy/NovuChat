@@ -92,25 +92,36 @@ corte con período de gracia (hoy corta el 1).
 | **Varias cuentas de cobro**, cada una con alias, credenciales y datos | ESTADO 16/09/2026 |
 | API HTTP y consola del comerciante (demo), Firestore como estado | `packages/functions`, `demo-web` |
 
-**Lo que la API ya tiene** (verificado el 20/09 en `packages/functions/src/api/`):
-`POST /api/cobros` (teléfono del cliente, concepto, monto, horas de vigencia),
-`GET /api/cobros` y `/api/cobros/{id}`, `GET …/qr`, y las acciones `enviar`,
-`renovar`, `anular`, `comprobante`, `verificar`, `resolver`, `buscar-abono` y
-`sondear-anulacion`. **Crear, consultar, anular y ver el QR ya existen.**
+**El contrato para consumidores ya existe** (verificado el 20/09/2026 contra
+`origin/main` del proyecto de cobros; PR #38, fusionado el 20/09, «bloque 1»
+del prompt `cobrador-contrato-para-consumidores.md`; documento
+`docs/10-contrato-consumidores.md`, ADR-008):
 
-Lo que **falta** para que otro producto la consuma, y no es de NovuChat:
-(a) **identidad del consumidor**: la API autentica al dueño de la consola (un
-token fijo o un ID token de Firebase), no a un tercero, y no acota lo que ve a
-una cuenta de cobro —la cuenta se elige por proceso, no por petición—;
-(b) **referencia externa e idempotencia por esa referencia**: hoy dos `POST`
-iguales crean dos cobros; (c) **aviso al consumidor** cuando el cobro pasa a
-`CONFIRMADO`: no hay salida, se consulta por `GET`; (d) que `telefonoCliente`
-sea **opcional**: para el prepago no hay un «cliente» con teléfono que
-mandar al cobrador, y mandarlo sería un dato personal que el cobrador no
-necesita. Y el pase a producción formal (la cuenta de pruebas del banco, A4;
-la comisión, C9, **ya respondida: no hay**). El envío del QR por WhatsApp que ManejoQRSimple
-delega en otro proyecto **no se usa**: NovuChat manda el QR desde su propio
-número.
+- **Superficie propia** `/api/v1/cobros`, separada de la consola del dueño
+  (`/api/…`); un token de consumidor no abre ninguna ruta del dueño y el cruce
+  responde 404, no 403.
+- **Un token por consumidor** en el entorno de la API (`CONSUMIDOR_TOKEN_NOVUCHAT`
+  → consumidor `novuchat`), mínimo 32 caracteres, y **cupo de QR por hora**
+  (60) contra un token filtrado.
+- **`crearCobro`** con `referenciaExterna` opaca y única por consumidor,
+  **idempotente y atómica** (el id se deriva de consumidor + referencia; misma
+  referencia con otro importe → 409; una referencia no se recicla), monto como
+  texto decimal, vigencia 72 h por defecto, **sin teléfono del pagador** y
+  sin datos de personas; devuelve el QR en base64.
+- **`estadoCobro`** por id o por referencia, que **no toca el banco** (lee lo
+  que el satélite mantiene); `pago` con `confirmadoEn`, `ocurridoEn`, riel y
+  quién confirmó. **Solo `CONFIRMADO` es «está pagado».**
+- **`anularCobro`** con tres desenlaces distinguidos: anulado, `409` pagado
+  (no se anula), `409` pago tardío en revisión.
+- **`listarCobros`** por rango con zona obligatoria, hasta 92 días; y la
+  imagen del QR aparte.
+
+**Lo que falta** ahí, y no es de NovuChat: el **aviso de confirmación** al
+consumidor (bloque 2 del mismo prompt: firmado, con reintentos, y solo como
+acelerador —`estadoCobro` sigue siendo la fuente de verdad—), y el pase a
+producción formal (la cuenta de pruebas del banco, A4; la comisión, C9, **ya
+respondida: no hay**). Mientras no exista el aviso, NovuChat **sondea**
+`estadoCobro` mientras tenga un cobro pendiente.
 
 **Decisión de integración.** Dos formas, y conviene la primera:
 
