@@ -73,8 +73,12 @@ const bitacora = async (tipo: string, t = A) =>
 
 const CUENTA_BASE = { plan: 'crecimiento', limites: limitesDe('crecimiento'), catalogoPlanes: CATALOGO_PLANES };
 
-/** Un manual válido en efectivo, 1 mes de Crecimiento: 50 USD × 12,6 = 630 Bs. */
+/**
+ * Un manual válido en efectivo, 1 mes de Crecimiento: 50 USD × 12,6 = 630 Bs.
+ * Cada llamada trae su propio `pagoId`, como un formulario nuevo de la consola.
+ */
 const manual = (extra: Record<string, unknown> = {}) => ({
+  pagoId: pagos.nuevoPagoId(),
   tenantId: A, tipo: 'mensualidad', plan: 'crecimiento', meses: 1,
   medio: 'efectivo', referencia: 'recibido por Andres',
   tcoAplicado: TCO, tcoFuente: 'BCB', tcoFecha: FECHA_HOY, montoRecibidoBs: 630,
@@ -201,6 +205,26 @@ describe('registrarPagoManual: lo que exige el pedido', () => {
 });
 
 // ===========================================================================
+describe('registrarPagoManual: idempotencia por pagoId (MEDIUM 1)', () => {
+  it('sin pagoId, o con uno mal formado, no se registra nada, tampoco en efectivo', async () => {
+    for (const pagoId of [undefined, '', 'p1', 'AbCdEfGhIjKlMnOpQrStU', '../../x/AbCdEfGhIjKlMnOpQ']) {
+      await rechaza(correr(indice.registrarPagoManual, manual({ pagoId })), 'invalid-argument');
+    }
+    expect(await pagosDe()).toHaveLength(0);
+    expect(await cuenta()).toEqual(CUENTA_BASE);
+  });
+
+  it('dos llamadas idénticas en efectivo con el mismo pagoId: la segunda already-exists y el mes avanza UNA vez', async () => {
+    const pedido = manual({ pagoId: PAGO_ID });
+    await correr(indice.registrarPagoManual, pedido);
+    await rechaza(correr(indice.registrarPagoManual, pedido), 'already-exists');
+    expect(await cuenta()).toMatchObject({ periodoPagado: HOY });
+    expect(await pagosDe()).toHaveLength(1);
+    expect(await auditoria('pago_manual')).toHaveLength(1);
+    expect(await bitacora('pago_registrado')).toHaveLength(1);
+  });
+});
+
 describe('registrarPagoManual: transferencia y evidencia', () => {
   const conEvidencia = (existe: boolean) => pagos.crearRegistrarPagoManual({ existeEvidencia: async () => existe });
 
@@ -212,7 +236,7 @@ describe('registrarPagoManual: transferencia y evidencia', () => {
   });
 
   it('con evidencia hace falta el pagoId de la carpeta, y con la forma correcta', async () => {
-    await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 1', evidencia: 'evidencia.pdf' })), 'invalid-argument');
+    await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 1', evidencia: 'evidencia.pdf', pagoId: undefined })), 'invalid-argument');
     await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 1', evidencia: 'evidencia.pdf', pagoId: 'p1' })), 'invalid-argument');
     await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 1', evidencia: 'evidencia.pdf', pagoId: '../../otro/evidencia' })), 'invalid-argument');
     expect(await pagosDe()).toHaveLength(0);

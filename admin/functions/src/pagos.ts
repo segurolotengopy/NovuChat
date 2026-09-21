@@ -47,9 +47,10 @@
  *
  * EL IDENTIFICADOR DEL PAGO es opaco, 22 caracteres de `base64url` (128 bits),
  * y es también la referencia externa que viaja al cobrador (§4undecies.1). En
- * el manual con evidencia LO ELIGE LA CONSOLA (con `crypto.getRandomValues`)
- * porque la evidencia se sube ANTES bajo esa ruta; el servidor solo exige la
- * forma y `tx.create`, que falla si ya existe. Un id al azar del navegador es
+ * el manual LO ELIGE LA CONSOLA (con `crypto.getRandomValues`), una vez por
+ * formulario: es la clave de idempotencia de los reintentos y, con evidencia,
+ * la carpeta donde se subió ANTES; el servidor exige la forma y `tx.create`,
+ * que falla si ya existe. Un id al azar del navegador es
  * tan opaco como uno del servidor: lo que importa es que nadie lo adivine y
  * que no se repita, y las dos cosas las garantiza el `create`.
  *
@@ -478,9 +479,12 @@ function pedidoDe(datos: Record<string, unknown>): Pago {
  * motivoDiferencia?, pagoId?, evidencia? })` → `{ pagoId, monto, montoUsd,
  * periodoPagado, cubiertoHasta, bolsa, plan, modalidad, pendienteAnulado }`.
  *
- * Solo el propietario con Google. En transferencia, `pagoId` (elegido por la
- * consola) y `evidencia` (`evidencia.jpg|png|pdf`) son obligatorios, y el
- * objeto tiene que existir en Storage. `motivoDiferencia` es obligatorio si
+ * Solo el propietario con Google. `pagoId` es OBLIGATORIO en todo registro,
+ * cualquiera sea el medio: la consola lo genera UNA vez por formulario y lo
+ * reusa en los reintentos, y `tx.create` hace de clave de idempotencia (un
+ * reintento de red no suma dos meses; revisión de seguridad de A-1, MEDIUM 1).
+ * En transferencia, además, `evidencia` (`evidencia.jpg|png|pdf`) es
+ * obligatoria y el objeto tiene que existir en Storage bajo ese `pagoId`. `motivoDiferencia` es obligatorio si
  * `montoRecibidoBs` no es el importe de la lista al TCO declarado.
  *
  * Orden: validar todo → comprobar la evidencia → cerrar el pendiente vivo (o
@@ -529,17 +533,19 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
         `Lo recibido (${montoRecibidoBs} Bs) no es el importe de la lista (${monto} Bs): motivoDiferencia es obligatorio.`);
     }
 
+    // LA CLAVE DE IDEMPOTENCIA. Sin ella, un reintento del navegador tras un
+    // corte de red registraba un segundo pago y sumaba otro mes.
     const pagoIdPedido = texto(datos['pagoId'], 40);
-    if (pagoIdPedido && !ID_PAGO.test(pagoIdPedido)) throw new HttpsError('invalid-argument', 'pagoId inválido.');
+    if (!ID_PAGO.test(pagoIdPedido)) {
+      throw new HttpsError('invalid-argument',
+        'pagoId es obligatorio (22 caracteres de base64url): la consola lo genera una vez por formulario y lo reusa al reintentar.');
+    }
     const evidencia = texto(datos['evidencia'], 40);
     let rutaEvidencia: string | null = null;
     if (medio === 'transferencia') {
       if (!(ARCHIVOS_EVIDENCIA as readonly string[]).includes(evidencia)) {
         throw new HttpsError('invalid-argument',
           `Una transferencia exige evidencia: uno de ${ARCHIVOS_EVIDENCIA.join(', ')}, subido antes a Storage.`);
-      }
-      if (!pagoIdPedido) {
-        throw new HttpsError('invalid-argument', 'Con evidencia, pagoId es obligatorio: es la carpeta donde se subió.');
       }
       rutaEvidencia = `tenants/${tenantId}/pagos/${pagoIdPedido}/${evidencia}`;
       if (!(await d.existeEvidencia(rutaEvidencia))) {
@@ -548,7 +554,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
     } else if (evidencia) {
       throw new HttpsError('invalid-argument', 'La evidencia va solo con transferencia.');
     }
-    const pagoId = pagoIdPedido || nuevoPagoId();
+    const pagoId = pagoIdPedido;
     const r = refsDe(tenantId, pagoId);
 
     // EL PENDIENTE VIVO SE CIERRA ANTES, fuera de la transacción (la anulación
