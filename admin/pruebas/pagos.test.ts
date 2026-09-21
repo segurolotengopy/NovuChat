@@ -32,7 +32,9 @@ const db = getFirestore();
 const A = 'pagos-a';
 const B = 'pagos-b';
 const HOY = mesBolivia(Date.now());
-const FECHA_HOY = new Date().toISOString().slice(0, 10);
+/** El día de hoy en Bolivia (UTC−4): el TCO del BCB se fecha así. */
+const diaBolivia = (ms: number) => new Date(ms - 4 * 3_600_000).toISOString().slice(0, 10);
+const FECHA_HOY = diaBolivia(Date.now());
 const TCO = 12.6;
 const PAGO_ID = 'AbCdEfGhIjKlMnOpQrStUv';
 const OTRO_ID = 'zYxWvUtSrQpOnMlKjIhGfE';
@@ -115,6 +117,8 @@ beforeEach(async () => {
   await db.doc(`tenants/${A}/cuenta/estado`).set(CUENTA_BASE);
   await db.doc(`tenants/${B}`).set({ nombre: 'Resto B', estado: 'activo', plan: 'impulso', flujos: ['venta'] });
   await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', limites: limitesDe('impulso'), catalogoPlanes: CATALOGO_PLANES });
+  // El TCO de referencia vigente: el mismo que declaran las pruebas.
+  await db.doc('plataforma/tipoCambio').set({ tco: TCO, fecha: FECHA_HOY, fuente: 'BCB' });
 });
 
 // ===========================================================================
@@ -171,6 +175,37 @@ describe('registrarPagoManual: sin TCO válido no se registra', () => {
 });
 
 // ===========================================================================
+describe('registrarPagoManual: el TCO contra la referencia del BCB (LOW 5)', () => {
+  it('un TCO que difiere del vigente en más de 0,01 SIN motivo se rechaza; CON motivo queda escrito con la referencia', async () => {
+    await rechaza(correr(indice.registrarPagoManual, manual({ tcoAplicado: 12.7, montoRecibidoBs: 635 })), 'invalid-argument');
+    await rechaza(correr(indice.registrarPagoManual, manual({ tcoAplicado: 12.5, montoRecibidoBs: 625 })), 'invalid-argument');
+    expect(await pagosDe()).toHaveLength(0);
+    // Dentro de la tolerancia no hace falta motivo.
+    await correr(indice.registrarPagoManual, manual({ tcoAplicado: 12.61, montoRecibidoBs: 631 }));
+    const r = await correr(indice.registrarPagoManual, manual({
+      tcoAplicado: 12.7, montoRecibidoBs: 635, motivoDiferencia: 'cobrado el viernes con el TCO de ese día',
+    }));
+    const p = await pago(r['pagoId'] as string);
+    expect(p).toMatchObject({ tcoAplicado: 12.7, monto: 635, tcoReferencia: { tco: TCO, fecha: FECHA_HOY, fuente: 'BCB' } });
+    expect((await auditoria('pago_manual')).some((a) => (a['tcoReferencia'] as Record<string, unknown>)?.['tco'] === TCO)).toBe(true);
+  });
+
+  it('sin TCO vigente en plataforma no se exige motivo, y queda escrito que no había referencia', async () => {
+    await db.doc('plataforma/tipoCambio').delete();
+    const r = await correr(indice.registrarPagoManual, manual({ tcoAplicado: 12.7, montoRecibidoBs: 635 }));
+    expect((await pago(r['pagoId'] as string))!['tcoReferencia']).toBeNull();
+  });
+
+  it('una tcoFecha de más de 31 días se rechaza; una de 30 días pasa', async () => {
+    const DIA = 86_400_000;
+    await rechaza(correr(indice.registrarPagoManual, manual({ tcoFecha: diaBolivia(Date.now() - 33 * DIA) })), 'invalid-argument');
+    await rechaza(correr(indice.registrarPagoManual, manual({ tcoFecha: '2026-01-02' })), 'invalid-argument');
+    expect(await pagosDe()).toHaveLength(0);
+    await correr(indice.registrarPagoManual, manual({ tcoFecha: diaBolivia(Date.now() - 30 * DIA) }));
+    expect(await pagosDe()).toHaveLength(1);
+  });
+});
+
 describe('registrarPagoManual: lo que exige el pedido', () => {
   it('meses 7 no, meses 0 no, plan demostracion no, bolsa 13 no, tipo inventado no', async () => {
     const malos = [

@@ -68,6 +68,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { registrar } from './ingesta.js';
+import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
 import { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
@@ -85,6 +86,10 @@ export const TELEFONOS_PAGO_MAXIMO = 5;
 export const MEDIOS_MANUALES = ['efectivo', 'transferencia'] as const;
 export type MedioManual = (typeof MEDIOS_MANUALES)[number];
 export const ARCHIVOS_EVIDENCIA = ['evidencia.jpg', 'evidencia.png', 'evidencia.pdf'] as const;
+/** Un TCO declarado de más de un mes no reconstruye ninguna factura de hoy. */
+export const TCO_MANUAL_DIAS_MAXIMO = 31;
+/** Tolerancia entre el TCO declarado y el de referencia antes de pedir motivo. */
+const TCO_TOLERANCIA = 0.01;
 /** Tope de cordura para lo recibido: diez millones de bolivianos. */
 const MONTO_RECIBIDO_MAXIMO = 10_000_000;
 
@@ -583,6 +588,9 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
       || Date.parse(`${tcoFecha}T00:00:00Z`) > ahoraMs + 86_400_000) {
       throw new HttpsError('invalid-argument', 'tcoFecha tiene que ser aaaa-mm-dd y no puede ser futura.');
     }
+    if (ahoraMs - Date.parse(`${tcoFecha}T00:00:00Z`) > (TCO_MANUAL_DIAS_MAXIMO + 1) * 86_400_000) {
+      throw new HttpsError('invalid-argument', `tcoFecha no puede tener más de ${TCO_MANUAL_DIAS_MAXIMO} días.`);
+    }
     const montoRecibidoBs = datos['montoRecibidoBs'];
     if (!enteroEntre(montoRecibidoBs, 0, MONTO_RECIBIDO_MAXIMO)) {
       throw new HttpsError('invalid-argument', 'montoRecibidoBs tiene que ser un entero en bolivianos.');
@@ -597,6 +605,23 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
 
     // LA CLAVE DE IDEMPOTENCIA. Sin ella, un reintento del navegador tras un
     // corte de red registraba un segundo pago y sumaba otro mes.
+    // EL TCO DE REFERENCIA (revisión de seguridad de A-1, LOW 5). Si hay un
+    // TCO del BCB vigente en `plataforma/tipoCambio` y el declarado difiere
+    // en más de un centavo, el propietario tiene que decir por qué (un pago
+    // cobrado otro día, un acuerdo): el TCO es lo que convierte la lista en
+    // bolivianos, y cambiarlo en silencio es un descuento sin firma. Sin
+    // referencia vigente no se exige nada más, y queda escrito que no la había.
+    let tcoReferencia: TipoCambio | null = null;
+    try {
+      tcoReferencia = tipoCambioDe((await db().doc(RUTA_TIPO_CAMBIO).get()).data(), ahoraMs);
+    } catch (e) {
+      if (!(e instanceof SinTipoDeCambio)) throw e;
+    }
+    if (tcoReferencia && Math.abs(tcoAplicado - tcoReferencia.tco) > TCO_TOLERANCIA + 1e-9 && !motivoDiferencia) {
+      throw new HttpsError('invalid-argument',
+        `El TCO declarado (${tcoAplicado}) no es el vigente del BCB (${tcoReferencia.tco}, ${tcoReferencia.fecha}): motivoDiferencia es obligatorio.`);
+    }
+
     const pagoIdPedido = texto(datos['pagoId'], 40);
     if (!ID_PAGO.test(pagoIdPedido)) {
       throw new HttpsError('invalid-argument',
@@ -657,7 +682,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
       ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
       ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
       montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
-      tcoAplicado, tcoFuente, tcoFecha,
+      tcoAplicado, tcoFuente, tcoFecha, tcoReferencia,
       medio, canal: 'manual', referencia,
       ...(rutaEvidencia ? { evidencia: rutaEvidencia, evidenciaMeta } : {}),
       descripcion: descripcionDe(pedido),
@@ -693,7 +718,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
         pagoId, tipo: pedido.tipo,
         ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
         ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
-        montoUsd, monto, montoRecibidoBs, tcoAplicado, tcoFuente, tcoFecha, medio, referencia,
+        montoUsd, monto, montoRecibidoBs, tcoAplicado, tcoFuente, tcoFecha, tcoReferencia, medio, referencia,
         evidencia: rutaEvidencia, evidenciaMeta, motivoDiferencia: motivoDiferencia || null,
         pendienteAnulado,
         cubiertoHasta: a.resultado.cubiertoHasta, planDespues: a.resultado.plan, bolsaDespues: a.resultado.bolsa,
