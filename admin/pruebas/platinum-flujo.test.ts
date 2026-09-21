@@ -2990,9 +2990,15 @@ describe.each([
       // El texto real de la publicidad de la clínica que llegó el 20/09/2026.
       const t = texto('publicidad', 'PLATINUM CLÍNICA DENTAL & ESTÉTICA FACIAL ANTES DESPUÉS Dr. Christyan Sandoval');
       expect(t).toContain('Guíate por ese TEXTO, no por las fotos');
-      expect(t).toMatch(/la vigente o una anterior/);
+      expect(t).toMatch(/una de las vigentes \(puede haber varias a la vez\) o una anterior/);
+      // Las piezas reales de Platinum no traen fecha: se reconoce por servicio y precio.
+      expect(t).toMatch(/por su servicio, su precio y, si la trae, su fecha/);
       expect(t).toMatch(/con la fecha de hoy/);
       expect(t).toMatch(/si es una anterior o ya vencida, díselo con amabilidad y ofrécele la vigente/);
+      // La publicidad propia dice «sin dolor» y «sin dañar el esmalte», que es
+      // justo lo que la clínica prohíbe afirmar: venir del negocio no lo
+      // convierte en respuesta.
+      expect(t).toMatch(/Aunque la imagen sea del propio negocio, NO repitas ni confirmes lo que afirma sobre dolor, resultados o efectos/);
       expect(t).toMatch(/no la reconoces, no inventes/);
       expect(t).toContain('PLATINUM CLÍNICA DENTAL');
     });
