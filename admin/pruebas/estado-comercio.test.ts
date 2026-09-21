@@ -18,16 +18,9 @@
  * corre el código nuevo.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { codigoDe, configBase, correr, leerFlujo } from './lib/flujo.ts';
 
-const aqui = dirname(fileURLToPath(import.meta.url));
-
-interface Nodo { name: string; parameters: { jsCode?: string; options?: unknown } }
-const flujo = (archivo: string) => JSON.parse(
-  readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8'),
-) as { nodes: Nodo[] };
+const flujo = leerFlujo;
 
 /** Los tres flujos, con el nombre de su nodo de fusión y su política ante silencio. */
 const FLUJOS = [
@@ -46,25 +39,13 @@ const FLUJOS = [
 /** Ejecuta el nodo de fusión con una respuesta HTTP simulada. */
 function fusionar(archivo: string, fusion: string, base: string, respuesta: unknown) {
   const f = flujo(archivo);
-  const codigo = f.nodes.find((n) => n.name === fusion)?.parameters.jsCode;
-  if (!codigo) throw new Error(`sin nodo ${fusion} en ${archivo}`);
-  const set = f.nodes.find((n) => n.name === base) as unknown as {
-    parameters: { assignments: { assignments: { name: string; value: unknown }[] } };
-  };
-  const valores = Object.fromEntries(
-    set.parameters.assignments.assignments.map((a) => [a.name, a.value]),
-  );
-  const entrada = { first: () => ({ json: respuesta }) };
-  const contexto = () => ({ first: () => ({ json: valores }) });
-  // Se ejecuta el flujo VERSIONADO dentro de una prueba; copiar la lógica
-  // dejaría la prueba en verde mientras el flujo se rompe. Misma justificación
-  // que en `candado-agenda.test.ts`. La marca va en la línea de arriba del
-  // código a propósito: `nosemgrep` solo alcanza a la línea siguiente, y
-  // ponerla más arriba no surte efecto —comprobado en el pipeline—.
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', codigo) as
-    (i: unknown, c: unknown) => { json: Record<string, unknown> }[];
-  return { salida: fn(entrada, contexto)[0]?.json ?? {}, base: valores };
+  const valores = configBase(f, base);
+  // Se ejecuta el flujo VERSIONADO dentro de una prueba (`lib/flujo.ts`);
+  // copiar la lógica dejaría la prueba en verde mientras el flujo se rompe.
+  // El nodo de fusión solo consulta `$('<base>').first()`, y eso es lo que
+  // recibe.
+  const salida = correr(codigoDe(f, fusion), [respuesta as Record<string, unknown>], { [base]: valores });
+  return { salida: salida[0]?.json ?? {}, base: valores };
 }
 
 /** Una respuesta del panel con el comercio activo, mínima pero suficiente. */
@@ -146,9 +127,7 @@ describe('La compuerta que aplica el estado', () => {
     expect(nombres).toContain('¿Comercio operativo?');
     expect(nombres).toContain('Comercio no operativo');
 
-    const conexiones = (JSON.parse(
-      readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8'),
-    ) as { connections: Record<string, { main?: { node: string }[][] }> }).connections;
+    const conexiones = flujo(archivo).connections;
     const salidas = conexiones['¿Comercio operativo?']?.main ?? [];
     // Rama falsa: al aviso neutro, nunca al agente.
     expect((salidas[1] ?? []).map((x) => x.node)).toEqual(['Comercio no operativo']);
@@ -164,9 +143,7 @@ describe('La compuerta que aplica el estado', () => {
     // reporte cuelga del envío. La ingesta le contesta 409 a un comercio
     // suspendido —igual que al entrante— y el nodo continúa; en la bitácora
     // queda la evidencia de que el flujo mandó la cortesía.
-    const conexiones = (JSON.parse(
-      readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8'),
-    ) as { connections: Record<string, { main?: { node: string }[][] }> }).connections;
+    const conexiones = flujo(archivo).connections;
     const destinos = (n: string) => (conexiones[n]?.main?.[0] ?? []).map((x) => x.node);
     expect(destinos('Comercio no operativo')).toEqual(['Mensaje a enviar']);
     expect(destinos('Mensaje a enviar')).toEqual(['Responder al cliente']);

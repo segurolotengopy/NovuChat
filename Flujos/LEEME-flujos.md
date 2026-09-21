@@ -1,12 +1,15 @@
 # Flujos n8n de los demos NovuChat — guía de importación y puesta en marcha
 
-> **Archivos:** `demo-a-agendamiento.json` (Belleza y Salud, con Google
-> Calendar real) y `demo-b-venta-cobro.json` (Gastronomía y Retail, con QR
-> simulado y alerta al dueño).
+> **Archivos:** `demo-a-agendamiento.json` (reservas, con Google Calendar
+> real) y `demo-b-venta-cobro.json` (venta con QR simulado y alerta al
+> dueño), más los que se fueron sumando: la captación de NovuChat (§7), los
+> clientes de reservas (§8) y los flujos programados de recordatorios,
+> seguimientos y señas vencidas. El código de los nodos y los prompts viven
+> en módulos (§0).
 > **Destino:** n8n 2.36.5 en `${N8N_BASE_URL}`.
 > **Referencia normativa:** `NovuChat/Analisis/02-criterios-implementacion.md`
-> (los criterios citados en los sticky notes de cada flujo) y el cronograma de
-> `03-plan-demos.md`.
+> (los criterios que cada flujo hace cumplir por código; los flujos ya no
+> llevan sticky notes) y el cronograma de `03-plan-demos.md`.
 
 Ambos flujos parten de los borradores de Silvana (`Preliminares/gemini-code-*`)
 con todas las correcciones del análisis aplicadas: memoria con clave de sesión
@@ -18,38 +21,124 @@ las bifurcaciones, y cero secretos dentro de los nodos.
 
 ---
 
-## 0. Los JSON de esta carpeta son la única fuente de verdad
+## 0. Los JSON de esta carpeta son lo que se importa; su código y sus prompts viven en módulos
 
-Hasta el 2026-08-28 existía un generador, `build_flows.py`, que producía
-ambos JSON desde Python. **Se retiró.**
+**Lo que se importa a n8n y lo que se versiona sigue siendo el JSON.** Nada
+de la topología, los nombres de nodo, las conexiones, las credenciales ni el
+`webhookId` se genera desde otro lado. `publicar-flujo.sh`,
+`preparar-import.sh` y `verificar-saneo.sh` buscan nodos por nombre en el
+JSON y no cambiaron.
 
-El motivo no es de estilo. `CLAUDE.md` ya define que la fuente de verdad son
-los JSON versionados y que el ciclo real de trabajo es *editar en la interfaz
-de n8n → exportar (⋯ → Download) → reemplazar el archivo*. Con esa definición,
-el generador quedaba como una **segunda fuente de verdad que solo podía
-divergir**: nadie edita Python después de tocar el lienzo de n8n.
+**Desde el 20/09/2026, el JavaScript de los nodos Code y los prompts de los
+agentes viven ADEMÁS en módulos versionados**, y un ensamblador los inyecta
+en el JSON:
 
-Y ya había divergido con consecuencias. El generador seguía produciendo la
-versión vieja del Demo B, mientras que `demo-b-venta-cobro.json` fue reescrito
-a fondo: 18 nodos, la corrección del defecto de emparejamiento que enviaba la
-respuesta de un cliente al teléfono de otro, la configuración del negocio
-movida a 20 campos del nodo `Config del negocio`, y tres compuertas por código
-que hacen cumplir la **prohibición 3** (cobro simulado siempre rotulado).
-Correr el generador habría revertido todo eso **en silencio**, incluidas las
-compuertas de seguridad.
+| Carpeta | Qué hay |
+|---|---|
+| `Flujos/src/comun/` | Los nodos Code que existen con el mismo nombre en todos los verticales conversacionales (`Normalizar entrada`, `Procesar respuesta`, `Config del negocio`, `Comercio no operativo`, `Uso extendido`). Hoy llevan la versión del vertical de reservas; el Demo B y la captación tienen la suya, y conciliarlas es del bloque B-2 |
+| `Flujos/src/reservas/` | Los trece nodos Code que solo existen en los flujos de reservas (el candado `Comprobar reserva`, la seña, los medios, el reintento tras cruce) |
+| `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`, `platinum.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
+| `Flujos/manifiestos/<flujo>.json` | Qué nodo de ese JSON toma qué archivo, **por nombre de nodo**. Nunca hay marcadores dentro del código |
+| `admin/scripts/ensamblar-flujo.mjs` | `verificar` (ensambla en memoria y compara byte a byte; sale con 1 si difiere), `ensamblar` (módulos → JSON) y `extraer` (JSON → módulos) |
+| `admin/pruebas/ensamblador.test.ts` | La prueba de identidad: para cada JSON con manifiesto, ensamblar reproduce el archivo byte a byte; `extraer` y volver a ensamblar es la identidad; un módulo cambiado o un nodo renombrado hacen fallar con el nombre; y ningún módulo contiene un valor real |
 
-Regla, entonces:
+**Regla:** el JSON y sus módulos tienen que ser **idénticos byte a byte**, y
+`node admin/scripts/ensamblar-flujo.mjs verificar` lo comprueba para los ocho
+archivos. Los que todavía no tienen manifiesto (al 20/09: seguimientos, señas
+vencidas, Bellido, recordatorios, Demo B y captación) se verifican como «sin
+manifiesto: idéntico por definición», y pasan a módulos en el bloque B-2.
 
-- Se edita en n8n y se exporta. No se genera.
-- Antes de reemplazar el archivo, se sanea: los valores reales del nodo
-  `Config del negocio` se cambian por sus marcadores `REEMPLAZAR_*`
-  (ver `CONFIGURACION.local.md` §0.b para la correspondencia).
-- `scripts/verificar-saneo.sh` bloquea el commit si un JSON de `Flujos/` queda
-  sin ningún `REEMPLAZAR_`, que es la señal de un export sin sanear.
+### 0.a Por qué se retiró un generador en agosto de 2026, y por qué esto no es aquello
+
+Hasta el 2026-08-28 existía `build_flows.py`, que producía los JSON enteros
+desde Python. Se retiró porque era una **segunda fuente de verdad que solo
+podía divergir**: nadie edita Python después de tocar el lienzo de n8n, y de
+hecho ya había divergido —seguía produciendo la versión vieja del Demo B,
+sin las tres compuertas que hacen cumplir la prohibición 3—. Correrlo habría
+revertido eso en silencio.
+
+El ensamblador de hoy responde a esa objeción punto por punto:
+
+1. **No produce topología.** No crea nodos, conexiones, credenciales ni
+   posiciones. Parsea el JSON que ya existe y muta en sitio exactamente dos
+   cosas: `parameters.jsCode` de un nodo Code, y
+   `parameters.options.systemMessage` / `parameters.text` de un agente. Todo
+   lo demás del archivo queda como estaba, incluido el orden de las claves
+   (`demo-a-recordatorios.json` tiene otro orden de primer nivel y se
+   conserva).
+2. **La identidad byte a byte impide divergir mecánicamente.** Aquel
+   generador podía producir algo distinto del lienzo y nadie se enteraba.
+   Acá `verificar` compara lo ensamblado con el archivo con `Buffer.equals`,
+   y la suite lo exige en CI: un byte distinto es una prueba en rojo, no una
+   sorpresa en producción.
+3. **Trae la inversa, `extraer`, que `build_flows.py` nunca tuvo.** El ciclo
+   real —editar en n8n, exportar, reemplazar el archivo— sigue existiendo y
+   ahora termina en `extraer`, que lleva a los módulos lo que cambió en n8n.
+   Aquel generador solo iba en una dirección, y por eso el lienzo lo dejaba
+   atrás.
+4. **Los `REEMPLAZAR_*` no entran en ningún módulo.** Viven en el nodo
+   `Config base` del JSON (`Config del negocio` en la captación), y el
+   manifiesto lo declara en `conservanMarcadores`; `verificar` comprueba que
+   el prefijo sigue ahí. `preparar-import.sh` y `verificar-saneo.sh` no
+   cambiaron.
+
+### 0.b El ciclo de trabajo, ahora
+
+- **Se cambia una regla del código o del prompt:** se edita el módulo en
+  `Flujos/src/` o `Flujos/prompts/`, se corre
+  `node admin/scripts/ensamblar-flujo.mjs ensamblar`, y se commitean juntos
+  el módulo y el JSON. Un módulo compartido cambia a la vez el Demo A y
+  Platinum: es lo que hace real «un cambio se aplica a todos o a ninguno»
+  (`Analisis/20` §5).
+- **Se edita en la interfaz de n8n:** se exporta (⋯ → Download), se sanea
+  (los valores reales de `Config base` vuelven a ser `REEMPLAZAR_*`), se
+  reemplaza el JSON y se corre
+  `node admin/scripts/ensamblar-flujo.mjs extraer <flujo>.json`. Los módulos
+  reciben lo que cambió; si un módulo compartido cambia, el comando lo avisa,
+  porque el otro flujo que lo usa va a dejar de verificar hasta que se
+  ensamble también.
+- **Antes de cada commit:** `node admin/scripts/ensamblar-flujo.mjs verificar`
+  en 0 y `scripts/verificar-saneo.sh` en 0. El gancho de pre-commit que lo
+  exige es del bloque B-4.
+- **Un flujo nuevo de un vertical que ya tiene módulos** (un cliente de
+  reservas) se crea con `extraer --nuevo <carpeta>` y después se edita el
+  manifiesto para apuntar a `comun/` y `reservas/` lo que comparte, igual que
+  `platinum-agendamiento.json` hoy: su manifiesto es el del Demo A con otro
+  archivo para el prompt de Sofía.
+
+Dos convenciones que sostienen la identidad: el archivo de un módulo es el
+contenido más **un** salto de línea final (es lo que dejan los editores y el
+gancho `end-of-file-fixer`), y cuando el contenido real termina en salto de
+línea el manifiesto lo marca con `saltoFinal: true`. Los prompts van en `.md`
+porque el gancho `trailing-whitespace` no toca los `.md`: si un prompt
+llevara un espacio al final de una línea, el gancho no lo quitaría y la
+identidad no se rompería.
 
 `Demo-Recursos/build_recursos.py` **sí se conserva**: genera artefactos
 derivados (`calendario-demo-relleno.ics`, `qr-demo.png`) que nadie edita a
 mano en otra herramienta, así que ahí el script es la fuente legítima.
+
+Y dos salvaguardas: las rutas del manifiesto tienen que quedar bajo
+`Flujos/src/` o `Flujos/prompts/` (una entrada con `../` se rechaza en las
+tres operaciones, nombrando la ruta), y la carpeta de `extraer --nuevo` es un
+nombre simple (`[a-z0-9-]+`).
+
+**Pendiente para B-2:** hoy `extraer` sobreescribe un módulo compartido con
+un aviso y sale con 0. Cuando el módulo lo referencia otro manifiesto tiene
+que salir con código 3 y no escribir, salvo `--forzar`: si no, un export de
+Platinum puede pisar en silencio el código que también corre en el Demo A.
+
+### 0.c Lo que sigue en el JSON a propósito (propuesta para B-2)
+
+Entre el Demo A y Platinum difieren, además del prompt de Sofía, la expresión
+`end` y la `toolDescription` de `agendar_cita` (la duración de la cita) y el
+`textBody` de `Avisar a recepción`. En este bloque quedan en el JSON: son
+texto de un nodo que no es Code ni agente, y sacarlos exigiría un tipo más de
+punto de inyección. Lo que se propone para B-2 es un prompt en capas —un
+`base.md` del vertical más las variables por tenant (nombres, ejemplos del
+rubro, duración)— que reproduzca cada `systemMessage` byte a byte a partir de
+una plantilla; hasta que esa reproducción exista, un archivo por flujo es la
+única forma que no cambia el texto.
 
 ---
 
@@ -70,10 +159,14 @@ repo Git).
 | Google Calendar | Google Calendar OAuth2 | Tools del Demo A | OAuth2 de la cuenta que posee el calendario del demo |
 | Header Auth para Graph API | Header Auth | Nodos `Enviar a WhatsApp`, `Enviar texto de respaldo` y `Avisar a NovuChat` (captación). El Demo B ya no la usa: su nodo «Lista interactiva de bienvenida» se retiró el 07/09 | Nombre `Authorization`, valor `Bearer <token permanente>`. **Nunca** la credencial de ingesta: al importar, n8n asigna la única Header Auth que exista a todos los nodos de ese tipo (pasó el 15/09) |
 
-## 3. Completar el nodo `Config del negocio` de cada flujo
+## 3. Completar el nodo `Config base` de cada flujo
 
-Es el único lugar donde se personaliza el flujo (criterio B-8). Campos con
-prefijo `REEMPLAZAR_`:
+Es el único lugar del JSON donde hay valores del negocio (criterio B-8): el
+nodo Set `Config base` (`Config del negocio` en la captación) lleva los
+campos con prefijo `REEMPLAZAR_`, y `Config del negocio` —un nodo Code, en
+`Flujos/src/comun/`— los fusiona con lo que responde el panel. Los completa
+`scripts/preparar-import.sh` desde `CONFIGURACION.local.md`, nunca a mano.
+Campos con prefijo `REEMPLAZAR_`:
 
 - **Demo A:** `phoneNumberId` (el ID del número de prueba, no el número),
   `numeroRecepcion` (uno de los 5 registrados, sin `+`), `calendarioId`
