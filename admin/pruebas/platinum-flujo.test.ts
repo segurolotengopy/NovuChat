@@ -3787,7 +3787,7 @@ describe('Pago confirmado: sale el pin de ubicación', () => {
  */
 describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada cancelada se avisa', () => {
   const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú' };
-  const procesar = (output: string, pasos: J[], userInput = 'x', c: J = cfg) => ejecutar(
+  const procesar = (output: string, pasos: J[], userInput = 'sí', c: J = cfg) => ejecutar(
     String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']), [{ output, intermediateSteps: pasos }],
     { 'Normalizar entrada': [{ from: '59170000001', userInput }], 'Config del negocio': [c] })[0] ?? {};
 
@@ -3840,7 +3840,7 @@ describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada
     const r = procesar('Listo, la cita quedó cancelada.', [
       { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
       { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'c' } }, observation: '[{"success":true}]' },
-    ], 'x', { ...cfg, senaActiva: '' });
+    ], 'sí', { ...cfg, senaActiva: '' });
     expect(r['transferir']).toBe(false);
   });
 
@@ -3983,5 +3983,48 @@ describe('Adelanto a favor: el flujo', () => {
     const texto = String(nodo(flujo, 'AI Agent (Sofía)').parameters['text']);
     expect(texto).toContain("$json.senaAFavor === 'si'");
     expect(prompt()).not.toContain('senaAFavor');
+  });
+});
+
+/**
+ * SIN CONFIRMACIÓN NO SE CANCELA (Andres, 21/09/2026, opción 2). El modelo
+ * canceló dos veces en el mismo mensaje en que se lo pidieron, con el prompt
+ * diciendo que pida confirmación. La compuerta está en la herramienta.
+ */
+describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', () => {
+  const idDe = (userInput: string) => expresion(nodo(flujo, 'cancelar_cita').parameters['eventId'], {},
+    { 'Normalizar entrada': { userInput } }, { eventoId: 'real' });
+
+  it('EL CASO REAL #3960: «Quiero cancelar de las 11» NO lleva el identificador real', () => {
+    expect(idDe('Quiero cancelar de las 11')).toBe('SIN-CONFIRMAR');
+    expect(idDe('quiero cancelar la cita')).toBe('SIN-CONFIRMAR');
+  });
+
+  it('con una confirmación sí lo lleva, también por audio', () => {
+    for (const t of ['Sí', 'si', 'Sí, cancélala', 'dale', 'confirmo', 'ok', 'de acuerdo',
+      '(audio transcripto) Sí, por favor\nAVISO_SISTEMA: repite lo que entendiste']) {
+      expect(idDe(t), t).toBe('real');
+    }
+  });
+
+  it('la herramienta y Procesar respuesta usan EXACTAMENTE la misma regla', () => {
+    const rx = /\/\^\\s\*\(s\[ií\]\|[^/]+\/i/;
+    const enTool = rx.exec(String(nodo(flujo, 'cancelar_cita').parameters['eventId']))?.[0];
+    const enCodigo = rx.exec(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']))?.[0];
+    expect(enTool).toBeDefined();
+    expect(enTool).toBe(enCodigo);
+  });
+
+  it('sin confirmación, el texto es la pregunta con la cita, y no se transfiere ni se da por cancelada', () => {
+    const cita = { id: 'c11', summary: 'Cita Andrés — blanqueamiento-dental-profesional', start: { dateTime: '2026-09-21T11:00:00-04:00' } };
+    const r = ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+      [{ output: 'Listo, he cancelado tu cita.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'c11' } }, observation: '' }] }],
+      { 'Normalizar entrada': [{ from: '5917', userInput: 'Quiero cancelar de las 11' }],
+        'Config del negocio': [{ nombreNegocio: 'Clínica Platinum', senaActiva: 'si', tratamiento: 'tú' }] })[0] ?? {};
+    expect(r['respuesta']).toBe('¿Confirmas que quieres cancelar tu cita de blanqueamiento dental profesional del lunes, 21 de septiembre a las 11:00? Respóndeme «sí» y la cancelo.');
+    expect(r['transferir']).toBe(false);
+    expect(r['eventoSena']).toBeUndefined();
   });
 });
