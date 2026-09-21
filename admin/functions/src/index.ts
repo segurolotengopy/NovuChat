@@ -51,8 +51,19 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, type IdPlan,
+  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, periodoDe, type IdPlan,
 } from './planes.js';
+// PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
+// campos derivados de la situación de pago, que se recalculan y nunca se
+// escriben a mano; y la bandera del modo observación (`fijarCortePrepago`).
+import {
+  MODALIDADES, PRUEBA, camposDerivados, consumidasDe, esModalidad, esPeriodo, estadoDeServicio,
+  mesBolivia, modalidadDe, type CuentaCruda,
+} from './prepago.js';
+// COBRANZA DEL PREPAGO: el barrido de la hora del número de NovuChat pregunta a
+// qué comercios les toca un recordatorio y marca ANTES de enviar (molde de
+// `seguimientos.ts`). El porqué en `cobranza.ts`.
+export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -593,7 +604,42 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     plan = pedido;
   }
 
-  const otros = [...Object.keys(cambios), ...Object.keys(umbrales)].sort();
+  // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.2). La MODALIDAD es
+  // cerrada: demostración, prueba o prepago. `periodoPrueba` (`aaaa-mm`) es
+  // opcional: al pasar a prueba sin él, es el mes en curso de Bolivia; `null`
+  // lo borra. `corteActivo` es un booleano (enciende el corte en ESTE tenant
+  // antes que en toda la plataforma; `null` lo borra) y no cambia ningún
+  // derivado. Cualquier otra cosa se RECHAZA, como todo lo demás de acá.
+  //
+  // `periodoPagado` NO se acepta: solo lo escribe un pago (A-1) o la migración
+  // (`scripts/migrar-prepago.mjs`, uno por uno, con el OK de Andres).
+  const prepago: Record<string, unknown> = {};
+  if (viene('modalidad')) {
+    const m = datos['modalidad'];
+    if (!esModalidad(m)) {
+      throw new HttpsError('invalid-argument', `Modalidad desconocida. Una de: ${MODALIDADES.join(', ')}.`);
+    }
+    prepago['modalidad'] = m;
+  }
+  if (viene('periodoPrueba')) {
+    const p = datos['periodoPrueba'];
+    if (p === null) prepago['periodoPrueba'] = FieldValue.delete();
+    else if (esPeriodo(p)) prepago['periodoPrueba'] = p;
+    else throw new HttpsError('invalid-argument', 'periodoPrueba inválido: aaaa-mm.');
+  }
+  if (viene('corteActivo')) {
+    const c = datos['corteActivo'];
+    if (c === null) prepago['corteActivo'] = FieldValue.delete();
+    else if (typeof c === 'boolean') prepago['corteActivo'] = c;
+    else throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
+  }
+  // Los campos que ENTRAN en `estadoDeServicio`: si alguno cambia, los
+  // derivados se recalculan en la misma transacción (`recalcular`, abajo, con
+  // la cuenta ya leída). Los demás (umbrales, motivo, bandera) no los mueven,
+  // y no se toca lo que no hace falta.
+  const leerMetricas = plan !== null || viene('modalidad') || viene('periodoPrueba');
+
+  const otros = [...Object.keys(cambios), ...Object.keys(umbrales), ...Object.keys(prepago)].sort();
   if (otros.length === 0 && plan === null) {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
   }
@@ -601,11 +647,16 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
   const refFicha = db().doc(`tenants/${tenantId}`);
   const refAuditoria = db().collection(`tenants/${tenantId}/auditoria`);
+  const ahoraMs = Date.now();
+  const refMetricas = db().doc(`tenants/${tenantId}/metricas/${periodoDe(ahoraMs)}`);
 
   // UNA TRANSACCIÓN: la cuenta, el espejo de la ficha y la auditoría se
   // escriben juntos o no se escribe nada. Lecturas antes que escrituras.
   const limites = await db().runTransaction(async (tx) => {
-    const [cuentaDoc, ficha] = await Promise.all([tx.get(refCuenta), tx.get(refFicha)]);
+    const [cuentaDoc, ficha, metricasDoc] = await Promise.all([
+      tx.get(refCuenta), tx.get(refFicha),
+      leerMetricas ? tx.get(refMetricas) : Promise.resolve(null),
+    ]);
     if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
     const actual = cuentaDoc.data() ?? {};
     const ahora = Timestamp.now();
@@ -623,7 +674,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
       }
     }
 
-    const escritura: Record<string, unknown> = { ...cambios, ...umbrales, actualizadoEn: ahora };
+    const escritura: Record<string, unknown> = { ...cambios, ...umbrales, ...prepago, actualizadoEn: ahora };
     const nuevos = plan ? limitesDe(plan) : null;
     if (plan && nuevos) {
       escritura['plan'] = plan;
@@ -636,6 +687,36 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
         limitesAntes: actual['limites'] ?? null, limitesDespues: nuevos,
         catalogoPlanes: CATALOGO_PLANES,
       });
+    }
+
+    // Al pasar a PRUEBA sin período, la prueba es el mes en curso de Bolivia,
+    // con su bolsa de 20 conversaciones; si ya tenía una, no se reinicia.
+    if (prepago['modalidad'] === 'prueba' && !viene('periodoPrueba') && !esPeriodo(actual['periodoPrueba'])) {
+      escritura['periodoPrueba'] = mesBolivia(ahoraMs);
+      escritura['bolsaPrueba'] = PRUEBA.conversaciones;
+    }
+
+    // LOS DERIVADOS se recalculan con la cuenta COMO VA A QUEDAR: lo que ya
+    // había, más lo que trae esta llamada. Sobre eso decide `estadoDeServicio`
+    // (`prepago.ts`, puro), y lo que decide se escribe, no lo que mande nadie.
+    // Se recalculan cuando cambia la modalidad o la prueba, y cuando cambia el
+    // plan de una cuenta CON modalidad; un cambio de plan en una cuenta sin
+    // modalidad (los comercios de hoy, y los demos) no toca lo que había: el
+    // prepago no la gobierna todavía.
+    const combinada: Record<string, unknown> = { ...actual };
+    for (const [k, v] of Object.entries(escritura)) {
+      if (v instanceof FieldValue) delete combinada[k]; else combinada[k] = v;
+    }
+    const recalcular = viene('modalidad') || viene('periodoPrueba')
+      || (plan !== null && modalidadDe(combinada as CuentaCruda) !== 'demostracion');
+    if (recalcular) {
+      const servicio = estadoDeServicio(combinada as CuentaCruda, consumidasDe(metricasDoc?.data()), ahoraMs);
+      const d = camposDerivados(servicio, combinada as CuentaCruda);
+      escritura['estadoPago'] = d.estadoPago;
+      escritura['montoMensual'] = d.montoMensual;
+      escritura['moneda'] = d.moneda;
+      escritura['proximoVencimiento'] = d.proximoVencimientoMs === null
+        ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs);
     }
 
     // `update` y no `set` con `merge`: reemplaza `limites` ENTERO en vez de
@@ -656,13 +737,62 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
         accion: 'estado_cuenta', uid, en: ahora, campos: otros,
         valores: Object.fromEntries(otros
           .filter((k) => k !== 'motivoVisible')
-          .map((k) => [k, valor(k in cambios ? cambios[k] : umbrales[k])])),
+          .map((k) => [k, valor(k in cambios ? cambios[k] : k in umbrales ? umbrales[k] : prepago[k])])),
       });
     }
     return nuevos;
   });
 
   return { ok: true, ...(plan && limites ? { plan, limites } : {}) };
+});
+
+// ---------------------------------------------------------------------------
+// LA BANDERA DEL MODO OBSERVACIÓN DEL PREPAGO (`DISENO.md` §4undecies.4).
+//
+// `plataforma/prepago.corteActivo` es la compuerta global: A-0 entra a `main`
+// con ella apagada y así se queda hasta que Andres decida, «después del demo y
+// con un pago confirmado de punta a punta». `cuenta/estado.corteActivo` es la
+// de UN tenant, para el ensayo de extremo a extremo: se enciende en uno solo,
+// se observa un ciclo completo, y recién después la global. Apagada, la
+// ingesta calcula el corte, lo anota con `aplicado: false` y atiende igual;
+// encendida, `configuracionFlujo` responde 409 y la ingesta no cuenta nada.
+//
+// Solo el propietario, y queda quién y cuándo: cada cambio deja una entrada
+// en `plataforma/prepago/historial` (y, por tenant, en su auditoría). Ningún
+// script con `--aplicar` la toca: es una decisión, no una operación.
+// ---------------------------------------------------------------------------
+export const fijarCortePrepago = onCall(async (peticion) => {
+  const uid = exigirPropietario(peticion);
+  const datos = (peticion.data ?? {}) as Record<string, unknown>;
+  const corteActivo = datos['corteActivo'];
+  if (typeof corteActivo !== 'boolean') {
+    throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
+  }
+  const motivo = texto(datos['motivo'], 300);
+  const tenantId = texto(datos['tenantId'], 60);
+  if (tenantId !== '' && !ID_TENANT.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Identificador inválido.');
+  }
+  const ahora = Timestamp.now();
+  const refPlataforma = db().doc('plataforma/prepago');
+  const refHistorial = refPlataforma.collection('historial');
+
+  await db().runTransaction(async (tx) => {
+    if (tenantId === '') {
+      tx.set(refPlataforma, { corteActivo, actualizadoEn: ahora, actualizadoPor: uid, motivo }, { merge: true });
+      tx.create(refHistorial.doc(), { corteActivo, uid, en: ahora, motivo });
+      return;
+    }
+    const ficha = await tx.get(db().doc(`tenants/${tenantId}`));
+    if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    tx.set(db().doc(`tenants/${tenantId}/cuenta/estado`), { corteActivo, actualizadoEn: ahora }, { merge: true });
+    tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
+      accion: 'corte_prepago', uid, en: ahora, corteActivo, motivo,
+    });
+    tx.create(refHistorial.doc(), { corteActivo, uid, en: ahora, motivo, tenantId });
+  });
+
+  return { ok: true, corteActivo, ...(tenantId ? { tenantId } : {}) };
 });
 
 // ---------------------------------------------------------------------------
