@@ -3927,7 +3927,8 @@ describe('Adelanto a favor: el flujo', () => {
       'Config del negocio': [{ senaActiva: 'si', tratamiento: 'tú', funcionarios: '[]' }] })[0] ?? {};
     expect(r['aplicarAdelanto']).toBe(true);
     expect(r['eventoSena']).toEqual({ evento: 'reprogramada', referencia: 'pagada', inicio: '2026-09-21T15:00:00-04:00', nueva: 'nueva', calendario: 'cal' });
-    expect(String(r['respuesta'])).not.toMatch(/seña|RESERVADO por|queda a tu favor/i);
+    // Lo que no puede quedar es el PEDIDO de pago; «no pagas otra seña» sí.
+    expect(String(r['respuesta'])).not.toMatch(/espera de la seña|\bQR\b|RESERVADO por|queda a tu favor/i);
     expect(String(r['respuesta'])).toContain('te agendé el martes a las 11:00');
     expect(String(r['respuesta'])).toContain('Tu adelanto de la cita anterior se aplica a esta');
   });
@@ -3952,8 +3953,30 @@ describe('Adelanto a favor: el flujo', () => {
       'Config del negocio': [{ senaAFavor: 'si', senaActiva: 'si', tratamiento: 'tú', funcionarios: '[]' }] })[0] ?? {};
     expect(r['eventoSena']).toEqual({ evento: 'adelanto_aplicado', referencia: 'nueva', calendario: 'cal' });
     expect(r['aplicarAdelanto']).toBe(true);
-    expect(String(r['respuesta'])).not.toMatch(/seña|QR|RESERVADO por/i);
-    expect(String(r['respuesta'])).toContain('Tu adelanto de la cita anterior se aplica a esta');
+    expect(String(r['respuesta'])).not.toMatch(/espera de la seña|\bQR\b|RESERVADO por/i);
+    expect(String(r['respuesta'])).toContain('Tu adelanto de la cita anterior se aplica a esta: no pagas otra seña.');
+  });
+
+  it('una cita pagada con el adelanto manda el pin, como un pago que cuadró (21/09/2026)', () => {
+    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
+      start: { dateTime: '2026-09-23T09:00:00-04:00' }, end: { dateTime: '2026-09-23T10:00:00-04:00' }, created: new Date().toISOString() };
+    const previa = { respuesta: 'Quedó confirmada.', ubicacionLat: -17.7, ubicacionLng: -63.1,
+      eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime }] };
+    const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
+      'Config del negocio': [{ senaAFavor: 'si', senaActiva: 'si', funcionarios: '[]' }] })[0] ?? {};
+    expect(r['enviarUbicacion']).toBe(true);
+    const sinCoord = ejecutar(cod, [ev], { 'Procesar respuesta': [{ ...previa, ubicacionLat: null, ubicacionLng: null }],
+      'Config del negocio': [{ senaAFavor: 'si', senaActiva: 'si', funcionarios: '[]' }] })[0] ?? {};
+    expect(sinCoord['enviarUbicacion']).toBe(false);
+  });
+
+  it('el mensaje del pago nombra el servicio con espacios, no con guiones (#3952)', () => {
+    const cod = String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+    const cita = { id: 'ev', summary: 'Cita Andrés — blanqueamiento-dental-profesional', start: { dateTime: '2026-09-21T11:00:00-04:00' }, organizer: { email: 'c' } };
+    const r = ejecutar(cod, [{}], { 'Respuesta de la seña': [{ respuesta: 'Recibí tu comprobante. Tu cita queda reservada.', resultadoSena: 'cuadra', motivoTransferencia: '' }],
+      'Config del negocio': [{ funcionarios: '[]' }], 'Confirmar cita retenida': [cita] })[0] ?? {};
+    expect(String(r['respuesta'])).toContain('Tu cita de blanqueamiento dental profesional queda reservada');
   });
 
   it('el modelo sabe del adelanto por el contexto del turno, no por el prompt (que sigue cacheable)', () => {
