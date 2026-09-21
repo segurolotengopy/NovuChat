@@ -387,16 +387,35 @@ describe('5. senaVencida', () => {
     expect(await bitacora('sena_vencida')).toHaveLength(0);
   });
 
+  it('pero la protección NO es para siempre: pasada la ventana, vence y queda contada aparte', async () => {
+    // El híbrido (Andres, 20/09): proteger siempre convertiría cualquier imagen
+    // en un horario bloqueado eternamente. Se envejece el cotejo tres horas.
+    const ref = db.doc(`tenants/${T}/cierres/cita_evt_sena_2`);
+    const viejo = (await ref.get()).get('cotejo') as Record<string, unknown>;
+    await ref.set({ cotejo: { ...viejo, en: new Date(Date.now() - 3 * 60 * 60 * 1000) } }, { merge: true });
+
+    const r = await vencida(TEL_2, 'evt_sena_2');
+    expect(r.cuerpo).toEqual({ registrado: true, repetido: false, conComprobante: true });
+    expect((await conversacion(TEL_2))['solicitud']).toMatchObject({ etapa: 'vencida', cotejos: 2 });
+    // Contada aparte: no es lo mismo que una seña que nadie pagó nunca.
+    expect((await metricas())['senasVencidasConComprobante']).toBe(1);
+    const renglones = await bitacora('sena_vencida');
+    expect(renglones.some((x) => x['codigo'] === 'liberada_con_comprobante')).toBe(true);
+  });
+
   it('la retención SIN comprobante sí vence: solicitud vencida, senasVencidas y bitácora', async () => {
     await qrEnviado(TEL_4, 'evt_sena_4');
     const r = await vencida(TEL_4, 'evt_sena_4');
     expect(r.codigo).toBe(200);
     expect(r.cuerpo).toEqual({ registrado: true, repetido: false });
     expect((await conversacion(TEL_4))['solicitud']).toMatchObject({ etapa: 'vencida', cotejos: 0, evento: { id: 'evt_sena_4' } });
-    expect((await metricas())['senasVencidas']).toBe(1);
+    expect((await metricas())['senasVencidas']).toBe(2);   // la de TEL_2 (con comprobante) y esta
     const renglones = await bitacora('sena_vencida');
-    expect(renglones).toHaveLength(1);
-    expect(renglones[0]).toMatchObject({ resultado: 'ok', destinoEnmascarado: '5917****004' });
+    expect(renglones).toHaveLength(2);
+    const suyo = renglones.find((x) => x['destinoEnmascarado'] === '5917****004');
+    expect(suyo).toMatchObject({ resultado: 'ok' });
+    // Y esta NO lleva el código: nadie mandó nunca un comprobante.
+    expect(suyo?.['codigo']).toBeUndefined();
     // Ningún mensaje salió: la conversación no tiene salientes nuevos.
     const mensajes = await db.collection(`tenants/${T}/conversaciones/wa_${TEL_4}/mensajes`).get();
     expect(mensajes.docs.filter((d) => d.get('direccion') === 'saliente')).toHaveLength(1);   // solo el QR
@@ -405,8 +424,8 @@ describe('5. senaVencida', () => {
   it('la segunda vez es repetido y no cuenta de nuevo', async () => {
     const r = await vencida(TEL_4, 'evt_sena_4');
     expect(r.cuerpo).toEqual({ registrado: false, repetido: true });
-    expect((await metricas())['senasVencidas']).toBe(1);
-    expect(await bitacora('sena_vencida')).toHaveLength(1);
+    expect((await metricas())['senasVencidas']).toBe(2);
+    expect(await bitacora('sena_vencida')).toHaveLength(2);
   });
 
   it('un comprobante que llega después del vencimiento: 409, y la clínica lo resuelve', async () => {
@@ -458,12 +477,51 @@ describe('5. senaVencida', () => {
     expect(renglones.some((x) => x['codigo'] === 'cita_pagada_con_rotulo' && x['resultado'] === 'rechazado')).toBe(true);
   });
 
-  it('un cotejo que NO cuadró no protege a la cita: sigue siendo huérfana', async () => {
+  // UNA HUÉRFANA CON COMPROBANTE TAMBIÉN TIENE MOTIVO (Andres, 20/09/2026).
+  // Antes acá se liberaba igual: «no hay seña pendiente, no hay nadie
+  // esperando». Pero si hay cotejo, alguien mandó un comprobante, y eso es un
+  // motivo aunque el servidor ya no retenga la seña. Se protege mientras una
+  // persona puede resolverlo, y ni un minuto más.
+  it('una huérfana con un comprobante RECIENTE se protege: alguien la reclamó', async () => {
     await db.doc(`tenants/${T}/cierres/cita_evt_nocuadra`).set({
-      tipo: 'cita', referencia: 'evt_nocuadra', cotejo: { resultado: 'no_cuadra' },
+      tipo: 'cita', referencia: 'evt_nocuadra',
+      cotejo: { resultado: 'no_cuadra', en: new Date() },
     });
     const r = await vencida(TEL_3, 'evt_nocuadra', creadaHace(90));
-    expect(r.cuerpo).toEqual({ registrado: true, repetido: false, motivo: 'huerfana' });
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'comprobante_en_revision' });
+  });
+
+  it('y con el comprobante VIEJO se libera igual, contada y anotada aparte', async () => {
+    await db.doc(`tenants/${T}/cierres/cita_evt_nocuadra`).set({
+      tipo: 'cita', referencia: 'evt_nocuadra',
+      cotejo: { resultado: 'no_cuadra', en: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+    }, { merge: true });
+    const r = await vencida(TEL_3, 'evt_nocuadra', creadaHace(90));
+    expect(r.cuerpo).toEqual({ registrado: true, repetido: false, motivo: 'huerfana', conComprobante: true });
+    expect((await metricas())['senasHuerfanasConComprobante']).toBe(1);
+    const renglones = await bitacora('sena_vencida');
+    expect(renglones.some((x) => x['codigo'] === 'liberada_con_comprobante')).toBe(true);
+  });
+
+  it('un cotejo ILEGIBLE protege igual que uno que no cuadró: también hubo un comprobante', async () => {
+    await db.doc(`tenants/${T}/cierres/cita_evt_ilegible`).set({
+      tipo: 'cita', referencia: 'evt_ilegible',
+      cotejo: { resultado: 'ilegible', en: new Date() },
+    });
+    const r = await vencida(TEL_3, 'evt_ilegible', creadaHace(90));
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'comprobante_en_revision' });
+  });
+
+  it('sin marca de cuándo llegó el comprobante, la ventana se cuenta desde la cita', async () => {
+    // Un cierre sin `en` es un defecto NUESTRO. La ventana igual tiene final:
+    // se toma cuándo se creó la cita, así nada queda bloqueado para siempre.
+    await db.doc(`tenants/${T}/cierres/cita_evt_sinmarca`).set({
+      tipo: 'cita', referencia: 'evt_sinmarca', cotejo: { resultado: 'no_cuadra' },
+    });
+    expect((await vencida(TEL_3, 'evt_sinmarca', creadaHace(30))).cuerpo)
+      .toMatchObject({ registrado: false, motivo: 'comprobante_en_revision' });
+    expect((await vencida(TEL_3, 'evt_sinmarca', creadaHace(200))).cuerpo)
+      .toMatchObject({ registrado: true, motivo: 'huerfana', conComprobante: true });
   });
 
   it('un QR nuevo para el mismo teléfono abre otra solicitud desde cero', async () => {
