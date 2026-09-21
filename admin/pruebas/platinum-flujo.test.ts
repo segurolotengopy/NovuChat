@@ -3882,14 +3882,26 @@ describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada
  * sin otra seña. El asistente ya prometía «reprogramar sin costo».
  */
 describe('Adelanto a favor: el flujo', () => {
-  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú' };
+  // `senaEventoId`: la cita que el SERVIDOR tiene como la de la seña pagada.
+  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú',
+    senaEventoId: 'pagada' };
   const enTresHoras = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
   const pagada = { id: 'pagada', summary: 'Cita Andrés — blanqueamiento', start: { dateTime: enTresHoras } };
-  const cancelada = () => ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+  const cancelada = (extra: J = {}) => ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
     [{ output: 'Listo, la cita quedó cancelada.', intermediateSteps: [
       { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([pagada]) },
       { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'pagada' } }, observation: '[{"success":true}]' }] }],
-    { 'Normalizar entrada': [{ from: '59170000001', userInput: 'sí' }], 'Config del negocio': [cfg] })[0] ?? {};
+    { 'Normalizar entrada': [{ from: '59170000001', userInput: 'sí' }], 'Config del negocio': [{ ...cfg, ...extra }] })[0] ?? {};
+
+  it('EL CASO REAL #4034: una cita sin rótulo que NO es la de la seña registrada no promete crédito: lo coordina recepción', () => {
+    for (const extra of [{ senaEventoId: 'otra' }, { senaEventoId: '' }, { senaPendiente: 'si' }]) {
+      const r = cancelada(extra);
+      expect(String(r['respuesta']), JSON.stringify(extra)).not.toContain('queda a tu favor');
+      expect(String(r['respuesta'])).toContain('Sobre el adelanto que pagaste, te escribe recepción.');
+      expect(r['transferir']).toBe(true);
+      expect(r['eventoSena']).toBeUndefined();
+    }
+  });
 
   it('cancelar con 2 h o más: el adelanto queda a favor 7 días, sin molestar a recepción, y se informa al servidor', () => {
     const r = cancelada();
