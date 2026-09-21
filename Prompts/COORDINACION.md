@@ -46,7 +46,7 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` (`be135da`, worktree `agent-a073cd5409c381cca`) | ocho plantillas de utilidad redactadas | **redacción cerrada (20/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
 | **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0 | **cerrado (20/09)**: ver «Diagnóstico B» abajo | ninguno | — |
 | **B-1 · ensamblador** | `flujos/ensamblador` (4 commits, `c477aef`…`b9a6cac`, worktree `agent-ad32890c0b62ce13b`) | ensamblador + `extraer` + `verificar`, 18 módulos (5 `comun/`, 13 `reservas/`), 5 prompts, 2 manifiestos, ayudante `admin/pruebas/lib/flujo.ts`, LEEME §0 reescrito | **construido (20/09, noche)**: identidad byte a byte en los 8 JSON, suite 2242 → 2287 casos (+45, la suite nueva), saneo por patrones 0; **en rebase y reextracción sobre `e571e76`** (los flujos de reservas cambiaron en #140 a #147); antes: listo; seguridad apto tras corregir la travesía de rutas del manifiesto (`2abb027`, CWE-22, 5 casos negativos); suite 2255 en verde (+50 de la suite nueva); saneo exacto rc=0 (29 cadenas, 354 archivos); `verificar` 0 en los 8 JSON; `Flujos/*.json`, `scripts/` y `.pre-commit-config.yaml` sin diff | `Flujos/src/`, `Flujos/prompts/`, `Flujos/manifiestos/`, `admin/scripts/ensamblar-flujo.mjs`, `admin/pruebas/lib/flujo.ts`, `admin/pruebas/ensamblador.test.ts`, `Flujos/LEEME-flujos.md`; `scripts/` y `.pre-commit-config.yaml` sin diff | `git push` + PR contra `main`, con su OK |
-| **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 y de **verificar** que los flujos publicados coinciden con `main` (Andres dice que sí, 21/09) | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
+| **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | encolado detrás de B-1 fusionado; **la publicación de los flujos está verificada (21/09)**, así que ya no hay descalce entre `main` y n8n | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
 | **B-3 · corpus del sitio** | por definir | el corpus fuera del nodo Code | encolado detrás de B-1 fusionado | flujo de captación, Function que lo sirve | — |
 | **B-4 · procedimiento** | por definir | RUNBOOK etapa 5, agente `flujos-n8n`, gancho de pre-commit | encolado detrás de B-2 | `docs/alta-cliente/RUNBOOK.md`, `.claude/agents/flujos-n8n.md`, `.githooks/` | — |
 | **C · contrato del cobrador** | otro proyecto (`$HOME/ManejoQRSimple/`), otra sesión ya activa | bloque 2 (aviso) en `feat/aviso-de-confirmacion`; doc en `docs/estado-pr-38` | **bloques 0 y 1 fusionados (PR #38, 20/09); 2 en curso; 3 y 4 pendientes** — verificado por la coordinadora a pedido de Andres | nada de NovuChat | ver «Lo que A-2 le pide a C» abajo |
@@ -166,13 +166,20 @@ C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
 
 **Después de que Andres escriba que el demo terminó:**
 
-5. **Flujos publicados: Andres dice que sí (21/09); falta la verificación.** Los PR
-   #145, #146 y #147 se fusionaron después de `v0.6.7` y solo tocan flujos, así que se
-   publican sin etiqueta. La comprobación es el diagnóstico en seco de
-   `publicar-flujo.sh` (solo lee n8n) de los ocho flujos contra `main`; el clasificador
-   de permisos de la sesión lo bloqueó el 21/09 por hablar con producción. Queda
-   pendiente de que Andres lo autorice. `ESTADO.md` de `main` no registra ninguna
-   publicación después del 19/09.
+5. **Flujos publicados: VERIFICADO el 21/09/2026** (con permiso de Andres para leer los
+   otros worktrees y sesiones, sin conectarse a n8n):
+
+   | Flujo | Publicado (hora de Bolivia) | Desde | ¿Igual a `main` hoy? |
+   |---|---|---|---|
+   | Demo A, Platinum, Bellido, Demo B, Captación | 21/09 11:51–11:52 | worktree `publicar`, commit `4aa6f3c` (#147, fusionado 11:19) | sí, sin diferencias en `Flujos/` |
+   | Señas vencidas (Platinum) | 20/09 23:06 | worktree `release`, tras el #132 (fusionado 22:39) | sí, sin cambios desde `e22e79b` |
+   | Recordatorios, Seguimientos | sin cambios en `main` desde el 07/09 y el 17/09 | — | — |
+
+   Prueba: el respaldo del flujo vivo que `publicar-flujo.sh --aplicar` escribe antes de
+   cada escritura, y la salida en la sesión «Platinum: flujo mixto, leads y medios»:
+   «Flujo actualizado en su lugar (HTTP 200)». Lo que esto **no** descarta es una edición
+   a mano en n8n después de las 11:52; eso solo lo ve el diagnóstico en seco.
+
 6. **Migrar los comercios reales** con `migrar-prepago.mjs` (seco, y `--aplicar` uno por
    uno con su OK), **antes** de desplegar A-1.
 7. **Nube para el prepago:** crear `COBRADOR_TOKEN` y `COBRADOR_AVISO_SECRETO` sin mostrar
@@ -198,6 +205,9 @@ sitio, arreglando antes su alarma de huella que no corre en CI), B-4 (runbook, a
 `flujos-n8n`, gancho de pre-commit, acotar `verificar-saneo.sh`).
 
 ## Bitácora
+
+- **21/09/2026** — **Publicación de los flujos verificada** por respaldos y salida de
+  la sesión que publicó (ver el punto 5 de «Lo que espera a Andres»). B-2 desbloqueado.
 
 - **21/09/2026** — **Andres: el demo terminó y los flujos quedaron publicados.** Compuerta
   abierta. La verificación de la publicación se intentó con el diagnóstico en seco y el
