@@ -7,8 +7,9 @@ CONFIGURACION.local.md
 *.local.md
 *.local.json
 # Los respaldos heredan el contenido del original: mismos valores reales.
-*.respaldo
-*.respaldo[0-9]
+# El sufijo es libre (`.respaldo2`, `.respaldo-platinum`): se cubre entero,
+# porque `*.respaldo[0-9]` dejaba fuera los sufijos con letras (16/09).
+*.respaldo*
 *.bak
 secrets/
 *.key
