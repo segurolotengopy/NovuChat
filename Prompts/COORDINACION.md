@@ -40,7 +40,7 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **Coordinación** | `claude/prepago-modularizacion-paralelo-e0d10c` (worktree `novuchat-modularization-0fc59d`) | tablero, integración | en curso | `Prompts/COORDINACION.md`, `ESTADO.md`, `admin/DISENO.md` (solo agrega) | integrar Diseño A y Diagnóstico B |
 | **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño | **cerrado (20/09)**: `admin/DISENO.md` §4undecies en la rama de coordinación (`bb07890`), con la §4undecies.5 reescrita contra el contrato real | `admin/DISENO.md` | — |
 | **A-0 · servidor** | `prepago/modulo-y-cortes` (`eb10d7e`…`32ca227`, worktree `agent-a2ab73163a086db6a`) | módulo puro reaplicado, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas` por teléfono, modo observación (`fijarCortePrepago`), `cobranza.ts`, `migrar-prepago.mjs` | **construido (21/09, madrugada)**: suite 2316 en verde (+111), build/lint 0, saneo 0, todas las negativas pasan; **listo para subir y abrir PR (espera el «sí» de Andres)**: correcciones de seguridad en `066bd29` (un período mal formado ahora se atiende y se audita una vez; `sin_conversaciones` sin teléfono responde 200; claves de cobranza cerradas; `motivo` ≥ 10 y regla de `historial`); suite 2327 en verde, build/lint/saneo 0 | `prepago.ts`, `cobranza.ts`, `web/src/lib/prepago.ts`, `admin/scripts/migrar-prepago.mjs`, `ingesta.ts`, `index.ts`, `firestore.rules` (tipos de bitácora), `bitacora.ts`, 4 suites nuevas, `estado-cuenta.test.ts`, `CLAUDE.md` §7, `ESTADO.md` | `git push` + PR contra `main` con su OK; es **el primero del frente A en fusionarse**; **la fusión de A-0 y A-2 se resuelve quedándose con la línea de A-0 en las tres listas de tipos de bitácora**. **Entra en observación**: `plataforma/prepago.corteActivo` no existe hasta que Andres lo encienda |
-| **A-1 · pagos** | `prepago/pagos-y-carga-manual` (`454d927`…`49d2a41`, sobre A-0; worktree `agent-a5a86bc0ca540242b`) | `pagos.ts`, `tipoCambio.ts`, `autorizacion.ts`, `registrarPagoManual`, `anularPagoPendiente`, `fijarTelefonosPago`, `consultarPagoPendiente`, derivados rechazados, reglas de Firestore y Storage | **construido (21/09)**: suite 2384 en verde (+68), Storage 54 en verde (+24), build/lint/saneo 0; **seguridad: apto con cambios** (2 MEDIUM sobre dinero: un manual en efectivo repetido acreditaba dos veces; la evidencia se podía reemplazar después de registrar el pago; 7 LOW), **en corrección** | `pagos.ts`, `tipoCambio.ts`, `autorizacion.ts`, `admin/scripts/fijar-tipo-cambio.mjs` (nuevos), `index.ts`, `firestore.rules`, `storage.rules`, `web/src/lib/cuenta.ts`, 2 suites nuevas + 3 ampliadas, `ESTADO.md` | tras seguridad, PR sobre A-0 |
+| **A-1 · pagos** | `prepago/pagos-y-carga-manual` (rebasada sobre A-0 con `066bd29`; 12 commits, último `aaefaed`; worktree `agent-a5a86bc0ca540242b`) | `pagos.ts`, `tipoCambio.ts`, `autorizacion.ts`, `registrarPagoManual`, `anularPagoPendiente`, `fijarTelefonosPago`, `consultarPagoPendiente`, derivados gobernados, reglas de Firestore y Storage | **listo para subir y abrir PR (espera el «sí» de Andres)**: las 9 correcciones de seguridad aplicadas con prueba (`pagoId` obligatorio en todo manual; evidencia no reemplazable y con huella `evidenciaMeta`; `ademas` cerrado; sesión reciente ≤ 30 min; TCO contrastado con `plataforma/tipoCambio`; comercio sin migrar no cambia de aspecto; confirmar un QR pagado por menos con motivo); suite 2409 en verde, Storage 55, build/lint/saneo 0 | `pagos.ts`, `tipoCambio.ts`, `autorizacion.ts`, `admin/scripts/fijar-tipo-cambio.mjs`, `index.ts`, `firestore.rules`, `storage.rules`, `web/src/lib/cuenta.ts`, pruebas, `ESTADO.md` | `git push` + PR **sobre A-0** con su OK; se fusiona segundo |
 | **A-2 · cobrador** | `prepago/cliente-cobrador` (`7320532`, `7e3f1f7`; worktree `agent-a8de99da38fd4652b`) | cliente del contrato real + `crearCobroPrepago`, `avisoCobrador`, `barridoCobros`, `imagenDePago`, doble, reglas de `pagos`/`cobrosPendientes`/`cobrosResueltos` | **construido (21/09, madrugada)**: suite 2268 en verde (+58), build/lint 0, saneo 0; **listo para subir y abrir PR (espera el «sí» de Andres)**: seguridad apto; los 7 cambios aplicados con prueba (`32ce2ac`, `f60a90a`: importe menor no acredita y queda pendiente para el camino manual; el barrido consulta por referencia aunque falte `cobroId`; retomar sin imagen; loopback anclado; secreto corto → 401; stub vigilado; tenant en baja no emite); suite 2277 en verde, build/lint/saneo 0 | `cobrador.ts`, `cobroPrepago.ts`, `pagos-stub.ts` (provisorio), `firma.ts` (dos exports), `ingesta.ts`/`firestore.rules`/`bitacora.ts` (tipo `pago_registrado`), `admin/pruebas/dobles/`, tres suites nuevas, `.github/DESPLIEGUE-FIREBASE.md` | `git push` + PR contra `main` con su OK; **se fusiona después de A-0 y A-1** (resuelve conflictos en `TipoEvento`/tipos de bitácora/exports y reemplaza `pagos-stub.ts`) |
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **encolado detrás de B-1 fusionado** | `Flujos/src/` (módulo), nunca el JSON a mano | — |
@@ -150,12 +150,54 @@ C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
 - **Flujos fusionados sin publicar** (#119 a #127): publicar desde `main` con el
   diagnóstico en seco leído entero; hasta entonces B-2 espera.
 
-## Lo que espera a Andres después del demo
+## Lo que espera a Andres, en orden (al 21/09/2026)
 
-(se completa al cerrar; en orden: qué fusionar, qué etiquetar, qué publicar, qué
-presentar a Meta, y cuándo encender el corte)
+**Ya, sin esperar el demo (subir y abrir PR no despliega nada):**
+
+1. «Sí» para `git push` y PR de **B-1** (`flujos/ensamblador`). Independiente del prepago.
+2. «Sí» para `git push` y PR de **A-0** (`prepago/modulo-y-cortes`), **A-1**
+   (`prepago/pagos-y-carga-manual`, sobre A-0) y **A-2** (`prepago/cliente-cobrador`).
+3. «Sí» para fusionar, en este orden: B-1 (cuando quiera), A-0, A-1, y A-2 al final
+   (la coordinadora resuelve sus conflictos: una sola copia de las reglas de `/pagos`,
+   la línea de A-0 en las listas de tipos de bitácora, `tipoCambioDe`, y se borra
+   `pagos-stub.ts`). Fusionar tampoco despliega.
+4. «Sí» para subir y abrir PR de **A-5** (`prepago/plantillas-cobranza`, solo documento)
+   y de esta rama de coordinación (`admin/DISENO.md` §4undecies, el tablero, las notas
+   de estado de `Analisis/36` y del prompt de C).
+
+**Después de que Andres escriba que el demo terminó:**
+
+5. **Publicar los flujos fusionados sin publicar** (#119 a #127: Demo A, Platinum,
+   Bellido y señas vencidas), desde `main`, leyendo entero el diagnóstico en seco. Es
+   lo más urgente: hoy producción puede no ser lo que dice `main`. Anotarlo en `ESTADO.md`.
+6. **Migrar los comercios reales** con `migrar-prepago.mjs` (seco, y `--aplicar` uno por
+   uno con su OK), **antes** de desplegar A-1.
+7. **Nube para el prepago:** crear `COBRADOR_TOKEN` y `COBRADOR_AVISO_SECRETO` sin mostrar
+   el valor (con un `scripts/rotar-cobrador.sh` a imagen de `rotar-ingesta.sh`, que hay
+   que escribir), `secretAccessor` a `sa-functions`, condición de IAM `COBRADOR_`, permiso
+   de Storage de `sa-functions` sobre el bucket, Cloud Scheduler, invocador `allUsers`
+   para `avisoCobrador` e `imagenDePago`, y `plataforma/prepago.cobrador.baseUrl`.
+8. **Etiqueta** (la crea Andres) con A-0, A-1 y A-2 fusionados: despliega el prepago en
+   **modo observación**. Aprobar el Environment `production`.
+9. **Ampliar `crear-plantilla.sh`** (encabezado de imagen, pie, botón de respuesta) y
+   **presentar las ocho plantillas a Meta** (`docs/plantillas-cobranza.md` §7). Tarda días.
+10. **B-2** (resto de los flujos al ensamblador), con los flujos ya publicados.
+11. **Ensayo de punta a punta** con el TENANT de ensayo y un cobro real de monto mínimo:
+    exige que C cierre sus bloques 3 y 4 (cuenta `novuchat`, URL pública) y la bandera
+    encendida **solo en ese tenant** (`fijarCortePrepago` con `tenantId`).
+12. **Encender el corte global:** decisión de Andres, después de un pago confirmado de
+    punta a punta y un ciclo completo de recordatorios observado, y con todos los flujos
+    publicados mandando `telefono` a `Traer configuración`.
+
+**Encolado, sin fecha:** A-3 (consola «Pagar», tras A-1 en `main`), A-4 (WhatsApp interno,
+tras B-1 en `main` y con la verificación del titular de cada teléfono), B-3 (corpus del
+sitio, arreglando antes su alarma de huella que no corre en CI), B-4 (runbook, agente
+`flujos-n8n`, gancho de pre-commit, acotar `verificar-saneo.sh`).
 
 ## Bitácora
+
+- **21/09/2026** — Cierre de la jornada. A-0, A-1, A-2 y B-1 construidos, revisados por
+  `seguridad` y corregidos; A-5 redactado. Ninguna rama subida: todo espera el «sí».
 
 - **21/09/2026** — A-1 revisado por seguridad: dos MEDIUM (idempotencia del manual en
   efectivo; evidencia reemplazable) y siete LOW, en corrección. Al fusionar A-1 y A-2:
