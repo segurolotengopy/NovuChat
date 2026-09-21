@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { CobradorDoble, firmarAviso, idDeCobro, pngMinimo } from './dobles/cobrador.ts';
 import {
-  ErrorCobrador, CobradorNoResponde, crearClienteHttp, montoATexto, montoDesdeTexto, verificarAviso,
+  ErrorCobrador, CobradorNoResponde, configCobradorDe, crearClienteHttp, montoATexto, montoDesdeTexto, verificarAviso,
 } from '../functions/src/cobrador.ts';
 import { VENTANA_MS } from '../functions/src/firma.ts';
 
@@ -35,6 +35,22 @@ describe('montos como texto decimal', () => {
     expect(montoDesdeTexto('630.5')).toBe(630.5);
     expect(montoDesdeTexto(630)).toBeNull();
     expect(montoDesdeTexto('630,00')).toBeNull();
+  });
+});
+
+describe('la base URL del cobrador (el destino del token)', () => {
+  it('acepta https y el loopback anclado; rechaza un host que empieza con localhost y http remoto', () => {
+    const de = (baseUrl: string) => configCobradorDe({ cobrador: { baseUrl } })?.baseUrl ?? null;
+    expect(de('https://cobros.ejemplo.bo/')).toBe('https://cobros.ejemplo.bo');
+    expect(de('http://localhost:8787')).toBe('http://localhost:8787');
+    expect(de('http://127.0.0.1:8787/api')).toBe('http://127.0.0.1:8787/api');
+    expect(de('http://localhost.atacante.bo')).toBeNull();
+    expect(de('http://localhost.atacante.bo:80/')).toBeNull();
+    expect(de('http://127.0.0.1.atacante.bo')).toBeNull();
+    expect(de('http://cobros.ejemplo.bo')).toBeNull();
+    expect(de('')).toBeNull();
+    expect(configCobradorDe({})).toBeNull();
+    expect(configCobradorDe({ cobrador: { baseUrl: 'https://x.bo', vigenciaHoras: 999999 } })?.vigenciaHoras).toBe(72);
   });
 });
 

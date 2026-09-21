@@ -68,6 +68,19 @@ describe('Separación entre la seña y el prepago', () => {
     for (const archivo of DE_LA_SENA) expect(sinComentarios(leer(archivo))).not.toMatch(/\/pagos\//);
   });
 
+  it('el stub de A-1 se va cuando llega pagos.ts: cobroPrepago.ts no puede importar los dos', () => {
+    const modulos = importaciones(leer('cobroPrepago.ts'));
+    if (existsSync(ruta('pagos.ts'))) {
+      expect(modulos, 'cobroPrepago.ts sigue importando el stub con pagos.ts ya en el repositorio').not.toContain('./pagos-stub.js');
+      expect(existsSync(ruta('pagos-stub.ts')), 'pagos-stub.ts tiene que borrarse cuando exista pagos.ts').toBe(false);
+      expect(modulos).toContain('./pagos.js');
+    } else {
+      // Hoy: el stub existe y es lo que se importa (control de que la vigilancia funciona).
+      expect(existsSync(ruta('pagos-stub.ts'))).toBe(true);
+      expect(modulos).toContain('./pagos-stub.js');
+    }
+  });
+
   it('el prepago SÍ puede decir «pago confirmado por el banco»; la seña, nunca', () => {
     const afirma = /pago confirmado|pago acreditado|pago verificado|recibimos tu pago/i;
     for (const archivo of DE_LA_SENA) {

@@ -59,6 +59,29 @@ repetido después de cerrar el pago responda su estado real en vez de
 **Costo en mensajes: 0.** La confirmación por WhatsApp se encola en
 `cuenta.confirmacionesPendientes[pagoId]`; la manda A-4.
 
+**Revisión de seguridad (20/09): apta con cambios menores, aplicados.** Un
+`CONFIRMADO` con menos plata que el QR no acredita nada solo (queda pendiente
+con `montoRecibidoBs` y auditoría `pago_importe_menor`, para el camino manual
+con `motivoDiferencia`); el barrido y `anularCobroVivo` consultan por
+referencia aunque el índice no tenga `cobroId` (solo un 404 significa «sin
+emitir»); un pendiente emitido sin imagen se retoma pidiendo solo `imagenQr`;
+el loopback de `baseUrl` va anclado y ninguna callable la recibe de un
+cliente; `avisoCobrador` rechaza un secreto de menos de 32 caracteres; un
+comercio dado de baja no emite; y la prueba de fuente exige que el stub
+desaparezca cuando exista `pagos.ts`. **Observaciones sin severidad, que
+quedan anotadas:**
+
+- Falta la regla de Storage para `tenants/{t}/pagos/{pagoId}/qr.png` (admin
+  legible o propietario, solo lectura): la agrega A-1/A-3.
+- `avisoCobrador` e `imagenDePago` exigen invocador `allUsers`: documentarlo
+  en el despliegue junto con los secretos.
+- El barrido de 500 debería excluir los `EN_REVISION` del `orderBy`, para que
+  una cola de revisión larga no tape a los demás.
+- Falta `scripts/rotar-cobrador.sh` a imagen de `rotar-ingesta.sh` antes del
+  primer despliegue (es de `scripts/`, del frente B mientras esté abierto).
+- `crearCobroInterno` deja la autorización por `telefonosPago` a A-4, que
+  debe probarla negando.
+
 **En espera de la compuerta del demo** (nada de esto se ejecutó): crear los
 dos secretos, ampliar la condición de IAM con `COBRADOR_`, `secretAccessor`
 para `sa-functions`, habilitar Cloud Scheduler, escribir

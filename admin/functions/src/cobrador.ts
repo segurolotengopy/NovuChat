@@ -310,7 +310,11 @@ export function configCobradorDe(datos: Record<string, unknown> | undefined): Co
   if (typeof c !== 'object' || c === null) return null;
   const r = c as Record<string, unknown>;
   const baseUrl = typeof r['baseUrl'] === 'string' ? r['baseUrl'].trim() : '';
-  if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(baseUrl) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?/.test(baseUrl)) return null;
+  // La base URL es EL DESTINO DEL TOKEN: cada petición le manda el secreto.
+  // Por eso solo se lee de `plataforma/prepago` (que ningún navegador escribe)
+  // y NINGUNA callable la recibe de un cliente. HTTPS, o solo el loopback
+  // anclado para el ensayo local: `localhost.otro.com` no pasa.
+  if (!/^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(baseUrl) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(baseUrl)) return null;
   const vig = r['vigenciaHoras'];
   return {
     baseUrl: baseUrl.replace(/\/+$/, ''),
