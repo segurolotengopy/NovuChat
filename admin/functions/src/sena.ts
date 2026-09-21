@@ -386,12 +386,25 @@ export const senaVencida = onRequest(
         if (cotejo?.resultado === 'cuadra') {
           return { registrado: false, repetido: false, motivo: 'cita_pagada' };
         }
+        // OJO: un cotejo que NO cuadró tampoco protege acá, y es a propósito.
+        // Una huérfana es un horario que el servidor NO retiene: no hay seña
+        // pendiente, no hay nadie esperando, y dejarlo bloqueado para siempre
+        // fue el problema que esto vino a resolver. La protección por
+        // «comprobante en revisión» vive en el camino de abajo, donde SÍ hay
+        // una seña pendiente y alguien esperando una respuesta.
         // Y el tiempo se exige acá también: sin saber cuándo se creó, o si
         // todavía no pasó la retención, no se autoriza nada.
-        const vencioDeVerdad = Number.isFinite(creadoEnMs)
-          && (ahoraMs - creadoEnMs) >= minutosRetencion * 60 * 1000;
-        if (!vencioDeVerdad) {
-          return { registrado: false, repetido: false, motivo: 'sin_sena_pendiente' };
+        //
+        // EL MOTIVO NO PUEDE SER `sin_sena_pendiente` (2026-09-20). Ese motivo
+        // está en la lista con la que el flujo SÍ borra --viene de antes de las
+        // huérfanas, cuando significaba «el servidor ya no la retiene»--, así
+        // que este «todavía no» terminaba en un borrado, y la comprobación de
+        // tiempo no protegía nada: solo la salvaba el filtro previo del flujo.
+        if (!Number.isFinite(creadoEnMs)) {
+          return { registrado: false, repetido: false, motivo: 'sin_fecha_de_creacion' };
+        }
+        if ((ahoraMs - creadoEnMs) < minutosRetencion * 60 * 1000) {
+          return { registrado: false, repetido: false, motivo: 'todavia_no_vence' };
         }
         tx.set(refMetricas, { senasHuerfanas: FieldValue.increment(1) }, { merge: true });
         return { registrado: true, repetido: false, motivo: 'huerfana' };
@@ -402,6 +415,23 @@ export const senaVencida = onRequest(
         // flujo NO debería haber borrado la cita. Se contesta con el motivo
         // para que quede a la vista en el registro de n8n.
         return { registrado: false, repetido: false, motivo: 'ya_agendada' };
+      }
+      // --- UN COMPROBANTE EN REVISIÓN NO VENCE (2026-09-20) -----------------
+      // Prueba real con el teléfono: el paciente pagó 1 Bs de verdad, mandó el
+      // comprobante, y el cotejo dijo «no cuadra» porque no entendió la fecha
+      // --«20 de Septiembre, 2026»--. El flujo le contestó, con toda razón,
+      // «lo va a revisar una persona; tu horario sigue reservado mientras
+      // tanto», y a recepción «la cita sigue retenida, revisar el banco». Y
+      // este endpoint, cinco minutos después, autorizaba BORRARLA: solo miraba
+      // la etapa, y un cotejo que no cuadra no la cambia.
+      //
+      // La retención existe para quien NO pagó. Quien mandó un comprobante,
+      // cuadre o no, está esperando a una persona, y la decisión es de esa
+      // persona: borrarle el turno a alguien que pagó por un error de lectura
+      // nuestro es lo peor que puede pasar acá. Si el comprobante era falso,
+      // recepción lo ve y borra la cita a mano.
+      if (typeof solicitud.cotejos === 'number' && solicitud.cotejos > 0) {
+        return { registrado: false, repetido: false, motivo: 'comprobante_en_revision' };
       }
       tx.set(refConversacion, {
         solicitud: { ...solicitud, etapa: 'vencida', desde: Timestamp.fromMillis(ahoraMs) },

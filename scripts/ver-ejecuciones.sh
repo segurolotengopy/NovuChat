@@ -10,13 +10,14 @@
 #   ./scripts/ver-ejecuciones.sh --n 25             # cuantas traer
 #   ./scripts/ver-ejecuciones.sh --id 123           # una, nodo por nodo
 #   ./scripts/ver-ejecuciones.sh --id 123 --nodo agendar_cita   # un nodo
+#   ./scripts/ver-ejecuciones.sh --id 123 --nodo 'Normalizar entrada' --campos tipo,esComprobante
 #
 # NO imprime el contenido de los mensajes salvo que se pida un nodo concreto:
 # por ahi pasan conversaciones de clientes finales.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-N=10; SOLO_ERROR=0; ID=""; NODO=""; ENV_FILE=".env"
+N=10; SOLO_ERROR=0; ID=""; NODO=""; CAMPOS=""; ENV_FILE=".env"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -24,6 +25,7 @@ while [[ $# -gt 0 ]]; do
     --error) SOLO_ERROR=1; shift ;;
     --id)    ID="${2:?}"; shift 2 ;;
     --nodo)  NODO="${2:?}"; shift 2 ;;
+    --campos) CAMPOS="${2:?--campos necesita una lista separada por comas}"; shift 2 ;;
     --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*) ENV_FILE="${1#*=}"; shift ;;
     -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -56,10 +58,14 @@ if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ HTTP %s\033[0m\n' "$COD"; head -c 300 "$TMP"; echo; exit 1
 fi
 
-ID="$ID" NODO="$NODO" python3 - "$TMP" <<'PY'
+ID="$ID" NODO="$NODO" CAMPOS="$CAMPOS" python3 - "$TMP" <<'PY'
 import json, os, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 uno, nodo_pedido = os.environ.get("ID", ""), os.environ.get("NODO", "")
+# --campos a,b,c: solo esas claves de cada item, completas. El recorte de 400
+# caracteres dejaba afuera justo los campos que deciden una rama (20/09/2026),
+# y pedir solo algunos imprime MENOS contenido del cliente, no mas.
+campos = [c.strip() for c in os.environ.get("CAMPOS", "").split(",") if c.strip()]
 V, R, A, G, FIN = "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[0;90m", "\033[0m"
 
 def error_de(datos):
@@ -104,7 +110,11 @@ if uno:
                 salida = ((c.get("data") or {}).get("main") or [[]])[0]
                 print(f"      {G}items de salida: {len(salida)}{FIN}")
                 for it in (salida or [])[:3]:
-                    print(f"      {G}{json.dumps(it.get('json', {}), ensure_ascii=False)[:400]}{FIN}")
+                    j = it.get('json', {})
+                    if campos:
+                        print(f"      {G}{json.dumps({k: j.get(k, '(no está)') for k in campos}, ensure_ascii=False)}{FIN}")
+                    else:
+                        print(f"      {G}{json.dumps(j, ensure_ascii=False)[:400]}{FIN}")
     if not run:
         print(f"  {A}Sin datos de nodos (¿ejecución sin guardar datos?){FIN}")
 else:

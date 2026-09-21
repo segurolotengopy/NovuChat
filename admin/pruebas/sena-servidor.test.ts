@@ -47,6 +47,7 @@ const NUMERO = '1000000097';
 const TEL_1 = '59170000001';
 const TEL_2 = '59170000002';
 const TEL_3 = '59170000003';   // sin ninguna seña pendiente: el caso de la cita huérfana
+const TEL_4 = '59170000004';   // seña pendiente SIN ningún comprobante: la que sí vence
 const MES = new Date().toISOString().slice(0, 7);
 
 // QR Simple reutilizable, de monto abierto, a nombre de PEREZ GOMEZ JUAN CARLOS,
@@ -363,33 +364,53 @@ describe('5. senaVencida', () => {
 
   it('otra referencia que la retenida: no es esta seña', async () => {
     const r = await vencida(TEL_2, 'evt_otra');
-    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_sena_pendiente' });
+    // Sin `creadoEn` no se puede saber si venció, así que no se autoriza nada.
+    // El motivo ya NO es `sin_sena_pendiente`: ese estaba en la lista con la
+    // que el flujo BORRA, y este caso terminaba en un borrado (20/09/2026).
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_fecha_de_creacion' });
     expect((await conversacion(TEL_2))['solicitud']).toMatchObject({ etapa: 'qr_enviado' });
   });
 
-  it('la retención pendiente vence: solicitud vencida, senasVencidas y bitácora', async () => {
+  // --- UN COMPROBANTE EN REVISIÓN NO VENCE (2026-09-20) ---------------------
+  // Prueba real con el teléfono: el paciente pagó 1 Bs de verdad y el cotejo
+  // dijo «no cuadra» porque no entendió la fecha. El flujo le contestó «lo
+  // revisa una persona, tu horario sigue reservado» y este endpoint, cinco
+  // minutos después, autorizaba BORRARLE la cita. TEL_2 llega acá con dos
+  // cotejos (uno que no cuadró y uno ilegible): es exactamente ese caso.
+  it('una seña CON comprobante en revisión NO vence: la decide una persona', async () => {
     const r = await vencida(TEL_2, 'evt_sena_2');
     expect(r.codigo).toBe(200);
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'comprobante_en_revision' });
+    // Sigue pendiente: ni vencida, ni contada, ni anotada.
+    expect((await conversacion(TEL_2))['solicitud']).toMatchObject({ etapa: 'qr_enviado', cotejos: 2 });
+    expect((await metricas())['senasVencidas'] ?? 0).toBe(0);
+    expect(await bitacora('sena_vencida')).toHaveLength(0);
+  });
+
+  it('la retención SIN comprobante sí vence: solicitud vencida, senasVencidas y bitácora', async () => {
+    await qrEnviado(TEL_4, 'evt_sena_4');
+    const r = await vencida(TEL_4, 'evt_sena_4');
+    expect(r.codigo).toBe(200);
     expect(r.cuerpo).toEqual({ registrado: true, repetido: false });
-    expect((await conversacion(TEL_2))['solicitud']).toMatchObject({ etapa: 'vencida', cotejos: 2, evento: { id: 'evt_sena_2' } });
+    expect((await conversacion(TEL_4))['solicitud']).toMatchObject({ etapa: 'vencida', cotejos: 0, evento: { id: 'evt_sena_4' } });
     expect((await metricas())['senasVencidas']).toBe(1);
     const renglones = await bitacora('sena_vencida');
     expect(renglones).toHaveLength(1);
-    expect(renglones[0]).toMatchObject({ resultado: 'ok', destinoEnmascarado: '5917****002' });
+    expect(renglones[0]).toMatchObject({ resultado: 'ok', destinoEnmascarado: '5917****004' });
     // Ningún mensaje salió: la conversación no tiene salientes nuevos.
-    const mensajes = await db.collection(`tenants/${T}/conversaciones/wa_${TEL_2}/mensajes`).get();
+    const mensajes = await db.collection(`tenants/${T}/conversaciones/wa_${TEL_4}/mensajes`).get();
     expect(mensajes.docs.filter((d) => d.get('direccion') === 'saliente')).toHaveLength(1);   // solo el QR
   });
 
   it('la segunda vez es repetido y no cuenta de nuevo', async () => {
-    const r = await vencida(TEL_2, 'evt_sena_2');
+    const r = await vencida(TEL_4, 'evt_sena_4');
     expect(r.cuerpo).toEqual({ registrado: false, repetido: true });
     expect((await metricas())['senasVencidas']).toBe(1);
     expect(await bitacora('sena_vencida')).toHaveLength(1);
   });
 
   it('un comprobante que llega después del vencimiento: 409, y la clínica lo resuelve', async () => {
-    const r = await comprobante(TEL_2, { monto: '50' });
+    const r = await comprobante(TEL_4, { monto: '50' });
     expect(r.codigo).toBe(409);
     expect(r.cuerpo).toEqual({ error: 'sin_sena_pendiente' });
   });
@@ -409,14 +430,19 @@ describe('5. senaVencida', () => {
     expect(renglones.some((x) => x['codigo'] === 'huerfana')).toBe(true);
   });
 
+  // EL MOTIVO IMPORTA TANTO COMO EL «NO» (2026-09-20). Estos dos casos ya
+  // contestaban `registrado: false`, pero con el motivo `sin_sena_pendiente`,
+  // que estaba en la lista con la que el flujo BORRA: el servidor decía que no
+  // y la cita se borraba igual. Ahora cada uno dice lo suyo, y ninguno de los
+  // dos hace borrar (`senas-vencidas.test.ts` lo comprueba sobre la condición).
   it('una huérfana que TODAVÍA no cumplió la retención NO se borra', async () => {
     const r = await vencida(TEL_3, 'evt_huerfana_nueva', creadaHace(3));
-    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_sena_pendiente' });
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'todavia_no_vence' });
   });
 
   it('sin saber cuándo se creó tampoco se borra: no se autoriza a ciegas', async () => {
     const r = await vencida(TEL_3, 'evt_huerfana_sin_fecha');
-    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_sena_pendiente' });
+    expect(r.cuerpo).toEqual({ registrado: false, repetido: false, motivo: 'sin_fecha_de_creacion' });
   });
 
   it('una cita YA PAGADA con el rótulo puesto NO se borra: eso destruiría una cita paga', async () => {
@@ -443,6 +469,6 @@ describe('5. senaVencida', () => {
   it('un QR nuevo para el mismo teléfono abre otra solicitud desde cero', async () => {
     await qrEnviado(TEL_2, 'evt_sena_3');
     expect((await conversacion(TEL_2))['solicitud']).toMatchObject({ etapa: 'qr_enviado', cotejos: 0, evento: { id: 'evt_sena_3' } });
-    expect((await metricas())['senasEnviadas']).toBe(3);
+    expect((await metricas())['senasEnviadas']).toBe(4);   // los tres de antes y el de TEL_4
   });
 });

@@ -258,12 +258,18 @@ describe('Reportar y recién entonces borrar', () => {
     expect(expresion(r.parameters['headerParameters'].parameters[0].value, {}, { 'Config de la seña': { phoneNumberId: '1000000001' } })).toBe('1000000001');
   });
 
-  it('se borra solo si el servidor la dio por vencida, ya la tenía vencida, o no la conoce; con `ya_agendada` o sin respuesta, NO', () => {
+  it('se borra solo si el servidor la dio por vencida o ya la tenía vencida; con cualquier otro motivo, NO', () => {
     const condicion = nodo('¿Borrar la cita?').parameters['conditions'].conditions[0].leftValue;
     expect(expresion(condicion, { statusCode: 200, body: { registrado: true, repetido: false } })).toBe(true);
     expect(expresion(condicion, { statusCode: 200, body: { registrado: false, repetido: true } })).toBe(true);
-    expect(expresion(condicion, { statusCode: 200, body: { registrado: false, repetido: false, motivo: 'sin_sena_pendiente' } })).toBe(true);
-    expect(expresion(condicion, { statusCode: 200, body: { registrado: false, repetido: false, motivo: 'ya_agendada' } })).toBe(false);
+    // NINGÚN «no» del servidor borra (2026-09-20). `sin_sena_pendiente` estaba
+    // en la lista y por él se borraban citas que el servidor NO autorizó: una
+    // huérfana que todavía no vencía, y una de la que no se sabía la fecha.
+    for (const motivo of ['ya_agendada', 'comprobante_en_revision', 'todavia_no_vence',
+      'sin_fecha_de_creacion', 'cita_pagada', 'sin_sena_pendiente']) {
+      expect(expresion(condicion, { statusCode: 200, body: { registrado: false, repetido: false, motivo } }),
+        motivo).toBe(false);
+    }
     expect(expresion(condicion, { statusCode: 401, body: {} })).toBe(false);
     expect(expresion(condicion, { statusCode: 500, body: { registrado: true } })).toBe(false);
     expect(expresion(condicion, {})).toBe(false);

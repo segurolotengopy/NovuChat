@@ -134,7 +134,8 @@ export const OFFSET_LA_PAZ_HORAS = -4;
 
 /**
  * Interpreta la fecha y hora del comprobante y devuelve el instante en
- * milisegundos. Acepta `dd/mm/aaaa`, `aaaa-mm-dd` y `dd de septiembre de aaaa`,
+ * milisegundos. Acepta `dd/mm/aaaa`, `aaaa-mm-dd`, `dd septiembre aaaa` y
+ * `dd de septiembre de aaaa` (con o sin coma, mes abreviado o completo),
  * con hora opcional de 24 h o con «a. m.»/«p. m.».
  *
  * Se interpreta SIEMPRE como hora de Bolivia, que es la que imprime el banco.
@@ -154,7 +155,17 @@ export function parsearFechaHora(texto: string, offsetHoras = OFFSET_LA_PAZ_HORA
 
   const iso = t.match(/\b(\d{4})[\s\-/](\d{1,2})[\s\-/](\d{1,2})\b/);
   const dmy = t.match(/\b(\d{1,2})[\s\-/](\d{1,2})[\s\-/](\d{2,4})\b/);
-  const conMes = t.match(/\b(\d{1,2})\s+([A-Z]{3,10})\s+(\d{2,4})\b/);
+  // EL «DE» DEL CASTELLANO (2026-09-20). La version anterior exigia el mes
+  // pegado al dia --«20 SEPTIEMBRE 2026»-- y por eso NINGUNA fecha escrita como
+  // la escribe un banco boliviano se entendia: «20 de Septiembre, 2026»,
+  // «20 de septiembre de 2026», «Domingo, 20 de sep. de 2026». Con la fecha
+  // ilegible el cotejo dice «no cuadra», y un pago REAL que coincidia en
+  // importe, cuenta, titular y banco termino en una persona (comprobante del
+  // Banco Economico, prueba con telefono). Se admiten «de» y «del» opcionales
+  // a los dos lados del mes; el dia de la semana y las comas ya los descarta
+  // la limpieza de arriba o no molestan. El `(?!:)` impide que, sin año, la
+  // hora se lea como año: «20 de septiembre 19:59» no es del año 2019.
+  const conMes = t.match(/\b(\d{1,2})\s+(?:DE\s+)?([A-Z]{3,10})\s+(?:DEL?\s+)?(\d{4}|\d{2})\b(?!:)/);
 
   if (iso) {
     anio = Number(iso[1]); mes = Number(iso[2]); dia = Number(iso[3]);
