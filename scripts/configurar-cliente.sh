@@ -131,6 +131,14 @@ fi
 
 # --- .env.<cliente> -----------------------------------------------------------
 [[ -f "$DESTINO" ]] && cp -p "$DESTINO" "${DESTINO}.respaldo"
+# LO DEL FLUJO NO CAMBIA CUANDO CAMBIA EL NUMERO (21/09/2026). Al mover un
+# cliente a su propia WABA (Platinum) el flujo de n8n es el mismo: su id, su
+# ruta de webhook y el token de verificacion se conservan del entorno anterior.
+# Antes salian vacios y todo lo que seguia (publicar, ver ejecuciones, el
+# webhook) fallaba. Se leen sin mostrarlos.
+previo() { [[ -f "${DESTINO}.respaldo" ]] && grep -E "^$1=" "${DESTINO}.respaldo" | head -1 | cut -d= -f2- || true; }
+PREV_WF=$(previo N8N_WORKFLOW_ID); PREV_PATH=$(previo N8N_WEBHOOK_PATH)
+PREV_URL=$(previo N8N_WEBHOOK_URL); PREV_VERIF=$(previo WA_WEBHOOK_VERIFY_TOKEN)
 GRAPH=$(grep -E '^WA_GRAPH_VERSION=' .env | cut -d= -f2- | tr -d '[:space:]' || true)
 umask 077
 {
@@ -146,10 +154,12 @@ umask 077
   echo "WA_TO=$(grep -E '^WA_TO=' .env | cut -d= -f2- | tr -d '[:space:]' || true)"
   echo "N8N_BASE_URL=$(grep -E '^N8N_BASE_URL=' .env | cut -d= -f2- || true)"
   echo "N8N_API_KEY=$(grep -E '^N8N_API_KEY=' .env | cut -d= -f2- || true)"
-  echo "# El webhook y el workflow se completan al crear el flujo del cliente:"
-  echo "N8N_WEBHOOK_PATH="
-  echo "N8N_WEBHOOK_URL="
-  echo "N8N_WORKFLOW_ID="
+  echo "# El webhook y el workflow: del entorno anterior si existia; si no, se"
+  echo "# completan al crear el flujo del cliente."
+  echo "N8N_WEBHOOK_PATH=${PREV_PATH}"
+  echo "N8N_WEBHOOK_URL=${PREV_URL}"
+  echo "N8N_WORKFLOW_ID=${PREV_WF}"
+  if [[ -n "$PREV_VERIF" ]]; then echo "WA_WEBHOOK_VERIFY_TOKEN=${PREV_VERIF}"; fi
 } > "$DESTINO"
 chmod 600 "$DESTINO"
 

@@ -12,6 +12,14 @@
 #
 #   ./scripts/registrar-numero.sh --env .env.bellido --estado      # solo mira
 #   ./scripts/registrar-numero.sh --env .env.bellido --registrar   # pide el PIN oculto
+#   ./scripts/registrar-numero.sh --env .env.platinum --dar-de-baja  # pide escribir los últimos 4
+#
+# --dar-de-baja existe para mover un número a OTRA WABA (Platinum, 21/09/2026:
+# de la WABA de NovuChat a la del portafolio de la clínica): antes de sacarlo de
+# la WABA vieja hay que darlo de baja de la Cloud API. Desde ese momento el
+# número NO RECIBE NI MANDA NADA hasta que se registre en la WABA nueva, así que
+# pide escribir a mano los últimos 4 dígitos del Phone ID: un Enter de más no
+# corta a un cliente.
 #
 # Lee WA_TOKEN y WA_PHONE_ID del entorno del cliente (escrito por
 # configurar-cliente.sh). El PIN lo pega una persona, oculto; no queda en el
@@ -25,11 +33,12 @@ while [ $# -gt 0 ]; do
     --env)        ENV_FILE="$2"; shift 2 ;;
     --estado)     MODO="estado"; shift ;;
     --registrar)  MODO="registrar"; shift ;;
+    --dar-de-baja) MODO="baja"; shift ;;
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || { echo "✗ Falta --env <archivo> (p. ej. .env.bellido)" >&2; exit 2; }
-[ -n "$MODO" ] || { echo "✗ Falta --estado o --registrar" >&2; exit 2; }
+[ -n "$MODO" ] || { echo "✗ Falta --estado, --registrar o --dar-de-baja" >&2; exit 2; }
 
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige un argumento
@@ -73,6 +82,21 @@ case "$MODO" in
       echo "   133016 = demasiados intentos: esperar; no reintentar"
       echo "   133006 = hay que volver a verificar el número (SMS)"
       echo "   100/33 = el PHONE_NUMBER_ID no es de esta WABA o el token no la ve"
+    fi
+    ;;
+  baja)
+    echo "BAJA del número …${WA_PHONE_ID: -4} de la Cloud API (entorno ${ENV_FILE})."
+    echo "Desde ahora NO recibe ni manda mensajes hasta registrarlo en la WABA nueva."
+    read -r -p "  Para confirmar, escriba los últimos 4 dígitos del Phone ID: " CONF
+    [ "$CONF" = "${WA_PHONE_ID: -4}" ] || { echo "✗ No coincide. No se hizo nada." >&2; exit 1; }
+    RESP=$(curl -s --max-time 30 -X POST "${G}/${WA_PHONE_ID}/deregister" \
+      -H "Authorization: Bearer ${WA_TOKEN}")
+    echo "$RESP" | mostrar
+    if echo "$RESP" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+      echo; echo "✓ Dado de baja. --estado ya no tiene que decir CONNECTED."
+      echo "  Siguiente: sacarlo de la WABA vieja en WhatsApp Manager y agregarlo en la nueva."
+    else
+      echo; echo "✗ Meta no lo dio de baja: el código de arriba dice por qué. El número sigue como estaba."
     fi
     ;;
 esac
