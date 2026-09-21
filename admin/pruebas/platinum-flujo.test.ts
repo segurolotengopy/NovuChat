@@ -3012,7 +3012,16 @@ describe.each([
       expect(t).toContain('PLATINUM CLÍNICA DENTAL');
     });
 
-    it('una promoción se responde con los precios de la consola, NUNCA con los de la foto', () => {
+    it('ante una campaña vigente de este negocio, UN mensaje corto: la tienen, el precio y agendar (20/09/2026)', () => {
+    // Prueba real: «¿tienes este?» y la imagen tres segundos después llegan
+    // como dos mensajes; el segundo salió con 381 caracteres de procedimiento.
+    const t = texto('publicidad', 'Platinum BLANQUEAMIENTO DENTAL PROFESIONAL Ahora solo 500 Bs');
+    expect(t).toContain('SI ES UNA CAMPAÑA VIGENTE DE ESTE NEGOCIO, contesta en UN mensaje corto');
+    expect(t).toMatch(/que la tienen, el precio vigente, y ofrécele agendar/);
+    expect(t).toMatch(/no repitas lo que ya le dijiste en tu mensaje anterior/);
+  });
+
+  it('una promoción se responde con los precios de la consola, NUNCA con los de la foto', () => {
       const t = texto('publicidad', 'BLANQUEAMIENTO 199 Bs — promo de otro lugar');
       expect(t).toMatch(/nunca con los de la imagen/i);
       expect(t).toContain('dato del cliente');
@@ -3648,3 +3657,124 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       for (const v of ['senaPendiente', 'senaQrEnviadoEn', '$json.from']) expect(p, v).not.toContain(v);
     });
   });
+
+/**
+ * LO QUE NO SABE, EL ASISTENTE NO LO NIEGA NI LO INVENTA (20/09/2026).
+ *
+ * Prueba con teléfono: a «¿Estética facial? Dice en tu logo» contestó «No
+ * realizamos estética facial; somos una clínica exclusivamente dental», que
+ * ninguna fuente dice; y a «¿las fotos son reales?», «sí, son casos reales de
+ * nuestros pacientes», que tampoco. El asistente nunca conoce la lista completa
+ * de lo que un negocio hace: lo que no está en su información lo asesora una
+ * persona. Y el motivo que recibe recepción tiene que decir qué pasó.
+ */
+describe('Lo que no sabe, no lo niega ni lo inventa', () => {
+  for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+    it(`${cliente}: el prompt deriva a una persona lo que no está en su información`, () => {
+      const g = JSON.parse(readFileSync(join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8')) as
+        { nodes: { name: string; type: string; parameters: { options?: { systemMessage?: string } } }[] };
+      const p = String(g.nodes.find((n) => n.type.endsWith('.agent') && !n.name.includes('Reintento'))
+        ?.parameters.options?.systemMessage);
+      expect(p).toContain('LO QUE NO SABES, NO LO NIEGUES NI LO INVENTES');
+      expect(p).toMatch(/aunque lo mencione el logo, una imagen o una publicidad del negocio/);
+      expect(p).toMatch(/NO digas que no lo tienen ni que lo tienen: di que una persona del equipo le asesora sobre eso y termina con \[TRANSFERIR\]/);
+      expect(p).toMatch(/Tampoco afirmes nada sobre fotos, casos o resultados que tu información no diga/);
+    });
+  }
+
+  it('el motivo que recibe recepción dice lo que escribió el cliente, no «tres rechazos»', () => {
+    const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009' };
+    const r = ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+      [{ output: 'Sobre eso te asesora una persona del equipo. [TRANSFERIR]', intermediateSteps: [] }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: '¿Estética facial? Dice en tu logo' }],
+        'Config del negocio': [cfg] })[0] ?? {};
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).not.toContain('tres rechazos');
+    expect(String(r['motivoTransferencia'])).toContain('el asistente pidió que lo atienda una persona');
+    expect(String(r['motivoTransferencia'])).toContain('«¿Estética facial? Dice en tu logo»');
+    expect(String(r['respuesta'])).not.toContain('[TRANSFERIR]');
+  });
+});
+
+/**
+ * UNA CANCELACIÓN SE AFIRMA SOLO SI GOOGLE LA CONFIRMÓ (20/09/2026).
+ *
+ * Caso real, ejecución #3802: el paciente confirmó, el modelo llamó a
+ * cancelar_cita con un identificador INVENTADO —el real se había quedado en el
+ * turno anterior—, Google devolvió «Not Found» (la herramienta, vacío) y el
+ * modelo escribió «Listo, la cita quedó cancelada». La cita siguió ahí.
+ */
+describe('Cancelar: solo se afirma lo que Google confirmó', () => {
+  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009' };
+  const procesar = (output: string, observacion: unknown) => ejecutar(
+    String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+    [{ output, intermediateSteps: [{ action: { tool: 'cancelar_cita', toolInput: { eventoId: 'x' } }, observation: observacion }] }],
+    { 'Normalizar entrada': [{ from: '59170000001', userInput: 'Si' }], 'Config del negocio': [cfg] })[0] ?? {};
+
+  it('EL CASO REAL: la herramienta devolvió vacío y el modelo dijo «cancelada» → NO se envía, se transfiere', () => {
+    const r = procesar('Listo, la cita quedó cancelada. Para cancelar o reprogramar, escríbenos por este mismo chat.', '');
+    expect(String(r['respuesta'])).not.toMatch(/cancelada/i);
+    expect(String(r['respuesta'])).toContain('No pude cancelar la cita en la agenda');
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('cancelar_cita NO la borró');
+  });
+
+  it('un error de la herramienta tampoco se afirma como cancelación', () => {
+    const r = procesar('Tu cita fue cancelada.', '{"error":"The resource you are requesting could not be found"}');
+    expect(String(r['respuesta'])).toContain('No pude cancelar');
+    expect(r['transferir']).toBe(true);
+  });
+
+  it('con { success: true } de Google, la cancelación se afirma como la escribió el modelo', () => {
+    for (const obs of ['[{"success":true}]', '{"success":true}', [{ success: true }]]) {
+      const r = procesar('Listo, la cita quedó cancelada.', obs);
+      expect(String(r['respuesta'])).toBe('Listo, la cita quedó cancelada.');
+      expect(r['transferir']).toBe(false);
+    }
+  });
+
+  it('el prompt dice que el identificador no sobrevive de un turno a otro, y que no vuelva a preguntar', () => {
+    const p = prompt();
+    expect(p).toContain('EL IDENTIFICADOR NO QUEDA\n     EN TU MEMORIA de un mensaje a otro');
+    expect(p).toMatch(/EN ESE MISMO TURNO, llama a\n     cancelar_cita con el identificador exacto/);
+    expect(p).toMatch(/No le\n     vuelvas a preguntar: ya confirmó/);
+  });
+});
+
+/**
+ * LA UBICACIÓN VA CON LA CONFIRMACIÓN DEL PAGO (Andres, 20/09/2026), en el
+ * MISMO mensaje: un mensaje largo cuesta menos que dos.
+ */
+describe('Pago confirmado: la dirección y el enlace de Maps van en el mismo mensaje', () => {
+  const codigoSena = () => String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+  const base = (resultadoSena: string) => ({
+    respuesta: 'Recibí tu comprobante y los datos coinciden. Tu cita queda reservada, sujeta a la verificación del pago por Clínica Platinum.',
+    resultadoSena, motivoTransferencia: 'seña', calendarioDelEvento: '',
+  });
+  const cfgConMapa = { direccion: 'Radial 26, entre 2do y 3er anillo', direccionMaps: 'https://maps.app.goo.gl/ejemplo',
+    funcionarios: '[]', tratamiento: 'tú', nivelEmojis: 'moderado' };
+  const correr = (resultado: string, cfg: J) => ejecutar(codigoSena(), [{}],
+    { 'Respuesta de la seña': [base(resultado)], 'Config del negocio': [cfg] })[0] ?? {};
+
+  it('si CUADRÓ, el mismo mensaje trae la dirección y el enlace', () => {
+    const r = String(correr('cuadra', cfgConMapa)['respuesta']);
+    expect(r).toContain('Radial 26, entre 2do y 3er anillo');
+    expect(r).toContain('https://maps.app.goo.gl/ejemplo');
+    // Y sigue sin afirmar el pago (prohibición 3).
+    expect(r).not.toMatch(/acreditad|verificamos|recibimos (tu|su) pago/i);
+  });
+  it('si NO cuadró, no se manda la dirección: la cita todavía no está firme', () => {
+    const r = String(correr('no_cuadra', cfgConMapa)['respuesta']);
+    expect(r).not.toContain('maps.app.goo.gl');
+  });
+  it('sin dirección ni enlace configurados, no se agrega nada', () => {
+    const r = String(correr('cuadra', { funcionarios: '[]' })['respuesta']);
+    expect(r).not.toContain('📍');
+    expect(r).not.toContain('Dirección:');
+  });
+  it('con los emojis apagados, sin emoji', () => {
+    const r = String(correr('cuadra', { ...cfgConMapa, nivelEmojis: 'ninguno' })['respuesta']);
+    expect(r).toContain('Dirección: Radial 26');
+    expect(r).not.toContain('📍');
+  });
+});
