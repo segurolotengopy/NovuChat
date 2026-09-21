@@ -41,7 +41,7 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño | **cerrado (20/09)**: `admin/DISENO.md` §4undecies en la rama de coordinación (`bb07890`), con la §4undecies.5 reescrita contra el contrato real | `admin/DISENO.md` | — |
 | **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro reaplicado sobre la ingesta de hoy, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación, `cobranza.ts` | **en curso (20/09, noche)** | `admin/functions/src/prepago.ts`, `cobranza.ts` (nuevos), `ingesta.ts`, `index.ts`, `firestore.rules` (tipos de bitácora), `web/src/lib/`, `admin/pruebas/` | PR con las pruebas negativas |
 | **A-1 · pagos** | `prepago/pagos-y-carga-manual` | colección `pagos` con TCO, `registrarPagoManual`, auditoría, fase 0 de `Analisis/29` | encolado detrás de A-0 | `index.ts`, `firestore.rules`, `admin/pruebas/` | — |
-| **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del contrato real + `crearCobroPrepago`, `avisoCobrador`, `barridoCobros`, `imagenDePago`, contra el doble | **en curso (20/09, noche)**, contra un stub de A-1 | `admin/functions/src/cobrador.ts`, `cobroPrepago.ts` (nuevos), `firma.ts` (dos exports), `admin/pruebas/dobles/` | integra con A-1 en `main`; el aviso se ajusta cuando C cierre su bloque 2 |
+| **A-2 · cobrador** | `prepago/cliente-cobrador` (`7320532`, `7e3f1f7`; worktree `agent-a8de99da38fd4652b`) | cliente del contrato real + `crearCobroPrepago`, `avisoCobrador`, `barridoCobros`, `imagenDePago`, doble, reglas de `pagos`/`cobrosPendientes`/`cobrosResueltos` | **construido (21/09, madrugada)**: suite 2268 en verde (+58), build/lint 0, saneo 0; **en revisión de `seguridad`** | `cobrador.ts`, `cobroPrepago.ts`, `pagos-stub.ts` (provisorio), `firma.ts` (dos exports), `ingesta.ts`/`firestore.rules`/`bitacora.ts` (tipo `pago_registrado`), `admin/pruebas/dobles/`, tres suites nuevas, `.github/DESPLIEGUE-FIREBASE.md` | tras seguridad, pedir OK para subir y abrir PR; al fusionar A-0 y A-1, reemplazar `pagos-stub.ts` sin tocar las aserciones de `cobro-prepago.test.ts` |
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **encolado detrás de B-1 fusionado** | `Flujos/src/` (módulo), nunca el JSON a mano | — |
 | **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` (`be135da`, worktree `agent-a073cd5409c381cca`) | ocho plantillas de utilidad redactadas | **redacción cerrada (20/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
@@ -145,6 +145,14 @@ presentar a Meta, y cuándo encender el corte)
 
 ## Bitácora
 
+- **21/09/2026 (madrugada)** — A-2 construido. Firma que A-1 debe respetar:
+  `aplicarPagoEnTransaccion(tx, refs, pago, confirmacion)` síncrona, una escritura por
+  documento, lanza si el pago no está `pendiente`; `camposDerivados(cuenta, corteGuardado,
+  ahoraMs)`. Agregó `/cobrosResueltos/{pagoId}` para que un aviso repetido tras cerrar
+  el pago responda `aplicado: false` sin índice de grupo. Tres discrepancias del
+  cobrador para elevar a C: `riel` con nombres distintos en el aviso (`watcher-baneco`)
+  y en `estadoCobro` (`api-baneco`); `montoCentavos` en el aviso y `monto` decimal en
+  la API; `pago.monto` puede ser `null`. NovuChat guarda siempre lo de `estadoCobro`.
 - **20/09/2026 (noche)** — B-1 construido. Deja para B-2: prompt en capas (`base.md` +
   variables por tenant: 23 líneas de 191 difieren, todas nombres y ejemplos del rubro),
   un tercer tipo de punto de inyección (parámetro de texto de un nodo cualquiera:
