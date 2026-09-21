@@ -73,6 +73,19 @@ WhatsApp (Meta Cloud API)
   caso «verbo no previsto y la herramienta sí corrió», y todo cambio del
   candado se prueba contra un teléfono real insistiendo sobre una hora
   ocupada.
+- **El asistente solo ofrece lo que el flujo cumple. Política general de
+  NovuChat, para todo cliente (Andres, 21/09/2026).** Ante un error o una
+  consulta que no sabe responder, lo único que ofrece es **pasar con
+  recepción**, que es siempre el aviso a recepción **más** el botón para
+  escribirle directo. Nunca «lo consulto», «te aviso luego», «te llamamos» o
+  «te escribirán» sin un mecanismo detrás. Se hace cumplir en código, como el
+  candado: toda promesa sin respaldo se cumple (se transfiere) o se quita del
+  texto; todo lo que se transfiere y todo error del modelo sale con el botón
+  (en los flujos de agenda lo decide `Mensaje a enviar`); y una respuesta que es
+  solo una marca nunca se toma por vacía. El 21/09 el prompt decía «ofrece
+  consultarlo con recepción», el paciente aceptó dos veces y recibió «tuve un
+  problema técnico». Pruebas: `platinum-flujo.test.ts`, «solo se ofrece lo que
+  se cumple».
 - **Memoria con clave de sesión explícita** = número de origen
   (`messages[0].from`). Sin esto, dos clientes comparten memoria. Es el
   defecto más grave que puede tener uno de estos flujos.

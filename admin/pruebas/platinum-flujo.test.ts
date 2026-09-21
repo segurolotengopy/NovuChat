@@ -70,6 +70,7 @@ const leer = (archivo: string) => readFileSync(join(aqui, '../../Flujos/', archi
 const TEXTO = leer('platinum-agendamiento.json');
 const flujo = JSON.parse(TEXTO) as Flujo;
 const demoA = JSON.parse(leer('demo-a-agendamiento.json')) as Flujo;
+const bellido = JSON.parse(leer('bellido-agendamiento.json')) as Flujo;
 
 const nodo = (f: Flujo, nombre: string): Nodo => {
   const n = f.nodes.find((x) => x.name === nombre);
@@ -894,8 +895,10 @@ describe.each([
     });
 
     it('«Mensaje a enviar» es de paso: no cambia el destinatario, la transferencia ni el texto (salvo la negrita de Markdown, bloque j)', () => {
-      expect(ejecutar(codigo('Mensaje a enviar'), [{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]))
-        .toEqual([{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]);
+      const [salida] = ejecutar(codigo('Mensaje a enviar'), [{ from: '591', respuesta: 'Hola', transferir: false, extra: 1 }]);
+      expect(salida).toMatchObject({ from: '591', respuesta: 'Hola', transferir: false, extra: 1 });
+      // Lo único que agrega es el botón de recepción, que acá no corresponde.
+      expect(salida?.['enviarContacto']).toBe(false);
     });
 
     it('el cuerpo del reporte lleva el texto y el teléfono de «Mensaje a enviar», y el id que devolvió Meta', () => {
@@ -1759,8 +1762,15 @@ describe.each([
       expect(s['enviarUbicacion']).toBe(false);
     });
 
-    it('si el modelo escribió SOLO la marca, sale el texto de error y no el pin: nunca un pin sin dirección', () => {
+    it('si el modelo escribió SOLO la marca, la dirección es el texto y sale el pin: la acción es la respuesta (21/09)', () => {
       const s = procesar('[ENVIAR_UBICACION]', CON_PIN);
+      expect(s['respuesta']).toBe('Nos encuentra en Calle 1, zona Sur.');
+      expect(s['respuestaVacia']).toBe(false);
+      expect(s['enviarUbicacion']).toBe(true);
+    });
+
+    it('SOLO la marca y sin dirección cargada: texto de error y ningún pin, nunca un pin sin dirección', () => {
+      const s = procesar('[ENVIAR_UBICACION]', { ...CON_PIN, direccion: '' });
       expect(s['respuesta']).toBe(cfg['mensajeErrorTemporal']);
       expect(s['respuestaVacia']).toBe(true);
       expect(s['enviarUbicacion']).toBe(false);
@@ -3440,8 +3450,11 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       expect(procesar('El horario es de 09:00 a 19:00.')['enviarContacto']).toBe(false);
     });
 
-    it('si la respuesta quedó vacía tampoco sale: nunca un botón suelto sin texto', () => {
-      expect(procesar('[CONTACTO_RECEPCION]')['enviarContacto']).toBe(false);
+    it('EL CASO REAL #4047: SOLO la marca es la respuesta, con una línea fija, y el botón sale', () => {
+      const s = procesar('[CONTACTO_RECEPCION]');
+      expect(s['respuesta']).toBe('Te paso el contacto de recepción para que les escribas directo.');
+      expect(s['respuestaVacia']).toBe(false);
+      expect(s['enviarContacto']).toBe(true);
     });
 
     it('el número viaja en el BOTÓN, y el cuerpo del mensaje no lo escribe', () => {
@@ -4008,7 +4021,7 @@ describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', ()
   });
 
   it('la herramienta y Procesar respuesta usan EXACTAMENTE la misma regla', () => {
-    const rx = /\/\^\\s\*\(s\[ií\]\|[^/]+\/i/;
+    const rx = /\/\^\[\^a-záéíóúñ0-9\]\*\(s\[ií\]\|[^/]+\/i/;
     const enTool = rx.exec(String(nodo(flujo, 'cancelar_cita').parameters['eventId']))?.[0];
     const enCodigo = rx.exec(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']))?.[0];
     expect(enTool).toBeDefined();
@@ -4026,5 +4039,134 @@ describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', ()
     expect(r['respuesta']).toBe('¿Confirmas que quieres cancelar tu cita de blanqueamiento dental profesional del lunes, 21 de septiembre a las 11:00? Respóndeme «sí» y la cancelo.');
     expect(r['transferir']).toBe(false);
     expect(r['eventoSena']).toBeUndefined();
+  });
+});
+
+/**
+ * NO SE OFRECE LO QUE NO SE VA A CUMPLIR (Andres, 21/09/2026). Política de
+ * NovuChat para todos los clientes. Prueba con el teléfono: el asistente
+ * escribió «lo consulto con recepción para que te confirmen» sin tener cómo
+ * consultar a nadie; el paciente aceptó dos veces y las dos recibió «tuve un
+ * problema técnico» (#4042, #4047). Lo único que puede ofrecer cuando le falta
+ * un dato o algo falla es pasar con recepción: el aviso MÁS el botón.
+ */
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+  '%s · solo se ofrece lo que se cumple', (_archivo, f) => {
+    const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
+    const procesar = (output: string, userInput = 'cuánto pagué?', cfg: J = {}) => ejecutar(codigoDe('Procesar respuesta'),
+      [{ output }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput }],
+        'Config del negocio': [{ numeroRecepcion: '59170000002', nombreNegocio: 'Un Negocio', tratamiento: 'tú', ...cfg }] })[0] ?? {};
+    const salida = (item: J, cfg: J = {}) => ejecutar(codigoDe('Mensaje a enviar'), [item],
+      { 'Config del negocio': [{ numeroRecepcion: '591 7000-0002', nombreNegocio: 'Un Negocio', phoneNumberId: '1000000001', waGraphVersion: 'v26.0', ...cfg }] })[0] ?? {};
+
+    it('EL CASO REAL #4038: «lo consulto con recepción» se cumple: pasa a recepción, sin tocar el texto', () => {
+      const texto = 'No tengo ese dato a mano. Si gustas, lo consulto con recepción para que te confirmen el detalle de tus pagos. ¿Te comunico con ellos?';
+      const s = procesar(texto);
+      expect(s['respuesta']).toBe(texto);
+      expect(s['transferir']).toBe(true);
+      expect(String(s['motivoTransferencia'])).toContain('lo consulto con recepción');
+      expect(String(s['motivoTransferencia'])).toContain('cuánto pagué?');
+      expect(s['avisos']).toContain('promesa_cumplida_por_recepcion');
+    });
+
+    it('las promesas de responder o avisar después también se cumplen', () => {
+      for (const t of ['Te escribirá recepción en un momento.', 'Voy a consultar con el equipo y te cuento.',
+        'Te aviso más tarde si se libera un horario.', 'Lo averiguo con la clínica.', 'Le confirmarán por este chat.',
+        'Preguntaré a recepción por ese tratamiento.']) {
+        expect(procesar(t)['transferir'], t).toBe(true);
+      }
+    });
+
+    it('una pregunta no promete nada, y las frases normales no disparan nada', () => {
+      for (const t of ['¿Quieres que te pase con recepción?', 'Tu cita quedó para mañana a las 10:00. Te esperamos.',
+        'Te confirmo: el lunes a las 10:00 con el Dr. Pérez.', 'El blanqueamiento cuesta 500 Bs.',
+        'Revisé la agenda y el martes hay lugar a las 11:00.']) {
+        const s = procesar(t);
+        expect(s['transferir'], t).toBe(false);
+        expect(s['avisos'], t).not.toContain('promesa_cumplida_por_recepcion');
+      }
+    });
+
+    it('si el modelo ya transfirió, no se agrega otro motivo', () => {
+      const s = procesar('Lo consulto con recepción. [TRANSFERIR]');
+      expect(s['transferir']).toBe(true);
+      expect(s['avisos']).not.toContain('promesa_cumplida_por_recepcion');
+    });
+
+    it('EL CASO REAL #4042: «ok» a la oferta y el modelo responde SOLO la marca: sale el contacto', () => {
+      const s = procesar('[CONTACTO_RECEPCION]', 'ok');
+      expect(s['respuesta']).toBe('Te paso el contacto de recepción para que les escribas directo.');
+      expect(s['respuestaVacia']).toBe(false);
+      expect(s['enviarContacto']).toBe(true);
+    });
+
+    it('un texto que anuncia el contacto lo manda aunque el cliente no haya usado la palabra', () => {
+      expect(procesar('Te paso el contacto de recepción. [CONTACTO_RECEPCION]', 'ok')['enviarContacto']).toBe(true);
+    });
+
+    it('SOLO la marca de contacto sin número cargado: pasa a recepción con un texto que es verdad', () => {
+      const s = procesar('[CONTACTO_RECEPCION]', 'ok', { numeroRecepcion: '' });
+      expect(s['respuesta']).toBe('Le pido a recepción que te responda por este chat.');
+      expect(s['transferir']).toBe(true);
+      expect(String(s['motivoTransferencia'])).toContain('no hay número de recepción');
+    });
+
+    it('SOLO [TRANSFERIR]: una línea que dice lo que pasa, nunca «problema técnico»', () => {
+      const s = procesar('[TRANSFERIR]', 'y eso?');
+      expect(s['respuesta']).toBe('Le pido a recepción que te responda por este chat.');
+      expect(s['transferir']).toBe(true);
+      expect(s['respuestaVacia']).toBe(false);
+    });
+
+    it('«Mensaje a enviar»: todo lo que se transfiere, y todo error del modelo, lleva el botón de recepción', () => {
+      const t = salida({ from: '591', respuesta: 'Le pido a recepción que te responda.', transferir: true });
+      expect(t['enviarContacto']).toBe(true);
+      expect(t['numeroRecepcion']).toBe('59170000002');
+      expect(t['phoneNumberId']).toBe('1000000001');
+      expect(t['nombreNegocio']).toBe('Un Negocio');
+      expect(salida({ from: '591', respuesta: 'Disculpa, tuve un problema.', falloModelo: true })['enviarContacto']).toBe(true);
+      expect(salida({ from: '591', respuesta: 'Disculpa, tuve un problema.', respuestaVacia: true })['enviarContacto']).toBe(true);
+    });
+
+    it('«Mensaje a enviar»: sin número, sin texto, o en una respuesta normal, no hay botón', () => {
+      expect(salida({ from: '591', respuesta: 'x', transferir: true }, { numeroRecepcion: '' })['enviarContacto']).toBe(false);
+      expect(salida({ from: '591', respuesta: '', transferir: true })['enviarContacto']).toBe(false);
+      expect(salida({ from: '591', respuesta: 'Gracias por escribirnos.', respuestaVacia: true, seDespide: true })['enviarContacto']).toBe(false);
+      expect(salida({ from: '591', respuesta: 'Hola', transferir: false })['enviarContacto']).toBe(false);
+    });
+
+    it('el prompt dice la lista cerrada y ya no ofrece «consultarlo con recepción»', () => {
+      const p = String(nodo(f, 'AI Agent (Sofía)').parameters['options'].systemMessage);
+      expect(p).toContain('SOLO OFRECES LO QUE PUEDES HACER');
+      expect(p).toContain('Nunca respondas solo con una marca');
+      expect(p).not.toMatch(/ofrece consultarlo/);
+      expect(p).not.toMatch(/debés inventar|pasás el contacto|respondelas/);
+      expect(p).toContain('jamás debes inventar');
+    });
+
+    it('el botón no usa voseo', () => {
+      const b = String(nodo(f, 'Enviar contacto').parameters['jsonBody']);
+      expect(b).toContain('Escríbele directo');
+      expect(b).not.toContain('Escribile');
+    });
+  });
+
+describe('Cancelar: la confirmación es SOLO una confirmación (#4034)', () => {
+  const idDe = (userInput: string) => expresion(nodo(flujo, 'cancelar_cita').parameters['eventId'], {},
+    { 'Normalizar entrada': { userInput } }, { eventoId: 'real' });
+
+  it('EL CASO REAL #4034: «si, quiero cancelar la de hoy a las 16» es un pedido, no una confirmación', () => {
+    for (const t of ['si, quiero cancelar la de hoy a las 16', 'sí, la de las 16', 'Sí, cancela la del lunes',
+      'ok, cancela la otra', 'sí quiero cancelar mi cita', 'dale, pero la de mañana']) {
+      expect(idDe(t), t).toBe('SIN-CONFIRMAR');
+    }
+  });
+
+  it('las confirmaciones de verdad siguen pasando', () => {
+    for (const t of ['Sí', 'Sí 👍', 'sí, cancélala por favor', 'Sí, confirmo la cancelación', 'si quiero',
+      'Dale, cancelala nomás', 'ok gracias, cancela esa', 'SÍ, POR FAVOR', '¡Sí!']) {
+      expect(idDe(t), t).toBe('real');
+    }
   });
 });

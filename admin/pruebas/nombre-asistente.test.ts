@@ -304,3 +304,33 @@ describe('demo-a-recordatorios.json: no presenta al asistente, por eso no cambia
     expect(texto).not.toMatch(/asistente|\bsoy\b/i);
   });
 });
+
+// SOLO SE OFRECE LO QUE SE CUMPLE (política de NovuChat, 21/09/2026). El Demo B
+// no tiene a nadie a quien pasar la conversación: una promesa de consultar o de
+// avisar después no la cumple nadie, y la oración se quita.
+describe('demo-b-venta-cobro.json: una promesa sin respaldo se quita', () => {
+  const f = flujo('demo-b-venta-cobro.json');
+  const procesar = (salida: string) => ejecutar(
+    String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
+    [{ output: salida }],
+    { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Ana', rotuloDemo: 'rótulo', textoPagoSimulado: 'simulado' }] },
+  )[0] ?? {};
+
+  it('quita la oración que promete, y deja el resto', () => {
+    const s = procesar('No tengo la dirección cargada. Lo consulto con el negocio y te aviso más tarde. ¿Quieres ver el catálogo?');
+    expect(s['respuesta']).toBe('No tengo la dirección cargada. ¿Quieres ver el catálogo?');
+    expect(s['avisos']).toContain('promesa_quitada');
+  });
+
+  it('una respuesta normal no se toca', () => {
+    const s = procesar('La hamburguesa doble cuesta 35 Bs. ¿Te la anoto?');
+    expect(s['respuesta']).toBe('La hamburguesa doble cuesta 35 Bs. ¿Te la anoto?');
+    expect(s['avisos']).not.toContain('promesa_quitada');
+  });
+
+  it('el prompt ya no dice «lo confirmas con el negocio» y trae la lista cerrada', () => {
+    const p = String(nodo(f, 'AI Agent NovuChat').parameters['options'].systemMessage);
+    expect(p).not.toContain('confirmas con el negocio');
+    expect(p).toContain('SOLO OFRECES LO QUE PUEDES HACER');
+  });
+});

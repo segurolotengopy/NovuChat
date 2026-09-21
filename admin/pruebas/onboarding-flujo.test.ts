@@ -1599,3 +1599,49 @@ describe('Base de conocimiento', () => {
       + '(Flujos/LEEME-flujos.md, flujo de captación).').toBe(delSitio.huella);
   });
 });
+
+// ===========================================================================
+// SOLO SE OFRECE LO QUE SE CUMPLE (política de NovuChat, 21/09/2026). En la
+// captación, la única salida hacia una persona es el botón «Hablar con un
+// asesor»: si el texto remite a un asesor o promete que alguien responde, y en
+// ese turno no sale el aviso, el mensaje lleva el botón.
+describe('Solo se ofrece lo que se cumple', () => {
+  const procesar = (salidaAgente: string, ent: J, sd: J) =>
+    correr('Procesar respuesta', [{ output: salidaAgente }], { 'Estado de la conversación': ent }, sd)[0]!;
+  const entrada = (sd: J) => estado(normalizar(texto('¿se integra con mi sistema contable?'), config()), sd)[0]!;
+  const botones = (r: J) => (r['cuerpoMeta']?.['interactive']?.['action']?.['buttons'] ?? []) as J[];
+
+  it('«un asesor lo confirma» sale con el botón, que es la forma de llegar a él', () => {
+    const sd: J = {};
+    const r = procesar('Esa integración no la tengo en mi información; un asesor te lo confirma.', entrada(sd), sd);
+    expect(botones(r).map((b) => b['reply']['id'])).toEqual(['asesor']);
+    expect(r['avisos']).toContain('promesa_con_boton_asesor');
+  });
+
+  it('«lo consulto con el equipo» también', () => {
+    const sd: J = {};
+    const r = procesar('Lo consulto con el equipo y te cuento.', entrada(sd), sd);
+    expect(botones(r)).toHaveLength(1);
+  });
+
+  it('una pregunta o una respuesta normal no llevan el botón', () => {
+    for (const t of ['¿Quieres hablar con un asesor?', 'El plan de entrada cuesta 25 dólares al mes.']) {
+      const sd: J = {};
+      const r = procesar(t, entrada(sd), sd);
+      expect(r['cuerpoMeta'], t).toBeUndefined();
+    }
+  });
+
+  it('con el cierre avisando a una persona, la promesa ya es verdad: sin botón', () => {
+    const sd: J = {};
+    const r = procesar('Listo, Ana: un asesor te escribirá. [LEAD]{"empresa":"Salón Rosa","contacto":"Ana","rubro":"belleza"}[/LEAD][CIERRE]',
+      entrada(sd), sd);
+    expect(r['avisar']).toBe(true);
+    expect(r['cuerpoMeta']).toBeUndefined();
+  });
+
+  it('el prompt dice la lista cerrada', () => {
+    const s = String(nodo('AI Agent NovuChat').parameters['options']['systemMessage']);
+    expect(s).toContain('SOLO OFRECES LO QUE PUEDES HACER');
+  });
+});
