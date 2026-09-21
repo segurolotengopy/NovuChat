@@ -8,6 +8,60 @@
 
 ---
 
+## 2026-09-20 — Prepago, bloque A-0: el módulo puro reaplicado y los cortes en modo observación
+
+**Rama `prepago/modulo-y-cortes`, sobre `main` (`ee04fcd`). Sin desplegar, sin
+publicar, sin tocar `Flujos/`.** Es el bloque 0 del frente Prepago estricto
+(`Prompts/prepago-estricto.md`, diseño en `admin/DISENO.md` §4undecies).
+
+**Qué hay.** `functions/src/prepago.ts`, puro, reaplicado desde la rama del
+08/09 con las correcciones del diseño: importa `PLANES`, `BOLSA`, `esIdPlan`,
+`limitesDeCuenta` de `planes.ts` (los duplicados de la rama se borraron);
+`estadoDeServicio(cuenta, consumidas, ahoraMs)` decide por instantes y devuelve
+`fase` y `graciaHasta`; **gracia de 48 h** (D0 = día 1 a las 00:00 de Bolivia,
+corte a las 00:00 del día 3); PRUEBA sin cobranza; calendario D-5 / D-1 / D0 /
+D+2 / D+4 con las plantillas de `docs/plantillas-cobranza.md` y claves
+idempotentes; `corte` con `mensajesPerdidos` y `aplicado`, y `perdidas` que
+cuenta teléfonos; `mensajeCortesia(numeroRecepcion)`; `aplicarPago` con tope 6
+y bolsa de regalo al pagar 6; `corteAplicable`, `camposDerivados`. La ingesta
+lee `plataforma/prepago` en la misma transacción, decide, cuenta `perdidas` por
+teléfono (`corteVisto`) y, en corte aplicado, guarda el mensaje sin mover ningún
+contador. `configuracionFlujo` corta con el **409 que los flujos ya obedecen**
+(cero cambios en `Flujos/`, **0 mensajes por conversación**), con el teléfono de
+recepción en la cortesía, y devuelve `prepago` en el 200. `actualizarEstadoCuenta`
+acepta `modalidad`, `periodoPrueba` y `corteActivo` y recalcula los derivados;
+nueva callable `fijarCortePrepago` (solo propietario, con historial).
+`cobranza.ts`: `recordatoriosPrepago` y `recordatorioPrepagoEnviado` con el
+molde de `seguimientos.ts` (marca ANTES de enviar; solo el número de NovuChat).
+`web/src/lib/prepago.ts` reexporta; `scripts/migrar-prepago.mjs` es seco por
+defecto y **no se corrió**. Tres tipos nuevos de bitácora en las tres listas.
+
+**Modo observación, y así se queda.** `plataforma/prepago.corteActivo` no existe
+todavía (= apagado): la ingesta calcula el corte, lo anota con `aplicado: false`,
+cuenta lo que se habría perdido y deja auditoría `corte_observado`, pero atiende
+igual. Encender la global (o `cuenta/estado.corteActivo` en un tenant de ensayo)
+es una decisión de Andres, por `fijarCortePrepago`, «después del demo y con un
+pago confirmado de punta a punta». Una cuenta sin modalidad, en demostración o
+con plan de demostración **no se corta nunca**, con la bandera encendida o
+apagada: es la condición de fusión y está probada negando.
+
+**Pruebas.** `pruebas/prepago.test.ts` (pura), `prepago-ingesta.test.ts`
+(ingesta real, alias `cliente16`, tabla de §4undecies.4), `prepago-configuracion.test.ts`,
+`cobranza.test.ts`; `estado-cuenta.test.ts` ampliado. El resultado real de la
+suite está en el mensaje del último commit de la rama.
+
+**Lo que queda para A-1 y A-2** (sobre esta rama): `pagos.ts` con
+`aplicarPagoEnTransaccion`; que `actualizarEstadoCuenta` rechace `estadoPago`,
+`montoMensual`, `moneda` y `proximoVencimiento`; `suspender`/`reactivar` sin
+`estadoPago`; `exigirAdminDe` con proveedor; `tipoCambio.ts`; el cliente del
+cobrador. Firmas que A-0 deja: `estadoDeServicio(cuenta, consumidas, ahoraMs)`,
+`corteAplicable(cuenta, plataforma)`, `camposDerivados(estado, cuenta)` →
+`{ estadoPago, proximoVencimientoMs, montoMensual, moneda }`,
+`aplicarPago(cuenta, pago, ahoraMs)`. **En espera de la compuerta del demo**
+para desplegar.
+
+---
+
 ## 2026-09-19 (noche) — `v0.6.0` en producción, y los cinco flujos publicados
 
 **Desplegado.** `v0.6.0` sobre `af37c77`, con la aprobación del entorno: consola,
