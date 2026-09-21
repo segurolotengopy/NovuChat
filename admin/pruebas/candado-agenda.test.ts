@@ -718,3 +718,44 @@ describe('El aviso no le dice al cliente que quedó algo cuando no quedó nada',
     expect(r['reservaVerificada']).toBe(true);
   });
 });
+
+/**
+ * LA CITA DE ESTA CONVERSACIÓN, NO LA DE OTRO PACIENTE (20/09/2026).
+ *
+ * Prueba real con dos teléfonos: Silvana agendó el jueves 16:00 y, un minuto
+ * después, Andres agendó el lunes 15:00 en la MISMA agenda. `recien` junta todo
+ * lo creado en los últimos cinco minutos en esa agenda, y se tomaba `recien[0]`:
+ * la seña de Andres quedó atada a la cita de Silvana. Si él pagaba, se
+ * confirmaba la de ella y la suya quedaba pendiente hasta que el barrido la
+ * borrara, con el pago hecho.
+ */
+describe('La seña se ata a la cita que creó ESTA conversación', () => {
+  const deSilvana = ev('silvana', 'Cita Silvana — blanqueamiento', CAL_JOSE,
+    '2026-09-24T16:00:00-04:00', '2026-09-24T17:00:00-04:00', '2026-09-06T20:15:05.000Z');
+  const deAndres = ev('andres', 'PENDIENTE DE SEÑA · Cita Andrés — blanqueamiento', CAL_JOSE,
+    '2026-09-21T15:00:00-04:00', '2026-09-21T16:00:00-04:00', '2026-09-06T20:16:00.000Z');
+  const conLaSuya = (id: string) => ({ ...PREVIA, eventosCreados: [{ id, calendario: CAL_JOSE,
+    inicio: '2026-09-21T15:00:00-04:00', fin: '2026-09-21T16:00:00-04:00', titulo: 'x' }] });
+
+  it('EL CASO REAL: con dos citas recientes en la agenda, toma la que agendó este turno', () => {
+    // Silvana va PRIMERO en la lista, como pasó: la versión anterior la elegía a ella.
+    const r = comprobarTodo([deSilvana, deAndres], AHORA, { mensajeReservaNoConfirmada: '' }, conLaSuya('andres'))[0] ?? {};
+    expect(r['reservaVerificada']).toBe(true);
+    expect(r['eventoId']).toBe('andres');
+  });
+
+  it('si la cita de este turno no aparece, NO toma la de otro: queda sin verificar', () => {
+    // Sin inicio ni fin la cita propia no se puede inyectar desde lo que
+    // devolvió agendar_cita, así que de verdad no aparece.
+    const sinDatos = { ...PREVIA, eventosCreados: [{ id: 'andres', calendario: CAL_JOSE }] };
+    const r = comprobarTodo([deSilvana], AHORA, { mensajeReservaNoConfirmada: '' }, sinDatos)[0] ?? {};
+    expect(r['eventoId']).toBeUndefined();
+    expect(r['reservaVerificada']).toBe(false);
+    expect(r['citaCreadaNoEncontrada']).toBe(true);
+  });
+
+  it('sin los pasos del agente (versiones viejas), sigue tomando la primera reciente, como antes', () => {
+    const r = comprobarTodo([deAndres], AHORA, { mensajeReservaNoConfirmada: '' }, PREVIA)[0] ?? {};
+    expect(r['eventoId']).toBe('andres');
+  });
+});

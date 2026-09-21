@@ -2320,14 +2320,17 @@ describe.each([
     const OK = (cuerpo: J) => ({ statusCode: 200, body: { importe: 100, moneda: 'BOB', cierreId: 'cita_ev-retenido',
       evento: { id: 'ev-retenido', calendario: persona.calendario }, diferencias: [], ...cuerpo } });
 
-    it('cuadra: la cita queda reservada SUJETA a la verificación del pago; transfiere con el motivo de cita pagada', () => {
+    it('cuadra: «tu cita queda reservada», y nada más; a recepción NO se le avisa (Andres, 20/09/2026)', () => {
+      // La clínica verifica el adelanto el día de la cita: un aviso por cada
+      // reserva pagada es ruido. Y la frase es la realidad: la cita queda
+      // reservada. La prohibición 3 se cumple: no dice que el pago se acreditó.
       const s = responder(OK({ resultado: 'cuadra' }));
       const r = String(s['respuesta']);
       expect(r).toMatch(/Recibí (su|tu) comprobante y los datos coinciden con (su|tu) reserva/);
-      expect(r).toContain('queda reservada, sujeta a la verificación del pago por Un Negocio');
-      expect(r).toContain('Ya avisé a recepción');
+      expect(r).toMatch(/(Su|Tu) cita queda reservada\./);
+      expect(r).not.toMatch(/sujeta a la verificación|Ya avisé a recepción/);
       expect(r).toContain('Calle 1, zona Sur');
-      expect(s).toMatchObject({ transferir: true, resultadoSena: 'cuadra', confirmarCita: true, eventoId: 'ev-retenido',
+      expect(s).toMatchObject({ transferir: false, resultadoSena: 'cuadra', confirmarCita: true, eventoId: 'ev-retenido',
         calendarioDelEvento: persona.calendario, from: '59170000001', nombrePerfil: 'Ana' });
       expect(String(s['motivoTransferencia'])).toContain('mensaje de NovuChat por cita pagada');
       expect(String(s['motivoTransferencia'])).toContain('confirmar en el banco');
@@ -2389,7 +2392,8 @@ describe.each([
           const s = responder(r, config);
           expect(String(s['respuesta'])).not.toMatch(AFIRMA_PAGO);
           expect(String(s['respuesta'])).not.toMatch(/simulad/i);
-          expect(s['transferir']).toBe(true);
+          // A recepción, todo MENOS el comprobante que cuadró (Andres, 20/09/2026).
+          expect(s['transferir']).toBe(s['resultadoSena'] !== 'cuadra');
         }
       }
     });
@@ -2431,16 +2435,18 @@ describe.each([
         const s = mensaje({ 'Leer cita retenida': [CITA_RETENIDA], 'Confirmar cita retenida': [{ ...CITA_RETENIDA, summary: 'Cita Ana — valoración clínica' }] });
         const r = String(s['respuesta']);
         expect(r).toMatch(/(Su|Tu) cita de valoración clínica queda reservada para el viernes, 18 de septiembre a las 10:00 con /);
-        expect(r).toContain(persona.nombre + ', sujeta a la verificación del pago por Un Negocio');
+        expect(r).toContain(`con ${persona.nombre}.`);
+        expect(r).not.toMatch(/sujeta a la verificación/);
         expect(r).not.toMatch(AFIRMA_PAGO);
-        expect(s).toMatchObject({ transferir: true, tituloCorregido: true });
-        expect(String(s['motivoTransferencia'])).toContain('mensaje de NovuChat por cita pagada');
-        expect(String(s['motivoTransferencia'])).not.toContain('quitarlo a mano');
+        // Todo salió bien: a recepción no le llega nada.
+        expect(s).toMatchObject({ transferir: false, tituloCorregido: true, motivoTransferencia: '' });
       });
 
       it('si no se pudo leer la cita, el texto sale sin fecha (nunca inventada) y recepción lo sabe', () => {
         const s = mensaje({});
-        expect(String(s['respuesta'])).toContain('queda reservada, sujeta a la verificación del pago por Un Negocio');
+        expect(String(s['respuesta'])).toMatch(/(Su|Tu) cita queda reservada\./);
+        // Esto SÍ es un problema de agenda: se avisa aunque el pago cuadró.
+        expect(s['transferir']).toBe(true);
         expect(String(s['motivoTransferencia'])).toContain('no pude leer la cita retenida');
         expect(String(s['motivoTransferencia'])).toContain('quitarlo a mano');
         expect(s['tituloCorregido']).toBe(false);
@@ -3012,7 +3018,16 @@ describe.each([
       expect(t).toContain('PLATINUM CLÍNICA DENTAL');
     });
 
-    it('una promoción se responde con los precios de la consola, NUNCA con los de la foto', () => {
+    it('ante una campaña vigente de este negocio, UN mensaje corto: la tienen, el precio y agendar (20/09/2026)', () => {
+    // Prueba real: «¿tienes este?» y la imagen tres segundos después llegan
+    // como dos mensajes; el segundo salió con 381 caracteres de procedimiento.
+    const t = texto('publicidad', 'Platinum BLANQUEAMIENTO DENTAL PROFESIONAL Ahora solo 500 Bs');
+    expect(t).toContain('SI ES UNA CAMPAÑA VIGENTE DE ESTE NEGOCIO, contesta en UN mensaje corto');
+    expect(t).toMatch(/que la tienen, el precio vigente, y ofrécele agendar/);
+    expect(t).toMatch(/no repitas lo que ya le dijiste en tu mensaje anterior/);
+  });
+
+  it('una promoción se responde con los precios de la consola, NUNCA con los de la foto', () => {
       const t = texto('publicidad', 'BLANQUEAMIENTO 199 Bs — promo de otro lugar');
       expect(t).toMatch(/nunca con los de la imagen/i);
       expect(t).toContain('dato del cliente');
@@ -3648,3 +3663,121 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       for (const v of ['senaPendiente', 'senaQrEnviadoEn', '$json.from']) expect(p, v).not.toContain(v);
     });
   });
+
+/**
+ * LO QUE NO SABE, EL ASISTENTE NO LO NIEGA NI LO INVENTA (20/09/2026).
+ *
+ * Prueba con teléfono: a «¿Estética facial? Dice en tu logo» contestó «No
+ * realizamos estética facial; somos una clínica exclusivamente dental», que
+ * ninguna fuente dice; y a «¿las fotos son reales?», «sí, son casos reales de
+ * nuestros pacientes», que tampoco. El asistente nunca conoce la lista completa
+ * de lo que un negocio hace: lo que no está en su información lo asesora una
+ * persona. Y el motivo que recibe recepción tiene que decir qué pasó.
+ */
+describe('Lo que no sabe, no lo niega ni lo inventa', () => {
+  for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+    it(`${cliente}: el prompt deriva a una persona lo que no está en su información`, () => {
+      const g = JSON.parse(readFileSync(join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8')) as
+        { nodes: { name: string; type: string; parameters: { options?: { systemMessage?: string } } }[] };
+      const p = String(g.nodes.find((n) => n.type.endsWith('.agent') && !n.name.includes('Reintento'))
+        ?.parameters.options?.systemMessage);
+      expect(p).toContain('LO QUE NO SABES, NO LO NIEGUES NI LO INVENTES');
+      expect(p).toMatch(/aunque lo mencione el logo, una imagen o una publicidad del negocio/);
+      expect(p).toMatch(/NO digas que no lo tienen ni que lo tienen: di que una persona del equipo le asesora sobre eso y termina con \[TRANSFERIR\]/);
+      expect(p).toMatch(/Tampoco afirmes nada sobre fotos, casos o resultados que tu información no diga/);
+    });
+  }
+
+  it('el motivo que recibe recepción dice lo que escribió el cliente, no «tres rechazos»', () => {
+    const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009' };
+    const r = ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+      [{ output: 'Sobre eso te asesora una persona del equipo. [TRANSFERIR]', intermediateSteps: [] }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: '¿Estética facial? Dice en tu logo' }],
+        'Config del negocio': [cfg] })[0] ?? {};
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).not.toContain('tres rechazos');
+    expect(String(r['motivoTransferencia'])).toContain('el asistente pidió que lo atienda una persona');
+    expect(String(r['motivoTransferencia'])).toContain('«¿Estética facial? Dice en tu logo»');
+    expect(String(r['respuesta'])).not.toContain('[TRANSFERIR]');
+  });
+});
+
+/**
+ * UNA CANCELACIÓN SE AFIRMA SOLO SI GOOGLE LA CONFIRMÓ (20/09/2026).
+ *
+ * Caso real, ejecución #3802: el paciente confirmó, el modelo llamó a
+ * cancelar_cita con un identificador INVENTADO —el real se había quedado en el
+ * turno anterior—, Google devolvió «Not Found» (la herramienta, vacío) y el
+ * modelo escribió «Listo, la cita quedó cancelada». La cita siguió ahí.
+ */
+describe('Cancelar: solo se afirma lo que Google confirmó', () => {
+  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009' };
+  const procesar = (output: string, observacion: unknown) => ejecutar(
+    String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+    [{ output, intermediateSteps: [{ action: { tool: 'cancelar_cita', toolInput: { eventoId: 'x' } }, observation: observacion }] }],
+    { 'Normalizar entrada': [{ from: '59170000001', userInput: 'Si' }], 'Config del negocio': [cfg] })[0] ?? {};
+
+  it('EL CASO REAL: la herramienta devolvió vacío y el modelo dijo «cancelada» → NO se envía, se transfiere', () => {
+    const r = procesar('Listo, la cita quedó cancelada. Para cancelar o reprogramar, escríbenos por este mismo chat.', '');
+    expect(String(r['respuesta'])).not.toMatch(/cancelada/i);
+    expect(String(r['respuesta'])).toContain('No pude cancelar la cita en la agenda');
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('cancelar_cita NO la borró');
+  });
+
+  it('un error de la herramienta tampoco se afirma como cancelación', () => {
+    const r = procesar('Tu cita fue cancelada.', '{"error":"The resource you are requesting could not be found"}');
+    expect(String(r['respuesta'])).toContain('No pude cancelar');
+    expect(r['transferir']).toBe(true);
+  });
+
+  it('con { success: true } de Google, la cancelación se afirma como la escribió el modelo', () => {
+    for (const obs of ['[{"success":true}]', '{"success":true}', [{ success: true }]]) {
+      const r = procesar('Listo, la cita quedó cancelada.', obs);
+      expect(String(r['respuesta'])).toBe('Listo, la cita quedó cancelada.');
+      expect(r['transferir']).toBe(false);
+    }
+  });
+
+  it('el prompt dice que el identificador no sobrevive de un turno a otro, y que no vuelva a preguntar', () => {
+    const p = prompt();
+    expect(p).toContain('EL IDENTIFICADOR NO QUEDA\n     EN TU MEMORIA de un mensaje a otro');
+    expect(p).toMatch(/EN ESE MISMO TURNO, llama a\n     cancelar_cita con el identificador exacto/);
+    expect(p).toMatch(/No le\n     vuelvas a preguntar: ya confirmó/);
+  });
+});
+
+/**
+ * LA UBICACIÓN, CON EL PIN NATIVO, DESPUÉS DEL PAGO (Andres, 20/09/2026:
+ * «aunque sea en un segundo mensaje»). Como pin y no como enlace de Maps: el
+ * enlace corto muere en Android con «Invalid Dynamic Link» (19/09). Un mensaje
+ * más por reserva PAGADA, aceptado por Andres.
+ */
+describe('Pago confirmado: sale el pin de ubicación', () => {
+  const codigoSena = () => String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+  const base = (resultadoSena: string) => ({ respuesta: 'Recibí tu comprobante y los datos coinciden con tu reserva. Tu cita queda reservada.',
+    resultadoSena, motivoTransferencia: 'x', calendarioDelEvento: '', from: '59170000001' });
+  const cfg = { direccion: 'Radial 26', nombreNegocio: 'Clínica Platinum', funcionarios: '[]', phoneNumberId: '1000000001',
+    ubicacionLat: '-17.763381', ubicacionLng: '-63.188263' };
+  const cita = { id: 'ev', summary: 'Cita Ana — blanqueamiento', start: { dateTime: '2026-09-24T16:00:00-04:00' }, organizer: { email: 'c' } };
+  const correr = (resultado: string, c: J = cfg, refs: Record<string, J[]> = { 'Leer cita retenida': [cita], 'Confirmar cita retenida': [cita] }) =>
+    ejecutar(codigoSena(), [{}], { 'Respuesta de la seña': [base(resultado)], 'Config del negocio': [c], ...refs })[0] ?? {};
+
+  it('si CUADRÓ, sale el pin con las coordenadas, el nombre y la dirección, y el texto no lleva el enlace', () => {
+    const r = correr('cuadra');
+    expect(r).toMatchObject({ enviarUbicacion: true, ubicacionLat: -17.763381, ubicacionLng: -63.188263,
+      nombreNegocio: 'Clínica Platinum', direccion: 'Radial 26', phoneNumberId: '1000000001' });
+    expect(String(r['respuesta'])).not.toContain('maps.app.goo.gl');
+    // Lo lee el nodo que ya manda el pin cuando el paciente lo pide.
+    expect(expresion(nodo(flujo, '¿Enviar ubicación?').parameters['conditions'].conditions[0].leftValue, {}, { 'Mensaje a enviar': r })).toBe(true);
+  });
+  it('si NO cuadró, no sale el pin: la cita todavía no está firme', () => {
+    expect(correr('no_cuadra')['enviarUbicacion']).toBe(false);
+  });
+  it('sin coordenadas cargadas no sale el pin (el texto ya lleva la dirección)', () => {
+    expect(correr('cuadra', { ...cfg, ubicacionLat: '', ubicacionLng: '' })['enviarUbicacion']).toBe(false);
+  });
+  it('si no se pudo leer la cita, tampoco: primero que una persona la revise', () => {
+    expect(correr('cuadra', cfg, {})['enviarUbicacion']).toBe(false);
+  });
+});
