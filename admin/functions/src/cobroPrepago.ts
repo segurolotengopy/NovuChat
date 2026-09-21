@@ -1,0 +1,812 @@
+/**
+ * =============================================================================
+ * COBRO DEL PREPAGO POR QR — NovuChat le cobra al comercio, por el cobrador
+ * =============================================================================
+ *
+ * LA DIRECCIÓN DEL DINERO, antes que nada. Esto NO es la seña de `cobro.ts`
+ * ni de `sena.ts`: allá el comercio le cobra a su cliente con la cuenta del
+ * comercio y NovuChat no toca la plata. Acá **NovuChat le cobra al comercio**
+ * la mensualidad, la bolsa o la instalación, con la cuenta de cobro de
+ * NovuChat en el proyecto de cobros. Credenciales, colecciones, pantallas y
+ * textos separados (decisión 2 del frente); este archivo no importa `cobro.ts`,
+ * `sena.ts`, `cotejo.ts` ni `qrSimple.ts`, y `pruebas/prepago-separacion.test.ts`
+ * lo exige leyendo la fuente.
+ *
+ * QUIÉN CONFIRMA UN PAGO, y es la regla que gobierna todo (decisión 5): el
+ * banco, a través de la consulta autenticada `estadoCobro` al cobrador, o el
+ * propietario con evidencia y auditoría (`pagos.ts`, bloque A-1). **El aviso
+ * del cobrador no confirma nada**: se verifica su firma, y después se le
+ * pregunta al cobrador, con nuestro token, en qué estado está el cobro. Solo
+ * si esa respuesta dice `CONFIRMADO` se suman meses. Aunque el secreto del
+ * aviso se filtrara, nadie acredita un mes sin que el cobrador, autenticado,
+ * lo afirme. El barrido horario llega al mismo resultado sin aviso.
+ *
+ * LAS CUATRO PUERTAS DE ESTE ARCHIVO (DISENO.md §4undecies.5 y .7):
+ *
+ *   - `crearCobroPrepago` (callable; admin del comercio o propietario): TCO
+ *     del día, un solo pendiente por cuenta, `pagoId` opaco que es también la
+ *     referencia externa, QR como PNG en Storage, índice `/cobrosPendientes`.
+ *   - `avisoCobrador` (HTTP, sin CORS): firma → consulta autenticada → aplica.
+ *     Idempotente: un aviso repetido no suma nada.
+ *   - `barridoCobros` (cada hora): recorre `/cobrosPendientes`, consulta y
+ *     aplica la tabla de estados. Anula lo que venció hace más de un día:
+ *     el banco vence los QR por día, y uno «olvidado» sigue pagable.
+ *   - `imagenDePago` (HTTP pública, por ficha al azar): el PNG para que Meta
+ *     lo descargue; 404 si el pago ya no está pendiente.
+ *
+ * LA TABLA DE ESTADOS del cobrador → pago de NovuChat, aplicada literal:
+ *
+ *   BORRADOR        → sigue pendiente; se reintenta con la MISMA referencia
+ *   QR_ACTIVO       → pendiente
+ *   PAGO_DETECTADO  → pendiente (se anota `cobro.estado`; no se acredita nada)
+ *   CONFIRMADO      → confirmado: LA ÚNICA transición que suma meses
+ *   EN_REVISION     → pendiente; auditoría
+ *   VENCIDO         → vencido; se limpia `pagoPendienteId`
+ *   ANULADO/RECHAZADO → anulado
+ *
+ * COSTO EN MENSAJES: 0. La confirmación por WhatsApp solo se ENCOLA en
+ * `cuenta.confirmacionesPendientes`; la manda el módulo de A-4.
+ *
+ * `pagos-stub.ts` es provisorio: cuando A-1 esté en `main`, los imports de
+ * abajo cambian a `pagos.ts` y `prepago.ts` y nada más se toca.
+ */
+import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { FieldValue, Timestamp, getFirestore, type DocumentSnapshot } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import { randomBytes } from 'node:crypto';
+import { REGION } from './region.js';
+import { registrar } from './ingesta.js';
+import {
+  COBRADOR_AVISO_SECRETO, COBRADOR_TOKEN, ErrorCobrador, CobradorNoResponde,
+  configCobradorDe, montoDesdeTexto, resolverCobrador, verificarAviso,
+  VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador,
+} from './cobrador.js';
+import {
+  MONEDA_COBRO, MONEDA_LISTA, SinTipoDeCambio, conceptoDe, descripcionDe, esPedidoDePago,
+  importeBs, montoUsdDe, puertaDePagos, tipoCambioDelDia,
+  type Confirmacion, type PedidoDePago, type PuertaDePagos,
+} from './pagos-stub.js';
+
+const db = () => getFirestore();
+const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
+/** `randomBytes(16).toString('base64url')`: 22 caracteres del juego `[A-Za-z0-9_-]`. */
+const ID_PAGO = /^[A-Za-z0-9_-]{22}$/;
+const FICHA = /^[0-9a-f]{32}$/;
+const HORA = 3_600_000;
+const DIA = 24 * HORA;
+/** Un pendiente que nunca llegó a emitir su QR se cierra pasado este plazo. */
+const RESERVA_SIN_EMITIR_MS = 4 * DIA;
+/** Cuántos pendientes revisa el barrido por corrida. */
+export const TOPE_BARRIDO = 500;
+const PNG_FIRMA = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_MAXIMO = 512 * 1024;
+
+const texto = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max).trim() : '');
+const ultimos4 = (v: string) => v.slice(-4);
+
+// ---------------------------------------------------------------------------
+// STORAGE, inyectable: el emulador de Firestore no trae Storage
+// ---------------------------------------------------------------------------
+
+export interface Almacen {
+  guardar(ruta: string, bytes: Buffer, contentType: string): Promise<void>;
+  leer(ruta: string): Promise<Buffer | null>;
+}
+
+const almacenDeStorage: Almacen = {
+  async guardar(ruta, bytes, contentType) {
+    await getStorage().bucket().file(ruta).save(bytes, {
+      contentType, resumable: false, metadata: { cacheControl: 'private, max-age=0' },
+    });
+  },
+  async leer(ruta) {
+    const archivo = getStorage().bucket().file(ruta);
+    const [existe] = await archivo.exists();
+    if (!existe) return null;
+    const [bytes] = await archivo.download();
+    return bytes;
+  },
+};
+
+let almacenDePrueba: Almacen | null = null;
+/** Solo con `COBRADOR_DOBLE` en el entorno, como `registrarCobradorDoble`. */
+export function fijarAlmacenDePrueba(a: Almacen | null): void {
+  if (!process.env['COBRADOR_DOBLE']) throw new Error('fijarAlmacenDePrueba exige COBRADOR_DOBLE en el entorno');
+  almacenDePrueba = a;
+}
+const almacen = (): Almacen => almacenDePrueba ?? almacenDeStorage;
+
+/** Dependencias inyectables de cada operación; en producción, todas por defecto. */
+export interface Deps {
+  cobrador?: Cobrador;
+  puerta?: PuertaDePagos;
+  ahoraMs?: number;
+}
+
+// ---------------------------------------------------------------------------
+// AUTORIZACIÓN — las Functions se saltan las reglas; se comprueba a mano
+// ---------------------------------------------------------------------------
+
+type Quien = { uid: string; rol: 'admin' | 'propietario' };
+
+/**
+ * Administrador del comercio (sesión de contraseña con correo verificado, como
+ * `esAdmin()` de las reglas) o propietario (sesión de Google, T-19). El vínculo
+ * rol ↔ proveedor va acá porque `index.ts:exigirAdminDe` todavía no lo mira
+ * (lo agrega A-1); un claim de admin en una sesión de Google es inerte en las
+ * reglas y tiene que serlo también acá.
+ */
+function exigirAdminOPropietario(p: CallableRequest, tenantId: string): Quien {
+  const uid = p.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Inicie sesión.');
+  const token = (p.auth?.token ?? {}) as Record<string, unknown>;
+  const nc = (typeof token['nc'] === 'object' && token['nc'] !== null ? token['nc'] : {}) as Record<string, unknown>;
+  const proveedor = (token['firebase'] as { sign_in_provider?: unknown } | undefined)?.sign_in_provider;
+  if (nc['p'] === true && proveedor === 'google.com') return { uid, rol: 'propietario' };
+  const roles = (typeof nc['t'] === 'object' && nc['t'] !== null ? nc['t'] : {}) as Record<string, unknown>;
+  if (roles[tenantId] === 'admin' && proveedor === 'password' && token['email_verified'] === true) {
+    return { uid, rol: 'admin' };
+  }
+  throw new HttpsError('permission-denied', 'Solo el administrador del negocio o NovuChat.');
+}
+
+const auditar = (tenantId: string, accion: string, quien: string, detalle: object = {}) =>
+  db().collection(`tenants/${tenantId}/auditoria`).add({ accion, uid: quien, en: Timestamp.now(), ...detalle })
+    .catch(() => console.error(`No se pudo auditar ${accion} en ${tenantId}`));
+
+// ---------------------------------------------------------------------------
+// EL PAGO EN FIRESTORE
+// ---------------------------------------------------------------------------
+
+/** Lo que `pago.cobro` guarda del cobrador. `SIN_EMITIR`: reservado acá, todavía sin pedir el QR. */
+interface CobroGuardado {
+  id: string | null;
+  estado: string;   // EstadoCobrador | 'SIN_EMITIR' | 'QR_SUELTO'
+  venceEn: Timestamp | null;
+  creadoEn: Timestamp | null;
+  fichaQr: string;
+  qrRuta: string | null;
+}
+
+const cobroGuardadoDe = (datos: Record<string, unknown> | undefined): CobroGuardado | null => {
+  const c = datos?.['cobro'];
+  if (typeof c !== 'object' || c === null) return null;
+  const r = c as Record<string, unknown>;
+  return {
+    id: typeof r['id'] === 'string' ? r['id'] : null,
+    estado: typeof r['estado'] === 'string' ? r['estado'] : 'SIN_EMITIR',
+    venceEn: r['venceEn'] instanceof Timestamp ? r['venceEn'] : null,
+    creadoEn: r['creadoEn'] instanceof Timestamp ? r['creadoEn'] : null,
+    fichaQr: typeof r['fichaQr'] === 'string' ? r['fichaQr'] : '',
+    qrRuta: typeof r['qrRuta'] === 'string' ? r['qrRuta'] : null,
+  };
+};
+
+const refs = (tenantId: string, pagoId: string) => ({
+  pago: db().doc(`tenants/${tenantId}/pagos/${pagoId}`),
+  cuenta: db().doc(`tenants/${tenantId}/cuenta/estado`),
+  ficha: db().doc(`tenants/${tenantId}`),
+  cobroPendiente: db().doc(`cobrosPendientes/${pagoId}`),
+  cobroResuelto: db().doc(`cobrosResueltos/${pagoId}`),
+});
+
+const rutaQr = (tenantId: string, pagoId: string) => `tenants/${tenantId}/pagos/${pagoId}/qr.png`;
+
+const milis = (v: unknown): number | null => (v instanceof Timestamp ? v.toMillis() : null);
+const fechaIso = (v: unknown): Timestamp | null => {
+  if (typeof v !== 'string') return null;
+  const ms = Date.parse(v);
+  return Number.isFinite(ms) ? Timestamp.fromMillis(ms) : null;
+};
+
+/** Decodifica el PNG del cobrador; `null` si no es PNG o pesa más de 512 KiB. */
+export function decodificarPng(base64: string | null): Buffer | null {
+  if (!base64 || base64.length > PNG_MAXIMO * 2) return null;
+  let bytes: Buffer;
+  try { bytes = Buffer.from(base64, 'base64'); } catch { return null; }
+  if (bytes.length < 8 || bytes.length > PNG_MAXIMO) return null;
+  return bytes.subarray(0, 8).equals(PNG_FIRMA) ? bytes : null;
+}
+
+export interface PagoEmitido {
+  pagoId: string;
+  estado: 'pendiente';
+  tipo: PedidoDePago['tipo'];
+  descripcion: string;
+  montoUsd: number;
+  monto: number;
+  moneda: 'BOB';
+  tcoAplicado: number;
+  tcoFuente: string;
+  tcoFecha: string;
+  venceEn: number;
+  fichaQr: string;
+  cobro: { id: string; estado: string };
+  /** `true` si se retomó una reserva anterior con la misma referencia. */
+  reutilizado: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// CREAR: reservar → pedir el QR → registrar
+// ---------------------------------------------------------------------------
+
+/**
+ * La función interna que comparten la callable de la consola y, cuando
+ * exista, `pagoPorWhatsapp` (A-4). Tres pasos, y el orden importa:
+ *
+ *  1. UNA TRANSACCIÓN RESERVA. Lee la cuenta; si hay un pendiente vivo (QR
+ *     emitido y sin vencer) rechaza y lo devuelve; si el pendiente nunca llegó
+ *     a emitir su QR —falló el banco, o quedó `BORRADOR`— lo RETOMA: misma
+ *     referencia, mismo pedido. Si no hay nada, crea el pago, escribe
+ *     `pagoPendienteId` y `/cobrosPendientes`. Dos llamadas simultáneas chocan
+ *     en la cuenta y la segunda relee y encuentra el pendiente de la primera.
+ *  2. SE LE PIDE EL QR AL COBRADOR con esa referencia. Es idempotente allá:
+ *     un reintento devuelve el mismo cobro y el mismo QR, nunca dos.
+ *  3. OTRA TRANSACCIÓN ANOTA el cobro. Si el cobrador no respondió, la reserva
+ *     queda: la próxima llamada la retoma. Si dijo `QR_SUELTO_EN_EL_PROVEEDOR`,
+ *     la reserva se marca y NO se reintenta con esa referencia hasta revisar.
+ */
+export async function crearCobroInterno(
+  tenantId: string,
+  pedido: PedidoDePago,
+  quien: { uid: string; creadoPor: string; canal: 'consola' | 'whatsapp' | 'manual' },
+  deps: Deps = {},
+): Promise<PagoEmitido> {
+  const ahoraMs = deps.ahoraMs ?? Date.now();
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  const [tcDoc, plataformaDoc] = await Promise.all([
+    db().doc('plataforma/tipoCambio').get(), db().doc('plataforma/prepago').get(),
+  ]);
+  let tc;
+  try { tc = tipoCambioDelDia(tcDoc.data(), ahoraMs); } catch (e) {
+    if (e instanceof SinTipoDeCambio) throw new HttpsError('failed-precondition', 'No hay tipo de cambio del día: no se puede emitir el cobro.');
+    throw e;
+  }
+  const montoUsd = montoUsdDe(pedido);
+  const monto = importeBs(montoUsd, tc.tco);
+  const vigenciaHoras = configCobradorDe(plataformaDoc.data())?.vigenciaHoras ?? VIGENCIA_HORAS_POR_DEFECTO;
+  const descripcion = descripcionDe(pedido);
+
+  const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
+  const refFicha = db().doc(`tenants/${tenantId}`);
+
+  // 1. Reservar (o retomar).
+  const reserva = await db().runTransaction(async (tx) => {
+    const [fichaDoc, cuentaDoc] = await Promise.all([tx.get(refFicha), tx.get(refCuenta)]);
+    if (!fichaDoc.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    const cuenta = cuentaDoc.data() ?? {};
+    const pendienteId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
+      ? cuenta['pagoPendienteId'] : null;
+
+    if (pendienteId) {
+      const pDoc = await tx.get(db().doc(`tenants/${tenantId}/pagos/${pendienteId}`));
+      const p = pDoc.data();
+      if (p && p['estado'] === 'pendiente') {
+        const cobro = cobroGuardadoDe(p);
+        const vivo = { pagoId: pendienteId, monto: p['monto'], descripcion: p['descripcion'], fichaQr: cobro?.fichaQr ?? '', venceEn: milis(p['venceEn']), cobroEstado: cobro?.estado ?? 'SIN_EMITIR' };
+        if (cobro?.estado === 'QR_SUELTO') {
+          throw new HttpsError('failed-precondition', 'El último cobro quedó suelto en el banco: NovuChat lo tiene que revisar antes de emitir otro.', vivo);
+        }
+        const emitido = cobro?.id && cobro.estado !== 'BORRADOR';
+        if (!emitido) {
+          // Retomar solo si es el MISMO pedido: la referencia ya está reservada
+          // allá con este importe, y otro importe sería un 409 del cobrador.
+          const mismo = p['tipo'] === pedido.tipo && p['monto'] === monto
+            && (pedido.tipo !== 'mensualidad' || (p['plan'] === pedido.plan && p['meses'] === pedido.meses))
+            && (pedido.tipo !== 'bolsa' || p['cantidad'] === pedido.cantidad);
+          if (!mismo) throw new HttpsError('failed-precondition', 'Hay un cobro reservado con otro pedido. Cancélelo antes de emitir otro.', vivo);
+          return { pagoId: pendienteId, fichaQr: cobro?.fichaQr ?? '', reutilizado: true };
+        }
+        // QR vivo, o vencido según el reloj: en los dos casos hay que cerrarlo
+        // antes (lo cierra el barrido, o `anularPagoPendiente` de A-1).
+        throw new HttpsError('failed-precondition', 'Ya hay un cobro pendiente para esta cuenta.', vivo);
+      }
+      // `pagoPendienteId` apunta a un pago cerrado: se limpia con la reserva nueva.
+    }
+
+    const pagoId = randomBytes(16).toString('base64url');
+    const fichaQr = randomBytes(16).toString('hex');
+    const refPago = db().doc(`tenants/${tenantId}/pagos/${pagoId}`);
+    tx.create(refPago, {
+      tipo: pedido.tipo,
+      ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
+      ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
+      montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
+      tcoAplicado: tc.tco, tcoFuente: tc.fuente, tcoFecha: tc.fecha,
+      montoRecibidoBs: null,
+      estado: 'pendiente', medio: 'qr', canal: quien.canal,
+      referencia: pagoId,
+      descripcion,
+      cobro: { id: null, estado: 'SIN_EMITIR', venceEn: null, creadoEn: null, fichaQr, qrRuta: null },
+      creadoEn: ahora, creadoPor: quien.creadoPor, actualizadoEn: ahora,
+    });
+    tx.set(refCuenta, { pagoPendienteId: pagoId, actualizadoEn: ahora }, { merge: true });
+    tx.create(db().doc(`cobrosPendientes/${pagoId}`), {
+      tenantId, pagoId, cobroId: null, fichaQr, venceEn: null, creadoEn: ahora,
+    });
+    return { pagoId, fichaQr, reutilizado: false };
+  });
+
+  const { pagoId, fichaQr, reutilizado } = reserva;
+  const r = refs(tenantId, pagoId);
+  const cobrador = await resolverCobrador(deps.cobrador);
+
+  // 2. Pedir el QR.
+  let respuesta;
+  try {
+    respuesta = await cobrador.crearCobro({
+      referenciaExterna: pagoId, concepto: conceptoDe(pedido), montoBs: monto, horasDeVigencia: vigenciaHoras,
+    });
+  } catch (e) {
+    if (e instanceof ErrorCobrador) {
+      if (e.codigo === 'QR_SUELTO_EN_EL_PROVEEDOR') {
+        await r.pago.set({ cobro: { estado: 'QR_SUELTO' }, actualizadoEn: Timestamp.now() }, { merge: true });
+        await auditar(tenantId, 'cobro_suelto_en_el_proveedor', quien.uid, { pagoId, codigo: e.codigo });
+        throw new HttpsError('aborted', 'El banco no confirmó la emisión del QR. NovuChat lo revisa; no se emitió ningún cobro.');
+      }
+      if (e.codigo === 'CUPO_POR_HORA_AGOTADO') throw new HttpsError('resource-exhausted', 'Demasiados cobros en la última hora. Vuelva a intentar más tarde.');
+      if (e.codigo === 'IMPORTE_DISTINTO_CON_MISMA_REFERENCIA') {
+        await auditar(tenantId, 'cobro_referencia_en_conflicto', quien.uid, { pagoId, codigo: e.codigo });
+        throw new HttpsError('internal', 'La referencia del cobro ya existe con otro importe.');
+      }
+      console.error(`cobrador ${e.status} ${e.codigo} al crear el cobro …${ultimos4(pagoId)}`);
+      throw new HttpsError('unavailable', 'El cobrador rechazó la operación. Vuelva a intentar.');
+    }
+    if (e instanceof CobradorNoResponde) throw new HttpsError('unavailable', 'El cobrador no respondió. Vuelva a intentar en unos minutos.');
+    throw e;
+  }
+
+  const cobro = respuesta.cobro;
+  if (cobro.estado === 'BORRADOR') {
+    await r.pago.set({ cobro: { id: cobro.id, estado: 'BORRADOR' }, actualizadoEn: Timestamp.now() }, { merge: true });
+    throw new HttpsError('unavailable', 'El banco no emitió el QR. Vuelva a intentar en unos minutos: se retoma el mismo cobro.');
+  }
+  if (cobro.estado !== 'QR_ACTIVO' && cobro.estado !== 'PAGO_DETECTADO' && cobro.estado !== 'EN_REVISION') {
+    // Una reserva retomada cuyo cobro ya terminó allá (pagado, vencido o
+    // anulado): se aplica lo que el cobrador dice y no se muestra ningún QR.
+    const resultado = await aplicarEstadoDelCobrador(tenantId, pagoId, cobro, { via: 'creacion' }, deps);
+    throw new HttpsError('failed-precondition', `El cobro anterior ya está ${resultado.estado}. Emita uno nuevo.`, { pagoId, estado: resultado.estado });
+  }
+
+  // 3. Guardar el PNG y anotar el cobro.
+  const png = decodificarPng(respuesta.imagenQrBase64);
+  const ruta = rutaQr(tenantId, pagoId);
+  const venceEn = fechaIso(cobro.qr?.venceEn) ?? Timestamp.fromMillis(ahoraMs + vigenciaHoras * HORA);
+  const creadoEnCobrador = fechaIso(cobro.creadoEn) ?? ahora;
+  let qrRuta: string | null = null;
+  if (png) {
+    try { await almacen().guardar(ruta, png, 'image/png'); qrRuta = ruta; } catch (e) {
+      console.error(`No se pudo guardar el QR de …${ultimos4(pagoId)}: ${e instanceof Error ? e.message : 'error'}`);
+    }
+  }
+  await db().runTransaction(async (tx) => {
+    const pDoc = await tx.get(r.pago);
+    if (pDoc.data()?.['estado'] !== 'pendiente') return;
+    tx.update(r.pago, {
+      cobro: { id: cobro.id, estado: cobro.estado, venceEn, creadoEn: creadoEnCobrador, fichaQr, qrRuta },
+      venceEn, actualizadoEn: Timestamp.now(),
+    });
+    tx.set(r.cobroPendiente, { cobroId: cobro.id, venceEn }, { merge: true });
+  });
+  await auditar(tenantId, 'cobro_emitido', quien.uid, {
+    pagoId, cobroId: cobro.id, monto, montoUsd, tcoAplicado: tc.tco, tcoFecha: tc.fecha, descripcion,
+    canal: quien.canal, reutilizado, conQr: qrRuta !== null,
+  });
+  if (!qrRuta) {
+    // El cobro existe y es pagable; sin imagen no se puede mostrar. Un reintento
+    // vuelve a pedirla (200 del cobrador, mismo QR) y la guarda.
+    throw new HttpsError('unavailable', 'El cobro se emitió pero la imagen del QR no se pudo guardar. Vuelva a intentar.');
+  }
+  return {
+    pagoId, estado: 'pendiente', tipo: pedido.tipo, descripcion,
+    montoUsd, monto, moneda: MONEDA_COBRO,
+    tcoAplicado: tc.tco, tcoFuente: tc.fuente, tcoFecha: tc.fecha,
+    venceEn: venceEn.toMillis(), fichaQr,
+    cobro: { id: cobro.id, estado: cobro.estado }, reutilizado,
+  };
+}
+
+export const crearCobroPrepago = onCall(
+  { region: REGION, secrets: [COBRADOR_TOKEN] },
+  async (peticion: CallableRequest) => {
+    const datos = (peticion.data ?? {}) as Record<string, unknown>;
+    const tenantId = texto(datos['tenantId'], 60);
+    if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
+    const quien = exigirAdminOPropietario(peticion, tenantId);
+    const pedido = {
+      tipo: datos['tipo'], plan: datos['plan'], meses: datos['meses'], cantidad: datos['cantidad'],
+    };
+    if (!esPedidoDePago(pedido)) {
+      throw new HttpsError('invalid-argument', 'Pedido inválido: mensualidad (plan y 1 a 6 meses), bolsa (1 a 12) o instalación.');
+    }
+    const limpio: PedidoDePago = pedido.tipo === 'mensualidad'
+      ? { tipo: 'mensualidad', plan: pedido.plan, meses: pedido.meses }
+      : pedido.tipo === 'bolsa' ? { tipo: 'bolsa', cantidad: pedido.cantidad } : { tipo: 'instalacion' };
+    return crearCobroInterno(tenantId, limpio, { uid: quien.uid, creadoPor: quien.uid, canal: 'consola' });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// APLICAR LO QUE EL COBRADOR DICE — la tabla de estados, en una transacción
+// ---------------------------------------------------------------------------
+
+export type EstadoPago = 'pendiente' | 'confirmado' | 'vencido' | 'anulado';
+export interface ResultadoAplicacion {
+  aplicado: boolean;
+  estado: EstadoPago | 'desconocido';
+  /** `true` si el pago ya estaba cerrado al llegar. */
+  ya?: boolean;
+}
+
+type Origen = { via: 'aviso' | 'barrido' | 'consulta' | 'creacion' | 'anulacion'; avisoId?: string };
+
+/**
+ * Aplica al pago de NovuChat el estado que el cobrador informó por la
+ * consulta autenticada. Es la ÚNICA función que cambia el estado de un pago
+ * por QR, y la llaman el aviso, el barrido, la consulta puntual y la creación.
+ */
+export async function aplicarEstadoDelCobrador(
+  tenantId: string, pagoId: string, cobro: CobroDelCobrador, origen: Origen, deps: Deps = {},
+): Promise<ResultadoAplicacion> {
+  const ahoraMs = deps.ahoraMs ?? Date.now();
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  const puerta = deps.puerta ?? puertaDePagos;
+  const r = refs(tenantId, pagoId);
+
+  const salida = await db().runTransaction(async (tx): Promise<ResultadoAplicacion & {
+    bitacora?: { descripcion: string; corteEstabaAplicado: boolean; cubiertoHasta: string };
+    auditoria?: { accion: string; detalle: object };
+  }> => {
+    const [pDoc, cuentaDoc, fichaDoc] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta), tx.get(r.ficha)]);
+    const p = pDoc.data();
+    if (!p) return { aplicado: false, estado: 'desconocido' };
+    const estadoActual = String(p['estado'] ?? '');
+    if (estadoActual !== 'pendiente') {
+      return { aplicado: false, estado: estadoActual as EstadoPago, ya: true };
+    }
+    const guardado = cobroGuardadoDe(p);
+    const cierre = (estadoFinal: EstadoPago) => {
+      const cuenta = cuentaDoc.data() ?? {};
+      const escrituraCuenta: Record<string, unknown> = { actualizadoEn: ahora };
+      if (cuenta['pagoPendienteId'] === pagoId) {
+        escrituraCuenta['pagoPendienteId'] = FieldValue.delete();
+        const sinPendiente = { ...cuenta }; delete sinPendiente['pagoPendienteId'];
+        Object.assign(escrituraCuenta, puerta.camposDerivados(sinPendiente,
+          typeof cuenta['corte'] === 'object' && cuenta['corte'] !== null ? cuenta['corte'] as Record<string, unknown> : null, ahoraMs));
+      }
+      tx.set(r.cuenta, escrituraCuenta, { merge: true });
+      tx.delete(r.cobroPendiente);
+      tx.set(r.cobroResuelto, { tenantId, pagoId, cobroId: cobro.id, estado: estadoFinal, cerradoEn: ahora });
+    };
+
+    switch (cobro.estado) {
+      case 'CONFIRMADO': {
+        const informado = montoDesdeTexto(cobro.pago?.monto);
+        const montoRecibidoBs = informado !== null ? Math.round(informado) : Number(p['monto'] ?? 0);
+        const confirmadoEn = fechaIso(cobro.pago?.confirmadoEn) ?? ahora;
+        const descripcion = String(p['descripcion'] ?? '');
+        const confirmacion: Confirmacion = {
+          origen: 'banco', cobroId: cobro.id, riel: cobro.pago?.riel ?? null,
+          confirmadoPorCobrador: cobro.pago?.confirmadoPor ?? 'automatico',
+          ...(origen.avisoId ? { avisoId: origen.avisoId } : {}),
+          montoRecibidoBs, confirmadoEn, ahoraMs,
+          ademas: {
+            pago: { cobro: { ...(guardado ?? { fichaQr: '', qrRuta: null, venceEn: null, creadoEn: null }), id: cobro.id, estado: 'CONFIRMADO' } },
+            cuenta: {},
+          },
+        };
+        const resultado = puerta.aplicarPagoEnTransaccion(tx, r, {
+          id: pagoId, datos: p, cuenta: cuentaDoc.data() ?? {}, ficha: fichaDoc.data() ?? {},
+        }, confirmacion);
+        // La confirmación por WhatsApp se ENCOLA: la manda A-4 (0 mensajes acá).
+        // Va en su propia escritura porque `aplicarPagoEnTransaccion` ya escribió
+        // la cuenta; Firestore acepta más de una escritura al mismo documento
+        // en una transacción y las aplica en orden.
+        tx.set(r.cuenta, {
+          confirmacionesPendientes: {
+            [pagoId]: { plantilla: 'pago_confirmado', descripcion, cubiertoHasta: resultado.cubiertoHasta, encoladoEn: ahora },
+          },
+        }, { merge: true });
+        tx.delete(r.cobroPendiente);
+        tx.set(r.cobroResuelto, { tenantId, pagoId, cobroId: cobro.id, estado: 'confirmado', cerradoEn: ahora });
+        return {
+          aplicado: true, estado: 'confirmado',
+          bitacora: { descripcion, corteEstabaAplicado: resultado.corteEstabaAplicado, cubiertoHasta: resultado.cubiertoHasta },
+          auditoria: { accion: 'pago_aplicado', detalle: {
+            pagoId, cobroId: cobro.id, via: origen.via, riel: cobro.pago?.riel ?? null,
+            confirmadoPorCobrador: cobro.pago?.confirmadoPor ?? null, montoRecibidoBs,
+            cubiertoHasta: resultado.cubiertoHasta, plan: resultado.plan, bolsa: resultado.bolsa,
+          } },
+        };
+      }
+      case 'VENCIDO': {
+        tx.update(r.pago, { estado: 'vencido', 'cobro.estado': 'VENCIDO', 'cobro.id': cobro.id, vencidoEn: ahora, actualizadoEn: ahora });
+        cierre('vencido');
+        return { aplicado: true, estado: 'vencido', auditoria: { accion: 'pago_vencido', detalle: { pagoId, cobroId: cobro.id, via: origen.via } } };
+      }
+      case 'ANULADO':
+      case 'RECHAZADO': {
+        tx.update(r.pago, {
+          estado: 'anulado', 'cobro.estado': cobro.estado, 'cobro.id': cobro.id,
+          anuladoEn: ahora, anuladoPor: 'cobrador', motivoAnulacion: `cobrador:${cobro.estado}`, actualizadoEn: ahora,
+        });
+        cierre('anulado');
+        return { aplicado: true, estado: 'anulado', auditoria: { accion: 'pago_anulado', detalle: { pagoId, cobroId: cobro.id, via: origen.via, motivo: cobro.estado } } };
+      }
+      default: {
+        // BORRADOR, QR_ACTIVO, PAGO_DETECTADO, EN_REVISION: sigue pendiente. Se
+        // anota el último estado visto para que la consola pueda decir «el
+        // banco detectó un pago y lo está conciliando», y nada más.
+        if (guardado?.estado !== cobro.estado || guardado?.id !== cobro.id) {
+          tx.update(r.pago, { 'cobro.estado': cobro.estado, 'cobro.id': cobro.id, actualizadoEn: ahora });
+        }
+        const revisionNueva = cobro.estado === 'EN_REVISION' && guardado?.estado !== 'EN_REVISION';
+        return {
+          aplicado: false, estado: 'pendiente',
+          ...(revisionNueva ? { auditoria: { accion: 'cobro_en_revision', detalle: { pagoId, cobroId: cobro.id, via: origen.via } } } : {}),
+        };
+      }
+    }
+  });
+
+  if (salida.bitacora) {
+    await registrar(tenantId, {
+      tipo: 'pago_registrado', resultado: 'ok', canal: 'sistema', codigo: 'banco',
+      detalle: `${salida.bitacora.descripcion} · hasta ${salida.bitacora.cubiertoHasta}`.slice(0, 120),
+    });
+    // Cuando A-0 traiga `reanudacion_servicio` a `TipoEvento`, acá va ese
+    // renglón si `salida.bitacora.corteEstabaAplicado`.
+  }
+  if (salida.auditoria) await auditar(tenantId, salida.auditoria.accion, `cobrador:${origen.via}`, salida.auditoria.detalle);
+  return { aplicado: salida.aplicado, estado: salida.estado, ...(salida.ya ? { ya: true } : {}) };
+}
+
+/** Consulta al cobrador por la referencia y aplica. Para la pantalla al abrirse (A-1 la expone como callable). */
+export async function consultarYAplicar(tenantId: string, pagoId: string, origen: Origen, deps: Deps = {}): Promise<ResultadoAplicacion> {
+  if (!ID_PAGO.test(pagoId)) return { aplicado: false, estado: 'desconocido' };
+  const cobrador = await resolverCobrador(deps.cobrador);
+  let cobro: CobroDelCobrador;
+  try { cobro = await cobrador.estadoPorReferencia(pagoId); } catch (e) {
+    if (e instanceof ErrorCobrador && e.status === 404) return { aplicado: false, estado: 'desconocido' };
+    throw e;
+  }
+  return aplicarEstadoDelCobrador(tenantId, pagoId, cobro, origen, deps);
+}
+
+// ---------------------------------------------------------------------------
+// ANULAR EL QR VIVO — lo que `registrarPagoManual` (A-1) llama antes de cargar
+// ---------------------------------------------------------------------------
+
+export type ResultadoAnulacion =
+  | { resultado: 'anulado' }
+  | { resultado: 'sin_cobro' }
+  /** Había plata: se aplicó el cobro del banco. El manual NO se carga. */
+  | { resultado: 'pagado'; estado: ResultadoAplicacion['estado'] }
+  /** Pago sobre QR vencido: lo decide una persona en el cobrador. El manual NO se carga. */
+  | { resultado: 'en_revision' };
+
+/**
+ * Anula el cobro del pago pendiente, en el cobrador y acá. Es la inyección
+ * `anular` que A-1 enchufa en `registrarPagoManual` (§4undecies.7). Si el
+ * cobrador responde `PAGADO_NO_SE_ANULA`, se consulta y se aplica el pago del
+ * banco: nunca dos pagos vivos por el mismo mes. Si no responde, lanza: no se
+ * carga nada.
+ */
+export async function anularCobroVivo(tenantId: string, pagoId: string, motivo: string, deps: Deps = {}): Promise<ResultadoAnulacion> {
+  if (!ID_PAGO.test(pagoId)) return { resultado: 'sin_cobro' };
+  const r = refs(tenantId, pagoId);
+  const pDoc = await r.pago.get();
+  const p = pDoc.data();
+  if (!p || p['estado'] !== 'pendiente') return { resultado: 'sin_cobro' };
+  const guardado = cobroGuardadoDe(p);
+  const cobrador = await resolverCobrador(deps.cobrador);
+  const ahoraMs = deps.ahoraMs ?? Date.now();
+
+  if (guardado?.id) {
+    try {
+      await cobrador.anularCobro(guardado.id, motivo.slice(0, 200));
+    } catch (e) {
+      if (e instanceof ErrorCobrador && e.codigo === 'PAGADO_NO_SE_ANULA') {
+        const aplicado = await consultarYAplicar(tenantId, pagoId, { via: 'anulacion' }, deps);
+        return { resultado: 'pagado', estado: aplicado.estado };
+      }
+      if (e instanceof ErrorCobrador && e.codigo === 'PAGO_TARDIO_EN_REVISION') {
+        await auditar(tenantId, 'cobro_en_revision', 'cobrador:anulacion', { pagoId, cobroId: guardado.id, motivo: 'pago_tardio' });
+        return { resultado: 'en_revision' };
+      }
+      if (e instanceof ErrorCobrador && e.status === 404) {
+        // El cobrador no lo conoce: no hay QR vivo que anular allá.
+      } else {
+        throw e;
+      }
+    }
+  }
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  await db().runTransaction(async (tx) => {
+    const [pd, cd] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta)]);
+    if (pd.data()?.['estado'] !== 'pendiente') return;
+    tx.update(r.pago, {
+      estado: 'anulado', 'cobro.estado': 'ANULADO', anuladoEn: ahora, anuladoPor: 'novuchat',
+      motivoAnulacion: motivo.slice(0, 300), actualizadoEn: ahora,
+    });
+    const cuenta = cd.data() ?? {};
+    const escritura: Record<string, unknown> = { actualizadoEn: ahora };
+    if (cuenta['pagoPendienteId'] === pagoId) {
+      escritura['pagoPendienteId'] = FieldValue.delete();
+      const sin = { ...cuenta }; delete sin['pagoPendienteId'];
+      Object.assign(escritura, (deps.puerta ?? puertaDePagos).camposDerivados(sin, null, ahoraMs));
+    }
+    tx.set(r.cuenta, escritura, { merge: true });
+    tx.delete(r.cobroPendiente);
+    tx.set(r.cobroResuelto, { tenantId, pagoId, cobroId: guardado?.id ?? null, estado: 'anulado', cerradoEn: ahora });
+  });
+  await auditar(tenantId, 'pago_anulado', 'novuchat', { pagoId, cobroId: guardado?.id ?? null, motivo: motivo.slice(0, 300) });
+  return { resultado: 'anulado' };
+}
+
+// ---------------------------------------------------------------------------
+// EL AVISO — verificar la firma, y después preguntarle al cobrador
+// ---------------------------------------------------------------------------
+
+export interface RespuestaAviso { recibido: true; aplicado: boolean; estado: ResultadoAplicacion['estado'] }
+
+/**
+ * Qué se hace con un aviso ya verificado. `referenciaExterna` es nuestro
+ * `pagoId`: se resuelve el comercio por `/cobrosPendientes` (o por
+ * `/cobrosResueltos` si el pago ya se cerró: un aviso repetido responde
+ * `aplicado: false` con el estado real y no suma nada). Y ANTES de aplicar se
+ * consulta `estadoCobro` con el token de salida: el aviso solo dispara la
+ * consulta. Si el cobrador no responde se lanza, para que el llamador
+ * conteste 503 y el cobrador reintente.
+ */
+export async function procesarAviso(aviso: AvisoDeConfirmacion, deps: Deps = {}): Promise<RespuestaAviso> {
+  const pagoId = aviso.referenciaExterna;
+  if (!ID_PAGO.test(pagoId)) return { recibido: true, aplicado: false, estado: 'desconocido' };
+  const pendiente = await db().doc(`cobrosPendientes/${pagoId}`).get();
+  if (!pendiente.exists) {
+    const resuelto = await db().doc(`cobrosResueltos/${pagoId}`).get();
+    if (resuelto.exists) {
+      return { recibido: true, aplicado: false, estado: String(resuelto.get('estado') ?? 'desconocido') as ResultadoAplicacion['estado'] };
+    }
+    console.warn(`aviso del cobrador para una referencia desconocida: cobro …${ultimos4(aviso.cobroId)}`);
+    return { recibido: true, aplicado: false, estado: 'desconocido' };
+  }
+  const tenantId = String(pendiente.get('tenantId') ?? '');
+  if (!ID_TENANT.test(tenantId)) return { recibido: true, aplicado: false, estado: 'desconocido' };
+  const resultado = await consultarYAplicar(tenantId, pagoId, { via: 'aviso', avisoId: aviso.idEvento }, deps);
+  return { recibido: true, aplicado: resultado.aplicado, estado: resultado.estado };
+}
+
+export const avisoCobrador = onRequest(
+  { region: REGION, cors: false, secrets: [COBRADOR_TOKEN, COBRADOR_AVISO_SECRETO], maxInstances: 5 },
+  async (peticion, respuesta) => {
+    if (peticion.method !== 'POST') { respuesta.status(405).send(''); return; }
+    const v = verificarAviso(peticion, COBRADOR_AVISO_SECRETO.value());
+    if (v.estado === 'no_firmado') { respuesta.status(401).send(''); return; }
+    if (v.estado === 'mal_formado') { respuesta.status(400).json({ recibido: false }); return; }
+    try {
+      const r = await procesarAviso(v.aviso);
+      respuesta.status(200).json(r);
+    } catch (e) {
+      if (e instanceof CobradorNoResponde || (e instanceof ErrorCobrador && e.status >= 500)) {
+        respuesta.status(503).json({ recibido: false, reintentar: true }); return;
+      }
+      console.error(`aviso del cobrador: ${e instanceof Error ? e.message : 'error'}`);
+      respuesta.status(500).json({ recibido: false });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// EL BARRIDO HORARIO — sin aviso se llega al mismo lugar, más lento
+// ---------------------------------------------------------------------------
+
+export interface ResumenBarrido {
+  revisados: number; confirmados: number; vencidos: number; anulados: number; sinCambio: number; errores: number;
+}
+
+/**
+ * Recorre `/cobrosPendientes` (≤ 500), consulta cada uno y aplica la tabla.
+ * Un `QR_ACTIVO` cuyo vencimiento pasó hace más de 24 h se ANULA en el
+ * cobrador antes de cerrarse: el banco vence por día, y un QR olvidado sigue
+ * pagable hasta la medianoche. Si al anular hay plata (`PAGADO_NO_SE_ANULA`),
+ * se vuelve a consultar y se aplica el pago. Un pendiente que nunca emitió su
+ * QR se cierra a los cuatro días. Un error en uno no frena a los demás.
+ */
+export async function barrerCobrosPendientes(ahoraMs: number = Date.now(), deps: Deps = {}): Promise<ResumenBarrido> {
+  const resumen: ResumenBarrido = { revisados: 0, confirmados: 0, vencidos: 0, anulados: 0, sinCambio: 0, errores: 0 };
+  const lista = await db().collection('cobrosPendientes').orderBy('creadoEn', 'asc').limit(TOPE_BARRIDO).get();
+  const cobrador = await resolverCobrador(deps.cobrador);
+  const depsConCobrador: Deps = { ...deps, cobrador, ahoraMs };
+
+  for (const doc of lista.docs) {
+    resumen.revisados += 1;
+    const tenantId = String(doc.get('tenantId') ?? ''); const pagoId = doc.id;
+    if (!ID_TENANT.test(tenantId) || !ID_PAGO.test(pagoId)) { resumen.errores += 1; continue; }
+    try {
+      const cobroId = doc.get('cobroId');
+      if (typeof cobroId !== 'string') {
+        const creadoEn = milis(doc.get('creadoEn')) ?? ahoraMs;
+        if (ahoraMs - creadoEn > RESERVA_SIN_EMITIR_MS) {
+          await anularCobroVivo(tenantId, pagoId, 'reserva sin emitir', depsConCobrador);
+          resumen.anulados += 1;
+        } else {
+          resumen.sinCambio += 1;
+        }
+        continue;
+      }
+      let cobro = await cobrador.estadoPorReferencia(pagoId);
+      if (cobro.estado === 'QR_ACTIVO' || cobro.estado === 'BORRADOR') {
+        const venceEn = cobro.qr ? Date.parse(cobro.qr.venceEn) : (milis(doc.get('venceEn')) ?? Number.NaN);
+        if (Number.isFinite(venceEn) && ahoraMs - venceEn > DIA) {
+          try {
+            await cobrador.anularCobro(cobro.id, 'vencido sin pago');
+            cobro = { ...cobro, estado: 'VENCIDO' };
+          } catch (e) {
+            if (e instanceof ErrorCobrador && e.codigo === 'PAGADO_NO_SE_ANULA') {
+              cobro = await cobrador.estadoPorReferencia(pagoId);
+            } else if (e instanceof ErrorCobrador && e.codigo === 'PAGO_TARDIO_EN_REVISION') {
+              cobro = { ...cobro, estado: 'EN_REVISION' };
+            } else {
+              throw e;
+            }
+          }
+        }
+      }
+      const resultado = await aplicarEstadoDelCobrador(tenantId, pagoId, cobro, { via: 'barrido' }, depsConCobrador);
+      if (resultado.estado === 'confirmado' && resultado.aplicado) resumen.confirmados += 1;
+      else if (resultado.estado === 'vencido' && resultado.aplicado) resumen.vencidos += 1;
+      else if (resultado.estado === 'anulado' && resultado.aplicado) resumen.anulados += 1;
+      else resumen.sinCambio += 1;
+    } catch (e) {
+      resumen.errores += 1;
+      console.error(`barrido: pago …${ultimos4(pagoId)} de …${ultimos4(tenantId)}: ${e instanceof Error ? e.message : 'error'}`);
+    }
+  }
+  return resumen;
+}
+
+/** Exige Cloud Scheduler habilitado: paso de nube tras la compuerta del demo. */
+export const barridoCobros = onSchedule(
+  { schedule: 'every 60 minutes', region: REGION, secrets: [COBRADOR_TOKEN], timeoutSeconds: 540, maxInstances: 1 },
+  async () => {
+    const r = await barrerCobrosPendientes(Date.now());
+    console.info(`barrido de cobros: ${JSON.stringify(r)}`);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// LA IMAGEN — la descarga Meta, con una ficha al azar de 128 bits
+// ---------------------------------------------------------------------------
+
+/**
+ * Pública a propósito: los servidores de Meta no traen credencial nuestra.
+ * La protege la ficha al azar (nadie recorre la cartera probando nombres) y
+ * que del otro lado hay un QR que solo sirve para pagarle a NovuChat. 404 si
+ * el pago ya no está `pendiente`: un QR de un cobro cerrado no se muestra.
+ * Se sirve desde Storage, no al vuelo desde el cobrador: cada descarga de Meta
+ * sería una llamada autenticada más.
+ */
+export const imagenDePago = onRequest(
+  { region: REGION, cors: false, maxInstances: 10 },
+  async (peticion, respuesta) => {
+    const ficha = String(peticion.query['f'] ?? '').trim();
+    if (!FICHA.test(ficha)) { respuesta.status(404).send('no encontrado'); return; }
+    const encontrados = await db().collection('cobrosPendientes').where('fichaQr', '==', ficha).limit(1).get();
+    const indice = encontrados.docs[0];
+    const tenantId = String(indice?.get('tenantId') ?? ''); const pagoId = indice?.id ?? '';
+    if (!indice || !ID_TENANT.test(tenantId) || !ID_PAGO.test(pagoId)) { respuesta.status(404).send('no encontrado'); return; }
+    const pago = (await db().doc(`tenants/${tenantId}/pagos/${pagoId}`).get()) as DocumentSnapshot;
+    const guardado = cobroGuardadoDe(pago.data());
+    if (pago.get('estado') !== 'pendiente' || guardado?.fichaQr !== ficha || !guardado.qrRuta) {
+      respuesta.status(404).send('no encontrado'); return;
+    }
+    const png = await almacen().leer(guardado.qrRuta);
+    if (!png) { respuesta.status(404).send('no encontrado'); return; }
+    respuesta.set('Content-Type', 'image/png');
+    respuesta.set('Cache-Control', 'public, max-age=300');
+    respuesta.set('X-Content-Type-Options', 'nosniff');
+    respuesta.status(200).send(png);
+  },
+);

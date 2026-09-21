@@ -636,7 +636,12 @@ type TipoEvento =
   // lee esta unión hasta el primero que encuentra, así que uno escrito acá
   // arriba corta la lista y deja tipos fuera del control que compara la
   // ingesta con las reglas y con la consola. Costó una corrida el 17/09.
-  | 'seguimiento_enviado';
+  | 'seguimiento_enviado'
+  // PREPAGO (bloque A-2, 20/09): un pago de la mensualidad, la bolsa o la
+  // instalación quedó confirmado y aplicado a la cuenta. `codigo` lleva el
+  // origen de la confirmación (`banco` o `propietario`). Lo escribe
+  // `cobroPrepago.ts`. Es el hecho que explica «pagué y se reactivó solo».
+  | 'pago_registrado';
 
 interface Evento {
   tipo: TipoEvento;

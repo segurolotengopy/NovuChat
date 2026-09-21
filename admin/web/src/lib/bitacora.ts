@@ -64,6 +64,10 @@ export const TIPOS = [
   // recordatorio único a un paciente que no terminó de reservar. El modo
   // (`texto` o `plantilla`) va en `codigo`. Lo escribe `seguimientos.ts`.
   'seguimiento_enviado',
+  // Prepago (bloque A-2, 20/09): un pago confirmado y aplicado a la cuenta;
+  // `codigo` lleva quién confirmó (`banco` o `propietario`). Lo escribe
+  // `functions/src/cobroPrepago.ts`.
+  'pago_registrado',
 ] as const;
 
 export const RESULTADOS = ['ok', 'fallo', 'rechazado', 'reintento'] as const;

@@ -1525,6 +1525,25 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------------------
+      // /pagos/{pagoId} — LOS PAGOS DEL PREPAGO: mensualidades, bolsas e
+      // instalación, con su TCO (DISENO.md §4undecies.1). Solo los escribe el
+      // SDK Admin; nadie desde el navegador, ni el propietario (quedaría sin
+      // auditoría de quién confirmó qué). Los lee el administrador del
+      // comercio, también cortado (tenantLegible: un comercio sin servicio
+      // tiene que poder ver qué debe y qué pagó), y NovuChat.
+      //
+      // Es el mismo criterio que /cuenta, y por la misma razón: si el comercio
+      // pudiera escribir `estado: 'confirmado'`, el pago dejaría de significar
+      // nada. Las puertas son `crearCobroPrepago`, `avisoCobrador` y
+      // `barridoCobros` (cobroPrepago.ts) y, cuando existan, las de pagos.ts.
+      // -----------------------------------------------------------------------
+      match /pagos/{pagoId} {
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+        allow create, update, delete: if false;
+      }
+
+      // -----------------------------------------------------------------------
       // /reclamos/{reclamoId} — RECLAMOS DEL COMERCIO HACIA NOVUCHAT.
       //
       // Se guardan en Firestore ANTES de enviarse por correo. Si el proveedor de
@@ -2055,7 +2074,11 @@ service cloud.firestore {
                  // Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4):
                  // salió el recordatorio único; `codigo` lleva el modo (`texto`
                  // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
-                 'seguimiento_enviado'
+                 'seguimiento_enviado',
+                 // Prepago (bloque A-2, 20/09): un pago quedó confirmado y
+                 // aplicado a la cuenta; `codigo` lleva quién confirmó
+                 // (`banco` o `propietario`). Lo escribe `cobroPrepago.ts`.
+                 'pago_registrado'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]
@@ -2117,6 +2140,21 @@ service cloud.firestore {
     match /plataforma/{documento} {
       allow get, list: if esPropietario();
       allow create, update, delete: if false;
+    }
+
+    // =========================================================================
+    // /cobrosPendientes/{pagoId} y /cobrosResueltos/{pagoId} — ÍNDICES DEL
+    // COBRADOR (DISENO.md §4undecies.1). Resuelven «referencia externa →
+    // comercio» cuando llega el aviso del cobrador, y son la lista de trabajo
+    // del barrido horario. Los escribe y los lee SOLO el SDK Admin: no hay
+    // pantalla que los necesite, y una lectura desde el navegador revelaría
+    // qué comercios tienen un cobro abierto. Negados enteros, sin excepción.
+    // =========================================================================
+    match /cobrosPendientes/{pagoId} {
+      allow read, write: if false;
+    }
+    match /cobrosResueltos/{pagoId} {
+      allow read, write: if false;
     }
 
     // =========================================================================

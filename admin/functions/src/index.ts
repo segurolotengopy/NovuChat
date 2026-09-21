@@ -73,6 +73,12 @@ export { comprobarArchivoPlanes } from './captacion.js';
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
 // único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
 export { verificarComportamiento } from './verificarComportamiento.js';
+// PREPAGO: EL CLIENTE DEL COBRADOR (bloque A-2, 20/09/2026). NovuChat le cobra
+// al comercio por QR a través del proyecto de cobros; el aviso del cobrador
+// solo dispara la consulta autenticada, que es la única que confirma. Dos
+// secretos nuevos (`COBRADOR_TOKEN`, `COBRADOR_AVISO_SECRETO`) y el Scheduler
+// del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
+export { crearCobroPrepago, avisoCobrador, barridoCobros, imagenDePago } from './cobroPrepago.js';
 
 const db = () => getFirestore();
 

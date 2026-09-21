@@ -256,6 +256,14 @@ beforeEach(async () => {
         montoMensual: 350, moneda: 'BOB',
         motivoVisible: estado === 'suspendido' ? 'Factura de agosto pendiente.' : '',
       });
+      // Un pago del prepago por comercio (§4undecies.1): lo escribe solo el
+      // SDK Admin; acá se siembra sin reglas para probar quién lo lee.
+      await setDoc(doc(db, `tenants/${t}/pagos/p1`), {
+        tipo: 'mensualidad', plan: 'crecimiento', meses: 1, montoUsd: 50, monto: 630,
+        moneda: 'BOB', monedaLista: 'USD', tcoAplicado: 12.6, tcoFuente: 'BCB', tcoFecha: '2026-09-20',
+        estado: 'pendiente', medio: 'qr', canal: 'consola', referencia: 'p1',
+        descripcion: 'Crecimiento · 1 mes', creadoEn: Timestamp.now(), creadoPor: `u-admin-${t}`,
+      });
       await setDoc(doc(db, `tenants/${t}/reclamos/r1`), {
         asunto: 'El asistente no responde', texto: 'Desde ayer no contesta.',
         categoria: 'falla', estado: 'nuevo',
@@ -307,6 +315,9 @@ beforeEach(async () => {
       epigrafe: 'Cobro SIMULADO: no cobra ni mueve dinero.',
       confirmacion: 'Pago verificado (SIMULADO - demostracion, sin cobro real).',
     });
+    // Índices del cobrador (§4undecies.1): solo el SDK Admin, nadie más.
+    await setDoc(doc(db, 'cobrosPendientes/p1'), { tenantId: A, pagoId: 'p1', cobroId: null, fichaQr: 'f'.repeat(32), venceEn: null, creadoEn: Timestamp.now() });
+    await setDoc(doc(db, 'cobrosResueltos/p0'), { tenantId: A, pagoId: 'p0', cobroId: null, estado: 'confirmado', cerradoEn: Timestamp.now() });
     await setDoc(doc(db, 'plataforma/notificaciones'), {
       // FormSubmit: el destino es una dirección (o un alias opaco), no una API
       // con credencial. Vive acá y NUNCA en el reclamo.
@@ -1235,6 +1246,73 @@ describe('Estado de cuenta', () => {
 
   it('un comercio DADO DE BAJA ya no lo ve', async () => {
     await assertFails(getDoc(doc(adminC(), `tenants/${C}/cuenta/estado`)));
+  });
+});
+
+// ===========================================================================
+// 13bis. PAGOS DEL PREPAGO (DISENO.md §4undecies.1) — se escribe negando
+// ===========================================================================
+//
+// Lo que NovuChat le cobra al comercio. Lo lee el administrador del comercio
+// (también cortado) y el propietario; NADIE lo escribe desde el navegador, ni
+// el propietario: si pudiera, no habría auditoría de quién confirmó qué. Los
+// índices del cobrador en la raíz están negados enteros.
+describe('Pagos del prepago', () => {
+  it('el admin de A lee y lista sus pagos (control positivo)', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `tenants/${A}/pagos/p1`)));
+    await assertSucceeds(getDocs(query(collection(adminA(), `tenants/${A}/pagos`), orderBy('creadoEn', 'desc'), limit(20))));
+  });
+
+  it('el admin de B NO lee ni lista los pagos de A', async () => {
+    await assertFails(getDoc(doc(adminB(), `tenants/${A}/pagos/p1`)));
+    await assertFails(getDocs(collection(adminB(), `tenants/${A}/pagos`)));
+  });
+
+  it('el operador de A no los ve: la situación financiera no es asunto suyo', async () => {
+    await assertFails(getDoc(doc(operA(), `tenants/${A}/pagos/p1`)));
+    await assertFails(getDocs(collection(operA(), `tenants/${A}/pagos`)));
+  });
+
+  it('el admin de A NO se confirma un pago, ni crea uno a mano, ni borra', async () => {
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/pagos/p1`), { estado: 'confirmado' }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/pagos/p1`), { estado: 'confirmado' }, { merge: true }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/pagos/p2`), {
+      tipo: 'mensualidad', plan: 'pro', meses: 6, monto: 0, estado: 'confirmado', medio: 'efectivo',
+    }));
+    await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/pagos/p1`)));
+  });
+
+  it('el propietario (Google) lee, pero NO escribe: quedaría sin auditoría', async () => {
+    await assertSucceeds(getDoc(doc(propietario(), `tenants/${A}/pagos/p1`)));
+    await assertFails(updateDoc(doc(propietario(), `tenants/${A}/pagos/p1`), { estado: 'confirmado' }));
+    await assertFails(setDoc(doc(propietario(), `tenants/${A}/pagos/p3`), { estado: 'confirmado', medio: 'efectivo' }));
+    await assertFails(deleteDoc(doc(propietario(), `tenants/${A}/pagos/p1`)));
+  });
+
+  it('el propietario con sesión de contraseña no lee (T-19); un admin con Google tampoco', async () => {
+    await assertFails(getDoc(doc(propietarioConPassword(), `tenants/${A}/pagos/p1`)));
+    await assertFails(getDoc(doc(adminAConGoogle(), `tenants/${A}/pagos/p1`)));
+  });
+
+  it('un comercio SUSPENDIDO sigue viendo sus pagos; uno DADO DE BAJA, no', async () => {
+    await assertSucceeds(getDoc(doc(adminD(), `tenants/${D}/pagos/p1`)));
+    await assertFails(getDoc(doc(adminC(), `tenants/${C}/pagos/p1`)));
+  });
+
+  it('nadie lee ni escribe /cobrosPendientes ni /cobrosResueltos, ni el propietario', async () => {
+    for (const ctx of [adminA(), operA(), propietario(), anonimo()]) {
+      await assertFails(getDoc(doc(ctx, 'cobrosPendientes/p1')));
+      await assertFails(getDocs(collection(ctx, 'cobrosPendientes')));
+      await assertFails(setDoc(doc(ctx, 'cobrosPendientes/p9'), { tenantId: A, pagoId: 'p9' }));
+      await assertFails(deleteDoc(doc(ctx, 'cobrosPendientes/p1')));
+      await assertFails(getDoc(doc(ctx, 'cobrosResueltos/p0')));
+      await assertFails(setDoc(doc(ctx, 'cobrosResueltos/p0'), { estado: 'anulado' }, { merge: true }));
+    }
+  });
+
+  it('el admin de A NO escribe cuenta/estado.pagoPendienteId', async () => {
+    await assertFails(updateDoc(doc(adminA(), `tenants/${A}/cuenta/estado`), { pagoPendienteId: 'p1' }));
+    await assertFails(setDoc(doc(adminA(), `tenants/${A}/cuenta/estado`), { pagoPendienteId: 'p1' }, { merge: true }));
   });
 });
 
