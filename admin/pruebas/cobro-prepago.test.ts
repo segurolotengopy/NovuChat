@@ -56,8 +56,13 @@ const TCO = 12.6;
 // --- El doble, el cliente HTTP real contra él, y el almacén en memoria -------
 let doble: CobradorDoble;
 const archivos = new Map<string, Buffer>();
+/** Cuántas veces seguidas va a fallar el almacén (Storage caído). */
+let fallosDeAlmacen = 0;
 fijarAlmacenDePrueba({
-  async guardar(ruta, bytes) { archivos.set(ruta, bytes); },
+  async guardar(ruta, bytes) {
+    if (fallosDeAlmacen > 0) { fallosDeAlmacen -= 1; throw new Error('storage caído'); }
+    archivos.set(ruta, bytes);
+  },
   async leer(ruta) { return archivos.get(ruta) ?? null; },
 });
 function nuevoDoble() {
@@ -138,7 +143,7 @@ beforeAll(async () => {
   }
 });
 beforeEach(async () => {
-  nuevoDoble(); archivos.clear();
+  nuevoDoble(); archivos.clear(); fallosDeAlmacen = 0;
   for (const c of ['cobrosPendientes', 'cobrosResueltos']) {
     for (const d of (await db.collection(c).get()).docs) await d.ref.delete();
   }
@@ -237,8 +242,9 @@ describe('1. Crear el cobro', () => {
     doble.bancoCaido = true;
     await rechaza(crear(MENSUALIDAD), 'unavailable');
     const id = (await cuenta())['pagoPendienteId'] as string;
-    expect(await pago(id)).toMatchObject({ estado: 'pendiente', cobro: { estado: 'BORRADOR' } });
-    expect(await pendiente(id)).toMatchObject({ cobroId: null });
+    expect(await pago(id)).toMatchObject({ estado: 'pendiente', cobro: { id: idDeCobro('novuchat', id), estado: 'BORRADOR' } });
+    // El índice también sabe el id del cobro: el barrido lo consulta aunque no haya QR.
+    expect(await pendiente(id)).toMatchObject({ cobroId: idDeCobro('novuchat', id) });
     // Otro pedido mientras la referencia está reservada con este importe: no.
     await rechaza(crear({ tenantId: A, tipo: 'mensualidad', plan: 'pro', meses: 1 }), 'failed-precondition');
     doble.bancoCaido = false;
@@ -258,6 +264,31 @@ describe('1. Crear el cobro', () => {
     await rechaza(crear(MENSUALIDAD), 'failed-precondition');
     expect(doble.cobros.size).toBe(0);
     expect(await auditoria('cobro_suelto_en_el_proveedor')).toHaveLength(1);
+  });
+
+  it('si el almacén falla una vez, el segundo intento retoma el cobro, pide SOLO la imagen y la sirve', async () => {
+    fallosDeAlmacen = 1;
+    await rechaza(crear(MENSUALIDAD), 'unavailable');
+    const id = (await cuenta())['pagoPendienteId'] as string;
+    expect(await pago(id)).toMatchObject({ estado: 'pendiente', cobro: { id: idDeCobro('novuchat', id), estado: 'QR_ACTIVO', qrRuta: null } });
+    expect(await auditoria('cobro_emitido')).toMatchObject([{ conQr: false }]);
+    const r = await crear(MENSUALIDAD);
+    expect(r).toMatchObject({ pagoId: id, reutilizado: true, cobro: { estado: 'QR_ACTIVO' } });
+    expect(doble.llamadas.filter((l) => l.metodo === 'POST')).toHaveLength(1);           // no se pidió un segundo QR
+    expect(doble.llamadas.filter((l) => l.ruta.endsWith('/qr'))).toHaveLength(1);        // se pidió solo la imagen
+    expect(await pago(id)).toMatchObject({ cobro: { qrRuta: `tenants/${A}/pagos/${id}/qr.png` } });
+    expect((await imagen(r['fichaQr'] as string)).codigo).toBe(200);
+    expect(doble.cobros.size).toBe(1);
+  });
+
+  it('un comercio dado de baja no emite cobros; uno suspendido sí', async () => {
+    await db.doc(`tenants/${B}`).set({ estado: 'dado_de_baja' }, { merge: true });
+    await rechaza(crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO), 'failed-precondition');
+    expect((await cuenta(B))['pagoPendienteId']).toBeUndefined();
+    expect((await db.collection(`tenants/${B}/pagos`).get()).size).toBe(0);
+    expect(doble.cobros.size).toBe(0);
+    await db.doc(`tenants/${B}`).set({ estado: 'suspendido' }, { merge: true });
+    expect(await crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO)).toMatchObject({ estado: 'pendiente' });
   });
 
   it('si el cobrador no responde, la reserva queda y el reintento la retoma con el mismo QR', async () => {
@@ -358,6 +389,37 @@ describe('2. El aviso del cobrador', () => {
     expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente' });
   });
 
+  it('CONFIRMADO con 600 sobre un cobro de 630 → NO suma meses: queda pendiente con lo recibido, y audita una vez', async () => {
+    doble.fijarEstado(pagoId, 'CONFIRMADO', { montoCentavos: 60000 });
+    expect((await aviso(pagoId)).cuerpo).toEqual({ recibido: true, aplicado: false, estado: 'pendiente' });
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', montoRecibidoBs: 600, cobro: { estado: 'CONFIRMADO' } });
+    expect((await cuenta())['periodoPagado']).toBeUndefined();
+    expect((await cuenta())['pagoPendienteId']).toBe(pagoId);
+    expect(await pendiente(pagoId)).toBeDefined();
+    expect(await auditoria('pago_importe_menor')).toMatchObject([{ pagoId, esperado: 630, recibido: 600, via: 'aviso' }]);
+    expect(await bitacora('pago_registrado')).toHaveLength(0);
+    // El barrido lo vuelve a ver y no vuelve a auditar ni acredita.
+    expect(await barrerCobrosPendientes(Date.now())).toMatchObject({ sinCambio: 1, confirmados: 0 });
+    expect(await auditoria('pago_importe_menor')).toHaveLength(1);
+    // De más sí se acredita (decisión 8: nunca se pierde), con lo recibido anotado.
+    const b = (await crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO))['pagoId'] as string;
+    doble.fijarEstado(b, 'CONFIRMADO', { montoCentavos: 90000 });
+    expect((await aviso(b)).cuerpo).toMatchObject({ aplicado: true, estado: 'confirmado' });
+    expect(await pago(b, B)).toMatchObject({ estado: 'confirmado', montoRecibidoBs: 900 });
+  });
+
+  it('con un secreto de aviso demasiado corto, 401 aunque la firma cierre con él', async () => {
+    process.env['COBRADOR_AVISO_SECRETO'] = 'corto';
+    try {
+      doble.fijarEstado(pagoId, 'CONFIRMADO');
+      expect((await aviso(pagoId, { secreto: 'corto' })).codigo).toBe(401);
+      expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente' });
+      expect(doble.llamadas.filter((l) => l.metodo === 'GET')).toHaveLength(0);
+    } finally {
+      process.env['COBRADOR_AVISO_SECRETO'] = SECRETO_AVISO;
+    }
+  });
+
   it('un cuerpo bien firmado sin la forma del aviso → 400, no 401', async () => {
     expect((await aviso(pagoId, { cuerpo: '{"evento":"otro"}' })).codigo).toBe(400);
   });
@@ -445,11 +507,43 @@ describe('3. El barrido horario', () => {
   it('un error en un pendiente no frena a los demás', async () => {
     const a = (await crear(MENSUALIDAD))['pagoId'] as string;
     const b = (await crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO))['pagoId'] as string;
-    doble.cobros.delete(idDeCobro('novuchat', a));      // el cobrador «perdió» el de A: 404
+    // El pago de A quedó corrupto (un tipo que la puerta no conoce): aplicar lanza.
+    await db.doc(`tenants/${A}/pagos/${a}`).set({ tipo: 'raro' }, { merge: true });
+    doble.fijarEstado(a, 'CONFIRMADO');
     doble.fijarEstado(b, 'CONFIRMADO');
     const r = await barrerCobrosPendientes(Date.now());
     expect(r).toMatchObject({ revisados: 2, confirmados: 1, errores: 1 });
     expect(await pago(b, B)).toMatchObject({ estado: 'confirmado' });
+    expect(await pago(a)).toMatchObject({ estado: 'pendiente' });
+  });
+
+  it('cobro emitido allá sin id acá (la respuesta se perdió): el barrido completa el índice y, con CONFIRMADO, acredita', async () => {
+    const pagoId = (await crear(MENSUALIDAD))['pagoId'] as string;
+    // Simular la pérdida: el índice y el pago quedaron como recién reservados.
+    await db.doc(`cobrosPendientes/${pagoId}`).set({ cobroId: null, venceEn: null }, { merge: true });
+    await db.doc(`tenants/${A}/pagos/${pagoId}`).set({ cobro: { id: null, estado: 'SIN_EMITIR' } }, { merge: true });
+    expect(await barrerCobrosPendientes(Date.now())).toMatchObject({ sinCambio: 1 });
+    expect(await pendiente(pagoId)).toMatchObject({ cobroId: idDeCobro('novuchat', pagoId) });
+    expect((await pendiente(pagoId))?.['venceEn']).toBeInstanceOf(Timestamp);
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', cobro: { id: idDeCobro('novuchat', pagoId), estado: 'QR_ACTIVO' } });
+    doble.fijarEstado(pagoId, 'CONFIRMADO');
+    expect(await barrerCobrosPendientes(Date.now())).toMatchObject({ confirmados: 1 });
+    expect(await pago(pagoId)).toMatchObject({ estado: 'confirmado' });
+    expect((await cuenta())['periodoPagado']).toBe(HOY);
+  });
+
+  it('reserva sin emitir (404 del cobrador): el barrido la deja, y a los 4 días la anula', async () => {
+    doble.noDisponible = true;
+    await rechaza(crear(MENSUALIDAD), 'unavailable');
+    doble.noDisponible = false;
+    const id = (await cuenta())['pagoPendienteId'] as string;
+    expect(doble.cobroPorReferencia(id)).toBeUndefined();
+    expect(await barrerCobrosPendientes(Date.now())).toMatchObject({ sinCambio: 1, errores: 0 });
+    expect(await pago(id)).toMatchObject({ estado: 'pendiente' });
+    expect(await barrerCobrosPendientes(Date.now() + 5 * DIA)).toMatchObject({ anulados: 1, errores: 0 });
+    expect(await pago(id)).toMatchObject({ estado: 'anulado', motivoAnulacion: 'reserva sin emitir' });
+    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
+    expect(await pendiente(id)).toBeUndefined();
   });
 
   it('la consulta puntual (al abrir la pantalla) aplica igual que el barrido', async () => {
@@ -473,6 +567,14 @@ describe('4. Anular el QR vivo antes de cargar un pago manual', () => {
     expect(await pendiente(a)).toBeUndefined();
     expect(await resuelto(a)).toMatchObject({ estado: 'anulado' });
     expect(await anularCobroVivo(A, a, 'otra vez')).toEqual({ resultado: 'sin_cobro' });
+  });
+
+  it('sin id guardado pregunta por la referencia y anula allá si el cobro existe', async () => {
+    const id = (await crear(MENSUALIDAD))['pagoId'] as string;
+    await db.doc(`tenants/${A}/pagos/${id}`).set({ cobro: { id: null, estado: 'SIN_EMITIR' } }, { merge: true });
+    expect(await anularCobroVivo(A, id, 'pago_manual')).toEqual({ resultado: 'anulado' });
+    expect(doble.cobroPorReferencia(id)?.estado).toBe('ANULADO');
+    expect(await resuelto(id)).toMatchObject({ cobroId: idDeCobro('novuchat', id), estado: 'anulado' });
   });
 
   it('con PAGADO_NO_SE_ANULA aplica el del banco y avisa que el manual no se carga', async () => {

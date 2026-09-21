@@ -60,7 +60,7 @@ import { registrar } from './ingesta.js';
 import {
   COBRADOR_AVISO_SECRETO, COBRADOR_TOKEN, ErrorCobrador, CobradorNoResponde,
   configCobradorDe, montoDesdeTexto, resolverCobrador, verificarAviso,
-  VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador,
+  VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador, type RespuestaCrear,
 } from './cobrador.js';
 import {
   MONEDA_COBRO, MONEDA_LISTA, SinTipoDeCambio, conceptoDe, descripcionDe, esPedidoDePago,
@@ -275,6 +275,11 @@ export async function crearCobroInterno(
   const reserva = await db().runTransaction(async (tx) => {
     const [fichaDoc, cuentaDoc] = await Promise.all([tx.get(refFicha), tx.get(refCuenta)]);
     if (!fichaDoc.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    // Un comercio dado de baja no tiene nada que pagar; uno suspendido sí
+    // (la suspensión es justamente lo que un pago levanta).
+    if (!['activo', 'suspendido'].includes(String(fichaDoc.get('estado') ?? ''))) {
+      throw new HttpsError('failed-precondition', 'Este comercio no está en condiciones de emitir un cobro.');
+    }
     const cuenta = cuentaDoc.data() ?? {};
     const pendienteId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
       ? cuenta['pagoPendienteId'] : null;
@@ -289,14 +294,17 @@ export async function crearCobroInterno(
           throw new HttpsError('failed-precondition', 'El último cobro quedó suelto en el banco: NovuChat lo tiene que revisar antes de emitir otro.', vivo);
         }
         const emitido = cobro?.id && cobro.estado !== 'BORRADOR';
-        if (!emitido) {
+        // Emitido allá pero sin imagen acá (falló Storage): se retoma y se
+        // vuelve a pedir SOLO la imagen, con el mismo pedido.
+        const sinImagen = emitido && cobro.qrRuta === null;
+        if (!emitido || sinImagen) {
           // Retomar solo si es el MISMO pedido: la referencia ya está reservada
           // allá con este importe, y otro importe sería un 409 del cobrador.
           const mismo = p['tipo'] === pedido.tipo && p['monto'] === monto
             && (pedido.tipo !== 'mensualidad' || (p['plan'] === pedido.plan && p['meses'] === pedido.meses))
             && (pedido.tipo !== 'bolsa' || p['cantidad'] === pedido.cantidad);
           if (!mismo) throw new HttpsError('failed-precondition', 'Hay un cobro reservado con otro pedido. Cancélelo antes de emitir otro.', vivo);
-          return { pagoId: pendienteId, fichaQr: cobro?.fichaQr ?? '', reutilizado: true };
+          return { pagoId: pendienteId, fichaQr: cobro?.fichaQr ?? '', reutilizado: true, cobroId: sinImagen ? cobro.id : null };
         }
         // QR vivo, o vencido según el reloj: en los dos casos hay que cerrarlo
         // antes (lo cierra el barrido, o `anularPagoPendiente` de A-1).
@@ -325,19 +333,24 @@ export async function crearCobroInterno(
     tx.create(db().doc(`cobrosPendientes/${pagoId}`), {
       tenantId, pagoId, cobroId: null, fichaQr, venceEn: null, creadoEn: ahora,
     });
-    return { pagoId, fichaQr, reutilizado: false };
+    return { pagoId, fichaQr, reutilizado: false, cobroId: null as string | null };
   });
 
   const { pagoId, fichaQr, reutilizado } = reserva;
   const r = refs(tenantId, pagoId);
   const cobrador = await resolverCobrador(deps.cobrador);
 
-  // 2. Pedir el QR.
-  let respuesta;
+  // 2. Pedir el QR (o solo su imagen, si el cobro ya existe y lo que faltó fue guardarla).
+  let respuesta: RespuestaCrear;
   try {
-    respuesta = await cobrador.crearCobro({
-      referenciaExterna: pagoId, concepto: conceptoDe(pedido), montoBs: monto, horasDeVigencia: vigenciaHoras,
-    });
+    if (reserva.cobroId) {
+      const [estado, imagen] = await Promise.all([cobrador.estadoCobro(reserva.cobroId), cobrador.imagenQr(reserva.cobroId)]);
+      respuesta = { creado: false, cobro: estado, imagenQrBase64: imagen.imagenQrBase64 };
+    } else {
+      respuesta = await cobrador.crearCobro({
+        referenciaExterna: pagoId, concepto: conceptoDe(pedido), montoBs: monto, horasDeVigencia: vigenciaHoras,
+      });
+    }
   } catch (e) {
     if (e instanceof ErrorCobrador) {
       if (e.codigo === 'QR_SUELTO_EN_EL_PROVEEDOR') {
@@ -360,6 +373,7 @@ export async function crearCobroInterno(
   const cobro = respuesta.cobro;
   if (cobro.estado === 'BORRADOR') {
     await r.pago.set({ cobro: { id: cobro.id, estado: 'BORRADOR' }, actualizadoEn: Timestamp.now() }, { merge: true });
+    await r.cobroPendiente.set({ cobroId: cobro.id }, { merge: true });
     throw new HttpsError('unavailable', 'El banco no emitió el QR. Vuelva a intentar en unos minutos: se retoma el mismo cobro.');
   }
   if (cobro.estado !== 'QR_ACTIVO' && cobro.estado !== 'PAGO_DETECTADO' && cobro.estado !== 'EN_REVISION') {
@@ -484,6 +498,19 @@ export async function aplicarEstadoDelCobrador(
       case 'CONFIRMADO': {
         const informado = montoDesdeTexto(cobro.pago?.monto);
         const montoRecibidoBs = informado !== null ? Math.round(informado) : Number(p['monto'] ?? 0);
+        const esperado = Number(p['monto'] ?? 0);
+        if (informado !== null && montoRecibidoBs < esperado) {
+          // Entró MENOS de lo que dice el QR: no se acredita nada solo. Queda
+          // pendiente, con lo recibido anotado, para el camino manual del
+          // propietario (`registrarPagoManual`), que exige `motivoDiferencia`:
+          // un descuento tiene nombre y firma. La auditoría sale una vez.
+          const yaVisto = guardado?.estado === 'CONFIRMADO';
+          tx.update(r.pago, { 'cobro.estado': 'CONFIRMADO', 'cobro.id': cobro.id, montoRecibidoBs, actualizadoEn: ahora });
+          return {
+            aplicado: false, estado: 'pendiente',
+            ...(yaVisto ? {} : { auditoria: { accion: 'pago_importe_menor', detalle: { pagoId, cobroId: cobro.id, via: origen.via, esperado, recibido: montoRecibidoBs } } }),
+          };
+        }
         const confirmadoEn = fechaIso(cobro.pago?.confirmadoEn) ?? ahora;
         const descripcion = String(p['descripcion'] ?? '');
         const confirmacion: Confirmacion = {
@@ -603,16 +630,26 @@ export async function anularCobroVivo(tenantId: string, pagoId: string, motivo: 
   const cobrador = await resolverCobrador(deps.cobrador);
   const ahoraMs = deps.ahoraMs ?? Date.now();
 
-  if (guardado?.id) {
+  // Sin id guardado no se supone «sin emitir»: se pregunta por la referencia.
+  // Si el cobro existe allá (se emitió y la respuesta se perdió), hay un QR
+  // vivo que anular; 404 es la única prueba de que no lo hay.
+  let cobroId = guardado?.id ?? null;
+  if (!cobroId) {
+    try { cobroId = (await cobrador.estadoPorReferencia(pagoId)).id; } catch (e) {
+      if (!(e instanceof ErrorCobrador && e.status === 404)) throw e;
+    }
+  }
+
+  if (cobroId) {
     try {
-      await cobrador.anularCobro(guardado.id, motivo.slice(0, 200));
+      await cobrador.anularCobro(cobroId, motivo.slice(0, 200));
     } catch (e) {
       if (e instanceof ErrorCobrador && e.codigo === 'PAGADO_NO_SE_ANULA') {
         const aplicado = await consultarYAplicar(tenantId, pagoId, { via: 'anulacion' }, deps);
         return { resultado: 'pagado', estado: aplicado.estado };
       }
       if (e instanceof ErrorCobrador && e.codigo === 'PAGO_TARDIO_EN_REVISION') {
-        await auditar(tenantId, 'cobro_en_revision', 'cobrador:anulacion', { pagoId, cobroId: guardado.id, motivo: 'pago_tardio' });
+        await auditar(tenantId, 'cobro_en_revision', 'cobrador:anulacion', { pagoId, cobroId, motivo: 'pago_tardio' });
         return { resultado: 'en_revision' };
       }
       if (e instanceof ErrorCobrador && e.status === 404) {
@@ -639,9 +676,9 @@ export async function anularCobroVivo(tenantId: string, pagoId: string, motivo: 
     }
     tx.set(r.cuenta, escritura, { merge: true });
     tx.delete(r.cobroPendiente);
-    tx.set(r.cobroResuelto, { tenantId, pagoId, cobroId: guardado?.id ?? null, estado: 'anulado', cerradoEn: ahora });
+    tx.set(r.cobroResuelto, { tenantId, pagoId, cobroId, estado: 'anulado', cerradoEn: ahora });
   });
-  await auditar(tenantId, 'pago_anulado', 'novuchat', { pagoId, cobroId: guardado?.id ?? null, motivo: motivo.slice(0, 300) });
+  await auditar(tenantId, 'pago_anulado', 'novuchat', { pagoId, cobroId, motivo: motivo.slice(0, 300) });
   return { resultado: 'anulado' };
 }
 
@@ -682,7 +719,14 @@ export const avisoCobrador = onRequest(
   { region: REGION, cors: false, secrets: [COBRADOR_TOKEN, COBRADOR_AVISO_SECRETO], maxInstances: 5 },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send(''); return; }
-    const v = verificarAviso(peticion, COBRADOR_AVISO_SECRETO.value());
+    const secreto = COBRADOR_AVISO_SECRETO.value();
+    if (!secreto || secreto.length < 32) {
+      // Misma exigencia que `resolverCobrador` con el token: un secreto corto
+      // es un error de configuración, y se contesta como si no hubiera firma.
+      console.error('COBRADOR_AVISO_SECRETO ausente o demasiado corto: el aviso se rechaza');
+      respuesta.status(401).send(''); return;
+    }
+    const v = verificarAviso(peticion, secreto);
     if (v.estado === 'no_firmado') { respuesta.status(401).send(''); return; }
     if (v.estado === 'mal_formado') { respuesta.status(400).json({ recibido: false }); return; }
     try {
@@ -725,8 +769,14 @@ export async function barrerCobrosPendientes(ahoraMs: number = Date.now(), deps:
     const tenantId = String(doc.get('tenantId') ?? ''); const pagoId = doc.id;
     if (!ID_TENANT.test(tenantId) || !ID_PAGO.test(pagoId)) { resumen.errores += 1; continue; }
     try {
-      const cobroId = doc.get('cobroId');
-      if (typeof cobroId !== 'string') {
+      // Se consulta SIEMPRE por la referencia, tenga o no `cobroId` el índice:
+      // un cobro emitido allá cuya respuesta se perdió acá tiene que
+      // acreditarse igual. Solo un 404 dice «sin emitir».
+      let cobro: CobroDelCobrador;
+      try {
+        cobro = await cobrador.estadoPorReferencia(pagoId);
+      } catch (e) {
+        if (!(e instanceof ErrorCobrador && e.status === 404)) throw e;
         const creadoEn = milis(doc.get('creadoEn')) ?? ahoraMs;
         if (ahoraMs - creadoEn > RESERVA_SIN_EMITIR_MS) {
           await anularCobroVivo(tenantId, pagoId, 'reserva sin emitir', depsConCobrador);
@@ -736,7 +786,9 @@ export async function barrerCobrosPendientes(ahoraMs: number = Date.now(), deps:
         }
         continue;
       }
-      let cobro = await cobrador.estadoPorReferencia(pagoId);
+      if (doc.get('cobroId') !== cobro.id) {
+        await doc.ref.set({ cobroId: cobro.id, ...(cobro.qr ? { venceEn: fechaIso(cobro.qr.venceEn) } : {}) }, { merge: true });
+      }
       if (cobro.estado === 'QR_ACTIVO' || cobro.estado === 'BORRADOR') {
         const venceEn = cobro.qr ? Date.parse(cobro.qr.venceEn) : (milis(doc.get('venceEn')) ?? Number.NaN);
         if (Number.isFinite(venceEn) && ahoraMs - venceEn > DIA) {
