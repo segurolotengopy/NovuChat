@@ -147,6 +147,74 @@ export function detalleDeLaSena(importe: number, moneda: string, resultado: Resu
 
 const TELEFONO = /^[0-9]{8,15}$/;
 
+/**
+ * CUÁNTO SE PROTEGE UNA CITA CON UN COMPROBANTE QUE NO CUADRÓ.
+ *
+ * Las dos posturas puras están mal, y las dos costaron algo el 20/09/2026:
+ *
+ *  - Liberar siempre: el paciente pagó de verdad, el cotejo dijo «no cuadra»
+ *    por un defecto NUESTRO --no entendía «20 de Septiembre, 2026»--, el
+ *    asistente le prometió «tu horario sigue reservado», y cinco minutos
+ *    después la cita se borró. Perdió el turno que pagó.
+ *  - Proteger siempre: cualquier imagen mandada a propósito bloquea un horario
+ *    para siempre, que es el problema que las huérfanas vinieron a resolver.
+ *
+ * El híbrido es el TIEMPO: un comprobante que no cuadra abre una revisión
+ * humana --recepción ya recibió el aviso con la diferencia-- y la cita se
+ * protege mientras esa persona puede actuar. Pasada la ventana, el horario se
+ * libera igual, pero NO en silencio: queda contado y anotado como liberado CON
+ * un comprobante de por medio, que es lo que hay que ir a mirar.
+ *
+ * Dos horas: alcanza para que alguien abra el banco y conteste, y no quema el
+ * día del horario. Un comprobante que SÍ cuadró no entra acá: esa cita no se
+ * libera nunca (`cita_pagada`).
+ */
+export const MINUTOS_DE_REVISION = 120;
+
+/**
+ * Lo que decide la transacción de `senaVencida`. Va escrito porque las ramas
+ * devuelven formas distintas --con motivo o sin él, con `conComprobante` o sin
+ * él-- y sin el tipo, TypeScript infiere una unión donde `motivo` no existe en
+ * todas: el `tsc -b` del pipeline no compila, aunque `--noEmit` pase.
+ */
+interface SalidaDeVencimiento {
+  registrado: boolean;
+  repetido: boolean;
+  motivo?: string;
+  /** Se liberó un horario por el que alguien había mandado un comprobante. */
+  conComprobante?: boolean;
+}
+
+/** La marca de un `Timestamp` de Firestore, de un ISO o de un número. */
+function marcaMs(v: unknown): number | null {
+  const t = v as { toMillis?: () => number; _seconds?: unknown; seconds?: unknown } | undefined;
+  if (typeof t?.toMillis === 'function') return t.toMillis();
+  const seg = (t?._seconds ?? t?.seconds);
+  if (typeof seg === 'number') return seg * 1000;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') { const p = Date.parse(v); return Number.isFinite(p) ? p : null; }
+  return null;
+}
+
+/**
+ * ¿Hay un comprobante esperando a una persona, y todavía dentro de la ventana?
+ *
+ * `desdeSiFalta` es la marca de respaldo cuando el cierre no guardó `en`: se
+ * usa cuándo se creó la cita, para que la ventana SIEMPRE tenga un final. Sin
+ * ninguna de las dos no se puede acotar nada, y entonces se protege: el que
+ * mandó un comprobante pesa más que un horario, y queda a la vista igual.
+ */
+export function comprobanteEnRevision(
+  cotejo: { resultado?: unknown; en?: unknown } | undefined,
+  ahoraMs: number, desdeSiFalta: number | null = null,
+): boolean {
+  const r = cotejo?.resultado;
+  if (r !== 'no_cuadra' && r !== 'ilegible') return false;
+  const desde = marcaMs(cotejo?.en) ?? desdeSiFalta;
+  if (desde === null) return true;
+  return (ahoraMs - desde) < MINUTOS_DE_REVISION * 60 * 1000;
+}
+
 /** La forma mínima de la solicitud que estas Functions miran. */
 type SolicitudGuardada = Partial<Solicitud> & { qrEnviadoEn?: { toMillis?: () => number } | null };
 
@@ -365,7 +433,7 @@ export const senaVencida = onRequest(
     // minutos y puede reportar dos veces la misma cita si el borrado falló a
     // medias. Solo la PRIMERA vez mueve algo; la segunda ve `vencida` y
     // contesta `repetido`, sin contar de nuevo.
-    const salida = await db.runTransaction(async (tx) => {
+    const salida = await db.runTransaction(async (tx): Promise<SalidaDeVencimiento> => {
       const conversacion = await tx.get(refConversacion);
       const solicitud = solicitudDe(conversacion);
       const mismaCita = String(solicitud?.evento?.id ?? '') === referencia;
@@ -386,15 +454,35 @@ export const senaVencida = onRequest(
         if (cotejo?.resultado === 'cuadra') {
           return { registrado: false, repetido: false, motivo: 'cita_pagada' };
         }
+        // UNA HUÉRFANA CON COMPROBANTE TAMBIÉN TIENE MOTIVO (Andres, 20/09).
+        // Que el servidor no retenga la seña no quiere decir que no haya nadie
+        // esperando: si hay cotejo, alguien mandó un comprobante. Se protege
+        // mientras una persona puede resolverlo, y después se libera igual,
+        // contada aparte para que se vea que hubo un pago reclamado.
+        if (comprobanteEnRevision(cotejo, ahoraMs, creadoEnMs)) {
+          return { registrado: false, repetido: false, motivo: 'comprobante_en_revision' };
+        }
+        const conComprobante = typeof cotejo?.resultado === 'string';
         // Y el tiempo se exige acá también: sin saber cuándo se creó, o si
         // todavía no pasó la retención, no se autoriza nada.
-        const vencioDeVerdad = Number.isFinite(creadoEnMs)
-          && (ahoraMs - creadoEnMs) >= minutosRetencion * 60 * 1000;
-        if (!vencioDeVerdad) {
-          return { registrado: false, repetido: false, motivo: 'sin_sena_pendiente' };
+        //
+        // EL MOTIVO NO PUEDE SER `sin_sena_pendiente` (2026-09-20). Ese motivo
+        // está en la lista con la que el flujo SÍ borra --viene de antes de las
+        // huérfanas, cuando significaba «el servidor ya no la retiene»--, así
+        // que este «todavía no» terminaba en un borrado, y la comprobación de
+        // tiempo no protegía nada: solo la salvaba el filtro previo del flujo.
+        if (!Number.isFinite(creadoEnMs)) {
+          return { registrado: false, repetido: false, motivo: 'sin_fecha_de_creacion' };
         }
-        tx.set(refMetricas, { senasHuerfanas: FieldValue.increment(1) }, { merge: true });
-        return { registrado: true, repetido: false, motivo: 'huerfana' };
+        if ((ahoraMs - creadoEnMs) < minutosRetencion * 60 * 1000) {
+          return { registrado: false, repetido: false, motivo: 'todavia_no_vence' };
+        }
+        tx.set(refMetricas, {
+          senasHuerfanas: FieldValue.increment(1),
+          ...(conComprobante ? { senasHuerfanasConComprobante: FieldValue.increment(1) } : {}),
+        }, { merge: true });
+        return { registrado: true, repetido: false, motivo: 'huerfana',
+          ...(conComprobante ? { conComprobante: true } : {}) };
       }
       if (solicitud.etapa === 'vencida') return { registrado: false, repetido: true };
       if (solicitud.etapa !== 'qr_enviado') {
@@ -403,11 +491,38 @@ export const senaVencida = onRequest(
         // para que quede a la vista en el registro de n8n.
         return { registrado: false, repetido: false, motivo: 'ya_agendada' };
       }
+      // --- UN COMPROBANTE EN REVISIÓN NO VENCE (2026-09-20) -----------------
+      // Prueba real con el teléfono: el paciente pagó 1 Bs de verdad, mandó el
+      // comprobante, y el cotejo dijo «no cuadra» porque no entendió la fecha
+      // --«20 de Septiembre, 2026»--. El flujo le contestó, con toda razón,
+      // «lo va a revisar una persona; tu horario sigue reservado mientras
+      // tanto», y a recepción «la cita sigue retenida, revisar el banco». Y
+      // este endpoint, cinco minutos después, autorizaba BORRARLA: solo miraba
+      // la etapa, y un cotejo que no cuadra no la cambia.
+      //
+      // La retención existe para quien NO pagó. Quien mandó un comprobante,
+      // cuadre o no, está esperando a una persona, y la decisión es de esa
+      // persona: borrarle el turno a alguien que pagó por un error de lectura
+      // nuestro es lo peor que puede pasar acá. Si el comprobante era falso,
+      // recepción lo ve y borra la cita a mano.
+      const cierreDeLaCita = await tx.get(refCierreDeLaCita);
+      const cotejoDeLaCita = cierreDeLaCita.get('cotejo') as { resultado?: unknown; en?: unknown } | undefined;
+      const hayComprobante = (typeof solicitud.cotejos === 'number' && solicitud.cotejos > 0)
+        || typeof cotejoDeLaCita?.resultado === 'string';
+      // La MISMA ventana que la huérfana: mientras una persona puede resolver,
+      // la cita se protege; después vence igual, y queda contada aparte.
+      if (hayComprobante && comprobanteEnRevision(
+        cotejoDeLaCita ?? { resultado: 'no_cuadra' }, ahoraMs, marcaMs(solicitud.qrEnviadoEn))) {
+        return { registrado: false, repetido: false, motivo: 'comprobante_en_revision' };
+      }
       tx.set(refConversacion, {
         solicitud: { ...solicitud, etapa: 'vencida', desde: Timestamp.fromMillis(ahoraMs) },
       }, { merge: true });
-      tx.set(refMetricas, { senasVencidas: FieldValue.increment(1) }, { merge: true });
-      return { registrado: true, repetido: false };
+      tx.set(refMetricas, {
+        senasVencidas: FieldValue.increment(1),
+        ...(hayComprobante ? { senasVencidasConComprobante: FieldValue.increment(1) } : {}),
+      }, { merge: true });
+      return { registrado: true, repetido: false, ...(hayComprobante ? { conComprobante: true } : {}) };
     });
 
     if (salida.registrado) {
@@ -416,6 +531,9 @@ export const senaVencida = onRequest(
         // Una huérfana se libera igual, pero queda dicho que lo era: no hubo
         // nadie esperando para pagar, y eso explica el horario recuperado.
         ...(salida.motivo === 'huerfana' ? { codigo: 'huerfana' } : {}),
+        // LO QUE HAY QUE IR A MIRAR: se liberó un horario por el que alguien
+        // mandó un comprobante. No es lo mismo que uno que nadie pagó nunca.
+        ...(salida.conComprobante ? { codigo: 'liberada_con_comprobante' } : {}),
       });
     }
     // Y lo que NO se autorizó porque la cita ya estaba paga se anota también:

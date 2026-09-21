@@ -226,6 +226,25 @@ describe('Fecha y hora del comprobante', () => {
     expect(laPaz('06/09/2026 14:32')).toBe(Date.UTC(2026, 8, 6, 14, 32) + 4 * 3_600_000);
   });
 
+  it('EL CASO REAL (20/09/2026): entiende la fecha escrita en castellano largo', () => {
+    // El Banco Económico imprime «20 de Septiembre, 2026». La versión anterior
+    // exigía el mes pegado al día y devolvía null, así que el cotejo decía «no
+    // cuadra» por fecha ilegible: un pago REAL de 1 Bs, que coincidía en
+    // importe, cuenta, titular y banco, terminó derivado a una persona.
+    const esperado = Date.UTC(2026, 8, 20, 23, 59, 59); // 19:59:59 en La Paz
+    expect(laPaz('20 de Septiembre, 2026 19:59:59')).toBe(esperado);
+    expect(laPaz('20 de septiembre de 2026 19:59:59')).toBe(esperado);
+    expect(laPaz('Domingo, 20 de septiembre de 2026 - 19:59:59')).toBe(esperado);
+    expect(laPaz('20 de Sep. de 2026, 07:59:59 p. m.')).toBe(esperado);
+    expect(laPaz('1 de enero del 2027 08:00')).toBe(Date.UTC(2027, 0, 1, 12, 0));
+  });
+
+  it('sin año, la hora NO se lee como año', () => {
+    // «20 de septiembre 19:59» no es del año 2019. Fallaría cerrado igual
+    // —«el comprobante es anterior al pedido»—, pero explicando cualquier cosa.
+    expect(laPaz('20 de septiembre 19:59')).toBeNull();
+  });
+
   it('descarta fechas imposibles', () => {
     expect(laPaz('35/13/2026')).toBeNull();
     expect(laPaz('sin fecha')).toBeNull();
