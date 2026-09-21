@@ -48,6 +48,7 @@ const TEL_1 = '59170000001';
 const TEL_2 = '59170000002';
 const TEL_3 = '59170000003';   // sin ninguna seña pendiente: el caso de la cita huérfana
 const TEL_4 = '59170000004';   // seña pendiente SIN ningún comprobante: la que sí vence
+const TEL_5 = '59170000005';   // seña cuyo plazo pasó sin que el calendario la venciera
 const MES = new Date().toISOString().slice(0, 7);
 
 // QR Simple reutilizable, de monto abierto, a nombre de PEREZ GOMEZ JUAN CARLOS,
@@ -524,9 +525,29 @@ describe('5. senaVencida', () => {
       .toMatchObject({ registrado: true, motivo: 'huerfana', conComprobante: true });
   });
 
+  it('LA SEÑA VENCIDA POR RELOJ no se coteja: 409, queda vencida y contada una vez (20/09/2026)', async () => {
+    // El calendario nunca la informó —la cita no coincidía—, pero el plazo pasó.
+    // Antes esto se cotejaba como pago de una reserva que ya no existía.
+    await qrEnviado(TEL_5, 'evt_sena_5');
+    const ref = db.doc(`tenants/${T}/conversaciones/wa_${TEL_5}`);
+    const sol = (await ref.get()).get('solicitud') as Record<string, unknown>;
+    await ref.set({ solicitud: { ...sol, qrEnviadoEn: new Date(Date.now() - 3 * 60 * 60 * 1000) } }, { merge: true });
+    const antes = Number((await metricas())['senasVencidas'] ?? 0);
+
+    const r = await comprobante(TEL_5, { monto: '50' });
+    expect(r.codigo).toBe(409);
+    expect(r.cuerpo).toEqual({ error: 'sin_sena_pendiente' });
+    expect((await conversacion(TEL_5))['solicitud']).toMatchObject({ etapa: 'vencida' });
+    expect(Number((await metricas())['senasVencidas'])).toBe(antes + 1);
+
+    // El segundo intento ya ve la etapa vencida: no cuenta de nuevo.
+    await comprobante(TEL_5, { monto: '50' });
+    expect(Number((await metricas())['senasVencidas'])).toBe(antes + 1);
+  });
+
   it('un QR nuevo para el mismo teléfono abre otra solicitud desde cero', async () => {
     await qrEnviado(TEL_2, 'evt_sena_3');
     expect((await conversacion(TEL_2))['solicitud']).toMatchObject({ etapa: 'qr_enviado', cotejos: 0, evento: { id: 'evt_sena_3' } });
-    expect((await metricas())['senasEnviadas']).toBe(4);   // los tres de antes y el de TEL_4
+    expect((await metricas())['senasEnviadas']).toBe(5);   // los tres de antes, el de TEL_4 y el de TEL_5
   });
 });
