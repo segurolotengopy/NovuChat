@@ -61,8 +61,13 @@ for (let i = 0; i < items.length; i++) {
   let motivo = '';
   if (resultado === 'cuadra') {
     respuesta = `Recibí ${su} comprobante y los datos coinciden con ${su} reserva${cara} `
-      + `${deUsted ? 'Su' : 'Tu'} cita queda reservada, sujeta a la verificación del pago por ${negocio}. `
-      + 'Ya avisé a recepción.' + (donde ? `\n${pin}${donde}` : '');
+      // «Tu cita queda reservada», y nada mas (Andres, 20/09/2026: «porque asi
+      // es la realidad»). Sin «sujeta a la verificacion del pago» ni «ya avise a
+      // recepcion»: con los datos coincidiendo no se avisa, y la clinica verifica
+      // el adelanto el dia de la cita. La prohibicion 3 se sigue cumpliendo: no
+      // se dice que el pago se acredito, solo que el comprobante coincide.
+      + `${deUsted ? 'Su' : 'Tu'} cita queda reservada.`
+      + (donde ? `\n${pin}${donde}` : '');
     motivo = `mensaje de NovuChat por cita pagada: llegó el comprobante de la seña de ${importe} y sus datos `
       + `coinciden (monto leído ${montoLeido || 'sin dato'}${banco ? `, banco ${banco}` : ''}); `
       + 'confirmar en el banco que el dinero entró antes de darla por cobrada';
@@ -88,7 +93,9 @@ for (let i = 0; i < items.length; i++) {
   out.push({ json: {
     ...previo,
     respuesta,
-    transferir: true,
+    // Con los datos coincidiendo no se avisa (Andres, 20/09/2026); la decision
+    // final la toma `Mensaje de la seña`, que ademas mira si el calendario fallo.
+    transferir: resultado !== 'cuadra',
     motivoTransferencia: motivo,
     resultadoSena: resultado,
     diferencias,

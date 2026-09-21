@@ -115,6 +115,19 @@ for (const e of (Array.isArray(item.eventosCreados) ? item.eventosCreados : []))
   });
 }
 
+// --- LA CITA DE ESTA CONVERSACION, NO LA DE OTRO PACIENTE (2026-09-20) -----
+// Prueba real con dos telefonos: Silvana agendo el jueves 16:00 y, UN MINUTO
+// despues, Andres agendo el lunes 15:00 en la MISMA agenda. `recien` junta todo
+// lo creado en los ultimos cinco minutos en esa agenda, sea de quien sea, y se
+// tomaba `recien[0]` como la cita de esta conversacion: la seña de Andres quedo
+// atada a la cita de Silvana. Si el pagaba, se confirmaba la de ella y la suya
+// quedaba «pendiente de seña» hasta que el barrido la borrara, con el pago
+// hecho. Ahora se elige la cita que agendar_cita DIJO haber creado en ESTE
+// turno (`idsCreados`); `recien[0]` queda solo como respaldo para cuando esos
+// pasos no vienen, que es como funcionaba antes.
+const propia = (lista) => (lista.find((e) => idsCreados.has(String(e.id)))
+  || (idsCreados.size === 0 ? lista[0] : undefined));
+
 const recien = todos.filter(e => {
   if (idsCreados.has(String(e.id))) return true;
   const c = Date.parse(e.created || e.updated || '');
@@ -338,7 +351,7 @@ if (ceden.length) {
   return ceden.map((e) => ({ json: { ...item,
     respuesta: aviso,
     reservaVerificada: sobreviven.length > 0,
-    eventoId: sobreviven.length > 0 ? sobreviven[0].id : undefined,
+    eventoId: sobreviven.length > 0 ? (propia(sobreviven) || {}).id : undefined,
     citaSolapada: true,
     eventoABorrar: e.id,
     calendarioDelBorrado: e.organizer.email,
@@ -364,7 +377,7 @@ const repetidos = Object.entries(porTitulo).filter(([, n]) => n > 1);
 if (repetidos.length) {
   // El evento queda igual (bloque 2): con seña activa el QR se manda para la
   // cita que sobrevive; recepcion borra las repetidas con el aviso de abajo.
-  return [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id, duplicados: repetidos.length,
+  return [{ json: { ...item, reservaVerificada: true, eventoId: (propia(recien) || recien[0]).id, duplicados: repetidos.length,
     transferir: true,
     motivoTransferencia: `se crearon citas DUPLICADAS (${repetidos.map(([t, n]) => `${n}x ${t}`).join('; ')}), hay que borrar las sobrantes` }, pairedItem: { item: 0 } }];
 }
@@ -377,4 +390,48 @@ if (recien.length === 0) {
   return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada }, pairedItem: { item: 0 } }];
 }
 
-return [{ json: { ...item, reservaVerificada: true, eventoId: recien[0].id, citaCreadaNoEncontrada }, pairedItem: { item: 0 } }];
+// Si esta conversacion creo una cita y no aparece entre las recientes, NO se
+// toma la de otro: la reserva queda sin verificar (y sin seña), que es lo que
+// ya pasa cuando la verificacion no encuentra nada.
+const laPropia = propia(recien);
+if (!laPropia) {
+  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada: true }, pairedItem: { item: 0 } }];
+}
+// EL ADELANTO A FAVOR SE APLICA A ESTA CITA (Andres, 21/09/2026), en los dos
+// casos en que existe: el servidor ya lo tenia a favor (canceló una cita
+// pagada en un mensaje anterior), o se cancelo una pagada EN ESTE MISMO TURNO
+// --«cambia mi cita al martes»: cancela y agenda a la vez--, que es como se
+// reagenda casi siempre. No sale QR (`¿Enviar QR de la seña?`), `Quitar rotulo
+// (adelanto)` le saca a la cita nueva el PENDIENTE DE SEÑA, y el servidor
+// recibe el hecho y decide (`adelanto_aplicado` o `reprogramada`). El texto se
+// corrige si el modelo hablo de seña o de QR: pedir que pague dos veces es lo
+// peor que puede pasar en este camino, y el prompt no es una barrera.
+const cancelada = item.eventoSena && item.eventoSena.evento === 'cita_cancelada' ? item.eventoSena : null;
+const hecho = cfgCampo('senaActiva') !== 'si' ? null
+  : (cfgCampo('senaAFavor') === 'si'
+    ? { evento: 'adelanto_aplicado', referencia: String(laPropia.id),
+        calendario: String((laPropia.organizer && laPropia.organizer.email) || '') }
+    : (cancelada
+      ? { evento: 'reprogramada', referencia: String(cancelada.referencia || ''), inicio: String(cancelada.inicio || ''),
+          nueva: String(laPropia.id), calendario: String((laPropia.organizer && laPropia.organizer.email) || '') }
+      : null));
+if (hecho) {
+  const usted = /\busted\b/i.test(String(cfgCampo('tratamiento') || ''));
+  const oraciones = String(item.respuesta || '').split(/(?<=[.!?:])\s+/)
+    .filter((o) => !/se[ñn]a|\bQR\b|comprobante|RESERVADO por|adelanto que pag|queda a (tu|su) favor/i.test(o));
+  // Sin «queda reservada»: el modelo ya lo dijo con fecha y hora (21/09/2026).
+  const aplicada = usted ? 'Su adelanto de la cita anterior se aplica a esta: no paga otra seña.'
+    : 'Tu adelanto de la cita anterior se aplica a esta: no pagas otra seña.';
+  return [{ json: { ...item, reservaVerificada: true, eventoId: laPropia.id, citaCreadaNoEncontrada,
+    respuesta: (oraciones.join(' ').trim() + '\n\n' + aplicada).trim(),
+    aplicarAdelanto: true,
+    // UNA CITA PAGADA CON EL ADELANTO ES UNA CITA PAGADA: sale el pin, igual
+    // que cuando el comprobante cuadra (Andres, 20/09/2026). Las coordenadas
+    // ya vienen en el item desde `Procesar respuesta`; sin ellas, nada.
+    enviarUbicacion: item.ubicacionLat !== null && item.ubicacionLat !== undefined
+      && item.ubicacionLng !== null && item.ubicacionLng !== undefined,
+    calendarioDelAdelanto: String((laPropia.organizer && laPropia.organizer.email) || ''),
+    tituloDelAdelanto: String(laPropia.summary || ''),
+    eventoSena: hecho }, pairedItem: { item: 0 } }];
+}
+return [{ json: { ...item, reservaVerificada: true, eventoId: laPropia.id, citaCreadaNoEncontrada }, pairedItem: { item: 0 } }];

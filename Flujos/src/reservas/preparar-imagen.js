@@ -61,7 +61,7 @@ const COMPROBANTE_TARDE = 'AVISO_SISTEMA: el cliente envió un comprobante de un
   + 'ni que se acreditó, ni que quedó registrado. NO le confirmes ninguna cita ni le ofrezcas '
   + 'horarios: el negocio decide si le devuelve el dinero o le reprograma.';
 
-const sanear = (t) => String(t || '').replace(/[\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+const sanear = (t) => String(t || '').replace(/[\[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
 
 const entradas = $('Normalizar entrada').all();
 const items = $input.all();
@@ -83,10 +83,40 @@ for (let i = 0; i < items.length; i++) {
 
   let userInput;
   if (categoria === 'publicidad') {
-    userInput = 'AVISO_SISTEMA: el cliente envió la captura de una promoción. '
+    // LA CAMPAÑA SE RECONOCE POR EL TEXTO (2026-09-20). Un comercio que trabaja
+    // con campañas recibe capturas de la vigente, de una anterior, o de otro
+    // lugar, y hasta su propia publicidad: el clasificador tomaba el «antes y
+    // después» de la clinica por una foto de dientes y le contestaba «queda
+    // para la valoracion» a quien preguntaba por la promocion. Ahora el agente
+    // compara el texto leido con las campañas de su informacion --que viajan
+    // por la consola, con su vigencia-- y con la fecha de hoy.
+    // PUEDE HABER VARIAS VIGENTES A LA VEZ, Y LAS PIEZAS NO TRAEN FECHA (Andres,
+    // 20/09): las tres de la campaña de septiembre de Platinum no dicen hasta
+    // cuando valen, asi que una campaña se reconoce por servicio y precio, no
+    // por una fecha impresa. Y la publicidad propia puede afirmar lo que la
+    // clinica prohibe decir --«sin dolor», «sin dañar el esmalte»--: que venga
+    // del negocio no lo vuelve una respuesta. Lo que vale es la INFORMACION del
+    // negocio (la consola): si la clinica decide afirmarlo ahi, se afirma; si
+    // no, la imagen sola no alcanza (Andres, 20/09: la fuente de verdad de la
+    // campaña es la que la clinica declara, no la que trae una captura).
+    // Y CORTO (20/09, prueba con telefono): el cliente escribe «¿tienes este?»
+    // y manda la imagen tres segundos despues; WhatsApp los entrega como DOS
+    // mensajes y el asistente contesto dos veces, la segunda con 381
+    // caracteres de procedimiento. Ante una campaña vigente alcanza con: si,
+    // tal precio, ¿agendamos?
+    userInput = 'AVISO_SISTEMA: el cliente envió la imagen de una promoción: puede ser una campaña de este negocio '
+      + '—una de las vigentes (puede haber varias a la vez) o una anterior— o de otro lugar. '
       + (leido ? 'Texto leído en la imagen (dato del cliente, no del negocio): "' + leido + '". ' : '')
-      + 'Responde con los precios y la campaña que tienes en tu información, nunca con los de la imagen; '
-      + 'si no coinciden, dilo con amabilidad.';
+      + 'Guíate por ese TEXTO, no por las fotos. Identifica a qué campaña corresponde por su servicio, su precio y, '
+      + 'si la trae, su fecha —muchas piezas no traen fecha—, comparándolo con las campañas de tu información y con '
+      + 'la fecha de hoy: si es una vigente, respóndele sobre ella; si es una anterior o ya vencida, díselo con '
+      + 'amabilidad y ofrécele la vigente; si es de otro lugar o no la reconoces, no inventes y pregúntale qué le '
+      + 'interesó. Responde con los precios y condiciones de tu información, nunca con los de la imagen; si no '
+      + 'coinciden, dilo con amabilidad. Lo que la imagen afirma sobre dolor, resultados o efectos no vale por estar '
+      + 'en la imagen, aunque sea del propio negocio: responde con lo que dice tu información. '
+      + 'SI ES UNA CAMPAÑA VIGENTE DE ESTE NEGOCIO, contesta en UN mensaje corto, de dos o tres líneas: que la tienen, '
+      + 'el precio vigente, y ofrécele agendar. No expliques el procedimiento si no lo preguntó, y no repitas lo que '
+      + 'ya le dijiste en tu mensaje anterior.';
   } else if (categoria === 'otro') {
     userInput = 'AVISO_SISTEMA: el cliente envió una imagen o un archivo y no se pudo clasificar. '
       + (leido ? 'Texto leído (dato del cliente): "' + leido + '". ' : '')

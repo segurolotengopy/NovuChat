@@ -34,10 +34,28 @@ const NEGRITA_MD = (t) => String(t).replace(/\*\*\*([^*\n]+?)\*\*\*/g, '*_$1_*')
 const recibido = Number($('Normalizar entrada').first().json.recibidoEn);
 const latenciaMs = Number.isFinite(recibido) && recibido > 0 ? Date.now() - recibido : null;
 
+// SIN DATOS O CON ERROR, VA EL BOTON DE RECEPCION (Andres, 21/09/2026). Lo
+// unico que el asistente puede ofrecer cuando no sabe algo o algo falla es
+// pasar con recepcion, y eso es SIEMPRE el aviso a recepcion mas el boton para
+// escribirle directo. Se decide aca porque todo camino al cliente pasa por
+// este nodo: la respuesta normal, el candado, el reintento, la seña y el uso
+// extendido. Todo lo que se transfiere, y todo error del modelo, lleva el
+// boton. Sin numero cargado no hay boton, y el aviso a recepcion sigue igual.
+// Cuesta un mensaje mas SOLO en esos casos.
+const cfgSalida = $('Config del negocio').first().json;
+const numeroDeRecepcion = String(cfgSalida.numeroRecepcion ?? '').replace(/\D/g, '');
+
 return $input.all().map((i, idx) => ({
   json: {
     ...i.json,
     respuesta: NEGRITA_MD(i.json.respuesta ?? ''),
+    enviarContacto: numeroDeRecepcion !== '' && String(i.json.respuesta ?? '').trim() !== ''
+      && (i.json.enviarContacto === true || i.json.transferir === true || i.json.falloModelo === true
+        || (i.json.respuestaVacia === true && i.json.seDespide !== true)),
+    numeroRecepcion: numeroDeRecepcion,
+    nombreNegocio: i.json.nombreNegocio || cfgSalida.nombreNegocio || '',
+    phoneNumberId: i.json.phoneNumberId || cfgSalida.phoneNumberId || '',
+    waGraphVersion: i.json.waGraphVersion || cfgSalida.waGraphVersion || '',
     ...(latenciaMs === null ? {} : { latenciaMs }),
   },
   pairedItem: { item: idx },

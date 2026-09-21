@@ -264,6 +264,11 @@ const laSena = {
     ? String(sn.vencidaHaceMin) : '',
   senaEventoId: typeof evSena.id === 'string' ? evSena.id.slice(0, 200) : '',
   senaEventoCalendario: typeof evSena.calendario === 'string' ? evSena.calendario.slice(0, 200) : '',
+  // EL ADELANTO A FAVOR (Andres, 21/09/2026): el servidor dice si este
+  // telefono tiene el adelanto de una cita pagada que cancelo con
+  // anticipacion, y hasta cuando vale. Con el, la proxima cita no pide seña.
+  senaAFavor: (sn.aFavor && typeof sn.aFavor.hasta === 'string') ? 'si' : '',
+  senaAFavorHasta: (sn.aFavor && typeof sn.aFavor.hasta === 'string') ? sn.aFavor.hasta.slice(0, 40) : '',
 };
 
 // `estadoComercio` NO se toma del respaldo: si el panel dice que el comercio no

@@ -84,6 +84,30 @@ for (let i = 0; i < items.length; i++) {
         (m, n, mon, despues) => correcto + despues);
   }
 
+  // --- UNA MARCA SOLA NO ES UNA RESPUESTA VACIA (21/09/2026) -----------------
+  // Prueba con el telefono: el asistente ofrecio «¿Te comunico con ellos?», el
+  // paciente dijo «ok» y despues «si, comunicame», y las dos veces el modelo
+  // contesto SOLO [CONTACTO_RECEPCION]. Sin la marca el texto quedaba vacio y
+  // salia «tuve un problema tecnico»: lo ofrecido no se cumplio nunca. Si el
+  // modelo solo marco una accion, la accion ES la respuesta, con una linea fija.
+  const tratoUsted = /\busted\b/i.test(String(cfg.tratamiento || ''));
+  const numeroCargado = String(cfg.numeroRecepcion ?? '').replace(/\D/g, '') !== '';
+  const soloMarca = !fallo && respuesta === '' && /\[[A-Za-z_ ]{3,30}\]/.test(texto);
+  const direccionFija = String(cfg.direccion || '').trim();
+  // Sin numero cargado no hay boton que mandar: lo resuelve una persona.
+  const contactoSinNumero = pideContacto && !numeroCargado;
+  if (soloMarca) {
+    if (pideContacto && numeroCargado) {
+      respuesta = tratoUsted ? 'Le paso el contacto de recepción para que les escriba directo.'
+        : 'Te paso el contacto de recepción para que les escribas directo.';
+    } else if (pideUbicacion && direccionFija && !/no\s+(est[aá]\s+)?definid/i.test(direccionFija)) {
+      respuesta = (tratoUsted ? 'Nos encuentra en ' : 'Nos encuentras en ') + direccionFija.replace(/[.\s]+$/, '') + '.';
+    } else if (transferir || contactoSinNumero) {
+      respuesta = tratoUsted ? 'Le pido a recepción que le responda por este chat.'
+        : 'Le pido a recepción que te responda por este chat.';
+    }
+  }
+
   const vacia = respuesta === '';
   if (fallo) respuesta = falla;
   else if (vacia) respuesta = seDespide ? cierre : falla;
@@ -183,7 +207,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // que avisa a recepcion y no le cuesta un mensaje al cliente.
   const PIDE_CONTACTO = /n[uú]mero|tel[eé]fono|celular|whats?app\s+de|hablar con (alguien|una persona|un humano|recepci[oó]n)|comunic|contacto|me pas(as|es|a)|atienda alguien|una persona/i;
   const pidioContacto = PIDE_CONTACTO.test(String(ent.userInput || ''));
-  const enviarContacto = pideContacto && pidioContacto && !vacia && numeroRecepcion !== '';
+  // Si el modelo solo marco el contacto, o su texto dice que lo pasa, se
+  // manda: un texto que anuncia el contacto y no lo trae es una promesa rota.
+  const ANUNCIA_CONTACTO = /contacto|n[uú]mero|bot[oó]n|escrib[a-záéíóúñ]*\s+directo/i;
+  const enviarContacto = pideContacto && (pidioContacto || soloMarca || ANUNCIA_CONTACTO.test(respuesta)) && !vacia && numeroRecepcion !== '';
   // Se reenvía SOLO si hay una seña pendiente de verdad y un QR que mandar: el
   // servidor lo dice, no el modelo. Sin eso, el texto ya explica qué pasa.
   const reenviarQr = pideQr && !vacia
@@ -238,15 +265,188 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     }
   }
   const ejecutoAgendar = herramientas.includes('agendar_cita') || herramientaAgendarCorrio;
+
+  // --- NO NEGAR UN SERVICIO QUE NO CONOCE (2026-09-21) -----------------------
+  // Dos pruebas seguidas con el telefono: a «¿hacen estetica facial?» el modelo
+  // contesto «no realizamos estetica facial; nos enfocamos exclusivamente en
+  // odontologia», aunque el prompt ya decia «lo que no sabes, no lo niegues:
+  // te asesora una persona». Ninguna fuente dice que no lo hagan, y el logo
+  // de la clinica dice «Clinica dental & estetica facial». El prompt no es una
+  // barrera: si la respuesta NIEGA un servicio, se reemplaza por la derivacion
+  // y se avisa a recepcion, que es quien sabe. Solo las formas de negar un
+  // SERVICIO; «no atendemos los domingos» o «no tenemos horario» no entran.
+  const NIEGA_SERVICIO = /\bno\s+(realizamos|ofrecemos|brindamos|hacemos|trabajamos|contamos\s+con|damos)\b|\bexclusivamente\s+(en\s+)?(odontolog|dental|estetica\s+dental|est[eé]tica\s+dental)|\bsolo\s+(hacemos|ofrecemos|realizamos|trabajamos)\b/i;
+  const negoServicio = !fallo && NIEGA_SERVICIO.test(respuesta.replace(/[*_~]/g, ''));
+  if (negoServicio) {
+    respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
+      ? 'Sobre eso le asesora una persona del equipo: ya le paso su consulta y le escribe por acá.'
+      : 'Sobre eso te asesora una persona del equipo: ya le paso tu consulta y te escribe por acá.';
+    avisos.push('negacion_de_servicio');
+  }
+
+  // --- UNA CANCELACION SE AFIRMA SOLO SI GOOGLE LA CONFIRMO (2026-09-20) -----
+  // Prueba real con el telefono: el cliente confirmo, el modelo llamo a
+  // cancelar_cita con un identificador INVENTADO --la memoria guarda los
+  // mensajes, no lo que devuelven las herramientas, y el id real se habia
+  // quedado en el turno anterior--, Google contesto «Not Found», y el modelo
+  // escribio igual «Listo, la cita quedo cancelada». La cita siguio en la
+  // agenda. El prompt ya decia «si cancelar_cita falla, di que no se pudo»:
+  // el prompt no es una barrera (CLAUDE.md), asi que se decide aca, por lo
+  // que la herramienta DEVOLVIO. Borrar un evento en Google devuelve
+  // `{ success: true }`; cualquier otra cosa --vacio, error, otra forma-- es
+  // una cancelacion que no se puede afirmar. Falla CERRADA: en el peor caso,
+  // recepcion confirma una cancelacion que si ocurrio.
+  const canceloBien = (obs) => {
+    let o = obs;
+    if (typeof o === 'string') { try { o = JSON.parse(o); } catch (e) { return false; } }
+    const lista = Array.isArray(o) ? o : [o];
+    return lista.length > 0 && lista.every((x) => x && x.success === true);
+  };
+  const pasosCancelar = pasos.filter((p) => p && p.action && p.action.tool === 'cancelar_cita');
+
+  // --- SIN CONFIRMACION NO SE CANCELA (Andres, 21/09/2026, opcion 2) --------
+  // El modelo cancelo dos veces en el mismo mensaje en que se lo pidieron
+  // («quiero cancelar la cita», «quiero cancelar la de las 11»), con el prompt
+  // diciendo que primero la muestre y pida confirmacion. Ahora la compuerta
+  // esta en la herramienta: si el mensaje del cliente no confirma, cancelar_cita
+  // recibe un identificador que no existe y Google no borra nada. Aca se
+  // reemplaza lo que haya escrito el modelo por la pregunta, con la cita que
+  // se busco en este mismo turno. La MISMA expresion regular esta en
+  // `cancelar_cita`: una prueba exige que sean identicas. Termina con
+  // `(?![a-z…])` y NO con `\b`: en JavaScript `\b` no ve la «í» como letra,
+  // y «Sí» con tilde —la respuesta mas comun— no se reconocia.
+  const CONFIRMA_CANCELAR = /^[^a-záéíóúñ0-9]*(s[ií]|dale|confirmo|confirmado|correcto|exacto|as[ií] es|ok|okay|okey|de acuerdo|claro|adelante|hazlo|procede|canc[eé]lal[ao]|por favor)(?![a-záéíóúñ])(?:[^a-záéíóúñ0-9]+(?:s[ií]|sip|dale|confirm[a-záéíóúñ]*|correcto|exacto|as[ií]|es|ok|okay|okey|de|acuerdo|claro|adelante|hazlo|procede|canc[eé]l[a-záéíóúñ]*|anul[a-záéíóúñ]*|quiero|la|lo|esa|ese|esta|misma|mismo|por|favor|porfa|porfavor|gracias|muchas|ya|y|listo|perfecto|bueno|nom[aá]s|seguro|pues|entonces)(?![a-záéíóúñ]))*[^a-záéíóúñ0-9]*$/i;
+  const textoCliente = String(ent.userInput || '').replace(/^\(audio transcripto\)\s*/i, '').split('\n')[0];
+  const cancelacionSinConfirmar = pasosCancelar.length > 0 && !CONFIRMA_CANCELAR.test(textoCliente);
+  const cancelacionFallida = !cancelacionSinConfirmar && pasosCancelar.length > 0
+    && pasosCancelar.some((p) => !canceloBien(p.observation));
+  if (cancelacionSinConfirmar && !fallo) {
+    const pedida = String((pasosCancelar[0].action.toolInput || {}).eventoId || '');
+    let cita = null;
+    for (const p of pasos) {
+      if (!p || !p.action || p.action.tool !== 'buscar_mi_cita') continue;
+      let obs = p.observation;
+      if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
+      for (const ev of (Array.isArray(obs) ? obs : [])) if (ev && String(ev.id) === pedida) cita = ev;
+    }
+    let desc = '';
+    if (cita) {
+      const serv = (String(cita.summary || '').split('—')[1] || '').trim().replace(/-/g, ' ');
+      let cuando = '';
+      try {
+        const d = new Date(cita.start && cita.start.dateTime);
+        cuando = d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' })
+          + ' a las ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
+      } catch (e) { cuando = ''; }
+      desc = (serv ? ' de ' + serv : '') + (cuando ? ' del ' + cuando : '');
+    }
+    respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
+      ? `¿Confirma que quiere cancelar su cita${desc}? Respóndame «sí» y la cancelo.`
+      : `¿Confirmas que quieres cancelar tu cita${desc}? Respóndeme «sí» y la cancelo.`;
+    avisos.push('cancelacion_sin_confirmar');
+  }
+
+  // --- UNA CITA PAGADA QUE SE CANCELA (2026-09-21) ---------------------------
+  // Prueba con el telefono: el paciente pago la seña y enseguida cancelo; el
+  // asistente contesto «listo, quedo cancelada» y nadie se entero de que habia
+  // un adelanto de por medio. Con la seña activa, toda cita nace con el rotulo
+  // «PENDIENTE DE SEÑA» y lo pierde solo cuando el comprobante cuadra: una cita
+  // SIN el rotulo que se cancela es una cita pagada (o cargada a mano por la
+  // clinica). Lo que se haga con el adelanto lo decide el negocio; lo que no
+  // puede pasar es que nadie lo sepa.
+  const idsCancelados = new Set(pasosCancelar.filter((p) => canceloBien(p.observation))
+    .map((p) => String((p.action.toolInput && p.action.toolInput.eventoId) || '')).filter(Boolean));
+  let citaPagadaCancelada = null;
+  if (idsCancelados.size && cfg.senaActiva === 'si') {
+    for (const p of pasos) {
+      if (!p || !p.action || p.action.tool !== 'buscar_mi_cita') continue;
+      let obs = p.observation;
+      if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
+      for (const ev of (Array.isArray(obs) ? obs : [])) {
+        if (ev && idsCancelados.has(String(ev.id)) && !/^PENDIENTE DE SEÑA/.test(String(ev.summary || ''))) {
+          citaPagadaCancelada = ev;
+        }
+      }
+    }
+  }
+  // CON ANTICIPACION, EL ADELANTO QUEDA A FAVOR (Andres, 21/09/2026): siete dias
+  // para reagendar sin pagar otra seña, si se cancelo con al menos dos horas.
+  // La regla la aplica el SERVIDOR con el evento `cita_cancelada`; aca se
+  // calcula lo mismo solo para decirle al paciente lo que va a pasar. Con
+  // menos anticipacion no hay credito automatico: lo decide recepcion.
+  const inicioPagada = citaPagadaCancelada ? Date.parse(String((citaPagadaCancelada.start || {}).dateTime || '')) : NaN;
+  const conAnticipacion = Number.isFinite(inicioPagada) && inicioPagada - Date.now() >= 2 * 3600 * 1000;
+  // EL CREDITO LO DA EL SERVIDOR, Y SOLO POR LA CITA DE SU SEÑA (21/09/2026,
+  // #4034). El flujo prometio «el adelanto queda a tu favor» por una cita sin
+  // rotulo que NO era la de la seña registrada, y el servidor —que exige esa
+  // cita— no dio nada: una promesa que nadie iba a cumplir. Ahora se promete
+  // solo si la cita cancelada es la que el servidor tiene como pagada; si no,
+  // lo coordina recepcion (aviso + boton).
+  const esLaCitaDeLaSena = !!citaPagadaCancelada && String(cfg.senaEventoId || '') !== ''
+    && String(cfg.senaEventoId) === String(citaPagadaCancelada.id) && cfg.senaPendiente !== 'si';
+  const adelantoAFavor = !!citaPagadaCancelada && !cancelacionFallida && conAnticipacion && esLaCitaDeLaSena;
+  const usted = /\busted\b/i.test(String(cfg.tratamiento || ''));
+  if (adelantoAFavor) {
+    respuesta = respuesta.trim() + (usted
+      ? '\n\nEl adelanto que pagó queda a su favor por 7 días: si reagenda en ese plazo, no paga otra seña.'
+      : '\n\nEl adelanto que pagaste queda a tu favor por 7 días: si reagendas en ese plazo, no pagas otra seña.');
+  } else if (citaPagadaCancelada && !cancelacionFallida) {
+    respuesta = respuesta.trim() + (usted
+      ? '\n\nSobre el adelanto que pagó, le escribe recepción.'
+      : '\n\nSobre el adelanto que pagaste, te escribe recepción.');
+  }
+  if (cancelacionFallida && !fallo) {
+    respuesta = 'No pude cancelar la cita en la agenda en este momento. Le paso el pedido a recepción '
+      + 'para que la cancele y le confirme por este chat.';
+    avisos.push('cancelacion_no_confirmada');
+  }
+  // --- NO SE OFRECE LO QUE NO SE VA A CUMPLIR (Andres, 21/09/2026) -----------
+  // POLITICA DE NOVUCHAT, para todos los clientes. El asistente escribio «lo
+  // consulto con recepcion para que te confirmen» y no tiene como consultar a
+  // nadie: el paciente espero una respuesta que no iba a llegar. Lo unico que
+  // puede ofrecer cuando le falta un dato o algo falla es pasar con recepcion,
+  // que es un aviso a recepcion MAS el boton para escribirle directo (lo
+  // agrega `Mensaje a enviar` a todo lo que se transfiere). Toda promesa de que
+  // alguien le va a responder o avisar despues se CUMPLE: se transfiere. No se
+  // toca el texto; lo que se hace es que sea verdad. Las preguntas («¿Quieres
+  // que te pase con recepcion?») no prometen nada y no cuentan.
+  const PROMESA = /(consult|averigu|pregunt|verific|revis|coordin)[a-záéíóúñ]*\s+(lo\s+|eso\s+)?(con|a)\s+(recepci|la\s+cl[ií]nica|el\s+equipo|el\s+personal|(el|la)\s+(doctor|doctora|dr|dra)(?![a-záéíóúñ])|administraci|caja|alguien|una\s+persona|la\s+empresa|el\s+negocio|mis\s+compa)|(te|le)\s+(avis|escrib|llam|contact|confirm|mand|env[ií]|respond)[a-záéíóúñ]*\s+(luego|despu[eé]s|m[aá]s\s+tarde|ma[ñn]ana|en\s+cuanto|apenas|pronto|en\s+un\s+rato|en\s+breve|a\s+la\s+brevedad)|(te|le)\s+(avisar|escribir|llamar|contactar|confirmar|responder)([eé]|[aá]n?)(?![a-záéíóúñ])|voy\s+a\s+(consultar|averiguar|preguntar|avisar|escribir|llamar|contactar|confirmar)/i;
+  const frasePrometida = fallo ? '' : (respuesta.split(/(?<=[.!?…])\s+|\n+/)
+    .map((o) => o.trim()).find((o) => o && !/\?\s*$/.test(o) && PROMESA.test(o)) || '');
+  const prometeSinRespaldo = frasePrometida !== '' && !transferir;
+  if (prometeSinRespaldo) avisos.push('promesa_cumplida_por_recepcion');
+  const pasarARecepcion = prometeSinRespaldo || contactoSinNumero;
+
   const verificarReserva = ejecutoAgendar || afirmaAgendo;
 
   out.push({ json: {
     respuesta,
-    transferir: transferir || qrSinSena,
-    motivoTransferencia: (transferir || qrSinSena)
-      ? (qrSinSena ? 'pidió el QR de su seña y no hay ninguna pendiente: revisar si quedó a medias'
+    // Con el adelanto a favor no hace falta una persona: se aplica solo.
+    transferir: transferir || qrSinSena || cancelacionFallida || negoServicio || (!!citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion,
+    motivoTransferencia: (transferir || qrSinSena || cancelacionFallida || negoServicio || (citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion)
+      ? ((citaPagadaCancelada && !adelantoAFavor) ? 'el cliente CANCELÓ una cita que ya tenía la seña pagada ('
+          + String(citaPagadaCancelada.summary || '') + ', ' + String((citaPagadaCancelada.start || {}).dateTime || '')
+          + '): coordinar con él qué pasa con el adelanto'
+        : negoServicio ? 'el cliente preguntó por algo que el asistente no sabe si el negocio ofrece: asesorarlo. Escribió: «'
+          + String(ent.userInput || '').replace(/\s+/g, ' ').slice(0, 160) + '»'
+        : cancelacionFallida ? 'el cliente pidió CANCELAR su cita y cancelar_cita NO la borró (Google no confirmó): la cita sigue en la agenda, cancelarla a mano y avisarle'
+        : pasarARecepcion ? (contactoSinNumero && !prometeSinRespaldo
+          ? 'el cliente pidió hablar con recepción y no hay número de recepción cargado en la consola: escribirle por este chat. Escribió: «'
+          : 'el asistente le dijo al cliente que alguien le iba a responder («' + frasePrometida.slice(0, 160)
+            + '»): responderle por este chat. El cliente escribió: «')
+          + String(ent.userInput || '').replace(/\s+/g, ' ').slice(0, 160) + '»'
+        : qrSinSena ? 'pidió el QR de su seña y no hay ninguna pendiente: revisar si quedó a medias'
         : (ent.forzarTransferencia === true && ent.motivoForzado
-          ? String(ent.motivoForzado) : 'tres rechazos de horario consecutivos')) : '',
+          ? String(ent.motivoForzado)
+          // EL MOTIVO DICE LO QUE PASO (2026-09-20). Antes decia siempre «tres
+          // rechazos de horario consecutivos», y el modelo marca [TRANSFERIR] por
+          // varias razones: un servicio que no conoce, una cancelacion que
+          // fallo, una cita que no pudo verificar. Recepcion leia «tres
+          // rechazos» cuando el paciente habia preguntado por estetica facial.
+          // Sin saber la razon exacta, se le da lo unico cierto: que derivo el
+          // asistente, y que escribio el cliente.
+          : 'el asistente pidió que lo atienda una persona. El cliente escribió: «'
+            + String(ent.userInput || '').replace(/\s+/g, ' ').slice(0, 160) + '»')) : '',
     afirmaAgendo,
     ejecutoAgendar,
     verificarReserva,
@@ -258,6 +458,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     from: ent.from,
     nombrePerfil: ent.nombrePerfil,
     enviarUbicacion, enviarContacto, numeroRecepcion, reenviarQr,
+    // El hecho que el reporte del saliente le lleva al servidor, que es quien
+    // decide el adelanto a favor.
+    ...(adelantoAFavor ? { eventoSena: { evento: 'cita_cancelada', referencia: String(citaPagadaCancelada.id),
+      inicio: String((citaPagadaCancelada.start || {}).dateTime || '') } } : {}),
     // Lo que el envio del pin necesita, arrastrado en el item (como en el
     // Demo B): `Enviar ubicacion` lo lee de `Mensaje a enviar`, porque el
     // $json que le llega de `Responder al cliente` es la respuesta de Meta.
