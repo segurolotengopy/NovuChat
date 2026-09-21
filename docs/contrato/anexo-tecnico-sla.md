@@ -11,6 +11,12 @@
 > **Regla de mantenimiento de esta plantilla:** no se agrega ningún compromiso
 > que el sistema no cumpla hoy. Cuando un prerrequisito de `Analisis/37` §5 se
 > cierre, se actualiza la cláusula correspondiente y se sube la versión.
+>
+> **El servicio está en implementación.** El monitoreo, la organización del
+> soporte, los respaldos y la configuración de cada cliente (agendas,
+> capacidades, datos del negocio) todavía se están completando. Esta versión
+> compromete solo lo que ya funciona. El §13 dice cómo crece el anexo a medida
+> que se termina cada pieza, sin renegociar el contrato cada vez.
 
 ---
 
@@ -90,6 +96,9 @@ virtual y de no negar que es una inteligencia artificial.
 - **Canal oficial de reportes:** `[canal de soporte: WhatsApp de NovuChat y/o
   correo]`, además de la sección «Reclamos» de la consola. Un reporte por otro
   medio se atiende, pero el plazo corre desde que llega al canal oficial.
+- **El soporte de NovuChat se está organizando**: canal, horario y equipo. Este
+  es el horario y el canal de esta versión. Cuando se amplíen, NovuChat lo
+  comunica por escrito y la ampliación rige desde esa comunicación (§13).
 
 ## 5. Atención de incidentes
 
@@ -112,7 +121,7 @@ virtual y de no negar que es una inteligencia artificial.
 
 **Fase inicial.** Desde el inicio del servicio y hasta que NovuChat comunique
 por escrito la activación de su monitoreo externo, **no se compromete un
-porcentaje de disponibilidad**. Rigen la atención de incidentes (§5) y el
+porcentaje de disponibilidad**. El monitoreo está en implementación (§13). Rigen la atención de incidentes (§5) y el
 informe mensual (§10).
 
 **Fase medida.** Desde el mes calendario siguiente a esa comunicación:
@@ -216,3 +225,30 @@ Dentro de los primeros 5 días hábiles de cada mes, NovuChat entrega al Cliente
 6. Avisar con 48 horas de anticipación los cambios que no haga él mismo en la
    consola.
 7. Reportar los incidentes por el canal oficial.
+
+## 13. Cómo evoluciona este anexo
+
+El Servicio y la configuración de cada cliente están en implementación. Este
+anexo tiene versión, y crece así:
+
+1. **Una mejora rige cuando NovuChat la comunica por escrito como activa.** No
+   antes. La lista de abajo anuncia lo que se está construyendo, pero **ninguna
+   mejora es un compromiso hasta esa comunicación**.
+2. **Si una versión nueva amplía los compromisos de NovuChat**, se aplica
+   desde la comunicación, sin necesidad de firmar de nuevo.
+3. **Si una versión nueva reduce algún compromiso**, requiere el acuerdo del
+   Cliente. Sin ese acuerdo, sigue rigiendo la versión anterior o el Cliente
+   puede rescindir sin penalidad.
+4. **Lo que se configura para cada cliente** (agendas, capacidades, flujos,
+   parámetros) se incorpora a su anexo particular con un **acta de
+   activación**, que registra la prueba con un teléfono real. Desde la fecha del
+   acta, esa configuración queda cubierta por los niveles de servicio.
+
+| Mejora en implementación | Qué cambia en este anexo | Desde cuándo rige |
+|---|---|---|
+| Monitoreo externo y alertas | Se activa la **fase medida** de disponibilidad (§6) | Mes calendario siguiente a la comunicación |
+| Soporte organizado: canal, horario ampliado, equipo | Horario cubierto y canal (§4); los plazos del §5 corren sobre el horario nuevo | Desde la comunicación |
+| Respaldos con prueba de restauración | Tiempos máximos de pérdida y de recuperación de datos (§9) | Versión nueva del anexo |
+| Borrado automático al cumplir la retención | Plazo de retención de los datos (§9) | Versión nueva del anexo |
+| Tres meses de mediciones del tiempo de respuesta | El objetivo del §10 puede pasar a compromiso | Versión nueva del anexo |
+| Más agendas, capacidades o flujos del Cliente | Su anexo particular | Fecha del acta de activación |

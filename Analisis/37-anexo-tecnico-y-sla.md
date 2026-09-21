@@ -49,6 +49,14 @@ conversaciones de bolsa.
 Es la misma política que Andres fijó el 21/09 para el asistente —**solo se
 ofrece lo que se cumple**— aplicada al contrato.
 
+**Nada de esto es definitivo, y el anexo lo dice.** El monitoreo, el soporte,
+los respaldos y la configuración de cada cliente todavía se están terminando:
+se van a agregar calendarios, capacidades y un soporte organizado. Por eso el
+anexo **tiene versión y crece** (§6bis): cada pieza terminada se comunica por
+escrito y amplía el compromiso desde ese día, sin renegociar. Así el contrato
+puede firmarse hoy sin prometer lo que falta, y mejora solo cuando la mejora
+existe.
+
 ---
 
 ## 1. De qué depende el servicio, y qué está en nuestras manos
@@ -309,15 +317,51 @@ Estas cuatro no tienen respaldo operativo:
 | **P7** | Corrector «no niega ser IA» en los flujos de agenda | Pasar de instrucción a garantía | ½ jornada |
 | **P8** | Quitar «en breve» y las promesas del §4 | Coherencia con el contrato | ½ hora |
 | **P9** | Agregar la latencia por mes | El informe | ½ jornada |
+| **P10** | **Límite de agendas por plan en el servidor** (la fila de `CLAUDE.md` §7 que falta) | Que el número de agendas del plan sea un límite y no una frase | 1,5 jornadas (`Analisis/29`, fase 3) |
 
 **P1 a P3 suman 1,5 jornadas** y convierten la fase inicial en fase medida.
-**Todo junto, unas 5 jornadas.** Nada de esto cambia la conversación ni agrega
+**Todo junto, unas 6,5 jornadas.**
+
+**P10 sube de prioridad porque se van a sumar calendarios.** Hoy un comercio
+puede cargar agendas sin tope, y el plan promete 1 / 5 / hasta 10. Mientras
+eran una o dos, daba lo mismo. Con clientes agregando calendarios, un anexo
+que dice «hasta N agendas» tiene que tener detrás una regla que lo haga cumplir.
+
+**Agregar calendarios no degrada el candado.** Desde el bloque 5 (`v0.6.0`),
+la verificación contra la doble reserva revisa solo el calendario que recibió
+la cita, no todos (`Analisis/24` §4). Lo que sí crece con cada profesional es
+la conversación: el asistente tiene que preguntar con quién, y eso son
+mensajes (`Analisis/24` §3). Cada agenda nueva entra con su prueba en el acta. Nada de esto cambia la conversación ni agrega
 mensajes. P3 y P5 tocan la VM de producción: van con OK de Andres, **después
 del demo** y fuera del horario cubierto.
 
 ---
 
-## 6. Qué medir para endurecer el SLA dentro de tres meses
+## 6bis. Un anexo que crece: el modelo de versiones
+
+El servicio está en implementación. Firmar un anexo cerrado obligaría a elegir
+entre dos males: prometer lo que todavía no existe, o renegociar cada vez que
+se termina una pieza. El anexo general (§13) resuelve eso con cuatro reglas:
+
+1. **Lo terminado se comunica por escrito como activo, y recién ahí rige.**
+   La tabla de mejoras en implementación anuncia, no compromete.
+2. **Ampliar un compromiso no requiere firma**; se aplica desde la
+   comunicación.
+3. **Reducirlo sí**: sin acuerdo del cliente, sigue la versión anterior o el
+   cliente puede irse sin penalidad. Es lo que hace confiable al esquema.
+4. **Lo de cada cliente entra por acta de activación**, con su prueba real: una
+   agenda nueva, una capacidad como la seña, un flujo más.
+
+| Pieza en implementación | Cuando esté terminada, el anexo pasa a decir |
+|---|---|
+| Monitoreo y alertas (P1–P3) | 98 % en horario cubierto, con créditos |
+| Soporte organizado | Horario cubierto ampliado; canal oficial definido |
+| Respaldos probados (P4) | Tiempos máximos de pérdida y de recuperación |
+| Purga (P5) | Retención de 12 meses |
+| Mediciones de latencia (P9, tres meses) | Latencia como compromiso |
+| Agendas y capacidades de cada cliente | Su anexo particular, por acta |
+
+## 7. Qué medir para endurecer el SLA dentro de tres meses
 
 - Disponibilidad en horario cubierto y fuera de él. Si fuera de horario se
   mantiene alta, se puede discutir extender la cobertura.
