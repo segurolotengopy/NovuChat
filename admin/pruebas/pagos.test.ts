@@ -226,7 +226,9 @@ describe('registrarPagoManual: idempotencia por pagoId (MEDIUM 1)', () => {
 });
 
 describe('registrarPagoManual: transferencia y evidencia', () => {
-  const conEvidencia = (existe: boolean) => pagos.crearRegistrarPagoManual({ existeEvidencia: async () => existe });
+  const META = { generation: '1726870000000001', md5Hash: 'aGFzaA==', size: 2048, contentType: 'image/jpeg' };
+  const conEvidencia = (existe: boolean, meta: Record<string, unknown> = META) =>
+    pagos.crearRegistrarPagoManual({ metaEvidencia: async () => (existe ? meta as never : null) });
 
   it('una transferencia SIN evidencia no se registra', async () => {
     await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 12345', pagoId: PAGO_ID })), 'invalid-argument');
@@ -243,12 +245,19 @@ describe('registrarPagoManual: transferencia y evidencia', () => {
   });
 
   it('una evidencia declarada que NO está en Storage no registra nada', async () => {
-    const existe = vi.fn(async () => false);
-    const f = pagos.crearRegistrarPagoManual({ existeEvidencia: existe });
+    const existe = vi.fn(async () => null);
+    const f = pagos.crearRegistrarPagoManual({ metaEvidencia: existe });
     await rechaza(correr(f, manual({ medio: 'transferencia', referencia: 'op 12345', pagoId: PAGO_ID, evidencia: 'evidencia.pdf' })), 'failed-precondition');
     expect(existe).toHaveBeenCalledWith(`tenants/${A}/pagos/${PAGO_ID}/evidencia.pdf`);
     expect(await pago(PAGO_ID)).toBeUndefined();
     expect(await cuenta()).toEqual(CUENTA_BASE);
+  });
+
+  it('una evidencia vacía, o con un tipo que no corresponde a su nombre, no registra nada', async () => {
+    await rechaza(correr(conEvidencia(true, { ...META, size: 0 }), manual({ medio: 'transferencia', referencia: 'op 1', pagoId: PAGO_ID, evidencia: 'evidencia.jpg' })), 'failed-precondition');
+    await rechaza(correr(conEvidencia(true, { ...META, contentType: 'text/html' }), manual({ medio: 'transferencia', referencia: 'op 1', pagoId: PAGO_ID, evidencia: 'evidencia.jpg' })), 'failed-precondition');
+    await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 1', pagoId: PAGO_ID, evidencia: 'evidencia.pdf' })), 'failed-precondition');
+    expect(await pagosDe()).toHaveLength(0);
   });
 
   it('la evidencia va SOLO con transferencia: en efectivo se rechaza', async () => {
@@ -261,7 +270,9 @@ describe('registrarPagoManual: transferencia y evidencia', () => {
     expect(r['pagoId']).toBe(PAGO_ID);
     expect(await pago(PAGO_ID)).toMatchObject({
       medio: 'transferencia', referencia: 'op 12345', evidencia: `tenants/${A}/pagos/${PAGO_ID}/evidencia.jpg`, estado: 'confirmado',
+      evidenciaMeta: META,
     });
+    expect((await auditoria('pago_manual'))[0]).toMatchObject({ evidenciaMeta: META });
     // El mismo id no se registra dos veces.
     await rechaza(correr(conEvidencia(true), manual({ medio: 'transferencia', referencia: 'op 12345', pagoId: PAGO_ID, evidencia: 'evidencia.jpg' })), 'already-exists');
     expect(await pagosDe()).toHaveLength(1);

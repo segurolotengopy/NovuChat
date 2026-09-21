@@ -37,7 +37,9 @@
  *     transferencia, `tenants/{t}/pagos/{pagoId}/evidencia.(jpg|png|pdf)`,
  *     subida por el propietario bajo `storage.rules`. Antes de registrar, el
  *     servidor COMPRUEBA CON EL SDK ADMIN que el objeto existe: una ruta
- *     declarada no es una evidencia.
+ *     declarada no es una evidencia. Se guardan su generación y su hash
+ *     (`evidenciaMeta`), y una vez registrado el pago las reglas de Storage
+ *     no dejan reemplazarla.
  *  7. `cuenta/estado` SE DERIVA (§4undecies.2): `estadoPago`, `montoMensual`,
  *     `moneda` y `proximoVencimiento` los escribe `camposDerivados`, junto con
  *     cada pago; `actualizarEstadoCuenta` los RECHAZA si vienen a mano.
@@ -347,8 +349,8 @@ export interface Deps {
   anular?: (tenantId: string, pagoId: string, motivo: string) => Promise<ResultadoAnulacion>;
   /** Consulta el estado en el cobrador y lo aplica. A-2: `consultarYAplicar`. */
   consultar?: (tenantId: string, pagoId: string) => Promise<unknown>;
-  /** ¿Existe el objeto de evidencia en Storage, con contenido? Por defecto, el SDK Admin. */
-  existeEvidencia?: (ruta: string) => Promise<boolean>;
+  /** Metadatos del objeto de evidencia en Storage, o `null` si no está. Por defecto, el SDK Admin. */
+  metaEvidencia?: (ruta: string) => Promise<MetaEvidencia | null>;
   ahoraMs?: () => number;
 }
 
@@ -408,17 +410,40 @@ export async function anularPendienteLocal(tenantId: string, pagoId: string, mot
   return { resultado: 'anulado' };
 }
 
-const existeEnStorage = async (ruta: string): Promise<boolean> => {
+/**
+ * LO QUE SE GUARDA DE LA EVIDENCIA, además de su ruta (revisión de seguridad
+ * de A-1, MEDIUM 2): la generación del objeto y su hash. Con eso, si alguien
+ * reemplazara el archivo después de registrar el pago, la auditoría dice qué
+ * versión se miró. Y `storage.rules` ya no deja reemplazarla una vez que el
+ * pago existe.
+ */
+export interface MetaEvidencia {
+  generation: string;
+  md5Hash: string | null;
+  size: number;
+  contentType: string;
+}
+
+const TIPO_DE_EVIDENCIA: Record<string, string> = {
+  'evidencia.jpg': 'image/jpeg', 'evidencia.png': 'image/png', 'evidencia.pdf': 'application/pdf',
+};
+
+const metaEnStorage = async (ruta: string): Promise<MetaEvidencia | null> => {
   const archivo = getStorage().bucket().file(ruta);
   const [existe] = await archivo.exists();
-  if (!existe) return false;
+  if (!existe) return null;
   const [meta] = await archivo.getMetadata();
-  return Number(meta.size ?? 0) > 0;
+  return {
+    generation: String(meta.generation ?? ''),
+    md5Hash: typeof meta.md5Hash === 'string' ? meta.md5Hash : null,
+    size: Number(meta.size ?? 0),
+    contentType: typeof meta.contentType === 'string' ? meta.contentType : '',
+  };
 };
 
 const con = (deps: Deps) => ({
   anular: deps.anular ?? anularPendienteLocal,
-  existeEvidencia: deps.existeEvidencia ?? existeEnStorage,
+  metaEvidencia: deps.metaEvidencia ?? metaEnStorage,
   ahoraMs: deps.ahoraMs ?? Date.now,
 });
 
@@ -542,14 +567,19 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
     }
     const evidencia = texto(datos['evidencia'], 40);
     let rutaEvidencia: string | null = null;
+    let evidenciaMeta: MetaEvidencia | null = null;
     if (medio === 'transferencia') {
       if (!(ARCHIVOS_EVIDENCIA as readonly string[]).includes(evidencia)) {
         throw new HttpsError('invalid-argument',
           `Una transferencia exige evidencia: uno de ${ARCHIVOS_EVIDENCIA.join(', ')}, subido antes a Storage.`);
       }
       rutaEvidencia = `tenants/${tenantId}/pagos/${pagoIdPedido}/${evidencia}`;
-      if (!(await d.existeEvidencia(rutaEvidencia))) {
+      evidenciaMeta = await d.metaEvidencia(rutaEvidencia);
+      if (!evidenciaMeta || evidenciaMeta.size <= 0) {
         throw new HttpsError('failed-precondition', 'La evidencia declarada no está en Storage. Súbala y vuelva a intentar.');
+      }
+      if (evidenciaMeta.contentType !== TIPO_DE_EVIDENCIA[evidencia]) {
+        throw new HttpsError('failed-precondition', 'La evidencia en Storage no tiene el tipo que corresponde a su nombre.');
       }
     } else if (evidencia) {
       throw new HttpsError('invalid-argument', 'La evidencia va solo con transferencia.');
@@ -582,7 +612,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
       montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
       tcoAplicado, tcoFuente, tcoFecha,
       medio, canal: 'manual', referencia,
-      ...(rutaEvidencia ? { evidencia: rutaEvidencia } : {}),
+      ...(rutaEvidencia ? { evidencia: rutaEvidencia, evidenciaMeta } : {}),
       descripcion: descripcionDe(pedido),
       creadoEn: ahora, creadoPor: uid,
     };
@@ -617,7 +647,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
         ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
         ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
         montoUsd, monto, montoRecibidoBs, tcoAplicado, tcoFuente, tcoFecha, medio, referencia,
-        evidencia: rutaEvidencia, motivoDiferencia: motivoDiferencia || null,
+        evidencia: rutaEvidencia, evidenciaMeta, motivoDiferencia: motivoDiferencia || null,
         pendienteAnulado,
         cubiertoHasta: a.resultado.cubiertoHasta, planDespues: a.resultado.plan, bolsaDespues: a.resultado.bolsa,
         planAntes: cuenta['plan'] ?? null, periodoPagadoAntes: cuenta['periodoPagado'] ?? null,

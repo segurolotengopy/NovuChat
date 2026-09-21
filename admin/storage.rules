@@ -321,12 +321,23 @@ service firebase.storage {
 
       allow list: if false;
 
-      // Solo la evidencia, solo el propietario. `qr.png` no tiene camino de
-      // escritura por reglas: es del SDK Admin.
+      // ¿Ya se registró el pago? Lectura cruzada a Firestore, una por
+      // evaluación, y solo después de comprobar que quien pide es el
+      // propietario con un archivo válido (cortocircuito del `&&`).
+      function pagoRegistrado() {
+        return firestore.exists(/databases/(default)/documents/tenants/$(tenantId)/pagos/$(pagoId));
+      }
+
+      // Solo la evidencia, solo el propietario, y SOLO ANTES DE REGISTRAR EL
+      // PAGO (revisión de seguridad de A-1, MEDIUM 2): una vez que existe el
+      // documento del pago, la evidencia que se miró no se reemplaza, ni por
+      // el propietario. El servidor además guarda su generación y su hash.
+      // `qr.png` no tiene camino de escritura por reglas: es del SDK Admin.
       allow create, update: if idDePagoValido()
                             && esEvidencia()
                             && evidenciaValida()
-                            && esPropietario();
+                            && esPropietario()
+                            && !pagoRegistrado();
 
       allow delete: if false;
     }

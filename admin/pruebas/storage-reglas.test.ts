@@ -374,7 +374,7 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       subir(s, rutaPago(t, archivo), n, tipo);
 
     describe('subir', () => {
-      it('el propietario sube evidencia.pdf, .jpg y .png con su tipo, y puede reemplazarla', async () => {
+      it('el propietario sube evidencia.pdf, .jpg y .png con su tipo, y la reemplaza MIENTRAS el pago no está registrado', async () => {
         await assertSucceeds(evidencia(propietario(), A));
         await assertSucceeds(evidencia(propietario(), A, MB, 'evidencia.jpg', 'image/jpeg'));
         await assertSucceeds(evidencia(propietario(), A, MB, 'evidencia.png', 'image/png'));
@@ -382,6 +382,18 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
         await assertSucceeds(evidencia(propietario(), A, 5 * MB, 'evidencia.jpg', 'image/jpeg'));
         await sembrarArchivo(rutaPago(A));
         await assertSucceeds(evidencia(propietario(), A));
+      });
+
+      it('una vez REGISTRADO el pago, el propietario no reemplaza la evidencia ni sube otra (MEDIUM 2)', async () => {
+        await sembrarArchivo(rutaPago(A));
+        await entorno.withSecurityRulesDisabled(async (ctx) => {
+          await setDoc(doc(ctx.firestore(), `tenants/${A}/pagos/${PAGO}`), { estado: 'confirmado', medio: 'transferencia' });
+        });
+        await assertFails(evidencia(propietario(), A));
+        await assertFails(evidencia(propietario(), A, MB, 'evidencia.jpg', 'image/jpeg'));
+        await assertFails(updateMetadata(ref(propietario(), rutaPago(A)), { customMetadata: { otra: 'version' } }));
+        // Sigue pudiendo LEERLA: es la evidencia del pago.
+        await assertSucceeds(getMetadata(ref(propietario(), rutaPago(A))));
       });
 
       it('el ADMIN del comercio no sube evidencia, ni en su propio comercio: confirma el propietario', async () => {
