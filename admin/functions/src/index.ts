@@ -65,6 +65,11 @@ import {
 // qué comercios les toca un recordatorio y marca ANTES de enviar (molde de
 // `seguimientos.ts`). El porqué en `cobranza.ts`.
 export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js';
+// PAGOS DEL PREPAGO (bloque A-1, `DISENO.md` §4undecies.1): la carga manual del
+// propietario con evidencia y auditoría, la anulación del pendiente, la
+// consulta al abrir la pantalla y los teléfonos que pueden pagar. Lo que suma
+// meses vive en `pagos.ts` y es una sola puerta; el porqué está ahí.
+export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente, fijarTelefonosPago } from './pagos.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las

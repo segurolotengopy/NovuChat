@@ -246,6 +246,92 @@ service firebase.storage {
     }
 
     // =========================================================================
+    // /tenants/{tenantId}/pagos/{pagoId}/{archivo} — EL QR Y LA EVIDENCIA DE
+    // UN PAGO DEL PREPAGO (DISENO.md §4undecies.1 y §4undecies.7, bloque A-1).
+    //
+    // Es NovuChat cobrándole al comercio (decisión 9 del frente): nada de esto
+    // se comparte con la seña de una reserva. Dos cosas viven acá, con
+    // nombres FIJOS, como en la captación:
+    //   qr.png          → la imagen del QR que devolvió el cobrador. La escribe
+    //                     SOLO el SDK Admin (`crearCobroPrepago`, A-2): ninguna
+    //                     regla de abajo admite crearla ni reemplazarla, y así
+    //                     nadie puede poner un QR ajeno donde el comercio va a
+    //                     pagar.
+    //   evidencia.jpg   → el comprobante de una transferencia que el PROPIETARIO
+    //   evidencia.png     carga a mano (`registrarPagoManual`). Sube él, y
+    //   evidencia.pdf     solo él: es la mitad de «confirma el propietario con
+    //                     evidencia y auditoría». El servidor comprueba con el
+    //                     SDK Admin que el objeto existe antes de registrar.
+    //
+    // QUIÉN LEE: el administrador del comercio (también SUSPENDIDO, con el
+    // mismo `tenantLegible` que `/cuenta` y `/pagos`: un comercio cortado tiene
+    // que poder ver el QR con el que se reactiva) y el propietario. El
+    // operador NO: la situación financiera no es asunto suyo. Otro comercio,
+    // nunca. Listar y borrar: nadie; un pago no se borra, se compensa.
+    //
+    // TIPO Y TAMAÑO atados a la extensión, igual que la captación: PDF hasta
+    // 10 MB, imagen hasta 5 MB, nunca vacío. El `contentType` lo declara el
+    // navegador, así que esto impide que un HTML se sirva como PDF; que el
+    // archivo sea lo que dice lo decide quien lo mira.
+    //
+    // `pagoId` no se valida contra Firestore: la evidencia se sube ANTES de
+    // que exista el documento del pago (la consola elige el id y lo declara al
+    // registrar), y una lectura cruzada por subida no compraría nada. La
+    // forma del id (22 caracteres de base64url) sí se exige.
+    // =========================================================================
+    match /tenants/{tenantId}/pagos/{pagoId}/{archivo} {
+
+      function idDePagoValido() {
+        return pagoId.matches('^[A-Za-z0-9_-]{22}$');
+      }
+
+      function esEvidencia() {
+        return archivo in ['evidencia.jpg', 'evidencia.png', 'evidencia.pdf'];
+      }
+
+      function nombreValidoDePago() {
+        return archivo == 'qr.png' || esEvidencia();
+      }
+
+      function evidenciaValida() {
+        let r = request.resource;
+        return r.size > 0
+          && ((archivo == 'evidencia.pdf'
+                && r.contentType == 'application/pdf'
+                && r.size <= 10 * 1024 * 1024)
+              || (archivo == 'evidencia.jpg'
+                && r.contentType == 'image/jpeg'
+                && r.size <= 5 * 1024 * 1024)
+              || (archivo == 'evidencia.png'
+                && r.contentType == 'image/png'
+                && r.size <= 5 * 1024 * 1024));
+      }
+
+      // Misma lógica que `tenantLegible` en firestore.rules: activo o suspendido.
+      function legibleEn(ficha) {
+        return ficha != null && ficha.data.get('estado', '') in ['activo', 'suspendido'];
+      }
+
+      // La identidad va PRIMERO para no gastar la lectura cruzada en quien no
+      // tiene rol; el propietario no la necesita.
+      allow get: if idDePagoValido()
+                 && nombreValidoDePago()
+                 && (esPropietario()
+                     || (esAdmin(tenantId) && legibleEn(fichaTenant(tenantId))));
+
+      allow list: if false;
+
+      // Solo la evidencia, solo el propietario. `qr.png` no tiene camino de
+      // escritura por reglas: es del SDK Admin.
+      allow create, update: if idDePagoValido()
+                            && esEvidencia()
+                            && evidenciaValida()
+                            && esPropietario();
+
+      allow delete: if false;
+    }
+
+    // =========================================================================
     // NEGACIÓN FINAL. Todo lo que no coincidió arriba queda prohibido: otros
     // caminos, otros nombres, carpetas ajenas del mismo comercio, rutas con
     // `..`. Es la red de seguridad del archivo. No borrarla.
