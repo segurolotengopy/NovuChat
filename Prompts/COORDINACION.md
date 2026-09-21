@@ -39,8 +39,8 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 |---|---|---|---|---|---|
 | **Coordinación** | `claude/prepago-modularizacion-paralelo-e0d10c` (worktree `novuchat-modularization-0fc59d`) | tablero, integración | en curso | `Prompts/COORDINACION.md`, `ESTADO.md`, `admin/DISENO.md` (solo agrega) | integrar Diseño A y Diagnóstico B |
 | **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño | **cerrado (20/09)**: `admin/DISENO.md` §4undecies en la rama de coordinación (`bb07890`), con la §4undecies.5 reescrita contra el contrato real | `admin/DISENO.md` | — |
-| **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro reaplicado sobre la ingesta de hoy, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación, `cobranza.ts` | **en curso (20/09, noche)** | `admin/functions/src/prepago.ts`, `cobranza.ts` (nuevos), `ingesta.ts`, `index.ts`, `firestore.rules` (tipos de bitácora), `web/src/lib/`, `admin/pruebas/` | PR con las pruebas negativas |
-| **A-1 · pagos** | `prepago/pagos-y-carga-manual` | colección `pagos` con TCO, `registrarPagoManual`, auditoría, fase 0 de `Analisis/29` | encolado detrás de A-0 | `index.ts`, `firestore.rules`, `admin/pruebas/` | — |
+| **A-0 · servidor** | `prepago/modulo-y-cortes` (`eb10d7e`…`32ca227`, worktree `agent-a2ab73163a086db6a`) | módulo puro reaplicado, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas` por teléfono, modo observación (`fijarCortePrepago`), `cobranza.ts`, `migrar-prepago.mjs` | **construido (21/09, madrugada)**: suite 2316 en verde (+111), build/lint 0, saneo 0, todas las negativas pasan; **en revisión de `seguridad`** | `prepago.ts`, `cobranza.ts`, `web/src/lib/prepago.ts`, `admin/scripts/migrar-prepago.mjs`, `ingesta.ts`, `index.ts`, `firestore.rules` (tipos de bitácora), `bitacora.ts`, 4 suites nuevas, `estado-cuenta.test.ts`, `CLAUDE.md` §7, `ESTADO.md` | tras seguridad, pedir OK para subir y abrir PR. **Entra en observación**: `plataforma/prepago.corteActivo` no existe hasta que Andres lo encienda |
+| **A-1 · pagos** | `prepago/pagos-y-carga-manual` (sobre la rama de A-0) | `pagos.ts` (`aplicarPagoEnTransaccion` con la firma que A-2 espera), `registrarPagoManual`, `anularPagoPendiente`, `fijarTelefonosPago`, `tipoCambio.ts`, derivados rechazados en `actualizarEstadoCuenta`, reglas de Storage para evidencia y `qr.png` | **en curso (21/09, madrugada)** | `pagos.ts`, `tipoCambio.ts` (nuevos), `index.ts`, `firestore.rules`, `storage.rules`, `admin/pruebas/` | PR sobre A-0; al fusionar, A-2 reemplaza `pagos-stub.ts` |
 | **A-2 · cobrador** | `prepago/cliente-cobrador` (`7320532`, `7e3f1f7`; worktree `agent-a8de99da38fd4652b`) | cliente del contrato real + `crearCobroPrepago`, `avisoCobrador`, `barridoCobros`, `imagenDePago`, doble, reglas de `pagos`/`cobrosPendientes`/`cobrosResueltos` | **construido (21/09, madrugada)**: suite 2268 en verde (+58), build/lint 0, saneo 0; **seguridad: apto con 7 cambios menores** (2 MEDIUM sobre dinero: `CONFIRMADO` con importe menor acreditaba meses completos; un pendiente sin `cobroId` no se consultaba y se anulaba localmente a los 4 días; 5 LOW), **en corrección** | `cobrador.ts`, `cobroPrepago.ts`, `pagos-stub.ts` (provisorio), `firma.ts` (dos exports), `ingesta.ts`/`firestore.rules`/`bitacora.ts` (tipo `pago_registrado`), `admin/pruebas/dobles/`, tres suites nuevas, `.github/DESPLIEGUE-FIREBASE.md` | tras seguridad, pedir OK para subir y abrir PR; al fusionar A-0 y A-1, reemplazar `pagos-stub.ts` sin tocar las aserciones de `cobro-prepago.test.ts` |
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **encolado detrás de B-1 fusionado** | `Flujos/src/` (módulo), nunca el JSON a mano | — |
@@ -149,6 +149,15 @@ presentar a Meta, y cuándo encender el corte)
 
 ## Bitácora
 
+- **21/09/2026 (madrugada)** — A-0 construido; en revisión de seguridad. A-1 lanzado sobre
+  la rama de A-0. Puntos que A-0 resolvió distinto del diseño (aceptados): `servicio`
+  viaja en la respuesta de la ingesta solo con modalidad (sin modalidad, byte a byte la
+  de hoy); `camposDerivados(estado, cuenta)` (necesita `pagoPendienteId`); un corte que
+  pasa de observado a aplicado empieza de cero; `recordatoriosPrepago` recorre `tenants`
+  con `getAll` (sin índice de grupo); `migrar-prepago.mjs` importa el módulo compilado.
+  **Conflictos de fusión esperados entre A-0 y A-2:** `ingesta.ts` (`TipoEvento`),
+  `firestore.rules` y `bitacora.ts` (listas de tipos: A-0 agrega tres, A-2 uno de los
+  tres), `index.ts` (exports), y la firma de `camposDerivados` (A-1 la adapta).
 - **21/09/2026 (madrugada)** — A-2 construido. Firma que A-1 debe respetar:
   `aplicarPagoEnTransaccion(tx, refs, pago, confirmacion)` síncrona, una escritura por
   documento, lanza si el pago no está `pendiente`; `camposDerivados(cuenta, corteGuardado,
