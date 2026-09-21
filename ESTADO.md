@@ -4,7 +4,69 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-20 (prepago, bloque A-2: el cliente del cobrador contra el contrato real, sobre `main`; secretos, IAM y Scheduler en espera de la compuerta del demo). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-20 — Prepago, bloque A-2: el cliente del cobrador (rama `prepago/cliente-cobrador`)
+
+**Qué hay.** NovuChat ya sabe pedirle un QR al proyecto de cobros y aplicar lo
+que el cobrador dice, sin tocar ningún banco (DISENO §4undecies.5, el contrato
+real verificado el 20/09):
+
+- `admin/functions/src/cobrador.ts`: cliente HTTP del contrato para
+  consumidores (`/api/v1/…`, montos como texto decimal, `cons-<64 hex>`,
+  201/200 por referencia, códigos de error estables, 404 para lo ajeno),
+  `defineSecret('COBRADOR_TOKEN')` y `defineSecret('COBRADOR_AVISO_SECRETO')`,
+  y `verificarAviso` con el esquema HMAC de `firma.ts` (que ahora exporta
+  `firmaValida` y `VENTANA_MS`).
+- `admin/functions/src/cobroPrepago.ts`: `crearCobroPrepago` (callable; admin
+  del comercio con contraseña verificada, o propietario con Google; TCO del
+  día de `plataforma/tipoCambio`, con tolerancia de 4 días; un solo pendiente
+  por cuenta, y la reserva se retoma con la misma referencia si el banco
+  falló; `concepto` «NovuChat · <plan> · N meses» sin datos del comercio; el
+  PNG en Storage `tenants/{t}/pagos/{pagoId}/qr.png`; índice
+  `/cobrosPendientes`), `avisoCobrador` (verifica la firma y **después
+  consulta `estadoCobro`**: solo `CONFIRMADO` suma meses; idempotente),
+  `barridoCobros` (`onSchedule` cada hora sobre `barrerCobrosPendientes`,
+  que anula en el cobrador lo que venció hace más de un día) e
+  `imagenDePago` (pública por ficha de 128 bits; 404 si no está pendiente).
+  Más `anularCobroVivo` y `consultarYAplicar`, las dos inyecciones que A-1
+  enchufa en `registrarPagoManual` y `consultarPagoPendiente`.
+- `admin/functions/src/pagos-stub.ts`: **provisorio, marcado para borrar**
+  cuando A-1 (`pagos.ts`) y A-0 (`prepago.ts`) estén en `main`. Fija la firma
+  que A-1 tiene que respetar: `aplicarPagoEnTransaccion(tx, refs, pago,
+  confirmacion): ResultadoDeAplicacion`, síncrona, una escritura por
+  documento, sin lecturas; y `camposDerivados(cuenta, corteGuardado, ahoraMs)`.
+- Reglas: `/tenants/{t}/pagos` (lee el admin legible y el propietario; nadie
+  escribe), `/cobrosPendientes` y `/cobrosResueltos` negados enteros.
+  Bitácora: tipo `pago_registrado` en las tres listas.
+- Pruebas: `cobrador-doble.test.ts` (el doble `pruebas/dobles/cobrador.ts`
+  cumple el contrato y el cliente HTTP lo habla bien), `cobro-prepago.test.ts`
+  (28 casos de punta a punta contra el emulador y el doble, incluidos los que
+  niegan: el admin de B no crea cobro en A; aviso bien firmado con el doble en
+  `QR_ACTIVO` o `PAGO_DETECTADO` no aplica; firma inválida o marca fuera de
+  ventana → 401 y nada cambia; aviso repetido no duplica meses),
+  `prepago-separacion.test.ts` (ningún archivo del prepago importa la seña) y
+  la sección «Pagos del prepago» de `reglas.test.ts`. Suite completa: 48
+  archivos, 2.268 pruebas en verde; build y lint en verde; saneo en 0.
+
+**Lo que agrega el diseño que no estaba escrito:** `/cobrosResueltos/{pagoId}`
+(`{ tenantId, pagoId, cobroId, estado, cerradoEn }`), para que un aviso
+repetido después de cerrar el pago responda su estado real en vez de
+«desconocido», como pide §4undecies.5, sin una consulta de grupo entre tenants.
+
+**Costo en mensajes: 0.** La confirmación por WhatsApp se encola en
+`cuenta.confirmacionesPendientes[pagoId]`; la manda A-4.
+
+**En espera de la compuerta del demo** (nada de esto se ejecutó): crear los
+dos secretos, ampliar la condición de IAM con `COBRADOR_`, `secretAccessor`
+para `sa-functions`, habilitar Cloud Scheduler, escribir
+`plataforma/prepago.cobrador.baseUrl` y registrar la URL de `avisoCobrador` en
+el cobrador (`.github/DESPLIEGUE-FIREBASE.md`). **Depende de C:** sin su
+bloque 2 no hay aviso (se confirma por barrido y por la consulta al abrir la
+pantalla: funciona igual, más lento); sin su bloque 4 no hay URL pública, y el
+ensayo de punta a punta queda listo sin ejecutar.
 
 ---
 
