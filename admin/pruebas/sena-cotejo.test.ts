@@ -157,7 +157,7 @@ describe('senaParaElFlujo: lo que recibe el flujo de reservas', () => {
     expect(senaParaElFlujo(cfg(), true, 'BOB', url, undefined)).toEqual({
       activa: true, importe: 50, moneda: 'BOB', minutosRetencion: 45,
       qr: { url: `https://panel/imagenDeCobro?f=${'f'.repeat(32)}`, nombreCuenta: 'Clínica Platinum SRL', banco: 'BNB' },
-      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null,
+      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null, aFavor: null,
     });
   });
 
@@ -241,6 +241,21 @@ describe('senaParaElFlujo: lo que recibe el flujo de reservas', () => {
     expect(senaParaElFlujo(cfg({ senaMinutosRetencion: 15 }), true, 'BOB', url, enRevision).pendiente).toBe(true);
     const hace3h = { ...enRevision, qrEnviadoEn: solicitudTras(undefined, 'qr_enviado', Date.now() - 3 * 3600 * 1000, { referencia: 'e' }).qrEnviadoEn };
     expect(senaParaElFlujo(cfg({ senaMinutosRetencion: 15 }), true, 'BOB', url, hace3h).pendiente).toBe(false);
+  });
+});
+
+describe('senaParaElFlujo: el adelanto a favor (Andres, 21/09/2026)', () => {
+  const url = (f: string) => `https://panel/imagenDeCobro?f=${f}`;
+  const cfg = { senaImporte: 50, senaMinutosRetencion: 15, cobroReal: COBRO };
+  const conHasta = (msDesdeAhora: number) => ({ etapa: 'a_favor', aFavorHasta: { toMillis: () => Date.now() + msDesdeAhora } });
+  it('vigente: el flujo recibe hasta cuándo vale', () => {
+    const s = senaParaElFlujo(cfg, true, 'BOB', url, conHasta(3 * 24 * 3600 * 1000));
+    expect(s.aFavor).not.toBeNull();
+    expect(s.pendiente).toBe(false);
+  });
+  it('vencido, o en otra etapa: nada', () => {
+    expect(senaParaElFlujo(cfg, true, 'BOB', url, conHasta(-1000)).aFavor).toBeNull();
+    expect(senaParaElFlujo(cfg, true, 'BOB', url, { etapa: 'agendada' }).aFavor).toBeNull();
   });
 });
 

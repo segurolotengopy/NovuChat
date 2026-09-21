@@ -35,7 +35,7 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { seguimientosPendientes, seguimientoEnviado, esPendienteDeSeguimiento, VENTANAS } =
   await import('../functions/src/seguimientos.ts');
-const { solicitudTras, reactivaTras } = await import('../functions/src/ingesta.ts');
+const { solicitudTras, reactivaTras, DIAS_ADELANTO_A_FAVOR } = await import('../functions/src/ingesta.ts');
 
 const T = 'seg-clinica';
 const NUMERO = '1000000098';
@@ -173,6 +173,7 @@ describe('2. solicitudTras con las etapas del seguimiento', () => {
     expect(s).toEqual({
       etapa: 'horarios', desde: Timestamp.fromMillis(AHORA), qrEnviadoEn: null,
       evento: null, cotejos: 0, seguimientos: 0, seguimientoEn: null, reactivadaEn: null,
+      aFavorHasta: null, aFavorDe: null,
     });
   });
 
@@ -441,5 +442,68 @@ describe('4. seguimientoEnviado marca una sola vez', () => {
     // Y nada de eso movió la solicitud de FUERA.
     const s = (await conversacion(FUERA))['solicitud'] as Record<string, unknown>;
     expect(s['seguimientos']).toBe(0);
+  });
+});
+
+/**
+ * EL ADELANTO A FAVOR (Andres, 21/09/2026): el adelanto de una cita PAGADA que
+ * se cancela con al menos 2 horas de anticipación queda a favor del paciente
+ * por 7 días, y se aplica una vez a la próxima cita. La regla es del servidor.
+ */
+describe('Adelanto a favor: solicitudTras', () => {
+  const H = 3_600_000;
+  const pagada = { etapa: 'agendada', desde: Timestamp.fromMillis(AHORA - H), qrEnviadoEn: Timestamp.fromMillis(AHORA - 2 * H),
+    evento: { id: 'pagada', calendario: 'cal' }, cotejos: 1, seguimientos: 0, seguimientoEn: null, reactivadaEn: null };
+  const cancelar = (previa: unknown, inicioMs: number, id = 'pagada') =>
+    solicitudTras(previa, 'cita_cancelada', AHORA, { referencia: id, inicio: new Date(inicioMs).toISOString() });
+
+  it('cancelar la cita PAGADA con 2 h o más de anticipación → a favor por 7 días, sin cita', () => {
+    const s = cancelar(pagada, AHORA + 3 * H)!;
+    expect(s.etapa).toBe('a_favor');
+    expect(s.evento).toBeNull();
+    expect(s.aFavorDe).toEqual({ id: 'pagada', calendario: 'cal' });
+    expect(s.aFavorHasta?.toMillis()).toBe(AHORA + DIAS_ADELANTO_A_FAVOR * 24 * H);
+  });
+
+  it('con MENOS de 2 h de anticipación no hay crédito automático: no se toca (lo decide recepción)', () => {
+    expect(cancelar(pagada, AHORA + 1 * H)).toBeNull();
+  });
+
+  it('sin saber cuándo era la cita, tampoco: no se da un crédito a ciegas', () => {
+    expect(solicitudTras(pagada, 'cita_cancelada', AHORA, { referencia: 'pagada' })).toBeNull();
+  });
+
+  it('una cita SIN pagar, o una que no es la de esta solicitud, no deja crédito', () => {
+    expect(cancelar({ ...pagada, etapa: 'qr_enviado', cotejos: 0 }, AHORA + 3 * H)).toBeNull();
+    expect(cancelar({ ...pagada, cotejos: 0 }, AHORA + 3 * H)).toBeNull();      // agendada sin seña
+    expect(cancelar(pagada, AHORA + 3 * H, 'otra')).toBeNull();
+  });
+
+  it('el adelanto se aplica a la cita nueva: vuelve a agendada, con esa cita, y una sola vez', () => {
+    const aFavor = cancelar(pagada, AHORA + 3 * H)!;
+    const s = solicitudTras(aFavor, 'adelanto_aplicado', AHORA + H, { referencia: 'nueva', calendario: 'cal' })!;
+    expect(s.etapa).toBe('agendada');
+    expect(s.evento).toEqual({ id: 'nueva', calendario: 'cal' });
+    expect(s.aFavorHasta).toBeNull();
+    // Se conserva de qué cita venía el adelanto: es lo que permite rastrear el pago.
+    expect(s.aFavorDe).toEqual({ id: 'pagada', calendario: 'cal' });
+    // Y una segunda vez ya no hay nada que aplicar.
+    expect(solicitudTras(s, 'adelanto_aplicado', AHORA + 2 * H, { referencia: 'otra', calendario: 'cal' })).toBeNull();
+  });
+
+  it('pasados los 7 días el adelanto ya no se aplica', () => {
+    const aFavor = cancelar(pagada, AHORA + 3 * H)!;
+    expect(solicitudTras(aFavor, 'adelanto_aplicado', AHORA + 8 * 24 * H, { referencia: 'nueva' })).toBeNull();
+  });
+
+  it('REPROGRAMADA en un solo turno: pasa directo a la cita nueva, con la misma regla', () => {
+    const s = solicitudTras(pagada, 'reprogramada', AHORA,
+      { referencia: 'pagada', inicio: new Date(AHORA + 3 * H).toISOString(), nueva: 'nueva', calendario: 'cal' })!;
+    expect(s.etapa).toBe('agendada');
+    expect(s.evento).toEqual({ id: 'nueva', calendario: 'cal' });
+    expect(s.aFavorDe).toEqual({ id: 'pagada', calendario: 'cal' });
+    // Sin anticipación, o sin cita nueva, no se toca nada.
+    expect(solicitudTras(pagada, 'reprogramada', AHORA, { referencia: 'pagada', inicio: new Date(AHORA + H).toISOString(), nueva: 'n' })).toBeNull();
+    expect(solicitudTras(pagada, 'reprogramada', AHORA, { referencia: 'pagada', inicio: new Date(AHORA + 3 * H).toISOString() })).toBeNull();
   });
 });

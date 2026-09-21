@@ -109,9 +109,19 @@ interface Entrante {
    *    y desde ahí ningún seguimiento automático le llega. Es UN solo hecho
    *    con dos orígenes; la dirección del mensaje que lo trae no importa.
    */
-  evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar';
+  evento?: 'qr_enviado' | 'horarios_ofrecidos' | 'no_contactar' | 'cita_cancelada' | 'adelanto_aplicado' | 'reprogramada';
   referencia?: string;
   calendario?: string;
+  /**
+   * EL ADELANTO A FAVOR (Andres, 21/09/2026). `cita_cancelada` trae en
+   * `referencia` la cita que se canceló y en `inicio` cuándo era (ISO): con eso
+   * el servidor decide si hubo anticipación suficiente. `adelanto_aplicado`
+   * trae en `referencia` la cita nueva a la que se aplicó. `reprogramada` es
+   * las dos cosas en el MISMO turno —«cambiá mi cita al martes»: cancela y
+   * agenda a la vez—: `referencia` e `inicio` de la cancelada, `nueva` la nueva.
+   */
+  inicio?: string;
+  nueva?: string;
 }
 
 const TIPOS = new Set([
@@ -120,7 +130,7 @@ const TIPOS = new Set([
 
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
-const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar']);
+const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada']);
 
 /**
  * Normaliza el mensaje entrante. TODO lo de acá es DATO NO CONFIABLE: lo escribió
@@ -148,12 +158,16 @@ function normalizar(cuerpo: unknown): Entrante | null {
     ? c['referencia'].trim().slice(0, 200) : '';
   const calendario = typeof c['calendario'] === 'string'
     ? c['calendario'].trim().slice(0, 200) : '';
+  const inicio = typeof c['inicio'] === 'string' ? c['inicio'].trim().slice(0, 40) : '';
+  const nueva = typeof c['nueva'] === 'string' ? c['nueva'].trim().slice(0, 200) : '';
 
   return { telefono, direccion, tipo, texto, ...(idMeta ? { idMeta } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
            ...(referencia ? { referencia } : {}),
-           ...(calendario ? { calendario } : {}) };
+           ...(calendario ? { calendario } : {}),
+           ...(inicio ? { inicio } : {}),
+           ...(nueva ? { nueva } : {}) };
 }
 
 /**
@@ -180,7 +194,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
  * recordatorio de solicitud pendiente (`seguimientos.ts`), una sola vez.
  */
 export interface Solicitud {
-  etapa: 'horarios' | 'qr_enviado' | 'agendada' | 'vencida';
+  etapa: 'horarios' | 'qr_enviado' | 'agendada' | 'vencida' | 'a_favor';
   /** Cuándo entró en esta etapa. */
   desde: Timestamp;
   qrEnviadoEn: Timestamp | null;
@@ -198,7 +212,25 @@ export interface Solicitud {
    * vez por solicitud y no una por cada mensaje que siga.
    */
   reactivadaEn: Timestamp | null;
+  /**
+   * ADELANTO A FAVOR (Andres, 21/09/2026): hasta cuándo vale el adelanto de una
+   * cita pagada que se canceló, y de qué cita venía. `null` fuera de `a_favor`.
+   */
+  aFavorHasta?: Timestamp | null;
+  aFavorDe?: { id: string; calendario: string } | null;
 }
+
+/**
+ * LA REGLA DEL ADELANTO A FAVOR (Andres, 21/09/2026). El asistente ya le decía
+ * al paciente «para cancelar o reprogramar, escríbenos con al menos 2 horas de
+ * anticipación y lo resolvemos sin costo», y el sistema le cobraba otra seña
+ * al reagendar. Ahora: el adelanto de una cita PAGADA que se cancela con esa
+ * anticipación queda a favor del paciente por siete días, y se aplica a la
+ * próxima cita que agende en ese plazo. Con menos anticipación no hay crédito
+ * automático: lo decide recepción, que recibe el aviso.
+ */
+export const DIAS_ADELANTO_A_FAVOR = 7;
+export const HORAS_ANTICIPACION_PARA_CANCELAR = 2;
 
 export const ETAPAS_PENDIENTES: ReadonlySet<string> = new Set(['horarios', 'qr_enviado']);
 
@@ -214,7 +246,7 @@ export function milisegundosDe(v: unknown): number | null {
 function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud {
   return {
     etapa, desde: ahora, qrEnviadoEn: null, evento: null, cotejos: 0, seguimientos: 0,
-    seguimientoEn: null, reactivadaEn: null,
+    seguimientoEn: null, reactivadaEn: null, aFavorHasta: null, aFavorDe: null,
   };
 }
 
@@ -252,7 +284,7 @@ export function solicitudTras(
   previa: unknown,
   evento: string | undefined,
   ahoraMs: number,
-  datos: { referencia?: string; calendario?: string },
+  datos: { referencia?: string; calendario?: string; inicio?: string; nueva?: string },
 ): Solicitud | null {
   const ahora = Timestamp.fromMillis(ahoraMs);
   const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
@@ -276,6 +308,50 @@ export function solicitudTras(
     const desdeMs = milisegundosDe(p.desde);
     const cerradaHaceMas24h = desdeMs === null || ahoraMs - desdeMs >= MS_VENTANA_ATENCION;
     return cerradaHaceMas24h ? solicitudNueva('horarios', ahora) : null;
+  }
+
+  // CANCELÓ UNA CITA PAGADA: el adelanto queda a su favor, si hubo anticipación.
+  // Solo la cita de ESTA solicitud, ya pagada (`agendada` con cotejo): una cita
+  // sin seña, o de otra solicitud, no deja ningún crédito. Sin anticipación —o
+  // sin saber cuándo era— no se da: lo resuelve recepción.
+  if (evento === 'cita_cancelada') {
+    const id = (datos.referencia ?? '').trim();
+    const pagada = etapaPrevia === 'agendada' && typeof p?.cotejos === 'number' && p.cotejos > 0
+      && !!p?.evento && p.evento.id === id && id !== '';
+    if (!pagada) return null;
+    const inicioMs = Date.parse(datos.inicio ?? '');
+    const conAnticipacion = Number.isFinite(inicioMs)
+      && inicioMs - ahoraMs >= HORAS_ANTICIPACION_PARA_CANCELAR * 3_600_000;
+    if (!conAnticipacion) return null;
+    return {
+      ...solicitudNueva('a_favor', ahora), ...p, etapa: 'a_favor', desde: ahora, evento: null,
+      aFavorHasta: Timestamp.fromMillis(ahoraMs + DIAS_ADELANTO_A_FAVOR * 24 * 3_600_000),
+      aFavorDe: p!.evento ?? null,
+    };
+  }
+
+  // REPROGRAMADA EN UN SOLO TURNO: la cancelación y la aplicación juntas. Misma
+  // regla que las dos por separado —cita pagada de esta solicitud, con
+  // anticipación—, y el adelanto pasa directo a la cita nueva, sin quedar «a
+  // favor» en el medio. Si la regla no se cumple, no se toca nada.
+  if (evento === 'reprogramada') {
+    const nueva = (datos.nueva ?? '').trim();
+    if (!nueva) return null;
+    const aFavor = solicitudTras(previa, 'cita_cancelada', ahoraMs, datos);
+    if (!aFavor) return null;
+    return solicitudTras(aFavor, 'adelanto_aplicado', ahoraMs, { referencia: nueva, calendario: datos.calendario });
+  }
+
+  // SE APLICÓ EL ADELANTO A UNA CITA NUEVA: vuelve a `agendada`, con la cita
+  // nueva. Una sola vez, y solo dentro del plazo: vencido, no se aplica nada.
+  if (evento === 'adelanto_aplicado') {
+    const id = (datos.referencia ?? '').trim();
+    const hasta = milisegundosDe(p?.aFavorHasta);
+    if (etapaPrevia !== 'a_favor' || !id || hasta === null || ahoraMs >= hasta) return null;
+    return {
+      ...solicitudNueva('agendada', ahora), ...p, etapa: 'agendada', desde: ahora,
+      evento: { id, calendario: (datos.calendario ?? '').trim() }, aFavorHasta: null,
+    };
   }
 
   if (evento === 'cita_agendada') {
@@ -459,6 +535,8 @@ export interface SenaParaElFlujo {
    * una persona. La ventana es de un día: más allá, es otra conversación.
    */
   vencidaHaceMin: number | null;
+  /** El adelanto a favor vigente de este teléfono (Andres, 21/09/2026), o `null`. */
+  aFavor: { hasta: string } | null;
 }
 
 export function senaParaElFlujo(
@@ -516,6 +594,11 @@ export function senaParaElFlujo(
       if (desdeMs === null) return null;
       const min = Math.floor((Date.now() - desdeMs) / 60000);
       return min >= 0 && min <= MINUTOS_DE_UN_DIA ? min : null;
+    })(),
+    aFavor: (() => {
+      if (s['etapa'] !== 'a_favor') return null;
+      const hasta = milisegundosDe(s['aFavorHasta']);
+      return hasta !== null && Date.now() < hasta ? { hasta: new Date(hasta).toISOString() } : null;
     })(),
   };
 }
@@ -1075,7 +1158,7 @@ export const ingesta = onRequest(
       // nadie lee, y una solicitud sin QR contado sería un mensaje regalado.
       const solicitudPrevia = conversacion.get('solicitud');
       const solicitud = solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
-        { referencia: mensaje.referencia, calendario: mensaje.calendario });
+        { referencia: mensaje.referencia, calendario: mensaje.calendario, inicio: mensaje.inicio, nueva: mensaje.nueva });
       // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
       // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
