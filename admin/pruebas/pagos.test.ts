@@ -594,19 +594,47 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
     const r = pagos.aplicarPagoEnTransaccion(t as never, refs(), {
       id: 'x', datos: { tipo: 'mensualidad', plan: 'pro', meses: 2, estado: 'pendiente' },
       cuenta: { plan: 'crecimiento', modalidad: 'prepago', corte: { motivo: 'sin_pago', aplicado: true } }, ficha: {},
-    }, { ...confirmacion(), ademas: { pago: { 'cobro.estado': 'CONFIRMADO' }, cuenta: { extra: 1 } } });
+    }, { ...confirmacion(), ademas: {
+      pago: { cobro: { id: 'cons-1', estado: 'CONFIRMADO' } },
+      cuenta: { confirmacionesPendientes: { x: { plantilla: 'pago_confirmado' } } },
+    } });
     expect(r).toMatchObject({ periodoPagado: sumarMeses(HOY, 1), cubiertoHasta: sumarMeses(HOY, 1), plan: 'pro', modalidad: 'prepago', bolsa: 0, corteEstabaAplicado: true });
     expect(t.update).toHaveBeenCalledTimes(1);
     expect(t.update.mock.calls[0]![1]).toMatchObject({
-      estado: 'confirmado', montoRecibidoBs: 630, cubiertoHasta: sumarMeses(HOY, 1), 'cobro.estado': 'CONFIRMADO',
+      estado: 'confirmado', montoRecibidoBs: 630, cubiertoHasta: sumarMeses(HOY, 1), cobro: { id: 'cons-1', estado: 'CONFIRMADO' },
       confirmadoPor: { origen: 'banco', cobroId: 'cons-1', riel: 'api-baneco', confirmadoPorCobrador: 'automatico' },
     });
     // La cuenta y el espejo de la ficha (cambió el plan): una vez cada uno.
     expect(t.set).toHaveBeenCalledTimes(2);
     const escrituraCuenta = t.set.mock.calls.find((c) => c[0].path.endsWith('cuenta/estado'))![1];
-    expect(escrituraCuenta).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), periodoPagado: sumarMeses(HOY, 1), modalidad: 'prepago', estadoPago: 'al_dia', montoMensual: 90, moneda: 'USD', extra: 1 });
+    expect(escrituraCuenta).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), periodoPagado: sumarMeses(HOY, 1), modalidad: 'prepago', estadoPago: 'al_dia', montoMensual: 90, moneda: 'USD', confirmacionesPendientes: { x: { plantilla: 'pago_confirmado' } } });
     expect(t.set.mock.calls.find((c) => c[0].path === `tenants/${A}`)![1]).toEqual({ plan: 'pro' });
     expect(t.delete).not.toHaveBeenCalled();
+  });
+
+  it('`ademas` es una lista cerrada: cualquier otra clave lanza y no se escribe nada (LOW 3)', () => {
+    const pendiente = { id: 'x', datos: { tipo: 'mensualidad', plan: 'crecimiento', meses: 1, estado: 'pendiente' }, cuenta: {}, ficha: {} };
+    const malos = [
+      { pago: { estado: 'confirmado' } }, { pago: { cubiertoHasta: '2099-12' } }, { pago: { confirmadoPor: { origen: 'banco' } } },
+      { cuenta: { periodoPagado: '2099-12' } }, { cuenta: { bolsa: 9999 } }, { cuenta: { modalidad: 'demostracion' } },
+      { cuenta: { cobro: {} } }, { pago: { confirmacionesPendientes: {} } }, { ficha: { plan: 'pro' } }, { pago: 'x' },
+    ];
+    for (const ademas of malos) {
+      const t = tx();
+      expect(() => pagos.aplicarPagoEnTransaccion(t as never, refs(), pendiente, { ...confirmacion(), ademas } as never)).toThrow(/no se admite|objeto/);
+      expect(t.update).not.toHaveBeenCalled();
+      expect(t.set).not.toHaveBeenCalled();
+    }
+    expect((pagos as Record<string, unknown>)['aplicacionDe']).toBeUndefined();
+  });
+
+  it('los campos propios ganan sobre `ademas` aunque vinieran con el mismo nombre', () => {
+    // `cobro` es lo único admitido en el pago: no puede pisar el estado.
+    const t = tx();
+    pagos.aplicarPagoEnTransaccion(t as never, refs(), {
+      id: 'x', datos: { tipo: 'mensualidad', plan: 'crecimiento', meses: 1, estado: 'pendiente' }, cuenta: {}, ficha: {},
+    }, { ...confirmacion(), ademas: { pago: { cobro: { estado: 'CONFIRMADO' } } } });
+    expect(t.update.mock.calls[0]![1]).toMatchObject({ estado: 'confirmado', cobro: { estado: 'CONFIRMADO' } });
   });
 
   it('camposDerivadosDeCuenta: los cuatro campos, listos para escribir', () => {

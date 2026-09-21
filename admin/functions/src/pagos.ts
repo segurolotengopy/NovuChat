@@ -226,11 +226,45 @@ export interface Aplicacion {
 }
 
 /**
+ * LO ÚNICO QUE `confirmacion.ademas` PUEDE AGREGAR (revisión de seguridad de
+ * A-1, LOW 3). `ademas` existe para que el cliente del cobrador sume a la
+ * MISMA escritura lo suyo: el estado del cobro en el pago y la confirmación
+ * encolada en la cuenta. Nada más: si pudiera traer `estado`, `periodoPagado`
+ * o `bolsa`, la puerta que suma meses dejaría de ser una sola. Cualquier otra
+ * clave lanza, y lo que sí se admite se esparce ANTES de los campos propios,
+ * que siempre ganan.
+ */
+const ADEMAS_PERMITIDO: Readonly<Record<'pago' | 'cuenta', readonly string[]>> = {
+  pago: ['cobro'],
+  cuenta: ['confirmacionesPendientes'],
+};
+
+function ademasValidado(confirmacion: Confirmacion): { pago: Record<string, unknown>; cuenta: Record<string, unknown> } {
+  const ademas = confirmacion.ademas ?? {};
+  const salida = { pago: {} as Record<string, unknown>, cuenta: {} as Record<string, unknown> };
+  for (const [destino, valor] of Object.entries(ademas)) {
+    if (destino !== 'pago' && destino !== 'cuenta') throw new Error(`confirmacion.ademas.${destino} no se admite`);
+    if (valor === undefined) continue;
+    if (typeof valor !== 'object' || valor === null) throw new Error(`confirmacion.ademas.${destino} tiene que ser un objeto`);
+    for (const clave of Object.keys(valor)) {
+      if (!ADEMAS_PERMITIDO[destino].includes(clave)) {
+        throw new Error(`confirmacion.ademas.${destino}.${clave} no se admite: solo ${ADEMAS_PERMITIDO[destino].join(', ')}`);
+      }
+    }
+    salida[destino] = valor as Record<string, unknown>;
+  }
+  return salida;
+}
+
+/**
  * Calcula, sin escribir, lo que un pago confirmado le hace a la cuenta. PURA
  * salvo por los `FieldValue` que arma. Lanza si el pedido guardado no es un
- * `Pago` válido: eso es un documento corrupto, no un caso de negocio.
+ * `Pago` válido (un documento corrupto, no un caso de negocio) o si
+ * `confirmacion.ademas` trae una clave fuera de la lista. No se exporta: la
+ * puerta es `aplicarPagoEnTransaccion`, y el manual la usa desde acá adentro.
  */
-export function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicacion {
+function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicacion {
+  const ademas = ademasValidado(confirmacion);
   const pedido = pagoDe(pago.datos);
   if (!pedido) throw new Error(`el pago ${ultimos4(pago.id)} no tiene un pedido válido`);
   const cuenta = pago.cuenta as CuentaCruda;
@@ -247,6 +281,7 @@ export function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): 
     : { origen: 'propietario', uid: confirmacion.uid };
 
   const escrituraPago: Record<string, unknown> = {
+    ...ademas.pago,
     estado: 'confirmado',
     confirmadoPor,
     confirmadoEn: confirmacion.confirmadoEn,
@@ -255,7 +290,6 @@ export function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): 
       ? { motivoDiferencia: confirmacion.motivoDiferencia } : {}),
     cubiertoHasta: tras.cubiertoHasta || null,
     actualizadoEn: ahora,
-    ...(confirmacion.ademas?.pago ?? {}),
   };
 
   // La cuenta COMO VA A QUEDAR, para derivar sobre ella: sin pendiente, sin
@@ -268,6 +302,7 @@ export function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): 
   delete cuentaNueva['corte'];
 
   const escrituraCuenta: Record<string, unknown> = {
+    ...ademas.cuenta,
     bolsa: tras.bolsa,
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
     // La modalidad se escribe cuando el pago la fija (una mensualidad o una
@@ -279,7 +314,6 @@ export function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): 
     corte: FieldValue.delete(),
     ...camposDerivadosDeCuenta(cuentaNueva, null, confirmacion.ahoraMs),
     actualizadoEn: ahora,
-    ...(confirmacion.ademas?.cuenta ?? {}),
   };
 
   const cambioDePlan = tras.plan !== 'demostracion' && tras.plan !== planAntes ? tras.plan : null;
@@ -311,7 +345,9 @@ export function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): 
  *     se toca: es del cliente del cobrador.
  *   - LANZA si el pago no está `pendiente`: es un error del llamador, que ya
  *     lo comprobó y respondió `{ aplicado: false, ya: true }`.
- *   - `confirmacion.ademas` agrega campos a LA MISMA escritura.
+ *   - `confirmacion.ademas` agrega campos a LA MISMA escritura, de una lista
+ *     cerrada (`ademas.pago`: solo `cobro`; `ademas.cuenta`: solo
+ *     `confirmacionesPendientes`). Cualquier otra clave lanza antes de escribir.
  */
 export function aplicarPagoEnTransaccion(
   tx: Transaction, refs: RefsDePago, pago: PagoAConfirmar, confirmacion: Confirmacion,
