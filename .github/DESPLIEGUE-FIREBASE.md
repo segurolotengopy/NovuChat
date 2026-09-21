@@ -99,9 +99,15 @@ del proyecto de producción. Lo que hay:
     3. dar `roles/secretmanager.secretAccessor` sobre cada uno a `sa-functions`,
        secreto por secreto (la simulación no lo detecta: solo avisa «will be
        granted»);
-    4. habilitar **Cloud Scheduler** en el proyecto: `barridoCobros` es un
-       `onSchedule` cada 60 minutos y el despliegue lo crea, pero sin la API
-       habilitada falla antes de publicar;
+    4. habilitar **Cloud Scheduler** en el proyecto: `sondeoCobros` (cada 5
+       minutos, solo los QR vivos, a lo sumo 100 consultas por corrida) y
+       `barridoCobros` (cada 60 minutos) son dos `onSchedule`, y el despliegue
+       crea sus dos trabajos, pero sin la API habilitada falla antes de
+       publicar. **Costo:** Cloud Scheduler cobra por trabajo y por mes —los 3
+       primeros de la cuenta de facturación son gratis, cada uno más USD 0,10
+       al mes—, no por ejecución; las 8.640 corridas mensuales del sondeo
+       entran en la franquicia de invocaciones de Functions y una corrida
+       vacía es 1 lectura de Firestore y ninguna llamada al cobrador;
     5. escribir `plataforma/prepago.cobrador.baseUrl` (no es secreto: es la
        URL pública del cobrador, sin barra final) y registrar en el cobrador
        la URL de `avisoCobrador` como destino del aviso del consumidor

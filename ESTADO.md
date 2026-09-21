@@ -59,6 +59,19 @@ repetido después de cerrar el pago responda su estado real en vez de
 **Costo en mensajes: 0.** La confirmación por WhatsApp se encola en
 `cuenta.confirmacionesPendientes[pagoId]`; la manda A-4.
 
+**Sondeo cada 5 minutos (21/09, por el #134).** Mientras C no mande aviso,
+`sondeoCobros` (`onSchedule('every 5 minutes')` sobre
+`sondearCobrosPendientes`) consulta `estadoPorReferencia` solo de los
+pendientes con `QR_ACTIVO` o `PAGO_DETECTADO` y sin vencer —el índice
+`/cobrosPendientes` guarda ahora `estado`, el último visto—, hasta 100 por
+corrida, y aplica la misma tabla que el aviso y el barrido: solo `CONFIRMADO`
+acredita. Sin pendientes vivos no llama al cobrador. El barrido horario sigue
+con lo demás (vencidos, sin emitir, `EN_REVISION`, `BORRADOR`). Costo: un
+trabajo más de Cloud Scheduler (USD 0,10 al mes pasados los 3 gratis),
+ningún mensaje. **La referencia externa sigue siendo `pagoId` solo**, aunque
+el #134 diga `tenant/periodo/pagoId`: el contrato real no admite `/` y la
+decisión 3 la exige opaca.
+
 **Revisión de seguridad (20/09): apta con cambios menores, aplicados.** Un
 `CONFIRMADO` con menos plata que el QR no acredita nada solo (queda pendiente
 con `montoRecibidoBs` y auditoría `pago_importe_menor`, para el camino manual

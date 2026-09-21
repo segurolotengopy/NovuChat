@@ -78,7 +78,8 @@ export { verificarComportamiento } from './verificarComportamiento.js';
 // solo dispara la consulta autenticada, que es la única que confirma. Dos
 // secretos nuevos (`COBRADOR_TOKEN`, `COBRADOR_AVISO_SECRETO`) y el Scheduler
 // del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
-export { crearCobroPrepago, avisoCobrador, barridoCobros, imagenDePago } from './cobroPrepago.js';
+// El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
+export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
 
 const db = () => getFirestore();
 

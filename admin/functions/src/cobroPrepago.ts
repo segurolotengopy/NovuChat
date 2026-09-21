@@ -28,6 +28,11 @@
  *     referencia externa, QR como PNG en Storage, índice `/cobrosPendientes`.
  *   - `avisoCobrador` (HTTP, sin CORS): firma → consulta autenticada → aplica.
  *     Idempotente: un aviso repetido no suma nada.
+ *   - `sondeoCobros` (cada 5 minutos): mientras el cobrador no mande aviso
+ *     (bloque 2 de C), es lo que acredita rápido. Consulta solo los
+ *     pendientes con el QR vivo (`QR_ACTIVO`, `PAGO_DETECTADO`, sin vencer);
+ *     si no hay ninguno, no llama al cobrador (`Prompts/prepago-estricto.md`,
+ *     bloque 2, según el #134).
  *   - `barridoCobros` (cada hora): recorre `/cobrosPendientes`, consulta y
  *     aplica la tabla de estados. Anula lo que venció hace más de un día:
  *     el banco vence los QR por día, y uno «olvidado» sigue pagable.
@@ -79,6 +84,17 @@ const DIA = 24 * HORA;
 const RESERVA_SIN_EMITIR_MS = 4 * DIA;
 /** Cuántos pendientes revisa el barrido por corrida. */
 export const TOPE_BARRIDO = 500;
+/**
+ * Cuántas consultas hace el sondeo por corrida. `estadoCobro` no toca el banco
+ * (lee el estado que mantiene el satélite del cobrador), pero cada consulta es
+ * una petición autenticada más: con 100 por corrida y una corrida cada 5
+ * minutos, el techo es 1.200 por hora, y en la práctica son tantas como QR
+ * vivos haya. Lo que no entra en una corrida entra en la siguiente, o en el
+ * barrido horario.
+ */
+export const TOPE_SONDEO = 100;
+/** Los estados del cobrador que el sondeo vigila: el QR está vivo y puede pagarse. */
+export const ESTADOS_SONDEABLES = ['QR_ACTIVO', 'PAGO_DETECTADO'] as const;
 const PNG_FIRMA = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const PNG_MAXIMO = 512 * 1024;
 
@@ -330,8 +346,10 @@ export async function crearCobroInterno(
       creadoEn: ahora, creadoPor: quien.creadoPor, actualizadoEn: ahora,
     });
     tx.set(refCuenta, { pagoPendienteId: pagoId, actualizadoEn: ahora }, { merge: true });
+    // `estado` es el último estado del cobrador visto: lo que el sondeo filtra
+    // sin tener que preguntarle nada a nadie.
     tx.create(db().doc(`cobrosPendientes/${pagoId}`), {
-      tenantId, pagoId, cobroId: null, fichaQr, venceEn: null, creadoEn: ahora,
+      tenantId, pagoId, cobroId: null, estado: 'SIN_EMITIR', fichaQr, venceEn: null, creadoEn: ahora,
     });
     return { pagoId, fichaQr, reutilizado: false, cobroId: null as string | null };
   });
@@ -373,7 +391,7 @@ export async function crearCobroInterno(
   const cobro = respuesta.cobro;
   if (cobro.estado === 'BORRADOR') {
     await r.pago.set({ cobro: { id: cobro.id, estado: 'BORRADOR' }, actualizadoEn: Timestamp.now() }, { merge: true });
-    await r.cobroPendiente.set({ cobroId: cobro.id }, { merge: true });
+    await r.cobroPendiente.set({ cobroId: cobro.id, estado: 'BORRADOR' }, { merge: true });
     throw new HttpsError('unavailable', 'El banco no emitió el QR. Vuelva a intentar en unos minutos: se retoma el mismo cobro.');
   }
   if (cobro.estado !== 'QR_ACTIVO' && cobro.estado !== 'PAGO_DETECTADO' && cobro.estado !== 'EN_REVISION') {
@@ -401,7 +419,7 @@ export async function crearCobroInterno(
       cobro: { id: cobro.id, estado: cobro.estado, venceEn, creadoEn: creadoEnCobrador, fichaQr, qrRuta },
       venceEn, actualizadoEn: Timestamp.now(),
     });
-    tx.set(r.cobroPendiente, { cobroId: cobro.id, venceEn }, { merge: true });
+    tx.set(r.cobroPendiente, { cobroId: cobro.id, estado: cobro.estado, venceEn }, { merge: true });
   });
   await auditar(tenantId, 'cobro_emitido', quien.uid, {
     pagoId, cobroId: cobro.id, monto, montoUsd, tcoAplicado: tc.tco, tcoFecha: tc.fecha, descripcion,
@@ -453,7 +471,7 @@ export interface ResultadoAplicacion {
   ya?: boolean;
 }
 
-type Origen = { via: 'aviso' | 'barrido' | 'consulta' | 'creacion' | 'anulacion'; avisoId?: string };
+type Origen = { via: 'aviso' | 'sondeo' | 'barrido' | 'consulta' | 'creacion' | 'anulacion'; avisoId?: string };
 
 /**
  * Aplica al pago de NovuChat el estado que el cobrador informó por la
@@ -472,9 +490,17 @@ export async function aplicarEstadoDelCobrador(
     bitacora?: { descripcion: string; corteEstabaAplicado: boolean; cubiertoHasta: string };
     auditoria?: { accion: string; detalle: object };
   }> => {
-    const [pDoc, cuentaDoc, fichaDoc] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta), tx.get(r.ficha)]);
+    const [pDoc, cuentaDoc, fichaDoc, indiceDoc] = await Promise.all([
+      tx.get(r.pago), tx.get(r.cuenta), tx.get(r.ficha), tx.get(r.cobroPendiente),
+    ]);
     const p = pDoc.data();
     if (!p) return { aplicado: false, estado: 'desconocido' };
+    /** Anota en el índice el último estado visto (solo si el índice existe: nunca uno a medias). */
+    const anotarIndice = (estado: string) => {
+      if (indiceDoc.exists && (indiceDoc.get('estado') !== estado || indiceDoc.get('cobroId') !== cobro.id)) {
+        tx.update(r.cobroPendiente, { estado, cobroId: cobro.id });
+      }
+    };
     const estadoActual = String(p['estado'] ?? '');
     if (estadoActual !== 'pendiente') {
       return { aplicado: false, estado: estadoActual as EstadoPago, ya: true };
@@ -506,6 +532,8 @@ export async function aplicarEstadoDelCobrador(
           // un descuento tiene nombre y firma. La auditoría sale una vez.
           const yaVisto = guardado?.estado === 'CONFIRMADO';
           tx.update(r.pago, { 'cobro.estado': 'CONFIRMADO', 'cobro.id': cobro.id, montoRecibidoBs, actualizadoEn: ahora });
+          // Fuera del sondeo: ya no hay nada que esperar del cobrador, espera al propietario.
+          anotarIndice('CONFIRMADO');
           return {
             aplicado: false, estado: 'pendiente',
             ...(yaVisto ? {} : { auditoria: { accion: 'pago_importe_menor', detalle: { pagoId, cobroId: cobro.id, via: origen.via, esperado, recibido: montoRecibidoBs } } }),
@@ -568,6 +596,7 @@ export async function aplicarEstadoDelCobrador(
         if (guardado?.estado !== cobro.estado || guardado?.id !== cobro.id) {
           tx.update(r.pago, { 'cobro.estado': cobro.estado, 'cobro.id': cobro.id, actualizadoEn: ahora });
         }
+        anotarIndice(cobro.estado);
         const revisionNueva = cobro.estado === 'EN_REVISION' && guardado?.estado !== 'EN_REVISION';
         return {
           aplicado: false, estado: 'pendiente',
@@ -787,7 +816,7 @@ export async function barrerCobrosPendientes(ahoraMs: number = Date.now(), deps:
         continue;
       }
       if (doc.get('cobroId') !== cobro.id) {
-        await doc.ref.set({ cobroId: cobro.id, ...(cobro.qr ? { venceEn: fechaIso(cobro.qr.venceEn) } : {}) }, { merge: true });
+        await doc.ref.set({ cobroId: cobro.id, estado: cobro.estado, ...(cobro.qr ? { venceEn: fechaIso(cobro.qr.venceEn) } : {}) }, { merge: true });
       }
       if (cobro.estado === 'QR_ACTIVO' || cobro.estado === 'BORRADOR') {
         const venceEn = cobro.qr ? Date.parse(cobro.qr.venceEn) : (milis(doc.get('venceEn')) ?? Number.NaN);
@@ -818,6 +847,76 @@ export async function barrerCobrosPendientes(ahoraMs: number = Date.now(), deps:
   }
   return resumen;
 }
+
+// ---------------------------------------------------------------------------
+// EL SONDEO — cada 5 minutos, solo lo que puede pagarse ahora
+// ---------------------------------------------------------------------------
+
+export interface ResumenSondeo { consultados: number; confirmados: number; cerrados: number; sinCambio: number; errores: number }
+
+/**
+ * Mientras el cobrador no mande aviso, esto es lo que hace que un pago se
+ * vea en minutos y no en una hora. NO es otra tabla: consulta
+ * `estadoPorReferencia` y llama a `aplicarEstadoDelCobrador`, la misma que
+ * usan el aviso y el barrido; solo `CONFIRMADO` acredita.
+ *
+ * Qué recorre: los pendientes cuyo último estado visto es `QR_ACTIVO` o
+ * `PAGO_DETECTADO` y cuyo `venceEn` no pasó, hasta `TOPE_SONDEO`, los que
+ * vencen antes primero. Lo demás —anular lo vencido, cerrar reservas sin
+ * emitir, reintentar `EN_REVISION` y `BORRADOR`, completar índices— es del
+ * barrido horario. Sin pendientes vivos, **no resuelve el cliente ni llama al
+ * cobrador**: una corrida vacía cuesta una consulta a Firestore.
+ */
+export async function sondearCobrosPendientes(ahoraMs: number = Date.now(), deps: Deps = {}): Promise<ResumenSondeo> {
+  const resumen: ResumenSondeo = { consultados: 0, confirmados: 0, cerrados: 0, sinCambio: 0, errores: 0 };
+  // Un solo filtro de igualdad múltiple (`in`), sin orden: no exige índice
+  // compuesto. El vencimiento se filtra y se ordena en memoria, y la lista
+  // es la de los QR vivos de NovuChat: decenas, no miles.
+  const lista = await db().collection('cobrosPendientes')
+    .where('estado', 'in', [...ESTADOS_SONDEABLES]).limit(TOPE_BARRIDO).get();
+  const vivos = lista.docs
+    .filter((d) => { const v = milis(d.get('venceEn')); return v !== null && v > ahoraMs; })
+    .sort((a, b) => (milis(a.get('venceEn')) ?? 0) - (milis(b.get('venceEn')) ?? 0))
+    .slice(0, TOPE_SONDEO);
+  if (vivos.length === 0) return resumen;
+
+  const cobrador = await resolverCobrador(deps.cobrador);
+  const depsConCobrador: Deps = { ...deps, cobrador, ahoraMs };
+  for (const doc of vivos) {
+    const tenantId = String(doc.get('tenantId') ?? ''); const pagoId = doc.id;
+    if (!ID_TENANT.test(tenantId) || !ID_PAGO.test(pagoId)) { resumen.errores += 1; continue; }
+    resumen.consultados += 1;
+    try {
+      const cobro = await cobrador.estadoPorReferencia(pagoId);
+      const resultado = await aplicarEstadoDelCobrador(tenantId, pagoId, cobro, { via: 'sondeo' }, depsConCobrador);
+      if (resultado.aplicado && resultado.estado === 'confirmado') resumen.confirmados += 1;
+      else if (resultado.aplicado) resumen.cerrados += 1;
+      else resumen.sinCambio += 1;
+    } catch (e) {
+      // Un 404 o un cobrador caído no frenan a los demás; el barrido lo revisa.
+      resumen.errores += 1;
+      console.error(`sondeo: pago …${ultimos4(pagoId)} de …${ultimos4(tenantId)}: ${e instanceof Error ? e.message : 'error'}`);
+    }
+  }
+  return resumen;
+}
+
+/**
+ * Cada 5 minutos. Exige Cloud Scheduler habilitado (paso de nube tras la
+ * compuerta del demo). COSTO: Cloud Scheduler cobra por trabajo y por mes
+ * —los 3 primeros de la cuenta de facturación son gratis y cada uno más
+ * cuesta USD 0,10 al mes—, no por ejecución: este y el barrido son 2
+ * trabajos. Las 8.640 ejecuciones al mes entran holgadas en la franquicia de
+ * invocaciones de Cloud Functions, y cada corrida vacía es 1 lectura de
+ * Firestore. `maxInstances: 1` evita dos corridas superpuestas.
+ */
+export const sondeoCobros = onSchedule(
+  { schedule: 'every 5 minutes', region: REGION, secrets: [COBRADOR_TOKEN], timeoutSeconds: 240, maxInstances: 1 },
+  async () => {
+    const r = await sondearCobrosPendientes(Date.now());
+    if (r.consultados > 0) console.info(`sondeo de cobros: ${JSON.stringify(r)}`);
+  },
+);
 
 /** Exige Cloud Scheduler habilitado: paso de nube tras la compuerta del demo. */
 export const barridoCobros = onSchedule(

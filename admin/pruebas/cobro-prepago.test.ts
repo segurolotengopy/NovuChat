@@ -43,7 +43,7 @@ const db = getFirestore();
 const { crearClienteHttp, registrarCobradorDoble } = await import('../functions/src/cobrador.ts');
 const {
   crearCobroPrepago, crearCobroInterno, avisoCobrador, barrerCobrosPendientes, anularCobroVivo, imagenDePago,
-  fijarAlmacenDePrueba, consultarYAplicar,
+  fijarAlmacenDePrueba, consultarYAplicar, sondearCobrosPendientes, TOPE_SONDEO,
 } = await import('../functions/src/cobroPrepago.ts');
 const { periodoBolivia, sumarMeses } = await import('../functions/src/pagos-stub.ts');
 
@@ -180,7 +180,7 @@ describe('1. Crear el cobro', () => {
     expect(p?.['cobro']).toMatchObject({ id: idDeCobro('novuchat', pagoId), estado: 'QR_ACTIVO', fichaQr: r['fichaQr'], qrRuta: `tenants/${A}/pagos/${pagoId}/qr.png` });
     expect((p?.['venceEn'] as InstanceType<typeof Timestamp>).toMillis()).toBeGreaterThan(Date.now() + 71 * 3_600_000);
     expect((await cuenta())['pagoPendienteId']).toBe(pagoId);
-    expect(await pendiente(pagoId)).toMatchObject({ tenantId: A, pagoId, cobroId: idDeCobro('novuchat', pagoId), fichaQr: r['fichaQr'] });
+    expect(await pendiente(pagoId)).toMatchObject({ tenantId: A, pagoId, cobroId: idDeCobro('novuchat', pagoId), estado: 'QR_ACTIVO', fichaQr: r['fichaQr'] });
     expect(archivos.get(`tenants/${A}/pagos/${pagoId}/qr.png`)?.subarray(0, 8)).toEqual(pngMinimo().subarray(0, 8));
 
     // Lo que viajó al cobrador: referencia = pagoId, monto como texto, concepto sin datos del comercio.
@@ -553,6 +553,78 @@ describe('3. El barrido horario', () => {
     expect(await consultarYAplicar(A, a, { via: 'consulta' })).toEqual({ aplicado: true, estado: 'confirmado' });
     expect(await consultarYAplicar(A, a, { via: 'consulta' })).toEqual({ aplicado: false, estado: 'confirmado', ya: true });
     expect(await consultarYAplicar(A, 'x'.repeat(22), { via: 'consulta' })).toEqual({ aplicado: false, estado: 'desconocido' });
+  });
+});
+
+// ===========================================================================
+describe('3bis. El sondeo de cada 5 minutos', () => {
+  const consultas = () => doble.llamadas.filter((l) => l.metodo === 'GET').length;
+
+  it('sin pendientes, cero llamadas al cobrador', async () => {
+    expect(await sondearCobrosPendientes(Date.now())).toEqual({ consultados: 0, confirmados: 0, cerrados: 0, sinCambio: 0, errores: 0 });
+    expect(doble.llamadas).toHaveLength(0);
+  });
+
+  it('PAGO_DETECTADO nunca acredita; cuando pasa a CONFIRMADO, el sondeo acredita', async () => {
+    const pagoId = (await crear(MENSUALIDAD))['pagoId'] as string;
+    doble.fijarEstado(pagoId, 'PAGO_DETECTADO');
+    for (let i = 0; i < 3; i++) {
+      expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 1, confirmados: 0, sinCambio: 1 });
+    }
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', cobro: { estado: 'PAGO_DETECTADO' } });
+    expect(await pendiente(pagoId)).toMatchObject({ estado: 'PAGO_DETECTADO' });
+    expect((await cuenta())['periodoPagado']).toBeUndefined();
+    expect(await bitacora('pago_registrado')).toHaveLength(0);
+
+    doble.fijarEstado(pagoId, 'CONFIRMADO');
+    expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 1, confirmados: 1 });
+    expect(await pago(pagoId)).toMatchObject({ estado: 'confirmado' });
+    expect((await cuenta())['periodoPagado']).toBe(HOY);
+    expect(await auditoria('pago_aplicado')).toMatchObject([{ via: 'sondeo' }]);
+    expect(await pendiente(pagoId)).toBeUndefined();
+    // Ya no hay nada vivo: la corrida siguiente no llama al cobrador.
+    const antes = consultas();
+    expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 0 });
+    expect(consultas()).toBe(antes);
+  });
+
+  it('no consulta lo que es del barrido: vencido, sin emitir, BORRADOR, EN_REVISION ni importe menor', async () => {
+    // Vencido según el reloj.
+    const a = (await crear(MENSUALIDAD))['pagoId'] as string;
+    // Sin emitir (el cobrador no respondió).
+    doble.noDisponible = true;
+    await rechaza(crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO), 'unavailable');
+    doble.noDisponible = false;
+    const antes = consultas();
+    expect(await sondearCobrosPendientes(Date.now() + 80 * 3_600_000)).toMatchObject({ consultados: 0 });
+    expect(consultas()).toBe(antes);
+    // EN_REVISION: el barrido lo anota en el índice y el sondeo deja de verlo.
+    doble.fijarEstado(a, 'EN_REVISION');
+    await barrerCobrosPendientes(Date.now());
+    expect(await pendiente(a)).toMatchObject({ estado: 'EN_REVISION' });
+    const despues = consultas();
+    expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 0 });
+    expect(consultas()).toBe(despues);
+  });
+
+  it('un CONFIRMADO con importe menor sale del sondeo (espera al propietario) y no vuelve a consultarse', async () => {
+    const pagoId = (await crear(MENSUALIDAD))['pagoId'] as string;
+    doble.fijarEstado(pagoId, 'CONFIRMADO', { montoCentavos: 60000 });
+    expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 1, confirmados: 0 });
+    expect(await pendiente(pagoId)).toMatchObject({ estado: 'CONFIRMADO' });
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', montoRecibidoBs: 600 });
+    expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 0 });
+  });
+
+  it('un error en uno no frena a los demás, y el tope por corrida se respeta', async () => {
+    const a = (await crear(MENSUALIDAD))['pagoId'] as string;
+    const b = (await crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO))['pagoId'] as string;
+    doble.cobros.delete(idDeCobro('novuchat', a));          // 404 para A
+    doble.fijarEstado(b, 'CONFIRMADO');
+    expect(await sondearCobrosPendientes(Date.now())).toMatchObject({ consultados: 2, confirmados: 1, errores: 1 });
+    expect(await pago(b, B)).toMatchObject({ estado: 'confirmado' });
+    expect(await pago(a)).toMatchObject({ estado: 'pendiente' });
+    expect(TOPE_SONDEO).toBe(100);
   });
 });
 
