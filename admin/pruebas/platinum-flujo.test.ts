@@ -3781,3 +3781,83 @@ describe('Pago confirmado: sale el pin de ubicación', () => {
     expect(correr('cuadra', cfg, {})['enviarUbicacion']).toBe(false);
   });
 });
+
+/**
+ * PRUEBA CON TELÉFONO DEL 21/09/2026 (ejecuciones #3834 a #3851).
+ */
+describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada cancelada se avisa', () => {
+  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú' };
+  const procesar = (output: string, pasos: J[], userInput = 'x', c: J = cfg) => ejecutar(
+    String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']), [{ output, intermediateSteps: pasos }],
+    { 'Normalizar entrada': [{ from: '59170000001', userInput }], 'Config del negocio': [c] })[0] ?? {};
+
+  it('EL CASO REAL #3851: «no realizamos estética facial… exclusivamente odontología» NO sale; se deriva', () => {
+    const r = procesar('No realizamos estética facial; nos enfocamos exclusivamente en odontología y estética dental. ¿Te gustaría agendar?', [], 'Hacen estetica facial?');
+    expect(String(r['respuesta'])).not.toMatch(/no realizamos|exclusivamente/i);
+    expect(String(r['respuesta'])).toContain('te asesora una persona del equipo');
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('«Hacen estetica facial?»');
+  });
+
+  it('negar HORARIOS no es negar un servicio: «no atendemos los domingos» pasa tal cual', () => {
+    for (const t of ['Los domingos no atendemos, te ofrezco el lunes.', 'No tenemos horario libre a esa hora.']) {
+      const r = procesar(t, []);
+      expect(r['respuesta']).toBe(t);
+      expect(r['transferir']).toBe(false);
+    }
+  });
+
+  it('usted: la derivación respeta el trato del negocio', () => {
+    const r = procesar('No ofrecemos ese servicio.', [], 'x', { ...cfg, tratamiento: 'Trate al cliente de USTED.' });
+    expect(String(r['respuesta'])).toContain('le asesora una persona');
+  });
+
+  it('EL CASO REAL #3840: cancelar una cita SIN el rótulo de pendiente —ya pagada— avisa a recepción', () => {
+    const cita = { id: 'pagada', summary: 'Cita Andrés — blanqueamiento', start: { dateTime: '2026-09-21T11:00:00-04:00' } };
+    const r = procesar('Listo, la cita quedó cancelada.', [
+      { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
+      { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'pagada' } }, observation: '[{"success":true}]' },
+    ]);
+    expect(String(r['respuesta'])).toContain('Listo, la cita quedó cancelada.');
+    expect(String(r['respuesta'])).toContain('Sobre el adelanto que pagaste, te escribe recepción.');
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('CANCELÓ una cita que ya tenía la seña pagada');
+  });
+
+  it('cancelar una cita que seguía PENDIENTE DE SEÑA no avisa: no había adelanto', () => {
+    const cita = { id: 'pend', summary: 'PENDIENTE DE SEÑA · Cita Andrés — blanqueamiento' };
+    const r = procesar('Listo, la cita quedó cancelada.', [
+      { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
+      { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'pend' } }, observation: '[{"success":true}]' },
+    ]);
+    expect(r['respuesta']).toBe('Listo, la cita quedó cancelada.');
+    expect(r['transferir']).toBe(false);
+  });
+
+  it('sin la seña activa, cancelar no se toma como cita pagada', () => {
+    const cita = { id: 'c', summary: 'Cita Andrés — blanqueamiento' };
+    const r = procesar('Listo, la cita quedó cancelada.', [
+      { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
+      { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'c' } }, observation: '[{"success":true}]' },
+    ], 'x', { ...cfg, senaActiva: '' });
+    expect(r['transferir']).toBe(false);
+  });
+
+  it('el prompt dice que pedir cancelar NO es confirmar', () => {
+    expect(prompt()).toMatch(/PERO pedir cancelar NO es confirmar/);
+  });
+
+  it('EL CASO REAL #3834: el pago que cuadró LEE su cita desde «Confirmar cita retenida» (no desde la salida de error)', () => {
+    const codigoSena = String(nodo(flujo, 'Mensaje de la seña').parameters['jsCode']);
+    expect(codigoSena).toContain("$('Confirmar cita retenida').first().json");
+    expect(codigoSena).toContain("$('Leer cita retenida').first(0).json");
+    const confirmada = { id: 'ev', summary: 'Cita Ana — blanqueamiento', start: { dateTime: '2026-09-21T11:00:00-04:00' }, organizer: { email: 'c' } };
+    const base = { respuesta: 'Recibí tu comprobante y los datos coinciden con tu reserva. Tu cita queda reservada.', resultadoSena: 'cuadra', motivoTransferencia: 'x' };
+    // Solo Confirmar trae datos: así estaba en producción, con Leer vacío desde la salida de error.
+    const r = ejecutar(codigoSena, [{}], { 'Respuesta de la seña': [base], 'Config del negocio': [{ funcionarios: '[]', ubicacionLat: '-17.7', ubicacionLng: '-63.1' }],
+      'Confirmar cita retenida': [confirmada] })[0] ?? {};
+    expect(r['transferir']).toBe(false);
+    expect(r['enviarUbicacion']).toBe(true);
+    expect(String(r['respuesta'])).toMatch(/queda reservada para el lunes, 21 de septiembre a las 11:00/);
+  });
+});
