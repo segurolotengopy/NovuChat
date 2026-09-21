@@ -66,7 +66,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
-import { exigirAdminOPropietario, exigirPropietario } from './autorizacion.js';
+import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { registrar } from './ingesta.js';
 import { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe, type IdPlanVendible } from './planes.js';
 import {
@@ -556,6 +556,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
   return onCall(async (peticion) => {
     const uid = exigirPropietario(peticion);
     const d = con(deps);
+    exigirSesionReciente(peticion, d.ahoraMs());
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
     const tenantId = texto(datos['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -623,11 +624,21 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
     const pagoId = pagoIdPedido;
     const r = refsDe(tenantId, pagoId);
 
+    // EL `pagoId` NO PUEDE SER UNO QUE YA EXISTE, NI EL DEL PENDIENTE, y eso
+    // se mira ANTES de anular nada (revisión de seguridad de A-1, LOW 4): si
+    // no, un reintento o un id repetido anulaba el QR vivo del comercio y
+    // recién después fallaba en el `create`.
+    const [pagoAntes, cuentaAntesDoc] = await Promise.all([r.pago.get(), r.cuenta.get()]);
+    const cuentaAntes = cuentaAntesDoc.data() ?? {};
+    const pendienteId = typeof cuentaAntes['pagoPendienteId'] === 'string' ? cuentaAntes['pagoPendienteId'] : '';
+    if (pendienteId !== '' && pendienteId === pagoId) {
+      throw new HttpsError('invalid-argument', 'El pagoId es el del cobro pendiente: el manual va con un id nuevo.');
+    }
+    if (pagoAntes.exists) throw new HttpsError('already-exists', 'Ese pagoId ya existe.');
+
     // EL PENDIENTE VIVO SE CIERRA ANTES, fuera de la transacción (la anulación
     // en el cobrador es una llamada de red). La transacción vuelve a mirar.
-    const cuentaAntes = (await r.cuenta.get()).data() ?? {};
     let pendienteAnulado: string | null = null;
-    const pendienteId = typeof cuentaAntes['pagoPendienteId'] === 'string' ? cuentaAntes['pagoPendienteId'] : '';
     if (ID_PAGO.test(pendienteId)) {
       const p = (await db().doc(`tenants/${tenantId}/pagos/${pendienteId}`).get()).data();
       if (p && p['estado'] === 'pendiente') {
@@ -841,6 +852,12 @@ export const fijarTelefonosPago = onCall(async (peticion) => {
   await db().runTransaction(async (tx) => {
     const ficha = await tx.get(refFicha);
     if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    // Un comercio dado de baja no fija quién le paga (LOW 7). La verificación
+    // del titular de cada teléfono y la unicidad entre comercios son
+    // precondición del pago por WhatsApp (A-4), no de esta callable.
+    if (ficha.get('estado') === 'dado_de_baja') {
+      throw new HttpsError('failed-precondition', 'El comercio está dado de baja.');
+    }
     tx.set(refCuenta, { telefonosPago: telefonos, actualizadoEn: ahora }, { merge: true });
     tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
       accion: 'telefonos_pago', uid, en: ahora, quien,

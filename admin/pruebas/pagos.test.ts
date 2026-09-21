@@ -39,7 +39,9 @@ const OTRO_ID = 'zYxWvUtSrQpOnMlKjIhGfE';
 
 const google = { sign_in_provider: 'google.com' };
 const password = { sign_in_provider: 'password' };
-const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true }, firebase: google } };
+/** `auth_time` en segundos: la sesión se abrió al cargar esta suite (reciente). */
+const AUTH_TIME = Math.floor(Date.now() / 1000);
+const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true }, firebase: google, auth_time: AUTH_TIME } };
 const PROPIETARIO_CON_CONTRASENA = { uid: 'prop-2', token: { nc: { p: true }, firebase: password, email_verified: true } };
 const ADMIN_A = { uid: 'adm-a', token: { nc: { t: { [A]: 'admin' } }, firebase: password, email_verified: true } };
 const ADMIN_A_CON_GOOGLE = { uid: 'adm-a', token: { nc: { t: { [A]: 'admin' } }, firebase: google, email_verified: true } };
@@ -126,6 +128,17 @@ describe('registrarPagoManual: quién puede', () => {
   it('el claim de propietario con sesión de CONTRASEÑA no alcanza (T-19)', async () => {
     await rechaza(correr(indice.registrarPagoManual, manual(), PROPIETARIO_CON_CONTRASENA), 'permission-denied');
     expect(await pagosDe()).toHaveLength(0);
+  });
+
+  it('con una sesión de hace más de media hora, o sin auth_time, pide volver a iniciar sesión (LOW 6)', async () => {
+    const vieja = { uid: 'prop-1', token: { ...PROPIETARIO.token, auth_time: Math.floor(Date.now() / 1000) - 1801 } };
+    const sinHora = { uid: 'prop-1', token: { nc: { p: true }, firebase: google } };
+    const texto = { uid: 'prop-1', token: { ...PROPIETARIO.token, auth_time: String(AUTH_TIME) } };
+    for (const quien of [vieja, sinHora, texto]) {
+      await rechaza(correr(indice.registrarPagoManual, manual(), quien), 'unauthenticated');
+    }
+    expect(await pagosDe()).toHaveLength(0);
+    expect(await cuenta()).toEqual(CUENTA_BASE);
   });
 
   it('ni el operador, ni el admin de otro comercio, ni sin sesión', async () => {
@@ -365,6 +378,19 @@ describe('registrarPagoManual: un solo pendiente por cuenta', () => {
     expect((await db.doc(`cobrosPendientes/${PAGO_ID}`).get()).exists).toBe(true);
   });
 
+  it('un pagoId igual al del pendiente, o uno que ya existe, se rechaza SIN anular el QR (LOW 4)', async () => {
+    await sembrarPendiente(PAGO_ID, 'cons-' + '9'.repeat(64));
+    const anular = vi.fn(async () => ({ resultado: 'anulado' as const }));
+    const f = pagos.crearRegistrarPagoManual({ anular });
+    await rechaza(correr(f, manual({ pagoId: PAGO_ID })), 'invalid-argument');
+    // Un id de un pago que ya existe (otro, confirmado) tampoco llega a anular.
+    await db.doc(`tenants/${A}/pagos/${OTRO_ID}`).set({ estado: 'confirmado', tipo: 'bolsa', cantidad: 1 });
+    await rechaza(correr(f, manual({ pagoId: OTRO_ID })), 'already-exists');
+    expect(anular).not.toHaveBeenCalled();
+    expect((await pago(PAGO_ID))!['estado']).toBe('pendiente');
+    expect((await cuenta())['pagoPendienteId']).toBe(PAGO_ID);
+  });
+
   it('una reserva SIN QR emitido se anula acá antes de cargar, y queda escrito', async () => {
     await sembrarPendiente(PAGO_ID, null);
     const r = await correr(indice.registrarPagoManual, manual());
@@ -531,8 +557,13 @@ describe('fijarTelefonosPago', () => {
     expect(await cuenta()).toMatchObject({ ...CUENTA_BASE, telefonosPago: [] });
   });
 
-  it('un comercio inexistente → not-found', async () => {
+  it('un comercio inexistente → not-found; uno dado de baja → failed-precondition, sin escribir (LOW 7)', async () => {
     await rechaza(correr(indice.fijarTelefonosPago, { tenantId: 'pagos-no-existe', telefonos: [] }, PROPIETARIO), 'not-found');
+    await db.doc(`tenants/${A}`).update({ estado: 'dado_de_baja' });
+    await rechaza(correr(indice.fijarTelefonosPago, { tenantId: A, telefonos: ['59170000001'] }, PROPIETARIO), 'failed-precondition');
+    await rechaza(correr(indice.fijarTelefonosPago, { tenantId: A, telefonos: ['59170000001'] }, ADMIN_A), 'failed-precondition');
+    expect((await cuenta())['telefonosPago']).toBeUndefined();
+    expect(await auditoria('telefonos_pago')).toHaveLength(0);
   });
 });
 

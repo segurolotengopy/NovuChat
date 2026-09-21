@@ -80,6 +80,23 @@ export const exigirAdminDe = (p: CallableRequest, tenantId: string): string => {
   return uid;
 };
 
+/** Media hora: lo que vale una sesión para las acciones que mueven dinero. */
+export const SESION_RECIENTE_SEG = 1800;
+
+/**
+ * SESIÓN RECIENTE (`Analisis/29` §4.2; revisión de seguridad de A-1, LOW 6).
+ * Registrar un pago a mano pide que el inicio de sesión (`auth_time`, en
+ * segundos) sea de hace no más de media hora. Protege contra un token robado
+ * y usado desde otro lado, no contra alguien sentado en la computadora con
+ * todo abierto; la consola responde pidiendo `reauthenticateWithPopup`.
+ */
+export const exigirSesionReciente = (p: CallableRequest, ahoraMs: number, maxSeg = SESION_RECIENTE_SEG): void => {
+  const authTime = p.auth?.token?.['auth_time'];
+  if (typeof authTime !== 'number' || !Number.isFinite(authTime) || ahoraMs / 1000 - authTime > maxSeg) {
+    throw new HttpsError('unauthenticated', 'Por seguridad, vuelva a iniciar sesión para registrar un pago.');
+  }
+};
+
 /**
  * El administrador del comercio o el propietario. Devuelve quién es, porque
  * la auditoría de un pago tiene que decir de qué lado vino la orden.
