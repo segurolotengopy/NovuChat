@@ -118,6 +118,16 @@ identidad no se rompería.
 derivados (`calendario-demo-relleno.ics`, `qr-demo.png`) que nadie edita a
 mano en otra herramienta, así que ahí el script es la fuente legítima.
 
+Y dos salvaguardas: las rutas del manifiesto tienen que quedar bajo
+`Flujos/src/` o `Flujos/prompts/` (una entrada con `../` se rechaza en las
+tres operaciones, nombrando la ruta), y la carpeta de `extraer --nuevo` es un
+nombre simple (`[a-z0-9-]+`).
+
+**Pendiente para B-2:** hoy `extraer` sobreescribe un módulo compartido con
+un aviso y sale con 0. Cuando el módulo lo referencia otro manifiesto tiene
+que salir con código 3 y no escribir, salvo `--forzar`: si no, un export de
+Platinum puede pisar en silencio el código que también corre en el Demo A.
+
 ### 0.c Lo que sigue en el JSON a propósito (propuesta para B-2)
 
 Entre el Demo A y Platinum difieren, además del prompt de Sofía, la expresión

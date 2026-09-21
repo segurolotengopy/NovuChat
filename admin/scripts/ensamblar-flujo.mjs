@@ -81,7 +81,7 @@
  * apuntar a `comun/` lo que se comparte y se vuelve a correr `extraer`.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -138,6 +138,29 @@ const entrada = (valor) => (typeof valor === 'string'
 /** Lo mismo, en la forma más corta que lo representa. */
 const compactar = ({ archivo, saltoFinal }) => (saltoFinal ? { archivo, saltoFinal: true } : archivo);
 
+/**
+ * La ruta absoluta de un módulo, y SOLO si queda dentro de su carpeta. Un
+ * manifiesto es un archivo del repositorio, pero se lee de disco y se edita a
+ * mano: una entrada como `../../x.js` haría que `extraer` escribiera fuera de
+ * `Flujos/` (CWE-22). Se rechaza con el flujo y la ruta, en las tres
+ * operaciones, porque las tres pasan por acá.
+ */
+function dentroDe(base, rel, flujo) {
+  const abs = resolve(base, String(rel));
+  if (!abs.startsWith(resolve(base) + sep)) {
+    throw new Error(`${flujo}: la ruta «${rel}» del manifiesto sale de ${base}; un módulo vive bajo esa carpeta`);
+  }
+  return abs;
+}
+
+/** La carpeta que `extraer --nuevo` crea bajo `src/` y `prompts/`: un nombre simple, nada más. */
+function carpetaValida(carpeta) {
+  if (!/^[a-z0-9-]+$/.test(String(carpeta))) {
+    throw new Error(`la carpeta «${carpeta}» no es válida: solo minúsculas, dígitos y guiones (p. ej. «reservas»)`);
+  }
+  return carpeta;
+}
+
 /** El contenido que va al JSON, leído del archivo del módulo según la convención del salto final. */
 function contenidoDeModulo(ruta, saltoFinal) {
   if (!existsSync(ruta)) throw new Error(`falta el módulo ${ruta}`);
@@ -179,7 +202,7 @@ function recorrer(j, manifiesto, raiz, visitar) {
     if (n.type !== TIPO_CODE) throw new Error(`${manifiesto.flujo}: «${nombre}» no es un nodo Code (${n.type})`);
     const e = entrada(valor);
     visitar({
-      nodo: n, campo: 'jsCode', clave: `codigo/${nombre}`, ...e, ruta: join(c.src, e.archivo),
+      nodo: n, campo: 'jsCode', clave: `codigo/${nombre}`, ...e, ruta: dentroDe(c.src, e.archivo, manifiesto.flujo),
       leer: () => n.parameters.jsCode,
       escribir: (v) => { n.parameters.jsCode = v; },
       anotar: (nuevaEntrada) => { manifiesto.codigo[nombre] = compactar(nuevaEntrada); },
@@ -196,7 +219,7 @@ function recorrer(j, manifiesto, raiz, visitar) {
         throw new Error(`${manifiesto.flujo}: «${nombre}» no tiene el campo ${campo} en el JSON`);
       }
       visitar({
-        nodo: n, campo, clave: `prompts/${nombre}.${campo}`, ...e, ruta: join(c.prompts, e.archivo),
+        nodo: n, campo, clave: `prompts/${nombre}.${campo}`, ...e, ruta: dentroDe(c.prompts, e.archivo, manifiesto.flujo),
         leer,
         escribir: campo === 'text'
           ? (v) => { n.parameters.text = v; }
@@ -261,6 +284,7 @@ export function ensamblarFlujo(archivoFlujo, raiz = RAIZ_FLUJOS) {
 
 /** El manifiesto inicial de un flujo: un archivo por nodo Code y por campo de agente, bajo `carpeta`. */
 export function manifiestoInicial(archivoFlujo, carpeta, raiz = RAIZ_FLUJOS) {
+  carpetaValida(carpeta);
   const j = JSON.parse(readFileSync(join(carpetas(raiz).flujos, archivoFlujo), 'utf8'));
   const m = { flujo: archivoFlujo, conservanMarcadores: {}, codigo: {}, prompts: {} };
   for (const n of j.nodes) {
@@ -286,7 +310,7 @@ export function manifiestoInicial(archivoFlujo, carpeta, raiz = RAIZ_FLUJOS) {
 export function extraerFlujo(archivoFlujo, { raiz = RAIZ_FLUJOS, nuevo = null } = {}) {
   let manifiesto = leerManifiesto(archivoFlujo, raiz);
   if (!manifiesto) {
-    if (!nuevo) throw new Error(`${archivoFlujo} no tiene manifiesto; use --nuevo <carpeta> para crearlo`);
+    if (nuevo === null || nuevo === undefined) throw new Error(`${archivoFlujo} no tiene manifiesto; use --nuevo <carpeta> para crearlo`);
     manifiesto = manifiestoInicial(archivoFlujo, nuevo, raiz);
   }
   const j = JSON.parse(readFileSync(join(carpetas(raiz).flujos, archivoFlujo), 'utf8'));

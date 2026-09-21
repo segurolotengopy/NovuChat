@@ -38,8 +38,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 import {
-  RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, extraerFlujo, leerManifiesto, listarFlujos,
-  rutaDeManifiesto, slug, verificarFlujo,
+  RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos,
+  manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../scripts/ensamblar-flujo.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -228,6 +228,41 @@ describe('5. Un nodo renombrado hace fallar con un mensaje claro', () => {
   it('un manifiesto que declara otro flujo se rechaza', () => {
     const dir = conManifiestoCambiado((m) => { m.flujo = 'platinum-agendamiento.json'; });
     expect(() => verificarFlujo('demo-a-agendamiento.json', dir)).toThrow(/declara "flujo"/);
+  });
+
+  // Un manifiesto se edita a mano y se lee de disco: una ruta con `../` haría
+  // que `extraer` escribiera fuera de `Flujos/` (CWE-22). Las tres operaciones
+  // la rechazan y nombran la ruta, antes de leer o escribir nada.
+  describe('una ruta del manifiesto que sale de su carpeta se rechaza y se nombra', () => {
+    const FUERA = '../../FUERA/x.js';
+    const casos: [string, (m: Record<string, any>) => void, RegExp][] = [
+      ['código con ../', (m) => { m.codigo['QR no enviado'] = FUERA; }, /«\.\.\/\.\.\/FUERA\/x\.js» del manifiesto sale de .*src/],
+      ['código absoluto', (m) => { m.codigo['QR no enviado'] = '/etc/x.js'; }, /«\/etc\/x\.js» del manifiesto sale de .*src/],
+      ['prompt con ../', (m) => { m.prompts['Reintento tras cruce'].text = '../src/comun/uso-extendido.js'; }, /del manifiesto sale de .*prompts/],
+      ['prompt en la raíz de Flujos', (m) => { m.prompts['Reintento tras cruce'].text = '../demo-a-agendamiento.json'; }, /del manifiesto sale de .*prompts/],
+    ];
+    it.each(casos)('%s: verificar, ensamblar y extraer', (_n, cambio, mensaje) => {
+      const dir = conManifiestoCambiado(cambio);
+      const fueraDeFlujos = join(dir, '..', 'FUERA');
+      expect(() => verificarFlujo('demo-a-agendamiento.json', dir)).toThrow(mensaje);
+      expect(() => ensamblarFlujo('demo-a-agendamiento.json', dir)).toThrow(mensaje);
+      expect(() => extraerFlujo('demo-a-agendamiento.json', { raiz: dir })).toThrow(mensaje);
+      expect(existsSync(fueraDeFlujos)).toBe(false);
+      // Y el JSON de la copia sigue intacto: `ensamblar` no llegó a escribir.
+      expect(bytes(join(dir, 'demo-a-agendamiento.json')).equals(bytes(join(RAIZ_FLUJOS, 'demo-a-agendamiento.json')))).toBe(true);
+    });
+  });
+
+  it('la carpeta de `extraer --nuevo` solo admite un nombre simple', () => {
+    const dir = copiaDeFlujos();
+    for (const mala of ['../fuera', 'a/b', '/tmp', 'Reservas', 'con espacio', '']) {
+      expect(() => manifiestoInicial('demo-b-venta-cobro.json', mala, dir), mala).toThrow(/no es válida: solo minúsculas/);
+      expect(() => extraerFlujo('demo-b-venta-cobro.json', { raiz: dir, nuevo: mala }), mala).toThrow(/no es válida: solo minúsculas/);
+    }
+    // Una válida crea el manifiesto bajo esa carpeta, y todo queda dentro de la copia.
+    const r = extraerFlujo('demo-b-venta-cobro.json', { raiz: dir, nuevo: 'venta' });
+    expect(r.escritos.every((e) => e.startsWith(dir + '/'))).toBe(true);
+    expect(Object.values(r.manifiesto.codigo!).every((v) => (typeof v === 'string' ? v : v.archivo).startsWith('venta/'))).toBe(true);
   });
 });
 
