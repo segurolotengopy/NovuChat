@@ -88,8 +88,14 @@ function aMarcadoresDeEnsayo(datos, cliente) {
   const calendarios = new Map();
   const texto = JSON.stringify(datos, (clave, valor) => {
     if (typeof valor !== 'string' || !valor.startsWith('REEMPLAZAR_')) return valor;
-    if (new RegExp(`^REEMPLAZAR_NUMERO_[A-Z_]*${sufijo}$`).test(valor)) return 'REEMPLAZAR_NUMERO_RECEPCION_ENSAYO';
-    if (new RegExp(`^REEMPLAZAR_CALENDARIO_${sufijo}(_[0-9]+)?$`).test(valor)) {
+    // Comparación de texto y no una expresión armada con el argumento: el
+    // nombre del cliente llega por la línea de comandos (CodeQL, #148).
+    if (valor.startsWith('REEMPLAZAR_NUMERO_') && valor.endsWith(`_${sufijo}`)
+      && /^[A-Z_]*$/.test(valor.slice('REEMPLAZAR_NUMERO_'.length, -sufijo.length - 1))) {
+      return 'REEMPLAZAR_NUMERO_RECEPCION_ENSAYO';
+    }
+    const cal = `REEMPLAZAR_CALENDARIO_${sufijo}`;
+    if (valor.startsWith(cal) && /^(_[0-9]+)?$/.test(valor.slice(cal.length))) {
       if (!calendarios.has(valor)) calendarios.set(valor, `REEMPLAZAR_CALENDARIO_ENSAYO_${calendarios.size + 1}`);
       return calendarios.get(valor);
     }
