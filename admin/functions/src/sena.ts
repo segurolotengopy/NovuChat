@@ -171,6 +171,20 @@ const TELEFONO = /^[0-9]{8,15}$/;
  */
 export const MINUTOS_DE_REVISION = 120;
 
+/**
+ * Lo que decide la transacción de `senaVencida`. Va escrito porque las ramas
+ * devuelven formas distintas --con motivo o sin él, con `conComprobante` o sin
+ * él-- y sin el tipo, TypeScript infiere una unión donde `motivo` no existe en
+ * todas: el `tsc -b` del pipeline no compila, aunque `--noEmit` pase.
+ */
+interface SalidaDeVencimiento {
+  registrado: boolean;
+  repetido: boolean;
+  motivo?: string;
+  /** Se liberó un horario por el que alguien había mandado un comprobante. */
+  conComprobante?: boolean;
+}
+
 /** La marca de un `Timestamp` de Firestore, de un ISO o de un número. */
 function marcaMs(v: unknown): number | null {
   const t = v as { toMillis?: () => number; _seconds?: unknown; seconds?: unknown } | undefined;
@@ -419,7 +433,7 @@ export const senaVencida = onRequest(
     // minutos y puede reportar dos veces la misma cita si el borrado falló a
     // medias. Solo la PRIMERA vez mueve algo; la segunda ve `vencida` y
     // contesta `repetido`, sin contar de nuevo.
-    const salida = await db.runTransaction(async (tx) => {
+    const salida = await db.runTransaction(async (tx): Promise<SalidaDeVencimiento> => {
       const conversacion = await tx.get(refConversacion);
       const solicitud = solicitudDe(conversacion);
       const mismaCita = String(solicitud?.evento?.id ?? '') === referencia;
