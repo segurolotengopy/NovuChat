@@ -183,7 +183,7 @@ describe('2. configuracionFlujo entrega la seña al flujo de reservas', () => {
     const sena = (r.cuerpo as Record<string, unknown>)['sena'];
     expect(sena).toEqual({
       activa: false, importe: 0, moneda: 'BOB', minutosRetencion: 45, qr: null,
-      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null,
+      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null, aFavor: null,
     });
   });
 
@@ -196,7 +196,7 @@ describe('2. configuracionFlujo entrega la seña al flujo de reservas', () => {
     expect(sena).toEqual({
       activa: true, importe: 50, moneda: 'BOB', minutosRetencion: 45,
       qr: { url: `https://us-east1-${PROYECTO}.cloudfunctions.net/imagenDeCobro?f=${ficha}`, nombreCuenta: TITULAR, banco: 'Banco de Prueba' },
-      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null,
+      pendiente: false, evento: null, qrEnviadoEn: null, vencidaHaceMin: null, aFavor: null,
     });
     // El flujo de venta no recibe `sena`, y el de agendamiento no recibe `cobroSimulado`.
     expect((r.cuerpo as Record<string, unknown>)['cobroSimulado']).toBeUndefined();

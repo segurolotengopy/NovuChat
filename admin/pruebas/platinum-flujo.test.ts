@@ -1018,7 +1018,7 @@ describe.each([
       expect(String(caidas[0]!['fecha'])).toContain('17 de septiembre');
       // La rama directa a la transferencia sigue para los otros casos del candado.
       expect(destinos('Comprobar reserva')).toEqual(['¿Deshacer cita solapada?', '¿Transferir a humano?', '¿Hay cita verificada?',
-        '¿Enviar QR de la seña?']); // el QR (bloque l) cuelga al final y más abajo
+        '¿Aplicar adelanto?', '¿Enviar QR de la seña?']); // el QR (bloque l) cuelga al final; el adelanto a favor (21/09) justo antes
     });
 
     it('Retomar respuesta: con el borrado bien hecho pide el reintento y NO transfiere todavía', () => {
@@ -3812,8 +3812,9 @@ describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada
     expect(String(r['respuesta'])).toContain('le asesora una persona');
   });
 
-  it('EL CASO REAL #3840: cancelar una cita SIN el rótulo de pendiente —ya pagada— avisa a recepción', () => {
-    const cita = { id: 'pagada', summary: 'Cita Andrés — blanqueamiento', start: { dateTime: '2026-09-21T11:00:00-04:00' } };
+  it('EL CASO REAL #3840, con MENOS de 2 h: cancelar una cita ya pagada avisa a recepción, que decide', () => {
+    const enUnaHora = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const cita = { id: 'pagada', summary: 'Cita Andrés — blanqueamiento', start: { dateTime: enUnaHora } };
     const r = procesar('Listo, la cita quedó cancelada.', [
       { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
       { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'pagada' } }, observation: '[{"success":true}]' },
@@ -3859,5 +3860,105 @@ describe('21/09: el pago lee su cita, no se niega un servicio, y una cita pagada
     expect(r['transferir']).toBe(false);
     expect(r['enviarUbicacion']).toBe(true);
     expect(String(r['respuesta'])).toMatch(/queda reservada para el lunes, 21 de septiembre a las 11:00/);
+  });
+});
+
+/**
+ * EL ADELANTO A FAVOR (Andres, 21/09/2026): el adelanto de una cita PAGADA que
+ * se cancela con 2 h o más queda a favor 7 días y se aplica a la próxima cita,
+ * sin otra seña. El asistente ya prometía «reprogramar sin costo».
+ */
+describe('Adelanto a favor: el flujo', () => {
+  const cfg = { nombreNegocio: 'Clínica Platinum', numeroRecepcion: '59170000009', senaActiva: 'si', tratamiento: 'tú' };
+  const enTresHoras = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+  const pagada = { id: 'pagada', summary: 'Cita Andrés — blanqueamiento', start: { dateTime: enTresHoras } };
+  const cancelada = () => ejecutar(String(nodo(flujo, 'Procesar respuesta').parameters['jsCode']),
+    [{ output: 'Listo, la cita quedó cancelada.', intermediateSteps: [
+      { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([pagada]) },
+      { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'pagada' } }, observation: '[{"success":true}]' }] }],
+    { 'Normalizar entrada': [{ from: '59170000001', userInput: 'sí' }], 'Config del negocio': [cfg] })[0] ?? {};
+
+  it('cancelar con 2 h o más: el adelanto queda a favor 7 días, sin molestar a recepción, y se informa al servidor', () => {
+    const r = cancelada();
+    expect(String(r['respuesta'])).toContain('El adelanto que pagaste queda a tu favor por 7 días');
+    expect(r['transferir']).toBe(false);
+    expect(r['eventoSena']).toEqual({ evento: 'cita_cancelada', referencia: 'pagada', inicio: enTresHoras });
+  });
+
+  it('el reporte del saliente lleva el hecho al servidor, por encima de los otros eventos', () => {
+    const cuerpo = JSON.parse(String(expresion(nodo(flujo, 'Reportar mensaje (saliente)').parameters['jsonBody'],
+      { messages: [{ id: 'wamid.X' }] }, { 'Mensaje a enviar': { ...cancelada(), transferir: true } })));
+    expect(cuerpo).toMatchObject({ evento: 'cita_cancelada', referencia: 'pagada', inicio: enTresHoras });
+  });
+
+  it('sin hecho de la seña, el reporte sigue como antes', () => {
+    const cuerpo = JSON.parse(String(expresion(nodo(flujo, 'Reportar mensaje (saliente)').parameters['jsonBody'],
+      { messages: [{ id: 'wamid.X' }] }, { 'Mensaje a enviar': { from: '5917', respuesta: 'x', transferir: true } })));
+    expect(cuerpo.evento).toBe('no_contactar');
+    expect(cuerpo.referencia).toBeUndefined();
+  });
+
+  it('con el adelanto aplicado NO sale QR, y un nodo le quita a la cita nueva el rótulo de pendiente', () => {
+    const cond = nodo(flujo, '¿Enviar QR de la seña?').parameters['conditions'].conditions[0].leftValue;
+    const base = { reservaVerificada: true, senaActiva: 'si', citaSolapada: false, eventoId: 'ev' };
+    expect(expresion(cond, base)).toBe(true);
+    expect(expresion(cond, { ...base, aplicarAdelanto: true })).toBe(false);
+    const aplicar = nodo(flujo, '¿Aplicar adelanto?').parameters['conditions'].conditions[0].leftValue;
+    expect(expresion(aplicar, { aplicarAdelanto: true, eventoId: 'ev' })).toBe(true);
+    expect(expresion(aplicar, { eventoId: 'ev' })).toBe(false);
+    const quitar = nodo(flujo, 'Quitar rótulo (adelanto)');
+    expect(quitar.parameters['operation']).toBe('update');
+    const refs = { 'Comprobar reserva': { eventoId: 'ev', calendarioDelAdelanto: 'cal', tituloDelAdelanto: 'PENDIENTE DE SEÑA · Cita Ana — blanqueamiento' } };
+    expect(expresion(quitar.parameters['calendar'].value, {}, refs)).toBe('cal');
+    expect(expresion(quitar.parameters['eventId'], {}, refs)).toBe('ev');
+    expect(expresion(quitar.parameters['updateFields'].summary, {}, refs)).toBe('Cita Ana — blanqueamiento');
+    expect(quitar.onError).toBe('continueRegularOutput');
+  });
+
+  it('REAGENDAR EN UN SOLO MENSAJE: cancela la pagada y agenda la nueva → «reprogramada», sin QR ni «queda a tu favor»', () => {
+    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
+      start: { dateTime: '2026-09-22T11:00:00-04:00' }, end: { dateTime: '2026-09-22T12:00:00-04:00' }, created: new Date().toISOString() };
+    const previa = { from: '5917',
+      respuesta: 'Listo, cancelé tu cita del lunes y te agendé el martes a las 11:00. Queda RESERVADO por 15 minutos a la espera de la seña.\n\nEl adelanto que pagaste queda a tu favor por 7 días: si reagendas en ese plazo, no pagas otra seña.',
+      eventoSena: { evento: 'cita_cancelada', referencia: 'pagada', inicio: '2026-09-21T15:00:00-04:00' },
+      eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }] };
+    const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
+      'Config del negocio': [{ senaActiva: 'si', tratamiento: 'tú', funcionarios: '[]' }] })[0] ?? {};
+    expect(r['aplicarAdelanto']).toBe(true);
+    expect(r['eventoSena']).toEqual({ evento: 'reprogramada', referencia: 'pagada', inicio: '2026-09-21T15:00:00-04:00', nueva: 'nueva', calendario: 'cal' });
+    expect(String(r['respuesta'])).not.toMatch(/seña|RESERVADO por|queda a tu favor/i);
+    expect(String(r['respuesta'])).toContain('te agendé el martes a las 11:00');
+    expect(String(r['respuesta'])).toContain('Tu adelanto de la cita anterior se aplica a esta');
+  });
+
+  it('sin adelanto ni cancelación pagada, la reserva sigue el camino de siempre (con QR)', () => {
+    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const ev = { id: 'n', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
+      start: { dateTime: '2026-09-22T11:00:00-04:00' }, end: { dateTime: '2026-09-22T12:00:00-04:00' }, created: new Date().toISOString() };
+    const r = ejecutar(cod, [ev], { 'Procesar respuesta': [{ respuesta: 'x', eventosCreados: [{ id: 'n', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime }] }],
+      'Config del negocio': [{ senaActiva: 'si', funcionarios: '[]' }] })[0] ?? {};
+    expect(r['aplicarAdelanto']).toBeUndefined();
+    expect(r['eventoSena']).toBeUndefined();
+  });
+
+  it('Comprobar reserva aplica el adelanto: avisa al servidor y saca del texto la seña y el QR', () => {
+    const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
+    const ev = { id: 'nueva', summary: 'Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
+      start: { dateTime: '2026-09-22T11:00:00-04:00' }, end: { dateTime: '2026-09-22T12:00:00-04:00' }, created: new Date().toISOString() };
+    const previa = { respuesta: 'Tu horario del martes a las 11:00 queda RESERVADO por 15 minutos a la espera de la seña. A continuación te llega el QR.',
+      from: '5917', eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }] };
+    const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
+      'Config del negocio': [{ senaAFavor: 'si', senaActiva: 'si', tratamiento: 'tú', funcionarios: '[]' }] })[0] ?? {};
+    expect(r['eventoSena']).toEqual({ evento: 'adelanto_aplicado', referencia: 'nueva', calendario: 'cal' });
+    expect(r['aplicarAdelanto']).toBe(true);
+    expect(String(r['respuesta'])).not.toMatch(/seña|QR|RESERVADO por/i);
+    expect(String(r['respuesta'])).toContain('Tu adelanto de la cita anterior se aplica a esta');
+  });
+
+  it('el modelo sabe del adelanto por el contexto del turno, no por el prompt (que sigue cacheable)', () => {
+    const texto = String(nodo(flujo, 'AI Agent (Sofía)').parameters['text']);
+    expect(texto).toContain("$json.senaAFavor === 'si'");
+    expect(prompt()).not.toContain('senaAFavor');
   });
 });
