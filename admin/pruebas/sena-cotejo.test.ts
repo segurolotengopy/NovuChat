@@ -26,6 +26,7 @@ import {
   IMPORTE_SENA_MAXIMO, MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, solicitudTras,
 } from '../functions/src/ingesta.ts';
 import { documentoQueCobra } from '../functions/src/cobro.ts';
+import { senaVencidaPorTiempo } from '../functions/src/retencion.ts';
 
 /** Lo que la prohibición 3 no deja decir, en ninguna forma. */
 const AFIRMA_PAGO = /acreditad|verificad|recibimos|pago confirmado/i;
@@ -180,9 +181,12 @@ describe('senaParaElFlujo: lo que recibe el flujo de reservas', () => {
   });
 
   it('pendiente, evento y qrEnviadoEn salen de la solicitud del teléfono', () => {
-    const solicitud = solicitudTras(undefined, 'qr_enviado', T0, { referencia: 'evt1', calendario: 'cal' });
+    // Un QR de hace cinco minutos: dentro de la retención (45). Con uno viejo,
+    // la seña ya venció por reloj (ver abajo).
+    const hace5 = Date.now() - 5 * 60 * 1000;
+    const solicitud = solicitudTras(undefined, 'qr_enviado', hace5, { referencia: 'evt1', calendario: 'cal' });
     const s = senaParaElFlujo(cfg(), true, 'BOB', url, solicitud);
-    expect(s).toMatchObject({ pendiente: true, evento: { id: 'evt1', calendario: 'cal' }, qrEnviadoEn: new Date(T0).toISOString() });
+    expect(s).toMatchObject({ pendiente: true, evento: { id: 'evt1', calendario: 'cal' }, qrEnviadoEn: new Date(hace5).toISOString() });
     const agendada = senaParaElFlujo(cfg(), true, 'BOB', url, { ...solicitud, etapa: 'agendada' });
     expect(agendada.pendiente).toBe(false);
     expect(agendada.evento).toEqual({ id: 'evt1', calendario: 'cal' });
@@ -206,8 +210,58 @@ describe('senaParaElFlujo: lo que recibe el flujo de reservas', () => {
   });
 
   it('la solicitud se informa aunque la seña se haya apagado después del QR', () => {
-    const solicitud = solicitudTras(undefined, 'qr_enviado', T0, { referencia: 'evt1' });
+    const solicitud = solicitudTras(undefined, 'qr_enviado', Date.now() - 60 * 1000, { referencia: 'evt1' });
     expect(senaParaElFlujo(cfg({ senaImporte: 0 }), true, 'BOB', url, solicitud)).toMatchObject({ activa: false, pendiente: true });
+  });
+
+  // --- LA SEÑA VENCE POR RELOJ (Andres, 20/09/2026: «la reserva pendiente de
+  // pago debería soltarse a los 15 minutos, porque así es la regla») ---------
+  // Antes solo la vencía el flujo del calendario, y si la cita no coincidía
+  // —borrada a mano, o atada a la de otro paciente— quedaba pendiente para
+  // siempre: el asistente seguía pidiendo el comprobante.
+  it('pasado el plazo, la seña YA NO está pendiente aunque la etapa siga en qr_enviado', () => {
+    const hace46 = Date.now() - 46 * 60 * 1000;
+    const s = senaParaElFlujo(cfg(), true, 'BOB', url, solicitudTras(undefined, 'qr_enviado', hace46, { referencia: 'evt1' }));
+    expect(s.pendiente).toBe(false);
+    // Y se informa como vencida hace ~1 minuto: un comprobante ahora es un pago TARDÍO.
+    expect(s.vencidaHaceMin).toBe(1);
+  });
+
+  it('con 15 minutos de retención, a los 16 ya venció y a los 14 no', () => {
+    const quince = cfg({ senaMinutosRetencion: 15 });
+    const a = (min: number) => senaParaElFlujo(quince, true, 'BOB', url,
+      solicitudTras(undefined, 'qr_enviado', Date.now() - min * 60 * 1000, { referencia: 'e' }));
+    expect(a(14).pendiente).toBe(true);
+    expect(a(16).pendiente).toBe(false);
+  });
+
+  it('con un comprobante en revisión el plazo es el de la revisión (2 h), no el de la retención', () => {
+    const hace30 = Date.now() - 30 * 60 * 1000;
+    const enRevision = { ...solicitudTras(undefined, 'qr_enviado', hace30, { referencia: 'e' }), cotejos: 1 };
+    expect(senaParaElFlujo(cfg({ senaMinutosRetencion: 15 }), true, 'BOB', url, enRevision).pendiente).toBe(true);
+    const hace3h = { ...enRevision, qrEnviadoEn: solicitudTras(undefined, 'qr_enviado', Date.now() - 3 * 3600 * 1000, { referencia: 'e' }).qrEnviadoEn };
+    expect(senaParaElFlujo(cfg({ senaMinutosRetencion: 15 }), true, 'BOB', url, hace3h).pendiente).toBe(false);
+  });
+});
+
+describe('senaVencidaPorTiempo: la regla, sola', () => {
+  const qr = (msAtras: number) => ({ toMillis: () => Date.now() - msAtras });
+  const min = 60 * 1000;
+  it('solo juzga una seña en qr_enviado con fecha de envío', () => {
+    expect(senaVencidaPorTiempo({ etapa: 'agendada', qrEnviadoEn: qr(99 * min) }, 15, Date.now()).vencida).toBe(false);
+    expect(senaVencidaPorTiempo({ etapa: 'qr_enviado' }, 15, Date.now()).vencida).toBe(false);
+    expect(senaVencidaPorTiempo(undefined, 15, Date.now()).vencida).toBe(false);
+  });
+  it('vence justo al cumplirse el plazo, y dice cuándo', () => {
+    const ahora = Date.now();
+    const r = senaVencidaPorTiempo({ etapa: 'qr_enviado', qrEnviadoEn: { toMillis: () => ahora - 15 * min } }, 15, ahora);
+    expect(r).toEqual({ vencida: true, venceMs: ahora });
+  });
+  it('acepta la marca como Timestamp, como segundos serializados o como ISO', () => {
+    const hace20 = Date.now() - 20 * min;
+    for (const qrEnviadoEn of [{ toMillis: () => hace20 }, { _seconds: hace20 / 1000 }, new Date(hace20).toISOString()]) {
+      expect(senaVencidaPorTiempo({ etapa: 'qr_enviado', qrEnviadoEn }, 15, Date.now()).vencida).toBe(true);
+    }
   });
 });
 

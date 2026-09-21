@@ -8,6 +8,7 @@ import {
 import { registrar, MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
 import { documentoDeVertical } from './prompt.js';
 import { periodoDe } from './planes.js';
+import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';
 
 /**
  * =============================================================================
@@ -147,29 +148,10 @@ export function detalleDeLaSena(importe: number, moneda: string, resultado: Resu
 
 const TELEFONO = /^[0-9]{8,15}$/;
 
-/**
- * CUÁNTO SE PROTEGE UNA CITA CON UN COMPROBANTE QUE NO CUADRÓ.
- *
- * Las dos posturas puras están mal, y las dos costaron algo el 20/09/2026:
- *
- *  - Liberar siempre: el paciente pagó de verdad, el cotejo dijo «no cuadra»
- *    por un defecto NUESTRO --no entendía «20 de Septiembre, 2026»--, el
- *    asistente le prometió «tu horario sigue reservado», y cinco minutos
- *    después la cita se borró. Perdió el turno que pagó.
- *  - Proteger siempre: cualquier imagen mandada a propósito bloquea un horario
- *    para siempre, que es el problema que las huérfanas vinieron a resolver.
- *
- * El híbrido es el TIEMPO: un comprobante que no cuadra abre una revisión
- * humana --recepción ya recibió el aviso con la diferencia-- y la cita se
- * protege mientras esa persona puede actuar. Pasada la ventana, el horario se
- * libera igual, pero NO en silencio: queda contado y anotado como liberado CON
- * un comprobante de por medio, que es lo que hay que ir a mirar.
- *
- * Dos horas: alcanza para que alguien abra el banco y conteste, y no quema el
- * día del horario. Un comprobante que SÍ cuadró no entra acá: esa cita no se
- * libera nunca (`cita_pagada`).
- */
-export const MINUTOS_DE_REVISION = 120;
+// La ventana de revisión, la marca de tiempo y el vencimiento por reloj viven
+// en `retencion.ts`: los necesita también `ingesta.ts`, que no puede importar
+// de acá (este archivo ya importa de ella).
+export { MINUTOS_DE_REVISION, comprobanteEnRevision } from './retencion.js';
 
 /**
  * Lo que decide la transacción de `senaVencida`. Va escrito porque las ramas
@@ -183,36 +165,6 @@ interface SalidaDeVencimiento {
   motivo?: string;
   /** Se liberó un horario por el que alguien había mandado un comprobante. */
   conComprobante?: boolean;
-}
-
-/** La marca de un `Timestamp` de Firestore, de un ISO o de un número. */
-function marcaMs(v: unknown): number | null {
-  const t = v as { toMillis?: () => number; _seconds?: unknown; seconds?: unknown } | undefined;
-  if (typeof t?.toMillis === 'function') return t.toMillis();
-  const seg = (t?._seconds ?? t?.seconds);
-  if (typeof seg === 'number') return seg * 1000;
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string') { const p = Date.parse(v); return Number.isFinite(p) ? p : null; }
-  return null;
-}
-
-/**
- * ¿Hay un comprobante esperando a una persona, y todavía dentro de la ventana?
- *
- * `desdeSiFalta` es la marca de respaldo cuando el cierre no guardó `en`: se
- * usa cuándo se creó la cita, para que la ventana SIEMPRE tenga un final. Sin
- * ninguna de las dos no se puede acotar nada, y entonces se protege: el que
- * mandó un comprobante pesa más que un horario, y queda a la vista igual.
- */
-export function comprobanteEnRevision(
-  cotejo: { resultado?: unknown; en?: unknown } | undefined,
-  ahoraMs: number, desdeSiFalta: number | null = null,
-): boolean {
-  const r = cotejo?.resultado;
-  if (r !== 'no_cuadra' && r !== 'ilegible') return false;
-  const desde = marcaMs(cotejo?.en) ?? desdeSiFalta;
-  if (desde === null) return true;
-  return (ahoraMs - desde) < MINUTOS_DE_REVISION * 60 * 1000;
 }
 
 /** La forma mínima de la solicitud que estas Functions miran. */
@@ -282,6 +234,23 @@ export const cotejarComprobante = onRequest(
       const solicitud = solicitudDe(conversacion);
       if (!conversacion.exists || solicitud?.etapa !== 'qr_enviado') {
         // Sin QR pendiente no hay con qué comparar: la imagen es una imagen.
+        return { codigo: 409 as const, cuerpo: { error: 'sin_sena_pendiente' } };
+      }
+      // LA SEÑA VENCIDA POR RELOJ NO SE COTEJA (Andres, 20/09/2026: la reserva
+      // pendiente de pago se suelta a los 15 minutos, es la regla). Antes solo la
+      // vencía el flujo del calendario, y si la cita no coincidía la seña quedaba
+      // pendiente para siempre y cualquier imagen se cotejaba como pago. Se deja
+      // anotada como vencida acá mismo, contada una vez; el flujo ve entonces un
+      // pago TARDÍO y lo pasa a una persona, que es lo que corresponde.
+      const minutosPedidos = especifica.get('senaMinutosRetencion');
+      const minutosRet = typeof minutosPedidos === 'number' && Number.isInteger(minutosPedidos)
+        && minutosPedidos >= 5 && minutosPedidos <= 180 ? minutosPedidos : MINUTOS_RETENCION_POR_DEFECTO;
+      const porReloj = senaVencidaPorTiempo(solicitud, minutosRet, ahoraMs);
+      if (porReloj.vencida) {
+        tx.set(refConversacion, {
+          solicitud: { ...solicitud, etapa: 'vencida', desde: Timestamp.fromMillis(porReloj.venceMs ?? ahoraMs) },
+        }, { merge: true });
+        tx.set(refMetricas, { senasVencidas: FieldValue.increment(1) }, { merge: true });
         return { codigo: 409 as const, cuerpo: { error: 'sin_sena_pendiente' } };
       }
       if (importe <= 0) {

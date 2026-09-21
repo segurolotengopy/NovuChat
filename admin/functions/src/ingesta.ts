@@ -1,4 +1,5 @@
 import { REGION } from './region.js';
+import { senaVencidaPorTiempo } from './retencion.js';
 import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
@@ -479,6 +480,7 @@ export function senaParaElFlujo(
   const s = (typeof solicitud === 'object' && solicitud !== null ? solicitud : {}) as Record<string, unknown>;
   const ev = s['evento'] as Record<string, unknown> | null | undefined;
   const enviado = s['qrEnviadoEn'] as { toMillis?: () => number } | null | undefined;
+  const porReloj = senaVencidaPorTiempo(s, minutosRetencion, Date.now());
   return {
     activa,
     importe: activa ? importe : 0,
@@ -493,16 +495,26 @@ export function senaParaElFlujo(
           banco: String(cobroReal['banco'] ?? ''),
         }
       : null,
-    pendiente: s['etapa'] === 'qr_enviado',
+    // PENDIENTE ES POR ETAPA Y POR RELOJ (20/09/2026): una seña cuyo plazo pasó
+    // ya no está pendiente aunque el calendario no la haya vencido todavía
+    // (`retencion.ts`, `senaVencidaPorTiempo`).
+    pendiente: s['etapa'] === 'qr_enviado' && !porReloj.vencida,
     evento: ev && typeof ev['id'] === 'string' && ev['id'] !== ''
       ? { id: ev['id'], calendario: String(ev['calendario'] ?? '') } : null,
     qrEnviadoEn: typeof enviado?.toMillis === 'function'
       ? new Date(enviado.toMillis()).toISOString() : null,
     vencidaHaceMin: (() => {
-      if (s['etapa'] !== 'vencida') return null;
-      const desde = s['desde'] as { toMillis?: () => number } | null | undefined;
-      if (typeof desde?.toMillis !== 'function') return null;
-      const min = Math.floor((Date.now() - desde.toMillis()) / 60000);
+      // Vencida por el calendario (etapa) o por el reloj: en los dos casos el
+      // flujo tiene que tratar un comprobante que llega como pago TARDÍO.
+      let desdeMs: number | null = null;
+      if (s['etapa'] === 'vencida') {
+        const desde = s['desde'] as { toMillis?: () => number } | null | undefined;
+        desdeMs = typeof desde?.toMillis === 'function' ? desde.toMillis() : null;
+      } else if (porReloj.vencida) {
+        desdeMs = porReloj.venceMs;
+      }
+      if (desdeMs === null) return null;
+      const min = Math.floor((Date.now() - desdeMs) / 60000);
       return min >= 0 && min <= MINUTOS_DE_UN_DIA ? min : null;
     })(),
   };
