@@ -2055,7 +2055,12 @@ service cloud.firestore {
                  // Seguimiento de solicitud pendiente (bloque 4, `Analisis/31` §4):
                  // salió el recordatorio único; `codigo` lleva el modo (`texto`
                  // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
-                 'seguimiento_enviado'
+                 'seguimiento_enviado',
+                 // Prepago (bloque A-0, 20/09, DISENO §4undecies): el servicio
+                 // se cortó por falta de pago o de conversaciones (`codigo`
+                 // lleva el motivo), volvió, y entró un pago. Un corte solo
+                 // observado NO llega acá: queda en la auditoría.
+                 'corte_servicio', 'reanudacion_servicio', 'pago_registrado'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
                ]
@@ -2115,6 +2120,15 @@ service cloud.firestore {
     // el correo la lee con el SDK Admin. El destino NUNCA sale del reclamo.
     // =========================================================================
     match /plataforma/{documento} {
+      allow get, list: if esPropietario();
+      allow create, update, delete: if false;
+    }
+
+    // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo
+    // observación del prepago (DISENO §4undecies.4): quién, cuándo, por qué y
+    // sobre qué tenant. La escribe solo `fijarCortePrepago` (SDK Admin); la
+    // lee el propietario. Es una subcolección: la regla de arriba no la cubre.
+    match /plataforma/prepago/historial/{id} {
       allow get, list: if esPropietario();
       allow create, update, delete: if false;
     }

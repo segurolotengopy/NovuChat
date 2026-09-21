@@ -313,6 +313,12 @@ beforeEach(async () => {
       formsubmitDestino: 'reclamos@ejemplo.com',
       correosReclamos: ['reclamos@ejemplo.com'],
     });
+    // La bandera del modo observación del prepago y su historial (bloque A-0):
+    // los escribe solo `fijarCortePrepago` con el SDK Admin.
+    await setDoc(doc(db, 'plataforma/prepago'), { corteActivo: false, motivo: 'semilla' });
+    await setDoc(doc(db, 'plataforma/prepago/historial/h1'), {
+      corteActivo: false, uid: 'seed', en: Timestamp.now(), motivo: 'semilla de las pruebas',
+    });
   });
 });
 
@@ -1382,6 +1388,27 @@ describe('Configuración de plataforma', () => {
     await assertFails(updateDoc(doc(adminA(), 'plataforma/notificaciones'), {
       formsubmitDestino: 'atacante@ejemplo.com',
     }));
+  });
+
+  it('la bandera del prepago y su historial: el propietario lee, ningún comercio lee, nadie escribe', async () => {
+    // Bloque A-0 (DISENO §4undecies.4). El historial es una subcolección: la
+    // regla de `/plataforma/{documento}` no la cubre, tiene la suya.
+    await assertSucceeds(getDoc(doc(propietario(), 'plataforma/prepago')));
+    await assertSucceeds(getDoc(doc(propietario(), 'plataforma/prepago/historial/h1')));
+    await assertSucceeds(getDocs(collection(propietario(), 'plataforma/prepago/historial')));
+    await assertFails(getDoc(doc(adminA(), 'plataforma/prepago')));
+    await assertFails(getDoc(doc(adminA(), 'plataforma/prepago/historial/h1')));
+    await assertFails(getDocs(collection(adminA(), 'plataforma/prepago/historial')));
+    await assertFails(getDoc(doc(operA(), 'plataforma/prepago/historial/h1')));
+    await assertFails(getDoc(doc(propietarioConPassword(), 'plataforma/prepago/historial/h1')));
+    // Encender el corte desde el navegador, o fabricar historial: nadie.
+    await assertFails(updateDoc(doc(propietario(), 'plataforma/prepago'), { corteActivo: true }));
+    await assertFails(setDoc(doc(adminA(), 'plataforma/prepago'), { corteActivo: true }));
+    await assertFails(setDoc(doc(propietario(), 'plataforma/prepago/historial/h2'), {
+      corteActivo: true, uid: 'u-novuchat', en: Timestamp.now(), motivo: 'desde el navegador',
+    }));
+    await assertFails(updateDoc(doc(propietario(), 'plataforma/prepago/historial/h1'), { motivo: 'editado' }));
+    await assertFails(deleteDoc(doc(propietario(), 'plataforma/prepago/historial/h1')));
   });
 });
 
