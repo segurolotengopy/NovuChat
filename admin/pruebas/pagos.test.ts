@@ -457,6 +457,58 @@ describe('registrarPagoManual: un solo pendiente por cuenta', () => {
     expect(await auditoria('pago_manual')).toHaveLength(0);
   });
 
+  it('el banco CONFIRMÓ pero no se aplicó (importe menor): no se dice «se aplica el banco», se ofrece confirmar ESE pago (LOW 9)', async () => {
+    const COBRO = 'cons-' + '7'.repeat(64);
+    await sembrarPendiente(PAGO_ID, COBRO);
+    // Lo que haría A-2: consulta, ve CONFIRMADO con importe menor, lo anota y no aplica.
+    const anular = vi.fn(async () => {
+      await db.doc(`tenants/${A}/pagos/${PAGO_ID}`).update({ 'cobro.estado': 'CONFIRMADO' });
+      return { resultado: 'pagado' as const, estado: 'pendiente' };
+    });
+    const d = await rechaza(correr(pagos.crearRegistrarPagoManual({ anular }), manual()), 'failed-precondition');
+    expect(d).toMatchObject({ pagoId: PAGO_ID, ofrecerConfirmar: true, cobroEstado: 'CONFIRMADO' });
+    expect(await pagosDe()).toHaveLength(1);
+    expect(await auditoria('pago_manual')).toHaveLength(0);
+
+    // Confirmar ESE pago: sin motivo no; el admin no; con sesión vieja no.
+    const confirmar = { tenantId: A, confirmarPendiente: PAGO_ID, montoRecibidoBs: 600 };
+    await rechaza(correr(indice.registrarPagoManual, confirmar), 'invalid-argument');
+    await rechaza(correr(indice.registrarPagoManual, { ...confirmar, motivoDiferencia: 'x' }, ADMIN_A), 'permission-denied');
+    await rechaza(correr(indice.registrarPagoManual, { ...confirmar, motivoDiferencia: 'x' },
+      { uid: 'prop-1', token: { ...PROPIETARIO.token, auth_time: AUTH_TIME - 4000 } }), 'unauthenticated');
+    expect((await pago(PAGO_ID))!['estado']).toBe('pendiente');
+
+    const r = await correr(indice.registrarPagoManual, { ...confirmar, motivoDiferencia: 'el banco acreditó 600 de 630: comisión' });
+    expect(r).toMatchObject({ pagoId: PAGO_ID, confirmadoQr: true, periodoPagado: HOY });
+    expect(await pago(PAGO_ID)).toMatchObject({
+      estado: 'confirmado', montoRecibidoBs: 600, monto: 630, motivoDiferencia: 'el banco acreditó 600 de 630: comisión',
+      confirmadoPor: { origen: 'propietario', uid: 'prop-1' }, medio: 'qr',
+    });
+    const c = await cuenta();
+    expect(c).toMatchObject({ periodoPagado: HOY, modalidad: 'prepago' });
+    expect(c['pagoPendienteId']).toBeUndefined();
+    expect((await db.doc(`cobrosPendientes/${PAGO_ID}`).get()).exists).toBe(false);
+    expect((await db.doc(`cobrosResueltos/${PAGO_ID}`).get()).data()).toMatchObject({ tenantId: A, cobroId: COBRO, estado: 'confirmado' });
+    expect((await auditoria('pago_manual_confirma_qr'))[0]).toMatchObject({ pagoId: PAGO_ID, cobroId: COBRO, montoRecibidoBs: 600 });
+    expect(await pagosDe()).toHaveLength(1);
+    // Repetirlo no suma otro mes.
+    await rechaza(correr(indice.registrarPagoManual, { ...confirmar, motivoDiferencia: 'otra vez' }), 'failed-precondition');
+    expect((await cuenta())['periodoPagado']).toBe(HOY);
+    await db.doc(`cobrosResueltos/${PAGO_ID}`).delete();
+  });
+
+  it('confirmarPendiente sobre un QR VIVO sin pago del banco se rechaza: nunca se confirma lo que el banco no confirmó', async () => {
+    await sembrarPendiente(PAGO_ID, 'cons-' + '8'.repeat(64));
+    await rechaza(correr(indice.registrarPagoManual, {
+      tenantId: A, confirmarPendiente: PAGO_ID, montoRecibidoBs: 630, motivoDiferencia: 'me dijo que pagó',
+    }), 'failed-precondition');
+    await rechaza(correr(indice.registrarPagoManual, {
+      tenantId: A, confirmarPendiente: 'p1', montoRecibidoBs: 630, motivoDiferencia: 'x',
+    }), 'invalid-argument');
+    expect((await pago(PAGO_ID))!['estado']).toBe('pendiente');
+    expect(await auditoria('pago_manual_confirma_qr')).toHaveLength(0);
+  });
+
   it('con un pago tardío EN REVISIÓN en el cobrador, no se carga nada', async () => {
     await sembrarPendiente(PAGO_ID, 'cons-' + 'c'.repeat(64));
     const f = pagos.crearRegistrarPagoManual({ anular: async () => ({ resultado: 'en_revision' as const }) });

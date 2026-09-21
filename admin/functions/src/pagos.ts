@@ -504,6 +504,75 @@ const con = (deps: Deps) => ({
   ahoraMs: deps.ahoraMs ?? Date.now,
 });
 
+const cobroEstadoDe = (datos: Record<string, unknown> | undefined): string | null => {
+  const cobro = datos?.['cobro'];
+  if (typeof cobro !== 'object' || cobro === null) return null;
+  const estado = (cobro as Record<string, unknown>)['estado'];
+  return typeof estado === 'string' ? estado : null;
+};
+
+/**
+ * CONFIRMAR A MANO UN QR QUE EL BANCO YA CONFIRMÓ Y NO SE APLICÓ (LOW 9).
+ *
+ * El caso: el cobrador dice `CONFIRMADO` pero NovuChat dejó el pago
+ * `pendiente` (un importe menor al del QR, por ejemplo). La plata entró por el
+ * QR, así que no se carga un pago nuevo: se confirma ESE `pagoId`, con
+ * `origen: 'propietario'`, lo recibido y `motivoDiferencia` obligatorio, por
+ * la misma puerta (`aplicarPagoEnTransaccion`), y queda auditado como
+ * `pago_manual_confirma_qr`. Solo si el pago sigue `pendiente` y su último
+ * estado del cobrador es `CONFIRMADO`: nunca sobre un QR vivo sin pago.
+ */
+async function confirmarQrConfirmado(
+  tenantId: string, pagoId: string, uid: string, datos: Record<string, unknown>, ahoraMs: number,
+) {
+  if (!ID_PAGO.test(pagoId)) throw new HttpsError('invalid-argument', 'confirmarPendiente tiene que ser un pagoId.');
+  const montoRecibidoBs = datos['montoRecibidoBs'];
+  if (!enteroEntre(montoRecibidoBs, 0, MONTO_RECIBIDO_MAXIMO)) {
+    throw new HttpsError('invalid-argument', 'montoRecibidoBs tiene que ser un entero en bolivianos.');
+  }
+  const motivoDiferencia = texto(datos['motivoDiferencia'], 300);
+  if (!motivoDiferencia) {
+    throw new HttpsError('invalid-argument', 'Confirmar a mano un cobro del banco exige motivoDiferencia.');
+  }
+  const r = refsDe(tenantId, pagoId);
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  const salida = await db().runTransaction(async (tx) => {
+    const [pagoDoc, cuentaDoc, fichaDoc] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta), tx.get(r.ficha)]);
+    if (!fichaDoc.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    const p = pagoDoc.data();
+    if (!p) throw new HttpsError('not-found', 'No existe ese pago.');
+    if (p['estado'] !== 'pendiente' || cobroEstadoDe(p) !== 'CONFIRMADO') {
+      throw new HttpsError('failed-precondition',
+        'Solo se confirma a mano un pago pendiente cuyo cobro el banco ya confirmó.');
+    }
+    const resultado = aplicarPagoEnTransaccion(tx, r, {
+      id: pagoId, datos: p, cuenta: cuentaDoc.data() ?? {}, ficha: fichaDoc.data() ?? {},
+    }, { origen: 'propietario', uid, montoRecibidoBs, motivoDiferencia, confirmadoEn: ahora, ahoraMs });
+    tx.delete(r.cobroPendiente);
+    tx.set(db().doc(`cobrosResueltos/${pagoId}`), {
+      tenantId, pagoId, cobroId: cobroIdDe(p), estado: 'confirmado', cerradoEn: ahora,
+    });
+    tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
+      accion: 'pago_manual_confirma_qr', uid, en: ahora, pagoId, cobroId: cobroIdDe(p),
+      monto: p['monto'] ?? null, montoRecibidoBs, motivoDiferencia,
+      cubiertoHasta: resultado.cubiertoHasta, planDespues: resultado.plan,
+    });
+    return { resultado, descripcion: String(p['descripcion'] ?? ''), monto: p['monto'] };
+  });
+  await registrar(tenantId, {
+    tipo: 'pago_registrado', resultado: 'ok', canal: 'panel', codigo: 'propietario',
+    detalle: `${salida.descripcion}${salida.resultado.cubiertoHasta ? ` · hasta ${salida.resultado.cubiertoHasta}` : ''}`.slice(0, 120),
+  });
+  if (salida.resultado.corteEstabaAplicado) {
+    await registrar(tenantId, { tipo: 'reanudacion_servicio', resultado: 'ok', canal: 'sistema', codigo: 'pago_manual' });
+  }
+  return {
+    pagoId, monto: salida.monto, confirmadoQr: true,
+    periodoPagado: salida.resultado.periodoPagado, cubiertoHasta: salida.resultado.cubiertoHasta,
+    bolsa: salida.resultado.bolsa, plan: salida.resultado.plan, modalidad: salida.resultado.modalidad,
+  };
+}
+
 /** Lo que se le devuelve a la consola cuando hay un pendiente vivo que hay que cerrar antes. */
 const resumenDelPendiente = (pagoId: string, p: Record<string, unknown>) => ({
   pagoId, estado: p['estado'], monto: p['monto'], descripcion: p['descripcion'],
@@ -521,9 +590,21 @@ async function cerrarPendienteAntesDe(
     case 'anulado':
     case 'sin_cobro':
       return;
-    case 'pagado':
+    case 'pagado': {
+      // ¿Se aplicó de verdad? Si el banco confirmó pero NovuChat no lo aplicó
+      // (el cliente del cobrador lo dejó `pendiente` con `cobro.estado:
+      // 'CONFIRMADO'`, por ejemplo por un importe menor), decir «se aplica el
+      // cobro del banco» sería falso: se ofrece confirmar ESE pago a mano
+      // (revisión de seguridad de A-1, LOW 9).
+      const ahora = (await db().doc(`tenants/${tenantId}/pagos/${pendienteId}`).get()).data();
+      if (ahora && ahora['estado'] === 'pendiente' && cobroEstadoDe(ahora) === 'CONFIRMADO') {
+        throw new HttpsError('failed-precondition',
+          'El banco confirmó un pago sobre ese QR, pero no se aplicó (el importe no coincide). Confírmelo con confirmarPendiente y motivoDiferencia, en vez de cargar otro.',
+          { ...vivo, estado: 'pendiente', cobroEstado: 'CONFIRMADO', ofrecerConfirmar: true });
+      }
       throw new HttpsError('failed-precondition',
         'Ese QR ya se pagó: se aplica el cobro del banco, no el manual.', { ...vivo, estado: r.estado });
+    }
     case 'en_revision':
       throw new HttpsError('failed-precondition',
         'Hay un pago tardío sobre ese QR en revisión en el cobrador: no se carga nada hasta que lo resuelvan.', vivo);
@@ -581,6 +662,11 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
     const tenantId = texto(datos['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
+
+    // El otro modo: confirmar a mano el QR que el banco ya confirmó (LOW 9).
+    if (Object.prototype.hasOwnProperty.call(datos, 'confirmarPendiente')) {
+      return confirmarQrConfirmado(tenantId, texto(datos['confirmarPendiente'], 40), uid, datos, d.ahoraMs());
+    }
 
     const pedido = pedidoDe(datos);
     const medio = datos['medio'];
