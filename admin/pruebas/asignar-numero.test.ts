@@ -31,6 +31,10 @@ const OTRO = 'asig-otro';
 const NUM = '1000000033';
 const NUM_OTRO = '1000000011';
 const WABA = '1000000048';
+const CLI = 'asig-clinica';
+const VIEJO = '1000000050';
+const NUEVO = '1000000051';
+const WABA_NUEVA = '1000000052';
 
 function correr(...args: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...args], {
@@ -47,6 +51,11 @@ beforeAll(async () => {
   await db.doc(`tenants/${OTRO}`).set({ nombre: 'Otro', estado: 'activo', vertical: 'venta', flujos: ['venta'] });
   // Un número AJENO que ya usa el alias cliente01.
   await db.doc(`rutasWhatsApp/${NUM_OTRO}`).set({ tenantId: OTRO, flujo: 'venta', aliasSecreto: 'cliente01', estado: 'activo' });
+  // El cliente que pasa a su propia WABA: su número viejo, con su alias.
+  for (const d of [`rutasWhatsApp/${VIEJO}`, `rutasWhatsApp/${NUEVO}`]) await db.doc(d).delete();
+  await db.doc(`tenants/${CLI}`).set({ nombre: 'Clínica', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'],
+    waPhoneNumberId: VIEJO, waWabaId: WABA });
+  await db.doc(`rutasWhatsApp/${VIEJO}`).set({ tenantId: CLI, flujo: 'agendamiento', aliasSecreto: 'cliente05', estado: 'activo' });
 });
 
 describe('asignar-numero.mjs', () => {
@@ -139,4 +148,70 @@ describe('asignar-numero.mjs', () => {
     });
     expect(Date.now() - inicio).toBeLessThan(10_000);
   }, 20_000);
+
+  // EL CLIENTE PASA A SU PROPIA WABA (Platinum, 21/09/2026): el mismo número
+  // con un Phone ID nuevo, y el mismo alias. Se escribe negando.
+  describe('--reemplaza: el Phone ID nuevo de un número que cambió de WABA', () => {
+    const mover = (extra: string[] = [], viejo = VIEJO, alias = 'cliente05') =>
+      correr('--tenant', CLI, '--numero', NUEVO, '--waba', WABA_NUEVA, '--flujo', 'agendamiento',
+        '--alias', alias, '--reemplaza', viejo, ...extra);
+
+    it('sin --reemplaza, el alias del número viejo bloquea el nuevo (como siempre)', async () => {
+      const r = correr('--tenant', CLI, '--numero', NUEVO, '--waba', WABA_NUEVA, '--flujo', 'agendamiento',
+        '--alias', 'cliente05', '--aplicar');
+      expect(r.codigo).not.toBe(0);
+      expect(r.salida).toMatch(/El alias cliente05 ya lo usa el número/);
+      expect((await db.doc(`rutasWhatsApp/${NUEVO}`).get()).exists).toBe(false);
+    });
+
+    it('NO libera la ruta de OTRO comercio', async () => {
+      const r = mover(['--aplicar'], NUM_OTRO, 'cliente01');
+      expect(r.codigo).not.toBe(0);
+      expect(r.salida).toMatch(/es de OTRO comercio/);
+      expect((await db.doc(`rutasWhatsApp/${NUM_OTRO}`).get()).get('tenantId')).toBe(OTRO);
+      expect((await db.doc(`rutasWhatsApp/${NUEVO}`).get()).exists).toBe(false);
+    });
+
+    it('NO reemplaza un número que usa otro alias', async () => {
+      const r = mover(['--aplicar'], VIEJO, 'cliente06');
+      expect(r.codigo).not.toBe(0);
+      expect(r.salida).toMatch(/usa el alias cliente05, no cliente06/);
+      expect((await db.doc(`rutasWhatsApp/${VIEJO}`).get()).exists).toBe(true);
+    });
+
+    it('NO reemplaza un número que no tiene ruta', async () => {
+      const r = mover(['--aplicar'], '1000000059');
+      expect(r.codigo).not.toBe(0);
+      expect(r.salida).toMatch(/no tiene ruta/);
+    });
+
+    it('--reemplaza igual a --numero se rechaza antes de conectar', () => {
+      const r = mover([], NUEVO);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toMatch(/--reemplaza es el mismo número/);
+    });
+
+    it('en seco no toca ninguna de las dos rutas', async () => {
+      const r = mover();
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/Ruta vieja: …0050 se borra/);
+      expect((await db.doc(`rutasWhatsApp/${VIEJO}`).get()).exists).toBe(true);
+      expect((await db.doc(`rutasWhatsApp/${NUEVO}`).get()).exists).toBe(false);
+    });
+
+    it('con --aplicar: la ruta vieja se borra, la nueva lleva el MISMO alias, y queda en la auditoría', async () => {
+      const r = mover(['--aplicar']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/✓ Verificación/);
+      expect((await db.doc(`rutasWhatsApp/${VIEJO}`).get()).exists).toBe(false);
+      expect((await db.doc(`rutasWhatsApp/${NUEVO}`).get()).data()).toMatchObject(
+        { tenantId: CLI, flujo: 'agendamiento', aliasSecreto: 'cliente05', wabaId: WABA_NUEVA });
+      expect((await db.doc(`tenants/${CLI}`).get()).data()).toMatchObject(
+        { waPhoneNumberId: NUEVO, waWabaId: WABA_NUEVA, flujos: ['agendamiento'] });
+      const aud = await db.collection(`tenants/${CLI}/auditoria`).where('reemplazaA', '==', VIEJO).get();
+      expect(aud.size).toBe(1);
+      expect(r.salida).not.toContain(VIEJO);
+      expect(r.salida).not.toContain(NUEVO);
+    });
+  });
 });

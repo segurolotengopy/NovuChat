@@ -25,6 +25,19 @@
  *   node scripts/asignar-numero.mjs --proyecto <id> --tenant novuchat \
  *     --numero <phone_number_id> --waba <waba_id> --flujo onboarding --alias cliente01
  *
+ * CAMBIAR EL NÚMERO DE UN COMERCIO (`--reemplaza <phone_number_id viejo>`,
+ * 21/09/2026). Cuando un cliente pasa a su propia WABA (Platinum), Meta le da
+ * al MISMO número un Phone ID nuevo. La ruta vieja tenía el alias del comercio,
+ * y el script rechazaba con razón que otro número lo usara. Con `--reemplaza`,
+ * en la MISMA transacción se borra la ruta vieja y se escribe la nueva, y solo
+ * si la vieja es de ESTE comercio y de ESTE alias: nunca se libera la ruta de
+ * otro. El secreto del alias no cambia, así que n8n no toca su credencial de
+ * ingesta. Queda en la auditoría qué número reemplazó a cuál.
+ *
+ *   node scripts/asignar-numero.mjs --proyecto <id> --tenant platinum \
+ *     --numero <nuevo> --waba <waba nueva> --flujo agendamiento --alias cliente02 \
+ *     --reemplaza <viejo>
+ *
  * Sin `--aplicar` no escribe nada: dice qué haría. Nunca imprime identificadores
  * completos: solo sus últimos cuatro dígitos.
  */
@@ -41,6 +54,7 @@ const NUMERO = (opcion('numero') ?? '').trim();
 const WABA = (opcion('waba') ?? '').trim();
 const FLUJO = (opcion('flujo') ?? '').trim();
 const ALIAS = (opcion('alias') ?? '').trim();
+const REEMPLAZA = (opcion('reemplaza') ?? '').trim();
 
 // Mismos formatos que `ID_TENANT`, `ID_NUMERO` y `VERTICALES` de functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -67,6 +81,8 @@ if (!LISTAR) {
   if (NUMERO && NUMERO === WABA) problemas.push('--numero y --waba son iguales: son dos IDs distintos');
   if (!FLUJOS_VALIDOS.has(FLUJO)) problemas.push(`--flujo desconocido: ${FLUJO || '(vacío)'}`);
   if (!ALIAS_VALIDOS.has(ALIAS)) problemas.push(`--alias no está en la reserva de firma.ts: ${ALIAS || '(vacío)'}`);
+  if (REEMPLAZA && !ID_NUMERO.test(REEMPLAZA)) problemas.push('--reemplaza no es un phone_number_id (solo dígitos, 6 a 25)');
+  if (REEMPLAZA && REEMPLAZA === NUMERO) problemas.push('--reemplaza es el mismo número que --numero');
   if (problemas.length) {
     console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
     console.error('\n  node scripts/asignar-numero.mjs --proyecto <id> --tenant <id> --numero <phone_number_id> \\');
@@ -102,6 +118,7 @@ if (LISTAR) {
 }
 
 const refRuta = db.doc(`rutasWhatsApp/${NUMERO}`);
+const refVieja = REEMPLAZA ? db.doc(`rutasWhatsApp/${REEMPLAZA}`) : null;
 const refTenant = db.doc(`tenants/${TENANT}`);
 const documento = DOCUMENTO[FLUJO] ?? null;
 const refConfig = documento ? db.doc(`tenants/${TENANT}/config/${documento}`) : null;
@@ -111,6 +128,7 @@ console.log(`\n  Negocio   : ${TENANT}`);
 console.log(`  Número    : ${cola(NUMERO)} · WABA ${cola(WABA)}`);
 console.log(`  Flujo     : ${FLUJO}`);
 console.log(`  Alias     : ${ALIAS} (secreto ${secreto})`);
+if (REEMPLAZA) console.log(`  Reemplaza : número ${cola(REEMPLAZA)} (su ruta se borra en la misma transacción)`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
 // UN RECHAZO NO SE LANZA DENTRO DE LA TRANSACCIÓN: se devuelve. Si el callback
@@ -128,17 +146,27 @@ let plan;
 try {
   plan = await db.runTransaction(async (tx) => {
     // Lecturas antes que escrituras, como exige la transacción.
-    const [ruta, tenant, config, conAlias] = await Promise.all([
+    const [ruta, tenant, config, conAlias, vieja] = await Promise.all([
       tx.get(refRuta), tx.get(refTenant),
       refConfig ? tx.get(refConfig) : Promise.resolve(null),
       tx.get(db.collection('rutasWhatsApp').where('aliasSecreto', '==', ALIAS).limit(5)),
+      refVieja ? tx.get(refVieja) : Promise.resolve(null),
     ]);
 
     if (!tenant.exists) return { error: `No existe el comercio «${TENANT}». Primero alta-comercio.mjs.` };
     if (ruta.exists && ruta.get('tenantId') !== TENANT) {
       return { error: 'Ese número ya está asignado a OTRO comercio. Libérelo primero.' };
     }
-    const otro = conAlias.docs.find((d) => d.id !== NUMERO);
+    if (vieja) {
+      if (!vieja.exists) return { error: `El número a reemplazar ${cola(REEMPLAZA)} no tiene ruta. Revise --reemplaza (--listar).` };
+      if (vieja.get('tenantId') !== TENANT) {
+        return { error: `El número a reemplazar ${cola(REEMPLAZA)} es de OTRO comercio. No se toca.` };
+      }
+      if (vieja.get('aliasSecreto') !== ALIAS) {
+        return { error: `El número a reemplazar ${cola(REEMPLAZA)} usa el alias ${vieja.get('aliasSecreto') ?? '(ninguno)'}, no ${ALIAS}.` };
+      }
+    }
+    const otro = conAlias.docs.find((d) => d.id !== NUMERO && d.id !== REEMPLAZA);
     if (otro) {
       return {
         error: `El alias ${ALIAS} ya lo usa el número ${cola(otro.id)} (${otro.get('tenantId')}). `
@@ -147,6 +175,7 @@ try {
     }
 
     const resumen = {
+      reemplazada: Boolean(vieja && vieja.exists),
       rutaNueva: !ruta.exists,
       configNueva: Boolean(refConfig && config && !config.exists),
       estado: tenant.get('estado') ?? 'activo',
@@ -154,6 +183,7 @@ try {
     };
     if (!APLICAR) return resumen;
 
+    if (refVieja) tx.delete(refVieja);
     tx.set(refRuta, {
       tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS,
       estado: resumen.estado,
@@ -170,6 +200,7 @@ try {
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
       accion: 'asignar_numero', uid: 'asignar-numero', en: Timestamp.now(),
       phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS,
+      ...(REEMPLAZA ? { reemplazaA: REEMPLAZA } : {}),
     });
     return resumen;
   });
@@ -184,6 +215,7 @@ if (plan.error) {
 }
 
 console.log(`  Ruta      : ${plan.rutaNueva ? 'se crea' : 'ya existía, se actualiza'}`);
+if (REEMPLAZA) console.log(`  Ruta vieja: ${cola(REEMPLAZA)} se borra`);
 console.log(`  Ficha     : flujos ${JSON.stringify(plan.flujosAntes)} + ${FLUJO} · estado ${plan.estado}`);
 console.log(`  Config    : ${documento ? (plan.configNueva ? `se crea config/${documento}` : `config/${documento} ya existe`) : 'sin documento propio'}`);
 
@@ -195,7 +227,8 @@ if (!APLICAR) {
 // --- verificación por relectura ---------------------------------------------
 const ruta = await refRuta.get();
 const ficha = await refTenant.get();
-const ok = ruta.get('tenantId') === TENANT && ruta.get('aliasSecreto') === ALIAS
+const viejaQueda = refVieja ? (await refVieja.get()).exists : false;
+const ok = !viejaQueda && ruta.get('tenantId') === TENANT && ruta.get('aliasSecreto') === ALIAS
   && ruta.get('flujo') === FLUJO && (ficha.get('flujos') ?? []).includes(FLUJO)
   && ficha.get('waPhoneNumberId') === NUMERO;
 console.log(`\n  ${ok ? '✓' : '✗'} Verificación: ruta → ${ruta.get('tenantId')} · alias ${ruta.get('aliasSecreto')}`

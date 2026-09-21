@@ -19,6 +19,12 @@
 #   ./scripts/marcador-local.sh --marcador REEMPLAZAR_X --valor <valor> [--nota "texto"]
 #   ./scripts/marcador-local.sh --verificar REEMPLAZAR_X
 #   ./scripts/marcador-local.sh --listar
+#   ./scripts/marcador-local.sh --marcador REEMPLAZAR_X --copiar-de REEMPLAZAR_Y [--nota "texto"]
+#
+# --copiar-de (21/09/2026, el ensayo) toma el valor de OTRA fila de la tabla sin
+# que pase por la pantalla ni por el chat: las filas del ensayo apuntan a los
+# mismos calendarios del Demo A y al teléfono de quien prueba, que ya están en
+# la tabla. Sin esto había que volver a pegarlos a mano.
 #
 # El valor se puede pasar por `--valor` o, mejor, por la variable de entorno
 # MARCADOR_VALOR, para que no quede en el historial del shell.
@@ -26,7 +32,7 @@
 set -euo pipefail
 
 LOCAL="${CONFIG_LOCAL:-$HOME/NovuChat/CONFIGURACION.local.md}"
-MARCADOR="" ; VALOR="${MARCADOR_VALOR:-}" ; NOTA="" ; MODO="agregar"
+MARCADOR="" ; VALOR="${MARCADOR_VALOR:-}" ; NOTA="" ; MODO="agregar" ; COPIAR_DE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,6 +42,7 @@ while [ $# -gt 0 ]; do
     --verificar) MODO="verificar"; MARCADOR="${2:-}"; shift 2 ;;
     --listar)    MODO="listar";  shift ;;
     --archivo)   LOCAL="$2";    shift 2 ;;
+    --copiar-de) COPIAR_DE="$2"; shift 2 ;;
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
@@ -64,7 +71,16 @@ if [ "$MODO" = "verificar" ]; then
 fi
 
 # --- agregar ------------------------------------------------------------------
-[ -n "$VALOR" ] || { echo "Falta el valor (--valor o MARCADOR_VALOR)." >&2; exit 2; }
+if [ -n "$COPIAR_DE" ]; then
+  printf '%s' "$COPIAR_DE" | grep -Eq '^REEMPLAZAR_[A-Z0-9_]+$' \
+    || { echo "✗ --copiar-de tiene que ser un marcador REEMPLAZAR_…" >&2; exit 2; }
+  [ -z "$VALOR" ] || { echo "✗ O --valor o --copiar-de, no los dos." >&2; exit 2; }
+  # La celda del valor, sin comillas invertidas ni espacios. Nunca se imprime.
+  VALOR=$(awk -v m="$COPIAR_DE" -F'|' '
+    /^\| *`REEMPLAZAR_/ { c=$2; gsub(/[ `]/, "", c); if (c == m) { v=$3; gsub(/[ `]/, "", v); print v; exit } }' "$LOCAL")
+  [ -n "$VALOR" ] || { echo "✗ $COPIAR_DE no está en la tabla (o está vacío): no hay qué copiar." >&2; exit 1; }
+fi
+[ -n "$VALOR" ] || { echo "Falta el valor (--valor, MARCADOR_VALOR o --copiar-de)." >&2; exit 2; }
 if [ "$existe" -gt 0 ]; then
   echo "✓ $MARCADOR ya estaba en la tabla: no se toca nada."
   echo "  (para cambiar su valor, edítalo a mano: este script no pisa filas existentes.)"
