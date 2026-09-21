@@ -21,8 +21,8 @@ import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './planes.js';
 // aplica lo que decidió, dentro de la transacción que ya existía.
 import {
   camposDerivados, consumidasDe, consumoDeConversacion, corteAplicable, corteDe, estadoDeServicio,
-  mensajeCortesia, modalidadDe, rechazoPorPrepago, type CuentaCruda, type EstadoServicio,
-  type MotivoCorte,
+  mensajeCortesia, modalidadDe, periodosIncoherentes, rechazoPorPrepago, type CuentaCruda,
+  type EstadoServicio, type MotivoCorte,
 } from './prepago.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
@@ -1211,6 +1211,23 @@ export const ingesta = onRequest(
       // afuera: `nuevo` = empezó (o cambió de modo) con este mensaje.
       const corte = { nuevo: false, aplicado: cortado, reanudado: false, motivo: rechazo };
 
+      // CUENTA INCOHERENTE (período presente y mal formado): se atiende, y
+      // queda en la auditoría UNA vez por cuenta, no por mensaje: la marca
+      // `incoherencia` en la cuenta es lo que evita repetirla, y se borra sola
+      // cuando el dato se corrige (si vuelve a romperse, vuelve a avisar).
+      if (servicio.incoherente) {
+        if (cuentaCruda.incoherencia === undefined) {
+          const campos = periodosIncoherentes(cuentaCruda);
+          tx.set(refCuenta, { incoherencia: { en: Timestamp.now(), campos } }, { merge: true });
+          tx.create(refAuditoria.doc(), {
+            accion: 'cuenta_incoherente', uid: 'ingesta', en: Timestamp.now(),
+            modalidad: servicio.modalidad, campos,
+          });
+        }
+      } else if (cuentaCruda.incoherencia !== undefined) {
+        tx.set(refCuenta, { incoherencia: FieldValue.delete() }, { merge: true });
+      }
+
       if (rechazo !== null) {
         // UN CORTE ES NUEVO si no había ninguno, si cambió el motivo, o si
         // cambió de observado a aplicado (o al revés): la fecha «desde» y las
@@ -1705,8 +1722,13 @@ export const configuracionFlujo = onRequest(
     const cuentaCruda = (cuenta.data() ?? {}) as CuentaCruda;
     const servicio = estadoDeServicio(cuentaCruda, consumidasDe(metricas.data()), ahoraMs);
     const corteAplica = corteAplicable(cuentaCruda, plataformaPrepago.data());
-    const ventanaAbierta = telefono !== null && conversacion !== null
-      && !ventanaVencida((conversacion.data() ?? {}) as MarcasDeConteo, ahoraMs);
+    // SIN TELÉFONO NO SE SABE SI LA VENTANA ESTÁ ABIERTA, y `sin_conversaciones`
+    // no corta una ventana abierta: se falla hacia atender. El corte a los
+    // teléfonos nuevos sigue entrando por la ingesta y por las peticiones con
+    // teléfono; por eso encender la bandera exige que todos los flujos
+    // publicados manden `telefono` (ESTADO.md, 20/09). `sin_pago` corta igual.
+    const ventanaAbierta = telefono === null || (conversacion !== null
+      && !ventanaVencida((conversacion.data() ?? {}) as MarcasDeConteo, ahoraMs));
     if (!servicio.operativo && corteAplica
         && !(servicio.motivo === 'sin_conversaciones' && ventanaAbierta)) {
       logger.info('configuracionFlujo: turno cortado por prepago', {

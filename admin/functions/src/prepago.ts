@@ -317,6 +317,8 @@ export interface CuentaCruda {
   /** Teléfonos del comercio que pueden pagar y reciben la cobranza (≤ 5). */
   telefonosPago?: unknown;
   confirmacionesPendientes?: unknown;
+  /** Marca de la ingesta: ya se avisó que la cuenta está incoherente. */
+  incoherencia?: unknown;
 }
 
 export type MotivoCorte = 'sin_pago' | 'sin_conversaciones';
@@ -416,6 +418,14 @@ export interface EstadoServicio {
   fase: Fase;
   /** Hasta cuándo dura la gracia, en milisegundos; `null` fuera de la gracia. */
   graciaHasta: number | null;
+  /**
+   * `true` si la cuenta tiene modalidad pero su período (`periodoPagado`, o
+   * `periodoPrueba` en prueba) está PRESENTE Y MAL FORMADO (`'2026-9'`, un
+   * Timestamp, `null`). Es un dato corrupto o a medio migrar, no un impago:
+   * se falla hacia ATENDER (operativo, sin motivo) y la ingesta lo deja en la
+   * auditoría, una vez por cuenta. Revisión de seguridad de A-0, 20/09.
+   */
+  incoherente: boolean;
   /** Desde cuándo rige (o regiría) el corte por falta de pago; `null` si no hay. */
   corteDesdeMs: number | null;
   modalidad: Modalidad;
@@ -447,6 +457,21 @@ export function consumidasDe(metricas: Record<string, unknown> | undefined): num
 }
 
 /**
+ * Los campos de período de la cuenta que están PRESENTES y mal formados:
+ * `periodoPagado` en prepago o prueba, `periodoPrueba` en prueba. Ausente
+ * (`undefined`) no cuenta; `null` sí. Vacía si todo está bien o no hay modalidad.
+ */
+export function periodosIncoherentes(cuenta: CuentaCruda | null | undefined): ('periodoPagado' | 'periodoPrueba')[] {
+  const c = cuenta ?? {};
+  const modalidad = modalidadDe(c);
+  if (modalidad === 'demostracion') return [];
+  const malos: ('periodoPagado' | 'periodoPrueba')[] = [];
+  if (c.periodoPagado !== undefined && !esPeriodo(c.periodoPagado)) malos.push('periodoPagado');
+  if (modalidad === 'prueba' && c.periodoPrueba !== undefined && !esPeriodo(c.periodoPrueba)) malos.push('periodoPrueba');
+  return malos;
+}
+
+/**
  * Decide el estado del servicio de una cuenta en un instante.
  *
  * `consumidas` son las conversaciones del mes según el agregado
@@ -472,7 +497,7 @@ export function estadoDeServicio(
 
   const base = {
     modalidad, plan, periodo, bolsa, bolsaPrueba, consumidas: usadas,
-    graciaHasta: null as number | null, corteDesdeMs: null as number | null,
+    graciaHasta: null as number | null, corteDesdeMs: null as number | null, incoherente: false,
   };
 
   if (modalidad === 'demostracion') {
@@ -480,6 +505,18 @@ export function estadoDeServicio(
       ...base, operativo: true, motivo: null, fase: 'cubierto', enPrueba: false, cubierto: true,
       cubiertoHasta: '', incluidas: 0, restanteDelPlan: 0, disponibles: Number.POSITIVE_INFINITY,
       mensualidadUsd: 0,
+    };
+  }
+
+  // UN PERÍODO PRESENTE Y MAL FORMADO NO ES UN IMPAGO. Ausente significa «nunca
+  // pagó» y se juzga como tal; presente con basura significa que alguien
+  // escribió mal la cuenta, y sobre eso no se corta a nadie: se atiende, y
+  // quien llama lo anota para que NovuChat lo corrija.
+  if (periodosIncoherentes(c).length > 0) {
+    return {
+      ...base, operativo: true, motivo: null, fase: 'cubierto', enPrueba: false, cubierto: true,
+      cubiertoHasta: '', incluidas: 0, restanteDelPlan: 0, disponibles: Number.POSITIVE_INFINITY,
+      mensualidadUsd: precio, incoherente: true,
     };
   }
 
@@ -558,7 +595,7 @@ export function consumoDeConversacion(estado: EstadoServicio): {
   campoBolsa: 'bolsa' | 'bolsaPrueba' | null;
   cortaDespues: boolean;
 } {
-  if (estado.modalidad === 'demostracion' || !estado.operativo) {
+  if (estado.modalidad === 'demostracion' || estado.incoherente || !estado.operativo) {
     return { campoBolsa: null, cortaDespues: false };
   }
   const campoBolsa = estado.restanteDelPlan > 0 ? null
@@ -865,7 +902,8 @@ export function recordatoriosDebidos(
   ahoraMs: number,
   contexto: ContextoRecordatorio,
 ): Recordatorio[] {
-  if (estado.modalidad === 'demostracion') return [];
+  // Una cuenta incoherente no recibe cobranza: primero se corrige el dato.
+  if (estado.modalidad === 'demostracion' || estado.incoherente) return [];
   const enviados = (typeof cuenta?.recordatorios === 'object' && cuenta.recordatorios !== null)
     ? cuenta.recordatorios as Record<string, unknown> : {};
   const debidos: Recordatorio[] = [];

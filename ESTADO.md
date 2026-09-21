@@ -45,6 +45,19 @@ pago confirmado de punta a punta». Una cuenta sin modalidad, en demostración o
 con plan de demostración **no se corta nunca**, con la bandera encendida o
 apagada: es la condición de fusión y está probada negando.
 
+**Revisión de seguridad (20/09, apta con cambios menores, aplicados):** una
+cuenta con modalidad y período **presente pero mal formado** se atiende
+(`incoherente: true`, auditoría `cuenta_incoherente` una vez por cuenta) en vez
+de cortarse; `actualizarEstadoCuenta` rechaza borrar `periodoPrueba` de una
+cuenta en prueba; `recordatorioPrepagoEnviado` solo marca claves que el servidor
+genera (400 y bitácora si no); `fijarCortePrepago` exige un motivo de al menos
+10 caracteres; regla y prueba para `plataforma/prepago/historial`. Y
+`configuracionFlujo` **sin `telefono`** ya no corta por `sin_conversaciones`
+(falla hacia atender: no sabe si la ventana está abierta). **Consecuencia:
+encender la bandera exige que todos los flujos publicados manden `telefono` a
+`Traer configuración`**; hasta entonces el corte por conversaciones a teléfonos
+nuevos entra solo por la ingesta. `sin_pago` corta con o sin teléfono.
+
 **Pruebas.** `pruebas/prepago.test.ts` (pura), `prepago-ingesta.test.ts`
 (ingesta real, alias `cliente16`, tabla de §4undecies.4), `prepago-configuracion.test.ts`,
 `cobranza.test.ts`; `estado-cuenta.test.ts` ampliado. El resultado real de la

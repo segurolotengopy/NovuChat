@@ -184,13 +184,22 @@ describe('Sin conversaciones y la ventana abierta', () => {
     expect(r.cuerpo['prepago']).toMatchObject({ fase: 'cortado', motivo: 'sin_conversaciones', disponibles: 0, corteAplicado: true });
   });
 
-  it('un teléfono con la ventana vencida, uno nuevo, o ninguno: 409', async () => {
-    for (const cuerpo of [{ telefono: '591000000012' }, { telefono: '591000000099' }, {}]) {
+  it('un teléfono con la ventana vencida, o uno nuevo: 409', async () => {
+    for (const cuerpo of [{ telefono: '591000000012' }, { telefono: '591000000099' }]) {
       const r = await configuracion(cuerpo);
       expect(r.codigo).toBe(409);
       expect(r.cuerpo['estado']).toBe('sin_conversaciones');
       expect(String(r.cuerpo['mensajeCortesia'])).not.toMatch(PROHIBIDO);
     }
+  });
+
+  it('sin teléfono en la petición NO corta por conversaciones: no se sabe si la ventana está abierta', async () => {
+    // Revisión de seguridad de A-0: se falla hacia atender. El corte a los
+    // teléfonos nuevos entra por la ingesta y por las peticiones con teléfono;
+    // por eso encender la bandera exige que todos los flujos manden `telefono`.
+    const r = await configuracion({});
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['prepago']).toMatchObject({ motivo: 'sin_conversaciones', corteAplicado: true });
   });
 });
 

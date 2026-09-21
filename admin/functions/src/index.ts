@@ -707,6 +707,11 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     for (const [k, v] of Object.entries(escritura)) {
       if (v instanceof FieldValue) delete combinada[k]; else combinada[k] = v;
     }
+    // Borrar `periodoPrueba` de una cuenta que queda en PRUEBA la dejaría
+    // incoherente (`estadoDeServicio` la atendería sin límite): se rechaza.
+    if (viene('periodoPrueba') && datos['periodoPrueba'] === null && combinada['modalidad'] === 'prueba') {
+      throw new HttpsError('invalid-argument', 'Una cuenta en prueba necesita su periodoPrueba.');
+    }
     const recalcular = viene('modalidad') || viene('periodoPrueba')
       || (plan !== null && modalidadDe(combinada as CuentaCruda) !== 'demostracion');
     if (recalcular) {
@@ -768,7 +773,12 @@ export const fijarCortePrepago = onCall(async (peticion) => {
   if (typeof corteActivo !== 'boolean') {
     throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
   }
+  // El motivo es obligatorio y tiene que decir algo: es lo que queda en el
+  // historial junto a quién y cuándo, y encender el corte es una decisión.
   const motivo = texto(datos['motivo'], 300);
+  if (motivo.length < 10) {
+    throw new HttpsError('invalid-argument', 'El motivo es obligatorio (al menos 10 caracteres).');
+  }
   const tenantId = texto(datos['tenantId'], 60);
   if (tenantId !== '' && !ID_TENANT.test(tenantId)) {
     throw new HttpsError('invalid-argument', 'Identificador inválido.');

@@ -33,7 +33,7 @@ process.env['INGESTA_CLIENTE16'] = TOKEN;
 // index.ts inicializa la app por defecto al cargarse, como en producción, y
 // reexporta la ingesta: se importa todo de ahí para no inicializar dos veces.
 const { ingesta, fijarCortePrepago } = await import('../functions/src/index.ts');
-const { getFirestore } = await import('firebase-admin/firestore');
+const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const { limitesDe } = await import('../functions/src/planes.ts');
 const { GRACIA_MS, finDelPeriodoMs, inicioDelPeriodoMs, mesBolivia, periodoAnterior, periodoSiguiente } =
   await import('../functions/src/prepago.ts');
@@ -161,6 +161,33 @@ describe('Negativas: lo que NUNCA se corta, con la bandera global encendida', ()
   });
 });
 
+describe('Negativas: una cuenta con modalidad pero con el período mal formado se atiende', () => {
+  beforeEach(() => plataforma(true));
+
+  it.each([
+    ['prepago con `periodoPagado: "2026-9"`', { modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento'), periodoPagado: '2026-9' }],
+    ['prueba con `periodoPrueba` como Timestamp', { modalidad: 'prueba', plan: 'impulso', periodoPrueba: Timestamp.fromMillis(AHORA), bolsaPrueba: 0 }],
+  ])('%s, bandera encendida: 200, contadores como hoy, auditoría `cuenta_incoherente` una sola vez', async (_, datos) => {
+    await fijarCuenta({ ...datos, avisoConsumo: { mes: MES_UTC(AHORA) } });
+    const r = await entrante('591000000601');
+    expect(r.codigo).toBe(200);
+    expect(r.cuerpo['servicio']).toMatchObject({ estado: 'operativo', motivo: null, fase: 'cubierto' });
+    expect(await metricas()).toMatchObject({ conversaciones: 1, mensajes: 1, entrantes: 1 });
+    expect((await cuenta())['corte']).toBeUndefined();
+    expect((await cuenta())['incoherencia']).toBeDefined();
+    await entrante('591000000602');
+    expect((await metricas())['conversaciones']).toBe(2);
+    const auds = await auditorias('cuenta_incoherente');
+    expect(auds).toHaveLength(1);
+    expect(auds[0]).toMatchObject({ uid: 'ingesta', modalidad: datos.modalidad });
+    expect(await bitacora('corte_servicio')).toHaveLength(0);
+    // Corregido el dato, la marca se va sola con el siguiente mensaje.
+    await db.doc(`tenants/${T}/cuenta/estado`).update({ periodoPagado: MES, periodoPrueba: MES });
+    await entrante('591000000603');
+    expect((await cuenta())['incoherencia']).toBeUndefined();
+  });
+});
+
 describe('Modo observación: la bandera apagada no corta a nadie aunque deba', () => {
   const VENCIDA = { modalidad: 'prepago', plan: 'crecimiento', limites: limitesDe('crecimiento'), periodoPagado: HACE_DOS_MESES };
 
@@ -207,6 +234,14 @@ describe('Modo observación: la bandera apagada no corta a nadie aunque deba', (
     await fijarCuenta(VENCIDA);
     expect((await entrante('591000000221')).cuerpo['servicio']).toMatchObject({ estado: 'observado' });
     expect((await metricas())['conversaciones']).toBe(1);
+  });
+
+  it('`corteActivo: "true"` (texto, no booleano) es apagada', async () => {
+    await db.doc('plataforma/prepago').set({ corteActivo: 'true' });
+    await fijarCuenta({ ...VENCIDA, corteActivo: 'true' });
+    expect((await entrante('591000000231')).cuerpo['servicio']).toMatchObject({ estado: 'observado' });
+    expect((await metricas())['conversaciones']).toBe(1);
+    expect((await cuenta())['corte']).toMatchObject({ aplicado: false });
   });
 });
 
@@ -377,6 +412,7 @@ describe('`fijarCortePrepago`: solo el propietario con sesión de Google', () =>
   const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' } } };
   const PROPIETARIO_CON_CONTRASENA = { uid: 'prop-2', token: { nc: { p: true }, firebase: { sign_in_provider: 'password' } } };
   const ADMIN = { uid: 'adm-1', token: { nc: { t: { [T]: 'admin' } }, firebase: { sign_in_provider: 'password' } } };
+  const MOTIVO = 'ensayo de extremo a extremo';
   type Peticion = Parameters<typeof fijarCortePrepago.run>[0];
   const llamar = (data: Record<string, unknown>, auth: object | null = PROPIETARIO) =>
     fijarCortePrepago.run({ data, auth, rawRequest: {} } as unknown as Peticion);
@@ -389,38 +425,46 @@ describe('`fijarCortePrepago`: solo el propietario con sesión de Google', () =>
   });
 
   it('el administrador del comercio NO puede, ni para su propio comercio; el documento queda intacto', async () => {
-    await expect(llamar({ corteActivo: true }, ADMIN)).rejects.toMatchObject({ code: 'permission-denied' });
-    await expect(llamar({ corteActivo: true, tenantId: T }, ADMIN)).rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(llamar({ corteActivo: true, motivo: MOTIVO }, ADMIN)).rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(llamar({ corteActivo: true, tenantId: T, motivo: MOTIVO }, ADMIN)).rejects.toMatchObject({ code: 'permission-denied' });
     expect((await db.doc('plataforma/prepago').get()).exists).toBe(false);
     expect((await cuenta())['corteActivo']).toBeUndefined();
   });
 
   it('el claim de propietario con contraseña no alcanza (T-19); sin sesión, tampoco', async () => {
-    await expect(llamar({ corteActivo: true }, PROPIETARIO_CON_CONTRASENA)).rejects.toMatchObject({ code: 'permission-denied' });
-    await expect(llamar({ corteActivo: true }, null)).rejects.toMatchObject({ code: 'unauthenticated' });
+    await expect(llamar({ corteActivo: true, motivo: MOTIVO }, PROPIETARIO_CON_CONTRASENA)).rejects.toMatchObject({ code: 'permission-denied' });
+    await expect(llamar({ corteActivo: true, motivo: MOTIVO }, null)).rejects.toMatchObject({ code: 'unauthenticated' });
     expect((await db.doc('plataforma/prepago').get()).exists).toBe(false);
   });
 
+  it('el motivo es obligatorio, de al menos 10 caracteres', async () => {
+    await expect(llamar({ corteActivo: true })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: true, motivo: 'ensayo' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: true, motivo: '         ' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect((await db.doc('plataforma/prepago').get()).exists).toBe(false);
+    expect(await historial()).toEqual([]);
+  });
+
   it('un valor que no es booleano se rechaza', async () => {
-    await expect(llamar({ corteActivo: 'si' })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: 'si', motivo: MOTIVO })).rejects.toMatchObject({ code: 'invalid-argument' });
     await expect(llamar({})).rejects.toMatchObject({ code: 'invalid-argument' });
-    await expect(llamar({ corteActivo: true, tenantId: 'no-existe' })).rejects.toMatchObject({ code: 'not-found' });
+    await expect(llamar({ corteActivo: true, tenantId: 'no-existe', motivo: MOTIVO })).rejects.toMatchObject({ code: 'not-found' });
   });
 
   it('la global se escribe con quién, cuándo y por qué, y queda en el historial', async () => {
-    expect(await llamar({ corteActivo: true, motivo: 'ensayo' })).toEqual({ ok: true, corteActivo: true });
-    expect((await db.doc('plataforma/prepago').get()).data()).toMatchObject({ corteActivo: true, actualizadoPor: 'prop-1', motivo: 'ensayo' });
-    expect(await historial()).toMatchObject([{ corteActivo: true, uid: 'prop-1', motivo: 'ensayo' }]);
-    await llamar({ corteActivo: false, motivo: 'fin del ensayo' });
+    expect(await llamar({ corteActivo: true, motivo: 'ensayo de extremo a extremo' })).toEqual({ ok: true, corteActivo: true });
+    expect((await db.doc('plataforma/prepago').get()).data()).toMatchObject({ corteActivo: true, actualizadoPor: 'prop-1', motivo: 'ensayo de extremo a extremo' });
+    expect(await historial()).toMatchObject([{ corteActivo: true, uid: 'prop-1', motivo: 'ensayo de extremo a extremo' }]);
+    await llamar({ corteActivo: false, motivo: 'fin del ensayo de extremo a extremo' });
     expect((await db.doc('plataforma/prepago').get()).get('corteActivo')).toBe(false);
     expect(await historial()).toHaveLength(2);
   });
 
   it('la de un tenant va a su cuenta, a su auditoría y al historial con el tenant', async () => {
-    expect(await llamar({ corteActivo: true, tenantId: T, motivo: 'ensayo' })).toEqual({ ok: true, corteActivo: true, tenantId: T });
+    expect(await llamar({ corteActivo: true, tenantId: T, motivo: 'ensayo de extremo a extremo' })).toEqual({ ok: true, corteActivo: true, tenantId: T });
     expect((await cuenta())['corteActivo']).toBe(true);
     expect((await db.doc('plataforma/prepago').get()).exists).toBe(false);
-    expect(await auditorias('corte_prepago')).toMatchObject([{ uid: 'prop-1', corteActivo: true, motivo: 'ensayo' }]);
+    expect(await auditorias('corte_prepago')).toMatchObject([{ uid: 'prop-1', corteActivo: true, motivo: 'ensayo de extremo a extremo' }]);
     expect(await historial()).toMatchObject([{ tenantId: T, corteActivo: true }]);
   });
 });

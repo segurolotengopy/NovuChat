@@ -61,6 +61,8 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
+// NovuChat mismo no es un cliente: no se migra a ninguna modalidad (DISENO §4undecies.2).
+if (TENANT === 'novuchat') problemas.push('--tenant novuchat no se migra: es la propia NovuChat y queda como demostración');
 if (!esModalidad(MODALIDAD)) problemas.push(`--modalidad desconocida: ${MODALIDAD || '(vacía)'}. Una de: ${MODALIDADES.join(', ')}`);
 if (MODALIDAD === 'prepago' && !esPeriodo(PERIODO_PAGADO)) problemas.push('--periodo-pagado aaaa-mm es obligatorio con prepago');
 if (PERIODO_PRUEBA && !esPeriodo(PERIODO_PRUEBA)) problemas.push('--periodo-prueba tiene que ser aaaa-mm');

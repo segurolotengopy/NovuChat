@@ -5,8 +5,8 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import { registrar } from './ingesta.js';
 import { periodoDe } from './planes.js';
 import {
-  PLANTILLAS, consumidasDe, estadoDeServicio, horaBolivia, modalidadDe, recordatoriosDebidos,
-  tipoCambioVigente, type CuentaCruda, type Recordatorio,
+  PLANTILLAS, consumidasDe, estadoDeServicio, horaBolivia, mesBolivia, modalidadDe, periodoSiguiente,
+  recordatoriosDebidos, tipoCambioVigente, type CuentaCruda, type Recordatorio,
 } from './prepago.js';
 
 /**
@@ -56,8 +56,33 @@ function texto(valor: unknown, maxLargo: number): string {
 
 const TELEFONO = /^[0-9]{8,15}$/;
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
-/** La forma de una clave de recordatorio: las genera `recordatoriosDebidos`. */
-const CLAVE = /^[a-z0-9_-]{3,80}$/;
+/**
+ * LAS CLAVES QUE SE PUEDEN MARCAR, y nada más: las que genera
+ * `recordatoriosDebidos` (prefijo conocido más un período `aaaa-mm` que no
+ * sea posterior al mes SIGUIENTE al en curso de Bolivia: los avisos de
+ * renovación D-5 y D-1 llevan el mes que vence, que es el que viene) y
+ * `confirmacion_<pagoId>`. Una clave inventada no se marca: si se marcara,
+ * `cuenta.recordatorios` sería un lugar donde el número de NovuChat puede
+ * escribir lo que quiera.
+ */
+const CLAVE_PERIODO = /^(vence_pronto|vence_manana|vencida|corte|corte2|agotadas|conversion)_(\d{4}-\d{2})$/;
+const CLAVE_CONFIRMACION = /^confirmacion_([A-Za-z0-9_-]{4,64})$/;
+
+export type ClaveValida =
+  | { tipo: 'periodo'; clave: string }
+  | { tipo: 'confirmacion'; clave: string; pagoId: string };
+
+/** Pura: qué clave es, o `null` si no es ninguna de las que se generan. */
+export function claveValida(clave: string, ahoraMs: number): ClaveValida | null {
+  const c = CLAVE_CONFIRMACION.exec(clave);
+  if (c) return { tipo: 'confirmacion', clave, pagoId: c[1]! };
+  const p = CLAVE_PERIODO.exec(clave);
+  if (!p) return null;
+  const periodo = p[2]!;
+  const mes = Number(periodo.slice(5));
+  if (mes < 1 || mes > 12 || periodo > periodoSiguiente(mesBolivia(ahoraMs))) return null;
+  return { tipo: 'periodo', clave };
+}
 
 /** Horario de envío en Bolivia: desde las 09:00 y antes de las 19:00. */
 export const HORARIO_ENVIO = { desde: 9, hasta: 19 } as const;
@@ -240,7 +265,16 @@ export const recordatorioPrepagoEnviado = onRequest(
     const tenantId = texto(cuerpo['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) { respuesta.status(400).json({ error: 'tenantId invalido' }); return; }
     const clave = texto(cuerpo['clave'], 80);
-    if (!CLAVE.test(clave)) { respuesta.status(400).json({ error: 'clave invalida' }); return; }
+    const valida = claveValida(clave, Date.now());
+    // Una clave rechazada queda en la bitácora del tenant: es el número de
+    // NovuChat intentando marcar algo que el servidor no generó.
+    const rechazar = async (codigo: string) => {
+      await registrar(tenantId, {
+        tipo: 'entrada_descartada', resultado: 'rechazado', canal: 'sistema', codigo, detalle: clave.slice(0, 120),
+      });
+      respuesta.status(400).json({ error: 'clave invalida', codigo });
+    };
+    if (valida === null) { await rechazar('clave_invalida'); return; }
 
     const db = getFirestore();
     const refCuenta = db.doc(`tenants/${tenantId}/cuenta/estado`);
@@ -258,7 +292,16 @@ export const recordatorioPrepagoEnviado = onRequest(
       if (typeof previos === 'object' && previos !== null && clave in (previos as Record<string, unknown>)) {
         return { marcado: false, repetido: true };
       }
-      const pagoId = clave.startsWith('confirmacion_') ? clave.slice('confirmacion_'.length) : '';
+      // Una confirmación se marca SOLO si está pendiente: la deja A-2 al
+      // aplicar el pago, y nadie más.
+      const pagoId = valida.tipo === 'confirmacion' ? valida.pagoId : '';
+      if (pagoId) {
+        const pendientes = cuenta.get('confirmacionesPendientes');
+        if (typeof pendientes !== 'object' || pendientes === null
+            || !(pagoId in (pendientes as Record<string, unknown>))) {
+          return { marcado: false, repetido: false, motivo: 'sin_confirmacion' as const };
+        }
+      }
       tx.set(refCuenta, {
         recordatorios: { [clave]: Timestamp.now() },
         // La confirmación pendiente se cierra al marcarla: ya salió (o se perdió).
@@ -267,6 +310,7 @@ export const recordatorioPrepagoEnviado = onRequest(
       return { marcado: true, repetido: false };
     });
 
+    if ('motivo' in salida && salida.motivo === 'sin_confirmacion') { await rechazar('sin_confirmacion'); return; }
     if (salida.marcado) {
       // Queda en la bitácora del comercio: le llegó una plantilla de NovuChat
       // sobre su cuenta. Sin teléfono: el destino es el comercio, no un cliente.

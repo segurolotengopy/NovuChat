@@ -204,6 +204,18 @@ describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
     expect(await cuenta()).toEqual(CUENTA_INICIAL);
   });
 
+  it('no se puede borrar `periodoPrueba` de una cuenta que queda en PRUEBA (quedaría incoherente)', async () => {
+    // Revisión de seguridad de A-0: en la misma llamada, o sobre una que ya es prueba.
+    await rechaza(llamar({ tenantId: T, modalidad: 'prueba', periodoPrueba: null }), 'invalid-argument');
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+    await llamar({ tenantId: T, modalidad: 'prueba' });
+    await rechaza(llamar({ tenantId: T, periodoPrueba: null }), 'invalid-argument');
+    expect((await cuenta()).periodoPrueba).toBe(mesBolivia(Date.now()));
+    // Al salir de prueba sí se puede borrar.
+    await llamar({ tenantId: T, modalidad: 'demostracion', periodoPrueba: null });
+    expect((await cuenta()).periodoPrueba).toBeUndefined();
+  });
+
   it('pasar a PRUEBA inicializa el mes en curso y su bolsa, y deriva al día con monto cero', async () => {
     await llamar({ tenantId: T, modalidad: 'prueba' });
     const c = await cuenta();

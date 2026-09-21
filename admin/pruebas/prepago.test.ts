@@ -19,7 +19,8 @@ import {
   PLANTILLAS, PRUEBA, VOSEO, aplicarPago, camposDerivados, consumoDeConversacion, corteAplicable,
   corteDe, descripcionDe, diasDelPeriodo, esPago, esTipoCambio, estadoDeServicio, fechaEscrita,
   fechaFinDelPeriodo, finDelPeriodoMs, importeBs, inicioDelPeriodoMs, mensajeCortesia, mesBolivia,
-  modalidadDe, montoUsdDe, periodoAnterior, periodoSiguiente, rechazoPorPrepago, recordatoriosDebidos,
+  modalidadDe, montoUsdDe, periodoAnterior, periodoSiguiente, periodosIncoherentes, rechazoPorPrepago,
+  recordatoriosDebidos,
   resumenDeCuenta, sumarMeses, tipoCambioVigente, type ContextoRecordatorio, type CuentaCruda,
 } from '../functions/src/prepago.ts';
 import { PLANES, limitesDe } from '../functions/src/planes.ts';
@@ -114,6 +115,29 @@ describe('Cobertura por instantes y la gracia de 48 horas', () => {
 
   it('la gracia solo es del primer mes sin cobertura: dos meses después no hay gracia', () => {
     expect(estadoDeServicio(cuenta, 0, bo(2026, 11, 1, 12)).fase).toBe('cortado');
+  });
+
+  it('un período PRESENTE y mal formado no es un impago: se atiende, y queda marcado como incoherente', () => {
+    // Revisión de seguridad de A-0: `'2026-9'`, un Timestamp o `null` son un
+    // dato corrupto o a medio migrar, no un comercio que no pagó.
+    for (const periodoPagado of ['2026-9', ts(1), null, 202609, '']) {
+      const e = estadoDeServicio(prepago({ periodoPagado }), 500, bo(2026, 10, 15));
+      expect(e).toMatchObject({ operativo: true, fase: 'cubierto', motivo: null, incoherente: true });
+      expect(rechazoPorPrepago(e.motivo, true)).toBeNull();
+      expect(consumoDeConversacion(e)).toEqual({ campoBolsa: null, cortaDespues: false });
+      expect(periodosIncoherentes(prepago({ periodoPagado }))).toEqual(['periodoPagado']);
+    }
+    const prueba = { modalidad: 'prueba', periodoPrueba: null, bolsaPrueba: 0 };
+    expect(estadoDeServicio(prueba, 0, bo(2026, 10, 15))).toMatchObject({ operativo: true, incoherente: true });
+    expect(periodosIncoherentes(prueba)).toEqual(['periodoPrueba']);
+    // Ausente no es incoherente: es «nunca pagó», y se juzga como tal.
+    expect(periodosIncoherentes(prepago())).toEqual([]);
+    expect(estadoDeServicio(prepago(), 0, bo(2026, 10, 15)).incoherente).toBe(false);
+    // Una demostración con basura sigue siendo demostración, sin marca.
+    expect(periodosIncoherentes({ periodoPagado: 'x' })).toEqual([]);
+    expect(estadoDeServicio({ periodoPagado: 'x' }, 0, bo(2026, 10, 15)).incoherente).toBe(false);
+    // Y no recibe cobranza.
+    expect(recordatoriosDebidos(prepago({ periodoPagado: null }), estadoDeServicio(prepago({ periodoPagado: null }), 0, bo(2026, 10, 30)), bo(2026, 10, 30), CON_TCO)).toEqual([]);
   });
 
   it('una cuenta prepago que nunca pagó está cortada, sin gracia ni fecha de corte', () => {

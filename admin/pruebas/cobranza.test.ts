@@ -25,7 +25,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { recordatoriosPrepago, recordatorioPrepagoEnviado, telefonosPagoDe, enHorarioDeEnvio } =
+const { recordatoriosPrepago, recordatorioPrepagoEnviado, telefonosPagoDe, enHorarioDeEnvio, claveValida } =
   await import('../functions/src/cobranza.ts');
 const { limitesDe } = await import('../functions/src/planes.ts');
 
@@ -134,6 +134,19 @@ describe('Ayudantes puros', () => {
     expect(telefonosPagoDe({ telefonosPago: 'no' })).toEqual([]);
   });
 
+  it('`claveValida`: solo prefijos conocidos, período hasta el mes que viene, y `confirmacion_<pagoId>`', () => {
+    const ahora = OCT_28;
+    expect(claveValida('vence_pronto_2026-11', ahora)).toEqual({ tipo: 'periodo', clave: 'vence_pronto_2026-11' });
+    expect(claveValida('corte2_2026-10', ahora)).toEqual({ tipo: 'periodo', clave: 'corte2_2026-10' });
+    expect(claveValida('conversion_2026-10', ahora)).toEqual({ tipo: 'periodo', clave: 'conversion_2026-10' });
+    expect(claveValida('confirmacion_abc123', ahora)).toEqual({ tipo: 'confirmacion', clave: 'confirmacion_abc123', pagoId: 'abc123' });
+    // Posterior al mes que viene, mes 13, prefijo inventado, mayúsculas, vacía: no.
+    for (const c of ['vence_pronto_2026-12', 'vencida_2027-01', 'corte_2026-13', 'regalo_2026-10', 'VENCIDA_2026-10',
+      'vencida_2026-1', 'confirmacion_ab', 'confirmacion_', '', 'recordatorios']) {
+      expect(claveValida(c, ahora)).toBeNull();
+    }
+  });
+
   it('`enHorarioDeEnvio`: de 09:00 a 18:59 de Bolivia', () => {
     expect(enHorarioDeEnvio(bo(2026, 10, 28, 8, 59))).toBe(false);
     expect(enHorarioDeEnvio(bo(2026, 10, 28, 9))).toBe(true);
@@ -212,6 +225,32 @@ describe('Marcar antes de enviar', () => {
     expect((await marcar(TENANTS.prepago, 'Con Espacios')).codigo).toBe(400);
     expect((await marcar('Mal', 'vence_pronto_2026-11')).codigo).toBe(400);
     expect((await marcar('no-existe-cob', 'vence_pronto_2026-11')).cuerpo).toMatchObject({ marcado: false, motivo: 'sin_cuenta' });
+  });
+
+  it('una clave que el servidor no genera se rechaza con 400, no se marca y queda en la bitácora', async () => {
+    const descartadas = async () =>
+      (await db.collection(`tenants/${TENANTS.prepago}/bitacora`).where('tipo', '==', 'entrada_descartada').get()).docs.map((d) => d.data());
+    const antes = (await descartadas()).length;
+    for (const clave of ['regalo_2026-10', 'vencida_2027-06', 'corte_2026-13', 'recordatorios']) {
+      const r = await marcar(TENANTS.prepago, clave);
+      expect(r.codigo).toBe(400);
+      expect(r.cuerpo).toMatchObject({ codigo: 'clave_invalida' });
+    }
+    const cuenta = (await db.doc(`tenants/${TENANTS.prepago}/cuenta/estado`).get()).data() ?? {};
+    const marcadas = Object.keys((cuenta['recordatorios'] as Record<string, unknown>) ?? {});
+    expect(marcadas).not.toContain('regalo_2026-10');
+    expect(marcadas).not.toContain('vencida_2027-06');
+    const despues = await descartadas();
+    expect(despues).toHaveLength(antes + 4);
+    expect(despues.at(-1)).toMatchObject({ resultado: 'rechazado', canal: 'sistema', codigo: 'clave_invalida' });
+  });
+
+  it('una confirmación que no está pendiente no se marca: 400 con `sin_confirmacion`', async () => {
+    const r = await marcar(TENANTS.prepago, 'confirmacion_nadie99');
+    expect(r.codigo).toBe(400);
+    expect(r.cuerpo).toMatchObject({ codigo: 'sin_confirmacion' });
+    const cuenta = (await db.doc(`tenants/${TENANTS.prepago}/cuenta/estado`).get()).data() ?? {};
+    expect(Object.keys((cuenta['recordatorios'] as Record<string, unknown>) ?? {})).not.toContain('confirmacion_nadie99');
   });
 
   it('una confirmación pendiente se lista y, al marcarla, se cierra', async () => {

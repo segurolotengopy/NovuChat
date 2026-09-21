@@ -2124,6 +2124,15 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo
+    // observación del prepago (DISENO §4undecies.4): quién, cuándo, por qué y
+    // sobre qué tenant. La escribe solo `fijarCortePrepago` (SDK Admin); la
+    // lee el propietario. Es una subcolección: la regla de arriba no la cubre.
+    match /plataforma/prepago/historial/{id} {
+      allow get, list: if esPropietario();
+      allow create, update, delete: if false;
+    }
+
     // =========================================================================
     // CONSULTA DE GRUPO DE COLECCIONES SOBRE LA BITÁCORA
     //
