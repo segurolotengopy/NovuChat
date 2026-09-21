@@ -273,18 +273,26 @@ describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
     expect((await cuenta()).periodoPagado).toBeUndefined();
   });
 
-  it('con modalidad, cambiar el plan recalcula el monto; SIN modalidad la cuenta es demostración y deriva sin cargo', async () => {
+  it('con modalidad, cambiar el plan recalcula el monto; un comercio SIN MIGRAR no cambia de aspecto (LOW 8)', async () => {
     await llamar({ tenantId: T, plan: 'pro' });
     expect(await cuenta()).toMatchObject({ plan: 'pro', montoMensual: 90, estadoPago: 'al_dia' });
-    // Un comercio de antes del 20/09, sin modalidad: para el módulo es
-    // demostración (`modalidadDe`), y eso es lo que se deriva. Por eso la
-    // migración (`scripts/migrar-prepago.mjs`) le da su modalidad a cada
-    // comercio real ANTES del primer pago, y por eso el pago la escribe.
+    // Un comercio de antes del 20/09, sin modalidad y con un plan del
+    // catálogo: para el módulo sería demostración y derivaría «Sin cargo».
+    // NO se le escriben derivados hasta migrarlo: ni al cambiar el plan, ni
+    // al tocar el motivo o los umbrales.
     const { modalidad: _m, periodoPagado: _p, ...sinPrepago } = CUENTA_INICIAL;
     await db.doc(`tenants/${T}/cuenta/estado`).set(sinPrepago);
     await llamar({ tenantId: T, plan: 'impulso' });
+    await llamar({ tenantId: T, motivoVisible: 'otro' });
+    await llamar({ tenantId: T, umbralOperador: 3, umbralBloqueo: 5 });
     const c = await cuenta();
-    expect(c).toMatchObject({ plan: 'impulso', montoMensual: 0, estadoPago: 'sin_cargo', moneda: 'USD' });
-    expect(c.proximoVencimiento).toBeUndefined();
+    expect(c).toMatchObject({ plan: 'impulso', estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD' });
+    expect(c.estadoPago).not.toBe('sin_cargo');
+  });
+
+  it('un comercio de demostración POR PLAN, sin modalidad, sí deriva «Sin cargo»', async () => {
+    await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'demostracion', estadoPago: 'al_dia', montoMensual: 50, moneda: 'BOB' });
+    await llamar({ tenantId: T, motivoVisible: 'demo' });
+    expect(await cuenta()).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD' });
   });
 });

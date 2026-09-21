@@ -381,6 +381,14 @@ describe('registrarPagoManual: lo que hace un pago bien cargado', () => {
     expect(await pagosDe()).toHaveLength(3);
   });
 
+  it('una instalación sobre un comercio SIN MIGRAR no le escribe modalidad ni derivados (LOW 8)', async () => {
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ ...CUENTA_BASE, estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD' });
+    await correr(indice.registrarPagoManual, manual({ tipo: 'instalacion', plan: undefined, meses: undefined, montoRecibidoBs: 819 }));
+    const c = await cuenta();
+    expect(c['modalidad']).toBeUndefined();
+    expect(c).toMatchObject({ estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD' });
+  });
+
   it('pagar otro plan ES cambiar de plan: límites, catálogo y espejo de la ficha', async () => {
     await correr(indice.registrarPagoManual, manual({ plan: 'pro', meses: 3, montoRecibidoBs: 3402 }));
     expect(await cuenta()).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, periodoPagado: sumarMeses(HOY, 2), montoMensual: 90 });
@@ -707,7 +715,9 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
     const d = pagos.camposDerivadosDeCuenta({ plan: 'crecimiento', modalidad: 'prepago', periodoPagado: '2099-12' }, null, Date.now());
     expect(d).toMatchObject({ estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD' });
     expect(d['proximoVencimiento']).toBeInstanceOf(Timestamp);
-    expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento' }, null, Date.now())).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0 });
+    // Sin migrar (sin modalidad, plan del catálogo): nada que escribir (LOW 8).
+    expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento' }, null, Date.now())).toEqual({});
+    expect(pagos.camposDerivadosDeCuenta({ plan: 'demostracion' }, null, Date.now())).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0 });
     expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento', modalidad: 'prepago' }, null, Date.now())).toMatchObject({ estadoPago: 'vencido', montoMensual: 50 });
     expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento', modalidad: 'prepago', periodoPagado: '2099-12', pagoPendienteId: PAGO_ID }, null, Date.now())).toMatchObject({ estadoPago: 'pendiente' });
     expect(pagos.puertaDePagos.camposDerivados).toBe(pagos.camposDerivadosDeCuenta);

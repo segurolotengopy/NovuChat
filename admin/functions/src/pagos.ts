@@ -188,11 +188,25 @@ export interface PuertaDePagos {
  * rechazo, y `aplicarPago` al reactivar), y `estadoPago` dice `vencido`
  * cuando la cuenta debe, esté el corte aplicado u observado.
  */
+/**
+ * ¿El prepago gobierna ya los derivados de esta cuenta? Sí si tiene una
+ * `modalidad` explícita, o si es de demostración por plan. NO si es un
+ * comercio real que todavía no se migró (sin modalidad y con un plan del
+ * catálogo): para el módulo sería «demostración» y derivaría «Sin cargo» con
+ * monto cero, y el comercio vería cambiar su estado de cuenta sin que nada
+ * hubiera pasado. Hasta que la migración le dé su modalidad, sus derivados
+ * no se tocan (revisión de seguridad de A-1, LOW 8).
+ */
+export function derivadosGobernados(cuenta: Record<string, unknown> | null | undefined): boolean {
+  return esModalidad(cuenta?.['modalidad']) || cuenta?.['plan'] === 'demostracion';
+}
+
 export function camposDerivadosDeCuenta(
   cuenta: Record<string, unknown>,
   _corteGuardado: Record<string, unknown> | null,
   ahoraMs: number,
 ): Record<string, unknown> {
+  if (!derivadosGobernados(cuenta)) return {};
   const c = cuenta as CuentaCruda;
   const d = derivadosDe(estadoDeServicio(c, 0, ahoraMs), c);
   return {
@@ -299,8 +313,14 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
 
   // La cuenta COMO VA A QUEDAR, para derivar sobre ella: sin pendiente, sin
   // corte, con el plan, la modalidad, el mes pagado y la bolsa nuevos.
+  // La modalidad se escribe cuando el pago la fija (una mensualidad o una
+  // bolsa convierten a prepago) o cuando ya estaba explícita; una instalación
+  // sobre una cuenta sin modalidad la deja como estaba (y sus derivados, sin
+  // tocar: `derivadosGobernados`).
+  const escribeModalidad = tras.modalidad !== 'demostracion' || esModalidad(cuenta.modalidad);
   const cuentaNueva: Record<string, unknown> = {
-    ...pago.cuenta, plan: tras.plan, modalidad: tras.modalidad, bolsa: tras.bolsa,
+    ...pago.cuenta, plan: tras.plan, bolsa: tras.bolsa,
+    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
   };
   delete cuentaNueva['pagoPendienteId'];
@@ -310,11 +330,7 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     ...ademas.cuenta,
     bolsa: tras.bolsa,
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
-    // La modalidad se escribe cuando el pago la fija (una mensualidad o una
-    // bolsa convierten a prepago) o cuando ya estaba explícita; una
-    // instalación sobre una cuenta sin modalidad no la vuelve «demostración»
-    // por escrito: la deja como estaba.
-    ...(tras.modalidad !== 'demostracion' || esModalidad(cuenta.modalidad) ? { modalidad: tras.modalidad } : {}),
+    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
     pagoPendienteId: FieldValue.delete(),
     corte: FieldValue.delete(),
     ...camposDerivadosDeCuenta(cuentaNueva, null, confirmacion.ahoraMs),

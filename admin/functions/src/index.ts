@@ -7,6 +7,7 @@ import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol } from './claims.js';
 import { claimsDe as claims, exigirAdminDe, exigirPropietario } from './autorizacion.js';
+import { derivadosGobernados } from './pagos.js';
 
 initializeApp();
 
@@ -655,10 +656,14 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     // `estadoDeServicio` (`prepago.ts`, puro), y lo que decide se escribe, no
     // lo que mande nadie. Incondicional desde el 20/09 (A-1): como esta
     // callable ya no acepta los derivados a mano, la única forma de que estén
-    // bien es calcularlos en cada escritura. Una cuenta SIN modalidad es
-    // demostración para el módulo y deriva `sin_cargo` con monto cero: por eso
-    // la migración (`scripts/migrar-prepago.mjs`) le da su modalidad a cada
-    // comercio real ANTES del primer pago.
+    // bien es calcularlos en cada escritura.
+    //
+    // SALVO un comercio real SIN MIGRAR (sin `modalidad` y con un plan del
+    // catálogo): para el módulo sería demostración y derivaría «Sin cargo»
+    // con monto cero, cambiándole el estado de cuenta sin que nada hubiera
+    // pasado. Sus derivados no se tocan hasta que `scripts/migrar-prepago.mjs`
+    // le dé su modalidad (`derivadosGobernados`, revisión de seguridad de
+    // A-1, LOW 8). La migración va igual ANTES de desplegar A-1.
     const combinada: Record<string, unknown> = { ...actual };
     for (const [k, v] of Object.entries(escritura)) {
       if (v instanceof FieldValue) delete combinada[k]; else combinada[k] = v;
@@ -668,13 +673,15 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     if (viene('periodoPrueba') && datos['periodoPrueba'] === null && combinada['modalidad'] === 'prueba') {
       throw new HttpsError('invalid-argument', 'Una cuenta en prueba necesita su periodoPrueba.');
     }
-    const servicio = estadoDeServicio(combinada as CuentaCruda, consumidasDe(metricasDoc.data()), ahoraMs);
-    const d = camposDerivados(servicio, combinada as CuentaCruda);
-    escritura['estadoPago'] = d.estadoPago;
-    escritura['montoMensual'] = d.montoMensual;
-    escritura['moneda'] = d.moneda;
-    escritura['proximoVencimiento'] = d.proximoVencimientoMs === null
-      ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs);
+    if (derivadosGobernados(combinada)) {
+      const servicio = estadoDeServicio(combinada as CuentaCruda, consumidasDe(metricasDoc.data()), ahoraMs);
+      const d = camposDerivados(servicio, combinada as CuentaCruda);
+      escritura['estadoPago'] = d.estadoPago;
+      escritura['montoMensual'] = d.montoMensual;
+      escritura['moneda'] = d.moneda;
+      escritura['proximoVencimiento'] = d.proximoVencimientoMs === null
+        ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs);
+    }
 
     // `update` y no `set` con `merge`: reemplaza `limites` ENTERO en vez de
     // mezclarlo con una copia vieja. Si la cuenta no existía, se crea sin los
