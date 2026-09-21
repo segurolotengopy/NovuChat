@@ -116,7 +116,7 @@ describe('cargar-negocio.mjs', () => {
     expect(r.salida).toMatch(/nuevo\s+blanqueamiento-dental-profesional\s+odontologia · 500 BOB · 60 min · activo/);
     expect(r.salida).toMatch(/nuevo\s+valoracion-clinica\s+odontologia · a consultar · 30 min/);
     expect(r.salida).toMatch(/funcionarios \(2 agenda\(s\)\)/);
-    expect(r.salida).toMatch(/christyan-sandoval .*calendario termina en …aaaa · 3 servicio\(s\)/);
+    expect(r.salida).toMatch(/christyan-sandoval .*calendario termina en …aaaa · 2 servicio\(s\)/);
     // Conteos y nombres, no los textos largos ni los identificadores enteros.
     expect(r.salida).toMatch(/instruccionesExtra\s+\d+ caracteres/);
     expect(r.salida).not.toContain('CAMPAÑA VIGENTE');
@@ -372,12 +372,14 @@ describe('cargar-negocio.mjs', () => {
     const valoracion = (await doc(`${T}/catalogo/valoracion-clinica`)) ?? {};
     expect(valoracion).toMatchObject({ nombre: 'Valoración clínica', duracionMin: 30, activo: true });
     expect(valoracion['precio']).toBeUndefined();
-    expect(await doc(`${T}/catalogo/estetica-facial`)).toMatchObject({ area: 'estetica', activo: true });
+    // Retirado el 20/09/2026: no figura en ninguna fuente de la clínica. Queda
+    // en el archivo como INACTIVO para que una recarga lo retire, no lo reviva.
+    expect(await doc(`${T}/catalogo/estetica-facial`)).toMatchObject({ area: 'estetica', activo: false });
 
     const f1 = (await doc(`${T}/funcionarios/christyan-sandoval`)) ?? {};
     expect(f1).toMatchObject({
       nombre: 'Dr. Christyan Sandoval', calendarioId: CALENDARIO_1, activo: true, actualizadoPor: 'cargar-negocio',
-      servicios: ['blanqueamiento-dental-profesional', 'valoracion-clinica', 'estetica-facial'],
+      servicios: ['blanqueamiento-dental-profesional', 'valoracion-clinica'],
       horarioTrabajo: { lun: '09:00-19:00', sab: '09:00-13:00', dom: 'cerrado' },
     });
     expect(f1['horarioTrabajo']['_nota']).toBeUndefined();

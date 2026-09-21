@@ -332,8 +332,11 @@ describe('(b) Config base no lleva ningún valor real', () => {
   it('los datos del cliente son los de la ficha: clínica, dirección real, campaña y política', () => {
     expect(base['nombreNegocio']).toBe('Clínica Platinum');
     expect(base['direccion']).toContain('Radial 26, entre 2do y 3er anillo, calle Nataniel Aguirre N.º 65');
-    expect(base['catalogoConPrecio']).toBe('Blanqueamiento dental profesional 500 Bs (precio de campaña; regular 600 Bs) · 60 min');
-    expect(base['catalogoSinPrecio']).toBe('Valoración clínica, Estética facial y otros tratamientos (se cotizan después de la valoración)');
+    expect(base['catalogoConPrecio']).toBe('Blanqueamiento dental profesional 500 Bs (precio de campaña hasta el 31/10/2026; regular 600 Bs) · 60 min');
+    // Estética facial se retiró el 20/09/2026: no figura en ninguna fuente de la clínica
+    // (el Excel de la campaña y sus tres piezas). La valoración es parte del blanqueamiento.
+    expect(base['catalogoSinPrecio']).toBe('Valoración clínica (parte del blanqueamiento y de su campaña)');
+    expect(JSON.stringify(base)).not.toMatch(/est[eé]tica facial/i);
     expect(base['politicaCancelacion']).toContain('2 horas de anticipación');
     expect(base['datosQueNoTenemos']).toContain('promociones distintas a la publicada');
     expect(base['nivelEmojis']).toBe('pocos');
@@ -345,11 +348,17 @@ describe('(b) Config base no lleva ningún valor real', () => {
   it('instruccionesExtra trae el texto de la campaña y las objeciones, dentro del tope de la consola', () => {
     const extra = String(base['instruccionesExtra']);
     expect(extra.length).toBeLessThanOrEqual(1500);
-    expect(extra).toContain('CAMPAÑA VIGENTE: blanqueamiento dental profesional de consultorio');
-    expect(extra).toContain('precio de campaña 500 Bs (precio regular 600 Bs)');
-    expect(extra).toContain('No prometa «cero dolor»');
-    expect(extra).toContain('No nombre competidores');
-    expect(extra).toContain('NO INVENTE formas de pago');
+    // LAS FUENTES DE VERDAD, Y SOLO ELLAS (Andres, 20/09/2026): el Excel de la
+    // campaña y sus tres piezas. Los textos anteriores se contradecían entre sí
+    // —uno prohibía justo lo que el Excel afirma—, y el respaldo, la consola y
+    // el archivo de datos decían tres cosas distintas. Ahora dicen lo mismo.
+    const datos = JSON.parse(readFileSync(join(aqui, '../scripts/datos/negocio-platinum.json'), 'utf8')) as { negocio: { instruccionesExtra: string } };
+    expect(extra).toBe(datos.negocio.instruccionesExtra);
+    expect(extra).toContain('Ahora solo 500 Bs (precio estándar 600 Bs), hasta el 31 de octubre de 2026');
+    expect(extra).toContain('La valoración clínica es parte del blanqueamiento y de la campaña');
+    expect(extra).toContain('agentes desensibilizantes');
+    // Lo que no está en ninguna fuente, no está.
+    expect(extra).not.toMatch(/est[eé]tica facial|200 Bs|RESERVA de 50|PROHIBIDO/i);
   });
 });
 
@@ -721,13 +730,13 @@ describe('(h) Dos odontólogos con calendarios distintos', () => {
     expect(equipo).toHaveLength(2);
     expect(equipo.map((f) => f.nombre)).toEqual(['Dr. Christyan Sandoval', 'Dr. Juan Pérez']);
     expect(equipo.map((f) => f.calendario)).toEqual(['REEMPLAZAR_CALENDARIO_PLATINUM_1', 'REEMPLAZAR_CALENDARIO_PLATINUM_2']);
-    expect(equipo[0]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica', 'estetica facial']);
+    expect(equipo[0]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
     expect(equipo[1]?.servicios).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
   });
 
   it('los tres servicios caen al calendario 1 cuando no se eligió persona, y el del negocio es el 1', () => {
     const mapa = JSON.parse(String(base['calendariosPorServicio'])) as Record<string, string>;
-    expect(Object.keys(mapa).sort()).toEqual(['blanqueamiento dental profesional', 'estetica facial', 'valoracion clinica']);
+    expect(Object.keys(mapa).sort()).toEqual(['blanqueamiento dental profesional', 'valoracion clinica']);
     expect(new Set(Object.values(mapa))).toEqual(new Set(['REEMPLAZAR_CALENDARIO_PLATINUM_1']));
     expect(base['calendarioId']).toBe('REEMPLAZAR_CALENDARIO_PLATINUM_1');
   });
@@ -2998,7 +3007,7 @@ describe.each([
       // La publicidad propia dice «sin dolor» y «sin dañar el esmalte», que es
       // justo lo que la clínica prohíbe afirmar: venir del negocio no lo
       // convierte en respuesta.
-      expect(t).toMatch(/Aunque la imagen sea del propio negocio, NO repitas ni confirmes lo que afirma sobre dolor, resultados o efectos/);
+      expect(t).toMatch(/Lo que la imagen afirma sobre dolor, resultados o efectos no vale por estar en la imagen, aunque sea del propio negocio: responde con lo que dice tu información/);
       expect(t).toMatch(/no la reconoces, no inventes/);
       expect(t).toContain('PLATINUM CLÍNICA DENTAL');
     });
