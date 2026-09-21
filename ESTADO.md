@@ -739,6 +739,68 @@ ahora vale también para la configuración:** una carga desde `main` pisa lo que
 un PR sin fusionar dejó en producción, y el diagnóstico en seco se lee entero
 antes de `--aplicar`.
 
+## 2026-09-16 — Q' Taco queda EN PAUSA, y un hallazgo del repo público
+
+**El cliente no respondió la propuesta del 11/09.** Andres pausó el trabajo
+hasta nuevo aviso. Estado por cliente en `CLIENTES/QTACO/estado.md`.
+
+**No hay nada que revertir:** el alta nunca empezó. Sin portafolio, sin app, sin
+WABA, sin número, sin tenant, sin flujo. Ningún recurso a medias y ningún gasto
+corriendo. Si responde, se retoma desde la etapa 0 del runbook.
+
+**Al retomar, `Analisis/25` está viejo en un punto concreto:** se escribió con el
+tope de 25 **con corte**, y el 13/09 la unidad pasó a ser un **bloque de 25 que
+no corta** (la 26 factura otra conversación; los cortes son 50 y 100). Hay que
+reescribir §1.5 y §4, **y rehacer la tabla de márgenes**, porque con bloques una
+conversación larga factura dos y el margen no se hunde como muestra la tabla
+vieja: la conclusión comercial puede cambiar. Ya estaba anotado en la entrada del
+13/09; queda repetido acá porque es lo primero que se olvida al retomar en frío.
+
+**Lo que Q'Taco destapó y no depende de Q'Taco** (vale para cualquier cliente de
+venta con cobro real): los avisos al negocio salen en texto libre y fuera de la
+ventana de 24 h Meta los rechaza, hay que mandarlos por plantilla utility; nada
+descarta un webhook reenviado por id de mensaje, y con cobro real eso registra
+dos veces el mismo comprobante; y sigue sin guardarse el `media id` del
+comprobante y el pedido conversado como pedido.
+
+### El hallazgo: dos archivos se creen fuera de git y no lo están
+
+Al cerrar se revisó qué quedaba sin confirmar, y el repositorio **es público**:
+
+1. **`CONFIGURACION.local.md.respaldo-platinum`** —valores reales— **no estaba
+   ignorado**. El patrón `*.respaldo[0-9]` cubre `.respaldo2` pero no un sufijo
+   con letras, y el archivo declara en su propia cabecera que está ignorado.
+   **Corregido el 16/09:** el patrón pasó a `*.respaldo*`. No saca de git nada
+   que estuviera versionado.
+2. **`CLIENTES/` tampoco está ignorado**, y ya no es hipotético: pesa **230 MB**
+   y tiene datos reales de dos clientes (la propuesta comercial y el menú de
+   Q'Taco, la ficha y las fotos de Platinum), además de un PDF de 79 MB. Los tres
+   `estado.md` dicen «Local, no versionado» y **hoy eso es falso**. Un `git add -A`
+   de cualquier sesión los sube al repositorio público.
+
+**La decisión sigue abierta y es de Andres** —ya estaba planteada en la entrada
+del 13/09: ignorar `CLIENTES/` en git, o moverlo a un repositorio privado—. No se
+tomó al cerrar porque `ESTADO.md` referencia documentos de ahí adentro
+(`CLIENTES/NOVUCHAT/01-instrucciones-…`) y ignorar la carpeta entera los sacaría
+del control de versiones. **Es lo primero a resolver de este pendiente**, antes
+que cualquier otra cosa de `CLIENTES/`.
+
+### Otra cosa vista al cerrar
+
+**Hay dos análisis con el número 28**: `28-agendamiento-agendapro-y-canales-meta.md`
+(del 14/09, sin confirmar) y `28-dast-y-prueba-de-humo.md` (confirmado en
+`a49caa1`). Hay que renumerar uno.
+
+---
+
+> **Nota del 20/09/2026, al recuperar esta entrada** (quedó sin commitear en la
+> carpeta principal): `CLIENTES/` ya está en el `.gitignore` de `main`, y el
+> patrón `*.respaldo*` —que acá se da por corregido— NO había llegado a `main`:
+> se incorporó recién el 20/09. Hasta entonces, tres respaldos con valores reales
+> de `CONFIGURACION.local.md` no estaban ignorados en el repositorio público.
+
+---
+
 ## 2026-09-15 (noche) — alta de PLATINUM preparada para el demo del 16/09 (rama `claude/platinum-novuchat-setup-58d3d0`)
 
 Tercer cliente: **Clínica Platinum** (clínica dental, Santa Cruz), flujo de
