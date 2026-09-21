@@ -80,9 +80,23 @@
  * con un archivo por nodo bajo esa carpeta; después se edita a mano para
  * apuntar a `comun/` lo que se comparte y se vuelve a correr `extraer`.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+/**
+ * Lee un archivo, o `null` si no existe. Un solo acceso al disco: comprobar
+ * primero si existe y leer después deja una ventana en la que el archivo puede
+ * cambiar entre las dos llamadas (CodeQL js/file-system-race).
+ */
+function leerSiExiste(ruta) {
+  try {
+    return readFileSync(ruta, 'utf8');
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return null;
+    throw e;
+  }
+}
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -115,8 +129,9 @@ export const rutaDeManifiesto = (archivoFlujo, raiz = RAIZ_FLUJOS) =>
 
 export function leerManifiesto(archivoFlujo, raiz = RAIZ_FLUJOS) {
   const ruta = rutaDeManifiesto(archivoFlujo, raiz);
-  if (!existsSync(ruta)) return null;
-  const m = JSON.parse(readFileSync(ruta, 'utf8'));
+  const crudo = leerSiExiste(ruta);
+  if (crudo === null) return null;
+  const m = JSON.parse(crudo);
   if (m.flujo !== archivoFlujo) {
     throw new Error(`${ruta}: declara "flujo": "${m.flujo}" pero es el manifiesto de ${archivoFlujo}`);
   }
@@ -163,8 +178,8 @@ function carpetaValida(carpeta) {
 
 /** El contenido que va al JSON, leído del archivo del módulo según la convención del salto final. */
 function contenidoDeModulo(ruta, saltoFinal) {
-  if (!existsSync(ruta)) throw new Error(`falta el módulo ${ruta}`);
-  const t = readFileSync(ruta, 'utf8');
+  const t = leerSiExiste(ruta);
+  if (t === null) throw new Error(`falta el módulo ${ruta}`);
   if (saltoFinal) return t;
   if (!t.endsWith('\n')) throw new Error(`${ruta}: el archivo de un módulo termina en un salto de línea`);
   return t.slice(0, -1);
@@ -318,7 +333,8 @@ export function extraerFlujo(archivoFlujo, { raiz = RAIZ_FLUJOS, nuevo = null } 
   const avisos = [];
   recorrer(j, manifiesto, raiz, ({ clave, ruta, leer, anotar, archivo }) => {
     const { texto, saltoFinal } = archivoDeContenido(leer(), clave);
-    if (existsSync(ruta) && readFileSync(ruta, 'utf8') !== texto) {
+    const previo = leerSiExiste(ruta);
+    if (previo !== null && previo !== texto) {
       avisos.push(`${archivo} cambia de contenido (${clave}); si otro flujo lo comparte, su verificación va a fallar`);
     }
     mkdirSync(dirname(ruta), { recursive: true });
