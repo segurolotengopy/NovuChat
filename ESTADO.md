@@ -4,7 +4,49 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-22 (Dhermacore: análisis de la oferta dual y el chat interno con el botón del traspaso y los rubros como referencia; nada publicado). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-22 — Dhermacore: rentabilidad de la oferta dual, y los rubros como referencia
+
+Pedido de Andres: analizar la rentabilidad y los costos de la propuesta comercial a
+**Dhermacore e Infoproductos** (PDF del 22/09) y corregir dos cosas del chat interno
+de NovuChat. Rama `claude/dhermacore-proposal-analysis-8a9cee`, **sin subir**. Nada
+contra producción, n8n, Meta ni GitHub. **Costo: 0 mensajes** (el botón del traspaso
+viaja dentro del mensaje que ya salía).
+
+- **`Analisis/38-dhermacore-oferta-dual.md`** y **`38-dhermacore-modelo.py`**: la
+  oferta de **USD 99 por 800 conversaciones** son 0,124 USD por conversación y
+  **pierde a partir de 588** con el perfil real de este cliente (13–14 mensajes por
+  conversación, porque las dos líneas mandan imágenes). Con las 800 usadas, −38 USD
+  al mes; −58 si el rescate a las 48 h cae en marketing. Lo que lo sostiene en parte
+  son las **dos franquicias de Meta** (un número, mil mensajes gratis: la segunda
+  vale 11,30 USD al mes). **Recomendado: USD 99 por 500**, setup 250, dos cambios
+  incluidos, el rescate fuera de lo incluido y revisión del volumen a los dos meses.
+  Tres cláusulas del PDF hay que corregirlas antes de firmar, y la primera es que
+  **«cada imagen consume 2 mensajes de la cuota» no existe en el servidor**:
+  `ingesta.ts` cuenta uno por saliente, sea del tipo que sea (`CLAUDE.md` §7).
+- **`Flujos/novuchat-onboarding.json` — el traspaso ahora sale con el botón.** Decía
+  «un especialista te escribirá» y dejaba al prospecto esperando, sin forma de
+  escribir él. Ahora el mensaje lleva el `cta_url` al WhatsApp de una persona
+  (`numeroRecepcion`), igual que `Cliente actual`: aviso interno **más** botón, que
+  es la política del 21/09. Sin número configurado no hay botón, y el texto tampoco
+  invita a escribir.
+- **Los rubros son áreas de referencia, no un menú de servicios** (decisión de
+  Andres). `[RUBROS]` ya no pone una lista numerada con «respóndeme con el número»:
+  pone las áreas en línea, sin numerar, sin el rubro «a medida» y con la salida
+  explícita («si lo tuyo no está en esa lista, cuéntamelo igual»). Se retiró la vía
+  del número (`esperaRubro` en `Estado de la conversación`) y el rubro lo registra el
+  modelo en `[LEAD]` con las palabras del cliente. `rubrosTexto` va sin numerar para
+  que el modelo no numere en el chat.
+- **`admin/pruebas/onboarding-flujo.test.ts`: 128 pruebas en verde**, con las nuevas
+  escritas negando (no hay numeración, no aparece el rubro a medida, un «2» ya no es
+  un rubro, el traspaso sale como `cta_url`). Las suites que piden el emulador de
+  Firestore (`cargar-captacion`, `comportamiento`, `instrucciones-vigentes`) no se
+  corrieron: el emulador no estaba levantado.
+- **Nada publicado en n8n.** El JSON versionado es lo que cambió; aplicarlo al flujo
+  vivo necesita el OK de Andres.
 
 ---
 
