@@ -62,7 +62,7 @@
  * `sena.ts`: es el comercio cobrándole a su cliente, decisión 9), ninguna
  * pantalla (A-3).
  */
-import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { HttpsError, onCall, type CallableOptions } from 'firebase-functions/v2/https';
 import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
@@ -399,12 +399,13 @@ export type ResultadoAnulacion =
   | { resultado: 'sin_cobro' }
   | { resultado: 'pagado'; estado: string }
   | { resultado: 'en_revision' }
-  | { resultado: 'qr_vivo_sin_cliente'; cobroId: string };
+  | { resultado: 'qr_vivo_sin_cliente'; cobroId: string | null };
 
 export interface Deps {
   /** Anula el pendiente en el cobrador y acá. A-2: `anularCobroVivo`. */
   anular?: (tenantId: string, pagoId: string, motivo: string) => Promise<ResultadoAnulacion>;
   /** Consulta el estado en el cobrador y lo aplica. A-2: `consultarYAplicar`. */
+  /** `null` si no hubo con quién consultar. */
   consultar?: (tenantId: string, pagoId: string) => Promise<unknown>;
   /** Metadatos del objeto de evidencia en Storage, o `null` si no está. Por defecto, el SDK Admin. */
   metaEvidencia?: (ruta: string) => Promise<MetaEvidencia | null>;
@@ -435,13 +436,21 @@ const cobroIdDe = (datos: Record<string, unknown> | undefined): string | null =>
  * puede anularlo allá: devuelve `qr_vivo_sin_cliente` y el llamador aborta.
  * Nunca se marca `anulado` acá un pago que el banco todavía puede cobrar.
  */
+/** ¿Este pago salió alguna vez hacia el cobrador? Entonces solo el cobrador lo anula. */
+function pasoPorElCobrador(p: Record<string, unknown>): boolean {
+  return p['medio'] === 'qr' || (typeof p['cobro'] === 'object' && p['cobro'] !== null);
+}
+
 export async function anularPendienteLocal(tenantId: string, pagoId: string, motivo: string): Promise<ResultadoAnulacion> {
   if (!ID_PAGO.test(pagoId)) return { resultado: 'sin_cobro' };
   const r = refsDe(tenantId, pagoId);
   const antes = (await r.pago.get()).data();
   if (!antes || antes['estado'] !== 'pendiente') return { resultado: 'sin_cobro' };
-  const cobroId = cobroIdDe(antes);
-  if (cobroId) return { resultado: 'qr_vivo_sin_cliente', cobroId };
+  // Un pago que pasó por el cobrador (medio `qr`, o con su objeto `cobro`) NO se
+  // anula acá aunque no tenga el id guardado: si la respuesta de `crearCobro`
+  // se perdió, el QR existe en el banco con `cobro.id` en null, y anularlo acá
+  // dejaría cobrable un QR que nadie mira (revisión de seguridad, 22/09).
+  if (pasoPorElCobrador(antes)) return { resultado: 'qr_vivo_sin_cliente', cobroId: cobroIdDe(antes) || null };
 
   const ahoraMs = Date.now();
   const ahora = Timestamp.fromMillis(ahoraMs);
@@ -449,7 +458,7 @@ export async function anularPendienteLocal(tenantId: string, pagoId: string, mot
     const [pd, cd] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta)]);
     const p = pd.data();
     if (!p || p['estado'] !== 'pendiente') return false;
-    if (cobroIdDe(p)) return false;
+    if (pasoPorElCobrador(p)) return false;
     tx.update(r.pago, { estado: 'anulado', anuladoEn: ahora, anuladoPor: 'novuchat', motivoAnulacion: motivo.slice(0, 300), actualizadoEn: ahora });
     const cuenta = cd.data() ?? {};
     const escritura: Record<string, unknown> = { actualizadoEn: ahora };
@@ -654,8 +663,8 @@ function pedidoDe(datos: Record<string, unknown>): Pago {
  * abortar) → UNA transacción que crea el pago confirmado, aplica y audita →
  * bitácora. Si algo falla antes de la transacción, no se escribió nada.
  */
-export function crearRegistrarPagoManual(deps: Deps = {}) {
-  return onCall(async (peticion) => {
+export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOptions = {}) {
+  return onCall(opciones, async (peticion) => {
     const uid = exigirPropietario(peticion);
     const d = con(deps);
     exigirSesionReciente(peticion, d.ahoraMs());
@@ -854,8 +863,8 @@ export function crearRegistrarPagoManual(deps: Deps = {}) {
  * pendiente de la cuenta. Un pago que no está `pendiente` NO se anula: un
  * confirmado se compensa con otro asiento, nunca se corrige.
  */
-export function crearAnularPagoPendiente(deps: Deps = {}) {
-  return onCall(async (peticion) => {
+export function crearAnularPagoPendiente(deps: Deps = {}, opciones: CallableOptions = {}) {
+  return onCall(opciones, async (peticion) => {
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
     const tenantId = texto(datos['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -905,8 +914,8 @@ export function crearAnularPagoPendiente(deps: Deps = {}) {
  * A-2: `consultarYAplicar`), primero pregunta allá y aplica; después devuelve
  * el pago guardado. Sin cliente, devuelve lo guardado tal cual.
  */
-export function crearConsultarPagoPendiente(deps: Deps = {}) {
-  return onCall(async (peticion) => {
+export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableOptions = {}) {
+  return onCall(opciones, async (peticion) => {
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
     const tenantId = texto(datos['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -919,8 +928,9 @@ export function crearConsultarPagoPendiente(deps: Deps = {}) {
 
     let consultado = false;
     if (deps.consultar) {
-      await deps.consultar(tenantId, pagoId);
-      consultado = true;
+      // `null` = no hubo con quién consultar (sin cobrador configurado): la
+      // pantalla no puede decir que preguntó al banco si no preguntó.
+      consultado = (await deps.consultar(tenantId, pagoId)) !== null;
     }
     const p = (await db().doc(`tenants/${tenantId}/pagos/${pagoId}`).get()).data();
     if (!p) return { pendiente: null, consultado };

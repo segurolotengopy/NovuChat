@@ -70,7 +70,9 @@ export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js'
 // propietario con evidencia y auditoría, la anulación del pendiente, la
 // consulta al abrir la pantalla y los teléfonos que pueden pagar. Lo que suma
 // meses vive en `pagos.ts` y es una sola puerta; el porqué está ahí.
-export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente, fijarTelefonosPago } from './pagos.js';
+// Pagos del prepago (A-1) con el cobrador (A-2) enchufado: ver pagosConCobrador.ts.
+export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './pagosConCobrador.js';
+export { fijarTelefonosPago } from './pagos.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -91,6 +93,13 @@ export { comprobarArchivoPlanes } from './captacion.js';
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
 // único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
 export { verificarComportamiento } from './verificarComportamiento.js';
+// PREPAGO: EL CLIENTE DEL COBRADOR (bloque A-2, 20/09/2026). NovuChat le cobra
+// al comercio por QR a través del proyecto de cobros; el aviso del cobrador
+// solo dispara la consulta autenticada, que es la única que confirma. Dos
+// secretos nuevos (`COBRADOR_TOKEN`, `COBRADOR_AVISO_SECRETO`) y el Scheduler
+// del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
+// El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
+export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
 
 const db = () => getFirestore();
 

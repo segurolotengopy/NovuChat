@@ -645,11 +645,12 @@ type TipoEvento =
   // arriba corta la lista y deja tipos fuera del control que compara la
   // ingesta con las reglas y con la consola. Costó una corrida el 17/09.
   | 'seguimiento_enviado'
-  // PREPAGO (bloque A-0, 20/09, `DISENO.md` §4undecies): el servicio se cortó
-  // por falta de pago o de conversaciones (`codigo` lleva el motivo), volvió,
-  // y entró un pago. El corte y la reanudación los escribe la ingesta, y el
-  // pago los bloques A-1 y A-2. En modo observación no sale `corte_servicio`:
-  // el corte observado va a la auditoría, no a la bitácora que lee el comercio.
+  // PREPAGO (bloques A-0 y A-2, 20/09, `DISENO.md` §4undecies): el servicio se
+  // cortó por falta de pago o de conversaciones (`codigo` lleva el motivo),
+  // volvió, y entró un pago. El corte y la reanudación los escribe la ingesta, y
+  // el pago lo escriben `cobroPrepago.ts` y el camino manual, con `codigo` = quién
+  // confirmó (`banco` o `propietario`). En modo observación no sale `corte_servicio`: el
+  // corte observado va a la auditoría, no a la bitácora que lee el comercio.
   | 'corte_servicio' | 'reanudacion_servicio' | 'pago_registrado';
 
 interface Evento {

@@ -81,6 +81,44 @@ del proyecto de producción. Lo que hay:
   - **Ojo con `gcloud`:** desde que el proyecto tiene un permiso con condición,
     `gcloud projects add-iam-policy-binding` y `remove-iam-policy-binding`
     **exigen `--condition=None`**, o la condición correspondiente.
+  - **Los dos secretos del cobrador del prepago** (bloque A-2, 20/09/2026;
+    `admin/functions/src/cobrador.ts`): `COBRADOR_TOKEN` (el token de salida
+    hacia el proyecto de cobros, que allá se configura como
+    `CONSUMIDOR_TOKEN_NOVUCHAT`, mínimo 32 caracteres) y
+    `COBRADOR_AVISO_SECRETO` (el que firma el aviso de confirmación que el
+    cobrador nos manda; allá, `CONSUMIDOR_AVISO_SECRETO_NOVUCHAT`). Son dos a
+    propósito: comprometer uno no permite fabricar lo otro. **Ninguno de los
+    dos cae en la condición de IAM de arriba**, que solo ve `INGESTA_*` y
+    `GEMINI_API_KEY`. Antes del primer despliegue con `crearCobroPrepago`,
+    `avisoCobrador` y `barridoCobros` hacen falta, en este orden y **a mano**:
+    1. crear los dos secretos con su valor real (el token lo emite el
+       cobrador; el secreto del aviso lo genera NovuChat y se le entrega al
+       cobrador por el gestor de contraseñas, nunca por chat);
+    2. ampliar la condición de IAM de la cuenta de despliegue con un tercer
+       `|| resource.name.startsWith("projects/<número>/secrets/COBRADOR_")`;
+    3. dar `roles/secretmanager.secretAccessor` sobre cada uno a `sa-functions`,
+       secreto por secreto (la simulación no lo detecta: solo avisa «will be
+       granted»);
+    4. habilitar **Cloud Scheduler** en el proyecto: `sondeoCobros` (cada 5
+       minutos, solo los QR vivos, a lo sumo 100 consultas por corrida) y
+       `barridoCobros` (cada 60 minutos) son dos `onSchedule`, y el despliegue
+       crea sus dos trabajos, pero sin la API habilitada falla antes de
+       publicar. **Costo:** Cloud Scheduler cobra por trabajo y por mes —los 3
+       primeros de la cuenta de facturación son gratis, cada uno más USD 0,10
+       al mes—, no por ejecución; las 8.640 corridas mensuales del sondeo
+       entran en la franquicia de invocaciones de Functions y una corrida
+       vacía es 1 lectura de Firestore y ninguna llamada al cobrador;
+    5. escribir `plataforma/prepago.cobrador.baseUrl` (no es secreto: es la
+       URL pública del cobrador, sin barra final) y registrar en el cobrador
+       la URL de `avisoCobrador` como destino del aviso del consumidor
+       `novuchat`.
+    **Todo esto está en espera de la compuerta del demo**
+    (`Prompts/prepago-y-modularizacion-en-paralelo.md`, decisión 1). Hasta
+    entonces, las Functions del cobro se pueden fusionar a `main` —el código
+    declara los secretos— pero **no se etiqueta un despliegue** que las
+    incluya, porque fallaría en el paso de secretos. Mientras el cobrador no
+    tenga URL pública (bloque 4 de C), las pruebas corren contra el doble
+    `admin/pruebas/dobles/cobrador.ts`.
   - **Ampliar la reserva de clientes** (más de 20) exige un paso **a mano**:
     dar `secretAccessor` sobre cada secreto nuevo a la cuenta de las Functions,
     **`sa-functions`**, secreto por secreto.

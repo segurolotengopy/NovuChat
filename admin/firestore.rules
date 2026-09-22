@@ -2075,10 +2075,12 @@ service cloud.firestore {
                  // salió el recordatorio único; `codigo` lleva el modo (`texto`
                  // en ventana, `plantilla` fuera). Lo escribe `seguimientos.ts`.
                  'seguimiento_enviado',
-                 // Prepago (bloque A-0, 20/09, DISENO §4undecies): el servicio
-                 // se cortó por falta de pago o de conversaciones (`codigo`
-                 // lleva el motivo), volvió, y entró un pago. Un corte solo
-                 // observado NO llega acá: queda en la auditoría.
+                 // Prepago (bloques A-0 y A-2, 20/09, DISENO §4undecies): el
+                 // servicio se cortó por falta de pago o de conversaciones
+                 // (`codigo` lleva el motivo), volvió, y entró un pago (`codigo`
+                 // lleva quién confirmó: `banco` o `propietario`; lo escribe
+                 // `cobroPrepago.ts`). Un corte solo observado NO llega acá:
+                 // queda en la auditoría.
                  'corte_servicio', 'reanudacion_servicio', 'pago_registrado'
                  // CRITERIO: esta lista es `TipoEvento` de la ingesta, entera.
                  // `pruebas/bitacora-tipos.test.ts` exige que sean iguales.
