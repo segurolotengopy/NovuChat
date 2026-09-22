@@ -1,5 +1,22 @@
 # Cobros por QR: un contrato para proyectos consumidores — construcción
 
+> **Precisiones del 20/09/2026 (noche), verificadas en el código del proyecto de
+> cobros por la sesión coordinadora del prepago.** Lo que el resto de este prompt
+> no dice:
+>
+> - La `referenciaExterna` admite solo letras, números y `: _ . -` (hasta 120),
+>   **sin `/`**: NovuChat manda su `pagoId` solo, opaco.
+> - El monto viaja como **texto decimal con punto** (`"150.50"`), no en centavos;
+>   el QR llega como **imagen PNG en base64**; el `concepto` lo ve el pagador en su
+>   app bancaria.
+> - El bloque 2 está **en curso** en la rama `feat/aviso-de-confirmacion`: ya define
+>   el evento `cobro.confirmado` y la cola de reintentos, **no** la firma ni el
+>   transporte HTTP. Lo que NovuChat propone para eso está en `admin/DISENO.md`
+>   §4undecies.5 y en la fila de C de `Prompts/COORDINACION.md`.
+> - `docs/10-contrato-consumidores.md` está todavía en la rama `docs/estado-pr-38`,
+>   sin fusionar; la API corre como proceso local, así que el ensayo de punta a
+>   punta depende del bloque 4 o de una URL alcanzable.
+
 > **Este prompt se pega en una sesión del proyecto de cobros por QR Simple**,
 > no en NovuChat. Vive acá porque lo escribió la sesión de NovuChat, que es su
 > primer consumidor; **cópialo a `Prompts/` de ese proyecto** como primera
