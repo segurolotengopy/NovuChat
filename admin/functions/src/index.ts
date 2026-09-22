@@ -1,11 +1,13 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https';
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { asignarRol, type Rol } from './claims.js';
+import { asignarRol } from './claims.js';
+import { claimsDe as claims, exigirAdminDe, exigirPropietario } from './autorizacion.js';
+import { derivadosGobernados } from './pagos.js';
 
 initializeApp();
 
@@ -51,8 +53,26 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, type IdPlan,
+  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, periodoDe, type IdPlan,
 } from './planes.js';
+// PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
+// campos derivados de la situación de pago, que se recalculan y nunca se
+// escriben a mano; y la bandera del modo observación (`fijarCortePrepago`).
+import {
+  MODALIDADES, PRUEBA, camposDerivados, consumidasDe, esModalidad, esPeriodo, estadoDeServicio,
+  mesBolivia, type CuentaCruda,
+} from './prepago.js';
+// COBRANZA DEL PREPAGO: el barrido de la hora del número de NovuChat pregunta a
+// qué comercios les toca un recordatorio y marca ANTES de enviar (molde de
+// `seguimientos.ts`). El porqué en `cobranza.ts`.
+export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js';
+// PAGOS DEL PREPAGO (bloque A-1, `DISENO.md` §4undecies.1): la carga manual del
+// propietario con evidencia y auditoría, la anulación del pendiente, la
+// consulta al abrir la pantalla y los teléfonos que pueden pagar. Lo que suma
+// meses vive en `pagos.ts` y es una sola puerta; el porqué está ahí.
+// Pagos del prepago (A-1) con el cobrador (A-2) enchufado: ver pagosConCobrador.ts.
+export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './pagosConCobrador.js';
+export { fijarTelefonosPago } from './pagos.js';
 import { documentoDeVertical } from './prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -73,6 +93,13 @@ export { comprobarArchivoPlanes } from './captacion.js';
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
 // único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
 export { verificarComportamiento } from './verificarComportamiento.js';
+// PREPAGO: EL CLIENTE DEL COBRADOR (bloque A-2, 20/09/2026). NovuChat le cobra
+// al comercio por QR a través del proyecto de cobros; el aviso del cobrador
+// solo dispara la consulta autenticada, que es la única que confirma. Dos
+// secretos nuevos (`COBRADOR_TOKEN`, `COBRADOR_AVISO_SECRETO`) y el Scheduler
+// del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
+// El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
+export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
 
 const db = () => getFirestore();
 
@@ -81,44 +108,12 @@ const db = () => getFirestore();
 // las saltan. Por eso cada función vuelve a comprobar el permiso a mano, desde
 // los claims del token que Firebase ya verificó. Confiar en que "el panel solo
 // muestra el botón al admin" sería confiar en el navegador.
-
-const claims = (p: CallableRequest) => {
-  const nc = p.auth?.token?.['nc'];
-  if (typeof nc !== 'object' || nc === null) return { p: false, t: {} as Record<string, Rol> };
-  const b = nc as Record<string, unknown>;
-  return {
-    p: b['p'] === true,
-    t: (typeof b['t'] === 'object' && b['t'] !== null ? b['t'] : {}) as Record<string, Rol>,
-  };
-};
-
-const exigirAutenticado = (p: CallableRequest): string => {
-  if (!p.auth?.uid) throw new HttpsError('unauthenticated', 'Inicie sesión.');
-  return p.auth.uid;
-};
-
-// VÍNCULO ROL ↔ PROVEEDOR, igual que `esPropietario()` en firestore.rules (T-19):
-// el claim de propietario solo vale con una sesión de Google. Sin esto, un `nc.p`
-// puesto por error en una cuenta de contraseña quedaba inerte en las reglas pero
-// ACTIVO en las Functions, que cambian planes y límites (revisión de seguridad
-// del 15/09/2026, MEDIUM preexistente).
-const exigirPropietario = (p: CallableRequest): string => {
-  const uid = exigirAutenticado(p);
-  const proveedor = (p.auth?.token?.['firebase'] as { sign_in_provider?: unknown } | undefined)
-    ?.sign_in_provider;
-  if (!claims(p).p || proveedor !== 'google.com') {
-    throw new HttpsError('permission-denied', 'Solo NovuChat.');
-  }
-  return uid;
-};
-
-const exigirAdminDe = (p: CallableRequest, tenantId: string): string => {
-  const uid = exigirAutenticado(p);
-  if (claims(p).t[tenantId] !== 'admin') {
-    throw new HttpsError('permission-denied', 'Solo el administrador del negocio.');
-  }
-  return uid;
-};
+//
+// Viven en `autorizacion.ts` desde el 20/09 (bloque A-1), para que `pagos.ts` y
+// lo que venga apliquen EXACTAMENTE el mismo vínculo rol ↔ proveedor que las
+// reglas (T-19): el propietario solo con Google; el administrador solo con
+// contraseña y correo verificado. Antes `exigirAdminDe` miraba solo el claim
+// (`Analisis/29` §4.1).
 
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 // `phone_number_id` de Meta: dígitos. Se valida el formato para que jamás se
@@ -310,8 +305,11 @@ export const suspenderTenant = onCall(async (peticion) => {
   // tiene que ver POR QUÉ. `motivoVisible` es lo que se le muestra en el panel;
   // `motivoSuspension` de la ficha es el registro interno. Ninguno de los dos
   // llega jamás al cliente final de WhatsApp.
+  //
+  // SIN `estadoPago` (20/09, `DISENO.md` §4undecies.2): suspender corta el
+  // SERVICIO y no afirma nada sobre el pago. `estadoPago` se deriva de los
+  // pagos (`camposDerivados`), y escribir `vencido` acá pisaba esa verdad.
   await db().doc(`tenants/${tenantId}/cuenta/estado`).set({
-    estadoPago: 'vencido',
     motivoVisible: texto(datos['motivoVisible'], 300)
       || 'Servicio suspendido. Comuníquese con NovuChat para regularizar su cuenta.',
     actualizadoEn: Timestamp.now(),
@@ -349,8 +347,9 @@ export const reactivarTenant = onCall(async (peticion) => {
     reactivadoPor: uid,
   });
   await marcarRutasDelTenant(tenantId, 'activo');
+  // Tampoco `estadoPago: 'al_dia'`: no se afirma «al día» sin un pago que lo
+  // respalde. Reactivar devuelve el servicio; lo que se debe sigue derivándose.
   await db().doc(`tenants/${tenantId}/cuenta/estado`).set({
-    estadoPago: 'al_dia',
     motivoVisible: '',
     actualizadoEn: Timestamp.now(),
   }, { merge: true });
@@ -522,7 +521,13 @@ export const quitarUsuario = onCall(async (peticion) => {
 // escribe acá, en la misma transacción, y ninguna regla ni ningún límite lo lee.
 // El cambio de plan queda en la auditoría con el antes y el después.
 // ---------------------------------------------------------------------------
-const ESTADOS_PAGO = new Set(['al_dia', 'pendiente', 'vencido']);
+// LOS CAMPOS QUE SE DERIVAN DE LOS PAGOS (20/09, bloque A-1, `DISENO.md`
+// §4undecies.2). Hasta el 20/09 esta callable los aceptaba escritos a mano;
+// ahora los RECHAZA: `estadoPago`, `montoMensual`, `moneda` y
+// `proximoVencimiento` los calcula `camposDerivados` a partir de la modalidad,
+// el mes pagado y el plan, en cada llamada. Un «al día» que no sale de un pago
+// no significa nada, y era lo que pisaba `suspenderTenant`.
+const CAMPOS_DERIVADOS = ['estadoPago', 'montoMensual', 'moneda', 'proximoVencimiento'] as const;
 
 export const actualizarEstadoCuenta = onCall(async (peticion) => {
   const uid = exigirPropietario(peticion);
@@ -533,33 +538,10 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   const viene = (clave: string) => Object.prototype.hasOwnProperty.call(datos, clave);
   const cambios: Record<string, unknown> = {};
 
-  if (viene('estadoPago')) {
-    const estadoPago = datos['estadoPago'];
-    if (typeof estadoPago !== 'string' || !ESTADOS_PAGO.has(estadoPago)) {
-      throw new HttpsError('invalid-argument', 'Estado de pago inválido.');
+  for (const clave of CAMPOS_DERIVADOS) {
+    if (viene(clave)) {
+      throw new HttpsError('invalid-argument', `${clave} se deriva de los pagos: no se escribe a mano.`);
     }
-    cambios['estadoPago'] = estadoPago;
-  }
-  if (viene('montoMensual')) {
-    const monto = datos['montoMensual'];
-    if (typeof monto !== 'number' || !Number.isFinite(monto) || monto < 0) {
-      throw new HttpsError('invalid-argument', 'Monto mensual inválido.');
-    }
-    cambios['montoMensual'] = monto;
-  }
-  if (viene('moneda')) {
-    const moneda = datos['moneda'];
-    if (moneda !== 'USD' && moneda !== 'BOB') {
-      throw new HttpsError('invalid-argument', 'Moneda inválida: USD o BOB.');
-    }
-    cambios['moneda'] = moneda;
-  }
-  if (viene('proximoVencimiento')) {
-    const vence = datos['proximoVencimiento'];
-    if (vence === null) cambios['proximoVencimiento'] = FieldValue.delete();
-    else if (typeof vence === 'number' && Number.isFinite(vence)) {
-      cambios['proximoVencimiento'] = Timestamp.fromMillis(vence);
-    } else throw new HttpsError('invalid-argument', 'Vencimiento inválido.');
   }
   if (viene('motivoVisible')) {
     if (typeof datos['motivoVisible'] !== 'string') {
@@ -593,7 +575,36 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     plan = pedido;
   }
 
-  const otros = [...Object.keys(cambios), ...Object.keys(umbrales)].sort();
+  // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.2). La MODALIDAD es
+  // cerrada: demostración, prueba o prepago. `periodoPrueba` (`aaaa-mm`) es
+  // opcional: al pasar a prueba sin él, es el mes en curso de Bolivia; `null`
+  // lo borra. `corteActivo` es un booleano (enciende el corte en ESTE tenant
+  // antes que en toda la plataforma; `null` lo borra) y no cambia ningún
+  // derivado. Cualquier otra cosa se RECHAZA, como todo lo demás de acá.
+  //
+  // `periodoPagado` NO se acepta: solo lo escribe un pago (A-1) o la migración
+  // (`scripts/migrar-prepago.mjs`, uno por uno, con el OK de Andres).
+  const prepago: Record<string, unknown> = {};
+  if (viene('modalidad')) {
+    const m = datos['modalidad'];
+    if (!esModalidad(m)) {
+      throw new HttpsError('invalid-argument', `Modalidad desconocida. Una de: ${MODALIDADES.join(', ')}.`);
+    }
+    prepago['modalidad'] = m;
+  }
+  if (viene('periodoPrueba')) {
+    const p = datos['periodoPrueba'];
+    if (p === null) prepago['periodoPrueba'] = FieldValue.delete();
+    else if (esPeriodo(p)) prepago['periodoPrueba'] = p;
+    else throw new HttpsError('invalid-argument', 'periodoPrueba inválido: aaaa-mm.');
+  }
+  if (viene('corteActivo')) {
+    const c = datos['corteActivo'];
+    if (c === null) prepago['corteActivo'] = FieldValue.delete();
+    else if (typeof c === 'boolean') prepago['corteActivo'] = c;
+    else throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
+  }
+  const otros = [...Object.keys(cambios), ...Object.keys(umbrales), ...Object.keys(prepago)].sort();
   if (otros.length === 0 && plan === null) {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
   }
@@ -601,11 +612,15 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
   const refFicha = db().doc(`tenants/${tenantId}`);
   const refAuditoria = db().collection(`tenants/${tenantId}/auditoria`);
+  const ahoraMs = Date.now();
+  const refMetricas = db().doc(`tenants/${tenantId}/metricas/${periodoDe(ahoraMs)}`);
 
   // UNA TRANSACCIÓN: la cuenta, el espejo de la ficha y la auditoría se
   // escriben juntos o no se escribe nada. Lecturas antes que escrituras.
   const limites = await db().runTransaction(async (tx) => {
-    const [cuentaDoc, ficha] = await Promise.all([tx.get(refCuenta), tx.get(refFicha)]);
+    const [cuentaDoc, ficha, metricasDoc] = await Promise.all([
+      tx.get(refCuenta), tx.get(refFicha), tx.get(refMetricas),
+    ]);
     if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
     const actual = cuentaDoc.data() ?? {};
     const ahora = Timestamp.now();
@@ -623,7 +638,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
       }
     }
 
-    const escritura: Record<string, unknown> = { ...cambios, ...umbrales, actualizadoEn: ahora };
+    const escritura: Record<string, unknown> = { ...cambios, ...umbrales, ...prepago, actualizadoEn: ahora };
     const nuevos = plan ? limitesDe(plan) : null;
     if (plan && nuevos) {
       escritura['plan'] = plan;
@@ -636,6 +651,45 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
         limitesAntes: actual['limites'] ?? null, limitesDespues: nuevos,
         catalogoPlanes: CATALOGO_PLANES,
       });
+    }
+
+    // Al pasar a PRUEBA sin período, la prueba es el mes en curso de Bolivia,
+    // con su bolsa de 20 conversaciones; si ya tenía una, no se reinicia.
+    if (prepago['modalidad'] === 'prueba' && !viene('periodoPrueba') && !esPeriodo(actual['periodoPrueba'])) {
+      escritura['periodoPrueba'] = mesBolivia(ahoraMs);
+      escritura['bolsaPrueba'] = PRUEBA.conversaciones;
+    }
+
+    // LOS DERIVADOS se recalculan SIEMPRE, con la cuenta COMO VA A QUEDAR: lo
+    // que ya había, más lo que trae esta llamada. Sobre eso decide
+    // `estadoDeServicio` (`prepago.ts`, puro), y lo que decide se escribe, no
+    // lo que mande nadie. Incondicional desde el 20/09 (A-1): como esta
+    // callable ya no acepta los derivados a mano, la única forma de que estén
+    // bien es calcularlos en cada escritura.
+    //
+    // SALVO un comercio real SIN MIGRAR (sin `modalidad` y con un plan del
+    // catálogo): para el módulo sería demostración y derivaría «Sin cargo»
+    // con monto cero, cambiándole el estado de cuenta sin que nada hubiera
+    // pasado. Sus derivados no se tocan hasta que `scripts/migrar-prepago.mjs`
+    // le dé su modalidad (`derivadosGobernados`, revisión de seguridad de
+    // A-1, LOW 8). La migración va igual ANTES de desplegar A-1.
+    const combinada: Record<string, unknown> = { ...actual };
+    for (const [k, v] of Object.entries(escritura)) {
+      if (v instanceof FieldValue) delete combinada[k]; else combinada[k] = v;
+    }
+    // Borrar `periodoPrueba` de una cuenta que queda en PRUEBA la dejaría
+    // incoherente (`estadoDeServicio` la atendería sin límite): se rechaza.
+    if (viene('periodoPrueba') && datos['periodoPrueba'] === null && combinada['modalidad'] === 'prueba') {
+      throw new HttpsError('invalid-argument', 'Una cuenta en prueba necesita su periodoPrueba.');
+    }
+    if (derivadosGobernados(combinada)) {
+      const servicio = estadoDeServicio(combinada as CuentaCruda, consumidasDe(metricasDoc.data()), ahoraMs);
+      const d = camposDerivados(servicio, combinada as CuentaCruda);
+      escritura['estadoPago'] = d.estadoPago;
+      escritura['montoMensual'] = d.montoMensual;
+      escritura['moneda'] = d.moneda;
+      escritura['proximoVencimiento'] = d.proximoVencimientoMs === null
+        ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs);
     }
 
     // `update` y no `set` con `merge`: reemplaza `limites` ENTERO en vez de
@@ -656,13 +710,67 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
         accion: 'estado_cuenta', uid, en: ahora, campos: otros,
         valores: Object.fromEntries(otros
           .filter((k) => k !== 'motivoVisible')
-          .map((k) => [k, valor(k in cambios ? cambios[k] : umbrales[k])])),
+          .map((k) => [k, valor(k in cambios ? cambios[k] : k in umbrales ? umbrales[k] : prepago[k])])),
       });
     }
     return nuevos;
   });
 
   return { ok: true, ...(plan && limites ? { plan, limites } : {}) };
+});
+
+// ---------------------------------------------------------------------------
+// LA BANDERA DEL MODO OBSERVACIÓN DEL PREPAGO (`DISENO.md` §4undecies.4).
+//
+// `plataforma/prepago.corteActivo` es la compuerta global: A-0 entra a `main`
+// con ella apagada y así se queda hasta que Andres decida, «después del demo y
+// con un pago confirmado de punta a punta». `cuenta/estado.corteActivo` es la
+// de UN tenant, para el ensayo de extremo a extremo: se enciende en uno solo,
+// se observa un ciclo completo, y recién después la global. Apagada, la
+// ingesta calcula el corte, lo anota con `aplicado: false` y atiende igual;
+// encendida, `configuracionFlujo` responde 409 y la ingesta no cuenta nada.
+//
+// Solo el propietario, y queda quién y cuándo: cada cambio deja una entrada
+// en `plataforma/prepago/historial` (y, por tenant, en su auditoría). Ningún
+// script con `--aplicar` la toca: es una decisión, no una operación.
+// ---------------------------------------------------------------------------
+export const fijarCortePrepago = onCall(async (peticion) => {
+  const uid = exigirPropietario(peticion);
+  const datos = (peticion.data ?? {}) as Record<string, unknown>;
+  const corteActivo = datos['corteActivo'];
+  if (typeof corteActivo !== 'boolean') {
+    throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
+  }
+  // El motivo es obligatorio y tiene que decir algo: es lo que queda en el
+  // historial junto a quién y cuándo, y encender el corte es una decisión.
+  const motivo = texto(datos['motivo'], 300);
+  if (motivo.length < 10) {
+    throw new HttpsError('invalid-argument', 'El motivo es obligatorio (al menos 10 caracteres).');
+  }
+  const tenantId = texto(datos['tenantId'], 60);
+  if (tenantId !== '' && !ID_TENANT.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Identificador inválido.');
+  }
+  const ahora = Timestamp.now();
+  const refPlataforma = db().doc('plataforma/prepago');
+  const refHistorial = refPlataforma.collection('historial');
+
+  await db().runTransaction(async (tx) => {
+    if (tenantId === '') {
+      tx.set(refPlataforma, { corteActivo, actualizadoEn: ahora, actualizadoPor: uid, motivo }, { merge: true });
+      tx.create(refHistorial.doc(), { corteActivo, uid, en: ahora, motivo });
+      return;
+    }
+    const ficha = await tx.get(db().doc(`tenants/${tenantId}`));
+    if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    tx.set(db().doc(`tenants/${tenantId}/cuenta/estado`), { corteActivo, actualizadoEn: ahora }, { merge: true });
+    tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
+      accion: 'corte_prepago', uid, en: ahora, corteActivo, motivo,
+    });
+    tx.create(refHistorial.doc(), { corteActivo, uid, en: ahora, motivo, tenantId });
+  });
+
+  return { ok: true, corteActivo, ...(tenantId ? { tenantId } : {}) };
 });
 
 // ---------------------------------------------------------------------------

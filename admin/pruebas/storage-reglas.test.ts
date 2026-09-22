@@ -359,4 +359,157 @@ describe.skipIf(!PUERTO_STORAGE)('storage.rules — archivo de planes de la capt
       await assertFails(deleteObject(ref(adminD(), ruta(D))));
     });
   });
+
+  // ===========================================================================
+  // EVIDENCIA DE PAGOS DEL PREPAGO (storage.rules, /tenants/{t}/pagos/{pagoId}/…;
+  // DISENO.md §4undecies.7, bloque A-1). La evidencia de una transferencia la
+  // sube SOLO el propietario; la lee el admin del comercio (también suspendido)
+  // y el propietario; `qr.png` no tiene camino de escritura por reglas.
+  // Se escribe negando.
+  // ===========================================================================
+  describe('Evidencia de pagos (prepago)', () => {
+    const PAGO = 'AbCdEfGhIjKlMnOpQrStUv';
+    const rutaPago = (t: string, archivo = 'evidencia.pdf', pagoId = PAGO) => `tenants/${t}/pagos/${pagoId}/${archivo}`;
+    const evidencia = (s: Storage, t: string, n = 200 * 1024, archivo = 'evidencia.pdf', tipo = 'application/pdf') =>
+      subir(s, rutaPago(t, archivo), n, tipo);
+
+    describe('subir', () => {
+      it('el propietario sube evidencia.pdf, .jpg y .png con su tipo, y la reemplaza MIENTRAS el pago no está registrado', async () => {
+        await assertSucceeds(evidencia(propietario(), A));
+        await assertSucceeds(evidencia(propietario(), A, MB, 'evidencia.jpg', 'image/jpeg'));
+        await assertSucceeds(evidencia(propietario(), A, MB, 'evidencia.png', 'image/png'));
+        await assertSucceeds(evidencia(propietario(), A, 10 * MB));
+        await assertSucceeds(evidencia(propietario(), A, 5 * MB, 'evidencia.jpg', 'image/jpeg'));
+        await sembrarArchivo(rutaPago(A));
+        await assertSucceeds(evidencia(propietario(), A));
+      });
+
+      it('una vez REGISTRADO el pago, el propietario no reemplaza la evidencia ni sube otra (MEDIUM 2)', async () => {
+        await sembrarArchivo(rutaPago(A));
+        await entorno.withSecurityRulesDisabled(async (ctx) => {
+          await setDoc(doc(ctx.firestore(), `tenants/${A}/pagos/${PAGO}`), { estado: 'confirmado', medio: 'transferencia' });
+        });
+        await assertFails(evidencia(propietario(), A));
+        await assertFails(evidencia(propietario(), A, MB, 'evidencia.jpg', 'image/jpeg'));
+        await assertFails(updateMetadata(ref(propietario(), rutaPago(A)), { customMetadata: { otra: 'version' } }));
+        // Sigue pudiendo LEERLA: es la evidencia del pago.
+        await assertSucceeds(getMetadata(ref(propietario(), rutaPago(A))));
+      });
+
+      it('el ADMIN del comercio no sube evidencia, ni en su propio comercio: confirma el propietario', async () => {
+        await assertFails(evidencia(adminA(), A));
+        await assertFails(evidencia(adminA(), A, MB, 'evidencia.jpg', 'image/jpeg'));
+      });
+
+      it('el operador, otro comercio, la ingesta y un anónimo tampoco', async () => {
+        await assertFails(evidencia(operA(), A));
+        await assertFails(evidencia(adminB(), A));
+        await assertFails(evidencia(ingestaA(), A));
+        await assertFails(evidencia(anonimo(), A));
+      });
+
+      it('el claim de propietario con contraseña o con token personalizado queda inerte (T-19)', async () => {
+        await assertFails(evidencia(propietarioConPassword(), A));
+        await assertFails(evidencia(propietarioCustom(), A));
+      });
+
+      it('un PDF de 11 MB (y de 10 MB + 1 byte) no; una imagen de 6 MB no; vacío no', async () => {
+        await assertFails(evidencia(propietario(), A, 11 * MB));
+        await assertFails(evidencia(propietario(), A, 10 * MB + 1));
+        await assertFails(evidencia(propietario(), A, 6 * MB, 'evidencia.jpg', 'image/jpeg'));
+        await assertFails(evidencia(propietario(), A, 6 * MB, 'evidencia.png', 'image/png'));
+        await assertFails(evidencia(propietario(), A, 0));
+      });
+
+      it('el tipo tiene que coincidir con la extensión', async () => {
+        await assertFails(evidencia(propietario(), A, 1024, 'evidencia.pdf', 'text/html'));
+        await assertFails(evidencia(propietario(), A, 1024, 'evidencia.pdf', 'image/png'));
+        await assertFails(evidencia(propietario(), A, 1024, 'evidencia.jpg', 'application/pdf'));
+        await assertFails(evidencia(propietario(), A, 1024, 'evidencia.png', 'image/svg+xml'));
+      });
+
+      it('qr.png NO se sube por reglas, ni el propietario: es del SDK Admin', async () => {
+        await assertFails(evidencia(propietario(), A, 1024, 'qr.png', 'image/png'));
+        await assertFails(evidencia(adminA(), A, 1024, 'qr.png', 'image/png'));
+      });
+
+      it('otro nombre, o un pagoId sin la forma de 22 caracteres, cae en la negación', async () => {
+        for (const nombre of ['comprobante.pdf', 'evidencia.jpeg', 'evidencia.PDF', 'evidencia', 'evidencia.pdf.html']) {
+          await assertFails(evidencia(propietario(), A, 1024, nombre));
+        }
+        for (const pagoId of ['p1', 'AbCdEfGhIjKlMnOpQrStU', 'AbCdEfGhIjKlMnOpQrStUvW', 'AbCdEfGhIjKlMnOpQrSt.v']) {
+          await assertFails(subir(propietario(), rutaPago(A, 'evidencia.pdf', pagoId), 1024, 'application/pdf'));
+        }
+        await assertFails(subir(propietario(), `tenants/${A}/pagos/evidencia.pdf`, 1024, 'application/pdf'));
+        await assertFails(subir(propietario(), `tenants/${A}/pagos/${PAGO}/x/evidencia.pdf`, 1024, 'application/pdf'));
+      });
+    });
+
+    describe('leer', () => {
+      beforeEach(async () => {
+        await sembrarArchivo(rutaPago(A));
+        await sembrarArchivo(rutaPago(A, 'qr.png'), 'image/png');
+        await sembrarArchivo(rutaPago(D, 'qr.png'), 'image/png');
+        await sembrarArchivo(rutaPago(X));
+        await sembrarArchivo(rutaPago(A, 'otro.pdf'));
+      });
+
+      it('el admin del comercio lee la evidencia y el QR; el propietario también', async () => {
+        await assertSucceeds(getMetadata(ref(adminA(), rutaPago(A))));
+        await assertSucceeds(getMetadata(ref(adminA(), rutaPago(A, 'qr.png'))));
+        await assertSucceeds(getDownloadURL(ref(adminA(), rutaPago(A, 'qr.png'))));
+        await assertSucceeds(getMetadata(ref(propietario(), rutaPago(A))));
+        await assertSucceeds(getMetadata(ref(propietario(), rutaPago(A, 'qr.png'))));
+      });
+
+      it('un comercio SUSPENDIDO sigue viendo su QR (es con lo que se reactiva)', async () => {
+        await assertSucceeds(getMetadata(ref(adminD(), rutaPago(D, 'qr.png'))));
+      });
+
+      it('el OPERADOR no lee: la situación financiera no es asunto suyo', async () => {
+        await assertFails(getMetadata(ref(operA(), rutaPago(A))));
+        await assertFails(getMetadata(ref(operA(), rutaPago(A, 'qr.png'))));
+        await assertFails(getDownloadURL(ref(operA(), rutaPago(A, 'qr.png'))));
+      });
+
+      it('el admin del comercio B no lee lo de A; tampoco la ingesta, un anónimo ni un admin con Google', async () => {
+        await assertFails(getMetadata(ref(adminB(), rutaPago(A))));
+        await assertFails(getDownloadURL(ref(adminB(), rutaPago(A, 'qr.png'))));
+        await assertFails(getMetadata(ref(ingestaA(), rutaPago(A))));
+        await assertFails(getMetadata(ref(anonimo(), rutaPago(A))));
+        await assertFails(getMetadata(ref(adminAConGoogle(), rutaPago(A))));
+        await assertFails(getMetadata(ref(propietarioConPassword(), rutaPago(A))));
+      });
+
+      it('un comercio dado de baja no lee ni con su admin', async () => {
+        await assertFails(getMetadata(ref(adminX(), rutaPago(X))));
+      });
+
+      it('un nombre fuera de la lista no se lee aunque exista', async () => {
+        await assertFails(getMetadata(ref(adminA(), rutaPago(A, 'otro.pdf'))));
+        await assertFails(getMetadata(ref(propietario(), rutaPago(A, 'otro.pdf'))));
+      });
+    });
+
+    describe('listar y borrar: nadie', () => {
+      beforeEach(async () => { await sembrarArchivo(rutaPago(A)); });
+
+      it('ni el admin ni el propietario listan la carpeta del pago ni la de pagos', async () => {
+        await assertFails(listAll(ref(adminA(), `tenants/${A}/pagos/${PAGO}`)));
+        await assertFails(listAll(ref(propietario(), `tenants/${A}/pagos/${PAGO}`)));
+        await assertFails(listAll(ref(propietario(), `tenants/${A}/pagos`)));
+      });
+
+      it('nadie borra una evidencia, ni el propietario: un pago no se corrige, se compensa', async () => {
+        await assertFails(deleteObject(ref(propietario(), rutaPago(A))));
+        await assertFails(deleteObject(ref(adminA(), rutaPago(A))));
+        await assertFails(deleteObject(ref(anonimo(), rutaPago(A))));
+      });
+
+      it('cambiar los metadatos a un tipo que no corresponde se rechaza, también para el propietario', async () => {
+        await assertFails(updateMetadata(ref(propietario(), rutaPago(A)), { contentType: 'text/html' }));
+        await assertFails(updateMetadata(ref(adminA(), rutaPago(A)), { customMetadata: { origen: 'consola' } }));
+      });
+    });
+  });
 });

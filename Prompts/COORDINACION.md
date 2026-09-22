@@ -40,7 +40,7 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño | **cerrado (20/09)**: `admin/DISENO.md` §4undecies en la rama de coordinación (`bb07890`), con la §4undecies.5 reescrita contra el contrato real | `admin/DISENO.md` | — |
 | **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación, `cobranza.ts`, `migrar-prepago.mjs` | **FUSIONADO (#150, 21/09, `17984a4`)**. No despliega: entra con la etiqueta, y en **modo observación** (`plataforma/prepago.corteActivo` no existe) | — | — |
 | **A-1 · pagos** | `prepago/pagos-y-carga-manual` | pagos con TCO, carga manual con evidencia, derivados gobernados, reglas de Firestore y Storage | **FUSIONADO (#151, 22/09, `e778b72`)** | — | — |
-| **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del contrato real, sondeo cada 5 min, aviso firmado, barrido, imagen del QR; **integrado con A-1**: sin `pagos-stub.ts`, y `pagosConCobrador.ts` conecta la carga manual, la anulación y la consulta con el cobrador | **PR #152, integración con A-1 hecha y revisada por seguridad** (`e62bddd` + `ae286cd`: el camino local no anula ningún pago que haya pasado por el cobrador; las tres Functions declaran `COBRADOR_TOKEN`); suite 2657 en verde, Storage 55; espera la CI para fusionarse | `cobrador.ts`, `cobroPrepago.ts`, `pagosConCobrador.ts`, `index.ts`, `pagos.ts` (opciones de `onCall`, anulación local cerrada) | fusionar con la CI en verde |
+| **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del contrato real, sondeo cada 5 min, aviso firmado, barrido, imagen del QR, integrado con A-1 (`pagosConCobrador.ts`, sin stub) | **FUSIONADO (#152, 22/09, `2311c78`)** | — | — |
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **desbloqueado por B-1 (21/09)**; espera además A-2 en `main` y la verificación del titular de cada teléfono de pago | `Flujos/src/` (módulo), nunca el JSON a mano | — |
 | **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` | ocho plantillas de utilidad redactadas | **FUSIONADO (#154, 22/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
@@ -156,7 +156,7 @@ C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
 1. ~~B-1~~: **fusionado el 21/09 (#153)**.
 2. ~~A-0, A-1~~: fusionados (#150, #151). ~~Subir~~ **A-0**, **A-1**
    (`prepago/pagos-y-carga-manual`, sobre A-0) y **A-2** (`prepago/cliente-cobrador`).
-3. «Sí» para fusionar, en este orden: B-1 (cuando quiera), A-0, A-1, y A-2 al final
+3. ~~Fusionar B-1, A-0, A-1 y A-2~~: **hecho el 21 y 22/09 (#153, #150, #151, #152)**. Quedó así: A-2 al final
    (la coordinadora resuelve sus conflictos: una sola copia de las reglas de `/pagos`,
    la línea de A-0 en las listas de tipos de bitácora, `tipoCambioDe`, y se borra
    `pagos-stub.ts`). Fusionar tampoco despliega.
@@ -207,6 +207,11 @@ sitio, arreglando antes su alarma de huella que no corre en CI), B-4 (runbook, a
 `flujos-n8n`, gancho de pre-commit, acotar `verificar-saneo.sh`).
 
 ## Bitácora
+
+- **22/09/2026** — **#152 (A-2) fusionado**, CI en verde. **Los cinco PR de código y
+  plantillas están en `main`** (#150 a #154); `pagos-stub.ts` no llegó a `main`. Queda
+  #155 (esta rama). Lo que sigue ya no es fusionar: es la migración de los comercios,
+  la nube del cobrador y la etiqueta, cada paso con el «sí» de Andres.
 
 - **22/09/2026** — Andres: «procede conforme las recomendaciones». Fusionados **#151**
   (A-1) y **#154** (A-5). **#152** (A-2) integrado con A-1 en su rama: se borró el stub,
