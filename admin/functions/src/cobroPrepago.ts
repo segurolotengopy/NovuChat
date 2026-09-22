@@ -52,8 +52,8 @@
  * COSTO EN MENSAJES: 0. La confirmación por WhatsApp solo se ENCOLA en
  * `cuenta.confirmacionesPendientes`; la manda el módulo de A-4.
  *
- * `pagos-stub.ts` es provisorio: cuando A-1 esté en `main`, los imports de
- * abajo cambian a `pagos.ts` y `prepago.ts` y nada más se toca.
+ * La puerta que suma meses es `pagos.ts` (A-1): `aplicarPagoEnTransaccion`.
+ * El `pagos-stub.ts` provisorio se borró al integrar A-1 (21/09).
  */
 import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
@@ -67,11 +67,12 @@ import {
   configCobradorDe, montoDesdeTexto, resolverCobrador, verificarAviso,
   VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador, type RespuestaCrear,
 } from './cobrador.js';
+import { MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, montoUsdDe } from './prepago.js';
+import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
 import {
-  MONEDA_COBRO, MONEDA_LISTA, SinTipoDeCambio, conceptoDe, descripcionDe, esPedidoDePago,
-  importeBs, montoUsdDe, puertaDePagos, tipoCambioDelDia,
+  conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,
-} from './pagos-stub.js';
+} from './pagos.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -275,7 +276,7 @@ export async function crearCobroInterno(
     db().doc('plataforma/tipoCambio').get(), db().doc('plataforma/prepago').get(),
   ]);
   let tc;
-  try { tc = tipoCambioDelDia(tcDoc.data(), ahoraMs); } catch (e) {
+  try { tc = tipoCambioDe(tcDoc.data(), ahoraMs); } catch (e) {
     if (e instanceof SinTipoDeCambio) throw new HttpsError('failed-precondition', 'No hay tipo de cambio del día: no se puede emitir el cobro.');
     throw e;
   }

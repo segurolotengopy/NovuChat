@@ -1,0 +1,1006 @@
+/**
+ * =============================================================================
+ * PAGOS DEL PREPAGO — la colección `/tenants/{t}/pagos`, la puerta que suma
+ * meses, y la carga manual del propietario (bloque A-1, `DISENO.md` §4undecies)
+ * =============================================================================
+ *
+ * LO QUE ESTE MÓDULO GARANTIZA, y dónde:
+ *
+ *  1. SOLO DOS COSAS CONFIRMAN UN PAGO (decisión 1 del frente): el banco, por
+ *     la consulta autenticada al cobrador (A-2, `cobroPrepago.ts`), o EL
+ *     PROPIETARIO cargándolo con evidencia y auditoría (`registrarPagoManual`,
+ *     acá). No existe `origen: 'comprobante'` ni `'webhook'`: un comprobante
+ *     que manda un cliente es una imagen, y una imagen se edita.
+ *  2. `aplicarPagoEnTransaccion` ES LA ÚNICA PUERTA QUE SUMA MESES O BOLSAS.
+ *     A-2 la llama dentro de su transacción con el estado del cobrador ya
+ *     verificado; `registrarPagoManual` usa la misma aritmética
+ *     (`aplicacionDe`) y escribe el pago NACIDO confirmado: nunca pasa por
+ *     `pendiente`. Los dos caminos terminan en `aplicarPago` de `prepago.ts`,
+ *     que es puro y está probado mes por mes.
+ *  3. NADIE ESCRIBE UN PAGO DESDE EL NAVEGADOR, ni el propietario
+ *     (`firestore.rules`, `/pagos`: `create, update, delete: if false`). Si
+ *     pudiera, no habría auditoría de quién confirmó qué. Las puertas son
+ *     estas callables y las de A-2, todas con el SDK Admin.
+ *  4. UN SOLO PENDIENTE POR CUENTA (decisión 8). La carga manual ANULA el QR
+ *     vivo antes de cargar, o no carga: si el cobrador dice que ese QR ya se
+ *     pagó, se aplica el del banco y el manual se rechaza. Nunca dos pagos
+ *     vivos por el mismo mes. La anulación en el cobrador es una INYECCIÓN
+ *     (`Deps.anular`) que A-2 enchufa con `anularCobroVivo`; sin ella, un
+ *     pendiente con QR emitido ABORTA la carga (nunca se carga un manual
+ *     encima de un QR vivo que no se pudo anular).
+ *  5. SIN TCO NO SE COBRA. El manual trae `tcoAplicado`, `tcoFuente` y
+ *     `tcoFecha` declarados por el propietario (la fuente es lo que él diga:
+ *     «BCB», «BCB del 18/09»); `importeBs` lanza fuera de 5..40. Y si lo que
+ *     entró no es lo de la lista, `motivoDiferencia` es obligatorio: un
+ *     descuento manual tiene nombre y firma.
+ *  6. LA EVIDENCIA VIVE EN STORAGE, no en el chat: obligatoria en
+ *     transferencia, `tenants/{t}/pagos/{pagoId}/evidencia.(jpg|png|pdf)`,
+ *     subida por el propietario bajo `storage.rules`. Antes de registrar, el
+ *     servidor COMPRUEBA CON EL SDK ADMIN que el objeto existe: una ruta
+ *     declarada no es una evidencia. Se guardan su generación y su hash
+ *     (`evidenciaMeta`), y una vez registrado el pago las reglas de Storage
+ *     no dejan reemplazarla.
+ *  7. `cuenta/estado` SE DERIVA (§4undecies.2): `estadoPago`, `montoMensual`,
+ *     `moneda` y `proximoVencimiento` los escribe `camposDerivados`, junto con
+ *     cada pago; `actualizarEstadoCuenta` los RECHAZA si vienen a mano.
+ *  8. TODO SE HACE CUMPLIR ACÁ, no en la pantalla (`CLAUDE.md` §7): meses ≤ 6,
+ *     bolsas ≤ 12, plan del catálogo, `telefonosPago` ≤ 5 con formato, quién
+ *     puede qué. Cada límite tiene su prueba negativa en `pruebas/pagos.test.ts`.
+ *
+ * EL IDENTIFICADOR DEL PAGO es opaco, 22 caracteres de `base64url` (128 bits),
+ * y es también la referencia externa que viaja al cobrador (§4undecies.1). En
+ * el manual LO ELIGE LA CONSOLA (con `crypto.getRandomValues`), una vez por
+ * formulario: es la clave de idempotencia de los reintentos y, con evidencia,
+ * la carpeta donde se subió ANTES; el servidor exige la forma y `tx.create`,
+ * que falla si ya existe. Un id al azar del navegador es
+ * tan opaco como uno del servidor: lo que importa es que nadie lo adivine y
+ * que no se repita, y las dos cosas las garantiza el `create`.
+ *
+ * COSTO EN MENSAJES: 0. Ninguna de estas funciones manda WhatsApp.
+ *
+ * QUÉ NO HAY ACÁ: nada del cobrador (A-2), nada de la seña (`cobro.ts`,
+ * `sena.ts`: es el comercio cobrándole a su cliente, decisión 9), ninguna
+ * pantalla (A-3).
+ */
+import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import { randomBytes } from 'node:crypto';
+import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
+import { registrar } from './ingesta.js';
+import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
+import { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe, type IdPlanVendible } from './planes.js';
+import {
+  BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
+  corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoUsdDe,
+  type CuentaCruda, type Pago,
+} from './prepago.js';
+
+const db = () => getFirestore();
+const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
+/** `randomBytes(16).toString('base64url')`: 22 caracteres de `[A-Za-z0-9_-]`. */
+export const ID_PAGO = /^[A-Za-z0-9_-]{22}$/;
+/** Teléfono que puede pagar por WhatsApp: solo dígitos, con código de país. Igual que `cobranza.ts`. */
+const TELEFONO = /^[0-9]{8,15}$/;
+export const TELEFONOS_PAGO_MAXIMO = 5;
+export const MEDIOS_MANUALES = ['efectivo', 'transferencia'] as const;
+export type MedioManual = (typeof MEDIOS_MANUALES)[number];
+export const ARCHIVOS_EVIDENCIA = ['evidencia.jpg', 'evidencia.png', 'evidencia.pdf'] as const;
+/** Un TCO declarado de más de un mes no reconstruye ninguna factura de hoy. */
+export const TCO_MANUAL_DIAS_MAXIMO = 31;
+/** Tolerancia entre el TCO declarado y el de referencia antes de pedir motivo. */
+const TCO_TOLERANCIA = 0.01;
+/** Tope de cordura para lo recibido: diez millones de bolivianos. */
+const MONTO_RECIBIDO_MAXIMO = 10_000_000;
+
+const texto = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max).trim() : '');
+const ultimos4 = (v: string) => v.slice(-4);
+export const nuevoPagoId = (): string => randomBytes(16).toString('base64url');
+
+// Alias para A-2, que nombró estas cosas antes de que A-0 fijara los nombres
+// de `prepago.ts`: el pedido y su validación son los mismos objetos.
+export type PedidoDePago = Pago;
+export const esPedidoDePago = esPago;
+
+/**
+ * El concepto que ve el pagador en su app bancaria (`DISENO.md` §4undecies.5):
+ * SIN nombre del comercio y sin datos de ninguna persona. «NovuChat · Pro · 3 meses».
+ */
+export function conceptoDe(pago: Pago): string {
+  if (pago.tipo === 'instalacion') return 'NovuChat · Instalacion';
+  if (pago.tipo === 'bolsa') return `NovuChat · Bolsa x ${pago.cantidad}`;
+  return `NovuChat · ${PLANES[pago.plan].nombre} · ${pago.meses} ${pago.meses === 1 ? 'mes' : 'meses'}`;
+}
+
+// ---------------------------------------------------------------------------
+// LOS TIPOS DEL CONTRATO CON A-2 (`pagos-stub.ts`, que este módulo reemplaza)
+// ---------------------------------------------------------------------------
+
+export interface RefsDePago {
+  pago: DocumentReference;
+  cuenta: DocumentReference;
+  ficha: DocumentReference;
+  /** `/cobrosPendientes/{pagoId}`. Acá no se escribe; lo borra el cliente del cobrador. */
+  cobroPendiente: DocumentReference;
+}
+
+/** El pago y su contexto, YA LEÍDOS por el llamador dentro de la misma transacción. */
+export interface PagoAConfirmar {
+  id: string;
+  datos: Record<string, unknown>;
+  cuenta: Record<string, unknown>;
+  ficha: Record<string, unknown>;
+}
+
+interface AdemasDeLaEscritura {
+  ademas?: { pago?: Record<string, unknown>; cuenta?: Record<string, unknown> };
+}
+
+export type Confirmacion =
+  | ({
+    origen: 'banco';
+    cobroId: string;
+    riel: string | null;
+    confirmadoPorCobrador: 'automatico' | 'revision-manual';
+    avisoId?: string;
+    montoRecibidoBs: number;
+    confirmadoEn: Timestamp;
+    ahoraMs: number;
+  } & AdemasDeLaEscritura)
+  | ({
+    origen: 'propietario';
+    uid: string;
+    montoRecibidoBs: number;
+    motivoDiferencia?: string;
+    confirmadoEn: Timestamp;
+    ahoraMs: number;
+  } & AdemasDeLaEscritura);
+
+export interface ResultadoDeAplicacion {
+  periodoPagado: string;
+  cubiertoHasta: string;
+  bolsa: number;
+  plan: string;
+  modalidad: string;
+  /** La cuenta tenía un corte APLICADO (no observado): el llamador escribe `reanudacion_servicio`. */
+  corteEstabaAplicado: boolean;
+}
+
+export interface PuertaDePagos {
+  aplicarPagoEnTransaccion(tx: Transaction, refs: RefsDePago, pago: PagoAConfirmar, confirmacion: Confirmacion): ResultadoDeAplicacion;
+  camposDerivados(cuenta: Record<string, unknown>, corteGuardado: Record<string, unknown> | null, ahoraMs: number): Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// LOS DERIVADOS, listos para escribir
+// ---------------------------------------------------------------------------
+
+/**
+ * Los campos de `cuenta/estado` que se DERIVAN (§4undecies.2), como se
+ * escriben: `estadoPago`, `montoMensual`, `moneda` y `proximoVencimiento`
+ * (Timestamp, o borrado). Envuelve `camposDerivados(estado, cuenta)` de
+ * `prepago.ts`: calcula el estado del servicio con `estadoDeServicio` y le
+ * pasa la cuenta. Las conversaciones consumidas no entran: `estadoPago` habla
+ * del PAGO, y `sin_conversaciones` no lo cambia.
+ *
+ * `corteGuardado` viene por el contrato con A-2 y no decide nada: el corte
+ * NO se borra por recalcular derivados (lo borra la ingesta cuando ya no hay
+ * rechazo, y `aplicarPago` al reactivar), y `estadoPago` dice `vencido`
+ * cuando la cuenta debe, esté el corte aplicado u observado.
+ */
+/**
+ * ¿El prepago gobierna ya los derivados de esta cuenta? Sí si tiene una
+ * `modalidad` explícita, o si es de demostración por plan. NO si es un
+ * comercio real que todavía no se migró (sin modalidad y con un plan del
+ * catálogo): para el módulo sería «demostración» y derivaría «Sin cargo» con
+ * monto cero, y el comercio vería cambiar su estado de cuenta sin que nada
+ * hubiera pasado. Hasta que la migración le dé su modalidad, sus derivados
+ * no se tocan (revisión de seguridad de A-1, LOW 8).
+ */
+export function derivadosGobernados(cuenta: Record<string, unknown> | null | undefined): boolean {
+  return esModalidad(cuenta?.['modalidad']) || cuenta?.['plan'] === 'demostracion';
+}
+
+export function camposDerivadosDeCuenta(
+  cuenta: Record<string, unknown>,
+  _corteGuardado: Record<string, unknown> | null,
+  ahoraMs: number,
+): Record<string, unknown> {
+  if (!derivadosGobernados(cuenta)) return {};
+  const c = cuenta as CuentaCruda;
+  const d = derivadosDe(estadoDeServicio(c, 0, ahoraMs), c);
+  return {
+    estadoPago: d.estadoPago,
+    montoMensual: d.montoMensual,
+    moneda: d.moneda,
+    proximoVencimiento: d.proximoVencimientoMs === null ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs),
+  };
+}
+
+/** El nombre con el que A-2 la llama (`puertaDePagos.camposDerivados`). */
+export const camposDerivados = camposDerivadosDeCuenta;
+
+// ---------------------------------------------------------------------------
+// LA ARITMÉTICA DE APLICAR UN PAGO — una sola, para el banco y para el manual
+// ---------------------------------------------------------------------------
+
+/** Lee el pedido guardado en el documento del pago, validado como `Pago`. */
+export function pagoDe(datos: Record<string, unknown>): Pago | null {
+  const tipo = datos['tipo'];
+  const candidato: Record<string, unknown> = tipo === 'mensualidad'
+    ? { tipo, plan: datos['plan'], meses: datos['meses'] }
+    : tipo === 'bolsa' ? { tipo, cantidad: datos['cantidad'] }
+    : { tipo };
+  return esPago(candidato) ? candidato : null;
+}
+
+export interface Aplicacion {
+  /** Lo que se escribe en el documento del pago (`update`, o parte del `create` en el manual). */
+  escrituraPago: Record<string, unknown>;
+  /** Lo que se escribe en `cuenta/estado`, con `merge`. */
+  escrituraCuenta: Record<string, unknown>;
+  /** El plan nuevo para el espejo de la ficha, si cambió. */
+  cambioDePlan: IdPlanVendible | null;
+  resultado: ResultadoDeAplicacion;
+}
+
+/**
+ * LO ÚNICO QUE `confirmacion.ademas` PUEDE AGREGAR (revisión de seguridad de
+ * A-1, LOW 3). `ademas` existe para que el cliente del cobrador sume a la
+ * MISMA escritura lo suyo: el estado del cobro en el pago y la confirmación
+ * encolada en la cuenta. Nada más: si pudiera traer `estado`, `periodoPagado`
+ * o `bolsa`, la puerta que suma meses dejaría de ser una sola. Cualquier otra
+ * clave lanza, y lo que sí se admite se esparce ANTES de los campos propios,
+ * que siempre ganan.
+ */
+const ADEMAS_PERMITIDO: Readonly<Record<'pago' | 'cuenta', readonly string[]>> = {
+  pago: ['cobro'],
+  cuenta: ['confirmacionesPendientes'],
+};
+
+function ademasValidado(confirmacion: Confirmacion): { pago: Record<string, unknown>; cuenta: Record<string, unknown> } {
+  const ademas = confirmacion.ademas ?? {};
+  const salida = { pago: {} as Record<string, unknown>, cuenta: {} as Record<string, unknown> };
+  for (const [destino, valor] of Object.entries(ademas)) {
+    if (destino !== 'pago' && destino !== 'cuenta') throw new Error(`confirmacion.ademas.${destino} no se admite`);
+    if (valor === undefined) continue;
+    if (typeof valor !== 'object' || valor === null) throw new Error(`confirmacion.ademas.${destino} tiene que ser un objeto`);
+    for (const clave of Object.keys(valor)) {
+      if (!ADEMAS_PERMITIDO[destino].includes(clave)) {
+        throw new Error(`confirmacion.ademas.${destino}.${clave} no se admite: solo ${ADEMAS_PERMITIDO[destino].join(', ')}`);
+      }
+    }
+    salida[destino] = valor as Record<string, unknown>;
+  }
+  return salida;
+}
+
+/**
+ * Calcula, sin escribir, lo que un pago confirmado le hace a la cuenta. PURA
+ * salvo por los `FieldValue` que arma. Lanza si el pedido guardado no es un
+ * `Pago` válido (un documento corrupto, no un caso de negocio) o si
+ * `confirmacion.ademas` trae una clave fuera de la lista. No se exporta: la
+ * puerta es `aplicarPagoEnTransaccion`, y el manual la usa desde acá adentro.
+ */
+function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicacion {
+  const ademas = ademasValidado(confirmacion);
+  const pedido = pagoDe(pago.datos);
+  if (!pedido) throw new Error(`el pago ${ultimos4(pago.id)} no tiene un pedido válido`);
+  const cuenta = pago.cuenta as CuentaCruda;
+  const ahora = Timestamp.fromMillis(confirmacion.ahoraMs);
+  const tras = aplicarPago(cuenta, pedido, confirmacion.ahoraMs);
+  const planAntes = esIdPlan(cuenta.plan) ? cuenta.plan : null;
+
+  const confirmadoPor = confirmacion.origen === 'banco'
+    ? {
+      origen: 'banco', cobroId: confirmacion.cobroId, riel: confirmacion.riel,
+      confirmadoPorCobrador: confirmacion.confirmadoPorCobrador,
+      ...(confirmacion.avisoId ? { avisoId: confirmacion.avisoId } : {}),
+    }
+    : { origen: 'propietario', uid: confirmacion.uid };
+
+  const escrituraPago: Record<string, unknown> = {
+    ...ademas.pago,
+    estado: 'confirmado',
+    confirmadoPor,
+    confirmadoEn: confirmacion.confirmadoEn,
+    montoRecibidoBs: confirmacion.montoRecibidoBs,
+    ...(confirmacion.origen === 'propietario' && confirmacion.motivoDiferencia
+      ? { motivoDiferencia: confirmacion.motivoDiferencia } : {}),
+    cubiertoHasta: tras.cubiertoHasta || null,
+    actualizadoEn: ahora,
+  };
+
+  // La cuenta COMO VA A QUEDAR, para derivar sobre ella: sin pendiente, sin
+  // corte, con el plan, la modalidad, el mes pagado y la bolsa nuevos.
+  // La modalidad se escribe cuando el pago la fija (una mensualidad o una
+  // bolsa convierten a prepago) o cuando ya estaba explícita; una instalación
+  // sobre una cuenta sin modalidad la deja como estaba (y sus derivados, sin
+  // tocar: `derivadosGobernados`).
+  const escribeModalidad = tras.modalidad !== 'demostracion' || esModalidad(cuenta.modalidad);
+  const cuentaNueva: Record<string, unknown> = {
+    ...pago.cuenta, plan: tras.plan, bolsa: tras.bolsa,
+    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
+    ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
+  };
+  delete cuentaNueva['pagoPendienteId'];
+  delete cuentaNueva['corte'];
+
+  const escrituraCuenta: Record<string, unknown> = {
+    ...ademas.cuenta,
+    bolsa: tras.bolsa,
+    ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
+    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
+    pagoPendienteId: FieldValue.delete(),
+    corte: FieldValue.delete(),
+    ...camposDerivadosDeCuenta(cuentaNueva, null, confirmacion.ahoraMs),
+    actualizadoEn: ahora,
+  };
+
+  const cambioDePlan = tras.plan !== 'demostracion' && tras.plan !== planAntes ? tras.plan : null;
+  if (cambioDePlan) {
+    escrituraCuenta['plan'] = cambioDePlan;
+    escrituraCuenta['limites'] = limitesDe(cambioDePlan);
+    escrituraCuenta['catalogoPlanes'] = CATALOGO_PLANES;
+  }
+
+  return {
+    escrituraPago, escrituraCuenta, cambioDePlan,
+    resultado: {
+      periodoPagado: tras.periodoPagado, cubiertoHasta: tras.cubiertoHasta, bolsa: tras.bolsa,
+      plan: tras.plan, modalidad: tras.modalidad,
+      corteEstabaAplicado: corteDe(cuenta)?.aplicado === true,
+    },
+  };
+}
+
+/**
+ * LA ÚNICA PUERTA QUE SUMA MESES O BOLSAS, dentro de la transacción del
+ * llamador. Contrato con A-2 (`pagos-stub.ts`, cabecera):
+ *
+ *   - SÍNCRONA: encola escrituras en `tx` y devuelve; nada de `await`.
+ *   - NO LEE: recibe en `pago` lo que el llamador ya leyó (en una transacción
+ *     las lecturas van antes que las escrituras).
+ *   - UNA ESCRITURA POR DOCUMENTO: `refs.pago` (update), `refs.cuenta` (set con
+ *     merge) y `refs.ficha` (solo si cambia el plan). `refs.cobroPendiente` NO
+ *     se toca: es del cliente del cobrador.
+ *   - LANZA si el pago no está `pendiente`: es un error del llamador, que ya
+ *     lo comprobó y respondió `{ aplicado: false, ya: true }`.
+ *   - `confirmacion.ademas` agrega campos a LA MISMA escritura, de una lista
+ *     cerrada (`ademas.pago`: solo `cobro`; `ademas.cuenta`: solo
+ *     `confirmacionesPendientes`). Cualquier otra clave lanza antes de escribir.
+ */
+export function aplicarPagoEnTransaccion(
+  tx: Transaction, refs: RefsDePago, pago: PagoAConfirmar, confirmacion: Confirmacion,
+): ResultadoDeAplicacion {
+  if (pago.datos['estado'] !== 'pendiente') {
+    throw new Error(`el pago …${ultimos4(pago.id)} no está pendiente: ${String(pago.datos['estado'])}`);
+  }
+  const a = aplicacionDe(pago, confirmacion);
+  tx.update(refs.pago, a.escrituraPago);
+  tx.set(refs.cuenta, a.escrituraCuenta, { merge: true });
+  if (a.cambioDePlan) tx.set(refs.ficha, { plan: a.cambioDePlan }, { merge: true });
+  return a.resultado;
+}
+
+export const puertaDePagos: PuertaDePagos = { aplicarPagoEnTransaccion, camposDerivados: camposDerivadosDeCuenta };
+
+// ---------------------------------------------------------------------------
+// DEPENDENCIAS INYECTABLES — lo que A-2 enchufa, y lo que las pruebas reemplazan
+// ---------------------------------------------------------------------------
+
+/**
+ * Qué pasó al intentar anular el pendiente. Las cuatro primeras son las de
+ * `anularCobroVivo` (A-2); `qr_vivo_sin_cliente` es la de esta versión sin
+ * cobrador: hay un QR emitido allá y nadie que lo anule.
+ */
+export type ResultadoAnulacion =
+  | { resultado: 'anulado' }
+  | { resultado: 'sin_cobro' }
+  | { resultado: 'pagado'; estado: string }
+  | { resultado: 'en_revision' }
+  | { resultado: 'qr_vivo_sin_cliente'; cobroId: string };
+
+export interface Deps {
+  /** Anula el pendiente en el cobrador y acá. A-2: `anularCobroVivo`. */
+  anular?: (tenantId: string, pagoId: string, motivo: string) => Promise<ResultadoAnulacion>;
+  /** Consulta el estado en el cobrador y lo aplica. A-2: `consultarYAplicar`. */
+  /** `null` si no hubo con quién consultar. */
+  consultar?: (tenantId: string, pagoId: string) => Promise<unknown>;
+  /** Metadatos del objeto de evidencia en Storage, o `null` si no está. Por defecto, el SDK Admin. */
+  metaEvidencia?: (ruta: string) => Promise<MetaEvidencia | null>;
+  ahoraMs?: () => number;
+}
+
+const auditar = (tenantId: string, accion: string, uid: string, detalle: object = {}) =>
+  db().collection(`tenants/${tenantId}/auditoria`).add({ accion, uid, en: Timestamp.now(), ...detalle });
+
+const refsDe = (tenantId: string, pagoId: string): RefsDePago => ({
+  pago: db().doc(`tenants/${tenantId}/pagos/${pagoId}`),
+  cuenta: db().doc(`tenants/${tenantId}/cuenta/estado`),
+  ficha: db().doc(`tenants/${tenantId}`),
+  cobroPendiente: db().doc(`cobrosPendientes/${pagoId}`),
+});
+
+const cobroIdDe = (datos: Record<string, unknown> | undefined): string | null => {
+  const cobro = datos?.['cobro'];
+  if (typeof cobro !== 'object' || cobro === null) return null;
+  const id = (cobro as Record<string, unknown>)['id'];
+  return typeof id === 'string' && id !== '' ? id : null;
+};
+
+/**
+ * La anulación SIN cobrador: cierra acá un pendiente que nunca llegó a tener
+ * un QR emitido (una reserva sin emitir, o un manual a medio camino). Si el
+ * pendiente TIENE `cobro.id`, hay un QR vivo en el banco y esta función no
+ * puede anularlo allá: devuelve `qr_vivo_sin_cliente` y el llamador aborta.
+ * Nunca se marca `anulado` acá un pago que el banco todavía puede cobrar.
+ */
+export async function anularPendienteLocal(tenantId: string, pagoId: string, motivo: string): Promise<ResultadoAnulacion> {
+  if (!ID_PAGO.test(pagoId)) return { resultado: 'sin_cobro' };
+  const r = refsDe(tenantId, pagoId);
+  const antes = (await r.pago.get()).data();
+  if (!antes || antes['estado'] !== 'pendiente') return { resultado: 'sin_cobro' };
+  const cobroId = cobroIdDe(antes);
+  if (cobroId) return { resultado: 'qr_vivo_sin_cliente', cobroId };
+
+  const ahoraMs = Date.now();
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  const hecho = await db().runTransaction(async (tx) => {
+    const [pd, cd] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta)]);
+    const p = pd.data();
+    if (!p || p['estado'] !== 'pendiente') return false;
+    if (cobroIdDe(p)) return false;
+    tx.update(r.pago, { estado: 'anulado', anuladoEn: ahora, anuladoPor: 'novuchat', motivoAnulacion: motivo.slice(0, 300), actualizadoEn: ahora });
+    const cuenta = cd.data() ?? {};
+    const escritura: Record<string, unknown> = { actualizadoEn: ahora };
+    if (cuenta['pagoPendienteId'] === pagoId) {
+      escritura['pagoPendienteId'] = FieldValue.delete();
+      const sin = { ...cuenta }; delete sin['pagoPendienteId'];
+      Object.assign(escritura, camposDerivadosDeCuenta(sin, null, ahoraMs));
+    }
+    tx.set(r.cuenta, escritura, { merge: true });
+    tx.delete(r.cobroPendiente);
+    return true;
+  });
+  if (!hecho) return { resultado: 'sin_cobro' };
+  await auditar(tenantId, 'pago_anulado', 'novuchat', { pagoId, cobroId: null, motivo: motivo.slice(0, 300) });
+  return { resultado: 'anulado' };
+}
+
+/**
+ * LO QUE SE GUARDA DE LA EVIDENCIA, además de su ruta (revisión de seguridad
+ * de A-1, MEDIUM 2): la generación del objeto y su hash. Con eso, si alguien
+ * reemplazara el archivo después de registrar el pago, la auditoría dice qué
+ * versión se miró. Y `storage.rules` ya no deja reemplazarla una vez que el
+ * pago existe.
+ */
+export interface MetaEvidencia {
+  generation: string;
+  md5Hash: string | null;
+  size: number;
+  contentType: string;
+}
+
+const TIPO_DE_EVIDENCIA: Record<string, string> = {
+  'evidencia.jpg': 'image/jpeg', 'evidencia.png': 'image/png', 'evidencia.pdf': 'application/pdf',
+};
+
+const metaEnStorage = async (ruta: string): Promise<MetaEvidencia | null> => {
+  const archivo = getStorage().bucket().file(ruta);
+  const [existe] = await archivo.exists();
+  if (!existe) return null;
+  const [meta] = await archivo.getMetadata();
+  return {
+    generation: String(meta.generation ?? ''),
+    md5Hash: typeof meta.md5Hash === 'string' ? meta.md5Hash : null,
+    size: Number(meta.size ?? 0),
+    contentType: typeof meta.contentType === 'string' ? meta.contentType : '',
+  };
+};
+
+const con = (deps: Deps) => ({
+  anular: deps.anular ?? anularPendienteLocal,
+  metaEvidencia: deps.metaEvidencia ?? metaEnStorage,
+  ahoraMs: deps.ahoraMs ?? Date.now,
+});
+
+const cobroEstadoDe = (datos: Record<string, unknown> | undefined): string | null => {
+  const cobro = datos?.['cobro'];
+  if (typeof cobro !== 'object' || cobro === null) return null;
+  const estado = (cobro as Record<string, unknown>)['estado'];
+  return typeof estado === 'string' ? estado : null;
+};
+
+/**
+ * CONFIRMAR A MANO UN QR QUE EL BANCO YA CONFIRMÓ Y NO SE APLICÓ (LOW 9).
+ *
+ * El caso: el cobrador dice `CONFIRMADO` pero NovuChat dejó el pago
+ * `pendiente` (un importe menor al del QR, por ejemplo). La plata entró por el
+ * QR, así que no se carga un pago nuevo: se confirma ESE `pagoId`, con
+ * `origen: 'propietario'`, lo recibido y `motivoDiferencia` obligatorio, por
+ * la misma puerta (`aplicarPagoEnTransaccion`), y queda auditado como
+ * `pago_manual_confirma_qr`. Solo si el pago sigue `pendiente` y su último
+ * estado del cobrador es `CONFIRMADO`: nunca sobre un QR vivo sin pago.
+ */
+async function confirmarQrConfirmado(
+  tenantId: string, pagoId: string, uid: string, datos: Record<string, unknown>, ahoraMs: number,
+) {
+  if (!ID_PAGO.test(pagoId)) throw new HttpsError('invalid-argument', 'confirmarPendiente tiene que ser un pagoId.');
+  const montoRecibidoBs = datos['montoRecibidoBs'];
+  if (!enteroEntre(montoRecibidoBs, 0, MONTO_RECIBIDO_MAXIMO)) {
+    throw new HttpsError('invalid-argument', 'montoRecibidoBs tiene que ser un entero en bolivianos.');
+  }
+  const motivoDiferencia = texto(datos['motivoDiferencia'], 300);
+  if (!motivoDiferencia) {
+    throw new HttpsError('invalid-argument', 'Confirmar a mano un cobro del banco exige motivoDiferencia.');
+  }
+  const r = refsDe(tenantId, pagoId);
+  const ahora = Timestamp.fromMillis(ahoraMs);
+  const salida = await db().runTransaction(async (tx) => {
+    const [pagoDoc, cuentaDoc, fichaDoc] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta), tx.get(r.ficha)]);
+    if (!fichaDoc.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    const p = pagoDoc.data();
+    if (!p) throw new HttpsError('not-found', 'No existe ese pago.');
+    if (p['estado'] !== 'pendiente' || cobroEstadoDe(p) !== 'CONFIRMADO') {
+      throw new HttpsError('failed-precondition',
+        'Solo se confirma a mano un pago pendiente cuyo cobro el banco ya confirmó.');
+    }
+    const resultado = aplicarPagoEnTransaccion(tx, r, {
+      id: pagoId, datos: p, cuenta: cuentaDoc.data() ?? {}, ficha: fichaDoc.data() ?? {},
+    }, { origen: 'propietario', uid, montoRecibidoBs, motivoDiferencia, confirmadoEn: ahora, ahoraMs });
+    tx.delete(r.cobroPendiente);
+    tx.set(db().doc(`cobrosResueltos/${pagoId}`), {
+      tenantId, pagoId, cobroId: cobroIdDe(p), estado: 'confirmado', cerradoEn: ahora,
+    });
+    tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
+      accion: 'pago_manual_confirma_qr', uid, en: ahora, pagoId, cobroId: cobroIdDe(p),
+      monto: p['monto'] ?? null, montoRecibidoBs, motivoDiferencia,
+      cubiertoHasta: resultado.cubiertoHasta, planDespues: resultado.plan,
+    });
+    return { resultado, descripcion: String(p['descripcion'] ?? ''), monto: p['monto'] };
+  });
+  await registrar(tenantId, {
+    tipo: 'pago_registrado', resultado: 'ok', canal: 'panel', codigo: 'propietario',
+    detalle: `${salida.descripcion}${salida.resultado.cubiertoHasta ? ` · hasta ${salida.resultado.cubiertoHasta}` : ''}`.slice(0, 120),
+  });
+  if (salida.resultado.corteEstabaAplicado) {
+    await registrar(tenantId, { tipo: 'reanudacion_servicio', resultado: 'ok', canal: 'sistema', codigo: 'pago_manual' });
+  }
+  return {
+    pagoId, monto: salida.monto, confirmadoQr: true,
+    periodoPagado: salida.resultado.periodoPagado, cubiertoHasta: salida.resultado.cubiertoHasta,
+    bolsa: salida.resultado.bolsa, plan: salida.resultado.plan, modalidad: salida.resultado.modalidad,
+  };
+}
+
+/** Lo que se le devuelve a la consola cuando hay un pendiente vivo que hay que cerrar antes. */
+const resumenDelPendiente = (pagoId: string, p: Record<string, unknown>) => ({
+  pagoId, estado: p['estado'], monto: p['monto'], descripcion: p['descripcion'],
+  cobroId: cobroIdDe(p),
+  venceEn: p['venceEn'] instanceof Timestamp ? p['venceEn'].toMillis() : null,
+});
+
+/** Anula el pendiente de la cuenta antes de cargar un manual, o explica por qué no se puede. */
+async function cerrarPendienteAntesDe(
+  tenantId: string, pendienteId: string, p: Record<string, unknown>, anular: NonNullable<Deps['anular']>,
+): Promise<void> {
+  const r = await anular(tenantId, pendienteId, 'pago_manual');
+  const vivo = resumenDelPendiente(pendienteId, p);
+  switch (r.resultado) {
+    case 'anulado':
+    case 'sin_cobro':
+      return;
+    case 'pagado': {
+      // ¿Se aplicó de verdad? Si el banco confirmó pero NovuChat no lo aplicó
+      // (el cliente del cobrador lo dejó `pendiente` con `cobro.estado:
+      // 'CONFIRMADO'`, por ejemplo por un importe menor), decir «se aplica el
+      // cobro del banco» sería falso: se ofrece confirmar ESE pago a mano
+      // (revisión de seguridad de A-1, LOW 9).
+      const ahora = (await db().doc(`tenants/${tenantId}/pagos/${pendienteId}`).get()).data();
+      if (ahora && ahora['estado'] === 'pendiente' && cobroEstadoDe(ahora) === 'CONFIRMADO') {
+        throw new HttpsError('failed-precondition',
+          'El banco confirmó un pago sobre ese QR, pero no se aplicó (el importe no coincide). Confírmelo con confirmarPendiente y motivoDiferencia, en vez de cargar otro.',
+          { ...vivo, estado: 'pendiente', cobroEstado: 'CONFIRMADO', ofrecerConfirmar: true });
+      }
+      throw new HttpsError('failed-precondition',
+        'Ese QR ya se pagó: se aplica el cobro del banco, no el manual.', { ...vivo, estado: r.estado });
+    }
+    case 'en_revision':
+      throw new HttpsError('failed-precondition',
+        'Hay un pago tardío sobre ese QR en revisión en el cobrador: no se carga nada hasta que lo resuelvan.', vivo);
+    case 'qr_vivo_sin_cliente':
+      throw new HttpsError('failed-precondition',
+        'Hay un QR emitido en el cobrador para esta cuenta y esta versión no puede anularlo: cancélelo allá antes de cargar un pago manual.',
+        { ...vivo, cobroId: r.cobroId });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// registrarPagoManual — el propietario carga efectivo o transferencia
+// ---------------------------------------------------------------------------
+
+const enteroEntre = (v: unknown, min: number, max: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+
+/** Lee y valida el pedido de la petición. Lo que no es del catálogo se rechaza. */
+function pedidoDe(datos: Record<string, unknown>): Pago {
+  const tipo = datos['tipo'];
+  const candidato: Record<string, unknown> = tipo === 'mensualidad'
+    ? { tipo, plan: datos['plan'], meses: datos['meses'] }
+    : tipo === 'bolsa' ? { tipo, cantidad: datos['cantidad'] }
+    : { tipo };
+  if (!esPago(candidato)) {
+    throw new HttpsError('invalid-argument',
+      'Pedido inválido: tipo mensualidad (plan del catálogo, meses 1 a 6), bolsa (cantidad 1 a 12) o instalacion.');
+  }
+  return candidato;
+}
+
+/**
+ * `registrarPagoManual({ tenantId, tipo, plan?, meses?, cantidad?, medio,
+ * referencia, tcoAplicado, tcoFuente, tcoFecha, montoRecibidoBs,
+ * motivoDiferencia?, pagoId?, evidencia? })` → `{ pagoId, monto, montoUsd,
+ * periodoPagado, cubiertoHasta, bolsa, plan, modalidad, pendienteAnulado }`.
+ *
+ * Solo el propietario con Google. `pagoId` es OBLIGATORIO en todo registro,
+ * cualquiera sea el medio: la consola lo genera UNA vez por formulario y lo
+ * reusa en los reintentos, y `tx.create` hace de clave de idempotencia (un
+ * reintento de red no suma dos meses; revisión de seguridad de A-1, MEDIUM 1).
+ * En transferencia, además, `evidencia` (`evidencia.jpg|png|pdf`) es
+ * obligatoria y el objeto tiene que existir en Storage bajo ese `pagoId`. `motivoDiferencia` es obligatorio si
+ * `montoRecibidoBs` no es el importe de la lista al TCO declarado.
+ *
+ * Orden: validar todo → comprobar la evidencia → cerrar el pendiente vivo (o
+ * abortar) → UNA transacción que crea el pago confirmado, aplica y audita →
+ * bitácora. Si algo falla antes de la transacción, no se escribió nada.
+ */
+export function crearRegistrarPagoManual(deps: Deps = {}) {
+  return onCall(async (peticion) => {
+    const uid = exigirPropietario(peticion);
+    const d = con(deps);
+    exigirSesionReciente(peticion, d.ahoraMs());
+    const datos = (peticion.data ?? {}) as Record<string, unknown>;
+    const tenantId = texto(datos['tenantId'], 60);
+    if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
+
+    // El otro modo: confirmar a mano el QR que el banco ya confirmó (LOW 9).
+    if (Object.prototype.hasOwnProperty.call(datos, 'confirmarPendiente')) {
+      return confirmarQrConfirmado(tenantId, texto(datos['confirmarPendiente'], 40), uid, datos, d.ahoraMs());
+    }
+
+    const pedido = pedidoDe(datos);
+    const medio = datos['medio'];
+    if (medio !== 'efectivo' && medio !== 'transferencia') {
+      throw new HttpsError('invalid-argument', 'medio tiene que ser efectivo o transferencia.');
+    }
+    const referencia = texto(datos['referencia'], 120);
+    if (!referencia) {
+      throw new HttpsError('invalid-argument',
+        'referencia es obligatoria: el número de operación, o «recibido por <nombre>» en efectivo.');
+    }
+    const tcoAplicado = datos['tcoAplicado'];
+    if (typeof tcoAplicado !== 'number' || !Number.isFinite(tcoAplicado) || tcoAplicado < TCO_MINIMO || tcoAplicado > TCO_MAXIMO) {
+      throw new HttpsError('invalid-argument', `tcoAplicado tiene que ser un número entre ${TCO_MINIMO} y ${TCO_MAXIMO}.`);
+    }
+    const tcoFuente = texto(datos['tcoFuente'], 60);
+    if (!tcoFuente) throw new HttpsError('invalid-argument', 'tcoFuente es obligatoria (por ejemplo, BCB).');
+    const tcoFecha = datos['tcoFecha'];
+    const ahoraMs = d.ahoraMs();
+    if (!esFecha(tcoFecha) || !Number.isFinite(Date.parse(`${tcoFecha}T12:00:00Z`))
+      || Date.parse(`${tcoFecha}T00:00:00Z`) > ahoraMs + 86_400_000) {
+      throw new HttpsError('invalid-argument', 'tcoFecha tiene que ser aaaa-mm-dd y no puede ser futura.');
+    }
+    if (ahoraMs - Date.parse(`${tcoFecha}T00:00:00Z`) > (TCO_MANUAL_DIAS_MAXIMO + 1) * 86_400_000) {
+      throw new HttpsError('invalid-argument', `tcoFecha no puede tener más de ${TCO_MANUAL_DIAS_MAXIMO} días.`);
+    }
+    const montoRecibidoBs = datos['montoRecibidoBs'];
+    if (!enteroEntre(montoRecibidoBs, 0, MONTO_RECIBIDO_MAXIMO)) {
+      throw new HttpsError('invalid-argument', 'montoRecibidoBs tiene que ser un entero en bolivianos.');
+    }
+    const montoUsd = montoUsdDe(pedido);
+    const monto = importeBs(montoUsd, tcoAplicado);
+    const motivoDiferencia = texto(datos['motivoDiferencia'], 300);
+    if (montoRecibidoBs !== monto && !motivoDiferencia) {
+      throw new HttpsError('invalid-argument',
+        `Lo recibido (${montoRecibidoBs} Bs) no es el importe de la lista (${monto} Bs): motivoDiferencia es obligatorio.`);
+    }
+
+    // LA CLAVE DE IDEMPOTENCIA. Sin ella, un reintento del navegador tras un
+    // corte de red registraba un segundo pago y sumaba otro mes.
+    // EL TCO DE REFERENCIA (revisión de seguridad de A-1, LOW 5). Si hay un
+    // TCO del BCB vigente en `plataforma/tipoCambio` y el declarado difiere
+    // en más de un centavo, el propietario tiene que decir por qué (un pago
+    // cobrado otro día, un acuerdo): el TCO es lo que convierte la lista en
+    // bolivianos, y cambiarlo en silencio es un descuento sin firma. Sin
+    // referencia vigente no se exige nada más, y queda escrito que no la había.
+    let tcoReferencia: TipoCambio | null = null;
+    try {
+      tcoReferencia = tipoCambioDe((await db().doc(RUTA_TIPO_CAMBIO).get()).data(), ahoraMs);
+    } catch (e) {
+      if (!(e instanceof SinTipoDeCambio)) throw e;
+    }
+    if (tcoReferencia && Math.abs(tcoAplicado - tcoReferencia.tco) > TCO_TOLERANCIA + 1e-9 && !motivoDiferencia) {
+      throw new HttpsError('invalid-argument',
+        `El TCO declarado (${tcoAplicado}) no es el vigente del BCB (${tcoReferencia.tco}, ${tcoReferencia.fecha}): motivoDiferencia es obligatorio.`);
+    }
+
+    const pagoIdPedido = texto(datos['pagoId'], 40);
+    if (!ID_PAGO.test(pagoIdPedido)) {
+      throw new HttpsError('invalid-argument',
+        'pagoId es obligatorio (22 caracteres de base64url): la consola lo genera una vez por formulario y lo reusa al reintentar.');
+    }
+    const evidencia = texto(datos['evidencia'], 40);
+    let rutaEvidencia: string | null = null;
+    let evidenciaMeta: MetaEvidencia | null = null;
+    if (medio === 'transferencia') {
+      if (!(ARCHIVOS_EVIDENCIA as readonly string[]).includes(evidencia)) {
+        throw new HttpsError('invalid-argument',
+          `Una transferencia exige evidencia: uno de ${ARCHIVOS_EVIDENCIA.join(', ')}, subido antes a Storage.`);
+      }
+      rutaEvidencia = `tenants/${tenantId}/pagos/${pagoIdPedido}/${evidencia}`;
+      evidenciaMeta = await d.metaEvidencia(rutaEvidencia);
+      if (!evidenciaMeta || evidenciaMeta.size <= 0) {
+        throw new HttpsError('failed-precondition', 'La evidencia declarada no está en Storage. Súbala y vuelva a intentar.');
+      }
+      if (evidenciaMeta.contentType !== TIPO_DE_EVIDENCIA[evidencia]) {
+        throw new HttpsError('failed-precondition', 'La evidencia en Storage no tiene el tipo que corresponde a su nombre.');
+      }
+    } else if (evidencia) {
+      throw new HttpsError('invalid-argument', 'La evidencia va solo con transferencia.');
+    }
+    const pagoId = pagoIdPedido;
+    const r = refsDe(tenantId, pagoId);
+
+    // EL `pagoId` NO PUEDE SER UNO QUE YA EXISTE, NI EL DEL PENDIENTE, y eso
+    // se mira ANTES de anular nada (revisión de seguridad de A-1, LOW 4): si
+    // no, un reintento o un id repetido anulaba el QR vivo del comercio y
+    // recién después fallaba en el `create`.
+    const [pagoAntes, cuentaAntesDoc] = await Promise.all([r.pago.get(), r.cuenta.get()]);
+    const cuentaAntes = cuentaAntesDoc.data() ?? {};
+    const pendienteId = typeof cuentaAntes['pagoPendienteId'] === 'string' ? cuentaAntes['pagoPendienteId'] : '';
+    if (pendienteId !== '' && pendienteId === pagoId) {
+      throw new HttpsError('invalid-argument', 'El pagoId es el del cobro pendiente: el manual va con un id nuevo.');
+    }
+    if (pagoAntes.exists) throw new HttpsError('already-exists', 'Ese pagoId ya existe.');
+
+    // EL PENDIENTE VIVO SE CIERRA ANTES, fuera de la transacción (la anulación
+    // en el cobrador es una llamada de red). La transacción vuelve a mirar.
+    let pendienteAnulado: string | null = null;
+    if (ID_PAGO.test(pendienteId)) {
+      const p = (await db().doc(`tenants/${tenantId}/pagos/${pendienteId}`).get()).data();
+      if (p && p['estado'] === 'pendiente') {
+        await cerrarPendienteAntesDe(tenantId, pendienteId, p, d.anular);
+        pendienteAnulado = pendienteId;
+      }
+    }
+
+    const ahora = Timestamp.fromMillis(ahoraMs);
+    const confirmacion: Confirmacion = {
+      origen: 'propietario', uid, montoRecibidoBs, confirmadoEn: ahora, ahoraMs,
+      ...(motivoDiferencia ? { motivoDiferencia } : {}),
+    };
+    const base: Record<string, unknown> = {
+      tipo: pedido.tipo,
+      ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
+      ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
+      montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
+      tcoAplicado, tcoFuente, tcoFecha, tcoReferencia,
+      medio, canal: 'manual', referencia,
+      ...(rutaEvidencia ? { evidencia: rutaEvidencia, evidenciaMeta } : {}),
+      descripcion: descripcionDe(pedido),
+      creadoEn: ahora, creadoPor: uid,
+    };
+
+    const salida = await db().runTransaction(async (tx) => {
+      const [pagoDoc, cuentaDoc, fichaDoc] = await Promise.all([tx.get(r.pago), tx.get(r.cuenta), tx.get(r.ficha)]);
+      if (!fichaDoc.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+      if (fichaDoc.get('estado') === 'dado_de_baja') {
+        throw new HttpsError('failed-precondition', 'El comercio está dado de baja: no se le carga un pago.');
+      }
+      if (pagoDoc.exists) throw new HttpsError('already-exists', 'Ese pagoId ya existe.');
+      const cuenta = cuentaDoc.data() ?? {};
+      // SE VUELVE A MIRAR EL PENDIENTE, SIEMPRE, sin confiar en lo que dijo
+      // `anular`: si la cuenta todavía apunta a un pago `pendiente` (el mismo
+      // que no se cerró, u otro que apareció en el medio), no se carga nada.
+      const vivoId = typeof cuenta['pagoPendienteId'] === 'string' ? cuenta['pagoPendienteId'] : '';
+      if (ID_PAGO.test(vivoId)) {
+        const vivo = (await tx.get(db().doc(`tenants/${tenantId}/pagos/${vivoId}`))).data();
+        if (vivo && vivo['estado'] === 'pendiente') {
+          throw new HttpsError('failed-precondition', 'Sigue habiendo un cobro pendiente en esta cuenta. Ciérrelo y vuelva a intentar.',
+            resumenDelPendiente(vivoId, vivo));
+        }
+      }
+      const a = aplicacionDe({ id: pagoId, datos: { ...base, estado: 'pendiente' }, cuenta, ficha: fichaDoc.data() ?? {} }, confirmacion);
+      // NACE CONFIRMADO: un solo `create` con el pedido y la confirmación.
+      tx.create(r.pago, { ...base, ...a.escrituraPago });
+      tx.set(r.cuenta, a.escrituraCuenta, { merge: true });
+      if (a.cambioDePlan) tx.set(r.ficha, { plan: a.cambioDePlan }, { merge: true });
+      tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
+        accion: 'pago_manual', uid, en: ahora,
+        pagoId, tipo: pedido.tipo,
+        ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
+        ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
+        montoUsd, monto, montoRecibidoBs, tcoAplicado, tcoFuente, tcoFecha, tcoReferencia, medio, referencia,
+        evidencia: rutaEvidencia, evidenciaMeta, motivoDiferencia: motivoDiferencia || null,
+        pendienteAnulado,
+        cubiertoHasta: a.resultado.cubiertoHasta, planDespues: a.resultado.plan, bolsaDespues: a.resultado.bolsa,
+        planAntes: cuenta['plan'] ?? null, periodoPagadoAntes: cuenta['periodoPagado'] ?? null,
+      });
+      return a.resultado;
+    });
+
+    await registrar(tenantId, {
+      tipo: 'pago_registrado', resultado: 'ok', canal: 'panel', codigo: 'propietario',
+      detalle: `${descripcionDe(pedido)}${salida.cubiertoHasta ? ` · hasta ${salida.cubiertoHasta}` : ''}`.slice(0, 120),
+    });
+    if (salida.corteEstabaAplicado) {
+      await registrar(tenantId, { tipo: 'reanudacion_servicio', resultado: 'ok', canal: 'sistema', codigo: 'pago_manual' });
+    }
+    return {
+      pagoId, monto, montoUsd, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
+      periodoPagado: salida.periodoPagado, cubiertoHasta: salida.cubiertoHasta,
+      bolsa: salida.bolsa, plan: salida.plan, modalidad: salida.modalidad, pendienteAnulado,
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// anularPagoPendiente — «cancelar y emitir otro»
+// ---------------------------------------------------------------------------
+
+/**
+ * `anularPagoPendiente({ tenantId, pagoId?, motivo? })` → `{ ok, pagoId }`.
+ * El administrador del comercio o el propietario. Sin `pagoId`, anula el
+ * pendiente de la cuenta. Un pago que no está `pendiente` NO se anula: un
+ * confirmado se compensa con otro asiento, nunca se corrige.
+ */
+export function crearAnularPagoPendiente(deps: Deps = {}) {
+  return onCall(async (peticion) => {
+    const datos = (peticion.data ?? {}) as Record<string, unknown>;
+    const tenantId = texto(datos['tenantId'], 60);
+    if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
+    const { uid, quien } = exigirAdminOPropietario(peticion, tenantId);
+    const motivo = texto(datos['motivo'], 300) || `anulado desde la consola (${quien})`;
+    const pedido = texto(datos['pagoId'], 40);
+    if (pedido && !ID_PAGO.test(pedido)) throw new HttpsError('invalid-argument', 'pagoId inválido.');
+
+    const cuenta = (await db().doc(`tenants/${tenantId}/cuenta/estado`).get()).data() ?? {};
+    const guardado = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
+      ? cuenta['pagoPendienteId'] : '';
+    const pagoId = pedido || guardado;
+    if (!pagoId) throw new HttpsError('failed-precondition', 'No hay un pago pendiente que anular.');
+    const p = (await db().doc(`tenants/${tenantId}/pagos/${pagoId}`).get()).data();
+    if (!p) throw new HttpsError('not-found', 'No existe ese pago.');
+    if (p['estado'] !== 'pendiente') {
+      throw new HttpsError('failed-precondition', `Un pago ${String(p['estado'])} no se anula.`);
+    }
+
+    const r = await con(deps).anular(tenantId, pagoId, motivo);
+    if (r.resultado !== 'anulado') {
+      const vivo = resumenDelPendiente(pagoId, p);
+      if (r.resultado === 'pagado') {
+        throw new HttpsError('failed-precondition', 'Ese QR ya se pagó: se aplicó el cobro del banco.', { ...vivo, estado: r.estado });
+      }
+      if (r.resultado === 'en_revision') {
+        throw new HttpsError('failed-precondition', 'Hay un pago tardío en revisión en el cobrador: lo resuelve una persona allá.', vivo);
+      }
+      if (r.resultado === 'qr_vivo_sin_cliente') {
+        throw new HttpsError('failed-precondition',
+          'Hay un QR emitido en el cobrador y esta versión no puede anularlo allá.', { ...vivo, cobroId: r.cobroId });
+      }
+      throw new HttpsError('failed-precondition', 'No había nada que anular.', vivo);
+    }
+    await auditar(tenantId, 'anular_pago_pendiente', uid, { pagoId, quien, motivo });
+    return { ok: true, pagoId };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// consultarPagoPendiente — la «consulta al abrir la pantalla»
+// ---------------------------------------------------------------------------
+
+/**
+ * `consultarPagoPendiente({ tenantId })` → `{ pendiente: {...} | null }`.
+ * Administrador o propietario. Si hay cliente del cobrador (`Deps.consultar`,
+ * A-2: `consultarYAplicar`), primero pregunta allá y aplica; después devuelve
+ * el pago guardado. Sin cliente, devuelve lo guardado tal cual.
+ */
+export function crearConsultarPagoPendiente(deps: Deps = {}) {
+  return onCall(async (peticion) => {
+    const datos = (peticion.data ?? {}) as Record<string, unknown>;
+    const tenantId = texto(datos['tenantId'], 60);
+    if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
+    exigirAdminOPropietario(peticion, tenantId);
+
+    const cuenta = (await db().doc(`tenants/${tenantId}/cuenta/estado`).get()).data() ?? {};
+    const pagoId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
+      ? cuenta['pagoPendienteId'] : '';
+    if (!pagoId) return { pendiente: null, consultado: false };
+
+    let consultado = false;
+    if (deps.consultar) {
+      // `null` = no hubo con quién consultar (sin cobrador configurado): la
+      // pantalla no puede decir que preguntó al banco si no preguntó.
+      consultado = (await deps.consultar(tenantId, pagoId)) !== null;
+    }
+    const p = (await db().doc(`tenants/${tenantId}/pagos/${pagoId}`).get()).data();
+    if (!p) return { pendiente: null, consultado };
+    const cobro = typeof p['cobro'] === 'object' && p['cobro'] !== null ? p['cobro'] as Record<string, unknown> : null;
+    const ms = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : null);
+    const resumen = {
+      pagoId, estado: p['estado'], tipo: p['tipo'], descripcion: p['descripcion'],
+      monto: p['monto'], montoUsd: p['montoUsd'], moneda: p['moneda'], monedaLista: p['monedaLista'],
+      tcoAplicado: p['tcoAplicado'], tcoFuente: p['tcoFuente'], tcoFecha: p['tcoFecha'],
+      medio: p['medio'], canal: p['canal'],
+      venceEn: ms(p['venceEn']), creadoEn: ms(p['creadoEn']),
+      cobroEstado: cobro?.['estado'] ?? null,
+      fichaQr: typeof cobro?.['fichaQr'] === 'string' ? cobro['fichaQr'] : null,
+      qrRuta: typeof cobro?.['qrRuta'] === 'string' ? cobro['qrRuta'] : null,
+    };
+    return p['estado'] === 'pendiente'
+      ? { pendiente: resumen, consultado }
+      : { pendiente: null, ultimo: { pagoId, estado: p['estado'] }, consultado };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// fijarTelefonosPago — quién puede pagar por WhatsApp y recibe la cobranza
+// ---------------------------------------------------------------------------
+
+/**
+ * `fijarTelefonosPago({ tenantId, telefonos: string[] })` → `{ ok, telefonos }`.
+ * El administrador del comercio o el propietario. Hasta 5, solo dígitos con
+ * código de país (8 a 15), sin repetidos; la lista vacía los borra. Va en
+ * `cuenta/estado` y no en la ficha porque la ficha la leen el operador y la
+ * ingesta (§4undecies.2). Auditada con los últimos 4 de cada uno.
+ */
+export const fijarTelefonosPago = onCall(async (peticion) => {
+  const datos = (peticion.data ?? {}) as Record<string, unknown>;
+  const tenantId = texto(datos['tenantId'], 60);
+  if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
+  const { uid, quien } = exigirAdminOPropietario(peticion, tenantId);
+
+  const lista = datos['telefonos'];
+  if (!Array.isArray(lista)) throw new HttpsError('invalid-argument', 'telefonos tiene que ser una lista.');
+  if (lista.length > TELEFONOS_PAGO_MAXIMO) {
+    throw new HttpsError('invalid-argument', `Hasta ${TELEFONOS_PAGO_MAXIMO} teléfonos de pago.`);
+  }
+  const telefonos: string[] = [];
+  for (const t of lista) {
+    const limpio = typeof t === 'string' ? t.replace(/[\s+()-]/g, '') : '';
+    if (!TELEFONO.test(limpio)) {
+      throw new HttpsError('invalid-argument', 'Cada teléfono va solo con dígitos y código de país (8 a 15 dígitos).');
+    }
+    if (!telefonos.includes(limpio)) telefonos.push(limpio);
+  }
+
+  const refFicha = db().doc(`tenants/${tenantId}`);
+  const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
+  const ahora = Timestamp.now();
+  await db().runTransaction(async (tx) => {
+    const ficha = await tx.get(refFicha);
+    if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
+    // Un comercio dado de baja no fija quién le paga (LOW 7). La verificación
+    // del titular de cada teléfono y la unicidad entre comercios son
+    // precondición del pago por WhatsApp (A-4), no de esta callable.
+    if (ficha.get('estado') === 'dado_de_baja') {
+      throw new HttpsError('failed-precondition', 'El comercio está dado de baja.');
+    }
+    tx.set(refCuenta, { telefonosPago: telefonos, actualizadoEn: ahora }, { merge: true });
+    tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
+      accion: 'telefonos_pago', uid, en: ahora, quien,
+      cantidad: telefonos.length, ultimos4: telefonos.map(ultimos4),
+    });
+  });
+  return { ok: true, telefonos };
+});
+
+// Las callables que se despliegan, con las dependencias por defecto: sin
+// cobrador (A-2 las enchufa), Storage real, reloj real.
+export const registrarPagoManual = crearRegistrarPagoManual();
+export const anularPagoPendiente = crearAnularPagoPendiente();
+export const consultarPagoPendiente = crearConsultarPagoPendiente();
+
+// Reexportado para quien arme un pago y necesite el precio de lista.
+export { BOLSA, INSTALACION_USD, PLANES };

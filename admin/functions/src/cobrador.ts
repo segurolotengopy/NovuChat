@@ -328,6 +328,19 @@ export function configCobradorDe(datos: Record<string, unknown> | undefined): Co
  * de producción. El de producción lee la base URL de `plataforma/prepago` en
  * cada resolución —no se cachea— y el token del secreto.
  */
+/**
+ * ¿Hay un cobrador con el que hablar? La misma decisión que `resolverCobrador`,
+ * sin armar el cliente: el doble de las pruebas, o `plataforma/prepago.cobrador`
+ * configurado. Hasta los pasos de nube del despliegue no hay ninguno, y quien
+ * depende del cobrador (anular un QR vivo, consultar su estado) tiene que poder
+ * seguir por el camino local en vez de fallar.
+ */
+export async function cobradorDisponible(): Promise<boolean> {
+  if (process.env['COBRADOR_DOBLE'] && dobleRegistrado) return true;
+  const doc = await getFirestore().doc('plataforma/prepago').get();
+  return configCobradorDe(doc.data()) !== null;
+}
+
 export async function resolverCobrador(inyectado?: Cobrador): Promise<Cobrador> {
   if (inyectado) return inyectado;
   if (process.env['COBRADOR_DOBLE'] && dobleRegistrado) return dobleRegistrado;

@@ -11,9 +11,14 @@
  * `sin_cargo` además no estaba en la tabla original: la sembradora lo escribe
  * para los comercios de demostración y ninguna pantalla sabía traducirlo.
  */
+// `pendiente` es un estado DERIVADO (functions/src/prepago.ts,
+// `camposDerivados`, DISENO.md §4undecies.2): la cuenta está en las 48 horas
+// de gracia, o tiene un cobro por QR emitido y sin confirmar. La etiqueta dice
+// las dos cosas porque el comercio ve una sola palabra y tiene que entender
+// qué le pasa sin llamar a nadie.
 const ETIQUETA_PAGO: Record<string, string> = {
   al_dia: 'Al día',
-  pendiente: 'Pago pendiente',
+  pendiente: 'En gracia / cobro pendiente',
   vencido: 'Vencido',
   sin_cargo: 'Sin cargo',
 };

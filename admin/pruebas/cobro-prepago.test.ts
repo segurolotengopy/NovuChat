@@ -45,11 +45,11 @@ const {
   crearCobroPrepago, crearCobroInterno, avisoCobrador, barrerCobrosPendientes, anularCobroVivo, imagenDePago,
   fijarAlmacenDePrueba, consultarYAplicar, sondearCobrosPendientes, TOPE_SONDEO,
 } = await import('../functions/src/cobroPrepago.ts');
-const { periodoBolivia, sumarMeses } = await import('../functions/src/pagos-stub.ts');
+const { mesBolivia, sumarMeses } = await import('../functions/src/prepago.ts');
 
 const A = 'prep-salon';
 const B = 'prep-otro';
-const HOY = periodoBolivia(Date.now());
+const HOY = mesBolivia(Date.now());
 const DIA = 86_400_000;
 const TCO = 12.6;
 
@@ -625,6 +625,31 @@ describe('3bis. El sondeo de cada 5 minutos', () => {
     expect(await pago(b, B)).toMatchObject({ estado: 'confirmado' });
     expect(await pago(a)).toMatchObject({ estado: 'pendiente' });
     expect(TOPE_SONDEO).toBe(100);
+  });
+});
+
+// ===========================================================================
+describe('4bis. La carga manual EXPORTADA (A-1 con el cobrador enchufado, pagosConCobrador.ts)', () => {
+  it('con cobrador disponible anula allá el QR vivo antes de cargar el manual, y el manual entra', async () => {
+    const indice = await import('../functions/src/pagosConCobrador.ts');
+    const { randomBytes } = await import('node:crypto');
+    const vivo = (await crear(MENSUALIDAD))['pagoId'] as string;
+    const propietario = { uid: 'prop', token: { ...PROPIETARIO.token, auth_time: Math.floor(Date.now() / 1000) } };
+    const manualId = randomBytes(16).toString('base64url');
+    const r = await (indice.registrarPagoManual as unknown as { run: (x: unknown) => Promise<Record<string, unknown>> }).run({
+      data: {
+        pagoId: manualId, tenantId: A, tipo: 'mensualidad', plan: 'crecimiento', meses: 1,
+        medio: 'efectivo', referencia: 'recibido por Andres',
+        tcoAplicado: TCO, tcoFuente: 'BCB', tcoFecha: new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10),
+        montoRecibidoBs: 630,
+      },
+      auth: propietario, rawRequest: {},
+    });
+    expect(r).toBeTruthy();
+    expect(doble.cobroPorReferencia(vivo)?.estado).toBe('ANULADO');
+    expect(await pago(vivo)).toMatchObject({ estado: 'anulado', motivoAnulacion: 'pago_manual' });
+    expect(await pago(manualId)).toMatchObject({ estado: 'confirmado', medio: 'efectivo' });
+    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
   });
 });
 
