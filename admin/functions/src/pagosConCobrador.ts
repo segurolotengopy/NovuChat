@@ -8,12 +8,12 @@
  * inicializar Firebase dos veces.
  *
  * Sin cobrador configurado —así queda el despliegue hasta los pasos de nube—
- * se anula localmente como en A-1, que aborta si hubiera un QR emitido, y no se
- * consulta: sin cobrador no pudo emitirse ninguno.
+ * se usa la anulación local de A-1, que NO anula ningún pago que haya pasado por
+ * el cobrador (aunque le falte el id), y no se consulta.
  */
 import { crearRegistrarPagoManual, crearAnularPagoPendiente, crearConsultarPagoPendiente, anularPendienteLocal, type Deps } from './pagos.js';
 import { anularCobroVivo, consultarYAplicar } from './cobroPrepago.js';
-import { cobradorDisponible } from './cobrador.js';
+import { COBRADOR_TOKEN, cobradorDisponible } from './cobrador.js';
 
 export const conCobrador: Deps = {
   anular: async (tenantId, pagoId, motivo) =>
@@ -24,6 +24,10 @@ export const conCobrador: Deps = {
     (await cobradorDisponible()) ? consultarYAplicar(tenantId, pagoId, { via: 'consulta' }) : null,
 };
 
-export const registrarPagoManual = crearRegistrarPagoManual(conCobrador);
-export const anularPagoPendiente = crearAnularPagoPendiente(conCobrador);
-export const consultarPagoPendiente = crearConsultarPagoPendiente(conCobrador);
+// El secreto se declara acá y no en pagos.ts: sin declararlo, `COBRADOR_TOKEN.value()`
+// llega vacío en producción y estas tres Functions fallarían con el cobrador ya
+// configurado (revisión de seguridad, 22/09).
+const conSecreto = { secrets: [COBRADOR_TOKEN] };
+export const registrarPagoManual = crearRegistrarPagoManual(conCobrador, conSecreto);
+export const anularPagoPendiente = crearAnularPagoPendiente(conCobrador, conSecreto);
+export const consultarPagoPendiente = crearConsultarPagoPendiente(conCobrador, conSecreto);

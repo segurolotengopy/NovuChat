@@ -18,7 +18,7 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const ruta = (archivo: string) => join(aqui, '..', 'functions', 'src', archivo);
 const leer = (archivo: string) => readFileSync(ruta(archivo), 'utf8');
 
-const DEL_PREPAGO = ['cobrador.ts', 'cobroPrepago.ts', 'pagos-stub.ts', 'prepago.ts', 'pagos.ts', 'cobranza.ts', 'tipoCambio.ts']
+const DEL_PREPAGO = ['cobrador.ts', 'cobroPrepago.ts', 'pagos-stub.ts', 'prepago.ts', 'pagos.ts', 'pagosConCobrador.ts', 'cobranza.ts', 'tipoCambio.ts']
   .filter((a) => existsSync(ruta(a)));
 const DE_LA_SENA = ['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts'].filter((a) => existsSync(ruta(a)));
 

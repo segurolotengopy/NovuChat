@@ -434,16 +434,15 @@ describe('registrarPagoManual: un solo pendiente por cuenta', () => {
     expect((await cuenta())['pagoPendienteId']).toBe(PAGO_ID);
   });
 
-  it('una reserva SIN QR emitido se anula acá antes de cargar, y queda escrito', async () => {
+  it('una reserva que salió al cobrador SIN id guardado NO se anula acá: aborta y no carga nada (el QR puede existir en el banco)', async () => {
     await sembrarPendiente(PAGO_ID, null);
-    const r = await correr(indice.registrarPagoManual, manual());
-    expect(r['pendienteAnulado']).toBe(PAGO_ID);
-    expect(await pago(PAGO_ID)).toMatchObject({ estado: 'anulado', motivoAnulacion: 'pago_manual', anuladoPor: 'novuchat' });
-    expect((await pago(r['pagoId'] as string))!['estado']).toBe('confirmado');
-    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
-    expect((await db.doc(`cobrosPendientes/${PAGO_ID}`).get()).exists).toBe(false);
-    expect(await auditoria('pago_anulado')).toHaveLength(1);
-    expect((await auditoria('pago_manual'))[0]).toMatchObject({ pendienteAnulado: PAGO_ID });
+    const d = await rechaza(correr(indice.registrarPagoManual, manual()), 'failed-precondition');
+    expect(d).toMatchObject({ pagoId: PAGO_ID, cobroId: null });
+    expect(await pago(PAGO_ID)).toMatchObject({ estado: 'pendiente' });
+    expect((await cuenta())['pagoPendienteId']).toBe(PAGO_ID);
+    expect((await db.doc(`cobrosPendientes/${PAGO_ID}`).get()).exists).toBe(true);
+    expect(await pagosDe()).toHaveLength(1);
+    expect(await auditoria('pago_anulado')).toHaveLength(0);
   });
 
   it('si el cobrador dice que ese QR YA SE PAGÓ, se aplica el del banco y el manual se rechaza', async () => {
@@ -560,20 +559,29 @@ describe('anularPagoPendiente', () => {
     expect((await cuenta())['pagoPendienteId']).toBe(PAGO_ID);
   });
 
-  it('el admin de A (contraseña, verificado) anula la reserva de su cuenta; queda auditado con quién', async () => {
-    await sembrarPendiente(PAGO_ID, null);
-    const r = await correr(indice.anularPagoPendiente, { tenantId: A, motivo: 'quiero otro plan' }, ADMIN_A);
+  it('el admin de A (contraseña, verificado) anula la reserva de su cuenta por el cobrador; queda auditado con quién', async () => {
+    await sembrarPendiente(PAGO_ID, 'cons-' + 'c'.repeat(64));
+    const anular = vi.fn(async () => ({ resultado: 'anulado' as const }));
+    const f = pagos.crearAnularPagoPendiente({ anular });
+    const r = await correr(f, { tenantId: A, motivo: 'quiero otro plan' }, ADMIN_A);
     expect(r).toMatchObject({ ok: true, pagoId: PAGO_ID });
-    expect(await pago(PAGO_ID)).toMatchObject({ estado: 'anulado', motivoAnulacion: 'quiero otro plan' });
-    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
-    expect((await db.doc(`cobrosPendientes/${PAGO_ID}`).get()).exists).toBe(false);
+    expect(anular).toHaveBeenCalledWith(A, PAGO_ID, 'quiero otro plan');
     expect((await auditoria('anular_pago_pendiente'))[0]).toMatchObject({ uid: 'adm-a', quien: 'admin', pagoId: PAGO_ID });
   });
 
   it('el propietario también, y la auditoría dice propietario', async () => {
-    await sembrarPendiente(PAGO_ID, null);
-    await correr(indice.anularPagoPendiente, { tenantId: A, pagoId: PAGO_ID });
+    await sembrarPendiente(PAGO_ID, 'cons-' + 'c'.repeat(64));
+    const f = pagos.crearAnularPagoPendiente({ anular: async () => ({ resultado: 'anulado' as const }) });
+    await correr(f, { tenantId: A, pagoId: PAGO_ID });
     expect((await auditoria('anular_pago_pendiente'))[0]).toMatchObject({ uid: 'prop-1', quien: 'propietario' });
+  });
+
+  it('SIN cobrador configurado, una reserva que salió al cobrador no se anula acá: queda pendiente (el QR puede existir en el banco)', async () => {
+    await sembrarPendiente(PAGO_ID, null);
+    await rechaza(correr(indice.anularPagoPendiente, { tenantId: A, motivo: 'quiero otro plan' }, ADMIN_A), 'failed-precondition');
+    expect(await pago(PAGO_ID)).toMatchObject({ estado: 'pendiente' });
+    expect((await cuenta())['pagoPendienteId']).toBe(PAGO_ID);
+    expect(await auditoria('anular_pago_pendiente')).toHaveLength(0);
   });
 
   it('un CONFIRMADO no se anula: se compensa con otro asiento', async () => {
