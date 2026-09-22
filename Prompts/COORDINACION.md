@@ -180,9 +180,9 @@ C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
    «Flujo actualizado en su lugar (HTTP 200)». Lo que esto **no** descarta es una edición
    a mano en n8n después de las 11:52; eso solo lo ve el diagnóstico en seco.
 
-6. **Migrar los comercios reales** con `migrar-prepago.mjs` (seco, y `--aplicar` uno por
+6. ~~Migrar los comercios reales~~: **no aplica al 22/09**, porque Andres confirmó que todos los comercios son demo. El pase de cada uno sigue `docs/pase-a-produccion/RUNBOOK.md`. Detalle original: migrar con `migrar-prepago.mjs` (seco, y `--aplicar` uno por
    uno con su OK), **antes** de desplegar A-1.
-7. **Nube para el prepago:** crear `COBRADOR_TOKEN` y `COBRADOR_AVISO_SECRETO` sin mostrar
+7. ~~Nube para el prepago~~: **hecho el 22/09** (`scripts/nube-prepago.sh`), salvo la URL del cobrador y `rotar-cobrador.sh`. Detalle original: crear `COBRADOR_TOKEN` y `COBRADOR_AVISO_SECRETO` sin mostrar
    el valor (con un `scripts/rotar-cobrador.sh` a imagen de `rotar-ingesta.sh`, que hay
    que escribir), `secretAccessor` a `sa-functions`, condición de IAM `COBRADOR_`, permiso
    de Storage de `sa-functions` sobre el bucket, Cloud Scheduler, invocador `allUsers`
@@ -207,6 +207,28 @@ sitio, arreglando antes su alarma de huella que no corre en CI), B-4 (runbook, a
 `flujos-n8n`, gancho de pre-commit, acotar `verificar-saneo.sh`).
 
 ## Bitácora
+
+- **22/09/2026** — **Pasos de nube del prepago aplicados** con el «sí» de Andres, con
+  `scripts/nube-prepago.sh --aplicar`. Quedaron hechos los ocho:
+  - Cloud Scheduler habilitado.
+  - `COBRADOR_TOKEN` y `COBRADOR_AVISO_SECRETO` creados, con 48 caracteres al azar que
+    nunca se mostraron.
+  - `secretAccessor` de los dos para `sa-functions`.
+  - La condición de la cuenta de despliegue ampliada con `COBRADOR_`.
+  - `cloudscheduler.admin` para la cuenta de despliegue.
+  - `objectViewer` y `objectCreator` sobre el bucket de la consola para `sa-functions`.
+
+  El diagnóstico posterior da todo en verde y ningún permiso previo desapareció.
+  Policy Troubleshooter:
+  - `sa-functions` puede leer los dos secretos.
+  - La cuenta de despliegue puede crear trabajos de Scheduler.
+  - La cuenta de despliegue **no** puede leer su valor ni cambiarles los accesos.
+  - `secrets.get` de la cuenta de despliegue sale denegado **igual que en
+    `INGESTA_CLIENTE01`**, que se usa en cada despliegue. La herramienta no evalúa esa
+    condición. Lo que vale es la equivalencia: los dos caen bajo la misma condición.
+
+  **Sin hacer, a propósito:** la URL del cobrador, porque no tiene una pública. Cuando se
+  conecte, el mismo valor de los dos secretos se carga allá con un script, sin mostrarlo.
 
 - **22/09/2026** — **#152 (A-2) fusionado**, CI en verde. **Los cinco PR de código y
   plantillas están en `main`** (#150 a #154); `pagos-stub.ts` no llegó a `main`. Queda

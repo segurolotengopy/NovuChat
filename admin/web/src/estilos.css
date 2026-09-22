@@ -130,6 +130,38 @@
   .cabecera nav { order: 3; flex: 0 0 100%; overflow-x: auto; gap: var(--space-3); padding-bottom: 2px; }
 }
 
+/* FRANJA DEL COMERCIO: el nombre del negocio y el chip PRUEBA / PRODUCCIÓN,
+   debajo del menú (`EncabezadoComercio.tsx`). Pedido de Andres (22/09): que se
+   vea, pero no con letras grandes. El nombre va al tamaño de los enlaces del
+   menú y el chip al de las demás pastillas; la franja es baja para no comerse
+   la primera pantalla en un celular. */
+.franja-comercio {
+  display: flex; align-items: center; gap: var(--space-2);
+  min-height: 32px; padding-block: var(--space-1);
+  border-top: 1px solid var(--color-divider);
+}
+.franja-comercio-nombre {
+  font-size: 14px; font-weight: 600;
+  color: color-mix(in srgb, var(--color-text) 85%, transparent);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap !important;
+}
+.franja-comercio .tag { padding: 2px 10px; font-size: 11px; letter-spacing: .06em; font-weight: 600; }
+/* Los colores salen de los tokens de estado, que el tema oscuro redefine: en
+   claro y en oscuro el chip es un tinte del color sobre el fondo, con el texto
+   del tema encima, igual que `.tag-aviso`. PRODUCCIÓN en el verde de «ok»;
+   PRUEBA en el ámbar de aviso, porque lo que se toca ahí no llega a clientes
+   que pagan y conviene que se note. */
+.tag-modo-produccion {
+  background: color-mix(in srgb, var(--color-ok) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-ok) 55%, transparent);
+  color: var(--color-text);
+}
+.tag-modo-prueba {
+  background: color-mix(in srgb, var(--color-aviso) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-aviso) 55%, transparent);
+  color: var(--color-text);
+}
+
 /* Una tabla de seis columnas no entra en un celular. Antes desbordaba la
    página entera: se arrastraba TODO de costado, con el formulario y el título
    incluidos, y no se entendía qué se estaba moviendo. Así, la que se desliza

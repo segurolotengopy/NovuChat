@@ -39,6 +39,28 @@ producción, n8n, Meta ni GitHub.
   Platinum además tiene que mover el número a la WABA de la clínica.
 - **Costo: 0 mensajes.**
 
+---
+
+## 2026-09-22 — consola: nombre del comercio y PRUEBA / PRODUCCIÓN en la cabecera
+
+Pedido de Andres: arriba de la consola, el nombre del comercio y si es PRUEBA o
+PRODUCCIÓN, sin letras grandes. Rama `consola/encabezado-comercio-y-modo`, sin push
+ni despliegue. **Costo: 0 mensajes.**
+
+- **Franja debajo del menú** (`componentes/EncabezadoComercio.tsx`), en todas las
+  páginas que tienen un comercio: nombre a 14 px y un chip de 11 px (`ChipModo.tsx`),
+  ámbar para PRUEBA y verde para PRODUCCIÓN, con tokens que el tema oscuro redefine.
+  El `title` dice «Demostración», «Mes de prueba» o «Prepago».
+- **La regla es la del servidor:** `modoDelComercio` (`lib/modoComercio.ts`) llama a
+  `modalidadDe` de `functions/src/prepago.ts`; PRODUCCIÓN solo con `prepago`.
+- **El operador ve solo el nombre:** las reglas le niegan `cuenta/estado`, y la
+  cabecera ni lo pide. No se abrieron las reglas. Un error de lectura oculta esa
+  parte sin romper la cabecera. Solo lectura.
+- **Cartera (`Tenants.tsx`):** columna «Modo» con el mismo chip, sacada de la lectura
+  de `cuenta/estado` que ya se hacía para el aviso del 80 %.
+- **Prueba:** `admin/pruebas/encabezado-comercio.test.ts` (función, chip dibujado con
+  `renderToStaticMarkup`, y fuente: usa `modalidadDe`, no escribe, el operador no lee).
+
 ## 2026-09-22 — prepago estricto y modularización: cinco PR fusionados, nada desplegado
 
 Sesión coordinadora de `Prompts/prepago-y-modularizacion-en-paralelo.md`. El tablero
