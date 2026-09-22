@@ -64,6 +64,11 @@ export const TIPOS = [
   // recordatorio único a un paciente que no terminó de reservar. El modo
   // (`texto` o `plantilla`) va en `codigo`. Lo escribe `seguimientos.ts`.
   'seguimiento_enviado',
+  // Prepago (bloques A-0 y A-2, 20/09): el servicio se cortó por falta de pago
+  // o de conversaciones (el motivo va en `codigo`), volvió, y entró un pago
+  // (`codigo` lleva quién confirmó: `banco` o `propietario`). Un corte solo
+  // observado no se escribe: para el comercio no existe.
+  'corte_servicio', 'reanudacion_servicio', 'pago_registrado',
 ] as const;
 
 export const RESULTADOS = ['ok', 'fallo', 'rechazado', 'reintento'] as const;

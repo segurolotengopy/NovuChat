@@ -9,6 +9,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CATALOGO_PLANES, limitesDe } from '../functions/src/planes.ts';
+import { PRUEBA, mesBolivia } from '../functions/src/prepago.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -39,9 +40,13 @@ const ficha = async () => (await db.doc(`tenants/${T}`).get()).data() ?? {};
 const auditoria = async (accion: string) =>
   (await db.collection(`tenants/${T}/auditoria`).where('accion', '==', accion).get()).docs.map((d) => d.data());
 
-// Un comercio que ya paga Crecimiento, con todo cargado.
+// Un comercio que ya paga Crecimiento, con todo cargado. Desde el 20/09 (A-1)
+// los derivados se recalculan en CADA llamada, así que la cuenta lleva la
+// modalidad y un mes pagado lejano: sobre eso `camposDerivados` dice
+// `al_dia` con 50 USD, que es lo que las pruebas de abajo esperan sin cambio.
 const CUENTA_INICIAL = {
   plan: 'crecimiento', limites: limitesDe('crecimiento'), catalogoPlanes: '2026-09-15',
+  modalidad: 'prepago', periodoPagado: '2099-12',
   estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD',
   motivoVisible: 'Gracias por su pago.', umbralOperador: 40, umbralBloqueo: 90,
 };
@@ -79,8 +84,8 @@ describe('El plan es cerrado', () => {
   });
 
   it('rechazar el plan también frena lo demás que venía en la misma llamada', async () => {
-    await rechaza(llamar({ tenantId: T, plan: 'premium', montoMensual: 1 }), 'invalid-argument');
-    expect((await cuenta()).montoMensual).toBe(50);
+    await rechaza(llamar({ tenantId: T, plan: 'premium', motivoVisible: 'x' }), 'invalid-argument');
+    expect((await cuenta()).motivoVisible).toBe('Gracias por su pago.');
   });
 
   it('con un plan del catálogo escribe la copia de límites, el catálogo, el espejo y la auditoría', async () => {
@@ -98,10 +103,10 @@ describe('El plan es cerrado', () => {
     });
   });
 
-  it('cambiar el plan NO toca la mensualidad, la moneda, el estado de pago, el motivo ni los umbrales', async () => {
+  it('cambiar el plan recalcula la mensualidad (es derivada) y NO toca el motivo ni los umbrales', async () => {
     await llamar({ tenantId: T, plan: 'impulso' });
     expect(await cuenta()).toMatchObject({
-      estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD',
+      estadoPago: 'al_dia', montoMensual: 25, moneda: 'USD',
       motivoVisible: 'Gracias por su pago.', umbralOperador: 40, umbralBloqueo: 90,
     });
   });
@@ -143,9 +148,21 @@ describe('Escritura parcial: solo cambia lo que se manda', () => {
     expect((await cuenta()).umbralOperador).toBe(40);
   });
 
-  it('el estado de pago ya no es obligatorio, y solo cambia él', async () => {
-    await llamar({ tenantId: T, estadoPago: 'pendiente' });
-    expect(await cuenta()).toMatchObject({ ...CUENTA_INICIAL, estadoPago: 'pendiente' });
+  // LO QUE SE DERIVA DE LOS PAGOS NO SE ESCRIBE A MANO (20/09, bloque A-1,
+  // `DISENO.md` §4undecies.2). Hasta ese día estas cuatro claves se
+  // aceptaban; ahora se RECHAZAN aunque vengan bien formadas, y nada se
+  // escribe, ni lo demás que venía en la misma llamada.
+  it('estadoPago, montoMensual, moneda y proximoVencimiento se RECHAZAN: se derivan de los pagos', async () => {
+    await rechaza(llamar({ tenantId: T, estadoPago: 'pendiente' }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, estadoPago: 'al_dia' }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, montoMensual: 90 }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, moneda: 'USD' }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, proximoVencimiento: Date.now() + 86_400_000 }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, proximoVencimiento: null }), 'invalid-argument');
+    // Y frenan lo demás que venía con ellos.
+    await rechaza(llamar({ tenantId: T, estadoPago: 'pendiente', motivoVisible: 'x', umbralOperador: 3, umbralBloqueo: 5 }), 'invalid-argument');
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+    expect(await auditoria('estado_cuenta')).toHaveLength(0);
   });
 
   it('un valor mal formado se RECHAZA en vez de cambiarse por uno por defecto', async () => {
@@ -158,6 +175,14 @@ describe('Escritura parcial: solo cambia lo que se manda', () => {
     expect(await cuenta()).toEqual(CUENTA_INICIAL);
   });
 
+  it('los derivados se recalculan en CADA llamada: uno pisado a mano se corrige al tocar cualquier otra cosa', async () => {
+    await db.doc(`tenants/${T}/cuenta/estado`).update({ estadoPago: 'vencido', montoMensual: 1, moneda: 'BOB' });
+    await llamar({ tenantId: T, motivoVisible: 'al día otra vez' });
+    const c = await cuenta();
+    expect(c).toMatchObject({ estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD', motivoVisible: 'al día otra vez' });
+    expect(c.proximoVencimiento).toBeDefined();
+  });
+
   it('una llamada sin nada que cambiar se rechaza', async () => {
     await rechaza(llamar({ tenantId: T }), 'invalid-argument');
   });
@@ -166,5 +191,108 @@ describe('Escritura parcial: solo cambia lo que se manda', () => {
     await llamar({ tenantId: T, motivoVisible: '' });
     expect((await cuenta()).motivoVisible).toBe('');
     expect((await cuenta()).plan).toBe('crecimiento');
+  });
+});
+
+// PREPAGO (bloques A-0 y A-1, `DISENO.md` §4undecies.2): la modalidad es
+// cerrada, la bandera por tenant es solo booleana, y los campos de situación
+// de pago se recalculan en cada llamada; escritos a mano, se rechazan (arriba).
+describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
+  it('una modalidad inventada se rechaza y NO escribe nada', async () => {
+    for (const modalidad of ['gratis', 'Prepago', '', 7, null, 'toString']) {
+      await rechaza(llamar({ tenantId: T, modalidad }), 'invalid-argument');
+    }
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+  });
+
+  it('`corteActivo` solo acepta verdadero o falso; `null` lo borra; no toca los derivados', async () => {
+    await rechaza(llamar({ tenantId: T, corteActivo: 'si' }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, corteActivo: 1 }), 'invalid-argument');
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+    await llamar({ tenantId: T, corteActivo: true });
+    expect(await cuenta()).toEqual({
+      ...CUENTA_INICIAL, corteActivo: true, actualizadoEn: expect.anything(), proximoVencimiento: expect.anything(),
+    });
+    await llamar({ tenantId: T, corteActivo: null });
+    expect((await cuenta()).corteActivo).toBeUndefined();
+    expect((await cuenta()).estadoPago).toBe('al_dia');
+    const auds = await auditoria('estado_cuenta');
+    expect(auds).toHaveLength(2);
+    expect(auds.some((a) => (a['valores'] as Record<string, unknown>)['corteActivo'] === true)).toBe(true);
+    for (const a of auds) expect(a['campos']).toEqual(['corteActivo']);
+  });
+
+  it('`periodoPrueba` tiene que ser aaaa-mm', async () => {
+    await rechaza(llamar({ tenantId: T, periodoPrueba: '2026-1' }), 'invalid-argument');
+    await rechaza(llamar({ tenantId: T, periodoPrueba: 'octubre' }), 'invalid-argument');
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+  });
+
+  it('no se puede borrar `periodoPrueba` de una cuenta que queda en PRUEBA (quedaría incoherente)', async () => {
+    // Revisión de seguridad de A-0: en la misma llamada, o sobre una que ya es prueba.
+    await rechaza(llamar({ tenantId: T, modalidad: 'prueba', periodoPrueba: null }), 'invalid-argument');
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+    await llamar({ tenantId: T, modalidad: 'prueba' });
+    await rechaza(llamar({ tenantId: T, periodoPrueba: null }), 'invalid-argument');
+    expect((await cuenta()).periodoPrueba).toBe(mesBolivia(Date.now()));
+    // Al salir de prueba sí se puede borrar.
+    await llamar({ tenantId: T, modalidad: 'demostracion', periodoPrueba: null });
+    expect((await cuenta()).periodoPrueba).toBeUndefined();
+  });
+
+  it('pasar a PRUEBA inicializa el mes en curso y su bolsa, y deriva al día con monto cero', async () => {
+    await llamar({ tenantId: T, modalidad: 'prueba' });
+    const c = await cuenta();
+    expect(c).toMatchObject({
+      modalidad: 'prueba', periodoPrueba: mesBolivia(Date.now()), bolsaPrueba: PRUEBA.conversaciones,
+      estadoPago: 'al_dia', montoMensual: 0, moneda: 'USD', plan: 'crecimiento',
+    });
+    expect(c.proximoVencimiento).toBeDefined();
+    // Volver a pedir prueba no reinicia el mes ni la bolsa.
+    await db.doc(`tenants/${T}/cuenta/estado`).update({ bolsaPrueba: 3 });
+    await llamar({ tenantId: T, modalidad: 'prueba' });
+    expect((await cuenta()).bolsaPrueba).toBe(3);
+    const [a] = await auditoria('estado_cuenta');
+    expect(a).toMatchObject({ campos: ['modalidad'], valores: { modalidad: 'prueba' } });
+  });
+
+  it('pasar a DEMOSTRACIÓN deriva sin cargo, monto cero y sin vencimiento', async () => {
+    await llamar({ tenantId: T, modalidad: 'demostracion' });
+    const c = await cuenta();
+    expect(c).toMatchObject({ modalidad: 'demostracion', estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD' });
+    expect(c.proximoVencimiento).toBeUndefined();
+  });
+
+  it('pasar a PREPAGO sin un mes pagado deriva `vencido` con el precio del plan; `periodoPagado` no se acepta', async () => {
+    const { modalidad: _m, periodoPagado: _p, ...sinPrepago } = CUENTA_INICIAL;
+    await db.doc(`tenants/${T}/cuenta/estado`).set(sinPrepago);
+    await llamar({ tenantId: T, modalidad: 'prepago' });
+    expect(await cuenta()).toMatchObject({ modalidad: 'prepago', estadoPago: 'vencido', montoMensual: 50, moneda: 'USD' });
+    // Solo un pago (A-1) o la migración escriben el mes pagado: la callable lo ignora.
+    await llamar({ tenantId: T, modalidad: 'prepago', motivoVisible: 'x', periodoPagado: '2099-01' } as Record<string, unknown>);
+    expect((await cuenta()).periodoPagado).toBeUndefined();
+  });
+
+  it('con modalidad, cambiar el plan recalcula el monto; un comercio SIN MIGRAR no cambia de aspecto (LOW 8)', async () => {
+    await llamar({ tenantId: T, plan: 'pro' });
+    expect(await cuenta()).toMatchObject({ plan: 'pro', montoMensual: 90, estadoPago: 'al_dia' });
+    // Un comercio de antes del 20/09, sin modalidad y con un plan del
+    // catálogo: para el módulo sería demostración y derivaría «Sin cargo».
+    // NO se le escriben derivados hasta migrarlo: ni al cambiar el plan, ni
+    // al tocar el motivo o los umbrales.
+    const { modalidad: _m, periodoPagado: _p, ...sinPrepago } = CUENTA_INICIAL;
+    await db.doc(`tenants/${T}/cuenta/estado`).set(sinPrepago);
+    await llamar({ tenantId: T, plan: 'impulso' });
+    await llamar({ tenantId: T, motivoVisible: 'otro' });
+    await llamar({ tenantId: T, umbralOperador: 3, umbralBloqueo: 5 });
+    const c = await cuenta();
+    expect(c).toMatchObject({ plan: 'impulso', estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD' });
+    expect(c.estadoPago).not.toBe('sin_cargo');
+  });
+
+  it('un comercio de demostración POR PLAN, sin modalidad, sí deriva «Sin cargo»', async () => {
+    await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'demostracion', estadoPago: 'al_dia', montoMensual: 50, moneda: 'BOB' });
+    await llamar({ tenantId: T, motivoVisible: 'demo' });
+    expect(await cuenta()).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD' });
   });
 });

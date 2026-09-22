@@ -1916,6 +1916,660 @@ Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre su
 roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
 suponer que una pestaña de flujo implica administrador.
 
+## 4undecies. Prepago estricto: pagos, cortes, cobranza y el cobrador (20/09/2026)
+
+> Ficha de diseño del frente A (`Prompts/prepago-estricto.md`, coordinado por
+> `Prompts/prepago-y-modularizacion-en-paralelo.md`). La escribió el agente de
+> diseño sobre `main` al 20/09 y la integró la coordinadora, que reemplazó la
+> §4undecies.5 por el contrato **real** del proyecto de cobros (verificado ese
+> día a pedido de Andres) y alineó los nombres de plantillas con
+> `docs/plantillas-cobranza.md` (bloque A-5).
+
+**Estado de la base sobre la que se diseña.** `main` al 20/09 (después de `v0.6.0`).
+La rama `integracion/prepago-sobre-flujos-vivos` (08/09, `87714d1`) aporta el
+módulo puro `prepago.ts`; todo lo demás de esa rama (`cuentas.ts`,
+`cobroPrepago.ts`, `cobroTextos.ts`, `cache.ts`, `costos.ts`, su `planes.ts` con el
+tope de 25 con corte, `AltaNegocio.tsx`, `CuentaNegocio.tsx`) **no se reaplica**: o lo
+reemplazó `main` (bloques de 25, `atencion.ts`, `planes.ts` con catálogo), o
+contradice las decisiones de este frente (el comprobante por WhatsApp que NovuChat
+«daba por bueno»). Es integración, no cherry-pick.
+
+**Lo que se descubrió leyendo y que condiciona el diseño:**
+
+1. **El flujo reporta el entrante aunque el panel conteste 409.** En
+   `Flujos/demo-a-agendamiento.json`, `Normalizar entrada` conecta con `¿Comercio
+   operativo?` **y** con `Reportar mensaje (entrante)`, y este último está arriba
+   (y=120 contra y=280), así que con `executionOrder: v1` corre primero. Si
+   `configuracionFlujo` corta con 409, la ingesta **igual recibe el mensaje del
+   cliente**: ahí se cuentan las `perdidas`, sin tocar ningún flujo (que son de B).
+2. **Los tres flujos ya saben cortar con un 409.** `Config del negocio` trata el 409
+   de `Traer configuración` como «no operativo» y `Comercio no operativo` manda
+   `mensajeCortesia` sin llamar al modelo. El corte del prepago **reutiliza ese
+   409**: cero cambios en `Flujos/`, cero mensajes nuevos.
+3. **La ingesta ya lee `cuenta/estado` dentro de su transacción**
+   (`ingesta.ts:1027-1029`) y ya lee `metricas/{periodo}` condicionalmente para el
+   aviso del 80 % (`1053-1054`). El prepago se cuelga de esas dos lecturas; no abre
+   otra transacción.
+4. **`actualizarEstadoCuenta` ya es parcial** (`index.ts:509-516`, `viene()` en
+   `533`, probado en `pruebas/estado-cuenta.test.ts`). De la fase 0 de `Analisis/29`
+   falta solo que deje de aceptar los campos que pasan a ser derivados (§4undecies.2).
+5. **El cobrador entrega el QR como PNG en base64, no como texto.** `dibujoQr.ts`
+   **no sirve** para el prepago: no hay cadena que redibujar. Se comparte
+   `firma.ts` (el esquema HMAC) y nada más.
+6. **La condición de IAM de la cuenta de despliegue solo ve secretos `INGESTA_*` y
+   `GEMINI_API_KEY`** (`.github/DESPLIEGUE-FIREBASE.md:73-75`). Los dos secretos del
+   cobrador exigen ampliar esa condición y dar `secretAccessor` a `sa-functions`,
+   secreto por secreto (`firma.ts:69-85`). Son pasos de nube: **en espera de la
+   compuerta del demo**.
+
+### 4undecies.1 La colección `/tenants/{t}/pagos/{pagoId}`
+
+**Un documento por pago, en cualquier estado.** El identificador es opaco y lo
+genera el servidor: `randomBytes(16).toString('base64url')` (22 caracteres, 128
+bits). Es también la **referencia externa** que viaja al cobrador (§4undecies.5):
+un solo valor, generado una vez, sin tenant ni período adentro, y dentro del juego
+de caracteres que el cobrador admite (`[A-Za-z0-9:_.-]`, hasta 120).
+
+| Campo | Tipo | Quién lo escribe | Por qué |
+|---|---|---|---|
+| `tipo` | `'mensualidad' \| 'bolsa' \| 'instalacion'` | Functions | `instalacion` es el agregado de `Analisis/29` §2.5: hoy los USD 65 no tienen dónde registrarse. No suma meses ni bolsas |
+| `plan` | `IdPlanVendible` (`planes.ts:42`) | Functions | Solo en `mensualidad`. Del catálogo, nunca texto libre |
+| `meses` | entero 1..6 | Functions | Solo en `mensualidad`. El tope 6 se hace cumplir acá (`MESES_MAXIMO = 6` en `prepago.ts`), no en la pantalla |
+| `cantidad` | entero 1..12 | Functions | Solo en `bolsa` |
+| `montoUsd` | número | Functions | El de la lista (`PLANES[plan].precioUsd × meses`, `BOLSA.precioUsd × cantidad`, `INSTALACION_USD`) |
+| `monto` | entero | Functions | Bolivianos, redondeados con `importeBs`. Es lo que va al QR |
+| `moneda` / `monedaLista` | `'BOB'` / `'USD'` | Functions | Constantes, para que el documento se explique solo |
+| `tcoAplicado` | número 5..40 | Functions | El TCO del BCB del **día de emisión**. Sin él, `importeBs` lanza y el pago no se crea |
+| `tcoFuente` | string | Functions | `'BCB'` en los automáticos; lo que declare el propietario en los manuales |
+| `tcoFecha` | `aaaa-mm-dd` | Functions | Reemplaza al `tcoPeriodo` (`aaaa-mm`) de la rama: el TCO ya no es mensual |
+| `montoRecibidoBs` | entero o `null` | Functions | Lo que entró de verdad (el cobrador lo informa; el propietario lo declara) |
+| `motivoDiferencia` | string ≤ 300 | Functions | Obligatorio si `montoRecibidoBs !== monto` en un manual: un descuento tiene nombre y firma |
+| `estado` | `'pendiente' \| 'confirmado' \| 'vencido' \| 'anulado'` | Functions | Desaparecen `esperando_comprobante`, `comprobante_recibido`, `rechazado` de la rama: ya no hay comprobante que alguien «dé por bueno» |
+| `medio` | `'qr' \| 'efectivo' \| 'transferencia'` | Functions | `qr` solo lo escribe el cliente del cobrador; los otros dos, solo `registrarPagoManual` |
+| `canal` | `'consola' \| 'whatsapp' \| 'manual'` | Functions | Por dónde pidió el pago el comercio. Primera medida del §8 de `Analisis/36` |
+| `referencia` | string ≤ 120 | Functions | En `qr`: **igual a `pagoId`** (la referencia externa). En `transferencia`: número de operación. En `efectivo`: «recibido por <nombre>» |
+| `cobro` | `{ id, estado, venceEn, creadoEn, fichaQr, qrRuta }` o ausente | Functions (A-2) | `id` es el `cons-…` del cobrador; `estado` es el último estado del cobrador visto. `fichaQr` es un valor al azar de 32 hex (como `cobroReal.ficha`, `cobro.ts:152`) con el que `imagenDePago` sirve el PNG. `qrRuta` es la ruta en Storage |
+| `confirmadoPor` | `{ origen: 'banco', cobroId, riel, confirmadoPorCobrador, avisoId? } \| { origen: 'propietario', uid }` | Functions | Las dos únicas fuentes que confirman (decisión 5). No existe `origen: 'comprobante'` ni `'webhook'` |
+| `evidencia` | ruta de Storage o ausente | Functions | `tenants/{t}/pagos/{pagoId}/evidencia.(jpg\|png\|pdf)`. Obligatoria si `medio === 'transferencia'` |
+| `descripcion` | string | Functions | `descripcionDe(pago)` de `prepago.ts`: «Crecimiento · 3 meses» |
+| `cubiertoHasta` | `aaaa-mm` | Functions | Lo que la cuenta quedó cubriendo tras aplicar. Es lo que muestra el historial |
+| `creadoEn`, `creadoPor` | Timestamp, uid o `'whatsapp:<últimos 4>'` | Functions | |
+| `confirmadoEn`, `venceEn`, `anuladoEn`, `anuladoPor`, `motivoAnulacion` | | Functions | `venceEn` = vencimiento del cobro (72 h) solo en `qr` |
+
+**Transiciones válidas** (todo lo demás se rechaza con `failed-precondition`):
+
+```
+(crear qr)      → pendiente
+(crear manual)  → confirmado           ← nace confirmado; nunca pasa por pendiente
+pendiente → confirmado   por avisoCobrador o barridoCobros, SOLO si estadoCobro(id) === 'CONFIRMADO'
+pendiente → vencido      por barridoCobros, cuando el cobrador dice VENCIDO
+pendiente → anulado      por anularPagoPendiente (admin del tenant o propietario), por
+                         registrarPagoManual (que anula el QR vivo antes de cargar), o cuando el
+                         cobrador dice ANULADO o RECHAZADO
+confirmado, vencido, anulado → (terminales). Un confirmado NO se corrige: se compensa con otro asiento.
+```
+
+`PAGO_DETECTADO`, `EN_REVISION` y `BORRADOR` del cobrador **no mueven** el pago de
+NovuChat: sigue `pendiente` (con `cobro.estado` actualizado, para que la consola
+pueda decir «el banco detectó un pago y lo está conciliando»). `BORRADOR` se resuelve
+reintentando `crearCobro` con la misma referencia, que retoma el mismo cobro.
+
+**Idempotencia por referencia.** La clave es que `pagoId === referenciaExterna === id del documento`:
+
+- Crear: `tx.create(refPago)` falla si el documento ya existe, y el cobrador devuelve
+  el mismo cobro ante la misma referencia (200 en vez de 201). Un reintento de red
+  no produce dos QR ni dos documentos.
+- Confirmar: la transacción relee `pagos/{pagoId}`; si ya está `confirmado`,
+  responde `{ aplicado: false, ya: true }` y no suma meses otra vez.
+- Resolver `referenciaExterna → tenant`: colección raíz `/cobrosPendientes/{pagoId}`
+  con `{ tenantId, pagoId, cobroId, fichaQr, venceEn, creadoEn }`, escrita en la misma
+  transacción que crea el pago y borrada al cerrarlo. Es además la lista de trabajo
+  del barrido horario: no hace falta ninguna consulta de grupo entre tenants.
+
+**Un solo pendiente por cuenta.** `cuenta/estado.pagoPendienteId` se escribe en la
+misma transacción que crea el pago. Antes de crear, la transacción lee la cuenta y,
+si `pagoPendienteId` apunta a un pago que sigue `pendiente` y cuyo `venceEn` no
+pasó, rechaza con `failed-precondition` y **devuelve ese pago** (id, importe,
+`fichaQr`, `venceEn`) para que la consola muestre el QR vivo y el botón «cancelar y
+emitir otro». Si el pendiente ya venció según el reloj, el barrido lo cierra; la
+consola ofrece «emitir otro», que primero llama a `anularPagoPendiente`.
+
+**Quién escribe: solo Functions con el SDK Admin.** Ninguna regla admite escritura
+desde el navegador, ni para el propietario: si pudiera, no habría auditoría de quién
+confirmó qué. Las puertas son `crearCobroPrepago` (admin del tenant o propietario,
+A-2), `pagoPorWhatsapp` (A-4, vía la misma función interna), `registrarPagoManual`
+(propietario, A-1), `anularPagoPendiente` (admin o propietario, A-1), `avisoCobrador`
+y `barridoCobros` (A-2).
+
+**Quién lee:** el administrador del tenant con `tenantLegible` (un comercio cortado
+tiene que ver sus pagos) y el propietario. El operador no (misma regla que
+`/cuenta`, `firestore.rules:1521-1525`).
+
+**La regla**, calcada de `/cuenta` (a continuación de `match /cuenta/{documento}`):
+
+```
+      // /pagos/{pagoId} — LOS PAGOS DEL PREPAGO: mensualidades, bolsas e
+      // instalación, con su TCO. Solo los escribe el SDK Admin; nadie desde el
+      // navegador, ni el propietario (quedaría sin auditoría). Los lee el
+      // administrador del comercio, también cortado (tenantLegible), y NovuChat.
+      match /pagos/{pagoId} {
+        allow get, list: if (esAdmin(tenantId) && tenantLegible(tenantId))
+                         || esPropietario();
+        allow create, update, delete: if false;
+      }
+```
+
+Y en la raíz, junto a `/plataforma`: `match /cobrosPendientes/{pagoId} { allow read, write: if false; }`.
+
+**Pruebas de reglas (`pruebas/reglas.test.ts`, sección «Pagos del prepago»), escritas negando:**
+
+| Caso | Esperado |
+|---|---|
+| el admin de A lee `tenants/A/pagos/p1` | pasa (control positivo) |
+| el admin de A lista `tenants/A/pagos` ordenado por `creadoEn` | pasa |
+| el admin de **B** lee o lista `tenants/A/pagos` | falla |
+| el **operador** de A lee `tenants/A/pagos/p1` | falla |
+| el admin de A hace `setDoc`/`updateDoc` con `estado: 'confirmado'` | falla |
+| el admin de A crea un pago a mano | falla |
+| el **propietario** (Google) escribe un pago | falla |
+| el propietario con sesión de contraseña lee | falla (T-19) |
+| el admin de A **suspendido** lee sus pagos | pasa (`tenantLegible`) |
+| el admin de A **dado de baja** lee | falla |
+| cualquiera lee o escribe `/cobrosPendientes/x` | falla |
+| el admin de A escribe `cuenta/estado.pagoPendienteId` | falla |
+
+### 4undecies.2 `cuenta/estado` se deriva de los pagos
+
+**El principio:** los campos de situación de pago **no se escriben a mano**. Se
+escriben junto con cada cambio de la cuenta, calculados por `estadoDeServicio`
+(`prepago.ts`), desde una sola función `camposDerivados(estado, corteGuardado)`
+(tomada de `cuentas.ts` de la rama, con un ajuste: el corte no se borra si está en
+modo observación, §4undecies.4).
+
+| Campo de `cuenta/estado` | Origen | Quién lo escribe |
+|---|---|---|
+| `modalidad` | `'demostracion' \| 'prueba' \| 'prepago'`; ausente = demostración | `actualizarEstadoCuenta({ modalidad })` (propietario, auditado) para `prueba` o `demostracion`; `aplicarPago` la pone en `prepago` al confirmar la primera mensualidad |
+| `plan`, `limites`, `catalogoPlanes` | como hoy | `actualizarEstadoCuenta({ plan })` **y** `aplicarPago` de una mensualidad de otro plan («cambiar de plan es pagar el plan nuevo») |
+| `periodoPagado` | `aaaa-mm`, último mes cubierto | solo `aplicarPago` |
+| `periodoPrueba`, `bolsaPrueba` | mes de prueba y sus 20 conversaciones | `actualizarEstadoCuenta({ modalidad: 'prueba' })` los inicializa |
+| `bolsa` | conversaciones compradas sin usar | `aplicarPago` suma; la ingesta descuenta (`consumoDeConversacion`) |
+| `pagoPendienteId` | id del pago `pendiente` | la transacción que crea el pago; se borra al confirmar, vencer o anular |
+| `corte` | `{ motivo, desde, perdidas, mensajesPerdidos, aplicado }` | la ingesta (§4undecies.3) y `aplicarPago` (lo borra al reactivar) |
+| `estadoPago` | **derivado**: `al_dia`, `pendiente` (en gracia o con `pagoPendienteId`), `vencido` (cortado por `sin_pago`), `sin_cargo` (demostración) | `camposDerivados` |
+| `proximoVencimiento` | **derivado**: `finDelPeriodoMs(periodoPagado)`; ausente en demostración | `camposDerivados` |
+| `montoMensual`, `moneda` | **derivados**: `PLANES[plan].precioUsd`, `'USD'` | `camposDerivados` |
+| `telefonosPago` | lista ≤ 5 de teléfonos que pueden pagar por WhatsApp | callable `fijarTelefonosPago` (admin del tenant, auditada). Va acá y no en la ficha porque la ficha la lee el operador y la ingesta |
+| `corteActivo` | `true` para encender el corte en **este** tenant antes que en toda la plataforma | `fijarCortePrepago` (propietario) |
+
+**Lo que hoy pisa esos campos, línea por línea, y qué se hace (bloque A-1):**
+
+| Archivo:línea | Qué escribe | Resolución |
+|---|---|---|
+| `index.ts:314` (`suspenderTenant`) | `estadoPago: 'vencido'` | se quita: suspender corta el **servicio**, no afirma nada sobre el pago |
+| `index.ts:353` (`reactivarTenant`) | `estadoPago: 'al_dia'` | se quita: no se afirma «al día» sin un pago que lo respalde |
+| `index.ts:536-563` | acepta `estadoPago`, `montoMensual`, `moneda`, `proximoVencimiento` | se **rechazan** con `invalid-argument` «se deriva de los pagos» |
+| `index.ts:115-121` (`exigirAdminDe`) | no mira proveedor ni correo verificado | exige `sign_in_provider === 'password'` y `email_verified`, igual que `esAdmin()` de las reglas, porque A-2 y A-3 agregan callables de admin |
+| `pruebas/estado-cuenta.test.ts:146-158` | prueban que esos campos se aceptan | se reescriben negando |
+| `web/src/paginas/EstadoCuenta.tsx:54-55, 86-99`, `Tablero.tsx:352, 490-491` | pintan `estadoPago`, `montoMensual`, `proximoVencimiento` | siguen leyendo los mismos nombres: ahora son derivados |
+| `scripts/asignar-plan.mjs` | escribe plan sin tocar el resto | no cambia |
+
+`actualizarEstadoCuenta` gana `modalidad` (cerrada, `esModalidad`), `periodoPrueba`
+(`aaaa-mm`, opcional; por defecto el mes en curso al pasar a `prueba`) y
+`corteActivo` (booleano), y recalcula `camposDerivados` en la misma transacción
+(`index.ts:607-663`), leyendo `metricas/{periodo}` para `consumidas`.
+
+**Migración (`Analisis/29` §2.6), antes del primer pago:** los comercios con `plan:
+'demostracion'` quedan como están (sin `modalidad`; además `estadoDeServicio` trata
+`plan === 'demostracion'` como demostración, doble salvaguarda). El tenant
+`novuchat` igual. Los comercios reales reciben `modalidad` y `periodoPagado` **a
+mano, uno por uno**, con `actualizarEstadoCuenta` o un `migrar-prepago.mjs` seco por
+defecto. Ningún comercio recibe `modalidad: 'prepago'` sin un pago o una decisión
+explícita de Andres.
+
+### 4undecies.3 Reaplicación de `prepago.ts` sobre la ingesta de hoy
+
+#### Qué se conserva tal cual del módulo del 08/09
+
+`MODALIDADES`, `esModalidad`, `TipoCambio`/`esTipoCambio`/`TCO_MINIMO`/`TCO_MAXIMO`,
+`importeBs` (lanza sin TCO válido), `MONEDA_LISTA`/`MONEDA_COBRO`, `esPeriodo`,
+`sumarMeses`, `periodoSiguiente`, `periodoAnterior`, `diasDelPeriodo`, `diaDelMes`,
+`finDelPeriodoMs`, `inicioDelPeriodoMs`, `fechaFinDelPeriodo`, `fechaCorta` (en hora
+de Bolivia, UTC−4), `CuentaCruda`, `Corte`, `MotivoCorte`, `corteDe`, `consumidasDe`,
+`consumoDeConversacion`, `Pago`, `montoUsdDe`, `descripcionDe`, `CuentaTrasPago`,
+`aplicarPago`, `resumenDeCuenta`, `VOSEO`, y la mitad de `estadoDeServicio`.
+
+#### Qué se corrige
+
+| Qué | Cómo | Por qué |
+|---|---|---|
+| **`PLANES`, `BOLSA`, `PLAN_POR_DEFECTO`, `esPlan`** de la rama | se **borran**; `prepago.ts` importa `PLANES`, `BOLSA`, `esIdPlan`, `limitesDeCuenta` de `planes.ts` | la rama dice `base/crecimiento/corporativo`; `main` dice `impulso/crecimiento/pro` (`planes.ts:76-80`). Las incluidas se leen de la **copia** `cuenta.limites.conversaciones` vía `limitesDeCuenta`, como el aviso del 80 % y el límite de productos |
+| **`periodoDe`** de la rama (Bolivia) | se borra; se usa `periodoDe` de `planes.ts:218` (UTC) para todo lo que sea **id de agregado o de aviso** | dos funciones con el mismo nombre y distinta zona son el defecto que `planes.ts` ya documenta. La **cobertura** se decide por instantes: `cubierto = ahoraMs <= finDelPeriodoMs(periodoPagado)`. Lo único que usa el mes UTC es `consumidas`, y en las 4 horas de desfase falla hacia el lado seguro |
+| **`estadoDeServicio(cuenta, consumidas, periodo)`** | pasa a `estadoDeServicio(cuenta, consumidas, ahoraMs)` y devuelve además `fase: 'cubierto' \| 'gracia' \| 'cortado'` y `graciaHasta: number \| null` | la gracia es tiempo, no mes |
+| **Gracia de 48 h** | `GRACIA_MS = 48 h`. Con `periodoPagado === periodoAnterior(mesActualBolivia)` y `ahoraMs < inicioDelPeriodoMs(mesActual) + GRACIA_MS` → `fase: 'gracia'`, `operativo: true`. Pasado eso → `cortado`, `sin_pago` | **D0 = día 1 del mes sin cobertura, 00:00 Bolivia; el corte rige desde las 00:00 del día 3.** Es el único reparto en el que «vence hoy» (D0), «48 horas» y «corte a las 00:00» son verdad a la vez |
+| **`prueba`** | igual que `prepago` para la cobertura (`enPrueba = periodoPrueba === mesActual`), con gracia; **sin cobranza**: `recordatoriosDebidos` solo emite `conversion` | decisión 5 |
+| **Calendario** | `DIAS_AVISO_RENOVACION = [7, 2]` → `[5, 1]`; se agregan `vencida` (D0), `cortePago` (D+2) y `cortePago2` (D+4, con `perdidas`) | `Analisis/36` §3.1 |
+| **`PLANTILLAS`** | se reescriben con los **nombres y cuerpos de `docs/plantillas-cobranza.md`** (A-5): `mensualidad_vence_pronto` (D-5), `mensualidad_vence_manana` (D-1), `mensualidad_vencida_gracia` (D0), `asistente_sin_atender` (D+2), `asistente_sin_atender_perdidas` (D+4), `conversaciones_agotadas`, `prueba_termina`, `pago_confirmado` | los cuerpos de la rama tienen voseo residual y lenguaje de venta; la prueba de `VOSEO` los vigila |
+| **`corte`** | gana `mensajesPerdidos` y `aplicado: boolean`; `perdidas` pasa a contar **teléfonos distintos** que consultaron durante el corte (marca `corteVisto` en la conversación, cero lecturas extra) | «[N] clientes te escribieron» tiene que ser clientes, no mensajes |
+| **`MENSAJE_CORTESIA`** | pasa a ser función: `mensajeCortesia(numeroRecepcion)` → el texto de hoy + « Puede comunicarse al {número}.» si hay número válido | corrección 2 de `Analisis/36` §3.2. Nunca «mantenimiento», nunca «pago» |
+| **`aplicarPago` con 6 meses** | suma `BOLSA.conversaciones` de regalo cuando `meses === 6` | «a partir de 6» con tope 6 es «al pagar 6» |
+| **`meses`** | tope 6 (`MESES_MAXIMO`), no 12 | decisión 4 |
+
+#### Dónde se decide en la ingesta, y cómo se cuentan las `perdidas`
+
+Todo dentro de la transacción que ya existe (`ingesta.ts:1026-1200`). No se abre otra.
+
+1. **Lecturas (1027-1029).** El `Promise.all` pasa a `[conversacion, cuentaDoc,
+   plataformaDoc]` sumando `tx.get(db.doc('plataforma/prepago'))`. Es +1 lectura por
+   mensaje y evita un caché cuya invalidación habría que probar.
+2. **Métricas (1053-1054).** `const necesitaMetricas = conteo.conversacion &&
+   (avisoConsumoPendiente(cuenta, periodo) || modalidadDe(cuenta) !== 'demostracion')`.
+   Solo un mensaje que **abriría** una conversación puede chocar con `sin_conversaciones`.
+3. **Decisión (nuevo bloque entre 1058 y 1060):**
+   ```ts
+   const servicio = estadoDeServicio(cuenta, consumidasDe(metricasDoc?.data()), ahoraMs);
+   const aplica = corteAplicable(cuenta, plataformaDoc.data());  // §4undecies.4
+   const corteGuardado = corteDe(cuenta);
+   const rechazo = rechazoPorPrepago(servicio.motivo, conteo.atencion);   // de la rama
+   ```
+   `sin_pago` rechaza todo; `sin_conversaciones` rechaza solo lo que **abriría** una
+   conversación (una ventana ya abierta se atiende hasta el final: ya se pagó).
+4. **Si hay `rechazo`**: se escribe `cuenta.corte` con `merge` (`motivo`, `desde`,
+   `aplicado: aplica`, `perdidas += (entrante consulta && conversacion.corteVisto !== desde ? 1 : 0)`,
+   `mensajesPerdidos += (entrante ? 1 : 0)`) y `camposDerivados`; se marca
+   `corteVisto: desde` en la conversación.
+   - **Con `aplica === true` (cortado):** se escribe el mensaje en `mensajes` y
+     `ultimoMensaje`/`ultimoEn` (el comercio tiene que ver **quién** le escribió), pero
+     **ningún contador de facturación se mueve**. La respuesta HTTP es **200** con
+     `servicio: { estado: 'cortado', motivo }` (no 409: el 409 de la ingesta significa
+     «ficha no activa»).
+   - **Con `aplica === false` (observación):** todo sigue como hoy. El corte queda con
+     `aplicado: false`; la bitácora **no** recibe `corte_servicio`, la auditoría recibe
+     `corte_observado` (una vez por corte).
+5. **Sin rechazo y con corte guardado:** `corte: FieldValue.delete()` +
+   `camposDerivados`; bitácora `reanudacion_servicio` solo si el corte tenía `aplicado: true`.
+6. **Bolsa (dentro del `if (conteo.atencion)`):** `consumoDeConversacion(servicio)`
+   descuenta `bolsa` o `bolsaPrueba`; si `cortaDespues`, anota `corte: { motivo:
+   'sin_conversaciones', desde, perdidas: 0, aplicado: aplica }`; **este mensaje se atiende**.
+7. **Escrituras (1072-1184):** se envuelven en `escribirMensaje(tx, conteo)` para que el
+   caso «cortado» escriba solo el mensaje. `avisoConsumo` (1190-1197) no cambia.
+8. **Retorno (1199) y respuesta (1264-1271):** se agrega `servicio: { estado, motivo, fase, graciaHasta }`.
+
+**Bitácora y auditoría.** `TipoEvento` (`ingesta.ts:511-544`) suma `'corte_servicio'
+| 'reanudacion_servicio' | 'pago_registrado'`. Las tres listas (`ingesta.ts`,
+`firestore.rules:2035-2060`, `web/src/lib/bitacora.ts:52-70`) se tocan juntas o
+`pruebas/bitacora-tipos.test.ts` rompe. El entrante durante el corte se registra como
+`mensaje_entrante` con `resultado: 'rechazado'` y `codigo: 'cortado'`.
+
+#### `configuracionFlujo` (línea 1304 en adelante)
+
+1. `config/negocio` se lee **antes** del `if (comercio.estado !== 'activo')` (1354),
+   porque la cortesía ahora lleva `numeroRecepcion`.
+2. **Leer siempre `cuenta/estado`, `metricas/{periodo}` y `plataforma/prepago`**, no
+   solo con teléfono (1389-1394).
+3. `if (!servicio.operativo && corteAplicable(...) && !(servicio.motivo ===
+   'sin_conversaciones' && telefono && !ventanaVencida(marcas, ahora)))` → `409 {
+   estado: servicio.motivo, mensajeCortesia }`. **Los flujos ya obedecen ese 409.** No
+   se toca `atencion.estado`: el corte entra por `¿Comercio operativo?`, que está antes.
+4. **En gracia o en observación:** 200 normal, más `prepago: { modalidad, fase,
+   motivo, graciaHasta, disponibles, corteAplicado }`. Ningún flujo decide con eso.
+
+**Reactivación en ≤ 60 s:** `configuracionFlujo` no cachea nada hoy, así que el
+siguiente turno ya lee la cuenta con `periodoPagado` nuevo.
+
+#### Qué se reutiliza como molde
+
+- **`seguimientos.ts`** para la cobranza: `recordatoriosPrepago` (POST, devuelve lo
+  debido hoy para **todos** los tenants con modalidad, autenticado con
+  `rutaAutenticada` y `ruta.flujo === 'onboarding'`) y `recordatorioPrepagoEnviado`
+  (POST `{ tenantId, clave }`, **marca antes de enviar** en `cuenta.recordatorios[clave]`
+  en una transacción que responde `repetido` si ya estaba). Se adopta el criterio de
+  `seguimientos.ts:35-39` («un seguimiento perdido es mejor que dos») y **se descarta**
+  el de la rama (`marcarRecordatorioPrepago` exigía `idMensaje`, o sea marcaba después).
+- **`firma.ts`**: el esquema HMAC de `rutaAutenticada` (`firma.ts:195-200`:
+  `sha256(secreto, "${marca}." + cuerpoCrudo)`, ventana de 5 min, `timingSafeEqual`) es
+  lo que NovuChat le propone al cobrador para el aviso (§4undecies.5). Se exportan
+  `firmaValida` y `VENTANA_MS` (hoy privados, líneas 108 y 112).
+- **`dibujoQr.ts`**: **no se usa** (el cobrador entrega PNG). Si el banco algún día
+  devuelve la cadena EMV, `imagenDePago` puede redibujar con `dibujarQr`.
+- **`atencion.ts`** como molde de módulo puro compartido con la consola
+  (`web/src/lib/prepago.ts` reexporta, como `web/src/lib/planes.ts:23-35`).
+- **`cobro.ts:200-243` (`imagenDeCobro`)** como molde de `imagenDePago`: pública, por
+  ficha al azar de 128 bits, 404 si el pago no está `pendiente`.
+
+#### Qué NO se comparte con `cobro.ts` / `sena.ts` / `cotejo.ts`
+
+Son el comercio cobrándole a su cliente (decisión 2). `prepago.ts`, `pagos.ts`,
+`cobrador.ts` y `cobroPrepago.ts` **no importan** `cobro.ts`, `sena.ts`, `cotejo.ts` ni
+`qrSimple.ts`; `Pagar.tsx`/`EstadoCuenta.tsx` no importan nada de
+`Cobros.tsx`/`Cobro.tsx`. Una prueba de fuente (`pruebas/prepago-separacion.test.ts`,
+al estilo de `comportamiento-pantalla.test.ts`) lo exige y busca que ningún texto del
+prepago contenga «seña» y ninguno de la seña contenga «mensualidad». Los datos
+tampoco se cruzan: `config/{flujo}.cobroReal` y `tenants/{t}/pagos` no se tocan en
+una misma Function. El prepago **sí** puede decir «pago confirmado por el banco» (es
+el único lugar); la seña **nunca** (prohibición 3).
+
+#### Choques del módulo del 08/09 con `main`
+
+| Función de la rama | Choca con | Resolución |
+|---|---|---|
+| `PLANES`/`esPlan`/`PLAN_POR_DEFECTO` | `planes.ts:42-108` | se borran; importar |
+| `periodoDe` (Bolivia) | `planes.ts:218` (UTC) | se borra; cobertura por instantes |
+| `estadoDeServicio` leyendo `PLANES[plan].conversaciones` | `limitesDeCuenta` | se usa la copia |
+| `recordatoriosDebidos` con `PLANES[estado.plan].nombre` | `PLANES_ASIGNABLES[plan].nombre` | importar |
+| `rechazoPorPrepago` / `ventanaAbierta` | `atencion.ts` ya tiene `ventanaVencida` (`108-111`) | `ventanaAbierta` no se reaplica |
+| `topeMensajes24h`, `estadoDelTope`, `limites` | bloques de 25 + umbrales | no se reaplican |
+| `salientes`, `distribucion`, `ventanaCerrada` (costos) | otro frente (`Analisis/27` §8) | no se reaplican |
+| `estadoPago: 'pendiente'` escrito por `marcarRecordatorioPrepago` | derivados | solo `camposDerivados` lo escribe |
+| Aviso del 80 % (`planes.ts:244-270`) | no choca | conviven en la misma transacción |
+
+### 4undecies.4 La bandera de modo observación
+
+**Dónde vive: `plataforma/prepago`** (documento nuevo; `match /plataforma/{documento}`
+de `firestore.rules:2117-2120` ya lo cubre: lo lee el propietario, nadie lo escribe
+desde el navegador), **más `cuenta/estado.corteActivo` por tenant.**
+
+```
+plataforma/prepago
+  corteActivo:   false        ← global. Ausente = false. Es el interruptor que la decisión 2 deja apagado
+  actualizadoEn, actualizadoPor, motivo
+  cobrador: { baseUrl, consumidor: 'novuchat', vigenciaHoras: 72 }   ← §4undecies.5 (no es secreto)
+plataforma/prepago/historial/{id}     ← cada cambio de la bandera: { corteActivo, uid, en, motivo, tenantId? }
+```
+
+**Por qué las dos.** La global es la compuerta que el prompt exige («A-0 entra a
+`main` en modo observación y así se queda hasta que Andres decida»). La de tenant
+existe para el ensayo de extremo a extremo con el TENANT de ensayo: se enciende en
+uno solo, se observa un ciclo completo, y recién después la global.
+`corteAplicable(cuenta, plataforma) = modalidad !== 'demostracion' &&
+(plataforma.corteActivo === true || cuenta.corteActivo === true)`. Un `corteActivo:
+false` por tenant **no exime**: la exención es `modalidad: 'demostracion'` (o sin
+modalidad, o `plan: 'demostracion'`). La lista de excepciones sigue siendo una sola.
+
+**Qué hace apagada.** La ingesta calcula `estadoDeServicio`, escribe `cuenta.corte` con
+`aplicado: false`, cuenta `perdidas` y `mensajesPerdidos` («lo que se habría perdido»),
+deja auditoría `corte_observado`, y **atiende igual**: `configuracionFlujo` responde
+200 y los contadores se mueven como hoy. Encendida: 409 en `configuracionFlujo`, cero
+contadores en la ingesta, bitácora `corte_servicio`. Lo único que cambia es `aplica`;
+el cálculo es el mismo, que es lo que permite mirar un ciclo entero antes de encender.
+
+**Quién la enciende.** Callable `fijarCortePrepago({ corteActivo, motivo, tenantId? })`,
+`exigirPropietario`, escribe el documento y una entrada en `historial` en una
+transacción. Sin `tenantId` toca la global; con él, `cuenta/estado.corteActivo` y la
+auditoría del tenant (`accion: 'corte_prepago'`). Ningún script con `--aplicar`: es
+una decisión, y se quiere que quede quién y cuándo. Encender la global la decide
+Andres «después del demo y con un pago confirmado de punta a punta»; Claude la
+ejecuta con su OK.
+
+**Cómo se ve en la consola.** Propietario, en `Tenants.tsx`: franja «Prepago en **modo
+observación**: los cortes se calculan y no se aplican» (o «Corte **activo** desde el
+dd/mm») con el botón que llama a `fijarCortePrepago`; en cada fila `modalidad`, `fase`
+y, si hay `corte`, «cortaría por sin_pago desde el dd/mm · N clientes» en gris si
+`aplicado: false` y en rojo si `true`. Comercio (`EstadoCuenta.tsx`): `corte` **solo si
+`aplicado === true`**; un corte observado no existe para él. La consola importa
+`estadoDeServicio` y `corteDe` vía `web/src/lib/prepago.ts` y no calcula nada.
+
+**Pruebas negativas (`pruebas/prepago-ingesta.test.ts`, ingesta real contra el emulador, alias `cliente16`):**
+
+| Caso | Esperado |
+|---|---|
+| tenant **sin modalidad**, `periodoPagado` vacío, bandera global **encendida** | 200, contadores se mueven, sin `corte` |
+| tenant `modalidad: 'demostracion'`, bandera encendida, `consumidas` = 99.999 | igual: nunca se corta |
+| tenant `plan: 'demostracion'` sin modalidad | igual |
+| tenant `prepago` con `periodoPagado` de hace dos meses, bandera **apagada** | 200, contadores se mueven, `corte.aplicado === false`, `perdidas` sube, auditoría `corte_observado`, bitácora **sin** `corte_servicio` |
+| mismo tenant, bandera apagada, `cuenta.corteActivo: false` | ídem (no exime nada, tampoco corta) |
+| mismo tenant, `cuenta.corteActivo: true` | 200 con `servicio.estado: 'cortado'`, mensaje escrito, **ningún** contador se mueve, `perdidas` cuenta **una** vez por teléfono, bitácora `corte_servicio` una vez |
+| `periodoPagado` = mes anterior, ahora = día 2 a las 23:00 Bolivia, corte activo | `fase: 'gracia'`, se atiende |
+| ídem, ahora = día 3 a las 00:01 Bolivia | cortado |
+| `configuracionFlujo` con tenant cortado y corte activo | 409 con `mensajeCortesia` que contiene `numeroRecepcion` y **no** contiene «pago», «deuda», «mantenimiento» |
+| `configuracionFlujo` con `sin_conversaciones`, corte activo y teléfono con ventana abierta | 200 |
+| `fijarCortePrepago` llamada por el admin del tenant | `permission-denied`, documento intacto |
+| `fijarCortePrepago` por propietario con sesión de contraseña | `permission-denied` |
+
+### 4undecies.5 El contrato con el cobrador: el real, verificado el 20/09/2026
+
+**El contrato existe y está fusionado** en el proyecto de cobros (PR #38, bloque 1;
+documento `docs/10-contrato-consumidores.md`, todavía en la rama `docs/estado-pr-38`
+de ese repositorio). A-2 lo consume **tal cual**; el doble
+`admin/pruebas/dobles/cobrador.ts` lo reproduce **exactamente**, no una versión
+imaginada. Lo que sigue es lo verificado en su código (`packages/functions/src/api/`).
+
+**Identidad.** Consumidor `novuchat`. `Authorization: Bearer <token>`; el token lo
+configura el cobrador como `CONSUMIDOR_TOKEN_NOVUCHAT` (mínimo 32 caracteres) y
+NovuChat lo guarda en Secret Manager como `COBRADOR_TOKEN` (`defineSecret`, `.value()`
+solo en ejecución). Un token de consumidor **no abre** ninguna ruta del dueño, y lo
+ajeno responde **404, nunca 403**. Cupo: **60 QR por hora** por consumidor
+(`429 CUPO_POR_HORA_AGOTADO`). Base: `plataforma/prepago.cobrador.baseUrl` (no es
+secreto), sin barra final; las rutas van bajo `/api/v1/`.
+
+**Montos: texto decimal con punto** (`"150.50"`), nunca número ni centavos.
+`monto` en NovuChat es entero en Bs, así que viaja como `String(monto) + ".00"`.
+**Fechas** ISO 8601 con zona. **Errores** siempre `{ error: { codigo, mensaje } }`;
+se mira `codigo`, que es estable. Sin `telefonoCliente`: no existe en este contrato.
+El `concepto` **lo ve el pagador en su app bancaria**: va «NovuChat · <plan> · N
+meses», sin nombre del comercio ni datos de persona.
+
+| Operación | Petición | Respuesta |
+|---|---|---|
+| **`crearCobro`** | `POST /api/v1/cobros` `{ referenciaExterna, concepto (≤100), monto: "150.00", horasDeVigencia: 72 }`. `referenciaExterna` = `pagoId` (letras, números y `: _ . -`, ≤120) | **201** nuevo o **200** ya existía (**mismo cobro, mismo QR**): `{ cobro: { id: "cons-<64 hex>", referenciaExterna, estado, monto, moneda: "BOB", concepto, creadoEn, qr: { version, venceEn, imagenDisponible } \| null, pago: null }, imagenQrBase64 }`. `409 IMPORTE_DISTINTO_CON_MISMA_REFERENCIA` si se repite la referencia con otro importe; `400 CUERPO_INVALIDO` / `MONTO_INVALIDO`; `429`; `502 PROVEEDOR_RECHAZO` / `QR_SUELTO_EN_EL_PROVEEDOR` (no reintentar con la misma referencia hasta revisar); `503 SERVICIO_NO_DISPONIBLE` (reintentable) |
+| **`estadoCobro`** | `GET /api/v1/cobros/:id` o `GET /api/v1/cobros/por-referencia/:referencia` | `{ cobro }` con la misma forma; `pago` **solo** con `CONFIRMADO`: `{ confirmadoEn, ocurridoEn, monto, riel: "api-baneco" \| "scraping-yape" \| null, confirmadoPor: "automatico" \| "revision-manual" }`. No toca el banco: lee el estado que mantiene el satélite |
+| **`anularCobro`** | `POST /api/v1/cobros/:id/anular` `{ motivo? }` | `200 { resultado: "ANULADO" }` (repetirlo sobre uno anulado devuelve lo mismo); `409 PAGADO_NO_SE_ANULA` (hay plata: consultar el estado); `409 PAGO_TARDIO_EN_REVISION` (pago sobre QR vencido; lo decide una persona) |
+| **`listarCobros`** | `GET /api/v1/cobros?desde&hasta&limite` (ISO con zona; `hasta` exclusivo; rango ≤ 92 días; `limite` 1..100) | `{ desde, hasta, limite, truncado, cobros: [...] }`. Solo para conciliar (mensual, propietario) |
+| **imagen del QR** | `GET /api/v1/cobros/:id/qr` | `{ imagenQrBase64, venceEn }`; `404 SIN_IMAGEN`. Viene también en `crearCobro`; sirve para pedirla de nuevo |
+
+**Estados del cobrador y qué hace NovuChat con cada uno:**
+
+| Estado | Significado | Pago de NovuChat |
+|---|---|---|
+| `BORRADOR` | reservado, el QR no se emitió (falló el banco); `qr: null` | sigue `pendiente`; se reintenta `crearCobro` con la **misma** referencia, que lo retoma |
+| `QR_ACTIVO` | se puede pagar | `pendiente` |
+| `PAGO_DETECTADO` | el banco reportó un abono; **todavía no conciliado** | `pendiente` (la consola puede decir «el banco detectó un pago y lo está conciliando»); **no se acredita nada** |
+| `CONFIRMADO` | plata conciliada; terminal | `confirmado` (la única transición que suma meses) |
+| `EN_REVISION` | monto distinto, fuera de vigencia, duplicado; lo mira una persona | `pendiente`; se avisa a NovuChat por auditoría |
+| `VENCIDO` | venció sin pago y quedó anulado en el banco | `vencido`; se limpia `pagoPendienteId` |
+| `ANULADO` / `RECHAZADO` | terminales | `anulado` |
+
+**Una referencia externa no se recicla:** para volver a cobrar lo mismo se emite un
+pago nuevo con otro `pagoId`. **`ENVIADO` y `COMPROBANTE_RECIBIDO` no existen** para un
+consumidor. El banco vence los QR **por día**: un cobro vencido en nuestro reloj sigue
+pagable hasta la medianoche si no se anula; por eso el barrido anula, no «olvida».
+
+#### El aviso de confirmación (bloque 2 de C, en curso: rama `feat/aviso-de-confirmacion`)
+
+Lo que ese bloque **ya decidió** en su dominio, y NovuChat toma como dado: un aviso por
+cobro (clave `cobroId`), reconstruido al enviarlo desde el cobro y su evidencia (no una
+copia guardada), reintentos **sin tope** con espera 30 s → 1 min → 5 min → 15 min →
+1 h → 6 h → 1 día, y el cuerpo `AvisoDeConfirmacion`:
+
+```
+{ evento: "cobro.confirmado", idEvento: <cobroId, estable entre reentregas>,
+  consumidorId: "novuchat", cobroId, referenciaExterna, montoCentavos,
+  confirmadoEn: ISO, ocurridoEn: ISO | null, riel: "watcher-baneco" | "scraper-yape" | null }
+```
+
+Lo que ese bloque **no decidió todavía**, y NovuChat le pide (fila C de
+`Prompts/COORDINACION.md`): transporte `POST` a una URL registrada por consumidor
+(`https://<región>-<proyecto>.cloudfunctions.net/avisoCobrador`, configurada allá, no
+viaja en ninguna petición); cabeceras `X-Firma: sha256=<hex>` y `X-Marca-Tiempo`
+(milisegundos desde la época), con `hex = HMAC-SHA256(secreto, "<marca>." + cuerpo
+crudo)`, que es byte a byte `firma.ts:198-199`; secreto por consumidor
+(`CONSUMIDOR_AVISO_SECRETO_NOVUCHAT` allá, `COBRADOR_AVISO_SECRETO` en Secret Manager
+acá; distinto del token de salida: comprometer uno no permite fabricar lo otro);
+tolerancia ±5 min (`VENTANA_MS`); respuesta 2xx = entregado. Si C elige otro esquema,
+A-2 cambia `verificarAviso` y nada más.
+
+**Del lado de NovuChat (`avisoCobrador`, `onRequest`, `cors: false`):**
+
+- Verifica la firma con `firmaValida` (tiempo constante). Fuera de ventana, firma
+  inválida o cuerpo > 64 KiB: `401` sin explicar.
+- **El aviso no es fuente de verdad** (lo dice el contrato, §1): después de la firma,
+  `avisoCobrador` **llama a `estadoCobro(cobroId)`** con el token de salida y solo si la
+  respuesta autenticada dice `CONFIRMADO` aplica el pago. Es la decisión 5 literal:
+  aunque el secreto del aviso se filtrara, nadie acredita un mes sin que el cobrador,
+  autenticado, lo afirme. El barrido llega al mismo resultado sin aviso.
+- Respuesta idempotente: `200 { recibido: true, aplicado: boolean, estado }`. Un aviso
+  repetido devuelve `aplicado: false, estado: 'confirmado'` y no suma nada. Un
+  `referenciaExterna` desconocido: `200 { recibido: true, aplicado: false, estado:
+  'desconocido' }` (para que el cobrador cierre el aviso) y un renglón en el log con
+  el `cobroId` (no tiene datos de personas).
+- **Qué aplica:** una transacción sobre `pagos/{pagoId}` + `cuenta/estado` +
+  `tenants/{t}` (espejo del plan) + `cobrosPendientes/{pagoId}` (se borra):
+  `aplicarPago` puro, `camposDerivados`, `corte: delete`, `pagoPendienteId: delete`,
+  `estado: 'confirmado'`, `confirmadoPor: { origen: 'banco', cobroId, riel,
+  confirmadoPorCobrador, avisoId }`, `montoRecibidoBs` desde `pago.monto`. Después,
+  bitácora `pago_registrado` y, si había corte aplicado, `reanudacion_servicio`;
+  auditoría `pago_aplicado`; y se encola la confirmación por WhatsApp
+  (`cuenta.confirmacionesPendientes[pagoId]`, que `recordatoriosPrepago` devuelve como
+  tipo `confirmacion` con la plantilla `pago_confirmado`).
+
+#### El barrido horario
+
+`barridoCobros`: `onSchedule('every 60 minutes')` (`firebase-functions/v2/scheduler`;
+exige Cloud Scheduler habilitado, paso de nube tras la compuerta; la lógica vive en
+`barrerCobrosPendientes(ahoraMs)` exportada para probarla sin scheduler). Recorre
+`/cobrosPendientes` (≤ 500 por corrida), llama `estadoCobro` por cada uno y aplica la
+tabla de estados de arriba. Un `QR_ACTIVO` con `venceEn` pasado hace más de 24 h →
+`anularCobro` y cierra; si responde `PAGADO_NO_SE_ANULA`, vuelve a consultar y aplica.
+Además, `EstadoCuenta.tsx` al abrirse con un `pagoPendienteId` llama a
+`consultarPagoPendiente` (callable admin), que hace un `estadoCobro` puntual: es la
+«consulta al abrir la pantalla» de `Analisis/36` §6.
+
+#### Anulación al cargar un pago manual
+
+`registrarPagoManual` lee `cuenta.pagoPendienteId`; si hay un pendiente, llama
+`anularCobro` **antes** de la transacción: `ANULADO` → sigue y marca el pendiente
+`anulado` (`motivoAnulacion: 'pago_manual'`); `409 PAGADO_NO_SE_ANULA` → aborta con
+`failed-precondition` «ese QR ya se pagó: se aplica el cobro del banco, no el manual»
+y aplica el confirmado por el camino normal; `409 PAGO_TARDIO_EN_REVISION` → aborta y
+deja el pendiente para que lo resuelva el cobrador. Si el cobrador no responde:
+aborta, no carga nada. Nunca dos pagos vivos por el mismo mes.
+
+#### El QR como imagen PNG
+
+`crearCobro` devuelve `imagenQrBase64`. `crearCobroPrepago` lo decodifica, comprueba
+que sea PNG (8 bytes de firma, ≤ 512 KiB) y lo guarda con el SDK Admin en Storage:
+`tenants/{t}/pagos/{pagoId}/qr.png`. Dos lectores:
+
+- **La consola** lo lee con el SDK de Storage bajo la regla de §4undecies.7. Muestra
+  importe en Bs, USD, TCO y fuente, vencimiento, y «lo puede pagar desde cualquier banco».
+- **WhatsApp (A-4)**: Meta descarga desde `…/imagenDePago?f=<fichaQr>`, Function pública
+  que busca `cobrosPendientes` por ficha y sirve el PNG con `Cache-Control: public,
+  max-age=300` y `nosniff`, **404 si el pago ya no está `pendiente`**. No se pasa al
+  vuelo desde el cobrador: cada descarga de Meta sería una llamada autenticada más.
+
+#### Lo que todavía depende de C (bloques 2 a 4)
+
+Sin bloque 2, NovuChat confirma solo por barrido (≤ 1 h) y por la consulta al abrir la
+pantalla: **funciona igual, más lento**. Sin bloque 3, todos los cobros van a la cuenta
+del proceso del cobrador: para el ensayo hace falta que ese proceso corra con la
+cuenta `novuchat`. Sin bloque 4, la API es un proceso local sin URL pública: el ensayo
+de punta a punta queda **listo pero sin ejecutar**.
+
+### 4undecies.6 Costo en mensajes, por bloque
+
+| Bloque | Mensajes que agrega | Quién los paga |
+|---|---|---|
+| **A-0** | **0.** El corte reutiliza el 409 que ya manda la cortesía. Durante un corte aplicado, cada consulta de un cliente final recibe **1** cortesía desde el número del comercio, como hoy con la suspensión; en observación, 0 | comercio (dentro de su franquicia), solo si está cortado |
+| **A-1**, **A-2**, **A-3** | 0 | — |
+| **A-4** | por pago: **2** (QR con importe y vencimiento; confirmación). Por ciclo de cobranza: **3** plantillas sin corte (D-5 con QR, D-1, D0); **5** con corte (+ D+2, D+4); **1** por `sin_conversaciones`; **1** de conversión en prueba | **NovuChat**, desde su número y su franquicia de 1.000: a 100 clientes, unos 500 mensajes al mes, dentro de la franquicia. Coherente con `Analisis/36` §5.1 (≈ 0,045 USD por cliente y mes sin corte, ≈ 0,07 con corte, 0 de comisión) |
+| **A-5** | 0 (son las plantillas de A-4, presentadas a Meta) | — |
+
+Optimización pendiente y no incluida: durante un corte aplicado, mandar la cortesía
+**una vez por teléfono y por 24 h** en vez de una por mensaje. Se decide después de
+ver `mensajesPerdidos` reales.
+
+### 4undecies.7 Reparto por archivos y pruebas
+
+Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20`):
+**A-0 usa `cliente16`, A-2 `cliente15`, A-4 `cliente14`**.
+
+#### A-0 — `prepago/modulo-y-cortes`
+
+| | |
+|---|---|
+| **Crea** | `admin/functions/src/prepago.ts` (puro, reaplicado con §4undecies.3); `admin/functions/src/cobranza.ts` (`recordatoriosPrepago`, `recordatorioPrepagoEnviado`, molde `seguimientos.ts`); `admin/web/src/lib/prepago.ts` (reexporta); `admin/scripts/migrar-prepago.mjs` (seco por defecto) |
+| **Modifica** | `ingesta.ts`: `Promise.all` (1027), condición de `metricasDoc` (1053), bloque de decisión tras 1058, `escribirMensaje`, retorno (1199) y respuesta (1264); `configuracionFlujo`: orden de lectura de `config/negocio` (1354/1374), lecturas de cuenta/métricas/plataforma (1389-1394), 409 del corte, campo `prepago`; `TipoEvento` (511-544). `index.ts`: exports; `actualizarEstadoCuenta` acepta `modalidad`, `periodoPrueba`, `corteActivo` y recalcula `camposDerivados` (607-663); nueva `fijarCortePrepago`. `firestore.rules`: tipos de bitácora (2035-2060). `web/src/lib/bitacora.ts:52-70`. `ESTADO.md`, `CLAUDE.md` §7 fila «Conversaciones incluidas» |
+| **Pruebas nuevas** | `pruebas/prepago.test.ts` (pura: períodos, gracia hora por hora en los bordes, `estadoDeServicio` por modalidad, `aplicarPago` mes por mes incluidos 6 meses con bolsa de regalo y tope 6, `recordatoriosDebidos` día por día D-5..D+4 e idempotencia por clave, `mensajeCortesia` con y sin número y sin «pago»/«mantenimiento», `PLANTILLAS` sin voseo); `pruebas/prepago-ingesta.test.ts` (tabla de §4undecies.4, más: contadores idénticos a hoy con modalidad ausente; `sin_conversaciones` descuenta `bolsa` y no corta la ventana abierta); `pruebas/prepago-configuracion.test.ts` (409 con teléfono de recepción; 200 en gracia; 200 con demostración); `pruebas/cobranza.test.ts` (lista solo tenants con modalidad; nunca demostración; prueba solo `conversion`; marcar antes: segunda llamada `repetido`; tenant sin `telefonosPago` va en `sinTelefono`) |
+| **Modifica pruebas** | `estado-cuenta.test.ts` (+ modalidad cerrada; `corteActivo` solo booleano) |
+| **Necesita** | nada. Entra a `main` en observación |
+
+#### A-1 — `prepago/pagos-y-carga-manual` (sobre A-0)
+
+| | |
+|---|---|
+| **Crea** | `admin/functions/src/pagos.ts`: `aplicarPagoEnTransaccion(tx, refs, pago, confirmacion)` (**la única puerta que suma meses o bolsas**; A-2 la llama dentro de su transacción), `camposDerivados`, `registrarPagoManual` (propietario; exige `medio`, `referencia`, `tcoAplicado`/`tcoFuente`/`tcoFecha`, `montoRecibidoBs`, `evidencia` si transferencia, comprobando que el objeto exista en Storage; `motivoDiferencia` si difiere; anula el QR vivo vía `cobrador.anularCobro` si existe), `anularPagoPendiente` (admin del tenant o propietario), `fijarTelefonosPago` (admin), `consultarPagoPendiente` (admin). `admin/functions/src/tipoCambio.ts`: `tipoCambioDelDia()` lee `plataforma/tipoCambio { tco, fecha, fuente }`, lanza `SinTipoDeCambio` si falta o `fecha` tiene más de 4 días (fines de semana del BCB). `admin/scripts/fijar-tipo-cambio.mjs` (de la rama, con `fecha` diaria). Reglas `/pagos` y `/cobrosPendientes`. Storage: `match /tenants/{tenantId}/pagos/{pagoId}/{archivo}` con `archivo in ['qr.png','evidencia.jpg','evidencia.png','evidencia.pdf']`, `get` para admin legible o propietario, `create/update` de `evidencia.*` solo `esPropietario()` con tipo y tamaño (≤ 5 MB imagen, ≤ 10 MB PDF), `list`/`delete` `false`, `qr.png` solo lo escribe el Admin SDK |
+| **Modifica** | `index.ts:314, 353` (quitar `estadoPago`); `536-563` (rechazar los derivados); `115-121` (`exigirAdminDe` con proveedor); exports. `firestore.rules`, `storage.rules`, `web/src/lib/cuenta.ts` (`pendiente` = «En gracia / cobro pendiente»). `ESTADO.md` |
+| **Pruebas nuevas** | `pruebas/pagos.test.ts` (callables reales con `.run()`): el admin **no** puede `registrarPagoManual` ni en su comercio; propietario con contraseña no; sin TCO válido no registra; transferencia sin evidencia no; evidencia declarada que no existe en Storage no; importe distinto sin motivo no; confirmado no se anula; segundo pendiente con uno vivo → `failed-precondition` y devuelve el vivo; `anularPagoPendiente` del admin de B sobre A → `permission-denied`; `suspenderTenant` ya no toca `estadoPago`; `fijarTelefonosPago` rechaza > 5 y formatos malos. `pruebas/reglas.test.ts` sección «Pagos del prepago» (tabla de §4undecies.1). `pruebas/storage-reglas.test.ts` sección «Evidencia de pagos». `pruebas/tipo-cambio.test.ts` |
+| **Modifica pruebas** | `estado-cuenta.test.ts:146-158` (ahora rechazan) |
+| **Necesita** | A-0. `registrarPagoManual` llama a `anularCobro` solo si `cobrador.ts` existe: A-1 lo define como inyección (`anular: (cobroId) => Promise<Resultado>`) y A-2 la enchufa |
+
+#### A-2 — `prepago/cliente-cobrador` (en paralelo con A-1, contra el doble)
+
+| | |
+|---|---|
+| **Crea** | `admin/functions/src/cobrador.ts`: cliente HTTP del contrato real (`fetch` nativo de Node 22; `crearCobro`, `estadoCobro`, `estadoPorReferencia`, `anularCobro`, `listarCobros`, `imagenQr`; timeout 10 s; `defineSecret('COBRADOR_TOKEN')`, `defineSecret('COBRADOR_AVISO_SECRETO')`; `verificarAviso(peticion)` con `firmaValida`/`VENTANA_MS` de `firma.ts`; tipos de estado y códigos de error del contrato, y nada más). `admin/functions/src/cobroPrepago.ts`: `crearCobroPrepago` (callable, admin del tenant o propietario; TCO del día; pendiente único; `concepto` sin datos del comercio; guarda `qr.png`; escribe `cobrosPendientes`; reintenta con la misma referencia si el cobrador devolvió `BORRADOR`), `avisoCobrador` (`onRequest`, `cors: false`), `barridoCobros` (`onSchedule` + `barrerCobrosPendientes` exportada), `imagenDePago` (`onRequest` pública por ficha). `admin/pruebas/dobles/cobrador.ts`: doble en memoria que implementa **exactamente** §4undecies.5 (rutas `/api/v1/…`, 201/200 por referencia, `409 IMPORTE_DISTINTO_CON_MISMA_REFERENCIA`, `429`, `PAGADO_NO_SE_ANULA`, `PAGO_TARDIO_EN_REVISION`, `SIN_IMAGEN`, 404 para lo ajeno, montos como texto, `firmarAviso(secreto, cuerpo, marcaMs)`), inyectable por `process.env['COBRADOR_DOBLE']` o por parámetro; se descarta cuando C exista |
+| **Modifica** | `firma.ts` (exportar `firmaValida` y `VENTANA_MS`; nada más); `index.ts` (exports); `firestore.rules` (`/cobrosPendientes` deny si A-1 no lo puso); `.github/DESPLIEGUE-FIREBASE.md` (los dos secretos y la condición `COBRADOR_`) |
+| **Pruebas nuevas** | `pruebas/cobrador-doble.test.ts` (el doble cumple el contrato: mismo `id` ante la misma referencia; otro importe → 409; anular pagado → `PAGADO_NO_SE_ANULA`; lo ajeno → 404). `pruebas/cobro-prepago.test.ts` (emulador + doble, alias `cliente15`): crear deja `pendiente`, `pagoPendienteId`, `cobrosPendientes`, `qr.png`; segundo crear → `failed-precondition` con el vivo; el admin de B **no** crea cobro en A; aviso bien firmado y doble en `CONFIRMADO` → `confirmado`, `periodoPagado` +N, `corte` borrado, `pagoPendienteId` borrado, bitácora `pago_registrado`; **aviso bien firmado pero doble en `QR_ACTIVO` o `PAGO_DETECTADO` → no aplica** (el aviso no confirma); firma inválida → 401 y nada cambia; marca fuera de ±5 min → 401; aviso repetido → `aplicado: false` y meses no se duplican; sin aviso, `barrerCobrosPendientes` confirma; `VENCIDO` → `vencido` y limpia; `registrarPagoManual` con QR vivo → lo anula primero; con `PAGADO_NO_SE_ANULA` → aplica el del banco y rechaza el manual; `imagenDePago` con ficha de pago confirmado → 404 |
+| **Necesita** | la firma de `aplicarPagoEnTransaccion` y `camposDerivados` de A-1 (acordadas por este documento; A-2 desarrolla contra un stub y se integra cuando A-1 esté en `main`). Y la compuerta del demo para los secretos y el Scheduler |
+
+#### A-3 — `prepago/consola-pagar` (con A-1 en `main`)
+
+| | |
+|---|---|
+| **Crea** | `admin/web/src/paginas/Pagar.tsx` (plan, meses 1-6, bolsas; importe USD y Bs con TCO y fuente **leídos del servidor** vía `cotizarPago` callable o de `plataforma/tipoCambio`; el QR desde Storage; «cancelar y emitir otro»); `admin/web/src/paginas/CuentaNegocio.tsx` (propietario, fases 1-2 de `Analisis/29`: modalidad, plan, umbrales, suspender/reactivar, **cargar pago manual** con subida de evidencia, historial de `/auditoria` y de `/pagos`, bandera por tenant); `admin/web/src/componentes/HistorialPagos.tsx` |
+| **Modifica** | `EstadoCuenta.tsx` (botón Pagar, `fase`/gracia, `corte.perdidas` solo si `aplicado`, historial, `telefonosPago` editable por el admin vía callable); `Tenants.tsx` (franja de modo observación, columnas modalidad/fase/corte, botón `fijarCortePrepago`); `Tablero.tsx:352,490` (derivados; sin cambio de nombre); `App.tsx` (rutas `/negocio/:tenantId/cuenta/pagar`, `/negocio/:tenantId/cuenta-novuchat`); `web/src/lib/prepago.ts` |
+| **Pruebas nuevas** | `pruebas/prepago-pantalla.test.ts` (lectura de fuentes): `Pagar.tsx` y `EstadoCuenta.tsx` **no importan** `cobro`, `sena`, `Cobros`, `Cobro`; ningún texto contiene «seña»; el importe en Bs **no se calcula en la pantalla**; `perdidas` se pinta condicionado a `aplicado`; `Tenants.tsx` llama a `fijarCortePrepago` y no escribe `plataforma/`. `pruebas/indices.test.ts` si `pagos` necesita orden compuesto (no debería) |
+| **Necesita** | A-1 (callables y regla), A-2 para el QR real (hasta entonces «cobro no disponible») |
+
+#### A-4 — módulo de `Flujos/src/` (encolado detrás de B-1): la interfaz que necesitará
+
+El número de NovuChat (ruta con `flujo: 'onboarding'`, tenant `novuchat`) autentica
+como hoy con `X-NovuChat-Numero` + token. Functions que el módulo llama, todas
+autenticadas con `rutaAutenticada` y `ruta.flujo === 'onboarding'`:
+
+| Function | Cuerpo | Devuelve |
+|---|---|---|
+| `pagoPorWhatsapp` (POST) | `{ telefono, accion: 'menu' \| 'estado' \| 'pagar', tenantId?, plan?, meses? (1\|3\|6), bolsas? }` | `{ conocido: false }` si el teléfono no está en ningún `cuenta/estado.telefonosPago`; `{ elegir: [{ tenantId, nombre }] }` si está en varios y no vino `tenantId` (nunca se infiere de un nombre); `{ tenantId, resumen, estado: { fase, cubiertoHasta, disponibles, corte }, pago?: { pagoId, descripcion, monto, venceEn, qrUrl } }`. `qrUrl` = `imagenDePago?f=<ficha>`; el flujo la pone en `image.link` y el `caption` con importe y vencimiento. Un solo mensaje |
+| `recordatoriosPrepago` (POST) | `{}` | `{ recordatorios: [{ tenantId, telefono, clave, tipo, plantilla, parametros[], qrUrl? }], confirmaciones: [{ tenantId, telefono, pagoId, plantilla, parametros[] }] }` |
+| `recordatorioPrepagoEnviado` (POST) | `{ tenantId, clave }` **antes** de enviar | `{ marcado, repetido }` |
+| `configuracionFlujo` | como hoy | sin cambios |
+
+El módulo reporta cada saliente a la ingesta del número de NovuChat como hoy. El
+disparador programado corre cada hora (las plantillas salen entre 09:00 y 19:00
+Bolivia; la lista lo filtra en el servidor).
+
+### 4undecies.8 Contradicciones entre `Analisis/36` y el código de hoy, y su resolución
+
+| # | Dónde | Qué dice | Qué hay | Resolución |
+|---|---|---|---|---|
+| 1 | `Analisis/36` §1.1, `Analisis/29` §2.4 | `actualizarEstadoCuenta` pisa campos; fase 0 pendiente | ya es parcial (`index.ts:509-516, 533`) | fase 0 = rechazar los derivados (`536-563`), `suspender`/`reactivar` sin `estadoPago` (`314`, `353`), `exigirAdminDe` con proveedor (`115-121`) |
+| 2 | `Analisis/36` §1.1, `Analisis/29` §2.5 | TCO **mensual** en `plataforma/tipoCambio.periodo` | decisión 6: TCO del **día de emisión** | `tcoFecha` (`aaaa-mm-dd`) en el pago y en `plataforma/tipoCambio`; no se emite con un TCO de más de 4 días |
+| 3 | `Analisis/36` §1.2 y prompt de C; prompt coordinador («se comparte `dibujoQr.ts`») | el QR viene como «texto e imagen» | el banco devuelve **solo PNG** | el contrato entrega `imagenQrBase64`; `dibujoQr.ts` no se usa; pregunta abierta al banco anotada en el proyecto de cobros |
+| 4 | `Analisis/36` §4.2 | «el teléfono tiene que estar en `usuarios` del comercio con rol admin» | `/miembros` no tiene teléfono; `/contactos` es «personas de referencia» | `cuenta/estado.telefonosPago` (≤ 5), fijado por el admin por callable auditada |
+| 5 | `Analisis/36` §3.1 | D0 «venció hoy», corte «D+2 00:00», gracia 48 h | ambiguo | **D0 = día 1, 00:00 Bolivia; corte 00:00 del día 3** |
+| 6 | `Analisis/36` §4.1 y §1.2 | referencia `tenant/periodo/pagoId` | decisión 3 (opaca) y el contrato real (sin `/`) | `pagoId` solo (128 bits al azar); resolución por `/cobrosPendientes` |
+| 7 | `Analisis/36` §4.1, §1.2 y `Prompts/prepago-estricto.md` bloque 2 | «importe en centavos» | el contrato real pide **texto decimal** `"150.00"` | `cobrador.ts` convierte; NovuChat guarda entero en Bs |
+| 8 | `Analisis/36` §7 fila 1 | «esta es la vez que se abre la transacción» | la seña y los seguimientos ya la abrieron (`ingesta.ts:1060-1070`) | el prepago se cuelga de las lecturas que ya existen; no abre otra |
+| 9 | `CLAUDE.md` §7 tabla | «Conversaciones incluidas: Hecho en la rama de prepago» | no está en `main` | A-0 lo pone en modo observación; la fila se corrige |
+| 10 | rama `prepago.ts` | `PLANES` `base/crecimiento/corporativo`; `periodoDe` Bolivia | `planes.ts:76-80`; `periodoDe` UTC (`218`) | §4undecies.3 |
+| 11 | rama `cuentas.ts`/`cobroPrepago.ts` | `confirmarPago` por el propietario mirando un comprobante por WhatsApp | decisión 5 | no se reaplican |
+| 12 | rama `cobroPrepago.ts` | marcar el recordatorio **después** de enviar | `seguimientos.ts:35-39` marca **antes** | se adopta «antes» |
+| 13 | `Analisis/36` §3.3 | «el aviso del 80 % es el D-5 de `sin_conversaciones`» | el aviso del 80 % **no manda WhatsApp** (`planes.ts:122-127`) | se mantiene solo en consola; si se quiere por WhatsApp es +1 plantilla y se decide con el costo a la vista |
+| 14 | `Analisis/36` §2.2 | «a partir de 6 meses, una bolsa de regalo» con tope 6 | — | «al pagar 6 meses» |
+| 15 | `Analisis/36` §2.3 | subir de plan a mitad de mes, prorrateado | no está en ningún bloque | pendiente; hoy «cambiar de plan» es pagar el nuevo desde el mes que cubre |
+| 16 | `Analisis/36` §4.1 paso 4 | «la pantalla cambia sola» | `EstadoCuenta.tsx` ya usa `onSnapshot` (línea 46) | se cumple sin nada nuevo |
+| 17 | `Analisis/36` §4.2 | «al confirmar el banco, el mismo número escribe» | ninguna Function manda WhatsApp (`Analisis/35` pendiente) | se encola en `confirmacionesPendientes` y lo manda el flujo programado de A-4 en ≤ 1 h; la reactivación del servicio sigue siendo ≤ 60 s |
+| 18 | `Analisis/36` §1.2 y prompt de C | «lo que falta para que otro producto la consuma» | bloques 0 y 1 de C **fusionados** el 20/09 | A-2 consume el contrato real; el doble lo reproduce |
+
+**Reglas que no se discuten, verificadas contra este diseño:** nada bancario en
+NovuChat (solo `fetch` a un contrato); confirman el banco (vía `estadoCobro`
+autenticado) o el propietario con evidencia en Storage y auditoría; seña y prepago
+separados en credenciales, colecciones, pantallas y textos, con prueba de fuente;
+multi-tenant probado negando en reglas, Storage y callables; límites en el servidor
+(meses ≤ 6, pendiente único, TCO obligatorio, `telefonosPago` ≤ 5); precios USD, cobro
+Bs al TCO del BCB del día de emisión guardado en el pago; PRUEBA sin cobranza;
+demostración no se corta; el mensaje al cliente final nunca dice «pago» ni
+«mantenimiento»; identificadores por últimos 4 en logs; ningún secreto en el repositorio.
+
 ## 4duodecies. Seña por QR en reservas
 
 > **Decidido el 17/09/2026** (`Analisis/30` §4, `Analisis/07` §4; rama

@@ -81,10 +81,16 @@ function comprobarTodo(
   // archivo, y entonces la prueba comprobaría la copia: quedaría en verde para
   // siempre mientras el flujo se rompe en silencio. Eso es peor.
   //
-  // DEUDA: lo correcto a futuro es que el código del nodo viva en un `.js`
-  // versionado que se inyecte al JSON al preparar el import. Así habría una
-  // sola fuente y la prueba lo importaría sin nada dinámico. Es un cambio en la
-  // canalización de los flujos y no entra antes del congelamiento del 8.
+  // La deuda que se declaró acá el 06/09 («que el código del nodo viva en un
+  // `.js` versionado que se inyecte al JSON») quedó saldada a medias el
+  // 20/09/2026, y a propósito: el candado vive en
+  // `Flujos/src/reservas/comprobar-reserva.js`, el ensamblador
+  // (`admin/scripts/ensamblar-flujo.mjs`) lo inyecta al JSON y
+  // `ensamblador.test.ts` prueba que los dos son idénticos byte a byte. Lo que
+  // NO cambió es esta línea: el cuerpo de un nodo Code tiene `return` al nivel
+  // superior y recibe `$input` y `$` como globales, así que no es un módulo
+  // importable, y envolverlo cambiaría el texto que va al JSON. Ver la
+  // cabecera de `lib/flujo.ts`.
   //
   // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', 'Date', codigo as string) as

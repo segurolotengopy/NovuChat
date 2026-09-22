@@ -105,11 +105,20 @@ export const SECRETOS_POR_ALIAS: Record<string, ReturnType<typeof defineSecret>>
   cliente20: defineSecret('INGESTA_CLIENTE20'),
 };
 
-const VENTANA_MS = 5 * 60 * 1000;   // Tolerancia de reloj y de red.
+/**
+ * Tolerancia de reloj y de red. Se exporta (20/09/2026) porque es también la
+ * ventana del aviso de confirmación del cobrador (`cobrador.ts`,
+ * `verificarAviso`): el mismo esquema HMAC, la misma tolerancia.
+ */
+export const VENTANA_MS = 5 * 60 * 1000;
 const MAX_CUERPO = 64 * 1024;
 
-/** Compara en tiempo constante. Un `===` filtra el secreto por temporización. */
-function firmaValida(esperada: string, recibida: string): boolean {
+/**
+ * Compara en tiempo constante. Un `===` filtra el secreto por temporización.
+ * Exportada (20/09/2026) para `cobrador.ts`: el prepago comparte con la ingesta
+ * el esquema de firma y nada más (DISENO §4undecies.3).
+ */
+export function firmaValida(esperada: string, recibida: string): boolean {
   const a = Buffer.from(esperada, 'hex');
   const b = Buffer.from(recibida, 'hex');
   return a.length === b.length && timingSafeEqual(a, b);

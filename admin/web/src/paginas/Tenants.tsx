@@ -3,7 +3,9 @@ import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { Link } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
+import { ChipModo } from '../componentes/ChipModo';
 import { avisoConsumoVigente, nombreDePlan, type AvisoConsumoVista } from '../lib/planes';
+import { modoDelComercio, type ModoComercio } from '../lib/modoComercio';
 
 interface Tenant { id: string; nombre?: unknown; estado?: unknown; plan?: unknown }
 
@@ -23,6 +25,10 @@ interface Tenant { id: string; nombre?: unknown; estado?: unknown; plan?: unknow
 export function Tenants() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [avisos, setAvisos] = useState<Record<string, AvisoConsumoVista | null>>({});
+  // PRUEBA / PRODUCCIÓN por comercio, con el mismo criterio que la cabecera
+  // (`modoDelComercio`, que usa `modalidadDe` del servidor). Sale de la misma
+  // lectura de `cuenta/estado` que ya se hacía para el aviso: cero lecturas más.
+  const [modos, setModos] = useState<Record<string, ModoComercio | null>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => onSnapshot(
@@ -40,8 +46,14 @@ export function Tenants() {
   useEffect(() => {
     if (!ids) return;
     const bajas = ids.split('|').map((id) => onSnapshot(doc(db, 'tenants', id, 'cuenta', 'estado'),
-      (d) => setAvisos((a) => ({ ...a, [id]: avisoConsumoVigente(d.data()) })),
-      () => setAvisos((a) => ({ ...a, [id]: null }))));
+      (d) => {
+        setAvisos((a) => ({ ...a, [id]: avisoConsumoVigente(d.data()) }));
+        setModos((m) => ({ ...m, [id]: modoDelComercio(d.data()) }));
+      },
+      () => {
+        setAvisos((a) => ({ ...a, [id]: null }));
+        setModos((m) => ({ ...m, [id]: null }));
+      }));
     return () => bajas.forEach((baja) => baja());
   }, [ids]);
 
@@ -59,13 +71,15 @@ export function Tenants() {
         </p>
       )}
       <table className="table">
-        <thead><tr><th>Negocio</th><th>Estado</th><th>Plan</th><th>Consumo del mes</th><th /></tr></thead>
+        <thead><tr><th>Negocio</th><th>Modo</th><th>Estado</th><th>Plan</th><th>Consumo del mes</th><th /></tr></thead>
         <tbody>
           {tenants.map((t) => {
             const aviso = avisos[t.id];
+            const modo = modos[t.id];
             return (
               <tr key={t.id}>
                 <td><TextoSeguro valor={t.nombre} maxLargo={80} /></td>
+                <td>{modo ? <ChipModo modo={modo} /> : <span className="text-muted">—</span>}</td>
                 <td><TextoSeguro valor={t.estado} maxLargo={20} /></td>
                 <td>{nombreDePlan(t.plan) ?? <TextoSeguro valor={t.plan} maxLargo={20} />}</td>
                 <td>
