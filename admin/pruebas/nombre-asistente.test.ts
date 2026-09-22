@@ -20,57 +20,12 @@
  * mientras el flujo se rompe.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const aqui = dirname(fileURLToPath(import.meta.url));
-
-interface Nodo { name: string; type: string; parameters: Record<string, unknown> }
-interface Flujo { nodes: Nodo[] }
-type Json = Record<string, unknown>;
-
-const flujo = (archivo: string) => JSON.parse(
-  readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8'),
-) as Flujo;
-
-function nodo(f: Flujo, nombre: string): Nodo {
-  const n = f.nodes.find((x) => x.name === nombre);
-  if (!n) throw new Error(`sin nodo ${nombre}`);
-  return n;
-}
-
-/** Ejecuta un nodo Code; `$(nombre)` devuelve los items de `referencias[nombre]`. */
-function ejecutar(codigo: string, items: Json[], referencias: Record<string, Json[]> = {}): Json[] {
-  const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };
-  const $ = (n: string) => ({
-    first: () => ({ json: referencias[n]?.[0] ?? {} }),
-    all: () => (referencias[n] ?? []).map((json) => ({ json })),
-  });
-  // nosemgrep: devsecops.js-eval-prohibido
-  const fn = new Function('$input', '$', codigo) as (i: unknown, r: unknown) => { json: Json }[];
-  return fn(entrada, $).map((x) => x.json);
-}
-
-/** Renderiza una plantilla de n8n (`=texto {{ expresión }} texto`) con el `$json` dado. */
-function plantilla(texto: unknown, $json: Json): string {
-  const t = String(texto);
-  if (!t.startsWith('=')) throw new Error('no es una plantilla de n8n');
-  return t.slice(1).replace(/\{\{([\s\S]*?)\}\}/g, (_, expr: string) => {
-    // nosemgrep: devsecops.js-eval-prohibido
-    const v = (new Function('$json', `return (${expr});`) as (j: unknown) => unknown)($json);
-    return v === undefined || v === null ? '' : String(v);
-  });
-}
-
-function configBase(f: Flujo): Json {
-  const set = nodo(f, 'Config base').parameters as
-    { assignments: { assignments: { name: string; value: unknown }[] } };
-  return Object.fromEntries(set.assignments.assignments.map((a) => [a.name, a.value]));
-}
+import {
+  type J as Json, configBase, ejecutar, leerFlujo as flujo, nodo, plantilla,
+} from './lib/flujo.ts';
 
 /** `Config del negocio` con una respuesta simulada del panel. */
-function fusionar(f: Flujo, respuesta: unknown, base: Json = {}): Json {
+function fusionar(f: ReturnType<typeof flujo>, respuesta: unknown, base: Json = {}): Json {
   return ejecutar(String(nodo(f, 'Config del negocio').parameters['jsCode']),
     [respuesta as Json], { 'Config base': [{ ...configBase(f), ...base }] })[0] ?? {};
 }

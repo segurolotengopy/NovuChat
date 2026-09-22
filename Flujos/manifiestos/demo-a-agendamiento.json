@@ -1,0 +1,42 @@
+{
+  "flujo": "demo-a-agendamiento.json",
+  "conservanMarcadores": {
+    "Config base": "REEMPLAZAR_"
+  },
+  "codigo": {
+    "Normalizar entrada": "comun/normalizar-entrada.js",
+    "Procesar respuesta": "comun/procesar-respuesta.js",
+    "Comprobar reserva": "reservas/comprobar-reserva.js",
+    "Comercio no operativo": "comun/comercio-no-operativo.js",
+    "Calendarios a revisar": "reservas/calendarios-a-revisar.js",
+    "Retomar respuesta": "reservas/retomar-respuesta.js",
+    "Config del negocio": "comun/config-del-negocio.js",
+    "Uso extendido": {
+      "archivo": "comun/uso-extendido.js",
+      "saltoFinal": true
+    },
+    "Mensaje a enviar": "reservas/mensaje-a-enviar.js",
+    "Procesar reintento": "reservas/procesar-reintento.js",
+    "Preparar reenvío del QR": {
+      "archivo": "reservas/preparar-reenvio-del-qr.js",
+      "saltoFinal": true
+    },
+    "Preparar seña": "reservas/preparar-sena.js",
+    "QR no enviado": "reservas/qr-no-enviado.js",
+    "Interpretar lectura": "reservas/interpretar-lectura.js",
+    "Respuesta de la seña": "reservas/respuesta-de-la-sena.js",
+    "Mensaje de la seña": "reservas/mensaje-de-la-sena.js",
+    "Preparar transcripción": "reservas/preparar-transcripcion.js",
+    "Preparar imagen": "reservas/preparar-imagen.js"
+  },
+  "prompts": {
+    "AI Agent (Sofía)": {
+      "systemMessage": "reservas/demo-a.md",
+      "text": "reservas/turno-del-cliente.md"
+    },
+    "Reintento tras cruce": {
+      "systemMessage": "reservas/reintento-tras-cruce.md",
+      "text": "reservas/reintento-tras-cruce.turno.md"
+    }
+  }
+}
