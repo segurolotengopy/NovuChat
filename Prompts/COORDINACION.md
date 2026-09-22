@@ -39,11 +39,11 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **Coordinación** | `claude/prepago-modularizacion-paralelo-e0d10c` (worktree `novuchat-modularization-0fc59d`) | tablero, integración | en curso | `Prompts/COORDINACION.md`, `ESTADO.md`, `admin/DISENO.md` (solo agrega) | integrar Diseño A y Diagnóstico B |
 | **A · Diseño** | (solo lectura, agente `Plan`) | ficha de diseño | **cerrado (20/09)**: `admin/DISENO.md` §4undecies en la rama de coordinación (`bb07890`), con la §4undecies.5 reescrita contra el contrato real | `admin/DISENO.md` | — |
 | **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación, `cobranza.ts`, `migrar-prepago.mjs` | **FUSIONADO (#150, 21/09, `17984a4`)**. No despliega: entra con la etiqueta, y en **modo observación** (`plataforma/prepago.corteActivo` no existe) | — | — |
-| **A-1 · pagos** | `prepago/pagos-y-carga-manual` (rebasada sobre A-0 con `066bd29`; 12 commits, último `aaefaed`; worktree `agent-a5a86bc0ca540242b`) | `pagos.ts`, `tipoCambio.ts`, `autorizacion.ts`, `registrarPagoManual`, `anularPagoPendiente`, `fijarTelefonosPago`, `consultarPagoPendiente`, derivados gobernados, reglas de Firestore y Storage | **rebasado sobre A-0 `56c6650` sin conflictos (último `b26cc03`), **PR #151**, reapuntado a `main` tras fusionar A-0 y actualizado con una fusión de `main` (`1b9c79b`) para que la CI vuelva a correr**; suite 2537 en verde, Storage 55; las 9 correcciones de seguridad aplicadas con prueba (`pagoId` obligatorio en todo manual; evidencia no reemplazable y con huella `evidenciaMeta`; `ademas` cerrado; sesión reciente ≤ 30 min; TCO contrastado con `plataforma/tipoCambio`; comercio sin migrar no cambia de aspecto; confirmar un QR pagado por menos con motivo); suite 2409 en verde, Storage 55, build/lint/saneo 0 | `pagos.ts`, `tipoCambio.ts`, `autorizacion.ts`, `admin/scripts/fijar-tipo-cambio.mjs`, `index.ts`, `firestore.rules`, `storage.rules`, `web/src/lib/cuenta.ts`, pruebas, `ESTADO.md` | `git push` + PR **sobre A-0** con su OK; se fusiona segundo |
-| **A-2 · cobrador** | `prepago/cliente-cobrador` (`7320532`, `7e3f1f7`; worktree `agent-a8de99da38fd4652b`) | cliente del contrato real + `crearCobroPrepago`, `avisoCobrador`, `barridoCobros`, `imagenDePago`, doble, reglas de `pagos`/`cobrosPendientes`/`cobrosResueltos` | **construido (21/09, madrugada)**: suite 2268 en verde (+58), build/lint 0, saneo 0; **rebasado sobre `e571e76` (último `b97d82b`) con el sondeo cada 5 min (`sondeoCobros`: solo pendientes `QR_ACTIVO`/`PAGO_DETECTADO` no vencidos, tope 100, cero llamadas si no hay; solo `CONFIRMADO` acredita), **PR #152****; suite 2410 en verde; seguridad apto; los 7 cambios aplicados con prueba (`32ce2ac`, `f60a90a`: importe menor no acredita y queda pendiente para el camino manual; el barrido consulta por referencia aunque falte `cobroId`; retomar sin imagen; loopback anclado; secreto corto → 401; stub vigilado; tenant en baja no emite); suite 2277 en verde, build/lint/saneo 0 | `cobrador.ts`, `cobroPrepago.ts`, `pagos-stub.ts` (provisorio), `firma.ts` (dos exports), `ingesta.ts`/`firestore.rules`/`bitacora.ts` (tipo `pago_registrado`), `admin/pruebas/dobles/`, tres suites nuevas, `.github/DESPLIEGUE-FIREBASE.md` | `git push` + PR contra `main` con su OK; **se fusiona después de A-0 y A-1** (resuelve conflictos en `TipoEvento`/tipos de bitácora/exports y reemplaza `pagos-stub.ts`) |
+| **A-1 · pagos** | `prepago/pagos-y-carga-manual` | pagos con TCO, carga manual con evidencia, derivados gobernados, reglas de Firestore y Storage | **FUSIONADO (#151, 22/09, `e778b72`)** | — | — |
+| **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del contrato real, sondeo cada 5 min, aviso firmado, barrido, imagen del QR; **integrado con A-1**: sin `pagos-stub.ts`, y `pagosConCobrador.ts` conecta la carga manual, la anulación y la consulta con el cobrador | **PR #152, integración con A-1 hecha y revisada por seguridad** (`e62bddd` + `ae286cd`: el camino local no anula ningún pago que haya pasado por el cobrador; las tres Functions declaran `COBRADOR_TOKEN`); suite 2657 en verde, Storage 55; espera la CI para fusionarse | `cobrador.ts`, `cobroPrepago.ts`, `pagosConCobrador.ts`, `index.ts`, `pagos.ts` (opciones de `onCall`, anulación local cerrada) | fusionar con la CI en verde |
 | **A-3 · consola** | `prepago/consola-pagar` | «Pagar», historial, `perdidas`, propietario (fases 1–2 de `Analisis/29`) | encolado detrás de A-1 fusionado | `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx` | — |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **desbloqueado por B-1 (21/09)**; espera además A-2 en `main` y la verificación del titular de cada teléfono de pago | `Flujos/src/` (módulo), nunca el JSON a mano | — |
-| **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` (`be135da`, worktree `agent-a073cd5409c381cca`) | ocho plantillas de utilidad redactadas | **redacción cerrada (20/09), PR #154**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
+| **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` | ocho plantillas de utilidad redactadas | **FUSIONADO (#154, 22/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
 | **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0 | **cerrado (20/09)**: ver «Diagnóstico B» abajo | ninguno | — |
 | **B-1 · ensamblador** | `flujos/ensamblador` | ensamblador + `extraer` + `verificar`, módulos de reservas, ayudante de pruebas, LEEME §0 | **FUSIONADO (#153, 21/09, `1c5855f`)**; CodeQL corregido (`fba723d`, lectura única en vez de comprobar y leer). No despliega ni cambia ningún JSON | — | — |
 | **B-2 · resto de flujos** | por definir | todos los flujos, incluidos los de cliente con nodos propios | **desbloqueado (21/09)**: B-1 en `main` y la publicación de los flujos verificada | `Flujos/*.json` (regenerados idénticos), `admin/scripts/sincronizar-flujo-cliente.mjs` | — |
@@ -154,7 +154,7 @@ C (otra sesión, en su proyecto) ──► contrato ──► A-2 integra
 **Ya, sin esperar el demo (subir y abrir PR no despliega nada):**
 
 1. ~~B-1~~: **fusionado el 21/09 (#153)**.
-2. «Sí» para `git push` y PR de **A-0** (`prepago/modulo-y-cortes`), **A-1**
+2. ~~A-0, A-1~~: fusionados (#150, #151). ~~Subir~~ **A-0**, **A-1**
    (`prepago/pagos-y-carga-manual`, sobre A-0) y **A-2** (`prepago/cliente-cobrador`).
 3. «Sí» para fusionar, en este orden: B-1 (cuando quiera), A-0, A-1, y A-2 al final
    (la coordinadora resuelve sus conflictos: una sola copia de las reglas de `/pagos`,
@@ -207,6 +207,17 @@ sitio, arreglando antes su alarma de huella que no corre en CI), B-4 (runbook, a
 `flujos-n8n`, gancho de pre-commit, acotar `verificar-saneo.sh`).
 
 ## Bitácora
+
+- **22/09/2026** — Andres: «procede conforme las recomendaciones». Fusionados **#151**
+  (A-1) y **#154** (A-5). **#152** (A-2) integrado con A-1 en su rama: se borró el stub,
+  los imports pasan a los módulos reales, y `pagosConCobrador.ts` conecta la carga
+  manual, la anulación y la consulta de A-1 con el cobrador de A-2 (sin cobrador
+  configurado se usa la anulación local, que nunca anula un pago que haya pasado
+  por el cobrador). Seguridad revisó la integración: dos MEDIUM (un QR con id perdido
+  anulado localmente; las Functions de pagos sin declarar `COBRADOR_TOKEN`) y un LOW,
+  corregidos en `ae286cd`. Errores míos en el camino, corregidos: un comentario con
+  punto y coma que rompía la prueba de tipos de bitácora, y una conexión que llamaba
+  al cobrador aun sin configurar.
 
 - **21/09/2026** — **#150 (A-0) fusionado** con el «sí» de Andres. La rama estaba 8
   commits atrás (todos del #153) sin archivos en común, así que la combinación no
