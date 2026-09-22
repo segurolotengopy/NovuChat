@@ -4,6 +4,7 @@ import { ProveedorSesion, useSesion } from './lib/contexto';
 import { rolEn } from './lib/sesion';
 import { Proteger } from './componentes/Proteger';
 import { Marca } from './componentes/Marca';
+import { EncabezadoComercio } from './componentes/EncabezadoComercio';
 import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
 import { Configuracion } from './paginas/Configuracion';
@@ -165,6 +166,13 @@ function Cabecera() {
       <NavLink to="/mi-cuenta">Mi cuenta</NavLink>
       <button type="button" className="btn btn-secondary" onClick={salir}>Salir</button>
       </div>
+      {/* El comercio que se está mirando y si es PRUEBA o PRODUCCIÓN. Va en
+          una franja propia debajo del menú y no al lado de la marca: la fila
+          de arriba ya lleva hasta trece enlaces, y el nombre de un negocio
+          largo los empujaba fuera de la pantalla. El chip solo se pide a quien
+          las reglas le dejan leer `cuenta/estado`: admin y propietario. */}
+      {tenantId &&
+        <EncabezadoComercio tenantId={tenantId} leeCuenta={esAdminDelNegocio || permisos.propietario} />}
     </header>
   );
 }
