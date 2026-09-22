@@ -8,6 +8,37 @@
 
 ---
 
+## 2026-09-22 — el pase de un comercio de PRUEBA a PRODUCCIÓN, con la activación del prepago
+
+Pedido de Andres: «un procedimiento de pase de PRUEBA a PRODUCCIÓN de un cliente
+determinado y, como parte de ese proceso, que se active el prepago», aplicado a
+cada cliente. Rama `alta-cliente/pase-a-produccion`, **sin subir**. Nada contra
+producción, n8n, Meta ni GitHub.
+
+- **`docs/pase-a-produccion/RUNBOOK.md`**: precondiciones, canal (reutiliza el #148
+  y el documento de WABA propia de Platinum), activación del prepago (`prueba` →
+  primer pago → `prepago`, teléfonos de pago, TCO), un ciclo de cobranza en
+  observación, el corte encendido solo en ese comercio, lo que ve y se le dice al
+  comercio, y cómo se deshace. **PRODUCCIÓN = `modalidad === 'prepago'`**, lo que
+  pinta el encabezado de la consola. Los demos, `novuchat` y `ensayo` no pasan
+  nunca. Enlazado desde `docs/alta-cliente/RUNBOOK.md` como su §8.
+- **`admin/scripts/pase-a-produccion.mjs`**: diagnóstico **solo lectura** (rechaza
+  `--aplicar`), sin números completos ni correos, con la lógica del servidor
+  importada de `functions/src/` sin compilar. Dice qué se cumple, qué falta, qué
+  mira una persona y en qué etapa está el pase. Suite
+  `admin/pruebas/pase-a-produccion.test.ts` (12 pruebas, escritas negando). **No
+  se corrió contra producción.** No se creó ninguna puerta que escriba.
+- **Por cliente**, `CLIENTES/<X>/pase-a-produccion.md` (fuera de git) para Platinum,
+  Bellido, NovuChat y Q'Taco.
+- **Lo que frena el pase de todos hoy**, en orden: la aceptación con teléfono real
+  sin anotar (Platinum 43 filas, Bellido 22), los supuestos de
+  `negocio-platinum.json` y `negocio-bellido.json`, **ninguna pantalla que llame a
+  `fijarTelefonosPago`, `registrarPagoManual` ni `fijarCortePrepago` (A-3)**, el
+  cobrador sin conectar, y el flujo de cobranza (A-4) con sus ocho plantillas sin
+  presentar: sin él no hay ciclo que observar y el corte no se enciende en nadie.
+  Platinum además tiene que mover el número a la WABA de la clínica.
+- **Costo: 0 mensajes.**
+
 ## 2026-09-22 — prepago estricto y modularización: cinco PR fusionados, nada desplegado
 
 Sesión coordinadora de `Prompts/prepago-y-modularizacion-en-paralelo.md`. El tablero
