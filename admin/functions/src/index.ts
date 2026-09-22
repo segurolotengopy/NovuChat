@@ -1,8 +1,9 @@
+// PRIMERO, antes que cualquier otro módulo propio: fija las opciones globales.
+import './opcionesGlobales.js';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { setGlobalOptions } from 'firebase-functions/v2';
 import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol } from './claims.js';
@@ -11,22 +12,8 @@ import { derivadosGobernados } from './pagos.js';
 
 initializeApp();
 
-// CUENTA PROPIA, NO LA DE CÓMPUTO POR DEFECTO (2026-09-13). La de cómputo tiene
-// rol Editor: quien lograra ejecutar código en una Function tendría casi todo
-// el proyecto. `sa-functions` tiene solo lo que las Functions usan —Firestore,
-// Auth (getUserByEmail, setCustomUserClaims, revokeRefreshTokens), lectura de
-// sus secretos, los disparadores de Firestore y logs— y NO puede cambiar
-// permisos, redesplegar ni hacerse pasar por otra cuenta; verificado con Policy
-// Troubleshooter. Permisos y procedimiento en .github/DESPLIEGUE-FIREBASE.md,
-// «Estado real». El correo va escrito: los de cuenta de servicio están
-// exceptuados de la convención de repositorio público.
-// Un secreto nuevo necesita `secretAccessor` para ESTA cuenta, uno por uno
-// (ver `firma.ts`, «CUANDO SE ACABEN LOS VEINTE»).
-setGlobalOptions({
-  region: REGION,
-  maxInstances: 10,
-  serviceAccount: 'sa-functions@novuchat-demo.iam.gserviceaccount.com',
-});
+// Las opciones globales (región, instancias, cuenta sa-functions) se fijan en
+// opcionesGlobales.ts, que es el PRIMER import de este archivo: ver ahí por qué.
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './cierres.js';

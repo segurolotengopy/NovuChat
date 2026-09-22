@@ -63,6 +63,7 @@
  * pantalla (A-3).
  */
 import { HttpsError, onCall, type CallableOptions } from 'firebase-functions/v2/https';
+import { REGION } from './region.js';
 import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
@@ -664,7 +665,7 @@ function pedidoDe(datos: Record<string, unknown>): Pago {
  * bitácora. Si algo falla antes de la transacción, no se escribió nada.
  */
 export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOptions = {}) {
-  return onCall(opciones, async (peticion) => {
+  return onCall({ region: REGION, ...opciones }, async (peticion) => {
     const uid = exigirPropietario(peticion);
     const d = con(deps);
     exigirSesionReciente(peticion, d.ahoraMs());
@@ -864,7 +865,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
  * confirmado se compensa con otro asiento, nunca se corrige.
  */
 export function crearAnularPagoPendiente(deps: Deps = {}, opciones: CallableOptions = {}) {
-  return onCall(opciones, async (peticion) => {
+  return onCall({ region: REGION, ...opciones }, async (peticion) => {
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
     const tenantId = texto(datos['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -915,7 +916,7 @@ export function crearAnularPagoPendiente(deps: Deps = {}, opciones: CallableOpti
  * el pago guardado. Sin cliente, devuelve lo guardado tal cual.
  */
 export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableOptions = {}) {
-  return onCall(opciones, async (peticion) => {
+  return onCall({ region: REGION, ...opciones }, async (peticion) => {
     const datos = (peticion.data ?? {}) as Record<string, unknown>;
     const tenantId = texto(datos['tenantId'], 60);
     if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
@@ -963,7 +964,11 @@ export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableO
  * `cuenta/estado` y no en la ficha porque la ficha la leen el operador y la
  * ingesta (§4undecies.2). Auditada con los últimos 4 de cada uno.
  */
-export const fijarTelefonosPago = onCall(async (peticion) => {
+// Región explícita, como en cobro.ts: index.ts importa este módulo ANTES de
+// llamar a setGlobalOptions, y una Function creada sin objeto de opciones se
+// quedaba sin región ni cuenta (se habría desplegado en us-central1 con la
+// cuenta de cómputo, que no puede leer Firestore). Lo vigila region-y-cuenta.test.ts.
+export const fijarTelefonosPago = onCall({ region: REGION }, async (peticion) => {
   const datos = (peticion.data ?? {}) as Record<string, unknown>;
   const tenantId = texto(datos['tenantId'], 60);
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
