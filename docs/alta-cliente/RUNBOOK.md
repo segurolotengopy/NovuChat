@@ -234,6 +234,18 @@ Skill `pase-a-produccion`: acta en `docs/produccion/`, revisión del agente
 `seguridad`, **la etiqueta va después de fusionar sus arreglos**, y la aprueba
 la cuenta revisora de `production`.
 
+## 8 · Después de la aceptación: el pase del comercio a PRODUCCIÓN
+
+La etapa que sigue a la aceptación es **el pase del comercio de PRUEBA a
+PRODUCCIÓN**, con la activación del prepago: precondiciones verificadas con
+`admin/scripts/pase-a-produccion.mjs` (solo lectura), número y WABA del
+comercio, `prueba` → primer pago → `prepago`, un ciclo de cobranza en
+observación y, recién entonces, el corte encendido solo en ese comercio. El
+procedimiento es `docs/pase-a-produccion/RUNBOOK.md`; su aplicación a cada
+cliente, `CLIENTES/<NOMBRE>/pase-a-produccion.md`. No es la etapa 7: aquella es
+el pase de una versión del código; esta, el de un comercio. Los demos y
+`novuchat` no pasan nunca.
+
 ---
 
 ## Reglas del repositorio público que frenan un commit
