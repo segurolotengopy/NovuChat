@@ -154,4 +154,20 @@ describe('La compuerta que aplica el estado', () => {
     expect(destinos('Responder al cliente').slice(1)).toEqual(
       ['¿Enviar ubicación?', '¿Enviar contacto?', '¿Reenviar el QR?']);
   });
+
+  it('demo-b-venta-cobro.json: el aviso neutro va directo al envío y se reporta DESPUÉS', () => {
+    // El Demo B no tiene punto único de salida —a «Responder al cliente» se
+    // llega desde cuatro lugares— así que el aviso del comercio suspendido va
+    // directo al envío. Lo que SÍ comparte con los flujos de agenda desde el
+    // 22/09/2026 es que el reporte cuelga del envío y no de quien generó el
+    // texto: por «Texto enviado», que averigua cuál de los cuatro caminos
+    // armó lo que salió. Antes el aviso neutro no se reportaba nunca, porque
+    // el reporte colgaba de «Procesar respuesta» y en este camino el agente
+    // ni siquiera corre.
+    const conexiones = flujo('demo-b-venta-cobro.json').connections;
+    const destinos = (n: string) => (conexiones[n]?.main?.[0] ?? []).map((x) => x.node);
+    expect(destinos('Comercio no operativo')).toEqual(['Responder al cliente']);
+    expect(destinos('Responder al cliente')).toEqual(['Texto enviado']);
+    expect(destinos('Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
+  });
 });

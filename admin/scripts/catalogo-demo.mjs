@@ -58,39 +58,42 @@ if (!existsSync(DIST)) {
 }
 
 // -----------------------------------------------------------------------------
-// LOS DATOS DEL DEMO B.
+// LOS DATOS DEL DEMO B SALEN DEL ARCHIVO VERSIONADO, NO DE UNA COPIA.
 //
-// Son una COPIA de `scripts/sembrar-demos.mjs`, comercio `demo-venta`. No se
-// importan de allá porque ese script se ejecuta al cargarse —intentaría hablar
-// con Firestore— y esto tiene que correr sin credenciales ni red.
+// HASTA EL 22/09/2026 ACÁ HABÍA UNA COPIA A MANO de los seis ítems que
+// `scripts/sembrar-demos.mjs` siembra en `demo-venta`, con un comentario que
+// admitía que iba a quedar vieja. Y quedó vieja el día que el catálogo del
+// comercio pasó a diecisiete: la vista previa mostraba seis tarjetas mientras
+// la página de producción mostraba diecisiete. Una vista previa que enseña otra
+// cosa que el producto no es un respaldo, es una trampa en una reunión.
 //
-// Si el catálogo del Demo B cambia, esta copia queda vieja. Es una vista previa,
-// no una fuente: el daño de que se desfase es que la demostración muestre un
-// precio de la semana pasada, y por eso el script lo dice al arrancar.
+// Ahora lee `scripts/datos/negocio-demo-venta.json`, que es el MISMO archivo
+// que `cargar-negocio.mjs` escribe en Firestore. Una sola fuente: si el
+// catálogo cambia, cambia en los dos lados o en ninguno. Es la lección que este
+// proyecto ya había pagado con `build_flows.py` (`Flujos/LEEME-flujos.md`
+// §0.a): una segunda fuente de verdad solo puede divergir.
+//
+// Se lee el archivo y no `sembrar-demos.mjs` porque ese script se ejecuta al
+// cargarse —intentaría hablar con Firestore— y esto tiene que correr sin
+// credenciales ni red.
 // -----------------------------------------------------------------------------
-const FOTO = 'https://images.pexels.com/photos';
-const CORTE = '?cs=tinysrgb&dpr=1&w=500';
+const ARCHIVO_DATOS = join(RAIZ, 'scripts', 'datos', 'negocio-demo-venta.json');
 
-const CATALOGO_DEMO_B = [
-  { nombre: 'Hamburguesa doble', area: 'gastronomia', precio: 35,
-    descripcion: 'Doble carne, queso cheddar y papas',
-    foto: `${FOTO}/28966660/pexels-photo-28966660.jpeg${CORTE}` },
-  { nombre: 'Hamburguesa clásica', area: 'gastronomia', precio: 28,
-    descripcion: 'Carne, lechuga, tomate y papas',
-    foto: `${FOTO}/33253853/pexels-photo-33253853.jpeg${CORTE}` },
-  { nombre: 'Salchipapa', area: 'gastronomia', precio: 20,
-    descripcion: 'Porción personal',
-    foto: `${FOTO}/31533630/pexels-photo-31533630.jpeg${CORTE}` },
-  { nombre: 'Gaseosa (normal o zero)', area: 'gastronomia', precio: 8,
-    descripcion: '500 ml',
-    foto: `${FOTO}/36522880/pexels-photo-36522880/free-photo-of-refrescante-primer-plano-de-un-refresco-helado-con-burbujas.jpeg${CORTE}` },
-  { nombre: 'Chaqueta negra (S, M, L)', area: 'retail', precio: 180,
-    descripcion: 'Indicá la talla al pedir',
-    foto: `${FOTO}/33772487/pexels-photo-33772487/free-photo-of-retrato-melancolico-de-una-mujer-con-chaqueta-negra.jpeg${CORTE}` },
-  { nombre: 'Audífonos inalámbricos', area: 'retail', precio: 95,
-    descripcion: 'Bluetooth, con estuche de carga',
-    foto: `${FOTO}/35599938/pexels-photo-35599938/free-photo-of-mano-sosteniendo-auriculares-inalambricos-en-el-estuche-de-carga.jpeg${CORTE}` },
-];
+if (!existsSync(ARCHIVO_DATOS)) {
+  console.error(`No existe ${ARCHIVO_DATOS}: la vista previa sale de ese archivo.`);
+  process.exit(1);
+}
+
+/**
+ * Los ítems que la página mostraría, con el MISMO criterio que
+ * `catalogoPublico`: solo los activos y con precio. Un ítem sin precio no se
+ * publica —no se puede cobrar lo que no tiene precio— y uno dado de baja
+ * tampoco. Filtrarlo acá es lo que hace que la vista previa se parezca a la
+ * página de verdad y no a la pantalla de edición.
+ */
+const datos = JSON.parse(readFileSync(ARCHIVO_DATOS, 'utf8'));
+const CATALOGO_DEMO_B = (Array.isArray(datos.catalogo) ? datos.catalogo : [])
+  .filter((i) => i.activo !== false && Number.isFinite(i.precio));
 
 /** Mismo identificador que deriva la consola a partir del nombre. */
 const idDe = (nombre) => nombre.trim().toLowerCase().normalize('NFD')
@@ -112,7 +115,9 @@ const RESPUESTA = {
     // nube. Con `--sin-logo` se ve la página de un comercio que no subió
     // ninguno.
     logo: args.includes('--sin-logo') ? '' : logoIncrustado(),
-    paleta: leer('--paleta', 'terracota'),
+    // La del archivo, que es la que se carga en Firestore. `--paleta` la pisa
+    // para probar cómo se ve el mismo catálogo con otra.
+    paleta: leer('--paleta', datos.negocio?.paleta ?? 'terracota'),
   },
   // De `/config/venta` del mismo comercio sembrado.
   entrega: {
@@ -121,8 +126,8 @@ const RESPUESTA = {
   },
   items: CATALOGO_DEMO_B.map((i) => ({
     id: idDe(i.nombre), nombre: i.nombre, descripcion: i.descripcion,
-    area: i.area, precio: i.precio, moneda: 'BOB',
-    imagenUrl: args.includes('--sin-fotos') ? '' : i.foto,
+    area: i.area, precio: i.precio, moneda: i.moneda === 'USD' ? 'USD' : 'BOB',
+    imagenUrl: args.includes('--sin-fotos') ? '' : (i.imagenUrl ?? ''),
   })),
   caducaEn: new Date(Date.now() + 72 * 3_600_000).toISOString(),
 };
@@ -210,7 +215,7 @@ createServer(async (peticion, respuesta) => {
     + ` · envío ${RESPUESTA.entrega.costoDelivery} Bs · paleta ${RESPUESTA.negocio.paleta}`
     + ` · logo ${RESPUESTA.negocio.logo ? 'sí' : 'no'}`);
   console.log('  Paletas: terracota · bosque · indigo · vino · oceano   (--paleta <nombre>)');
-  console.log('  Los datos son una COPIA de sembrar-demos.mjs: si el catálogo del');
-  console.log('  Demo B cambió, esta vista previa muestra lo de antes.');
+  console.log('  Datos: scripts/datos/negocio-demo-venta.json, el mismo archivo que se');
+  console.log('  carga en Firestore. Lo que se ve acá es lo que va a ver el cliente.');
   console.log('  El backend es simulado: no se guarda ningún pedido.\n');
 });

@@ -4,6 +4,7 @@
 |---|---|
 | `calendario-demo-relleno.ics` | 55 eventos "ocupados" (1–12 sep, sin domingos) para el calendario del Demo A |
 | `qr-demo.png` | Imagen del QR de cobro simulado del Demo B, con el rótulo impreso en la propia imagen |
+| `logo-demo-b.webp` | Logo del comercio de demostración del Demo B, para el catálogo web (ver §5) |
 | `prueba-humo-meta.sh` | Verificación del número de Meta desde la terminal, antes de conectar n8n |
 | `checklist-ensayo.md` | Suite de aceptación completa (A, B y casos hostiles) para marcar en el ensayo |
 | `guion-presentacion-demos.md` | Guion del presentador para los demos del 9–10/09 |
@@ -110,3 +111,25 @@ Se ejecuta en la laptop al terminar los Bloques 2–4 de
 la plantilla `hello_world` y el texto libre dentro de la ventana de 24 h, con
 los errores típicos explicados. Si las dos pruebas pasan, todo fallo posterior
 está en n8n, no en Meta — eso corta a la mitad el espacio de depuración.
+
+## 5. Logo del catálogo web (`logo-demo-b.webp`)
+
+El catálogo web lleva la marca del comercio, no la de NovuChat: su logo arriba
+y «Pedidos por WhatsApp con NovuChat» en el pie. Este archivo es el logo del
+comercio de demostración `demo-venta` («Resto & Tienda Demo NovuChat»).
+
+**Se versiona desde el 22/09/2026.** Antes existía suelto en la carpeta de
+trabajo de una máquina: la vista previa arrancaba sin logo en cualquier copia
+del repositorio que no fuera esa, y en una reunión eso es la diferencia entre
+una vitrina con marca y una página anónima.
+
+Dos usos, y no son el mismo:
+
+- **La vista previa local** (`admin/scripts/catalogo-demo.mjs`) lo lee de acá y
+  lo incrusta en la respuesta, igual que hace producción. No hay que hacer
+  nada.
+- **El comercio de verdad** lo sube desde la consola, en Configuración →
+  Catálogo web → Logo del negocio. El navegador lo recorta a 320 px y lo
+  guarda en `/config/marca`; ningún script lo escribe, y por eso cargar el
+  catálogo con `cargar-negocio.mjs` **no** deja el logo puesto. Es un paso de
+  persona, y hay que acordarse antes de una demostración.

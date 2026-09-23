@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "admin/web", "run", "servir"],
       "port": 5230
+    },
+    {
+      "name": "catalogo-demo",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["admin/scripts/catalogo-demo.mjs"],
+      "port": 5241
     }
   ]
 }

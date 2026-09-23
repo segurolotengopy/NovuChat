@@ -1,0 +1,168 @@
+{
+  "_fuente": "Catálogo de demostración del Demo B (comercio `demo-venta`, «Resto & Tienda Demo NovuChat»), para mostrar el CATÁLOGO WEB delante de un prospecto. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben.",
+  "_por-que": "El Demo B tenía 6 productos sin foto y el catálogo web apagado: una vitrina de 6 tarjetas grises no vende. Acá quedan 17 productos con foto, repartidos en dos áreas (gastronomia y retail), que es lo que hace que el filtro por área tenga sentido en pantalla.",
+  "_umbral-del-prompt": "17 productos está POR DEBAJO de UMBRAL_CATALOGO_AL_PROMPT = 40 (functions/src/prompt.ts): el catálogo entero viaja al prompt, así que en la demostración el asistente puede recitar precios por chat Y mandar el enlace de la página. Si algún día pasa de 40, el prompt recibe solo un resumen por categorías y el enlace.",
+  "_los-seis-de-siempre": "Hamburguesa doble, Hamburguesa clásica, Salchipapa, Gaseosa (normal o zero), Chaqueta negra (S, M, L) y Audífonos inalámbricos se conservan con su nombre y su precio EXACTOS, porque el prompt del flujo y los guiones de la demostración los nombran. Lo nuevo se agrega alrededor.",
+  "_fotos": "Son de Pexels y están ENLAZADAS, no alojadas: es el mismo criterio del catálogo web (cada comercio referencia las fotos que ya tiene publicadas). Las seis primeras son las mismas que usa scripts/catalogo-demo.mjs. Las once nuevas se verificaron una por una el 22/09/2026: todas responden con una imagen y todas pasan el regex de urlImagenValida del script, que es más estricto que el de las reglas.",
+  "_lo-que-NO-va-aca": "No hay sección `venta`: cargar-negocio.mjs no la acepta y rechazaría el archivo entero. Los costos de entrega, el pedido mínimo y el media ID del QR quedan como los dejó sembrar-demos.mjs en /config/venta. Tampoco va el logo: vive en /config/marca y solo lo escribe la consola.",
+  "negocio": {
+    "_nota": "SOLO estas dos claves. `mergeFields` reemplaza únicamente lo que el archivo trae: el nombre, la descripción, los horarios, los mensajes y el número de recepción del Demo B quedan como están. `catalogoWebActivo: true` exige que el comercio tenga el flujo `venta`, y demo-venta lo tiene.",
+    "catalogoWebActivo": true,
+    "paleta": "terracota"
+  },
+  "catalogo": [
+    {
+      "nombre": "Hamburguesa doble",
+      "descripcion": "Doble carne a la parrilla, queso cheddar, salsa de la casa y papas fritas.",
+      "area": "gastronomia",
+      "precio": 35,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/28966660/pexels-photo-28966660.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Hamburguesa clásica",
+      "descripcion": "Carne, lechuga, tomate y queso, con papas fritas.",
+      "area": "gastronomia",
+      "precio": 28,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/33253853/pexels-photo-33253853.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Salchipapa",
+      "descripcion": "Porción personal de papas fritas con salchicha y salsas.",
+      "area": "gastronomia",
+      "precio": 20,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/31533630/pexels-photo-31533630.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Gaseosa (normal o zero)",
+      "descripcion": "Botella de 500 ml bien helada. Indica en el pedido si la prefieres normal o zero.",
+      "area": "gastronomia",
+      "precio": 8,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/36522880/pexels-photo-36522880/free-photo-of-refrescante-primer-plano-de-un-refresco-helado-con-burbujas.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Pique macho",
+      "descripcion": "Lomo salteado con cebolla, locoto y papas fritas. La porción alcanza para dos.",
+      "area": "gastronomia",
+      "precio": 48,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/34251051/pexels-photo-34251051.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Churrasco con arroz y papas",
+      "descripcion": "Corte a la parrilla, con arroz graneado y papas fritas.",
+      "area": "gastronomia",
+      "precio": 42,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/16970732/pexels-photo-16970732.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Pollo broaster con papas",
+      "descripcion": "Presas crocantes de pollo broaster, con papas fritas y salsas.",
+      "area": "gastronomia",
+      "precio": 32,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/9872916/pexels-photo-9872916.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Sándwich tostado de jamón y queso",
+      "descripcion": "Pan tostado con jamón y queso fundido, acompañado de papas fritas.",
+      "area": "gastronomia",
+      "precio": 18,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/11256670/pexels-photo-11256670.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Jugo natural de frutilla",
+      "descripcion": "Vaso de 400 ml, preparado al momento con fruta fresca.",
+      "area": "gastronomia",
+      "precio": 12,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/2479242/pexels-photo-2479242.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Porción de cheesecake",
+      "descripcion": "Porción individual de cheesecake con base de galleta.",
+      "area": "gastronomia",
+      "precio": 20,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/33213151/pexels-photo-33213151.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta negra (S, M, L)",
+      "descripcion": "Chaqueta liviana negra para el día a día. Indica la talla en el pedido.",
+      "area": "retail",
+      "precio": 180,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/33772487/pexels-photo-33772487/free-photo-of-retrato-melancolico-de-una-mujer-con-chaqueta-negra.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Audífonos inalámbricos",
+      "descripcion": "Bluetooth, con estuche de carga y hasta 20 horas de batería.",
+      "area": "retail",
+      "precio": 95,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/35599938/pexels-photo-35599938/free-photo-of-mano-sosteniendo-auriculares-inalambricos-en-el-estuche-de-carga.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Parlante bluetooth portátil",
+      "descripcion": "Sonido potente en tamaño de bolsillo, con batería para toda la tarde.",
+      "area": "retail",
+      "precio": 220,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/374110/pexels-photo-374110.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Mochila urbana",
+      "descripcion": "Resistente y amplia, con bolsillos para todo lo del día.",
+      "area": "retail",
+      "precio": 165,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/701742/pexels-photo-701742.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Polera básica blanca (S, M, L)",
+      "descripcion": "Algodón peinado, corte recto. Indica la talla en el pedido.",
+      "area": "retail",
+      "precio": 85,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/4115035/pexels-photo-4115035.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Gorra negra ajustable",
+      "descripcion": "Talla única, con broche ajustable en la parte de atrás.",
+      "area": "retail",
+      "precio": 65,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/6343593/pexels-photo-6343593.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    },
+    {
+      "nombre": "Taza de cerámica",
+      "descripcion": "Taza de 350 ml, apta para microondas y lavavajillas.",
+      "area": "retail",
+      "precio": 45,
+      "moneda": "BOB",
+      "imagenUrl": "https://images.pexels.com/photos/6754875/pexels-photo-6754875.jpeg?cs=tinysrgb&dpr=1&w=500",
+      "activo": true
+    }
+  ]
+}

@@ -25,7 +25,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 FLUJO="${1:-Flujos/demo-a-agendamiento.json}"
-LOCAL="CONFIGURACION.local.md"
+# La tabla de marcadores. Se puede apuntar a otra con CONFIG_LOCAL_MD, y lo
+# unico que la usa asi es la suite: sin eso, la guarda de los dos disparadores
+# -la que evita que el webhook del carrito le pise la ruta a Meta- solo se
+# podria probar en la maquina del operador, que es donde menos falta hace.
+LOCAL="${CONFIG_LOCAL_MD:-CONFIGURACION.local.md}"
 ENV_FILE="${2:-.env}"
 
 [[ -f "$FLUJO" ]] || { echo "✗ No existe $FLUJO"; exit 1; }
@@ -54,15 +58,48 @@ CON_WEBHOOK = ("whatsapptrigger", "webhook", "formtrigger", "chattrigger")
 disparadores = [n for n in d["nodes"]
                 if any(c in n["type"].lower() for c in CON_WEBHOOK)]
 
-if len(uuids) == 1 and disparadores:
-    for n in disparadores:
+# UN FLUJO PUEDE TENER DOS DISPARADORES CON URL, Y NO COMPARTEN RUTA.
+#
+# Desde el 22/09/2026 el Demo B tiene, ademas del disparador de WhatsApp, un
+# nodo Webhook que recibe el carrito del catalogo web. Los dos entran en
+# CON_WEBHOOK, y la version anterior de este bloque le ponia el MISMO
+# `webhookId` -el UUID que Meta tiene registrado- a todos: un nodo Webhook sin
+# `path` propio se registra en esa misma ruta y le pisa el webhook a Meta, que
+# es el que hace andar todo el flujo. El sintoma seria que deja de llegar
+# cualquier mensaje de WhatsApp, y el operador no tendria por que relacionarlo
+# con haber importado.
+#
+# La regla es la del propio n8n: un disparador toma su URL del `webhookId`
+# SOLO si no declara un `path` propio (el de WhatsApp no lo declara; el nodo
+# Webhook si). Asi que la ruta de Meta se le pone unicamente a los que no
+# tienen ruta propia, y si hubiera dos de esos se corta: dos disparadores no
+# pueden escuchar la misma URL.
+def ruta_propia(n):
+    return str((n.get("parameters") or {}).get("path") or "").strip()
+
+con_ruta_propia = [n for n in disparadores if ruta_propia(n)]
+toman_la_de_meta = [n for n in disparadores if not ruta_propia(n)]
+propias = "".join(
+    f"\n  {GRIS}·{FIN} {n['name']}: conserva su ruta propia ({ruta_propia(n)})"
+    for n in con_ruta_propia)
+
+if len(toman_la_de_meta) > 1:
+    webhook = (f"{ROJO}✗{FIN} hay {len(toman_la_de_meta)} disparadores sin ruta propia "
+               f"({', '.join(n['name'] for n in toman_la_de_meta)}): no pueden compartir la de Meta. "
+               f"Deles un `path` propio en el JSON.") + propias
+    print(f"Origen : {flujo}\n")
+    print(" ", webhook)
+    sys.exit(1)
+elif len(uuids) == 1 and toman_la_de_meta:
+    for n in toman_la_de_meta:
         n["webhookId"] = uuids[0]
-    webhook = f"{VERDE}+{FIN} webhookId fijado en: " + ", ".join(n["name"] for n in disparadores)
+    webhook = (f"{VERDE}+{FIN} webhookId fijado en: "
+               + ", ".join(n["name"] for n in toman_la_de_meta)) + propias
 elif not uuids:
     webhook = (f"{GRIS}·{FIN} {env_file} no tiene ruta de webhook registrada: n8n crea una nueva "
-               f"(correcto para un flujo nuevo; despues se anota en N8N_WEBHOOK_PATH)")
+               f"(correcto para un flujo nuevo; despues se anota en N8N_WEBHOOK_PATH)") + propias
 else:
-    webhook = f"{ROJO}✗{FIN} la ruta tiene {len(uuids)} UUID: reviselo a mano"
+    webhook = (f"{ROJO}✗{FIN} la ruta tiene {len(uuids)} UUID: reviselo a mano") + propias
 
 texto = json.dumps(d, ensure_ascii=False, indent=2) + "\n"
 

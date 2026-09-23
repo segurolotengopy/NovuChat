@@ -4,7 +4,97 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-22 (catálogo web en el Demo B: el asistente deriva a la página del comercio, `enlaceCatalogo` abierta en producción, 17 productos con fotos; falta cargar, publicar y probar contra un teléfono real). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+
+---
+
+## 2026-09-22 — el catálogo web, conectado al Demo B
+
+Pedido de Andres: una demostración del catálogo para mañana, sobre el flujo de
+venta. Rama `catalogo/demo-b-derivar`, **sin publicar en n8n y sin cargar nada
+en Firestore todavía**. **Costo: 0 mensajes** en la derivación al catálogo;
+**+1 mensaje** por cada carrito que vuelve (ver abajo).
+
+**Qué había.** El catálogo web propio existe desde el 08/09 (#43) y sus seis
+Functions se desplegaron el 22/09. Ningún flujo lo llamaba: el Demo B recitaba
+el catálogo como texto y su prompt decía «no existe ninguna lista tocable ni
+botón». Los flujos de agendamiento no cuentan: por la decisión del 08/09 el
+catálogo web es una capacidad de **venta** y las reglas rechazan encenderlo sin
+ese flujo.
+
+**El bloqueante, que no estaba anotado en ningún lado.** `enlaceCatalogo` se
+desplegó **sin ningún binding de `roles/run.invoker`**: devolvía un 403 con HTML
+de Google antes de ejecutar una línea de su código, así que n8n no podía pedir
+un enlace y el 403 no se parece a ninguno de los errores que el flujo sabe
+interpretar. Las otras tres (`catalogoPublico`, `checkoutCatalogo`,
+`fotoDeCatalogo`) sí tenían `allUsers`, y por eso el síntoma no se veía al abrir
+la página. Es el mismo paso que `Prompts/COORDINACION.md` ya tenía anotado para
+`avisoCobrador` e `imagenDePago`: **una Function HTTP nueva no nace invocable**,
+y el despliegue no lo arregla porque corre con `--non-interactive`.
+`scripts/nube-catalogo.sh` lo diagnostica y lo aplica (idempotente); se corrió
+con el OK de Andres y `enlaceCatalogo` pasó a contestar `401 no autorizado`, que
+es su propio código rechazando por credenciales. **Conviene revisarlo después de
+cada despliegue que agregue una Function HTTP.**
+
+**El flujo** (`Flujos/demo-b-venta-cobro.json`, sin manifiesto: se edita
+directo). Marca `[ENVIAR_CATALOGO]`, con la mecánica que el flujo ya usa para el
+QR. **No se usó un nodo herramienta**: en n8n 2.36.5 `toolHttpRequest` está
+`hidden: true` —en retiro— y no se pudo confirmar el tipo `httpRequestTool`; el
+`httpRequest` 4.2 que se usó lo conocen las tres rutas de credenciales.
+
+**El enlace no agrega un mensaje.** El texto del agente y la dirección salen
+juntos: una compuerta `¿Responder ahora?` corta el camino normal en ese turno y
+el mensaje lo arma `Enlace del catálogo`, que examina los diez códigos de
+`enlaceCatalogo` uno por uno. **Sin enlace no se promete nada**: se quitan del
+texto del agente las oraciones que anunciaban una página y se sigue por chat,
+que es lo único que el flujo cumple (política del 21/09).
+
+**Dos defectos viejos que se cerraron de paso**, porque el catálogo los volvía
+graves:
+
+- **El reporte saliente colgaba de `Procesar respuesta`**, o sea que la consola
+  registraba lo que dijo el modelo y no lo que se envió (pendiente desde el
+  #97, ya resuelto en A y en Platinum). En el turno del catálogo el texto del
+  modelo **no es** el que sale, así que era un defecto de facturación. Ahora
+  cuelga del envío, por `Texto enviado`, que averigua cuál de los cuatro
+  caminos armó lo que salió. Con eso el aviso del comercio suspendido pasa a
+  reportarse, y antes no se reportaba nunca.
+- **`Enviar QR (imagen DEMO)` tenía un `genericAuthType` residual** con
+  credencial `whatsAppApi`: `importar-flujo-cliente.sh` se lo habría
+  sobreescrito con la de ingesta al dar de alta un cliente nuevo. Es la misma
+  familia del incidente del 15/09, cuando Meta devolvía 190 y el diagnóstico lo
+  informaba en verde.
+
+**El voseo del prompt del Demo B** (pendiente desde el 15/09) quedó corregido.
+
+**Los datos** (`admin/scripts/datos/negocio-demo-venta.json`, nuevo): 17
+productos —los 6 de siempre con sus precios exactos, más 11— todos activos, con
+precio y con foto verificada una por una. 17 está por debajo del umbral de 40,
+así que el asistente **recita precios y además manda el enlace**. Paleta
+`terracota`. El seco deja el contador en 6 → 17, sin ítems ajenos.
+
+**La vista previa local dejó de tener su propia copia de los datos.**
+`catalogo-demo.mjs` llevaba seis ítems escritos a mano con un comentario que
+admitía que iban a quedar viejos, y quedaron viejos: mostraba seis tarjetas
+mientras producción iba a mostrar diecisiete. Ahora lee el mismo archivo que se
+carga en Firestore. Es la lección de `build_flows.py` otra vez: una segunda
+fuente de verdad solo puede divergir. El logo del comercio
+(`Demo-Recursos/logo-demo-b.webp`) **se versionó**: vivía suelto en una sola
+máquina.
+
+**Probado en el navegador, con la vista previa:** la página carga con marca,
+logo, buscador y filtro por área; las 17 fotos cargan; se ve bien en teléfono; y
+el checkout sale del navegador con **solo identificadores y cantidades, ni un
+precio** —la garantía central del diseño— verificado leyendo lo que el servidor
+recibe.
+
+**Lo que falta, y es de persona o necesita el OK de Andres:**
+
+1. Cargar el catálogo (`cargar-negocio.mjs --aplicar`); el seco está corrido.
+2. Subir el logo desde la consola: Configuración → Catálogo web. Ningún script
+   lo escribe.
+3. Publicar el flujo en n8n (`publicar-flujo.sh`), con su diagnóstico en seco.
+4. **Probarlo contra un teléfono real**, que es lo único que cierra esto.
 
 ---
 

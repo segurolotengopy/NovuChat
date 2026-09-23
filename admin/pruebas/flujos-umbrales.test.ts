@@ -140,21 +140,30 @@ const activo = (atencion: unknown) => ({
  * `salidaAlCliente`: en los flujos de agendamiento, desde el 17/09/2026 todo
  * lo que se envía pasa por «Mensaje a enviar» y el reporte saliente cuelga
  * DESPUÉS de «Responder al cliente» (la consola mostraba lo que el modelo
- * dijo y no lo que el cliente recibió, ejecución #2867 de Platinum). El Demo B
- * conserva el cableado anterior: no tiene candado que reescriba el texto.
+ * dijo y no lo que el cliente recibió, ejecución #2867 de Platinum).
+ *
+ * EL DEMO B NO TIENE PUNTO ÚNICO DE SALIDA, y desde el 22/09/2026 tampoco
+ * conserva el cableado viejo. Su reporte también cuelga del envío, pero por
+ * «Texto enviado» (`primeroTrasElEnvio`), un nodo que averigua cuál de los
+ * cuatro caminos armó el texto que salió. Hizo falta al agregar el catálogo
+ * web: en ese turno el texto del modelo NO es el que se envía, así que la
+ * consola —donde se mira lo que Meta cobra— habría registrado otra cosa. La
+ * propiedad que se defiende es la misma en los cuatro flujos: se reporta lo
+ * enviado, una sola vez, y después de enviarlo.
  */
 const FLUJOS = [
   {
     archivo: 'demo-a-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    primeroTrasElEnvio: 'Reportar mensaje (saliente)',
     antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
     entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
-    campoTexto: 'textoAviso', salidaAlCliente: null,
+    campoTexto: 'textoAviso', salidaAlCliente: null, primeroTrasElEnvio: 'Texto enviado',
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
@@ -162,6 +171,7 @@ const FLUJOS = [
     archivo: 'platinum-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    primeroTrasElEnvio: 'Reportar mensaje (saliente)',
     antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
     entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
@@ -174,6 +184,7 @@ const FLUJOS = [
     archivo: 'bellido-agendamiento.json', agente: 'AI Agent (Sofía)',
     compuertaAviso: '¿Transferir a humano?', campoAviso: 'transferir', envioAviso: 'Avisar a recepción',
     campoTexto: 'motivoTransferencia', salidaAlCliente: 'Mensaje a enviar',
+    primeroTrasElEnvio: 'Reportar mensaje (saliente)',
     antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?', 'Estado de la conversación',
       '¿Menú inicial?', '¿Contacto directo?', '¿Emergencia?'],
     // En el consultorio, lo que convirtió el medio en texto no le habla al
@@ -189,7 +200,8 @@ describe('El mensaje fijo de uso extendido', () => {
 });
 
 describe.each(FLUJOS)('$archivo', (entrada) => {
-  const { archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente } = entrada;
+  const { archivo, agente, compuertaAviso, campoAviso, envioAviso, campoTexto, salidaAlCliente,
+    primeroTrasElEnvio } = entrada;
   const f = flujo(archivo);
 
   describe('Traer configuración', () => {
@@ -348,23 +360,24 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
 
     it('la respuesta fija sale al cliente y se reporta como saliente, porque cuenta', () => {
       expect(destinos(f, 'Uso extendido')).toContain('¿Responder uso extendido?');
-      if (salidaAlCliente) {
-        // Un solo punto de salida, y el reporte cuelga DESPUÉS del envío: se
-        // reporta lo que salió, no lo que se pensaba mandar.
-        expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente]);
-        expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
-        // Del envío cuelgan el reporte del texto y, DEBAJO, lo que cada flujo
-        // agregue: la compuerta del pin (Analisis/34 §2) y, en Bellido, la de
-        // su segundo mensaje. Con orden v1 el texto se reporta PRIMERO.
-        expect(destinos(f, 'Responder al cliente')[0]).toBe('Reportar mensaje (saliente)');
-        for (const d of destinos(f, 'Responder al cliente').slice(1)) {
-          // Todo lo que cuelga debajo del reporte es una COMPUERTA que solo
-          // pasa a pedido: el pin, el contacto, el reenvío del QR, las redes.
-          expect(d, d).toMatch(/^¿(Enviar|Reenviar) /);
-        }
-      } else {
-        expect([...destinos(f, '¿Responder uso extendido?', 0)].sort())
-          .toEqual(['Reportar mensaje (saliente)', 'Responder al cliente']);
+      // El aviso fijo sale por el MISMO envío que todo lo demás —con su paso
+      // previo donde lo hay— y el reporte cuelga DESPUÉS del envío: se reporta
+      // lo que salió, no lo que se pensaba mandar. Antes, en el Demo B, el
+      // reporte colgaba en paralelo al envío y contaba un mensaje que Meta
+      // podía haber rechazado.
+      expect(destinos(f, '¿Responder uso extendido?', 0)).toEqual([salidaAlCliente ?? 'Responder al cliente']);
+      if (salidaAlCliente) expect(destinos(f, salidaAlCliente)).toEqual(['Responder al cliente']);
+      // Del envío cuelgan, PRIMERO, el reporte del texto —o el nodo que lo
+      // alimenta— y, DEBAJO, lo que cada flujo agregue: la compuerta del pin
+      // (Analisis/34 §2) y, en Bellido, la de su segundo mensaje. Con orden v1
+      // el texto se reporta antes que nada.
+      expect(destinos(f, 'Responder al cliente')[0]).toBe(primeroTrasElEnvio);
+      expect(primeroTrasElEnvio === 'Reportar mensaje (saliente)'
+        || alcanzables(f, primeroTrasElEnvio).has('Reportar mensaje (saliente)')).toBe(true);
+      for (const d of destinos(f, 'Responder al cliente').slice(1)) {
+        // Todo lo que cuelga debajo del reporte es una COMPUERTA que solo
+        // pasa a pedido: el pin, el contacto, el reenvío del QR, las redes.
+        expect(d, d).toMatch(/^¿(Enviar|Reenviar) /);
       }
       const condicion = (nodo(f, '¿Responder uso extendido?').parameters['conditions'] as
         { conditions: { leftValue: string }[] }).conditions[0]?.leftValue;
@@ -437,15 +450,24 @@ describe.each(FLUJOS)('$archivo', (entrada) => {
       expect(envio.onError ?? 'stopWorkflow').toBe('stopWorkflow');
       const padres = origenes(f, 'Reportar mensaje (saliente)');
       expect(padres.length).toBeGreaterThan(0);
+      // El ÚNICO padre del reporte está DESPUÉS del envío, y el cuerpo lee el
+      // texto del nodo por el que pasó lo enviado, nunca el `$json` de quien
+      // lo generó. Así la consola no puede volver a mostrar la confirmación
+      // que el candado deshizo, ni —en el Demo B— el texto del modelo en vez
+      // del mensaje con el enlace del catálogo.
+      const cuerpo = String(nodo(f, 'Reportar mensaje (saliente)').parameters['jsonBody']);
+      expect(cuerpo).not.toContain('$json.respuesta');
       if (salidaAlCliente) {
-        // Agendamiento (17/09/2026): el ÚNICO padre del reporte es el envío, y
-        // el cuerpo lee el texto del nodo por el que pasó todo lo enviado, no
-        // el `$json` de quien lo generó. Así la consola no puede volver a
-        // mostrar la confirmación que el candado deshizo.
         expect(padres).toEqual(['Responder al cliente']);
-        const cuerpo = String(nodo(f, 'Reportar mensaje (saliente)').parameters['jsonBody']);
         expect(cuerpo).toContain(`$('${salidaAlCliente}').item.json.respuesta`);
-        expect(cuerpo).not.toContain('$json.respuesta');
+      } else {
+        // Demo B (22/09/2026): sin punto único de salida, quien averigua qué
+        // texto salió es «Texto enviado», que corre después del envío y solo
+        // alimenta al reporte.
+        expect(padres).toEqual(['Texto enviado']);
+        expect(origenes(f, 'Texto enviado')).toEqual(['Responder al cliente']);
+        expect(destinos(f, 'Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
+        expect(cuerpo).toContain('$json.texto');
       }
       for (const padre of padres) {
         for (const hermano of destinos(f, padre)) {
