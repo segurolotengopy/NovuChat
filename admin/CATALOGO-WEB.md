@@ -158,40 +158,109 @@ automática**, y está anotado como pendiente en `DISENO.md` §4octies.7.
 
 ---
 
-## 4. Lo que hay que hacer en n8n (dos nodos y una plantilla)
+## 4. Lo que hay en n8n — HECHO en el Demo B el 22/09/2026
 
-**No se tocó ningún JSON de `Flujos/`.** Son la exportación de lo que corre en
-n8n, y editarlos a mano los separaría de la realidad —además de que el
-congelamiento de los demos es el 8 de septiembre—. Esto es lo que hay que agregar
-cuando se decida ponerlo en marcha.
+> **Esta sección era una lista de pendientes y ahora describe lo construido.**
+> Lo de abajo está en `Flujos/demo-b-venta-cobro.json`, probado en
+> `admin/pruebas/demo-b-catalogo.test.ts` (85 pruebas). Lo que sigue pendiente
+> se dice en su lugar. Para llevarlo a otro cliente de venta, se copia de ahí.
 
-### 4.1 Nodo «Derivar al catálogo» (herramienta del agente)
+### 4.0 Tres decisiones que conviene no volver a discutir
 
-Un `HTTP Request` que el agente puede invocar cuando el cliente pide ver
-productos:
+**No se usa un nodo herramienta del agente.** El plan original era un
+`toolHttpRequest` que el modelo invocara. En n8n 2.36.5 ese nodo está
+`hidden: true` —en retiro— y no se pudo confirmar el tipo `httpRequestTool` que
+lo reemplaza. Se usa la mecánica de **marca de texto** que el flujo ya tiene
+para el QR (`[ENVIAR_QR]`), con un `httpRequest` 4.2, que es un tipo que las
+tres rutas de credenciales conocen. El agente no fabrica una URL ni un cuerpo:
+solo puede emitir una marca.
 
-- **URL** `https://${DOMINIO}/api/catalogo/enlace`
-- **Método** POST, cuerpo `{ "telefono": "{{ $json.messages[0].from }}" }`
-- **Credencial** la misma de autenticación por cabecera que ya usa la ingesta,
-  más `X-NovuChat-Numero` con el `phone_number_id`.
-- **Uso de la respuesta** el agente manda `url` al cliente. Si `catalogoGrande`
-  es `true`, además tiene que decir explícitamente que el detalle está en el
-  enlace: en ese caso **no recibió el catálogo en su configuración** y no lo
-  puede recitar.
+**El enlace no cuesta un mensaje.** El texto del agente y la dirección salen
+JUNTOS. Mandar la dirección aparte duplicaría el costo de cada derivación, que
+es justamente la jugada que se hace para gastar menos conversación
+(«Base comercial» §1 de `CLAUDE.md`). Lo consigue una compuerta
+`¿Responder ahora?` que corta el camino normal en ese turno.
 
-### 4.2 Nodo «Webhook de carrito» (entrada nueva)
+**El disparador del carrito lleva ruta propia.** Ver §4.2: sin ella le pisa el
+webhook a Meta.
+
+### 4.1 Ida: la marca `[ENVIAR_CATALOGO]`
+
+`Procesar respuesta` detecta la marca, la borra del texto y emite
+`pedirCatalogo`. `¿Pedir catálogo?` abre la rama y `Pedir enlace del catálogo`
+llama al endpoint:
+
+- **URL** `https://${REGION}-${GCP_PROJECT_ID}.cloudfunctions.net/enlaceCatalogo`
+- **Método** POST, cuerpo `{ "telefono": … }`
+- **Credencial** la misma de cabecera que usa la ingesta, declarada **por
+  nombre con `id` vacío**, más `X-NovuChat-Numero` con el `phone_number_id`.
+- **`timeout` 8000, no 4000.** `enlaceCatalogo` no tiene `minInstances` y paga
+  arranque en frío; `configuracionFlujo` sí tiene instancia caliente.
+- **`fullResponse` y `neverError`**, porque hay cuatro `409` distintos que son
+  respuestas válidas y no fallos.
+
+`Enlace del catálogo` arma el mensaje final tratando los diez códigos uno por
+uno. Si `catalogoGrande` es `true`, el mensaje dice explícitamente que el
+detalle está en el enlace: en ese caso el asistente **no recibió el catálogo**
+en su configuración y no lo puede recitar.
+
+**Sin enlace no se promete nada.** Si no hubo dirección usable, se QUITAN del
+texto del agente las oraciones que anunciaban una página y se sigue por chat.
+Es la política general del 21/09: el asistente solo ofrece lo que el flujo
+cumple.
+
+### 4.1bis El prompt se adapta solo
+
+`Config del negocio` lee `catalogoWeb.activo` y `catalogoResumen` de
+`configuracionFlujo`. Con el catálogo web apagado el prompt dice que no existe
+ninguna página y que todo se hace escribiendo; con él encendido, explica cuándo
+mandarla. **Por defecto, apagado**: si el panel no contesta, no se ofrece una
+página que quizá no existe.
+
+### 4.2 Vuelta: el nodo `Carrito del catálogo`
 
 Un `Webhook` con autenticación por cabecera (la misma credencial), cuya URL se
 registra con `fijarWebhookCarrito`. Al recibir un carrito:
 
-1. Si `accion` es `responder` → mensaje libre con el resumen del pedido.
-2. Si `accion` es `plantilla_carrito_espera` → **plantilla** (§4.3).
+1. Si `accion` es `responder` → un mensaje con el resumen del pedido.
+2. Si `accion` es `plantilla_carrito_espera` → **plantilla** (§4.3), que hoy
+   **no está aprobada por Meta**: el flujo no manda nada y lo deja anotado.
 3. Si `fichaCompartida` es `true` → confirmar de quién es el pedido antes de
    despachar. El enlace pudo haberse compartido.
-4. Si `descartados` no está vacío → decir qué no entró y por qué.
-5. Si `descartados` trae algo, puede ser porque lo dieron de baja **o porque le
-   sacaron el precio** mientras el cliente elegía. Desde el webhook no se
-   distingue: hay que preguntarlo, no suponerlo.
+4. Si `descartados` no está vacío → decir qué no entró y **preguntar cuál era**.
+   Del webhook solo llegan identificadores, y no se distingue si el ítem se dio
+   de baja, si le sacaron el precio o si se agotó mientras el cliente elegía.
+   Suponerlo sería inventar.
+
+**La ruta es propia, y esto es lo que más caro sale olvidar.** El nodo declara
+`path: REEMPLAZAR_RUTA_CARRITO`, con su fila en la tabla de marcadores. Hasta el
+22/09 `preparar-import.sh` le ponía a **todo** disparador el `webhookId` que Meta
+tiene registrado; un `Webhook` sin `path` propio se habría registrado en esa misma
+ruta y **habrían dejado de llegar los mensajes de WhatsApp**, sin que nadie lo
+relacionara con haber importado. Ahora ese UUID va solo a los disparadores sin
+ruta propia, y con dos de esos el script aborta.
+
+**La firma HMAC no se verifica, y se dice.** `despertarFlujo` manda
+`X-NovuChat-Signature`, pero comprobarla exigiría el secreto **dentro** del
+lienzo, que es la prohibición 2 de `CLAUDE.md`; y leerlo del entorno tampoco se
+puede, porque el Code de n8n corre en un sandbox sin `require` ni entorno. Quien
+autentica es el **nodo Webhook** con su credencial de cabecera: `despertarFlujo`
+manda `Authorization: Bearer <el secreto del número>` y n8n contesta 403 a lo que
+no lo traiga. La firma se comprueba en **forma**, no en valor, y sirve para
+descartar basura. Para verificarla de verdad haría falta exponer el secreto a n8n
+como variable de entorno y habilitar `crypto` en el Code: es un cambio en la VM,
+no en el flujo.
+
+**El mensaje del carrito cuesta un mensaje** (0,0113 USD), y es el único del
+catálogo web que agrega costo. Vale la pena porque reemplaza la conversación de
+toma de pedido entera. Por eso va todo junto en uno: confirmación, lo que falta,
+lo descartado y la pregunta de propiedad.
+
+**El agente no se entera del carrito.** El mensaje sale fuera del agente, así que
+no entra en su memoria. Por eso el texto es autosuficiente y cierra invitando a
+escribir por el chat, en vez de pedir una confirmación que el turno siguiente no
+sabría interpretar. Que el asistente conozca el pedido exigiría que
+`configuracionFlujo` devolviera el historial: es un cambio de servidor.
 
 ### 4.3 La plantilla «tu carrito te espera»
 
