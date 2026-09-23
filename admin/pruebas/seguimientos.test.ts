@@ -174,6 +174,12 @@ describe('2. solicitudTras con las etapas del seguimiento', () => {
       etapa: 'horarios', desde: Timestamp.fromMillis(AHORA), qrEnviadoEn: null,
       evento: null, cotejos: 0, seguimientos: 0, seguimientoEn: null, reactivadaEn: null,
       aFavorHasta: null, aFavorDe: null,
+      // `monto` es del cobro de una VENTA (`cobroVenta.ts`, 23/09/2026): el
+      // total que se cotizó al mandar el QR. En reservas siempre es nulo —ahí
+      // el importe es la seña, que vive en la configuración— pero el campo
+      // nace con la solicitud, como todos los demás: una solicitud nueva
+      // escribe TODOS sus campos, incluidos los nulos.
+      monto: null,
     });
   });
 

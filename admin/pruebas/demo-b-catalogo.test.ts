@@ -98,7 +98,8 @@ describe('El cableado: quién entra y quién sale de cada nodo nuevo', () => {
     // arriba hacia abajo, y el cliente tiene que recibir su mensaje antes de
     // que corran las ramas que solo registran o avisan.
     expect(destinos(f, 'Procesar respuesta')).toEqual([
-      '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Pedido confirmado?', '¿Hay comprobante?',
+      '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Reenviar el QR?',
+      '¿Pedido confirmado?', '¿Hay comprobante?',
     ]);
     expect(destinos(f, 'Procesar respuesta')).not.toContain('Reportar mensaje (saliente)');
     expect(destinos(f, 'Procesar respuesta')).not.toContain('Responder al cliente');
@@ -120,7 +121,7 @@ describe('El cableado: quién entra y quién sale de cada nodo nuevo', () => {
     // carrito, que entra por el otro disparador.
     expect([...entradas(f, 'Responder al cliente')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo',
+      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
     ].sort());
   });
 
@@ -201,9 +202,15 @@ describe('CUÁNTOS MENSAJES CUESTA: exactamente los mismos que antes', () => {
   it('el único nodo que le escribe al cliente sigue siendo «Responder al cliente»', () => {
     // Si alguien agregara un segundo emisor, cada conversación costaría más sin
     // que nadie lo note hasta la factura de Meta.
-    const aClientes = f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp')
+    // Se cuentan los que ENVÍAN. Desde el 23/09 hay un tercer nodo de WhatsApp
+    // --«Obtener URL del medio», que baja el comprobante-- y ese no manda nada:
+    // lo que encarece una conversación es `operation: 'send'`, no el tipo.
+    const deWhatsApp = f.nodes.filter((n) => n.type === 'n8n-nodes-base.whatsApp');
+    const aClientes = deWhatsApp.filter((n) => n.parameters['operation'] === 'send')
       .map((n) => n.name).sort();
     expect(aClientes).toEqual(['Avisar al dueño', 'Responder al cliente']);
+    expect(deWhatsApp.filter((n) => n.parameters['operation'] !== 'send').map((n) => n.name))
+      .toEqual(['Obtener URL del medio']);
   });
 });
 
@@ -494,11 +501,11 @@ describe('«Pedir enlace del catálogo»: el nodo HTTP', () => {
     expect(c?.id).toBe('');
   });
 
-  it('«Enviar QR (imagen DEMO)» ya no lleva el `genericAuthType` residual', () => {
+  it('«Enviar QR de cobro» ya no lleva el `genericAuthType` residual', () => {
     // Con él, `importar-flujo-cliente.sh` lo tomaba por un nodo de ingesta y le
     // pisaba la credencial de WhatsApp con la del reporte. Mismo defecto que
     // el del 15/09, latente en otro nodo.
-    const qr = nodo(f, 'Enviar QR (imagen DEMO)');
+    const qr = nodo(f, 'Enviar QR de cobro');
     expect(qr.parameters['authentication']).toBe('predefinedCredentialType');
     expect(qr.parameters['genericAuthType']).toBeUndefined();
     expect(qr.credentials?.['whatsAppApi']?.name).not.toBe(undefined);
@@ -721,10 +728,10 @@ describe('El carrito: el cableado de la rama nueva', () => {
     expect(destinos(f, 'Recordar pedido')).toEqual([]);
   });
 
-  it('el envío sigue siendo uno solo, con cinco caminos que llegan a él', () => {
+  it('el envío sigue siendo uno solo, con seis caminos que llegan a él', () => {
     expect([...entradas(f, 'Responder al cliente')].sort()).toEqual([
       '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
-      'Comercio no operativo', 'Enlace del catálogo',
+      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
     ].sort());
     // Y lo que cuelga del envío no cambió: el reporte del saliente, una vez.
     expect(destinos(f, 'Responder al cliente')).toEqual(['Texto enviado']);
@@ -834,7 +841,8 @@ describe('El carrito deja el pedido en la memoria del agente', () => {
 
   it('el orden de las demás ramas no se tocó: el abanico del agente sigue igual', () => {
     expect(destinos(f, 'Procesar respuesta')).toEqual([
-      '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Pedido confirmado?', '¿Hay comprobante?',
+      '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Reenviar el QR?',
+      '¿Pedido confirmado?', '¿Hay comprobante?',
     ]);
     expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
     // El envío está más arriba que la escritura en memoria: corre primero.

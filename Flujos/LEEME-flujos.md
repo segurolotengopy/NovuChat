@@ -1,8 +1,9 @@
 # Flujos n8n de los demos NovuChat — guía de importación y puesta en marcha
 
 > **Archivos:** `demo-a-agendamiento.json` (reservas, con Google Calendar
-> real) y `demo-b-venta-cobro.json` (venta con QR simulado y alerta al
-> dueño), más los que se fueron sumando: la captación de NovuChat (§7), los
+> real) y `demo-b-venta-cobro.json` (venta con cobro por QR —simulado o real,
+> nunca los dos: lo decide el servidor— y alerta al dueño), más los que se
+> fueron sumando: la captación de NovuChat (§7), los
 > clientes de reservas (§8) y los flujos programados de recordatorios,
 > seguimientos y señas vencidas. El código de los nodos y los prompts viven
 > en módulos (§0).
@@ -205,10 +206,18 @@ evitarlo en vivo). Recomendado: **(a)**.
    del contenedor y la zona del calendario).
 4. Demo A: rechazar horarios 3 veces → llega el aviso al número de recepción
    y el cliente recibe la despedida sin la marca `[TRANSFERIR]` visible.
-5. Demo B: completar una venta → llega el QR con caption de demostración, la
-   confirmación dice "simulado" y la alerta llega al celular del dueño.
-6. Demo B retail: pedir envío a Oruro → el bot NO entrega QR sin Nombre + CI.
-7. Exportar ambos flujos al repo Git de NovuChat después de cada sesión
+5. Demo B: completar una venta → llega **UN SOLO mensaje**: la imagen del QR
+   con el total y el rótulo de demostración en el pie (desde el 23/09/2026 el
+   texto ya no sale aparte). La confirmación dice "simulado" y la alerta llega
+   al celular del dueño.
+6. Demo B: mandar una foto **sin** haber recibido el QR → NO se registra ningún
+   cierre de venta. Y mandar el comprobante después del QR → sí, aunque la
+   respuesta del asistente no diga la palabra "simulado" (el cierre nace de dos
+   hechos, no de lo que el modelo escriba).
+7. Demo B: decir que el QR no llegó → el asistente lo reenvía, y nunca contesta
+   que el sistema de pagos no está disponible.
+8. Demo B retail: pedir envío a Oruro → el bot NO entrega QR sin Nombre + CI.
+9. Exportar ambos flujos al repo Git de NovuChat después de cada sesión
    (criterio D-18) revisando que ningún valor `REEMPLAZAR_` haya sido
    sustituido por un secreto real dentro del JSON (criterio D-15 — tokens y
    claves viven solo en credenciales).

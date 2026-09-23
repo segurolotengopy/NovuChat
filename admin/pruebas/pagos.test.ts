@@ -21,6 +21,20 @@ import { mesBolivia, sumarMeses } from '../functions/src/prepago.ts';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
+// EL ENTORNO DEL COBRADOR SE FIJA ACÁ, no se hereda (23/09/2026).
+//
+// Cinco pruebas de esta suite —las que comprueban que un pago con QR emitido
+// NO se anula a mano— llegan hasta `resolverCobrador`, que exige un
+// `COBRADOR_TOKEN` de 32 caracteres. Hasta hoy lo encontraba porque
+// `cobro-prepago.test.ts` lo había dejado en el entorno del mismo worker de
+// vitest, y eso no es una dependencia: es una coincidencia de reparto. Al
+// agregar dos archivos de prueba el reparto cambió, `pagos.test.ts` cayó en
+// otro worker y las cinco fallaron con un error que no tiene nada que ver con
+// lo que prueban. Cada suite fija su entorno.
+// Valores de prueba, no secretos.
+process.env['COBRADOR_DOBLE'] ??= '1';
+process.env['COBRADOR_TOKEN'] ??= 'token-de-prueba-de-novuchat-sin-valor-real';
+process.env['COBRADOR_AVISO_SECRETO'] ??= 'secreto-de-prueba-del-aviso-de-confirmacion';
 
 // index.ts inicializa la app por defecto al cargarse, como en producción.
 const indice = await import('../functions/src/index.ts');

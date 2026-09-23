@@ -29,6 +29,10 @@ import {
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
 } from './prompt.js';
+// El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
+// sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
+// (sus dos importaciones son de tipo), así que no hay ciclo.
+import { cobroParaElFlujo, totalUtilizable } from './cobroVenta.js';
 
 /**
  * =========================================================================
@@ -121,6 +125,17 @@ interface Entrante {
   referencia?: string;
   calendario?: string;
   /**
+   * EL TOTAL QUE SE COTIZÓ AL MANDAR EL QR, solo con `qr_enviado` y solo en
+   * venta (`cobroVenta.ts`). En una reserva el importe es fijo y vive en la
+   * configuración; en una venta cambia con cada pedido, así que se fija acá,
+   * en el mismo mensaje que reporta el QR, y se guarda en `solicitud.monto`.
+   *
+   * Es lo que hace que el cotejo sea «por hecho, no por dicho»: el número
+   * contra el que se compara el comprobante quedó escrito cuando salió el QR,
+   * y nada de lo que el modelo escriba después lo mueve.
+   */
+  monto?: number;
+  /**
    * EL ADELANTO A FAVOR (Andres, 21/09/2026). `cita_cancelada` trae en
    * `referencia` la cita que se canceló y en `inicio` cuándo era (ISO): con eso
    * el servidor decide si hubo anticipación suficiente. `adelanto_aplicado`
@@ -168,6 +183,10 @@ function normalizar(cuerpo: unknown): Entrante | null {
     ? c['calendario'].trim().slice(0, 200) : '';
   const inicio = typeof c['inicio'] === 'string' ? c['inicio'].trim().slice(0, 40) : '';
   const nueva = typeof c['nueva'] === 'string' ? c['nueva'].trim().slice(0, 200) : '';
+  // EL TOTAL DEL PEDIDO. Dato no confiable como todo lo de acá: se acepta solo
+  // como número finito y positivo dentro de un techo. Lo que no pase no se
+  // guarda, y sin total el cotejo no compara nada (no lo toma por cero).
+  const monto = totalUtilizable(c['monto']);
 
   return { telefono, direccion, tipo, texto, ...(idMeta ? { idMeta } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
@@ -175,7 +194,8 @@ function normalizar(cuerpo: unknown): Entrante | null {
            ...(referencia ? { referencia } : {}),
            ...(calendario ? { calendario } : {}),
            ...(inicio ? { inicio } : {}),
-           ...(nueva ? { nueva } : {}) };
+           ...(nueva ? { nueva } : {}),
+           ...(monto !== null ? { monto } : {}) };
 }
 
 /**
@@ -226,6 +246,18 @@ export interface Solicitud {
    */
   aFavorHasta?: Timestamp | null;
   aFavorDe?: { id: string; calendario: string } | null;
+  /**
+   * EL TOTAL COTIZADO AL MANDAR EL QR, solo en venta (`cobroVenta.ts`).
+   *
+   * En una reserva el importe esperado se lee de `config/agendamiento`; en una
+   * venta cambia con cada pedido y por eso se guarda acá, en el mismo instante
+   * en que el QR salió. Es el número contra el que se coteja el comprobante, y
+   * nada de lo que el modelo escriba después lo mueve.
+   *
+   * `null` en las reservas y cuando el flujo no lo mandó. Sin él no se coteja
+   * el importe: se manda a una persona, que es lo honesto.
+   */
+  monto?: number | null;
 }
 
 /**
@@ -254,7 +286,7 @@ export function milisegundosDe(v: unknown): number | null {
 function solicitudNueva(etapa: Solicitud['etapa'], ahora: Timestamp): Solicitud {
   return {
     etapa, desde: ahora, qrEnviadoEn: null, evento: null, cotejos: 0, seguimientos: 0,
-    seguimientoEn: null, reactivadaEn: null, aFavorHasta: null, aFavorDe: null,
+    seguimientoEn: null, reactivadaEn: null, aFavorHasta: null, aFavorDe: null, monto: null,
   };
 }
 
@@ -292,7 +324,7 @@ export function solicitudTras(
   previa: unknown,
   evento: string | undefined,
   ahoraMs: number,
-  datos: { referencia?: string; calendario?: string; inicio?: string; nueva?: string },
+  datos: { referencia?: string; calendario?: string; inicio?: string; nueva?: string; monto?: number },
 ): Solicitud | null {
   const ahora = Timestamp.fromMillis(ahoraMs);
   const p = typeof previa === 'object' && previa !== null ? (previa as Partial<Solicitud>) : null;
@@ -306,7 +338,16 @@ export function solicitudTras(
       // Sin identificador de la cita no hay cita que seguir: el cotejo igual
       // corre (el cierre se referencia con el mensaje del comprobante), pero
       // `senaVencida` no tiene qué borrar. El flujo siempre lo manda.
+      //
+      // EN VENTA, `referencia` es el PEDIDO (el `cat_…` del carrito web, o el
+      // id del mensaje del QR) y `calendario` no viene: no hay agenda. La forma
+      // del campo no cambia porque lo que significa es lo mismo —qué quedó
+      // reservado esperando este pago— y duplicarlo por vertical partiría en
+      // dos una regla que es una sola.
       evento: id ? { id, calendario: (datos.calendario ?? '').trim() } : null,
+      // EL TOTAL COTIZADO, en venta. Se escribe acá y no se vuelve a tocar: es
+      // el número contra el que se cotejará el comprobante (`cobroVenta.ts`).
+      monto: totalUtilizable(datos.monto),
     };
   }
 
@@ -1333,7 +1374,8 @@ export const ingesta = onRequest(
       // nadie lee, y una solicitud sin QR contado sería un mensaje regalado.
       const solicitudPrevia = conversacion.get('solicitud');
       const solicitud = solicitudTras(solicitudPrevia, mensaje.evento, ahoraMs,
-        { referencia: mensaje.referencia, calendario: mensaje.calendario, inicio: mensaje.inicio, nueva: mensaje.nueva });
+        { referencia: mensaje.referencia, calendario: mensaje.calendario, inicio: mensaje.inicio,
+          nueva: mensaje.nueva, monto: mensaje.monto });
       // REACTIVADA (bloque 4): el primer mensaje del paciente dentro de las 24 h
       // de un seguimiento. Se anota en la solicitud y se cuenta en el mes, en
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
@@ -1963,10 +2005,26 @@ export const configuracionFlujo = onRequest(
       // `sanearCaptacion` descarta cada elemento que no cumple su forma antes
       // de que el asistente lo diga. Sale siempre, aunque falte el documento,
       // con valores por defecto y listas vacías: el flujo tiene un solo camino.
+      //
+      // Y EL QR DEL COMERCIO NO VIAJA ACÁ (23/09/2026). El documento del
+      // vertical se volcaba ENTERO, y adentro va `cobroReal` con su
+      // `cargaUtil`: el código del QR llegaba a n8n en cada consulta y quedaba
+      // en los datos de ejecución del flujo, que se guardan y se miran. El
+      // diseño dice lo contrario con todas las letras —«la imagen NO viaja
+      // acá: viaja su ficha», §4duodecies— y los bloques `cobroReal` y `cobro`
+      // de más abajo mandan exactamente lo que el flujo necesita: el nombre de
+      // la cuenta, el banco, las cuentas para cotejar y la dirección pública de
+      // la imagen. La carga útil no hace falta para nada de eso.
+      //
+      // Afectaba a los DOS verticales que cobran, venta y agendamiento, y
+      // estaba en producción desde que existe el cobro real.
       ...(docVertical === 'onboarding'
         ? { onboarding: sanearCaptacion(especifica?.exists ? especifica.data() : {}) }
         : docVertical && especifica?.exists
-          ? { [docVertical]: especifica.data() }
+          ? { [docVertical]: (() => {
+              const { cobroReal: _fuera, ...resto } = especifica.data() as Record<string, unknown>;
+              return resto;
+            })() }
           : {}),
 
       // COBRO: real o simulado, NUNCA los dos.
@@ -2004,6 +2062,28 @@ export const configuracionFlujo = onRequest(
                 // no mandar nada que mandar una imagen sin rotular.
                 mediaIdQr: String(especifica?.get('mediaIdQr') ?? ''),
               } })
+        : {}),
+
+      // EL ESTADO DEL COBRO DE ESTE TELÉFONO, solo para el flujo de venta.
+      //
+      // Va SEPARADO de `cobroReal`/`cobroSimulado` porque no es lo mismo: aquel
+      // par dice en qué modo está el comercio, y esto dice qué hacer con el
+      // próximo archivo que mande ESTE cliente. Y sale en los DOS modos a
+      // propósito: la compuerta del comprobante tiene que funcionar también en
+      // la demostración, o el camino que se prueba delante de un prospecto no
+      // es el que corre en producción.
+      //
+      // Es lo que le faltaba al flujo de venta para dejar de dar por comprobante
+      // cualquier imagen que llegara (`cobroVenta.ts`).
+      ...(comercio.flujo === 'venta'
+        ? { cobro: cobroParaElFlujo(
+              especifica?.exists ? (especifica.data() as Record<string, unknown>) : undefined,
+              cobroRealActivo,
+              String(negocio['moneda'] ?? 'BOB'),
+              (ficha) => `https://${REGION}-${process.env['GCLOUD_PROJECT'] ?? ''}`
+                + `.cloudfunctions.net/imagenDeCobro?f=${ficha}`,
+              conversacion?.get('solicitud'),
+            ) }
         : {}),
 
       // SEÑA PARA RESERVAR, solo para el flujo de agendamiento (bloque 2). El

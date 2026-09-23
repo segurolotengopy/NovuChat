@@ -2656,6 +2656,77 @@ Imágenes y PDF que no son comprobante, audio, seguimientos de la solicitud, y
 el candado con un solo calendario: son los bloques 3, 4 y 5 de `Analisis/30`.
 Los dos primeros están hechos: §4terdecies (medios) y §4quaterdecies (seguimiento).
 
+### 4duodecies.5 El mismo cobro, en una VENTA (23/09/2026)
+
+> **`Analisis/07` §4, que estaba escrito para el Demo B desde el 06/09 y no se
+> había construido.** Toda la maquinaria de §4duodecies se porta al flujo de
+> venta con **una sola diferencia**, y de ella sale todo lo demás:
+>
+> **En una reserva el importe esperado se LEE de la configuración; en una venta
+> se FIJA cuando sale el QR.** La seña es un número fijo (`senaImporte`); el
+> total de un pedido cambia con cada conversación.
+
+**Las decisiones, en orden:**
+
+1. **El total viaja con el QR, no con el comprobante.** El flujo lo reporta en
+   el mismo mensaje que reporta el QR (`evento: 'qr_enviado'`, campo `monto`) y
+   la ingesta lo guarda en `solicitud.monto` **dentro de la transacción que ya
+   cuenta ese mensaje**. El cotejo lo lee de ahí. Es «por hecho, no por dicho»
+   aplicado al dinero: el número quedó escrito cuando salió el QR y nada de lo
+   que el modelo escriba después lo mueve.
+2. **Si el pedido vino del carrito web, gana el total del SERVIDOR.**
+   `pedidos/{id}.total` lo calculó `catalogoWeb.ts` con el costo de envío
+   incluido y sin pasar por el navegador. Cuando la referencia de la solicitud
+   es un `cat_…`, `cotejarComprobante` lee ese documento y descarta lo que
+   mandó el flujo.
+3. **Sin total no se coteja contra cero.** `409 sin_total`, y el comprobante lo
+   mira una persona. Con cero, el cliente leería «el comprobante dice 350 y el
+   pedido es de 0», que es un motivo falso.
+4. **El QR pendiente caduca a las 24 h** (`MINUTOS_QR_VENTA`), que es la
+   ventana de la conversación. No hay horario que liberar —eso es de la
+   agenda—, pero un pendiente que no caduca convierte cualquier imagen en un
+   pago. No hace falta un flujo programado: lo resuelve el reloj en el cotejo.
+5. **El estado del cobro sale en los DOS modos** (`configuracionFlujo.cobro`,
+   `cobroVenta.ts`), real y simulado. La compuerta del comprobante tiene que
+   funcionar también en la demostración, o el camino que se prueba delante de
+   un prospecto no es el que corre en producción.
+6. **El cierre es `cierres/venta_<referencia>`**, con la misma cuenta que
+   `idDesdeReferencia` de `cierres.ts`, para que no se cuente dos veces.
+   Métricas propias: `cobrosCotejados` y `cobrosVencidos`.
+7. **Lo que NO se porta, y por qué:** la retención del horario (no hay horario)
+   y el adelanto a favor (lo contrario de una cita cancelada con seña es una
+   devolución de dinero, y eso no lo decide un asistente).
+
+**Campos nuevos**
+
+| Dónde | Campo | Tipo | Quién escribe |
+|---|---|---|---|
+| `conversaciones/wa_{tel}` | `solicitud.monto` | number \| null | la ingesta, con `qr_enviado` |
+| `metricas/{aaaa-mm}` | `cobrosCotejados`, `cobrosVencidos` | int | `cotejarComprobante` |
+
+**Mensajes por conversación: −1** en las que llegan a pagar (el texto del
+asistente viaja en el **pie** del QR y deja de salir aparte), **0** en el resto.
+El mensaje fijo del cotejo reemplaza a la confirmación que hoy escribe el
+modelo. Los avisos al negocio los paga NovuChat.
+
+**Dos defectos que aparecieron al construirlo, y quedaron cerrados:**
+
+- **La carga útil del QR viajaba al flujo.** `configuracionFlujo` volcaba el
+  documento del vertical ENTERO, y adentro va `cobroReal.cargaUtil`: el código
+  del QR llegaba a n8n en cada consulta y quedaba en los datos de ejecución.
+  Contradecía lo que §4duodecies.1 dice con todas las letras («la imagen NO
+  viaja acá: viaja su ficha»). Afectaba a los dos verticales que cobran y
+  estaba en producción desde que existe el cobro real.
+- **Un QR vencido se seguía sirviendo.** `imagenDeCobro` miraba `activo` y
+  revalidaba el código, pero no `venceEl`. `registrarQrDeCobro` rechaza
+  registrar uno vencido y `activar-cobro-real.mjs` se niega a encenderlo, pero
+  ninguno de los dos mira lo que pasa DESPUÉS: un QR encendido en junio con
+  vencimiento en septiembre se servía en octubre, el cliente escaneaba, el
+  banco rechazaba y el negocio se enteraba por un reclamo.
+
+`admin/functions/src/cobroVenta.ts`; pruebas en `pruebas/cobro-venta.test.ts`
+(el servidor) y `pruebas/demo-b-cobro.test.ts` (el flujo, escrita negando).
+
 ## 4terdecies. Medios entrantes: clasificar, no mirar
 
 > **Decidido el 17/09/2026** (`Analisis/34` §3.1 y §4.1;
