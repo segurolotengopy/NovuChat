@@ -187,13 +187,15 @@ cuenta se **deriva de los pagos**, no se escribe a mano. **Costo: 0 mensajes.**
 ### Bloque 2 — El cliente del cobrador (1,5 jornadas)
 Rama `prepago/cliente-cobrador`. Contra `docs/10-contrato-consumidores.md`
 del proyecto de cobros: `POST /api/v1/cobros` con `referenciaExterna`
-`tenant/periodo/pagoId`, monto como texto decimal, vigencia 72 h, concepto
+= `pagoId`, 128 bits al azar (el contrato admite solo letras, números y
+`: _ . -`, **sin `/**`, y la referencia tiene que ser opaca: el tenant se
+resuelve en NovuChat por `/cobrosPendientes/{pagoId}`), monto como texto decimal, vigencia 72 h, concepto
 sin datos del comercio; guardar el pendiente; **sondear `estadoCobro` por
 referencia** mientras haya un cobro pendiente (cada pocos minutos, más el
 barrido horario), y aplicar `aplicarPago` **idempotentemente** solo cuando el
 estado sea `CONFIRMADO`; verificar la firma del aviso cuando exista;
 `anularCobro` al cargar un pago manual, tratando el `409` de pagado como «hay
-plata: consultá el estado». **Costo: 0
+plata: consulta el estado». **Costo: 0
 mensajes** (los del QR están en el bloque 4).
 
 ### Bloque 3 — Consola: «Pagar» y el propietario (1,5 jornadas)

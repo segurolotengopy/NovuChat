@@ -257,8 +257,9 @@ D-5 de este caso.
 1. En «Estado de cuenta», el botón **Pagar**: elegir plan, meses (1 a 6) y
    bolsas; ver el importe en USD y en Bs con el TCO del día y su fuente.
 2. NovuChat pide el cobro a ManejoQRSimple (`crearCobro`: importe en
-   centavos, vencimiento 72 h, referencia `tenant/periodo/pagoId`, cuenta
-   `novuchat`), guarda `/tenants/{t}/pagos/{pagoId}` en `pendiente` con el
+   centavos, vencimiento 72 h, referencia `pagoId` —128 bits al azar, opaca:
+   sin el nombre del comercio, y el tenant se resuelve en NovuChat por
+   `/cobrosPendientes/{pagoId}`—, cuenta `novuchat`), guarda `/tenants/{t}/pagos/{pagoId}` en `pendiente` con el
    TCO y marca `cuenta.pagoPendienteId`.
 3. La pantalla muestra el QR y «lo puede pagar desde cualquier banco».
 4. ManejoQRSimple confirma contra el banco y avisa (firmado); la Function

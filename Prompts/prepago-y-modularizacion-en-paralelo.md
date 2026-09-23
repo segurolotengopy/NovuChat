@@ -189,8 +189,10 @@ tres precisiones que el prompt no tenía:
 - **A-0** se hace sobre la ingesta de hoy: primero leerla entera, después
   reaplicar. Es integración, no trasplante.
 - **A-2** consume `docs/10-contrato-consumidores.md` del proyecto de cobros
-  **literalmente**: `referenciaExterna` = `tenant/periodo/pagoId` (opaca para
-  el cobrador; sin nombres ni teléfonos), `concepto` sin datos del comercio
+  **literalmente**: `referenciaExterna` = `pagoId`, 128 bits al azar. **Opaca**:
+  el `tenantId` es el nombre comercial de un cliente y no viaja al cobrador;
+  el tenant se resuelve en NovuChat por `/cobrosPendientes/{pagoId}`. El
+  contrato además admite solo letras, números y `: _ . -`, sin `/`, `concepto` sin datos del comercio
   (lo ve quien paga en su banco), monto como texto decimal, `estadoCobro` por
   referencia, y **solo `CONFIRMADO` es pagado** (`PAGO_DETECTADO` no lo es).
   El doble de prueba en `admin/pruebas/dobles/cobrador.ts` imita ese
