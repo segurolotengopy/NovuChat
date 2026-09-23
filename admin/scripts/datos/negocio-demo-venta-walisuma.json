@@ -1,0 +1,1296 @@
+{
+  "_fuente": "Catálogo de demostración del Demo B (comercio `demo-venta`) VESTIDO CON EL CATÁLOGO REAL DE WALISUMA, marca boliviana de artesanía de alta gama, para la reunión del 23/09/2026. Los 154 productos salen del PDF «Catalogo GIFTS Walisuma 2024» (34 páginas, Canva), que el prospecto entregó. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben.",
+  "_esto-es-una-demostracion-no-es-walisuma": "El asistente NO se hace pasar por Walisuma: el nombre del negocio dice «vitrina de demostración» y la descripción lo repite. Todo lo que la marca no dijo en ese PDF —direcciones, envíos, formas de pago, plazos, garantías, cambios, promociones, stock, tallas— está en `datosQueNoTenemos`, que es lo que hace que el asistente diga que no lo tiene en vez de inventarlo. El PDF trae dos direcciones y dos números de WhatsApp de Walisuma en su última página: NO se cargan, porque el repositorio es público y porque un dato de contacto de un tercero puesto en boca del asistente es exactamente lo que no se puede hacer. El QR del demo sigue siendo el simulado y rotulado de siempre, y el asistente nunca niega ser una IA: las dos cosas viven fuera de este archivo (/config/venta y el prompt del flujo) y este archivo no las toca.",
+  "_como-se-extrajo": "El texto del PDF sale en bloques por columna y los precios NO vienen en el orden de los nombres, así que cada precio se emparejó con el nombre que lo CONTIENE horizontalmente y está inmediatamente encima, usando las cajas de `pdftotext -bbox-layout`. Se verificaron a ojo once páginas renderizadas (3, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 25, 29). Las fotos se recortan de la página renderizada con las MISMAS coordenadas, así que ninguna foto puede quedar en otro producto.",
+  "_lo-que-quedo-fuera": "22 filas del PDF. Nueve porque el precio viene en rango o contradictorio y un precio cruzado delante del dueño arruina la reunión (pañuelos de aguayo $51-$56, corredor de mesa y corredores $211-$221, máscaras grandes $35-$39, ensaladeras $22 a 27, y las capas Tsai y Mia, que el PDF pone a $469/$479 en la p. 25 y a $437/$579 en la p. 29). Cinco porque el PDF omite el color y el identificador chocaría con el de su hermana. Cinco por repeticiones exactas. Tres del collage de la p. 25, que no tiene caja de foto propia. El detalle está en `_fuera` de este archivo.",
+  "_umbral-del-prompt": "154 productos está POR ENCIMA de UMBRAL_CATALOGO_AL_PROMPT = 40 (functions/src/prompt.ts): al prompt NO viaja la lista, viaja un resumen con las áreas y el rango de precios, y el asistente DERIVA al enlace del catálogo web en vez de recitar precios por chat. Es el comportamiento correcto para un catálogo de este tamaño y es lo que hay que mostrar en la reunión; el archivo `negocio-demo-venta-resto.json`, con 17, muestra el otro lado del umbral.",
+  "_fotos": "NO van acá y NO van en este repositorio: son fotos de producto de un tercero. Se recortan del PDF y se suben a `tenants/demo-venta/fotosCatalogo/{id}` con `admin/scripts/cargar-fotos-catalogo.mjs`, desde una carpeta fuera del control de versiones. Por eso ningún ítem de acá trae `imagenUrl`: la foto subida gana sobre el enlace y en este catálogo no hay ningún enlace que ganar. El logo va por el mismo script a `/config/marca`.",
+  "_el-otro-archivo": "`negocio-demo-venta-resto.json` es el mismo comercio con el catálogo genérico de 17 productos («Resto & Tienda Demo NovuChat», en bolivianos). Los dos escriben sobre `demo-venta` y son EXCLUYENTES: el último que se carga es el que se ve. Para volver al genérico: cargar ese archivo con `--aplicar` y borrar las fotos subidas con `cargar-fotos-catalogo.mjs --limpiar`. Los dos traen `nombreNegocio`, `descripcion` y `moneda` justamente para que ese viaje de ida y vuelta sea un solo comando y no deje mitades del otro puestas.",
+  "_lo-que-NO-va-aca": "No hay sección `venta`: cargar-negocio.mjs no la acepta y rechazaría el archivo entero. Los costos de entrega, el pedido mínimo y el media ID del QR quedan como los dejó sembrar-demos.mjs en /config/venta. Tampoco van los horarios ni el número de recepción: son los del Demo B y no cambian.",
+  "negocio": {
+    "_nota": "`mergeFields` reemplaza SOLO lo que el archivo trae. Estas ocho claves son lo que distingue a esta demostración de la genérica; todo lo demás del Demo B —horarios, mensajes, número de recepción— queda como está.",
+    "nombreNegocio": "Walisuma — vitrina de demostración NovuChat",
+    "descripcion": "Demostración de NovuChat armada con el catálogo GIFTS 2024 de Walisuma, marca boliviana de artesanía de alta gama: baby alpaca, lana de oveja, tintes naturales, cuero y madera tallada. Los precios están en dólares, como los publica ese catálogo. No es la tienda de Walisuma: es una vitrina de demostración de NovuChat.",
+    "moneda": "USD",
+    "tratamiento": "tu",
+    "estiloEmojis": "ninguno",
+    "nombreAsistente": "Sami",
+    "catalogoWebActivo": true,
+    "paleta": "terracota",
+    "_paleta": "El logo es marrón tierra (#8C6043, matiz ≈24°). Terracota (#C2410C, matiz ≈17°) es la única de las cinco en esa familia de color; vino está en 344° (rosa/borgoña) y chocaría con el marrón del logo y con los camel, crudo y vicuña de las fotos. Su tono suave (#FFEDD5) es una crema cálida que combina con el fondo topo de las fotos del catálogo. La «sugerencia» de paletas.ts (comida, parrillas) orienta al comercio, no limita la elección.",
+    "datosQueNoTenemos": [
+      "direcciones de las tiendas",
+      "formas de pago",
+      "costos y plazos de envío",
+      "envíos al exterior",
+      "disponibilidad y stock",
+      "tallas y medidas",
+      "colores disponibles de cada modelo",
+      "garantías, cambios y devoluciones",
+      "promociones y descuentos",
+      "hasta cuándo rigen estos precios",
+      "tipo de cambio para pagar en bolivianos",
+      "pedidos al por mayor",
+      "productos que el catálogo publica con precio en rango"
+    ],
+    "instruccionesExtra": "RUBRO: artesanía boliviana de alta gama. Baby alpaca, alpaca super fina, baby llama, lana de oveja con tintes naturales, cuero vacuno y exóticos, madera tallada y tejidos de comunidades tacanas.\nTONO: sobrio y cuidado, de boutique. Frases cortas, sin exclamaciones ni emojis. Se habla de materiales y de oficio, no de ofertas.\nMONEDA: los precios del catálogo están en DÓLARES. Si preguntan cuánto es en bolivianos, se dice que el cambio lo confirma el local, porque acá no tenemos el tipo de cambio del día.\nCATÁLOGO GRANDE: son más de ciento cincuenta piezas y no entran en el chat. Ante la pregunta de qué tienen se nombran las áreas y se manda el enlace del catálogo, que tiene la foto y el precio de cada una.\nLO QUE NO SABEMOS: envíos, formas de pago, plazos, garantías, cambios, stock, tallas y colores no están cargados. Se dice que no los tenemos y se ofrece pasar con recepción. Nunca se estima un plazo ni se promete un cambio.\nESTA ES UNA DEMOSTRACIÓN de NovuChat con el catálogo de Walisuma, no es la tienda de Walisuma. Si preguntan, se dice así, con naturalidad."
+  },
+  "catalogo": [
+    {
+      "nombre": "Abrigo Churchill",
+      "descripcion": "Abrigo largo. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 590,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Erna",
+      "descripcion": "Abrigo largo, baby alpaca.",
+      "area": "abrigos",
+      "precio": 590,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Halimah",
+      "descripcion": "Baby alpaca.",
+      "area": "abrigos",
+      "precio": 630,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Hilda",
+      "descripcion": "Abrigo con capucha, baby alpaca.",
+      "area": "abrigos",
+      "precio": 610,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Jacinda",
+      "descripcion": "Abrigo oversize, baby alpaca.",
+      "area": "abrigos",
+      "precio": 570,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Kenyatta",
+      "descripcion": "Abrigo con solapa. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 610,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Leona",
+      "descripcion": "Baby alpaca.",
+      "area": "abrigos",
+      "precio": 630,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Obama",
+      "descripcion": "Abrigo 3/4 con botones. Royal alpaca.",
+      "area": "abrigos",
+      "precio": 590,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Saara",
+      "descripcion": "Abrigo con solapa y cinturón, baby alpaca.",
+      "area": "abrigos",
+      "precio": 610,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Simonetta",
+      "descripcion": "Abrigo oversize con botones. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 570,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Capa Mia",
+      "descripcion": "Capa doble botonadura y cinturón. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 579,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Capa Rosa Parks",
+      "descripcion": "Capa con capucha, baby alpaca.",
+      "area": "abrigos",
+      "precio": 439,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Capa Tsai",
+      "descripcion": "Capa con cinturón. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 437,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaleco Busch",
+      "descripcion": "Chaleco con cierre. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 327,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaleco Katrin",
+      "descripcion": "Chaleco con solapa, sin botones. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 490,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaleco Kolinda",
+      "descripcion": "Chaleco largo, baby alpaca.",
+      "area": "abrigos",
+      "precio": 520,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaleco Neruh",
+      "descripcion": "Chaleco con despuntes. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 349,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Gandhi",
+      "descripcion": "Chaqueta con detalles de cuero. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 570,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Gorbachev",
+      "descripcion": "Chaqueta con bolsillos. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 579,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Hasina",
+      "descripcion": "Chaqueta casual, con cierre. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 460,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Macron",
+      "descripcion": "Chaqueta casual. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 463,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Mandela",
+      "descripcion": "Chaqueta con botones. Royal alpaca.",
+      "area": "abrigos",
+      "precio": 549,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Sahle",
+      "descripcion": "Chaqueta oversize con cinturón, baby alpaca.",
+      "area": "abrigos",
+      "precio": 530,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chaqueta Truman",
+      "descripcion": "Chaqueta casual. Baby alpaca.",
+      "area": "abrigos",
+      "precio": 498,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda Bicolor Tejida",
+      "descripcion": "Rojo/Vicuña alpaca super fina.",
+      "area": "accesorios",
+      "precio": 57,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda Simple Gris",
+      "descripcion": "Gris, baby alpaca.",
+      "area": "accesorios",
+      "precio": 81,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda Simple Rojo",
+      "descripcion": "Rojo, baby alpaca.",
+      "area": "accesorios",
+      "precio": 81,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda Simple Vicuña",
+      "descripcion": "Vicuña, baby alpaca.",
+      "area": "accesorios",
+      "precio": 81,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda Telar Premium",
+      "descripcion": "Vicuña, baby alpaca.",
+      "area": "accesorios",
+      "precio": 47,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda a Cuadros Crudo/Camel",
+      "descripcion": "Crudo/Camel, baby alpaca.",
+      "area": "accesorios",
+      "precio": 47,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda a Cuadros Crudo/Verde",
+      "descripcion": "Crudo/Verde, baby alpaca.",
+      "area": "accesorios",
+      "precio": 47,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bufanda a Cuadros Gris/Crudo",
+      "descripcion": "Gris/Crudo, baby alpaca.",
+      "area": "accesorios",
+      "precio": 47,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chal Bicolor Tejido",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 99,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chal Simple Tejido",
+      "descripcion": "Vicuña, alpaca super fina.",
+      "area": "accesorios",
+      "precio": 95,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chal Telar Premium",
+      "descripcion": "Verde, alpaca super fina.",
+      "area": "accesorios",
+      "precio": 95,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chuspa (bandolera Andina)",
+      "descripcion": "Bandolera de tintes naturales, tejido en telar de pie. Lana de Oveja.",
+      "area": "accesorios",
+      "precio": 43,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cuello Carolina Crudo",
+      "descripcion": "Crudo, baby alpaca.",
+      "area": "accesorios",
+      "precio": 33,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cuello Carolina Gris",
+      "descripcion": "Gris, baby alpaca.",
+      "area": "accesorios",
+      "precio": 33,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cuello Esperanza",
+      "descripcion": "Bufanda circular, 100% baby llama.",
+      "area": "accesorios",
+      "precio": 65,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Gorro Esperanza",
+      "descripcion": "Baby llama.",
+      "area": "accesorios",
+      "precio": 35,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Gorro Pto Inglés",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 27,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Gorros Simples",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 24,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Guantes Lita",
+      "descripcion": "Alpaca super fina y cuero.",
+      "area": "accesorios",
+      "precio": 35,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Guantes Robin",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 35,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Guantes Varón",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 27,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Mitones Esperanza",
+      "descripcion": "Baby llama.",
+      "area": "accesorios",
+      "precio": 37,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Mitones Trenza",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 21,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Mitones Trenza Largos",
+      "descripcion": "Alpaca super fina.",
+      "area": "accesorios",
+      "precio": 26,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Bandolera Peki",
+      "descripcion": "Tejido original en tintas naturales y cuero.",
+      "area": "cuero",
+      "precio": 75,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera",
+      "descripcion": "Tejido original en tintas naturales y cuero.",
+      "area": "cuero",
+      "precio": 54,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Peq. Tipo IV Cuero Vacuno",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 60,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Peq. Tipo IV Cuero de Lagarto",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 87,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Peq. Tipo IV Cuero de Paiche",
+      "descripcion": "Cuero de paiche.",
+      "area": "cuero",
+      "precio": 75,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Tipo I",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 92,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Tipo II",
+      "descripcion": "Cuero de avestruz.",
+      "area": "cuero",
+      "precio": 140,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Tipo III",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 92,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Tres Cuerpos",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 130,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Varon Clasica Cuero Vacuno",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 49,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Varon Clasica Cuero de Lagarto",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 85,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Varon Modelo I",
+      "descripcion": "Cuero de paiche.",
+      "area": "cuero",
+      "precio": 75,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera con Cierre",
+      "descripcion": "Cuero de paiche.",
+      "area": "cuero",
+      "precio": 137,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Brissia",
+      "descripcion": "Cuero de paiche.",
+      "area": "cuero",
+      "precio": 260,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Emilie",
+      "descripcion": "Cuero de lagarto, pieza entera.",
+      "area": "cuero",
+      "precio": 900,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Gabrielle Cuero de Lagarto",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 230,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Gabrielle Cuero de Paiche",
+      "descripcion": "Cuero de paiche.",
+      "area": "cuero",
+      "precio": 189,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Mabel",
+      "descripcion": "Cuero vacuno con aplicaciones de Lagarto.",
+      "area": "cuero",
+      "precio": 179,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Marie",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 475,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Sobre",
+      "descripcion": "Tejido original en tintas naturales y cuero.",
+      "area": "cuero",
+      "precio": 81,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Sonia",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 210,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cartera Stephanie",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 186,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón Cuero Vacuno",
+      "descripcion": "25MM.",
+      "area": "cuero",
+      "precio": 35,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón Tejido",
+      "descripcion": "Tejido original tintes naturales.",
+      "area": "cuero",
+      "precio": 53,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón Vacuno",
+      "descripcion": "40 Mm.",
+      "area": "cuero",
+      "precio": 35,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón de Lagarto 20 mm",
+      "descripcion": "Ancho 20mm.",
+      "area": "cuero",
+      "precio": 51,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón de Lagarto 25 mm",
+      "descripcion": "25MM.",
+      "area": "cuero",
+      "precio": 63,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón de Lagarto 30 mm",
+      "descripcion": "30 Mm.",
+      "area": "cuero",
+      "precio": 100,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón de Lagarto 35 mm",
+      "descripcion": "35MM.",
+      "area": "cuero",
+      "precio": 109,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón de Napa 20 mm",
+      "descripcion": "Ancho 20mm.",
+      "area": "cuero",
+      "precio": 30,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinturón de Napa 30 mm",
+      "descripcion": "30 Mm.",
+      "area": "cuero",
+      "precio": 48,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cowhide Two-Tone Tote",
+      "descripcion": "",
+      "area": "cuero",
+      "precio": 131,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Dopp Kit",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 57,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Estuche Simple",
+      "descripcion": "Cuero revuelto.",
+      "area": "cuero",
+      "precio": 28,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Estuche para Lentes",
+      "descripcion": "Tejido original tintes naturales.",
+      "area": "cuero",
+      "precio": 33,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 23,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero Clasico",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 23,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero Gota",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 23,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Make Up Pouch",
+      "descripcion": "Aguayo.",
+      "area": "cuero",
+      "precio": 29,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Manilla",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 35,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Mochila Aguayo",
+      "descripcion": "",
+      "area": "cuero",
+      "precio": 69,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Neceser",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 38,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Labial Doble",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 40,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Labial Simple",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 27,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Lentes",
+      "descripcion": "Tejido original tintes naturales.",
+      "area": "cuero",
+      "precio": 33,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Pasaporte Cuero Vacuno",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 31,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Pasaporte Familiar",
+      "descripcion": "6 pasaportes.",
+      "area": "cuero",
+      "precio": 55,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Pasaporte Upcycling",
+      "descripcion": "Upcycling Chulos & jeans.",
+      "area": "cuero",
+      "precio": 37,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Tarjetero",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 20,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Porta Tarjetero Simple",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 11,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Road Trip Aguayo",
+      "descripcion": "",
+      "area": "cuero",
+      "precio": 85,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Anais",
+      "descripcion": "Tallada y pintada a mano en una sola pieza.",
+      "area": "hogar y oficina",
+      "precio": 153,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Awaq",
+      "descripcion": "Tallada y pintada a mano en una sola pieza, madera balsa (ligera). 24,5 x 10 x 9,8 cm.",
+      "area": "hogar y oficina",
+      "precio": 181,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de Madera 15 cm",
+      "descripcion": "",
+      "area": "hogar y oficina",
+      "precio": 41,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de Madera 25 cm",
+      "descripcion": "",
+      "area": "hogar y oficina",
+      "precio": 53,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de Madera 30-36 cm",
+      "descripcion": "",
+      "area": "hogar y oficina",
+      "precio": 59,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Fuente de Madera 49x31 cm",
+      "descripcion": "",
+      "area": "hogar y oficina",
+      "precio": 86,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Individuales de Algodón",
+      "descripcion": "100% algodón tejido por mujeres tacanas.",
+      "area": "hogar y oficina",
+      "precio": 27,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Individuales de Palma",
+      "descripcion": "Tejidos en palma.",
+      "area": "hogar y oficina",
+      "precio": 29,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Individuales de Telar",
+      "descripcion": "Tejidos en telar, teñidos con tintes naturales.",
+      "area": "hogar y oficina",
+      "precio": 53,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Jendy",
+      "descripcion": "Tallada y pintada a mano en una sola pieza, madera balsa (ligera). 31,5 x 10,5 x 9,5 cm.",
+      "area": "hogar y oficina",
+      "precio": 181,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Kerana",
+      "descripcion": "Tallada y pintada a mano en una sola pieza.",
+      "area": "hogar y oficina",
+      "precio": 95,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Killari",
+      "descripcion": "Tallada y Pintada a mano, madera balsa (ligera) 20.5x12x12cm.",
+      "area": "hogar y oficina",
+      "precio": 215,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Mascaras de Animales Medianas",
+      "descripcion": "Medianas.",
+      "area": "hogar y oficina",
+      "precio": 31,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Mascaras de Animales Pequeñas",
+      "descripcion": "Pequeñas.",
+      "area": "hogar y oficina",
+      "precio": 29,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Pankara",
+      "descripcion": "Tallada y pintada a mano en una sola pieza.",
+      "area": "hogar y oficina",
+      "precio": 181,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Posa Ollas",
+      "descripcion": "Tejidos en palma.",
+      "area": "hogar y oficina",
+      "precio": 17,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Posa Vasos",
+      "descripcion": "4 U 100% algodón tejido por mujeres tacanas.",
+      "area": "hogar y oficina",
+      "precio": 27,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz Matrimonio",
+      "descripcion": "70 x 38 cm. Tejido en telar a mano. Piezas únicas y originales de La Candelaria.",
+      "area": "hogar y oficina",
+      "precio": 331,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Tapiz Pujllay",
+      "descripcion": "67 x 32 cm. Tejido en telar a mano. Piezas únicas y originales de La Candelaria.",
+      "area": "hogar y oficina",
+      "precio": 359,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Wara",
+      "descripcion": "Tallada y pintada a mano en una sola pieza.",
+      "area": "hogar y oficina",
+      "precio": 125,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Alegría Ponpon",
+      "descripcion": "100% baby alpaca.",
+      "area": "ruanas y chales",
+      "precio": 152,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Fernela",
+      "descripcion": "90% alpaca, 10% algodón pima.",
+      "area": "ruanas y chales",
+      "precio": 347,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Puytu Ruana",
+      "descripcion": "100% baby alpaca.",
+      "area": "ruanas y chales",
+      "precio": 347,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Ruana Bird Of Paradise",
+      "descripcion": "100% baby alpaca.",
+      "area": "ruanas y chales",
+      "precio": 347,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Ruana Cadessi",
+      "descripcion": "90% alpaca 10% algodon pima.",
+      "area": "ruanas y chales",
+      "precio": 347,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Ruana Grand Tour",
+      "descripcion": "Baby alpaca.",
+      "area": "ruanas y chales",
+      "precio": 300,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cinta Porta Lentes",
+      "descripcion": "Cintas tejidas a mano por mujeres de las Comunidades Tacanas.",
+      "area": "souvenirs",
+      "precio": 12,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Jabón de Quinua",
+      "descripcion": "",
+      "area": "souvenirs",
+      "precio": 9,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Joyero en Cestería Fina",
+      "descripcion": "",
+      "area": "souvenirs",
+      "precio": 15,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Marca Libros",
+      "descripcion": "Tejidos a mano por mujeres de las Comunidades Tacanas.",
+      "area": "souvenirs",
+      "precio": 12,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Marcadores de Libros",
+      "descripcion": "Tejido en telar a mano. Piezas únicas y originales de La Candelaria.",
+      "area": "souvenirs",
+      "precio": 12,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Pantuflas de Fieltro",
+      "descripcion": "Pantuflas artesanales de fieltro de oveja, aisla de la humedad y frío.",
+      "area": "souvenirs",
+      "precio": 22,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Paq. 2 Jabones",
+      "descripcion": "Jabones de quinua con hierbas.",
+      "area": "souvenirs",
+      "precio": 15,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Paq. 3 Jabones",
+      "descripcion": "Jabones de quinua con hierbas.",
+      "area": "souvenirs",
+      "precio": 22,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sales Spa",
+      "descripcion": "Sales de El Salar de Uyuni.",
+      "area": "souvenirs",
+      "precio": 7,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cardigan",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Empire Dress Lila Snow",
+      "descripcion": "100% algodón pima.",
+      "area": "sweaters",
+      "precio": 343,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Helecho Jacketon",
+      "descripcion": "90% baby alpaca.",
+      "area": "sweaters",
+      "precio": 295,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Huarani Coat",
+      "descripcion": "90% alpaca, 10% algodón pima.",
+      "area": "sweaters",
+      "precio": 295,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Huarani Coat Cream",
+      "descripcion": "90% alpaca, 10% algodón pima.",
+      "area": "sweaters",
+      "precio": 295,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Jacket Jalur Pleatblack",
+      "descripcion": "Alpaca con algodón pima.",
+      "area": "sweaters",
+      "precio": 296,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Saco Pauli",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 92,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Saco Rosa",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 123,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Saco Sonia",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 115,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Saco Victoria",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 139,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater 1/2 Cierre",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater C/Sujetador",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 131,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Cierre Entero",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Cuello Cruzado",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Cuello Redondo",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Cuello V",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Grueso",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 120,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Manga Globo",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 121,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Pepe",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 137,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Sweater Santa Clara",
+      "descripcion": "Alpaca super fina.",
+      "area": "sweaters",
+      "precio": 110,
+      "moneda": "USD",
+      "activo": true
+    }
+  ],
+  "_fuera": [
+    "p.3 · BUFANDA TELAR PREMIUM · $47 → el PDF no dice el color: el id chocaría con el de «Vicuña»",
+    "p.3 · BUFANDA TELAR PREMIUM · $47 → el PDF no dice el color (subtítulo con la coma suelta)",
+    "p.3 · CUELLO CAROLINA · $ 33 → el PDF no dice el color: el id chocaría con «Crudo» y «Gris»",
+    "p.4 · BUFANDA BICOLOR TEJIDA · $57 → el PDF no dice el color: chocaría con «Rojo/Vicuña»",
+    "p.4 · CHAL SIMPLE TEJIDO · $95 → el PDF no dice el color: chocaría con «Vicuña»",
+    "p.8 · PORTA LABIAL DOBLE · $ 40 → repetido: mismo nombre, material y precio (dos fotos del mismo producto)",
+    "p.8 · PORTA TARJETERO SIMPLE · $ 10 → dos productos distintos con el mismo nombre y material; sin forma de distinguirlos ($10)",
+    "p.9 · LLAVERO GOTA · $23 → repetido en la p. 8 con el mismo precio",
+    "p.9 · PORTA TARJETERO · $20 → repetido en la p. 8 con el mismo precio",
+    "p.10 · PAÑUELOS DE AGUAYO EN SEDA · $51 - $56 → precio en rango ($51-$56)",
+    "p.11 · PORTA PASAPORTE · $22 → dos productos distintos con el mismo nombre y material; sin forma de distinguirlos ($22)",
+    "p.12 · CORREDOR DE MESA · $211-$221 → precio en rango",
+    "p.14 · MASCARAS DE ANIMALES · $35 - $39 → precio en rango",
+    "p.15 · INDIVIDUALES · $27 → repetido: dos fotos del mismo producto",
+    "p.15 · CORREDORES · $211-$221 → precio en rango",
+    "p.18 · ENSALADERAS DE MADERA · $22 A 27 (dif. tamaños) → precio en rango",
+    "p.25 · Capa con cinturón. · $469 → CAPA TSAI: el PDF la pone a $469 acá y a $437 en la p. 29",
+    "p.25 · Capa doble botonadura y · $479 → CAPA MIA: $479 acá y $579 en la p. 29",
+    "p.25 · Billetera de cuero · 137$ → collage sin caja de foto propia: no se puede recortar su imagen",
+    "p.25 · Cartera Roselinda. Cuero de · 390$ → collage sin caja de foto propia",
+    "p.25 · Billetera cuero de lagarto. tipo III · 130$ → collage sin caja de foto propia",
+    "p.26 · CINTURÓN DE LAGARTO · $109 → repetido en la p. 7 («35MM», $109)"
+  ]
+}

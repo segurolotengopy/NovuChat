@@ -1,12 +1,15 @@
 {
-  "_fuente": "Catálogo de demostración del Demo B (comercio `demo-venta`, «Resto & Tienda Demo NovuChat»), para mostrar el CATÁLOGO WEB delante de un prospecto. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben.",
+  "_fuente": "Catálogo de demostración GENÉRICO del Demo B (comercio `demo-venta`, «Resto & Tienda Demo NovuChat»), para mostrar el CATÁLOGO WEB delante de un prospecto sin rubro definido. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben.",
   "_por-que": "El Demo B tenía 6 productos sin foto y el catálogo web apagado: una vitrina de 6 tarjetas grises no vende. Acá quedan 17 productos con foto, repartidos en dos áreas (gastronomia y retail), que es lo que hace que el filtro por área tenga sentido en pantalla.",
-  "_umbral-del-prompt": "17 productos está POR DEBAJO de UMBRAL_CATALOGO_AL_PROMPT = 40 (functions/src/prompt.ts): el catálogo entero viaja al prompt, así que en la demostración el asistente puede recitar precios por chat Y mandar el enlace de la página. Si algún día pasa de 40, el prompt recibe solo un resumen por categorías y el enlace.",
+  "_umbral-del-prompt": "17 productos está POR DEBAJO de UMBRAL_CATALOGO_AL_PROMPT = 40 (functions/src/prompt.ts): el catálogo entero viaja al prompt, así que en la demostración el asistente puede recitar precios por chat Y mandar el enlace de la página. El de Walisuma, con 154, cae del otro lado: al prompt va solo un resumen por categorías y el asistente deriva al enlace.",
   "_los-seis-de-siempre": "Hamburguesa doble, Hamburguesa clásica, Salchipapa, Gaseosa (normal o zero), Chaqueta negra (S, M, L) y Audífonos inalámbricos se conservan con su nombre y su precio EXACTOS, porque el prompt del flujo y los guiones de la demostración los nombran. Lo nuevo se agrega alrededor.",
   "_fotos": "Son de Pexels y están ENLAZADAS, no alojadas: es el mismo criterio del catálogo web (cada comercio referencia las fotos que ya tiene publicadas). Las seis primeras son las mismas que usa scripts/catalogo-demo.mjs. Las once nuevas se verificaron una por una el 22/09/2026: todas responden con una imagen y todas pasan el regex de urlImagenValida del script, que es más estricto que el de las reglas.",
   "_lo-que-NO-va-aca": "No hay sección `venta`: cargar-negocio.mjs no la acepta y rechazaría el archivo entero. Los costos de entrega, el pedido mínimo y el media ID del QR quedan como los dejó sembrar-demos.mjs en /config/venta. Tampoco va el logo: vive en /config/marca y solo lo escribe la consola.",
   "negocio": {
-    "_nota": "SOLO estas dos claves. `mergeFields` reemplaza únicamente lo que el archivo trae: el nombre, la descripción, los horarios, los mensajes y el número de recepción del Demo B quedan como están. `catalogoWebActivo: true` exige que el comercio tenga el flujo `venta`, y demo-venta lo tiene.",
+    "_nota": "Las tres primeras claves son la IDENTIDAD, y están acá para poder VOLVER desde el archivo de Walisuma: `mergeFields` reemplaza solo lo que el archivo trae. Los valores son los que siembra `sembrar-demos.mjs` para demo-venta. Los horarios, los mensajes y el número de recepción no se tocan: son los mismos en los dos archivos. `catalogoWebActivo: true` exige que el comercio tenga el flujo `venta`, y demo-venta lo tiene.",
+    "nombreNegocio": "Resto & Tienda Demo NovuChat",
+    "descripcion": "Gastronomía y retail. Toma pedidos y cobra por WhatsApp.",
+    "moneda": "BOB",
     "catalogoWebActivo": true,
     "paleta": "terracota"
   },
@@ -164,5 +167,6 @@
       "imagenUrl": "https://images.pexels.com/photos/6754875/pexels-photo-6754875.jpeg?cs=tinysrgb&dpr=1&w=500",
       "activo": true
     }
-  ]
+  ],
+  "_el-otro-archivo": "`negocio-demo-venta-walisuma.json` es el MISMO comercio vestido con el catálogo real de Walisuma (artesanía de alta gama, precios en dólares), para la reunión con esa marca. Los dos escriben sobre `demo-venta` y son EXCLUYENTES: el último que se carga es el que se ve. Para volver a este, se carga este archivo con `--aplicar` y se borran las fotos subidas con `cargar-fotos-catalogo.mjs --limpiar`; para ir al otro, al revés. Por eso los dos traen `nombreNegocio`, `descripcion` y `moneda`: sin esas tres claves, volver dejaría el nombre y la moneda del otro puestos, y `mergeFields` no las devolvería solas."
 }

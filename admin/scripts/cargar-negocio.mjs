@@ -33,7 +33,9 @@
  *     lo que NovuChat carga tiene que poder editarse después desde la consola
  *     sin que la capa 1 lo rechace por un carácter que puso NovuChat.
  *   Los ítems y funcionarios que ya existen y el archivo no nombra NO se tocan:
- *   se informan. Retirar es una decisión de la consola, no de una carga.
+ *   se informan. Retirar es una decisión de la consola, no de una carga. La
+ *   única excepción es `--vaciar-ajenos` (abajo), que borra los ítems ajenos del
+ *   CATÁLOGO y existe solo para alternar entre los dos vestidos del Demo B.
  *
  * EL CONTADOR DEL CATÁLOGO VIAJA CON EL CATÁLOGO. Corregido el 17/09/2026.
  * Este script escribía los ítems con el SDK Admin y NO tocaba
@@ -78,6 +80,19 @@
  *     --archivo scripts/datos/negocio-platinum.json \
  *     [--local <ruta a CONFIGURACION.local.md>]                # en seco
  *   ... --aplicar                                              # escribe
+ *   ... --vaciar-ajenos --aplicar   # y BORRA los productos que el archivo no nombra
+ *
+ * `--vaciar-ajenos` existe por el Demo B, que se viste de dos maneras
+ * (`negocio-demo-venta-resto.json` y `-walisuma.json`) sobre el MISMO comercio.
+ * Sin él, cargar el segundo deja los 17 productos del primero: una hamburguesa
+ * entre los abrigos de baby alpaca, delante del prospecto. Es la única
+ * operación DESTRUCTIVA de este script, así que:
+ *   - solo actúa sobre el catálogo, nunca sobre funcionarios ni configuración;
+ *   - en seco lista uno por uno los identificadores que borraría;
+ *   - el contador se recalcula con lo que de verdad existía, leído dentro de la
+ *     misma transacción, y no con la lista de antes;
+ *   - **no se usa con un cliente real**: allá un producto que el archivo no
+ *     nombra es un producto que el comercio cargó desde la consola.
  *
  * Sin `--aplicar` no escribe nada: dice qué cambiaría, con conteos y nombres
  * de campos, nunca los textos largos ni un identificador completo (el número
@@ -90,6 +105,7 @@ import { readFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const APLICAR = args.includes('--aplicar');
+const VACIAR_AJENOS = args.includes('--vaciar-ajenos');
 
 // El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
 // módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
@@ -577,6 +593,16 @@ try {
     // Se cuentan los DOCUMENTOS, no los `activo: true`: es lo que cuentan las
     // reglas (`altaContada()` suma uno por documento que nace, mire o no
     // `activo`), y un producto dado de baja sigue ocupando cupo del plan.
+    // LOS AJENOS QUE DE VERDAD EXISTEN, leídos DENTRO de la transacción. La
+    // lista de arriba se armó con una consulta de antes; si alguien borró uno
+    // desde la consola en el medio, restarlo del contador lo dejaría corto. Con
+    // `tx.getAll` se sabe cuáles hay ahora mismo, y el contador queda exacto.
+    let aBorrar = [];
+    if (VACIAR_AJENOS && ajenosCatalogo.length) {
+      const docs = await tx.getAll(...ajenosCatalogo.map((id) => refItem(id)));
+      aBorrar = docs.filter((d) => d.exists).map((d) => d.id);
+    }
+
     let contador = null;
     if (catalogo) {
       const antes = await contarProductos(tx, colCatalogo);
@@ -584,8 +610,9 @@ try {
       const previo = docContador.get('ultimoItem');
       contador = {
         antes: docContador.exists ? docContador.get('items') : null,
-        items: antes + nuevos.length,
+        items: antes + nuevos.length - aBorrar.length,
         nuevos: nuevos.length,
+        borrados: aBorrar.length,
         // El último que nace en ESTA carga; si no nace ninguno, se conserva lo
         // que decía. Ver `escribirContador` en la librería.
         ultimoItem: nuevos.at(-1)?.id ?? (typeof previo === 'string' ? previo : ''),
@@ -607,6 +634,11 @@ try {
       catalogo: catalogo && {
         items: catalogo.map((it, i) => ({ ...it, estado: estadoDoc(docsItems[i], it.datos, { borraPrecio: true }) })),
         ajenos: ajenosCatalogo,
+        // En seco `aBorrar` no se leyó dentro de la transacción (se sale antes
+        // de escribir), así que para MOSTRAR se usa la lista de la consulta
+        // previa; para ESCRIBIR, la de la transacción. Es la diferencia entre
+        // enseñar algo aproximado y borrar algo aproximado.
+        borra: VACIAR_AJENOS ? (APLICAR ? aBorrar : ajenosCatalogo) : [],
       },
       funcionarios: funcionarios && {
         items: funcionarios.map((f, i) => ({ ...f, estado: estadoDoc(docsFunc[i], f.datos) })),
@@ -640,6 +672,10 @@ try {
     if (agendamiento) {
       tx.set(refAgend, { ...agendamiento, ...sello }, { mergeFields: [...Object.keys(agendamiento), ...selloCampos] });
     }
+    // PRIMERO SE BORRA Y DESPUÉS SE ESCRIBE, para que un identificador que
+    // estuviera en las dos listas —no puede estarlo, `idsAjenos` lo excluye—
+    // no quedara borrado al final.
+    for (const id of aBorrar) tx.delete(refItem(id));
     for (const it of catalogo ?? []) {
       // Con merge, un precio que el archivo YA NO trae quedaría escrito de la
       // carga anterior, y ausente significa «a consultar»: se borra a
@@ -667,6 +703,7 @@ try {
       },
       conteos: {
         ...(catalogo ? { catalogo: catalogo.length } : {}),
+        ...(aBorrar.length ? { catalogoBorrados: aBorrar.length } : {}),
         ...(funcionarios ? { funcionarios: funcionarios.length } : {}),
       },
     });
@@ -690,7 +727,11 @@ if (plan.catalogo) {
     console.log(`    ${it.estado.padEnd(6)} ${it.id.padEnd(36)} ${d.area ?? '—'} · ${typeof d.precio === 'number' ? `${d.precio} ${d.moneda ?? 'BOB'}` : 'a consultar'}`
       + `${d.duracionMin ? ` · ${d.duracionMin} min` : ''} · ${d.activo ? 'activo' : 'inactivo'}`);
   }
-  if (plan.catalogo.ajenos.length) console.log(`    ! ${plan.catalogo.ajenos.length} ítem(s) existente(s) que el archivo no nombra quedan como están: ${plan.catalogo.ajenos.join(', ')}`);
+  if (plan.catalogo.ajenos.length && !VACIAR_AJENOS) {
+    console.log(`    ! ${plan.catalogo.ajenos.length} ítem(s) existente(s) que el archivo no nombra quedan como están: ${plan.catalogo.ajenos.join(', ')}`);
+    console.log('      (con --vaciar-ajenos se borran; es para los dos demos del Demo B, nunca para un cliente real)');
+  }
+  for (const id of plan.catalogo.borra) console.log(`    ${rojo('BORRA')}  ${id}`);
   // El contador que hace cumplir el límite por plan. Sin él, la consola no
   // puede dar de alta ni de baja un producto: las reglas lo niegan.
   const c = plan.contador;

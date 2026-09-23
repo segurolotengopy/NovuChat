@@ -4,7 +4,93 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-22 (catálogo web conectado al Demo B: el asistente deriva a la página del comercio y el carrito vuelve al chat; `enlaceCatalogo` abierta, 17 productos cargados, flujo publicado y webhook del carrito registrado; falta el logo y la prueba con teléfono real). Antes: 2026-09-22 (noche) (flujo de captación publicado y verificado con teléfono real; la marca [RUBROS] medida contra Gemini y sostenida por tres capas). Antes: 2026-09-22 (Dhermacore: análisis de la oferta dual y el chat interno con el botón del traspaso y los rubros como referencia; nada publicado). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+**Última actualización:** 2026-09-22 (noche) (el Demo B vestido de Walisuma para la reunión: 10 productos de su catálogo real con fotos y logo, en producción; y el carrito del sitio deja de contar lo que el catálogo ya no tiene). Antes: 2026-09-22 (catálogo web conectado al Demo B: el asistente deriva a la página del comercio y el carrito vuelve al chat; `enlaceCatalogo` abierta, 17 productos cargados, flujo publicado y webhook del carrito registrado; falta el logo y la prueba con teléfono real). Antes: 2026-09-22 (noche) (flujo de captación publicado y verificado con teléfono real; la marca [RUBROS] medida contra Gemini y sostenida por tres capas). Antes: 2026-09-22 (Dhermacore: análisis de la oferta dual y el chat interno con el botón del traspaso y los rubros como referencia; nada publicado). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
+---
+
+## 2026-09-22 (noche) — el Demo B vestido de Walisuma, y un defecto del carrito
+
+Pedido de Andres: mostrarle el demo a **Walisuma** —marca boliviana de artesanía
+de alta gama— con **su propio catálogo**, para que el prospecto vea su producto
+en la pantalla. Sobre el PR #163. **Costo: 0 mensajes.**
+
+**De dónde salen los datos.** Del `Catalogo GIFTS Walisuma 2024.pdf` (34 páginas,
+Canva). Se extrajeron **154 productos** en 7 áreas, con precios en dólares, y
+quedaron en `negocio-demo-venta-walisuma.json`.
+
+**El riesgo era el emparejamiento, no la extracción.** El PDF está maquetado en
+columnas, así que `pdftotext` devuelve los nombres en bloque y los precios en
+otro, y el orden **no siempre** se corresponde. Un precio cruzado lo ve el dueño
+de la marca en dos segundos. Se extrajo con `pdftotext -bbox-layout`, emparejando
+cada precio con el nombre que lo **contiene horizontalmente**, y se verificaron
+13 páginas renderizadas a ojo. Después se comprobaron doce precios más contra el
+PDF de forma independiente: todos coinciden. **22 filas quedaron fuera** y están
+listadas en `_fuera` dentro del JSON: nueve por precio no confiable —incluidas
+dos contradicciones del propio PDF, la CAPA TSAI a $469 y $437, la CAPA MIA a
+$479 y $579—, cinco porque el PDF omite el color y el id chocaría con su
+hermana, cinco repeticiones exactas y tres del collage de la p. 25.
+
+**En producción van DIEZ, no los 154** (decisión de Andres). Los diez *primeros*
+del archivo son diez abrigos de entre 570 y 630 dólares: con esos el filtro por
+área no tiene nada que filtrar y la marca parece vender una sola cosa. Se eligió
+**uno o dos por área, las siete cubiertas, de 7 a 590 dólares**, en
+`negocio-demo-venta-walisuma-10.json`. Diez está muy por debajo del umbral de 40,
+así que el asistente **recita precios y además manda el enlace**; con los 154
+pasaría lo contrario. Los dos archivos quedan, y la vista previa los sirve con
+`--datos resto|walisuma-10|walisuma`: se pueden mostrar los dos lados del umbral
+en la misma reunión sin tocar la nube.
+
+**Las fotos y el logo no van al repositorio**, que es público: son material de un
+tercero. Viven en `CLIENTES/WALISUMA/` (ignorado). Se recortaron de la página
+renderizada **con las mismas coordenadas del texto**, así que ninguna puede caer
+en otro producto. `cargar-fotos-catalogo.mjs` (nuevo) las escribe en
+`fotosCatalogo` y el logo en `config/marca`, con el mismo recorte a 320 px que
+hace el navegador.
+
+**Lo que se hizo con el OK de Andres, en este orden:** los 10 productos con
+`--vaciar-ajenos`, las 10 fotos y el logo, y después dos remates que el
+diagnóstico dejó ver: **seis fotos sin ítem** que sobrevivían del demo genérico,
+y el **nombre del tenant**, que `cargar-negocio.mjs` no toca y que es el que la
+consola muestra en la cartera y en la cabecera. Sin eso la pantalla decía «Resto
+& Tienda» sobre un catálogo de Walisuma.
+
+**Tres cosas que no se cargaron, a propósito.** El comercio se llama «Walisuma —
+vitrina de demostración NovuChat» y la descripción termina diciendo que no es la
+tienda de Walisuma. El PDF trae dos direcciones, dos teléfonos, Instagram y sitio
+web: **no se cargaron**, porque un dato de contacto de un tercero puesto en boca
+del asistente es justo lo que no se puede hacer, y porque los teléfonos disparan
+el saneo. Y los 13 datos que no tenemos —plazos, envíos, tallas, garantías,
+stock— están en `datosQueNoTenemos`, que es lo que hace que el asistente diga que
+no lo sabe en vez de inventarlo. Hay pruebas que hacen cumplir las tres cosas.
+
+### El defecto del carrito, encontrado mirando y no leyendo
+
+Al abrir la vista previa con el catálogo nuevo, la barra decía **«1 ítem» y el
+total «$ 0»**. El carrito del sitio público se lee de `sessionStorage` al montar,
+**antes** de que llegue el catálogo, y nadie volvía a mirarlo: el identificador de
+un producto dado de baja seguía ahí, la barra lo contaba —suma las cantidades
+guardadas— y el total no —solo suma lo que existe—. El cliente entraba a «Tu
+pedido», lo veía vacío y **no tenía cómo limpiarlo**: lo que no aparece en la
+lista no tiene botón para quitarlo, y el carrito quedaba trabado hasta cerrar la
+pestaña.
+
+Le pasa a cualquier cliente al que le den de baja un producto —o le saquen el
+precio— mientras elige. Es el mismo caso que el servidor ya contempla en el
+checkout con `descartados`; faltaba contemplarlo **al mirar**, no solo al
+confirmar. `podarCarrito` (pura y exportada) descarta contra el catálogo vigente
+y devuelve el mismo objeto cuando no sobra nada, para no reescribir
+`sessionStorage` en cada respuesta. Probado con `pruebas/carrito-podado.test.ts`
+(6) y comprobado en el navegador sembrando un carrito con un producto inexistente
+y uno real: queda el real, con su total.
+
+**No está desplegado:** el arreglo es del sitio y llega con el próximo despliegue
+de Hosting. Para la reunión no molesta —el cliente abre el enlace por primera vez
+y no tiene carrito viejo—, pero conviene abrirlo en una pestaña nueva si alguien
+ya probó el catálogo en ese teléfono.
+
+**Para volver al demo genérico:** `cargar-negocio.mjs` con
+`negocio-demo-venta-resto.json --vaciar-ajenos`, `cargar-fotos-catalogo.mjs
+--limpiar --logo` con el logo del resto, y devolverle al tenant su nombre.
+
 ---
 
 ## 2026-09-22 — el catálogo web, conectado al Demo B
