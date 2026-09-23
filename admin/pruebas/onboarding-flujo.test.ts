@@ -728,7 +728,7 @@ describe('Una ventana nueva es una conversación nueva', () => {
   const LEAD = { empresa: 'Salón Rosa', contacto: 'Ana', rubro: 'belleza' };
   const vencida = (): J => ({ conversaciones: { [TEL]: {
     desde: Date.now() - 25 * 3_600_000, ultimo: Date.now() - 25 * 3_600_000, respuestas: 12,
-    etapa: 'cerrado', bienvenida: true, avisado: true, esperaRubro: true,
+    etapa: 'cerrado', bienvenida: true, avisado: true,
     avisoFalla: 'aviso_rechazado: HTTP 400, código 132001', lead: { ...LEAD } } } });
 
   it('al vencer se reinician etapa, bienvenida y aviso; los datos del prospecto se conservan', () => {
@@ -737,8 +737,11 @@ describe('Una ventana nueva es una conversación nueva', () => {
     // Vuelve a ser recibido como la primera vez: +1 mensaje por ventana nueva.
     expect(r['accion']).toBe('bienvenida');
     const c = sd['conversaciones'][TEL];
-    expect([c['etapa'], c['bienvenida'], c['avisado'], c['esperaRubro'], c['respuestas']])
-      .toEqual(['', false, false, false, 1]);
+    expect([c['etapa'], c['bienvenida'], c['avisado'], c['respuestas']])
+      .toEqual(['', false, false, 1]);
+    // `esperaRubro` se retiró el 22/09/2026 junto con la lista numerada: la
+    // ventana nueva no tiene nada que reiniciar.
+    expect(c['esperaRubro']).toBeUndefined();
     expect(c['avisoFalla']).toBeUndefined();
     expect(c['lead']).toEqual(LEAD);
     // Y el prompt sigue sabiendo lo que ya dijo: no se lo vuelve a preguntar.
@@ -1358,29 +1361,89 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       expect(s).toMatch(/UNA SOLA PREGUNTA, su nombre y el de su empresa/);
     });
 
-    it('[RUBROS] muestra la lista de la consola numerada, con el rubro a medida al final', () => {
+    // ÁREAS DE REFERENCIA, NO UN MENÚ DE SERVICIOS (Andres, 22/09/2026). El
+    // 22/09 el asistente le mostró a una cafetería cinco rubros numerados y le
+    // pidió el número: eso se lee como el catálogo cerrado de lo que NovuChat
+    // sabe hacer. NovuChat atiende negocios de cualquier rubro.
+    it('[RUBROS] pone áreas de referencia, en línea, sin numerar y sin el rubro a medida', () => {
       const sd: J = {};
       const cfg = cfgCon();
       const ent = turnoCon(texto('Soy Ana, de Inversiones AAB'), sd, cfg);
-      const r = procesar('Gracias, Ana. ¿A qué rubro pertenece Inversiones AAB?\n[RUBROS]\nRespóndeme con el número.'
+      const r = procesar('Gracias, Ana. ¿A qué se dedica Inversiones AAB?\n[RUBROS]'
         + '\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]', ent, sd);
-      expect(r['respuesta']).toContain('1. Salud y belleza\n2. Gastronomía\n3. Otro rubro (a medida)');
-      expect(r['respuesta']).not.toContain('[RUBROS]');
-      // El siguiente «2» es un rubro, resuelto por código antes del modelo.
-      const dos = turnoCon(texto('2'), sd, cfg);
-      expect(dos['leadConocido']).toMatchObject({ rubro: 'Gastronomía', flujos: 'ventas' });
-      expect(dos['mensajeDelTurno']).toMatch(/eligió de la lista el rubro 2: «Gastronomía»/);
-      expect(dos['mensajeDelTurno']).toMatch(/Faltan: ninguno/);
-      // Un número fuera de la lista no registra nada.
-      const sd2: J = {};
-      procesar('Elige:\n[RUBROS]', turnoCon(texto('hola, info'), sd2, cfg), sd2);
-      const nueve = turnoCon(texto('9'), sd2, cfg);
-      expect(nueve['leadConocido']['rubro']).toBeUndefined();
-      expect(nueve['mensajeDelTurno']).toMatch(/no está en la lista de rubros: pídele que elija un número de 1 a 3/);
+      const dicho = String(r['respuesta']);
+      expect(dicho).toContain('Por darte una referencia, algunas áreas en las que ya trabajamos: '
+        + 'Salud y belleza, Gastronomía. Si lo tuyo no está en esa lista, cuéntamelo igual: '
+        + 'trabajamos con negocios de todo tipo.');
+      expect(dicho).not.toContain('[RUBROS]');
+      // Escrita negando: ni numeración, ni el rubro a medida como opción.
+      expect(dicho).not.toMatch(/^\s*\d[.)]\s/m);
+      expect(dicho).not.toContain('Otro rubro (a medida)');
     });
 
-    it('un «2» sin lista mostrada es un mensaje más, no un rubro', () => {
+    it('mostrada la referencia, un «2» sigue siendo un mensaje más y no un rubro', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      procesar('¿A qué se dedican?\n[RUBROS]', turnoCon(texto('hola, info'), sd, cfg), sd);
+      const dos = turnoCon(texto('2'), sd, cfg);
+      expect(dos['leadConocido']['rubro']).toBeUndefined();
+      expect(dos['mensajeDelTurno']).not.toMatch(/eligió de la lista|no está en la lista de rubros/);
+      expect(sd['conversaciones'][TEL]['esperaRubro']).toBeUndefined();
+    });
+
+    it('un «2» sin referencia mostrada tampoco es un rubro', () => {
       expect(turnoCon(texto('2'), {}, cfgCon())['leadConocido']['rubro']).toBeUndefined();
+    });
+
+    // EL RUBRO NO DEPENDE DE LA VOLUNTAD DEL MODELO. Dos redes, medidas el
+    // 22/09/2026: la indicación del turno lleva la marca del 67 % al 93 %, y
+    // la red de `Procesar respuesta` cubre el resto sin un mensaje más.
+    it('sabida la empresa y sin rubro, el turno le indica al modelo que ponga la marca', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      procesar('Gracias.\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]',
+        turnoCon(texto('Soy Ana, de Inversiones AAB'), sd, cfg), sd);
+      const sigue = turnoCon(texto('cuéntame más'), sd, cfg);
+      expect(sigue['mensajeDelTurno']).toMatch(/NO sabes su rubro.*\[RUBROS\] en su propia línea/s);
+    });
+
+    it('sin saber todavía la empresa, el turno NO le pide el rubro', () => {
+      const primero = turnoCon(texto('hola, info'), {}, cfgCon());
+      expect(primero['mensajeDelTurno']).not.toMatch(/NO sabes su rubro/);
+    });
+
+    it('si el modelo no puso la marca, la referencia la agrega el código, en el mismo mensaje', () => {
+      const sd: J = {};
+      const cfg = cfgCon();
+      const r = procesar('¡Hola, Ana! NovuChat atiende tu WhatsApp las 24 horas. ¿Me confirmas algo más?'
+        + '\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]',
+        turnoCon(texto('Soy Ana, de Inversiones AAB'), sd, cfg), sd);
+      expect(r['respuesta']).toContain('Por darte una referencia, algunas áreas en las que ya trabajamos');
+      expect(r['avisos']).toContain('rubros_agregados_por_codigo');
+      // Un solo mensaje: la red no manda nada aparte.
+      expect(correr('Salida', [r])[0]!['responder']).toBe(true);
+    });
+
+    it('la red no se activa si el modelo sí puso la marca, si ya hay rubro o si es cliente actual', () => {
+      const cfg = cfgCon();
+      const conMarca = procesar('Contame más.\n[RUBROS]\n[LEAD]{"empresa":"AAB"}[/LEAD]',
+        turnoCon(texto('Soy Ana, de AAB'), {}, cfg), {});
+      expect(conMarca['avisos']).not.toContain('rubros_agregados_por_codigo');
+
+      const conRubro = procesar('Listo.\n[LEAD]{"empresa":"AAB","rubro":"Gastronomía"}[/LEAD]',
+        turnoCon(texto('somos un restaurante'), {}, cfg), {});
+      expect(conRubro['avisos']).not.toContain('rubros_agregados_por_codigo');
+      expect(conRubro['respuesta']).not.toContain('Por darte una referencia');
+
+      const sd: J = {};
+      const ent = turnoCon(texto('ayuda con la consola'), sd, cfg);
+      const actual = procesar('Te ayudo con la consola.', { ...ent, etapa: 'cliente_actual' }, sd);
+      expect(actual['avisos']).not.toContain('rubros_agregados_por_codigo');
+    });
+
+    it('sin empresa conocida la red no dispara: primero el nombre, después el rubro', () => {
+      const r = procesar('¿Cómo te llamas y cómo se llama tu empresa?', turnoCon(texto('hola'), {}, cfgCon()), {});
+      expect(r['respuesta']).not.toContain('Por darte una referencia');
     });
 
     it('el rubro deducido por el modelo trae sus flujos de la lista', () => {
@@ -1430,7 +1493,8 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       sd['conversaciones'][TEL]['lead'] = { empresa: 'Salón Rosa' };      // falta todo lo demás
       const r = correr('Traspaso a un asesor', [e], {}, sd)[0]!;
       expect(r['respuesta']).toBe('¡Anotado! 📋 Ya le pasé tus datos a nuestro equipo. Un especialista de NovuChat '
-        + 'te escribirá a este mismo número en horario de atención (lunes a viernes, de 09:00 a 18:00).'
+        + 'te escribirá a este mismo número en horario de atención (lunes a viernes, de 09:00 a 18:00),'
+        + ' y si prefieres no esperar, toca el botón y escríbele ahora mismo.'
         + ' ¡Que tengas un excelente día!');
       expect(r['avisar']).toBe(true);
       expect(r['guardarLead']).toBe(true);
@@ -1440,7 +1504,14 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const vars = (s['cuerpoAviso']['template']['components'][0]['parameters'] as J[]).map((p) => p['text']);
       expect(vars.slice(0, 3)).toEqual(['pidió hablar con un asesor', 'Salón Rosa', 'Ana']);
       expect(s['cuerpoCrm']).toMatchObject({ estado: 'cerrado', empresa: 'Salón Rosa' });
-      expect(s['esInteractivo']).toBe(false);
+      // SOLO SE OFRECE LO QUE SE CUMPLE: el aviso interno MÁS el botón para
+      // escribirle directo, dentro del mismo mensaje (no cuesta uno más).
+      expect(s['esInteractivo']).toBe(true);
+      expect(s['cuerpoMeta']['interactive']['type']).toBe('cta_url');
+      expect(s['cuerpoMeta']['interactive']['action']['parameters']).toMatchObject({
+        display_text: 'Escribir ahora' });
+      expect(s['cuerpoMeta']['interactive']['action']['parameters']['url'])
+        .toMatch(/^https:\/\/wa\.me\/59170000000\?text=/);
       // Meta acepta la plantilla: recién ahí el aviso queda dado.
       correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 },
         'Avisar a NovuChat': { statusCode: 200 } }, sd);
@@ -1500,7 +1571,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const c = config(PANEL(OFERTA, undefined, { operacion: { numeroRecepcion: '+591 7000-0000', horarioAtencion: '' } }),
         respaldoConHorario);
       const r = correr('Traspaso a un asesor', [{ ...c, from: TEL }], {}, {})[0]!;
-      expect(r['respuesta']).toContain('te escribirá a este mismo número lo antes posible.');
+      expect(r['respuesta']).toContain('te escribirá a este mismo número lo antes posible,');
       expect(r['respuesta']).not.toMatch(/horario/i);
       const s = instrucciones(c);
       // Lo que el negocio escribe; el corpus del sitio va aparte, al final.
@@ -1521,6 +1592,11 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const s = instrucciones(cfgCon());
       expect(s).toMatch(/Si DATOS DE NOVUCHAT dice otra cosa sobre planes, precios o sobre un tema de las ACLARACIONES DE LA OFERTA .*gana la consola/);
       expect(s).toContain('Impulso (USD 25/mes): Hasta 100 conversaciones');
+      // NUMERADOS EN EL PROMPT, sin numerar en el chat: son dos listas
+      // distintas. La del prompt la lee el modelo, y medido el 22/09 con
+      // `scripts/comparar-prompt.mjs` es lo que lo hace poner la marca (67 %
+      // contra 33-37 % sin numerar), sin que le pida un número al cliente ni
+      // una vez en 30 corridas.
       expect(s).toContain('1. Salud y belleza - solución: Agenda sola y recuerda las citas.');
       expect(s).toMatch(/cobran en bolivianos al tipo de cambio oficial del BCB/);
       // La oferta va antes del corpus, y el corpus sigue al final.
@@ -1566,9 +1642,12 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const salen = [
         turno(texto('hola'), sd, cfg),
         turno(nuevo, sd, cfg, '¿Cómo te llamas y cómo se llama tu empresa?'),
-        turno(texto('Ana, de Inversiones AAB'), sd, cfg, 'Gracias, Ana. ¿En qué rubro está?\n[RUBROS]\n'
+        turno(texto('Ana, de Inversiones AAB'), sd, cfg, 'Gracias, Ana. ¿A qué se dedican?\n[RUBROS]\n'
           + '[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]'),
-        turno(texto('2'), sd, cfg, 'Para gastronomía, tu asistente toma el pedido.\n[PLANES]'),
+        // Contesta con sus palabras, no con un número: el rubro lo registra el
+        // modelo en [LEAD], como cuando lo deduce del nombre de la empresa.
+        turno(texto('tenemos un restaurante'), sd, cfg, 'Para gastronomía, tu asistente toma el pedido.'
+          + '\n[PLANES]\n[LEAD]{"rubro":"Gastronomía"}[/LEAD]'),
         turno(asesor, sd, cfg),
       ];
       expect(salen).toHaveLength(5);
