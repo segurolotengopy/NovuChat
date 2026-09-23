@@ -227,6 +227,24 @@ America»). Antes eran gratis.
 - **La unidad se llama «conversación», nunca «atención».** El glosario publicado
   dice que la atención —persona distinta en el período— **no se factura**. Usar
   «atenciones» para lo que se cobra contradice el sitio y la consola.
+- **BYOC: el comercio trae su portafolio, su número y su tarjeta** (decisión de
+  Andres, 23/09/2026; `Analisis/39`). **Las dos modalidades conviven:** los
+  planes de arriba siguen para el comercio chico, y BYOC —**USD 50 por 2.000
+  conversaciones**, plan `byoc` en `planes.ts`, fuera de `PLANES_PUBLICADOS`—
+  se ofrece caso por caso. **Lo que decide no es el margen: es el cupo.** Meta
+  limita a 2 portafolios por cuenta personal sin verificar, 2 números por
+  portafolio y 1 usuario de sistema administrador, y con la cola de clientes esos
+  cupos se agotan; un comercio con portafolio verificado no consume ninguno.
+  Tres reglas que van con la modalidad:
+  - **El tope se fija contra el modelo que corre.** Los 2.000 salen de Gemini
+    (equilibrio 3.873). Con Haiku 4.5 el equilibrio cae a 1.542 y con Sonnet 5
+    a 771: **cambiar de modelo en un comercio BYOC sin rehacer la cuenta lo pone
+    a perder plata.** El contrato dice que el modelo lo elige NovuChat.
+  - **La factura de Meta del comercio no son «centavos»:** va de 21 a 112 USD al
+    mes con 800 conversaciones, según cuánto de su tráfico nazca de un anuncio.
+    Decirla como calderilla es presentar un cobro como algo que no es.
+  - **BYOC no levanta el techo de n8n:** un webhook por app sigue siendo un flujo
+    por cliente (`Analisis/20`). Eso solo lo cierra Tech Provider.
 - **Al escribir código que muestre precios:** el campo se denomina en dólares, el
   importe en bolivianos es derivado, y **hay que registrar el TCO aplicado a cada
   pago** o no se puede reconstruir una factura. En el JSON-LD del sitio,
