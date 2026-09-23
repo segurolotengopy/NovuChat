@@ -15,9 +15,10 @@ Continuación de la entrada anterior. **El flujo de captación se publicó** en 
 `Flujos/respaldo-ayMDHHBXRREgT8gR-20260922-185529.local.json`), después de fusionar
 el PR #161 a `main`. **Costo: 0 mensajes.**
 
-- **El traspaso quedó verificado contra un teléfono real** (ejecución #4692, 72047339):
-  el mensaje salió con el botón `cta_url` a `wa.me/59170661250`, Meta lo aceptó en
-  508 ms y `Enviar texto de respaldo` no corrió. Es la primera vez que el flujo de
+- **El traspaso quedó verificado contra un teléfono real** (ejecución #4692): el
+  mensaje salió con el botón `cta_url` al WhatsApp del asesor —el `numeroRecepcion`
+  de la configuración, nunca escrito en el repositorio—, Meta lo aceptó en 508 ms y
+  `Enviar texto de respaldo` no corrió. Es la primera vez que el flujo de
   captación manda un `cta_url`.
 - **Pero la misma prueba mostró que el modelo se saltó `[RUBROS]`** (ejecución #4688):
   registró empresa y contacto, y no mostró las áreas. Andres pidió medirlo en vez de
