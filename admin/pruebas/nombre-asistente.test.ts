@@ -54,9 +54,14 @@ const FLUJOS = [
     hoy: 'Eres NovuChat, el asistente virtual de ventas de Un Negocio (restaurante y tienda retail). Amable',
     conNombre: 'Eres Kenji, el asistente virtual de ventas de Un Negocio (restaurante y tienda retail).'
       + ' Cuando te presentes, di: «Soy Kenji, el asistente virtual de Un Negocio». Amable',
+    // La regla de identidad sigue diciendo lo mismo; lo que cambió el
+    // 22/09/2026 es la persona verbal: el prompt del Demo B tuteaba a medias
+    // («sos», «decilo», «seguí») contra el español boliviano sin voseo que
+    // pide CLAUDE.md y contra su propio campo `tratamiento`, que dice «NUNCA
+    // uses voseo». La prohibición 4 no depende de cómo se conjugue.
     identidad: [
-      'TRANSPARENCIA (regla que no se negocia): sos un asistente con inteligencia artificial',
-      'Nunca digas que sos una persona',
+      'TRANSPARENCIA (regla que no se negocia): eres un asistente con inteligencia artificial',
+      'Nunca digas que eres una persona',
     ],
   },
 ] as const;

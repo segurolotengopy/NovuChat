@@ -42,6 +42,14 @@ export interface Nodo {
   id?: string; name: string; type: string; typeVersion?: number; position?: [number, number];
   parameters: J; credentials?: Record<string, { id: string; name: string }>;
   onError?: string; retryOnFail?: boolean; maxTries?: number; notes?: string;
+  /**
+   * La ruta que n8n le da a un disparador con webhook. Se declara para poder
+   * probar que está AUSENTE: desde que el Demo B tiene dos disparadores, el del
+   * carrito lleva `path` propio y `preparar-import.sh` le escribe el `webhookId`
+   * de Meta solo a los que no tienen ruta propia. Si los dos lo tuvieran,
+   * compartirían URL y el carrito le pisaría el webhook a WhatsApp.
+   */
+  webhookId?: string;
 }
 export interface Flujo {
   name: string; settings?: J; nodes: Nodo[];

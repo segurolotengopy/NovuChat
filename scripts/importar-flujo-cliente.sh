@@ -145,6 +145,17 @@ TIPO_POR_NODO = {
   "n8n-nodes-base.whatsAppTrigger": "whatsAppTriggerApi",
   "n8n-nodes-base.whatsApp": "whatsAppApi",
   "n8n-nodes-base.httpRequest": "httpHeaderAuth",
+  # EL DISPARADOR DEL CARRITO (22/09/2026). Un flujo de venta tiene un segundo
+  # disparador, el nodo Webhook que recibe el carrito del catálogo web, y se
+  # autentica con la MISMA credencial de cabecera que la ingesta. Sin esta fila
+  # el nodo entraba sin credencial y n8n contestaba 500 a `despertarFlujo`: el
+  # pedido del cliente quedaba guardado y sin respuesta, que es el síntoma más
+  # caro de todos porque nadie lo ve hasta que el cliente reclama.
+  #
+  # Va SIN la condición de `genericAuthType` de más abajo: el nodo Webhook no
+  # tiene ese parámetro —declara `authentication: "headerAuth"`— así que la
+  # condición lo descartaría.
+  "n8n-nodes-base.webhook": "httpHeaderAuth",
   "n8n-nodes-base.googleCalendar": "googleCalendarOAuth2Api",
   "n8n-nodes-base.googleCalendarTool": "googleCalendarOAuth2Api",
   "@n8n/n8n-nodes-langchain.lmChatGoogleGemini": "googlePalmApi",
@@ -152,7 +163,11 @@ TIPO_POR_NODO = {
 def aplica(n):
     tipo = TIPO_POR_NODO.get(n["type"])
     if not tipo: return None
-    if tipo == "httpHeaderAuth" and n.get("parameters", {}).get("genericAuthType") != "httpHeaderAuth": return None
+    # La condición es solo para los nodos que ELIGEN entre credencial genérica y
+    # predefinida (`httpRequest`). El Webhook no elige: su `headerAuth` ya es la
+    # de cabecera, y exigirle `genericAuthType` lo dejaría sin credencial.
+    if tipo == "httpHeaderAuth" and n["type"] != "n8n-nodes-base.webhook" \
+       and n.get("parameters", {}).get("genericAuthType") != "httpHeaderAuth": return None
     return tipo
 print("\nAsignación nodo por nodo:")
 for n in flujo["nodes"]:

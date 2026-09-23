@@ -1,0 +1,118 @@
+{
+  "_fuente": "Catálogo de demostración del Demo B (comercio `demo-venta`) VESTIDO CON EL CATÁLOGO REAL DE WALISUMA, marca boliviana de artesanía de alta gama, para la reunión del 23/09/2026. Los 154 productos salen del PDF «Catalogo GIFTS Walisuma 2024» (34 páginas, Canva), que el prospecto entregó. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben.",
+  "_por-que": "DIEZ PRODUCTOS, NO MÁS (decisión de Andres, 22/09/2026). El archivo hermano `negocio-demo-venta-walisuma.json` tiene los 154 del catálogo completo; este trae diez.",
+  "_como-se-eligieron": "Uno o dos por área, cubriendo las SIETE, y de 7 a 590 dólares. Los diez PRIMEROS del archivo completo son diez abrigos de entre 570 y 630: con esos, el filtro por área no tiene nada que filtrar y la marca parece vender una sola cosa. La consigna era el número, no el orden.",
+  "_umbral-del-prompt": "Diez está MUY por debajo de UMBRAL_CATALOGO_AL_PROMPT (40), así que el catálogo entero viaja al prompt y el asistente recita precios además de mandar el enlace. Con los 154 pasa lo contrario: solo viaja un resumen y derivar al enlace deja de ser una opción. Se pueden mostrar los dos lados del umbral en la misma reunión, cambiando de archivo.",
+  "_fotos": "NO van acá y NO van en este repositorio: son fotos de producto de un tercero. Se recortan del PDF y se suben a `tenants/demo-venta/fotosCatalogo/{id}` con `admin/scripts/cargar-fotos-catalogo.mjs`, desde una carpeta fuera del control de versiones. Por eso ningún ítem de acá trae `imagenUrl`: la foto subida gana sobre el enlace y en este catálogo no hay ningún enlace que ganar. El logo va por el mismo script a `/config/marca`.",
+  "_lo-que-NO-va-aca": "No hay sección `venta`: cargar-negocio.mjs no la acepta y rechazaría el archivo entero. Los costos de entrega, el pedido mínimo y el media ID del QR quedan como los dejó sembrar-demos.mjs en /config/venta. Tampoco van los horarios ni el número de recepción: son los del Demo B y no cambian.",
+  "negocio": {
+    "_nota": "`mergeFields` reemplaza SOLO lo que el archivo trae. Estas ocho claves son lo que distingue a esta demostración de la genérica; todo lo demás del Demo B —horarios, mensajes, número de recepción— queda como está.",
+    "nombreNegocio": "Walisuma — vitrina de demostración NovuChat",
+    "descripcion": "Demostración de NovuChat armada con el catálogo GIFTS 2024 de Walisuma, marca boliviana de artesanía de alta gama: baby alpaca, lana de oveja, tintes naturales, cuero y madera tallada. Los precios están en dólares, como los publica ese catálogo. No es la tienda de Walisuma: es una vitrina de demostración de NovuChat.",
+    "moneda": "USD",
+    "tratamiento": "tu",
+    "estiloEmojis": "ninguno",
+    "nombreAsistente": "Sami",
+    "catalogoWebActivo": true,
+    "paleta": "terracota",
+    "_paleta": "El logo es marrón tierra (#8C6043, matiz ≈24°). Terracota (#C2410C, matiz ≈17°) es la única de las cinco en esa familia de color; vino está en 344° (rosa/borgoña) y chocaría con el marrón del logo y con los camel, crudo y vicuña de las fotos. Su tono suave (#FFEDD5) es una crema cálida que combina con el fondo topo de las fotos del catálogo. La «sugerencia» de paletas.ts (comida, parrillas) orienta al comercio, no limita la elección.",
+    "datosQueNoTenemos": [
+      "direcciones de las tiendas",
+      "formas de pago",
+      "costos y plazos de envío",
+      "envíos al exterior",
+      "disponibilidad y stock",
+      "tallas y medidas",
+      "colores disponibles de cada modelo",
+      "garantías, cambios y devoluciones",
+      "promociones y descuentos",
+      "hasta cuándo rigen estos precios",
+      "tipo de cambio para pagar en bolivianos",
+      "pedidos al por mayor",
+      "productos que el catálogo publica con precio en rango"
+    ],
+    "instruccionesExtra": "RUBRO: artesanía boliviana de alta gama. Baby alpaca, alpaca super fina, baby llama, lana de oveja con tintes naturales, cuero vacuno y exóticos, madera tallada y tejidos de comunidades tacanas.\nTONO: sobrio y cuidado, de boutique. Frases cortas, sin exclamaciones ni emojis. Se habla de materiales y de oficio, no de ofertas.\nMONEDA: los precios del catálogo están en DÓLARES. Si preguntan cuánto es en bolivianos, se dice que el cambio lo confirma el local, porque acá no tenemos el tipo de cambio del día.\nCATÁLOGO GRANDE: son más de ciento cincuenta piezas y no entran en el chat. Ante la pregunta de qué tienen se nombran las áreas y se manda el enlace del catálogo, que tiene la foto y el precio de cada una.\nLO QUE NO SABEMOS: envíos, formas de pago, plazos, garantías, cambios, stock, tallas y colores no están cargados. Se dice que no los tenemos y se ofrece pasar con recepción. Nunca se estima un plazo ni se promete un cambio.\nESTA ES UNA DEMOSTRACIÓN de NovuChat con el catálogo de Walisuma, no es la tienda de Walisuma. Si preguntan, se dice así, con naturalidad."
+  },
+  "catalogo": [
+    {
+      "nombre": "Sales Spa",
+      "descripcion": "Sales de El Salar de Uyuni.",
+      "area": "souvenirs",
+      "precio": 7,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Llavero",
+      "descripcion": "Cuero de lagarto.",
+      "area": "cuero",
+      "precio": 23,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Individuales de Algodón",
+      "descripcion": "100% algodón tejido por mujeres tacanas.",
+      "area": "hogar y oficina",
+      "precio": 27,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Chuspa (bandolera Andina)",
+      "descripcion": "Bandolera de tintes naturales, tejido en telar de pie. Lana de Oveja.",
+      "area": "accesorios",
+      "precio": 43,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cuello Esperanza",
+      "descripcion": "Bufanda circular, 100% baby llama.",
+      "area": "accesorios",
+      "precio": 65,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Billetera Tipo I",
+      "descripcion": "Cuero vacuno.",
+      "area": "cuero",
+      "precio": 92,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Cardigan",
+      "descripcion": "Baby alpaca.",
+      "area": "sweaters",
+      "precio": 108,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Ruana Grand Tour",
+      "descripcion": "Baby alpaca.",
+      "area": "ruanas y chales",
+      "precio": 300,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Capa Rosa Parks",
+      "descripcion": "Capa con capucha, baby alpaca.",
+      "area": "abrigos",
+      "precio": 439,
+      "moneda": "USD",
+      "activo": true
+    },
+    {
+      "nombre": "Abrigo Obama",
+      "descripcion": "Abrigo 3/4 con botones. Royal alpaca.",
+      "area": "abrigos",
+      "precio": 590,
+      "moneda": "USD",
+      "activo": true
+    }
+  ]
+}

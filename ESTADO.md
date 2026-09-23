@@ -4,8 +4,7 @@
 > leer esto primero. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos.
 
-**Última actualización:** 2026-09-22 (cierre) (el chat de captación vuelve a servir a la ficha: el rubro se registra por código y el traspaso pide lo que falta). Antes: 2026-09-22 (noche) (flujo de captación publicado y verificado con teléfono real; la marca [RUBROS] medida contra Gemini y sostenida por tres capas). Antes: 2026-09-22 (Dhermacore: análisis de la oferta dual y el chat interno con el botón del traspaso y los rubros como referencia; nada publicado). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor
-
+**Última actualización:** 2026-09-22 (noche) (el Demo B vestido de Walisuma para la reunión: 10 productos de su catálogo real con fotos y logo, en producción; y el carrito del sitio deja de contar lo que el catálogo ya no tiene). Antes: 2026-09-22 (catálogo web conectado al Demo B: el asistente deriva a la página del comercio y el carrito vuelve al chat; `enlaceCatalogo` abierta, 17 productos cargados, flujo publicado y webhook del carrito registrado; falta el logo y la prueba con teléfono real). Antes: 2026-09-22 (noche) (flujo de captación publicado y verificado con teléfono real; la marca [RUBROS] medida contra Gemini y sostenida por tres capas). Antes: 2026-09-22 (Dhermacore: análisis de la oferta dual y el chat interno con el botón del traspaso y los rubros como referencia; nada publicado). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor Antes: 2026-09-22 (cierre) (el chat de captación vuelve a servir a la ficha: el rubro se registra por código y el traspaso pide lo que falta). Antes: 2026-09-22 (noche) (flujo de captación publicado y verificado con teléfono real; la marca [RUBROS] medida contra Gemini y sostenida por tres capas). Antes: 2026-09-22 (Dhermacore: análisis de la oferta dual y el chat interno con el botón del traspaso y los rubros como referencia; nada publicado). Antes: 2026-09-22 (prepago y modularización: #150 A-0, #151 A-1, #152 A-2, #153 B-1 y #154 A-5 fusionados; nada desplegado; lo que sigue, en `Prompts/COORDINACION.md`). Antes: 2026-09-22 (prepago: A-0 y A-1 fusionados, A-2 integrado con A-1 y sin el stub provisorio). Antes: 2026-09-21 (Prepago, bloque A-1: pagos con su TCO, carga manual del propietario y `cuenta/estado` derivado; sobre A-0, sin desplegar). Antes: 2026-09-19 (noche) (`v0.6.0` en producción: seña, medios, seguimientos, Maps y candado; los tres flujos publicados y el de señas vencidas activo; el de seguimientos espera la plantilla de Meta). 2026-09-19 (los seis bloques de Platinum fusionados en `main`; el despliegue espera la etiqueta `v0.6.0`; plantilla de Meta en revisión). 2026-09-19 (Platinum, bloque 0: umbrales verificados en el flujo vivo y el script para fijarlos; sobre `main` con los cinco bloques de flujo ya fusionados). Antes: 2026-09-19 (Platinum, bloque 5: el candado revisa solo la agenda que recibió la cita; sobre `main` con los bloques 1 a 4 ya fusionados). Antes: 2026-09-18 (Platinum, bloque 4: recordatorio de solicitud pendiente una sola vez; sobre el bloque 3 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 3: el audio, la imagen y el PDF entran como texto; sobre el bloque 2 y el Bellido de producción). Antes: 2026-09-18 (Platinum, bloque 2: seña por QR con cotejo del comprobante; sobre el bloque 1 y `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (Platinum, bloque 1: dirección con enlace de Maps; sobre `main` con el consultorio del Dr. Bellido en producción). Antes: 2026-09-18 (tarde) (Bellido en producción con menú, contacto directo, emergencia y reglas de agenda; dos rondas de prueba real, la segunda limpia; candado cerrado cuando el calendario no responde, #113; #110, #113 y #114 abiertos). Antes: 2026-09-17 (cierre de jornada: `v0.5.5` en producción, el comportamiento del asistente se verifica antes de aplicarse; #82 a #102; las pruebas reales quedan para cuando el desarrollo esté completo). Antes: 2026-09-16 (alta de Clínica Platinum: Meta, canal y plataforma hechos; flujo en curso para el demo del 16/09). Antes: 2026-09-15 (noche) (`v0.4.0` en producción: captación genérica, Kenji, rotación de la clave de ingesta y el bucket de Storage). Antes: 2026-09-15 (cierre del cobro por bloques: #68 fusionado, flujos A y B publicados el 14/09 y ya atrasados respecto de `main`, sitio todavía en `v0.3.4`). Antes, el mismo día: 2026-09-15 (v0.3.0 en producción, agentes del alta, y el alta de NovuChat a mitad de camino: nombre visible aprobado sin aplicar). Antes: 2026-09-14 (flujo de captación de NovuChat en PR, sobre los umbrales del servidor; número de NovuChat en Meta, verificado). Antes, el mismo día: 2026-09-14 (revisión del #66: el mensaje del cliente se reporta antes que la respuesta y el aviso de uso extendido vuelve a salir; Semgrep deja de subir a Code Scanning lo exceptuado con `nosemgrep`, #67 y SeguridadGeneral#25; antes, 2026-09-13: flujos A y B con umbrales de uso extendido; #64 y #46 fusionados, producción pendiente de `v0.2.0`; fase C: ninguna cuenta del proyecto tiene Editor---
 ---
 
 ## 2026-09-22 (cierre) — el chat de captación vuelve a servir a la ficha
@@ -46,7 +45,203 @@ Tres arreglos, todos con **0 mensajes** de costo:
   nuevas escritas negando: una pregunta no es un rubro, un texto suelto sin haber
   preguntado tampoco, y la ficha completa cierra con el saludo mientras la ficha a
   medias cierra pidiendo lo que falta.
+## 2026-09-22 (noche) — el Demo B vestido de Walisuma, y un defecto del carrito
 
+Pedido de Andres: mostrarle el demo a **Walisuma** —marca boliviana de artesanía
+de alta gama— con **su propio catálogo**, para que el prospecto vea su producto
+en la pantalla. Sobre el PR #163. **Costo: 0 mensajes.**
+
+**De dónde salen los datos.** Del `Catalogo GIFTS Walisuma 2024.pdf` (34 páginas,
+Canva). Se extrajeron **154 productos** en 7 áreas, con precios en dólares, y
+quedaron en `negocio-demo-venta-walisuma.json`.
+
+**El riesgo era el emparejamiento, no la extracción.** El PDF está maquetado en
+columnas, así que `pdftotext` devuelve los nombres en bloque y los precios en
+otro, y el orden **no siempre** se corresponde. Un precio cruzado lo ve el dueño
+de la marca en dos segundos. Se extrajo con `pdftotext -bbox-layout`, emparejando
+cada precio con el nombre que lo **contiene horizontalmente**, y se verificaron
+13 páginas renderizadas a ojo. Después se comprobaron doce precios más contra el
+PDF de forma independiente: todos coinciden. **22 filas quedaron fuera** y están
+listadas en `_fuera` dentro del JSON: nueve por precio no confiable —incluidas
+dos contradicciones del propio PDF, la CAPA TSAI a $469 y $437, la CAPA MIA a
+$479 y $579—, cinco porque el PDF omite el color y el id chocaría con su
+hermana, cinco repeticiones exactas y tres del collage de la p. 25.
+
+**En producción van DIEZ, no los 154** (decisión de Andres). Los diez *primeros*
+del archivo son diez abrigos de entre 570 y 630 dólares: con esos el filtro por
+área no tiene nada que filtrar y la marca parece vender una sola cosa. Se eligió
+**uno o dos por área, las siete cubiertas, de 7 a 590 dólares**, en
+`negocio-demo-venta-walisuma-10.json`. Diez está muy por debajo del umbral de 40,
+así que el asistente **recita precios y además manda el enlace**; con los 154
+pasaría lo contrario. Los dos archivos quedan, y la vista previa los sirve con
+`--datos resto|walisuma-10|walisuma`: se pueden mostrar los dos lados del umbral
+en la misma reunión sin tocar la nube.
+
+**Las fotos y el logo no van al repositorio**, que es público: son material de un
+tercero. Viven en `CLIENTES/WALISUMA/` (ignorado). Se recortaron de la página
+renderizada **con las mismas coordenadas del texto**, así que ninguna puede caer
+en otro producto. `cargar-fotos-catalogo.mjs` (nuevo) las escribe en
+`fotosCatalogo` y el logo en `config/marca`, con el mismo recorte a 320 px que
+hace el navegador.
+
+**Lo que se hizo con el OK de Andres, en este orden:** los 10 productos con
+`--vaciar-ajenos`, las 10 fotos y el logo, y después dos remates que el
+diagnóstico dejó ver: **seis fotos sin ítem** que sobrevivían del demo genérico,
+y el **nombre del tenant**, que `cargar-negocio.mjs` no toca y que es el que la
+consola muestra en la cartera y en la cabecera. Sin eso la pantalla decía «Resto
+& Tienda» sobre un catálogo de Walisuma.
+
+**Tres cosas que no se cargaron, a propósito.** El comercio se llama «Walisuma —
+vitrina de demostración NovuChat» y la descripción termina diciendo que no es la
+tienda de Walisuma. El PDF trae dos direcciones, dos teléfonos, Instagram y sitio
+web: **no se cargaron**, porque un dato de contacto de un tercero puesto en boca
+del asistente es justo lo que no se puede hacer, y porque los teléfonos disparan
+el saneo. Y los 13 datos que no tenemos —plazos, envíos, tallas, garantías,
+stock— están en `datosQueNoTenemos`, que es lo que hace que el asistente diga que
+no lo sabe en vez de inventarlo. Hay pruebas que hacen cumplir las tres cosas.
+
+### El defecto del carrito, encontrado mirando y no leyendo
+
+Al abrir la vista previa con el catálogo nuevo, la barra decía **«1 ítem» y el
+total «$ 0»**. El carrito del sitio público se lee de `sessionStorage` al montar,
+**antes** de que llegue el catálogo, y nadie volvía a mirarlo: el identificador de
+un producto dado de baja seguía ahí, la barra lo contaba —suma las cantidades
+guardadas— y el total no —solo suma lo que existe—. El cliente entraba a «Tu
+pedido», lo veía vacío y **no tenía cómo limpiarlo**: lo que no aparece en la
+lista no tiene botón para quitarlo, y el carrito quedaba trabado hasta cerrar la
+pestaña.
+
+Le pasa a cualquier cliente al que le den de baja un producto —o le saquen el
+precio— mientras elige. Es el mismo caso que el servidor ya contempla en el
+checkout con `descartados`; faltaba contemplarlo **al mirar**, no solo al
+confirmar. `podarCarrito` (pura y exportada) descarta contra el catálogo vigente
+y devuelve el mismo objeto cuando no sobra nada, para no reescribir
+`sessionStorage` en cada respuesta. Probado con `pruebas/carrito-podado.test.ts`
+(6) y comprobado en el navegador sembrando un carrito con un producto inexistente
+y uno real: queda el real, con su total.
+
+**No está desplegado:** el arreglo es del sitio y llega con el próximo despliegue
+de Hosting. Para la reunión no molesta —el cliente abre el enlace por primera vez
+y no tiene carrito viejo—, pero conviene abrirlo en una pestaña nueva si alguien
+ya probó el catálogo en ese teléfono.
+
+**Para volver al demo genérico:** `cargar-negocio.mjs` con
+`negocio-demo-venta-resto.json --vaciar-ajenos`, `cargar-fotos-catalogo.mjs
+--limpiar --logo` con el logo del resto, y devolverle al tenant su nombre.
+
+---
+
+## 2026-09-22 — el catálogo web, conectado al Demo B
+
+Pedido de Andres: una demostración del catálogo para mañana, sobre el flujo de
+venta. Rama `catalogo/demo-b-derivar`, **PR #163**. **Costo: 0 mensajes** en la
+derivación al catálogo; **+1 mensaje** por cada carrito que vuelve (ver abajo).
+
+**Aplicado en producción con el OK de Andres, en este orden:** el invocador de
+`enlaceCatalogo`; el catálogo del comercio (contador 6 → 17, verificado por
+relectura); el flujo publicado en n8n (37 nodos, activo, con respaldo del vivo
+anterior); y el webhook del carrito registrado en la ruta del número del Demo B.
+**Queda el logo** —lo sube una persona desde la consola— **y la prueba contra un
+teléfono real**, que es lo único que cierra esto.
+
+**Qué había.** El catálogo web propio existe desde el 08/09 (#43) y sus seis
+Functions se desplegaron el 22/09. Ningún flujo lo llamaba: el Demo B recitaba
+el catálogo como texto y su prompt decía «no existe ninguna lista tocable ni
+botón». Los flujos de agendamiento no cuentan: por la decisión del 08/09 el
+catálogo web es una capacidad de **venta** y las reglas rechazan encenderlo sin
+ese flujo.
+
+**El bloqueante, que no estaba anotado en ningún lado.** `enlaceCatalogo` se
+desplegó **sin ningún binding de `roles/run.invoker`**: devolvía un 403 con HTML
+de Google antes de ejecutar una línea de su código, así que n8n no podía pedir
+un enlace y el 403 no se parece a ninguno de los errores que el flujo sabe
+interpretar. Las otras tres (`catalogoPublico`, `checkoutCatalogo`,
+`fotoDeCatalogo`) sí tenían `allUsers`, y por eso el síntoma no se veía al abrir
+la página. Es el mismo paso que `Prompts/COORDINACION.md` ya tenía anotado para
+`avisoCobrador` e `imagenDePago`: **una Function HTTP nueva no nace invocable**,
+y el despliegue no lo arregla porque corre con `--non-interactive`.
+`scripts/nube-catalogo.sh` lo diagnostica y lo aplica (idempotente); se corrió
+con el OK de Andres y `enlaceCatalogo` pasó a contestar `401 no autorizado`, que
+es su propio código rechazando por credenciales. **Conviene revisarlo después de
+cada despliegue que agregue una Function HTTP.**
+
+**El flujo** (`Flujos/demo-b-venta-cobro.json`, sin manifiesto: se edita
+directo). Marca `[ENVIAR_CATALOGO]`, con la mecánica que el flujo ya usa para el
+QR. **No se usó un nodo herramienta**: en n8n 2.36.5 `toolHttpRequest` está
+`hidden: true` —en retiro— y no se pudo confirmar el tipo `httpRequestTool`; el
+`httpRequest` 4.2 que se usó lo conocen las tres rutas de credenciales.
+
+**El enlace no agrega un mensaje.** El texto del agente y la dirección salen
+juntos: una compuerta `¿Responder ahora?` corta el camino normal en ese turno y
+el mensaje lo arma `Enlace del catálogo`, que examina los diez códigos de
+`enlaceCatalogo` uno por uno. **Sin enlace no se promete nada**: se quitan del
+texto del agente las oraciones que anunciaban una página y se sigue por chat,
+que es lo único que el flujo cumple (política del 21/09).
+
+**Dos defectos viejos que se cerraron de paso**, porque el catálogo los volvía
+graves:
+
+- **El reporte saliente colgaba de `Procesar respuesta`**, o sea que la consola
+  registraba lo que dijo el modelo y no lo que se envió (pendiente desde el
+  #97, ya resuelto en A y en Platinum). En el turno del catálogo el texto del
+  modelo **no es** el que sale, así que era un defecto de facturación. Ahora
+  cuelga del envío, por `Texto enviado`, que averigua cuál de los cuatro
+  caminos armó lo que salió. Con eso el aviso del comercio suspendido pasa a
+  reportarse, y antes no se reportaba nunca.
+- **`Enviar QR (imagen DEMO)` tenía un `genericAuthType` residual** con
+  credencial `whatsAppApi`: `importar-flujo-cliente.sh` se lo habría
+  sobreescrito con la de ingesta al dar de alta un cliente nuevo. Es la misma
+  familia del incidente del 15/09, cuando Meta devolvía 190 y el diagnóstico lo
+  informaba en verde.
+
+**El voseo del prompt del Demo B** (pendiente desde el 15/09) quedó corregido.
+
+**Los datos** (`admin/scripts/datos/negocio-demo-venta.json`, nuevo): 17
+productos —los 6 de siempre con sus precios exactos, más 11— todos activos, con
+precio y con foto verificada una por una. 17 está por debajo del umbral de 40,
+así que el asistente **recita precios y además manda el enlace**. Paleta
+`terracota`. El seco deja el contador en 6 → 17, sin ítems ajenos.
+
+**La vista previa local dejó de tener su propia copia de los datos.**
+`catalogo-demo.mjs` llevaba seis ítems escritos a mano con un comentario que
+admitía que iban a quedar viejos, y quedaron viejos: mostraba seis tarjetas
+mientras producción iba a mostrar diecisiete. Ahora lee el mismo archivo que se
+carga en Firestore. Es la lección de `build_flows.py` otra vez: una segunda
+fuente de verdad solo puede divergir. El logo del comercio
+(`Demo-Recursos/logo-demo-b.webp`) **se versionó**: vivía suelto en una sola
+máquina.
+
+**Probado en el navegador, con la vista previa:** la página carga con marca,
+logo, buscador y filtro por área; las 17 fotos cargan; se ve bien en teléfono; y
+el checkout sale del navegador con **solo identificadores y cantidades, ni un
+precio** —la garantía central del diseño— verificado leyendo lo que el servidor
+recibe.
+
+**La vuelta del carrito.** Nodo Webhook `Carrito del catálogo` con RUTA PROPIA:
+`preparar-import.sh` le ponía el `webhookId` de Meta a todo disparador, así que
+un Webhook sin `path` le habría pisado la ruta al de WhatsApp y **habrían dejado
+de llegar los mensajes**, sin que nadie lo relacionara con haber importado.
+La firma HMAC **no se verifica y se dice**: exigiría el secreto dentro del
+lienzo (prohibición 2), y el Code de n8n corre en un sandbox sin `require` ni
+entorno. Autentica el nodo Webhook con su credencial de cabecera; de la firma se
+comprueban forma y frescura, y el `tenantId` se coteja por dos caminos.
+
+**Dos caminos que no existían** y se agregaron: `fijar-webhook-carrito.mjs` (la
+callable existía pero ninguna pantalla la llama y solo la invoca el propietario,
+igual que le pasó al alias de ingesta el 14/09) y la fila de
+`n8n-nodes-base.webhook` en `importar-flujo-cliente.sh`, sin la cual un cliente
+de venta nuevo nacería con el disparador del carrito sin credencial.
+
+**Lo que falta:**
+
+1. **Subir el logo** desde la consola: Configuración → Catálogo web. Ningún
+   script lo escribe.
+2. **Probarlo contra un teléfono real.** El número del Demo B solo responde a
+   los cinco destinatarios registrados.
+3. La plantilla `carrito_te_espera` sigue sin presentar a Meta: fuera de la
+   ventana de 24 h el flujo **no manda nada** y lo deja anotado. Al darla de
+   alta, ojo: Meta rechaza un parámetro vacío, y `{{1}}` es el nombre del
+   cliente, que este flujo no conoce.
 ---
 
 ## 2026-09-22 (noche) — el flujo de captación publicado, y la marca [RUBROS] medida contra Gemini
@@ -140,7 +335,6 @@ viaja dentro del mensaje que ya salía).
   corrieron: el emulador no estaba levantado.
 - **Nada publicado en n8n.** El JSON versionado es lo que cambió; aplicarlo al flujo
   vivo necesita el OK de Andres.
-
 ---
 
 ## 2026-09-22 — el pase de un comercio de PRUEBA a PRODUCCIÓN, con la activación del prepago

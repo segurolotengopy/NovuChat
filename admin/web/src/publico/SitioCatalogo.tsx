@@ -86,6 +86,31 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
   useEffect(() => { guardarCarrito(ficha, carrito); }, [ficha, carrito]);
 
   /**
+   * EL CARRITO SE PODA CONTRA EL CATÁLOGO QUE ACABA DE LLEGAR.
+   *
+   * EL DEFECTO (22/09/2026, visto en la vista previa y no leyendo el código).
+   * El carrito se lee de `sessionStorage` al montar, ANTES de que exista el
+   * catálogo, y nadie volvía a mirarlo. Si mientras tanto el comercio dio de
+   * baja un ítem —o le sacó el precio, que para la página es lo mismo— el
+   * identificador seguía en el carrito y la pantalla se contradecía sola: la
+   * barra contaba «1 ítem» porque suma las cantidades guardadas, y el total
+   * decía 0 porque `totalDelCarrito` solo suma lo que está en el catálogo. El
+   * cliente entraba a «Tu pedido», lo veía vacío, y **no tenía manera de
+   * limpiarlo**: lo que no está en la lista no tiene botón para quitarlo.
+   *
+   * Es el mismo caso que el servidor ya contempla en el checkout con
+   * `descartados`; lo que faltaba era contemplarlo también al mirar.
+   *
+   * Se devuelve `previo` cuando no sobra nada, a propósito: un objeto nuevo en
+   * cada respuesta del servidor volvería a disparar el efecto de guardado y a
+   * reescribir `sessionStorage` sin motivo.
+   */
+  useEffect(() => {
+    if (!datos) return;
+    setCarrito((previo) => podarCarrito(previo, datos.items));
+  }, [datos]);
+
+  /**
    * EL TÍTULO ES EL DEL COMERCIO.
    *
    * `index.html` es uno solo para las dos aplicaciones, así que su `<title>`
@@ -528,6 +553,23 @@ function sumar(carrito: Carrito, id: string, n: number): Carrito {
   const copia = { ...carrito };
   if (cantidad === 0) delete copia[id]; else copia[id] = cantidad;
   return copia;
+}
+
+/**
+ * EL CARRITO, PODADO CONTRA EL CATÁLOGO VIGENTE.
+ *
+ * Se exporta y es pura para poder probarla: el efecto que la llama vive dentro
+ * de un componente y montarlo entero para comprobar una poda sería más frágil
+ * que la poda misma.
+ *
+ * Devuelve el MISMO objeto cuando no sobra nada, a propósito: uno nuevo en cada
+ * respuesta del servidor volvería a disparar el guardado y a reescribir
+ * `sessionStorage` sin motivo.
+ */
+export function podarCarrito(carrito: Carrito, items: ItemPublico[]): Carrito {
+  const vigentes = new Set(items.map((i) => i.id));
+  const quedan = Object.entries(carrito).filter(([id]) => vigentes.has(id));
+  return quedan.length === Object.keys(carrito).length ? carrito : Object.fromEntries(quedan);
 }
 
 function totalDelCarrito(items: ItemPublico[], carrito: Carrito): number {
