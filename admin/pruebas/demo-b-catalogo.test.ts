@@ -287,6 +287,67 @@ describe('«Enlace del catálogo»: el camino feliz', () => {
   });
 });
 
+describe('«Enlace del catálogo»: lo que el agente ya dijo no se dice dos veces', () => {
+  /** El texto REAL que recibió Andres el 23/09: el agente ya anuncia la página. */
+  const YA_ANUNCIA = 'Puedes ver la selección completa con todas las piezas, fotos y precios '
+    + 'en el enlace del catálogo que te compartimos.';
+  const previo = (respuesta: string): J => ({ ...CONFIG, respuesta, pedirCatalogo: true, avisos: [] });
+
+  it('si el agente ya anunció la página, el nodo agrega la dirección y NADA más', () => {
+    const texto = String(enlazar(OK(), previo(YA_ANUNCIA))['respuesta']);
+    expect(texto).toContain(YA_ANUNCIA);
+    expect(texto).toContain('https://novuchat-demo.web.app/c/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    // La frase que se repetía, y cualquier otra forma de decir lo mismo.
+    expect(texto).not.toMatch(/Acá puedes verlo todo/);
+    expect(texto).not.toMatch(/elegir con calma/);
+    // La dirección no queda pegada al párrafo anterior ni arranca con un salto
+    // suelto: el bloque del enlace es la dirección y nada más.
+    expect(texto).not.toMatch(/\n\n\n/);
+    expect(texto.split('\n\n')).toContain('https://novuchat-demo.web.app/c/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(enlazar(OK(), previo(YA_ANUNCIA))['avisos']).toContain('catalogo_invitacion_no_repetida');
+  });
+
+  it('si el agente NO la anunció, la línea que la presenta sigue saliendo', () => {
+    const texto = String(enlazar(OK(), previo('Tenemos abrigos, cuero y accesorios.'))['respuesta']);
+    expect(texto).toContain('Acá puedes verlo todo (12 productos) y elegir con calma:');
+    expect(texto).toContain('https://novuchat-demo.web.app/c/');
+    expect(enlazar(OK(), previo('Tenemos abrigos.'))['avisos'])
+      .not.toContain('catalogo_invitacion_no_repetida');
+  });
+
+  it('con el catálogo GRANDE, de la línea queda lo único que el agente no sabe: cuántos son', () => {
+    // El dato de que hay más de los que puede escribir lo aporta el sistema, y
+    // el agente no lo tiene: se conserva el número, no la frase entera.
+    const texto = String(enlazar(OK({ catalogoGrande: true, items: 312 }), previo(YA_ANUNCIA))['respuesta']);
+    expect(texto).toContain('Son 312 productos en total:');
+    expect(texto).not.toMatch(/más productos de los que puedo escribirte/);
+    expect(texto).toContain('https://novuchat-demo.web.app/c/');
+  });
+
+  it('el cierre tampoco se repite cuando el agente ya invitó a escribir de vuelta', () => {
+    const conCierre = 'Avísame cuando elijas qué quieres y las cantidades.';
+    const texto = String(enlazar(OK(), previo(YA_ANUNCIA + ' ' + conCierre))['respuesta']);
+    expect(texto.match(/escríbeme por acá/gi)).toBeNull();
+    expect(texto).toContain(conCierre);
+    expect(enlazar(OK(), previo(YA_ANUNCIA + ' ' + conCierre))['avisos'])
+      .toContain('catalogo_cierre_no_repetido');
+    // Y si no lo dijo, el cierre va: el cliente tiene que saber cómo seguir.
+    expect(String(enlazar(OK(), previo('Tenemos abrigos, cuero y accesorios.'))['respuesta']))
+      .toMatch(/escríbeme por acá/i);
+  });
+
+  it('no repetir no es no enlazar: la dirección sale SIEMPRE que el endpoint la dé', () => {
+    for (const t of [YA_ANUNCIA, 'Acá te dejo el menú.', 'Te comparto el catálogo.',
+      'Mira nuestro catálogo web.', 'Tenemos abrigos y cuero.']) {
+      const s = enlazar(OK(), previo(t));
+      expect(String(s['respuesta']), t).toContain('https://novuchat-demo.web.app/c/');
+      expect(s['avisos'], t).toContain('catalogo_enlace');
+      // Y sigue siendo UN mensaje: el texto del agente no se parte.
+      expect(String(s['respuesta']), t).toContain(t);
+    }
+  });
+});
+
 describe('«Enlace del catálogo»: sin enlace no se promete nada', () => {
   /** Las diez respuestas de `enlaceCatalogo`, verificadas en `catalogoWeb.ts`. */
   const SIN_ENLACE: [string, J, string][] = [
@@ -560,6 +621,38 @@ describe('El prompt: cuándo se manda el enlace, y cuándo no', () => {
     expect(CON).toMatch(/Nunca prometas mandarla «en un rato»/);
   });
 
+  it('PRIMERO INVITA AL CATÁLOGO: con la página encendida no vuelca la lista', () => {
+    // El 23/09 el asistente saludaba y a continuación recitaba «Abrigo Obama
+    // 590 USD, Capa Rosa Parks 439 USD, Billetera Tipo I 92 USD…», y recién al
+    // turno siguiente mandaba el enlace. Se paga dos veces por lo mismo, y la
+    // «Base comercial» §5 dice que el enlace solo ahorra cuando REEMPLAZA la
+    // conversación. La secuencia es: invitar al catálogo → pedido → pago.
+    expect(CON).toContain('PRIMERO SE INVITA AL CATÁLOGO; EL PEDIDO Y EL PAGO VIENEN DESPUÉS');
+    expect(CON).toMatch(/NO VUELQUES LA LISTA DE PRODUCTOS/);
+    expect(CON).toMatch(/NOMBRES DE LAS ÁREAS del catálogo, solos, sin productos ni precios/);
+    expect(CON).toMatch(/Ante un saludo, un «hola»/);
+    expect(CON).toMatch(/Recién cuando el cliente vuelva con lo que eligió/);
+    // Y la página se manda también cuando el cliente apenas saluda.
+    expect(CON).toMatch(/MÁNDALA cuando el cliente apenas saluda sin decir qué busca/);
+  });
+
+  it('pero sigue contestando una pregunta puntual con su precio', () => {
+    // No enumerar no es no saber: los productos están en el prompt y negarlos
+    // sería peor atención que recitarlos.
+    expect(CON).toContain('1a. PREGUNTA PUNTUAL, RESPUESTA PUNTUAL.');
+    expect(CON).toMatch(/RESPÓNDELE con esos productos y sus precios en el mismo mensaje/);
+    expect(CON).toMatch(/Lo que no haces nunca es enumerar el catálogo entero sin que te lo pidan/);
+  });
+
+  it('el agente no describe la página: esa línea la pone el sistema', () => {
+    // La otra mitad del defecto del 23/09: el agente decía «puedes ver todo en
+    // el enlace que te compartimos» y el nodo agregaba «Acá puedes verlo todo
+    // (10 productos) y elegir con calma». Lo mismo, dos veces, en un mensaje
+    // que se paga una sola vez. Acá el prompt; el código, más abajo.
+    expect(CON).toMatch(/NO ANUNCIES LA PÁGINA CON TUS PALABRAS/);
+    expect(CON).toMatch(/el cliente lee lo mismo dos veces/);
+  });
+
   it('con el catálogo web apagado, el prompt no ofrece ninguna página', () => {
     expect(SIN).toMatch(/NO tiene catálogo web/);
     expect(SIN).toContain('No existe ninguna lista tocable ni botón: todo se hace escribiendo.');
@@ -617,8 +710,15 @@ describe('El carrito: el cableado de la rama nueva', () => {
     expect(destinos(f, '¿Carrito válido?', 1)).toEqual([]);
     expect(destinos(f, 'Config del carrito')).toEqual(['Mensaje del carrito']);
     expect(destinos(f, 'Mensaje del carrito')).toEqual(['¿Avisar del carrito?']);
-    expect(destinos(f, '¿Avisar del carrito?', 0)).toEqual(['Responder al cliente']);
+    // La rama que sí responde lleva a DOS sitios: el envío, que es lo que el
+    // cliente ve, y «Recordar pedido», que es lo que el agente va a leer en el
+    // turno siguiente. El envío va primero —está más arriba en el lienzo y
+    // `executionOrder: v1` respeta esa altura—, así que un fallo al escribir
+    // la memoria nunca deja al cliente sin su mensaje.
+    expect(destinos(f, '¿Avisar del carrito?', 0)).toEqual(['Responder al cliente', 'Recordar pedido']);
     expect(destinos(f, '¿Avisar del carrito?', 1)).toEqual([]);
+    // Y «Recordar pedido» es una hoja: no reencamina nada hacia el envío.
+    expect(destinos(f, 'Recordar pedido')).toEqual([]);
   });
 
   it('el envío sigue siendo uno solo, con cinco caminos que llegan a él', () => {
@@ -633,7 +733,8 @@ describe('El carrito: el cableado de la rama nueva', () => {
   it('la rama del carrito está debajo de todo: no reordena ninguna rama del mensaje', () => {
     const y = (n: string) => nodo(f, n).position?.[1] ?? Number.NaN;
     const abajo = ['Carrito del catálogo', 'Validar carrito', '¿Carrito válido?',
-      'Config del carrito', 'Mensaje del carrito', '¿Avisar del carrito?'];
+      'Config del carrito', 'Mensaje del carrito', '¿Avisar del carrito?',
+      'Recordar pedido', 'Memoria del carrito'];
     const maxDelMensaje = Math.max(...f.nodes
       .filter((n) => !abajo.includes(n.name)).map((n) => n.position?.[1] ?? 0));
     for (const n of abajo) expect(y(n), n).toBeGreaterThan(maxDelMensaje);
@@ -646,9 +747,105 @@ describe('El carrito: el cableado de la rama nueva', () => {
     const ids = f.nodes.map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const n of ['Carrito del catálogo', 'Validar carrito', '¿Carrito válido?',
-      'Config del carrito', 'Mensaje del carrito', '¿Avisar del carrito?']) {
+      'Config del carrito', 'Mensaje del carrito', '¿Avisar del carrito?',
+      'Recordar pedido', 'Memoria del carrito']) {
       expect(nodo(f, n).id, n).toMatch(/^[a-z][a-z0-9-]{2,30}$/);
     }
+  });
+});
+
+/* ==========================================================================
+ * EL PEDIDO DEL CATÁLOGO ENTRA EN LA MEMORIA DEL AGENTE
+ *
+ * EL CASO, 23/09/2026 05:01 (teléfono de Andres, ejecución #4899). El carrito
+ * llegó, el flujo contestó «Recibí tu pedido del catálogo y quedó registrado…
+ * Total: 229 USD» y treinta segundos después el cliente escribió «ok»: el
+ * asistente le contestó «avísame cuando elijas algo del catálogo para tomar tu
+ * pedido», y al preguntar «¿puedo pagar?» le pidió que dijera qué productos
+ * quería. El pedido estaba en Firestore y en el chat del cliente; no estaba en
+ * la ÚNICA parte que el modelo lee, que es la memoria de la conversación,
+ * porque esta rama arma y manda el mensaje FUERA del agente.
+ *
+ * EL ARREGLO, y por qué funciona. `Memoria por teléfono` es un
+ * `memoryBufferWindow`, y su almacén es un singleton del proceso indexado por
+ * `${workflowId}__${sessionKey}` (verificado en el código del paquete
+ * `@n8n/n8n-nodes-langchain@2.36.5`, `MemoryBufferWindow.node.js`): DOS nodos
+ * de memoria del MISMO flujo con la MISMA clave de sesión comparten el mismo
+ * buffer. Por eso la rama del carrito puede colgar su propio nodo de memoria
+ * —el del agente no le sirve: su clave sale de `Normalizar entrada`, que en
+ * esta rama no corrió— y escribir en el historial del agente.
+ * ========================================================================== */
+
+describe('El carrito deja el pedido en la memoria del agente', () => {
+  const manager = () => nodo(f, 'Recordar pedido');
+  const memoria = () => nodo(f, 'Memoria del carrito');
+
+  it('es un Chat Memory Manager en modo INSERTAR, con los parámetros del paquete 2.36.5', () => {
+    // Los nombres NO se suponen: salen de `MemoryManager.node.js` de
+    // `@n8n/n8n-nodes-langchain@2.36.5`, que lee `mode`, `insertMode` y
+    // `messages.messageValues` con `type` ∈ {ai, system, user}, `message` y
+    // `hideFromUI`. Un parámetro mal escrito no da error al importar: el nodo
+    // corre con el valor por defecto y la memoria queda vacía en silencio.
+    const n = manager();
+    expect(n.type).toBe('@n8n/n8n-nodes-langchain.memoryManager');
+    expect(n.typeVersion).toBe(1.1);
+    expect(n.parameters['mode']).toBe('insert');
+    expect(n.parameters['insertMode']).toBe('insert');
+    const vals = (n.parameters['messages'] as { messageValues: J[] }).messageValues;
+    expect(vals.map((v) => v['type'])).toEqual(['user', 'ai']);
+    for (const v of vals) {
+      expect(Object.keys(v).sort()).toEqual(['hideFromUI', 'message', 'type']);
+      expect(typeof v['message']).toBe('string');
+    }
+  });
+
+  it('inserta el pedido como turno del cliente y la confirmación como turno del asistente', () => {
+    const vals = (manager().parameters['messages'] as { messageValues: J[] }).messageValues;
+    const item = { memoriaCliente: 'PEDIDO', memoriaAsistente: 'CONFIRMACIÓN' };
+    expect(expresion(vals[0]!['message'], item)).toBe('PEDIDO');
+    expect(expresion(vals[1]!['message'], item)).toBe('CONFIRMACIÓN');
+  });
+
+  it('cuelga de la MISMA memoria que el agente: mismo tipo, misma ventana, misma clave', () => {
+    const m = memoria();
+    const delAgente = nodo(f, 'Memoria por teléfono');
+    expect(m.type).toBe(delAgente.type);
+    expect(m.typeVersion).toBe(delAgente.typeVersion);
+    expect(m.parameters['sessionIdType']).toBe('customKey');
+    // La ventana tiene que ser la misma: el buffer se crea con la `k` del
+    // primer nodo que lo pida, y dos valores distintos harían que el historial
+    // dependiera de quién llegó antes, el mensaje o el carrito.
+    expect(m.parameters['contextWindowLength']).toBe(delAgente.parameters['contextWindowLength']);
+    // Y la clave es el TELÉFONO del cliente, el mismo valor que el agente usa,
+    // solo que leído del nodo que sí corrió en esta rama.
+    const TEL = '59170000001';
+    expect(expresion(m.parameters['sessionKey'], {}, { 'Mensaje del carrito': [{ from: TEL }] })).toBe(TEL);
+    expect(expresion(delAgente.parameters['sessionKey'], {}, { 'Normalizar entrada': [{ from: TEL }] })).toBe(TEL);
+  });
+
+  it('la memoria del carrito alimenta a «Recordar pedido» y a nadie más', () => {
+    expect(f.connections['Memoria del carrito']?.['ai_memory']?.[0]?.map((x) => x.node))
+      .toEqual(['Recordar pedido']);
+    expect(f.connections['Memoria del carrito']?.['ai_memory']?.[0]?.[0]?.type).toBe('ai_memory');
+    // Y la del agente sigue alimentando solo al agente: no se reconectó nada.
+    expect(f.connections['Memoria por teléfono']?.['ai_memory']?.[0]?.map((x) => x.node))
+      .toEqual(['AI Agent NovuChat']);
+  });
+
+  it('el orden de las demás ramas no se tocó: el abanico del agente sigue igual', () => {
+    expect(destinos(f, 'Procesar respuesta')).toEqual([
+      '¿Responder ahora?', '¿Pedir catálogo?', '¿Enviar QR?', '¿Pedido confirmado?', '¿Hay comprobante?',
+    ]);
+    expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
+    // El envío está más arriba que la escritura en memoria: corre primero.
+    expect(y('Responder al cliente')).toBeLessThan(y('Recordar pedido'));
+  });
+
+  it('NO agrega ni un mensaje: escribir en la memoria no manda nada por WhatsApp', () => {
+    const envia = (n: string) => nodo(f, n).type === 'n8n-nodes-base.whatsApp';
+    expect(envia('Recordar pedido')).toBe(false);
+    expect(envia('Memoria del carrito')).toBe(false);
+    expect(destinos(f, 'Recordar pedido')).toEqual([]);
   });
 });
 
@@ -901,6 +1098,51 @@ describe('«Mensaje del carrito»: uno solo, y solo cuando se puede', () => {
       { conditions: { leftValue: string }[] }).conditions[0]?.leftValue;
     expect(expresion(cond, { responder: true })).toBe(true);
     expect(expresion(cond, { responder: false })).toBe(false);
+  });
+
+  // --- Los dos turnos que se guardan en la memoria del agente --------------
+
+  it('deja armado el turno del CLIENTE con todo lo que el modelo va a necesitar', () => {
+    // Es el defecto del 23/09 (05:01): sin esto, el turno siguiente el
+    // asistente pide «dime qué productos y cuántas unidades» sobre un pedido
+    // que el cliente ya hizo y que él mismo acaba de confirmar.
+    const m = String(armar()['memoriaCliente']);
+    expect(m).toContain('2× Hamburguesa doble');
+    expect(m).toContain('1× Gaseosa');
+    expect(m).toContain('Total: 89 Bs');
+    expect(m).toContain('Envío: 7 Bs');
+    expect(m).toContain('Quiero envío a Calle 21 #100, Calacoto');
+    expect(m).toContain('Mi nota: Sin cebolla');
+    // En primera persona del cliente: entra al historial como SU turno.
+    expect(m).toMatch(/^Acabo de enviar este pedido desde el catálogo web:/);
+  });
+
+  it('el turno del ASISTENTE es exactamente el texto que se envió, ni más ni menos', () => {
+    const s = armar();
+    expect(s['memoriaAsistente']).toBe(s['respuesta']);
+    expect(String(s['memoriaAsistente'])).toContain('Total: 89 Bs');
+  });
+
+  it('dice qué falta: sin dirección lo declara, y con retiro no inventa un envío', () => {
+    expect(String(armar({ direccion: '' })['memoriaCliente']))
+      .toContain('Quiero envío y todavía no te di la dirección.');
+    const retiro = String(armar({ entrega: 'retiro', costoEnvio: 0, direccion: '' })['memoriaCliente']);
+    expect(retiro).toContain('Paso a recoger.');
+    expect(retiro).not.toMatch(/Envío:/);
+  });
+
+  it('lo que no entró también se recuerda, para que el asistente pueda retomarlo', () => {
+    expect(String(armar({ descartados: 1 })['memoriaCliente'])).toContain('1 producto no entró en el pedido.');
+    expect(String(armar({ descartados: 3 })['memoriaCliente'])).toContain('3 productos no entraron en el pedido.');
+    expect(String(armar()['memoriaCliente'])).not.toMatch(/no entr/);
+  });
+
+  it('el turno del cliente no aparece cuando no hay nada que contar al modelo', () => {
+    // Si no se responde, «Recordar pedido» no corre (cuelga de la rama
+    // verdadera), y el turno del asistente queda vacío porque no se envió nada.
+    const s = armar({ accion: 'plantilla_carrito_espera' });
+    expect(s['responder']).toBe(false);
+    expect(s['memoriaAsistente']).toBe('');
   });
 });
 
