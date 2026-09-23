@@ -997,11 +997,19 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
     });
 
     it('el traspaso también obedece el nivel de emojis', () => {
-      const traspaso = (nivel: string) => correr('Traspaso a un asesor',
-        [{ ...cfgCon(OFERTA, { voz: { nivelEmojis: nivel } }), from: TEL }], {}, {})[0]!['respuesta'] as string;
+      // Con la ficha COMPLETA el mensaje cierra con el saludo y sus dos emojis;
+      // con la ficha a medias cierra pidiendo lo que falta, y queda uno solo.
+      const sdCompleto = () => ({ conversaciones: { [TEL]: {
+        lead: { contacto: 'Ana', empresa: 'Salón Rosa', rubro: 'belleza' } } } });
+      const traspaso = (nivel: string, sd: J = sdCompleto() as J) => correr('Traspaso a un asesor',
+        [{ ...cfgCon(OFERTA, { voz: { nivelEmojis: nivel } }), from: TEL }], {}, sd)[0]!['respuesta'] as string;
       expect(traspaso('ninguno').match(EMOJI)).toBeNull();
       expect(traspaso('pocos').match(EMOJI)).toHaveLength(1);
       expect(traspaso('muchos').match(EMOJI)).toHaveLength(2);
+      // Ficha a medias: el saludo del final se reemplaza por la pregunta.
+      const aMedias = traspaso('muchos', {} as J);
+      expect(aMedias.match(EMOJI)).toHaveLength(1);
+      expect(aMedias).toContain('¿me dices tu nombre, el nombre de tu empresa y a qué se dedica?');
     });
   });
 
@@ -1372,23 +1380,57 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const r = procesar('Gracias, Ana. ¿A qué se dedica Inversiones AAB?\n[RUBROS]'
         + '\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]', ent, sd);
       const dicho = String(r['respuesta']);
-      expect(dicho).toContain('Por darte una referencia, algunas áreas en las que ya trabajamos: '
-        + 'Salud y belleza, Gastronomía. Si lo tuyo no está en esa lista, cuéntamelo igual: '
-        + 'trabajamos con negocios de todo tipo.');
+      // TERMINA EN PREGUNTA: este flujo existe para llenar la ficha, y una
+      // enumeración que termina en punto es un anuncio, que no se contesta.
+      expect(dicho).toContain('Trabajamos con negocios de todo tipo —salud y belleza, gastronomía…—. '
+        + '¿A qué se dedica el tuyo?');
       expect(dicho).not.toContain('[RUBROS]');
       // Escrita negando: ni numeración, ni el rubro a medida como opción.
       expect(dicho).not.toMatch(/^\s*\d[.)]\s/m);
       expect(dicho).not.toContain('Otro rubro (a medida)');
     });
 
-    it('mostrada la referencia, un «2» sigue siendo un mensaje más y no un rubro', () => {
+    // LA CAPTURA DEL RUBRO NO DEPENDE DEL MODELO. Preguntado el rubro, la
+    // respuesta EN PALABRAS se registra por código, igual de firme que el
+    // número de la lista vieja. Medido el 22/09: dejándoselo al modelo, el
+    // rubro dicho con todas las letras quedaba en [LEAD] el 60 % de las veces.
+    it('preguntado el rubro, la respuesta en palabras queda registrada por código', () => {
       const sd: J = {};
       const cfg = cfgCon();
       procesar('¿A qué se dedican?\n[RUBROS]', turnoCon(texto('hola, info'), sd, cfg), sd);
-      const dos = turnoCon(texto('2'), sd, cfg);
-      expect(dos['leadConocido']['rubro']).toBeUndefined();
-      expect(dos['mensajeDelTurno']).not.toMatch(/eligió de la lista|no está en la lista de rubros/);
-      expect(sd['conversaciones'][TEL]['esperaRubro']).toBeUndefined();
+      expect(sd['conversaciones'][TEL]['pidioRubro']).toBe(true);
+      const dicho = turnoCon(texto('tenemos una pastelería'), sd, cfg);
+      expect(dicho['leadConocido']['rubro']).toBe('tenemos una pastelería');
+      expect(dicho['mensajeDelTurno']).toMatch(/YA QUEDÓ REGISTRADO/);
+      expect(sd['conversaciones'][TEL]['pidioRubro']).toBe(false);
+    });
+
+    it('una pregunta, un saludo o un «ok» no son un rubro', () => {
+      for (const t of ['¿cuánto cuesta?', 'hola', 'ok', 'gracias']) {
+        const sd: J = {};
+        const cfg = cfgCon();
+        procesar('¿A qué se dedican?\n[RUBROS]', turnoCon(texto('hola, info'), sd, cfg), sd);
+        expect(turnoCon(texto(t), sd, cfg)['leadConocido']['rubro']).toBeUndefined();
+      }
+    });
+
+    it('sin haber preguntado, un texto suelto no se toma por rubro', () => {
+      expect(turnoCon(texto('pastelería'), {}, cfgCon())['leadConocido']['rubro']).toBeUndefined();
+    });
+
+    it('«area» normaliza el rubro dicho con las palabras del cliente y deduce el flujo', () => {
+      const sd: J = {};
+      procesar('Perfecto.\n[LEAD]{"empresa":"La Colmena","rubro":"pastelería","area":"Gastronomía"}[/LEAD]',
+        turnoCon(texto('tenemos una pastelería'), sd, cfgCon()), sd);
+      expect(sd['conversaciones'][TEL]['lead']).toMatchObject(
+        { rubro: 'pastelería', area: 'Gastronomía', flujos: 'ventas' });
+    });
+
+    it('sin «area», el flujo se deduce igual por subcadena', () => {
+      const sd: J = {};
+      procesar('Listo.\n[LEAD]{"empresa":"Rosa","rubro":"salón de salud y belleza"}[/LEAD]',
+        turnoCon(texto('un salón'), sd, cfgCon()), sd);
+      expect(sd['conversaciones'][TEL]['lead']['flujos']).toBe('citas');
     });
 
     it('un «2» sin referencia mostrada tampoco es un rubro', () => {
@@ -1403,7 +1445,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const cfg = cfgCon();
       procesar('Gracias.\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]',
         turnoCon(texto('Soy Ana, de Inversiones AAB'), sd, cfg), sd);
-      const sigue = turnoCon(texto('cuéntame más'), sd, cfg);
+      const sigue = turnoCon(texto('cuéntame más sobre los planes'), sd, cfg);
       expect(sigue['mensajeDelTurno']).toMatch(/NO sabes su rubro.*\[RUBROS\] en su propia línea/s);
     });
 
@@ -1418,7 +1460,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const r = procesar('¡Hola, Ana! NovuChat atiende tu WhatsApp las 24 horas. ¿Me confirmas algo más?'
         + '\n[LEAD]{"empresa":"Inversiones AAB","contacto":"Ana"}[/LEAD]',
         turnoCon(texto('Soy Ana, de Inversiones AAB'), sd, cfg), sd);
-      expect(r['respuesta']).toContain('Por darte una referencia, algunas áreas en las que ya trabajamos');
+      expect(r['respuesta']).toContain('¿A qué se dedica el tuyo?');
       expect(r['avisos']).toContain('rubros_agregados_por_codigo');
       // Un solo mensaje: la red no manda nada aparte.
       expect(correr('Salida', [r])[0]!['responder']).toBe(true);
@@ -1433,7 +1475,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const conRubro = procesar('Listo.\n[LEAD]{"empresa":"AAB","rubro":"Gastronomía"}[/LEAD]',
         turnoCon(texto('somos un restaurante'), {}, cfg), {});
       expect(conRubro['avisos']).not.toContain('rubros_agregados_por_codigo');
-      expect(conRubro['respuesta']).not.toContain('Por darte una referencia');
+      expect(conRubro['respuesta']).not.toContain('¿A qué se dedica el tuyo?');
 
       const sd: J = {};
       const ent = turnoCon(texto('ayuda con la consola'), sd, cfg);
@@ -1443,7 +1485,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
 
     it('sin empresa conocida la red no dispara: primero el nombre, después el rubro', () => {
       const r = procesar('¿Cómo te llamas y cómo se llama tu empresa?', turnoCon(texto('hola'), {}, cfgCon()), {});
-      expect(r['respuesta']).not.toContain('Por darte una referencia');
+      expect(r['respuesta']).not.toContain('¿A qué se dedica el tuyo?');
     });
 
     it('el rubro deducido por el modelo trae sus flujos de la lista', () => {
@@ -1492,10 +1534,13 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
       const e = turnoCon(tocar(), sd, cfg);
       sd['conversaciones'][TEL]['lead'] = { empresa: 'Salón Rosa' };      // falta todo lo demás
       const r = correr('Traspaso a un asesor', [e], {}, sd)[0]!;
+      // CON LA FICHA A MEDIAS, EL TRASPASO PIDE LO QUE FALTA en el mismo
+      // mensaje: este flujo existe para captar, y quien pide una persona antes
+      // de dar sus datos dejaba al especialista con un teléfono y nada más.
       expect(r['respuesta']).toBe('¡Anotado! 📋 Ya le pasé tus datos a nuestro equipo. Un especialista de NovuChat '
         + 'te escribirá a este mismo número en horario de atención (lunes a viernes, de 09:00 a 18:00),'
         + ' y si prefieres no esperar, toca el botón y escríbele ahora mismo.'
-        + ' ¡Que tengas un excelente día!');
+        + ' Para que llegue al grano, ¿me dices tu nombre y a qué se dedica?');
       expect(r['avisar']).toBe(true);
       expect(r['guardarLead']).toBe(true);
       expect(r['estadoLead']).toBe('cerrado');
