@@ -9,6 +9,9 @@ import { registrar, MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './inge
 import { documentoDeVertical } from './prompt.js';
 import { periodoDe } from './planes.js';
 import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';
+import {
+  detalleDeLaVenta, esperadoDeLaVenta, idDeCierreDeVenta, qrDeVentaVencido, totalUtilizable,
+} from './cobroVenta.js';
 
 /**
  * =============================================================================
@@ -218,6 +221,14 @@ export const cotejarComprobante = onRequest(
       db.doc(`tenants/${tenantId}/config/${docVertical}`).get(),
       db.doc(`tenants/${tenantId}/config/negocio`).get(),
     ]);
+    // ¿RESERVA O VENTA? Es la única bifurcación de esta Function, y cambia una
+    // sola cosa: DE DÓNDE SALE EL IMPORTE ESPERADO. En una reserva es la seña,
+    // fija, escrita en la configuración del comercio; en una venta es el total
+    // del pedido, que se fijó cuando salió el QR y vive en `solicitud.monto`
+    // (`cobroVenta.ts`). Todo lo demás —quién coteja, qué se guarda, qué se
+    // responde y qué NO se dice nunca— es idéntico, y tiene que seguir
+    // siéndolo: son el mismo problema.
+    const esVenta = docVertical === 'venta';
     const importeCrudo = especifica.get('senaImporte');
     const importe = typeof importeCrudo === 'number' && Number.isInteger(importeCrudo) && importeCrudo > 0
       ? importeCrudo : 0;
@@ -245,36 +256,70 @@ export const cotejarComprobante = onRequest(
       const minutosPedidos = especifica.get('senaMinutosRetencion');
       const minutosRet = typeof minutosPedidos === 'number' && Number.isInteger(minutosPedidos)
         && minutosPedidos >= 5 && minutosPedidos <= 180 ? minutosPedidos : MINUTOS_RETENCION_POR_DEFECTO;
-      const porReloj = senaVencidaPorTiempo(solicitud, minutosRet, ahoraMs);
+      // EN VENTA EL PLAZO ES OTRO y la razón es distinta: no hay horario
+      // bloqueado que otro cliente quiera, así que el QR vive las 24 h de la
+      // ventana de la conversación (`MINUTOS_QR_VENTA`). Lo que sí se conserva
+      // es que CADUQUE: un pendiente eterno convierte cualquier imagen en un
+      // pago, que es el defecto que este cambio viene a cerrar.
+      const porReloj = esVenta
+        ? (() => { const v = qrDeVentaVencido(solicitud, ahoraMs);
+                   return { vencida: v.vencido, venceMs: v.venceMs }; })()
+        : senaVencidaPorTiempo(solicitud, minutosRet, ahoraMs);
       if (porReloj.vencida) {
         tx.set(refConversacion, {
           solicitud: { ...solicitud, etapa: 'vencida', desde: Timestamp.fromMillis(porReloj.venceMs ?? ahoraMs) },
         }, { merge: true });
-        tx.set(refMetricas, { senasVencidas: FieldValue.increment(1) }, { merge: true });
+        tx.set(refMetricas, esVenta
+          ? { cobrosVencidos: FieldValue.increment(1) }
+          : { senasVencidas: FieldValue.increment(1) }, { merge: true });
         return { codigo: 409 as const, cuerpo: { error: 'sin_sena_pendiente' } };
       }
-      if (importe <= 0) {
-        // La seña se apagó entre el QR y el comprobante. No se coteja contra
-        // cero: se le dice al flujo que no hay seña, y lo resuelve una persona.
-        return { codigo: 409 as const, cuerpo: { error: 'sena_inactiva' } };
+
+      // EL IMPORTE ESPERADO. Acá está toda la diferencia entre los dos
+      // verticales, y está escrita una sola vez.
+      //
+      // En VENTA es el total que se cotizó al mandar el QR. Si el pedido vino
+      // del carrito web, el total que manda es el del PEDIDO —lo calculó el
+      // servidor, con el costo de envío incluido, y no pasó por el navegador ni
+      // por el modelo—; si no, el que el flujo reportó junto al QR.
+      let esperado = importe;
+      const pedidoId = String(solicitud.evento?.id ?? '').trim();
+      if (esVenta) {
+        let delPedido: number | null = null;
+        if (pedidoId.startsWith('cat_')) {
+          const pedido = await tx.get(db.doc(`tenants/${tenantId}/pedidos/${pedidoId}`));
+          delPedido = pedido.exists ? totalUtilizable(pedido.get('total')) : null;
+        }
+        esperado = delPedido ?? totalUtilizable(solicitud.monto) ?? 0;
+      }
+      if (esperado <= 0) {
+        // Sin importe no se coteja contra cero: con cero, el flujo le diría al
+        // cliente «el comprobante dice 350 y el pedido es de 0», que es un
+        // motivo falso. En reservas, la seña se apagó entre el QR y el
+        // comprobante; en venta, el total no llegó o no es utilizable. En los
+        // dos casos lo resuelve una persona, y se lo dice tal cual.
+        return { codigo: 409 as const, cuerpo: { error: esVenta ? 'sin_total' : 'sena_inactiva' } };
       }
 
-      const eventoId = String(solicitud.evento?.id ?? '').trim();
-      // La referencia externa del cierre: la cita retenida; si no la hubiera,
-      // el mensaje del comprobante, que también es una prueba verificable
-      // (`cierres.ts`, defensa 1). Sin ninguna de las dos no hay cierre.
+      const eventoId = pedidoId;
+      // La referencia externa del cierre: la cita retenida —o el pedido, en
+      // venta—; si no la hubiera, el mensaje del comprobante, que también es
+      // una prueba verificable (`cierres.ts`, defensa 1). Sin ninguna de las
+      // dos no hay cierre.
       const referencia = eventoId || idMeta;
       if (!referencia) return { codigo: 400 as const, cuerpo: { error: 'falta referencia' } };
 
       const qrEnviadoEn = typeof solicitud.qrEnviadoEn?.toMillis === 'function'
         ? solicitud.qrEnviadoEn.toMillis() : ahoraMs;
       const cotejo = legible
-        ? cotejar(esperadoDeLaSena(importe, cobroReal, qrEnviadoEn, ahoraMs), leido)
+        ? cotejar(esVenta
+            ? esperadoDeLaVenta(esperado, cobroReal, qrEnviadoEn, ahoraMs, MINUTOS_TOLERANCIA_RELOJ)
+            : esperadoDeLaSena(esperado, cobroReal, qrEnviadoEn, ahoraMs), leido)
         : null;
       const veredicto = resultadoDelCotejo(legible, cotejo);
       const intentos = (typeof solicitud.cotejos === 'number' ? solicitud.cotejos : 0) + 1;
 
-      const idCierre = idDeCierreDeCita(referencia);
+      const idCierre = esVenta ? idDeCierreDeVenta(referencia) : idDeCierreDeCita(referencia);
       const refCierre = db.doc(`tenants/${tenantId}/cierres/${idCierre}`);
       const previo = await tx.get(refCierre);
 
@@ -297,11 +342,11 @@ export const cotejarComprobante = onRequest(
         tx.update(refCierre, { cotejo: registroCotejo });
       } else {
         tx.set(refCierre, {
-          tipo: 'cita',
+          tipo: esVenta ? 'venta' : 'cita',
           ocurridoEn: Timestamp.fromMillis(ahoraMs),
           referencia,
           telefonoEnmascarado: enmascarar(telefono),
-          monto: importe,
+          monto: esperado,
           moneda,
           cotejo: registroCotejo,
         });
@@ -312,12 +357,15 @@ export const cotejarComprobante = onRequest(
           telefono,
           conversacionId: idConversacion,
           ...(nombre ? { nombreCliente: nombre } : {}),
-          detalle: detalleDeLaSena(importe, moneda, veredicto.resultado),
+          detalle: esVenta
+            ? detalleDeLaVenta(esperado, moneda, veredicto.resultado)
+            : detalleDeLaSena(esperado, moneda, veredicto.resultado),
         });
       }
 
       tx.set(refMetricas, {
-        senasCotejadas: FieldValue.increment(1),
+        ...(esVenta ? { cobrosCotejados: FieldValue.increment(1) }
+          : { senasCotejadas: FieldValue.increment(1) }),
         ...(previo.exists ? {} : { cierres: FieldValue.increment(1) }),
       }, { merge: true });
 
@@ -338,7 +386,10 @@ export const cotejarComprobante = onRequest(
         cuerpo: {
           resultado: veredicto.resultado,
           diferencias: veredicto.diferencias,
-          importe,
+          // El importe contra el que se cotejó: la seña, o el total del pedido.
+          // El flujo lo repite en el aviso al negocio, así que tiene que ser el
+          // que se usó, no el de la configuración.
+          importe: esperado,
           moneda,
           evento: solicitud.evento ?? null,
           cierreId: idCierre,

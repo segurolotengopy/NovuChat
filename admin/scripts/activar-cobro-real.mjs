@@ -112,6 +112,18 @@ if (!APAGAR) {
       + 'El banco le cobraría al cliente el monto del QR, el cotejo nunca cuadraría y cada reserva '
       + 'terminaría en una persona. Iguale la seña al QR, o que el comercio genere uno de monto abierto.');
   }
+  // Y EN VENTA ES PEOR (23/09/2026). En una reserva un QR de monto cerrado al
+  // menos puede coincidir con la seña, porque la seña es un número fijo. En una
+  // venta el total cambia con CADA pedido, así que un QR de monto cerrado no
+  // puede cuadrar nunca: el banco le cobra al cliente el monto grabado, el
+  // cotejo dice «no cuadra» siempre y TODOS los pedidos terminan en una
+  // persona. No hay número con el que igualarlo; hay que cambiar el QR.
+  if (documento === 'venta' && typeof qr.montoFijo === 'number') {
+    problemas.push(`Ese QR cobra siempre ${qr.montoFijo}, y en una venta el total cambia con cada `
+      + 'pedido: el banco le cobraría al cliente ese monto y no el del pedido, el cotejo no cuadraría '
+      + 'nunca y todas las ventas terminarían en una persona. Que el comercio genere uno de MONTO '
+      + 'ABIERTO en su banco y lo vuelva a cargar en la consola.');
+  }
   if (problemas.length > 0) {
     for (const p of problemas) rojo(`✗ ${p}`);
     process.exit(1);

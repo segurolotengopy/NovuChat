@@ -206,8 +206,26 @@ export const imagenDeCobro = onRequest(
     const encontrados = await db().collectionGroup('config')
       .where('cobroReal.ficha', '==', ficha).limit(1).get();
     const cobro = encontrados.docs[0]?.get('cobroReal') as
-      { cargaUtil?: string; activo?: boolean; cuentas?: string[] } | undefined;
+      { cargaUtil?: string; activo?: boolean; cuentas?: string[]; venceEl?: string } | undefined;
     if (!cobro?.cargaUtil || cobro.activo !== true) {
+      respuesta.status(404).send('no encontrado'); return;
+    }
+
+    // UN QR VENCIDO NO SE SIRVE (23/09/2026).
+    //
+    // `registrarQrDeCobro` rechaza registrar uno vencido y `activar-cobro-real`
+    // se niega a encenderlo, pero ninguno de los dos mira lo que pasa DESPUÉS:
+    // un QR encendido en junio con vencimiento en septiembre seguía sirviéndose
+    // en octubre, y el modo de fallo era el peor de todos —el cliente escanea,
+    // el banco rechaza, y el negocio se entera por un reclamo—. Con esto la
+    // imagen deja de existir el día que el código deja de valer.
+    //
+    // 404 y no 409: para Meta es lo mismo —no hay imagen que descargar— y el
+    // flujo ya sabe qué hacer con un QR que no salió (avisa a una persona, no
+    // deja al cliente esperando). Sin fecha guardada no se bloquea nada: los
+    // registros anteriores a que el campo existiera no se rompen.
+    const vence = finDelDiaBoliviano(String(cobro.venceEl ?? ''));
+    if (vence !== null && vence <= Date.now()) {
       respuesta.status(404).send('no encontrado'); return;
     }
 

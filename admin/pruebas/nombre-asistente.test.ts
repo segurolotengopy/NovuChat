@@ -51,8 +51,11 @@ const FLUJOS = [
   },
   {
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
-    hoy: 'Eres NovuChat, el asistente virtual de ventas de Un Negocio (restaurante y tienda retail). Amable',
-    conNombre: 'Eres Kenji, el asistente virtual de ventas de Un Negocio (restaurante y tienda retail).'
+    // Sin «(restaurante y tienda retail)» desde el 23/09/2026: el flujo de venta
+    // estaba cableado a esos dos rubros y por eso el asistente de una marca de
+    // artesanía ofrecía hamburguesas. NovuChat atiende cualquier rubro.
+    hoy: 'Eres NovuChat, el asistente virtual de ventas de Un Negocio. Amable',
+    conNombre: 'Eres Kenji, el asistente virtual de ventas de Un Negocio.'
       + ' Cuando te presentes, di: «Soy Kenji, el asistente virtual de Un Negocio». Amable',
     // La regla de identidad sigue diciendo lo mismo; lo que cambió el
     // 22/09/2026 es la persona verbal: el prompt del Demo B tuteaba a medias

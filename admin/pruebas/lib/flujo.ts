@@ -98,6 +98,57 @@ export const entradas = (f: Flujo, hacia: string): string[] =>
     .map(([desde]) => desde);
 
 /**
+ * =============================================================================
+ * LOS GLOBALES QUE EL SANDBOX DE n8n **NO** TIENE, Y QUE ACÁ TAMPOCO EXISTEN
+ * =============================================================================
+ *
+ * EL CASO, 23/09/2026 (Demo B, ejecución #4880 contra el teléfono de Andres).
+ * `Enlace del catálogo` validaba la dirección del catálogo con `new URL(...)`
+ * dentro de un `try/catch`. El endpoint contestó **200 con una URL buena**, y
+ * aun así el cliente recibió el mensaje SIN enlace y con el aviso
+ * `catalogo_sin_enlace`: en el nodo Code de n8n **`URL` no existe**, el
+ * `ReferenceError` cayó en el `catch` y quedó indistinguible de «la URL no
+ * sirve».
+ *
+ * POR QUÉ LA PRUEBA NO LO VIO, que es lo que de verdad hay que arreglar. Las 85
+ * pruebas de `demo-b-catalogo.test.ts` pasaron con el defecto adentro, porque
+ * `correr` ejecuta el cuerpo del nodo con `new Function` **en Node**, donde
+ * `URL` sí existe. La prueba corría en un entorno MÁS RICO que producción, así
+ * que no podía ver el fallo: probaba un flujo que no es el que se ejecuta.
+ *
+ * QUÉ HACE ESTA LISTA. Cada nombre se le pasa a `new Function` como PARÁMETRO
+ * con valor `undefined`, así que dentro del cuerpo del nodo queda declarado y
+ * vacío: usarlo revienta acá igual que revienta en n8n. No es una prohibición
+ * de estilo, es la única forma de que la prueba corra en el mismo entorno que
+ * producción.
+ *
+ * **NO SE QUITA NINGÚN NOMBRE DE ACÁ PARA QUE PASE UNA PRUEBA.** Si una prueba
+ * se pone roja al agregar un nombre, lo que hay es un defecto del flujo —el
+ * nodo usa algo que en producción no existe— y se arregla el nodo. Sacar un
+ * nombre de la lista solo se justifica con evidencia de una ejecución REAL de
+ * n8n 2.36.5 que demuestre que ese global sí está, y esa evidencia se escribe
+ * acá al lado del nombre.
+ *
+ * LA LISTA ES CONSERVADORA A PROPÓSITO: son globales de Node (o de la
+ * plataforma web) que el sandbox del Code node no promete. Los globales del
+ * LENGUAJE —`JSON`, `Math`, `Date`, `RegExp`, `Promise`, `Intl`, `globalThis`—
+ * sí están en el sandbox y no se tocan; y `console`, que n8n redirige a su
+ * registro, tampoco.
+ */
+export const GLOBALES_FUERA_DEL_SANDBOX = [
+  // Web/Node: el caso del 23/09/2026.
+  'URL', 'URLSearchParams',
+  'TextEncoder', 'TextDecoder', 'structuredClone', 'btoa', 'atob',
+  'fetch', 'Request', 'Response', 'Headers', 'FormData', 'Blob', 'AbortController',
+  // Node puro.
+  'Buffer', 'crypto', 'process', 'require', 'module', 'exports',
+  '__dirname', '__filename',
+  // Temporizadores: un nodo Code no espera, y `setTimeout` no está garantizado.
+  'setTimeout', 'setInterval', 'setImmediate',
+  'clearTimeout', 'clearInterval', 'clearImmediate', 'queueMicrotask',
+] as const;
+
+/**
  * Lo que `$('Nombre')` devuelve en una prueba: un item (se usa como `first()`)
  * o la lista completa (`all()` la entrega tal cual; `first()` toma el primero).
  */
@@ -129,11 +180,19 @@ export function correr(
       isExecuted: n in referencias,
     };
   };
-  const nombres = Object.keys(globales);
+  const propios = Object.keys(globales);
+  // Los globales que n8n NO expone entran como parámetros vacíos, para que el
+  // cuerpo del nodo corra en el mismo entorno que en producción. Ver el bloque
+  // «LOS GLOBALES QUE EL SANDBOX DE n8n NO TIENE» más arriba. Si una suite
+  // inyecta uno a propósito (`globales`), el inyectado manda: es una decisión
+  // explícita y visible en la prueba.
+  const vacios = GLOBALES_FUERA_DEL_SANDBOX.filter((g) => !propios.includes(g));
+  const nombres = [...vacios, ...propios];
+  const valores = [...vacios.map(() => undefined), ...propios.map((n) => globales[n])];
   // Se ejecuta el flujo VERSIONADO; ver la cabecera de este archivo.
   // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', ...nombres, codigo) as (...a: unknown[]) => { json: J }[];
-  return fn(entrada, $, ...nombres.map((n) => globales[n]));
+  return fn(entrada, $, ...valores);
 }
 
 /** Como `correr`, pero devuelve solo los `.json` de cada item. */

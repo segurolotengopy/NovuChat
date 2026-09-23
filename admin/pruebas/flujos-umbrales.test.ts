@@ -164,6 +164,11 @@ const FLUJOS = [
     archivo: 'demo-b-venta-cobro.json', agente: 'AI Agent NovuChat',
     compuertaAviso: '¿Avisar uso extendido?', campoAviso: 'avisar', envioAviso: 'Avisar al dueño',
     campoTexto: 'textoAviso', salidaAlCliente: null, primeroTrasElEnvio: 'Texto enviado',
+    // Desde el 23/09/2026 la venta también desvía el comprobante ANTES del
+    // agente (cobro real, `cobroVenta.ts`): entre la compuerta de los umbrales
+    // y el modelo hay un eslabón, igual que en los tres de reservas.
+    antesDelAgente: ['¿Es un comprobante?'],
+    entradasAlAgente: ['¿Es un comprobante?'],
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
