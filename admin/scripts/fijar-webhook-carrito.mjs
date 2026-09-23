@@ -101,16 +101,24 @@ const db = getFirestore();
 const ocultar = (n) => `…${String(n).slice(-4)}`;
 
 /**
- * La URL, sin la ruta. Se ve el host —para comprobar que apunta a n8n y no a
- * otro lado— y los últimos cuatro caracteres, que alcanzan para distinguir dos
- * rutas entre sí sin publicar ninguna.
+ * La URL, enmascarada entera: ni el host ni la ruta se escriben completos.
+ *
+ * LA PRIMERA VERSIÓN DE ESTO MOSTRABA EL HOST, y estaba mal. El host de n8n
+ * está entre los valores que `verificar-saneo.sh` busca en modo A —y su dominio
+ * de DNS dinámico es uno de los patrones del modo B, el que corre en CI—, o sea
+ * que el propio repositorio lo trata como algo que no se publica. Un script que
+ * lo imprime lo deja en el historial de la terminal y en el registro de quien
+ * lo haya corrido. Se descubrió el 22/09/2026 usándolo por primera vez.
+ *
+ * Queda lo justo para operar: el esquema, el final del host —que distingue una
+ * instancia de otra sin nombrarla— y el final de la ruta.
  */
 const ocultarUrl = (valor) => {
   if (!valor) return '';
   let u;
   try { u = new URL(valor); } catch { return '(URL ilegible)'; }
   const ruta = u.pathname.replace(/\/+$/, '');
-  return `${u.origin}/…${ruta.slice(-4)}`;
+  return `${u.protocol}//…${u.hostname.slice(-6)}/…${ruta.slice(-4)}`;
 };
 
 const rutas = await db.collection('rutasWhatsApp').get();
