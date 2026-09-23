@@ -2145,6 +2145,24 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // /plataforma/tipoCambio — EL TIPO DE CAMBIO OFICIAL DEL BCB, que es
+    // informacion publica. Lo lee tambien el administrador de un comercio, y
+    // tiene que poder leerlo: la pantalla «Pagar» le muestra cuantos bolivianos
+    // se le van a cobrar ANTES de emitir el QR, y ese numero se arma con
+    // `importeBs` sobre este documento, la misma funcion y el mismo dato que
+    // usa el servidor al emitir. Sin esta regla la pantalla tendria que
+    // estimar el importe por su cuenta, y la diferencia entre lo estimado y lo
+    // impreso en el QR aparece recien en el banco, con el cliente mirando.
+    //
+    // Es una excepcion acotada a la regla de arriba, y es segura porque el TCO
+    // no es de nadie: lo publica el BCB todos los dias. Lo que la regla de
+    // arriba protege es `notificaciones.correosReclamos`, que sigue cerrado.
+    // Escribir sigue negado para todos: lo carga una Function con auditoria.
+    match /plataforma/tipoCambio {
+      allow get: if request.auth != null;
+      allow list, create, update, delete: if false;
+    }
+
     // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo
     // observación del prepago (DISENO §4undecies.4): quién, cuándo, por qué y
     // sobre qué tenant. La escribe solo `fijarCortePrepago` (SDK Admin); la
