@@ -42,6 +42,10 @@ const NODO_AGENTE = arg('--nodo-agente', 'AI Agent NovuChat');
 // Una linea de mas en el CONTEXTO DEL TURNO, para medir un refuerzo por codigo
 // ANTES de construirlo. Es lo que pondria un nodo, simulado.
 const EXTRA_TURNO = arg('--extra-turno');
+// Reemplaza el mensaje del cliente y/o los datos ya registrados del turno, para
+// medir un momento de la conversacion del que todavia no hay ejecucion.
+const TURNO_TEXTO = arg('--turno-texto');
+const TURNO_DATOS = arg('--turno-datos');
 // Para aislar UNA variable: correr la version actual con la lista de rubros
 // numerada en el prompt, como la tenia la version vieja. El cliente nunca ve
 // esa lista -- la arma `Procesar respuesta` --, asi que numerarla en el prompt
@@ -151,7 +155,13 @@ async function llamar(sistema, usuario, modelo, temperatura, maxTokens) {
 const ej = ejecucion(EJECUCION);
 const cfg = salidaDeNodo(ej, 'Config del negocio');
 const conocimiento = salidaDeNodo(ej, 'Conocimiento del sitio').conocimiento;
-const turno = salidaDeNodo(ej, 'Estado de la conversación').mensajeDelTurno;
+let turno = salidaDeNodo(ej, 'Estado de la conversación').mensajeDelTurno;
+if (TURNO_TEXTO) turno = turno.replace(/(\[MENSAJE DEL CLIENTE\]\n)[\s\S]*$/, `$1${TURNO_TEXTO}`);
+if (TURNO_DATOS) {
+  const faltan = ['empresa', 'contacto', 'rubro'].filter((k) => !JSON.parse(TURNO_DATOS)[k]);
+  turno = turno.replace(/Datos ya registrados: .*\. Faltan: .*\./,
+    `Datos ya registrados: ${TURNO_DATOS}. Faltan: ${faltan.join(', ') || 'ninguno'}.`);
+}
 
 const flujoAhora = readFileSync(FLUJO, 'utf8');
 const flujoAntes = versionEnSha(ANTES, FLUJO);
@@ -185,7 +195,12 @@ for (const [etiqueta, sistema, entrada] of variantes) {
   for (let i = 0; i < N; i++) {
     try {
       const salida = await llamar(sistema, entrada, MODELO, TEMP, MAXTOK);
-      if (salida.includes(MARCA)) conMarca++;
+      const cuerpoLead = (/\[LEAD\]([\s\S]*?)\[\/LEAD\]/i.exec(salida) ?? [, ''])[1];
+      if (MARCA.startsWith('lead.')) {
+        const campo = MARCA.slice(5);
+        let v; try { v = JSON.parse(cuerpoLead.trim())?.[campo]; } catch { v = undefined; }
+        if (v && String(v).trim() && !/^(pendiente|no especificado|n\/?a)$/i.test(String(v))) conMarca++;
+      } else if (salida.includes(MARCA)) conMarca++;
       if (/\[LEAD\]/i.test(salida)) conLead++;
       if (/(responde|contesta|resp[oó]ndeme|indica|escribe)[^.!?\n]{0,40}\bn[uú]mero\b|\bn[uú]mero\s+(de\s+la\s+)?(opci[oó]n|lista)/i.test(salida)) pideNumero++;
       muestras.push(salida.replace(/\[LEAD\][\s\S]*?\[\/LEAD\]/gi, '').replace(/\s+/g, ' ').trim().slice(0, 150));
