@@ -654,8 +654,23 @@ describe('(9) El orden del lienzo y el costo en mensajes', () => {
     expect(emisores).toEqual(['Avisar al dueño', 'Responder al cliente']);
     // Y el único HTTP que le manda un mensaje al cliente es el del QR, que
     // reemplaza al que ya existía: no hay un segundo envío nuevo.
+    //
+    // EL HOST SE COMPARA ENTERO, NO POR SUBCADENA, y también acá. CodeQL lo
+    // marca como `js/incomplete-url-substring-sanitization` —con razón:
+    // `includes('graph.facebook.com')` da por buena a
+    // `https://graph.facebook.com.otro-dominio.tld`— y el proyecto ya tiene la
+    // regla escrita para el código; una prueba que la incumple enseña a
+    // incumplirla. Como el `url` del nodo es una expresión de n8n con `{{ }}`,
+    // se compara el host del primer tramo, que es donde vive el dominio.
+    const HOST_META = 'graph.facebook.com';
+    const vaAMeta = (url: string): boolean => {
+      // El `=` del principio marca una expresión de n8n; el host va antes de
+      // la primera `{{`, así que sale entero y se compara entero.
+      const host = /^=?https:\/\/([^/?#{]+)/i.exec(url)?.[1]?.toLowerCase() ?? '';
+      return host === HOST_META || host.endsWith(`.${HOST_META}`);
+    };
     const porGraph = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest'
-      && String(n.parameters['url'] ?? '').includes('graph.facebook.com')).map((n) => n.name);
+      && vaAMeta(String(n.parameters['url'] ?? ''))).map((n) => n.name);
     expect(porGraph).toEqual(['Enviar QR de cobro']);
   });
 
