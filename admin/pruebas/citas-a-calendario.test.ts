@@ -72,12 +72,12 @@ describe('La planilla se revisa antes de escribir nada', () => {
   });
 
   it.each([
-    ['07/10/2026,11:00,Ana,71234567,x', 'no es AAAA-MM-DD'],
-    ['2026-02-31,11:00,Ana,71234567,x', 'no existe'],
-    ['2026-10-07,25:00,Ana,71234567,x', 'no existe'],
-    ['2026-10-07,11:00,,71234567,x', 'falta el nombre'],
+    ['07/10/2026,11:00,Ana,70000001,x', 'no es AAAA-MM-DD'],
+    ['2026-02-31,11:00,Ana,70000001,x', 'no existe'],
+    ['2026-10-07,25:00,Ana,70000001,x', 'no existe'],
+    ['2026-10-07,11:00,,70000001,x', 'falta el nombre'],
     ['2026-10-07,11:00,Ana,123,x', 'demasiado corto'],
-    ['2026-10-07,11:00,Ana,71234567,', 'falta el servicio'],
+    ['2026-10-07,11:00,Ana,70000001,', 'falta el servicio'],
   ])('«%s» se rechaza con el motivo y el número de fila', (fila, motivo) => {
     const r = generar([fila]);
     expect(r.codigo).toBe(1);
@@ -87,14 +87,14 @@ describe('La planilla se revisa antes de escribir nada', () => {
   });
 
   it('lista TODOS los problemas de una vez, no solo el primero', () => {
-    const r = generar(['mal,11:00,Ana,71234567,x', '2026-10-07,99:99,Ana,71234567,x']);
+    const r = generar(['mal,11:00,Ana,70000001,x', '2026-10-07,99:99,Ana,70000001,x']);
     expect(r.salida).toContain('2 problema(s)');
   });
 });
 
 describe('El .ics', () => {
   it('pone la hora local con el TZID del negocio, sin convertir a UTC', () => {
-    const r = generar(['2026-10-07,11:00,Ana Quispe,71234567,control-del-nino-sano']);
+    const r = generar(['2026-10-07,11:00,Ana Quispe,70000001,control-del-nino-sano']);
     expect(r.codigo).toBe(0);
     const ics = r.leer();
     expect(ics).toContain('DTSTART;TZID=America/La_Paz:20261007T110000');
@@ -104,26 +104,26 @@ describe('El .ics', () => {
   });
 
   it('la duración manda, y el fin puede cruzar la hora', () => {
-    const ics = generar(['2026-10-07,11:45,Ana,71234567,x'], '--minutos', '45').leer();
+    const ics = generar(['2026-10-07,11:45,Ana,70000001,x'], '--minutos', '45').leer();
     expect(ics).toContain('DTEND;TZID=America/La_Paz:20261007T123000');
   });
 
   it('el teléfono queda en la forma de Meta: dígitos con código de país, sin «+»', () => {
-    for (const escrito of ['+591 7123-4567', '7123 4567', '0059171234567', '59171234567']) {
+    for (const escrito of ['+591 7000-0001', '7000 0001', '0059170000001', '59170000001']) {
       const ics = generar([`2026-10-07,11:00,Ana,${escrito},x`]).leer();
-      expect(ics.replace(/\r\n /g, ''), escrito).toContain('Telefono: 59171234567');
+      expect(ics.replace(/\r\n /g, ''), escrito).toContain('Telefono: 59170000001');
     }
   });
 
   it('un nombre con coma no rompe el archivo ni la columna', () => {
-    const ics = generar(['2026-10-07,11:00,"Quispe, Ana",71234567,control'], '--minutos', '30').leer();
+    const ics = generar(['2026-10-07,11:00,"Quispe, Ana",70000001,control'], '--minutos', '30').leer();
     expect(ics).toContain('SUMMARY:Cita Quispe\\, Ana — control');
   });
 
   it('avisa de las citas que se pisan, pero escribe el archivo', () => {
     const r = generar([
-      '2026-10-07,11:00,Ana,71234567,x',
-      '2026-10-07,11:15,Luis,72345678,y',
+      '2026-10-07,11:00,Ana,70000001,x',
+      '2026-10-07,11:15,Luis,70000002,y',
     ]);
     expect(r.codigo).toBe(0);
     expect(r.salida).toContain('se pisan');
@@ -132,16 +132,16 @@ describe('El .ics', () => {
 
   it('dos citas que NO se pisan no generan aviso', () => {
     const r = generar([
-      '2026-10-07,11:00,Ana,71234567,x',
-      '2026-10-07,11:30,Luis,72345678,y',
+      '2026-10-07,11:00,Ana,70000001,x',
+      '2026-10-07,11:30,Luis,70000002,y',
     ]);
     expect(r.salida).not.toContain('se pisan');
   });
 
   it('cada evento tiene un UID propio: importar dos veces no duplica', () => {
     const ics = generar([
-      '2026-10-07,11:00,Ana,71234567,x',
-      '2026-10-07,11:30,Luis,72345678,y',
+      '2026-10-07,11:00,Ana,70000001,x',
+      '2026-10-07,11:30,Luis,70000002,y',
     ]).leer();
     const uids = [...ics.matchAll(/^UID:(.+)$/gm)].map((m) => m[1]!.trim());
     expect(uids).toHaveLength(2);
@@ -166,9 +166,9 @@ describe('La descripción es la que el asistente sabe leer', () => {
     const esperada = enElFlujo
       .replace(/^=/, '')
       .replace(/\{\{[^}]*nombrePerfil[^}]*\}\}/, 'Ana Quispe')
-      .replace(/\{\{[^}]*\.from[^}]*\}\}/, '59171234567');
+      .replace(/\{\{[^}]*\.from[^}]*\}\}/, '59170000001');
 
-    const ics = generar(['2026-10-07,11:00,Ana Quispe,71234567,control-del-nino-sano']).leer();
+    const ics = generar(['2026-10-07,11:00,Ana Quispe,70000001,control-del-nino-sano']).leer();
     // Se deshace el plegado de líneas del ICS y el escapado de la coma.
     const descripcion = /DESCRIPTION:((?:.|\r\n )*?)\r\n[A-Z]/.exec(ics)![1]!
       .replace(/\r\n /g, '')
@@ -177,14 +177,14 @@ describe('La descripción es la que el asistente sabe leer', () => {
 
     expect(descripcion).toBe(esperada);
     // Y lo que de verdad hace falta: el teléfono, que es por lo que se busca.
-    expect(descripcion).toContain('Telefono: 59171234567');
+    expect(descripcion).toContain('Telefono: 59170000001');
   });
 
   it('el título sigue el formato «Cita <nombre> — <servicio>» que usa el flujo', () => {
     const agendar = flujo.nodes.find((n) => n.name === 'agendar_cita')!;
     const titulo = String((agendar.parameters['additionalFields'] as Record<string, unknown>)['summary']);
     expect(titulo).toContain('Cita <nombre> — <servicio>');
-    const ics = generar(['2026-10-07,11:00,Ana Quispe,71234567,control-del-nino-sano']).leer();
+    const ics = generar(['2026-10-07,11:00,Ana Quispe,70000001,control-del-nino-sano']).leer();
     expect(ics).toContain('SUMMARY:Cita Ana Quispe — control-del-nino-sano');
   });
 });

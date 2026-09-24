@@ -108,7 +108,7 @@ if (faltan.length) {
 const indice = Object.fromEntries(COLUMNAS.map((c) => [c, cabecera.indexOf(c)]));
 
 // EL TELÉFONO, EN LA MISMA FORMA QUE LO ESCRIBE META. El webhook trae el número
-// como dígitos con código de país y sin «+» (`59176588088`), y así lo guarda el
+// como dígitos con código de país y sin «+» (`59170000001`), y así lo guarda el
 // flujo y así lo busca. Un «+591 7123-4567» de la planilla se normaliza a eso,
 // o `buscar_mi_cita` no lo encuentra nunca.
 const telefonoDe = (crudo) => {

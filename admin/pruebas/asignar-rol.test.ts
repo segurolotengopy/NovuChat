@@ -53,13 +53,13 @@ describe('Lo que no se puede pedir', () => {
 
   it('un identificador de comercio con mayúsculas o espacios se rechaza', () => {
     for (const t of ['BELLIDO', 'be llido', 'be', 'bellido/../otro']) {
-      const r = correr('--proyecto', 'p', '--tenant', t, '--correo', 'a@b.com');
+      const r = correr('--proyecto', 'p', '--tenant', t, '--correo', 'alguien@ejemplo.com');
       expect(r.codigo, t).toBe(2);
       expect(r.salida, t).toContain('--tenant no es un identificador válido');
     }
   });
 
-  it.each(['sin-arroba', 'a@b', '@b.com', 'a b@c.com'])('el correo «%s» se rechaza', (correo) => {
+  it.each(['sin-arroba', 'a@b', '@ejemplo.com', 'a b@ejemplo.com'])('el correo «%s» se rechaza', (correo) => {
     const r = correr('--proyecto', 'p', '--tenant', 'bellido', '--correo', correo);
     expect(r.codigo).toBe(2);
     expect(r.salida).toContain('--correo no es un correo');
