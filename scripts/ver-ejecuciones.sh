@@ -45,20 +45,60 @@ API="${N8N_BASE_URL%/}/api/v1"
 
 TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
 
+# LA LISTA NO PIDE LOS DATOS (2026-09-23). `includeData=true` en la lista trae
+# el contenido de CADA ejecucion: con un flujo de 96 nodos son ~270 kB por
+# ejecucion, y pedir 40 son 12,7 MB que no entran en ningun `--max-time`
+# razonable. Se pedia solo para poder nombrar el nodo que fallo en el resumen.
+# Ahora la lista viene pelada —rapida y de tamano fijo— y el detalle se busca
+# UNA POR UNA, solo para las que fallaron, que son las pocas que importan.
 if [[ -n "$ID" ]]; then
   URL="${API}/executions/${ID}?includeData=true"
 else
-  URL="${API}/executions?workflowId=${N8N_WORKFLOW_ID}&limit=${N}&includeData=true"
+  URL="${API}/executions?workflowId=${N8N_WORKFLOW_ID}&limit=${N}"
   [[ $SOLO_ERROR -eq 1 ]] && URL="${URL}&status=error"
 fi
 
-COD=$(curl -s --max-time 40 -o "$TMP" -w '%{http_code}' \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$URL" || echo 000)
+# EL CODIGO DE CURL Y EL CODIGO HTTP SON DOS COSAS (2026-09-23). Antes esto
+# decia `... || echo 000`, que dentro de `$( )` no REEMPLAZA el valor: lo
+# CONCATENA. Con un HTTP 200 y un curl que terminaba mal, COD valia «200000»,
+# el script moria diciendo «HTTP 200000» y el motivo real —que es el que
+# importa— no se imprimia nunca. Costo una tarde de diagnostico a ciegas.
+#
+# Y LA LISTA PIDE LOS DATOS DE CADA EJECUCION. Con `includeData=true`, una sola
+# ejecucion de un flujo de 96 nodos pesa ~270 kB: veinte son 5 MB y el
+# `--max-time` de 40 s se quedaba corto. El tiempo sube y se explica aparte,
+# porque el sintoma (una lista vacia) no se parece a la causa (un timeout).
+SALIDA=0
+COD=$(curl -sS --max-time 180 -o "$TMP" -w '%{http_code}' \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$URL") || SALIDA=$?
+if [[ "$SALIDA" -ne 0 ]]; then
+  printf '\033[1;31m✗ curl terminó con %s\033[0m (HTTP %s)\n' "$SALIDA" "${COD:-sin código}"
+  [[ "$SALIDA" -eq 28 ]] && printf '  Se agotó el tiempo. Probá con --n más chico: la lista trae los datos de cada ejecución.\n'
+  head -c 300 "$TMP"; echo; exit 1
+fi
 if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ HTTP %s\033[0m\n' "$COD"; head -c 300 "$TMP"; echo; exit 1
 fi
 
-ID="$ID" NODO="$NODO" CAMPOS="$CAMPOS" python3 - "$TMP" <<'PY'
+# EL DETALLE, SOLO DE LAS QUE FALLARON. La lista ya no trae datos, asi que el
+# nodo que reventó se busca de a una. Son pocas, y si fueran muchas el limite
+# de `--n` ya acota el gasto.
+DETALLES="$(mktemp -d)"; trap 'rm -f "$TMP"; rm -rf "$DETALLES"' EXIT
+if [[ -z "$ID" ]]; then
+  for FALLIDA in $(python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+for e in d.get("data", []):
+    if e.get("status") == "error" or e.get("stoppedAt") is None:
+        print(e.get("id"))
+' "$TMP"); do
+    curl -sS --max-time 60 -o "$DETALLES/${FALLIDA}.json" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+      "${API}/executions/${FALLIDA}?includeData=true" || true
+  done
+fi
+
+ID="$ID" NODO="$NODO" CAMPOS="$CAMPOS" DETALLES="$DETALLES" python3 - "$TMP" <<'PY'
 import json, os, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 uno, nodo_pedido = os.environ.get("ID", ""), os.environ.get("NODO", "")
@@ -86,7 +126,16 @@ def resumen(e):
     c = R if est == "error" else V
     ini = str(e.get("startedAt", ""))[:19].replace("T", " ")
     print(f"  {c}{est:<8}{FIN} #{e.get('id'):<7} {ini}")
-    nodo, msg = error_de(e.get("data"))
+    # La lista viene sin datos: el detalle de una fallida se bajó aparte.
+    datos = e.get("data")
+    if datos is None:
+        ruta = os.path.join(os.environ.get("DETALLES", ""), f"{e.get('id')}.json")
+        if os.path.isfile(ruta):
+            try:
+                datos = (json.load(open(ruta, encoding="utf-8")) or {}).get("data")
+            except (ValueError, OSError):
+                datos = None
+    nodo, msg = error_de(datos)
     if nodo:
         print(f"           {R}↳ {nodo}: {msg}{FIN}")
 
