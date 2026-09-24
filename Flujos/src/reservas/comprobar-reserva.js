@@ -247,6 +247,27 @@ const ganaPrioridad = (a, b) => {
   return String(a.id) < String(b.id);
 };
 
+// UN BLOQUE FIJO NO ES UNA CITA (Andres, 24/09/2026). El calendario del
+// consultorio tiene un evento REPETIDO todos los dias de 13:00 a 14:00 --el
+// almuerzo-- y hasta hoy el candado lo trataba como «otra cita»: si el modelo
+// agendaba a las 13:30, la cita se deshacia y al paciente se le decia que «ese
+// horario ya estaba ocupado con la misma persona». Deshacerla esta BIEN; la
+// explicacion era falsa, y ademas confundia dos cosas distintas en los avisos
+// y en las metricas: un choque con otro paciente es un problema de agenda, un
+// choque con el almuerzo es una restriccion del negocio.
+//
+// COMO SE RECONOCE, y el primero es exacto y no una heuristica: Google marca
+// cada instancia de una serie con `recurringEventId`, y `agendar_cita` NUNCA
+// crea eventos repetidos. Un repetido en una agenda de reservas es, siempre,
+// un bloqueo que puso el negocio. La segunda via es para el bloqueo cargado a
+// mano dia por dia, sin repeticion, que se reconoce por como lo escriben.
+const esBloqueoFijo = (e) => {
+  if (!e) return false;
+  if (e.recurringEventId) return true;
+  return /\b(bloq|almuerzo|no atender|sin citas?|feriado|vacacion|vacación|receso|reuni[oó]n)/i
+    .test(String(e.summary || ''));
+};
+
 // Una cita se deshace por DOS causas, y se anota cual: el cruce con otra cita
 // (lo de siempre) y el horario en el que el negocio no atiende (2026-09-20).
 // La causa cambia lo que se le dice al cliente: «ya estaba ocupado» cuando en
@@ -265,7 +286,11 @@ for (const nueva of recien) {
     return ro && seSuperponen(r, ro) && ganaPrioridad(otro, nueva);
   });
 
-  if (choque) { ceden.push(nueva); causaDe[String(nueva.id)] = 'cruce'; continue; }
+  if (choque) {
+    ceden.push(nueva);
+    causaDe[String(nueva.id)] = esBloqueoFijo(choque) ? 'bloqueado' : 'cruce';
+    continue;
+  }
 
   const quien = delCalendario(calendario);
   const mal = quien ? fueraDeHorario(nueva.start && nueva.start.dateTime,
@@ -301,7 +326,9 @@ if (ceden.length) {
     ? 'ese horario ya estaba ocupado con la misma persona'
     : (causas.size === 1 && causas.has('cerrado')
       ? 'ese dia no atendemos'
-      : 'ese horario esta fuera de nuestro horario de atencion');
+      : (causas.size === 1 && causas.has('bloqueado')
+        ? 'ese horario esta reservado en la agenda'
+        : 'ese horario esta fuera de nuestro horario de atencion'));
   // «El resto de lo que agendamos si esta bien» SOLO si de verdad quedo alguna:
   // cuando el cliente pidio una sola cita y esa es la que cayo, esa frase le
   // dice que algo quedo cuando no quedo nada (2026-09-20).
@@ -346,7 +373,9 @@ if (ceden.length) {
   // Un item por cita a deshacer: el nodo de Calendar borra uno por item.
   const motivoCruce = (causas.has('cruce')
     ? 'se intento agendar sobre un horario YA OCUPADO de la misma persona '
-    : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona ')
+    : (causas.size === 1 && causas.has('bloqueado')
+      ? 'se intento agendar sobre un BLOQUEO de la agenda (un horario que el negocio no abre a citas) '
+      : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona '))
     + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}); la cita nueva se deshizo`;
   return ceden.map((e) => ({ json: { ...item,
     respuesta: aviso,

@@ -2952,33 +2952,70 @@ describe.each([
       expect(s).toMatchObject({ from: '59170000001', nombrePerfil: 'Ana', tipo: 'audio' });
     });
 
-    it('un audio largo NO se transcribe: se pide que lo escriba, con amabilidad', () => {
+    it('una nota de voz de MÁS de cinco minutos no se transcribe, y se dice por qué', () => {
       const s = transcribir(gemini('lo que sea'), 2_000_000);
-      expect(String(s['userInput'])).toContain('audio largo o que no se pudo entender');
-      expect(String(s['userInput'])).toMatch(/que lo escriba o lo resuma/i);
+      expect(String(s['userInput'])).toContain('más de cinco minutos');
+      expect(String(s['userInput'])).toMatch(/en texto o en un audio más corto/i);
       expect(String(s['userInput'])).not.toContain('(audio transcripto)');
     });
 
-    it('una transcripción vacía —o el nodo caído— pide lo mismo, en vez de contestar cualquier cosa', () => {
+    // DOS CASOS DISTINTOS, DOS AVISOS (2026-09-24). Antes «muy largo» y «no se
+    // entendió» compartían mensaje, y quien mandaba un audio inaudible recibía
+    // el mismo texto que quien mandaba uno de seis minutos: no sabía cuál de
+    // las dos cosas arreglar.
+    it('una transcripción vacía —o el nodo caído— pide que lo repita, y NO dice que fue largo', () => {
       for (const salida of [gemini(''), gemini('   '), { error: 'algo falló' }, {}]) {
-        expect(String(transcribir(salida as J, 10_000)['userInput'])).toContain('audio largo o que no se pudo entender');
+        const u = String(transcribir(salida as J, 10_000)['userInput']);
+        expect(u).toContain('no se pudo entender');
+        expect(u).not.toContain('cinco minutos');
       }
     });
 
-    it('el tope de 60 s se estima por `file_size`, y el supuesto está escrito en el código', () => {
+    // EL TOPE MEDIDO, NO SUPUESTO (2026-09-23). La nota de voz del Dr. Bellido:
+    // 604.186 bytes en 256 s = 2.360 B/s. El supuesto anterior de 16.000 B/s
+    // hacía que el «tope de 60 s» fuera en realidad de seis minutos y medio, y
+    // nadie lo sabía porque nunca se había medido.
+    it('el tope se estima por `file_size` con la tasa MEDIDA de una nota de voz real', () => {
       const c = codigo('Preparar transcripción');
-      expect(c).toContain('const SEGUNDOS_MAX = 60;');
-      expect(c).toContain('const BYTES_POR_SEGUNDO = 16000;');
-      expect(c).toMatch(/Meta NO manda la duracion/i);
-      expect(c).toMatch(/HAY QUE MEDIRLO CON UN\s*\/\/ TELEFONO REAL/i);
+      expect(c).toContain('const SEGUNDOS_MAX = 300;');
+      expect(c).toContain('const BYTES_POR_SEGUNDO = 2400;');
+      expect(c).toMatch(/MEDIDO, NO SUPUESTO/);
+      expect(c).toMatch(/604\.186 bytes para 256 segundos/);
       // Justo por debajo del límite todavía se transcribe.
-      expect(String(transcribir(gemini('sí'), 960_000)['userInput'])).toContain('(audio transcripto)');
-      expect(String(transcribir(gemini('sí'), 960_001)['userInput'])).toContain('audio largo');
+      expect(String(transcribir(gemini('sí'), 720_000)['userInput'])).toContain('(audio transcripto)');
+      expect(String(transcribir(gemini('sí'), 720_001)['userInput'])).toContain('cinco minutos');
+      // EL CASO REAL: el audio del doctor, 4:16 y 604 kB, entra.
+      expect(String(transcribir(gemini('sí'), 604_186)['userInput'])).toContain('(audio transcripto)');
     });
 
-    it('recorta una transcripción enorme: el prompt se paga en tokens en cada turno de la memoria', () => {
-      const s = transcribir(gemini('pa '.repeat(2000)), 500_000);
-      expect(String(s['userInput']).length).toBeLessThan(1500);
+    // «QUE NO LLEGUEN CORTADOS» (Andres, 24/09/2026). El presupuesto anterior
+    // era de 1.200 caracteres: un audio de cuatro minutos —unos 3.400— llegaba
+    // al agente con un tercio de lo que el cliente dijo, cortado a mitad de
+    // palabra y sin que nadie se enterara.
+    it('cuatro minutos de habla entran ENTEROS: ya no se cortan a 1.200 caracteres', () => {
+      const cuatroMinutos = 'necesito una cita para mi hijo. '.repeat(106);   // ~3.400 car.
+      const s = transcribir(gemini(cuatroMinutos), 604_186);
+      expect(cuatroMinutos.length).toBeGreaterThan(3000);
+      expect(String(s['userInput'])).toContain(cuatroMinutos.trim());
+      expect(String(s['userInput'])).not.toContain('solo la primera parte');
+    });
+
+    it('si de verdad hay que recortar, se corta en una ORACIÓN y se le avisa al agente', () => {
+      const larguisimo = 'Le cuento lo que le pasa a mi hijo. '.repeat(200);   // ~7.200 car.
+      const u = String(transcribir(gemini(larguisimo), 700_000)['userInput']);
+      expect(u).toContain('solo la primera parte');
+      expect(u).toMatch(/sin inventar lo que falta/);
+      // Cortado en una oración, nunca a mitad de palabra.
+      const transcripto = u.slice(u.indexOf('(audio transcripto) ') + 20, u.indexOf('\nAVISO_SISTEMA'));
+      expect(transcripto.trimEnd().endsWith('.')).toBe(true);
+      expect(transcripto.length).toBeLessThanOrEqual(4400);
+    });
+
+    it('un audio sin un solo punto tampoco se parte en medio de una palabra', () => {
+      const sinPuntos = 'palabra '.repeat(900);   // ~7.200 car., ni un punto
+      const u = String(transcribir(gemini(sinPuntos), 700_000)['userInput']);
+      const transcripto = u.slice(u.indexOf('(audio transcripto) ') + 20, u.indexOf('\nAVISO_SISTEMA'));
+      expect(transcripto.endsWith('palabra')).toBe(true);
     });
 
     it('empareja por índice: con dos clientes a la vez, el audio de uno no va a la conversación del otro', () => {
