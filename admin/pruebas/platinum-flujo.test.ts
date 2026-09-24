@@ -4279,7 +4279,13 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
     it('el calendario de los próximos días viaja en la configuración, para que no tenga que calcular', () => {
       const cfg = ejecutar(String(nodo(f, 'Config del negocio').parameters['jsCode']),
         [{ statusCode: 200, body: {} }], { 'Config base': [{}] })[0] ?? {};
+      // Es la frase entera, armada en el nodo: el prompt solo la interpola,
+      // porque el bloque de contexto del turno tiene un tope de 700 caracteres.
       const dias = String(cfg['diasProximos'] ?? '');
-      expect(dias).toMatch(/^(lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}( · (lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}){14}$/);
+      expect(dias.startsWith('\n')).toBe(true);
+      expect(dias).toMatch(/no lo calcules/);
+      expect(dias).toMatch(/pregunta cuál quieren/);
+      const calendario = /:\s([^.]+)\./.exec(dias)![1]!;
+      expect(calendario).toMatch(/^(lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}( · (lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}){9}$/);
     });
   });

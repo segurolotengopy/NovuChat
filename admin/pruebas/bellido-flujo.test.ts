@@ -366,8 +366,13 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     expect(String(nodo(flujo, AGENTE).parameters['text'])).toContain("$now.setZone('America/La_Paz')");
     // El mensaje del turno es el del Demo A más UNA línea: el contexto del
     // turno (tipo de cita elegido en el menú, lo que escribió antes del botón).
+    // El salto de línea pasó del prompt al nodo el 23/09/2026: el bloque de
+    // contexto tiene un tope de 700 caracteres y el de este cliente estaba en
+    // 686, así que los 33 de la condición hacían falta para el calendario de
+    // fechas. Ahora `Estado de la conversación` devuelve el contexto con su
+    // salto puesto, o cadena vacía.
     const sinContexto = String(nodo(flujo, AGENTE).parameters['text'])
-      .replace("{{ $json.contextoTurno ? $json.contextoTurno + '\\n' : '' }}", '');
+      .replace('{{ $json.contextoTurno }}', '');
     expect(sinContexto).toBe(nodo(demoA, AGENTE).parameters['text']);
   });
 });
@@ -1312,8 +1317,12 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(t.indexOf('contextoTurno')).toBeGreaterThan(0);
       expect(t.indexOf('contextoTurno')).toBeLessThan(t.indexOf('[MENSAJE DEL CLIENTE]'));
       // Con contexto, entra en su propia línea justo antes del rótulo; sin
-      // contexto, no deja ni una línea vacía.
-      expect(t).toContain("{{ $json.contextoTurno ? $json.contextoTurno + '\\n' : '' }}[MENSAJE DEL CLIENTE]");
+      // contexto, no deja ni una línea vacía. El salto lo pone el NODO desde el
+      // 23/09/2026, no la plantilla: hacían falta esos 33 caracteres.
+      expect(t).toContain('{{ $json.contextoTurno }}[MENSAJE DEL CLIENTE]');
+      const conCtx = turno({ tipo: 'interactive', eleccion: 'control_nino_sano' }, {});
+      expect(String(conCtx['contextoTurno'])).not.toBe('');
+      expect(String(conCtx['contextoTurno']).endsWith('\n')).toBe(true);
     });
 
     it('la configuración trae los textos nuevos y el número del doctor como marcador, y la consola puede pisarlos', () => {

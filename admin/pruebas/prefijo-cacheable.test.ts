@@ -107,6 +107,21 @@ for (const { archivo, agente, trasElTope } of FLUJOS) {
       expect(sinCliente.length).toBeLessThan(700);
     });
 
+    // EL TOPE NO SE ESQUIVA MOVIENDO EL TEXTO DE LADO (2026-09-23). La prueba
+    // de arriba mide la PLANTILLA, que es un proxy: el dia que una linea larga
+    // del turno se convierte en `{{ $json.algo }}` y el texto se arma en un
+    // nodo Code, la plantilla se achica y lo que el modelo lee cada turno no.
+    // Paso con `diasProximos` —el calendario que evita que el modelo calcule el
+    // dia de la semana— y en vez de dejarlo pasar se mide tambien lo que se
+    // interpola. Si hace falta mas texto por turno, que sea una decision, no un
+    // efecto de haberlo mudado de archivo.
+    it('lo que se INTERPOLA en el turno tampoco crece sin que se note', () => {
+      const cfg = fusionar(f, { statusCode: 200, body: { tenantId: 'x' } }) as Record<string, unknown>;
+      const interpolado = ['diasProximos', 'contextoTurno']
+        .map((k) => String(cfg[k] ?? '')).join('');
+      expect(interpolado.length, interpolado).toBeLessThan(260);
+    });
+
     it('el aviso de respuestas restantes solo se enciende con 3 o menos', () => {
       const m = /\{\{\s*(typeof \$json\.mensajesRestantes24h[\s\S]*?)\}\}/.exec(texto);
       expect(m).not.toBeNull();
