@@ -6,6 +6,7 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
 import { ChipModo } from '../componentes/ChipModo';
 import { avisoConsumoVigente, nombreDePlan, type AvisoConsumoVista } from '../lib/planes';
 import { modoDelComercio, type ModoComercio } from '../lib/modoComercio';
+import { corteDe, fechaCorta, type Corte } from '../lib/prepago';
 
 interface Tenant { id: string; nombre?: unknown; estado?: unknown; plan?: unknown }
 
@@ -29,6 +30,11 @@ export function Tenants() {
   // (`modoDelComercio`, que usa `modalidadDe` del servidor). Sale de la misma
   // lectura de `cuenta/estado` que ya se hacía para el aviso: cero lecturas más.
   const [modos, setModos] = useState<Record<string, ModoComercio | null>>({});
+  // EL CORTE, TAMBIEN EL OBSERVADO. Es el dato que solo ve NovuChat: mientras
+  // el prepago corre en modo observacion el servidor anota lo que HABRIA
+  // cortado (`aplicado: false`). Verlo en gris es lo que permite encender el
+  // corte sabiendo a quien alcanza; el comercio no lo ve hasta que se aplica.
+  const [cortes, setCortes] = useState<Record<string, Corte | null>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => onSnapshot(
@@ -49,10 +55,12 @@ export function Tenants() {
       (d) => {
         setAvisos((a) => ({ ...a, [id]: avisoConsumoVigente(d.data()) }));
         setModos((m) => ({ ...m, [id]: modoDelComercio(d.data()) }));
+        setCortes((c) => ({ ...c, [id]: corteDe(d.data()) }));
       },
       () => {
         setAvisos((a) => ({ ...a, [id]: null }));
         setModos((m) => ({ ...m, [id]: null }));
+        setCortes((c) => ({ ...c, [id]: null }));
       }));
     return () => bajas.forEach((baja) => baja());
   }, [ids]);
@@ -71,11 +79,12 @@ export function Tenants() {
         </p>
       )}
       <table className="table">
-        <thead><tr><th>Negocio</th><th>Modo</th><th>Estado</th><th>Plan</th><th>Consumo del mes</th><th /></tr></thead>
+        <thead><tr><th>Negocio</th><th>Modo</th><th>Estado</th><th>Plan</th><th>Consumo del mes</th><th>Corte</th><th /></tr></thead>
         <tbody>
           {tenants.map((t) => {
             const aviso = avisos[t.id];
             const modo = modos[t.id];
+            const corte = cortes[t.id];
             return (
               <tr key={t.id}>
                 <td><TextoSeguro valor={t.nombre} maxLargo={80} /></td>
@@ -86,6 +95,19 @@ export function Tenants() {
                   {aviso
                     ? <span className="tag tag-aviso" title="El servidor marcó el aviso de consumo este mes">
                         {aviso.porcentaje} %: {aviso.conversaciones} de {aviso.limite}
+                      </span>
+                    : <span className="text-muted">—</span>}
+                </td>
+                <td>
+                  {corte
+                    ? <span className={corte.aplicado ? 'tag tag-aviso' : 'tag'}
+                        title={corte.aplicado
+                          ? 'El corte se esta aplicando: el flujo recibe 409'
+                          : 'Modo observacion: se anota lo que cortaria, no se corta'}>
+                        {corte.aplicado ? 'corta' : 'cortaria'} por{' '}
+                        {corte.motivo === 'sin_pago' ? 'falta de pago' : 'fin de conversaciones'}
+                        {' '}desde el {fechaCorta(corte.desdeMs)}
+                        {corte.perdidas > 0 && <> · {corte.perdidas} sin atender</>}
                       </span>
                     : <span className="text-muted">—</span>}
                 </td>

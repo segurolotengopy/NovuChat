@@ -40,7 +40,9 @@ describe('cuentaInicial()', () => {
     const c = cuentaInicial();
     expect(c.plan).toBe(PLAN_POR_DEFECTO);
     expect(esIdPlan(c.plan)).toBe(true);
-    const { nombre: _n, precioUsd: _p, ...limites } = PLANES[PLAN_POR_DEFECTO];
+    // `pagaMeta` es del PLAN, no de los límites: no se copia a la cuenta porque
+    // nadie lo hace cumplir, lo lee la consola (`planes.ts`, `Analisis/39`).
+    const { nombre: _n, precioUsd: _p, pagaMeta: _m, ...limites } = PLANES[PLAN_POR_DEFECTO];
     expect(c.limites).toEqual(limites);
     expect(c.catalogoPlanes).toBe(CATALOGO_PLANES);
   });

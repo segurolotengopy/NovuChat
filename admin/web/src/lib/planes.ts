@@ -21,14 +21,15 @@
  * arrastrar nada del servidor.
  */
 import {
-  AVISO_CONSUMO, PLANES, PLANES_ASIGNABLES, PLAN_POR_DEFECTO, esIdPlan, limitesDeCuenta, periodoDe,
+  AVISO_CONSUMO, PLANES, PLANES_ASIGNABLES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esIdPlan,
+  limitesDeCuenta, periodoDe,
   type IdPlanVendible,
 } from '../../../functions/src/planes';
 
 export {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
-  PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo, esIdPlan, limitesDe,
-  limitesDeCuenta, periodoDe, umbralDeAviso,
+  PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
+  esIdPlan, limitesDe, limitesDeCuenta, periodoDe, umbralDeAviso,
 } from '../../../functions/src/planes';
 export type {
   AvisoConsumo, IdPlan, IdPlanVendible, Limites, LimitesDeCuenta, Plan,
@@ -50,13 +51,18 @@ export function nombreDePlan(plan: unknown): string | null {
 
 /**
  * El plan al que conviene subir para tener más productos, con su tope. Sigue
- * el orden de `PLANES` (el de la oferta). Un plan desconocido se trata como el
- * más chico —igual que el servidor—, así que sugiere el segundo. El plan de
- * demostración y el más grande no tienen siguiente.
+ * el orden de `PLANES_PUBLICADOS` (el de la oferta del sitio). Un plan
+ * desconocido se trata como el más chico —igual que el servidor—, así que
+ * sugiere el segundo. El más grande no tiene siguiente.
+ *
+ * NI DEMOSTRACIÓN NI BYOC TIENEN SIGUIENTE, y por el mismo motivo: no están en
+ * la escalera publicada. A un comercio BYOC no se le ofrece «subir» —ya tiene
+ * el catálogo de Pro, y su modalidad se acordó contra su portafolio, no contra
+ * un tope de productos (`Analisis/39`)—.
  */
 export function planSiguiente(plan: unknown): { nombre: string; productos: number } | null {
-  if (plan === 'demostracion') return null;
-  const orden = Object.keys(PLANES) as IdPlanVendible[];
+  if (plan === 'demostracion' || plan === 'byoc') return null;
+  const orden = PLANES_PUBLICADOS as readonly IdPlanVendible[];
   const actual: IdPlanVendible = esIdPlan(plan) ? plan as IdPlanVendible : PLAN_POR_DEFECTO;
   const s = orden[orden.indexOf(actual) + 1];
   return s ? { nombre: PLANES[s].nombre, productos: PLANES[s].productos } : null;

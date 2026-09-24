@@ -2513,6 +2513,27 @@ Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20
 
 #### A-3 — `prepago/consola-pagar` (con A-1 en `main`)
 
+> **Estado al 23/09/2026: A-3 se parte en dos ramas.** La primera,
+> `prepago/consola-pagar`, es **la mitad del comercio** y está hecha: «Pagar»
+> con plan, meses, bolsas e instalación; importe en USD y en Bs con el TCO del
+> día y su fuente; el QR por ficha; «ya pagué» y «cancelar»; historial de
+> pagos; la cobertura, la gracia y `perdidas` en «Cuenta»; y la columna de
+> corte en la cartera (en gris si es observado). La segunda, la **mitad del
+> propietario** (`CuentaNegocio.tsx`: modalidad, plan, umbrales, suspender y
+> reactivar, carga manual con evidencia, botón de `fijarCortePrepago`), es
+> íntegramente las fases 1-2 de `Analisis/29` y va en su propia rama: son dos
+> jornadas y ninguna de las dos mitades necesita a la otra para entrar.
+>
+> Dos desviaciones del plano de abajo, y por qué:
+> - **No hay callable `cotizarPago`.** La pantalla lee `plataforma/tipoCambio`
+>   con una regla nueva y acotada (`allow get: if request.auth != null` sobre
+>   ESE documento) y arma el importe con `importeBs`, la misma función del
+>   servidor. Una callable más para leer un dato público es una Function más
+>   que desplegar, y el TCO del BCB no es de nadie.
+> - **El QR no sale de Storage**, sale de `imagenDePago` por la ficha opaca que
+>   ya devuelve `consultarPagoPendiente` (A-2). Es la única forma de ponerlo en
+>   un `<img src>`, y la Function devuelve 404 en cuanto el cobro se cierra.
+
 | | |
 |---|---|
 | **Crea** | `admin/web/src/paginas/Pagar.tsx` (plan, meses 1-6, bolsas; importe USD y Bs con TCO y fuente **leídos del servidor** vía `cotizarPago` callable o de `plataforma/tipoCambio`; el QR desde Storage; «cancelar y emitir otro»); `admin/web/src/paginas/CuentaNegocio.tsx` (propietario, fases 1-2 de `Analisis/29`: modalidad, plan, umbrales, suspender/reactivar, **cargar pago manual** con subida de evidencia, historial de `/auditoria` y de `/pagos`, bandera por tenant); `admin/web/src/componentes/HistorialPagos.tsx` |

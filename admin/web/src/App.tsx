@@ -13,6 +13,7 @@ import { Consumo } from './paginas/Consumo';
 import { Usuarios } from './paginas/Usuarios';
 import { Contactos } from './paginas/Contactos';
 import { EstadoCuenta } from './paginas/EstadoCuenta';
+import { Pagar } from './paginas/Pagar';
 import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
@@ -82,6 +83,7 @@ const TITULOS: Record<string, string> = {
   captacion: 'Captación',
   consumo: 'Consumo',
   cuenta: 'Cuenta',
+  pagar: 'Pagar',
   reclamos: 'Reclamos',
   ingresar: 'Ingresar',
 };
@@ -158,6 +160,12 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/consumo`}>Consumo</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/cuenta`}>Cuenta</NavLink>}
+        {/* «Pagar» solo para el administrador del comercio y el propietario: un
+            operador no compromete gasto. La puerta real es la callable, que
+            exige lo mismo (`exigirAdminOPropietario`); esto es la cortesia de
+            no mostrar lo que el servidor va a rechazar. */}
+        {tenantId && (esAdminDelNegocio || permisos.propietario) &&
+          <NavLink to={`/negocio/${tenantId}/pagar`}>Pagar</NavLink>}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/reclamos`}>Reclamos</NavLink>}
         {tenantId && esAdminDelNegocio &&
@@ -275,6 +283,8 @@ export function App() {
         <Route path="/negocio/:tenantId/cierres" element={<DesvioAConsumo />} />
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
+        <Route path="/negocio/:tenantId/pagar" element={
+          <Proteger requiere="adminOPropietario"><><Cabecera /><Pagar /></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
         {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}

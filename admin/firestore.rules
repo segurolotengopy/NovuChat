@@ -1089,7 +1089,7 @@ service cloud.firestore {
         let propio = limites is map ? limites.get('productos', null) : null;
         return propio is int && propio >= 1 && propio <= 100000
           ? propio
-          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'demostracion': 500}
+          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500, 'demostracion': 500}
               .get(cuenta.get('plan', ''), 20);
       }
 
@@ -2143,6 +2143,24 @@ service cloud.firestore {
     match /plataforma/{documento} {
       allow get, list: if esPropietario();
       allow create, update, delete: if false;
+    }
+
+    // /plataforma/tipoCambio — EL TIPO DE CAMBIO OFICIAL DEL BCB, que es
+    // informacion publica. Lo lee tambien el administrador de un comercio, y
+    // tiene que poder leerlo: la pantalla «Pagar» le muestra cuantos bolivianos
+    // se le van a cobrar ANTES de emitir el QR, y ese numero se arma con
+    // `importeBs` sobre este documento, la misma funcion y el mismo dato que
+    // usa el servidor al emitir. Sin esta regla la pantalla tendria que
+    // estimar el importe por su cuenta, y la diferencia entre lo estimado y lo
+    // impreso en el QR aparece recien en el banco, con el cliente mirando.
+    //
+    // Es una excepcion acotada a la regla de arriba, y es segura porque el TCO
+    // no es de nadie: lo publica el BCB todos los dias. Lo que la regla de
+    // arriba protege es `notificaciones.correosReclamos`, que sigue cerrado.
+    // Escribir sigue negado para todos: lo carga una Function con auditoria.
+    match /plataforma/tipoCambio {
+      allow get: if request.auth != null;
+      allow list, create, update, delete: if false;
     }
 
     // /plataforma/prepago/historial/{id} — cada cambio de la bandera del modo
