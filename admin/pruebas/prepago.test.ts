@@ -168,6 +168,23 @@ describe('El saldo de conversaciones', () => {
     expect(rechazoPorPrepago(e.motivo, false)).toBeNull();
   });
 
+  it('BYOC corta a las 2.000: el comercio NO puede pasar su tope (`Analisis/39`)', () => {
+    // Escrita negando, como pide `CLAUDE.md` §7.3. El tope de BYOC es cuatro
+    // veces el de Pro, así que lo que hay que probar es que EXISTE: un plan
+    // grande sin corte es la forma más fácil de perder plata sin enterarse.
+    const byoc = prepago({ periodoPagado: '2026-10', plan: 'byoc', limites: limitesDe('byoc') });
+
+    const ultima = estadoDeServicio(byoc, 1999, AHORA);
+    expect(ultima).toMatchObject({ incluidas: 2000, disponibles: 1, operativo: true });
+
+    const agotado = estadoDeServicio(byoc, 2000, AHORA);
+    expect(agotado).toMatchObject({ operativo: false, motivo: 'sin_conversaciones', disponibles: 0 });
+    expect(rechazoPorPrepago(agotado.motivo, true)).toBe('sin_conversaciones');
+
+    // Y no hereda el tope de Pro por recorrer la escalera publicada.
+    expect(estadoDeServicio(byoc, PLANES.pro.conversaciones, AHORA)).toMatchObject({ operativo: true });
+  });
+
   it('las bolsas sostienen el servicio cuando las incluidas se acabaron', () => {
     const e = estadoDeServicio(prepago({ periodoPagado: '2026-10', bolsa: 3 }), 220, AHORA);
     expect(e).toMatchObject({ operativo: true, disponibles: 3, restanteDelPlan: 0 });

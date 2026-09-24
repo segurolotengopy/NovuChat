@@ -5,8 +5,8 @@ import { useParams } from 'react-router-dom';
 import { db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PLANES_EN_VENTA, PLAN_INICIAL, PRECIOS, mesEscrito, vistaDelPedido,
-  type Pago, type PlanEnVenta,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, paganEllosAMeta, planInicial,
+  planesOfrecidos, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
 
@@ -101,7 +101,7 @@ export function Pagar() {
   const [aviso, setAviso] = useState<string | null>(null);
 
   const [tipo, setTipo] = useState<Tipo>('mensualidad');
-  const [plan, setPlan] = useState<PlanEnVenta>(PLAN_INICIAL);
+  const [plan, setPlan] = useState<PlanEnVenta | null>(null);
   const [meses, setMeses] = useState(1);
   const [cantidad, setCantidad] = useState(1);
 
@@ -151,10 +151,16 @@ export function Pagar() {
 
   useEffect(() => { void consultar(true); }, [consultar]);
 
+  // EL PLAN QUE VIENE MARCADO ES EL SUYO, y se fija una sola vez, cuando la
+  // cuenta llega. Si se recalculara en cada dibujo, la escucha en vivo de
+  // `cuenta/estado` le pisaría la elección al comercio mientras elige.
+  const planes = useMemo(() => planesOfrecidos(cuenta), [cuenta]);
+  useEffect(() => { if (cuenta && plan === null) setPlan(planInicial(cuenta)); }, [cuenta, plan]);
+
   const pedido: Pago | null = useMemo(() => {
     if (tipo === 'instalacion') return { tipo: 'instalacion' };
     if (tipo === 'bolsa') return { tipo: 'bolsa', cantidad };
-    return { tipo: 'mensualidad', plan, meses };
+    return plan === null ? null : { tipo: 'mensualidad', plan, meses };
   }, [tipo, plan, meses, cantidad]);
 
   const vista = useMemo(
@@ -223,13 +229,22 @@ export function Pagar() {
             {tipo === 'mensualidad' && (
               <>
                 <label htmlFor="plan">Plan</label>
-                <select id="plan" value={plan} onChange={(e) => setPlan(e.target.value as PlanEnVenta)}>
-                  {PLANES_EN_VENTA.map((p) => (
+                <select id="plan" value={plan ?? ''} onChange={(e) => setPlan(e.target.value as PlanEnVenta)}>
+                  {planes.map((p) => (
                     <option key={p} value={p}>
                       {PLANES[p].nombre} · USD {PLANES[p].precioUsd} · {PLANES[p].conversaciones} conversaciones
                     </option>
                   ))}
                 </select>
+                {/* BYOC: el comercio le paga a Meta con su tarjeta. Decirlo acá
+                    evita la pregunta de por qué su plan tiene 2.000
+                    conversaciones y cuesta lo mismo que Crecimiento. */}
+                {plan !== null && paganEllosAMeta(plan) && (
+                  <p className="ayuda">
+                    En este plan, el consumo de WhatsApp lo factura Meta directamente a su
+                    tarjeta. Lo que se paga acá es el servicio de NovuChat.
+                  </p>
+                )}
                 <label htmlFor="meses">Meses por adelantado</label>
                 <select id="meses" value={meses} onChange={(e) => setMeses(Number(e.target.value))}>
                   {MESES_POSIBLES.map((m) => (

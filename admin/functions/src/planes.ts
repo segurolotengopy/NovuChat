@@ -28,18 +28,24 @@
  *    escribe solo quien cambia el plan, en la misma transacción, y NINGÚN
  *    límite ni ninguna regla lo lee nunca.
  *
- * LOS NÚMEROS son los que publica el sitio (`Novuchat-site`,
- * `src/contenido/precios.es.ts`, verificado el 15/09/2026) y los de la «Base
- * comercial» de `CLAUDE.md`. Un PR que cambie uno de ellos cambia los tres
- * lugares; `pruebas/planes.test.ts` compara este archivo con `CLAUDE.md`.
+ * LOS NÚMEROS DE LOS PLANES PUBLICADOS son los que publica el sitio
+ * (`Novuchat-site`, `src/contenido/precios.es.ts`, verificado el 15/09/2026) y
+ * los de la «Base comercial» de `CLAUDE.md`. Un PR que cambie uno de ellos
+ * cambia los tres lugares; `pruebas/planes.test.ts` compara este archivo con
+ * `CLAUDE.md`. `byoc` NO se publica y por eso no está en esa comparación: se
+ * ofrece caso por caso (`Analisis/39`).
  */
 
 // -----------------------------------------------------------------------------
 // EL CATÁLOGO
 // -----------------------------------------------------------------------------
 
-/** Los planes que se venden, en el orden en que se muestran. */
-export type IdPlanVendible = 'impulso' | 'crecimiento' | 'pro';
+/**
+ * Los planes que se pueden contratar y pagar. Los tres primeros son los que
+ * publica el sitio, en el orden en que se muestran (`PLANES_PUBLICADOS`);
+ * `byoc` se ofrece caso por caso y no aparece en ninguna lista de precios.
+ */
+export type IdPlanVendible = 'impulso' | 'crecimiento' | 'pro' | 'byoc';
 /** Todo lo que puede decir `cuenta/estado.plan`. `demostracion` no se vende. */
 export type IdPlan = IdPlanVendible | 'demostracion';
 
@@ -57,6 +63,20 @@ export interface Plan extends Limites {
   nombre: string;
   /** La lista se denomina en dólares; se cobra en bolivianos al TCO del BCB (`CLAUDE.md` §3). */
   precioUsd: number;
+  /**
+   * QUIÉN LE PAGA A META los mensajes de este plan (`Analisis/39`).
+   *
+   *  - `'novuchat'`: la tarjeta de NovuChat está en la WABA y el consumo entra
+   *    en el precio. Es lo que hacen los planes publicados.
+   *  - `'comercio'`: BYOC. El comercio trae su portafolio y su tarjeta, y Meta
+   *    le factura a él directamente. NovuChat no lo cobra ni lo ve.
+   *
+   * NO es un límite y por eso NO se copia a la cuenta: nadie lo «hace cumplir»,
+   * lo lee la consola para decidir qué mostrar y el contrato para decir quién
+   * paga qué. El límite que sí se hace cumplir es `conversaciones`, y ese
+   * viaja en la copia como siempre.
+   */
+  pagaMeta: 'novuchat' | 'comercio';
 }
 
 /**
@@ -65,25 +85,69 @@ export interface Plan extends Limites {
  * límites, para saber más tarde con qué catálogo se asignó cada plan. Se cambia
  * CADA VEZ que cambia un número de abajo.
  */
-export const CATALOGO_PLANES = '2026-09-15';
+export const CATALOGO_PLANES = '2026-09-23';
 
 /**
+ * LO QUE SE PUEDE CONTRATAR Y PAGAR. No es lo mismo que lo que publica el
+ * sitio: los TRES PRIMEROS son los publicados (`PLANES_PUBLICADOS`), y `byoc`
+ * es una modalidad que se ofrece caso por caso (`Analisis/39`).
+ *
  * Impulso 25/100, Crecimiento 50/220, Pro 90/500 (`Analisis/21`, adoptado el
  * 08/09). Productos 20/100/500 (decisión de Andres, 15/09, como promete el
  * sitio). Agendas 1/5/10 (`Analisis/24`: el techo lo pone la latencia del
  * candado, que consulta cada calendario; no prometer más sin el arreglo del §4).
+ *
+ * BYOC 50/2.000 con los límites de catálogo y agendas de Pro (`Analisis/39`,
+ * decisión de Andres del 23/09: las dos modalidades conviven). El comercio trae
+ * su portafolio verificado, su número y su tarjeta; Meta le factura a él. Está
+ * acá y no suelto en la cuenta porque un pago de mensualidad solo acepta planes
+ * de este catálogo (`prepago.ts`, `montoUsdDe`) y porque `montoMensual` se
+ * deriva de `precioUsd`: un límite escrito a mano dejaría la cuenta diciendo un
+ * precio que no es el contratado.
+ *
+ * EL TOPE DE 2.000 SE FIJÓ CONTRA GEMINI, que es lo que corre en los cinco
+ * flujos. Con Claude Haiku 4.5 el equilibrio cae a 1.542 conversaciones y con
+ * Sonnet 5 a 771: **cambiar el modelo de un comercio BYOC sin rehacer esta
+ * cuenta lo pone a perder plata** (`Analisis/39` §2).
  */
 export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
-  impulso: { nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1 },
-  crecimiento: { nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5 },
-  pro: { nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10 },
+  impulso: {
+    nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
+    pagaMeta: 'novuchat',
+  },
+  crecimiento: {
+    nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
+    pagaMeta: 'novuchat',
+  },
+  pro: {
+    nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
+    pagaMeta: 'novuchat',
+  },
+  byoc: {
+    nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
+    pagaMeta: 'comercio',
+  },
 };
+
+/**
+ * LOS QUE PUBLICA EL SITIO, en el orden en que se muestran. `Novuchat-site`
+ * (`src/contenido/precios.es.ts`) y la «Base comercial» de `CLAUDE.md` §3 dicen
+ * estos tres y solo estos tres; `pruebas/planes.test.ts` lo verifica.
+ *
+ * BYOC no está acá a propósito: se ofrece caso por caso, contra un portafolio
+ * verificado del comercio, y su precio no se puede comparar de frente con los
+ * publicados porque no incluye el consumo de Meta (`Analisis/39` §4).
+ */
+export const PLANES_PUBLICADOS = ['impulso', 'crecimiento', 'pro'] as const;
 
 /**
  * PLAN INTERNO DE LOS DEMOS y de la propia NovuChat. No se vende ni se muestra
  * en ninguna lista de precios: tiene los límites de Pro, para que un demo no se
  * quede corto el día de una presentación, y precio cero. Está fuera de `PLANES`
- * a propósito: quien recorra `PLANES` para pintar una oferta no lo encuentra.
+ * a propósito, porque no se contrata ni se paga.
+ *
+ * OJO: estar en `PLANES` ya no alcanza para pintar una oferta —`byoc` también
+ * está y tampoco se publica—. Lo que se muestra es `PLANES_PUBLICADOS`.
  */
 export const PLAN_DEMOSTRACION: Readonly<Plan> = {
   nombre: 'Demostración',
@@ -91,6 +155,7 @@ export const PLAN_DEMOSTRACION: Readonly<Plan> = {
   conversaciones: PLANES.pro.conversaciones,
   productos: PLANES.pro.productos,
   agendas: PLANES.pro.agendas,
+  pagaMeta: 'novuchat',
 };
 
 /** Todo lo que se puede asignar a una cuenta: los que se venden más el interno. */

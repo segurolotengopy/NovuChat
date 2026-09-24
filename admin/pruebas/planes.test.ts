@@ -15,8 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
-  PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo, esIdPlan, limitesDe,
-  limitesDeCuenta, umbralDeAviso,
+  PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
+  esIdPlan, limitesDe, limitesDeCuenta, umbralDeAviso,
 } from '../functions/src/planes.ts';
 
 const MES = '2026-10';
@@ -24,9 +24,22 @@ const MES = '2026-10';
 describe('El catálogo', () => {
   it('son los números que publica el sitio (verificados el 15/09/2026)', () => {
     expect(PLANES).toEqual({
-      impulso: { nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1 },
-      crecimiento: { nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5 },
-      pro: { nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10 },
+      impulso: {
+        nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
+        pagaMeta: 'novuchat',
+      },
+      crecimiento: {
+        nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
+        pagaMeta: 'novuchat',
+      },
+      pro: {
+        nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
+        pagaMeta: 'novuchat',
+      },
+      byoc: {
+        nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
+        pagaMeta: 'comercio',
+      },
     });
     expect(BOLSA).toEqual({ conversaciones: 30, precioUsd: 10 });
     expect(INSTALACION_USD).toBe(65);
@@ -70,7 +83,32 @@ describe('El catálogo', () => {
       agendas: PLANES.pro.agendas,
     });
     expect(Object.keys(PLANES)).not.toContain('demostracion');
-    expect(Object.keys(PLANES_ASIGNABLES).sort()).toEqual(['crecimiento', 'demostracion', 'impulso', 'pro']);
+    expect(Object.keys(PLANES_ASIGNABLES).sort())
+      .toEqual(['byoc', 'crecimiento', 'demostracion', 'impulso', 'pro']);
+  });
+
+  it('BYOC se puede contratar y pagar, pero NO se publica', () => {
+    // Está en el catálogo —un pago de mensualidad solo acepta planes de acá—
+    // pero fuera de la escalera del sitio: su precio no se compara de frente
+    // con los publicados porque no incluye el consumo de Meta (`Analisis/39`).
+    expect(esIdPlan('byoc')).toBe(true);
+    expect(PLANES_PUBLICADOS).toEqual(['impulso', 'crecimiento', 'pro']);
+    expect(PLANES_PUBLICADOS).not.toContain('byoc');
+  });
+
+  it('en BYOC le paga a Meta el comercio; en todos los demás, NovuChat', () => {
+    expect(PLANES.byoc.pagaMeta).toBe('comercio');
+    for (const id of ['impulso', 'crecimiento', 'pro', 'demostracion'] as const) {
+      expect(PLANES_ASIGNABLES[id].pagaMeta, id).toBe('novuchat');
+    }
+  });
+
+  it('el tope de BYOC es el que se fijó contra el modelo que corre', () => {
+    // 2.000 conversaciones salen de `Analisis/39` §2 CON GEMINI. Con Haiku 4.5
+    // el equilibrio cae a 1.542 y con Sonnet 5 a 771: si algún día se cambia el
+    // modelo de un comercio BYOC, esta cuenta se rehace ANTES.
+    expect(PLANES.byoc.conversaciones).toBe(2000);
+    expect(PLANES.byoc.precioUsd).toBe(50);
   });
 
   it('el respaldo es el plan más chico', () => {
@@ -84,8 +122,10 @@ describe('El catálogo', () => {
 });
 
 describe('Identificadores de plan', () => {
-  it('acepta los cuatro del catálogo', () => {
-    for (const id of ['impulso', 'crecimiento', 'pro', 'demostracion']) expect(esIdPlan(id)).toBe(true);
+  it('acepta los cinco del catálogo', () => {
+    for (const id of ['impulso', 'crecimiento', 'pro', 'byoc', 'demostracion']) {
+      expect(esIdPlan(id), id).toBe(true);
+    }
   });
 
   it('NO acepta planes inventados, viejos, con mayúsculas ni propiedades heredadas', () => {

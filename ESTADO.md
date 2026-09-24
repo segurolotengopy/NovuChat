@@ -52,10 +52,22 @@ escribieron durante el corte y recibieron el mensaje de cortesía en lugar del
 asistente. Es el número que mueve a pagar —son clientes suyos, no una deuda
 nuestra— y por eso va en «Cuenta» y en los recordatorios.
 
-**Pruebas:** 3043 en verde, 55 omitidas (las de Storage, que piden su propio
-emulador). 17 nuevas en `pruebas/consola-pagar.test.ts`, más la del tipo de
+**BYOC se puede renovar, y por eso la pantalla no recorre el catálogo entero.**
+El mismo día entró el plan BYOC (#168), que está en el catálogo y **no se
+publica**. «Pagar» ofrece los tres planes publicados **más el del comercio, si
+el suyo no se publica**. No es una cortesía: pagar una mensualidad FIJA el plan
+(`aplicarPago`), así que ofrecerle a un comercio BYOC solo los tres publicados
+lo sacaría de BYOC al renovar —de 2.000 conversaciones a 500, y de pagarle él a
+Meta a que le facture NovuChat— sin que nadie lo decidiera. Y cuando el plan
+elegido le factura Meta directamente, la pantalla lo dice.
+
+**Pruebas:** 3053 en verde, 55 omitidas (las de Storage, que piden su propio
+emulador). 21 nuevas en `pruebas/consola-pagar.test.ts`, más la del tipo de
 cambio en `reglas.test.ts`. La pantalla se dibuja de verdad con
-`renderToStaticMarkup`, como `encabezado-comercio.test.ts`.
+`renderToStaticMarkup`, como `encabezado-comercio.test.ts`. **Ninguna prueba
+escribe la lista de planes a mano**: la primera versión lo hacía y se cayó sola
+cuando apareció BYOC, sin que nada estuviera mal. Se fija la regla, no el
+contenido del día (`CLAUDE.md` §7.4).
 
 **Nada desplegado.** La rama toca `firestore.rules`, así que llegar a
 producción pide etiqueta y despliegue de reglas, con el «sí» de Andres.

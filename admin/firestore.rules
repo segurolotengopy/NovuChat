@@ -1089,7 +1089,7 @@ service cloud.firestore {
         let propio = limites is map ? limites.get('productos', null) : null;
         return propio is int && propio >= 1 && propio <= 100000
           ? propio
-          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'demostracion': 500}
+          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500, 'demostracion': 500}
               .get(cuenta.get('plan', ''), 20);
       }
 

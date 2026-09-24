@@ -21,24 +21,53 @@ import {
   aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
-import { PLAN_POR_DEFECTO } from './planes';
+import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esIdPlan, type IdPlanVendible } from './planes';
 
 export type { Pago, TipoCambio };
 
-/** Un plan de la lista de precios. El interno de demostración no entra. */
-export type PlanEnVenta = keyof typeof PLANES;
-
-/** Los planes que se pueden comprar, en orden de precio. `demostracion` no está. */
-export const PLANES_EN_VENTA: readonly PlanEnVenta[] = (Object.keys(PLANES) as PlanEnVenta[])
-  .sort((a, b) => PLANES[a].precioUsd - PLANES[b].precioUsd);
+/** Un plan que se puede contratar y pagar. El interno de demostración no entra. */
+export type PlanEnVenta = IdPlanVendible;
 
 /**
- * El que viene marcado al abrir la pantalla. Es `PLAN_POR_DEFECTO`, el más
- * chico, y no `PLANES_EN_VENTA[0]`: ante la duda se falla hacia el plan menor,
- * igual que el servidor, y así la pantalla no depende de que la lista esté
- * ordenada ni de que tenga al menos un elemento.
+ * QUÉ PLANES SE LE OFRECEN A ESTE COMERCIO, y en qué orden.
+ *
+ * Los TRES PUBLICADOS (`PLANES_PUBLICADOS`, en el orden del sitio) **más el
+ * suyo, si el suyo no se publica**. Hoy ese caso es BYOC, que se ofrece caso
+ * por caso contra un portafolio verificado y no aparece en ninguna lista de
+ * precios (`Analisis/39`).
+ *
+ * LA SEGUNDA PARTE NO ES UNA CORTESÍA, ES CORRECCIÓN. Pagar una mensualidad
+ * **fija el plan** (`aplicarPago`: `plan: pago.plan`). Si a un comercio BYOC se
+ * le ofrecieran solo los tres publicados, al renovar tendría que elegir uno de
+ * ellos y su renovación lo sacaría de BYOC sin que nadie lo decidiera: pasaría
+ * de 2.000 conversaciones a 500, y de pagarle él a Meta a que le facture
+ * NovuChat. Un cambio de modalidad no puede ser el efecto colateral de apretar
+ * «Pagar».
+ *
+ * No se recorre `PLANES` entero justamente por esto: estar en el catálogo
+ * significa «se puede pagar», no «se le ofrece a cualquiera».
  */
-export const PLAN_INICIAL: PlanEnVenta = PLAN_POR_DEFECTO;
+export function planesOfrecidos(cuenta: CuentaCruda | null | undefined): readonly PlanEnVenta[] {
+  const publicados = PLANES_PUBLICADOS as readonly PlanEnVenta[];
+  const actual = cuenta?.plan;
+  return esIdPlan(actual) && actual !== 'demostracion' && !publicados.includes(actual)
+    ? [...publicados, actual]
+    : publicados;
+}
+
+/**
+ * El plan que viene marcado al abrir la pantalla: **el que el comercio tiene
+ * hoy**, para que renovar sea apretar un botón y no una elección con
+ * consecuencias. Sin plan conocido, `PLAN_POR_DEFECTO`, que es el más chico:
+ * ante la duda se falla hacia el límite menor, igual que el servidor.
+ */
+export function planInicial(cuenta: CuentaCruda | null | undefined): PlanEnVenta {
+  const actual = cuenta?.plan;
+  return esIdPlan(actual) && actual !== 'demostracion' ? actual : PLAN_POR_DEFECTO;
+}
+
+/** ¿A este plan le factura Meta directamente al comercio? (BYOC.) */
+export const paganEllosAMeta = (plan: PlanEnVenta): boolean => PLANES[plan].pagaMeta === 'comercio';
 
 export const MESES_POSIBLES = Array.from({ length: MESES_MAXIMO }, (_, i) => i + 1);
 export const BOLSAS_POSIBLES = Array.from({ length: BOLSAS_MAXIMO }, (_, i) => i + 1);

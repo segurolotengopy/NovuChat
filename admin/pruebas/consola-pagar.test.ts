@@ -25,8 +25,10 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../functions/src/prepago';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PLANES_EN_VENTA, mesEscrito, vistaDelPedido,
+  BOLSAS_POSIBLES, MESES_POSIBLES, mesEscrito, paganEllosAMeta, planInicial, planesOfrecidos,
+  vistaDelPedido,
 } from '../web/src/lib/pagar';
+import { PLANES_PUBLICADOS } from '../functions/src/planes';
 import { ResumenPrepago } from '../web/src/componentes/ResumenPrepago';
 import { estadoDeServicio, type Corte } from '../functions/src/prepago';
 
@@ -103,9 +105,49 @@ describe('vistaDelPedido: el importe es el del servidor, o no hay importe', () =
 });
 
 describe('las opciones que ofrece la pantalla salen del catálogo', () => {
-  it('no ofrece el plan de demostración: no se vende', () => {
-    expect(PLANES_EN_VENTA).toEqual(['impulso', 'crecimiento', 'pro']);
-    expect(PLANES_EN_VENTA as readonly string[]).not.toContain('demostracion');
+  // NO SE ESCRIBE LA LISTA A MANO. El 23/09 apareció `byoc` en el catálogo y
+  // una prueba con los tres nombres escritos se cayó sin que nada estuviera
+  // mal: lo que hay que fijar es la REGLA, no el contenido de ese día
+  // (`CLAUDE.md` §7.4, «el límite se lee del plan, no se escribe en el código»).
+  it('ofrece exactamente los planes publicados, en el orden del sitio', () => {
+    expect(planesOfrecidos({})).toEqual([...PLANES_PUBLICADOS]);
+    expect(planesOfrecidos(null)).toEqual([...PLANES_PUBLICADOS]);
+  });
+
+  it('nunca ofrece el plan de demostración: no se vende ni se paga', () => {
+    for (const cuenta of [{}, { plan: 'demostracion' }, { modalidad: 'demostracion', plan: 'demostracion' }]) {
+      expect(planesOfrecidos(cuenta) as readonly string[]).not.toContain('demostracion');
+    }
+    expect(planInicial({ plan: 'demostracion' })).toBe('impulso');
+  });
+
+  it('a un comercio con un plan que NO se publica le ofrece también el suyo', () => {
+    // Si no estuviera, renovar lo sacaría de su plan sin que nadie lo decida:
+    // pagar una mensualidad fija el plan (`aplicarPago`).
+    const noPublicados = (Object.keys(PLANES) as (keyof typeof PLANES)[])
+      .filter((p) => !(PLANES_PUBLICADOS as readonly string[]).includes(p));
+    for (const p of noPublicados) {
+      const ofrecidos = planesOfrecidos({ plan: p });
+      expect(ofrecidos, `el plan ${p} tiene que poder renovarse`).toContain(p);
+      expect(ofrecidos.length).toBe(PLANES_PUBLICADOS.length + 1);
+      // Y el suyo es el que viene marcado.
+      expect(planInicial({ plan: p })).toBe(p);
+    }
+    // La prueba solo vale si de verdad hay alguno: hoy es BYOC.
+    expect(noPublicados.length).toBeGreaterThan(0);
+  });
+
+  it('un plan publicado no se duplica cuando ya es el del comercio', () => {
+    for (const p of PLANES_PUBLICADOS) {
+      expect(planesOfrecidos({ plan: p })).toEqual([...PLANES_PUBLICADOS]);
+      expect(planInicial({ plan: p })).toBe(p);
+    }
+  });
+
+  it('dice cuáles le facturan el consumo de Meta al comercio', () => {
+    // La pantalla lo avisa; el dato sale del catálogo, no de una lista propia.
+    for (const p of PLANES_PUBLICADOS) expect(paganEllosAMeta(p)).toBe(false);
+    expect(paganEllosAMeta('byoc')).toBe(true);
   });
 
   it('los meses y las bolsas son los topes del servidor, no listas escritas a mano', () => {
