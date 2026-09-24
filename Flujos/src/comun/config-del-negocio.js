@@ -327,4 +327,23 @@ const laSena = {
 const estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'
   : (util(r.estadoComercio) ? 'suspendido' : base.estadoComercio);
 
-return [{ json: { ...base, ...atencion, diasProximos, ...deLaConsola, ...laSena, estadoComercio, configDeLaConsola: true } }];
+// --- CAMPAÑAS VIGENTES (Andres, 24/09/2026) ---------------------------------
+// El servidor manda en `campanas` SOLO las que estan aplicadas (pasaron la
+// verificacion) y vigentes hoy, con el tope del plan ya cumplido. Aca se vuelve
+// a mirar la vigencia contra el reloj, porque es barato y porque una campaña
+// vencida que se colara le saltaria el menu a alguien que escribio lo mismo por
+// su cuenta. Viaja como texto JSON: `Normalizar entrada` compara el texto.
+// Sin `campanas`, o con el panel caido (las otras dos salidas de este nodo),
+// no hay campañas: el menu sale como siempre, que es el peor caso aceptable.
+const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas : [])
+  .filter((k) => k && typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300)
+  .filter((k) => {
+    const desde = Date.parse(String(k.inicio || ''));
+    const hasta = Date.parse(String(k.fin || ''));
+    const ahora = Date.now();
+    return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
+  })
+  .slice(0, 10)
+  .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
+
+return [{ json: { ...base, ...atencion, diasProximos, ...deLaConsola, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];

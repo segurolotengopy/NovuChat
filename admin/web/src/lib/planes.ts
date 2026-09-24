@@ -29,7 +29,7 @@ import {
 export {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
   PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
-  esIdPlan, limitesDe, limitesDeCuenta, periodoDe, umbralDeAviso,
+  esIdPlan, limitesDe, limitesDeCuenta, periodoDe, umbralDeAviso, limiteDeCampanas, MAXIMO_CAMPANAS,
 } from '../../../functions/src/planes';
 export type {
   AvisoConsumo, IdPlan, IdPlanVendible, Limites, LimitesDeCuenta, Plan,

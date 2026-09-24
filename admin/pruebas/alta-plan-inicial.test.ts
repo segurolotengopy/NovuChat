@@ -42,7 +42,10 @@ describe('cuentaInicial()', () => {
     expect(esIdPlan(c.plan)).toBe(true);
     // `pagaMeta` es del PLAN, no de los límites: no se copia a la cuenta porque
     // nadie lo hace cumplir, lo lee la consola (`planes.ts`, `Analisis/39`).
-    const { nombre: _n, precioUsd: _p, pagaMeta: _m, ...limites } = PLANES[PLAN_POR_DEFECTO];
+    // `campanas` TAMPOCO se copia (24/09/2026): vale de 0 a 10 y la copia de
+    // `Limites` exige de 1 en adelante; rige la del plan, que lee
+    // `limiteDeCampanas`, salvo que NovuChat fije `limites.campanas` a mano.
+    const { nombre: _n, precioUsd: _p, pagaMeta: _m, campanas: _c, ...limites } = PLANES[PLAN_POR_DEFECTO];
     expect(c.limites).toEqual(limites);
     expect(c.catalogoPlanes).toBe(CATALOGO_PLANES);
   });

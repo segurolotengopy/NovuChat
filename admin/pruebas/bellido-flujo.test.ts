@@ -1045,6 +1045,108 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(normalizar({ type: 'text', text: { body: 'hola' } })[0]!['eleccion']).toBe('');
     });
 
+    // LAS CAMPAÑAS DE LA CONSOLA (Andres, 24/09/2026): se reconocen por el
+    // texto EXACTO que el anuncio deja escrito, vigente entre sus dos fechas, y
+    // saltan el menú. Se prueba con la cadena real: el servidor manda las
+    // campañas, `Config del negocio` las filtra, `Normalizar entrada` compara
+    // el texto y `Estado de la conversación` decide.
+    describe('campañas: texto exacto, vigencia, y el menú no sale', () => {
+      const HORA = 3600000;
+      const vigente = (texto: string, id = 'c-' + texto.length) => ({ id, texto,
+        inicio: new Date(Date.now() - HORA).toISOString(), fin: new Date(Date.now() + 24 * HORA).toISOString() });
+      const conCampanas = (lista: J[]) => {
+        const r = ejecutar(codigo(flujo, 'Config del negocio'), [{ statusCode: 200, body: { tenantId: 'bellido', campanas: lista } }],
+          { 'Config base': [configBase(flujo)] })[0]!;
+        return String(r['campanasActivas']);
+      };
+      const entra = (msg: J, activas: string) =>
+        ejecutar(codigo(flujo, 'Normalizar entrada'), [webhook(msg, { campanasActivas: activas })])[0]!;
+      const TEXTO = 'Hola, quiero agendar el control de mi bebé 👶';
+
+      it('Config del negocio deja pasar SOLO las vigentes, y sin panel no hay ninguna', () => {
+        const ayer = { id: 'vieja', texto: 'Promo de agosto', inicio: '2026-08-01T00:00:00-04:00', fin: new Date(Date.now() - HORA).toISOString() };
+        const futura = { id: 'futura', texto: 'Promo de diciembre', inicio: new Date(Date.now() + 48 * HORA).toISOString(), fin: new Date(Date.now() + 96 * HORA).toISOString() };
+        const activas = JSON.parse(conCampanas([vigente(TEXTO, 'buena'), ayer, futura, { id: 'rota', texto: '' }]));
+        expect(activas).toEqual([{ id: 'buena', texto: TEXTO }]);
+        const caido = ejecutar(codigo(flujo, 'Config del negocio'), [{ statusCode: 503, body: {} }], { 'Config base': [configBase(flujo)] })[0]!;
+        expect(caido['campanasActivas'] ?? '').toBe('');
+      });
+
+      it('el texto de la campaña se reconoce sin mayúsculas, tildes, signos ni emojis; una palabra de más ya no', () => {
+        const activas = conCampanas([vigente(TEXTO, 'bebe')]);
+        for (const escrito of [TEXTO, 'hola quiero agendar el control de mi bebe', '  HOLA,  QUIERO AGENDAR EL CONTROL DE MI BEBÉ!!  ']) {
+          expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toEqual({ id: 'bebe', texto: TEXTO });
+        }
+        for (const escrito of ['Hola, quiero agendar el control de mi bebé mañana', 'quiero agendar el control de mi bebé']) {
+          expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toBeNull();
+        }
+        // Solo texto; sin campañas o con basura, ninguna.
+        expect(entra({ type: 'audio', audio: { id: 'a1' } }, activas)['campana']).toBeNull();
+        expect(entra({ type: 'text', text: { body: TEXTO } }, '')['campana']).toBeNull();
+        expect(entra({ type: 'text', text: { body: TEXTO } }, 'no es json')['campana']).toBeNull();
+      });
+
+      it('el anuncio de Meta (referral) llega al item, recortado', () => {
+        const e = entra({ type: 'text', text: { body: TEXTO },
+          referral: { source_type: 'ad', source_id: '120000000000000001', headline: 'Control del niño sano\n'.repeat(20) } }, '');
+        expect(e['anuncio']).toMatchObject({ fuente: 'ad', idAnuncio: '120000000000000001' });
+        expect(String((e['anuncio'] as J)['titular'])).not.toContain('\n');
+        expect(String((e['anuncio'] as J)['titular']).length).toBeLessThanOrEqual(120);
+        expect(entra({ type: 'text', text: { body: 'hola' } }, '')['anuncio']).toBeNull();
+      });
+
+      it('una campaña salta el menú: va al asistente, que se presenta en ese turno y sabe a qué viene', () => {
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: TEXTO } }, conCampanas([vigente(TEXTO)]));
+        const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+        expect(r['accion']).toBe('agente');
+        expect(String(r['contextoTurno'])).toContain('preséntate en una línea');
+        expect(String(r['contextoTurno'])).toContain('Llegó por una campaña');
+        expect(String(r['contextoTurno'])).not.toContain('Ya te presentaste');
+        expect(sd['conversaciones'][TELEFONO]['menu']).toBe(true);
+        // El turno siguiente no vuelve al menú ni a presentarse.
+        const r2 = turno({ userInput: 'el lunes en la mañana' }, sd);
+        expect(r2['accion']).toBe('agente');
+        expect(String(r2['contextoTurno'])).toContain('Ya te presentaste');
+        expect(String(r2['contextoTurno'])).not.toContain('Llegó por una campaña');
+      });
+
+      it('si el texto de la campaña ES una opción del menú, entra directo a esa rama', () => {
+        for (const [texto, tipo] of [['Recién nacido', 'recién nacido'], ['Control niño sano', 'niño sano'], ['niño sano', 'niño sano']] as const) {
+          const sd: J = {};
+          const e = entra({ type: 'text', text: { body: texto } }, conCampanas([vigente(texto)]));
+          const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+          expect(r['accion'], texto).toBe('agente');
+          expect(r['tipoCita'], texto).toBe(tipo);
+        }
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'Vacunas y otros' } }, conCampanas([vigente('Vacunas y otros')]));
+        expect(turno({ userInput: e['userInput'], campana: e['campana'] }, sd)['accion']).toBe('contacto_doctor');
+      });
+
+      it('la emergencia NUNCA sale de un título de campaña; la tabla de títulos coincide con las filas del menú', () => {
+        const estado = codigo(flujo, 'Estado de la conversación');
+        const tabla = /const OPCION_POR_TITULO = (\{[^}]+\})/.exec(estado)![1]!;
+        expect(tabla).not.toContain('emergencia');
+        const filas = codigo(flujo, 'Menú inicial');
+        for (const id of ['control_recien_nacido', 'control_nino_sano', 'vacunas_otros']) {
+          expect(tabla, id).toContain(`'${id}'`);
+          expect(filas, id).toContain(`"id": "${id}"`);
+        }
+        for (const titulo of ['Recién nacido', 'Control niño sano', 'Vacunas y otros']) expect(filas).toContain(`"title": "${titulo}"`);
+      });
+
+      it('sin campaña, el primer mensaje sigue recibiendo el menú, y lo que escribió llega aunque después escriba en vez de tocar', () => {
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'quiero cita para mi bebé' } }, conCampanas([vigente(TEXTO)]));
+        expect(e['campana']).toBeNull();
+        expect(turno({ userInput: e['userInput'], campana: e['campana'] }, sd)['accion']).toBe('menu');
+        sd['conversaciones'][TELEFONO]['menu'] = true;   // lo marca Confirmar interactivo
+        const r = turno({ userInput: 'el lunes en la mañana' }, sd);
+        expect(String(r['contextoTurno'])).toContain('Antes del menú, el cliente había escrito: «quiero cita para mi bebé»');
+      });
+    });
+
     it('«Niño sano» guarda el otro tipo, y con el menú ya enviado un texto suelto va al agente', () => {
       const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
       expect(turno({ tipo: 'interactive', eleccion: 'control_nino_sano' }, sd)['tipoCita']).toBe('niño sano');

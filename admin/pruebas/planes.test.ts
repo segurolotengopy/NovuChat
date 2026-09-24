@@ -26,19 +26,19 @@ describe('El catálogo', () => {
     expect(PLANES).toEqual({
       impulso: {
         nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
-        pagaMeta: 'novuchat',
+        pagaMeta: 'novuchat', campanas: 0,
       },
       crecimiento: {
         nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
-        pagaMeta: 'novuchat',
+        pagaMeta: 'novuchat', campanas: 3,
       },
       pro: {
         nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
-        pagaMeta: 'novuchat',
+        pagaMeta: 'novuchat', campanas: 10,
       },
       byoc: {
         nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-        pagaMeta: 'comercio',
+        pagaMeta: 'comercio', campanas: 10,
       },
     });
     expect(BOLSA).toEqual({ conversaciones: 30, precioUsd: 10 });
