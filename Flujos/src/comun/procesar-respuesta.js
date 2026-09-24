@@ -417,6 +417,101 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   if (prometeSinRespaldo) avisos.push('promesa_cumplida_por_recepcion');
   const pasarARecepcion = prometeSinRespaldo || contactoSinNumero;
 
+  // --- EL DIA DE LA SEMANA LO PONE EL CODIGO, NO EL MODELO (2026-09-23) ------
+  // Bellido, prueba real del cliente con dos telefonos (#4790 y #4799):
+  //   · `consultar_disponibilidad` recibio 2026-09-25 y el modelo escribio
+  //     «el jueves 25 de septiembre». El 25 era viernes.
+  //   · `buscar_mi_cita` DEVOLVIO la cita correcta, 2026-09-24T15:00-04:00, y
+  //     el modelo escribio «el miercoles 24 de septiembre a las 15:00». El 24
+  //     era jueves.
+  // El dia del mes y la hora salieron BIEN las dos veces. Lo unico que el
+  // modelo inventa es la PALABRA del dia de la semana, porque es lo unico que
+  // tiene que calcular. El doctor lo leyo como «se ha confundido con las
+  // fechas» y decidio no publicar el numero hasta que se arregle. Y el error
+  // no se queda en el texto: con el dia equivocado el modelo consulto la
+  // franja del jueves (14:00-18:00) sobre una fecha que era viernes.
+  //
+  // POR QUE EN CODIGO Y NO EN EL PROMPT. Pedirle que no calcule es una
+  // instruccion mas, y ya sabemos como termina (la regla del candado, 17/09:
+  // una instruccion se ignora bajo insistencia y cambia con cada modelo). Aca
+  // no hay nada que interpretar: el turno SABE que fechas tocaron las
+  // herramientas —lo que les entro y lo que devolvieron— y de una fecha al dia
+  // de la semana hay una sola respuesta.
+  //
+  // SOLO CORRIGE LO QUE PUEDE PROBAR. Se toca la palabra unicamente cuando el
+  // numero del dia coincide con una fecha real de este turno (y el mes, si el
+  // texto lo dice). Si no coincide, o si dos fechas del turno caen en el mismo
+  // numero con distinto dia de semana, el flujo no tiene con que decidir: deja
+  // el texto como esta. Corregir de menos es un texto raro; corregir de mas es
+  // mandar a un paciente otro dia.
+  const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const sinTilde = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const porDia = new Map();   // dia del mes -> [{ semana, mes }]
+  const anotarFecha = (iso) => {
+    const t = Date.parse(String(iso || ''));
+    if (!Number.isFinite(t)) return;
+    // El dia, el mes y el dia de la semana, los tres en la zona del negocio:
+    // en UTC una cita de las 17:30 de La Paz ya pertenece al dia siguiente, y
+    // ese desfase es justo el que se vino a arreglar.
+    const partes = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/La_Paz', weekday: 'short', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date(t));
+    const valor = (tipo) => (partes.find((p) => p.type === tipo) || {}).value || '';
+    const dia = parseInt(valor('day'), 10);
+    const mes = parseInt(valor('month'), 10);
+    const semana = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[valor('weekday')];
+    if (!Number.isFinite(dia) || !Number.isFinite(mes) || !Number.isFinite(semana)) return;
+    const ya = porDia.get(dia) || [];
+    if (!ya.some((f) => f.mes === mes && f.semana === semana)) ya.push({ mes, semana });
+    porDia.set(dia, ya);
+  };
+  for (const p of pasos) {
+    if (!p || !p.action) continue;
+    const entrada = p.action.toolInput || {};
+    anotarFecha(entrada.inicio);
+    anotarFecha(entrada.fin);
+    let obs = p.observation;
+    if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
+    const eventos = Array.isArray(obs) ? obs : (obs && typeof obs === 'object' ? [obs] : []);
+    for (const ev of eventos) {
+      if (!ev || typeof ev !== 'object') continue;
+      anotarFecha((ev.start || {}).dateTime);
+      anotarFecha((ev.end || {}).dateTime);
+    }
+  }
+  let diaCorregido = false;
+  if (porDia.size && !fallo) {
+    respuesta = respuesta.replace(
+      /\b(domingo|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)(\s+)(\d{1,2})\b(\s+de\s+([a-záéíóú]+))?/gi,
+      (todo, palabra, espacio, numero, colaMes, nombreMes) => {
+        const dia = parseInt(numero, 10);
+        const candidatas = porDia.get(dia) || [];
+        if (!candidatas.length) return todo;
+        let elegidas = candidatas;
+        if (nombreMes) {
+          const mes = MESES.findIndex((m) => m === sinTilde(nombreMes)) + 1;
+          // Un mes escrito que no es ninguno de los del turno: no es esta fecha.
+          if (!mes) return todo;
+          elegidas = candidatas.filter((f) => f.mes === mes);
+          if (!elegidas.length) return todo;
+        }
+        const semanas = Array.from(new Set(elegidas.map((f) => f.semana)));
+        if (semanas.length !== 1) return todo;   // ambiguo: no se toca
+        const correcto = DIAS[semanas[0]];
+        if (sinTilde(palabra) === sinTilde(correcto)) return todo;
+        diaCorregido = true;
+        // Se conserva la mayuscula inicial: la palabra puede abrir la oracion.
+        const puesto = /^[A-ZÁÉÍÓÚÑ]/.test(palabra)
+          ? correcto.charAt(0).toUpperCase() + correcto.slice(1)
+          : correcto;
+        return puesto + espacio + numero + (colaMes || '');
+      },
+    );
+  }
+  if (diaCorregido) avisos.push('dia_de_semana_corregido');
+
   const verificarReserva = ejecutoAgendar || afirmaAgendo;
 
   out.push({ json: {
