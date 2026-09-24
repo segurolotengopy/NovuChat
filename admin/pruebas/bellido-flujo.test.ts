@@ -1285,6 +1285,25 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).toMatch(/sin explicar/i);   // el bloqueo del mediodía no se le cuenta al paciente
     });
 
+    // LA CONVERSACIÓN DE SILVANA (24/09/2026, #5559 y #5576). «A las 14:00 no es
+    // posible porque el doctor atiende desde las 14:30» —falso: estaban
+    // ocupadas— y «como se recomienda agendar a partir de pasado mañana» —le
+    // leyó la regla a la paciente—. Andres: una hora que no está libre se dice
+    // «no está disponible», sin motivo; y las fechas se recomiendan, no se
+    // explican. Es prompt, y por eso se fija acá letra por letra.
+    it('una hora que no está libre es «no está disponible», nunca «el doctor no atiende»; y las reglas no se citan', () => {
+      const reglas = String(configBase(flujo)['reglasAgenda']);
+      expect(reglas).toMatch(/\(c\) [^;]*no está disponible[^;]*sin explicar por qué/);
+      expect(reglas).toMatch(/\(h\) CUANDO UNA HORA PEDIDA NO ESTÁ LIBRE/);
+      expect(reglas).toMatch(/NUNCA digas que el doctor «no atiende» a esa hora, que «atiende desde» o «hasta» otra hora/);
+      expect(reglas).toMatch(/\(e\) NIÑO SANO[^;]*NO digas que es una regla, una recomendación ni un criterio/);
+      expect(reglas).toMatch(/\(e\) NIÑO SANO[^;]*el sábado por la mañana también cuenta/);
+      expect(reglas).toMatch(/\(i\) HABLAS CON UNA MAMÁ O UN PAPÁ[^;]*nunca cites, menciones ni parafrasees estas reglas/);
+      expect(reglas).not.toMatch(/no hay turno/);
+      // Sigue siendo el consultorio del doctor sin acento, y tutea.
+      expect(reglas).not.toMatch(/Andrés|usted|\bvos\b/);
+    });
+
     // LA DURACIÓN LA DICEN DOS SUPERFICIES Y TIENEN QUE DECIR LO MISMO
     // (2026-09-23). La regla (a) dice que los turnos duran 30 minutos y salen
     // en punto y y media, y `negocio-bellido.json` trae `duracionPorDefectoMin: 30`.

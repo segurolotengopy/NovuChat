@@ -95,7 +95,13 @@ const diasProximos = (() => {
   }
   // Siempre una cadena: el prompt la interpola cruda y un `undefined` se veria.
   if (!lista.length) return '';
-  return '\nQué día es cada fecha (no lo calcules): ' + lista.join(' · ')
+  // CON EL AÑO (24/09/2026, ejecucion #5563 de Bellido): con «Ahora: jueves 24
+  // de septiembre de 2026» en el mismo turno, el modelo llamo a las
+  // herramientas con 2025-09-25 y creo una cita un año atras. Son diez
+  // caracteres por turno; la barrera esta en `Comprobar reserva`, que deshace
+  // una cita en el pasado. Esto solo hace que casi nunca tenga que actuar.
+  const anio = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric' }).format(hoy);
+  return '\nQué día es cada fecha (año ' + anio + ', no lo calcules): ' + lista.join(' · ')
     + '. Si te dan un día y un número que no coinciden, pregunta cuál quieren.';
 })();
 
