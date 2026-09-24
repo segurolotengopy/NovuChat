@@ -800,6 +800,25 @@ describe('Estructura del flujo', () => {
     expect(entradas('Config base')).toEqual(['¿Es un mensaje?']);
   });
 
+  // Tech Provider (24/09/2026): la app que dispara este flujo es compartida con
+  // otro producto, y una app tiene un solo webhook. Un evento de OTRO número
+  // que entre por esta ruta no puede seguir: `Config del negocio` caería al
+  // respaldo de `Config base` y el asistente contestaría como NovuChat a un
+  // cliente ajeno. El filtro compara con el mismo marcador que `Config base`.
+  it('un mensaje para otro número no pasa del filtro de entrada', () => {
+    const cond = nodo('¿Es un mensaje?').parameters['conditions'] as {
+      combinator: string; conditions: { leftValue: string; rightValue: unknown; operator: { operation: string } }[];
+    };
+    expect(cond.combinator).toBe('and');
+    const porNumero = cond.conditions.find((c) => c.leftValue.includes('metadata') && c.leftValue.includes('phone_number_id'));
+    expect(porNumero, 'falta la condición por phone_number_id').toBeDefined();
+    expect(porNumero?.operator.operation).toBe('equals');
+    expect(porNumero?.rightValue).toBe('REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT');
+    // El mismo marcador que `Config base`: preparar-import.sh llena los dos con la misma fila.
+    const base = nodo('Config base').parameters['assignments'] as { assignments: { name: string; value: unknown }[] };
+    expect(base.assignments.find((a) => a.name === 'phoneNumberId')?.value).toBe('REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT');
+  });
+
   it('`.text.body` solo se lee en «Normalizar entrada»', () => {
     const conTextBody = flujo.nodes.filter((n) => JSON.stringify(n.parameters).includes('.text?.body')
       || JSON.stringify(n.parameters).includes('.text.body'));

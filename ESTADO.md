@@ -50,11 +50,26 @@ herramientas. Nada se ejecutó en Meta, en n8n ni en la plataforma.**
   `curl` suelto sobre el entorno). Lo primero se corre en la fase 2 con el
   OK explícito; lo segundo lo reemplaza `--texto`.
 
-**Decisiones que esperan a Andres** (§1 del procedimiento): cuál es la app
-Tech Provider de AAB1 (y que `--ver-meta` diga «ninguna» antes del alta),
-número de recepción, destino de 78567326 (propuesta: se queda, desuscrito),
-método de pago en la WABA de Silvana, y si el corte espera la aprobación de
-la plantilla nueva.
+**Decisiones de Andres (24/09, tarde):** la app Tech Provider es
+`AAB1-WA-Prod` (…0345), la de **producción del otro sistema de AAB1** (leído en
+modo lectura en la documentación de ese proyecto, solo para saber qué es: acceso
+avanzado aprobado el 15/09). Recepción sigue en …1250, que es de Silvana;
+78567326 se queda y la app vieja se desuscribe; Silvana carga su tarjeta; se
+corta cuanto antes y se espera la plantilla.
+
+**Lo que cambió con esa decisión, y por qué.** Una app tiene un solo webhook y
+el de `AAB1-WA-Prod` **no se toca** (prohibición 5). Meta permite que una WABA
+tenga su propia URL por encima de la de la app (`POST /{WABA}/subscribed_apps`
+con `override_callback_uri`, verificado en la documentación de Embedded
+Signup): `webhook-meta.sh --alta-waba` la da de alta y `--ver-waba` la
+muestra; el rodeo del desafío aplica igual. Y como por una app compartida
+pueden entrar eventos de otros números, **el flujo filtra por
+`phone_number_id`** en `¿Es un mensaje?` (condición c3, con el mismo marcador
+que `Config base`): sin eso, `Config del negocio` caía al respaldo y el
+asistente contestaba como NovuChat a un cliente ajeno. Prueba estructural en
+`onboarding-flujo.test.ts` (138 en verde). El token sale de un usuario de
+sistema nuevo en AAB1, solo con esa app y la WABA de Silvana. **El flujo
+cambia, así que la fase 2 publica desde `main` después de fusionar esta rama.**
 
 **Costo en mensajes: 0.** Cambia el número que emite, no cuántos mensajes salen.
 El número nuevo estrena su franquicia de 1.000 mensajes.
