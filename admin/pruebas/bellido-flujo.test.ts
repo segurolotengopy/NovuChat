@@ -1021,8 +1021,11 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
     });
 
     it.each([
-      ['necesito vacunas para mi bebé', 'contacto_recepcion'],
-      ['tienen cremas para la piel?', 'contacto_recepcion'],
+      // VACUNAS Y CREMAS PASARON DE RECEPCION AL DOCTOR (pedido del doctor,
+      // 23/09/2026): «así como emergencias lo direcciona con la María René,
+      // vacunas y otros que lo direccione conmigo».
+      ['necesito vacunas para mi bebé', 'contacto_doctor'],
+      ['tienen cremas para la piel?', 'contacto_doctor'],
       ['hacen consultas virtuales?', 'contacto_doctor'],
       ['puede ser por videollamada', 'contacto_doctor'],
       ['es una emergencia, no respira bien', 'emergencia'],
@@ -1038,7 +1041,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
     });
 
     it('«vacuna» dentro de otra palabra no dispara, y una imagen no dispara nada por palabra', () => {
-      expect(turno({ userInput: 'la vacunación fue ayer, quiero control' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('contacto_recepcion');
+      expect(turno({ userInput: 'la vacunación fue ayer, quiero control' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('contacto_doctor');
       expect(turno({ userInput: 'revacunado' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('agente');
       expect(turno({ tipo: 'image', userInput: 'AVISO_SISTEMA: emergencia' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('agente');
     });
@@ -1058,24 +1061,79 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
   });
 
   describe('Los mensajes fijos, sin modelo', () => {
-    it('el menú abre con la bienvenida al consultorio del Dr. Bellido, Pediatra, y pregunta si quiere una cita', () => {
+    // EL ASISTENTE NO TIENE NOMBRE (pedido del doctor, 23/09/2026). La Pau
+    // proponia «Dante»; el doctor dijo «creo que todavia sin nombre», y que la
+    // bienvenida diga «soy la asistente virtual del doctor Bellido». Con
+    // `nombreAsistente` vacio el vertical ponia «Sofía» por respaldo, asi que
+    // el prompt de este cliente tambien cambio.
+    it('el menú se presenta como la asistente virtual del doctor Bellido, SIN nombre propio', () => {
       const texto = String(configBase(flujo)['mensajeMenu']);
-      expect(texto).toMatch(/Dr\. Bellido, Pediatra/);
-      expect(texto).toMatch(/cita\?/);
-      expect(texto.indexOf('Bienvenido')).toBeLessThan(texto.indexOf('Niño sano'));
+      expect(texto).toMatch(/la asistente virtual del doctor Bellido/);
+      expect(texto).not.toMatch(/Dante|Sofía/);
+      expect(configBase(flujo)['nombreAsistente']).toBe('');
+      const p = prompt();
+      expect(p).toContain("'Eres la asistente virtual'");
+      expect(p).toContain('NO tienes nombre propio');
+      expect(p).not.toContain('Eres Sofía');
     });
 
-    it('el menú son TRES botones de respuesta con los ids que lee el estado, títulos de hasta 20 caracteres', () => {
+    // CUATRO OPCIONES NO ENTRAN EN BOTONES (pedido del doctor, 23/09/2026).
+    // Pidio emergencia, recien nacido, nino sano, y vacunas y otros: WhatsApp
+    // admite TRES botones, asi que el interactivo es una LISTA. La descripcion
+    // de cada fila es donde entra la aclaracion que pidio, porque «los papas a
+    // veces piensan que todo el primer ano de vida son un recien nacido».
+    it('el menú es una LISTA de cuatro filas, con los ids que lee el estado y los topes de Meta', () => {
       const r = ejecutar(codigo(flujo, 'Menú inicial'), [{ ...base(), accion: 'menu' }])[0]!;
       const meta = r['cuerpoMeta'] as J;
       expect(meta['type']).toBe('interactive');
-      expect(meta['interactive']['type']).toBe('button');
+      expect(meta['interactive']['type']).toBe('list');
       expect(meta['to']).toBe(TELEFONO);
-      const botones = meta['interactive']['action']['buttons'] as { type: string; reply: { id: string; title: string } }[];
-      expect(botones.map((b) => b.reply.id)).toEqual(['control_nino_sano', 'control_recien_nacido', 'emergencia']);
-      for (const b of botones) { expect(b.type).toBe('reply'); expect(b.reply.title.length).toBeLessThanOrEqual(20); }
-      expect(String(meta['interactive']['body']['text'])).toContain('Dante');
+      const accion = meta['interactive']['action'] as J;
+      expect(String(accion['button']).length).toBeLessThanOrEqual(20);
+      const secciones = accion['sections'] as { title: string; rows: { id: string; title: string; description: string }[] }[];
+      expect(secciones).toHaveLength(1);
+      expect(secciones[0]!.title.length).toBeLessThanOrEqual(24);
+      const filas = secciones[0]!.rows;
+      expect(filas.map((f) => f.id)).toEqual(['emergencia', 'control_recien_nacido', 'control_nino_sano', 'vacunas_otros']);
+      expect(filas.length).toBeLessThanOrEqual(10);
+      for (const f of filas) {
+        expect(f.title.length, f.title).toBeLessThanOrEqual(24);
+        expect(f.description.length, f.description).toBeLessThanOrEqual(72);
+      }
+      // La aclaracion de los dos meses, que es lo que el doctor pidio.
+      expect(filas.find((f) => f.id === 'control_recien_nacido')!.description).toMatch(/2 meses/);
+      expect(filas.find((f) => f.id === 'control_nino_sano')!.description).toMatch(/2 meses/);
+      expect(String(meta['interactive']['body']['text'])).not.toContain('Dante');
       expect(String(r['textoRespaldo'])).toContain('recién nacido');
+      expect(String(r['textoRespaldo'])).toContain('vacunas');
+    });
+
+    it('la cuarta opción del menú lleva al DOCTOR, no a recepción', () => {
+      expect(turno({ tipo: 'interactive', eleccion: 'vacunas_otros' }, {})['accion']).toBe('contacto_doctor');
+      const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
+      expect(turno({ tipo: 'interactive', eleccion: 'vacunas_otros' }, sd)['accion']).toBe('contacto_doctor');
+    });
+
+    // EL MENSAJE DE EMERGENCIA, RECORTADO (decision del doctor, 23/09/2026):
+    // «eso de tu hijo si respira o convulsiona, quitalo por favor... solo toca
+    // el boton y ya le avisare al doctor. Con eso suficiente». Es una decision
+    // clinica suya y queda anotada como tal: la prueba niega que el texto
+    // vuelva a traer una indicacion medica o un numero de emergencias.
+    it('el mensaje de emergencia es solo el botón y el aviso, sin indicación médica ni número', () => {
+      const texto = String(configBase(flujo)['mensajeEmergencia']);
+      expect(texto).toMatch(/María René/);
+      expect(texto).toMatch(/bot[óo]n/i);
+      expect(texto).toMatch(/avis[ée] al doctor/i);
+      expect(texto).not.toMatch(/168/);
+      expect(texto).not.toMatch(/convulsion/i);
+      expect(texto).not.toMatch(/no respira/i);
+      expect(texto).not.toMatch(/emergencias más cercano/i);
+    });
+
+    // EL DOCTOR ES «ANDRES», SIN ACENTO (23/09/2026): «sé que el tuyo tiene
+    // acento, bueno todos los Andreses tienen acento, pero el mío no».
+    it('en ningún texto del flujo el doctor lleva acento', () => {
+      expect(TEXTO).not.toContain('Andrés');
     });
 
     it('el contacto directo es un botón cta_url a la persona; el número NO va en el texto', () => {
@@ -1260,7 +1318,14 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
 
     it('la configuración trae los textos nuevos y el número del doctor como marcador, y la consola puede pisarlos', () => {
       const base = configBase(flujo);
-      for (const k of ['numeroDoctor', 'palabrasClaveRecepcion', 'palabrasClaveDoctor', 'palabrasClaveEmergencia',
+      // `palabrasClaveRecepcion` quedó VACIO a proposito el 23/09/2026: sus dos
+      // unicas palabras (vacunas y cremas) pasaron al doctor por pedido suyo.
+      // Vacio NO es un patron que coincide con todo: `Estado de la
+      // conversacion` devuelve `null` con una lista vacia y no dispara nada.
+      // A recepcion se sigue llegando por el traspaso del modelo y por la
+      // politica «solo se ofrece lo que se cumple», que no dependen de esto.
+      expect(configBase(flujo)['palabrasClaveRecepcion']).toBe('');
+      for (const k of ['numeroDoctor', 'palabrasClaveDoctor', 'palabrasClaveEmergencia',
         'mensajeMenu', 'mensajeContactoRecepcion', 'mensajeContactoDoctor', 'mensajeEmergencia', 'mensajeRedes', 'reglasAgenda']) {
         expect(String(base[k] ?? '').trim().length, k).toBeGreaterThan(0);
       }
