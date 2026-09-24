@@ -156,8 +156,25 @@ if uno:
                 if err.get("description"):
                     print(f"      {G}{str(err['description'])[:220]}{FIN}")
             if nodo_pedido:
-                salida = ((c.get("data") or {}).get("main") or [[]])[0]
-                print(f"      {G}items de salida: {len(salida)}{FIN}")
+                # UNA HERRAMIENTA NO PUBLICA EN `main` (2026-09-23). Los nodos
+                # que el agente usa como herramienta (`agendar_cita`,
+                # `buscar_mi_cita`, …) dejan su salida en `ai_tool`, no en
+                # `main`. Leyendo solo `main` el script decia «items de salida:
+                # 0», que se lee como «la herramienta no devolvio nada» — y es
+                # exactamente la conclusion equivocada: en la ejecucion #4799
+                # de Bellido `buscar_mi_cita` SI habia encontrado la cita. Un
+                # diagnostico que miente es peor que no tener diagnostico, asi
+                # que ahora se prueban las dos ramas y se dice por cual salio.
+                datos_nodo = c.get("data") or {}
+                rama = "main"
+                salida = (datos_nodo.get("main") or [[]])[0] or []
+                if not salida:
+                    for otra in ("ai_tool", "ai_languageModel", "ai_memory"):
+                        alterna = (datos_nodo.get(otra) or [[]])[0] or []
+                        if alterna:
+                            salida, rama = alterna, otra
+                            break
+                print(f"      {G}items de salida: {len(salida)} (rama {rama}){FIN}")
                 for it in (salida or [])[:3]:
                     j = it.get('json', {})
                     if campos:
