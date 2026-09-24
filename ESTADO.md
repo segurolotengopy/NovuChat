@@ -68,7 +68,7 @@ dependan de hoy. Ensamblador idéntico, saneo en 0.
 **Sin publicar, sin PR todavía.** Falta, con el OK de Andres: PR, fusión y
 publicar los tres flujos desde `main`; borrar del calendario del doctor el
 evento fantasma «Cita Sil — consulta-de-neonatologia» del **25/09/2025 15:30**
-(`vogsu6llu465q49lk2j23bi1p0`, creado por `novuchat.bo@gmail.com`); y decidir
+(`vogsu6llu465q49lk2j23bi1p0`, creado por la cuenta de Calendar de NovuChat); y decidir
 qué hacer con el cierre `cita_vogsu6llu465q49lk2j23bi1p0` que la consola contó
 para `bellido`. Silvana **no tiene cita mañana**: el asistente se lo dijo y no
 es cierto.
