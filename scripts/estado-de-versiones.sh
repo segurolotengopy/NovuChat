@@ -115,7 +115,10 @@ while IFS=$'\t' read -r CLIENTE ENV_FILE FLUJO EXCEPCION; do
   fi
 
   # Solo los NOMBRES de los nodos que difieren: nunca su contenido.
-  NODOS=$(grep -oE '^    ~ [^·]+·' "$TMP/seco" | sed 's/^    ~ //; s/ ·$//' | sort -u | paste -sd', ' -)
+  # `paste -sd', '` ALTERNA los dos delimitadores --coma, espacio, coma...-- y
+  # salia «Config del negocio ¿Hay comprobante?,Normalizar entrada». Un solo
+  # delimitador, y la coma se separa despues.
+  NODOS=$(grep -oE '^    ~ [^·]+·' "$TMP/seco" | sed 's/^    ~ //; s/ ·$//' | sort -u | paste -sd'|' - | sed 's/|/, /g')
   [[ -n "$NODOS" ]] || NODOS="(diferencias de configuración)"
   if [[ -n "$EXCEPCION" ]]; then
     printf '  %s!%s %-34s atrasado, CON excepción declarada\n' "$A" "$FIN" "$CLIENTE"
