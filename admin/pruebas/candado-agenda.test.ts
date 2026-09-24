@@ -773,9 +773,15 @@ describe('La seña se ata a la cita que creó ESTA conversación', () => {
  * candado tenía anotado como «límite conocido»: `Verificar en el calendario`
  * traía hasta 50 eventos de una ventana de 90 días, y el calendario del Dr.
  * Bellido tiene un evento REPETIDO todos los días de 13:00 a 14:00. Con
- * `singleEvents`, solo el almuerzo llena las 50 ranuras antes de que exista un
- * solo paciente, y con la lista saturada la detección de cruces puede quedar
- * ciega. El candado es la regla mandatoria del 17/09.
+ * `singleEvents`, cada repetición cuenta, y con la lista saturada la detección
+ * de cruces puede quedar ciega. El candado es la regla mandatoria del 17/09.
+ *
+ * MEDIDO DESPUÉS, y corrige lo que este comentario decía: el 24/09, con la
+ * ventana vieja de 90 días, ese calendario devolvió ONCE eventos, no cincuenta
+ * (ejecución #5424). El tope no se estaba alcanzando. Lo que sí quedó
+ * comprobado con datos reales es que el bloqueo del mediodía es un evento
+ * repetido de verdad (`recurringEventId: 6vvvcqpv…`), así que el detector de
+ * abajo actúa sobre un caso real y no sobre uno imaginado.
  *
  * Se arregla por los dos lados: la ventana se acota al día de la cita (el
  * almuerzo aporta UN evento, no noventa) y un bloqueo repetido deja de contarse

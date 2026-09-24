@@ -60,10 +60,16 @@ const revisionAcotada = delEvento.length > 0;
 // EL PROBLEMA, con nombre y apellido. `Verificar en el calendario` traia hasta
 // 50 eventos de una ventana de 90 dias. El calendario del Dr. Bellido tiene un
 // evento REPETIDO TODOS LOS DIAS de 13:00 a 14:00 --el almuerzo-- y con
-// `singleEvents` cada repeticion cuenta como un evento: solo el almuerzo llena
-// las 50 ranuras antes de que exista un solo paciente. Con la lista saturada,
-// la deteccion de cruces puede quedar CIEGA, y el candado es la regla
+// `singleEvents` cada repeticion cuenta como un evento, y con la lista saturada
+// la deteccion de cruces puede quedar CIEGA -- el candado es la regla
 // mandatoria del 17/09.
+//
+// CUANTO FALTABA DE VERDAD, medido despues de escribir esto: el 24/09, con la
+// ventana vieja de 90 dias, ese calendario devolvio ONCE eventos, no cincuenta
+// (ejecucion #5424). El tope NO se estaba alcanzando, y decir que «el almuerzo
+// solo ya lo llena» fue una afirmacion sin medir. El arreglo se queda igual
+// --una ventana de un dia es mas barata y mas rapida que una de noventa, y el
+// limite existe--, pero la urgencia era del que escribia, no del calendario.
 //
 // LA SALIDA NO ES SUBIR EL LIMITE, es no pedir 90 dias. Para saber si la cita
 // que se acaba de crear se superpone con otra, alcanza con mirar SU DIA. Con la
