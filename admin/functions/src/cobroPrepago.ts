@@ -791,6 +791,11 @@ export interface ResumenBarrido {
 export async function barrerCobrosPendientes(ahoraMs: number = Date.now(), deps: Deps = {}): Promise<ResumenBarrido> {
   const resumen: ResumenBarrido = { revisados: 0, confirmados: 0, vencidos: 0, anulados: 0, sinCambio: 0, errores: 0 };
   const lista = await db().collection('cobrosPendientes').orderBy('creadoEn', 'asc').limit(TOPE_BARRIDO).get();
+  // Sin pendientes no se resuelve el cobrador, igual que en el sondeo: mientras
+  // no esté configurado (así quedó v0.7.0, sin URL pública), resolverlo lanza y
+  // el trabajo horario fallaba en cada corrida con un error en producción que
+  // no le pasaba nada a nadie. Verificado el 23/09 sobre el despliegue real.
+  if (lista.empty) return resumen;
   const cobrador = await resolverCobrador(deps.cobrador);
   const depsConCobrador: Deps = { ...deps, cobrador, ahoraMs };
 

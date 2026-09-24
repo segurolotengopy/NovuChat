@@ -24,6 +24,11 @@
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { CobradorDoble, firmarAviso, idDeCobro, pngMinimo } from './dobles/cobrador.ts';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const aqui = dirname(fileURLToPath(import.meta.url));
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -440,6 +445,27 @@ describe('3. El barrido horario', () => {
     expect(await auditoria('pago_aplicado')).toMatchObject([{ via: 'barrido' }]);
     // La segunda corrida no encuentra nada.
     expect(await barrerCobrosPendientes(Date.now())).toMatchObject({ revisados: 0 });
+  });
+
+  it('sin pendientes no llama al cobrador', async () => {
+    expect(await barrerCobrosPendientes(Date.now()))
+      .toEqual({ revisados: 0, confirmados: 0, vencidos: 0, anulados: 0, sinCambio: 0, errores: 0 });
+    expect(doble.llamadas).toHaveLength(0);
+  });
+
+  it('y ni siquiera lo RESUELVE: la salida temprana va antes (v0.7.0 fallaba cada hora)', () => {
+    // Producción, 23/09: sin URL pública, resolver el cobrador lanza. El
+    // barrido lo resolvía ANTES de mirar si había algo que revisar, y el
+    // trabajo horario terminaba con error en cada corrida; el sondeo nunca
+    // falló porque consulta primero. Se comprueba sobre la fuente porque
+    // borrar la configuración compartida rompe las suites que corren en
+    // paralelo contra el mismo emulador.
+    const fuente = readFileSync(join(aqui, '../functions/src/cobroPrepago.ts'), 'utf8');
+    const cuerpo = fuente.slice(fuente.indexOf('export async function barrerCobrosPendientes'));
+    const salida = cuerpo.indexOf('if (lista.empty) return resumen;');
+    const resolver = cuerpo.indexOf('await resolverCobrador(');
+    expect(salida, 'falta la salida temprana del barrido').toBeGreaterThan(-1);
+    expect(salida).toBeLessThan(resolver);
   });
 
   it('6 meses regalan una bolsa; una bolsa suma 30 por unidad; la instalación no suma nada', async () => {
