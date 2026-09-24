@@ -2,8 +2,8 @@
   "_fuente": "CLIENTES/BELLIDO/conocimiento-asistente.md (17/09/2026), única fuente de los textos: si cambia allá, cambia acá. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. El número de recepción y el calendario NO van acá (repositorio público): van como marcadores que el script resuelve desde la tabla de CONFIGURACION.local.md.",
   "_supuestos": "La duración de 30 minutos por consulta y la anticipación mínima de 2 horas son SUPUESTOS de Andres; el guion del cliente no los trae. Los precios NO se cargan porque el cliente todavía no los dio. Confirmar los tres con el doctor (§7 y §3 del archivo fuente).",
   "negocio": {
-    "nombreNegocio": "Dr. Andrés Bellido — Pediatra",
-    "descripcion": "Consultorio de pediatría, neonatología y nutrición infantil en La Paz, a cargo del Dr. Andrés Bellido. Se atiende con cita previa y se agenda por este mismo WhatsApp. Quien escribe casi siempre es el papá o la mamá de un niño.",
+    "nombreNegocio": "Dr. Andres Bellido — Pediatra",
+    "descripcion": "Consultorio de pediatría, neonatología y nutrición infantil en La Paz, a cargo del Dr. Andres Bellido. Se atiende con cita previa y se agenda por este mismo WhatsApp. Quien escribe casi siempre es el papá o la mamá de un niño.",
     "direccion": "Calle Campos esq. Av. 6 de Agosto, Edif. Iturri, piso 1, of. 1A, La Paz",
     "numeroRecepcionMarcador": "REEMPLAZAR_NUMERO_RECEPCION_BELLIDO",
     "calendarioMarcador": "REEMPLAZAR_CALENDARIO_BELLIDO_1",
@@ -11,7 +11,7 @@
     "moneda": "BOB",
     "tratamiento": "tu",
     "estiloEmojis": "pocos",
-    "nombreAsistente": "Dante",
+    "nombreAsistente": "",
     "politicaCancelacion": "Para cancelar o reprogramar, escríbenos por este mismo chat con al menos 2 horas de anticipación y lo resolvemos sin costo.",
     "prefijosPermitidos": [
       "591"
@@ -47,13 +47,13 @@
     "anticipacionMaximaDias": 60,
     "permitirCancelacion": true,
     "horasRecordatorio": 24,
-    "mensajeRecordatorio": "Te recordamos la cita de mañana con el Dr. Andrés Bellido. Si necesitas cancelar o reprogramar, escríbenos por este mismo chat."
+    "mensajeRecordatorio": "Te recordamos la cita de mañana con el Dr. Andres Bellido. Si necesitas cancelar o reprogramar, escríbenos por este mismo chat."
   },
   "catalogo": [
     {
       "nombre": "Consulta pediátrica",
       "area": "pediatria",
-      "descripcion": "Consulta con el Dr. Andrés Bellido; costo a consultar con recepción",
+      "descripcion": "Consulta con el Dr. Andres Bellido; costo a consultar con recepción",
       "duracionMin": 30,
       "activo": true
     },
@@ -82,7 +82,7 @@
   "funcionarios": [
     {
       "id": "andres-bellido",
-      "nombre": "Dr. Andrés Bellido",
+      "nombre": "Dr. Andres Bellido",
       "especialidad": "Pediatría, neonatología y nutrición infantil",
       "calendarioMarcador": "REEMPLAZAR_CALENDARIO_BELLIDO_1",
       "servicios": [

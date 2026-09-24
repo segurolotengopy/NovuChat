@@ -55,6 +55,50 @@ const cuerpo = (respuesta.body ?? {});
 const util = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : undefined;
 const soloLlenos = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
+// EL CALENDARIO DE LOS PROXIMOS DIAS, MASTICADO (2026-09-23). El modelo
+// escribio «el jueves 25 de septiembre» por un 25 que era viernes, y «el
+// miercoles 24» por un 24 que era jueves (Bellido, #4790 y #4799): de una fecha
+// al dia de la semana hay una sola respuesta, y es lo unico que el modelo tenia
+// que calcular solo. Aca va servido, para que no calcule.
+//
+// LA FRASE ENTERA SE ARMA ACA, no en el prompt, y no es por comodidad: el
+// bloque de contexto del turno tiene un tope de 700 caracteres
+// (`prefijo-cacheable.test.ts`) porque se paga y se guarda en la memoria en
+// CADA turno, y el de Bellido ya estaba en 686. Con el texto en el nodo, el
+// prompt gasta `{{ $json.diasProximos }}` y nada mas.
+//
+// PERO ESO NO LO HACE GRATIS, y conviene decirlo: lo que se ahorra son
+// caracteres de PLANTILLA; lo que el modelo lee y paga cada turno son los ~200
+// de abajo. Por eso van DIEZ dias y no quince, y la frase es la mas corta que
+// dice las dos cosas. `prefijo-cacheable.test.ts` mide ahora tambien esto, para
+// que el tope no se pueda esquivar moviendo texto de lado.
+//
+// ES UNA AYUDA, NO LA BARRERA. La barrera esta en `Procesar respuesta`, que
+// corrige la palabra contra las fechas que las herramientas tocaron de verdad.
+// Esto solo hace que casi nunca tenga que actuar, y no cubre una fecha mas alla
+// de la ventana (las citas de octubre, por ejemplo).
+const diasProximos = (() => {
+  const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const hoy = new Date();
+  const lista = [];
+  for (let i = 0; i < 10; i++) {
+    const d = new Date(hoy.getTime() + i * 86400000);
+    // Dia y dia-de-la-semana en la zona del negocio: el servidor corre en UTC
+    // y a las 20:00 de La Paz ya seria el dia siguiente.
+    const partes = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/La_Paz', weekday: 'short', day: '2-digit',
+    }).formatToParts(d);
+    const valor = (t) => (partes.find((p) => p.type === t) || {}).value || '';
+    const semana = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[valor('weekday')];
+    const dia = parseInt(valor('day'), 10);
+    if (Number.isFinite(semana) && Number.isFinite(dia)) lista.push(DIAS[semana] + ' ' + dia);
+  }
+  // Siempre una cadena: el prompt la interpola cruda y un `undefined` se veria.
+  if (!lista.length) return '';
+  return '\nQué día es cada fecha (no lo calcules): ' + lista.join(' · ')
+    + '. Si te dan un día y un número que no coinciden, pregunta cuál quieren.';
+})();
+
 // EL NOMBRE DEL ASISTENTE lo elige cada empresa en la consola y vale para todos
 // sus flujos (decidido el 15/09/2026). Es TEXTO LIBRE y va al prompt: se deja en
 // una sola linea, sin corchetes ni llaves -- con ellos podria imitar un bloque
@@ -108,7 +152,7 @@ const atencion = {
 };
 
 if (codigo === 409) {
-  return [{ json: { ...base, ...atencion,
+  return [{ json: { ...base, ...atencion, diasProximos,
     estadoComercio: 'suspendido',
     // El texto neutro lo pone el panel: no menciona pagos ni deudas, porque el
     // cliente final no tiene por que enterarse de que el negocio debe dinero.
@@ -123,7 +167,7 @@ const contesto = codigo === 200 && cuerpo && typeof cuerpo.tenantId === 'string'
 if (!contesto) {
 // Sin respuesta no se corta: una caida del panel no puede dejar sin asistente a
 // todos los comercios. Un cliente escribiendo merece una respuesta.
-  return [{ json: { ...base, ...atencion,
+  return [{ json: { ...base, ...atencion, diasProximos,
     estadoComercio: base.estadoComercio ?? 'operativo',
     configDeLaConsola: false,
     panelSinRespuesta: true,
@@ -277,4 +321,4 @@ const laSena = {
 const estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'
   : (util(r.estadoComercio) ? 'suspendido' : base.estadoComercio);
 
-return [{ json: { ...base, ...atencion, ...deLaConsola, ...laSena, estadoComercio, configDeLaConsola: true } }];
+return [{ json: { ...base, ...atencion, diasProximos, ...deLaConsola, ...laSena, estadoComercio, configDeLaConsola: true } }];

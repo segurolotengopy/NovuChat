@@ -4182,3 +4182,110 @@ describe('Cancelar: la confirmación es SOLO una confirmación (#4034)', () => {
     }
   });
 });
+
+/**
+ * EL DÍA DE LA SEMANA LO PONE EL CÓDIGO, NO EL MODELO (2026-09-23).
+ *
+ * Prueba real del Dr. Bellido con dos teléfonos, la noche del 22/09. El modelo
+ * acertó SIEMPRE el día del mes y la hora, y erró la palabra:
+ *
+ *   · #4790 · `consultar_disponibilidad` recibió `2026-09-25T14:00:00-04:00`
+ *     y el modelo escribió «el jueves 25 de septiembre». El 25 era viernes.
+ *   · #4799 · `buscar_mi_cita` DEVOLVIÓ la cita correcta,
+ *     `2026-09-24T15:00:00-04:00`, y el modelo escribió «el miércoles 24 de
+ *     septiembre a las 15:00». El 24 era jueves.
+ *
+ * El doctor lo leyó como «se ha confundido con las fechas» y decidió no
+ * publicar el número hasta que se arregle. Y el daño no se queda en el texto:
+ * con el día equivocado el modelo consultó la franja del jueves (14:00–18:00)
+ * sobre una fecha que era viernes.
+ *
+ * La barrera está en `Procesar respuesta` y NO en el prompt, por la misma razón
+ * que el candado (17/09): una instrucción se ignora bajo insistencia y cambia
+ * con cada modelo. De una fecha al día de la semana hay una sola respuesta, y
+ * el turno sabe qué fechas tocaron las herramientas.
+ */
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+  '%s · el día de la semana lo pone el código', (_archivo, f) => {
+    const procesar = (output: string, pasos: J[]) => ejecutar(String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
+      [{ output, intermediateSteps: pasos }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: 'mi cita' }],
+        'Config del negocio': [{ numeroRecepcion: '59170000002', nombreNegocio: 'Un Negocio', tratamiento: 'tú' }] })[0] ?? {};
+
+    const buscoYDevolvio = (inicio: string, fin: string): J[] => [{
+      action: { tool: 'buscar_mi_cita', toolInput: {} },
+      observation: JSON.stringify([{ id: 'c1', summary: 'Cita', start: { dateTime: inicio }, end: { dateTime: fin } }]),
+    }];
+    const consulto = (inicio: string, fin: string): J[] => [{
+      action: { tool: 'consultar_disponibilidad', toolInput: { inicio, fin } },
+      observation: '[]',
+    }];
+
+    it('EL CASO REAL #4799: la herramienta devolvió el 24 (jueves) y el modelo escribió «miércoles 24»', () => {
+      const s = procesar(
+        'Encontré una cita para control del niño sano el miércoles 24 de septiembre a las 15:00. ¿Es esa?',
+        buscoYDevolvio('2026-09-24T15:00:00-04:00', '2026-09-24T15:30:00-04:00'));
+      expect(s['respuesta']).toContain('jueves 24 de septiembre a las 15:00');
+      expect(s['respuesta']).not.toContain('miércoles 24');
+      expect(s['avisos']).toContain('dia_de_semana_corregido');
+    });
+
+    it('EL CASO REAL #4790: consultó el 25 (viernes) y el modelo escribió «jueves 25»', () => {
+      const s = procesar(
+        'Para la consulta el jueves 25 de septiembre tengo 14:00, 15:00 o 16:00. ¿Cuál prefieres?',
+        consulto('2026-09-25T14:00:00-04:00', '2026-09-25T18:00:00-04:00'));
+      expect(s['respuesta']).toContain('viernes 25 de septiembre');
+      expect(s['avisos']).toContain('dia_de_semana_corregido');
+    });
+
+    it('cuando el modelo acierta, no se toca una letra', () => {
+      const texto = 'Tu cita es el jueves 24 de septiembre a las 15:00. Te esperamos.';
+      const s = procesar(texto, buscoYDevolvio('2026-09-24T15:00:00-04:00', '2026-09-24T15:30:00-04:00'));
+      expect(s['respuesta']).toBe(texto);
+      expect(s['avisos']).not.toContain('dia_de_semana_corregido');
+    });
+
+    it('se corrige en la zona del negocio: las 17:30 de La Paz NO son del día siguiente', () => {
+      // En UTC, 2026-09-24T17:30-04:00 es el 24 a las 21:30; pero una cita de
+      // las 20:30 de La Paz sí cruzaría. Se mira siempre America/La_Paz.
+      const s = procesar('Te espero el miércoles 24 a las 17:30.',
+        buscoYDevolvio('2026-09-24T17:30:00-04:00', '2026-09-24T18:00:00-04:00'));
+      expect(s['respuesta']).toContain('jueves 24 a las 17:30');
+    });
+
+    it('conserva la mayúscula cuando la palabra abre la oración', () => {
+      const s = procesar('Miércoles 24 a las 15:00 te esperamos.',
+        buscoYDevolvio('2026-09-24T15:00:00-04:00', '2026-09-24T15:30:00-04:00'));
+      expect(s['respuesta']).toContain('Jueves 24 a las 15:00');
+    });
+
+    it('un mes que NO es el de la cita no se toca: es otra fecha', () => {
+      const texto = 'La anterior fue el lunes 24 de agosto.';
+      const s = procesar(texto, buscoYDevolvio('2026-09-24T15:00:00-04:00', '2026-09-24T15:30:00-04:00'));
+      expect(s['respuesta']).toBe(texto);
+    });
+
+    it('sin fechas de herramienta en el turno no se corrige nada: no hay con qué decidir', () => {
+      const texto = 'Te espero el miércoles 24.';
+      expect(procesar(texto, [])['respuesta']).toBe(texto);
+    });
+
+    it('un día sin número no se toca: no hay fecha que comparar', () => {
+      const texto = 'Te espero el miércoles a las 15:00.';
+      const s = procesar(texto, buscoYDevolvio('2026-09-24T15:00:00-04:00', '2026-09-24T15:30:00-04:00'));
+      expect(s['respuesta']).toBe(texto);
+    });
+
+    it('el calendario de los próximos días viaja en la configuración, para que no tenga que calcular', () => {
+      const cfg = ejecutar(String(nodo(f, 'Config del negocio').parameters['jsCode']),
+        [{ statusCode: 200, body: {} }], { 'Config base': [{}] })[0] ?? {};
+      // Es la frase entera, armada en el nodo: el prompt solo la interpola,
+      // porque el bloque de contexto del turno tiene un tope de 700 caracteres.
+      const dias = String(cfg['diasProximos'] ?? '');
+      expect(dias.startsWith('\n')).toBe(true);
+      expect(dias).toMatch(/no lo calcules/);
+      expect(dias).toMatch(/pregunta cuál quieren/);
+      const calendario = /:\s([^.]+)\./.exec(dias)![1]!;
+      expect(calendario).toMatch(/^(lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}( · (lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}){9}$/);
+    });
+  });
