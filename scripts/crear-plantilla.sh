@@ -26,6 +26,12 @@
 #       --cuerpo 'Se registró tu solicitud de cita en {{1}} para {{2}}. Estado: sin confirmar. Responde este mensaje si quieres retomarla.' \
 #       --ejemplos 'Clínica Platinum|el sábado 20 a las 10:00' [--aplicar]
 #
+# --encabezado y --pie (24/09/2026) agregan un encabezado de TEXTO y un pie,
+# fijos y sin variables (hasta 60 caracteres cada uno): es la forma de la
+# plantilla `solicitud_contacto` de NovuChat, que hay que volver a pedir en
+# la WABA de Silvana. Un flujo que manda solo parametros de cuerpo sigue
+# calzando: el encabezado y el pie fijos no llevan parametros.
+#
 # Despues: ./scripts/listar-plantillas.sh --env .env.platinum --detalle
 set -euo pipefail
 
@@ -33,6 +39,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 ENV_FILE=".env"
 NOMBRE=""; IDIOMA="es"; CATEGORIA="UTILITY"; CUERPO=""; EJEMPLOS=""; VALIDEZ=""; APLICAR=0
+ENCABEZADO=""; PIE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)        ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
@@ -42,9 +49,11 @@ while [[ $# -gt 0 ]]; do
     --categoria)  CATEGORIA="${2:?}"; shift 2 ;;
     --cuerpo)     CUERPO="${2:?}"; shift 2 ;;
     --ejemplos)   EJEMPLOS="${2:?}"; shift 2 ;;
+    --encabezado) ENCABEZADO="${2:?}"; shift 2 ;;
+    --pie)        PIE="${2:?}"; shift 2 ;;
     --validez-seg) VALIDEZ="${2:?}"; shift 2 ;;
     --aplicar)    APLICAR=1; shift ;;
-    -h|--help)    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
@@ -62,12 +71,25 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 # --- la carga util, comprobada -------------------------------------------------
 NOMBRE="$NOMBRE" IDIOMA="$IDIOMA" CATEGORIA="$CATEGORIA" CUERPO="$CUERPO" \
-EJEMPLOS="$EJEMPLOS" VALIDEZ="$VALIDEZ" TMP="$TMP" python3 - <<'PY'
+EJEMPLOS="$EJEMPLOS" VALIDEZ="$VALIDEZ" ENCABEZADO="$ENCABEZADO" PIE="$PIE" TMP="$TMP" python3 - <<'PY'
 import json, os, re, sys
 R, A, V, FIN = "\033[1;31m", "\033[1;33m", "\033[1;32m", "\033[0m"
 nombre, idioma, categoria = os.environ["NOMBRE"], os.environ["IDIOMA"], os.environ["CATEGORIA"].upper()
 cuerpo, ejemplos, validez = os.environ["CUERPO"], os.environ["EJEMPLOS"], os.environ["VALIDEZ"]
+encabezado, pie = os.environ["ENCABEZADO"], os.environ["PIE"]
 problemas = []
+# Encabezado y pie: fijos. Meta admite variables en el encabezado, pero el
+# flujo no manda parametros de encabezado, y una variable ahi lo haria fallar
+# con #132000 despues de aprobada.
+for rotulo, texto in (("--encabezado", encabezado), ("--pie", pie)):
+    if not texto:
+        continue
+    if len(texto) > 60:
+        problemas.append(f"{rotulo}: mas de 60 caracteres")
+    if re.search(r"\{\{\d+\}\}", texto):
+        problemas.append(f"{rotulo}: no admite variables (el flujo no manda parametros ahi)")
+    if "\n" in texto:
+        problemas.append(f"{rotulo}: sin saltos de linea")
 if not re.fullmatch(r"[a-z0-9_]{1,512}", nombre):
     problemas.append("--nombre: minusculas, digitos y guion bajo")
 if categoria not in ("UTILITY", "MARKETING", "AUTHENTICATION"):
@@ -103,10 +125,16 @@ if problemas:
 componente = {"type": "BODY", "text": cuerpo}
 if variables:
     componente["example"] = {"body_text": [lista_ejemplos]}
+componentes = []
+if encabezado:
+    componentes.append({"type": "HEADER", "format": "TEXT", "text": encabezado})
+componentes.append(componente)
+if pie:
+    componentes.append({"type": "FOOTER", "text": pie})
 carga = {
     "name": nombre, "language": idioma, "category": categoria,
     "message_send_ttl_seconds": ttl,
-    "components": [componente],
+    "components": componentes,
 }
 open(os.path.join(os.environ["TMP"], "carga.json"), "w", encoding="utf-8").write(json.dumps(carga, ensure_ascii=False))
 print(f"{V}Carga util (sin ningun valor del entorno):{FIN}")

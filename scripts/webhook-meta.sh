@@ -20,6 +20,11 @@
 #       borra el temporal y activa el flujo del cliente
 #   ./scripts/webhook-meta.sh --probar   --webhook-id <uuid>
 #       hace el GET que hace Meta y muestra qué contesta la ruta
+#   ./scripts/webhook-meta.sh --ver-meta --env-cliente <.env.x>
+#       SOLO LEE: muestra a qué URL apunta hoy el webhook de la app del
+#       entorno. Existe (24/09/2026) porque una app de Meta tiene UNA sola URL
+#       de webhook: darla de alta en una app que ya atiende a otro producto le
+#       quita el webhook a ese producto. Se mira antes de --alta-meta.
 #
 # Lee N8N_BASE_URL y N8N_API_KEY de .env (o --env-n8n). No imprime valores.
 # =============================================================================
@@ -33,6 +38,7 @@ while [ $# -gt 0 ]; do
     --cerrar)      MODO="cerrar"; shift ;;
     --probar)      MODO="probar"; shift ;;
     --alta-meta)   MODO="alta-meta"; shift ;;
+    --ver-meta)    MODO="ver-meta"; shift ;;
     --webhook-id)  WH="$2"; shift 2 ;;
     --flujo-id)    FID="$2"; shift 2 ;;
     --env-n8n)     ENV_N8N="$2"; shift 2 ;;
@@ -40,6 +46,27 @@ while [ $# -gt 0 ]; do
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
+
+# --ver-meta: el GET de suscripciones de la app, con el app access token
+# APPID|APPSECRET del .env del cliente. No escribe nada y no imprime valores:
+# solo la URL de devolución de llamada, si está activa y qué campos tiene.
+if [ "$MODO" = "ver-meta" ]; then
+  [ -n "$ENV_CLIENTE" ] && [ -f "$ENV_CLIENTE" ] || { echo "Uso: --ver-meta --env-cliente <.env.x>" >&2; exit 2; }
+  set -a
+  # shellcheck disable=SC1090  # ruta variable: la elige un argumento
+  source "$ENV_CLIENTE"
+  set +a
+  : "${WA_APP_ID:?}" "${WA_APP_SECRET:?WA_APP_SECRET no está en $ENV_CLIENTE: sin él no hay app access token}"
+  G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
+  echo "Suscripciones de webhook de la app …${WA_APP_ID: -4}:"
+  curl -s --max-time 30 "$G/$WA_APP_ID/subscriptions?access_token=${WA_APP_ID}|${WA_APP_SECRET}" \
+    | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+if 'error' in d: print('  ERROR:', d['error'].get('message')); sys.exit(1)
+if not d.get('data'): print('  (ninguna: la app no tiene webhook dado de alta)')
+for s in d.get('data',[]): print('  ', s.get('object'), '→', s.get('callback_url'), '· activo:', s.get('active'), '· campos:', [f.get('name') for f in s.get('fields',[])])"
+  exit 0
+fi
 
 # --alta-meta: registra la URL en la APP por la Graph API, sin pasar por la
 # pantalla de Meta (que el 18/09 contestaba «#1004 An error occurred» sin
