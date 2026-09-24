@@ -6,7 +6,13 @@
 > este repositorio. La justificación de cada número está en
 > `Analisis/37-anexo-tecnico-y-sla.md`.
 >
-> **Versión 1 · 21/09/2026.** Marcas a completar: `[…]`.
+> **Versión 2 · 24/09/2026.** Marcas a completar: `[…]`.
+>
+> Cambio de la v1: el §8 dice **cuándo** se aplican los cambios —la ventana
+> diaria de 02:00 a 03:00, fuera del horario cubierto— y separa esa aplicación,
+> que no interrumpe el servicio, del mantenimiento programado que sí lo
+> interrumpe y se anuncia con 24 horas. No agrega ningún compromiso nuevo:
+> le pone hora a lo que la v1 ya exigía hacer fuera del horario cubierto.
 >
 > **Regla de mantenimiento de esta plantilla:** no se agrega ningún compromiso
 > que el sistema no cumpla hoy. Cuando un prerrequisito de `Analisis/37` §5 se
@@ -164,8 +170,15 @@ se suman al saldo del Cliente. No se pagan en dinero.
   hechos.
 - **Mejoras de los flujos:** se aplican a todos los clientes que usan ese flujo
   a la vez, previa prueba.
-- **Mantenimiento programado:** se anuncia con 24 horas de anticipación y se
-  hace fuera del horario cubierto.
+- **Cuándo se aplican:** en la **ventana diaria de 02:00 a 03:00, hora de
+  Bolivia**, que está fuera del horario cubierto y solo se abre cuando hay algo
+  que aplicar. La actualización se hace sobre el asistente en funcionamiento y
+  **no interrumpe el servicio**: dura segundos y no cambia el número ni la
+  conversación en curso. Por eso **no se anuncia ni se interrumpe a quien
+  escriba**. Un cambio urgente puede aplicarse fuera de esa ventana, evaluando
+  antes el tiempo de impacto.
+- **Mantenimiento programado** (el que **sí** interrumpe el servicio): se
+  anuncia con 24 horas de anticipación y se hace fuera del horario cubierto.
 - **Correcciones de seguridad urgentes:** en cualquier momento, con aviso.
 
 ## 9. Datos
