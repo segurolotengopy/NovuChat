@@ -1222,6 +1222,33 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).toMatch(/sin explicar/i);   // el bloqueo del mediodía no se le cuenta al paciente
     });
 
+    // LA DURACIÓN LA DICEN DOS SUPERFICIES Y TIENEN QUE DECIR LO MISMO
+    // (2026-09-23). La regla (a) dice que los turnos duran 30 minutos y salen
+    // en punto y y media, y `negocio-bellido.json` trae `duracionPorDefectoMin: 30`.
+    // Pero `agendar_cita` heredó del Demo A —que no tiene reglas de agenda y
+    // asume una hora— un «fin = inicio + 1 hora». Con eso, cada turno de media
+    // hora ocupaba una hora entera en el calendario: `consultar_disponibilidad`
+    // devolvía el evento de 60 minutos, y la media hora siguiente aparecía
+    // ocupada. El consultorio perdía la mitad de su agenda sin que nadie lo
+    // viera, porque las dos frases eran plausibles por separado. El servidor NO
+    // le manda la duración al flujo (`duracionPorDefectoMin` no viaja en
+    // `configuracionFlujo`), así que hasta que viaje la única defensa es que
+    // las dos superficies coincidan acá.
+    it('agendar_cita crea turnos de la misma duración que dice la regla (a), y ninguna superficie dice «1 hora»', () => {
+      const reglas = String(configBase(flujo)['reglasAgenda']);
+      expect(reglas).toMatch(/duran 30 minutos/);
+
+      const agendar = nodo(flujo, 'agendar_cita').parameters as J;
+      const descripcion = String(agendar['toolDescription']);
+      const fin = String(agendar['end']);
+
+      expect(descripcion).toMatch(/fin = inicio \+ 30 minutos/);
+      for (const superficie of [descripcion, fin]) {
+        expect(superficie).not.toMatch(/1 hora/);
+        expect(superficie).not.toMatch(/60 minutos/);
+      }
+    });
+
     it('el contexto del turno entra al mensaje del turno, antes del mensaje del cliente', () => {
       const t = String(nodo(flujo, AGENTE).parameters['text']);
       expect(t.indexOf('contextoTurno')).toBeGreaterThan(0);

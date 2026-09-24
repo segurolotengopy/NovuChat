@@ -480,7 +480,7 @@
       ],
       "parameters": {
         "descriptionType": "manual",
-        "toolDescription": "agendar_cita: crea la cita en el calendario cuando el cliente CONFIRMA un horario y ya diste su nombre. NO la uses si en este mismo mensaje no llamaste antes a consultar_disponibilidad para esa persona y ese día. Si el cliente pidió DOS citas, llámala dos veces, una por cada una. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (fin = inicio + 1 hora) y titulo con el formato \"Cita <nombre> — <servicio>\".",
+        "toolDescription": "agendar_cita: crea la cita en el calendario cuando el cliente CONFIRMA un horario y ya diste su nombre. NO la uses si en este mismo mensaje no llamaste antes a consultar_disponibilidad para esa persona y ese día. Si el cliente pidió DOS citas, llámala dos veces, una por cada una. Parámetros: inicio y fin en ISO 8601 con zona -04:00 (fin = inicio + 30 minutos, que es lo que dura un turno de este consultorio) y titulo con el formato \"Cita <nombre> — <servicio>\".",
         "operation": "create",
         "calendar": {
           "__rl": true,
@@ -488,7 +488,7 @@
           "value": "={{ (() => { const cfg = $('Config del negocio').first().json; const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').trim(); /* 1. FUNCIONARIO. Si el agente eligio una persona y esa persona tiene agenda propia, la cita va ahi. Es lo que impide que dos personas que hacen lo mismo reciban dos citas a la misma hora. */ let equipo = []; try { equipo = JSON.parse(cfg.funcionarios || '[]'); } catch (e) { equipo = []; } const quien = norm($fromAI('funcionario', 'Nombre del funcionario que va a atender, si el cliente eligio uno', 'string')); if (quien) { for (const f of equipo) { if (norm(f.nombre) === quien && f.calendario) return f.calendario; } } /* 2. SERVICIO. Sin funcionario elegido se cae al area, como antes. */ let mapa = {}; try { mapa = JSON.parse(cfg.calendariosPorServicio || '{}'); } catch (e) { mapa = {}; } const pedido = norm($fromAI('servicio', 'Servicio solicitado, tal como figura en el catalogo', 'string')); for (const clave of Object.keys(mapa)) { const k = norm(clave); if (k === pedido || pedido.includes(k) || k.includes(pedido)) return mapa[clave]; } /* 3. El del negocio. */ return cfg.calendarioId; })() }}"
         },
         "start": "={{ $fromAI('inicio', 'Inicio de la cita en ISO 8601 con zona -04:00', 'string') }}",
-        "end": "={{ $fromAI('fin', 'Fin de la cita en ISO 8601 con zona -04:00, normalmente 1 hora después', 'string') }}",
+        "end": "={{ $fromAI('fin', 'Fin de la cita en ISO 8601 con zona -04:00, 30 minutos después del inicio', 'string') }}",
         "additionalFields": {
           "summary": "={{ $fromAI('titulo', 'Título: Cita <nombre> — <servicio>', 'string') }}",
           "description": "=Cliente: {{ $('Normalizar entrada').first().json.nombrePerfil }}\nTelefono: {{ $('Normalizar entrada').first().json.from }}\nAgendado por NovuChat."
