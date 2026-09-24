@@ -112,10 +112,27 @@ for (const item of $input.all()) {
   }
 
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
+
+  // DE DONDE NACIO LA CONVERSACION (Analisis/38 §2, Analisis/39). Si el cliente
+  // escribio desde un anuncio de clic a WhatsApp, Meta manda `referral` EN EL
+  // PRIMER MENSAJE y solo en ese. Esa conversacion abre la ventana de punto de
+  // entrada gratuito: 72 h en las que la empresa no paga ningun mensaje y no
+  // gasta franquicia. Con que fraccion del trafico entra asi se decide el
+  // margen de un contrato, y hasta ahora no se medía.
+  //
+  // Aca solo se dice SI vino de un anuncio, no cual: el titular y la URL no
+  // hacen falta para la cifra y no tienen por que viajar al servidor. Los
+  // mensajes siguientes mandan `directo` y el servidor NO los deja pisar el
+  // origen de la ventana, que se escribe al abrirla (`ingesta.ts`).
+  //
+  // Cero mensajes agregados: viaja en el reporte que ya se hacia.
+  const origen = msg.referral ? 'anuncio' : 'directo';
+
   out.push({ json: {
     ...config,
     userInput,
     tipo,
+    origen,
     from: msg.from,
     nombrePerfil: contacto?.profile?.name ?? '',
     mensajeId: String(msg.id ?? ''),
