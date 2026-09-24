@@ -330,6 +330,9 @@ beforeEach(async () => {
     await setDoc(doc(db, 'plataforma/prepago/historial/h1'), {
       corteActivo: false, uid: 'seed', en: Timestamp.now(), motivo: 'semilla de las pruebas',
     });
+    // El TCO del dia: publico, lo lee tambien el comercio para ver en cuantos
+    // bolivianos se le va a cobrar antes de emitir el QR (bloque A-3).
+    await setDoc(doc(db, 'plataforma/tipoCambio'), { tco: 12.6, fecha: '2026-10-15', fuente: 'BCB' });
   });
 });
 
@@ -1446,6 +1449,25 @@ describe('Configuración de plataforma', () => {
     await assertFails(getDoc(doc(adminA(), 'plataforma/notificaciones')));
     await assertFails(getDocs(collection(adminA(), 'plataforma')));
     await assertFails(getDoc(doc(operA(), 'plataforma/notificaciones')));
+  });
+
+  it('el tipo de cambio SÍ lo lee el comercio, y nadie lo escribe', async () => {
+    // Excepción acotada (bloque A-3). El TCO oficial del BCB es información
+    // pública, y el comercio tiene que ver con cuál se le cobra ANTES de
+    // apretar «Pagar»: la pantalla arma el importe en bolivianos con
+    // `importeBs` sobre ESTE documento, la misma función y el mismo dato que
+    // usa el servidor al emitir el QR. Sin esta lectura la consola tendría que
+    // estimar, y la diferencia con el QR aparecería recién en el banco.
+    await assertSucceeds(getDoc(doc(adminA(), 'plataforma/tipoCambio')));
+    await assertSucceeds(getDoc(doc(propietario(), 'plataforma/tipoCambio')));
+    // La excepción es de ESE documento y de la lectura de UNO: ni la colección
+    // entera ni el resto de la configuración se abren con ella.
+    await assertFails(getDoc(doc(adminA(), 'plataforma/notificaciones')));
+    await assertFails(getDocs(collection(adminA(), 'plataforma')));
+    // Escribirlo desde el navegador multiplicaría por diez lo que se factura.
+    await assertFails(setDoc(doc(adminA(), 'plataforma/tipoCambio'), { tco: 1, fecha: '2026-10-15', fuente: 'BCB' }));
+    await assertFails(updateDoc(doc(propietario(), 'plataforma/tipoCambio'), { tco: 126 }));
+    await assertFails(deleteDoc(doc(propietario(), 'plataforma/tipoCambio')));
   });
 
   it('solo NovuChat la lee, y NADIE la escribe desde el navegador', async () => {

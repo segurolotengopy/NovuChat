@@ -39,7 +39,10 @@ CLIENTES/
 .DS_Store
 __pycache__/
 *.pyc
-node_modules/
+# Sin la barra final: en un worktree, `node_modules` es un ENLACE al del
+# checkout principal, y `node_modules/` (con barra) solo casa con
+# directorios. Por eso un `git add -A` llego a versionar el enlace.
+node_modules
 .venv/
 venv/
 

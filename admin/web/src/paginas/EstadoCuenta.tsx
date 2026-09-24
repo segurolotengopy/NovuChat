@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../lib/atencion';
-import { avisoConsumoVigente, limiteDeProductos, nombreDePlan } from '../lib/planes';
+import { avisoConsumoVigente, limiteDeProductos, nombreDePlan, periodoDe } from '../lib/planes';
 import { AvisoConsumo } from '../componentes/AvisoConsumo';
+import { consumidasDe, corteDe, estadoDeServicio } from '../lib/prepago';
+import { ResumenPrepago } from '../componentes/ResumenPrepago';
 
 interface Cuenta {
   plan?: unknown;
@@ -39,6 +41,7 @@ interface Cuenta {
 export function EstadoCuenta() {
   const { tenantId = '' } = useParams();
   const [cuenta, setCuenta] = useState<Cuenta | null>(null);
+  const [consumidas, setConsumidas] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -46,6 +49,19 @@ export function EstadoCuenta() {
     return onSnapshot(doc(db, 'tenants', tenantId, 'cuenta', 'estado'),
       (d) => setCuenta(d.data() ?? {}),
       () => setError('No se pudo leer el estado de cuenta.'));
+  }, [tenantId]);
+
+  // LAS CONVERSACIONES DEL MES, del MISMO agregado que lee la ingesta
+  // (`metricas/{periodoDe()}`, mes UTC) y con la misma funcion (`consumidasDe`,
+  // que tolera el nombre viejo `atenciones`). Si falla la lectura queda en 0:
+  // el saldo se vera mas alto de lo que es, y eso no corta a nadie ni le
+  // cobra de mas. Lo contrario --suponer consumo-- si diria que no le queda
+  // servicio a quien si lo tiene.
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(doc(db, 'tenants', tenantId, 'metricas', periodoDe()),
+      (d) => setConsumidas(consumidasDe(d.data())),
+      () => setConsumidas(0));
   }, [tenantId]);
 
   if (error) return <section><p role="alert">{error}</p></section>;
@@ -58,6 +74,11 @@ export function EstadoCuenta() {
   const umbrales = umbralesDeAtencion(cuenta as Record<string, unknown>);
   const aviso = avisoConsumoVigente(cuenta as Record<string, unknown>);
   const plan = nombreDePlan(cuenta.plan);
+  // El MISMO modulo que decide el corte en el servidor. La consola no calcula
+  // cobertura ni gracia: si lo hiciera, la pantalla podria decir «cubierto» el
+  // dia en que la ingesta corta, y sobre esa diferencia se discute un reclamo.
+  const servicio = estadoDeServicio(cuenta as Record<string, unknown>, consumidas, Date.now());
+  const corte = corteDe(cuenta as Record<string, unknown>);
 
   return (
     <section>
@@ -68,6 +89,19 @@ export function EstadoCuenta() {
       </p>
 
       {aviso && <AvisoConsumo aviso={aviso} />}
+
+      {/* Una demostración no paga nada: mostrarle «su prepago» a un demo es
+          confundir al que hace la presentación. */}
+      {servicio.modalidad !== 'demostracion' && (
+        <>
+          <ResumenPrepago servicio={servicio} corte={corte} />
+          <p>
+            <Link className="btn btn-primary" to={`/negocio/${encodeURIComponent(tenantId)}/pagar`}>
+              Pagar
+            </Link>
+          </p>
+        </>
+      )}
 
       <table>
         <tbody>
@@ -128,3 +162,4 @@ export function EstadoCuenta() {
     </section>
   );
 }
+
