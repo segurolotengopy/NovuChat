@@ -1019,6 +1019,32 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(String(r2['contextoTurno'])).not.toContain('quiero cita');
     });
 
+    // EL CASO REAL DEL 24/09 (#5639 a #5647): la suite inyectaba `eleccion` a
+    // mano y `Normalizar entrada` nunca la llenaba, así que en producción el
+    // tipo de cita no se guardó jamás. Esta prueba encadena los DOS nodos
+    // reales, con el payload que manda Meta al tocar una fila de la lista.
+    it('el botón tocado llega desde Normalizar entrada: la cadena real guarda el tipo de cita', () => {
+      const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
+      const tocar = (id: string, title: string) => {
+        const [n] = normalizar({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id, title } } });
+        expect(n!['eleccion'], id).toBe(id);
+        // Solo lo que el estado lee; el id de mensaje lo pone `turno`, uno por toque
+        // (el mismo id sería un reenvío de Meta y se descartaría, como corresponde).
+        return turno({ eleccion: n!['eleccion'], tipo: n!['tipo'], userInput: n!['userInput'] }, sd);
+      };
+      expect(tocar('control_nino_sano', 'Control niño sano')['tipoCita']).toBe('niño sano');
+      // El último botón manda: después de «niño sano», «recién nacido» lo cambia.
+      const r = tocar('control_recien_nacido', 'Recién nacido');
+      expect(r['tipoCita']).toBe('recién nacido');
+      expect(String(r['contextoTurno'])).toContain('Tipo de cita elegido en el menú: recién nacido');
+      // Y lo recuerda en el turno de texto siguiente.
+      expect(String(turno({ userInput: 'a las 12 entonces' }, sd)['contextoTurno'])).toContain('recién nacido');
+      // Un botón de respuesta rápida también trae su id; un texto no trae ninguno.
+      const [b] = normalizar({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'emergencia', title: 'Emergencia' } } });
+      expect(b!['eleccion']).toBe('emergencia');
+      expect(normalizar({ type: 'text', text: { body: 'hola' } })[0]!['eleccion']).toBe('');
+    });
+
     it('«Niño sano» guarda el otro tipo, y con el menú ya enviado un texto suelto va al agente', () => {
       const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
       expect(turno({ tipo: 'interactive', eleccion: 'control_nino_sano' }, sd)['tipoCita']).toBe('niño sano');

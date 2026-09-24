@@ -118,6 +118,20 @@ for (const item of $input.all()) {
     tipo,
     from: msg.from,
     nombrePerfil: contacto?.profile?.name ?? '',
+    // EL ID DE LA OPCION TOCADA (24/09/2026). `Estado de la conversacion` de
+    // Bellido decide con `eleccion` --«control_recien_nacido»,
+    // «control_nino_sano», «vacunas_otros», «emergencia»-- y NADIE lo llenaba
+    // desde el 18/09: el id solo viajaba dentro del texto de `userInput`. Los
+    // botones de emergencia y vacunas funcionaban de casualidad, por las
+    // palabras del titulo; el tipo de cita no se guardaba NUNCA, y el modelo lo
+    // adivinaba de la memoria. Con «niño sano» y despues «recién nacido» en la
+    // misma conversacion consulto la agenda como niño sano y rechazo las 12:00
+    // del dia siguiente, que estaban libres (Andres, 24/09, #5647). La suite no
+    // lo veia porque inyectaba `eleccion` a mano: ahora hay una prueba que
+    // encadena los dos nodos reales. Vacio en todo lo que no es un interactivo.
+    eleccion: tipo === 'interactive'
+      ? String((msg.interactive?.list_reply ?? msg.interactive?.button_reply)?.id ?? '')
+      : '',
     mensajeId: String(msg.id ?? ''),
     mediaId,
     mimeType,
