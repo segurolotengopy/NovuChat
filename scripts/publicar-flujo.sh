@@ -100,8 +100,14 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 # --- 1. leer el flujo vivo ----------------------------------------------------
+# EL CODIGO DE CURL Y EL CODIGO HTTP SON DOS COSAS. Esto decia
+# `... || echo 000)`, que dentro de `$( )` no REEMPLAZA el valor: lo CONCATENA.
+# Con un HTTP 200 y un curl que terminaba mal, COD valia «200000» y el script
+# moria con un numero que no existe, escondiendo el motivo real. El mismo
+# defecto estaba en `ver-ejecuciones.sh` y costo una tarde de diagnostico a
+# ciegas; aca lo encontro `estado-de-versiones.sh` al no poder leer un flujo.
 COD=$(curl -s --max-time 30 -o "$TMP/vivo.json" -w '%{http_code}' \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}") || COD=000
 
 if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ No se pudo leer el flujo: HTTP %s\033[0m\n' "$COD"
@@ -136,7 +142,7 @@ if [[ $ENCENDER -eq 1 || $APAGAR -eq 1 ]]; then
     exit 0
   fi
   COD=$(curl -s --max-time 30 -o "$TMP/estado.json" -w '%{http_code}' -X POST \
-        -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}" || echo 000)
+        -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}") || COD=000
   if [[ "$COD" != "200" ]]; then
     printf '\033[1;31m✗ HTTP %s al %s el flujo\033[0m\n' "$COD" "$QUE"
     head -c 300 "$TMP/estado.json" 2>/dev/null || true
@@ -254,7 +260,7 @@ PY
 
   COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X POST \
         -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
-        --data-binary @"$TMP/cuerpo.json" "${API}/workflows" || echo 000)
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows") || COD=000
   if [[ "$COD" != "200" && "$COD" != "201" ]]; then
     printf '\033[1;31m✗ No se pudo crear: HTTP %s\033[0m\n' "$COD"
     head -c 500 "$TMP/rta.json" 2>/dev/null || true; echo
@@ -266,7 +272,7 @@ PY
 
   if [[ $ACTIVAR -eq 1 ]]; then
     COD=$(curl -s --max-time 60 -o "$TMP/act.json" -w '%{http_code}' -X POST \
-          -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${NUEVO_ID}/activate" || echo 000)
+          -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${NUEVO_ID}/activate") || COD=000
     if [[ "$COD" == "200" ]]; then
       printf '\033[1;32m✓ Flujo activado (publicado).\033[0m\n'
     else
@@ -336,7 +342,7 @@ PY
   [[ $APLICAR -eq 1 ]] || exit 0
   COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
         -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
-        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}") || COD=000
   if [[ "$COD" == "200" ]]; then
     RESTAN=$(curl -s --max-time 30 -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}" \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(((d.get("staticData") or {}).get("global") or {}).get("conversaciones") or {}))')
@@ -628,7 +634,7 @@ PY
 # --- 2. escribir de vuelta ----------------------------------------------------
 COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
       -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
-      --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+      --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}") || COD=000
 
 if [[ "$COD" == "200" ]]; then
   printf '\033[1;32m✓ Flujo actualizado en su lugar (HTTP 200).\033[0m\n'
