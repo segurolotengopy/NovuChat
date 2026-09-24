@@ -66,7 +66,7 @@ describe('asignar-plan.mjs', () => {
     for (const plan of ['basico', 'premium', 'Pro', 'toString']) {
       const r = correr('--tenant', T, '--plan', plan, '--aplicar');
       expect(r.codigo, plan).toBe(2);
-      expect(r.salida).toMatch(/Del catálogo: impulso, crecimiento, pro, demostracion/);
+      expect(r.salida).toMatch(/Del catálogo: impulso, crecimiento, pro, byoc, demostracion/);
     }
     expect((await cuenta()).plan).toBe('basico');
   });
