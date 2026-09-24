@@ -338,6 +338,21 @@ dibujar una fila **no impide nada**. Es el mismo criterio que `admin/DISENO.md`
   reportar el resultado **real**, no el esperado.
 - **Nunca editar a mano el flujo de un cliente.** Se edita el JSON versionado y
   se reaplica con `publicar-flujo.sh`. Hoy hay un flujo por cliente —lo obliga
-  la credencial del disparador, porque cada app de Meta tiene un solo webhook—
-  y un cambio se aplica a todos o a ninguno: un cliente con el prompt viejo es
-  un defecto que nadie nota hasta que reclama. Ver `Analisis/20`.
+  la credencial del disparador, porque cada app de Meta tiene un solo webhook—.
+  Ver `Analisis/20`.
+- **Un cambio se aplica PREFERENTEMENTE A TODOS, y toda excepción se registra**
+  (Andres, 24/09/2026; antes decía «a todos o a ninguno»). El motivo del cambio
+  es que empezamos a sacar **productos empaquetados**: un cliente puede quedarse
+  a propósito en una versión —porque compró un paquete, porque está en una
+  prueba, porque su pase a producción viene después—, y una regla absoluta
+  obligaba a mentir o a incumplirla en silencio, que es peor.
+  - **El riesgo que la regla vieja cubría sigue existiendo:** un cliente con el
+    prompt viejo es un defecto que nadie nota hasta que reclama. Lo que cambia
+    no es la vigilancia, es que ahora la diferencia se **declara** en vez de
+    prohibirse.
+  - **Dónde se registra:** `docs/versiones-por-cliente.md`, una fila por flujo
+    publicado, con la excepción y su porqué. Sin fila, un cliente atrasado es un
+    defecto, no una excepción.
+  - **Cómo se comprueba:** `./scripts/estado-de-versiones.sh` compara cada flujo
+    vivo con el versionado y falla si hay un atraso **sin declarar**. Se corre
+    antes de dar por cerrada una jornada que haya publicado algo.
