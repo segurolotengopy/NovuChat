@@ -51,6 +51,25 @@ reglas y Functions (la etiqueta la crea Andres), y publicar los tres flujos.
 
 ---
 
+## 2026-09-24 (noche) — el Demo B atrasado sin declarar: se declara, no se publica (rama `versiones/excepcion-demo-b`)
+
+`estado-de-versiones.sh` fallaba por el Demo B. **No lo causó el PR #175.** El flujo
+vivo (última edición 23/09 05:24) coincide nodo por nodo —39 de 39, por huella de
+parámetros y sin imprimir contenido— con `1f2938c`; lo único que le falta de `main`
+es `7988cdf`, el cobro por QR (PR #165), y de ahí salen los siete nodos distintos.
+Diagnóstico en seco leído entero: 7 cambiados, 16 nuevos, `Enviar QR (imagen DEMO)`
+se va, todas las credenciales se heredan.
+
+**No se publica porque las Functions de #165 no están desplegadas** (ninguna
+etiqueta contiene `ac17cad`; la última es `v0.7.0`). Con la `configuracionFlujo`
+vieja no llega `cobro.pendiente`, y sin eso `pagoDeclarado` es siempre falso: los
+rótulos de simulado siguen, pero **ningún pago simulado registraría su cierre**.
+Se declaró la excepción en `docs/versiones-por-cliente.md` con qué la cierra:
+etiqueta con `ac17cad` → publicar desde `main` → teléfono real en simulado. Con la
+excepción, el script revisa los 8 flujos y termina en 0.
+
+---
+
 ## 2026-09-24 (noche) — Bellido: la prueba de Silvana a las 19:56, leída ejecución por ejecución (rama `claude/bellido-scheduling-tone-issues-88549f`)
 
 Andres reportó cuatro cosas de la conversación de Silvana con el asistente del
