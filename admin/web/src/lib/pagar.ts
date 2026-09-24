@@ -21,12 +21,24 @@ import {
   aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
+import { PLAN_POR_DEFECTO } from './planes';
 
 export type { Pago, TipoCambio };
 
+/** Un plan de la lista de precios. El interno de demostración no entra. */
+export type PlanEnVenta = keyof typeof PLANES;
+
 /** Los planes que se pueden comprar, en orden de precio. `demostracion` no está. */
-export const PLANES_EN_VENTA = (Object.keys(PLANES) as (keyof typeof PLANES)[])
+export const PLANES_EN_VENTA: readonly PlanEnVenta[] = (Object.keys(PLANES) as PlanEnVenta[])
   .sort((a, b) => PLANES[a].precioUsd - PLANES[b].precioUsd);
+
+/**
+ * El que viene marcado al abrir la pantalla. Es `PLAN_POR_DEFECTO`, el más
+ * chico, y no `PLANES_EN_VENTA[0]`: ante la duda se falla hacia el plan menor,
+ * igual que el servidor, y así la pantalla no depende de que la lista esté
+ * ordenada ni de que tenga al menos un elemento.
+ */
+export const PLAN_INICIAL: PlanEnVenta = PLAN_POR_DEFECTO;
 
 export const MESES_POSIBLES = Array.from({ length: MESES_MAXIMO }, (_, i) => i + 1);
 export const BOLSAS_POSIBLES = Array.from({ length: BOLSAS_MAXIMO }, (_, i) => i + 1);

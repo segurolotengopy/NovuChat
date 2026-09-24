@@ -5,8 +5,8 @@ import { useParams } from 'react-router-dom';
 import { db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PLANES_EN_VENTA, PRECIOS, mesEscrito, vistaDelPedido,
-  type Pago,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PLANES_EN_VENTA, PLAN_INICIAL, PRECIOS, mesEscrito, vistaDelPedido,
+  type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
 
@@ -101,7 +101,7 @@ export function Pagar() {
   const [aviso, setAviso] = useState<string | null>(null);
 
   const [tipo, setTipo] = useState<Tipo>('mensualidad');
-  const [plan, setPlan] = useState<(typeof PLANES_EN_VENTA)[number]>(PLANES_EN_VENTA[0]);
+  const [plan, setPlan] = useState<PlanEnVenta>(PLAN_INICIAL);
   const [meses, setMeses] = useState(1);
   const [cantidad, setCantidad] = useState(1);
 
@@ -223,7 +223,7 @@ export function Pagar() {
             {tipo === 'mensualidad' && (
               <>
                 <label htmlFor="plan">Plan</label>
-                <select id="plan" value={plan} onChange={(e) => setPlan(e.target.value as typeof plan)}>
+                <select id="plan" value={plan} onChange={(e) => setPlan(e.target.value as PlanEnVenta)}>
                   {PLANES_EN_VENTA.map((p) => (
                     <option key={p} value={p}>
                       {PLANES[p].nombre} · USD {PLANES[p].precioUsd} · {PLANES[p].conversaciones} conversaciones
