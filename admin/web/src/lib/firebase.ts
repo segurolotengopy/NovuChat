@@ -88,3 +88,24 @@ if (enEmuladores) {
       Number(import.meta.env.VITE_STORAGE_EMULATOR_PORT ?? 9199));
   }
 }
+
+/**
+ * LA URL DE UNA FUNCIÓN HTTP (no callable), armada donde ya viven el proyecto
+ * y la región. La necesita el QR del prepago: `imagenDePago` es `onRequest`,
+ * se pide con `<img src>` y no pasa por el SDK, así que la dirección hay que
+ * construirla. Se arma acá y no en la pantalla porque la forma cambia con el
+ * emulador, y un `src` mal armado no da error: da una imagen rota.
+ *
+ * La ficha (`f`) es un identificador opaco de 32 hexadecimales que solo sirve
+ * mientras el cobro está pendiente; no lleva el tenant ni el pago, y la
+ * Function devuelve 404 en cuanto el cobro se cierra.
+ */
+export function urlDeFuncionHttp(nombre: string, parametros: Record<string, string> = {}): string {
+  const consulta = new URLSearchParams(parametros).toString();
+  const cola = consulta ? `?${consulta}` : '';
+  if (enEmuladores) {
+    const puerto = Number(import.meta.env.VITE_FUNCTIONS_EMULATOR_PORT ?? 5231);
+    return `http://127.0.0.1:${puerto}/${config.projectId}/${REGION_FUNCIONES}/${nombre}${cola}`;
+  }
+  return `https://${REGION_FUNCIONES}-${config.projectId}.cloudfunctions.net/${nombre}${cola}`;
+}

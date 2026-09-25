@@ -15,7 +15,8 @@ import {
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
-import { avisoConsumoPendiente, avisoDeConsumo, periodoDe } from './planes.js';
+import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './planes.js';
+import { campanasParaElFlujo } from './campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
@@ -1781,7 +1782,7 @@ export const configuracionFlujo = onRequest(
     const docVertical = documentoDeVertical(comercio.flujo);
     const ahoraMs = Date.now();
 
-    const [catalogo, funcionarios, especifica, rotulos, conversacion, cuenta, metricas, plataformaPrepago] =
+    const [catalogo, funcionarios, especifica, rotulos, conversacion, cuenta, metricas, plataformaPrepago, campanas] =
       await Promise.all([
         db.collection(`tenants/${comercio.tenantId}/catalogo`)
           .where('activo', '==', true).limit(200).get(),
@@ -1805,6 +1806,9 @@ export const configuracionFlujo = onRequest(
         db.doc(`tenants/${comercio.tenantId}/cuenta/estado`).get(),
         db.doc(`tenants/${comercio.tenantId}/metricas/${periodoDe(ahoraMs)}`).get(),
         db.doc('plataforma/prepago').get(),
+        // LAS CAMPAÑAS (24/09/2026): capa común, un documento por comercio.
+        // Solo se usan las `vigentes` (las aprobó `verificarCampanas`).
+        db.doc(`tenants/${comercio.tenantId}/config/campanas`).get(),
       ]);
 
     // -------------------------------------------------------------------------
@@ -2166,6 +2170,16 @@ export const configuracionFlujo = onRequest(
         funcionarios.docs.map((d) => ({ id: d.id, datos: d.data() })),
         negocio,
         new Set(catalogo.docs.map((d) => d.id)),
+      ),
+
+      // LAS CAMPAÑAS QUE EL FLUJO RECONOCE POR SU TEXTO (Andres, 24/09/2026):
+      // SOLO las aprobadas por `verificarCampanas`, en curso hoy y dentro del
+      // tope del plan de HOY. Lo propuesto (`lista`) nunca viaja: una campaña
+      // sin revisar no salta ningún menú. `campanas.ts` explica el contrato.
+      campanas: campanasParaElFlujo(
+        campanas.exists ? campanas.get('vigentes') : [],
+        limiteDeCampanas(cuenta.exists ? cuenta.data() as Record<string, unknown> : null),
+        ahoraMs,
       ),
     });
   },

@@ -13,12 +13,14 @@ import { Consumo } from './paginas/Consumo';
 import { Usuarios } from './paginas/Usuarios';
 import { Contactos } from './paginas/Contactos';
 import { EstadoCuenta } from './paginas/EstadoCuenta';
+import { Pagar } from './paginas/Pagar';
 import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
 import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './paginas/Catalogo';
+import { Campanas } from './paginas/Campanas';
 import { Cobro } from './paginas/Cobro';
 import { Inventario } from './paginas/Inventario';
 import { Pedidos } from './paginas/Pedidos';
@@ -80,8 +82,10 @@ const TITULOS: Record<string, string> = {
   // no significa nada.
   cobro: 'Configuración de QR',
   captacion: 'Captación',
+  campanas: 'Campañas',
   consumo: 'Consumo',
   cuenta: 'Cuenta',
+  pagar: 'Pagar',
   reclamos: 'Reclamos',
   ingresar: 'Ingresar',
 };
@@ -128,6 +132,12 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/configuracion`}>Configuración</NavLink>}
         {tenantId && esAdminDelNegocio && flujos &&
           <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</NavLink>}
+        {/* CAMPAÑAS: capa común (24/09/2026). Un anuncio lleva al número del
+            comercio, no a un flujo, así que va con el catálogo y no en
+            `lib/flujos.ts`. Solo el administrador: la regla no deja escribir
+            a nadie más. */}
+        {tenantId && esAdminDelNegocio &&
+          <NavLink to={`/negocio/${tenantId}/campanas`}>Campañas</NavLink>}
         {/* LA COMPUERTA DE ROLES YA NO DA POR SENTADO QUE PESTAÑA DE FLUJO =
             ADMINISTRADOR. Lo era hasta el 09/09, y «Pedidos» rompe la regla: la
             mira el cocinero o el repartidor. Cada pestaña declara sus roles en
@@ -158,6 +168,12 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/consumo`}>Consumo</NavLink>}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/cuenta`}>Cuenta</NavLink>}
+        {/* «Pagar» solo para el administrador del comercio y el propietario: un
+            operador no compromete gasto. La puerta real es la callable, que
+            exige lo mismo (`exigirAdminOPropietario`); esto es la cortesia de
+            no mostrar lo que el servidor va a rechazar. */}
+        {tenantId && (esAdminDelNegocio || permisos.propietario) &&
+          <NavLink to={`/negocio/${tenantId}/pagar`}>Pagar</NavLink>}
         {tenantId && esPersona &&
           <NavLink to={`/negocio/${tenantId}/reclamos`}>Reclamos</NavLink>}
         {tenantId && esAdminDelNegocio &&
@@ -244,6 +260,8 @@ export function App() {
             siempre, la puerta la cierra el servidor. */}
         <Route path="/negocio/:tenantId/catalogo" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Catalogo /></></Proteger>} />
+        <Route path="/negocio/:tenantId/campanas" element={
+          <Proteger requiere="adminTenant"><><Cabecera /><Campanas /></></Proteger>} />
         <Route path="/negocio/:tenantId/agenda" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Funcionarios /></></Proteger>} />
         <Route path="/negocio/:tenantId/funcionarios" element={<DesvioAAgenda />} />
@@ -275,6 +293,8 @@ export function App() {
         <Route path="/negocio/:tenantId/cierres" element={<DesvioAConsumo />} />
         <Route path="/negocio/:tenantId/cuenta" element={
           <Proteger requiere="adminTenant"><><Cabecera /><EstadoCuenta /></></Proteger>} />
+        <Route path="/negocio/:tenantId/pagar" element={
+          <Proteger requiere="adminOPropietario"><><Cabecera /><Pagar /></></Proteger>} />
         <Route path="/negocio/:tenantId/reclamos" element={
           <Proteger requiere="miembroTenant"><><Cabecera /><Reclamos /></></Proteger>} />
         {/* Vista de plataforma: todos los comercios, por consulta de grupo. */}

@@ -315,7 +315,19 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // `cancelar_cita`: una prueba exige que sean identicas. Termina con
   // `(?![a-z…])` y NO con `\b`: en JavaScript `\b` no ve la «í» como letra,
   // y «Sí» con tilde —la respuesta mas comun— no se reconocia.
-  const CONFIRMA_CANCELAR = /^[^a-záéíóúñ0-9]*(s[ií]|dale|confirmo|confirmado|correcto|exacto|as[ií] es|ok|okay|okey|de acuerdo|claro|adelante|hazlo|procede|canc[eé]lal[ao]|por favor)(?![a-záéíóúñ])(?:[^a-záéíóúñ0-9]+(?:s[ií]|sip|dale|confirm[a-záéíóúñ]*|correcto|exacto|as[ií]|es|ok|okay|okey|de|acuerdo|claro|adelante|hazlo|procede|canc[eé]l[a-záéíóúñ]*|anul[a-záéíóúñ]*|quiero|la|lo|esa|ese|esta|misma|mismo|por|favor|porfa|porfavor|gracias|muchas|ya|y|listo|perfecto|bueno|nom[aá]s|seguro|pues|entonces)(?![a-záéíóúñ]))*[^a-záéíóúñ0-9]*$/i;
+  //
+  // «SI QUIERO REAGENDAR» ES UNA CONFIRMACION (24/09/2026, ejecucion #5553 de
+  // Bellido). El asistente pregunto «¿me confirmas que quieres reagendar esa
+  // cita?», la paciente contesto «Si quiero reagendar», y la lista no tenia
+  // «reagendar»: la herramienta recibio SIN-CONFIRMAR, Google no borro nada,
+  // el modelo dijo «he cancelado» y esta compuerta lo reemplazo por la pregunta
+  // otra vez. Resultado: un mensaje pagado de mas, seco, y las opciones de
+  // horario recien en el siguiente. Se aceptan las formas de mover, cambiar,
+  // reprogramar y reagendar, y las palabras «fecha», «hora», «horario» y «dia»
+  // que las acompañan. Lo que sigue SIN entrar es lo del #4034: una respuesta
+  // que nombra OTRA cita («la de las 16», «la del lunes», «la otra») no es una
+  // confirmacion de la que se mostro.
+  const CONFIRMA_CANCELAR = /^[^a-záéíóúñ0-9]*(s[ií]|dale|confirmo|confirmado|correcto|exacto|as[ií] es|ok|okay|okey|de acuerdo|claro|adelante|hazlo|procede|canc[eé]lal[ao]|mu[eé]vel[ao]|c[aá]mbial[ao]|reprogr[aá]mal[ao]|reag[eé]ndal[ao]|por favor)(?![a-záéíóúñ])(?:[^a-záéíóúñ0-9]+(?:s[ií]|sip|dale|confirm[a-záéíóúñ]*|correcto|exacto|as[ií]|es|ok|okay|okey|de|acuerdo|claro|adelante|hazlo|procede|canc[eé]l[a-záéíóúñ]*|anul[a-záéíóúñ]*|reag[eé]nd[a-záéíóúñ]*|reprogr[aá]m[a-záéíóúñ]*|mov[a-záéíóúñ]*|mu[eé]v[a-záéíóúñ]*|cambi[a-záéíóúñ]*|c[aá]mbi[a-záéíóúñ]*|fecha|hora|horario|d[ií]a|quiero|la|lo|esa|ese|esta|misma|mismo|por|favor|porfa|porfavor|gracias|muchas|ya|y|listo|perfecto|bueno|nom[aá]s|seguro|pues|entonces)(?![a-záéíóúñ]))*[^a-záéíóúñ0-9]*$/i;
   const textoCliente = String(ent.userInput || '').replace(/^\(audio transcripto\)\s*/i, '').split('\n')[0];
   const cancelacionSinConfirmar = pasosCancelar.length > 0 && !CONFIRMA_CANCELAR.test(textoCliente);
   const cancelacionFallida = !cancelacionSinConfirmar && pasosCancelar.length > 0
@@ -340,9 +352,20 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       } catch (e) { cuando = ''; }
       desc = (serv ? ' de ' + serv : '') + (cuando ? ' del ' + cuando : '');
     }
-    respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
-      ? `¿Confirma que quiere cancelar su cita${desc}? Respóndame «sí» y la cancelo.`
-      : `¿Confirmas que quieres cancelar tu cita${desc}? Respóndeme «sí» y la cancelo.`;
+    // SI VINO A MOVER LA CITA, LA PREGUNTA LO DICE (Andres, 24/09/2026): «primero
+    // tienes que cancelar» sin ofrecer nada suena a tramite, y la persona
+    // escribio para conseguir OTRO horario, no para perder el suyo. El horario
+    // nuevo lo ofrece el turno siguiente, cuando la cancelacion ya es un hecho
+    // (regla 4b.5 del prompt: primero cancelar, despues agendar).
+    const quiereMover = /reagend|reprogram|\bmov[eé]r|mu[eé]v[ae]|cambi/i.test(textoCliente);
+    const deUsted = /\busted\b/i.test(String(cfg.tratamiento || ''));
+    respuesta = deUsted
+      ? (quiereMover
+        ? `Para moverla necesito que me confirme: ¿cancelo su cita${desc}? Respóndame «sí» y la cancelo para darle otro horario.`
+        : `¿Confirma que quiere cancelar su cita${desc}? Respóndame «sí» y la cancelo.`)
+      : (quiereMover
+        ? `Para moverla necesito que me confirmes: ¿cancelo tu cita${desc}? Respóndeme «sí» y la cancelo para darte otro horario.`
+        : `¿Confirmas que quieres cancelar tu cita${desc}? Respóndeme «sí» y la cancelo.`);
     avisos.push('cancelacion_sin_confirmar');
   }
 
@@ -416,6 +439,118 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const prometeSinRespaldo = frasePrometida !== '' && !transferir;
   if (prometeSinRespaldo) avisos.push('promesa_cumplida_por_recepcion');
   const pasarARecepcion = prometeSinRespaldo || contactoSinNumero;
+
+  // --- EL DIA DE LA SEMANA LO PONE EL CODIGO, NO EL MODELO (2026-09-23) ------
+  // Bellido, prueba real del cliente con dos telefonos (#4790 y #4799):
+  //   · `consultar_disponibilidad` recibio 2026-09-25 y el modelo escribio
+  //     «el jueves 25 de septiembre». El 25 era viernes.
+  //   · `buscar_mi_cita` DEVOLVIO la cita correcta, 2026-09-24T15:00-04:00, y
+  //     el modelo escribio «el miercoles 24 de septiembre a las 15:00». El 24
+  //     era jueves.
+  // El dia del mes y la hora salieron BIEN las dos veces. Lo unico que el
+  // modelo inventa es la PALABRA del dia de la semana, porque es lo unico que
+  // tiene que calcular. El doctor lo leyo como «se ha confundido con las
+  // fechas» y decidio no publicar el numero hasta que se arregle. Y el error
+  // no se queda en el texto: con el dia equivocado el modelo consulto la
+  // franja del jueves (14:00-18:00) sobre una fecha que era viernes.
+  //
+  // POR QUE EN CODIGO Y NO EN EL PROMPT. Pedirle que no calcule es una
+  // instruccion mas, y ya sabemos como termina (la regla del candado, 17/09:
+  // una instruccion se ignora bajo insistencia y cambia con cada modelo). Aca
+  // no hay nada que interpretar: el turno SABE que fechas tocaron las
+  // herramientas —lo que les entro y lo que devolvieron— y de una fecha al dia
+  // de la semana hay una sola respuesta.
+  //
+  // SOLO CORRIGE LO QUE PUEDE PROBAR. Se toca la palabra unicamente cuando el
+  // numero del dia coincide con una fecha real de este turno (y el mes, si el
+  // texto lo dice). Si no coincide, o si dos fechas del turno caen en el mismo
+  // numero con distinto dia de semana, el flujo no tiene con que decidir: deja
+  // el texto como esta. Corregir de menos es un texto raro; corregir de mas es
+  // mandar a un paciente otro dia.
+  const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+    'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const sinTilde = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const porDia = new Map();   // dia del mes -> [{ semana, mes }]
+  // UNA FECHA ANTERIOR A HOY NO ES EVIDENCIA (24/09/2026, ejecucion #5563 de
+  // Bellido). El modelo llamo a consultar_disponibilidad y a agendar_cita con
+  // el 25/09/2025 --un año atras-- y este corrector, fiel a «lo que las
+  // herramientas tocaron», cambio un «viernes 25» que estaba BIEN por «jueves
+  // 25», que era el dia de la semana del 25 de 2025. Una cita nunca esta en
+  // el pasado: una fecha de ayer o de otro año en un paso de herramienta es
+  // un error del modelo, no un dato, y no sirve para corregir nada. Se
+  // compara el DIA en la zona del negocio (en-CA da AAAA-MM-DD, que ordena
+  // como texto); lo de hoy si cuenta, porque un rango de hoy a las 09:00
+  // consultado a las 19:00 es legitimo.
+  const hoyLaPaz = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const anotarFecha = (iso) => {
+    const t = Date.parse(String(iso || ''));
+    if (!Number.isFinite(t)) return;
+    const diaLaPaz = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(t));
+    if (diaLaPaz < hoyLaPaz) return;
+    // El dia, el mes y el dia de la semana, los tres en la zona del negocio:
+    // en UTC una cita de las 17:30 de La Paz ya pertenece al dia siguiente, y
+    // ese desfase es justo el que se vino a arreglar.
+    const partes = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/La_Paz', weekday: 'short', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date(t));
+    const valor = (tipo) => (partes.find((p) => p.type === tipo) || {}).value || '';
+    const dia = parseInt(valor('day'), 10);
+    const mes = parseInt(valor('month'), 10);
+    const semana = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[valor('weekday')];
+    if (!Number.isFinite(dia) || !Number.isFinite(mes) || !Number.isFinite(semana)) return;
+    const ya = porDia.get(dia) || [];
+    if (!ya.some((f) => f.mes === mes && f.semana === semana)) ya.push({ mes, semana });
+    porDia.set(dia, ya);
+  };
+  for (const p of pasos) {
+    if (!p || !p.action) continue;
+    const entrada = p.action.toolInput || {};
+    anotarFecha(entrada.inicio);
+    anotarFecha(entrada.fin);
+    let obs = p.observation;
+    if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
+    const eventos = Array.isArray(obs) ? obs : (obs && typeof obs === 'object' ? [obs] : []);
+    for (const ev of eventos) {
+      if (!ev || typeof ev !== 'object') continue;
+      anotarFecha((ev.start || {}).dateTime);
+      anotarFecha((ev.end || {}).dateTime);
+    }
+  }
+  let diaCorregido = false;
+  if (porDia.size && !fallo) {
+    respuesta = respuesta.replace(
+      /\b(domingo|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)(\s+)(\d{1,2})\b(\s+de\s+([a-záéíóú]+))?/gi,
+      (todo, palabra, espacio, numero, colaMes, nombreMes) => {
+        const dia = parseInt(numero, 10);
+        const candidatas = porDia.get(dia) || [];
+        if (!candidatas.length) return todo;
+        let elegidas = candidatas;
+        if (nombreMes) {
+          const mes = MESES.findIndex((m) => m === sinTilde(nombreMes)) + 1;
+          // Un mes escrito que no es ninguno de los del turno: no es esta fecha.
+          if (!mes) return todo;
+          elegidas = candidatas.filter((f) => f.mes === mes);
+          if (!elegidas.length) return todo;
+        }
+        const semanas = Array.from(new Set(elegidas.map((f) => f.semana)));
+        if (semanas.length !== 1) return todo;   // ambiguo: no se toca
+        const correcto = DIAS[semanas[0]];
+        if (sinTilde(palabra) === sinTilde(correcto)) return todo;
+        diaCorregido = true;
+        // Se conserva la mayuscula inicial: la palabra puede abrir la oracion.
+        const puesto = /^[A-ZÁÉÍÓÚÑ]/.test(palabra)
+          ? correcto.charAt(0).toUpperCase() + correcto.slice(1)
+          : correcto;
+        return puesto + espacio + numero + (colaMes || '');
+      },
+    );
+  }
+  if (diaCorregido) avisos.push('dia_de_semana_corregido');
 
   const verificarReserva = ejecutoAgendar || afirmaAgendo;
 

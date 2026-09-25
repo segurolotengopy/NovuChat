@@ -765,3 +765,132 @@ describe('La seña se ata a la cita que creó ESTA conversación', () => {
     expect(r['eventoId']).toBe('andres');
   });
 });
+
+/**
+ * EL ALMUERZO NO ES UNA CITA, Y NO PUEDE LLENAR LAS 50 RANURAS.
+ *
+ * Pedido de Andres (24/09/2026), sobre un riesgo que el propio código del
+ * candado tenía anotado como «límite conocido»: `Verificar en el calendario`
+ * traía hasta 50 eventos de una ventana de 90 días, y el calendario del Dr.
+ * Bellido tiene un evento REPETIDO todos los días de 13:00 a 14:00. Con
+ * `singleEvents`, cada repetición cuenta, y con la lista saturada la detección
+ * de cruces puede quedar ciega. El candado es la regla mandatoria del 17/09.
+ *
+ * MEDIDO DESPUÉS, y corrige lo que este comentario decía: el 24/09, con la
+ * ventana vieja de 90 días, ese calendario devolvió ONCE eventos, no cincuenta
+ * (ejecución #5424). El tope no se estaba alcanzando. Lo que sí quedó
+ * comprobado con datos reales es que el bloqueo del mediodía es un evento
+ * repetido de verdad (`recurringEventId: 6vvvcqpv…`), así que el detector de
+ * abajo actúa sobre un caso real y no sobre uno imaginado.
+ *
+ * Se arregla por los dos lados: la ventana se acota al día de la cita (el
+ * almuerzo aporta UN evento, no noventa) y un bloqueo repetido deja de contarse
+ * como «otra cita» para pasar a ser lo que es, una restricción del negocio.
+ */
+describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
+  const DIA = 86400000;
+  const CAL_OTRO = 'dddd000000dddd@group.calendar.google.com';
+  const CONFIG: Record<string, unknown> = {
+    mensajeReservaNoConfirmada: '',
+    calendarioId: CAL_OTRO,
+    funcionarios: JSON.stringify([{ nombre: 'Dr. Sandoval', servicios: [], calendario: CAL_JOSE }]),
+  };
+  const creadoEn = (id: string, calendario: string, inicio: string, fin: string) =>
+    ({ id, calendario, inicio, fin, titulo: `Cita ${id}` });
+  const conCreados = (eventosCreados: unknown): Record<string, unknown> =>
+    ({ ...PREVIA, ejecutoAgendar: true, verificarReserva: true, eventosCreados });
+
+  it('con cita creada, la ventana se acota a SU día: el almuerzo aporta un evento, no noventa', () => {
+    const { items } = calendariosARevisar(
+      conCreados([creadoEn('c1', CAL_OTRO, '2026-10-07T11:00:00-04:00', '2026-10-07T11:30:00-04:00')]),
+      CONFIG);
+    expect(items[0]?.['ventanaAcotada']).toBe(true);
+    const desde = Date.parse(String(items[0]?.['ventanaDesde']));
+    const hasta = Date.parse(String(items[0]?.['ventanaHasta']));
+    // Cubre la cita con un día de margen a cada lado, y nada más.
+    expect(desde).toBeLessThan(Date.parse('2026-10-07T11:00:00-04:00'));
+    expect(hasta).toBeGreaterThan(Date.parse('2026-10-07T11:30:00-04:00'));
+    expect(hasta - desde).toBeLessThanOrEqual(3 * DIA);
+  });
+
+  it('dos citas en días distintos: la ventana las cubre a las dos, no noventa días', () => {
+    const { items } = calendariosARevisar(conCreados([
+      creadoEn('c1', CAL_OTRO, '2026-10-07T11:00:00-04:00', '2026-10-07T11:30:00-04:00'),
+      creadoEn('c2', CAL_OTRO, '2026-10-09T16:00:00-04:00', '2026-10-09T16:30:00-04:00'),
+    ]), CONFIG);
+    const desde = Date.parse(String(items[0]?.['ventanaDesde']));
+    const hasta = Date.parse(String(items[0]?.['ventanaHasta']));
+    expect(desde).toBeLessThan(Date.parse('2026-10-07T11:00:00-04:00'));
+    expect(hasta).toBeGreaterThan(Date.parse('2026-10-09T16:30:00-04:00'));
+    expect(hasta - desde).toBeLessThanOrEqual(5 * DIA);
+  });
+
+  // SIN CITA CREADA NO SE ACOTA, y no es un descuido: es el camino del detector
+  // de texto —el modelo DIJO que agendó y la herramienta no corrió—, donde no
+  // hay fecha en la cual anclarse. Ahí la saturación no hace daño: si no se
+  // creó nada, lo que se busca no existe y «no quedó registrada» es la
+  // respuesta correcta.
+  it('sin cita creada se conserva la ventana larga', () => {
+    const { items } = calendariosARevisar({ ...PREVIA, eventosCreados: [] }, CONFIG);
+    expect(items[0]?.['ventanaAcotada']).toBe(false);
+    const dias = (Date.parse(String(items[0]?.['ventanaHasta']))
+      - Date.parse(String(items[0]?.['ventanaDesde']))) / DIA;
+    expect(dias).toBeGreaterThan(80);
+  });
+
+  it('el nodo que consulta usa esa ventana, en los tres flujos', () => {
+    for (const archivo of ['demo-a-agendamiento.json', 'platinum-agendamiento.json', 'bellido-agendamiento.json']) {
+      const f = JSON.parse(readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8')) as
+        { nodes: { name: string; parameters: { options?: Record<string, unknown> } }[] };
+      const o = f.nodes.find((n) => n.name === 'Verificar en el calendario')!.parameters.options!;
+      expect(o['timeMin'], archivo).toBe('={{ $json.ventanaDesde }}');
+      expect(o['timeMax'], archivo).toBe('={{ $json.ventanaHasta }}');
+      // Sin orden explícito, Google devuelve los eventos en un orden arbitrario:
+      // con la lista recortada, cuáles llegan pasaba a ser cuestión de suerte.
+      expect(o['orderBy'], archivo).toBe('startTime');
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  const almuerzo = (extra: Record<string, unknown>) => ({
+    ...ev('almuerzo', 'Sin citas - Almuerzo o Varios', CAL_JOSE,
+      '2026-09-27T13:00:00-04:00', '2026-09-27T14:00:00-04:00', '2026-08-01T10:00:00.000Z'),
+    ...extra,
+  });
+  const nuevaAlMediodia = ev('nueva', 'Cita Sil — consulta', CAL_JOSE,
+    '2026-09-27T13:30:00-04:00', '2026-09-27T14:00:00-04:00', '2026-09-06T20:16:00.000Z');
+
+  it('agendar sobre el almuerzo REPETIDO deshace la cita y lo explica como bloqueo', () => {
+    // `recurringEventId` es exacto, no una heurística: Google marca así cada
+    // instancia de una serie, y `agendar_cita` nunca crea eventos repetidos.
+    const items = comprobarTodo([almuerzo({ recurringEventId: 'serie-almuerzo' }), nuevaAlMediodia]);
+    expect(items[0]?.['eventoABorrar']).toBe('nueva');
+    expect(items[0]?.['citaSolapada']).toBe(true);
+    const texto = String(items[0]?.['respuesta']);
+    expect(texto).toContain('reservado en la agenda');
+    // Lo que NO puede decir: que otro paciente tenía esa hora.
+    expect(texto).not.toContain('ocupado');
+    expect(String(items[0]?.['motivoCruce'])).toContain('BLOQUEO');
+  });
+
+  it('un bloqueo cargado a mano, sin repetición, se reconoce por lo que dice', () => {
+    const items = comprobarTodo([almuerzo({}), nuevaAlMediodia]);
+    expect(String(items[0]?.['respuesta'])).toContain('reservado en la agenda');
+  });
+
+  it('pero una CITA de otro paciente a la misma hora sigue siendo un cruce', () => {
+    const otroPaciente = ev('vieja', 'Cita Ana — consulta', CAL_JOSE,
+      '2026-09-27T13:00:00-04:00', '2026-09-27T14:00:00-04:00', '2026-08-01T10:00:00.000Z');
+    const items = comprobarTodo([otroPaciente, nuevaAlMediodia]);
+    expect(items[0]?.['causaDeLaCaida']).toBe('cruce');
+    expect(String(items[0]?.['respuesta'])).toContain('ocupado');
+  });
+
+  it('el reintento recibe «horario», que es lo que sabe explicar de un bloqueo', () => {
+    // El contrato de `causaDeLaCaida` sigue siendo de dos valores: el prompt del
+    // reintento distingue «horario» de todo lo demás. Un bloqueo es lo primero:
+    // «en ese horario no se atiende» es verdad.
+    const items = comprobarTodo([almuerzo({ recurringEventId: 'serie' }), nuevaAlMediodia]);
+    expect(items[0]?.['causaDeLaCaida']).toBe('horario');
+  });
+});

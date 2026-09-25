@@ -55,4 +55,46 @@ const delEvento = [...new Set(creados
 const calendarios = delEvento.length ? delEvento : todos;
 const revisionAcotada = delEvento.length > 0;
 
-return calendarios.map((calendarioARevisar) => ({ json: { ...base, calendarioARevisar, revisionAcotada } }));
+// --- LA VENTANA TAMBIEN SE ACOTA, NO SOLO EL CALENDARIO (Andres, 24/09/2026) -
+//
+// EL PROBLEMA, con nombre y apellido. `Verificar en el calendario` traia hasta
+// 50 eventos de una ventana de 90 dias. El calendario del Dr. Bellido tiene un
+// evento REPETIDO TODOS LOS DIAS de 13:00 a 14:00 --el almuerzo-- y con
+// `singleEvents` cada repeticion cuenta como un evento, y con la lista saturada
+// la deteccion de cruces puede quedar CIEGA -- el candado es la regla
+// mandatoria del 17/09.
+//
+// CUANTO FALTABA DE VERDAD, medido despues de escribir esto: el 24/09, con la
+// ventana vieja de 90 dias, ese calendario devolvio ONCE eventos, no cincuenta
+// (ejecucion #5424). El tope NO se estaba alcanzando, y decir que «el almuerzo
+// solo ya lo llena» fue una afirmacion sin medir. El arreglo se queda igual
+// --una ventana de un dia es mas barata y mas rapida que una de noventa, y el
+// limite existe--, pero la urgencia era del que escribia, no del calendario.
+//
+// LA SALIDA NO ES SUBIR EL LIMITE, es no pedir 90 dias. Para saber si la cita
+// que se acaba de crear se superpone con otra, alcanza con mirar SU DIA. Con la
+// ventana del dia, el almuerzo aporta UN evento en vez de noventa, y las 50
+// ranuras pasan a ser holgadas para cualquier consultorio. Ademas la consulta
+// es mas rapida, que es lo que `CLAUDE.md` pedia para poder prometer mas
+// agendas por plan.
+//
+// CUANDO NO HAY CITA CREADA se conserva la ventana larga, y no es un descuido:
+// ese es el camino del detector de texto --el modelo DIJO que agendo y la
+// herramienta no corrio--, donde no hay fecha en la cual anclarse. Ahi la
+// saturacion no hace daño: si no se creo nada, lo que se busca no existe y la
+// respuesta correcta es justamente «no quedo registrada».
+const DIA_MS = 86400000;
+const instantes = creados.flatMap((e) => [Date.parse(String((e && e.inicio) || '')),
+  Date.parse(String((e && e.fin) || ''))]).filter((n) => Number.isFinite(n));
+const ahora = Date.now();
+const ventanaDesde = instantes.length
+  ? new Date(Math.min(...instantes) - DIA_MS).toISOString()
+  : new Date(ahora - DIA_MS).toISOString();
+const ventanaHasta = instantes.length
+  ? new Date(Math.max(...instantes) + DIA_MS).toISOString()
+  : new Date(ahora + 90 * DIA_MS).toISOString();
+const ventanaAcotada = instantes.length > 0;
+
+return calendarios.map((calendarioARevisar) => ({
+  json: { ...base, calendarioARevisar, revisionAcotada, ventanaDesde, ventanaHasta, ventanaAcotada },
+}));
