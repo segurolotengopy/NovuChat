@@ -20,7 +20,7 @@ tres planes publicados), `admin/DISENO.md` §4sexies (política de capas) y
 
 | | |
 |---|---|
-| **Por qué duele** | «Plan» significa hoy **seis cosas a la vez** —precio, cupo de conversaciones, límites de catálogo y agendas, quién le paga a Meta, qué flujos corren y qué nivel de servicio— y las seis viajan en **un identificador de una lista cerrada** (`IdPlanVendible`). La oferta real cruza flujos × niveles × modalidad: eso no entra en una lista cerrada sin un despliegue por venta (§1, §2) |
+| **Por qué duele** | «Plan» significa hoy **siete cosas a la vez** —precio, cupo de conversaciones, límites de catálogo y agendas, campañas simultáneas, quién le paga a Meta, qué flujos corren y qué nivel de servicio— y las siete viajan en **un identificador de una lista cerrada** (`IdPlanVendible`). La séptima llegó el 24/09, dos días después de escribirse este documento, y es la mejor prueba de la tendencia (§9). La oferta real cruza flujos × niveles × modalidad: eso no entra en una lista cerrada sin un despliegue por venta (§1, §2) |
 | **La buena noticia** | **Lo que hace cumplir los límites ya está listo.** `limitesDeCuenta` prefiere la COPIA que vive en la cuenta sobre el plan, y acepta hasta 100.000. No hay que tocar la ingesta, ni las reglas de productos, ni los umbrales. Lo que falta es **cómo se escribe esa copia y de dónde sale el precio** (§4.1) |
 | **La recomendación** | **Dos estanterías, no una.** La *vitrina*: los tres planes publicados, en código, autoservicio, sin negociación. El *mostrador*: un **contrato por comercio**, versionado e inmutable, que se vuelve vigente **cuando se paga**. `plan: 'aMedida'` es el único identificador nuevo (§3 opción D, §4) |
 | **Los niveles NO son planes** | Básico/medio/pro son **capacidades del flujo**, y viven en `/config/{flujo}`, donde ya vive todo lo propio de un flujo (§4.5). Meterlos en el plan multiplica el catálogo por tres y no habilita nada |
@@ -32,7 +32,7 @@ tres planes publicados), `admin/DISENO.md` §4sexies (política de capas) y
 
 ---
 
-## 1. Hoy «plan» significa seis cosas a la vez
+## 1. Hoy «plan» significa siete cosas a la vez
 
 `planes.ts` define un plan como precio más tres límites, más quién le paga a
 Meta. Alrededor de ese identificador se colgó todo lo demás:
@@ -44,6 +44,7 @@ Meta. Alrededor de ese identificador se colgó todo lo demás:
 | **Productos y agendas** | igual que arriba, y una tabla de respaldo en `firestore.rules` | **Sí**, con una salvedad (§5.3) |
 | **Quién le paga a Meta** | `PLANES[plan].pagaMeta` | **Sí**, pero es una propiedad de la modalidad, no del precio |
 | **Qué flujos corren** | `tenants/{t}.flujos`, **fuera del plan** | **Sí** — y es el modelo correcto, el que hay que imitar |
+| **Campañas simultáneas** | `PLANES[plan].campanas` (0 / 3 / 10), desde el 24/09, con su propia tabla de respaldo en las reglas | **Sí** para los publicados; **no** para un acuerdo con otro número |
 | **Nivel de servicio** (soporte, cambios incluidos, profundidad del flujo) | **en ninguna parte** | **No existe** |
 
 Las dos filas que dicen «no» son exactamente las dos que la oferta nueva
@@ -386,3 +387,38 @@ combinación.** El resto es dejar de operarlo a mano.
    comercialmente; hay que escribirlos como capacidades para poder hacerlos
    cumplir (bloque 5).
 4. **Si el nivel «pro» promete un modelo mejor**, y con qué cupo (§5.1).
+
+---
+
+## 9. Nota del 25-sep-2026: la séptima cosa
+
+Este documento se escribió contra `origin/main` del 23/09. Dos días después, el
+catálogo ganó una dimensión más, y conviene leerla como confirmación del
+diagnóstico y no como un detalle:
+
+- **`Plan.campanas`** (Andres, 24/09): cuántas campañas de Meta simultáneas
+  admite el plan, **0 / 3 / 10**. Es la séptima cosa que decide el mismo
+  identificador.
+- **Se dejó FUERA de `Limites` a propósito**, y el motivo está escrito en el
+  código: en la copia de la cuenta todo número vale de 1 en adelante, y un 0 es
+  legítimo para campañas; meterlo ahí habría vuelto «incompletas» todas las
+  cuentas que ya existen. **Es exactamente el problema que el contrato de §4.2
+  resuelve**: un acuerdo a medida necesita un lugar donde convivan límites,
+  cantidades y premisas sin que el formato de uno rompa la validación del otro.
+- **Ahora hay DOS tablas de respaldo por plan escritas a mano en
+  `firestore.rules`** —productos y campañas—, y las dos hay que tocarlas al
+  agregar un plan. El costo por venta del §2 subió, no bajó.
+- **`planQuePuedePedir`** (también del 24/09) hace cumplir en el servidor qué
+  plan puede pagarse un comercio: los publicados siempre, y uno fuera de lista
+  solo para renovar el que ya tiene. **Es un punto de contacto nuevo para el
+  diseño**: con contratos, un comercio solo puede pagar **su** contrato vigente,
+  nunca elegir uno; y `aMedida` no puede ser pedible por nadie desde el
+  navegador.
+
+Nada de esto cambia la recomendación. La refuerza: en cuarenta y ocho horas, la
+lista cerrada absorbió una dimensión más y duplicó las tablas que hay que
+mantener a mano.
+
+**Antes de construir cualquier bloque del §6 hay que releer `planes.ts`,
+`prepago.ts` y `firestore.rules` contra el `main` del día.** Este documento cita
+líneas que ya se movieron una vez.
