@@ -403,6 +403,35 @@ describe('(5) El comprobante: quién lo desvía y quién NO', () => {
     expect(s['pagoDeclarado']).toBe(true);
   });
 
+  it('CON COBRO SIMULADO cualquier archivo pasa como comprobante del pago simulado, haya o no QR pendiente (Andres, 23/09)', () => {
+    // El port del cobro le había pegado la exigencia del pendiente a los dos
+    // modos: en la demostración una foto sin QR pendiente hacía decir «no hay
+    // ningún pago pendiente». La exigencia es del modo real.
+    for (const pendiente of [false, true]) {
+      const cfg = fusionar(simulado({ pendiente }));
+      const s = normalizar(cfg, { type: 'image', image: { id: '1000000000000002', mime_type: 'image/jpeg' } });
+      expect(String(s['userInput']), `pendiente=${pendiente}`).toContain('pago SIMULADO del QR');
+      expect(String(s['userInput']), `pendiente=${pendiente}`).not.toContain('no hay ningún pago pendiente');
+      expect(s['esComprobante']).toBe(false);
+      // El cierre sigue siendo por hecho: solo cuenta si el servidor tenía un QR pendiente.
+      expect(s['pagoDeclarado']).toBe(pendiente);
+    }
+  });
+
+  it('NEGANDO: con cobro REAL y sin QR pendiente, el archivo NO se trata como pago', () => {
+    const cfg = fusionar(real({ pendiente: false }));
+    const s = normalizar(cfg, { type: 'image', image: { id: '1000000000000002' } });
+    expect(String(s['userInput'])).toContain('no hay ningún pago pendiente');
+    expect(String(s['userInput'])).not.toContain('SIMULADO');
+  });
+
+  it('con cobro REAL y QR pendiente pero sin id del medio, el modelo recibe el aviso de que no se pudo leer y NO da el pago por recibido', () => {
+    const cfg = fusionar(real({ pendiente: true }));
+    const s = normalizar(cfg, { type: 'image', image: { mime_type: 'image/jpeg' } });
+    expect(s['esComprobante']).toBe(false);
+    expect(String(s['userInput'])).toContain('NO des el pago por recibido');
+  });
+
   it('un PDF también es comprobante; un audio o un sticker, nunca', () => {
     const cfg = fusionar(real({ pendiente: true }));
     const pdf = normalizar(cfg, { type: 'document', document: { id: '1000000000000003', mime_type: 'application/pdf' } });
