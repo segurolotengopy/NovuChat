@@ -73,6 +73,19 @@ PY
 
 [[ -s "$TMP/filas" ]] || { echo "✗ El registro no tiene ninguna fila utilizable" >&2; exit 2; }
 
+# Los nodos que difieren, de a uno por linea (ver donde se arma NODOS).
+imprimir_nodos() {
+  if [[ ${#NODOS[@]} -eq 0 ]]; then
+    printf '      %sdifiere en: (diferencias de configuración)%s\n' "$G" "$FIN"
+    return
+  fi
+  printf '      %sdifiere en %s nodo(s):%s\n' "$G" "${#NODOS[@]}" "$FIN"
+  local nodo
+  for nodo in "${NODOS[@]}"; do
+    printf '        %s- %s%s\n' "$G" "$nodo" "$FIN"
+  done
+}
+
 printf '\n  Registro: %s\n\n' "$REGISTRO"
 SIN_DECLARAR=0; REVISADOS=0; OMITIDOS=0
 
@@ -115,15 +128,19 @@ while IFS=$'\t' read -r CLIENTE ENV_FILE FLUJO EXCEPCION; do
   fi
 
   # Solo los NOMBRES de los nodos que difieren: nunca su contenido.
-  NODOS=$(grep -oE '^    ~ [^·]+·' "$TMP/seco" | sed 's/^    ~ //; s/ ·$//' | sort -u | paste -sd', ' -)
-  [[ -n "$NODOS" ]] || NODOS="(diferencias de configuración)"
+  # UNO POR LINEA, porque los nombres de n8n llevan espacios (y pueden llevar
+  # comas): en una sola linea no se sabe donde termina uno. Antes se unian con
+  # `paste -sd', '`, que NO usa «, » como separador: `-d` es una LISTA que
+  # paste alterna, coma y espacio, y el 24/09 el Demo B salio como
+  # «AI Agent NovuChat,Config del negocio ¿Hay comprobante?,...».
+  mapfile -t NODOS < <(grep -oE '^    ~ [^·]+·' "$TMP/seco" | sed 's/^    ~ //; s/ ·$//' | sort -u)
   if [[ -n "$EXCEPCION" ]]; then
     printf '  %s!%s %-34s atrasado, CON excepción declarada\n' "$A" "$FIN" "$CLIENTE"
-    printf '      %sdifiere en: %s%s\n' "$G" "$NODOS" "$FIN"
+    imprimir_nodos
     printf '      %sexcepción: %s%s\n' "$G" "$EXCEPCION" "$FIN"
   else
     printf '  %s✗%s %-34s %sATRASADO Y SIN DECLARAR%s\n' "$R" "$FIN" "$CLIENTE" "$R" "$FIN"
-    printf '      %sdifiere en: %s%s\n' "$G" "$NODOS" "$FIN"
+    imprimir_nodos
     SIN_DECLARAR=$((SIN_DECLARAR + 1))
   fi
 done < "$TMP/filas"
