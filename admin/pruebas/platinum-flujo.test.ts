@@ -3511,7 +3511,7 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
       }
     });
 
-    it('el reporte entrante sigue mandando lo de siempre', () => {
+    it('el reporte entrante sigue mandando lo de siempre, más el origen', () => {
       for (const [quien, f] of LOS_DOS) {
         expect(cuerpoEntrante({
           from: '59170000001', userInput: 'Hola', tipo: 'text',
@@ -3519,6 +3519,11 @@ describe('(n) Seguimiento de solicitud pendiente', () => {
         })(f), quien).toEqual({
           telefono: '59170000001', direccion: 'entrante', tipo: 'text', texto: 'Hola',
           idMeta: 'wamid.E1', nombreContacto: 'Ana',
+          // DE DÓNDE NACIÓ LA CONVERSACIÓN (`Analisis/38` §2). Sin `referral`
+          // en el mensaje, `directo`. La cobertura de los cinco flujos está en
+          // `flujos-origen.test.ts`; acá se fija que el cuerpo del reporte no
+          // creció con nada más.
+          origen: 'directo',
         });
       }
     });

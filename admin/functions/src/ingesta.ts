@@ -101,6 +101,8 @@ interface Entrante {
   texto: string;
   idMeta?: string;
   nombreContacto?: string;
+  /** `anuncio` o `directo` (`ORIGENES`). Solo se guarda al ABRIR la ventana. */
+  origen?: string;
   /**
    * HECHO DEL FLUJO que acompaña al mensaje, además del mensaje en sí. Hoy el
    * único es `qr_enviado` —el flujo de reservas mandó el QR de la seña—, y
@@ -152,6 +154,29 @@ const TIPOS = new Set([
   'text', 'interactive', 'image', 'audio', 'document', 'order', 'location', 'otro',
 ]);
 
+/**
+ * DE DÓNDE NACIÓ LA CONVERSACIÓN (`Analisis/38` §2, `Analisis/39`).
+ *
+ * `anuncio` = el cliente escribió desde un anuncio de clic a WhatsApp, que es
+ * lo que Meta avisa mandando `referral` en el mensaje. Esa conversación abre la
+ * VENTANA DE PUNTO DE ENTRADA GRATUITO: Meta no cobra ningún mensaje de la
+ * empresa durante 72 horas, y esos mensajes tampoco gastan franquicia.
+ *
+ * POR QUÉ SE MIDE. El margen de un contrato como el de Dhermacore depende de
+ * qué fracción del tráfico entra por campaña —a 14 mensajes por conversación,
+ * con 30 % no se pierde y con 0 % se pierden 38 USD al mes—, y hasta hoy ese
+ * número NO SE PODÍA SABER: el flujo leía el `referral` y no lo reportaba. Un
+ * contrato cuyo margen depende de un supuesto que no se mide es un contrato que
+ * se renegocia a ciegas. En la modalidad BYOC (`Analisis/39`) importa todavía
+ * más, porque esa varianza la absorbe el comercio y no NovuChat.
+ *
+ * LISTA CERRADA, como `TIPOS`: lo manda el flujo, o sea dato no confiable. Un
+ * valor desconocido —o ausente— cae en `directo`, que es el caso conservador:
+ * ante la duda se cuenta como tráfico que SÍ le cuesta a alguien. Nunca al
+ * revés, porque sobreestimar la fracción por anuncio infla el margen esperado.
+ */
+const ORIGENES = new Set(['anuncio', 'directo']);
+
 /** Los hechos del flujo que la ingesta entiende. Uno desconocido se ignora:
  *  el mensaje se cuenta igual y el campo no se guarda. */
 const EVENTOS = new Set(['qr_enviado', 'horarios_ofrecidos', 'no_contactar', 'cita_cancelada', 'adelanto_aplicado', 'reprogramada']);
@@ -174,6 +199,9 @@ function normalizar(cuerpo: unknown): Entrante | null {
   const idMeta = typeof c['idMeta'] === 'string' ? c['idMeta'].slice(0, 120) : undefined;
   const nombreContacto = typeof c['nombreContacto'] === 'string'
     ? c['nombreContacto'].slice(0, 120) : undefined;
+  // Lista cerrada: lo desconocido cae en `directo`, no en `anuncio` (`ORIGENES`).
+  const origen = typeof c['origen'] === 'string' && ORIGENES.has(c['origen'])
+    ? c['origen'] : 'directo';
   // El hecho del flujo y sus identificadores. Los dos son datos que n8n copia
   // de la respuesta de Google Calendar; igual se recortan y no se interpolan.
   const evento = typeof c['evento'] === 'string' && EVENTOS.has(c['evento'])
@@ -189,7 +217,7 @@ function normalizar(cuerpo: unknown): Entrante | null {
   // guarda, y sin total el cotejo no compara nada (no lo toma por cero).
   const monto = totalUtilizable(c['monto']);
 
-  return { telefono, direccion, tipo, texto, ...(idMeta ? { idMeta } : {}),
+  return { telefono, direccion, tipo, texto, origen, ...(idMeta ? { idMeta } : {}),
            ...(nombreContacto ? { nombreContacto } : {}),
            ...(evento ? { evento } : {}),
            ...(referencia ? { referencia } : {}),
@@ -820,6 +848,14 @@ export interface MarcasDeConteo {
    * recepción por el mismo umbral en la misma ventana. Ver `atencion.ts`.
    */
   atencionEstado?: unknown;
+  /**
+   * De dónde nació la VENTANA vigente (`ORIGENES`). Se escribe al abrirla y no
+   * se vuelve a tocar: el segundo mensaje de una conversación no trae
+   * `referral` —Meta lo manda solo en el primero—, así que refrescarlo con
+   * cada mensaje convertiría en `directo` a toda conversación que vino de un
+   * anuncio. Es el mismo motivo por el que `atencionDesde` tampoco se refresca.
+   */
+  origen?: unknown;
 }
 
 /**
@@ -1382,6 +1418,15 @@ export const ingesta = onRequest(
       // la misma transacción que cuenta el mensaje. Cero lecturas extra.
       const reactivada = reactivaTras(solicitudPrevia, mensaje.direccion, ahoraMs);
 
+      // EL ORIGEN ES DE LA VENTANA, NO DEL MENSAJE. Al abrirla manda lo que
+      // reportó el flujo; después manda lo guardado, porque Meta solo pone
+      // `referral` en el PRIMER mensaje. Así un bloque adicional —la respuesta
+      // 26, que factura otra conversación— se atribuye a la campaña que trajo
+      // la ventana, que es donde de verdad nació el tráfico.
+      const origenVentana = conteo.atencion
+        ? (mensaje.origen === 'anuncio' ? 'anuncio' : 'directo')
+        : (marcas.origen === 'anuncio' ? 'anuncio' : 'directo');
+
       tx.set(refConversacion, {
         // La marca del estado se escribe con cada mensaje: cuando la ventana se
         // renueva vuelve a `normal` sola, y el próximo umbral vuelve a avisar.
@@ -1396,6 +1441,8 @@ export const ingesta = onRequest(
         // conversación activa nunca se renovaría: el cliente que escribe todos
         // los días quedaría contado una sola vez, para siempre.
         ...(conteo.atencion ? { atencionDesde: FieldValue.serverTimestamp() } : {}),
+        // Se escribe con el mismo hecho y por el mismo motivo que el ancla.
+        ...(conteo.atencion ? { origen: origenVentana } : {}),
         mensajesTotal: FieldValue.increment(1),
         periodoContado: periodo,
         // El contador de respuestas se calcula, no se incrementa: dentro de la
@@ -1473,6 +1520,15 @@ export const ingesta = onRequest(
         ...(conteo.personaNueva ? { personasAtendidas: FieldValue.increment(1) } : {}),
         ...(conteo.conversacion ? { conversaciones: FieldValue.increment(1) } : {}),
         ...(conteo.bloqueNuevo ? { bloquesAdicionales: FieldValue.increment(1) } : {}),
+        //   POR ANUNCIO   = de esas conversaciones, cuántas nacieron de un
+        //                   anuncio de clic a WhatsApp (`ORIGENES`). Es un
+        //                   SUBCONJUNTO de `conversaciones`, nunca mayor, y la
+        //                   fracción se calcula contra ella: la misma unidad
+        //                   que se factura, así que las dos cifras se comparan
+        //                   sin traducir nada. Lo que no vino por anuncio no
+        //                   necesita su propio contador: es la resta.
+        ...(conteo.conversacion && origenVentana === 'anuncio'
+          ? { conversacionesPorAnuncio: FieldValue.increment(1) } : {}),
         ...(conteo.interaccion ? { interacciones: FieldValue.increment(1) } : {}),
         //   DERIVADAS      = ventanas que pasaron al operador por uso extendido.
         //   BLOQUEADAS     = ventanas que llegaron al bloqueo. Las dos son la
