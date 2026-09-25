@@ -32,6 +32,14 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 - Dieciséis PR de Dependabot abiertos (#2 a #52) y #63 (docs): no se mezclan con
   ningún bloque.
 
+> **Al cerrar la sesión coordinadora (25/09/2026).** Esta sesión se cierra a pedido de
+> Andres, que encontró errores de arquitectura y quiere revisarlos antes de seguir. El
+> tablero queda al día hasta acá: A-0, A-1, A-2, A-3a y A-5 fusionados; **A-3b es lo
+> siguiente del frente A** y no lo empezó nadie. Lo demás del frente A (A-4, conectar el
+> cobrador, encender el corte) sigue esperando a los bloques 3 y 4 de C, que son de otro
+> proyecto. **Antes de retomar cualquiera de los dos frentes, preguntarle a Andres por los
+> errores de arquitectura:** puede que cambien el plan.
+
 ## Tablero
 
 | Frente | Rama | Bloque en curso | Estado | Archivos que toca | Próximo paso |
@@ -41,8 +49,8 @@ en `742eaf7`, muy atrás de `origin/main`: **no se opera nada desde ahí**.
 | **A-0 · servidor** | `prepago/modulo-y-cortes` | módulo puro, gracia 48 h, calendario D-5/D-1/D0/D+2/D+4, `perdidas`, modo observación, `cobranza.ts`, `migrar-prepago.mjs` | **FUSIONADO (#150, 21/09, `17984a4`)**. No despliega: entra con la etiqueta, y en **modo observación** (`plataforma/prepago.corteActivo` no existe) | — | — |
 | **A-1 · pagos** | `prepago/pagos-y-carga-manual` | pagos con TCO, carga manual con evidencia, derivados gobernados, reglas de Firestore y Storage | **FUSIONADO (#151, 22/09, `e778b72`)** | — | — |
 | **A-2 · cobrador** | `prepago/cliente-cobrador` | cliente del contrato real, sondeo cada 5 min, aviso firmado, barrido, imagen del QR, integrado con A-1 (`pagosConCobrador.ts`, sin stub) | **FUSIONADO (#152, 22/09, `2311c78`)** | — | — |
-| **A-3a · consola del comercio** | `prepago/consola-pagar` | «Pagar» (plan, meses, bolsas, instalación), importe en USD y Bs con el TCO del día, el QR por ficha, historial, cobertura y `perdidas` en «Cuenta», columna de corte en la cartera | **listo, sin subir** (23/09): 3043 pruebas en verde, 17 nuevas en `consola-pagar.test.ts` | `web/src/paginas/Pagar.tsx` (nuevo), `componentes/ResumenPrepago.tsx` (nuevo), `lib/pagar.ts` (nuevo), `EstadoCuenta.tsx`, `Tenants.tsx`, `App.tsx`, `lib/firebase.ts`, `firestore.rules` | el «si» de Andres para subir la rama y abrir el PR |
-| **A-3b · consola del propietario** | por definir | fases 1–2 de `Analisis/29`: modalidad, plan, umbrales, suspender y reactivar, **carga manual con evidencia**, botón de `fijarCortePrepago` | encolado detrás de A-3a; ninguna de las dos mitades necesita a la otra | `web/src/paginas/CuentaNegocio.tsx` (nuevo), `Tenants.tsx` | — |
+| **A-3a · consola del comercio** | `prepago/consola-pagar` | «Pagar» (plan, meses, bolsas, instalación), importe en USD y Bs con el TCO del día, el QR por ficha, historial, cobertura y `perdidas` en «Cuenta», columna de corte en la cartera | **FUSIONADO (#169, 23/09, `798ebf0`)**. Corregido enseguida por el **#179**: el tope de plan estaba solo en la pantalla y ahora lo hace cumplir el servidor dentro de la transacción (`planQuePuedePedir`) | — | — |
+| **A-3b · consola del propietario** | por definir | fases 1–2 de `Analisis/29`: modalidad, plan, umbrales, suspender y reactivar, **carga manual con evidencia**, botón de `fijarCortePrepago` | **pendiente, y es lo que sigue del frente A**: hoy no hay pantalla para ninguna de esas operaciones (`grep` de `registrarPagoManual`, `suspenderTenant`, `fijarCortePrepago` en `admin/web/src` no da nada) | `web/src/paginas/CuentaNegocio.tsx` (nuevo), `componentes/HistorialPagos.tsx` (nuevo), `Tenants.tsx` | empezar por la carga manual: es lo único que hoy exige un script |
 | **A-4 · WhatsApp interno** | `prepago/whatsapp-pago` | intención «pagar / estado» como módulo del esquema de B | **desbloqueado por B-1 (21/09)**; espera además A-2 en `main` y la verificación del titular de cada teléfono de pago | `Flujos/src/` (módulo), nunca el JSON a mano | — |
 | **A-5 · plantillas de Meta** | `prepago/plantillas-cobranza` | ocho plantillas de utilidad redactadas | **FUSIONADO (#154, 22/09)**; `docs/plantillas-cobranza.md`; saneo 0 | `docs/plantillas-cobranza.md` (nuevo) | **en espera de la compuerta del demo**: presentarlas a Meta (§7 del documento). `crear-plantilla.sh` no admite encabezado de imagen, pie ni botón de respuesta: hay que ampliarlo antes (bloque aparte, `scripts/`, tras el #129) |
 | **B · Diagnóstico** | (solo lectura, agente `Explore`) | bloque 0 | **cerrado (20/09)**: ver «Diagnóstico B» abajo | ninguno | — |

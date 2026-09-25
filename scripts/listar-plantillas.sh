@@ -8,20 +8,29 @@
 #   ./scripts/listar-plantillas.sh
 #   ./scripts/listar-plantillas.sh --env .env.demo-b
 #   ./scripts/listar-plantillas.sh --detalle   # componentes y variables
+#   ./scripts/listar-plantillas.sh --texto     # ademas, el texto de cada componente
 #
 # --detalle existe para una comprobacion que la APROBACION NO HACE: que la
 # plantilla tenga exactamente los componentes y la cantidad de variables que
 # el flujo le manda. Si no calzan, Meta aprueba igual y el envio falla en
 # produccion con #132000 (number of parameters does not match).
+#
+# --texto existe para REPRODUCIR una plantilla en otra WABA (24/09/2026, el
+# chat de NovuChat pasa a la WABA del portafolio de Silvana): las plantillas
+# pertenecen a la WABA y no se mueven con el numero, asi que hay que volver a
+# pedirlas con el mismo encabezado, cuerpo, pie, ejemplos y validez. Imprime
+# el texto tal cual y los argumentos equivalentes de crear-plantilla.sh. Una
+# plantilla no contiene secretos: solo el texto que ya ve el destinatario.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-ENV_FILE=".env"; DETALLE=0
+ENV_FILE=".env"; DETALLE=0; TEXTO=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*) ENV_FILE="${1#*=}"; shift ;;
     --detalle) DETALLE=1; shift ;;
+    --texto)   DETALLE=1; TEXTO=1; shift ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
@@ -36,7 +45,7 @@ set +a
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 
 CAMPOS=""
-if [[ $DETALLE -eq 1 ]]; then CAMPOS=",components"; fi
+if [[ $DETALLE -eq 1 ]]; then CAMPOS=",components,message_send_ttl_seconds"; fi
 TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
 COD=$(curl -s --max-time 25 -o "$TMP" -w '%{http_code}' \
   "${G}/${WABA_ID}/message_templates?limit=100&fields=name,status,category,language${CAMPOS}" \
@@ -50,11 +59,42 @@ if [[ "$COD" != "200" ]]; then
   exit 1
 fi
 
-python3 - "$TMP" <<'PY'
-import json, re, sys, collections
+TEXTO="$TEXTO" python3 - "$TMP" <<'PY'
+import json, os, re, shlex, sys, collections
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 plantillas = d.get("data", [])
 V, R, A, G, FIN = "\033[1;32m", "\033[1;31m", "\033[1;33m", "\033[0;90m", "\033[0m"
+TEXTO = os.environ.get("TEXTO") == "1"
+
+def mostrar_texto(p):
+    """El texto de cada componente y el comando equivalente de crear-plantilla.sh."""
+    comps = p.get("components") or []
+    args = ["--nombre", p.get("name", ""), "--idioma", p.get("language", "es"),
+            "--categoria", p.get("category", "UTILITY")]
+    for c in comps:
+        t = str(c.get("type", "?")).upper()
+        if t == "HEADER":
+            print(f"             {A}ENCABEZADO{FIN} ({c.get('format', '?')}): {c.get('text', '')!r}")
+            if c.get("format") == "TEXT":
+                args += ["--encabezado", c.get("text", "")]
+        elif t == "BODY":
+            print(f"             {A}CUERPO{FIN}: {c.get('text', '')!r}")
+            ej = (c.get("example") or {}).get("body_text") or []
+            if ej:
+                print(f"             {A}EJEMPLOS{FIN}: {' | '.join(str(x) for x in ej[0])!r}")
+                args += ["--ejemplos", "|".join(str(x) for x in ej[0])]
+            args += ["--cuerpo", c.get("text", "")]
+        elif t == "FOOTER":
+            print(f"             {A}PIE{FIN}: {c.get('text', '')!r}")
+            args += ["--pie", c.get("text", "")]
+        elif t == "BUTTONS":
+            for b in c.get("buttons", []):
+                print(f"             {A}BOTON{FIN} {b.get('type', '?')}: {b.get('text', '')!r}")
+    ttl = p.get("message_send_ttl_seconds")
+    if ttl:
+        print(f"             {A}VALIDEZ{FIN}: {ttl} s ({int(ttl) // 3600} h)")
+        args += ["--validez-seg", str(ttl)]
+    print(f"             {G}crear-plantilla.sh --env <.env.destino> {' '.join(shlex.quote(a) for a in args)}{FIN}")
 
 if not plantillas:
     print(f"{A}La WABA no tiene ninguna plantilla.{FIN}")
@@ -87,6 +127,8 @@ for p in sorted(plantillas, key=lambda x: (x.get("status", ""), x.get("name", ""
         else:
             tipos.append(t)
     print(f"             {G}componentes: {', '.join(tipos) or 'ninguno'}{FIN}")
+    if TEXTO:
+        mostrar_texto(p)
 
 print()
 aprobadas = por_estado.get("APPROVED", 0)

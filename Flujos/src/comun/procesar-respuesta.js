@@ -266,6 +266,25 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   }
   const ejecutoAgendar = herramientas.includes('agendar_cita') || herramientaAgendarCorrio;
 
+  // --- LA HERRAMIENTA CORRIO Y NO DEVOLVIO NINGUNA CITA (2026-09-25) --------
+  // Cuando `agendar_cita` falla --Google rechaza la creacion, la fecha, un
+  // 403--, n8n le entrega al modelo una observacion VACIA (#5553) y el modelo
+  // escribe «quedo agendada» igual. `eventosCreados` queda vacio y el candado,
+  // que ancla en esos ids, no tenia nada que verificar: fallaba ABIERTO y el
+  // texto salia tal cual. Este hecho --la herramienta figura en los pasos y no
+  // trajo ningun evento con id-- viaja al candado, que lo cierra. Solo con los
+  // pasos a la vista: si el agente no los devolvio (`isExecuted` como respaldo)
+  // no se puede afirmar que fallo, y queda como antes.
+  const agendarSinEvento = herramientas.includes('agendar_cita') && eventosCreados.length === 0;
+  // Lo que la herramienta DEVOLVIO cuando no trajo cita, recortado y en una
+  // linea, para el aviso a recepcion (revision de seguridad del 25/09): si un
+  // dia n8n cambia la forma de la observacion y una cita real deja de
+  // reconocerse, se ve en el primer aviso y no por reclamo. Vacio = «vacia».
+  const observacionAgendar = !agendarSinEvento ? '' : pasos
+    .filter((p) => p && p.action && p.action.tool === 'agendar_cita')
+    .map((p) => (typeof p.observation === 'string' ? p.observation : JSON.stringify(p.observation ?? '')))
+    .join(' | ').replace(/\s+/g, ' ').trim().slice(0, 160) || 'vacia';
+
   // --- NO NEGAR UN SERVICIO QUE NO CONOCE (2026-09-21) -----------------------
   // Dos pruebas seguidas con el telefono: a «¿hacen estetica facial?» el modelo
   // contesto «no realizamos estetica facial; nos enfocamos exclusivamente en
@@ -584,6 +603,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
             + String(ent.userInput || '').replace(/\s+/g, ' ').slice(0, 160) + '»')) : '',
     afirmaAgendo,
     ejecutoAgendar,
+    agendarSinEvento,
+    observacionAgendar,
     verificarReserva,
     herramientas,
     eventosCreados,

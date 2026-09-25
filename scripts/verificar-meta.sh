@@ -7,6 +7,12 @@
 #   ./scripts/verificar-meta.sh --env .env.demo-b     # otro entorno
 #   ./scripts/verificar-meta.sh --suscribir           # corrige la suscripción
 #   ./scripts/verificar-meta.sh --env .env.demo-b --suscribir
+#   ./scripts/verificar-meta.sh --env .env.x.respaldo --desuscribir
+#       lo contrario de --suscribir: la WABA del entorno DEJA de entregar a la
+#       app del entorno. Existe (24/09/2026) para cuando un chat cambia de app
+#       y de número: si la app vieja sigue suscrita a la WABA vieja, el número
+#       viejo sigue mandando eventos a la misma ruta de n8n. Pide escribir los
+#       últimos 4 del App ID, y es reversible con --suscribir.
 #
 # Cada demo tiene su propia app de Meta, con su WA_APP_ID, WA_PHONE_ID y
 # WABA_ID: por eso hace falta poder apuntar el script a un archivo distinto.
@@ -17,6 +23,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 ARCHIVO_ENV=".env"
 SUSCRIBIR=0
+DESUSCRIBIR=0
 uso() {
   # Imprime el bloque de comentarios de la cabecera, hasta la primera linea
   # que no sea comentario. Asi la ayuda no se desincroniza al editar el script.
@@ -30,10 +37,12 @@ while [[ $# -gt 0 ]]; do
       ARCHIVO_ENV="$2"; shift 2 ;;
     --env=*)   ARCHIVO_ENV="${1#--env=}"; shift ;;
     --suscribir) SUSCRIBIR=1; shift ;;
+    --desuscribir) DESUSCRIBIR=1; shift ;;
     -h|--help)   uso 0 ;;
     *) echo "✗ Argumento no reconocido: $1"; uso 2 ;;
   esac
 done
+[[ $SUSCRIBIR -eq 1 && $DESUSCRIBIR -eq 1 ]] && { echo "✗ --suscribir y --desuscribir no van juntos"; exit 2; }
 
 if [[ ! -f "$ARCHIVO_ENV" ]]; then
   echo "✗ Falta ${ARCHIVO_ENV} (copiar de .env.example)"
@@ -69,7 +78,25 @@ fi
 
 echo "== 2. La WABA está suscrita a la app =="
 SUBS=$(curl -s --max-time 20 "${G}/${WABA_ID}/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
-if echo "$SUBS" | grep -q "\"${WA_APP_ID}\""; then
+if [[ $DESUSCRIBIR -eq 1 ]]; then
+  if ! echo "$SUBS" | grep -q "\"${WA_APP_ID}\""; then
+    p_ok "la app …${WA_APP_ID: -4} ya no está suscrita a la WABA …${WABA_ID: -4}: nada que hacer"
+  else
+    echo "  La WABA …${WABA_ID: -4} DEJARÁ de entregar a la app …${WA_APP_ID: -4}."
+    echo "  Desde ese momento los mensajes al número de esa WABA no llegan a esta app."
+    read -r -p "  Para confirmar, escriba los últimos 4 dígitos del App ID: " CONF
+    if [[ "$CONF" != "${WA_APP_ID: -4}" ]]; then
+      p_fail "no coincide: no se desuscribió nada"
+    else
+      R=$(curl -s --max-time 20 -X DELETE "${G}/${WABA_ID}/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+      if echo "$R" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+        p_ok "desuscrita. Reversible con: $0 --env ${ARCHIVO_ENV} --suscribir"
+      else
+        p_fail "Meta no la desuscribió: $(echo "$R" | head -c 200)"
+      fi
+    fi
+  fi
+elif echo "$SUBS" | grep -q "\"${WA_APP_ID}\""; then
   p_ok "la WABA ${WABA_ID} entrega a la app ${WA_APP_ID}"
 else
   p_fail "la app NO está suscrita a la WABA — los mensajes no llegarán a n8n"
