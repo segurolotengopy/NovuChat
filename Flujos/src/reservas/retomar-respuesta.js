@@ -25,11 +25,22 @@ const describir = (c) => {
 // porque el negocio NO ATIENDE ese dia, decirle al modelo «ya estaba ocupado»
 // lo lleva a repetirselo al cliente, y a ofrecer otra hora del mismo dia
 // cerrado. La causa la decide `Comprobar reserva`.
-const porHorario = caidas.length > 0 && caidas.every((c) => c && c.causa && c.causa !== 'cruce');
+// Y CUANDO LA FECHA YA PASO (24/09/2026, #5563): la nota trae el año en que
+// se agendo y la fecha de HOY, con año, para que el modelo consulte la misma
+// fecha del año en curso. Sin decirle el dia de la semana de la cita caida.
+const porPasado = caidas.length > 0 && caidas.every((c) => c && c.causa === 'pasado');
+const porHorario = !porPasado && caidas.length > 0 && caidas.every((c) => c && c.causa && c.causa !== 'cruce');
+let hoy = '';
+try {
+  hoy = new Date().toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/La_Paz' });
+} catch (e) { hoy = ''; }
 const notaCruce = caidas.length
-  ? (porHorario
-    ? `${caidas.map(describir).join(' y ')} cae fuera del horario de atencion`
-    : `el horario de ${caidas.map(describir).join(' y el de ')} ya estaba ocupado`)
+  ? (porPasado
+    ? `la fecha de ${caidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${caidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
+      + (hoy ? `; hoy es ${hoy}` : '') + ': el cliente quiere esa misma fecha del año en curso'
+    : (porHorario
+      ? `${caidas.map(describir).join(' y ')} cae fuera del horario de atencion`
+      : `el horario de ${caidas.map(describir).join(' y el de ')} ya estaba ocupado`))
   : 'el horario pedido ya estaba ocupado con esa persona';
 
 // El texto original del cliente vuelve a entrar en el turno del reintento:

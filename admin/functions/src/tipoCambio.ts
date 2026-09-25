@@ -9,9 +9,10 @@
  * `DISENO.md` §4undecies.8 fila 2). Se guarda en cada pago con su fecha y su
  * fuente, o la factura no se reconstruye.
  *
- * DÓNDE VIVE: un solo documento, `plataforma/tipoCambio`, que escribe el
- * script `scripts/fijar-tipo-cambio.mjs` (seco por defecto, `--aplicar` con
- * el OK de Andres) y que ninguna pantalla puede tocar (`match /plataforma`:
+ * DÓNDE VIVE: un solo documento, `plataforma/tipoCambio`, que escribe cada
+ * día `tipoCambioBcb` leyendo la tabla del BCB (`tipoCambioBcb.ts`), y a mano
+ * el script `scripts/fijar-tipo-cambio.mjs` (seco por defecto, `--aplicar` con
+ * el OK de Andres); ninguna pantalla puede tocarlo (`match /plataforma`:
  * solo lectura del propietario). Con historial en
  * `plataforma/tipoCambio/historial`.
  *

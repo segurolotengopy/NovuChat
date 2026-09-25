@@ -247,6 +247,27 @@ const ganaPrioridad = (a, b) => {
   return String(a.id) < String(b.id);
 };
 
+// UN BLOQUE FIJO NO ES UNA CITA (Andres, 24/09/2026). El calendario del
+// consultorio tiene un evento REPETIDO todos los dias de 13:00 a 14:00 --el
+// almuerzo-- y hasta hoy el candado lo trataba como «otra cita»: si el modelo
+// agendaba a las 13:30, la cita se deshacia y al paciente se le decia que «ese
+// horario ya estaba ocupado con la misma persona». Deshacerla esta BIEN; la
+// explicacion era falsa, y ademas confundia dos cosas distintas en los avisos
+// y en las metricas: un choque con otro paciente es un problema de agenda, un
+// choque con el almuerzo es una restriccion del negocio.
+//
+// COMO SE RECONOCE, y el primero es exacto y no una heuristica: Google marca
+// cada instancia de una serie con `recurringEventId`, y `agendar_cita` NUNCA
+// crea eventos repetidos. Un repetido en una agenda de reservas es, siempre,
+// un bloqueo que puso el negocio. La segunda via es para el bloqueo cargado a
+// mano dia por dia, sin repeticion, que se reconoce por como lo escriben.
+const esBloqueoFijo = (e) => {
+  if (!e) return false;
+  if (e.recurringEventId) return true;
+  return /\b(bloq|almuerzo|no atender|sin citas?|feriado|vacacion|vacación|receso|reuni[oó]n)/i
+    .test(String(e.summary || ''));
+};
+
 // Una cita se deshace por DOS causas, y se anota cual: el cruce con otra cita
 // (lo de siempre) y el horario en el que el negocio no atiende (2026-09-20).
 // La causa cambia lo que se le dice al cliente: «ya estaba ocupado» cuando en
@@ -258,6 +279,28 @@ for (const nueva of recien) {
   const calendario = nueva.organizer && nueva.organizer.email;
   if (!r || !calendario) continue;
 
+  // --- UNA CITA EN EL PASADO NO ES UNA CITA (24/09/2026, ejecucion #5563 de
+  // Bellido). El modelo llamo a agendar_cita con `2025-09-25T15:30` --un año
+  // atras-- y Google creo el evento sin chistar: la paciente leyo «quedo
+  // agendada para mañana» y en la agenda de mañana no habia nada. Ni el cruce
+  // ni el horario lo ven: un jueves de 2025 a las 15:30 cae dentro del horario
+  // y no choca con nadie. Se deshace por la MISMA via que un cruce --se borra y
+  // el reintento le dice al modelo que la fecha ya paso, con la de hoy-- y no
+  // cuesta un mensaje mas. Y el modelo no se entera del error de la
+  // herramienta aunque se lo lanzaramos: en esta version de n8n una
+  // herramienta que falla le devuelve una observacion VACIA (#5553), asi que
+  // rechazar la fecha en la herramienta no sirve; el hecho se corrige aca.
+  //
+  // SOLO PARA LA CITA QUE agendar_cita DEVOLVIO EN ESTE TURNO (`idsCreados`).
+  // La ventana de cinco minutos tambien trae lo que recepcion cargo a mano
+  // hace un momento, y una cita de las 15:00 anotada a las 15:10 es de un
+  // paciente que ya esta en la sala, no un error.
+  if (idsCreados.has(String(nueva.id)) && r.i < ahora) {
+    ceden.push(nueva);
+    causaDe[String(nueva.id)] = 'pasado';
+    continue;
+  }
+
   const choque = todos.find((otro) => {
     if (otro.id === nueva.id) return false;
     if (!otro.organizer || otro.organizer.email !== calendario) return false;
@@ -265,7 +308,11 @@ for (const nueva of recien) {
     return ro && seSuperponen(r, ro) && ganaPrioridad(otro, nueva);
   });
 
-  if (choque) { ceden.push(nueva); causaDe[String(nueva.id)] = 'cruce'; continue; }
+  if (choque) {
+    ceden.push(nueva);
+    causaDe[String(nueva.id)] = esBloqueoFijo(choque) ? 'bloqueado' : 'cruce';
+    continue;
+  }
 
   const quien = delCalendario(calendario);
   const mal = quien ? fueraDeHorario(nueva.start && nueva.start.dateTime,
@@ -297,11 +344,15 @@ if (ceden.length) {
   // si no, se arma con la causa REAL. Decirle «ya estaba ocupado» a quien pidio
   // un domingo con la clinica cerrada es explicarle algo que no paso.
   const causas = new Set(ceden.map((e) => causaDe[String(e.id)] || 'cruce'));
-  const porQue = causas.has('cruce')
+  const porQue = causas.has('pasado')
+    ? 'la fecha de esa cita ya paso'
+    : causas.has('cruce')
     ? 'ese horario ya estaba ocupado con la misma persona'
     : (causas.size === 1 && causas.has('cerrado')
       ? 'ese dia no atendemos'
-      : 'ese horario esta fuera de nuestro horario de atencion');
+      : (causas.size === 1 && causas.has('bloqueado')
+        ? 'ese horario esta reservado en la agenda'
+        : 'ese horario esta fuera de nuestro horario de atencion'));
   // «El resto de lo que agendamos si esta bien» SOLO si de verdad quedo alguna:
   // cuando el cliente pidio una sola cita y esa es la que cayo, esa frase le
   // dice que algo quedo cuando no quedo nada (2026-09-20).
@@ -323,16 +374,25 @@ if (ceden.length) {
     return f && f.nombre ? String(f.nombre) : '';
   };
   const citasCaidas = ceden.map((e) => {
+    const causa = causaDe[String(e.id)] || 'cruce';
     let hora = '';
     let fecha = '';
+    let anio = '';
     try {
       const d = new Date(e.start.dateTime);
       hora = d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
-      fecha = d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' });
-    } catch (err) { hora = ''; fecha = ''; }
+      // Una cita caida POR LA FECHA se describe con el año y SIN el dia de la
+      // semana: «jueves 25» era el dia del 25 de 2025, y repetirselo al modelo
+      // es invitarlo a escribir «jueves» por un viernes. Para las otras causas,
+      // la forma de siempre.
+      fecha = causa === 'pasado'
+        ? d.toLocaleDateString('es-BO', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/La_Paz' })
+        : d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' });
+      anio = d.toLocaleDateString('es-BO', { year: 'numeric', timeZone: 'America/La_Paz' });
+    } catch (err) { hora = ''; fecha = ''; anio = ''; }
     const servicio = String(e.summary || '').split('—')[1];
-    return { hora, fecha, persona: personaDe(e.organizer.email), servicio: servicio ? servicio.trim() : '',
-      inicio: e.start.dateTime || '', causa: causaDe[String(e.id)] || 'cruce' };
+    return { hora, fecha, anio, persona: personaDe(e.organizer.email), servicio: servicio ? servicio.trim() : '',
+      inicio: e.start.dateTime || '', causa };
   });
 
   // LA TRANSFERENCIA YA NO SE DECIDE ACA. Antes el primer item salia con
@@ -344,9 +404,13 @@ if (ceden.length) {
   // reintento no sale, ahi si va el aviso, con este mismo motivo.
   //
   // Un item por cita a deshacer: el nodo de Calendar borra uno por item.
-  const motivoCruce = (causas.has('cruce')
+  const motivoCruce = (causas.has('pasado')
+    ? 'se intento agendar en una FECHA YA PASADA (el modelo uso un año anterior al de hoy) '
+    : causas.has('cruce')
     ? 'se intento agendar sobre un horario YA OCUPADO de la misma persona '
-    : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona ')
+    : (causas.size === 1 && causas.has('bloqueado')
+      ? 'se intento agendar sobre un BLOQUEO de la agenda (un horario que el negocio no abre a citas) '
+      : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona '))
     + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}); la cita nueva se deshizo`;
   return ceden.map((e) => ({ json: { ...item,
     respuesta: aviso,
@@ -359,7 +423,7 @@ if (ceden.length) {
     transferir: false,
     motivoTransferencia: '',
     motivoCruce,
-    causaDeLaCaida: causas.has('cruce') ? 'cruce' : 'horario',
+    causaDeLaCaida: causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce' : 'horario'),
   }, pairedItem: { item: 0 } }));
 }
 

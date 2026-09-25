@@ -366,8 +366,13 @@ describe.skipIf(!HAY_JSON)('(a) Es el Demo A vigente, nodo por nodo, salvo los c
     expect(String(nodo(flujo, AGENTE).parameters['text'])).toContain("$now.setZone('America/La_Paz')");
     // El mensaje del turno es el del Demo A más UNA línea: el contexto del
     // turno (tipo de cita elegido en el menú, lo que escribió antes del botón).
+    // El salto de línea pasó del prompt al nodo el 23/09/2026: el bloque de
+    // contexto tiene un tope de 700 caracteres y el de este cliente estaba en
+    // 686, así que los 33 de la condición hacían falta para el calendario de
+    // fechas. Ahora `Estado de la conversación` devuelve el contexto con su
+    // salto puesto, o cadena vacía.
     const sinContexto = String(nodo(flujo, AGENTE).parameters['text'])
-      .replace("{{ $json.contextoTurno ? $json.contextoTurno + '\\n' : '' }}", '');
+      .replace('{{ $json.contextoTurno }}', '');
     expect(sinContexto).toBe(nodo(demoA, AGENTE).parameters['text']);
   });
 });
@@ -1014,6 +1019,134 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(String(r2['contextoTurno'])).not.toContain('quiero cita');
     });
 
+    // EL CASO REAL DEL 24/09 (#5639 a #5647): la suite inyectaba `eleccion` a
+    // mano y `Normalizar entrada` nunca la llenaba, así que en producción el
+    // tipo de cita no se guardó jamás. Esta prueba encadena los DOS nodos
+    // reales, con el payload que manda Meta al tocar una fila de la lista.
+    it('el botón tocado llega desde Normalizar entrada: la cadena real guarda el tipo de cita', () => {
+      const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
+      const tocar = (id: string, title: string) => {
+        const [n] = normalizar({ type: 'interactive', interactive: { type: 'list_reply', list_reply: { id, title } } });
+        expect(n!['eleccion'], id).toBe(id);
+        // Solo lo que el estado lee; el id de mensaje lo pone `turno`, uno por toque
+        // (el mismo id sería un reenvío de Meta y se descartaría, como corresponde).
+        return turno({ eleccion: n!['eleccion'], tipo: n!['tipo'], userInput: n!['userInput'] }, sd);
+      };
+      expect(tocar('control_nino_sano', 'Control niño sano')['tipoCita']).toBe('niño sano');
+      // El último botón manda: después de «niño sano», «recién nacido» lo cambia.
+      const r = tocar('control_recien_nacido', 'Recién nacido');
+      expect(r['tipoCita']).toBe('recién nacido');
+      expect(String(r['contextoTurno'])).toContain('Tipo de cita elegido en el menú: recién nacido');
+      // Y lo recuerda en el turno de texto siguiente.
+      expect(String(turno({ userInput: 'a las 12 entonces' }, sd)['contextoTurno'])).toContain('recién nacido');
+      // Un botón de respuesta rápida también trae su id; un texto no trae ninguno.
+      const [b] = normalizar({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: 'emergencia', title: 'Emergencia' } } });
+      expect(b!['eleccion']).toBe('emergencia');
+      expect(normalizar({ type: 'text', text: { body: 'hola' } })[0]!['eleccion']).toBe('');
+    });
+
+    // LAS CAMPAÑAS DE LA CONSOLA (Andres, 24/09/2026): se reconocen por el
+    // texto EXACTO que el anuncio deja escrito, vigente entre sus dos fechas, y
+    // saltan el menú. Se prueba con la cadena real: el servidor manda las
+    // campañas, `Config del negocio` las filtra, `Normalizar entrada` compara
+    // el texto y `Estado de la conversación` decide.
+    describe('campañas: texto exacto, vigencia, y el menú no sale', () => {
+      const HORA = 3600000;
+      const vigente = (texto: string, id = 'c-' + texto.length) => ({ id, texto,
+        inicio: new Date(Date.now() - HORA).toISOString(), fin: new Date(Date.now() + 24 * HORA).toISOString() });
+      const conCampanas = (lista: J[]) => {
+        const r = ejecutar(codigo(flujo, 'Config del negocio'), [{ statusCode: 200, body: { tenantId: 'bellido', campanas: lista } }],
+          { 'Config base': [configBase(flujo)] })[0]!;
+        return String(r['campanasActivas']);
+      };
+      const entra = (msg: J, activas: string) =>
+        ejecutar(codigo(flujo, 'Normalizar entrada'), [webhook(msg, { campanasActivas: activas })])[0]!;
+      const TEXTO = 'Hola, quiero agendar el control de mi bebé 👶';
+
+      it('Config del negocio deja pasar SOLO las vigentes, y sin panel no hay ninguna', () => {
+        const ayer = { id: 'vieja', texto: 'Promo de agosto', inicio: '2026-08-01T00:00:00-04:00', fin: new Date(Date.now() - HORA).toISOString() };
+        const futura = { id: 'futura', texto: 'Promo de diciembre', inicio: new Date(Date.now() + 48 * HORA).toISOString(), fin: new Date(Date.now() + 96 * HORA).toISOString() };
+        const activas = JSON.parse(conCampanas([vigente(TEXTO, 'buena'), ayer, futura, { id: 'rota', texto: '' }]));
+        expect(activas).toEqual([{ id: 'buena', texto: TEXTO }]);
+        const caido = ejecutar(codigo(flujo, 'Config del negocio'), [{ statusCode: 503, body: {} }], { 'Config base': [configBase(flujo)] })[0]!;
+        expect(caido['campanasActivas'] ?? '').toBe('');
+      });
+
+      it('el texto de la campaña se reconoce sin mayúsculas, tildes, signos ni emojis; una palabra de más ya no', () => {
+        const activas = conCampanas([vigente(TEXTO, 'bebe')]);
+        for (const escrito of [TEXTO, 'hola quiero agendar el control de mi bebe', '  HOLA,  QUIERO AGENDAR EL CONTROL DE MI BEBÉ!!  ']) {
+          expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toEqual({ id: 'bebe', texto: TEXTO });
+        }
+        for (const escrito of ['Hola, quiero agendar el control de mi bebé mañana', 'quiero agendar el control de mi bebé']) {
+          expect(entra({ type: 'text', text: { body: escrito } }, activas)['campana'], escrito).toBeNull();
+        }
+        // Solo texto; sin campañas o con basura, ninguna.
+        expect(entra({ type: 'audio', audio: { id: 'a1' } }, activas)['campana']).toBeNull();
+        expect(entra({ type: 'text', text: { body: TEXTO } }, '')['campana']).toBeNull();
+        expect(entra({ type: 'text', text: { body: TEXTO } }, 'no es json')['campana']).toBeNull();
+      });
+
+      it('el anuncio de Meta (referral) llega al item, recortado', () => {
+        const e = entra({ type: 'text', text: { body: TEXTO },
+          referral: { source_type: 'ad', source_id: '120000000000000001', headline: 'Control del niño sano\n'.repeat(20) } }, '');
+        expect(e['anuncio']).toMatchObject({ fuente: 'ad', idAnuncio: '120000000000000001' });
+        expect(String((e['anuncio'] as J)['titular'])).not.toContain('\n');
+        expect(String((e['anuncio'] as J)['titular']).length).toBeLessThanOrEqual(120);
+        expect(entra({ type: 'text', text: { body: 'hola' } }, '')['anuncio']).toBeNull();
+      });
+
+      it('una campaña salta el menú: va al asistente, que se presenta en ese turno y sabe a qué viene', () => {
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: TEXTO } }, conCampanas([vigente(TEXTO)]));
+        const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+        expect(r['accion']).toBe('agente');
+        expect(String(r['contextoTurno'])).toContain('preséntate en una línea');
+        expect(String(r['contextoTurno'])).toContain('Llegó por una campaña');
+        expect(String(r['contextoTurno'])).not.toContain('Ya te presentaste');
+        expect(sd['conversaciones'][TELEFONO]['menu']).toBe(true);
+        // El turno siguiente no vuelve al menú ni a presentarse.
+        const r2 = turno({ userInput: 'el lunes en la mañana' }, sd);
+        expect(r2['accion']).toBe('agente');
+        expect(String(r2['contextoTurno'])).toContain('Ya te presentaste');
+        expect(String(r2['contextoTurno'])).not.toContain('Llegó por una campaña');
+      });
+
+      it('si el texto de la campaña ES una opción del menú, entra directo a esa rama', () => {
+        for (const [texto, tipo] of [['Recién nacido', 'recién nacido'], ['Control niño sano', 'niño sano'], ['niño sano', 'niño sano']] as const) {
+          const sd: J = {};
+          const e = entra({ type: 'text', text: { body: texto } }, conCampanas([vigente(texto)]));
+          const r = turno({ userInput: e['userInput'], campana: e['campana'] }, sd);
+          expect(r['accion'], texto).toBe('agente');
+          expect(r['tipoCita'], texto).toBe(tipo);
+        }
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'Vacunas y otros' } }, conCampanas([vigente('Vacunas y otros')]));
+        expect(turno({ userInput: e['userInput'], campana: e['campana'] }, sd)['accion']).toBe('contacto_doctor');
+      });
+
+      it('la emergencia NUNCA sale de un título de campaña; la tabla de títulos coincide con las filas del menú', () => {
+        const estado = codigo(flujo, 'Estado de la conversación');
+        const tabla = /const OPCION_POR_TITULO = (\{[^}]+\})/.exec(estado)![1]!;
+        expect(tabla).not.toContain('emergencia');
+        const filas = codigo(flujo, 'Menú inicial');
+        for (const id of ['control_recien_nacido', 'control_nino_sano', 'vacunas_otros']) {
+          expect(tabla, id).toContain(`'${id}'`);
+          expect(filas, id).toContain(`"id": "${id}"`);
+        }
+        for (const titulo of ['Recién nacido', 'Control niño sano', 'Vacunas y otros']) expect(filas).toContain(`"title": "${titulo}"`);
+      });
+
+      it('sin campaña, el primer mensaje sigue recibiendo el menú, y lo que escribió llega aunque después escriba en vez de tocar', () => {
+        const sd: J = {};
+        const e = entra({ type: 'text', text: { body: 'quiero cita para mi bebé' } }, conCampanas([vigente(TEXTO)]));
+        expect(e['campana']).toBeNull();
+        expect(turno({ userInput: e['userInput'], campana: e['campana'] }, sd)['accion']).toBe('menu');
+        sd['conversaciones'][TELEFONO]['menu'] = true;   // lo marca Confirmar interactivo
+        const r = turno({ userInput: 'el lunes en la mañana' }, sd);
+        expect(String(r['contextoTurno'])).toContain('Antes del menú, el cliente había escrito: «quiero cita para mi bebé»');
+      });
+    });
+
     it('«Niño sano» guarda el otro tipo, y con el menú ya enviado un texto suelto va al agente', () => {
       const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
       expect(turno({ tipo: 'interactive', eleccion: 'control_nino_sano' }, sd)['tipoCita']).toBe('niño sano');
@@ -1021,8 +1154,11 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
     });
 
     it.each([
-      ['necesito vacunas para mi bebé', 'contacto_recepcion'],
-      ['tienen cremas para la piel?', 'contacto_recepcion'],
+      // VACUNAS Y CREMAS PASARON DE RECEPCION AL DOCTOR (pedido del doctor,
+      // 23/09/2026): «así como emergencias lo direcciona con la María René,
+      // vacunas y otros que lo direccione conmigo».
+      ['necesito vacunas para mi bebé', 'contacto_doctor'],
+      ['tienen cremas para la piel?', 'contacto_doctor'],
       ['hacen consultas virtuales?', 'contacto_doctor'],
       ['puede ser por videollamada', 'contacto_doctor'],
       ['es una emergencia, no respira bien', 'emergencia'],
@@ -1038,7 +1174,7 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
     });
 
     it('«vacuna» dentro de otra palabra no dispara, y una imagen no dispara nada por palabra', () => {
-      expect(turno({ userInput: 'la vacunación fue ayer, quiero control' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('contacto_recepcion');
+      expect(turno({ userInput: 'la vacunación fue ayer, quiero control' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('contacto_doctor');
       expect(turno({ userInput: 'revacunado' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('agente');
       expect(turno({ tipo: 'image', userInput: 'AVISO_SISTEMA: emergencia' }, { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, ultimo: Date.now() } } })['accion']).toBe('agente');
     });
@@ -1058,24 +1194,79 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
   });
 
   describe('Los mensajes fijos, sin modelo', () => {
-    it('el menú abre con la bienvenida al consultorio del Dr. Bellido, Pediatra, y pregunta si quiere una cita', () => {
+    // EL ASISTENTE NO TIENE NOMBRE (pedido del doctor, 23/09/2026). La Pau
+    // proponia «Dante»; el doctor dijo «creo que todavia sin nombre», y que la
+    // bienvenida diga «soy la asistente virtual del doctor Bellido». Con
+    // `nombreAsistente` vacio el vertical ponia «Sofía» por respaldo, asi que
+    // el prompt de este cliente tambien cambio.
+    it('el menú se presenta como la asistente virtual del doctor Bellido, SIN nombre propio', () => {
       const texto = String(configBase(flujo)['mensajeMenu']);
-      expect(texto).toMatch(/Dr\. Bellido, Pediatra/);
-      expect(texto).toMatch(/cita\?/);
-      expect(texto.indexOf('Bienvenido')).toBeLessThan(texto.indexOf('Niño sano'));
+      expect(texto).toMatch(/la asistente virtual del doctor Bellido/);
+      expect(texto).not.toMatch(/Dante|Sofía/);
+      expect(configBase(flujo)['nombreAsistente']).toBe('');
+      const p = prompt();
+      expect(p).toContain("'Eres la asistente virtual'");
+      expect(p).toContain('NO tienes nombre propio');
+      expect(p).not.toContain('Eres Sofía');
     });
 
-    it('el menú son TRES botones de respuesta con los ids que lee el estado, títulos de hasta 20 caracteres', () => {
+    // CUATRO OPCIONES NO ENTRAN EN BOTONES (pedido del doctor, 23/09/2026).
+    // Pidio emergencia, recien nacido, nino sano, y vacunas y otros: WhatsApp
+    // admite TRES botones, asi que el interactivo es una LISTA. La descripcion
+    // de cada fila es donde entra la aclaracion que pidio, porque «los papas a
+    // veces piensan que todo el primer ano de vida son un recien nacido».
+    it('el menú es una LISTA de cuatro filas, con los ids que lee el estado y los topes de Meta', () => {
       const r = ejecutar(codigo(flujo, 'Menú inicial'), [{ ...base(), accion: 'menu' }])[0]!;
       const meta = r['cuerpoMeta'] as J;
       expect(meta['type']).toBe('interactive');
-      expect(meta['interactive']['type']).toBe('button');
+      expect(meta['interactive']['type']).toBe('list');
       expect(meta['to']).toBe(TELEFONO);
-      const botones = meta['interactive']['action']['buttons'] as { type: string; reply: { id: string; title: string } }[];
-      expect(botones.map((b) => b.reply.id)).toEqual(['control_nino_sano', 'control_recien_nacido', 'emergencia']);
-      for (const b of botones) { expect(b.type).toBe('reply'); expect(b.reply.title.length).toBeLessThanOrEqual(20); }
-      expect(String(meta['interactive']['body']['text'])).toContain('Dante');
+      const accion = meta['interactive']['action'] as J;
+      expect(String(accion['button']).length).toBeLessThanOrEqual(20);
+      const secciones = accion['sections'] as { title: string; rows: { id: string; title: string; description: string }[] }[];
+      expect(secciones).toHaveLength(1);
+      expect(secciones[0]!.title.length).toBeLessThanOrEqual(24);
+      const filas = secciones[0]!.rows;
+      expect(filas.map((f) => f.id)).toEqual(['emergencia', 'control_recien_nacido', 'control_nino_sano', 'vacunas_otros']);
+      expect(filas.length).toBeLessThanOrEqual(10);
+      for (const f of filas) {
+        expect(f.title.length, f.title).toBeLessThanOrEqual(24);
+        expect(f.description.length, f.description).toBeLessThanOrEqual(72);
+      }
+      // La aclaracion de los dos meses, que es lo que el doctor pidio.
+      expect(filas.find((f) => f.id === 'control_recien_nacido')!.description).toMatch(/2 meses/);
+      expect(filas.find((f) => f.id === 'control_nino_sano')!.description).toMatch(/2 meses/);
+      expect(String(meta['interactive']['body']['text'])).not.toContain('Dante');
       expect(String(r['textoRespaldo'])).toContain('recién nacido');
+      expect(String(r['textoRespaldo'])).toContain('vacunas');
+    });
+
+    it('la cuarta opción del menú lleva al DOCTOR, no a recepción', () => {
+      expect(turno({ tipo: 'interactive', eleccion: 'vacunas_otros' }, {})['accion']).toBe('contacto_doctor');
+      const sd: J = { conversaciones: { [TELEFONO]: { desde: Date.now(), menu: true, tipoCita: '', primerMensaje: '', ultimo: Date.now() } } };
+      expect(turno({ tipo: 'interactive', eleccion: 'vacunas_otros' }, sd)['accion']).toBe('contacto_doctor');
+    });
+
+    // EL MENSAJE DE EMERGENCIA, RECORTADO (decision del doctor, 23/09/2026):
+    // «eso de tu hijo si respira o convulsiona, quitalo por favor... solo toca
+    // el boton y ya le avisare al doctor. Con eso suficiente». Es una decision
+    // clinica suya y queda anotada como tal: la prueba niega que el texto
+    // vuelva a traer una indicacion medica o un numero de emergencias.
+    it('el mensaje de emergencia es solo el botón y el aviso, sin indicación médica ni número', () => {
+      const texto = String(configBase(flujo)['mensajeEmergencia']);
+      expect(texto).toMatch(/María René/);
+      expect(texto).toMatch(/bot[óo]n/i);
+      expect(texto).toMatch(/avis[ée] al doctor/i);
+      expect(texto).not.toMatch(/168/);
+      expect(texto).not.toMatch(/convulsion/i);
+      expect(texto).not.toMatch(/no respira/i);
+      expect(texto).not.toMatch(/emergencias más cercano/i);
+    });
+
+    // EL DOCTOR ES «ANDRES», SIN ACENTO (23/09/2026): «sé que el tuyo tiene
+    // acento, bueno todos los Andreses tienen acento, pero el mío no».
+    it('en ningún texto del flujo el doctor lleva acento', () => {
+      expect(TEXTO).not.toContain('Andrés');
     });
 
     it('el contacto directo es un botón cta_url a la persona; el número NO va en el texto', () => {
@@ -1222,18 +1413,75 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).toMatch(/sin explicar/i);   // el bloqueo del mediodía no se le cuenta al paciente
     });
 
+    // LA CONVERSACIÓN DE SILVANA (24/09/2026, #5559 y #5576). «A las 14:00 no es
+    // posible porque el doctor atiende desde las 14:30» —falso: estaban
+    // ocupadas— y «como se recomienda agendar a partir de pasado mañana» —le
+    // leyó la regla a la paciente—. Andres: una hora que no está libre se dice
+    // «no está disponible», sin motivo; y las fechas se recomiendan, no se
+    // explican. Es prompt, y por eso se fija acá letra por letra.
+    it('una hora que no está libre es «no está disponible», nunca «el doctor no atiende»; y las reglas no se citan', () => {
+      const reglas = String(configBase(flujo)['reglasAgenda']);
+      expect(reglas).toMatch(/\(c\) [^;]*no está disponible[^;]*sin explicar por qué/);
+      expect(reglas).toMatch(/\(h\) CUANDO UNA HORA PEDIDA NO ESTÁ LIBRE/);
+      expect(reglas).toMatch(/NUNCA digas que el doctor «no atiende» a esa hora, que «atiende desde» o «hasta» otra hora/);
+      expect(reglas).toMatch(/\(e\) NIÑO SANO[^;]*NO digas que es una regla, una recomendación ni un criterio/);
+      expect(reglas).toMatch(/\(e\) NIÑO SANO[^;]*el sábado por la mañana también cuenta/);
+      expect(reglas).toMatch(/\(i\) HABLAS CON UNA MAMÁ O UN PAPÁ[^;]*nunca cites, menciones ni parafrasees estas reglas/);
+      expect(reglas).not.toMatch(/no hay turno/);
+      // Sigue siendo el consultorio del doctor sin acento, y tutea.
+      expect(reglas).not.toMatch(/Andrés|usted|\bvos\b/);
+    });
+
+    // LA DURACIÓN LA DICEN DOS SUPERFICIES Y TIENEN QUE DECIR LO MISMO
+    // (2026-09-23). La regla (a) dice que los turnos duran 30 minutos y salen
+    // en punto y y media, y `negocio-bellido.json` trae `duracionPorDefectoMin: 30`.
+    // Pero `agendar_cita` heredó del Demo A —que no tiene reglas de agenda y
+    // asume una hora— un «fin = inicio + 1 hora». Con eso, cada turno de media
+    // hora ocupaba una hora entera en el calendario: `consultar_disponibilidad`
+    // devolvía el evento de 60 minutos, y la media hora siguiente aparecía
+    // ocupada. El consultorio perdía la mitad de su agenda sin que nadie lo
+    // viera, porque las dos frases eran plausibles por separado. El servidor NO
+    // le manda la duración al flujo (`duracionPorDefectoMin` no viaja en
+    // `configuracionFlujo`), así que hasta que viaje la única defensa es que
+    // las dos superficies coincidan acá.
+    it('agendar_cita crea turnos de la misma duración que dice la regla (a), y ninguna superficie dice «1 hora»', () => {
+      const reglas = String(configBase(flujo)['reglasAgenda']);
+      expect(reglas).toMatch(/duran 30 minutos/);
+
+      const agendar = nodo(flujo, 'agendar_cita').parameters as J;
+      const descripcion = String(agendar['toolDescription']);
+      const fin = String(agendar['end']);
+
+      expect(descripcion).toMatch(/fin = inicio \+ 30 minutos/);
+      for (const superficie of [descripcion, fin]) {
+        expect(superficie).not.toMatch(/1 hora/);
+        expect(superficie).not.toMatch(/60 minutos/);
+      }
+    });
+
     it('el contexto del turno entra al mensaje del turno, antes del mensaje del cliente', () => {
       const t = String(nodo(flujo, AGENTE).parameters['text']);
       expect(t.indexOf('contextoTurno')).toBeGreaterThan(0);
       expect(t.indexOf('contextoTurno')).toBeLessThan(t.indexOf('[MENSAJE DEL CLIENTE]'));
       // Con contexto, entra en su propia línea justo antes del rótulo; sin
-      // contexto, no deja ni una línea vacía.
-      expect(t).toContain("{{ $json.contextoTurno ? $json.contextoTurno + '\\n' : '' }}[MENSAJE DEL CLIENTE]");
+      // contexto, no deja ni una línea vacía. El salto lo pone el NODO desde el
+      // 23/09/2026, no la plantilla: hacían falta esos 33 caracteres.
+      expect(t).toContain('{{ $json.contextoTurno }}[MENSAJE DEL CLIENTE]');
+      const conCtx = turno({ tipo: 'interactive', eleccion: 'control_nino_sano' }, {});
+      expect(String(conCtx['contextoTurno'])).not.toBe('');
+      expect(String(conCtx['contextoTurno']).endsWith('\n')).toBe(true);
     });
 
     it('la configuración trae los textos nuevos y el número del doctor como marcador, y la consola puede pisarlos', () => {
       const base = configBase(flujo);
-      for (const k of ['numeroDoctor', 'palabrasClaveRecepcion', 'palabrasClaveDoctor', 'palabrasClaveEmergencia',
+      // `palabrasClaveRecepcion` quedó VACIO a proposito el 23/09/2026: sus dos
+      // unicas palabras (vacunas y cremas) pasaron al doctor por pedido suyo.
+      // Vacio NO es un patron que coincide con todo: `Estado de la
+      // conversacion` devuelve `null` con una lista vacia y no dispara nada.
+      // A recepcion se sigue llegando por el traspaso del modelo y por la
+      // politica «solo se ofrece lo que se cumple», que no dependen de esto.
+      expect(configBase(flujo)['palabrasClaveRecepcion']).toBe('');
+      for (const k of ['numeroDoctor', 'palabrasClaveDoctor', 'palabrasClaveEmergencia',
         'mensajeMenu', 'mensajeContactoRecepcion', 'mensajeContactoDoctor', 'mensajeEmergencia', 'mensajeRedes', 'reglasAgenda']) {
         expect(String(base[k] ?? '').trim().length, k).toBeGreaterThan(0);
       }

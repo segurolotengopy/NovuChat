@@ -196,6 +196,47 @@ describe('1. Crear el cobro', () => {
     expect(await auditoria('cobro_emitido')).toHaveLength(1);
   });
 
+  // BYOC lo asigna NovuChat (revisión de seguridad del pase, 24/09/2026): la
+  // pantalla solo lo ofrece a quien ya lo tiene, y el servidor tiene que negarlo
+  // aunque la petición se arme a mano. Se prueba NEGANDO, y sin escribir nada.
+  it('un administrador NO se paga BYOC armando la petición a mano, y no queda nada reservado', async () => {
+    await rechaza(crear({ ...MENSUALIDAD, plan: 'byoc' }), 'permission-denied');
+    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
+    expect((await db.collection(`tenants/${A}/pagos`).get()).size).toBe(0);
+    expect(doble.llamadas).toEqual([]);
+  });
+
+  it('tampoco por WhatsApp: sin rol vale lo mismo que un administrador', async () => {
+    await rechaza(crearCobroInterno(A, { tipo: 'mensualidad', plan: 'byoc', meses: 1 },
+      { uid: 'whatsapp', creadoPor: 'whatsapp:0001', canal: 'whatsapp' }), 'permission-denied');
+    expect((await db.collection(`tenants/${A}/pagos`).get()).size).toBe(0);
+  });
+
+  it('el comercio que YA es BYOC lo renueva, y el propietario lo asigna', async () => {
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'byoc', modalidad: 'prepago' });
+    const renovado = await crear({ tenantId: B, tipo: 'mensualidad', plan: 'byoc', meses: 1 }, ADMIN_B);
+    expect(renovado).toMatchObject({ estado: 'pendiente', tipo: 'mensualidad' });
+    expect((await pago(renovado['pagoId'] as string, B))?.['plan']).toBe('byoc');
+
+    const asignado = await crear({ ...MENSUALIDAD, plan: 'byoc' }, PROPIETARIO);
+    expect((await pago(asignado['pagoId'] as string))?.['plan']).toBe('byoc');
+  });
+
+  it('un administrador SÍ sube a otro plan publicado: el candado es solo para lo que no se publica', async () => {
+    const r = await crear({ ...MENSUALIDAD, plan: 'pro' });
+    expect((await pago(r['pagoId'] as string))?.['plan']).toBe('pro');
+  });
+
+  it('sin cobrador configurado → failed-precondition ANTES de reservar: ningún pendiente trabado', async () => {
+    registrarCobradorDoble(null);
+    await db.doc('plataforma/prepago').set({ corteActivo: false });
+    const r = crear(MENSUALIDAD);
+    await rechaza(r, 'failed-precondition');
+    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
+    expect((await db.collection(`tenants/${A}/pagos`).get()).size).toBe(0);
+    expect((await db.collection('cobrosPendientes').get()).size).toBe(0);
+  });
+
   it('un segundo pedido con el QR vivo → failed-precondition, y devuelve el vivo', async () => {
     const primero = await crear(MENSUALIDAD);
     const detalles = await rechaza(crear({ tenantId: A, tipo: 'bolsa', cantidad: 1 }), 'failed-precondition');

@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
   PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
-  esIdPlan, limitesDe, limitesDeCuenta, umbralDeAviso,
+  esIdPlan, limitesDe, limitesDeCuenta, planQuePuedePedir, umbralDeAviso,
 } from '../functions/src/planes.ts';
 
 const MES = '2026-10';
@@ -26,19 +26,19 @@ describe('El catálogo', () => {
     expect(PLANES).toEqual({
       impulso: {
         nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
-        pagaMeta: 'novuchat',
+        pagaMeta: 'novuchat', campanas: 0,
       },
       crecimiento: {
         nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
-        pagaMeta: 'novuchat',
+        pagaMeta: 'novuchat', campanas: 3,
       },
       pro: {
         nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
-        pagaMeta: 'novuchat',
+        pagaMeta: 'novuchat', campanas: 10,
       },
       byoc: {
         nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-        pagaMeta: 'comercio',
+        pagaMeta: 'comercio', campanas: 10,
       },
     });
     expect(BOLSA).toEqual({ conversaciones: 30, precioUsd: 10 });
@@ -248,5 +248,24 @@ describe('El aviso de consumo al 80 %', () => {
   it('una marca corrupta no bloquea el aviso', () => {
     expect(avisoConsumoPendiente({ avisoConsumo: 'sí' }, MES)).toBe(true);
     expect(avisoConsumoPendiente({ avisoConsumo: null }, MES)).toBe(true);
+  });
+});
+
+describe('Qué plan puede pagarse un comercio por su cuenta', () => {
+  it('los publicados, desde cualquier plan', () => {
+    for (const p of PLANES_PUBLICADOS) {
+      expect(planQuePuedePedir('impulso', p)).toBe(true);
+      expect(planQuePuedePedir(undefined, p)).toBe(true);
+    }
+  });
+  it('BYOC solo para renovarlo quien ya lo tiene: nunca para pasarse a él', () => {
+    expect(planQuePuedePedir('byoc', 'byoc')).toBe(true);
+    for (const actual of ['impulso', 'crecimiento', 'pro', 'demostracion', undefined, null, 'BYOC']) {
+      expect(planQuePuedePedir(actual, 'byoc')).toBe(false);
+    }
+  });
+  it('ni la demostración ni algo que no es un plan', () => {
+    expect(planQuePuedePedir('demostracion', 'demostracion')).toBe(false);
+    expect(planQuePuedePedir('toString', 'toString')).toBe(false);
   });
 });

@@ -6,7 +6,22 @@
 > este repositorio. La justificación de cada número está en
 > `Analisis/37-anexo-tecnico-y-sla.md`.
 >
-> **Versión 1 · 21/09/2026.** Marcas a completar: `[…]`.
+> **Versión 3 · 24/09/2026.** Marcas a completar: `[…]`.
+>
+> Cambios de la v1, los dos en el §8:
+>
+> 1. Dice **cuándo** se aplican los cambios —la ventana diaria de 02:00 a 03:00,
+>    fuera del horario cubierto— y separa esa aplicación, que no interrumpe el
+>    servicio, del mantenimiento programado que sí lo interrumpe y se anuncia
+>    con 24 horas. No agrega ningún compromiso nuevo: le pone hora a lo que la
+>    v1 ya exigía hacer fuera del horario cubierto.
+> 2. La v1 prometía que las mejoras de flujo se aplican «a todos los clientes a
+>    la vez». **Eso deja de ser exacto** cuando NovuChat vende productos
+>    empaquetados: un Cliente puede estar en una versión acordada. La cláusula
+>    ahora dice la verdad —se aplican a todos, salvo versión acordada, y esa
+>    diferencia se registra y se comunica— y **retiene sin excepción** las
+>    correcciones de seguridad y las reglas que protegen al paciente o al
+>    comprador. Es una promesa más chica, pero es la que se cumple.
 >
 > **Regla de mantenimiento de esta plantilla:** no se agrega ningún compromiso
 > que el sistema no cumpla hoy. Cuando un prerrequisito de `Analisis/37` §5 se
@@ -162,10 +177,22 @@ se suman al saldo del Cliente. No se pagan en dinero.
 - **Cambios que opera NovuChat a pedido del Cliente:** 2 días hábiles desde que
   el pedido llega completo. Se prueban con un teléfono real antes de darlos por
   hechos.
-- **Mejoras de los flujos:** se aplican a todos los clientes que usan ese flujo
-  a la vez, previa prueba.
-- **Mantenimiento programado:** se anuncia con 24 horas de anticipación y se
-  hace fuera del horario cubierto.
+- **Mejoras de los flujos:** se aplican, previa prueba, a **todos** los clientes
+  que usan ese flujo. Un Cliente puede quedar fuera de una mejora cuando su
+  servicio está en una versión acordada —un paquete cerrado, una configuración
+  hecha a su medida— y en ese caso **NovuChat lo registra y se lo dice**: qué
+  queda distinto, por qué, y qué haría falta para ponerlo al día. **Ninguna
+  corrección de seguridad ni de las reglas que protegen al paciente o al
+  comprador queda fuera**, en ninguna versión.
+- **Cuándo se aplican:** en la **ventana diaria de 02:00 a 03:00, hora de
+  Bolivia**, que está fuera del horario cubierto y solo se abre cuando hay algo
+  que aplicar. La actualización se hace sobre el asistente en funcionamiento y
+  **no interrumpe el servicio**: dura segundos y no cambia el número ni la
+  conversación en curso. Por eso **no se anuncia ni se interrumpe a quien
+  escriba**. Un cambio urgente puede aplicarse fuera de esa ventana, evaluando
+  antes el tiempo de impacto.
+- **Mantenimiento programado** (el que **sí** interrumpe el servicio): se
+  anuncia con 24 horas de anticipación y se hace fuera del horario cubierto.
 - **Correcciones de seguridad urgentes:** en cualquier momento, con aviso.
 
 ## 9. Datos

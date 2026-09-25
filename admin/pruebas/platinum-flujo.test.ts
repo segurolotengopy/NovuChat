@@ -71,6 +71,39 @@ const TEXTO = leer('platinum-agendamiento.json');
 const flujo = JSON.parse(TEXTO) as Flujo;
 const demoA = JSON.parse(leer('demo-a-agendamiento.json')) as Flujo;
 const bellido = JSON.parse(leer('bellido-agendamiento.json')) as Flujo;
+/**
+ * FECHAS CALCULADAS, NO ESCRITAS (24/09/2026). Desde ese día el candado deshace
+ * una cita cuyo inicio ya pasó y el corrector del día de la semana ignora las
+ * fechas anteriores a hoy: una fecha fija en una prueba caduca sola, y nueve de
+ * estas pruebas se cayeron el mismo día por citas «de mañana» escritas el 18/09.
+ * `enDias(n)` es el día de hoy más n, y `proximo(semana)` el próximo día con ese
+ * día de la semana (0 = domingo), de mañana en adelante. Todo en La Paz.
+ */
+const DIAS_SEMANA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+interface Fecha { iso: string; anio: number; mes: number; dia: number; semana: number; nombre: string; otroNombre: string; nombreMes: string }
+function fechaEnLaPaz(d: Date): Fecha {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz', weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d);
+  const v = (t: string) => partes.find((p) => p.type === t)?.value ?? '';
+  const semana = ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[v('weekday')]!;
+  const mes = Number(v('month'));
+  return { iso: `${v('year')}-${v('month')}-${v('day')}`, anio: Number(v('year')), mes, dia: Number(v('day')), semana,
+    nombre: DIAS_SEMANA[semana]!, otroNombre: DIAS_SEMANA[(semana + 6) % 7]!, nombreMes: MESES[mes - 1]! };
+}
+const enDias = (n: number): Fecha => fechaEnLaPaz(new Date(Date.now() + n * 86400000));
+function proximo(semana: number): Fecha {
+  for (let i = 1; i <= 14; i++) {
+    const f = enDias(i);
+    if (f.semana === semana) return f;
+  }
+  throw new Error('sin fecha');
+}
+/** Un miércoles futuro (los tres negocios atienden los miércoles) y el miércoles siguiente. */
+const DIA_J = proximo(3).iso;
+const DIA_J2 = fechaEnLaPaz(new Date(Date.parse(`${DIA_J}T12:00:00-04:00`) + 7 * 86400000)).iso;
 
 const nodo = (f: Flujo, nombre: string): Nodo => {
   const n = f.nodes.find((x) => x.name === nombre);
@@ -1248,13 +1281,13 @@ describe.each([
   const eventoCreado = {
     id: 'ev-nuevo', kind: 'calendar#event', summary: 'Cita Paciente — estética facial',
     organizer: { email: persona.calendario },
-    start: { dateTime: '2026-09-18T10:00:00-04:00' }, end: { dateTime: '2026-09-18T10:30:00-04:00' },
+    start: { dateTime: `${DIA_J}T10:00:00-04:00` }, end: { dateTime: `${DIA_J}T10:30:00-04:00` },
     created: '2026-09-17T15:31:05.000Z',
   };
   /** La que ya estaba de 10:00 a 11:00 en la misma agenda. */
   const yaEstaba = {
     id: 'existente', summary: 'Cita OTRA PACIENTE — valoración', organizer: { email: persona.calendario },
-    start: { dateTime: '2026-09-18T10:00:00-04:00' }, end: { dateTime: '2026-09-18T11:00:00-04:00' },
+    start: { dateTime: `${DIA_J}T10:00:00-04:00` }, end: { dateTime: `${DIA_J}T11:00:00-04:00` },
     created: '2026-09-15T12:00:00.000Z',
   };
   const DIJO = `¡Listo! He reprogramado tu cita de **estética facial** para mañana a las 10:00 con ${persona.nombre}.`;
@@ -1263,9 +1296,9 @@ describe.each([
    * nodo herramienta y `observation` es el JSON (texto) de lo que devolvió.
    */
   const pasos = (observacionDeAgendar: unknown = JSON.stringify([eventoCreado])) => [
-    { action: { tool: 'consultar_disponibilidad', toolInput: { inicio: '2026-09-18T09:00:00-04:00', fin: '2026-09-18T19:00:00-04:00' } },
+    { action: { tool: 'consultar_disponibilidad', toolInput: { inicio: `${DIA_J}T09:00:00-04:00`, fin: `${DIA_J}T19:00:00-04:00` } },
       observation: JSON.stringify([yaEstaba]) },
-    { action: { tool: 'agendar_cita', toolInput: { inicio: '2026-09-18T10:00:00-04:00', fin: '2026-09-18T10:30:00-04:00' } },
+    { action: { tool: 'agendar_cita', toolInput: { inicio: `${DIA_J}T10:00:00-04:00`, fin: `${DIA_J}T10:30:00-04:00` } },
       observation: observacionDeAgendar },
   ];
   const procesar = (salida: J, contexto: Record<string, J[]> = {}) =>
@@ -1300,8 +1333,8 @@ describe.each([
       expect(compuerta(r)).toBe(true);
       expect(r['herramientas']).toEqual(['consultar_disponibilidad', 'agendar_cita']);
       expect(r['eventosCreados']).toEqual([{
-        id: 'ev-nuevo', calendario: persona.calendario, inicio: '2026-09-18T10:00:00-04:00',
-        fin: '2026-09-18T10:30:00-04:00', titulo: 'Cita Paciente — estética facial',
+        id: 'ev-nuevo', calendario: persona.calendario, inicio: `${DIA_J}T10:00:00-04:00`,
+        fin: `${DIA_J}T10:30:00-04:00`, titulo: 'Cita Paciente — estética facial',
       }]);
       expect(r['falloModelo']).toBe(false);
       expect(r['transferir']).toBe(false);
@@ -1395,7 +1428,7 @@ describe.each([
 
     it('sin choque, la cita verificada es la que devolvió la herramienta y llega al cierre', () => {
       const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
-      const libre = { ...yaEstaba, start: { dateTime: '2026-09-18T11:00:00-04:00' }, end: { dateTime: '2026-09-18T12:00:00-04:00' } };
+      const libre = { ...yaEstaba, start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` } };
       const c = candado(previa, [libre, eventoCreado]);
       expect(c['reservaVerificada']).toBe(true);
       expect(c['eventoId']).toBe('ev-nuevo');
@@ -1430,7 +1463,7 @@ describe.each([
       // aparecía todavía, y no choca con ninguna. Antes: sin verificar y sin
       // QR. Ahora: verificada, y el QR sale.
       const otroDia = { ...yaEstaba, id: 'otro-dia',
-        start: { dateTime: '2026-09-25T09:00:00-04:00' }, end: { dateTime: '2026-09-25T10:00:00-04:00' } };
+        start: { dateTime: `${DIA_J2}T09:00:00-04:00` }, end: { dateTime: `${DIA_J2}T10:00:00-04:00` } };
       const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
       const c = candado(previa, [otroDia]);
       expect(c['reservaVerificada']).toBe(true);
@@ -2952,33 +2985,70 @@ describe.each([
       expect(s).toMatchObject({ from: '59170000001', nombrePerfil: 'Ana', tipo: 'audio' });
     });
 
-    it('un audio largo NO se transcribe: se pide que lo escriba, con amabilidad', () => {
+    it('una nota de voz de MÁS de cinco minutos no se transcribe, y se dice por qué', () => {
       const s = transcribir(gemini('lo que sea'), 2_000_000);
-      expect(String(s['userInput'])).toContain('audio largo o que no se pudo entender');
-      expect(String(s['userInput'])).toMatch(/que lo escriba o lo resuma/i);
+      expect(String(s['userInput'])).toContain('más de cinco minutos');
+      expect(String(s['userInput'])).toMatch(/en texto o en un audio más corto/i);
       expect(String(s['userInput'])).not.toContain('(audio transcripto)');
     });
 
-    it('una transcripción vacía —o el nodo caído— pide lo mismo, en vez de contestar cualquier cosa', () => {
+    // DOS CASOS DISTINTOS, DOS AVISOS (2026-09-24). Antes «muy largo» y «no se
+    // entendió» compartían mensaje, y quien mandaba un audio inaudible recibía
+    // el mismo texto que quien mandaba uno de seis minutos: no sabía cuál de
+    // las dos cosas arreglar.
+    it('una transcripción vacía —o el nodo caído— pide que lo repita, y NO dice que fue largo', () => {
       for (const salida of [gemini(''), gemini('   '), { error: 'algo falló' }, {}]) {
-        expect(String(transcribir(salida as J, 10_000)['userInput'])).toContain('audio largo o que no se pudo entender');
+        const u = String(transcribir(salida as J, 10_000)['userInput']);
+        expect(u).toContain('no se pudo entender');
+        expect(u).not.toContain('cinco minutos');
       }
     });
 
-    it('el tope de 60 s se estima por `file_size`, y el supuesto está escrito en el código', () => {
+    // EL TOPE MEDIDO, NO SUPUESTO (2026-09-23). La nota de voz del Dr. Bellido:
+    // 604.186 bytes en 256 s = 2.360 B/s. El supuesto anterior de 16.000 B/s
+    // hacía que el «tope de 60 s» fuera en realidad de seis minutos y medio, y
+    // nadie lo sabía porque nunca se había medido.
+    it('el tope se estima por `file_size` con la tasa MEDIDA de una nota de voz real', () => {
       const c = codigo('Preparar transcripción');
-      expect(c).toContain('const SEGUNDOS_MAX = 60;');
-      expect(c).toContain('const BYTES_POR_SEGUNDO = 16000;');
-      expect(c).toMatch(/Meta NO manda la duracion/i);
-      expect(c).toMatch(/HAY QUE MEDIRLO CON UN\s*\/\/ TELEFONO REAL/i);
+      expect(c).toContain('const SEGUNDOS_MAX = 300;');
+      expect(c).toContain('const BYTES_POR_SEGUNDO = 2400;');
+      expect(c).toMatch(/MEDIDO, NO SUPUESTO/);
+      expect(c).toMatch(/604\.186 bytes para 256 segundos/);
       // Justo por debajo del límite todavía se transcribe.
-      expect(String(transcribir(gemini('sí'), 960_000)['userInput'])).toContain('(audio transcripto)');
-      expect(String(transcribir(gemini('sí'), 960_001)['userInput'])).toContain('audio largo');
+      expect(String(transcribir(gemini('sí'), 720_000)['userInput'])).toContain('(audio transcripto)');
+      expect(String(transcribir(gemini('sí'), 720_001)['userInput'])).toContain('cinco minutos');
+      // EL CASO REAL: el audio del doctor, 4:16 y 604 kB, entra.
+      expect(String(transcribir(gemini('sí'), 604_186)['userInput'])).toContain('(audio transcripto)');
     });
 
-    it('recorta una transcripción enorme: el prompt se paga en tokens en cada turno de la memoria', () => {
-      const s = transcribir(gemini('pa '.repeat(2000)), 500_000);
-      expect(String(s['userInput']).length).toBeLessThan(1500);
+    // «QUE NO LLEGUEN CORTADOS» (Andres, 24/09/2026). El presupuesto anterior
+    // era de 1.200 caracteres: un audio de cuatro minutos —unos 3.400— llegaba
+    // al agente con un tercio de lo que el cliente dijo, cortado a mitad de
+    // palabra y sin que nadie se enterara.
+    it('cuatro minutos de habla entran ENTEROS: ya no se cortan a 1.200 caracteres', () => {
+      const cuatroMinutos = 'necesito una cita para mi hijo. '.repeat(106);   // ~3.400 car.
+      const s = transcribir(gemini(cuatroMinutos), 604_186);
+      expect(cuatroMinutos.length).toBeGreaterThan(3000);
+      expect(String(s['userInput'])).toContain(cuatroMinutos.trim());
+      expect(String(s['userInput'])).not.toContain('solo la primera parte');
+    });
+
+    it('si de verdad hay que recortar, se corta en una ORACIÓN y se le avisa al agente', () => {
+      const larguisimo = 'Le cuento lo que le pasa a mi hijo. '.repeat(200);   // ~7.200 car.
+      const u = String(transcribir(gemini(larguisimo), 700_000)['userInput']);
+      expect(u).toContain('solo la primera parte');
+      expect(u).toMatch(/sin inventar lo que falta/);
+      // Cortado en una oración, nunca a mitad de palabra.
+      const transcripto = u.slice(u.indexOf('(audio transcripto) ') + 20, u.indexOf('\nAVISO_SISTEMA'));
+      expect(transcripto.trimEnd().endsWith('.')).toBe(true);
+      expect(transcripto.length).toBeLessThanOrEqual(4400);
+    });
+
+    it('un audio sin un solo punto tampoco se parte en medio de una palabra', () => {
+      const sinPuntos = 'palabra '.repeat(900);   // ~7.200 car., ni un punto
+      const u = String(transcribir(gemini(sinPuntos), 700_000)['userInput']);
+      const transcripto = u.slice(u.indexOf('(audio transcripto) ') + 20, u.indexOf('\nAVISO_SISTEMA'));
+      expect(transcripto.endsWith('palabra')).toBe(true);
     });
 
     it('empareja por índice: con dos clientes a la vez, el audio de uno no va a la conversación del otro', () => {
@@ -3943,7 +4013,7 @@ describe('Adelanto a favor: el flujo', () => {
   it('REAGENDAR EN UN SOLO MENSAJE: cancela la pagada y agenda la nueva → «reprogramada», sin QR ni «queda a tu favor»', () => {
     const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
-      start: { dateTime: '2026-09-22T11:00:00-04:00' }, end: { dateTime: '2026-09-22T12:00:00-04:00' }, created: new Date().toISOString() };
+      start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { from: '5917',
       respuesta: 'Listo, cancelé tu cita del lunes y te agendé el martes a las 11:00. Queda RESERVADO por 15 minutos a la espera de la seña.\n\nEl adelanto que pagaste queda a tu favor por 7 días: si reagendas en ese plazo, no pagas otra seña.',
       eventoSena: { evento: 'cita_cancelada', referencia: 'pagada', inicio: '2026-09-21T15:00:00-04:00' },
@@ -3961,7 +4031,7 @@ describe('Adelanto a favor: el flujo', () => {
   it('sin adelanto ni cancelación pagada, la reserva sigue el camino de siempre (con QR)', () => {
     const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'n', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
-      start: { dateTime: '2026-09-22T11:00:00-04:00' }, end: { dateTime: '2026-09-22T12:00:00-04:00' }, created: new Date().toISOString() };
+      start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [{ respuesta: 'x', eventosCreados: [{ id: 'n', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime }] }],
       'Config del negocio': [{ senaActiva: 'si', funcionarios: '[]' }] })[0] ?? {};
     expect(r['aplicarAdelanto']).toBeUndefined();
@@ -3971,7 +4041,7 @@ describe('Adelanto a favor: el flujo', () => {
   it('Comprobar reserva aplica el adelanto: avisa al servidor y saca del texto la seña y el QR', () => {
     const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'nueva', summary: 'Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
-      start: { dateTime: '2026-09-22T11:00:00-04:00' }, end: { dateTime: '2026-09-22T12:00:00-04:00' }, created: new Date().toISOString() };
+      start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { respuesta: 'Tu horario del martes a las 11:00 queda RESERVADO por 15 minutos a la espera de la seña. A continuación te llega el QR.',
       from: '5917', eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }] };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
@@ -3985,7 +4055,7 @@ describe('Adelanto a favor: el flujo', () => {
   it('una cita pagada con el adelanto manda el pin, como un pago que cuadró (21/09/2026)', () => {
     const cod = String(nodo(flujo, 'Comprobar reserva').parameters['jsCode']);
     const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
-      start: { dateTime: '2026-09-23T09:00:00-04:00' }, end: { dateTime: '2026-09-23T10:00:00-04:00' }, created: new Date().toISOString() };
+      start: { dateTime: `${DIA_J}T09:00:00-04:00` }, end: { dateTime: `${DIA_J}T10:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { respuesta: 'Quedó confirmada.', ubicacionLat: -17.7, ubicacionLng: -63.1,
       eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime }] };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
@@ -4182,3 +4252,306 @@ describe('Cancelar: la confirmación es SOLO una confirmación (#4034)', () => {
     }
   });
 });
+
+/**
+ * EL DÍA DE LA SEMANA LO PONE EL CÓDIGO, NO EL MODELO (2026-09-23).
+ *
+ * Prueba real del Dr. Bellido con dos teléfonos, la noche del 22/09. El modelo
+ * acertó SIEMPRE el día del mes y la hora, y erró la palabra:
+ *
+ *   · #4790 · `consultar_disponibilidad` recibió `2026-09-25T14:00:00-04:00`
+ *     y el modelo escribió «el jueves 25 de septiembre». El 25 era viernes.
+ *   · #4799 · `buscar_mi_cita` DEVOLVIÓ la cita correcta,
+ *     `2026-09-24T15:00:00-04:00`, y el modelo escribió «el miércoles 24 de
+ *     septiembre a las 15:00». El 24 era jueves.
+ *
+ * El doctor lo leyó como «se ha confundido con las fechas» y decidió no
+ * publicar el número hasta que se arregle. Y el daño no se queda en el texto:
+ * con el día equivocado el modelo consultó la franja del jueves (14:00–18:00)
+ * sobre una fecha que era viernes.
+ *
+ * La barrera está en `Procesar respuesta` y NO en el prompt, por la misma razón
+ * que el candado (17/09): una instrucción se ignora bajo insistencia y cambia
+ * con cada modelo. De una fecha al día de la semana hay una sola respuesta, y
+ * el turno sabe qué fechas tocaron las herramientas.
+ *
+ * Las fechas se calculan (`proximo`, arriba): desde el 24/09 el corrector
+ * ignora las fechas anteriores a hoy, y una fecha escrita a mano caduca sola.
+ * `J` es el próximo jueves y `V` el próximo viernes; `otroNombre` es el día de
+ * la semana anterior, el error típico del modelo.
+ */
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+  '%s · el día de la semana lo pone el código', (_archivo, f) => {
+    const procesar = (output: string, pasos: J[]) => ejecutar(String(nodo(f, 'Procesar respuesta').parameters['jsCode']),
+      [{ output, intermediateSteps: pasos }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: 'mi cita' }],
+        'Config del negocio': [{ numeroRecepcion: '59170000002', nombreNegocio: 'Un Negocio', tratamiento: 'tú' }] })[0] ?? {};
+
+    const buscoYDevolvio = (inicio: string, fin: string): J[] => [{
+      action: { tool: 'buscar_mi_cita', toolInput: {} },
+      observation: JSON.stringify([{ id: 'c1', summary: 'Cita', start: { dateTime: inicio }, end: { dateTime: fin } }]),
+    }];
+    const consulto = (inicio: string, fin: string): J[] => [{
+      action: { tool: 'consultar_disponibilidad', toolInput: { inicio, fin } },
+      observation: '[]',
+    }];
+    const J = proximo(4);
+    const V = proximo(5);
+    const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+    it('EL CASO REAL #4799: la herramienta devolvió un jueves y el modelo escribió «miércoles»', () => {
+      const s = procesar(
+        `Encontré una cita para control del niño sano el ${J.otroNombre} ${J.dia} de ${J.nombreMes} a las 15:00. ¿Es esa?`,
+        buscoYDevolvio(`${J.iso}T15:00:00-04:00`, `${J.iso}T15:30:00-04:00`));
+      expect(s['respuesta']).toContain(`${J.nombre} ${J.dia} de ${J.nombreMes} a las 15:00`);
+      expect(s['respuesta']).not.toContain(`${J.otroNombre} ${J.dia}`);
+      expect(s['avisos']).toContain('dia_de_semana_corregido');
+    });
+
+    it('EL CASO REAL #4790: consultó un viernes y el modelo escribió «jueves»', () => {
+      const s = procesar(
+        `Para la consulta el ${V.otroNombre} ${V.dia} de ${V.nombreMes} tengo 14:00, 15:00 o 16:00. ¿Cuál prefieres?`,
+        consulto(`${V.iso}T14:00:00-04:00`, `${V.iso}T18:00:00-04:00`));
+      expect(s['respuesta']).toContain(`${V.nombre} ${V.dia} de ${V.nombreMes}`);
+      expect(s['avisos']).toContain('dia_de_semana_corregido');
+    });
+
+    it('cuando el modelo acierta, no se toca una letra', () => {
+      const texto = `Tu cita es el ${J.nombre} ${J.dia} de ${J.nombreMes} a las 15:00. Te esperamos.`;
+      const s = procesar(texto, buscoYDevolvio(`${J.iso}T15:00:00-04:00`, `${J.iso}T15:30:00-04:00`));
+      expect(s['respuesta']).toBe(texto);
+      expect(s['avisos']).not.toContain('dia_de_semana_corregido');
+    });
+
+    it('se corrige en la zona del negocio: las 17:30 de La Paz NO son del día siguiente', () => {
+      // En UTC, las 17:30 de La Paz son las 21:30 del mismo día; pero una cita de
+      // las 20:30 de La Paz sí cruzaría. Se mira siempre America/La_Paz.
+      const s = procesar(`Te espero el ${J.otroNombre} ${J.dia} a las 17:30.`,
+        buscoYDevolvio(`${J.iso}T17:30:00-04:00`, `${J.iso}T18:00:00-04:00`));
+      expect(s['respuesta']).toContain(`${J.nombre} ${J.dia} a las 17:30`);
+    });
+
+    it('conserva la mayúscula cuando la palabra abre la oración', () => {
+      const s = procesar(`${cap(J.otroNombre)} ${J.dia} a las 15:00 te esperamos.`,
+        buscoYDevolvio(`${J.iso}T15:00:00-04:00`, `${J.iso}T15:30:00-04:00`));
+      expect(s['respuesta']).toContain(`${cap(J.nombre)} ${J.dia} a las 15:00`);
+    });
+
+    it('un mes que NO es el de la cita no se toca: es otra fecha', () => {
+      const otroMes = MESES[(J.mes + 10) % 12]!;
+      const texto = `La anterior fue el ${J.otroNombre} ${J.dia} de ${otroMes}.`;
+      const s = procesar(texto, buscoYDevolvio(`${J.iso}T15:00:00-04:00`, `${J.iso}T15:30:00-04:00`));
+      expect(s['respuesta']).toBe(texto);
+    });
+
+    it('sin fechas de herramienta en el turno no se corrige nada: no hay con qué decidir', () => {
+      const texto = `Te espero el ${J.otroNombre} ${J.dia}.`;
+      expect(procesar(texto, [])['respuesta']).toBe(texto);
+    });
+
+    it('un día sin número no se toca: no hay fecha que comparar', () => {
+      const texto = `Te espero el ${J.otroNombre} a las 15:00.`;
+      const s = procesar(texto, buscoYDevolvio(`${J.iso}T15:00:00-04:00`, `${J.iso}T15:30:00-04:00`));
+      expect(s['respuesta']).toBe(texto);
+    });
+
+    it('EL CASO REAL #5563: una fecha de OTRO AÑO en la herramienta no corrige nada', () => {
+      // El modelo llamó a agendar_cita con el 25/09/2025 —un año atrás— y el
+      // corrector cambió un «viernes 25» CORRECTO por «jueves 25», que era el
+      // día de la semana del 25 de 2025. Una cita nunca está en el pasado: una
+      // fecha anterior a hoy en un paso de herramienta es un error, no un dato.
+      const hace = `${J.anio - 1}${J.iso.slice(4)}`;
+      const texto = `Quedó agendada para el ${J.nombre} ${J.dia} de ${J.nombreMes} a las 15:30.`;
+      const s = procesar(texto, [{
+        action: { tool: 'agendar_cita', toolInput: { inicio: `${hace}T15:30:00-04:00`, fin: `${hace}T16:00:00-04:00` } },
+        observation: JSON.stringify([{ id: 'x', summary: 'Cita', start: { dateTime: `${hace}T15:30:00-04:00` }, end: { dateTime: `${hace}T16:00:00-04:00` } }]),
+      }]);
+      expect(s['respuesta']).toBe(texto);
+      expect(s['avisos']).not.toContain('dia_de_semana_corregido');
+    });
+
+    it('el calendario de los próximos días viaja en la configuración, con el año, para que no tenga que calcular', () => {
+      const cfg = ejecutar(String(nodo(f, 'Config del negocio').parameters['jsCode']),
+        [{ statusCode: 200, body: {} }], { 'Config base': [{}] })[0] ?? {};
+      // Es la frase entera, armada en el nodo: el prompt solo la interpola,
+      // porque el bloque de contexto del turno tiene un tope de 700 caracteres.
+      const dias = String(cfg['diasProximos'] ?? '');
+      expect(dias.startsWith('\n')).toBe(true);
+      expect(dias).toMatch(/no lo calcules/);
+      expect(dias).toMatch(/pregunta cuál quieren/);
+      // CON EL AÑO (24/09/2026, #5563): el modelo agendó en 2025 con «Ahora:
+      // jueves 24 de septiembre de 2026» en el mismo turno.
+      expect(dias).toContain(`(año ${enDias(0).anio}, no lo calcules)`);
+      const calendario = /:\s([^.]+)\./.exec(dias)![1]!;
+      expect(calendario).toMatch(/^(lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}( · (lunes|martes|miércoles|jueves|viernes|sábado|domingo) \d{1,2}){9}$/);
+    });
+  });
+
+/**
+ * LA CONVERSACIÓN DE SILVANA CON EL DR. BELLIDO (24/09/2026, #5550 a #5578),
+ * leída ejecución por ejecución. Cuatro cosas salieron mal y ninguna era del
+ * modelo solo:
+ *
+ *   · #5553 · «Si quiero reagendar» respondía a «¿me confirmas que quieres
+ *     reagendar esa cita?», y la compuerta de `cancelar_cita` no aceptaba
+ *     «reagendar»: la herramienta recibió SIN-CONFIRMAR, Google no borró
+ *     nada, y la paciente recibió la pregunta OTRA VEZ, seca y sin horarios.
+ *     Un mensaje pagado de más.
+ *   · #5563 · el modelo llamó a consultar_disponibilidad y a agendar_cita con
+ *     el 25/09/2025 —un año atrás—. Google creó el evento; la paciente leyó
+ *     «quedó agendada para mañana» y en la agenda de mañana no había nada. Y
+ *     el corrector del día de la semana, fiel a la fecha de la herramienta,
+ *     cambió «viernes 25» (correcto) por «jueves 25».
+ *   · #5559 · «a las 14:00 no es posible porque el doctor atiende desde las
+ *     14:30»: falso. Las 14:00 estaban OCUPADAS por otra paciente.
+ *   · #5576 · «como se recomienda agendar a partir de pasado mañana»: el
+ *     modelo le leyó la regla a la paciente.
+ *
+ * Lo de #5559 y #5576 es prompt (reglas de agenda de Bellido, probadas en su
+ * suite). Lo de #5553 y #5563 es código, y se prueba acá en los tres flujos.
+ */
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+  '%s · 24/09: reagendar es confirmar, y una cita en el pasado no es una cita', (_archivo, f) => {
+    const codigo = (n: string) => String(nodo(f, n).parameters['jsCode']);
+    const idDe = (userInput: string) => expresion(nodo(f, 'cancelar_cita').parameters['eventId'], {},
+      { 'Normalizar entrada': { userInput } }, { eventoId: 'real' });
+
+    describe('#5553: la compuerta de cancelar_cita acepta las formas de mover la cita', () => {
+      it('«Si quiero reagendar» y sus variantes llevan el identificador real', () => {
+        for (const t of ['Si quiero reagendar', 'Sí, quiero reprogramar', 'sí, moverla', 'dale, cámbiala', 'Sí, cambiar la fecha',
+          'sí, reagéndala por favor', 'ok, quiero cambiar la hora', 'Sí, muévela']) {
+          expect(idDe(t), t).toBe('real');
+        }
+      });
+
+      it('lo del #4034 sigue afuera: una respuesta que nombra OTRA cita, o una hora nueva, no confirma', () => {
+        for (const t of ['sí, muévela a las 4', 'sí, cambia la del lunes', 'ok, cancela la otra', 'reagendar la de las 16',
+          'quiero reagendar mi cita para el viernes']) {
+          expect(idDe(t), t).toBe('SIN-CONFIRMAR');
+        }
+      });
+
+      it('la herramienta y Procesar respuesta usan EXACTAMENTE la misma regla', () => {
+        const rx = /\/\^\[\^a-záéíóúñ0-9\]\*\(s\[ií\]\|[^/]+\/i/;
+        const enTool = rx.exec(String(nodo(f, 'cancelar_cita').parameters['eventId']))?.[0];
+        const enCodigo = rx.exec(codigo('Procesar respuesta'))?.[0];
+        expect(enTool).toBeDefined();
+        expect(enTool).toBe(enCodigo);
+        expect(enTool).toContain('reag[eé]nd[a-záéíóúñ]*');
+      });
+
+      it('cuando SÍ hay que preguntar y la persona vino a MOVER la cita, la pregunta lo dice y anuncia otro horario', () => {
+        const cita = { id: 'c1', summary: 'Cita Sil — consulta-de-neonatologia', start: { dateTime: `${DIA_J}T17:30:00-04:00` } };
+        const procesar = (userInput: string, tratamiento = 'tú') => ejecutar(codigo('Procesar respuesta'),
+          [{ output: 'He cancelado tu cita. Para mañana tengo 11:00, 11:30 o 12:00.', intermediateSteps: [
+            { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([cita]) },
+            { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'c1' } }, observation: '' }] }],
+          { 'Normalizar entrada': [{ from: '5917', userInput }],
+            'Config del negocio': [{ nombreNegocio: 'Un Negocio', tratamiento }] })[0] ?? {};
+        const mover = procesar('quiero reagendar mi cita para el viernes');
+        expect(mover['respuesta']).toMatch(/^Para moverla necesito que me confirmes: ¿cancelo tu cita de consulta de neonatologia del /);
+        expect(mover['respuesta']).toMatch(/a las 17:30\? Respóndeme «sí» y la cancelo para darte otro horario\.$/);
+        expect(mover['avisos']).toContain('cancelacion_sin_confirmar');
+        expect(mover['transferir']).toBe(false);
+        expect(String(procesar('quiero reagendar mi cita para el viernes', 'usted')['respuesta']))
+          .toMatch(/^Para moverla necesito que me confirme: ¿cancelo su cita .* Respóndame «sí» y la cancelo para darle otro horario\.$/);
+        // Cancelar a secas sigue con la pregunta de siempre.
+        expect(String(procesar('Quiero cancelar de las 11')['respuesta'])).toMatch(/^¿Confirmas que quieres cancelar tu cita/);
+      });
+    });
+
+    describe('#5563: una cita creada en el pasado se deshace y el modelo recibe la fecha de hoy', () => {
+      const cfg = configBase(f);
+      const equipo = JSON.parse(String(cfg['funcionarios'])) as { nombre: string; calendario: string }[];
+      const persona = equipo[0]!;
+      const J = proximo(4);
+      const hace = `${J.anio - 1}${J.iso.slice(4)}`;   // el mismo día y mes, un año atrás
+      const creada = (inicio: string, fin: string) => ({
+        id: 'ev-2025', summary: 'Cita Sil — consulta-de-neonatologia', organizer: { email: persona.calendario },
+        start: { dateTime: inicio }, end: { dateTime: fin }, created: new Date().toISOString(),
+      });
+      const previa = (ev: J): J => ({
+        respuesta: `Quedó agendada tu consulta para mañana, ${J.nombre} ${J.dia} de ${J.nombreMes}, a las 15:30.`,
+        from: '59170000001', nombrePerfil: 'Sil', transferir: false, ejecutoAgendar: true, verificarReserva: true,
+        eventosCreados: [{ id: ev.id, calendario: persona.calendario, inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }],
+      });
+      const candado = (ev: J, eventos: J[] = [ev], p: J = previa(ev)) =>
+        ejecutar(codigo('Comprobar reserva'), eventos, { 'Procesar respuesta': [p], 'Config del negocio': [cfg] })[0]!;
+
+      it('LA EJECUCIÓN #5563: el evento del 25/09/2025 cede, con la causa «pasado», y se manda a borrar', () => {
+        const ev = creada(`${hace}T15:30:00-04:00`, `${hace}T16:00:00-04:00`);
+        const c = candado(ev);
+        expect(c['citaSolapada']).toBe(true);
+        expect(c['eventoABorrar']).toBe('ev-2025');
+        expect(c['calendarioDelBorrado']).toBe(persona.calendario);
+        expect(c['reservaVerificada']).toBe(false);
+        expect(c['causaDeLaCaida']).toBe('pasado');
+        expect(String(c['motivoCruce'])).toContain('FECHA YA PASADA');
+        const caida = (c['citasCaidas'] as J[])[0]!;
+        expect(caida['causa']).toBe('pasado');
+        expect(caida['hora']).toBe('15:30');
+        expect(caida['anio']).toBe(String(J.anio - 1));
+        // Sin el día de la semana de 2025, que es justo lo que confundiría al modelo.
+        expect(String(caida['fecha'])).toBe(`${J.dia} de ${J.nombreMes} de ${J.anio - 1}`);
+        expect(String(caida['fecha'])).not.toMatch(/lunes|martes|miércoles|jueves|viernes|sábado|domingo/);
+        // Y NO llega al cierre: una cita que no existe no se cobra.
+        expect(expresion(nodo(f, '¿Hay cita verificada?').parameters['conditions'].conditions[0].leftValue, c)).toBe(false);
+      });
+
+      it('la misma cita en el año en curso queda verificada: no es la hora, es la fecha', () => {
+        const ev = creada(`${J.iso}T15:30:00-04:00`, `${J.iso}T16:00:00-04:00`);
+        const c = candado(ev);
+        expect(c['citaSolapada']).toBeUndefined();
+        expect(c['reservaVerificada']).toBe(true);
+        expect(c['eventoId']).toBe('ev-2025');
+      });
+
+      it('SOLO la cita de esta conversación: lo que recepción cargó a mano hace un momento, aunque ya empezó, no se toca', () => {
+        // Una cita de hace 10 minutos anotada recién es un paciente que ya está
+        // en la sala. Sin id de la herramienta (`eventosCreados` vacío) el
+        // candado sigue con la ventana de cinco minutos y no la deshace.
+        const hace10 = new Date(Date.now() - 10 * 60000).toISOString();
+        const en20 = new Date(Date.now() + 20 * 60000).toISOString();
+        const ev = { ...creada(hace10, en20), id: 'a-mano', created: new Date(Date.now() - 30000).toISOString() };
+        const c = candado(ev, [ev], { respuesta: 'x', from: '5917', eventosCreados: [] });
+        expect(c['citaSolapada']).toBeUndefined();
+        expect(c['eventoABorrar']).toBeUndefined();
+      });
+
+      it('Retomar respuesta: la nota dice que la fecha YA PASÓ, en qué año se agendó y qué día es hoy, sin «ocupado»', () => {
+        const ev = creada(`${hace}T15:30:00-04:00`, `${hace}T16:00:00-04:00`);
+        const r = ejecutar(codigo('Retomar respuesta'), [{ success: true }],
+          { 'Comprobar reserva': [candado(ev)], 'Normalizar entrada': [{ userInput: 'A las 15.30' }] })[0]!;
+        expect(r['reintentar']).toBe(true);
+        expect(r['transferir']).toBe(false);
+        const nota = String(r['notaCruce']);
+        expect(nota).toContain(`la fecha de las 15:30 del ${J.dia} de ${J.nombreMes} de ${J.anio - 1} con ${persona.nombre} YA PASÓ`);
+        expect(nota).toContain(`se agendó en el año ${J.anio - 1}`);
+        expect(nota).toContain(`hoy es ${enDias(0).nombre}, ${enDias(0).dia} de ${enDias(0).nombreMes} de ${enDias(0).anio}`);
+        expect(nota).toContain('esa misma fecha del año en curso');
+        expect(nota).not.toContain('ocupado');
+        expect(nota).not.toContain('fuera del horario');
+      });
+
+      it('el prompt del reintento conoce la tercera causa y pide el AÑO EN CURSO', () => {
+        const p = String(nodo(f, 'Reintento tras cruce').parameters['options']['systemMessage']);
+        expect(p).toContain("$json.causaDeLaCaida === 'pasado'");
+        expect(p).toContain('la FECHA de esa cita YA PASÓ');
+        expect(p).toContain('que hubo un error con la fecha');
+        expect(p).toContain('AÑO EN CURSO');
+        // Las otras dos causas siguen igual.
+        expect(p).toContain("$json.causaDeLaCaida === 'horario'");
+        expect(p).toContain('ese horario YA ESTABA OCUPADO con esa persona');
+      });
+
+      it('la barrera está en el candado y no en la herramienta, porque n8n le esconde al modelo el error de una herramienta', () => {
+        // #5553: `cancelar_cita` falló con «Not Found» y el modelo recibió una
+        // observación VACÍA, y escribió «he cancelado». Rechazar la fecha en
+        // `agendar_cita` daría lo mismo: el modelo no vería el motivo. Por eso
+        // las herramientas no validan la fecha, y el hecho se corrige después.
+        expect(String(nodo(f, 'agendar_cita').parameters['start'])).toBe("={{ $fromAI('inicio', 'Inicio de la cita en ISO 8601 con zona -04:00', 'string') }}");
+        expect(codigo('Comprobar reserva')).toContain("causaDe[String(nueva.id)] = 'pasado'");
+        expect(codigo('Comprobar reserva')).toContain('idsCreados.has(String(nueva.id)) && r.i < ahora');
+      });
+    });
+  });
