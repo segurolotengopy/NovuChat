@@ -115,7 +115,13 @@ export const registrarCierre = onRequest(
     // seguimientos («nunca a quien ya agendó»). Va en la MISMA transacción que
     // el cierre, y solo la primera vez: un reintento de n8n no toca nada.
     const telefonoLimpio = telefono.replace(/\D/g, '');
-    const refConversacion = tipo === 'cita' && /^[0-9]{8,15}$/.test(telefonoLimpio)
+    // LO MISMO CON UNA VENTA COBRADA EN SIMULADO (25/09/2026). En venta el
+    // cierre simulado nace de un QR pendiente y del archivo del cliente
+    // (`¿Hay comprobante?` del Demo B); si la solicitud seguía en `qr_enviado`,
+    // el servidor seguía diciendo `cobro.pendiente` 24 h, y CADA imagen
+    // siguiente de ese teléfono se tomaba como otro pago: un cierre de venta
+    // más por foto. Con cobro real la cierra el cotejo que cuadra (`sena.ts`).
+    const refConversacion = (tipo === 'cita' || tipo === 'venta') && /^[0-9]{8,15}$/.test(telefonoLimpio)
       ? db.doc(`tenants/${tenantId}/conversaciones/wa_${telefonoLimpio}`) : null;
     const ahoraMs = Date.now();
 

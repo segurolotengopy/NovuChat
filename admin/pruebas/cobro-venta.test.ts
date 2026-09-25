@@ -39,6 +39,7 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta, configuracionFlujo } = await import('../functions/src/ingesta.ts');
 const { cotejarComprobante } = await import('../functions/src/sena.ts');
+const { registrarCierre } = await import('../functions/src/cierres.ts');
 const { imagenDeCobro, registrarQrDeCobro } = await import('../functions/src/cobro.ts');
 const {
   MINUTOS_QR_VENTA, cobroParaElFlujo, detalleDeLaVenta, esperadoDeLaVenta,
@@ -59,6 +60,7 @@ const TEL_2 = '59170000002';   // el pedido del carrito web: manda el total del 
 const TEL_3 = '59170000003';   // QR enviado SIN total
 const TEL_4 = '59170000004';   // QR caducado por reloj
 const TEL_5 = '59170000005';   // sin ningún QR pendiente
+const TEL_6 = '59170000006';   // cobro SIMULADO: el cierre del flujo cierra la solicitud
 const MES = new Date().toISOString().slice(0, 7);
 
 // El mismo QR Simple de `qr.test.ts`: reutilizable, de monto abierto, a nombre
@@ -441,5 +443,33 @@ describe('7. La seña no se rompió: el otro vertical sigue leyendo su importe f
     const sena = esperadoDeLaSena(50, qr, 1000, 2000);
     const venta = esperadoDeLaVenta(50, qr, 1000, 2000, MINUTOS_TOLERANCIA_RELOJ);
     expect(venta).toEqual(sena);
+  });
+});
+
+// ===========================================================================
+describe('Cobro SIMULADO: el cierre de venta cierra el QR pendiente', () => {
+  // Prueba con teléfono del 25/09/2026: el cierre se registró, pero la
+  // solicitud quedó en `qr_enviado` y `cobro.pendiente` seguía en true 24 h.
+  // Cada foto siguiente de ese cliente habría sido otro cierre de venta.
+  it('después del cierre, la solicitud queda cerrada y el total se conserva; un reintento no la toca', async () => {
+    expect((await qrEnviado(TEL_6, 'wamid.qr6', 597)).codigo).toBe(200);
+    expect((await conversacion(TEL_6))['solicitud']).toMatchObject({ etapa: 'qr_enviado', monto: 597 });
+
+    const r = await llamar(registrarCierre, { tipo: 'venta', referencia: 'wamid.pago6', telefono: TEL_6 });
+    expect(r.codigo).toBe(200);
+    const s = (await conversacion(TEL_6))['solicitud'] as Record<string, unknown>;
+    expect(s).toMatchObject({ etapa: 'agendada', monto: 597 });
+    expect(cobroParaElFlujo(undefined, false, 'BOB', () => '', s).pendiente).toBe(false);
+
+    // El mismo cierre otra vez (reintento de n8n): no se cuenta ni se mueve nada.
+    const antes = (await conversacion(TEL_6))['solicitud'];
+    expect((await llamar(registrarCierre, { tipo: 'venta', referencia: 'wamid.pago6', telefono: TEL_6 })).codigo).toBe(200);
+    expect((await conversacion(TEL_6))['solicitud']).toEqual(antes);
+  });
+
+  it('un cierre de REGISTRO no toca la solicitud: solo cita y venta la cierran', async () => {
+    expect((await qrEnviado(TEL_6, 'wamid.qr6b', 300)).codigo).toBe(200);
+    await llamar(registrarCierre, { tipo: 'registro', referencia: 'fila-6', telefono: TEL_6 });
+    expect((await conversacion(TEL_6))['solicitud']).toMatchObject({ etapa: 'qr_enviado', monto: 300 });
   });
 });

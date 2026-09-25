@@ -77,7 +77,20 @@ export interface Plan extends Limites {
    * viaja en la copia como siempre.
    */
   pagaMeta: 'novuchat' | 'comercio';
+  /**
+   * CAMPAÑAS SIMULTÁNEAS (Andres, 24/09/2026): cuántas campañas de Meta puede
+   * tener cargadas y vigentes a la vez el comercio, de 0 a `MAXIMO_CAMPANAS`.
+   * Va FUERA de `Limites` a propósito: ahí todo número vale de 1 en adelante y
+   * la copia de la cuenta se juzga completa con los tres de siempre; un 0 es un
+   * valor legítimo acá (el plan de entrada no trae campañas) y agregarlo a la
+   * copia habría vuelto «incompletas» todas las cuentas que ya existen. Se lee
+   * con `limiteDeCampanas`.
+   */
+  campanas: number;
 }
+
+/** El techo de campañas simultáneas de cualquier plan (decisión de Andres, 24/09/2026). */
+export const MAXIMO_CAMPANAS = 10;
 
 /**
  * VERSIÓN DEL CATÁLOGO: la fecha del último cambio de algún número de este
@@ -85,7 +98,7 @@ export interface Plan extends Limites {
  * límites, para saber más tarde con qué catálogo se asignó cada plan. Se cambia
  * CADA VEZ que cambia un número de abajo.
  */
-export const CATALOGO_PLANES = '2026-09-23';
+export const CATALOGO_PLANES = '2026-09-24';
 
 /**
  * LO QUE SE PUEDE CONTRATAR Y PAGAR. No es lo mismo que lo que publica el
@@ -113,19 +126,19 @@ export const CATALOGO_PLANES = '2026-09-23';
 export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
   impulso: {
     nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
-    pagaMeta: 'novuchat',
+    pagaMeta: 'novuchat', campanas: 0,
   },
   crecimiento: {
     nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
-    pagaMeta: 'novuchat',
+    pagaMeta: 'novuchat', campanas: 3,
   },
   pro: {
     nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
-    pagaMeta: 'novuchat',
+    pagaMeta: 'novuchat', campanas: MAXIMO_CAMPANAS,
   },
   byoc: {
     nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-    pagaMeta: 'comercio',
+    pagaMeta: 'comercio', campanas: MAXIMO_CAMPANAS,
   },
 };
 
@@ -156,6 +169,7 @@ export const PLAN_DEMOSTRACION: Readonly<Plan> = {
   productos: PLANES.pro.productos,
   agendas: PLANES.pro.agendas,
   pagaMeta: 'novuchat',
+  campanas: PLANES.pro.campanas,
 };
 
 /** Todo lo que se puede asignar a una cuenta: los que se venden más el interno. */
@@ -209,6 +223,21 @@ export const LIMITE_MAXIMO = 100_000;
  */
 export function esIdPlan(v: unknown): v is IdPlan {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANES_ASIGNABLES, v);
+}
+
+/**
+ * ¿Puede un comercio PAGARSE este plan por su cuenta? Los publicados, siempre;
+ * uno fuera de la lista (BYOC), solo para renovar el que ya tiene. Estar en el
+ * catálogo significa «se puede pagar», no «se le ofrece a cualquiera»: BYOC lo
+ * asigna NovuChat contra un portafolio verificado, y pagado por un comercio que
+ * sigue en el número de NovuChat le daría 2.000 conversaciones por USD 50 con
+ * los mensajes de Meta a cargo de NovuChat. Es la regla de `planesOfrecidos`
+ * (`web/src/lib/pagar.ts`) hecha cumplir en el servidor (CLAUDE.md, «Base
+ * comercial» §7): la pantalla solo la acompaña. El propietario no pasa por acá.
+ */
+export function planQuePuedePedir(planActual: unknown, pedido: unknown): boolean {
+  if ((PLANES_PUBLICADOS as readonly unknown[]).includes(pedido)) return true;
+  return esIdPlan(pedido) && pedido !== 'demostracion' && planActual === pedido;
 }
 
 /** Los límites de un plan del catálogo. Uno desconocido da los del más chico. */
@@ -267,6 +296,21 @@ export function limitesDeCuenta(cuenta: Record<string, unknown> | null | undefin
     agendas: elegir('agendas'),
     origen: completa ? 'cuenta' : esIdPlan(cuenta?.['plan']) ? 'plan' : 'respaldo',
   };
+}
+
+/**
+ * LAS CAMPAÑAS QUE PUEDE TENER UNA CUENTA A LA VEZ. Como `limitesDeCuenta`:
+ * manda la copia `cuenta.limites.campanas` si es un entero de 0 a
+ * `MAXIMO_CAMPANAS` (lo contratado, o lo que NovuChat le fijó a mano); si no,
+ * el número del plan; y si el plan no es del catálogo, el del más chico.
+ * Nunca más de `MAXIMO_CAMPANAS`, lo diga quien lo diga.
+ */
+export function limiteDeCampanas(cuenta: Record<string, unknown> | null | undefined): number {
+  const crudo = cuenta?.['limites'];
+  const copia = typeof crudo === 'object' && crudo !== null ? (crudo as Record<string, unknown>)['campanas'] : undefined;
+  if (typeof copia === 'number' && Number.isInteger(copia) && copia >= 0 && copia <= MAXIMO_CAMPANAS) return copia;
+  const plan = cuenta?.['plan'];
+  return esIdPlan(plan) ? PLANES_ASIGNABLES[plan].campanas : PLANES[PLAN_POR_DEFECTO].campanas;
 }
 
 // -----------------------------------------------------------------------------

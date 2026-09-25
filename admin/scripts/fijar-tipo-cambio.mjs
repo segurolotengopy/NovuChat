@@ -22,10 +22,13 @@
  *     `plataforma/tipoCambio/historial` con quién y cuándo, y verifica por
  *     relectura.
  *
- * ES UNA DECISIÓN CON FIRMA, NO UNA OPERACIÓN AUTOMÁTICA: el valor lo lee una
- * persona del sitio del BCB y lo carga con su nombre en `--por`. Hasta que
- * exista una lectura automática verificada, esto se corre a mano, con el OK
- * de Andres en el chat, y NUNCA sin `--aplicar` explícito.
+ * DESDE EL 25/09/2026 LA CARGA DIARIA ES AUTOMÁTICA: `tipoCambioBcb` lee la
+ * tabla del BCB tres veces al día y escribe si hay un TCO nuevo, válido y sin
+ * un salto de más del 5 %. Este script queda para CORREGIR a mano --un salto
+ * que la Function no escribe sola, una página del BCB caída varios días--:
+ * el valor lo lee una persona, lo carga con su nombre en `--por`, con el OK de
+ * Andres en el chat, y NUNCA sin `--aplicar` explícito. La Function no pisa
+ * una carga manual con la misma fecha o posterior.
  *
  * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/prepago.js`): antes de
  * correrlo, `pnpm functions:build`.
@@ -92,7 +95,9 @@ if (!APLICAR) { console.log('\n  Seco: no se escribió nada. Agregue --aplicar (
 
 const ahora = Timestamp.now();
 const lote = db.batch();
-lote.set(ref, { ...nuevo, actualizadoEn: ahora, actualizadoPor: POR });
+// El documento lo lee cualquier sesión (la pantalla «Pagar»): lleva el TCO y
+// cuándo se cargó, no QUIÉN. Eso va al historial, que solo lee el propietario.
+lote.set(ref, { ...nuevo, actualizadoEn: ahora });
 lote.create(ref.collection('historial').doc(), { ...nuevo, en: ahora, por: POR, antes: actual ? { tco: actual.tco ?? null, fecha: actual.fecha ?? null } : null });
 await lote.commit();
 

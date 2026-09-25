@@ -2931,6 +2931,77 @@ que el comercio ya pega (`functions/src/mapa.ts`), y la pantalla solo informa
 si quedaron detectadas.
 
 
+## 4sexdecies. Campañas de Meta: texto exacto, vigencia y tope por plan
+
+**Decidido por Andres el 24/09/2026.** Un anuncio de clic a WhatsApp deja
+escrito en el chat un texto que el comercio eligió al crear el anuncio. El
+comercio carga ese **texto exacto** en la pestaña «Campañas», con fecha de
+inicio y de fin, y puede tener **varias a la vez** hasta el tope de su plan.
+Cuando llega ese texto, el flujo **salta el menú**: si el texto es igual a
+una opción del menú, entra directo a esa rama; si no, va al asistente con la
+campaña en el contexto. Una campaña nunca dispara la emergencia por su título.
+
+### 4sexdecies.1 Dónde vive, y por qué un documento
+
+Capa **común** (§4sexies): un anuncio lleva al número del comercio, no a un
+flujo. Un solo documento, `tenants/{t}/config/campanas`:
+
+| Campo | Quién lo escribe | Qué es |
+|---|---|---|
+| `lista` | la consola (admin del comercio) | lo **propuesto**: `{id, texto, inicio, fin}`, fechas `AAAA-MM-DD` de Bolivia, fin inclusivo |
+| `revision` | solo `verificarCampanas` | el veredicto por campaña (`aprobada`, `rechazada`, `pendiente`, `fuera_del_plan`), con motivo, campo y el hash de la lista |
+| `vigentes` | solo `verificarCampanas` | las aprobadas: lo único que lee `configuracionFlujo` |
+
+Un documento y no una colección porque así la regla hace cumplir el tope con
+`lista.size()`, sin contador aparte (el tope máximo es 10).
+
+### 4sexdecies.2 El tope por plan, en el servidor
+
+`planes.ts`: `campanas` por plan (Impulso 0, Crecimiento 3, Pro 10, BYOC 10,
+demostración 10; **propuesta a confirmar por Andres**) y `limiteDeCampanas`,
+que lee la copia `cuenta/estado.limites.campanas` si es un entero de 0 a 10.
+Va **fuera** de `Limites` porque ahí todo vale de 1 en adelante y la copia se
+juzga completa con los tres de siempre.
+
+La regla de `config/campanas` exige admin, comercio operativo, sello, que no se
+toquen `revision` ni `vigentes` (por el diff), y `lista.size() <=
+limiteCampanas()`, con la tabla escrita a mano y comparada con `planes.ts` por
+la suite. **Una excepción deliberada:** si el plan bajó con campañas cargadas,
+pasa una escritura que ACHICA la lista, para que el comercio pueda borrar.
+`configuracionFlujo` recorta además al tope de hoy.
+
+**La regla valida solo la forma mínima** de cada campaña (mapa de cuatro
+claves, texto de hasta 300): una petición tiene un tope de 1.000 expresiones
+evaluadas y validar campo por campo diez campañas lo agotaba desde la quinta
+(medido en el emulador). El formato, las fechas y el contenido los decide el
+servidor; una campaña mal escrita queda cargada y **nunca** se aplica.
+
+### 4sexdecies.3 La verificación antes de aplicar
+
+`verificarCampanas` es un disparador sobre el documento, como
+`verificarComportamiento` (§4quater.5), y solo actúa si cambió `lista`.
+`campanas.ts` (puro) decide, en este orden: tope del plan, forma, fechas (fin
+pasado, inicio pasado para una campaña nueva o con el inicio cambiado, inicio a
+más de seis meses, más de un año de duración), duplicados por palabras,
+palabras de emergencia, la capa 1 de patrones del comportamiento, y el modelo:
+¿es algo que un cliente de ESTE negocio escribiría, sin contradecir su
+configuración ni prometer precios o promociones que la información del negocio
+no respalda? Con el mismo texto ya aprobado no se le vuelve a preguntar. Un
+modelo caído deja la campaña `pendiente`, y una pendiente no se aplica.
+
+### 4sexdecies.4 El flujo
+
+`configuracionFlujo` manda `campanas: [{id, texto, inicio, fin}]` con instantes
+ISO: solo las `vigentes`, en curso hoy y dentro del tope. `Config del negocio`
+vuelve a mirar la vigencia contra el reloj y deja `campanasActivas`.
+`Normalizar entrada` compara las **palabras** del mensaje (sin mayúsculas,
+tildes, signos ni emojis) con las de cada campaña, y lee además el `referral`
+del anuncio de Meta. El estado de la conversación de Bellido salta el menú.
+La consola compara con la misma cuenta; `campanas-consola.test.ts` lo fija.
+
+**Mensajes:** −1 por cada conversación que entra por una campaña reconocida en
+un flujo con menú (el menú no sale); 0 en el resto.
+
 ## 5. Integración con n8n
 
 ### 5.1 Lo que va en cada sentido
