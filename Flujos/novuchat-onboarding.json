@@ -56,12 +56,22 @@
                 "type": "number",
                 "operation": "equals"
               }
+            },
+            {
+              "id": "c3",
+              "leftValue": "={{ String((($json.metadata || {}).phone_number_id) || '') }}",
+              "rightValue": "REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
             }
           ],
           "combinator": "and"
         },
         "options": {}
-      }
+      },
+      "notes": "Tres condiciones, todas obligatorias: trae mensajes, no trae acuses, y el mensaje es PARA ESTE NUMERO. La tercera existe desde el 24/09/2026 (Tech Provider): la app de Meta que dispara este flujo es compartida con otro producto y una app tiene un solo webhook, asi que por esta ruta pueden llegar eventos de numeros que no son el de NovuChat. Sin este filtro, `Config del negocio` cae al respaldo de `Config base` y el asistente contestaria como NovuChat a un cliente de otro sistema. El valor es el mismo marcador que `Config base`: lo llena preparar-import.sh."
     },
     {
       "parameters": {

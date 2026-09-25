@@ -139,6 +139,10 @@ fi
 previo() { [[ -f "${DESTINO}.respaldo" ]] && grep -E "^$1=" "${DESTINO}.respaldo" | head -1 | cut -d= -f2- || true; }
 PREV_WF=$(previo N8N_WORKFLOW_ID); PREV_PATH=$(previo N8N_WEBHOOK_PATH)
 PREV_URL=$(previo N8N_WEBHOOK_URL); PREV_VERIF=$(previo WA_WEBHOOK_VERIFY_TOKEN)
+# El token de verificacion del webhook con el nombre que lee webhook-meta.sh
+# --alta-meta (24/09/2026: el .env de NovuChat no lo tenia con ningun nombre,
+# y el alta del webhook en la app nueva se habria negado).
+PREV_META_VERIF=$(previo META_VERIFY_TOKEN)
 GRAPH=$(grep -E '^WA_GRAPH_VERSION=' .env | cut -d= -f2- | tr -d '[:space:]' || true)
 umask 077
 {
@@ -160,6 +164,7 @@ umask 077
   echo "N8N_WEBHOOK_URL=${PREV_URL}"
   echo "N8N_WORKFLOW_ID=${PREV_WF}"
   if [[ -n "$PREV_VERIF" ]]; then echo "WA_WEBHOOK_VERIFY_TOKEN=${PREV_VERIF}"; fi
+  if [[ -n "$PREV_META_VERIF" ]]; then echo "META_VERIFY_TOKEN=${PREV_META_VERIF}"; fi
 } > "$DESTINO"
 chmod 600 "$DESTINO"
 

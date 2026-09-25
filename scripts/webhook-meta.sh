@@ -20,6 +20,24 @@
 #       borra el temporal y activa el flujo del cliente
 #   ./scripts/webhook-meta.sh --probar   --webhook-id <uuid>
 #       hace el GET que hace Meta y muestra qué contesta la ruta
+#   ./scripts/webhook-meta.sh --ver-meta --env-cliente <.env.x>
+#       SOLO LEE: muestra a qué URL apunta hoy el webhook de la app del
+#       entorno. Existe (24/09/2026) porque una app de Meta tiene UNA sola URL
+#       de webhook: darla de alta en una app que ya atiende a otro producto le
+#       quita el webhook a ese producto. Se mira antes de --alta-meta.
+#   ./scripts/webhook-meta.sh --ver-waba --env-cliente <.env.x>
+#       SOLO LEE: qué apps están suscritas a la WABA del entorno y si alguna
+#       tiene una URL propia (`override_callback_uri`).
+#   ./scripts/webhook-meta.sh --alta-waba --webhook-id <uuid> --env-cliente <.env.x>
+#       EL WEBHOOK A NIVEL DE WABA (24/09/2026, Tech Provider). Cuando la app
+#       es compartida con otro producto —AAB1-WA-Prod atiende también al otro
+#       sistema— NO se toca el webhook de la app: Meta permite que UNA WABA
+#       tenga su propia URL por encima de la de la app
+#       (POST /{WABA}/subscribed_apps con override_callback_uri y verify_token;
+#       la app tiene que estar ya suscrita a la WABA). Solo van por ahí los
+#       mensajes de esa WABA; los eventos de plantillas y de cuenta siguen a la
+#       URL de la app. Meta verifica la URL con el mismo desafío: el rodeo
+#       --preparar / --cerrar aplica igual. Usa WA_TOKEN y WABA_ID del entorno.
 #
 # Lee N8N_BASE_URL y N8N_API_KEY de .env (o --env-n8n). No imprime valores.
 # =============================================================================
@@ -33,6 +51,9 @@ while [ $# -gt 0 ]; do
     --cerrar)      MODO="cerrar"; shift ;;
     --probar)      MODO="probar"; shift ;;
     --alta-meta)   MODO="alta-meta"; shift ;;
+    --ver-meta)    MODO="ver-meta"; shift ;;
+    --ver-waba)    MODO="ver-waba"; shift ;;
+    --alta-waba)   MODO="alta-waba"; shift ;;
     --webhook-id)  WH="$2"; shift 2 ;;
     --flujo-id)    FID="$2"; shift 2 ;;
     --env-n8n)     ENV_N8N="$2"; shift 2 ;;
@@ -40,6 +61,68 @@ while [ $# -gt 0 ]; do
     *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
+
+# --ver-waba y --alta-waba: la suscripción de la WABA, con el token de usuario
+# de sistema del entorno. Lo que se imprime: app, campos y URL propia; nunca
+# el token ni el verify token.
+if [ "$MODO" = "ver-waba" ] || [ "$MODO" = "alta-waba" ]; then
+  [ -n "$ENV_CLIENTE" ] && [ -f "$ENV_CLIENTE" ] || { echo "Uso: --ver-waba|--alta-waba --env-cliente <.env.x> [--webhook-id <uuid>]" >&2; exit 2; }
+  [ -f "$ENV_N8N" ] || { echo "✗ Falta $ENV_N8N" >&2; exit 1; }
+  set -a
+  # shellcheck disable=SC1090  # ruta variable: la elige un argumento
+  source "$ENV_N8N"
+  # shellcheck disable=SC1090  # ruta variable: la elige un argumento
+  source "$ENV_CLIENTE"
+  set +a
+  : "${WA_TOKEN:?}" "${WABA_ID:?}" "${WA_APP_ID:?}"
+  G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
+  mostrar_waba() {
+    curl -s --max-time 30 "$G/$WABA_ID/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" \
+      | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+if 'error' in d: print('  ERROR:', d['error'].get('message')); sys.exit(1)
+if not d.get('data'): print('  (ninguna app suscrita a esta WABA)')
+for s in d.get('data',[]):
+    a=s.get('whatsapp_business_api_data',{})
+    print('  app', a.get('name','?'), '…'+str(a.get('id',''))[-4:], '· URL propia de la WABA:', s.get('override_callback_uri') or '(ninguna: usa la de la app)')"
+  }
+  if [ "$MODO" = "ver-waba" ]; then
+    echo "Apps suscritas a la WABA …${WABA_ID: -4}:"; mostrar_waba; exit 0
+  fi
+  [ -n "$WH" ] || { echo "✗ --alta-waba necesita --webhook-id" >&2; exit 2; }
+  : "${N8N_BASE_URL:?}"
+  VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
+  URL="${N8N_BASE_URL%/}/webhook/$WH/webhook"
+  echo "Webhook PROPIO de la WABA …${WABA_ID: -4} (la URL de la app …${WA_APP_ID: -4} no se toca):"
+  echo "  override_callback_uri: $URL"
+  R=$(curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
+        -H "Authorization: Bearer ${WA_TOKEN}" -H "Content-Type: application/json" \
+        -d "$(python3 -c "import json,sys; print(json.dumps({'override_callback_uri': sys.argv[1], 'verify_token': sys.argv[2]}))" "$URL" "$VT")")
+  echo "  respuesta: $R"
+  echo "Suscripciones vigentes de la WABA:"; mostrar_waba
+  exit 0
+fi
+
+# --ver-meta: el GET de suscripciones de la app, con el app access token
+# APPID|APPSECRET del .env del cliente. No escribe nada y no imprime valores:
+# solo la URL de devolución de llamada, si está activa y qué campos tiene.
+if [ "$MODO" = "ver-meta" ]; then
+  [ -n "$ENV_CLIENTE" ] && [ -f "$ENV_CLIENTE" ] || { echo "Uso: --ver-meta --env-cliente <.env.x>" >&2; exit 2; }
+  set -a
+  # shellcheck disable=SC1090  # ruta variable: la elige un argumento
+  source "$ENV_CLIENTE"
+  set +a
+  : "${WA_APP_ID:?}" "${WA_APP_SECRET:?WA_APP_SECRET no está en $ENV_CLIENTE: sin él no hay app access token}"
+  G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
+  echo "Suscripciones de webhook de la app …${WA_APP_ID: -4}:"
+  curl -s --max-time 30 "$G/$WA_APP_ID/subscriptions?access_token=${WA_APP_ID}|${WA_APP_SECRET}" \
+    | python3 -c "
+import json,sys; d=json.load(sys.stdin)
+if 'error' in d: print('  ERROR:', d['error'].get('message')); sys.exit(1)
+if not d.get('data'): print('  (ninguna: la app no tiene webhook dado de alta)')
+for s in d.get('data',[]): print('  ', s.get('object'), '→', s.get('callback_url'), '· activo:', s.get('active'), '· campos:', [f.get('name') for f in s.get('fields',[])])"
+  exit 0
+fi
 
 # --alta-meta: registra la URL en la APP por la Graph API, sin pasar por la
 # pantalla de Meta (que el 18/09 contestaba «#1004 An error occurred» sin
