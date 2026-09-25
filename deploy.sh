@@ -2,7 +2,7 @@
 # ==============================================================================
 # deploy.sh v2 — Despliegue manual gobernado por el estándar DevSecOps
 # ==============================================================================
-# Versión: 2.0 | Fecha: 2026-08-24
+# Versión: 2.1 | Fecha: 2026-09-12
 # Documentos relacionados: 00-gobernanza/01-politica-cicd-devsecops.md,
 #   00-gobernanza/02-flujo-git-y-versionado.md, 01-seguridad/05-checklist-pase-a-produccion.md,
 #   02-pipelines/README.md, 03-scripts/security-local.sh
@@ -57,7 +57,7 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 # Constantes y estado global
 # ------------------------------------------------------------------------------
-readonly SCRIPT_VERSION="2.0"
+readonly SCRIPT_VERSION="2.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 readonly MANIFIESTO=".devsecops.yml"
