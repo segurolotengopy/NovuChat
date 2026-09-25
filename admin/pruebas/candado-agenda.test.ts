@@ -196,6 +196,59 @@ describe('Candado contra la doble reserva', () => {
     expect(r['transferir']).toBe(true);
   });
 
+  it('EL HUECO DEL 24/09: agendar_cita FALLÓ y el calendario SÍ responde → falla CERRADO', () => {
+    // Google rechazó la creación (o la fecha, o dio 403): `Procesar respuesta`
+    // vio `agendar_cita` en los pasos sin ningún evento con id
+    // (`agendarSinEvento`). La verificación contesta bien —trae la cita de
+    // otra paciente— y no hay ninguna cita reciente de esta conversación.
+    // Antes: sin id que anclar y sin reciente, el texto «quedó agendada» salía
+    // tal cual. Ahora se cierra por el hecho, como con el calendario caído.
+    const r = comprobarTodo([
+      ev('otra', 'Cita Otra — control', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T09:30:00-04:00', '2026-09-01T10:00:00.000Z'),
+    ], AHORA, { mensajeReservaNoConfirmada: '' },
+    { ...PREVIA, respuesta: 'Listo, quedó agendada tu cita para mañana a las 9:00.', agendarSinEvento: true, eventosCreados: [] })[0] ?? {};
+    expect(String(r['respuesta'])).not.toMatch(/quedó agendada/i);
+    expect(String(r['respuesta'])).toMatch(/recepci/i);
+    expect(r['reservaVerificada']).toBe(false);
+    expect(r['verificacionFallo']).toBe(true);
+    expect(r['agendarFallo']).toBe(true);
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('agendar_cita corrio y NO devolvio ninguna cita');
+  });
+
+  it('y NO se apropia de una cita reciente de OTRA conversación cuando la herramienta falló', () => {
+    // Antes del hotfix, con `idsCreados` vacío el respaldo tomaba «la primera
+    // reciente» como propia: la cita que otro paciente acababa de agendar se
+    // habría verificado como si fuera de este turno, con seña y cierre.
+    const r = comprobarTodo([
+      ev('ajena', 'Cita Otra — corte', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T09:30:00-04:00', '2026-09-06T20:15:30.000Z'),
+    ], AHORA, { mensajeReservaNoConfirmada: '' },
+    { ...PREVIA, agendarSinEvento: true, eventosCreados: [] })[0] ?? {};
+    expect(r['reservaVerificada']).toBe(false);
+    expect(r['eventoId']).toBeUndefined();
+    expect(r['agendarFallo']).toBe(true);
+  });
+
+  it('con la herramienta fallida usa el texto que configuró el negocio, si lo hay', () => {
+    const r = comprobarTodo([], AHORA, { mensajeReservaNoConfirmada: 'Texto del consultorio.' },
+      { ...PREVIA, agendarSinEvento: true, eventosCreados: [] })[0] ?? {};
+    expect(r['respuesta']).toBe('Texto del consultorio.');
+    expect(r['transferir']).toBe(true);
+  });
+
+  it('pero si la herramienta SÍ devolvió su cita, `agendarSinEvento` no aplica y el candado sigue igual', () => {
+    const r = comprobarTodo([
+      ev('propia', 'Cita Ana — control', CAL_JOSE,
+         '2026-09-07T09:00:00-04:00', '2026-09-07T09:30:00-04:00', '2026-09-06T20:16:00.000Z'),
+    ], AHORA, { mensajeReservaNoConfirmada: '' },
+    { ...PREVIA, agendarSinEvento: false, eventosCreados: [{ id: 'propia', calendario: CAL_JOSE }] })[0] ?? {};
+    expect(r['agendarFallo']).toBeUndefined();
+    expect(r['reservaVerificada']).toBe(true);
+    expect(r['eventoId']).toBe('propia');
+  });
+
   it('un item de error JUNTO a eventos reales no es «calendario caído»: decide el candado normal', () => {
     // Solo cuenta como caído cuando NO vino ningún evento. Si hay eventos, la
     // consulta funcionó y el error es de otro calendario u otra cosa: se sigue
@@ -893,4 +946,31 @@ describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
     const items = comprobarTodo([almuerzo({ recurringEventId: 'serie' }), nuevaAlMediodia]);
     expect(items[0]?.['causaDeLaCaida']).toBe('horario');
   });
+});
+
+describe('Olvidar turno fallido: borra DOS mensajes, no la memoria entera', () => {
+  // VERIFICADO CONTRA EL PAQUETE `@n8n/n8n-nodes-langchain@2.36.5` el 25/09/2026
+  // (`dist/node-definitions/nodes/n8n-nodes-langchain/memoryManager/v11/mode_delete.ts`):
+  //   deleteMode?: 'lastN' | 'all'      (@default lastN)
+  //   lastMessagesCount?: number        (@displayOptions.show { deleteMode: ["lastN"] })
+  // y en `MemoryManager.node.js` el código hace `if (deleteMode === 'lastN') {...}`
+  // y, si no, borra TODO. Desde el 17/09 los tres flujos de reservas declaraban
+  // `lastMessages`, que no existe: en cada reintento tras un cruce se vaciaba la
+  // memoria completa del paciente, justo cuando la conversación más importa.
+  // Un parámetro mal nombrado no da error en n8n: el nodo corre con el valor
+  // por defecto o con la rama «else». Por eso se fija acá.
+  const VALIDOS = ['lastN', 'all'];
+  for (const cliente of ['demo-a', 'platinum', 'bellido']) {
+    it(`${cliente}: deleteMode es lastN con lastMessagesCount 2, y los dos son valores que el nodo conoce`, () => {
+      const otro = JSON.parse(readFileSync(
+        join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8'),
+      ) as { nodes: { name: string; type: string; typeVersion: number; parameters: Record<string, unknown> }[] };
+      const m = otro.nodes.find((n) => n.name === 'Olvidar turno fallido');
+      expect(m, cliente).toBeDefined();
+      expect(m?.type).toBe('@n8n/n8n-nodes-langchain.memoryManager');
+      expect(m?.typeVersion).toBe(1.1);
+      expect(VALIDOS).toContain(m?.parameters['deleteMode']);
+      expect(m?.parameters).toEqual({ mode: 'delete', deleteMode: 'lastN', lastMessagesCount: 2 });
+    });
+  }
 });
