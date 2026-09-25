@@ -46,6 +46,12 @@
 
 > Número real: **no** tiene la lista de 5 destinatarios del número de prueba.
 
+> **Traspaso en curso (24/09/2026):** el chat interno pasa al portafolio
+> `NovuChat` de Silvana, operado por AAB1 como **Tech Provider** (la app de
+> AAB1 sobre la WABA de Silvana, compartida como socio), con el número
+> `${WA_NUMBER_NOVUCHAT}` nuevo. Esta tabla se reescribe cuando el traspaso
+> termine; procedimiento en `CLIENTES/NOVUCHAT/traspaso-tech-provider.md`.
+
 ## 2. n8n
 
 | Parámetro | Valor |

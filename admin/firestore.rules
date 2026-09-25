@@ -1867,6 +1867,19 @@ service cloud.firestore {
             // admitida para no romper los documentos ya escritos con ese
             // nombre; no se escribe mas.
             'cierres', 'conversaciones', 'atenciones', 'interacciones',
+            // BLOQUES Y UMBRALES (13/09). `bloquesAdicionales` = de esas
+            // conversaciones, cuántas vinieron de exceder las 25 respuestas en
+            // una misma ventana. `derivadasAOperador` y `bloqueadas` = ventanas
+            // que cruzaron cada umbral de uso extendido (`atencion.ts`). Los
+            // tres los escribe la ingesta desde que existen los bloques y
+            // faltaban en esta lista: con el principal de ingesta sano no se
+            // notaba —el Admin SDK no pasa por las reglas—, pero es justo el
+            // caso que esta lista blanca existe para cubrir.
+            'bloquesAdicionales', 'derivadasAOperador', 'bloqueadas',
+            // POR ANUNCIO (`Analisis/38` §2). Subconjunto de `conversaciones`:
+            // las que nacieron de un anuncio de clic a WhatsApp y abren la
+            // ventana de punto de entrada gratuito de Meta.
+            'conversacionesPorAnuncio',
             // SEÑA POR QR (bloque 2, 17/09). Las tres cuentan el embudo de la
             // reserva con seña: QR enviados, comprobantes cotejados —cualquiera
             // sea el resultado— y retenciones que vencieron sin comprobante.

@@ -22,7 +22,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | Fase | Qué | Estado | Cierra |
 |---|---|---|---|
 | **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits | **en curso (25/09)**: todo preparado en local; espera los «sí» de la cola de fusión | H0 (con E) |
-| **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 0 hecho** (25/09): solo `_reusable-security.yml` cambia de verdad (2.3→2.4); cuatro copias atrasadas solo en la cabecera; `gitleaks.toml` y `.pre-commit-config.yaml` sin cambios del estándar; `security-local.sh` (2.4→2.5) y `deploy.sh` (cabecera) por fusión de tres vías. Manifiesto valida; `ci-node-firebase.yml` compatible con 2.4. **Bloque 1 en curso** en `chore/estandar-devsecops-2.4` | H0 |
+| **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 1 en PR #191** (25/09): siete copias al nivel de `702f2da`; pruebas del estándar, actionlint, ShellCheck, validador y `security-local.sh` iguales antes y después. Se fusiona después de F-1 |
 | **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de seis tenants, Negocios (A-3b) | espera H0 | H1 |
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | espera H0; en paralelo con F1 | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | espera H0; en paralelo con F1 y F2; antes del ensayo de F3 | H3 |
@@ -38,21 +38,21 @@ Cada paso escribe en GitHub y necesita el «sí» de Andres. Lo que está
 
 | # | Bloque | Rama | Estado (25/09) | Costo |
 |---|---|---|---|---|
-| 1 | Hotfix: `deleteMode` y hueco del candado, tres flujos de reservas | `cierre/hotfix-memoria-y-candado`, **PR #186** | **en PR**: 1076 pruebas de flujos + suite completa 3266 en verde; seguridad aprobado con 2 observaciones atendidas. Falta: OK de fusión, **ensayo en el Demo A** y **publicación de los 3 flujos en la ventana de 02:00 a 03:00** | 0 mensajes; 1 PR; 3 publicaciones |
-| 2 | Cinco ramas de documentación, en este orden: `estado/v0.9.0` (#182, más el commit local con `Prompts/capacidades-comunes.md`, que hay que subir) → `prepago/tablero-al-dia` (#183) → `cierre/traspaso-25-09` (#185) → `claude/topes-campanas-confirmados` (**#189**) → `docs/planes-a-medida` (#184) | las cinco | **el commit local de `estado/v0.9.0` ya está subido a #182; simulado en local**: cada una entra limpia contra `main`; en secuencia chocan `ESTADO.md` (dos veces) y `Prompts/LEEME.md` (una), y la receta que conserva los dos lados las resuelve (`scratchpad/resolver-docs.py`). Al fusionar cada una se le trae `main` a la rama, se resuelve igual y se fusiona | 0 mensajes; 5 fusiones, 1 push, 1 PR nuevo, hasta 3 pushes de resolución |
-| 3 | Traspaso del chat interno | `claude/novuchat-silvana-transfer-c40177`, **PR #187** | **en PR**: 138 pruebas de captación, saneo 0, identidad ok. Falta: OK de fusión | 0 mensajes; 1 push, 1 PR |
-| 4 | Origen del anuncio | `medicion/origen-del-anuncio`, **PR #188** | **en PR**: `main` fusionado sin reescribir la rama, `origen` derivado del objeto `anuncio`, suite completa 3285 en verde, saneo 0. Falta: OK de fusión | 0 mensajes; 1 push, 1 PR |
+| 1 | Hotfix: `deleteMode` y hueco del candado, tres flujos de reservas | `cierre/hotfix-memoria-y-candado`, **PR #186, fusionado el 25/09** | 1076 pruebas de flujos + suite completa 3266 en verde; seguridad aprobado con 2 observaciones atendidas. Falta: **ensayo en el Demo A** y **publicación de los 3 flujos en la ventana de 02:00 a 03:00** (atraso declarado en `docs/versiones-por-cliente.md`) | 0 mensajes; 1 PR; 3 publicaciones |
+| 2 | Cinco ramas de documentación, en este orden: `estado/v0.9.0` (#182, más el commit local con `Prompts/capacidades-comunes.md`, que hay que subir) → `prepago/tablero-al-dia` (#183) → `cierre/traspaso-25-09` (#185) → `claude/topes-campanas-confirmados` (**#189**) → `docs/planes-a-medida` (#184) | las cinco | **fusionadas el 25/09 en ese orden** (#182, #183, #185, #189, #184). A #185 y #184 se les trajo `main` a la rama resolviendo `ESTADO.md` y `Prompts/LEEME.md` con la receta que conserva los dos lados | 0 mensajes; 5 fusiones, 1 push, 1 PR nuevo, hasta 3 pushes de resolución |
+| 3 | Traspaso del chat interno | `claude/novuchat-silvana-transfer-c40177`, **PR #187, fusionado el 25/09** | 138 pruebas de captación, saneo 0, identidad ok. Los pasos de Meta: sesión de clientes de NovuChat | 0 mensajes; 1 push, 1 PR |
+| 4 | Origen del anuncio | `medicion/origen-del-anuncio`, **PR #188, fusionado el 25/09** | `main` fusionado dos veces sin reescribir la rama (la segunda, ya con el hotfix adentro: 1409 pruebas de flujos en verde), `origen` derivado del objeto `anuncio`, suite completa 3285 en verde, saneo 0. Las Functions entran con la siguiente etiqueta | 0 mensajes; 1 push, 1 PR |
 | 5 | Ayudante de configuración | `claude/ai-config-helper-e3b434` | **diseño guardado** como `Analisis/42` (en `cierre/25-09`). Falta: borrar la rama remota, con OK | 0 |
 | 6 | Worktrees colgados | `novuchat-byoc-pricing-4e0c69` (origen), `novuchat-modularization-0fc59d` (tablero), `optimistic-fermi-a6a02d` (traspaso), `planes` | se quitan después de fusionar sus ramas; los de esta sesión (`cierre-25-09`, `hotfix`, `origen-anuncio`, `traspaso`, `cola-docs`) se quitan al cerrar F-1 | 0 |
 | 7 | Matriz de capacidades (anexo A de `Analisis/41`) | `cierre/25-09` (`b768b0c`) | **hecho**: `Analisis/41-anexo-A-matriz-de-capacidades.md`; ninguna brecha es regresión, todas van a F3 | 0 |
 | 8 | Este tablero | `cierre/25-09` | **hecho** | 0 |
-| 9 | `Analisis/41` y los tres prompts | `cierre/25-09`, **PR #190** | **en PR**, con `Analisis/42`, el anexo A y este tablero. Se fusiona después del paso 2 (`Prompts/LEEME.md` choca con #182 y #185; se le trae `main` y se resuelve) | 0 mensajes; 1 push, 1 PR |
+| 9 | `Analisis/41` y los tres prompts | `cierre/25-09`, **PR #190** | **en PR**, con `Analisis/42`, el anexo A y este tablero; `main` traído a la rama (este tablero reemplaza al anterior, que #183 había actualizado; `LEEME.md` conserva las dos filas) | 0 mensajes; 1 push, 1 PR |
 
 **Autorización general de Andres (25/09):** push y apertura de PR sin pedir OK
 por cada uno; fusionar, ensayar, publicar, desplegar y Meta siguen con «sí»
 por acción.
 
-**Lo que se le pregunta a Andres:** si el comprobante en simulado del Demo B (`Analisis/41` §7.1 lo
+**Decidido por Andres (25/09, tarde):** fusionar en el orden de la cola con CI en verde; el comprobante en simulado del Demo B va en PR propio; la excepción de `uuid` se corrige. Queda por decidir `ruta` (recomendación abajo). Antes se preguntaba si el comprobante en simulado del Demo B (`Analisis/41` §7.1 lo
 manda «con el hotfix», el prompt acota el hotfix a los tres flujos de
 reservas) entra en este PR con una cuarta publicación o va en un PR propio.
 
@@ -130,3 +130,8 @@ quedó fuera y por qué; lo que se encontró mal en `Analisis/41`.
   (origen), **#189** (topes), **#190** (documentación); #182 recibió el commit
   del prompt de capacidades. Anexo A entregado. Relevamiento de E cerrado;
   bloque 1 de E en construcción con el agente `devsecops`.
+- **25/09/2026 (noche)** — Andres autoriza fusionar en orden con CI en verde.
+  Fusionados **#186, #182, #183, #185, #189, #184, #187, #188**, en ese orden;
+  cuatro de ellos recibieron `main` con la receta de conservar los dos lados.
+  #190 y #191 abiertos. Decisiones de Andres: Demo B en PR propio; corregir
+  `uuid`; `ruta` pendiente de recomendación.
