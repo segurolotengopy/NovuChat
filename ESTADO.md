@@ -41,6 +41,14 @@ trabajo de Cloud Scheduler activo; revisiones nuevas de `registrarCierre`,
 `verificarCampanas` y `tipoCambioBcb`; públicas 404/401; corte apagado; consola
 200; sin errores.
 
+**ERROR DE ARQUITECTURA (Andres, 25/09): audio, imagen y documento son
+capacidades GENERALES y solo las tienen los flujos de reservas.** La prueba de
+Andres en el Demo B (`#5903` imagen, `#5907` nota de voz) recibió «no puedo
+abrir imágenes» y «no puedo escuchar notas de voz». No es regresión: el Demo B
+nunca las tuvo (12 versiones del JSON), la captación tampoco, y el registro de
+versiones no lo ve porque compara cada flujo con su propio JSON. **Se cierra en
+una sesión dedicada: `Prompts/capacidades-comunes.md`.**
+
 **Decidido por Andres el 25/09:** el QR de seña de Platinum que vence el 26/09
 no es un problema, porque Platinum todavía no sale a producción; y está bien que
 toda sesión lea el tipo de cambio.
