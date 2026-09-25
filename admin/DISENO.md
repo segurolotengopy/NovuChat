@@ -2958,7 +2958,7 @@ Un documento y no una colección porque así la regla hace cumplir el tope con
 ### 4sexdecies.2 El tope por plan, en el servidor
 
 `planes.ts`: `campanas` por plan (Impulso 0, Crecimiento 3, Pro 10, BYOC 10,
-demostración 10; **propuesta a confirmar por Andres**) y `limiteDeCampanas`,
+demostración 10; **confirmado por Andres el 24/09/2026**) y `limiteDeCampanas`,
 que lee la copia `cuenta/estado.limites.campanas` si es un entero de 0 a 10.
 Va **fuera** de `Limites` porque ahí todo vale de 1 en adelante y la copia se
 juzga completa con los tres de siempre.
