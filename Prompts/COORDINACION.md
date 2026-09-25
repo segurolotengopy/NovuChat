@@ -22,7 +22,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | Fase | Qué | Estado | Cierra |
 |---|---|---|---|
 | **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits | **en curso (25/09)**: todo preparado en local; espera los «sí» de la cola de fusión | H0 (con E) |
-| **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de cuatro copias con lo propio | relevamiento (bloque 0) en curso, sin escribir | H0 |
+| **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 0 hecho** (25/09): solo `_reusable-security.yml` cambia de verdad (2.3→2.4); cuatro copias atrasadas solo en la cabecera; `gitleaks.toml` y `.pre-commit-config.yaml` sin cambios del estándar; `security-local.sh` (2.4→2.5) y `deploy.sh` (cabecera) por fusión de tres vías. Manifiesto valida; `ci-node-firebase.yml` compatible con 2.4. **Bloque 1 en curso** en `chore/estandar-devsecops-2.4` | H0 |
 | **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de seis tenants, Negocios (A-3b) | espera H0 | H1 |
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | espera H0; en paralelo con F1 | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | espera H0; en paralelo con F1 y F2; antes del ensayo de F3 | H3 |
@@ -38,18 +38,21 @@ Cada paso escribe en GitHub y necesita el «sí» de Andres. Lo que está
 
 | # | Bloque | Rama | Estado (25/09) | Costo |
 |---|---|---|---|---|
-| 1 | Hotfix: `deleteMode` y hueco del candado, tres flujos de reservas | `cierre/hotfix-memoria-y-candado` (2 commits) | **listo**: 1076 pruebas de flujos + suite completa 3266 en verde; seguridad aprobado con 2 observaciones atendidas. Falta: push, PR, fusión, **ensayo en el Demo A** y **publicación de los 3 flujos en la ventana de 02:00 a 03:00** | 0 mensajes; 1 PR; 3 publicaciones |
-| 2 | Cinco ramas de documentación, en este orden: `estado/v0.9.0` (#182, más el commit local con `Prompts/capacidades-comunes.md`, que hay que subir) → `prepago/tablero-al-dia` (#183) → `cierre/traspaso-25-09` (#185) → `claude/topes-campanas-confirmados` (sin PR: abrirlo) → `docs/planes-a-medida` (#184) | las cinco | **simulado en local**: cada una entra limpia contra `main`; en secuencia chocan `ESTADO.md` (dos veces) y `Prompts/LEEME.md` (una), y la receta que conserva los dos lados las resuelve (`scratchpad/resolver-docs.py`). Al fusionar cada una se le trae `main` a la rama, se resuelve igual y se fusiona | 0 mensajes; 5 fusiones, 1 push, 1 PR nuevo, hasta 3 pushes de resolución |
-| 3 | Traspaso del chat interno | `claude/novuchat-silvana-transfer-c40177` (local, 5 commits, 0 atrás) | **listo**: 138 pruebas de captación, saneo 0, identidad ok. Falta: push, PR, fusión | 0 mensajes; 1 push, 1 PR |
-| 4 | Origen del anuncio | `medicion/origen-del-anuncio` + fusión de `main` (local) | **listo**: `main` fusionado sin reescribir la rama, `origen` derivado del objeto `anuncio`, suite completa 3285 en verde, saneo 0. Falta: push de la fusión, PR, fusión | 0 mensajes; 1 push, 1 PR |
+| 1 | Hotfix: `deleteMode` y hueco del candado, tres flujos de reservas | `cierre/hotfix-memoria-y-candado`, **PR #186** | **en PR**: 1076 pruebas de flujos + suite completa 3266 en verde; seguridad aprobado con 2 observaciones atendidas. Falta: OK de fusión, **ensayo en el Demo A** y **publicación de los 3 flujos en la ventana de 02:00 a 03:00** | 0 mensajes; 1 PR; 3 publicaciones |
+| 2 | Cinco ramas de documentación, en este orden: `estado/v0.9.0` (#182, más el commit local con `Prompts/capacidades-comunes.md`, que hay que subir) → `prepago/tablero-al-dia` (#183) → `cierre/traspaso-25-09` (#185) → `claude/topes-campanas-confirmados` (**#189**) → `docs/planes-a-medida` (#184) | las cinco | **el commit local de `estado/v0.9.0` ya está subido a #182; simulado en local**: cada una entra limpia contra `main`; en secuencia chocan `ESTADO.md` (dos veces) y `Prompts/LEEME.md` (una), y la receta que conserva los dos lados las resuelve (`scratchpad/resolver-docs.py`). Al fusionar cada una se le trae `main` a la rama, se resuelve igual y se fusiona | 0 mensajes; 5 fusiones, 1 push, 1 PR nuevo, hasta 3 pushes de resolución |
+| 3 | Traspaso del chat interno | `claude/novuchat-silvana-transfer-c40177`, **PR #187** | **en PR**: 138 pruebas de captación, saneo 0, identidad ok. Falta: OK de fusión | 0 mensajes; 1 push, 1 PR |
+| 4 | Origen del anuncio | `medicion/origen-del-anuncio`, **PR #188** | **en PR**: `main` fusionado sin reescribir la rama, `origen` derivado del objeto `anuncio`, suite completa 3285 en verde, saneo 0. Falta: OK de fusión | 0 mensajes; 1 push, 1 PR |
 | 5 | Ayudante de configuración | `claude/ai-config-helper-e3b434` | **diseño guardado** como `Analisis/42` (en `cierre/25-09`). Falta: borrar la rama remota, con OK | 0 |
 | 6 | Worktrees colgados | `novuchat-byoc-pricing-4e0c69` (origen), `novuchat-modularization-0fc59d` (tablero), `optimistic-fermi-a6a02d` (traspaso), `planes` | se quitan después de fusionar sus ramas; los de esta sesión (`cierre-25-09`, `hotfix`, `origen-anuncio`, `traspaso`, `cola-docs`) se quitan al cerrar F-1 | 0 |
-| 7 | Matriz de capacidades (anexo A de `Analisis/41`) | `cierre/25-09` | en preparación por un agente de solo lectura | 0 |
+| 7 | Matriz de capacidades (anexo A de `Analisis/41`) | `cierre/25-09` (`b768b0c`) | **hecho**: `Analisis/41-anexo-A-matriz-de-capacidades.md`; ninguna brecha es regresión, todas van a F3 | 0 |
 | 8 | Este tablero | `cierre/25-09` | **hecho** | 0 |
-| 9 | `Analisis/41` y los tres prompts | `cierre/25-09` (`062432b`) | **hecho**, más `Analisis/42` (`fb1f480`). Falta: push, PR, fusión (después del paso 2, porque `Prompts/LEEME.md` choca con #182 y #185) | 0 mensajes; 1 push, 1 PR |
+| 9 | `Analisis/41` y los tres prompts | `cierre/25-09`, **PR #190** | **en PR**, con `Analisis/42`, el anexo A y este tablero. Se fusiona después del paso 2 (`Prompts/LEEME.md` choca con #182 y #185; se le trae `main` y se resuelve) | 0 mensajes; 1 push, 1 PR |
 
-**Lo que se le pregunta a Andres en el primer punto de control:** el orden de
-arriba; y si el comprobante en simulado del Demo B (`Analisis/41` §7.1 lo
+**Autorización general de Andres (25/09):** push y apertura de PR sin pedir OK
+por cada uno; fusionar, ensayar, publicar, desplegar y Meta siguen con «sí»
+por acción.
+
+**Lo que se le pregunta a Andres:** si el comprobante en simulado del Demo B (`Analisis/41` §7.1 lo
 manda «con el hotfix», el prompt acota el hotfix a los tres flujos de
 reservas) entra en este PR con una cuarta publicación o va en un PR propio.
 
@@ -101,6 +104,19 @@ quedó fuera y por qué; lo que se encontró mal en `Analisis/41`.
 | **C** contrato del cobrador (otro proyecto): cuenta `novuchat`, URL pública, `rotar-cobrador.sh` | Fuera de este frente; su proyecto |
 | Encender el corte del prepago (`fijarCortePrepago`) | Decisión de Andres después de un pago de punta a punta; **F1** deja el botón en Negocios |
 
+## Decisiones abiertas para Andres (E, del relevamiento)
+
+- `ruta: '.'` con el `package.json` en `admin/`: la auditoría nativa de pnpm se
+  salta y solo Trivy cubre `admin/`; pasar a `./admin` la activa pero crea
+  categorías nuevas de Code Scanning. No lo cambia el bloque 1.
+- La excepción de Trivy por `uuid` (CVE-2026-41907, hoy MEDIUM, inerte con
+  `bloquear_en: CRITICAL,HIGH`) vence el 31/10. El PR #11 de Dependabot
+  (`firebase-admin` 14) **no la cierra**: `uuid@9` sigue por `firebase-tools`.
+  Lo que la cerraría es un `firebase-tools` con `gaxios ≥ 7` o un
+  `pnpm.overrides`. Además #11 tiene `construir` en rojo y está desactualizado.
+- Para SeguridadGeneral (no se arregla desde acá): `security-local.sh` del
+  estándar sigue con `cd "$RUTA"` sin `|| exit 1`; el de NovuChat lo tiene.
+
 ## Bitácora del frente
 
 - **25/09/2026** — Arranca la sesión operadora. Leído el plano y los prompts.
@@ -109,3 +125,8 @@ quedó fuera y por qué; lo que se encontró mal en `Analisis/41`.
   cita); fusión de `main` en el origen del anuncio resuelta; diseño del
   ayudante guardado; cola de documentación simulada; traspaso verificado.
   Todo en local, a la espera del primer punto de control con Andres.
+- **25/09/2026 (tarde)** — Andres autoriza push y PR en general. Subidas las
+  cinco ramas y abiertos **#186** (hotfix), **#187** (traspaso), **#188**
+  (origen), **#189** (topes), **#190** (documentación); #182 recibió el commit
+  del prompt de capacidades. Anexo A entregado. Relevamiento de E cerrado;
+  bloque 1 de E en construcción con el agente `devsecops`.
