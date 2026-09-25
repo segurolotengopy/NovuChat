@@ -92,6 +92,7 @@ export { verificarCampanas } from './verificarCampanas.js';
 // del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
 // El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
 export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
+export { tipoCambioBcb } from './tipoCambioBcb.js';
 
 const db = () => getFirestore();
 

@@ -22,10 +22,13 @@
  *     `plataforma/tipoCambio/historial` con quién y cuándo, y verifica por
  *     relectura.
  *
- * ES UNA DECISIÓN CON FIRMA, NO UNA OPERACIÓN AUTOMÁTICA: el valor lo lee una
- * persona del sitio del BCB y lo carga con su nombre en `--por`. Hasta que
- * exista una lectura automática verificada, esto se corre a mano, con el OK
- * de Andres en el chat, y NUNCA sin `--aplicar` explícito.
+ * DESDE EL 25/09/2026 LA CARGA DIARIA ES AUTOMÁTICA: `tipoCambioBcb` lee la
+ * tabla del BCB tres veces al día y escribe si hay un TCO nuevo, válido y sin
+ * un salto de más del 5 %. Este script queda para CORREGIR a mano --un salto
+ * que la Function no escribe sola, una página del BCB caída varios días--:
+ * el valor lo lee una persona, lo carga con su nombre en `--por`, con el OK de
+ * Andres en el chat, y NUNCA sin `--aplicar` explícito. La Function no pisa
+ * una carga manual con la misma fecha o posterior.
  *
  * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/prepago.js`): antes de
  * correrlo, `pnpm functions:build`.
