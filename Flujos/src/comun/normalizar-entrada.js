@@ -111,6 +111,40 @@ for (const item of $input.all()) {
         'Respóndele cortésmente que por ahora atiendes por texto.';
   }
 
+  // --- EL ANUNCIO DE META (24/09/2026) -------------------------------------
+  // Cuando alguien toca un anuncio de clic a WhatsApp, Meta manda `referral`
+  // junto al primer mensaje: el titular, el texto y la fuente del anuncio. Los
+  // flujos de reservas lo tiraban; el de captacion ya lo leia, y esta es la
+  // misma forma. Es DATO del anuncio, no una orden: va recortado y sin saltos.
+  const plano = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, max);
+  const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : null;
+  const anuncio = ref ? {
+    titular: plano(ref.headline, 120),
+    fuente: plano(ref.source_type, 20),
+    idAnuncio: plano(ref.source_id, 40),
+  } : null;
+
+  // --- LA CAMPAÑA SE RECONOCE POR SU TEXTO EXACTO (Andres, 24/09/2026) ------
+  // El comercio carga en la consola el texto que su campaña de Meta deja
+  // escrito en el chat, con su vigencia; el servidor lo verifica y manda SOLO
+  // las campañas vigentes y aplicadas (`campanasActivas`, texto JSON). Si lo
+  // que escribio la persona es ESE texto, la conversacion nace de la campaña.
+  // «Exacto» es exacto en las palabras: no cuentan mayusculas, tildes, signos
+  // ni emojis, que el celular cambia solo; una palabra de mas o de menos si
+  // cuenta, porque entonces ya no es el texto del anuncio sino lo que la
+  // persona escribio. Solo texto: un audio o un boton no son la campaña.
+  // Sin campañas, o con el panel caido, no hay coincidencia: el flujo sigue
+  // como siempre.
+  const palabras = (t) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  let campanas = [];
+  try { campanas = JSON.parse(String(config.campanasActivas || '[]')); } catch (e) { campanas = []; }
+  const escrito = tipo === 'text' ? palabras(msg.text?.body) : '';
+  const laCampana = escrito === '' || !Array.isArray(campanas) ? null
+    : (campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null);
+  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300) } : null;
+
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
   out.push({ json: {
     ...config,
@@ -118,6 +152,22 @@ for (const item of $input.all()) {
     tipo,
     from: msg.from,
     nombrePerfil: contacto?.profile?.name ?? '',
+    // EL ID DE LA OPCION TOCADA (24/09/2026). `Estado de la conversacion` de
+    // Bellido decide con `eleccion` --«control_recien_nacido»,
+    // «control_nino_sano», «vacunas_otros», «emergencia»-- y NADIE lo llenaba
+    // desde el 18/09: el id solo viajaba dentro del texto de `userInput`. Los
+    // botones de emergencia y vacunas funcionaban de casualidad, por las
+    // palabras del titulo; el tipo de cita no se guardaba NUNCA, y el modelo lo
+    // adivinaba de la memoria. Con «niño sano» y despues «recién nacido» en la
+    // misma conversacion consulto la agenda como niño sano y rechazo las 12:00
+    // del dia siguiente, que estaban libres (Andres, 24/09, #5647). La suite no
+    // lo veia porque inyectaba `eleccion` a mano: ahora hay una prueba que
+    // encadena los dos nodos reales. Vacio en todo lo que no es un interactivo.
+    eleccion: tipo === 'interactive'
+      ? String((msg.interactive?.list_reply ?? msg.interactive?.button_reply)?.id ?? '')
+      : '',
+    anuncio,
+    campana,
     mensajeId: String(msg.id ?? ''),
     mediaId,
     mimeType,

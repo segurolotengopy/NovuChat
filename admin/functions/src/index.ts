@@ -80,6 +80,11 @@ export { comprobarArchivoPlanes } from './captacion.js';
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
 // único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
 export { verificarComportamiento } from './verificarComportamiento.js';
+// CAMPAÑAS DE META (Andres, 24/09/2026). El comercio las carga en la consola
+// (`config/campanas.lista`); este disparador las verifica —fechas, duplicados,
+// palabras de emergencia, inyección y, con el modelo, que sean de ESTE negocio—
+// y copia las aprobadas a `vigentes`, lo único que viaja al flujo.
+export { verificarCampanas } from './verificarCampanas.js';
 // PREPAGO: EL CLIENTE DEL COBRADOR (bloque A-2, 20/09/2026). NovuChat le cobra
 // al comercio por QR a través del proyecto de cobros; el aviso del cobrador
 // solo dispara la consulta autenticada, que es la única que confirma. Dos

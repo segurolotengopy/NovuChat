@@ -502,6 +502,81 @@ service cloud.firestore {
                       && documento == 'marca' && tieneCobro(tenantId) && logoValido();
         allow delete: if false;
 
+        // =====================================================================
+        // /config/campanas — LAS CAMPAÑAS DE META (Andres, 24/09/2026)
+        //
+        // Capa COMÚN (DISENO.md §4sexies): un anuncio lleva al número del
+        // comercio, no a un flujo. El admin la crea al cargar su primera
+        // campaña y la edita después; nunca la borra (vaciar la lista alcanza).
+        //
+        // `lista` es lo PROPUESTO. `revision` y `vigentes` los escribe SOLO el
+        // servidor (`verificarCampanas`), con el mismo contrato que
+        // `instruccionesVigentes`: se mira el DIFF, no las claves, porque en
+        // una edición el documento resultante los trae aunque el parche no.
+        //
+        // EL TOPE DEL PLAN SE HACE CUMPLIR ACÁ (CLAUDE.md, base comercial §7),
+        // con el tamaño de la lista. Una excepción, a propósito: si el plan
+        // BAJÓ con campañas cargadas, el comercio tiene que poder BORRAR
+        // aunque siga por encima del tope; por eso pasa también una escritura
+        // que achica la lista. Lo que sobra no se aplica igual:
+        // `configuracionFlujo` recorta al tope de hoy.
+        // =====================================================================
+        allow create, update: if documento == 'campanas'
+                              && esAdmin(tenantId)
+                              && tenantOperativo(tenantId)
+                              && configCampanasValida();
+
+        // El tope escrito a mano, porque las reglas no importan TypeScript;
+        // `pruebas/campanas-reglas.test.ts` compara esta tabla y el rango con
+        // `limiteDeCampanas` de `functions/src/planes.ts`.
+        // RESPALDO-CAMPANAS-POR-PLAN
+        function limiteCampanas() {
+          let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
+          let cuenta = exists(ruta) ? get(ruta).data : {};
+          let limites = cuenta.get('limites', {});
+          let propio = limites is map ? limites.get('campanas', null) : null;
+          return propio is int && propio >= 0 && propio <= 10
+            ? propio
+            : {'impulso': 0, 'crecimiento': 3, 'pro': 10, 'byoc': 10, 'demostracion': 10}
+                .get(cuenta.get('plan', ''), 0);
+        }
+
+        // LA FORMA MÍNIMA DE UNA CAMPAÑA: un mapa de cuatro claves con un texto
+        // de hasta 300 caracteres. Nada más, y a propósito: una petición tiene
+        // un tope de 1.000 expresiones evaluadas, y validar campo por campo diez
+        // campañas lo agotaba desde la quinta (claves) o la séptima (formato);
+        // medido en el emulador el 24/09. El formato del id y de las fechas, el
+        // orden de las fechas, que no sean pasadas ni muy futuras, los
+        // duplicados y el contenido los decide el SERVIDOR (`campanas.ts`) antes
+        // de aplicar: una campaña mal escrita queda cargada y NUNCA viaja al
+        // flujo. Lo que la regla sí tiene que hacer cumplir, que es el tope del
+        // plan, lo hace con el tamaño de la lista.
+        function unaCampanaValida(c) {
+          return c is map && c.size() == 4 && c.get('texto', 0) is string && c.texto.size() <= 300;
+        }
+
+        function campanaValida(lista, i) {
+          return i >= lista.size() || unaCampanaValida(lista[i]);
+        }
+
+        function configCampanasValida() {
+          let d = request.resource.data;
+          let lista = d.get('lista', null);
+          let antes = resource == null ? [] : resource.data.get('lista', []);
+          return (resource == null
+                    ? d.keys().hasOnly(['lista', 'actualizadoPor', 'actualizadoEn'])
+                    : request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['lista', 'actualizadoPor', 'actualizadoEn']))
+            && selloValido(d)
+            && lista is list
+            && lista.size() <= 10
+            && (lista.size() <= limiteCampanas() || lista.size() < antes.size())
+            && campanaValida(lista, 0) && campanaValida(lista, 1) && campanaValida(lista, 2)
+            && campanaValida(lista, 3) && campanaValida(lista, 4) && campanaValida(lista, 5)
+            && campanaValida(lista, 6) && campanaValida(lista, 7) && campanaValida(lista, 8)
+            && campanaValida(lista, 9);
+        }
+
         // EL DOCUMENTO DEL FLUJO DE CAPTACIÓN, POR EL PROPIETARIO. Además del
         // administrador (arriba, solo `update`, como todo documento de flujo),
         // lo escribe el propietario. El alta lo crea vacío, pero el propietario
