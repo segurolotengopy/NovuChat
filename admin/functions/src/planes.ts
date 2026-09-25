@@ -225,6 +225,21 @@ export function esIdPlan(v: unknown): v is IdPlan {
   return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANES_ASIGNABLES, v);
 }
 
+/**
+ * ¿Puede un comercio PAGARSE este plan por su cuenta? Los publicados, siempre;
+ * uno fuera de la lista (BYOC), solo para renovar el que ya tiene. Estar en el
+ * catálogo significa «se puede pagar», no «se le ofrece a cualquiera»: BYOC lo
+ * asigna NovuChat contra un portafolio verificado, y pagado por un comercio que
+ * sigue en el número de NovuChat le daría 2.000 conversaciones por USD 50 con
+ * los mensajes de Meta a cargo de NovuChat. Es la regla de `planesOfrecidos`
+ * (`web/src/lib/pagar.ts`) hecha cumplir en el servidor (CLAUDE.md, «Base
+ * comercial» §7): la pantalla solo la acompaña. El propietario no pasa por acá.
+ */
+export function planQuePuedePedir(planActual: unknown, pedido: unknown): boolean {
+  if ((PLANES_PUBLICADOS as readonly unknown[]).includes(pedido)) return true;
+  return esIdPlan(pedido) && pedido !== 'demostracion' && planActual === pedido;
+}
+
 /** Los límites de un plan del catálogo. Uno desconocido da los del más chico. */
 export function limitesDe(plan: unknown): Limites {
   const p = esIdPlan(plan) ? PLANES_ASIGNABLES[plan] : PLANES[PLAN_POR_DEFECTO];
