@@ -69,6 +69,7 @@ import {
 } from './cobrador.js';
 import { MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, montoUsdDe } from './prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
+import { planQuePuedePedir } from './planes.js';
 import {
   conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,
@@ -267,7 +268,7 @@ export interface PagoEmitido {
 export async function crearCobroInterno(
   tenantId: string,
   pedido: PedidoDePago,
-  quien: { uid: string; creadoPor: string; canal: 'consola' | 'whatsapp' | 'manual' },
+  quien: { uid: string; creadoPor: string; canal: 'consola' | 'whatsapp' | 'manual'; rol?: 'admin' | 'propietario' },
   deps: Deps = {},
 ): Promise<PagoEmitido> {
   const ahoraMs = deps.ahoraMs ?? Date.now();
@@ -288,6 +289,17 @@ export async function crearCobroInterno(
   const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
   const refFicha = db().doc(`tenants/${tenantId}`);
 
+  // 0. HAY CON QUIÉN COBRAR, ANTES DE RESERVAR NADA. Se resolvía después de la
+  // reserva: sin `plataforma/prepago.cobrador` el pago quedaba `pendiente`, con
+  // `pagoPendienteId` y en `cobrosPendientes`, y no se podía anular desde la
+  // consola --anular también necesita el cobrador--; el barrido horario volvía
+  // a fallar por ese pendiente. Con «Pagar» a la vista de todo administrador,
+  // bastaba apretar el botón antes de que existiera el cobrador (24/09/2026).
+  let cobrador: Cobrador;
+  try { cobrador = await resolverCobrador(deps.cobrador); } catch {
+    throw new HttpsError('failed-precondition', 'El pago por QR todavía no está habilitado. Escríbale a NovuChat para pagar.');
+  }
+
   // 1. Reservar (o retomar).
   const reserva = await db().runTransaction(async (tx) => {
     const [fichaDoc, cuentaDoc] = await Promise.all([tx.get(refFicha), tx.get(refCuenta)]);
@@ -298,6 +310,14 @@ export async function crearCobroInterno(
       throw new HttpsError('failed-precondition', 'Este comercio no está en condiciones de emitir un cobro.');
     }
     const cuenta = cuentaDoc.data() ?? {};
+    // Un plan fuera de los publicados (BYOC) no se lo paga un comercio por su
+    // cuenta: solo renueva el que ya tiene. Sin `rol` --la entrada por
+    // WhatsApp-- vale lo mismo que un administrador. Se mira DENTRO de la
+    // transacción, contra la cuenta leída acá, no contra lo que dijo la pantalla.
+    if (pedido.tipo === 'mensualidad' && quien.rol !== 'propietario'
+        && !planQuePuedePedir(cuenta['plan'], pedido.plan)) {
+      throw new HttpsError('permission-denied', 'Ese plan lo asigna NovuChat: escríbanos para cambiarlo.');
+    }
     const pendienteId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
       ? cuenta['pagoPendienteId'] : null;
 
@@ -357,7 +377,6 @@ export async function crearCobroInterno(
 
   const { pagoId, fichaQr, reutilizado } = reserva;
   const r = refs(tenantId, pagoId);
-  const cobrador = await resolverCobrador(deps.cobrador);
 
   // 2. Pedir el QR (o solo su imagen, si el cobro ya existe y lo que faltó fue guardarla).
   let respuesta: RespuestaCrear;
@@ -456,7 +475,7 @@ export const crearCobroPrepago = onCall(
     const limpio: PedidoDePago = pedido.tipo === 'mensualidad'
       ? { tipo: 'mensualidad', plan: pedido.plan, meses: pedido.meses }
       : pedido.tipo === 'bolsa' ? { tipo: 'bolsa', cantidad: pedido.cantidad } : { tipo: 'instalacion' };
-    return crearCobroInterno(tenantId, limpio, { uid: quien.uid, creadoPor: quien.uid, canal: 'consola' });
+    return crearCobroInterno(tenantId, limpio, { uid: quien.uid, creadoPor: quien.uid, canal: 'consola', rol: quien.rol });
   },
 );
 
