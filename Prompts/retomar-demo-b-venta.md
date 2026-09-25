@@ -120,6 +120,22 @@ QR», así que alguien ya trabajó cerca. Leé ese cambio antes de escribir.
 - La ingesta manda `agotado` por ítem y el flujo lo ignora: un producto sin existencias
   se ofrece igual.
 
+## 5bis. Dónde está el material de Walisuma
+
+`CLIENTES/` está ignorado por git y **vive en la copia base**, no en un worktree
+(memoria `directorio-clientes-por-cliente`). Al cerrar esta sesión se copió ahí todo lo
+que se había generado:
+
+| Archivo | Qué es |
+|---|---|
+| `~/NovuChat/CLIENTES/WALISUMA/Catalogo GIFTS Walisuma 2024.pdf` | El catálogo original, 34 páginas |
+| `~/NovuChat/CLIENTES/WALISUMA/fotos/` | **154 fotos** recortadas de las páginas con las mismas coordenadas del texto, para que ninguna caiga en otro producto |
+| `~/NovuChat/CLIENTES/WALISUMA/fotos-10/` | Las **diez** que están cargadas en producción |
+| `~/NovuChat/CLIENTES/WALISUMA/logo-walisuma.webp` | El logo ya recortado a 320 px, como lo deja la consola |
+
+Sin esa carpeta, recargar el catálogo exige volver a extraer las fotos del PDF, que es
+lo más caro de rehacer.
+
 ## 6. Cómo verificar el estado al retomar
 
 ```bash
