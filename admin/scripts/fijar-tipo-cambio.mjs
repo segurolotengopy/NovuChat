@@ -92,7 +92,9 @@ if (!APLICAR) { console.log('\n  Seco: no se escribió nada. Agregue --aplicar (
 
 const ahora = Timestamp.now();
 const lote = db.batch();
-lote.set(ref, { ...nuevo, actualizadoEn: ahora, actualizadoPor: POR });
+// El documento lo lee cualquier sesión (la pantalla «Pagar»): lleva el TCO y
+// cuándo se cargó, no QUIÉN. Eso va al historial, que solo lee el propietario.
+lote.set(ref, { ...nuevo, actualizadoEn: ahora });
 lote.create(ref.collection('historial').doc(), { ...nuevo, en: ahora, por: POR, antes: actual ? { tco: actual.tco ?? null, fecha: actual.fecha ?? null } : null });
 await lote.commit();
 

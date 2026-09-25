@@ -1468,6 +1468,12 @@ describe('Configuración de plataforma', () => {
     await assertFails(setDoc(doc(adminA(), 'plataforma/tipoCambio'), { tco: 1, fecha: '2026-10-15', fuente: 'BCB' }));
     await assertFails(updateDoc(doc(propietario(), 'plataforma/tipoCambio'), { tco: 126 }));
     await assertFails(deleteDoc(doc(propietario(), 'plataforma/tipoCambio')));
+    // Sin sesión, nada; y el historial --quién cargó cada TCO-- no se abre con
+    // la excepción: es una subcolección y la cubre la regla de cierre.
+    await assertFails(getDoc(doc(anonimo(), 'plataforma/tipoCambio')));
+    await assertFails(getDocs(collection(adminA(), 'plataforma/tipoCambio/historial')));
+    await assertFails(getDoc(doc(adminA(), 'plataforma/tipoCambio/historial/uno')));
+    await assertFails(setDoc(doc(adminA(), 'plataforma/tipoCambio/historial/uno'), { tco: 1 }));
   });
 
   it('solo NovuChat la lee, y NADIE la escribe desde el navegador', async () => {

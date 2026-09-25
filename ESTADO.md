@@ -51,6 +51,35 @@ reglas y Functions (la etiqueta la crea Andres), y publicar los tres flujos.
 
 ---
 
+## 2026-09-25 (madrugada) — `v0.8.0` en producción, y el Demo B publicado con el cobro por QR
+
+**Antes de la etiqueta, el pase encontró un HIGH y se arregló (#179):** un comercio
+podía pagarse el plan BYOC armando la petición a mano —la restricción vivía solo en
+la pantalla—, y sin cobrador configurado un «Pagar» dejaba un pago pendiente trabado.
+Los dos, cerrados en `crearCobroInterno` con pruebas que niegan. En producción no
+había tipo de cambio ni cobrador, así que no llegó a ser explotable.
+
+**`v0.8.0` = `70eff23`**, creada por Andres con `scripts/etiquetar-version.sh`.
+Pipeline en verde con `post-despliegue`; verificación posterior sin fallas:
+`verificarCampanas` con `sa-functions` y su disparador, revisiones nuevas en las
+siete Functions tocadas, públicas 404/401, `plataforma/prepago` sin crear (corte
+apagado), consola 200, sin errores. Seguridad local: 0 CRITICAL, 0 HIGH.
+
+**Demo B publicado** desde `origin/main` (39 → 55 nodos, respaldo en
+`Flujos/respaldo-ohgPUwaotgJFvcb7-20260925-000224.local.json`); la excepción del
+#177 se cierra y `estado-de-versiones.sh` da 8 de 8 al día. **Falta la prueba con
+teléfono real, en simulado.**
+
+**Pendientes que abre el despliegue:**
+- **Platinum: su QR de seña vence el 26/09.** Desde `v0.8.0` un QR vencido no se
+  sirve (`imagenDeCobro`): tiene que registrar uno nuevo desde la consola antes.
+- El tope de campañas por plan (0 / 3 / 10, BYOC 10) ya lo hacen cumplir las reglas.
+- Dos LOW de la revisión, sin arreglar: `plataforma/tipoCambio` guarda quién lo
+  cargó y lo lee cualquier sesión; el rechazo «menciona otro comercio» de campañas
+  deja averiguar quién es cliente.
+
+---
+
 ## 2026-09-24 (noche) — el Demo B atrasado sin declarar: se declara, no se publica (rama `versiones/excepcion-demo-b`)
 
 `estado-de-versiones.sh` fallaba por el Demo B. **No lo causó el PR #175.** El flujo

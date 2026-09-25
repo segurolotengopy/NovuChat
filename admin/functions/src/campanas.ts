@@ -43,6 +43,18 @@ const DIA_MS = 86_400_000;
 const CUATRO_HORAS_MS = 4 * 3_600_000;
 const FECHA = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 const ID = /^[a-z0-9-]{1,40}$/;
+/**
+ * EL MOTIVO DE UN RECHAZO DE LA CAPA 1, SIEMPRE EL MISMO. `verificarPatrones`
+ * dice «menciona otro comercio» cuando el texto nombra a otro tenant: en una
+ * campaña eso era un oráculo --un comercio probaba hasta 10 nombres por
+ * escritura y leía en `revision` cuáles son clientes de NovuChat, la cartera
+ * que protege T-12 (revisión de seguridad del pase de v0.8.0, 24/09/2026)--.
+ * Un motivo genérico solo para ese caso seguiría delatándolo por diferencia,
+ * así que TODO rechazo de patrones sale con este mismo texto, sea inyección o
+ * sea otro comercio. El detalle queda en el registro del servidor.
+ */
+export const MOTIVO_TEXTO_NO_PERMITIDO =
+  'el texto tiene palabras que no se pueden usar en una campaña: reescríbalo o escríbale a NovuChat';
 
 export interface Campana { id: string; texto: string; inicio: string; fin: string }
 
@@ -222,7 +234,10 @@ export function revisarSinModelo(
     }
     // Inyección, otro comercio: la misma capa 1 que el comportamiento.
     const p = verificarPatrones(t, otros);
-    if (p.nivel === 'rechazado') { decidir(revision('rechazada', 'patrones', 'texto', p.motivo, t)); return; }
+    if (p.nivel === 'rechazado') {
+      console.info(`campaña ${c.id} rechazada por patrones: ${p.coincidencias.join(', ')}`);
+      decidir(revision('rechazada', 'patrones', 'texto', MOTIVO_TEXTO_NO_PERMITIDO, t)); return;
+    }
     out.set(c.id, null);
   });
   return out;
