@@ -1037,7 +1037,11 @@ describe.each([
     it('la memoria olvida el turno que NO se envió: los últimos 2 mensajes, y no corta nada si falla', () => {
       const m = nodo(f, 'Olvidar turno fallido');
       expect(m.type).toBe('@n8n/n8n-nodes-langchain.memoryManager');
-      expect(m.parameters).toEqual({ mode: 'delete', deleteMode: 'lastMessages', lastMessagesCount: 2 });
+      // `lastN`, y no `lastMessages`: el nodo de n8n 2.36.5 solo conoce `lastN`
+      // y `all`, y cualquier otro valor cae en «borrar todo» (hotfix del
+      // 25/09; la prueba que lo fija contra el paquete está en
+      // `candado-agenda.test.ts`).
+      expect(m.parameters).toEqual({ mode: 'delete', deleteMode: 'lastN', lastMessagesCount: 2 });
       expect(m.onError).toBe('continueRegularOutput');
       expect((m as unknown as { alwaysOutputData?: boolean }).alwaysOutputData).toBe(true);
       expect(nodo(f, 'Reintento tras cruce').onError).toBe('continueRegularOutput');
@@ -1395,6 +1399,50 @@ describe.each([
       expect(r['ejecutoAgendar']).toBe(true);
       expect(r['eventosCreados']).toEqual([]);
       expect(compuerta(r)).toBe(true);
+    });
+
+    it('EL HUECO (25/09): la herramienta corrió y NO devolvió cita → `agendarSinEvento`, y el candado falla CERRADO aunque el calendario responda', () => {
+      // n8n le entrega al modelo una observación VACÍA cuando la herramienta
+      // falla (#5553), y el modelo afirma igual. Antes el candado no tenía id
+      // que anclar ni cita reciente que verificar, y el texto salía tal cual.
+      for (const observacion of ['', 'Error during node execution: 403', '[]', 'null']) {
+        const previa = procesar({ output: DIJO, intermediateSteps: pasos(observacion) });
+        expect(previa['agendarSinEvento'], observacion).toBe(true);
+        expect(previa['verificarReserva'], observacion).toBe(true);
+        // El calendario SÍ contesta: trae la cita de otra paciente, y ninguna
+        // reciente de esta conversación.
+        const r = candado(previa, [yaEstaba]);
+        expect(String(r['respuesta']), observacion).not.toMatch(/reprogramado|quedó|agendada|confirmad/i);
+        expect(String(r['respuesta']), observacion).toMatch(/recepci/i);
+        expect(r['reservaVerificada'], observacion).toBe(false);
+        expect(r['agendarFallo'], observacion).toBe(true);
+        expect(r['transferir'], observacion).toBe(true);
+        expect(String(r['motivoTransferencia']), observacion).toContain('NO quedo registrada');
+      }
+    });
+
+    it('por el HECHO, no por el verbo: con una redacción que ningún regex cubre y la herramienta fallida, también se cierra', () => {
+      const previa = procesar({ output: 'Perfecto, ya está todo listo para mañana a las 10:00. ¡Nos vemos!', intermediateSteps: pasos('') });
+      expect(previa['afirmaAgendo']).toBe(false);
+      expect(previa['agendarSinEvento']).toBe(true);
+      const r = candado(previa, [yaEstaba]);
+      expect(String(r['respuesta'])).not.toMatch(/todo listo/i);
+      expect(r['reservaVerificada']).toBe(false);
+      expect(r['transferir']).toBe(true);
+    });
+
+    it('con la herramienta bien (devolvió su evento) `agendarSinEvento` es falso y el candado sigue su camino de siempre', () => {
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      expect(previa['agendarSinEvento']).toBe(false);
+      const r = candado(previa, [eventoCreado]);
+      expect(r['agendarFallo']).toBeUndefined();
+      expect(r['reservaVerificada']).toBe(true);
+    });
+
+    it('sin los pasos del agente no se puede afirmar que falló: queda como antes (respaldo por `isExecuted`)', () => {
+      const previa = procesar({ output: DIJO }, { agendar_cita: [{ response: [eventoCreado] }] });
+      expect(previa['ejecutoAgendar']).toBe(true);
+      expect(previa['agendarSinEvento']).toBe(false);
     });
 
     it('la observación como objeto, o como un evento solo, también sirve', () => {

@@ -84,6 +84,38 @@ const idsCreados = new Set((Array.isArray(item.eventosCreados) ? item.eventosCre
 const citaCreadaNoEncontrada = idsCreados.size > 0
   && ![...idsCreados].some((id) => todos.some((e) => String(e.id) === id));
 
+// --- LA HERRAMIENTA FALLO Y EL CALENDARIO SI RESPONDE (2026-09-25) ---------
+// El caso de arriba cubre la credencial caida: nada responde. Este es el otro:
+// `Verificar en el calendario` contesta bien, pero `agendar_cita` corrio y NO
+// devolvio ninguna cita (Google rechazo la creacion, o la fecha, o dio 403).
+// n8n le entrega al modelo una observacion vacia (#5553) y el modelo escribe
+// «quedo agendada» igual. Hasta hoy el candado fallaba ABIERTO aca: sin id que
+// anclar y sin cita reciente que verificar, no tocaba el texto, y el paciente
+// leia una confirmacion de una cita que no existe. Quedo anotado el 24/09 al
+// cerrar el caso de la fecha pasada, y se cierra aca.
+//
+// Falla CERRADO por la misma razon que el calendario caido: si la herramienta
+// no creo nada, no hay cita que duplicar, y callarse es presentar algo como lo
+// que no es. Se dispara POR EL HECHO --la herramienta corrio y no trajo evento--
+// y no por lo que el modelo dijo: asi cubre tambien el verbo que ninguna lista
+// preve. Y va ANTES de mirar `recien`: una cita reciente de OTRA conversacion
+// no es la de esta, y el respaldo de «la primera reciente» la tomaria como
+// propia. Sin los pasos del agente (`agendarSinEvento` ausente) no se puede
+// afirmar el fallo, y sigue el camino de siempre.
+if (item.agendarSinEvento === true && idsCreados.size === 0) {
+  const configurado = String(cfgCampo('mensajeReservaNoConfirmada') || '').trim();
+  const aviso = configurado
+    || 'Disculpa, en este momento no puedo confirmar tu cita en la agenda. Te paso con recepcion para que lo resuelva contigo ahora mismo.';
+  return [{ json: { ...item,
+    respuesta: aviso,
+    reservaVerificada: false,
+    verificacionFallo: true,
+    agendarFallo: true,
+    transferir: true,
+    motivoTransferencia: 'agendar_cita corrio y NO devolvio ninguna cita (la herramienta fallo); la cita NO quedo registrada y el cliente recibio el aviso de que no se pudo confirmar',
+  }, pairedItem: { item: 0 } }];
+}
+
 // --- LA LISTA DE GOOGLE TARDA EN VER LO RECIEN CREADO (2026-09-20) ----------
 // `agendar_cita` creo la cita y Google la devolvio con su id, su calendario y
 // su horario. Segundos despues, `events.list` sobre ESE mismo calendario no la
