@@ -100,6 +100,22 @@ toda sesión lea el tipo de cambio.
 
 ---
 
+## 2026-09-24 (noche, 3) — flujos publicados; topes de campañas confirmados
+
+**PR #176 fusionado** (`7d7df72`) y **los tres flujos de reservas publicados**
+con el OK de Andres: Demo A, Platinum y Bellido, HTTP 200, activos y releídos
+(«coincide con el origen»); el seco mostró solo `Normalizar entrada`,
+`Config del negocio` y, en Bellido, `Estado de la conversación`.
+`estado-de-versiones.sh`: los tres al día (el Demo B sigue atrasado, lo
+resuelve su propia sesión). Desde ya el botón del menú de Bellido guarda el
+tipo de cita. **Las campañas todavía no rigen:** reglas y Functions esperan la
+etiqueta de Andres; sin servidor, los flujos no reciben ninguna.
+
+**Topes confirmados por Andres: 0 / 3 / 10, BYOC 10.** El sitio todavía no
+los publica (`~/Novuchat-site`, su propia sesión).
+
+---
+
 ## 2026-09-24 (noche, 2) — campañas de Meta por consola, y el botón del menú (rama `claude/bellido-eleccion-del-menu`)
 
 **El botón del menú de Bellido nunca se guardó (defecto del 18/09).** `Estado de
@@ -130,7 +146,7 @@ en `admin/DISENO.md` §4sexdecies. En corto:
 evaluadas; validar campo por campo diez campañas lo agotaba desde la quinta. La
 regla valida la forma mínima y el servidor el resto.
 
-**Tope por plan: 0 / 3 / 10 (BYOC 10) es una propuesta mía, sin confirmar.** El
+**Tope por plan: 0 / 3 / 10 (BYOC 10), confirmado por Andres el mismo día.** El
 sitio todavía no lo publica.
 
 **Pruebas:** `campanas.test.ts` (25), `campanas-reglas.test.ts` (9),
