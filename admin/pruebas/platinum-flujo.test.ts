@@ -1418,6 +1418,10 @@ describe.each([
         expect(r['agendarFallo'], observacion).toBe(true);
         expect(r['transferir'], observacion).toBe(true);
         expect(String(r['motivoTransferencia']), observacion).toContain('NO quedo registrada');
+        // Lo que devolvió la herramienta viaja al aviso, para auditar un
+        // cambio de forma sin esperar un reclamo (revisión del 25/09).
+        expect(String(previa['observacionAgendar']), observacion).toBe(observacion === '' ? 'vacia' : observacion);
+        expect(String(r['motivoTransferencia']), observacion).toContain(observacion === '' ? 'vacia' : observacion);
       }
     });
 

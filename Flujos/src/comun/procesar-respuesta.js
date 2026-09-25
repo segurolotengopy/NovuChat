@@ -276,6 +276,14 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // pasos a la vista: si el agente no los devolvio (`isExecuted` como respaldo)
   // no se puede afirmar que fallo, y queda como antes.
   const agendarSinEvento = herramientas.includes('agendar_cita') && eventosCreados.length === 0;
+  // Lo que la herramienta DEVOLVIO cuando no trajo cita, recortado y en una
+  // linea, para el aviso a recepcion (revision de seguridad del 25/09): si un
+  // dia n8n cambia la forma de la observacion y una cita real deja de
+  // reconocerse, se ve en el primer aviso y no por reclamo. Vacio = «vacia».
+  const observacionAgendar = !agendarSinEvento ? '' : pasos
+    .filter((p) => p && p.action && p.action.tool === 'agendar_cita')
+    .map((p) => (typeof p.observation === 'string' ? p.observation : JSON.stringify(p.observation ?? '')))
+    .join(' | ').replace(/\s+/g, ' ').trim().slice(0, 160) || 'vacia';
 
   // --- NO NEGAR UN SERVICIO QUE NO CONOCE (2026-09-21) -----------------------
   // Dos pruebas seguidas con el telefono: a «¿hacen estetica facial?» el modelo
@@ -596,6 +604,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     afirmaAgendo,
     ejecutoAgendar,
     agendarSinEvento,
+    observacionAgendar,
     verificarReserva,
     herramientas,
     eventosCreados,

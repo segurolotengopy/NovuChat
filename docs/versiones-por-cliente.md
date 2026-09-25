@@ -28,9 +28,9 @@ Una excepción necesita las tres cosas, o no es una excepción:
 
 | Cliente | `--env` | Flujo versionado | Excepción declarada |
 |---|---|---|---|
-| Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
-| Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | — |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | — |
+| Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | Hotfix de memoria y candado (`cierre/hotfix-memoria-y-candado`, 25/09): fusionado antes de publicarse; se publica en la ventana de 02:00 a 03:00 siguiente, después del ensayo en el Demo A. La cierra la publicación |
+| Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Hotfix de memoria y candado (`cierre/hotfix-memoria-y-candado`, 25/09): fusionado antes de publicarse; se publica en la ventana de 02:00 a 03:00 siguiente, después del ensayo en el Demo A. La cierra la publicación |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Hotfix de memoria y candado (`cierre/hotfix-memoria-y-candado`, 25/09): fusionado antes de publicarse; se publica en la ventana de 02:00 a 03:00 siguiente, después del ensayo en el Demo A. La cierra la publicación |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |

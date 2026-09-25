@@ -112,7 +112,9 @@ if (item.agendarSinEvento === true && idsCreados.size === 0) {
     verificacionFallo: true,
     agendarFallo: true,
     transferir: true,
-    motivoTransferencia: 'agendar_cita corrio y NO devolvio ninguna cita (la herramienta fallo); la cita NO quedo registrada y el cliente recibio el aviso de que no se pudo confirmar',
+    motivoTransferencia: 'agendar_cita corrio y NO devolvio ninguna cita (la herramienta fallo; devolvio: '
+      + String(item.observacionAgendar || 'vacia').slice(0, 160)
+      + '); la cita NO quedo registrada y el cliente recibio el aviso de que no se pudo confirmar',
   }, pairedItem: { item: 0 } }];
 }
 
