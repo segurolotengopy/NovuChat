@@ -55,7 +55,8 @@ WhatsApp (Meta Cloud API)
    son de WhatsApp-Modular, un sistema financiero en producción. Comparten la
    VM y la WABA, pero son productos distintos.
 6. **NUNCA** publicar el número de prueba a terceros: solo responde a los 5
-   destinatarios registrados (ver ESTADO.md, riesgo de demo).
+   destinatarios registrados (ver `CONFIGURACION.md`; el riesgo está en
+   `bitacora/2026-09.md`, «Riesgos vivos»).
 
 ## Reglas de diseño de los flujos n8n
 

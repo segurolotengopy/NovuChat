@@ -25,7 +25,8 @@
 #      hacen los scripts de `admin/scripts/`; imprime id, estado, plan y
 #      modalidad, nada más. Si no hay credenciales, dice cómo.
 #
-# NO ESCRIBE NADA en ningún lado. NO IMPRIME SECRETOS: solo nombres, estados y
+# NO ESCRIBE fuera de `.git/refs/remotes` (hace `git fetch`) y de un temporal
+# propio que borra al salir. NO IMPRIME SECRETOS: solo nombres, estados y
 # fechas. Sale con 0 aunque un bloque no se pueda derivar: el bloque lo dice.
 #
 #   ./scripts/estado-generado.sh                       # todo lo que pueda
@@ -87,10 +88,11 @@ elif [[ -z "$PROYECTO" ]]; then
 elif [[ -z "$(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null)" ]]; then
   falta "gcloud sin cuenta activa (gcloud auth list). Con credenciales: gcloud functions list --project $PROYECTO"
 else
-  if ! gcloud functions list --project "$PROYECTO" --format='table(name.basename(),state,environment,updateTime.date())' 2>/tmp/estado-generado-gcloud.err | sed 's/^/   /'; then
-    falta "gcloud functions list falló: $(head -1 /tmp/estado-generado-gcloud.err 2>/dev/null)"
+  ERR_GCLOUD="$(mktemp)"
+  trap 'rm -f "$ERR_GCLOUD"' EXIT
+  if ! gcloud functions list --project "$PROYECTO" --format='table(name.basename(),state,environment,updateTime.date())' 2>"$ERR_GCLOUD" | sed 's/^/   /'; then
+    falta "gcloud functions list falló: $(head -1 "$ERR_GCLOUD" 2>/dev/null)"
   fi
-  rm -f /tmp/estado-generado-gcloud.err
 fi
 
 # ------------------------------------------------------------ 3. flujos vivos
@@ -157,5 +159,5 @@ try {
 JS
 fi
 
-printf '\n%sFin.%s Este script no escribe nada.\n' "$G" "$FIN"
+printf '\n%sFin.%s Este script no escribe fuera de .git/refs/remotes (hace git fetch).\n' "$G" "$FIN"
 exit 0

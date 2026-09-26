@@ -206,15 +206,20 @@ veredicto, autorizar F1 (con S y F6 en paralelo).
   `docs/base-comercial.md` y `limites.md`; **#201** `docs/clientes/CICLO-DE-VIDA.md`
   (§12 de `Analisis/41` con los punteros a los runbooks); **#202** gancho
   `zona-de-escritura.sh` sobre Edit y Write, con `.claude/zona` como segunda
-  fuente, realpath, fallo cerrado y prefijos amplios rechazados, 40/40 casos;
+  fuente (lo escribe quien lanza al agente, nunca se versiona: en
+  `.gitignore`), realpath, fallo cerrado y prefijos amplios rechazados, 38
+  casos del gancho + 2 comprobaciones de git, todos en verde;
   **#204** ocho agentes por zona más `analista-de-solicitudes`, con
   `docs/arquitectura/agentes.md` (zonas efectivas y diferencias con §8.1);
-  **#206** dos proyectos de vitest: `puras` 43 suites / 2.291 pruebas sin
-  emulador en 24 s, `emulador` 33 suites / 1.058 pruebas; y el **PR final**:
+  **#206** dos proyectos de vitest: `puras` 42 suites / 2.275 pruebas sin
+  emulador y herméticas (`FIRESTORE_EMULATOR_HOST=127.0.0.1:1`) en 13 s,
+  `emulador` 34 suites (con `asignar-rol`, que abre Firebase antes del modo
+  seco); y el **PR final**:
   `bitacora/2026-08.md` (14 asientos) y `2026-09.md` (65), `ESTADO.md` de una
   pantalla, `scripts/estado-generado.sh` (etiqueta viva, Functions, flujos con
   `estado-de-versiones.sh`, tenants con modalidad por ADC), `CLAUDE.md` solo
-  invariantes con la regla de zonas. Costo: 0 mensajes; 6 PR y 8 pushes; 0
+  invariantes con la regla de zonas. Dos vueltas de seguridad cerradas en
+  las ramas (#202, #204, #206, #208). Costo: 0 mensajes; 6 PR y 12 pushes; 0
   nube. Lo que queda para la coordinadora: `indice.md` gana las filas de
   `zona-de-escritura.md` y `agentes.md` cuando #200, #202 y #204 estén en
   `main`; las diferencias con §8.1 van al informe de H1 para la revisora.
