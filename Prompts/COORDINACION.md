@@ -63,15 +63,30 @@ Un ensayo a la vez (`Analisis/41` §12.9). Se anota antes de correr
 
 | Cuándo | Qué se ensaya | Con qué JSON | Estado |
 |---|---|---|---|
-| pendiente de OK | Hotfix de memoria y candado | `platinum-agendamiento.json` de `cierre/hotfix-memoria-y-candado` sobre el Demo A (mismos nodos comunes que los tres) | por hacer: una reserva exitosa (comprobar `agendarSinEvento: false` con el id en la ejecución), un cruce con reintento (comprobar que la memoria conserva la conversación), «¿eres un robot?» |
+| 26/09 00:37–00:43 | Hotfix de memoria y candado | El propio Demo A, publicado desde `main` (`0655cd3`): es uno de los tres flujos | **hecho por Andres**: reserva buena #6054/#6059 (`agendarSinEvento: false`, id anclado, verificada); cruce #6063 (candado, `Olvidar turno fallido` `{success: true}`, reintento con alternativas); memoria conservada #6067/#6082. «¿Eres un robot?» no se hizo. Dos hallazgos previos: falso «duplicadas» por título (#6072) y **cancelación de la cita equivocada** (#6086/#6091), ver `ESTADO.md` |
 
 ## Informes de hito
 
-### H0 — F-1 y E (en preparación)
+### H0 — F-1 y E (borrador, 26/09 madrugada; se cierra con la publicación en ventana)
 
-Se completa al cerrar: PR y sha fusionados; pruebas con números reales e
-identificadores de ejecución del ensayo; costo en las tres unidades; lo que
-quedó fuera y por qué; lo que se encontró mal en `Analisis/41`.
+- **PR y sha fusionados:** #186, #182, #183, #185, #189, #184, #187, #188, #190,
+  #191, #192, #193, en ese orden; `main` en `0655cd3`. Pendiente #194 (registro)
+  y el asiento de F-1 (`cierre/estado-f-1`).
+- **Pruebas:** hotfix 1076 de flujos y suite completa 3266; origen 3285; `uuid`
+  3301; estándar: suites del reusable iguales antes y después, `security-local`
+  2.5 aprobado. Ensayo real en el Demo A: #6041 a #6098 (tabla en `ESTADO.md`).
+- **Costo:** 0 mensajes por conversación; 13 fusiones y unas 20 corridas de CI;
+  3 publicaciones en n8n; 0 despliegues.
+- **Fuera, y por qué:** `pedidos.md`, cláusulas, calendario de Bellido y Meta
+  de Platinum son de las sesiones de clientes (§8.5); el ensayo por
+  `ensayo-flujo.sh` no hizo falta porque el Demo A es uno de los tres flujos;
+  «¿eres un robot?» queda para la aceptación; las Functions del origen y de
+  `uuid` esperan la etiqueta.
+- **Hallazgos para el plano y para F3:** los del anexo A; más dos del ensayo
+  (falso «duplicadas» por título; **cancelación de otra cita distinta de la
+  confirmada**, hotfix de protección antes de F2).
+- **`estado-de-versiones.sh`:** 6 al día + 2 con excepción hasta la ventana;
+  8/8 al publicar Platinum y Bellido.
 
 **Lo que ya se encontró mal o incompleto en `Analisis/41`, para la revisora:**
 
@@ -135,3 +150,8 @@ quedó fuera y por qué; lo que se encontró mal en `Analisis/41`.
   cuatro de ellos recibieron `main` con la receta de conservar los dos lados.
   #190 y #191 abiertos. Decisiones de Andres: Demo B en PR propio; corregir
   `uuid`; `ruta` pendiente de recomendación.
+- **26/09/2026 (madrugada)** — #191, #192 y #193 fusionados; ramas remotas
+  borradas. Publicados Demo A, Demo B y captación desde `0655cd3`. Andres
+  verificó el hotfix en el Demo A (#6041–#6098): memoria conservada, candado y
+  reintento en orden. Dos hallazgos previos al hotfix, anotados en `ESTADO.md`.
+  Falta la ventana de 02:00 a 03:00 para Platinum y Bellido.
