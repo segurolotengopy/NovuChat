@@ -537,7 +537,7 @@ service cloud.firestore {
           let propio = limites is map ? limites.get('campanas', null) : null;
           return propio is int && propio >= 0 && propio <= 10
             ? propio
-            : {'impulso': 0, 'crecimiento': 3, 'pro': 10, 'byoc': 10, 'demostracion': 10}
+            : {'impulso': 0, 'crecimiento': 3, 'pro': 10, 'byoc': 10}
                 .get(cuenta.get('plan', ''), 0);
         }
 
@@ -1164,7 +1164,7 @@ service cloud.firestore {
         let propio = limites is map ? limites.get('productos', null) : null;
         return propio is int && propio >= 1 && propio <= 100000
           ? propio
-          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500, 'demostracion': 500}
+          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500}
               .get(cuenta.get('plan', ''), 20);
       }
 

@@ -70,7 +70,7 @@ import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { registrar } from './ingesta.js';
 import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
-import { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe, type IdPlanVendible } from './planes.js';
+import { CATALOGO_PLANES, PLANES, esPlanVendible, limitesDe, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
   corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoUsdDe,
@@ -191,15 +191,18 @@ export interface PuertaDePagos {
  */
 /**
  * ¿El prepago gobierna ya los derivados de esta cuenta? Sí si tiene una
- * `modalidad` explícita, o si es de demostración por plan. NO si es un
- * comercio real que todavía no se migró (sin modalidad y con un plan del
- * catálogo): para el módulo sería «demostración» y derivaría «Sin cargo» con
+ * `modalidad` explícita. NO si es un comercio que todavía no se migró (sin
+ * modalidad): para el módulo sería «demostración» y derivaría «Sin cargo» con
  * monto cero, y el comercio vería cambiar su estado de cuenta sin que nada
  * hubiera pasado. Hasta que la migración le dé su modalidad, sus derivados
  * no se tocan (revisión de seguridad de A-1, LOW 8).
+ *
+ * Hasta F1 un `plan: 'demostracion'` también gobernaba; desde el 25/09 el
+ * plan no dice nada sobre el cobro (`Analisis/41` §4), y los demos reciben su
+ * `modalidad: 'demostracion'` explícita con `scripts/migrar-ejes.mjs`.
  */
 export function derivadosGobernados(cuenta: Record<string, unknown> | null | undefined): boolean {
-  return esModalidad(cuenta?.['modalidad']) || cuenta?.['plan'] === 'demostracion';
+  return esModalidad(cuenta?.['modalidad']);
 }
 
 export function camposDerivadosDeCuenta(
@@ -290,7 +293,7 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
   const cuenta = pago.cuenta as CuentaCruda;
   const ahora = Timestamp.fromMillis(confirmacion.ahoraMs);
   const tras = aplicarPago(cuenta, pedido, confirmacion.ahoraMs);
-  const planAntes = esIdPlan(cuenta.plan) ? cuenta.plan : null;
+  const planAntes = esPlanVendible(cuenta.plan) ? cuenta.plan : null;
 
   const confirmadoPor = confirmacion.origen === 'banco'
     ? {
@@ -338,7 +341,7 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     actualizadoEn: ahora,
   };
 
-  const cambioDePlan = tras.plan !== 'demostracion' && tras.plan !== planAntes ? tras.plan : null;
+  const cambioDePlan = tras.plan !== planAntes ? tras.plan : null;
   if (cambioDePlan) {
     escrituraCuenta['plan'] = cambioDePlan;
     escrituraCuenta['limites'] = limitesDe(cambioDePlan);

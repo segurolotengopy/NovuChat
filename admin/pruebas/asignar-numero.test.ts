@@ -37,7 +37,7 @@ const NUEVO = '1000000051';
 const WABA_NUEVA = '1000000052';
 
 function correr(...args: string[]) {
-  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...args], {
+  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
     env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
@@ -92,12 +92,25 @@ describe('asignar-numero.mjs', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/✓ Verificación/);
     const ruta = (await db.doc(`rutasWhatsApp/${NUM}`).get()).data() ?? {};
-    expect(ruta).toMatchObject({ tenantId: T, flujo: 'onboarding', aliasSecreto: 'cliente02', wabaId: WABA, estado: 'activo' });
+    // Sin `--titularidad`, el número es de NovuChat (F1, `Analisis/41` §4): el lado seguro.
+    expect(ruta).toMatchObject({ tenantId: T, flujo: 'onboarding', aliasSecreto: 'cliente02', wabaId: WABA, estado: 'activo', titularidad: 'novuchat', asignadoPor: 'operador@ejemplo.com' });
+    expect(r.salida).toMatch(/Titular {3}: novuchat \(por defecto\)/);
     const ficha = (await db.doc(`tenants/${T}`).get()).data() ?? {};
     expect(ficha).toMatchObject({ waPhoneNumberId: NUM, waWabaId: WABA, flujos: ['onboarding'] });
     expect((await db.doc(`tenants/${T}/config/onboarding`).get()).exists).toBe(true);
     const auditoria = await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'asignar_numero').get();
     expect(auditoria.size).toBeGreaterThanOrEqual(1);
+    expect(auditoria.docs[0]?.data()).toMatchObject({ uid: 'operador@ejemplo.com', origen: 'script', script: 'asignar-numero' });
+  });
+
+  it('sin --operador, o con uno que no es un correo, no conecta (LOW-3)', () => {
+    for (const operador of [null, 'asignar-numero', 'andres']) {
+      const args = [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--numero', NUM, '--waba', WABA, '--flujo', 'onboarding', '--alias', 'cliente02',
+        ...(operador === null ? [] : ['--operador', operador]), '--aplicar'];
+      const o = spawnSync(process.execPath, args, { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      expect(o.status, String(operador)).toBe(2);
+      expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
+    }
   });
 
   it('repetir la misma asignación no rompe nada', async () => {
@@ -105,6 +118,19 @@ describe('asignar-numero.mjs', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/ya existía, se actualiza/);
     expect((await db.doc(`tenants/${T}`).get()).get('flujos')).toEqual(['onboarding']);
+  });
+
+  it('--titularidad comercio la escribe (el comercio trae su WABA y paga Meta); fuera de la lista, no', async () => {
+    const mala = asignar('cliente02', ['--titularidad', 'byoc', '--aplicar']);
+    expect(mala.codigo).toBe(2);
+    expect(mala.salida).toMatch(/--titularidad desconocida: byoc. Una de: novuchat, comercio/);
+    expect((await db.doc(`rutasWhatsApp/${NUM}`).get()).get('titularidad')).toBe('novuchat');
+    const r = asignar('cliente02', ['--titularidad', 'comercio', '--aplicar']);
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/Titular {3}: comercio$/m);
+    expect((await db.doc(`rutasWhatsApp/${NUM}`).get()).get('titularidad')).toBe('comercio');
+    const auditoria = await db.collection(`tenants/${T}/auditoria`).where('titularidad', '==', 'comercio').get();
+    expect(auditoria.size).toBeGreaterThanOrEqual(1);
   });
 
   it('NO reutiliza un alias que ya usa otro número', async () => {

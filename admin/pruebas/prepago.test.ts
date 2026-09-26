@@ -72,12 +72,15 @@ describe('La modalidad que rige, y la salvaguarda de los demos', () => {
     expect(modalidadDe({ modalidad: 'prepago' })).toBe('prepago');
   });
 
-  it('un plan de demostración es demostración, diga lo que diga la modalidad', () => {
-    expect(modalidadDe({ plan: 'demostracion', modalidad: 'prepago' })).toBe('demostracion');
+  it('el plan NO opina sobre la modalidad (F1): un plan viejo «demostracion» con modalidad prepago es prepago', () => {
+    // Hasta el 25/09 el plan mandaba («doble salvaguarda»). Desde F1 la
+    // modalidad es el único eje que decide si se cobra (`Analisis/41` §4).
+    expect(modalidadDe({ plan: 'demostracion', modalidad: 'prepago' })).toBe('prepago');
+    expect(modalidadDe({ plan: 'pro', modalidad: 'demostracion' })).toBe('demostracion');
   });
 
   it('una demostración es operativa siempre, con cualquier consumo y sin pago', () => {
-    for (const cuenta of [{}, { modalidad: 'demostracion' }, { plan: 'demostracion', modalidad: 'prepago' }]) {
+    for (const cuenta of [{}, { modalidad: 'demostracion' }, { plan: 'pro', modalidad: 'demostracion', periodoPagado: '2025-01' }]) {
       const e = estadoDeServicio(cuenta, 99_999, bo(2026, 10, 15));
       expect(e).toMatchObject({ operativo: true, motivo: null, fase: 'cubierto', modalidad: 'demostracion' });
       expect(e.disponibles).toBe(Number.POSITIVE_INFINITY);
@@ -226,7 +229,9 @@ describe('La bandera de modo observación (`corteAplicable`)', () => {
   it('nunca se aplica a una demostración, ni con la bandera encendida', () => {
     expect(corteAplicable({}, encendida)).toBe(false);
     expect(corteAplicable({ modalidad: 'demostracion', corteActivo: true }, encendida)).toBe(false);
-    expect(corteAplicable({ plan: 'demostracion', modalidad: 'prepago', corteActivo: true }, encendida)).toBe(false);
+    expect(corteAplicable({ plan: 'pro', modalidad: 'demostracion', corteActivo: true }, encendida)).toBe(false);
+    // Y un plan viejo «demostracion» ya no exime: la modalidad decide (F1).
+    expect(corteAplicable({ plan: 'demostracion', modalidad: 'prepago', corteActivo: true }, encendida)).toBe(true);
   });
 
   it('con modalidad, se aplica solo si la global o la del tenant están encendidas', () => {
@@ -511,7 +516,7 @@ describe('El calendario de cobranza (`recordatoriosDebidos`)', () => {
   });
 
   it('DEMOSTRACIÓN: nada, nunca', () => {
-    for (const c of [{}, { modalidad: 'demostracion' }, { plan: 'demostracion', modalidad: 'prepago', periodoPagado: '2026-08' }]) {
+    for (const c of [{}, { modalidad: 'demostracion' }, { plan: 'pro', modalidad: 'demostracion', periodoPagado: '2026-08' }]) {
       expect(claves(c, bo(2026, 10, 27, 10))).toEqual([]);
       expect(claves(c, bo(2026, 11, 5, 10))).toEqual([]);
     }
