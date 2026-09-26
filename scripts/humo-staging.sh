@@ -141,6 +141,21 @@ if grep -q '^cache-control:.*no-cache' <<< "$(cabeceras_de "$URL/")"; then
 else
   mal "/ (la consola) sin Cache-Control: no-cache (un navegador guardaría el index viejo tras cada despliegue)"
 fi
+# La precedencia de firebase.json (la regla posterior gana para la misma
+# clave): los archivos con hash siguen inmutables y /c/** conserva su CSP
+# propia, más cerrada que la general (revisión de seguridad de #227).
+activo="$(curl -sS -L --max-time 20 "$URL/" 2>/dev/null | grep -oE '/assets/[A-Za-z0-9_-]+\.js' | head -1)"
+if [[ -n "$activo" ]] && grep -q '^cache-control:.*immutable' <<< "$(cabeceras_de "$URL$activo")"; then
+  ok "$activo inmutable"
+else
+  mal "${activo:-/assets/*.js} sin Cache-Control inmutable (¿se reordenaron las reglas de firebase.json?)"
+fi
+csp_c="$(grep '^content-security-policy:' <<< "$(cabeceras_de "$URL/c/00000000000000000000000000000000")")"
+if grep -q "form-action 'none'" <<< "$csp_c" && ! grep -q 'frame-src' <<< "$csp_c"; then
+  ok "/c/** con su CSP propia"
+else
+  mal "/c/** sin su CSP propia (¿cae en la general?)"
+fi
 
 echo "2. Functions detrás de Hosting (los códigos que el código fuente da a un anónimo)"
 esperar 405 "GET  /api/ingesta/ (Function viva)"       GET  "$URL/api/ingesta/"
