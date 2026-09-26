@@ -18,7 +18,7 @@ import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/fi
 import { Link, useParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
-import { PLANES, PLANES_PUBLICADOS, esIdPlan, limiteDeCampanas, nombreDePlan } from '../lib/planes';
+import { PLANES, PLANES_PUBLICADOS, esIdPlan, esPlanPublicado, limiteDeCampanas, nombreDePlan } from '../lib/planes';
 import {
   TOPE_TEXTO_CAMPANA, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,
   leerCampanas, problemaEnPantalla, sumarDias,
@@ -29,7 +29,9 @@ const VACIA = (hoy: string): Campana => ({ id: '', texto: '', inicio: hoy, fin: 
 
 /** El plan publicado siguiente que admite más campañas que el tope de hoy, si existe. */
 function planConMasCampanas(plan: unknown, limite: number): { nombre: string; campanas: number } | null {
-  if (plan === 'demostracion' || plan === 'byoc') return null;
+  // Un plan del catálogo que no se publica (BYOC, el interno de demostración)
+  // no tiene escalera: se decide por el catálogo, no por el nombre.
+  if (esIdPlan(plan) && !esPlanPublicado(plan)) return null;
   const orden = PLANES_PUBLICADOS as readonly (keyof typeof PLANES)[];
   const desde = esIdPlan(plan) ? orden.indexOf(plan as keyof typeof PLANES) : -1;
   for (const p of orden.slice(desde + 1)) {

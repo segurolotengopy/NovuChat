@@ -49,19 +49,41 @@ export function nombreDePlan(plan: unknown): string | null {
   return esIdPlan(plan) ? PLANES_ASIGNABLES[plan].nombre : null;
 }
 
+/** ¿Está en la lista de precios del sitio? Es la escalera a la que se «sube». */
+export function esPlanPublicado(plan: unknown): plan is IdPlanVendible {
+  return (PLANES_PUBLICADOS as readonly unknown[]).includes(plan);
+}
+
+/**
+ * ¿Se puede contratar y pagar? Es «está en `PLANES`», el catálogo de lo que
+ * se vende. Reemplaza a comparar con el nombre del plan interno de
+ * demostración: la demostración es una MODALIDAD (`Analisis/41` §4), y un
+ * plan que no se vende se reconoce por el catálogo, no por su nombre.
+ */
+export function esPlanVendible(plan: unknown): plan is IdPlanVendible {
+  return typeof plan === 'string' && Object.prototype.hasOwnProperty.call(PLANES, plan);
+}
+
+/** El precio de lista en dólares de un plan; `null` si no está en el catálogo. */
+export function precioUsdDe(plan: unknown): number | null {
+  return esIdPlan(plan) ? PLANES_ASIGNABLES[plan].precioUsd : null;
+}
+
 /**
  * El plan al que conviene subir para tener más productos, con su tope. Sigue
  * el orden de `PLANES_PUBLICADOS` (el de la oferta del sitio). Un plan
  * desconocido se trata como el más chico —igual que el servidor—, así que
  * sugiere el segundo. El más grande no tiene siguiente.
  *
- * NI DEMOSTRACIÓN NI BYOC TIENEN SIGUIENTE, y por el mismo motivo: no están en
- * la escalera publicada. A un comercio BYOC no se le ofrece «subir» —ya tiene
- * el catálogo de Pro, y su modalidad se acordó contra su portafolio, no contra
- * un tope de productos (`Analisis/39`)—.
+ * UN PLAN DEL CATÁLOGO QUE NO SE PUBLICA NO TIENE SIGUIENTE (hoy, BYOC y el
+ * interno de demostración): no está en la escalera publicada. A un comercio
+ * BYOC no se le ofrece «subir» —ya tiene el catálogo de Pro, y su acuerdo se
+ * hizo contra su portafolio, no contra un tope de productos (`Analisis/39`)—.
+ * Se decide con `esPlanPublicado`, no comparando nombres: el catálogo puede
+ * cambiar sin que este archivo se entere.
  */
 export function planSiguiente(plan: unknown): { nombre: string; productos: number } | null {
-  if (plan === 'demostracion' || plan === 'byoc') return null;
+  if (esIdPlan(plan) && !esPlanPublicado(plan)) return null;
   const orden = PLANES_PUBLICADOS as readonly IdPlanVendible[];
   const actual: IdPlanVendible = esIdPlan(plan) ? plan as IdPlanVendible : PLAN_POR_DEFECTO;
   const s = orden[orden.indexOf(actual) + 1];
