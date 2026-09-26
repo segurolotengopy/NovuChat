@@ -26,12 +26,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  CALLABLES, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_TITULARIDAD, MODALIDADES, MODELOS,
-  cambiosDelMes, etiquetaModalidad, facturaMetaAlComercio, modeloDe, rutaDe, titularidadDe,
+  CALLABLES, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO, ETIQUETA_TITULARIDAD, MODALIDADES, MODELOS,
+  MODELO_POR_DEFECTO, TITULARIDADES, etiquetaModalidad, facturaMetaAlComercio, modeloDe, rutaDe, titularidadDe,
+  type CambiosVista, type EjesDeCuenta,
 } from '../web/src/lib/ejes';
 import { esPlanPublicado, esPlanVendible, planSiguiente, precioUsdDe } from '../web/src/lib/planes';
-import { PLANES, PLANES_PUBLICADOS, PLAN_DEMOSTRACION, periodoDe } from '../functions/src/planes';
+import { PLANES, PLANES_PUBLICADOS } from '../functions/src/planes';
 import { MODALIDADES as MODALIDADES_SERVIDOR, importeBs } from '../functions/src/prepago';
+import * as CENTRAL from '../functions/src/central/ejes';
 import { EjesDeLaCuenta } from '../web/src/central/componentes/EjesDeLaCuenta';
 import { ContadorCambios } from '../web/src/central/componentes/ContadorCambios';
 
@@ -49,7 +51,7 @@ const { renderToStaticMarkup } = desdeWeb('react-dom/server') as { renderToStati
 /** 15 de octubre de 2026, 12:00 de Bolivia. */
 const AHORA = Date.UTC(2026, 9, 15, 16, 0, 0);
 const TC = { tco: 12.6, fecha: '2026-10-15', fuente: 'BCB' };
-const MES = periodoDe(AHORA);
+const MES = CENTRAL.mesDeCambios(AHORA);
 
 /** Todos los .ts y .tsx de la consola, para las prohibiciones globales. */
 function archivosDeLaConsola(dir = join(aqui, '..', 'web', 'src')): string[] {
@@ -110,48 +112,66 @@ describe('titularidad: por número, con NovuChat de respaldo', () => {
   });
 });
 
-describe('modelo: decisión de NovuChat por tenant', () => {
-  it('sin dato o con uno desconocido rige Gemini, que es lo que corre hoy', () => {
-    expect(modeloDe(undefined)).toBe('gemini');
-    expect(modeloDe({ modelo: 'gpt' })).toBe('gemini');
-    expect(modeloDe({ modelo: 'claude-haiku' })).toBe('claude-haiku');
-    expect(MODELOS).toContain('gemini');
+describe('modelo y titularidad: las listas son las del servidor, no una copia', () => {
+  it('MODELOS y TITULARIDADES son los mismos objetos que exporta functions/src/central/ejes.ts', () => {
+    expect(MODELOS).toBe(CENTRAL.MODELOS);
+    expect(TITULARIDADES).toBe(CENTRAL.TITULARIDADES);
+    expect(MODELO_POR_DEFECTO).toBe(CENTRAL.MODELO_POR_DEFECTO);
+  });
+
+  it('cada modelo de la lista cerrada tiene su etiqueta, y ninguna más', () => {
+    expect(Object.keys(ETIQUETA_MODELO).sort()).toEqual([...MODELOS].sort());
+  });
+
+  it('sin dato o con uno desconocido rige el de respaldo del servidor', () => {
+    expect(modeloDe(undefined)).toBe(CENTRAL.MODELO_POR_DEFECTO);
+    expect(modeloDe({ modelo: 'gpt' })).toBe(CENTRAL.MODELO_POR_DEFECTO);
+    expect(modeloDe({ modelo: 'claude-haiku-4-5' })).toBe('claude-haiku-4-5');
+  });
+
+  it('la consola no escribe su propia lista de modelos ni de titularidades', () => {
+    const ejes = sinComentarios(leer('web/src/lib/ejes.ts'));
+    expect(ejes).not.toMatch(/MODELOS\s*=\s*\[/);
+    expect(ejes).not.toMatch(/TITULARIDADES\s*=\s*\[/);
+    expect(ejes).toContain("from '../../../functions/src/central/ejes'");
   });
 });
 
-describe('cambios incluidos del mes: se cuentan en el servidor, acá se leen', () => {
-  it('lee el contador del mes en curso y el tope de la copia de límites', () => {
-    const c = cambiosDelMes({ cambios: { [MES]: 2 }, limites: { cambiosIncluidos: 3 } }, AHORA);
-    expect(c).toEqual({ mes: MES, usados: 2, incluidos: 3, agotados: false });
+describe('cambios incluidos del mes: los cuenta el servidor, acá se dibujan', () => {
+  const vista = (c: Partial<CambiosVista>): CambiosVista =>
+    ({ mes: MES, usados: 0, incluidos: 2, restantes: 2, ilimitado: false, ...c });
+  const dibujar = (c: CambiosVista) => renderToStaticMarkup(createElement(ContadorCambios, { cambios: c }));
+
+  it('la vista de ejesDeCuenta es la de cambiosDelMes del servidor (demostración: ilimitado y sin tope)', () => {
+    const cuenta = { modalidad: 'prepago', plan: 'pro', cambios: { [MES]: 1 } };
+    const c = CENTRAL.cambiosDelMes(cuenta, AHORA);
+    expect(c).toMatchObject({ mes: MES, usados: 1, incluidos: PLANES.pro.cambiosIncluidos, ilimitado: false });
+    expect(CENTRAL.cambiosDelMes({ modalidad: 'demostracion', plan: 'pro' }, AHORA).ilimitado).toBe(true);
   });
 
-  it('el contador de otro mes no cuenta', () => {
-    const c = cambiosDelMes({ cambios: { '2026-09': 5 }, limites: { cambiosIncluidos: 3 } }, AHORA);
-    expect(c.usados).toBe(0);
+  it('dibuja «usados de incluidos» y avisa cuando se agotaron', () => {
+    expect(dibujar(vista({ usados: 1, incluidos: 3 }))).toContain('1 de 3 incluidos este mes');
+    const agotado = dibujar(vista({ usados: 2, incluidos: 2, restantes: 0 }));
+    expect(agotado).toContain('se cotizan aparte');
+    expect(agotado).toContain('situacion alerta');
   });
 
-  it('sin la clave del plan NO inventa un tope: incluidos es null y nunca «agotados»', () => {
-    const c = cambiosDelMes({ cambios: { [MES]: 9 }, limites: { conversaciones: 100 } }, AHORA);
-    expect(c).toEqual({ mes: MES, usados: 9, incluidos: null, agotados: false });
-    expect(cambiosDelMes(undefined, AHORA)).toEqual({ mes: MES, usados: 0, incluidos: null, agotados: false });
+  it('con cero incluidos (autoservicio) el primero ya se cotiza', () => {
+    expect(dibujar(vista({ usados: 0, incluidos: 0, restantes: 0 }))).toContain('se cotizan aparte');
   });
 
-  it('agotados cuando se usaron todos; un dato mal formado vale cero', () => {
-    expect(cambiosDelMes({ cambios: { [MES]: 3 }, limites: { cambiosIncluidos: 3 } }, AHORA).agotados).toBe(true);
-    expect(cambiosDelMes({ cambios: { [MES]: 'dos' }, limites: { cambiosIncluidos: -1 } }, AHORA))
-      .toEqual({ mes: MES, usados: 0, incluidos: null, agotados: false });
+  it('en demostración no inventa un tope: cuenta y dice que no hay', () => {
+    const html = dibujar(vista({ usados: 3, incluidos: null, restantes: null, ilimitado: true }));
+    expect(html).toContain('3 cambios este mes');
+    expect(html).toContain('sin tope en demostración');
+    expect(html).not.toContain('incluidos');
+    expect(html).not.toContain('cotizan');
   });
 
-  it('ContadorCambios dibuja «usados de incluidos» y avisa cuando se agotaron', () => {
-    const dibujar = (cuenta: Record<string, unknown>) =>
-      renderToStaticMarkup(createElement(ContadorCambios, { cambios: cambiosDelMes(cuenta, AHORA) }));
-    expect(dibujar({ cambios: { [MES]: 1 }, limites: { cambiosIncluidos: 3 } })).toContain('1 de 3 incluidos este mes');
-    expect(dibujar({ cambios: { [MES]: 3 }, limites: { cambiosIncluidos: 3 } })).toContain('se cotizan aparte');
-    const sinTope = dibujar({ cambios: { [MES]: 2 } });
-    expect(sinTope).toContain('2 cambios este mes');
-    expect(sinTope).not.toContain('incluidos');
-    expect(sinTope).not.toContain('cotizan');
-    expect(dibujar({})).toContain('0 cambios este mes');
+  it('sin tope conocido tampoco inventa uno', () => {
+    const html = dibujar(vista({ usados: 2, incluidos: null, restantes: null }));
+    expect(html).toContain('2 cambios este mes');
+    expect(html).not.toContain('cotizan');
   });
 });
 
@@ -172,27 +192,35 @@ describe('el catálogo decide qué plan se vende, no el nombre del plan', () => 
 
   it('planSiguiente: un plan del catálogo fuera de la escalera no tiene siguiente; uno desconocido sugiere el segundo', () => {
     for (const p of Object.keys(PLANES).filter((p) => !esPlanPublicado(p))) expect(planSiguiente(p)).toBeNull();
-    expect(planSiguiente('demostracion')).toBeNull();
+    // «demostracion» ya no es un plan: una cuenta sin migrar se trata como
+    // cualquier plan desconocido, igual que en el servidor (el más chico).
+    expect(planSiguiente('demostracion')).toEqual(planSiguiente('basico'));
     expect(planSiguiente(PLANES_PUBLICADOS.at(-1))).toBeNull();
     expect(planSiguiente('basico')?.nombre).toBe(PLANES[PLANES_PUBLICADOS[1]].nombre);
   });
 
-  it('precioUsdDe sale del catálogo, y la demostración cuesta cero', () => {
+  it('precioUsdDe sale del catálogo; «demostracion» ya no es un plan y no tiene precio', () => {
     expect(precioUsdDe('pro')).toBe(PLANES.pro.precioUsd);
-    expect(precioUsdDe('demostracion')).toBe(PLAN_DEMOSTRACION.precioUsd);
+    expect(precioUsdDe('demostracion')).toBeNull();
     expect(precioUsdDe('premium')).toBeNull();
   });
 });
 
-describe('EjesDeLaCuenta: tres filas, tres fuentes', () => {
-  const dibujar = (cuenta: Record<string, unknown>, rutas: ReturnType<typeof rutaDe>[] | null, tc: unknown = TC) =>
-    renderToStaticMarkup(createElement(EjesDeLaCuenta, { cuenta, rutas, tipoCambio: tc, ahoraMs: AHORA }));
+describe('EjesDeLaCuenta: tres filas, todo de ejesDeCuenta', () => {
+  const ejes = (e: Partial<EjesDeCuenta>): EjesDeCuenta => ({
+    tenantId: 't-1', plan: 'impulso',
+    limites: { conversaciones: 100, productos: 20, agendas: 1, cambiosIncluidos: 0, origen: 'cuenta' },
+    modalidad: 'prepago', modalidadExplicita: true, modelo: CENTRAL.MODELO_POR_DEFECTO, numeros: [],
+    cambios: { mes: MES, usados: 0, incluidos: 0, restantes: 0, ilimitado: false },
+    ...e,
+  });
+  const numero = (id: string, titularidad: 'novuchat' | 'comercio', flujo = 'reservas') =>
+    ({ phoneNumberId: id, flujo, estado: 'activo', titularidad, titularidadExplicita: true });
+  const dibujar = (e: EjesDeCuenta | null | undefined, tc: unknown = TC) =>
+    renderToStaticMarkup(createElement(EjesDeLaCuenta, { ejes: e, tipoCambio: tc, ahoraMs: AHORA }));
 
   it('muestra la modalidad, el plan con USD y Bs al TCO del día, y la titularidad de cada número', () => {
-    const html = dibujar({ modalidad: 'prepago', plan: 'impulso' }, [
-      rutaDe('1', { tenantId: 't', flujo: 'reservas', titularidad: 'comercio' }),
-      rutaDe('2', { tenantId: 't', flujo: 'venta' }),
-    ]);
+    const html = dibujar(ejes({ numeros: [numero('1', 'comercio'), numero('2', 'novuchat', 'venta')] }));
     expect(html).toContain('Producción');
     expect(html).toContain(PLANES.impulso.nombre);
     expect(html).toContain(`USD ${PLANES.impulso.precioUsd} al mes`);
@@ -204,30 +232,32 @@ describe('EjesDeLaCuenta: tres filas, tres fuentes', () => {
   });
 
   it('un comercio con plan Impulso y número propio se ve así, sin necesidad del plan BYOC', () => {
-    const html = dibujar({ modalidad: 'prepago', plan: 'impulso' }, [rutaDe('1', { tenantId: 't', titularidad: 'comercio' })]);
+    const html = dibujar(ejes({ numeros: [numero('1', 'comercio')] }));
     expect(html).toContain(PLANES.impulso.nombre);
     expect(html).toContain('Número propio del comercio');
   });
 
   it('sin tipo de cambio del día no inventa la cifra en bolivianos, y lo dice', () => {
-    const html = dibujar({ modalidad: 'prepago', plan: 'pro' }, [], null);
+    const html = dibujar(ejes({ plan: 'pro' }), null);
     expect(html).toContain('sin tipo de cambio del día');
     expect(html).not.toContain('Bs ');
   });
 
-  it('si no se pudieron leer los números dice «Sin información»; sin números, «Sin número asignado»', () => {
-    expect(dibujar({}, null)).toContain('Sin información');
-    expect(dibujar({}, [])).toContain('Sin número asignado');
+  it('cargando lo dice; si el servidor no respondió, lo dice; sin números, «Sin número asignado»', () => {
+    expect(dibujar(undefined)).toContain('Leyendo los ejes de la cuenta');
+    expect(dibujar(null)).toContain('No se pudieron leer los ejes de la cuenta');
+    expect(dibujar(ejes({}))).toContain('Sin número asignado');
   });
 
   it('una demostración se muestra como modalidad con su plan, no como un plan', () => {
-    const html = dibujar({ modalidad: 'demostracion', plan: 'pro' }, []);
+    const html = dibujar(ejes({ modalidad: 'demostracion', plan: 'pro' }));
     expect(html).toContain('Demostración');
     expect(html).toContain(PLANES.pro.nombre);
   });
 
   it('trae el contador de cambios del mes', () => {
-    expect(dibujar({ cambios: { [MES]: 1 }, limites: { cambiosIncluidos: 2 } }, [])).toContain('1 de 2 incluidos este mes');
+    expect(dibujar(ejes({ cambios: { mes: MES, usados: 1, incluidos: 2, restantes: 1, ilimitado: false } })))
+      .toContain('1 de 2 incluidos este mes');
   });
 });
 
@@ -247,6 +277,12 @@ describe('ninguna pantalla deduce un eje del nombre del plan (hito H1)', () => {
     }
   });
 
+  it('ningún archivo de la consola usa los puentes deprecados de planes.ts (F2 los borra)', () => {
+    for (const { ruta, texto } of fuentes) {
+      expect(texto, ruta).not.toMatch(/\besIdPlan\b|\bPLANES_ASIGNABLES\b|\bPLAN_DEMOSTRACION\b|\bIdPlan\b/);
+    }
+  });
+
   it("no compara con 'byoc' por nombre: BYOC ya no es un plan que decida nada", () => {
     for (const { ruta, texto } of fuentes) {
       expect(texto, ruta).not.toMatch(/===\s*'byoc'|'byoc'\s*\|\||\|\|\s*plan\s*===\s*'byoc'/);
@@ -254,7 +290,7 @@ describe('ninguna pantalla deduce un eje del nombre del plan (hito H1)', () => {
   });
 
   it('las callables de los ejes se llaman por CALLABLES de lib/ejes.ts, en un solo lugar', () => {
-    const lista = ['asignarEjes', 'registrarCambioOperado', 'fijarCortePrepago', 'suspenderTenant', 'reactivarTenant', 'registrarPagoManual'];
+    const lista = ['asignarEjes', 'ejesDeCuenta', 'registrarCambioOperado', 'fijarCortePrepago', 'suspenderTenant', 'reactivarTenant', 'registrarPagoManual'];
     for (const nombre of lista) expect(Object.values(CALLABLES)).toContain(nombre);
     for (const { ruta, texto } of fuentes) {
       if (ruta.endsWith('lib/ejes.ts')) continue;

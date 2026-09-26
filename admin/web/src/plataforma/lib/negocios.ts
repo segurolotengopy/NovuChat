@@ -188,17 +188,8 @@ export const diaBolivia = (ms: number): string => new Date(ms - 4 * 3_600_000).t
 // EL ERROR DEL SERVIDOR, TAL CUAL
 // -----------------------------------------------------------------------------
 
-/**
- * Las Functions de Plataforma escriben mensajes para la persona que opera
- * («El umbral de bloqueo tiene que ser mayor que el de operador», «Ese QR ya
- * se pagó»). Se muestran tal cual y no se tapan con «ocurrió un error», que
- * obligaría a mirar el registro del servidor para saber qué pasó.
- */
-export function mensajeDeError(e: unknown, respaldo: string): string {
-  const mensaje = (e as { message?: unknown } | undefined)?.message;
-  return typeof mensaje === 'string' && mensaje.trim() !== '' && !/^internal$/i.test(mensaje)
-    ? mensaje : respaldo;
-}
+/** El error del servidor, tal cual (`lib/errores.ts`, compartido con Central). */
+export { mensajeDeError } from '../../lib/errores';
 
 /** `registrarPagoManual` exige una sesión de hace menos de media hora: con este código la pantalla ofrece volver a entrar. */
 export const pideSesionReciente = (e: unknown): boolean =>

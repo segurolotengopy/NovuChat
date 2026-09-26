@@ -1,8 +1,8 @@
 import { TextoSeguro } from '../../componentes/TextoSeguro';
 import { ContadorCambios } from './ContadorCambios';
 import {
-  DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_TITULARIDAD, cambiosDelMes, etiquetaModalidad,
-  modalidadDe, titularidadDe, type RutaWhatsApp,
+  DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_TITULARIDAD,
+  type EjesDeCuenta,
 } from '../../lib/ejes';
 import { nombreDePlan, precioUsdDe } from '../../lib/planes';
 import { importeBs, tipoCambioVigente } from '../../lib/prepago';
@@ -15,40 +15,36 @@ import { importeBs, tipoCambioVigente } from '../../lib/prepago';
  * número (de NovuChat o propio del comercio). Más el contador de cambios
  * incluidos del mes, que es un límite de Central y no de ningún módulo.
  *
- * SON TRES DATOS INDEPENDIENTES Y SE MUESTRAN COMO TRES. Antes la pantalla
- * deducía la modalidad del plan («demostracion») y quién paga Meta del plan
- * («byoc»): un comercio con número propio y plan Impulso no tenía forma de
- * verse bien. Acá cada eje sale de su fuente: la modalidad de `modalidadDe`
- * (el módulo del servidor), la titularidad de cada `rutasWhatsApp/{n}`, y el
- * plan de `cuenta/estado.plan`.
+ * TODO VIENE DE `ejesDeCuenta` (el servidor): la modalidad con `modalidadDe`,
+ * la titularidad de cada `rutasWhatsApp/{n}` —que el comercio no puede leer
+ * directo— y el contador de cambios. La pantalla no deduce nada del plan.
  *
  * NO CALCULA NADA PROPIO. El importe en bolivianos sale de `importeBs` y
  * `tipoCambioVigente`, las mismas funciones con que el servidor emite un
  * cobro; sin tipo de cambio del día no hay cifra, y se dice.
  *
- * `rutas` en `null` significa que NO se pudo leer (hoy las reglas abren
- * `rutasWhatsApp` solo al propietario): se dice «sin información» y no se
- * supone nada. Componente puro: se dibuja en una prueba sin Firestore.
+ * `ejes` en `undefined` es «cargando»; en `null`, que el servidor no
+ * respondió (el error lo muestra la página): se dice y no se supone nada.
+ * Componente puro: se dibuja en una prueba sin Firestore.
  */
-export function EjesDeLaCuenta({ cuenta, rutas, tipoCambio, ahoraMs }: {
-  cuenta: Record<string, unknown> | null | undefined;
-  rutas: readonly RutaWhatsApp[] | null;
+export function EjesDeLaCuenta({ ejes, tipoCambio, ahoraMs }: {
+  ejes: EjesDeCuenta | null | undefined;
   tipoCambio: unknown;
   ahoraMs: number;
 }) {
-  const modalidad = modalidadDe(cuenta);
-  const plan = nombreDePlan(cuenta?.['plan']);
-  const precioUsd = precioUsdDe(cuenta?.['plan']);
+  if (ejes === undefined) return <p className="text-muted">Leyendo los ejes de la cuenta…</p>;
+  if (ejes === null) return <p className="text-muted">No se pudieron leer los ejes de la cuenta.</p>;
+  const plan = nombreDePlan(ejes.plan);
+  const precioUsd = precioUsdDe(ejes.plan);
   const tc = tipoCambioVigente(tipoCambio, ahoraMs);
-  const cambios = cambiosDelMes(cuenta, ahoraMs);
   return (
     <table className="ejes-cuenta">
       <tbody>
         <tr>
           <th>Modalidad</th>
           <td>
-            <strong>{etiquetaModalidad(cuenta)}</strong>
-            <span className="text-muted"> · {DESCRIPCION_MODALIDAD[modalidad]}</span>
+            <strong>{ETIQUETA_MODALIDAD[ejes.modalidad]}</strong>
+            <span className="text-muted"> · {DESCRIPCION_MODALIDAD[ejes.modalidad]}</span>
           </td>
         </tr>
         <tr>
@@ -56,13 +52,13 @@ export function EjesDeLaCuenta({ cuenta, rutas, tipoCambio, ahoraMs }: {
           <td>
             {/* El nombre del plan, no el identificador; uno desconocido se
                 muestra tal cual, pasado por `TextoSeguro`. */}
-            <strong>{plan ?? <TextoSeguro valor={cuenta?.['plan']} maxLargo={40} />}</strong>
+            <strong>{plan ?? <TextoSeguro valor={ejes.plan ?? '—'} maxLargo={40} />}</strong>
             {precioUsd !== null && (
               <>
                 {' '}· USD {precioUsd} al mes
-                {precioUsd > 0 && (tc
+                {tc
                   ? <span className="text-muted"> · Bs {importeBs(precioUsd, tc.tco)} al tipo de cambio oficial de {tc.tco} del {tc.fecha}</span>
-                  : <span className="text-muted"> · sin tipo de cambio del día para decirlo en bolivianos</span>)}
+                  : <span className="text-muted"> · sin tipo de cambio del día para decirlo en bolivianos</span>}
               </>
             )}
           </td>
@@ -70,26 +66,22 @@ export function EjesDeLaCuenta({ cuenta, rutas, tipoCambio, ahoraMs }: {
         <tr>
           <th>Titularidad del número</th>
           <td>
-            {rutas === null && <span className="text-muted">Sin información</span>}
-            {rutas !== null && rutas.length === 0 && <span className="text-muted">Sin número asignado</span>}
-            {rutas !== null && rutas.length > 0 && (
+            {ejes.numeros.length === 0 && <span className="text-muted">Sin número asignado</span>}
+            {ejes.numeros.length > 0 && (
               <ul className="lista-ejes">
-                {rutas.map((r) => {
-                  const t = titularidadDe(r);
-                  return (
-                    <li key={r.phoneNumberId} title={DESCRIPCION_TITULARIDAD[t]}>
-                      <strong>{ETIQUETA_TITULARIDAD[t]}</strong>
-                      {typeof r.flujo === 'string' && <span className="text-muted"> · flujo <TextoSeguro valor={r.flujo} maxLargo={30} /></span>}
-                    </li>
-                  );
-                })}
+                {ejes.numeros.map((n) => (
+                  <li key={n.phoneNumberId} title={DESCRIPCION_TITULARIDAD[n.titularidad]}>
+                    <strong>{ETIQUETA_TITULARIDAD[n.titularidad]}</strong>
+                    {n.flujo && <span className="text-muted"> · flujo <TextoSeguro valor={n.flujo} maxLargo={30} /></span>}
+                  </li>
+                ))}
               </ul>
             )}
           </td>
         </tr>
         <tr>
           <th>Cambios incluidos</th>
-          <td><ContadorCambios cambios={cambios} /></td>
+          <td><ContadorCambios cambios={ejes.cambios} /></td>
         </tr>
       </tbody>
     </table>

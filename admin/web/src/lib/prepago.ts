@@ -22,7 +22,7 @@
 export {
   BOLSA, DIAS_AVISO_CONVERSION, DIAS_AVISO_CORTE, DIAS_AVISO_RENOVACION, GRACIA_MS, INSTALACION_USD,
   MENSAJE_CORTESIA, MESES_MAXIMO, BOLSAS_MAXIMO, MODALIDADES, MONEDA_COBRO, MONEDA_LISTA, PLANES,
-  PLANES_ASIGNABLES, PLANTILLAS, PRUEBA, TCO_DIAS_VIGENCIA, TCO_MAXIMO, TCO_MINIMO,
+  PLANTILLAS, PRUEBA, TCO_DIAS_VIGENCIA, TCO_MAXIMO, TCO_MINIMO,
   aplicarPago, camposDerivados, consumidasDe, consumoDeConversacion, corteAplicable, corteDe,
   descripcionDe, diaDelMes, diasDelPeriodo, esFecha, esModalidad, esPago, esPeriodo, esTipoCambio,
   estadoDeServicio, fechaCorta, fechaEscrita, fechaFinDelPeriodo, finDelPeriodoMs, importeBs,

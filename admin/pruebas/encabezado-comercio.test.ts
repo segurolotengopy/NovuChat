@@ -5,10 +5,10 @@
  *
  *  1. LA REGLA ES LA DEL SERVIDOR. PRODUCCIÓN solo si `modalidadDe(cuenta)` es
  *     `prepago`; PRUEBA en cualquier otro caso (demostración, prueba, sin
- *     modalidad, `plan: 'demostracion'`). La pantalla usa `modalidadDe` y no
- *     lee el campo `modalidad` a mano: si lo hiciera, un `plan: 'demostracion'`
- *     con `modalidad: 'prepago'` saldría PRODUCCIÓN mientras el servidor lo
- *     trata como demostración.
+ *     modalidad). La pantalla usa `modalidadDe` y no lee el campo `modalidad`
+ *     a mano: el día que la regla del servidor cambie (como cambió en F1,
+ *     cuando el plan dejó de mandar sobre la modalidad), la cabecera cambia
+ *     con ella sin tocarla.
  *  2. SOLO LECTURA. La cabecera no escribe nada en Firestore.
  *  3. EL OPERADOR NO PIDE `cuenta/estado`. Las reglas se lo niegan; la
  *     cabecera ni lo intenta y muestra solo el nombre.
@@ -63,12 +63,13 @@ describe('modoDelComercio: PRUEBA o PRODUCCIÓN', () => {
     }
   });
 
-  it('con plan «demostracion» y modalidad de producción dice lo que diga el servidor, no lo que diga el plan', () => {
-    // La regla es de `modalidadDe` (Functions). Hoy el plan interno manda;
-    // cuando `central` haga la modalidad independiente del plan
-    // (`Analisis/41` §4), este caso sigue valiendo sin tocar la consola.
-    const cuenta = { plan: 'demostracion', modalidad: 'prepago' };
-    expect(modoDelComercio(cuenta).etiqueta).toBe(modalidadDe(cuenta) === 'prepago' ? 'PRODUCCIÓN' : 'PRUEBA');
+  it('la modalidad manda y el plan no opina, como en el servidor desde F1 (`Analisis/41` §4)', () => {
+    // Hasta el 25/09 un `plan: 'demostracion'` volvía PRUEBA a una cuenta en
+    // prepago. Ya no hay plan de demostración: un demo es modalidad
+    // `demostracion` con cualquier plan, y una cuenta en prepago es PRODUCCIÓN
+    // diga lo que diga su plan (incluido el valor viejo sin migrar).
+    expect(modoDelComercio({ plan: 'demostracion', modalidad: 'prepago' }).etiqueta).toBe('PRODUCCIÓN');
+    expect(modoDelComercio({ plan: 'pro', modalidad: 'demostracion' }).etiqueta).toBe('PRUEBA');
   });
 });
 

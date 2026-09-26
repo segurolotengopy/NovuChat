@@ -8,7 +8,7 @@ import { auth, db, funciones, storage } from '../../lib/firebase';
 import { TextoSeguro } from '../../componentes/TextoSeguro';
 import { ChipModo } from '../../componentes/ChipModo';
 import { modoDelComercio } from '../../lib/modoComercio';
-import { useRutasDelComercio, useTipoCambio } from '../../central/lib/lecturas';
+import { useEjesDeCuenta, useTipoCambio } from '../../central/lib/lecturas';
 import { CALLABLES, type Modalidad, type Modelo, type Titularidad } from '../../lib/ejes';
 import type { IdPlanVendible } from '../../lib/planes';
 import { corteDe, fechaCorta } from '../../lib/prepago';
@@ -62,7 +62,9 @@ export function CuentaNegocio() {
   const [ficha, setFicha] = useState<Record<string, unknown> | null | undefined>(undefined);
   const [cuenta, setCuenta] = useState<Record<string, unknown> | null | undefined>(undefined);
   const [pagos, setPagos] = useState<FilaPago[] | null>(null);
-  const rutas = useRutasDelComercio(tenantId, true);
+  // Titularidad por número, modelo y cambios del mes: del servidor, y se
+  // vuelven a pedir después de cada cambio confirmado.
+  const { ejes, error: errorEjes, recargar } = useEjesDeCuenta(tenantId);
   const tipoCambio = useTipoCambio();
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +109,7 @@ export function CuentaNegocio() {
     try {
       await httpsCallable(funciones, nombre)({ tenantId, ...datos });
       setAviso(exito);
+      recargar();
       return true;
     } catch (e) {
       setError(mensajeDeError(e, `No se pudo completar la operación (${nombre}).`));
@@ -114,7 +117,7 @@ export function CuentaNegocio() {
     } finally {
       setOcupado(false);
     }
-  }, [tenantId]);
+  }, [tenantId, recargar]);
 
   const registrarPago = useCallback(async (pedido: PedidoDePagoManual) => {
     if (!esIdTenant(tenantId)) { setError(TENANT_INVALIDO); return; }
@@ -199,7 +202,8 @@ export function CuentaNegocio() {
         </p>
       )}
 
-      <PanelEjes ficha={ficha} cuenta={cuenta} rutas={rutas ?? null} tipoCambio={tipoCambio} ahoraMs={ahoraMs} ocupado={ocupado}
+      {errorEjes && <p role="alert">{errorEjes}</p>}
+      <PanelEjes cuenta={cuenta} ejes={ejes} tipoCambio={tipoCambio} ahoraMs={ahoraMs} ocupado={ocupado}
         onPlan={(plan: IdPlanVendible) => void operar(CALLABLES.cuenta, { plan }, 'Plan cambiado.')}
         onModalidad={(modalidad: Modalidad) => void operar(CALLABLES.cuenta, { modalidad }, 'Modalidad cambiada.')}
         onTitularidad={(phoneNumberId: string, titularidad: Titularidad) =>
@@ -207,7 +211,9 @@ export function CuentaNegocio() {
         onModelo={(modelo: Modelo) => void operar(CALLABLES.ejes, { modelo }, 'Modelo cambiado.')}
         onUmbrales={(u) => void operar(CALLABLES.cuenta,
           u ? { umbralOperador: u.operador, umbralBloqueo: u.bloqueo } : { umbralOperador: null, umbralBloqueo: null },
-          u ? 'Umbrales fijados.' : 'Umbrales de respaldo restaurados.')} />
+          u ? 'Umbrales fijados.' : 'Umbrales de respaldo restaurados.')}
+        onCambio={(descripcion, forzar) => void operar(CALLABLES.cambio, { descripcion, ...(forzar ? { forzar: true } : {}) },
+          forzar ? 'Cambio registrado por encima de los incluidos.' : 'Cambio registrado.')} />
 
       <SuspensionNegocio ficha={ficha} ocupado={ocupado}
         onSuspender={(motivo, motivoVisible) => void operar(CALLABLES.suspender, { motivo, motivoVisible }, 'Servicio suspendido.')}

@@ -22,7 +22,6 @@ import {
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
 import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, type IdPlanVendible } from './planes';
-import { facturaMetaAlComercio, type RutaWhatsApp } from './ejes';
 
 export type { Pago, TipoCambio };
 
@@ -70,14 +69,8 @@ export function planInicial(cuenta: CuentaCruda | null | undefined): PlanEnVenta
   return esPlanVendible(actual) ? actual : PLAN_POR_DEFECTO;
 }
 
-/**
- * ¿A este comercio le factura Meta el consumo directamente? Lo dice la
- * TITULARIDAD de sus números, no el plan (`Analisis/41` §4: BYOC deja de ser
- * un plan; es titularidad `comercio` más un plan). Antes lo decía
- * `PLANES[plan].pagaMeta`, y un comercio con un número propio y un plan
- * publicado se quedaba sin el aviso.
- */
-export const paganEllosAMeta = (rutas: readonly RutaWhatsApp[]): boolean => facturaMetaAlComercio(rutas);
+// Quién le paga a Meta NO sale del plan: es la titularidad de cada número, que
+// la pantalla lee de `ejesDeCuenta` (`facturaMetaAlComercio`, `lib/ejes.ts`).
 
 export const MESES_POSIBLES = Array.from({ length: MESES_MAXIMO }, (_, i) => i + 1);
 export const BOLSAS_POSIBLES = Array.from({ length: BOLSAS_MAXIMO }, (_, i) => i + 1);

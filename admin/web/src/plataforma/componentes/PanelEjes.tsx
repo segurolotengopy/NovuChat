@@ -4,8 +4,8 @@ import { TextoSeguro } from '../../componentes/TextoSeguro';
 import { ContadorCambios } from '../../central/componentes/ContadorCambios';
 import {
   DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO, ETIQUETA_TITULARIDAD,
-  MODALIDADES, MODELOS, TITULARIDADES, cambiosDelMes, modalidadDe, modeloDe, titularidadDe,
-  type Modalidad, type Modelo, type RutaWhatsApp, type Titularidad,
+  MODALIDADES, MODELOS, TITULARIDADES, modalidadDe,
+  type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
 } from '../../lib/ejes';
 import { PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
 import { importeBs, tipoCambioVigente } from '../../lib/prepago';
@@ -24,14 +24,20 @@ import { resumenDeCambio } from '../lib/negocios';
  * tenant (`tenants/{t}.modelo`), y va acá porque cambiarlo en un comercio con
  * número propio sin rehacer la cuenta lo pone a perder plata (`Analisis/39`).
  *
+ * DE DÓNDE SALE CADA DATO. Plan, modalidad y umbrales, de `cuenta/estado` en
+ * vivo (lo que escribe `actualizarEstadoCuenta`); titularidad por número,
+ * modelo y cambios del mes, de `ejesDeCuenta` (lo que escribe `asignarEjes` y
+ * cuenta `registrarCambioOperado`), que la página vuelve a pedir después de
+ * cada cambio confirmado.
+ *
  * NO ESCRIBE NADA: cada confirmación llama al `on…` que la página conecta con
  * la callable, y el error del servidor lo muestra la página tal cual. Este
  * componente es puro y se dibuja en una prueba con `renderToStaticMarkup`.
  */
 export interface PanelEjesProps {
-  ficha: Record<string, unknown> | null | undefined;
   cuenta: Record<string, unknown> | null | undefined;
-  rutas: readonly RutaWhatsApp[] | null;
+  /** La respuesta de `ejesDeCuenta`; `undefined` cargando, `null` si falló. */
+  ejes: EjesDeCuenta | null | undefined;
   tipoCambio: unknown;
   ahoraMs: number;
   ocupado: boolean;
@@ -41,12 +47,13 @@ export interface PanelEjesProps {
   onModelo: (modelo: Modelo) => void;
   /** `null` borra los propios y vuelven a regir los de respaldo. */
   onUmbrales: (umbrales: { operador: number; bloqueo: number } | null) => void;
+  /** Registra un cambio operado por NovuChat (`registrarCambioOperado`); `forzar` pasa el tope, con constancia. */
+  onCambio: (descripcion: string, forzar: boolean) => void;
 }
 
 const PLANES_VENDIBLES = Object.keys(PLANES) as IdPlanVendible[];
 
 export function PanelEjes(p: PanelEjesProps) {
-  const cambios = cambiosDelMes(p.cuenta, p.ahoraMs);
   return (
     <section className="ejes-panel">
       <h3>Los ejes de la cuenta</h3>
@@ -59,17 +66,16 @@ export function PanelEjes(p: PanelEjesProps) {
           <SeccionPlan {...p} />
           <SeccionModalidad {...p} />
           <SeccionTitularidad {...p} />
-          <SeccionModelo {...p} />
+          {p.ejes ? <SeccionModelo {...p} modeloActual={p.ejes.modelo} /> : (
+            <tr><th>Modelo de IA</th><td className="text-muted">{p.ejes === undefined ? 'Leyendo…' : 'No se pudo leer.'}</td></tr>
+          )}
           <SeccionUmbrales {...p} />
           <tr>
             <th>Cambios incluidos</th>
             <td>
-              <ContadorCambios cambios={cambios} />
-              <p className="ayuda">
-                Los cambios de configuración que NovuChat opera por el comercio se registran
-                con <code>registrarCambioOperado</code> al hacerlos; acá se ven contra los
-                que incluye su plan.
-              </p>
+              {p.ejes ? <ContadorCambios cambios={p.ejes.cambios} />
+                : <span className="text-muted">{p.ejes === undefined ? 'Leyendo…' : 'No se pudo leer.'}</span>}
+              {p.ejes && <RegistrarCambio cambios={p.ejes.cambios} ocupado={p.ocupado} onCambio={p.onCambio} />}
             </td>
           </tr>
         </tbody>
@@ -112,8 +118,8 @@ function SeccionPlan(p: PanelEjesProps) {
           : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
               onClick={() => setPendiente(true)}>Cambiar el plan</button>}
         <p className="ayuda">
-          El plan interno de demostración ya no se asigna: una demostración es una
-          modalidad, con cualquier plan.
+          Una demostración es una modalidad, con cualquier plan: no hay plan de
+          demostración.
         </p>
       </td>
     </tr>
@@ -154,12 +160,15 @@ function SeccionTitularidad(p: PanelEjesProps) {
     <tr>
       <th>Titularidad</th>
       <td>
-        {p.rutas === null && <p className="text-muted">No se pudieron leer los números de este comercio.</p>}
-        {p.rutas !== null && p.rutas.length === 0 && (
+        {p.ejes === undefined && <p className="text-muted">Leyendo los números de este comercio…</p>}
+        {p.ejes === null && <p className="text-muted">No se pudieron leer los números de este comercio.</p>}
+        {p.ejes && p.ejes.numeros.length === 0 && (
           <p className="text-muted">Sin número asignado. Se asigna con <code>asignar-numero.mjs</code>: incluye un secreto y no pasa por la consola.</p>
         )}
-        {p.rutas !== null && p.rutas.map((r) => (
-          <FilaTitularidad key={r.phoneNumberId} ruta={r} ocupado={p.ocupado} onTitularidad={p.onTitularidad} />
+        {p.ejes && p.ejes.numeros.map((n) => (
+          // La clave lleva la titularidad: al confirmarse un cambio, la fila
+          // vuelve a nacer con el valor nuevo elegido.
+          <FilaTitularidad key={`${n.phoneNumberId}:${n.titularidad}`} numero={n} ocupado={p.ocupado} onTitularidad={p.onTitularidad} />
         ))}
         <p className="ayuda">
           Es por número, no por plan: la franquicia de 1.000 mensajes de Meta es por
@@ -170,10 +179,11 @@ function SeccionTitularidad(p: PanelEjesProps) {
   );
 }
 
-function FilaTitularidad({ ruta, ocupado, onTitularidad }: {
-  ruta: RutaWhatsApp; ocupado: boolean; onTitularidad: PanelEjesProps['onTitularidad'];
+function FilaTitularidad({ numero, ocupado, onTitularidad }: {
+  numero: NumeroDeCuenta; ocupado: boolean; onTitularidad: PanelEjesProps['onTitularidad'];
 }) {
-  const actual = titularidadDe(ruta);
+  const ruta = numero;
+  const actual = numero.titularidad;
   const [elegida, setElegida] = useState<Titularidad>(actual);
   const [pendiente, setPendiente] = useState(false);
   const resumen = resumenDeCambio('Titularidad', ETIQUETA_TITULARIDAD[actual], ETIQUETA_TITULARIDAD[elegida]);
@@ -181,8 +191,9 @@ function FilaTitularidad({ ruta, ocupado, onTitularidad }: {
   return (
     <p className="fila-titularidad">
       <strong>{ETIQUETA_TITULARIDAD[actual]}</strong>
-      {typeof ruta.flujo === 'string' && <span className="text-muted"> · flujo <TextoSeguro valor={ruta.flujo} maxLargo={30} /></span>}
+      {ruta.flujo && <span className="text-muted"> · flujo <TextoSeguro valor={ruta.flujo} maxLargo={30} /></span>}
       <span className="text-muted"> · número <TextoSeguro valor={ruta.phoneNumberId} maxLargo={25} /></span>
+      {!numero.titularidadExplicita && <span className="text-muted"> · sin asignar: rige la de respaldo</span>}
       <br />
       <label htmlFor={id}>Cambiar a</label>{' '}
       <select id={id} value={elegida} disabled={ocupado || pendiente}
@@ -199,8 +210,8 @@ function FilaTitularidad({ ruta, ocupado, onTitularidad }: {
   );
 }
 
-function SeccionModelo(p: PanelEjesProps) {
-  const actual = modeloDe(p.ficha);
+function SeccionModelo(p: PanelEjesProps & { modeloActual: Modelo }) {
+  const actual = p.modeloActual;
   const [elegido, setElegido] = useState<Modelo>(actual);
   const [pendiente, setPendiente] = useState(false);
   const resumen = resumenDeCambio('Modelo', ETIQUETA_MODELO[actual], ETIQUETA_MODELO[elegido]);
@@ -216,12 +227,12 @@ function SeccionModelo(p: PanelEjesProps) {
         </select>{' '}
         {pendiente && resumen
           ? <Confirmacion resumen={resumen} ocupado={p.ocupado}
-              advertencia="Con número propio del comercio, el tope de conversaciones se fijó contra Gemini: cambiar el modelo sin rehacer esa cuenta lo pone a perder plata."
+              advertencia="El tope de BYOC se fijó contra Gemini: con Haiku el equilibrio cae a 1.542 conversaciones y con Sonnet a 771. No se cambia sin rehacer esa cuenta."
               onConfirmar={() => { p.onModelo(elegido); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
           : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
               onClick={() => setPendiente(true)}>Cambiar el modelo</button>}
-        <p className="ayuda">Lo decide NovuChat por comercio; el flujo lo recibe en el contexto de turno.</p>
+        <p className="ayuda">Lo decide NovuChat por comercio. En F1 el flujo todavía no lo consume: queda registrado contra qué modelo se fijó el plan.</p>
       </td>
     </tr>
   );
@@ -275,5 +286,45 @@ function SeccionUmbrales(p: PanelEjesProps) {
         {!coherentes && <p className="field-error">El bloqueo tiene que ser mayor que el operador, y los dos enteros entre 1 y {UMBRAL_MAXIMO}.</p>}
       </td>
     </tr>
+  );
+}
+
+/**
+ * REGISTRAR UN CAMBIO OPERADO POR NOVUCHAT. Cada cambio de configuración que
+ * NovuChat hace a mano por el comercio se anota acá, al hacerlo, con qué se
+ * cambió (10 a 300 caracteres). El servidor cuenta contra los incluidos del
+ * plan y NIEGA pasado el tope; «forzar» lo registra igual, con constancia en
+ * la auditoría (es un cambio que se cotiza aparte). Sin cuenta, o sobre un
+ * comercio dado de baja, el servidor lo rechaza y la página lo muestra tal cual.
+ */
+function RegistrarCambio({ cambios, ocupado, onCambio }: {
+  cambios: CambiosVista; ocupado: boolean; onCambio: PanelEjesProps['onCambio'];
+}) {
+  const [descripcion, setDescripcion] = useState('');
+  const [forzar, setForzar] = useState(false);
+  const [pendiente, setPendiente] = useState(false);
+  const agotados = !cambios.ilimitado && cambios.incluidos !== null && cambios.usados >= cambios.incluidos;
+  const largo = descripcion.trim().length;
+  const listo = largo >= 10 && largo <= 300 && (!agotados || forzar);
+  return (
+    <div className="registrar-cambio">
+      <label htmlFor="cambio-descripcion">Registrar un cambio operado (qué se cambió)</label>
+      <input id="cambio-descripcion" type="text" maxLength={300} value={descripcion} disabled={ocupado || pendiente}
+        onChange={(e) => setDescripcion(e.target.value)} placeholder="al menos 10 caracteres" />
+      {agotados && (
+        <label>
+          <input type="checkbox" checked={forzar} disabled={ocupado || pendiente} onChange={(e) => setForzar(e.target.checked)} />{' '}
+          Ya usó los incluidos: registrarlo igual (se cotiza aparte)
+        </label>
+      )}{' '}
+      {pendiente
+        ? <Confirmacion ocupado={ocupado}
+            resumen={`Registrar un cambio operado${forzar ? ' por encima de los incluidos' : ''}`}
+            advertencia="Queda en el contador del mes y en la auditoría del comercio."
+            onConfirmar={() => { onCambio(descripcion.trim(), agotados && forzar); setPendiente(false); setDescripcion(''); setForzar(false); }}
+            onCancelar={() => setPendiente(false)} />
+        : <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !listo}
+            onClick={() => setPendiente(true)}>Registrar el cambio</button>}
+    </div>
   );
 }

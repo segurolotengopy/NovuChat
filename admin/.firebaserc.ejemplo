@@ -1,7 +1,7 @@
 {
   "projects": {
-    "default": "novuchat-admin-dev",
-    "dev": "novuchat-admin-dev",
-    "prod": "novuchat-admin-prod"
+    "default": "${GCP_PROJECT_ID_STAGING}",
+    "staging": "${GCP_PROJECT_ID_STAGING}",
+    "prod": "${GCP_PROJECT_ID}"
   }
 }

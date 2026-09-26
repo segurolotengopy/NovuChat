@@ -86,8 +86,9 @@ describe('Los números del límite: una sola fuente', () => {
     expect(L.PRODUCTOS_POR_PLAN_RESPALDO).toMatchObject({ impulso: 20, crecimiento: 100, pro: 500 });
     const vendibles = Object.values(P.PLANES).map((p) => p.productos);
     expect(L.PRODUCTOS_SIN_PLAN).toBe(Math.min(...vendibles));
-    // El plan de demostración no se vende, pero existe para las reglas.
-    expect(L.PRODUCTOS_POR_PLAN_RESPALDO['demostracion']).toBe(P.PLANES.pro.productos);
+    // Desde F1 no hay plan de demostración: ni en el catálogo ni en las reglas.
+    expect(L.PRODUCTOS_POR_PLAN_RESPALDO['demostracion']).toBeUndefined();
+    expect(Object.keys(L.PRODUCTOS_POR_PLAN_RESPALDO).sort()).toEqual(Object.keys(P.PLANES).sort());
   });
 
   it('la función del catálogo es limitesDeCuenta: mismo número en los casos del borde', () => {
@@ -288,7 +289,8 @@ describe('importarCatalogo: crea hasta donde deja el plan', () => {
   it('sin `limites`, el respaldo por plan; sin plan conocido o sin cuenta, 20', async () => {
     for (const [cuenta, limite] of [
       [{ plan: 'impulso' }, 20], [{ plan: 'crecimiento' }, 100], [{ plan: 'pro' }, 500],
-      [{ plan: 'demostracion' }, 500], [{ plan: 'basico' }, 20], [null, 20],
+      // El plan viejo «demostracion», sin migrar, es un plan desconocido: el más chico.
+      [{ plan: 'demostracion' }, 20], [{ plan: 'basico' }, 20], [null, 20],
       [{ plan: 'crecimiento', limites: { productos: '500' } }, 100],
     ] as const) {
       await sembrar(T, { cuenta: cuenta as Cuenta });

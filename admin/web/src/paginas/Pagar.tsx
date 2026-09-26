@@ -5,13 +5,13 @@ import { useParams } from 'react-router-dom';
 import { db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, paganEllosAMeta, planInicial,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, planInicial,
   planesOfrecidos, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
-import { useRutasDelComercio } from '../central/lib/lecturas';
-import { useSesion } from '../lib/contexto';
+import { useEjesDeCuenta } from '../central/lib/lecturas';
+import { facturaMetaAlComercio } from '../lib/ejes';
 
 /**
  * PAGAR — NovuChat cobrándole al comercio (`Analisis/41` §6.1 punto 6; «Cobros»
@@ -106,11 +106,10 @@ export function Pagar() {
   const [aviso, setAviso] = useState<string | null>(null);
 
   // LOS NÚMEROS DEL COMERCIO, por su titularidad: es lo que dice si Meta le
-  // factura el consumo a él (`paganEllosAMeta`), no el plan.
-  // Solo el propietario puede listarlos con la regla de hoy; el administrador
-  // no intenta la lectura y la fila dice «sin información».
-  const { permisos } = useSesion();
-  const rutas = useRutasDelComercio(tenantId, permisos.propietario);
+  // factura el consumo a él (`facturaMetaAlComercio`), no el plan.
+  // `ejesDeCuenta`: la titularidad de cada número, que el comercio no puede
+  // leer de `rutasWhatsApp` (es del propietario).
+  const { ejes, error: errorEjes } = useEjesDeCuenta(tenantId);
 
   const [tipo, setTipo] = useState<Tipo>('mensualidad');
   const [plan, setPlan] = useState<PlanEnVenta | null>(null);
@@ -219,7 +218,8 @@ export function Pagar() {
       {/* Lo que se está pagando, en sus tres ejes: el plan (con la doble
           moneda), la modalidad y de quién es el número. Es lo que evita la
           pregunta de por qué dos comercios con el mismo plan pagan distinto. */}
-      <EjesDeLaCuenta cuenta={cuenta} rutas={rutas ?? null} tipoCambio={tipoCambio} ahoraMs={Date.now()} />
+      {errorEjes && <p role="alert">{errorEjes}</p>}
+      <EjesDeLaCuenta ejes={ejes} tipoCambio={tipoCambio} ahoraMs={Date.now()} />
 
       {pendiente
         ? <CobroPendiente
@@ -257,7 +257,7 @@ export function Pagar() {
                     su tarjeta. Lo dice la titularidad de sus números, no el
                     plan (`Analisis/41` §4). Decirlo acá evita la pregunta de
                     por qué lo que paga a NovuChat no incluye WhatsApp. */}
-                {paganEllosAMeta(rutas ?? []) && (
+                {facturaMetaAlComercio(ejes?.numeros ?? []) && (
                   <p className="ayuda">
                     Su número es propio: el consumo de WhatsApp lo factura Meta directamente a su
                     tarjeta. Lo que se paga acá es el servicio de NovuChat.

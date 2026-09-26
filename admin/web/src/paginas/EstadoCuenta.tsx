@@ -10,8 +10,7 @@ import { AvisoConsumo } from '../componentes/AvisoConsumo';
 import { consumidasDe, corteDe, estadoDeServicio } from '../lib/prepago';
 import { ResumenPrepago } from '../componentes/ResumenPrepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
-import { useRutasDelComercio, useTipoCambio } from '../central/lib/lecturas';
-import { useSesion } from '../lib/contexto';
+import { useEjesDeCuenta, useTipoCambio } from '../central/lib/lecturas';
 
 interface Cuenta {
   plan?: unknown;
@@ -48,10 +47,9 @@ export function EstadoCuenta() {
   const [error, setError] = useState<string | null>(null);
   // LOS TRES EJES POR SEPARADO (`Analisis/41` §4): la titularidad es de cada
   // número y el importe en bolivianos, del tipo de cambio del día.
-  // Los números solo los puede listar el propietario (regla de hoy): el
-  // administrador no intenta la lectura y ve «sin información».
-  const { permisos } = useSesion();
-  const rutas = useRutasDelComercio(tenantId, permisos.propietario);
+  // La titularidad de sus números solo la ve el comercio por `ejesDeCuenta`:
+  // `rutasWhatsApp` es del propietario (trae el alias del secreto).
+  const { ejes, error: errorEjes } = useEjesDeCuenta(tenantId);
   const tipoCambio = useTipoCambio();
 
   useEffect(() => {
@@ -100,8 +98,8 @@ export function EstadoCuenta() {
       {aviso && <AvisoConsumo aviso={aviso} />}
 
       <h3>Su cuenta</h3>
-      <EjesDeLaCuenta cuenta={cuenta as Record<string, unknown>} rutas={rutas ?? null}
-        tipoCambio={tipoCambio} ahoraMs={Date.now()} />
+      {errorEjes && <p role="alert">{errorEjes}</p>}
+      <EjesDeLaCuenta ejes={ejes} tipoCambio={tipoCambio} ahoraMs={Date.now()} />
 
       {/* Una demostración no paga nada: mostrarle «su producción» a un demo
           es confundir al que hace la presentación. Se pregunta por la

@@ -1,36 +1,49 @@
 /**
- * LECTURAS EN VIVO QUE COMPARTEN LAS PANTALLAS DE LA CUENTA: los números del
- * comercio con su titularidad y el tipo de cambio del día. Solo lectura, por
- * `onSnapshot`; ninguna escribe nada.
+ * LECTURAS QUE COMPARTEN LAS PANTALLAS DE LA CUENTA: los ejes de la cuenta y
+ * el tipo de cambio del día. Ninguna escribe nada.
  *
- * `useRutasDelComercio(tenantId, habilitado)` devuelve `undefined` mientras
- * carga, `null` si no se pudo o no se intentó leer, y la lista en cualquier
- * otro caso. HOY `rutasWhatsApp` la abren las reglas SOLO al propietario, así
- * que las pantallas del comercio pasan `habilitado = permisos.propietario`:
- * un administrador ni intenta la consulta (sería un PERMISSION_DENIED seguro
- * en la consola del navegador; revisión de seguridad de #203, LOW 3) y ve
- * «sin información» en vez de una titularidad supuesta. Cuando `central`
- * publique la regla de listado para el administrador del comercio
- * (`allow list: if esPropietario() || (esAdmin(resource.data.tenantId) &&
- * tenantLegible(resource.data.tenantId))`), se quita la condición y nada más.
+ * LOS EJES SE PIDEN AL SERVIDOR (`ejesDeCuenta`, admin del comercio o
+ * propietario). Es el único camino por el que el comercio ve la titularidad
+ * de sus números: `rutasWhatsApp` es solo del propietario en
+ * `firestore.rules`, porque el documento trae el alias del secreto, la WABA y
+ * quién lo asignó; la callable devuelve solo lo que la pantalla pinta. El
+ * contador de cambios y el modelo vienen ya calculados: la consola no hace
+ * aritmética propia.
+ *
+ * `useEjesDeCuenta` devuelve `ejes: undefined` mientras carga, `null` si falló
+ * (con `error`, el mensaje del servidor tal cual) y la respuesta si llegó.
+ * `recargar()` vuelve a pedirla: la página del propietario lo llama después de
+ * cada cambio que confirma el servidor.
  */
-import { useEffect, useState } from 'react';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
-import { rutaDe, type RutaWhatsApp } from '../../lib/ejes';
+import { useCallback, useEffect, useState } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { db, funciones } from '../../lib/firebase';
+import { CALLABLES, type EjesDeCuenta } from '../../lib/ejes';
+import { mensajeDeError } from '../../lib/errores';
 
-export function useRutasDelComercio(tenantId: string, habilitado: boolean): RutaWhatsApp[] | null | undefined {
-  const [rutas, setRutas] = useState<RutaWhatsApp[] | null | undefined>(undefined);
+export interface LecturaDeEjes {
+  ejes: EjesDeCuenta | null | undefined;
+  error: string | null;
+  recargar: () => void;
+}
+
+export function useEjesDeCuenta(tenantId: string): LecturaDeEjes {
+  const [ejes, setEjes] = useState<EjesDeCuenta | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [vuelta, setVuelta] = useState(0);
+  const recargar = useCallback(() => setVuelta((v) => v + 1), []);
+
   useEffect(() => {
     if (!tenantId) return;
-    if (!habilitado) { setRutas(null); return; }
-    setRutas(undefined);
-    return onSnapshot(
-      query(collection(db, 'rutasWhatsApp'), where('tenantId', '==', tenantId)),
-      (i) => setRutas(i.docs.map((d) => rutaDe(d.id, d.data()))),
-      () => setRutas(null));
-  }, [tenantId, habilitado]);
-  return rutas;
+    let vigente = true;
+    httpsCallable<{ tenantId: string }, EjesDeCuenta>(funciones, CALLABLES.leerEjes)({ tenantId })
+      .then((r) => { if (vigente) { setEjes(r.data); setError(null); } })
+      .catch((e) => { if (vigente) { setEjes(null); setError(mensajeDeError(e, 'No se pudieron leer los ejes de la cuenta.')); } });
+    return () => { vigente = false; };
+  }, [tenantId, vuelta]);
+
+  return { ejes, error, recargar };
 }
 
 /**

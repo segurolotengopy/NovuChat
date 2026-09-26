@@ -78,8 +78,10 @@ export function Tenants() {
   const fijarCorte = useCallback(async (corteActivo: boolean, motivo: string) => {
     setOcupado(true); setError(null); setAviso(null);
     try {
-      // SIN `tenantId`: es la compuerta global. La de un comercio se toca en su página.
-      await httpsCallable(funciones, CALLABLES.corte)({ corteActivo, motivo });
+      // `alcance: 'global'` y SIN `tenantId`: es la compuerta de toda la
+      // plataforma. La de un comercio se toca en su página. (Un `tenantId: ''`
+      // el servidor lo rechaza, para que nadie apague la global por error.)
+      await httpsCallable(funciones, CALLABLES.corte)({ alcance: 'global', corteActivo, motivo });
       setAviso(corteActivo ? 'Corte encendido para todos los comercios en producción.' : 'Corte apagado: vuelve el modo observación.');
     } catch (e) {
       setError(mensajeDeError(e, 'No se pudo cambiar el corte.'));

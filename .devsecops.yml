@@ -17,11 +17,17 @@ componentes:
     proveedor: firebase
     # Estado real (2026-09-12): la consola en producción vive en el proyecto
     # que CONFIGURACION.local.md registra —no en «novuchat-admin-prod», que no
-    # aparece en la cuenta dueña de producción— y NO hay proyecto de staging
-    # para la consola. El ID va como
-    # marcador: el repositorio es público (CONVENCIONES-REPO-PUBLICO.md). El
-    # pipeline no lee este bloque; toma el proyecto de vars.GCP_PROJECT_ID_PROD.
+    # aparece en la cuenta dueña de producción—. Los ID van como marcador: el
+    # repositorio es público (CONVENCIONES-REPO-PUBLICO.md). El pipeline no lee
+    # este bloque; toma los proyectos de vars.GCP_PROJECT_ID_STAGING y
+    # vars.GCP_PROJECT_ID_PROD.
+    # Staging (2026-09-25): proyecto Firebase propio, separado del de
+    # producción, diseñado en docs/staging/DISENO.md. Mientras la variable de
+    # GitHub esté vacía, desplegar-staging y dast-y-humo se omiten.
     ambientes:
+      staging:
+        proyecto: ${GCP_PROJECT_ID_STAGING}
+        url: https://${GCP_PROJECT_ID_STAGING}.web.app
       production:
         proyecto: ${GCP_PROJECT_ID}
         url: https://consola.novuchat.site

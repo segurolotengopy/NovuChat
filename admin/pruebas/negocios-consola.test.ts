@@ -36,7 +36,7 @@ import { PanelEjes } from '../web/src/plataforma/componentes/PanelEjes';
 import { SuspensionNegocio } from '../web/src/plataforma/componentes/SuspensionNegocio';
 import { CortePrepago } from '../web/src/plataforma/componentes/CortePrepago';
 import { FormularioPagoManual } from '../web/src/plataforma/componentes/FormularioPagoManual';
-import { rutaDe } from '../web/src/lib/ejes';
+import { MODELO_POR_DEFECTO, type EjesDeCuenta } from '../web/src/lib/ejes';
 import { BOLSA, MESES_MAXIMO, PLANES, aplicarPago, importeBs } from '../functions/src/prepago';
 import { UMBRALES_ATENCION } from '../functions/src/atencion';
 
@@ -57,7 +57,7 @@ const dibujar = (componente: unknown, props: Record<string, unknown>) =>
 const AHORA = Date.UTC(2026, 9, 15, 16, 0, 0);
 const TC = { tco: 12.6, fecha: '2026-10-15', fuente: 'BCB' };
 const nada = () => undefined;
-const acciones = { onPlan: nada, onModalidad: nada, onTitularidad: nada, onModelo: nada, onUmbrales: nada };
+const acciones = { onPlan: nada, onModalidad: nada, onTitularidad: nada, onModelo: nada, onUmbrales: nada, onCambio: nada };
 
 describe('el pagoId y el comprobante tienen la forma que exigen el servidor y storage.rules', () => {
   it('nuevoPagoId da 22 caracteres de base64url, distintos cada vez', () => {
@@ -143,15 +143,22 @@ describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', (
   });
 });
 
-describe('el administrador del comercio no consulta rutasWhatsApp mientras la regla no lo deje (LOW 3)', () => {
-  it('el hook se condiciona con permisos.propietario en Cuenta y Pagar, y siempre en Administrar', () => {
-    for (const ruta of ['web/src/paginas/EstadoCuenta.tsx', 'web/src/paginas/Pagar.tsx']) {
-      expect(sinComentarios(leer(ruta))).toContain('useRutasDelComercio(tenantId, permisos.propietario)');
+describe('la titularidad llega por ejesDeCuenta: nadie fuera de la cartera lee rutasWhatsApp (LOW 3)', () => {
+  it('Cuenta, Pagar y Administrar piden ejesDeCuenta y no consultan rutasWhatsApp', () => {
+    for (const ruta of ['web/src/paginas/EstadoCuenta.tsx', 'web/src/paginas/Pagar.tsx', 'web/src/plataforma/paginas/CuentaNegocio.tsx']) {
+      const fuente = sinComentarios(leer(ruta));
+      expect(fuente, ruta).toContain('useEjesDeCuenta(tenantId)');
+      expect(fuente, ruta).not.toContain('rutasWhatsApp');
     }
-    expect(sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'))).toContain('useRutasDelComercio(tenantId, true)');
     const hook = sinComentarios(leer('web/src/central/lib/lecturas.ts'));
-    expect(hook).toContain('if (!habilitado) { setRutas(null); return; }');
-    expect(hook.indexOf('if (!habilitado)')).toBeLessThan(hook.indexOf('onSnapshot('));
+    expect(hook).toContain('CALLABLES.leerEjes');
+    expect(hook).not.toContain('rutasWhatsApp');
+    expect(hook).not.toContain('useRutasDelComercio');
+  });
+
+  it('Administrar vuelve a pedir los ejes después de cada cambio confirmado', () => {
+    const pagina = sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'));
+    expect(pagina).toMatch(/setAviso\(exito\);\s*recargar\(\);/);
   });
 });
 
@@ -207,10 +214,20 @@ describe('el error del servidor se muestra tal cual', () => {
 });
 
 describe('PanelEjes: los tres ejes, el modelo y los umbrales, cada uno con su confirmación', () => {
+  const MES = new Date(AHORA - 4 * 3_600_000).toISOString().slice(0, 7);
+  const ejes: EjesDeCuenta = {
+    tenantId: 't', plan: 'impulso',
+    limites: { conversaciones: 100, productos: 20, agendas: 1, cambiosIncluidos: 0, origen: 'cuenta' },
+    modalidad: 'prepago', modalidadExplicita: true, modelo: MODELO_POR_DEFECTO,
+    numeros: [
+      { phoneNumberId: '111', flujo: 'reservas', estado: 'activo', titularidad: 'comercio', titularidadExplicita: true },
+      { phoneNumberId: '222', flujo: 'venta', estado: 'activo', titularidad: 'novuchat', titularidadExplicita: false },
+    ],
+    cambios: { mes: MES, usados: 0, incluidos: 0, restantes: 0, ilimitado: false },
+  };
   const base = {
-    ficha: { modelo: 'gemini' }, cuenta: { modalidad: 'prepago', plan: 'impulso', umbralOperador: 20, umbralBloqueo: 40 },
-    rutas: [rutaDe('111', { tenantId: 't', flujo: 'reservas', titularidad: 'comercio' }), rutaDe('222', { tenantId: 't', flujo: 'venta' })],
-    tipoCambio: TC, ahoraMs: AHORA, ocupado: false, ...acciones,
+    cuenta: { modalidad: 'prepago', plan: 'impulso', umbralOperador: 20, umbralBloqueo: 40 },
+    ejes, tipoCambio: TC, ahoraMs: AHORA, ocupado: false, ...acciones,
   };
 
   it('muestra el plan con USD y Bs, la modalidad, la titularidad de cada número, el modelo y los umbrales propios', () => {
@@ -221,7 +238,9 @@ describe('PanelEjes: los tres ejes, el modelo y los umbrales, cada uno con su co
     expect(html).toContain('Producción');
     expect(html).toContain('Número propio del comercio');
     expect(html).toContain('Número de NovuChat');
-    expect(html).toContain('Gemini');
+    expect(html).toContain('Gemini 3.5 Flash-Lite');
+    // El número sin titularidad asignada lo dice: rige la de respaldo.
+    expect(html).toContain('sin asignar: rige la de respaldo');
     expect(html).toContain('<strong>20</strong>');
     expect(html).toContain('<strong>40</strong>');
     expect(html).toContain('propios de esta cuenta');
@@ -253,15 +272,30 @@ describe('PanelEjes: los tres ejes, el modelo y los umbrales, cada uno con su co
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Volver a los de respaldo<\/button>/);
   });
 
-  it('si no se pudieron leer los números lo dice; sin número, dice cómo se asigna (por script, con secreto)', () => {
-    expect(dibujar(PanelEjes, { ...base, rutas: null })).toContain('No se pudieron leer los números');
-    expect(dibujar(PanelEjes, { ...base, rutas: [] })).toContain('asignar-numero.mjs');
+  it('si ejesDeCuenta falló lo dice; mientras carga, también; sin número, dice cómo se asigna (por script, con secreto)', () => {
+    expect(dibujar(PanelEjes, { ...base, ejes: null })).toContain('No se pudieron leer los números');
+    expect(dibujar(PanelEjes, { ...base, ejes: undefined })).toContain('Leyendo los números');
+    expect(dibujar(PanelEjes, { ...base, ejes: { ...ejes, numeros: [] } })).toContain('asignar-numero.mjs');
   });
 
-  it('trae el contador de cambios incluidos del mes', () => {
-    const mes = new Date(AHORA).toISOString().slice(0, 7);
-    const html = dibujar(PanelEjes, { ...base, cuenta: { ...base.cuenta, cambios: { [mes]: 1 }, limites: { cambiosIncluidos: 2 } } });
+  it('trae el contador de cambios incluidos del mes, el que devuelve ejesDeCuenta', () => {
+    const html = dibujar(PanelEjes, { ...base, ejes: { ...ejes, cambios: { mes: MES, usados: 1, incluidos: 2, restantes: 1, ilimitado: false } } });
     expect(html).toContain('1 de 2 incluidos este mes');
+  });
+
+  it('registrar un cambio operado: deshabilitado sin descripción, y «forzar» solo cuando se agotaron los incluidos', () => {
+    const libre = dibujar(PanelEjes, { ...base, ejes: { ...ejes, cambios: { mes: MES, usados: 0, incluidos: 2, restantes: 2, ilimitado: false } } });
+    expect(libre).toMatch(/<button[^>]*disabled=""[^>]*>Registrar el cambio<\/button>/);
+    expect(libre).not.toContain('registrarlo igual');
+    const agotado = dibujar(PanelEjes, { ...base, ejes: { ...ejes, cambios: { mes: MES, usados: 2, incluidos: 2, restantes: 0, ilimitado: false } } });
+    expect(agotado).toContain('registrarlo igual (se cotiza aparte)');
+    const demo = dibujar(PanelEjes, { ...base, ejes: { ...ejes, cambios: { mes: MES, usados: 9, incluidos: null, restantes: null, ilimitado: true } } });
+    expect(demo).not.toContain('registrarlo igual');
+  });
+
+  it('el modelo se elige de la lista cerrada del servidor', () => {
+    const html = dibujar(PanelEjes, base);
+    for (const m of ['gemini-3.5-flash-lite', 'claude-haiku-4-5', 'claude-sonnet-5']) expect(html).toContain(`<option value="${m}"`);
   });
 });
 
@@ -348,12 +382,13 @@ describe('las pantallas no escriben en Firestore y llaman a las callables por el
   });
 
   it('cada acción es una callable de CALLABLES: cuenta, ejes, suspender, reactivar, corte y pago manual', () => {
-    for (const c of ['CALLABLES.cuenta', 'CALLABLES.ejes', 'CALLABLES.suspender', 'CALLABLES.reactivar', 'CALLABLES.corte', 'CALLABLES.pagoManual']) {
+    for (const c of ['CALLABLES.cuenta', 'CALLABLES.ejes', 'CALLABLES.cambio', 'CALLABLES.suspender', 'CALLABLES.reactivar', 'CALLABLES.corte', 'CALLABLES.pagoManual']) {
       expect(pagina).toContain(c);
     }
     expect(cartera).toContain('CALLABLES.corte');
-    // La compuerta global va SIN tenantId; la del comercio, con él.
-    expect(cartera).toContain("httpsCallable(funciones, CALLABLES.corte)({ corteActivo, motivo })");
+    // La compuerta global va con `alcance: 'global'` y SIN tenantId; la del comercio, con él.
+    expect(cartera).toContain("httpsCallable(funciones, CALLABLES.corte)({ alcance: 'global', corteActivo, motivo })");
+    expect(cartera).not.toMatch(/CALLABLES\.corte\)\(\{[^}]*tenantId/);
     expect(pagina).toContain('httpsCallable(funciones, nombre)({ tenantId, ...datos })');
   });
 
