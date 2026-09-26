@@ -28,9 +28,9 @@ Una excepción necesita las tres cosas, o no es una excepción:
 
 | Cliente | `--env` | Flujo versionado | Excepción declarada |
 |---|---|---|---|
-| Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | Hotfix de memoria y candado (`cierre/hotfix-memoria-y-candado`, 25/09): fusionado antes de publicarse; se publica en la ventana de 02:00 a 03:00 siguiente, después del ensayo en el Demo A. La cierra la publicación |
-| Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Hotfix de memoria y candado (`cierre/hotfix-memoria-y-candado`, 25/09): fusionado antes de publicarse; se publica en la ventana de 02:00 a 03:00 siguiente, después del ensayo en el Demo A. La cierra la publicación |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Hotfix de memoria y candado (`cierre/hotfix-memoria-y-candado`, 25/09): fusionado antes de publicarse; se publica en la ventana de 02:00 a 03:00 siguiente, después del ensayo en el Demo A. La cierra la publicación |
+| Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
+| Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Hotfix de memoria y candado (#186, fusionado el 25/09) más el origen del anuncio (#188): publicados en el Demo A el 25/09 a la noche para verificarlos con teléfono real; en este flujo se publican en la ventana de 02:00 a 03:00 siguiente, con la verificación del Demo A hecha. La cierra la publicación |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Hotfix de memoria y candado (#186, fusionado el 25/09) más el origen del anuncio (#188): publicados en el Demo A el 25/09 a la noche para verificarlos con teléfono real; en este flujo se publican en la ventana de 02:00 a 03:00 siguiente, con la verificación del Demo A hecha. La cierra la publicación |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -39,6 +39,15 @@ Una excepción necesita las tres cosas, o no es una excepción:
 
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
+
+## Estado al 25/09/2026 (noche)
+
+Publicados desde `origin/main` (`0655cd3`) con el diagnóstico en seco leído
+entero: **Demo A** (hotfix #186 y origen del anuncio #188: cinco nodos), **Demo B**
+(#188 y el comprobante en simulado #192: dos nodos) y **captación** (#187 y #188:
+tres nodos). Todas las credenciales heredadas del flujo vivo, ninguna corregida.
+Platinum y Bellido atienden pacientes reales y esperan la ventana de 02:00 a
+03:00, con la excepción declarada arriba.
 
 ## Estado al 24/09/2026
 
