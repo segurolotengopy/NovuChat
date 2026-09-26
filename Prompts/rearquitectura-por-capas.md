@@ -150,7 +150,7 @@ tocan solo agregando, una entrada por agente; vos conciliás.
 | Agente | Tipo | Zona de escritura | Fases | Entrega |
 |---|---|---|---|---|
 | **Diseño del registro** | `Plan` | Nada; devuelve el esquema | F2, primero, solo | La forma final de `registro.ts` y del manifiesto, y el orden de movimiento de archivos que minimiza PR en conflicto |
-| **central** | `general-purpose` | `functions/src/central/`, `web/src/central/`, `pruebas/central/`, reglas de `cuenta` y `pagos` | F1, F2 | Los tres ejes; `cambiosIncluidos`; renombres; `asignar-plan`; migración de los seis tenants |
+| **central** | `general-purpose` | `functions/src/central/`, `web/src/central/`, `pruebas/central/`, reglas de `cuenta` y `pagos` | F1, F1b, F2 | Los tres ejes; `cambiosIncluidos`; renombres; `asignar-plan`; migración de los tenants reales (cinco); la copia de límites y el precio por contrato (F1b) |
 | **plataforma-consola** | `general-purpose` | `web/src/plataforma/`, `functions/src/plataforma/` | F1, F2 | Negocios con los tres ejes, carga manual de pago, suspender y reactivar, corte (lo que A-3b prometía) |
 | **core-functions** | `general-purpose` | `functions/src/core/`, `pruebas/core/` | F2, F3 | Coordinador de turno con ganchos; `fronteras.test.ts`; `registro.test.ts` |
 | **core-flujos** | `flujos-n8n` | `Flujos/src/core/`, `Flujos/prompts/core/`, `ensamblar-flujo.mjs` | F-1 (hotfix), F2, F3 | Una variante de los nodos comunes; tercer tipo de inyección; prompt por capas; extracción de B y captación |
@@ -178,19 +178,31 @@ en un cliente; `estado-de-versiones.sh` 8/8 al cerrar cada jornada que
 publique. **Si algo rompe la atención de un comercio, se detiene todo y se
 revierte** con el respaldo `.local.json` que `publicar-flujo.sh` guarda.
 
-**Orden de fusión:** F-1 → E → F1 ∥ F6 ∥ S → F2 (registro primero, después
-los módulos en cualquier orden, consola, core-flujos) → etiqueta, despliegue y
-publicación de los 8 flujos → F3 (core-functions ∥ core-flujos, después
-módulos) → etiqueta, despliegue, publicación y ensayo real → **H4, que lo
-cierra la sesión de clientes** (aceptación y pase de Platinum) → F4 ∥ F5.
+**Orden de fusión (reorientado el 26/09, `Analisis/41` §6.3):** F-1 → E → F1 ∥
+F6 ∥ S (hechas) → **F1b** → F2 (registro primero, después los módulos en
+cualquier orden, consola, core-flujos) → etiqueta, despliegue (staging antes, o
+la alternativa declarada) y publicación de los 8 flujos → **F3a** (core-flujos
+con los módulos de venta) → etiqueta, despliegue, publicación de Demo B y
+captación y ensayo real → **H3a; la sesión de Edgar ensambla su flujo** → **F3b**
+(core-functions ∥ core-flujos, después módulos) → etiqueta, despliegue,
+publicación de los 8 en ventana y ensayo → H3b → F4 ∥ F5. **H4-Bellido y
+H4-Platinum los cierran las sesiones de clientes en paralelo, sin esperar a
+F3**; antes de F3b, la de Platinum alinea su JSON con producción.
 
 **Secuencia o paralelo, por fase:** F-1 y E van en secuencia y vos mismo las
 hacés (con `flujos-n8n` para el hotfix y `devsecops` para E). F1, F6 y S
 corren en paralelo con tres agentes. F2 abre en paralelo hasta ocho agentes
-después del registro. F3 abre dos en paralelo y después los módulos. F4 y F5,
-dos en paralelo.
+después del registro. F3a abre `core-flujos` con los módulos de venta (cobros, captación); F3b abre
+dos en paralelo y después los módulos. F4 y F5, dos en paralelo.
 
 ## Qué construir, por bloques
+
+> **Reorientación del 26/09** (`Analisis/41` §6.3, confirmada por Andres): F-1,
+> E, F1, S y F6 están hechas. Sigue **F1b → F2 → F3a → F3b**. Los bloques de
+> abajo se leen con eso: F3 aparece partido, y H4 se cierra por cliente desde
+> las sesiones de clientes. El primer PR de esta reorientación es de solo
+> documentación y ya está en `main`; el tablero (`Prompts/COORDINACION.md`)
+> lo actualizás vos como primer paso.
 
 ### F-1 — Cierre de las sesiones abiertas (1,5 jornadas; rama `cierre/25-09`)
 En este orden, cada paso con OK:
@@ -245,11 +257,22 @@ Lo del §7 de `Analisis/41`: `modalidad` independiente del plan; `titularidad`
 por número en `rutasWhatsApp`; `modelo` por tenant; `cambiosIncluidos` con
 contador en el servidor y prueba negativa; renombres en consola (Producción,
 Cobros, Pagar); `asignar-plan` escribe los tres ejes; migración por script de
-`plan: 'demostracion'` y `pagaMeta` en los seis tenants, en seco primero y
+`plan: 'demostracion'` y `pagaMeta` en los tenants reales (cinco), en seco primero y
 releída después; Negocios (Plataforma) con carga manual de pago, suspender y
 reactivar, cambiar plan, modalidad, titularidad y umbrales, y encender el
 corte. **Costo:** 0 mensajes; PR por agente; un despliegue (etiqueta) al
-cerrar. **Cierra H1.**
+cerrar. **Cierra H1.** *(Hecha el 26/09, `v0.10.0`.)*
+
+### F1b — Copia de límites y precio por contrato (0,5 a 1 jornada, agente `central`, antes de F2)
+Lo del §4 punto 5 de `Analisis/41`: `asignar-plan.mjs --conversaciones`,
+`--cambios` y `--precio` escriben la copia `cuenta/estado.limites` y el precio
+mensual del comercio, con `--operador` obligatorio y auditoría; `asignarEjes` lo
+mismo desde Negocios; Negocios lo muestra; el pago manual de Negocios acepta el
+precio del contrato y rechaza otro. Pruebas negativas: un admin no lo escribe,
+la copia manda sobre el plan, un precio fuera de contrato se rechaza. No mueve
+archivos ni toca flujos. **Costo:** 0 mensajes; un PR; sin despliegue propio,
+entra con la etiqueta de F2. **Cierra H1b.** Platinum lo espera (USD 120 por
+500); Dhermacore, los cambios pactados.
 
 ### F6 — Método (1,5 jornadas, en paralelo con F1 a F3)
 `docs/arquitectura/` por zona y por módulo con `indice.md` que mapea cada
@@ -283,28 +306,48 @@ captación con `ensamblar-flujo.mjs extraer`; `tenants.modulos` reemplaza a
 `flujos` con migración; `tieneModulo` en reglas; límite de agendas por plan;
 chequeos que faltan en inventario y catálogo; `Flujos/manifiestos/` para los 8
 flujos; `Flujos/<tenant>.json` con cabecera «generado» y gancho de pre-commit
-que exige `verificar`. **Costo:** 0 mensajes; un PR por agente; `firebase
-deploy --dry-run` en la aprobación. **Cierra H2**, con etiqueta, despliegue y
-publicación de los 8 flujos.
+que exige `verificar`. **Costo:** 0 mensajes; un PR por agente. **Es el primer
+despliegue con clientes pagando:** staging con facturación antes, o `firebase
+deploy --dry-run` leído entero en la aprobación y verificación de las Functions
+HTTP después, declarado en el informe; la migración de `tenants.modulos` en
+ventana, con respaldo y vuelta atrás escrita antes de correrla. **Cierra H2**,
+con etiqueta, despliegue y publicación de los 8 flujos.
 
-### F3 — Core unificado (4 jornadas)
+### F3a — Esqueleto de venta (2 jornadas, después de H2)
+La mitad de F3 que todo cliente de venta necesita (Edgar, Dhermacore, Q'Taco);
+los flujos de reservas ya la tienen (anexo A). Sobre `Flujos/src` extraído en
+F2, agentes `core-flujos` y `modulo` (cobros, captacion): medios (audio,
+imagen, documento) en el core para los tres esqueletos, con categorías por
+módulo (bloques 1 a 3 de `Prompts/capacidades-comunes.md`); transferencia con
+aviso y botón, y fallo del modelo con botón, en el esqueleto de venta y en
+captación (la política del 21/09); prohibición 4 en código en la variante común
+(`NIEGA_IA`); campaña por texto en venta; embudo único de salida; gancho de
+Inventario que respeta `agotado`; ids de credencial vacíos y `REEMPLAZAR_*` solo
+en `Config base` o declarado (anexo A, brechas 1 a 6, 8 y 9). Ensayo real en el
+TENANT de ensayo de venta con audio, foto, PDF y foto sin contexto, y el caso
+«verbo no previsto y la herramienta sí corrió», con identificadores de
+ejecución. **Costo:** 0 mensajes; etiqueta, despliegue y publicación de Demo B
+y captación desde `main`. **Cierra H3a.** La sesión de Edgar ensambla su flujo
+de esta salida, sin nodo propio.
+
+### F3b — Core unificado de reservas (2 jornadas, después de H3a)
 Ganchos registrados en lugar de importaciones en `ingesta.ts`; una sola
 variante de `Normalizar entrada`, `Config del negocio`, `Procesar respuesta`,
-`Uso extendido` y `Comercio no operativo` para los tres esqueletos, con la
-matriz del anexo A como lista de lo que todo flujo tiene (bloques 1 a 3 de
-`Prompts/capacidades-comunes.md`); medios (audio, imagen, documento) en el
-core con categorías por módulo; prompt por capas (base + módulos +
-variables del tenant); las suites importan `Flujos/src/` en vez de `new
-Function`; el corpus de captación sale del nodo Code; barrera de horas libres
-rechazadas en `modulos/agenda`; embudo único de salida en el esqueleto de
-venta (el botón a recepción de la política del 21/09); gancho de Inventario
-que respeta `agotado`. Ensayo real en el TENANT de ensayo de reservas y en el
-de venta con audio, foto, PDF y foto sin contexto, y el caso «verbo no
-previsto y la herramienta sí corrió». **Costo:** 0 mensajes; etiqueta,
-despliegue y publicación de los 8 flujos en ventana. **Cierra H3.** Después
-de H3, **esta sesión espera H4**, que cierra la sesión de clientes.
+`Uso extendido` y `Comercio no operativo` para los tres esqueletos; el estado de
+la conversación por teléfono en el servidor (`Analisis/41` §2.2: hoy en
+`$getWorkflowStaticData` por #197 y en un nodo propio de Bellido); prompt por
+capas (base + módulos + variables del tenant); las suites importan
+`Flujos/src/` en vez de `new Function`; el corpus de captación sale del nodo
+Code; barrera de horas libres rechazadas en `modulos/agenda`. Ensayo real en el
+TENANT de ensayo de reservas; Bellido se porta con
+`sincronizar-flujo-cliente.mjs --base` y se ensaya antes de publicar. **Platinum
+no se publica hasta que su sesión haya alineado `platinum-agendamiento.json` y
+`negocio-platinum.json` con producción** (tercera agenda, estética facial,
+emojis, Maps). **Costo:** 0 mensajes; etiqueta, despliegue y publicación de los
+8 flujos en ventana; las sesiones de Bellido y Platinum re-aceptan solo el
+delta. **Cierra H3b.** Ya no bloquea a ningún cliente.
 
-### F4 — Conector de canal fuera de n8n (5 jornadas, después de H4)
+### F4 — Conector de canal fuera de n8n (5 jornadas, después de H3b y del primer cliente pagador)
 Function receptora del webhook de Meta (firma con el App Secret por
 `phone_number_id`, acuse inmediato, deduplicación, descarga de medios,
 normalización) que llama a n8n por webhook genérico firmado con el patrón de
