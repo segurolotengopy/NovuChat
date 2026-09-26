@@ -144,14 +144,17 @@ const fichaD = ficha.data() ?? {};
 const cuenta = cuentaDoc.data() ?? {};
 
 // 0 · ¿Este comercio pasa alguna vez? -----------------------------------------
-const esDemo = cuenta.plan === 'demostracion' || fichaD.plan === 'demostracion'
+// Un demo lo dice su MODALIDAD explícita (F1: el plan ya no lo dice). Un
+// comercio SIN modalidad no es un demo: es uno sin migrar, y sigue al informe,
+// que lo anota como falta en «Prepago».
+const esDemo = cuenta.modalidad === 'demostracion'
   || NUNCA_PASAN.has(TENANT) || TENANT.startsWith('demo-');
 if (esDemo) {
   const porque = TENANT === 'novuchat'
     ? 'es el número de captación de la propia NovuChat: no es un comercio que paga y queda en demostración'
     : TENANT === 'ensayo'
       ? 'es el comercio del ensayo (docs/ensayo/LEEME.md): vive en un número de demostración'
-      : 'es un demo (plan demostracion): los demos no pasan a producción';
+      : 'es un demo (modalidad demostracion): los demos no pasan a producción';
   console.log(`  · «${TENANT}» NO pasa a producción: ${porque}.`);
   console.log(`    Modalidad hoy: ${modalidadDe(cuenta)}. Nada que hacer.\n`);
   process.exit(3);

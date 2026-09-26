@@ -47,6 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/prompt.ts';
+import { limitesDe } from '../functions/src/planes.ts';
 import { urlImagenValida } from '../functions/src/catalogoWeb.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -144,7 +145,8 @@ beforeAll(async () => {
     await db.doc(`tenants/${c.tenant}`).set({
       nombre: 'Demo B', estado: 'activo', vertical: 'venta', flujos: ['venta'],
     });
-    await db.doc(`tenants/${c.tenant}/cuenta/estado`).set({ plan: 'demostracion', modalidad: 'demostracion' });
+    // Un demo desde F1: modalidad demostración con un plan del catálogo y su copia de límites (Pro, como tenían).
+    await db.doc(`tenants/${c.tenant}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
   }
   // Un comercio SIN el flujo venta, para negar el catálogo web.
   await db.doc(`tenants/${SIN_VENTA}`).set({
@@ -290,12 +292,12 @@ for (const c of CONJUNTOS) describe(`negocio-demo-venta-${c.nombre}.json`, () =>
     expect((await db.doc(`tenants/${c.tenant}/contadores/catalogo`).get()).exists).toBe(false);
   }, 60_000);
 
-  it('en seco dice que crearía el contador, con el límite del plan demostración', () => {
+  it('en seco dice que crearía el contador, con el límite de la copia de la cuenta (Pro, 500)', () => {
     const r = correr(c.tenant, c.archivo);
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(new RegExp(
       `contador: FALTA → ${base.catalogo.length} \\(${base.catalogo.length} ítem\\(s\\) nuevo\\(s\\)\\)`
-      + ' · límite 500 \\(plan demostracion\\)'));
+      + ' · límite 500 \\(limites.productos\\)'));
     expect(r.salida).not.toMatch(/por encima del límite/);
   }, 60_000);
 
@@ -466,7 +468,7 @@ describe('alternar los dos demos sobre el MISMO comercio, con --vaciar-ajenos', 
     await db.doc(`tenants/${T}`).set({
       nombre: 'Demo B', estado: 'activo', vertical: 'venta', flujos: ['venta'],
     });
-    await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'demostracion', modalidad: 'demostracion' });
+    await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
   }, 60_000);
 
   it('sin la bandera, el segundo archivo se SUMA al primero y lo dice', async () => {

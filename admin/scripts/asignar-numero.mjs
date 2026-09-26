@@ -55,11 +55,20 @@ const WABA = (opcion('waba') ?? '').trim();
 const FLUJO = (opcion('flujo') ?? '').trim();
 const ALIAS = (opcion('alias') ?? '').trim();
 const REEMPLAZA = (opcion('reemplaza') ?? '').trim();
+// TITULARIDAD DEL CANAL (F1, `Analisis/41` §4): de quién es la WABA y quién
+// le paga a Meta este número. Sin `--titularidad`, de NovuChat (el lado
+// seguro). La lista cerrada se lee de `functions/src/central/ejes.ts`, como
+// los alias se leen de `firma.ts`: sin copia.
+const TITULARIDAD = (opcion('titularidad') ?? '').trim();
 
 // Mismos formatos que `ID_TENANT`, `ID_NUMERO` y `VERTICALES` de functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_NUMERO = /^[0-9]{6,25}$/;
 const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
+const ejes = readFileSync(new URL('../functions/src/central/ejes.ts', import.meta.url), 'utf8');
+const TITULARIDADES = [...(ejes.match(/export const TITULARIDADES = \[([^\]]+)\]/)?.[1] ?? '').matchAll(/'(\w+)'/g)].map((m) => m[1]);
+const TITULARIDAD_POR_DEFECTO = ejes.match(/export const TITULARIDAD_POR_DEFECTO: Titularidad = '(\w+)'/)?.[1] ?? 'novuchat';
+const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
 // Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
@@ -83,6 +92,7 @@ if (!LISTAR) {
   if (!ALIAS_VALIDOS.has(ALIAS)) problemas.push(`--alias no está en la reserva de firma.ts: ${ALIAS || '(vacío)'}`);
   if (REEMPLAZA && !ID_NUMERO.test(REEMPLAZA)) problemas.push('--reemplaza no es un phone_number_id (solo dígitos, 6 a 25)');
   if (REEMPLAZA && REEMPLAZA === NUMERO) problemas.push('--reemplaza es el mismo número que --numero');
+  if (!TITULARIDADES.includes(titularidad)) problemas.push(`--titularidad desconocida: ${TITULARIDAD}. Una de: ${TITULARIDADES.join(', ')}`);
   if (problemas.length) {
     console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
     console.error('\n  node scripts/asignar-numero.mjs --proyecto <id> --tenant <id> --numero <phone_number_id> \\');
@@ -128,6 +138,7 @@ console.log(`\n  Negocio   : ${TENANT}`);
 console.log(`  Número    : ${cola(NUMERO)} · WABA ${cola(WABA)}`);
 console.log(`  Flujo     : ${FLUJO}`);
 console.log(`  Alias     : ${ALIAS} (secreto ${secreto})`);
+console.log(`  Titular   : ${titularidad}${TITULARIDAD ? '' : ' (por defecto)'}`);
 if (REEMPLAZA) console.log(`  Reemplaza : número ${cola(REEMPLAZA)} (su ruta se borra en la misma transacción)`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
@@ -185,7 +196,7 @@ try {
 
     if (refVieja) tx.delete(refVieja);
     tx.set(refRuta, {
-      tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS,
+      tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS, titularidad,
       estado: resumen.estado,
       asignadoEn: Timestamp.now(), asignadoPor: 'asignar-numero',
     }, { merge: true });
@@ -199,7 +210,7 @@ try {
     }
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
       accion: 'asignar_numero', uid: 'asignar-numero', en: Timestamp.now(),
-      phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS,
+      phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS, titularidad,
       ...(REEMPLAZA ? { reemplazaA: REEMPLAZA } : {}),
     });
     return resumen;
@@ -230,9 +241,9 @@ const ficha = await refTenant.get();
 const viejaQueda = refVieja ? (await refVieja.get()).exists : false;
 const ok = !viejaQueda && ruta.get('tenantId') === TENANT && ruta.get('aliasSecreto') === ALIAS
   && ruta.get('flujo') === FLUJO && (ficha.get('flujos') ?? []).includes(FLUJO)
-  && ficha.get('waPhoneNumberId') === NUMERO;
+  && ficha.get('waPhoneNumberId') === NUMERO && ruta.get('titularidad') === titularidad;
 console.log(`\n  ${ok ? '✓' : '✗'} Verificación: ruta → ${ruta.get('tenantId')} · alias ${ruta.get('aliasSecreto')}`
-  + ` · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);
+  + ` · titularidad ${ruta.get('titularidad')} · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);
 console.log('  Siguiente: el valor del secreto va a la credencial de cabecera de n8n');
 console.log(`  (Name: Authorization · Value: Bearer <valor>), nunca al repositorio:`);
 console.log(`    gcloud secrets versions access latest --secret=${secreto} --project ${PROYECTO}\n`);
