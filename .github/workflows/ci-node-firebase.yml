@@ -1193,8 +1193,10 @@ jobs:
           set -euo pipefail
           # Los parámetros de las Functions (`defineString`) se leen de
           # functions/.env, ignorado por git; se escribe desde el Environment.
+          # INSTANCIAS_MINIMAS=0: en staging no hay instancia siempre despierta
+          # (producción escribe 1; ver `ingesta.ts` y `instancias-minimas.test.ts`).
           if [[ "$SOLO" == *functions* ]]; then
-            printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+            printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=0\n' "$SITIO_PUBLICO" > functions/.env
           fi
           # El bucket se declara como destino, no se consulta (ver el bloque
           # «EL BUCKET DE STORAGE SE DECLARA» del job de producción).
@@ -1521,7 +1523,11 @@ jobs:
           if [[ "$SOLO" == *functions* ]]; then
             [[ -n "$SITIO_PUBLICO" ]] \
               || { echo "::error::Falta vars.SITIO_PUBLICO (ver .github/DESPLIEGUE-FIREBASE.md, «Estado real»)"; exit 1; }
-            printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+            # INSTANCIAS_MINIMAS=1 va ESCRITO aunque sea el valor por defecto:
+            # con --non-interactive firebase-tools NO toma el default de un
+            # parámetro ausente del .env, falla («In non-interactive mode but
+            # have no value», lib/deploy/functions/params.js:181 en 15.28.1).
+            printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=1\n' "$SITIO_PUBLICO" > functions/.env
           fi
           # EL BUCKET DE STORAGE SE DECLARA, NO SE ADIVINA (2026-09-17).
           # firebase.json apunta las reglas de Storage al destino «principal» y
