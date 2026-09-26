@@ -9,8 +9,21 @@
  * Firestore— y la consola la habría buscado en otra región. Esta prueba lee el
  * mismo `__endpoint` del que sale el manifiesto de despliegue, Function por
  * Function, así que ninguna nueva puede volver a quedar afuera.
+ *
+ * Endurecida el 25/09/2026 (revisión de #205): la cuenta tiene que ser el
+ * correo COMPLETO `sa-functions@<proyecto>.iam.gserviceaccount.com`, nunca la
+ * abreviatura `sa-functions@`. firebase-tools la acepta al crear el servicio,
+ * pero el manifiesto la lleva literal y `ensure.secretsAccessDelta` la compara
+ * con el correo completo que devuelve GCF: el delta da todos los secretos y el
+ * despliegue llama a `setIamPolicy` con un miembro inválido antes de crear
+ * ninguna Function (ver manifiesto-secretos.test.ts, que lo reproduce). El
+ * correo sale de GCLOUD_PROJECT, que acá fija vitest.config.ts y acá mismo
+ * se asegura antes del import, como firebase-tools lo fija al descubrir.
  */
 import { describe, expect, it } from 'vitest';
+
+process.env['GCLOUD_PROJECT'] ??= 'demo-test';
+const PROYECTO = process.env['GCLOUD_PROJECT'];
 
 const indice = (await import('../functions/src/index.ts')) as Record<string, unknown>;
 const { REGION } = await import('../functions/src/region.ts');
@@ -26,10 +39,16 @@ describe('región y cuenta de servicio de cada Function exportada', () => {
   });
 
   for (const [nombre, f] of funciones) {
-    it(`${nombre}: región ${REGION} y cuenta sa-functions`, () => {
+    it(`${nombre}: región ${REGION} y cuenta sa-functions con correo completo`, () => {
       const e = f.__endpoint!;
       expect(e.region, `${nombre} sin región`).toEqual([REGION]);
-      expect(String(e.serviceAccountEmail ?? ''), `${nombre} sin cuenta de servicio`).toMatch(/^sa-functions@/);
+      const cuenta = String(e.serviceAccountEmail ?? '');
+      expect(cuenta, `${nombre} sin cuenta de servicio o con la abreviatura`).toMatch(
+        /^sa-functions@[a-z0-9-]+\.iam\.gserviceaccount\.com$/,
+      );
+      expect(cuenta, `${nombre} con la cuenta de otro proyecto`).toBe(
+        `sa-functions@${PROYECTO}.iam.gserviceaccount.com`,
+      );
     });
   }
 });

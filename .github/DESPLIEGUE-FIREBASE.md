@@ -22,8 +22,17 @@ del proyecto de producción. Lo que hay:
 - **Producción** es el proyecto `${GCP_PROJECT_ID}` de `CONFIGURACION.local.md`,
   el mismo de `admin/.firebaserc`, con la consola en `consola.novuchat.site`.
   Donde abajo diga `novuchat-admin-prod`, léase ese.
-- **No hay proyecto de staging.** `desplegar-staging` se omite mientras
-  `vars.GCP_PROJECT_ID_STAGING` esté vacía, en vez de fallar en cada push.
+- **Staging (2026-09-25):** el diseño del proyecto de staging, sus variables
+  por Environment, su federación propia y la lista ordenada de escrituras en la
+  nube y en GitHub están en `docs/staging/DISENO.md`; el script
+  `scripts/preparar-staging.sh` las ejecuta en seco por defecto. Mientras
+  `vars.GCP_PROJECT_ID_STAGING` esté vacía, `desplegar-staging` se omite en vez
+  de fallar en cada push, y con ella `dast-y-humo` y `humo-staging`.
+  **Ninguna cuenta de despliegue —ni la de staging ni la de producción— recibe
+  `roles/firebase.viewer`**: trae 290 permisos, entre ellos leer Firestore,
+  Auth y Storage. Cuando el pipeline necesita la configuración pública del SDK
+  (`apiKey`, `appId`), la lee sin credenciales de
+  `https://<sitio>/__/firebase/init.json`, que Hosting sirve para cada sitio.
 - **El primer despliegue por CI fue `v0.1.4` (2026-09-13).** Hasta el 12/09 no
   había secretos y todo se desplegaba a mano. Llegar ahí destapó seis piezas que
   faltaban; están en la tabla de `ESTADO.md` y, una por una, en esta sección.

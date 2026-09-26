@@ -53,10 +53,14 @@
  *     plan, se corta. Sin cobranza.
  *
  * LO QUE ESTO NO CAMBIA: los negocios de demostración y NovuChat mismo. Una
- * cuenta SIN `modalidad` —o con `modalidad: 'demostracion'`, o con
- * `plan: 'demostracion'`— no está sujeta a nada de esto y el asistente atiende
- * siempre. Es deliberado, y se prueba negando: desplegar este módulo no puede
- * apagar un demo el día de una presentación.
+ * cuenta SIN `modalidad` —o con `modalidad: 'demostracion'`— no está sujeta a
+ * nada de esto y el asistente atiende siempre. Es deliberado, y se prueba
+ * negando: desplegar este módulo no puede apagar un demo el día de una
+ * presentación. DESDE F1 (`Analisis/41` §4, 25/09/2026) LA MODALIDAD ES EL
+ * ÚNICO EJE QUE DECIDE ESTO: `plan: 'demostracion'` dejó de existir como plan
+ * y ya no manda sobre la modalidad. Un demo es modalidad `demostracion` con
+ * cualquier plan del catálogo; `scripts/migrar-ejes.mjs` convierte los que
+ * quedaron con el plan viejo.
  *
  * Y LA BANDERA DE MODO OBSERVACIÓN (§4undecies.4): aunque una cuenta con
  * modalidad deba, el corte solo SE APLICA si `plataforma/prepago.corteActivo`
@@ -66,8 +70,8 @@
  * Andres, no un despliegue.
  */
 import {
-  BOLSA, INSTALACION_USD, PLANES, PLANES_ASIGNABLES, PLAN_POR_DEFECTO, esIdPlan, limitesDeCuenta,
-  type IdPlan, type IdPlanVendible,
+  BOLSA, INSTALACION_USD, PLANES, PLAN_POR_DEFECTO, esPlanVendible, limitesDeCuenta,
+  type IdPlanVendible,
 } from './planes.js';
 
 // Lo que la consola y los pagos necesitan del catálogo lo reexportamos desde
@@ -369,12 +373,17 @@ export function corteDe(cuenta: CuentaCruda | null | undefined): Corte | null {
 
 /**
  * LA MODALIDAD QUE RIGE. Sin `modalidad` no hay prepago: es la salvaguarda de
- * los demos y de cualquier negocio cargado antes de este módulo. Y un
- * `plan: 'demostracion'` es demostración diga lo que diga `modalidad`: doble
- * salvaguarda (§4undecies.2, migración).
+ * los demos y de cualquier negocio cargado antes de este módulo.
+ *
+ * EL PLAN NO OPINA (F1, `Analisis/41` §4). Hasta el 25/09 un
+ * `plan: 'demostracion'` era demostración diga lo que dijera `modalidad`
+ * («doble salvaguarda»). Esa doble salvaguarda era la mezcla de los dos ejes:
+ * el plan decidiendo si se cobra. Ahora la modalidad es el único dato que
+ * decide, y los tenants que tenían el plan viejo reciben `modalidad:
+ * 'demostracion'` por `scripts/migrar-ejes.mjs`. Lo que sí se conserva es la
+ * salvaguarda de la AUSENCIA: sin modalidad, demostración.
  */
 export function modalidadDe(cuenta: CuentaCruda | null | undefined): Modalidad {
-  if (cuenta?.plan === 'demostracion') return 'demostracion';
   return esModalidad(cuenta?.modalidad) ? cuenta.modalidad : 'demostracion';
 }
 
@@ -429,7 +438,7 @@ export interface EstadoServicio {
   /** Desde cuándo rige (o regiría) el corte por falta de pago; `null` si no hay. */
   corteDesdeMs: number | null;
   modalidad: Modalidad;
-  plan: IdPlan;
+  plan: IdPlanVendible;
   /** Mes calendario de Bolivia del instante juzgado (`aaaa-mm`). */
   periodo: string;
   /** ¿El mes que rige es el de prueba? */
@@ -485,7 +494,7 @@ export function estadoDeServicio(
   ahoraMs: number,
 ): EstadoServicio {
   const c = cuenta ?? {};
-  const plan: IdPlan = esIdPlan(c.plan) ? c.plan : PLAN_POR_DEFECTO;
+  const plan: IdPlanVendible = esPlanVendible(c.plan) ? c.plan : PLAN_POR_DEFECTO;
   const modalidad = modalidadDe(c);
   const periodo = mesBolivia(ahoraMs);
   const periodoPagado = esPeriodo(c.periodoPagado) ? c.periodoPagado : '';
@@ -493,7 +502,9 @@ export function estadoDeServicio(
   const bolsa = entero(c.bolsa);
   const bolsaPrueba = entero(c.bolsaPrueba);
   const usadas = entero(consumidas);
-  const precio = plan === 'demostracion' ? 0 : PLANES_ASIGNABLES[plan].precioUsd;
+  // El precio del plan. Que una demostración no pague lo decide la modalidad
+  // (abajo: `mensualidadUsd: 0`), no un plan con precio cero.
+  const precio = PLANES[plan].precioUsd;
 
   const base = {
     modalidad, plan, periodo, bolsa, bolsaPrueba, consumidas: usadas,
@@ -666,7 +677,7 @@ export function esPago(v: unknown): v is Pago {
   if (p['tipo'] === 'instalacion') return true;
   if (p['tipo'] === 'bolsa') return enteroEntre(p['cantidad'], 1, BOLSAS_MAXIMO);
   if (p['tipo'] === 'mensualidad') {
-    return esIdPlan(p['plan']) && p['plan'] !== 'demostracion' && enteroEntre(p['meses'], 1, MESES_MAXIMO);
+    return esPlanVendible(p['plan']) && enteroEntre(p['meses'], 1, MESES_MAXIMO);
   }
   return false;
 }
@@ -696,7 +707,7 @@ export function descripcionDe(pago: Pago): string {
 }
 
 export interface CuentaTrasPago {
-  plan: IdPlan;
+  plan: IdPlanVendible;
   modalidad: Modalidad;
   periodoPagado: string;
   bolsa: number;
@@ -910,9 +921,9 @@ export function recordatoriosDebidos(
   const mesActual = estado.periodo;
   const hoy = diaDelMes(ahoraMs);
   const diasHastaD0 = diasDelPeriodo(mesActual) - hoy + 1;
-  const planNombre = PLANES_ASIGNABLES[estado.plan].nombre;
+  const planNombre = PLANES[estado.plan].nombre;
   const tco = contexto.tco;
-  const precioBs = tco === null ? null : String(importeBs(estado.mensualidadUsd || PLANES_ASIGNABLES[estado.plan].precioUsd, tco));
+  const precioBs = tco === null ? null : String(importeBs(estado.mensualidadUsd || PLANES[estado.plan].precioUsd, tco));
   const agregar = (tipo: TipoRecordatorio, clave: string, parametros: string[], conImporte: boolean) => {
     if (conImporte && precioBs === null) return;
     debidos.push({ clave, tipo, plantilla: PLANTILLAS[tipo].nombre, parametros, conImporte });
@@ -990,7 +1001,7 @@ export function resumenDeCuenta(estado: EstadoServicio, nombreNegocio: string): 
   if (estado.modalidad === 'demostracion') {
     return `${negocio} está en modo demostración: sin mensualidad ni límite de conversaciones.`;
   }
-  const planNombre = PLANES_ASIGNABLES[estado.plan].nombre;
+  const planNombre = PLANES[estado.plan].nombre;
   const saldo = ` Quedan ${estado.disponibles} conversaciones este mes` +
     (estado.bolsa > 0 ? ` (${estado.bolsa} de bolsa)` : '') + '.';
   if (estado.motivo === 'sin_pago') {

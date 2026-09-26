@@ -42,6 +42,7 @@
  * completos: solo sus últimos cuatro dígitos.
  */
 import { readFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -55,11 +56,37 @@ const WABA = (opcion('waba') ?? '').trim();
 const FLUJO = (opcion('flujo') ?? '').trim();
 const ALIAS = (opcion('alias') ?? '').trim();
 const REEMPLAZA = (opcion('reemplaza') ?? '').trim();
+// TITULARIDAD DEL CANAL (F1, `Analisis/41` §4): de quién es la WABA y quién
+// le paga a Meta este número. Sin `--titularidad`, de NovuChat (el lado
+// seguro). La lista cerrada se lee de `functions/src/central/ejes.ts`, como
+// los alias se leen de `firma.ts`: sin copia.
+const TITULARIDAD = (opcion('titularidad') ?? '').trim();
+// QUIÉN OPERA. Obligatorio: es quien queda en `asignadoPor`, `actualizadoPor`
+// y en la auditoría (`uid`, `origen: 'script'`), no el nombre del script
+// (revisión de seguridad de #207, LOW-3).
+const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
+const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // Mismos formatos que `ID_TENANT`, `ID_NUMERO` y `VERTICALES` de functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_NUMERO = /^[0-9]{6,25}$/;
 const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
+// `central/ejes.ts` importa `./planes.js` y `./prepago.js`: se resuelve con el
+// mismo hook que `asignar-plan.mjs` y `pase-a-produccion.mjs`, sin compilar.
+registerHooks({
+  resolve(especificador, contexto, siguiente) {
+    try {
+      return siguiente(especificador, contexto);
+    } catch (e) {
+      if (especificador.startsWith('.') && especificador.endsWith('.js') && contexto.parentURL?.endsWith('.ts')) {
+        return siguiente(`${especificador.slice(0, -3)}.ts`, contexto);
+      }
+      throw e;
+    }
+  },
+});
+const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../functions/src/central/ejes.ts');
+const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
 // Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
@@ -83,10 +110,12 @@ if (!LISTAR) {
   if (!ALIAS_VALIDOS.has(ALIAS)) problemas.push(`--alias no está en la reserva de firma.ts: ${ALIAS || '(vacío)'}`);
   if (REEMPLAZA && !ID_NUMERO.test(REEMPLAZA)) problemas.push('--reemplaza no es un phone_number_id (solo dígitos, 6 a 25)');
   if (REEMPLAZA && REEMPLAZA === NUMERO) problemas.push('--reemplaza es el mismo número que --numero');
+  if (!esTitularidad(titularidad)) problemas.push(`--titularidad desconocida: ${TITULARIDAD}. Una de: ${TITULARIDADES.join(', ')}`);
+  if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
   if (problemas.length) {
     console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-    console.error('\n  node scripts/asignar-numero.mjs --proyecto <id> --tenant <id> --numero <phone_number_id> \\');
-    console.error('      --waba <waba_id> --flujo <flujo> --alias <clienteNN> [--aplicar]');
+    console.error('\n  node scripts/asignar-numero.mjs --proyecto <id> --operador <correo> --tenant <id> --numero <phone_number_id> \\');
+    console.error('      --waba <waba_id> --flujo <flujo> --alias <clienteNN> [--titularidad novuchat|comercio] [--aplicar]');
     console.error('  node scripts/asignar-numero.mjs --proyecto <id> --listar\n');
     process.exit(2);
   }
@@ -128,6 +157,8 @@ console.log(`\n  Negocio   : ${TENANT}`);
 console.log(`  Número    : ${cola(NUMERO)} · WABA ${cola(WABA)}`);
 console.log(`  Flujo     : ${FLUJO}`);
 console.log(`  Alias     : ${ALIAS} (secreto ${secreto})`);
+console.log(`  Titular   : ${titularidad}${TITULARIDAD ? '' : ' (por defecto)'}`);
+console.log(`  Operador  : ${OPERADOR}`);
 if (REEMPLAZA) console.log(`  Reemplaza : número ${cola(REEMPLAZA)} (su ruta se borra en la misma transacción)`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
@@ -185,9 +216,9 @@ try {
 
     if (refVieja) tx.delete(refVieja);
     tx.set(refRuta, {
-      tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS,
+      tenantId: TENANT, flujo: FLUJO, wabaId: WABA, aliasSecreto: ALIAS, titularidad,
       estado: resumen.estado,
-      asignadoEn: Timestamp.now(), asignadoPor: 'asignar-numero',
+      asignadoEn: Timestamp.now(), asignadoPor: OPERADOR,
     }, { merge: true });
     tx.update(refTenant, {
       waPhoneNumberId: NUMERO, waWabaId: WABA,
@@ -195,11 +226,11 @@ try {
       flujos: FieldValue.arrayUnion(FLUJO),
     });
     if (resumen.configNueva) {
-      tx.set(refConfig, { actualizadoPor: 'asignar-numero', actualizadoEn: Timestamp.now() });
+      tx.set(refConfig, { actualizadoPor: OPERADOR, actualizadoEn: Timestamp.now() });
     }
     tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-      accion: 'asignar_numero', uid: 'asignar-numero', en: Timestamp.now(),
-      phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS,
+      accion: 'asignar_numero', uid: OPERADOR, origen: 'script', script: 'asignar-numero', en: Timestamp.now(),
+      phoneNumberId: NUMERO, wabaId: WABA, flujo: FLUJO, aliasSecreto: ALIAS, titularidad,
       ...(REEMPLAZA ? { reemplazaA: REEMPLAZA } : {}),
     });
     return resumen;
@@ -230,9 +261,9 @@ const ficha = await refTenant.get();
 const viejaQueda = refVieja ? (await refVieja.get()).exists : false;
 const ok = !viejaQueda && ruta.get('tenantId') === TENANT && ruta.get('aliasSecreto') === ALIAS
   && ruta.get('flujo') === FLUJO && (ficha.get('flujos') ?? []).includes(FLUJO)
-  && ficha.get('waPhoneNumberId') === NUMERO;
+  && ficha.get('waPhoneNumberId') === NUMERO && ruta.get('titularidad') === titularidad;
 console.log(`\n  ${ok ? '✓' : '✗'} Verificación: ruta → ${ruta.get('tenantId')} · alias ${ruta.get('aliasSecreto')}`
-  + ` · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);
+  + ` · titularidad ${ruta.get('titularidad')} · flujos ${JSON.stringify(ficha.get('flujos'))}\n`);
 console.log('  Siguiente: el valor del secreto va a la credencial de cabecera de n8n');
 console.log(`  (Name: Authorization · Value: Bearer <valor>), nunca al repositorio:`);
 console.log(`    gcloud secrets versions access latest --secret=${secreto} --project ${PROYECTO}\n`);

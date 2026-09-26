@@ -46,10 +46,33 @@
  * `byoc` se ofrece caso por caso y no aparece en ninguna lista de precios.
  */
 export type IdPlanVendible = 'impulso' | 'crecimiento' | 'pro' | 'byoc';
-/** Todo lo que puede decir `cuenta/estado.plan`. `demostracion` no se vende. */
+/**
+ * PUENTE DE TIPO, Y SOLO DE TIPO. DESDE F1 (`Analisis/41` §4, 25/09/2026)
+ * «demostración» DEJÓ DE SER UN PLAN: `cuenta/estado.plan` solo puede decir
+ * un `IdPlanVendible`. Que un comercio no pague, o que sea un demo de
+ * NovuChat, lo dice la MODALIDAD (`cuenta/estado.modalidad`, `prepago.ts`); el
+ * plan solo dice qué límites rigen. Un demo es un tenant con modalidad
+ * `demostracion` y cualquier plan del catálogo.
+ *
+ * Este tipo conserva `'demostracion'` ÚNICAMENTE porque `web/src/lib/pagar.ts`
+ * compara `actual !== 'demostracion'` después de acotar con `esIdPlan`, y
+ * TypeScript rechaza esa comparación si el tipo no la contiene; la consola es
+ * zona de otro agente. NINGÚN VALOR `'demostracion'` existe en el catálogo ni
+ * lo acepta `esIdPlan`: es el mismo predicado que `esPlanVendible`. El
+ * servidor usa `IdPlanVendible` y `esPlanVendible`; `pruebas/central/ejes.test.ts`
+ * vigila que siga siendo así. Cuando la consola deje de comparar, `IdPlan`
+ * pasa a ser `IdPlanVendible` a secas.
+ *
+ * @deprecated En el servidor, `IdPlanVendible`.
+ */
 export type IdPlan = IdPlanVendible | 'demostracion';
 
-/** Lo que se copia a la cuenta al asignar un plan, y lo que el servidor hace cumplir. */
+/**
+ * Lo que se copia a la cuenta al asignar un plan, y lo que el servidor hace
+ * cumplir. Los tres primeros valen de 1 en adelante y son los que leen las
+ * reglas; `cambiosIncluidos` admite 0 (ver abajo) y lo hace cumplir
+ * `registrarCambioOperado` (`central/cambiosOperados.ts`).
+ */
 export interface Limites {
   /** Conversaciones incluidas por mes (bloques de 25 respuestas en 24 h, `atencion.ts`). */
   conversaciones: number;
@@ -57,6 +80,16 @@ export interface Limites {
   productos: number;
   /** Agendas (calendarios de Google) conectadas. */
   agendas: number;
+  /**
+   * CAMBIOS DE CONFIGURACIÓN OPERADOS POR NOVUCHAT AL MES (`Analisis/40` §5.2,
+   * `Analisis/41` §4.4). Es el límite que ya se vendió («hasta 4 cambios al
+   * mes») y que hasta F1 nadie contaba: un límite que solo existe en el
+   * contrato no existe (`CLAUDE.md`, Base comercial §7). Cuenta lo que
+   * NovuChat hace A MANO por el comercio; lo que el comercio hace solo en su
+   * consola no cuenta, porque para eso está la consola. Un 0 es legítimo: el
+   * plan de entrada es autoservicio.
+   */
+  cambiosIncluidos: number;
 }
 
 export interface Plan extends Limites {
@@ -64,19 +97,19 @@ export interface Plan extends Limites {
   /** La lista se denomina en dólares; se cobra en bolivianos al TCO del BCB (`CLAUDE.md` §3). */
   precioUsd: number;
   /**
-   * QUIÉN LE PAGA A META los mensajes de este plan (`Analisis/39`).
+   * PUENTE, Y VACÍO A PROPÓSITO. Hasta F1 `pagaMeta` decía quién le paga a
+   * Meta los mensajes de este plan; desde F1 eso NO lo decide el plan sino la
+   * TITULARIDAD DEL CANAL, POR NÚMERO (`rutasWhatsApp/{n}.titularidad`,
+   * `central/ejes.ts`): un comercio puede tener un número propio y otro
+   * provisto, y la franquicia de Meta es por número. Ningún plan trae este
+   * campo. La clave sigue existiendo, opcional, solo porque
+   * `web/src/lib/pagar.ts` (`paganEllosAMeta`) todavía la lee y la consola es
+   * zona de otro agente; cuando la consola lea la titularidad, esta línea se
+   * borra. `pruebas/central/ejes.test.ts` vigila que ningún plan la traiga.
    *
-   *  - `'novuchat'`: la tarjeta de NovuChat está en la WABA y el consumo entra
-   *    en el precio. Es lo que hacen los planes publicados.
-   *  - `'comercio'`: BYOC. El comercio trae su portafolio y su tarjeta, y Meta
-   *    le factura a él directamente. NovuChat no lo cobra ni lo ve.
-   *
-   * NO es un límite y por eso NO se copia a la cuenta: nadie lo «hace cumplir»,
-   * lo lee la consola para decidir qué mostrar y el contrato para decir quién
-   * paga qué. El límite que sí se hace cumplir es `conversaciones`, y ese
-   * viaja en la copia como siempre.
+   * @deprecated La titularidad es por número: `rutasWhatsApp/{n}.titularidad`.
    */
-  pagaMeta: 'novuchat' | 'comercio';
+  pagaMeta?: 'novuchat' | 'comercio';
   /**
    * CAMPAÑAS SIMULTÁNEAS (Andres, 24/09/2026): cuántas campañas de Meta puede
    * tener cargadas y vigentes a la vez el comercio, de 0 a `MAXIMO_CAMPANAS`.
@@ -98,7 +131,14 @@ export const MAXIMO_CAMPANAS = 10;
  * límites, para saber más tarde con qué catálogo se asignó cada plan. Se cambia
  * CADA VEZ que cambia un número de abajo.
  */
-export const CATALOGO_PLANES = '2026-09-24';
+export const CATALOGO_PLANES = '2026-09-25';
+
+/**
+ * El techo de cambios operados incluidos que se puede copiar a una cuenta.
+ * Como `MAXIMO_CAMPANAS`: un seguro contra un dato corrupto, no una opinión
+ * comercial. Un contrato a medida (`Analisis/40` §4.2) cabe de sobra.
+ */
+export const MAXIMO_CAMBIOS_INCLUIDOS = 100;
 
 /**
  * LO QUE SE PUEDE CONTRATAR Y PAGAR. No es lo mismo que lo que publica el
@@ -121,24 +161,42 @@ export const CATALOGO_PLANES = '2026-09-24';
  * EL TOPE DE 2.000 SE FIJÓ CONTRA GEMINI, que es lo que corre en los cinco
  * flujos. Con Claude Haiku 4.5 el equilibrio cae a 1.542 conversaciones y con
  * Sonnet 5 a 771: **cambiar el modelo de un comercio BYOC sin rehacer esta
- * cuenta lo pone a perder plata** (`Analisis/39` §2).
+ * cuenta lo pone a perder plata** (`Analisis/39` §2). Desde F1 el modelo es
+ * un dato del tenant (`tenants/{t}.modelo`, `central/ejes.ts`), así que se
+ * puede comprobar en vez de suponer.
+ *
+ * BYOC YA NO DICE QUIÉN PAGA META (F1, `Analisis/41` §4): eso es la
+ * titularidad del número. Lo que BYOC sigue siendo es un plan del catálogo con
+ * 2.000 conversaciones por USD 50, que se asigna a un comercio cuyo número es
+ * de titularidad `comercio`. Las dos cosas se escriben por separado
+ * (`asignarNumero` / `asignarEjes` el número; `actualizarEstadoCuenta` /
+ * `asignar-plan.mjs` el plan) y la migración `migrar-ejes.mjs` deja las dos
+ * coherentes para los que ya existen.
+ *
+ * CAMBIOS INCLUIDOS 0 / 1 / 2 / 2 (propuesta del 25/09/2026, a confirmar por
+ * Andres). El criterio: Impulso es autoservicio (su consola es el cambio); en
+ * Crecimiento y Pro, uno o dos cambios operados por NovuChat al mes son
+ * soporte, no obra; y lo que se vendió por encima («hasta 4», `Analisis/40`
+ * §5.2) va en la COPIA de esa cuenta (`limites.cambiosIncluidos`), como todo
+ * contrato a medida. `Analisis/40` valuó el cambio suelto en USD 15: incluir
+ * más de dos en un plan de USD 50 lo regala.
  */
 export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
   impulso: {
     nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
-    pagaMeta: 'novuchat', campanas: 0,
+    campanas: 0, cambiosIncluidos: 0,
   },
   crecimiento: {
     nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
-    pagaMeta: 'novuchat', campanas: 3,
+    campanas: 3, cambiosIncluidos: 1,
   },
   pro: {
     nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
-    pagaMeta: 'novuchat', campanas: MAXIMO_CAMPANAS,
+    campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2,
   },
   byoc: {
     nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-    pagaMeta: 'comercio', campanas: MAXIMO_CAMPANAS,
+    campanas: MAXIMO_CAMPANAS, cambiosIncluidos: 2,
   },
 };
 
@@ -154,29 +212,35 @@ export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
 export const PLANES_PUBLICADOS = ['impulso', 'crecimiento', 'pro'] as const;
 
 /**
- * PLAN INTERNO DE LOS DEMOS y de la propia NovuChat. No se vende ni se muestra
- * en ninguna lista de precios: tiene los límites de Pro, para que un demo no se
- * quede corto el día de una presentación, y precio cero. Está fuera de `PLANES`
- * a propósito, porque no se contrata ni se paga.
+ * YA NO EXISTE UN PLAN DE DEMOSTRACIÓN (F1, `Analisis/41` §4 y §6.1.7). Hasta
+ * el 25/09 acá vivía un plan interno con los límites de Pro y precio cero, y
+ * `plan: 'demostracion'` mandaba sobre la modalidad. Eso mezclaba dos ejes:
+ * qué límites rigen (el plan) y si se cobra (la modalidad). Un demo es ahora
+ * un tenant con `modalidad: 'demostracion'` y un plan del catálogo; el precio
+ * cero, el «nunca se corta» y el «sin cobranza» los decide la modalidad en
+ * `prepago.ts`, como siempre lo hizo para las cuentas sin plan de demo.
  *
- * OJO: estar en `PLANES` ya no alcanza para pintar una oferta —`byoc` también
- * está y tampoco se publica—. Lo que se muestra es `PLANES_PUBLICADOS`.
+ * ESTA CONSTANTE ES UN PUENTE NULO: `web/src/lib/planes.ts` la reexporta y la
+ * consola es zona de otro agente. Cuando esa reexportación se quite, esta
+ * línea se borra. Ningún módulo del servidor, script ni prueba la usa
+ * (`pruebas/central/ejes.test.ts` lo verifica).
+ *
+ * @deprecated Sin reemplazo: un demo es modalidad `demostracion` + un plan.
  */
-export const PLAN_DEMOSTRACION: Readonly<Plan> = {
-  nombre: 'Demostración',
-  precioUsd: 0,
-  conversaciones: PLANES.pro.conversaciones,
-  productos: PLANES.pro.productos,
-  agendas: PLANES.pro.agendas,
-  pagaMeta: 'novuchat',
-  campanas: PLANES.pro.campanas,
-};
+export const PLAN_DEMOSTRACION = null;
 
-/** Todo lo que se puede asignar a una cuenta: los que se venden más el interno. */
-export const PLANES_ASIGNABLES: Readonly<Record<IdPlan, Readonly<Plan>>> = {
-  ...PLANES,
-  demostracion: PLAN_DEMOSTRACION,
-};
+/**
+ * Todo lo que se puede asignar a una cuenta. Desde F1 es EL CATÁLOGO: ya no
+ * hay un plan interno además de los vendibles. Es EL MISMO OBJETO que
+ * `PLANES`; se conserva el nombre porque la consola (`web/src/lib/planes.ts`,
+ * `web/src/lib/prepago.ts`) y varias pruebas lo importan. El tipo declara la
+ * clave `'demostracion'` por el puente de `IdPlan` (arriba): en tiempo de
+ * ejecución NO existe, y como `esIdPlan` nunca la da por válida, nadie llega a
+ * indexarla. Es la única conversión de tipo del archivo, y se va con el puente.
+ *
+ * @deprecated En el servidor, `PLANES`.
+ */
+export const PLANES_ASIGNABLES = PLANES as unknown as Readonly<Record<IdPlan, Readonly<Plan>>>;
 
 /**
  * EL RESPALDO ES EL PLAN MÁS CHICO. Un comercio sin copia de límites y con un
@@ -219,10 +283,23 @@ export const LIMITE_MAXIMO = 100_000;
 
 /**
  * ¿Es un identificador de plan del catálogo? Se mira con `hasOwnProperty`, no
- * con `in`: `'toString' in PLANES_ASIGNABLES` es verdadero y no es un plan.
+ * con `in`: `'toString' in PLANES` es verdadero y no es un plan. Desde F1
+ * `'demostracion'` NO es un plan: una cuenta que todavía lo diga (sin migrar)
+ * cae en el respaldo, el más chico, como cualquier plan desconocido.
+ */
+export function esPlanVendible(v: unknown): v is IdPlanVendible {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANES, v);
+}
+
+/**
+ * EL MISMO PREDICADO, con el tipo puente `IdPlan` (ver arriba): existe para la
+ * consola, que no puede cambiar en este PR. Nunca da por válido
+ * `'demostracion'`: el catálogo no lo tiene.
+ *
+ * @deprecated En el servidor, `esPlanVendible`.
  */
 export function esIdPlan(v: unknown): v is IdPlan {
-  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(PLANES_ASIGNABLES, v);
+  return esPlanVendible(v);
 }
 
 /**
@@ -237,13 +314,20 @@ export function esIdPlan(v: unknown): v is IdPlan {
  */
 export function planQuePuedePedir(planActual: unknown, pedido: unknown): boolean {
   if ((PLANES_PUBLICADOS as readonly unknown[]).includes(pedido)) return true;
-  return esIdPlan(pedido) && pedido !== 'demostracion' && planActual === pedido;
+  return esPlanVendible(pedido) && planActual === pedido;
 }
 
-/** Los límites de un plan del catálogo. Uno desconocido da los del más chico. */
+/**
+ * Los límites de un plan del catálogo, o sea LA COPIA que se escribe en la
+ * cuenta al asignarlo. Uno desconocido da los del más chico. Desde F1 la copia
+ * lleva también `cambiosIncluidos`; `campanas` sigue afuera (ver `Plan`).
+ */
 export function limitesDe(plan: unknown): Limites {
-  const p = esIdPlan(plan) ? PLANES_ASIGNABLES[plan] : PLANES[PLAN_POR_DEFECTO];
-  return { conversaciones: p.conversaciones, productos: p.productos, agendas: p.agendas };
+  const p = esPlanVendible(plan) ? PLANES[plan] : PLANES[PLAN_POR_DEFECTO];
+  return {
+    conversaciones: p.conversaciones, productos: p.productos, agendas: p.agendas,
+    cambiosIncluidos: p.cambiosIncluidos,
+  };
 }
 
 /**
@@ -262,6 +346,10 @@ export function cuentaInicial(): { plan: IdPlanVendible; limites: Limites; catal
 const limiteValido = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LIMITE_MAXIMO;
 
+/** `cambiosIncluidos` admite 0, y su techo es otro: es la excepción de `Limites`. */
+const cambiosIncluidosValidos = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAXIMO_CAMBIOS_INCLUIDOS;
+
 export interface LimitesDeCuenta extends Limites {
   /**
    * De dónde salieron: `cuenta` si la copia estaba completa y sana; `plan` si
@@ -279,22 +367,29 @@ export interface LimitesDeCuenta extends Limites {
  * comercios dados de alta antes del 15/09— rigen los del plan, si el plan es
  * del catálogo, y si no, los de Impulso. Cada límite se decide por separado: un
  * `productos` corrupto en la copia no invalida las conversaciones.
+ *
+ * `origen` se juzga con los TRES límites de siempre, no con `cambiosIncluidos`:
+ * ese llegó en F1 y las copias anteriores no lo traen; hasta que
+ * `migrar-ejes.mjs` lo agregue, rige el del plan sin que la copia deje de ser
+ * «de la cuenta» para los otros tres (que es lo que miran las reglas).
  */
 export function limitesDeCuenta(cuenta: Record<string, unknown> | null | undefined): LimitesDeCuenta {
   const delPlan = limitesDe(cuenta?.['plan']);
   const crudo = cuenta?.['limites'];
   const copia = typeof crudo === 'object' && crudo !== null ? crudo as Record<string, unknown> : {};
-  const elegir = (k: keyof Limites): number => {
+  const elegir = (k: 'conversaciones' | 'productos' | 'agendas'): number => {
     const v = copia[k];
     return limiteValido(v) ? v : delPlan[k];
   };
   const completa = (['conversaciones', 'productos', 'agendas'] as const)
     .every((k) => limiteValido(copia[k]));
+  const cambios = copia['cambiosIncluidos'];
   return {
     conversaciones: elegir('conversaciones'),
     productos: elegir('productos'),
     agendas: elegir('agendas'),
-    origen: completa ? 'cuenta' : esIdPlan(cuenta?.['plan']) ? 'plan' : 'respaldo',
+    cambiosIncluidos: cambiosIncluidosValidos(cambios) ? cambios : delPlan.cambiosIncluidos,
+    origen: completa ? 'cuenta' : esPlanVendible(cuenta?.['plan']) ? 'plan' : 'respaldo',
   };
 }
 
@@ -310,7 +405,7 @@ export function limiteDeCampanas(cuenta: Record<string, unknown> | null | undefi
   const copia = typeof crudo === 'object' && crudo !== null ? (crudo as Record<string, unknown>)['campanas'] : undefined;
   if (typeof copia === 'number' && Number.isInteger(copia) && copia >= 0 && copia <= MAXIMO_CAMPANAS) return copia;
   const plan = cuenta?.['plan'];
-  return esIdPlan(plan) ? PLANES_ASIGNABLES[plan].campanas : PLANES[PLAN_POR_DEFECTO].campanas;
+  return esPlanVendible(plan) ? PLANES[plan].campanas : PLANES[PLAN_POR_DEFECTO].campanas;
 }
 
 // -----------------------------------------------------------------------------

@@ -40,13 +40,14 @@ describe('cuentaInicial()', () => {
     const c = cuentaInicial();
     expect(c.plan).toBe(PLAN_POR_DEFECTO);
     expect(esIdPlan(c.plan)).toBe(true);
-    // `pagaMeta` es del PLAN, no de los límites: no se copia a la cuenta porque
-    // nadie lo hace cumplir, lo lee la consola (`planes.ts`, `Analisis/39`).
-    // `campanas` TAMPOCO se copia (24/09/2026): vale de 0 a 10 y la copia de
-    // `Limites` exige de 1 en adelante; rige la del plan, que lee
-    // `limiteDeCampanas`, salvo que NovuChat fije `limites.campanas` a mano.
-    const { nombre: _n, precioUsd: _p, pagaMeta: _m, campanas: _c, ...limites } = PLANES[PLAN_POR_DEFECTO];
+    // `campanas` NO se copia (24/09/2026): vale de 0 a 10 y la copia de
+    // `Limites` juzga su completitud con los tres de siempre; rige la del
+    // plan, que lee `limiteDeCampanas`, salvo que NovuChat fije
+    // `limites.campanas` a mano. `cambiosIncluidos` SÍ se copia (F1): es un
+    // límite de Central que se hace cumplir contra la copia.
+    const { nombre: _n, precioUsd: _p, campanas: _c, ...limites } = PLANES[PLAN_POR_DEFECTO];
     expect(c.limites).toEqual(limites);
+    expect(c.limites.cambiosIncluidos).toBe(0);
     expect(c.catalogoPlanes).toBe(CATALOGO_PLANES);
   });
 

@@ -138,7 +138,7 @@ describe('Lo que nunca da 409 por prepago', () => {
 
   it('una demostración, con la bandera encendida y 99.999 consumidas', async () => {
     await fijarMetricas(99_999);
-    for (const datos of [{ plan: 'crecimiento' }, { modalidad: 'demostracion' }, { plan: 'demostracion', modalidad: 'prepago' }]) {
+    for (const datos of [{ plan: 'crecimiento' }, { modalidad: 'demostracion' }, { plan: 'pro', modalidad: 'demostracion', periodoPagado: '2025-01' }]) {
       await fijarCuenta(datos);
       const r = await configuracion({ telefono: '591000000001' });
       expect(r.codigo).toBe(200);
