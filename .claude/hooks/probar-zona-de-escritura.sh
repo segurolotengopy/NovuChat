@@ -191,7 +191,33 @@ SIN_PY="$(mktemp -d)"
 for h in bash grep tr sed cat head dirname; do ln -s "$(command -v "$h")" "$SIN_PY/$h"; done
 salida="$(evento_cwd Write "$AGENTE/admin/functions/src/core/ingesta.ts" "$AGENTE" | env -u NOVUCHAT_ZONA PATH="$SIN_PY" CLAUDE_PROJECT_DIR="$PRINCIPAL" "$SIN_PY/bash" "$GANCHO")"
 informar "python3 ausente, zona solo en el worktree del cwd" deny "$(decidir "$salida")" "PATH sin python3" "$salida"
-rm -rf "$SIN_PY" "$PRINCIPAL"
+rm -rf "$SIN_PY"
+echo
+echo "Revisión de seguridad de #210: relativas contra el cwd, plantar raíz o zona, intersección, zona vacía"
+mkdir -p "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude"
+caso_cwd "FUERA: relativa desde una subcarpeta cae fuera"      deny "$AGENTE/admin/functions/src/core" Write "admin/functions/src/modulos/agenda/x.ts"
+caso_cwd "ADENTRO: ../ desde una subcarpeta cae adentro"      nada "$AGENTE/admin/functions/src/core" Write "../modulos/agenda/x.ts"
+caso_cwd "FUERA: plantar un .git dentro de la zona"           deny "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sub/.git"
+caso_cwd "FUERA: plantar un .claude/zona dentro de la zona"   deny "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude/zona"
+# Si igual aparecen (plantados por Bash), no amplían la zona: se aplican todas.
+: > "$AGENTE/admin/functions/src/modulos/agenda/sub/.git"
+printf '../../../core/\n' > "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude/zona"
+caso_cwd "FUERA: raíz y zona plantadas, cwd adentro, escribe en el core" deny "$AGENTE/admin/functions/src/modulos/agenda/sub" Write "$AGENTE/admin/functions/src/core/ingesta.ts"
+rm -rf "$AGENTE/admin/functions/src/modulos/agenda/sub"
+# Otro worktree con su zona: una sesión con zona en el proyecto, sin cwd, no escribe ahí.
+OTRO="$PRINCIPAL/.claude/worktrees/otro"
+mkdir -p "$OTRO/.claude" "$OTRO/admin" "$OTRO/docs"
+printf 'gitdir: x\n' > "$OTRO/.git"; printf 'admin/\n' > "$OTRO/.claude/zona"
+printf 'docs/\n' > "$PRINCIPAL/.claude/zona"
+salida="$(evento Write "$OTRO/admin/x.ts" | env -u NOVUCHAT_ZONA CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
+informar "FUERA: sin cwd, zona del proyecto y del destino a la vez" deny "$(decidir "$salida")" "Write otro/admin/x.ts" "$salida"
+salida="$(evento_cwd Write "$OTRO/docs/x.md" "$OTRO" | NOVUCHAT_ZONA="docs/" CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
+informar "FUERA: NOVUCHAT_ZONA se ancla en CLAUDE_PROJECT_DIR" deny "$(decidir "$salida")" "Write otro/docs/x.md" "$salida"
+rm -f "$PRINCIPAL/.claude/zona"
+printf '# pendiente\n\n' > "$OTRO/.claude/zona"
+caso_cwd "FUERA: .claude/zona sin prefijos (fallo cerrado)"   deny "$OTRO" Write "$OTRO/admin/x.ts"
+
+rm -rf "$PRINCIPAL"
 
 echo
 echo ".claude/zona nunca se versiona (lo escribe quien lanza al agente; está en .gitignore)"

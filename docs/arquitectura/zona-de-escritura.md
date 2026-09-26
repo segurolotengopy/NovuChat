@@ -23,10 +23,12 @@ prompt, y el prompt no es una barrera.
 ## De dónde sale la zona (dos fuentes, en este orden)
 
 1. **La variable de entorno `NOVUCHAT_ZONA`**, si existe y no está vacía.
-2. **El archivo `.claude/zona` de la primera de estas raíces que lo tenga**:
-   la del `cwd` que Claude Code manda en el evento (el worktree donde trabaja
-   el agente), la del archivo destino, y `CLAUDE_PROJECT_DIR` (si no está, el
-   directorio de trabajo). La raíz de una ruta es la carpeta más cercana,
+2. **Todos los `.claude/zona` de estas raíces, a la vez** (intersección): la
+   del `cwd` que Claude Code manda en el evento (el worktree donde trabaja el
+   agente), la del archivo destino, y `CLAUDE_PROJECT_DIR` (si no está, el
+   directorio de trabajo). El destino tiene que caber en cada una, con los
+   prefijos de cada una relativos a su propia raíz. `NOVUCHAT_ZONA`, si está,
+   manda sola y se ancla en `CLAUDE_PROJECT_DIR`, como antes. La raíz de una ruta es la carpeta más cercana,
    subiendo, que tiene `.git` (directorio en la copia principal, archivo en un
    worktree).
 
@@ -97,14 +99,19 @@ y se vuelve a pegar el resto. Así:
 - `docs/../admin/firestore.rules` se evalúa como `admin/firestore.rules`.
 - Un enlace simbólico dentro de la zona que apunte afuera (`docs/enlace →
   admin/`) se rechaza, también para un archivo nuevo debajo del enlace.
-- Una ruta relativa se resuelve contra la raíz elegida (la del `cwd` del
-  evento si tiene zona o si no hay otra; si no, la que tenga la zona), no
-  contra el directorio desde donde se lanzó el proceso.
+- Una ruta relativa se juzga **contra el `cwd` del evento**, que es contra lo
+  que la herramienta la escribe (si el evento no trae `cwd`, contra
+  `CLAUDE_PROJECT_DIR`). Los prefijos relativos, contra la raíz de su zona.
+- **Con la zona activa no se escribe un `.git` ni un `.claude/zona`**: sería
+  plantar desde adentro una raíz o una zona nuevas. Y si aparecen igual (por
+  `Bash`), no amplían nada, porque se aplican todas las zonas a la vez.
 
 ## Fallo cerrado
 
 Con la zona activa, el gancho **niega antes que dejar pasar** lo que no pudo
-comprobar: sin `python3` en el `PATH`, con un evento que no es JSON, con un
+comprobar. También niega si un `.claude/zona` existe pero no deja ningún
+prefijo (vacío o solo comentarios): es un error de quien lanzó al agente, no
+una zona abierta. Y en los demás casos: sin `python3` en el `PATH`, con un evento que no es JSON, con un
 evento o un `tool_input` que no son objetos, o sin `file_path`, responde
 `deny` («gancho no operativo»). Sin zona, no opina, como siempre. Sale siempre
 con 0: un fallo del script no debe dejar la herramienta en un estado
