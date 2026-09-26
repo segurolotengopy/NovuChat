@@ -1120,27 +1120,19 @@ describe('Personas atendidas', () => {
 describe('Índice inverso número -> comercio', () => {
   it('un comercio no puede saber con qué números operan los demás', async () => {
     await assertFails(getDoc(doc(adminA(), `rutasWhatsApp/pnid-${B}`)));
-    // Ni listando sin filtro, ni con el filtro de OTRO comercio.
     await assertFails(getDocs(collection(adminA(), 'rutasWhatsApp')));
     await assertFails(getDocs(query(collection(adminA(), 'rutasWhatsApp'), where('tenantId', '==', B))));
-    await assertFails(getDocs(query(collection(adminB(), 'rutasWhatsApp'), where('tenantId', '==', A))));
-    await assertFails(getDocs(query(collection(operA(), 'rutasWhatsApp'), where('tenantId', '==', A))));
   });
 
-  it('el ADMIN del comercio lee y LISTA SUS rutas (F1: ahí está la titularidad, que dice quién le paga a Meta); nadie más del comercio', async () => {
-    await assertSucceeds(getDoc(doc(adminA(), `rutasWhatsApp/pnid-${A}`)));
-    // La consola consulta siempre con el filtro de su tenant.
-    await assertSucceeds(getDocs(query(collection(adminA(), 'rutasWhatsApp'), where('tenantId', '==', A))));
-    await assertSucceeds(getDocs(query(collection(adminD(), 'rutasWhatsApp'), where('tenantId', '==', D))));
-    await assertFails(getDocs(query(collection(adminC(), 'rutasWhatsApp'), where('tenantId', '==', C))));
-    // Suspendido sigue viendo lo suyo (como cuenta/estado); dado de baja, no.
-    await assertSucceeds(getDoc(doc(adminD(), `rutasWhatsApp/pnid-${D}`)));
-    await assertFails(getDoc(doc(adminC(), `rutasWhatsApp/pnid-${C}`)));
-    // El operador no: la titularidad es asunto comercial. Ni la ingesta ni un colado.
+  it('NI SIQUIERA LAS SUYAS (revisión de seguridad de #207, LOW-1): el documento trae el alias del secreto, la WABA y quién lo asignó', async () => {
+    // La titularidad del número, que sí tiene derecho a ver, le llega por
+    // `ejesDeCuenta`, que la devuelve sin el alias del secreto. Por Firestore,
+    // nada: ni por documento ni por consulta filtrada a su propio tenant.
+    await assertFails(getDoc(doc(adminA(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDocs(query(collection(adminA(), 'rutasWhatsApp'), where('tenantId', '==', A))));
+    await assertFails(getDocs(query(collection(adminD(), 'rutasWhatsApp'), where('tenantId', '==', D))));
     await assertFails(getDoc(doc(operA(), `rutasWhatsApp/pnid-${A}`)));
     await assertFails(getDoc(doc(ingestaA(), `rutasWhatsApp/pnid-${A}`)));
-    await assertFails(getDoc(doc(adminAConGoogle(), `rutasWhatsApp/pnid-${A}`)));
-    await assertFails(getDoc(doc(adminASinVerificar(), `rutasWhatsApp/pnid-${A}`)));
     await assertFails(getDoc(doc(sinClaims(), `rutasWhatsApp/pnid-${A}`)));
     await assertFails(getDoc(doc(anonimo(), `rutasWhatsApp/pnid-${A}`)));
   });
@@ -1164,7 +1156,7 @@ describe('Índice inverso número -> comercio', () => {
 
   it('la TITULARIDAD del número (F1, Analisis/41 §4) no la escribe nadie desde el navegador: ni el comercio ni NovuChat', async () => {
     // Decide quién le paga a Meta y de quién es la franquicia: la escriben
-    // solo `asignarNumero`, `fijarTitularidad` y los scripts, con auditoría.
+    // solo `asignarNumero`, `asignarEjes` y los scripts, con auditoría.
     for (const fs of [propietario(), adminA(), operA(), ingestaA(), anonimo()]) {
       await assertFails(updateDoc(doc(fs, `rutasWhatsApp/pnid-${A}`), { titularidad: 'comercio' }));
       await assertFails(setDoc(doc(fs, `rutasWhatsApp/pnid-${A}`), { titularidad: 'comercio' }, { merge: true }));

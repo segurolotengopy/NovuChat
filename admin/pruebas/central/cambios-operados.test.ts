@@ -149,10 +149,24 @@ describe('El límite se hace cumplir en el servidor', () => {
     expect((await auditoria())[0]).toMatchObject({ incluidos: null, modalidad: 'demostracion' });
   });
 
-  it('un comercio SIN cuenta (o sin modalidad) es demostración por ausencia: se le crea la cuenta con el contador', async () => {
+  it('un comercio SIN cuenta NO se cuenta (LOW-4): failed-precondition y ningún documento parcial', async () => {
     await sembrar(null);
+    await rechaza(llamar({ tenantId: T, descripcion: DESCRIPCION }), 'failed-precondition');
+    await rechaza(llamar({ tenantId: T, descripcion: DESCRIPCION, forzar: true }), 'failed-precondition');
+    expect((await db.doc(`tenants/${T}/cuenta/estado`).get()).exists).toBe(false);
+    expect(await auditoria()).toHaveLength(0);
+  });
+
+  it('un comercio DADO DE BAJA no recibe cambios, como en asignarEjes', async () => {
+    await db.doc(`tenants/${T}`).update({ estado: 'dado_de_baja' });
+    await rechaza(llamar({ tenantId: T, descripcion: DESCRIPCION }), 'failed-precondition');
+    expect((await cuenta())['cambios']).toBeUndefined();
+  });
+
+  it('una cuenta sin modalidad es demostración por ausencia: se cuenta y no se niega', async () => {
+    await sembrar({ plan: 'impulso', limites: limitesDe('impulso') });
     const r = await llamar({ tenantId: T, descripcion: DESCRIPCION });
     expect(r).toMatchObject({ usados: 1, ilimitado: true });
-    expect(await cuenta()).toMatchObject({ cambios: { [MES]: 1 } });
+    expect(await cuenta()).toMatchObject({ plan: 'impulso', cambios: { [MES]: 1 } });
   });
 });

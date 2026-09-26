@@ -187,7 +187,7 @@ export const altaTenant = onCall(async (peticion) => {
     nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
     // El modelo de IA es una decisión de NovuChat por tenant (`central/ejes.ts`):
     // nace con el que corre en todos los flujos y se cambia con
-    // `actualizarEstadoCuenta`, nunca desde el navegador.
+    // `asignarEjes`, nunca desde el navegador.
     modelo: MODELO_POR_DEFECTO,
     // El número de WhatsApp se asigna aparte, con `asignarNumero`: exige
     // trámites en Meta que no se pueden hacer en la misma transacción.
@@ -388,7 +388,7 @@ export const asignarNumero = onCall(async (peticion) => {
   // TITULARIDAD DEL CANAL (F1, `Analisis/41` §4): de quién es la WABA y quién
   // le paga a Meta este número. Opcional: sin ella, de NovuChat, que es el
   // lado seguro. Con ella, tiene que ser de la lista; cualquier otra cosa se
-  // rechaza como todo lo demás. Se cambia después con `fijarTitularidad`.
+  // rechaza como todo lo demás. Se cambia después con `asignarEjes`.
   const titularidad = datos['titularidad'] === undefined ? TITULARIDAD_POR_DEFECTO : datos['titularidad'];
 
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');

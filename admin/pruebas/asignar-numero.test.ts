@@ -37,7 +37,7 @@ const NUEVO = '1000000051';
 const WABA_NUEVA = '1000000052';
 
 function correr(...args: string[]) {
-  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...args], {
+  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
     env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
@@ -93,13 +93,24 @@ describe('asignar-numero.mjs', () => {
     expect(r.salida).toMatch(/✓ Verificación/);
     const ruta = (await db.doc(`rutasWhatsApp/${NUM}`).get()).data() ?? {};
     // Sin `--titularidad`, el número es de NovuChat (F1, `Analisis/41` §4): el lado seguro.
-    expect(ruta).toMatchObject({ tenantId: T, flujo: 'onboarding', aliasSecreto: 'cliente02', wabaId: WABA, estado: 'activo', titularidad: 'novuchat' });
+    expect(ruta).toMatchObject({ tenantId: T, flujo: 'onboarding', aliasSecreto: 'cliente02', wabaId: WABA, estado: 'activo', titularidad: 'novuchat', asignadoPor: 'operador@ejemplo.com' });
     expect(r.salida).toMatch(/Titular {3}: novuchat \(por defecto\)/);
     const ficha = (await db.doc(`tenants/${T}`).get()).data() ?? {};
     expect(ficha).toMatchObject({ waPhoneNumberId: NUM, waWabaId: WABA, flujos: ['onboarding'] });
     expect((await db.doc(`tenants/${T}/config/onboarding`).get()).exists).toBe(true);
     const auditoria = await db.collection(`tenants/${T}/auditoria`).where('accion', '==', 'asignar_numero').get();
     expect(auditoria.size).toBeGreaterThanOrEqual(1);
+    expect(auditoria.docs[0]?.data()).toMatchObject({ uid: 'operador@ejemplo.com', origen: 'script', script: 'asignar-numero' });
+  });
+
+  it('sin --operador, o con uno que no es un correo, no conecta (LOW-3)', () => {
+    for (const operador of [null, 'asignar-numero', 'andres']) {
+      const args = [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--numero', NUM, '--waba', WABA, '--flujo', 'onboarding', '--alias', 'cliente02',
+        ...(operador === null ? [] : ['--operador', operador]), '--aplicar'];
+      const o = spawnSync(process.execPath, args, { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      expect(o.status, String(operador)).toBe(2);
+      expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
+    }
   });
 
   it('repetir la misma asignación no rompe nada', async () => {

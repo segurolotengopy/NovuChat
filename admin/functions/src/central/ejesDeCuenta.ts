@@ -20,10 +20,11 @@
  *   `ejesDeCuenta({ tenantId })` — LECTURA. Los tres ejes (`Analisis/41` §4)
  *   más el modelo y el contador de cambios, en una sola forma, para que la
  *   consola los pinte iguales en Cuenta, Pagar y Negocios sin calcular nada. La
- *   llama el administrador del comercio o el propietario. El administrador
- *   también puede leer su ruta directamente (`firestore.rules`, `get` de
- *   `rutasWhatsApp/{n}` cuando el `tenantId` es el suyo); esto le da TODOS sus
- *   números sin conocer los identificadores, y el contador ya calculado.
+ *   llama el administrador del comercio o el propietario. ES EL ÚNICO CAMINO
+ *   por el que el comercio ve la titularidad de sus números: `rutasWhatsApp`
+ *   sigue siendo solo del propietario en `firestore.rules`, porque el
+ *   documento trae el alias del secreto, la WABA y quién lo asignó (revisión
+ *   de seguridad de #207, LOW-1). Acá viaja solo lo que la pantalla necesita.
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';

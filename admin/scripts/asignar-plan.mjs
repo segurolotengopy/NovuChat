@@ -29,6 +29,9 @@
  *                               comercio.
  *   --umbral-operador N --umbral-bloqueo M
  *                               la pareja de `atencion.ts`, validada igual.
+ *   --operador <correo>         OBLIGATORIO: quien queda en la auditoría
+ *                               (`uid`, `titularidadPor`, `origen: 'script'`),
+ *                               no el nombre del script (LOW-3 de #207).
  *
  * Todo en UNA transacción, con auditoría (`cambiar_plan` para el plan, como
  * siempre; `estado_cuenta` para el resto, con los campos que cambiaron). Los
@@ -63,6 +66,7 @@ const TITULARIDAD = opcion('titularidad');
 const NUMERO = opcion('numero');
 const UMBRAL_OPERADOR = opcion('umbral-operador');
 const UMBRAL_BLOQUEO = opcion('umbral-bloqueo');
+const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 
 // --- los módulos del servidor, sin compilar ---------------------------------
 registerHooks({
@@ -92,6 +96,8 @@ const cola = (v) => (v ? `…${String(v).slice(-4)}` : '—');
 
 const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
+const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (PLAN !== null && !esIdPlan(PLAN)) {
   problemas.push(`--plan desconocido: ${PLAN || '(vacío)'}. Del catálogo: ${Object.keys(PLANES).join(', ')}`);
@@ -118,7 +124,7 @@ const pideAlgo = PLAN !== null || MODALIDAD !== null || MODELO !== null || TITUL
 if (!pideAlgo) problemas.push('nada que asignar: --plan, --modalidad, --modelo, --titularidad/--numero o --umbral-*');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/asignar-plan.mjs --proyecto <id> --tenant <id> [--plan <plan>] [--modalidad <m>]');
+  console.error('\n  node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <id> [--plan <plan>] [--modalidad <m>]');
   console.error('      [--modelo <id>] [--titularidad <t> --numero <phone_number_id>] [--umbral-operador N --umbral-bloqueo M] [--aplicar]\n');
   process.exit(2);
 }
@@ -145,6 +151,7 @@ if (MODALIDAD) console.log(`  Modalidad : ${MODALIDAD}`);
 if (MODELO) console.log(`  Modelo    : ${MODELO}`);
 if (TITULARIDAD) console.log(`  Número    : ${cola(NUMERO)} → titularidad ${TITULARIDAD}`);
 if (Object.keys(umbrales).length) console.log(`  Umbrales  : ${JSON.stringify(umbrales)}`);
+console.log(`  Operador  : ${OPERADOR}`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
 
 // UN RECHAZO NO SE LANZA DENTRO DE LA TRANSACCIÓN: se devuelve. Si el callback
@@ -241,9 +248,9 @@ try {
     // El modelo y la titularidad dejan la MISMA auditoría que la callable
     // `asignarEjes`: un solo vocabulario para leerla después.
     if (rutaCambia || fichaCambios.modelo) {
-      if (rutaCambia) tx.update(refRuta, { titularidad: TITULARIDAD, titularidadEn: ahora, titularidadPor: 'asignar-plan' });
+      if (rutaCambia) tx.update(refRuta, { titularidad: TITULARIDAD, titularidadEn: ahora, titularidadPor: OPERADOR });
       tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-        accion: 'asignar_ejes', uid: 'asignar-plan', en: ahora,
+        accion: 'asignar_ejes', uid: OPERADOR, origen: 'script', script: 'asignar-plan', en: ahora,
         ...(fichaCambios.modelo ? { modeloAntes: antes.modelo ?? MODELO_POR_DEFECTO, modeloDespues: MODELO } : {}),
         ...(rutaCambia ? {
           phoneNumberId: NUMERO, titularidadAntes: antes.titularidad ?? 'novuchat', titularidadDespues: TITULARIDAD,
@@ -252,7 +259,7 @@ try {
     }
     if (escritura.plan) {
       tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-        accion: 'cambiar_plan', uid: 'asignar-plan', en: ahora,
+        accion: 'cambiar_plan', uid: OPERADOR, origen: 'script', script: 'asignar-plan', en: ahora,
         planAntes: antes.plan, planDespues: PLAN,
         limitesAntes: antes.limites, limitesDespues: limites,
         catalogoPlanes: CATALOGO_PLANES,
@@ -263,7 +270,7 @@ try {
       .sort();
     if (otros.length) {
       tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
-        accion: 'estado_cuenta', uid: 'asignar-plan', en: ahora, campos: otros,
+        accion: 'estado_cuenta', uid: OPERADOR, origen: 'script', script: 'asignar-plan', en: ahora, campos: otros,
         valores: Object.fromEntries(otros.map((k) => [k, escritura[k]])),
       });
     }

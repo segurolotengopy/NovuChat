@@ -38,7 +38,7 @@ const TENANTS = [DEMO, DEMO_GRANDE, BYOC, REAL, VIEJO, LISTO];
 const NUM = { demo: '1000000061', grande: '1000000062', byoc1: '1000000063', byoc2: '1000000064', real: '1000000065', listo: '1000000066' };
 
 function correr(...args: string[]) {
-  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...args], {
+  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
     env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
@@ -104,6 +104,12 @@ describe('migrar-ejes.mjs', () => {
     const r = spawnSync(process.execPath, [SCRIPT, '--tenant', DEMO], { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
     expect(r.status).toBe(2);
     expect(`${r.stdout}${r.stderr}`).toMatch(/falta --proyecto/);
+    // Sin operador, o con uno que no es un correo, no conecta (LOW-3).
+    for (const args of [['--proyecto', PROYECTO], ['--proyecto', PROYECTO, '--operador', 'andres'], ['--proyecto', PROYECTO, '--operador', 'migrar-ejes']]) {
+      const o = spawnSync(process.execPath, [SCRIPT, ...args], { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      expect(o.status, args.join(' ')).toBe(2);
+      expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
+    }
     const p = correr('--plan-demos', 'demostracion');
     expect(p.codigo).toBe(2);
     expect(p.salida).toMatch(/--plan-demos desconocido/);
@@ -115,7 +121,7 @@ describe('migrar-ejes.mjs', () => {
     const total = Number(/Tenants en Firestore: (\d+)/.exec(r.salida)?.[1]);
     expect(total).toBeGreaterThanOrEqual(TENANTS.length);
     expect(r.salida).toMatch(new RegExp(`${DEMO} .*ERA DEMO POR PLAN`));
-    expect(r.salida).toMatch(new RegExp(`${VIEJO} [\\s\\S]*?plan «basico» no es del catálogo: no se toca`));
+    expect(r.salida).toMatch(new RegExp(`${VIEJO} [\\s\\S]*?plan «basico» no es del catálogo: el plan y la modalidad los asigna asignar-plan.mjs`));
     expect(r.salida).toMatch(new RegExp(`${LISTO} [\\s\\S]*?= sin cambios`));
     expect(r.salida).toMatch(new RegExp(`${DEMO_GRANDE} [\\s\\S]*?✗ NO SE TOCA: el catálogo tiene 170 ítems y el plan impulso admite 20`));
     expect(r.salida).toMatch(/Seco: no se escribió nada/);
@@ -140,8 +146,10 @@ describe('migrar-ejes.mjs', () => {
     });
     expect((await cuenta(DEMO))['proximoVencimiento']).toBeUndefined();
     expect(await ficha(DEMO)).toMatchObject({ plan: 'impulso', modelo: MODELO_POR_DEFECTO });
-    expect(await ruta(NUM.demo)).toMatchObject({ titularidad: 'novuchat', titularidadPor: 'migrar-ejes' });
+    expect(await ruta(NUM.demo)).toMatchObject({ titularidad: 'novuchat', titularidadPor: 'operador@ejemplo.com' });
     expect(await auditorias(DEMO)).toBe(1);
+    const [a] = (await db.collection(`tenants/${DEMO}/auditoria`).where('accion', '==', 'migrar_ejes').get()).docs.map((d) => d.data());
+    expect(a).toMatchObject({ uid: 'operador@ejemplo.com', origen: 'script', script: 'migrar-ejes' });
     // Solo ese tenant: los demás siguen como estaban.
     expect((await ruta(NUM.byoc1))['titularidad']).toBeUndefined();
   });
@@ -181,10 +189,10 @@ describe('migrar-ejes.mjs', () => {
     expect(await cuenta(REAL)).toMatchObject({ modalidad: 'prepago', estadoPago: 'al_dia', montoMensual: 50 });
   });
 
-  it('un comercio sin plan del catálogo no se toca, y uno ya migrado dice «sin cambios»', async () => {
+  it('un comercio sin plan del catálogo solo recibe modelo y titularidad, y uno ya migrado dice «sin cambios»', async () => {
     const v = correr('--tenant', VIEJO, '--aplicar');
     expect(v.codigo, v.salida).toBe(0);
-    expect(v.salida).toMatch(/no es del catálogo: no se toca/);
+    expect(v.salida).toMatch(/no es del catálogo: el plan y la modalidad los asigna asignar-plan.mjs; acá solo el modelo y la titularidad por defecto/);
     expect(await cuenta(VIEJO)).toEqual({ plan: 'basico' });
     expect((await ficha(VIEJO))['modelo']).toBe(MODELO_POR_DEFECTO);
     const l = correr('--tenant', LISTO, '--aplicar');

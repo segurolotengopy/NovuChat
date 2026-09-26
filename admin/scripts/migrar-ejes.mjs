@@ -38,6 +38,31 @@
  * Con `--aplicar` escribe, deja auditoría `migrar_ejes` con el antes y el
  * después, y RELEE cada documento mostrando el resultado. Sin `--aplicar`
  * imprime TODO lo que cambiaría y no escribe nada. `--tenant <id>` acota a uno.
+ * `--operador <correo>` es OBLIGATORIO: es quien queda en la auditoría
+ * (`uid`, `titularidadPor`, con `origen: 'script'`), no el nombre del script
+ * (revisión de seguridad de #207, LOW-3). Un script contra producción lo corre
+ * una persona, y esa persona se escribe.
+ *
+ * ORDEN DE PUESTA EN PRODUCCIÓN (revisión de #207, LOW-2): SE CORRE ANTES DE
+ * DESPLEGAR F1, no después. Todo lo que escribe es válido para el código que
+ * hoy está en producción, así que no hay ventana en la que un demo o un
+ * cliente queden a medias:
+ *   - `modalidad: 'demostracion'` explícita: el `modalidadDe` de `main` la
+ *     respeta (mira el plan viejo primero y la modalidad después), y
+ *     `derivadosGobernados` de `main` la acepta;
+ *   - `plan: 'impulso' | 'pro'` en cuenta y ficha: `esIdPlan` y las dos
+ *     tablas de respaldo de las reglas de `main` los conocen;
+ *   - `limites.cambiosIncluidos`: `limitesDeCuenta` de `main` lee solo tres
+ *     claves y juzga la copia completa con esas tres; las reglas leen
+ *     `limites.productos` y nada más;
+ *   - `tenants/{t}.modelo`: nadie lo lee en `main`;
+ *   - `rutasWhatsApp/{n}.titularidad` (+ `titularidadEn`, `titularidadPor`):
+ *     `main` lee `tenantId`, `flujo`, `estado` y `aliasSecreto`, nada más;
+ *   - los derivados salen de la misma aritmética que `main` aplica a una
+ *     cuenta con modalidad explícita y plan vendible.
+ * Lo único que cambia entre migrar y desplegar es que `ensayo.mjs` y
+ * `pase-a-produccion.mjs` de `main` todavía deciden por el plan viejo: en ese
+ * intervalo se corren desde esta rama.
  *
  * LOS MÓDULOS DEL SERVIDOR SE IMPORTAN SIN COMPILAR con el hook de resolución
  * (`module.registerHooks`), como `asignar-plan.mjs` y `pase-a-produccion.mjs`.
@@ -56,6 +81,7 @@ const APLICAR = args.includes('--aplicar');
 const PROYECTO = opcion('proyecto');
 const SOLO = (opcion('tenant') ?? '').toLowerCase();
 const PLAN_DEMOS = (opcion('plan-demos') ?? 'impulso').trim();
+const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 
 registerHooks({
   resolve(especificador, contexto, siguiente) {
@@ -78,9 +104,11 @@ const problemas = [];
 if (!PROYECTO) problemas.push('falta --proyecto');
 if (SOLO && !ID_TENANT.test(SOLO)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (!esIdPlan(PLAN_DEMOS)) problemas.push(`--plan-demos desconocido: ${PLAN_DEMOS}. Del catálogo: ${Object.keys(PLANES).join(', ')}`);
+const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/migrar-ejes.mjs --proyecto <id> [--plan-demos <plan>] [--tenant <id>] [--aplicar]\n');
+  console.error('\n  node scripts/migrar-ejes.mjs --proyecto <id> --operador <correo> [--plan-demos <plan>] [--tenant <id>] [--aplicar]\n');
   process.exit(2);
 }
 
@@ -105,6 +133,7 @@ const sinTenant = rutasSnap.docs.filter((r) => !tenantsSnap.docs.some((t) => t.i
 console.log(`\n  Migración a los tres ejes · proyecto ${PROYECTO} · ${APLICAR ? 'APLICAR' : 'seco'}`);
 console.log(`  Tenants en Firestore: ${tenantsSnap.size}${SOLO ? ` (se mira solo «${SOLO}»)` : ''} · rutas de WhatsApp: ${rutasSnap.size}`);
 console.log(`  Plan para los demos: ${PLAN_DEMOS} (${PLANES[PLAN_DEMOS].productos} productos, ${PLANES[PLAN_DEMOS].conversaciones} conversaciones)`);
+console.log(`  Operador: ${OPERADOR}`);
 if (sinTenant.length) console.log(`  ✗ Rutas cuyo tenant no existe (no se tocan): ${sinTenant.map((r) => cola(r.id)).join(', ')}`);
 if (SOLO && tenants.length === 0) { console.error(`\n  ✗ No existe el comercio «${SOLO}».\n`); process.exit(1); }
 console.log('');
@@ -148,7 +177,7 @@ function analizar(ficha, cuentaDoc, contadorDoc, metricasDoc, rutas) {
     }
     if (!esModalidad(cuenta.modalidad)) avisos.push('sin modalidad: no es demo por plan, no se toca (migrar-prepago.mjs)');
   } else {
-    avisos.push(`plan «${plan ?? '(ninguno)'}» no es del catálogo: no se toca (asignar-plan.mjs)`);
+    avisos.push(`plan «${plan ?? '(ninguno)'}» no es del catálogo: el plan y la modalidad los asigna asignar-plan.mjs; acá solo el modelo y la titularidad por defecto`);
   }
 
   // El modelo de IA, en la ficha.
@@ -174,10 +203,14 @@ function analizar(ficha, cuentaDoc, contadorDoc, metricasDoc, rutas) {
       ? FieldValue.delete() : Timestamp.fromMillis(d.proximoVencimientoMs);
   }
 
-  // (c) el cerrojo del catálogo: nunca dejar un tenant sin poder cargar.
+  // (c) el cerrojo del catálogo: nunca dejar un tenant sin poder cargar. Solo
+  // se juzga cuando ESTE script cambia el plan (un demo que pasa a
+  // `--plan-demos`): un tenant que ya está por encima de su límite no es
+  // asunto de la migración, y bloquearlo impediría escribirle el modelo y la
+  // titularidad, que no tienen nada que ver.
   const items = Number(contadorDoc?.get('items') ?? 0);
   const productosDespues = limitesDeCuenta(combinada).productos;
-  const bloqueo = items > productosDespues
+  const bloqueo = escrituraCuenta.plan !== undefined && items > productosDespues
     ? `el catálogo tiene ${items} ítems y el plan ${plan} admite ${productosDespues}: elija otro --plan-demos o asigne el plan a mano`
     : null;
 
@@ -250,10 +283,10 @@ for (const ficha of tenants) {
       }
       if (Object.keys(b.escrituraFicha).length) tx.update(ficha.ref, b.escrituraFicha);
       for (const [n, v] of b.escrituraRutas) {
-        tx.update(db.doc(`rutasWhatsApp/${n}`), { titularidad: v, titularidadEn: ahora, titularidadPor: 'migrar-ejes' });
+        tx.update(db.doc(`rutasWhatsApp/${n}`), { titularidad: v, titularidadEn: ahora, titularidadPor: OPERADOR });
       }
       tx.create(db.collection(`tenants/${t}/auditoria`).doc(), {
-        accion: 'migrar_ejes', uid: 'migrar-ejes', en: ahora, planDemos: PLAN_DEMOS,
+        accion: 'migrar_ejes', uid: OPERADOR, origen: 'script', script: 'migrar-ejes', en: ahora, planDemos: PLAN_DEMOS,
         antes: b.antes, despues: b.despues,
       });
     });

@@ -40,7 +40,7 @@ const NUM_OTRO = '1000000072';
 const NUM_SIN_RUTA = '1000000073';
 
 function correr(...args: string[]) {
-  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...args], {
+  const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
     env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
@@ -73,10 +73,16 @@ beforeAll(async () => {
 });
 
 describe('asignar-plan.mjs: el plan', () => {
-  it('sin ningún eje no hace nada', () => {
+  it('sin ningún eje no hace nada; sin --operador (o con uno que no es un correo) tampoco (LOW-3)', () => {
     const r = correr('--tenant', T);
     expect(r.codigo).toBe(2);
     expect(r.salida).toMatch(/nada que asignar/);
+    for (const args of [[], ['--operador', 'asignar-plan'], ['--operador', 'andres']]) {
+      const o = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--plan', 'pro', ...args],
+        { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      expect(o.status, args.join(' ')).toBe(2);
+      expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
+    }
   });
 
   it('NO acepta un plan que no está en el catálogo: ni el viejo «basico» ni el viejo «demostracion»', async () => {
@@ -107,7 +113,7 @@ describe('asignar-plan.mjs: el plan', () => {
     const a = await auditorias('cambiar_plan');
     expect(a).toHaveLength(1);
     expect(a[0]).toMatchObject({
-      uid: 'asignar-plan', planAntes: 'basico', planDespues: 'pro', limitesAntes: null, limitesDespues: limitesDe('pro'),
+      uid: 'operador@ejemplo.com', origen: 'script', script: 'asignar-plan', planAntes: 'basico', planDespues: 'pro', limitesAntes: null, limitesDespues: limitesDe('pro'),
     });
   });
 
@@ -177,7 +183,7 @@ describe('asignar-plan.mjs: los otros ejes (F1)', () => {
       motivoVisible: 'Comercio de demostración', umbralOperador: 3, umbralBloqueo: 5,
     });
     const [a] = await auditorias('estado_cuenta');
-    expect(a).toMatchObject({ uid: 'asignar-plan', campos: ['modalidad'], valores: { modalidad: 'demostracion' } });
+    expect(a).toMatchObject({ uid: 'operador@ejemplo.com', origen: 'script', campos: ['modalidad'], valores: { modalidad: 'demostracion' } });
   });
 
   it('--modalidad fuera de la lista no entra; --modalidad prueba inicializa el mes y la bolsa', async () => {
@@ -223,7 +229,7 @@ describe('asignar-plan.mjs: los otros ejes (F1)', () => {
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).not.toContain(NUM_T);
     expect(r.salida).toMatch(/…0071 → titularidad comercio/);
-    expect(await ruta(NUM_T)).toMatchObject({ titularidad: 'comercio', titularidadPor: 'asignar-plan', tenantId: T });
+    expect(await ruta(NUM_T)).toMatchObject({ titularidad: 'comercio', titularidadPor: 'operador@ejemplo.com', tenantId: T });
     const a = (await auditorias('asignar_ejes')).find((x) => x['phoneNumberId'] === NUM_T);
     expect(a).toMatchObject({ titularidadAntes: 'novuchat', titularidadDespues: 'comercio' });
     // Repetir: sin cambios.

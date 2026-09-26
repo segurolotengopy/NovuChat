@@ -73,7 +73,17 @@ export const registrarCambioOperado = onCall(async (peticion) => {
   return db().runTransaction(async (tx) => {
     const [ficha, cuentaDoc] = await Promise.all([tx.get(refFicha), tx.get(refCuenta)]);
     if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
-    const cuenta = (cuentaDoc.data() ?? {}) as Record<string, unknown>;
+    if (ficha.get('estado') === 'dado_de_baja') {
+      throw new HttpsError('failed-precondition', 'Un comercio dado de baja no recibe cambios.');
+    }
+    // SIN CUENTA NO SE CUENTA (revisión de seguridad de #207, LOW-4): crear
+    // acá un `cuenta/estado` con solo el contador dejaría un documento parcial
+    // sin plan ni copia de límites. La cuenta la escribe el alta o
+    // `asignar-plan.mjs`; después se registra.
+    if (!cuentaDoc.exists) {
+      throw new HttpsError('failed-precondition', 'El comercio no tiene cuenta: primero asignar-plan.mjs.');
+    }
+    const cuenta = cuentaDoc.data() as Record<string, unknown>;
     const situacion = cambiosDelMes(cuenta, ahoraMs);
 
     if (!situacion.permitido && !forzar) {
@@ -85,13 +95,9 @@ export const registrarCambioOperado = onCall(async (peticion) => {
     const numero = situacion.usados + 1;
     const forzado = !situacion.permitido;
     const ahora = Timestamp.now();
-    if (cuentaDoc.exists) {
-      // `FieldPath` y no la notación con punto: el mes lleva un guion y como
-      // texto se leería como dos claves.
-      tx.update(refCuenta, new FieldPath('cambios', situacion.mes), numero, 'actualizadoEn', ahora);
-    } else {
-      tx.set(refCuenta, { cambios: { [situacion.mes]: numero }, actualizadoEn: ahora });
-    }
+    // `FieldPath` y no la notación con punto: el mes lleva un guion y como
+    // texto se leería como dos claves.
+    tx.update(refCuenta, new FieldPath('cambios', situacion.mes), numero, 'actualizadoEn', ahora);
     tx.create(refAuditoria.doc(), {
       accion: 'cambio_operado', uid, en: ahora,
       mes: situacion.mes, numero, descripcion, forzado,

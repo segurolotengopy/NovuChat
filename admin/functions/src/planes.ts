@@ -169,7 +169,7 @@ export const MAXIMO_CAMBIOS_INCLUIDOS = 100;
  * titularidad del número. Lo que BYOC sigue siendo es un plan del catálogo con
  * 2.000 conversaciones por USD 50, que se asigna a un comercio cuyo número es
  * de titularidad `comercio`. Las dos cosas se escriben por separado
- * (`asignarNumero` / `fijarTitularidad` el número; `actualizarEstadoCuenta` /
+ * (`asignarNumero` / `asignarEjes` el número; `actualizarEstadoCuenta` /
  * `asignar-plan.mjs` el plan) y la migración `migrar-ejes.mjs` deja las dos
  * coherentes para los que ya existen.
  *
