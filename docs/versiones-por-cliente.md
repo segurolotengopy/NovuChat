@@ -29,8 +29,8 @@ Una excepción necesita las tres cosas, o no es una excepción:
 | Cliente | `--env` | Flujo versionado | Excepción declarada |
 |---|---|---|---|
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
-| Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Hotfix de memoria y candado (#186, fusionado el 25/09) más el origen del anuncio (#188): publicados en el Demo A el 25/09 a la noche para verificarlos con teléfono real; en este flujo se publican en la ventana de 02:00 a 03:00 siguiente, con la verificación del Demo A hecha. La cierra la publicación |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Hotfix de memoria y candado (#186, fusionado el 25/09) más el origen del anuncio (#188): publicados en el Demo A el 25/09 a la noche para verificarlos con teléfono real; en este flujo se publican en la ventana de 02:00 a 03:00 siguiente, con la verificación del Demo A hecha. La cierra la publicación |
+| Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | — |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | — |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -46,8 +46,11 @@ Publicados desde `origin/main` (`0655cd3`) con el diagnóstico en seco leído
 entero: **Demo A** (hotfix #186 y origen del anuncio #188: cinco nodos), **Demo B**
 (#188 y el comprobante en simulado #192: dos nodos) y **captación** (#187 y #188:
 tres nodos). Todas las credenciales heredadas del flujo vivo, ninguna corregida.
-Platinum y Bellido atienden pacientes reales y esperan la ventana de 02:00 a
-03:00, con la excepción declarada arriba.
+**Platinum y Bellido** se publicaron después, el 26/09 a la madrugada, fuera de
+la ventana por decisión de Andres: ningún comercio está en modalidad
+producción, así que la ventana no condiciona. Antes, Andres verificó el hotfix
+en el Demo A con teléfono real (ejecuciones #6041 a #6098, ver `ESTADO.md`).
+Los ocho flujos quedan al día con su JSON versionado.
 
 ## Estado al 24/09/2026
 
