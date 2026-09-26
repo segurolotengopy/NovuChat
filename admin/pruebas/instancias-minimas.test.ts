@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -53,6 +54,26 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
     const produccion = job('desplegar-produccion');
     expect(produccion).toMatch(/INSTANCIAS_MINIMAS=1\\n/);
     expect(produccion).not.toMatch(/INSTANCIAS_MINIMAS=(0|[2-9])/);
+  });
+
+  // La compuerta de la revisión de seguridad de #215: antes de simular, el job
+  // de producción corta si hay un functions/.env.* (lo cargaría después y
+  // pisaría el .env) o si INSTANCIAS_MINIMAS no quedó exactamente una vez en 1.
+  it('producción tiene la compuerta que impide desplegar con otro valor', () => {
+    const produccion = job('desplegar-produccion');
+    expect(produccion).toContain("compgen -G 'functions/.env.*'");
+    expect(produccion).toContain("grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env");
+    const compuerta = produccion.indexOf("grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env");
+    const simulacion = produccion.indexOf('firebase deploy --only "$SIMULAR"');
+    expect(simulacion).toBeGreaterThan(-1);
+    expect(compuerta).toBeGreaterThan(-1);
+    expect(compuerta, 'la compuerta va antes de la simulación').toBeLessThan(simulacion);
+  });
+
+  it('ningún archivo de parámetros de las Functions está versionado', () => {
+    const versionados = execFileSync('git', ['ls-files', 'functions'], { cwd: join(aqui, '..'), encoding: 'utf8' })
+      .split('\n').filter((f) => /(^|\/)\.env(\.|$)/.test(f));
+    expect(versionados).toEqual([]);
   });
 
   it('el despliegue de staging lo fija en 0, y en ningún otro valor', () => {

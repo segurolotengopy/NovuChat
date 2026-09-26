@@ -1571,6 +1571,18 @@ jobs:
             FORZAR="--force"
             echo "::warning::vars.FIREBASE_DEPLOY_FORCE activa: se acepta subir el piso de la factura y --force borra Functions que ya no estén en el código."
           fi
+          # PRODUCCIÓN QUEDA EN UNA INSTANCIA MÍNIMA (revisión de seguridad de
+          # #215, 26/09/2026). Bajar de 1 a 0 no pide --force ni avisa, y
+          # firebase-tools carga `functions/.env.<proyecto>` DESPUÉS de `.env` y
+          # lo pisa (lib/functions/env.js). Se corta antes de simular si hay otro
+          # archivo de parámetros o si la línea no quedó exactamente una vez en 1.
+          if [[ "$SOLO" == *functions* ]]; then
+            if compgen -G 'functions/.env.*' >/dev/null; then
+              echo "::error::Hay un functions/.env.* que pisaría los parámetros de producción."; exit 1
+            fi
+            [[ "$(grep -c '^INSTANCIAS_MINIMAS=' functions/.env)" == 1 ]] && grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env \
+              || { echo "::error::functions/.env no deja INSTANCIAS_MINIMAS=1 exactamente una vez."; exit 1; }
+          fi
           SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
           if [[ -n "$SIMULAR" ]]; then
             echo "Simulando: $SIMULAR"
