@@ -110,8 +110,12 @@ describe('copiaDeLimites (pura): qué distingue un contrato de un plan', () => {
       expect(porContratoDe(c), String(malo)).toEqual([]);
       expect(limitesDeCuenta(c).cambiosIncluidos).toBe(limitesDe('pro').cambiosIncluidos);
     }
-    // Claves que no pueden ir por contrato se ignoran.
-    expect(porContratoDe({ limites: { conversaciones: 9000 }, limitesPorContrato: ['conversaciones', 'toString'] })).toEqual([]);
+    // Claves que no pueden ir por contrato se ignoran. Desde F1b (decisión de
+    // Andres del 26/09) `conversaciones` SÍ puede, con su propia validación:
+    // un valor sano cuenta; uno fuera de rango, no.
+    expect(porContratoDe({ limites: { conversaciones: 9000 }, limitesPorContrato: ['conversaciones', 'toString'] })).toEqual(['conversaciones']);
+    expect(porContratoDe({ limites: { conversaciones: 0 }, limitesPorContrato: ['conversaciones'] })).toEqual([]);
+    expect(porContratoDe({ limites: { productos: 9000 }, limitesPorContrato: ['productos', 'agendas'] })).toEqual([]);
   });
 
   it('un cambio de plan CONSERVA el valor por contrato y lo informa; el resto es la copia del plan nuevo', () => {

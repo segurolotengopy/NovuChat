@@ -40,8 +40,9 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, PLANES, cambiosIncluidosValidos, copiaDeLimites, cuentaInicial,
-  esPlanVendible, mismoMarcador, periodoDe, porContratoDe, type IdPlanVendible,
+  CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, PLANES, RANGO_POR_CONTRATO, copiaDeLimites,
+  cuentaInicial, esPlanVendible, mismoMarcador, periodoDe, porContratoDe, precioMensualDe, precioPorContratoDe,
+  precioPorContratoValido, valorPorContratoValido, type ClavePorContrato, type IdPlanVendible,
 } from './planes.js';
 // LOS TRES EJES DE LA CUENTA (F1, `Analisis/41` §4). El alta escribe el modelo
 // por defecto y `asignarNumero` la titularidad del número; cambiarlos después
@@ -55,8 +56,9 @@ export { asignarEjes, ejesDeCuenta } from './central/ejesDeCuenta.js';
 // campos derivados de la situación de pago, que se recalculan y nunca se
 // escriben a mano; y la bandera del modo observación (`fijarCortePrepago`).
 import {
-  MODALIDADES, PRUEBA, camposDerivados, consumidasDe, esModalidad, esPeriodo, estadoDeServicio,
-  mesBolivia, type CuentaCruda,
+  BOLSA_PRUEBA_MAXIMA, MODALIDADES, PruebaInvalida, bolsaPruebaValida, camposDerivados, consumidasDe, esModalidad,
+  esPeriodo, estadoDeServicio, montoFueraDeContrato, pruebaActual, pruebaNueva,
+  type CuentaCruda, type PedidoDePrueba, type PruebaNueva,
 } from './prepago.js';
 // COBRANZA DEL PREPAGO: el barrido de la hora del número de NovuChat pregunta a
 // qué comercios les toca un recordatorio y marca ANTES de enviar (molde de
@@ -537,11 +539,20 @@ export const quitarUsuario = onCall(async (peticion) => {
 //
 // LOS VALORES POR CONTRATO (`planes.ts`, `copiaDeLimites`). `cambiosIncluidos`
 // fija por contrato los cambios operados incluidos al mes (entero de 0 a
-// `MAXIMO_CAMBIOS_INCLUIDOS`, la MISMA validación con que se lee), y `null` lo
-// quita y vuelve a regir el del plan. Un cambio de plan CONSERVA lo que va por
-// contrato: antes reescribía la copia entera y un contrato volvía al número del
-// plan sin que nadie lo decidiera. Cada fijación o retiro deja
-// `limites_por_contrato` en la auditoría; lo conservado va en `cambiar_plan`.
+// `MAXIMO_CAMBIOS_INCLUIDOS`) y, desde F1b, `conversaciones` las incluidas al
+// mes (entero de 1 a `LIMITE_MAXIMO`): la MISMA validación con que se leen.
+// `null` quita el valor y vuelve a regir el del plan. Un cambio de plan
+// CONSERVA lo que va por contrato: antes reescribía la copia entera y un
+// contrato volvía al número del plan sin que nadie lo decidiera. Cada
+// fijación o retiro deja `limites_por_contrato` en la auditoría; lo
+// conservado va en `cambiar_plan`.
+//
+// EL PRECIO Y LA PRUEBA POR CONTRATO (F1b). `precioPorContrato` (USD, con
+// centavos, hasta `MAXIMO_PRECIO_POR_CONTRATO_USD`) es la mensualidad pactada
+// y manda sobre la del plan en todo lo que cobra (`precioMensualDe`); `null`
+// la quita. `periodoPrueba` fija o extiende el último mes de la prueba y
+// `bolsaPrueba` sus conversaciones, solo con modalidad prueba (`pruebaNueva`).
+// Todo con sesión reciente y con el antes y el después en la auditoría.
 // ---------------------------------------------------------------------------
 // LOS CAMPOS QUE SE DERIVAN DE LOS PAGOS (20/09, bloque A-1, `DISENO.md`
 // §4undecies.2). Hasta el 20/09 esta callable los aceptaba escritos a mano;
@@ -596,24 +607,50 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
     plan = pedido;
   }
-  let cambiosIncluidos: number | null | undefined;
-  if (viene('cambiosIncluidos')) {
-    const v = datos['cambiosIncluidos'];
-    if (v !== null && !cambiosIncluidosValidos(v)) {
+  // LOS VALORES POR CONTRATO DE LA COPIA (`CLAVES_POR_CONTRATO`: los cambios
+  // incluidos y, desde F1b, las conversaciones). Cada uno con LA validación
+  // con que se lee (`valorPorContratoValido`); `null` lo quita y vuelve a
+  // regir el del plan.
+  const valoresPorContrato: Partial<Record<ClavePorContrato, number | null>> = {};
+  for (const clave of CLAVES_POR_CONTRATO) {
+    if (!viene(clave)) continue;
+    const v = datos[clave];
+    if (v !== null && !valorPorContratoValido(clave, v)) {
       throw new HttpsError('invalid-argument',
-        `cambiosIncluidos tiene que ser un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}, o null para volver al del plan.`);
+        `${clave} tiene que ser ${RANGO_POR_CONTRATO[clave]}, o null para volver al del plan.`);
     }
-    cambiosIncluidos = v;
+    valoresPorContrato[clave] = v as number | null;
+  }
+  const pideCopiaPorContrato = Object.keys(valoresPorContrato).length > 0;
+  // EL PRECIO POR CONTRATO (F1b): la mensualidad pactada, en USD, que manda
+  // sobre la del plan (`precioMensualDe`, `planes.ts`); `null` la quita.
+  let precioPorContrato: number | null | undefined;
+  if (viene('precioPorContrato')) {
+    const v = datos['precioPorContrato'];
+    if (v !== null && !precioPorContratoValido(v)) {
+      throw new HttpsError('invalid-argument',
+        `precioPorContrato tiene que ser un monto en dólares mayor que 0 y de hasta ${MAXIMO_PRECIO_POR_CONTRATO_USD}, `
+        + 'con dos decimales como mucho; o null para volver al precio del plan.');
+    }
+    precioPorContrato = v;
   }
   // EL MODELO DE IA y la TITULARIDAD del número NO van por acá: son
   // `asignarEjes` (`central/ejesDeCuenta.ts`), con la firma que usa la consola.
 
   // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.2). La MODALIDAD es
-  // cerrada: demostración, prueba o prepago. `periodoPrueba` (`aaaa-mm`) es
-  // opcional: al pasar a prueba sin él, es el mes en curso de Bolivia; `null`
-  // lo borra. `corteActivo` es un booleano (enciende el corte en ESTE tenant
-  // antes que en toda la plataforma; `null` lo borra) y no cambia ningún
-  // derivado. Cualquier otra cosa se RECHAZA, como todo lo demás de acá.
+  // cerrada: demostración, prueba o prepago. `corteActivo` es un booleano
+  // (enciende el corte en ESTE tenant antes que en toda la plataforma; `null`
+  // lo borra) y no cambia ningún derivado. Cualquier otra cosa se RECHAZA,
+  // como todo lo demás de acá.
+  //
+  // LA PRUEBA (F1b): `periodoPrueba` (`aaaa-mm`) es el ÚLTIMO mes de la prueba
+  // —la fija o la extiende, nunca a un mes pasado—; `bolsaPrueba` (1 a
+  // `BOLSA_PRUEBA_MAXIMA`), las conversaciones de prueba que quedan. Las dos
+  // solo con modalidad prueba. Acá se valida la FORMA; lo que depende de la
+  // cuenta (la modalidad que queda, el mes en curso, el primer mes) lo decide
+  // `pruebaNueva` (`prepago.ts`) dentro de la transacción, la misma función
+  // que usa `asignar-plan.mjs`. `null` en `periodoPrueba` la borra, solo si
+  // la cuenta no queda en prueba.
   //
   // `periodoPagado` NO se acepta: solo lo escribe un pago (A-1) o la migración
   // (`scripts/migrar-prepago.mjs`, uno por uno, con el OK de Andres).
@@ -625,11 +662,21 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
     prepago['modalidad'] = m;
   }
+  const pedidoPrueba: PedidoDePrueba = {};
+  const camposPrueba: string[] = [];
   if (viene('periodoPrueba')) {
     const p = datos['periodoPrueba'];
-    if (p === null) prepago['periodoPrueba'] = FieldValue.delete();
-    else if (esPeriodo(p)) prepago['periodoPrueba'] = p;
-    else throw new HttpsError('invalid-argument', 'periodoPrueba inválido: aaaa-mm.');
+    if (p !== null && !esPeriodo(p)) throw new HttpsError('invalid-argument', 'periodoPrueba inválido: aaaa-mm.');
+    pedidoPrueba.periodoPrueba = p as string | null;
+    camposPrueba.push('periodoPrueba');
+  }
+  if (viene('bolsaPrueba')) {
+    const b = datos['bolsaPrueba'];
+    if (!bolsaPruebaValida(b)) {
+      throw new HttpsError('invalid-argument', `bolsaPrueba tiene que ser un entero de 1 a ${BOLSA_PRUEBA_MAXIMA}.`);
+    }
+    pedidoPrueba.bolsaPrueba = b;
+    camposPrueba.push('bolsaPrueba');
   }
   if (viene('corteActivo')) {
     const c = datos['corteActivo'];
@@ -637,24 +684,27 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     else if (typeof c === 'boolean') prepago['corteActivo'] = c;
     else throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
   }
-  const otros = [...Object.keys(cambios), ...Object.keys(umbrales), ...Object.keys(prepago)].sort();
-  if (otros.length === 0 && plan === null && cambiosIncluidos === undefined) {
+  const otros = [...Object.keys(cambios), ...Object.keys(umbrales), ...Object.keys(prepago), ...camposPrueba].sort();
+  if (otros.length === 0 && plan === null && !pideCopiaPorContrato && precioPorContrato === undefined) {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
   }
   // SESIÓN RECIENTE PARA LO QUE MUEVE DINERO (revisión de seguridad de #212,
   // LOW 3 de las dos vueltas): cambiar el plan cambia la mensualidad; los
-  // cambios incluidos por contrato son trabajo que NovuChat regala o cobra; y
-  // la modalidad, el mes de prueba y el corte deciden si se cobra y si se
-  // atiende. Como `registrarPagoManual`: un token robado y usado desde otro
-  // lado no alcanza. Los umbrales y el motivo visible no la piden. Se pide
-  // DESPUÉS de validar la forma, para que una petición mal armada diga qué
-  // tiene mal. La consola responde con `reauthenticateWithPopup` y repite.
-  if (plan !== null || cambiosIncluidos !== undefined || Object.keys(prepago).length > 0) {
+  // valores por contrato (cambios incluidos, conversaciones) son trabajo y
+  // consumo que NovuChat regala o cobra; el precio por contrato ES la
+  // mensualidad; y la modalidad, la prueba (su período y su bolsa) y el corte
+  // deciden si se cobra y si se atiende. Como `registrarPagoManual`: un token
+  // robado y usado desde otro lado no alcanza. Los umbrales y el motivo
+  // visible no la piden. Se pide DESPUÉS de validar la forma, para que una
+  // petición mal armada diga qué tiene mal. La consola responde con
+  // `reauthenticateWithPopup` y repite.
+  if (plan !== null || pideCopiaPorContrato || precioPorContrato !== undefined
+      || Object.keys(prepago).length > 0 || camposPrueba.length > 0) {
     try {
       exigirSesionReciente(peticion, Date.now());
     } catch {
       throw new HttpsError('unauthenticated',
-        'Por seguridad, vuelva a iniciar sesión para cambiar el plan, la modalidad o los cambios incluidos.');
+        'Por seguridad, vuelva a iniciar sesión para cambiar el plan, la modalidad, la prueba, el precio o los límites por contrato.');
     }
   }
 
@@ -679,12 +729,22 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     // plan y se cambia el plan acá, al confirmarse el QR la cuenta quedaría
     // con dos verdades. Primero se anula el cobro pendiente (Pagar o
     // `anularPagoPendiente`), después se cambia el plan.
+    //
+    // Y UN QR VIVO FRENA EL CAMBIO DE PRECIO (F1b): si hay una mensualidad
+    // pendiente y el precio nuevo la deja fuera de contrato
+    // (`montoFueraDeContrato`, más abajo, con la cuenta como va a quedar), el
+    // banco la cobraría a un precio que la cuenta ya no tiene. Se lee acá, con
+    // las demás lecturas; se decide cuando la cuenta nueva esté armada.
     const pendienteId = actual['pagoPendienteId'];
-    if (plan && typeof pendienteId === 'string' && /^[A-Za-z0-9_-]{22}$/.test(pendienteId)) {
+    let pendienteVivo: Record<string, unknown> | null = null;
+    if ((plan || precioPorContrato !== undefined) && typeof pendienteId === 'string' && /^[A-Za-z0-9_-]{22}$/.test(pendienteId)) {
       const pendiente = (await tx.get(db().doc(`tenants/${tenantId}/pagos/${pendienteId}`))).data();
-      if (pendiente && pendiente['estado'] === 'pendiente' && pendiente['tipo'] === 'mensualidad' && pendiente['plan'] !== plan) {
-        throw new HttpsError('failed-precondition',
-          'Hay un cobro pendiente de una mensualidad de otro plan: anule el cobro pendiente primero y después cambie el plan.');
+      if (pendiente && pendiente['estado'] === 'pendiente' && pendiente['tipo'] === 'mensualidad') {
+        if (plan && pendiente['plan'] !== plan) {
+          throw new HttpsError('failed-precondition',
+            'Hay un cobro pendiente de una mensualidad de otro plan: anule el cobro pendiente primero y después cambie el plan.');
+        }
+        pendienteVivo = pendiente;
       }
     }
 
@@ -702,13 +762,14 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
 
     const escritura: Record<string, unknown> = { ...cambios, ...umbrales, ...prepago, actualizadoEn: ahora };
-    // Un valor por contrato sin cuenta ni plan dejaría un `cuenta/estado`
-    // parcial, con una copia de una sola clave y sin plan: primero el plan.
-    if (cambiosIncluidos !== undefined && !plan && !cuentaDoc.exists) {
+    // Un valor o un precio por contrato sin cuenta ni plan dejaría un
+    // `cuenta/estado` parcial, con una copia de una sola clave y sin plan:
+    // primero el plan.
+    if ((pideCopiaPorContrato || precioPorContrato !== undefined) && !plan && !cuentaDoc.exists) {
       throw new HttpsError('failed-precondition', 'El comercio no tiene cuenta: primero se le asigna un plan.');
     }
-    const copia = plan || cambiosIncluidos !== undefined
-      ? copiaDeLimites(actual, { ...(plan ? { plan } : {}), ...(cambiosIncluidos !== undefined ? { cambiosIncluidos } : {}) })
+    const copia = plan || pideCopiaPorContrato
+      ? copiaDeLimites(actual, { ...(plan ? { plan } : {}), ...valoresPorContrato })
       : null;
     const nuevos = copia ? copia.limites : null;
     if (copia) {
@@ -729,28 +790,52 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
         ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados } : {}),
       });
     }
-    // `limites_por_contrato` SOLO SI ALGO CAMBIA (el valor o su origen), con
-    // la misma condición que `asignar-plan.mjs`: repetir la misma fijación no
-    // deja una auditoría que diga que se fijó (observación de #212).
+    // `limites_por_contrato` SOLO SI ALGO CAMBIA (el valor o su origen), una
+    // por clave, con la misma condición que `asignar-plan.mjs`: repetir la
+    // misma fijación no deja una auditoría que diga que se fijó (observación
+    // de #212).
     const copiaAntes = actual['limites'] as Record<string, unknown> | undefined;
-    const contratoAntes = porContratoDe(actual).includes('cambiosIncluidos');
-    const contratoCambia = cambiosIncluidos !== undefined && copia !== null
-      && (contratoAntes !== (cambiosIncluidos !== null) || copiaAntes?.['cambiosIncluidos'] !== copia.limites['cambiosIncluidos']);
-    if (contratoCambia && copia) {
-      const antes = contratoAntes;
+    const porContratoAntes = porContratoDe(actual);
+    for (const clave of CLAVES_POR_CONTRATO) {
+      const pedido = valoresPorContrato[clave];
+      if (pedido === undefined || !copia) continue;
+      const contratoAntes = porContratoAntes.includes(clave);
+      if (contratoAntes === (pedido !== null) && copiaAntes?.[clave] === copia.limites[clave]) continue;
       tx.create(refAuditoria.doc(), {
-        accion: 'limites_por_contrato', uid, en: ahora, clave: 'cambiosIncluidos',
-        antes: { valor: copiaAntes?.['cambiosIncluidos'] ?? null, porContrato: antes },
-        despues: { valor: copia.limites['cambiosIncluidos'], porContrato: cambiosIncluidos !== null },
-        plan: plan ?? actual['plan'] ?? null, delPlan: copia.delPlan.cambiosIncluidos,
+        accion: 'limites_por_contrato', uid, en: ahora, clave,
+        antes: { valor: copiaAntes?.[clave] ?? null, porContrato: contratoAntes },
+        despues: { valor: copia.limites[clave], porContrato: pedido !== null },
+        plan: plan ?? actual['plan'] ?? null, delPlan: copia.delPlan[clave],
       });
     }
 
-    // Al pasar a PRUEBA sin período, la prueba es el mes en curso de Bolivia,
-    // con su bolsa de 20 conversaciones; si ya tenía una, no se reinicia.
-    if (prepago['modalidad'] === 'prueba' && !viene('periodoPrueba') && !esPeriodo(actual['periodoPrueba'])) {
-      escritura['periodoPrueba'] = mesBolivia(ahoraMs);
-      escritura['bolsaPrueba'] = PRUEBA.conversaciones;
+    // EL PRECIO POR CONTRATO (F1b). Un campo propio, que ningún escritor del
+    // plan toca: por eso un cambio de plan lo conserva sin hacer nada.
+    // `precio_por_contrato` en la auditoría solo si cambia, con la mensualidad
+    // que regía antes y la que rige después.
+    const precioAntes = precioPorContratoDe(actual);
+    if (precioPorContrato !== undefined && precioPorContrato !== precioAntes) {
+      escritura['precioPorContrato'] = precioPorContrato === null ? FieldValue.delete() : precioPorContrato;
+    } else if (precioPorContrato === null && actual['precioPorContrato'] !== undefined) {
+      // Un valor roto (que no regía) se limpia igual al pedir el del plan.
+      escritura['precioPorContrato'] = FieldValue.delete();
+    }
+
+    // LA PRUEBA (F1b): su último mes, su primer mes y su bolsa, decididos por
+    // `pruebaNueva` con la modalidad que queda. Al pasar a prueba sin período,
+    // la prueba es el mes en curso con la bolsa de lista, como siempre.
+    const pideAlgoDePrueba = camposPrueba.length > 0 || prepago['modalidad'] !== undefined;
+    let prueba: PruebaNueva = {};
+    if (pideAlgoDePrueba) {
+      try {
+        prueba = pruebaNueva(actual, {
+          ...(esModalidad(prepago['modalidad']) ? { modalidad: prepago['modalidad'] } : {}), ...pedidoPrueba,
+        }, ahoraMs);
+      } catch (e) {
+        if (e instanceof PruebaInvalida) throw new HttpsError('invalid-argument', e.message);
+        throw e;
+      }
+      for (const [k, v] of Object.entries(prueba)) escritura[k] = v === null ? FieldValue.delete() : v;
     }
 
     // LOS DERIVADOS se recalculan SIEMPRE, con la cuenta COMO VA A QUEDAR: lo
@@ -770,10 +855,22 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     for (const [k, v] of Object.entries(escritura)) {
       if (v instanceof FieldValue) delete combinada[k]; else combinada[k] = v;
     }
-    // Borrar `periodoPrueba` de una cuenta que queda en PRUEBA la dejaría
-    // incoherente (`estadoDeServicio` la atendería sin límite): se rechaza.
-    if (viene('periodoPrueba') && datos['periodoPrueba'] === null && combinada['modalidad'] === 'prueba') {
-      throw new HttpsError('invalid-argument', 'Una cuenta en prueba necesita su periodoPrueba.');
+    // UN PRECIO FUERA DE CONTRATO SE RECHAZA (F1b): la mensualidad pendiente
+    // se emitió a un importe que la cuenta, como va a quedar, ya no cobraría.
+    // Primero se anula el cobro pendiente; después se cambia el precio.
+    if (pendienteVivo && montoFueraDeContrato(pendienteVivo, combinada)) {
+      throw new HttpsError('failed-precondition',
+        `Hay un cobro pendiente de una mensualidad por USD ${String(pendienteVivo['montoUsd'])}, que con este cambio quedaría `
+        + `fuera de contrato (la cuenta cobraría USD ${precioMensualDe(combinada, pendienteVivo['plan'])} al mes): `
+        + 'anule el cobro pendiente primero.');
+    }
+    if (precioPorContrato !== undefined && precioPorContrato !== precioAntes) {
+      tx.create(refAuditoria.doc(), {
+        accion: 'precio_por_contrato', uid, en: ahora,
+        antes: { valor: precioAntes, porContrato: precioAntes !== null, mensualUsd: precioMensualDe(actual) },
+        despues: { valor: precioPorContrato, porContrato: precioPorContrato !== null, mensualUsd: precioMensualDe(combinada) },
+        plan: combinada['plan'] ?? null, delPlanUsd: precioMensualDe({ plan: combinada['plan'] }),
+      });
     }
     if (derivadosGobernados(combinada)) {
       const servicio = estadoDeServicio(combinada as CuentaCruda, consumidasDe(metricasDoc.data()), ahoraMs);
@@ -795,15 +892,21 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
 
     if (otros.length > 0) {
-      // El registro lleva QUÉ campos cambiaron y el valor de los que no son
-      // texto libre. `motivoVisible` va solo por nombre: es texto.
+      // El registro lleva QUÉ campos se pidieron, el valor de los que no son
+      // texto libre y, desde F1b, el ANTES de cada uno (`antes`), para que la
+      // auditoría diga qué había sin reconstruirlo. `motivoVisible` va solo
+      // por nombre: es texto. Si la prueba cambió (también su primer mes y su
+      // bolsa, que se deciden solos), va entera antes y después (`prueba`).
       const valor = (v: unknown) => v instanceof FieldValue ? null
         : v instanceof Timestamp ? v.toMillis() : v;
+      const pedidoDe = (k: string) => k in cambios ? cambios[k] : k in umbrales ? umbrales[k]
+        : k in prepago ? prepago[k] : datos[k];
+      const conValor = otros.filter((k) => k !== 'motivoVisible');
       tx.create(refAuditoria.doc(), {
         accion: 'estado_cuenta', uid, en: ahora, campos: otros,
-        valores: Object.fromEntries(otros
-          .filter((k) => k !== 'motivoVisible')
-          .map((k) => [k, valor(k in cambios ? cambios[k] : k in umbrales ? umbrales[k] : prepago[k])])),
+        valores: Object.fromEntries(conValor.map((k) => [k, valor(pedidoDe(k))])),
+        antes: Object.fromEntries(conValor.map((k) => [k, valor(actual[k] ?? null)])),
+        ...(Object.keys(prueba).length ? { prueba: { antes: pruebaActual(actual), despues: pruebaActual(combinada) } } : {}),
       });
     }
     return nuevos;

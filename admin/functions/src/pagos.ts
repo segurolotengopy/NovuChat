@@ -73,7 +73,7 @@ import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from
 import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
-  corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoUsdDe,
+  corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoFueraDeContrato, montoUsdDe,
   type CuentaCruda, type Pago,
 } from './prepago.js';
 
@@ -410,6 +410,14 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion, soltar: 
   // por esa revisión, no se aplica.
   if (cambioDePlan && confirmacion.origen === 'banco' && !cambioAutorizado(pago.datos)) {
     throw new Error(`el pago ${ultimos4(pago.id)} cambiaría el plan sin autorización del propietario`);
+  }
+  // NI A UN PRECIO FUERA DE CONTRATO (F1b): una mensualidad emitida a un
+  // importe que la cuenta ya no cobra (se fijó o se quitó un precio por
+  // contrato después de emitir el QR) no se acredita sola. El cliente del
+  // cobrador la deja en revisión (`precio_distinto`) antes de llegar acá; esto
+  // es la red. El propietario sí la confirma, con motivo (`confirmarPendiente`).
+  if (confirmacion.origen === 'banco' && montoFueraDeContrato(pago.datos, pago.cuenta)) {
+    throw new Error(`el pago ${ultimos4(pago.id)} está fuera del precio de la cuenta: va a revisión del propietario`);
   }
   let cambioDeLimites: CambioDeLimites | null = null;
   if (cambioDePlan) {
@@ -819,12 +827,20 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
     if (!enteroEntre(montoRecibidoBs, 0, MONTO_RECIBIDO_MAXIMO)) {
       throw new HttpsError('invalid-argument', 'montoRecibidoBs tiene que ser un entero en bolivianos.');
     }
-    const montoUsd = montoUsdDe(pedido);
+    // EL IMPORTE ES EL DE LA CUENTA (F1b): una mensualidad se cobra al precio
+    // por contrato si la cuenta tiene uno (`precioMensualDe`), si no al del
+    // plan. «El pago manual acepta el precio del contrato»: lo recibido que
+    // coincide con él no pide motivo. Y uno que no coincide —el de lista de
+    // una cuenta con contrato, o cualquier otro— es un descuento o un recargo
+    // y exige `motivoDiferencia`, como siempre: nunca pasa en silencio. Se
+    // vuelve a comprobar dentro de la transacción, contra la cuenta releída.
+    const cuentaDelPrecio = (await db().doc(`tenants/${tenantId}/cuenta/estado`).get()).data() ?? {};
+    const montoUsd = montoUsdDe(pedido, cuentaDelPrecio);
     const monto = importeBs(montoUsd, tcoAplicado);
     const motivoDiferencia = texto(datos['motivoDiferencia'], 300);
     if (montoRecibidoBs !== monto && !motivoDiferencia) {
       throw new HttpsError('invalid-argument',
-        `Lo recibido (${montoRecibidoBs} Bs) no es el importe de la lista (${monto} Bs): motivoDiferencia es obligatorio.`);
+        `Lo recibido (${montoRecibidoBs} Bs) no es el importe de la cuenta (${monto} Bs, USD ${montoUsd}): motivoDiferencia es obligatorio.`);
     }
 
     // LA CLAVE DE IDEMPOTENCIA. Sin ella, un reintento del navegador tras un
@@ -921,6 +937,14 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
       }
       if (pagoDoc.exists) throw new HttpsError('already-exists', 'Ese pagoId ya existe.');
       const cuenta = cuentaDoc.data() ?? {};
+      // EL PRECIO NO CAMBIÓ POR EL CAMINO (F1b): si entre la validación y esta
+      // transacción alguien fijó o quitó un precio por contrato, el importe
+      // comparado con lo recibido ya no es el de la cuenta. No se adivina: se
+      // pide repetir, y la vista previa mostrará el importe nuevo.
+      if (Math.abs(montoUsdDe(pedido, cuenta) - montoUsd) > 0.005) {
+        throw new HttpsError('failed-precondition',
+          'El precio de la cuenta cambió mientras se cargaba el pago: revise el importe y vuelva a intentar.');
+      }
       // SE VUELVE A MIRAR EL PENDIENTE, SIEMPRE, sin confiar en lo que dijo
       // `anular`: si la cuenta todavía apunta a un pago `pendiente` (el mismo
       // que no se cerró, u otro que apareció en el medio), no se carga nada.

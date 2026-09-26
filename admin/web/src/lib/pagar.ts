@@ -21,9 +21,38 @@ import {
   aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, modalidadDe, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
-import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, type IdPlanVendible } from './planes';
+import { PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, limitesDeCuenta, type IdPlanVendible } from './planes';
+import { porContratoDe, precioMensualDe, precioPorContratoDe } from '../../../functions/src/planes';
 
 export type { Pago, TipoCambio };
+
+/**
+ * LO QUE LA CUENTA PAGA Y RECIBE POR UN PLAN, para pintarlo (F1b). Con precio
+ * por contrato, el precio es el del contrato (`precioMensualDe`, la misma
+ * función con que el servidor emite el QR), no el de la lista; y las
+ * conversaciones, las de la copia de la cuenta si van por contrato
+ * (`porContratoDe`), que un cambio de plan conserva. Así «Pagar» y el
+ * formulario de pago manual dicen lo mismo que el cobro.
+ */
+export interface PlanDeLaCuenta {
+  nombre: string;
+  precioUsd: number;
+  precioPorContrato: boolean;
+  conversaciones: number;
+  conversacionesPorContrato: boolean;
+}
+
+export function planDeLaCuenta(cuenta: CuentaCruda | null | undefined, plan: PlanEnVenta): PlanDeLaCuenta {
+  const c = (cuenta ?? null) as Record<string, unknown> | null;
+  const conversacionesPorContrato = porContratoDe(c).includes('conversaciones');
+  return {
+    nombre: PLANES[plan].nombre,
+    precioUsd: precioMensualDe(c, plan),
+    precioPorContrato: precioPorContratoDe(c) !== null,
+    conversaciones: conversacionesPorContrato ? limitesDeCuenta(c).conversaciones : PLANES[plan].conversaciones,
+    conversacionesPorContrato,
+  };
+}
 
 /** Un plan que se puede contratar y pagar. El interno de demostración no entra. */
 export type PlanEnVenta = IdPlanVendible;
@@ -127,7 +156,8 @@ export function vistaDelPedido(
 ): VistaDelPedido | null {
   if (!esPago(pedido)) return null;
   const tipoCambio = tipoCambioVigente(tipoCambioCrudo, ahoraMs);
-  const montoUsd = montoUsdDe(pedido);
+  // Al precio de la CUENTA (F1b): el del contrato si tiene uno, como el QR.
+  const montoUsd = montoUsdDe(pedido, cuenta ?? null);
   const tras = aplicarPago(cuenta, pedido, ahoraMs);
   return {
     descripcion: descripcionDe(pedido),

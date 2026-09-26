@@ -68,10 +68,10 @@ import {
   VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador, type RespuestaCrear,
 } from './cobrador.js';
 import {
-  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, modalidadDe, montoUsdDe, type CuentaCruda,
+  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, modalidadDe, montoFueraDeContrato, montoUsdDe, type CuentaCruda,
 } from './prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
-import { planQuePuedePedir } from './planes.js';
+import { planQuePuedePedir, precioMensualDe } from './planes.js';
 import { exigirSesionReciente } from './autorizacion.js';
 import {
   auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, puertaDePagos,
@@ -293,8 +293,11 @@ export async function crearCobroInterno(
     if (e instanceof SinTipoDeCambio) throw new HttpsError('failed-precondition', 'No hay tipo de cambio del día: no se puede emitir el cobro.');
     throw e;
   }
-  const montoUsd = montoUsdDe(pedido);
-  const monto = importeBs(montoUsd, tc.tco);
+  // EL IMPORTE SE DECIDE EN LA RESERVA, contra la cuenta leída en la
+  // transacción (F1b): una mensualidad cuesta `precioMensualDe(cuenta)`, el
+  // precio por contrato si la cuenta tiene uno. Nadie lo manda desde afuera:
+  // ni la consola ni el WhatsApp pueden pedir un QR por otro importe.
+  const tco = tc.tco;
   const vigenciaHoras = configCobradorDe(plataformaDoc.data())?.vigenciaHoras ?? VIGENCIA_HORAS_POR_DEFECTO;
   const descripcion = descripcionDe(pedido);
 
@@ -358,6 +361,8 @@ export async function crearCobroInterno(
     }
     const pendienteId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
       ? cuenta['pagoPendienteId'] : null;
+    const montoUsd = montoUsdDe(pedido, cuenta);
+    const monto = importeBs(montoUsd, tco);
 
     if (pendienteId) {
       const pDoc = await tx.get(db().doc(`tenants/${tenantId}/pagos/${pendienteId}`));
@@ -386,7 +391,10 @@ export async function crearCobroInterno(
             && (pedido.tipo !== 'mensualidad' || (p['plan'] === pedido.plan && p['meses'] === pedido.meses))
             && (pedido.tipo !== 'bolsa' || p['cantidad'] === pedido.cantidad);
           if (!mismo) throw new HttpsError('failed-precondition', 'Hay un cobro reservado con otro pedido. Cancélelo antes de emitir otro.', vivo);
-          return { pagoId: pendienteId, fichaQr: cobro?.fichaQr ?? '', reutilizado: true, cobroId: sinImagen ? cobro.id : null };
+          return {
+            pagoId: pendienteId, fichaQr: cobro?.fichaQr ?? '', reutilizado: true, cobroId: sinImagen ? cobro.id : null,
+            montoUsd, monto,
+          };
         }
         // QR vivo, o vencido según el reloj: en los dos casos hay que cerrarlo
         // antes (lo cierra el barrido, o `anularPagoPendiente` de A-1).
@@ -422,10 +430,10 @@ export async function crearCobroInterno(
     tx.create(db().doc(`cobrosPendientes/${pagoId}`), {
       tenantId, pagoId, cobroId: null, estado: 'SIN_EMITIR', fichaQr, venceEn: null, creadoEn: ahora,
     });
-    return { pagoId, fichaQr, reutilizado: false, cobroId: null as string | null };
+    return { pagoId, fichaQr, reutilizado: false, cobroId: null as string | null, montoUsd, monto };
   });
 
-  const { pagoId, fichaQr, reutilizado } = reserva;
+  const { pagoId, fichaQr, reutilizado, montoUsd, monto } = reserva;
   const r = refs(tenantId, pagoId);
 
   // 2. Pedir el QR (o solo su imagen, si el cobro ya existe y lo que faltó fue guardarla).
@@ -634,6 +642,27 @@ export async function aplicarEstadoDelCobrador(
             aplicado: false, estado: 'pendiente',
             ...(yaVisto ? {} : { auditoria: { accion: 'pago_plan_distinto', detalle: {
               pagoId, cobroId: cobro.id, via: origen.via, planPedido, planVigente: planVigente ?? null, recibido: montoRecibidoBs,
+            } } }),
+          };
+        }
+        // UN PRECIO FUERA DE CONTRATO NO SE APLICA SOLO (F1b). El QR se emitió
+        // a un importe que la cuenta ya no cobra: se le fijó o quitó un precio
+        // por contrato después de emitirlo, o cambió la lista. El mismo patrón
+        // que el plan distinto: queda pendiente con el cobro CONFIRMADO y
+        // `revision: 'precio_distinto'`, y lo resuelve el propietario desde
+        // Negocios (`confirmarPendiente`, con motivo). La plata entró; lo que
+        // no se hace es darle a la cuenta un mes a un precio que no pactó.
+        if (montoFueraDeContrato(p, cuentaDoc.data())) {
+          const yaVisto = guardado?.estado === 'CONFIRMADO';
+          tx.update(r.pago, {
+            'cobro.estado': 'CONFIRMADO', 'cobro.id': cobro.id, montoRecibidoBs, revision: 'precio_distinto', actualizadoEn: ahora,
+          });
+          anotarIndice('CONFIRMADO');
+          return {
+            aplicado: false, estado: 'pendiente',
+            ...(yaVisto ? {} : { auditoria: { accion: 'pago_precio_distinto', detalle: {
+              pagoId, cobroId: cobro.id, via: origen.via, montoUsd: p['montoUsd'] ?? null,
+              precioVigenteUsd: precioMensualDe(cuentaDoc.data() ?? {}, p['plan']), recibido: montoRecibidoBs,
             } } }),
           };
         }

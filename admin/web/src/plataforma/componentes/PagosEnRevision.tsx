@@ -76,6 +76,12 @@ function FilaEnRevision({ pago, planVigente, ocupado, onConfirmar }: {
       {pago.motivo === 'importe_menor' && (
         <p className="ayuda">Entró menos de lo que dice el QR: el motivo explica la diferencia.</p>
       )}
+      {pago.motivo === 'precio_distinto' && (
+        <p className="ayuda">
+          El QR se emitió a un precio que la cuenta ya no cobra (se fijó o se quitó un precio por contrato
+          después de emitirlo). La plata entró; confirmarlo suma el mes a ese importe, y el motivo explica por qué.
+        </p>
+      )}
       <label htmlFor={idRecibido}>Lo que entró, en bolivianos</label>
       <input id={idRecibido} type="text" inputMode="numeric" value={recibido} disabled={ocupado || preguntando}
         onChange={(e) => setRecibido(e.target.value)} />

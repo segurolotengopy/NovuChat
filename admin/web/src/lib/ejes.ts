@@ -28,16 +28,34 @@ import {
   modeloDe as modeloDeFicha, titularidadDe as titularidadDeRuta,
   type Modelo, type Titularidad,
 } from '../../../functions/src/central/ejes';
+// LO QUE VA POR CONTRATO (F1b): las validaciones y las lecturas del precio y
+// de la prueba son las del servidor, importadas del módulo puro como todo lo
+// demás de esta carpeta. El campo de la pantalla valida con el MISMO
+// predicado con que el servidor rechaza.
+import {
+  LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, conversacionesValidas, precioMensualDe, precioPorContratoDe,
+  precioPorContratoValido,
+} from '../../../functions/src/planes';
+import {
+  BOLSA_PRUEBA_MAXIMA, bolsaPruebaValida, esPeriodo, inicioDePrueba, mesBolivia,
+} from '../../../functions/src/prepago';
 
 export { MODALIDADES, esModalidad, modalidadDe, MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad };
 export type { Modalidad, Modelo, Titularidad };
+export {
+  BOLSA_PRUEBA_MAXIMA, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, bolsaPruebaValida, conversacionesValidas,
+  precioMensualDe, precioPorContratoDe, precioPorContratoValido,
+};
 
 // -----------------------------------------------------------------------------
 // LAS CALLABLES, POR NOMBRE
 // -----------------------------------------------------------------------------
 
 export const CALLABLES = {
-  /** Plan, modalidad, umbrales, motivo visible, corte por tenant y cambios incluidos por contrato. */
+  /**
+   * Plan, modalidad, umbrales, motivo visible, corte por tenant y lo que va
+   * por contrato: cambios incluidos, conversaciones, precio y la prueba.
+   */
   cuenta: 'actualizarEstadoCuenta',
   /** Titularidad por número y modelo por tenant (solo propietario). */
   ejes: 'asignarEjes',
@@ -86,7 +104,15 @@ export interface EjesDeCuenta {
     porContrato?: string[];
     /** Cuántos cambios trae el plan de la cuenta, para decir «el plan trae N». */
     cambiosIncluidosDelPlan?: number;
+    /** Cuántas conversaciones trae el plan de la cuenta (F1b), para decir «el plan trae N». */
+    conversacionesDelPlan?: number;
   };
+  /**
+   * LA MENSUALIDAD QUE RIGE (F1b): la del contrato si la cuenta tiene una, si
+   * no la del plan. Opcional: un servidor anterior no la manda, y entonces la
+   * pantalla usa la del plan sin afirmar ningún contrato.
+   */
+  precio?: { mensualUsd: number; porContrato: number | null; delPlanUsd: number };
   modalidad: Modalidad;
   modalidadExplicita: boolean;
   modelo: Modelo;
@@ -100,10 +126,43 @@ export interface EjesDeCuenta {
  * (uno anterior a este campo): en ese caso la pantalla no afirma ninguno.
  */
 export function origenDeCambiosIncluidos(ejes: Pick<EjesDeCuenta, 'limites'> | null | undefined): 'contrato' | 'plan' | null {
+  return origenPorContrato(ejes, 'cambiosIncluidos');
+}
+
+/**
+ * LO MISMO PARA CUALQUIER CLAVE POR CONTRATO (F1b: `cambiosIncluidos` y
+ * `conversaciones`): `contrato`, `plan`, o `null` si el servidor no lo dijo.
+ */
+export function origenPorContrato(
+  ejes: Pick<EjesDeCuenta, 'limites'> | null | undefined, clave: 'cambiosIncluidos' | 'conversaciones',
+): 'contrato' | 'plan' | null {
   const por = ejes?.limites.porContrato;
   if (!Array.isArray(por)) return null;
-  return por.includes('cambiosIncluidos') ? 'contrato' : 'plan';
+  return por.includes(clave) ? 'contrato' : 'plan';
 }
+
+/**
+ * LA PRUEBA DE UNA CUENTA, PARA PINTARLA (F1b): su primer y su último mes y
+ * la bolsa que queda. `null` si la cuenta no tiene un período de prueba sano.
+ * `desde` sale de `inicioDePrueba`, la misma lectura que `estadoDeServicio`.
+ */
+export function pruebaDeCuenta(cuenta: CuentaCruda | null | undefined): { desde: string; hasta: string; bolsa: number | null } | null {
+  const hasta = cuenta?.periodoPrueba;
+  if (!esPeriodo(hasta)) return null;
+  const bolsa = cuenta?.bolsaPrueba;
+  return { desde: inicioDePrueba(cuenta), hasta, bolsa: typeof bolsa === 'number' && Number.isFinite(bolsa) ? bolsa : null };
+}
+
+/**
+ * ¿Es un último mes de prueba que el servidor aceptaría? Un `aaaa-mm` que no
+ * es anterior al mes en curso de Bolivia (`pruebaNueva` rechaza los pasados).
+ * La modalidad la mira el servidor contra la cuenta.
+ */
+export const periodoPruebaAceptable = (v: unknown, ahoraMs: number): v is string =>
+  esPeriodo(v) && v >= mesBolivia(ahoraMs);
+
+/** El mes en curso de Bolivia (`aaaa-mm`): el mínimo del campo del último mes de prueba. */
+export const mesEnCurso = (ahoraMs: number): string => mesBolivia(ahoraMs);
 
 // -----------------------------------------------------------------------------
 // MODALIDAD — las palabras nuevas sobre los valores del servidor

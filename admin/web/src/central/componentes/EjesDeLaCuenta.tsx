@@ -35,7 +35,12 @@ export function EjesDeLaCuenta({ ejes, tipoCambio, ahoraMs }: {
   if (ejes === undefined) return <p className="text-muted">Leyendo los ejes de la cuenta…</p>;
   if (ejes === null) return <p className="text-muted">No se pudieron leer los ejes de la cuenta.</p>;
   const plan = nombreDePlan(ejes.plan);
-  const precioUsd = precioUsdDe(ejes.plan);
+  // LA MENSUALIDAD QUE RIGE (F1b): la que manda el servidor en `precio` —la
+  // del contrato si la cuenta tiene una— y, con un servidor anterior, la del
+  // plan. Es la misma cifra que cobra el QR: el comercio no ve la lista si
+  // pactó otro precio.
+  const precioUsd = ejes.precio?.mensualUsd ?? precioUsdDe(ejes.plan);
+  const porContrato = ejes.precio !== undefined && ejes.precio.porContrato !== null;
   const tc = tipoCambioVigente(tipoCambio, ahoraMs);
   return (
     <table className="ejes-cuenta">
@@ -55,7 +60,7 @@ export function EjesDeLaCuenta({ ejes, tipoCambio, ahoraMs }: {
             <strong>{plan ?? <TextoSeguro valor={ejes.plan ?? '—'} maxLargo={40} />}</strong>
             {precioUsd !== null && (
               <>
-                {' '}· USD {precioUsd} al mes
+                {' '}· USD {precioUsd} al mes{porContrato && <span className="text-muted"> (precio por contrato)</span>}
                 {tc
                   ? <span className="text-muted"> · Bs {importeBs(precioUsd, tc.tco)} al tipo de cambio oficial de {tc.tco} del {tc.fecha}</span>
                   : <span className="text-muted"> · sin tipo de cambio del día para decirlo en bolivianos</span>}

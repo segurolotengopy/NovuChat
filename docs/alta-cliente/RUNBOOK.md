@@ -98,6 +98,8 @@ Después, siempre **primero en seco** y luego con `--aplicar`:
 ```bash
 node admin/scripts/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>"
 node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --plan <impulso|crecimiento|pro> [--modalidad <demostracion|prueba|prepago>]
+# Solo si el comercio firmó un contrato a medida (F1b), en la misma corrida o después:
+node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> [--conversaciones <N|plan>] [--cambios <N|plan>] [--precio <USD|plan>] [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>]
 node admin/scripts/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
 node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
@@ -110,6 +112,28 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   `--aplicar`) cambia el plan, la copia, el espejo de la ficha y deja la
   auditoría. El plan sale del catálogo de `admin/functions/src/planes.ts`: no
   hay texto libre. Desde F1 (26/09) `demostracion` es una **modalidad**, no un plan: los demos son Pro con modalidad demostración. `--operador` es obligatorio en `asignar-plan.mjs` y `asignar-numero.mjs`: es quien queda en la auditoría. La modalidad (`demostracion`, `prueba`, `prepago`, que la consola muestra como «Producción»), el modelo y la titularidad del número se fijan con el mismo script o desde Negocios.
+- **Lo pactado fuera de la lista va POR CONTRATO (F1b, decisión de Andres del
+  26/09/2026).** Un contrato a medida no es un plan nuevo: es el plan de lista
+  más la copia de la cuenta fijada a mano, con el mismo script o desde
+  Negocios (fila de cada eje, con sesión reciente). Todo con `--operador`, en
+  seco primero, y con auditoría del antes y el después:
+  - `--conversaciones N` (1 a 100.000) y `--cambios N` (0 a 100): la copia
+    `cuenta/estado.limites` manda sobre el plan, y un cambio de plan posterior
+    **la conserva**. `plan` en lugar de `N` la quita.
+  - `--precio USD` (más de 0 y hasta 1.000, con punto y hasta dos decimales:
+    `120`, `37.50`): la mensualidad pactada (`precioPorContrato`). Manda sobre
+    el precio del plan en **todo** lo que cobra: el QR de Pagar, el pago manual
+    de Negocios (que la acepta sin motivo y pide motivo para cualquier otro
+    importe), los recordatorios y `montoMensual`. Un cambio de plan no la toca;
+    `--precio plan` la quita. Se rechaza si hay una mensualidad pendiente que
+    quedaría fuera de contrato: primero se anula el cobro.
+  - Conversaciones y precio van **siempre juntos y decididos**: más
+    conversaciones sin precio es regalar consumo (`docs/base-comercial.md`).
+  - `--periodo-prueba aaaa-mm` y `--bolsa-prueba N` (1 a 1.000): una prueba
+    pactada distinta de la de lista (un mes y 20 conversaciones). Solo con
+    modalidad prueba (la que tiene, o `--modalidad prueba` en la misma
+    corrida); el mes no puede ser pasado. Detalle en
+    `docs/pase-a-produccion/RUNBOOK.md` §3.1.
 - `contar-catalogo.mjs` en seco **comprueba** que el contador exista y coincida
   con los productos. Un comercio nuevo no lo necesita con `--aplicar`; uno dado
   de alta **antes del 15/09** sí, una vez, antes de desplegar las reglas del

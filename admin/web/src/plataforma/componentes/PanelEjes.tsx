@@ -3,8 +3,10 @@ import { Confirmacion } from './Confirmacion';
 import { TextoSeguro } from '../../componentes/TextoSeguro';
 import { ContadorCambios } from '../../central/componentes/ContadorCambios';
 import {
-  DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO, ETIQUETA_TITULARIDAD,
-  MODALIDADES, MODELOS, TITULARIDADES, modalidadDe, origenDeCambiosIncluidos,
+  BOLSA_PRUEBA_MAXIMA, DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO,
+  ETIQUETA_TITULARIDAD, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MODALIDADES, MODELOS, TITULARIDADES,
+  bolsaPruebaValida, conversacionesValidas, mesEnCurso, modalidadDe, origenDeCambiosIncluidos, origenPorContrato,
+  periodoPruebaAceptable, precioMensualDe, precioPorContratoDe, precioPorContratoValido, pruebaDeCuenta,
   type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
 } from '../../lib/ejes';
 import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
@@ -54,6 +56,17 @@ export interface PanelEjesProps {
    * con `cambiosIncluidos`); `null` quita el contrato y vuelve a regir el del plan.
    */
   onCambiosIncluidos: (cambios: number | null) => void;
+  /**
+   * F1b. Fija POR CONTRATO las conversaciones incluidas al mes
+   * (`actualizarEstadoCuenta` con `conversaciones`); `null` vuelve a las del plan.
+   * Opcional para no romper una página que todavía no lo conecta: sin él, la
+   * fila solo muestra.
+   */
+  onConversaciones?: (conversaciones: number | null) => void;
+  /** F1b. Fija la mensualidad POR CONTRATO en USD (`precioPorContrato`); `null` vuelve a la del plan. */
+  onPrecio?: (precioUsd: number | null) => void;
+  /** F1b. Fija o extiende el último mes de la prueba y/o su bolsa (`periodoPrueba`, `bolsaPrueba`). */
+  onPrueba?: (prueba: { periodoPrueba?: string; bolsaPrueba?: number }) => void;
 }
 
 const PLANES_VENDIBLES = Object.keys(PLANES) as IdPlanVendible[];
@@ -69,12 +82,24 @@ export function PanelEjes(p: PanelEjesProps) {
       <table>
         <tbody>
           <SeccionPlan {...p} />
+          {/* La clave lleva el precio por contrato: al confirmarse, la fila vuelve a nacer con el del servidor. */}
+          <SeccionPrecio key={`precio:${precioPorContratoDe(p.cuenta) ?? 'plan'}:${String(p.cuenta?.['plan'] ?? '')}`} {...p} />
           <SeccionModalidad {...p} />
+          <SeccionPrueba key={`prueba:${String(p.cuenta?.['periodoPrueba'] ?? '')}:${String(p.cuenta?.['bolsaPrueba'] ?? '')}`} {...p} />
           <SeccionTitularidad {...p} />
           {p.ejes ? <SeccionModelo {...p} modeloActual={p.ejes.modelo} /> : (
             <tr><th>Modelo de IA</th><td className="text-muted">{p.ejes === undefined ? 'Leyendo…' : 'No se pudo leer.'}</td></tr>
           )}
           <SeccionUmbrales {...p} />
+          <tr>
+            <th>Conversaciones incluidas</th>
+            <td>
+              {p.ejes
+                ? <ConversacionesPorContrato key={`${p.ejes.limites.conversaciones}:${origenPorContrato(p.ejes, 'conversaciones') ?? '?'}`}
+                    ejes={p.ejes} ocupado={p.ocupado} onConversaciones={p.onConversaciones} />
+                : <span className="text-muted">{p.ejes === undefined ? 'Leyendo…' : 'No se pudo leer.'}</span>}
+            </td>
+          </tr>
           <tr>
             <th>Cambios incluidos</th>
             <td>
@@ -109,6 +134,8 @@ function SeccionPlan(p: PanelEjesProps) {
         <p>
           <strong>{nombre ?? <TextoSeguro valor={actual} maxLargo={40} />}</strong>
           {esPlanVendible(actual) && <> · USD {PLANES[actual].precioUsd} al mes
+            {/* Con precio por contrato, el del plan es solo la lista: la mensualidad es la de la fila «Precio». */}
+            {precioPorContratoDe(p.cuenta) !== null && <span className="text-muted"> de lista</span>}
             {tc && <span className="text-muted"> · Bs {importeBs(PLANES[actual].precioUsd, tc.tco)} al {tc.tco} del {tc.fecha}</span>}</>}
         </p>
         <label htmlFor="eje-plan">Cambiar a</label>{' '}
@@ -355,6 +382,192 @@ function CambiosPorContrato({ ejes, ocupado, onCambiosIncluidos }: {
       )}
       {!valido && <p className="field-error">Un entero de 0 a {MAXIMO_CAMBIOS_INCLUIDOS}.</p>}
     </div>
+  );
+}
+
+/**
+ * LAS CONVERSACIONES INCLUIDAS, CON SU ORIGEN (F1b): las del plan o las del
+ * contrato. Mismo patrón que los cambios incluidos: se fijan acá POR
+ * CONTRATO, un cambio de plan posterior las CONSERVA (`copiaDeLimites`), y
+ * volver a las del plan es explícito. El tope es el del servidor
+ * (`LIMITE_MAXIMO`, `conversacionesValidas`). Como cambian lo que cuesta
+ * atender al comercio, la confirmación lo recuerda: van con un precio decidido.
+ * Los botones llevan su propio nombre para no confundirse con los de los
+ * cambios incluidos.
+ */
+function ConversacionesPorContrato({ ejes, ocupado, onConversaciones }: {
+  ejes: EjesDeCuenta; ocupado: boolean; onConversaciones: PanelEjesProps['onConversaciones'];
+}) {
+  const actual = ejes.limites.conversaciones;
+  const origen = origenPorContrato(ejes, 'conversaciones');
+  const delPlan = ejes.limites.conversacionesDelPlan;
+  const [valor, setValor] = useState(String(actual));
+  const [pendiente, setPendiente] = useState<'fijar' | 'plan' | null>(null);
+  const n = Number(valor);
+  const valido = /^[0-9]+$/.test(valor.trim()) && conversacionesValidas(n);
+  const cambia = valido && (n !== actual || origen !== 'contrato');
+  const sinAccion = !onConversaciones;
+  return (
+    <div className="conversaciones-por-contrato">
+      <p>
+        <strong>{actual}</strong> {actual === 1 ? 'conversación incluida' : 'conversaciones incluidas'} al mes
+        {origen === 'contrato' && <span className="text-muted"> · por contrato{delPlan !== undefined && <> (el plan trae {delPlan})</>}</span>}
+        {origen === 'plan' && <span className="text-muted"> · las del plan</span>}
+      </p>
+      <label htmlFor="eje-conversaciones">Por contrato</label>{' '}
+      <input id="eje-conversaciones" type="number" min={1} max={LIMITE_MAXIMO} value={valor}
+        disabled={ocupado || pendiente !== null || sinAccion} onChange={(e) => setValor(e.target.value)} style={{ width: '7em' }} />{' '}
+      {pendiente === 'fijar' && onConversaciones && (
+        <Confirmacion ocupado={ocupado}
+          resumen={`Conversaciones incluidas: ${actual}${origen === 'contrato' ? ' por contrato' : ' del plan'} → ${n} por contrato`}
+          advertencia="Cambia lo que cuesta atender a este comercio: va con un precio decidido. Un cambio de plan posterior lo conserva. Queda en la auditoría."
+          onConfirmar={() => { onConversaciones(n); setPendiente(null); }}
+          onCancelar={() => setPendiente(null)} />
+      )}
+      {pendiente === 'plan' && onConversaciones && (
+        <Confirmacion ocupado={ocupado}
+          resumen={`Conversaciones incluidas: ${actual} por contrato → las del plan${delPlan !== undefined ? ` (${delPlan})` : ''}`}
+          advertencia="Se quita el contrato: desde ahora rigen las del plan, y siguen al plan si cambia."
+          onConfirmar={() => { onConversaciones(null); setPendiente(null); }}
+          onCancelar={() => setPendiente(null)} />
+      )}
+      {pendiente === null && (
+        <>
+          <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !cambia || sinAccion}
+            onClick={() => setPendiente('fijar')}>Fijar las conversaciones por contrato</button>{' '}
+          <button type="button" className="btn btn-ghost btn-chico" disabled={ocupado || origen !== 'contrato' || sinAccion}
+            onClick={() => setPendiente('plan')}>Volver a las del plan</button>
+        </>
+      )}
+      {!valido && <p className="field-error">Un entero de 1 a {LIMITE_MAXIMO}.</p>}
+    </div>
+  );
+}
+
+/**
+ * EL PRECIO, CON SU ORIGEN (F1b): la mensualidad del contrato o la del plan.
+ * Se lee de la cuenta en vivo con `precioMensualDe` y `precioPorContratoDe`,
+ * las mismas funciones con que el servidor emite el QR y deriva
+ * `montoMensual`. El campo valida con `precioPorContratoValido` (más de 0,
+ * hasta `MAXIMO_PRECIO_POR_CONTRATO_USD`, dos decimales como mucho), que es lo
+ * mismo que rechaza el servidor. Un cambio de plan no toca el precio por
+ * contrato; los meses ya pagados no se re-tarifan.
+ */
+function SeccionPrecio(p: PanelEjesProps) {
+  const contrato = precioPorContratoDe(p.cuenta);
+  const mensual = precioMensualDe(p.cuenta);
+  const delPlan = precioMensualDe({ plan: p.cuenta?.['plan'] });
+  const tc = tipoCambioVigente(p.tipoCambio, p.ahoraMs);
+  const [valor, setValor] = useState(String(mensual));
+  const [pendiente, setPendiente] = useState<'fijar' | 'plan' | null>(null);
+  const n = Number(valor);
+  const valido = /^[0-9]{1,4}(\.[0-9]{1,2})?$/.test(valor.trim()) && precioPorContratoValido(n);
+  const cambia = valido && (n !== mensual || contrato === null);
+  const sinAccion = !p.onPrecio;
+  return (
+    <tr>
+      <th>Precio</th>
+      <td>
+        <p>
+          <strong>USD {mensual}</strong> al mes
+          {contrato !== null
+            ? <span className="text-muted"> · por contrato (el plan cuesta USD {delPlan})</span>
+            : <span className="text-muted"> · el del plan</span>}
+          {tc && <span className="text-muted"> · Bs {importeBs(mensual, tc.tco)} al {tc.tco} del {tc.fecha}</span>}
+        </p>
+        <label htmlFor="eje-precio">USD al mes por contrato</label>{' '}
+        <input id="eje-precio" type="number" min={0.01} step={0.01} max={MAXIMO_PRECIO_POR_CONTRATO_USD} value={valor}
+          disabled={p.ocupado || pendiente !== null || sinAccion} onChange={(e) => setValor(e.target.value)} style={{ width: '7em' }} />{' '}
+        {pendiente === 'fijar' && p.onPrecio && (
+          <Confirmacion ocupado={p.ocupado}
+            resumen={`Precio: USD ${mensual}${contrato !== null ? ' por contrato' : ' del plan'} → USD ${n} por contrato`}
+            advertencia="Rige para los próximos cobros (QR, pago manual y recordatorios); los meses ya pagados no cambian. Un cambio de plan lo conserva. Si hay un cobro pendiente que quedaría fuera de contrato, el servidor lo rechaza."
+            onConfirmar={() => { p.onPrecio?.(n); setPendiente(null); }}
+            onCancelar={() => setPendiente(null)} />
+        )}
+        {pendiente === 'plan' && p.onPrecio && (
+          <Confirmacion ocupado={p.ocupado}
+            resumen={`Precio: USD ${mensual} por contrato → el del plan (USD ${delPlan})`}
+            advertencia="Se quita el contrato: desde el próximo cobro rige el precio del plan, y sigue al plan si cambia."
+            onConfirmar={() => { p.onPrecio?.(null); setPendiente(null); }}
+            onCancelar={() => setPendiente(null)} />
+        )}
+        {pendiente === null && (
+          <>
+            <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || !cambia || sinAccion}
+              onClick={() => setPendiente('fijar')}>Fijar el precio por contrato</button>{' '}
+            <button type="button" className="btn btn-ghost btn-chico" disabled={p.ocupado || contrato === null || sinAccion}
+              onClick={() => setPendiente('plan')}>Volver al precio del plan</button>
+          </>
+        )}
+        {!valido && <p className="field-error">Un monto en dólares mayor que 0 y de hasta {MAXIMO_PRECIO_POR_CONTRATO_USD}, con dos decimales como mucho.</p>}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * LA PRUEBA POR CONTRATO (F1b): su último mes y su bolsa. Solo tiene sentido
+ * en modalidad prueba —el servidor rechaza fijarla en otra (`pruebaNueva`)—,
+ * así que fuera de ella la fila lo dice y no ofrece nada. Extender la prueba
+ * cubre sin huecos desde su primer mes; la bolsa NO se reinicia sola: si hace
+ * falta, se fija en el mismo paso. El mes no puede ser pasado (el campo nace
+ * con el mínimo del mes en curso, y el servidor igual lo valida).
+ */
+function SeccionPrueba(p: PanelEjesProps) {
+  const enPrueba = modalidadDe(p.cuenta) === 'prueba';
+  const prueba = pruebaDeCuenta(p.cuenta);
+  const minimo = mesEnCurso(p.ahoraMs);
+  const [hasta, setHasta] = useState(prueba?.hasta ?? minimo);
+  const [bolsa, setBolsa] = useState(prueba?.bolsa !== null && prueba?.bolsa !== undefined ? String(prueba.bolsa) : '');
+  const [pendiente, setPendiente] = useState(false);
+  const periodoOk = periodoPruebaAceptable(hasta, p.ahoraMs);
+  const nBolsa = Number(bolsa);
+  const bolsaOk = bolsa.trim() === '' || (/^[0-9]+$/.test(bolsa.trim()) && bolsaPruebaValida(nBolsa));
+  const pedido: { periodoPrueba?: string; bolsaPrueba?: number } = {
+    ...(periodoOk && hasta !== prueba?.hasta ? { periodoPrueba: hasta } : {}),
+    ...(bolsa.trim() !== '' && bolsaOk && nBolsa !== prueba?.bolsa ? { bolsaPrueba: nBolsa } : {}),
+  };
+  const cambia = periodoOk && bolsaOk && Object.keys(pedido).length > 0;
+  if (!enPrueba) {
+    return (
+      <tr>
+        <th>Prueba</th>
+        <td className="text-muted">
+          Solo en modalidad prueba: primero se cambia la modalidad, y después se fijan acá su último mes y su bolsa.
+        </td>
+      </tr>
+    );
+  }
+  return (
+    <tr>
+      <th>Prueba</th>
+      <td>
+        <p>
+          {prueba
+            ? <>De <strong>{prueba.desde}</strong> a <strong>{prueba.hasta}</strong>
+                {prueba.bolsa !== null && <> · quedan <strong>{prueba.bolsa}</strong> conversaciones de prueba</>}</>
+            : <span className="text-muted">Sin período de prueba.</span>}
+        </p>
+        <label htmlFor="eje-periodo-prueba">Último mes</label>{' '}
+        <input id="eje-periodo-prueba" type="month" min={minimo} value={hasta}
+          disabled={p.ocupado || pendiente || !p.onPrueba} onChange={(e) => setHasta(e.target.value)} />{' '}
+        <label htmlFor="eje-bolsa-prueba">Bolsa de prueba</label>{' '}
+        <input id="eje-bolsa-prueba" type="number" min={1} max={BOLSA_PRUEBA_MAXIMA} value={bolsa}
+          disabled={p.ocupado || pendiente || !p.onPrueba} onChange={(e) => setBolsa(e.target.value)} style={{ width: '6em' }} />{' '}
+        {pendiente && p.onPrueba
+          ? <Confirmacion ocupado={p.ocupado}
+              resumen={`Prueba: ${prueba ? `hasta ${prueba.hasta}` : 'sin período'}${pedido.periodoPrueba ? ` → hasta ${pedido.periodoPrueba}` : ''}`
+                + `${pedido.bolsaPrueba !== undefined ? ` · bolsa ${prueba?.bolsa ?? '—'} → ${pedido.bolsaPrueba}` : ''}`}
+              advertencia="Cubre sin huecos desde el primer mes de la prueba. La bolsa no se reinicia sola al extender. Queda en la auditoría."
+              onConfirmar={() => { p.onPrueba?.(pedido); setPendiente(false); }}
+              onCancelar={() => setPendiente(false)} />
+          : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || !cambia || !p.onPrueba}
+              onClick={() => setPendiente(true)}>Fijar la prueba</button>}
+        {!periodoOk && <p className="field-error">El último mes es aaaa-mm y no puede ser anterior a {minimo}.</p>}
+        {!bolsaOk && <p className="field-error">La bolsa es un entero de 1 a {BOLSA_PRUEBA_MAXIMA}.</p>}
+      </td>
+    </tr>
   );
 }
 

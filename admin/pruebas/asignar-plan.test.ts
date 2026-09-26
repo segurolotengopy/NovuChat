@@ -17,7 +17,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, limitesDe } from '../functions/src/planes.ts';
-import { PRUEBA, mesBolivia } from '../functions/src/prepago.ts';
+import { PRUEBA, estadoDeServicio, mesBolivia, sumarMeses } from '../functions/src/prepago.ts';
 import { cambiosDelMes } from '../functions/src/central/ejes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -419,5 +419,165 @@ describe('asignar-plan.mjs: un QR vivo de otro plan frena --plan (tercera vuelta
     await sembrar('CONFIRMADO', 'confirmado');
     expect(correr('--tenant', Q, '--plan', 'impulso').codigo).toBe(0);
     await nadaCambio();
+  });
+});
+
+// ===========================================================================
+// F1b (decisión de Andres del 26/09/2026): conversaciones, precio y prueba por
+// contrato, con --operador y auditoría con el antes y el después. Las mismas
+// reglas que la callable (`central/contrato-f1b.test.ts`), porque el script
+// usa las mismas funciones puras (`copiaDeLimites`, `precioPorContratoValido`,
+// `pruebaNueva`, `montoFueraDeContrato`).
+// ===========================================================================
+describe('asignar-plan.mjs F1b: --conversaciones, --precio, --periodo-prueba y --bolsa-prueba', () => {
+  const P = 'plan-f1b';
+  const PR = 'plan-f1b-prueba';
+  const MES = mesBolivia(Date.now());
+  const MES_SIGUIENTE = sumarMeses(MES, 1);
+  const MES_PASADO = sumarMeses(MES, -1);
+  const PRO_PREPAGO = { plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12' };
+  const EN_PRUEBA = { plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prueba', periodoPrueba: MES, bolsaPrueba: 7 };
+
+  async function sembrarF1b(t: string, datos: Record<string, unknown>) {
+    for (const col of ['auditoria', 'pagos']) {
+      for (const d of (await db.collection(`tenants/${t}/${col}`).get()).docs) await d.ref.delete();
+    }
+    await db.doc(`tenants/${t}`).set({ nombre: t, estado: 'activo', plan: datos['plan'], flujos: ['agendamiento'] });
+    await db.doc(`tenants/${t}/cuenta/estado`).set(datos);
+  }
+
+  it('valores mal formados NO entran (código 2), y sin --operador tampoco', async () => {
+    await sembrarF1b(P, PRO_PREPAGO);
+    const casos: [string, string, RegExp][] = [
+      ...['0', '-1', '2.5', '100001', 'x', ''].map((v): [string, string, RegExp] => ['--conversaciones', v, /--conversaciones inválido.*de 1 a 100000/]),
+      ...['0', '-1', '12.345', '1000.01', '120,5', 'x', ''].map((v): [string, string, RegExp] => ['--precio', v, /--precio inválido/]),
+      ...['2026-1', 'octubre', ''].map((v): [string, string, RegExp] => ['--periodo-prueba', v, /--periodo-prueba inválido/]),
+      ...['0', '1001', '2.5', 'x', ''].map((v): [string, string, RegExp] => ['--bolsa-prueba', v, /--bolsa-prueba inválida/]),
+    ];
+    for (const [opcion, valor, mensaje] of casos) {
+      const r = correr('--tenant', P, opcion, valor, '--aplicar');
+      expect(r.codigo, `${opcion} ${valor}`).toBe(2);
+      expect(r.salida, `${opcion} ${valor}`).toMatch(mensaje);
+    }
+    const sinOperador = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', P, '--precio', '120', '--aplicar'],
+      { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+    expect(sinOperador.status).toBe(2);
+    expect(await cuenta(P)).toEqual(PRO_PREPAGO);
+  });
+
+  it('--conversaciones y --precio: el seco dice el antes y el después y no escribe', async () => {
+    await sembrarF1b(P, PRO_PREPAGO);
+    const r = correr('--tenant', P, '--conversaciones', '800', '--precio', '120');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/Contrato  : conversaciones 500 del plan → 800 por contrato/);
+    expect(r.salida).toMatch(/Precio    : USD 90 del plan → USD 120 por contrato/);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
+    expect(await cuenta(P)).toEqual(PRO_PREPAGO);
+  });
+
+  it('con --aplicar: la copia, el marcador, el precio y la mensualidad derivada, con auditoría del operador', async () => {
+    await sembrarF1b(P, PRO_PREPAGO);
+    const r = correr('--tenant', P, '--conversaciones', '800', '--precio', '120', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/✓ Verificación: .* 800 conversaciones .* por contrato: conversaciones/);
+    expect(r.salida).toMatch(/USD 120 al mes por contrato · montoMensual 120/);
+    const c = await cuenta(P);
+    expect(c).toMatchObject({
+      limites: { ...limitesDe('pro'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'], precioPorContrato: 120, montoMensual: 120,
+    });
+    const [conv] = await auditorias('limites_por_contrato', P);
+    expect(conv).toMatchObject({
+      uid: 'operador@ejemplo.com', origen: 'script', clave: 'conversaciones',
+      antes: { valor: 500, porContrato: false }, despues: { valor: 800, porContrato: true }, delPlan: 500,
+    });
+    const [precio] = await auditorias('precio_por_contrato', P);
+    expect(precio).toMatchObject({
+      uid: 'operador@ejemplo.com', origen: 'script',
+      antes: { valor: null, porContrato: false, mensualUsd: 90 }, despues: { valor: 120, porContrato: true, mensualUsd: 120 },
+    });
+    // Repetirlo no escribe nada ni deja otra constancia.
+    expect(correr('--tenant', P, '--conversaciones', '800', '--precio', '120', '--aplicar').salida).toMatch(/Sin cambios/);
+    expect(await auditorias('precio_por_contrato', P)).toHaveLength(1);
+  });
+
+  it('LA COPIA Y EL PRECIO MANDAN SOBRE EL PLAN: --plan crecimiento conserva 800 y USD 120, y el seco lo anuncia', async () => {
+    await sembrarF1b(P, { ...PRO_PREPAGO, limites: { ...limitesDe('pro'), conversaciones: 800 }, limitesPorContrato: ['conversaciones'], precioPorContrato: 120 });
+    const seco = correr('--tenant', P, '--plan', 'crecimiento');
+    expect(seco.salida).toMatch(/se conserva conversaciones 800 por contrato \(el plan crecimiento trae 220\)/);
+    expect(seco.salida).toMatch(/Precio    : USD 120 por contrato → USD 120 por contrato \(se conserva: el cambio de plan no toca el precio por contrato\)/);
+    expect(correr('--tenant', P, '--plan', 'crecimiento', '--aplicar').codigo).toBe(0);
+    const c = await cuenta(P);
+    expect(c).toMatchObject({
+      plan: 'crecimiento', limites: { ...limitesDe('crecimiento'), conversaciones: 800 }, precioPorContrato: 120, montoMensual: 120,
+    });
+    // Y quitarlos es explícito: vuelve el plan.
+    expect(correr('--tenant', P, '--conversaciones', 'plan', '--precio', 'plan', '--aplicar').codigo).toBe(0);
+    const d = await cuenta(P);
+    expect(d['limites']).toEqual(limitesDe('crecimiento'));
+    expect(d['precioPorContrato']).toBeUndefined();
+    expect(d['montoMensual']).toBe(50);
+  });
+
+  it('UN PRECIO FUERA DE CONTRATO SE RECHAZA: con una mensualidad pendiente de USD 90, --precio 120 no se escribe', async () => {
+    const PAGO = 'PendienteF1bDeLista001';
+    expect(PAGO).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    await sembrarF1b(P, { ...PRO_PREPAGO, pagoPendienteId: PAGO });
+    await db.doc(`tenants/${P}/pagos/${PAGO}`).set({
+      tipo: 'mensualidad', plan: 'pro', meses: 1, montoUsd: 90, monto: 1134, estado: 'pendiente', medio: 'qr',
+      cobro: { id: 'cobro-de-prueba', estado: 'QR_ACTIVO' },
+    });
+    for (const args of [['--precio', '120'], ['--precio', '120', '--aplicar']]) {
+      const r = correr('--tenant', P, ...args);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toContain('quedaría fuera de contrato');
+      expect(r.salida).toContain('anule el cobro pendiente primero');
+      expect(r.salida).not.toContain(PAGO);
+    }
+    expect((await cuenta(P))['precioPorContrato']).toBeUndefined();
+    expect(await auditorias('precio_por_contrato', P)).toHaveLength(0);
+  });
+
+  it('--periodo-prueba y --bolsa-prueba SIN modalidad prueba se rechazan; un mes pasado también', async () => {
+    await sembrarF1b(P, PRO_PREPAGO);
+    for (const args of [['--periodo-prueba', MES_SIGUIENTE], ['--bolsa-prueba', '40']]) {
+      const r = correr('--tenant', P, ...args, '--aplicar');
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/solo vale con modalidad prueba/);
+    }
+    expect(await cuenta(P)).toEqual(PRO_PREPAGO);
+    await sembrarF1b(PR, EN_PRUEBA);
+    const pasado = correr('--tenant', PR, '--periodo-prueba', MES_PASADO, '--aplicar');
+    expect(pasado.codigo).toBe(1);
+    expect(pasado.salida).toMatch(/mes pasado/);
+    expect(await cuenta(PR)).toEqual(EN_PRUEBA);
+  });
+
+  it('--periodo-prueba EXTIENDE sin huecos y sin reiniciar la bolsa; --bolsa-prueba fija la que usa estadoDeServicio', async () => {
+    await sembrarF1b(PR, EN_PRUEBA);
+    const seco = correr('--tenant', PR, '--periodo-prueba', MES_SIGUIENTE);
+    expect(seco.salida).toContain(`Prueba    : ${MES} · bolsa 7 → de ${MES} a ${MES_SIGUIENTE} · bolsa 7`);
+    const r = correr('--tenant', PR, '--periodo-prueba', MES_SIGUIENTE, '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/✓ Verificación/);
+    let c = await cuenta(PR);
+    expect(c).toMatchObject({ periodoPrueba: MES_SIGUIENTE, pruebaDesde: MES, bolsaPrueba: 7, estadoPago: 'al_dia', montoMensual: 0 });
+    expect(estadoDeServicio(c, 0, Date.now())).toMatchObject({ cubierto: true, enPrueba: true, operativo: true });
+    const [a] = await auditorias('estado_cuenta', PR);
+    expect(a).toMatchObject({
+      uid: 'operador@ejemplo.com', origen: 'script', campos: ['periodoPrueba', 'pruebaDesde'],
+      antes: { periodoPrueba: MES, pruebaDesde: null },
+      prueba: { antes: { periodoPrueba: MES, bolsaPrueba: 7 }, despues: { periodoPrueba: MES_SIGUIENTE, pruebaDesde: MES, bolsaPrueba: 7 } },
+    });
+    expect(correr('--tenant', PR, '--bolsa-prueba', '40', '--aplicar').codigo).toBe(0);
+    c = await cuenta(PR);
+    expect(c['bolsaPrueba']).toBe(40);
+    expect(estadoDeServicio(c, 0, Date.now())).toMatchObject({ bolsaPrueba: 40, disponibles: 40 });
+  });
+
+  it('--modalidad prueba con --periodo-prueba y --bolsa-prueba pasa una cuenta de producción a una prueba pactada', async () => {
+    await sembrarF1b(P, PRO_PREPAGO);
+    const r = correr('--tenant', P, '--modalidad', 'prueba', '--periodo-prueba', MES_SIGUIENTE, '--bolsa-prueba', '50', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(await cuenta(P)).toMatchObject({ modalidad: 'prueba', periodoPrueba: MES_SIGUIENTE, pruebaDesde: MES, bolsaPrueba: 50 });
   });
 });
