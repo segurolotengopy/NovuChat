@@ -22,6 +22,16 @@
 #            NODE_VERSION (22), COVERAGE_MIN (70), GHAS_ENABLED, BLOQUEAR_EN,
 #            FIREBASE_DEPLOY_ONLY ('hosting,firestore:rules,firestore:indexes,functions,storage'),
 #            FIREBASE_SITE_ID, FIREBASE_PREVIEW ('true' para canales de PR)
+#
+# ALCANCE DE LAS VARIABLES (2026-09-25). Las del repositorio son las de
+# PRODUCCIÓN (VITE_*, SITIO_PUBLICO, FIREBASE_DEPLOY_ONLY, ...). El Environment
+# `staging` tiene las suyas CON EL MISMO NOMBRE, y GitHub le da precedencia
+# cuando un job lo declara: construir-staging, desplegar-staging y
+# humo-staging. Una variable que falte en el Environment cae en silencio al
+# valor de producción, y por eso esos jobs verifican cada una contra
+# GCP_PROJECT_ID_STAGING antes de usarla. Las de producción NO se mueven al
+# Environment `production`: su revisor obligatorio detendría `construir` en
+# cada PR (ver docs/staging/DISENO.md §3).
 # =============================================================================
 name: CI/CD Node → Firebase
 
@@ -554,9 +564,19 @@ jobs:
         run: ./scripts/verificar-saneo.sh --patrones
 
   # ---------------------------------------------------------------------------
-  # Fase 3 — construir: build de producción (Vite). APP_ENV selecciona el
+  # Fase 3 — construir: build de PRODUCCIÓN (Vite). APP_ENV selecciona el
   # archivo .env.<ambiente> que Vite carga con --mode. El artifact dist/ se
-  # reutiliza en staging y producción (se despliega lo que se probó).
+  # despliega tal cual en producción (se despliega lo que se probó).
+  #
+  # DOS JOBS, NO UNA MATRIZ (2026-09-25). Antes una matriz construía staging y
+  # producción con las MISMAS variables VITE_* del repositorio, así que un
+  # staging habría hablado con el Auth y el Firestore de producción
+  # (Analisis/28 §1). Ahora las VITE_* de staging viven en el Environment
+  # `staging`, y para leerlas el job tiene que declararlo. No se puede declarar
+  # por rama de matriz, y declarar `environment: production` acá detendría
+  # cada PR ante el revisor obligatorio. Por eso: `construir` (producción, con
+  # las variables del repositorio, corre en PR, push y tag) y
+  # `construir-staging` (Environment `staging`, solo en push a main).
   # ---------------------------------------------------------------------------
   construir:
     name: construir
@@ -569,11 +589,6 @@ jobs:
     defaults:
       run:
         working-directory: ${{ needs.preparar.outputs.hay_componente == 'true' && 'admin' || '.' }}
-    strategy:
-      matrix:
-        # Se construyen ambos ambientes en paralelo: el de producción solo
-        # se usa si el run es de tag/dispatch, pero cuesta ~1 min y simplifica.
-        ambiente: [staging, production]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -598,18 +613,16 @@ jobs:
       - name: Instalar dependencias
         run: ${{ needs.preparar.outputs.instalar }}
 
-      - name: Build (${{ matrix.ambiente }})
+      - name: Build (production)
         env:
-          APP_ENV: ${{ matrix.ambiente }}
+          APP_ENV: production
           PM: ${{ needs.preparar.outputs.pm }}
           VITE_APP_VERSION: ${{ github.ref_name }}-${{ github.sha }}
           # Configuracion PUBLICA del cliente Firebase: viaja en el bundle, no
           # son secretos. Van como variables del repositorio para no versionar
-          # los identificadores del proyecto (repositorio publico).
-          # PENDIENTE: hoy `vars` es de alcance repositorio, asi que las dos
-          # ramas de la matriz reciben los MISMOS valores. Para separar de
-          # verdad staging de produccion hay que declarar `environment:` en
-          # este job y mover las variables a cada Environment.
+          # los identificadores del proyecto (repositorio publico). Las del
+          # repositorio son las de PRODUCCION; las de staging las lee
+          # construir-staging desde su Environment.
           VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
@@ -709,7 +722,7 @@ jobs:
       - name: Guardar dist/
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: dist-${{ matrix.ambiente }}
+          name: dist-production
           path: ${{ env.RUTA_COMPONENTE }}/${{ steps.dist.outputs.ruta }}/
           retention-days: 7
           if-no-files-found: error
@@ -724,7 +737,161 @@ jobs:
       - name: Guardar functions/ (lib compilado + package-lock)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: functions-${{ matrix.ambiente }}
+          name: functions-production
+          path: |
+            ${{ env.RUTA_COMPONENTE }}/functions/lib/
+            ${{ env.RUTA_COMPONENTE }}/functions/package-lock.json
+          retention-days: 7
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # Fase 3.b — construir-staging: el MISMO build, con las variables del
+  # Environment `staging`. Ver el bloque de `construir` para el porqué de dos
+  # jobs. Solo en push a main (y en el dispatch a dev): el Environment limita
+  # las ramas a `main`, y un job de PR que lo declare falla antes de arrancar.
+  # Se omite si no hay proyecto de staging, igual que desplegar-staging.
+  # ---------------------------------------------------------------------------
+  construir-staging:
+    name: construir-staging
+    needs: preparar
+    if: >-
+      needs.preparar.outputs.hay_componente == 'true'
+      && needs.preparar.outputs.admin_cambio == 'true'
+      && vars.GCP_PROJECT_ID_STAGING != ''
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || (github.event_name == 'workflow_dispatch' && inputs.destino == 'dev'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+    defaults:
+      run:
+        working-directory: ${{ env.RUTA_COMPONENTE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+
+      # LA COMPUERTA DE ESTE JOB. Las VITE_* se leen con el mismo nombre que
+      # las de producción y las resuelve el Environment; si alguna falta en el
+      # Environment, GitHub entrega la del repositorio —la de producción— sin
+      # avisar, y el paquete de staging hablaría con producción. Se verifica
+      # cada una contra el proyecto de staging ANTES de compilar.
+      - name: Las VITE_* son las del proyecto de staging
+        env:
+          PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          PROYECTO_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
+          VITE_PROYECTO: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          set -euo pipefail
+          fallos=0
+          if [[ -z "$PROYECTO" || "$PROYECTO" == "$PROYECTO_PROD" ]]; then
+            echo "::error::GCP_PROJECT_ID_STAGING está vacía o es el proyecto de producción."; fallos=1
+          fi
+          if [[ "$VITE_PROYECTO" != "$PROYECTO" ]]; then
+            echo "::error::VITE_FIREBASE_PROJECT_ID no es el proyecto de staging: falta en el Environment 'staging' (cae al valor del repositorio, que es producción)."; fallos=1
+          fi
+          if [[ "$VITE_AUTH_DOMAIN" != "$PROYECTO".* ]]; then
+            echo "::error::VITE_FIREBASE_AUTH_DOMAIN no pertenece al proyecto de staging."; fallos=1
+          fi
+          if [[ -n "$VITE_BUCKET" && "${VITE_BUCKET#gs://}" != "$PROYECTO".* ]]; then
+            echo "::error::VITE_FIREBASE_STORAGE_BUCKET no es un bucket del proyecto de staging."; fallos=1
+          fi
+          # La clave de App Check está atada a un dominio: la de producción no
+          # sirve en staging. En el Environment se declara vacía a propósito.
+          exit "$fallos"
+
+      - name: Habilitar corepack
+        if: needs.preparar.outputs.pm != 'npm'
+        run: corepack enable
+
+      - name: Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: ${{ needs.preparar.outputs.pm }}
+          cache-dependency-path: ${{ needs.preparar.outputs.lockfile }}
+
+      - name: Instalar dependencias
+        run: ${{ needs.preparar.outputs.instalar }}
+
+      - name: Build (staging)
+        env:
+          APP_ENV: staging
+          PM: ${{ needs.preparar.outputs.pm }}
+          VITE_APP_VERSION: ${{ github.ref_name }}-${{ github.sha }}
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_APPCHECK_SITE_KEY: ${{ vars.VITE_APPCHECK_SITE_KEY }}
+        run: |
+          set -euo pipefail
+          if jq -e '.scripts["web:build"]' package.json >/dev/null 2>&1; then
+            "$PM" run web:build -- --mode "$APP_ENV"
+            if jq -e '.scripts["functions:build"]' package.json >/dev/null 2>&1; then
+              "$PM" run functions:build
+            fi
+          else
+            npm run build -- --mode "$APP_ENV"
+          fi
+
+      # Los tres pasos siguientes son los mismos de `construir`; el porqué de
+      # cada uno está comentado allá.
+      - name: Cloud Functions — sin dependencias `workspace:`
+        run: |
+          set -euo pipefail
+          if [[ ! -f functions/package.json ]]; then
+            echo "Sin functions/: nada que verificar."; exit 0
+          fi
+          malas=$(jq -r '
+            ((.dependencies // {}) + (.devDependencies // {}))
+            | to_entries[] | select(.value | tostring | startswith("workspace:"))
+            | "\(.key)=\(.value)"' functions/package.json)
+          if [[ -n "$malas" ]]; then
+            echo "$malas"
+            echo "::error::functions/package.json usa el protocolo 'workspace:'."
+            exit 1
+          fi
+          echo "Sin dependencias 'workspace:'."
+
+      - name: Cloud Functions — lockfile npm para Cloud Build
+        run: |
+          set -euo pipefail
+          [[ -f functions/package.json ]] || exit 0
+          bash scripts/lockfile-functions.sh
+
+      - name: Localizar el directorio construido
+        id: dist
+        run: |
+          set -euo pipefail
+          for d in web/dist dist; do
+            if [[ -d "$d" ]]; then
+              echo "ruta=$d" >> "$GITHUB_OUTPUT"
+              echo "Construido en ${RUTA_COMPONENTE:-.}/$d"
+              exit 0
+            fi
+          done
+          echo "::error::No se encontro el directorio construido (web/dist ni dist)."
+          exit 1
+
+      - name: Guardar dist/
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dist-staging
+          path: ${{ env.RUTA_COMPONENTE }}/${{ steps.dist.outputs.ruta }}/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Guardar functions/ (lib compilado + package-lock)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: functions-staging
           path: |
             ${{ env.RUTA_COMPONENTE }}/functions/lib/
             ${{ env.RUTA_COMPONENTE }}/functions/package-lock.json
@@ -762,17 +929,21 @@ jobs:
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
           ref: ${{ inputs.tag || github.ref }}
 
+      # El paquete de PRODUCCIÓN: construir-staging no corre en PR (el
+      # Environment `staging` solo admite `main`). Es lo mismo que pasaba
+      # antes del 2026-09-25, cuando ambos paquetes llevaban las variables de
+      # producción; y este job sigue apagado (vars.FIREBASE_PREVIEW).
       - name: Descargar dist/
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: dist-staging
+          name: dist-production
           # firebase.json de admin/ publica `web/dist`.
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
       - name: Descargar functions/ (lib compilado + package-lock)
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: functions-staging
+          name: functions-production
           # Restaura lib/ y package-lock.json donde firebase.json los espera.
           path: ${{ env.RUTA_COMPONENTE }}/functions
 
@@ -810,22 +981,30 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Fase 4 — desplegar-staging: automático en cada push a main.
+  #
+  # Se OMITE (no falla) mientras vars.GCP_PROJECT_ID_STAGING esté vacía: así
+  # quedó el 2026-09-12 porque no había proyecto de staging, y cada push que
+  # tocaba admin/ dejaba main en rojo sin probar nada. Con el proyecto creado
+  # y las variables cargadas (docs/staging/DISENO.md), este job, dast-y-humo y
+  # humo-staging dejan de omitirse solos.
+  #
+  # Es el ESPEJO del job de producción —mismos pasos, mismo orden, misma
+  # simulación previa— con dos diferencias a propósito:
+  #   - no hay aprobación humana: el Environment `staging` no tiene revisores;
+  #   - las variables (SITIO_PUBLICO, FIREBASE_DEPLOY_ONLY,
+  #     VITE_FIREBASE_STORAGE_BUCKET, FIREBASE_DEPLOY_FORCE) se leen con el
+  #     MISMO nombre que en producción y las resuelve el Environment. Como una
+  #     que falte caería en silencio al valor de producción, el primer paso
+  #     verifica cada una contra el proyecto de staging.
   # ---------------------------------------------------------------------------
   desplegar-staging:
     name: desplegar-staging
-    needs: [calidad, seguridad-estatica, construir]
-    # Sin proyecto de staging configurado, el job se OMITE en vez de fallar
-    # (2026-09-12). No existe un proyecto de staging para la consola: cada push
-    # a main que tocaba admin/ fallaba al autenticar y dejaba main en rojo sin
-    # probar nada. Al omitirse, dast-y-humo —que depende de este job— también
-    # se omite. Si algún día se crea staging: cargar vars.GCP_PROJECT_ID_STAGING
-    # y agregar a su paso de despliegue la escritura de functions/.env que hace
-    # el de producción (SITIO_PUBLICO).
+    needs: [calidad, seguridad-estatica, construir-staging]
     if: >-
       github.event_name == 'push' && github.ref == 'refs/heads/main'
       && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment:
       name: staging
       url: ${{ vars.STAGING_URL }}
@@ -839,14 +1018,13 @@ jobs:
       run:
         working-directory: ${{ env.RUTA_COMPONENTE }}
     steps:
-      - name: Checkout (firebase.json, firestore.rules)
+      - name: Checkout (firebase.json, firestore.rules, storage.rules)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # El token del checkout no queda en .git/config (portado de
           # despliegue-admin.yml, retirado).
           persist-credentials: false
-          # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ github.ref }}
 
       - name: Descargar dist/
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
@@ -855,9 +1033,45 @@ jobs:
           # firebase.json de admin/ publica `web/dist`.
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
+      - name: Descargar functions/ (lib compilado + package-lock)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: functions-staging
+          path: ${{ env.RUTA_COMPONENTE }}/functions
+
+      - name: Las variables del Environment apuntan al proyecto de staging
+        env:
+          PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          PROYECTO_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
+          URL_STAGING: ${{ vars.STAGING_URL }}
+          URL_PROD: ${{ vars.PROD_URL }}
+          SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+          BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
+        run: |
+          set -euo pipefail
+          fallos=0
+          if [[ -z "$PROYECTO" || "$PROYECTO" == "$PROYECTO_PROD" ]]; then
+            echo "::error::GCP_PROJECT_ID_STAGING está vacía o es el proyecto de producción."; fallos=1
+          fi
+          if [[ -z "$URL_STAGING" || "$URL_STAGING" == "$URL_PROD" ]]; then
+            echo "::error::STAGING_URL está vacía o es PROD_URL."; fallos=1
+          fi
+          if [[ "$SOLO" == *functions* && ( -z "$SITIO_PUBLICO" || "$SITIO_PUBLICO" == "$URL_PROD" ) ]]; then
+            echo "::error::SITIO_PUBLICO falta en el Environment 'staging' o es el de producción: los enlaces del catálogo de staging apuntarían a producción."; fallos=1
+          fi
+          if [[ "$SOLO" == *storage* && "${BUCKET_STORAGE#gs://}" != "$PROYECTO".* ]]; then
+            echo "::error::VITE_FIREBASE_STORAGE_BUCKET no es un bucket del proyecto de staging (falta en el Environment)."; fallos=1
+          fi
+          exit "$fallos"
+
       - name: Autenticar en GCP (WIF + impersonación de la SA de deploy)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
+          # Ambos secretos viven en el Environment `staging`: el proveedor es
+          # el del pool PROPIO del proyecto de staging (docs/staging/DISENO.md
+          # §4), no el de producción, y el secreto del Environment tiene
+          # precedencia sobre el del repositorio con el mismo nombre.
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_SA_DEPLOY_STAGING }}
 
@@ -868,7 +1082,8 @@ jobs:
 
       - name: Conservar copia de la versión actual (canal "previa" para rollback)
         # D7: antes de CADA deploy a live (staging y producción) se clona el
-        # contenido en vivo a un canal "previa". El rollback es clonar de vuelta.
+        # contenido en vivo a un canal "previa". El rollback es clonar de vuelta:
+        # firebase hosting:clone <proyecto>:previa <proyecto>:live
         continue-on-error: true
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
@@ -879,24 +1094,56 @@ jobs:
             --non-interactive >/dev/null 2>&1 || true
           firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"
 
-      - name: Desplegar hosting + reglas (staging)
+      - name: Cloud Functions — dependencias para que firebase deploy lea el código
+        # Igual que en producción: `firebase deploy` carga lib/index.js para
+        # descubrir las Functions y necesita functions/node_modules. Se instala
+        # desde el package-lock.json del artefacto, solo runtime, sin scripts.
+        env:
+          SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOLO" == *functions* ]]; then
+            ( cd functions && npm ci --omit=dev --ignore-scripts --no-audit --no-fund )
+            test -f functions/node_modules/firebase-functions/package.json
+            echo "Dependencias de runtime de functions/ instaladas desde el lockfile del artefacto."
+          fi
+
+      - name: Desplegar hosting + reglas + Functions (staging)
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_STAGING: ${{ vars.STAGING_URL }}
-          BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET_STAGING }}
+          SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+          FORZAR_FACTURA: ${{ vars.FIREBASE_DEPLOY_FORCE }}
+          BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
         run: |
           set -euo pipefail
-          # Mismo criterio que en producción: el destino «principal» se resuelve
-          # desde la variable; ver el bloque «EL BUCKET DE STORAGE SE DECLARA».
+          # Los parámetros de las Functions (`defineString`) se leen de
+          # functions/.env, ignorado por git; se escribe desde el Environment.
+          if [[ "$SOLO" == *functions* ]]; then
+            printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+          fi
+          # El bucket se declara como destino, no se consulta (ver el bloque
+          # «EL BUCKET DE STORAGE SE DECLARA» del job de producción).
           if [[ "$SOLO" == *storage* ]]; then
-            [[ -n "${BUCKET_STORAGE:-}" ]] \
-              || { echo "::error::Falta vars.VITE_FIREBASE_STORAGE_BUCKET_STAGING y el despliegue incluye storage"; exit 1; }
             firebase target:apply storage principal "${BUCKET_STORAGE#gs://}" --project "$PROYECTO"
           fi
-          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
+          # Simulación primero, con el mismo --force que la publicación; hosting
+          # queda fuera porque su prepare crea una versión aun en dry-run. Los
+          # porqués, en el job de producción.
+          FORZAR=""
+          if [[ -n "${FORZAR_FACTURA:-}" ]]; then
+            FORZAR="--force"
+            echo "::warning::vars.FIREBASE_DEPLOY_FORCE activa en staging: se acepta subir el piso de la factura y --force borra Functions que ya no estén en el código."
+          fi
+          SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
+          if [[ -n "$SIMULAR" ]]; then
+            echo "Simulando: $SIMULAR"
+            firebase deploy --only "$SIMULAR" --project "$PROYECTO" --non-interactive $FORZAR --dry-run
+          fi
+          firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
             --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
-          echo "### Staging desplegado: $URL_STAGING" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Staging desplegado: $URL_STAGING (${GITHUB_SHA::7})" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # desplegar-dev — camino corto para PROBAR, no para operar.
@@ -918,7 +1165,9 @@ jobs:
   # ---------------------------------------------------------------------------
   desplegar-dev:
     name: desplegar-dev
-    needs: [preparar, calidad, construir]
+    # Usa el paquete de STAGING (construir-staging corre también en este
+    # dispatch): un ambiente de prueba nunca lleva las variables de producción.
+    needs: [preparar, calidad, construir-staging]
     if: github.event_name == 'workflow_dispatch' && inputs.destino == 'dev'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -993,10 +1242,44 @@ jobs:
       contents: read
     uses: ./.github/workflows/_reusable-dast.yml
     with:
+      # `vars` en un `with:` de workflow reutilizable se resuelve a nivel de
+      # repositorio: STAGING_URL y HEALTH_PATH son variables del repositorio.
       url_objetivo: ${{ vars.STAGING_URL }}
       reglas: .github/zap-rules.tsv
       escaneo_completo: false
       ruta_salud: ${{ vars.HEALTH_PATH || '/healthz' }}
+
+  # ---------------------------------------------------------------------------
+  # Fase 5.b — humo-staging: lo que el humo HTTP del reusable no mira
+  # (Analisis/28): que las Functions estén detrás de Hosting y contesten como
+  # el código dice a un anónimo (401 sin firma, 404 con ficha inválida, 405 con
+  # el método equivocado), que las reglas de Firestore y Storage desplegadas
+  # nieguen al anónimo, y que el paquete publicado apunte al proyecto de
+  # staging y no al de producción. Todo sin credenciales: scripts/humo-staging.sh.
+  # ---------------------------------------------------------------------------
+  humo-staging:
+    name: humo-staging
+    needs: desplegar-staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: staging
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout (scripts/humo-staging.sh)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.ref }}
+
+      - name: Humo funcional contra staging
+        env:
+          STAGING_URL: ${{ vars.STAGING_URL }}
+          GCP_PROJECT_ID_STAGING: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          GCP_PROJECT_ID_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
+          FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+        run: ./scripts/humo-staging.sh
 
   # ---------------------------------------------------------------------------
   # Fase 6 — desplegar-produccion (D3): push de tag v* estable (nunca

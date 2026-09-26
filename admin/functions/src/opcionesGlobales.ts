@@ -25,8 +25,20 @@ import { REGION } from './region.js';
 // exceptuados de la convención de repositorio público.
 // Un secreto nuevo necesita `secretAccessor` para ESTA cuenta, uno por uno
 // (ver `firma.ts`, «CUANDO SE ACABEN LOS VEINTE»).
+//
+// SIN PROYECTO EN EL NOMBRE (2026-09-25, staging). Hasta hoy el correo llevaba
+// escrito el proyecto de producción, y eso hacía imposible desplegar las
+// mismas Functions en el proyecto de staging: pedían correr con una cuenta de
+// OTRO proyecto. La forma `sa-functions@` es la abreviatura que firebase-tools
+// completa con el proyecto DESTINO del despliegue —`lib/gcp/proto.js`,
+// `formatServiceAccount`, líneas 95-107 de 15.29.0: si termina en «@» le
+// agrega `<proyecto>.iam.gserviceaccount.com`—, y firebase-functions la deja
+// pasar tal cual al manifiesto (`lib/common/encoding.js`, líneas 60-74). En
+// producción resuelve al MISMO correo de siempre; en staging, al
+// `sa-functions` de ese proyecto. `region-y-cuenta.test.ts` sigue exigiendo
+// que empiece con `sa-functions@`.
 setGlobalOptions({
   region: REGION,
   maxInstances: 10,
-  serviceAccount: 'sa-functions@novuchat-demo.iam.gserviceaccount.com',
+  serviceAccount: 'sa-functions@',
 });
