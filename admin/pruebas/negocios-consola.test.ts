@@ -29,8 +29,10 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   ID_PAGO, ID_TENANT, TCO_MANUAL_DIAS_MAXIMO, diaBolivia, esIdTenant, esMedioManual, mensajeDeError, motivoDeRechazoPrevio,
-  nombreEvidencia, nuevoPagoId, pideSesionReciente, resumenDeCambio, rutaEvidencia, vistaDelPagoManual,
+  nombreEvidencia, nuevoPagoId, pagosEnRevision, pideSesionReciente, resumenDeCambio, rutaEvidencia, vistaDelPagoManual,
+  motivoDeConfirmacionValido,
 } from '../web/src/plataforma/lib/negocios';
+import { PagosEnRevision } from '../web/src/plataforma/componentes/PagosEnRevision';
 import { TCO_MAXIMO, TCO_MINIMO } from '../functions/src/prepago';
 import { PanelEjes } from '../web/src/plataforma/componentes/PanelEjes';
 import { SuspensionNegocio } from '../web/src/plataforma/componentes/SuspensionNegocio';
@@ -417,5 +419,56 @@ describe('las pantallas no escriben en Firestore y llaman a las callables por el
     expect(cartera).toContain('<CortePrepago plataforma={plataforma} alcance="global"');
     expect(cartera).toContain('<th>Modalidad</th>');
     expect(cartera).toContain('<th>Titularidad</th>');
+  });
+});
+
+describe('los pagos que el banco confirmó y esperan en revisión se resuelven desde Negocios (tercera vuelta de #212, LOW 1)', () => {
+  const ID = 'AbCdEfGhIjKlMnOpQrStUv';
+  const enRevision = { id: ID, estado: 'pendiente', tipo: 'mensualidad', plan: 'crecimiento', monto: 630, montoRecibidoBs: 630,
+    descripcion: 'Crecimiento · 1 mes', revision: 'plan_distinto', cobro: { estado: 'CONFIRMADO' } };
+
+  it('lista SOLO los pendientes con el cobro CONFIRMADO: la misma condición que exige confirmarPendiente', () => {
+    expect(pagosEnRevision([enRevision])).toEqual([{
+      pagoId: ID, descripcion: 'Crecimiento · 1 mes', monto: 630, montoRecibidoBs: 630, plan: 'crecimiento', motivo: 'plan_distinto',
+    }]);
+    // Un QR vivo, un pago ya confirmado, uno sin cobro, o un identificador con otra forma: no se listan.
+    for (const otro of [
+      { ...enRevision, cobro: { estado: 'QR_ACTIVO' } },
+      { ...enRevision, estado: 'confirmado' },
+      { ...enRevision, cobro: undefined },
+      { ...enRevision, id: 'corto' },
+    ]) expect(pagosEnRevision([otro])).toEqual([]);
+    // Sin la marca de plan, un importe menor se nombra como tal.
+    expect(pagosEnRevision([{ ...enRevision, revision: undefined, montoRecibidoBs: 600 }])[0]?.motivo).toBe('importe_menor');
+    expect(pagosEnRevision([{ ...enRevision, revision: undefined }])[0]?.motivo).toBe('otro');
+  });
+
+  it('el motivo es obligatorio, como en el servidor (motivoDiferencia, hasta 300)', () => {
+    expect(motivoDeConfirmacionValido('')).toBe(false);
+    expect(motivoDeConfirmacionValido('  ab ')).toBe(false);
+    expect(motivoDeConfirmacionValido('x'.repeat(301))).toBe(false);
+    expect(motivoDeConfirmacionValido('QR emitido antes del cambio de plan')).toBe(true);
+  });
+
+  it('el panel dice qué pasa con el plan, precarga lo recibido y no ofrece confirmar sin motivo', () => {
+    const html = dibujar(PagosEnRevision, { pagos: pagosEnRevision([enRevision]), planVigente: 'pro', ocupado: false, onConfirmar: nada });
+    expect(html).toContain('Pagos confirmados por el banco, sin registrar');
+    expect(html).toContain('el comercio puede quedar cortado');
+    expect(html).toContain('Confirmarlo cambia el plan de la cuenta al del QR');
+    expect(html).toContain('value="630"');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Registrar el pago<\/button>/);
+    // NADA SE ESCRIBE SIN CONFIRMAR: el primer clic abre la pregunta, no llama.
+    expect(html).not.toContain('¿Confirmar?');
+    // Sin pagos en revisión, no dibuja nada.
+    expect(dibujar(PagosEnRevision, { pagos: [], planVigente: 'pro', ocupado: false, onConfirmar: nada })).toBe('');
+  });
+
+  it('la página lee los pendientes aparte de los últimos diez y confirma por operar, con el reintento de sesión reciente', () => {
+    const pagina = sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'));
+    expect(pagina).toContain("where('estado', '==', 'pendiente')");
+    expect(pagina).toContain('setEnRevision(pagosEnRevision(');
+    expect(pagina).toMatch(/void operar\(CALLABLES\.pagoManual,\s*\{ confirmarPendiente, montoRecibidoBs, motivoDiferencia \}/);
+    // `operar` es la que guarda el reintento cuando el servidor pide sesión reciente.
+    expect(pagina).toContain('if (pideSesionReciente(e)) setReintento({ nombre, datos, exito });');
   });
 });

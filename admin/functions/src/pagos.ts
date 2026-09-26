@@ -93,6 +93,8 @@ export const TCO_MANUAL_DIAS_MAXIMO = 31;
 const TCO_TOLERANCIA = 0.01;
 /** Tope de cordura para lo recibido: diez millones de bolivianos. */
 const MONTO_RECIBIDO_MAXIMO = 10_000_000;
+/** El motivo más corto que explica algo; el mismo de la consola (`negocios.ts`). */
+export const MOTIVO_CONFIRMACION_MINIMO = 3;
 
 const texto = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max).trim() : '');
 const ultimos4 = (v: string) => v.slice(-4);
@@ -323,7 +325,18 @@ function ademasValidado(confirmacion: Confirmacion): { pago: Record<string, unkn
  * `confirmacion.ademas` trae una clave fuera de la lista. No se exporta: la
  * puerta es `aplicarPagoEnTransaccion`, y el manual la usa desde acá adentro.
  */
-function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicacion {
+/**
+ * Qué hacer con `cuenta.pagoPendienteId` al aplicar (revisión de seguridad del
+ * #217, guarda 2). `si_es_este` --lo de siempre, por defecto-- lo suelta SOLO
+ * si apunta al pago que se aplica: si apunta a OTRO pago, puede ser un QR vivo
+ * distinto, y soltarlo lo dejaría cobrable sin que la cuenta lo sepa (ni el
+ * sondeo, ni «Ya hay un cobro pendiente», ni la anulación desde Pagar).
+ * `siempre` es solo para el manual, que verificó EN LA MISMA transacción que
+ * lo apuntado no está `pendiente` (un puntero viejo a un pago cerrado).
+ */
+type SoltarPendiente = 'si_es_este' | 'siempre';
+
+function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion, soltar: SoltarPendiente = 'si_es_este'): Aplicacion {
   const ademas = ademasValidado(confirmacion);
   const pedido = pagoDe(pago.datos);
   if (!pedido) throw new Error(`el pago ${ultimos4(pago.id)} no tiene un pedido válido`);
@@ -349,6 +362,13 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     ...(confirmacion.origen === 'propietario' && confirmacion.motivoDiferencia
       ? { motivoDiferencia: confirmacion.motivoDiferencia } : {}),
     cubiertoHasta: tras.cubiertoHasta || null,
+    // UN PAGO CONFIRMADO YA NO ESTÁ EN REVISIÓN (revisión de seguridad de
+    // #212, tercera vuelta, LOW 2). `revision: 'plan_distinto'` lo anota el
+    // cliente del cobrador cuando el banco confirmó un QR de otro plan sin
+    // firma; si quedara escrito en un pago confirmado, Negocios lo seguiría
+    // listando como «por resolver». Se borra solo si existe: el manual crea
+    // el pago con esta escritura (`tx.create`), y ahí un borrado no se admite.
+    ...(pago.datos['revision'] !== undefined ? { revision: FieldValue.delete() } : {}),
     actualizadoEn: ahora,
   };
 
@@ -369,14 +389,15 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     ...(cambioDePlan ? { plan: cambioDePlan } : {}),
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
   };
-  delete cuentaNueva['pagoPendienteId'];
+  const suelta = soltar === 'siempre' || pago.cuenta['pagoPendienteId'] === pago.id;
+  if (suelta) delete cuentaNueva['pagoPendienteId'];
   delete cuentaNueva['corte'];
 
   const escrituraCuenta: Record<string, unknown> = {
     ...ademas.cuenta,
     bolsa: tras.bolsa,
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
-    pagoPendienteId: FieldValue.delete(),
+    ...(suelta ? { pagoPendienteId: FieldValue.delete() } : {}),
     corte: FieldValue.delete(),
     ...camposDerivadosDeCuenta(cuentaNueva, null, confirmacion.ahoraMs),
     actualizadoEn: ahora,
@@ -607,9 +628,20 @@ async function confirmarQrConfirmado(
   if (!enteroEntre(montoRecibidoBs, 0, MONTO_RECIBIDO_MAXIMO)) {
     throw new HttpsError('invalid-argument', 'montoRecibidoBs tiene que ser un entero en bolivianos.');
   }
+  // CERO NO ES UN PAGO (revisión de seguridad del #217, LOW). Acá se confirma
+  // un cobro que el banco YA confirmó: si no entró nada, no hay qué confirmar,
+  // y sumar un mes con 0 Bs sería un regalo sin nombre. Un descuento total, si
+  // alguna vez existe, va por otro camino, no por este.
+  if (montoRecibidoBs === 0) {
+    throw new HttpsError('invalid-argument',
+      'montoRecibidoBs no puede ser 0: se confirma lo que el banco informó que entró por ese QR.');
+  }
+  // EL MOTIVO, CON LA MISMA COTA QUE LA CONSOLA (`motivoDeConfirmacionValido`,
+  // 3 caracteres o más): un «x» no explica nada en la auditoría.
   const motivoDiferencia = texto(datos['motivoDiferencia'], 300);
-  if (!motivoDiferencia) {
-    throw new HttpsError('invalid-argument', 'Confirmar a mano un cobro del banco exige motivoDiferencia.');
+  if (motivoDiferencia.length < MOTIVO_CONFIRMACION_MINIMO) {
+    throw new HttpsError('invalid-argument',
+      `Confirmar a mano un cobro del banco exige motivoDiferencia (${MOTIVO_CONFIRMACION_MINIMO} caracteres o más).`);
   }
   const r = refsDe(tenantId, pagoId);
   const ahora = Timestamp.fromMillis(ahoraMs);
@@ -629,10 +661,23 @@ async function confirmarQrConfirmado(
     tx.set(db().doc(`cobrosResueltos/${pagoId}`), {
       tenantId, pagoId, cobroId: cobroIdDe(p), estado: 'confirmado', cerradoEn: ahora,
     });
+    // LA MISMA AUDITORÍA QUE UN CAMBIO DE PLAN (revisión de seguridad de
+    // #212, tercera vuelta, LOW 2). Un pago en revisión por `plan_distinto`
+    // confirmado acá CAMBIA el plan: sin el antes y el después de la copia
+    // de límites, este cambio sería el único que no deja constancia de qué
+    // se perdió o se conservó por contrato. `revision` dice por qué estaba
+    // detenido.
     tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
       accion: 'pago_manual_confirma_qr', uid, en: ahora, pagoId, cobroId: cobroIdDe(p),
       monto: p['monto'] ?? null, montoRecibidoBs, motivoDiferencia,
-      cubiertoHasta: resultado.cubiertoHasta, planDespues: resultado.plan,
+      revision: typeof p['revision'] === 'string' ? p['revision'] : null,
+      // LO QUE INFORMÓ EL BANCO, leído antes de aplicar: `aplicacionDe`
+      // sobrescribe `montoRecibidoBs` del pago con lo que declara el
+      // propietario, y sin esto la auditoría perdería la diferencia.
+      montoInformadoBanco: typeof p['montoRecibidoBs'] === 'number' ? p['montoRecibidoBs'] : null,
+      cubiertoHasta: resultado.cubiertoHasta,
+      planAntes: (cuentaDoc.data() ?? {})['plan'] ?? null, planDespues: resultado.plan,
+      ...auditoriaDeLimites(resultado.cambioDeLimites),
     });
     return { resultado, descripcion: String(p['descripcion'] ?? ''), monto: p['monto'] };
   });
@@ -887,7 +932,9 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
             resumenDelPendiente(vivoId, vivo));
         }
       }
-      const a = aplicacionDe({ id: pagoId, datos: { ...base, estado: 'pendiente' }, cuenta, ficha: fichaDoc.data() ?? {} }, confirmacion);
+      // `siempre`: arriba, en esta misma transacción, se comprobó que lo que
+      // apunta `pagoPendienteId` no está `pendiente`; un puntero viejo se suelta.
+      const a = aplicacionDe({ id: pagoId, datos: { ...base, estado: 'pendiente' }, cuenta, ficha: fichaDoc.data() ?? {} }, confirmacion, 'siempre');
       // NACE CONFIRMADO: un solo `create` con el pedido y la confirmación.
       tx.create(r.pago, { ...base, ...a.escrituraPago });
       tx.set(r.cuenta, a.escrituraCuenta, { merge: true });
@@ -952,6 +999,17 @@ export function crearAnularPagoPendiente(deps: Deps = {}, opciones: CallableOpti
     if (p['estado'] !== 'pendiente') {
       throw new HttpsError('failed-precondition', `Un pago ${String(p['estado'])} no se anula.`);
     }
+    // EL BANCO YA CONFIRMÓ ESE QR Y NOVUCHAT NO LO APLICÓ (en revisión por
+    // importe o por plan; revisión de seguridad de #212, tercera vuelta,
+    // LOW 1). No hay nada que cancelar: la plata entró. Se dice así, sin
+    // llamar al cobrador --que respondería `PAGADO_NO_SE_ANULA` y dejaría el
+    // mensaje «se aplicó el cobro del banco», que acá sería falso--. Lo
+    // resuelve el propietario desde Negocios (`confirmarPendiente`).
+    if (cobroEstadoDe(p) === 'CONFIRMADO') {
+      throw new HttpsError('failed-precondition',
+        'El banco ya confirmó el pago de ese QR y NovuChat lo está registrando: no se cancela.',
+        { ...resumenDelPendiente(pagoId, p), cobroEstado: 'CONFIRMADO' });
+    }
 
     const r = await con(deps).anular(tenantId, pagoId, motivo);
     if (r.resultado !== 'anulado') {
@@ -1005,6 +1063,12 @@ export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableO
     if (!p) return { pendiente: null, consultado };
     const cobro = typeof p['cobro'] === 'object' && p['cobro'] !== null ? p['cobro'] as Record<string, unknown> : null;
     const ms = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : null);
+    // UN QR QUE EL BANCO YA CONFIRMÓ NO SE VUELVE A MOSTRAR (tercera vuelta
+    // de #212, LOW 1): el pago puede seguir `pendiente` --en revisión, hasta
+    // que el propietario lo confirme--, pero pagar dos veces el mismo QR no
+    // tiene sentido. Sin ficha, la pantalla no tiene qué dibujar, y
+    // `imagenDePago` también responde 404.
+    const confirmadoPorElBanco = cobro?.['estado'] === 'CONFIRMADO';
     const resumen = {
       pagoId, estado: p['estado'], tipo: p['tipo'], descripcion: p['descripcion'],
       monto: p['monto'], montoUsd: p['montoUsd'], moneda: p['moneda'], monedaLista: p['monedaLista'],
@@ -1012,8 +1076,8 @@ export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableO
       medio: p['medio'], canal: p['canal'],
       venceEn: ms(p['venceEn']), creadoEn: ms(p['creadoEn']),
       cobroEstado: cobro?.['estado'] ?? null,
-      fichaQr: typeof cobro?.['fichaQr'] === 'string' ? cobro['fichaQr'] : null,
-      qrRuta: typeof cobro?.['qrRuta'] === 'string' ? cobro['qrRuta'] : null,
+      fichaQr: !confirmadoPorElBanco && typeof cobro?.['fichaQr'] === 'string' ? cobro['fichaQr'] : null,
+      qrRuta: !confirmadoPorElBanco && typeof cobro?.['qrRuta'] === 'string' ? cobro['qrRuta'] : null,
     };
     return p['estado'] === 'pendiente'
       ? { pendiente: resumen, consultado }

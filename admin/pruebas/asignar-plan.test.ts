@@ -365,3 +365,59 @@ describe('asignar-plan.mjs: --cambios, los cambios incluidos por contrato', () =
     expect((await cuenta(c)).limites).toEqual({ ...limitesDe('pro'), cambiosIncluidos: 0 });
   });
 });
+
+describe('asignar-plan.mjs: un QR vivo de otro plan frena --plan (tercera vuelta de #212, LOW 1)', () => {
+  // La MISMA guarda que `actualizarEstadoCuenta` (index.ts): si la cuenta
+  // tiene pendiente una mensualidad de otro plan --un QR vivo, o uno que el
+  // banco ya confirmó y espera en revisión-- el cambio de plan se rechaza, en
+  // seco y al aplicar, y no se escribe nada.
+  const Q = 'plan-qr-vivo';
+  const PAGO = 'QrVivoDeOtroPlan000001';
+  const CUENTA_Q = { plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', pagoPendienteId: PAGO };
+
+  async function sembrar(cobroEstado: string, estado = 'pendiente') {
+    for (const d of (await db.collection(`tenants/${Q}/auditoria`).get()).docs) await d.ref.delete();
+    await db.doc(`tenants/${Q}`).set({ nombre: 'QR vivo', estado: 'activo', plan: 'pro', flujos: ['venta'] });
+    await db.doc(`tenants/${Q}/cuenta/estado`).set(CUENTA_Q);
+    await db.doc(`tenants/${Q}/pagos/${PAGO}`).set({
+      tipo: 'mensualidad', plan: 'crecimiento', meses: 1, monto: 630, estado, medio: 'qr',
+      cobro: { id: 'cobro-de-prueba', estado: cobroEstado },
+    });
+  }
+  const nadaCambio = async () => {
+    expect(await cuenta(Q)).toEqual(CUENTA_Q);
+    expect((await ficha(Q)).plan).toBe('pro');
+    expect(await auditorias('cambiar_plan', Q)).toHaveLength(0);
+  };
+
+  it('con un QR vivo de Crecimiento, --plan impulso se rechaza en seco y al aplicar, sin escribir', async () => {
+    await sembrar('QR_ACTIVO');
+    for (const args of [['--plan', 'impulso'], ['--plan', 'impulso', '--aplicar']]) {
+      const r = correr('--tenant', Q, ...args);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toContain('Hay un cobro pendiente de una mensualidad de otro plan (crecimiento');
+      expect(r.salida).toContain('anule el cobro pendiente primero');
+      // Ni el identificador completo del pago.
+      expect(r.salida).not.toContain(PAGO);
+    }
+    await nadaCambio();
+  });
+
+  it('con el pago EN REVISIÓN (el banco ya confirmó) también, y dice que se confirma en Negocios', async () => {
+    await sembrar('CONFIRMADO');
+    const r = correr('--tenant', Q, '--plan', 'impulso', '--aplicar');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toContain('el banco ya lo confirmó y espera en revisión');
+    expect(r.salida).toContain('confírmelo en Negocios');
+    await nadaCambio();
+  });
+
+  it('el MISMO plan del QR, un pago ya cerrado o un eje que no es el plan no se frenan', async () => {
+    await sembrar('QR_ACTIVO');
+    expect(correr('--tenant', Q, '--plan', 'crecimiento').codigo).toBe(0);
+    expect(correr('--tenant', Q, '--modalidad', 'prueba').codigo).toBe(0);
+    await sembrar('CONFIRMADO', 'confirmado');
+    expect(correr('--tenant', Q, '--plan', 'impulso').codigo).toBe(0);
+    await nadaCambio();
+  });
+});

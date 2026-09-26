@@ -52,6 +52,7 @@ const {
 } = await import('../functions/src/cobroPrepago.ts');
 const { mesBolivia, sumarMeses } = await import('../functions/src/prepago.ts');
 const { puertaDePagos } = await import('../functions/src/pagos.ts');
+const { limitesDe } = await import('../functions/src/planes.ts');
 
 const A = 'prep-salon';
 const B = 'prep-otro';
@@ -84,7 +85,13 @@ const ADMIN_B = { uid: 'adm-b', token: token({ t: { [B]: 'admin' } }) };
 const ADMIN_A_CON_GOOGLE = { uid: 'adm-a', token: token({ t: { [A]: 'admin' } }, 'google.com') };
 const ADMIN_A_SIN_VERIFICAR = { uid: 'adm-a', token: token({ t: { [A]: 'admin' } }, 'password', false) };
 const OPER_A = { uid: 'op-a', token: token({ t: { [A]: 'oper' } }) };
-const PROPIETARIO = { uid: 'prop', token: token({ p: true }, 'google.com') };
+// `auth_time` (segundos) de ahora: el propietario que pide un QR de OTRO plan
+// firma el cambio, y eso exige una sesión de menos de media hora (tercera
+// vuelta de #212, LOW 3). La vieja y la sin `auth_time` son las negativas.
+const AUTH_TIME = Math.floor(Date.now() / 1000);
+const PROPIETARIO = { uid: 'prop', token: { ...token({ p: true }, 'google.com'), auth_time: AUTH_TIME } };
+const PROPIETARIO_SESION_VIEJA = { uid: 'prop', token: { ...PROPIETARIO.token, auth_time: AUTH_TIME - 7200 } };
+const PROPIETARIO_SIN_AUTH_TIME = { uid: 'prop', token: token({ p: true }, 'google.com') };
 const PROPIETARIO_CON_CONTRASENA = { uid: 'prop', token: token({ p: true }, 'password') };
 
 type Peticion = Parameters<typeof crearCobroPrepago.run>[0];
@@ -586,6 +593,143 @@ describe('1ter. Un QR confirmado de OTRO plan no cambia el plan sin autorizació
       origen: 'banco', cobroId: 'c', riel: null, confirmadoPorCobrador: 'automatico', montoRecibidoBs: 1134,
       confirmadoEn: Timestamp.now(), ahoraMs: Date.now(),
     })).toThrow(/sin autorización del propietario/);
+  });
+});
+
+describe('1quater. El pago en revisión se resuelve, con auditoría y sesión reciente (tercera vuelta de #212)', () => {
+  const PRO = { conversaciones: 500, productos: 500, agendas: 10, cambiosIncluidos: 2 };
+  type Callable = { run: (x: unknown) => Promise<Record<string, unknown>> };
+  const conCobrador = async () => import('../functions/src/pagosConCobrador.ts') as unknown as Promise<Record<string, Callable>>;
+
+  /** Un QR de Crecimiento sin firma, confirmado por el banco después de que NovuChat pasó la cuenta a Pro. */
+  async function pagoEnRevision(): Promise<{ pagoId: string; ficha: string }> {
+    const r = await crear(MENSUALIDAD);
+    const pagoId = r['pagoId'] as string;
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ plan: 'pro', limites: PRO }, { merge: true });
+    await db.doc(`tenants/${A}`).set({ plan: 'pro' }, { merge: true });
+    doble.fijarEstado(pagoId, 'CONFIRMADO');
+    expect((await aviso(pagoId)).cuerpo).toEqual({ recibido: true, aplicado: false, estado: 'pendiente' });
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', revision: 'plan_distinto', cobro: { estado: 'CONFIRMADO' } });
+    return { pagoId, ficha: r['fichaQr'] as string };
+  }
+
+  it('revisión → confirmarPendiente: plan, límites, espejo, auditoría con antes y después; el banco no vuelve a sumar; repetirlo no pasa', async () => {
+    const { pagoId } = await pagoEnRevision();
+    const { registrarPagoManual } = await conCobrador();
+    const confirmar = { tenantId: A, confirmarPendiente: pagoId, montoRecibidoBs: 630, motivoDiferencia: 'QR emitido antes del cambio a Pro' };
+
+    // NEGATIVAS primero: sin motivo, un admin, una sesión vieja. Nada cambia.
+    await rechaza(registrarPagoManual.run({ data: { ...confirmar, motivoDiferencia: '' }, auth: PROPIETARIO, rawRequest: {} }), 'invalid-argument');
+    await rechaza(registrarPagoManual.run({ data: confirmar, auth: ADMIN_A, rawRequest: {} }), 'permission-denied');
+    await rechaza(registrarPagoManual.run({ data: confirmar, auth: PROPIETARIO_SESION_VIEJA, rawRequest: {} }), 'unauthenticated');
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', revision: 'plan_distinto' });
+    expect(await cuenta()).toMatchObject({ plan: 'pro', limites: PRO, pagoPendienteId: pagoId });
+    expect(await auditoria('pago_manual_confirma_qr')).toHaveLength(0);
+
+    const r = await registrarPagoManual.run({ data: confirmar, auth: PROPIETARIO, rawRequest: {} });
+    expect(r).toMatchObject({ pagoId, confirmadoQr: true, periodoPagado: HOY, plan: 'crecimiento', modalidad: 'prepago' });
+
+    // El pago: confirmado por el propietario, SIN la marca de revisión.
+    const p = await pago(pagoId);
+    expect(p).toMatchObject({ estado: 'confirmado', montoRecibidoBs: 630, confirmadoPor: { origen: 'propietario', uid: 'prop' } });
+    expect(p?.['revision']).toBeUndefined();
+    // La cuenta: el plan del QR con SU copia de límites, el mes sumado, sin pendiente ni corte.
+    const c = await cuenta();
+    expect(c).toMatchObject({ plan: 'crecimiento', limites: limitesDe('crecimiento'), periodoPagado: HOY, modalidad: 'prepago' });
+    expect(c['pagoPendienteId']).toBeUndefined();
+    expect(c['corte']).toBeUndefined();
+    // El espejo de la ficha.
+    expect((await db.doc(`tenants/${A}`).get()).get('plan')).toBe('crecimiento');
+    // Los índices del cobrador, cerrados.
+    expect(await pendiente(pagoId)).toBeUndefined();
+    expect(await resuelto(pagoId)).toMatchObject({ tenantId: A, estado: 'confirmado' });
+    // La auditoría, con el antes y el después como `cambiar_plan`.
+    expect(await auditoria('pago_manual_confirma_qr')).toMatchObject([{
+      pagoId, uid: 'prop', revision: 'plan_distinto', montoRecibidoBs: 630, motivoDiferencia: 'QR emitido antes del cambio a Pro',
+      planAntes: 'pro', planDespues: 'crecimiento', limitesAntes: PRO, limitesDespues: limitesDe('crecimiento'),
+    }]);
+
+    // UN SEGUNDO AVISO DEL BANCO NO SUMA OTRO MES: ni por el aviso (el índice
+    // ya está resuelto) ni por la consulta, que llega a la tabla y dice `ya`.
+    expect((await aviso(pagoId)).cuerpo).toEqual({ recibido: true, aplicado: false, estado: 'confirmado' });
+    expect(await consultarYAplicar(A, pagoId, { via: 'consulta' })).toEqual({ aplicado: false, estado: 'confirmado', ya: true });
+    expect((await cuenta())['periodoPagado']).toBe(HOY);
+    expect(await auditoria('pago_aplicado')).toHaveLength(0);
+
+    // Y confirmarlo otra vez se rechaza: el pago ya no está pendiente.
+    await rechaza(registrarPagoManual.run({ data: { ...confirmar, motivoDiferencia: 'otra vez' }, auth: PROPIETARIO, rawRequest: {} }), 'failed-precondition');
+    expect((await cuenta())['periodoPagado']).toBe(HOY);
+    expect(await auditoria('pago_manual_confirma_qr')).toHaveLength(1);
+  });
+
+  it('en revisión el QR no se muestra: imagenDePago da 404, la consulta no trae ficha y «cancelar» se niega sin llamar al cobrador', async () => {
+    const { pagoId, ficha } = await pagoEnRevision();
+    expect((await imagen(ficha)).codigo).toBe(404);
+    const { consultarPagoPendiente, anularPagoPendiente } = await conCobrador();
+    const consulta = await consultarPagoPendiente.run({ data: { tenantId: A }, auth: ADMIN_A, rawRequest: {} });
+    expect(consulta['pendiente']).toMatchObject({ pagoId, estado: 'pendiente', cobroEstado: 'CONFIRMADO', fichaQr: null, qrRuta: null });
+
+    const llamadasAntes = doble.llamadas.length;
+    const d = await rechaza(anularPagoPendiente.run({ data: { tenantId: A }, auth: ADMIN_A, rawRequest: {} }), 'failed-precondition');
+    expect(d).toMatchObject({ pagoId, cobroEstado: 'CONFIRMADO' });
+    expect(doble.llamadas.length).toBe(llamadasAntes);
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', cobro: { estado: 'CONFIRMADO' } });
+    expect(doble.cobroPorReferencia(pagoId)?.estado).toBe('CONFIRMADO');
+    expect(await auditoria('anular_pago_pendiente')).toHaveLength(0);
+  });
+
+  it('un QR vivo SIN confirmar sí se sigue mostrando: el 404 es solo para el que el banco ya confirmó', async () => {
+    const r = await crear(MENSUALIDAD);
+    doble.fijarEstado(r['pagoId'] as string, 'PAGO_DETECTADO');
+    await consultarYAplicar(A, r['pagoId'] as string, { via: 'consulta' });
+    expect(await pago(r['pagoId'] as string)).toMatchObject({ estado: 'pendiente', cobro: { estado: 'PAGO_DETECTADO' } });
+    expect((await imagen(r['fichaQr'] as string)).codigo).toBe(200);
+  });
+
+  it('LA FIRMA PIDE SESIÓN RECIENTE: el propietario con auth_time viejo (o sin él) no emite un QR de otro plan; no queda pago, pendiente ni llamada al cobrador', async () => {
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+    const OTRO_PLAN = { tenantId: B, tipo: 'mensualidad', plan: 'pro', meses: 1 };
+    for (const sesion of [PROPIETARIO_SESION_VIEJA, PROPIETARIO_SIN_AUTH_TIME]) {
+      await rechaza(crear(OTRO_PLAN, sesion), 'unauthenticated');
+    }
+    expect((await db.collection(`tenants/${B}/pagos`).get()).size).toBe(0);
+    expect((await cuenta(B))['pagoPendienteId']).toBeUndefined();
+    expect((await db.collection('cobrosPendientes').where('tenantId', '==', B).get()).size).toBe(0);
+    expect(doble.llamadas).toEqual([]);
+    expect(await auditoria('cobro_emitido', B)).toHaveLength(0);
+    expect(await cuenta(B)).toMatchObject({ plan: 'impulso' });
+
+  });
+
+  it('POSITIVA: el propietario con sesión VIEJA renueva el MISMO plan y el cobro sale (la guarda es solo para la firma)', async () => {
+    // Si alguien endureciera la guarda a «todo propietario», esta prueba cae.
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+    for (const sesion of [PROPIETARIO_SESION_VIEJA, PROPIETARIO_SIN_AUTH_TIME]) {
+      await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+      const r = await crear({ tenantId: B, tipo: 'mensualidad', plan: 'impulso', meses: 1 }, sesion);
+      expect(r).toMatchObject({ estado: 'pendiente', cobro: { estado: 'QR_ACTIVO' } });
+      const p = await pago(r['pagoId'] as string, B);
+      expect(p).toMatchObject({ plan: 'impulso', estado: 'pendiente', creadoPor: 'prop' });
+      expect(p?.['cambioAutorizadoPor']).toBeUndefined();
+      expect((await cuenta(B))['pagoPendienteId']).toBe(r['pagoId']);
+    }
+  });
+
+  it('«Ya hay un cobro pendiente» NO trae la ficha del QR si el banco ya lo confirmó (como la consulta); con un QR vivo sí', async () => {
+    const { pagoId } = await pagoEnRevision();   // la cuenta A quedó en Pro, con el pendiente en revisión
+    const d = await rechaza(crear({ tenantId: A, tipo: 'mensualidad', plan: 'pro', meses: 1 }), 'failed-precondition');
+    expect(d).toMatchObject({ pagoId, cobroEstado: 'CONFIRMADO' });
+    expect(d).not.toHaveProperty('fichaQr');
+    // El contraste: con un QR vivo, la ficha sí viaja (la pantalla la necesita para mostrarlo).
+    const vivo = await crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO);
+    const d2 = await rechaza(crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO), 'failed-precondition');
+    expect(d2).toMatchObject({ pagoId: vivo['pagoId'], cobroEstado: 'QR_ACTIVO', fichaQr: vivo['fichaQr'] });
+  });
+
+  it('con sesión reciente la firma entra, como antes', async () => {
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+    const r = await crear({ tenantId: B, tipo: 'mensualidad', plan: 'pro', meses: 1 }, PROPIETARIO);
+    expect((await pago(r['pagoId'] as string, B))?.['cambioAutorizadoPor']).toBe('prop');
   });
 });
 

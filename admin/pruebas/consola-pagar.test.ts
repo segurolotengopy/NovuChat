@@ -25,8 +25,8 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../functions/src/prepago';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, mesEscrito, planInicial, planesOfrecidos,
-  vistaDelPedido,
+  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
+  planesOfrecidos, vistaDelPedido,
 } from '../web/src/lib/pagar';
 import { PLANES_PUBLICADOS } from '../functions/src/planes';
 import { facturaMetaAlComercio } from '../web/src/lib/ejes';
@@ -270,5 +270,45 @@ describe('la pantalla no escribe, y no promete lo que no sabe', () => {
     expect(cuenta).not.toMatch(/plan === 'demostracion'|\bpagaMeta\b/);
     expect(cuenta).toContain('useEjesDeCuenta(tenantId)');
     expect(cuenta).not.toContain('rutasWhatsApp');
+  });
+});
+
+describe('el cobro que el banco ya confirmó y espera en revisión (tercera vuelta de #212, LOW 1)', () => {
+  const pagar = sinComentarios(leer('web/src/paginas/Pagar.tsx'));
+
+  it('CONFIRMADO se lee «el banco confirmó el pago; NovuChat lo está registrando», sin decir acreditado', () => {
+    expect(ESTADO_DEL_COBRO['CONFIRMADO']).toBe('el banco confirmó el pago; NovuChat lo está registrando');
+    for (const texto of Object.values(ESTADO_DEL_COBRO)) {
+      for (const prohibido of ['acreditado', 'verificado', 'recibimos']) expect(texto.toLowerCase()).not.toContain(prohibido);
+    }
+    // La tabla vive en el módulo puro y la pantalla la usa: no hay una segunda copia.
+    expect(pagar).toContain('ESTADO_DEL_COBRO[estado]');
+    expect(pagar).not.toMatch(/const ESTADO_DEL_COBRO/);
+  });
+
+  it('en CONFIRMADO no se muestran el QR ni «Cancelar este cobro»; en los demás estados, sí', () => {
+    expect(cobroSeMuestraParaPagar('CONFIRMADO')).toBe(false);
+    for (const e of ['SIN_EMITIR', 'BORRADOR', 'QR_ACTIVO', 'PAGO_DETECTADO', 'EN_REVISION', 'QR_SUELTO', undefined, null]) {
+      expect(cobroSeMuestraParaPagar(e), String(e)).toBe(true);
+    }
+    // La rama sin QR vuelve ANTES de dibujar la imagen y el botón de cancelar.
+    const rama = pagar.indexOf('if (!paraPagar)');
+    expect(rama).toBeGreaterThan(0);
+    expect(rama).toBeLessThan(pagar.indexOf("urlDeFuncionHttp('imagenDePago'"));
+    expect(rama).toBeLessThan(pagar.indexOf('Cancelar este cobro'));
+    const sinQr = pagar.slice(rama, pagar.indexOf('return (', pagar.indexOf('return (', rama) + 1));
+    expect(sinQr).not.toContain('imagenDePago');
+    expect(sinQr).not.toContain('onAnular');
+    expect(sinQr).toContain('No hace falta pagar otra vez');
+  });
+
+  it('el pedido de sesión reciente al emitir otro plan ofrece volver a entrar con Google y repetir el MISMO pedido (LOW 3)', () => {
+    expect(pideVolverAEntrar({ code: 'functions/unauthenticated' })).toBe(true);
+    for (const e of [{ code: 'functions/permission-denied' }, { code: 'unauthenticated' }, null, undefined, 'x']) {
+      expect(pideVolverAEntrar(e)).toBe(false);
+    }
+    expect(pagar).toContain("if (pideVolverAEntrar(e) && conGoogle) setReintento(p);");
+    expect(pagar).toContain('reauthenticateWithPopup(auth.currentUser, proveedor)');
+    expect(pagar).toContain('await emitirPedido(pendienteDeEmitir);');
   });
 });

@@ -152,3 +152,44 @@ export function mesEscrito(periodo: string): string {
 
 /** El precio de lista, para la tabla de planes. */
 export const PRECIOS = { bolsa: BOLSA, instalacionUsd: INSTALACION_USD } as const;
+
+// -----------------------------------------------------------------------------
+// EL COBRO PENDIENTE, COMO LO LEE EL COMERCIO
+// -----------------------------------------------------------------------------
+
+/**
+ * Lo que el comercio lee de cada estado del cobro en el banco.
+ *
+ * `CONFIRMADO` CON EL PAGO TODAVÍA PENDIENTE (revisión de seguridad de #212,
+ * tercera vuelta, LOW 1): el banco confirmó, pero NovuChat no lo aplicó solo
+ * --entró menos de lo que dice el QR, o el QR era de otro plan-- y lo tiene
+ * que confirmar el propietario en Negocios. Se dice lo que pasa, sin decir que
+ * el pago está acreditado (prohibición 3 de `CLAUDE.md`): lo acreditará
+ * NovuChat al registrarlo.
+ */
+export const ESTADO_DEL_COBRO: Readonly<Record<string, string>> = {
+  SIN_EMITIR: 'todavía sin QR',
+  BORRADOR: 'el banco todavía no emitió el QR',
+  QR_ACTIVO: 'esperando el pago',
+  PAGO_DETECTADO: 'el banco detectó un pago y lo está confirmando',
+  EN_REVISION: 'un pago tardío está en revisión en el banco',
+  QR_SUELTO: 'NovuChat lo está revisando',
+  CONFIRMADO: 'el banco confirmó el pago; NovuChat lo está registrando',
+};
+
+/**
+ * ¿Se muestran el QR y el botón «Cancelar este cobro»? NO si el banco ya
+ * confirmó: pagar dos veces el mismo QR no tiene sentido, y cancelar un cobro
+ * cuya plata ya entró tampoco (el servidor lo rechaza igual:
+ * `anularPagoPendiente`, e `imagenDePago` responde 404).
+ */
+export const cobroSeMuestraParaPagar = (cobroEstado: unknown): boolean => cobroEstado !== 'CONFIRMADO';
+
+/**
+ * El servidor pide volver a iniciar sesión (`unauthenticated`): pasa cuando
+ * el propietario emite el cobro de OTRO plan con una sesión de más de media
+ * hora (`crearCobroPrepago`, tercera vuelta de #212, LOW 3). La pantalla
+ * ofrece volver a entrar con Google y repetir el pedido.
+ */
+export const pideVolverAEntrar = (e: unknown): boolean =>
+  (e as { code?: unknown } | undefined)?.code === 'functions/unauthenticated';

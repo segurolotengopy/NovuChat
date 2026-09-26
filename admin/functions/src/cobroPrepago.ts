@@ -72,6 +72,7 @@ import {
 } from './prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
 import { planQuePuedePedir } from './planes.js';
+import { exigirSesionReciente } from './autorizacion.js';
 import {
   auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,
@@ -270,7 +271,16 @@ export interface PagoEmitido {
 export async function crearCobroInterno(
   tenantId: string,
   pedido: PedidoDePago,
-  quien: { uid: string; creadoPor: string; canal: 'consola' | 'whatsapp' | 'manual'; rol?: 'admin' | 'propietario' },
+  quien: {
+    uid: string; creadoPor: string; canal: 'consola' | 'whatsapp' | 'manual'; rol?: 'admin' | 'propietario';
+    /**
+     * La sesión del propietario tiene menos de media hora (`exigirSesionReciente`).
+     * Solo se mira si el pedido es una mensualidad de OTRO plan: eso deja la
+     * firma `cambioAutorizadoPor`, que después cambia el plan sin más control.
+     * Sin el dato, se toma como NO reciente: ante la duda, no se firma.
+     */
+    sesionReciente?: boolean;
+  },
   deps: Deps = {},
 ): Promise<PagoEmitido> {
   const ahoraMs = deps.ahoraMs ?? Date.now();
@@ -331,6 +341,21 @@ export async function crearCobroInterno(
       throw new HttpsError('permission-denied',
         'El cambio de plan lo hace NovuChat: desde acá se paga el plan que la cuenta ya tiene.');
     }
+    // LA FIRMA PIDE SESIÓN RECIENTE (revisión de seguridad de #212, tercera
+    // vuelta, LOW 3). Un QR de otro plan pedido por el propietario queda
+    // firmado (`cambioAutorizadoPor`) y, al confirmarlo el banco, cambia el
+    // plan y la mensualidad sin otro control: es lo mismo que cambiar el plan
+    // en Negocios, que ya exige una sesión de menos de media hora
+    // (`actualizarEstadoCuenta`). Sin esto, un token robado del propietario
+    // firmaba cambios de plan por la puerta de Pagar. Se mira acá, contra la
+    // cuenta leída en la transacción, y ANTES de reservar: no queda pago,
+    // pendiente ni llamada al cobrador. La pantalla responde con
+    // `reauthenticateWithPopup` y repite.
+    const firma = pedido.tipo === 'mensualidad' && quien.rol === 'propietario' && pedido.plan !== cuenta['plan'];
+    if (firma && quien.sesionReciente !== true) {
+      throw new HttpsError('unauthenticated',
+        'Por seguridad, vuelva a iniciar sesión para emitir el cobro de otro plan: ese pago cambia el plan de la cuenta.');
+    }
     const pendienteId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
       ? cuenta['pagoPendienteId'] : null;
 
@@ -339,7 +364,14 @@ export async function crearCobroInterno(
       const p = pDoc.data();
       if (p && p['estado'] === 'pendiente') {
         const cobro = cobroGuardadoDe(p);
-        const vivo = { pagoId: pendienteId, monto: p['monto'], descripcion: p['descripcion'], fichaQr: cobro?.fichaQr ?? '', venceEn: milis(p['venceEn']), cobroEstado: cobro?.estado ?? 'SIN_EMITIR' };
+        // Un QR que el banco ya confirmó no viaja en los detalles del error
+        // (revisión de seguridad del #217): lo mismo que `consultarPagoPendiente`
+        // e `imagenDePago`, para que ninguna puerta invite a pagarlo dos veces.
+        const vivo = {
+          pagoId: pendienteId, monto: p['monto'], descripcion: p['descripcion'],
+          ...(cobro?.estado === 'CONFIRMADO' ? {} : { fichaQr: cobro?.fichaQr ?? '' }),
+          venceEn: milis(p['venceEn']), cobroEstado: cobro?.estado ?? 'SIN_EMITIR',
+        };
         if (cobro?.estado === 'QR_SUELTO') {
           throw new HttpsError('failed-precondition', 'El último cobro quedó suelto en el banco: NovuChat lo tiene que revisar antes de emitir otro.', vivo);
         }
@@ -369,7 +401,7 @@ export async function crearCobroInterno(
     // EL PROPIETARIO QUE PIDE OTRO PLAN LO DEJA FIRMADO (LOW 2 de #212): al
     // confirmar el banco, un plan distinto del vigente solo se aplica con esta
     // marca; sin ella, el pago queda en revisión.
-    const autoriza = pedido.tipo === 'mensualidad' && quien.rol === 'propietario' && pedido.plan !== cuenta['plan'];
+    const autoriza = firma;
     tx.create(refPago, {
       tipo: pedido.tipo,
       ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
@@ -493,7 +525,14 @@ export const crearCobroPrepago = onCall(
     const limpio: PedidoDePago = pedido.tipo === 'mensualidad'
       ? { tipo: 'mensualidad', plan: pedido.plan, meses: pedido.meses }
       : pedido.tipo === 'bolsa' ? { tipo: 'bolsa', cantidad: pedido.cantidad } : { tipo: 'instalacion' };
-    return crearCobroInterno(tenantId, limpio, { uid: quien.uid, creadoPor: quien.uid, canal: 'consola', rol: quien.rol });
+    // Si la sesión es reciente se decide acá, con el token; si hace falta
+    // (otro plan, pedido por el propietario) se decide en la reserva, contra
+    // la cuenta leída. Un administrador nunca firma: da igual.
+    let sesionReciente = false;
+    try { exigirSesionReciente(peticion, Date.now()); sesionReciente = true; } catch { /* solo cuenta si hay firma */ }
+    return crearCobroInterno(tenantId, limpio, {
+      uid: quien.uid, creadoPor: quien.uid, canal: 'consola', rol: quien.rol, sesionReciente,
+    });
   },
 );
 
@@ -1017,7 +1056,12 @@ export const imagenDePago = onRequest(
     if (!indice || !ID_TENANT.test(tenantId) || !ID_PAGO.test(pagoId)) { respuesta.status(404).send('no encontrado'); return; }
     const pago = (await db().doc(`tenants/${tenantId}/pagos/${pagoId}`).get()) as DocumentSnapshot;
     const guardado = cobroGuardadoDe(pago.data());
-    if (pago.get('estado') !== 'pendiente' || guardado?.fichaQr !== ficha || !guardado.qrRuta) {
+    // 404 TAMBIÉN SI EL BANCO YA CONFIRMÓ ESE QR (tercera vuelta de #212,
+    // LOW 1). Un pago en revisión (importe menor, o `plan_distinto`) sigue
+    // `pendiente` hasta que el propietario lo confirma, y el índice sigue
+    // existiendo; servir la imagen invitaría a pagar dos veces el mismo QR.
+    if (pago.get('estado') !== 'pendiente' || guardado?.fichaQr !== ficha || !guardado.qrRuta
+      || guardado.estado === 'CONFIRMADO') {
       respuesta.status(404).send('no encontrado'); return;
     }
     const png = await almacen().leer(guardado.qrRuta);

@@ -196,6 +196,70 @@ export const pideSesionReciente = (e: unknown): boolean =>
   (e as { code?: unknown } | undefined)?.code === 'functions/unauthenticated';
 
 // -----------------------------------------------------------------------------
+// LOS PAGOS EN REVISIÓN: el banco confirmó y NovuChat no lo aplicó solo
+// -----------------------------------------------------------------------------
+
+/**
+ * POR QUÉ EXISTE (revisión de seguridad de #212, tercera vuelta, LOW 1). El
+ * cliente del cobrador deja un pago `pendiente` con `cobro.estado:
+ * 'CONFIRMADO'` cuando la plata entró pero no se puede aplicar sola: entró
+ * menos de lo que dice el QR, o el QR era de OTRO plan sin la firma del
+ * propietario (`revision: 'plan_distinto'`). Hasta este bloque solo se
+ * resolvía armando la petición a mano, y mientras tanto el comercio que pagó
+ * podía quedar cortado. Negocios los lista y ofrece `confirmarPendiente`.
+ */
+export type MotivoDeRevision = 'plan_distinto' | 'importe_menor' | 'otro';
+
+export interface PagoEnRevision {
+  pagoId: string;
+  descripcion: unknown;
+  /** Lo que dice el QR, en bolivianos. */
+  monto: number | null;
+  /** Lo que el banco informó que entró; con eso se precarga el formulario. */
+  montoRecibidoBs: number | null;
+  /** El plan del QR, si es una mensualidad. */
+  plan: string | null;
+  motivo: MotivoDeRevision;
+}
+
+const numeroFinito = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * De los pagos leídos, los que esperan al propietario: `pendiente` y con el
+ * cobro que el banco ya confirmó. Con la MISMA condición que exige el servidor
+ * para `confirmarPendiente` (`pagos.ts`, `confirmarQrConfirmado`): lo que se
+ * lista, se puede confirmar; lo que no, el servidor lo rechaza igual.
+ */
+export function pagosEnRevision(filas: ReadonlyArray<{ id: string } & Record<string, unknown>>): PagoEnRevision[] {
+  const salida: PagoEnRevision[] = [];
+  for (const f of filas) {
+    const cobro = typeof f['cobro'] === 'object' && f['cobro'] !== null ? f['cobro'] as Record<string, unknown> : null;
+    if (f['estado'] !== 'pendiente' || cobro?.['estado'] !== 'CONFIRMADO' || !ID_PAGO.test(f.id)) continue;
+    const monto = numeroFinito(f['monto']);
+    const recibido = numeroFinito(f['montoRecibidoBs']);
+    const motivo: MotivoDeRevision = f['revision'] === 'plan_distinto' ? 'plan_distinto'
+      : monto !== null && recibido !== null && recibido < monto ? 'importe_menor' : 'otro';
+    salida.push({
+      pagoId: f.id, descripcion: f['descripcion'], monto, montoRecibidoBs: recibido,
+      plan: f['tipo'] === 'mensualidad' && typeof f['plan'] === 'string' ? f['plan'] : null, motivo,
+    });
+  }
+  return salida;
+}
+
+/**
+ * El motivo que el servidor exige para confirmar a mano (`motivoDiferencia`,
+ * de `MOTIVO_CONFIRMACION_MINIMO` a 300; `functions/src/pagos.ts`, que no se
+ * importa porque arrastra el SDK Admin: la prueba compara los dos números).
+ */
+export const MOTIVO_CONFIRMACION_MINIMO = 3;
+export const MOTIVO_CONFIRMACION_MAXIMO = 300;
+export const motivoDeConfirmacionValido = (motivo: string): boolean => {
+  const t = motivo.trim();
+  return t.length >= MOTIVO_CONFIRMACION_MINIMO && t.length <= MOTIVO_CONFIRMACION_MAXIMO;
+};
+
+// -----------------------------------------------------------------------------
 // TEXTOS DE CONFIRMACIÓN: lo que se le muestra al propietario antes de escribir
 // -----------------------------------------------------------------------------
 
