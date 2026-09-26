@@ -369,48 +369,89 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     } catch (e) { return null; }
   })();
   const telefonoDelCliente = String(ent.from || '');
-  const guardarPendiente = (id) => {
-    if (pendientesDeCancelar && telefonoDelCliente && id) {
-      pendientesDeCancelar[telefonoDelCliente] = { eventoId: String(id).slice(0, 200), desde: Date.now() };
-    }
+  // Como se describe una cita en la pregunta: «de corte del sabado, 26 de
+  // septiembre a las 10:00». Es lo que el cliente lee, y lo que se guarda con
+  // el id para que la pregunta siguiente pueda nombrar lo que va a cancelar.
+  const describirCita = (cita) => {
+    if (!cita) return '';
+    const serv = (String(cita.summary || '').split('—')[1] || '').trim().replace(/-/g, ' ');
+    let cuando = '';
+    try {
+      const d = new Date(cita.start && cita.start.dateTime);
+      cuando = d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' })
+        + ' a las ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
+    } catch (e) { cuando = ''; }
+    return (serv ? ' de ' + serv : '') + (cuando ? ' del ' + cuando : '');
   };
-  const olvidarPendiente = () => { if (pendientesDeCancelar && telefonoDelCliente) delete pendientesDeCancelar[telefonoDelCliente]; };
+  // El registro de este telefono: el pendiente (la cita que se mostro al pedir
+  // confirmacion) y los CANDIDATOS (todo lo que buscar_mi_cita le devolvio en
+  // los ultimos 30 minutos, id y descripcion). Los candidatos son lo unico que
+  // el cliente pudo haber visto: la herramienta rechaza cancelar otra cosa.
+  const registroDe = () => (pendientesDeCancelar && telefonoDelCliente)
+    ? (pendientesDeCancelar[telefonoDelCliente] = pendientesDeCancelar[telefonoDelCliente] || { eventoId: '', desc: '', desde: 0, candidatos: {} })
+    : null;
+  const guardarPendiente = (id, desc) => {
+    const r = registroDe();
+    if (r && id) { r.eventoId = String(id).slice(0, 200); r.desc = String(desc || '').slice(0, 160); r.desde = Date.now(); }
+  };
+  const olvidarPendiente = () => { const r = registroDe(); if (r) { r.eventoId = ''; r.desc = ''; } };
   const citasBuscadas = () => {
-    const ids = [];
+    const vistas = [];
     for (const p of pasos) {
       if (!p || !p.action || p.action.tool !== 'buscar_mi_cita') continue;
       let obs = p.observation;
       if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
-      for (const ev of (Array.isArray(obs) ? obs : [])) if (ev && ev.id) ids.push(String(ev.id));
+      for (const ev of (Array.isArray(obs) ? obs : [])) {
+        if (ev && ev.id && !vistas.some((v) => v.id === String(ev.id))) vistas.push({ id: String(ev.id), desc: describirCita(ev) });
+      }
     }
-    return [...new Set(ids)];
+    return vistas;
   };
+  // Todo lo que buscar_mi_cita devolvio en este turno queda como candidato, con
+  // su descripcion, por 30 minutos: hasta diez, que es mas de lo que un cliente
+  // tiene por delante.
+  const vistasEsteTurno = citasBuscadas();
+  if (vistasEsteTurno.length) {
+    const r = registroDe();
+    if (r) {
+      r.candidatos = (r.candidatos && typeof r.candidatos === 'object') ? r.candidatos : {};
+      for (const v of vistasEsteTurno) r.candidatos[v.id.slice(0, 200)] = String(v.desc).slice(0, 160);
+      const ids = Object.keys(r.candidatos);
+      for (const id of ids.slice(0, Math.max(0, ids.length - 10))) delete r.candidatos[id];
+      r.desde = Date.now();
+    }
+  }
 
   const cancelacionSinConfirmar = pasosCancelar.length > 0 && !CONFIRMA_CANCELAR.test(textoCliente);
   const cancelacionFallida = !cancelacionSinConfirmar && pasosCancelar.length > 0
     && pasosCancelar.some((p) => !canceloBien(p.observation));
   if (cancelacionSinConfirmar && !fallo) {
     const pedida = String((pasosCancelar[0].action.toolInput || {}).eventoId || '');
-    let cita = null;
-    for (const p of pasos) {
-      if (!p || !p.action || p.action.tool !== 'buscar_mi_cita') continue;
-      let obs = p.observation;
-      if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
-      for (const ev of (Array.isArray(obs) ? obs : [])) if (ev && String(ev.id) === pedida) cita = ev;
-    }
+    const vista = vistasEsteTurno.find((v) => v.id === pedida) || null;
+    const registro = registroDe();
+    const candidatos = (registro && registro.candidatos && typeof registro.candidatos === 'object') ? registro.candidatos : {};
     let desc = '';
-    if (cita) {
-      const serv = (String(cita.summary || '').split('—')[1] || '').trim().replace(/-/g, ' ');
-      let cuando = '';
-      try {
-        const d = new Date(cita.start && cita.start.dateTime);
-        cuando = d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' })
-          + ' a las ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
-      } catch (e) { cuando = ''; }
-      desc = (serv ? ' de ' + serv : '') + (cuando ? ' del ' + cuando : '');
+    // LA PREGUNTA NOMBRA SIEMPRE LO QUE SE VA A CANCELAR (revision de seguridad
+    // del 26/09). Tres casos, en orden:
+    //   1. el modelo busco en este turno y pidio una de las que encontro: esa;
+    //   2. no busco, pero pidio una que el cliente YA VIO en los ultimos 30
+    //      minutos (candidatos): esa. Es «no, mejor la de las 11» sin volver a
+    //      buscar, y el pendiente viejo NO se queda pegado;
+    //   3. pidio algo que nadie vio: si habia un pendiente, la pregunta nombra
+    //      ESE (es lo que el «si» va a cancelar); si no, se olvida todo y la
+    //      pregunta sale sin cita, y el «si» siguiente tampoco cancela nada que
+    //      no se haya mostrado (la herramienta lo rechaza).
+    if (vista) {
+      desc = vista.desc;
+      guardarPendiente(vista.id, desc);
+    } else if (pedida && Object.prototype.hasOwnProperty.call(candidatos, pedida)) {
+      desc = String(candidatos[pedida] || '');
+      guardarPendiente(pedida, desc);
+    } else if (registro && registro.eventoId) {
+      desc = String(registro.desc || '');
+    } else {
+      olvidarPendiente();
     }
-    // La cita que se muestra es la que se va a cancelar cuando confirme.
-    if (cita) guardarPendiente(cita.id);
     // SI VINO A MOVER LA CITA, LA PREGUNTA LO DICE (Andres, 24/09/2026): «primero
     // tienes que cancelar» sin ofrecer nada suena a tramite, y la persona
     // escribio para conseguir OTRO horario, no para perder el suyo. El horario
@@ -431,8 +472,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // herramienta) y en este turno busco y encontro UNA sola cita, esa es la que
   // se mostro: queda guardada igual. Con varias no se adivina cual.
   if (!fallo && pasosCancelar.length === 0 && /cancel/i.test(respuesta) && /\?/.test(respuesta)) {
-    const unicas = citasBuscadas();
-    if (unicas.length === 1) guardarPendiente(unicas[0]);
+    if (vistasEsteTurno.length === 1) guardarPendiente(vistasEsteTurno[0].id, vistasEsteTurno[0].desc);
   }
 
   // --- UNA CITA PAGADA QUE SE CANCELA (2026-09-21) ---------------------------
@@ -445,8 +485,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // puede pasar es que nadie lo sepa.
   const idsCancelados = new Set(pasosCancelar.filter((p) => canceloBien(p.observation))
     .map((p) => String((p.action.toolInput && p.action.toolInput.eventoId) || '')).filter(Boolean));
-  // Cancelada de verdad: el pendiente de este telefono ya no existe.
-  if (idsCancelados.size) olvidarPendiente();
+  // Cancelada de verdad: el pendiente y los candidatos de este telefono ya no
+  // sirven (la cita cancelada no vuelve a mostrarse; las otras, cuando las
+  // vuelva a buscar).
+  if (idsCancelados.size && pendientesDeCancelar && telefonoDelCliente) delete pendientesDeCancelar[telefonoDelCliente];
   let citaPagadaCancelada = null;
   if (idsCancelados.size && cfg.senaActiva === 'si') {
     for (const p of pasos) {

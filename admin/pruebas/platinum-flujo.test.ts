@@ -4221,10 +4221,65 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       expect(idDe('Sí, cancélala', 'corte10', 'manicure11')).toBe('corte10');
     });
 
-    it('sin cita guardada, sigue como hasta hoy: el id del modelo con confirmación, SIN-CONFIRMAR sin ella', () => {
+    it('sin cita guardada ni candidatos, sigue como hasta hoy: el id del modelo con confirmación, SIN-CONFIRMAR sin ella', () => {
       expect(idDe('sí', '', 'manicure11')).toBe('manicure11');
       expect(idDe('Quiero cancelar de las 11', '', 'manicure11')).toBe('SIN-CONFIRMAR');
       expect(idDe('Quiero cancelar de las 11', 'corte10', 'manicure11')).toBe('SIN-CONFIRMAR');
+    });
+
+    it('sin pendiente pero con candidatos, solo se cancela lo que el cliente vio: otro id es NO-MOSTRADA', () => {
+      const con = (userInput: string, delModelo: string) => expresion(nodo(f, 'cancelar_cita').parameters['eventId'], {},
+        { 'Normalizar entrada': { userInput }, 'Config del negocio': { cancelacionPendienteId: '', cancelacionCandidatos: JSON.stringify(['corte10', 'manicure11']) } },
+        { eventoId: delModelo });
+      expect(con('sí', 'manicure11')).toBe('manicure11');
+      expect(con('sí', 'inventada')).toBe('NO-MOSTRADA');
+      expect(con('Quiero cancelar', 'manicure11')).toBe('SIN-CONFIRMAR');
+    });
+
+    it('EL CASO DE LA REVISIÓN: el cliente cambia de cita y el modelo NO vuelve a buscar: el pendiente pasa a la que ya vio, y la pregunta la nombra', () => {
+      const estado: J = {};
+      // Turno 1: buscó, mostró el corte, quedó pendiente.
+      procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: '' }] }, estado);
+      // Turno 2: «no, mejor la manicure de las 11», sin buscar de nuevo.
+      const r = procesar({ output: 'Listo, cancelé tu manicure.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'manicure11' } }, observation: '' }] }, estado, 'no, mejor la manicure de las 11');
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(reg['eventoId']).toBe('manicure11');
+      expect(String(r['respuesta'])).toMatch(/cancelar tu cita de manicure del/);
+    });
+
+    it('si pide algo que nadie vio y hay un pendiente, la pregunta nombra el pendiente: el «sí» cancela lo que la pregunta dice', () => {
+      const estado: J = {};
+      procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: '' }] }, estado);
+      const r = procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'inventada' } }, observation: '' }] }, estado, 'cancela la otra');
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(reg['eventoId']).toBe('corte10');
+      expect(String(r['respuesta'])).toMatch(/cancelar tu cita de corte del/);
+    });
+
+    it('si pide algo que nadie vio y NO hay pendiente, se olvida todo y la pregunta sale sin cita', () => {
+      const estado: J = { cancelacionesPendientes: { [ENT.from]: { eventoId: '', desc: '', desde: Date.now(), candidatos: {} } } };
+      const r = procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'inventada' } }, observation: '' }] }, estado);
+      expect(String(r['respuesta'])).toBe('¿Confirmas que quieres cancelar tu cita? Respóndeme «sí» y la cancelo.');
+      expect((estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]?.['eventoId']).toBe('');
+    });
+
+    it('los candidatos son lo que buscar_mi_cita devolvió, con su descripción, y Config del negocio los expone', () => {
+      const estado: J = {};
+      procesar({ output: 'Tienes dos citas: corte a las 10 y manicure a las 11. ¿Cuál quieres cancelar?', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) }] }, estado);
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(Object.keys(reg['candidatos'] as J).sort()).toEqual(['corte10', 'manicure11']);
+      expect(String((reg['candidatos'] as J)['manicure11'])).toMatch(/manicure/);
+      const cfg = configCon(estado);
+      expect(cfg['cancelacionPendienteId']).toBe('');
+      expect(JSON.parse(String(cfg['cancelacionCandidatos']))).toEqual(['corte10', 'manicure11']);
     });
 
     it('la compuerta guarda por teléfono el id de la cita que mostró al pedir confirmación', () => {
@@ -4235,15 +4290,20 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       expect(String(r['respuesta'])).toMatch(/¿Confirmas que quieres cancelar tu cita de corte/);
       const pend = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
       expect(pend['eventoId']).toBe('corte10');
+      expect(String(pend['desc'])).toMatch(/de corte del/);
       expect(typeof pend['desde']).toBe('number');
+      expect(configCon(estado)['cancelacionPendienteDesc']).toBe(pend['desc']);
     });
 
-    it('no guarda nada si el id que pidió el modelo no estaba entre las citas buscadas (podría ser inventado)', () => {
+    it('no guarda pendiente si el id que pidió el modelo no estaba entre las citas buscadas (podría ser inventado)', () => {
       const estado: J = {};
       procesar({ output: 'Listo.', intermediateSteps: [
         { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10]) },
         { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'inventado' } }, observation: '' }] }, estado);
-      expect(estado['cancelacionesPendientes']).toEqual({});
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(reg['eventoId']).toBe('');
+      // Pero lo buscado sí queda como candidato: es lo único que se podrá cancelar.
+      expect(Object.keys(reg['candidatos'] as J)).toEqual(['corte10']);
     });
 
     it('cuando el modelo pregunta por su cuenta y encontró UNA sola cita, esa queda guardada; con dos no adivina', () => {
@@ -4254,11 +4314,11 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       const dos: J = {};
       procesar({ output: '¿Cuál quieres cancelar, la de las 10 o la de las 11?', intermediateSteps: [
         { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) }] }, dos);
-      expect(dos['cancelacionesPendientes']).toEqual({});
+      expect((dos['cancelacionesPendientes'] as Record<string, J>)[ENT.from]?.['eventoId']).toBe('');
     });
 
     it('cancelada de verdad, el pendiente de ese teléfono se olvida', () => {
-      const estado: J = { cancelacionesPendientes: { [ENT.from]: { eventoId: 'corte10', desde: Date.now() }, '59170000009': { eventoId: 'x', desde: Date.now() } } };
+      const estado: J = { cancelacionesPendientes: { [ENT.from]: { eventoId: 'corte10', desde: Date.now(), candidatos: { corte10: 'x' } }, '59170000009': { eventoId: 'x', desde: Date.now() } } };
       procesar({ output: 'Listo, cancelé tu cita.', intermediateSteps: [
         { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: JSON.stringify([{ success: true }]) }] }, estado, 'sí');
       expect(Object.keys(estado['cancelacionesPendientes'] as J)).toEqual(['59170000009']);
@@ -4272,6 +4332,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
         '59170000008': { eventoId: 'vieja', desde: ahora - 31 * 60 * 1000 } } };
       expect(configCon(estado)['cancelacionPendienteId']).toBe('corte10');
       expect(configCon(estado, '59170000007')['cancelacionPendienteId']).toBe('');
+      expect(configCon(estado, '59170000007')['cancelacionCandidatos']).toBe('[]');
       expect(Object.keys(estado['cancelacionesPendientes'] as J).sort()).toEqual([ENT.from, '59170000009'].sort());
     });
 
@@ -4279,10 +4340,12 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       const r = ejecutar(codigoDe('Config del negocio'), [{ statusCode: 500, body: {} }],
         { 'Config base': [cfgBase], 'Normalizar entrada': [{ from: ENT.from }] })[0] ?? {};
       expect(r['cancelacionPendienteId']).toBe('');
+      expect(r['cancelacionCandidatos']).toBe('[]');
     });
 
-    it('la herramienta usa el pendiente que expone Config del negocio, y lo dice en el código', () => {
+    it('la herramienta usa el pendiente y los candidatos que expone Config del negocio, y lo dice en el código', () => {
       expect(String(nodo(f, 'cancelar_cita').parameters['eventId'])).toContain('cancelacionPendienteId');
+      expect(String(nodo(f, 'cancelar_cita').parameters['eventId'])).toContain('cancelacionCandidatos');
     });
   });
 
