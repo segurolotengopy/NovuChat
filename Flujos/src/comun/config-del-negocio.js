@@ -21,6 +21,46 @@
 // tiene que comportarse como antes, no peor.
 const base = $('Config base').first().json;
 
+// --- LA CANCELACION PENDIENTE DE CONFIRMAR, POR TELEFONO (26/09/2026) --------
+// `Procesar respuesta` guarda, cuando pide confirmar una cancelacion, el id de
+// LA CITA QUE SE MOSTRO; la herramienta `cancelar_cita` usa ESE id cuando el
+// cliente confirma, y no el que el modelo elija. Motivo: #6086 y #6091 del Demo
+// A (26/09): el asistente pidio confirmar el corte de las 10:00, el cliente
+// dijo «si» y el modelo cancelo la manicure de las 11:00, porque la memoria
+// guarda mensajes y no ids. Vive en los datos estaticos del flujo, 30 minutos,
+// y se lee aca porque este nodo corre antes del agente en todos los turnos.
+// Sin datos estaticos (una prueba sin ese global, una version sin el) no hay
+// pendiente y la herramienta sigue con el id del modelo, como hasta hoy.
+// Ademas del pendiente viajan los CANDIDATOS: los ids que buscar_mi_cita le
+// devolvio a ese telefono en los ultimos 30 minutos. Son lo unico que el
+// cliente pudo haber visto, y la herramienta rechaza cancelar cualquier otro.
+const CANCELACION_PENDIENTE_MS = 30 * 60 * 1000;
+const laCancelacion = (() => {
+  const nada = { cancelacionPendienteId: '', cancelacionPendienteDesc: '', cancelacionCandidatos: '[]' };
+  try {
+    const sd = $getWorkflowStaticData('global');
+    const lista = (sd.cancelacionesPendientes && typeof sd.cancelacionesPendientes === 'object')
+      ? sd.cancelacionesPendientes : null;
+    if (!lista) return nada;
+    const ahora = Date.now();
+    // Se toca el objeto SOLO si hay algo que barrer: n8n guarda los datos
+    // estaticos al terminar cada ejecucion que los cambio, y dos ejecuciones
+    // solapadas se pisan; cuanto menos se escriba, menos ventana.
+    for (const [tel, p] of Object.entries(lista)) {
+      if (!p || !(ahora - Number(p.desde || 0) < CANCELACION_PENDIENTE_MS)) delete lista[tel];
+    }
+    const from = String($('Normalizar entrada').first().json.from || '');
+    const p = from ? lista[from] : null;
+    if (!p) return nada;
+    const candidatos = (p.candidatos && typeof p.candidatos === 'object') ? Object.keys(p.candidatos).slice(0, 10) : [];
+    return {
+      cancelacionPendienteId: (typeof p.eventoId === 'string') ? p.eventoId.slice(0, 200) : '',
+      cancelacionPendienteDesc: (typeof p.desc === 'string') ? p.desc.slice(0, 160) : '',
+      cancelacionCandidatos: JSON.stringify(candidatos.map((id) => String(id).slice(0, 200))),
+    };
+  } catch (e) { return nada; }
+})();
+
 // ---------------------------------------------------------------------------
 // EL 409 NO ES UN FALLO: ES LA RESPUESTA QUE CORTA EL SERVICIO.
 //
@@ -158,7 +198,7 @@ const atencion = {
 };
 
 if (codigo === 409) {
-  return [{ json: { ...base, ...atencion, diasProximos,
+  return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion,
     estadoComercio: 'suspendido',
     // El texto neutro lo pone el panel: no menciona pagos ni deudas, porque el
     // cliente final no tiene por que enterarse de que el negocio debe dinero.
@@ -173,7 +213,7 @@ const contesto = codigo === 200 && cuerpo && typeof cuerpo.tenantId === 'string'
 if (!contesto) {
 // Sin respuesta no se corta: una caida del panel no puede dejar sin asistente a
 // todos los comercios. Un cliente escribiendo merece una respuesta.
-  return [{ json: { ...base, ...atencion, diasProximos,
+  return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion,
     estadoComercio: base.estadoComercio ?? 'operativo',
     configDeLaConsola: false,
     panelSinRespuesta: true,
@@ -346,4 +386,4 @@ const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas :
   .slice(0, 10)
   .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
 
-return [{ json: { ...base, ...atencion, diasProximos, ...deLaConsola, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];
+return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion, ...deLaConsola, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];

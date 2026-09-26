@@ -4182,6 +4182,174 @@ describe('Cancelar exige confirmación: la compuerta está en cancelar_cita', ()
 });
 
 /**
+ * LA CITA QUE SE MOSTRÓ ES LA QUE SE CANCELA (26/09/2026). Ejecuciones #6086 y
+ * #6091 del Demo A: la compuerta pidió confirmar el corte de las 10:00, Andres
+ * dijo «sí», y el modelo llamó a cancelar_cita con el id de la manicure de las
+ * 11:00 (la memoria guarda mensajes, no ids). Ahora el id de la cita mostrada se
+ * guarda por teléfono en los datos estáticos, Config del negocio lo expone y la
+ * herramienta lo usa en vez del que el modelo elija.
+ */
+describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json', demoA], ['bellido-agendamiento.json', bellido]])(
+  '%s · la cita que se mostró es la que se cancela', (_archivo, f) => {
+    const codigoDe = (n: string) => String(nodo(f, n).parameters['jsCode']);
+    const cfgBase = configBase(f);
+    const ENT = { from: '59170000001', userInput: 'Quiero cancelar la cita' };
+    const c10 = { id: 'corte10', summary: 'Cita Andrés — corte', start: { dateTime: '2026-09-26T10:00:00-04:00' } };
+    const m11 = { id: 'manicure11', summary: 'Cita Andrés — manicure', start: { dateTime: '2026-09-26T11:00:00-04:00' } };
+    /** Como `ejecutar`, con `$getWorkflowStaticData` sobre un objeto que la prueba controla. */
+    const conEstado = (codigo: string, items: J[], referencias: Record<string, J[]>, estado: J): J[] => {
+      const entrada = { all: () => items.map((json) => ({ json })), first: () => ({ json: items[0] }) };
+      const $ = (n: string) => ({
+        first: () => ({ json: referencias[n]?.[0] ?? {} }),
+        all: () => (referencias[n] ?? []).map((json) => ({ json })),
+        isExecuted: n in referencias,
+      });
+      // nosemgrep: devsecops.js-eval-prohibido
+      const fn = new Function('$input', '$', '$getWorkflowStaticData', codigo) as (i: unknown, r: unknown, s: unknown) => { json: J }[];
+      return fn(entrada, $, () => estado).map((x) => x.json);
+    };
+    const procesar = (salida: J, estado: J, userInput = ENT.userInput) => conEstado(codigoDe('Procesar respuesta'), [salida],
+      { 'Normalizar entrada': [{ ...ENT, userInput }], 'Config del negocio': [{ nombreNegocio: 'Un Negocio', tratamiento: 'tú' }] },
+      estado)[0] ?? {};
+    const idDe = (userInput: string, pendiente: string, delModelo = 'otra') => expresion(nodo(f, 'cancelar_cita').parameters['eventId'], {},
+      { 'Normalizar entrada': { userInput }, 'Config del negocio': { cancelacionPendienteId: pendiente } }, { eventoId: delModelo });
+    const configCon = (estado: J, from = ENT.from) => conEstado(codigoDe('Config del negocio'), [{ statusCode: 500, body: {} }],
+      { 'Config base': [cfgBase], 'Normalizar entrada': [{ from }] }, estado)[0] ?? {};
+
+    it('EL CASO REAL: con la cita mostrada guardada, «sí» cancela ESA, no la que el modelo eligió', () => {
+      expect(idDe('sí', 'corte10', 'manicure11')).toBe('corte10');
+      expect(idDe('Sí, cancélala', 'corte10', 'manicure11')).toBe('corte10');
+    });
+
+    it('sin cita guardada ni candidatos, sigue como hasta hoy: el id del modelo con confirmación, SIN-CONFIRMAR sin ella', () => {
+      expect(idDe('sí', '', 'manicure11')).toBe('manicure11');
+      expect(idDe('Quiero cancelar de las 11', '', 'manicure11')).toBe('SIN-CONFIRMAR');
+      expect(idDe('Quiero cancelar de las 11', 'corte10', 'manicure11')).toBe('SIN-CONFIRMAR');
+    });
+
+    it('sin pendiente pero con candidatos, solo se cancela lo que el cliente vio: otro id es NO-MOSTRADA', () => {
+      const con = (userInput: string, delModelo: string) => expresion(nodo(f, 'cancelar_cita').parameters['eventId'], {},
+        { 'Normalizar entrada': { userInput }, 'Config del negocio': { cancelacionPendienteId: '', cancelacionCandidatos: JSON.stringify(['corte10', 'manicure11']) } },
+        { eventoId: delModelo });
+      expect(con('sí', 'manicure11')).toBe('manicure11');
+      expect(con('sí', 'inventada')).toBe('NO-MOSTRADA');
+      expect(con('Quiero cancelar', 'manicure11')).toBe('SIN-CONFIRMAR');
+    });
+
+    it('EL CASO DE LA REVISIÓN: el cliente cambia de cita y el modelo NO vuelve a buscar: el pendiente pasa a la que ya vio, y la pregunta la nombra', () => {
+      const estado: J = {};
+      // Turno 1: buscó, mostró el corte, quedó pendiente.
+      procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: '' }] }, estado);
+      // Turno 2: «no, mejor la manicure de las 11», sin buscar de nuevo.
+      const r = procesar({ output: 'Listo, cancelé tu manicure.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'manicure11' } }, observation: '' }] }, estado, 'no, mejor la manicure de las 11');
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(reg['eventoId']).toBe('manicure11');
+      expect(String(r['respuesta'])).toMatch(/cancelar tu cita de manicure del/);
+    });
+
+    it('si pide algo que nadie vio y hay un pendiente, la pregunta nombra el pendiente: el «sí» cancela lo que la pregunta dice', () => {
+      const estado: J = {};
+      procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: '' }] }, estado);
+      const r = procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'inventada' } }, observation: '' }] }, estado, 'cancela la otra');
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(reg['eventoId']).toBe('corte10');
+      expect(String(r['respuesta'])).toMatch(/cancelar tu cita de corte del/);
+    });
+
+    it('si pide algo que nadie vio y NO hay pendiente, se olvida todo y la pregunta sale sin cita', () => {
+      const estado: J = { cancelacionesPendientes: { [ENT.from]: { eventoId: '', desc: '', desde: Date.now(), candidatos: {} } } };
+      const r = procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'inventada' } }, observation: '' }] }, estado);
+      expect(String(r['respuesta'])).toBe('¿Confirmas que quieres cancelar tu cita? Respóndeme «sí» y la cancelo.');
+      expect((estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]?.['eventoId']).toBe('');
+    });
+
+    it('los candidatos son lo que buscar_mi_cita devolvió, con su descripción, y Config del negocio los expone', () => {
+      const estado: J = {};
+      procesar({ output: 'Tienes dos citas: corte a las 10 y manicure a las 11. ¿Cuál quieres cancelar?', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) }] }, estado);
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(Object.keys(reg['candidatos'] as J).sort()).toEqual(['corte10', 'manicure11']);
+      expect(String((reg['candidatos'] as J)['manicure11'])).toMatch(/manicure/);
+      const cfg = configCon(estado);
+      expect(cfg['cancelacionPendienteId']).toBe('');
+      expect(JSON.parse(String(cfg['cancelacionCandidatos']))).toEqual(['corte10', 'manicure11']);
+    });
+
+    it('la compuerta guarda por teléfono el id de la cita que mostró al pedir confirmación', () => {
+      const estado: J = {};
+      const r = procesar({ output: 'Listo, he cancelado tu cita.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: '' }] }, estado);
+      expect(String(r['respuesta'])).toMatch(/¿Confirmas que quieres cancelar tu cita de corte/);
+      const pend = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(pend['eventoId']).toBe('corte10');
+      expect(String(pend['desc'])).toMatch(/de corte del/);
+      expect(typeof pend['desde']).toBe('number');
+      expect(configCon(estado)['cancelacionPendienteDesc']).toBe(pend['desc']);
+    });
+
+    it('no guarda pendiente si el id que pidió el modelo no estaba entre las citas buscadas (podría ser inventado)', () => {
+      const estado: J = {};
+      procesar({ output: 'Listo.', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'inventado' } }, observation: '' }] }, estado);
+      const reg = (estado['cancelacionesPendientes'] as Record<string, J>)[ENT.from]!;
+      expect(reg['eventoId']).toBe('');
+      // Pero lo buscado sí queda como candidato: es lo único que se podrá cancelar.
+      expect(Object.keys(reg['candidatos'] as J)).toEqual(['corte10']);
+    });
+
+    it('cuando el modelo pregunta por su cuenta y encontró UNA sola cita, esa queda guardada; con dos no adivina', () => {
+      const una: J = {};
+      procesar({ output: '¿Confirmas que quieres cancelar tu cita del sábado a las 10:00?', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10]) }] }, una);
+      expect((una['cancelacionesPendientes'] as Record<string, J>)[ENT.from]?.['eventoId']).toBe('corte10');
+      const dos: J = {};
+      procesar({ output: '¿Cuál quieres cancelar, la de las 10 o la de las 11?', intermediateSteps: [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c10, m11]) }] }, dos);
+      expect((dos['cancelacionesPendientes'] as Record<string, J>)[ENT.from]?.['eventoId']).toBe('');
+    });
+
+    it('cancelada de verdad, el pendiente de ese teléfono se olvida', () => {
+      const estado: J = { cancelacionesPendientes: { [ENT.from]: { eventoId: 'corte10', desde: Date.now(), candidatos: { corte10: 'x' } }, '59170000009': { eventoId: 'x', desde: Date.now() } } };
+      procesar({ output: 'Listo, cancelé tu cita.', intermediateSteps: [
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'corte10' } }, observation: JSON.stringify([{ success: true }]) }] }, estado, 'sí');
+      expect(Object.keys(estado['cancelacionesPendientes'] as J)).toEqual(['59170000009']);
+    });
+
+    it('Config del negocio expone el pendiente de ESTE teléfono, no el de otro, y olvida los de más de 30 minutos', () => {
+      const ahora = Date.now();
+      const estado: J = { cancelacionesPendientes: {
+        [ENT.from]: { eventoId: 'corte10', desde: ahora - 5 * 60 * 1000 },
+        '59170000009': { eventoId: 'ajena', desde: ahora },
+        '59170000008': { eventoId: 'vieja', desde: ahora - 31 * 60 * 1000 } } };
+      expect(configCon(estado)['cancelacionPendienteId']).toBe('corte10');
+      expect(configCon(estado, '59170000007')['cancelacionPendienteId']).toBe('');
+      expect(configCon(estado, '59170000007')['cancelacionCandidatos']).toBe('[]');
+      expect(Object.keys(estado['cancelacionesPendientes'] as J).sort()).toEqual([ENT.from, '59170000009'].sort());
+    });
+
+    it('sin datos estáticos (una prueba sin ese global) nada se rompe: no hay pendiente', () => {
+      const r = ejecutar(codigoDe('Config del negocio'), [{ statusCode: 500, body: {} }],
+        { 'Config base': [cfgBase], 'Normalizar entrada': [{ from: ENT.from }] })[0] ?? {};
+      expect(r['cancelacionPendienteId']).toBe('');
+      expect(r['cancelacionCandidatos']).toBe('[]');
+    });
+
+    it('la herramienta usa el pendiente y los candidatos que expone Config del negocio, y lo dice en el código', () => {
+      expect(String(nodo(f, 'cancelar_cita').parameters['eventId'])).toContain('cancelacionPendienteId');
+      expect(String(nodo(f, 'cancelar_cita').parameters['eventId'])).toContain('cancelacionCandidatos');
+    });
+  });
+
+/**
  * NO SE OFRECE LO QUE NO SE VA A CUMPLIR (Andres, 21/09/2026). Política de
  * NovuChat para todos los clientes. Prueba con el teléfono: el asistente
  * escribió «lo consulto con recepción para que te confirmen» sin tener cómo

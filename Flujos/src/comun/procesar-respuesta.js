@@ -348,28 +348,109 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // confirmacion de la que se mostro.
   const CONFIRMA_CANCELAR = /^[^a-záéíóúñ0-9]*(s[ií]|dale|confirmo|confirmado|correcto|exacto|as[ií] es|ok|okay|okey|de acuerdo|claro|adelante|hazlo|procede|canc[eé]lal[ao]|mu[eé]vel[ao]|c[aá]mbial[ao]|reprogr[aá]mal[ao]|reag[eé]ndal[ao]|por favor)(?![a-záéíóúñ])(?:[^a-záéíóúñ0-9]+(?:s[ií]|sip|dale|confirm[a-záéíóúñ]*|correcto|exacto|as[ií]|es|ok|okay|okey|de|acuerdo|claro|adelante|hazlo|procede|canc[eé]l[a-záéíóúñ]*|anul[a-záéíóúñ]*|reag[eé]nd[a-záéíóúñ]*|reprogr[aá]m[a-záéíóúñ]*|mov[a-záéíóúñ]*|mu[eé]v[a-záéíóúñ]*|cambi[a-záéíóúñ]*|c[aá]mbi[a-záéíóúñ]*|fecha|hora|horario|d[ií]a|quiero|la|lo|esa|ese|esta|misma|mismo|por|favor|porfa|porfavor|gracias|muchas|ya|y|listo|perfecto|bueno|nom[aá]s|seguro|pues|entonces)(?![a-záéíóúñ]))*[^a-záéíóúñ0-9]*$/i;
   const textoCliente = String(ent.userInput || '').replace(/^\(audio transcripto\)\s*/i, '').split('\n')[0];
+  // --- EL ID DE LA CITA QUE SE MOSTRO, GUARDADO POR TELEFONO (26/09/2026) ---
+  // Ejecuciones #6086 y #6091 del Demo A: la compuerta de abajo pregunto
+  // «¿confirmas que quieres cancelar tu cita de corte de las 10:00?», el
+  // cliente dijo «si», y el modelo llamo a cancelar_cita con el id de OTRA cita
+  // (la manicure de las 11:00) y escribio «he cancelado tu manicure». La
+  // memoria del agente guarda mensajes, no lo que devolvieron las herramientas:
+  // en el turno siguiente el id es lo que el modelo reconstruya. Por eso el id
+  // de la cita que se mostro se guarda ACA, por telefono y por 30 minutos, en
+  // los datos estaticos del flujo; `Config del negocio` lo expone en el turno
+  // siguiente y `cancelar_cita` lo usa cuando el cliente confirma, en vez del
+  // que el modelo elija. Barrera por hecho, no por prompt. Sin datos estaticos
+  // (pruebas sin ese global) no se guarda nada y todo sigue como hasta hoy.
+  const pendientesDeCancelar = (() => {
+    try {
+      const sd = $getWorkflowStaticData('global');
+      sd.cancelacionesPendientes = (sd.cancelacionesPendientes && typeof sd.cancelacionesPendientes === 'object')
+        ? sd.cancelacionesPendientes : {};
+      return sd.cancelacionesPendientes;
+    } catch (e) { return null; }
+  })();
+  const telefonoDelCliente = String(ent.from || '');
+  // Como se describe una cita en la pregunta: «de corte del sabado, 26 de
+  // septiembre a las 10:00». Es lo que el cliente lee, y lo que se guarda con
+  // el id para que la pregunta siguiente pueda nombrar lo que va a cancelar.
+  const describirCita = (cita) => {
+    if (!cita) return '';
+    const serv = (String(cita.summary || '').split('—')[1] || '').trim().replace(/-/g, ' ');
+    let cuando = '';
+    try {
+      const d = new Date(cita.start && cita.start.dateTime);
+      cuando = d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' })
+        + ' a las ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
+    } catch (e) { cuando = ''; }
+    return (serv ? ' de ' + serv : '') + (cuando ? ' del ' + cuando : '');
+  };
+  // El registro de este telefono: el pendiente (la cita que se mostro al pedir
+  // confirmacion) y los CANDIDATOS (todo lo que buscar_mi_cita le devolvio en
+  // los ultimos 30 minutos, id y descripcion). Los candidatos son lo unico que
+  // el cliente pudo haber visto: la herramienta rechaza cancelar otra cosa.
+  const registroDe = () => (pendientesDeCancelar && telefonoDelCliente)
+    ? (pendientesDeCancelar[telefonoDelCliente] = pendientesDeCancelar[telefonoDelCliente] || { eventoId: '', desc: '', desde: 0, candidatos: {} })
+    : null;
+  const guardarPendiente = (id, desc) => {
+    const r = registroDe();
+    if (r && id) { r.eventoId = String(id).slice(0, 200); r.desc = String(desc || '').slice(0, 160); r.desde = Date.now(); }
+  };
+  const olvidarPendiente = () => { const r = registroDe(); if (r) { r.eventoId = ''; r.desc = ''; } };
+  const citasBuscadas = () => {
+    const vistas = [];
+    for (const p of pasos) {
+      if (!p || !p.action || p.action.tool !== 'buscar_mi_cita') continue;
+      let obs = p.observation;
+      if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
+      for (const ev of (Array.isArray(obs) ? obs : [])) {
+        if (ev && ev.id && !vistas.some((v) => v.id === String(ev.id))) vistas.push({ id: String(ev.id), desc: describirCita(ev) });
+      }
+    }
+    return vistas;
+  };
+  // Todo lo que buscar_mi_cita devolvio en este turno queda como candidato, con
+  // su descripcion, por 30 minutos: hasta diez, que es mas de lo que un cliente
+  // tiene por delante.
+  const vistasEsteTurno = citasBuscadas();
+  if (vistasEsteTurno.length) {
+    const r = registroDe();
+    if (r) {
+      r.candidatos = (r.candidatos && typeof r.candidatos === 'object') ? r.candidatos : {};
+      for (const v of vistasEsteTurno) r.candidatos[v.id.slice(0, 200)] = String(v.desc).slice(0, 160);
+      const ids = Object.keys(r.candidatos);
+      for (const id of ids.slice(0, Math.max(0, ids.length - 10))) delete r.candidatos[id];
+      r.desde = Date.now();
+    }
+  }
+
   const cancelacionSinConfirmar = pasosCancelar.length > 0 && !CONFIRMA_CANCELAR.test(textoCliente);
   const cancelacionFallida = !cancelacionSinConfirmar && pasosCancelar.length > 0
     && pasosCancelar.some((p) => !canceloBien(p.observation));
   if (cancelacionSinConfirmar && !fallo) {
     const pedida = String((pasosCancelar[0].action.toolInput || {}).eventoId || '');
-    let cita = null;
-    for (const p of pasos) {
-      if (!p || !p.action || p.action.tool !== 'buscar_mi_cita') continue;
-      let obs = p.observation;
-      if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
-      for (const ev of (Array.isArray(obs) ? obs : [])) if (ev && String(ev.id) === pedida) cita = ev;
-    }
+    const vista = vistasEsteTurno.find((v) => v.id === pedida) || null;
+    const registro = registroDe();
+    const candidatos = (registro && registro.candidatos && typeof registro.candidatos === 'object') ? registro.candidatos : {};
     let desc = '';
-    if (cita) {
-      const serv = (String(cita.summary || '').split('—')[1] || '').trim().replace(/-/g, ' ');
-      let cuando = '';
-      try {
-        const d = new Date(cita.start && cita.start.dateTime);
-        cuando = d.toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' })
-          + ' a las ' + d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
-      } catch (e) { cuando = ''; }
-      desc = (serv ? ' de ' + serv : '') + (cuando ? ' del ' + cuando : '');
+    // LA PREGUNTA NOMBRA SIEMPRE LO QUE SE VA A CANCELAR (revision de seguridad
+    // del 26/09). Tres casos, en orden:
+    //   1. el modelo busco en este turno y pidio una de las que encontro: esa;
+    //   2. no busco, pero pidio una que el cliente YA VIO en los ultimos 30
+    //      minutos (candidatos): esa. Es «no, mejor la de las 11» sin volver a
+    //      buscar, y el pendiente viejo NO se queda pegado;
+    //   3. pidio algo que nadie vio: si habia un pendiente, la pregunta nombra
+    //      ESE (es lo que el «si» va a cancelar); si no, se olvida todo y la
+    //      pregunta sale sin cita, y el «si» siguiente tampoco cancela nada que
+    //      no se haya mostrado (la herramienta lo rechaza).
+    if (vista) {
+      desc = vista.desc;
+      guardarPendiente(vista.id, desc);
+    } else if (pedida && Object.prototype.hasOwnProperty.call(candidatos, pedida)) {
+      desc = String(candidatos[pedida] || '');
+      guardarPendiente(pedida, desc);
+    } else if (registro && registro.eventoId) {
+      desc = String(registro.desc || '');
+    } else {
+      olvidarPendiente();
     }
     // SI VINO A MOVER LA CITA, LA PREGUNTA LO DICE (Andres, 24/09/2026): «primero
     // tienes que cancelar» sin ofrecer nada suena a tramite, y la persona
@@ -387,6 +468,12 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
         : `¿Confirmas que quieres cancelar tu cita${desc}? Respóndeme «sí» y la cancelo.`);
     avisos.push('cancelacion_sin_confirmar');
   }
+  // Cuando el MODELO pide la confirmacion por su cuenta (sin llamar a la
+  // herramienta) y en este turno busco y encontro UNA sola cita, esa es la que
+  // se mostro: queda guardada igual. Con varias no se adivina cual.
+  if (!fallo && pasosCancelar.length === 0 && /cancel/i.test(respuesta) && /\?/.test(respuesta)) {
+    if (vistasEsteTurno.length === 1) guardarPendiente(vistasEsteTurno[0].id, vistasEsteTurno[0].desc);
+  }
 
   // --- UNA CITA PAGADA QUE SE CANCELA (2026-09-21) ---------------------------
   // Prueba con el telefono: el paciente pago la seña y enseguida cancelo; el
@@ -398,6 +485,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // puede pasar es que nadie lo sepa.
   const idsCancelados = new Set(pasosCancelar.filter((p) => canceloBien(p.observation))
     .map((p) => String((p.action.toolInput && p.action.toolInput.eventoId) || '')).filter(Boolean));
+  // Cancelada de verdad: el pendiente y los candidatos de este telefono ya no
+  // sirven (la cita cancelada no vuelve a mostrarse; las otras, cuando las
+  // vuelva a buscar).
+  if (idsCancelados.size && pendientesDeCancelar && telefonoDelCliente) delete pendientesDeCancelar[telefonoDelCliente];
   let citaPagadaCancelada = null;
   if (idsCancelados.size && cfg.senaActiva === 'si') {
     for (const p of pasos) {
