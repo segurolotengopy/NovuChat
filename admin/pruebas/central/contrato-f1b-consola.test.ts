@@ -22,10 +22,14 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PanelEjes } from '../../web/src/plataforma/componentes/PanelEjes';
 import { EjesDeLaCuenta } from '../../web/src/central/componentes/EjesDeLaCuenta';
-import { MODELO_POR_DEFECTO, origenPorContrato, pruebaDeCuenta, type EjesDeCuenta } from '../../web/src/lib/ejes';
-import { planDeLaCuenta, vistaDelPedido } from '../../web/src/lib/pagar';
+import {
+  MODELO_POR_DEFECTO, origenPorContrato, periodoPruebaAceptable, pruebaDeCuenta, type EjesDeCuenta,
+} from '../../web/src/lib/ejes';
+import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../web/src/lib/pagar';
 import { pagosEnRevision, vistaDelPagoManual } from '../../web/src/plataforma/lib/negocios';
-import { LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, limitesDe } from '../../functions/src/planes';
+import {
+  LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, limitesDe,
+} from '../../functions/src/planes';
 import { BOLSA_PRUEBA_MAXIMA } from '../../functions/src/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -89,6 +93,9 @@ describe('Negocios: las conversaciones y el precio con su origen', () => {
     const html = panel(CON_CONTRATO, ejes);
     expect(html).toMatch(new RegExp(`<input id="eje-conversaciones"[^>]*max="${LIMITE_MAXIMO}"`));
     expect(html).toMatch(new RegExp(`<input id="eje-precio"[^>]*max="${MAXIMO_PRECIO_POR_CONTRATO_USD}"`));
+    // #221 LOW 3: el piso del campo es el del servidor, no 0,01.
+    expect(html).toMatch(new RegExp(`<input id="eje-precio"[^>]*min="${MINIMO_PRECIO_POR_CONTRATO_USD}"`));
+    expect(html).not.toContain('min="0.01"');
   });
 
   it('una página que no conecta las acciones nuevas solo muestra: los botones nacen deshabilitados', () => {
@@ -106,7 +113,11 @@ describe('Negocios: la prueba por contrato', () => {
     const html = panel(EXTENDIDA, ejesCon({ porContrato: [] }, { modalidad: 'prueba' }));
     expect(html).toContain('De <strong>2026-10</strong> a <strong>2026-11</strong>');
     expect(html).toContain('quedan <strong>7</strong> conversaciones de prueba');
-    expect(html).toMatch(/<input id="eje-periodo-prueba" type="month" min="2026-10"/);
+    // #221 LOW 2: el campo tiene el techo del servidor (15/10 → enero de 2027).
+    expect(html).toMatch(/<input id="eje-periodo-prueba" type="month" min="2026-10" max="2027-01"/);
+    expect(periodoPruebaAceptable('2027-01', AHORA)).toBe(true);
+    expect(periodoPruebaAceptable('2027-02', AHORA)).toBe(false);
+    expect(periodoPruebaAceptable('2099-12', AHORA)).toBe(false);
     expect(html).toMatch(new RegExp(`<input id="eje-bolsa-prueba"[^>]*max="${BOLSA_PRUEBA_MAXIMA}"`));
     // Sin nada cambiado, «Fijar la prueba» no es un cambio.
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Fijar la prueba<\/button>/);
@@ -161,6 +172,21 @@ describe('Cuenta, Pagar y el pago manual dicen el precio del contrato', () => {
     const pagar = leer('web/src/paginas/Pagar.tsx');
     expect(pagar).toContain('planDeLaCuenta(cuenta, planes[0])');
     expect(pagar).not.toMatch(/PLANES\[planes\[0\]\]\.precioUsd/);
+  });
+
+  it('#221: pedir OTRO plan sobre una cuenta con contrato avisa que se cobra el contrato; el mismo plan o sin contrato, no', () => {
+    const aviso = avisoPrecioPorContrato(CON_CONTRATO, 'impulso');
+    expect(aviso).toContain('se sigue cobrando USD 120');
+    expect(aviso).toContain('no los USD 25 de la lista');
+    expect(aviso).toContain('fila «Precio»');
+    expect(avisoPrecioPorContrato(CON_CONTRATO, 'pro')).toBeNull();
+    expect(avisoPrecioPorContrato({ plan: 'pro', modalidad: 'prepago' }, 'impulso')).toBeNull();
+    // Un precio roto no es contrato: no se avisa lo que no rige.
+    expect(avisoPrecioPorContrato({ ...CON_CONTRATO, precioPorContrato: 0.05 }, 'impulso')).toBeNull();
+    expect(avisoPrecioPorContrato(CON_CONTRATO, 'plan-que-no-existe')).toBeNull();
+    // Los dos lugares de Negocios donde se pide otro plan lo pintan.
+    expect(leer('web/src/plataforma/componentes/PanelEjes.tsx')).toContain('avisoPrecioPorContrato(p.cuenta, elegido)');
+    expect(leer('web/src/plataforma/componentes/FormularioPagoManual.tsx')).toContain('avisoPrecioPorContrato(cuenta, plan)');
   });
 
   it('un pago en revisión por precio fuera de contrato se lista con su motivo', () => {

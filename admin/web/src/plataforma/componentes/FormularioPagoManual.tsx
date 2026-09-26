@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Confirmacion } from './Confirmacion';
 import { TextoSeguro } from '../../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, planDeLaCuenta, planesOfrecidos, planInicial, type PlanEnVenta,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, mesEscrito, planDeLaCuenta, planesOfrecidos, planInicial,
+  type PlanEnVenta,
 } from '../../lib/pagar';
 import { tipoCambioVigente, type Pago } from '../../lib/prepago';
 import {
@@ -120,6 +121,8 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
               );
             })}
           </select>
+          {/* Otro plan sobre una cuenta con contrato: se cobra el contrato (revisión del #221). */}
+          {avisoPrecioPorContrato(cuenta, plan) && <p className="ayuda" role="note">{avisoPrecioPorContrato(cuenta, plan)}</p>}
           <label htmlFor="pago-meses">Meses</label>
           <select id="pago-meses" value={meses} disabled={ocupado || pendiente} onChange={(e) => setMeses(Number(e.target.value))}>
             {MESES_POSIBLES.map((m) => <option key={m} value={m}>{m === 1 ? '1 mes' : `${m} meses`}</option>)}

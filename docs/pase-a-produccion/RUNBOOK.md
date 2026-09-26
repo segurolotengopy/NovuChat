@@ -189,6 +189,18 @@ node scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant
   cual.
 - Se rechaza un mes **pasado** y una cuenta que no esté en prueba (para una
   cuenta en producción: `--modalidad prueba` en la misma corrida).
+- Desde la revisión de seguridad del #221 también se rechazan:
+  - **una prueba sobre meses ya pagados**: si `periodoPagado` llega al primer
+    mes de la prueba que quedaría, el script sale con «se cruza con meses ya
+    pagados». En un mes de prueba las conversaciones incluidas son 0, y un
+    comercio que pagó ese mes se quedaba solo con la bolsa de prueba. Si una
+    cuenta ya viene así escrita, el servidor hace valer el pago en ese mes;
+  - **un último mes a más de 3 meses** del mes en curso (el 26/09, hasta
+    2026-12): un seguro contra un `2099-12` tipeado.
+- De una prueba **vencida** (su último mes ya pasó) no se hereda el primer mes:
+  extenderla empieza en el mes en curso. El 01/10, una prueba que terminó en
+  septiembre y se extiende a octubre queda `2026-10` sin `pruebaDesde`, y cubre
+  desde el 01/10 (la gracia de 48 horas ya la cubría hasta ahí).
 - El aviso de fin (`prueba_termina`) sale a 5 días del fin del **último** mes,
   no del mes en curso.
 - `migrar-prepago.mjs --periodo-prueba` NO tiene estas guardas: sirve para la

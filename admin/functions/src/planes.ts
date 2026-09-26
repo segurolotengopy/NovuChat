@@ -609,16 +609,33 @@ export function copiaDeLimites(cuenta: Record<string, unknown> | null | undefine
 export const MAXIMO_PRECIO_POR_CONTRATO_USD = 1000;
 
 /**
- * ¿Es un precio mensual por contrato aceptable? Positivo (sin cobro es la
- * MODALIDAD `demostracion`, no un precio cero), hasta
- * `MAXIMO_PRECIO_POR_CONTRATO_USD`, y con dos decimales como mucho: la lista
- * se denomina en dólares con centavos, y un tercer decimal es un precio que
- * ninguna factura reproduce. Es LA validación: la usan quien escribe
- * (`actualizarEstadoCuenta`, `asignar-plan.mjs --precio`) y quien lee
- * (`precioPorContratoDe`).
+ * EL PISO DE UNA MENSUALIDAD POR CONTRATO, EN DÓLARES (revisión de seguridad
+ * del #221, LOW 3). Con «más de 0», USD 0,01 era un precio válido y, al tipo
+ * de cambio, `importeBs` lo redondeaba a Bs 0: un QR que no cobra nada y que,
+ * confirmado, cubre un mes. USD 1 es el piso TÉCNICO más bajo que garantiza
+ * un importe de al menos Bs 5 con cualquier tipo de cambio aceptado
+ * (`TCO_MINIMO`), y no toma una decisión comercial que la base no tiene
+ * escrita: el precio de una bolsa (USD 10) habría sido un piso con opinión
+ * —«una mensualidad no vale menos que un excedente»— y dejaría fuera un
+ * precio simbólico pactado a propósito. Si Andres quiere un piso comercial,
+ * se escribe en `docs/base-comercial.md` y se sube este número; hasta
+ * entonces, como `MAXIMO_PRECIO_POR_CONTRATO_USD`, es un seguro contra un
+ * dato imposible, no una opinión.
+ */
+export const MINIMO_PRECIO_POR_CONTRATO_USD = 1;
+
+/**
+ * ¿Es un precio mensual por contrato aceptable? De `MINIMO_PRECIO_POR_CONTRATO_USD`
+ * (sin cobro es la MODALIDAD `demostracion`, no un precio cero ni de
+ * centavos) a `MAXIMO_PRECIO_POR_CONTRATO_USD`, y con dos decimales como
+ * mucho: la lista se denomina en dólares con centavos, y un tercer decimal es
+ * un precio que ninguna factura reproduce. Es LA validación: la usan quien
+ * escribe (`actualizarEstadoCuenta`, `asignar-plan.mjs --precio`) y quien lee
+ * (`precioPorContratoDe`): un precio de centavos que ya estuviera escrito se
+ * ignora y rige el del plan.
  */
 export const precioPorContratoValido = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= MAXIMO_PRECIO_POR_CONTRATO_USD
+  typeof v === 'number' && Number.isFinite(v) && v >= MINIMO_PRECIO_POR_CONTRATO_USD && v <= MAXIMO_PRECIO_POR_CONTRATO_USD
   && Math.abs(v * 100 - Math.round(v * 100)) < 1e-6;
 
 /**

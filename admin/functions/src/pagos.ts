@@ -73,8 +73,8 @@ import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from
 import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
-  corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoFueraDeContrato, montoUsdDe,
-  type CuentaCruda, type Pago,
+  corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, importeCobrable, montoFueraDeContrato,
+  montoUsdDe, type CuentaCruda, type Pago,
 } from './prepago.js';
 
 const db = () => getFirestore();
@@ -837,6 +837,14 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
     const cuentaDelPrecio = (await db().doc(`tenants/${tenantId}/cuenta/estado`).get()).data() ?? {};
     const montoUsd = montoUsdDe(pedido, cuentaDelPrecio);
     const monto = importeBs(montoUsd, tcoAplicado);
+    // UNA MENSUALIDAD (o cualquier pago) DE BS 0 NO SE REGISTRA (revisión de
+    // seguridad del #221, LOW 3): el importe de la cuenta sería cero, y con
+    // «lo recibido coincide» el pago cubriría un mes sin motivo ni dinero.
+    if (!importeCobrable(monto)) {
+      throw new HttpsError('failed-precondition',
+        `El importe de la cuenta para este pago sería de Bs ${monto} (USD ${montoUsd}): no se registra un pago de nada. `
+        + 'Revise el precio de la cuenta.');
+    }
     const motivoDiferencia = texto(datos['motivoDiferencia'], 300);
     if (montoRecibidoBs !== monto && !motivoDiferencia) {
       throw new HttpsError('invalid-argument',

@@ -9,7 +9,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CATALOGO_PLANES, limitesDe } from '../functions/src/planes.ts';
-import { PRUEBA, mesBolivia } from '../functions/src/prepago.ts';
+import { PRUEBA, mesBolivia, sumarMeses } from '../functions/src/prepago.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -59,6 +59,12 @@ const CUENTA_INICIAL = {
   estadoPago: 'al_dia', montoMensual: 50, moneda: 'USD',
   motivoVisible: 'Gracias por su pago.', umbralOperador: 40, umbralBloqueo: 90,
 };
+/**
+ * La misma, pagada solo hasta el mes PASADO: la que se puede pasar a prueba.
+ * Desde la revisión del #221 una prueba no se fija sobre un mes pagado, y
+ * `CUENTA_INICIAL` tiene todos los meses pagados hasta 2099.
+ */
+const SIN_MES_PAGADO = { ...CUENTA_INICIAL, periodoPagado: sumarMeses(mesBolivia(Date.now()), -1) };
 
 beforeEach(async () => {
   const previas = await db.collection(`tenants/${T}/auditoria`).get();
@@ -269,6 +275,9 @@ describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
     // Revisión de seguridad de A-0: en la misma llamada, o sobre una que ya es prueba.
     await rechaza(llamar({ tenantId: T, modalidad: 'prueba', periodoPrueba: null }), 'invalid-argument');
     expect(await cuenta()).toEqual(CUENTA_INICIAL);
+    // Sin el mes en curso pagado: una prueba no se fija sobre un mes pagado
+    // (revisión del #221; ver «pasar a PRUEBA una cuenta con el mes pagado»).
+    await db.doc(`tenants/${T}/cuenta/estado`).set(SIN_MES_PAGADO);
     await llamar({ tenantId: T, modalidad: 'prueba' });
     await rechaza(llamar({ tenantId: T, periodoPrueba: null }), 'invalid-argument');
     expect((await cuenta()).periodoPrueba).toBe(mesBolivia(Date.now()));
@@ -277,7 +286,16 @@ describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
     expect((await cuenta()).periodoPrueba).toBeUndefined();
   });
 
+  it('pasar a PRUEBA una cuenta con el mes en curso PAGADO se rechaza, y no escribe (revisión del #221, MEDIUM)', async () => {
+    // En un mes de prueba las conversaciones incluidas son 0: el comercio que
+    // pagó ese mes se quedaba solo con la bolsa de prueba.
+    await rechaza(llamar({ tenantId: T, modalidad: 'prueba' }), 'invalid-argument');
+    expect(await cuenta()).toEqual(CUENTA_INICIAL);
+    expect(await auditoria('estado_cuenta')).toHaveLength(0);
+  });
+
   it('pasar a PRUEBA inicializa el mes en curso y su bolsa, y deriva al día con monto cero', async () => {
+    await db.doc(`tenants/${T}/cuenta/estado`).set(SIN_MES_PAGADO);
     await llamar({ tenantId: T, modalidad: 'prueba' });
     const c = await cuenta();
     expect(c).toMatchObject({

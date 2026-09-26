@@ -120,7 +120,7 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   - `--conversaciones N` (1 a 100.000) y `--cambios N` (0 a 100): la copia
     `cuenta/estado.limites` manda sobre el plan, y un cambio de plan posterior
     **la conserva**. `plan` en lugar de `N` la quita.
-  - `--precio USD` (más de 0 y hasta 1.000, con punto y hasta dos decimales:
+  - `--precio USD` (de 1 a 1.000, con punto y hasta dos decimales:
     `120`, `37.50`): la mensualidad pactada (`precioPorContrato`). Manda sobre
     el precio del plan en **todo** lo que cobra: el QR de Pagar, el pago manual
     de Negocios (que la acepta sin motivo y pide motivo para cualquier otro
@@ -132,7 +132,8 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   - `--periodo-prueba aaaa-mm` y `--bolsa-prueba N` (1 a 1.000): una prueba
     pactada distinta de la de lista (un mes y 20 conversaciones). Solo con
     modalidad prueba (la que tiene, o `--modalidad prueba` en la misma
-    corrida); el mes no puede ser pasado. Detalle en
+    corrida); el mes no puede ser pasado, ni estar a más de 3 meses del mes en
+    curso, ni cruzarse con un mes ya pagado. Detalle en
     `docs/pase-a-produccion/RUNBOOK.md` §3.1.
 - `contar-catalogo.mjs` en seco **comprueba** que el contador exista y coincida
   con los productos. Un comercio nuevo no lo necesita con `--aplicar`; uno dado

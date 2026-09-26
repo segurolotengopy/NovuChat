@@ -54,6 +54,29 @@ export function planDeLaCuenta(cuenta: CuentaCruda | null | undefined, plan: Pla
   };
 }
 
+/**
+ * EL AVISO DE UN PLAN DISTINTO SOBRE UNA CUENTA CON PRECIO POR CONTRATO
+ * (observación de diseño de la revisión de seguridad del #221). El contrato
+ * manda sobre cualquier plan (`precioMensualDe`): cambiar el plan en Negocios
+ * o cargar a mano la mensualidad de otro plan NO cambia lo que se cobra. La
+ * lista de planes muestra el precio de lista, y sin este aviso el propietario
+ * podía leer «Pro · USD 90» y suponer que ese sería el cobro.
+ *
+ * Solo dice lo que pasa y el único camino que existe para cambiarlo (la fila
+ * «Precio» de Negocios, que llama a `actualizarEstadoCuenta` con
+ * `precioPorContrato: null`). `null` si no hay contrato o si el plan pedido es
+ * el que la cuenta ya tiene. Pagar (el comercio) no lo necesita: ahí no hay
+ * selector de plan, se renueva el propio.
+ */
+export function avisoPrecioPorContrato(cuenta: CuentaCruda | Record<string, unknown> | null | undefined, plan: unknown): string | null {
+  const c = (cuenta ?? null) as Record<string, unknown> | null;
+  const contrato = precioPorContratoDe(c);
+  if (contrato === null || !esPlanVendible(plan) || plan === c?.['plan']) return null;
+  return `Esta cuenta tiene precio por contrato: con el plan ${PLANES[plan].nombre} se sigue cobrando USD ${contrato} `
+    + `al mes, no los USD ${PLANES[plan].precioUsd} de la lista. Para cobrar el de lista, primero se quita el precio `
+    + 'por contrato en la fila «Precio».';
+}
+
 /** Un plan que se puede contratar y pagar. El interno de demostración no entra. */
 export type PlanEnVenta = IdPlanVendible;
 

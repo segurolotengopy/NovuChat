@@ -4,13 +4,15 @@ import { TextoSeguro } from '../../componentes/TextoSeguro';
 import { ContadorCambios } from '../../central/componentes/ContadorCambios';
 import {
   BOLSA_PRUEBA_MAXIMA, DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO,
-  ETIQUETA_TITULARIDAD, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MODALIDADES, MODELOS, TITULARIDADES,
+  ETIQUETA_TITULARIDAD, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, MODALIDADES, MODELOS,
+  PRUEBA_MESES_MAXIMO, TITULARIDADES,
   bolsaPruebaValida, conversacionesValidas, mesEnCurso, modalidadDe, origenDeCambiosIncluidos, origenPorContrato,
-  periodoPruebaAceptable, precioMensualDe, precioPorContratoDe, precioPorContratoValido, pruebaDeCuenta,
+  periodoPruebaAceptable, precioMensualDe, precioPorContratoDe, precioPorContratoValido, pruebaDeCuenta, techoDePrueba,
   type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
 } from '../../lib/ejes';
 import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
 import { importeBs, tipoCambioVigente } from '../../lib/prepago';
+import { avisoPrecioPorContrato } from '../../lib/pagar';
 import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../lib/atencion';
 import { resumenDeCambio } from '../lib/negocios';
 
@@ -127,6 +129,9 @@ function SeccionPlan(p: PanelEjesProps) {
   const tc = tipoCambioVigente(p.tipoCambio, p.ahoraMs);
   const nombre = nombreDePlan(actual);
   const resumen = resumenDeCambio('Plan', nombre ?? String(actual ?? '—'), PLANES[elegido].nombre);
+  // Con precio por contrato, el plan nuevo NO cambia la mensualidad: se dice
+  // antes de confirmar, no después (observación de la revisión del #221).
+  const aviso = avisoPrecioPorContrato(p.cuenta, elegido);
   return (
     <tr>
       <th>Plan</th>
@@ -148,9 +153,12 @@ function SeccionPlan(p: PanelEjesProps) {
             </option>
           ))}
         </select>{' '}
+        {aviso && <p className="ayuda" role="note">{aviso}</p>}
         {pendiente && resumen
           ? <Confirmacion resumen={resumen} ocupado={p.ocupado}
-              advertencia="Cambia la copia de límites de la cuenta y la mensualidad derivada; no cambia la modalidad. Lo que va por contrato se conserva."
+              advertencia={aviso
+                ? `Cambia la copia de límites de la cuenta; no cambia la modalidad ni la mensualidad. ${aviso}`
+                : 'Cambia la copia de límites de la cuenta y la mensualidad derivada; no cambia la modalidad. Lo que va por contrato se conserva.'}
               onConfirmar={() => { p.onPlan(elegido); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
           : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
@@ -448,7 +456,8 @@ function ConversacionesPorContrato({ ejes, ocupado, onConversaciones }: {
  * EL PRECIO, CON SU ORIGEN (F1b): la mensualidad del contrato o la del plan.
  * Se lee de la cuenta en vivo con `precioMensualDe` y `precioPorContratoDe`,
  * las mismas funciones con que el servidor emite el QR y deriva
- * `montoMensual`. El campo valida con `precioPorContratoValido` (más de 0,
+ * `montoMensual`. El campo valida con `precioPorContratoValido` (desde
+ * `MINIMO_PRECIO_POR_CONTRATO_USD`,
  * hasta `MAXIMO_PRECIO_POR_CONTRATO_USD`, dos decimales como mucho), que es lo
  * mismo que rechaza el servidor. Un cambio de plan no toca el precio por
  * contrato; los meses ya pagados no se re-tarifan.
@@ -476,7 +485,7 @@ function SeccionPrecio(p: PanelEjesProps) {
           {tc && <span className="text-muted"> · Bs {importeBs(mensual, tc.tco)} al {tc.tco} del {tc.fecha}</span>}
         </p>
         <label htmlFor="eje-precio">USD al mes por contrato</label>{' '}
-        <input id="eje-precio" type="number" min={0.01} step={0.01} max={MAXIMO_PRECIO_POR_CONTRATO_USD} value={valor}
+        <input id="eje-precio" type="number" min={MINIMO_PRECIO_POR_CONTRATO_USD} step={0.01} max={MAXIMO_PRECIO_POR_CONTRATO_USD} value={valor}
           disabled={p.ocupado || pendiente !== null || sinAccion} onChange={(e) => setValor(e.target.value)} style={{ width: '7em' }} />{' '}
         {pendiente === 'fijar' && p.onPrecio && (
           <Confirmacion ocupado={p.ocupado}
@@ -500,7 +509,7 @@ function SeccionPrecio(p: PanelEjesProps) {
               onClick={() => setPendiente('plan')}>Volver al precio del plan</button>
           </>
         )}
-        {!valido && <p className="field-error">Un monto en dólares mayor que 0 y de hasta {MAXIMO_PRECIO_POR_CONTRATO_USD}, con dos decimales como mucho.</p>}
+        {!valido && <p className="field-error">Un monto en dólares de {MINIMO_PRECIO_POR_CONTRATO_USD} a {MAXIMO_PRECIO_POR_CONTRATO_USD}, con dos decimales como mucho.</p>}
       </td>
     </tr>
   );
@@ -518,6 +527,7 @@ function SeccionPrueba(p: PanelEjesProps) {
   const enPrueba = modalidadDe(p.cuenta) === 'prueba';
   const prueba = pruebaDeCuenta(p.cuenta);
   const minimo = mesEnCurso(p.ahoraMs);
+  const maximo = techoDePrueba(p.ahoraMs);
   const [hasta, setHasta] = useState(prueba?.hasta ?? minimo);
   const [bolsa, setBolsa] = useState(prueba?.bolsa !== null && prueba?.bolsa !== undefined ? String(prueba.bolsa) : '');
   const [pendiente, setPendiente] = useState(false);
@@ -550,7 +560,7 @@ function SeccionPrueba(p: PanelEjesProps) {
             : <span className="text-muted">Sin período de prueba.</span>}
         </p>
         <label htmlFor="eje-periodo-prueba">Último mes</label>{' '}
-        <input id="eje-periodo-prueba" type="month" min={minimo} value={hasta}
+        <input id="eje-periodo-prueba" type="month" min={minimo} max={maximo} value={hasta}
           disabled={p.ocupado || pendiente || !p.onPrueba} onChange={(e) => setHasta(e.target.value)} />{' '}
         <label htmlFor="eje-bolsa-prueba">Bolsa de prueba</label>{' '}
         <input id="eje-bolsa-prueba" type="number" min={1} max={BOLSA_PRUEBA_MAXIMA} value={bolsa}
@@ -564,7 +574,7 @@ function SeccionPrueba(p: PanelEjesProps) {
               onCancelar={() => setPendiente(false)} />
           : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || !cambia || !p.onPrueba}
               onClick={() => setPendiente(true)}>Fijar la prueba</button>}
-        {!periodoOk && <p className="field-error">El último mes es aaaa-mm y no puede ser anterior a {minimo}.</p>}
+        {!periodoOk && <p className="field-error">El último mes es aaaa-mm, de {minimo} a {maximo} (como mucho {PRUEBA_MESES_MAXIMO} meses después del mes en curso).</p>}
         {!bolsaOk && <p className="field-error">La bolsa es un entero de 1 a {BOLSA_PRUEBA_MAXIMA}.</p>}
       </td>
     </tr>
