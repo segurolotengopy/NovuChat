@@ -60,8 +60,25 @@ if (!proyecto) {
       '(firebase-tools la fija al descubrir las Functions; en las pruebas, vitest.config.ts).',
   );
 }
+
+// CPU FRACCIONARIA SOLO EN STAGING (26/09/2026). El proyecto de staging tiene
+// 20 vCPU de cuota regional de Cloud Run (producción, 200) y Google no la sube
+// hasta que el proyecto tenga historial de uso (NOT_ENOUGH_USAGE_HISTORY, pedido
+// rechazado el 26/09). Cada despliegue arranca una instancia por Function para
+// su chequeo de salud: con 1 vCPU cada una, las 55 no entran y el despliegue
+// falla por cuota. Con `gcf_gen1` y la memoria por defecto (256 MiB) cada
+// instancia usa 0,1666 vCPU y la concurrencia baja sola a 1 (firebase-tools
+// 15.28.1, deploy/functions/prepare.js, resolveCpuAndConcurrency).
+//
+// La decide `CPU_FRACCIONARIA=si` en `functions/.env`, que firebase-tools
+// entrega al descubrir las Functions (prepare.js, `...userEnvs`) y Cloud Run al
+// ejecutarlas. Solo el job `desplegar-staging` la escribe; producción no la
+// tiene y conserva la CPU por defecto (`instancias-minimas.test.ts` vigila las
+// dos mitades, como con INSTANCIAS_MINIMAS).
+const cpuFraccionaria = process.env['CPU_FRACCIONARIA'] === 'si';
 setGlobalOptions({
   region: REGION,
   maxInstances: 10,
   serviceAccount: `sa-functions@${proyecto}.iam.gserviceaccount.com`,
+  ...(cpuFraccionaria ? { cpu: 'gcf_gen1' as const } : {}),
 });

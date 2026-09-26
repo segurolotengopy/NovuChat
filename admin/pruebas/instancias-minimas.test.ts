@@ -62,8 +62,8 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
   it('producción tiene la compuerta que impide desplegar con otro valor', () => {
     const produccion = job('desplegar-produccion');
     expect(produccion).toContain("compgen -G 'functions/.env.*'");
-    expect(produccion).toContain("grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env");
-    const compuerta = produccion.indexOf("grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env");
+    expect(produccion).toContain("diff <(printf 'SITIO_PUBLICO=%s\\nINSTANCIAS_MINIMAS=1\\n' \"$SITIO_PUBLICO\") functions/.env");
+    const compuerta = produccion.indexOf("diff <(printf 'SITIO_PUBLICO=%s");
     const simulacion = produccion.indexOf('firebase deploy --only "$SIMULAR"');
     expect(simulacion).toBeGreaterThan(-1);
     expect(compuerta).toBeGreaterThan(-1);
@@ -74,6 +74,23 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
     const versionados = execFileSync('git', ['ls-files', 'functions'], { cwd: join(aqui, '..'), encoding: 'utf8' })
       .split('\n').filter((f) => /(^|\/)\.env(\.|$)/.test(f));
     expect(versionados).toEqual([]);
+  });
+
+  // CPU FRACCIONARIA (26/09/2026): la misma idea para la CPU. Solo staging la
+  // pide; producción no la escribe y su compuerta corta si aparece.
+  it('la CPU fraccionaria depende de CPU_FRACCIONARIA=si en opcionesGlobales', () => {
+    const opciones = readFileSync(join(aqui, '../functions/src/opcionesGlobales.ts'), 'utf8');
+    expect(opciones).toMatch(/process\.env\['CPU_FRACCIONARIA'\] === 'si'/);
+    expect(opciones).toMatch(/cpuFraccionaria \? \{ cpu: 'gcf_gen1' as const \} : \{\}/);
+  });
+
+  it('staging pide CPU fraccionaria y producción no, con compuerta', () => {
+    expect(job('desplegar-staging')).toMatch(/CPU_FRACCIONARIA=si\\n/);
+    const produccion = job('desplegar-produccion');
+    expect(produccion).not.toMatch(/CPU_FRACCIONARIA=si/);
+    // La compara el .env entero (diff), no una línea: el lector de firebase-tools
+    // acepta espacios y `export` (revisión de seguridad de #219).
+    expect(produccion).toMatch(/diff <\(printf 'SITIO_PUBLICO=%s\\nINSTANCIAS_MINIMAS=1\\n'/);
   });
 
   it('el despliegue de staging lo fija en 0, y en ningún otro valor', () => {
