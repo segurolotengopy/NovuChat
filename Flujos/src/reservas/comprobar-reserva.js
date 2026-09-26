@@ -466,11 +466,25 @@ function cfgCampo(nombre) {
   catch (e) { return ''; }
 }
 
-// Duplicado por titulo: la cita existe, al cliente se le confirma igual --
-// negarlo seria mentirle -- pero recepcion tiene que borrar la sobrante.
-const porTitulo = {};
-for (const e of recien) porTitulo[e.summary || ''] = (porTitulo[e.summary || ''] || 0) + 1;
-const repetidos = Object.entries(porTitulo).filter(([, n]) => n > 1);
+// Duplicado por titulo Y HORA: la cita existe, al cliente se le confirma igual
+// -- negarlo seria mentirle -- pero recepcion tiene que borrar la sobrante.
+//
+// POR TITULO SOLO ERA UN FALSO POSITIVO (26/09/2026, ejecucion #6072 del Demo
+// A): el mismo cliente agendo un corte a las 10:00 y otro a las 14:00 dentro
+// de cinco minutos, con el mismo titulo «Cita <nombre> — corte», y salio el
+// aviso «citas DUPLICADAS» con el boton para el cliente. Una madre que agenda
+// dos hijos, o dos servicios iguales en horas distintas, no es un duplicado.
+// Duplicado es la MISMA cita dos veces: mismo titulo y misma hora de inicio
+// (en la misma agenda ya lo resuelve el candado de solapes de arriba; aca
+// queda el caso de dos agendas distintas, o de dos creadas en el mismo
+// segundo que el candado dejo pasar).
+const porTituloYHora = {};
+for (const e of recien) {
+  const clave = (e.summary || '') + '|' + String((e.start && e.start.dateTime) || '');
+  porTituloYHora[clave] = (porTituloYHora[clave] || 0) + 1;
+}
+const repetidos = Object.entries(porTituloYHora).filter(([, n]) => n > 1)
+  .map(([clave, n]) => [clave.split('|')[0], n]);
 
 if (repetidos.length) {
   // El evento queda igual (bloque 2): con seña activa el QR se manda para la

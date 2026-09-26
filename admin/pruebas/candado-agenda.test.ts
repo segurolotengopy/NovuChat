@@ -441,6 +441,35 @@ describe('Candado contra la doble reserva', () => {
  * `organizer.email` del evento devuelto). Y si no lo sabe, TODOS, como antes:
  * nunca cero, porque el candado no puede dejar de correr.
  */
+describe('Duplicadas: mismo título Y misma hora, no solo el título (26/09/2026, #6072)', () => {
+  const t = (h: string) => `2026-09-26T${h}:00-04:00`;
+  const fin = (h: string) => `2026-09-26T${h}:00-04:00`;
+  it('EL CASO REAL: dos citas del mismo cliente y servicio a horas distintas NO son duplicadas', () => {
+    // Corte a las 10:00 y corte a las 14:00, creadas dentro de cinco minutos:
+    // antes salía «citas DUPLICADAS» a recepción y el botón al cliente.
+    const r = comprobarTodo([
+      ev('c10', 'Cita Andrés — corte', CAL_JOSE, t('10:00'), fin('11:00'), '2026-09-06T20:12:30.000Z'),
+      ev('c14', 'Cita Andrés — corte', CAL_JOSE, t('14:00'), fin('15:00'), '2026-09-06T20:15:50.000Z'),
+    ], AHORA, { mensajeReservaNoConfirmada: '' }, { ...PREVIA, eventosCreados: [{ id: 'c14', calendario: CAL_JOSE }] })[0] ?? {};
+    expect(r['duplicados']).toBeUndefined();
+    expect(r['transferir']).toBe(false);
+    expect(r['reservaVerificada']).toBe(true);
+    expect(r['eventoId']).toBe('c14');
+  });
+
+  it('la MISMA cita dos veces (mismo título y misma hora, en dos agendas) sigue siendo duplicada', () => {
+    const r = comprobarTodo([
+      ev('d1', 'Cita Andrés — corte', CAL_JOSE, t('10:00'), fin('11:00'), '2026-09-06T20:15:50.000Z'),
+      ev('d2', 'Cita Andrés — corte', CAL_MARIA, t('10:00'), fin('11:00'), '2026-09-06T20:15:52.000Z'),
+    ])[0] ?? {};
+    expect(r['duplicados']).toBe(1);
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('DUPLICADAS');
+    expect(String(r['motivoTransferencia'])).toContain('2x Cita Andrés — corte');
+    expect(r['reservaVerificada']).toBe(true);
+  });
+});
+
 describe('Calendarios a revisar: solo el que recibió la cita', () => {
   const CAL_DR1 = 'cccc000000cccc@group.calendar.google.com';
   const CAL_DR2 = 'dddd000000dddd@group.calendar.google.com';
