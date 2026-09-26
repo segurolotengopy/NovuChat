@@ -40,6 +40,12 @@ Una excepción necesita las tres cosas, o no es una excepción:
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
 
+## Estado al 26/09/2026 (madrugada)
+
+Los tres flujos de reservas se volvieron a publicar desde `e02a756` con #196
+(duplicadas por título y hora) y #197 (se cancela la cita que se mostró), los
+dos verificados en el Demo A antes de entrar. Ninguna excepción: 8 de 8 al día.
+
 ## Estado al 25/09/2026 (noche)
 
 Publicados desde `origin/main` (`0655cd3`) con el diagnóstico en seco leído

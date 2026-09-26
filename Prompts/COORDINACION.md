@@ -21,9 +21,9 @@ hito de abajo son lo que Andres le pega a la revisora.
 
 | Fase | Qué | Estado | Cierra |
 |---|---|---|---|
-| **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits | **en curso (25/09)**: todo preparado en local; espera los «sí» de la cola de fusión | H0 (con E) |
+| **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits; más los dos hallazgos del ensayo (#196, #197) | **cerrada el 26/09** | H0 (con E) |
 | **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 1 en PR #191** (25/09): siete copias al nivel de `702f2da`; pruebas del estándar, actionlint, ShellCheck, validador y `security-local.sh` iguales antes y después. Se fusiona después de F-1 |
-| **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de seis tenants, Negocios (A-3b) | espera H0 | H1 |
+| **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de seis tenants, Negocios (A-3b) | **espera el veredicto de la revisora sobre H0** | H1 |
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | espera H0; en paralelo con F1 | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | espera H0; en paralelo con F1 y F2; antes del ensayo de F3 | H3 |
 | **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas | espera H1 | H2 |
@@ -67,44 +67,66 @@ Un ensayo a la vez (`Analisis/41` §12.9). Se anota antes de correr
 
 ## Informes de hito
 
-### H0 — F-1 y E (borrador, 26/09 madrugada; se cierra con la publicación en ventana)
+### H0 — F-1 y E (cerrado el 26/09/2026, madrugada; para la revisora)
 
-- **PR y sha fusionados:** #186, #182, #183, #185, #189, #184, #187, #188, #190,
-  #191, #192, #193, en ese orden; `main` en `0655cd3`. Pendiente #194 (registro)
-  y el asiento de F-1 (`cierre/estado-f-1`).
-- **Pruebas:** hotfix 1076 de flujos y suite completa 3266; origen 3285; `uuid`
-  3301; estándar: suites del reusable iguales antes y después, `security-local`
-  2.5 aprobado. Ensayo real en el Demo A: #6041 a #6098 (tabla en `ESTADO.md`).
-- **Costo:** 0 mensajes por conversación; 13 fusiones y unas 20 corridas de CI;
-  3 publicaciones en n8n; 0 despliegues.
-- **Fuera, y por qué:** `pedidos.md`, cláusulas, calendario de Bellido y Meta
-  de Platinum son de las sesiones de clientes (§8.5); el ensayo por
-  `ensayo-flujo.sh` no hizo falta porque el Demo A es uno de los tres flujos;
-  «¿eres un robot?» queda para la aceptación; las Functions del origen y de
-  `uuid` esperan la etiqueta.
-- **Hallazgos para el plano y para F3:** los del anexo A; más dos del ensayo
-  (falso «duplicadas» por título; **cancelación de otra cita distinta de la
-  confirmada**, hotfix de protección antes de F2).
-- **`estado-de-versiones.sh`:** 6 al día + 2 con excepción hasta la ventana;
-  8/8 al publicar Platinum y Bellido.
+**PR y sha fusionados en `main`, en orden:** #186 (hotfix `deleteMode` y
+candado), #182, #183, #185, #189, #184 (cinco de documentación), #187
+(traspaso), #188 (origen del anuncio), #190 (plano, prompts, anexo A,
+`Analisis/42`, tablero), #191 (E, estándar 2.4), #192 (Demo B comprobante en
+simulado), #193 (`uuid`), #194 (registro de versiones), #195 (asiento de F-1),
+#196 (duplicadas por título y hora), #197 (hotfix de cancelación). `main` en
+`e02a756`. Las nueve sesiones del 25/09 cerradas; la del ayudante sin fusionar,
+con su diseño en `Analisis/42`; once más dos ramas remotas borradas; worktrees
+colgados quitados.
 
-**Lo que ya se encontró mal o incompleto en `Analisis/41`, para la revisora:**
+**Publicado desde `origin/main`**, cada uno con el seco leído entero,
+credenciales heredadas y ninguna corregida, respaldo en `Flujos/respaldo-*`:
+Demo A, Demo B y captación (desde `0655cd3`, 25/09 20:10); Platinum y Bellido
+(`0655cd3`, 26/09 00:55, fuera de la ventana por decisión de Andres: nadie está
+en modalidad producción); los tres de reservas de nuevo desde `e02a756`
+(26/09 01:3x) con #196 y #197. **`estado-de-versiones.sh`: 8 de 8 al día.**
 
-- §7.1 lista, entre lo que F-1 absorbe, «`pedidos.md` de Bellido y Platinum»,
-  «lista de cláusulas sobre las propuestas de Q'Taco y Dhermacore», «limpieza
-  del calendario de Bellido» y «arranque en Meta de Platinum y del traspaso».
-  El prompt de la operadora (§8.5: «esta sesión no atiende pedidos de
-  clientes») los excluye y los asigna a las sesiones de clientes
-  (`Prompts/operacion-de-clientes.md`, anexo). Se sigue el prompt: no son de
-  esta sesión. Conviene que §7.1 lo diga.
-- §7.1 dice que la rama del origen del anuncio tenía «conflicto conocido en
-  `normalizar-entrada.js`». Al fusionar, el módulo fusionó solo (git separó
-  el objeto `anuncio` de `origen`); los conflictos reales estaban en los tres
-  JSON de reservas, que es donde el mismo código vive copiado. La corrección
-  de derivar `origen` del objeto `anuncio` se hizo igual, por diseño.
-- §7.1 asigna «comprobante en simulado → con el hotfix». El hotfix se acotó a
-  los tres flujos de reservas (el prompt lo dice así); el Demo B se decide
-  con Andres (arriba).
+**Pruebas, con números reales:** hotfix 1076 de flujos + suite completa 3266;
+origen 3285; `uuid` 3301; cancelación 1119 de flujos + suite completa 3342
+(5 de `pagos.test.ts` por tiempo del cobrador; sola, 60/60); duplicadas 965;
+estándar: suites del reusable iguales antes y después, `security-local` 2.5
+aprobado, primer run de `main` verde. **Ensayo real de Andres en el Demo A**:
+#6041 a #6098 (tabla en `ESTADO.md` del 26/09): reserva buena con
+`agendarSinEvento: false` y el id anclado (#6054, #6059); cruce, borrado,
+`Olvidar turno fallido` `{success: true}` y reintento con alternativas (#6063);
+memoria conservada (#6067, #6082). «¿Eres un robot?» queda para la aceptación.
+
+**Costo en las tres unidades:** 0 mensajes por conversación (y −1 aviso falso
+a recepción en el caso de duplicadas); 16 fusiones, 12 PR propios y unas 25
+corridas de CI; 8 publicaciones en n8n; 0 despliegues (las Functions del
+origen del anuncio y de `uuid` entran con la próxima etiqueta).
+
+**Lo que quedó fuera y por qué:** `pedidos.md`, cláusulas de Q'Taco y
+Dhermacore, limpieza del calendario de Bellido y Meta de Platinum son de las
+sesiones de clientes (§8.5); el ensayo por `ensayo-flujo.sh` no hizo falta
+porque el Demo A es uno de los tres flujos; las citas de prueba del 26/09 en el
+calendario del demo (corte 10:00 y 14:00) quedan hasta que se borren a mano.
+
+**Lo que se encontró mal o incompleto en `Analisis/41`:** (1) §7.1 mezcla en
+F-1 tareas de las sesiones de clientes; (2) §7.1 ubica el conflicto del origen
+en `normalizar-entrada.js` y estaba en los tres JSON (el módulo fusionó solo);
+(3) §7.1 pone «comprobante en simulado con el hotfix» y fue PR propio; (4) el
+plano no prevé **estado por teléfono en n8n** como barrera por hecho
+(`$getWorkflowStaticData`): #197 lo necesitó, y en F3 conviene decidir si ese
+estado vive en el servidor (`configuracionFlujo` ya recibe `telefono`).
+
+**Hallazgos para F3 (anexo A y ensayo):** medios y transferencia en Demo B y
+captación; prohibición 4 solo en el prompt en reservas; ids de credencial en
+Demo A y Demo B; concurrencia de datos estáticos y `.first()` (riesgos
+aceptados en `ESTADO.md`).
+
+**Decisiones de Andres en este hito:** push y PR sin pedir OK (25/09); fusión
+en orden con CI en verde; Demo B en PR propio; corregir `uuid`; publicar sin
+ventana mientras nadie esté en producción; `ruta: '.'` se mantiene
+(recomendación aceptada por omisión: se revisa en F6).
+
+**Lo que le toca a Andres:** pegar este informe en la sesión revisora y, con su
+veredicto, autorizar F1 (con S y F6 en paralelo).
 
 ## Heredado del tablero anterior (prepago y modularización), y adónde va
 
@@ -155,3 +177,7 @@ Un ensayo a la vez (`Analisis/41` §12.9). Se anota antes de correr
   verificó el hotfix en el Demo A (#6041–#6098): memoria conservada, candado y
   reintento en orden. Dos hallazgos previos al hotfix, anotados en `ESTADO.md`.
   Falta la ventana de 02:00 a 03:00 para Platinum y Bellido.
+- **26/09/2026 (madrugada, 2)** — Andres autoriza fusionar #196 y #197 y
+  publicar los tres flujos de reservas: hecho desde `e02a756`, 8 de 8 al día.
+  #191 y #193 fusionados antes. **H0 cerrado**: informe arriba, para la
+  revisora.
