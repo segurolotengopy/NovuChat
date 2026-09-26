@@ -974,3 +974,19 @@ describe('Olvidar turno fallido: borra DOS mensajes, no la memoria entera', () =
     });
   }
 });
+
+describe('cancelar_cita: la misma herramienta en los tres flujos', () => {
+  // Un flujo con la compuerta vieja cancelaría la cita que el modelo elija
+  // (#6091): la expresión tiene que ser letra por letra la misma.
+  const expr = (cliente: string) => {
+    const j = JSON.parse(readFileSync(join(aqui, `../../Flujos/${cliente}-agendamiento.json`), 'utf8')) as
+      { nodes: { name: string; parameters: Record<string, unknown> }[] };
+    return String(j.nodes.find((n) => n.name === 'cancelar_cita')?.parameters['eventId']);
+  };
+  it('demo-a, platinum y bellido llevan la misma expresión, con el pendiente por teléfono', () => {
+    const a = expr('demo-a');
+    expect(a).toContain('cancelacionPendienteId');
+    expect(expr('platinum')).toBe(a);
+    expect(expr('bellido')).toBe(a);
+  });
+});

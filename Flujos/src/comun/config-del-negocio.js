@@ -21,6 +21,33 @@
 // tiene que comportarse como antes, no peor.
 const base = $('Config base').first().json;
 
+// --- LA CANCELACION PENDIENTE DE CONFIRMAR, POR TELEFONO (26/09/2026) --------
+// `Procesar respuesta` guarda, cuando pide confirmar una cancelacion, el id de
+// LA CITA QUE SE MOSTRO; la herramienta `cancelar_cita` usa ESE id cuando el
+// cliente confirma, y no el que el modelo elija. Motivo: #6086 y #6091 del Demo
+// A (26/09): el asistente pidio confirmar el corte de las 10:00, el cliente
+// dijo «si» y el modelo cancelo la manicure de las 11:00, porque la memoria
+// guarda mensajes y no ids. Vive en los datos estaticos del flujo, 30 minutos,
+// y se lee aca porque este nodo corre antes del agente en todos los turnos.
+// Sin datos estaticos (una prueba sin ese global, una version sin el) no hay
+// pendiente y la herramienta sigue con el id del modelo, como hasta hoy.
+const CANCELACION_PENDIENTE_MS = 30 * 60 * 1000;
+const cancelacionPendienteId = (() => {
+  try {
+    const sd = $getWorkflowStaticData('global');
+    const lista = (sd.cancelacionesPendientes && typeof sd.cancelacionesPendientes === 'object')
+      ? sd.cancelacionesPendientes : {};
+    const ahora = Date.now();
+    for (const [tel, p] of Object.entries(lista)) {
+      if (!p || !(ahora - Number(p.desde || 0) < CANCELACION_PENDIENTE_MS)) delete lista[tel];
+    }
+    sd.cancelacionesPendientes = lista;
+    const from = String($('Normalizar entrada').first().json.from || '');
+    const p = from ? lista[from] : null;
+    return (p && typeof p.eventoId === 'string') ? p.eventoId.slice(0, 200) : '';
+  } catch (e) { return ''; }
+})();
+
 // ---------------------------------------------------------------------------
 // EL 409 NO ES UN FALLO: ES LA RESPUESTA QUE CORTA EL SERVICIO.
 //
@@ -158,7 +185,7 @@ const atencion = {
 };
 
 if (codigo === 409) {
-  return [{ json: { ...base, ...atencion, diasProximos,
+  return [{ json: { ...base, ...atencion, diasProximos, cancelacionPendienteId,
     estadoComercio: 'suspendido',
     // El texto neutro lo pone el panel: no menciona pagos ni deudas, porque el
     // cliente final no tiene por que enterarse de que el negocio debe dinero.
@@ -173,7 +200,7 @@ const contesto = codigo === 200 && cuerpo && typeof cuerpo.tenantId === 'string'
 if (!contesto) {
 // Sin respuesta no se corta: una caida del panel no puede dejar sin asistente a
 // todos los comercios. Un cliente escribiendo merece una respuesta.
-  return [{ json: { ...base, ...atencion, diasProximos,
+  return [{ json: { ...base, ...atencion, diasProximos, cancelacionPendienteId,
     estadoComercio: base.estadoComercio ?? 'operativo',
     configDeLaConsola: false,
     panelSinRespuesta: true,
@@ -346,4 +373,4 @@ const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas :
   .slice(0, 10)
   .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
 
-return [{ json: { ...base, ...atencion, diasProximos, ...deLaConsola, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];
+return [{ json: { ...base, ...atencion, diasProximos, cancelacionPendienteId, ...deLaConsola, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];
