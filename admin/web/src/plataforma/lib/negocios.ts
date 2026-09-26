@@ -24,9 +24,19 @@
  */
 import { FORMATOS, extensionDe, type ExtensionPlanes } from '../../lib/archivoPlanes';
 import {
-  MESES_MAXIMO, aplicarPago, descripcionDe, esPago, importeBs, montoUsdDe,
+  MESES_MAXIMO, TCO_MAXIMO, TCO_MINIMO, aplicarPago, descripcionDe, esFecha, esPago, importeBs, montoUsdDe,
   type CuentaCruda, type Pago,
 } from '../../lib/prepago';
+
+/**
+ * La MISMA forma que `ID_TENANT` de `functions/src/pagos.ts` e `index.ts`
+ * (`pruebas/negocios-consola.test.ts` lo compara con la fuente). Importa para
+ * `fijarCortePrepago`: con `tenantId` vacío la callable toca la COMPUERTA
+ * GLOBAL (`index.ts`), así que la página de un comercio nunca llama a nada con
+ * un identificador que el servidor no aceptaría.
+ */
+export const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
+export const esIdTenant = (v: unknown): v is string => typeof v === 'string' && ID_TENANT.test(v);
 
 // -----------------------------------------------------------------------------
 // EL IDENTIFICADOR DEL PAGO
@@ -131,6 +141,44 @@ export function vistaDelPagoManual(
     bolsa: tras.bolsa,
     conRegalo: pedido.tipo === 'mensualidad' && pedido.meses === MESES_MAXIMO,
   };
+}
+
+/**
+ * Días hacia atrás que `registrarPagoManual` acepta para `tcoFecha`
+ * (`TCO_MANUAL_DIAS_MAXIMO` de `functions/src/pagos.ts`, que no se importa
+ * porque ese módulo arrastra el SDK Admin; la prueba lo compara con la fuente).
+ */
+export const TCO_MANUAL_DIAS_MAXIMO = 31;
+
+/**
+ * LO QUE EL SERVIDOR RECHAZA ANTES DE MIRAR LA EVIDENCIA, replicado ANTES de
+ * subirla (revisión de seguridad de #203, LOW 1). `registrarPagoManual`
+ * valida referencia, TCO, fuente, fecha e importe recibido y recién después
+ * comprueba el objeto en Storage: si la consola subiera el comprobante y el
+ * servidor rechazara el resto, quedaría una evidencia huérfana bajo un
+ * `pagoId` sin pago. Los topes son los del módulo compartido (`TCO_MINIMO`,
+ * `TCO_MAXIMO`, `esFecha`); no hay números propios. Devuelve el motivo, en
+ * las mismas palabras del servidor, o `null` si todo es aceptable.
+ */
+export function motivoDeRechazoPrevio(pedido: {
+  referencia: string; tcoAplicado: number; tcoFuente: string; tcoFecha: string; montoRecibidoBs: number;
+}, ahoraMs: number): string | null {
+  if (!pedido.referencia.trim()) return 'referencia es obligatoria: el número de operación, o «recibido por <nombre>» en efectivo.';
+  const tco = pedido.tcoAplicado;
+  if (typeof tco !== 'number' || !Number.isFinite(tco) || tco < TCO_MINIMO || tco > TCO_MAXIMO) {
+    return `tcoAplicado tiene que ser un número entre ${TCO_MINIMO} y ${TCO_MAXIMO}.`;
+  }
+  if (!pedido.tcoFuente.trim()) return 'tcoFuente es obligatoria (por ejemplo, BCB).';
+  const f = pedido.tcoFecha;
+  if (!esFecha(f) || !Number.isFinite(Date.parse(`${f}T12:00:00Z`)) || Date.parse(`${f}T00:00:00Z`) > ahoraMs + 86_400_000) {
+    return 'tcoFecha tiene que ser aaaa-mm-dd y no puede ser futura.';
+  }
+  if (ahoraMs - Date.parse(`${f}T00:00:00Z`) > (TCO_MANUAL_DIAS_MAXIMO + 1) * 86_400_000) {
+    return `tcoFecha no puede tener más de ${TCO_MANUAL_DIAS_MAXIMO} días.`;
+  }
+  const recibido = pedido.montoRecibidoBs;
+  if (!Number.isInteger(recibido) || recibido < 0) return 'montoRecibidoBs tiene que ser un entero en bolivianos.';
+  return null;
 }
 
 /** El día de hoy en Bolivia (UTC−4), `aaaa-mm-dd`: así fecha el BCB su tipo de cambio. */

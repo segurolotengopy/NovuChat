@@ -11,6 +11,7 @@ import {
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
 import { useRutasDelComercio } from '../central/lib/lecturas';
+import { useSesion } from '../lib/contexto';
 
 /**
  * PAGAR — NovuChat cobrándole al comercio (`Analisis/41` §6.1 punto 6; «Cobros»
@@ -106,7 +107,10 @@ export function Pagar() {
 
   // LOS NÚMEROS DEL COMERCIO, por su titularidad: es lo que dice si Meta le
   // factura el consumo a él (`paganEllosAMeta`), no el plan.
-  const rutas = useRutasDelComercio(tenantId);
+  // Solo el propietario puede listarlos con la regla de hoy; el administrador
+  // no intenta la lectura y la fila dice «sin información».
+  const { permisos } = useSesion();
+  const rutas = useRutasDelComercio(tenantId, permisos.propietario);
 
   const [tipo, setTipo] = useState<Tipo>('mensualidad');
   const [plan, setPlan] = useState<PlanEnVenta | null>(null);

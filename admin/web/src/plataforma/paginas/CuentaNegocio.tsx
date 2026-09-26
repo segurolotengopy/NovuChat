@@ -17,8 +17,12 @@ import { SuspensionNegocio } from '../componentes/SuspensionNegocio';
 import { FormularioPagoManual, type PedidoDePagoManual } from '../componentes/FormularioPagoManual';
 import { CortePrepago } from '../componentes/CortePrepago';
 import {
-  mensajeDeError, nombreEvidencia, nuevoPagoId, pideSesionReciente, rutaEvidencia, validarComprobante,
+  esIdTenant, mensajeDeError, motivoDeRechazoPrevio, nombreEvidencia, nuevoPagoId, pideSesionReciente, rutaEvidencia,
+  validarComprobante,
 } from '../lib/negocios';
+
+/** Lo que se dice si la ruta trae un identificador que el servidor no aceptaría. */
+const TENANT_INVALIDO = 'Identificador de comercio inválido: no se llama a nada.';
 
 interface FilaPago {
   id: string;
@@ -58,7 +62,7 @@ export function CuentaNegocio() {
   const [ficha, setFicha] = useState<Record<string, unknown> | null | undefined>(undefined);
   const [cuenta, setCuenta] = useState<Record<string, unknown> | null | undefined>(undefined);
   const [pagos, setPagos] = useState<FilaPago[] | null>(null);
-  const rutas = useRutasDelComercio(tenantId);
+  const rutas = useRutasDelComercio(tenantId, true);
   const tipoCambio = useTipoCambio();
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,8 +95,14 @@ export function CuentaNegocio() {
       () => setPagos(null));
   }, [tenantId]);
 
-  /** Llama a una callable y muestra el resultado real: el error del servidor, tal cual. */
+  /**
+   * Llama a una callable y muestra el resultado real: el error del servidor,
+   * tal cual. GUARDIA DEL `tenantId` (revisión de seguridad de #203, LOW 2):
+   * con un identificador que no cumple `ID_TENANT` no se llama a NADA, porque
+   * `fijarCortePrepago` con cadena vacía significa «la compuerta global».
+   */
   const operar = useCallback(async (nombre: string, datos: Record<string, unknown>, exito: string): Promise<boolean> => {
+    if (!esIdTenant(tenantId)) { setError(TENANT_INVALIDO); return false; }
     setOcupado(true); setError(null); setAviso(null);
     try {
       await httpsCallable(funciones, nombre)({ tenantId, ...datos });
@@ -107,9 +117,15 @@ export function CuentaNegocio() {
   }, [tenantId]);
 
   const registrarPago = useCallback(async (pedido: PedidoDePagoManual) => {
+    if (!esIdTenant(tenantId)) { setError(TENANT_INVALIDO); return; }
     setOcupado(true); setError(null); setAviso(null); setReautenticar(null);
     try {
       const { pedido: pago, comprobante, ...resto } = pedido;
+      // ANTES DE SUBIR NADA: lo que el servidor rechazaría antes de mirar la
+      // evidencia se rechaza acá, para no dejar comprobantes huérfanos en
+      // Storage (LOW 1). Las mismas cotas del módulo compartido.
+      const rechazo = motivoDeRechazoPrevio(resto, Date.now());
+      if (rechazo) throw new Error(rechazo);
       let evidencia: string | undefined;
       if (resto.medio === 'transferencia') {
         if (!comprobante) throw new Error('Una transferencia exige el comprobante.');

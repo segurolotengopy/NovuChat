@@ -11,6 +11,7 @@ import { consumidasDe, corteDe, estadoDeServicio } from '../lib/prepago';
 import { ResumenPrepago } from '../componentes/ResumenPrepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
 import { useRutasDelComercio, useTipoCambio } from '../central/lib/lecturas';
+import { useSesion } from '../lib/contexto';
 
 interface Cuenta {
   plan?: unknown;
@@ -47,7 +48,10 @@ export function EstadoCuenta() {
   const [error, setError] = useState<string | null>(null);
   // LOS TRES EJES POR SEPARADO (`Analisis/41` §4): la titularidad es de cada
   // número y el importe en bolivianos, del tipo de cambio del día.
-  const rutas = useRutasDelComercio(tenantId);
+  // Los números solo los puede listar el propietario (regla de hoy): el
+  // administrador no intenta la lectura y ve «sin información».
+  const { permisos } = useSesion();
+  const rutas = useRutasDelComercio(tenantId, permisos.propietario);
   const tipoCambio = useTipoCambio();
 
   useEffect(() => {

@@ -28,9 +28,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  ID_PAGO, diaBolivia, esMedioManual, mensajeDeError, nombreEvidencia, nuevoPagoId, pideSesionReciente, resumenDeCambio,
-  rutaEvidencia, vistaDelPagoManual,
+  ID_PAGO, ID_TENANT, TCO_MANUAL_DIAS_MAXIMO, diaBolivia, esIdTenant, esMedioManual, mensajeDeError, motivoDeRechazoPrevio,
+  nombreEvidencia, nuevoPagoId, pideSesionReciente, resumenDeCambio, rutaEvidencia, vistaDelPagoManual,
 } from '../web/src/plataforma/lib/negocios';
+import { TCO_MAXIMO, TCO_MINIMO } from '../functions/src/prepago';
 import { PanelEjes } from '../web/src/plataforma/componentes/PanelEjes';
 import { SuspensionNegocio } from '../web/src/plataforma/componentes/SuspensionNegocio';
 import { CortePrepago } from '../web/src/plataforma/componentes/CortePrepago';
@@ -84,6 +85,73 @@ describe('el pagoId y el comprobante tienen la forma que exigen el servidor y st
     expect(esMedioManual('transferencia')).toBe(true);
     expect(esMedioManual('qr')).toBe(false);
     expect(esMedioManual(undefined)).toBe(false);
+  });
+});
+
+describe('nada se sube a Storage si el servidor rechazaría el pedido antes de mirar la evidencia (LOW 1)', () => {
+  const bueno = { referencia: 'op-123', tcoAplicado: 12.6, tcoFuente: 'BCB', tcoFecha: '2026-10-15', montoRecibidoBs: 315 };
+
+  it('un pedido aceptable no tiene motivo de rechazo', () => {
+    expect(motivoDeRechazoPrevio(bueno, AHORA)).toBeNull();
+    // Hasta 31 días atrás vale, como en el servidor.
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoFecha: '2026-09-15' }, AHORA)).toBeNull();
+  });
+
+  it('rechaza con las mismas cotas del módulo compartido: TCO fuera de rango, fuente vacía, referencia vacía', () => {
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoAplicado: TCO_MINIMO - 0.01 }, AHORA)).toContain(`entre ${TCO_MINIMO} y ${TCO_MAXIMO}`);
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoAplicado: TCO_MAXIMO + 1 }, AHORA)).toContain('tcoAplicado');
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoAplicado: Number.NaN }, AHORA)).toContain('tcoAplicado');
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoFuente: '  ' }, AHORA)).toContain('tcoFuente');
+    expect(motivoDeRechazoPrevio({ ...bueno, referencia: '' }, AHORA)).toContain('referencia');
+  });
+
+  it('rechaza una fecha futura, mal formada o de más de 31 días, y un importe recibido que no es entero', () => {
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoFecha: '2026-10-17' }, AHORA)).toContain('futura');
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoFecha: '15/10/2026' }, AHORA)).toContain('aaaa-mm-dd');
+    expect(motivoDeRechazoPrevio({ ...bueno, tcoFecha: '2026-08-30' }, AHORA)).toContain(`${TCO_MANUAL_DIAS_MAXIMO} días`);
+    expect(motivoDeRechazoPrevio({ ...bueno, montoRecibidoBs: 315.5 }, AHORA)).toContain('entero');
+    expect(motivoDeRechazoPrevio({ ...bueno, montoRecibidoBs: -1 }, AHORA)).toContain('entero');
+  });
+
+  it('el tope de días es el del servidor, no uno propio', () => {
+    expect(leer('functions/src/pagos.ts')).toContain(`export const TCO_MANUAL_DIAS_MAXIMO = ${TCO_MANUAL_DIAS_MAXIMO};`);
+  });
+
+  it('la página valida el pedido ANTES de subir el comprobante', () => {
+    const pagina = sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'));
+    const validacion = pagina.indexOf('motivoDeRechazoPrevio(resto, Date.now())');
+    expect(validacion).toBeGreaterThan(0);
+    expect(validacion).toBeLessThan(pagina.indexOf('uploadBytes('));
+    expect(pagina).toContain('if (rechazo) throw new Error(rechazo);');
+  });
+});
+
+describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', () => {
+  it('ID_TENANT es la misma expresión de functions/src/pagos.ts e index.ts', () => {
+    expect(leer('functions/src/pagos.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
+    expect(leer('functions/src/index.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
+    expect(esIdTenant('salon-rosa')).toBe(true);
+    for (const malo of ['', 'ab', 'Salon', '-salon', 'a'.repeat(61), undefined, 7]) expect(esIdTenant(malo)).toBe(false);
+  });
+
+  it('operar y registrarPago cortan con la cadena vacía: fijarCortePrepago sin tenantId es la compuerta global', () => {
+    const pagina = sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'));
+    const guardias = pagina.match(/if \(!esIdTenant\(tenantId\)\) \{ setError\(TENANT_INVALIDO\); return( false)?; \}/g) ?? [];
+    expect(guardias.length).toBe(2);
+    // Las dos guardias van antes de cualquier httpsCallable.
+    expect(pagina.indexOf('esIdTenant(tenantId)')).toBeLessThan(pagina.indexOf('httpsCallable(funciones'));
+  });
+});
+
+describe('el administrador del comercio no consulta rutasWhatsApp mientras la regla no lo deje (LOW 3)', () => {
+  it('el hook se condiciona con permisos.propietario en Cuenta y Pagar, y siempre en Administrar', () => {
+    for (const ruta of ['web/src/paginas/EstadoCuenta.tsx', 'web/src/paginas/Pagar.tsx']) {
+      expect(sinComentarios(leer(ruta))).toContain('useRutasDelComercio(tenantId, permisos.propietario)');
+    }
+    expect(sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'))).toContain('useRutasDelComercio(tenantId, true)');
+    const hook = sinComentarios(leer('web/src/central/lib/lecturas.ts'));
+    expect(hook).toContain('if (!habilitado) { setRutas(null); return; }');
+    expect(hook.indexOf('if (!habilitado)')).toBeLessThan(hook.indexOf('onSnapshot('));
   });
 });
 
