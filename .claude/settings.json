@@ -39,6 +39,15 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/acciones-sensibles.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/zona-de-escritura.sh"
+          }
+        ]
       }
     ]
   }
