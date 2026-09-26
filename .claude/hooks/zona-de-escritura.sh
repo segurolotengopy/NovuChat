@@ -14,10 +14,13 @@
 #
 #   1. La variable de entorno NOVUCHAT_ZONA, si existe y no está vacía.
 #   2. Si no, el archivo `.claude/zona` en la raíz del proyecto (la que dice
-#      CLAUDE_PROJECT_DIR, o el directorio de trabajo si no está). Un agente en
-#      su worktree lleva así su zona VERSIONADA en su rama, y dos subagentes
-#      lanzados desde la misma sesión —que comparten el entorno— no comparten
-#      la zona.
+#      CLAUDE_PROJECT_DIR, o el directorio de trabajo si no está). LO ESCRIBE
+#      QUIEN LANZA AL AGENTE (la sesión coordinadora) al crear el worktree,
+#      NO el agente, y NUNCA SE VERSIONA: está en .gitignore, y la prueba del
+#      gancho falla si git lo rastrea. Así dos subagentes lanzados desde la
+#      misma sesión —que comparten el entorno— no comparten la zona, y un
+#      archivo de zona nunca llega a `main` (donde le negaría la escritura a
+#      toda sesión, incluida la de Andres) ni choca entre dos ramas.
 #
 # Las dos fuentes usan la misma sintaxis: prefijos de ruta permitidos separados
 # por «:» (en el archivo, también uno por línea; las líneas con «#» son

@@ -30,9 +30,15 @@ La segunda fuente existe por una observación de la revisión de seguridad
 (26/09/2026): dos subagentes lanzados desde una misma sesión **comparten el
 entorno**, así que una variable no los distingue; en cambio, cada agente
 trabaja en su propio worktree (`.claude/worktrees/`) y ahí `.claude/zona`
-lleva su zona **versionada en su rama**. La variable queda para lanzar una
-sesión con zona desde afuera (`NOVUCHAT_ZONA=… claude`) o para un
-`.claude/settings.local.json` con `env`, y manda sobre el archivo.
+lleva su zona. **El archivo lo escribe quien lanza al agente** (la sesión
+coordinadora) al crear el worktree, **no el agente, y nunca se versiona**:
+está en `.gitignore`, y la prueba del gancho falla si git lo rastrea
+(`git ls-files --error-unmatch .claude/zona` tiene que fallar). Si llegara a
+`main`, toda sesión sobre `main` o sobre un worktree nuevo heredaría esa zona
+—`deny` para todos, incluida la sesión de Andres— y dos ramas con zonas
+distintas chocarían. La variable queda para lanzar una sesión con zona desde
+afuera (`NOVUCHAT_ZONA=… claude`) o para un `.claude/settings.local.json` con
+`env`, y manda sobre el archivo.
 
 Las dos fuentes usan la misma sintaxis: prefijos de ruta permitidos separados
 por `:` (en el archivo, también uno por línea; las líneas que empiezan con `#`

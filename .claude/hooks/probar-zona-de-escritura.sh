@@ -155,6 +155,21 @@ informar "python3 ausente SIN zona: no hace nada" nada "$(decidir "$salida")" "P
 rm -rf "$SIN_PY"
 
 echo
+echo ".claude/zona nunca se versiona (lo escribe quien lanza al agente; está en .gitignore)"
+if git -C "$RAIZ" ls-files --error-unmatch .claude/zona >/dev/null 2>&1; then
+  printf '  ✗ %-62s git RASTREA .claude/zona: hay que quitarlo del índice (git rm --cached) y dejarlo en .gitignore\n' ".claude/zona no rastreado por git"
+  FALLOS=$((FALLOS + 1))
+else
+  printf '  ✓ %-62s %-5s (git ls-files --error-unmatch falla)\n' ".claude/zona no rastreado por git" "ok"
+fi
+if git -C "$RAIZ" check-ignore -q .claude/zona; then
+  printf '  ✓ %-62s %-5s (git check-ignore)\n' ".claude/zona está en .gitignore" "ok"
+else
+  printf '  ✗ %-62s falta la línea .claude/zona en .gitignore\n' ".claude/zona está en .gitignore"
+  FALLOS=$((FALLOS + 1))
+fi
+
+echo
 if [[ "$FALLOS" -eq 0 ]]; then
   echo "✓ Todos los casos pasaron."
 else
