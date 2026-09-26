@@ -642,17 +642,19 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
   }
   // SESIÓN RECIENTE PARA LO QUE MUEVE DINERO (revisión de seguridad de #212,
-  // LOW 3): cambiar el plan cambia la mensualidad, y los cambios incluidos
-  // por contrato son trabajo que NovuChat regala o cobra. Como
-  // `registrarPagoManual`: un token robado y usado desde otro lado no alcanza.
-  // Se pide DESPUÉS de validar la forma, para que una petición mal armada diga
-  // qué tiene mal. La consola responde con `reauthenticateWithPopup` y repite.
-  if (plan !== null || cambiosIncluidos !== undefined) {
+  // LOW 3 de las dos vueltas): cambiar el plan cambia la mensualidad; los
+  // cambios incluidos por contrato son trabajo que NovuChat regala o cobra; y
+  // la modalidad, el mes de prueba y el corte deciden si se cobra y si se
+  // atiende. Como `registrarPagoManual`: un token robado y usado desde otro
+  // lado no alcanza. Los umbrales y el motivo visible no la piden. Se pide
+  // DESPUÉS de validar la forma, para que una petición mal armada diga qué
+  // tiene mal. La consola responde con `reauthenticateWithPopup` y repite.
+  if (plan !== null || cambiosIncluidos !== undefined || Object.keys(prepago).length > 0) {
     try {
       exigirSesionReciente(peticion, Date.now());
     } catch {
       throw new HttpsError('unauthenticated',
-        'Por seguridad, vuelva a iniciar sesión para cambiar el plan o los cambios incluidos.');
+        'Por seguridad, vuelva a iniciar sesión para cambiar el plan, la modalidad o los cambios incluidos.');
     }
   }
 
@@ -671,6 +673,20 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     if (!ficha.exists) throw new HttpsError('not-found', 'No existe ese comercio.');
     const actual = cuentaDoc.data() ?? {};
     const ahora = Timestamp.now();
+
+    // UN QR VIVO DE OTRO PLAN FRENA EL CAMBIO DE PLAN (revisión de seguridad
+    // de #212, LOW 2): si el comercio tiene pendiente una mensualidad de otro
+    // plan y se cambia el plan acá, al confirmarse el QR la cuenta quedaría
+    // con dos verdades. Primero se anula el cobro pendiente (Pagar o
+    // `anularPagoPendiente`), después se cambia el plan.
+    const pendienteId = actual['pagoPendienteId'];
+    if (plan && typeof pendienteId === 'string' && /^[A-Za-z0-9_-]{22}$/.test(pendienteId)) {
+      const pendiente = (await tx.get(db().doc(`tenants/${tenantId}/pagos/${pendienteId}`))).data();
+      if (pendiente && pendiente['estado'] === 'pendiente' && pendiente['tipo'] === 'mensualidad' && pendiente['plan'] !== plan) {
+        throw new HttpsError('failed-precondition',
+          'Hay un cobro pendiente de una mensualidad de otro plan: anule el cobro pendiente primero y después cambie el plan.');
+      }
+    }
 
     if (Object.keys(umbrales).length > 0) {
       const combinados: Record<string, unknown> = { ...actual };

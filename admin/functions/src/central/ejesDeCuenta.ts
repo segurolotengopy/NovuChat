@@ -29,7 +29,7 @@
  */
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
-import { exigirAdminOPropietario, exigirPropietario } from '../autorizacion.js';
+import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../autorizacion.js';
 import { limitesDe, limitesDeCuenta, porContratoDe } from '../planes.js';
 import { modalidadDe, type CuentaCruda } from '../prepago.js';
 import {
@@ -73,6 +73,16 @@ export const asignarEjes = onCall(async (peticion) => {
     titularidad = t['titularidad'];
   }
   if (modelo === null && titularidad === null) throw new HttpsError('invalid-argument', 'Nada que asignar.');
+  // LA TITULARIDAD DECIDE QUIÉN LE PAGA A META (revisión de seguridad de #212,
+  // LOW 3): exige una sesión reciente, como el plan y la modalidad. El modelo
+  // solo, no: no cambia a quién se le cobra.
+  if (titularidad !== null) {
+    try {
+      exigirSesionReciente(peticion, Date.now());
+    } catch {
+      throw new HttpsError('unauthenticated', 'Por seguridad, vuelva a iniciar sesión para cambiar la titularidad.');
+    }
+  }
 
   const refFicha = db().doc(`tenants/${tenantId}`);
   const refRuta = titularidad !== null ? db().doc(`rutasWhatsApp/${phoneNumberId}`) : null;

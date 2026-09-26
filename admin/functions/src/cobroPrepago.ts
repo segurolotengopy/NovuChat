@@ -67,11 +67,13 @@ import {
   configCobradorDe, montoDesdeTexto, resolverCobrador, verificarAviso,
   VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador, type RespuestaCrear,
 } from './cobrador.js';
-import { MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, montoUsdDe } from './prepago.js';
+import {
+  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, modalidadDe, montoUsdDe, type CuentaCruda,
+} from './prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
 import { planQuePuedePedir } from './planes.js';
 import {
-  auditoriaDeLimites, conceptoDe, esPedidoDePago, puertaDePagos,
+  auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,
 } from './pagos.js';
 
@@ -310,6 +312,14 @@ export async function crearCobroInterno(
       throw new HttpsError('failed-precondition', 'Este comercio no está en condiciones de emitir un cobro.');
     }
     const cuenta = cuentaDoc.data() ?? {};
+    // UNA CUENTA EN DEMOSTRACIÓN NO EMITE COBROS (Andres, 26/09/2026, opción
+    // B): en demostración el precio es cero y un pago ya no cambia la
+    // modalidad, así que el comercio pagaría por nada. Tampoco el propietario:
+    // primero la pasa a prueba o a producción en Negocios. Antes de reservar.
+    if (modalidadDe(cuenta as CuentaCruda) === 'demostracion') {
+      throw new HttpsError('failed-precondition',
+        'La cuenta está en demostración: NovuChat la pasa a prueba o producción antes de cobrar.');
+    }
     // EL COMERCIO RENUEVA SU PLAN; EL CAMBIO LO HACE NOVUCHAT (Andres,
     // 26/09/2026): pagar una mensualidad fija el plan, así que un plan
     // distinto del que tiene —más grande o más chico— se rechaza acá, antes
@@ -356,9 +366,14 @@ export async function crearCobroInterno(
     const pagoId = randomBytes(16).toString('base64url');
     const fichaQr = randomBytes(16).toString('hex');
     const refPago = db().doc(`tenants/${tenantId}/pagos/${pagoId}`);
+    // EL PROPIETARIO QUE PIDE OTRO PLAN LO DEJA FIRMADO (LOW 2 de #212): al
+    // confirmar el banco, un plan distinto del vigente solo se aplica con esta
+    // marca; sin ella, el pago queda en revisión.
+    const autoriza = pedido.tipo === 'mensualidad' && quien.rol === 'propietario' && pedido.plan !== cuenta['plan'];
     tx.create(refPago, {
       tipo: pedido.tipo,
       ...(pedido.tipo === 'mensualidad' ? { plan: pedido.plan, meses: pedido.meses } : {}),
+      ...(autoriza ? { cambioAutorizadoPor: quien.uid } : {}),
       ...(pedido.tipo === 'bolsa' ? { cantidad: pedido.cantidad } : {}),
       montoUsd, monto, moneda: MONEDA_COBRO, monedaLista: MONEDA_LISTA,
       tcoAplicado: tc.tco, tcoFuente: tc.fuente, tcoFecha: tc.fecha,
@@ -560,6 +575,27 @@ export async function aplicarEstadoDelCobrador(
           return {
             aplicado: false, estado: 'pendiente',
             ...(yaVisto ? {} : { auditoria: { accion: 'pago_importe_menor', detalle: { pagoId, cobroId: cobro.id, via: origen.via, esperado, recibido: montoRecibidoBs } } }),
+          };
+        }
+        // UN PLAN DISTINTO DEL VIGENTE, SIN AUTORIZACIÓN DEL PROPIETARIO, NO
+        // SE APLICA SOLO (revisión de seguridad de #212, LOW 2). Pasa con un
+        // QR emitido antes de un cambio de plan en Negocios, o antes del
+        // 26/09, cuando el comercio podía elegir otro plan. Mismo patrón que
+        // el importe menor: queda pendiente con el cobro CONFIRMADO, y el
+        // propietario lo resuelve con `registrarPagoManual({ confirmarPendiente })`.
+        const planPedido = p['tipo'] === 'mensualidad' ? p['plan'] : null;
+        const planVigente = (cuentaDoc.data() ?? {})['plan'];
+        if (planPedido !== null && planPedido !== planVigente && !cambioAutorizado(p)) {
+          const yaVisto = guardado?.estado === 'CONFIRMADO';
+          tx.update(r.pago, {
+            'cobro.estado': 'CONFIRMADO', 'cobro.id': cobro.id, montoRecibidoBs, revision: 'plan_distinto', actualizadoEn: ahora,
+          });
+          anotarIndice('CONFIRMADO');
+          return {
+            aplicado: false, estado: 'pendiente',
+            ...(yaVisto ? {} : { auditoria: { accion: 'pago_plan_distinto', detalle: {
+              pagoId, cobroId: cobro.id, via: origen.via, planPedido, planVigente: planVigente ?? null, recibido: montoRecibidoBs,
+            } } }),
           };
         }
         const confirmadoEn = fechaIso(cobro.pago?.confirmadoEn) ?? ahora;

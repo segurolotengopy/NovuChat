@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { planesOfrecidos, planesQuePuedePagar } from '../../web/src/lib/pagar';
+import { cuentaEnDemostracion, planesOfrecidos, planesQuePuedePagar } from '../../web/src/lib/pagar';
 import { PLANES, PLANES_PUBLICADOS } from '../../functions/src/planes';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -47,12 +47,26 @@ describe('planesQuePuedePagar: el comercio renueva el suyo, y nada más', () => 
   });
 });
 
+describe('Pagar en demostración: no ofrece pagar, y no promete nada (opción B, 26/09/2026)', () => {
+  const pagar = sinComentarios(leer('web/src/paginas/Pagar.tsx'));
+  it('cuentaEnDemostracion sigue la regla del servidor: sin modalidad, es demostración', () => {
+    expect(cuentaEnDemostracion({})).toBe(true);
+    expect(cuentaEnDemostracion({ modalidad: 'demostracion' })).toBe(true);
+    expect(cuentaEnDemostracion({ modalidad: 'prueba' })).toBe(false);
+    expect(cuentaEnDemostracion({ modalidad: 'prepago' })).toBe(false);
+  });
+
+  it('con la cuenta en demostración muestra el texto en lugar del formulario, y dice quién hace el paso', () => {
+    expect(pagar).toMatch(/cuenta !== null && cuentaEnDemostracion\(cuenta\)\s*\?\s*\(\s*<p className="ayuda">\s*La cuenta está en demostración, sin costo: desde acá no se paga nada\. El paso a\s*prueba o a producción lo hace NovuChat\./);
+  });
+});
+
 describe('Pagar: sin selector de plan ni de modalidad, y el camino que existe para pedir el cambio', () => {
   const pagar = sinComentarios(leer('web/src/paginas/Pagar.tsx'));
 
   it('no hay selector de plan ni de modalidad, ni usa la lista del propietario', () => {
     expect(pagar).not.toMatch(/<select id="plan"/);
-    expect(pagar).not.toMatch(/modalidad/i);
+    expect(pagar).not.toMatch(/<select id="modalidad"|setModalidad|modalidad:/);
     expect(pagar).not.toMatch(/planesOfrecidos/);
     expect(pagar).toMatch(/planesQuePuedePagar\(cuenta\)/);
   });

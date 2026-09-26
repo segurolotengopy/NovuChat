@@ -122,7 +122,7 @@ export const etiquetaModalidad = (cuenta: CuentaCruda | null | undefined): strin
 /** Lo que explica cada modalidad en un `title` o una ayuda. */
 export const DESCRIPCION_MODALIDAD: Record<Modalidad, string> = {
   demostracion: 'Sin costo y sin corte: es para mostrar el asistente.',
-  prueba: 'Un mes sin mensualidad, con 20 conversaciones de prueba. Después pasa a producción.',
+  prueba: 'Un mes sin mensualidad, con 20 conversaciones de prueba. El paso a producción lo hace NovuChat.',
   prepago: 'El comercio paga por adelantado y el servicio se corta si el mes no está cubierto.',
 };
 

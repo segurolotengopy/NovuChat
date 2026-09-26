@@ -93,7 +93,18 @@ describe('Quién puede llamarla', () => {
     expect(await auditoria('cambiar_plan')).toHaveLength(0);
   });
 
-  it('lo que NO mueve dinero (umbrales, modalidad) no pide sesión reciente: no se rompe lo que ya funcionaba', async () => {
+  it('la MODALIDAD, el mes de prueba y el corte también la exigen (segunda vuelta de #212, LOW 3)', async () => {
+    for (const datos of [{ modalidad: 'demostracion' }, { modalidad: 'prueba' }, { periodoPrueba: '2026-10' }, { corteActivo: true }, { corteActivo: null }]) {
+      await rechaza(llamar({ tenantId: T, ...datos }, PROPIETARIO_SESION_VIEJA), 'unauthenticated');
+    }
+    const c = await cuenta();
+    expect(c).toMatchObject({ modalidad: 'prepago', estadoPago: 'al_dia', montoMensual: 50 });
+    expect(c['periodoPrueba']).toBeUndefined();
+    expect(c['corteActivo']).toBeUndefined();
+    expect(await auditoria('estado_cuenta')).toHaveLength(0);
+  });
+
+  it('los umbrales NO la piden: no cambian a quién se le cobra', async () => {
     await llamar({ tenantId: T, umbralOperador: 10, umbralBloqueo: 20 }, PROPIETARIO_SESION_VIEJA);
     expect(await cuenta()).toMatchObject({ umbralOperador: 10, umbralBloqueo: 20, plan: 'crecimiento' });
   });

@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, cuentaEnDemostracion, mesEscrito,
   planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
@@ -223,10 +223,22 @@ export function Pagar() {
       {errorEjes && <p role="alert">{errorEjes}</p>}
       <EjesDeLaCuenta ejes={ejes} tipoCambio={tipoCambio} ahoraMs={Date.now()} />
 
+      {/* EN DEMOSTRACIÓN NO SE PAGA (Andres, 26/09/2026, opción B): el precio
+          es cero y un pago no cambia la modalidad, así que el servidor no
+          emite cobros (`crearCobroInterno`). No se ofrece lo que se rechaza,
+          y no se promete un paso que no hay: solo se dice quién lo hace. Un
+          pendiente anterior, si lo hubiera, se sigue mostrando para cerrarlo. */}
       {pendiente
         ? <CobroPendiente
             pendiente={pendiente} consultado={consultado} trabajando={trabajando}
             onConsultar={() => void consultar(false)} onAnular={() => void anular()} />
+        : cuenta !== null && cuentaEnDemostracion(cuenta)
+          ? (
+            <p className="ayuda">
+              La cuenta está en demostración, sin costo: desde acá no se paga nada. El paso a
+              prueba o a producción lo hace NovuChat.
+            </p>
+          )
         : (
           <>
             <fieldset>

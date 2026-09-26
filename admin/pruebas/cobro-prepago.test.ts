@@ -51,6 +51,7 @@ const {
   fijarAlmacenDePrueba, consultarYAplicar, sondearCobrosPendientes, TOPE_SONDEO,
 } = await import('../functions/src/cobroPrepago.ts');
 const { mesBolivia, sumarMeses } = await import('../functions/src/prepago.ts');
+const { puertaDePagos } = await import('../functions/src/pagos.ts');
 
 const A = 'prep-salon';
 const B = 'prep-otro';
@@ -509,6 +510,85 @@ describe('2. El aviso del cobrador', () => {
 });
 
 // ===========================================================================
+describe('1bis. Una cuenta en demostración no emite cobros (opción B, 26/09/2026)', () => {
+  it('ni el administrador ni el propietario: failed-precondition antes de reservar, sin escrituras ni llamadas al cobrador', async () => {
+    for (const cuentaDemo of [{ plan: 'crecimiento', modalidad: 'demostracion' }, { plan: 'crecimiento' }]) {
+      await db.doc(`tenants/${A}/cuenta/estado`).set(cuentaDemo);
+      for (const [pedido, quien] of [[MENSUALIDAD, ADMIN_A], [MENSUALIDAD, PROPIETARIO], [{ tenantId: A, tipo: 'bolsa', cantidad: 1 }, ADMIN_A]] as const) {
+        await expect(crear(pedido, quien)).rejects.toMatchObject({
+          code: 'failed-precondition',
+          message: 'La cuenta está en demostración: NovuChat la pasa a prueba o producción antes de cobrar.',
+        });
+      }
+      const c = await cuenta();
+      expect(c).toEqual(cuentaDemo);
+      expect((await db.collection(`tenants/${A}/pagos`).get()).size).toBe(0);
+      expect((await db.collection('cobrosPendientes').where('tenantId', '==', A).get()).size).toBe(0);
+    }
+    expect(doble.llamadas).toEqual([]);
+    expect(await auditoria('cobro_emitido')).toHaveLength(0);
+  });
+
+  it('en prueba sí se cobra, y el pago confirmado NO la pasa a producción: sigue en prueba', async () => {
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ plan: 'crecimiento', modalidad: 'prueba', periodoPrueba: HOY, bolsaPrueba: 20 });
+    const pagoId = (await crear(MENSUALIDAD))['pagoId'] as string;
+    doble.fijarEstado(pagoId, 'CONFIRMADO');
+    expect((await aviso(pagoId)).cuerpo).toMatchObject({ aplicado: true });
+    expect(await cuenta()).toMatchObject({ modalidad: 'prueba', periodoPrueba: HOY, periodoPagado: sumarMeses(HOY, 1) });
+  });
+});
+
+describe('1ter. Un QR confirmado de OTRO plan no cambia el plan sin autorización del propietario (LOW 2 de #212)', () => {
+  it('el QR que pide el propietario con otro plan queda firmado; el del comercio con su plan, no', async () => {
+    const delComercio = await crear(MENSUALIDAD);
+    expect((await pago(delComercio['pagoId'] as string))?.['cambioAutorizadoPor']).toBeUndefined();
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+    const delPropietario = await crear({ tenantId: B, tipo: 'mensualidad', plan: 'pro', meses: 1 }, PROPIETARIO);
+    expect((await pago(delPropietario['pagoId'] as string, B))?.['cambioAutorizadoPor']).toBe('prop');
+  });
+
+  it('un QR del plan viejo, confirmado después de un cambio de plan: queda EN REVISIÓN, sin tocar plan, límites ni meses', async () => {
+    const pagoId = (await crear(MENSUALIDAD))['pagoId'] as string;   // Crecimiento, sin firma
+    // NovuChat cambió el plan mientras el QR estaba vivo (antes de la regla
+    // que ahora lo impide en Negocios, o un QR anterior al 26/09).
+    const PRO = { conversaciones: 500, productos: 500, agendas: 10, cambiosIncluidos: 2 };
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ plan: 'pro', limites: PRO }, { merge: true });
+    await db.doc(`tenants/${A}`).set({ plan: 'pro' }, { merge: true });
+    doble.fijarEstado(pagoId, 'CONFIRMADO');
+    expect((await aviso(pagoId)).cuerpo).toEqual({ recibido: true, aplicado: false, estado: 'pendiente' });
+    expect(await pago(pagoId)).toMatchObject({ estado: 'pendiente', revision: 'plan_distinto', montoRecibidoBs: 630, cobro: { estado: 'CONFIRMADO' } });
+    const c = await cuenta();
+    expect(c).toMatchObject({ plan: 'pro', limites: PRO, pagoPendienteId: pagoId });
+    expect(c['periodoPagado']).toBeUndefined();
+    expect((await db.doc(`tenants/${A}`).get()).get('plan')).toBe('pro');
+    expect(await auditoria('pago_aplicado')).toHaveLength(0);
+    expect(await auditoria('pago_plan_distinto')).toMatchObject([{ pagoId, planPedido: 'crecimiento', planVigente: 'pro', recibido: 630 }]);
+    // Un segundo aviso no duplica la auditoría.
+    await aviso(pagoId);
+    expect(await auditoria('pago_plan_distinto')).toHaveLength(1);
+  });
+
+  it('el QR firmado por el propietario sí cambia el plan al confirmarse', async () => {
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+    const pagoId = (await crear({ tenantId: B, tipo: 'mensualidad', plan: 'pro', meses: 1 }, PROPIETARIO))['pagoId'] as string;
+    doble.fijarEstado(pagoId, 'CONFIRMADO');
+    expect((await aviso(pagoId)).cuerpo).toMatchObject({ aplicado: true, estado: 'confirmado' });
+    expect(await cuenta(B)).toMatchObject({ plan: 'pro', modalidad: 'prepago' });
+  });
+
+  it('la puerta misma se niega a aplicar un cambio de plan del banco sin firma (la red detrás de la revisión)', () => {
+    const tx = { update: () => undefined, set: () => undefined, create: () => undefined };
+    const refs = { pago: {}, cuenta: {}, ficha: {}, cobroPendiente: {} };
+    expect(() => puertaDePagos.aplicarPagoEnTransaccion(tx as never, refs as never, {
+      id: 'x'.repeat(22), cuenta: { plan: 'impulso', modalidad: 'prepago' }, ficha: {},
+      datos: { tipo: 'mensualidad', plan: 'pro', meses: 1, estado: 'pendiente' },
+    }, {
+      origen: 'banco', cobroId: 'c', riel: null, confirmadoPorCobrador: 'automatico', montoRecibidoBs: 1134,
+      confirmadoEn: Timestamp.now(), ahoraMs: Date.now(),
+    })).toThrow(/sin autorización del propietario/);
+  });
+});
+
 describe('2bis. Un pago del banco que cambia el plan queda trazable (LOW 1 de #212)', () => {
   const PRO = { conversaciones: 500, productos: 500, agendas: 10, cambiosIncluidos: 2 };
 

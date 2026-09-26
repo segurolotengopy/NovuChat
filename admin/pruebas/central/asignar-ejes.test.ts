@@ -29,7 +29,11 @@ const NUM_B = '1000000093';
 const NUM_NUEVO = '1000000094';
 const WABA = '2000000091';
 
-const PROPIETARIO = { uid: 'prop-e', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' } } };
+// `auth_time` reciente: cambiar la titularidad exige sesión de menos de media
+// hora (revisión de seguridad de #212, LOW 3). El modelo solo, no.
+const AUTH_TIME = Math.floor(Date.now() / 1000);
+const PROPIETARIO = { uid: 'prop-e', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' }, auth_time: AUTH_TIME } };
+const PROPIETARIO_SESION_VIEJA = { uid: 'prop-e', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' }, auth_time: AUTH_TIME - 7200 } };
 const admin = (t: string, uid = `adm-${t}`) => ({
   uid, token: { nc: { t: { [t]: 'admin' } }, firebase: { sign_in_provider: 'password' }, email_verified: true },
 });
@@ -94,6 +98,21 @@ describe('asignarEjes: quién puede', () => {
     await asignar({ tenantId: A, modelo: 'gemini-3.5-flash-lite' });
     expect((await ficha(A))['modelo']).toBe('gemini-3.5-flash-lite');
     expect((await ruta(NUM_A))['titularidad']).toBe('comercio');
+  });
+});
+
+describe('asignarEjes: la titularidad pide sesión reciente (LOW 3 de #212)', () => {
+  it('el propietario con sesión vieja NO cambia la titularidad, ni con el modelo en la misma llamada', async () => {
+    await rechaza(asignar({ tenantId: A, titularidad: { phoneNumberId: NUM_A, titularidad: 'comercio' } }, PROPIETARIO_SESION_VIEJA), 'unauthenticated');
+    await rechaza(asignar({ tenantId: A, modelo: 'claude-sonnet-5', titularidad: { phoneNumberId: NUM_A, titularidad: 'comercio' } }, PROPIETARIO_SESION_VIEJA), 'unauthenticated');
+    expect((await ruta(NUM_A))['titularidad']).toBeUndefined();
+    expect((await ficha(A))['modelo']).toBeUndefined();
+    expect(await auditoria(A, 'asignar_ejes')).toHaveLength(0);
+  });
+
+  it('el modelo solo no cambia a quién se le cobra: no la pide', async () => {
+    await asignar({ tenantId: A, modelo: 'claude-haiku-4-5' }, PROPIETARIO_SESION_VIEJA);
+    expect((await ficha(A))['modelo']).toBe('claude-haiku-4-5');
   });
 });
 

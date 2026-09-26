@@ -242,6 +242,24 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
     expect(c['limitesPorContrato']).toBeUndefined();
   });
 
+  it('un QR vivo de una mensualidad de OTRO plan frena el cambio de plan: primero se anula (LOW 2 de #212)', async () => {
+    const PID = 'PendienteDeOtroPlan000';
+    await db.doc(`tenants/${A}/pagos/${PID}`).set({ tipo: 'mensualidad', plan: 'pro', meses: 1, estado: 'pendiente' });
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ pagoPendienteId: PID }, { merge: true });
+    await expect(cuentaDe({ plan: 'impulso' })).rejects.toMatchObject({
+      code: 'failed-precondition', message: expect.stringMatching(/anule el cobro pendiente primero/),
+    });
+    let c = await cuenta();
+    expect(c).toMatchObject({ plan: 'pro', limites: { ...limitesDe('pro'), cambiosIncluidos: 4 } });
+    expect((await db.doc(`tenants/${A}`).get()).get('plan')).toBe('pro');
+    expect(await auditoria('cambiar_plan')).toHaveLength(0);
+    // El MISMO plan del pendiente no choca, y un pendiente ya cerrado tampoco.
+    await db.doc(`tenants/${A}/pagos/${PID}`).update({ estado: 'anulado' });
+    await cuentaDe({ plan: 'crecimiento' });
+    c = await cuenta();
+    expect(c['plan']).toBe('crecimiento');
+  });
+
   it('sin cuenta NO se fija un contrato suelto (quedaría una cuenta parcial sin plan)', async () => {
     await db.doc(`tenants/${A}/cuenta/estado`).delete();
     await rechaza(cuentaDe({ cambiosIncluidos: 4 }), 'failed-precondition');

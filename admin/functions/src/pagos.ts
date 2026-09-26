@@ -278,6 +278,14 @@ export interface Aplicacion {
 }
 
 /**
+ * ¿El propietario autorizó el cambio de plan de este pago? Lo anota
+ * `crearCobroInterno` (`cambioAutorizadoPor: uid`) cuando el QR lo pide el
+ * propietario con un plan distinto del vigente (revisión de #212, LOW 2).
+ */
+export const cambioAutorizado = (datos: Record<string, unknown> | undefined): boolean =>
+  typeof datos?.['cambioAutorizadoPor'] === 'string' && datos['cambioAutorizadoPor'].length > 0;
+
+/**
  * LO ÚNICO QUE `confirmacion.ademas` PUEDE AGREGAR (revisión de seguridad de
  * A-1, LOW 3). `ademas` existe para que el cliente del cobrador sume a la
  * MISMA escritura lo suyo: el estado del cobro en el pago y la confirmación
@@ -344,16 +352,21 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     actualizadoEn: ahora,
   };
 
+  // SOLO UNA MENSUALIDAD FIJA EL PLAN (revisión de seguridad de #212, LOW 1).
+  // `aplicarPago` devuelve para la bolsa y la instalación el plan que RIGE
+  // (con el de respaldo si la cuenta no tiene uno del catálogo): compararlo
+  // con el guardado le asignaba Impulso a una cuenta `basico` que compraba
+  // una bolsa, sin que nadie lo decidiera.
+  const cambioDePlan = pedido.tipo === 'mensualidad' && tras.plan !== planAntes ? tras.plan : null;
+
   // La cuenta COMO VA A QUEDAR, para derivar sobre ella: sin pendiente, sin
-  // corte, con el plan, la modalidad, el mes pagado y la bolsa nuevos.
-  // La modalidad se escribe cuando el pago la fija (una mensualidad o una
-  // bolsa convierten a prepago) o cuando ya estaba explícita; una instalación
-  // sobre una cuenta sin modalidad la deja como estaba (y sus derivados, sin
-  // tocar: `derivadosGobernados`).
-  const escribeModalidad = tras.modalidad !== 'demostracion' || esModalidad(cuenta.modalidad);
+  // corte, con el mes pagado y la bolsa nuevos, y el plan si cambió.
+  // LA MODALIDAD NO LA TOCA UN PAGO (Andres, 26/09/2026, opción B): la cambia
+  // solo el propietario. Una cuenta sin modalidad (sin migrar) sigue sin ella
+  // y sus derivados sin tocar (`derivadosGobernados`).
   const cuentaNueva: Record<string, unknown> = {
-    ...pago.cuenta, plan: tras.plan, bolsa: tras.bolsa,
-    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
+    ...pago.cuenta, bolsa: tras.bolsa,
+    ...(cambioDePlan ? { plan: cambioDePlan } : {}),
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
   };
   delete cuentaNueva['pagoPendienteId'];
@@ -363,14 +376,20 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     ...ademas.cuenta,
     bolsa: tras.bolsa,
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
-    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
     pagoPendienteId: FieldValue.delete(),
     corte: FieldValue.delete(),
     ...camposDerivadosDeCuenta(cuentaNueva, null, confirmacion.ahoraMs),
     actualizadoEn: ahora,
   };
 
-  const cambioDePlan = tras.plan !== planAntes ? tras.plan : null;
+  // UN QR DEL BANCO NO CAMBIA EL PLAN SIN QUE LO HAYA AUTORIZADO EL
+  // PROPIETARIO (revisión de seguridad de #212, LOW 2). El cliente del
+  // cobrador (`aplicarEstadoDelCobrador`) deja en revisión un pago así antes
+  // de llegar acá; esto es la red: si alguien llamara a la puerta sin pasar
+  // por esa revisión, no se aplica.
+  if (cambioDePlan && confirmacion.origen === 'banco' && !cambioAutorizado(pago.datos)) {
+    throw new Error(`el pago ${ultimos4(pago.id)} cambiaría el plan sin autorización del propietario`);
+  }
   let cambioDeLimites: CambioDeLimites | null = null;
   if (cambioDePlan) {
     escrituraCuenta['plan'] = cambioDePlan;
@@ -393,7 +412,10 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     escrituraPago, escrituraCuenta, cambioDePlan,
     resultado: {
       periodoPagado: tras.periodoPagado, cubiertoHasta: tras.cubiertoHasta, bolsa: tras.bolsa,
-      plan: tras.plan, modalidad: tras.modalidad,
+      // El plan que QUEDA: el nuevo si una mensualidad lo cambió; si no, el
+      // que la cuenta tenía (no el de respaldo con que `aplicarPago` calcula).
+      plan: cambioDePlan ?? (typeof pago.cuenta['plan'] === 'string' ? pago.cuenta['plan'] : tras.plan),
+      modalidad: tras.modalidad,
       corteEstabaAplicado: corteDe(cuenta)?.aplicado === true,
       cambioDeLimites,
     },
@@ -654,7 +676,7 @@ async function cerrarPendienteAntesDe(
       const ahora = (await db().doc(`tenants/${tenantId}/pagos/${pendienteId}`).get()).data();
       if (ahora && ahora['estado'] === 'pendiente' && cobroEstadoDe(ahora) === 'CONFIRMADO') {
         throw new HttpsError('failed-precondition',
-          'El banco confirmó un pago sobre ese QR, pero no se aplicó (el importe no coincide). Confírmelo con confirmarPendiente y motivoDiferencia, en vez de cargar otro.',
+          'El banco confirmó un pago sobre ese QR, pero no se aplicó (el importe o el plan no coinciden). Confírmelo con confirmarPendiente y motivoDiferencia, en vez de cargar otro.',
           { ...vivo, estado: 'pendiente', cobroEstado: 'CONFIRMADO', ofrecerConfirmar: true });
       }
       throw new HttpsError('failed-precondition',

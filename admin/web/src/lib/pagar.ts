@@ -18,7 +18,7 @@
  */
 import {
   BOLSA, BOLSAS_MAXIMO, INSTALACION_USD, MESES_MAXIMO,
-  aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, montoUsdDe, tipoCambioVigente,
+  aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, modalidadDe, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
 import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, type IdPlanVendible } from './planes';
@@ -57,6 +57,15 @@ export function planesOfrecidos(cuenta: CuentaCruda | null | undefined): readonl
     ? [...publicados, actual]
     : publicados;
 }
+
+/**
+ * ¿La cuenta está en DEMOSTRACIÓN, donde no se cobra? Con la opción B
+ * (Andres, 26/09/2026) un pago ya no cambia la modalidad, y el servidor no
+ * emite cobros en demostración (`crearCobroInterno`): la pantalla no ofrece
+ * pagar. La modalidad la dice `modalidadDe`, la misma regla del servidor.
+ */
+export const cuentaEnDemostracion = (cuenta: CuentaCruda | null | undefined): boolean =>
+  modalidadDe(cuenta) === 'demostracion';
 
 /**
  * QUÉ PLAN PUEDE PAGARSE EL COMERCIO POR SU CUENTA: el que ya tiene, y nada
