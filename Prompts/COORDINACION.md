@@ -23,9 +23,9 @@ hito de abajo son lo que Andres le pega a la revisora.
 |---|---|---|---|
 | **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits; más los dos hallazgos del ensayo (#196, #197) | **cerrada el 26/09** | H0 (con E) |
 | **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 1 en PR #191** (25/09): siete copias al nivel de `702f2da`; pruebas del estándar, actionlint, ShellCheck, validador y `security-local.sh` iguales antes y después. Se fusiona después de F-1 |
-| **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de seis tenants, Negocios (A-3b) | **espera el veredicto de la revisora sobre H0** | H1 |
-| **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | espera H0; en paralelo con F1 | H6 |
-| **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | espera H0; en paralelo con F1 y F2; antes del ensayo de F3 | H3 |
+| **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de los tenants reales, Negocios (A-3b) | **en obra desde el 26/09**: H0 pasó; agentes `central` (`central/ejes-de-la-cuenta`) y `plataforma-consola` (`plataforma/negocios-tres-ejes`) | H1 |
+| **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **en obra desde el 26/09**: agente `metodo` (`metodo/…`, varios PR; `ESTADO.md` y `CLAUDE.md` en el último) | H6 |
+| **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **en obra desde el 26/09**: agente `deploy` (`staging/proyecto-y-pipeline`) prepara todo sin escribir en la nube; cada escritura se pide a Andres una por una. **Cierra antes de la etiqueta de F1** | H3 |
 | **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas | espera H1 | H2 |
 | **F3** Core unificado | Ganchos; una variante de los nodos comunes; medios en el core; prompt por capas; suites sin `new Function` | espera H2 | H3 |
 | **H4** Aceptación y pase de Platinum | Lo cierra la sesión de clientes | espera H3 | H4 |
@@ -141,6 +141,21 @@ veredicto, autorizar F1 (con S y F6 en paralelo).
 | **C** contrato del cobrador (otro proyecto): cuenta `novuchat`, URL pública, `rotar-cobrador.sh` | Fuera de este frente; su proyecto |
 | Encender el corte del prepago (`fijarCortePrepago`) | Decisión de Andres después de un pago de punta a punta; **F1** deja el botón en Negocios |
 
+## Reglas para F1 (recomendaciones de la revisora sobre H0, 26/09)
+
+- **S cierra antes de la etiqueta de F1.** Ese despliegue es el primero desde
+  `v0.9.0` y carga las Functions del origen del anuncio y `uuid` 11 en el
+  runtime, que nunca corrió en la nube: aterriza primero en staging. Si S no
+  llega, `firebase deploy --dry-run` en la aprobación y verificación de las
+  Functions HTTP después (memoria de despliegues).
+- **Migración de los ejes:** contar primero los tenants reales en Firestore,
+  seco leído entero, aplicar, releer. Los seis del plano son una estimación.
+- La sesión de **Platinum** se abre en paralelo con `Prompts/operacion-de-clientes.md`:
+  H1 es lo que espera para escribir plan, modalidad y titularidad; Meta es de
+  calendario.
+- Copia principal al día (`988c223`), ramas locales fusionadas borradas (156),
+  citas de prueba del 26/09 borradas por Andres.
+
 ## Decisiones abiertas para Andres (E, del relevamiento)
 
 - `ruta: '.'` con el `package.json` en `admin/`: la auditoría nativa de pnpm se
@@ -181,3 +196,6 @@ veredicto, autorizar F1 (con S y F6 en paralelo).
   publicar los tres flujos de reservas: hecho desde `e02a756`, 8 de 8 al día.
   #191 y #193 fusionados antes. **H0 cerrado**: informe arriba, para la
   revisora.
+- **26/09/2026 (mañana)** — La revisora da por pasado H0 con cinco
+  recomendaciones (arriba). Arrancan **F1** (dos agentes), **S** y **F6**,
+  cuatro worktrees desde `origin/main` (`988c223`).
