@@ -23,6 +23,8 @@
 #     secretos    los 25 secretos que las Functions declaran, con valores
 #                 aleatorios, y su secretAccessor para sa-functions
 #     storage     el rol del agente de Storage (DESPUÉS de crear el bucket a mano)
+#     invocadores roles/run.invoker para allUsers en cada Function HTTP o
+#                 callable desplegada (DESPUÉS del primer despliegue; idempotente)
 #     github      secretos y variables de GitHub; la última es
 #                 GCP_PROJECT_ID_STAGING, que es el interruptor de los jobs
 #     verificar   solo lectura: lo que quedó, y el Policy Troubleshooter de los
@@ -55,8 +57,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 case "$FASE" in
-  apis|firestore|app|wif|cuentas|secretos|storage|github|verificar) ;;
-  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|storage|github|verificar> --proyecto <id> [--aplicar]" >&2; exit 2 ;;
+  apis|firestore|app|wif|cuentas|secretos|storage|invocadores|github|verificar) ;;
+  *) echo "Uso: $0 <apis|firestore|app|wif|cuentas|secretos|storage|invocadores|github|verificar> --proyecto <id> [--aplicar]" >&2; exit 2 ;;
 esac
 [[ "$P" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] || { echo "✗ --proyecto: ID de proyecto de Google Cloud inválido" >&2; exit 2; }
 
@@ -286,6 +288,38 @@ fase_storage() {
     --role=roles/firebaserules.firestoreServiceAgent --condition=None
 }
 
+# LAS FUNCTIONS QUE TIENEN QUE SER INVOCABLES POR CUALQUIERA: las HTTP y las
+# callables, es decir las desplegadas sin disparador de evento y sin la etiqueta
+# de programada que pone Firebase. Da el mismo conjunto que el manifiesto
+# (31 callables + 16 HTTP = 47 el 26/09/2026) y que producción. Cada una se
+# autentica DENTRO de su código (firma, token o sesión); `allUsers` solo deja
+# que la petición llegue. Sin él Google responde 403 antes del código.
+invocables() {
+  gc functions list --regions "$REGION" \
+    --filter='-eventTrigger:* AND -labels.deployment-scheduled=true' \
+    --format='value(name.basename())' | tr 'A-Z' 'a-z'
+}
+
+fase_invocadores() {
+  titulo "Invocadores: allUsers en las Functions HTTP y callables de $P"
+  # Por qué existe (26/09/2026): el primer despliegue a staging se hizo en lotes
+  # por la cuota de CPU, y 29 de 47 servicios quedaron SIN invocador: el humo
+  # dio 403 de Google en vez de los códigos de nuestro código. Una Function
+  # HTTP nueva no nace invocable si su creación no salió limpia.
+  local s total=0 faltan=0
+  while IFS= read -r s; do
+    [[ -n "$s" ]] || continue
+    total=$((total + 1))
+    if gc run services get-iam-policy "$s" --region "$REGION" --format=json 2>/dev/null | grep -q '"allUsers"'; then
+      continue
+    fi
+    faltan=$((faltan + 1))
+    correr "$s: roles/run.invoker para allUsers" -- gc run services add-iam-policy-binding "$s" \
+      --region "$REGION" --member=allUsers --role=roles/run.invoker
+  done < <(invocables)
+  hecho "$total Functions HTTP o callables; $faltan sin invocador al empezar"
+}
+
 fase_github() {
   titulo "GitHub: secretos y variables del Environment staging y del repositorio"
   local num; num="$(numero_proyecto)"
@@ -309,6 +343,13 @@ fase_verificar() {
   echo "  Secretos: $(gc secrets list --format='value(name)' | wc -l) (declarados por el código: $(secretos_declarados | wc -l))"
   echo "  Variables del Environment staging:"; gh variable list --env staging --repo "$REPO" --json name --jq '.[].name' | sed 's/^/    /'
   echo "  Secretos del Environment staging:"; gh secret list --env staging --repo "$REPO" --json name --jq '.[].name' | sed 's/^/    /'
+  local s sin=0 total=0
+  while IFS= read -r s; do
+    [[ -n "$s" ]] || continue; total=$((total + 1))
+    gc run services get-iam-policy "$s" --region "$REGION" --format=json 2>/dev/null | grep -q '"allUsers"' \
+      || { falla "$s sin invocador allUsers (fase invocadores)"; sin=$((sin + 1)); }
+  done < <(invocables)
+  (( sin == 0 )) && hecho "las $total Functions HTTP o callables son invocables"
   # Los permisos que más veces hundieron un despliegue de producción, antes
   # de gastar una corrida (memoria «despliegues: verificar antes de aprobar»).
   local num; num="$(numero_proyecto)"
