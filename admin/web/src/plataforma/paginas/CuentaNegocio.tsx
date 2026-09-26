@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth';
 import { ref, uploadBytes } from 'firebase/storage';
@@ -16,9 +16,10 @@ import { PanelEjes } from '../componentes/PanelEjes';
 import { SuspensionNegocio } from '../componentes/SuspensionNegocio';
 import { FormularioPagoManual, type PedidoDePagoManual } from '../componentes/FormularioPagoManual';
 import { CortePrepago } from '../componentes/CortePrepago';
+import { PagosEnRevision } from '../componentes/PagosEnRevision';
 import {
-  esIdTenant, mensajeDeError, motivoDeRechazoPrevio, nombreEvidencia, nuevoPagoId, pideSesionReciente, rutaEvidencia,
-  validarComprobante,
+  esIdTenant, mensajeDeError, motivoDeRechazoPrevio, nombreEvidencia, nuevoPagoId, pagosEnRevision, pideSesionReciente,
+  rutaEvidencia, validarComprobante, type PagoEnRevision,
 } from '../lib/negocios';
 
 /** Lo que se dice si la ruta trae un identificador que el servidor no aceptaría. */
@@ -99,6 +100,19 @@ export function CuentaNegocio() {
       query(collection(db, 'tenants', tenantId, 'pagos'), orderBy('creadoEn', 'desc'), limit(10)),
       (i) => setPagos(i.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setPagos(null));
+  }, [tenantId]);
+
+  // LOS PENDIENTES, APARTE DE LOS ÚLTIMOS DIEZ (tercera vuelta de #212,
+  // LOW 1): un pago que el banco confirmó y espera en revisión puede ser más
+  // viejo que los últimos diez registrados, y es justo el que no puede
+  // perderse de vista. Igualdad sobre un solo campo: no pide índice compuesto.
+  const [enRevision, setEnRevision] = useState<PagoEnRevision[]>([]);
+  useEffect(() => {
+    if (!tenantId) return;
+    return onSnapshot(
+      query(collection(db, 'tenants', tenantId, 'pagos'), where('estado', '==', 'pendiente'), limit(10)),
+      (i) => setEnRevision(pagosEnRevision(i.docs.map((d) => ({ id: d.id, ...d.data() })))),
+      () => setEnRevision([]));
   }, [tenantId]);
 
   /**
@@ -249,6 +263,13 @@ export function CuentaNegocio() {
       <SuspensionNegocio ficha={ficha} ocupado={ocupado}
         onSuspender={(motivo, motivoVisible) => void operar(CALLABLES.suspender, { motivo, motivoVisible }, 'Servicio suspendido.')}
         onReactivar={() => void operar(CALLABLES.reactivar, {}, 'Servicio reactivado.')} />
+
+      {/* `confirmarPendiente` por la misma `operar`: si la sesión tiene más
+          de media hora, ofrece volver a entrar con Google y repetirlo. */}
+      <PagosEnRevision pagos={enRevision} planVigente={cuenta?.['plan']} ocupado={ocupado}
+        onConfirmar={(confirmarPendiente, montoRecibidoBs, motivoDiferencia) => void operar(CALLABLES.pagoManual,
+          { confirmarPendiente, montoRecibidoBs, motivoDiferencia },
+          'Pago registrado: el cobro que el banco había confirmado quedó aplicado.')} />
 
       <FormularioPagoManual key={pagoId} cuenta={cuenta} tipoCambio={tipoCambio} ahoraMs={ahoraMs} ocupado={ocupado}
         onRegistrar={(pedido) => void registrarPago(pedido)} />

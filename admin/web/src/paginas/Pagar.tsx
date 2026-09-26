@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable, type FunctionsError } from 'firebase/functions';
+import { GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth';
 import { Link, useParams } from 'react-router-dom';
-import { db, funciones, urlDeFuncionHttp } from '../lib/firebase';
+import { auth, db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, cuentaEnDemostracion, mesEscrito,
-  planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
+  BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
+  pideVolverAEntrar, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
@@ -72,16 +73,6 @@ interface FilaPago {
   canal?: unknown;
   creadoEn?: { toMillis(): number };
 }
-
-/** Lo que el comercio lee de cada estado del cobro en el banco. */
-const ESTADO_DEL_COBRO: Record<string, string> = {
-  SIN_EMITIR: 'todavía sin QR',
-  BORRADOR: 'el banco todavía no emitió el QR',
-  QR_ACTIVO: 'esperando el pago',
-  PAGO_DETECTADO: 'el banco detectó un pago y lo está confirmando',
-  EN_REVISION: 'un pago tardío está en revisión en el banco',
-  QR_SUELTO: 'NovuChat lo está revisando',
-};
 
 const ESTADO_DEL_PAGO: Record<string, string> = {
   pendiente: 'pendiente',
@@ -180,20 +171,50 @@ export function Pagar() {
     () => (pedido ? vistaDelPedido(cuenta, pedido, tipoCambio, Date.now()) : null),
     [cuenta, pedido, tipoCambio]);
 
-  const emitir = async () => {
-    if (!pedido || !vista?.montoBs) return;
-    setTrabajando(true); setError(null); setAviso(null);
+  // EL PEDIDO QUE PIDIÓ SESIÓN RECIENTE (tercera vuelta de #212, LOW 3): el
+  // propietario que emite el cobro de otro plan con una sesión de más de
+  // media hora. Se guarda tal cual para repetirlo después de volver a entrar
+  // con Google, sin que tenga que elegirlo de nuevo.
+  const [reintento, setReintento] = useState<Pago | null>(null);
+
+  const emitirPedido = async (p: Pago) => {
+    setTrabajando(true); setError(null); setAviso(null); setReintento(null);
     try {
-      await httpsCallable(funciones, 'crearCobroPrepago')({ tenantId, ...pedido });
+      await httpsCallable(funciones, 'crearCobroPrepago')({ tenantId, ...p });
       await consultar(true);
       setAviso('QR emitido. Páguelo desde su aplicación bancaria antes de que venza.');
     } catch (e) {
+      // Solo con sesión de Google (el propietario): el administrador del
+      // comercio no firma cambios de plan y no llega a este pedido.
+      const conGoogle = auth.currentUser?.providerData.some((d) => d.providerId === 'google.com') === true;
+      if (pideVolverAEntrar(e) && conGoogle) setReintento(p);
       // El servidor manda mensajes pensados para el comercio («Ya hay un cobro
       // pendiente», «No hay tipo de cambio del día»): se muestran tal cual y no
       // se reemplazan por uno genérico, que obligaría a llamar por teléfono.
       setError(mensajeDeError(e, 'No se pudo emitir el cobro.'));
       await consultar(true);
     } finally { setTrabajando(false); }
+  };
+
+  const emitir = async () => {
+    if (!pedido || !vista?.montoBs) return;
+    await emitirPedido(pedido);
+  };
+
+  /** Volver a entrar con Google y repetir el MISMO pedido. */
+  const volverAEntrarYEmitir = async () => {
+    const pendienteDeEmitir = reintento;
+    if (!auth.currentUser || !pendienteDeEmitir) return;
+    setError(null);
+    try {
+      const proveedor = new GoogleAuthProvider();
+      proveedor.setCustomParameters({ prompt: 'select_account' });
+      await reauthenticateWithPopup(auth.currentUser, proveedor);
+    } catch (e) {
+      setError(mensajeDeError(e, 'No se pudo volver a iniciar sesión.'));
+      return;
+    }
+    await emitirPedido(pendienteDeEmitir);
   };
 
   const anular = async () => {
@@ -215,6 +236,13 @@ export function Pagar() {
     <section>
       <h2>Pagar</h2>
       {error && <p role="alert">{error}</p>}
+      {reintento && (
+        <p>
+          <button type="button" className="btn btn-primary" disabled={trabajando} onClick={() => void volverAEntrarYEmitir()}>
+            Volver a entrar con Google y emitir el cobro
+          </button>
+        </p>
+      )}
       {aviso && <p role="status" className="ayuda">{aviso}</p>}
 
       {/* Lo que se está pagando, en sus tres ejes: el plan (con la doble
@@ -410,7 +438,34 @@ function CobroPendiente({ pendiente, consultado, trabajando, onConsultar, onAnul
   onConsultar: () => void; onAnular: () => void;
 }) {
   const estado = String(pendiente.cobroEstado ?? 'SIN_EMITIR');
-  const vencido = typeof pendiente.venceEn === 'number' && pendiente.venceEn < Date.now();
+  // EL BANCO YA CONFIRMÓ Y NOVUCHAT LO ESTÁ REGISTRANDO (tercera vuelta de
+  // #212, LOW 1): ni QR para pagar otra vez, ni «Cancelar», ni «ya venció».
+  const paraPagar = cobroSeMuestraParaPagar(estado);
+  const vencido = paraPagar && typeof pendiente.venceEn === 'number' && pendiente.venceEn < Date.now();
+  if (!paraPagar) {
+    return (
+      <>
+        <h3>El banco confirmó su pago</h3>
+        <table>
+          <tbody>
+            <tr><th>Concepto</th><td><TextoSeguro valor={pendiente.descripcion} maxLargo={80} /></td></tr>
+            <tr>
+              <th>Importe del QR</th>
+              <td>{numero(pendiente.monto) ?? '—'} <TextoSeguro valor={pendiente.moneda} maxLargo={3} /></td>
+            </tr>
+            <tr><th>En el banco</th><td>{ESTADO_DEL_COBRO[estado] ?? estado}</td></tr>
+          </tbody>
+        </table>
+        <p className="ayuda">
+          No hace falta pagar otra vez ni emitir otro QR. NovuChat revisa este pago y lo registra;
+          cuando lo haga, esta pantalla lo muestra en «Pagos anteriores».
+        </p>
+        <button type="button" className="btn btn-secondary" disabled={trabajando} onClick={onConsultar}>
+          {trabajando ? 'Consultando…' : 'Volver a consultar'}
+        </button>
+      </>
+    );
+  }
   return (
     <>
       <h3>Hay un cobro emitido</h3>

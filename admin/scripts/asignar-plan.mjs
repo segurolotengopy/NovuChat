@@ -18,6 +18,9 @@
  *                               `tenants/{t}.plan`.
  *                               «demostracion» YA NO ES UN PLAN: un demo es
  *                               modalidad `demostracion` con cualquier plan.
+ *                               Se rechaza, en seco y al aplicar, si hay una
+ *                               mensualidad pendiente de OTRO plan (QR vivo o
+ *                               en revisión), como la callable.
  *   --modalidad <m>             demostracion | prueba | prepago → `modalidad`.
  *                               Con `prueba` y sin período previo, el mes en
  *                               curso de Bolivia con su bolsa de 20, como la
@@ -222,6 +225,27 @@ try {
       return;
     }
     const actual = cuenta.data() ?? {};
+    // UN QR VIVO DE OTRO PLAN FRENA EL CAMBIO DE PLAN, en seco y al aplicar
+    // (revisión de seguridad de #212, tercera vuelta, LOW 1). La misma guarda
+    // que `actualizarEstadoCuenta` en `functions/src/index.ts`: si la cuenta
+    // tiene pendiente una mensualidad de otro plan --un QR vivo, o uno que el
+    // banco ya confirmó y espera en revisión-- y se cambia el plan acá, al
+    // resolverse ese pago la cuenta quedaría con dos verdades. Primero se
+    // anula el QR (Pagar) o se confirma el pago en revisión (Negocios);
+    // después, el plan. Es una lectura más, dentro de la misma transacción.
+    const pendienteId = actual.pagoPendienteId;
+    if (PLAN && typeof pendienteId === 'string' && /^[A-Za-z0-9_-]{22}$/.test(pendienteId)) {
+      const pendiente = (await tx.get(db.doc(`tenants/${TENANT}/pagos/${pendienteId}`))).data();
+      if (pendiente && pendiente.estado === 'pendiente' && pendiente.tipo === 'mensualidad' && pendiente.plan !== PLAN) {
+        const enRevision = pendiente.cobro && typeof pendiente.cobro === 'object' && pendiente.cobro.estado === 'CONFIRMADO';
+        resumen = {
+          error: `Hay un cobro pendiente de una mensualidad de otro plan (${pendiente.plan}, pago ${cola(pendienteId)}`
+            + `${enRevision ? ', el banco ya lo confirmó y espera en revisión' : ''}): `
+            + `${enRevision ? 'confírmelo en Negocios' : 'anule el cobro pendiente'} primero y después cambie el plan.`,
+        };
+        return;
+      }
+    }
     // Un valor por contrato sin cuenta ni plan dejaría una cuenta parcial,
     // con una copia de una sola clave y sin plan (LOW-4 de #207).
     if (cambiosPedidos !== undefined && !PLAN && !cuenta.exists) {

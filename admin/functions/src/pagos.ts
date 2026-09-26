@@ -349,6 +349,13 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     ...(confirmacion.origen === 'propietario' && confirmacion.motivoDiferencia
       ? { motivoDiferencia: confirmacion.motivoDiferencia } : {}),
     cubiertoHasta: tras.cubiertoHasta || null,
+    // UN PAGO CONFIRMADO YA NO ESTÁ EN REVISIÓN (revisión de seguridad de
+    // #212, tercera vuelta, LOW 2). `revision: 'plan_distinto'` lo anota el
+    // cliente del cobrador cuando el banco confirmó un QR de otro plan sin
+    // firma; si quedara escrito en un pago confirmado, Negocios lo seguiría
+    // listando como «por resolver». Se borra solo si existe: el manual crea
+    // el pago con esta escritura (`tx.create`), y ahí un borrado no se admite.
+    ...(pago.datos['revision'] !== undefined ? { revision: FieldValue.delete() } : {}),
     actualizadoEn: ahora,
   };
 
@@ -629,10 +636,19 @@ async function confirmarQrConfirmado(
     tx.set(db().doc(`cobrosResueltos/${pagoId}`), {
       tenantId, pagoId, cobroId: cobroIdDe(p), estado: 'confirmado', cerradoEn: ahora,
     });
+    // LA MISMA AUDITORÍA QUE UN CAMBIO DE PLAN (revisión de seguridad de
+    // #212, tercera vuelta, LOW 2). Un pago en revisión por `plan_distinto`
+    // confirmado acá CAMBIA el plan: sin el antes y el después de la copia
+    // de límites, este cambio sería el único que no deja constancia de qué
+    // se perdió o se conservó por contrato. `revision` dice por qué estaba
+    // detenido.
     tx.create(db().collection(`tenants/${tenantId}/auditoria`).doc(), {
       accion: 'pago_manual_confirma_qr', uid, en: ahora, pagoId, cobroId: cobroIdDe(p),
       monto: p['monto'] ?? null, montoRecibidoBs, motivoDiferencia,
-      cubiertoHasta: resultado.cubiertoHasta, planDespues: resultado.plan,
+      revision: typeof p['revision'] === 'string' ? p['revision'] : null,
+      cubiertoHasta: resultado.cubiertoHasta,
+      planAntes: (cuentaDoc.data() ?? {})['plan'] ?? null, planDespues: resultado.plan,
+      ...auditoriaDeLimites(resultado.cambioDeLimites),
     });
     return { resultado, descripcion: String(p['descripcion'] ?? ''), monto: p['monto'] };
   });
@@ -952,6 +968,17 @@ export function crearAnularPagoPendiente(deps: Deps = {}, opciones: CallableOpti
     if (p['estado'] !== 'pendiente') {
       throw new HttpsError('failed-precondition', `Un pago ${String(p['estado'])} no se anula.`);
     }
+    // EL BANCO YA CONFIRMÓ ESE QR Y NOVUCHAT NO LO APLICÓ (en revisión por
+    // importe o por plan; revisión de seguridad de #212, tercera vuelta,
+    // LOW 1). No hay nada que cancelar: la plata entró. Se dice así, sin
+    // llamar al cobrador --que respondería `PAGADO_NO_SE_ANULA` y dejaría el
+    // mensaje «se aplicó el cobro del banco», que acá sería falso--. Lo
+    // resuelve el propietario desde Negocios (`confirmarPendiente`).
+    if (cobroEstadoDe(p) === 'CONFIRMADO') {
+      throw new HttpsError('failed-precondition',
+        'El banco ya confirmó el pago de ese QR y NovuChat lo está registrando: no se cancela.',
+        { ...resumenDelPendiente(pagoId, p), cobroEstado: 'CONFIRMADO' });
+    }
 
     const r = await con(deps).anular(tenantId, pagoId, motivo);
     if (r.resultado !== 'anulado') {
@@ -1005,6 +1032,12 @@ export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableO
     if (!p) return { pendiente: null, consultado };
     const cobro = typeof p['cobro'] === 'object' && p['cobro'] !== null ? p['cobro'] as Record<string, unknown> : null;
     const ms = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : null);
+    // UN QR QUE EL BANCO YA CONFIRMÓ NO SE VUELVE A MOSTRAR (tercera vuelta
+    // de #212, LOW 1): el pago puede seguir `pendiente` --en revisión, hasta
+    // que el propietario lo confirme--, pero pagar dos veces el mismo QR no
+    // tiene sentido. Sin ficha, la pantalla no tiene qué dibujar, y
+    // `imagenDePago` también responde 404.
+    const confirmadoPorElBanco = cobro?.['estado'] === 'CONFIRMADO';
     const resumen = {
       pagoId, estado: p['estado'], tipo: p['tipo'], descripcion: p['descripcion'],
       monto: p['monto'], montoUsd: p['montoUsd'], moneda: p['moneda'], monedaLista: p['monedaLista'],
@@ -1012,8 +1045,8 @@ export function crearConsultarPagoPendiente(deps: Deps = {}, opciones: CallableO
       medio: p['medio'], canal: p['canal'],
       venceEn: ms(p['venceEn']), creadoEn: ms(p['creadoEn']),
       cobroEstado: cobro?.['estado'] ?? null,
-      fichaQr: typeof cobro?.['fichaQr'] === 'string' ? cobro['fichaQr'] : null,
-      qrRuta: typeof cobro?.['qrRuta'] === 'string' ? cobro['qrRuta'] : null,
+      fichaQr: !confirmadoPorElBanco && typeof cobro?.['fichaQr'] === 'string' ? cobro['fichaQr'] : null,
+      qrRuta: !confirmadoPorElBanco && typeof cobro?.['qrRuta'] === 'string' ? cobro['qrRuta'] : null,
     };
     return p['estado'] === 'pendiente'
       ? { pendiente: resumen, consultado }
