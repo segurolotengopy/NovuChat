@@ -2,13 +2,14 @@ import { fechaCorta, type Corte, type EstadoServicio } from '../lib/prepago';
 import { mesEscrito } from '../lib/pagar';
 
 /**
- * EL PREPAGO, COMO LO VE EL COMERCIO: hasta cuándo está cubierto, cuántas
+ * LA PRODUCCIÓN, COMO LA VE EL COMERCIO («prepago» en el código; «Producción»
+ * en la consola, `Analisis/41` §6.1 punto 6): hasta cuándo está cubierto, cuántas
  * conversaciones le quedan y, si el corte se aplicó, a cuántos de sus clientes
  * dejó sin atender. Recibe el estado ya calculado por el módulo del servidor
  * (`estadoDeServicio`) y no calcula nada: es una vista, y se puede dibujar en
  * una prueba sin Firestore ni enrutador.
  *
- * EL CORTE SOLO SE MUESTRA SI SE APLICÓ. Mientras el prepago corre en modo
+ * EL CORTE SOLO SE MUESTRA SI SE APLICÓ. Mientras el corte corre en modo
  * observación (`plataforma/prepago.corteActivo` apagado, `DISENO.md`
  * §4undecies.4) el servidor anota cortes con `aplicado: false` para medir qué
  * pasaría. Ese corte NO existe para el comercio: decirle «su servicio está
@@ -27,7 +28,7 @@ export function ResumenPrepago({ servicio, corte }: {
   const corteVisible = corte && corte.aplicado ? corte : null;
   return (
     <>
-      <h3>Su prepago</h3>
+      <h3>Su servicio en producción</h3>
       <table>
         <tbody>
           <tr>
