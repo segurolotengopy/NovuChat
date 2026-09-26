@@ -8,51 +8,54 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-09-26 (F6, método: la bitácora partida y este
-archivo de una pantalla). Los asientos anteriores de este archivo, desde el
-28/08, están **sin cambiar una letra** en `bitacora/2026-08.md` (14 asientos)
-y `bitacora/2026-09.md` (65 asientos).
+**Última actualización:** 2026-09-26, 00:50 de La Paz (F1 cerrada: ejes
+migrados en producción y `v0.10.0` desplegada; F6 y S fusionados). Lo anterior,
+en `bitacora/2026-09.md`.
 
 ## En producción
 
-- **Consola y Functions:** `v0.9.0` (25/09; el tipo de cambio del BCB cada
-  día). Las Functions del origen del anuncio y de `uuid` 11 están en `main`
-  y entran con la próxima etiqueta; S (staging) tiene que existir antes de
-  ese despliegue.
+- **Consola y Functions:** `v0.10.0` (26/09, `4f7e091`): los tres ejes de la
+  cuenta (plan, modalidad, titularidad), el modelo por tenant, el contador de
+  cambios operados, Negocios con los tres ejes y «Producción» en la consola;
+  además el origen del anuncio y `uuid` 11, que llegaban de F-1. Tres
+  callables nuevas: `asignarEjes`, `ejesDeCuenta`, `registrarCambioOperado`.
+- **Ejes migrados** (26/09, antes del despliegue, auditoría `migrar_ejes`):
+  los tres demos (Demo A, Demo B, captación) son **Pro en modalidad
+  demostración**; Bellido (Impulso) y Platinum (Pro) sin modalidad explícita,
+  que el código trata como demostración: nadie tiene corte. Los cinco con
+  `gemini-3.5-flash-lite` y titularidad «número de NovuChat». Son **5 tenants
+  reales**, no los 6 del plano.
 - **Flujos de n8n:** los 8 publicados desde `origin/main` (`e02a756`, 26/09),
-  `estado-de-versiones.sh` 8 de 8 al día. Registro de excepciones en
-  `docs/versiones-por-cliente.md`.
+  `estado-de-versiones.sh` 8 de 8 al día. F1 no tocó flujos.
 - **Tenants que atienden personas:** Platinum (desde el 16/09), Bellido (desde
   el 18/09) y NovuChat (captación). **Ningún cliente está en modalidad
-  producción**: atienden en demostración o prueba, con aceptación formal de 0
-  filas llenas; su pase espera el hito H3. Q'Taco en pausa, Dhermacore con
-  propuesta, Walisuma prospecto (`Prompts/operacion-de-clientes.md`, anexo).
+  producción**; su modalidad la fija la sesión de clientes con
+  `asignar-plan.mjs --modalidad`. Su pase espera H3/H4.
 - **Prepago:** en modo observación (el corte se calcula y no corta hasta
   `corteActivo`). Umbrales 50 / 100 en el servidor y en los flujos.
-- El objetivo inmediato original —dos demos comerciales el 9 y 10 de
-  septiembre de 2026, con congelamiento de cambios el 8— se cumplió; desde
-  entonces el proyecto está en alta de clientes y en la rearquitectura.
 
 ## En obra: la rearquitectura por capas (`Analisis/41`)
 
-- **H0 cerrado el 26/09** (F-1 cierre de las nueve sesiones, E estándar
-  DevSecOps 2.4). Veredicto de la revisora: pasa; arrancan F1, S y F6.
-- **En paralelo ahora:** **F1** ejes de la cuenta y consola del propietario
-  (agentes `central` y `plataforma-consola`); **S** staging (agente `deploy`);
-  **F6** método (agente `metodo`): PR #200 (`docs/arquitectura/` e índice),
-  #201 (`CICLO-DE-VIDA.md`), #202 (gancho por carpeta), #204 (agentes por
-  zona), #206 (pruebas puras) y el de este archivo.
-- **Sesiones de clientes** bajo el congelamiento del §12.10: configuración,
-  comercial, Meta y análisis de solicitudes sí; código a medida no.
-- Tablero, cola de fusión, cola de ensayo e informes de hito:
-  **`Prompts/COORDINACION.md`**.
+- **H0 cerrado** (F-1, E). **F1 cerrada el 26/09** (#207 ejes, #203 consola,
+  migración, `v0.10.0`): informe **H1** en `Prompts/COORDINACION.md`, para la
+  revisora. **F6 fusionada** (#200 a #206, #208). **S fusionada** (#205) pero
+  **sin estrenar**: el proyecto `novuchatstaging` existe y no tiene
+  facturación (cuota de cuentas de facturación agotada), así que
+  `desplegar-staging` sigue omitido y `v0.10.0` fue con el `--dry-run` del
+  pipeline y verificación HTTP después.
+- **Decisiones abiertas de Andres:** facturación de staging (pedir aumento de
+  cuota o desvincular un proyecto inactivo); modelo por defecto (seguir con
+  `gemini-3.5-flash-lite`, recomendado, o pasar a `gemini-3.7-flash`;
+  «3.7-flash-lite» no existe).
+- **Sesiones de clientes:** con H1, ya pueden escribir modalidad y titularidad
+  de Platinum y Bellido. Código a medida congelado (§12.10).
 
 ## Lo próximo, en orden
 
-H1 (F1) → F2 carpetas, registro y frontera (`registro.ts` primero, después
-los módulos en cualquier orden) → etiqueta, despliegue y publicación de los 8
-flujos → F3 core unificado → H3 → **H4: aceptación y pase de Platinum**, el
-primer cliente pagador → F4 conector de canal ∥ F5 tenants como datos.
+Veredicto de la revisora sobre H1 → **F2** carpetas, registro y frontera
+(`registro.ts` primero; borra los puentes deprecados de `planes.ts`) → F3 core
+unificado → H3 → **H4: aceptación y pase de Platinum** → F4 conector de canal
+∥ F5 tenants como datos. S se estrena cuando haya facturación.
 
 ## Dónde está cada cosa
 

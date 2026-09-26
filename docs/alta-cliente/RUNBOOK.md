@@ -97,10 +97,10 @@ Después, siempre **primero en seco** y luego con `--aplicar`:
 
 ```bash
 node admin/scripts/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>"
-node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --tenant <id> --plan <impulso|crecimiento|pro>
+node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --plan <impulso|crecimiento|pro> [--modalidad <demostracion|prueba|prepago>]
 node admin/scripts/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
 node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --listar
-node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
+node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
 ```
 
 - **El plan y el contador del catálogo.** `alta-comercio.mjs` deja al comercio
@@ -109,7 +109,7 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --tenant <id> --nume
   contrató **Crecimiento** o **Pro**, `asignar-plan.mjs` (en seco y después con
   `--aplicar`) cambia el plan, la copia, el espejo de la ficha y deja la
   auditoría. El plan sale del catálogo de `admin/functions/src/planes.ts`: no
-  hay texto libre. Los demos llevan `demostracion`, que no se vende.
+  hay texto libre. Desde F1 (26/09) `demostracion` es una **modalidad**, no un plan: los demos son Pro con modalidad demostración. `--operador` es obligatorio en `asignar-plan.mjs` y `asignar-numero.mjs`: es quien queda en la auditoría. La modalidad (`demostracion`, `prueba`, `prepago`, que la consola muestra como «Producción»), el modelo y la titularidad del número se fijan con el mismo script o desde Negocios.
 - `contar-catalogo.mjs` en seco **comprueba** que el contador exista y coincida
   con los productos. Un comercio nuevo no lo necesita con `--aplicar`; uno dado
   de alta **antes del 15/09** sí, una vez, antes de desplegar las reglas del

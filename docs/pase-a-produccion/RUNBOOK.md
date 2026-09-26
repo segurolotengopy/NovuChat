@@ -84,10 +84,10 @@ node scripts/pase-a-produccion.mjs --proyecto <proyecto> --tenant <id> \
 | Precondición | Qué mira el script | Si falta, se arregla con (primero en seco, leído entero) |
 |---|---|---|
 | **Comercio activo** con sus flujos | `tenants/{id}.estado`, `flujos` | `reactivarTenant` (consola del propietario) |
-| **Plan del catálogo** con su copia de límites | `cuenta/estado.plan`, `limites` = `limitesDe(plan)` | `asignar-plan.mjs --plan <impulso\|crecimiento\|pro>` |
+| **Plan del catálogo** con su copia de límites | `cuenta/estado.plan`, `limites` = `limitesDe(plan)` | `asignar-plan.mjs --operador <correo> --plan <impulso\|crecimiento\|pro>` (y `--modalidad`, `--titularidad --numero`) |
 | Agendas y productos **dentro del plan** | funcionarios activos, catálogo | subir de plan, o dar de baja en la consola. El tope de agendas **todavía no lo hacen cumplir las reglas** (`CLAUDE.md` §7): lo mira este script |
 | **Umbrales** coherentes | `umbralesDeAtencion` | `fijar-umbrales.mjs` (o dejar los de respaldo 50 / 100) |
-| **Número** con ruta activa, alias `clienteNN`, flujo de la ficha, sin ensayo | `rutasWhatsApp` | `asignar-numero.mjs` (y `ensayo.mjs --restaurar` si quedó desviada) |
+| **Número** con ruta activa, alias `clienteNN`, flujo de la ficha, sin ensayo | `rutasWhatsApp` | `asignar-numero.mjs --operador <correo>` (y `ensayo.mjs --restaurar` si quedó desviada) |
 | **WABA exclusiva** del comercio | ninguna otra ruta comparte `wabaId` | §2 |
 | `config/negocio` con nombre y **recepción válida** | `numeroRecepcion` de 8 a 15 dígitos | `cargar-negocio.mjs` desde `main` |
 | **Sin marcadores** `REEMPLAZAR_` ni datos «supuesto» | todos los textos de `config/negocio` y `config/{flujo}` | confirmar con el comercio, corregir `admin/scripts/datos/negocio-<id>.json` en un PR, recargar desde `main` |

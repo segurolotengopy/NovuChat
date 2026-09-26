@@ -22,10 +22,10 @@ hito de abajo son lo que Andres le pega a la revisora.
 | Fase | Qué | Estado | Cierra |
 |---|---|---|---|
 | **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits; más los dos hallazgos del ensayo (#196, #197) | **cerrada el 26/09** | H0 (con E) |
-| **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 1 en PR #191** (25/09): siete copias al nivel de `702f2da`; pruebas del estándar, actionlint, ShellCheck, validador y `security-local.sh` iguales antes y después. Se fusiona después de F-1 |
-| **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de los tenants reales, Negocios (A-3b) | **en obra desde el 26/09**: H0 pasó; agentes `central` (`central/ejes-de-la-cuenta`) y `plataforma-consola` (`plataforma/negocios-tres-ejes`) | H1 |
-| **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **en PR** (26/09): #200 `docs/arquitectura/` e índice, #201 `CICLO-DE-VIDA.md`, #202 gancho por carpeta, #204 agentes por zona, #206 pruebas puras, y el PR final (bitácora, `ESTADO.md` de una pantalla, `estado-generado.sh`, `CLAUDE.md` con invariantes); observaciones de seguridad de #202 y #204 cerradas | H6 |
-| **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **en obra desde el 26/09**: agente `deploy` (`staging/proyecto-y-pipeline`) prepara todo sin escribir en la nube; cada escritura se pide a Andres una por una. **Cierra antes de la etiqueta de F1** | H3 |
+| **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **cerrado el 26/09**: #191 fusionado, primer run de `main` en verde | H0 |
+| **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de los tenants reales, Negocios (A-3b) | **cerrada el 26/09**: #207 y #203 fusionados, 5 tenants migrados, `v0.10.0` desplegada y verificada. Informe H1 abajo | H1 |
+| **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **fusionada el 26/09**: #200, #201, #202, #204, #206 y #208 | H6 |
+| **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **fusionada el 26/09 (#205), sin estrenar**: el proyecto existe y no tiene facturación («Cloud billing quota exceeded»); decisión de Andres pendiente. `v0.10.0` fue con la alternativa (`--dry-run` y verificación HTTP) | H3 |
 | **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas | espera H1 | H2 |
 | **F3** Core unificado | Ganchos; una variante de los nodos comunes; medios en el core; prompt por capas; suites sin `new Function` | espera H2 | H3 |
 | **H4** Aceptación y pase de Platinum | Lo cierra la sesión de clientes | espera H3 | H4 |
@@ -128,6 +128,61 @@ ventana mientras nadie esté en producción; `ruta: '.'` se mantiene
 **Lo que le toca a Andres:** pegar este informe en la sesión revisora y, con su
 veredicto, autorizar F1 (con S y F6 en paralelo).
 
+### H1 — F1 (cerrado el 26/09/2026, madrugada; para la revisora)
+
+**PR fusionados:** #207 (los tres ejes: plan, modalidad, titularidad; modelo
+por tenant; contador de cambios; `asignar-plan.mjs` con `--operador`
+obligatorio; `migrar-ejes.mjs`), #203 (Negocios asigna los tres ejes; Cuenta
+y Pagar los muestran; «Producción» en lugar de «prepago»). En paralelo S
+(#205) y F6 (#200 a #206, #208). `main` en `4f7e091`; suite completa 3498 en
+verde.
+
+**Migración:** 5 tenants reales (el plano estimaba 6), seco leído entero,
+aplicado con el «sí» de Andres, releído, y un segundo seco con 0 cambios;
+auditoría `migrar_ejes` en los cinco. Demos: Pro en modalidad demostración.
+Bellido y Platinum: sin modalidad explícita (demostración para el código).
+
+**Despliegue:** `v0.10.0` sobre `4f7e091`, con la alternativa de la revisora
+porque S no tiene facturación: `--dry-run` del pipeline y verificación de las
+Functions HTTP después (55/55 revisiones listas, 0 errores, las tres callables
+nuevas con `allUsers` y respondiendo con nuestro código). Detalle en la
+bitácora del 26/09 (madrugada, 3).
+
+**Costo en las tres unidades:** 0 mensajes por conversación; 2 PR de F1 más
+7 de F6 y 1 de S, con sus corridas de CI; 15 escrituras y 5 auditorías en
+Firestore, 1 despliegue.
+
+**Zonas efectivas frente al §8.1** (`docs/arquitectura/agentes.md`):
+1. **F1 escribió fuera de las carpetas de zona**, y era inevitable: los ejes
+   viven en `planes.ts`, `prepago.ts`, `pagos.ts`, `ingesta.ts` y
+   `limiteCatalogo.ts` en la raíz de `functions/src/`, en `admin/scripts/`,
+   en `admin/pruebas/` y en `web/src/lib` y `web/src/paginas`, que recién F2
+   mueve a `central/` y `plataforma/`. #207 tocó 7 archivos en carpetas de zona
+   y 29 fuera; #203, 12 y 17. El gancho (#202) entró después del
+   trabajo de F1: **F2 es la primera fase que corre con el gancho activo**.
+2. `agentes.md` tiene la fila **`plataforma-consola`**, que el §8.1 no tiene
+   (ahí Negocios era de `consola`); y le da a `consola` solo Tablero,
+   Configuración y componentes, sin `plataforma/`. Conviene que el §8.1 adopte
+   la separación.
+3. `plataforma-consola` escribe en `admin/scripts/plataforma/`, carpeta que el
+   plano no nombra.
+
+**Lo que se encontró mal o incompleto en `Analisis/41`:** la migración de
+«seis tenants» (son cinco); el plano supone que el plan `demostracion`
+desaparece sin decir que las reglas dejan de reconocerlo, lo que obliga a
+migrar **antes** de desplegar; y S depende de facturación, que el plano no
+lista como precondición.
+
+**Para F2:** borrar los puentes deprecados de `planes.ts`; mover los ejes a
+`central/`.
+
+**Decisiones de Andres en este hito:** migrar con los demos en Pro; etiqueta
+sin S (alternativa de la revisora); modelo sin cambiar (3.7-flash-lite no
+existe). Pendientes: facturación de staging y el modelo por defecto.
+
+**Lo que le toca a Andres:** pegar este informe en la sesión revisora y, con
+su veredicto, autorizar F2.
+
 ## Heredado del tablero anterior (prepago y modularización), y adónde va
 
 | Pendiente al 25/09 | Adónde va en este frente |
@@ -223,3 +278,6 @@ veredicto, autorizar F1 (con S y F6 en paralelo).
   nube. Lo que queda para la coordinadora: `indice.md` gana las filas de
   `zona-de-escritura.md` y `agentes.md` cuando #200, #202 y #204 estén en
   `main`; las diferencias con §8.1 van al informe de H1 para la revisora.
+- **26/09/2026 (madrugada, 3)** — Andres autoriza la migración de los ejes:
+  5 tenants, aplicada y releída. Andres crea `v0.10.0`; desplegada y
+  verificada. **F1 cerrada; H1 arriba, para la revisora.**
