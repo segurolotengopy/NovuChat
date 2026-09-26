@@ -91,17 +91,27 @@ producción. Tres compuertas, en orden:
    `1:<GCP_PROJECT_NUMBER_STAGING>:web:…` (el número del proyecto va en el
    Environment, lo carga `preparar-staging.sh app`); `VITE_FIREBASE_API_KEY` no
    vacía. Una apiKey no dice de quién es, y por eso hay una segunda compuerta.
-2. `desplegar-staging`, **ya autenticado en el proyecto de staging**, pide la
-   configuración de la app web registrada (`firebase apps:sdkconfig WEB
-   <appId> --json`, permiso `firebase.clients.get` de `roles/firebase.viewer`) y
-   exige que su `apiKey` y su `appId` estén en el JavaScript del artefacto
-   antes de `firebase deploy`. También verifica `SITIO_PUBLICO`, `STAGING_URL` y
-   el bucket. Si algo falta, el job falla con el nombre de la variable y no se
-   publica nada.
+2. `desplegar-staging`, antes de `firebase deploy`, lee **sin credenciales** la
+   configuración pública del SDK que Firebase Hosting sirve en
+   `https://<id>.web.app/__/firebase/init.json` (`apiKey`, `appId`,
+   `projectId`, `authDomain`, `storageBucket`: lo mismo que devuelve
+   `apps:sdkconfig`) y exige que el `projectId` sea el de staging, que el
+   `appId` sea el del Environment y que la `apiKey` y el `appId` estén en el
+   JavaScript del artefacto. **Sin `roles/firebase.viewer`**: ese rol trae 290
+   permisos —`datastore.entities.get/list`, `firebaseauth.users.get`,
+   `storage.objects.get/list` entre ellos— y la cuenta de despliegue no lee
+   datos, ni en staging ni en producción, que tampoco lo recibe. En el
+   **primer despliegue** (paso 12, con la cuenta dueña) `init.json` puede no
+   estar publicado todavía: el paso lo dice con un aviso y sigue, y
+   `humo-staging` lo exige después con el sitio ya publicado. También verifica
+   `SITIO_PUBLICO`, `STAGING_URL` y el bucket. Si algo falta, el job falla con
+   el nombre de la variable y no se publica nada.
 3. `humo-staging`, por fuera y **sin Environment** —así `vars.VITE_FIREBASE_APP_ID`
    es la del repositorio, la de producción—, lee el JavaScript publicado y exige
-   el ID y el appId de staging (que recibe como salidas de `desplegar-staging`)
-   y la **ausencia** del ID y del appId de producción.
+   el ID y el appId de staging (que recibe como salidas de `desplegar-staging`),
+   la **ausencia** del ID y del appId de producción, y que la `apiKey` y el
+   `appId` de `init.json` (ya publicado) estén en el paquete. En CI, una
+   entrada que falte es fallo, no aviso.
 
 Los identificadores no se imprimen en el registro de Actions (repositorio
 público): los jobs los enmascaran con `::add-mask::` y los mensajes dicen «el

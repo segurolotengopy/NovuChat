@@ -28,6 +28,11 @@ del proyecto de producción. Lo que hay:
   `scripts/preparar-staging.sh` las ejecuta en seco por defecto. Mientras
   `vars.GCP_PROJECT_ID_STAGING` esté vacía, `desplegar-staging` se omite en vez
   de fallar en cada push, y con ella `dast-y-humo` y `humo-staging`.
+  **Ninguna cuenta de despliegue —ni la de staging ni la de producción— recibe
+  `roles/firebase.viewer`**: trae 290 permisos, entre ellos leer Firestore,
+  Auth y Storage. Cuando el pipeline necesita la configuración pública del SDK
+  (`apiKey`, `appId`), la lee sin credenciales de
+  `https://<sitio>/__/firebase/init.json`, que Hosting sirve para cada sitio.
 - **El primer despliegue por CI fue `v0.1.4` (2026-09-13).** Hasta el 12/09 no
   había secretos y todo se desplegaba a mano. Llegar ahí destapó seis piezas que
   faltaban; están en la tabla de `ESTADO.md` y, una por una, en esta sección.

@@ -202,16 +202,15 @@ fase_cuentas() {
     else correr "crear ${cuenta%%:*}" -- gc iam service-accounts create "${cuenta%%:*}" --display-name="${cuenta#*:}"; fi
   done
   # sa-deploy-staging: hosting, reglas, índices, Storage (solo ver el bucket),
-  # Functions gen2 (Run + Build + Artifact Registry + Eventarc), Scheduler
-  # (sondeoCobros y barridoCobros son onSchedule) y firebase.viewer, que trae
-  # firebase.clients.get: desplegar-staging pregunta por la app web
-  # (apps:sdkconfig) para comparar apiKey y appId con el paquete antes de
-  # publicar.
+  # Functions gen2 (Run + Build + Artifact Registry + Eventarc) y Scheduler
+  # (sondeoCobros y barridoCobros son onSchedule). NUNCA roles/firebase.viewer:
+  # trae 290 permisos, entre ellos leer Firestore, Auth y Storage, y la cuenta
+  # de despliegue no lee datos, ni acá ni en producción. La configuración
+  # pública del SDK la sirve Hosting en /__/firebase/init.json, sin credenciales.
   for r in roles/firebasehosting.admin roles/firebaserules.admin roles/datastore.indexAdmin \
            roles/serviceusage.serviceUsageConsumer roles/firebasestorage.viewer \
            roles/cloudfunctions.developer roles/run.admin roles/artifactregistry.writer \
-           roles/cloudbuild.builds.editor roles/eventarc.admin roles/cloudscheduler.admin \
-           roles/firebase.viewer; do
+           roles/cloudbuild.builds.editor roles/eventarc.admin roles/cloudscheduler.admin; do
     correr "sa-deploy-staging: $r" -- gc projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_DEPLOY" --role="$r" --condition=None
   done
   # Actuar como: sa-functions (con la que corren), App Engine (firebase deploy lo
@@ -310,8 +309,7 @@ fase_verificar() {
   # de gastar una corrida (memoria «despliegues: verificar antes de aprobar»).
   local num; num="$(numero_proyecto)"
   for perm in firebasehosting.sites.update firebaserules.releases.update iam.serviceAccounts.actAs \
-              secretmanager.versions.list cloudfunctions.functions.create run.services.update eventarc.triggers.create \
-              firebase.clients.get; do
+              secretmanager.versions.list cloudfunctions.functions.create run.services.update eventarc.triggers.create; do
     local recurso="//cloudresourcemanager.googleapis.com/projects/${P}"
     [[ "$perm" == iam.serviceAccounts.actAs ]] && recurso="//iam.googleapis.com/projects/${P}/serviceAccounts/${SA_FUNCTIONS}"
     [[ "$perm" == secretmanager.versions.list ]] && recurso="//secretmanager.googleapis.com/projects/${num}/secrets/INGESTA_DEMOA"

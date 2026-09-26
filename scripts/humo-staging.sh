@@ -47,8 +47,12 @@
 #      Storage: un objeto cualquiera del bucket responde 403 (las reglas se
 #      evalúan antes de mirar si el objeto existe; 404 sería reglas abiertas).
 #   4. El paquete publicado: el JavaScript de la consola contiene el ID del
-#      proyecto de staging (VITE_FIREBASE_PROJECT_ID viaja en el bundle) y NO
-#      el de producción.
+#      proyecto y el appId de staging y NO los de producción; y lleva la apiKey
+#      y el appId que Hosting sirve en /__/firebase/init.json (la configuración
+#      pública del SDK, la misma de `apps:sdkconfig`, sin credenciales).
+#
+# En CI (GITHUB_ACTIONS=true) las entradas «opcionales» son obligatorias:
+# faltar es salida 2. El aviso queda para la ejecución manual.
 #
 # Salida: 0 todo en orden · 1 alguna comprobación falló · 2 faltan datos.
 # =============================================================================
@@ -82,11 +86,19 @@ URL="${STAGING_URL%/}"
 P="$GCP_PROJECT_ID_STAGING"
 BUCKET="${FIREBASE_STORAGE_BUCKET:-}"; BUCKET="${BUCKET#gs://}"
 APP_ID_STAGING="${APP_ID_STAGING:-}"; APP_ID_PROD="${APP_ID_PROD:-}"
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+EN_CI=0; [[ "${GITHUB_ACTIONS:-}" == "true" ]] && EN_CI=1
+if (( EN_CI )); then
   for v in "$P" "${GCP_PROJECT_ID_PROD:-}" "$APP_ID_STAGING" "$APP_ID_PROD"; do
     [[ -n "$v" ]] && echo "::add-mask::$v"
   done
+  # En CI las entradas opcionales NO son opcionales: llegan de desplegar-staging
+  # y del repositorio, y si faltan es un defecto del pipeline, no un aviso.
+  for par in APP_ID_STAGING:"$APP_ID_STAGING" FIREBASE_STORAGE_BUCKET:"$BUCKET" APP_ID_PROD:"$APP_ID_PROD" GCP_PROJECT_ID_PROD:"${GCP_PROJECT_ID_PROD:-}"; do
+    [[ -n "${par#*:}" ]] || { echo "::error::En CI falta ${par%%:*}: humo-staging no puede verificar el paquete." >&2; exit 2; }
+  done
 fi
+# Sin CI, lo que falte se avisa (la ejecución manual puede no tener todo).
+faltante() { if (( EN_CI )); then mal "$*"; else aviso "$*"; fi; }
 # Si la app de staging y la de producción fueran la misma, la comprobación 4
 # no podría distinguirlas: se avisa y se trata como fallo de configuración.
 if [[ -n "$APP_ID_STAGING" && "$APP_ID_STAGING" == "$APP_ID_PROD" ]]; then
@@ -149,7 +161,7 @@ if [[ -n "$BUCKET" ]]; then
   c="$(codigo GET "https://firebasestorage.googleapis.com/v0/b/$BUCKET/o/captacion%2Fnadie%2Fplanes.pdf")"
   if [[ "$c" == 403 ]]; then ok "Storage (bucket de staging) → 403"; else mal "Storage (bucket de staging) → $c (se esperaba 403)"; fi
 else
-  aviso "sin FIREBASE_STORAGE_BUCKET: no se comprueban las reglas de Storage"
+  faltante "sin FIREBASE_STORAGE_BUCKET: no se comprueban las reglas de Storage"
 fi
 
 echo "4. El paquete publicado apunta a staging"
@@ -173,7 +185,7 @@ else
       ok "$js no menciona el proyecto de producción"
     fi
   else
-    aviso "sin GCP_PROJECT_ID_PROD: no se comprueba la ausencia del proyecto de producción"
+    faltante "sin GCP_PROJECT_ID_PROD: no se comprueba la ausencia del proyecto de producción"
   fi
   # El appId es la app web registrada: el de staging tiene que estar y el de
   # producción no (una consola con el appId de producción autentica contra el
@@ -182,13 +194,36 @@ else
     if grep -qF "$APP_ID_STAGING" <<< "$bundle"; then ok "$js lleva el appId de la app de staging"
     else mal "$js no lleva el appId de la app de staging"; fi
   else
-    aviso "sin APP_ID_STAGING: no se comprueba el appId de staging"
+    faltante "sin APP_ID_STAGING: no se comprueba el appId de staging"
   fi
   if [[ -n "$APP_ID_PROD" ]]; then
     if grep -qF "$APP_ID_PROD" <<< "$bundle"; then mal "$js lleva el appId de la app de PRODUCCIÓN"
     else ok "$js no lleva el appId de producción"; fi
   else
-    aviso "sin APP_ID_PROD: no se comprueba la ausencia del appId de producción"
+    faltante "sin APP_ID_PROD: no se comprueba la ausencia del appId de producción"
+  fi
+  # La configuración PÚBLICA del SDK que sirve Hosting (/__/firebase/init.json:
+  # apiKey, appId, projectId…) es la misma que `apps:sdkconfig`, sin
+  # credenciales. El paquete publicado tiene que llevar exactamente esa apiKey y
+  # ese appId, y el projectId tiene que ser el de staging. Con el sitio ya
+  # publicado, init.json existe: acá es exigible.
+  cfg="$(curl -sS --max-time 20 "$URL/__/firebase/init.json" 2>/dev/null || true)"
+  if [[ -z "$cfg" ]] || ! jq -e '.apiKey and .appId' <<< "$cfg" >/dev/null 2>&1; then
+    mal "/__/firebase/init.json no responde con apiKey y appId: el sitio no publica su configuración"
+  else
+    cfg_proyecto="$(jq -r '.projectId // empty' <<< "$cfg")"
+    cfg_api_key="$(jq -r '.apiKey' <<< "$cfg")"
+    cfg_app_id="$(jq -r '.appId' <<< "$cfg")"
+    (( EN_CI )) && echo "::add-mask::$cfg_api_key"
+    if [[ "$cfg_proyecto" == "$P" ]]; then ok "init.json es del proyecto de staging"
+    else mal "init.json no es del proyecto de staging"; fi
+    if grep -qF "$cfg_api_key" <<< "$bundle"; then ok "$js lleva la apiKey que sirve init.json"
+    else mal "$js no lleva la apiKey que sirve init.json: se compiló con otras VITE_*"; fi
+    if grep -qF "$cfg_app_id" <<< "$bundle"; then ok "$js lleva el appId que sirve init.json"
+    else mal "$js no lleva el appId que sirve init.json"; fi
+    if [[ -n "$APP_ID_STAGING" && "$cfg_app_id" != "$APP_ID_STAGING" ]]; then
+      mal "init.json sirve una app distinta de la del Environment staging"
+    fi
   fi
 fi
 

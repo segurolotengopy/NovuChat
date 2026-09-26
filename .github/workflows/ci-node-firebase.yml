@@ -1105,32 +1105,47 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: El paquete descargado es el de staging (contra la app registrada)
-        # La compuerta de construir-staging mira la FORMA de las variables; acá,
-        # ya autenticado, se pregunta al proyecto de staging por su app web y se
-        # exige que la apiKey y el appId que devuelve estén en el JavaScript
-        # que se va a publicar. Si el paquete se compiló con otras VITE_*, no
-        # se despliega. Necesita firebase.clients.get (roles/firebase.viewer).
+      - name: El paquete descargado es el de staging (contra init.json de Hosting)
+        # La compuerta de construir-staging mira la FORMA de las variables; acá
+        # se compara el paquete con la configuración PÚBLICA del SDK que Firebase
+        # Hosting sirve en /__/firebase/init.json (apiKey, appId, projectId…),
+        # la misma que devuelve `apps:sdkconfig`, pero por curl y SIN
+        # credenciales: así la cuenta de despliegue no necesita
+        # roles/firebase.viewer, que trae 290 permisos —leer Firestore, Auth y
+        # Storage entre ellos— y que producción no tiene a propósito. Si el
+        # paquete se compiló con otras VITE_*, no se despliega.
+        #
+        # PRIMER DESPLIEGUE: init.json lo sirve el sitio de Hosting, y antes de
+        # la primera publicación puede no estar. Entonces se AVISA y se sigue
+        # (humo-staging lo exige después, con el sitio ya publicado); nunca se
+        # falla en silencio ni se da por verificado.
         id: paquete
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
-          APP_REGISTRADA: ${{ vars.VITE_FIREBASE_APP_ID }}
+          URL_STAGING: ${{ vars.STAGING_URL }}
+          APP_ESPERADA: ${{ vars.VITE_FIREBASE_APP_ID }}
           BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
         run: |
           set -euo pipefail
-          npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
-          cfg=$(firebase apps:sdkconfig WEB "$APP_REGISTRADA" --project "$PROYECTO" --json | jq -c '.result.sdkConfig // empty')
-          [[ -n "$cfg" ]] || { echo "::error::apps:sdkconfig no devolvió la configuración de la app de staging"; exit 1; }
+          js=$(find web/dist/assets -maxdepth 1 -name 'index-*.js' | head -1)
+          [[ -n "$js" ]] || { echo "::error::no hay web/dist/assets/index-*.js en el artefacto"; exit 1; }
+          grep -qF "$APP_ESPERADA" "$js" || { echo "::error::el paquete no lleva el appId del Environment 'staging': se compiló con otras VITE_*"; exit 1; }
+          cfg=$(curl -sS --max-time 20 -w '\n%{http_code}' "${URL_STAGING%/}/__/firebase/init.json" 2>/dev/null || echo $'\n000')
+          codigo="${cfg##*$'\n'}"; cfg="${cfg%$'\n'*}"
+          if [[ "$codigo" != "200" ]]; then
+            echo "::warning::/__/firebase/init.json respondió $codigo: el sitio de staging todavía no publica su configuración (primer despliegue). humo-staging la exige después."
+            { echo "bucket=${BUCKET_STORAGE#gs://}"; echo "app_id=$APP_ESPERADA"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           api_key=$(jq -r '.apiKey // empty' <<< "$cfg")
           app_id=$(jq -r '.appId // empty' <<< "$cfg")
           proyecto_app=$(jq -r '.projectId // empty' <<< "$cfg")
+          [[ -n "$api_key" && -n "$app_id" ]] || { echo "::error::init.json sin apiKey o appId"; exit 1; }
           echo "::add-mask::$api_key"
-          [[ "$proyecto_app" == "$PROYECTO" ]] || { echo "::error::la app registrada no pertenece al proyecto de staging"; exit 1; }
-          js=$(find web/dist/assets -maxdepth 1 -name 'index-*.js' | head -1)
-          [[ -n "$js" ]] || { echo "::error::no hay web/dist/assets/index-*.js en el artefacto"; exit 1; }
+          [[ "$proyecto_app" == "$PROYECTO" ]] || { echo "::error::init.json no es del proyecto de staging"; exit 1; }
+          [[ "$app_id" == "$APP_ESPERADA" ]] || { echo "::error::la app que sirve Hosting no es la del Environment 'staging' (VITE_FIREBASE_APP_ID)"; exit 1; }
           grep -qF "$api_key" "$js" || { echo "::error::el paquete no lleva la apiKey de la app de staging: se compiló con otras VITE_*"; exit 1; }
-          grep -qF "$app_id" "$js" || { echo "::error::el paquete no lleva el appId de la app de staging"; exit 1; }
-          echo "El paquete lleva la apiKey y el appId de la app web de staging."
+          echo "El paquete lleva la apiKey y el appId de la app web de staging (según init.json)."
           # Salidas para humo-staging (no son secretos: viajan en el bundle).
           { echo "bucket=${BUCKET_STORAGE#gs://}"; echo "app_id=$app_id"; } >> "$GITHUB_OUTPUT"
 
