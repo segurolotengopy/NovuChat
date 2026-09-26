@@ -14,6 +14,10 @@ Platinum y Bellido atienden en modalidad de prueba; Q'Taco, Dhermacore y
 Walisuma no tienen flujo publicado. Eso permite renombrar campos y mover
 colecciones con un script y sin compatibilidad hacia atrás, y es la razón para
 hacer este cambio **antes** del primer cliente pagador y no después.
+**Vigente hasta H1 (26/09/2026):** F1 usó esa ventana y migró los cinco tenants
+reales. Lo que sigue quedó **reorientado en §6.3**: los clientes de reservas no
+esperan a F3, y F3 se parte en el esqueleto de venta (F3a) y el core unificado
+(F3b).
 
 **Antecedentes que este documento integra, no reemplaza:** `admin/DISENO.md`
 §4sexies (política de capas por vertical), `Analisis/20` (un flujo por cliente y
@@ -35,7 +39,7 @@ retirado), `CLAUDE.md` §7 (todo límite se hace cumplir en el servidor).
 | **La unidad de la arquitectura** | El **manifiesto de módulo** (§3): configuración, colecciones, límites, pestañas, fragmento de prompt, herramientas, ganchos y pruebas. De él se derivan las siete copias de hoy |
 | **Los tres ejes de la cuenta** | **Plan** (módulos y límites contratados), **modalidad** (demostración, prueba, producción) y **titularidad del canal** (NovuChat o el comercio). Hoy `demostracion` es plan y modalidad a la vez, y BYOC es un plan cuando es titularidad más un plan (§4) |
 | **Cómo se hace cumplir** | Carpeta = zona, una prueba de fronteras de importación en CI, y un gancho de Claude Code que limita a cada agente a su carpeta. La política escrita es un prompt, y el prompt no es una barrera |
-| **El camino** | Una fase de cierre más seis (§7), unas 20 jornadas de trabajo que con agentes en paralelo caben en 6 a 7 días de calendario. **Primero:** F-1 (cierre de las nueve sesiones abiertas, hotfix) y E (estándar DevSecOps). **Antes del primer cliente pagador:** F1 (ejes de la cuenta y consola del propietario), F2 (carpetas, registro y frontera), F3 (core unificado), S (staging) y F6 (método). **Después, antes del quinto número:** F4 (conector de canal fuera de n8n) y F5 (tenants como datos) |
+| **El camino** | Una fase de cierre más siete (§7), unas 21 jornadas de trabajo. **Hechas al 26/09:** F-1 y E (H0), F1 (H1), F6 (H6) y S (fusionada, sin estrenar por falta de facturación). **Reorientado el 26/09 (§6.3), en este orden:** F1b (copia de límites y precio por contrato), F2 (carpetas, registro y frontera), F3a (esqueleto de venta: lo que todo cliente de venta necesita), F3b (core unificado de reservas). **Los clientes de reservas no esperan a F3:** Bellido pasa ahora sobre la versión publicada y Platinum cuando cierren anexo y datos; los de venta (Edgar, Dhermacore, Q'Taco) esperan F3a. **Después, antes del quinto número:** F4 (conector de canal fuera de n8n) y F5 (tenants como datos) |
 | **El proceso con los clientes** | Ocho etapas con compuerta (§12.2); todo pedido pasa por un análisis de solicitud con tres opciones «así se puede», esfuerzo real y decisión comercial antes de construirse (§12.3, §12.4); reclamos con circuito (§12.7); inventario de recursos compartidos (§12.9); ningún código a medida mientras F2 y F3 estén en obra (§12.10) |
 | **Cómo se opera** | Tres sesiones (§8.5): una operadora de la rearquitectura, las de clientes, y una revisora que comprueba cada hito antes de que Andres autorice el siguiente |
 | **Mensajes por conversación** | Cero agregados o quitados en todas las fases. F4 agrega un salto de red por mensaje, no un mensaje |
@@ -154,6 +158,14 @@ ordena su contenido en tres bloques, que son los tres ejes del §4:
 
 El flujo no sabe de planes ni de modalidades: recibe `operativo` y `modulos`.
 
+**Corrección de H0 (26/09):** el contexto de turno lleva también el **estado de
+la conversación por teléfono** (`conversacion: { pendiente, candidatos, desde }`:
+la cancelación pendiente de los flujos de reservas, la etapa del menú de
+Bellido). Hoy vive en los datos estáticos de n8n (#197,
+`$getWorkflowStaticData`, con el riesgo aceptado «último en escribir gana») y en
+un nodo propio de Bellido. Es estado de turno y pertenece al servidor:
+`configuracionFlujo` ya recibe `telefono`. Entra en **F3b**.
+
 ### 2.3 Reporte de turno y ganchos (lo que el core hace después de responder)
 
 Hoy es `ingesta`. Se conserva la llamada y se parte por dentro en el
@@ -169,6 +181,10 @@ coordinador más los ganchos. Un módulo puede registrar:
 
 El coordinador recorre los módulos **encendidos para ese tenant** en el orden
 del registro. El core no nombra a ningún módulo.
+
+El reporte de turno devuelve el estado de la conversación por teléfono (§2.2) y
+el coordinador lo guarda: desde F3b ningún flujo conserva estado entre turnos
+fuera del servidor.
 
 ### 2.4 Cierre
 
@@ -293,6 +309,16 @@ Tres consecuencias:
    (`cambiosIncluidos`) con su contador, igual que `conversaciones` es del core.
    El plan lo trae como cualquier otra clave; el registro de módulos no lo
    conoce porque no es de un módulo.
+5. **Quién escribe la copia por contrato (hallazgo de H1, 26/09).** F1 dejó el
+   contador y el cumplimiento, pero `asignar-plan.mjs` y `asignarEjes` escriben
+   siempre `limitesDe(plan)`: no hay forma de dar a un comercio un número de
+   conversaciones o de cambios distinto del de su plan, ni un precio mensual
+   propio, y el pago de la mensualidad solo acepta la lista. Es el bloque
+   **F1b** (§7): `asignar-plan.mjs --conversaciones --cambios --precio` con
+   `--operador` y auditoría, lo mismo desde Negocios, el pago manual acepta el
+   precio del contrato y rechaza otro, y la copia manda sobre el plan con prueba
+   negativa. Platinum (USD 120 por 500 conversaciones) y Dhermacore (cambios
+   pactados) lo esperan; Bellido y Edgar, con planes de lista, no.
 
 ---
 
@@ -336,7 +362,7 @@ Un archivo por fila; la columna «Va a» es la carpeta destino de la fase 2.
 | Colección o documento | Zona | Cambio |
 |---|---|---|
 | `/tenants/{t}` (ficha: `estado`, `flujos`, `plan`, `waPhoneNumberId`) | Plataforma escribe, Core lee | `flujos` → `modulos` (lista de módulos encendidos); `vertical` se retira; se agrega `modelo` |
-| `config/negocio` | Tenant, documento de Central | Sale `calendarioId` hacia `config/agenda` (migración por script, seis tenants) |
+| `config/negocio` | Tenant, documento de Central | Sale `calendarioId` hacia `config/agenda` (migración por script sobre los tenants reales, cinco al 26/09) |
 | `config/agendamiento`, `config/venta` | Tenant, documentos de módulo | `config/agenda`, `config/pedidos`, `config/cobros` con lista blanca por manifiesto |
 | `config/marca`, `config/onboarding`, `config/campanas` | Tenant, documentos de módulo | `marca` pasa a Catálogo web; los otros quedan |
 | `catalogo`, `fotosCatalogo`, `contadores/catalogo`, `comprobacionesImagen` | Productos | Escrituras exigen `tieneModulo('productos')` |
@@ -438,11 +464,30 @@ Un archivo por fila; la columna «Va a» es la carpeta destino de la fase 2.
 | Decisión | Opciones | Adoptada |
 |---|---|---|
 | **F4 antes o después del primer cliente pagador** | Antes: nadie migra en vivo, pero corre la fecha. Después: exige una ventana de mantenimiento por número | **Después del primero y antes del quinto número.** F1 a F3 ya dejan el core limpio; F4 es el paso de escala y de canales, y una ventana por número con cuatro clientes es una tarde |
-| **`tenants/{t}.modulos` reemplaza a `flujos` o conviven** | Reemplazar (una migración de seis tenants) o mantener `flujos` como respaldo | **Reemplazar.** Nadie está en producción; mantener dos listas es la séptima copia otra vez |
+| **`tenants/{t}.modulos` reemplaza a `flujos` o conviven** | Reemplazar (una migración de los tenants reales: cinco al 26/09, no seis) o mantener `flujos` como respaldo | **Reemplazar.** Decidido cuando nadie estaba en producción; desde H4-Bellido la migración va en ventana, con respaldo y vuelta atrás escrita antes de correrla (§6.3). Mantener dos listas es la séptima copia otra vez |
 | **Campañas: módulo apagado con límite 0, o común** | Como está (común, límite 0) o módulo | **Módulo.** El plan de entrada no lo trae; eso es «se enciende por tenant» |
 | **Ramas abiertas al empezar la F2** | Fusionar, cerrar o dejar | **Se cierran todas en la fase F-1** (§7.1). Mover archivos con ramas abiertas es un conflicto por cada una |
-| **El estándar DevSecOps, antes o después** | Actualizar las copias antes, después o en medio | **Antes, primera en la cola de fusión**, en una sesión sola y sin agentes, como manda su prompt. Es una jornada y no toca lo que la rearquitectura mueve. El **staging** se crea en paralelo con F1 y F2 y tiene que existir antes del ensayo de F3. La transición a **modo B** se decide en el pase del primer cliente, nunca en medio de F2 |
+| **El estándar DevSecOps, antes o después** | Actualizar las copias antes, después o en medio | **Antes, primera en la cola de fusión**, en una sesión sola y sin agentes, como manda su prompt. Es una jornada y no toca lo que la rearquitectura mueve. El **staging** se crea en paralelo con F1 y F2 y tiene que existir antes del ensayo de F3; **necesita facturación en su proyecto**, precondición que no estaba escrita (H1: la cuota de cuentas de facturación lo dejó fusionado y sin estrenar). La transición a **modo B** se decide en el pase del primer cliente, nunca en medio de F2 |
 | **Cómo se opera** | Una sesión que hace todo, o dos | **Dos sesiones** (§8.5): una **operadora**, con sus worktrees y sus agentes, que construye y fusiona; y una **revisora**, la que escribió este documento, que no escribe código y revisa cada hito antes de que Andres autorice el siguiente |
+
+### 6.3 Decididas el 26/09 después de H1: la reorientación
+
+Con H1 cerrado, tres clientes podían salir rápido (Bellido y Platinum en
+reservas, Edgar en venta con BYOC) y los análisis de Dhermacore y Q'Taco
+mostraron que los tres de venta esperan lo mismo. Andres confirmó esta
+reorientación el 26/09. Es de **orden y cortes**, no de arquitectura: las cinco
+zonas, carpeta = zona, cero código a medida, cero mensajes y F4 y F5 después
+del quinto número no cambian.
+
+| Decisión | Por qué | Adoptada |
+|---|---|---|
+| **F3 se parte en F3a y F3b** | Ningún cliente de reservas necesita F3 para operar (anexo A: Demo A, Platinum y Bellido tienen todo). Todo cliente de venta necesita la mitad de F3: medios, transferencia y embudo en el esqueleto de venta | **F3a** (esqueleto de venta) antes que **F3b** (core unificado de reservas). F3b ya no bloquea a nadie |
+| **F1b antes de F2** | La copia de límites y el precio por contrato no tienen quién los escriba (§4, punto 5); Platinum y Dhermacore los esperan | Bloque corto de Central, sin mover archivos, entra con la etiqueta de F2 |
+| **H4 se parte por cliente** | Bellido ya atiende pacientes reales desde el 18/09 con el flujo publicado desde `main`: pasarlo a producción no agrega riesgo técnico, agrega contrato y cobranza | **H4-Bellido** ahora, sobre la versión publicada, con fila de excepción en `docs/versiones-por-cliente.md` hasta la re-aceptación tras F3b; **H4-Platinum** cuando cierren anexo y datos, sin esperar a F3; **H4-Edgar** con H3a |
+| **El SLA de cambios durante la obra** | Los cambios incluidos son de configuración (§4, punto 4) y la configuración no está congelada | Los cambios de configuración se cumplen en dos días hábiles durante la obra; los de código se cotizan con fecha «después de F3b». Con eso en el anexo, el pase no espera a F3 (§12.10) |
+| **El primer despliegue con clientes pagando** | Es el de F2, y el staging no tiene facturación | Staging con facturación antes, o `--dry-run` leído entero más verificación de las Functions HTTP después, **declarado en el informe**. La facturación del staging es decisión de Andres con fecha |
+| **Migrar antes de desplegar** | Cuando las reglas dejan de reconocer un valor (`plan: 'demostracion'` en F1), desplegar antes de migrar deja la consola sin leer la cuenta | Regla general: toda migración que acompaña a reglas nuevas se aplica y relee antes de la etiqueta; con clientes pagando, en ventana y con vuelta atrás escrita |
+| **Platinum antes de F3b** | Su JSON versionado y `negocio-platinum.json` no tienen la tercera agenda, estética facial, emojis ni Maps que sí están en producción | La sesión de Platinum alinea los dos archivos con producción en un PR de solo datos; **F3b no publica Platinum sin ese PR** |
 
 ---
 
@@ -455,20 +500,23 @@ persona con Claude Code; con agentes en paralelo el calendario se comprime
 
 | Fase | Qué | Prueba | Despliega | Jornadas | Cuándo |
 |---|---|---|---|---|---|
-| **F-1 Cierre de las sesiones abiertas** (§7.1) | Hotfix del `deleteMode` inválido en los tres flujos de reservas y del hueco del candado cuando `agendar_cita` falla; fusión de las cinco ramas de solo documentación (#182 más el commit local del prompt de capacidades, tablero del prepago, cierre del Demo B, topes de campañas, #184); traer `main` a la rama del origen del anuncio y fusionarla; subir, PR y fusionar el traspaso del chat interno; cerrar sin fusionar la rama del ayudante de configuración guardando su diseño como análisis; borrar los worktrees colgados; matriz de capacidades de los 5 flujos (bloque 0 del prompt de capacidades comunes) como anexo; `pedidos.md` de Bellido y Platinum con lo ya sabido (§12.8); lista de cláusulas sobre las propuestas de Q'Taco y Dhermacore (§12.3); limpieza del calendario de Bellido; arranque en Meta de Platinum y del traspaso | Suites de los 3 flujos de reservas y `candado-agenda`; ensayo en el Demo A; publicación en ventana; `estado-de-versiones.sh` 8/8 | Publicación de 3 flujos | 1,5 | **Primero.** Cuatro de las ramas agregan al principio de `ESTADO.md` y se fusionan en orden conservando todo |
-| **E Actualización al estándar DevSecOps** (§6.2) | Reusable de seguridad 2.4, cabeceras del 22/09, fusión de tres vías de `gitleaks.toml`, `security-local.sh`, `deploy.sh` y `.pre-commit-config.yaml` conservando lo propio; según `~/SeguridadGeneral/Prompts/actualizar-repo-al-estandar.md` | Suites de los workflows del estándar contra el reusable copiado; actionlint; validador del manifiesto; `security-local.sh` | Con el siguiente pase | 1 | **Segundo en la cola de fusión**, en una sesión sola y sin agentes. No toca lo que F2 mueve |
+| **F-1 Cierre de las sesiones abiertas** (§7.1) | Hotfix del `deleteMode` inválido en los tres flujos de reservas y del hueco del candado cuando `agendar_cita` falla; fusión de las cinco ramas de solo documentación (#182 más el commit local del prompt de capacidades, tablero del prepago, cierre del Demo B, topes de campañas, #184); traer `main` a la rama del origen del anuncio y fusionarla; subir, PR y fusionar el traspaso del chat interno; cerrar sin fusionar la rama del ayudante de configuración guardando su diseño como análisis; borrar los worktrees colgados; matriz de capacidades de los 5 flujos (bloque 0 del prompt de capacidades comunes) como anexo (lo que esta fila mezclaba de las sesiones de clientes —`pedidos.md`, cláusulas de Q'Taco y Dhermacore, calendario de Bellido, Meta de Platinum y del traspaso— es de ellas, §8.5: corrección de H0) | Suites de los 3 flujos de reservas y `candado-agenda`; ensayo en el Demo A; publicación en ventana; `estado-de-versiones.sh` 8/8 | Publicación de 3 flujos | 1,5 | **Hecha el 26/09 (H0).** Cuatro de las ramas agregaban al principio de `ESTADO.md` y se fusionaron en orden conservando todo |
+| **E Actualización al estándar DevSecOps** (§6.2) | Reusable de seguridad 2.4, cabeceras del 22/09, fusión de tres vías de `gitleaks.toml`, `security-local.sh`, `deploy.sh` y `.pre-commit-config.yaml` conservando lo propio; según `~/SeguridadGeneral/Prompts/actualizar-repo-al-estandar.md` | Suites de los workflows del estándar contra el reusable copiado; actionlint; validador del manifiesto; `security-local.sh` | Con el siguiente pase | 1 | **Hecha el 26/09 (H0).** Segunda en la cola de fusión, en una sesión sola y sin agentes |
 | **F0 Papel** | Este documento validado; decisiones del §6.2 tomadas | Lectura de Andres | No | 0,5 | Hecho el 25/09 |
-| **F1 Ejes de la cuenta, vocabulario y consola del propietario** | `modalidad` independiente del plan; `titularidad` por número; `modelo` por tenant; clave de límite `cambiosIncluidos` con contador; renombres en consola (Producción, Cobros, Pagar); `asignar-plan` escribe los tres ejes; migración de `plan: 'demostracion'` y `pagaMeta` por script; **absorbe A-3b del prepago**: la página Negocios de Plataforma carga un pago a mano con comprobante, suspende y reactiva, cambia plan, modalidad, titularidad y umbrales, y enciende el corte; **absorbe las decisiones del §8 de `Analisis/40`** (planes a medida: la copia de la cuenta con contrato por comercio) | `prepago.test.ts`, `planes.test.ts`, `estado-cuenta`, `consola-pagar`, `encabezado-comercio`, `pagos`, más las negativas nuevas: un admin no escribe los ejes, un propietario sí; el contador de cambios se hace cumplir en el servidor | **Sí** (Functions, reglas, consola) | 2,5 | Antes del primer cliente pagador. Platinum la espera para su pase |
-| **S Staging** | Proyecto Firebase de staging con sus variables `VITE_*` por Environment, secreto de ingesta propio, `desplegar-staging` y `dast-y-humo` dejan de omitirse; `Analisis/28` para el humo | Job `desplegar-staging` en verde; ZAP baseline sin FAIL | Sí, en staging | 1 | En paralelo con F1 y F2, a cargo del agente `deploy`. **Tiene que existir antes del ensayo de F3** |
-| **F2 Carpetas, registro y frontera** | Mover archivos a `core/`, `central/`, `plataforma/`, `modulos/<m>/` en Functions, consola, `Flujos/src` y pruebas, sin cambiar lógica; `registro.ts` con los manifiestos; `fronteras.test.ts` y `registro.test.ts`; extraer los Code de Demo B y onboarding; `tenants.modulos` reemplaza a `flujos`; `tieneModulo` en reglas; límite de agendas por plan; chequeos que faltan en inventario y catálogo | Identidad byte a byte de los 8 JSON (`ensamblar-flujo.mjs verificar`), las 74 suites sin tocar su contenido, `fronteras` y `registro` en verde | Con el siguiente pase | 2,5 | Antes del primer cliente pagador |
-| **F3 Core unificado** | Ganchos registrados en lugar de importaciones en `ingesta.ts`; una sola variante de `Normalizar entrada`, `Config del negocio`, `Procesar respuesta`, `Uso extendido`, `Comercio no operativo` para los tres esqueletos; prompt por capas (base + módulos + variables); las suites importan `Flujos/src/` en vez de `new Function`; el corpus de captación sale del nodo | Suites de flujos de A, B, onboarding, Platinum y Bellido; `candado-agenda`; ensayo con teléfono real en el número del Demo A y en el Demo B; el caso «verbo no previsto y la herramienta sí corrió» | **Sí**, y publicación de los 8 flujos desde `main` | 4 | Antes del primer cliente pagador |
+| **F1 Ejes de la cuenta, vocabulario y consola del propietario** | `modalidad` independiente del plan; `titularidad` por número; `modelo` por tenant; clave de límite `cambiosIncluidos` con contador; renombres en consola (Producción, Cobros, Pagar); `asignar-plan` escribe los tres ejes; migración de `plan: 'demostracion'` y `pagaMeta` por script; **absorbe A-3b del prepago**: la página Negocios de Plataforma carga un pago a mano con comprobante, suspende y reactiva, cambia plan, modalidad, titularidad y umbrales, y enciende el corte; **absorbe las decisiones del §8 de `Analisis/40`** (planes a medida: la copia de la cuenta con contrato por comercio) | `prepago.test.ts`, `planes.test.ts`, `estado-cuenta`, `consola-pagar`, `encabezado-comercio`, `pagos`, más las negativas nuevas: un admin no escribe los ejes, un propietario sí; el contador de cambios se hace cumplir en el servidor | **Sí** (Functions, reglas, consola) | 2,5 | **Hecha el 26/09 (H1, `v0.10.0`).** Migró los cinco tenants reales (el plano decía seis), **antes** del despliegue porque las reglas dejan de reconocer `plan: 'demostracion'`. Dejó sin hacer la copia por contrato: F1b |
+| **F1b Copia de límites y precio por contrato** | `asignar-plan.mjs --conversaciones --cambios --precio` escribe la copia `cuenta/estado.limites` y el precio mensual del comercio, con `--operador` y auditoría; `asignarEjes` lo mismo desde Negocios; Negocios lo muestra; el pago manual acepta el precio del contrato (§4, punto 5) | Negativas: un admin no lo escribe; la copia manda sobre el plan; un precio fuera de contrato se rechaza; Platinum releído con 500 conversaciones y USD 120 | Con la etiqueta de F2 | 0,5 a 1 | **Siguiente**, antes de F2. Central, no mueve archivos |
+| **S Staging** | Proyecto Firebase de staging con sus variables `VITE_*` por Environment, secreto de ingesta propio, `desplegar-staging` y `dast-y-humo` dejan de omitirse; `Analisis/28` para el humo | Job `desplegar-staging` en verde; ZAP baseline sin FAIL | Sí, en staging | 1 | **Fusionada el 26/09 (#205), sin estrenar:** el proyecto de staging no tiene facturación. Mientras no la tenga, cada despliegue con clientes pagando va con `--dry-run` leído entero y verificación HTTP después, declarado (§6.3) |
+| **F2 Carpetas, registro y frontera** | Mover archivos a `core/`, `central/`, `plataforma/`, `modulos/<m>/` en Functions, consola, `Flujos/src` y pruebas, sin cambiar lógica; `registro.ts` con los manifiestos; `fronteras.test.ts` y `registro.test.ts`; extraer los Code de Demo B y onboarding; `tenants.modulos` reemplaza a `flujos`; `tieneModulo` en reglas; límite de agendas por plan; chequeos que faltan en inventario y catálogo | Identidad byte a byte de los 8 JSON (`ensamblar-flujo.mjs verificar`), las 74 suites sin tocar su contenido, `fronteras` y `registro` en verde; segundo seco de `migrar-ejes.mjs` en 0 después de mover los ejes | Con el siguiente pase | 2,5 | Después de F1b. **Su despliegue es el primero con clientes pagando** (§6.3); la migración de `tenants.modulos` en ventana, con respaldo y vuelta atrás escrita |
+| **F3a Esqueleto de venta** | Medios entrantes (audio, imagen, documento) en el core para los tres esqueletos, con categorías por módulo; transferencia con aviso y botón, y fallo del modelo con botón, en el esqueleto de venta y en captación; prohibición 4 en código en la variante común (`NIEGA_IA`); campaña por texto en venta; embudo único de salida; gancho de Inventario que respeta `agotado`; higiene de ids de credencial y de `REEMPLAZAR_*` (anexo A, brechas 1 a 6, 8 y 9) | Suites de A, B y captación; ensayo con teléfono real en el Demo B con audio, foto, PDF y foto sin contexto, y el caso «verbo no previsto y la herramienta sí corrió», con identificadores de ejecución | **Sí**, y publicación de Demo B y captación desde `main` | 2 | Después de H2. Es lo que Edgar, Dhermacore y Q'Taco necesitan; los flujos de reservas ya lo tienen (anexo A). Cierra **H3a** y habilita **H4-Edgar** |
+| **F3b Core unificado** | Ganchos registrados en lugar de importaciones en `ingesta.ts`; una sola variante de `Normalizar entrada`, `Config del negocio`, `Procesar respuesta`, `Uso extendido`, `Comercio no operativo` para los tres esqueletos; prompt por capas (base + módulos + variables); estado de la conversación por teléfono en el servidor (§2.2); las suites importan `Flujos/src/` en vez de `new Function`; el corpus de captación sale del nodo; barrera de horas rechazadas en `modulos/agenda` | Suites de los cinco flujos y `candado-agenda`; ensayo en el Demo A; Bellido portado con `sincronizar-flujo-cliente.mjs --base` y ensayado antes de publicar | **Sí**, y publicación de los 8 flujos desde `main` en ventana; Bellido y Platinum re-aceptan solo el delta | 2 | Después de H3a. Ya no bloquea a ningún cliente. Cierra **H3b** |
 | **F4 Conector de canal** | Function receptora del webhook de Meta (firma con el App Secret por `phone_number_id`, deduplicación, descarga de medios, normalización) que llama a n8n por webhook genérico firmado; Function `enviar` con Secret Manager y traducción de opciones; `/rutas/{canal}/{id}`; `contactoId` con prefijo; el flujo cambia el disparador y quita los nodos de envío y descarga | Suites del conector (firma, deduplicación, degradación de opciones); ensayo real; latencia p50 medida antes y después (hoy 3,8 s) | **Sí**, con ventana de mantenimiento de 2 a 3 por número | 5 | Después del primer cliente, antes del quinto número |
 | **F5 Tenants como datos** | Los 19 nodos de Bellido pasan a `modulos/menu-interactivo/`; `platinum-flujo` y `bellido-flujo` se reparten en módulos y quedan pruebas de instancia; `docs/versiones-por-cliente.md` informa versión de módulo por tenant | Las mismas suites, repartidas, sin perder un caso | Publicación de Bellido y Platinum | 2 | Junto con F4 |
-| **F6 Método** | `docs/arquitectura/` por zona y módulo con índice de secciones viejas; `bitacora/` por mes y `ESTADO.md` corto; script de estado generado; `CLAUDE.md` solo invariantes; gancho de Claude Code para Edit y Write por carpeta; agentes por zona; separar pruebas puras de las del emulador | Revisión de Andres; el gancho probado con un intento fuera de carpeta | No | 1,5 | En paralelo con F1 a F3 |
+| **F6 Método** | `docs/arquitectura/` por zona y módulo con índice de secciones viejas; `bitacora/` por mes y `ESTADO.md` corto; script de estado generado; `CLAUDE.md` solo invariantes; gancho de Claude Code para Edit y Write por carpeta; agentes por zona; separar pruebas puras de las del emulador | Revisión de Andres; el gancho probado con un intento fuera de carpeta | No | 1,5 | **Hecha el 26/09 (H6)** |
 
-**Total: unas 20 jornadas.** Antes del primer cliente pagador: F-1, E, F1 a
-F3, S y F6, unas 14 jornadas de trabajo, que en paralelo son 6 a 7 días de
-calendario.
+**Total: unas 21 jornadas.** Hechas al 26/09: F-1, E, F1, S y F6, unas 7,5.
+Quedan F1b, F2, F3a y F3b, unas 7 jornadas, que con agentes en paralelo son 4 a
+5 días de calendario; después F4 y F5. Bellido no espera construcción; Platinum
+espera F1b; Edgar espera F3a.
 
 ### 7.1 Las nueve sesiones del 25/09, absorbidas
 
@@ -482,17 +530,21 @@ en las fases.
 | Bellido y campañas | #175 y #176 desplegados con v0.8.0; rama de topes solo documentación; calendario con eventos fantasma; barrera de horas rechazadas y hueco del candado sin construir | Hueco del candado → hotfix en F-1; barrera → `modulos/agenda` en F3; calendario → F-1; topes → fusión en F-1 |
 | Traspaso del chat interno | Rama local, 5 commits sin subir, 0 atrás, toca el JSON de captación | PR y fusión en F-1, antes de que F2 extraiga ese JSON. Meta en paralelo. Primer tenant con titularidad `comercio` |
 | Ayudante de configuración | Solo diseño, 589 commits atrás, choca con §4quater.5 | Se cierra sin fusionar; el diseño se guarda como análisis; se rehace después de F6 sobre `central/asistente` |
-| Platinum a WABA propia | Todo en `main`; el número sigue en el portafolio de NovuChat; §11 con decisiones abiertas | Es el primer cliente pagador. Meta ya; ejes en F1; una sola republicación después de F3; aceptación de una hora antes del pase |
+| Platinum a WABA propia | Todo en `main`; el número sigue en el portafolio de NovuChat; §11 con decisiones abiertas | Meta ya; ejes en F1; el pase no espera a F3 (H4-Platinum, §6.3); una republicación después de F3b con re-aceptación del delta; su JSON alineado con producción antes |
 | Prepago A-3b | Nada construido; rama del tablero solo documentación | Absorbido en F1 |
 | Planes a medida | PR #184 solo documentación, 0 atrás; usa el número `Analisis/40` | Se fusiona como está; sus §6 y §8 los resuelve el §4 de este documento; el límite «cambios incluidos» entra en F1 |
-| Origen del anuncio | 3 commits verificados, 40 atrás, conflicto conocido en `normalizar-entrada.js` | Traer `main` y fusionar en F-1, antes de F2 |
-| Demo B | Todo fusionado; rama de cierre solo documentación; `deleteMode` inválido borra la memoria entera en tres flujos; comprobante en simulado exige pendiente | `deleteMode` → hotfix en F-1; comprobante en simulado → con el hotfix; embudo único de salida y `agotado` → F3 |
+| Origen del anuncio | 3 commits verificados, 40 atrás, conflicto conocido en los tres JSON de reservas (no en `normalizar-entrada.js`, que fusionó solo: corrección de H0) | Traer `main` y fusionar en F-1, antes de F2 (hecho, #188) |
+| Demo B | Todo fusionado; rama de cierre solo documentación; `deleteMode` inválido borra la memoria entera en tres flujos; comprobante en simulado exige pendiente | `deleteMode` → hotfix en F-1; comprobante en simulado → PR propio (#192, corrección de H0); embudo único de salida y `agotado` → F3a |
 
 **Lo que permite que nadie esté en producción, y que hay que aprovechar
 ahora:** migrar `cuenta/estado`, `rutasWhatsApp` y `config/*` con un script
-sobre seis tenants y sin compatibilidad; renombrar sin alias; republicar los
+sobre los tenants reales (cinco) y sin compatibilidad; renombrar sin alias; republicar los
 ocho flujos en una sola tarde. Con el primer cliente pagador cada uno de esos
 pasos pasa a exigir ventana de mantenimiento, aviso y vuelta atrás probada.
+
+**Vigencia (26/09):** esa ventana se usó en F1. Lo que queda de migración es
+`tenants.modulos` en F2 y, desde H4-Bellido, va en ventana con respaldo y
+vuelta atrás escrita antes de correrla (§6.3).
 
 ---
 
@@ -510,15 +562,27 @@ parten de la rama de la sesión), una rama por bloque y un PR por bloque.
 | Agente | Zona de escritura | Fase | Entrega |
 |---|---|---|---|
 | **Coordinadora** (la sesión de Andres) | `registro.ts`, `docs/arquitectura/`, tablero de coordinación, cola de fusión | Todas | Orden de fusión, conflictos en documentos compartidos, ESTADO |
-| **central** | `functions/src/central/`, `web/src/central/`, `pruebas/central/`, reglas de `cuenta` y `pagos` | F1, F2 | Los tres ejes; renombres; `asignar-plan` |
+| **central** | `functions/src/central/`, `web/src/central/`, `pruebas/central/`, reglas de `cuenta` y `pagos` | F1, F1b, F2 | Los tres ejes; renombres; `asignar-plan`; la copia de límites y el precio por contrato (F1b) |
 | **core-functions** | `functions/src/core/`, `pruebas/core/` | F2, F3 | Coordinador de turno con ganchos; `fronteras.test.ts`; `registro.test.ts` |
-| **core-flujos** (`flujos-n8n`) | `Flujos/src/core/`, `Flujos/prompts/core/`, `ensamblar-flujo.mjs` | F2, F3 | Una variante de los nodos comunes; tercer tipo de inyección; prompt por capas; extracción de B y onboarding |
+| **core-flujos** (`flujos-n8n`) | `Flujos/src/core/`, `Flujos/prompts/core/`, `ensamblar-flujo.mjs`, `pruebas/core/` (compartida con core-functions) | F2, F3a, F3b | Medios y transferencia en el core (F3a); una variante de los nodos comunes; tercer tipo de inyección; prompt por capas; extracción de B y onboarding |
 | **modulo:productos**, **modulo:agenda**, **modulo:cobros**, **modulo:pedidos-inventario**, **modulo:campanas**, **modulo:captacion**, **modulo:catalogo-web** | `functions/src/modulos/<m>/`, `web/src/modulos/<m>/`, `Flujos/src/modulos/<m>/`, `pruebas/modulos/<m>/`, y las reglas de sus colecciones | F2 (mover), F3 (ganchos) | Manifiesto; movimiento sin cambio de lógica; `tieneModulo` y límite en su regla; su gancho registrado |
-| **consola** | `web/src/central/paginas/Tablero`, `Configuracion`, `ConfiguracionModulo`, `plataforma/` | F2 | Ranuras del Tablero; Configuración sin piezas de módulo; Negocios con los tres ejes |
+| **consola** | `web/src/central/paginas/Tablero`, `Configuracion`, `web/src/central/componentes/`, `pruebas/central/` (compartida con central) | F2 | Ranuras del Tablero; Configuración sin piezas de módulo |
+| **plataforma-consola** | `functions/src/plataforma/`, `web/src/plataforma/`, `pruebas/plataforma/`, `scripts/plataforma/`, reglas de la ficha del tenant, `accesosSoporte` y `/plataforma/*` | F1, F1b, F2 | Negocios con los tres ejes, carga manual de pago, suspender y reactivar, umbrales y corte (lo que A-3b prometía); alta, baja y suspensión movidas |
 | **conector-canal** | `functions/src/core/canal/`, `Flujos/src/core/` (disparador y envío) | F4 | Receptor y `enviar`; rutas por canal |
 | **tenants** | `Flujos/src/modulos/menu-interactivo/`, `Flujos/prompts/tenants/`, `pruebas/tenants/` | F5 | Bellido como módulo; pruebas de instancia |
 | **metodo** | `docs/`, `bitacora/`, `.claude/hooks/`, `.claude/agents/`, `CLAUDE.md` | F6 | Documentación por zona; gancho por carpeta; agentes por zona; estado generado |
 | **seguridad** (existente) | Solo lectura | Cada PR | Revisión antes de cada OK de fusión: ningún valor real en módulos, reglas con prueba negativa, secretos solo en Secret Manager |
+
+**Las zonas efectivas mandan sobre esta tabla.** Están en
+`docs/arquitectura/agentes.md` (F6, #204), con cada diferencia justificada:
+pruebas compartidas entre dos agentes de la misma zona, `firestore.rules`
+entero por el gancho (la restricción a sus colecciones la cubre la revisión y
+`registro.test.ts`), `Flujos/prompts/modulos/<m>.md` y
+`docs/arquitectura/modulos/<m>.md` del dueño del módulo, `.claude/settings.json`
+y `admin/package.json` concedidos por PR. La fila `plataforma-consola` y la de
+`consola` sin `plataforma/` vienen de ahí (corrección de H1): lo del operador no
+comparte zona con lo del comercio (§1.2). Esta tabla se corrige en cada hito con
+lo que aquel archivo cambie.
 
 ### 8.2 Regla de integración dura
 
@@ -577,13 +641,17 @@ opera**; revisa. Y la operación de clientes no se mezcla con la obra.
 
 | Hito | Cierra | La revisora comprueba |
 |---|---|---|
-| **H0** | F-1 y E | `estado-de-versiones.sh` 8/8; ninguna rama de las nueve sigue abierta; hotfix probado con teléfono real; el reusable 2.4 evaluando `main`; matriz de capacidades entregada |
-| **H1** | F1 (y S en marcha) | Los tres ejes en `cuenta/estado` y `rutasWhatsApp`; ninguna pantalla ni script escribe `plan: 'demostracion'` ni `pagaMeta`; Negocios hace lo que A-3b prometía; migración de los seis tenants aplicada y releída; prueba negativa del contador de cambios |
-| **H2** | F2 | `fronteras.test.ts` y `registro.test.ts` en CI; 8 JSON idénticos byte a byte; cero cambios de lógica en el diff (solo rutas e importaciones); ninguna de las siete copias de la lista de flujos sobrevive |
-| **H3** | F3 y S | Una sola variante de los cinco nodos comunes; `ingesta.ts` sin importar módulos; ensayo real en Demo A y Demo B con audio, foto, PDF y foto sin contexto; los 8 flujos publicados desde `main`; staging con `desplegar-staging` en verde |
-| **H4** | Aceptación y pase de Platinum | 45 filas con identificador de ejecución; ejes escritos; acta del checklist con los pendientes en la nube cerrados con evidencia; decisión de modo A o B tomada |
+| **H0** (cerrado el 26/09) | F-1 y E | `estado-de-versiones.sh` 8/8; ninguna rama de las nueve sigue abierta; hotfix probado con teléfono real; el reusable 2.4 evaluando `main`; matriz de capacidades entregada |
+| **H1** (cerrado el 26/09) | F1 (y S en marcha) | Los tres ejes en `cuenta/estado` y `rutasWhatsApp`; ninguna pantalla ni script escribe `plan: 'demostracion'` ni `pagaMeta`; Negocios hace lo que A-3b prometía; migración de los tenants reales (cinco) aplicada y releída; prueba negativa del contador de cambios |
+| **H1b** | F1b | La copia de límites y el precio del contrato escritos con `asignar-plan` y desde Negocios, con `--operador` y auditoría; un admin no los escribe; la copia manda sobre el plan; el pago manual acepta el precio del contrato y rechaza otro; Platinum releído con 500 conversaciones y USD 120 |
+| **H2** | F2 | `fronteras.test.ts` y `registro.test.ts` en CI; 8 JSON idénticos byte a byte; cero cambios de lógica en el diff (solo rutas e importaciones); ninguna de las siete copias de la lista de flujos sobrevive; el despliegue con staging o con la alternativa declarada; `tenants.modulos` migrado en ventana con respaldo; segundo seco de `migrar-ejes.mjs` en 0 |
+| **H3a** | F3a | Medios, transferencia con botón y fallo con botón en venta y captación; `NIEGA_IA` en la variante común; campaña por texto; ensayo en el Demo B con audio, foto, PDF, foto sin contexto y «verbo no previsto», con identificadores; Demo B y captación publicados desde `main`; el flujo de Edgar ensamblado de esa salida |
+| **H3b** | F3b | Una sola variante de los cinco nodos comunes; `ingesta.ts` sin importar módulos; estado de la conversación en el servidor; suites sin `new Function`; los 8 publicados desde `main` en ventana; Bellido y Platinum re-aceptados en su delta con ejecuciones; Platinum publicado solo con su JSON alineado con producción |
+| **H4-Bellido** (sesión de clientes, ahora) | Pase de Bellido | Ejes en prueba y luego producción por pago confirmado; 46 filas con ejecución sobre la versión publicada; fila de excepción en `docs/versiones-por-cliente.md` hasta F3b; anexo con cero cambios incluidos y quién paga Meta; app y WABA huérfanas borradas; pendientes de la nube con evidencia |
+| **H4-Platinum** (sesión de clientes, cuando cierren anexo y datos) | Pase de Platinum | 45 filas con ejecución; ejes y copia por contrato escritos (H1b); anexo sin cláusulas prohibidas ni que no coincidan; datos de la clínica confirmados o supuestos declarados; JSON y `negocio-platinum.json` alineados con producción; seña solo con acta y QR de la clínica; acta del checklist |
+| **H4-Edgar** (sesión de clientes, con H3a) | Alta y pase de Edgar | Alta BYOC completa (portafolio propio, titularidad `comercio`, plan `byoc`); catálogo en el chat, sin catálogo web (compuerta T-37); QR de monto abierto; aviso al comercio con el detalle; aceptación con ejecuciones sobre el flujo de F3a |
 | **H5** | F4 y F5 | Tokens fuera de n8n; latencia p50 medida; Bellido sin nodos propios en su JSON; pruebas de instancia cortas |
-| **H6** | F6 | `CLAUDE.md` solo invariantes; `docs/arquitectura/` con índice de secciones viejas; gancho por carpeta probado con un intento fuera de carpeta |
+| **H6** (cerrado el 26/09) | F6 | `CLAUDE.md` solo invariantes; `docs/arquitectura/` con índice de secciones viejas; gancho por carpeta probado con un intento fuera de carpeta |
 
 **El informe de hito** lo escribe la sesión operadora en `Prompts/COORDINACION.md`
 (tablero nuevo de este frente) y lo pega Andres en la sesión revisora: PR y sha
@@ -868,10 +936,17 @@ Mientras F2 y F3 estén en curso, **ningún cliente recibe código a medida**. L
 que sí sigue: configuración (es dato y se aplica en cualquier momento),
 comercial, Meta, aceptación, y hotfix de seguridad o de protección. Todo pedido
 que exija código se analiza igual (§12.4), se cotiza si corresponde, y queda en
-`pedidos.md` con fecha comprometida «después de F3». Se les dice a los clientes
-en prueba, y es la razón para no firmar el pase de nadie antes de F3: el SLA
-promete cambios operados por NovuChat en dos días hábiles, y con el core en
-obra esa promesa no se puede cumplir.
+`pedidos.md` con fecha comprometida «después de F3b». Se les dice a los
+clientes en prueba.
+
+**Corregido el 26/09 (§6.3):** los **cambios incluidos** del contrato son cambios
+de **configuración** (§4, punto 4), y la configuración no está congelada: el SLA
+de dos días hábiles se cumple durante la obra. Lo que se cotiza con fecha
+«después de F3b» son los cambios que exigen código. Con esa distinción escrita
+en el anexo, **el pase de un cliente no espera a F3**: Bellido pasa sobre la
+versión publicada y Platinum cuando cierren anexo y datos. Lo que sí espera es
+todo cliente cuyo esqueleto no cumpla la política general (venta: medios y
+transferencia), y eso lo resuelve F3a para todos.
 
 De los pedidos abiertos al 25/09: los siete del audio de Bellido son
 configuración o decisión del doctor salvo la lista de cuatro filas (topología,
