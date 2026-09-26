@@ -26,8 +26,8 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **cerrado el 26/09**: #191 fusionado, primer run de `main` en verde | H0 |
 | **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de los tenants reales, Negocios (A-3b) | **cerrada el 26/09**: #207 y #203 fusionados, 5 tenants migrados, `v0.10.0` desplegada y verificada. Informe H1 abajo | H1 |
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **fusionada el 26/09**: #200, #201, #202, #204, #206 y #208 | H6 |
-| **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **fusionada el 26/09 (#205)**. `v0.10.0` fue con la alternativa (`--dry-run` y verificación HTTP) porque el proyecto no tenía facturación («Cloud billing quota exceeded»); **tiene facturación desde el 26/09** y se estrena con la etiqueta de F2 | H2 |
-| **F1b** Copia de límites y precio por contrato | `asignar-plan.mjs --conversaciones`, `--cambios`, `--precio`, `--periodo-prueba aaaa-mm` y `--bolsa-prueba N` con `--operador` y auditoría; lo mismo desde Negocios; el pago manual acepta el precio del contrato; negativas (un admin no lo escribe, la copia manda sobre el plan, precio fuera de contrato rechazado). Agente `central`, un PR, 0 mensajes, sin despliegue propio: entra con la etiqueta de F2 | **siguiente**, antes de F2. Ya en `main` (#212): `--cambios` y el marcador `limitesPorContrato`; el pago no cambia la modalidad (opción B) | H1b |
+| **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **Nube lista el 26/09**: facturación vinculada, presupuesto de 5 USD, las fases de `preparar-staging.sh` aplicadas, **55/55 Functions activas** (primer despliegue a mano con la cuenta dueña). Cuota de Cloud Run de 20 vCPU (aumento a 100 rechazado por falta de historial: CPU fraccionaria solo en staging, #219; instancia mínima 0, #215). Tres defectos del job que nunca había corrido, corregidos: App Check (#213), compuerta del paquete en fragmentos (#222), firebase-tools sin instalar (#224). **Falta el primer `desplegar-staging` + humo + DAST en verde por CI** | H2 |
+| **F1b** Copia de límites y precio por contrato | `--conversaciones`, `--cambios`, `--precio`, `--periodo-prueba`, `--bolsa-prueba` con `--operador` y auditoría; lo mismo desde Negocios; pago manual al precio del contrato | **cerrada el 26/09**: #212, #217, #221, #223. Informe H1b abajo | H1b |
 | **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas. Sin cambios de alcance | **diseño en curso desde el 26/09**; sus PR se fusionan después de F1b; primer PR `registro.ts` solo; gancho corregido en #210. Condición de la etiqueta abajo (Reglas para F2) | H2 |
 | **F3a** Esqueleto de venta | Medios entrantes en el core para los tres esqueletos; transferencia con aviso y botón; fallo del modelo con botón; `NIEGA_IA` en la variante común; campaña por texto; embudo único; brechas 8 y 9 del anexo A. Agentes `core-flujos` y `modulo` | espera H2 | H3a |
 | **F3b** Core unificado de reservas | Una variante de los cinco nodos comunes; prompt por capas; suites sin `new Function`; corpus de captación fuera del nodo; los 8 publicados desde `main`, Bellido y Platinum en ventana con ensayo previo | espera H3a; Platinum además espera su PR de datos | H3b |
@@ -211,6 +211,60 @@ existe). Pendientes: facturación de staging y el modelo por defecto.
 **Lo que le toca a Andres:** pegar este informe en la sesión revisora y, con
 su veredicto, autorizar F2.
 
+### H1b — F1b (cerrado el 26/09/2026, noche; para la revisora)
+
+1. **PR y sha en `main`, en orden:** #212 `a74c8c6` (copia por contrato de
+   `cambiosIncluidos`; el comercio renueva su plan y no lo cambia; el pago no
+   cambia la modalidad, opción B), #217 `7977088` (el pago en revisión se
+   resuelve desde Negocios, con auditoría y sesión reciente), #221 `d35579a`
+   (conversaciones, precio, periodo y bolsa de prueba por contrato), #223
+   `e15a1c8` (la prueba no se cruza con meses pagados, techo de 3 meses, piso
+   de precio de 1 USD, auditoría). Del mismo tramo: #210 `e17ab76` (el gancho
+   de zona estaba mudo en los subagentes), #213 `dd6d819`, #215 `325c7a2`,
+   #219 `7346307`, #222 `76f029b`, #224 `bf6d2a7` (staging), #214 `048a7ff`
+   (F2 PR 1, `registro.ts`), #216 `941363e` (plano, revisora), #218 `c8dbf91`
+   y #220 `60b6284` (documentación).
+2. **Publicado o desplegado:** producción, **nada** (F1b entra con la etiqueta
+   de F2). En Firestore de producción, con seco leído entero y relectura:
+   Bellido a `modalidad: prueba` (septiembre, bolsa 20) y Platinum a
+   `modalidad: prueba` (septiembre, **bolsa 100**), auditoría `estado_cuenta`
+   a nombre de Andres. Staging: ver fila S.
+3. **Pruebas:** suite completa 3742 en verde en #223 (3714 en #221, 3649 en
+   #217, 3570 en #212); cada PR con su revisión de seguridad citada en el
+   cuerpo (#212 tres vueltas, #217, #221 y #223 una o dos), todos los
+   hallazgos MEDIUM y LOW cerrados salvo el LOW residual de
+   `migrar-prepago.mjs --periodo-prueba` (fuera de la zona de Central; no pasa
+   por `pruebaNueva`). Mutaciones en #217 y #223. El gancho de zona estuvo
+   activo en #217, #221 y #223 y no rechazó escrituras; en #217 parte de las
+   pruebas se escribieron desde Bash (el gancho no cubre Bash, declarado).
+4. **Costo:** 0 mensajes por conversación (el aviso de fin de prueba ya no se
+   adelanta, #221); unos 16 PR y sus corridas; 2 escrituras de cuenta en
+   producción y la preparación entera de staging.
+5. **Fuera y por qué:** `migrar-prepago.mjs` sin `pruebaNueva`,
+   `pase-a-produccion.mjs:173` imprime el precio de lista, y dos suites puras
+   de F1b fuera de `SUITES_PURAS` (zonas de otros agentes; van con F2). Las
+   plantillas `prueba_termina` y `conversaciones_agotadas` prometen que el
+   comercio elige o cambia el plan: cambiarlas exige Meta, antes del primer
+   pase real.
+6. **`Analisis/41` después del #216:** §7 (fila S) y §6.3 dicen que staging no
+   tiene facturación; §4.5 y la fila F1b no nombran `--periodo-prueba`,
+   `--bolsa-prueba` ni la copia de #212, y dicen `asignarEjes` donde la copia
+   la escribe `actualizarEstadoCuenta`; §8.3 conserva el orden de fusión viejo;
+   no recoge «el comercio no cambia plan ni modalidad» ni la opción B.
+7. **Cliente habilitado:** **Platinum** queda en prueba con su bolsa pactada
+   (lo que le falta no es construcción: anexo según `cumplimiento.md`, PR de
+   datos con producción, precio y cambios del contrato con `asignar-plan.mjs
+   --precio/--cambios`, aceptación). **Bellido** sigue habilitado (H4-Bellido)
+   y la extensión a octubre ya no depende de nada construido.
+8. **Decisiones de Andres en el hito:** opción B; el comercio no cambia plan ni
+   modalidad; el contrato sobrevive a un cambio de plan; piso de precio de 1
+   USD; el pago adelantado se respeta en la prueba; CPU fraccionaria en
+   staging. **Le toca:** fijar precio y cambios de Platinum por contrato (con su
+   «sí», seco primero); la extensión del 01/10; las dos plantillas de Meta; y
+   las dos decisiones abiertas: Edgar en prueba antes de H3a con dos
+   excepciones declaradas, y qué pasa si la etiqueta de F2 no aterriza en
+   staging.
+
 ## Reglas para F2 (recomendaciones de la revisora sobre H1, 26/09)
 
 - **Copia por contrato antes de F2 o en su primera tanda:** `--cambios N` en
@@ -276,8 +330,9 @@ durante la obra (§12.10).
 
 | Cliente | Ahora | Con qué hito | Lo que le falta que no es construcción |
 |---|---|---|---|
-| **Bellido** (reservas) | **En prueba desde el 26/09** (mes de septiembre, con `asignar-plan.mjs --modalidad prueba`: la prueba del mes en curso vence el 30/09). **El 01/10 se extiende a octubre** con `--periodo-prueba 2026-10` (F1b), cubierta hasta el 31/10: F1b tiene que estar en `main` antes del 01/10. Antes de escribir la modalidad, leer la advertencia de «Reglas para F2» (aviso de conversión y bolsa de 20) | **H4-Bellido, ahora**, sobre la versión publicada; re-aceptación del delta tras F3b | Contrato con **cero cambios incluidos** y quién paga Meta; aceptación de las **46 filas** sobre la versión publicada, con identificador de ejecución; pase a prepago por pago confirmado (el propietario, regla común); **fila de excepción de versión** en `docs/versiones-por-cliente.md` hasta la re-aceptación tras F3b (este PR) |
-| **Platinum** (reservas) | Ejes en prueba **cuando F1b esté fusionado**, con **`--bolsa-prueba 100` por contrato**: su volumen es de unas 55 conversaciones al mes y la bolsa de prueba por defecto es 20 | **H4-Platinum**, cuando cierren anexo y datos; **no después de H3** | Precio y cambios con F1b (USD 120 por 500 conversaciones; los cambios del contrato); anexo corregido (`cumplimiento.md` en cero); **PR de solo datos** que alinee `platinum-agendamiento.json` y `negocio-platinum.json` con producción (tercera agenda, estética, emojis, Maps): **sin ese PR, F3b no publica Platinum** |
+| **Bellido** (reservas) | **En prueba desde el 26/09** (septiembre, bolsa 20). **El 01/10 se extiende a octubre** con `--periodo-prueba 2026-10 --bolsa-prueba 20` (F1b ya en `main`: #221, #223), cubierta hasta el 31/10; antes, leer que no tenga `periodoPagado` (una prueba no se cruza con meses pagados). Antes de escribir la modalidad, leer la advertencia de «Reglas para F2» (aviso de conversión y bolsa de 20) | **H4-Bellido, ahora**, sobre la versión publicada; re-aceptación del delta tras F3b | Contrato con **cero cambios incluidos** y quién paga Meta; aceptación de las **46 filas** sobre la versión publicada, con identificador de ejecución; pase a prepago por pago confirmado (el propietario, regla común); **fila de excepción de versión** en `docs/versiones-por-cliente.md` hasta la re-aceptación tras F3b (este PR) |
+| **Platinum** (reservas) | **En prueba desde el 26/09** (septiembre, `--bolsa-prueba 100` por contrato, con F1b en `main`; su volumen es de unas 55 conversaciones al mes). **El 01/10 se extiende a octubre** con `--periodo-prueba 2026-10 --bolsa-prueba 100` (la bolsa se descuenta con el uso y no se reinicia sola) | **H4-Platinum**, cuando cierren anexo y datos; **no después de H3** | Precio y cambios con F1b (USD 120 por 500 conversaciones; los cambios del contrato); anexo corregido (`cumplimiento.md` en cero); **PR de solo datos** que alinee `platinum-agendamiento.json` y `negocio-platinum.json` con producción (tercera agenda, estética, emojis, Maps): **sin ese PR, F3b no publica Platinum** |
+| **NovuChat** (captación) | **Traspaso al portafolio de Silvana**: fases 1 a 3 en Meta, plantilla `solicitud_contacto` pedida de nuevo, tarjeta de Silvana, corte de minutos; **titularidad `comercio` en su número el día del corte** (`asignar-plan.mjs --titularidad comercio --numero …`) | Con **H3a**: medios, botón ante fallo del modelo y campaña por texto | **Sin pase: demostración por diseño** (el runbook de pase lo rechaza por nombre). Lo que queda es de Meta y de la tarjeta, no de construcción |
 | **Edgar** (venta, BYOC) | **Alta completa en paralelo**: Meta en su portafolio, configuración, catálogo en el chat sin catálogo web, QR de monto abierto, aviso a Edgar; titularidad `comercio` y plan `byoc` | **Producción en H3a** (H4-Edgar): su flujo se ensambla de la salida de F3a, sin nodo propio | Todo lo del alta, que no espera a la obra; la aceptación, sobre el flujo de F3a |
 | **Dhermacore** | `cumplimiento.md` y contrato | Sus módulos (enrutamiento por campaña, reactivación) nacen **después de F3a**, como módulos con bandera, para todos | Contrato y anexo; los cambios pactados se escriben con `--cambios` (ya en `main`, #212) |
 | **Q'Taco** | `cumplimiento.md` y contrato | Su módulo (mesas) nace **después de F3a**, como módulo con bandera, para todos | Contrato y anexo |
@@ -405,3 +460,7 @@ H1b para la revisora.
   `--periodo-prueba 2026-10`; Platinum en prueba con `--bolsa-prueba 100`
   cuando F1b esté fusionado; el pago no cambia la modalidad (opción B, #212).
   Fila de excepción de Bellido en `docs/versiones-por-cliente.md`.
+- **26/09/2026 (noche)** — F1b cerrada (#212, #217, #221, #223). Bellido y
+  Platinum en prueba en producción. Staging con 55/55 Functions y el pipeline
+  encendido; tres defectos del job de staging corregidos. **H1b arriba, para
+  la revisora.**
