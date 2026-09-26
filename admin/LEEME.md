@@ -128,6 +128,8 @@ cd admin
 pnpm install
 
 pnpm pruebas:reglas     # emulador + 164 pruebas (155 de reglas, 26 puras)
+pnpm pruebas:puras      # SIN emulador: las 42 suites que no tocan Firestore (2.275 pruebas, ~5 s), herméticas
+pnpm pruebas:emulador   # solo las 33 suites que sí lo tocan (reglas, ingesta, prepago, campañas…)
 pnpm emuladores         # Auth + Firestore para probar a mano
 pnpm sembrar            # datos de prueba (idempotente)
 pnpm csp                # sirve dist con las cabeceras REALES de Hosting
@@ -139,6 +141,40 @@ pnpm verificar          # las tres cosas
 **Antes de dar por bueno cualquier cambio en `firestore.rules`, corra
 `pnpm pruebas:reglas`.** Es el único control automático que impide que una
 edición bienintencionada abra el paso entre negocios.
+
+### Pruebas puras y pruebas del emulador (desde el 26/09/2026)
+
+`vitest.config.ts` tiene **dos proyectos**. `puras` es una lista explícita
+(`SUITES_PURAS`) de las suites que se verificaron en verde sin emulador: las
+de los flujos de n8n (`platinum-flujo`, `bellido-flujo`, `onboarding-flujo`,
+`demo-b-*`, `candado-agenda`, `flujos-*`), `planes`, `prepago` puro,
+`campanas-consola`, `umbrales-atencion`, `conteo-bloques`, `ensamblador`,
+`saneo`, `qr`, las de pantalla y las de scripts. `emulador` es **todo lo
+demás**: `reglas`, `campanas-reglas`, `prepago-ingesta`, `aviso-consumo`,
+`pagos`, `cobranza`, `seguimientos`, `catalogo-web`, `storage-reglas` y las
+otras que levantan `@firebase/rules-unit-testing` o `firebase-admin` contra el
+emulador.
+
+- `pnpm pruebas:puras` corre sin emulador y sin puerto: es el ciclo corto
+  para editar un flujo, un plan o una pantalla. Es **hermética por
+  construcción**: el guion fija `FIRESTORE_EMULATOR_HOST=127.0.0.1:1`, un
+  puerto donde nadie escucha, así que una suite de la lista que abra Firebase
+  falla al instante en vez de colgarse sin red o de mandar tráfico real con
+  las credenciales por defecto. Por eso `asignar-rol.test.ts` está en
+  `emulador` aunque pase sin él: el script abre Firebase antes de decidir el
+  modo seco.
+- `pnpm pruebas:emulador` levanta el emulador con `pruebas/correr.sh` y corre
+  solo el otro proyecto (mismo cuidado con el puerto compartido:
+  `FIRESTORE_EMULATOR_PORT` propio por worktree).
+- `pnpm pruebas:reglas` sigue corriendo **todo** con emulador, y es lo que
+  corre el CI: nada cambia ahí.
+
+**Cómo se mantiene la lista.** Una suite nueva cae en `emulador` por defecto,
+donde siempre funciona. Si no toca Firestore, agréguela a `SUITES_PURAS` y
+gana el ciclo corto. Si una suite de la lista empieza a necesitar el emulador,
+`pnpm pruebas:puras` falla: sáquela de la lista. No hay detección automática
+porque un `import` de `firebase-admin` no dice si la suite lo usa contra el
+emulador o solo importa un tipo: la lista es la prueba.
 
 ⚠️ **Y si agrega pruebas, agregue también el documento a la semilla.** Casi todas
 las pruebas son `assertFails`, y una prueba así pasa igual de bien cuando la
