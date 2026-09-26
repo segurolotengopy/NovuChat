@@ -223,6 +223,16 @@ del proyecto de producción. Lo que hay:
     `gh variable set -f admin/functions/.env`.
   - Las **`VITE_*`** salen de `admin/web/.env.local`, que ya apunta a
     producción: `gh variable set -f admin/web/.env.local`.
+- **`INSTANCIAS_MINIMAS`** (26/09/2026) no es una variable de GitHub: el job
+  la escribe en `functions/.env` junto a `SITIO_PUBLICO`, en **1** en
+  producción y en **0** en staging (`instancias-minimas.test.ts`), y el job de
+  producción corta antes de simular si no quedó exactamente en 1. Un
+  despliegue a mano desde una máquina lo lleva **por proyecto**, en
+  `admin/functions/.env.<id del proyecto>` (ignorado por git), no en el `.env`
+  común: firebase-tools carga ese archivo según `--project` y así un ensayo en
+  staging no deja producción en 0. Con `--non-interactive`, un parámetro
+  ausente no toma el valor por defecto: el despliegue falla. Y bajar de 1 a 0
+  no pide `--force` ni avisa.
 
 ---
 

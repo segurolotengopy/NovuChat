@@ -4,6 +4,7 @@ import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
+import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
 import { sanearCaptacion } from './captacion.js';
 import { vozFija } from './prompt.js';
@@ -1059,6 +1060,17 @@ export function contadoresDelMensaje(
   };
 }
 
+// INSTANCIAS MÍNIMAS POR AMBIENTE (26/09/2026). Las dos Functions que el flujo
+// llama en serie tienen una instancia siempre despierta en producción (decisión
+// de Andres del 15/09, ver abajo). En staging esa instancia cuesta lo mismo
+// (~8,1 USD al mes cada una) para un ambiente sin tráfico: tres veces su
+// presupuesto. Por eso es un parámetro, con valor por defecto 1: el job
+// `desplegar-produccion` escribe INSTANCIAS_MINIMAS=1 y `desplegar-staging`,
+// INSTANCIAS_MINIMAS=0 (con --non-interactive, firebase-tools no usa el valor
+// por defecto de un parámetro ausente: falla). `instancias-minimas.test.ts`
+// vigila las dos mitades.
+const INSTANCIAS_MINIMAS = defineInt('INSTANCIAS_MINIMAS', { default: 1 });
+
 export const ingesta = onRequest(
   {
     region: REGION,
@@ -1076,7 +1088,7 @@ export const ingesta = onRequest(
     // vCPU·s y por GiB·s → ~8,1 USD al mes por Function con 1 vCPU y 256 MiB,
     // compartidos por todos los comercios. `pruebas/instancias-minimas.test.ts`
     // impide que se pierda sin querer.
-    minInstances: 1,
+    minInstances: INSTANCIAS_MINIMAS,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }
@@ -1721,7 +1733,7 @@ export const configuracionFlujo = onRequest(
     // vCPU·s y por GiB·s → ~8,1 USD al mes por Function con 1 vCPU y 256 MiB,
     // compartidos por todos los comercios. `pruebas/instancias-minimas.test.ts`
     // impide que se pierda sin querer.
-    minInstances: 1,
+    minInstances: INSTANCIAS_MINIMAS,
   },
   async (peticion, respuesta) => {
     if (peticion.method !== 'POST') { respuesta.status(405).send('metodo'); return; }

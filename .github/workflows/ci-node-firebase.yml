@@ -1193,8 +1193,10 @@ jobs:
           set -euo pipefail
           # Los parámetros de las Functions (`defineString`) se leen de
           # functions/.env, ignorado por git; se escribe desde el Environment.
+          # INSTANCIAS_MINIMAS=0: en staging no hay instancia siempre despierta
+          # (producción escribe 1; ver `ingesta.ts` y `instancias-minimas.test.ts`).
           if [[ "$SOLO" == *functions* ]]; then
-            printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+            printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=0\n' "$SITIO_PUBLICO" > functions/.env
           fi
           # El bucket se declara como destino, no se consulta (ver el bloque
           # «EL BUCKET DE STORAGE SE DECLARA» del job de producción).
@@ -1521,7 +1523,11 @@ jobs:
           if [[ "$SOLO" == *functions* ]]; then
             [[ -n "$SITIO_PUBLICO" ]] \
               || { echo "::error::Falta vars.SITIO_PUBLICO (ver .github/DESPLIEGUE-FIREBASE.md, «Estado real»)"; exit 1; }
-            printf 'SITIO_PUBLICO=%s\n' "$SITIO_PUBLICO" > functions/.env
+            # INSTANCIAS_MINIMAS=1 va ESCRITO aunque sea el valor por defecto:
+            # con --non-interactive firebase-tools NO toma el default de un
+            # parámetro ausente del .env, falla («In non-interactive mode but
+            # have no value», lib/deploy/functions/params.js:181 en 15.28.1).
+            printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=1\n' "$SITIO_PUBLICO" > functions/.env
           fi
           # EL BUCKET DE STORAGE SE DECLARA, NO SE ADIVINA (2026-09-17).
           # firebase.json apunta las reglas de Storage al destino «principal» y
@@ -1564,6 +1570,18 @@ jobs:
           if [[ -n "${FORZAR_FACTURA:-}" ]]; then
             FORZAR="--force"
             echo "::warning::vars.FIREBASE_DEPLOY_FORCE activa: se acepta subir el piso de la factura y --force borra Functions que ya no estén en el código."
+          fi
+          # PRODUCCIÓN QUEDA EN UNA INSTANCIA MÍNIMA (revisión de seguridad de
+          # #215, 26/09/2026). Bajar de 1 a 0 no pide --force ni avisa, y
+          # firebase-tools carga `functions/.env.<proyecto>` DESPUÉS de `.env` y
+          # lo pisa (lib/functions/env.js). Se corta antes de simular si hay otro
+          # archivo de parámetros o si la línea no quedó exactamente una vez en 1.
+          if [[ "$SOLO" == *functions* ]]; then
+            if compgen -G 'functions/.env.*' >/dev/null; then
+              echo "::error::Hay un functions/.env.* que pisaría los parámetros de producción."; exit 1
+            fi
+            [[ "$(grep -c '^INSTANCIAS_MINIMAS=' functions/.env)" == 1 ]] && grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env \
+              || { echo "::error::functions/.env no deja INSTANCIAS_MINIMAS=1 exactamente una vez."; exit 1; }
           fi
           SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
           if [[ -n "$SIMULAR" ]]; then
