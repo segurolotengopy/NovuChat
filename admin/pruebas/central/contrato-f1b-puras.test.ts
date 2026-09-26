@@ -20,12 +20,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  CLAVES_POR_CONTRATO, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, PLANES, aCentavos, copiaDeLimites, limitesDe,
-  limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
+  CLAVES_POR_CONTRATO, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, PLANES, aCentavos,
+  copiaDeLimites, limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
 } from '../../functions/src/planes.ts';
 import {
-  BOLSA_PRUEBA_MAXIMA, PRUEBA, PruebaInvalida, camposDerivados, estadoDeServicio, inicioDePrueba, montoFueraDeContrato,
-  montoUsdDe, periodosIncoherentes, pruebaNueva, recordatoriosDebidos,
+  BOLSA_PRUEBA_MAXIMA, PRUEBA, PRUEBA_MESES_MAXIMO, PruebaInvalida, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados,
+  consumoDeConversacion, estadoDeServicio, importeBs, importeCobrable, inicioDePrueba, montoFueraDeContrato, montoUsdDe,
+  periodosIncoherentes, pruebaNueva, recordatoriosDebidos, techoDePrueba,
 } from '../../functions/src/prepago.ts';
 
 /** 26/09/2026 a las 12:00 de Bolivia (16:00 UTC): quedan cinco días de septiembre. */
@@ -85,11 +86,12 @@ describe('la lista cerrada se abrió a las conversaciones (decisión de Andres d
 
 // ===========================================================================
 describe('el precio por contrato: qué es válido y quién lo usa', () => {
-  it('positivo, hasta el tope y con dos decimales como mucho; lo demás no es un precio', () => {
-    for (const bueno of [0.01, 1, 37.5, 99.99, 120, MAXIMO_PRECIO_POR_CONTRATO_USD]) {
+  it('del piso al tope y con dos decimales como mucho; lo demás no es un precio', () => {
+    for (const bueno of [MINIMO_PRECIO_POR_CONTRATO_USD, 1.01, 37.5, 99.99, 120, MAXIMO_PRECIO_POR_CONTRATO_USD]) {
       expect(precioPorContratoValido(bueno), String(bueno)).toBe(true);
     }
-    for (const malo of [0, -1, 12.345, MAXIMO_PRECIO_POR_CONTRATO_USD + 0.01, Number.NaN, Number.POSITIVE_INFINITY, '120', null, true]) {
+    // 0,01 y 0,99 eran válidos hasta la revisión del #221 (LOW 3): ver «el piso del precio».
+    for (const malo of [0, 0.01, 0.99, -1, 12.345, MAXIMO_PRECIO_POR_CONTRATO_USD + 0.01, Number.NaN, Number.POSITIVE_INFINITY, '120', null, true]) {
       expect(precioPorContratoValido(malo), String(malo)).toBe(false);
     }
   });
@@ -175,7 +177,10 @@ describe('pruebaNueva: fijar o extender la prueba, con las reglas del servidor',
   });
 
   it('SIN MODALIDAD PRUEBA se rechaza (el período y la bolsa); con `modalidad: prueba` en la misma operación, no', () => {
-    const produccion = { plan: 'pro', modalidad: 'prepago', periodoPagado: '2026-09' };
+    // Pagada hasta AGOSTO: septiembre no está pagado, así que la prueba puede
+    // empezar en septiembre. (Hasta la revisión del #221 esta prueba usaba
+    // «pagada hasta septiembre» y aceptaba la prueba encima: era el MEDIUM.)
+    const produccion = { plan: 'pro', modalidad: 'prepago', periodoPagado: '2026-08' };
     expect(() => pruebaNueva(produccion, { periodoPrueba: '2026-10' }, SEP_26)).toThrow(/solo vale con modalidad prueba/);
     expect(() => pruebaNueva(produccion, { bolsaPrueba: 40 }, SEP_26)).toThrow(/solo vale con modalidad prueba/);
     expect(() => pruebaNueva({}, { periodoPrueba: '2026-10' }, SEP_26)).toThrow(PruebaInvalida);
@@ -244,5 +249,138 @@ describe('pruebaNueva: fijar o extender la prueba, con las reglas del servidor',
       expect(periodosIncoherentes(cuenta), String(roto)).toEqual(['pruebaDesde']);
       expect(estadoDeServicio(cuenta, 0, SEP_26)).toMatchObject({ operativo: true, incoherente: true });
     }
+  });
+});
+
+// ===========================================================================
+// REVISIÓN DE SEGURIDAD DEL #221 (seguimiento de F1b). Cada caso niega: lo que
+// antes se aceptaba y dejaba a un comercio sin conversaciones o sin cobro, ahora
+// se rechaza; y el estado que queda se afirma, no se supone.
+// ===========================================================================
+describe('#221 MEDIUM: la prueba no se cruza con meses pagados', () => {
+  const PRO = limitesDe('pro').conversaciones;
+
+  it('EL CASO DE LA REVISIÓN: prueba vencida en agosto + pagado octubre + extender a octubre → se rechaza', () => {
+    const cuenta = {
+      plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba',
+      periodoPrueba: '2026-08', pruebaDesde: '2026-07', bolsaPrueba: 20, periodoPagado: '2026-10',
+    };
+    expect(() => pruebaNueva(cuenta, { periodoPrueba: '2026-10' }, SEP_26)).toThrow(PruebaInvalida);
+    expect(() => pruebaNueva(cuenta, { periodoPrueba: '2026-10' }, SEP_26)).toThrow(/se cruza con meses ya pagados \(pagado hasta 2026-10\)/);
+    // Y la cuenta, que no se tocó, sigue con su plan entero en octubre.
+    expect(estadoDeServicio(cuenta, 0, OCT_27)).toMatchObject({ enPrueba: false, incluidas: PRO, disponibles: PRO, mensualidadUsd: 90 });
+  });
+
+  it('extender de septiembre a octubre SIN pagos se acepta, con pruebaDesde 2026-09', () => {
+    const cuenta = { plan: 'pro', modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
+    expect(pruebaNueva(cuenta, { periodoPrueba: '2026-10' }, SEP_26)).toEqual({ periodoPrueba: '2026-10', pruebaDesde: '2026-09' });
+  });
+
+  it('una cuenta en prueba que YA PAGÓ octubre por adelantado no extiende la prueba a octubre', () => {
+    const prueba = { plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
+    const trasPago = aplicarPago(prueba, { tipo: 'mensualidad', plan: 'pro', meses: 1 }, SEP_26);
+    expect(trasPago.periodoPagado).toBe('2026-10');
+    const pagada = { ...prueba, periodoPagado: trasPago.periodoPagado };
+    expect(() => pruebaNueva(pagada, { periodoPrueba: '2026-10' }, SEP_26)).toThrow(/se cruza con meses ya pagados/);
+  });
+
+  it('pasar a prueba sin período con el mes en curso pagado se rechaza; pagado hasta el mes anterior, no', () => {
+    expect(() => pruebaNueva({ plan: 'pro', modalidad: 'prepago', periodoPagado: '2026-09' }, { modalidad: 'prueba' }, SEP_26))
+      .toThrow(/se cruza con meses ya pagados/);
+    expect(pruebaNueva({ plan: 'pro', modalidad: 'prepago', periodoPagado: '2026-08' }, { modalidad: 'prueba' }, SEP_26))
+      .toEqual({ periodoPrueba: '2026-09', bolsaPrueba: PRUEBA.conversaciones });
+  });
+
+  it('DE UNA PRUEBA VENCIDA NO SE HEREDA EL PRIMER MES: vencida en julio, extender el 26/09 empieza en septiembre', () => {
+    const vencida = { plan: 'pro', modalidad: 'prueba', periodoPrueba: '2026-07', pruebaDesde: '2026-06', bolsaPrueba: 3 };
+    // Antes del arreglo salía `pruebaDesde: '2026-06'`: junio a agosto revividos como meses de prueba.
+    expect(pruebaNueva(vencida, { periodoPrueba: '2026-10' }, SEP_26)).toEqual({ periodoPrueba: '2026-10', pruebaDesde: '2026-09' });
+    // Una prueba VIVA sí conserva su primer mes.
+    const viva = { plan: 'pro', modalidad: 'prueba', periodoPrueba: '2026-10', pruebaDesde: '2026-08', bolsaPrueba: 3 };
+    expect(pruebaNueva(viva, { periodoPrueba: '2026-11' }, SEP_26)).toEqual({ periodoPrueba: '2026-11' });
+  });
+
+  it('en la gracia de una prueba vencida (01/10 10:00, prueba hasta septiembre) extender a octubre empieza en octubre', () => {
+    const OCT_01_10H = Date.UTC(2026, 9, 1, 14, 0, 0);
+    const prueba = { plan: 'pro', modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 5 };
+    expect(estadoDeServicio(prueba, 0, OCT_01_10H)).toMatchObject({ fase: 'gracia' });
+    const cambios = pruebaNueva(prueba, { periodoPrueba: '2026-10' }, OCT_01_10H);
+    expect(cambios).toEqual({ periodoPrueba: '2026-10' });
+    expect(estadoDeServicio({ ...prueba, ...cambios }, 0, OCT_01_10H))
+      .toMatchObject({ cubierto: true, enPrueba: true, fase: 'cubierto', bolsaPrueba: 5 });
+  });
+
+  it('LA DEFENSA DE estadoDeServicio: una prueba escrita sobre un mes pagado → ese mes rige como pagado', () => {
+    // Una cuenta que otra puerta (o una versión anterior) dejó así.
+    const cruzada = {
+      plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba',
+      periodoPrueba: '2026-10', pruebaDesde: '2026-09', bolsaPrueba: 20, periodoPagado: '2026-10',
+    };
+    for (const instante of [SEP_26, OCT_27]) {
+      const e = estadoDeServicio(cruzada, 0, instante);
+      expect(e, new Date(instante).toISOString())
+        .toMatchObject({ enPrueba: false, incluidas: PRO, restanteDelPlan: PRO, disponibles: PRO, mensualidadUsd: 90, operativo: true });
+      // Las conversaciones salen del plan, no de la bolsa de prueba.
+      expect(consumoDeConversacion(e).campoBolsa).toBeNull();
+    }
+    // Pagado octubre, prueba hasta noviembre: octubre es del pago; noviembre, de la prueba.
+    const hastaNoviembre = { ...cruzada, periodoPrueba: '2026-11' };
+    expect(estadoDeServicio(hastaNoviembre, 0, OCT_27)).toMatchObject({ enPrueba: false, incluidas: PRO });
+    expect(estadoDeServicio(hastaNoviembre, 0, NOV_01)).toMatchObject({ enPrueba: true, incluidas: 0, disponibles: 20, mensualidadUsd: 0 });
+  });
+
+  it('LA DEFENSA NO SE PASA: la prueba que pagó el mes SIGUIENTE por adelantado sigue en prueba en su mes', () => {
+    const prueba = { plan: 'pro', limites: limitesDe('pro'), modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 20 };
+    const pagada = { ...prueba, periodoPagado: aplicarPago(prueba, { tipo: 'mensualidad', plan: 'pro', meses: 1 }, SEP_26).periodoPagado };
+    expect(estadoDeServicio(pagada, 0, SEP_26)).toMatchObject({ enPrueba: true, incluidas: 0, disponibles: 20, mensualidadUsd: 0 });
+    expect(estadoDeServicio(pagada, 0, OCT_27)).toMatchObject({ enPrueba: false, incluidas: PRO, mensualidadUsd: 90 });
+  });
+});
+
+describe('#221 LOW 2: el último mes de prueba tiene techo', () => {
+  const enPrueba = { plan: 'pro', modalidad: 'prueba', periodoPrueba: '2026-09', bolsaPrueba: 7 };
+
+  it(`como mucho ${PRUEBA_MESES_MAXIMO} meses después del mes en curso: el 26/09, hasta diciembre`, () => {
+    expect(PRUEBA_MESES_MAXIMO).toBe(3);
+    expect(techoDePrueba(SEP_26)).toBe('2026-12');
+    expect(pruebaNueva(enPrueba, { periodoPrueba: '2026-12' }, SEP_26)).toEqual({ periodoPrueba: '2026-12', pruebaDesde: '2026-09' });
+  });
+
+  it('2099-12 se rechaza (el caso de la revisión), y 2027-01 también; por el script y por la callable', () => {
+    for (const lejos of ['2099-12', '2027-01']) {
+      expect(() => pruebaNueva(enPrueba, { periodoPrueba: lejos }, SEP_26), lejos).toThrow(PruebaInvalida);
+      expect(() => pruebaNueva(enPrueba, { periodoPrueba: lejos }, SEP_26), lejos).toThrow(/como mucho 2026-12/);
+      // Con el pase a prueba en la misma operación, igual.
+      expect(() => pruebaNueva({ plan: 'pro' }, { modalidad: 'prueba', periodoPrueba: lejos }, SEP_26), lejos).toThrow(/como mucho/);
+    }
+  });
+});
+
+describe('#221 LOW 3: el piso del precio y el QR de Bs 0', () => {
+  it(`el precio por contrato mínimo es USD ${MINIMO_PRECIO_POR_CONTRATO_USD}; los centavos ya no son precio`, () => {
+    expect(MINIMO_PRECIO_POR_CONTRATO_USD).toBe(1);
+    expect(precioPorContratoValido(0.99)).toBe(false);
+    expect(precioPorContratoValido(0.01)).toBe(false);
+  });
+
+  it('ANTES del piso, USD 0,01 daba un QR de Bs 0; con el piso, el importe más chico es de al menos Bs 5', () => {
+    expect(importeBs(0.01, TCO_MAXIMO)).toBe(0);
+    expect(importeCobrable(importeBs(0.01, TCO_MAXIMO))).toBe(false);
+    expect(importeBs(MINIMO_PRECIO_POR_CONTRATO_USD, TCO_MINIMO)).toBeGreaterThanOrEqual(5);
+    expect(importeCobrable(importeBs(MINIMO_PRECIO_POR_CONTRATO_USD, TCO_MINIMO))).toBe(true);
+  });
+
+  it('un precio de centavos ya escrito se ignora: la mensualidad es la del plan, nunca cero', () => {
+    const vieja = { plan: 'pro', modalidad: 'prepago', periodoPagado: '2099-12', precioPorContrato: 0.05 };
+    expect(precioPorContratoDe(vieja)).toBeNull();
+    expect(montoUsdDe({ tipo: 'mensualidad', plan: 'pro', meses: 1 }, vieja)).toBe(PLANES.pro.precioUsd);
+    expect(importeCobrable(importeBs(montoUsdDe({ tipo: 'mensualidad', plan: 'pro', meses: 1 }, vieja), TCO_MINIMO))).toBe(true);
+  });
+
+  it('importeCobrable: solo enteros de al menos 1 Bs', () => {
+    for (const malo of [0, -1, 0.4, 2.5, Number.NaN, Number.POSITIVE_INFINITY, '5', null, undefined]) {
+      expect(importeCobrable(malo), String(malo)).toBe(false);
+    }
+    for (const bueno of [1, 5, 626]) expect(importeCobrable(bueno)).toBe(true);
   });
 });

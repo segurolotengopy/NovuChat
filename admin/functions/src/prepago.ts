@@ -107,6 +107,24 @@ export const BOLSA_PRUEBA_MAXIMA = 1000;
 export const bolsaPruebaValida = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= BOLSA_PRUEBA_MAXIMA;
 
+/**
+ * EL TECHO DEL ÚLTIMO MES DE PRUEBA: como mucho `PRUEBA_MESES_MAXIMO` meses
+ * después del mes en curso de Bolivia (en septiembre, hasta diciembre).
+ * Revisión de seguridad del #221 (LOW 2): sin techo, un `2099-12` tipeado por
+ * `2026-12` dejaba a un comercio setenta años sin mensualidad, y nada lo
+ * habría avisado (la cobranza de una prueba solo habla en su último mes).
+ * Como `BOLSA_PRUEBA_MAXIMA`, es un seguro contra un error de tipeo, no una
+ * política comercial: la prueba de lista es de un mes, y la más larga
+ * conversada (extender a octubre) cabe de sobra. Se mide desde el mes en
+ * curso, no desde el primer mes de la prueba, porque es lo que el operador
+ * ve en el calendario cuando la fija; lo usan `pruebaNueva` (callable y
+ * script) y el campo de Negocios.
+ */
+export const PRUEBA_MESES_MAXIMO = 3;
+
+/** El último mes de prueba más lejano que se acepta hoy (`aaaa-mm`). */
+export const techoDePrueba = (ahoraMs: number): string => sumarMeses(mesBolivia(ahoraMs), PRUEBA_MESES_MAXIMO);
+
 /** Hasta cuántos meses se pagan por adelantado (decisión 4 del frente). */
 export const MESES_MAXIMO = 6;
 /** Hasta cuántas bolsas entran en un solo pago. */
@@ -183,6 +201,20 @@ export function importeBs(usd: number, tco: number): number {
   }
   return Math.round(usd * tco);
 }
+
+/**
+ * ¿SE PUEDE COBRAR ESTE IMPORTE EN BOLIVIANOS? Un entero de al menos 1 Bs.
+ * Revisión de seguridad del #221 (LOW 3): con un precio por contrato de
+ * centavos, `importeBs` redondeaba a 0 y salía un QR de «Bs 0» que el banco
+ * confirmaría y que cubriría un mes entero. El piso de
+ * `precioPorContratoValido` (USD 1, `planes.ts`) ya lo impide para todo
+ * precio que se lee; esto es la segunda barrera, en los dos lugares donde un
+ * importe se vuelve dinero (`crearCobroInterno` y `registrarPagoManual`):
+ * si algún día otro camino produce un cero, se rechaza antes de emitir o de
+ * registrar, en vez de cobrar nada por algo.
+ */
+export const importeCobrable = (montoBs: unknown): montoBs is number =>
+  typeof montoBs === 'number' && Number.isInteger(montoBs) && montoBs >= 1;
 
 // -----------------------------------------------------------------------------
 // EL MENSAJE AL CLIENTE FINAL
@@ -619,8 +651,27 @@ export function estadoDeServicio(
   // El mes que rige: el actual si está cubierto; el que venció, si estamos en
   // su gracia (la gracia extiende ESA cobertura dos días).
   const mesQueRige = cubierto ? periodo : cubiertoHasta;
+  // EL PAGO MANDA SOBRE LA PRUEBA en un mes que los dos reclaman (revisión de
+  // seguridad del #221, MEDIUM, tercera barrera). Si la prueba se extendió
+  // sobre meses ya pagados —hoy `pruebaNueva` lo rechaza; una cuenta escrita
+  // antes, a mano o por otra puerta todavía puede traerlo—, ese mes rige como
+  // pagado: con las conversaciones del plan, no con `incluidas = 0` y solo la
+  // bolsa de prueba. Un comercio que pagó un mes nunca queda sin su plan por
+  // una prueba encima.
+  //
+  // «Se cruzan» es `periodoPagado <= periodoPrueba`, no solo
+  // `mesQueRige <= periodoPagado`. La diferencia es la cuenta en prueba que
+  // PAGA POR ADELANTADO, un caso legítimo: `aplicarPago` le suma el mes
+  // DESPUÉS de su cobertura (prueba hasta septiembre, paga el 25/09 →
+  // `periodoPagado` = octubre). Como `periodoPagado` significa «ese mes y los
+  // anteriores», la condición corta sola le quitaba la prueba en septiembre
+  // —el plan entero regalado en el mes de prueba y una mensualidad derivada
+  // que no debe— sin que ningún mes de verdad se hubiera pagado dos veces. Con
+  // el pago terminando DESPUÉS de la prueba, no hay cruce y la prueba sigue.
+  const pagoSobrePrueba = periodoPagado !== '' && periodoPrueba !== ''
+    && periodoPagado <= periodoPrueba && mesQueRige <= periodoPagado;
   const enPrueba = modalidad === 'prueba' && periodoPrueba !== ''
-    && mesQueRige >= desdePrueba && mesQueRige <= periodoPrueba;
+    && mesQueRige >= desdePrueba && mesQueRige <= periodoPrueba && !pagoSobrePrueba;
   const incluidas = enPrueba ? 0 : limitesDeCuenta(c as Record<string, unknown>).conversaciones;
   const restanteDelPlan = Math.max(0, incluidas - usadas);
   // Las bolsas compradas valen siempre; la de prueba, solo en el mes de prueba.
@@ -925,6 +976,20 @@ export class PruebaInvalida extends Error {}
  *     de lista (o la pedida). Si ya tenía un período, no se toca.
  *  6. Borrar el período (`null`) de una cuenta que queda en prueba se rechaza:
  *     quedaría incoherente y `estadoDeServicio` la atendería sin límite.
+ *
+ * Y DESDE LA REVISIÓN DE SEGURIDAD DEL #221:
+ *
+ *  7. LA PRUEBA NO SE CRUZA CON MESES PAGADOS (MEDIUM). Si `periodoPagado`
+ *     llega al primer mes de la prueba que quedaría, se rechaza: en un mes de
+ *     prueba `incluidas` es 0, y un comercio que pagó ese mes se quedaba solo
+ *     con la bolsa de prueba. Vale para fijar, extender y pasar a prueba sin
+ *     período. (`estadoDeServicio` tiene además su defensa: el pago manda.)
+ *  8. EL PRIMER MES ES EL DE UNA PRUEBA VIVA. Solo se hereda el inicio de la
+ *     prueba vigente si su último mes todavía no terminó; de una prueba
+ *     VENCIDA (agosto, hoy septiembre) no se hereda nada: el primer mes es el
+ *     en curso. Heredarlo revivía meses ya cerrados como meses de prueba.
+ *  9. EL ÚLTIMO MES TIENE TECHO: `techoDePrueba`, `PRUEBA_MESES_MAXIMO` meses
+ *     después del mes en curso (LOW 2).
  */
 export function pruebaNueva(
   cuenta: CuentaCruda | Record<string, unknown> | null | undefined, pedido: PedidoDePrueba, ahoraMs: number,
@@ -935,6 +1000,15 @@ export function pruebaNueva(
   const salida: PruebaNueva = {};
   const poner = (k: CampoDePrueba, v: string | number) => { if (c[k] !== v) salida[k] = v; };
   const borrar = (k: CampoDePrueba) => { if (c[k] !== undefined) salida[k] = null; };
+  // Regla 7: ningún mes de la prueba que queda puede estar pagado. Pagado
+  // «hasta X» cubre X y los anteriores, así que basta con el primer mes.
+  const exigirSinMesesPagados = (desde: string, hasta: string) => {
+    if (esPeriodo(c.periodoPagado) && c.periodoPagado >= desde) {
+      throw new PruebaInvalida(
+        `La prueba (${desde} a ${hasta}) se cruza con meses ya pagados (pagado hasta ${c.periodoPagado}): `
+        + 'una prueba no se fija sobre un mes que el comercio pagó, porque ese mes perdería las conversaciones de su plan.');
+    }
+  };
 
   if (pedido.bolsaPrueba !== undefined) {
     if (!bolsaPruebaValida(pedido.bolsaPrueba)) {
@@ -958,15 +1032,25 @@ export function pruebaNueva(
     if (hasta < mes) {
       throw new PruebaInvalida(`periodoPrueba no puede ser un mes pasado (${hasta}): el mes en curso es ${mes}.`);
     }
+    const techo = techoDePrueba(ahoraMs);
+    if (hasta > techo) {
+      throw new PruebaInvalida(
+        `periodoPrueba ${hasta} está a más de ${PRUEBA_MESES_MAXIMO} meses del mes en curso (${mes}): como mucho ${techo}.`);
+    }
     // El primer mes: el de la prueba vigente, si la cuenta YA estaba en
-    // prueba y empezó antes; si no, el mes en curso. Nunca un mes futuro:
-    // entre hoy y el primer mes la cuenta quedaría sin cobertura.
-    const inicioVigente = modalidadDe(c) === 'prueba' && periodosIncoherentes(c).length === 0 ? inicioDePrueba(c) : '';
+    // prueba, empezó antes Y SIGUE VIVA (su último mes no terminó; regla 8);
+    // si no, el mes en curso. Nunca un mes futuro: entre hoy y el primer mes
+    // la cuenta quedaría sin cobertura.
+    const viva = esPeriodo(c.periodoPrueba) && finDelPeriodoMs(c.periodoPrueba) >= inicioDelPeriodoMs(mes);
+    const inicioVigente = modalidadDe(c) === 'prueba' && periodosIncoherentes(c).length === 0 && viva
+      ? inicioDePrueba(c) : '';
     const desde = inicioVigente !== '' && inicioVigente <= mes ? inicioVigente : mes;
+    exigirSinMesesPagados(desde, hasta);
     poner('periodoPrueba', hasta);
     if (desde < hasta) poner('pruebaDesde', desde); else borrar('pruebaDesde');
     if (pedido.bolsaPrueba === undefined && typeof c.bolsaPrueba !== 'number') poner('bolsaPrueba', PRUEBA.conversaciones);
   } else if (pedido.modalidad === 'prueba' && !esPeriodo(c.periodoPrueba)) {
+    exigirSinMesesPagados(mes, mes);
     poner('periodoPrueba', mes);
     borrar('pruebaDesde');
     poner('bolsaPrueba', pedido.bolsaPrueba ?? PRUEBA.conversaciones);

@@ -68,7 +68,8 @@ import {
   VIGENCIA_HORAS_POR_DEFECTO, type AvisoDeConfirmacion, type Cobrador, type CobroDelCobrador, type RespuestaCrear,
 } from './cobrador.js';
 import {
-  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, modalidadDe, montoFueraDeContrato, montoUsdDe, type CuentaCruda,
+  MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, importeCobrable, modalidadDe, montoFueraDeContrato, montoUsdDe,
+  type CuentaCruda,
 } from './prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
 import { planQuePuedePedir, precioMensualDe } from './planes.js';
@@ -363,6 +364,14 @@ export async function crearCobroInterno(
       ? cuenta['pagoPendienteId'] : null;
     const montoUsd = montoUsdDe(pedido, cuenta);
     const monto = importeBs(montoUsd, tco);
+    // UN QR DE BS 0 NO SE EMITE (revisión de seguridad del #221, LOW 3): se
+    // rechaza antes de reservar nada, y antes de devolver un pendiente vivo,
+    // porque el importe es el que tendría el cobro nuevo. `importeCobrable`.
+    if (!importeCobrable(monto)) {
+      throw new HttpsError('failed-precondition',
+        `El importe de este cobro sería de Bs ${monto} (USD ${montoUsd}): no se emite un QR que no cobra nada. `
+        + 'Revise el precio de la cuenta en Negocios.');
+    }
 
     if (pendienteId) {
       const pDoc = await tx.get(db().doc(`tenants/${tenantId}/pagos/${pendienteId}`));

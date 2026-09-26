@@ -450,7 +450,7 @@ describe('asignar-plan.mjs F1b: --conversaciones, --precio, --periodo-prueba y -
     await sembrarF1b(P, PRO_PREPAGO);
     const casos: [string, string, RegExp][] = [
       ...['0', '-1', '2.5', '100001', 'x', ''].map((v): [string, string, RegExp] => ['--conversaciones', v, /--conversaciones inválido.*de 1 a 100000/]),
-      ...['0', '-1', '12.345', '1000.01', '120,5', 'x', ''].map((v): [string, string, RegExp] => ['--precio', v, /--precio inválido/]),
+      ...['0', '0.5', '-1', '12.345', '1000.01', '120,5', 'x', ''].map((v): [string, string, RegExp] => ['--precio', v, /--precio inválido/]),
       ...['2026-1', 'octubre', ''].map((v): [string, string, RegExp] => ['--periodo-prueba', v, /--periodo-prueba inválido/]),
       ...['0', '1001', '2.5', 'x', ''].map((v): [string, string, RegExp] => ['--bolsa-prueba', v, /--bolsa-prueba inválida/]),
     ];
@@ -575,9 +575,105 @@ describe('asignar-plan.mjs F1b: --conversaciones, --precio, --periodo-prueba y -
   });
 
   it('--modalidad prueba con --periodo-prueba y --bolsa-prueba pasa una cuenta de producción a una prueba pactada', async () => {
-    await sembrarF1b(P, PRO_PREPAGO);
+    // Pagada hasta el mes PASADO: el mes en curso no está pagado y puede ser
+    // de prueba. (Hasta la revisión del #221 esta prueba sembraba una cuenta
+    // pagada hasta 2099 y aceptaba la prueba encima: era el MEDIUM.)
+    const pagadaHastaElMesPasado = { ...PRO_PREPAGO, periodoPagado: MES_PASADO };
+    await sembrarF1b(P, pagadaHastaElMesPasado);
     const r = correr('--tenant', P, '--modalidad', 'prueba', '--periodo-prueba', MES_SIGUIENTE, '--bolsa-prueba', '50', '--aplicar');
     expect(r.codigo, r.salida).toBe(0);
     expect(await cuenta(P)).toMatchObject({ modalidad: 'prueba', periodoPrueba: MES_SIGUIENTE, pruebaDesde: MES, bolsaPrueba: 50 });
+  });
+});
+
+// ===========================================================================
+// REVISIÓN DE SEGURIDAD DEL #221 (seguimiento de F1b), por la puerta del
+// script, que es la que se va a usar el 01/10 con `--periodo-prueba`. Cada
+// caso afirma el estado que queda: la cuenta igual y sin auditoría cuando se
+// rechaza; lo escrito y su constancia cuando se acepta.
+// ===========================================================================
+describe('asignar-plan.mjs, revisión del #221: prueba sobre meses pagados, techo, piso y auditoría', () => {
+  const S = 'plan-f1b-seg';
+  const MES = mesBolivia(Date.now());
+  const MES_SIGUIENTE = sumarMeses(MES, 1);
+  const MES_PASADO = sumarMeses(MES, -1);
+  const BASE = { plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES };
+
+  async function sembrar(datos: Record<string, unknown>) {
+    for (const col of ['auditoria', 'pagos']) {
+      for (const d of (await db.collection(`tenants/${S}/${col}`).get()).docs) await d.ref.delete();
+    }
+    await db.doc(`tenants/${S}`).set({ nombre: S, estado: 'activo', plan: 'pro', flujos: ['agendamiento'] });
+    await db.doc(`tenants/${S}/cuenta/estado`).set(datos);
+  }
+
+  it('MEDIUM, el caso de la revisión: prueba vencida + mes siguiente pagado + extender a ese mes → rechazado, en seco y al aplicar', async () => {
+    const cruzada = {
+      ...BASE, modalidad: 'prueba', periodoPrueba: MES_PASADO, pruebaDesde: sumarMeses(MES, -2), bolsaPrueba: 20,
+      periodoPagado: MES_SIGUIENTE,
+    };
+    await sembrar(cruzada);
+    for (const args of [['--periodo-prueba', MES_SIGUIENTE], ['--periodo-prueba', MES_SIGUIENTE, '--aplicar']]) {
+      const r = correr('--tenant', S, ...args);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toContain(`se cruza con meses ya pagados (pagado hasta ${MES_SIGUIENTE})`);
+    }
+    expect(await cuenta(S)).toEqual(cruzada);
+    expect(await auditorias('estado_cuenta', S)).toHaveLength(0);
+  });
+
+  it('MEDIUM: pasar a prueba una cuenta con el mes en curso pagado se rechaza, y no escribe', async () => {
+    const pagada = { ...BASE, modalidad: 'prepago', periodoPagado: '2099-12' };
+    await sembrar(pagada);
+    const r = correr('--tenant', S, '--modalidad', 'prueba', '--periodo-prueba', MES_SIGUIENTE, '--aplicar');
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toMatch(/se cruza con meses ya pagados/);
+    expect(await cuenta(S)).toEqual(pagada);
+  });
+
+  it('MEDIUM: de una prueba VENCIDA sin pagos no se hereda el primer mes; la extensión empieza en el mes en curso', async () => {
+    await sembrar({ ...BASE, modalidad: 'prueba', periodoPrueba: MES_PASADO, pruebaDesde: sumarMeses(MES, -2), bolsaPrueba: 4 });
+    const r = correr('--tenant', S, '--periodo-prueba', MES_SIGUIENTE, '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    const c = await cuenta(S);
+    expect(c).toMatchObject({ periodoPrueba: MES_SIGUIENTE, pruebaDesde: MES, bolsaPrueba: 4 });
+    expect(estadoDeServicio(c, 0, Date.now())).toMatchObject({ cubierto: true, enPrueba: true, operativo: true });
+  });
+
+  it('LOW 2: --periodo-prueba 2099-12 se rechaza por el techo, en seco y al aplicar', async () => {
+    const enPrueba = { ...BASE, modalidad: 'prueba', periodoPrueba: MES, bolsaPrueba: 7 };
+    await sembrar(enPrueba);
+    for (const args of [['--periodo-prueba', '2099-12'], ['--periodo-prueba', '2099-12', '--aplicar']]) {
+      const r = correr('--tenant', S, ...args);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/está a más de 3 meses del mes en curso/);
+    }
+    expect(await cuenta(S)).toEqual(enPrueba);
+  });
+
+  it('LOW 3: --precio de centavos (0.5, 0.99) no entra; el piso es USD 1', async () => {
+    const pro = { ...BASE, modalidad: 'prepago', periodoPagado: '2099-12' };
+    await sembrar(pro);
+    for (const v of ['0.5', '0.99', '0.01']) {
+      const r = correr('--tenant', S, '--precio', v, '--aplicar');
+      expect(r.codigo, v).toBe(2);
+      expect(r.salida, v).toMatch(/--precio inválido.*de 1 a 1000/);
+    }
+    expect(correr('--tenant', S, '--precio', '1', '--aplicar').codigo).toBe(0);
+    expect((await cuenta(S))['precioPorContrato']).toBe(1);
+  });
+
+  it('LOW 4: limpiar un precio ROTO (--precio plan) deja la auditoría con el valor crudo', async () => {
+    await sembrar({ ...BASE, modalidad: 'prepago', periodoPagado: '2099-12', precioPorContrato: 0.05 });
+    const r = correr('--tenant', S, '--precio', 'plan', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    const c = await cuenta(S);
+    expect(c['precioPorContrato']).toBeUndefined();
+    expect(c['montoMensual']).toBe(90);
+    const auditadas = await auditorias('precio_por_contrato', S);
+    expect(auditadas).toHaveLength(1);
+    expect(auditadas[0]).toMatchObject({
+      uid: 'operador@ejemplo.com', origen: 'script', antes: { valorCrudo: 0.05 }, despues: null, plan: 'pro',
+    });
   });
 });

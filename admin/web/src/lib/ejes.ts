@@ -33,18 +33,18 @@ import {
 // demás de esta carpeta. El campo de la pantalla valida con el MISMO
 // predicado con que el servidor rechaza.
 import {
-  LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, conversacionesValidas, precioMensualDe, precioPorContratoDe,
-  precioPorContratoValido,
+  LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, conversacionesValidas, precioMensualDe,
+  precioPorContratoDe, precioPorContratoValido,
 } from '../../../functions/src/planes';
 import {
-  BOLSA_PRUEBA_MAXIMA, bolsaPruebaValida, esPeriodo, inicioDePrueba, mesBolivia,
+  BOLSA_PRUEBA_MAXIMA, PRUEBA_MESES_MAXIMO, bolsaPruebaValida, esPeriodo, inicioDePrueba, mesBolivia, techoDePrueba,
 } from '../../../functions/src/prepago';
 
 export { MODALIDADES, esModalidad, modalidadDe, MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad };
 export type { Modalidad, Modelo, Titularidad };
 export {
-  BOLSA_PRUEBA_MAXIMA, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, bolsaPruebaValida, conversacionesValidas,
-  precioMensualDe, precioPorContratoDe, precioPorContratoValido,
+  BOLSA_PRUEBA_MAXIMA, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, bolsaPruebaValida,
+  conversacionesValidas, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
 };
 
 // -----------------------------------------------------------------------------
@@ -154,15 +154,20 @@ export function pruebaDeCuenta(cuenta: CuentaCruda | null | undefined): { desde:
 }
 
 /**
- * ¿Es un último mes de prueba que el servidor aceptaría? Un `aaaa-mm` que no
- * es anterior al mes en curso de Bolivia (`pruebaNueva` rechaza los pasados).
- * La modalidad la mira el servidor contra la cuenta.
+ * ¿Es un último mes de prueba que el servidor aceptaría por su FORMA? Un
+ * `aaaa-mm` que no es anterior al mes en curso de Bolivia (`pruebaNueva`
+ * rechaza los pasados) ni posterior a `techoDePrueba` (revisión del #221,
+ * LOW 2). La modalidad y los meses ya pagados los mira el servidor contra la
+ * cuenta.
  */
 export const periodoPruebaAceptable = (v: unknown, ahoraMs: number): v is string =>
-  esPeriodo(v) && v >= mesBolivia(ahoraMs);
+  esPeriodo(v) && v >= mesBolivia(ahoraMs) && v <= techoDePrueba(ahoraMs);
 
 /** El mes en curso de Bolivia (`aaaa-mm`): el mínimo del campo del último mes de prueba. */
 export const mesEnCurso = (ahoraMs: number): string => mesBolivia(ahoraMs);
+
+/** El último mes de prueba más lejano que acepta el servidor hoy: el máximo del campo. */
+export { PRUEBA_MESES_MAXIMO, techoDePrueba };
 
 // -----------------------------------------------------------------------------
 // MODALIDAD — las palabras nuevas sobre los valores del servidor

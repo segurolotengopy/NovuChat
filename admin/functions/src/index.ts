@@ -40,7 +40,8 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, PLANES, RANGO_POR_CONTRATO, copiaDeLimites,
+  CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, PLANES,
+  RANGO_POR_CONTRATO, copiaDeLimites,
   cuentaInicial, esPlanVendible, mismoMarcador, periodoDe, porContratoDe, precioMensualDe, precioPorContratoDe,
   precioPorContratoValido, valorPorContratoValido, type ClavePorContrato, type IdPlanVendible,
 } from './planes.js';
@@ -629,7 +630,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     const v = datos['precioPorContrato'];
     if (v !== null && !precioPorContratoValido(v)) {
       throw new HttpsError('invalid-argument',
-        `precioPorContrato tiene que ser un monto en dólares mayor que 0 y de hasta ${MAXIMO_PRECIO_POR_CONTRATO_USD}, `
+        `precioPorContrato tiene que ser un monto en dólares de ${MINIMO_PRECIO_POR_CONTRATO_USD} a ${MAXIMO_PRECIO_POR_CONTRATO_USD}, `
         + 'con dos decimales como mucho; o null para volver al precio del plan.');
     }
     precioPorContrato = v;
@@ -817,7 +818,16 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     if (precioPorContrato !== undefined && precioPorContrato !== precioAntes) {
       escritura['precioPorContrato'] = precioPorContrato === null ? FieldValue.delete() : precioPorContrato;
     } else if (precioPorContrato === null && actual['precioPorContrato'] !== undefined) {
-      // Un valor roto (que no regía) se limpia igual al pedir el del plan.
+      // Un valor roto (que no regía) se limpia igual al pedir el del plan, Y
+      // QUEDA AUDITADO con lo que había (revisión de seguridad del #221, LOW 4):
+      // borrar un dato de la cuenta sin constancia es perder la evidencia de
+      // quién escribió mal y qué. La mensualidad no cambia (el valor roto no
+      // regía), por eso no hay `mensualUsd`: solo el crudo y el borrado.
+      tx.create(refAuditoria.doc(), {
+        accion: 'precio_por_contrato', uid, en: ahora,
+        antes: { valorCrudo: actual['precioPorContrato'] }, despues: null,
+        plan: actual['plan'] ?? null,
+      });
       escritura['precioPorContrato'] = FieldValue.delete();
     }
 
@@ -899,8 +909,15 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
       // bolsa, que se deciden solos), va entera antes y después (`prueba`).
       const valor = (v: unknown) => v instanceof FieldValue ? null
         : v instanceof Timestamp ? v.toMillis() : v;
+      // LA PRUEBA SE AUDITA COMO QUEDÓ, NO COMO SE PIDIÓ (revisión de
+      // seguridad del #221, LOW 4): `periodoPrueba` y `bolsaPrueba` los decide
+      // `pruebaNueva`, y `valores` dice lo que la cuenta tiene después de esta
+      // escritura, como el script (`escritura[k]`). Si un día `pruebaNueva`
+      // ajusta un pedido, la auditoría no puede afirmar lo que no se escribió.
       const pedidoDe = (k: string) => k in cambios ? cambios[k] : k in umbrales ? umbrales[k]
-        : k in prepago ? prepago[k] : datos[k];
+        : k in prepago ? prepago[k]
+        : k === 'periodoPrueba' || k === 'bolsaPrueba' ? combinada[k] ?? null
+        : datos[k];
       const conValor = otros.filter((k) => k !== 'motivoVisible');
       tx.create(refAuditoria.doc(), {
         accion: 'estado_cuenta', uid, en: ahora, campos: otros,

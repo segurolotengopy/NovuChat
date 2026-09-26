@@ -314,6 +314,10 @@ describe('4. La prueba por contrato: su último mes y su bolsa', () => {
     await rechaza(cuentaDe({ periodoPrueba: MES_SIGUIENTE }), 'invalid-argument', /solo vale con modalidad prueba/);
     await rechaza(cuentaDe({ bolsaPrueba: 40 }), 'invalid-argument', /solo vale con modalidad prueba/);
     expect(await cuenta()).toEqual(PRO);
+    // Pagada hasta el mes PASADO: el mes en curso puede ser de prueba. (Con
+    // `PRO`, pagada hasta 2099, esto se aceptaba hasta la revisión del #221:
+    // era el MEDIUM; ahora se rechaza, ver la sección 5.)
+    await sembrar(A, { ...PRO, periodoPagado: MES_PASADO });
     await cuentaDe({ modalidad: 'prueba', periodoPrueba: MES_SIGUIENTE, bolsaPrueba: 40 });
     expect(await cuenta()).toMatchObject({ modalidad: 'prueba', periodoPrueba: MES_SIGUIENTE, pruebaDesde: MES, bolsaPrueba: 40 });
   });
@@ -342,5 +346,69 @@ describe('4. La prueba por contrato: su último mes y su bolsa', () => {
     expect(estadoDeServicio(c, 0, Date.now())).toMatchObject({ bolsaPrueba: 40, disponibles: 40 });
     const [a] = await auditoria('estado_cuenta');
     expect(a).toMatchObject({ campos: ['bolsaPrueba'], valores: { bolsaPrueba: 40 }, antes: { bolsaPrueba: 7 } });
+  });
+});
+
+// ===========================================================================
+// 5. REVISIÓN DE SEGURIDAD DEL #221, por la callable de Negocios. Cada rechazo
+// afirma que la cuenta quedó igual y sin auditoría; cada aceptación, lo escrito.
+// ===========================================================================
+describe('5. Revisión del #221: prueba sobre meses pagados, techo, piso y auditoría', () => {
+  it('MEDIUM, el caso de la revisión: prueba vencida + mes siguiente pagado + extender a ese mes → rechazado, nada escrito', async () => {
+    const cruzada = {
+      ...EN_PRUEBA, periodoPrueba: MES_PASADO, pruebaDesde: sumarMeses(MES, -2), bolsaPrueba: 20, periodoPagado: MES_SIGUIENTE,
+    };
+    await sembrar(A, cruzada);
+    await rechaza(cuentaDe({ periodoPrueba: MES_SIGUIENTE }), 'invalid-argument', /se cruza con meses ya pagados/);
+    expect(await cuenta()).toEqual(cruzada);
+    expect(await auditoria('estado_cuenta')).toHaveLength(0);
+  });
+
+  it('MEDIUM: pasar a prueba una cuenta con el mes en curso pagado se rechaza (antes se aceptaba y dejaba incluidas = 0)', async () => {
+    await rechaza(cuentaDe({ modalidad: 'prueba', periodoPrueba: MES_SIGUIENTE }), 'invalid-argument', /se cruza con meses ya pagados/);
+    await rechaza(cuentaDe({ modalidad: 'prueba' }), 'invalid-argument', /se cruza con meses ya pagados/);
+    expect(await cuenta()).toEqual(PRO);
+    expect(await auditoria('estado_cuenta')).toHaveLength(0);
+  });
+
+  it('LOW 2: periodoPrueba 2099-12 se rechaza por el techo, y nada se escribe', async () => {
+    await sembrar(A, EN_PRUEBA);
+    await rechaza(cuentaDe({ periodoPrueba: '2099-12' }), 'invalid-argument', /está a más de 3 meses del mes en curso/);
+    expect(await cuenta()).toEqual(EN_PRUEBA);
+  });
+
+  it('LOW 3: un precio de centavos no entra; uno roto ya escrito no produce un QR de Bs 0, sino el del plan', async () => {
+    for (const malo of [0.01, 0.5, 0.99]) {
+      await rechaza(cuentaDe({ precioPorContrato: malo }), 'invalid-argument', /precioPorContrato tiene que ser un monto en dólares de 1 a/);
+    }
+    expect(await cuenta()).toEqual(PRO);
+    await sembrar(A, { ...PRO, precioPorContrato: 0.05 });
+    const r = await correr(crearCobroPrepago, { tenantId: A, tipo: 'mensualidad', plan: 'pro', meses: 1 }, ADMIN_A);
+    expect(r).toMatchObject({ montoUsd: 90, monto: importeBs(90, TCO) });
+    expect(r['monto'] as number).toBeGreaterThan(0);
+    expect(doble.cobroPorReferencia(r['pagoId'] as string)).toMatchObject({ montoCentavos: importeBs(90, TCO) * 100 });
+  });
+
+  it('LOW 4: limpiar un precio ROTO (`precioPorContrato: null`) deja `precio_por_contrato` con el valor crudo', async () => {
+    await sembrar(A, { ...PRO, precioPorContrato: 0.05 });
+    await cuentaDe({ precioPorContrato: null });
+    const c = await cuenta();
+    expect(c['precioPorContrato']).toBeUndefined();
+    expect(c['montoMensual']).toBe(90);
+    const auditadas = await auditoria('precio_por_contrato');
+    expect(auditadas).toHaveLength(1);
+    expect(auditadas[0]).toMatchObject({ uid: 'prop-f1b', antes: { valorCrudo: 0.05 }, despues: null, plan: 'pro' });
+    // Sin nada roto que limpiar, pedir el del plan no deja constancia.
+    await cuentaDe({ precioPorContrato: null });
+    expect(await auditoria('precio_por_contrato')).toHaveLength(1);
+  });
+
+  it('LOW 4: `estado_cuenta.valores` de la prueba es lo que la cuenta quedó teniendo', async () => {
+    await sembrar(A, EN_PRUEBA);
+    await cuentaDe({ periodoPrueba: MES_SIGUIENTE, bolsaPrueba: 40 });
+    const c = await cuenta();
+    const [a] = await auditoria('estado_cuenta');
+    expect(a?.['valores']).toEqual({ periodoPrueba: c['periodoPrueba'], bolsaPrueba: c['bolsaPrueba'] });
+    expect(a?.['valores']).toEqual({ periodoPrueba: MES_SIGUIENTE, bolsaPrueba: 40 });
   });
 });

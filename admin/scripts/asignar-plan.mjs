@@ -47,7 +47,8 @@
  *                               mes (`limites.conversaciones`, entero de 1 a
  *                               LIMITE_MAXIMO, la validación con que se leen).
  *   --precio <USD> | plan       la mensualidad pactada, en dólares con hasta
- *                               dos decimales (`120`, `37.50`), de más de 0 a
+ *                               dos decimales (`120`, `37.50`), de
+ *                               MINIMO_PRECIO_POR_CONTRATO_USD (1) a
  *                               MAXIMO_PRECIO_POR_CONTRATO_USD →
  *                               `precioPorContrato`. Manda sobre el precio del
  *                               plan en TODO lo que cobra (QR, pago manual,
@@ -58,7 +59,12 @@
  *                               extiende, sin huecos desde su primer mes (o
  *                               desde el mes en curso). Solo con modalidad
  *                               prueba (la que tiene o `--modalidad prueba`);
- *                               nunca un mes pasado.
+ *                               nunca un mes pasado, nunca más allá de
+ *                               PRUEBA_MESES_MAXIMO (3) meses después del mes
+ *                               en curso, y nunca sobre un mes ya pagado
+ *                               (`periodoPagado`): ese mes perdería las
+ *                               conversaciones de su plan. De una prueba
+ *                               vencida no hereda el primer mes.
  *   --bolsa-prueba N            las conversaciones de prueba que quedan, 1 a
  *                               BOLSA_PRUEBA_MAXIMA → `bolsaPrueba`. Solo con
  *                               modalidad prueba. Extender la prueba NO la
@@ -133,7 +139,8 @@ registerHooks({
   },
 });
 const {
-  PLANES, CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, RANGO_POR_CONTRATO, copiaDeLimites,
+  PLANES, CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD,
+  RANGO_POR_CONTRATO, copiaDeLimites,
   esIdPlan, limitesDe, mismoMarcador, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
   valorPorContratoValido,
 } = await import('../functions/src/planes.ts');
@@ -196,7 +203,7 @@ if (PRECIO !== null) {
   if (PRECIO === 'plan') precioPedido = null;
   else if (/^[0-9]{1,4}(\.[0-9]{1,2})?$/.test(PRECIO) && precioPorContratoValido(Number(PRECIO))) precioPedido = Number(PRECIO);
   else {
-    problemas.push(`--precio inválido: ${PRECIO || '(vacío)'}. Un monto en dólares mayor que 0 y de hasta ${MAXIMO_PRECIO_POR_CONTRATO_USD}, `
+    problemas.push(`--precio inválido: ${PRECIO || '(vacío)'}. Un monto en dólares de ${MINIMO_PRECIO_POR_CONTRATO_USD} a ${MAXIMO_PRECIO_POR_CONTRATO_USD}, `
       + 'con punto y hasta dos decimales (120 o 37.50), o «plan» para volver al precio del plan.');
   }
 }
@@ -366,8 +373,12 @@ try {
     // EL PRECIO POR CONTRATO: un campo propio, que un cambio de plan no toca.
     const precioAntes = precioPorContratoDe(actual);
     const precioCambia = precioPedido !== undefined && precioPedido !== precioAntes;
+    // Un precio ROTO (presente, pero que no regía) se limpia al pedir el del
+    // plan, y queda auditado con su valor crudo, como en la callable
+    // (revisión de seguridad del #221, LOW 4).
+    const precioRotoSeLimpia = !precioCambia && precioPedido === null && actual.precioPorContrato !== undefined;
     if (precioCambia) escritura.precioPorContrato = precioPedido === null ? FieldValue.delete() : precioPedido;
-    else if (precioPedido === null && actual.precioPorContrato !== undefined) escritura.precioPorContrato = FieldValue.delete();
+    else if (precioRotoSeLimpia) escritura.precioPorContrato = FieldValue.delete();
 
     if (MODALIDAD && actual.modalidad !== MODALIDAD) escritura.modalidad = MODALIDAD;
     // LA PRUEBA: la decide `pruebaNueva` (`prepago.ts`), la misma función que
@@ -492,6 +503,12 @@ try {
         antes: { valor: precioAntes, porContrato: precioAntes !== null, mensualUsd: antes.mensualUsd },
         despues: { valor: precioPedido, porContrato: precioPedido !== null, mensualUsd: precioMensualDe(combinada) },
         plan: combinada.plan ?? null, delPlanUsd: precioMensualDe({ plan: combinada.plan }),
+      });
+    } else if (precioRotoSeLimpia) {
+      auditar({
+        accion: 'precio_por_contrato',
+        antes: { valorCrudo: actual.precioPorContrato }, despues: null,
+        plan: actual.plan ?? null,
       });
     }
     const otros = Object.keys(escritura)
