@@ -70,7 +70,7 @@
  * Andres, no un despliegue.
  */
 import {
-  BOLSA, INSTALACION_USD, PLANES, PLAN_POR_DEFECTO, esPlanVendible, limitesDeCuenta,
+  BOLSA, INSTALACION_USD, PLANES, PLAN_POR_DEFECTO, aCentavos, esPlanVendible, limitesDeCuenta, precioMensualDe,
   type IdPlanVendible,
 } from './planes.js';
 
@@ -88,8 +88,24 @@ export type Modalidad = (typeof MODALIDADES)[number];
 export const esModalidad = (v: unknown): v is Modalidad =>
   typeof v === 'string' && (MODALIDADES as readonly string[]).includes(v);
 
-/** El mes de prueba: sin mensualidad y con esta bolsa. */
+/**
+ * La prueba: sin mensualidad y con esta bolsa. Es la de LISTA; un contrato
+ * fija otra con `--bolsa-prueba N` o `actualizarEstadoCuenta({ bolsaPrueba })`
+ * (F1b), que escribe `cuenta/estado.bolsaPrueba` y `estadoDeServicio` la usa
+ * tal cual.
+ */
 export const PRUEBA = { conversaciones: 20 } as const;
+
+/**
+ * El techo de la bolsa de prueba por contrato. Un seguro contra un dato
+ * corrupto, no una opinión comercial: el plan más grande de lista trae 500
+ * conversaciones al mes, y una prueba de 1.000 ya es regalar dos meses de Pro.
+ */
+export const BOLSA_PRUEBA_MAXIMA = 1000;
+
+/** ¿Es una bolsa de prueba aceptable? Entero de 1 a `BOLSA_PRUEBA_MAXIMA`. */
+export const bolsaPruebaValida = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= BOLSA_PRUEBA_MAXIMA;
 
 /** Hasta cuántos meses se pagan por adelantado (decisión 4 del frente). */
 export const MESES_MAXIMO = 6;
@@ -307,8 +323,21 @@ export interface CuentaCruda {
   modalidad?: unknown;
   /** Último mes calendario PAGADO (`aaaa-mm`). Cubre ese mes y los anteriores. */
   periodoPagado?: unknown;
-  /** El mes calendario de prueba (`aaaa-mm`). Sin mensualidad ese mes. */
+  /**
+   * El ÚLTIMO mes calendario de prueba (`aaaa-mm`). Sin mensualidad hasta ese
+   * mes. Con `pruebaDesde` ausente, la prueba es solo ese mes, como siempre.
+   */
   periodoPrueba?: unknown;
+  /**
+   * El PRIMER mes de una prueba de varios meses (`aaaa-mm`, F1b). Lo escribe
+   * `pruebaNueva` al EXTENDER una prueba (`--periodo-prueba`): sin él,
+   * llevar `periodoPrueba` de septiembre a octubre el día 26 dejaba sin
+   * cobertura del 27 al 30 de septiembre. Ausente = la prueba empieza en
+   * `periodoPrueba`.
+   */
+  pruebaDesde?: unknown;
+  /** La mensualidad pactada, en USD (`planes.ts`, `precioPorContratoDe`). Manda sobre el plan. */
+  precioPorContrato?: unknown;
   /** Conversaciones compradas en bolsas y todavía no usadas. No vencen. */
   bolsa?: unknown;
   /** Conversaciones de prueba que quedan. Solo valen durante el mes de prueba. */
@@ -470,14 +499,35 @@ export function consumidasDe(metricas: Record<string, unknown> | undefined): num
  * `periodoPagado` en prepago o prueba, `periodoPrueba` en prueba. Ausente
  * (`undefined`) no cuenta; `null` sí. Vacía si todo está bien o no hay modalidad.
  */
-export function periodosIncoherentes(cuenta: CuentaCruda | null | undefined): ('periodoPagado' | 'periodoPrueba')[] {
+export function periodosIncoherentes(
+  cuenta: CuentaCruda | null | undefined,
+): ('periodoPagado' | 'periodoPrueba' | 'pruebaDesde')[] {
   const c = cuenta ?? {};
   const modalidad = modalidadDe(c);
   if (modalidad === 'demostracion') return [];
-  const malos: ('periodoPagado' | 'periodoPrueba')[] = [];
+  const malos: ('periodoPagado' | 'periodoPrueba' | 'pruebaDesde')[] = [];
   if (c.periodoPagado !== undefined && !esPeriodo(c.periodoPagado)) malos.push('periodoPagado');
   if (modalidad === 'prueba' && c.periodoPrueba !== undefined && !esPeriodo(c.periodoPrueba)) malos.push('periodoPrueba');
+  // El inicio de una prueba extendida: presente, tiene que ser un mes y no
+  // posterior al último. Si no, alguien escribió mal la cuenta: se atiende y
+  // se anota, como con los otros dos (nunca se corta sobre un dato roto).
+  if (modalidad === 'prueba' && c.pruebaDesde !== undefined
+      && !(esPeriodo(c.pruebaDesde) && esPeriodo(c.periodoPrueba) && c.pruebaDesde <= c.periodoPrueba)) {
+    malos.push('pruebaDesde');
+  }
   return malos;
+}
+
+/**
+ * EL PRIMER MES DE LA PRUEBA: `pruebaDesde` si la prueba se extendió, o el
+ * propio `periodoPrueba` si es de un solo mes. `''` si no hay prueba. Asume
+ * una cuenta coherente (`periodosIncoherentes` vacío).
+ */
+export function inicioDePrueba(cuenta: CuentaCruda | null | undefined): string {
+  const hasta = esPeriodo(cuenta?.periodoPrueba) ? cuenta.periodoPrueba : '';
+  if (hasta === '') return '';
+  const desde = cuenta?.pruebaDesde;
+  return esPeriodo(desde) && desde <= hasta ? desde : hasta;
 }
 
 /**
@@ -499,12 +549,16 @@ export function estadoDeServicio(
   const periodo = mesBolivia(ahoraMs);
   const periodoPagado = esPeriodo(c.periodoPagado) ? c.periodoPagado : '';
   const periodoPrueba = esPeriodo(c.periodoPrueba) ? c.periodoPrueba : '';
+  const desdePrueba = inicioDePrueba(c);
   const bolsa = entero(c.bolsa);
+  // La bolsa de prueba TAL CUAL está escrita: la de lista (20) o la fijada
+  // por contrato (`--bolsa-prueba`, F1b). No se recorta ni se completa acá.
   const bolsaPrueba = entero(c.bolsaPrueba);
   const usadas = entero(consumidas);
-  // El precio del plan. Que una demostración no pague lo decide la modalidad
-  // (abajo: `mensualidadUsd: 0`), no un plan con precio cero.
-  const precio = PLANES[plan].precioUsd;
+  // La mensualidad que rige: la del contrato si la cuenta tiene una
+  // (`precioPorContrato`, F1b), si no la del plan. Que una demostración no
+  // pague lo decide la modalidad (abajo: `mensualidadUsd: 0`), no un precio cero.
+  const precio = precioMensualDe(c as Record<string, unknown>, plan);
 
   const base = {
     modalidad, plan, periodo, bolsa, bolsaPrueba, consumidas: usadas,
@@ -532,10 +586,11 @@ export function estadoDeServicio(
   }
 
   // COBERTURA POR INSTANTES. Un pago cubre hasta el último instante del mes
-  // pagado; el mes de prueba cubre solo ese mes, y solo en modalidad prueba.
+  // pagado; la prueba cubre de su primer mes (`pruebaDesde`, o el mismo
+  // `periodoPrueba`) al último, y solo en modalidad prueba.
   const pagado = periodoPagado !== '' && ahoraMs <= finDelPeriodoMs(periodoPagado);
   const pruebaVigente = modalidad === 'prueba' && periodoPrueba !== ''
-    && ahoraMs >= inicioDelPeriodoMs(periodoPrueba) && ahoraMs <= finDelPeriodoMs(periodoPrueba);
+    && ahoraMs >= inicioDelPeriodoMs(desdePrueba) && ahoraMs <= finDelPeriodoMs(periodoPrueba);
   const cubierto = pagado || pruebaVigente;
   const cubiertoHasta = [periodoPagado, modalidad === 'prueba' ? periodoPrueba : '']
     .filter(Boolean).sort().pop() ?? '';
@@ -564,7 +619,8 @@ export function estadoDeServicio(
   // El mes que rige: el actual si está cubierto; el que venció, si estamos en
   // su gracia (la gracia extiende ESA cobertura dos días).
   const mesQueRige = cubierto ? periodo : cubiertoHasta;
-  const enPrueba = modalidad === 'prueba' && periodoPrueba === mesQueRige;
+  const enPrueba = modalidad === 'prueba' && periodoPrueba !== ''
+    && mesQueRige >= desdePrueba && mesQueRige <= periodoPrueba;
   const incluidas = enPrueba ? 0 : limitesDeCuenta(c as Record<string, unknown>).conversaciones;
   const restanteDelPlan = Math.max(0, incluidas - usadas);
   // Las bolsas compradas valen siempre; la de prueba, solo en el mes de prueba.
@@ -686,13 +742,51 @@ function exigirPago(pago: Pago): void {
   if (!esPago(pago)) throw new Error('pago invalido');
 }
 
-/** Lo que cuesta un pago, EN DÓLARES. El importe en bolivianos es derivado. */
-export function montoUsdDe(pago: Pago): number {
+/**
+ * Lo que cuesta un pago, EN DÓLARES. El importe en bolivianos es derivado.
+ *
+ * LA MENSUALIDAD SE COBRA AL PRECIO DE LA CUENTA (F1b): con `cuenta`, es
+ * `precioMensualDe(cuenta, plan)` por los meses —el del contrato si la cuenta
+ * tiene `precioPorContrato`, si no el del plan pedido—. Sin `cuenta` es el de
+ * lista, que es lo que dice el catálogo y nada más: TODO QUIEN COBRA le pasa
+ * la cuenta (`crearCobroInterno`, `registrarPagoManual`, las vistas previas
+ * de Pagar y de Negocios). La bolsa y la instalación son siempre de lista: el
+ * contrato pacta la mensualidad, no el excedente.
+ */
+export function montoUsdDe(pago: Pago, cuenta?: CuentaCruda | Record<string, unknown> | null): number {
   exigirPago(pago);
   if (pago.tipo === 'instalacion') return INSTALACION_USD;
-  return pago.tipo === 'mensualidad'
-    ? PLANES[pago.plan].precioUsd * pago.meses
-    : BOLSA.precioUsd * pago.cantidad;
+  if (pago.tipo === 'bolsa') return BOLSA.precioUsd * pago.cantidad;
+  const precio = cuenta === undefined ? PLANES[pago.plan].precioUsd : precioMensualDe(cuenta as Record<string, unknown> | null, pago.plan);
+  return aCentavos(precio * pago.meses);
+}
+
+/**
+ * ¿UN PAGO DE MENSUALIDAD QUEDÓ FUERA DE CONTRATO? Verdadero si su importe en
+ * dólares (`montoUsd`, el que se fijó al emitirlo) no es el que la cuenta
+ * cobraría HOY por ese mismo pedido (`montoUsdDe(pedido, cuenta)`). Es la
+ * definición de «un precio fuera de contrato se rechaza» (F1b):
+ *
+ *  - un QR de mensualidad emitido a USD 50 cuando la cuenta ya tiene un
+ *    contrato de USD 120 (o al revés) NO se acredita solo al confirmarlo el
+ *    banco: queda en revisión (`precio_distinto`) para el propietario, como un
+ *    plan distinto (`cobroPrepago.ts`);
+ *  - y un precio por contrato no se cambia mientras haya una mensualidad
+ *    pendiente que quedaría así (`actualizarEstadoCuenta`, `asignar-plan.mjs`).
+ *
+ * Una bolsa o una instalación nunca lo están: son de lista. Un pago sin
+ * `montoUsd` numérico (anterior al campo) no se juzga: no hay con qué.
+ * Tolera medio centavo de redondeo.
+ */
+export function montoFueraDeContrato(
+  pago: Record<string, unknown> | null | undefined, cuenta: CuentaCruda | Record<string, unknown> | null | undefined,
+): boolean {
+  if (!pago || pago['tipo'] !== 'mensualidad') return false;
+  const pedido = { tipo: 'mensualidad', plan: pago['plan'], meses: pago['meses'] };
+  if (!esPago(pedido)) return false;
+  const guardado = pago['montoUsd'];
+  if (typeof guardado !== 'number' || !Number.isFinite(guardado)) return false;
+  return Math.abs(guardado - montoUsdDe(pedido, cuenta ?? {})) > 0.005;
 }
 
 export function descripcionDe(pago: Pago): string {
@@ -777,6 +871,116 @@ export function aplicarPago(cuenta: CuentaCruda | null | undefined, pago: Pago, 
     periodoPagado: nuevo,
     bolsa: estado.bolsa + (pago.meses === MESES_MAXIMO ? BOLSA.conversaciones : 0),
     cubiertoHasta: nuevo,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// LA PRUEBA POR CONTRATO — su último mes y su bolsa, fijados por NovuChat
+// -----------------------------------------------------------------------------
+
+/** Lo que se pide sobre la prueba de una cuenta. Ausente = no se toca. */
+export interface PedidoDePrueba {
+  /** La modalidad pedida EN LA MISMA operación, si viene: decide si la cuenta queda en prueba. */
+  modalidad?: Modalidad;
+  /**
+   * El ÚLTIMO mes de la prueba (`aaaa-mm`): la fija o la extiende. `null` la
+   * borra, y solo si la cuenta NO queda en prueba.
+   */
+  periodoPrueba?: string | null;
+  /** Las conversaciones de prueba que quedan, 1 a `BOLSA_PRUEBA_MAXIMA`. */
+  bolsaPrueba?: number;
+}
+
+export type CampoDePrueba = 'periodoPrueba' | 'pruebaDesde' | 'bolsaPrueba';
+/** Lo que cambia: el valor nuevo, o `null` = borrar el campo. Solo las claves que cambian. */
+export type PruebaNueva = Partial<Record<CampoDePrueba, string | number | null>>;
+
+/** Un pedido sobre la prueba que no se acepta. El mensaje se muestra tal cual. */
+export class PruebaInvalida extends Error {}
+
+/**
+ * LA PRUEBA QUE QUEDA DESPUÉS DE UN PEDIDO. PURA: la usan
+ * `actualizarEstadoCuenta` (Negocios) y `asignar-plan.mjs`
+ * (`--modalidad prueba`, `--periodo-prueba`, `--bolsa-prueba`), para que las
+ * dos puertas decidan igual. Lanza `PruebaInvalida` con el motivo.
+ *
+ * LAS REGLAS (F1b, Andres, 26/09/2026):
+ *
+ *  1. `periodoPrueba` y `bolsaPrueba` SOLO VALEN CON MODALIDAD PRUEBA (la que
+ *     queda después de la operación): en producción o en demostración no
+ *     significan nada, y escribirlos dejaría un dato que alguien leería como
+ *     vigente.
+ *  2. `periodoPrueba` NO PUEDE SER UN MES PASADO: una prueba que ya terminó
+ *     no se «fija», se cortaría en el acto.
+ *  3. FIJAR O EXTENDER CUBRE SIN HUECOS. `periodoPrueba` es el ÚLTIMO mes; el
+ *     primero es el de la prueba vigente si la cuenta ya estaba en prueba y
+ *     empezó antes, o el mes en curso. Hasta F1b la prueba era un solo mes:
+ *     llevarla de septiembre a octubre el 26/09 dejaba sin cobertura del 27
+ *     al 30. Cuando el primero y el último difieren se escribe `pruebaDesde`;
+ *     si coinciden, se borra (la prueba de un mes queda como siempre).
+ *  4. LA BOLSA NO SE REINICIA SOLA al extender: sigue la que quedaba, salvo
+ *     que se pida (`bolsaPrueba`). Si la cuenta no tenía una, nace con la de
+ *     lista (`PRUEBA.conversaciones`) o con la pedida.
+ *  5. Pasar a prueba SIN período (lo de siempre): el mes en curso con la bolsa
+ *     de lista (o la pedida). Si ya tenía un período, no se toca.
+ *  6. Borrar el período (`null`) de una cuenta que queda en prueba se rechaza:
+ *     quedaría incoherente y `estadoDeServicio` la atendería sin límite.
+ */
+export function pruebaNueva(
+  cuenta: CuentaCruda | Record<string, unknown> | null | undefined, pedido: PedidoDePrueba, ahoraMs: number,
+): PruebaNueva {
+  const c = (cuenta ?? {}) as CuentaCruda & Record<string, unknown>;
+  const modalidad = pedido.modalidad ?? modalidadDe(c);
+  const mes = mesBolivia(ahoraMs);
+  const salida: PruebaNueva = {};
+  const poner = (k: CampoDePrueba, v: string | number) => { if (c[k] !== v) salida[k] = v; };
+  const borrar = (k: CampoDePrueba) => { if (c[k] !== undefined) salida[k] = null; };
+
+  if (pedido.bolsaPrueba !== undefined) {
+    if (!bolsaPruebaValida(pedido.bolsaPrueba)) {
+      throw new PruebaInvalida(`bolsaPrueba tiene que ser un entero de 1 a ${BOLSA_PRUEBA_MAXIMA}.`);
+    }
+    if (modalidad !== 'prueba') {
+      throw new PruebaInvalida('La bolsa de prueba solo vale con modalidad prueba: pase la cuenta a prueba en la misma operación.');
+    }
+  }
+
+  if (pedido.periodoPrueba === null) {
+    if (modalidad === 'prueba') throw new PruebaInvalida('Una cuenta en prueba necesita su periodoPrueba.');
+    borrar('periodoPrueba');
+    borrar('pruebaDesde');
+  } else if (pedido.periodoPrueba !== undefined) {
+    const hasta = pedido.periodoPrueba;
+    if (!esPeriodo(hasta)) throw new PruebaInvalida('periodoPrueba inválido: aaaa-mm.');
+    if (modalidad !== 'prueba') {
+      throw new PruebaInvalida('El período de prueba solo vale con modalidad prueba: pase la cuenta a prueba en la misma operación.');
+    }
+    if (hasta < mes) {
+      throw new PruebaInvalida(`periodoPrueba no puede ser un mes pasado (${hasta}): el mes en curso es ${mes}.`);
+    }
+    // El primer mes: el de la prueba vigente, si la cuenta YA estaba en
+    // prueba y empezó antes; si no, el mes en curso. Nunca un mes futuro:
+    // entre hoy y el primer mes la cuenta quedaría sin cobertura.
+    const inicioVigente = modalidadDe(c) === 'prueba' && periodosIncoherentes(c).length === 0 ? inicioDePrueba(c) : '';
+    const desde = inicioVigente !== '' && inicioVigente <= mes ? inicioVigente : mes;
+    poner('periodoPrueba', hasta);
+    if (desde < hasta) poner('pruebaDesde', desde); else borrar('pruebaDesde');
+    if (pedido.bolsaPrueba === undefined && typeof c.bolsaPrueba !== 'number') poner('bolsaPrueba', PRUEBA.conversaciones);
+  } else if (pedido.modalidad === 'prueba' && !esPeriodo(c.periodoPrueba)) {
+    poner('periodoPrueba', mes);
+    borrar('pruebaDesde');
+    poner('bolsaPrueba', pedido.bolsaPrueba ?? PRUEBA.conversaciones);
+  }
+
+  if (pedido.bolsaPrueba !== undefined) poner('bolsaPrueba', pedido.bolsaPrueba);
+  return salida;
+}
+
+/** Los tres campos de la prueba como están, para la auditoría («antes»). */
+export function pruebaActual(cuenta: CuentaCruda | Record<string, unknown> | null | undefined): Record<CampoDePrueba, unknown> {
+  const c = (cuenta ?? {}) as Record<string, unknown>;
+  return {
+    periodoPrueba: c['periodoPrueba'] ?? null, pruebaDesde: c['pruebaDesde'] ?? null, bolsaPrueba: c['bolsaPrueba'] ?? null,
   };
 }
 
@@ -936,7 +1140,10 @@ export function recordatoriosDebidos(
   const diasHastaD0 = diasDelPeriodo(mesActual) - hoy + 1;
   const planNombre = PLANES[estado.plan].nombre;
   const tco = contexto.tco;
-  const precioBs = tco === null ? null : String(importeBs(estado.mensualidadUsd || PLANES[estado.plan].precioUsd, tco));
+  // El importe de UN mes a la mensualidad que rige: la del contrato si la
+  // cuenta tiene una (F1b), si no la del plan. No `estado.mensualidadUsd`: en
+  // prueba vale 0 y el aviso tiene que decir lo que costará renovar.
+  const precioBs = tco === null ? null : String(importeBs(precioMensualDe(cuenta as Record<string, unknown> | null, estado.plan), tco));
   const agregar = (tipo: TipoRecordatorio, clave: string, parametros: string[], conImporte: boolean) => {
     if (conImporte && precioBs === null) return;
     debidos.push({ clave, tipo, plantilla: PLANTILLAS[tipo].nombre, parametros, conImporte });
@@ -945,7 +1152,13 @@ export function recordatoriosDebidos(
   // --- PRUEBA: solo conversión --------------------------------------------
   if (estado.modalidad === 'prueba') {
     const periodoPrueba = esPeriodo(cuenta?.periodoPrueba) ? cuenta.periodoPrueba : '';
-    if (estado.enPrueba && estado.cubierto && periodoPrueba !== '' && diasHastaD0 <= DIAS_AVISO_CONVERSION) {
+    // SOLO EN EL ÚLTIMO MES DE LA PRUEBA (F1b): `diasHastaD0` cuenta los días
+    // que faltan para terminar el mes EN CURSO. Con una prueba extendida de
+    // septiembre a octubre, sin esta condición el aviso «tu prueba termina el
+    // 31 de octubre» salía el 26 de septiembre: una plantilla pagada que dice
+    // la verdad en el momento equivocado.
+    if (estado.enPrueba && estado.cubierto && periodoPrueba !== '' && periodoPrueba === mesActual
+        && diasHastaD0 <= DIAS_AVISO_CONVERSION) {
       agregar('conversion', `conversion_${periodoPrueba}`, [fechaEscrita(finDelPeriodoMs(periodoPrueba))], false);
     }
     return debidos.filter((r) => !(r.clave in enviados));

@@ -19,7 +19,8 @@
  *
  *   `ejesDeCuenta({ tenantId })` — LECTURA. Los tres ejes (`Analisis/41` §4)
  *   más el modelo y el contador de cambios (con qué claves de la copia van
- *   POR CONTRATO y cuántos cambios trae el plan), en una sola forma, para que la
+ *   POR CONTRATO, cuántos cambios y conversaciones trae el plan, y la
+ *   mensualidad que rige con su origen, F1b), en una sola forma, para que la
  *   consola los pinte iguales en Cuenta, Pagar y Negocios sin calcular nada. La
  *   llama el administrador del comercio o el propietario. ES EL ÚNICO CAMINO
  *   por el que el comercio ve la titularidad de sus números: `rutasWhatsApp`
@@ -30,7 +31,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../autorizacion.js';
-import { limitesDe, limitesDeCuenta, porContratoDe } from '../planes.js';
+import { limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe } from '../planes.js';
 import { modalidadDe, type CuentaCruda } from '../prepago.js';
 import {
   MODELOS, TITULARIDADES, cambiosDelMes, esModelo, esTitularidad, modeloDe, titularidadDe,
@@ -151,6 +152,16 @@ export const ejesDeCuenta = onCall(async (peticion) => {
       // calcular nada. Un cambio de plan conserva lo que va por contrato.
       porContrato: porContratoDe(cuenta),
       cambiosIncluidosDelPlan: limitesDe(cuenta['plan']).cambiosIncluidos,
+      conversacionesDelPlan: limitesDe(cuenta['plan']).conversaciones,
+    },
+    // LA MENSUALIDAD QUE RIGE (F1b) y de dónde sale: la del contrato si la
+    // cuenta tiene `precioPorContrato`, si no la del plan. Es la misma cifra
+    // que cobra el QR (`montoUsdDe`) y que deriva `montoMensual`: Cuenta,
+    // Pagar y Negocios dicen lo mismo que el cobro.
+    precio: {
+      mensualUsd: precioMensualDe(cuenta),
+      porContrato: precioPorContratoDe(cuenta),
+      delPlanUsd: precioMensualDe({ plan: cuenta['plan'] }),
     },
     modalidad: modalidadDe(cuenta as CuentaCruda),
     modalidadExplicita: typeof cuenta['modalidad'] === 'string',

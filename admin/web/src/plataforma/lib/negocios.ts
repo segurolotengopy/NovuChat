@@ -114,7 +114,7 @@ export const esMedioManual = (v: unknown): v is MedioManual =>
 export interface VistaDelPagoManual {
   descripcion: string;
   montoUsd: number;
-  /** El importe de la lista al TCO declarado: lo que el servidor va a comparar con lo recibido. */
+  /** El importe de la cuenta (el del contrato si tiene uno) al TCO declarado: lo que el servidor va a comparar con lo recibido. */
   montoBs: number;
   cubiertoHasta: string;
   bolsa: number;
@@ -131,7 +131,9 @@ export function vistaDelPagoManual(
   cuenta: CuentaCruda | null | undefined, pedido: Pago, tco: number, ahoraMs: number,
 ): VistaDelPagoManual | null {
   if (!esPago(pedido) || !Number.isFinite(tco) || tco <= 0) return null;
-  const montoUsd = montoUsdDe(pedido);
+  // Al precio de la CUENTA (F1b): con un precio por contrato, ese es el
+  // importe que el servidor compara con lo recibido, no el de la lista.
+  const montoUsd = montoUsdDe(pedido, cuenta ?? null);
   const tras = aplicarPago(cuenta, pedido, ahoraMs);
   return {
     descripcion: descripcionDe(pedido),
@@ -207,8 +209,12 @@ export const pideSesionReciente = (e: unknown): boolean =>
  * propietario (`revision: 'plan_distinto'`). Hasta este bloque solo se
  * resolvía armando la petición a mano, y mientras tanto el comercio que pagó
  * podía quedar cortado. Negocios los lista y ofrece `confirmarPendiente`.
+ *
+ * DESDE F1b, `precio_distinto`: el QR se emitió a un importe que la cuenta ya
+ * no cobra (se le fijó o se le quitó un precio por contrato después), y el
+ * cliente del cobrador no le da el mes solo (`montoFueraDeContrato`).
  */
-export type MotivoDeRevision = 'plan_distinto' | 'importe_menor' | 'otro';
+export type MotivoDeRevision = 'plan_distinto' | 'precio_distinto' | 'importe_menor' | 'otro';
 
 export interface PagoEnRevision {
   pagoId: string;
@@ -238,6 +244,7 @@ export function pagosEnRevision(filas: ReadonlyArray<{ id: string } & Record<str
     const monto = numeroFinito(f['monto']);
     const recibido = numeroFinito(f['montoRecibidoBs']);
     const motivo: MotivoDeRevision = f['revision'] === 'plan_distinto' ? 'plan_distinto'
+      : f['revision'] === 'precio_distinto' ? 'precio_distinto'
       : monto !== null && recibido !== null && recibido < monto ? 'importe_menor' : 'otro';
     salida.push({
       pagoId: f.id, descripcion: f['descripcion'], monto, montoRecibidoBs: recibido,

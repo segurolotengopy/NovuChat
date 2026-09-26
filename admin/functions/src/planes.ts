@@ -353,6 +353,15 @@ const limiteValido = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LIMITE_MAXIMO;
 
 /**
+ * LAS CONVERSACIONES QUE SE PUEDEN COPIAR A UNA CUENTA: la MISMA validación con
+ * que `limitesDeCuenta` las lee (entero de 1 a `LIMITE_MAXIMO`). Se exporta
+ * para `actualizarEstadoCuenta` y `asignar-plan.mjs --conversaciones`: un
+ * valor que el lector descartaría (y cambiaría en silencio por el del plan)
+ * no se deja escribir.
+ */
+export const conversacionesValidas = limiteValido;
+
+/**
  * `cambiosIncluidos` admite 0, y su techo es otro: es la excepción de `Limites`.
  * Se exporta porque es LA validación: la usan `limitesDeCuenta` al leer, y
  * `actualizarEstadoCuenta` y `asignar-plan.mjs --cambios` al escribir un valor
@@ -424,17 +433,45 @@ export function limiteDeCampanas(cuenta: Record<string, unknown> | null | undefi
 // -----------------------------------------------------------------------------
 
 /**
- * LAS CLAVES DE LA COPIA QUE PUEDEN IR POR CONTRATO. Hoy una sola:
- * `cambiosIncluidos`, que es la que ya se vendió por encima del plan («hasta 4
- * cambios al mes» con un plan que trae 2, `Analisis/40` §5.2). La lista es
- * cerrada a propósito: fijar por contrato las conversaciones o los productos
- * cambia lo que cuesta atender al comercio y el precio que se le cobra, y eso
- * es un plan a medida (`Analisis/40` §8), no un ajuste de la copia.
+ * LAS CLAVES DE LA COPIA QUE PUEDEN IR POR CONTRATO: `cambiosIncluidos` y
+ * `conversaciones`.
+ *
+ *  - `cambiosIncluidos` (#212) es la que ya se vendió por encima del plan
+ *    («hasta 4 cambios al mes» con un plan que trae 2, `Analisis/40` §5.2).
+ *  - `conversaciones` (F1b, DECISIÓN DE ANDRES DEL 26/09/2026). Hasta F1b este
+ *    comentario decía que fijarlas por contrato «es un plan a medida, no un
+ *    ajuste de la copia». Andres decidió lo contrario: el plan a medida ES la
+ *    copia por contrato (`Analisis/40` §8, opción D, «vitrina en código,
+ *    mostrador por contrato»), y un contrato de 500 conversaciones por USD 120
+ *    se escribe con `--conversaciones 500 --precio 120`, sin una entrada de
+ *    catálogo por cliente. Como cambian lo que cuesta atender al comercio, van
+ *    SIEMPRE junto a un precio decidido a propósito (`precioPorContrato`, más
+ *    abajo): el operador lo ve en el seco y en Negocios.
+ *
+ * `productos` y `agendas` siguen FUERA: los hacen cumplir las reglas de
+ * Firestore contra la copia, y la de agendas tiene un techo técnico (la
+ * latencia del candado, `Analisis/24`), no comercial. Abrirlas es otra
+ * decisión, con su prueba.
  */
-export const CLAVES_POR_CONTRATO = ['cambiosIncluidos'] as const;
+export const CLAVES_POR_CONTRATO = ['cambiosIncluidos', 'conversaciones'] as const;
 export type ClavePorContrato = (typeof CLAVES_POR_CONTRATO)[number];
 export const esClavePorContrato = (v: unknown): v is ClavePorContrato =>
   typeof v === 'string' && (CLAVES_POR_CONTRATO as readonly string[]).includes(v);
+
+/**
+ * LA VALIDACIÓN DE CADA CLAVE POR CONTRATO, la misma con que se LEE
+ * (`limitesDeCuenta`): `cambiosIncluidos` de 0 a `MAXIMO_CAMBIOS_INCLUIDOS`;
+ * `conversaciones` de 1 a `LIMITE_MAXIMO`. Un valor que el lector
+ * descartaría no cuenta como contrato ni se deja escribir.
+ */
+export const valorPorContratoValido = (clave: ClavePorContrato, v: unknown): v is number =>
+  clave === 'cambiosIncluidos' ? cambiosIncluidosValidos(v) : conversacionesValidas(v);
+
+/** El rango de cada clave, dicho en palabras, para los mensajes de rechazo. */
+export const RANGO_POR_CONTRATO: Readonly<Record<ClavePorContrato, string>> = {
+  cambiosIncluidos: `un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}`,
+  conversaciones: `un entero de 1 a ${LIMITE_MAXIMO}`,
+};
 
 /**
  * EL MARCADOR: `cuenta/estado.limitesPorContrato`, la lista de claves de la
@@ -461,7 +498,7 @@ export function porContratoDe(cuenta: Record<string, unknown> | null | undefined
   if (!Array.isArray(marcador)) return [];
   const crudo = cuenta?.['limites'];
   const copia = typeof crudo === 'object' && crudo !== null ? crudo as Record<string, unknown> : {};
-  return CLAVES_POR_CONTRATO.filter((k) => marcador.includes(k) && cambiosIncluidosValidos(copia[k]));
+  return CLAVES_POR_CONTRATO.filter((k) => marcador.includes(k) && valorPorContratoValido(k, copia[k]));
 }
 
 /** ¿El marcador guardado es exactamente esta lista? Para no reescribirlo si no cambia. */
@@ -481,6 +518,11 @@ export interface PedidoDeCopia {
    * por contrato, un cambio de plan lo conserva).
    */
   cambiosIncluidos?: number | null;
+  /**
+   * Lo mismo para las conversaciones incluidas al mes (F1b): un entero válido
+   * (`conversacionesValidas`) las fija POR CONTRATO; `null` las quita.
+   */
+  conversaciones?: number | null;
 }
 
 export interface CopiaNueva {
@@ -504,11 +546,14 @@ export interface CopiaNueva {
  * CONSERVA LOS VALORES POR CONTRATO. Hasta este bloque, cambiar el plan
  * reescribía la copia entera con `limitesDe(plan)` y un contrato de 4 cambios
  * volvía a 2 sin que nadie lo decidiera. Quitar un valor por contrato es una
- * acción explícita (`cambiosIncluidos: null`, `--cambios plan`).
+ * acción explícita (`cambiosIncluidos: null`, `--cambios plan`; lo mismo
+ * `conversaciones: null`, `--conversaciones plan`).
  *
  * Sin cambio de plan se toca SOLO la clave pedida: el resto de la copia queda
  * como estaba (incluidas claves que este módulo no gobierna, como `campanas`).
  * Con cambio de plan la copia es la del plan, como siempre, más lo conservado.
+ * Las dos claves siguen la MISMA regla: el bucle es uno solo, para que abrir
+ * una tercera no sea copiar un bloque y olvidarse de una rama.
  */
 export function copiaDeLimites(cuenta: Record<string, unknown> | null | undefined, pedido: PedidoDeCopia): CopiaNueva {
   const planVigente = pedido.plan ?? (esPlanVendible(cuenta?.['plan']) ? cuenta?.['plan'] as IdPlanVendible : PLAN_POR_DEFECTO);
@@ -523,20 +568,24 @@ export function copiaDeLimites(cuenta: Record<string, unknown> | null | undefine
 
   if (pedido.plan) {
     for (const k of previos) {
-      if (k === 'cambiosIncluidos' && pedido.cambiosIncluidos !== undefined) continue;
+      if (pedido[k] !== undefined) continue;
       limites[k] = actual[k];
       conservados[k] = actual[k] as number;
     }
   }
-  if (pedido.cambiosIncluidos === null) {
-    porContrato.delete('cambiosIncluidos');
-    limites['cambiosIncluidos'] = delPlan.cambiosIncluidos;
-  } else if (pedido.cambiosIncluidos !== undefined) {
-    if (!cambiosIncluidosValidos(pedido.cambiosIncluidos)) {
-      throw new RangeError(`cambiosIncluidos tiene que ser un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}`);
+  for (const k of CLAVES_POR_CONTRATO) {
+    const pedidoK = pedido[k];
+    if (pedidoK === undefined) continue;
+    if (pedidoK === null) {
+      porContrato.delete(k);
+      limites[k] = delPlan[k];
+      continue;
     }
-    porContrato.add('cambiosIncluidos');
-    limites['cambiosIncluidos'] = pedido.cambiosIncluidos;
+    if (!valorPorContratoValido(k, pedidoK)) {
+      throw new RangeError(`${k} tiene que ser ${RANGO_POR_CONTRATO[k]}`);
+    }
+    porContrato.add(k);
+    limites[k] = pedidoK;
   }
   return {
     limites,
@@ -545,6 +594,83 @@ export function copiaDeLimites(cuenta: Record<string, unknown> | null | undefine
     delPlan,
   };
 }
+
+// -----------------------------------------------------------------------------
+// EL PRECIO POR CONTRATO: la mensualidad pactada, distinta de la del plan
+// -----------------------------------------------------------------------------
+
+/**
+ * EL TECHO DE UNA MENSUALIDAD POR CONTRATO, EN DÓLARES. Como
+ * `MAXIMO_CAMBIOS_INCLUIDOS`: un seguro contra un dato corrupto o un cero de
+ * más, no una opinión comercial. El plan más caro de lista es de USD 90 y el
+ * contrato a medida más grande conversado, de USD 120 (`Analisis/41` §4, punto 5):
+ * USD 1.000 cabe de sobra y todavía frena un «12000» tipeado por «120».
+ */
+export const MAXIMO_PRECIO_POR_CONTRATO_USD = 1000;
+
+/**
+ * ¿Es un precio mensual por contrato aceptable? Positivo (sin cobro es la
+ * MODALIDAD `demostracion`, no un precio cero), hasta
+ * `MAXIMO_PRECIO_POR_CONTRATO_USD`, y con dos decimales como mucho: la lista
+ * se denomina en dólares con centavos, y un tercer decimal es un precio que
+ * ninguna factura reproduce. Es LA validación: la usan quien escribe
+ * (`actualizarEstadoCuenta`, `asignar-plan.mjs --precio`) y quien lee
+ * (`precioPorContratoDe`).
+ */
+export const precioPorContratoValido = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= MAXIMO_PRECIO_POR_CONTRATO_USD
+  && Math.abs(v * 100 - Math.round(v * 100)) < 1e-6;
+
+/**
+ * EL PRECIO POR CONTRATO DE UNA CUENTA (`cuenta/estado.precioPorContrato`, en
+ * USD), o `null` si no tiene uno sano.
+ *
+ * POR QUÉ UN CAMPO PROPIO Y NO UNA CLAVE DE `limites` CON MARCADOR. Las claves
+ * de la copia necesitan el marcador porque hay escritores que reescriben
+ * `limites` entera (un cambio de plan, un pago de otro plan): sin marcador, un
+ * 4 por contrato no se distingue de un 4 del catálogo. El precio NO tiene ese
+ * problema: nadie más lo escribe, y su sola presencia dice «por contrato».
+ * Por eso tampoco hace falta conservarlo a mano en un cambio de plan: ningún
+ * escritor del plan lo toca, y se quita solo con `--precio plan` o
+ * `precioPorContrato: null`.
+ *
+ * Un valor presente y malo se IGNORA y rige el del plan, como una clave rota
+ * de la copia: decir «por contrato» sobre un número que no rige sería mentir.
+ */
+export function precioPorContratoDe(cuenta: Record<string, unknown> | null | undefined): number | null {
+  const v = cuenta?.['precioPorContrato'];
+  return precioPorContratoValido(v) ? v : null;
+}
+
+/**
+ * LA MENSUALIDAD QUE RIGE PARA UNA CUENTA, EN DÓLARES: la del contrato si
+ * tiene una; si no, la del plan. `plan` es el plan de la mensualidad que se
+ * está cobrando (un QR de otro plan firmado por el propietario); ausente, el
+ * de la cuenta; uno desconocido, el más chico.
+ *
+ * EL CONTRATO MANDA SOBRE CUALQUIER PLAN. Un contrato fija el precio del
+ * comercio, no el de un plan: con `precioPorContrato: 120` la mensualidad es
+ * USD 120 con el plan que tenga, igual que un cambio de plan conserva las
+ * conversaciones por contrato. Volver al precio de lista es una acción
+ * explícita (`--precio plan`), nunca un efecto de cambiar de plan.
+ *
+ * La usan `estadoDeServicio` (la mensualidad derivada y `montoMensual`),
+ * `montoUsdDe` (el importe del QR y del pago manual), la cobranza y la
+ * consola: el mismo número en los cuatro lados.
+ */
+export function precioMensualDe(cuenta: Record<string, unknown> | null | undefined, plan?: unknown): number {
+  const contrato = precioPorContratoDe(cuenta);
+  if (contrato !== null) return contrato;
+  const p = plan ?? cuenta?.['plan'];
+  return esPlanVendible(p) ? PLANES[p].precioUsd : PLANES[PLAN_POR_DEFECTO].precioUsd;
+}
+
+/**
+ * Redondea un importe en dólares a centavos. Con un precio por contrato de
+ * USD 33,33, tres meses son 99,99 y no 99,99000000000001: el importe que
+ * viaja a un pago y a una auditoría tiene que ser el que se lee.
+ */
+export const aCentavos = (usd: number): number => Math.round(usd * 100) / 100;
 
 // -----------------------------------------------------------------------------
 // EL AVISO DE CONSUMO

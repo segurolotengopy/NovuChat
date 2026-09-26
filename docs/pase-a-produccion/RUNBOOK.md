@@ -85,6 +85,7 @@ node scripts/pase-a-produccion.mjs --proyecto <proyecto> --tenant <id> \
 |---|---|---|
 | **Comercio activo** con sus flujos | `tenants/{id}.estado`, `flujos` | `reactivarTenant` (consola del propietario) |
 | **Plan del catálogo** con su copia de límites | `cuenta/estado.plan`, `limites` = `limitesDe(plan)` | `asignar-plan.mjs --operador <correo> --plan <impulso\|crecimiento\|pro>` (y `--modalidad`, `--titularidad --numero`) |
+| **Lo pactado por contrato**, si lo hay (F1b) | `limites.conversaciones` / `cambiosIncluidos` con su marcador `limitesPorContrato`; `precioPorContrato` | `asignar-plan.mjs --operador <correo> --conversaciones N --precio USD` (y `--cambios N`), o las filas «Conversaciones incluidas» y «Precio» de Negocios. Un cambio de plan los conserva |
 | Agendas y productos **dentro del plan** | funcionarios activos, catálogo | subir de plan, o dar de baja en la consola. El tope de agendas **todavía no lo hacen cumplir las reglas** (`CLAUDE.md` §7): lo mira este script |
 | **Umbrales** coherentes | `umbralesDeAtencion` | `fijar-umbrales.mjs` (o dejar los de respaldo 50 / 100) |
 | **Número** con ruta activa, alias `clienteNN`, flujo de la ficha, sin ensayo | `rutasWhatsApp` | `asignar-numero.mjs --operador <correo>` (y `ensayo.mjs --restaurar` si quedó desviada) |
@@ -164,6 +165,34 @@ node scripts/migrar-prepago.mjs --proyecto <proyecto> --tenant <id> --modalidad 
 - Se niega con un comercio de plan `demostracion` (asignar el plan primero) y
   con `novuchat`.
 - **Lo que ve el comercio:** el encabezado sigue diciendo **PRUEBA**.
+
+#### Una prueba pactada: extenderla o cambiarle la bolsa (F1b, 26/09/2026)
+
+Cuando lo acordado con el comercio no es la prueba de lista (un mes, 20
+conversaciones), se fija con `asignar-plan.mjs` (o la fila «Prueba» de
+Negocios, con sesión reciente), en seco primero:
+
+```bash
+node scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --periodo-prueba <aaaa-mm> [--bolsa-prueba <N>]            # seco, leído entero
+node scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --periodo-prueba <aaaa-mm> [--bolsa-prueba <N>] --aplicar
+```
+
+- `--periodo-prueba` es el **último** mes de la prueba. La fija o la
+  **extiende sin huecos**: la cobertura va desde el primer mes de la prueba
+  vigente (o desde el mes en curso) hasta ese mes, y el script escribe
+  `pruebaDesde` cuando son distintos. Hasta F1b la prueba era un solo mes, y
+  llevarla de septiembre a octubre el 26/09 dejaba la cuenta sin cobertura del
+  27 al 30.
+- **La bolsa no se reinicia sola al extender**: sigue la que quedaba. Si lo
+  pactado incluye conversaciones para el mes nuevo, `--bolsa-prueba N` (1 a
+  1.000) en la misma corrida. La bolsa escrita es la que usa el servidor, tal
+  cual.
+- Se rechaza un mes **pasado** y una cuenta que no esté en prueba (para una
+  cuenta en producción: `--modalidad prueba` en la misma corrida).
+- El aviso de fin (`prueba_termina`) sale a 5 días del fin del **último** mes,
+  no del mes en curso.
+- `migrar-prepago.mjs --periodo-prueba` NO tiene estas guardas: sirve para la
+  primera migración de un comercio sin modalidad, no para extender.
 
 ### 3.2 [Admin del comercio] Los teléfonos de pago
 
@@ -333,6 +362,7 @@ recordatorio de 24 h que el flujo del comercio no tenga.
 | **Apagar el corte** del comercio | `fijarCortePrepago({ corteActivo: false, motivo, tenantId })` | Vuelve a observación en el siguiente mensaje (`configuracionFlujo` no cachea); historial y auditoría |
 | **Volver a PRUEBA** | `actualizarEstadoCuenta({ tenantId, modalidad: 'prueba' })` o `migrar-prepago.mjs --modalidad prueba` (seco primero) | Los pagos confirmados **no se borran**: un pago no se corrige, se compensa con otro asiento. `periodoPagado` queda escrito |
 | **Sacarlo del prepago** | `migrar-prepago.mjs --modalidad demostracion` | Sin cargo ni corte; el encabezado dice PRUEBA |
+| **Quitar lo pactado por contrato** | `asignar-plan.mjs --operador <correo> --conversaciones plan --precio plan` (y `--cambios plan`), o «Volver a las del plan» / «Volver al precio del plan» en Negocios | Rigen los del plan desde el próximo cobro; los meses ya pagados no se re-tarifan. Auditoría `limites_por_contrato` y `precio_por_contrato` con el antes y el después |
 | **Devolver el número** al portafolio de NovuChat | Rollback del camino B (`CLIENTES/PLATINUM/pase-a-produccion-waba-propia.md` §7) | Otra ventana de 30 a 60 min sin respuesta |
 | **Un pago mal cargado** | No se anula un confirmado. Se registra la compensación y se anota el motivo | La auditoría de los dos |
 

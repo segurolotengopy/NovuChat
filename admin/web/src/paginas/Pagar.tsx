@@ -7,9 +7,9 @@ import { auth, db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
   BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
-  pideVolverAEntrar, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
+  pideVolverAEntrar, planDeLaCuenta, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
-import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
+import { BOLSA, fechaCorta } from '../lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
 import { useEjesDeCuenta } from '../central/lib/lecturas';
 import { facturaMetaAlComercio } from '../lib/ejes';
@@ -292,9 +292,18 @@ export function Pagar() {
                     selector: se paga el que la cuenta tiene. Para cambiarlo,
                     el camino que existe es un reclamo de Facturación, que
                     NovuChat ve (como en Catálogo y Campañas). */}
+                {/* EL PRECIO Y LAS CONVERSACIONES DE ESTA CUENTA (F1b): con un
+                    contrato, los del contrato, que es lo que cobra el QR. */}
                 {planes[0]
-                  ? <p>Plan <strong>{PLANES[planes[0]].nombre}</strong> · USD {PLANES[planes[0]].precioUsd} al mes
-                      · {PLANES[planes[0]].conversaciones} conversaciones</p>
+                  ? (() => {
+                      const suyo = planDeLaCuenta(cuenta, planes[0]);
+                      return (
+                        <p>Plan <strong>{suyo.nombre}</strong> · USD {suyo.precioUsd} al mes
+                          {suyo.precioPorContrato && <span className="text-muted"> (precio por contrato)</span>}
+                          {' '}· {suyo.conversaciones} conversaciones
+                          {suyo.conversacionesPorContrato && <span className="text-muted"> (por contrato)</span>}</p>
+                      );
+                    })()
                   : <p className="ayuda">Su cuenta todavía no tiene un plan asignado: lo asigna NovuChat.</p>}
                 <p className="ayuda">
                   El cambio de plan, para subir o para bajar, lo hace NovuChat. Para pedirlo,

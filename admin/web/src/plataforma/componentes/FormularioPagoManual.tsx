@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Confirmacion } from './Confirmacion';
 import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, planesOfrecidos, planInicial, type PlanEnVenta } from '../../lib/pagar';
-import { PLANES, tipoCambioVigente, type Pago } from '../../lib/prepago';
+import {
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, planDeLaCuenta, planesOfrecidos, planInicial, type PlanEnVenta,
+} from '../../lib/pagar';
+import { tipoCambioVigente, type Pago } from '../../lib/prepago';
 import {
   ACEPTA_COMPROBANTE, MEDIOS_MANUALES, diaBolivia, vistaDelPagoManual, type MedioManual,
 } from '../lib/negocios';
@@ -107,9 +109,16 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
         <>
           <label htmlFor="pago-plan">Plan</label>
           <select id="pago-plan" value={plan} disabled={ocupado || pendiente} onChange={(e) => setPlan(e.target.value as PlanEnVenta)}>
-            {planes.map((p) => (
-              <option key={p} value={p}>{PLANES[p].nombre} · USD {PLANES[p].precioUsd} · {PLANES[p].conversaciones} conversaciones</option>
-            ))}
+            {/* Lo que ESTA cuenta paga y recibe con cada plan (F1b): con un
+                contrato, su precio y sus conversaciones, que un cambio de plan conserva. */}
+            {planes.map((p) => {
+              const suyo = planDeLaCuenta(cuenta, p);
+              return (
+                <option key={p} value={p}>
+                  {suyo.nombre} · USD {suyo.precioUsd}{suyo.precioPorContrato ? ' por contrato' : ''} · {suyo.conversaciones} conversaciones
+                </option>
+              );
+            })}
           </select>
           <label htmlFor="pago-meses">Meses</label>
           <select id="pago-meses" value={meses} disabled={ocupado || pendiente} onChange={(e) => setMeses(Number(e.target.value))}>
@@ -184,7 +193,7 @@ export function FormularioPagoManual({ cuenta, tipoCambio, ahoraMs, ocupado, onR
       <label htmlFor="pago-recibido">Recibido, en bolivianos (entero)</label>
       <input id="pago-recibido" type="number" step="1" min={0} value={recibido} disabled={ocupado || pendiente}
         onChange={(e) => setRecibido(e.target.value)} placeholder={vista ? String(vista.montoBs) : ''} style={{ width: '8em' }} />
-      {difiereDelImporte && <p className="ayuda">Lo recibido no es el importe de la lista: hay que decir por qué.</p>}
+      {difiereDelImporte && <p className="ayuda">Lo recibido no es el importe de la cuenta: hay que decir por qué.</p>}
       {exigeMotivo && (
         <>
           <label htmlFor="pago-motivo">Motivo de la diferencia</label>

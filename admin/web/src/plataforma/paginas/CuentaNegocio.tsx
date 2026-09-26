@@ -258,7 +258,12 @@ export function CuentaNegocio() {
         onCambio={(descripcion, forzar) => void operar(CALLABLES.cambio, { descripcion, ...(forzar ? { forzar: true } : {}) },
           forzar ? 'Cambio registrado por encima de los incluidos.' : 'Cambio registrado.')}
         onCambiosIncluidos={(cambiosIncluidos) => void operar(CALLABLES.cuenta, { cambiosIncluidos },
-          cambiosIncluidos === null ? 'Cambios incluidos: rigen los del plan.' : 'Cambios incluidos fijados por contrato.')} />
+          cambiosIncluidos === null ? 'Cambios incluidos: rigen los del plan.' : 'Cambios incluidos fijados por contrato.')}
+        onConversaciones={(conversaciones) => void operar(CALLABLES.cuenta, { conversaciones },
+          conversaciones === null ? 'Conversaciones incluidas: rigen las del plan.' : 'Conversaciones incluidas fijadas por contrato.')}
+        onPrecio={(precioPorContrato) => void operar(CALLABLES.cuenta, { precioPorContrato },
+          precioPorContrato === null ? 'Precio: rige el del plan.' : 'Precio fijado por contrato.')}
+        onPrueba={(prueba) => void operar(CALLABLES.cuenta, { ...prueba }, 'Prueba fijada.')} />
 
       <SuspensionNegocio ficha={ficha} ocupado={ocupado}
         onSuspender={(motivo, motivoVisible) => void operar(CALLABLES.suspender, { motivo, motivoVisible }, 'Servicio suspendido.')}
