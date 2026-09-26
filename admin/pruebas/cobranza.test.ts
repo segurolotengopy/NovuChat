@@ -82,7 +82,9 @@ beforeAll(async () => {
   vi.setSystemTime(OCT_28);
   await db.doc(`rutasWhatsApp/${NUMERO_NOVUCHAT}`).set({ tenantId: NOVUCHAT, flujo: 'onboarding', aliasSecreto: 'cliente16', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUMERO_COMERCIO}`).set({ tenantId: TENANTS.prepago, flujo: 'agendamiento', aliasSecreto: 'cliente16', estado: 'activo' });
-  await db.doc(`tenants/${NOVUCHAT}`).set({ nombre: 'NovuChat', estado: 'activo', plan: 'demostracion' });
+  // NovuChat mismo: un demo por MODALIDAD (F1), con un plan del catálogo.
+  await db.doc(`tenants/${NOVUCHAT}`).set({ nombre: 'NovuChat', estado: 'activo', plan: 'pro' });
+  await db.doc(`tenants/${NOVUCHAT}/cuenta/estado`).set({ plan: 'pro', modalidad: 'demostracion' });
   await tipoCambio('2026-10-27');
 
   const crecimiento = { plan: 'crecimiento', limites: limitesDe('crecimiento') };

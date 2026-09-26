@@ -791,7 +791,9 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
     expect(d['proximoVencimiento']).toBeInstanceOf(Timestamp);
     // Sin migrar (sin modalidad, plan del catálogo): nada que escribir (LOW 8).
     expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento' }, null, Date.now())).toEqual({});
-    expect(pagos.camposDerivadosDeCuenta({ plan: 'demostracion' }, null, Date.now())).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0 });
+    // Un demo es modalidad demostración (F1); el plan viejo sin modalidad es «sin migrar»: nada.
+    expect(pagos.camposDerivadosDeCuenta({ plan: 'pro', modalidad: 'demostracion' }, null, Date.now())).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0 });
+    expect(pagos.camposDerivadosDeCuenta({ plan: 'demostracion' }, null, Date.now())).toEqual({});
     expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento', modalidad: 'prepago' }, null, Date.now())).toMatchObject({ estadoPago: 'vencido', montoMensual: 50 });
     expect(pagos.camposDerivadosDeCuenta({ plan: 'crecimiento', modalidad: 'prepago', periodoPagado: '2099-12', pagoPendienteId: PAGO_ID }, null, Date.now())).toMatchObject({ estadoPago: 'pendiente' });
     expect(pagos.puertaDePagos.camposDerivados).toBe(pagos.camposDerivadosDeCuenta);

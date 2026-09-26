@@ -60,9 +60,13 @@ const preparar = (numero: string, extra: string[] = []) => correr('--numero', nu
 beforeAll(async () => {
   for (const d of [`rutasWhatsApp/${NUM_DEMO}`, `rutasWhatsApp/${NUM_CLIENTE}`]) await db.doc(d).delete();
   await db.recursiveDelete(db.doc('tenants/ensayo'));
-  await db.doc(`tenants/${DEMO}`).set({ nombre: 'Demo', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], plan: 'demostracion' });
+  // Un demo es MODALIDAD demostración explícita en su cuenta (F1): el plan no lo dice.
+  await db.doc(`tenants/${DEMO}`).set({ nombre: 'Demo', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], plan: 'pro' });
+  await db.doc(`tenants/${DEMO}/cuenta/estado`).set({ plan: 'pro', modalidad: 'demostracion' });
   await db.doc(`tenants/${DEMO}/config/negocio`).set({ nombreNegocio: 'Demo de siempre' });
+  // El cliente real: prepago. Y sin modalidad escrita tampoco se ensaya (se prueba abajo).
   await db.doc(`tenants/${CLIENTE_REAL}`).set({ nombre: 'Cliente', estado: 'activo', vertical: 'agendamiento', flujos: ['agendamiento'], plan: 'pro' });
+  await db.doc(`tenants/${CLIENTE_REAL}/cuenta/estado`).set({ plan: 'pro', modalidad: 'prepago', periodoPagado: '2099-12' });
   await db.doc(`rutasWhatsApp/${NUM_DEMO}`).set({ tenantId: DEMO, flujo: 'agendamiento', aliasSecreto: 'demoA', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUM_CLIENTE}`).set({ tenantId: CLIENTE_REAL, flujo: 'agendamiento', aliasSecreto: 'cliente09', estado: 'activo' });
 });

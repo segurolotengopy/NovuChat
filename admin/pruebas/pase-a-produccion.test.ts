@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { limitesDe } from '../functions/src/planes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'pase-a-produccion.mjs');
@@ -121,8 +122,8 @@ beforeAll(async () => {
   await sembrarComercio(SIN_PLAN, { plan: 'basico' }, negocioSano, 'basico');
   await ruta(NUM_SIN_PLAN, SIN_PLAN, WABA_COMPARTIDA, 'cliente21');
 
-  // DEMO: plan de demostración.
-  await sembrarComercio(DEMO, { plan: 'demostracion' }, negocioSano, 'demostracion');
+  // DEMO: modalidad demostración con un plan del catálogo (F1: el plan no dice que es un demo).
+  await sembrarComercio(DEMO, { plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' }, negocioSano, 'pro');
 
   // NOVUCHAT: la propia NovuChat, aunque tuviera un plan vendible.
   await sembrarComercio('novuchat', { plan: 'impulso' }, negocioSano, 'impulso');

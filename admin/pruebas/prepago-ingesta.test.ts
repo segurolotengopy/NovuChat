@@ -144,8 +144,8 @@ describe('Negativas: lo que NUNCA se corta, con la bandera global encendida', ()
   it.each([
     ['sin modalidad y sin período pagado', { plan: 'crecimiento', estadoPago: 'al_dia', montoMensual: 50, ...AVISADA }],
     ['modalidad demostración con 99.999 consumidas', { modalidad: 'demostracion', plan: 'pro', ...AVISADA }],
-    ['plan de demostración sin modalidad', { plan: 'demostracion', ...AVISADA }],
-    ['plan de demostración con modalidad prepago (doble salvaguarda)', { plan: 'demostracion', modalidad: 'prepago', periodoPagado: '2025-01', ...AVISADA }],
+    ['plan viejo «demostracion» sin modalidad (sin migrar: rige demostración por ausencia)', { plan: 'demostracion', ...AVISADA }],
+    ['modalidad demostración con un mes pagado vencido hace un año (la modalidad manda, F1)', { plan: 'pro', modalidad: 'demostracion', periodoPagado: '2025-01', ...AVISADA }],
   ])('%s: 200, contadores idénticos a hoy, sin `corte` y sin tocar la cuenta', async (_, datos) => {
     await fijarCuenta(datos);
     await db.doc(`tenants/${T}/metricas/${MES_UTC(AHORA)}`).set({ conversaciones: 99_999, mensajes: 5 });
@@ -452,7 +452,7 @@ describe('`fijarCortePrepago`: solo el propietario con sesión de Google', () =>
   });
 
   it('la global se escribe con quién, cuándo y por qué, y queda en el historial', async () => {
-    expect(await llamar({ corteActivo: true, motivo: 'ensayo de extremo a extremo' })).toEqual({ ok: true, corteActivo: true });
+    expect(await llamar({ corteActivo: true, motivo: 'ensayo de extremo a extremo' })).toEqual({ ok: true, corteActivo: true, alcance: 'global' });
     expect((await db.doc('plataforma/prepago').get()).data()).toMatchObject({ corteActivo: true, actualizadoPor: 'prop-1', motivo: 'ensayo de extremo a extremo' });
     expect(await historial()).toMatchObject([{ corteActivo: true, uid: 'prop-1', motivo: 'ensayo de extremo a extremo' }]);
     await llamar({ corteActivo: false, motivo: 'fin del ensayo de extremo a extremo' });
@@ -461,10 +461,30 @@ describe('`fijarCortePrepago`: solo el propietario con sesión de Google', () =>
   });
 
   it('la de un tenant va a su cuenta, a su auditoría y al historial con el tenant', async () => {
-    expect(await llamar({ corteActivo: true, tenantId: T, motivo: 'ensayo de extremo a extremo' })).toEqual({ ok: true, corteActivo: true, tenantId: T });
+    expect(await llamar({ corteActivo: true, tenantId: T, motivo: 'ensayo de extremo a extremo' })).toEqual({ ok: true, corteActivo: true, alcance: 'tenant', tenantId: T });
     expect((await cuenta())['corteActivo']).toBe(true);
     expect((await db.doc('plataforma/prepago').get()).exists).toBe(false);
     expect(await auditorias('corte_prepago')).toMatchObject([{ uid: 'prop-1', corteActivo: true, motivo: 'ensayo de extremo a extremo' }]);
     expect(await historial()).toMatchObject([{ tenantId: T, corteActivo: true }]);
+  });
+
+  it('EL ALCANCE ES EXPLÍCITO (revisión de #203): una cadena vacía NO es la compuerta global y no toca nada', async () => {
+    // Antes `tenantId: ''` —un formulario mandado sin el comercio— encendía el
+    // corte para TODOS. Ahora se rechaza; la global es `alcance: 'global'`,
+    // o `tenantId` ausente o `null` (como la llama la consola).
+    await expect(llamar({ corteActivo: true, tenantId: '', motivo: MOTIVO })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: true, tenantId: '   ', motivo: MOTIVO })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: true, alcance: 'tenant', motivo: MOTIVO })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: true, alcance: 'global', tenantId: T, motivo: MOTIVO })).rejects.toMatchObject({ code: 'invalid-argument' });
+    await expect(llamar({ corteActivo: true, alcance: 'todos', motivo: MOTIVO })).rejects.toMatchObject({ code: 'invalid-argument' });
+    expect((await db.doc('plataforma/prepago').get()).exists).toBe(false);
+    expect((await cuenta())['corteActivo']).toBeUndefined();
+    expect(await historial()).toEqual([]);
+    // Las tres formas válidas de pedir la global.
+    expect(await llamar({ corteActivo: true, alcance: 'global', motivo: MOTIVO })).toMatchObject({ alcance: 'global' });
+    expect(await llamar({ corteActivo: true, tenantId: null, motivo: MOTIVO })).toMatchObject({ alcance: 'global' });
+    expect(await llamar({ corteActivo: false, alcance: 'tenant', tenantId: T, motivo: MOTIVO })).toMatchObject({ alcance: 'tenant', tenantId: T });
+    expect((await db.doc('plataforma/prepago').get()).get('corteActivo')).toBe(true);
+    expect((await cuenta())['corteActivo']).toBe(false);
   });
 });
