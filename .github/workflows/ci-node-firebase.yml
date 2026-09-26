@@ -782,12 +782,19 @@ jobs:
       - name: Las VITE_* son las del proyecto de staging
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          NUMERO: ${{ vars.GCP_PROJECT_NUMBER_STAGING }}
           PROYECTO_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
           VITE_PROYECTO: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
         run: |
           set -euo pipefail
+          # Los identificadores no se imprimen en el registro (repositorio público).
+          for v in "$PROYECTO" "$NUMERO" "$PROYECTO_PROD" "$VITE_API_KEY" "$VITE_APP_ID"; do
+            [[ -n "$v" ]] && echo "::add-mask::$v"
+          done
           fallos=0
           if [[ -z "$PROYECTO" || "$PROYECTO" == "$PROYECTO_PROD" ]]; then
             echo "::error::GCP_PROJECT_ID_STAGING está vacía o es el proyecto de producción."; fallos=1
@@ -800,6 +807,19 @@ jobs:
           fi
           if [[ -n "$VITE_BUCKET" && "${VITE_BUCKET#gs://}" != "$PROYECTO".* ]]; then
             echo "::error::VITE_FIREBASE_STORAGE_BUCKET no es un bucket del proyecto de staging."; fallos=1
+          fi
+          # El appId lleva el NÚMERO del proyecto (1:<número>:web:<hash>): con el
+          # número de staging en el Environment se sabe a qué proyecto pertenece
+          # sin conocer el valor de producción. La apiKey no dice de quién es;
+          # acá solo se exige que exista, y desplegar-staging la compara, ya
+          # autenticado, con la app registrada en el proyecto de staging.
+          if [[ -z "$NUMERO" || ! "$NUMERO" =~ ^[0-9]+$ ]]; then
+            echo "::error::GCP_PROJECT_NUMBER_STAGING falta en el Environment 'staging' (la carga preparar-staging.sh app)."; fallos=1
+          elif [[ ! "$VITE_APP_ID" =~ ^1:${NUMERO}:web:[0-9a-f]+$ ]]; then
+            echo "::error::VITE_FIREBASE_APP_ID no es una app web del proyecto de staging: falta en el Environment (cae a la de producción) o tiene otra forma."; fallos=1
+          fi
+          if [[ -z "$VITE_API_KEY" ]]; then
+            echo "::error::VITE_FIREBASE_API_KEY vacía."; fallos=1
           fi
           # La clave de App Check está atada a un dominio: la de producción no
           # sirve en staging. En el Environment se declara vacía a propósito.
@@ -1005,6 +1025,11 @@ jobs:
       && vars.GCP_PROJECT_ID_STAGING != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Para humo-staging, que corre SIN Environment (necesita las variables del
+    # repositorio, es decir las de producción, para comprobar su ausencia).
+    outputs:
+      bucket: ${{ steps.paquete.outputs.bucket }}
+      app_id: ${{ steps.paquete.outputs.app_id }}
     environment:
       name: staging
       url: ${{ vars.STAGING_URL }}
@@ -1080,6 +1105,35 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: El paquete descargado es el de staging (contra la app registrada)
+        # La compuerta de construir-staging mira la FORMA de las variables; acá,
+        # ya autenticado, se pregunta al proyecto de staging por su app web y se
+        # exige que la apiKey y el appId que devuelve estén en el JavaScript
+        # que se va a publicar. Si el paquete se compiló con otras VITE_*, no
+        # se despliega. Necesita firebase.clients.get (roles/firebase.viewer).
+        id: paquete
+        env:
+          PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          APP_REGISTRADA: ${{ vars.VITE_FIREBASE_APP_ID }}
+          BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+        run: |
+          set -euo pipefail
+          npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+          cfg=$(firebase apps:sdkconfig WEB "$APP_REGISTRADA" --project "$PROYECTO" --json | jq -c '.result.sdkConfig // empty')
+          [[ -n "$cfg" ]] || { echo "::error::apps:sdkconfig no devolvió la configuración de la app de staging"; exit 1; }
+          api_key=$(jq -r '.apiKey // empty' <<< "$cfg")
+          app_id=$(jq -r '.appId // empty' <<< "$cfg")
+          proyecto_app=$(jq -r '.projectId // empty' <<< "$cfg")
+          echo "::add-mask::$api_key"
+          [[ "$proyecto_app" == "$PROYECTO" ]] || { echo "::error::la app registrada no pertenece al proyecto de staging"; exit 1; }
+          js=$(find web/dist/assets -maxdepth 1 -name 'index-*.js' | head -1)
+          [[ -n "$js" ]] || { echo "::error::no hay web/dist/assets/index-*.js en el artefacto"; exit 1; }
+          grep -qF "$api_key" "$js" || { echo "::error::el paquete no lleva la apiKey de la app de staging: se compiló con otras VITE_*"; exit 1; }
+          grep -qF "$app_id" "$js" || { echo "::error::el paquete no lleva el appId de la app de staging"; exit 1; }
+          echo "El paquete lleva la apiKey y el appId de la app web de staging."
+          # Salidas para humo-staging (no son secretos: viajan en el bundle).
+          { echo "bucket=${BUCKET_STORAGE#gs://}"; echo "app_id=$app_id"; } >> "$GITHUB_OUTPUT"
+
       - name: Conservar copia de la versión actual (canal "previa" para rollback)
         # D7: antes de CADA deploy a live (staging y producción) se clona el
         # contenido en vivo a un canal "previa". El rollback es clonar de vuelta:
@@ -1089,7 +1143,6 @@ jobs:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SITIO: ${{ vars.GCP_PROJECT_ID_STAGING }}
         run: |
-          npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
           firebase hosting:channel:create previa --project "$PROYECTO" --expires 30d \
             --non-interactive >/dev/null 2>&1 || true
           firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"
@@ -1143,7 +1196,9 @@ jobs:
           fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive $FORZAR \
             --message "staging ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
-          echo "### Staging desplegado: $URL_STAGING (${GITHUB_SHA::7})" >> "$GITHUB_STEP_SUMMARY"
+          # Sin la URL: lleva el ID del proyecto y el registro es público. La URL
+          # la muestra el Environment del job.
+          echo "### Staging desplegado (${GITHUB_SHA::7})" >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # desplegar-dev — camino corto para PROBAR, no para operar.
@@ -1262,8 +1317,10 @@ jobs:
     needs: desplegar-staging
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment:
-      name: staging
+    # SIN Environment, a propósito: así `vars.VITE_FIREBASE_APP_ID` es la del
+    # repositorio —la de producción— y el humo puede exigir que NO esté en el
+    # paquete publicado. Lo de staging llega por las salidas de
+    # desplegar-staging y por las dos variables del repositorio.
     permissions:
       contents: read
     steps:
@@ -1278,7 +1335,9 @@ jobs:
           STAGING_URL: ${{ vars.STAGING_URL }}
           GCP_PROJECT_ID_STAGING: ${{ vars.GCP_PROJECT_ID_STAGING }}
           GCP_PROJECT_ID_PROD: ${{ vars.GCP_PROJECT_ID_PROD }}
-          FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          APP_ID_PROD: ${{ vars.VITE_FIREBASE_APP_ID }}
+          APP_ID_STAGING: ${{ needs.desplegar-staging.outputs.app_id }}
+          FIREBASE_STORAGE_BUCKET: ${{ needs.desplegar-staging.outputs.bucket }}
         run: ./scripts/humo-staging.sh
 
   # ---------------------------------------------------------------------------

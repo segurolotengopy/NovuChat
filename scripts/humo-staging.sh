@@ -12,14 +12,19 @@
 # desde internet. No hay nada que pueda romper.
 #
 #   ./scripts/humo-staging.sh
-#       Lee STAGING_URL, GCP_PROJECT_ID_STAGING y GCP_PROJECT_ID_PROD (variables
-#       del repositorio) y VITE_FIREBASE_STORAGE_BUCKET (del Environment
-#       `staging`) con `gh variable get`; respeta GH_CONFIG_DIR.
+#       Lee STAGING_URL, GCP_PROJECT_ID_STAGING, GCP_PROJECT_ID_PROD y
+#       VITE_FIREBASE_APP_ID (variables del repositorio; la última es la app de
+#       PRODUCCIÓN) y VITE_FIREBASE_STORAGE_BUCKET y VITE_FIREBASE_APP_ID del
+#       Environment `staging`, con `gh variable get`; respeta GH_CONFIG_DIR.
 #
 #   STAGING_URL=https://... GCP_PROJECT_ID_STAGING=... ./scripts/humo-staging.sh
 #       Con las variables en el entorno no llama a gh: así corre en CI, en el
-#       job humo-staging. FIREBASE_STORAGE_BUCKET y GCP_PROJECT_ID_PROD son
-#       opcionales; sin ellas se omite la comprobación correspondiente y se avisa.
+#       job humo-staging. FIREBASE_STORAGE_BUCKET, GCP_PROJECT_ID_PROD,
+#       APP_ID_STAGING y APP_ID_PROD son opcionales; sin ellas se omite la
+#       comprobación correspondiente y se avisa.
+#
+# Los identificadores no se imprimen: en GitHub Actions se enmascaran
+# (::add-mask::) y los mensajes dicen «el proyecto de staging», no su ID.
 #
 # Qué comprueba, y por qué ese código y no otro (los códigos salen del código
 # fuente de admin/functions/src, no de una suposición):
@@ -68,12 +73,25 @@ if [[ -z "${STAGING_URL:-}" || -z "${GCP_PROJECT_ID_STAGING:-}" ]]; then
   GCP_PROJECT_ID_STAGING="${GCP_PROJECT_ID_STAGING:-$(leer_variable GCP_PROJECT_ID_STAGING)}"
   FIREBASE_STORAGE_BUCKET="${FIREBASE_STORAGE_BUCKET:-$(leer_variable VITE_FIREBASE_STORAGE_BUCKET staging)}"
   GCP_PROJECT_ID_PROD="${GCP_PROJECT_ID_PROD:-$(leer_variable GCP_PROJECT_ID_PROD)}"
+  APP_ID_STAGING="${APP_ID_STAGING:-$(leer_variable VITE_FIREBASE_APP_ID staging)}"
+  APP_ID_PROD="${APP_ID_PROD:-$(leer_variable VITE_FIREBASE_APP_ID)}"
 fi
 [[ -n "${STAGING_URL:-}" && -n "${GCP_PROJECT_ID_STAGING:-}" ]] \
   || { echo "Sin STAGING_URL o GCP_PROJECT_ID_STAGING: ¿existe ya el proyecto de staging? (docs/staging/DISENO.md)" >&2; exit 2; }
 URL="${STAGING_URL%/}"
 P="$GCP_PROJECT_ID_STAGING"
 BUCKET="${FIREBASE_STORAGE_BUCKET:-}"; BUCKET="${BUCKET#gs://}"
+APP_ID_STAGING="${APP_ID_STAGING:-}"; APP_ID_PROD="${APP_ID_PROD:-}"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  for v in "$P" "${GCP_PROJECT_ID_PROD:-}" "$APP_ID_STAGING" "$APP_ID_PROD"; do
+    [[ -n "$v" ]] && echo "::add-mask::$v"
+  done
+fi
+# Si la app de staging y la de producción fueran la misma, la comprobación 4
+# no podría distinguirlas: se avisa y se trata como fallo de configuración.
+if [[ -n "$APP_ID_STAGING" && "$APP_ID_STAGING" == "$APP_ID_PROD" ]]; then
+  echo "La app de staging y la de producción son la misma: VITE_FIREBASE_APP_ID no está en el Environment staging." >&2; exit 2
+fi
 
 codigo() { # $1 método, $2 URL, resto: opciones de curl. Imprime el código HTTP o 000.
   local metodo="$1" destino="$2" c; shift 2
@@ -88,7 +106,7 @@ esperar() { # $1 esperado, $2 descripción, $3 método, $4 URL, resto: curl
 }
 cabeceras_de() { curl -sSI -L --max-time 20 "$1" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]'; }
 
-echo "Humo de staging: $URL (proyecto $P)"
+echo "Humo del proyecto de staging"
 echo "1. Consola"
 # Hosting puede tardar en propagar tras el despliegue: hasta 10 intentos.
 c=000
@@ -129,7 +147,7 @@ for col in tenants plataforma rutasWhatsApp; do
 done
 if [[ -n "$BUCKET" ]]; then
   c="$(codigo GET "https://firebasestorage.googleapis.com/v0/b/$BUCKET/o/captacion%2Fnadie%2Fplanes.pdf")"
-  if [[ "$c" == 403 ]]; then ok "Storage $BUCKET → 403"; else mal "Storage $BUCKET → $c (se esperaba 403)"; fi
+  if [[ "$c" == 403 ]]; then ok "Storage (bucket de staging) → 403"; else mal "Storage (bucket de staging) → $c (se esperaba 403)"; fi
 else
   aviso "sin FIREBASE_STORAGE_BUCKET: no se comprueban las reglas de Storage"
 fi
@@ -156,6 +174,21 @@ else
     fi
   else
     aviso "sin GCP_PROJECT_ID_PROD: no se comprueba la ausencia del proyecto de producción"
+  fi
+  # El appId es la app web registrada: el de staging tiene que estar y el de
+  # producción no (una consola con el appId de producción autentica contra el
+  # Auth de producción aunque el projectId diga staging).
+  if [[ -n "$APP_ID_STAGING" ]]; then
+    if grep -qF "$APP_ID_STAGING" <<< "$bundle"; then ok "$js lleva el appId de la app de staging"
+    else mal "$js no lleva el appId de la app de staging"; fi
+  else
+    aviso "sin APP_ID_STAGING: no se comprueba el appId de staging"
+  fi
+  if [[ -n "$APP_ID_PROD" ]]; then
+    if grep -qF "$APP_ID_PROD" <<< "$bundle"; then mal "$js lleva el appId de la app de PRODUCCIÓN"
+    else ok "$js no lleva el appId de producción"; fi
+  else
+    aviso "sin APP_ID_PROD: no se comprueba la ausencia del appId de producción"
   fi
 fi
 

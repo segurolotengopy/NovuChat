@@ -80,11 +80,16 @@ correr() {
   if (( APLICAR )); then
     echo "  → $que"; "$@"; hecho "$que"
   else
-    # En seco se muestra el comando real: `gc` es la función de abajo.
-    local primero="$1"; shift
+    # En seco se muestra el comando real: `gc` es la función de abajo. Lo que
+    # sigue a --body (secretos y variables de GitHub) se imprime como <valor>:
+    # la pantalla y el historial no son lugar para identificadores ni secretos.
+    local primero="$1" ocultar=0; shift
     [[ "$primero" == gc ]] && primero="gcloud --project $P --quiet"
     printf '  [seco] %s\n         $ %s' "$que" "$primero"
-    for a in "$@"; do printf ' %q' "$a"; done; printf '\n'
+    for a in "$@"; do
+      if (( ocultar )); then printf ' %s' '<valor>'; ocultar=0
+      else printf ' %q' "$a"; [[ "$a" == "--body" ]] && ocultar=1; fi
+    done; printf '\n'
   fi
 }
 # gcloud con el proyecto fijo, siempre.
@@ -158,6 +163,9 @@ fase_app() {
   # La clave de App Check de producción está atada a su dominio y NO sirve
   # acá: se declara vacía para que el Environment no caiga a la del repositorio.
   correr "VITE_APPCHECK_SITE_KEY vacía en staging" -- gh variable set VITE_APPCHECK_SITE_KEY --env staging --repo "$REPO" --body ""
+  # El NÚMERO del proyecto: construir-staging verifica con él que el appId
+  # (1:<número>:web:…) sea de una app de staging, sin conocer el de producción.
+  correr "GCP_PROJECT_NUMBER_STAGING (Environment staging)" -- gh variable set GCP_PROJECT_NUMBER_STAGING --env staging --repo "$REPO" --body "$(numero_proyecto)"
 }
 
 fase_wif() {
@@ -194,12 +202,16 @@ fase_cuentas() {
     else correr "crear ${cuenta%%:*}" -- gc iam service-accounts create "${cuenta%%:*}" --display-name="${cuenta#*:}"; fi
   done
   # sa-deploy-staging: hosting, reglas, índices, Storage (solo ver el bucket),
-  # Functions gen2 (Run + Build + Artifact Registry + Eventarc) y Scheduler
-  # (sondeoCobros y barridoCobros son onSchedule).
+  # Functions gen2 (Run + Build + Artifact Registry + Eventarc), Scheduler
+  # (sondeoCobros y barridoCobros son onSchedule) y firebase.viewer, que trae
+  # firebase.clients.get: desplegar-staging pregunta por la app web
+  # (apps:sdkconfig) para comparar apiKey y appId con el paquete antes de
+  # publicar.
   for r in roles/firebasehosting.admin roles/firebaserules.admin roles/datastore.indexAdmin \
            roles/serviceusage.serviceUsageConsumer roles/firebasestorage.viewer \
            roles/cloudfunctions.developer roles/run.admin roles/artifactregistry.writer \
-           roles/cloudbuild.builds.editor roles/eventarc.admin roles/cloudscheduler.admin; do
+           roles/cloudbuild.builds.editor roles/eventarc.admin roles/cloudscheduler.admin \
+           roles/firebase.viewer; do
     correr "sa-deploy-staging: $r" -- gc projects add-iam-policy-binding "$P" --member="serviceAccount:$SA_DEPLOY" --role="$r" --condition=None
   done
   # Actuar como: sa-functions (con la que corren), App Engine (firebase deploy lo
@@ -298,7 +310,8 @@ fase_verificar() {
   # de gastar una corrida (memoria «despliegues: verificar antes de aprobar»).
   local num; num="$(numero_proyecto)"
   for perm in firebasehosting.sites.update firebaserules.releases.update iam.serviceAccounts.actAs \
-              secretmanager.versions.list cloudfunctions.functions.create run.services.update eventarc.triggers.create; do
+              secretmanager.versions.list cloudfunctions.functions.create run.services.update eventarc.triggers.create \
+              firebase.clients.get; do
     local recurso="//cloudresourcemanager.googleapis.com/projects/${P}"
     [[ "$perm" == iam.serviceAccounts.actAs ]] && recurso="//iam.googleapis.com/projects/${P}/serviceAccounts/${SA_FUNCTIONS}"
     [[ "$perm" == secretmanager.versions.list ]] && recurso="//secretmanager.googleapis.com/projects/${num}/secrets/INGESTA_DEMOA"

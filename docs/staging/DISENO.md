@@ -59,7 +59,7 @@ script).
 
 | Archivo | Cambio | Por qué |
 |---|---|---|
-| `admin/functions/src/opcionesGlobales.ts` | `serviceAccount: 'sa-functions@'` en vez del correo con el proyecto de producción escrito | **Sin esto no hay staging:** las Functions pedían correr con una cuenta de OTRO proyecto. La forma `nombre@` es la abreviatura que firebase-tools completa con el proyecto destino (`lib/gcp/proto.js`, `formatServiceAccount`, 15.29.0 líneas 95-107). En producción resuelve al mismo correo de hoy; `region-y-cuenta.test.ts` sigue pasando |
+| `admin/functions/src/opcionesGlobales.ts` | `serviceAccount: \`sa-functions@${GCLOUD_PROJECT}.iam.gserviceaccount.com\``, con fallo explícito si `GCLOUD_PROJECT` está vacía, en vez del correo con el proyecto de producción escrito | **Sin esto no hay staging:** las Functions pedían correr con una cuenta de OTRO proyecto. firebase-tools fija `GCLOUD_PROJECT` al proyecto destino cuando carga el código para descubrir las Functions (`lib/functions/env.js:278`, 15.29.0) y Cloud Run la fija en ejecución. **No** se usa la abreviatura `sa-functions@` aunque firebase-tools la acepte: el manifiesto la lleva literal y `ensure.secretsAccessDelta` la compara con el correo completo que devuelve GCF, así que el delta da los 25 secretos en cada despliegue y `setIamPolicy` se llama con un miembro inválido antes de crear ninguna Function; el desplegador no tiene ese permiso a propósito, y **el `--dry-run` no lo detecta** (solo corre `checkSecretAccess`). Lo prueba `admin/pruebas/manifiesto-secretos.test.ts` contra el `ensure.js` instalado; la forma del correo, `region-y-cuenta.test.ts` |
 | `.github/workflows/ci-node-firebase.yml` | `construir` deja la matriz y construye solo producción; nuevo `construir-staging` con `environment: staging` y una compuerta que verifica cada `VITE_*` contra el proyecto de staging; `desplegar-staging` es el espejo del de producción (artefacto de Functions, `npm ci`, `functions/.env`, bucket como destino, simulación `--dry-run`, `--force` solo por variable) y verifica las variables del Environment antes de tocar nada; nuevo `humo-staging`; `desplegar-dev` y `previsualizar` apuntan al artefacto que corresponde | §3 |
 | `scripts/humo-staging.sh` | El humo funcional de `Analisis/28`, sin credenciales | §7 |
 | `scripts/preparar-staging.sh` | Las escrituras de §8, en seco por defecto, fase por fase | Andres autoriza; Claude opera |
@@ -83,13 +83,29 @@ sufijos ni ramas de matriz.
 
 **El riesgo de este esquema, y cómo se cierra.** Una variable que falte en el
 Environment cae **en silencio** al valor del repositorio, que es el de
-producción. Por eso `construir-staging` verifica, antes de compilar, que
-`VITE_FIREBASE_PROJECT_ID == GCP_PROJECT_ID_STAGING`, que `AUTH_DOMAIN` y
-`STORAGE_BUCKET` pertenezcan a ese proyecto y que el proyecto no sea el de
-producción; y `desplegar-staging` verifica `SITIO_PUBLICO`, `STAGING_URL` y el
-bucket. Si algo falta, el job falla con el nombre de la variable, y no se
-publica nada. `humo-staging` cierra el círculo por fuera: lee el JavaScript
-publicado y exige que contenga el ID de staging y no el de producción.
+producción. Tres compuertas, en orden:
+
+1. `construir-staging`, antes de compilar y sin credenciales, mira la **forma**:
+   `VITE_FIREBASE_PROJECT_ID == GCP_PROJECT_ID_STAGING`; `AUTH_DOMAIN` y
+   `STORAGE_BUCKET` del proyecto de staging; `VITE_FIREBASE_APP_ID` con la forma
+   `1:<GCP_PROJECT_NUMBER_STAGING>:web:…` (el número del proyecto va en el
+   Environment, lo carga `preparar-staging.sh app`); `VITE_FIREBASE_API_KEY` no
+   vacía. Una apiKey no dice de quién es, y por eso hay una segunda compuerta.
+2. `desplegar-staging`, **ya autenticado en el proyecto de staging**, pide la
+   configuración de la app web registrada (`firebase apps:sdkconfig WEB
+   <appId> --json`, permiso `firebase.clients.get` de `roles/firebase.viewer`) y
+   exige que su `apiKey` y su `appId` estén en el JavaScript del artefacto
+   antes de `firebase deploy`. También verifica `SITIO_PUBLICO`, `STAGING_URL` y
+   el bucket. Si algo falta, el job falla con el nombre de la variable y no se
+   publica nada.
+3. `humo-staging`, por fuera y **sin Environment** —así `vars.VITE_FIREBASE_APP_ID`
+   es la del repositorio, la de producción—, lee el JavaScript publicado y exige
+   el ID y el appId de staging (que recibe como salidas de `desplegar-staging`)
+   y la **ausencia** del ID y del appId de producción.
+
+Los identificadores no se imprimen en el registro de Actions (repositorio
+público): los jobs los enmascaran con `::add-mask::` y los mensajes dicen «el
+proyecto de staging».
 
 **Por qué las de producción no se mueven al Environment `production`.** Ese
 Environment tiene revisor obligatorio, y GitHub detiene **cualquier** job que
@@ -125,6 +141,12 @@ PR alcanza con `construir` (producción), que valida la compilación.
 |---|---|---|
 | **A · Pool y proveedor propios en el proyecto de staging** (adoptada) | `github`/`novuchat` en `${GCP_PROJECT_ID_STAGING}`, con la condición por identificadores (`repository_id`, `repository_owner_id`) y **un solo sujeto**: `…:environment:staging`. `sa-deploy-staging` confía en ese sujeto y en ninguno más | Ninguno sobre producción: no se edita su pool ni su condición. El costo es un pool más que mantener, que es exactamente un proveedor |
 | B · Reutilizar el pool de producción con la condición ampliada | Agregar `…:environment:staging` a la condición del proveedor de producción y hacer que `sa-deploy-staging` (en el proyecto de staging) confíe en un `principal://` del pool de producción | La confianza de staging queda anclada a un recurso de producción: editar esa condición es una escritura de IAM en producción, y un error ahí (un `||` de más) abre producción. Además, el proveedor de producción pasa a ser un punto de fallo de dos ambientes |
+
+**La condición compara el `sub` exacto** (`…:environment:staging`), no un
+prefijo ni un `attribute.environment` mapeado: es la forma más estrecha que
+GitHub permite y la misma que usa producción; si algún día hace falta otro
+Environment contra este proyecto, se agrega un segundo sujeto a la lista,
+nunca se afloja a `startsWith`.
 
 Con A, la cuenta de despliegue de staging tiene los mismos roles acotados que
 la de producción (`.github/DESPLIEGUE-FIREBASE.md`, «Estado real»): Hosting,
@@ -222,7 +244,7 @@ persona) o Claude con el script. Todo lo del script se corre **primero sin
 | 4 | Base de Firestore `(default)` en `us-east1`, modo nativo | Claude | `S firestore` | `gcloud firestore databases describe` | **No** (una base no se cambia de región: si la región está mal, el proyecto se descarta) |
 | 5 | Auth: habilitar Google y correo/contraseña; el dominio `<id>.web.app` ya viene autorizado | **Andres**, consola de Firebase → Authentication → Métodos de acceso | — | La pantalla de ingreso de staging acepta una cuenta `@ejemplo.com` (paso 15) | Sí |
 | 6 | Storage: «Comenzar» en modo producción, ubicación `us-east1`; anotar el nombre del bucket | **Andres**, consola de Firebase → Storage | — | `gsutil ls -p <id>` muestra el bucket | Sí |
-| 7 | App web «Consola (staging)» y sus `VITE_*` al Environment `staging` (+ `VITE_APPCHECK_SITE_KEY` vacía) | Claude | `S app` | `gh variable list --env staging` muestra las seis | Sí (`gh variable delete`) |
+| 7 | App web «Consola (staging)» y sus `VITE_*` al Environment `staging` (+ `VITE_APPCHECK_SITE_KEY` vacía y `GCP_PROJECT_NUMBER_STAGING`) | Claude | `S app` | `gh variable list --env staging` muestra las siete | Sí (`gh variable delete`) |
 | 8 | Pool `github` y proveedor `novuchat` propios, condición por identificadores y sujeto `environment:staging` | Claude | `S wif` | `gcloud iam workload-identity-pools providers describe` muestra la condición | Sí |
 | 9 | `sa-deploy-staging` y `sa-functions` con sus roles; rol `desplegadorSecretos`; binding de la federación; cómputo sin Editor | Claude | `S cuentas` | `S verificar` (Policy Troubleshooter de los siete permisos que más fallaron en producción) | Sí, rol por rol |
 | 10 | 25 secretos con valor aleatorio y `secretAccessor` para `sa-functions` | Claude | `S secretos` | `S verificar`: 25 secretos = 25 declarados | Sí (`secrets delete`) |
@@ -244,13 +266,18 @@ despliega.
 
 ## 9. Riesgos y límites, dichos
 
-- **El cambio de `opcionesGlobales.ts` toca el manifiesto de producción.**
-  Resuelve al mismo correo, así que `firebase deploy` no ve diferencia; pero es
-  la primera vez que la abreviatura se usa en este repositorio. Si el próximo
-  despliegue de producción fallara en el paso de descubrimiento con «Service
-  account must be of the form…», la vuelta atrás es volver a escribir el
-  correo completo. La simulación `--dry-run` del job de producción lo
-  detectaría antes de publicar.
+- **El cambio de `opcionesGlobales.ts` toca el manifiesto de producción.** El
+  correo se deriva de `GCLOUD_PROJECT` y resuelve al mismo de hoy, así que
+  `firebase deploy` no ve diferencia en producción. Lo que lo prueba **no es el
+  `--dry-run`** —que solo corre `checkSecretAccess` y no ve un miembro
+  malformado en el delta de secretos—, sino la suite: `region-y-cuenta.test.ts`
+  exige el correo completo con la forma `sa-functions@<proyecto>.iam.…` en las
+  53 Functions, y `manifiesto-secretos.test.ts` reproduce el delta de
+  `ensure.secretsAccessDelta` con el firebase-tools instalado (vacío con el
+  correo derivado; los 25 secretos con la abreviatura). La prueba definitiva es
+  el despliegue real a staging (paso 12), que ejercita el mismo código antes
+  que producción. Si `GCLOUD_PROJECT` faltara al descubrir, el módulo falla con
+  un mensaje que lo dice, en vez de publicar un manifiesto a medias.
 - **Cloud Scheduler y Eventarc en el primer despliegue.** Producción los
   estrenó con la cuenta dueña; por eso el paso 12 también. Si el pipeline
   fallara después por un permiso de la cuenta de despliegue que producción

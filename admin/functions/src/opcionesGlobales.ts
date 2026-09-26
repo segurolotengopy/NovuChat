@@ -26,19 +26,42 @@ import { REGION } from './region.js';
 // Un secreto nuevo necesita `secretAccessor` para ESTA cuenta, uno por uno
 // (ver `firma.ts`, «CUANDO SE ACABEN LOS VEINTE»).
 //
-// SIN PROYECTO EN EL NOMBRE (2026-09-25, staging). Hasta hoy el correo llevaba
-// escrito el proyecto de producción, y eso hacía imposible desplegar las
-// mismas Functions en el proyecto de staging: pedían correr con una cuenta de
-// OTRO proyecto. La forma `sa-functions@` es la abreviatura que firebase-tools
-// completa con el proyecto DESTINO del despliegue —`lib/gcp/proto.js`,
-// `formatServiceAccount`, líneas 95-107 de 15.29.0: si termina en «@» le
-// agrega `<proyecto>.iam.gserviceaccount.com`—, y firebase-functions la deja
-// pasar tal cual al manifiesto (`lib/common/encoding.js`, líneas 60-74). En
-// producción resuelve al MISMO correo de siempre; en staging, al
-// `sa-functions` de ese proyecto. `region-y-cuenta.test.ts` sigue exigiendo
-// que empiece con `sa-functions@`.
+// EL PROYECTO SE DERIVA, NO SE ESCRIBE (2026-09-25, staging). Hasta hoy el
+// correo llevaba escrito el proyecto de producción, y eso hacía imposible
+// desplegar las mismas Functions en el proyecto de staging: pedían correr con
+// una cuenta de OTRO proyecto. Se arma con GCLOUD_PROJECT, que firebase-tools
+// fija al proyecto DESTINO cuando carga este código para descubrir las
+// Functions (`lib/functions/env.js`, línea 278 de 15.29.0) y que Cloud Run
+// fija en tiempo de ejecución. En producción resuelve al MISMO correo de
+// siempre; en staging, al `sa-functions` de ese proyecto.
+//
+// POR QUÉ NO LA ABREVIATURA `sa-functions@`, que firebase-tools también acepta
+// (`lib/gcp/proto.js`, `formatServiceAccount`): la completa recién al crear el
+// servicio, pero el manifiesto la lleva literal (`lib/v2/options.js`,
+// `optionsToEndpoint` no la convierte; `discovery/v1alpha1.js` la copia tal
+// cual) y `deploy/functions/ensure.js` compara esa cadena cruda con el correo
+// completo que devuelve GCF: el delta de accesos a secretos da los 25
+// `defineSecret` en cada despliegue, y `fabricator.js` llama a `setIamPolicy`
+// de cada secreto con el miembro `serviceAccount:sa-functions@` ANTES de crear
+// ninguna Function. El desplegador no tiene `secrets.setIamPolicy` a propósito
+// (DESPLIEGUE-FIREBASE.md, `desplegadorSecretos`): 403 en producción y 400 en
+// staging, y el `--dry-run` NO lo ve (solo corre `checkSecretAccess`).
+// Reproducido contra `ensure.secretsAccessDelta` en
+// admin/pruebas/manifiesto-secretos.test.ts; la forma del correo la vigila
+// admin/pruebas/region-y-cuenta.test.ts.
+//
+// Sin GCLOUD_PROJECT se FALLA, no se adivina: un manifiesto con un correo a
+// medias es exactamente el defecto de arriba. En las pruebas lo fija
+// vitest.config.ts.
+const proyecto = process.env['GCLOUD_PROJECT'];
+if (!proyecto) {
+  throw new Error(
+    'opcionesGlobales: GCLOUD_PROJECT no está definida; sin ella no se puede armar el correo de sa-functions ' +
+      '(firebase-tools la fija al descubrir las Functions; en las pruebas, vitest.config.ts).',
+  );
+}
 setGlobalOptions({
   region: REGION,
   maxInstances: 10,
-  serviceAccount: 'sa-functions@',
+  serviceAccount: `sa-functions@${proyecto}.iam.gserviceaccount.com`,
 });
