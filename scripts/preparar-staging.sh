@@ -112,7 +112,9 @@ fase_apis() {
   local apis=(iamcredentials sts iam firebase firebasehosting firebaserules firestore
               firebasestorage storage cloudfunctions run cloudbuild artifactregistry
               eventarc secretmanager cloudscheduler pubsub identitytoolkit serviceusage
-              cloudresourcemanager)
+              cloudresourcemanager policytroubleshooter)
+  # policytroubleshooter: sin ella, `verificar` devuelve «?» en cada permiso
+  # (el error se tragaba; medido el 26/09).
   local lista=(); for a in "${apis[@]}"; do lista+=("$a.googleapis.com"); done
   correr "habilitar ${#lista[@]} APIs" -- gc services enable "${lista[@]}"
 }
