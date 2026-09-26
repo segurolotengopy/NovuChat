@@ -13,7 +13,10 @@
 ## Reglas que valen para todos
 
 - La zona se escribe en `.claude/zona` del worktree del agente (una línea por
-  prefijo, versionada en su rama) o en `NOVUCHAT_ZONA`; la variable manda.
+  prefijo) o en `NOVUCHAT_ZONA`; la variable manda. **`.claude/zona` lo
+  escribe quien lanza al agente** (la sesión coordinadora) al crear el
+  worktree, no el agente, y **nunca se versiona**: está en `.gitignore` y la
+  prueba del gancho falla si git lo rastrea (`zona-de-escritura.md`).
 - **Todo cambio en `.claude/hooks/` y `.claude/agents/` exige revisión humana
   de Andres antes de fusionarse**, aunque el agente `metodo` los tenga en su
   zona: son superficie de control, no documentación.
