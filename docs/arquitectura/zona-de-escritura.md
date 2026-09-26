@@ -23,8 +23,29 @@ prompt, y el prompt no es una barrera.
 ## De dónde sale la zona (dos fuentes, en este orden)
 
 1. **La variable de entorno `NOVUCHAT_ZONA`**, si existe y no está vacía.
-2. **El archivo `.claude/zona`** en la raíz del proyecto (la que dice
-   `CLAUDE_PROJECT_DIR`; si no está, el directorio de trabajo).
+2. **El archivo `.claude/zona` de la primera de estas raíces que lo tenga**:
+   la del `cwd` que Claude Code manda en el evento (el worktree donde trabaja
+   el agente), la del archivo destino, y `CLAUDE_PROJECT_DIR` (si no está, el
+   directorio de trabajo). La raíz de una ruta es la carpeta más cercana,
+   subiendo, que tiene `.git` (directorio en la copia principal, archivo en un
+   worktree).
+
+**Corregido el 26/09/2026, antes de F2.** Hasta ese día el archivo se buscaba
+solo en `CLAUDE_PROJECT_DIR`, y un subagente lanzado con worktree recibe el de
+la sesión que lo lanzó, que es la copia principal. Resultado: **dentro del
+worktree del agente el gancho no rechazaba nada**. Se midió con un agente de
+prueba que escribió su `.claude/zona` (`docs/`) y después escribió en
+`admin/` sin un rechazo. Las pruebas del gancho armaban el evento sin `cwd` y
+con `CLAUDE_PROJECT_DIR` apuntando al proyecto con zona, así que no lo veían;
+los casos nuevos arman la copia principal sin zona con el worktree del agente
+adentro, y fallan con el gancho anterior.
+
+**Claude Code ejecuta el gancho desde la copia principal**
+(`"$CLAUDE_PROJECT_DIR"/.claude/hooks/zona-de-escritura.sh` en
+`.claude/settings.json`): un cambio del gancho rige para los agentes recién
+cuando la copia principal se pone al día con `main`. Antes de lanzar agentes
+con zona, la coordinadora lo comprueba con un agente de prueba que intente
+escribir fuera de su zona.
 
 La segunda fuente existe por una observación de la revisión de seguridad
 (26/09/2026): dos subagentes lanzados desde una misma sesión **comparten el
@@ -76,8 +97,9 @@ y se vuelve a pegar el resto. Así:
 - `docs/../admin/firestore.rules` se evalúa como `admin/firestore.rules`.
 - Un enlace simbólico dentro de la zona que apunte afuera (`docs/enlace →
   admin/`) se rechaza, también para un archivo nuevo debajo del enlace.
-- Una ruta relativa se resuelve contra `CLAUDE_PROJECT_DIR`, no contra el
-  directorio desde donde se lanzó el proceso.
+- Una ruta relativa se resuelve contra la raíz elegida (la del `cwd` del
+  evento si tiene zona o si no hay otra; si no, la que tenga la zona), no
+  contra el directorio desde donde se lanzó el proceso.
 
 ## Fallo cerrado
 
@@ -97,6 +119,11 @@ indefinido.
   agente con `admin/firestore.rules` en su zona puede editar cualquier regla.
   Cada agente que comparte un archivo lo declara y la revisión del PR cubre
   la sección.
+- **Un agente que se muda a una carpeta sin zona y escribe ahí.** Si el
+  `cwd` y el destino están en la copia principal (sin `.claude/zona`), el
+  gancho no opina. Es el mismo nivel que `Bash`: lo cubren la revisión del PR
+  y que el agente trabaja en su worktree. Si escribe desde su worktree en la
+  principal, o desde la principal en su worktree, se rechaza.
 - **Quién fija la zona.** El gancho no decide: la fija quien lanza al agente,
   en `.claude/zona` de su worktree o en `NOVUCHAT_ZONA`.
 

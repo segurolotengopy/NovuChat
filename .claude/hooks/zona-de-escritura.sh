@@ -13,8 +13,11 @@
 # DE DÓNDE SALE LA ZONA, en este orden (revisión de seguridad del 26/09):
 #
 #   1. La variable de entorno NOVUCHAT_ZONA, si existe y no está vacía.
-#   2. Si no, el archivo `.claude/zona` en la raíz del proyecto (la que dice
-#      CLAUDE_PROJECT_DIR, o el directorio de trabajo si no está). LO ESCRIBE
+#   2. Si no, el archivo `.claude/zona` de la PRIMERA de estas raíces que lo
+#      tenga: la del `cwd` del evento (el worktree del agente), la del archivo
+#      destino, y CLAUDE_PROJECT_DIR (o el directorio de trabajo). Hasta el
+#      26/09 solo se miraba CLAUDE_PROJECT_DIR, que en un subagente es la copia
+#      principal: el gancho no rechazaba nada dentro del worktree del agente. LO ESCRIBE
 #      QUIEN LANZA AL AGENTE (la sesión coordinadora) al crear el worktree,
 #      NO el agente, y NUNCA SE VERSIONA: está en .gitignore, y la prueba del
 #      gancho falla si git lo rastrea. Así dos subagentes lanzados desde la
@@ -56,15 +59,77 @@
 # Documentación: docs/arquitectura/zona-de-escritura.md.
 set -uo pipefail
 
-RAIZ="${CLAUDE_PROJECT_DIR:-$PWD}"
+# El evento completo, una sola vez: de él salen el `cwd` y el destino.
+EVENTO="$(cat)"
+
+# campo <nombre>: `cwd` del evento o `tool_input.file_path`, con python3 si
+# está y, si no, con sed (lo justo para decidir si hay zona: sin python3 y con
+# zona, el gancho rechaza igual más abajo).
+campo() {
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$EVENTO" | python3 -c '
+import json, sys
+try:
+    e = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+if not isinstance(e, dict):
+    sys.exit(0)
+v = e.get("cwd") if sys.argv[1] == "cwd" else (e.get("tool_input") or {}).get("file_path") if isinstance(e.get("tool_input"), dict) else None
+print(v if isinstance(v, str) else "")' "$1" 2>/dev/null
+  else
+    local clave="$1"; [[ "$clave" == "cwd" ]] || clave="file_path"
+    printf '%s' "$EVENTO" | sed -n "s/.*\"$clave\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n 1
+  fi
+}
+
+# raiz_de <ruta>: la raíz del checkout que contiene la ruta (la carpeta más
+# cercana, subiendo, que tiene `.git`: directorio en la copia principal,
+# archivo en un worktree). Sirve aunque la ruta todavía no exista.
+raiz_de() {
+  local d="$1"
+  [[ -n "$d" ]] || return 0
+  while [[ ! -d "$d" && "$d" != "/" && "$d" != "." ]]; do d="$(dirname "$d")"; done
+  [[ -d "$d" ]] || return 0
+  d="$(cd "$d" 2>/dev/null && pwd -P)" || return 0
+  while [[ -n "$d" && "$d" != "/" ]]; do
+    [[ -e "$d/.git" ]] && { printf '%s' "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+}
+
+# DE DÓNDE SALE LA RAÍZ (corregido el 26/09/2026, antes de F2). Un subagente
+# lanzado con worktree recibe el CLAUDE_PROJECT_DIR de la sesión que lo lanzó
+# —la copia principal—, así que buscar `.claude/zona` solo ahí dejaba el gancho
+# mudo dentro del worktree del agente: medido con un agente de prueba, que
+# escribió fuera de su zona sin un rechazo. Ahora se miran, en este orden, la
+# raíz del `cwd` del evento (el worktree donde trabaja el agente), la raíz del
+# archivo destino y CLAUDE_PROJECT_DIR (o el directorio de trabajo); manda la
+# PRIMERA que tenga `.claude/zona`. Así un agente con zona que escribe en otro
+# checkout choca con su propia zona, y uno que se mudó de carpeta y escribe en
+# un worktree con zona choca con la de ese worktree.
+PROYECTO="${CLAUDE_PROJECT_DIR:-$PWD}"
+CWD_EVENTO="$(campo cwd)"
+DESTINO_EVENTO="$(campo file_path)"
+[[ -z "$DESTINO_EVENTO" || "$DESTINO_EVENTO" == /* ]] || DESTINO_EVENTO="${CWD_EVENTO:-$PROYECTO}/$DESTINO_EVENTO"
+RAIZ_CWD="$(raiz_de "$CWD_EVENTO")"
+RAIZ_DESTINO="$(raiz_de "$DESTINO_EVENTO")"
+
+RAIZ="${RAIZ_CWD:-$PROYECTO}"
 ZONA="${NOVUCHAT_ZONA:-}"
-if [[ -z "$ZONA" && -f "$RAIZ/.claude/zona" ]]; then
-  # Une las líneas del archivo con «:», sin comentarios ni vacías.
-  ZONA="$(grep -v '^[[:space:]]*#' "$RAIZ/.claude/zona" | grep -v '^[[:space:]]*$' | tr '\n' ':' | sed 's/:*$//')"
+if [[ -z "$ZONA" ]]; then
+  for candidata in "$RAIZ_CWD" "$RAIZ_DESTINO" "$PROYECTO"; do
+    if [[ -n "$candidata" && -f "$candidata/.claude/zona" ]]; then
+      RAIZ="$candidata"
+      # Une las líneas del archivo con «:», sin comentarios ni vacías.
+      ZONA="$(grep -v '^[[:space:]]*#' "$candidata/.claude/zona" | grep -v '^[[:space:]]*$' | tr '\n' ':' | sed 's/:*$//')"
+      break
+    fi
+  done
 fi
 
-# Sin zona: se consume el stdin (para no dejar un pipe roto) y no se opina.
-[[ -n "$ZONA" ]] || { cat >/dev/null; exit 0; }
+# Sin zona: no se opina.
+[[ -n "$ZONA" ]] || exit 0
 
 negar() {
   # Sin depender de python3: JSON escrito a mano, sin comillas dentro del texto.
@@ -73,11 +138,10 @@ negar() {
 }
 
 if ! command -v python3 >/dev/null 2>&1; then
-  cat >/dev/null
   negar "Zona de escritura: gancho no operativo (falta python3) y la zona esta activa; se rechaza la escritura por seguridad."
 fi
 
-NOVUCHAT_ZONA="$ZONA" NOVUCHAT_RAIZ="$RAIZ" python3 -c '
+printf '%s' "$EVENTO" | NOVUCHAT_ZONA="$ZONA" NOVUCHAT_RAIZ="$RAIZ" python3 -c '
 import json, os, sys
 
 def responder(motivo):
