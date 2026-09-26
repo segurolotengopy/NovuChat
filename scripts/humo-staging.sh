@@ -29,15 +29,19 @@
 # Qué comprueba, y por qué ese código y no otro (los códigos salen del código
 # fuente de admin/functions/src, no de una suposición):
 #   1. Consola: GET / → 200 con Strict-Transport-Security y
-#      Content-Security-Policy (firebase.json las declara); /index.html con
-#      Cache-Control: no-cache.
+#      Content-Security-Policy (firebase.json las declara); la consola (/ y sus
+#      rutas) con Cache-Control: no-cache. No /index.html: con cleanUrls esa ruta
+#      redirige a / (301) y la cabecera de la redirección no dice nada.
 #   2. Functions detrás de las reescrituras de firebase.json. Si una Function
 #      no está desplegada, Hosting responde 404 a todo; por eso se pide primero
 #      el método EQUIVOCADO (405 = la Function existe y contestó ella):
-#        GET  /api/ingesta             405   ingesta.ts (método)
-#        POST /api/ingesta sin firma   401   ingesta.ts (no autorizado)
-#        GET  /api/configuracion       405   ingesta.ts
-#        POST /api/configuracion       401   ingesta.ts
+#        GET  /api/ingesta/            405   ingesta.ts (método)
+#        POST /api/ingesta/ sin firma  401   ingesta.ts (no autorizado)
+#        GET  /api/configuracion/      405   ingesta.ts
+#        POST /api/configuracion/      401   ingesta.ts
+#      Con la barra final: firebase.json redirige `/api/ingesta/**`, que no
+#      cubre `/api/ingesta` sin barra (cae en la consola con 200). Los flujos no
+#      usan estas rutas: llaman a las Functions por su URL directa.
 #        GET  /api/qr/<ficha inválida> 404   cobro.ts
 #        POST /api/catalogo/enlace     401   catalogoWeb.ts
 #        GET  /api/catalogo/<vencido>  404   catalogoWeb.ts (enlace vencido)
@@ -132,17 +136,17 @@ cabeceras="$(cabeceras_de "$URL/")"
 for h in strict-transport-security content-security-policy x-content-type-options x-frame-options; do
   if grep -q "^$h:" <<< "$cabeceras"; then ok "cabecera $h"; else mal "falta la cabecera $h"; fi
 done
-if grep -q '^cache-control:.*no-cache' <<< "$(cabeceras_de "$URL/index.html")"; then
-  ok "/index.html sin caché"
+if grep -q '^cache-control:.*no-cache' <<< "$(cabeceras_de "$URL/")"; then
+  ok "/ (la consola) sin caché"
 else
-  mal "/index.html sin Cache-Control: no-cache"
+  mal "/ (la consola) sin Cache-Control: no-cache (un navegador guardaría el index viejo tras cada despliegue)"
 fi
 
 echo "2. Functions detrás de Hosting (los códigos que el código fuente da a un anónimo)"
-esperar 405 "GET  /api/ingesta (Function viva)"       GET  "$URL/api/ingesta"
-esperar 401 "POST /api/ingesta sin firma"             POST "$URL/api/ingesta" -H 'Content-Type: application/json' -d '{}'
-esperar 405 "GET  /api/configuracion (Function viva)" GET  "$URL/api/configuracion"
-esperar 401 "POST /api/configuracion sin firma"       POST "$URL/api/configuracion" -H 'Content-Type: application/json' -d '{}'
+esperar 405 "GET  /api/ingesta/ (Function viva)"       GET  "$URL/api/ingesta/"
+esperar 401 "POST /api/ingesta/ sin firma"             POST "$URL/api/ingesta/" -H 'Content-Type: application/json' -d '{}'
+esperar 405 "GET  /api/configuracion/ (Function viva)" GET  "$URL/api/configuracion/"
+esperar 401 "POST /api/configuracion/ sin firma"       POST "$URL/api/configuracion/" -H 'Content-Type: application/json' -d '{}'
 esperar 404 "GET  /api/qr/<ficha inválida>"           GET  "$URL/api/qr/no-es-una-ficha"
 esperar 401 "POST /api/catalogo/enlace sin firma"     POST "$URL/api/catalogo/enlace" -H 'Content-Type: application/json' -d '{}'
 esperar 404 "GET  /api/catalogo/<enlace vencido>"     GET  "$URL/api/catalogo/no-es-una-ficha"
