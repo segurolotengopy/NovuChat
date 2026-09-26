@@ -30,7 +30,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 |---|---|---|---|
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | — |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | — |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -39,6 +39,15 @@ Una excepción necesita las tres cosas, o no es una excepción:
 
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
+
+## Estado al 26/09/2026 (reorientación después de H1)
+
+Primera excepción desde la del Demo B: **Bellido**, declarada antes de que su
+flujo se atrase, para que el atraso que traiga la obra (F2 a F3b) nunca sea un
+defecto sin fila. Mientras su JSON versionado no cambie,
+`estado-de-versiones.sh` lo verá al día e informará «excepción declarada pero
+el flujo está al día»: es lo esperado, no se borra la fila hasta la
+re-aceptación tras F3b. Los otros siete siguen sin excepción.
 
 ## Estado al 26/09/2026 (madrugada)
 
