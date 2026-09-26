@@ -174,6 +174,8 @@ fase_wif() {
   num="$(numero_proyecto)"
   read -r id_repo id_duenio prefijo <<< "$(ids_de_github)"
   if existe gc iam workload-identity-pools describe github --location=global; then nota "el pool github ya existe"
+  # El nombre visible de un proveedor admite hasta 32 caracteres (medido el
+  # 26/09: «<dueño>/<repo> (staging)» pasaba de largo y el alta fallaba).
   else correr "crear el pool github" -- gc iam workload-identity-pools create github --location=global --display-name="GitHub Actions"; fi
   # La condición compara IDENTIFICADORES, no nombres (DESPLIEGUE-FIREBASE.md,
   # «Estado real»): resiste un cambio de nombre y cierra la puerta a los forks.
@@ -184,7 +186,7 @@ fase_wif() {
       --location=global --workload-identity-pool=github --attribute-condition="$condicion"
   else
     correr "crear el proveedor novuchat" -- gc iam workload-identity-pools providers create-oidc novuchat \
-      --location=global --workload-identity-pool=github --display-name="$REPO (staging)" \
+      --location=global --workload-identity-pool=github --display-name="NovuChat staging" \
       --issuer-uri="https://token.actions.githubusercontent.com" \
       --allowed-audiences="https://iam.googleapis.com/projects/${num}/locations/global/workloadIdentityPools/github/providers/novuchat" \
       --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id" \
