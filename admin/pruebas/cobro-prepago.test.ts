@@ -699,10 +699,31 @@ describe('1quater. El pago en revisión se resuelve, con auditoría y sesión re
     expect(await auditoria('cobro_emitido', B)).toHaveLength(0);
     expect(await cuenta(B)).toMatchObject({ plan: 'impulso' });
 
-    // Renovar EL MISMO plan no firma nada: no pide sesión reciente.
-    expect(await crear({ tenantId: B, tipo: 'mensualidad', plan: 'impulso', meses: 1 }, PROPIETARIO_SESION_VIEJA)).toMatchObject({ estado: 'pendiente' });
-    const [emitido] = (await db.collection(`tenants/${B}/pagos`).get()).docs;
-    expect(emitido?.get('cambioAutorizadoPor')).toBeUndefined();
+  });
+
+  it('POSITIVA: el propietario con sesión VIEJA renueva el MISMO plan y el cobro sale (la guarda es solo para la firma)', async () => {
+    // Si alguien endureciera la guarda a «todo propietario», esta prueba cae.
+    await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+    for (const sesion of [PROPIETARIO_SESION_VIEJA, PROPIETARIO_SIN_AUTH_TIME]) {
+      await db.doc(`tenants/${B}/cuenta/estado`).set({ plan: 'impulso', modalidad: 'prepago' });
+      const r = await crear({ tenantId: B, tipo: 'mensualidad', plan: 'impulso', meses: 1 }, sesion);
+      expect(r).toMatchObject({ estado: 'pendiente', cobro: { estado: 'QR_ACTIVO' } });
+      const p = await pago(r['pagoId'] as string, B);
+      expect(p).toMatchObject({ plan: 'impulso', estado: 'pendiente', creadoPor: 'prop' });
+      expect(p?.['cambioAutorizadoPor']).toBeUndefined();
+      expect((await cuenta(B))['pagoPendienteId']).toBe(r['pagoId']);
+    }
+  });
+
+  it('«Ya hay un cobro pendiente» NO trae la ficha del QR si el banco ya lo confirmó (como la consulta); con un QR vivo sí', async () => {
+    const { pagoId } = await pagoEnRevision();   // la cuenta A quedó en Pro, con el pendiente en revisión
+    const d = await rechaza(crear({ tenantId: A, tipo: 'mensualidad', plan: 'pro', meses: 1 }), 'failed-precondition');
+    expect(d).toMatchObject({ pagoId, cobroEstado: 'CONFIRMADO' });
+    expect(d).not.toHaveProperty('fichaQr');
+    // El contraste: con un QR vivo, la ficha sí viaja (la pantalla la necesita para mostrarlo).
+    const vivo = await crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO);
+    const d2 = await rechaza(crear({ tenantId: B, tipo: 'instalacion' }, PROPIETARIO), 'failed-precondition');
+    expect(d2).toMatchObject({ pagoId: vivo['pagoId'], cobroEstado: 'QR_ACTIVO', fichaQr: vivo['fichaQr'] });
   });
 
   it('con sesión reciente la firma entra, como antes', async () => {

@@ -850,6 +850,79 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
 });
 
 // ===========================================================================
+describe('revisión de seguridad del #217: lo que informó el banco, el motivo, el cero y el puntero del pendiente', () => {
+  /** Un QR que el banco confirmó por 600 de 630 y NovuChat dejó pendiente (lo que hace A-2). */
+  async function sembrarConfirmado(id = PAGO_ID) {
+    await sembrarPendiente(id, 'cons-' + '9'.repeat(64));
+    await db.doc(`tenants/${A}/pagos/${id}`).update({ 'cobro.estado': 'CONFIRMADO', montoRecibidoBs: 600 });
+  }
+  const confirmar = { tenantId: A, confirmarPendiente: PAGO_ID };
+
+  it('LOW: un motivo de menos de 3 caracteres o 0 Bs se rechazan, y no se escribe nada', async () => {
+    await sembrarConfirmado();
+    await rechaza(correr(indice.registrarPagoManual, { ...confirmar, montoRecibidoBs: 600, motivoDiferencia: 'ab' }), 'invalid-argument');
+    await rechaza(correr(indice.registrarPagoManual, { ...confirmar, montoRecibidoBs: 600, motivoDiferencia: '  x  ' }), 'invalid-argument');
+    let error: unknown = null;
+    try { await correr(indice.registrarPagoManual, { ...confirmar, montoRecibidoBs: 0, motivoDiferencia: 'no entró nada' }); } catch (e) { error = e; }
+    expect(error).toMatchObject({ code: 'invalid-argument', message: expect.stringContaining('no puede ser 0') });
+    expect(await pago(PAGO_ID)).toMatchObject({ estado: 'pendiente', montoRecibidoBs: 600, cobro: { estado: 'CONFIRMADO' } });
+    expect((await cuenta())['periodoPagado']).toBeUndefined();
+    expect(await auditoria('pago_manual_confirma_qr')).toHaveLength(0);
+    // La cota es la misma en el servidor y en la consola.
+    const { MOTIVO_CONFIRMACION_MINIMO: deLaConsola } = await import('../web/src/plataforma/lib/negocios');
+    expect(pagos.MOTIVO_CONFIRMACION_MINIMO).toBe(3);
+    expect(deLaConsola).toBe(pagos.MOTIVO_CONFIRMACION_MINIMO);
+  });
+
+  it('LOW: la auditoría guarda lo que informó el banco ANTES de que el pago lo sobrescriba con lo declarado', async () => {
+    await sembrarConfirmado();
+    await correr(indice.registrarPagoManual, { ...confirmar, montoRecibidoBs: 630, motivoDiferencia: 'el banco informó 600; el extracto dice 630' });
+    expect((await pago(PAGO_ID))!['montoRecibidoBs']).toBe(630);
+    expect(await auditoria('pago_manual_confirma_qr')).toMatchObject([{ pagoId: PAGO_ID, montoInformadoBanco: 600, montoRecibidoBs: 630 }]);
+    await db.doc(`cobrosResueltos/${PAGO_ID}`).delete();
+  });
+
+  it('GUARDA: confirmar un pago NO suelta el pendiente de OTRO QR vivo; el vivo sigue apuntado, pendiente e indexado', async () => {
+    await sembrarConfirmado(PAGO_ID);
+    await sembrarPendiente(OTRO_ID, 'cons-' + 'a'.repeat(64));   // la cuenta apunta ahora al QR vivo
+    await correr(indice.registrarPagoManual, { ...confirmar, montoRecibidoBs: 600, motivoDiferencia: 'comisión del banco' });
+    expect((await pago(PAGO_ID))!['estado']).toBe('confirmado');
+    const c = await cuenta();
+    expect(c['pagoPendienteId']).toBe(OTRO_ID);
+    expect(c['periodoPagado']).toBe(HOY);
+    expect((await pago(OTRO_ID))!['estado']).toBe('pendiente');
+    expect((await db.doc(`cobrosPendientes/${OTRO_ID}`).get()).exists).toBe(true);
+    await db.doc(`cobrosResueltos/${PAGO_ID}`).delete();
+  });
+
+  it('GUARDA, en la puerta: el puntero se suelta solo si es el del pago que se aplica', () => {
+    const refs = {
+      pago: db.doc(`tenants/${A}/pagos/x`), cuenta: db.doc(`tenants/${A}/cuenta/estado`),
+      ficha: db.doc(`tenants/${A}`), cobroPendiente: db.doc('cobrosPendientes/x'),
+    };
+    const escrituraDeCuenta = (pagoPendienteId: string) => {
+      const t = { update: vi.fn(), set: vi.fn(), delete: vi.fn(), create: vi.fn(), get: vi.fn() };
+      pagos.aplicarPagoEnTransaccion(t as never, refs, {
+        id: 'x', datos: { tipo: 'mensualidad', plan: 'crecimiento', meses: 1, estado: 'pendiente' },
+        cuenta: { plan: 'crecimiento', modalidad: 'prepago', pagoPendienteId }, ficha: {},
+      }, { origen: 'propietario', uid: 'prop-1', montoRecibidoBs: 630, confirmadoEn: Timestamp.now(), ahoraMs: Date.now() });
+      return t.set.mock.calls[0]![1] as Record<string, unknown>;
+    };
+    expect(escrituraDeCuenta('x')['pagoPendienteId']).toBeInstanceOf(FieldValue);
+    const otro = escrituraDeCuenta('otro-qr-vivo');
+    expect(Object.keys(otro)).not.toContain('pagoPendienteId');
+    // Y con OTRO pendiente vivo, la cuenta sigue diciendo que hay algo pendiente.
+    expect(otro['estadoPago']).toBe('pendiente');
+  });
+
+  it('el manual sí suelta un puntero VIEJO (a un pago ya cerrado): lo comprobó en su transacción', async () => {
+    await db.doc(`tenants/${A}/pagos/${OTRO_ID}`).set({ tipo: 'bolsa', cantidad: 1, estado: 'anulado', creadoEn: Timestamp.now() });
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ pagoPendienteId: OTRO_ID }, { merge: true });
+    await correr(indice.registrarPagoManual, manual());
+    expect((await cuenta())['pagoPendienteId']).toBeUndefined();
+  });
+});
+
 describe('exigirAdminDe exige el proveedor, como las reglas', () => {
   const p = (auth: object | null) => ({ data: {}, auth, rawRequest: {} }) as never;
   it('solo el claim, Google, o sin verificar → permission-denied; contraseña verificada → el uid', () => {

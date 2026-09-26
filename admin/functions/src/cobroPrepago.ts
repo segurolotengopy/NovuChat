@@ -364,7 +364,14 @@ export async function crearCobroInterno(
       const p = pDoc.data();
       if (p && p['estado'] === 'pendiente') {
         const cobro = cobroGuardadoDe(p);
-        const vivo = { pagoId: pendienteId, monto: p['monto'], descripcion: p['descripcion'], fichaQr: cobro?.fichaQr ?? '', venceEn: milis(p['venceEn']), cobroEstado: cobro?.estado ?? 'SIN_EMITIR' };
+        // Un QR que el banco ya confirmó no viaja en los detalles del error
+        // (revisión de seguridad del #217): lo mismo que `consultarPagoPendiente`
+        // e `imagenDePago`, para que ninguna puerta invite a pagarlo dos veces.
+        const vivo = {
+          pagoId: pendienteId, monto: p['monto'], descripcion: p['descripcion'],
+          ...(cobro?.estado === 'CONFIRMADO' ? {} : { fichaQr: cobro?.fichaQr ?? '' }),
+          venceEn: milis(p['venceEn']), cobroEstado: cobro?.estado ?? 'SIN_EMITIR',
+        };
         if (cobro?.estado === 'QR_SUELTO') {
           throw new HttpsError('failed-precondition', 'El último cobro quedó suelto en el banco: NovuChat lo tiene que revisar antes de emitir otro.', vivo);
         }

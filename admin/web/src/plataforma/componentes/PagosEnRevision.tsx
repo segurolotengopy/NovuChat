@@ -50,7 +50,8 @@ function FilaEnRevision({ pago, planVigente, ocupado, onConfirmar }: {
   const [motivo, setMotivo] = useState('');
   const [preguntando, setPreguntando] = useState(false);
   const monto = Number(recibido);
-  const montoValido = /^[0-9]{1,7}$/.test(recibido.trim()) && Number.isInteger(monto);
+  // Mayor que cero: el servidor rechaza confirmar 0 Bs (no entró nada que confirmar).
+  const montoValido = /^[0-9]{1,7}$/.test(recibido.trim()) && Number.isInteger(monto) && monto > 0;
   const listo = montoValido && motivoDeConfirmacionValido(motivo);
   const idRecibido = `revision-recibido-${pago.pagoId}`;
   const idMotivo = `revision-motivo-${pago.pagoId}`;

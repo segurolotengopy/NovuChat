@@ -247,11 +247,16 @@ export function pagosEnRevision(filas: ReadonlyArray<{ id: string } & Record<str
   return salida;
 }
 
-/** El motivo que el servidor exige para confirmar a mano (`motivoDiferencia`, hasta 300). */
+/**
+ * El motivo que el servidor exige para confirmar a mano (`motivoDiferencia`,
+ * de `MOTIVO_CONFIRMACION_MINIMO` a 300; `functions/src/pagos.ts`, que no se
+ * importa porque arrastra el SDK Admin: la prueba compara los dos números).
+ */
+export const MOTIVO_CONFIRMACION_MINIMO = 3;
 export const MOTIVO_CONFIRMACION_MAXIMO = 300;
 export const motivoDeConfirmacionValido = (motivo: string): boolean => {
   const t = motivo.trim();
-  return t.length >= 3 && t.length <= MOTIVO_CONFIRMACION_MAXIMO;
+  return t.length >= MOTIVO_CONFIRMACION_MINIMO && t.length <= MOTIVO_CONFIRMACION_MAXIMO;
 };
 
 // -----------------------------------------------------------------------------
