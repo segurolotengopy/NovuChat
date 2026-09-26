@@ -34,7 +34,7 @@ humo-staging 1 + DAST 3), gratis en un repositorio público.
 | Secreto de ingesta | **Propio: los 25 secretos que el código declara, con valores aleatorios nuevos** | §5. Nunca los de producción |
 | Datos | **Solo datos de prueba** creados por scripts del repositorio; **ningún cliente real, ningún número de WhatsApp real** | §6, DAT-07 |
 | Primer despliegue de Functions | **Con la cuenta dueña del proyecto, desde la máquina de Andres, con `--dry-run` antes**; los siguientes, el pipeline | §8 paso 11. Es como nació producción, y evita darle a la cuenta de despliegue permisos de IAM que después no necesita |
-| App Check | **Apagado en staging** (`VITE_APPCHECK_SITE_KEY` vacía en el Environment) | La clave de producción está atada a su dominio; una clave nueva es un paso más de consola que no aporta al humo |
+| App Check | **Apagado en staging** (`VITE_APPCHECK_SITE_KEY: ''` fijada en el job `construir-staging`; GitHub no admite una variable de Environment vacía) | La clave de producción está atada a su dominio; una clave nueva es un paso más de consola que no aporta al humo |
 
 ---
 
@@ -254,7 +254,7 @@ persona) o Claude con el script. Todo lo del script se corre **primero sin
 | 4 | Base de Firestore `(default)` en `us-east1`, modo nativo | Claude | `S firestore` | `gcloud firestore databases describe` | **No** (una base no se cambia de región: si la región está mal, el proyecto se descarta) |
 | 5 | Auth: habilitar Google y correo/contraseña; el dominio `<id>.web.app` ya viene autorizado | **Andres**, consola de Firebase → Authentication → Métodos de acceso | — | La pantalla de ingreso de staging acepta una cuenta `@ejemplo.com` (paso 15) | Sí |
 | 6 | Storage: «Comenzar» en modo producción, ubicación `us-east1`; anotar el nombre del bucket | **Andres**, consola de Firebase → Storage | — | `gsutil ls -p <id>` muestra el bucket | Sí |
-| 7 | App web «Consola (staging)» y sus `VITE_*` al Environment `staging` (+ `VITE_APPCHECK_SITE_KEY` vacía y `GCP_PROJECT_NUMBER_STAGING`) | Claude | `S app` | `gh variable list --env staging` muestra las siete | Sí (`gh variable delete`) |
+| 7 | App web «Consola (staging)» y sus `VITE_*` al Environment `staging` (+ `GCP_PROJECT_NUMBER_STAGING`; App Check vacío lo fija el workflow) | Claude | `S app` | `gh variable list --env staging` muestra las seis | Sí (`gh variable delete`) |
 | 8 | Pool `github` y proveedor `novuchat` propios, condición por identificadores y sujeto `environment:staging` | Claude | `S wif` | `gcloud iam workload-identity-pools providers describe` muestra la condición | Sí |
 | 9 | `sa-deploy-staging` y `sa-functions` con sus roles; rol `desplegadorSecretos`; binding de la federación; cómputo sin Editor | Claude | `S cuentas` | `S verificar` (Policy Troubleshooter de los siete permisos que más fallaron en producción) | Sí, rol por rol |
 | 10 | 25 secretos con valor aleatorio y `secretAccessor` para `sa-functions` | Claude | `S secretos` | `S verificar`: 25 secretos = 25 declarados | Sí (`secrets delete`) |

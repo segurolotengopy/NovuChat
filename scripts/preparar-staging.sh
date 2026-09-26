@@ -112,7 +112,9 @@ fase_apis() {
   local apis=(iamcredentials sts iam firebase firebasehosting firebaserules firestore
               firebasestorage storage cloudfunctions run cloudbuild artifactregistry
               eventarc secretmanager cloudscheduler pubsub identitytoolkit serviceusage
-              cloudresourcemanager)
+              cloudresourcemanager policytroubleshooter)
+  # policytroubleshooter: sin ella, `verificar` devuelve «?» en cada permiso
+  # (el error se tragaba; medido el 26/09).
   local lista=(); for a in "${apis[@]}"; do lista+=("$a.googleapis.com"); done
   correr "habilitar ${#lista[@]} APIs" -- gc services enable "${lista[@]}"
 }
@@ -161,8 +163,8 @@ fase_app() {
     fi
   done
   # La clave de App Check de producción está atada a su dominio y NO sirve
-  # acá: se declara vacía para que el Environment no caiga a la del repositorio.
-  correr "VITE_APPCHECK_SITE_KEY vacía en staging" -- gh variable set VITE_APPCHECK_SITE_KEY --env staging --repo "$REPO" --body ""
+  # acá. No se carga como variable (GitHub rechaza una variable vacía con 422,
+  # medido el 26/09): el job construir-staging la fija vacía en el workflow.
   # El NÚMERO del proyecto: construir-staging verifica con él que el appId
   # (1:<número>:web:…) sea de una app de staging, sin conocer el de producción.
   correr "GCP_PROJECT_NUMBER_STAGING (Environment staging)" -- gh variable set GCP_PROJECT_NUMBER_STAGING --env staging --repo "$REPO" --body "$(numero_proyecto)"
@@ -174,6 +176,8 @@ fase_wif() {
   num="$(numero_proyecto)"
   read -r id_repo id_duenio prefijo <<< "$(ids_de_github)"
   if existe gc iam workload-identity-pools describe github --location=global; then nota "el pool github ya existe"
+  # El nombre visible de un proveedor admite hasta 32 caracteres (medido el
+  # 26/09: «<dueño>/<repo> (staging)» pasaba de largo y el alta fallaba).
   else correr "crear el pool github" -- gc iam workload-identity-pools create github --location=global --display-name="GitHub Actions"; fi
   # La condición compara IDENTIFICADORES, no nombres (DESPLIEGUE-FIREBASE.md,
   # «Estado real»): resiste un cambio de nombre y cierra la puerta a los forks.
@@ -184,7 +188,7 @@ fase_wif() {
       --location=global --workload-identity-pool=github --attribute-condition="$condicion"
   else
     correr "crear el proveedor novuchat" -- gc iam workload-identity-pools providers create-oidc novuchat \
-      --location=global --workload-identity-pool=github --display-name="$REPO (staging)" \
+      --location=global --workload-identity-pool=github --display-name="NovuChat staging" \
       --issuer-uri="https://token.actions.githubusercontent.com" \
       --allowed-audiences="https://iam.googleapis.com/projects/${num}/locations/global/workloadIdentityPools/github/providers/novuchat" \
       --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id" \

@@ -849,7 +849,12 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
           VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_APPCHECK_SITE_KEY: ${{ vars.VITE_APPCHECK_SITE_KEY }}
+          # App Check VACÍO en staging, fijado acá y no por variable: la clave
+          # de producción está atada a su dominio, GitHub no admite una variable
+          # de Environment vacía, y sin variable en `staging` se usaría la del
+          # repositorio (la de producción). Con la clave vacía la consola no
+          # inicializa App Check (`web/src/lib/firebase.ts`).
+          VITE_APPCHECK_SITE_KEY: ''
         run: |
           set -euo pipefail
           if jq -e '.scripts["web:build"]' package.json >/dev/null 2>&1; then
