@@ -144,10 +144,14 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
     }
   });
 
-  it('dice cuáles le facturan el consumo de Meta al comercio', () => {
-    // La pantalla lo avisa; el dato sale del catálogo, no de una lista propia.
-    for (const p of PLANES_PUBLICADOS) expect(paganEllosAMeta(p)).toBe(false);
-    expect(paganEllosAMeta('byoc')).toBe(true);
+  it('NINGÚN plan dice quién le paga a Meta (F1): eso es la titularidad del número, y la pantalla la tiene que leer de `ejesDeCuenta`', () => {
+    // Hasta el 25/09 `byoc` traía `pagaMeta: 'comercio'` y `paganEllosAMeta`
+    // lo pintaba. Desde F1 (`Analisis/41` §4) quién paga Meta es la
+    // titularidad de CADA número (`rutasWhatsApp/{n}.titularidad`), porque un
+    // comercio puede tener uno propio y otro provisto. `paganEllosAMeta`
+    // queda como puente sin información hasta que el agente de consola lo
+    // reemplace por la titularidad; esta prueba lo declara en vez de fingir.
+    for (const p of [...PLANES_PUBLICADOS, 'byoc'] as const) expect(paganEllosAMeta(p)).toBe(false);
   });
 
   it('los meses y las bolsas son los topes del servidor, no listas escritas a mano', () => {

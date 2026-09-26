@@ -31,7 +31,7 @@
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { REGION } from './region.js';
-import { PLANES, PLANES_ASIGNABLES, PLAN_POR_DEFECTO, limitesDeCuenta } from './planes.js';
+import { PLANES, PLAN_POR_DEFECTO, limitesDeCuenta } from './planes.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -45,12 +45,13 @@ const ID_ITEM = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
  * `limiteProductos()`; `pruebas/limite-catalogo.test.ts` compara aquella línea
  * con esta tabla, o sea con `planes.ts`.
  *
- * Incluye `demostracion` (`PLANES_ASIGNABLES`), el plan de los demos de
- * NovuChat (`scripts/sembrar-demos.mjs`): los límites de Pro, para que una
- * demo nunca choque.
+ * Son los planes del catálogo y nada más: desde F1 (`Analisis/41` §4) no hay
+ * plan de demostración. Un demo tiene un plan del catálogo con su copia de
+ * límites, y es la copia la que rige; un `plan: 'demostracion'` que quedara
+ * sin migrar cae en el más chico, como cualquier plan desconocido.
  */
 export const PRODUCTOS_POR_PLAN_RESPALDO: Readonly<Record<string, number>> = Object.freeze(
-  Object.fromEntries(Object.entries(PLANES_ASIGNABLES).map(([id, p]) => [id, p.productos])),
+  Object.fromEntries(Object.entries(PLANES).map(([id, p]) => [id, p.productos])),
 );
 
 /** Sin `limites` y con un plan desconocido: el plan más chico. Fallar hacia abajo. */

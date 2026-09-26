@@ -29,8 +29,9 @@
  * un ensayo NUNCA agenda en la agenda del cliente ni avisa a su recepción.
  *
  * LOS CERROJOS, que se prueban negando (`pruebas/ensayo.test.ts`):
- *   - solo se desvía el número de un comercio con plan `demostracion`: nunca el
- *     de un cliente que paga;
+ *   - solo se desvía el número de un comercio con `modalidad: 'demostracion'`
+ *     EXPLÍCITA en su cuenta (desde F1 el plan no dice si es un demo): nunca
+ *     el de un cliente que paga, ni el de uno sin modalidad cargada;
  *   - el único comercio que se vacía y se recarga es `ensayo`, escrito en el
  *     código;
  *   - la ruta recuerda de dónde vino (`ensayoDe`) y `--restaurar` vuelve solo
@@ -146,9 +147,13 @@ if (MODO[0] === '--restaurar') {
 // 1. Solo un número de DEMOSTRACIÓN. Si ya está en ensayo, su origen se conserva.
 const comercioDeOrigen = actual === ENSAYO ? origen : actual;
 if (!comercioDeOrigen) { console.error('\n  ✗ La ruta está en ensayo sin origen anotado: revisar a mano.\n'); await salir(1); }
-const fichaOrigen = await db.doc(`tenants/${comercioDeOrigen}`).get();
-if (!fichaOrigen.exists || fichaOrigen.get('plan') !== 'demostracion') {
-  console.error(`\n  ✗ ${comercioDeOrigen} no es un comercio de demostración: su número no se usa para ensayar.\n`);
+// La modalidad tiene que estar ESCRITA: «sin modalidad» rige como demostración
+// para el prepago, pero acá se va a desviar un número, y ante la duda no.
+const [fichaOrigen, cuentaOrigen] = await Promise.all([
+  db.doc(`tenants/${comercioDeOrigen}`).get(), db.doc(`tenants/${comercioDeOrigen}/cuenta/estado`).get(),
+]);
+if (!fichaOrigen.exists || cuentaOrigen.get('modalidad') !== 'demostracion') {
+  console.error(`\n  ✗ ${comercioDeOrigen} no es un comercio de demostración (modalidad ${cuentaOrigen.get('modalidad') ?? 'sin cargar'}): su número no se usa para ensayar.\n`);
   await salir(1);
 }
 if (ruta.get('estado') && ruta.get('estado') !== 'activo') {
@@ -194,10 +199,19 @@ if (!APLICAR) {
 
 if (APLICAR) {
   if (!fichaEnsayo.exists) {
+    // El comercio del ensayo es un demo de NovuChat: modalidad demostración
+    // (nunca se corta, sin cargo) con los límites de Pro, porque carga el
+    // catálogo entero del cliente que se ensaya (`cargar-negocio.mjs` respeta
+    // `limites.productos`). `plan: 'demostracion'` ya no existe (F1).
+    const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/planes.ts');
     await refEnsayo.set({
       nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
-      plan: 'demostracion', creadoPor: 'ensayo', creadoEn: Timestamp.now(),
+      plan: 'pro', creadoPor: 'ensayo', creadoEn: Timestamp.now(),
     });
+    await db.doc(`tenants/${ENSAYO}/cuenta/estado`).set({
+      plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'demostracion',
+      estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD', actualizadoEn: Timestamp.now(),
+    }, { merge: true });
   } else {
     await refEnsayo.update({ estado: 'activo', vertical: flujoCliente, flujos: FieldValue.arrayUnion(flujoCliente) });
     for (let i = 0; i < aBorrar.length; i += 400) {

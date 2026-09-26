@@ -1,13 +1,16 @@
 /**
  * Pruebas del catálogo de planes y del aviso de consumo al 80 %
- * (`functions/src/planes.ts`, decisiones de Andres del 15/09/2026).
+ * (`functions/src/planes.ts`, decisiones de Andres del 15/09/2026; los tres
+ * ejes de la cuenta, F1 del 25/09/2026, `Analisis/41` §4).
  *
  * NO NECESITAN EMULADOR: `planes.ts` es puro. La prueba de punta a punta del
  * aviso, con la ingesta real y el emulador, está en `aviso-consumo.test.ts`.
  *
  * Se escriben NEGANDO donde importa: un plan inventado NO es un plan, un
  * comercio sin copia de límites NO recibe más que su plan, y el aviso NO sale
- * dos veces en el mes.
+ * dos veces en el mes. Desde F1, además: «demostracion» NO es un plan, y
+ * ningún plan dice quién paga Meta (`pruebas/central/ejes.test.ts` fija el
+ * resto de los ejes).
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -16,29 +19,29 @@ import { dirname, join } from 'node:path';
 import {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
   PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
-  esIdPlan, limitesDe, limitesDeCuenta, planQuePuedePedir, umbralDeAviso,
+  esIdPlan, esPlanVendible, limitesDe, limitesDeCuenta, planQuePuedePedir, umbralDeAviso,
 } from '../functions/src/planes.ts';
 
 const MES = '2026-10';
 
 describe('El catálogo', () => {
-  it('son los números que publica el sitio (verificados el 15/09/2026)', () => {
+  it('son los números que publica el sitio (verificados el 15/09/2026), más los cambios incluidos de F1', () => {
     expect(PLANES).toEqual({
       impulso: {
         nombre: 'Impulso', precioUsd: 25, conversaciones: 100, productos: 20, agendas: 1,
-        pagaMeta: 'novuchat', campanas: 0,
+        campanas: 0, cambiosIncluidos: 0,
       },
       crecimiento: {
         nombre: 'Crecimiento', precioUsd: 50, conversaciones: 220, productos: 100, agendas: 5,
-        pagaMeta: 'novuchat', campanas: 3,
+        campanas: 3, cambiosIncluidos: 1,
       },
       pro: {
         nombre: 'Pro', precioUsd: 90, conversaciones: 500, productos: 500, agendas: 10,
-        pagaMeta: 'novuchat', campanas: 10,
+        campanas: 10, cambiosIncluidos: 2,
       },
       byoc: {
         nombre: 'BYOC', precioUsd: 50, conversaciones: 2000, productos: 500, agendas: 10,
-        pagaMeta: 'comercio', campanas: 10,
+        campanas: 10, cambiosIncluidos: 2,
       },
     });
     expect(BOLSA).toEqual({ conversaciones: 30, precioUsd: 10 });
@@ -75,38 +78,38 @@ describe('El catálogo', () => {
     expect(PLANES.impulso.conversaciones * 10).toBe(1000);
   });
 
-  it('demostración tiene los límites de Pro, precio cero, y NO está entre los que se venden', () => {
-    expect(PLAN_DEMOSTRACION).toMatchObject({
-      precioUsd: 0,
-      conversaciones: PLANES.pro.conversaciones,
-      productos: PLANES.pro.productos,
-      agendas: PLANES.pro.agendas,
-    });
+  it('«demostracion» YA NO ES UN PLAN (F1): lo asignable es el catálogo y nada más', () => {
+    // Hasta el 25/09 acá vivía `PLAN_DEMOSTRACION` con los límites de Pro y
+    // precio cero. Un demo es ahora modalidad `demostracion` con cualquier
+    // plan (`prepago.ts`); lo que queda es un puente nulo para la consola.
+    expect(PLAN_DEMOSTRACION).toBeNull();
     expect(Object.keys(PLANES)).not.toContain('demostracion');
-    expect(Object.keys(PLANES_ASIGNABLES).sort())
-      .toEqual(['byoc', 'crecimiento', 'demostracion', 'impulso', 'pro']);
+    expect(PLANES_ASIGNABLES).toBe(PLANES);
+    expect(Object.keys(PLANES_ASIGNABLES).sort()).toEqual(['byoc', 'crecimiento', 'impulso', 'pro']);
   });
 
   it('BYOC se puede contratar y pagar, pero NO se publica', () => {
     // Está en el catálogo —un pago de mensualidad solo acepta planes de acá—
     // pero fuera de la escalera del sitio: su precio no se compara de frente
     // con los publicados porque no incluye el consumo de Meta (`Analisis/39`).
-    expect(esIdPlan('byoc')).toBe(true);
+    expect(esPlanVendible('byoc')).toBe(true);
     expect(PLANES_PUBLICADOS).toEqual(['impulso', 'crecimiento', 'pro']);
     expect(PLANES_PUBLICADOS).not.toContain('byoc');
   });
 
-  it('en BYOC le paga a Meta el comercio; en todos los demás, NovuChat', () => {
-    expect(PLANES.byoc.pagaMeta).toBe('comercio');
-    for (const id of ['impulso', 'crecimiento', 'pro', 'demostracion'] as const) {
-      expect(PLANES_ASIGNABLES[id].pagaMeta, id).toBe('novuchat');
+  it('ningún plan dice quién le paga a Meta (F1): eso es la titularidad de cada número', () => {
+    // `byoc.pagaMeta` se fue con los ejes: un comercio puede tener un número
+    // propio y otro provisto, y la franquicia de Meta es por número
+    // (`rutasWhatsApp/{n}.titularidad`, `central/ejes.ts`).
+    for (const [id, p] of Object.entries(PLANES)) {
+      expect(Object.prototype.hasOwnProperty.call(p, 'pagaMeta'), id).toBe(false);
     }
   });
 
   it('el tope de BYOC es el que se fijó contra el modelo que corre', () => {
     // 2.000 conversaciones salen de `Analisis/39` §2 CON GEMINI. Con Haiku 4.5
     // el equilibrio cae a 1.542 y con Sonnet 5 a 771: si algún día se cambia el
-    // modelo de un comercio BYOC, esta cuenta se rehace ANTES.
+    // modelo de un comercio BYOC (`tenants/{t}.modelo`), esta cuenta se rehace ANTES.
     expect(PLANES.byoc.conversaciones).toBe(2000);
     expect(PLANES.byoc.precioUsd).toBe(50);
   });
@@ -117,29 +120,36 @@ describe('El catálogo', () => {
       expect(p.conversaciones).toBeGreaterThanOrEqual(PLANES[PLAN_POR_DEFECTO].conversaciones);
       expect(p.productos).toBeGreaterThanOrEqual(PLANES[PLAN_POR_DEFECTO].productos);
       expect(p.agendas).toBeGreaterThanOrEqual(PLANES[PLAN_POR_DEFECTO].agendas);
+      expect(p.cambiosIncluidos).toBeGreaterThanOrEqual(PLANES[PLAN_POR_DEFECTO].cambiosIncluidos);
     }
   });
 });
 
 describe('Identificadores de plan', () => {
-  it('acepta los cinco del catálogo', () => {
-    for (const id of ['impulso', 'crecimiento', 'pro', 'byoc', 'demostracion']) {
+  it('acepta los cuatro del catálogo, con la guarda del servidor y con el puente de la consola', () => {
+    for (const id of ['impulso', 'crecimiento', 'pro', 'byoc']) {
+      expect(esPlanVendible(id), id).toBe(true);
       expect(esIdPlan(id), id).toBe(true);
     }
   });
 
-  it('NO acepta planes inventados, viejos, con mayúsculas ni propiedades heredadas', () => {
-    for (const id of ['basico', 'base', 'corporativo', 'Pro', 'pro ', '', 'toString', '__proto__',
+  it('NO acepta planes inventados, viejos, el plan de demostración, con mayúsculas ni propiedades heredadas', () => {
+    for (const id of ['basico', 'base', 'corporativo', 'demostracion', 'Pro', 'pro ', '', 'toString', '__proto__',
       'constructor', 'hasOwnProperty']) {
+      expect(esPlanVendible(id), id).toBe(false);
       expect(esIdPlan(id), id).toBe(false);
     }
-    for (const v of [null, undefined, 3, {}, ['pro']]) expect(esIdPlan(v)).toBe(false);
+    for (const v of [null, undefined, 3, {}, ['pro']]) {
+      expect(esPlanVendible(v)).toBe(false);
+      expect(esIdPlan(v)).toBe(false);
+    }
   });
 
-  it('limitesDe da los del plan, y los del más chico si el plan no existe', () => {
-    expect(limitesDe('crecimiento')).toEqual({ conversaciones: 220, productos: 100, agendas: 5 });
-    expect(limitesDe('demostracion')).toEqual({ conversaciones: 500, productos: 500, agendas: 10 });
-    expect(limitesDe('basico')).toEqual({ conversaciones: 100, productos: 20, agendas: 1 });
+  it('limitesDe da los del plan (con los cambios incluidos), y los del más chico si el plan no existe', () => {
+    expect(limitesDe('crecimiento')).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1 });
+    expect(limitesDe('basico')).toEqual({ conversaciones: 100, productos: 20, agendas: 1, cambiosIncluidos: 0 });
+    // El plan viejo de los demos es hoy un plan desconocido: el más chico.
+    expect(limitesDe('demostracion')).toEqual(limitesDe('impulso'));
     expect(limitesDe(undefined)).toEqual(limitesDe('impulso'));
     expect(limitesDe('toString')).toEqual(limitesDe('impulso'));
   });
@@ -154,8 +164,8 @@ describe('Identificadores de plan', () => {
 describe('Los límites que rigen para una cuenta', () => {
   it('manda la copia guardada, aunque el catálogo diga otra cosa', () => {
     // Un comercio que contrató Crecimiento cuando incluía 200 conserva 200.
-    const cuenta = { plan: 'crecimiento', limites: { conversaciones: 200, productos: 80, agendas: 4 } };
-    expect(limitesDeCuenta(cuenta)).toEqual({ conversaciones: 200, productos: 80, agendas: 4, origen: 'cuenta' });
+    const cuenta = { plan: 'crecimiento', limites: { conversaciones: 200, productos: 80, agendas: 4, cambiosIncluidos: 3 } };
+    expect(limitesDeCuenta(cuenta)).toEqual({ conversaciones: 200, productos: 80, agendas: 4, cambiosIncluidos: 3, origen: 'cuenta' });
   });
 
   it('sin copia (comercio viejo), rigen los del plan', () => {
@@ -164,6 +174,7 @@ describe('Los límites que rigen para una cuenta', () => {
 
   it('sin copia y con un plan que no es del catálogo, NO recibe más que Impulso', () => {
     expect(limitesDeCuenta({ plan: 'basico' })).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
+    expect(limitesDeCuenta({ plan: 'demostracion' })).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
     expect(limitesDeCuenta(undefined)).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
     expect(limitesDeCuenta({})).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
   });
@@ -173,10 +184,15 @@ describe('Los límites que rigen para una cuenta', () => {
       plan: 'crecimiento',
       limites: { conversaciones: 220, productos: 'cien', agendas: LIMITE_MAXIMO + 1 },
     };
-    expect(limitesDeCuenta(cuenta)).toEqual({ conversaciones: 220, productos: 100, agendas: 5, origen: 'plan' });
+    expect(limitesDeCuenta(cuenta)).toEqual({ conversaciones: 220, productos: 100, agendas: 5, cambiosIncluidos: 1, origen: 'plan' });
     // Cero, negativo y fracciones tampoco son límites.
     const raro = { plan: 'basico', limites: { conversaciones: 0, productos: -3, agendas: 1.5 } };
     expect(limitesDeCuenta(raro)).toEqual({ ...limitesDe('impulso'), origen: 'respaldo' });
+  });
+
+  it('una copia anterior a F1 (sin cambiosIncluidos) sigue siendo «de la cuenta», y los cambios salen del plan', () => {
+    const vieja = { plan: 'pro', limites: { conversaciones: 500, productos: 500, agendas: 10 } };
+    expect(limitesDeCuenta(vieja)).toEqual({ conversaciones: 500, productos: 500, agendas: 10, cambiosIncluidos: 2, origen: 'cuenta' });
   });
 });
 
@@ -229,10 +245,10 @@ describe('El aviso de consumo al 80 %', () => {
     expect(avisoDeConsumo(cuenta, 160, MES)).toMatchObject({ limite: 200, conversaciones: 160 });
   });
 
-  it('los demos avisan al 80 % de Pro', () => {
-    expect(avisoDeConsumo({ plan: 'demostracion', limites: limitesDe('demostracion') }, 399, MES)).toBeNull();
-    expect(avisoDeConsumo({ plan: 'demostracion', limites: limitesDe('demostracion') }, 400, MES))
-      .toMatchObject({ limite: 500 });
+  it('un demo avisa al 80 % de SU plan (F1): con Pro, a las 400', () => {
+    const demo = { plan: 'pro', modalidad: 'demostracion', limites: limitesDe('pro') };
+    expect(avisoDeConsumo(demo, 399, MES)).toBeNull();
+    expect(avisoDeConsumo(demo, 400, MES)).toMatchObject({ limite: 500 });
   });
 
   it('si los límites bajaron a mitad de mes y ya estaba por encima, avisa con la siguiente', () => {
@@ -264,7 +280,7 @@ describe('Qué plan puede pagarse un comercio por su cuenta', () => {
       expect(planQuePuedePedir(actual, 'byoc')).toBe(false);
     }
   });
-  it('ni la demostración ni algo que no es un plan', () => {
+  it('ni el plan viejo de demostración ni algo que no es un plan', () => {
     expect(planQuePuedePedir('demostracion', 'demostracion')).toBe(false);
     expect(planQuePuedePedir('toString', 'toString')).toBe(false);
   });

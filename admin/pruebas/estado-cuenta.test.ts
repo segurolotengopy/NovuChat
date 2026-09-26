@@ -290,9 +290,15 @@ describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
     expect(c.estadoPago).not.toBe('sin_cargo');
   });
 
-  it('un comercio de demostración POR PLAN, sin modalidad, sí deriva «Sin cargo»', async () => {
+  it('un plan viejo «demostracion» SIN modalidad ya no gobierna los derivados (F1): es un demo sin migrar y no se toca', async () => {
+    // Hasta el 25/09 `plan: 'demostracion'` derivaba «Sin cargo» por sí solo.
+    // Desde F1 solo la modalidad gobierna; `scripts/migrar-ejes.mjs` le da al
+    // demo su `modalidad: 'demostracion'` y recién entonces deriva.
     await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'demostracion', estadoPago: 'al_dia', montoMensual: 50, moneda: 'BOB' });
     await llamar({ tenantId: T, motivoVisible: 'demo' });
+    expect(await cuenta()).toMatchObject({ estadoPago: 'al_dia', montoMensual: 50, moneda: 'BOB', motivoVisible: 'demo' });
+    // Con la modalidad escrita, sí: sin cargo, monto cero, sin vencimiento.
+    await llamar({ tenantId: T, modalidad: 'demostracion' });
     expect(await cuenta()).toMatchObject({ estadoPago: 'sin_cargo', montoMensual: 0, moneda: 'USD' });
   });
 });

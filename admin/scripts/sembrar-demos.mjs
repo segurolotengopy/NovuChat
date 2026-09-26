@@ -39,6 +39,7 @@
  *   node scripts/sembrar-demos.mjs --proyecto <id> --aplicar
  */
 import { readFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 
 const RAIZ = new URL('../../', import.meta.url);
 
@@ -236,8 +237,8 @@ const COMERCIOS = [
 // -----------------------------------------------------------------------------
 const args = process.argv.slice(2);
 const APLICAR = args.includes('--aplicar');
-const iProy = args.indexOf('--proyecto');
-const PROYECTO = iProy >= 0 ? args[iProy + 1] : null;
+const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
+const PROYECTO = opcion('proyecto');
 
 const problemas = [];
 if (!envA) problemas.push('Falta .env (Demo A)');
@@ -300,11 +301,43 @@ const idDe = (nombre) => nombre.toLowerCase()
 
 console.log(`\nDestino: ${PROYECTO}\n`);
 
+// EL PLAN DE LOS DEMOS (F1, `Analisis/41` §4): «demostracion» ya no es un plan.
+// Un demo es modalidad `demostracion` (nunca se corta, sin cargo) con un plan
+// del catálogo, que es el que fija sus límites. Hasta el 25/09 los demos
+// tenían los límites de Pro; `--plan-demos` lo elige, y el valor por defecto
+// es el mismo que el de `migrar-ejes.mjs`. OJO: el catálogo del Demo B tiene
+// más de 150 ítems; con `impulso` (20 productos) `cargar-negocio.mjs` lo
+// rechaza. Es una decisión de Andres, no de este script.
+// `central/ejes.ts` importa `./planes.js` y `./prepago.js`: Node no reescribe
+// esa extensión al cargar TypeScript sin compilar, así que se resuelve con el
+// mismo hook que `asignar-plan.mjs` y `pase-a-produccion.mjs`.
+registerHooks({
+  resolve(especificador, contexto, siguiente) {
+    try {
+      return siguiente(especificador, contexto);
+    } catch (e) {
+      if (especificador.startsWith('.') && especificador.endsWith('.js') && contexto.parentURL?.endsWith('.ts')) {
+        return siguiente(`${especificador.slice(0, -3)}.ts`, contexto);
+      }
+      throw e;
+    }
+  },
+});
+const { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe } = await import('../functions/src/planes.ts');
+const { MODELO_POR_DEFECTO, TITULARIDAD_POR_DEFECTO } = await import('../functions/src/central/ejes.ts');
+const PLAN_DEMOS = (opcion('plan-demos') ?? 'impulso').trim();
+if (!esIdPlan(PLAN_DEMOS)) {
+  console.error(`\n  ✗ --plan-demos desconocido: ${PLAN_DEMOS}. Del catálogo: ${Object.keys(PLANES).join(', ')}\n`);
+  process.exit(2);
+}
+console.log(`Plan de los demos: ${PLAN_DEMOS} (${PLANES[PLAN_DEMOS].productos} productos) · modalidad demostracion\n`);
+
 for (const c of COMERCIOS) {
   await db.doc(`tenants/${c.id}`).set({
     nombre: c.nombre,
     estado: 'activo',
-    plan: 'demostracion',
+    plan: PLAN_DEMOS,
+    modelo: MODELO_POR_DEFECTO,
     vertical: c.vertical,
     flujos: [c.vertical],
     waPhoneNumberId: c.pnid,
@@ -380,14 +413,15 @@ for (const c of COMERCIOS) {
   // El plan de los demos, CON su copia de límites y la versión del catálogo
   // (`functions/src/planes.ts`): quien hace cumplir un límite lee la copia.
   // `set` con `merge` reemplaza `limites` entero, como `asignar-plan.mjs`.
-  const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/planes.ts');
+  // La MODALIDAD es lo que dice que es un demo: sin cargo, nunca se corta.
   await db.doc(`tenants/${c.id}/cuenta/estado`).set({
-    plan: 'demostracion',
-    limites: limitesDe('demostracion'),
+    plan: PLAN_DEMOS,
+    limites: limitesDe(PLAN_DEMOS),
     catalogoPlanes: CATALOGO_PLANES,
+    modalidad: 'demostracion',
     estadoPago: 'sin_cargo',
     montoMensual: 0,
-    moneda: 'BOB',
+    moneda: 'USD',
     motivoVisible: 'Comercio de demostración de NovuChat. No genera cargos.',
     actualizadoEn: FieldValue.serverTimestamp(),
   }, { merge: true });
@@ -395,6 +429,8 @@ for (const c of COMERCIOS) {
   await db.doc(`rutasWhatsApp/${c.pnid}`).set({
     tenantId: c.id,
     flujo: c.vertical,
+    // Los números de los demos son de NovuChat: su WABA, su tarjeta, su franquicia.
+    titularidad: TITULARIDAD_POR_DEFECTO,
     // Apodo del secreto HMAC de ESTE número. El nombre del secreto tiene que
     // ser fijo en el código (`defineSecret`), y el identificador del número no
     // puede escribirse en un repositorio público: el alias resuelve las dos
