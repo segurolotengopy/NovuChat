@@ -605,6 +605,17 @@ dependencias en cada PR.
 
 ## 7. Vulnerabilidad conocida en dependencias (CVE-2026-41907)
 
+> **Cerrado el 25/09/2026 por el camino 1, con una diferencia:** pnpm 11 ya no
+> lee `pnpm.overrides` de `package.json`; el override vive en
+> `admin/pnpm-workspace.yaml` (`overrides: { uuid: ^11.1.1 }`). Con eso
+> `uuid@9.0.1` desapareció de `admin/pnpm-lock.yaml`, la suite completa contra
+> el emulador (que corre sobre `firebase-tools`, es decir sobre `gaxios` con el
+> `uuid` nuevo), `pnpm web:build` y el `tsc` de Functions quedaron en verde, y
+> la excepción del manifiesto se retiró. El runtime de Cloud Functions instala
+> desde `admin/functions/package.json` y **no** lleva el override: allá sigue
+> `uuid` 9, no alcanzable según el análisis de abajo. Lo que sigue es el texto
+> original.
+
 Trivy bloquea el pipeline por `uuid` 9.0.1 en `admin/pnpm-lock.yaml`, severidad
 HIGH. **No es una dependencia declarada del panel**: entra como transitiva de
 `firebase-admin` / `firebase-functions`, a través de `gaxios`, `google-gax` y

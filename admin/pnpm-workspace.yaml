@@ -6,6 +6,11 @@
 # una dependencia parchada es mejor que una excepcion documentada.
 overrides:
   qs: ^6.16.0
+  # CVE-2026-41907 (GHSA-w5hq-g745-h8pq): uuid < 11.1.1 llega solo como transitiva
+  # de gaxios 6 y teeny-request (firebase-admin 13, firebase-tools 15). Ninguna
+  # llamada del árbol usa v3/v5/v6 con búfer, pero el lockfile es lo que Trivy
+  # escanea; se fuerza la versión corregida en el workspace (25/09/2026).
+  uuid: ^11.1.1
 
 packages:
   - web
