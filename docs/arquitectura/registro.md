@@ -41,6 +41,52 @@ manifiesto completo y declaración de mensajes; `fronteras.test.ts` lee los
 importa a otro sin `dependeDe`. Sin esas dos pruebas en verde nada se fusiona
 (`Analisis/41` §8.2).
 
+## registro.ts (F2, PR 1)
+
+**Dónde vive:** `admin/functions/src/registro.ts`, un solo archivo con
+`IDS_MODULOS` (en orden topológico), los nueve manifiestos (`REGISTRO`),
+`carpetasDe(m)`, `manifiestoDe(m)` y dos puentes transitorios:
+`PUENTE_DE_FLUJOS` (cada flujo de hoy expresado como módulos, que se borra con
+la migración `tenants.flujos` → `tenants.modulos`) y `MODULOS_COMUNES_HOY`
+(Productos y Campañas, que hoy tiene todo comercio). En el PR 1 **no lo
+importa nadie**: existe, se verifica y mide.
+
+**Por qué no importa nada:** lo van a importar cuatro mundos que no comparten
+resolución de módulos. Las Functions compilan con `rootDir: src` e importan
+`./registro.js`; la consola lo toma con `../../../functions/src/registro`
+(como ya hace con `planes.ts`); las pruebas, con la extensión `.ts`; y los
+scripts `.mjs`, que Node carga quitando tipos. Node quita tipos pero no
+traduce `./x.js` a `./x.ts`, así que un solo `import` relativo rompería la
+carga desde los scripts. Por la misma razón la sintaxis es solo la que Node
+sabe borrar (sin `enum`, `namespace` ni propiedades de parámetro). Y el
+registro **no lleva rutas de archivos que F2 mueve**: las carpetas de un
+módulo se derivan del id, y el inventario origen → destino está aparte, en
+`admin/pruebas/core/destinos-f2.ts`, que se borra al cerrar F2.
+
+**Cómo se verifica:** `admin/pruebas/core/registro.test.ts` (pura, sin
+emulador) comprueba el registro contra el código de hoy en ocho grupos:
+estructura y cero `import`; pestañas contra `web/src/lib/flujos.ts` y
+`App.tsx`; listas blancas de `firestore.rules`; colecciones y Storage;
+límites contra `planes.ts` y las reglas; herramientas contra los nodos de
+`Flujos/*.json`; Functions contra `index.ts`; y las copias de la lista de
+flujos (`prompt.ts`, `flujos.ts`, `index.ts`, reglas y los dos scripts de
+alta). Lo que hoy es una incoherencia conocida del código está en una lista
+con nombre que solo puede achicarse.
+
+**Cómo se corre la medición:**
+
+```
+node admin/scripts/medir-zonas.mjs          # informe legible
+node admin/scripts/medir-zonas.mjs --json   # el mismo, en JSON
+```
+
+Solo lectura. Clasifica cada archivo de `admin/functions/src`,
+`admin/web/src`, `Flujos/src`, `admin/scripts` y `admin/pruebas` por
+`destinos-f2.ts` (las pruebas, por lo que importan o leen), y lista los que
+quedan sin zona, los que se parten y las importaciones hacia arriba o entre
+módulos sin `dependeDe`. Es una medición: sale siempre con 0. La prueba que
+falla por una importación hacia arriba es `fronteras.test.ts` (PR 2).
+
 ## La política de capas del 06/09, que el registro reemplaza
 
 Lo que sigue es `admin/DISENO.md` §4sexies tal como estaba. Es el antecedente
