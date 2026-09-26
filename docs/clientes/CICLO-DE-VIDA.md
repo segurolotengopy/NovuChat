@@ -245,10 +245,11 @@ Mientras F2 y F3 estén en curso, **ningún cliente recibe código a medida**. L
 que sí sigue: configuración (es dato y se aplica en cualquier momento),
 comercial, Meta, aceptación, y hotfix de seguridad o de protección. Todo pedido
 que exija código se analiza igual (§12.4), se cotiza si corresponde, y queda en
-`pedidos.md` con fecha comprometida «después de F3». Se les dice a los clientes
-en prueba, y es la razón para no firmar el pase de nadie antes de F3: el SLA
-promete cambios operados por NovuChat en dos días hábiles, y con el core en
-obra esa promesa no se puede cumplir.
+`pedidos.md` con fecha comprometida «después de F3b». Se les dice a los
+clientes en prueba. **Desde la reorientación del 26/09/2026** (`Analisis/41`
+§6.3 y §12.10), los cambios incluidos son de configuración y su SLA de dos días
+hábiles se cumple durante la obra, porque la configuración no está congelada:
+el pase de un cliente ya no espera a F3 (H4 se parte por cliente).
 
 De los pedidos abiertos al 25/09: los siete del audio de Bellido son
 configuración o decisión del doctor salvo la lista de cuatro filas (topología,
