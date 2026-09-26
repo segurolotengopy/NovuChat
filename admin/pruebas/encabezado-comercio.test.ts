@@ -25,6 +25,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { modoDelComercio } from '../web/src/lib/modoComercio';
 import { ChipModo } from '../web/src/componentes/ChipModo';
+import { modalidadDe } from '../functions/src/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');
@@ -44,9 +45,11 @@ const dibujar = (cuenta: Record<string, unknown> | null | undefined) =>
   renderToStaticMarkup(createElement(ChipModo, { modo: modoDelComercio(cuenta) }));
 
 describe('modoDelComercio: PRUEBA o PRODUCCIÓN', () => {
-  it('prepago es PRODUCCIÓN, con «Prepago» de detalle', () => {
+  it('la modalidad de producción es PRODUCCIÓN, con «Producción» de detalle (nunca «Prepago»)', () => {
+    // `Analisis/41` §6.1 punto 6: «producción» reemplaza a «prepago» en la
+    // consola; el código conserva el valor `prepago`.
     expect(modoDelComercio({ modalidad: 'prepago', plan: 'emprendedor' }))
-      .toEqual({ etiqueta: 'PRODUCCIÓN', detalle: 'Prepago', produccion: true });
+      .toEqual({ etiqueta: 'PRODUCCIÓN', detalle: 'Producción', produccion: true });
   });
 
   it('el mes de prueba es PRUEBA, con «Mes de prueba» de detalle', () => {
@@ -60,15 +63,19 @@ describe('modoDelComercio: PRUEBA o PRODUCCIÓN', () => {
     }
   });
 
-  it('plan «demostracion» manda sobre la modalidad, como en el servidor', () => {
-    expect(modoDelComercio({ plan: 'demostracion', modalidad: 'prepago' }).etiqueta).toBe('PRUEBA');
+  it('con plan «demostracion» y modalidad de producción dice lo que diga el servidor, no lo que diga el plan', () => {
+    // La regla es de `modalidadDe` (Functions). Hoy el plan interno manda;
+    // cuando `central` haga la modalidad independiente del plan
+    // (`Analisis/41` §4), este caso sigue valiendo sin tocar la consola.
+    const cuenta = { plan: 'demostracion', modalidad: 'prepago' };
+    expect(modoDelComercio(cuenta).etiqueta).toBe(modalidadDe(cuenta) === 'prepago' ? 'PRODUCCIÓN' : 'PRUEBA');
   });
 });
 
 describe('El chip dibujado', () => {
-  it('prepago → «PRODUCCIÓN», con su clase y su title', () => {
+  it('producción → «PRODUCCIÓN», con su clase y su title', () => {
     expect(dibujar({ modalidad: 'prepago' }))
-      .toBe('<span class="tag tag-modo-produccion" title="Prepago">PRODUCCIÓN</span>');
+      .toBe('<span class="tag tag-modo-produccion" title="Producción">PRODUCCIÓN</span>');
   });
 
   it('prueba → «PRUEBA», con «Mes de prueba» de title', () => {
@@ -100,6 +107,8 @@ describe('La cabecera en la fuente', () => {
     for (const fuente of [encabezado, chip, cartera]) {
       expect(fuente).not.toMatch(/'(prepago|prueba|demostracion)'/);
     }
+    // Y el módulo no mira el plan: la modalidad es un eje independiente.
+    expect(modulo).not.toMatch(/\.plan\b|\['plan'\]|'demostracion'/);
     expect(encabezado).toContain('modoDelComercio(d.data())');
     expect(cartera).toContain('modoDelComercio(d.data())');
   });

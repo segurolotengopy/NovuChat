@@ -144,10 +144,18 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
     }
   });
 
-  it('dice cuáles le facturan el consumo de Meta al comercio', () => {
-    // La pantalla lo avisa; el dato sale del catálogo, no de una lista propia.
-    for (const p of PLANES_PUBLICADOS) expect(paganEllosAMeta(p)).toBe(false);
-    expect(paganEllosAMeta('byoc')).toBe(true);
+  it('dice si Meta le factura el consumo al comercio: lo decide la TITULARIDAD de sus números, no el plan', () => {
+    // `Analisis/41` §4: BYOC deja de ser un plan; es titularidad `comercio` más
+    // un plan. La pantalla lo avisa mirando cada `rutasWhatsApp/{n}`.
+    const propio = { phoneNumberId: '1', tenantId: 't', titularidad: 'comercio' };
+    const provisto = { phoneNumberId: '2', tenantId: 't', titularidad: 'novuchat' };
+    const sinDato = { phoneNumberId: '3', tenantId: 't' };
+    expect(paganEllosAMeta([])).toBe(false);
+    expect(paganEllosAMeta([provisto, sinDato])).toBe(false);
+    expect(paganEllosAMeta([provisto, propio])).toBe(true);
+    // Y el plan ya no dice nada al respecto: ni `pagaMeta` ni el nombre BYOC.
+    expect(sinComentarios(leer('web/src/lib/pagar.ts'))).not.toMatch(/\bpagaMeta\b/);
+    expect(sinComentarios(leer('web/src/paginas/Pagar.tsx'))).not.toMatch(/\bpagaMeta\b|'byoc'/);
   });
 
   it('los meses y las bolsas son los topes del servidor, no listas escritas a mano', () => {
@@ -164,7 +172,7 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
   });
 });
 
-describe('ResumenPrepago: el corte observado no existe para el comercio', () => {
+describe('ResumenPrepago: el corte observado no existe para el comercio, y se llama «producción»', () => {
   const dibujar = (cuenta: Record<string, unknown>, consumidas: number, corte: Corte | null) =>
     renderToStaticMarkup(createElement(ResumenPrepago, {
       servicio: estadoDeServicio(cuenta, consumidas, AHORA), corte,
@@ -208,6 +216,12 @@ describe('ResumenPrepago: el corte observado no existe para el comercio', () => 
     expect(html).toContain('30 en bolsas');
     expect(html).toContain('90'); // 100 - 40 + 30
   });
+
+  it('al comercio se le dice «producción», nunca «prepago» (Analisis/41 §6.1 punto 6)', () => {
+    const html = dibujar({ modalidad: 'prepago', plan: 'impulso', periodoPagado: '2026-10' }, 1, null);
+    expect(html).toContain('Su servicio en producción');
+    expect(html.toLowerCase()).not.toContain('prepago');
+  });
 });
 
 describe('la pantalla no escribe, y no promete lo que no sabe', () => {
@@ -235,5 +249,17 @@ describe('la pantalla no escribe, y no promete lo que no sabe', () => {
 
   it('el botón de emitir se deshabilita si no hay importe en bolivianos', () => {
     expect(pagar).toContain('vista.montoBs === null');
+  });
+
+  it('muestra los tres ejes por separado y no deduce nada del nombre del plan', () => {
+    // `Analisis/41` §4, consecuencia 3: Cuenta y Pagar muestran plan,
+    // modalidad y titularidad; Negocios es el único lugar donde se asignan.
+    const texto = sinComentarios(pagar);
+    expect(texto).toContain('<EjesDeLaCuenta');
+    expect(texto).not.toMatch(/=== 'demostracion'|!== 'demostracion'/);
+    expect(texto).toContain('paganEllosAMeta(rutas ?? [])');
+    const cuenta = sinComentarios(leer('web/src/paginas/EstadoCuenta.tsx'));
+    expect(cuenta).toContain('<EjesDeLaCuenta');
+    expect(cuenta).not.toMatch(/plan === 'demostracion'|\bpagaMeta\b/);
   });
 });
