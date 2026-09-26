@@ -109,8 +109,15 @@ y se vuelve a pegar el resto. Así:
   `CLAUDE_PROJECT_DIR`). Los prefijos relativos, contra la raíz de su zona.
 - **Con la zona activa no se escribe un `.git` ni un `.claude/zona`**: sería
   plantar desde adentro una raíz o una zona nuevas. Y si aparecen igual (por
-  `Bash`), no amplían nada: el recorrido sigue hasta la raíz real del
-  worktree y todas las zonas se aplican a la vez. Por lo mismo, **la
+  `Bash`), no amplían nada **dentro del worktree**: el recorrido sigue hasta
+  la raíz real y todas las zonas se aplican a la vez. **Límite declarado
+  (LOW, tercera revisión de #210):** un `.git` directorio, o un archivo
+  `gitdir:` que apunte a una carpeta existente, plantado con `Bash` en una
+  subcarpeta donde el agente deja su `cwd`, corta el recorrido; desde ahí un
+  Edit/Write a la copia principal (que no tiene zona) no se rechaza. Exige
+  `Bash` con intención y un `cwd` persistente en esa subcarpeta, y ese agente
+  ya puede escribir directo con `Bash`. Remedio, si hiciera falta: validar el
+  enlace inverso de git (`.git/worktrees/<n>/gitdir`). Por lo mismo, **la
   coordinadora tampoco reescribe con Edit/Write un `.claude/zona` que ya
   existe**: lo crea por primera vez, o lo cambia con Bash.
 
