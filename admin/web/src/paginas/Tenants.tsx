@@ -11,6 +11,7 @@ import { corteDe, fechaCorta, type Corte } from '../lib/prepago';
 import { CALLABLES, ETIQUETA_TITULARIDAD, rutaDe, titularidadDe, type RutaWhatsApp } from '../lib/ejes';
 import { CortePrepago } from '../plataforma/componentes/CortePrepago';
 import { mensajeDeError } from '../plataforma/lib/negocios';
+import { useCompuertaDelCorte } from '../plataforma/lib/lecturas';
 
 interface Tenant { id: string; nombre?: unknown; estado?: unknown; plan?: unknown }
 
@@ -50,10 +51,9 @@ export function Tenants() {
   // `rutasWhatsApp` (decenas de documentos, solo el propietario la lista) y
   // se agrupa por comercio. `null` si no se pudo leer.
   const [rutas, setRutas] = useState<Record<string, RutaWhatsApp[]> | null>({});
-  // LA COMPUERTA GLOBAL DEL CORTE (`plataforma/prepago`): se ve y se cambia
-  // desde acá, con motivo y confirmación. Es la decisión que alcanza a todos
-  // los comercios en producción.
-  const [plataforma, setPlataforma] = useState<Record<string, unknown> | null | undefined>(undefined);
+  // LA COMPUERTA GLOBAL DEL CORTE: se ve y se cambia desde acá, con motivo y
+  // confirmación. Es la decisión que alcanza a todos los comercios en producción.
+  const plataforma = useCompuertaDelCorte();
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,10 +74,6 @@ export function Tenants() {
       setRutas(porTenant);
     },
     () => setRutas(null)), []);
-
-  useEffect(() => onSnapshot(doc(db, 'plataforma', 'prepago'),
-    (d) => setPlataforma(d.data() ?? null),
-    () => setPlataforma(null)), []);
 
   const fijarCorte = useCallback(async (corteActivo: boolean, motivo: string) => {
     setOcupado(true); setError(null); setAviso(null);
