@@ -23,12 +23,17 @@ prompt, y el prompt no es una barrera.
 ## De dónde sale la zona (dos fuentes, en este orden)
 
 1. **La variable de entorno `NOVUCHAT_ZONA`**, si existe y no está vacía.
-2. **Todos los `.claude/zona` de estas raíces, a la vez** (intersección): la
-   del `cwd` que Claude Code manda en el evento (el worktree donde trabaja el
-   agente), la del archivo destino, y `CLAUDE_PROJECT_DIR` (si no está, el
-   directorio de trabajo). El destino tiene que caber en cada una, con los
-   prefijos de cada una relativos a su propia raíz. `NOVUCHAT_ZONA`, si está,
-   manda sola y se ancla en `CLAUDE_PROJECT_DIR`, como antes. La raíz de una ruta es la carpeta más cercana,
+2. **Todos los `.claude/zona` que aparezcan, a la vez** (intersección):
+   subiendo desde el `cwd` que Claude Code manda en el evento (el worktree
+   donde trabaja el agente) y desde el archivo destino, cada recorrido hasta
+   su primera **raíz git real** (un `.git` directorio, o un archivo
+   `gitdir:` cuya ruta existe; un `.git` vacío plantado no cuenta). La de
+   `CLAUDE_PROJECT_DIR` (si no está, el directorio de trabajo) entra solo de
+   respaldo, cuando el `cwd` no dio ninguna: así una sesión con zona puede
+   lanzar subagentes con zona en otros worktrees. El destino tiene que caber
+   en cada zona, con sus prefijos relativos a la carpeta de esa zona.
+   `NOVUCHAT_ZONA`, si está, manda sola y se ancla en `CLAUDE_PROJECT_DIR`,
+   como antes (por eso no sirve para subagentes con worktree). La raíz de una ruta es la carpeta más cercana,
    subiendo, que tiene `.git` (directorio en la copia principal, archivo en un
    worktree).
 
@@ -104,7 +109,10 @@ y se vuelve a pegar el resto. Así:
   `CLAUDE_PROJECT_DIR`). Los prefijos relativos, contra la raíz de su zona.
 - **Con la zona activa no se escribe un `.git` ni un `.claude/zona`**: sería
   plantar desde adentro una raíz o una zona nuevas. Y si aparecen igual (por
-  `Bash`), no amplían nada, porque se aplican todas las zonas a la vez.
+  `Bash`), no amplían nada: el recorrido sigue hasta la raíz real del
+  worktree y todas las zonas se aplican a la vez. Por lo mismo, **la
+  coordinadora tampoco reescribe con Edit/Write un `.claude/zona` que ya
+  existe**: lo crea por primera vez, o lo cambia con Bash.
 
 ## Fallo cerrado
 

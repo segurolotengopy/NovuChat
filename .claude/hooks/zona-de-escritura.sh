@@ -83,22 +83,36 @@ print(v if isinstance(v, str) else "")' "$1" 2>/dev/null
   fi
 }
 
-# raiz_de <ruta>: la raíz del checkout que contiene la ruta (la carpeta más
-# cercana, subiendo, que tiene `.git`: directorio en la copia principal,
-# archivo en un worktree). Sirve aunque la ruta todavía no exista.
-raiz_de() {
-  # Solo con expansiones de bash: sin `dirname` (puede faltar en un PATH
-  # mínimo) y con un tope de 256 niveles, para que ningún camino raro cuelgue
-  # el gancho.
+# es_raiz_real <dir>: un checkout de verdad, no un `.git` plantado. En la
+# copia principal `.git` es un directorio; en un worktree es un archivo
+# «gitdir: <ruta>» cuya ruta existe.
+es_raiz_real() {
+  local d="$1" linea destino
+  [[ -d "$d/.git" ]] && return 0
+  [[ -f "$d/.git" ]] || return 1
+  IFS= read -r linea < "$d/.git" || return 1
+  [[ "$linea" == gitdir:* ]] || return 1
+  destino="${linea#gitdir:}"; destino="${destino# }"
+  [[ "$destino" == /* ]] || destino="$d/$destino"
+  [[ -d "$destino" ]]
+}
+
+# zonas_hasta_raiz <ruta>: cada carpeta con `.claude/zona` desde la carpeta
+# existente más cercana a la ruta, subiendo, HASTA la primera raíz real
+# (incluida). Así una zona o un `.git` plantados en una subcarpeta no ocultan
+# la zona del worktree, y la zona de un checkout no alcanza a los worktrees
+# que viven adentro de él. Solo con expansiones de bash (sin `dirname`) y con
+# un tope de 256 niveles, para que ningún camino raro cuelgue el gancho.
+zonas_hasta_raiz() {
   local d="$1" n=0
   [[ -n "$d" && "$d" == /* ]] || return 0
   while [[ -n "$d" && ! -d "$d" && $n -lt 256 ]]; do d="${d%/*}"; n=$((n + 1)); done
   [[ -n "$d" ]] || d="/"
-  [[ -d "$d" ]] || return 0
   d="$(cd "$d" 2>/dev/null && pwd -P)" || return 0
   n=0
   while [[ -n "$d" && "$d" != "/" && $n -lt 256 ]]; do
-    [[ -e "$d/.git" ]] && { printf '%s' "$d"; return 0; }
+    [[ -f "$d/.claude/zona" ]] && printf '%s\n' "$d"
+    es_raiz_real "$d" && return 0
     d="${d%/*}"; n=$((n + 1))
   done
 }
@@ -107,12 +121,13 @@ raiz_de() {
 # lanzado con worktree recibe el CLAUDE_PROJECT_DIR de la sesión que lo lanzó
 # —la copia principal—, así que buscar `.claude/zona` solo ahí dejaba el gancho
 # mudo dentro del worktree del agente: medido con un agente de prueba, que
-# escribió fuera de su zona sin un rechazo. Ahora se miran TRES raíces: la del
-# `cwd` del evento (el worktree donde trabaja el agente), la del archivo
-# destino y CLAUDE_PROJECT_DIR (o el directorio de trabajo). TODAS las que
-# tengan `.claude/zona` se aplican a la vez (intersección; revisión de
-# seguridad de #210): el destino tiene que caber en cada una, cada una con sus
-# prefijos relativos a su propia raíz. Así un agente con zona que escribe en
+# escribió fuera de su zona sin un rechazo. Ahora se juntan las zonas que hay
+# subiendo desde el `cwd` del evento (el worktree donde trabaja el agente) y
+# desde el archivo destino, cada recorrido hasta su primera raíz git real; la
+# de CLAUDE_PROJECT_DIR (o el directorio de trabajo) entra solo si el cwd no
+# dio ninguna. TODAS se aplican a la vez (intersección; revisión de seguridad
+# de #210): el destino tiene que caber en cada una, cada una con sus prefijos
+# relativos a su propia carpeta. Así un agente con zona que escribe en
 # otro checkout choca con su zona, uno que se mudó de carpeta y escribe en un
 # worktree con zona choca con la de ese worktree, y una zona plantada no
 # amplía la otra.
@@ -124,8 +139,12 @@ CWD_EVENTO="$(campo cwd)"
 DESTINO_EVENTO="$(campo file_path)"
 # Una ruta relativa la escribe la herramienta contra el cwd: se juzga ESA.
 [[ -z "$DESTINO_EVENTO" || "$DESTINO_EVENTO" == /* ]] || DESTINO_EVENTO="${CWD_EVENTO:-$PROYECTO}/$DESTINO_EVENTO"
-RAIZ_CWD="$(raiz_de "$CWD_EVENTO")"
-RAIZ_DESTINO="$(raiz_de "$DESTINO_EVENTO")"
+ZONAS_CWD="$(zonas_hasta_raiz "$CWD_EVENTO")"
+ZONAS_DESTINO="$(zonas_hasta_raiz "$DESTINO_EVENTO")"
+# La del proyecto, solo de respaldo: cuando el cwd no dio ninguna zona. Si no,
+# una sesión con zona no podría lanzar subagentes con zona en otros worktrees.
+ZONA_PROYECTO=""
+[[ -z "$ZONAS_CWD" && -f "$PROYECTO/.claude/zona" ]] && ZONA_PROYECTO="$PROYECTO"
 
 negar() {
   # Sin depender de python3: JSON escrito a mano, sin comillas dentro del texto.
@@ -139,7 +158,7 @@ if [[ -n "${NOVUCHAT_ZONA:-}" ]]; then
   ZONAS="$PROYECTO"$'\t'"$NOVUCHAT_ZONA"
 else
   vistas=":"
-  for candidata in "$RAIZ_CWD" "$RAIZ_DESTINO" "$PROYECTO"; do
+  while IFS= read -r candidata; do
     [[ -n "$candidata" && -f "$candidata/.claude/zona" ]] || continue
     real="$(cd "$candidata" 2>/dev/null && pwd -P)" || real="$candidata"
     [[ "$vistas" == *":$real:"* ]] && continue
@@ -150,7 +169,7 @@ else
     # quien lanzó al agente, no una zona abierta: fallo cerrado.
     [[ -n "$prefijos" ]] || negar "Zona de escritura: el archivo de zona existe pero no tiene prefijos (o no se pudo leer); se rechaza la escritura hasta que nombre carpetas concretas."
     ZONAS="${ZONAS:+$ZONAS$'\n'}$real"$'\t'"$prefijos"
-  done
+  done <<< "$ZONAS_CWD"$'\n'"$ZONAS_DESTINO"$'\n'"$ZONA_PROYECTO"
 fi
 
 # Sin zona: no se opina.

@@ -164,7 +164,7 @@ echo "Subagente en su worktree (26/09): CLAUDE_PROJECT_DIR es la copia principal
 # de este arreglo el gancho solo miraba CLAUDE_PROJECT_DIR y no rechazaba nada.
 PRINCIPAL="$(mktemp -d)"
 AGENTE="$PRINCIPAL/.claude/worktrees/agente"
-mkdir -p "$PRINCIPAL/.git" "$PRINCIPAL/docs" "$PRINCIPAL/admin/functions/src" "$AGENTE/.claude" \
+mkdir -p "$PRINCIPAL/.git/worktrees/agente" "$PRINCIPAL/.git/worktrees/otro" "$PRINCIPAL/docs" "$PRINCIPAL/admin/functions/src" "$AGENTE/.claude" \
   "$AGENTE/admin/functions/src/modulos/agenda" "$AGENTE/admin/functions/src/core"
 printf 'gitdir: %s/.git/worktrees/agente\n' "$PRINCIPAL" > "$AGENTE/.git"
 printf 'admin/functions/src/modulos/agenda/\n' > "$AGENTE/.claude/zona"
@@ -203,16 +203,23 @@ caso_cwd "FUERA: plantar un .claude/zona dentro de la zona"   deny "$AGENTE" Wri
 : > "$AGENTE/admin/functions/src/modulos/agenda/sub/.git"
 printf '../../../core/\n' > "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude/zona"
 caso_cwd "FUERA: raíz y zona plantadas, cwd adentro, escribe en el core" deny "$AGENTE/admin/functions/src/modulos/agenda/sub" Write "$AGENTE/admin/functions/src/core/ingesta.ts"
+# El residual de la segunda vuelta: la raíz plantada ya no oculta la zona del
+# worktree aunque el destino esté en la copia principal (se sube hasta la
+# primera raíz REAL, y un `.git` vacío no lo es).
+caso_cwd "FUERA: raíz plantada, cwd adentro, escribe en la principal" deny "$AGENTE/admin/functions/src/modulos/agenda/sub" Write "$PRINCIPAL/admin/functions/src/ingesta.ts"
 rm -rf "$AGENTE/admin/functions/src/modulos/agenda/sub"
 # Otro worktree con su zona: una sesión con zona en el proyecto, sin cwd, no escribe ahí.
 OTRO="$PRINCIPAL/.claude/worktrees/otro"
 mkdir -p "$OTRO/.claude" "$OTRO/admin" "$OTRO/docs"
-printf 'gitdir: x\n' > "$OTRO/.git"; printf 'admin/\n' > "$OTRO/.claude/zona"
+printf 'gitdir: %s/.git/worktrees/otro\n' "$PRINCIPAL" > "$OTRO/.git"; printf 'admin/\n' > "$OTRO/.claude/zona"
 printf 'docs/\n' > "$PRINCIPAL/.claude/zona"
 salida="$(evento Write "$OTRO/admin/x.ts" | env -u NOVUCHAT_ZONA CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
 informar "FUERA: sin cwd, zona del proyecto y del destino a la vez" deny "$(decidir "$salida")" "Write otro/admin/x.ts" "$salida"
 salida="$(evento_cwd Write "$OTRO/docs/x.md" "$OTRO" | NOVUCHAT_ZONA="docs/" CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
 informar "FUERA: NOVUCHAT_ZONA se ancla en CLAUDE_PROJECT_DIR" deny "$(decidir "$salida")" "Write otro/docs/x.md" "$salida"
+# Una sesión con zona puede lanzar subagentes con zona en otros worktrees: la
+# zona del proyecto es solo el respaldo de un cwd sin zona.
+caso_cwd "ADENTRO: proyecto con zona, subagente dentro de la suya" nada "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sena.ts"
 rm -f "$PRINCIPAL/.claude/zona"
 printf '# pendiente\n\n' > "$OTRO/.claude/zona"
 caso_cwd "FUERA: .claude/zona sin prefijos (fallo cerrado)"   deny "$OTRO" Write "$OTRO/admin/x.ts"
