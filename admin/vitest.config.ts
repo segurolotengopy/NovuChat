@@ -11,13 +11,22 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * comparte entre worktrees (ver `pruebas/correr.sh`).
  *
  * `puras` es una LISTA EXPLÍCITA: cada archivo de abajo se verificó en verde
- * sin emulador (43 suites, 2.291 pruebas, ~5 s, el 26/09/2026). `emulador` es
+ * sin emulador (42 suites, 2.275 pruebas, ~5 s, el 26/09/2026). `emulador` es
  * TODO LO DEMÁS: una suite nueva cae ahí por defecto, donde siempre funciona;
  * si no toca Firestore, se agrega a la lista y gana el ciclo corto. Una suite
  * de la lista que empiece a necesitar el emulador falla en `pnpm
  * pruebas:puras`, que es exactamente lo que se quiere: se la saca de la lista.
  *
- *   pnpm pruebas:puras      -> vitest run --project puras      (sin emulador)
+ * HERMÉTICA POR CONSTRUCCIÓN: `pnpm pruebas:puras` fija
+ * FIRESTORE_EMULATOR_HOST=127.0.0.1:1, un puerto donde nadie escucha. Si una
+ * suite de la lista abre Firebase, falla al instante en vez de colgarse en un
+ * entorno sin red o, peor, de mandar tráfico real con las credenciales por
+ * defecto (ADC). Por eso `asignar-rol.test.ts` NO está en la lista aunque
+ * pasaba sin emulador: `asignar-rol.mjs` inicializa Firebase y lee Firestore
+ * ANTES de decidir el modo seco (líneas 82-98), y con ADC en la máquina eso es
+ * una lectura real. Va en `emulador` (revisión de seguridad del PR #206).
+ *
+ *   pnpm pruebas:puras      -> vitest run --project puras      (sin emulador, hermética)
  *   pnpm pruebas:emulador   -> correr.sh --project emulador    (con emulador)
  *   pnpm pruebas:reglas     -> correr.sh                       (todo, como siempre)
  *
@@ -26,7 +35,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export const SUITES_PURAS = [
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',
-  'pruebas/asignar-rol.test.ts',
+  // 'pruebas/asignar-rol.test.ts' NO: abre Firebase antes del modo seco (ver arriba).
   'pruebas/bellido-flujo.test.ts',
   'pruebas/bitacora-tipos.test.ts',
   'pruebas/campanas-consola.test.ts',

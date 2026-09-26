@@ -128,7 +128,7 @@ cd admin
 pnpm install
 
 pnpm pruebas:reglas     # emulador + 164 pruebas (155 de reglas, 26 puras)
-pnpm pruebas:puras      # SIN emulador: las 43 suites que no tocan Firestore (2.291 pruebas, ~5 s)
+pnpm pruebas:puras      # SIN emulador: las 42 suites que no tocan Firestore (2.275 pruebas, ~5 s), herméticas
 pnpm pruebas:emulador   # solo las 33 suites que sí lo tocan (reglas, ingesta, prepago, campañas…)
 pnpm emuladores         # Auth + Firestore para probar a mano
 pnpm sembrar            # datos de prueba (idempotente)
@@ -156,7 +156,13 @@ otras que levantan `@firebase/rules-unit-testing` o `firebase-admin` contra el
 emulador.
 
 - `pnpm pruebas:puras` corre sin emulador y sin puerto: es el ciclo corto
-  para editar un flujo, un plan o una pantalla.
+  para editar un flujo, un plan o una pantalla. Es **hermética por
+  construcción**: el guion fija `FIRESTORE_EMULATOR_HOST=127.0.0.1:1`, un
+  puerto donde nadie escucha, así que una suite de la lista que abra Firebase
+  falla al instante en vez de colgarse sin red o de mandar tráfico real con
+  las credenciales por defecto. Por eso `asignar-rol.test.ts` está en
+  `emulador` aunque pase sin él: el script abre Firebase antes de decidir el
+  modo seco.
 - `pnpm pruebas:emulador` levanta el emulador con `pruebas/correr.sh` y corre
   solo el otro proyecto (mismo cuidado con el puerto compartido:
   `FIRESTORE_EMULATOR_PORT` propio por worktree).
