@@ -214,8 +214,9 @@ describe('Las fuentes: nadie escribe el plan viejo ni pagaMeta, y el servidor us
       expect(fuente, a).not.toMatch(/\bPLANES_ASIGNABLES\b(?!\s*\}\s*from)/);
       expect(fuente, a).not.toMatch(/\bIdPlan\b/);
     }
-    // Y la consola sí los importa todavía: cuando deje de hacerlo, el puente se borra.
-    const consola = leer('web/src/lib/planes.ts') + leer('web/src/lib/pagar.ts');
-    expect(consola).toMatch(/PLAN_DEMOSTRACION|esIdPlan/);
+    // Y la consola ya no los usa (reconciliación de #203 con #207): el puente
+    // queda solo en `planes.ts` y lo borra F2.
+    const consola = sinComentarios(leer('web/src/lib/planes.ts') + leer('web/src/lib/pagar.ts') + leer('web/src/lib/prepago.ts'));
+    expect(consola).not.toMatch(/\bPLAN_DEMOSTRACION\b|\besIdPlan\b|\bPLANES_ASIGNABLES\b|\bIdPlan\b|\bpagaMeta\b/);
   });
 });

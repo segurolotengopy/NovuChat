@@ -7,6 +7,7 @@ import { Marca } from './componentes/Marca';
 import { EncabezadoComercio } from './componentes/EncabezadoComercio';
 import { Ingresar } from './paginas/Ingresar';
 import { Tenants } from './paginas/Tenants';
+import { CuentaNegocio } from './plataforma/paginas/CuentaNegocio';
 import { Configuracion } from './paginas/Configuracion';
 import { Conversaciones } from './paginas/Conversaciones';
 import { Consumo } from './paginas/Consumo';
@@ -69,6 +70,7 @@ import type { FlujoId } from './lib/flujos';
 const TITULOS: Record<string, string> = {
   '': 'Inicio',
   negocios: 'Negocios',
+  administrar: 'Administrar negocio',
   bitacora: 'Bitácora',
   'mi-cuenta': 'Mi cuenta',
   configuracion: 'Configuración',
@@ -247,6 +249,11 @@ export function App() {
           <Proteger><><Cabecera /><MiCuenta /></></Proteger>} />
         <Route path="/negocios" element={
           <Proteger requiere="propietario"><><Cabecera /><Tenants /></></Proteger>} />
+        {/* PLATAFORMA: un negocio visto por NovuChat. Los tres ejes, el modelo,
+            los umbrales, suspender, el pago a mano y el corte del comercio.
+            Solo el propietario, y cada acción la valida el servidor. */}
+        <Route path="/negocios/:tenantId/administrar" element={
+          <Proteger requiere="propietario"><><Cabecera /><CuentaNegocio /></></Proteger>} />
         <Route path="/negocio/:tenantId/configuracion" element={
           <Proteger requiere="adminTenant"><><Cabecera /><Configuracion /></></Proteger>} />
         <Route path="/negocio/:tenantId/conversaciones" element={
