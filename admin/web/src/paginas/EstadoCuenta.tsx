@@ -5,10 +5,12 @@ import { db } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
 import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../lib/atencion';
-import { avisoConsumoVigente, limiteDeProductos, nombreDePlan, periodoDe } from '../lib/planes';
+import { avisoConsumoVigente, limiteDeProductos, periodoDe } from '../lib/planes';
 import { AvisoConsumo } from '../componentes/AvisoConsumo';
 import { consumidasDe, corteDe, estadoDeServicio } from '../lib/prepago';
 import { ResumenPrepago } from '../componentes/ResumenPrepago';
+import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
+import { useEjesDeCuenta, useTipoCambio } from '../central/lib/lecturas';
 
 interface Cuenta {
   plan?: unknown;
@@ -43,6 +45,12 @@ export function EstadoCuenta() {
   const [cuenta, setCuenta] = useState<Cuenta | null>(null);
   const [consumidas, setConsumidas] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // LOS TRES EJES POR SEPARADO (`Analisis/41` §4): la titularidad es de cada
+  // número y el importe en bolivianos, del tipo de cambio del día.
+  // La titularidad de sus números solo la ve el comercio por `ejesDeCuenta`:
+  // `rutasWhatsApp` es del propietario (trae el alias del secreto).
+  const { ejes, error: errorEjes } = useEjesDeCuenta(tenantId);
+  const tipoCambio = useTipoCambio();
 
   useEffect(() => {
     if (!tenantId) return;
@@ -73,7 +81,6 @@ export function EstadoCuenta() {
   // trae una pareja incoherente, acá también se ven los de respaldo.
   const umbrales = umbralesDeAtencion(cuenta as Record<string, unknown>);
   const aviso = avisoConsumoVigente(cuenta as Record<string, unknown>);
-  const plan = nombreDePlan(cuenta.plan);
   // El MISMO modulo que decide el corte en el servidor. La consola no calcula
   // cobertura ni gracia: si lo hiciera, la pantalla podria decir «cubierto» el
   // dia en que la ingesta corta, y sobre esa diferencia se discute un reclamo.
@@ -90,8 +97,13 @@ export function EstadoCuenta() {
 
       {aviso && <AvisoConsumo aviso={aviso} />}
 
-      {/* Una demostración no paga nada: mostrarle «su prepago» a un demo es
-          confundir al que hace la presentación. */}
+      <h3>Su cuenta</h3>
+      {errorEjes && <p role="alert">{errorEjes}</p>}
+      <EjesDeLaCuenta ejes={ejes} tipoCambio={tipoCambio} ahoraMs={Date.now()} />
+
+      {/* Una demostración no paga nada: mostrarle «su producción» a un demo
+          es confundir al que hace la presentación. Se pregunta por la
+          MODALIDAD que decidió el servidor, nunca por el plan. */}
       {servicio.modalidad !== 'demostracion' && (
         <>
           <ResumenPrepago servicio={servicio} corte={corte} />
@@ -105,13 +117,8 @@ export function EstadoCuenta() {
 
       <table>
         <tbody>
-          <tr>
-            <th>Plan</th>
-            {/* El nombre del plan, no el identificador de la base: «pro» en
-                minúscula se lee como un dato a medio terminar. Uno que no
-                conocemos se muestra tal cual, pasado por `TextoSeguro`. */}
-            <td>{plan ?? <TextoSeguro valor={cuenta.plan} maxLargo={40} />}</td>
-          </tr>
+          {/* El plan con su precio ya está arriba, en los ejes: acá queda lo
+              que el plan incluye y lo que se deriva de los pagos. */}
           <tr>
             <th>Productos del catálogo</th>
             <td>Hasta {limiteDeProductos(cuenta as Record<string, unknown>)}</td>

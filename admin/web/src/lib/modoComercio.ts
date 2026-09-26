@@ -9,18 +9,22 @@
  *
  * LA REGLA NO SE ESCRIBE ACÁ. La modalidad la decide `modalidadDe` del módulo
  * compartido con el servidor (`functions/src/prepago.ts`, reexportado por
- * `lib/prepago.ts`): ausente = demostración, y `plan: 'demostracion'` también
- * es demostración (`DISENO.md` §4undecies.2). Si la pantalla comparara el
+ * `lib/prepago.ts`): ausente = demostración. Si la pantalla comparara el
  * campo `modalidad` a mano, el día que esa regla cambie la cabecera diría
- * PRODUCCIÓN de un comercio que el servidor trata como demostración.
+ * PRODUCCIÓN de un comercio que el servidor trata como demostración. La
+ * modalidad es un eje INDEPENDIENTE del plan (`Analisis/41` §4): acá no se
+ * mira el plan para nada.
  *
- * Solo `prepago` es PRODUCCIÓN: es el único en el que el comercio paga y el
- * servidor puede cortarle el servicio. Demostración y mes de prueba son PRUEBA.
+ * Solo la modalidad de producción (`prepago` en el código, «Producción» en la
+ * consola, `Analisis/41` §6.1 punto 6) es PRODUCCIÓN: es la única en la que
+ * el comercio paga y el servidor puede cortarle el servicio. Demostración y
+ * mes de prueba son PRUEBA.
  *
  * Módulo puro, sin Firebase: lo prueba `pruebas/encabezado-comercio.test.ts`
  * sin emulador ni navegador.
  */
 import { modalidadDe, type CuentaCruda, type Modalidad } from './prepago';
+import { ETIQUETA_MODALIDAD } from './ejes';
 
 export type EtiquetaModo = 'PRUEBA' | 'PRODUCCIÓN';
 
@@ -32,10 +36,12 @@ export interface ModoComercio {
   produccion: boolean;
 }
 
+// Las mismas palabras que el resto de la consola (`lib/ejes.ts`): «Prepago» ya
+// no se le dice a nadie.
 const DETALLE: Record<Modalidad, string> = {
-  demostracion: 'Demostración',
+  demostracion: ETIQUETA_MODALIDAD.demostracion,
   prueba: 'Mes de prueba',
-  prepago: 'Prepago',
+  prepago: ETIQUETA_MODALIDAD.prepago,
 };
 
 export function modoDelComercio(cuenta: CuentaCruda | null | undefined): ModoComercio {

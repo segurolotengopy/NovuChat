@@ -17,11 +17,11 @@
  * que se factura.
  */
 import {
-  BOLSA, BOLSAS_MAXIMO, INSTALACION_USD, MESES_MAXIMO, PLANES,
+  BOLSA, BOLSAS_MAXIMO, INSTALACION_USD, MESES_MAXIMO,
   aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
-import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esIdPlan, type IdPlanVendible } from './planes';
+import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, type IdPlanVendible } from './planes';
 
 export type { Pago, TipoCambio };
 
@@ -50,7 +50,10 @@ export type PlanEnVenta = IdPlanVendible;
 export function planesOfrecidos(cuenta: CuentaCruda | null | undefined): readonly PlanEnVenta[] {
   const publicados = PLANES_PUBLICADOS as readonly PlanEnVenta[];
   const actual = cuenta?.plan;
-  return esIdPlan(actual) && actual !== 'demostracion' && !publicados.includes(actual)
+  // «Vendible» y no «del catálogo»: el interno de demostración está en el
+  // catálogo asignable y no se paga. Se pregunta por el catálogo, no por el
+  // nombre (`esPlanVendible`).
+  return esPlanVendible(actual) && !publicados.includes(actual)
     ? [...publicados, actual]
     : publicados;
 }
@@ -63,11 +66,11 @@ export function planesOfrecidos(cuenta: CuentaCruda | null | undefined): readonl
  */
 export function planInicial(cuenta: CuentaCruda | null | undefined): PlanEnVenta {
   const actual = cuenta?.plan;
-  return esIdPlan(actual) && actual !== 'demostracion' ? actual : PLAN_POR_DEFECTO;
+  return esPlanVendible(actual) ? actual : PLAN_POR_DEFECTO;
 }
 
-/** ¿A este plan le factura Meta directamente al comercio? (BYOC.) */
-export const paganEllosAMeta = (plan: PlanEnVenta): boolean => PLANES[plan].pagaMeta === 'comercio';
+// Quién le paga a Meta NO sale del plan: es la titularidad de cada número, que
+// la pantalla lee de `ejesDeCuenta` (`facturaMetaAlComercio`, `lib/ejes.ts`).
 
 export const MESES_POSIBLES = Array.from({ length: MESES_MAXIMO }, (_, i) => i + 1);
 export const BOLSAS_POSIBLES = Array.from({ length: BOLSAS_MAXIMO }, (_, i) => i + 1);

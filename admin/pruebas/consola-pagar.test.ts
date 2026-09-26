@@ -25,10 +25,11 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../functions/src/prepago';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, mesEscrito, paganEllosAMeta, planInicial, planesOfrecidos,
+  BOLSAS_POSIBLES, MESES_POSIBLES, mesEscrito, planInicial, planesOfrecidos,
   vistaDelPedido,
 } from '../web/src/lib/pagar';
 import { PLANES_PUBLICADOS } from '../functions/src/planes';
+import { facturaMetaAlComercio } from '../web/src/lib/ejes';
 import { ResumenPrepago } from '../web/src/componentes/ResumenPrepago';
 import { estadoDeServicio, type Corte } from '../functions/src/prepago';
 
@@ -144,14 +145,21 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
     }
   });
 
-  it('NINGÚN plan dice quién le paga a Meta (F1): eso es la titularidad del número, y la pantalla la tiene que leer de `ejesDeCuenta`', () => {
-    // Hasta el 25/09 `byoc` traía `pagaMeta: 'comercio'` y `paganEllosAMeta`
-    // lo pintaba. Desde F1 (`Analisis/41` §4) quién paga Meta es la
-    // titularidad de CADA número (`rutasWhatsApp/{n}.titularidad`), porque un
-    // comercio puede tener uno propio y otro provisto. `paganEllosAMeta`
-    // queda como puente sin información hasta que el agente de consola lo
-    // reemplace por la titularidad; esta prueba lo declara en vez de fingir.
-    for (const p of [...PLANES_PUBLICADOS, 'byoc'] as const) expect(paganEllosAMeta(p)).toBe(false);
+  it('dice si Meta le factura el consumo al comercio: lo decide la TITULARIDAD de sus números, no el plan', () => {
+    // `Analisis/41` §4: BYOC deja de ser un plan; es titularidad `comercio` más
+    // un plan. La pantalla lo avisa mirando cada `rutasWhatsApp/{n}`.
+    // Los números llegan de `ejesDeCuenta.numeros` (el comercio no lee
+    // `rutasWhatsApp`); los dos `{ ... }` sin titularidad son de antes de F1.
+    const propio = { phoneNumberId: '1', titularidad: 'comercio' };
+    const provisto = { phoneNumberId: '2', titularidad: 'novuchat' };
+    const sinDato = { phoneNumberId: '3' };
+    expect(facturaMetaAlComercio([])).toBe(false);
+    expect(facturaMetaAlComercio([provisto, sinDato])).toBe(false);
+    expect(facturaMetaAlComercio([provisto, propio])).toBe(true);
+    // Y el plan ya no dice nada al respecto: ni `pagaMeta`, ni el nombre BYOC,
+    // ni el viejo `paganEllosAMeta(plan)`.
+    expect(sinComentarios(leer('web/src/lib/pagar.ts'))).not.toMatch(/\bpagaMeta\b|paganEllosAMeta/);
+    expect(sinComentarios(leer('web/src/paginas/Pagar.tsx'))).not.toMatch(/\bpagaMeta\b|'byoc'|paganEllosAMeta/);
   });
 
   it('los meses y las bolsas son los topes del servidor, no listas escritas a mano', () => {
@@ -168,7 +176,7 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
   });
 });
 
-describe('ResumenPrepago: el corte observado no existe para el comercio', () => {
+describe('ResumenPrepago: el corte observado no existe para el comercio, y se llama «producción»', () => {
   const dibujar = (cuenta: Record<string, unknown>, consumidas: number, corte: Corte | null) =>
     renderToStaticMarkup(createElement(ResumenPrepago, {
       servicio: estadoDeServicio(cuenta, consumidas, AHORA), corte,
@@ -212,6 +220,12 @@ describe('ResumenPrepago: el corte observado no existe para el comercio', () => 
     expect(html).toContain('30 en bolsas');
     expect(html).toContain('90'); // 100 - 40 + 30
   });
+
+  it('al comercio se le dice «producción», nunca «prepago» (Analisis/41 §6.1 punto 6)', () => {
+    const html = dibujar({ modalidad: 'prepago', plan: 'impulso', periodoPagado: '2026-10' }, 1, null);
+    expect(html).toContain('Su servicio en producción');
+    expect(html.toLowerCase()).not.toContain('prepago');
+  });
 });
 
 describe('la pantalla no escribe, y no promete lo que no sabe', () => {
@@ -239,5 +253,22 @@ describe('la pantalla no escribe, y no promete lo que no sabe', () => {
 
   it('el botón de emitir se deshabilita si no hay importe en bolivianos', () => {
     expect(pagar).toContain('vista.montoBs === null');
+  });
+
+  it('muestra los tres ejes por separado y no deduce nada del nombre del plan', () => {
+    // `Analisis/41` §4, consecuencia 3: Cuenta y Pagar muestran plan,
+    // modalidad y titularidad; Negocios es el único lugar donde se asignan.
+    const texto = sinComentarios(pagar);
+    expect(texto).toContain('<EjesDeLaCuenta');
+    expect(texto).not.toMatch(/=== 'demostracion'|!== 'demostracion'/);
+    expect(texto).toContain('facturaMetaAlComercio(ejes?.numeros ?? [])');
+    // La titularidad llega SOLO por `ejesDeCuenta`: `rutasWhatsApp` es del propietario.
+    expect(texto).toContain('useEjesDeCuenta(tenantId)');
+    expect(texto).not.toContain('rutasWhatsApp');
+    const cuenta = sinComentarios(leer('web/src/paginas/EstadoCuenta.tsx'));
+    expect(cuenta).toContain('<EjesDeLaCuenta');
+    expect(cuenta).not.toMatch(/plan === 'demostracion'|\bpagaMeta\b/);
+    expect(cuenta).toContain('useEjesDeCuenta(tenantId)');
+    expect(cuenta).not.toContain('rutasWhatsApp');
   });
 });
