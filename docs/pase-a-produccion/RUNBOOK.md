@@ -27,9 +27,13 @@ por conversación (ver §9).
 
 La regla del encabezado es una sola: **PRODUCCIÓN ⇔ `modalidad === 'prepago'`**.
 La está construyendo otro agente (rama `consola/encabezado-comercio-y-modo`); la
-consola no calcula nada, lee la modalidad. Y `modalidad: 'prepago'` **solo la
-escribe un pago confirmado** (`aplicarPago`), o una decisión explícita de Andres
-con `migrar-prepago.mjs` (§3.5). No hay otra forma de «pasar a producción».
+consola no calcula nada, lee la modalidad. Y `modalidad: 'prepago'` **la
+escribe solo el propietario** (desde Negocios con sesión reciente, o con
+`asignar-plan.mjs --modalidad prepago`), **después de confirmar el pago** (§3.4);
+o, para un comercio que pagó por fuera, `migrar-prepago.mjs` (§3.5). **El pago
+no cambia la modalidad** (decisión de Andres del 26/09/2026, opción B, #212): un
+pago confirmado registra el dinero y suma meses, nada más. No hay otra forma de
+«pasar a producción».
 
 **Nunca pasan a producción** (el script de §1 sale con código 3 y lo dice):
 
@@ -235,7 +239,7 @@ ningún cobro**. El valor lo lee una persona del sitio del BCB; NovuChat no
 publica un tipo de cambio propio (`CLAUDE.md` §3). Se carga el mismo día del
 primer pago.
 
-### 3.4 El primer pago: la cuenta pasa a `prepago`
+### 3.4 El primer pago, y después el pase a `prepago` (lo hace el propietario)
 
 Solo dos cosas confirman un pago (`admin/functions/src/pagos.ts`): **el banco**
 o **el propietario con evidencia**. Un comprobante que manda el comercio por
@@ -246,23 +250,37 @@ WhatsApp es una imagen, y una imagen se edita.
 | **QR del cobrador** (`crearCobroPrepago`) | Cuando el cobrador esté conectado: secretos `COBRADOR_*`, IAM, Scheduler, `plataforma/prepago.cobrador.baseUrl` y la pantalla «Pagar» (A-3). Lista de «Lo que espera a Andres», puntos 7 y 11 de `Prompts/COORDINACION.md` | el admin del comercio paga el QR desde su banco | `confirmadoPor.origen: 'banco'`, la única forma de un pago **de punta a punta** |
 | **Manual** (`registrarPagoManual`) | Efectivo o transferencia, antes de que el cobrador esté conectado | **el propietario** (sesión de Google reciente), con `tcoAplicado`/`tcoFuente`/`tcoFecha`, `montoRecibidoBs`, referencia, y **evidencia en Storage** si es transferencia; `motivoDiferencia` si entró otro importe | `confirmadoPor.origen: 'propietario'`, auditado. Anula antes el QR vivo si lo hay |
 
-En los dos, `aplicarPago` suma los meses, pone `modalidad: 'prepago'`, escribe
-`periodoPagado` y recalcula los derivados. **Desde ese momento el encabezado
-dice PRODUCCIÓN.**
+En los dos, `aplicarPago` suma los meses, escribe `periodoPagado` y recalcula
+los derivados, **sin cambiar la modalidad** (opción B, #212). **El pase a
+PRODUCCIÓN es un paso aparte del propietario, después de ver el pago
+confirmado:** en Negocios, modalidad «Producción» (pide sesión reciente), o
 
-- **El plan pagado pasa a ser el plan de la cuenta** («cambiar de plan es pagar
-  el plan nuevo»): el plan del pago tiene que ser el que se acordó, y el
-  diagnóstico de §1 se vuelve a correr después para ver la copia de límites.
-- **El primer pago es una mensualidad**, no una bolsa: una bolsa comprada desde
-  demostración también pasa la cuenta a prepago, pero sin `periodoPagado`: el
-  comercio quedaría en PRODUCCIÓN sin ningún mes cubierto.
+```bash
+node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --modalidad prepago   # seco, y después --aplicar
+```
+
+**Desde ese momento el encabezado dice PRODUCCIÓN.**
+
+- **El comercio no cambia de plan ni de modalidad por sí solo** (#212): desde
+  Pagar solo renueva el plan que ya tiene. Un cambio de plan lo hace el
+  propietario (Negocios o `asignar-plan.mjs --plan`), o un QR de otro plan que
+  el propietario emite firmado (`cambioAutorizadoPor`, sesión reciente). Un QR
+  confirmado a otro plan o a otro importe sin esa firma queda **en revisión**
+  (`plan_distinto`, `precio_distinto`) y se resuelve en Negocios. El diagnóstico
+  de §1 se vuelve a correr después para ver la copia de límites.
+- **El precio es el de la cuenta**: el del plan, o el `precioPorContrato` si
+  hay contrato (F1b, #221). El pago manual con otro importe pide motivo.
+- **El primer pago es una mensualidad**, no una bolsa. Una cuenta en
+  demostración (o sin modalidad) **no emite cobros**: primero el propietario la
+  pasa a prueba o a producción.
 - **La instalación** (USD 65) va como pago aparte, `tipo: 'instalacion'`, si
   corresponde. No suma meses ni cambia la modalidad.
-- **Hoy ninguna pantalla llama a `registrarPagoManual` ni a
-  `crearCobroPrepago`** (A-3 está encolado). El paso espera a A-3. No se crea
-  un script que registre pagos: el diseño exige sesión de propietario, TCO
-  declarado y evidencia comprobada en Storage, y eso no se reproduce en un
-  script sin volverlo una puerta sin auditoría.
+- **Las pantallas existen desde F1** (#203): Pagar llama a
+  `crearCobroPrepago` (el comercio renueva su plan) y Negocios a
+  `registrarPagoManual` (el propietario). No se crea un script que registre
+  pagos: el diseño exige sesión de propietario, TCO declarado y evidencia
+  comprobada en Storage, y eso no se reproduce en un script sin volverlo una
+  puerta sin auditoría.
 
 ### 3.5 La excepción: un comercio que ya pagó por fuera
 
@@ -311,8 +329,8 @@ mes. Lo demás lo confirma una persona y se anota en `CLIENTES/<NOMBRE>/estado.m
 
 **Es una decisión de Andres, con motivo, no una operación.** Precondiciones, todas:
 
-- `modalidad: 'prepago'` por un **pago confirmado de punta a punta** (por el
-  banco, §3.4);
+- `modalidad: 'prepago'` fijada por el propietario **después de un pago
+  confirmado de punta a punta** (por el banco, §3.4);
 - **un ciclo de recordatorios observado** (§4);
 - **teléfonos de pago** fijados y verificados con su titular;
 - **todos los flujos publicados del comercio mandan `telefono` a
