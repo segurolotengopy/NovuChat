@@ -24,7 +24,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **F-1** Cierre de las nueve sesiones | Hotfix (memoria y candado), cinco ramas de documentación, traspaso, origen del anuncio, ayudante, worktrees, matriz, este tablero, los primeros commits; más los dos hallazgos del ensayo (#196, #197) | **cerrada el 26/09** | H0 (con E) |
 | **E** Estándar DevSecOps 2.4 | Reusable 2.4, cabeceras del 22/09, fusión de tres vías de dos copias con lo propio | **bloque 1 en PR #191** (25/09): siete copias al nivel de `702f2da`; pruebas del estándar, actionlint, ShellCheck, validador y `security-local.sh` iguales antes y después. Se fusiona después de F-1 |
 | **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de los tenants reales, Negocios (A-3b) | **en obra desde el 26/09**: H0 pasó; agentes `central` (`central/ejes-de-la-cuenta`) y `plataforma-consola` (`plataforma/negocios-tres-ejes`) | H1 |
-| **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **en obra desde el 26/09**: agente `metodo` (`metodo/…`, varios PR; `ESTADO.md` y `CLAUDE.md` en el último) | H6 |
+| **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **en PR** (26/09): #200 `docs/arquitectura/` e índice, #201 `CICLO-DE-VIDA.md`, #202 gancho por carpeta, #204 agentes por zona, #206 pruebas puras, y el PR final (bitácora, `ESTADO.md` de una pantalla, `estado-generado.sh`, `CLAUDE.md` con invariantes); observaciones de seguridad de #202 y #204 cerradas | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **en obra desde el 26/09**: agente `deploy` (`staging/proyecto-y-pipeline`) prepara todo sin escribir en la nube; cada escritura se pide a Andres una por una. **Cierra antes de la etiqueta de F1** | H3 |
 | **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas | espera H1 | H2 |
 | **F3** Core unificado | Ganchos; una variante de los nodos comunes; medios en el core; prompt por capas; suites sin `new Function` | espera H2 | H3 |
@@ -199,3 +199,22 @@ veredicto, autorizar F1 (con S y F6 en paralelo).
 - **26/09/2026 (mañana)** — La revisora da por pasado H0 con cinco
   recomendaciones (arriba). Arrancan **F1** (dos agentes), **S** y **F6**,
   cuatro worktrees desde `origin/main` (`988c223`).
+- **26/09/2026 (F6, agente `metodo`)** — Seis PR, cada uno desde
+  `origin/main` y fusionables en cualquier orden: **#200** `admin/DISENO.md`
+  §4–§6 movidos por zona y módulo a `docs/arquitectura/` (112 bloques, 2.977
+  líneas movidas + 466 que quedan = 3.443), `indice.md` de secciones viejas,
+  `docs/base-comercial.md` y `limites.md`; **#201** `docs/clientes/CICLO-DE-VIDA.md`
+  (§12 de `Analisis/41` con los punteros a los runbooks); **#202** gancho
+  `zona-de-escritura.sh` sobre Edit y Write, con `.claude/zona` como segunda
+  fuente, realpath, fallo cerrado y prefijos amplios rechazados, 40/40 casos;
+  **#204** ocho agentes por zona más `analista-de-solicitudes`, con
+  `docs/arquitectura/agentes.md` (zonas efectivas y diferencias con §8.1);
+  **#206** dos proyectos de vitest: `puras` 43 suites / 2.291 pruebas sin
+  emulador en 24 s, `emulador` 33 suites / 1.058 pruebas; y el **PR final**:
+  `bitacora/2026-08.md` (14 asientos) y `2026-09.md` (65), `ESTADO.md` de una
+  pantalla, `scripts/estado-generado.sh` (etiqueta viva, Functions, flujos con
+  `estado-de-versiones.sh`, tenants con modalidad por ADC), `CLAUDE.md` solo
+  invariantes con la regla de zonas. Costo: 0 mensajes; 6 PR y 8 pushes; 0
+  nube. Lo que queda para la coordinadora: `indice.md` gana las filas de
+  `zona-de-escritura.md` y `agentes.md` cuando #200, #202 y #204 estén en
+  `main`; las diferencias con §8.1 van al informe de H1 para la revisora.
