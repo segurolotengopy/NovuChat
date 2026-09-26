@@ -959,14 +959,14 @@ jobs:
       # antes del 2026-09-25, cuando ambos paquetes llevaban las variables de
       # producción; y este job sigue apagado (vars.FIREBASE_PREVIEW).
       - name: Descargar dist/
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist-production
           # firebase.json de admin/ publica `web/dist`.
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
       - name: Descargar functions/ (lib compilado + package-lock)
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: functions-production
           # Restaura lib/ y package-lock.json donde firebase.json los espera.
@@ -1057,14 +1057,14 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Descargar dist/
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist-staging
           # firebase.json de admin/ publica `web/dist`.
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
       - name: Descargar functions/ (lib compilado + package-lock)
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: functions-staging
           path: ${{ env.RUTA_COMPONENTE }}/functions
@@ -1271,13 +1271,13 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Descargar dist/
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist-staging
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
       - name: Descargar functions/ (lib compilado + package-lock)
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: functions-staging
           path: ${{ env.RUTA_COMPONENTE }}/functions
@@ -1444,13 +1444,13 @@ jobs:
           echo "Aprobación verificada: $TAG por $ACTOR ($EVENTO)"
 
       - name: Descargar dist/
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist-production
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
       - name: Descargar functions/ (lib compilado + package-lock)
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: functions-production
           # Restaura lib/ y package-lock.json donde firebase.json los espera.
