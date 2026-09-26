@@ -1110,6 +1110,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: firebase-tools (la versión fijada)
+        # Faltaba: el job nunca había corrido hasta el 26/09 y el primer
+        # despliegue por CI cortó con «firebase: command not found» en la copia
+        # «previa» y en el despliegue. Producción lo instala dentro de su paso de
+        # copia previa; acá va aparte, para que ningún paso dependa de otro que
+        # tiene continue-on-error.
+        run: npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+
       - name: El paquete descargado es el de staging (contra init.json de Hosting)
         # La compuerta de construir-staging mira la FORMA de las variables; acá
         # se compara el paquete con la configuración PÚBLICA del SDK que Firebase
