@@ -23,8 +23,36 @@ prompt, y el prompt no es una barrera.
 ## De dónde sale la zona (dos fuentes, en este orden)
 
 1. **La variable de entorno `NOVUCHAT_ZONA`**, si existe y no está vacía.
-2. **El archivo `.claude/zona`** en la raíz del proyecto (la que dice
-   `CLAUDE_PROJECT_DIR`; si no está, el directorio de trabajo).
+2. **Todos los `.claude/zona` que aparezcan, a la vez** (intersección):
+   subiendo desde el `cwd` que Claude Code manda en el evento (el worktree
+   donde trabaja el agente) y desde el archivo destino, cada recorrido hasta
+   su primera **raíz git real** (un `.git` directorio, o un archivo
+   `gitdir:` cuya ruta existe; un `.git` vacío plantado no cuenta). La de
+   `CLAUDE_PROJECT_DIR` (si no está, el directorio de trabajo) entra solo de
+   respaldo, cuando el `cwd` no dio ninguna: así una sesión con zona puede
+   lanzar subagentes con zona en otros worktrees. El destino tiene que caber
+   en cada zona, con sus prefijos relativos a la carpeta de esa zona.
+   `NOVUCHAT_ZONA`, si está, manda sola y se ancla en `CLAUDE_PROJECT_DIR`,
+   como antes (por eso no sirve para subagentes con worktree). La raíz de una ruta es la carpeta más cercana,
+   subiendo, que tiene `.git` (directorio en la copia principal, archivo en un
+   worktree).
+
+**Corregido el 26/09/2026, antes de F2.** Hasta ese día el archivo se buscaba
+solo en `CLAUDE_PROJECT_DIR`, y un subagente lanzado con worktree recibe el de
+la sesión que lo lanzó, que es la copia principal. Resultado: **dentro del
+worktree del agente el gancho no rechazaba nada**. Se midió con un agente de
+prueba que escribió su `.claude/zona` (`docs/`) y después escribió en
+`admin/` sin un rechazo. Las pruebas del gancho armaban el evento sin `cwd` y
+con `CLAUDE_PROJECT_DIR` apuntando al proyecto con zona, así que no lo veían;
+los casos nuevos arman la copia principal sin zona con el worktree del agente
+adentro, y fallan con el gancho anterior.
+
+**Claude Code ejecuta el gancho desde la copia principal**
+(`"$CLAUDE_PROJECT_DIR"/.claude/hooks/zona-de-escritura.sh` en
+`.claude/settings.json`): un cambio del gancho rige para los agentes recién
+cuando la copia principal se pone al día con `main`. Antes de lanzar agentes
+con zona, la coordinadora lo comprueba con un agente de prueba que intente
+escribir fuera de su zona.
 
 La segunda fuente existe por una observación de la revisión de seguridad
 (26/09/2026): dos subagentes lanzados desde una misma sesión **comparten el
@@ -76,13 +104,29 @@ y se vuelve a pegar el resto. Así:
 - `docs/../admin/firestore.rules` se evalúa como `admin/firestore.rules`.
 - Un enlace simbólico dentro de la zona que apunte afuera (`docs/enlace →
   admin/`) se rechaza, también para un archivo nuevo debajo del enlace.
-- Una ruta relativa se resuelve contra `CLAUDE_PROJECT_DIR`, no contra el
-  directorio desde donde se lanzó el proceso.
+- Una ruta relativa se juzga **contra el `cwd` del evento**, que es contra lo
+  que la herramienta la escribe (si el evento no trae `cwd`, contra
+  `CLAUDE_PROJECT_DIR`). Los prefijos relativos, contra la raíz de su zona.
+- **Con la zona activa no se escribe un `.git` ni un `.claude/zona`**: sería
+  plantar desde adentro una raíz o una zona nuevas. Y si aparecen igual (por
+  `Bash`), no amplían nada **dentro del worktree**: el recorrido sigue hasta
+  la raíz real y todas las zonas se aplican a la vez. **Límite declarado
+  (LOW, tercera revisión de #210):** un `.git` directorio, o un archivo
+  `gitdir:` que apunte a una carpeta existente, plantado con `Bash` en una
+  subcarpeta donde el agente deja su `cwd`, corta el recorrido; desde ahí un
+  Edit/Write a la copia principal (que no tiene zona) no se rechaza. Exige
+  `Bash` con intención y un `cwd` persistente en esa subcarpeta, y ese agente
+  ya puede escribir directo con `Bash`. Remedio, si hiciera falta: validar el
+  enlace inverso de git (`.git/worktrees/<n>/gitdir`). Por lo mismo, **la
+  coordinadora tampoco reescribe con Edit/Write un `.claude/zona` que ya
+  existe**: lo crea por primera vez, o lo cambia con Bash.
 
 ## Fallo cerrado
 
 Con la zona activa, el gancho **niega antes que dejar pasar** lo que no pudo
-comprobar: sin `python3` en el `PATH`, con un evento que no es JSON, con un
+comprobar. También niega si un `.claude/zona` existe pero no deja ningún
+prefijo (vacío o solo comentarios): es un error de quien lanzó al agente, no
+una zona abierta. Y en los demás casos: sin `python3` en el `PATH`, con un evento que no es JSON, con un
 evento o un `tool_input` que no son objetos, o sin `file_path`, responde
 `deny` («gancho no operativo»). Sin zona, no opina, como siempre. Sale siempre
 con 0: un fallo del script no debe dejar la herramienta en un estado
@@ -97,6 +141,11 @@ indefinido.
   agente con `admin/firestore.rules` en su zona puede editar cualquier regla.
   Cada agente que comparte un archivo lo declara y la revisión del PR cubre
   la sección.
+- **Un agente que se muda a una carpeta sin zona y escribe ahí.** Si el
+  `cwd` y el destino están en la copia principal (sin `.claude/zona`), el
+  gancho no opina. Es el mismo nivel que `Bash`: lo cubren la revisión del PR
+  y que el agente trabaja en su worktree. Si escribe desde su worktree en la
+  principal, o desde la principal en su worktree, se rechaza.
 - **Quién fija la zona.** El gancho no decide: la fija quien lanza al agente,
   en `.claude/zona` de su worktree o en `NOVUCHAT_ZONA`.
 

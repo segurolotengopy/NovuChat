@@ -10,7 +10,9 @@
 # CLAUDE_PROJECT_DIR distinto de la raíz del worktree, la zona leída de
 # `.claude/zona` sin variable, un enlace simbólico hacia fuera de la zona, un
 # prefijo demasiado amplio (la raíz, «/», un ancestro), y el fallo cerrado
-# (JSON inválido, tool_input que no es objeto, python3 ausente). Imprime cada
+# (JSON inválido, tool_input que no es objeto, python3 ausente), y el
+# subagente en su worktree con CLAUDE_PROJECT_DIR en la copia principal (el
+# `cwd` del evento decide). Imprime cada
 # caso con su resultado real y sale con 1 si alguno falla. Es lo que exige
 # Analisis/41 §7 (fila F6) y §8.5 (H6): «el gancho probado con un intento
 # fuera de carpeta».
@@ -153,6 +155,76 @@ informar "python3 ausente con zona activa" deny "$(decidir "$salida")" "PATH sin
 salida="$(printf '{"tool_name":"Write","tool_input":{"file_path":"docs/uno.md"}}' | env -u NOVUCHAT_ZONA PATH="$SIN_PY" CLAUDE_PROJECT_DIR="$RAIZ" "$SIN_PY/bash" "$GANCHO")"
 informar "python3 ausente SIN zona: no hace nada" nada "$(decidir "$salida")" "PATH sin python3" "$salida"
 rm -rf "$SIN_PY"
+
+echo
+echo "Subagente en su worktree (26/09): CLAUDE_PROJECT_DIR es la copia principal, sin zona"
+# Como en el repositorio real: la copia principal (con .git directorio y SIN
+# .claude/zona) y, adentro, el worktree del agente (con .git archivo y su
+# .claude/zona). Claude Code manda el `cwd` del agente en cada evento; antes
+# de este arreglo el gancho solo miraba CLAUDE_PROJECT_DIR y no rechazaba nada.
+PRINCIPAL="$(mktemp -d)"
+AGENTE="$PRINCIPAL/.claude/worktrees/agente"
+mkdir -p "$PRINCIPAL/.git/worktrees/agente" "$PRINCIPAL/.git/worktrees/otro" "$PRINCIPAL/docs" "$PRINCIPAL/admin/functions/src" "$AGENTE/.claude" \
+  "$AGENTE/admin/functions/src/modulos/agenda" "$AGENTE/admin/functions/src/core"
+printf 'gitdir: %s/.git/worktrees/agente\n' "$PRINCIPAL" > "$AGENTE/.git"
+printf 'admin/functions/src/modulos/agenda/\n' > "$AGENTE/.claude/zona"
+
+# evento_cwd <herramienta> <ruta> <cwd>
+evento_cwd() {
+  python3 -c 'import json,sys; print(json.dumps({"tool_name": sys.argv[1], "cwd": sys.argv[3], "tool_input": {"file_path": sys.argv[2], "content": "x"}}))' "$1" "$2" "$3"
+}
+# caso_cwd <nombre> <esperado> <cwd> <herramienta> <ruta>   (sin NOVUCHAT_ZONA)
+caso_cwd() {
+  local nombre="$1" esperado="$2" cwd="$3" herramienta="$4" ruta="$5" salida
+  salida="$(evento_cwd "$herramienta" "$ruta" "$cwd" | env -u NOVUCHAT_ZONA CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
+  informar "$nombre" "$esperado" "$(decidir "$salida")" "$herramienta ${ruta#"$PRINCIPAL"/} desde ${cwd#"$PRINCIPAL"/}" "$salida"
+}
+
+caso_cwd "FUERA: el core, desde su worktree (el caso medido)"  deny "$AGENTE" Write "$AGENTE/admin/functions/src/core/ingesta.ts"
+caso_cwd "ADENTRO: su módulo, desde su worktree"              nada "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sena.ts"
+caso_cwd "ADENTRO: relativa resuelta contra el cwd"           nada "$AGENTE" Write "admin/functions/src/modulos/agenda/nuevo.ts"
+caso_cwd "FUERA: cwd en una subcarpeta de su worktree"        deny "$AGENTE/admin/functions" Edit "$AGENTE/admin/functions/src/core/ingesta.ts"
+caso_cwd "FUERA: escribe en la copia principal"               deny "$AGENTE" Write "$PRINCIPAL/admin/functions/src/ingesta.ts"
+caso_cwd "FUERA: se mudó a la principal y escribe en su worktree" deny "$PRINCIPAL" Write "$AGENTE/admin/functions/src/core/ingesta.ts"
+caso_cwd "sin zona en ningún lado: la principal sigue igual"  nada "$PRINCIPAL" Write "$PRINCIPAL/admin/functions/src/ingesta.ts"
+SIN_PY="$(mktemp -d)"
+for h in bash grep tr sed cat head dirname; do ln -s "$(command -v "$h")" "$SIN_PY/$h"; done
+salida="$(evento_cwd Write "$AGENTE/admin/functions/src/core/ingesta.ts" "$AGENTE" | env -u NOVUCHAT_ZONA PATH="$SIN_PY" CLAUDE_PROJECT_DIR="$PRINCIPAL" "$SIN_PY/bash" "$GANCHO")"
+informar "python3 ausente, zona solo en el worktree del cwd" deny "$(decidir "$salida")" "PATH sin python3" "$salida"
+rm -rf "$SIN_PY"
+echo
+echo "Revisión de seguridad de #210: relativas contra el cwd, plantar raíz o zona, intersección, zona vacía"
+mkdir -p "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude"
+caso_cwd "FUERA: relativa desde una subcarpeta cae fuera"      deny "$AGENTE/admin/functions/src/core" Write "admin/functions/src/modulos/agenda/x.ts"
+caso_cwd "ADENTRO: ../ desde una subcarpeta cae adentro"      nada "$AGENTE/admin/functions/src/core" Write "../modulos/agenda/x.ts"
+caso_cwd "FUERA: plantar un .git dentro de la zona"           deny "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sub/.git"
+caso_cwd "FUERA: plantar un .claude/zona dentro de la zona"   deny "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude/zona"
+# Si igual aparecen (plantados por Bash), no amplían la zona: se aplican todas.
+: > "$AGENTE/admin/functions/src/modulos/agenda/sub/.git"
+printf '../../../core/\n' > "$AGENTE/admin/functions/src/modulos/agenda/sub/.claude/zona"
+caso_cwd "FUERA: raíz y zona plantadas, cwd adentro, escribe en el core" deny "$AGENTE/admin/functions/src/modulos/agenda/sub" Write "$AGENTE/admin/functions/src/core/ingesta.ts"
+# El residual de la segunda vuelta: la raíz plantada ya no oculta la zona del
+# worktree aunque el destino esté en la copia principal (se sube hasta la
+# primera raíz REAL, y un `.git` vacío no lo es).
+caso_cwd "FUERA: raíz plantada, cwd adentro, escribe en la principal" deny "$AGENTE/admin/functions/src/modulos/agenda/sub" Write "$PRINCIPAL/admin/functions/src/ingesta.ts"
+rm -rf "$AGENTE/admin/functions/src/modulos/agenda/sub"
+# Otro worktree con su zona: una sesión con zona en el proyecto, sin cwd, no escribe ahí.
+OTRO="$PRINCIPAL/.claude/worktrees/otro"
+mkdir -p "$OTRO/.claude" "$OTRO/admin" "$OTRO/docs"
+printf 'gitdir: %s/.git/worktrees/otro\n' "$PRINCIPAL" > "$OTRO/.git"; printf 'admin/\n' > "$OTRO/.claude/zona"
+printf 'docs/\n' > "$PRINCIPAL/.claude/zona"
+salida="$(evento Write "$OTRO/admin/x.ts" | env -u NOVUCHAT_ZONA CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
+informar "FUERA: sin cwd, zona del proyecto y del destino a la vez" deny "$(decidir "$salida")" "Write otro/admin/x.ts" "$salida"
+salida="$(evento_cwd Write "$OTRO/docs/x.md" "$OTRO" | NOVUCHAT_ZONA="docs/" CLAUDE_PROJECT_DIR="$PRINCIPAL" bash "$GANCHO")"
+informar "FUERA: NOVUCHAT_ZONA se ancla en CLAUDE_PROJECT_DIR" deny "$(decidir "$salida")" "Write otro/docs/x.md" "$salida"
+# Una sesión con zona puede lanzar subagentes con zona en otros worktrees: la
+# zona del proyecto es solo el respaldo de un cwd sin zona.
+caso_cwd "ADENTRO: proyecto con zona, subagente dentro de la suya" nada "$AGENTE" Write "$AGENTE/admin/functions/src/modulos/agenda/sena.ts"
+rm -f "$PRINCIPAL/.claude/zona"
+printf '# pendiente\n\n' > "$OTRO/.claude/zona"
+caso_cwd "FUERA: .claude/zona sin prefijos (fallo cerrado)"   deny "$OTRO" Write "$OTRO/admin/x.ts"
+
+rm -rf "$PRINCIPAL"
 
 echo
 echo ".claude/zona nunca se versiona (lo escribe quien lanza al agente; está en .gitignore)"
