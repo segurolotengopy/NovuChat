@@ -62,8 +62,8 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
   it('producción tiene la compuerta que impide desplegar con otro valor', () => {
     const produccion = job('desplegar-produccion');
     expect(produccion).toContain("compgen -G 'functions/.env.*'");
-    expect(produccion).toContain("grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env");
-    const compuerta = produccion.indexOf("grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env");
+    expect(produccion).toContain("diff <(printf 'SITIO_PUBLICO=%s\\nINSTANCIAS_MINIMAS=1\\n' \"$SITIO_PUBLICO\") functions/.env");
+    const compuerta = produccion.indexOf("diff <(printf 'SITIO_PUBLICO=%s");
     const simulacion = produccion.indexOf('firebase deploy --only "$SIMULAR"');
     expect(simulacion).toBeGreaterThan(-1);
     expect(compuerta).toBeGreaterThan(-1);
@@ -88,7 +88,9 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
     expect(job('desplegar-staging')).toMatch(/CPU_FRACCIONARIA=si\\n/);
     const produccion = job('desplegar-produccion');
     expect(produccion).not.toMatch(/CPU_FRACCIONARIA=si/);
-    expect(produccion).toContain("grep -q '^CPU_FRACCIONARIA=' functions/.env");
+    // La compara el .env entero (diff), no una línea: el lector de firebase-tools
+    // acepta espacios y `export` (revisión de seguridad de #219).
+    expect(produccion).toMatch(/diff <\(printf 'SITIO_PUBLICO=%s\\nINSTANCIAS_MINIMAS=1\\n'/);
   });
 
   it('el despliegue de staging lo fija en 0, y en ningún otro valor', () => {

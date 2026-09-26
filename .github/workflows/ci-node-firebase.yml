@@ -1583,11 +1583,17 @@ jobs:
             if compgen -G 'functions/.env.*' >/dev/null; then
               echo "::error::Hay un functions/.env.* que pisaría los parámetros de producción."; exit 1
             fi
-            if grep -q '^CPU_FRACCIONARIA=' functions/.env; then
-              echo "::error::functions/.env de producción no lleva CPU_FRACCIONARIA (es solo de staging)."; exit 1
-            fi
-            [[ "$(grep -c '^INSTANCIAS_MINIMAS=' functions/.env)" == 1 ]] && grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env \
-              || { echo "::error::functions/.env no deja INSTANCIAS_MINIMAS=1 exactamente una vez."; exit 1; }
+            # El .env COMPLETO tiene que ser exactamente el esperado: el lector de
+            # firebase-tools acepta espacios, `export` y espacios alrededor del
+            # `=` (lib/functions/env.js, LINE_RE), así que buscar una línea con
+            # grep no alcanza (revisión de seguridad de #219). Y SITIO_PUBLICO no
+            # puede traer saltos de línea, comillas ni `#`: sería una línea extra.
+            case "$SITIO_PUBLICO" in
+              *$'\n'*|*$'\r'*|*'"'*|*"'"*|*'#'*)
+                echo "::error::vars.SITIO_PUBLICO trae caracteres que el .env interpretaría."; exit 1 ;;
+            esac
+            diff <(printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=1\n' "$SITIO_PUBLICO") functions/.env >/dev/null \
+              || { echo "::error::functions/.env de producción no es exactamente SITIO_PUBLICO + INSTANCIAS_MINIMAS=1 (sin CPU_FRACCIONARIA)."; exit 1; }
           fi
           SIMULAR=$(printf '%s' "$SOLO" | tr ',' '\n' | grep -v -x -e hosting -e '' | paste -sd, - || true)
           if [[ -n "$SIMULAR" ]]; then
