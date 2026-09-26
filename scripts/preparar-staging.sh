@@ -161,8 +161,8 @@ fase_app() {
     fi
   done
   # La clave de App Check de producción está atada a su dominio y NO sirve
-  # acá: se declara vacía para que el Environment no caiga a la del repositorio.
-  correr "VITE_APPCHECK_SITE_KEY vacía en staging" -- gh variable set VITE_APPCHECK_SITE_KEY --env staging --repo "$REPO" --body ""
+  # acá. No se carga como variable (GitHub rechaza una variable vacía con 422,
+  # medido el 26/09): el job construir-staging la fija vacía en el workflow.
   # El NÚMERO del proyecto: construir-staging verifica con él que el appId
   # (1:<número>:web:…) sea de una app de staging, sin conocer el de producción.
   correr "GCP_PROJECT_NUMBER_STAGING (Environment staging)" -- gh variable set GCP_PROJECT_NUMBER_STAGING --env staging --repo "$REPO" --body "$(numero_proyecto)"
