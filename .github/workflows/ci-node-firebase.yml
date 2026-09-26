@@ -1132,9 +1132,13 @@ jobs:
           BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
         run: |
           set -euo pipefail
-          js=$(find web/dist/assets -maxdepth 1 -name 'index-*.js' | head -1)
-          [[ -n "$js" ]] || { echo "::error::no hay web/dist/assets/index-*.js en el artefacto"; exit 1; }
-          grep -qF "$APP_ESPERADA" "$js" || { echo "::error::el paquete no lleva el appId del Environment 'staging': se compiló con otras VITE_*"; exit 1; }
+          # TODO el JavaScript del paquete, no solo index-*.js: Vite parte la
+          # consola en fragmentos y la configuración de Firebase vive en el de
+          # `consola` (medido en el primer despliegue por CI, 26/09/2026: el
+          # paquete era correcto y la compuerta miraba el archivo equivocado).
+          mapfile -t js < <(find web/dist/assets -maxdepth 1 -name '*.js')
+          (( ${#js[@]} > 0 )) || { echo "::error::no hay JavaScript en web/dist/assets del artefacto"; exit 1; }
+          grep -qF "$APP_ESPERADA" "${js[@]}" || { echo "::error::el paquete no lleva el appId del Environment 'staging': se compiló con otras VITE_*"; exit 1; }
           cfg=$(curl -sS --max-time 20 -w '\n%{http_code}' "${URL_STAGING%/}/__/firebase/init.json" 2>/dev/null || echo $'\n000')
           codigo="${cfg##*$'\n'}"; cfg="${cfg%$'\n'*}"
           if [[ "$codigo" != "200" ]]; then
@@ -1149,7 +1153,7 @@ jobs:
           echo "::add-mask::$api_key"
           [[ "$proyecto_app" == "$PROYECTO" ]] || { echo "::error::init.json no es del proyecto de staging"; exit 1; }
           [[ "$app_id" == "$APP_ESPERADA" ]] || { echo "::error::la app que sirve Hosting no es la del Environment 'staging' (VITE_FIREBASE_APP_ID)"; exit 1; }
-          grep -qF "$api_key" "$js" || { echo "::error::el paquete no lleva la apiKey de la app de staging: se compiló con otras VITE_*"; exit 1; }
+          grep -qF "$api_key" "${js[@]}" || { echo "::error::el paquete no lleva la apiKey de la app de staging: se compiló con otras VITE_*"; exit 1; }
           echo "El paquete lleva la apiKey y el appId de la app web de staging (según init.json)."
           # Salidas para humo-staging (no son secretos: viajan en el bundle).
           { echo "bucket=${BUCKET_STORAGE#gs://}"; echo "app_id=$app_id"; } >> "$GITHUB_OUTPUT"

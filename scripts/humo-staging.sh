@@ -170,7 +170,13 @@ js="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' <<< "$html" | head -1)"
 if [[ -z "$js" ]]; then
   mal "no se encontró el JavaScript principal en /"
 else
+  # El principal y los fragmentos que importa: Vite deja la configuración de
+  # Firebase en el fragmento de la consola, no en index-*.js (26/09/2026).
   bundle="$(curl -sS -L --max-time 30 "$URL$js" 2>/dev/null)"
+  for fragmento in $(grep -oE '[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8}\.js' <<< "$bundle" | sort -u); do
+    bundle+=$'\n'"$(curl -sS -L --max-time 30 "$URL/assets/$fragmento" 2>/dev/null)"
+  done
+  js="$js y sus fragmentos"
   # El ID va entre comillas o seguido de punto (authDomain, bucket): así no
   # confunde un ID que contenga al otro como subcadena.
   if grep -qE "[\"']${P}[\"'.]" <<< "$bundle"; then
