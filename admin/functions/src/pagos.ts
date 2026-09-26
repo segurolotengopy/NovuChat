@@ -165,6 +165,35 @@ export interface ResultadoDeAplicacion {
   modalidad: string;
   /** La cuenta tenía un corte APLICADO (no observado): el llamador escribe `reanudacion_servicio`. */
   corteEstabaAplicado: boolean;
+  /**
+   * Si el pago CAMBIÓ EL PLAN: la copia de límites antes y después, y lo que se
+   * conservó por contrato (`copiaDeLimites`). Con el vocabulario de la
+   * auditoría `cambiar_plan`, para que `pago_manual` y `pago_aplicado` digan
+   * lo mismo que un cambio de plan desde Negocios (revisión de seguridad del
+   * PR #212, LOW 1). `null` si el pago no cambió el plan. Opcional en el tipo
+   * para no romper una puerta inyectada que no lo conozca.
+   */
+  cambioDeLimites?: CambioDeLimites | null;
+}
+
+/** Lo que la auditoría de un pago dice de la copia cuando el pago cambió el plan. */
+export interface CambioDeLimites {
+  limitesAntes: unknown;
+  limitesDespues: Record<string, unknown>;
+  /** Solo presente si algo se conservó por contrato. */
+  conservadosPorContrato?: Record<string, number>;
+}
+
+/**
+ * Los campos de la auditoría de un pago que cambió el plan, listos para
+ * esparcir: vacío si no lo cambió. El mismo vocabulario que `cambiar_plan`.
+ */
+export function auditoriaDeLimites(c: CambioDeLimites | null | undefined): Record<string, unknown> {
+  if (!c) return {};
+  return {
+    limitesAntes: c.limitesAntes ?? null, limitesDespues: c.limitesDespues,
+    ...(c.conservadosPorContrato ? { conservadosPorContrato: c.conservadosPorContrato } : {}),
+  };
 }
 
 export interface PuertaDePagos {
@@ -342,14 +371,22 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
   };
 
   const cambioDePlan = tras.plan !== planAntes ? tras.plan : null;
+  let cambioDeLimites: CambioDeLimites | null = null;
   if (cambioDePlan) {
     escrituraCuenta['plan'] = cambioDePlan;
     // PAGAR OTRO PLAN ES CAMBIAR DE PLAN, y un cambio de plan CONSERVA lo que
     // va por contrato (`copiaDeLimites`, `planes.ts`): un comercio con 4
     // cambios al mes por contrato que se pasa de plan pagando no vuelve a los
     // del plan. El marcador `limitesPorContrato` no se toca: sigue valiendo.
-    escrituraCuenta['limites'] = copiaDeLimites(pago.cuenta, { plan: cambioDePlan }).limites;
+    // (Si un pago debe o no conservar el contrato es una decisión de Andres
+    // pendiente; hasta entonces lo conserva, y la auditoría lo dice.)
+    const copia = copiaDeLimites(pago.cuenta, { plan: cambioDePlan });
+    escrituraCuenta['limites'] = copia.limites;
     escrituraCuenta['catalogoPlanes'] = CATALOGO_PLANES;
+    cambioDeLimites = {
+      limitesAntes: pago.cuenta['limites'] ?? null, limitesDespues: copia.limites,
+      ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados as Record<string, number> } : {}),
+    };
   }
 
   return {
@@ -358,6 +395,7 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
       periodoPagado: tras.periodoPagado, cubiertoHasta: tras.cubiertoHasta, bolsa: tras.bolsa,
       plan: tras.plan, modalidad: tras.modalidad,
       corteEstabaAplicado: corteDe(cuenta)?.aplicado === true,
+      cambioDeLimites,
     },
   };
 }
@@ -842,6 +880,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
         pendienteAnulado,
         cubiertoHasta: a.resultado.cubiertoHasta, planDespues: a.resultado.plan, bolsaDespues: a.resultado.bolsa,
         planAntes: cuenta['plan'] ?? null, periodoPagadoAntes: cuenta['periodoPagado'] ?? null,
+        ...auditoriaDeLimites(a.resultado.cambioDeLimites),
       });
       return a.resultado;
     });

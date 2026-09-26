@@ -86,6 +86,15 @@ describe('Negocios: el valor por contrato lo escribe el servidor, no la pantalla
     expect(pagina).toMatch(/onCambiosIncluidos=\{\(cambiosIncluidos\) => void operar\(CALLABLES\.cuenta, \{ cambiosIncluidos \}/);
   });
 
+  it('con sesión vieja, la página ofrece volver a entrar con Google y REPITE el mismo cambio (LOW 3 de #212)', () => {
+    const pagina = leer('web/src/plataforma/paginas/CuentaNegocio.tsx');
+    // Reconoce el pedido de sesión reciente del servidor en cualquier operación de los ejes…
+    expect(pagina).toMatch(/if \(pideSesionReciente\(e\)\) setReintento\(\{ nombre, datos, exito \}\)/);
+    // …reautentica como Pagar, y repite la MISMA llamada con la misma elección.
+    expect(pagina).toMatch(/const volverAEntrarYRepetir[\s\S]*?reauthenticateWithPopup\(auth\.currentUser, proveedor\)[\s\S]*?await operar\(pendiente\.nombre, pendiente\.datos, pendiente\.exito\)/);
+    expect(pagina).toContain('Volver a entrar con Google y repetir el cambio');
+  });
+
   it('ni el panel ni la página importan escrituras de Firestore', () => {
     for (const ruta of ['web/src/plataforma/componentes/PanelEjes.tsx', 'web/src/plataforma/paginas/CuentaNegocio.tsx']) {
       expect(leer(ruta), ruta).not.toMatch(/\b(setDoc|updateDoc|addDoc|writeBatch|runTransaction)\b/);

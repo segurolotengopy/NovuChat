@@ -21,7 +21,16 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 
 const T = 'cuenta-parcial';
-const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' } } };
+// `auth_time` (segundos): la sesión se abrió al cargar la suite. Cambiar el
+// plan exige una sesión de menos de media hora (revisión de #212, LOW 3).
+const AUTH_TIME = Math.floor(Date.now() / 1000);
+const PROPIETARIO = { uid: 'prop-1', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' }, auth_time: AUTH_TIME } };
+/** El propietario de verdad, con Google, pero con una sesión de hace dos horas. */
+const PROPIETARIO_SESION_VIEJA = {
+  uid: 'prop-1', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' }, auth_time: AUTH_TIME - 7200 },
+};
+/** Y uno sin `auth_time`: tampoco es una sesión reciente. */
+const PROPIETARIO_SIN_AUTH_TIME = { uid: 'prop-1', token: { nc: { p: true }, firebase: { sign_in_provider: 'google.com' } } };
 // El mismo claim con una sesión de contraseña no es el propietario (T-19).
 const PROPIETARIO_CON_CONTRASENA = { uid: 'prop-2', token: { nc: { p: true }, firebase: { sign_in_provider: 'password' } } };
 const ADMIN_DEL_COMERCIO = { uid: 'adm-1', token: { nc: { t: { [T]: 'admin' } } } };
@@ -70,6 +79,23 @@ describe('Quién puede llamarla', () => {
 
   it('sin sesión, NO', async () => {
     await rechaza(llamar({ tenantId: T, plan: 'pro' }, null), 'unauthenticated');
+  });
+
+  it('cambiar el PLAN exige sesión reciente: el propietario con auth_time viejo (o sin él) NO cambia el plan (LOW 3 de #212)', async () => {
+    for (const quien of [PROPIETARIO_SESION_VIEJA, PROPIETARIO_SIN_AUTH_TIME]) {
+      await expect(llamar({ tenantId: T, plan: 'pro' }, quien)).rejects.toMatchObject({
+        code: 'unauthenticated', message: expect.stringMatching(/vuelva a iniciar sesión para cambiar el plan/),
+      });
+      // Tampoco pasa lo demás que venía en la misma llamada.
+      await rechaza(llamar({ tenantId: T, plan: 'pro', umbralOperador: 10, umbralBloqueo: 20 }, quien), 'unauthenticated');
+    }
+    expect(await cuenta()).toMatchObject({ plan: 'crecimiento', umbralOperador: 40, umbralBloqueo: 90 });
+    expect(await auditoria('cambiar_plan')).toHaveLength(0);
+  });
+
+  it('lo que NO mueve dinero (umbrales, modalidad) no pide sesión reciente: no se rompe lo que ya funcionaba', async () => {
+    await llamar({ tenantId: T, umbralOperador: 10, umbralBloqueo: 20 }, PROPIETARIO_SESION_VIEJA);
+    expect(await cuenta()).toMatchObject({ umbralOperador: 10, umbralBloqueo: 20, plan: 'crecimiento' });
   });
 });
 

@@ -304,17 +304,22 @@ export function esIdPlan(v: unknown): v is IdPlan {
 }
 
 /**
- * ¿Puede un comercio PAGARSE este plan por su cuenta? Los publicados, siempre;
- * uno fuera de la lista (BYOC), solo para renovar el que ya tiene. Estar en el
- * catálogo significa «se puede pagar», no «se le ofrece a cualquiera»: BYOC lo
- * asigna NovuChat contra un portafolio verificado, y pagado por un comercio que
- * sigue en el número de NovuChat le daría 2.000 conversaciones por USD 50 con
- * los mensajes de Meta a cargo de NovuChat. Es la regla de `planesOfrecidos`
- * (`web/src/lib/pagar.ts`) hecha cumplir en el servidor (CLAUDE.md, «Base
- * comercial» §7): la pantalla solo la acompaña. El propietario no pasa por acá.
+ * ¿Puede un comercio PAGARSE este plan por su cuenta? SOLO EL QUE YA TIENE
+ * (decisión de Andres, 26/09/2026, en la revisión del PR #212). El cambio de
+ * plan —subir o bajar— lo hace NovuChat, por Negocios (`actualizarEstadoCuenta`),
+ * por un pago manual del propietario o por `asignar-plan.mjs`; el comercio
+ * renueva. Hasta el 26/09 podía pagarse cualquiera de los publicados, y pagar
+ * una mensualidad FIJA el plan (`aplicarPago`): una baja de Pro a Impulso era
+ * apretar «Pagar», sin que nadie de NovuChat lo viera ni conversara el
+ * contrato (que un cambio de plan conserva, `copiaDeLimites`).
+ *
+ * Un plan que no es del catálogo (una cuenta sin plan, o con el `'basico'` de
+ * las altas viejas) no se renueva: primero NovuChat le asigna uno. Es la regla
+ * de `planesQuePuedePagar` (`web/src/lib/pagar.ts`) hecha cumplir en el
+ * servidor (CLAUDE.md, «Base comercial» §7): la pantalla solo la acompaña. El
+ * propietario no pasa por acá.
  */
 export function planQuePuedePedir(planActual: unknown, pedido: unknown): boolean {
-  if ((PLANES_PUBLICADOS as readonly unknown[]).includes(pedido)) return true;
   return esPlanVendible(pedido) && planActual === pedido;
 }
 

@@ -7,7 +7,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol } from './claims.js';
-import { claimsDe as claims, exigirAdminDe, exigirPropietario } from './autorizacion.js';
+import { claimsDe as claims, exigirAdminDe, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { derivadosGobernados } from './pagos.js';
 
 initializeApp();
@@ -641,6 +641,20 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   if (otros.length === 0 && plan === null && cambiosIncluidos === undefined) {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
   }
+  // SESIÓN RECIENTE PARA LO QUE MUEVE DINERO (revisión de seguridad de #212,
+  // LOW 3): cambiar el plan cambia la mensualidad, y los cambios incluidos
+  // por contrato son trabajo que NovuChat regala o cobra. Como
+  // `registrarPagoManual`: un token robado y usado desde otro lado no alcanza.
+  // Se pide DESPUÉS de validar la forma, para que una petición mal armada diga
+  // qué tiene mal. La consola responde con `reauthenticateWithPopup` y repite.
+  if (plan !== null || cambiosIncluidos !== undefined) {
+    try {
+      exigirSesionReciente(peticion, Date.now());
+    } catch {
+      throw new HttpsError('unauthenticated',
+        'Por seguridad, vuelva a iniciar sesión para cambiar el plan o los cambios incluidos.');
+    }
+  }
 
   const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
   const refFicha = db().doc(`tenants/${tenantId}`);
@@ -699,9 +713,15 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
         ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados } : {}),
       });
     }
-    if (cambiosIncluidos !== undefined && copia) {
-      const antes = porContratoDe(actual).includes('cambiosIncluidos');
-      const copiaAntes = actual['limites'] as Record<string, unknown> | undefined;
+    // `limites_por_contrato` SOLO SI ALGO CAMBIA (el valor o su origen), con
+    // la misma condición que `asignar-plan.mjs`: repetir la misma fijación no
+    // deja una auditoría que diga que se fijó (observación de #212).
+    const copiaAntes = actual['limites'] as Record<string, unknown> | undefined;
+    const contratoAntes = porContratoDe(actual).includes('cambiosIncluidos');
+    const contratoCambia = cambiosIncluidos !== undefined && copia !== null
+      && (contratoAntes !== (cambiosIncluidos !== null) || copiaAntes?.['cambiosIncluidos'] !== copia.limites['cambiosIncluidos']);
+    if (contratoCambia && copia) {
+      const antes = contratoAntes;
       tx.create(refAuditoria.doc(), {
         accion: 'limites_por_contrato', uid, en: ahora, clave: 'cambiosIncluidos',
         antes: { valor: copiaAntes?.['cambiosIncluidos'] ?? null, porContrato: antes },

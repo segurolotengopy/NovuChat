@@ -50,6 +50,8 @@ const FECHA_HOY = new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10
 const google = { sign_in_provider: 'google.com' };
 const password = { sign_in_provider: 'password' };
 const PROPIETARIO = { uid: 'prop-c', token: { nc: { p: true }, firebase: google, auth_time: Math.floor(Date.now() / 1000) } };
+/** El propietario con Google, pero con una sesión de hace dos horas (LOW 3 de #212). */
+const PROPIETARIO_SESION_VIEJA = { uid: 'prop-c', token: { nc: { p: true }, firebase: google, auth_time: Math.floor(Date.now() / 1000) - 7200 } };
 const PROPIETARIO_CON_CONTRASENA = { uid: 'prop-c2', token: { nc: { p: true }, firebase: password, email_verified: true } };
 const ADMIN_A = { uid: 'adm-a', token: { nc: { t: { [A]: 'admin' } }, firebase: password, email_verified: true } };
 const ADMIN_B = { uid: 'adm-b', token: { nc: { t: { [B]: 'admin' } }, firebase: password, email_verified: true } };
@@ -151,6 +153,30 @@ describe('actualizarEstadoCuenta: fijar y quitar el contrato (la callable de Neg
     const c = await cuenta();
     expect(c['limites']).toEqual(limitesDe('pro'));
     expect(c['limitesPorContrato']).toBeUndefined();
+    expect(await auditoria('limites_por_contrato')).toHaveLength(0);
+  });
+
+  it('el propietario con una sesión VIEJA tampoco: fijar o quitar el contrato exige sesión reciente (LOW 3 de #212)', async () => {
+    await rechaza(cuentaDe({ cambiosIncluidos: 9 }, PROPIETARIO_SESION_VIEJA), 'unauthenticated');
+    await rechaza(cuentaDe({ cambiosIncluidos: null }, PROPIETARIO_SESION_VIEJA), 'unauthenticated');
+    await rechaza(cuentaDe({ plan: 'crecimiento' }, PROPIETARIO_SESION_VIEJA), 'unauthenticated');
+    const c = await cuenta();
+    expect(c).toMatchObject({ plan: 'pro', limites: { cambiosIncluidos: 4 }, limitesPorContrato: ['cambiosIncluidos'] });
+    expect(await auditoria('limites_por_contrato')).toHaveLength(0);
+  });
+
+  it('repetir la misma fijación NO deja otra auditoría (observación de #212: solo si algo cambia)', async () => {
+    await cuentaDe({ cambiosIncluidos: 4 });
+    expect(await auditoria('limites_por_contrato')).toHaveLength(0);
+    await cuentaDe({ cambiosIncluidos: 5 });
+    await cuentaDe({ cambiosIncluidos: 5 });
+    expect(await auditoria('limites_por_contrato')).toHaveLength(1);
+    // Un cambio de plan que conserva el contrato no es una fijación: no audita `limites_por_contrato`.
+    await cuentaDe({ plan: 'crecimiento' });
+    expect(await auditoria('limites_por_contrato')).toHaveLength(1);
+    // Quitar uno que no existe tampoco.
+    await sembrar(A, PRO_SIN_CONTRATO);
+    await cuentaDe({ cambiosIncluidos: null });
     expect(await auditoria('limites_por_contrato')).toHaveLength(0);
   });
 
@@ -269,6 +295,15 @@ describe('pagar otro plan también es cambiar de plan: NO pisa el contrato', () 
     expect(c['plan']).toBe('crecimiento');
     expect(c['limites']).toEqual({ ...limitesDe('crecimiento'), cambiosIncluidos: 4 });
     expect(c['limitesPorContrato']).toEqual(['cambiosIncluidos']);
+    // TRAZABLE (LOW 1 de #212): la auditoría del pago dice la copia antes y
+    // después y lo conservado, con el vocabulario de `cambiar_plan`.
+    const [a] = await auditoria('pago_manual');
+    expect(a).toMatchObject({
+      planAntes: 'pro', planDespues: 'crecimiento',
+      limitesAntes: { ...limitesDe('pro'), cambiosIncluidos: 4 },
+      limitesDespues: { ...limitesDe('crecimiento'), cambiosIncluidos: 4 },
+      conservadosPorContrato: { cambiosIncluidos: 4 },
+    });
   });
 
   it('sin contrato, pagar otro plan sigue dejando la copia del plan (como siempre)', async () => {
@@ -280,6 +315,22 @@ describe('pagar otro plan también es cambiar de plan: NO pisa el contrato', () 
       montoRecibidoBs: 630,
     });
     expect((await cuenta())['limites']).toEqual(limitesDe('crecimiento'));
+    const [a] = await auditoria('pago_manual');
+    expect(a).toMatchObject({ limitesAntes: limitesDe('pro'), limitesDespues: limitesDe('crecimiento') });
+    expect(a['conservadosPorContrato']).toBeUndefined();
+  });
+
+  it('un pago que NO cambia el plan no dice nada de la copia en su auditoría', async () => {
+    const { periodoPagado: _p, ...cuentaSinMes } = PRO_SIN_CONTRATO;
+    await sembrar(A, cuentaSinMes);
+    await correr(indice.registrarPagoManual, {
+      pagoId: pagos.nuevoPagoId(), tenantId: A, tipo: 'mensualidad', plan: 'pro', meses: 1,
+      medio: 'efectivo', referencia: 'recibido por la prueba', tcoAplicado: TCO, tcoFuente: 'BCB', tcoFecha: FECHA_HOY,
+      montoRecibidoBs: 1134,
+    });
+    const [a] = await auditoria('pago_manual');
+    expect(a).toBeDefined();
+    for (const k of ['limitesAntes', 'limitesDespues', 'conservadosPorContrato']) expect(a![k], k).toBeUndefined();
   });
 });
 

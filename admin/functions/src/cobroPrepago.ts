@@ -71,7 +71,7 @@ import { MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, montoUsdDe } from
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
 import { planQuePuedePedir } from './planes.js';
 import {
-  conceptoDe, esPedidoDePago, puertaDePagos,
+  auditoriaDeLimites, conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,
 } from './pagos.js';
 
@@ -310,13 +310,16 @@ export async function crearCobroInterno(
       throw new HttpsError('failed-precondition', 'Este comercio no está en condiciones de emitir un cobro.');
     }
     const cuenta = cuentaDoc.data() ?? {};
-    // Un plan fuera de los publicados (BYOC) no se lo paga un comercio por su
-    // cuenta: solo renueva el que ya tiene. Sin `rol` --la entrada por
-    // WhatsApp-- vale lo mismo que un administrador. Se mira DENTRO de la
-    // transacción, contra la cuenta leída acá, no contra lo que dijo la pantalla.
+    // EL COMERCIO RENUEVA SU PLAN; EL CAMBIO LO HACE NOVUCHAT (Andres,
+    // 26/09/2026): pagar una mensualidad fija el plan, así que un plan
+    // distinto del que tiene —más grande o más chico— se rechaza acá, antes
+    // de reservar nada. Sin `rol` --la entrada por WhatsApp-- vale lo mismo
+    // que un administrador. Se mira DENTRO de la transacción, contra la cuenta
+    // leída acá, no contra lo que dijo la pantalla. El propietario sí puede.
     if (pedido.tipo === 'mensualidad' && quien.rol !== 'propietario'
         && !planQuePuedePedir(cuenta['plan'], pedido.plan)) {
-      throw new HttpsError('permission-denied', 'Ese plan lo asigna NovuChat: escríbanos para cambiarlo.');
+      throw new HttpsError('permission-denied',
+        'El cambio de plan lo hace NovuChat: desde acá se paga el plan que la cuenta ya tiene.');
     }
     const pendienteId = typeof cuenta['pagoPendienteId'] === 'string' && ID_PAGO.test(cuenta['pagoPendienteId'])
       ? cuenta['pagoPendienteId'] : null;
@@ -592,6 +595,9 @@ export async function aplicarEstadoDelCobrador(
             pagoId, cobroId: cobro.id, via: origen.via, riel: cobro.pago?.riel ?? null,
             confirmadoPorCobrador: cobro.pago?.confirmadoPor ?? null, montoRecibidoBs,
             cubiertoHasta: resultado.cubiertoHasta, plan: resultado.plan, bolsa: resultado.bolsa,
+            // Si el pago cambió el plan: la copia antes y después y lo
+            // conservado por contrato, como `cambiar_plan` (LOW 1 de #212).
+            ...auditoriaDeLimites(resultado.cambioDeLimites),
           } },
         };
       }

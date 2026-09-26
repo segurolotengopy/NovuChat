@@ -59,6 +59,21 @@ export function planesOfrecidos(cuenta: CuentaCruda | null | undefined): readonl
 }
 
 /**
+ * QUÉ PLAN PUEDE PAGARSE EL COMERCIO POR SU CUENTA: el que ya tiene, y nada
+ * más (decisión de Andres, 26/09/2026). El cambio de plan —subir o bajar— lo
+ * hace NovuChat; el servidor rechaza cualquier otro (`planQuePuedePedir`,
+ * `crearCobroPrepago`). Una cuenta sin plan del catálogo no tiene qué renovar:
+ * lista vacía, y la pantalla lo dice.
+ *
+ * `planesOfrecidos` (arriba) sigue siendo la lista del PROPIETARIO, que sí
+ * cambia el plan al cargar un pago a mano (`FormularioPagoManual`).
+ */
+export function planesQuePuedePagar(cuenta: CuentaCruda | null | undefined): readonly PlanEnVenta[] {
+  const actual = cuenta?.plan;
+  return esPlanVendible(actual) ? [actual] : [];
+}
+
+/**
  * El plan que viene marcado al abrir la pantalla: **el que el comercio tiene
  * hoy**, para que renovar sea apretar un botón y no una elección con
  * consecuencias. Sin plan conocido, `PLAN_POR_DEFECTO`, que es el más chico:

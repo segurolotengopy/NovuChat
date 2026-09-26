@@ -34,7 +34,8 @@ const BYOC = 'mej-byoc';
 const REAL = 'mej-real';
 const VIEJO = 'mej-viejo';
 const LISTO = 'mej-listo';
-const TENANTS = [DEMO, DEMO_GRANDE, BYOC, REAL, VIEJO, LISTO];
+const DEMO_CONTRATO = 'mej-demo-contrato';
+const TENANTS = [DEMO, DEMO_GRANDE, BYOC, REAL, VIEJO, LISTO, DEMO_CONTRATO];
 const NUM = { demo: '1000000061', grande: '1000000062', byoc1: '1000000063', byoc2: '1000000064', real: '1000000065', listo: '1000000066' };
 
 function correr(...args: string[]) {
@@ -97,6 +98,14 @@ beforeAll(async () => {
   await db.doc(`tenants/${LISTO}`).set({ nombre: 'Listo', estado: 'activo', plan: 'pro', modelo: MODELO_POR_DEFECTO });
   await db.doc(`tenants/${LISTO}/cuenta/estado`).set({ plan: 'pro', limites: limitesDe('pro'), modalidad: 'demostracion' });
   await db.doc(`rutasWhatsApp/${NUM.listo}`).set({ tenantId: LISTO, flujo: 'venta', aliasSecreto: 'demoC', estado: 'activo', titularidad: 'novuchat' });
+
+  // Un demo por plan con un valor POR CONTRATO ya marcado (revisión de #212,
+  // LOW 2): pasar a `--plan-demos` es un cambio de plan y no lo pisa.
+  await db.doc(`tenants/${DEMO_CONTRATO}`).set({ nombre: 'Demo con contrato', estado: 'activo', plan: 'demostracion', modelo: MODELO_POR_DEFECTO });
+  await db.doc(`tenants/${DEMO_CONTRATO}/cuenta/estado`).set({
+    plan: 'demostracion', limites: { ...LIMITES_VIEJOS_DEMO, cambiosIncluidos: 4 }, limitesPorContrato: ['cambiosIncluidos'],
+    modalidad: 'demostracion',
+  });
 });
 
 describe('migrar-ejes.mjs', () => {
@@ -208,6 +217,27 @@ describe('migrar-ejes.mjs', () => {
       expect(r.salida).toMatch(/= sin cambios/);
       expect(await auditorias(t)).toBe(1);
     }
+  });
+
+  it('un demo con un valor POR CONTRATO no lo pierde al pasar a --plan-demos: el seco lo anuncia y el aplicado lo conserva', async () => {
+    const seco = correr('--tenant', DEMO_CONTRATO);
+    expect(seco.codigo, seco.salida).toBe(0);
+    expect(seco.salida).toMatch(/se conserva cambiosIncluidos 4 por contrato \(el plan impulso trae 0\)/);
+    expect((await cuenta(DEMO_CONTRATO))['plan']).toBe('demostracion');
+    const r = correr('--tenant', DEMO_CONTRATO, '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/cambiosIncluidos 4/);
+    const c = await cuenta(DEMO_CONTRATO);
+    expect(c).toMatchObject({ plan: 'impulso', limites: { ...limitesDe('impulso'), cambiosIncluidos: 4 }, modalidad: 'demostracion' });
+    // El marcador sigue: ni se borra ni se reescribe.
+    expect(c['limitesPorContrato']).toEqual(['cambiosIncluidos']);
+    expect(correr('--tenant', DEMO_CONTRATO, '--aplicar').salida).toMatch(/= sin cambios/);
+  });
+
+  it('SIN marcador, la copia de un demo es exactamente la del plan: ningún tenant de hoy cambia por este bloque', async () => {
+    // Es la garantía para el seco en producción: nadie tiene `limitesPorContrato`.
+    for (const t of [DEMO, DEMO_GRANDE]) expect((await cuenta(t))['limitesPorContrato']).toBeUndefined();
+    expect((await cuenta(DEMO))['limites']).toEqual(limitesDe('impulso'));
   });
 
   it('un tenant que no existe se dice', () => {
