@@ -537,7 +537,7 @@ service cloud.firestore {
           let propio = limites is map ? limites.get('campanas', null) : null;
           return propio is int && propio >= 0 && propio <= 10
             ? propio
-            : {'impulso': 0, 'crecimiento': 3, 'pro': 10, 'byoc': 10, 'demostracion': 10}
+            : {'impulso': 0, 'crecimiento': 3, 'pro': 10, 'byoc': 10}
                 .get(cuenta.get('plan', ''), 0);
         }
 
@@ -1164,7 +1164,7 @@ service cloud.firestore {
         let propio = limites is map ? limites.get('productos', null) : null;
         return propio is int && propio >= 1 && propio <= 100000
           ? propio
-          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500, 'demostracion': 500}
+          : {'impulso': 20, 'crecimiento': 100, 'pro': 500, 'byoc': 500}
               .get(cuenta.get('plan', ''), 20);
       }
 
@@ -2332,7 +2332,20 @@ service cloud.firestore {
     // Documento: { tenantId, flujo, wabaId, estado }
     // =========================================================================
     match /rutasWhatsApp/{phoneNumberId} {
-      allow get, list: if esPropietario();
+      // El propietario lee y lista todo. El ADMINISTRADOR DEL COMERCIO lee y
+      // lista SUS rutas (F1, `Analisis/41` §4): ahí vive la titularidad del
+      // número, que dice quién le paga a Meta, y tiene derecho a verla en
+      // Cuenta y Pagar. Solo las suyas —el documento dice de qué tenant es—:
+      // con qué números operan los demás sigue siendo de NovuChat. La consola
+      // consulta siempre con `where('tenantId', '==', t)`, y las reglas solo
+      // aprueban una consulta cuyo filtro garantiza que todo documento devuelto
+      // cumple la condición; sin filtro, o con el filtro de otro comercio, se
+      // niega. Se prueba negando en `pruebas/reglas.test.ts`: el admin de B no
+      // lee ni lista las rutas de A.
+      allow get, list: if esPropietario()
+                       || (resource.data.tenantId is string
+                           && esAdmin(resource.data.tenantId)
+                           && tenantLegible(resource.data.tenantId));
       // La escribe únicamente la Function `asignarNumero`, que además garantiza
       // que un mismo phone_number_id no apunte nunca a dos comercios.
       allow create, update, delete: if false;

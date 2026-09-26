@@ -40,8 +40,16 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, PLANES_ASIGNABLES, cuentaInicial, esIdPlan, limitesDe, periodoDe, type IdPlan,
+  CATALOGO_PLANES, PLANES, cuentaInicial, esPlanVendible, limitesDe, periodoDe, type IdPlanVendible,
 } from './planes.js';
+// LOS TRES EJES DE LA CUENTA (F1, `Analisis/41` §4). El alta escribe el modelo
+// por defecto y `asignarNumero` la titularidad del número; cambiarlos después
+// es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
+// los dos en `central/`. El plan, la modalidad y los umbrales siguen en
+// `actualizarEstadoCuenta`, más abajo.
+import { MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } from './central/ejes.js';
+export { registrarCambioOperado } from './central/cambiosOperados.js';
+export { asignarEjes, ejesDeCuenta } from './central/ejesDeCuenta.js';
 // PREPAGO (bloque A-0, `DISENO.md` §4undecies): la modalidad de la cuenta y los
 // campos derivados de la situación de pago, que se recalculan y nunca se
 // escriben a mano; y la bandera del modo observación (`fijarCortePrepago`).
@@ -177,6 +185,10 @@ export const altaTenant = onCall(async (peticion) => {
   });
   lote.create(ref, {
     nombre, estado: 'activo', plan: cuenta.plan, vertical, flujos,
+    // El modelo de IA es una decisión de NovuChat por tenant (`central/ejes.ts`):
+    // nace con el que corre en todos los flujos y se cambia con
+    // `actualizarEstadoCuenta`, nunca desde el navegador.
+    modelo: MODELO_POR_DEFECTO,
     // El número de WhatsApp se asigna aparte, con `asignarNumero`: exige
     // trámites en Meta que no se pueden hacer en la misma transacción.
     waPhoneNumberId: null, waWabaId: null,
@@ -373,10 +385,18 @@ export const asignarNumero = onCall(async (peticion) => {
   const phoneNumberId = texto(datos['phoneNumberId'], 25);
   const wabaId = texto(datos['wabaId'], 25);
   const flujo = texto(datos['flujo'], 30);
+  // TITULARIDAD DEL CANAL (F1, `Analisis/41` §4): de quién es la WABA y quién
+  // le paga a Meta este número. Opcional: sin ella, de NovuChat, que es el
+  // lado seguro. Con ella, tiene que ser de la lista; cualquier otra cosa se
+  // rechaza como todo lo demás. Se cambia después con `fijarTitularidad`.
+  const titularidad = datos['titularidad'] === undefined ? TITULARIDAD_POR_DEFECTO : datos['titularidad'];
 
   if (!ID_TENANT.test(tenantId)) throw new HttpsError('invalid-argument', 'Identificador inválido.');
   if (!ID_NUMERO.test(phoneNumberId)) throw new HttpsError('invalid-argument', 'phone_number_id inválido.');
   if (!VERTICALES.has(flujo)) throw new HttpsError('invalid-argument', 'Flujo desconocido.');
+  if (!esTitularidad(titularidad)) {
+    throw new HttpsError('invalid-argument', `Titularidad desconocida. Una de: ${TITULARIDADES.join(', ')}.`);
+  }
 
   const ref = db().doc(`rutasWhatsApp/${phoneNumberId}`);
   await db().runTransaction(async (tx) => {
@@ -402,7 +422,7 @@ export const asignarNumero = onCall(async (peticion) => {
     const config = refConfig ? await tx.get(refConfig) : null;
 
     tx.set(ref, {
-      tenantId, flujo, wabaId,
+      tenantId, flujo, wabaId, titularidad,
       estado: tenant.get('estado') ?? 'activo',
       asignadoEn: Timestamp.now(), asignadoPor: uid,
     });
@@ -416,8 +436,8 @@ export const asignarNumero = onCall(async (peticion) => {
     }
   });
 
-  await auditar(tenantId, 'asignar_numero', uid, { phoneNumberId, wabaId, flujo });
-  return { ok: true };
+  await auditar(tenantId, 'asignar_numero', uid, { phoneNumberId, wabaId, flujo, titularidad });
+  return { ok: true, titularidad };
 });
 
 export const liberarNumero = onCall(async (peticion) => {
@@ -558,15 +578,17 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     umbrales[clave] = v;
   }
 
-  let plan: IdPlan | null = null;
+  let plan: IdPlanVendible | null = null;
   if (viene('plan')) {
     const pedido = datos['plan'];
-    if (!esIdPlan(pedido)) {
+    if (!esPlanVendible(pedido)) {
       throw new HttpsError('invalid-argument',
-        `Plan desconocido. Tiene que ser uno del catálogo: ${Object.keys(PLANES_ASIGNABLES).join(', ')}.`);
+        `Plan desconocido. Tiene que ser uno del catálogo: ${Object.keys(PLANES).join(', ')}.`);
     }
     plan = pedido;
   }
+  // EL MODELO DE IA y la TITULARIDAD del número NO van por acá: son
+  // `asignarEjes` (`central/ejesDeCuenta.ts`), con la firma que usa la consola.
 
   // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.2). La MODALIDAD es
   // cerrada: demostración, prueba o prepago. `periodoPrueba` (`aaaa-mm`) es
@@ -660,12 +682,12 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     // callable ya no acepta los derivados a mano, la única forma de que estén
     // bien es calcularlos en cada escritura.
     //
-    // SALVO un comercio real SIN MIGRAR (sin `modalidad` y con un plan del
-    // catálogo): para el módulo sería demostración y derivaría «Sin cargo»
-    // con monto cero, cambiándole el estado de cuenta sin que nada hubiera
-    // pasado. Sus derivados no se tocan hasta que `scripts/migrar-prepago.mjs`
-    // le dé su modalidad (`derivadosGobernados`, revisión de seguridad de
-    // A-1, LOW 8). La migración va igual ANTES de desplegar A-1.
+    // SALVO un comercio SIN MIGRAR (sin `modalidad`): para el módulo sería
+    // demostración y derivaría «Sin cargo» con monto cero, cambiándole el
+    // estado de cuenta sin que nada hubiera pasado. Sus derivados no se tocan
+    // hasta que `scripts/migrar-prepago.mjs` (un comercio real) o
+    // `scripts/migrar-ejes.mjs` (un demo con el plan viejo) le dé su
+    // modalidad (`derivadosGobernados`, revisión de seguridad de A-1, LOW 8).
     const combinada: Record<string, unknown> = { ...actual };
     for (const [k, v] of Object.entries(escritura)) {
       if (v instanceof FieldValue) delete combinada[k]; else combinada[k] = v;
@@ -740,16 +762,30 @@ export const fijarCortePrepago = onCall(async (peticion) => {
   if (motivo.length < 10) {
     throw new HttpsError('invalid-argument', 'El motivo es obligatorio (al menos 10 caracteres).');
   }
-  const tenantId = texto(datos['tenantId'], 60);
-  if (tenantId !== '' && !ID_TENANT.test(tenantId)) {
-    throw new HttpsError('invalid-argument', 'Identificador inválido.');
+  // EL ALCANCE ES EXPLÍCITO (revisión de seguridad de #203, 25/09/2026). La
+  // compuerta GLOBAL se pide con `{ alcance: 'global' }`, o con `tenantId`
+  // ausente o `null` (así la llama la consola). La de UN tenant, con su
+  // identificador. Una CADENA VACÍA no es «global»: es un formulario que se
+  // mandó sin el comercio, y antes encendía el corte para todos.
+  const alcance = datos['alcance'];
+  const crudo = datos['tenantId'];
+  if (alcance !== undefined && alcance !== 'global' && alcance !== 'tenant') {
+    throw new HttpsError('invalid-argument', 'alcance tiene que ser global o tenant.');
+  }
+  const global = alcance === 'global' || (alcance === undefined && (crudo === undefined || crudo === null));
+  if (global && typeof crudo === 'string' && crudo !== '') {
+    throw new HttpsError('invalid-argument', 'La compuerta global no lleva tenantId.');
+  }
+  const tenantId = global ? '' : texto(crudo, 60);
+  if (!global && !ID_TENANT.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Identificador inválido: para la compuerta global, alcance global.');
   }
   const ahora = Timestamp.now();
   const refPlataforma = db().doc('plataforma/prepago');
   const refHistorial = refPlataforma.collection('historial');
 
   await db().runTransaction(async (tx) => {
-    if (tenantId === '') {
+    if (global) {
       tx.set(refPlataforma, { corteActivo, actualizadoEn: ahora, actualizadoPor: uid, motivo }, { merge: true });
       tx.create(refHistorial.doc(), { corteActivo, uid, en: ahora, motivo });
       return;
@@ -763,7 +799,7 @@ export const fijarCortePrepago = onCall(async (peticion) => {
     tx.create(refHistorial.doc(), { corteActivo, uid, en: ahora, motivo, tenantId });
   });
 
-  return { ok: true, corteActivo, ...(tenantId ? { tenantId } : {}) };
+  return { ok: true, corteActivo, alcance: global ? 'global' : 'tenant', ...(global ? {} : { tenantId }) };
 });
 
 // ---------------------------------------------------------------------------

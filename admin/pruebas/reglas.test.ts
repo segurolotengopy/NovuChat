@@ -1120,12 +1120,32 @@ describe('Personas atendidas', () => {
 describe('Índice inverso número -> comercio', () => {
   it('un comercio no puede saber con qué números operan los demás', async () => {
     await assertFails(getDoc(doc(adminA(), `rutasWhatsApp/pnid-${B}`)));
+    // Ni listando sin filtro, ni con el filtro de OTRO comercio.
     await assertFails(getDocs(collection(adminA(), 'rutasWhatsApp')));
-    // Ni siquiera el suyo: el panel no lo necesita, lo resuelve la Function.
-    await assertFails(getDoc(doc(adminA(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDocs(query(collection(adminA(), 'rutasWhatsApp'), where('tenantId', '==', B))));
+    await assertFails(getDocs(query(collection(adminB(), 'rutasWhatsApp'), where('tenantId', '==', A))));
+    await assertFails(getDocs(query(collection(operA(), 'rutasWhatsApp'), where('tenantId', '==', A))));
   });
 
-  it('solo NovuChat lo consulta', async () => {
+  it('el ADMIN del comercio lee y LISTA SUS rutas (F1: ahí está la titularidad, que dice quién le paga a Meta); nadie más del comercio', async () => {
+    await assertSucceeds(getDoc(doc(adminA(), `rutasWhatsApp/pnid-${A}`)));
+    // La consola consulta siempre con el filtro de su tenant.
+    await assertSucceeds(getDocs(query(collection(adminA(), 'rutasWhatsApp'), where('tenantId', '==', A))));
+    await assertSucceeds(getDocs(query(collection(adminD(), 'rutasWhatsApp'), where('tenantId', '==', D))));
+    await assertFails(getDocs(query(collection(adminC(), 'rutasWhatsApp'), where('tenantId', '==', C))));
+    // Suspendido sigue viendo lo suyo (como cuenta/estado); dado de baja, no.
+    await assertSucceeds(getDoc(doc(adminD(), `rutasWhatsApp/pnid-${D}`)));
+    await assertFails(getDoc(doc(adminC(), `rutasWhatsApp/pnid-${C}`)));
+    // El operador no: la titularidad es asunto comercial. Ni la ingesta ni un colado.
+    await assertFails(getDoc(doc(operA(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDoc(doc(ingestaA(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDoc(doc(adminAConGoogle(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDoc(doc(adminASinVerificar(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDoc(doc(sinClaims(), `rutasWhatsApp/pnid-${A}`)));
+    await assertFails(getDoc(doc(anonimo(), `rutasWhatsApp/pnid-${A}`)));
+  });
+
+  it('NovuChat lee y lista', async () => {
     await assertSucceeds(getDoc(doc(propietario(), `rutasWhatsApp/pnid-${A}`)));
     await assertSucceeds(getDocs(collection(propietario(), 'rutasWhatsApp')));
   });
@@ -1140,6 +1160,15 @@ describe('Índice inverso número -> comercio', () => {
     await assertFails(updateDoc(doc(propietario(), `rutasWhatsApp/pnid-${A}`), { tenantId: B }));
     await assertFails(deleteDoc(doc(propietario(), `rutasWhatsApp/pnid-${A}`)));
     await assertFails(setDoc(doc(ingestaA(), `rutasWhatsApp/pnid-${A}`), { tenantId: A }));
+  });
+
+  it('la TITULARIDAD del número (F1, Analisis/41 §4) no la escribe nadie desde el navegador: ni el comercio ni NovuChat', async () => {
+    // Decide quién le paga a Meta y de quién es la franquicia: la escriben
+    // solo `asignarNumero`, `fijarTitularidad` y los scripts, con auditoría.
+    for (const fs of [propietario(), adminA(), operA(), ingestaA(), anonimo()]) {
+      await assertFails(updateDoc(doc(fs, `rutasWhatsApp/pnid-${A}`), { titularidad: 'comercio' }));
+      await assertFails(setDoc(doc(fs, `rutasWhatsApp/pnid-${A}`), { titularidad: 'comercio' }, { merge: true }));
+    }
   });
 });
 
@@ -1245,6 +1274,26 @@ describe('Estado de cuenta', () => {
     await assertFails(setDoc(doc(adminA(), `tenants/${A}/cuenta/estado`), { estadoPago: 'al_dia' }));
     await assertFails(setDoc(doc(propietario(), `tenants/${A}/cuenta/estado`), { estadoPago: 'vencido' }));
     await assertFails(deleteDoc(doc(adminA(), `tenants/${A}/cuenta/estado`)));
+  });
+
+  it('los EJES (F1, Analisis/41 §4) tampoco: modalidad, plan, límites y el contador de cambios van por las callables', async () => {
+    // Si el comercio pudiera escribir `modalidad: 'demostracion'`, dejaría de
+    // pagar; si pudiera escribir `cambios`, el límite de cambios operados no
+    // existiría. Ni siquiera el propietario: sin la callable no hay auditoría.
+    for (const fs of [adminA(), propietario(), operA(), ingestaA()]) {
+      await assertFails(updateDoc(doc(fs, `tenants/${A}/cuenta/estado`), { modalidad: 'demostracion' }));
+      await assertFails(updateDoc(doc(fs, `tenants/${A}/cuenta/estado`), { plan: 'pro', limites: { productos: 500 } }));
+      await assertFails(updateDoc(doc(fs, `tenants/${A}/cuenta/estado`), { 'cambios.2026-10': 0 }));
+      await assertFails(setDoc(doc(fs, `tenants/${A}/cuenta/estado`), { modalidad: 'demostracion' }, { merge: true }));
+    }
+  });
+
+  it('el MODELO de IA de la ficha (tenants/{t}.modelo) lo escribe solo Plataforma, nunca el navegador', async () => {
+    for (const fs of [adminA(), propietario(), operA(), ingestaA(), anonimo()]) {
+      await assertFails(updateDoc(doc(fs, 'tenants', A), { modelo: 'claude-sonnet-5' }));
+      await assertFails(setDoc(doc(fs, 'tenants', A), { modelo: 'claude-sonnet-5' }, { merge: true }));
+      await assertFails(updateDoc(doc(fs, 'tenants', A), { plan: 'pro' }));
+    }
   });
 
   it('un comercio SUSPENDIDO sigue viendo por qué lo está', async () => {
@@ -3717,10 +3766,10 @@ describe('Límite de productos por plan: el catálogo no pasa del plan', () => {
     await assertSucceeds(bajaProducto(adminA(), A, 'p20'));
   });
 
-  it('sin `limites`, el respaldo por plan: impulso 20, crecimiento 100, pro y demostración 500', async () => {
+  it('sin `limites`, el respaldo por plan: impulso 20, crecimiento 100, pro y byoc 500; «demostracion» ya no es un plan (F1)', async () => {
     for (const [plan, pasa] of [
-      ['crecimiento', true], ['pro', true], ['demostracion', true],
-      ['impulso', false], ['basico', false], ['inventado', false],
+      ['crecimiento', true], ['pro', true], ['byoc', true],
+      ['impulso', false], ['basico', false], ['inventado', false], ['demostracion', false],
     ] as const) {
       await llenar(A, 20, { plan });
       const intento = altaProducto(adminA(), A, `p21-${plan}`, producto('P21'));
