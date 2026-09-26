@@ -40,7 +40,8 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, PLANES, cuentaInicial, esPlanVendible, limitesDe, periodoDe, type IdPlanVendible,
+  CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, PLANES, cambiosIncluidosValidos, copiaDeLimites, cuentaInicial,
+  esPlanVendible, mismoMarcador, periodoDe, porContratoDe, type IdPlanVendible,
 } from './planes.js';
 // LOS TRES EJES DE LA CUENTA (F1, `Analisis/41` §4). El alta escribe el modelo
 // por defecto y `asignarNumero` la titularidad del número; cambiarlos después
@@ -533,6 +534,14 @@ export const quitarUsuario = onCall(async (peticion) => {
 // cumplir un límite. `tenants/{t}.plan` es un ESPEJO para pintar la lista: se
 // escribe acá, en la misma transacción, y ninguna regla ni ningún límite lo lee.
 // El cambio de plan queda en la auditoría con el antes y el después.
+//
+// LOS VALORES POR CONTRATO (`planes.ts`, `copiaDeLimites`). `cambiosIncluidos`
+// fija por contrato los cambios operados incluidos al mes (entero de 0 a
+// `MAXIMO_CAMBIOS_INCLUIDOS`, la MISMA validación con que se lee), y `null` lo
+// quita y vuelve a regir el del plan. Un cambio de plan CONSERVA lo que va por
+// contrato: antes reescribía la copia entera y un contrato volvía al número del
+// plan sin que nadie lo decidiera. Cada fijación o retiro deja
+// `limites_por_contrato` en la auditoría; lo conservado va en `cambiar_plan`.
 // ---------------------------------------------------------------------------
 // LOS CAMPOS QUE SE DERIVAN DE LOS PAGOS (20/09, bloque A-1, `DISENO.md`
 // §4undecies.2). Hasta el 20/09 esta callable los aceptaba escritos a mano;
@@ -587,6 +596,15 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
     plan = pedido;
   }
+  let cambiosIncluidos: number | null | undefined;
+  if (viene('cambiosIncluidos')) {
+    const v = datos['cambiosIncluidos'];
+    if (v !== null && !cambiosIncluidosValidos(v)) {
+      throw new HttpsError('invalid-argument',
+        `cambiosIncluidos tiene que ser un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}, o null para volver al del plan.`);
+    }
+    cambiosIncluidos = v;
+  }
   // EL MODELO DE IA y la TITULARIDAD del número NO van por acá: son
   // `asignarEjes` (`central/ejesDeCuenta.ts`), con la firma que usa la consola.
 
@@ -620,7 +638,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     else throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
   }
   const otros = [...Object.keys(cambios), ...Object.keys(umbrales), ...Object.keys(prepago)].sort();
-  if (otros.length === 0 && plan === null) {
+  if (otros.length === 0 && plan === null && cambiosIncluidos === undefined) {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
   }
 
@@ -654,17 +672,41 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
 
     const escritura: Record<string, unknown> = { ...cambios, ...umbrales, ...prepago, actualizadoEn: ahora };
-    const nuevos = plan ? limitesDe(plan) : null;
-    if (plan && nuevos) {
+    // Un valor por contrato sin cuenta ni plan dejaría un `cuenta/estado`
+    // parcial, con una copia de una sola clave y sin plan: primero el plan.
+    if (cambiosIncluidos !== undefined && !plan && !cuentaDoc.exists) {
+      throw new HttpsError('failed-precondition', 'El comercio no tiene cuenta: primero se le asigna un plan.');
+    }
+    const copia = plan || cambiosIncluidos !== undefined
+      ? copiaDeLimites(actual, { ...(plan ? { plan } : {}), ...(cambiosIncluidos !== undefined ? { cambiosIncluidos } : {}) })
+      : null;
+    const nuevos = copia ? copia.limites : null;
+    if (copia) {
+      escritura['limites'] = copia.limites;
+      if (!mismoMarcador(actual, copia.porContrato)) {
+        escritura['limitesPorContrato'] = copia.porContrato.length ? copia.porContrato : FieldValue.delete();
+      }
+    }
+    if (plan && copia) {
       escritura['plan'] = plan;
-      escritura['limites'] = nuevos;
       escritura['catalogoPlanes'] = CATALOGO_PLANES;
       tx.update(refFicha, { plan });
       tx.create(refAuditoria.doc(), {
         accion: 'cambiar_plan', uid, en: ahora,
         planAntes: actual['plan'] ?? null, planDespues: plan,
-        limitesAntes: actual['limites'] ?? null, limitesDespues: nuevos,
+        limitesAntes: actual['limites'] ?? null, limitesDespues: copia.limites,
         catalogoPlanes: CATALOGO_PLANES,
+        ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados } : {}),
+      });
+    }
+    if (cambiosIncluidos !== undefined && copia) {
+      const antes = porContratoDe(actual).includes('cambiosIncluidos');
+      const copiaAntes = actual['limites'] as Record<string, unknown> | undefined;
+      tx.create(refAuditoria.doc(), {
+        accion: 'limites_por_contrato', uid, en: ahora, clave: 'cambiosIncluidos',
+        antes: { valor: copiaAntes?.['cambiosIncluidos'] ?? null, porContrato: antes },
+        despues: { valor: copia.limites['cambiosIncluidos'], porContrato: cambiosIncluidos !== null },
+        plan: plan ?? actual['plan'] ?? null, delPlan: copia.delPlan.cambiosIncluidos,
       });
     }
 
@@ -731,7 +773,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     return nuevos;
   });
 
-  return { ok: true, ...(plan && limites ? { plan, limites } : {}) };
+  return { ok: true, ...(plan ? { plan } : {}), ...(limites ? { limites } : {}) };
 });
 
 // ---------------------------------------------------------------------------

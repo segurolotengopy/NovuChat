@@ -11,9 +11,11 @@
  *
  * DESDE F1 (`Analisis/41` §4, 25/09/2026) EL PLAN ES UNO DE TRES EJES, y este
  * script escribe los tres más el modelo, cada uno solo si se pide:
- *   --plan <id>                 plan del catálogo → `plan`, `limites` (copia
- *                               entera, reemplazando la anterior),
- *                               `catalogoPlanes`, y el espejo `tenants/{t}.plan`.
+ *   --plan <id>                 plan del catálogo → `plan`, `limites` (la copia
+ *                               del plan, reemplazando la anterior SALVO lo que
+ *                               va por contrato, que se CONSERVA y el seco lo
+ *                               dice), `catalogoPlanes`, y el espejo
+ *                               `tenants/{t}.plan`.
  *                               «demostracion» YA NO ES UN PLAN: un demo es
  *                               modalidad `demostracion` con cualquier plan.
  *   --modalidad <m>             demostracion | prueba | prepago → `modalidad`.
@@ -29,9 +31,23 @@
  *                               comercio.
  *   --umbral-operador N --umbral-bloqueo M
  *                               la pareja de `atencion.ts`, validada igual.
+ *   --cambios N | plan          `N` fija POR CONTRATO los cambios operados
+ *                               incluidos al mes (`limites.cambiosIncluidos`,
+ *                               entero de 0 a MAXIMO_CAMBIOS_INCLUIDOS, la misma
+ *                               validación del servidor) y lo anota en
+ *                               `limitesPorContrato`; `plan` lo QUITA y vuelve
+ *                               a regir el del plan. Auditoría
+ *                               `limites_por_contrato`, como la callable.
  *   --operador <correo>         OBLIGATORIO: quien queda en la auditoría
  *                               (`uid`, `titularidadPor`, `origen: 'script'`),
  *                               no el nombre del script (LOW-3 de #207).
+ *
+ * LOS VALORES POR CONTRATO (`copiaDeLimites` de `planes.ts`, la misma función
+ * que usan `actualizarEstadoCuenta` y el pago de otro plan). Hasta este bloque
+ * `--plan` reescribía la copia entera y un contrato de 4 cambios volvía a los
+ * del plan sin que nadie lo decidiera. Ahora un cambio de plan conserva lo que
+ * el marcador `cuenta/estado.limitesPorContrato` dice que va por contrato, y
+ * quitarlo es `--cambios plan`, explícito.
  *
  * Todo en UNA transacción, con auditoría (`cambiar_plan` para el plan, como
  * siempre; `estado_cuenta` para el resto, con los campos que cambiaron). Los
@@ -47,7 +63,9 @@
  *
  *   node scripts/asignar-plan.mjs --proyecto <id> --tenant demo-venta --plan pro --modalidad demostracion
  *   node scripts/asignar-plan.mjs --proyecto <id> --tenant salon-rosa --plan crecimiento --aplicar
- *   node scripts/asignar-plan.mjs --proyecto <id> --tenant platinum --titularidad comercio --numero <phone id> --aplicar
+ *   node scripts/asignar-plan.mjs --proyecto <id> --tenant <tenant> --titularidad comercio --numero <phone id> --aplicar
+ *   node scripts/asignar-plan.mjs --proyecto <id> --tenant <tenant> --cambios 4 --aplicar
+ *   node scripts/asignar-plan.mjs --proyecto <id> --tenant <tenant> --cambios plan --aplicar
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
@@ -66,6 +84,7 @@ const TITULARIDAD = opcion('titularidad');
 const NUMERO = opcion('numero');
 const UMBRAL_OPERADOR = opcion('umbral-operador');
 const UMBRAL_BLOQUEO = opcion('umbral-bloqueo');
+const CAMBIOS = opcion('cambios');
 const OPERADOR = (opcion('operador') ?? '').trim().toLowerCase();
 
 // --- los módulos del servidor, sin compilar ---------------------------------
@@ -81,7 +100,10 @@ registerHooks({
     }
   },
 });
-const { PLANES, CATALOGO_PLANES, esIdPlan, limitesDe } = await import('../functions/src/planes.ts');
+const {
+  PLANES, CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, cambiosIncluidosValidos, copiaDeLimites, esIdPlan, limitesDe,
+  mismoMarcador, porContratoDe,
+} = await import('../functions/src/planes.ts');
 const {
   MODALIDADES, PRUEBA, camposDerivados, consumidasDe, esModalidad, esPeriodo, estadoDeServicio, mesBolivia,
 } = await import('../functions/src/prepago.ts');
@@ -120,12 +142,23 @@ for (const [clave, crudo] of [['umbralOperador', UMBRAL_OPERADOR], ['umbralBloqu
   if (!umbralValido(n)) problemas.push(`--${clave === 'umbralOperador' ? 'umbral-operador' : 'umbral-bloqueo'} inválido: ${crudo}`);
   else umbrales[clave] = n;
 }
-const pideAlgo = PLAN !== null || MODALIDAD !== null || MODELO !== null || TITULARIDAD !== null || Object.keys(umbrales).length > 0;
-if (!pideAlgo) problemas.push('nada que asignar: --plan, --modalidad, --modelo, --titularidad/--numero o --umbral-*');
+// --cambios: un entero en texto que valide IGUAL que el servidor
+// (`cambiosIncluidosValidos`), o la palabra `plan` para quitar el contrato.
+// `undefined` = no se pidió; `null` = volver al del plan (la forma de la callable).
+let cambiosPedidos;
+if (CAMBIOS !== null) {
+  if (CAMBIOS === 'plan') cambiosPedidos = null;
+  else if (/^[0-9]{1,4}$/.test(CAMBIOS) && cambiosIncluidosValidos(Number(CAMBIOS))) cambiosPedidos = Number(CAMBIOS);
+  else problemas.push(`--cambios inválido: ${CAMBIOS || '(vacío)'}. Un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}, o «plan» para volver al del plan.`);
+}
+const pideAlgo = PLAN !== null || MODALIDAD !== null || MODELO !== null || TITULARIDAD !== null || CAMBIOS !== null
+  || Object.keys(umbrales).length > 0;
+if (!pideAlgo) problemas.push('nada que asignar: --plan, --modalidad, --modelo, --titularidad/--numero, --cambios o --umbral-*');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
   console.error('\n  node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <id> [--plan <plan>] [--modalidad <m>]');
-  console.error('      [--modelo <id>] [--titularidad <t> --numero <phone_number_id>] [--umbral-operador N --umbral-bloqueo M] [--aplicar]\n');
+  console.error('      [--modelo <id>] [--titularidad <t> --numero <phone_number_id>] [--umbral-operador N --umbral-bloqueo M]');
+  console.error('      [--cambios <N|plan>] [--aplicar]\n');
   process.exit(2);
 }
 
@@ -139,6 +172,9 @@ const refFicha = db.doc(`tenants/${TENANT}`);
 const refCuenta = db.doc(`tenants/${TENANT}/cuenta/estado`);
 const refMetricas = db.doc(`tenants/${TENANT}/metricas/${periodoDe(ahoraMs)}`);
 const refRuta = NUMERO ? db.doc(`rutasWhatsApp/${NUMERO}`) : null;
+// Los límites DEL PLAN pedido, para el encabezado. Lo que queda en la copia
+// (con lo conservado por contrato) se decide en la transacción, contra la
+// cuenta leída: `copiaDeLimites`.
 const limites = PLAN ? limitesDe(PLAN) : null;
 const texto = (l) => (l && typeof l === 'object'
   ? `${l.conversaciones ?? '?'} conversaciones · ${l.productos ?? '?'} productos · ${l.agendas ?? '?'} agendas`
@@ -150,6 +186,7 @@ if (PLAN) console.log(`  Plan      : ${PLAN} (${PLANES[PLAN].nombre}, USD ${PLAN
 if (MODALIDAD) console.log(`  Modalidad : ${MODALIDAD}`);
 if (MODELO) console.log(`  Modelo    : ${MODELO}`);
 if (TITULARIDAD) console.log(`  Número    : ${cola(NUMERO)} → titularidad ${TITULARIDAD}`);
+if (CAMBIOS !== null) console.log(`  Cambios   : ${cambiosPedidos === null ? 'volver al del plan (quitar el contrato)' : `${cambiosPedidos} al mes por contrato`}`);
 if (Object.keys(umbrales).length) console.log(`  Umbrales  : ${JSON.stringify(umbrales)}`);
 console.log(`  Operador  : ${OPERADOR}`);
 console.log(`  Proyecto  : ${PROYECTO}\n`);
@@ -185,16 +222,37 @@ try {
       return;
     }
     const actual = cuenta.data() ?? {};
+    // Un valor por contrato sin cuenta ni plan dejaría una cuenta parcial,
+    // con una copia de una sola clave y sin plan (LOW-4 de #207).
+    if (cambiosPedidos !== undefined && !PLAN && !cuenta.exists) {
+      resumen = { error: `«${TENANT}» no tiene cuenta: primero --plan.` };
+      return;
+    }
 
     // --- qué cambia en la cuenta -------------------------------------------
+    // LA COPIA: la del plan pedido, conservando lo que va por contrato, más
+    // el valor por contrato pedido (o su retiro). La misma función que la
+    // callable y el pago de otro plan.
     const escritura = {};
+    const copia = PLAN || cambiosPedidos !== undefined
+      ? copiaDeLimites(actual, { ...(PLAN ? { plan: PLAN } : {}), ...(cambiosPedidos !== undefined ? { cambiosIncluidos: cambiosPedidos } : {}) })
+      : null;
+    const marcadorCambia = Boolean(copia) && !mismoMarcador(actual, copia.porContrato);
+    const copiaCambia = Boolean(copia) && (marcadorCambia || !(actual.limites && typeof actual.limites === 'object'
+      && ['conversaciones', 'productos', 'agendas', 'cambiosIncluidos'].every((k) => actual.limites[k] === copia.limites[k])));
     if (PLAN) {
-      const mismosLimites = actual.limites && typeof actual.limites === 'object'
-        && ['conversaciones', 'productos', 'agendas', 'cambiosIncluidos'].every((k) => actual.limites[k] === limites[k]);
-      if (!(actual.plan === PLAN && ficha.get('plan') === PLAN && actual.catalogoPlanes === CATALOGO_PLANES && mismosLimites)) {
-        Object.assign(escritura, { plan: PLAN, limites, catalogoPlanes: CATALOGO_PLANES });
+      if (!(actual.plan === PLAN && ficha.get('plan') === PLAN && actual.catalogoPlanes === CATALOGO_PLANES && !copiaCambia)) {
+        Object.assign(escritura, { plan: PLAN, limites: copia.limites, catalogoPlanes: CATALOGO_PLANES });
       }
+    } else if (copiaCambia) {
+      escritura.limites = copia.limites;
     }
+    if (marcadorCambia) {
+      escritura.limitesPorContrato = copia.porContrato.length ? copia.porContrato : FieldValue.delete();
+    }
+    const contratoAntes = porContratoDe(actual).includes('cambiosIncluidos');
+    const cambiosCambian = cambiosPedidos !== undefined && copiaCambia
+      && (marcadorCambia || actual.limites?.cambiosIncluidos !== copia.limites.cambiosIncluidos);
     if (MODALIDAD && actual.modalidad !== MODALIDAD) {
       escritura.modalidad = MODALIDAD;
       if (MODALIDAD === 'prueba' && !esPeriodo(actual.periodoPrueba)) {
@@ -231,17 +289,22 @@ try {
 
     const antes = {
       plan: actual.plan ?? null, limites: actual.limites ?? null, catalogo: actual.catalogoPlanes ?? null,
+      porContrato: porContratoDe(actual),
       espejo: ficha.get('plan') ?? null, modalidad: actual.modalidad ?? null, modelo: ficha.get('modelo') ?? null,
       titularidad: ruta ? (ruta.get('titularidad') ?? null) : undefined,
       umbrales: { operador: actual.umbralOperador ?? null, bloqueo: actual.umbralBloqueo ?? null },
     };
     const sinCambios = Object.keys(escritura).length === 0 && Object.keys(fichaCambios).length === 0 && !rutaCambia;
-    resumen = { antes, sinCambios, cuentaNueva: !cuenta.exists, derivados, campos: Object.keys(escritura).sort() };
+    resumen = {
+      antes, sinCambios, cuentaNueva: !cuenta.exists, derivados, campos: Object.keys(escritura).sort(),
+      queda: copia ? { limites: copia.limites, porContrato: copia.porContrato, conservados: copia.conservados, delPlan: copia.delPlan } : null,
+    };
     if (!APLICAR || sinCambios) return;
 
     const ahora = Timestamp.now();
     escritura.actualizadoEn = ahora;
-    // `update` reemplaza `limites` entero; `set` solo si la cuenta no existía.
+    // `update` reemplaza `limites` entero (la copia ya trae lo conservado);
+    // `set` solo si la cuenta no existía.
     if (cuenta.exists) tx.update(refCuenta, escritura);
     else tx.set(refCuenta, Object.fromEntries(Object.entries(escritura).filter(([, v]) => !(v instanceof FieldValue))));
     if (Object.keys(fichaCambios).length) tx.update(refFicha, fichaCambios);
@@ -261,12 +324,24 @@ try {
       tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
         accion: 'cambiar_plan', uid: OPERADOR, origen: 'script', script: 'asignar-plan', en: ahora,
         planAntes: antes.plan, planDespues: PLAN,
-        limitesAntes: antes.limites, limitesDespues: limites,
+        limitesAntes: antes.limites, limitesDespues: copia.limites,
         catalogoPlanes: CATALOGO_PLANES,
+        ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados } : {}),
+      });
+    }
+    // El valor por contrato deja la MISMA auditoría que la callable
+    // `actualizarEstadoCuenta`: un solo vocabulario para leerla después.
+    if (cambiosCambian) {
+      tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
+        accion: 'limites_por_contrato', uid: OPERADOR, origen: 'script', script: 'asignar-plan', en: ahora,
+        clave: 'cambiosIncluidos',
+        antes: { valor: antes.limites?.cambiosIncluidos ?? null, porContrato: contratoAntes },
+        despues: { valor: copia.limites.cambiosIncluidos, porContrato: cambiosPedidos !== null },
+        plan: PLAN ?? actual.plan ?? null, delPlan: copia.delPlan.cambiosIncluidos,
       });
     }
     const otros = Object.keys(escritura)
-      .filter((k) => !['plan', 'limites', 'catalogoPlanes', 'actualizadoEn', 'estadoPago', 'montoMensual', 'moneda', 'proximoVencimiento'].includes(k))
+      .filter((k) => !['plan', 'limites', 'limitesPorContrato', 'catalogoPlanes', 'actualizadoEn', 'estadoPago', 'montoMensual', 'moneda', 'proximoVencimiento'].includes(k))
       .sort();
     if (otros.length) {
       tx.create(db.collection(`tenants/${TENANT}/auditoria`).doc(), {
@@ -286,12 +361,28 @@ if (resumen.error) {
 
 const a = resumen.antes;
 console.log(`  Antes     : plan ${a.plan ?? '(ninguno)'} · espejo ${a.espejo ?? '(ninguno)'} · catálogo ${a.catalogo ?? '(ninguno)'}`);
-console.log(`              ${texto(a.limites)}`);
+console.log(`              ${texto(a.limites)}${a.porContrato.length ? ` · por contrato: ${a.porContrato.join(', ')}` : ''}`);
 console.log(`              modalidad ${a.modalidad ?? '(ninguna: rige demostración)'} · modelo ${a.modelo ?? '(ninguno: rige el de defecto)'}`
   + (a.titularidad !== undefined ? ` · titularidad ${a.titularidad ?? '(ninguna: rige novuchat)'}` : '')
   + ` · umbrales ${a.umbrales.operador ?? '-'}/${a.umbrales.bloqueo ?? '-'}`);
 console.log(`  Cuenta    : ${resumen.cuentaNueva ? 'no existía, se crea' : `existe, cambian: ${resumen.campos.join(', ') || 'nada de la cuenta'}`}`);
 if (resumen.derivados) console.log(`  Derivados : ${JSON.stringify(resumen.derivados)}`);
+// LO QUE PASA CON EL CONTRATO, dicho en el seco y en el aplicado: un cambio de
+// plan que conserva un valor por contrato lo anuncia, y uno que lo fija o lo
+// quita dice el antes y el después.
+const q = resumen.queda;
+if (q) {
+  for (const [k, v] of Object.entries(q.conservados)) {
+    console.log(`  Contrato  : se conserva ${k} ${v} por contrato (el plan ${PLAN} trae ${q.delPlan[k]})`);
+  }
+  if (cambiosPedidos !== undefined) {
+    const antesValor = a.limites?.cambiosIncluidos ?? '(sin copia)';
+    const antesOrigen = a.porContrato.includes('cambiosIncluidos') ? 'por contrato' : 'del plan';
+    const despuesOrigen = q.porContrato.includes('cambiosIncluidos') ? 'por contrato' : `del plan ${PLAN ?? a.plan ?? '—'}`;
+    console.log(`  Contrato  : cambiosIncluidos ${antesValor} ${antesOrigen} → ${q.limites.cambiosIncluidos} ${despuesOrigen}`);
+  }
+  console.log(`  Queda     : ${texto(q.limites)}${q.porContrato.length ? ` · por contrato: ${q.porContrato.join(', ')}` : ''}`);
+}
 
 if (resumen.sinCambios) {
   console.log('\n  Sin cambios: ya tiene esos ejes.\n');
@@ -305,15 +396,22 @@ if (!APLICAR) {
 // --- verificación por relectura ---------------------------------------------
 const [cuenta, ficha, ruta] = await Promise.all([refCuenta.get(), refFicha.get(), refRuta ? refRuta.get() : null]);
 const copia = cuenta.get('limites') ?? {};
+// LA COPIA RELEÍDA TIENE QUE SER LA DECIDIDA: la del plan con lo conservado
+// por contrato, o con el valor por contrato fijado o quitado; y el marcador,
+// el decidido. Si otro escritor la pisó entre medio, se dice.
+const esperada = resumen.queda;
+const okCopia = !esperada || (['conversaciones', 'productos', 'agendas', 'cambiosIncluidos'].every((k) => copia[k] === esperada.limites[k])
+  && mismoMarcador(cuenta.data(), esperada.porContrato));
 const okPlan = !PLAN || (cuenta.get('plan') === PLAN && ficha.get('plan') === PLAN
-  && cuenta.get('catalogoPlanes') === CATALOGO_PLANES
-  && ['conversaciones', 'productos', 'agendas', 'cambiosIncluidos'].every((k) => copia[k] === limites[k]));
+  && cuenta.get('catalogoPlanes') === CATALOGO_PLANES);
 const okModalidad = !MODALIDAD || cuenta.get('modalidad') === MODALIDAD;
 const okModelo = !MODELO || ficha.get('modelo') === MODELO;
 const okTitularidad = !TITULARIDAD || ruta?.get('titularidad') === TITULARIDAD;
 const okUmbrales = Object.entries(umbrales).every(([k, v]) => cuenta.get(k) === v);
-const ok = okPlan && okModalidad && okModelo && okTitularidad && okUmbrales;
-console.log(`\n  ${ok ? '✓' : '✗'} Verificación: plan ${cuenta.get('plan')} · espejo ${ficha.get('plan')} · ${texto(copia)}`);
+const ok = okPlan && okCopia && okModalidad && okModelo && okTitularidad && okUmbrales;
+const marcadorLeido = porContratoDe(cuenta.data());
+console.log(`\n  ${ok ? '✓' : '✗'} Verificación: plan ${cuenta.get('plan')} · espejo ${ficha.get('plan')} · ${texto(copia)}`
+  + (marcadorLeido.length ? ` · por contrato: ${marcadorLeido.join(', ')}` : ''));
 console.log(`    modalidad ${cuenta.get('modalidad') ?? '(ninguna)'} · modelo ${ficha.get('modelo') ?? '(ninguno)'}`
   + (ruta ? ` · titularidad ${ruta.get('titularidad') ?? '(ninguna)'}` : '')
   + ` · umbrales ${cuenta.get('umbralOperador') ?? '-'}/${cuenta.get('umbralBloqueo') ?? '-'}\n`);

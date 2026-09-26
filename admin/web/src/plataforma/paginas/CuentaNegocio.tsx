@@ -213,7 +213,9 @@ export function CuentaNegocio() {
           u ? { umbralOperador: u.operador, umbralBloqueo: u.bloqueo } : { umbralOperador: null, umbralBloqueo: null },
           u ? 'Umbrales fijados.' : 'Umbrales de respaldo restaurados.')}
         onCambio={(descripcion, forzar) => void operar(CALLABLES.cambio, { descripcion, ...(forzar ? { forzar: true } : {}) },
-          forzar ? 'Cambio registrado por encima de los incluidos.' : 'Cambio registrado.')} />
+          forzar ? 'Cambio registrado por encima de los incluidos.' : 'Cambio registrado.')}
+        onCambiosIncluidos={(cambiosIncluidos) => void operar(CALLABLES.cuenta, { cambiosIncluidos },
+          cambiosIncluidos === null ? 'Cambios incluidos: rigen los del plan.' : 'Cambios incluidos fijados por contrato.')} />
 
       <SuspensionNegocio ficha={ficha} ocupado={ocupado}
         onSuspender={(motivo, motivoVisible) => void operar(CALLABLES.suspender, { motivo, motivoVisible }, 'Servicio suspendido.')}

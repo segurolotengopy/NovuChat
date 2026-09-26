@@ -4,10 +4,10 @@ import { TextoSeguro } from '../../componentes/TextoSeguro';
 import { ContadorCambios } from '../../central/componentes/ContadorCambios';
 import {
   DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO, ETIQUETA_TITULARIDAD,
-  MODALIDADES, MODELOS, TITULARIDADES, modalidadDe,
+  MODALIDADES, MODELOS, TITULARIDADES, modalidadDe, origenDeCambiosIncluidos,
   type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
 } from '../../lib/ejes';
-import { PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
+import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
 import { importeBs, tipoCambioVigente } from '../../lib/prepago';
 import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../lib/atencion';
 import { resumenDeCambio } from '../lib/negocios';
@@ -49,6 +49,11 @@ export interface PanelEjesProps {
   onUmbrales: (umbrales: { operador: number; bloqueo: number } | null) => void;
   /** Registra un cambio operado por NovuChat (`registrarCambioOperado`); `forzar` pasa el tope, con constancia. */
   onCambio: (descripcion: string, forzar: boolean) => void;
+  /**
+   * Fija POR CONTRATO los cambios incluidos al mes (`actualizarEstadoCuenta`
+   * con `cambiosIncluidos`); `null` quita el contrato y vuelve a regir el del plan.
+   */
+  onCambiosIncluidos: (cambios: number | null) => void;
 }
 
 const PLANES_VENDIBLES = Object.keys(PLANES) as IdPlanVendible[];
@@ -75,6 +80,12 @@ export function PanelEjes(p: PanelEjesProps) {
             <td>
               {p.ejes ? <ContadorCambios cambios={p.ejes.cambios} />
                 : <span className="text-muted">{p.ejes === undefined ? 'Leyendo…' : 'No se pudo leer.'}</span>}
+              {p.ejes && (
+                // La clave lleva el valor y el origen: al confirmarse un
+                // cambio, el formulario vuelve a nacer con lo que dice el servidor.
+                <CambiosPorContrato key={`${p.ejes.limites.cambiosIncluidos}:${origenDeCambiosIncluidos(p.ejes) ?? '?'}`}
+                  ejes={p.ejes} ocupado={p.ocupado} onCambiosIncluidos={p.onCambiosIncluidos} />
+              )}
               {p.ejes && <RegistrarCambio cambios={p.ejes.cambios} ocupado={p.ocupado} onCambio={p.onCambio} />}
             </td>
           </tr>
@@ -112,7 +123,7 @@ function SeccionPlan(p: PanelEjesProps) {
         </select>{' '}
         {pendiente && resumen
           ? <Confirmacion resumen={resumen} ocupado={p.ocupado}
-              advertencia="Cambia la copia de límites de la cuenta y la mensualidad derivada; no cambia la modalidad."
+              advertencia="Cambia la copia de límites de la cuenta y la mensualidad derivada; no cambia la modalidad. Lo que va por contrato se conserva."
               onConfirmar={() => { p.onPlan(elegido); setPendiente(false); }}
               onCancelar={() => setPendiente(false)} />
           : <button type="button" className="btn btn-secondary btn-chico" disabled={p.ocupado || resumen === null}
@@ -286,6 +297,64 @@ function SeccionUmbrales(p: PanelEjesProps) {
         {!coherentes && <p className="field-error">El bloqueo tiene que ser mayor que el operador, y los dos enteros entre 1 y {UMBRAL_MAXIMO}.</p>}
       </td>
     </tr>
+  );
+}
+
+/**
+ * LOS CAMBIOS INCLUIDOS, CON SU ORIGEN: los del plan o los del contrato.
+ *
+ * Un contrato a medida puede incluir más (o menos) cambios operados al mes que
+ * el plan. Se fijan acá POR CONTRATO y un cambio de plan posterior los
+ * CONSERVA: el servidor lo decide (`copiaDeLimites`, `planes.ts`) y esta
+ * pantalla solo lo dice. Volver a los del plan es una acción explícita, con su
+ * confirmación. El tope del campo es el mismo del servidor
+ * (`MAXIMO_CAMBIOS_INCLUIDOS`), que igual valida y rechaza.
+ */
+function CambiosPorContrato({ ejes, ocupado, onCambiosIncluidos }: {
+  ejes: EjesDeCuenta; ocupado: boolean; onCambiosIncluidos: PanelEjesProps['onCambiosIncluidos'];
+}) {
+  const actual = ejes.limites.cambiosIncluidos;
+  const origen = origenDeCambiosIncluidos(ejes);
+  const delPlan = ejes.limites.cambiosIncluidosDelPlan;
+  const [valor, setValor] = useState(String(actual));
+  const [pendiente, setPendiente] = useState<'fijar' | 'plan' | null>(null);
+  const n = Number(valor);
+  const valido = /^[0-9]+$/.test(valor.trim()) && Number.isInteger(n) && n >= 0 && n <= MAXIMO_CAMBIOS_INCLUIDOS;
+  const cambia = valido && (n !== actual || origen !== 'contrato');
+  return (
+    <div className="cambios-por-contrato">
+      <p>
+        <strong>{actual}</strong> {actual === 1 ? 'cambio incluido' : 'cambios incluidos'} al mes
+        {origen === 'contrato' && <span className="text-muted"> · por contrato{delPlan !== undefined && <> (el plan trae {delPlan})</>}</span>}
+        {origen === 'plan' && <span className="text-muted"> · los del plan</span>}
+      </p>
+      <label htmlFor="eje-cambios-incluidos">Por contrato</label>{' '}
+      <input id="eje-cambios-incluidos" type="number" min={0} max={MAXIMO_CAMBIOS_INCLUIDOS} value={valor}
+        disabled={ocupado || pendiente !== null} onChange={(e) => setValor(e.target.value)} style={{ width: '6em' }} />{' '}
+      {pendiente === 'fijar' && (
+        <Confirmacion ocupado={ocupado}
+          resumen={`Cambios incluidos: ${actual}${origen === 'contrato' ? ' por contrato' : ' del plan'} → ${n} por contrato`}
+          advertencia="Queda por contrato: un cambio de plan posterior lo conserva. Queda en la auditoría del comercio."
+          onConfirmar={() => { onCambiosIncluidos(n); setPendiente(null); }}
+          onCancelar={() => setPendiente(null)} />
+      )}
+      {pendiente === 'plan' && (
+        <Confirmacion ocupado={ocupado}
+          resumen={`Cambios incluidos: ${actual} por contrato → los del plan${delPlan !== undefined ? ` (${delPlan})` : ''}`}
+          advertencia="Se quita el contrato: desde ahora rigen los del plan, y siguen al plan si cambia."
+          onConfirmar={() => { onCambiosIncluidos(null); setPendiente(null); }}
+          onCancelar={() => setPendiente(null)} />
+      )}
+      {pendiente === null && (
+        <>
+          <button type="button" className="btn btn-secondary btn-chico" disabled={ocupado || !cambia}
+            onClick={() => setPendiente('fijar')}>Fijar por contrato</button>{' '}
+          <button type="button" className="btn btn-ghost btn-chico" disabled={ocupado || origen !== 'contrato'}
+            onClick={() => setPendiente('plan')}>Volver a los del plan</button>
+        </>
+      )}
+      {!valido && <p className="field-error">Un entero de 0 a {MAXIMO_CAMBIOS_INCLUIDOS}.</p>}
+    </div>
   );
 }
 

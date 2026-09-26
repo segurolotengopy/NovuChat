@@ -18,7 +18,8 @@
  *   ficha y el canal. `asignar-plan.mjs` escribe los cinco desde la terminal.
  *
  *   `ejesDeCuenta({ tenantId })` — LECTURA. Los tres ejes (`Analisis/41` §4)
- *   más el modelo y el contador de cambios, en una sola forma, para que la
+ *   más el modelo y el contador de cambios (con qué claves de la copia van
+ *   POR CONTRATO y cuántos cambios trae el plan), en una sola forma, para que la
  *   consola los pinte iguales en Cuenta, Pagar y Negocios sin calcular nada. La
  *   llama el administrador del comercio o el propietario. ES EL ÚNICO CAMINO
  *   por el que el comercio ve la titularidad de sus números: `rutasWhatsApp`
@@ -29,7 +30,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { exigirAdminOPropietario, exigirPropietario } from '../autorizacion.js';
-import { limitesDeCuenta } from '../planes.js';
+import { limitesDe, limitesDeCuenta, porContratoDe } from '../planes.js';
 import { modalidadDe, type CuentaCruda } from '../prepago.js';
 import {
   MODELOS, TITULARIDADES, cambiosDelMes, esModelo, esTitularidad, modeloDe, titularidadDe,
@@ -135,6 +136,11 @@ export const ejesDeCuenta = onCall(async (peticion) => {
     limites: {
       conversaciones: limites.conversaciones, productos: limites.productos,
       agendas: limites.agendas, cambiosIncluidos: limites.cambiosIncluidos, origen: limites.origen,
+      // QUÉ VA POR CONTRATO (`porContratoDe`, `planes.ts`) y cuánto trae el
+      // plan, para que Negocios diga «4 por contrato; el plan trae 2» sin
+      // calcular nada. Un cambio de plan conserva lo que va por contrato.
+      porContrato: porContratoDe(cuenta),
+      cambiosIncluidosDelPlan: limitesDe(cuenta['plan']).cambiosIncluidos,
     },
     modalidad: modalidadDe(cuenta as CuentaCruda),
     modalidadExplicita: typeof cuenta['modalidad'] === 'string',

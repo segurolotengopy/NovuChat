@@ -178,7 +178,8 @@ export const MAXIMO_CAMBIOS_INCLUIDOS = 100;
  * Crecimiento y Pro, uno o dos cambios operados por NovuChat al mes son
  * soporte, no obra; y lo que se vendió por encima («hasta 4», `Analisis/40`
  * §5.2) va en la COPIA de esa cuenta (`limites.cambiosIncluidos`), como todo
- * contrato a medida. `Analisis/40` valuó el cambio suelto en USD 15: incluir
+ * contrato a medida, marcado POR CONTRATO (`limitesPorContrato`,
+ * `copiaDeLimites` más abajo) para que un cambio de plan no lo pise. `Analisis/40` valuó el cambio suelto en USD 15: incluir
  * más de dos en un plan de USD 50 lo regala.
  */
 export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
@@ -346,8 +347,13 @@ export function cuentaInicial(): { plan: IdPlanVendible; limites: Limites; catal
 const limiteValido = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= LIMITE_MAXIMO;
 
-/** `cambiosIncluidos` admite 0, y su techo es otro: es la excepción de `Limites`. */
-const cambiosIncluidosValidos = (v: unknown): v is number =>
+/**
+ * `cambiosIncluidos` admite 0, y su techo es otro: es la excepción de `Limites`.
+ * Se exporta porque es LA validación: la usan `limitesDeCuenta` al leer, y
+ * `actualizarEstadoCuenta` y `asignar-plan.mjs --cambios` al escribir un valor
+ * por contrato. Un valor que el lector descartaría no se deja escribir.
+ */
+export const cambiosIncluidosValidos = (v: unknown): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAXIMO_CAMBIOS_INCLUIDOS;
 
 export interface LimitesDeCuenta extends Limites {
@@ -406,6 +412,133 @@ export function limiteDeCampanas(cuenta: Record<string, unknown> | null | undefi
   if (typeof copia === 'number' && Number.isInteger(copia) && copia >= 0 && copia <= MAXIMO_CAMPANAS) return copia;
   const plan = cuenta?.['plan'];
   return esPlanVendible(plan) ? PLANES[plan].campanas : PLANES[PLAN_POR_DEFECTO].campanas;
+}
+
+// -----------------------------------------------------------------------------
+// VALORES POR CONTRATO: lo que la copia dice distinto del plan, a propósito
+// -----------------------------------------------------------------------------
+
+/**
+ * LAS CLAVES DE LA COPIA QUE PUEDEN IR POR CONTRATO. Hoy una sola:
+ * `cambiosIncluidos`, que es la que ya se vendió por encima del plan («hasta 4
+ * cambios al mes» con un plan que trae 2, `Analisis/40` §5.2). La lista es
+ * cerrada a propósito: fijar por contrato las conversaciones o los productos
+ * cambia lo que cuesta atender al comercio y el precio que se le cobra, y eso
+ * es un plan a medida (`Analisis/40` §8), no un ajuste de la copia.
+ */
+export const CLAVES_POR_CONTRATO = ['cambiosIncluidos'] as const;
+export type ClavePorContrato = (typeof CLAVES_POR_CONTRATO)[number];
+export const esClavePorContrato = (v: unknown): v is ClavePorContrato =>
+  typeof v === 'string' && (CLAVES_POR_CONTRATO as readonly string[]).includes(v);
+
+/**
+ * EL MARCADOR: `cuenta/estado.limitesPorContrato`, la lista de claves de la
+ * copia que se fijaron por contrato. POR QUÉ UN MARCADOR Y NO UNA COMPARACIÓN.
+ * «La copia dice 4 y el plan dice 2» no distingue un contrato de una copia
+ * escrita con un catálogo anterior (el plan cambió de número después) ni de
+ * un dato corrupto; y «la copia dice 2 y el plan dice 2» no distingue un
+ * contrato que casualmente coincide con el plan de uno que no existe. Solo
+ * quien fija el valor sabe que es por contrato, así que lo escribe.
+ *
+ * POR QUÉ FUERA DE `limites` y no adentro. `limites` es la copia que leen las
+ * reglas y los que hacen cumplir un límite, y hay escritores que la reemplazan
+ * entera; un marcador adentro se iría con ella sin dejar rastro. Afuera, un
+ * escritor que no lo conoce solo puede pisar el VALOR, y la cuenta queda
+ * diciendo «por contrato» con el número del plan: una incoherencia visible,
+ * no un contrato borrado en silencio.
+ *
+ * Una clave cuenta como por contrato solo si está en el marcador Y la copia
+ * trae un valor sano: sin valor sano rige el del plan (`limitesDeCuenta`), y
+ * decir «por contrato» sobre un número que no rige sería mentir.
+ */
+export function porContratoDe(cuenta: Record<string, unknown> | null | undefined): ClavePorContrato[] {
+  const marcador = cuenta?.['limitesPorContrato'];
+  if (!Array.isArray(marcador)) return [];
+  const crudo = cuenta?.['limites'];
+  const copia = typeof crudo === 'object' && crudo !== null ? crudo as Record<string, unknown> : {};
+  return CLAVES_POR_CONTRATO.filter((k) => marcador.includes(k) && cambiosIncluidosValidos(copia[k]));
+}
+
+/** ¿El marcador guardado es exactamente esta lista? Para no reescribirlo si no cambia. */
+export function mismoMarcador(cuenta: Record<string, unknown> | null | undefined, claves: readonly ClavePorContrato[]): boolean {
+  const marcador = cuenta?.['limitesPorContrato'];
+  const guardado = Array.isArray(marcador) ? marcador : [];
+  return guardado.length === claves.length && claves.every((k) => guardado.includes(k));
+}
+
+/** Lo que se pide sobre la copia: un plan nuevo, un valor por contrato, o las dos cosas. */
+export interface PedidoDeCopia {
+  /** Cambio de plan: la copia pasa a ser la del plan, SALVO lo que va por contrato. */
+  plan?: IdPlanVendible;
+  /**
+   * Un entero válido (`cambiosIncluidosValidos`) lo fija POR CONTRATO; `null`
+   * lo QUITA y vuelve a regir el del plan. Ausente, no se toca (y si estaba
+   * por contrato, un cambio de plan lo conserva).
+   */
+  cambiosIncluidos?: number | null;
+}
+
+export interface CopiaNueva {
+  /** La copia entera que se escribe en `cuenta/estado.limites`. */
+  limites: Record<string, unknown>;
+  /** El marcador que queda (`cuenta/estado.limitesPorContrato`). */
+  porContrato: ClavePorContrato[];
+  /** Lo que un cambio de plan CONSERVÓ por contrato, con su valor. Vacío si nada. */
+  conservados: Partial<Record<ClavePorContrato, number>>;
+  /** Los límites del plan que queda rigiendo, para decir «el plan trae…». */
+  delPlan: Limites;
+}
+
+/**
+ * LA COPIA QUE QUEDA DESPUÉS DE UN PEDIDO. PURA: la usan `actualizarEstadoCuenta`
+ * (la consola de Plataforma), `aplicacionDe` en `pagos.ts` (pagar otro plan es
+ * cambiar de plan) y `asignar-plan.mjs`, para que los tres escritores de la
+ * copia decidan igual.
+ *
+ * LA REGLA (Andres, recomendación de la revisión de F1): UN CAMBIO DE PLAN
+ * CONSERVA LOS VALORES POR CONTRATO. Hasta este bloque, cambiar el plan
+ * reescribía la copia entera con `limitesDe(plan)` y un contrato de 4 cambios
+ * volvía a 2 sin que nadie lo decidiera. Quitar un valor por contrato es una
+ * acción explícita (`cambiosIncluidos: null`, `--cambios plan`).
+ *
+ * Sin cambio de plan se toca SOLO la clave pedida: el resto de la copia queda
+ * como estaba (incluidas claves que este módulo no gobierna, como `campanas`).
+ * Con cambio de plan la copia es la del plan, como siempre, más lo conservado.
+ */
+export function copiaDeLimites(cuenta: Record<string, unknown> | null | undefined, pedido: PedidoDeCopia): CopiaNueva {
+  const planVigente = pedido.plan ?? (esPlanVendible(cuenta?.['plan']) ? cuenta?.['plan'] as IdPlanVendible : PLAN_POR_DEFECTO);
+  const delPlan = limitesDe(planVigente);
+  const crudo = cuenta?.['limites'];
+  const actual = typeof crudo === 'object' && crudo !== null ? crudo as Record<string, unknown> : {};
+  const previos = porContratoDe(cuenta);
+
+  const limites: Record<string, unknown> = pedido.plan ? { ...delPlan } : { ...actual };
+  const porContrato = new Set<ClavePorContrato>(previos);
+  const conservados: Partial<Record<ClavePorContrato, number>> = {};
+
+  if (pedido.plan) {
+    for (const k of previos) {
+      if (k === 'cambiosIncluidos' && pedido.cambiosIncluidos !== undefined) continue;
+      limites[k] = actual[k];
+      conservados[k] = actual[k] as number;
+    }
+  }
+  if (pedido.cambiosIncluidos === null) {
+    porContrato.delete('cambiosIncluidos');
+    limites['cambiosIncluidos'] = delPlan.cambiosIncluidos;
+  } else if (pedido.cambiosIncluidos !== undefined) {
+    if (!cambiosIncluidosValidos(pedido.cambiosIncluidos)) {
+      throw new RangeError(`cambiosIncluidos tiene que ser un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}`);
+    }
+    porContrato.add('cambiosIncluidos');
+    limites['cambiosIncluidos'] = pedido.cambiosIncluidos;
+  }
+  return {
+    limites,
+    porContrato: CLAVES_POR_CONTRATO.filter((k) => porContrato.has(k)),
+    conservados,
+    delPlan,
+  };
 }
 
 // -----------------------------------------------------------------------------

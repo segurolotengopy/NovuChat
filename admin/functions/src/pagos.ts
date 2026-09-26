@@ -70,7 +70,7 @@ import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { registrar } from './ingesta.js';
 import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
-import { CATALOGO_PLANES, PLANES, esPlanVendible, limitesDe, type IdPlanVendible } from './planes.js';
+import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
   corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoUsdDe,
@@ -344,7 +344,11 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
   const cambioDePlan = tras.plan !== planAntes ? tras.plan : null;
   if (cambioDePlan) {
     escrituraCuenta['plan'] = cambioDePlan;
-    escrituraCuenta['limites'] = limitesDe(cambioDePlan);
+    // PAGAR OTRO PLAN ES CAMBIAR DE PLAN, y un cambio de plan CONSERVA lo que
+    // va por contrato (`copiaDeLimites`, `planes.ts`): un comercio con 4
+    // cambios al mes por contrato que se pasa de plan pagando no vuelve a los
+    // del plan. El marcador `limitesPorContrato` no se toca: sigue valiendo.
+    escrituraCuenta['limites'] = copiaDeLimites(pago.cuenta, { plan: cambioDePlan }).limites;
     escrituraCuenta['catalogoPlanes'] = CATALOGO_PLANES;
   }
 
