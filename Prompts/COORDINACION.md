@@ -26,7 +26,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **F1** Ejes de la cuenta y consola del propietario | `modalidad`, `titularidad`, `modelo`, `cambiosIncluidos`, renombres, `asignar-plan`, migración de los tenants reales, Negocios (A-3b) | **cerrada el 26/09**: #207 y #203 fusionados, 5 tenants migrados, `v0.10.0` desplegada y verificada. Informe H1 abajo | H1 |
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **fusionada el 26/09**: #200, #201, #202, #204, #206 y #208 | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **fusionada el 26/09 (#205), sin estrenar**: el proyecto existe y no tiene facturación («Cloud billing quota exceeded»); decisión de Andres pendiente. `v0.10.0` fue con la alternativa (`--dry-run` y verificación HTTP) | H3 |
-| **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas | espera H1 | H2 |
+| **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas | **arranca el 26/09** (H1 pasó con recomendaciones): diseño del registro en curso; primer PR `registro.ts` solo; gancho corregido en #210 | H2 |
 | **F3** Core unificado | Ganchos; una variante de los nodos comunes; medios en el core; prompt por capas; suites sin `new Function` | espera H2 | H3 |
 | **H4** Aceptación y pase de Platinum | Lo cierra la sesión de clientes | espera H3 | H4 |
 | **F4** Conector de canal ∥ **F5** Tenants como datos | Receptor y `enviar` fuera de n8n; Bellido como módulo | esperan H4 | H5 |
@@ -183,6 +183,43 @@ existe). Pendientes: facturación de staging y el modelo por defecto.
 **Lo que le toca a Andres:** pegar este informe en la sesión revisora y, con
 su veredicto, autorizar F2.
 
+## Reglas para F2 (recomendaciones de la revisora sobre H1, 26/09)
+
+- **Copia por contrato antes de F2 o en su primera tanda:** `--cambios N` en
+  `asignar-plan.mjs` y el campo en Negocios, con la prueba de que la copia
+  manda sobre el plan. Es de Central y no mueve archivos. La coordinadora
+  agregó al bloque lo que la revisora no vio: hoy `--plan` reescribe la copia
+  entera, así que **un cambio de plan posterior borraba el contrato en
+  silencio**; el bloque lo cierra con prueba negativa (script y callable).
+  Platinum queda en 4 antes de H4. En obra: agente `central`,
+  `central/copia-por-contrato`.
+- **Modalidad de Platinum y Bellido por las sesiones de clientes**, leyendo
+  antes `estadoDeServicio` en prueba. **Advertencia de la coordinadora, antes
+  de escribirla:** `asignar-plan.mjs --modalidad prueba` fija como mes de
+  prueba el mes EN CURSO, sin opción para elegir otro. Hecho el 26/09, la
+  prueba dura hasta el 30/09; el aviso de conversión (5 días antes del fin)
+  queda debido de inmediato y sale por el flujo de captación si el comercio
+  tiene `telefonosPago`, entre las 09:00 y las 19:00; y desde el 03/10 la
+  cuenta queda «sin pago» (en observación, se atiende igual). Además, en el
+  mes de prueba **no rigen las conversaciones del plan: solo la bolsa de 20**.
+  Decisión de Andres (ver abajo).
+- **F2 arranca con el gancho activo, y el primer PR es `registro.ts` solo**,
+  midiendo ahí cuánto del árbol no cabe en las zonas antes de lanzar los
+  módulos en paralelo. **Hallazgo de la coordinadora al preparar F2:** el
+  gancho **no rechazaba nada dentro del worktree de un subagente** (buscaba
+  `.claude/zona` en `CLAUDE_PROJECT_DIR`, que para el subagente es la copia
+  principal). Medido con un agente de prueba; corregido en #210 (la zona sale
+  del `cwd` del evento), con ocho casos nuevos que fallan con el gancho
+  anterior. Rige cuando la copia principal se ponga al día; antes de lanzar
+  agentes con zona, se repite el agente de prueba. **F1 y todo lo anterior
+  corrieron sin gancho efectivo.**
+- `ruta: '.'` pasa a `./admin` en el mismo PR que mueva `functions/src`.
+- **La etiqueta de F2 no sale sin staging.** El `--dry-run` sirvió para F1,
+  pero F2 y F3 mueven mucho más código y publican los ocho flujos.
+- **Medir en H2:** el segundo seco de `migrar-ejes.mjs` sigue dando 0 después
+  de mover los ejes a `central/`; `estado-de-versiones.sh` compara también
+  contra los módulos.
+
 ## Heredado del tablero anterior (prepago y modularización), y adónde va
 
 | Pendiente al 25/09 | Adónde va en este frente |
@@ -281,3 +318,6 @@ su veredicto, autorizar F2.
 - **26/09/2026 (madrugada, 3)** — Andres autoriza la migración de los ejes:
   5 tenants, aplicada y releída. Andres crea `v0.10.0`; desplegada y
   verificada. **F1 cerrada; H1 arriba, para la revisora.**
+- **26/09/2026 (madrugada, 4)** — H1 pasa con seis recomendaciones (arriba).
+  Andres autoriza: tablero, copia por contrato y F2 con `registro.ts` primero.
+  Al preparar F2 se midió el gancho de zona mudo en los subagentes: #210.
