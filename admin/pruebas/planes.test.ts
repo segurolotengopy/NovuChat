@@ -50,17 +50,21 @@ describe('El catálogo', () => {
     expect(CATALOGO_PLANES).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('coincide con la «Base comercial» de CLAUDE.md', () => {
+  it('coincide con la «Base comercial» (docs/base-comercial.md)', () => {
+    // Hasta el 26/09/2026 la base comercial vivía en CLAUDE.md; F6 la movió
+    // textual a docs/base-comercial.md y CLAUDE.md quedó con los invariantes.
+    // La regla no cambia: el catálogo tiene que decir lo mismo que el documento
+    // que rige el dinero, y esta prueba es la que lo comprueba.
     const aqui = dirname(fileURLToPath(import.meta.url));
-    const claude = readFileSync(join(aqui, '..', '..', 'CLAUDE.md'), 'utf8');
+    const claude = readFileSync(join(aqui, '..', '..', 'docs', 'base-comercial.md'), 'utf8');
     const planes = claude.match(/Planes: USD (\d+) \/ (\d+) \/ (\d+) por (\d+) \/ (\d+) \/ (\d+) conversaciones/);
-    expect(planes, 'CLAUDE.md ya no enuncia los planes con la misma frase').not.toBeNull();
+    expect(planes, 'docs/base-comercial.md ya no enuncia los planes con la misma frase').not.toBeNull();
     const [, p1, p2, p3, c1, c2, c3] = (planes ?? []).map(Number);
     expect([PLANES.impulso.precioUsd, PLANES.crecimiento.precioUsd, PLANES.pro.precioUsd]).toEqual([p1, p2, p3]);
     expect([PLANES.impulso.conversaciones, PLANES.crecimiento.conversaciones, PLANES.pro.conversaciones])
       .toEqual([c1, c2, c3]);
 
-    // La frase cruza un salto de línea en CLAUDE.md: `\s+` y no un espacio.
+    // La frase cruza un salto de línea en el documento: `\s+` y no un espacio.
     const bolsa = claude.match(/bolsa\s+de \*\*(\d+) conversaciones por USD (\d+)\*\*/);
     expect(bolsa).not.toBeNull();
     expect([BOLSA.conversaciones, BOLSA.precioUsd]).toEqual([Number(bolsa?.[1]), Number(bolsa?.[2])]);
