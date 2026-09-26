@@ -16,6 +16,8 @@ calendario y el catálogo web). Escriba en español de Bolivia, sin voseo.
 NOVUCHAT_ZONA="admin/web/src/central/paginas/Tablero.tsx:admin/web/src/central/paginas/Configuracion.tsx:admin/web/src/central/componentes/:admin/pruebas/central/"
 ```
 
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** quita `plataforma/`, que §8.1 pone en esta fila y que `Prompts/rearquitectura-por-capas.md` ya separa en el agente `plataforma-consola` (§1.2 del plano: lo del operador no comparte zona con lo del comercio); y agrega `admin/pruebas/central/` (compartida con `central`) para las pruebas de pantalla.
+
 Hasta que F2 cree `web/src/central/`, esas páginas viven en
 `admin/web/src/paginas/` (`Tablero.tsx`, `Configuracion.tsx`,
 `ConfiguracionVertical.tsx`): en el primer PR la zona es esa lista, y se

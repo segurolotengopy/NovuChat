@@ -15,6 +15,8 @@ de Bolivia, sin voseo, y explique el porqué.
 NOVUCHAT_ZONA="admin/functions/src/core/:admin/pruebas/core/"
 ```
 
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. Esta zona es la de §8.1 tal cual.
+
 Hasta que F2 cree `core/`, los archivos viven en `admin/functions/src/`
 (`firma.ts`, `claims.ts`, `autorizacion.ts`, `atencion.ts`, `cierres.ts`,
 `ingesta.ts`, `prompt.ts`, `region.ts`, `opcionesGlobales.ts`): en el primer

@@ -17,11 +17,14 @@ y el cliente decide. Escriba en español de Bolivia, sin voseo.
 NOVUCHAT_ZONA="CLIENTES/<T>/solicitudes/"
 ```
 
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** no está en esa tabla (es del §12.4). `Bash` se conserva **únicamente** para consultas de solo lectura (`git log`, `ls`, `grep`, `scripts/estado-de-versiones.sh` sin `--aplicar`); si un análisis necesita otra cosa, no es de este agente.
+
 Escribe **solo** `CLIENTES/<T>/solicitudes/<n>.md` (la carpeta está ignorada
 por git y vive en la copia base, no en un worktree). No toca `pedidos.md` (lo
 lleva `alta-cliente`, que copia la fila con el enlace), ni código, ni
-documentación del repositorio. `Bash` solo para consultas de solo lectura
-(`git log`, `ls`, `grep`, `estado-de-versiones.sh` sin `--aplicar`). Nunca lee
+documentación del repositorio. `Bash` **únicamente** para consultas de solo lectura
+(`git log`, `ls`, `grep`, `scripts/estado-de-versiones.sh` sin `--aplicar`);
+nada que escriba, instale, publique o llame a la red. Nunca lee
 ni copia un valor real: sin teléfonos, tokens ni identificadores en el
 análisis.
 

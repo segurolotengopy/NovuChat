@@ -15,6 +15,8 @@ español de Bolivia, sin voseo, y explique el porqué de cada decisión.
 NOVUCHAT_ZONA="admin/functions/src/central/:admin/web/src/central/:admin/pruebas/central/:admin/firestore.rules"
 ```
 
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. Esta zona es la de §8.1 tal cual.
+
 `admin/firestore.rules` solo en las reglas de `cuenta` y `pagos`; el gancho no
 distingue secciones de un archivo, así que la revisión del PR sí. Fuera de esa
 lista no escribe: el gancho `.claude/hooks/zona-de-escritura.sh` lo rechaza, y

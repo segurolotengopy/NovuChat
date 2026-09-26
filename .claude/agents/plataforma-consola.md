@@ -18,6 +18,8 @@ voseo.
 NOVUCHAT_ZONA="admin/functions/src/plataforma/:admin/web/src/plataforma/:admin/pruebas/plataforma/:admin/scripts/plataforma/:admin/firestore.rules"
 ```
 
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** no existe como fila en §8.1 (Plataforma está dentro de `consola`); existe en la tabla de `Prompts/rearquitectura-por-capas.md` como `plataforma-consola`. Se llama así porque `plataforma.md` ya existe y no se toca. Agrega `admin/pruebas/plataforma/` y `admin/scripts/plataforma/` (§5.5 manda ahí los scripts de operador).
+
 `admin/firestore.rules` solo en `/tenants/{t}` (ficha), `accesosSoporte` y
 `/plataforma/*`; el gancho no distingue secciones de un archivo, así que la
 revisión del PR sí. Hasta que F2 cree las carpetas, las piezas viven en

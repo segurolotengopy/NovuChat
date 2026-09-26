@@ -20,6 +20,8 @@ Bolivia, sin voseo.
 NOVUCHAT_ZONA="admin/functions/src/modulos/<m>/:admin/web/src/modulos/<m>/:Flujos/src/modulos/<m>/:admin/pruebas/modulos/<m>/:Flujos/prompts/modulos/<m>.md:docs/arquitectura/modulos/<m>.md:admin/firestore.rules"
 ```
 
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** agrega `Flujos/prompts/modulos/<m>.md` (el fragmento de prompt es parte del manifiesto, §3.1) y `docs/arquitectura/modulos/<m>.md` (el manifiesto en prosa lo mantiene el dueño del módulo); y `admin/firestore.rules` entra entero porque el gancho no distingue secciones: la restricción a sus colecciones la cubre la revisión del PR y `registro.test.ts`.
+
 `admin/firestore.rules` solo en las reglas de las colecciones y documentos de
 su manifiesto; el gancho no distingue secciones de un archivo, así que la
 revisión del PR sí. **La línea del módulo en `registro.ts` la escribe la

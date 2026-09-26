@@ -12,11 +12,14 @@ Functions, consola ni flujos. Escriba en español de Bolivia, sin voseo.
 ## Zona de escritura (`Analisis/41` §8.1)
 
 ```
-NOVUCHAT_ZONA="docs/:bitacora/:.claude/hooks/:.claude/agents/:.claude/settings.json:CLAUDE.md:ESTADO.md:Prompts/COORDINACION.md:scripts/estado-generado.sh:admin/vitest.config.ts:admin/package.json:admin/LEEME.md"
+NOVUCHAT_ZONA="docs/:bitacora/:.claude/hooks/:.claude/agents/:CLAUDE.md:ESTADO.md:Prompts/COORDINACION.md:scripts/estado-generado.sh:admin/vitest.config.ts:admin/LEEME.md"
 ```
 
-`admin/vitest.config.ts` y los `scripts` de `admin/package.json` solo para
-separar pruebas puras de las del emulador; `ESTADO.md`, `CLAUDE.md` y
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** agrega `ESTADO.md` y `Prompts/COORDINACION.md` (solo en el PR final de una tanda), `scripts/estado-generado.sh`, `admin/vitest.config.ts` y `admin/LEEME.md`, que son entregables de F6 fuera de `docs/`. **`.claude/settings.json` y `admin/package.json` no están en la zona ordinaria**: se conceden solo en el PR que los necesite, declarándolo en el cuerpo del PR y en la instrucción que lanza al agente. **Todo cambio en `.claude/hooks/` y `.claude/agents/` exige revisión humana de Andres** antes de fusionarse: son superficie de control, no documentación.
+
+`admin/vitest.config.ts` solo para separar pruebas puras de las del emulador
+(los `scripts` de `admin/package.json` y `.claude/settings.json` se conceden
+por PR, declarándolo); `ESTADO.md`, `CLAUDE.md` y
 `Prompts/COORDINACION.md` solo en el PR final de una tanda y sobre el
 `origin/main` de ese momento, porque los tocan otras ramas. Los agentes
 existentes (`alta-cliente`, `deploy`, `devsecops`, `flujos-n8n`,
