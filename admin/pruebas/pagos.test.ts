@@ -127,6 +127,12 @@ async function sembrarPendiente(id: string, cobroId: string | null, t = A) {
 
 beforeEach(async () => {
   await limpiar(A); await limpiar(B);
+  // SIN COBRADOR CONFIGURADO, SIEMPRE: varias pruebas de acá afirman qué
+  // pasa sin cliente del cobrador, y `cobro-prepago.test.ts` deja
+  // `plataforma/prepago.cobrador` escrito. Según el orden en que vitest
+  // reparte los archivos, esta suite lo heredaba y cinco pruebas fallaban con
+  // `CobradorNoResponde` (visto el 26/09 en el PR #212). Cada suite fija su entorno.
+  await db.doc('plataforma/prepago').delete();
   await db.doc(`tenants/${A}`).set({ nombre: 'Salón A', estado: 'activo', plan: 'crecimiento', flujos: ['agendamiento'] });
   await db.doc(`tenants/${A}/cuenta/estado`).set(CUENTA_BASE);
   await db.doc(`tenants/${B}`).set({ nombre: 'Resto B', estado: 'activo', plan: 'impulso', flujos: ['venta'] });
@@ -344,6 +350,9 @@ describe('registrarPagoManual: transferencia y evidencia', () => {
 // ===========================================================================
 describe('registrarPagoManual: lo que hace un pago bien cargado', () => {
   it('efectivo, 1 mes: el pago nace confirmado con todo, la cuenta se deriva, hay auditoría y bitácora', async () => {
+    // Un comercio en producción. Desde la opción B (26/09) un pago no pone la
+    // modalidad: la cuenta ya la tiene.
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ modalidad: 'prepago' }, { merge: true });
     const r = await correr(indice.registrarPagoManual, manual());
     expect(r).toMatchObject({
       monto: 630, montoUsd: 50, moneda: 'BOB', monedaLista: 'USD',
@@ -385,6 +394,7 @@ describe('registrarPagoManual: lo que hace un pago bien cargado', () => {
   });
 
   it('6 meses regalan una bolsa; una bolsa suma 30 por unidad; la instalación no cambia la cuenta', async () => {
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ modalidad: 'prepago' }, { merge: true });
     await correr(indice.registrarPagoManual, manual({ meses: 6, montoRecibidoBs: 3780 }));
     expect(await cuenta()).toMatchObject({ periodoPagado: sumarMeses(HOY, 5), bolsa: 30, modalidad: 'prepago' });
     await correr(indice.registrarPagoManual, manual({ tipo: 'bolsa', cantidad: 2, plan: undefined, meses: undefined, montoRecibidoBs: 252 }));
@@ -404,6 +414,7 @@ describe('registrarPagoManual: lo que hace un pago bien cargado', () => {
   });
 
   it('pagar otro plan ES cambiar de plan: límites, catálogo y espejo de la ficha', async () => {
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ modalidad: 'prepago' }, { merge: true });
     await correr(indice.registrarPagoManual, manual({ plan: 'pro', meses: 3, montoRecibidoBs: 3402 }));
     expect(await cuenta()).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, periodoPagado: sumarMeses(HOY, 2), montoMensual: 90 });
     expect((await ficha())['plan']).toBe('pro');
@@ -415,11 +426,44 @@ describe('registrarPagoManual: lo que hace un pago bien cargado', () => {
     expect(await cuenta()).toMatchObject({ periodoPagado: sumarMeses(HOY, 1) });
   });
 
-  it('una bolsa sola sobre un comercio sin modalidad lo vuelve prepago sin mes pagado: queda vencido', async () => {
+  // OPCIÓN B (Andres, 26/09/2026): un pago solo registra el dinero; la
+  // modalidad la cambia solo el propietario, en Negocios. Hasta ese día una
+  // bolsa sobre un comercio sin modalidad lo dejaba en prepago y VENCIDO.
+  it('una bolsa sola sobre un comercio sin modalidad NO lo vuelve prepago: suma la bolsa y no toca modalidad ni derivados', async () => {
     await correr(indice.registrarPagoManual, manual({ tipo: 'bolsa', cantidad: 1, plan: undefined, meses: undefined, montoRecibidoBs: 126 }));
     const c = await cuenta();
-    expect(c).toMatchObject({ modalidad: 'prepago', bolsa: 30, estadoPago: 'vencido' });
-    expect(c['periodoPagado']).toBeUndefined();
+    expect(c['bolsa']).toBe(30);
+    for (const k of ['modalidad', 'estadoPago', 'periodoPagado', 'montoMensual']) expect(c[k], k).toBeUndefined();
+  });
+
+  it('el pago manual del propietario NO cambia la modalidad: en prueba sigue en prueba, en demostración sigue en demostración', async () => {
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ modalidad: 'prueba', periodoPrueba: HOY, bolsaPrueba: 20 }, { merge: true });
+    await correr(indice.registrarPagoManual, manual());
+    let c = await cuenta();
+    expect(c).toMatchObject({ modalidad: 'prueba', periodoPrueba: HOY, periodoPagado: sumarMeses(HOY, 1) });
+    await limpiar(A);
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ ...CUENTA_BASE, modalidad: 'demostracion' });
+    await correr(indice.registrarPagoManual, manual());
+    c = await cuenta();
+    expect(c).toMatchObject({ modalidad: 'demostracion', estadoPago: 'sin_cargo', montoMensual: 0 });
+    // Y el pago queda registrado igual: es dinero que entró.
+    expect(await pagosDe()).toHaveLength(1);
+  });
+
+  it('una bolsa o una instalación NO asignan plan a una cuenta sin plan del catálogo (LOW 1 de #212)', async () => {
+    await db.doc(`tenants/${A}`).set({ nombre: 'Salón A', estado: 'activo', plan: 'basico', flujos: ['agendamiento'] });
+    await db.doc(`tenants/${A}/cuenta/estado`).set({ plan: 'basico', modalidad: 'prepago' });
+    await correr(indice.registrarPagoManual, manual({ tipo: 'bolsa', cantidad: 1, plan: undefined, meses: undefined, montoRecibidoBs: 126 }));
+    await correr(indice.registrarPagoManual, manual({ tipo: 'instalacion', plan: undefined, meses: undefined, montoRecibidoBs: 819 }));
+    const c = await cuenta();
+    expect(c['plan']).toBe('basico');
+    expect(c['limites']).toBeUndefined();
+    expect(c['catalogoPlanes']).toBeUndefined();
+    expect((await ficha())['plan']).toBe('basico');
+    for (const a of await auditoria('pago_manual')) {
+      expect(a['limitesDespues']).toBeUndefined();
+      expect(a['planDespues']).not.toBe('impulso');
+    }
   });
 });
 
@@ -498,7 +542,9 @@ describe('registrarPagoManual: un solo pendiente por cuenta', () => {
       confirmadoPor: { origen: 'propietario', uid: 'prop-1' }, medio: 'qr',
     });
     const c = await cuenta();
-    expect(c).toMatchObject({ periodoPagado: HOY, modalidad: 'prepago' });
+    // Confirmar a mano tampoco cambia la modalidad (opción B): la cuenta no tenía.
+    expect(c).toMatchObject({ periodoPagado: HOY });
+    expect(c['modalidad']).toBeUndefined();
     expect(c['pagoPendienteId']).toBeUndefined();
     expect((await db.doc(`cobrosPendientes/${PAGO_ID}`).get()).exists).toBe(false);
     expect((await db.doc(`cobrosResueltos/${PAGO_ID}`).get()).data()).toMatchObject({ tenantId: A, cobroId: COBRO, estado: 'confirmado' });
@@ -604,7 +650,7 @@ describe('anularPagoPendiente', () => {
     await rechaza(correr(indice.anularPagoPendiente, { tenantId: A, pagoId: id }), 'failed-precondition');
     await rechaza(correr(indice.anularPagoPendiente, { tenantId: A, pagoId: id }, ADMIN_A), 'failed-precondition');
     expect((await pago(id))!['estado']).toBe('confirmado');
-    expect(await cuenta()).toMatchObject({ periodoPagado: HOY, modalidad: 'prepago' });
+    expect(await cuenta()).toMatchObject({ periodoPagado: HOY });
   });
 
   it('sin pendiente → failed-precondition; un pagoId inexistente → not-found; uno mal formado → invalid-argument', async () => {
@@ -740,7 +786,8 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
   it('con un pendiente: una escritura por documento, síncrona, y el resultado', () => {
     const t = tx();
     const r = pagos.aplicarPagoEnTransaccion(t as never, refs(), {
-      id: 'x', datos: { tipo: 'mensualidad', plan: 'pro', meses: 2, estado: 'pendiente' },
+      // Otro plan por el banco: solo con la firma del propietario (LOW 2 de #212).
+      id: 'x', datos: { tipo: 'mensualidad', plan: 'pro', meses: 2, estado: 'pendiente', cambioAutorizadoPor: 'prop-1' },
       cuenta: { plan: 'crecimiento', modalidad: 'prepago', corte: { motivo: 'sin_pago', aplicado: true } }, ficha: {},
     }, { ...confirmacion(), ademas: {
       pago: { cobro: { id: 'cons-1', estado: 'CONFIRMADO' } },
@@ -755,7 +802,9 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
     // La cuenta y el espejo de la ficha (cambió el plan): una vez cada uno.
     expect(t.set).toHaveBeenCalledTimes(2);
     const escrituraCuenta = t.set.mock.calls.find((c) => c[0].path.endsWith('cuenta/estado'))![1];
-    expect(escrituraCuenta).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), periodoPagado: sumarMeses(HOY, 1), modalidad: 'prepago', estadoPago: 'al_dia', montoMensual: 90, moneda: 'USD', confirmacionesPendientes: { x: { plantilla: 'pago_confirmado' } } });
+    expect(escrituraCuenta).toMatchObject({ plan: 'pro', limites: limitesDe('pro'), periodoPagado: sumarMeses(HOY, 1), estadoPago: 'al_dia', montoMensual: 90, moneda: 'USD', confirmacionesPendientes: { x: { plantilla: 'pago_confirmado' } } });
+    // Un pago no escribe la modalidad (opción B, 26/09/2026).
+    expect(escrituraCuenta['modalidad']).toBeUndefined();
     expect(t.set.mock.calls.find((c) => c[0].path === `tenants/${A}`)![1]).toEqual({ plan: 'pro' });
     expect(t.delete).not.toHaveBeenCalled();
   });
@@ -780,7 +829,7 @@ describe('aplicarPagoEnTransaccion: la puerta, con una transacción falsa', () =
     // `cobro` es lo único admitido en el pago: no puede pisar el estado.
     const t = tx();
     pagos.aplicarPagoEnTransaccion(t as never, refs(), {
-      id: 'x', datos: { tipo: 'mensualidad', plan: 'crecimiento', meses: 1, estado: 'pendiente' }, cuenta: {}, ficha: {},
+      id: 'x', datos: { tipo: 'mensualidad', plan: 'crecimiento', meses: 1, estado: 'pendiente' }, cuenta: { plan: 'crecimiento' }, ficha: {},
     }, { ...confirmacion(), ademas: { pago: { cobro: { estado: 'CONFIRMADO' } } } });
     expect(t.update.mock.calls[0]![1]).toMatchObject({ estado: 'confirmado', cobro: { estado: 'CONFIRMADO' } });
   });

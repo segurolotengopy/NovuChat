@@ -16,8 +16,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { CATALOGO_PLANES, limitesDe } from '../functions/src/planes.ts';
+import { CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, limitesDe } from '../functions/src/planes.ts';
 import { PRUEBA, mesBolivia } from '../functions/src/prepago.ts';
+import { cambiosDelMes } from '../functions/src/central/ejes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'asignar-plan.mjs');
@@ -35,6 +36,8 @@ const T = 'plan-demo';
 const BAJA = 'plan-baja';
 const SIN_CUENTA = 'plan-sin-cuenta';
 const OTRO = 'plan-otro';
+const CONTRATO = 'plan-contrato';
+const CONTRATO_SIN_CUENTA = 'plan-contrato-sin-cuenta';
 const NUM_T = '1000000071';
 const NUM_OTRO = '1000000072';
 const NUM_SIN_RUTA = '1000000073';
@@ -52,7 +55,7 @@ const auditorias = async (accion: string, t = T) =>
   (await db.collection(`tenants/${t}/auditoria`).where('accion', '==', accion).get()).docs.map((d) => d.data());
 
 beforeAll(async () => {
-  for (const t of [T, BAJA, SIN_CUENTA, OTRO]) {
+  for (const t of [T, BAJA, SIN_CUENTA, OTRO, CONTRATO, CONTRATO_SIN_CUENTA]) {
     const previas = await db.collection(`tenants/${t}/auditoria`).get();
     for (const d of previas.docs) await d.ref.delete();
     await db.doc(`tenants/${t}/cuenta/estado`).delete();
@@ -70,6 +73,12 @@ beforeAll(async () => {
   await db.doc(`rutasWhatsApp/${NUM_T}`).set({ tenantId: T, flujo: 'venta', aliasSecreto: 'demoB', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUM_OTRO}`).set({ tenantId: OTRO, flujo: 'venta', aliasSecreto: 'cliente50', estado: 'activo' });
   await db.doc(`rutasWhatsApp/${NUM_SIN_RUTA}`).delete();
+  // Un comercio en producción con Pro (2 cambios al mes), sin contrato todavía.
+  await db.doc(`tenants/${CONTRATO}`).set({ nombre: 'Contrato', estado: 'activo', plan: 'pro', flujos: ['agendamiento'] });
+  await db.doc(`tenants/${CONTRATO}/cuenta/estado`).set({
+    plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'prepago', periodoPagado: '2099-12',
+  });
+  await db.doc(`tenants/${CONTRATO_SIN_CUENTA}`).set({ nombre: 'Sin cuenta', estado: 'activo', plan: 'basico' });
 });
 
 describe('asignar-plan.mjs: el plan', () => {
@@ -258,5 +267,101 @@ describe('asignar-plan.mjs: los otros ejes (F1)', () => {
       plan: 'byoc', limites: limitesDe('byoc'), modalidad: 'prepago', estadoPago: 'vencido', montoMensual: 50,
     });
     expect(await ficha(SIN_CUENTA)).toMatchObject({ plan: 'byoc', modelo: 'claude-sonnet-5' });
+  });
+});
+
+describe('asignar-plan.mjs: --cambios, los cambios incluidos por contrato', () => {
+  const c = CONTRATO;
+
+  it('un valor fuera de rango o que no es un entero NO entra (misma validación que el servidor), y no escribe nada', async () => {
+    for (const malo of ['-1', String(MAXIMO_CAMBIOS_INCLUIDOS + 1), '2.5', '4a', 'x', '', 'Plan']) {
+      const r = correr('--tenant', c, '--cambios', malo, '--aplicar');
+      expect(r.codigo, malo).toBe(2);
+      expect(r.salida).toMatch(new RegExp(`--cambios inválido.*de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}`));
+    }
+    expect((await cuenta(c)).limites).toEqual(limitesDe('pro'));
+    expect((await cuenta(c)).limitesPorContrato).toBeUndefined();
+  });
+
+  it('sin cuenta NO fija un contrato suelto: primero --plan', async () => {
+    const r = correr('--tenant', CONTRATO_SIN_CUENTA, '--cambios', '4', '--aplicar');
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/no tiene cuenta: primero --plan/);
+    expect((await db.doc(`tenants/${CONTRATO_SIN_CUENTA}/cuenta/estado`).get()).exists).toBe(false);
+  });
+
+  it('en seco dice el antes y el después, y no escribe', async () => {
+    const r = correr('--tenant', c, '--cambios', '4');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/Contrato  : cambiosIncluidos 2 del plan → 4 por contrato/);
+    expect(r.salida).toMatch(/Seco: no se escribió nada/);
+    expect((await cuenta(c)).limites).toEqual(limitesDe('pro'));
+    expect(await auditorias('limites_por_contrato', c)).toHaveLength(0);
+  });
+
+  it('con --aplicar fija la copia y el marcador, audita, relee; y el contador la respeta (4, no los 2 del plan)', async () => {
+    const r = correr('--tenant', c, '--cambios', '4', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/✓ Verificación: .* 4 cambios\/mes · por contrato: cambiosIncluidos/);
+    const cu = await cuenta(c);
+    expect(cu.limites).toEqual({ ...limitesDe('pro'), cambiosIncluidos: 4 });
+    expect(cu.limitesPorContrato).toEqual(['cambiosIncluidos']);
+    // No es un cambio de plan.
+    expect(await auditorias('cambiar_plan', c)).toHaveLength(0);
+    expect(await auditorias('estado_cuenta', c)).toHaveLength(0);
+    const [a] = await auditorias('limites_por_contrato', c);
+    expect(a).toMatchObject({
+      uid: 'operador@ejemplo.com', origen: 'script', script: 'asignar-plan', clave: 'cambiosIncluidos', plan: 'pro', delPlan: 2,
+      antes: { valor: 2, porContrato: false }, despues: { valor: 4, porContrato: true },
+    });
+    expect(cambiosDelMes(cu, Date.now())).toMatchObject({ incluidos: 4 });
+    // Repetirlo no escribe ni audita otra vez.
+    expect(correr('--tenant', c, '--cambios', '4', '--aplicar').salida).toMatch(/Sin cambios/);
+    expect(await auditorias('limites_por_contrato', c)).toHaveLength(1);
+  });
+
+  it('UN CAMBIO DE PLAN NO PISA EL CONTRATO: el seco lo anuncia y el aplicado lo conserva, con constancia', async () => {
+    const seco = correr('--tenant', c, '--plan', 'crecimiento');
+    expect(seco.codigo, seco.salida).toBe(0);
+    expect(seco.salida).toMatch(/se conserva cambiosIncluidos 4 por contrato \(el plan crecimiento trae 1\)/);
+    expect(seco.salida).toMatch(/Queda     : 220 conversaciones · 100 productos · 5 agendas · 4 cambios\/mes · por contrato: cambiosIncluidos/);
+    const r = correr('--tenant', c, '--plan', 'crecimiento', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/✓ Verificación/);
+    const cu = await cuenta(c);
+    expect(cu).toMatchObject({ plan: 'crecimiento', limites: { ...limitesDe('crecimiento'), cambiosIncluidos: 4 } });
+    expect(cu.limitesPorContrato).toEqual(['cambiosIncluidos']);
+    expect(cambiosDelMes(cu, Date.now())).toMatchObject({ incluidos: 4 });
+    const [a] = await auditorias('cambiar_plan', c);
+    expect(a).toMatchObject({
+      planAntes: 'pro', planDespues: 'crecimiento', conservadosPorContrato: { cambiosIncluidos: 4 },
+      limitesDespues: { ...limitesDe('crecimiento'), cambiosIncluidos: 4 },
+    });
+  });
+
+  it('quitarlo es explícito (--cambios plan): vuelve al del plan, se borra el marcador, y el siguiente plan ya manda', async () => {
+    const seco = correr('--tenant', c, '--cambios', 'plan');
+    expect(seco.salida).toMatch(/Contrato  : cambiosIncluidos 4 por contrato → 1 del plan crecimiento/);
+    const r = correr('--tenant', c, '--cambios', 'plan', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    let cu = await cuenta(c);
+    expect(cu.limites).toEqual(limitesDe('crecimiento'));
+    expect(cu.limitesPorContrato).toBeUndefined();
+    const quita = (await auditorias('limites_por_contrato', c)).find((x) => x['despues']?.['porContrato'] === false);
+    expect(quita).toMatchObject({ antes: { valor: 4, porContrato: true }, despues: { valor: 1, porContrato: false } });
+    expect(correr('--tenant', c, '--plan', 'pro', '--aplicar').codigo).toBe(0);
+    cu = await cuenta(c);
+    expect(cu.limites).toEqual(limitesDe('pro'));
+    expect(cambiosDelMes(cu, Date.now())).toMatchObject({ incluidos: 2 });
+  });
+
+  it('0 es un contrato válido (autoservicio), y plan y contrato juntos se escriben en una sola corrida', async () => {
+    const r = correr('--tenant', c, '--plan', 'impulso', '--cambios', '0', '--aplicar');
+    expect(r.codigo, r.salida).toBe(0);
+    const cu = await cuenta(c);
+    expect(cu).toMatchObject({ plan: 'impulso', limites: limitesDe('impulso'), limitesPorContrato: ['cambiosIncluidos'] });
+    // Y subir de plan conserva el 0 por contrato: el plan Pro trae 2, pero el contrato dice 0.
+    expect(correr('--tenant', c, '--plan', 'pro', '--aplicar').codigo).toBe(0);
+    expect((await cuenta(c)).limites).toEqual({ ...limitesDe('pro'), cambiosIncluidos: 0 });
   });
 });

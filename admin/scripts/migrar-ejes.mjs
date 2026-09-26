@@ -95,7 +95,9 @@ registerHooks({
     }
   },
 });
-const { PLANES, CATALOGO_PLANES, esIdPlan, limitesDe, limitesDeCuenta, periodoDe } = await import('../functions/src/planes.ts');
+const {
+  PLANES, CATALOGO_PLANES, copiaDeLimites, esIdPlan, limitesDeCuenta, mismoMarcador, periodoDe,
+} = await import('../functions/src/planes.ts');
 const { camposDerivados, consumidasDe, esModalidad, estadoDeServicio } = await import('../functions/src/prepago.ts');
 const { MODELO_POR_DEFECTO, esModelo, esTitularidad } = await import('../functions/src/central/ejes.ts');
 
@@ -162,9 +164,21 @@ function analizar(ficha, cuentaDoc, contadorDoc, metricasDoc, rutas) {
     plan = PLAN_DEMOS;
     if (cuenta.modalidad !== 'demostracion') escrituraCuenta.modalidad = 'demostracion';
     if (cuenta.plan !== PLAN_DEMOS) escrituraCuenta.plan = PLAN_DEMOS;
-    const limites = limitesDe(PLAN_DEMOS);
+    // LA COPIA, CON LA MISMA FUNCIÓN QUE LA CALLABLE Y EL SCRIPT
+    // (`copiaDeLimites`, revisión de seguridad de #212, LOW 2): pasar a
+    // `--plan-demos` es un cambio de plan y CONSERVA lo que va por contrato
+    // (`limitesPorContrato`). Sin marcador —ningún tenant lo tiene al escribir
+    // esto— da exactamente `limitesDe(PLAN_DEMOS)`, y el seco sigue igual.
+    const nueva = copiaDeLimites(cuenta, { plan: PLAN_DEMOS });
+    const limites = nueva.limites;
     const copia = cuenta.limites && typeof cuenta.limites === 'object' ? cuenta.limites : null;
     if (!copia || Object.keys(limites).some((k) => copia[k] !== limites[k])) escrituraCuenta.limites = limites;
+    if (!mismoMarcador(cuenta, nueva.porContrato)) {
+      escrituraCuenta.limitesPorContrato = nueva.porContrato.length ? nueva.porContrato : FieldValue.delete();
+    }
+    for (const [k, v] of Object.entries(nueva.conservados)) {
+      avisos.push(`se conserva ${k} ${v} por contrato (el plan ${PLAN_DEMOS} trae ${nueva.delPlan[k]})`);
+    }
     if (cuenta.catalogoPlanes !== CATALOGO_PLANES) escrituraCuenta.catalogoPlanes = CATALOGO_PLANES;
     if (fichaD.plan !== PLAN_DEMOS) escrituraFicha.plan = PLAN_DEMOS;
   } else if (esIdPlan(plan)) {

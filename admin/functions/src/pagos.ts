@@ -70,7 +70,7 @@ import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { registrar } from './ingesta.js';
 import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
-import { CATALOGO_PLANES, PLANES, esPlanVendible, limitesDe, type IdPlanVendible } from './planes.js';
+import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
   corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, montoUsdDe,
@@ -165,6 +165,35 @@ export interface ResultadoDeAplicacion {
   modalidad: string;
   /** La cuenta tenía un corte APLICADO (no observado): el llamador escribe `reanudacion_servicio`. */
   corteEstabaAplicado: boolean;
+  /**
+   * Si el pago CAMBIÓ EL PLAN: la copia de límites antes y después, y lo que se
+   * conservó por contrato (`copiaDeLimites`). Con el vocabulario de la
+   * auditoría `cambiar_plan`, para que `pago_manual` y `pago_aplicado` digan
+   * lo mismo que un cambio de plan desde Negocios (revisión de seguridad del
+   * PR #212, LOW 1). `null` si el pago no cambió el plan. Opcional en el tipo
+   * para no romper una puerta inyectada que no lo conozca.
+   */
+  cambioDeLimites?: CambioDeLimites | null;
+}
+
+/** Lo que la auditoría de un pago dice de la copia cuando el pago cambió el plan. */
+export interface CambioDeLimites {
+  limitesAntes: unknown;
+  limitesDespues: Record<string, unknown>;
+  /** Solo presente si algo se conservó por contrato. */
+  conservadosPorContrato?: Record<string, number>;
+}
+
+/**
+ * Los campos de la auditoría de un pago que cambió el plan, listos para
+ * esparcir: vacío si no lo cambió. El mismo vocabulario que `cambiar_plan`.
+ */
+export function auditoriaDeLimites(c: CambioDeLimites | null | undefined): Record<string, unknown> {
+  if (!c) return {};
+  return {
+    limitesAntes: c.limitesAntes ?? null, limitesDespues: c.limitesDespues,
+    ...(c.conservadosPorContrato ? { conservadosPorContrato: c.conservadosPorContrato } : {}),
+  };
 }
 
 export interface PuertaDePagos {
@@ -249,6 +278,14 @@ export interface Aplicacion {
 }
 
 /**
+ * ¿El propietario autorizó el cambio de plan de este pago? Lo anota
+ * `crearCobroInterno` (`cambioAutorizadoPor: uid`) cuando el QR lo pide el
+ * propietario con un plan distinto del vigente (revisión de #212, LOW 2).
+ */
+export const cambioAutorizado = (datos: Record<string, unknown> | undefined): boolean =>
+  typeof datos?.['cambioAutorizadoPor'] === 'string' && datos['cambioAutorizadoPor'].length > 0;
+
+/**
  * LO ÚNICO QUE `confirmacion.ademas` PUEDE AGREGAR (revisión de seguridad de
  * A-1, LOW 3). `ademas` existe para que el cliente del cobrador sume a la
  * MISMA escritura lo suyo: el estado del cobro en el pago y la confirmación
@@ -315,16 +352,21 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     actualizadoEn: ahora,
   };
 
+  // SOLO UNA MENSUALIDAD FIJA EL PLAN (revisión de seguridad de #212, LOW 1).
+  // `aplicarPago` devuelve para la bolsa y la instalación el plan que RIGE
+  // (con el de respaldo si la cuenta no tiene uno del catálogo): compararlo
+  // con el guardado le asignaba Impulso a una cuenta `basico` que compraba
+  // una bolsa, sin que nadie lo decidiera.
+  const cambioDePlan = pedido.tipo === 'mensualidad' && tras.plan !== planAntes ? tras.plan : null;
+
   // La cuenta COMO VA A QUEDAR, para derivar sobre ella: sin pendiente, sin
-  // corte, con el plan, la modalidad, el mes pagado y la bolsa nuevos.
-  // La modalidad se escribe cuando el pago la fija (una mensualidad o una
-  // bolsa convierten a prepago) o cuando ya estaba explícita; una instalación
-  // sobre una cuenta sin modalidad la deja como estaba (y sus derivados, sin
-  // tocar: `derivadosGobernados`).
-  const escribeModalidad = tras.modalidad !== 'demostracion' || esModalidad(cuenta.modalidad);
+  // corte, con el mes pagado y la bolsa nuevos, y el plan si cambió.
+  // LA MODALIDAD NO LA TOCA UN PAGO (Andres, 26/09/2026, opción B): la cambia
+  // solo el propietario. Una cuenta sin modalidad (sin migrar) sigue sin ella
+  // y sus derivados sin tocar (`derivadosGobernados`).
   const cuentaNueva: Record<string, unknown> = {
-    ...pago.cuenta, plan: tras.plan, bolsa: tras.bolsa,
-    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
+    ...pago.cuenta, bolsa: tras.bolsa,
+    ...(cambioDePlan ? { plan: cambioDePlan } : {}),
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
   };
   delete cuentaNueva['pagoPendienteId'];
@@ -334,26 +376,48 @@ function aplicacionDe(pago: PagoAConfirmar, confirmacion: Confirmacion): Aplicac
     ...ademas.cuenta,
     bolsa: tras.bolsa,
     ...(tras.periodoPagado ? { periodoPagado: tras.periodoPagado } : {}),
-    ...(escribeModalidad ? { modalidad: tras.modalidad } : {}),
     pagoPendienteId: FieldValue.delete(),
     corte: FieldValue.delete(),
     ...camposDerivadosDeCuenta(cuentaNueva, null, confirmacion.ahoraMs),
     actualizadoEn: ahora,
   };
 
-  const cambioDePlan = tras.plan !== planAntes ? tras.plan : null;
+  // UN QR DEL BANCO NO CAMBIA EL PLAN SIN QUE LO HAYA AUTORIZADO EL
+  // PROPIETARIO (revisión de seguridad de #212, LOW 2). El cliente del
+  // cobrador (`aplicarEstadoDelCobrador`) deja en revisión un pago así antes
+  // de llegar acá; esto es la red: si alguien llamara a la puerta sin pasar
+  // por esa revisión, no se aplica.
+  if (cambioDePlan && confirmacion.origen === 'banco' && !cambioAutorizado(pago.datos)) {
+    throw new Error(`el pago ${ultimos4(pago.id)} cambiaría el plan sin autorización del propietario`);
+  }
+  let cambioDeLimites: CambioDeLimites | null = null;
   if (cambioDePlan) {
     escrituraCuenta['plan'] = cambioDePlan;
-    escrituraCuenta['limites'] = limitesDe(cambioDePlan);
+    // PAGAR OTRO PLAN ES CAMBIAR DE PLAN, y un cambio de plan CONSERVA lo que
+    // va por contrato (`copiaDeLimites`, `planes.ts`): un comercio con 4
+    // cambios al mes por contrato que se pasa de plan pagando no vuelve a los
+    // del plan. El marcador `limitesPorContrato` no se toca: sigue valiendo.
+    // (Si un pago debe o no conservar el contrato es una decisión de Andres
+    // pendiente; hasta entonces lo conserva, y la auditoría lo dice.)
+    const copia = copiaDeLimites(pago.cuenta, { plan: cambioDePlan });
+    escrituraCuenta['limites'] = copia.limites;
     escrituraCuenta['catalogoPlanes'] = CATALOGO_PLANES;
+    cambioDeLimites = {
+      limitesAntes: pago.cuenta['limites'] ?? null, limitesDespues: copia.limites,
+      ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados as Record<string, number> } : {}),
+    };
   }
 
   return {
     escrituraPago, escrituraCuenta, cambioDePlan,
     resultado: {
       periodoPagado: tras.periodoPagado, cubiertoHasta: tras.cubiertoHasta, bolsa: tras.bolsa,
-      plan: tras.plan, modalidad: tras.modalidad,
+      // El plan que QUEDA: el nuevo si una mensualidad lo cambió; si no, el
+      // que la cuenta tenía (no el de respaldo con que `aplicarPago` calcula).
+      plan: cambioDePlan ?? (typeof pago.cuenta['plan'] === 'string' ? pago.cuenta['plan'] : tras.plan),
+      modalidad: tras.modalidad,
       corteEstabaAplicado: corteDe(cuenta)?.aplicado === true,
+      cambioDeLimites,
     },
   };
 }
@@ -612,7 +676,7 @@ async function cerrarPendienteAntesDe(
       const ahora = (await db().doc(`tenants/${tenantId}/pagos/${pendienteId}`).get()).data();
       if (ahora && ahora['estado'] === 'pendiente' && cobroEstadoDe(ahora) === 'CONFIRMADO') {
         throw new HttpsError('failed-precondition',
-          'El banco confirmó un pago sobre ese QR, pero no se aplicó (el importe no coincide). Confírmelo con confirmarPendiente y motivoDiferencia, en vez de cargar otro.',
+          'El banco confirmó un pago sobre ese QR, pero no se aplicó (el importe o el plan no coinciden). Confírmelo con confirmarPendiente y motivoDiferencia, en vez de cargar otro.',
           { ...vivo, estado: 'pendiente', cobroEstado: 'CONFIRMADO', ofrecerConfirmar: true });
       }
       throw new HttpsError('failed-precondition',
@@ -838,6 +902,7 @@ export function crearRegistrarPagoManual(deps: Deps = {}, opciones: CallableOpti
         pendienteAnulado,
         cubiertoHasta: a.resultado.cubiertoHasta, planDespues: a.resultado.plan, bolsaDespues: a.resultado.bolsa,
         planAntes: cuenta['plan'] ?? null, periodoPagadoAntes: cuenta['periodoPagado'] ?? null,
+        ...auditoriaDeLimites(a.resultado.cambioDeLimites),
       });
       return a.resultado;
     });

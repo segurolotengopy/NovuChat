@@ -293,9 +293,30 @@ describe('Los campos derivados de la situación de pago', () => {
 describe('Aplicar un pago, mes por mes', () => {
   const AHORA = bo(2026, 10, 15, 12);
 
-  it('una demostración que paga su primer mes pasa a prepago cubriendo el mes en curso', () => {
+  // OPCIÓN B (Andres, 26/09/2026): un pago solo registra el dinero; la
+  // modalidad la cambia solo el propietario. Se prueba NEGANDO la conversión.
+  it('un pago en demostración NO la pasa a prepago: registra el mes, y la modalidad no cambia', () => {
     expect(aplicarPago({ plan: 'impulso' }, { tipo: 'mensualidad', plan: 'impulso', meses: 1 }, AHORA))
-      .toEqual({ plan: 'impulso', modalidad: 'prepago', periodoPagado: '2026-10', bolsa: 0, cubiertoHasta: '2026-10' });
+      .toEqual({ plan: 'impulso', modalidad: 'demostracion', periodoPagado: '2026-10', bolsa: 0, cubiertoHasta: '2026-10' });
+    expect(aplicarPago({ plan: 'impulso', modalidad: 'demostracion' }, { tipo: 'bolsa', cantidad: 1 }, AHORA).modalidad).toBe('demostracion');
+  });
+
+  it('bolsa y mensualidad desde prepago siguen en prepago', () => {
+    const c = prepago({ periodoPagado: '2026-10' });
+    expect(aplicarPago(c, { tipo: 'bolsa', cantidad: 1 }, AHORA).modalidad).toBe('prepago');
+    expect(aplicarPago(c, { tipo: 'mensualidad', plan: 'crecimiento', meses: 1 }, AHORA).modalidad).toBe('prepago');
+  });
+
+  it('en prueba, los meses pagados suman cobertura aunque la cuenta siga en prueba', () => {
+    // Pagó hasta noviembre con la prueba en octubre: en noviembre la prueba
+    // terminó, pero el mes está pagado y rige el plan entero.
+    const c = { plan: 'impulso', modalidad: 'prueba', periodoPrueba: '2026-10', periodoPagado: '2026-11' };
+    const s = estadoDeServicio(c, 0, bo(2026, 11, 10));
+    expect(s).toMatchObject({ modalidad: 'prueba', cubierto: true, enPrueba: false, operativo: true, cubiertoHasta: '2026-11' });
+    expect(s.incluidas).toBe(100);
+    expect(s.mensualidadUsd).toBe(25);
+    // Y vencido el mes pagado, se corta como cualquier cuenta que no pagó.
+    expect(estadoDeServicio(c, 0, bo(2027, 1, 10))).toMatchObject({ operativo: false, motivo: 'sin_pago' });
   });
 
   it('con el mes cubierto, el pago cubre el siguiente; tres meses, tres siguientes', () => {
@@ -333,7 +354,8 @@ describe('Aplicar un pago, mes por mes', () => {
 
   it('la prueba vigente cuenta como cubierta: el pago cubre el mes siguiente', () => {
     const r = aplicarPago({ modalidad: 'prueba', periodoPrueba: '2026-10' }, { tipo: 'mensualidad', plan: 'impulso', meses: 1 }, AHORA);
-    expect(r).toMatchObject({ modalidad: 'prepago', periodoPagado: '2026-11', plan: 'impulso' });
+    // Y NO termina la prueba (opción B): sigue en prueba hasta que el propietario la pase.
+    expect(r).toMatchObject({ modalidad: 'prueba', periodoPagado: '2026-11', plan: 'impulso' });
   });
 
   it('la instalación no cambia nada de la cuenta', () => {

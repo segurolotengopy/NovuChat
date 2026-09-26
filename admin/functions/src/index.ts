@@ -7,7 +7,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { REGION } from './region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol } from './claims.js';
-import { claimsDe as claims, exigirAdminDe, exigirPropietario } from './autorizacion.js';
+import { claimsDe as claims, exigirAdminDe, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
 import { derivadosGobernados } from './pagos.js';
 
 initializeApp();
@@ -40,7 +40,8 @@ export {
 import { registrar } from './ingesta.js';
 import { umbralValido, umbralesDeAtencion } from './atencion.js';
 import {
-  CATALOGO_PLANES, PLANES, cuentaInicial, esPlanVendible, limitesDe, periodoDe, type IdPlanVendible,
+  CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, PLANES, cambiosIncluidosValidos, copiaDeLimites, cuentaInicial,
+  esPlanVendible, mismoMarcador, periodoDe, porContratoDe, type IdPlanVendible,
 } from './planes.js';
 // LOS TRES EJES DE LA CUENTA (F1, `Analisis/41` §4). El alta escribe el modelo
 // por defecto y `asignarNumero` la titularidad del número; cambiarlos después
@@ -533,6 +534,14 @@ export const quitarUsuario = onCall(async (peticion) => {
 // cumplir un límite. `tenants/{t}.plan` es un ESPEJO para pintar la lista: se
 // escribe acá, en la misma transacción, y ninguna regla ni ningún límite lo lee.
 // El cambio de plan queda en la auditoría con el antes y el después.
+//
+// LOS VALORES POR CONTRATO (`planes.ts`, `copiaDeLimites`). `cambiosIncluidos`
+// fija por contrato los cambios operados incluidos al mes (entero de 0 a
+// `MAXIMO_CAMBIOS_INCLUIDOS`, la MISMA validación con que se lee), y `null` lo
+// quita y vuelve a regir el del plan. Un cambio de plan CONSERVA lo que va por
+// contrato: antes reescribía la copia entera y un contrato volvía al número del
+// plan sin que nadie lo decidiera. Cada fijación o retiro deja
+// `limites_por_contrato` en la auditoría; lo conservado va en `cambiar_plan`.
 // ---------------------------------------------------------------------------
 // LOS CAMPOS QUE SE DERIVAN DE LOS PAGOS (20/09, bloque A-1, `DISENO.md`
 // §4undecies.2). Hasta el 20/09 esta callable los aceptaba escritos a mano;
@@ -587,6 +596,15 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
     plan = pedido;
   }
+  let cambiosIncluidos: number | null | undefined;
+  if (viene('cambiosIncluidos')) {
+    const v = datos['cambiosIncluidos'];
+    if (v !== null && !cambiosIncluidosValidos(v)) {
+      throw new HttpsError('invalid-argument',
+        `cambiosIncluidos tiene que ser un entero de 0 a ${MAXIMO_CAMBIOS_INCLUIDOS}, o null para volver al del plan.`);
+    }
+    cambiosIncluidos = v;
+  }
   // EL MODELO DE IA y la TITULARIDAD del número NO van por acá: son
   // `asignarEjes` (`central/ejesDeCuenta.ts`), con la firma que usa la consola.
 
@@ -620,8 +638,24 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     else throw new HttpsError('invalid-argument', 'corteActivo tiene que ser verdadero o falso.');
   }
   const otros = [...Object.keys(cambios), ...Object.keys(umbrales), ...Object.keys(prepago)].sort();
-  if (otros.length === 0 && plan === null) {
+  if (otros.length === 0 && plan === null && cambiosIncluidos === undefined) {
     throw new HttpsError('invalid-argument', 'Nada que actualizar.');
+  }
+  // SESIÓN RECIENTE PARA LO QUE MUEVE DINERO (revisión de seguridad de #212,
+  // LOW 3 de las dos vueltas): cambiar el plan cambia la mensualidad; los
+  // cambios incluidos por contrato son trabajo que NovuChat regala o cobra; y
+  // la modalidad, el mes de prueba y el corte deciden si se cobra y si se
+  // atiende. Como `registrarPagoManual`: un token robado y usado desde otro
+  // lado no alcanza. Los umbrales y el motivo visible no la piden. Se pide
+  // DESPUÉS de validar la forma, para que una petición mal armada diga qué
+  // tiene mal. La consola responde con `reauthenticateWithPopup` y repite.
+  if (plan !== null || cambiosIncluidos !== undefined || Object.keys(prepago).length > 0) {
+    try {
+      exigirSesionReciente(peticion, Date.now());
+    } catch {
+      throw new HttpsError('unauthenticated',
+        'Por seguridad, vuelva a iniciar sesión para cambiar el plan, la modalidad o los cambios incluidos.');
+    }
   }
 
   const refCuenta = db().doc(`tenants/${tenantId}/cuenta/estado`);
@@ -640,6 +674,20 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     const actual = cuentaDoc.data() ?? {};
     const ahora = Timestamp.now();
 
+    // UN QR VIVO DE OTRO PLAN FRENA EL CAMBIO DE PLAN (revisión de seguridad
+    // de #212, LOW 2): si el comercio tiene pendiente una mensualidad de otro
+    // plan y se cambia el plan acá, al confirmarse el QR la cuenta quedaría
+    // con dos verdades. Primero se anula el cobro pendiente (Pagar o
+    // `anularPagoPendiente`), después se cambia el plan.
+    const pendienteId = actual['pagoPendienteId'];
+    if (plan && typeof pendienteId === 'string' && /^[A-Za-z0-9_-]{22}$/.test(pendienteId)) {
+      const pendiente = (await tx.get(db().doc(`tenants/${tenantId}/pagos/${pendienteId}`))).data();
+      if (pendiente && pendiente['estado'] === 'pendiente' && pendiente['tipo'] === 'mensualidad' && pendiente['plan'] !== plan) {
+        throw new HttpsError('failed-precondition',
+          'Hay un cobro pendiente de una mensualidad de otro plan: anule el cobro pendiente primero y después cambie el plan.');
+      }
+    }
+
     if (Object.keys(umbrales).length > 0) {
       const combinados: Record<string, unknown> = { ...actual };
       for (const [k, v] of Object.entries(umbrales)) {
@@ -654,17 +702,47 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     }
 
     const escritura: Record<string, unknown> = { ...cambios, ...umbrales, ...prepago, actualizadoEn: ahora };
-    const nuevos = plan ? limitesDe(plan) : null;
-    if (plan && nuevos) {
+    // Un valor por contrato sin cuenta ni plan dejaría un `cuenta/estado`
+    // parcial, con una copia de una sola clave y sin plan: primero el plan.
+    if (cambiosIncluidos !== undefined && !plan && !cuentaDoc.exists) {
+      throw new HttpsError('failed-precondition', 'El comercio no tiene cuenta: primero se le asigna un plan.');
+    }
+    const copia = plan || cambiosIncluidos !== undefined
+      ? copiaDeLimites(actual, { ...(plan ? { plan } : {}), ...(cambiosIncluidos !== undefined ? { cambiosIncluidos } : {}) })
+      : null;
+    const nuevos = copia ? copia.limites : null;
+    if (copia) {
+      escritura['limites'] = copia.limites;
+      if (!mismoMarcador(actual, copia.porContrato)) {
+        escritura['limitesPorContrato'] = copia.porContrato.length ? copia.porContrato : FieldValue.delete();
+      }
+    }
+    if (plan && copia) {
       escritura['plan'] = plan;
-      escritura['limites'] = nuevos;
       escritura['catalogoPlanes'] = CATALOGO_PLANES;
       tx.update(refFicha, { plan });
       tx.create(refAuditoria.doc(), {
         accion: 'cambiar_plan', uid, en: ahora,
         planAntes: actual['plan'] ?? null, planDespues: plan,
-        limitesAntes: actual['limites'] ?? null, limitesDespues: nuevos,
+        limitesAntes: actual['limites'] ?? null, limitesDespues: copia.limites,
         catalogoPlanes: CATALOGO_PLANES,
+        ...(Object.keys(copia.conservados).length ? { conservadosPorContrato: copia.conservados } : {}),
+      });
+    }
+    // `limites_por_contrato` SOLO SI ALGO CAMBIA (el valor o su origen), con
+    // la misma condición que `asignar-plan.mjs`: repetir la misma fijación no
+    // deja una auditoría que diga que se fijó (observación de #212).
+    const copiaAntes = actual['limites'] as Record<string, unknown> | undefined;
+    const contratoAntes = porContratoDe(actual).includes('cambiosIncluidos');
+    const contratoCambia = cambiosIncluidos !== undefined && copia !== null
+      && (contratoAntes !== (cambiosIncluidos !== null) || copiaAntes?.['cambiosIncluidos'] !== copia.limites['cambiosIncluidos']);
+    if (contratoCambia && copia) {
+      const antes = contratoAntes;
+      tx.create(refAuditoria.doc(), {
+        accion: 'limites_por_contrato', uid, en: ahora, clave: 'cambiosIncluidos',
+        antes: { valor: copiaAntes?.['cambiosIncluidos'] ?? null, porContrato: antes },
+        despues: { valor: copia.limites['cambiosIncluidos'], porContrato: cambiosIncluidos !== null },
+        plan: plan ?? actual['plan'] ?? null, delPlan: copia.delPlan.cambiosIncluidos,
       });
     }
 
@@ -731,7 +809,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     return nuevos;
   });
 
-  return { ok: true, ...(plan && limites ? { plan, limites } : {}) };
+  return { ok: true, ...(plan ? { plan } : {}), ...(limites ? { limites } : {}) };
 });
 
 // ---------------------------------------------------------------------------

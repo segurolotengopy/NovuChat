@@ -70,6 +70,10 @@ export function CuentaNegocio() {
   const [error, setError] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const [reautenticar, setReautenticar] = useState<PedidoDePagoManual | null>(null);
+  // LA OPERACIÓN QUE PIDIÓ SESIÓN RECIENTE (cambiar el plan o los cambios
+  // incluidos por contrato, revisión de seguridad de #212, LOW 3): se guarda
+  // tal cual para repetirla después de volver a entrar con Google, como el pago.
+  const [reintento, setReintento] = useState<{ nombre: string; datos: Record<string, unknown>; exito: string } | null>(null);
   // El `pagoId` de ESTE formulario: se renueva solo cuando un pago se registró.
   const [pagoId, setPagoId] = useState(() => nuevoPagoId());
 
@@ -105,13 +109,15 @@ export function CuentaNegocio() {
    */
   const operar = useCallback(async (nombre: string, datos: Record<string, unknown>, exito: string): Promise<boolean> => {
     if (!esIdTenant(tenantId)) { setError(TENANT_INVALIDO); return false; }
-    setOcupado(true); setError(null); setAviso(null);
+    setOcupado(true); setError(null); setAviso(null); setReintento(null);
     try {
       await httpsCallable(funciones, nombre)({ tenantId, ...datos });
       setAviso(exito);
       recargar();
       return true;
     } catch (e) {
+      // Sesión vieja: se ofrece volver a entrar y repetir, sin perder la elección.
+      if (pideSesionReciente(e)) setReintento({ nombre, datos, exito });
       setError(mensajeDeError(e, `No se pudo completar la operación (${nombre}).`));
       return false;
     } finally {
@@ -166,6 +172,22 @@ export function CuentaNegocio() {
     await registrarPago(pendiente);
   };
 
+  /** Lo mismo para una operación de los ejes: volver a entrar con Google y repetirla tal cual. */
+  const volverAEntrarYRepetir = async () => {
+    const pendiente = reintento;
+    if (!auth.currentUser || !pendiente) return;
+    setError(null);
+    try {
+      const proveedor = new GoogleAuthProvider();
+      proveedor.setCustomParameters({ prompt: 'select_account' });
+      await reauthenticateWithPopup(auth.currentUser, proveedor);
+    } catch (e) {
+      setError(mensajeDeError(e, 'No se pudo volver a iniciar sesión.'));
+      return;
+    }
+    await operar(pendiente.nombre, pendiente.datos, pendiente.exito);
+  };
+
   if (error && ficha === undefined) return <section><p role="alert">{error}</p></section>;
   if (ficha === undefined || cuenta === undefined) return <section><h2>Negocio</h2><p>Cargando…</p></section>;
   if (ficha === null) return <section><h2>Negocio</h2><p role="alert">No existe ese comercio.</p><p><Link to="/negocios">Volver a Negocios</Link></p></section>;
@@ -193,6 +215,13 @@ export function CuentaNegocio() {
           </button>
         </p>
       )}
+      {reintento && (
+        <p>
+          <button type="button" className="btn btn-primary" disabled={ocupado} onClick={() => void volverAEntrarYRepetir()}>
+            Volver a entrar con Google y repetir el cambio
+          </button>
+        </p>
+      )}
       {aviso && <p role="status" className="ayuda">{aviso}</p>}
       {corte && (
         <p className={corte.aplicado ? 'situacion alerta' : 'text-muted'}>
@@ -213,7 +242,9 @@ export function CuentaNegocio() {
           u ? { umbralOperador: u.operador, umbralBloqueo: u.bloqueo } : { umbralOperador: null, umbralBloqueo: null },
           u ? 'Umbrales fijados.' : 'Umbrales de respaldo restaurados.')}
         onCambio={(descripcion, forzar) => void operar(CALLABLES.cambio, { descripcion, ...(forzar ? { forzar: true } : {}) },
-          forzar ? 'Cambio registrado por encima de los incluidos.' : 'Cambio registrado.')} />
+          forzar ? 'Cambio registrado por encima de los incluidos.' : 'Cambio registrado.')}
+        onCambiosIncluidos={(cambiosIncluidos) => void operar(CALLABLES.cuenta, { cambiosIncluidos },
+          cambiosIncluidos === null ? 'Cambios incluidos: rigen los del plan.' : 'Cambios incluidos fijados por contrato.')} />
 
       <SuspensionNegocio ficha={ficha} ocupado={ocupado}
         onSuspender={(motivo, motivoVisible) => void operar(CALLABLES.suspender, { motivo, motivoVisible }, 'Servicio suspendido.')}

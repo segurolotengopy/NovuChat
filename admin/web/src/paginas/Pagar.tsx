@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable, type FunctionsError } from 'firebase/functions';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { db, funciones, urlDeFuncionHttp } from '../lib/firebase';
 import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
-  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, mesEscrito, planInicial,
-  planesOfrecidos, vistaDelPedido, type Pago, type PlanEnVenta,
+  BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, cuentaEnDemostracion, mesEscrito,
+  planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
 } from '../lib/pagar';
 import { BOLSA, PLANES, fechaCorta } from '../lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
@@ -165,8 +165,10 @@ export function Pagar() {
   // EL PLAN QUE VIENE MARCADO ES EL SUYO, y se fija una sola vez, cuando la
   // cuenta llega. Si se recalculara en cada dibujo, la escucha en vivo de
   // `cuenta/estado` le pisaría la elección al comercio mientras elige.
-  const planes = useMemo(() => planesOfrecidos(cuenta), [cuenta]);
-  useEffect(() => { if (cuenta && plan === null) setPlan(planInicial(cuenta)); }, [cuenta, plan]);
+  // Desde el 26/09 es UNO SOLO: el que la cuenta ya tiene (el cambio de plan
+  // lo hace NovuChat). Sin plan del catálogo, ninguno: no hay qué renovar.
+  const planes = useMemo(() => planesQuePuedePagar(cuenta), [cuenta]);
+  useEffect(() => { if (plan === null && planes[0]) setPlan(planes[0]); }, [planes, plan]);
 
   const pedido: Pago | null = useMemo(() => {
     if (tipo === 'instalacion') return { tipo: 'instalacion' };
@@ -221,10 +223,22 @@ export function Pagar() {
       {errorEjes && <p role="alert">{errorEjes}</p>}
       <EjesDeLaCuenta ejes={ejes} tipoCambio={tipoCambio} ahoraMs={Date.now()} />
 
+      {/* EN DEMOSTRACIÓN NO SE PAGA (Andres, 26/09/2026, opción B): el precio
+          es cero y un pago no cambia la modalidad, así que el servidor no
+          emite cobros (`crearCobroInterno`). No se ofrece lo que se rechaza,
+          y no se promete un paso que no hay: solo se dice quién lo hace. Un
+          pendiente anterior, si lo hubiera, se sigue mostrando para cerrarlo. */}
       {pendiente
         ? <CobroPendiente
             pendiente={pendiente} consultado={consultado} trabajando={trabajando}
             onConsultar={() => void consultar(false)} onAnular={() => void anular()} />
+        : cuenta !== null && cuentaEnDemostracion(cuenta)
+          ? (
+            <p className="ayuda">
+              La cuenta está en demostración, sin costo: desde acá no se paga nada. El paso a
+              prueba o a producción lo hace NovuChat.
+            </p>
+          )
         : (
           <>
             <fieldset>
@@ -245,14 +259,20 @@ export function Pagar() {
 
             {tipo === 'mensualidad' && (
               <>
-                <label htmlFor="plan">Plan</label>
-                <select id="plan" value={plan ?? ''} onChange={(e) => setPlan(e.target.value as PlanEnVenta)}>
-                  {planes.map((p) => (
-                    <option key={p} value={p}>
-                      {PLANES[p].nombre} · USD {PLANES[p].precioUsd} · {PLANES[p].conversaciones} conversaciones
-                    </option>
-                  ))}
-                </select>
+                {/* EL COMERCIO RENUEVA SU PLAN; NO LO ELIGE (Andres, 26/09/2026).
+                    Pagar una mensualidad fija el plan, así que acá no hay
+                    selector: se paga el que la cuenta tiene. Para cambiarlo,
+                    el camino que existe es un reclamo de Facturación, que
+                    NovuChat ve (como en Catálogo y Campañas). */}
+                {planes[0]
+                  ? <p>Plan <strong>{PLANES[planes[0]].nombre}</strong> · USD {PLANES[planes[0]].precioUsd} al mes
+                      · {PLANES[planes[0]].conversaciones} conversaciones</p>
+                  : <p className="ayuda">Su cuenta todavía no tiene un plan asignado: lo asigna NovuChat.</p>}
+                <p className="ayuda">
+                  El cambio de plan, para subir o para bajar, lo hace NovuChat. Para pedirlo,
+                  escríbanos desde <Link to={`/negocio/${encodeURIComponent(tenantId)}/reclamos`}>Reclamos</Link>{' '}
+                  con la categoría <em>Facturación</em>.
+                </p>
                 {/* NÚMERO PROPIO DEL COMERCIO: el comercio le paga a Meta con
                     su tarjeta. Lo dice la titularidad de sus números, no el
                     plan (`Analisis/41` §4). Decirlo acá evita la pregunta de

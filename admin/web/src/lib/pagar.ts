@@ -18,7 +18,7 @@
  */
 import {
   BOLSA, BOLSAS_MAXIMO, INSTALACION_USD, MESES_MAXIMO,
-  aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, montoUsdDe, tipoCambioVigente,
+  aplicarPago, descripcionDe, esPago, fechaEscrita, importeBs, modalidadDe, montoUsdDe, tipoCambioVigente,
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
 import { PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, type IdPlanVendible } from './planes';
@@ -56,6 +56,30 @@ export function planesOfrecidos(cuenta: CuentaCruda | null | undefined): readonl
   return esPlanVendible(actual) && !publicados.includes(actual)
     ? [...publicados, actual]
     : publicados;
+}
+
+/**
+ * ¿La cuenta está en DEMOSTRACIÓN, donde no se cobra? Con la opción B
+ * (Andres, 26/09/2026) un pago ya no cambia la modalidad, y el servidor no
+ * emite cobros en demostración (`crearCobroInterno`): la pantalla no ofrece
+ * pagar. La modalidad la dice `modalidadDe`, la misma regla del servidor.
+ */
+export const cuentaEnDemostracion = (cuenta: CuentaCruda | null | undefined): boolean =>
+  modalidadDe(cuenta) === 'demostracion';
+
+/**
+ * QUÉ PLAN PUEDE PAGARSE EL COMERCIO POR SU CUENTA: el que ya tiene, y nada
+ * más (decisión de Andres, 26/09/2026). El cambio de plan —subir o bajar— lo
+ * hace NovuChat; el servidor rechaza cualquier otro (`planQuePuedePedir`,
+ * `crearCobroPrepago`). Una cuenta sin plan del catálogo no tiene qué renovar:
+ * lista vacía, y la pantalla lo dice.
+ *
+ * `planesOfrecidos` (arriba) sigue siendo la lista del PROPIETARIO, que sí
+ * cambia el plan al cargar un pago a mano (`FormularioPagoManual`).
+ */
+export function planesQuePuedePagar(cuenta: CuentaCruda | null | undefined): readonly PlanEnVenta[] {
+  const actual = cuenta?.plan;
+  return esPlanVendible(actual) ? [actual] : [];
 }
 
 /**

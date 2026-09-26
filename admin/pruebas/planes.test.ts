@@ -272,10 +272,17 @@ describe('El aviso de consumo al 80 %', () => {
 });
 
 describe('Qué plan puede pagarse un comercio por su cuenta', () => {
-  it('los publicados, desde cualquier plan', () => {
+  it('SOLO el que ya tiene (Andres, 26/09/2026): ningún otro, ni más grande ni más chico', () => {
+    for (const actual of PLANES_PUBLICADOS) {
+      for (const pedido of PLANES_PUBLICADOS) {
+        expect(planQuePuedePedir(actual, pedido), `${actual} → ${pedido}`).toBe(actual === pedido);
+      }
+    }
+  });
+  it('una cuenta sin plan del catálogo no se paga ninguno: primero NovuChat le asigna uno', () => {
     for (const p of PLANES_PUBLICADOS) {
-      expect(planQuePuedePedir('impulso', p)).toBe(true);
-      expect(planQuePuedePedir(undefined, p)).toBe(true);
+      expect(planQuePuedePedir(undefined, p)).toBe(false);
+      expect(planQuePuedePedir('basico', p)).toBe(false);
     }
   });
   it('BYOC solo para renovarlo quien ya lo tiene: nunca para pasarse a él', () => {

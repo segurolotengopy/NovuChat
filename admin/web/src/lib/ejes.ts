@@ -37,7 +37,7 @@ export type { Modalidad, Modelo, Titularidad };
 // -----------------------------------------------------------------------------
 
 export const CALLABLES = {
-  /** Plan, modalidad, umbrales, motivo visible y corte por tenant. */
+  /** Plan, modalidad, umbrales, motivo visible, corte por tenant y cambios incluidos por contrato. */
   cuenta: 'actualizarEstadoCuenta',
   /** Titularidad por número y modelo por tenant (solo propietario). */
   ejes: 'asignarEjes',
@@ -78,12 +78,31 @@ export interface EjesDeCuenta {
   limites: {
     conversaciones: number; productos: number; agendas: number; cambiosIncluidos: number;
     origen: 'cuenta' | 'plan' | 'respaldo';
+    /**
+     * Las claves de la copia fijadas POR CONTRATO (`porContratoDe` de
+     * `planes.ts`); un cambio de plan las conserva. Opcional: un servidor
+     * anterior a este campo no lo manda, y entonces el origen no se afirma.
+     */
+    porContrato?: string[];
+    /** Cuántos cambios trae el plan de la cuenta, para decir «el plan trae N». */
+    cambiosIncluidosDelPlan?: number;
   };
   modalidad: Modalidad;
   modalidadExplicita: boolean;
   modelo: Modelo;
   numeros: NumeroDeCuenta[];
   cambios: CambiosVista;
+}
+
+/**
+ * DE DÓNDE SALEN LOS CAMBIOS INCLUIDOS: `contrato` si la cuenta los fijó por
+ * contrato, `plan` si rigen los del plan, `null` si el servidor no lo dijo
+ * (uno anterior a este campo): en ese caso la pantalla no afirma ninguno.
+ */
+export function origenDeCambiosIncluidos(ejes: Pick<EjesDeCuenta, 'limites'> | null | undefined): 'contrato' | 'plan' | null {
+  const por = ejes?.limites.porContrato;
+  if (!Array.isArray(por)) return null;
+  return por.includes('cambiosIncluidos') ? 'contrato' : 'plan';
 }
 
 // -----------------------------------------------------------------------------
@@ -103,7 +122,7 @@ export const etiquetaModalidad = (cuenta: CuentaCruda | null | undefined): strin
 /** Lo que explica cada modalidad en un `title` o una ayuda. */
 export const DESCRIPCION_MODALIDAD: Record<Modalidad, string> = {
   demostracion: 'Sin costo y sin corte: es para mostrar el asistente.',
-  prueba: 'Un mes sin mensualidad, con 20 conversaciones de prueba. Después pasa a producción.',
+  prueba: 'Un mes sin mensualidad, con 20 conversaciones de prueba. El paso a producción lo hace NovuChat.',
   prepago: 'El comercio paga por adelantado y el servicio se corta si el mes no está cubierto.',
 };
 

@@ -725,9 +725,22 @@ export interface CuentaTrasPago {
  * septiembre con septiembre ya pagado, queda cubierto para octubre. Nunca se
  * le cobra un mes que ya pasó ni se le regala uno.
  *
- * Pagar una mensualidad convierte la cuenta en PREPAGO, sea cual fuera su
- * modalidad anterior: es el acto que termina la prueba. Y fija el plan:
- * cambiar de plan ES pagar el plan nuevo. AL PAGAR 6 MESES (el tope) se suma
+ * UN PAGO SOLO REGISTRA EL DINERO: NO CAMBIA LA MODALIDAD (decisión de
+ * Andres del 26/09/2026, opción B, en la revisión del PR #212). Hasta ese día
+ * una mensualidad o una bolsa convertían la cuenta en prepago «sea cual fuera
+ * su modalidad anterior», y el pago era el acto que terminaba la prueba; con
+ * eso, una bolsa comprada en demostración dejaba la cuenta en producción y
+ * vencida. Ahora la modalidad la cambia SOLO el propietario (Negocios,
+ * `actualizarEstadoCuenta`): una cuenta en prueba que paga sigue en prueba
+ * —con los meses pagados sumando cobertura en `estadoDeServicio`, que ya los
+ * cuenta en esa modalidad— hasta que NovuChat la pase a producción. Una
+ * cuenta en demostración no emite cobros (`crearCobroInterno`).
+ *
+ * La mensualidad fija el plan (`plan: pago.plan`), pero QUIÉN puede pedir
+ * otro plan lo decide el servidor antes de cobrar (`planQuePuedePedir`) y al
+ * aplicar (`aplicarEstadoDelCobrador`). La bolsa y la instalación devuelven el
+ * plan que rige para calcular, y NO lo fijan: `aplicacionDe` (`pagos.ts`)
+ * solo escribe el plan de una mensualidad. AL PAGAR 6 MESES (el tope) se suma
  * una bolsa de regalo (`Analisis/36` §2.2). Más de 6 no se aplica: lanza.
  * La instalación no cambia nada de la cuenta.
  */
@@ -746,7 +759,7 @@ export function aplicarPago(cuenta: CuentaCruda | null | undefined, pago: Pago, 
   if (pago.tipo === 'bolsa') {
     return {
       plan: estado.plan,
-      modalidad: estado.modalidad === 'demostracion' ? 'prepago' : estado.modalidad,
+      modalidad: estado.modalidad,
       periodoPagado,
       bolsa: estado.bolsa + BOLSA.conversaciones * pago.cantidad,
       cubiertoHasta: estado.cubiertoHasta,
@@ -760,7 +773,7 @@ export function aplicarPago(cuenta: CuentaCruda | null | undefined, pago: Pago, 
   const nuevo = sumarMeses(ultimoCubierto, pago.meses);
   return {
     plan: pago.plan,
-    modalidad: 'prepago',
+    modalidad: estado.modalidad,
     periodoPagado: nuevo,
     bolsa: estado.bolsa + (pago.meses === MESES_MAXIMO ? BOLSA.conversaciones : 0),
     cubiertoHasta: nuevo,
