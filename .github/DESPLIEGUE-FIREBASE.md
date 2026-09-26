@@ -233,6 +233,11 @@ del proyecto de producción. Lo que hay:
   staging no deja producción en 0. Con `--non-interactive`, un parámetro
   ausente no toma el valor por defecto: el despliegue falla. Y bajar de 1 a 0
   no pide `--force` ni avisa.
+- **`CPU_FRACCIONARIA`** (26/09/2026), igual que la anterior: solo el job de
+  staging escribe `CPU_FRACCIONARIA=si` (cada instancia usa 0,1666 vCPU; el
+  proyecto de staging tiene 20 vCPU de cuota y Google no la sube sin historial
+  de uso). Producción no la lleva, y su compuerta corta si aparece en el
+  `.env`.
 
 ---
 

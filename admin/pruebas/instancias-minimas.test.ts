@@ -76,6 +76,21 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
     expect(versionados).toEqual([]);
   });
 
+  // CPU FRACCIONARIA (26/09/2026): la misma idea para la CPU. Solo staging la
+  // pide; producción no la escribe y su compuerta corta si aparece.
+  it('la CPU fraccionaria depende de CPU_FRACCIONARIA=si en opcionesGlobales', () => {
+    const opciones = readFileSync(join(aqui, '../functions/src/opcionesGlobales.ts'), 'utf8');
+    expect(opciones).toMatch(/process\.env\['CPU_FRACCIONARIA'\] === 'si'/);
+    expect(opciones).toMatch(/cpuFraccionaria \? \{ cpu: 'gcf_gen1' as const \} : \{\}/);
+  });
+
+  it('staging pide CPU fraccionaria y producción no, con compuerta', () => {
+    expect(job('desplegar-staging')).toMatch(/CPU_FRACCIONARIA=si\\n/);
+    const produccion = job('desplegar-produccion');
+    expect(produccion).not.toMatch(/CPU_FRACCIONARIA=si/);
+    expect(produccion).toContain("grep -q '^CPU_FRACCIONARIA=' functions/.env");
+  });
+
   it('el despliegue de staging lo fija en 0, y en ningún otro valor', () => {
     const staging = job('desplegar-staging');
     expect(staging).toMatch(/INSTANCIAS_MINIMAS=0\\n/);

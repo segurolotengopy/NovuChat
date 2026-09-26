@@ -1195,8 +1195,11 @@ jobs:
           # functions/.env, ignorado por git; se escribe desde el Environment.
           # INSTANCIAS_MINIMAS=0: en staging no hay instancia siempre despierta
           # (producción escribe 1; ver `ingesta.ts` y `instancias-minimas.test.ts`).
+          # CPU_FRACCIONARIA=si: cada instancia de staging usa 0,1666 vCPU; con
+          # los 20 vCPU de cuota del proyecto, una por Function no entraba
+          # (`opcionesGlobales.ts`). Producción no la escribe.
           if [[ "$SOLO" == *functions* ]]; then
-            printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=0\n' "$SITIO_PUBLICO" > functions/.env
+            printf 'SITIO_PUBLICO=%s\nINSTANCIAS_MINIMAS=0\nCPU_FRACCIONARIA=si\n' "$SITIO_PUBLICO" > functions/.env
           fi
           # El bucket se declara como destino, no se consulta (ver el bloque
           # «EL BUCKET DE STORAGE SE DECLARA» del job de producción).
@@ -1579,6 +1582,9 @@ jobs:
           if [[ "$SOLO" == *functions* ]]; then
             if compgen -G 'functions/.env.*' >/dev/null; then
               echo "::error::Hay un functions/.env.* que pisaría los parámetros de producción."; exit 1
+            fi
+            if grep -q '^CPU_FRACCIONARIA=' functions/.env; then
+              echo "::error::functions/.env de producción no lleva CPU_FRACCIONARIA (es solo de staging)."; exit 1
             fi
             [[ "$(grep -c '^INSTANCIAS_MINIMAS=' functions/.env)" == 1 ]] && grep -qx 'INSTANCIAS_MINIMAS=1' functions/.env \
               || { echo "::error::functions/.env no deja INSTANCIAS_MINIMAS=1 exactamente una vez."; exit 1; }
