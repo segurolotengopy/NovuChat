@@ -14,7 +14,7 @@ import {
   MENSAJE_USO_EXTENDIDO, RESPUESTAS_POR_CONVERSACION, UMBRALES_ATENCION, UMBRAL_MAXIMO,
   avisoDeTransicion, estadoDeAtencion, umbralValido, umbralesDeAtencion,
   type MarcasDeAtencion,
-} from '../functions/src/atencion.ts';
+} from '../functions/src/core/conteo/atencion.ts';
 import { contadoresDelMensaje, type MarcasDeConteo } from '../functions/src/ingesta.ts';
 
 const HORA = 3_600_000;

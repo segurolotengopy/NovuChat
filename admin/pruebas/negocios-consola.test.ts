@@ -40,7 +40,7 @@ import { CortePrepago } from '../web/src/plataforma/componentes/CortePrepago';
 import { FormularioPagoManual } from '../web/src/plataforma/componentes/FormularioPagoManual';
 import { MODELO_POR_DEFECTO, type EjesDeCuenta } from '../web/src/lib/ejes';
 import { BOLSA, MESES_MAXIMO, PLANES, aplicarPago, importeBs } from '../functions/src/prepago';
-import { UMBRALES_ATENCION } from '../functions/src/atencion';
+import { UMBRALES_ATENCION } from '../functions/src/core/conteo/atencion';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');

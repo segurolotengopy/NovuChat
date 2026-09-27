@@ -5,7 +5,7 @@
  *
  * ESTE MÓDULO ES PURO A PROPÓSITO: no importa Firebase ni lee la red. Lo usan
  * la ingesta y `configuracionFlujo` en el servidor, y lo importa TAMBIÉN la
- * consola (`web/src/lib/atencion.ts`), para que la pantalla y el servidor no
+ * consola (`web/src/core/lib/atencion.ts`), para que la pantalla y el servidor no
  * puedan decir dos cosas distintas sobre el mismo número. Sobre lo que decide
  * acá se factura y se corta el servicio a un cliente final, así que cada
  * función se prueba mensaje por mensaje sin emulador.

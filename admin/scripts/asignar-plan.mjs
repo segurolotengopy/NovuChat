@@ -150,7 +150,7 @@ const {
 } = await import('../functions/src/prepago.ts');
 const { periodoDe } = await import('../functions/src/planes.ts');
 const { MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad } = await import('../functions/src/central/ejes.ts');
-const { umbralValido, umbralesDeAtencion } = await import('../functions/src/atencion.ts');
+const { umbralValido, umbralesDeAtencion } = await import('../functions/src/core/conteo/atencion.ts');
 
 // Mismos formatos que `ID_TENANT` e `ID_NUMERO` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;

@@ -50,7 +50,7 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | # | Qué | Cruces al terminar |
 |---|---|---|
 | **T0** | Nada se mueve. Se cierran las pruebas que pasarían en vacío al mover y se agregan las compuertas (ver abajo) | 19 |
-| **T1** piloto | `F/atencion.ts → F/core/conteo/`; `F/cierres.ts → F/core/turno/`; `W/lib/atencion.ts → W/core/lib/`; `P/central/{contrato-f1b-consola,copia-por-contrato-consola}.test.ts → P/plataforma/`. `ruta` de `ci-node-firebase.yml` a `./admin` (regla 3, si la revisora lo confirma). `SUITES_PURAS`: las dos movidas y `central/contrato-f1b-puras` (regla 4) | 16 |
+| **T1** piloto | `F/atencion.ts → F/core/conteo/`; `F/cierres.ts → F/core/turno/`; `W/lib/atencion.ts → W/core/lib/`; `P/central/{contrato-f1b-consola,copia-por-contrato-consola}.test.ts → P/plataforma/` (`docs/arquitectura/tandas/t1.json`). `SUITES_PURAS`: las dos movidas y `central/contrato-f1b-puras` (regla 4). La `ruta` del análisis de seguridad NO cambia (decisión de la revisora, 27/09) | 16 |
 | T2 | `firma`, `claims`, `autorizacion → F/core/seguridad/`; `region`, `opcionesGlobales → F/core/` (`opcionesGlobales` sigue primero en `index.ts`) | 16 |
 | T3 | `F/prompt.ts → F/core/prompt/`, entero | 16 |
 | T4 | `saneo`, `tipoCambio`, `tipoCambioBcb → F/central/servicios/`; `comportamiento`, `verificarComportamiento → F/central/asistente/`; `mapa → F/central/negocio/`; `reclamos → F/central/reclamos/` | 16 |
@@ -61,8 +61,8 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | W1 | `W/lib/{planes,prepago,pagar,cuenta,bitacora}.ts → W/central/lib/`; `sesion`, `contexto → W/core/lib/` | 4 |
 | W2 | Las páginas de Central → `W/central/paginas/`; `ConfiguracionVertical → W/central/componentes/ConfiguracionModulo.tsx`; `Tenants → W/plataforma/paginas/` | 4 |
 | FL1 | `Flujos/src/comun → Flujos/src/core/`; de `reservas/`: dos a `core/medios/`, cuatro a `modulos/cobros/`, siete a `modulos/agenda/`. 8/8 JSON idénticos | 4 |
-| FL2 | Extraer los Code de Demo B y del onboarding (`core-flujos`). **El onboarding espera los PR de la cartera sobre `Flujos/novuchat-onboarding.json`** (#237 fusionado; #238 en curso) y parte del JSON con ellos ya fusionados | 4 |
-| S1, S2 | Scripts de Plataforma → `S/plataforma/`; de carga → `S/datos/`. Con los runbooks y `.claude/agents` en el mismo PR, y aviso a la cartera | 4 |
+| FL2 | Extraer los Code de Demo B y del onboarding (`core-flujos`). El onboarding parte de `dd13823` (con los PR #237 y #238 de la cartera, que cambiaron su topología); la cartera no tiene nada más en curso sobre ese flujo (27/09) | 4 |
+| S1, S2 | Scripts de Plataforma → `S/plataforma/`; de carga → `S/datos/`. Con los runbooks y `.claude/agents` en el mismo PR, y aviso a la cartera. **Antes: `rutas-escritas.test.ts` con parser** (pendiente de la revisión del #239, abajo). **Nunca el 01/10 de 08:00 a 12:00** (la cartera usa `asignar-plan.mjs`) | 4 |
 | Pz | Las suites de la raíz con zona por su grafo → `P/core|central|plataforma/` | 4 |
 | P1 | Partir `index.ts` (callables → `F/plataforma/tenants.ts` y `F/central/usuarios.ts`), solo después de C1 | 4 |
 | Z | Zona para los 42 sin zona (`App.tsx`, `main.tsx`, `consola.tsx` → coordinador por archivo). **Decide la revisora** | 4 |
@@ -102,8 +102,48 @@ La tanda cero cierra además el último LOW de la cuarta revisión del #236: el
 lector de la frontera toma por calculado todo `createRequire`,
 `getBuiltinModule`, `.require` o `['require']` fuera del patrón que sigue.
 
-Las herramientas de mudanza (`mudanza.mjs`, `solo-rutas.mjs`) van en un PR
-propio antes de la tanda 1.
+**Las herramientas de mudanza** (PR #241, antes de la tanda 1), en
+`admin/pruebas/frontera/`:
+
+- `mudanza.ts`: la lógica, probada en `mudanza.test.ts` sobre un árbol
+  inventado. Reescribe un literal solo en contextos conocidos (import/export,
+  `import()`, `require`, `vi.mock`, `new URL`, `join`/`resolve`, lecturas,
+  `SUITES_PURAS`); uno que coincide con una ruta movida en otro lugar se avisa.
+- `mudanza.mjs <tanda.json>`: en seco por defecto. Valida la tanda antes de
+  nada (rutas relativas normales, dentro de las raíces, misma extensión, `de`
+  versionado, `a` libre, sin enlaces); con `--escribir` exige el worktree
+  limpio, hace `git mv -n` de toda la tanda antes de mover, reescribe, lista los
+  cruces de la deuda que la tanda salda y falla si la ruta vieja queda en
+  código (completa o sin `admin/`; los comentarios se corrigen a mano).
+- **La tanda va versionada en el PR**: `docs/arquitectura/tandas/tN.json`, con
+  `movimientos` (`{ de, a }`) y `suitesPuras` (las suites que la tanda agrega a
+  `SUITES_PURAS`; `asignar-rol.test.ts` está vetada).
+- **La compuerta solo vale corrida desde la BASE**, nunca con la copia del
+  PR (que podría decirse «todo en orden» a sí misma desde cualquier archivo que
+  importa):
+  `git show origin/main:admin/pruebas/frontera/desde-la-base.sh | bash -s -- docs/arquitectura/tandas/tN.json`.
+  Extrae la herramienta del merge-base y la corre contra el worktree del PR.
+  Un PR de tanda no puede tocar la herramienta ni lo que ella importa
+  (`destinos-f2.ts`, `functions/src/registro.ts`). La tanda solo vive en
+  `docs/arquitectura/tandas/`, sin claves de más, y sus rutas solo aceptan
+  `[A-Za-z0-9._-/]`.
+- `solo-rutas.mjs docs/arquitectura/tandas/tN.json [base]`:
+  **reproducibilidad**. Lee la tanda del commit, la valida contra el árbol de
+  la base, vuelve a correr el plan sobre el `merge-base` y exige cada archivo
+  del PR byte a byte. A mano solo se acepta: quitar deuda saldada; en
+  `vitest.config.ts`, las suites declaradas (el resto del archivo, idéntico por
+  AST); en un comentario, la CITA de la ruta nueva y nada más (un
+  `/*#__PURE__*/` le quitaría App Check a la consola); y los `.md`, que se
+  listan si cambian más que la cita, para revisarlos a mano.
+
+Ensayo completo de la tanda 1 con la herramienta y la tanda versionada (en un
+worktree descartable): 5 movidos y 15 reescritos, 3 comentarios corregidos a
+mano, 3 entradas de deuda saldadas y 3 suites a `SUITES_PURAS` (las dos de F1b
+movidas y `central/contrato-f1b-puras`); `solo-rutas` pasa, y con un
+`/*#__PURE__*/` plantado falla; `functions:build` (sin
+`lib/atencion.js` viejo) y `web:build` en verde; 2.491 pruebas puras en verde en
+50 archivos, instantánea de despliegue idéntica, `registro.test.ts` 53 en
+verde, 16 cruces y los 8 flujos idénticos.
 
 **Pendiente de la revisión de seguridad del #239**, para ese PR o antes de la
 tanda que lo necesita:
