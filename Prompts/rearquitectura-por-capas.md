@@ -183,7 +183,7 @@ F6 ∥ S (hechas) → **F1b** → F2 (registro primero, después los módulos en
 cualquier orden, consola, core-flujos) → etiqueta, despliegue (staging antes, o
 la alternativa declarada) y publicación de los 8 flujos → **F3a** (core-flujos
 con los módulos de venta) → etiqueta, despliegue, publicación de Demo B y
-captación y ensayo real → **H3a; la sesión de Edgar ensambla su flujo** → **F3b**
+captación y ensayo real → **H3a; la sesión de Rubén Roca ensambla su flujo** → **F3b**
 (core-functions ∥ core-flujos, después módulos) → etiqueta, despliegue,
 publicación de los 8 en ventana y ensayo → H3b → F4 ∥ F5. **H4-Bellido y
 H4-Platinum los cierran las sesiones de clientes en paralelo, sin esperar a
@@ -314,7 +314,7 @@ ventana, con respaldo y vuelta atrás escrita antes de correrla. **Cierra H2**,
 con etiqueta, despliegue y publicación de los 8 flujos.
 
 ### F3a — Esqueleto de venta (2 jornadas, después de H2)
-La mitad de F3 que todo cliente de venta necesita (Edgar, Dhermacore, Q'Taco);
+La mitad de F3 que todo cliente de venta necesita (Rubén Roca, Dhermacore, Q'Taco);
 los flujos de reservas ya la tienen (anexo A). Sobre `Flujos/src` extraído en
 F2, agentes `core-flujos` y `modulo` (cobros, captacion): medios (audio,
 imagen, documento) en el core para los tres esqueletos, con categorías por
@@ -327,7 +327,7 @@ en `Config base` o declarado (anexo A, brechas 1 a 6, 8 y 9). Ensayo real en el
 TENANT de ensayo de venta con audio, foto, PDF y foto sin contexto, y el caso
 «verbo no previsto y la herramienta sí corrió», con identificadores de
 ejecución. **Costo:** 0 mensajes; etiqueta, despliegue y publicación de Demo B
-y captación desde `main`. **Cierra H3a.** La sesión de Edgar ensambla su flujo
+y captación desde `main`. **Cierra H3a.** La sesión de Rubén Roca ensambla su flujo
 de esta salida, sin nodo propio.
 
 ### F3b — Core unificado de reservas (2 jornadas, después de H3a)

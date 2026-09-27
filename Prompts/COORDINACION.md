@@ -33,7 +33,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **F3b** Core unificado de reservas | Una variante de los cinco nodos comunes; prompt por capas; suites sin `new Function`; corpus de captación fuera del nodo; los 8 publicados desde `main`, Bellido y Platinum en ventana con ensayo previo | espera H3a; Platinum además espera su PR de datos | H3b |
 | **H4-Bellido** Pase de Bellido | Lo cierra la sesión de Bellido, sobre la versión publicada | **ahora** (ver «Coordinación con las sesiones de clientes») | H4-Bellido |
 | **H4-Platinum** Pase de Platinum | Lo cierra la sesión de Platinum | cuando cierren anexo y datos; necesita H1b | H4-Platinum |
-| **H4-Edgar** Alta y pase de Edgar | Lo cierra la sesión de Edgar; alta en paralelo | su flujo sale de F3a: producción en H3a | H4-Edgar |
+| **H4-Rubén** Alta y pase de Rubén Roca | Lo cierra la sesión de Rubén Roca; alta en paralelo | su flujo sale de F3a: producción en H3a | H4-Rubén |
 | **F4** Conector de canal ∥ **F5** Tenants como datos | Receptor y `enviar` fuera de n8n; Bellido como módulo | esperan H3b y el primer cliente pagador; antes del quinto número | H5 |
 
 ## Cola de fusión (F-1), en orden
@@ -261,7 +261,7 @@ su veredicto, autorizar F2.
    USD; el pago adelantado se respeta en la prueba; CPU fraccionaria en
    staging. **Le toca:** fijar precio y cambios de Platinum por contrato (con su
    «sí», seco primero); la extensión del 01/10; las dos plantillas de Meta; y
-   las dos decisiones abiertas: Edgar en prueba antes de H3a con dos
+   las dos decisiones abiertas: Rubén Roca en prueba antes de H3a con dos
    excepciones declaradas, y qué pasa si la etiqueta de F2 no aterriza en
    staging.
 
@@ -333,7 +333,7 @@ durante la obra (§12.10).
 | **Bellido** (reservas) | **En prueba desde el 26/09** (septiembre, bolsa 20). **El 01/10 se extiende a octubre** con `--periodo-prueba 2026-10 --bolsa-prueba 20` (F1b ya en `main`: #221, #223), cubierta hasta el 31/10; antes, leer que no tenga `periodoPagado` (una prueba no se cruza con meses pagados). Antes de escribir la modalidad, leer la advertencia de «Reglas para F2» (aviso de conversión y bolsa de 20) | **H4-Bellido, ahora**, sobre la versión publicada; re-aceptación del delta tras F3b | Contrato con **cero cambios incluidos** y quién paga Meta; aceptación de las **46 filas** sobre la versión publicada, con identificador de ejecución; pase a prepago por pago confirmado (el propietario, regla común); **fila de excepción de versión** en `docs/versiones-por-cliente.md` hasta la re-aceptación tras F3b (este PR) |
 | **Platinum** (reservas) | **En prueba desde el 26/09** (septiembre, `--bolsa-prueba 100` por contrato, con F1b en `main`; su volumen es de unas 55 conversaciones al mes). **El 01/10 se extiende a octubre** con `--periodo-prueba 2026-10 --bolsa-prueba 100` (la bolsa se descuenta con el uso y no se reinicia sola) | **H4-Platinum**, cuando cierren anexo y datos; **no después de H3** | Precio y cambios con F1b (USD 120 por 500 conversaciones; los cambios del contrato); anexo corregido (`cumplimiento.md` en cero); **PR de solo datos** que alinee `platinum-agendamiento.json` y `negocio-platinum.json` con producción (tercera agenda, estética, emojis, Maps): **sin ese PR, F3b no publica Platinum** |
 | **NovuChat** (captación) | **Traspaso al portafolio de Silvana**: fases 1 a 3 en Meta, plantilla `solicitud_contacto` pedida de nuevo, tarjeta de Silvana, corte de minutos; **titularidad `comercio` en su número el día del corte** (`asignar-plan.mjs --titularidad comercio --numero …`) | Con **H3a**: medios, botón ante fallo del modelo y campaña por texto | **Sin pase: demostración por diseño** (el runbook de pase lo rechaza por nombre). Lo que queda es de Meta y de la tarjeta, no de construcción |
-| **Edgar** (venta, BYOC) | **Alta completa en paralelo**: Meta en su portafolio, configuración, catálogo en el chat sin catálogo web, QR de monto abierto, aviso a Edgar; titularidad `comercio` y plan `byoc` | **Producción en H3a** (H4-Edgar): su flujo se ensambla de la salida de F3a, sin nodo propio | Todo lo del alta, que no espera a la obra; la aceptación, sobre el flujo de F3a |
+| **Rubén Roca** (venta, BYOC) | **Alta completa en paralelo**: Meta en su portafolio, configuración, catálogo en el chat sin catálogo web, QR de monto abierto, aviso a Rubén Roca; titularidad `comercio` y plan `byoc` | **Producción en H3a** (H4-Rubén): su flujo se ensambla de la salida de F3a, sin nodo propio | Todo lo del alta, que no espera a la obra; la aceptación, sobre el flujo de F3a |
 | **Dhermacore** | `cumplimiento.md` y contrato | Sus módulos (enrutamiento por campaña, reactivación) nacen **después de F3a**, como módulos con bandera, para todos | Contrato y anexo; los cambios pactados se escriben con `--cambios` (ya en `main`, #212) |
 | **Q'Taco** | `cumplimiento.md` y contrato | Su módulo (mesas) nace **después de F3a**, como módulo con bandera, para todos | Contrato y anexo |
 
@@ -471,7 +471,7 @@ H1b para la revisora.
   y precio por contrato, más `--periodo-prueba` y `--bolsa-prueba`); **F3 se
   parte** en F3a (esqueleto de venta) y F3b (core unificado de reservas);
   **H4 se parte por cliente** (H4-Bellido ahora, H4-Platinum con anexo y
-  datos, Edgar con H3a); la etiqueta de F2 aterriza primero en staging, que
+  datos, Rubén Roca con H3a); la etiqueta de F2 aterriza primero en staging, que
   tiene facturación desde el 26/09; cada informe de hito dice qué cliente
   quedó habilitado y qué le falta que no es construcción, y la revisora
   verifica por sha, CI y lectura en seco. Decisiones de Andres del mismo día:
