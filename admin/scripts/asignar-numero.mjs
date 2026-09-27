@@ -87,7 +87,7 @@ registerHooks({
 });
 const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../functions/src/central/ejes.ts');
 const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
-// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
+// Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
 const firma = readFileSync(new URL('../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
