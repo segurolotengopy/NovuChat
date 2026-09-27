@@ -109,12 +109,19 @@ const agConsultas = (pasos, equipo, ignorar) => {
   }
   return lista;
 };
-// Por que una hora NO se puede ofrecer: '' si se puede. En este orden: ya paso
-// (o no llega a la anticipacion minima), el dia esta cerrado, cae fuera del
-// horario, nadie consulto esa hora en este turno, o esta ocupada.
+// LA GRILLA DEL CHAT: cada 30 minutos desde las 00:00 (pedido del doctor de un
+// consultorio, 27/09/2026, y vale para todos). El negocio puede cargar a mano
+// citas cada 15 minutos —y hasta dos a la misma hora, hermanos—, pero por el
+// chat solo se ofrecen y se agendan horas en punto o y media.
+const AG_GRILLA_MIN = 30;
+// Por que una hora NO se puede ofrecer: '' si se puede. En este orden: no cae
+// en la grilla, ya paso (o no llega a la anticipacion minima), el dia esta
+// cerrado, cae fuera del horario, nadie consulto esa hora en este turno, o
+// esta ocupada.
 const agMotivo = (consultas, fecha, min, duracion, limite) => {
   const t = agInstante(fecha, min);
   if (!Number.isFinite(t)) return 'sin_consulta';
+  if (min % AG_GRILLA_MIN !== 0) return 'fuera_de_grilla';
   if (t < limite) return 'pasado';
   const delDia = consultas.filter((c) => c.fecha === fecha);
   if (!delDia.length) return 'sin_consulta';
@@ -905,7 +912,30 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
 
   // LO QUE ESCRIBIO EL PACIENTE, leido por codigo. Una pregunta nunca confirma:
   // «¿a las 17 no tiene?», «tienes a las 13», «hay a las 10?».
-  const agCliente = String(ent.userInput || '').replace(/^\(audio transcripto\)\s*/i, '').trim();
+  // SOLO LO QUE EL CLIENTE TECLEO O DICTO (revision de seguridad de ca88ced):
+  // el texto, la transcripcion del audio y el titulo de la opcion interactiva
+  // que eligio. `userInput` trae ademas texto del SISTEMA —«(imagen) el
+  // cliente envio una foto», «AVISO_SISTEMA: …», el envoltorio «El cliente
+  // toco el boton:»— y esas palabras no pueden pasar por un nombre dicho ni
+  // por una hora elegida. La transcripcion no esta en `Normalizar entrada`
+  // (ahi solo dice «(audio) …»): la trae `Preparar transcripcion`.
+  const agCliente = (() => {
+    let crudo = String(ent.userInput || '');
+    if (/^\s*\(audio\)/i.test(crudo)) {
+      try { crudo = String(($('Preparar transcripción').first().json || {}).userInput || ''); } catch (e) { crudo = ''; }
+    }
+    const quedan = [];
+    for (const linea of crudo.split('\n')) {
+      let t = linea.trim();
+      if (!t || /^AVISO_SISTEMA\b/i.test(t) || /^\((audio|imagen|documento)\)/i.test(t)) continue;
+      t = t.replace(/^\(audio transcripto\)\s*/i, '');
+      const menu = /^El cliente seleccionó la opción del menú:\s*(.*?)\s*\(id:[^)]*\)\s*$/i.exec(t);
+      if (menu) t = menu[1];
+      t = t.replace(/^El cliente tocó el botón:\s*/i, '');
+      if (t.trim()) quedan.push(t.trim());
+    }
+    return quedan.join('\n');
+  })();
   const agClientePlano = agSinTilde(agCliente);
   // Sin signos (un audio transcripto no los trae), un verbo de pregunta sin
   // ningun verbo de pedir o confirmar tambien es pregunta: «y a las 5 de la
@@ -993,14 +1023,31 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // donde sale el nombre dicho «antes». Tope de 80 palabras.
   const agPalabrasCliente = new Set([...(agPrevio && Array.isArray(agPrevio.palabras) ? agPrevio.palabras : []),
     ...agPalabrasDe(agCliente)]);
+  // EL NOMBRE DEL TITULO, ANCLADO (revision de seguridad de ca88ced): «Cita
+  // <nombre> — <servicio>» empieza con «Cita» (despues del rotulo de la seña,
+  // si lo hay) y el nombre termina en el primer guion, tenga o no espacio
+  // delante. Sin anclar, «Cita — Consulta» daba el nombre «— Consulta».
   const agNombreDelTitulo = (titulo) => {
-    // «Cita <nombre> — <servicio>», con o sin el servicio.
-    const m = /Cita\s+(.+)$/.exec(String(titulo || ''));
-    return m ? m[1].split(/\s+[—–-]\s+/)[0].trim() : '';
+    const t = String(titulo || '').replace(/^\s*PENDIENTE DE SEÑA\s*·\s*/i, '');
+    const m = /^\s*Cita\s*:?\s*([^—–-]*)/i.exec(t);
+    return m ? m[1].trim() : '';
   };
+  // Palabras que NO son un nombre: las de los servicios del catalogo, las de
+  // quienes atienden, y las genericas. «Cita Consulta — consulta» con un
+  // cliente que escribio «quiero una consulta» no es un nombre dicho.
+  const AG_NO_SON_NOMBRE = new Set(['cita', 'citas', 'consulta', 'consultas', 'control', 'controles', 'cliente', 'clienta',
+    'paciente', 'bebe', 'bebito', 'bebita', 'nino', 'nina', 'ninos', 'ninas', 'hijo', 'hija', 'hijos', 'hijas', 'hijito', 'hijita',
+    'senor', 'senora', 'senorita', 'sr', 'sra', 'don', 'dona', 'mama', 'papa', 'mi', 'su', 'tu', 'para', 'nombre', 'persona',
+    'reserva', 'turno', 'servicio', 'recien', 'nacido', 'nacida', 'sano', 'sana', 'nuevo', 'nueva', 'dr', 'dra', 'doctor', 'doctora',
+    ...agPalabrasDe(String(cfg.catalogoConPrecio || '')), ...agPalabrasDe(String(cfg.catalogoSinPrecio || '')),
+    ...agEquipo.flatMap((x) => [...agPalabrasDe(x.nombre), ...(Array.isArray(x.servicios) ? x.servicios.flatMap((v) => agPalabrasDe(v)) : [])])]);
+  // EL PRIMER NOMBRE ALCANZA (Andres, 27/09/2026): el nombre del titulo vale
+  // si su PRIMERA palabra de nombre —la primera que no es generica ni del
+  // catalogo— la escribio el cliente, sin tildes. «Lucas» dicho y «Lucas
+  // Méndez» en el titulo vale; «Lucía» por «Lucas», no.
   const agTieneNombre = (titulo) => {
-    const palabras = agPalabrasDe(agNombreDelTitulo(titulo));
-    return palabras.length > 0 && palabras.every((w) => agPalabrasCliente.has(w));
+    const primera = agPalabrasDe(agNombreDelTitulo(titulo)).find((w) => !AG_NO_SON_NOMBRE.has(w));
+    return !!primera && agPalabrasCliente.has(primera);
   };
   // Las horas que este mensaje ELIGE, cada una con su fecha.
   const agOfrecidasEn = (fecha) => Array.from(new Set([
@@ -1134,7 +1181,9 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
           const previa = libres.filter((m) => m < hora).pop();
           const siguiente = libres.find((m) => m > hora);
           const cercanas = [previa, siguiente].filter((m) => m !== undefined);
-          const porque = motivo === 'cerrado' ? `El ${dia} no atendemos.`
+          const porque = motivo === 'fuera_de_grilla'
+            ? `Por este chat las citas son en punto o y media: las ${agHora(hora)} no ${agUsted ? 'se la puedo' : 'te la puedo'} dar.`
+            : motivo === 'cerrado' ? `El ${dia} no atendemos.`
             : (motivo === 'fuera' ? `El ${dia} a las ${agHora(hora)} no atendemos.`
               : (motivo === 'pasado' ? `El ${dia} a las ${agHora(hora)} ya no llego a darte el turno.`
                 : `El ${dia} a las ${agHora(hora)} ya está ocupado.`));

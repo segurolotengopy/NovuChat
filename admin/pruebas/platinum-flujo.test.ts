@@ -1286,7 +1286,7 @@ describe.each([
 
   /** La cita que agendar_cita creó en la #2936, tal como la devuelve Google. */
   const eventoCreado = {
-    id: 'ev-nuevo', kind: 'calendar#event', summary: 'Cita Paciente — estética facial',
+    id: 'ev-nuevo', kind: 'calendar#event', summary: 'Cita Ana Rojas — estética facial',
     organizer: { email: persona.calendario },
     start: { dateTime: `${DIA_J}T10:00:00-04:00` }, end: { dateTime: `${DIA_J}T10:30:00-04:00` },
     created: '2026-09-17T15:31:05.000Z',
@@ -1313,10 +1313,11 @@ describe.each([
   /**
    * Y DESDE LA REGLA DE ANDRES DEL 27/09, agendar exige además que esa hora se
    * le haya OFRECIDO y que el nombre del título lo haya dicho el paciente: el
-   * registro por teléfono trae la oferta de las 10:00 y la palabra «paciente».
+   * registro por teléfono trae la oferta de las 10:00 y el nombre «Ana Rojas»
+   * («paciente» no cuenta como nombre: es una palabra genérica).
    */
   const OFRECIO_LAS_10 = (): J => ({ agendaPorTelefono: { '59170000001': { ofrecidos: { [DIA_J]: [600, 660] },
-    ultima: { fecha: DIA_J, mins: [600, 660], desde: Date.now() }, elegido: null, palabras: ['paciente'], desde: Date.now() } } });
+    ultima: { fecha: DIA_J, mins: [600, 660], desde: Date.now() }, elegido: null, palabras: ['ana', 'rojas'], desde: Date.now() } } });
   /**
    * DESDE EL 27/09 UNA PREGUNTA NO AGENDA (#6555). «A las 10 no tienes?» es la
    * pregunta real de la #2936: si la hora estaba libre, esa cita ahora se
@@ -1358,7 +1359,7 @@ describe.each([
       expect(r['herramientas']).toEqual(['consultar_disponibilidad', 'agendar_cita']);
       expect(r['eventosCreados']).toEqual([{
         id: 'ev-nuevo', calendario: persona.calendario, inicio: `${DIA_J}T10:00:00-04:00`,
-        fin: `${DIA_J}T10:30:00-04:00`, titulo: 'Cita Paciente — estética facial',
+        fin: `${DIA_J}T10:30:00-04:00`, titulo: 'Cita Ana Rojas — estética facial',
       }]);
       expect(r['falloModelo']).toBe(false);
       expect(r['transferir']).toBe(false);

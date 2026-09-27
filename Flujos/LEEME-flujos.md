@@ -538,7 +538,11 @@ ninguna, sale una pregunta honesta. (H2, regla de Andres del 27/09) una cita
 que `agendar_cita` creó queda en pie SOLO si el cliente (a) ELIGIÓ esa hora
 —nombró una de las ofrecidas, un ordinal, o dijo «sí» a una oferta de UNA sola
 hora; una pregunta nunca elige— y (b) DIJO el nombre del paciente que va en el
-título, en ese turno o antes (ni inventado ni del perfil de WhatsApp). Sin (a),
+título, en ese turno o antes (ni inventado ni del perfil de WhatsApp). Alcanza el
+primer nombre: la primera palabra del nombre del título que no sea genérica
+(«cita», «consulta», «paciente», «niño»…) ni del catálogo tiene que estar, sin
+tildes, en lo que el cliente tecleó o dictó —el texto, la transcripción del
+audio o el título de la opción del menú, nunca los avisos del sistema—. Sin (a),
 `Comprobar reserva` la deshace por la vía del candado con la causa
 `sin_confirmar` y el paciente recibe «Sí, el lunes 28 a las 17:00 hay espacio.
 ¿Te la agendo?» (o «¿Cuál de estas horas del lunes 28 prefieres: …?» si dijo
@@ -557,6 +561,26 @@ donde el modelo agendó sin que eligiera la hora; 0,0113 USD cada una).
 restar turnos. Si en el mismo turno se canceló la cita vieja, la pregunta de H2
 empieza con «Tu cita … quedó cancelada.». Suite:
 `admin/pruebas/horarios-ofrecidos.test.ts`.
+
+**La grilla del chat: en punto o y media (27/09/2026, pedido del doctor de un
+consultorio; vale para todos).** El negocio puede cargar a mano citas cada 15
+minutos —y hasta dos a la misma hora—, pero por el chat solo se ofrece y se
+agenda a las :00 o :30 (`AG_GRILLA_MIN = 30`). H1 quita toda hora fuera de la
+grilla (aviso `horario_fuera_de_grilla`) y `Comprobar reserva` deshace una cita
+del chat fuera de grilla (causa `fuera_de_grilla`, después del cruce). Y el
+candado juzga solo las citas que creó ESE turno cuando la herramienta devolvió
+sus ids: dos citas manuales a la misma hora cargadas hace un minuto ya no se
+toman por un cruce ni por «duplicadas».
+
+**Riesgo aceptado: lo que se guarda por teléfono** (revisión de seguridad de
+`ca88ced`). El vencimiento de una hora de `agendaPorTelefono` se renueva con
+cada mensaje del cliente: una conversación activa lo mantiene vivo más de una
+hora. Y las palabras guardadas —de donde sale el nombre dicho antes— pueden
+ser datos de salud (lo que el paciente cuenta del niño), que la API de n8n
+devuelve al leer el flujo con sus datos estáticos. Solo se guardan palabras de
+lo que el cliente tecleó o dictó (texto, transcripción, título de la opción
+elegida), nunca los avisos del sistema. Se revisa en F3, cuando este estado
+pase al servidor.
 
 **Riesgo aceptado: escritura concurrente de `$getWorkflowStaticData`.** n8n
 guarda los datos estáticos al terminar cada ejecución que los cambió, y gana la

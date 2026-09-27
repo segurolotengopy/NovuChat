@@ -304,6 +304,82 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(noAgenda(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(igual)], estado))).toEqual([]);
     });
 
+    it('el título se lee ANCLADO: «Cita — consulta» no tiene nombre, y «consulta» no es un nombre (revisión de ca88ced)', () => {
+      for (const titulo of ['Cita — consulta', 'Cita— consulta', 'Cita Consulta — consulta', 'Cita Paciente — consulta',
+        'PENDIENTE DE SEÑA · Cita — consulta', 'Cita Control del niño sano — control']) {
+        const estado: J = {};
+        procesar('quiero una consulta de control del niño sano para el paciente', 'Claro.', [], estado);
+        ofrecio(estado, '11:00 o 17:00');
+        const ev = { ...ev17, id: 'ev-t', summary: titulo };
+        const r = procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(ev)], estado);
+        expect(r['agendaSinNombre'], titulo).toEqual(['ev-t']);
+      }
+      // Positiva: con el rótulo de la seña delante, el nombre dicho vale.
+      const estado: J = {};
+      dijoElNombre(estado);
+      ofrecio(estado, '11:00 o 17:00');
+      const conSena = { ...ev17, id: 'ev-s', summary: 'PENDIENTE DE SEÑA · Cita Lucas Méndez — consulta' };
+      expect(noAgenda(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(conSena)], estado))).toEqual([]);
+    });
+
+    it('las palabras del SISTEMA no pasan por un nombre dicho: «(imagen) el cliente envió una foto» (revisión de ca88ced)', () => {
+      for (const delSistema of ['(imagen) el cliente envió una foto', '(documento) el cliente envió un archivo',
+        'AVISO_SISTEMA: el cliente envió su ubicación. Agradécela y sigue con la consulta.']) {
+        const estado: J = {};
+        procesar(delSistema, 'Gracias.', [], estado);
+        ofrecio(estado, '11:00 o 17:00');
+        const ev = { ...ev17, id: 'ev-c', summary: 'Cita Cliente — consulta' };
+        const r = procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(ev)], estado);
+        expect(r['agendaSinNombre'], delSistema).toEqual(['ev-c']);
+      }
+      // Del menú interactivo cuenta el título de la opción, no el envoltorio.
+      const menu: J = {};
+      procesar('El cliente seleccionó la opción del menú: Recién nacido (id: control_recien_nacido)', 'Claro.', [], menu);
+      const guardadas = menu['agendaPorTelefono'][TEL]['palabras'] as string[];
+      expect(guardadas).toEqual(['recien', 'nacido']);
+      for (const w of ['cliente', 'selecciono', 'opcion', 'menu', 'id', 'control_recien_nacido']) expect(guardadas).not.toContain(w);
+    });
+
+    it('del audio cuenta la TRANSCRIPCIÓN (de `Preparar transcripción`), sin el aviso que la acompaña', () => {
+      const estado: J = {};
+      ofrecio(estado, '11:00 o 17:00');
+      const r = ejecutar(cod('Procesar respuesta'), [{ output: 'Quedó agendada.', intermediateSteps: [consulta(LUNES), agendo(ev17)] }],
+        { 'Normalizar entrada': [{ from: TEL, nombrePerfil: 'Lucas', userInput: '(audio) el cliente envió una nota de voz' }],
+          'Preparar transcripción': [{ userInput: '(audio transcripto) a las 17 por favor, para Lucas Méndez\n'
+            + 'AVISO_SISTEMA: antes de ofrecer horarios o agendar, repite en una línea lo que entendiste del audio.' }],
+          'Config del negocio': [CFG] }, { $getWorkflowStaticData: () => estado })[0]!;
+      expect(noAgenda(r)).toEqual([]);
+      expect(estado['agendaPorTelefono'][TEL]['palabras']).not.toContain('aviso');
+      // Negativa: sin transcripción, la marca «(audio)» no elige ni nombra nada.
+      const sinTexto: J = {};
+      ofrecio(sinTexto, '11:00 o 17:00');
+      expect(procesar('(audio) el cliente envió una nota de voz', 'Quedó agendada.', [consulta(LUNES), agendo(ev17)], sinTexto)['agendaSinConfirmar']).toEqual(['ev17']);
+    });
+
+    it('si la cita sin NOMBRE no aparece para deshacerla, el motivo lo dice así (revisión de ca88ced)', () => {
+      const previa = { ...procesar('a las 17', DIJO, [consulta(LUNES), agendo(ev17)]),
+        agendaSinConfirmar: [], agendaSinNombre: ['ev17'], eventosCreados: [{ id: 'ev17', calendario: '', inicio: '', fin: '' }] };
+      const r = comprobar(previa, [])[0]!;
+      expect(r['transferir']).toBe(true);
+      expect(String(r['motivoTransferencia'])).toContain('SIN que el cliente dijera a nombre de quién');
+      expect(String(r['motivoTransferencia'])).not.toContain('confirmara ese horario');
+    });
+
+    it('EL PRIMER NOMBRE ALCANZA (Andres, 27/09): «Lucas» dicho y «Lucas Méndez» en el título vale; «Lucía» por «Lucas», no', () => {
+      const estado: J = {};
+      procesar('Es para Lucas', '¿Para qué día?', [], estado);
+      ofrecio(estado, '11:00 o 17:00');
+      expect(noAgenda(procesar('a las 17', DIJO, [consulta(LUNES), agendo(ev17)], JSON.parse(JSON.stringify(estado))))).toEqual([]);
+      const lucia = { ...ev17, id: 'ev-lucia', summary: 'Cita Lucía Méndez — consulta' };
+      expect(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(lucia)], estado)['agendaSinNombre']).toEqual(['ev-lucia']);
+      // La primera palabra de NOMBRE: «Consulta» no cuenta, «Lucas» sí.
+      const conServicio = { ...ev17, id: 'ev-cs', summary: 'Cita Consulta Lucas — consulta' };
+      const otro: J = {};
+      procesar('Es para Lucas', '¿Para qué día?', [], otro);
+      ofrecio(otro, '11:00 o 17:00');
+      expect(noAgenda(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(conServicio)], otro))).toEqual([]);
+    });
+
     it('#6555 de punta a punta: «A las 17 no tiene?» + agendar_cita → se deshace y sale «¿Te la agendo?»; el «sí» siguiente agenda', () => {
       const estado: J = {};
       dijoElNombre(estado);
@@ -442,6 +518,102 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       const p = String(nodo(f, 'AI Agent (Sofía)').parameters['options'].systemMessage);
       expect(p).toContain('AGENDAS SOLO CON DOS COSAS DICHAS POR EL CLIENTE');
       expect(p).toContain('nunca el del perfil de WhatsApp');
+    });
+  });
+
+  describe('Grilla del chat: solo en punto o y media (pedido del doctor, 27/09; vale para todos)', () => {
+    /** Una cita que recepción cargó a mano, hace `haceMin` minutos. */
+    const manual = (id: string, desde: string, hasta: string, haceMin = 60, titulo = 'Cita Hermano Uno — consulta'): J => ({
+      id, summary: titulo, organizer: { email: CAL }, start: { dateTime: hora(LUNES, desde) }, end: { dateTime: hora(LUNES, hasta) },
+      created: new Date(Date.now() - haceMin * 60000).toISOString() });
+    const M1615 = manual('m1615', '16:15', '16:30');
+    /** El cliente eligió esa hora de una oferta y dijo su nombre: H2 no la deshace. */
+    const elegida = (hhmm: string, ocupados: J[]): J => {
+      const [h, m] = hhmm.split(':').map(Number) as [number, number];
+      const min = h * 60 + m;
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [min, 600] },
+        ultima: { fecha: LUNES.iso, mins: [min, 600], desde: Date.now() }, elegido: null, palabras: ['lucas', 'mendez'], desde: Date.now() } } };
+      const fin = new Date(Date.parse(hora(LUNES, hhmm)) + 30 * 60000 - 4 * 3600000).toISOString().slice(11, 16);
+      const ev = cita(`ev${h}${m}`, LUNES, hhmm, fin);
+      const previa = procesar(hhmm, 'Quedó agendada.', [consulta(LUNES, [almuerzo(LUNES), ...ocupados]), agendo(ev)], estado);
+      expect(noAgenda(previa), hhmm).toEqual([]);
+      return { previa, ev };
+    };
+    const noAgenda = (r: J): string[] => [...(r['agendaSinConfirmar'] as string[]), ...(r['agendaSinNombre'] as string[])];
+
+    it('con una manual de 16:15 a 16:30: se ofrece 16:30, y NUNCA 16:00 (se superpone), 16:15 ni 16:45', () => {
+      const r = procesar('Prefiero el lunes', `El ${L} tengo 16:00, 16:15, 16:30 o 16:45. ¿Cuál prefieres?`,
+        [consulta(LUNES, [almuerzo(LUNES), M1615])]);
+      expect(r['respuesta']).toBe(`El ${L} tengo 16:30. ¿Cuál prefieres?`);
+      expect(r['avisos']).toEqual(expect.arrayContaining(['horario_ocupado', 'horario_fuera_de_grilla']));
+    });
+
+    it('agendada a las 16:30 queda; a las 16:00 cede por CRUCE con la manual', () => {
+      const bien = elegida('16:30', [M1615]);
+      const c = comprobar(bien.previa, [M1615, bien.ev])[0]!;
+      expect(c['reservaVerificada']).toBe(true);
+      expect(c['citaSolapada']).toBeUndefined();
+      const mal = elegida('16:00', [M1615]);
+      expect(comprobar(mal.previa, [M1615, mal.ev])[0]).toMatchObject({ citaSolapada: true, eventoABorrar: mal.ev['id'], causaDeLaCaida: 'cruce' });
+    });
+
+    it('agendada a las 16:45 se DESHACE (fuera de grilla); a las 16:15, por cruce con la manual', () => {
+      const c = elegida('16:45', [M1615]);
+      const r = comprobar(c.previa, [M1615, c.ev])[0]!;
+      expect(r).toMatchObject({ citaSolapada: true, eventoABorrar: c.ev['id'], causaDeLaCaida: 'fuera_de_grilla' });
+      expect(String(r['motivoCruce'])).toContain('FUERA DE LA GRILLA');
+      const ret = retomar(r, { success: true }, c.previa);
+      expect(ret['reintentar']).toBe(true);
+      expect(String(ret['notaCruce'])).toContain('no cae en punto ni y media');
+      const q = elegida('16:15', [M1615]);
+      expect(comprobar(q.previa, [M1615, q.ev])[0]).toMatchObject({ citaSolapada: true, causaDeLaCaida: 'cruce' });
+      // Negativa: sin la manual, 16:15 igual cede por la grilla.
+      const sola = elegida('16:15', []);
+      expect(comprobar(sola.previa, [sola.ev])[0]).toMatchObject({ citaSolapada: true, causaDeLaCaida: 'fuera_de_grilla' });
+    });
+
+    it('con una manual de 16:15 a 16:45, 16:30 tampoco: ni ofrecida ni agendada', () => {
+      const larga = manual('m-larga', '16:15', '16:45');
+      const r = procesar('Prefiero el lunes', `El ${L} tengo 16:30 o 17:00. ¿Cuál prefieres?`, [consulta(LUNES, [almuerzo(LUNES), larga])]);
+      expect(r['respuesta']).toBe(`El ${L} tengo 17:00. ¿Cuál prefieres?`);
+      const c = elegida('16:30', [larga]);
+      expect(comprobar(c.previa, [larga, c.ev])[0]).toMatchObject({ citaSolapada: true, causaDeLaCaida: 'cruce' });
+    });
+
+    it('dos citas manuales a la MISMA hora (hermanos), cargadas hace un minuto, no rompen nada', () => {
+      const h1 = manual('h1', '16:15', '16:30', 1, 'Cita Hermanos — consulta');
+      const h2 = manual('h2', '16:15', '16:30', 1, 'Cita Hermanos — consulta');
+      const c = elegida('16:30', [h1, h2]);
+      const r = comprobar(c.previa, [h1, h2, c.ev]);
+      expect(r).toHaveLength(1);
+      expect(r[0]!['reservaVerificada']).toBe(true);
+      expect(r[0]!['citaSolapada']).toBeUndefined();     // no se borra ninguna de las manuales
+      expect(r[0]!['transferir']).not.toBe(true);         // ni se avisa de «duplicadas»
+      expect(r[0]!['eventoId']).toBe(c.ev['id']);
+      // Y ofrecer 16:30 al lado de ellas sigue valiendo.
+      const o = procesar('Prefiero el lunes', `El ${L} tengo 16:30. ¿Te sirve?`, [consulta(LUNES, [almuerzo(LUNES), h1, h2])]);
+      expect(o['respuesta']).toBe(`El ${L} tengo 16:30. ¿Te sirve?`);
+    });
+
+    it('«¿a las 16:15?» se contesta con la grilla y lo más cercano libre', () => {
+      const r = procesar('¿a las 16:15?', `Sí, a las 16:15 hay espacio el ${L}. ¿Te la agendo?`, [consulta(LUNES, [almuerzo(LUNES), M1615])]);
+      expect(r['respuesta']).toBe(`Por este chat las citas son en punto o y media: las 16:15 no te la puedo dar. Lo más cercano libre ese día es 15:30 o 16:30. ¿Te sirve alguna?`);
+    });
+
+    it('el prompt lo dice, en los tres flujos, y el del reintento también', () => {
+      expect(String(nodo(f, 'AI Agent (Sofía)').parameters['options'].systemMessage)).toContain('OFRECE SOLO HORAS EN PUNTO O Y MEDIA');
+      expect(String(nodo(f, 'Reintento tras cruce').parameters['options'].systemMessage)).toContain('solo en punto o y media');
+    });
+  });
+
+  describe('Las reglas del prompt están UNA vez cada una, y la vieja no está', () => {
+    it('AGENDAS SOLO…, SI PIDE OTRA HORA… y OFRECE SOLO HORAS EN PUNTO… una vez; «UNA PREGUNTA NO ES UNA CONFIRMACIÓN», nunca', () => {
+      const p = String(nodo(f, 'AI Agent (Sofía)').parameters['options'].systemMessage);
+      for (const r of ['- AGENDAS SOLO CON DOS COSAS DICHAS POR EL CLIENTE', '- SI PIDE OTRA HORA U OTRA FRANJA',
+        '- OFRECE SOLO HORAS EN PUNTO O Y MEDIA']) {
+        expect(p.split(r).length - 1, r).toBe(1);
+      }
+      expect(p).not.toContain('UNA PREGUNTA NO ES UNA CONFIRMACIÓN');
     });
   });
 

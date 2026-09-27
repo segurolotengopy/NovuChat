@@ -314,7 +314,15 @@ const sinNombre = new Set((Array.isArray(item.agendaSinNombre) ? item.agendaSinN
   .map((id) => String(id || '')).filter(Boolean));
 const sinConfirmar = new Set((Array.isArray(item.agendaSinConfirmar) ? item.agendaSinConfirmar : [])
   .map((id) => String(id || '')).filter(Boolean));
-for (const nueva of recien) {
+// SE JUZGA SOLO LO QUE CREO ESTE TURNO, cuando se sabe que fue (27/09/2026).
+// El negocio carga citas a mano —cada 15 minutos, y a veces dos a la misma
+// hora, hermanos—, y `recien` junta todo lo creado en cinco minutos en esa
+// agenda: sin esto, dos citas manuales a la misma hora cargadas hace un
+// minuto se tomaban por un cruce y el candado borraba una. Si la herramienta
+// devolvio sus ids, se juzgan esos (contra TODO lo que hay en la agenda, que
+// es lo que protege); si no, la ventana de siempre.
+const aJuzgar = idsCreados.size ? recien.filter((e) => idsCreados.has(String(e.id))) : recien;
+for (const nueva of aJuzgar) {
   const r = rango(nueva);
   const calendario = nueva.organizer && nueva.organizer.email;
   if (!r || !calendario) continue;
@@ -359,6 +367,21 @@ for (const nueva of recien) {
     nueva.end && nueva.end.dateTime, quien.horario) : '';
   if (mal) { ceden.push(nueva); causaDe[String(nueva.id)] = mal; continue; }
 
+  // --- LA GRILLA DEL CHAT: EN PUNTO O Y MEDIA (27/09/2026) -------------------
+  // Pedido del doctor de un consultorio, para todos: el negocio carga a mano
+  // citas cada 15 minutos, pero por el chat solo se agenda a las :00 o :30.
+  // Una cita que agendar_cita creo a las 16:45 se deshace por la misma via,
+  // despues del cruce (si ademas choca, se le dice eso). SOLO la que creo este
+  // turno: una cita de las 16:15 que recepcion cargo hace un minuto es del
+  // negocio, no un error del chat.
+  const GRILLA_MIN = 30;
+  const alInicio = enLaPaz(nueva.start && nueva.start.dateTime);
+  if (idsCreados.has(String(nueva.id)) && alInicio && alInicio.min % GRILLA_MIN !== 0) {
+    ceden.push(nueva);
+    causaDe[String(nueva.id)] = 'fuera_de_grilla';
+    continue;
+  }
+
   // --- SIN CONFIRMACION NO HAY CITA (27/09/2026, ejecucion #6555) -----------
   // El paciente pregunto «A las 17 no tiene?» y el turno consulto y AGENDO las
   // 17:00: nadie lo habia confirmado. `Procesar respuesta` decide, por lo que
@@ -380,7 +403,9 @@ for (const nueva of recien) {
 if (ceden.length) {
   // Las que NO ceden siguen siendo citas validas. Importa para el cobro: si el
   // cliente pidio tres y solo una choco, hubo cierre igual.
-  const sobreviven = recien.filter((e) => !ceden.some((c) => c.id === e.id));
+  // Las que sobreviven son de ESTE turno: una cita manual reciente no es «el
+  // resto de lo que agendamos» (27/09/2026).
+  const sobreviven = aJuzgar.filter((e) => !ceden.some((c) => c.id === e.id));
 
   // Nombre y hora de cada cita caida, para poder decirle al cliente CUAL fue.
   // Un "hubo un cruce" a secas, cuando se agendaron tres, no le dice a quien
@@ -409,7 +434,9 @@ if (ceden.length) {
       ? 'ese dia no atendemos'
       : (causas.size === 1 && causas.has('bloqueado')
         ? 'ese horario esta reservado en la agenda'
-        : 'ese horario esta fuera de nuestro horario de atencion'));
+        : (causas.size === 1 && causas.has('fuera_de_grilla')
+          ? 'por este chat las citas son en punto o y media'
+          : 'ese horario esta fuera de nuestro horario de atencion')));
   // «El resto de lo que agendamos si esta bien» SOLO si de verdad quedo alguna:
   // cuando el cliente pidio una sola cita y esa es la que cayo, esa frase le
   // dice que algo quedo cuando no quedo nada (2026-09-20).
@@ -516,7 +543,9 @@ if (ceden.length) {
     ? 'se intento agendar sobre un horario YA OCUPADO de la misma persona '
     : (causas.size === 1 && causas.has('bloqueado')
       ? 'se intento agendar sobre un BLOQUEO de la agenda (un horario que el negocio no abre a citas) '
-      : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona '))
+      : (causas.size === 1 && causas.has('fuera_de_grilla')
+        ? 'se intento agendar FUERA DE LA GRILLA del chat (solo en punto o y media) '
+        : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona ')))
     + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}); la cita nueva se deshizo`;
   return ceden.map((e) => ({ json: { ...item,
     respuesta: aviso,
@@ -530,7 +559,8 @@ if (ceden.length) {
     motivoTransferencia: '',
     motivoCruce,
     causaDeLaCaida: todasSinNombre ? 'sin_nombre' : soloSinConfirmar ? 'sin_confirmar'
-      : (causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce' : 'horario')),
+      : (causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce'
+        : (causas.size === 1 && causas.has('fuera_de_grilla') ? 'fuera_de_grilla' : 'horario'))),
   }, pairedItem: { item: 0 } }));
 }
 
@@ -552,11 +582,16 @@ function cfgCampo(nombre) {
 // queda el caso de dos agendas distintas, o de dos creadas en el mismo
 // segundo que el candado dejo pasar).
 const porTituloYHora = {};
+const creadasPorClave = new Set();
 for (const e of recien) {
+  if (idsCreados.has(String(e.id))) creadasPorClave.add((e.summary || '') + '|' + String((e.start && e.start.dateTime) || ''));
   const clave = (e.summary || '') + '|' + String((e.start && e.start.dateTime) || '');
   porTituloYHora[clave] = (porTituloYHora[clave] || 0) + 1;
 }
-const repetidos = Object.entries(porTituloYHora).filter(([, n]) => n > 1)
+// Con los ids de este turno a la vista, un duplicado tiene que incluir una
+// cita de ESTE turno: dos manuales iguales de recepcion no son del chat.
+const repetidos = Object.entries(porTituloYHora)
+  .filter(([clave, n]) => n > 1 && (idsCreados.size === 0 || creadasPorClave.has(clave)))
   .map(([clave, n]) => [clave.split('|')[0], n]);
 
 if (repetidos.length) {
@@ -577,8 +612,9 @@ if (repetidos.length) {
 // falla abierto en silencio: pasa a recepcion con el motivo.
 const sinConfirmarNoEncontrada = () => (sinConfirmar.size > 0 || sinNombre.size > 0 ? {
   transferir: true,
-  motivoTransferencia: 'agendar_cita creo una cita SIN que el cliente confirmara ese horario y no aparecio en el calendario '
-    + 'para deshacerla: revisar la agenda y borrarla si quedo, y confirmar con el cliente',
+  motivoTransferencia: 'agendar_cita creo una cita SIN que el cliente '
+    + (sinConfirmar.size > 0 ? 'confirmara ese horario' : 'dijera a nombre de quién')
+    + ' y no aparecio en el calendario para deshacerla: revisar la agenda y borrarla si quedo, y confirmar con el cliente',
 } : {});
 if (recien.length === 0) {
   return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada,

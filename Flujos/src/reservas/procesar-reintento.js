@@ -103,12 +103,19 @@ const agConsultas = (pasos, equipo, ignorar) => {
   }
   return lista;
 };
-// Por que una hora NO se puede ofrecer: '' si se puede. En este orden: ya paso
-// (o no llega a la anticipacion minima), el dia esta cerrado, cae fuera del
-// horario, nadie consulto esa hora en este turno, o esta ocupada.
+// LA GRILLA DEL CHAT: cada 30 minutos desde las 00:00 (pedido del doctor de un
+// consultorio, 27/09/2026, y vale para todos). El negocio puede cargar a mano
+// citas cada 15 minutos —y hasta dos a la misma hora, hermanos—, pero por el
+// chat solo se ofrecen y se agendan horas en punto o y media.
+const AG_GRILLA_MIN = 30;
+// Por que una hora NO se puede ofrecer: '' si se puede. En este orden: no cae
+// en la grilla, ya paso (o no llega a la anticipacion minima), el dia esta
+// cerrado, cae fuera del horario, nadie consulto esa hora en este turno, o
+// esta ocupada.
 const agMotivo = (consultas, fecha, min, duracion, limite) => {
   const t = agInstante(fecha, min);
   if (!Number.isFinite(t)) return 'sin_consulta';
+  if (min % AG_GRILLA_MIN !== 0) return 'fuera_de_grilla';
   if (t < limite) return 'pasado';
   const delDia = consultas.filter((c) => c.fecha === fecha);
   if (!delDia.length) return 'sin_consulta';

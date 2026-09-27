@@ -59,7 +59,9 @@ const notaOtras = otrasCaidas.length
   ? (porPasado
     ? `la fecha de ${otrasCaidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${otrasCaidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
       + (hoy ? `; hoy es ${hoy}` : '') + ': el cliente quiere esa misma fecha del año en curso'
-    : (porHorario
+    : (porHorario && otrasCaidas.every((c) => c.causa === 'fuera_de_grilla')
+      ? `${otrasCaidas.map(describir).join(' y ')} no cae en punto ni y media (por este chat solo se agenda en punto o y media)`
+      : porHorario
       ? `${otrasCaidas.map(describir).join(' y ')} cae fuera del horario de atencion`
       : `el horario de ${otrasCaidas.map(describir).join(' y el de ')} ya estaba ocupado`))
   : '';
