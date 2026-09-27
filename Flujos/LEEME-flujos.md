@@ -528,6 +528,22 @@ HTTP de ingesta y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp
 en `Enviar ubicación`. `publicar-flujo.sh` asigna por ese nombre y avisa si no
 existe.
 
+**Horas ofrecidas, confirmación y lo ya ofrecido (27/09/2026, los tres flujos de
+reservas).** Tres barreras por hecho, en `Procesar respuesta` y `Procesar
+reintento` (bloque compartido «AGENDA DEL TURNO», idéntico en los dos):
+(H1) toda hora que la respuesta ofrece se comprueba contra el
+`consultar_disponibilidad` del MISMO turno —ocupado, horario del día de esa
+persona, pasado y anticipación mínima—; la que no pasa se quita y, si no queda
+ninguna, sale una pregunta honesta. (H2) si `agendar_cita` corrió y el mensaje
+del paciente no confirma esa hora (una pregunta nunca confirma), `Comprobar
+reserva` la deshace por la vía del candado (causa `sin_confirmar`) y el paciente
+recibe «Sí, el lunes 28 a las 17:00 hay espacio. ¿Te la agendo?»; el reintento
+corre solo para que la memoria guarde esa pregunta. (M1) si pide otra hora, una
+hora concreta o una franja, no se le repite lo ya ofrecido ese día. Lo ofrecido,
+la última oferta y la hora elegida se guardan por teléfono en
+`agendaPorTelefono` (datos estáticos, una hora). **Mensajes: cero agregados.**
+Suite: `admin/pruebas/horarios-ofrecidos.test.ts`.
+
 **Mensajes por conversación: los mismos que el Demo A.** No agrega ni quita
 ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de
 siempre (tres rechazos, reserva no verificada, umbrales del servidor).

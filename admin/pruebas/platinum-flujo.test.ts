@@ -1307,6 +1307,13 @@ describe.each([
   ];
   const procesar = (salida: J, contexto: Record<string, J[]> = {}) =>
     ejecutar(codigo('Procesar respuesta'), [salida], { 'Normalizar entrada': ENTRADA, 'Config del negocio': CONFIG, ...contexto })[0]!;
+  /**
+   * DESDE EL 27/09 UNA PREGUNTA NO AGENDA (#6555). «A las 10 no tienes?» es la
+   * pregunta real de la #2936: si la hora estaba libre, esa cita ahora se
+   * deshace por falta de confirmación. Los casos de abajo que prueban el
+   * ANCLAJE sin choque usan una confirmación, que es lo que los hace válidos.
+   */
+  const CONFIRMA_LAS_10 = { 'Normalizar entrada': [{ ...ENTRADA[0], userInput: 'Sí, a las 10 por favor' }] };
   const compuerta = (item: J) =>
     expresion(nodo(f, '¿Afirma que agendó?').parameters['conditions'].conditions[0].leftValue, item);
   const candado = (previa: J, eventos: J[]) =>
@@ -1316,9 +1323,12 @@ describe.each([
   const enviar = (respuesta: string) => String(ejecutar(codigo('Mensaje a enviar'), [{ from: '59170000001', respuesta }])[0]!['respuesta']);
 
   describe('1. la compuerta abre por lo que el modelo HIZO', () => {
-    it('el agente devuelve los pasos intermedios; el reintento no los necesita porque no puede agendar', () => {
+    it('el agente devuelve los pasos intermedios, y el reintento también: no agenda, pero lo que OFRECE se verifica (27/09)', () => {
       expect(nodo(f, AGENTE).parameters['options'].returnIntermediateSteps).toBe(true);
-      expect(nodo(f, 'Reintento tras cruce').parameters['options'].returnIntermediateSteps).toBeUndefined();
+      // Hasta el 27/09 el reintento no los devolvía «porque no puede agendar».
+      // Desde que toda hora ofrecida tiene que salir de una consulta del mismo
+      // turno (#6509), `Procesar reintento` necesita ver su consultar_disponibilidad.
+      expect(nodo(f, 'Reintento tras cruce').parameters['options'].returnIntermediateSteps).toBe(true);
     });
 
     it('la compuerta lee `verificarReserva`, que es ejecutó O afirma', () => {
@@ -1436,7 +1446,7 @@ describe.each([
     });
 
     it('con la herramienta bien (devolvió su evento) `agendarSinEvento` es falso y el candado sigue su camino de siempre', () => {
-      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() }, CONFIRMA_LAS_10);
       expect(previa['agendarSinEvento']).toBe(false);
       const r = candado(previa, [eventoCreado]);
       expect(r['agendarFallo']).toBeUndefined();
@@ -1479,7 +1489,7 @@ describe.each([
     });
 
     it('sin choque, la cita verificada es la que devolvió la herramienta y llega al cierre', () => {
-      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() }, CONFIRMA_LAS_10);
       const libre = { ...yaEstaba, start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` } };
       const c = candado(previa, [libre, eventoCreado]);
       expect(c['reservaVerificada']).toBe(true);
@@ -1516,7 +1526,7 @@ describe.each([
       // QR. Ahora: verificada, y el QR sale.
       const otroDia = { ...yaEstaba, id: 'otro-dia',
         start: { dateTime: `${DIA_J2}T09:00:00-04:00` }, end: { dateTime: `${DIA_J2}T10:00:00-04:00` } };
-      const previa = procesar({ output: DIJO, intermediateSteps: pasos() });
+      const previa = procesar({ output: DIJO, intermediateSteps: pasos() }, CONFIRMA_LAS_10);
       const c = candado(previa, [otroDia]);
       expect(c['reservaVerificada']).toBe(true);
       expect(c['eventoId']).toBe('ev-nuevo');

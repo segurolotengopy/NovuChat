@@ -308,6 +308,8 @@ const esBloqueoFijo = (e) => {
 // realidad la clinica estaba cerrada es una explicacion falsa.
 const ceden = [];
 const causaDe = {};
+const sinConfirmar = new Set((Array.isArray(item.agendaSinConfirmar) ? item.agendaSinConfirmar : [])
+  .map((id) => String(id || '')).filter(Boolean));
 for (const nueva of recien) {
   const r = rango(nueva);
   const calendario = nueva.organizer && nueva.organizer.email;
@@ -351,7 +353,21 @@ for (const nueva of recien) {
   const quien = delCalendario(calendario);
   const mal = quien ? fueraDeHorario(nueva.start && nueva.start.dateTime,
     nueva.end && nueva.end.dateTime, quien.horario) : '';
-  if (mal) { ceden.push(nueva); causaDe[String(nueva.id)] = mal; }
+  if (mal) { ceden.push(nueva); causaDe[String(nueva.id)] = mal; continue; }
+
+  // --- SIN CONFIRMACION NO HAY CITA (27/09/2026, ejecucion #6555) -----------
+  // El paciente pregunto «A las 17 no tiene?» y el turno consulto y AGENDO las
+  // 17:00: nadie lo habia confirmado. `Procesar respuesta` decide, por lo que
+  // el paciente ESCRIBIO y no por lo que el modelo dijo, que citas de este
+  // turno no tienen confirmacion; aca se deshacen por la MISMA via que un
+  // cruce, y el paciente recibe la pregunta («Si, a las 17:00 hay espacio.
+  // ¿Te la agendo?»). Va DESPUES del cruce y del horario a proposito: si la
+  // hora estaba ocupada o cerrada, lo que hay que decirle es eso, no que hay
+  // espacio. Solo las citas que agendar_cita devolvio en ESTE turno.
+  if (idsCreados.has(String(nueva.id)) && sinConfirmar.has(String(nueva.id))) {
+    ceden.push(nueva);
+    causaDe[String(nueva.id)] = 'sin_confirmar';
+  }
 }
 
 if (ceden.length) {
@@ -391,11 +407,28 @@ if (ceden.length) {
   // cuando el cliente pidio una sola cita y esa es la que cayo, esa frase le
   // dice que algo quedo cuando no quedo nada (2026-09-20).
   const configurado = String(cfgCampo('mensajeReservaNoConfirmada') || '').trim();
-  const aviso = configurado
+  // SIN CONFIRMAR NO ES UN ERROR DE AGENDA (27/09/2026): la hora esta libre y
+  // dentro del horario --el cruce y el horario se miraron antes--, solo falta
+  // que el paciente diga que si. El texto no es una disculpa ni el aviso del
+  // comercio: es la pregunta. El dia de la semana lo pone el codigo.
+  const soloSinConfirmar = [...causas].every((c) => c === 'sin_confirmar');
+  const usted = /\busted\b/i.test(String(cfgCampo('tratamiento') || ''));
+  const cuandoEs = (e) => {
+    const p = enLaPaz(e.start && e.start.dateTime);
+    if (!p) return '';
+    const d = new Date(Date.parse(e.start.dateTime) - MIN_LA_PAZ * 60 * 1000);
+    const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    return `el ${dias[d.getUTCDay()]} ${d.getUTCDate()} a las ${String(Math.floor(p.min / 60)).padStart(2, '0')}:${String(p.min % 60).padStart(2, '0')}`;
+  };
+  const preguntaSinConfirmar = 'Sí, ' + ceden.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
+    + (ceden.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'));
+  const aviso = soloSinConfirmar
+    ? (sobreviven.length > 0 ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. ` : '') + preguntaSinConfirmar
+    : (configurado
     || `Disculpa, tengo que corregirte algo: la cita de ${caidas} no quedo, `
      + `porque ${porQue}. `
      + (sobreviven.length > 0 ? 'El resto de lo que agendamos si esta bien. ' : '')
-     + 'Le paso este pedido a recepcion para darte otro horario enseguida.';
+     + 'Le paso este pedido a recepcion para darte otro horario enseguida.');
 
   // QUIEN Y CUANDO, para el reintento (2026-09-17). Cuando la cita nueva cede,
   // el flujo ya no manda el texto fijo de una: le da al modelo UN turno mas
@@ -438,7 +471,9 @@ if (ceden.length) {
   // reintento no sale, ahi si va el aviso, con este mismo motivo.
   //
   // Un item por cita a deshacer: el nodo de Calendar borra uno por item.
-  const motivoCruce = (causas.has('pasado')
+  const motivoCruce = (soloSinConfirmar
+    ? 'se agendo SIN QUE EL CLIENTE CONFIRMARA ese horario (su mensaje era una pregunta o no nombraba esa hora) '
+    : causas.has('pasado')
     ? 'se intento agendar en una FECHA YA PASADA (el modelo uso un año anterior al de hoy) '
     : causas.has('cruce')
     ? 'se intento agendar sobre un horario YA OCUPADO de la misma persona '
@@ -457,7 +492,8 @@ if (ceden.length) {
     transferir: false,
     motivoTransferencia: '',
     motivoCruce,
-    causaDeLaCaida: causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce' : 'horario'),
+    causaDeLaCaida: soloSinConfirmar ? 'sin_confirmar'
+      : (causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce' : 'horario')),
   }, pairedItem: { item: 0 } }));
 }
 

@@ -13,6 +13,292 @@ let herramientaAgendarCorrio = false;
 try { herramientaAgendarCorrio = $('agendar_cita').isExecuted === true; }
 catch (e) { herramientaAgendarCorrio = false; }
 
+// ===== AGENDA DEL TURNO: BLOQUE COMPARTIDO (inicio) =========================
+// LETRA POR LETRA el mismo en `Procesar respuesta` y en `Procesar reintento`:
+// un nodo Code no puede importar a otro, y `candado-agenda.test.ts` exige que
+// los dos sean identicos. Son solo funciones: no leen nada del flujo, cada nodo
+// les pasa lo suyo. Para que sirven, en `Procesar respuesta` (27/09/2026).
+const AG_DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const AG_DIA_CORTO = ['dom', 'lun', 'mar', 'mie', 'jue', 'vie', 'sab'];
+const AG_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const agDos = (n) => String(n).padStart(2, '0');
+// La zona es fija, UTC-4 (CLAUDE.md): se resta el desfase y se lee en UTC, sin
+// depender de la base de zonas de la imagen de n8n.
+const agLaPaz = (ms) => {
+  const d = new Date(ms - 4 * 3600000);
+  return { fecha: d.toISOString().slice(0, 10), semana: d.getUTCDay(), dia: d.getUTCDate(),
+    mes: d.getUTCMonth() + 1, min: d.getUTCHours() * 60 + d.getUTCMinutes() };
+};
+const agInstante = (fecha, min) => Date.parse(fecha + 'T' + agDos(Math.floor(min / 60)) + ':'
+  + agDos(min % 60) + ':00-04:00');
+const agHora = (min) => agDos(Math.floor(min / 60)) + ':' + agDos(min % 60);
+const agSinTilde = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+const agSumarDias = (fecha, n) => agLaPaz(agInstante(fecha, 720) + n * 86400000).fecha;
+const agSemanaDe = (fecha) => agLaPaz(agInstante(fecha, 720)).semana;
+// «lunes 28»: el dia de la semana lo pone el codigo, nunca el modelo.
+const agDiaTexto = (fecha) => { const p = agLaPaz(agInstante(fecha, 720)); return AG_DIAS[p.semana] + ' ' + p.dia; };
+// Donde termina una oracion: despues de . ! ? o …, salvo en una abreviatura
+// («Dr.», «Dra.», «Lic.», «Av.»): «con el Dr. Pérez» es UNA oracion.
+const AG_ORACION = /(?<=[.!?…])(?<!\b(?:Dr|Dra|Sr|Sra|Srta|Lic|Ing|Av|Nro|Edif|Of|of|Esq|esq)\.)\s+/;
+const agLista = (mins) => {
+  const h = mins.map(agHora);
+  return h.length <= 1 ? (h[0] || '') : h.slice(0, -1).join(', ') + ' o ' + h[h.length - 1];
+};
+// Los tramos de un dia en el horario de una persona: `null` = no se puede
+// juzgar (sin dato, o ilegible); lista vacia = ese dia no atiende. Misma
+// lectura que `Comprobar reserva`: «09:00-12:00, 14:00-18:00» o «cerrado».
+const agTramos = (horario, semana) => {
+  const v = horario && typeof horario === 'object' ? horario[AG_DIA_CORTO[semana]] : null;
+  if (typeof v !== 'string' || v.trim() === '') return null;
+  const t = v.trim();
+  if (/^cerrad[oa]s?$/i.test(t)) return [];
+  const tramos = [];
+  for (const parte of t.split(/[,;]/)) {
+    const m = /^(\d{1,2}):(\d{2})\s*[-–a]\s*(\d{1,2}):(\d{2})$/.exec(parte.trim());
+    if (!m) continue;
+    const i = Number(m[1]) * 60 + Number(m[2]);
+    const f = Number(m[3]) * 60 + Number(m[4]);
+    if (f > i && f <= 1440) tramos.push({ i, f });
+  }
+  return tramos.length ? tramos : null;
+};
+// Lo que devolvio una herramienta, como lista. `null` = la herramienta FALLO:
+// n8n le entrega al modelo una observacion vacia (#5553), y una consulta que
+// fallo no verifica nada.
+const agObservacion = (obs) => {
+  let o = obs;
+  if (typeof o === 'string') {
+    if (o.trim() === '') return null;
+    try { o = JSON.parse(o); } catch (e) { return null; }
+  }
+  const lista = Array.isArray(o) ? o : (o && typeof o === 'object' ? [o] : null);
+  if (!lista || lista.some((x) => x && typeof x === 'object' && x.error !== undefined)) return null;
+  return lista;
+};
+// Las consultas de ESTE turno: el rango que se pidio, lo ocupado que volvio y
+// el horario de la persona consultada (el de la lista `funcionarios`; si no se
+// dijo quien, el de la unica persona, o el comun si todos tienen el mismo).
+// `ignorar`: ids que no cuentan como ocupados (una cita cancelada en el mismo
+// turno ya no ocupa nada).
+const agConsultas = (pasos, equipo, ignorar) => {
+  const lista = [];
+  const iguales = equipo.length > 0
+    && equipo.every((x) => JSON.stringify(x.horario || {}) === JSON.stringify(equipo[0].horario || {}));
+  for (const p of (Array.isArray(pasos) ? pasos : [])) {
+    if (!p || !p.action || p.action.tool !== 'consultar_disponibilidad') continue;
+    const e = p.action.toolInput || {};
+    const desde = Date.parse(String(e.inicio || ''));
+    const hasta = Date.parse(String(e.fin || ''));
+    const eventos = agObservacion(p.observation);
+    if (!Number.isFinite(desde) || !Number.isFinite(hasta) || hasta <= desde || eventos === null) continue;
+    const ocupados = [];
+    for (const ev of eventos) {
+      if (!ev || typeof ev !== 'object' || ignorar.has(String(ev.id || ''))) continue;
+      const i = Date.parse(String((ev.start || {}).dateTime || ''));
+      const f = Date.parse(String((ev.end || {}).dateTime || ''));
+      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f });
+    }
+    const quien = agSinTilde(e.funcionario);
+    const persona = (quien && equipo.find((x) => agSinTilde(x.nombre) === quien))
+      || (equipo.length === 1 ? equipo[0] : null);
+    const horario = persona ? persona.horario : (iguales ? equipo[0].horario : null);
+    lista.push({ desde, hasta, fecha: agLaPaz(desde).fecha, ocupados,
+      horario: horario && typeof horario === 'object' ? horario : null,
+      persona: persona ? String(persona.nombre || '') : '' });
+  }
+  return lista;
+};
+// Por que una hora NO se puede ofrecer: '' si se puede. En este orden: ya paso
+// (o no llega a la anticipacion minima), el dia esta cerrado, cae fuera del
+// horario, nadie consulto esa hora en este turno, o esta ocupada.
+const agMotivo = (consultas, fecha, min, duracion, limite) => {
+  const t = agInstante(fecha, min);
+  if (!Number.isFinite(t)) return 'sin_consulta';
+  if (t < limite) return 'pasado';
+  const delDia = consultas.filter((c) => c.fecha === fecha);
+  if (!delDia.length) return 'sin_consulta';
+  const orden = ['cerrado', 'fuera', 'sin_consulta', 'ocupado'];
+  let peor = 'ocupado';
+  for (const c of delDia) {
+    const tramos = agTramos(c.horario, agSemanaDe(fecha));
+    let motivo = '';
+    if (tramos !== null && tramos.length === 0) motivo = 'cerrado';
+    else if (tramos !== null && !tramos.some((r) => min >= r.i && min + duracion <= r.f)) motivo = 'fuera';
+    else if (!(c.desde <= t && t < c.hasta)) motivo = 'sin_consulta';
+    else if (c.ocupados.some((o) => t < o.f && o.i < t + duracion * 60000)) motivo = 'ocupado';
+    if (!motivo) return '';
+    if (orden.indexOf(motivo) < orden.indexOf(peor)) peor = motivo;
+  }
+  return peor;
+};
+// Una hora de 1 a 7 sin «tarde» ni «mañana» («a las 5») se juzga tambien doce
+// horas despues; si asi vale, queda a la tarde.
+const agMotivoDeHora = (juzgar, h) => {
+  const motivo = juzgar(h.min);
+  if (motivo && h.ambigua && juzgar(h.min + 720) === '') { h.min += 720; return ''; }
+  return motivo;
+};
+// Las horas libres de un dia segun lo consultado, cada `paso` minutos.
+const agLibres = (consultas, fecha, duracion, limite, paso) => {
+  const libres = [];
+  for (let min = 0; min + duracion <= 1440; min += paso) {
+    if (agMotivo(consultas, fecha, min, duracion, limite) === '') libres.push(min);
+  }
+  return libres;
+};
+// Las horas escritas en un texto, con su posicion. Del modelo se toma lo que
+// tiene minutos («11:00», «11.30», «16h30»), lo que viene tras «las» («a las
+// 17») y «17 hs»; «2 horas» es una duracion, no una hora. «De la tarde» o «pm»
+// suman doce. `ambigua`: de 1 a 7 sin tarde ni
+// mañana, que en un consultorio casi siempre es de la tarde.
+const agHorasDelTexto = (texto) => {
+  const t = String(texto || '');
+  const out = [];
+  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?/gi;
+  let m;
+  while ((m = re.exec(t)) !== null) {
+    if (m[0] === '') { re.lastIndex += 1; continue; }
+    let h = Number(m[1]);
+    const conMinutos = m[2] !== undefined || m[3] !== undefined;
+    const antes = t.slice(Math.max(0, m.index - 12), m.index);
+    const trasLas = /\b(las?|para\s+las?)\s+$/i.test(antes);
+    if (!conMinutos && !trasLas && !m[4] && !m[5]) continue;
+    // «15.00 Bs» es un precio, no una hora.
+    if (/^\s*(bs\b|bolivianos|usd|\$|%)/i.test(t.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
+    const min = m[2] !== undefined ? Number(m[2]) : (m[3] ? (/media/i.test(m[3]) ? 30 : 15) : 0);
+    if (m[5] && h < 12) h += 12;
+    out.push({ min: h * 60 + min, ambigua: !m[5] && !m[6] && h >= 1 && h <= 7,
+      desde: m.index, hasta: m.index + m[0].length });
+  }
+  return out;
+};
+// La fecha que nombra un texto, relativa a `hoy`: «28 de septiembre», «lunes
+// 28», «el 28», «pasado mañana», «mañana», «hoy», o un dia de la semana solo.
+// '' si no nombra ninguna. El numero manda sobre la palabra del dia.
+const agFechaDelTexto = (texto, hoy) => {
+  const t = agSinTilde(texto);
+  const buscar = (ok) => { for (let i = 0; i <= 62; i++) { const f = agSumarDias(hoy, i); if (ok(f)) return f; } return ''; };
+  const diaDe = (f) => Number(f.slice(8, 10));
+  let m = /\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/.exec(t);
+  if (m) {
+    const mes = AG_MESES.indexOf(m[2]) + 1;
+    const f = buscar((x) => diaDe(x) === Number(m[1]) && Number(x.slice(5, 7)) === mes);
+    if (f) return f;
+  }
+  m = /\b(?:domingo|lunes|martes|miercoles|jueves|viernes|sabado|hoy|manana)\s+(\d{1,2})(?![\d:.])/.exec(t)
+    || /\b(?:el|para\s+el|del|dia)\s+(\d{1,2})(?![\d:.])(?!\s*(?:hrs?|hs|horas?|de\s+la)\b)/.exec(t);
+  if (m && Number(m[1]) >= 1 && Number(m[1]) <= 31) {
+    const f = buscar((x) => diaDe(x) === Number(m[1]));
+    if (f) return f;
+  }
+  if (/\bpasado\s+manana\b/.test(t)) return agSumarDias(hoy, 2);
+  if (/(?<!\bla\s)\bmanana\b/.test(t)) return agSumarDias(hoy, 1);
+  if (/\bhoy\b/.test(t)) return hoy;
+  m = /\b(domingo|lunes|martes|miercoles|jueves|viernes|sabado)\b/.exec(t);
+  if (m) {
+    const semana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'].indexOf(m[1]);
+    return buscar((x) => agSemanaDe(x) === semana);
+  }
+  return '';
+};
+// Las oraciones de una respuesta que OFRECEN horas, con la fecha de cada una.
+// Ofrecer es nombrar horas como disponibles; no lo es confirmar una cita,
+// describir la que ya tiene, cancelar, negar («a las 13 no hay») ni dar el
+// horario de atencion («de 11:00 a 18:00»). Una linea que solo trae horas
+// hereda de la anterior si esa terminaba en «:» o ya ofrecia.
+const agOfertas = (texto, hoy) => {
+  const partes = String(texto || '').split(new RegExp('(' + AG_ORACION.source + '|\\n+)'));
+  const NO_OFERTA = /cancel|agendad|reservad|registrad|confirmad|reprogramad|anotad|\bqued[oó]\b|\b(tu|su|tus|sus)\s+citas?\b|\bten[ií]as?\b|\bhorario\s+de\s+atenci|\batendemos\s+de\b|\batiende\s+de\b/i;
+  const NEGADA = /\bno\s+(hay|tengo|tenemos|tiene|tienen|queda|quedan|est[aá]|atiende|atendemos|trabaja|contamos|puedo|se\s+puede|es\s+posible)\b|\bocupad|\bcerrad|\btomad[oa]s?\b|\bno\s+disponible|\bya\s+pas/i;
+  const POSITIVA = /disponib|libre|espacio|lugar|cupo|\btengo\b|\btenemos\b|\btiene\b|\bhay\b|ofrezco|\bpuedo\b/i;
+  const OFERTA = /disponib|libre|espacio|lugar|cupo|turno|horario|opci[oó]n|\btengo\b|\btenemos\b|\btiene\b|\bhay\b|puedo\s+(ofrecer|dar)|ofrezco|\b(te|le)\s+(sirve|viene|queda|acomoda|parece)|prefier|qu[eé]\s+tal|podr[ií]a\s+ser|\?|¿/i;
+  const ofertas = [];
+  let previa = false;
+  let fechaPrevia = '';
+  for (let i = 0; i < partes.length; i += 2) {
+    const oracion = partes[i] || '';
+    // Un rango («de 11:00 a 18:00», «entre las 14:00 y las 16:00») o un borde
+    // («después de las 15:00», «hasta las 18:00») describe un horario; no ofrece.
+    const todas = agHorasDelTexto(oracion);
+    const fuera = new Set();
+    todas.forEach((h, k) => {
+      const antes = oracion.slice(Math.max(0, h.desde - 22), h.desde);
+      if (/((despu[eé]s|antes|a\s+partir)\s+de|desde|hasta)\s+(las?\s+)?$/i.test(antes)) fuera.add(k);
+      const siguiente = todas[k + 1];
+      if (!siguiente) return;
+      const medio = oracion.slice(h.hasta, siguiente.desde);
+      if (/^\s*(a|al|hasta|-|–)\s*(las?\s+)?$/i.test(medio)
+        || (/^\s*y\s+(las?\s+)?$/i.test(medio) && /entre\s+(las?\s+)?$/i.test(antes))) { fuera.add(k); fuera.add(k + 1); }
+    });
+    const horas = todas.filter((_, k) => !fuera.has(k));
+    const fechaAqui = agFechaDelTexto(oracion, hoy);
+    if (fechaAqui) fechaPrevia = fechaAqui;
+    if (!horas.length) { previa = /:\s*$/.test(oracion.trim()) && OFERTA.test(oracion); continue; }
+    const sinFormato = oracion.replace(/[*_~]/g, '');
+    // La negacion alcanza a lo que sigue hasta que algo vuelve a ofrecer:
+    // «a las 13:00 no hay, pero tengo 12:30» ofrece 12:30; «no hay a las 13:00,
+    // 13:30 ni 14:00» no ofrece ninguna.
+    const negados = [];
+    const reCorte = /,|;|\s+pero\s+/gi;
+    let negando = false;
+    let ini = 0;
+    let corte;
+    const tramo = (a, b) => {
+      const x = oracion.slice(a, b);
+      if (NEGADA.test(x)) negando = true;
+      else if (POSITIVA.test(x)) negando = false;
+      if (negando) negados.push([a, b]);
+    };
+    while ((corte = reCorte.exec(oracion)) !== null) { tramo(ini, corte.index); ini = corte.index + corte[0].length; }
+    tramo(ini, oracion.length);
+    const ofrecidas = horas.filter((h) => !negados.some(([a, b]) => h.desde >= a && h.hasta <= b));
+    const esOferta = ofrecidas.length > 0 && !NO_OFERTA.test(sinFormato) && (OFERTA.test(sinFormato) || previa);
+    previa = esOferta;
+    if (!esOferta) continue;
+    ofertas.push({ indice: i, horas: ofrecidas, fecha: fechaAqui || fechaPrevia });
+  }
+  return { partes, ofertas };
+};
+// Deja en una oracion solo las horas `validas`: cada lista de horas seguidas
+// («11:00, 11:30 o 12:00») se vuelve a escribir con las que quedan.
+const agDejarValidas = (oracion, horas, validas) => {
+  const SEP = /^(\s*,\s*|\s+[oyu]\s+|\s*,\s*[oy]\s+)(a\s+las\s+|las\s+)?$/i;
+  const corridas = [];
+  for (const h of horas.slice().sort((a, b) => a.desde - b.desde)) {
+    const ultima = corridas[corridas.length - 1];
+    if (ultima && SEP.test(oracion.slice(ultima[ultima.length - 1].hasta, h.desde))) ultima.push(h);
+    else corridas.push([h]);
+  }
+  let texto = oracion;
+  for (const c of corridas.reverse()) {
+    const quedan = c.filter((h) => validas.includes(h));
+    if (quedan.length === c.length) continue;
+    texto = texto.slice(0, c[0].desde) + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
+  }
+  return texto.replace(/[ \t]{2,}/g, ' ');
+};
+// Cambia por `nuevo` las oraciones que hablan de horas; lo demas (una
+// presentacion, el nombre que falta, un precio) se queda, en su lugar.
+const agCambiarHoras = (texto, nuevo) => {
+  const HABLA_DE_HORAS = /horario|disponib|\blibre|\bturno|cu[aá]l\s+de\s+est|prefier|te\s+sirve|le\s+sirve|atenci[oó]n|agend/i;
+  const partes = String(texto || '').split(new RegExp(AG_ORACION.source + '|\\n+'));
+  const quedan = [];
+  let puesto = false;
+  for (const parte of partes) {
+    const o = parte.trim();
+    if (!o) continue;
+    if (agHorasDelTexto(o).length || HABLA_DE_HORAS.test(o)) {
+      if (!puesto) { quedan.push(nuevo); puesto = true; }
+      continue;
+    }
+    quedan.push(o);
+  }
+  if (!puesto) quedan.push(nuevo);
+  return quedan.join(' ').trim();
+};
+// ===== AGENDA DEL TURNO: BLOQUE COMPARTIDO (fin) ============================
+
 const items = $input.all();
 const out = [];
 for (let i = 0; i < items.length; i++) {
@@ -533,6 +819,329 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       + 'para que la cancele y le confirme por este chat.';
     avisos.push('cancelacion_no_confirmada');
   }
+  // --- LAS HORAS QUE SE OFRECEN SALEN DE LA AGENDA DE ESTE TURNO (27/09/2026) -
+  // Tres reclamos de un consultorio real, el mismo dia (ejecuciones #6509 a
+  // #6587), con la regla «NUNCA propongas un horario que no hayas verificado
+  // con consultar_disponibilidad en ESTE MISMO mensaje» ya publicada:
+  //   · #6509, 00:06 de un DOMINGO, con el domingo «cerrado»: «tengo
+  //     disponibles hoy domingo 27 los siguientes turnos: 11:00, 11:30 o
+  //     12:00», sin haber llamado a consultar_disponibilidad.
+  //   · #6555: el paciente pregunto «A las 17 no tiene?» y el turno consulto y
+  //     AGENDO las 17:00 sin que nadie lo confirmara.
+  //   · #6523, #6527, #6551, #6578, #6583: pidio otra hora, otra franja, «a las
+  //     13», «a las 19», y recibio TRES VECES las mismas tres opciones. «Ya me
+  //     diste 3 veces los mismos y no quiero».
+  // El prompt no es una barrera (CLAUDE.md). Aca se hace cumplir por HECHO:
+  //   1. (H1) toda hora que la respuesta ofrece como disponible se comprueba
+  //      contra lo que consultar_disponibilidad devolvio EN ESTE TURNO: lo
+  //      ocupado, el horario del dia de esa persona (el dia de la semana lo
+  //      calcula el codigo), lo que ya paso y la anticipacion minima. La que no
+  //      pasa se quita; si no queda ninguna, la respuesta pasa a ser una
+  //      pregunta honesta, nunca un horario inventado.
+  //   2. (H2) si agendar_cita corrio y el mensaje del paciente NO confirma ese
+  //      horario —una pregunta nunca confirma—, `Comprobar reserva` deshace la
+  //      cita por la misma via del candado y se le pregunta si la agenda.
+  //   3. (M1) si pidio otra hora, una hora concreta o una franja, no se repiten
+  //      las opciones que ya se le dieron ese dia.
+  // Lo ofrecido y lo elegido se guardan por telefono en los datos estaticos
+  // del flujo (como la barrera del #197): la memoria del agente guarda
+  // mensajes, no hechos. Sin datos estaticos (pruebas) no se guarda nada.
+  const agAhora = Date.now();
+  const agHoy = agLaPaz(agAhora).fecha;
+  const agNumero = (v, min, max, porDefecto) => {
+    const n = Number(v);
+    return v !== '' && v !== null && v !== undefined && Number.isFinite(n) && n >= min && n <= max ? n : porDefecto;
+  };
+  // La duracion con la que se juzga si una hora «cabe» y la anticipacion
+  // minima: de la configuracion si viene (`Config del negocio`); si no, 30
+  // minutos —la cita mas corta de los tres negocios— y ninguna anticipacion
+  // mas alla de «no en el pasado». Con una duracion menor que la real el
+  // candado sigue siendo la ultima defensa al agendar.
+  const agDuracion = agNumero(cfg.duracionPorDefectoMin, 5, 480, 30);
+  const agLimite = agAhora + agNumero(cfg.anticipacionMinimaMin, 0, 10080, 0) * 60000;
+  let agEquipo = [];
+  try { agEquipo = JSON.parse(cfg.funcionarios || '[]'); } catch (e) { agEquipo = []; }
+  agEquipo = Array.isArray(agEquipo) ? agEquipo.filter((x) => x && x.nombre) : [];
+  const agConsultasTurno = agConsultas(pasos, agEquipo, idsCancelados);
+  // El registro de este telefono, por una hora: lo ofrecido por fecha, la
+  // ultima oferta (con su fecha) y la hora que el paciente eligio sin que se
+  // agendara todavia.
+  const AG_VIGENCIA_MS = 60 * 60 * 1000;
+  const AG_ELECCION_MS = 30 * 60 * 1000;
+  const agRegistros = (() => {
+    try {
+      const sd = $getWorkflowStaticData('global');
+      sd.agendaPorTelefono = (sd.agendaPorTelefono && typeof sd.agendaPorTelefono === 'object') ? sd.agendaPorTelefono : {};
+      return sd.agendaPorTelefono;
+    } catch (e) { return null; }
+  })();
+  const agPrevio = (agRegistros && telefonoDelCliente && agRegistros[telefonoDelCliente]
+    && agAhora - Number(agRegistros[telefonoDelCliente].desde || 0) < AG_VIGENCIA_MS)
+    ? agRegistros[telefonoDelCliente] : null;
+  const agVigente = (x, ms) => !!x && typeof x === 'object' && agAhora - Number(x.desde || 0) < ms;
+  const agOfrecidosAntes = (fecha) => (agPrevio && agPrevio.ofrecidos && Array.isArray(agPrevio.ofrecidos[fecha]))
+    ? agPrevio.ofrecidos[fecha].filter((m) => Number.isFinite(m)) : [];
+  const agUltima = agPrevio && agVigente(agPrevio.ultima, AG_VIGENCIA_MS) && Array.isArray(agPrevio.ultima.mins)
+    ? agPrevio.ultima : null;
+  const agElegido = agPrevio && agVigente(agPrevio.elegido, AG_ELECCION_MS) ? agPrevio.elegido : null;
+
+  // LO QUE ESCRIBIO EL PACIENTE, leido por codigo. Una pregunta nunca confirma:
+  // «¿a las 17 no tiene?», «tienes a las 13», «hay a las 10?».
+  const agCliente = String(ent.userInput || '').replace(/^\(audio transcripto\)\s*/i, '').trim();
+  const agClientePlano = agSinTilde(agCliente);
+  // Sin signos (un audio transcripto no los trae), un verbo de pregunta sin
+  // ningun verbo de pedir o confirmar tambien es pregunta: «y a las 5 de la
+  // tarde tendra». Ante la duda se pregunta: cuesta un turno, no una cita.
+  const agPideOConfirma = /\b(quiero|prefiero|agend|reserv|dame|ponme|anotame|confirmo|me\s+quedo)|^\s*(si|ok|dale|listo|perfecto)\b/.test(agClientePlano);
+  const agPregunta = /[?¿]/.test(agCliente)
+    || /^\s*(y\s+)?(a\s+las?\s+\d{1,2}([:.]\d{2})?\s+)?(no\s+)?(tiene[sn]?|tendr[a-z]*|hay|habr[a-z]*|puede[sn]?|podr[a-z]*|sera|esta\s+libre|queda[sn]?|existe)\b/.test(agClientePlano)
+    || (!agPideOConfirma && /\b(tiene[sn]?|tendr(a|as|an|ia|ian)|hay|habra|habria|podr(a|as|ia|ian)|sera|estara|esta\s+libre)\b/.test(agClientePlano));
+  const agNiega = /^\s*no\b(?!\s+(tiene|tienes|tienen|hay|habra))|\bmejor\s+(no|otr)|\bno\s+(quiero|puedo|me\s+(sirve|sirven|queda|conviene|viene))/.test(agClientePlano);
+  const agHorasCliente = agHorasDelTexto(agCliente);
+  const agFechaCliente = agFechaDelTexto(agCliente, agHoy);
+  const AG_CONFIRMA = /^\s*(si|sip|ok|okay|okey|oki|dale|listo|perfecto|confirmo|confirmado|de\s+acuerdo|claro|correcto|exacto|vale|bueno|genial|excelente|ese|esa|esta|este|la\s+primera|la\s+segunda|la\s+tercera|la\s+ultima|por\s+favor)\b|\b(agend(a|ame|ala|alo|amela|amelo|eme|ar)|reserv(a|ame|ala|alo|amela|amelo)|anota(me|la|lo)|confirm(o|ada|ado|amos)|me\s+quedo\s+con|quiero\s+(esa|ese|esta|este|la|el)\b|prefiero|dame|pon(me|la|lo))\b/;
+  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano);
+  // FRANJA u OTRA HORA: lo que el paciente pidio cuando no quiere lo ofrecido.
+  // «La tarde» empieza a las 13:00: el mediodia no es lo que pide quien dice
+  // «¿en la tarde?».
+  const agFranja = (() => {
+    if (/\b(en|por|para)\s+la\s+tarde\b|\bde\s+tarde\b|\bla\s+tarde\b/.test(agClientePlano)) return { desde: 13 * 60, hasta: 1440, nombre: 'en la tarde' };
+    if (/\b(en|por|para)\s+la\s+manana\b|\bde\s+manana\b|\btemprano\b/.test(agClientePlano)) return { desde: 0, hasta: 12 * 60, nombre: 'en la mañana' };
+    if (/\b(en|por|para)\s+la\s+noche\b/.test(agClientePlano)) return { desde: 18 * 60, hasta: 1440, nombre: 'en la noche' };
+    const tras = /\bdespues\s+de\s+(las?\s+)?(\d{1,2})/.exec(agClientePlano);
+    if (tras) { const h = Number(tras[2]); const m = (h >= 1 && h <= 7 ? h + 12 : h) * 60; return { desde: m, hasta: 1440, nombre: 'después de las ' + agHora(m) }; }
+    const antes = /\bantes\s+de\s+(las?\s+)?(\d{1,2})/.exec(agClientePlano);
+    if (antes) { const h = Number(antes[2]); const m = (h >= 1 && h <= 7 ? h + 12 : h) * 60; return { desde: 0, hasta: m, nombre: 'antes de las ' + agHora(m) }; }
+    return null;
+  })();
+  const agPideOtra = /\botr[oa]s?\s+(hora|horas|horario|horarios|turno|turnos|opcion|opciones)\b|\bmas\s+(horarios|opciones|horas|turnos)\b|\bningun[oa]?\s+(me\s+)?(sirve|queda|conviene)|\bno\s+me\s+(sirve|sirven|queda|quedan|conviene|vienen?|acomoda)|\blos\s+mismos\b|\bya\s+me\s+(diste|dijiste|pasaste)|\bque\s+otr/.test(agClientePlano);
+
+  // --- H2: AGENDAR EXIGE QUE EL PACIENTE HAYA CONFIRMADO ESE HORARIO --------
+  // Confirma: un mensaje que no es pregunta ni negacion y que (a) nombra la
+  // hora que se agendo —«11.30 por favor», «quiero a las 16:30», «la de las
+  // 11»—, o (b) dice que si a lo ultimo que se le ofrecio, y lo agendado es
+  // eso, o (c) solo da su nombre despues de haber ELEGIDO esa hora en el
+  // mensaje anterior. Sin nada guardado (datos estaticos vacios) un «si» vale:
+  // la barrera contra la doble reserva sigue siendo el candado.
+  const agCitasSinConfirmar = [];
+  if (!fallo && eventosCreados.length) {
+    for (const ev of eventosCreados) {
+      const t = Date.parse(ev.inicio);
+      if (!Number.isFinite(t)) continue;
+      const lp = agLaPaz(t);
+      const esLaHora = (h) => h.min === lp.min || (h.ambigua && h.min + 720 === lp.min);
+      const fechaOk = !agFechaCliente || agFechaCliente === lp.fecha;
+      const enUltima = !!agUltima && agUltima.fecha === lp.fecha && agUltima.mins.includes(lp.min);
+      const esElegida = !!agElegido && agElegido.fecha === lp.fecha
+        && (Number(agElegido.min) === lp.min || (agElegido.ambigua === true && Number(agElegido.min) + 720 === lp.min));
+      let confirmada;
+      if (agPregunta || agNiega) confirmada = false;
+      else if (agHorasCliente.length) confirmada = fechaOk && agHorasCliente.some(esLaHora);
+      else if (agConfirmaPalabra) {
+        confirmada = fechaOk && (agUltima ? enUltima || esElegida
+          : (agElegido ? esElegida : (agOfrecidosAntes(lp.fecha).length ? agOfrecidosAntes(lp.fecha).includes(lp.min) : true)));
+      } else confirmada = esElegida;
+      if (!confirmada) agCitasSinConfirmar.push(ev.id);
+    }
+    if (agCitasSinConfirmar.length) avisos.push('agendo_sin_confirmar');
+  }
+
+  // La respuesta se toca solo si es texto del modelo: los textos fijos de
+  // arriba (cancelacion, servicio negado, error) no ofrecen horas.
+  const agTextoDelModelo = !fallo && !vacia && !soloMarca && !negoServicio && !cancelacionSinConfirmar
+    && !cancelacionFallida;
+  const agUsted = /\busted\b/i.test(String(cfg.tratamiento || ''));
+  const agDeQuien = (() => {
+    if (agEquipo.length !== 1) return '';
+    const n = String(agEquipo[0].nombre || '').trim();
+    if (/^dra\.?\s/i.test(n)) return ' de la ' + n;
+    if (/^dr\.?\s/i.test(n)) return ' del ' + n;
+    return n ? ' de ' + n : '';
+  })();
+  const agAgendo = agUsted ? '¿Se la agendo?' : '¿Te la agendo?';
+  const agSirve = agUsted ? '¿Le sirve alguna?' : '¿Te sirve alguna?';
+  const agOtroDia = agUsted ? '¿Le sirve otro día?' : '¿Te sirve otro día?';
+  const agPrefiere = agUsted ? '¿Cuál prefiere?' : '¿Cuál prefieres?';
+  let agFinal = null;             // lo ofrecido que queda en la respuesta final
+  let agEleccion = null;          // la hora que el paciente eligio y no se agendo
+  const agMotivosH1 = new Set();
+
+  if (agTextoDelModelo && !ejecutoAgendar) {
+    // Sin pregunta ni negacion, una hora nombrada es una ELECCION: si el turno
+    // no agendo (falto el nombre, por ejemplo), la proxima vez que se agende
+    // esa hora con solo el nombre del paciente, cuenta como confirmada.
+    if (!agPregunta && !agNiega && agHorasCliente.length === 1) {
+      const fechaElegida = agFechaCliente || (agUltima ? agUltima.fecha : '')
+        || (agConsultasTurno.length === 1 ? agConsultasTurno[0].fecha : '');
+      if (fechaElegida) agEleccion = { fecha: fechaElegida, min: agHorasCliente[0].min, ambigua: agHorasCliente[0].ambigua };
+    }
+  }
+
+  if (agTextoDelModelo) {
+    const { partes, ofertas } = agOfertas(respuesta, agHoy);
+    const fechasConsultadas = Array.from(new Set(agConsultasTurno.map((c) => c.fecha)));
+    // La fecha de cada oferta: la que nombra la oracion (o una anterior); si no
+    // nombra ninguna y se consulto un solo dia, ese.
+    const fechaDe = (o) => o.fecha || (fechasConsultadas.length === 1 ? fechasConsultadas[0] : '');
+    const motivoDe = (o, h) => {
+      const f = fechaDe(o);
+      if (f) return agMotivo(agConsultasTurno, f, h.min, agDuracion, agLimite);
+      // Sin fecha y con varias consultadas: vale si cabe en alguna.
+      const motivos = fechasConsultadas.map((x) => agMotivo(agConsultasTurno, x, h.min, agDuracion, agLimite));
+      return motivos.includes('') ? '' : (motivos[0] || 'sin_consulta');
+    };
+    // «a las 5» que vale a la tarde se lee como 17:00 desde aca en adelante.
+    ofertas.forEach((o) => o.horas.forEach((h) => { if (h.ambigua) agMotivoDeHora((min) => motivoDe(o, { ...h, min }), h); }));
+
+    // --- M1: PIDIO OTRA COSA, NO SE LE REPITE LO MISMO ----------------------
+    const fechaPedida = agFechaCliente || (ofertas.length ? fechaDe(ofertas[0]) : '')
+      || (agUltima ? agUltima.fecha : '') || (fechasConsultadas.length === 1 ? fechasConsultadas[0] : '');
+    const consultoEseDia = !!fechaPedida && fechasConsultadas.includes(fechaPedida);
+    // Una hora concreta se contesta sobre esa hora cuando es una PREGUNTA («¿a
+    // las 13?») o cuando la pidio y no se puede dar («quiero a las 19»). Si la
+    // eligio y se puede, el turno sigue como lo escribio el modelo (pedira el
+    // nombre, por ejemplo) y queda guardada como eleccion.
+    const horaPedida = agHorasCliente.length === 1 && !ejecutoAgendar && !agNiega ? agHorasCliente[0] : null;
+    const pideAlgo = !ejecutoAgendar && (horaPedida || agFranja || agPideOtra);
+    let reemplazo = '';
+    if (pideAlgo && consultoEseDia) {
+      const dia = agDiaTexto(fechaPedida);
+      const libres = agLibres(agConsultasTurno, fechaPedida, agDuracion, agLimite, 30);
+      const antes = agOfrecidosAntes(fechaPedida);
+      const delModelo = ofertas.filter((o) => fechaDe(o) === fechaPedida)
+        .flatMap((o) => o.horas.map((h) => h.min)).filter((m) => libres.includes(m));
+      const repite = delModelo.some((m) => antes.includes(m));
+      if (horaPedida) {
+        // Una hora de 1 a 7 sin «tarde» ni «mañana» es de la tarde si esa es la
+        // que cae dentro del horario.
+        const candidatas = horaPedida.ambigua ? [horaPedida.min + 720, horaPedida.min] : [horaPedida.min];
+        const hora = candidatas.find((m) => agMotivo(agConsultasTurno, fechaPedida, m, agDuracion, agLimite) !== 'fuera')
+          ?? candidatas[0];
+        const motivo = agMotivo(agConsultasTurno, fechaPedida, hora, agDuracion, agLimite);
+        const nombraLaHora = ofertas.some((o) => o.horas.some((h) => h.min === hora));
+        if (motivo === '') {
+          if (agPregunta && (!nombraLaHora || repite || delModelo.length !== 1)) {
+            reemplazo = `Sí, el ${dia} a las ${agHora(hora)} hay espacio. ${agAgendo}`;
+            agFinal = { fecha: fechaPedida, mins: [hora] };
+          }
+        } else {
+          // La libre mas cercana ANTES y la mas cercana DESPUES de la pedida.
+          const previa = libres.filter((m) => m < hora).pop();
+          const siguiente = libres.find((m) => m > hora);
+          const cercanas = [previa, siguiente].filter((m) => m !== undefined);
+          const porque = motivo === 'cerrado' ? `El ${dia} no atendemos.`
+            : (motivo === 'fuera' ? `El ${dia} a las ${agHora(hora)} no atendemos.`
+              : (motivo === 'pasado' ? `El ${dia} a las ${agHora(hora)} ya no llego a darte el turno.`
+                : `El ${dia} a las ${agHora(hora)} ya está ocupado.`));
+          reemplazo = porque + (cercanas.length
+            ? ` Lo más cercano libre ese día es ${agLista(cercanas)}. ${cercanas.length > 1 ? agSirve : (agUsted ? '¿Le sirve?' : '¿Te sirve?')}`
+            : ` Ese día ya no queda espacio libre. ${agOtroDia}`);
+          if (agUsted) reemplazo = reemplazo.replace('llego a darte', 'llego a darle');
+          agFinal = cercanas.length ? { fecha: fechaPedida, mins: cercanas } : null;
+        }
+        if (reemplazo) avisos.push('hora_pedida_respondida');
+      } else {
+        const enFranja = agFranja ? libres.filter((m) => m >= agFranja.desde && m < agFranja.hasta) : libres;
+        const nuevas = enFranja.filter((m) => !antes.includes(m));
+        const modeloBien = delModelo.length > 0 && !repite
+          && (!agFranja || delModelo.every((m) => m >= agFranja.desde && m < agFranja.hasta));
+        if (!modeloBien) {
+          const donde = `El ${dia}` + (agFranja ? ' ' + agFranja.nombre : '');
+          if (nuevas.length) {
+            reemplazo = `${donde}${agFranja ? '' : ' también'} hay espacio a las ${agLista(nuevas.slice(0, 3))}. ${agPrefiere}`;
+            agFinal = { fecha: fechaPedida, mins: nuevas.slice(0, 3) };
+          } else if (enFranja.length) {
+            reemplazo = `${donde} solo quedan las ${agLista(enFranja.slice(0, 3))}, que ya ${agUsted ? 'le pasé' : 'te pasé'}. `
+              + (agUsted ? '¿Le sirve alguna, o prefiere otro día?' : '¿Te sirve alguna, o prefieres otro día?');
+            agFinal = { fecha: fechaPedida, mins: enFranja.slice(0, 3) };
+          } else {
+            reemplazo = `${donde} ya no queda espacio libre. ${agOtroDia}`;
+          }
+          avisos.push(agFranja ? 'franja_sin_repetir' : 'otros_horarios_sin_repetir');
+        }
+      }
+    }
+
+    if (reemplazo) {
+      respuesta = agCambiarHoras(respuesta, reemplazo);
+    } else if (ofertas.length) {
+      // --- H1: SE QUITA TODA HORA QUE NO SALE DE LA AGENDA DE ESTE TURNO -----
+      const validasPorOferta = ofertas.map((o) => o.horas.filter((h) => {
+        const motivo = agMotivoDeHora((min) => motivoDe(o, { ...h, min }), h);
+        if (motivo) agMotivosH1.add(motivo);
+        return motivo === '';
+      }));
+      const invalidas = ofertas.some((o, k) => validasPorOferta[k].length < o.horas.length);
+      if (invalidas) {
+        const quedanOfertas = validasPorOferta.some((v) => v.length > 0);
+        if (!quedanOfertas && !ejecutoAgendar) {
+          // Ninguna hora se sostiene: una pregunta honesta, nunca un horario
+          // inventado. Si el dia que nombro esta cerrado, se le dice; si el
+          // paciente pregunto por una hora, la pregunta la nombra, y su «si»
+          // del turno siguiente cuenta como confirmacion de ESA hora.
+          const fechaNombrada = ofertas.map(fechaDe).find(Boolean) || agFechaCliente;
+          const iguales = agEquipo.length > 0
+            && agEquipo.every((x) => JSON.stringify(x.horario || {}) === JSON.stringify(agEquipo[0].horario || {}));
+          const tramos = fechaNombrada && iguales ? agTramos(agEquipo[0].horario, agSemanaDe(fechaNombrada)) : null;
+          const cerrado = Array.isArray(tramos) && tramos.length === 0;
+          const aviso = cerrado ? `El ${agDiaTexto(fechaNombrada)} no atendemos. ` : '';
+          const hora = agHorasCliente.length === 1 && agPregunta && !cerrado ? agHorasCliente[0].min : null;
+          let pregunta;
+          if (hora !== null && fechaNombrada) {
+            pregunta = (agUsted ? '¿Quiere' : '¿Quieres') + ` el ${agDiaTexto(fechaNombrada)} a las ${agHora(hora)}? Así reviso la agenda${agDeQuien}.`;
+            agFinal = { fecha: fechaNombrada, mins: [hora], soloUltima: true };
+          } else if (hora !== null) {
+            pregunta = `¿Para qué día ${agUsted ? 'quiere' : 'quieres'} las ${agHora(hora)}? Así reviso la agenda${agDeQuien}.`;
+            agFinal = null;
+          } else {
+            pregunta = `¿Para qué día y en qué horario ${agUsted ? 'le' : 'te'} acomoda? Reviso la agenda${agDeQuien}.`;
+            agFinal = null;
+          }
+          respuesta = agCambiarHoras(respuesta, aviso + pregunta);
+        } else {
+          // Quedan las validas, en el mismo lugar; una oracion que se queda sin
+          // ninguna se quita entera.
+          ofertas.forEach((o, k) => {
+            const validas = validasPorOferta[k];
+            partes[o.indice] = validas.length ? agDejarValidas(partes[o.indice], o.horas, validas) : '';
+          });
+          respuesta = partes.join('').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
+          const vivas = ofertas.map((o, k) => ({ o, v: validasPorOferta[k] })).filter((x) => x.v.length);
+          if (vivas.length) agFinal = { fecha: fechaDe(vivas[0].o), mins: vivas[0].v.map((h) => h.min) };
+        }
+        for (const m of agMotivosH1) avisos.push('horario_' + m);
+      } else {
+        const primera = ofertas.find((o) => fechaDe(o));
+        if (primera) agFinal = { fecha: fechaDe(primera), mins: primera.horas.map((h) => h.min) };
+      }
+    }
+  }
+
+  // Lo que queda guardado de este turno, por telefono: lo ofrecido (sumado al
+  // de antes, por fecha), la ultima oferta y la eleccion. Se barren los
+  // registros vencidos de todos los telefonos solo si hay algo que escribir.
+  if (agRegistros && telefonoDelCliente && (agFinal || agEleccion || agCitasSinConfirmar.length || eventosCreados.length)) {
+    for (const [tel, r] of Object.entries(agRegistros)) {
+      if (!r || !(agAhora - Number(r.desde || 0) < AG_VIGENCIA_MS)) delete agRegistros[tel];
+    }
+    const r = agRegistros[telefonoDelCliente] = agRegistros[telefonoDelCliente]
+      || { ofrecidos: {}, ultima: null, elegido: null, desde: agAhora };
+    r.ofrecidos = (r.ofrecidos && typeof r.ofrecidos === 'object') ? r.ofrecidos : {};
+    if (agFinal && agFinal.fecha && agFinal.mins.length && !agFinal.soloUltima) {
+      const previos = Array.isArray(r.ofrecidos[agFinal.fecha]) ? r.ofrecidos[agFinal.fecha] : [];
+      r.ofrecidos[agFinal.fecha] = Array.from(new Set([...previos, ...agFinal.mins])).slice(-48);
+      const fechas = Object.keys(r.ofrecidos);
+      for (const f of fechas.slice(0, Math.max(0, fechas.length - 7))) delete r.ofrecidos[f];
+    }
+    if (agFinal && agFinal.fecha && agFinal.mins.length) {
+      r.ultima = { fecha: agFinal.fecha, mins: agFinal.mins.slice(0, 12), desde: agAhora };
+    }
+    if (agEleccion) r.elegido = { ...agEleccion, desde: agAhora };
+    // Una cita que quedo agendada cierra la eleccion y la ultima oferta.
+    if (eventosCreados.length && !agCitasSinConfirmar.length) { r.elegido = null; r.ultima = null; }
+    r.desde = agAhora;
+  }
+
   // --- NO SE OFRECE LO QUE NO SE VA A CUMPLIR (Andres, 21/09/2026) -----------
   // POLITICA DE NOVUCHAT, para todos los clientes. El asistente escribio «lo
   // consulto con recepcion para que te confirmen» y no tiene como consultar a
@@ -694,6 +1303,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
             + String(ent.userInput || '').replace(/\s+/g, ' ').slice(0, 160) + '»')) : '',
     afirmaAgendo,
     ejecutoAgendar,
+    // H2 (27/09/2026): las citas que agendar_cita creo sin que el paciente
+    // confirmara ese horario. `Comprobar reserva` las deshace por la via del
+    // candado y el paciente recibe la pregunta.
+    agendaSinConfirmar: agCitasSinConfirmar,
     agendarSinEvento,
     observacionAgendar,
     verificarReserva,

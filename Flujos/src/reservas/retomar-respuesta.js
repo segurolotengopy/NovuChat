@@ -29,13 +29,22 @@ const describir = (c) => {
 // se agendo y la fecha de HOY, con año, para que el modelo consulte la misma
 // fecha del año en curso. Sin decirle el dia de la semana de la cita caida.
 const porPasado = caidas.length > 0 && caidas.every((c) => c && c.causa === 'pasado');
-const porHorario = !porPasado && caidas.length > 0 && caidas.every((c) => c && c.causa && c.causa !== 'cruce');
+// SIN CONFIRMAR (27/09/2026, #6555): la cita se deshizo porque el paciente
+// solo PREGUNTO por esa hora. No hay nada ocupado ni cerrado que explicarle:
+// el reintento no ofrece alternativas, repite la pregunta que armo `Comprobar
+// reserva` («Si, a las 17:00 hay espacio. ¿Te la agendo?») para que quede en
+// la memoria del agente lo que el paciente de verdad recibio.
+const porSinConfirmar = caidas.length > 0 && caidas.every((c) => c && c.causa === 'sin_confirmar');
+const porHorario = !porPasado && !porSinConfirmar && caidas.length > 0
+  && caidas.every((c) => c && c.causa && c.causa !== 'cruce');
 let hoy = '';
 try {
   hoy = new Date().toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/La_Paz' });
 } catch (e) { hoy = ''; }
 const notaCruce = caidas.length
-  ? (porPasado
+  ? (porSinConfirmar
+    ? `el cliente todavía NO había confirmado ${caidas.map(describir).join(' ni ')}: su mensaje era una pregunta o no eligió esa hora`
+    : porPasado
     ? `la fecha de ${caidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${caidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
       + (hoy ? `; hoy es ${hoy}` : '') + ': el cliente quiere esa misma fecha del año en curso'
     : (porHorario
@@ -51,6 +60,22 @@ try { userInput = String($('Normalizar entrada').first().json.userInput || ''); 
 
 const reintentar = !borradoFallo && caidas.length > 0;
 const motivo = base.motivoCruce || 'hubo un cruce de horario';
+// Sin confirmar y el borrado FALLO: la cita existe. Decirle «¿te la agendo?»
+// seria falso; sale lo que el modelo habia escrito (la cita esta agendada, es
+// verdad) y recepcion confirma con el paciente si la quiere.
+if (porSinConfirmar && borradoFallo) {
+  let original = '';
+  try { original = String($('Procesar respuesta').first().json.respuesta || ''); } catch (e) { original = ''; }
+  return [{ json: { ...base,
+    reintentar: false,
+    notaCruce,
+    userInput,
+    respuesta: original || base.respuesta,
+    reservaVerificada: true,
+    transferir: true,
+    motivoTransferencia: `${motivo}, PERO NO SE PUDO DESHACER: la cita quedó agendada sin que el cliente la confirmara; confirmar con él si la quiere`,
+  }, pairedItem: { item: 0 } }];
+}
 return [{ json: { ...base,
   reintentar,
   notaCruce,

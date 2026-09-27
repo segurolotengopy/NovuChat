@@ -1019,3 +1019,63 @@ describe('cancelar_cita: la misma herramienta en los tres flujos', () => {
     expect(expr('bellido')).toBe(a);
   });
 });
+
+describe('Sin confirmación no hay cita, y el cruce sigue mandando (27/09/2026, #6555)', () => {
+  // El paciente preguntó «A las 17 no tiene?» y el turno AGENDÓ las 17:00.
+  // `Procesar respuesta` marca en `agendaSinConfirmar` las citas del turno que
+  // el paciente no confirmó; el candado las deshace por la MISMA vía que un
+  // cruce. Reloj congelado (AHORA, 06/09/2026): estas fechas no caducan.
+  const nueva = ev('ev-17', 'Cita Paciente — consulta', CAL_JOSE,
+    '2026-09-07T17:00:00-04:00', '2026-09-07T17:30:00-04:00', '2026-09-06T20:16:00.000Z');
+  const previa = (sinConfirmar: string[]) => ({ ...PREVIA,
+    respuesta: 'Listo, quedó agendada para el lunes a las 17:00.',
+    eventosCreados: [{ id: 'ev-17', calendario: CAL_JOSE, inicio: nueva.start.dateTime, fin: nueva.end.dateTime }],
+    agendaSinConfirmar: sinConfirmar });
+
+  it('sin confirmación y con la hora libre: se deshace y el texto es la pregunta, con el día puesto por el código', () => {
+    const [r] = comprobarTodo([nueva], AHORA, { mensajeReservaNoConfirmada: 'Texto del comercio.' }, previa(['ev-17']));
+    expect(r).toMatchObject({ citaSolapada: true, eventoABorrar: 'ev-17', calendarioDelBorrado: CAL_JOSE,
+      reservaVerificada: false, causaDeLaCaida: 'sin_confirmar', transferir: false });
+    // El 07/09/2026 fue lunes: la palabra la calcula el código, no el modelo.
+    expect(r!['respuesta']).toBe('Sí, el lunes 7 a las 17:00 hay espacio. ¿Te la agendo?');
+  });
+
+  it('confirmada: el candado sigue su camino de siempre y la cita queda verificada', () => {
+    const [r] = comprobarTodo([nueva], AHORA, { mensajeReservaNoConfirmada: '' }, previa([]));
+    expect(r!['reservaVerificada']).toBe(true);
+    expect(r!['citaSolapada']).toBeUndefined();
+  });
+
+  it('REGLA MANDATORIA: encima de la cita de OTRA persona cede por CRUCE, confirmada o no', () => {
+    const otra = ev('otra', 'Cita OTRA PERSONA — consulta', CAL_JOSE,
+      '2026-09-07T17:00:00-04:00', '2026-09-07T18:00:00-04:00', '2026-09-01T12:00:00.000Z');
+    for (const marcadas of [[], ['ev-17']]) {
+      const [r] = comprobarTodo([otra, nueva], AHORA, { mensajeReservaNoConfirmada: '' }, previa(marcadas));
+      expect(r, JSON.stringify(marcadas)).toMatchObject({ citaSolapada: true, eventoABorrar: 'ev-17', causaDeLaCaida: 'cruce' });
+      expect(String(r!['motivoCruce'])).toContain('YA OCUPADO');
+    }
+  });
+
+  it('en otra agenda NO es cruce: la misma hora con otra persona sigue siendo válida', () => {
+    const deMaria = ev('maria', 'Cita OTRA PERSONA — consulta', CAL_MARIA,
+      '2026-09-07T17:00:00-04:00', '2026-09-07T18:00:00-04:00', '2026-09-01T12:00:00.000Z');
+    const [r] = comprobarTodo([deMaria, nueva], AHORA, { mensajeReservaNoConfirmada: '' }, previa([]));
+    expect(r!['reservaVerificada']).toBe(true);
+  });
+});
+
+describe('El bloque de la agenda del turno es letra por letra el mismo en los dos nodos que lo usan', () => {
+  // Un nodo Code no puede importar a otro: `Procesar respuesta` y `Procesar
+  // reintento` llevan copias del mismo bloque (H1, 27/09/2026). Si una cambia
+  // y la otra no, el reintento ofrecería horas con otra regla.
+  const bloque = (nombre: string) => {
+    const c = String(flujo.nodes.find((n) => n.name === nombre)?.parameters.jsCode ?? '');
+    const a = c.indexOf('// ===== AGENDA DEL TURNO: BLOQUE COMPARTIDO (inicio)');
+    const b = c.indexOf('// ===== AGENDA DEL TURNO: BLOQUE COMPARTIDO (fin)');
+    return a >= 0 && b > a ? c.slice(a, b) : '';
+  };
+  it('existe en los dos, y es idéntico', () => {
+    expect(bloque('Procesar respuesta').length).toBeGreaterThan(1000);
+    expect(bloque('Procesar reintento')).toBe(bloque('Procesar respuesta'));
+  });
+});
