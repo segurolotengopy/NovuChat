@@ -264,14 +264,16 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
     };
     buscarAliases(fuente);
   }
+  // Una declaración `declare` no emite nada: en ejecución, el require es el global.
   const declaradoAca = (sim: ts.Symbol | undefined): boolean =>
-    Boolean(sim?.declarations?.some((d) => d.getSourceFile() === fuente));
+    Boolean(sim?.declarations?.some((d) => d.getSourceFile() === fuente
+      && !(ts.getCombinedModifierFlags(d as ts.Declaration) & ts.ModifierFlags.Ambient)));
   /** ¿Este identificador ES un require (el global o un alias de createRequire)? */
   const esIdRequire = (id: ts.Identifier): boolean => {
     if (!checker) return false;
     const sim = checker.getSymbolAtLocation(id);
-    if (id.text === 'require') return !declaradoAca(sim);
-    return sim !== undefined && aliases.has(sim);
+    if (sim !== undefined && aliases.has(sim)) return true; // también un alias llamado `require`
+    return id.text === 'require' && !declaradoAca(sim);
   };
   /** ¿El identificador está en un lugar que nombra algo, y no es una referencia? */
   const nombra = (id: ts.Identifier): boolean => {

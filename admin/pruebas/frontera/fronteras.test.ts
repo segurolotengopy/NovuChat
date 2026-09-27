@@ -241,6 +241,14 @@ describe('la regla de la frontera (árbol inventado)', () => {
       const r = cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' });
       expect(r.sinResolver.map((x) => x.especificador), texto).toContain(CALCULADO);
     }
+    // Un alias llamado `require` y un `require` con `declare` son el require real: se siguen.
+    for (const texto of [
+      "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);\nrequire('../central/a');",
+      "declare const require: any;\nrequire('../central/a');",
+      "declare function require(x: string): any;\nrequire('../central/a');",
+    ]) {
+      expect(cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' }).cruces.map((c) => c.hacia), texto).toEqual([`${F}central/a.ts`]);
+    }
     // El patrón reconocido no se informa: se sigue.
     const bien = cruces({
       [CORE]: "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst a = r('../central/a');\nconst b = (require)('../central/b');\nconst c = require?.('../central/c');\nif (typeof require === 'undefined') {}",
