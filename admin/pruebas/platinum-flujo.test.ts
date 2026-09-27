@@ -3690,7 +3690,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       // segundos después. La reserva quedaba sin verificar y el QR no salía:
       // la clienta leyó «a continuación te llega el QR» y no le llegó nada.
       const creado = { id: 'ev-sil', summary: 'PENDIENTE DE SEÑA · Cita Sil', organizer: { email: 'cal-uno' },
-        start: { dateTime: '2026-09-27T13:00:00-04:00' }, end: { dateTime: '2026-09-27T14:00:00-04:00' } };
+        start: { dateTime: `${DIA_J}T13:00:00-04:00` }, end: { dateTime: `${DIA_J}T14:00:00-04:00` } };
       const previa = ejecutar(cod('Procesar respuesta'),
         [{ output: 'Tu horario queda reservado.', intermediateSteps: [
           { action: { tool: 'agendar_cita' }, observation: JSON.stringify([creado]) }] }],
