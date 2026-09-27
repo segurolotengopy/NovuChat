@@ -7,7 +7,7 @@
  *   node admin/pruebas/frontera/mudanza.mjs <tanda.json>              en seco: qué haría
  *   node admin/pruebas/frontera/mudanza.mjs <tanda.json> --escribir   git mv y escribe
  *
- * `tanda.json`: [{ "de": "admin/functions/src/atencion.ts", "a": "admin/functions/src/core/conteo/atencion.ts" }, …]
+ * `tanda.json`: [{ "de": "admin/functions/src/<viejo>.ts", "a": "admin/functions/src/core/<zona>/<viejo>.ts" }, …]
  *
  * La lógica está en `mudanza.ts` (probada en `mudanza.test.ts`). Recorre las
  * raíces de código, `scripts/` de la raíz y las configuraciones de vitest y

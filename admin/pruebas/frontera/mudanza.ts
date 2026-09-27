@@ -304,10 +304,23 @@ function soloQuitaDeuda(esperado: string, real: string): boolean {
 }
 
 /**
+ * El archivo reimpreso desde su AST SIN comentarios: dos versiones que solo
+ * difieren en comentarios (o en espacios) dan lo mismo, y nada ejecutable se
+ * esconde, porque es el árbol de sintaxis, no un escáner de fichas.
+ */
+export function sinComentariosAst(nombre: string, texto: string): string {
+  const tipo = nombre.endsWith('.tsx') ? ts.ScriptKind.TSX : nombre.endsWith('.jsx') ? ts.ScriptKind.JSX
+    : /\.(m|c)?ts$/.test(nombre) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const fuente = ts.createSourceFile(nombre, texto, ts.ScriptTarget.Latest, false, tipo);
+  return ts.createPrinter({ removeComments: true }).printFile(fuente);
+}
+
+/**
  * Los problemas de un PR de tanda frente a su plan: cada archivo del diff
  * tiene que ser BYTE A BYTE el que el plan produce sobre la base. Lo único que
  * se permite a mano: QUITAR entradas de `deuda.json` (las saldadas), agregar o
- * quitar líneas de `SUITES_PURAS` en `admin/vitest.config.ts`, y los `.md`.
+ * quitar líneas de `SUITES_PURAS` en `admin/vitest.config.ts`, corregir
+ * COMENTARIOS (la ruta vieja citada en un comentario) y los `.md`.
  */
 export function verificarReproducible(
   tanda: readonly Movimiento[], plan: Plan, diff: readonly EntradaDiff[],
@@ -332,6 +345,7 @@ export function verificarReproducible(
     if (real === quiere) continue;
     if (destino.endsWith('/deuda.json') && soloQuitaDeuda(quiere, real)) continue;
     if (destino === 'admin/vitest.config.ts' && diferenciaDeLineas(quiere, real).every((l) => LINEA_SUITE.test(l.slice(2)))) continue;
+    if (EXT_CODIGO.test(destino) && sinComentariosAst(destino, quiere) === sinComentariosAst(destino, real)) continue;
     problemas.push(`${destino}: no es lo que produce la mudanza (cambia algo más que rutas)`);
   }
   for (const m of tanda) if (!vistos.has(m.a)) problemas.push(`${m.de} → ${m.a}: la tanda lo mueve y el PR no`);

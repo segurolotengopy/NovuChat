@@ -15,18 +15,18 @@ import { planDeMudanza, validarTanda, verificarReproducible, type ArbolConCarpet
 
 const F = 'admin/functions/src';
 const ARCHIVOS: Record<string, string> = {
-  [`${F}/atencion.ts`]: "import { REGION } from './region.js';\nexport const x = REGION;\n",
+  [`${F}/muestra.ts`]: "import { REGION } from './region.js';\nexport const x = REGION;\n",
   [`${F}/region.ts`]: "export const REGION = 'us-east1';\n",
-  [`${F}/index.ts`]: "export { x } from './atencion.js';\n",
-  'admin/web/src/lib/atencion.ts': "export * from '../../../functions/src/atencion';\n",
-  'admin/web/src/paginas/Estado.tsx': "import { x } from '../lib/atencion';\nexport const E = () => x;\n",
-  'admin/scripts/pase.mjs': "const FUENTES = join(aqui, '..', 'functions', 'src');\nconst a = await import(join(FUENTES, 'atencion.ts'));\nconst p = await import('../functions/lib/atencion.js');\n",
-  'admin/pruebas/umbrales.test.ts': "vi.mock('../functions/src/atencion.ts');\nimport { x } from '../functions/src/atencion.ts';\nconst t = leer('admin/functions/src/atencion.ts');\n",
-  'admin/pruebas/central/panel.test.ts': "import { p } from '../../web/src/lib/atencion';\nconst FLUJOS = join(aqui, '../../../Flujos');\n",
+  [`${F}/index.ts`]: "export { x } from './muestra.js';\n",
+  'admin/web/src/lib/muestra.ts': "export * from '../../../functions/src/muestra';\n",
+  'admin/web/src/paginas/Estado.tsx': "import { x } from '../lib/muestra';\nexport const E = () => x;\n",
+  'admin/scripts/pase.mjs': "const FUENTES = join(aqui, '..', 'functions', 'src');\nconst a = await import(join(FUENTES, 'muestra.ts'));\nconst p = await import('../functions/lib/muestra.js');\n",
+  'admin/pruebas/umbrales.test.ts': "vi.mock('../functions/src/muestra.ts');\nimport { x } from '../functions/src/muestra.ts';\nconst t = leer('admin/functions/src/muestra.ts');\n",
+  'admin/pruebas/central/panel.test.ts': "import { p } from '../../web/src/lib/muestra';\nconst FLUJOS = join(aqui, '../../../Flujos');\n",
   'admin/vitest.config.ts': "export const SUITES_PURAS = [\n  'pruebas/central/panel.test.ts',\n];\n",
-  'admin/pruebas/frontera/deuda.json': `${JSON.stringify({ cruces: [{ desde: `${F}/atencion.ts`, hacia: `${F}/region.ts`, porque: 'x' }], sinZona: [], sinResolver: {}, transversales: [] }, null, 2)}\n`,
-  'scripts/staging.sh': 'grep x admin/functions/src/atencion.ts admin/functions/src/atencion.tsx\n',
-  'admin/pruebas/fixture.test.ts': "const CASOS = { 'admin/functions/src/atencion.ts': 1 };\nconst m = { de: 'admin/functions/src/atencion.ts' };\n",
+  'admin/pruebas/frontera/deuda.json': `${JSON.stringify({ cruces: [{ desde: `${F}/muestra.ts`, hacia: `${F}/region.ts`, porque: 'x' }], sinZona: [], sinResolver: {}, transversales: [] }, null, 2)}\n`,
+  'scripts/staging.sh': 'grep x admin/functions/src/muestra.ts admin/functions/src/muestra.tsx\n',
+  'admin/pruebas/fixture.test.ts': "const CASOS = { 'admin/functions/src/muestra.ts': 1 };\nconst m = { de: 'admin/functions/src/muestra.ts' };\n",
   'Flujos/a.json': '{}',
 };
 const arbol: ArbolConCarpetas = {
@@ -35,8 +35,8 @@ const arbol: ArbolConCarpetas = {
   esCarpeta: (r) => Object.keys(ARCHIVOS).some((a) => a.startsWith(`${r}/`)),
 };
 const TANDA = [
-  { de: `${F}/atencion.ts`, a: `${F}/core/conteo/atencion.ts` },
-  { de: 'admin/web/src/lib/atencion.ts', a: 'admin/web/src/core/lib/atencion.ts' },
+  { de: `${F}/muestra.ts`, a: `${F}/core/conteo/muestra.ts` },
+  { de: 'admin/web/src/lib/muestra.ts', a: 'admin/web/src/core/lib/muestra.ts' },
   { de: 'admin/pruebas/central/panel.test.ts', a: 'admin/pruebas/plataforma/sub/panel.test.ts' },
 ];
 const plan = planDeMudanza(TANDA, Object.keys(ARCHIVOS), arbol);
@@ -44,37 +44,37 @@ const texto = (a: string) => plan.ediciones.find((e) => e.archivo === a)?.nuevoT
 
 describe('planDeMudanza', () => {
   it('reescribe los imports PROPIOS del archivo movido', () => {
-    expect(texto(`${F}/core/conteo/atencion.ts`)).toContain("from '../../region.js'");
+    expect(texto(`${F}/core/conteo/muestra.ts`)).toContain("from '../../region.js'");
   });
   it('Functions: el import con .js sigue con .js', () => {
-    expect(texto(`${F}/index.ts`)).toBe("export { x } from './core/conteo/atencion.js';\n");
+    expect(texto(`${F}/index.ts`)).toBe("export { x } from './core/conteo/muestra.js';\n");
   });
   it('la consola: sin extensión, y desde un archivo que también se mueve', () => {
-    expect(texto('admin/web/src/core/lib/atencion.ts')).toBe("export * from '../../../../functions/src/core/conteo/atencion';\n");
-    expect(texto('admin/web/src/paginas/Estado.tsx')).toContain("from '../core/lib/atencion'");
+    expect(texto('admin/web/src/core/lib/muestra.ts')).toBe("export * from '../../../../functions/src/core/conteo/muestra';\n");
+    expect(texto('admin/web/src/paginas/Estado.tsx')).toContain("from '../core/lib/muestra'");
   });
   it('scripts: join(FUENTES, …) por segmentos, y el compilado lib/*.js', () => {
     const t = texto('admin/scripts/pase.mjs')!;
-    expect(t).toContain("join(FUENTES, 'core', 'conteo', 'atencion.ts')");
-    expect(t).toContain("import('../functions/lib/core/conteo/atencion.js')");
+    expect(t).toContain("join(FUENTES, 'core', 'conteo', 'muestra.ts')");
+    expect(t).toContain("import('../functions/lib/core/conteo/muestra.js')");
     expect(t).toContain("join(aqui, '..', 'functions', 'src')"); // la base no se toca: el script no se mueve
   });
   it('pruebas: vi.mock, el import y la ruta desde la raíz', () => {
     const t = texto('admin/pruebas/umbrales.test.ts')!;
-    expect(t).toContain("vi.mock('../functions/src/core/conteo/atencion.ts')");
-    expect(t).toContain("from '../functions/src/core/conteo/atencion.ts'");
-    expect(t).toContain("leer('admin/functions/src/core/conteo/atencion.ts')");
+    expect(t).toContain("vi.mock('../functions/src/core/conteo/muestra.ts')");
+    expect(t).toContain("from '../functions/src/core/conteo/muestra.ts'");
+    expect(t).toContain("leer('admin/functions/src/core/conteo/muestra.ts')");
   });
   it('una prueba movida más hondo: sus imports y su join(aqui, …) a una carpeta', () => {
     const t = texto('admin/pruebas/plataforma/sub/panel.test.ts')!;
-    expect(t).toContain("from '../../../web/src/core/lib/atencion'");
+    expect(t).toContain("from '../../../web/src/core/lib/muestra'");
     expect(t).toContain("join(aqui, '..', '..', '..', '..', 'Flujos')");
   });
   it('SUITES_PURAS (ruta desde admin/), deuda.json y un .sh', () => {
     expect(texto('admin/vitest.config.ts')).toContain("'pruebas/plataforma/sub/panel.test.ts'");
-    expect(JSON.parse(texto('admin/pruebas/frontera/deuda.json')!).cruces[0].desde).toBe(`${F}/core/conteo/atencion.ts`);
+    expect(JSON.parse(texto('admin/pruebas/frontera/deuda.json')!).cruces[0].desde).toBe(`${F}/core/conteo/muestra.ts`);
     // Con límites: el .tsx que empieza igual no se toca.
-    expect(texto('scripts/staging.sh')).toBe('grep x admin/functions/src/core/conteo/atencion.ts admin/functions/src/atencion.tsx\n');
+    expect(texto('scripts/staging.sh')).toBe('grep x admin/functions/src/core/conteo/muestra.ts admin/functions/src/muestra.tsx\n');
   });
   it('no toca lo que no nombra un archivo movido', () => {
     expect(plan.ediciones.map((e) => e.archivo)).not.toContain(`${F}/region.ts`);
@@ -92,21 +92,21 @@ describe('validarTanda', () => {
     esArchivoVersionado: (r) => versionados.includes(r),
     pasaPorEnlace: (r) => enlaces.some((e) => r.startsWith(e)),
   });
-  const ok = consulta([`${F}/atencion.ts`, `${F}/region.ts`]);
+  const ok = consulta([`${F}/muestra.ts`, `${F}/region.ts`]);
   it('una tanda correcta no tiene errores', () => {
-    expect(validarTanda([{ de: `${F}/atencion.ts`, a: `${F}/core/conteo/atencion.ts` }], ok)).toEqual([]);
+    expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/core/conteo/muestra.ts` }], ok)).toEqual([]);
   });
   it('rechaza salir del repositorio, rutas absolutas o no normales, y salir de las raíces', () => {
     for (const a of ['../../tmp/x.ts', '/tmp/x.ts', `${F}/core/../x.ts`, `${F}//x.ts`, 'admin/firestore.ts', '.github/x.ts']) {
-      expect(validarTanda([{ de: `${F}/atencion.ts`, a }], ok).length, a).toBeGreaterThan(0);
+      expect(validarTanda([{ de: `${F}/muestra.ts`, a }], ok).length, a).toBeGreaterThan(0);
     }
   });
   it('rechaza cambiar la extensión, repetir, mover lo que no está versionado o pisar lo que existe', () => {
-    expect(validarTanda([{ de: `${F}/atencion.ts`, a: `${F}/core/atencion.js` }], ok)).toHaveLength(1);
-    expect(validarTanda([{ de: `${F}/atencion.ts`, a: `${F}/core/a.ts` }, { de: `${F}/atencion.ts`, a: `${F}/core/b.ts` }], ok).length).toBeGreaterThan(0);
+    expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/core/muestra.js` }], ok)).toHaveLength(1);
+    expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/core/a.ts` }, { de: `${F}/muestra.ts`, a: `${F}/core/b.ts` }], ok).length).toBeGreaterThan(0);
     expect(validarTanda([{ de: `${F}/no-esta.ts`, a: `${F}/core/no-esta.ts` }], ok)).toHaveLength(1);
-    expect(validarTanda([{ de: `${F}/atencion.ts`, a: `${F}/region.ts` }], ok)).toHaveLength(1);
-    expect(validarTanda([{ de: `${F}/atencion.ts`, a: `${F}/enlace/atencion.ts` }], consulta([`${F}/atencion.ts`], [], [`${F}/enlace`]))).toHaveLength(1);
+    expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/region.ts` }], ok)).toHaveLength(1);
+    expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/enlace/muestra.ts` }], consulta([`${F}/muestra.ts`], [], [`${F}/enlace`]))).toHaveLength(1);
     expect(validarTanda([], ok)).toHaveLength(1);
     expect(validarTanda([{ de: 1, a: 2 }], ok)).toHaveLength(1);
   });
@@ -131,6 +131,15 @@ describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
     const r = verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ [`${F}/index.ts`]: `${idx}export const R = 'europe-west1';\n` }));
     expect(r).toEqual([`${F}/index.ts: no es lo que produce la mudanza (cambia algo más que rutas)`]);
   });
+  it('corregir un comentario a mano pasa; una regex o una plantilla con lógica al lado, no', () => {
+    const idx = texto(`${F}/index.ts`)!;
+    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ [`${F}/index.ts`]: `// ver core/conteo/muestra.ts\n${idx}` }))).toEqual([]);
+    const base = "const r = /['\"]/; permitir(false);\nconst u = `${b}/x?r=https://ok.com`; permitir(false);\n";
+    const truco = "const r = /['\"]/; permitir(true);\nconst u = `${b}/x?r=https://ok.com`; permitir(true);\n";
+    expect(verificarReproducible(TANDA, plan, [...diffPerfecto, { estado: 'M', viejo: `${F}/region.ts`, nuevo: `${F}/region.ts` }],
+      (r) => (r === `${F}/region.ts` ? base : leerBase(r)), head({ [`${F}/region.ts`]: truco }))).toHaveLength(1);
+  });
+
   it('un archivo que la tanda no toca, modificado, no pasa', () => {
     const diff = [...diffPerfecto, { estado: 'M', viejo: `${F}/region.ts`, nuevo: `${F}/region.ts` }];
     expect(verificarReproducible(TANDA, plan, diff, leerBase, head({ [`${F}/region.ts`]: "export const REGION = 'x';\n" }))).toHaveLength(1);
