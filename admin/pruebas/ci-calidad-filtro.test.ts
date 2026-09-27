@@ -80,7 +80,10 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
   it('toda ruta de fuera de admin/ que una suite lee hace correr calidad (derivado, no a mano)', () => {
     // Cada `join(aqui, …)` con argumentos literales de cada archivo de
     // admin/pruebas, resuelto desde SU carpeta: lo que cae fuera de admin/ es
-    // una lectura que el filtro tiene que ver.
+    // una lectura que el filtro tiene que ver. NO ve `join(RAIZ, …)`, rutas
+    // en plantillas, `new URL(…, import.meta.url)` ni lo que leen los scripts
+    // que una suite ejecuta: el 27/09 todas esas lecturas caían en Flujos/,
+    // ya cubierto. Una suite que lea otra carpeta así la agrega a mano.
     const listar = (d: string): string[] => readdirSync(d).flatMap((n) => {
       const r = join(d, n);
       return statSync(r).isDirectory() ? listar(r) : r.endsWith('.ts') ? [r] : [];
@@ -110,7 +113,8 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
 
   it('el diff ve los renombres por su origen y no pasa por una tubería con grep -q', () => {
     const paso = flujoCi.slice(flujoCi.indexOf('- name: Detectar cambios en el componente'), flujoCi.indexOf('- name: Habilitar corepack'));
-    expect(paso).toContain('git -c core.quotePath=false diff --no-renames --name-only');
+    expect(paso).toContain('git -c core.quotePath=false diff --no-renames --name-only -z');
+    expect(paso).toContain("| tr '\\0' '\\n')");
     // Con pipefail, `echo | grep -q` da 141 en un diff grande y el if toma la rama falsa.
     expect(paso).not.toMatch(/\|\s*grep -q/);
   });

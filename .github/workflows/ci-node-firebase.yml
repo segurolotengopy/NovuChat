@@ -220,8 +220,11 @@ jobs:
           # `git mv Flujos/x.json Analisis/` salteaba calidad.
           # core.quotePath=false: una ruta con tildes sale tal cual, no
           # entre comillas (con comillas no coincide con `^Flujos/`).
+          # -z con tr: quotePath=false no alcanza para comillas, barras o
+          # tabuladores en el nombre (git los sigue entrecomillando); con -z
+          # no entrecomilla nada. tr consume toda la entrada (sin SIGPIPE).
           # Revision de seguridad del PR #232.
-          archivos=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$cabeza")
+          archivos=$(git -c core.quotePath=false diff --no-renames --name-only -z "$base" "$cabeza" | tr '\0' '\n')
           echo "Archivos cambiados:"; echo "$archivos" | sed 's/^/  /'
           # Cambiar el propio pipeline tambien obliga a ejercitarlo entero.
           # `grep -q <<<` y no una tubería desde echo: con pipefail, grep -q corta en
