@@ -132,7 +132,7 @@ worktree descartable): 5 movidos y 15 reescritos, 3 comentarios corregidos a
 mano, 3 entradas de deuda saldadas y 3 suites a `SUITES_PURAS` (las dos de F1b
 movidas y `central/contrato-f1b-puras`); `solo-rutas` pasa, y con un
 `/*#__PURE__*/` plantado falla; `functions:build` (sin
-`lib/atencion.js` viejo) y `web:build` en verde; 2.485 pruebas puras en verde en
+`lib/atencion.js` viejo) y `web:build` en verde; 2.491 pruebas puras en verde en
 50 archivos, instantánea de despliegue idéntica, `registro.test.ts` 53 en
 verde, 16 cruces y los 8 flujos idénticos.
 
