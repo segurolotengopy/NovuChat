@@ -231,52 +231,82 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
   };
   const literal = (n: ts.Node | undefined): string | null =>
     n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
-  // `const r = createRequire(import.meta.url)`: `r(…)` es un require.
-  const requires = new Set(['require']);
-  const buscarRequires = (n: ts.Node): void => {
-    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.isCallExpression(n.initializer)
-      && ts.isIdentifier(n.initializer.expression) && n.initializer.expression.text === 'createRequire') {
-      requires.add(n.name.text);
-    }
-    ts.forEachChild(n, buscarRequires);
+  // LOS REQUIRE, POR SÍMBOLO (revisión de seguridad del #236). Solo si el
+  // texto los nombra: armar un programa por archivo cuesta.
+  //   - `require` es el global: una referencia cuyo símbolo NO se declara en
+  //     este archivo (un parámetro `require` es otra cosa).
+  //   - Un alias es `const r = createRequire(…)`: cuenta toda referencia cuyo
+  //     símbolo es el de esa declaración (un parámetro `r` no; un `r` de
+  //     relleno tampoco apaga la detección).
+  // Una referencia se SIGUE si es una llamada directa (`r('…')`, también entre
+  // paréntesis u opcional) o `r.resolve('…')`; cualquier otra posición de
+  // expresión (`const q = r`, `r.call`, `c ? r : x`, `(0, r)`) se informa como
+  // CALCULADO. No cuentan los lugares que NOMBRAN algo (declaraciones,
+  // propiedades, atributos JSX, tipos) ni `typeof`.
+  const texto = fuente.text;
+  const hayRequires = /\brequire\b|\bcreateRequire\b/.test(texto);
+  let checker: ts.TypeChecker | null = null;
+  const aliases = new Set<ts.Symbol>();
+  if (hayRequires) {
+    const opciones: ts.CompilerOptions = { noResolve: true, noLib: true, allowJs: true, jsx: ts.JsxEmit.Preserve, types: [] };
+    const anfitrion = ts.createCompilerHost(opciones);
+    anfitrion.getSourceFile = (nombre) => (nombre === archivo ? fuente : undefined);
+    anfitrion.fileExists = (nombre) => nombre === archivo;
+    anfitrion.readFile = (nombre) => (nombre === archivo ? texto : undefined);
+    checker = ts.createProgram([archivo], opciones, anfitrion).getTypeChecker();
+    const buscarAliases = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.isCallExpression(n.initializer)
+        && ts.isIdentifier(n.initializer.expression) && n.initializer.expression.text === 'createRequire') {
+        const sim = checker!.getSymbolAtLocation(n.name);
+        if (sim) aliases.add(sim);
+      }
+      ts.forEachChild(n, buscarAliases);
+    };
+    buscarAliases(fuente);
+  }
+  const declaradoAca = (sim: ts.Symbol | undefined): boolean =>
+    Boolean(sim?.declarations?.some((d) => d.getSourceFile() === fuente));
+  /** ¿Este identificador ES un require (el global o un alias de createRequire)? */
+  const esIdRequire = (id: ts.Identifier): boolean => {
+    if (!checker) return false;
+    const sim = checker.getSymbolAtLocation(id);
+    if (id.text === 'require') return !declaradoAca(sim);
+    return sim !== undefined && aliases.has(sim);
   };
-  buscarRequires(fuente);
-  /**
-   * Un `require` (o un alias de createRequire) pasado como VALOR: inicializa
-   * una variable, es argumento de una llamada, lado derecho de una
-   * asignación, `return`, elemento de un arreglo, propiedad o `export`. Solo
-   * esas posiciones: un parámetro, un método, una propiedad o un atributo JSX
-   * con el mismo nombre no son un require. Y un alias (no `require`) cuyo
-   * nombre se declara también en otro lado (un parámetro `r`) no se cuenta:
-   * sin resolver ámbitos, sería un falso positivo sin salida (revisión del #236).
-   */
-  const nombresDeclarados = new Map<string, number>();
-  const contarDeclaraciones = (n: ts.Node): void => {
-    if ((ts.isParameter(n) || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n)) && n.name && ts.isIdentifier(n.name)) {
-      nombresDeclarados.set(n.name.text, (nombresDeclarados.get(n.name.text) ?? 0) + 1);
-    }
-    ts.forEachChild(n, contarDeclaraciones);
-  };
-  contarDeclaraciones(fuente);
-  const usadoComoValor = (id: ts.Identifier): boolean => {
-    if (id.text !== 'require' && (nombresDeclarados.get(id.text) ?? 0) > 1) return false;
+  /** ¿El identificador está en un lugar que nombra algo, y no es una referencia? */
+  const nombra = (id: ts.Identifier): boolean => {
     const p = id.parent;
-    return (ts.isVariableDeclaration(p) && p.initializer === id)
-      || (ts.isCallExpression(p) && p.arguments.some((a) => a === id))
-      || (ts.isBinaryExpression(p) && p.right === id && p.operatorToken.kind === ts.SyntaxKind.EqualsToken)
-      || ts.isReturnStatement(p)
-      || ts.isArrayLiteralExpression(p)
-      || ts.isShorthandPropertyAssignment(p)
-      || (ts.isPropertyAssignment(p) && p.initializer === id)
-      || (ts.isExportSpecifier(p) && !ts.isStringLiteral(p.name) && (p.propertyName ?? p.name) === id)
-      || (ts.isArrowFunction(p) && p.body === id);
+    if ((ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isFunctionDeclaration(p) || ts.isMethodDeclaration(p)
+      || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodSignature(p) || ts.isPropertyAssignment(p)
+      || ts.isBindingElement(p) || ts.isEnumMember(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p)
+      || ts.isClassDeclaration(p) || ts.isInterfaceDeclaration(p) || ts.isTypeAliasDeclaration(p)) && p.name === id) return true;
+    if (ts.isPropertyAccessExpression(p) && p.name === id) return true;
+    if (ts.isJsxAttribute(p) || ts.isQualifiedName(p) || ts.isTypeReferenceNode(p)) return true;
+    if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)) return true;
+    for (let a: ts.Node | undefined = p; a; a = a.parent) if (ts.isTypeQueryNode(a)) return true;
+    return false;
   };
-  /** `require(…)`, `r(…)` de un createRequire, `require.resolve(…)` y `module.require(…)`. */
-  const esRequire = (e: ts.Expression): boolean =>
-    (ts.isIdentifier(e) && requires.has(e.text))
-    || (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression)
-      && ((requires.has(e.expression.text) && e.name.text === 'resolve')
-        || (e.expression.text === 'module' && e.name.text === 'require')));
+  /** Una referencia a un require que el lector sigue: la llamada directa y `.resolve(…)`. */
+  const seSigue = (id: ts.Identifier): boolean => {
+    let arriba: ts.Node = id;
+    while (ts.isParenthesizedExpression(arriba.parent)) arriba = arriba.parent;
+    const p = arriba.parent;
+    if (ts.isCallExpression(p) && p.expression === arriba) return true;
+    if (ts.isPropertyAccessExpression(p) && p.expression === arriba && p.name.text === 'resolve'
+      && ts.isCallExpression(p.parent) && p.parent.expression === p) return true;
+    if (ts.isTypeOfExpression(p)) return true;
+    return false;
+  };
+  /** `require(…)`, `r(…)` de un createRequire (con paréntesis), `require.resolve(…)` y `module.require(…)`. */
+  const esRequire = (e: ts.Expression): boolean => {
+    let x: ts.Expression = e;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x)
+      || ts.isTypeAssertionExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+    if (ts.isIdentifier(x)) return esIdRequire(x);
+    return ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression)
+      && ((x.name.text === 'resolve' && esIdRequire(x.expression))
+        || (x.expression.text === 'module' && x.name.text === 'require'));
+  };
   const visitar = (n: ts.Node): void => {
     // MODO CONSERVADOR con los require que no se pueden seguir (revisión de
     // seguridad del #236): `import * as m from 'node:module'`, `createRequire`
@@ -294,7 +324,7 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
       && !(ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name))) {
       anotar(CALCULADO, false, false);
     }
-    if (ts.isIdentifier(n) && requires.has(n.text) && usadoComoValor(n)) anotar(CALCULADO, false, false);
+    if (ts.isIdentifier(n) && !nombra(n) && esIdRequire(n) && !seSigue(n)) anotar(CALCULADO, false, false);
     if (ts.isImportDeclaration(n)) {
       anotar(literal(n.moduleSpecifier) ?? CALCULADO, Boolean(n.importClause?.isTypeOnly), false);
     } else if (ts.isExportDeclaration(n) && n.moduleSpecifier) {

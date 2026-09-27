@@ -383,28 +383,18 @@ jobs:
             echo "La negacion final de storage.rules esta presente."
           fi
 
-      - name: Habilitar corepack
-        if: needs.preparar.outputs.pm != 'npm'
-        run: corepack enable
-
-      - name: Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: ${{ needs.preparar.outputs.pm }}
-          cache-dependency-path: ${{ needs.preparar.outputs.lockfile }}
-
-      - name: Instalar dependencias
-        run: ${{ needs.preparar.outputs.instalar }}
-
       # ---------------------------------------------------------------------
-      # CONTROL 3 — La deuda de la frontera de zonas no crece en un PR.
+      # CONTROL 2b — La deuda de la frontera de zonas no crece en un PR.
       # fronteras.test.ts exige que la deuda coincida con el codigo, pero un
       # PR que agrega un cruce y lo anota en la lista la deja en verde. Aca se
       # compara cada lista de admin/pruebas/frontera/deuda.json con la de la
       # base del PR, por cantidad (mover un archivo cambia la ruta, no cuantas
       # hay). Revision de seguridad del PR #231. El sha de la base llega por
-      # variable de entorno, nunca interpolado en el script.
+      # variable de entorno, nunca interpolado en el script. Va ANTES de
+      # habilitar corepack e instalar dependencias: `pnpm install` corre los
+      # scripts del propio proyecto (un postinstall del PR podria anteponer un
+      # `node` o un `git` falsos en GITHUB_PATH). Solo usa git y el node del
+      # runner (revision de seguridad del #236).
       # ---------------------------------------------------------------------
       - name: La deuda de la frontera no crece (PR)
         if: github.event_name == 'pull_request'
@@ -443,6 +433,20 @@ jobs:
           node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt" \
             | tee "$RUNNER_TEMP/deuda.log"
           grep -q '^La deuda no crece' "$RUNNER_TEMP/deuda.log"
+
+      - name: Habilitar corepack
+        if: needs.preparar.outputs.pm != 'npm'
+        run: corepack enable
+
+      - name: Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: ${{ needs.preparar.outputs.pm }}
+          cache-dependency-path: ${{ needs.preparar.outputs.lockfile }}
+
+      - name: Instalar dependencias
+        run: ${{ needs.preparar.outputs.instalar }}
 
       - name: Lint
         # En un workspace pnpm el script `lint` vive en los paquetes (web/),

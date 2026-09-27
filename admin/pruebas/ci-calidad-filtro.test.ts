@@ -146,7 +146,10 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
     expect(c).not.toContain('cp pruebas/frontera/deuda-solo-baja.mjs');
     // Se exige la línea final de éxito: salir en 0 sin comparar no alcanza.
     expect(c).toContain("grep -q '^La deuda no crece' \"$RUNNER_TEMP/deuda.log\"");
-    const paso = c.slice(c.indexOf('- name: La deuda de la frontera'), c.indexOf('- name: Lint'));
+    // Antes de instalar: ningún script del PR (postinstall) corre antes que el control.
+    expect(c.indexOf('- name: La deuda de la frontera no crece (PR)')).toBeLessThan(c.indexOf('- name: Habilitar corepack'));
+    expect(c.indexOf('- name: La deuda de la frontera no crece (PR)')).toBeLessThan(c.indexOf('- name: Instalar dependencias'));
+    const paso = c.slice(c.indexOf('- name: La deuda de la frontera'), c.indexOf('- name: Habilitar corepack'));
     expect(paso).not.toContain('${{ github.event.pull_request.base.sha }}"');
     expect(paso.split('run: |')[1]).not.toContain('${{');
   });

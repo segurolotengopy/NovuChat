@@ -225,6 +225,17 @@ describe('la regla de la frontera (árbol inventado)', () => {
       "import { createRequire } from 'node:module';\nlet r;\nr = createRequire(import.meta.url);\nr('../central/a');",
       "const q = require;\nq('../central/a');",
       "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('../central/a');",
+      // Sondas de la tercera vuelta de seguridad del #236.
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nfunction f(r) { return r; }\nconst q = r;\nq('../central/a');",
+      "const q = (require);\nq('../central/a');",
+      "const q = require as any;\nq('../central/a');",
+      "const q = c ? require : null;",
+      "const q = require || null;",
+      "require.call(null, '../central/a');",
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nr.apply(null, ['../central/a']);",
+      "const q = require.bind(null);",
+      "(0, require)('../central/a');",
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nr.call(null, '../central/a');",
     ];
     for (const texto of casos) {
       const r = cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' });
@@ -232,11 +243,12 @@ describe('la regla de la frontera (árbol inventado)', () => {
     }
     // El patrón reconocido no se informa: se sigue.
     const bien = cruces({
-      [CORE]: "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst a = r('../central/a');\nif (typeof require === 'undefined') {}",
+      [CORE]: "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst a = r('../central/a');\nconst b = (require)('../central/b');\nconst c = require?.('../central/c');\nif (typeof require === 'undefined') {}",
+      [`${F}central/b.ts`]: '', [`${F}central/c.ts`]: '',
       [`${F}central/a.ts`]: '',
     });
     expect(bien.sinResolver).toEqual([]);
-    expect(bien.cruces.map((c) => c.hacia)).toEqual([`${F}central/a.ts`]);
+    expect(bien.cruces.map((c) => c.hacia)).toEqual([`${F}central/a.ts`, `${F}central/b.ts`, `${F}central/c.ts`]);
   });
 
   it('un nombre igual a require o a su alias que no es un require no se informa', () => {
@@ -248,6 +260,8 @@ describe('la regla de la frontera (árbol inventado)', () => {
       'const t = <input require />;',
       "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\ntype T = typeof r;",
       'function f(require: boolean) { return 1; }',
+      "function g(require) { return require('../central/a'); }",
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nfunction h(r) { return r('../central/a'); }",
     ];
     for (const texto of falsos) {
       const archivo = texto.includes('<input') ? `${F}core/a.tsx` : CORE;
