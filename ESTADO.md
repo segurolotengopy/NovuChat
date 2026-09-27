@@ -28,7 +28,7 @@ anterior, en `bitacora/2026-09.md`.
 
 ## Staging
 
-`novuchatstaging`, en verde desde el 26/09 (run 36280270495): 55 Functions,
+`novuchatstaging`, en verde desde el 26/09 (el run de la fusión del #227): 55 Functions,
 47 invocables como en producción, CPU fraccionaria e instancia mínima 0 (cuota
 de 20 vCPU; aumento rechazado por falta de historial), humo 26/26 y ZAP. Cada
 push a `main` que toque `admin/` despliega ahí.
