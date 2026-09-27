@@ -274,8 +274,24 @@ usuario, con el asistente «Kenji».
 3. **Captación** (guion de Silvana, 15/09, con las reglas por código del
    27/09). Registra empresa, contacto, rubro, personalización y consulta
    (`[LEAD]…[/LEAD]`); **ya no pide el NIT**. El rubro:
-   - **dicho por el cliente** —en el mensaje en que se le pregunta, o con todas
-     las letras en cualquier mensaje— queda registrado por código;
+   - **dicho por el cliente** —en el mensaje en que se le pregunta, o en
+     cualquier mensaje con esa palabra, con otra forma de ella («pediatra» →
+     «pediatría», raíz común de 5 letras sin tildes) o nombrando el oficio
+     («dentista» → «odontología»)— queda registrado por código (#6627). Las
+     palabras del nombre de la empresa y del contacto no cuentan: «Pastelería
+     La Colmena» no dice que sea una pastelería. La raíz común vale solo en la
+     respuesta a la pregunta por el rubro, y una mención no es el negocio: «no
+     vendo ropa», «mi mamá es médica»;
+   - **se guarda limpio** (#6648): sin «es una», «somos», «tengo una», «me
+     dedico a», «trabajo en» ni la puntuación final; «vendo ropa» queda «venta
+     de ropa». El área de la lista va en su campo aparte;
+   - **nunca es la empresa** (#6635): el flujo recuerda en orden qué datos
+     pidió cada mensaje, y la respuesta va al **primero**. Si el mensaje pedía
+     el nombre del consultorio, la respuesta es la empresa (se registra por
+     código si es solo un nombre), no el rubro; un rubro igual a la empresa se
+     descarta. Una evasiva («después te digo», «nada», «jaja», un emoji), una
+     orden al asistente o la respuesta de quien pidió soporte no se registran
+     como empresa;
    - **deducido por el modelo** (del nombre de la empresa) **no se registra
      hasta que el cliente lo confirma**: el mensaje tiene que preguntarlo
      («¿Es así?»), y una deducción afirmada que termina en punto, o con «si me
@@ -285,6 +301,14 @@ usuario, con el asistente «Kenji».
      rubro «a medida» y con la salida «si lo tuyo no está en esa lista,
      cuéntamelo igual», terminando en pregunta (marca `[RUBROS]`). Si el modelo
      escribe él la lista numerada o con viñetas, se reescribe igual (#4160).
+   - **Un mensaje pide un dato** (#6627, #6640). Si el mensaje pide la empresa
+     o el nombre, las áreas no van. Si ya pregunta el rubro, las áreas van
+     delante de **esa** pregunta y sin una propia; nunca dos preguntas por el
+     rubro, tampoco al confirmar una deducción. La red que agrega las áreas
+     cuando el modelo no puso la marca solo actúa si el mensaje no pregunta
+     nada, o si pregunta el rubro.
+   - **Ningún emoji queda solo en su línea** (#6619): una línea de solo emojis
+     se une al párrafo anterior, y «¿…? 🏢» cuenta como terminar en pregunta.
 
    **Los planes solo salen con la ficha**: el bloque de planes y cargos únicos
    (marca `[PLANES]`, precios exactos de la consola, botón «Hablar con un
@@ -325,6 +349,12 @@ lee lo que contestó Meta y
 
 No agrega ni quita mensajes a Meta: no hace ninguna llamada.
 
+**Correcciones de la prueba real del 27/09/2026** (rubro con otra palabra, un
+dato por mensaje, la empresa no es el rubro, rubro limpio, emojis sueltos y
+planes con archivo): **0 mensajes** agregados o quitados; todo se resuelve
+dentro de la respuesta del turno. `onboarding-flujo.test.ts`, «prueba real del
+27/09: seis defectos», reproduce cada ejecución con su texto real.
+
 **Mensajes por conversación desde el 27/09/2026:** el camino típico de un
 prospecto pasa de 4-5 mensajes a 3-4 (**−1**: el primer mensaje ya pide los
 datos, sin la bienvenida con botones); quien ya es cliente, de 2 a 1 (**−1**).
@@ -342,7 +372,10 @@ nueva con el siguiente «LEAD-nnnn», la fecha de La Paz y el rubro en F
 («Rubro»), o —si el teléfono ya está— solo nombre, empresa, rubro, calificación
 y resumen, y solo si el dato nuevo no está vacío, sin tocar nunca lo que edita
 el equipo. El rubro que se escribe es siempre el registrado por código: uno
-deducido y sin confirmar no llega a la planilla. Quien dice que ya es cliente
+deducido y sin confirmar no llega a la planilla. Un rubro o una empresa que
+registra `Estado de la conversación` también cuentan como cambio de la ficha
+(`fichaPorCodigo`): antes del 27/09 el rubro dicho en respuesta a la pregunta
+llegaba a la planilla recién con el cambio siguiente. Quien dice que ya es cliente
 no entra como prospecto nuevo. Las columnas, la tabla de calificación y los
 valores de las listas desplegables están en un solo nodo, `Decidir fila de la
 planilla`. Un fallo no corta la respuesta al cliente: queda como
@@ -376,7 +409,7 @@ lo que dice la consola manda sobre el corpus del sitio y sobre el respaldo de
 |---|---|---|
 | Nombre del asistente | `config/negocio.nombreAsistente` (común) | Se presenta con él; si le preguntan, dice que es una IA |
 | Rubros | `config/onboarding.rubros` | Reconoce el rubro del prospecto, le ofrece la solución de ese rubro y el flujo sugerido |
-| Planes | `config/onboarding.planes` | **Hasta 5, en texto** dentro de la respuesta. **Desde 6, el archivo** de `archivoPlanes` (PDF o imagen), que es obligatorio en ese caso |
+| Planes | `config/onboarding.planes` | **Con un `archivoPlanes` válido (PDF o imagen), siempre el archivo**, sean cuantos sean los planes (Andres, 27/09/2026): un interactivo con el archivo de encabezado, un cuerpo corto sin la lista ni precios en texto y el botón; si Meta lo rechaza, el texto de respaldo lleva el enlace. **Sin archivo, en texto** dentro de la respuesta. El servidor sigue exigiendo el archivo desde 6 planes (`planesEnArchivo`), pero el flujo ya no mira esa marca: mira si hay archivo |
 | Cargos únicos | `config/onboarding.cargosUnicos` | Instalación y demás; `desde: true` se dice «desde» |
 | Aclaraciones | `config/onboarding.aclaraciones` | **Solo si le preguntan** (qué es una conversación, la bolsa, el prepago, la moneda) |
 | Horario de atención | `config/negocio` | **Opcional.** Si está, lo usa para decir cuándo contesta una persona; si no, no promete un horario |
@@ -390,10 +423,24 @@ primer bloque (`topeAviso`) y en un `[CIERRE]` al que le faltan datos. En el
 cierre completo no va, porque la persona ya fue avisada y el botón solo
 invitaría a un mensaje pagado que repite el traspaso.
 
-**Mensajes:** la configuración no agrega mensajes. El archivo de planes tiene
-que salir **en lugar** del texto de ese turno (documento o imagen con el texto
-en el pie), nunca además: si saliera aparte, sumaría 1 mensaje por cada
-conversación que pregunte por planes.
+**Mensajes:** la configuración no agrega mensajes. El archivo de planes sale
+**en el mismo mensaje**, como encabezado del interactivo, nunca aparte: si
+saliera aparte, sumaría 1 mensaje por cada conversación que pregunte por
+planes. En el cierre ya avisado, que va sin botón, no hay interactivo que lo
+lleve: el texto lleva el enlace.
+
+**El archivo de planes solo vale desde el almacenamiento de la consola**
+(revisión de seguridad del PR #238): `https`, host `firebasestorage.googleapis.com`
+o `storage.googleapis.com` y sin usuario en la dirección. Cualquier otra
+dirección se ignora y los planes van en texto.
+
+**Al cargar o cambiar el archivo, pulsar «Comprobar archivo»** en la pestaña
+«Captación». Meta descarga la imagen o el PDF por su enlace cuando manda el
+mensaje; si no puede, **el envío no falla en ese momento**: el error llega
+después como un estado del mensaje, la ejecución figura correcta y el prospecto
+no recibe nada, ni los planes ni el botón. «Comprobar archivo» prueba el enlace
+con los límites de WhatsApp (imagen JPEG o PNG hasta 5 MB, documento hasta
+100 MB) antes de que lo pruebe un prospecto.
 
 **Carga inicial:** desde la pestaña «Captación», o con
 `node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
