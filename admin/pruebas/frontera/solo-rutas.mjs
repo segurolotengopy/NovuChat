@@ -30,7 +30,7 @@ process.emitWarning = (aviso, ...resto) => {
   return emitirOriginal.call(process, aviso, ...resto);
 };
 const { RAIZ } = await import(pathToFileURL(join(AQUI, 'frontera.ts')).href);
-const { planDeMudanza, archivosAMirar, verificarReproducible, validarTanda, leerTanda } = await import(pathToFileURL(join(AQUI, 'mudanza.ts')).href);
+const { planDeMudanza, archivosAMirar, verificarReproducible, validarTanda, leerTanda, RUTA_DE_TANDA } = await import(pathToFileURL(join(AQUI, 'mudanza.ts')).href);
 process.emitWarning = emitirOriginal;
 
 const [rutaTanda, base = 'origin/main'] = process.argv.slice(2);
@@ -38,7 +38,11 @@ if (!rutaTanda) { console.error('Uso: solo-rutas.mjs <docs/arquitectura/tandas/t
 const git = (...a) => execFileSync('git', ['-C', RAIZ, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 if (git('status', '--porcelain').trim()) { console.error('✗ El worktree tiene cambios sin commit: solo-rutas compara lo que tiene commit.'); process.exit(1); }
 
-const tanda = leerTanda(JSON.parse(git('show', `HEAD:${rutaTanda}`)));
+// Solo una tanda de docs/arquitectura/tandas/: cualquier otra ruta (un
+// workflow escrito en JSON) se rechaza antes de leerla (revisión del #241).
+if (!RUTA_DE_TANDA.test(rutaTanda)) { console.error(`✗ ${rutaTanda}: una tanda vive en docs/arquitectura/tandas/tN.json`); process.exit(1); }
+let tanda;
+try { tanda = leerTanda(JSON.parse(git('show', `HEAD:${rutaTanda}`))); } catch (e) { console.error(`✗ ${e.message}`); process.exit(1); }
 const mb = git('merge-base', base, 'HEAD').trim();
 // ls-tree con modo: 120000 es un enlace simbólico, 100644/100755 un archivo común.
 const filas = git('ls-tree', '-r', mb).trim().split('\n').map((l) => { const [meta, ruta] = l.split('\t'); return { modo: meta.split(' ')[0], ruta }; });

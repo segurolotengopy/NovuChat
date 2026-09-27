@@ -51,6 +51,19 @@ export interface Plan {
   readonly avisos: string[];
 }
 
+/** Una ruta con segmentos de [A-Za-z0-9._-] que no empiezan con punto ni guion. */
+export const RUTA_SEGURA = /^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/;
+
+/** Dónde vive una tanda versionada: la única ruta que `solo-rutas` acepta como tanda. */
+export const RUTA_DE_TANDA = /^docs\/arquitectura\/tandas\/t\d+[a-z]?\.json$/;
+
+/**
+ * Los archivos de la herramienta: un PR de tanda no los toca, porque el
+ * verificador que corre es el del PR (revisión del #241, tercera vuelta).
+ */
+export const HERRAMIENTA = ['admin/pruebas/frontera/mudanza.ts', 'admin/pruebas/frontera/solo-rutas.mjs',
+  'admin/pruebas/frontera/mudanza.mjs', 'admin/pruebas/frontera/frontera.ts'] as const;
+
 /** Las raíces donde F2 mueve archivos. */
 export const RAICES_DE_MUDANZA = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;
 
@@ -78,7 +91,11 @@ export function validarTanda(tanda: unknown, consulta: Consulta): string[] {
     const a = (m as Movimiento)?.a;
     if (typeof de !== 'string' || typeof a !== 'string') { errores.push(`#${i}: de y a tienen que ser texto`); continue; }
     for (const r of [de, a]) {
-      if (r.startsWith('/') || posix.normalize(r) !== r || r.split('/').includes('..')) errores.push(`#${i}: ${r} no es una ruta relativa normal`);
+      // Solo caracteres seguros: la ruta nueva se escribe dentro de literales de
+      // JS y de .sh sin escapar; una comilla, un $ o un ( inyectarían código
+      // (revisión de seguridad del #241, tercera vuelta).
+      if (!RUTA_SEGURA.test(r)) errores.push(`#${i}: ${r} tiene caracteres fuera de [A-Za-z0-9._-/]`);
+      else if (r.startsWith('/') || posix.normalize(r) !== r || r.split('/').includes('..')) errores.push(`#${i}: ${r} no es una ruta relativa normal`);
       else if (!RAICES_DE_MUDANZA.some((raiz) => r.startsWith(raiz))) errores.push(`#${i}: ${r} está fuera de las raíces de mudanza`);
     }
     if (posix.extname(de) !== posix.extname(a)) errores.push(`#${i}: ${de} → ${a} cambia la extensión`);
@@ -289,8 +306,12 @@ export interface EntradaDiff { readonly estado: string; readonly viejo: string; 
 export interface Tanda { readonly movimientos: readonly Movimiento[]; readonly suitesPuras: readonly string[] }
 export function leerTanda(json: unknown): Tanda {
   if (Array.isArray(json)) return { movimientos: json as Movimiento[], suitesPuras: [] };
+  if (!json || typeof json !== 'object') throw new Error('La tanda tiene que ser un objeto { movimientos, suitesPuras }');
+  const sobran = Object.keys(json).filter((k) => k !== 'movimientos' && k !== 'suitesPuras');
+  if (sobran.length) throw new Error(`La tanda tiene claves que no son de una tanda: ${sobran.join(', ')}`);
   const t = json as Partial<Tanda>;
-  return { movimientos: t?.movimientos ?? [], suitesPuras: t?.suitesPuras ?? [] };
+  if (!Array.isArray(t.movimientos) || !Array.isArray(t.suitesPuras ?? [])) throw new Error('movimientos y suitesPuras tienen que ser arreglos');
+  return { movimientos: t.movimientos, suitesPuras: t.suitesPuras ?? [] };
 }
 
 /**
@@ -387,6 +408,9 @@ export function verificarReproducible(
   leerBase: (r: string) => string, leerHead: (r: string) => string, archivoTanda?: string,
 ): Veredicto {
   const problemas: string[] = [];
+  if (archivoTanda !== undefined && !RUTA_DE_TANDA.test(archivoTanda)) {
+    problemas.push(`${archivoTanda}: una tanda vive en docs/arquitectura/tandas/tN.json`);
+  }
   const revisarAMano: string[] = [];
   const movs = new Map(tanda.movimientos.map((m) => [m.de, m.a]));
   const esperado = new Map(plan.ediciones.map((e) => [e.archivo, e.nuevoTexto]));
@@ -394,7 +418,11 @@ export function verificarReproducible(
   for (const d of diff) {
     const destino = d.nuevo;
     vistos.add(destino);
-    if (d.estado === 'A' && destino === archivoTanda) continue;
+    if (d.estado === 'A' && destino === archivoTanda && RUTA_DE_TANDA.test(destino)) continue;
+    if ((HERRAMIENTA as readonly string[]).includes(d.viejo) || (HERRAMIENTA as readonly string[]).includes(destino)) {
+      problemas.push(`${destino}: un PR de tanda no toca la herramienta que lo juzga`);
+      continue;
+    }
     if (d.estado.startsWith('R')) {
       if (movs.get(d.viejo) !== d.nuevo) { problemas.push(`${d.viejo} → ${d.nuevo}: renombre que no está en la tanda`); continue; }
     } else if (d.estado !== 'M') {
@@ -433,7 +461,9 @@ export function verificarReproducible(
   }
   for (const s of tanda.suitesPuras) {
     if (SUITES_VETADAS.includes(s)) problemas.push(`${s}: vetada en SUITES_PURAS`);
-    if (!/^pruebas\/[\w/.-]+\.test\.ts$/.test(s)) problemas.push(`${s}: no es una suite (pruebas/….test.ts)`);
+    if (!/^pruebas\/[\w/.-]+\.test\.ts$/.test(s) || posix.normalize(s) !== s || s.split('/').includes('..')) {
+      problemas.push(`${s}: no es una suite (pruebas/….test.ts, sin ..)`);
+    }
   }
   return { problemas, revisarAMano };
 }

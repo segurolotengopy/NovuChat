@@ -11,7 +11,7 @@
  * reproducibilidad con la que `solo-rutas.mjs` juzga un PR de tanda.
  */
 import { describe, expect, it } from 'vitest';
-import { planDeMudanza, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
+import { leerTanda, planDeMudanza, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
 
 const F = 'admin/functions/src';
 const ARCHIVOS: Record<string, string> = {
@@ -108,6 +108,11 @@ describe('validarTanda', () => {
     expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/region.ts` }], ok)).toHaveLength(1);
     expect(validarTanda([{ de: `${F}/muestra.ts`, a: `${F}/enlace/muestra.ts` }], consulta([`${F}/muestra.ts`], [], [`${F}/enlace`]))).toHaveLength(1);
     expect(validarTanda([], ok)).toHaveLength(1);
+    // Caracteres que inyectarían código en un literal de JS o en un .sh.
+    for (const a of [`${F}/core/aten'+require(\`child_process\`).execSync(\`id\`)+'cion.ts`, `${F}/core/x$(id>&2).ts`,
+      `${F}/core/a b.ts`, `${F}/core/a;b.ts`, `${F}/core/-x.ts`]) {
+      expect(validarTanda([{ de: `${F}/muestra.ts`, a }], consulta([`${F}/muestra.ts`])).length, a).toBeGreaterThan(0);
+    }
     expect(validarTanda([{ de: 1, a: 2 }], ok)).toHaveLength(1);
   });
 });
@@ -125,6 +130,20 @@ describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
   const problemas = (diff = diffPerfecto, cambios: Record<string, string> = {}, base = leerBase) =>
     verificarReproducible(T, plan, diff, base, head(cambios), 'docs/arquitectura/tandas/t9.json').problemas;
   const M = (r: string) => ({ estado: 'M', viejo: r, nuevo: r });
+
+  it('la tanda solo vive en docs/arquitectura/tandas/tN.json y sin claves de más', () => {
+    const conWorkflow = [...diffPerfecto, { estado: 'A', viejo: '.github/workflows/t.yml', nuevo: '.github/workflows/t.yml' }];
+    expect(verificarReproducible(T, plan, conWorkflow, leerBase, head(), '.github/workflows/t.yml').problemas.length).toBeGreaterThan(0);
+    expect(() => leerTanda({ movimientos: [], suitesPuras: [], on: { push: {} } })).toThrow(/claves/);
+    expect(() => leerTanda({ movimientos: 'x', suitesPuras: [] })).toThrow(/arreglos/);
+  });
+  it('un PR de tanda no toca la herramienta que lo juzga', () => {
+    expect(problemas([...diffPerfecto, M('admin/pruebas/frontera/mudanza.ts')])).toHaveLength(1);
+  });
+  it('suitesPuras no admite ..', () => {
+    expect(verificarReproducible({ movimientos: TANDA, suitesPuras: ['pruebas/../../Flujos/x.test.ts'] }, plan, diffPerfecto, leerBase, head())
+      .problemas.length).toBeGreaterThan(0);
+  });
 
   it('el PR que es exactamente la mudanza pasa, con el archivo de la tanda agregado', () => {
     expect(problemas([...diffPerfecto, { estado: 'A', viejo: 'docs/arquitectura/tandas/t9.json', nuevo: 'docs/arquitectura/tandas/t9.json' }])).toEqual([]);
