@@ -61,7 +61,7 @@ carga desde los scripts. Por la misma razón la sintaxis es solo la que Node
 sabe borrar (sin `enum`, `namespace` ni propiedades de parámetro). Y el
 registro **no lleva rutas de archivos que F2 mueve**: las carpetas de un
 módulo se derivan del id, y el inventario origen → destino está aparte, en
-`admin/pruebas/core/destinos-f2.ts`, que se borra al cerrar F2.
+`admin/pruebas/frontera/destinos-f2.ts`, que se borra al cerrar F2.
 
 **Cómo se verifica:** `admin/pruebas/core/registro.test.ts` (pura, sin
 emulador) comprueba el registro contra el código de hoy en ocho grupos:
@@ -89,10 +89,18 @@ falla por una importación hacia arriba es `fronteras.test.ts` (PR 2).
 
 ## fronteras.test.ts (F2, PR 2)
 
-**Dónde vive:** `admin/pruebas/core/fronteras.test.ts` (pura, en
-`SUITES_PURAS`), con la regla en `admin/pruebas/core/frontera.ts`, que
+**Dónde vive:** `admin/pruebas/frontera/fronteras.test.ts` (pura, en
+`SUITES_PURAS`), con la regla en `admin/pruebas/frontera/frontera.ts`, que
 `medir-zonas.mjs` importa también: la prueba y la medición que se cita en
-cada informe no pueden contar distinto.
+cada informe no pueden contar distinto. El inventario de F2
+(`destinos-f2.ts`) vive en la misma carpeta.
+
+**Por qué en `pruebas/frontera/` y no en `pruebas/core/`:** esa carpeta no
+está en la zona de ningún agente (`agentes.md`), así que el gancho rechaza que
+un agente la edite. En `pruebas/core/`, un agente de Core podía «arreglar» su
+propia prueba roja agregando el cruce a la deuda o cambiando la zona de un
+archivo en el inventario, sin salir de su zona (revisión de seguridad del
+#231). La regla, la deuda y el inventario los cambia solo la coordinadora.
 
 **La zona de un archivo**, en este orden: su entrada en `destinos-f2.ts`
 (mientras dura F2, un archivo sin mover ya tiene la zona a la que va); la
@@ -102,32 +110,50 @@ regla permanente cuando `destinos-f2.ts` se borre; y el prefijo más largo de
 `PREFIJOS_F2`.
 
 **La regla:** registro < core < central < plataforma < módulo < coordinador <
-tenants; una zona importa de la suya o de las de abajo, y un módulo importa a
-otro solo si lo declara, directa o indirectamente, en `dependeDe`. Cuenta todo
-import relativo: de tipo, de varias líneas, reexportación, dinámico,
-`require` y el que solo carga el archivo. Un script que importa
-`functions/lib/*.js` (compilado) depende de su fuente en `functions/src/`. No
-cuentan las reexportaciones de `functions/src/index.ts` (el inventario de
-despliegue) ni una prueba que lo importa para llamar a una callable. Las
-pruebas en carpeta de zona siguen la misma regla; `registro.test.ts` es la
-única transversal (compara el registro con el código de todas las zonas).
+tenants. Una zona importa de la suya o de las de abajo, y un módulo importa a
+otro solo si lo declara, directa o indirectamente, en `dependeDe`.
+- **Los imports se leen con el parser de TypeScript**, no con expresiones
+  regulares: estáticos, de tipo, reexportaciones, `import x = require()`,
+  dinámicos, `require` y `import('…').T`. Un texto con `/*` o un `export` sin
+  punto y coma ya no los esconde.
+- **Un cruce no se lava:** un import a un archivo sin zona (o, desde una
+  prueba, a un ayudante de prueba) se sigue hasta el primer archivo con zona,
+  y el cruce se atribuye al origen con su camino («vía …»).
+- **El código no importa `functions/src/index.ts`** (sería un atajo a
+  cualquier zona) **ni `admin/pruebas/`**. Las reexportaciones de `index.ts`
+  no cuentan (son el inventario de despliegue), y una prueba puede importarlo
+  para llamar a una callable.
+- **Lo que el lector no puede seguir se informa:** un import relativo roto, un
+  `import()` o `require` con ruta calculada y un alias (`@/`, `~/`, `#`, ruta
+  absoluta). Hoy el único aceptado es el `import()` de `medir-zonas.mjs`, en
+  su lista con el porqué.
+- Un script que importa `functions/lib/*.js` (compilado) depende de su fuente
+  en `functions/src/`.
+- Las pruebas en carpeta de zona siguen la misma regla; `registro.test.ts` es
+  la única transversal (compara el registro con el código de todas las
+  zonas).
 
 **La deuda conocida, que solo se achica:** los 19 cruces que existían el
 26/09 están en la prueba, uno por uno, con lo que los saca (8 hacia
 `ingesta.ts`, que deshace el coordinador de F3; 8 que se cortan al mover el
 archivo: entre módulos, de Central o Plataforma hacia un módulo, y el prompt
-de Core hacia el saneo de Central; y 3 pruebas
-de pantallas de Plataforma guardadas en `pruebas/central/`). Un cruce nuevo
-falla; una entrada cuyo cruce ya no existe también falla, para que se saque.
-Lo mismo con los archivos de código sin zona: **exactamente 42** (47 con las
-pruebas que la medición no ubica), y el PR que ubica archivos baja el número.
+de Core hacia el saneo de Central; y 3 pruebas de pantallas de Plataforma
+guardadas en `pruebas/central/`). Un cruce nuevo falla; una entrada cuyo
+cruce ya no existe también falla, para que se saque. Los **archivos sin zona
+fuera de las pruebas** (42, contando dos `.css` y dos `.sh`) son una lista
+exacta, no un número: ubicar uno y agregar otro no se compensan.
 
 **Negando:** la mitad de la suite es un árbol inventado donde cada forma de
-cruce tiene que fallar (Core → Central, Central → Plataforma, Plataforma →
-módulo, módulo sin `dependeDe`, registro que importa, tenants importados, un
-import que no resuelve). Contraprueba hecha al escribirla: un import de
-`planes.ts` plantado en `atencion.ts` y una entrada de la deuda borrada hacen
-fallar la suite.
+cruce tiene que fallar. Contraprueba sobre el código real, hecha al
+escribirla: un import de `planes.ts` plantado en `atencion.ts`, un puente
+plantado en `web/src/lib/errores.ts` (sin zona) hacia Plataforma, y una
+entrada de la deuda borrada hacen fallar la suite.
+
+**Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
+los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
+venir de `ensamblador.test.ts` o `registro.test.ts` cuando en F3 existan
+`Flujos/src/core/` y `Flujos/src/modulos/`. Tampoco las pruebas fuera de una
+carpeta de zona: esas las ubica la medición por grafo, no esta prueba.
 
 ## La política de capas del 06/09, que el registro reemplaza
 

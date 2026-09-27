@@ -59,7 +59,7 @@ implementación actual del pipeline de turno. Los cuatro contratos:
 | Nodos de medios (transcribir, describir, leer comprobante) | `Flujos/src/core/medios/` | Con el esqueleto único |
 | `Flujos/prompts/…` (parte base) | `prompts/core/base.md` | El prompt se arma por capas |
 | `web/src/lib/sesion.ts`, `contexto.tsx` y demás reexportaciones | `core/lib/` | Son reexportaciones de Functions; siguen |
-| `pruebas/core/fronteras.test.ts` y `frontera.ts` (F2, PR 2) | Core | Lee los `import` de cada archivo y falla si una zona importa hacia arriba o un módulo importa a otro sin `dependeDe`; la deuda de hoy, en una lista que solo se achica (`registro.md`) |
+| `pruebas/frontera/fronteras.test.ts` y `frontera.ts` (F2, PR 2) | Coordinadora (fuera de la zona de todo agente) | Lee los `import` de cada archivo y falla si una zona importa hacia arriba o un módulo importa a otro sin `dependeDe`; la deuda de hoy, en una lista que solo se achica (`registro.md`) |
 | `pruebas/core/registro.test.ts` (F2, PR 1) | Core | Cada documento, colección, pestaña y límite del registro tiene su regla y su prueba negativa |
 
 Lo que **no** es módulo aunque se parezca y es core: los **medios entrantes**

@@ -37,7 +37,7 @@ import {
 import { FLUJOS } from '../../web/src/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/prompt.ts';
 import { PLANES } from '../../functions/src/planes.ts';
-import { DESTINOS_F2 } from './destinos-f2.ts';
+import { DESTINOS_F2 } from '../frontera/destinos-f2.ts';
 
 process.env['GCLOUD_PROJECT'] ??= 'demo-test';
 const indice = (await import('../../functions/src/index.ts')) as Record<string, unknown>;
@@ -200,7 +200,7 @@ describe('1. estructura del registro', () => {
   });
 
   it('CERO import en registro.ts y en destinos-f2.ts, y Node los carga quitando tipos', () => {
-    for (const ruta of ['admin/functions/src/registro.ts', 'admin/pruebas/core/destinos-f2.ts']) {
+    for (const ruta of ['admin/functions/src/registro.ts', 'admin/pruebas/frontera/destinos-f2.ts']) {
       const codigo = sinComentarios(leer(ruta));
       expect(codigo, ruta).not.toMatch(/^\s*import\b|\bimport\s*\(|\brequire\s*\(|^\s*export\s[^;]*?\bfrom\s/m);
       expect(codigo, `${ruta}: sintaxis que Node no borra`).not.toMatch(/\benum\s+\w|\bnamespace\s+\w|constructor\s*\(\s*(public|private|protected|readonly)\b/);
@@ -208,7 +208,7 @@ describe('1. estructura del registro', () => {
     // Lo que hace `medir-zonas.mjs`: si Node no lo puede cargar, los scripts tampoco.
     const r = spawnSync(process.execPath, ['--no-warnings', '--input-type=module', '-e', `
       const r = await import(${JSON.stringify(join(RAIZ, 'admin/functions/src/registro.ts'))});
-      const d = await import(${JSON.stringify(join(RAIZ, 'admin/pruebas/core/destinos-f2.ts'))});
+      const d = await import(${JSON.stringify(join(RAIZ, 'admin/pruebas/frontera/destinos-f2.ts'))});
       console.log(r.REGISTRO.length, Object.keys(d.DESTINOS_F2).length > 0);`], { encoding: 'utf8' });
     expect(r.stderr).toBe('');
     expect(r.stdout.trim()).toBe(`${IDS_MODULOS.length} true`);
@@ -230,7 +230,7 @@ describe('1. estructura del registro', () => {
     );
     expect(nombres.size, 'la derivación de nombres no encontró ninguno').toBeGreaterThan(0);
     for (const ruta of [
-      'admin/functions/src/registro.ts', 'admin/pruebas/core/destinos-f2.ts',
+      'admin/functions/src/registro.ts', 'admin/pruebas/frontera/destinos-f2.ts',
       'admin/pruebas/core/registro.test.ts', 'admin/scripts/medir-zonas.mjs',
     ]) {
       const texto = leer(ruta).toLowerCase();

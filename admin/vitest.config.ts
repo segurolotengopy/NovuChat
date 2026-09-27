@@ -48,7 +48,7 @@ export const SUITES_PURAS = [
   'pruebas/consola-pagar.test.ts',
   'pruebas/conteo-bloques.test.ts',
   'pruebas/contrasena-minimo.test.ts',
-  'pruebas/core/fronteras.test.ts',
+  'pruebas/frontera/fronteras.test.ts',
   'pruebas/demo-b-catalogo.test.ts',
   'pruebas/demo-b-cobro.test.ts',
   'pruebas/direccion-maps.test.ts',

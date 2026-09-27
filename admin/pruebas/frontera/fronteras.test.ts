@@ -11,7 +11,9 @@
  *
  * La regla vive en `frontera.ts`, que usa también `scripts/medir-zonas.mjs`:
  * la medición que se cita en cada informe y esta prueba no pueden contar
- * distinto.
+ * distinto. Las dos, la deuda y el inventario de F2 viven en
+ * `admin/pruebas/frontera/`, fuera de la zona de todo agente: solo la
+ * coordinadora los cambia (revisión de seguridad del PR #231).
  *
  * LA DEUDA CONOCIDA. El código de hoy ya tiene cruces: el plano los esperaba
  * (el coordinador de turno de F3 existe para deshacer los de `ingesta.ts`).
@@ -19,8 +21,8 @@
  *   - un cruce que no está en la lista falla (es nuevo);
  *   - una entrada cuyo cruce ya no existe falla (se arregló o se movió el
  *     archivo: se saca la entrada, o se corrige su ruta si solo se movió).
- * Lo mismo con los archivos de código sin zona: el número es EXACTO, y cada
- * tanda de F2 lo baja en el mismo PR que mueve los archivos.
+ * Lo mismo con los archivos sin zona fuera de las pruebas: una lista EXACTA,
+ * que cada tanda de F2 achica en el mismo PR que mueve los archivos.
  *
  * Y la regla se prueba NEGANDO, con un árbol inventado: sin esa parte, un
  * lector de imports que no ve nada daría verde para siempre.
@@ -28,8 +30,8 @@
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
 import {
-  INDICE_DE_FUNCTIONS, analizar, claveDeCruce, esPrueba, importsDe, listarRaices, motivoDeCruce,
-  zonaDeCodigo, zonaPorCarpeta, type Arbol,
+  CALCULADO, INDICE_DE_FUNCTIONS, MOTIVO_INDICE, MOTIVO_PRUEBA, analizar, claveDeCruce, esPrueba, importsDe,
+  listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
 } from './frontera.ts';
 
 const F = 'admin/functions/src/';
@@ -71,11 +73,63 @@ const DEUDA_CONOCIDA: readonly { desde: string; hacia: string; porque: string }[
 ];
 
 /**
- * Archivos de código (fuera de `admin/pruebas/`) sin zona, medidos el
- * 26/09/2026. EXACTO: el PR que ubica archivos lo baja; uno que agrega un
- * archivo sin zona no pasa.
+ * Archivos sin zona fuera de `admin/pruebas/`, medidos el 26/09/2026 (incluye
+ * dos `.css` y dos `.sh`). EXACTA: el PR que ubica archivos los saca de acá;
+ * uno que agrega un archivo sin zona no pasa. Es una lista y no un número para
+ * que ubicar uno y agregar otro no se compensen.
  */
-const SIN_ZONA = 42;
+const SIN_ZONA: readonly string[] = [
+  'admin/scripts/activar-cobro-real.mjs',
+  'admin/scripts/completar-flujos.mjs',
+  'admin/scripts/contar-catalogo.mjs',
+  'admin/scripts/emuladores.sh',
+  'admin/scripts/ensayo.mjs',
+  'admin/scripts/fijar-webhook-carrito.mjs',
+  'admin/scripts/lib/contador-catalogo.mjs',
+  'admin/scripts/limpiar-cierres-de-prueba.mjs',
+  'admin/scripts/lockfile-functions.sh',
+  'admin/scripts/pase-a-produccion.mjs',
+  'admin/scripts/plantilla-catalogo.mjs',
+  'admin/scripts/probar-cierre.mjs',
+  'admin/scripts/probar-csp.mjs',
+  'admin/scripts/reiniciar-ventana.mjs',
+  'admin/scripts/sembrar-demos.mjs',
+  'admin/scripts/sembrar.mjs',
+  'admin/scripts/soltar-sena-pendiente.mjs',
+  'admin/scripts/usuarios-prueba.mjs',
+  'admin/web/src/App.tsx',
+  'admin/web/src/componentes/AvisoConsumo.tsx',
+  'admin/web/src/componentes/CampoMonto.tsx',
+  'admin/web/src/componentes/ChipModo.tsx',
+  'admin/web/src/componentes/EditorLista.tsx',
+  'admin/web/src/componentes/EncabezadoComercio.tsx',
+  'admin/web/src/componentes/GraficoDias.tsx',
+  'admin/web/src/componentes/Marca.tsx',
+  'admin/web/src/componentes/Proteger.tsx',
+  'admin/web/src/componentes/ResumenPrepago.tsx',
+  'admin/web/src/componentes/SinSalida.tsx',
+  'admin/web/src/componentes/TextoSeguro.tsx',
+  'admin/web/src/consola.tsx',
+  'admin/web/src/diseno.css',
+  'admin/web/src/estilos.css',
+  'admin/web/src/lib/contrasena.ts',
+  'admin/web/src/lib/ejes.ts',
+  'admin/web/src/lib/errores.ts',
+  'admin/web/src/lib/exportar.ts',
+  'admin/web/src/lib/firebase.ts',
+  'admin/web/src/lib/modoComercio.ts',
+  'admin/web/src/lib/paletas.ts',
+  'admin/web/src/lib/tema.ts',
+  'admin/web/src/main.tsx',
+];
+
+/**
+ * Imports que el lector no puede seguir y que se aceptan, con su porqué. Un
+ * `import()` con ruta calculada en un archivo con zona es un cruce invisible.
+ */
+const SIN_RESOLVER_CONOCIDOS: Readonly<Record<string, string>> = {
+  'admin/scripts/medir-zonas.mjs': 'Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona',
+};
 
 // ------------------------------------------------------------ el árbol real
 const ARCHIVOS = listarRaices();
@@ -101,13 +155,20 @@ describe('la frontera sobre el código de hoy', () => {
     for (const d of DEUDA_CONOCIDA) expect(d.porque.length, claveDeCruce(d)).toBeGreaterThan(20);
   });
 
-  it('todo import relativo lleva a un archivo (si no, el lector no ve el cruce)', () => {
-    expect(REAL.sinResolver).toEqual([]);
+  it('todo import lleva a un archivo: ni relativo roto, ni calculado, ni alias (si no, el lector no ve el cruce)', () => {
+    const inesperados = REAL.sinResolver.filter((s) => !(s.desde in SIN_RESOLVER_CONOCIDOS && s.especificador === CALCULADO));
+    expect(inesperados).toEqual([]);
+    for (const conocido of Object.keys(SIN_RESOLVER_CONOCIDOS)) {
+      expect(REAL.sinResolver.some((s) => s.desde === conocido), `${conocido} ya no tiene import calculado: sacarlo de la lista`).toBe(true);
+    }
   });
 
-  it(`los archivos de código sin zona son exactamente ${SIN_ZONA}`, () => {
+  it('los archivos sin zona fuera de las pruebas son exactamente los de la lista', () => {
     const sinZona = ARCHIVOS.filter((a) => !esPrueba(a) && !zonaDeCodigo(a));
-    expect(sinZona.length, `Sin zona hoy:\n${sinZona.join('\n')}\n(si bajó, se baja SIN_ZONA en este PR; si subió, el archivo nuevo va a una carpeta de zona)`).toBe(SIN_ZONA);
+    const nuevos = sinZona.filter((a) => !SIN_ZONA.includes(a));
+    const ubicados = SIN_ZONA.filter((a) => !sinZona.includes(a));
+    expect(nuevos, 'Archivo nuevo sin zona: va a una carpeta de zona, no a esta lista').toEqual([]);
+    expect(ubicados, 'Ya tienen zona (o no existen): sacarlos de SIN_ZONA en este PR').toEqual([]);
   });
 
   it('una carpeta modulos/<m>/ solo existe para un módulo del registro', () => {
@@ -124,13 +185,11 @@ describe('la frontera sobre el código de hoy', () => {
 // ------------------------------------------------------- la regla, negando
 /**
  * Un árbol inventado: rutas en carpetas de zona que el inventario no nombra.
- * Los textos se escriben con IMPORT, EXPORT, FROM y REQUIRE en mayúsculas y
- * se pasan a minúsculas al leerlos: escritos tal cual, el lector los vería en
- * ESTE archivo y los tomaría por imports suyos.
+ * Los imports escritos dentro de estos textos no son imports de ESTE archivo:
+ * el parser los ve como literales.
  */
-const codigo = (t: string): string => t.replace(/\b(IMPORT|EXPORT|FROM|REQUIRE)\b/g, (p) => p.toLowerCase());
 function arbolDe(archivos: Record<string, string>): Arbol {
-  return { leer: (a) => codigo(archivos[a] ?? ''), existe: (a) => a in archivos };
+  return { leer: (a) => archivos[a] ?? '', existe: (a) => a in archivos };
 }
 const cruces = (archivos: Record<string, string>) =>
   analizar(Object.keys(archivos), zonaDeCodigo, arbolDe(archivos));
@@ -141,15 +200,15 @@ describe('la regla de la frontera (árbol inventado)', () => {
   const PLATAFORMA = `${F}plataforma/c.ts`;
 
   it('Core no importa de Central, y Central sí de Core', () => {
-    const r = cruces({ [CORE]: "IMPORT { b } FROM '../central/b';", [CENTRAL]: "IMPORT { a } FROM '../core/a.js';" });
+    const r = cruces({ [CORE]: "import { b } from '../central/b';", [CENTRAL]: "import { a } from '../core/a.js';" });
     expect(r.cruces.map(claveDeCruce)).toEqual([`${CORE} → ${CENTRAL}`]);
     expect(r.cruces[0].motivo).toBe('core → central');
   });
 
   it('Central no importa de Plataforma, ni Plataforma de un módulo', () => {
     const r = cruces({
-      [CENTRAL]: "IMPORT { c } FROM '../plataforma/c';",
-      [PLATAFORMA]: "IMPORT { x } FROM '../modulos/agenda/x';",
+      [CENTRAL]: "import { c } from '../plataforma/c';",
+      [PLATAFORMA]: "import { x } from '../modulos/agenda/x';",
       [`${F}modulos/agenda/x.ts`]: '',
     });
     expect(r.cruces.map((c) => c.motivo)).toEqual(['central → plataforma', 'plataforma → modulo:agenda']);
@@ -163,7 +222,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
       && m.dependeDe.length === 0)!;
     const desde = `${F}modulos/${conDependencia.modulo}/a.ts`;
     const r = cruces({
-      [desde]: `IMPORT { b } FROM '../${declarado}/b';\nIMPORT { c } FROM '../${sinDependencia.modulo}/c';`,
+      [desde]: `import { b } from '../${declarado}/b';\nimport { c } from '../${sinDependencia.modulo}/c';`,
       [`${F}modulos/${declarado}/b.ts`]: '',
       [`${F}modulos/${sinDependencia.modulo}/c.ts`]: '',
     });
@@ -177,16 +236,16 @@ describe('la regla de la frontera (árbol inventado)', () => {
 
   it('todo el mundo lee el registro, y el registro no importa a nadie', () => {
     const r = cruces({
-      [CORE]: "IMPORT { REGISTRO } FROM '../registro';",
-      [`${F}registro.ts`]: "IMPORT { a } FROM './core/a';",
+      [CORE]: "import { REGISTRO } from '../registro';",
+      [`${F}registro.ts`]: "import { a } from './core/a';",
     });
     expect(r.cruces.map((c) => c.motivo)).toEqual(['registro → core']);
   });
 
   it('los tenants no son de nadie: ninguna zona importa de scripts/datos/', () => {
     const r = cruces({
-      'admin/scripts/plataforma/alta.mjs': "IMPORT { d } FROM '../datos/bellido.mjs';",
-      'admin/scripts/datos/bellido.mjs': "IMPORT { c } FROM '../plataforma/alta.mjs';",
+      'admin/scripts/plataforma/alta.mjs': "import { d } from '../datos/bellido.mjs';",
+      'admin/scripts/datos/bellido.mjs': "import { c } from '../plataforma/alta.mjs';",
     });
     expect(r.cruces.map((c) => c.motivo)).toEqual(['plataforma → tenants']);
   });
@@ -194,31 +253,88 @@ describe('la regla de la frontera (árbol inventado)', () => {
   it('ve todas las formas de importar: tipo, varias líneas, reexportación, dinámico y require', () => {
     const r = cruces({
       [CORE]: [
-        "IMPORT type { T } FROM '../central/b';",
-        "IMPORT {\n  x,\n  y,\n} FROM '../central/c';",
-        "EXPORT * FROM '../central/d';",
-        "const m = await IMPORT('../central/e');",
-        "const n = REQUIRE('../central/f');",
-        "IMPORT '../central/g';",
+        "import type { T } from '../central/b';",
+        "import {\n  x,\n  y,\n} from '../central/c';",
+        "export * from '../central/d';",
+        "const m = await import('../central/e');",
+        "const n = require('../central/f');",
+        "import '../central/g';",
+        "import{h}from'../central/h'",
+        "import i = require('../central/i');",
+        "let j: import('../central/j').J;",
+        'const k = await import(`../central/k`);',
       ].join('\n'),
-      ...Object.fromEntries(['b', 'c', 'd', 'e', 'f', 'g'].map((n) => [`${F}central/${n}.ts`, ''])),
+      ...Object.fromEntries(['b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k'].map((n) => [`${F}central/${n}.ts`, ''])),
     });
-    // En el orden de los patrones: `import|export … from`, el import suelto, el dinámico y require.
-    expect(r.cruces.map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'c.ts', 'd.ts', 'g.ts', 'e.ts', 'f.ts']);
-    expect(r.cruces.find((c) => c.hacia.endsWith('b.ts'))!.soloTipo).toBe(true);
+    // En el orden del texto: el parser recorre el archivo de arriba abajo.
+    expect(r.cruces.map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts', 'h.ts', 'i.ts', 'j.ts', 'k.ts']);
+    expect(r.cruces.filter((c) => c.soloTipo).map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'j.ts']);
   });
 
-  it('un import comentado no cuenta, y una URL dentro de un texto no es comentario', () => {
+  it('un import comentado no cuenta; un texto con /* o con // no esconde el import que sigue', () => {
     const r = cruces({
-      [CORE]: "// IMPORT { b } FROM '../central/b';\n/* IMPORT { c } FROM '../central/c'; */\nconst u = 'https://x.y'; IMPORT { d } FROM '../central/d';",
-      [`${F}central/b.ts`]: '', [`${F}central/c.ts`]: '', [`${F}central/d.ts`]: '',
+      [CORE]: [
+        "// import { b } from '../central/b';",
+        "/* import { c } from '../central/c'; */",
+        "const u = 'https://x.y'; import { d } from '../central/d';",
+        "const accept = 'image/*';",
+        "const m = await import('../central/e');",
+        "/** doc */",
+      ].join('\n'),
+      [`${F}central/b.ts`]: '', [`${F}central/c.ts`]: '', [`${F}central/d.ts`]: '', [`${F}central/e.ts`]: '',
     });
-    expect(r.cruces.map((c) => c.hacia)).toEqual([`${F}central/d.ts`]);
+    expect(r.cruces.map((c) => c.hacia)).toEqual([`${F}central/d.ts`, `${F}central/e.ts`]);
   });
 
-  it('un import relativo que no lleva a nada se informa, no se ignora', () => {
-    const r = cruces({ [CORE]: "IMPORT { b } FROM '../central/no-existe';" });
-    expect(r.sinResolver).toEqual([{ desde: CORE, especificador: '../central/no-existe' }]);
+  it('un import que no lleva a nada, calculado o por alias se informa, no se ignora', () => {
+    const r = cruces({
+      [CORE]: "import { b } from '../central/no-existe';\nconst m = await import(ruta);\nconst n = require(join(a, 'b'));\nimport { c } from '@/central/c';\nimport { z } from 'zod';",
+    });
+    expect(r.sinResolver).toEqual([
+      { desde: CORE, especificador: '../central/no-existe' },
+      { desde: CORE, especificador: CALCULADO },
+      { desde: CORE, especificador: CALCULADO },
+      { desde: CORE, especificador: '@/central/c' },
+    ]);
+  });
+
+  it('un cruce no se lava por un archivo sin zona (tampoco por dos)', () => {
+    const r = cruces({
+      [CORE]: "import { s } from '../suelto';",
+      [`${F}suelto.ts`]: "import { t } from './otro-suelto';",
+      [`${F}otro-suelto.ts`]: "import { b } from './central/b';",
+      [CENTRAL]: '',
+    });
+    expect(r.cruces.map((c) => [claveDeCruce(c), c.motivo])).toEqual([[
+      `${CORE} → ${CENTRAL}`, `core → central, vía ${F}suelto.ts → ${F}otro-suelto.ts`,
+    ]]);
+  });
+
+  it('una prueba no lava un cruce por un ayudante de prueba', () => {
+    const r = cruces({
+      'admin/pruebas/core/p.test.ts': "import { ayuda } from '../lib/ayuda';",
+      'admin/pruebas/lib/ayuda.ts': "import { c } from '../../functions/src/plataforma/c';",
+      [PLATAFORMA]: '',
+    });
+    expect(r.cruces.map(claveDeCruce)).toEqual([`admin/pruebas/core/p.test.ts → ${PLATAFORMA}`]);
+  });
+
+  it('el código no importa index.ts (sería un atajo a cualquier zona) ni una prueba', () => {
+    const r = cruces({
+      [`${F}modulos/agenda/a.ts`]: "import { c } from '../../index';\nimport { d } from '../../../../pruebas/dobles/d';",
+      [INDICE_DE_FUNCTIONS]: "export { c } from './modulos/campanas/c';",
+      [`${F}modulos/campanas/c.ts`]: '',
+      'admin/pruebas/dobles/d.ts': '',
+    });
+    expect(r.cruces.map((c) => c.motivo)).toEqual([MOTIVO_INDICE, MOTIVO_PRUEBA]);
+  });
+
+  it('en index.ts, un export sin punto y coma no convierte al import siguiente en reexportación', () => {
+    const r = cruces({
+      [INDICE_DE_FUNCTIONS]: "export const v = 1\nimport { y } from './modulos/agenda/y';",
+      [`${F}modulos/agenda/y.ts`]: '',
+    });
+    expect(r.cruces.map((c) => c.hacia)).toEqual([`${F}modulos/agenda/y.ts`]);
   });
 
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
@@ -228,7 +344,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
 
   it('index.ts: sus reexportaciones no cuentan; un import suyo sí', () => {
     const r = cruces({
-      [INDICE_DE_FUNCTIONS]: "EXPORT { x } FROM './modulos/agenda/x';\nIMPORT { y } FROM './modulos/agenda/y';",
+      [INDICE_DE_FUNCTIONS]: "export { x } from './modulos/agenda/x';\nimport { y } from './modulos/agenda/y';",
       [`${F}modulos/agenda/x.ts`]: '', [`${F}modulos/agenda/y.ts`]: '',
     });
     // index.ts es Plataforma (inventario §5): importar un módulo es subir.
@@ -237,8 +353,8 @@ describe('la regla de la frontera (árbol inventado)', () => {
 
   it('una prueba en carpeta de zona sigue la misma regla, salvo llamar a index.ts', () => {
     const r = cruces({
-      'admin/pruebas/core/p.test.ts': "IMPORT { b } FROM '../../functions/src/central/b';\nIMPORT * as f FROM '../../functions/src/index';",
-      'admin/pruebas/central/q.test.ts': "IMPORT { a } FROM '../../functions/src/core/a';",
+      'admin/pruebas/core/p.test.ts': "import { b } from '../../functions/src/central/b';\nimport * as f from '../../functions/src/index';",
+      'admin/pruebas/central/q.test.ts': "import { a } from '../../functions/src/core/a';",
       [CENTRAL]: '', [CORE]: '', [INDICE_DE_FUNCTIONS]: '',
     });
     expect(r.cruces.map(claveDeCruce)).toEqual([`admin/pruebas/core/p.test.ts → ${CENTRAL}`]);

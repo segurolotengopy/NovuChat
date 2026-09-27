@@ -26,7 +26,19 @@
  * el inventario de despliegue, no una dependencia.
  *
  * Un import de «solo tipo» también cuenta: acopla igual, y es el que primero
- * se esconde.
+ * se esconde. Y un cruce no se lava pasando por un archivo sin zona o por un
+ * ayudante de prueba: el análisis sigue esos archivos hasta el primero con
+ * zona (revisión de seguridad del PR #231).
+ *
+ * LOS IMPORTS SE LEEN CON EL PARSER DE TYPESCRIPT, no con expresiones
+ * regulares: un texto con `/*` (`accept="image/*"`), un `import{a}from'x'`
+ * sin espacios o un `export` sin punto y coma engañaban al lector anterior.
+ *
+ * DÓNDE VIVE Y QUIÉN LO CAMBIA. En `admin/pruebas/frontera/`, que no está en la
+ * zona de ningún agente (`docs/arquitectura/agentes.md`): la regla, la deuda y
+ * el inventario los cambia solo la coordinadora. Si estuvieran en
+ * `pruebas/core/`, un agente de Core podría «arreglar» una prueba roja
+ * agregando su cruce a la deuda, dentro de su zona.
  *
  * Node carga este archivo quitando tipos (desde `medir-zonas.mjs`): nada de
  * `enum` ni de parámetros con modificador, y las importaciones relativas con
@@ -35,6 +47,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { REGISTRO } from '../../functions/src/registro.ts';
 import { DESTINOS_F2, PREFIJOS_F2 } from './destinos-f2.ts';
 import type { DestinoF2, ZonaF2 } from './destinos-f2.ts';
@@ -77,7 +90,7 @@ export const PRUEBAS_TRANSVERSALES: readonly string[] = [
 
 export const esPrueba = (a: string): boolean => a.startsWith('admin/pruebas/');
 export const esSuite = (a: string): boolean => esPrueba(a) && a.endsWith('.test.ts');
-export const esCodigo = (a: string): boolean => /\.(ts|tsx|mts|mjs|js)$/.test(a);
+export const esCodigo = (a: string): boolean => /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(a);
 export const etiqueta = (z: DestinoF2): string => (z.zona === 'modulo' ? `modulo:${z.modulo}` : z.zona);
 
 // -------------------------------------------------------------------- módulos
@@ -140,7 +153,11 @@ export function listarRaices(): string[] {
 }
 
 // ------------------------------------------------------------ importaciones
-/** Un `//` pegado a `:` (una URL dentro de un texto) no es comentario. */
+/**
+ * Quita comentarios SIN tocar el texto de los literales. Ya no lo usa el
+ * lector de imports (que usa el parser); lo usa `medir-zonas.mjs` para buscar
+ * rutas escritas en las pruebas.
+ */
 export const sinComentarios = (t: string): string =>
   t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;])\/\/.*$/gm, '$1');
 
@@ -158,32 +175,65 @@ export function resolverRelativo(desde: string, especificador: string, arbol: Ar
   return null;
 }
 
+/** Especificador calculado (`import(x)`, `require(ruta)`): no se puede seguir. */
+export const CALCULADO = '<calculado>';
+
+/**
+ * Un especificador que no es relativo pero apunta al repositorio: un alias
+ * (`@/`, `~/`, `#`) o una ruta absoluta. Hoy no hay ninguno; si aparece, el
+ * lector no lo sigue, así que se informa en vez de ignorarlo.
+ */
+const esAlias = (e: string): boolean => /^(\/|@\/|~\/|#|src\/|admin\/)/.test(e);
+
 export interface Importacion {
   readonly especificador: string;
-  /** null si el import relativo no lleva a ningún archivo. */
+  /** null si el import no lleva a ningún archivo (o es calculado, o es un alias). */
   readonly destino: string | null;
   readonly soloTipo: boolean;
   readonly reexporta: boolean;
 }
 
-/** Imports estáticos, reexportaciones e imports dinámicos RELATIVOS de un archivo. */
+const TIPO_DE_SCRIPT: Record<string, ts.ScriptKind> = {
+  '.ts': ts.ScriptKind.TS, '.mts': ts.ScriptKind.TS, '.cts': ts.ScriptKind.TS, '.tsx': ts.ScriptKind.TSX,
+  '.js': ts.ScriptKind.JS, '.mjs': ts.ScriptKind.JS, '.cjs': ts.ScriptKind.JS, '.jsx': ts.ScriptKind.JSX,
+};
+
+/**
+ * Los imports de un archivo que apuntan al repositorio: estáticos,
+ * reexportaciones, `import x = require()`, dinámicos, `require` y los tipos
+ * `import('…').T`. Los paquetes de npm no cuentan.
+ */
 export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importacion[] {
-  const texto = sinComentarios(arbol.leer(archivo));
+  const extension = archivo.slice(archivo.lastIndexOf('.'));
+  const fuente = ts.createSourceFile(archivo, arbol.leer(archivo), ts.ScriptTarget.Latest, true,
+    TIPO_DE_SCRIPT[extension] ?? ts.ScriptKind.TS);
   const encontrados: Importacion[] = [];
-  const patrones = [
-    /\b(import|export)\s+(type\s+)?[^;'"`]*?\bfrom\s+['"]([^'"]+)['"]/g,
-    /\bimport\s+()()['"]([^'"]+)['"]/g,
-    /\bimport\(\s*()()['"]([^'"]+)['"]\s*\)/g,
-    /\brequire\(\s*()()['"]([^'"]+)['"]\s*\)/g,
-  ];
-  for (const p of patrones) for (const m of texto.matchAll(p)) {
-    const especificador = m[3];
-    if (!especificador.startsWith('.')) continue;
-    encontrados.push({
-      especificador, destino: resolverRelativo(archivo, especificador, arbol),
-      soloTipo: Boolean(m[2]), reexporta: m[1] === 'export',
-    });
-  }
+  const anotar = (especificador: string, soloTipo: boolean, reexporta: boolean) => {
+    if (especificador === CALCULADO || esAlias(especificador)) {
+      encontrados.push({ especificador, destino: null, soloTipo, reexporta });
+    } else if (especificador.startsWith('.')) {
+      encontrados.push({ especificador, destino: resolverRelativo(archivo, especificador, arbol), soloTipo, reexporta });
+    }
+  };
+  const literal = (n: ts.Node | undefined): string | null =>
+    n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
+  const visitar = (n: ts.Node): void => {
+    if (ts.isImportDeclaration(n)) {
+      anotar(literal(n.moduleSpecifier) ?? CALCULADO, Boolean(n.importClause?.isTypeOnly), false);
+    } else if (ts.isExportDeclaration(n) && n.moduleSpecifier) {
+      anotar(literal(n.moduleSpecifier) ?? CALCULADO, n.isTypeOnly, true);
+    } else if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference)) {
+      anotar(literal(n.moduleReference.expression) ?? CALCULADO, n.isTypeOnly, false);
+    } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument)) {
+      const e = literal(n.argument.literal);
+      if (e) anotar(e, true, false);
+    } else if (ts.isCallExpression(n)
+      && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === 'require'))) {
+      anotar(literal(n.arguments[0]) ?? CALCULADO, false, false);
+    }
+    ts.forEachChild(n, visitar);
+  };
+  visitar(fuente);
   return encontrados;
 }
 
@@ -193,6 +243,8 @@ export interface Cruce {
   readonly hacia: string;
   readonly motivo: string;
   readonly soloTipo: boolean;
+  /** Archivos sin zona (o ayudantes de prueba) por los que pasa el cruce, si no es directo. */
+  readonly via: readonly string[];
 }
 
 /**
@@ -208,15 +260,20 @@ export function motivoDeCruce(origen: DestinoF2, destino: DestinoF2): string | n
   return RANGO[destino.zona] > RANGO[origen.zona] ? `${etiqueta(origen)} → ${etiqueta(destino)}` : null;
 }
 
+export const MOTIVO_INDICE = 'index.ts es el inventario de despliegue: el código no lo importa';
+export const MOTIVO_PRUEBA = 'el código no importa de admin/pruebas/';
+
 export interface Analisis {
   readonly cruces: Cruce[];
-  /** Imports relativos que no llevan a ningún archivo: el lector se equivocó o el archivo no existe. */
+  /** Imports que no llevan a ningún archivo, calculados o por alias: el lector no ve a dónde van. */
   readonly sinResolver: { desde: string; especificador: string }[];
 }
 
 /**
  * Recorre los imports de `archivos` (los que tienen zona; una prueba solo si
- * está en una carpeta de zona) y devuelve los cruces hacia arriba. `zonaDe`
+ * está en una carpeta de zona) y devuelve los cruces hacia arriba. Un import
+ * a un archivo sin zona, o de una prueba a un ayudante de prueba, se sigue
+ * hasta el primer archivo con zona: el cruce se atribuye al origen. `zonaDe`
  * se inyecta para que la prueba negativa pueda inventar zonas.
  */
 export function analizar(
@@ -226,21 +283,54 @@ export function analizar(
 ): Analisis {
   const cruces: Cruce[] = [];
   const sinResolver: { desde: string; especificador: string }[] = [];
+  const cache = new Map<string, Importacion[]>();
+  const imports = (a: string): Importacion[] => {
+    if (!cache.has(a)) cache.set(a, esCodigo(a) ? importsDe(a, arbol) : []);
+    return cache.get(a)!;
+  };
   for (const archivo of archivos) {
     if (!esCodigo(archivo)) continue;
     const prueba = esPrueba(archivo);
     if (prueba && PRUEBAS_TRANSVERSALES.includes(archivo)) continue;
     const origen = prueba ? zonaPorCarpeta(archivo) : zonaDe(archivo);
     if (!origen) continue;
-    for (const i of importsDe(archivo, arbol)) {
-      if (!i.destino) { sinResolver.push({ desde: archivo, especificador: i.especificador }); continue; }
-      if (archivo === INDICE_DE_FUNCTIONS && i.reexporta) continue;
-      if (prueba && i.destino === INDICE_DE_FUNCTIONS) continue;
-      if (esPrueba(i.destino)) continue; // los ayudantes de prueba no son código de zona
-      const destino = zonaDe(i.destino);
-      if (!destino) continue;
-      const motivo = motivoDeCruce(origen, destino);
-      if (motivo) cruces.push({ desde: archivo, hacia: i.destino, motivo, soloTipo: i.soloTipo });
+    const vistos = new Set<string>([archivo]);
+    const pendientes: { archivo: string; via: string[] }[] = [{ archivo, via: [] }];
+    while (pendientes.length) {
+      const actual = pendientes.shift()!;
+      for (const i of imports(actual.archivo)) {
+        if (!i.destino) {
+          if (actual.via.length === 0) sinResolver.push({ desde: archivo, especificador: i.especificador });
+          continue;
+        }
+        const d = i.destino;
+        // Antes de marcarlo visto: si index.ts reexporta un archivo y además
+        // lo importa, la reexportación no debe tapar el import.
+        if (actual.archivo === INDICE_DE_FUNCTIONS && i.reexporta) continue;
+        if (vistos.has(d)) continue;
+        vistos.add(d);
+        const cruce = (hacia: string, motivo: string) =>
+          cruces.push({ desde: archivo, hacia, motivo, soloTipo: i.soloTipo, via: actual.via });
+        if (d === INDICE_DE_FUNCTIONS) {
+          // Una prueba llama a una callable por el índice; el código, no.
+          if (!prueba) cruce(d, MOTIVO_INDICE);
+          continue;
+        }
+        if (esPrueba(d)) {
+          if (!prueba) { cruce(d, MOTIVO_PRUEBA); continue; }
+          // Un ayudante de prueba no tiene zona propia: se sigue.
+          pendientes.push({ archivo: d, via: [...actual.via, d] });
+          continue;
+        }
+        const destino = zonaDe(d);
+        if (!destino) {
+          // Sin zona: se sigue, para que no sirva de puente.
+          pendientes.push({ archivo: d, via: [...actual.via, d] });
+          continue;
+        }
+        const motivo = motivoDeCruce(origen, destino);
+        if (motivo) cruce(d, actual.via.length ? `${motivo}, vía ${actual.via.join(' → ')}` : motivo);
+      }
     }
   }
   return { cruces, sinResolver };

@@ -14,7 +14,7 @@
  * lanzar a los agentes de módulo en paralelo, cuántos archivos de
  * `admin/functions/src`, `admin/web/src`, `Flujos/src`, `admin/scripts` y
  * `admin/pruebas` tienen zona según el inventario del §5
- * (`pruebas/core/destinos-f2.ts`), cuáles no la tienen, cuáles se parten, y
+ * (`pruebas/frontera/destinos-f2.ts`), cuáles no la tienen, cuáles se parten, y
  * qué importaciones van hacia arriba o entre módulos sin `dependeDe`.
  *
  * CÓMO CLASIFICA
@@ -26,13 +26,13 @@
  *     MÁS ALTA de lo que toca; dos módulos donde ninguno declara al otro en
  *     `dependeDe` es «sin zona» (la prueba está mal cortada); si solo lee los
  *     JSON de `Flujos/`, es «flujo-json»; si no toca nada con zona, «sin zona».
- *   - Hacia arriba: la regla de `pruebas/core/frontera.ts`, la MISMA que usa
+ *   - Hacia arriba: la regla de `pruebas/frontera/frontera.ts`, la MISMA que usa
  *     `fronteras.test.ts` (zona por inventario, por carpeta o por prefijo;
  *     registro < core < central < plataforma < módulo < coordinador <
  *     tenants; entre módulos, solo con `dependeDe`).
  *
  * Es una MEDICIÓN, no una prueba: sale siempre con 0. La prueba que falla si
- * una zona importa hacia arriba es `pruebas/core/fronteras.test.ts`; los dos
+ * una zona importa hacia arriba es `pruebas/frontera/fronteras.test.ts`; los dos
  * números del informe (sin zona y hacia arriba) son los que ella acota.
  */
 import { readFileSync, readdirSync } from 'node:fs';
@@ -57,7 +57,7 @@ process.emitWarning = (aviso, ...resto) => {
 const {
   RAIZ, RAICES, RANGO, analizar, dependenciasDe, esPrueba, esSuite, etiqueta, importsDe,
   listarRaices, sinComentarios, zonaDeCodigo,
-} = await import(pathToFileURL(join(RAIZ_DEL_SCRIPT, 'admin/pruebas/core/frontera.ts')).href);
+} = await import(pathToFileURL(join(RAIZ_DEL_SCRIPT, 'admin/pruebas/frontera/frontera.ts')).href);
 process.emitWarning = emitirOriginal;
 
 // ------------------------------------------------------------------ el árbol
@@ -167,7 +167,7 @@ const sinZona = clasificados.filter((c) => !c.zona);
 const seParten = clasificados.filter((c) => c.zona?.seParte?.length);
 
 // --------------------------------------------------------- hacia arriba
-// La regla de `pruebas/core/frontera.ts`: la misma que hace fallar a
+// La regla de `pruebas/frontera/frontera.ts`: la misma que hace fallar a
 // `fronteras.test.ts`. Además de lo que medía el PR 1, recorre las pruebas que
 // ya están en una carpeta de zona (`pruebas/core/`, `pruebas/central/`).
 const { cruces: haciaArriba, sinResolver } = analizar(ARCHIVOS);

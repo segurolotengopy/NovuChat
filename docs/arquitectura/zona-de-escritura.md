@@ -136,7 +136,7 @@ indefinido.
 
 - **`Bash`.** Un `sed -i` o un `cat >` desde Bash no pasan por acá. Lo
   sensible lo cubre `acciones-sensibles.sh`; el resto, la revisión del PR y la
-  prueba de fronteras de importación (`admin/pruebas/core/fronteras.test.ts`,
+  prueba de fronteras de importación (`admin/pruebas/frontera/fronteras.test.ts`,
   en CI desde F2).
 - **Secciones de un archivo.** El gancho distingue archivos, no partes: un
   agente con `admin/firestore.rules` en su zona puede editar cualquier regla.
