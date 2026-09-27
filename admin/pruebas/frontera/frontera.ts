@@ -242,19 +242,34 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
   };
   buscarRequires(fuente);
   /**
-   * Un `require` (o un `r` de createRequire) que no se llama ni se usa como
-   * `.resolve`: se pasa como valor y el lector ya no puede seguirlo. Ni su
-   * propia declaración ni un `typeof require` cuentan.
+   * Un `require` (o un alias de createRequire) pasado como VALOR: inicializa
+   * una variable, es argumento de una llamada, lado derecho de una
+   * asignación, `return`, elemento de un arreglo, propiedad o `export`. Solo
+   * esas posiciones: un parámetro, un método, una propiedad o un atributo JSX
+   * con el mismo nombre no son un require. Y un alias (no `require`) cuyo
+   * nombre se declara también en otro lado (un parámetro `r`) no se cuenta:
+   * sin resolver ámbitos, sería un falso positivo sin salida (revisión del #236).
    */
+  const nombresDeclarados = new Map<string, number>();
+  const contarDeclaraciones = (n: ts.Node): void => {
+    if ((ts.isParameter(n) || ts.isVariableDeclaration(n) || ts.isFunctionDeclaration(n)) && n.name && ts.isIdentifier(n.name)) {
+      nombresDeclarados.set(n.name.text, (nombresDeclarados.get(n.name.text) ?? 0) + 1);
+    }
+    ts.forEachChild(n, contarDeclaraciones);
+  };
+  contarDeclaraciones(fuente);
   const usadoComoValor = (id: ts.Identifier): boolean => {
+    if (id.text !== 'require' && (nombresDeclarados.get(id.text) ?? 0) > 1) return false;
     const p = id.parent;
-    if (ts.isCallExpression(p) && p.expression === id) return false;
-    if (ts.isPropertyAccessExpression(p) && p.expression === id) return false;
-    if (ts.isPropertyAccessExpression(p) && p.name === id) return false;
-    if (ts.isVariableDeclaration(p) && p.name === id) return false;
-    if (ts.isTypeOfExpression(p)) return false;
-    if (ts.isImportSpecifier(p) || ts.isPropertyAssignment(p) && p.name === id) return false;
-    return true;
+    return (ts.isVariableDeclaration(p) && p.initializer === id)
+      || (ts.isCallExpression(p) && p.arguments.some((a) => a === id))
+      || (ts.isBinaryExpression(p) && p.right === id && p.operatorToken.kind === ts.SyntaxKind.EqualsToken)
+      || ts.isReturnStatement(p)
+      || ts.isArrayLiteralExpression(p)
+      || ts.isShorthandPropertyAssignment(p)
+      || (ts.isPropertyAssignment(p) && p.initializer === id)
+      || (ts.isExportSpecifier(p) && !ts.isStringLiteral(p.name) && (p.propertyName ?? p.name) === id)
+      || (ts.isArrowFunction(p) && p.body === id);
   };
   /** `require(…)`, `r(…)` de un createRequire, `require.resolve(…)` y `module.require(…)`. */
   const esRequire = (e: ts.Expression): boolean =>

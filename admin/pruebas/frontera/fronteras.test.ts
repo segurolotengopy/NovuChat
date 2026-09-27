@@ -27,6 +27,8 @@
  * Y la regla se prueba NEGANDO, con un árbol inventado: sin esa parte, un
  * lector de imports que no ve nada daría verde para siempre.
  */
+import { dirname as carpetaDe } from 'node:path';
+import { fileURLToPath as rutaDe } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
 import {
@@ -34,6 +36,7 @@ import {
   leerDeuda, listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
 } from './frontera.ts';
 
+const RAIZ_FRONTERA = carpetaDe(rutaDe(import.meta.url));
 const F = 'admin/functions/src/';
 const W = 'admin/web/src/';
 
@@ -236,6 +239,22 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(bien.cruces.map((c) => c.hacia)).toEqual([`${F}central/a.ts`]);
   });
 
+  it('un nombre igual a require o a su alias que no es un require no se informa', () => {
+    const falsos = [
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst x = [1].map((r) => r + 1);\nfoo(r => r);",
+      'interface Opc { require: boolean }',
+      'class A { require() {} }',
+      'class B { require = true; }',
+      'const t = <input require />;',
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\ntype T = typeof r;",
+      'function f(require: boolean) { return 1; }',
+    ];
+    for (const texto of falsos) {
+      const archivo = texto.includes('<input') ? `${F}core/a.tsx` : CORE;
+      expect(cruces({ [archivo]: texto }).sinResolver, texto).toEqual([]);
+    }
+  });
+
   it('un import comentado no cuenta; un texto con /* o con // no esconde el import que sigue', () => {
     const r = cruces({
       [CORE]: [
@@ -410,6 +429,25 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
     });
     expect(r.crecen).toEqual([]);
     expect(r.inexplicadas).toEqual([`sin zona ${W}lib/nuevo.ts`, 'transversal admin/pruebas/core/otra.test.ts']);
+  });
+
+  it('invocado por un enlace simbólico, el comparador compara igual (no termina en 0 sin hacer nada)', async () => {
+    const { mkdtempSync, symlinkSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { spawnSync } = await import('node:child_process');
+    const { join: unir } = await import('node:path');
+    const dir = mkdtempSync(unir(tmpdir(), 'deuda-'));
+    try {
+      symlinkSync(unir(RAIZ_FRONTERA), unir(dir, 'enlace'));
+      const crece = { ...base, cruces: [...base.cruces, { desde: `${F}core/a.ts`, hacia: `${F}central/b.ts`, porque: 'x' }] };
+      writeFileSync(unir(dir, 'base.json'), JSON.stringify(base));
+      writeFileSync(unir(dir, 'pr.json'), JSON.stringify(crece));
+      const r = spawnSync(process.execPath, [unir(dir, 'enlace', 'deuda-solo-baja.mjs'), unir(dir, 'base.json'), unir(dir, 'pr.json')], { encoding: 'utf8' });
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('::error::La deuda de la frontera crece');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('achicar la deuda pasa', () => {

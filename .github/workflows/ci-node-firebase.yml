@@ -421,16 +421,28 @@ jobs:
           git show "${BASE_PR}:${ruta}" > "$RUNNER_TEMP/deuda-base.json"
           # El comparador es el de la BASE, no el del PR: un PR que agranda la
           # deuda no puede, en el mismo PR, aflojar el comparador (revision del
-          # #236). Solo el primer PR que lo trae usa el suyo.
+          # #236). Si la base tiene la deuda pero no el comparador, alguien lo
+          # borro: no se juzga con el del PR.
           comparador=admin/pruebas/frontera/deuda-solo-baja.mjs
-          if git cat-file -e "${BASE_PR}:${comparador}" 2>/dev/null; then
-            git show "${BASE_PR}:${comparador}" > "$RUNNER_TEMP/deuda-solo-baja.mjs"
-          else
-            cp pruebas/frontera/deuda-solo-baja.mjs "$RUNNER_TEMP/deuda-solo-baja.mjs"
+          if ! git cat-file -e "${BASE_PR}:${comparador}" 2>/dev/null; then
+            echo "::error::La base tiene ${ruta} pero no ${comparador}: no se juzga con el comparador del PR."
+            exit 1
           fi
-          # Los archivos movidos explican una entrada nueva de la deuda; nada mas.
-          git diff -M --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"
-          node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt"
+          git show "${BASE_PR}:${comparador}" > "$RUNNER_TEMP/deuda-solo-baja.mjs"
+          # Los archivos movidos explican una entrada nueva de la deuda; nada
+          # mas. -l0: sin limite de renombres (F2 mueve muchos archivos);
+          # quotePath=false: rutas con tildes sin comillas.
+          git -c core.quotePath=false diff -M -l0 --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"
+          # El analizador (frontera.ts, fronteras.test.ts, destinos-f2.ts) corre
+          # en la version del PR: un cambio ahi lo ve solo la revision humana.
+          if git diff --name-only "$BASE_PR" HEAD -- 'admin/pruebas/frontera/*.ts' | grep -q .; then
+            echo "::warning::Este PR cambia el analizador de la frontera (admin/pruebas/frontera/*.ts): revisarlo a mano."
+          fi
+          # Se exige la ultima linea de exito: un comparador que termina en 0
+          # sin comparar (por ejemplo, si no se reconoce como principal) no pasa.
+          node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt" \
+            | tee "$RUNNER_TEMP/deuda.log"
+          grep -q '^La deuda no crece' "$RUNNER_TEMP/deuda.log"
 
       - name: Lint
         # En un workspace pnpm el script `lint` vive en los paquetes (web/),

@@ -166,11 +166,14 @@ no se compensan. El lector reconoce además `createRequire(…)`,
 `require.resolve` y `module.require`, y toma por calculado (a `sinResolver`,
 que tampoco puede crecer) todo `require` que no puede seguir.
 
-**Hasta dónde protege:** el gancho frena a los agentes con zona; el CI, a un
-PR que toca solo la deuda o el comparador. Un PR que cambia a la vez
-`.github/workflows/` y `admin/pruebas/frontera/` puede quitar el control:
-eso lo cubre solo la revisión humana mientras `CODEOWNERS` tenga un único
-propietario, y la revisión de `seguridad` de cada PR lo señala explícitamente.
+**Hasta dónde protege:** el gancho frena a los agentes con zona. El CI frena
+a un PR que toca `deuda.json` o el comparador (corre el de la base; si la base
+lo perdió, bloquea). El **analizador** (`frontera.ts`, `fronteras.test.ts`,
+`destinos-f2.ts`) corre en la versión del PR: un PR que lo afloja y a la vez
+mete un cruce queda en verde, y lo frena solo la revisión humana. Lo mismo un
+PR que cambia `.github/workflows/`. Por eso el paso de la deuda emite un aviso
+cuando el PR toca `admin/pruebas/frontera/*.ts`, y la revisión de `seguridad`
+de cada PR lo señala, mientras `CODEOWNERS` tenga un único propietario.
 
 **Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que

@@ -33,7 +33,7 @@
  *
  * Solo lectura: no escribe nada, no abre la red.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 /** Las cantidades que no pueden crecer. */
@@ -86,7 +86,10 @@ export function comparar(base, pr, movidos = new Map()) {
   return { antes: a, despues: b, crecen, nuevas: nuevas.map(texto), inexplicadas };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Rutas reales en los dos lados: invocado por un enlace simbólico, argv[1] no
+// coincide con import.meta.url y el script terminaba en 0 sin comparar nada.
+const real = (r) => { try { return realpathSync(r); } catch { return r; } };
+if (real(process.argv[1] ?? '') === real(fileURLToPath(import.meta.url))) {
   const [rutaBase, rutaPr, rutaMovidos] = process.argv.slice(2);
   if (!rutaBase || !rutaPr) {
     console.error('Uso: deuda-solo-baja.mjs <deuda-de-la-base.json> <deuda-del-pr.json> [movidos.txt]');

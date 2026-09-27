@@ -139,8 +139,13 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
     expect(c).toContain('BASE_PR: ${{ github.event.pull_request.base.sha }}');
     // Corre el comparador de la BASE (un PR no afloja al que lo juzga) con los renombres del PR.
     expect(c).toContain('git show "${BASE_PR}:${comparador}" > "$RUNNER_TEMP/deuda-solo-baja.mjs"');
-    expect(c).toContain('git diff -M --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"');
+    expect(c).toContain('git -c core.quotePath=false diff -M -l0 --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"');
     expect(c).toContain('node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt"');
+    // Sin comparador en la base (con deuda en la base) se bloquea; nunca se usa el del PR.
+    expect(c).toContain('no se juzga con el comparador del PR."');
+    expect(c).not.toContain('cp pruebas/frontera/deuda-solo-baja.mjs');
+    // Se exige la línea final de éxito: salir en 0 sin comparar no alcanza.
+    expect(c).toContain("grep -q '^La deuda no crece' \"$RUNNER_TEMP/deuda.log\"");
     const paso = c.slice(c.indexOf('- name: La deuda de la frontera'), c.indexOf('- name: Lint'));
     expect(paso).not.toContain('${{ github.event.pull_request.base.sha }}"');
     expect(paso.split('run: |')[1]).not.toContain('${{');
