@@ -236,6 +236,13 @@ describe('la regla de la frontera (árbol inventado)', () => {
       "const q = require.bind(null);",
       "(0, require)('../central/a');",
       "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nr.call(null, '../central/a');",
+      // Sondas de la cuarta vuelta de seguridad del #236.
+      "import m from 'node:module';\nconst r = m.createRequire(import.meta.url);\nr('../central/a');",
+      "import { Module } from 'node:module';\nconst r = Module.createRequire(import.meta.url);\nr('../central/a');",
+      "const r = process.getBuiltinModule('node:module').createRequire(import.meta.url);\nr('../central/a');",
+      "const { createRequire: cr } = await import('node:module');\ncr(import.meta.url)('../central/a');",
+      "const q = (globalThis as any).require;\nq('../central/a');",
+      "module['require']('../central/a');",
     ];
     for (const texto of casos) {
       const r = cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' });

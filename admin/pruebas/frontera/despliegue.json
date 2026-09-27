@@ -1,0 +1,1748 @@
+{
+  "actualizarEstadoCuenta": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "ajustarStock": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "altaTenant": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "anularPagoPendiente": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "asignarEjes": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "asignarNumero": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "avisoCobrador": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      },
+      {
+        "key": "COBRADOR_AVISO_SECRETO"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "bajaTenant": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "barridoCobros": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 540,
+    "minInstances": null,
+    "maxInstances": 1,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      }
+    ],
+    "labels": {},
+    "scheduleTrigger": {
+      "schedule": "every 60 minutes",
+      "retryConfig": {}
+    }
+  },
+  "catalogoPublico": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 20,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "checkoutCatalogo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 20,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "comprobarArchivoPlanes": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 30,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "comprobarImagenDelCatalogo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "GEMINI_API_KEY"
+      }
+    ],
+    "labels": {},
+    "eventTrigger": {
+      "eventType": "google.cloud.firestore.document.v1.written",
+      "eventFilters": {
+        "database": "(default)",
+        "namespace": "(default)"
+      },
+      "eventFilterPathPatterns": {
+        "document": "tenants/{tenantId}/catalogo/{itemId}"
+      },
+      "retry": false
+    }
+  },
+  "configuracionFlujo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": "params.INSTANCIAS_MINIMAS",
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "configuracionParaFlujo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "consultarPagoPendiente": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "cotejarComprobante": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "crearCobroPrepago": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "dejarDeControlarStock": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "ejesDeCuenta": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "enlaceCatalogo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "fijarCortePrepago": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "fijarTelefonosPago": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "fijarWebhookCarrito": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "fotoDeCatalogo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 20,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "imagenDeCobro": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "imagenDePago": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "importarCatalogo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "ingesta": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": "params.INSTANCIAS_MINIMAS",
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "invitarUsuario": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "liberarNumero": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "moverReclamo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "notificarReclamo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "eventTrigger": {
+      "eventType": "google.cloud.firestore.document.v1.created",
+      "eventFilters": {
+        "database": "(default)",
+        "namespace": "(default)"
+      },
+      "eventFilterPathPatterns": {
+        "document": "tenants/{tenantId}/reclamos/{reclamoId}"
+      },
+      "retry": false
+    }
+  },
+  "otorgarAccesoSoporte": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "quitarUsuario": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "reactivarTenant": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "recomprobarImagen": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "GEMINI_API_KEY"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "recordatorioPrepagoEnviado": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "recordatoriosPrepago": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "registrarCambioConfig": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 5,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "eventTrigger": {
+      "eventType": "google.cloud.firestore.document.v1.written",
+      "eventFilters": {
+        "database": "(default)",
+        "namespace": "(default)"
+      },
+      "eventFilterPathPatterns": {
+        "document": "tenants/{tenantId}/config/negocio"
+      },
+      "retry": false
+    }
+  },
+  "registrarCambioOperado": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "registrarCierre": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "registrarPagoManual": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      }
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "registrarQrDeCobro": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "revocarAccesoSoporte": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "seguimientoEnviado": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "seguimientosPendientes": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "senaVencida": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "INGESTA_DEMOA"
+      },
+      {
+        "key": "INGESTA_DEMOB"
+      },
+      {
+        "key": "INGESTA_CLIENTE01"
+      },
+      {
+        "key": "INGESTA_CLIENTE02"
+      },
+      {
+        "key": "INGESTA_CLIENTE03"
+      },
+      {
+        "key": "INGESTA_CLIENTE04"
+      },
+      {
+        "key": "INGESTA_CLIENTE05"
+      },
+      {
+        "key": "INGESTA_CLIENTE06"
+      },
+      {
+        "key": "INGESTA_CLIENTE07"
+      },
+      {
+        "key": "INGESTA_CLIENTE08"
+      },
+      {
+        "key": "INGESTA_CLIENTE09"
+      },
+      {
+        "key": "INGESTA_CLIENTE10"
+      },
+      {
+        "key": "INGESTA_CLIENTE11"
+      },
+      {
+        "key": "INGESTA_CLIENTE12"
+      },
+      {
+        "key": "INGESTA_CLIENTE13"
+      },
+      {
+        "key": "INGESTA_CLIENTE14"
+      },
+      {
+        "key": "INGESTA_CLIENTE15"
+      },
+      {
+        "key": "INGESTA_CLIENTE16"
+      },
+      {
+        "key": "INGESTA_CLIENTE17"
+      },
+      {
+        "key": "INGESTA_CLIENTE18"
+      },
+      {
+        "key": "INGESTA_CLIENTE19"
+      },
+      {
+        "key": "INGESTA_CLIENTE20"
+      }
+    ],
+    "labels": {},
+    "httpsTrigger": {}
+  },
+  "sondeoCobros": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 240,
+    "minInstances": null,
+    "maxInstances": 1,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "COBRADOR_TOKEN"
+      }
+    ],
+    "labels": {},
+    "scheduleTrigger": {
+      "schedule": "every 5 minutes",
+      "retryConfig": {}
+    }
+  },
+  "suspenderTenant": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "tipoCambioBcb": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 60,
+    "minInstances": null,
+    "maxInstances": 1,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "scheduleTrigger": {
+      "schedule": "0 7,13,19 * * *",
+      "retryConfig": {},
+      "timeZone": "America/La_Paz"
+    }
+  },
+  "ubicacionDeEnlace": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  },
+  "verificarCampanas": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 120,
+    "minInstances": null,
+    "maxInstances": 3,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "GEMINI_API_KEY"
+      }
+    ],
+    "labels": {},
+    "eventTrigger": {
+      "eventType": "google.cloud.firestore.document.v1.written",
+      "eventFilters": {
+        "database": "(default)",
+        "namespace": "(default)"
+      },
+      "eventFilterPathPatterns": {
+        "document": "tenants/{tenantId}/config/campanas"
+      },
+      "retry": false
+    }
+  },
+  "verificarComportamiento": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": 60,
+    "minInstances": null,
+    "maxInstances": 3,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "secretEnvironmentVariables": [
+      {
+        "key": "GEMINI_API_KEY"
+      }
+    ],
+    "labels": {},
+    "eventTrigger": {
+      "eventType": "google.cloud.firestore.document.v1.written",
+      "eventFilters": {
+        "database": "(default)",
+        "namespace": "(default)"
+      },
+      "eventFilterPathPatterns": {
+        "document": "tenants/{tenantId}/config/negocio"
+      },
+      "retry": false
+    }
+  },
+  "vistaPreviaCatalogo": {
+    "availableMemoryMb": null,
+    "timeoutSeconds": null,
+    "minInstances": null,
+    "maxInstances": 10,
+    "ingressSettings": null,
+    "concurrency": null,
+    "serviceAccountEmail": "sa-functions@demo-test.iam.gserviceaccount.com",
+    "vpc": null,
+    "platform": "gcfv2",
+    "region": [
+      "us-east1"
+    ],
+    "labels": {},
+    "callableTrigger": {}
+  }
+}

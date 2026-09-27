@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
@@ -49,7 +52,9 @@ export const SUITES_PURAS = [
   'pruebas/consola-pagar.test.ts',
   'pruebas/conteo-bloques.test.ts',
   'pruebas/contrasena-minimo.test.ts',
+  'pruebas/frontera/despliegue.test.ts',
   'pruebas/frontera/fronteras.test.ts',
+  'pruebas/frontera/rutas-escritas.test.ts',
   'pruebas/demo-b-catalogo.test.ts',
   'pruebas/demo-b-cobro.test.ts',
   'pruebas/direccion-maps.test.ts',
@@ -80,6 +85,15 @@ export const SUITES_PURAS = [
   'pruebas/xlsx.test.ts',
 ];
 
+// Una entrada de SUITES_PURAS que no existe no falla sola: la suite movida sale
+// de «puras» y sigue corriendo en «emulador» sin que nadie lo note (F2 mueve
+// suites de carpeta). Se corta acá, al cargar la configuración.
+const aqui = dirname(fileURLToPath(import.meta.url));
+const perdidas = SUITES_PURAS.filter((s) => !existsSync(join(aqui, s)));
+if (perdidas.length) {
+  throw new Error(`SUITES_PURAS nombra suites que no existen (¿se movieron?): ${perdidas.join(', ')}`);
+}
+
 export default defineConfig({
   test: {
     testTimeout: 20000,
@@ -93,7 +107,9 @@ export default defineConfig({
     // GCLOUD_PROJECT y falla si no está (firebase-tools la fija al descubrir
     // las Functions; Cloud Run, en ejecución). Las suites que importan
     // index.ts la necesitan; `demo-` marca que no es un proyecto real.
-    env: { GCLOUD_PROJECT: 'demo-test' },
+    // CPU_FRACCIONARIA vacía: la forma de staging (`cpu`) no entra a la
+    // instantánea de despliegue aunque el shell la tenga (pruebas/frontera/despliegue.test.ts).
+    env: { GCLOUD_PROJECT: 'demo-test', CPU_FRACCIONARIA: '' },
     projects: [
       {
         extends: true,

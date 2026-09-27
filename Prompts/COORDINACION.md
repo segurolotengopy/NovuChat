@@ -31,7 +31,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **fusionada el 26/09**: #200, #201, #202, #204, #206 y #208 | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **cerrada el 26/09**: primer `desplegar-staging` + `humo-staging` (26/26) + ZAP en verde por CI (el run de la fusión del #227). Cuota de 20 vCPU con CPU fraccionaria (#219); invocadores (#226); defectos del job corregidos (#213, #222, #224, #227) | H2 |
 | **F1b** Copia de límites y precio por contrato | `--conversaciones`, `--cambios`, `--precio`, `--periodo-prueba`, `--bolsa-prueba` con `--operador` y auditoría; lo mismo desde Negocios; pago manual al precio del contrato | **cerrada el 26/09**: #212, #217, #221, #223. Informe H1b abajo | H1b |
-| **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas. Sin cambios de alcance | **diseño en curso desde el 26/09**; sus PR se fusionan después de F1b; primer PR `registro.ts` solo; gancho corregido en #210. Condición de la etiqueta abajo (Reglas para F2) | H2 |
+| **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas. Sin cambios de alcance | **En obra.** Hechos: `registro.ts` (#214), `fronteras.test.ts` (#231), CI de `Flujos/` (#232) y base de push y deuda que no crece (#236). Orden de movimiento en `docs/arquitectura/f2-orden-de-movimiento.md` (27/09): mueve la coordinadora con un script; **tanda cero** (compuertas, sin mover) en curso; FL2 (extraer el onboarding) espera los PR de la cartera (#237 fusionado, #238). Medición: 19 cruces, 47 sin zona. Condición de la etiqueta abajo (Reglas para F2) | H2 |
 | **F3a** Esqueleto de venta | Medios entrantes en el core para los tres esqueletos; transferencia con aviso y botón; fallo del modelo con botón; `NIEGA_IA` en la variante común; campaña por texto; embudo único; brechas 8 y 9 del anexo A. Agentes `core-flujos` y `modulo` | espera H2 | H3a |
 | **F3b** Core unificado de reservas | Una variante de los cinco nodos comunes; prompt por capas; suites sin `new Function`; corpus de captación fuera del nodo; los 8 publicados desde `main`, Bellido y Platinum en ventana con ensayo previo | espera H3a; Platinum además espera su PR de datos | H3b |
 | **H4-Bellido** Pase de Bellido | Lo cierra la sesión de cartera, sobre la versión publicada | **ahora** (ver «Coordinación con la sesión de cartera») | H4-Bellido |
@@ -330,6 +330,14 @@ La sesión de cartera no toca `Flujos/src/`, Functions ni consola: lo que exige 
 `pedidos.md` con fecha «después de F3b»; los **cambios incluidos** del
 contrato son de **configuración** y su SLA de dos días hábiles se cumple
 durante la obra (§12.10).
+
+**Defecto de publicación informado por la cartera (27/09, corte de la
+captación al número de Silvana):** `publicar-flujo.sh --apagar --aplicar`
+informó «HTTP 000000» aunque apagó bien, y `webhook-meta.sh --cerrar` borró el
+flujo temporal pero falló al leer la respuesta (JSONDecodeError) y **no volvió
+a encender** el flujo: la captación quedó apagada un minuto y medio, hasta que
+la cartera la encendió a mano. Es la familia del PR #174, sin fusionar:
+**fusionarlo antes del próximo alta de webhook** (pendiente de la operadora).
 
 **Reglas comunes a las tres sesiones:**
 - **El pago no cambia la modalidad** (opción B, #212): el pase a prepago

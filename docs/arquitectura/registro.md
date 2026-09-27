@@ -175,6 +175,12 @@ PR que cambia `.github/workflows/`. Por eso el paso de la deuda emite un aviso
 cuando el PR toca `admin/pruebas/frontera/*.ts`, y la revisión de `seguridad`
 de cada PR lo señala, mientras `CODEOWNERS` tenga un único propietario.
 
+**La tanda cero de F2** (`f2-orden-de-movimiento.md`) agrega a esta carpeta
+`rutas-escritas.test.ts` (las rutas que los scripts escriben hacia Functions
+existen) y `despliegue.test.ts` (los 55 nombres de `index.ts` y su
+`__endpoint`, contra `despliegue.json`), y cierra las pruebas que pasaban en
+vacío al mover un archivo.
+
 **Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
 venir de `ensamblador.test.ts` o `registro.test.ts` cuando en F3 existan

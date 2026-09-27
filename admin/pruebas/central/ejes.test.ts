@@ -184,13 +184,17 @@ describe('El contador de cambios operados', () => {
 });
 
 describe('Las fuentes: nadie escribe el plan viejo ni pagaMeta, y el servidor usa lo vendible', () => {
-  const carpetas = ['functions/src', 'functions/src/central', 'scripts'];
-  const archivos = carpetas.flatMap((c) => readdirSync(join(RAIZ_ADMIN, c))
-    .filter((f) => f.endsWith('.ts') || f.endsWith('.mjs'))
-    .map((f) => `${c}/${f}`));
+  // Todas las subcarpetas (F2, tanda cero): un archivo que F2 mueve a
+  // `central/cuenta/` o un script a `scripts/plataforma/` sigue revisándose.
+  const fuentesDe = (c: string): string[] => readdirSync(join(RAIZ_ADMIN, c), { withFileTypes: true })
+    .flatMap((e) => (e.isDirectory() ? (e.name === 'node_modules' ? [] : fuentesDe(`${c}/${e.name}`))
+      : e.name.endsWith('.ts') || e.name.endsWith('.mjs') ? [`${c}/${e.name}`] : []));
+  const archivos = ['functions/src', 'scripts'].flatMap(fuentesDe);
 
-  it('hay fuentes que revisar', () => {
-    expect(archivos).toEqual(expect.arrayContaining(['functions/src/planes.ts', 'scripts/asignar-plan.mjs', 'scripts/migrar-ejes.mjs']));
+  it('hay fuentes que revisar, también en subcarpetas (control de que no pasa en vacío al mover)', () => {
+    for (const nombre of ['/planes.ts', '/asignar-plan.mjs', '/migrar-ejes.mjs', '/central/ejes.ts']) {
+      expect(archivos.some((a) => a.endsWith(nombre)), nombre).toBe(true);
+    }
   });
 
   it('ningún módulo del servidor ni ningún script escribe `plan: \'demostracion\'`', () => {
@@ -207,7 +211,7 @@ describe('Las fuentes: nadie escribe el plan viejo ni pagaMeta, y el servidor us
   });
 
   it('el servidor usa `esPlanVendible` e `IdPlanVendible`: el puente `esIdPlan` / `IdPlan` / `PLAN_DEMOSTRACION` es solo para la consola', () => {
-    for (const a of archivos.filter((x) => x.startsWith('functions/src') && x !== 'functions/src/planes.ts')) {
+    for (const a of archivos.filter((x) => x.startsWith('functions/src') && !x.endsWith('/planes.ts'))) {
       const fuente = sinComentarios(leer(a));
       expect(fuente, a).not.toMatch(/\besIdPlan\b/);
       expect(fuente, a).not.toMatch(/\bPLAN_DEMOSTRACION\b/);

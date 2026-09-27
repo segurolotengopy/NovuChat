@@ -255,7 +255,10 @@ fase_cuentas() {
 }
 
 secretos_declarados() { # de firma.ts, cobroPrepago.ts y captacion/verificarComportamiento: lo que el código exige
-  grep -rhoE "define(Secret)\('[A-Z_0-9]+'" admin/functions/src/*.ts | sed -E "s/.*'([A-Z_0-9]+)'/\1/" | sort -u
+  # En todas las subcarpetas (F2 mueve los archivos a core/, central/ y
+  # modulos/<m>/): con `admin/functions/src/*.ts` un secreto de un archivo
+  # movido dejaba de crearse en staging.
+  grep -rhoE --include='*.ts' "define(Secret)\('[A-Z_0-9]+'" admin/functions/src | sed -E "s/.*'([A-Z_0-9]+)'/\1/" | sort -u
 }
 
 fase_secretos() {

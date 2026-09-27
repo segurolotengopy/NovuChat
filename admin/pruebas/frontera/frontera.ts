@@ -299,6 +299,19 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
     if (ts.isTypeOfExpression(p)) return true;
     return false;
   };
+  /**
+   * El único uso de `createRequire` que se sigue: importado por su nombre de
+   * `module`/`node:module`, y llamado para inicializar un `const r`.
+   */
+  const createRequireReconocido = (id: ts.Identifier): boolean => {
+    const p = id.parent;
+    if (ts.isImportSpecifier(p) && p.name === id && !p.propertyName) {
+      const decl = p.parent.parent.parent;
+      return ts.isImportDeclaration(decl) && /^(node:)?module$/.test(literal(decl.moduleSpecifier) ?? '');
+    }
+    return ts.isCallExpression(p) && p.expression === id
+      && ts.isVariableDeclaration(p.parent) && p.parent.initializer === p && ts.isIdentifier(p.parent.name);
+  };
   /** `require(…)`, `r(…)` de un createRequire (con paréntesis), `require.resolve(…)` y `module.require(…)`. */
   const esRequire = (e: ts.Expression): boolean => {
     let x: ts.Expression = e;
@@ -327,6 +340,18 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
       anotar(CALCULADO, false, false);
     }
     if (ts.isIdentifier(n) && !nombra(n) && esIdRequire(n) && !seSigue(n)) anotar(CALCULADO, false, false);
+    // Por NOMBRE, fuera del patrón reconocido (revisión del #236, cuarta vuelta):
+    // `m.createRequire`, `Module.createRequire`, `process.getBuiltinModule`,
+    // `{ createRequire: cr } = await import('node:module')`, `globalThis.require`,
+    // `module['require']`… Todo eso es CALCULADO.
+    if (ts.isIdentifier(n) && (n.text === 'createRequire' || n.text === 'getBuiltinModule') && !createRequireReconocido(n)) {
+      anotar(CALCULADO, false, false);
+    }
+    if (ts.isPropertyAccessExpression(n) && n.name.text === 'require'
+      && !(ts.isIdentifier(n.expression) && n.expression.text === 'module' && ts.isCallExpression(n.parent) && n.parent.expression === n)) {
+      anotar(CALCULADO, false, false);
+    }
+    if (ts.isElementAccessExpression(n) && literal(n.argumentExpression) === 'require') anotar(CALCULADO, false, false);
     if (ts.isImportDeclaration(n)) {
       anotar(literal(n.moduleSpecifier) ?? CALCULADO, Boolean(n.importClause?.isTypeOnly), false);
     } else if (ts.isExportDeclaration(n) && n.moduleSpecifier) {
