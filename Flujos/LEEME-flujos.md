@@ -279,7 +279,9 @@ usuario, con el asistente «Kenji».
      «pediatría», raíz común de 5 letras sin tildes) o nombrando el oficio
      («dentista» → «odontología»)— queda registrado por código (#6627). Las
      palabras del nombre de la empresa y del contacto no cuentan: «Pastelería
-     La Colmena» no dice que sea una pastelería;
+     La Colmena» no dice que sea una pastelería. La raíz común vale solo en la
+     respuesta a la pregunta por el rubro, y una mención no es el negocio: «no
+     vendo ropa», «mi mamá es médica»;
    - **se guarda limpio** (#6648): sin «es una», «somos», «tengo una», «me
      dedico a», «trabajo en» ni la puntuación final; «vendo ropa» queda «venta
      de ropa». El área de la lista va en su campo aparte;
@@ -287,7 +289,9 @@ usuario, con el asistente «Kenji».
      pidió cada mensaje, y la respuesta va al **primero**. Si el mensaje pedía
      el nombre del consultorio, la respuesta es la empresa (se registra por
      código si es solo un nombre), no el rubro; un rubro igual a la empresa se
-     descarta;
+     descarta. Una evasiva («después te digo», «nada», «jaja», un emoji), una
+     orden al asistente o la respuesta de quien pidió soporte no se registran
+     como empresa;
    - **deducido por el modelo** (del nombre de la empresa) **no se registra
      hasta que el cliente lo confirma**: el mensaje tiene que preguntarlo
      («¿Es así?»), y una deducción afirmada que termina en punto, o con «si me
@@ -424,6 +428,19 @@ invitaría a un mensaje pagado que repite el traspaso.
 saliera aparte, sumaría 1 mensaje por cada conversación que pregunte por
 planes. En el cierre ya avisado, que va sin botón, no hay interactivo que lo
 lleve: el texto lleva el enlace.
+
+**El archivo de planes solo vale desde el almacenamiento de la consola**
+(revisión de seguridad del PR #238): `https`, host `firebasestorage.googleapis.com`
+o `storage.googleapis.com` y sin usuario en la dirección. Cualquier otra
+dirección se ignora y los planes van en texto.
+
+**Al cargar o cambiar el archivo, pulsar «Comprobar archivo»** en la pestaña
+«Captación». Meta descarga la imagen o el PDF por su enlace cuando manda el
+mensaje; si no puede, **el envío no falla en ese momento**: el error llega
+después como un estado del mensaje, la ejecución figura correcta y el prospecto
+no recibe nada, ni los planes ni el botón. «Comprobar archivo» prueba el enlace
+con los límites de WhatsApp (imagen JPEG o PNG hasta 5 MB, documento hasta
+100 MB) antes de que lo pruebe un prospecto.
 
 **Carga inicial:** desde la pestaña «Captación», o con
 `node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
