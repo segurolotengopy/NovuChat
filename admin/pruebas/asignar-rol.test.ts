@@ -20,7 +20,10 @@
  * tope de 20 s; con red era tráfico a Google (revisión de seguridad del PR
  * #242). Por eso el hijo recibe el emulador explícito, y Auth apunta a un
  * puerto donde nadie escucha: si algún día una prueba llega a Auth, falla acá
- * en vez de salir de la máquina.
+ * en vez de salir de la máquina. Y aun con el emulador, la biblioteca de
+ * Google resuelve la credencial por defecto (lee el ADC del disco o sondea el
+ * servidor de metadatos): se le da una ruta que no existe y se apaga el sondeo,
+ * para que el hijo no toque nada del desarrollador.
  */
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -34,7 +37,13 @@ const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 
 const correr = (...args: string[]) => {
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST, FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:1' },
+    env: {
+      ...process.env,
+      FIRESTORE_EMULATOR_HOST: HOST,
+      FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:1',
+      GOOGLE_APPLICATION_CREDENTIALS: '/nonexistent/adc.json',
+      METADATA_SERVER_DETECTION: 'none',
+    },
     encoding: 'utf8', timeout: 20000,
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
