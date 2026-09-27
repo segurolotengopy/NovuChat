@@ -55,6 +55,22 @@ import type { DestinoF2, ZonaF2 } from './destinos-f2.ts';
 /** La raíz del repositorio. */
 export const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
+/**
+ * La deuda de la frontera (`deuda.json`, en esta carpeta): cruces conocidos,
+ * archivos sin zona, imports que no se pueden seguir y pruebas transversales.
+ * En JSON para que el CI la compare con la de la base del PR sin ejecutar
+ * TypeScript (`deuda-solo-baja.mjs`, en esta carpeta): ninguna lista puede crecer.
+ */
+export interface Deuda {
+  readonly cruces: readonly { desde: string; hacia: string; porque: string; soloTipo?: true }[];
+  readonly sinZona: readonly string[];
+  readonly sinResolver: Readonly<Record<string, { cantidad: number; porque: string }>>;
+  readonly transversales: readonly string[];
+}
+export function leerDeuda(): Deuda {
+  return JSON.parse(readFileSync(join(RAIZ, 'admin/pruebas/frontera/deuda.json'), 'utf8')) as Deuda;
+}
+
 /** Las raíces de código: lo que tiene zona vive debajo de una de estas. */
 export const RAICES = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;
 
@@ -84,9 +100,7 @@ export const INDICE_DE_FUNCTIONS = 'admin/functions/src/index.ts';
  * contra el código de cada una. Una prueba de zona que no esté acá importa
  * solo de su zona y de las de abajo, como el código.
  */
-export const PRUEBAS_TRANSVERSALES: readonly string[] = [
-  'admin/pruebas/core/registro.test.ts',
-];
+export const PRUEBAS_TRANSVERSALES: readonly string[] = leerDeuda().transversales;
 
 export const esPrueba = (a: string): boolean => a.startsWith('admin/pruebas/');
 export const esSuite = (a: string): boolean => esPrueba(a) && a.endsWith('.test.ts');
@@ -217,6 +231,22 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
   };
   const literal = (n: ts.Node | undefined): string | null =>
     n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
+  // `const r = createRequire(import.meta.url)`: `r(…)` es un require.
+  const requires = new Set(['require']);
+  const buscarRequires = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.isCallExpression(n.initializer)
+      && ts.isIdentifier(n.initializer.expression) && n.initializer.expression.text === 'createRequire') {
+      requires.add(n.name.text);
+    }
+    ts.forEachChild(n, buscarRequires);
+  };
+  buscarRequires(fuente);
+  /** `require(…)`, `r(…)` de un createRequire, `require.resolve(…)` y `module.require(…)`. */
+  const esRequire = (e: ts.Expression): boolean =>
+    (ts.isIdentifier(e) && requires.has(e.text))
+    || (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression)
+      && ((requires.has(e.expression.text) && e.name.text === 'resolve')
+        || (e.expression.text === 'module' && e.name.text === 'require')));
   const visitar = (n: ts.Node): void => {
     if (ts.isImportDeclaration(n)) {
       anotar(literal(n.moduleSpecifier) ?? CALCULADO, Boolean(n.importClause?.isTypeOnly), false);
@@ -227,8 +257,7 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
     } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument)) {
       const e = literal(n.argument.literal);
       if (e) anotar(e, true, false);
-    } else if (ts.isCallExpression(n)
-      && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === 'require'))) {
+    } else if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || esRequire(n.expression))) {
       anotar(literal(n.arguments[0]) ?? CALCULADO, false, false);
     }
     ts.forEachChild(n, visitar);

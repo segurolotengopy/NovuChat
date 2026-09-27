@@ -31,107 +31,26 @@ import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
 import {
   CALCULADO, INDICE_DE_FUNCTIONS, MOTIVO_INDICE, MOTIVO_PRUEBA, analizar, claveDeCruce, esPrueba, importsDe,
-  listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
+  leerDeuda, listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
 } from './frontera.ts';
 
 const F = 'admin/functions/src/';
 const W = 'admin/web/src/';
 
 // ------------------------------------------------------------------ la deuda
-const COORDINADOR_F3 = 'Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts';
-const PRUEBA_DE_PLATAFORMA = 'Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2';
-
-/** Cruces que existían el 26/09/2026, con lo que los saca. Solo se achica. */
-const DEUDA_CONOCIDA: readonly { desde: string; hacia: string; porque: string; soloTipo?: true }[] = [
-  { desde: `${F}catalogoWeb.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}cierres.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}cobranza.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}cobroPrepago.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}index.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}pagos.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}seguimientos.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}sena.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}captacion.ts`, hacia: `${F}imagenCatalogo.ts`,
-    porque: 'Captación usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover captación' },
-  { desde: `${F}verificarCampanas.ts`, hacia: `${F}imagenCatalogo.ts`,
-    porque: 'Campañas usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover campañas' },
-  { desde: `${F}verificarComportamiento.ts`, hacia: `${F}imagenCatalogo.ts`,
-    porque: 'Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos' },
-  { desde: `${F}catalogoWeb.ts`, hacia: `${F}inventario.ts`,
-    porque: 'Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web' },
-  { desde: `${F}cobroVenta.ts`, hacia: `${F}sena.ts`, soloTipo: true,
-    porque: 'Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos' },
-  { desde: `${F}prompt.ts`, hacia: `${F}saneo.ts`,
-    porque: 'El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts' },
-  { desde: `${W}paginas/Captacion.tsx`, hacia: `${W}lib/csv.ts`,
-    porque: 'csv.ts es un servicio compartido (nota del inventario): pasa a Central al mover productos' },
-  { desde: `${W}plataforma/lib/negocios.ts`, hacia: `${W}lib/archivoPlanes.ts`,
-    porque: 'Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación' },
-  { desde: 'admin/pruebas/central/contrato-f1b-consola.test.ts', hacia: `${W}plataforma/componentes/PanelEjes.tsx`, porque: PRUEBA_DE_PLATAFORMA },
-  { desde: 'admin/pruebas/central/contrato-f1b-consola.test.ts', hacia: `${W}plataforma/lib/negocios.ts`, porque: PRUEBA_DE_PLATAFORMA },
-  { desde: 'admin/pruebas/central/copia-por-contrato-consola.test.ts', hacia: `${W}plataforma/componentes/PanelEjes.tsx`, porque: PRUEBA_DE_PLATAFORMA },
-];
-
 /**
- * Archivos sin zona fuera de `admin/pruebas/`, medidos el 26/09/2026 (incluye
- * dos `.css` y dos `.sh`). EXACTA: el PR que ubica archivos los saca de acá;
- * uno que agrega un archivo sin zona no pasa. Es una lista y no un número para
- * que ubicar uno y agregar otro no se compensen.
+ * Las listas viven en `deuda.json` (esta carpeta), con su porqué en cada
+ * entrada; el CI compara cada una con la de la base del PR y falla si crece.
+ *   - `cruces`: los cruces que existían el 26/09/2026, con lo que los saca.
+ *   - `sinZona`: archivos sin zona fuera de `admin/pruebas/`. Lista EXACTA, no
+ *     un número, para que ubicar uno y agregar otro no se compensen.
+ *   - `sinResolver`: imports que el lector no puede seguir y se aceptan, por
+ *     cantidad exacta.
  */
-const SIN_ZONA: readonly string[] = [
-  'admin/scripts/activar-cobro-real.mjs',
-  'admin/scripts/completar-flujos.mjs',
-  'admin/scripts/contar-catalogo.mjs',
-  'admin/scripts/emuladores.sh',
-  'admin/scripts/ensayo.mjs',
-  'admin/scripts/fijar-webhook-carrito.mjs',
-  'admin/scripts/lib/contador-catalogo.mjs',
-  'admin/scripts/limpiar-cierres-de-prueba.mjs',
-  'admin/scripts/lockfile-functions.sh',
-  'admin/scripts/pase-a-produccion.mjs',
-  'admin/scripts/plantilla-catalogo.mjs',
-  'admin/scripts/probar-cierre.mjs',
-  'admin/scripts/probar-csp.mjs',
-  'admin/scripts/reiniciar-ventana.mjs',
-  'admin/scripts/sembrar-demos.mjs',
-  'admin/scripts/sembrar.mjs',
-  'admin/scripts/soltar-sena-pendiente.mjs',
-  'admin/scripts/usuarios-prueba.mjs',
-  'admin/web/src/App.tsx',
-  'admin/web/src/componentes/AvisoConsumo.tsx',
-  'admin/web/src/componentes/CampoMonto.tsx',
-  'admin/web/src/componentes/ChipModo.tsx',
-  'admin/web/src/componentes/EditorLista.tsx',
-  'admin/web/src/componentes/EncabezadoComercio.tsx',
-  'admin/web/src/componentes/GraficoDias.tsx',
-  'admin/web/src/componentes/Marca.tsx',
-  'admin/web/src/componentes/Proteger.tsx',
-  'admin/web/src/componentes/ResumenPrepago.tsx',
-  'admin/web/src/componentes/SinSalida.tsx',
-  'admin/web/src/componentes/TextoSeguro.tsx',
-  'admin/web/src/consola.tsx',
-  'admin/web/src/diseno.css',
-  'admin/web/src/estilos.css',
-  'admin/web/src/lib/contrasena.ts',
-  'admin/web/src/lib/ejes.ts',
-  'admin/web/src/lib/errores.ts',
-  'admin/web/src/lib/exportar.ts',
-  'admin/web/src/lib/firebase.ts',
-  'admin/web/src/lib/modoComercio.ts',
-  'admin/web/src/lib/paletas.ts',
-  'admin/web/src/lib/tema.ts',
-  'admin/web/src/main.tsx',
-];
-
-/**
- * Imports que el lector no puede seguir y que se aceptan, con su porqué. Un
- * `import()` con ruta calculada en un archivo con zona es un cruce invisible.
- */
-const SIN_RESOLVER_CONOCIDOS: Readonly<Record<string, { cantidad: number; porque: string }>> = {
-  'admin/scripts/medir-zonas.mjs': {
-    cantidad: 1, porque: 'Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona',
-  },
-};
+const DEUDA = leerDeuda();
+const DEUDA_CONOCIDA = DEUDA.cruces;
+const SIN_ZONA = DEUDA.sinZona;
+const SIN_RESOLVER_CONOCIDOS = DEUDA.sinResolver;
 
 // ------------------------------------------------------------ el árbol real
 const ARCHIVOS = listarRaices();
@@ -281,6 +200,21 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.filter((c) => c.soloTipo).map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'j.ts']);
   });
 
+  it('ve require por createRequire, require.resolve y module.require (los paquetes de npm no cuentan)', () => {
+    const r = cruces({
+      [CORE]: [
+        "import { createRequire } from 'node:module';",
+        'const desdeWeb = createRequire(import.meta.url);',
+        "const react = desdeWeb('react');",
+        "const b = desdeWeb('../central/b');",
+        "const c = require.resolve('../central/c');",
+        "const d = module.require('../central/d');",
+      ].join('\n'),
+      [`${F}central/b.ts`]: '', [`${F}central/c.ts`]: '', [`${F}central/d.ts`]: '',
+    });
+    expect(r.cruces.map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'c.ts', 'd.ts']);
+  });
+
   it('un import comentado no cuenta; un texto con /* o con // no esconde el import que sigue', () => {
     const r = cruces({
       [CORE]: [
@@ -400,5 +334,41 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(zonaPorCarpeta(`${F}suelto.ts`)).toBeNull();
     expect(zonaPorCarpeta(`${W}componentes/Marca.tsx`)).toBeNull();
     expect(zonaPorCarpeta(`${F}modulos/suelto.ts`)).toBeNull();
+  });
+});
+
+// ------------------------------------------- la deuda no crece (CI, en un PR)
+describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', async () => {
+  const { comparar } = await import('./deuda-solo-baja.mjs');
+  const base = leerDeuda();
+
+  it('la deuda de hoy contra sí misma no crece', () => {
+    expect(comparar(base, base).crecen).toEqual([]);
+  });
+
+  it('un cruce anotado de más falla, aunque la prueba de fronteras quede en verde', () => {
+    const pr = { ...base, cruces: [...base.cruces, { desde: `${F}core/a.ts`, hacia: `${F}central/b.ts`, porque: 'para que pase' }] };
+    expect(comparar(base, pr).crecen).toEqual([`cruces: ${base.cruces.length} → ${base.cruces.length + 1}`]);
+  });
+
+  it('un archivo sin zona de más, un import calculado de más o una transversal de más fallan', () => {
+    const r = comparar(base, {
+      ...base,
+      sinZona: [...base.sinZona, `${W}lib/nuevo.ts`],
+      sinResolver: { ...base.sinResolver, 'admin/scripts/otro.mjs': { cantidad: 1, porque: 'x' } },
+      transversales: [...base.transversales, 'admin/pruebas/core/otra.test.ts'],
+    });
+    expect(r.crecen.map((c) => c.split(':')[0])).toEqual(['sinZona', 'sinResolver', 'transversales']);
+  });
+
+  it('mover un archivo (misma cantidad, otra ruta) pasa y se informa como entrada nueva', () => {
+    const pr = { ...base, cruces: base.cruces.map((c, i) => (i === 0 ? { ...c, desde: `${F}modulos/catalogo-web/catalogoWeb.ts` } : c)) };
+    const r = comparar(base, pr);
+    expect(r.crecen).toEqual([]);
+    expect(r.nuevas).toEqual([`cruce ${F}modulos/catalogo-web/catalogoWeb.ts → ${base.cruces[0].hacia}`]);
+  });
+
+  it('achicar la deuda pasa', () => {
+    expect(comparar(base, { ...base, cruces: base.cruces.slice(1), sinZona: base.sinZona.slice(1) }).crecen).toEqual([]);
   });
 });

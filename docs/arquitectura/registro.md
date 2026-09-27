@@ -153,11 +153,18 @@ entrada de la deuda borrada hacen fallar la suite.
 valor al mismo archivo cuenta como de valor, y una entrada de la deuda
 marcada «solo tipo» falla si pasa a valor; lo que un puente no deja seguir
 (calculado, alias, roto) también se informa; y el import calculado aceptado
-de `medir-zonas.mjs` se acepta por cantidad exacta. Quedan dos LOW para un PR
-siguiente: un paso de CI que compare las listas de la deuda con las de
-`origin/main` (hoy las protege solo el gancho, que no rige para `Bash` ni para
-agentes sin zona) y `createRequire(...)` / `require.resolve`, que el lector
-no reconoce.
+de `medir-zonas.mjs` se acepta por cantidad exacta.
+
+**La deuda no crece en un PR (27/09):** las cuatro listas (cruces, archivos
+sin zona, imports que no se pueden seguir y pruebas transversales) viven en
+`admin/pruebas/frontera/deuda.json`, y `calidad` compara cada una con la de la
+base del PR (`deuda-solo-baja.mjs`, en la misma carpeta): si alguna crece, el
+PR no pasa, aunque `fronteras.test.ts` quede en verde. Compara cantidades, no
+rutas: mover un archivo cambia la ruta de su entrada, y eso se informa como
+entrada nueva para que el revisor la mire. Con eso, la carpeta queda protegida
+dos veces: por el gancho (agentes con zona) y por el CI (todo lo demás, `Bash`
+incluido). El lector reconoce además `createRequire(…)`, `require.resolve` y
+`module.require`.
 
 **Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que

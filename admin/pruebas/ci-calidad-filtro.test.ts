@@ -119,8 +119,28 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
     expect(paso).not.toMatch(/\|\s*grep -q/);
   });
 
-  it('un tag o un dispatch fijan las dos salidas en true', () => {
+  it('en un push a main, la base es la última corrida NO cancelada, y ante la duda corre todo', () => {
+    // 27/09/2026: con fusiones seguidas, GitHub cancela las corridas pendientes y
+    // la que sobrevive comparaba solo contra el push anterior (#231 no pasó por calidad en main).
+    const paso = flujoCi.slice(flujoCi.indexOf('- name: Detectar cambios en el componente'), flujoCi.indexOf('- name: Habilitar corepack'));
+    expect(paso).toContain('.conclusion != \\"cancelled\\"');
+    expect(paso).toContain('git merge-base --is-ancestor "$previa" "$GITHUB_SHA"');
+    expect(paso).toMatch(/Sin ultima corrida no cancelada de main verificable[^\n]*\n\s+echo "admin_cambio=true"[^\n]*\n\s+echo "pruebas_cambio=true"/);
+    expect(job('preparar')).toMatch(/permissions:\n\s+contents: read\n\s+actions: read/);
+  });
+
+  it('calidad compara la deuda de la frontera con la de la base del PR, sin interpolar el sha', () => {
+    const c = job('calidad');
+    expect(c).toContain('- name: La deuda de la frontera no crece (PR)');
+    expect(c).toContain('BASE_PR: ${{ github.event.pull_request.base.sha }}');
+    expect(c).toContain('node pruebas/frontera/deuda-solo-baja.mjs "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json');
+    const paso = c.slice(c.indexOf('- name: La deuda de la frontera'), c.indexOf('- name: Lint'));
+    expect(paso).not.toContain('${{ github.event.pull_request.base.sha }}"');
+    expect(paso.split('run: |')[1]).not.toContain('${{');
+  });
+
+  it('las salidas tempranas (tag o dispatch, base sin fiar, sin corrida previa verificable) fijan las dos en true', () => {
     const salidasTempranas = [...flujoCi.matchAll(/echo "admin_cambio=true" >> "\$GITHUB_OUTPUT"\n\s+echo "pruebas_cambio=true" >> "\$GITHUB_OUTPUT"; exit 0/g)];
-    expect(salidasTempranas).toHaveLength(2);
+    expect(salidasTempranas).toHaveLength(3);
   });
 });
