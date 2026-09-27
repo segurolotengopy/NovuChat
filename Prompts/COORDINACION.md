@@ -339,6 +339,16 @@ a encender** el flujo: la captación quedó apagada un minuto y medio, hasta que
 la cartera la encendió a mano. Es la familia del PR #174, sin fusionar:
 **fusionarlo antes del próximo alta de webhook** (pendiente de la operadora).
 
+**Pendientes de servidor del módulo captación** (informados por la cartera
+tras la revisión de seguridad del #238, 27/09; no son de su zona):
+`archivoPlanesValido` en `admin/firestore.rules` y `sanearArchivoPlanes` en
+`admin/functions/src/captacion.ts` exigen https pero no el dominio de Storage
+(`firebasestorage.googleapis.com` o `storage.googleapis.com`, sin «@»), que el
+flujo ya exige; falta con su prueba negativa en `reglas.test.ts`. Y
+`captacion.ts:210` marca `planesEnArchivo` solo con más de 5 planes, y la
+consola lo sigue mostrando así. Son lógica: van después de mover captación a
+su módulo en F2, o antes como hotfix de seguridad si Andres lo decide.
+
 **Reglas comunes a las tres sesiones:**
 - **El pago no cambia la modalidad** (opción B, #212): el pase a prepago
   (producción en la consola) lo hace **el propietario después de confirmar el
