@@ -338,12 +338,24 @@ el WhatsApp de una persona sin pasar por el flujo).
 
 Cada vez que la ficha cambia, el prospecto se guarda en la hoja «Leads_CRM» de
 una planilla de Google (encabezados en la fila 3, datos desde la 4): una fila
-nueva con el siguiente «LEAD-nnnn», la fecha de La Paz y el enlace al chat, o
-—si el teléfono ya está— solo nombre, empresa, calificación y resumen, sin
-tocar nunca lo que edita el equipo. Las columnas, la tabla de calificación y
-los valores de las listas desplegables están en un solo nodo, `Decidir fila de
-la planilla`. Un fallo no corta la respuesta al cliente: queda como
-`planilla_no_guardada` en los avisos del turno.
+nueva con el siguiente «LEAD-nnnn», la fecha de La Paz y el rubro en F
+(«Rubro»), o —si el teléfono ya está— solo nombre, empresa, rubro, calificación
+y resumen, y solo si el dato nuevo no está vacío, sin tocar nunca lo que edita
+el equipo. El rubro que se escribe es siempre el registrado por código: uno
+deducido y sin confirmar no llega a la planilla. Quien dice que ya es cliente
+no entra como prospecto nuevo. Las columnas, la tabla de calificación y los
+valores de las listas desplegables están en un solo nodo, `Decidir fila de la
+planilla`. Un fallo no corta la respuesta al cliente: queda como
+`planilla_no_guardada` en los avisos del turno, con el tipo y el código del
+error, nunca su mensaje.
+
+**Se lee lo mínimo** (revisión de seguridad del PR #237): cada ejecución guarda
+en la base de n8n lo que devuelven sus nodos, así que no se lee la hoja entera.
+`Buscar teléfono en planilla` trae solo la fila de ese teléfono (filtro de
+Google por «Teléfono WhatsApp», con y sin «+») y solo de A a J; `Leer IDs de la
+planilla` trae solo la columna A. Las columnas del equipo (K a N) no pasan
+nunca por n8n. El nombre de la hoja no debe llevar espacios: el nodo arma el
+rango A1 sin comillas.
 
 La planilla se configura con los marcadores `REEMPLAZAR_PLANILLA_PROSPECTOS_ID`
 y `REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA` de `Config base` (sin id no se guarda;

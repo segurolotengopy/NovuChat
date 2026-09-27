@@ -958,7 +958,8 @@ describe('Estructura del flujo', () => {
   });
 
   it('el aviso, el CRM y la planilla nunca cortan la respuesta al cliente', () => {
-    for (const n of ['Avisar a NovuChat', 'Guardar prospecto', 'Leer planilla', 'Agregar fila', 'Actualizar fila',
+    for (const n of ['Avisar a NovuChat', 'Guardar prospecto', 'Prospecto para la planilla', 'Buscar teléfono en planilla',
+      'Leer IDs de la planilla', 'Decidir fila de la planilla', 'Agregar fila', 'Actualizar fila',
       'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)']) {
       expect((nodo(n) as unknown as J)['onError']).toBe('continueRegularOutput');
     }
@@ -2084,9 +2085,9 @@ describe('Solo se ofrece lo que se cumple', () => {
 // solo se guardaba si `crmUrl` apuntaba a un CRM que nunca existió: no se
 // guardó nada. Ahora, la hoja «Leads_CRM» de una planilla de Google, con los
 // nodos de Google Sheets de n8n 2.36.5. Lo que se defiende, escrito negando:
-// sin id no se toca Google; un teléfono repetido no crea otra fila ni se le
-// pisan las columnas del equipo; y un fallo de la planilla nunca deja al
-// cliente sin respuesta.
+// sin id no se toca Google; se lee lo mínimo; un teléfono repetido no crea otra
+// fila ni se le pisan las columnas del equipo; un rubro sin confirmar no se
+// escribe; y un fallo de la planilla nunca deja al cliente sin respuesta.
 describe('La planilla de prospectos («Leads_CRM»)', () => {
   // Un id con la forma de uno de Google, evidentemente de prueba.
   const ID_PRUEBA = 'PLANILLA_DE_PRUEBA_' + 'x'.repeat(26);
@@ -2097,21 +2098,38 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
     return config(PANEL(), b);
   };
   const ENC = ['ID Lead', 'Fecha Registro', 'Nombre y Apellido', 'Empresa / Cliente', 'Teléfono WhatsApp',
-    'Chat WhatsApp', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA',
+    'Rubro', 'Etapa Funnel', 'Origen / Canal', 'Calificación IA', 'Resumen Chatbot IA',
     'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable'];
-  /** Lo que devuelve `Leer planilla`: una fila por item, con su row_number (datos desde la 4). */
-  const leida = (filas: unknown[][]) => filas.length
-    ? filas.map((f, k) => ({ row_number: 4 + k, ...Object.fromEntries(ENC.map((h, c) => [h, f[c] ?? ''])) }))
-    : [{}];                                                              // alwaysOutputData
+  /**
+   * Lo que devuelven los dos nodos de lectura para una hoja con estas filas
+   * (datos desde la fila 4), como los arma n8n con un rango A1: `row_number`
+   * cuenta desde la fila de encabezados (la 3 es la 1, la 4 es la 2).
+   *   - `Buscar teléfono en planilla`: la PRIMERA fila cuyo «Teléfono WhatsApp»
+   *     es igual al número o a «+» y el número, y solo de A a J;
+   *   - `Leer IDs de la planilla`: solo «ID Lead».
+   * Sin resultados, un item vacío (alwaysOutputData).
+   */
+  const lecturas = (filas: unknown[][], telefono: string) => {
+    const k = filas.findIndex((f) => [telefono, `+${telefono}`].includes(String(f[4] ?? '')));
+    const busqueda = k >= 0
+      ? [{ row_number: k + 2, ...Object.fromEntries(ENC.slice(0, 10).map((h, c) => [h, filas[k]![c] ?? ''])) }]
+      : [{}];
+    const ids = filas.length ? filas.map((f, j) => ({ row_number: j + 2, 'ID Lead': f[0] ?? '' })) : [{}];
+    return { busqueda, ids };
+  };
   // La fecha de La Paz (UTC-4 fijo), calculada: nunca escrita.
   const hoyLaPaz = () => new Date(Date.now() - 4 * 3_600_000).toISOString().slice(0, 10);
   const salir = (e: J, cfg: J = conPlanilla()) => correr('Salida', [{ ...cfg, from: TEL, nombrePerfil: 'Ana', ...e }])[0]!;
   const prospecto = (s: J, cfg: J = conPlanilla()) =>
     correr('Prospecto para la planilla', [s], { 'Config del negocio': cfg });
-  const decidir = (p: J[], lectura: J[]) => correr('Decidir fila de la planilla', lectura, { 'Prospecto para la planilla': p });
+  const decidir = (p: J[], filas: unknown[][]) => {
+    const { busqueda, ids } = lecturas(filas, String(p[0]?.['telefono'] ?? ''));
+    return correr('Decidir fila de la planilla', ids,
+      { 'Prospecto para la planilla': p, 'Buscar teléfono en planilla': busqueda });
+  };
   /** Las claves que escriben los nodos de Google: las que son encabezados (`ignoreIt`). */
   const celdas = (d: J) => Object.fromEntries(Object.entries(d).filter(([k]) => ENC.includes(k)));
-  const AJENA = ['LEAD-1001', '2026-01-02', 'Otro', 'Otra SRL', '59100000099', '💬 Chatear', '1. Nuevo Lead',
+  const AJENA = ['LEAD-1001', '2026-01-02', 'Otro', 'Otra SRL', '59100000099', 'ferretería', '1. Nuevo Lead',
     'Chatbot WhatsApp IA', 'Baja', '', '', '', 'Activo', ''];
 
   it('sin id de planilla no se guarda nada: ni se lee ni se escribe', () => {
@@ -2142,11 +2160,32 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
       estado: 'en_conversacion', anuncio: false });
   });
 
-  it('la fila nueva lleva el ID siguiente, la fecha de La Paz, la fórmula en F y los valores de las listas', () => {
+  // Revisión del PR #237: quien ya es cliente no entra como «1. Nuevo Lead»,
+  // ni en el mensaje en que lo dice ni después, en la misma ventana.
+  it('quien ya es cliente no entra a la planilla, ni se le piden datos en el traspaso', () => {
+    expect(salir({ respuesta: 'ok', guardarLead: true, pideSoporte: true })['guardarPlanilla']).toBe(false);
+    expect(salir({ respuesta: 'ok', guardarLead: true, soporteEnVentana: true })['guardarPlanilla']).toBe(false);
+    // De punta a punta: dice que es cliente y después toca «Hablar con un asesor».
+    const sd: J = {};
+    const cfg = conPlanilla();
+    estado(normalizar(texto('ya soy cliente, no puedo entrar'), cfg), sd);
+    const tocar = { type: 'interactive', interactive: { button_reply: { id: 'asesor', title: 'Hablar con un asesor' } } };
+    const e = estado(normalizar(tocar, cfg), sd)[0]!;
+    expect(e['soporteEnVentana']).toBe(true);
+    const r = correr('Traspaso a un asesor', [e], {}, sd)[0]!;
+    expect(r['respuesta']).not.toMatch(/tu nombre|tu empresa|a qué se dedica/);
+    expect(sd['conversaciones'][TEL]['pidioRubro']).not.toBe(true);
+    // El aviso a una persona sale igual; la planilla, no.
+    const s = correr('Salida', [r])[0]!;
+    expect(s['avisar']).toBe(true);
+    expect(s['guardarPlanilla']).toBe(false);
+  });
+
+  it('la fila nueva lleva el ID siguiente, la fecha de La Paz y el rubro en F, sin ninguna fórmula', () => {
     const s = salir({ respuesta: 'ok', guardarLead: true, estadoLead: 'en_conversacion',
       lead: { empresa: 'Salón Rosa', contacto: 'Ana', rubro: 'salón de belleza', flujos: 'citas' } });
     const antes = hoyLaPaz();
-    const [d] = decidir(prospecto(s), leida([AJENA, ['LEAD-1007', '', '', '', '59100000098'], ['nota suelta']]));
+    const [d] = decidir(prospecto(s), [AJENA, ['LEAD-1007', '', '', '', '59100000098'], ['nota suelta']]);
     expect(d).toMatchObject({ accionPlanilla: 'agregar' });
     expect([antes, hoyLaPaz()]).toContain(d!['Fecha Registro']);
     expect(celdas(d!)).toEqual({
@@ -2155,21 +2194,44 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
       'Nombre y Apellido': "'Ana",
       'Empresa / Cliente': "'Salón Rosa",
       'Teléfono WhatsApp': `'${TEL}`,
-      'Chat WhatsApp': '=HYPERLINK("https://wa.me/" & INDIRECT("E" & ROW()); "💬 Chatear")',
+      'Rubro': "'salón de belleza",
       'Etapa Funnel': '1. Nuevo Lead',
       'Origen / Canal': 'Chatbot WhatsApp IA',
       'Calificación IA': 'Alta',
-      'Resumen Chatbot IA': "'Rubro: salón de belleza. Interés: citas. En conversación con el asistente.",
+      'Resumen Chatbot IA': "'Interés: citas. En conversación con el asistente.",
       'Estado Comercial': 'Activo',
     });
     expect(d!['Fecha Registro']).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Ninguna fórmula, en ninguna celda (F dejó de ser el enlace al chat).
+    for (const v of Object.values(celdas(d!))) expect(String(v)).not.toMatch(/^'?=|HYPERLINK|INDIRECT/);
+    expect(TEXTO_FLUJO).not.toMatch(/HYPERLINK|INDIRECT|Chatear|Chat WhatsApp/);
+    // El rubro tiene su columna: el resumen ya no lo repite.
+    expect(d!['Resumen Chatbot IA']).not.toMatch(/Rubro:/);
     // K, L y N las llena el equipo: no se escriben.
     for (const h of ['Próxima acción', 'Notas del equipo', 'Responsable']) expect(d).not.toHaveProperty(h);
   });
 
+  it('un rubro deducido sin confirmar no se escribe en F', () => {
+    const sd = enCurso({}, { empresa: 'La Colmena', contacto: 'Silvana' });
+    const cfg = conPlanilla();
+    const e = estado(normalizar(texto('Hola, sigo aquí'), cfg), sd)[0]!;
+    const r = correr('Procesar respuesta', [{ output: 'Por el nombre, parece ser una pastelería.'
+      + '\n[LEAD]{"rubro":"pastelería"}[/LEAD]' }], { 'Estado de la conversación': e }, sd)[0]!;
+    // La ficha cambió por otra cosa en el mismo turno: se guarda, sin el rubro.
+    const s = correr('Salida', [{ ...r, guardarLead: true }])[0]!;
+    const [p] = prospecto(s, cfg);
+    expect(p!['rubro']).toBe('');
+    const [nueva] = decidir([p!], []);
+    expect(nueva!['Rubro']).toBe('');
+    // Y sobre una fila que ya tiene rubro, tampoco lo pisa.
+    const [existente] = decidir([p!], [['LEAD-1001', '', 'Silvana', 'La Colmena', TEL, 'cafetería']]);
+    expect(existente).not.toHaveProperty('Rubro');
+    expect(JSON.stringify(existente)).not.toContain('pastelería');
+  });
+
   it('en una hoja sin filas, el primer ID es LEAD-1001; con anuncio, el origen es la campaña', () => {
     const s = salir({ respuesta: 'ok', primeraVez: true, anuncioConocido: { titular: 'Tu negocio en WhatsApp' } });
-    const [d] = decidir(prospecto(s), leida([]));
+    const [d] = decidir(prospecto(s), []);
     expect(d).toMatchObject({ accionPlanilla: 'agregar', 'ID Lead': 'LEAD-1001', 'Origen / Canal': 'Campaña Meta Ads' });
     // Solo el teléfono y el nombre de perfil: calificación baja.
     expect(d!['Calificación IA']).toBe('Baja');
@@ -2177,42 +2239,48 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
 
   // Escrita negando: un teléfono repetido no crea otra fila, y de la que ya
   // existe no se toca nada que edite el equipo comercial.
-  it('un teléfono repetido no crea una segunda fila: actualiza SOLO C, D, I y J de la suya', () => {
+  it('un teléfono repetido no crea una segunda fila: actualiza SOLO C, D, F, I y J de la suya', () => {
     const s = salir({ respuesta: 'ok', guardarLead: true, estadoLead: 'cerrado',
-      lead: { empresa: 'Salón Rosa SRL', contacto: 'Ana Pérez', rubro: 'salón de belleza' } });
-    // La del cliente está en la fila 5, con G, L y M editados por el equipo, y
-    // el teléfono con otro formato.
-    const propia = ['LEAD-1002', '2026-09-01', 'Ana', '', `+${TEL}`, '💬 Chatear', '3. Propuesta enviada',
-      'Campaña Meta Ads', 'Media', 'Rubro: salón.', 'Llamar el lunes', 'Le interesa el plan Pro', 'Pausado', 'Silvana'];
-    const [d] = decidir(prospecto(s), leida([AJENA, propia]));
+      lead: { empresa: 'Salón Rosa SRL', contacto: 'Ana Pérez', rubro: 'salón de belleza', flujos: 'citas' } });
+    // La del cliente está en la fila 5 de la hoja, con G, L y M editados por el
+    // equipo, el teléfono con «+» y la F vacía.
+    const propia = ['LEAD-1002', '2026-09-01', 'Ana', '', `+${TEL}`, '', '3. Propuesta enviada',
+      'Campaña Meta Ads', 'Media', 'Interés: citas.', 'Llamar el lunes', 'Le interesa el plan Pro', 'Pausado', 'Silvana'];
+    const [d] = decidir(prospecto(s), [AJENA, propia]);
     expect(d).toMatchObject({ accionPlanilla: 'actualizar', row_number: 5 });
     expect(celdas(d!)).toEqual({
       'Nombre y Apellido': 'Ana Pérez',
       'Empresa / Cliente': 'Salón Rosa SRL',
+      'Rubro': 'salón de belleza',
       'Calificación IA': 'Alta',
-      'Resumen Chatbot IA': 'Rubro: salón de belleza. Pidió hablar con un asesor.',
+      'Resumen Chatbot IA': 'Interés: citas. Pidió hablar con un asesor.',
     });
-    // Ni el ID, ni la fecha, ni el teléfono, ni la fórmula, ni lo del equipo.
-    for (const h of ['ID Lead', 'Fecha Registro', 'Teléfono WhatsApp', 'Chat WhatsApp', 'Etapa Funnel',
+    // Ni el ID, ni la fecha, ni el teléfono, ni lo del equipo.
+    for (const h of ['ID Lead', 'Fecha Registro', 'Teléfono WhatsApp', 'Etapa Funnel',
       'Origen / Canal', 'Próxima acción', 'Notas del equipo', 'Estado Comercial', 'Responsable']) {
       expect(d, h).not.toHaveProperty(h);
     }
     expect(JSON.stringify(d)).not.toMatch(/Propuesta|Pausado|Llamar el lunes|LEAD-/);
+    // Una F distinta se actualiza con el rubro registrado; una igual, no.
+    const conOtro = [...propia]; conOtro[5] = 'peluquería';
+    expect(decidir(prospecto(s), [AJENA, conOtro])[0]!['Rubro']).toBe('salón de belleza');
+    const conIgual = [...propia]; conIgual[5] = 'salón de belleza';
+    expect(decidir(prospecto(s), [AJENA, conIgual])[0]).not.toHaveProperty('Rubro');
   });
 
   it('con datos vacíos no se pisa nada, y la calificación no baja', () => {
     // El flujo olvidó la ficha (48 h sin mensajes): llega solo el teléfono.
     const s = salir({ respuesta: 'ok', primeraVez: true, nombrePerfil: '' });
-    const propia = ['LEAD-1002', '2026-09-01', 'Ana Pérez', 'Salón Rosa', TEL, '💬', '1. Nuevo Lead',
-      'Chatbot WhatsApp IA', 'Alta', 'Rubro: salón.', '', '', 'Activo', ''];
-    const [d] = decidir(prospecto(s), leida([propia]));
+    const propia = ['LEAD-1002', '2026-09-01', 'Ana Pérez', 'Salón Rosa', TEL, 'salón', '1. Nuevo Lead',
+      'Chatbot WhatsApp IA', 'Alta', 'Interés: citas.', '', '', 'Activo', ''];
+    const [d] = decidir(prospecto(s), [propia]);
     expect(d).toEqual({ accionPlanilla: 'nada', veredictoPlanilla: 'sin_cambios' });
   });
 
   it('la calificación sale de la tabla de reglas, por código', () => {
     const calificar = (lead: J, estadoLead = 'en_conversacion') => {
       const s = salir({ respuesta: 'ok', guardarLead: true, estadoLead, nombrePerfil: 'Ana', lead });
-      return decidir(prospecto(s), leida([]))[0]!['Calificación IA'];
+      return decidir(prospecto(s), [])[0]!['Calificación IA'];
     };
     expect(calificar({}, 'cerrado')).toBe('Alta');                                    // pidió asesor
     expect(calificar({ empresa: 'Salón Rosa', rubro: 'belleza' })).toBe('Alta');      // ficha completa
@@ -2221,58 +2289,77 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
     expect(calificar({ contacto: 'Ana' })).toBe('Baja');
   });
 
-  it('un texto que empieza con «=» no se vuelve fórmula', () => {
-    const s = salir({ respuesta: 'ok', guardarLead: true, lead: { empresa: '=IMPORTXML("https://x.y";"//a")' } });
-    const [d] = decidir(prospecto(s), leida([]));
-    expect(d!['Empresa / Cliente']).toBe('\'=IMPORTXML("https://x.y";"//a")');
-    // Al actualizar se escribe crudo (RAW): tampoco se interpreta.
+  // Revisión del PR #237, L3: en los DOS caminos, sin el carácter inicial que
+  // una planilla toma por fórmula; al agregar, además, con apóstrofo.
+  it('un texto que empieza con «=», «+», «-» o «@» se escribe sin ese carácter, al agregar y al actualizar', () => {
+    const lead = { empresa: '=IMPORTXML("https://x.y";"//a")', contacto: '+Ana', rubro: '@pastelería',
+      consulta: '-precios' };
+    const s = salir({ respuesta: 'ok', guardarLead: true, lead });
+    const [nueva] = decidir(prospecto(s), []);
+    expect(nueva!['Empresa / Cliente']).toBe('\'IMPORTXML("https://x.y";"//a")');
+    expect(nueva!['Nombre y Apellido']).toBe("'Ana");
+    expect(nueva!['Rubro']).toBe("'pastelería");
+    expect(nueva!['Resumen Chatbot IA']).toBe("'Consulta: -precios. En conversación con el asistente.");
+    const [act] = decidir(prospecto(s), [['LEAD-1001', '', '', '', TEL]]);
+    expect(celdas(act!)).toMatchObject({ 'Empresa / Cliente': 'IMPORTXML("https://x.y";"//a")',
+      'Nombre y Apellido': 'Ana', 'Rubro': 'pastelería' });
+    for (const v of Object.values(celdas(act!))) expect(String(v)).not.toMatch(/^[=+\-@']/);
     expect(nodo('Actualizar fila').parameters['options']['cellFormat']).toBe('RAW');
   });
 
-  it('con los encabezados cambiados no se escribe; si no se pudo leer, tampoco, y el porqué no lleva el id', () => {
+  it('con los encabezados cambiados no se escribe; si no se pudo leer, tampoco, y el error no se copia', () => {
     const s = salir({ respuesta: 'ok', guardarLead: true });
-    const cambiada = leida([AJENA]).map((f) => {
-      const { ['Teléfono WhatsApp']: tel, ...resto } = f as J;
-      return { ...resto, 'Celular': tel };
+    const p = prospecto(s);
+    const { busqueda, ids } = lecturas([['LEAD-1001', '', '', '', TEL]], TEL);
+    const renombrada = busqueda.map((f) => {
+      const { ['Rubro']: r, ...resto } = f as J;
+      return { ...resto, 'Rubros': r };
     });
-    const [d] = decidir(prospecto(s), cambiada);
+    const [d] = correr('Decidir fila de la planilla', ids,
+      { 'Prospecto para la planilla': p, 'Buscar teléfono en planilla': renombrada });
     expect(d).toEqual({ accionPlanilla: 'nada',
-      veredictoPlanilla: 'encabezados_distintos: la fila 3 no tiene «Teléfono WhatsApp»' });
-    // El nodo de Google que falla devuelve el item de entrada con `error` al lado.
-    const [x] = decidir(prospecto(s), [{ [ITEM]: { json: { telefono: TEL },
-      error: { message: `The caller does not have permission on ${ID_PRUEBA}` } } }]);
-    expect(x!['accionPlanilla']).toBe('nada');
-    expect(x!['veredictoPlanilla']).toBe('no_leida: The caller does not have permission on [id]');
+      veredictoPlanilla: 'encabezados_distintos: la fila 3 no tiene «Rubro»' });
+    const [sinA] = correr('Decidir fila de la planilla', [{ row_number: 2, 'Identificador': 'LEAD-1001' }],
+      { 'Prospecto para la planilla': p, 'Buscar teléfono en planilla': [{}] });
+    expect(sinA!['veredictoPlanilla']).toBe('encabezados_distintos: la fila 3 no tiene «ID Lead»');
+    // El nodo de Google que falla devuelve el item de entrada con `error` al
+    // lado. Del error queda el tipo, el código y el estado de Google: nunca el
+    // mensaje, que puede repetir un dato del cliente.
+    const [x] = correr('Decidir fila de la planilla', [{}], { 'Prospecto para la planilla': p,
+      'Buscar teléfono en planilla': [{ [ITEM]: { json: { telefono: TEL }, error: { name: 'NodeApiError', httpCode: '403',
+        message: `Forbidden - Ana Pérez de Salón Rosa en ${ID_PRUEBA}`, description: 'PERMISSION_DENIED' } } }] });
+    expect(x).toEqual({ accionPlanilla: 'nada', veredictoPlanilla: 'no_leida: NodeApiError HTTP 403 PERMISSION_DENIED' });
+    expect(JSON.stringify(x)).not.toMatch(/Ana|Salón|PLANILLA_DE_PRUEBA/);
   });
 
   describe('un fallo de la planilla no impide responder', () => {
     const ACEPTADO = { statusCode: 200, body: { messages: [{ id: 'wamid.ok' }] } };
     const salida = () => salir({ respuesta: 'Gracias, Ana.', guardarLead: true, lead: { empresa: 'Salón Rosa' } });
 
-    it('Google rechaza la fila: el mensaje se reporta igual, con el aviso del turno', () => {
+    it('Google rechaza la fila: el mensaje se reporta igual, con el aviso y sin el mensaje del error', () => {
       const s = salida();
       const [reportado, ...resto] = correr('Confirmar envío', [s], {
         'Enviar a WhatsApp': ACEPTADO,
         'Decidir fila de la planilla': { accionPlanilla: 'agregar', veredictoPlanilla: 'agregar' },
-        'Agregar fila': { [ITEM]: { json: { accionPlanilla: 'agregar' },
-          error: { message: `Forbidden: el teléfono ${TEL} y la planilla ${ID_PRUEBA}` } } },
+        'Agregar fila': { [ITEM]: { json: { accionPlanilla: 'agregar' }, error: { name: 'NodeApiError', httpCode: '403',
+          message: `Forbidden: Ana Pérez, teléfono ${TEL}`, description: 'The caller does not have permission' } } },
       });
       expect(resto).toEqual([]);
       expect(reportado!['respuesta']).toBe('Gracias, Ana.');
-      expect(reportado!['avisos']).toContain('planilla_no_guardada: Forbidden: el teléfono [número] y la planilla [id]');
-      expect(String(reportado!['avisos'])).not.toContain(TEL);
+      expect(reportado!['avisos']).toContain('planilla_no_guardada: NodeApiError HTTP 403');
+      expect(String(reportado!['avisos'])).not.toMatch(new RegExp(`Ana Pérez|${TEL}|Forbidden|permission`));
       // Y la actualización que falla, igual.
       const [r2] = correr('Confirmar envío', [s], { 'Enviar a WhatsApp': ACEPTADO,
         'Decidir fila de la planilla': { accionPlanilla: 'actualizar' },
-        'Actualizar fila': { [ITEM]: { json: {}, error: { message: 'Rate limit' } } } });
-      expect(r2!['avisos']).toContain('planilla_no_guardada: Rate limit');
+        'Actualizar fila': { [ITEM]: { json: {}, error: { name: 'NodeApiError', message: 'Quota: RESOURCE_EXHAUSTED' } } } });
+      expect(r2!['avisos']).toContain('planilla_no_guardada: NodeApiError RESOURCE_EXHAUSTED');
     });
 
     it('no se pudo leer, o ni se llegó a decidir: también queda anotado, sin cortar', () => {
       const s = salida();
       const [a] = correr('Confirmar envío', [s], { 'Enviar a WhatsApp': ACEPTADO,
-        'Decidir fila de la planilla': { accionPlanilla: 'nada', veredictoPlanilla: 'no_leida: Forbidden' } });
-      expect(a!['avisos']).toContain('planilla_no_guardada: no_leida: Forbidden');
+        'Decidir fila de la planilla': { accionPlanilla: 'nada', veredictoPlanilla: 'no_leida: NodeApiError HTTP 403' } });
+      expect(a!['avisos']).toContain('planilla_no_guardada: no_leida: NodeApiError HTTP 403');
       const [b] = correr('Confirmar envío', [s], { 'Enviar a WhatsApp': ACEPTADO });
       expect(b!['avisos']).toContain('planilla_no_guardada: no se llegó a decidir la fila');
     });
@@ -2290,7 +2377,7 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
       }
     });
 
-    it('en el lienzo: la planilla va después del envío y antes de «Confirmar envío», y no corta', () => {
+    it('en el lienzo: la planilla va después del envío y antes de «Confirmar envío», y ningún nodo corta', () => {
       const y = (n: string) => ((nodo(n) as unknown as J)['position'] as number[])[1]!;
       const hijos = (flujo.connections['Salida']?.['main']?.[0] ?? []).map((c) => c.node);
       expect(hijos).toEqual(['¿Responder?', '¿Avisar a NovuChat?', '¿Guardar prospecto?',
@@ -2299,24 +2386,54 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
       expect(y('¿Guardar prospecto?')).toBeLessThan(y('Prospecto para la planilla'));
       expect(y('Prospecto para la planilla')).toBeLessThan(y('Confirmar envío'));
       const sale = (n: string, k = 0) => (flujo.connections[n]?.['main']?.[k] ?? []).map((c) => c.node);
-      expect(sale('Prospecto para la planilla')).toEqual(['Leer planilla']);
-      expect(sale('Leer planilla')).toEqual(['Decidir fila de la planilla']);
+      expect(sale('Prospecto para la planilla')).toEqual(['Buscar teléfono en planilla']);
+      expect(sale('Buscar teléfono en planilla')).toEqual(['Leer IDs de la planilla']);
+      expect(sale('Leer IDs de la planilla')).toEqual(['Decidir fila de la planilla']);
       expect(sale('Decidir fila de la planilla')).toEqual(['¿Agregar fila?']);
       expect([sale('¿Agregar fila?', 0), sale('¿Agregar fila?', 1)]).toEqual([['Agregar fila'], ['¿Actualizar fila?']]);
       expect(sale('¿Actualizar fila?')).toEqual(['Actualizar fila']);
-      // Nada de la planilla vuelve al envío ni a «Confirmar envío».
       for (const n of ['Agregar fila', 'Actualizar fila']) expect(flujo.connections[n]).toBeUndefined();
-      for (const n of ['Leer planilla', 'Agregar fila', 'Actualizar fila']) {
-        expect((nodo(n) as unknown as J)['onError']).toBe('continueRegularOutput');
+      // Revisión del PR #237, L4: también los dos nodos Code de la cadena.
+      for (const n of ['Prospecto para la planilla', 'Buscar teléfono en planilla', 'Leer IDs de la planilla',
+        'Decidir fila de la planilla', 'Agregar fila', 'Actualizar fila']) {
+        expect((nodo(n) as unknown as J)['onError'], n).toBe('continueRegularOutput');
       }
     });
   });
 
-  it('los nodos de Google: operación, fila de encabezados, agregado atómico y actualización por fila', () => {
-    const leer = nodo('Leer planilla') as unknown as J;
-    expect(leer['parameters']).toMatchObject({ resource: 'sheet', operation: 'read',
-      options: { dataLocationOnSheet: { values: { rangeDefinition: 'specifyRange', headerRow: 3, firstDataRow: 4 } } } });
-    expect([leer['executeOnce'], leer['alwaysOutputData']]).toEqual([true, true]);
+  // Revisión del PR #237, L1: cada ejecución guarda en la base de n8n lo que
+  // devuelve cada nodo. Leer la hoja entera guardaba a TODOS los prospectos,
+  // con las notas del equipo.
+  it('se lee lo mínimo: la fila de ESTE teléfono de A a J, y aparte solo la columna A', () => {
+    const buscar = nodo('Buscar teléfono en planilla') as unknown as J;
+    expect(buscar['parameters']).toMatchObject({ resource: 'sheet', operation: 'read', combineFilters: 'OR',
+      filtersUI: { values: [
+        { lookupColumn: 'Teléfono WhatsApp', lookupValue: '={{ $json.telefono }}' },
+        { lookupColumn: 'Teléfono WhatsApp', lookupValue: "={{ '+' + $json.telefono }}" }] },
+      options: { returnFirstMatch: true,
+        dataLocationOnSheet: { values: { rangeDefinition: 'specifyRangeA1', range: 'A3:J' } } } });
+    const ids = nodo('Leer IDs de la planilla') as unknown as J;
+    expect(ids['parameters']).toMatchObject({ operation: 'read',
+      options: { dataLocationOnSheet: { values: { rangeDefinition: 'specifyRangeA1', range: 'A3:A' } } } });
+    expect(ids['parameters']['filtersUI']).toBeUndefined();
+    expect([ids['executeOnce'], ids['alwaysOutputData'], buscar['alwaysOutputData']]).toEqual([true, true, true]);
+    // Escrita negando: ninguna lectura de la hoja entera, ni ninguna que
+    // alcance las columnas del equipo (K a N).
+    const lecturasDelFlujo = flujo.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets'
+      && n.parameters['operation'] === 'read');
+    expect(lecturasDelFlujo.map((n) => n.name).sort()).toEqual(['Buscar teléfono en planilla', 'Leer IDs de la planilla']);
+    for (const n of lecturasDelFlujo) {
+      const rango = n.parameters['options']?.['dataLocationOnSheet']?.['values'] ?? {};
+      expect(rango['rangeDefinition'], n.name).toBe('specifyRangeA1');
+      expect(String(rango['range']), n.name).toMatch(/^A3:[A-J]$/);
+    }
+    // Con el rango A1 la fila 4 llega como row_number 2: se actualiza la 4.
+    const s = salir({ respuesta: 'ok', guardarLead: true, lead: { contacto: 'Ana María' } });
+    const [d] = decidir(prospecto(s), [['LEAD-1001', '', 'Ana', '', TEL]]);
+    expect(d!['row_number']).toBe(4);
+  });
+
+  it('los nodos que escriben: agregado atómico y actualización por fila', () => {
     expect(nodo('Agregar fila').parameters).toMatchObject({ operation: 'append',
       columns: { mappingMode: 'autoMapInputData' },
       options: { cellFormat: 'USER_ENTERED', useAppend: true, handlingExtraData: 'ignoreIt',
@@ -2324,7 +2441,7 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
     expect(nodo('Actualizar fila').parameters).toMatchObject({ operation: 'update',
       columns: { mappingMode: 'autoMapInputData', matchingColumns: ['row_number'] },
       options: { cellFormat: 'RAW', handlingExtraData: 'ignoreIt', locationDefine: { values: { headerRow: 3, firstDataRow: 4 } } } });
-    for (const n of ['Leer planilla', 'Agregar fila', 'Actualizar fila']) {
+    for (const n of ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Agregar fila', 'Actualizar fila']) {
       const p = nodo(n).parameters;
       expect(p['documentId']).toEqual({ __rl: true, mode: 'id',
         value: "={{ $('Config del negocio').first().json.planillaProspectosId }}" });
@@ -2334,7 +2451,7 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
   });
 
   it('la credencial es la cuenta de servicio de Google, por nombre y con id vacío', () => {
-    for (const n of ['Leer planilla', 'Agregar fila', 'Actualizar fila']) {
+    for (const n of ['Buscar teléfono en planilla', 'Leer IDs de la planilla', 'Agregar fila', 'Actualizar fila']) {
       expect(nodo(n).parameters['authentication']).toBe('serviceAccount');
       expect(nodo(n).credentials).toEqual({ googleApi: { id: '', name: 'Google Sheets NovuChat (cuenta de servicio)' } });
     }
@@ -2363,11 +2480,37 @@ describe('La planilla de prospectos («Leads_CRM»)', () => {
       { 'Estado de la conversación': e }, sd)[0]!;
     const s = correr('Salida', [r])[0]!;
     expect(s['guardarPlanilla']).toBe(true);
-    const [d] = decidir(prospecto(s, cfg), leida([AJENA]));
-    expect(d).toMatchObject({ accionPlanilla: 'agregar', 'ID Lead': 'LEAD-1002', 'Calificación IA': 'Alta' });
+    const [d] = decidir(prospecto(s, cfg), [AJENA]);
+    expect(d).toMatchObject({ accionPlanilla: 'agregar', 'ID Lead': 'LEAD-1002', 'Calificación IA': 'Alta',
+      'Rubro': "'salón de belleza" });
     const [reportado] = correr('Confirmar envío', [s], { 'Enviar a WhatsApp': { statusCode: 200 },
       'Decidir fila de la planilla': d!, 'Agregar fila': d! }, sd);
     expect(reportado!['respuesta']).toBe(s['respuesta']);
     expect(String(reportado!['avisos'])).not.toMatch(/planilla/);
+  });
+});
+
+// ===========================================================================
+// Revisión del PR #237, L2: el texto que invita a tocar el botón y el botón
+// mismo salen con UNA sola condición. Nunca «Toca el botón» sin botón.
+describe('Soporte: el texto y el botón van juntos', () => {
+  const soporte = (lead: J, extra: J = {}) => {
+    const sd = enCurso({}, lead);
+    Object.assign(sd['conversaciones'][TEL], extra);
+    const e = estado(normalizar(texto('ya soy cliente, no puedo entrar a mi consola')), sd)[0]!;
+    return correr('Procesar respuesta', [{ output: 'La contraseña se recupera en la pantalla de ingreso.' }],
+      { 'Estado de la conversación': e }, sd)[0]!;
+  };
+
+  it('sin aviso previo: el texto invita y el botón está', () => {
+    const r = soporte({});
+    expect(r['respuesta']).toMatch(/Toca el botón\.$/);
+    expect(r['cuerpoMeta']['interactive']['action']['buttons'][0]['reply']['id']).toBe('asesor');
+  });
+
+  it('con el aviso ya dado (avisado, en curso): ni el texto ni el botón', () => {
+    const r = soporte({}, { avisado: true, etapa: 'en_curso' });
+    expect(r['respuesta']).not.toMatch(/Toca el botón/);
+    expect(r['cuerpoMeta']).toBeUndefined();
   });
 });
