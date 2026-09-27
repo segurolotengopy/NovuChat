@@ -434,7 +434,7 @@ for (const c of COMERCIOS) {
     // Apodo del secreto HMAC de ESTE número. El nombre del secreto tiene que
     // ser fijo en el código (`defineSecret`), y el identificador del número no
     // puede escribirse en un repositorio público: el alias resuelve las dos
-    // cosas sin perder el secreto por número. Ver functions/src/firma.ts.
+    // cosas sin perder el secreto por número. Ver functions/src/core/seguridad/firma.ts.
     aliasSecreto: c.alias,
     wabaId: c.wabaId ?? '',
     estado: 'activo',

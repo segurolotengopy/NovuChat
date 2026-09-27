@@ -160,22 +160,34 @@ tanda que lo necesita:
   `_load`, `new Function` y `eval`, y la exportación de un alias de
   `createRequire` (evasiones deliberadas; `o.require` hoy da un falso
   positivo sin casos).
-- **Citas de ruta que la tanda 2 dejó sin corregir** (la compuerta no las
-  acepta todavía): el comentario de `admin/vitest.config.ts` que cita
-  `functions/src/opcionesGlobales.ts` (la regla de ese archivo exige los
-  comentarios idénticos; que acepte `reemplazarRutas`) y
-  `sembrar-demos.mjs:437` y `superadmin.mjs:85`, donde la ruta cierra una
-  oración con punto (que el límite de `reemplazarRutas` acepte `.` seguido de
-  espacio o fin de línea). El control de restos de `mudanza.mjs` no debería
-  listar `docs/arquitectura/tandas/`, y debería mirar también `.github/*.md`
-  (la tanda 2 corrigió a mano `DESPLIEGUE-FIREBASE.md`, que no revisaba).
-  La tanda 3 dejó sin corregir `functions/src/prompt.ts` en tres casos
-  distintos: los comentarios de `alta-comercio.mjs:71`, `asignar-numero.mjs:90`
-  y `completar-flujos.mjs:29` (la ruta cierra la oración con punto, como
-  arriba); dos comentarios de `admin/firestore.rules` (229 y 671: la compuerta
-  no reconoce comentarios en las reglas), y el valor `_umbral-del-prompt` de
-  `scripts/datos/negocio-demo-venta-{resto,walisuma}.json` (es un dato, no un
-  comentario).
+- **Las citas que dejaron las tandas 2 y 3 quedaron corregidas** en el PR de
+  herramientas que siguió a la tanda 4. La compuerta ahora acepta el punto que
+  cierra una oración después de la ruta y la cita en un comentario de
+  `vitest.config.ts`. El control de restos mira `.github/*.md` y no lista
+  `docs/arquitectura/tandas/`. Dos casos siguen sin entrar en un PR de tanda, a
+  propósito, y se corrigen en el PR siguiente:
+  - **los comentarios de `firestore.rules`**: reconocerlos exige un lector de
+    reglas, y un error ahí dejaría pasar un cambio de permisos como si fuera
+    un comentario;
+  - **un texto dentro de un JSON de datos**, que es un valor y no un
+    comentario.
+- **`functions:build` borra `lib/` y `tsconfig.tsbuildinfo` antes de `tsc -b`**
+  (revisión de seguridad de la tanda 4). `tsc -b` no borra los compilados de
+  fuentes que ya no existen, y un despliegue manual los subía. El CI no se
+  veía afectado, porque compila desde un checkout limpio.
+- **El hijo de una suite hereda el emulador, nunca las ADC.** Lo mostró la
+  revisión de la tanda 1 y lo corrigió el #245 en `asignar-rol.test.ts`.
+  - **La regla:** toda suite que lance un script con `spawnSync` le pasa en su
+    `env` `FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST` hacia un
+    puerto muerto, `GOOGLE_APPLICATION_CREDENTIALS` hacia una ruta inexistente
+    y `METADATA_SERVER_DETECTION=none`. Lo hace aunque `pruebas/correr.sh` ya
+    exporte el emulador, porque la suite también se corre sin él.
+  - **Qué exige a las tandas:** una tanda que mueva suites (Pz) conserva ese
+    `env` y la última línea de `correr.sh`.
+  - **Cómo se comprueba:** con `pnpm pruebas:reglas` dentro de `unshare -rn`,
+    sin red y con un puerto propio.
+  - **Pendiente:** `pruebas/correr-storage.sh` exporta solo el puerto. Hoy no
+    es un riesgo, porque ninguna suite de Storage lanza scripts.
 - **La separación seña/prepago es solo directa:** existe el camino
   `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
   `ingesta` en F3b.

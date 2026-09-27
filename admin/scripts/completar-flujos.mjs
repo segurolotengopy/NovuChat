@@ -26,7 +26,7 @@ const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
-// Misma tabla que `documentoDeVertical` en functions/src/prompt.ts.
+// Misma tabla que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta' };
 
 const fichas = await db.collection('tenants').get();

@@ -226,7 +226,7 @@ service cloud.firestore {
 
     // Capacidades, expresadas como tabla y no como condiciones sueltas: agregar
     // un flujo es tocar estas líneas, no cazar `if` por el archivo. La misma
-    // tabla vive en `functions/src/prompt.ts` (VERTICALES_CONOCIDOS) y en
+    // tabla vive en `functions/src/core/prompt/prompt.ts` (VERTICALES_CONOCIDOS) y en
     // `web/src/lib/flujos.ts`: si se agrega un flujo en un solo lado, se nota.
     function tieneAgenda(tenantId) {
       return tieneFlujo(tenantId, 'agendamiento');
@@ -668,7 +668,7 @@ service cloud.firestore {
         // HORARIO DE UN DÍA: 'cerrado', o 'HH:MM-HH:MM' con «desde» antes que
         // «hasta». Un día AUSENTE también pasa (el valor por defecto es
         // 'cerrado'): la consola no escribe la clave de un día sin datos, y
-        // `horarioAtencion()` (functions/src/prompt.ts) lo omite de la frase.
+        // `horarioAtencion()` (functions/src/core/prompt/prompt.ts) lo omite de la frase.
         //
         // POR QUÉ UN FORMATO CERRADO Y NO TEXTO LIBRE. El valor entra tal cual
         // en la frase que el asistente le lee al cliente, y en el Tablero. «9 a

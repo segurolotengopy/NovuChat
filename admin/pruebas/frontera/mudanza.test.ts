@@ -11,7 +11,7 @@
  * reproducibilidad con la que `solo-rutas.mjs` juzga un PR de tanda.
  */
 import { describe, expect, it } from 'vitest';
-import { leerTanda, planDeMudanza, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
+import { leerTanda, planDeMudanza, reemplazarRutas, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
 
 const F = 'admin/functions/src';
 const ARCHIVOS: Record<string, string> = {
@@ -191,6 +191,18 @@ describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
     expect(problemas(diffPerfecto, { 'admin/vitest.config.ts': `${vitest}if (x) { throw new Error('y'); }\n` })).toHaveLength(1);
     expect(problemas(diffPerfecto, { 'admin/vitest.config.ts': `// ${vitest.replace(/\n/g, '\n// ')}` })).toHaveLength(1);
   });
+  it('vitest.config.ts: la cita de una ruta en un comentario pasa; mover código a un comentario, no', () => {
+    const conCita: Record<string, string> = { ...ARCHIVOS, 'admin/vitest.config.ts': `// ver functions/src/muestra.ts\n${ARCHIVOS['admin/vitest.config.ts']}` };
+    const arbolCita: ArbolConCarpetas = { ...arbol, leer: (a) => conCita[a] ?? '' };
+    const planCita = planDeMudanza(TANDA, Object.keys(conCita), arbolCita);
+    const quiere = planCita.ediciones.find((e) => e.archivo === 'admin/vitest.config.ts')!.nuevoTexto;
+    const nuevo = quiere.replace('functions/src/muestra.ts', 'functions/src/core/conteo/muestra.ts');
+    const juzgar = (vitest: string) => verificarReproducible(T, planCita, diffPerfecto, (r) => conCita[r] ?? '',
+      (r) => (r === 'admin/vitest.config.ts' ? vitest : planCita.ediciones.find((e) => e.archivo === r)?.nuevoTexto ?? conCita[r] ?? '')).problemas;
+    expect(juzgar(nuevo)).toEqual([]);
+    expect(juzgar(`${nuevo}// const CPU_FRACCIONARIA = '';\n`)).toHaveLength(1);
+    expect(juzgar(nuevo.replace('// ver', '/*#__PURE__*/ // ver'))).toHaveLength(1);
+  });
   it('un .md que cambia más que la cita se lista para revisar a mano', () => {
     const base = (r: string) => (r === 'docs/x.md' ? 'ver admin/functions/src/muestra.ts\n' : leerBase(r));
     const cita = verificarReproducible(T, plan, [...diffPerfecto, M('docs/x.md')], base, head({ 'docs/x.md': 'ver admin/functions/src/core/conteo/muestra.ts\n' }));
@@ -217,4 +229,18 @@ describe('contextos: relativo solo en módulos; completo también en lecturas y 
     expect(p.avisos.some((a) => a.includes("'../functions/src/muestra.ts'"))).toBe(true);
   });
   it('un relativo en un import sí', () => { expect(t).toContain("from '../functions/src/core/muestra'"); });
+});
+
+describe('reemplazarRutas: los límites de la cita', () => {
+  const m = [{ de: `${F}/muestra.ts`, a: `${F}/core/muestra.ts` }];
+  it('el punto que cierra la oración no es parte de la ruta', () => {
+    expect(reemplazarRutas('// Ver functions/src/muestra.ts.\n', m)).toBe('// Ver functions/src/core/muestra.ts.\n');
+    expect(reemplazarRutas('en functions/src/muestra.ts. Y', m)).toBe('en functions/src/core/muestra.ts. Y');
+    expect(reemplazarRutas('(functions/src/muestra.ts.)', m)).toBe('(functions/src/muestra.ts.)');
+  });
+  it('otro archivo con el mismo prefijo no se toca', () => {
+    for (const t of ['functions/src/muestra.tsx', 'functions/src/muestra.ts.bak', 'functions/src/muestra.ts-x', 'mas/functions/src/muestra.ts']) {
+      expect(reemplazarRutas(t, m), t).toBe(t);
+    }
+  });
 });

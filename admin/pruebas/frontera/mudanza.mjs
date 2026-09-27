@@ -88,7 +88,11 @@ const restos = (donde) => {
     return git('grep', '-n', '-F', ...patrones.flatMap((v) => ['-e', v]), '--', ...donde).trim().split('\n').filter(Boolean);
   } catch { return []; } // git grep sale con 1 si no encuentra nada
 };
-const DOCUMENTACION = ['docs', 'Prompts', '.claude/agents', 'CLAUDE.md', 'admin/*.md', 'Flujos/*.md', 'ESTADO.md'];
+// `.github/*.md` (DESPLIEGUE-FIREBASE.md cita firma.ts: revisión de la tanda
+// 2); las tandas de docs/arquitectura/tandas/ nombran las rutas viejas a
+// propósito.
+const DOCUMENTACION = ['docs', 'Prompts', '.claude/agents', 'CLAUDE.md', 'admin/*.md', 'Flujos/*.md', 'ESTADO.md', '.github/*.md',
+  ':!docs/arquitectura/tandas'];
 const enDocs = restos(DOCUMENTACION);
 console.log(`\nRestos en documentación (${enDocs.length}; se corrigen a mano en el mismo PR):`);
 for (const l of enDocs) console.log(`  ${l}`);
