@@ -15,9 +15,12 @@
 # «todo en orden». Acá se extrae la herramienta del merge-base a una carpeta
 # temporal y se corre contra el worktree del PR (NOVUCHAT_RAIZ).
 #
-# Los node_modules son los del worktree: un PR de tanda no toca el lockfile
-# (`solo-rutas` rechaza cualquier archivo que el plan no produce). Solo lectura
-# sobre el repositorio; la carpeta temporal se borra al salir.
+# NADA DEL PR CORRE: ni su código ni sus dependencias. Los node_modules se
+# instalan en la carpeta temporal desde el LOCKFILE DE LA BASE, con
+# --ignore-scripts (revisión de seguridad del #241: un `typescript` manipulado
+# en los node_modules del PR hacía decir «todo en orden» a la compuerta antes
+# de que llegara a marcar el lockfile). Usa el almacén de pnpm de la máquina.
+# Solo lectura sobre el repositorio; la carpeta temporal se borra al salir.
 set -euo pipefail
 
 tanda="${1:?Uso: … | bash -s -- docs/arquitectura/tandas/tN.json [base]}"
@@ -27,7 +30,10 @@ mb="$(git -C "$raiz" merge-base "$base" HEAD)"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/solo-rutas.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT
 
-git -C "$raiz" archive "$mb" admin/pruebas/frontera admin/functions/src admin/functions/package.json | tar -x -C "$tmp"
-ln -s "$raiz/admin/node_modules" "$tmp/admin/node_modules"
+git -C "$raiz" archive "$mb" admin/pruebas/frontera admin/functions/src \
+  admin/package.json admin/pnpm-lock.yaml admin/pnpm-workspace.yaml \
+  admin/functions/package.json admin/web/package.json | tar -x -C "$tmp"
+echo "Instalando las dependencias de la base (lockfile de ${mb:0:7}, --ignore-scripts)…"
+( cd "$tmp/admin" && pnpm install --frozen-lockfile --ignore-scripts --prefer-offline >/dev/null )
 echo "solo-rutas con la herramienta de ${mb:0:7} (merge-base con $base), contra $raiz"
 NOVUCHAT_RAIZ="$raiz" node "$tmp/admin/pruebas/frontera/solo-rutas.mjs" "$tanda" "$base"
