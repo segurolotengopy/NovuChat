@@ -333,6 +333,10 @@ const registrarOferta = (fecha, mins) => {
     sd.agendaPorTelefono = (sd.agendaPorTelefono && typeof sd.agendaPorTelefono === 'object') ? sd.agendaPorTelefono : {};
     const tel = String(base.from || '');
     if (!tel) return;
+    // Un registro vencido (mas de una hora) no se reutiliza: se barre y se
+    // empieza de cero, igual que en `Procesar respuesta` (revision del #244).
+    const previo = sd.agendaPorTelefono[tel];
+    if (previo && !(Date.now() - Number(previo.desde || 0) < 60 * 60 * 1000)) delete sd.agendaPorTelefono[tel];
     const r = sd.agendaPorTelefono[tel] = sd.agendaPorTelefono[tel] || { ofrecidos: {}, ultima: null, elegido: null, desde: Date.now() };
     r.ofrecidos = (r.ofrecidos && typeof r.ofrecidos === 'object') ? r.ofrecidos : {};
     const previos = Array.isArray(r.ofrecidos[fecha]) ? r.ofrecidos[fecha] : [];

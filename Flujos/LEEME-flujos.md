@@ -541,8 +541,24 @@ recibe «Sí, el lunes 28 a las 17:00 hay espacio. ¿Te la agendo?»; el reinten
 corre solo para que la memoria guarde esa pregunta. (M1) si pide otra hora, una
 hora concreta o una franja, no se le repite lo ya ofrecido ese día. Lo ofrecido,
 la última oferta y la hora elegida se guardan por teléfono en
-`agendaPorTelefono` (datos estáticos, una hora). **Mensajes: cero agregados.**
-Suite: `admin/pruebas/horarios-ofrecidos.test.ts`.
+`agendaPorTelefono` (datos estáticos, una hora). **Mensajes: 0 por turno; +1
+donde H2 actúa** (la confirmación que llega después del «sí» del paciente, en
+las conversaciones donde el modelo agendó sin confirmación; 0,0113 USD cada
+una). H1 puede sumar un intercambio cuando el modelo inventó horas; M1 tiende a
+restar turnos. Si en el mismo turno se canceló la cita vieja, la pregunta de H2
+empieza con «Tu cita … quedó cancelada.». Suite:
+`admin/pruebas/horarios-ofrecidos.test.ts`.
+
+**Riesgo aceptado: escritura concurrente de `$getWorkflowStaticData`.** n8n
+guarda los datos estáticos al terminar cada ejecución que los cambió, y gana la
+última: dos ejecuciones solapadas (dos pacientes escribiendo a la vez) pueden
+pisar el registro de otro teléfono en `agendaPorTelefono` o en
+`cancelacionesPendientes`. Sin solape no pasa nada. El peor caso es perder lo
+que una de las dos guardó en ese turno (lo ofrecido, la elección o la
+cancelación pendiente): H2 y la compuerta de `cancelar_cita` vuelven a pedir
+confirmación y M1 puede repetir una opción. El candado contra la doble reserva
+no depende de estos datos. Se cierra en F3,
+cuando ese estado pase al servidor.
 
 **Mensajes por conversación: los mismos que el Demo A.** No agrega ni quita
 ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de

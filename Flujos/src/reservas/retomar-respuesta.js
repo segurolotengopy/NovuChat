@@ -28,28 +28,38 @@ const describir = (c) => {
 // Y CUANDO LA FECHA YA PASO (24/09/2026, #5563): la nota trae el año en que
 // se agendo y la fecha de HOY, con año, para que el modelo consulte la misma
 // fecha del año en curso. Sin decirle el dia de la semana de la cita caida.
-const porPasado = caidas.length > 0 && caidas.every((c) => c && c.causa === 'pasado');
+// CAUSAS MEZCLADAS (revision de seguridad del PR #244): la cita sin confirmar
+// NO esta ni ocupada ni fuera de horario. La nota de las otras se arma solo
+// con las otras, y la sin confirmar se describe aparte.
+const sinConfirmarCaidas = caidas.filter((c) => c && c.causa === 'sin_confirmar');
+const otrasCaidas = caidas.filter((c) => !(c && c.causa === 'sin_confirmar'));
+const porPasado = otrasCaidas.length > 0 && otrasCaidas.every((c) => c && c.causa === 'pasado');
 // SIN CONFIRMAR (27/09/2026, #6555): la cita se deshizo porque el paciente
 // solo PREGUNTO por esa hora. No hay nada ocupado ni cerrado que explicarle:
 // el reintento no ofrece alternativas, repite la pregunta que armo `Comprobar
 // reserva` («Si, a las 17:00 hay espacio. ¿Te la agendo?») para que quede en
 // la memoria del agente lo que el paciente de verdad recibio.
-const porSinConfirmar = caidas.length > 0 && caidas.every((c) => c && c.causa === 'sin_confirmar');
-const porHorario = !porPasado && !porSinConfirmar && caidas.length > 0
-  && caidas.every((c) => c && c.causa && c.causa !== 'cruce');
+const porSinConfirmar = caidas.length > 0 && otrasCaidas.length === 0;
+const porHorario = !porPasado && otrasCaidas.length > 0
+  && otrasCaidas.every((c) => c && c.causa && c.causa !== 'cruce');
 let hoy = '';
 try {
   hoy = new Date().toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/La_Paz' });
 } catch (e) { hoy = ''; }
-const notaCruce = caidas.length
-  ? (porSinConfirmar
-    ? `el cliente todavía NO había confirmado ${caidas.map(describir).join(' ni ')}: su mensaje era una pregunta o no eligió esa hora`
-    : porPasado
-    ? `la fecha de ${caidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${caidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
+const notaSinConfirmar = sinConfirmarCaidas.length
+  ? `el cliente todavía NO había confirmado ${sinConfirmarCaidas.map(describir).join(' ni ')}: su mensaje era una pregunta o no eligió esa hora`
+  : '';
+const notaOtras = otrasCaidas.length
+  ? (porPasado
+    ? `la fecha de ${otrasCaidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${otrasCaidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
       + (hoy ? `; hoy es ${hoy}` : '') + ': el cliente quiere esa misma fecha del año en curso'
     : (porHorario
-      ? `${caidas.map(describir).join(' y ')} cae fuera del horario de atencion`
-      : `el horario de ${caidas.map(describir).join(' y el de ')} ya estaba ocupado`))
+      ? `${otrasCaidas.map(describir).join(' y ')} cae fuera del horario de atencion`
+      : `el horario de ${otrasCaidas.map(describir).join(' y el de ')} ya estaba ocupado`))
+  : '';
+const notaCruce = caidas.length
+  ? (porSinConfirmar ? notaSinConfirmar
+    : notaOtras + (notaSinConfirmar ? `; además, ${notaSinConfirmar} (esa cita también se deshizo)` : ''))
   : 'el horario pedido ya estaba ocupado con esa persona';
 
 // El texto original del cliente vuelve a entrar en el turno del reintento:

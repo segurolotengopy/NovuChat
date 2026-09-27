@@ -422,8 +422,20 @@ if (ceden.length) {
   };
   const preguntaSinConfirmar = 'Sí, ' + ceden.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
     + (ceden.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'));
+  // SI EN EL MISMO TURNO SE CANCELO LA VIEJA (revision de seguridad del PR
+  // #244): cancelar la cita anterior y agendar la nueva sin confirmar deja al
+  // paciente SIN cita. Se le dice antes de la pregunta, con la descripcion que
+  // trae `Procesar respuesta`; callarlo es dejarlo creyendo que la vieja sigue.
+  const canceladas = Array.isArray(item.canceladasEnElTurno) ? item.canceladasEnElTurno : [];
+  const avisoCanceladas = canceladas.map((c) => {
+    const desc = String((c && c.desc) || '').trim();
+    return usted
+      ? `Su cita${desc ? ' ' + desc : ' anterior'} quedó cancelada.`
+      : `Tu cita${desc ? ' ' + desc : ' anterior'} quedó cancelada.`;
+  }).join(' ');
   const aviso = soloSinConfirmar
-    ? (sobreviven.length > 0 ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. ` : '') + preguntaSinConfirmar
+    ? (avisoCanceladas ? avisoCanceladas + ' ' : '')
+      + (sobreviven.length > 0 ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. ` : '') + preguntaSinConfirmar
     : (configurado
     || `Disculpa, tengo que corregirte algo: la cita de ${caidas} no quedo, `
      + `porque ${porQue}. `
@@ -534,8 +546,18 @@ if (repetidos.length) {
 // siempre cuando se escribio esto; hoy si encuentra las citas (comprobado en la
 // ejecucion #964), pero el aviso se deja apagado hasta tener mas evidencia de
 // que no genera ruido. El registro queda en el item para poder auditarlo.
+// UNA CITA SIN CONFIRMAR QUE NO SE PUEDE DESHACER (revision de seguridad del
+// PR #244): si el paciente no confirmo y la cita creada no aparece para
+// borrarla, puede haber quedado en la agenda sin que nadie la quiera. No se
+// falla abierto en silencio: pasa a recepcion con el motivo.
+const sinConfirmarNoEncontrada = () => (sinConfirmar.size > 0 ? {
+  transferir: true,
+  motivoTransferencia: 'agendar_cita creo una cita SIN que el cliente confirmara ese horario y no aparecio en el calendario '
+    + 'para deshacerla: revisar la agenda y borrarla si quedo, y confirmar con el cliente',
+} : {});
 if (recien.length === 0) {
-  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada }, pairedItem: { item: 0 } }];
+  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada,
+    ...sinConfirmarNoEncontrada() }, pairedItem: { item: 0 } }];
 }
 
 // Si esta conversacion creo una cita y no aparece entre las recientes, NO se
@@ -543,7 +565,8 @@ if (recien.length === 0) {
 // ya pasa cuando la verificacion no encuentra nada.
 const laPropia = propia(recien);
 if (!laPropia) {
-  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada: true }, pairedItem: { item: 0 } }];
+  return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada: true,
+    ...sinConfirmarNoEncontrada() }, pairedItem: { item: 0 } }];
 }
 // EL ADELANTO A FAVOR SE APLICA A ESTA CITA (Andres, 21/09/2026), en los dos
 // casos en que existe: el servidor ya lo tenia a favor (canceló una cita

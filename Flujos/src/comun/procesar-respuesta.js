@@ -771,6 +771,24 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // puede pasar es que nadie lo sepa.
   const idsCancelados = new Set(pasosCancelar.filter((p) => canceloBien(p.observation))
     .map((p) => String((p.action.toolInput && p.action.toolInput.eventoId) || '')).filter(Boolean));
+  // LO QUE SE CANCELO EN ESTE TURNO, con su descripcion (revision de seguridad
+  // del PR #244): si en el mismo turno se cancela la cita vieja y la nueva se
+  // deshace por falta de confirmacion, el paciente se queda SIN cita. El
+  // mensaje de `Comprobar reserva` tiene que decirle que la vieja ya no esta.
+  // La descripcion sale de lo que buscar_mi_cita mostro (este turno o los
+  // candidatos guardados), antes de olvidar el registro.
+  const canceladasEnElTurno = (() => {
+    if (!idsCancelados.size) return [];
+    const reg = (pendientesDeCancelar && telefonoDelCliente && pendientesDeCancelar[telefonoDelCliente]) || null;
+    const cand = (reg && reg.candidatos && typeof reg.candidatos === 'object') ? reg.candidatos : {};
+    return [...idsCancelados].map((id) => {
+      const vista = vistasEsteTurno.find((v) => v.id === id);
+      const desc = vista ? vista.desc
+        : (Object.prototype.hasOwnProperty.call(cand, id) ? String(cand[id] || '')
+          : (reg && reg.eventoId === id ? String(reg.desc || '') : ''));
+      return { id: id.slice(0, 200), desc: String(desc).slice(0, 160) };
+    });
+  })();
   // Cancelada de verdad: el pendiente y los candidatos de este telefono ya no
   // sirven (la cita cancelada no vuelve a mostrarse; las otras, cuando las
   // vuelva a buscar).
@@ -892,13 +910,42 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // Sin signos (un audio transcripto no los trae), un verbo de pregunta sin
   // ningun verbo de pedir o confirmar tambien es pregunta: «y a las 5 de la
   // tarde tendra». Ante la duda se pregunta: cuesta un turno, no una cita.
-  const agPideOConfirma = /\b(quiero|prefiero|agend|reserv|dame|ponme|anotame|confirmo|me\s+quedo)|^\s*(si|ok|dale|listo|perfecto)\b/.test(agClientePlano);
-  const agPregunta = /[?¿]/.test(agCliente)
-    || /^\s*(y\s+)?(a\s+las?\s+\d{1,2}([:.]\d{2})?\s+)?(no\s+)?(tiene[sn]?|tendr[a-z]*|hay|habr[a-z]*|puede[sn]?|podr[a-z]*|sera|esta\s+libre|queda[sn]?|existe)\b/.test(agClientePlano)
-    || (!agPideOConfirma && /\b(tiene[sn]?|tendr(a|as|an|ia|ian)|hay|habra|habria|podr(a|as|ia|ian)|sera|estara|esta\s+libre)\b/.test(agClientePlano));
+  //
+  // PERO SOLO LA PREGUNTA QUE HABLA DE LA HORA (revision de seguridad del PR
+  // #244). «Sí, la de 11:30. ¿Tengo que llevar algo?» y «Sí, perfecto. ¿Hay
+  // estacionamiento?» confirman, y la pregunta de despues es otra cosa: con la
+  // regla anterior se deshacia una cita confirmada. Ahora: si el mensaje EMPIEZA
+  // confirmando («si,», «ok», «perfecto», «la segunda»), no es pregunta; si no,
+  // cuenta como pregunta solo la oracion que nombra una hora o una
+  // disponibilidad. «si tiene a las 17?» sigue siendo pregunta: ese «si» es
+  // condicional, no una confirmacion.
+  const agEmpiezaConfirmando = /^\s*((si|sip)\s*([,.!;:]|$|\s+(ok|dale|perfecto|listo|claro|por\s+favor|gracias|la|el|esa|ese|a\s+las)\b)|(ok|okay|okey|oki|dale|listo|perfecto|confirmo|confirmado|de\s+acuerdo|claro|correcto|exacto|vale|genial|excelente)\b|(la|el)\s+(primer[oa]|segund[oa]|tercer[oa]|ultim[oa])\b)/.test(agClientePlano);
+  const AG_HABLA_DE_HORA = /disponib|libre|espacio|lugar|cupo|turno|horario|\bhora\b/;
+  const agOracionPregunta = (o) => {
+    const plano = agSinTilde(o);
+    const pideOConfirma = /\b(quiero|prefiero|agend|reserv|dame|ponme|anotame|confirmo|me\s+quedo)/.test(plano);
+    return /[?¿]/.test(o)
+      || /^\s*(y\s+)?(a\s+las?\s+\d{1,2}([:.]\d{2})?\s+)?(no\s+)?(tiene[sn]?|tendr[a-z]*|hay|habr[a-z]*|puede[sn]?|podr[a-z]*|sera|esta\s+libre|queda[sn]?|existe)\b/.test(plano)
+      || (!pideOConfirma && /\b(tiene[sn]?|tendr(a|as|an|ia|ian)|hay|habra|habria|podr(a|as|ia|ian)|sera|estara|esta\s+libre)\b/.test(plano));
+  };
+  const agPregunta = !agEmpiezaConfirmando && agCliente.split(/(?<=[.!?])\s+|\n+|(?=¿)/)
+    .map((o) => o.trim()).filter(Boolean)
+    .some((o) => (agHorasDelTexto(o).length > 0 || AG_HABLA_DE_HORA.test(agSinTilde(o))) && agOracionPregunta(o));
   const agNiega = /^\s*no\b(?!\s+(tiene|tienes|tienen|hay|habra))|\bmejor\s+(no|otr)|\bno\s+(quiero|puedo|me\s+(sirve|sirven|queda|conviene|viene))/.test(agClientePlano);
-  const agHorasCliente = agHorasDelTexto(agCliente);
   const agFechaCliente = agFechaDelTexto(agCliente, agHoy);
+  // «La primera», «la segunda», «la tercera», «la última»: la hora que ocupa
+  // ese lugar en la ULTIMA oferta. Cuenta como nombrarla (revision del #244).
+  const agHorasCliente = (() => {
+    const nombradas = agHorasDelTexto(agCliente);
+    if (nombradas.length || !agUltima || !agUltima.mins.length) return nombradas;
+    const ord = /\b(?:la|el)\s+(primer[oa]|segund[oa]|tercer[oa]|ultim[oa])\b/.exec(agClientePlano);
+    if (!ord) return nombradas;
+    const lugar = /^primer/.test(ord[1]) ? 0 : (/^segund/.test(ord[1]) ? 1 : (/^tercer/.test(ord[1]) ? 2 : agUltima.mins.length - 1));
+    const min = agUltima.mins[lugar];
+    return Number.isFinite(min) ? [{ min, ambigua: false, ordinal: true }] : nombradas;
+  })();
+  // Un ordinal no trae fecha: es la de la ultima oferta.
+  const agFechaDeLaHora = agFechaCliente || (agHorasCliente.some((h) => h.ordinal) && agUltima ? agUltima.fecha : '');
   const AG_CONFIRMA = /^\s*(si|sip|ok|okay|okey|oki|dale|listo|perfecto|confirmo|confirmado|de\s+acuerdo|claro|correcto|exacto|vale|bueno|genial|excelente|ese|esa|esta|este|la\s+primera|la\s+segunda|la\s+tercera|la\s+ultima|por\s+favor)\b|\b(agend(a|ame|ala|alo|amela|amelo|eme|ar)|reserv(a|ame|ala|alo|amela|amelo)|anota(me|la|lo)|confirm(o|ada|ado|amos)|me\s+quedo\s+con|quiero\s+(esa|ese|esta|este|la|el)\b|prefiero|dame|pon(me|la|lo))\b/;
   const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano);
   // FRANJA u OTRA HORA: lo que el paciente pidio cuando no quiere lo ofrecido.
@@ -930,8 +977,11 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       if (!Number.isFinite(t)) continue;
       const lp = agLaPaz(t);
       const esLaHora = (h) => h.min === lp.min || (h.ambigua && h.min + 720 === lp.min);
-      const fechaOk = !agFechaCliente || agFechaCliente === lp.fecha;
-      const enUltima = !!agUltima && agUltima.fecha === lp.fecha && agUltima.mins.includes(lp.min);
+      const fechaOk = !agFechaDeLaHora || agFechaDeLaHora === lp.fecha;
+      // Un «si» a VARIAS opciones no dice cual (revision del #244): cuenta solo
+      // si la ultima oferta era UNA hora («¿Te la agendo?») y es la agendada.
+      const enUltima = !!agUltima && agUltima.fecha === lp.fecha && agUltima.mins.length === 1
+        && agUltima.mins[0] === lp.min;
       const esElegida = !!agElegido && agElegido.fecha === lp.fecha
         && (Number(agElegido.min) === lp.min || (agElegido.ambigua === true && Number(agElegido.min) + 720 === lp.min));
       let confirmada;
@@ -939,7 +989,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       else if (agHorasCliente.length) confirmada = fechaOk && agHorasCliente.some(esLaHora);
       else if (agConfirmaPalabra) {
         confirmada = fechaOk && (agUltima ? enUltima || esElegida
-          : (agElegido ? esElegida : (agOfrecidosAntes(lp.fecha).length ? agOfrecidosAntes(lp.fecha).includes(lp.min) : true)));
+          : (agElegido ? esElegida : (agOfrecidosAntes(lp.fecha).length
+            ? agOfrecidosAntes(lp.fecha).length === 1 && agOfrecidosAntes(lp.fecha)[0] === lp.min : true)));
       } else confirmada = esElegida;
       if (!confirmada) agCitasSinConfirmar.push(ev.id);
     }
@@ -1307,6 +1358,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // confirmara ese horario. `Comprobar reserva` las deshace por la via del
     // candado y el paciente recibe la pregunta.
     agendaSinConfirmar: agCitasSinConfirmar,
+    canceladasEnElTurno,
     agendarSinEvento,
     observacionAgendar,
     verificarReserva,

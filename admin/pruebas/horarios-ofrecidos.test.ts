@@ -23,10 +23,11 @@
  * se ejecuta, en los TRES flujos de reservas. Las fechas se calculan desde hoy
  * en La Paz (`proximo`), nunca se escriben: una fecha fija caduca sola.
  *
- * MENSAJES POR CONVERSACIÓN: CERO agregados. H1 y M1 cambian el texto del
- * mensaje que ya iba a salir; H2 reemplaza la confirmación por la pregunta
- * («¿Te la agendo?») en el MISMO mensaje, sin aviso a recepción ni botón. El
- * «sí» del paciente es el turno que ya existía en la conversación.
+ * MENSAJES POR CONVERSACIÓN: 0 por turno; +1 donde H2 actúa. H1 y M1 cambian
+ * el texto del mensaje que ya iba a salir; H2 reemplaza la confirmación por la
+ * pregunta («¿Te la agendo?») en el MISMO mensaje, sin aviso a recepción ni
+ * botón, y la confirmación llega después del «sí»: ese es el +1, solo en las
+ * conversaciones donde el modelo agendó sin confirmación.
  */
 import { describe, expect, it } from 'vitest';
 import { codigoDe, destinos, ejecutar, leerFlujo, nodo, plantilla, type J } from './lib/flujo';
@@ -270,12 +271,74 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(procesar('a las 16:30 por favor', DIJO, [consulta(LUNES), agendo(ev17)])['agendaSinConfirmar']).toEqual(['ev17']);
     });
 
-    it('«sí» a la última oferta confirma solo una hora de ESA oferta', () => {
-      const estado: J = {};
-      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 11:30 o 17:00. ¿Cuál prefieres?`, [consulta(LUNES)], estado);
-      expect(procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], estado)['agendaSinConfirmar']).toEqual([]);
+    it('«sí» ante VARIAS opciones no confirma ninguna; ante UNA sola, confirma esa (revisión del #244)', () => {
+      // Negativa: se ofrecieron tres horas y el paciente dijo solo «sí».
+      const tres: J = {};
+      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 11:30 o 17:00. ¿Cuál prefieres?`, [consulta(LUNES)], tres);
+      expect(procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], tres)['agendaSinConfirmar']).toEqual(['ev17']);
+      // Positiva: la última oferta era UNA hora.
+      const una: J = {};
+      procesar('A las 17 no tiene?', `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], una);
+      expect(procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], una)['agendaSinConfirmar']).toEqual([]);
+      // Y un «sí» a una hora que no es la ofrecida tampoco confirma.
       const ev15 = cita('ev15', LUNES, '15:00', '15:30');
-      expect(procesar('sí', 'Quedó agendada.', [consulta(LUNES), agendo(ev15)], estado)['agendaSinConfirmar']).toEqual(['ev15']);
+      expect(procesar('sí', 'Quedó agendada.', [consulta(LUNES), agendo(ev15)], una)['agendaSinConfirmar']).toEqual(['ev15']);
+    });
+
+    it('una confirmación seguida de OTRA pregunta sigue confirmando (revisión del #244)', () => {
+      const una: J = {};
+      procesar('¿a las 11:30?', `Sí, el ${L} a las 11:30 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], una);
+      const ev1130 = cita('ev1130', LUNES, '11:30', '12:00');
+      expect(procesar('Sí, la de 11:30. ¿Tengo que llevar algo?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], {})['agendaSinConfirmar']).toEqual([]);
+      expect(procesar('Sí, perfecto. ¿Hay estacionamiento?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], una)['agendaSinConfirmar']).toEqual([]);
+      // Negativa: un «si» condicional con la hora sigue siendo pregunta.
+      expect(procesar('si tiene a las 11:30?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], una)['agendaSinConfirmar']).toEqual(['ev1130']);
+      // Negativa: una pregunta por la hora después de otra oración, también.
+      expect(procesar('Gracias. ¿Hay a las 11:30?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], una)['agendaSinConfirmar']).toEqual(['ev1130']);
+    });
+
+    it('«la segunda» nombra la segunda hora de la última oferta, y queda como elección para el turno siguiente', () => {
+      const estado: J = {};
+      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 11:30 o 14:00. ¿Cuál prefieres?`, [consulta(LUNES)], estado);
+      const ev1130 = cita('ev1130', LUNES, '11:30', '12:00');
+      const ev1100 = cita('ev1100', LUNES, '11:00', '11:30');
+      // En el mismo turno: confirma la segunda (11:30) y no la primera.
+      expect(procesar('la segunda', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], JSON.parse(JSON.stringify(estado)))['agendaSinConfirmar']).toEqual([]);
+      expect(procesar('la segunda', 'Quedó agendada.', [consulta(LUNES), agendo(ev1100)], JSON.parse(JSON.stringify(estado)))['agendaSinConfirmar']).toEqual(['ev1100']);
+      // Sin agendar: queda como elección, y el nombre solo en el turno siguiente la confirma.
+      procesar('la segunda', `Perfecto. ¿Cuál es el nombre completo del paciente?`, [], estado);
+      expect(estado['agendaPorTelefono'][TEL]['elegido']).toMatchObject({ fecha: LUNES.iso, min: 690 });
+      expect(procesar('Lucas Méndez', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], estado)['agendaSinConfirmar']).toEqual([]);
+    });
+
+    it('cancelar la vieja y agendar la nueva SIN confirmar: el mensaje dice que la vieja quedó cancelada (revisión del #244)', () => {
+      const estado: J = {};
+      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 14:00 o 17:00. ¿Cuál prefieres?`, [consulta(LUNES)], estado);
+      const vieja = cita('ev-vieja', LUNES, '11:30', '12:00');
+      const pasos = [
+        { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([vieja]) },
+        { action: { tool: 'cancelar_cita', toolInput: { eventoId: 'ev-vieja' } }, observation: JSON.stringify({ success: true }) },
+        consulta(LUNES), agendo(ev17)];
+      const previa = procesar('Sí', 'Listo, cancelé la anterior y te agendé a las 17:00.', pasos, estado);
+      expect(previa['agendaSinConfirmar']).toEqual(['ev17']);
+      expect(previa['canceladasEnElTurno']).toEqual([{ id: 'ev-vieja', desc: expect.stringContaining('11:30') }]);
+      const c = comprobar(previa, [ev17])[0]!;
+      expect(String(c['respuesta'])).toMatch(/^Tu cita de consulta del .*11:30 quedó cancelada\. Sí, el .* a las 17:00 hay espacio\. ¿Te la agendo\?$/);
+      // Negativa: sin cancelación en el turno, la pregunta sale sola.
+      const sola = comprobar(procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]), [ev17])[0]!;
+      expect(sola['respuesta']).toBe(`Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`);
+    });
+
+    it('sin confirmar y la cita creada no aparece para deshacerla: pasa a recepción (revisión del #244)', () => {
+      const previa = procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]);
+      // La herramienta devolvió el evento sin calendario: no se puede ni ver ni borrar.
+      const sinCalendario = { ...previa, eventosCreados: [{ id: 'ev17', calendario: '', inicio: '', fin: '' }] };
+      const r = comprobar(sinCalendario, [])[0]!;
+      expect(r['transferir']).toBe(true);
+      expect(String(r['motivoTransferencia'])).toContain('SIN que el cliente confirmara');
+      // Negativa: confirmada y no encontrada, sigue como siempre (sin aviso).
+      const confirmada = { ...sinCalendario, agendaSinConfirmar: [] };
+      expect(comprobar(confirmada, [])[0]!['transferir']).not.toBe(true);
     });
 
     it('eligió la hora y el turno pidió el nombre: con SOLO el nombre, esa hora cuenta como confirmada', () => {
@@ -384,6 +447,41 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     });
   });
 
+  describe('Retomar respuesta con causas mezcladas (revisión del #244)', () => {
+    it('la cita sin confirmar no se describe como ocupada ni fuera de horario', () => {
+      const base = { respuesta: 'x', motivoCruce: 'm', citasCaidas: [
+        { hora: '10:00', fecha: 'lunes, 5', persona: DOCTOR, causa: 'cruce' },
+        { hora: '17:00', fecha: 'lunes, 5', persona: DOCTOR, causa: 'sin_confirmar' }] };
+      const r = retomar(base, { success: true }, { respuesta: 'x' });
+      const nota = String(r['notaCruce']);
+      expect(nota).toContain('el horario de las 10:00 del lunes, 5');
+      expect(nota).toContain('ya estaba ocupado');
+      expect(nota).toContain('NO había confirmado las 17:00 del lunes, 5');
+      // Negativa: las 17:00 NO aparecen en la parte de «ocupado».
+      expect(nota.split('; además,')[0]).not.toContain('17:00');
+      const horario = retomar({ ...base, citasCaidas: [{ ...base.citasCaidas[0], causa: 'cerrado' }, base.citasCaidas[1]] },
+        { success: true }, { respuesta: 'x' });
+      expect(String(horario['notaCruce']).split('; además,')[0]).toBe(`las 10:00 del lunes, 5 con ${DOCTOR} cae fuera del horario de atencion`);
+    });
+  });
+
+  describe('El registro por teléfono vencido no se reutiliza (revisión del #244)', () => {
+    it('Procesar reintento barre el registro de hace más de una hora antes de escribir', () => {
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { '2000-01-01': [600] }, ultima: null,
+        elegido: { fecha: '2000-01-01', min: 600, desde: 0 }, desde: Date.now() - 2 * 3600000 } } };
+      const r = retomar({ respuesta: `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, causaDeLaCaida: 'sin_confirmar',
+        citasCaidas: [{ hora: '17:00', causa: 'sin_confirmar' }], from: TEL }, { success: true }, { respuesta: 'x' });
+      reintento({ output: 'ok' }, { ...r, from: TEL }, estado);
+      const reg = estado['agendaPorTelefono'][TEL];
+      expect(Object.keys(reg['ofrecidos'])).toEqual([LUNES.iso]);
+      expect(reg['elegido']).toBeNull();
+      // Negativa: uno vigente se conserva y se le suma.
+      const vigente: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [660] }, ultima: null, elegido: null, desde: Date.now() } } };
+      reintento({ output: 'ok' }, { ...r, from: TEL }, vigente);
+      expect(vigente['agendaPorTelefono'][TEL]['ofrecidos'][LUNES.iso]).toEqual([660, 1020]);
+    });
+  });
+
   describe('El reintento tras un cruce también ofrece solo lo que consultó', () => {
     const base: J = { respuesta: CFG['mensajeReservaNoConfirmada'], motivoCruce: 'se intento agendar sobre un horario YA OCUPADO',
       causaDeLaCaida: 'cruce', from: TEL, avisos: [] };
@@ -400,7 +498,7 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     });
   });
 
-  describe('Mensajes por conversación: cero agregados', () => {
+  describe('Mensajes por conversación: 0 por turno; +1 donde H2 actúa', () => {
     it('H2 sale por el camino del reintento, con un solo mensaje y sin aviso a recepción ni botón', () => {
       expect(destinos(f, 'Procesar reintento')).toEqual(['Mensaje a enviar', '¿Transferir a humano?']);
       const salida = ejecutar(cod('Mensaje a enviar'), [{ from: TEL, respuesta: `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`,
