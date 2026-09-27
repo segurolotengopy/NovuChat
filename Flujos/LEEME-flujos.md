@@ -251,32 +251,48 @@ el asistente ofrece sale de la consola, no del JSON. NovuChat es su primer
 usuario, con el asistente «Kenji».
 
 > **Todavía no se publica para otro comercio.** El prompt, el mensaje de uso
-> extendido, el botón de cliente actual y la base de conocimiento (el corpus de
-> novuchat.site, con el teléfono de contacto de NovuChat) nombran a NovuChat a
-> mano. Publicado para un comercio X, sus prospectos recibirían la oferta y el
+> extendido y la base de conocimiento (el corpus de novuchat.site, con el
+> teléfono de contacto de NovuChat) nombran a NovuChat a mano. Publicado para un comercio X, sus prospectos recibirían la oferta y el
 > contacto de NovuChat. Antes del segundo comercio: esos textos pasan por
 > `nombreNegocio` y `enlaceConsola`, y el corpus se condiciona al tenant
 > `novuchat` (revisión de seguridad del 15/09, LOW-2).
 
 ### Qué hace
 
-1. **Compuerta inicial, sin modelo.** A un «hola» suelto le responde con dos
-   botones: «Soy cliente actual» y «Soy cliente nuevo». Quien ya escribió lo que
-   quiere («hola, ¿cuánto cuesta?») pasa directo al asistente.
-2. **Cliente actual, sin modelo.** Un mensaje con el enlace a la consola, cómo
-   recuperar la contraseña y un botón a una persona. **Sin código de acceso.**
-3. **Cliente nuevo** (guion de Silvana, 15/09). El asistente se presenta con el
-   nombre de la consola («Kenji» en NovuChat) y pide **en una sola pregunta** el
-   nombre de la persona y el de su empresa. **Deduce el rubro** solo si el nombre
-   de la empresa trae una palabra del oficio, y lo dice de forma que el cliente
-   pueda corregirlo; si no, muestra la lista numerada de rubros de la consola
-   (marca `[RUBROS]`) y el número se resuelve por código. Después, en el mismo
-   mensaje, la solución de ese rubro y los planes y cargos únicos armados por
-   código con los precios exactos de la consola (marca `[PLANES]`), con el botón
-   de respuesta **«Hablar con un asesor»**. Registra empresa, contacto, rubro,
-   personalización y consulta (`[LEAD]…[/LEAD]`); **ya no pide el NIT**. Con
-   empresa, contacto y rubro cierra (`[CIERRE]`) y avisa por la plantilla
-   `solicitud_contacto`; en ese cierre completo no va botón.
+1. **Sin botones al inicio** (Andres, 27/09/2026). El primer mensaje de la
+   ventana lo escribe el agente: se presenta con el nombre de la consola
+   («Kenji» en NovuChat) **como asistente virtual con inteligencia artificial** y
+   pide **en una sola pregunta** el nombre de la persona y el de su empresa,
+   terminando en esa pregunta. `Procesar respuesta` lo hace cumplir por código:
+   si el modelo no dijo que es una IA, se agrega; si no pidió los datos, se
+   agrega la pregunta al final. Ya no hay compuerta con dos botones ni rama de
+   cliente actual.
+2. **Quien ya es cliente o pide soporte** («ya soy cliente», «no puedo entrar a
+   mi consola», «olvidé mi contraseña»): responde el agente, **sin pedirle datos
+   de prospecto ni mostrarle planes**, y el mensaje sale con el botón **«Hablar
+   con un asesor»**, que lleva al traspaso sin modelo. **Sin código de acceso.**
+3. **Captación** (guion de Silvana, 15/09, con las reglas por código del
+   27/09). Registra empresa, contacto, rubro, personalización y consulta
+   (`[LEAD]…[/LEAD]`); **ya no pide el NIT**. El rubro:
+   - **dicho por el cliente** —en el mensaje en que se le pregunta, o con todas
+     las letras en cualquier mensaje— queda registrado por código;
+   - **deducido por el modelo** (del nombre de la empresa) **no se registra
+     hasta que el cliente lo confirma**: el mensaje tiene que preguntarlo
+     («¿Es así?»), y una deducción afirmada que termina en punto, o con «si me
+     equivoqué, dime», se reescribe como pregunta (ejecución #4160). Un «sí»
+     registra lo deducido; «no, es una cafetería» registra la cafetería;
+   - **sin rubro**, las **áreas de referencia en una línea, sin numerar**, sin el
+     rubro «a medida» y con la salida «si lo tuyo no está en esa lista,
+     cuéntamelo igual», terminando en pregunta (marca `[RUBROS]`). Si el modelo
+     escribe él la lista numerada o con viñetas, se reescribe igual (#4160).
+
+   **Los planes solo salen con la ficha**: el bloque de planes y cargos únicos
+   (marca `[PLANES]`, precios exactos de la consola, botón «Hablar con un
+   asesor») y cualquier precio escrito por el modelo **no salen mientras la
+   ficha del teléfono no tenga empresa y rubro**; en su lugar va la pregunta por
+   lo que falta. Un rubro que el modelo recuerde de otra ventana no cuenta
+   (#4817). Con empresa, contacto y rubro cierra (`[CIERRE]`) y avisa por la
+   plantilla `solicitud_contacto`; en ese cierre completo no va botón.
 4. **Traspaso, sin modelo.** Tocar «Hablar con un asesor» (o escribir que quiere
    un asesor) responde «Ya le pasé tus datos a nuestro equipo…», avisa una sola
    vez por la plantilla (nunca al propio número de recepción) y cierra la etapa.
@@ -304,10 +320,39 @@ lee lo que contestó Meta y
   lo encuentra. Antes, un texto rechazado terminaba en «success»;
 - reporta a la ingesta como saliente **solo lo que salió**. Antes el reporte
   colgaba de `¿Responder?` y un mensaje rechazado se contaba como respuesta;
-- marca la bienvenida recién cuando salió. Antes se marcaba al decidirla, y un
-  envío fallido dejaba a ese teléfono sin botones para siempre.
+- anota en los avisos del turno si el CRM o la planilla no guardaron
+  (`crm_rechazado`, `planilla_no_guardada`), sin cortar nada.
 
 No agrega ni quita mensajes a Meta: no hace ninguna llamada.
+
+**Mensajes por conversación desde el 27/09/2026:** el camino típico de un
+prospecto pasa de 4-5 mensajes a 3-4 (**−1**: el primer mensaje ya pide los
+datos, sin la bienvenida con botones); quien ya es cliente, de 2 a 1 (**−1**).
+Confirmar un rubro deducido cuesta el mensaje de la pregunta, que antes se
+ahorraba afirmando la deducción (**+1** solo en ese camino, que queda igual que
+antes: 4). La planilla no manda mensajes. Si quien ya es cliente toca «Hablar
+con un asesor», el traspaso es +1 mensaje y +1 plantilla (antes el botón abría
+el WhatsApp de una persona sin pasar por el flujo).
+
+### La planilla de prospectos
+
+Cada vez que la ficha cambia, el prospecto se guarda en la hoja «Leads_CRM» de
+una planilla de Google (encabezados en la fila 3, datos desde la 4): una fila
+nueva con el siguiente «LEAD-nnnn», la fecha de La Paz y el enlace al chat, o
+—si el teléfono ya está— solo nombre, empresa, calificación y resumen, sin
+tocar nunca lo que edita el equipo. Las columnas, la tabla de calificación y
+los valores de las listas desplegables están en un solo nodo, `Decidir fila de
+la planilla`. Un fallo no corta la respuesta al cliente: queda como
+`planilla_no_guardada` en los avisos del turno.
+
+La planilla se configura con los marcadores `REEMPLAZAR_PLANILLA_PROSPECTOS_ID`
+y `REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA` de `Config base` (sin id no se guarda;
+sin hoja, «Leads_CRM»), la credencial se crea con `scripts/credencial-planilla.sh`
+y la planilla se comparte a mano con la cuenta de servicio como editor.
+
+**Pendiente:** `mensajeClienteActual` y `enlaceConsola` siguen en
+`/config/onboarding` (Functions, reglas y pestaña «Captación» de la consola),
+pero el flujo ya no los lee desde el 27/09/2026. Se limpian en su propio bloque.
 
 ### Configuración por consola
 
@@ -351,6 +396,7 @@ conversación que pregunte por planes.
 | Graph WhatsApp NovuChat (Bearer) | Header Auth: `Authorization` = `Bearer <token permanente>` | `Enviar a WhatsApp`, `Enviar texto de respaldo`, `Avisar a NovuChat` |
 | NovuChat ingesta (alias del número) | Header Auth, el secreto del alias `clienteNN` | `Traer configuración`, `Reportar mensaje (entrante/saliente)` |
 | CRM de prospectos (cabecera) | Header Auth | `Guardar prospecto` (solo si `crmUrl` no está vacío) |
+| Google Sheets NovuChat (cuenta de servicio) | Google Service Account (`googleApi`), creada con `scripts/credencial-planilla.sh` | `Leer planilla`, `Agregar fila`, `Actualizar fila` |
 | Google Gemini | la compartida | `Google Gemini Chat Model` |
 
 ### Importar
@@ -366,7 +412,11 @@ la ruta de webhook del Demo A y los dos flujos pelearían por la misma URL. Con
 Los marcadores de `Config base` (`REEMPLAZAR_PHONE_NUMBER_ID_NOVUCHAT`,
 `REEMPLAZAR_NUMERO_RECEPCION_NOVUCHAT`, `REEMPLAZAR_HORARIO_ATENCION_NOVUCHAT`)
 son el **respaldo** si la consola no contesta: los valores de verdad salen del
-tenant `novuchat` en la consola. Después: `Trigger On` = Messages, credenciales,
+tenant `novuchat` en la consola. Los de la planilla
+(`REEMPLAZAR_PLANILLA_PROSPECTOS_ID`, `REEMPLAZAR_PLANILLA_PROSPECTOS_HOJA`) no
+tienen respaldo en la consola: salen solo de ahí. `preparar-import.sh` exige una
+fila por marcador en el `.env`; mientras no haya planilla, un valor que no sea un
+id de Google (por ejemplo `ninguna`) deja el guardado apagado. Después: `Trigger On` = Messages, credenciales,
 **Publish**, y la URL de Production al webhook de la app `NovuChat-Asistente`.
 
 ### La base de conocimiento es una copia con alarma
