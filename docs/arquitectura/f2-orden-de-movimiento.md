@@ -118,6 +118,15 @@ lector de la frontera toma por calculado todo `createRequire`,
 - **La tanda va versionada en el PR**: `docs/arquitectura/tandas/tN.json`, con
   `movimientos` (`{ de, a }`) y `suitesPuras` (las suites que la tanda agrega a
   `SUITES_PURAS`; `asignar-rol.test.ts` está vetada).
+- **La compuerta solo vale corrida desde la BASE**, nunca con la copia del
+  PR (que podría decirse «todo en orden» a sí misma desde cualquier archivo que
+  importa):
+  `git show origin/main:admin/pruebas/frontera/desde-la-base.sh | bash -s -- docs/arquitectura/tandas/tN.json`.
+  Extrae la herramienta del merge-base y la corre contra el worktree del PR.
+  Un PR de tanda no puede tocar la herramienta ni lo que ella importa
+  (`destinos-f2.ts`, `functions/src/registro.ts`). La tanda solo vive en
+  `docs/arquitectura/tandas/`, sin claves de más, y sus rutas solo aceptan
+  `[A-Za-z0-9._-/]`.
 - `solo-rutas.mjs docs/arquitectura/tandas/tN.json [base]`:
   **reproducibilidad**. Lee la tanda del commit, la valida contra el árbol de
   la base, vuelve a correr el plan sobre el `merge-base` y exige cada archivo
