@@ -1,0 +1,10 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/firma.ts", "a": "admin/functions/src/core/seguridad/firma.ts" },
+    { "de": "admin/functions/src/claims.ts", "a": "admin/functions/src/core/seguridad/claims.ts" },
+    { "de": "admin/functions/src/autorizacion.ts", "a": "admin/functions/src/core/seguridad/autorizacion.ts" },
+    { "de": "admin/functions/src/region.ts", "a": "admin/functions/src/core/region.ts" },
+    { "de": "admin/functions/src/opcionesGlobales.ts", "a": "admin/functions/src/core/opcionesGlobales.ts" }
+  ],
+  "suitesPuras": []
+}

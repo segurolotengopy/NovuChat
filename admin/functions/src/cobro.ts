@@ -28,7 +28,7 @@
 import { onCall, onRequest, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { validarQrSimple } from './qrSimple.js';
 import type { ProblemaQr } from './qrSimple.js';
 import { dibujarQr } from './dibujoQr.js';

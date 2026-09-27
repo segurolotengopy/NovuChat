@@ -99,7 +99,7 @@ describe('la cuenta del manifiesto y el delta de accesos a secretos', () => {
     delete process.env['GCLOUD_PROJECT'];
     vi.resetModules();
     try {
-      await expect(import('../functions/src/opcionesGlobales.ts')).rejects.toThrow(/GCLOUD_PROJECT/);
+      await expect(import('../functions/src/core/opcionesGlobales.ts')).rejects.toThrow(/GCLOUD_PROJECT/);
     } finally {
       process.env['GCLOUD_PROJECT'] = guardado;
       vi.resetModules();

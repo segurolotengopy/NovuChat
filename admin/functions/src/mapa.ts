@@ -29,7 +29,7 @@
  * dicho el servidor del otro lado.
  */
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { enlaceDeMapaValido, ubicacionDe } from './prompt.js';
 
 /** Los hosts a los que se acepta seguir una redirección. */

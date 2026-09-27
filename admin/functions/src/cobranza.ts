@@ -1,7 +1,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { REGION } from './region.js';
-import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
+import { REGION } from './core/region.js';
+import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { registrar } from './ingesta.js';
 import { periodoDe } from './planes.js';
 import {

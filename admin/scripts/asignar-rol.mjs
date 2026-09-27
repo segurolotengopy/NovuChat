@@ -5,7 +5,7 @@
  * =============================================================================
  *
  * POR QUÉ EXISTE. El modelo de roles y las reglas de Firestore soportan un
- * OPERADOR por comercio desde siempre (`functions/src/claims.ts`,
+ * OPERADOR por comercio desde siempre (`functions/src/core/seguridad/claims.ts`,
  * `firestore.rules`), pero no había forma de otorgarlo: `alta-comercio.mjs`
  * crea el comercio con UN administrador y nada más. El 23/09/2026 el Dr.
  * Bellido preguntó si su asistente, María René, podía entrar al sistema, y dio
@@ -160,7 +160,7 @@ if (!usuario) {
 const previo = (usuario.customClaims ?? {}).nc ?? {};
 await auth.setCustomUserClaims(usuario.uid, {
   ...(usuario.customClaims ?? {}),
-  // Misma forma que `functions/src/claims.ts`: claves de una letra, porque el
+  // Misma forma que `functions/src/core/seguridad/claims.ts`: claves de una letra, porque el
   // token tiene un tope de 1000 bytes.
   nc: { ...previo, t: { ...(previo.t ?? {}), [TENANT]: ROL }, v: (previo.v ?? 0) + 1 },
 });

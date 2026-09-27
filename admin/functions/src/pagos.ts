@@ -63,11 +63,11 @@
  * pantalla (A-3).
  */
 import { HttpsError, onCall, type CallableOptions } from 'firebase-functions/v2/https';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
-import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
+import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './core/seguridad/autorizacion.js';
 import { registrar } from './ingesta.js';
 import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
 import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';

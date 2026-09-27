@@ -79,7 +79,7 @@ describe('instancias mínimas de las Functions que el flujo llama en cada mensaj
   // CPU FRACCIONARIA (26/09/2026): la misma idea para la CPU. Solo staging la
   // pide; producción no la escribe y su compuerta corta si aparece.
   it('la CPU fraccionaria depende de CPU_FRACCIONARIA=si en opcionesGlobales', () => {
-    const opciones = readFileSync(join(aqui, '../functions/src/opcionesGlobales.ts'), 'utf8');
+    const opciones = readFileSync(join(aqui, '..', 'functions', 'src', 'core', 'opcionesGlobales.ts'), 'utf8');
     expect(opciones).toMatch(/process\.env\['CPU_FRACCIONARIA'\] === 'si'/);
     expect(opciones).toMatch(/cpuFraccionaria \? \{ cpu: 'gcf_gen1' as const \} : \{\}/);
   });

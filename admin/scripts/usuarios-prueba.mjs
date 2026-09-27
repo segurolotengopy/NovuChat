@@ -153,7 +153,7 @@ for (const u of USUARIOS) {
     continue;
   }
 
-  // Misma forma de claim que functions/src/claims.ts: claves de una letra por
+  // Misma forma de claim que functions/src/core/seguridad/claims.ts: claves de una letra por
   // el tope de 1000 bytes, y `v` que sube en cada cambio.
   const actual = (await auth.getUser(uid)).customClaims?.['nc'] ?? { t: {}, v: 0 };
   await auth.setCustomUserClaims(uid, {

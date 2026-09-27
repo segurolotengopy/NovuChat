@@ -126,7 +126,7 @@ fase_firestore() {
   if existe gc firestore databases describe --database='(default)'; then
     nota "la base (default) ya existe"; return
   fi
-  # La región es la de las Functions (admin/functions/src/region.ts): un
+  # La región es la de las Functions (admin/functions/src/core/region.ts): un
   # disparador de Firestore en otra región no se despliega.
   correr "crear la base (default) en $REGION" -- gc firestore databases create \
     --database='(default)' --location="$REGION" --type=firestore-native
