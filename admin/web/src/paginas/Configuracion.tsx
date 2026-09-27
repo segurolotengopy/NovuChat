@@ -114,7 +114,7 @@ function leerCoordenadas(c: Coordenadas): { error: string | null; ubicacion: { l
  *
  * EL FORMATO GUARDADO ES EL QUE YA LEEN LOS DEMÁS, sin cambiar nada: un mapa
  * `horarios` con claves `lun … dom` y valores `'HH:MM-HH:MM'` o `'cerrado'`.
- * Lo leen `horarioAtencion()` (functions/src/prompt.ts), que arma la frase que
+ * Lo leen `horarioAtencion()` (functions/src/core/prompt/prompt.ts), que arma la frase que
  * el asistente le dice al cliente, y `horarioDeHoy()` en el Tablero.
  *
  * UN DÍA SIN DATOS NO SE GUARDA. No es lo mismo que «cerrado»: «cerrado» es un

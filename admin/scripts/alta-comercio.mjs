@@ -68,7 +68,7 @@ initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const auth = getAuth();
 
-// Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
+// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);

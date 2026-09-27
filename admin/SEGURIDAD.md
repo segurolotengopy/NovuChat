@@ -1182,7 +1182,7 @@ depende de que ningún saneo esté completo.
 El texto libre que sí queda —`direccion`, `politicaCancelacion`,
 `instruccionesExtra`, los `mensaje*`— viaja topeado y en una sección delimitada
 rotulada como DATO DEL NEGOCIO, nunca por delante de las reglas de comportamiento
-del agente. La lista completa está en `functions/src/prompt.ts`,
+del agente. La lista completa está en `functions/src/core/prompt/prompt.ts`,
 `CAMPOS_LIBRES_AL_PROMPT`, y es cerrada a propósito: agregar un campo al prompt
 obliga a tocar esa constante.
 
