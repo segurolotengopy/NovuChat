@@ -30,7 +30,7 @@
  */
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { REGION } from './core/region.js';
-import { enlaceDeMapaValido, ubicacionDe } from './prompt.js';
+import { enlaceDeMapaValido, ubicacionDe } from './core/prompt/prompt.js';
 
 /** Los hosts a los que se acepta seguir una redirección. */
 const HOSTS_DE_GOOGLE = new Set([

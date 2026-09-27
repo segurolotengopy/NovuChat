@@ -6,7 +6,7 @@ import {
   cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido,
 } from './cotejo.js';
 import { registrar, MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
-import { documentoDeVertical } from './prompt.js';
+import { documentoDeVertical } from './core/prompt/prompt.js';
 import { periodoDe } from './planes.js';
 import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';
 import {

@@ -73,7 +73,7 @@
       "porque": "Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos"
     },
     {
-      "desde": "admin/functions/src/prompt.ts",
+      "desde": "admin/functions/src/core/prompt/prompt.ts",
       "hacia": "admin/functions/src/saneo.ts",
       "porque": "El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts"
     },

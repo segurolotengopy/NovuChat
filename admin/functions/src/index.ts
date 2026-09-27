@@ -72,7 +72,7 @@ export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js'
 // Pagos del prepago (A-1) con el cobrador (A-2) enchufado: ver pagosConCobrador.ts.
 export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './pagosConCobrador.js';
 export { fijarTelefonosPago } from './pagos.js';
-import { documentoDeVertical } from './prompt.js';
+import { documentoDeVertical } from './core/prompt/prompt.js';
 export { notificarReclamo } from './reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
 // altas de a una y de las importaciones de doscientas por igual, y una función

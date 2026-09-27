@@ -111,7 +111,7 @@ describe('Validación del destino', () => {
 // ===========================================================================
 // Resolución de funcionarios y ranuras de agenda (funciones puras)
 // ===========================================================================
-import { ranurasDe, resolverFuncionarios } from '../functions/src/prompt.ts';
+import { ranurasDe, resolverFuncionarios } from '../functions/src/core/prompt/prompt.ts';
 
 describe('Funcionario por defecto', () => {
   const negocio = { nombreNegocio: 'Salon Aurora', calendarioId: 'agenda@ejemplo.com',
@@ -194,7 +194,7 @@ describe('Ranuras de agenda', () => {
 // Rótulos del cobro simulado (prohibición 3)
 // ===========================================================================
 import { ROTULOS_POR_DEFECTO, documentoDeVertical, rotulosCobroSimulado }
-  from '../functions/src/prompt.ts';
+  from '../functions/src/core/prompt/prompt.ts';
 
 describe('Rótulos del cobro simulado', () => {
   it('sin documento de plataforma, rigen los rótulos de respaldo', () => {
