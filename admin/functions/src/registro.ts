@@ -31,7 +31,7 @@
  *
  * EL REGISTRO NO LLEVA RUTAS DE ARCHIVOS QUE F2 MUEVE. Las carpetas de un
  * módulo se derivan de su id (`carpetasDe`); el inventario origen → destino de
- * la mudanza vive aparte, en `pruebas/core/destinos-f2.ts`, y se borra cuando
+ * la mudanza vive aparte, en `pruebas/frontera/destinos-f2.ts`, y se borra cuando
  * F2 termine.
  *
  * LO ESCRIBE LA COORDINADORA (`Analisis/41` §8.1): cada agente de módulo
