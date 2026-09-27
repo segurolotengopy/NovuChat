@@ -115,15 +115,23 @@ lector de la frontera toma por calculado todo `createRequire`,
   limpio, hace `git mv -n` de toda la tanda antes de mover, reescribe, lista los
   cruces de la deuda que la tanda salda y falla si la ruta vieja queda en
   código (completa o sin `admin/`; los comentarios se corrigen a mano).
-- `solo-rutas.mjs <tanda.json> [base]`: **reproducibilidad**. Vuelve a correr
-  el plan sobre el `merge-base` y exige cada archivo del PR byte a byte. A mano
-  solo se permite quitar deuda saldada, líneas de `SUITES_PURAS`, comentarios
-  (comparados sin comentarios desde el AST) y los `.md`.
+- **La tanda va versionada en el PR**: `docs/arquitectura/tandas/tN.json`, con
+  `movimientos` (`{ de, a }`) y `suitesPuras` (las suites que la tanda agrega a
+  `SUITES_PURAS`; `asignar-rol.test.ts` está vetada).
+- `solo-rutas.mjs docs/arquitectura/tandas/tN.json [base]`:
+  **reproducibilidad**. Lee la tanda del commit, la valida contra el árbol de
+  la base, vuelve a correr el plan sobre el `merge-base` y exige cada archivo
+  del PR byte a byte. A mano solo se acepta: quitar deuda saldada; en
+  `vitest.config.ts`, las suites declaradas (el resto del archivo, idéntico por
+  AST); en un comentario, la CITA de la ruta nueva y nada más (un
+  `/*#__PURE__*/` le quitaría App Check a la consola); y los `.md`, que se
+  listan si cambian más que la cita, para revisarlos a mano.
 
-Ensayo completo de la tanda 1 con la herramienta (en un worktree descartable):
-5 movidos y 15 reescritos, 3 comentarios corregidos a mano, 3 entradas de
-deuda saldadas y 3 suites a `SUITES_PURAS` (las dos de F1b movidas y
-`central/contrato-f1b-puras`); `solo-rutas` pasa; `functions:build` (sin
+Ensayo completo de la tanda 1 con la herramienta y la tanda versionada (en un
+worktree descartable): 5 movidos y 15 reescritos, 3 comentarios corregidos a
+mano, 3 entradas de deuda saldadas y 3 suites a `SUITES_PURAS` (las dos de F1b
+movidas y `central/contrato-f1b-puras`); `solo-rutas` pasa, y con un
+`/*#__PURE__*/` plantado falla; `functions:build` (sin
 `lib/atencion.js` viejo) y `web:build` en verde; 2.485 pruebas puras en verde en
 50 archivos, instantánea de despliegue idéntica, `registro.test.ts` 53 en
 verde, 16 cruces y los 8 flujos idénticos.
