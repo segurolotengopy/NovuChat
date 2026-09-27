@@ -158,13 +158,19 @@ de `medir-zonas.mjs` se acepta por cantidad exacta.
 **La deuda no crece en un PR (27/09):** las cuatro listas (cruces, archivos
 sin zona, imports que no se pueden seguir y pruebas transversales) viven en
 `admin/pruebas/frontera/deuda.json`, y `calidad` compara cada una con la de la
-base del PR (`deuda-solo-baja.mjs`, en la misma carpeta): si alguna crece, el
-PR no pasa, aunque `fronteras.test.ts` quede en verde. Compara cantidades, no
-rutas: mover un archivo cambia la ruta de su entrada, y eso se informa como
-entrada nueva para que el revisor la mire. Con eso, la carpeta queda protegida
-dos veces: por el gancho (agentes con zona) y por el CI (todo lo demás, `Bash`
-incluido). El lector reconoce además `createRequire(…)`, `require.resolve` y
-`module.require`.
+base del PR con `deuda-solo-baja.mjs` (misma carpeta), **en su versión de la
+base**, para que un PR no afloje el comparador que lo juzga. Falla si alguna
+lista crece en cantidad, o si aparece una entrada nueva que no se explica por
+un archivo movido (`git diff -M` del PR): saldar un cruce trivial y anotar otro
+no se compensan. El lector reconoce además `createRequire(…)`,
+`require.resolve` y `module.require`, y toma por calculado (a `sinResolver`,
+que tampoco puede crecer) todo `require` que no puede seguir.
+
+**Hasta dónde protege:** el gancho frena a los agentes con zona; el CI, a un
+PR que toca solo la deuda o el comparador. Un PR que cambia a la vez
+`.github/workflows/` y `admin/pruebas/frontera/` puede quitar el control:
+eso lo cubre solo la revisión humana mientras `CODEOWNERS` tenga un único
+propietario, y la revisión de `seguridad` de cada PR lo señala explícitamente.
 
 **Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que

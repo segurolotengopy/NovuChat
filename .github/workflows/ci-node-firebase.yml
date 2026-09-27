@@ -205,24 +205,27 @@ jobs:
           # por rama y cancela las otras; la que sobrevive comparaba solo
           # contra el push inmediato anterior, y lo que traian las canceladas
           # no pasaba nunca por calidad en main (27/09/2026: #231 se cancelo y
-          # la de #235, solo documentacion, se salto las pruebas). Una corrida
-          # en curso o fallida cuenta como base: su contenido ya se esta
-          # probando, o ya fallo a la vista. Si la API no responde o el commit
-          # no es ancestro, se asume cambio: ante la duda, el pipeline entero.
+          # la de #235, solo documentacion, se salto las pruebas). Solo cuenta
+          # como base una corrida COMPLETADA CON EXITO: una fallida, en curso o
+          # que no arranco no probo su contenido (revision de seguridad del
+          # #236). Si la API no responde o el commit no es ancestro, se asume
+          # cambio: ante la duda, el pipeline entero.
           if [[ "$EVENTO" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
             creada=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ESTA_CORRIDA}" --jq .created_at 2>/dev/null || true)
             flujo=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ESTA_CORRIDA}" --jq .workflow_id 2>/dev/null || true)
             previa=""
             if [[ -n "$creada" && -n "$flujo" ]]; then
-              previa=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${flujo}/runs?branch=main&event=push&per_page=50" \
-                --jq "[.workflow_runs[] | select(.id != ${ESTA_CORRIDA} and .conclusion != \"cancelled\" and .created_at < \"${creada}\")][0].head_sha // empty" 2>/dev/null || true)
+              previa=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${flujo}/runs?branch=main&event=push&per_page=50" 2>/dev/null \
+                | jq -r --argjson id "$ESTA_CORRIDA" --arg c "$creada" \
+                  '[.workflow_runs[] | select(.id != $id and .status == "completed" and .conclusion == "success" and .created_at < $c)][0].head_sha // empty' \
+                  2>/dev/null || true)
             fi
             if [[ -n "$previa" ]] && git cat-file -e "${previa}^{commit}" 2>/dev/null \
                && git merge-base --is-ancestor "$previa" "$GITHUB_SHA" 2>/dev/null; then
-              echo "Base del push: ultima corrida no cancelada de main (${previa})."
+              echo "Base del push: ultima corrida exitosa de main (${previa})."
               base="$previa"
             else
-              echo "::notice::Sin ultima corrida no cancelada de main verificable: se asume cambio en el componente."
+              echo "::notice::Sin ultima corrida exitosa de main verificable: se asume cambio en el componente."
               echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
               echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
             fi
@@ -416,7 +419,18 @@ jobs:
             exit 0
           fi
           git show "${BASE_PR}:${ruta}" > "$RUNNER_TEMP/deuda-base.json"
-          node pruebas/frontera/deuda-solo-baja.mjs "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json
+          # El comparador es el de la BASE, no el del PR: un PR que agranda la
+          # deuda no puede, en el mismo PR, aflojar el comparador (revision del
+          # #236). Solo el primer PR que lo trae usa el suyo.
+          comparador=admin/pruebas/frontera/deuda-solo-baja.mjs
+          if git cat-file -e "${BASE_PR}:${comparador}" 2>/dev/null; then
+            git show "${BASE_PR}:${comparador}" > "$RUNNER_TEMP/deuda-solo-baja.mjs"
+          else
+            cp pruebas/frontera/deuda-solo-baja.mjs "$RUNNER_TEMP/deuda-solo-baja.mjs"
+          fi
+          # Los archivos movidos explican una entrada nueva de la deuda; nada mas.
+          git diff -M --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"
+          node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt"
 
       - name: Lint
         # En un workspace pnpm el script `lint` vive en los paquetes (web/),

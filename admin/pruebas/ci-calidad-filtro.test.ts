@@ -119,13 +119,17 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
     expect(paso).not.toMatch(/\|\s*grep -q/);
   });
 
-  it('en un push a main, la base es la última corrida NO cancelada, y ante la duda corre todo', () => {
+  it('en un push a main, la base es la última corrida EXITOSA, y ante la duda corre todo', () => {
     // 27/09/2026: con fusiones seguidas, GitHub cancela las corridas pendientes y
     // la que sobrevive comparaba solo contra el push anterior (#231 no pasó por calidad en main).
     const paso = flujoCi.slice(flujoCi.indexOf('- name: Detectar cambios en el componente'), flujoCi.indexOf('- name: Habilitar corepack'));
-    expect(paso).toContain('.conclusion != \\"cancelled\\"');
+    // Solo una corrida completada con éxito probó su contenido (revisión del #236).
+    expect(paso).toContain('.status == "completed" and .conclusion == "success"');
+    expect(paso).not.toContain('!= \\"cancelled\\"');
+    // Los valores entran al filtro con --arg, no interpolados.
+    expect(paso).toContain('jq -r --argjson id "$ESTA_CORRIDA" --arg c "$creada"');
     expect(paso).toContain('git merge-base --is-ancestor "$previa" "$GITHUB_SHA"');
-    expect(paso).toMatch(/Sin ultima corrida no cancelada de main verificable[^\n]*\n\s+echo "admin_cambio=true"[^\n]*\n\s+echo "pruebas_cambio=true"/);
+    expect(paso).toMatch(/Sin ultima corrida exitosa de main verificable[^\n]*\n\s+echo "admin_cambio=true"[^\n]*\n\s+echo "pruebas_cambio=true"/);
     expect(job('preparar')).toMatch(/permissions:\n\s+contents: read\n\s+actions: read/);
   });
 
@@ -133,7 +137,10 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
     const c = job('calidad');
     expect(c).toContain('- name: La deuda de la frontera no crece (PR)');
     expect(c).toContain('BASE_PR: ${{ github.event.pull_request.base.sha }}');
-    expect(c).toContain('node pruebas/frontera/deuda-solo-baja.mjs "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json');
+    // Corre el comparador de la BASE (un PR no afloja al que lo juzga) con los renombres del PR.
+    expect(c).toContain('git show "${BASE_PR}:${comparador}" > "$RUNNER_TEMP/deuda-solo-baja.mjs"');
+    expect(c).toContain('git diff -M --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"');
+    expect(c).toContain('node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt"');
     const paso = c.slice(c.indexOf('- name: La deuda de la frontera'), c.indexOf('- name: Lint'));
     expect(paso).not.toContain('${{ github.event.pull_request.base.sha }}"');
     expect(paso.split('run: |')[1]).not.toContain('${{');

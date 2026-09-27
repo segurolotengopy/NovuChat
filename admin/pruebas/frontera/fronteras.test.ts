@@ -215,6 +215,27 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'c.ts', 'd.ts']);
   });
 
+  it('los require que no se pueden seguir se informan como calculados', () => {
+    const casos = [
+      "import { createRequire as cr } from 'node:module';\nconst r = cr(import.meta.url);\nr('../central/a');",
+      "import * as m from 'node:module';\nconst r = m.createRequire(import.meta.url);\nr('../central/a');",
+      "import { createRequire } from 'node:module';\nlet r;\nr = createRequire(import.meta.url);\nr('../central/a');",
+      "const q = require;\nq('../central/a');",
+      "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('../central/a');",
+    ];
+    for (const texto of casos) {
+      const r = cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' });
+      expect(r.sinResolver.map((x) => x.especificador), texto).toContain(CALCULADO);
+    }
+    // El patrón reconocido no se informa: se sigue.
+    const bien = cruces({
+      [CORE]: "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst a = r('../central/a');\nif (typeof require === 'undefined') {}",
+      [`${F}central/a.ts`]: '',
+    });
+    expect(bien.sinResolver).toEqual([]);
+    expect(bien.cruces.map((c) => c.hacia)).toEqual([`${F}central/a.ts`]);
+  });
+
   it('un import comentado no cuenta; un texto con /* o con // no esconde el import que sigue', () => {
     const r = cruces({
       [CORE]: [
@@ -339,7 +360,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
 
 // ------------------------------------------- la deuda no crece (CI, en un PR)
 describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', async () => {
-  const { comparar } = await import('./deuda-solo-baja.mjs');
+  const { comparar, leerMovidos } = await import('./deuda-solo-baja.mjs');
   const base = leerDeuda();
 
   it('la deuda de hoy contra sí misma no crece', () => {
@@ -361,11 +382,34 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
     expect(r.crecen.map((c) => c.split(':')[0])).toEqual(['sinZona', 'sinResolver', 'transversales']);
   });
 
-  it('mover un archivo (misma cantidad, otra ruta) pasa y se informa como entrada nueva', () => {
-    const pr = { ...base, cruces: base.cruces.map((c, i) => (i === 0 ? { ...c, desde: `${F}modulos/catalogo-web/catalogoWeb.ts` } : c)) };
+  it('mover un archivo (misma cantidad, otra ruta) pasa si git lo muestra como renombre', () => {
+    const viejo = base.cruces[0].desde;
+    const nuevo = `${F}modulos/catalogo-web/catalogoWeb.ts`;
+    const pr = { ...base, cruces: base.cruces.map((c, i) => (i === 0 ? { ...c, desde: nuevo } : c)) };
+    const movidos = leerMovidos(`M\tadmin/functions/src/index.ts\nR097\t${viejo}\t${nuevo}\n`);
+    const r = comparar(base, pr, movidos);
+    expect(r.crecen).toEqual([]);
+    expect(r.inexplicadas).toEqual([]);
+    expect(r.nuevas).toEqual([`cruce ${nuevo} → ${base.cruces[0].hacia}`]);
+    // Sin el renombre, la misma entrada no se explica.
+    expect(comparar(base, pr).inexplicadas).toHaveLength(1);
+  });
+
+  it('saldar un cruce y anotar otro (misma cantidad) no pasa: canjear deuda no vale', () => {
+    const pr = { ...base, cruces: [...base.cruces.slice(1), { desde: `${F}core/x.ts`, hacia: `${F}modulos/agenda/y.ts`, porque: 'canje' }] };
     const r = comparar(base, pr);
     expect(r.crecen).toEqual([]);
-    expect(r.nuevas).toEqual([`cruce ${F}modulos/catalogo-web/catalogoWeb.ts → ${base.cruces[0].hacia}`]);
+    expect(r.inexplicadas).toEqual([`cruce ${F}core/x.ts → ${F}modulos/agenda/y.ts`]);
+  });
+
+  it('ubicar un archivo y dejar otro nuevo sin zona, o cambiar una transversal, no pasa', () => {
+    const r = comparar(base, {
+      ...base,
+      sinZona: [...base.sinZona.slice(1), `${W}lib/nuevo.ts`],
+      transversales: ['admin/pruebas/core/otra.test.ts'],
+    });
+    expect(r.crecen).toEqual([]);
+    expect(r.inexplicadas).toEqual([`sin zona ${W}lib/nuevo.ts`, 'transversal admin/pruebas/core/otra.test.ts']);
   });
 
   it('achicar la deuda pasa', () => {

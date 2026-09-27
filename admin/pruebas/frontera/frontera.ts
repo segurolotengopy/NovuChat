@@ -241,6 +241,21 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
     ts.forEachChild(n, buscarRequires);
   };
   buscarRequires(fuente);
+  /**
+   * Un `require` (o un `r` de createRequire) que no se llama ni se usa como
+   * `.resolve`: se pasa como valor y el lector ya no puede seguirlo. Ni su
+   * propia declaración ni un `typeof require` cuentan.
+   */
+  const usadoComoValor = (id: ts.Identifier): boolean => {
+    const p = id.parent;
+    if (ts.isCallExpression(p) && p.expression === id) return false;
+    if (ts.isPropertyAccessExpression(p) && p.expression === id) return false;
+    if (ts.isPropertyAccessExpression(p) && p.name === id) return false;
+    if (ts.isVariableDeclaration(p) && p.name === id) return false;
+    if (ts.isTypeOfExpression(p)) return false;
+    if (ts.isImportSpecifier(p) || ts.isPropertyAssignment(p) && p.name === id) return false;
+    return true;
+  };
   /** `require(…)`, `r(…)` de un createRequire, `require.resolve(…)` y `module.require(…)`. */
   const esRequire = (e: ts.Expression): boolean =>
     (ts.isIdentifier(e) && requires.has(e.text))
@@ -248,6 +263,23 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
       && ((requires.has(e.expression.text) && e.name.text === 'resolve')
         || (e.expression.text === 'module' && e.name.text === 'require')));
   const visitar = (n: ts.Node): void => {
+    // MODO CONSERVADOR con los require que no se pueden seguir (revisión de
+    // seguridad del #236): `import * as m from 'node:module'`, `createRequire`
+    // importado con alias, `createRequire` que no se guarda en un `const`
+    // (`r = createRequire(…)`, `createRequire(…)('…')`) y `require` usado como
+    // valor (`const q = require`) se informan como CALCULADO. Así caen en
+    // sinResolver, que el CI no deja crecer.
+    if (ts.isImportDeclaration(n) && /^(node:)?module$/.test(literal(n.moduleSpecifier) ?? '')) {
+      const nombres = n.importClause?.namedBindings;
+      if (nombres && ts.isNamespaceImport(nombres)) anotar(CALCULADO, false, false);
+      if (nombres && ts.isNamedImports(nombres)
+        && nombres.elements.some((e) => e.propertyName?.text === 'createRequire')) anotar(CALCULADO, false, false);
+    }
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'createRequire'
+      && !(ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name))) {
+      anotar(CALCULADO, false, false);
+    }
+    if (ts.isIdentifier(n) && requires.has(n.text) && usadoComoValor(n)) anotar(CALCULADO, false, false);
     if (ts.isImportDeclaration(n)) {
       anotar(literal(n.moduleSpecifier) ?? CALCULADO, Boolean(n.importClause?.isTypeOnly), false);
     } else if (ts.isExportDeclaration(n) && n.moduleSpecifier) {
