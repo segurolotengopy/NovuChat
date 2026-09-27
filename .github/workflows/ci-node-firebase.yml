@@ -215,10 +215,19 @@ jobs:
             cabeza="$(git rev-parse HEAD)"
           fi
 
-          archivos=$(git diff --name-only "$base" "$cabeza")
+          # --no-renames: un archivo MOVIDO fuera de admin/ o de Flujos/
+          # aparece tambien por su ruta de origen (como borrado); sin eso,
+          # `git mv Flujos/x.json Analisis/` salteaba calidad.
+          # core.quotePath=false: una ruta con tildes sale tal cual, no
+          # entre comillas (con comillas no coincide con `^Flujos/`).
+          # Revision de seguridad del PR #232.
+          archivos=$(git -c core.quotePath=false diff --no-renames --name-only "$base" "$cabeza")
           echo "Archivos cambiados:"; echo "$archivos" | sed 's/^/  /'
           # Cambiar el propio pipeline tambien obliga a ejercitarlo entero.
-          if echo "$archivos" | grep -qE "^(${RUTA}/|\.github/workflows/)"; then
+          # `grep -q <<<` y no una tubería desde echo: con pipefail, grep -q corta en
+          # la primera coincidencia, echo recibe SIGPIPE (141) y el `if` toma la
+          # rama falsa en un diff de mas de ~1000 archivos (revision del #232).
+          if grep -qE "^(${RUTA}/|\.github/workflows/)" <<< "$archivos"; then
             echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
             echo "El componente ${RUTA}/ (o el pipeline) cambio: se construye."
           else
@@ -232,7 +241,7 @@ jobs:
           # (planes.test.ts). Hasta el 27/09 un PR que solo tocaba Flujos/
           # salteaba `calidad` y entraba sin correr sus propias pruebas. Una
           # suite que empiece a leer otra ruta fuera de admin/ la agrega aca.
-          if echo "$archivos" | grep -qE "^(${RUTA}/|\.github/workflows/|Flujos/|scripts/|docs/base-comercial\.md$)"; then
+          if grep -qE "^(${RUTA}/|\.github/workflows/|Flujos/|scripts/|docs/base-comercial\.md$)" <<< "$archivos"; then
             echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"
             echo "Algo que leen las pruebas cambio: corre calidad."
           else

@@ -12,11 +12,12 @@
  *     `Flujos/` no despliega la consola.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
+const RAIZ = resolve(aqui, '..', '..');
 const flujoCi = readFileSync(join(aqui, '../../.github/workflows/ci-node-firebase.yml'), 'utf8');
 
 /** El texto de un job del workflow, desde su cabecera hasta la del siguiente. */
@@ -30,7 +31,7 @@ function job(nombre: string): string {
 
 /** El patrón de `grep -qE` que escribe una salida, como RegExp de JS (con RUTA = admin). */
 function patronDe(salida: string): RegExp {
-  const bloques = [...flujoCi.matchAll(/grep -qE "([^"]+)"; then\n\s+echo "(\w+)=true"/g)];
+  const bloques = [...flujoCi.matchAll(/grep -qE "([^"]+)" <<< "\$archivos"; then\n\s+echo "(\w+)=true"/g)];
   const bloque = bloques.find((b) => b[2] === salida);
   expect(bloque, `no encontré el grep que escribe ${salida}`).toBeTruthy();
   return new RegExp(bloque![1].replace('${RUTA}', 'admin'));
@@ -74,6 +75,44 @@ describe('qué cambios hacen correr las pruebas y cuáles despliegan', () => {
       expect(job(j)).toContain("needs.preparar.outputs.admin_cambio == 'true'");
       expect(job(j)).not.toContain('outputs.pruebas_cambio');
     }
+  });
+
+  it('toda ruta de fuera de admin/ que una suite lee hace correr calidad (derivado, no a mano)', () => {
+    // Cada `join(aqui, …)` con argumentos literales de cada archivo de
+    // admin/pruebas, resuelto desde SU carpeta: lo que cae fuera de admin/ es
+    // una lectura que el filtro tiene que ver.
+    const listar = (d: string): string[] => readdirSync(d).flatMap((n) => {
+      const r = join(d, n);
+      return statSync(r).isDirectory() ? listar(r) : r.endsWith('.ts') ? [r] : [];
+    });
+    const fuera = new Set<string>();
+    for (const archivo of listar(aqui)) {
+      // Sin comentarios: citan rutas de ejemplo que nadie lee.
+      const texto = readFileSync(archivo, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+      for (const m of texto.matchAll(/join\(\s*aqui\s*,([^)]*)\)/g)) {
+        const partes: string[] = [];
+        for (const a of m[1].split(',')) {
+          const lit = a.trim().match(/^['"]([^'"]+)['"]$/);
+          if (!lit) break; // un argumento calculado: se toma hasta ahí
+          partes.push(lit[1]);
+        }
+        if (partes.length === 0) continue;
+        const ruta = relative(RAIZ, resolve(dirname(archivo), ...partes));
+        if (ruta === '' || ruta.startsWith('admin/') || ruta === 'admin' || ruta.startsWith('..')) continue;
+        const esDir = existsSync(join(RAIZ, ruta)) && statSync(join(RAIZ, ruta)).isDirectory();
+        fuera.add(esDir ? `${ruta}/` : ruta);
+      }
+    }
+    expect(fuera.size, 'el recorrido no encontró ninguna lectura fuera de admin/: el patrón de join dejó de servir').toBeGreaterThan(3);
+    const sinCubrir = [...fuera].filter((r) => !pruebas.test(r) && !pruebas.test(`${r}x`));
+    expect(sinCubrir, 'Una suite lee esto fuera de admin/ y el filtro de calidad no lo mira: agregarlo a pruebas_cambio').toEqual([]);
+  });
+
+  it('el diff ve los renombres por su origen y no pasa por una tubería con grep -q', () => {
+    const paso = flujoCi.slice(flujoCi.indexOf('- name: Detectar cambios en el componente'), flujoCi.indexOf('- name: Habilitar corepack'));
+    expect(paso).toContain('git -c core.quotePath=false diff --no-renames --name-only');
+    // Con pipefail, `echo | grep -q` da 141 en un diff grande y el if toma la rama falsa.
+    expect(paso).not.toMatch(/\|\s*grep -q/);
   });
 
   it('un tag o un dispatch fijan las dos salidas en true', () => {
