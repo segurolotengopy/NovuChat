@@ -21,10 +21,19 @@
  *   - `deuda.json`: sus rutas; los `.sh`: la ruta desde la raíz.
  * Lo que queda en documentación se informa, no se toca.
  *
- * `soloRutas(viejo, nuevo)` compara dos versiones de un archivo con los
- * literales (y las listas de literales, como los argumentos de `join`)
- * reemplazados por un marcador: si no quedan iguales, el cambio no es solo de
- * rutas.
+ * SOLO EN CONTEXTOS CONOCIDOS (revisión de seguridad del #241): un literal se
+ * reescribe si es el especificador de un `import`/`export`/`import()`/
+ * `require`/`vi.mock`/`new URL`, un argumento de `join`/`resolve` o de una
+ * lectura (`leer`, `readFileSync`, `existsSync`…), o un elemento de
+ * `SUITES_PURAS`. Un literal que coincide con una ruta movida en otro lugar
+ * (un fixture, un mensaje, una tabla) NO se toca: se informa en `avisos`.
+ *
+ * `validarTanda` rechaza una tanda que saldría del repositorio, de las raíces
+ * de código o de su extensión, antes de escribir nada.
+ *
+ * La prueba de que un PR de movimiento es solo la mudanza es la
+ * REPRODUCIBILIDAD (`solo-rutas.mjs`): se vuelve a correr el plan sobre la base
+ * y cada archivo del PR tiene que ser byte a byte el del plan.
  *
  * Node lo carga quitando tipos: nada de `enum`, importaciones con extensión.
  */
@@ -38,6 +47,55 @@ export interface Plan {
   /** Archivo (ruta NUEVA si se mueve) → su texto nuevo, con la lista de cambios. */
   readonly ediciones: Edicion[];
   readonly renombres: Movimiento[];
+  /** Literales que coinciden con una ruta movida fuera de un contexto conocido: se revisan a mano. */
+  readonly avisos: string[];
+}
+
+/** Las raíces donde F2 mueve archivos. */
+export const RAICES_DE_MUDANZA = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;
+
+export interface Consulta {
+  /** ¿Existe (archivo o carpeta, sin seguir enlaces)? */
+  existe(ruta: string): boolean;
+  /** ¿Es un archivo común versionado por git? */
+  esArchivoVersionado(ruta: string): boolean;
+  /** ¿Algún ancestro existente de la ruta es un enlace simbólico? */
+  pasaPorEnlace(ruta: string): boolean;
+}
+
+/**
+ * Los errores de una tanda, antes de tocar nada: rutas relativas, normales, sin
+ * `..`, dentro de las raíces de mudanza, misma extensión, sin repetidos, `de`
+ * versionado y `a` libre, sin enlaces en el camino.
+ */
+export function validarTanda(tanda: unknown, consulta: Consulta): string[] {
+  const errores: string[] = [];
+  if (!Array.isArray(tanda) || tanda.length === 0) return ['La tanda tiene que ser un arreglo no vacío de { de, a }'];
+  const des = new Set<string>();
+  const aes = new Set<string>();
+  for (const [i, m] of tanda.entries()) {
+    const de = (m as Movimiento)?.de;
+    const a = (m as Movimiento)?.a;
+    if (typeof de !== 'string' || typeof a !== 'string') { errores.push(`#${i}: de y a tienen que ser texto`); continue; }
+    for (const r of [de, a]) {
+      if (r.startsWith('/') || posix.normalize(r) !== r || r.split('/').includes('..')) errores.push(`#${i}: ${r} no es una ruta relativa normal`);
+      else if (!RAICES_DE_MUDANZA.some((raiz) => r.startsWith(raiz))) errores.push(`#${i}: ${r} está fuera de las raíces de mudanza`);
+    }
+    if (posix.extname(de) !== posix.extname(a)) errores.push(`#${i}: ${de} → ${a} cambia la extensión`);
+    if (des.has(de) || aes.has(a)) errores.push(`#${i}: ruta repetida en la tanda`);
+    des.add(de); aes.add(a);
+    if (!consulta.esArchivoVersionado(de)) errores.push(`#${i}: ${de} no es un archivo versionado`);
+    if (consulta.existe(a)) errores.push(`#${i}: ${a} ya existe`);
+    if (consulta.pasaPorEnlace(a)) errores.push(`#${i}: el camino de ${a} pasa por un enlace simbólico`);
+  }
+  for (const a of aes) if (des.has(a)) errores.push(`${a} es a la vez origen y destino`);
+  return errores;
+}
+
+/** Los archivos que la mudanza lee: las raíces, `scripts/` de la raíz y las configuraciones de vitest y vite. */
+export function archivosAMirar(todos: readonly string[]): string[] {
+  return todos.filter((a) => RAICES_DE_MUDANZA.some((r) => a.startsWith(r)) || a.startsWith('scripts/')
+    || a === 'admin/vitest.config.ts' || a === 'admin/web/vite.config.ts').filter((a) => !a.includes('/node_modules/')).sort();
 }
 
 /** Un árbol con carpetas: para saber si `join(aqui, '..', 'Flujos')` apunta a una. */
@@ -64,6 +122,8 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
   const mapa = new Map(movimientos.map((m) => [m.de, m.a]));
   const nueva = (r: string) => mapa.get(r) ?? r;
   const ediciones: Edicion[] = [];
+  const avisos: string[] = [];
+  const rutaSh = (r: string) => new RegExp(`(?<![\\w./-])${r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g');
 
   for (const archivo of archivos) {
     const texto = arbol.leer(archivo);
@@ -83,8 +143,10 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
       if (Object.keys(antes as object).some((k, i) => k !== Object.keys(despues as object)[i])) cambios.push('claves');
       nuevoTexto = `${JSON.stringify(despues, null, 2)}\n`;
     } else if (archivo.endsWith('.sh')) {
+      // Con límites: `…/atencion.ts` no toca `…/atencion.tsx` (revisión del #241).
       for (const m of movimientos) {
-        if (nuevoTexto.includes(m.de)) { nuevoTexto = nuevoTexto.split(m.de).join(m.a); cambios.push(`${m.de} → ${m.a}`); }
+        const re = rutaSh(m.de);
+        if (re.test(nuevoTexto)) { nuevoTexto = nuevoTexto.replace(rutaSh(m.de), m.a); cambios.push(`${m.de} → ${m.a}`); }
       }
     } else if (EXT_CODIGO.test(archivo)) {
       const fuente = ts.createSourceFile(archivo, texto, ts.ScriptTarget.Latest, true,
@@ -94,6 +156,21 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
       const lit = (n: ts.Node | undefined): string | null =>
         n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
       const comilla = (n: ts.Node) => texto[n.getStart(fuente)]!;
+      const nombreDe = (e: ts.Expression): string => (ts.isIdentifier(e) ? e.text
+        : ts.isPropertyAccessExpression(e) ? e.name.text : e.kind === ts.SyntaxKind.ImportKeyword ? 'import' : '');
+      const LECTURAS = new Set(['import', 'require', 'resolve', 'mock', 'doMock', 'leer', 'readFileSync', 'existsSync',
+        'statSync', 'lstatSync', 'readdirSync', 'importActual']);
+      /** ¿El literal está donde se escribe una ruta? */
+      const enContexto = (n: ts.Node): boolean => {
+        const p = n.parent;
+        if ((ts.isImportDeclaration(p) || ts.isExportDeclaration(p)) && p.moduleSpecifier === n) return true;
+        if (ts.isExternalModuleReference(p) || (ts.isLiteralTypeNode(p) && ts.isImportTypeNode(p.parent))) return true;
+        if (ts.isCallExpression(p) && p.arguments.includes(n as ts.Expression) && LECTURAS.has(nombreDe(p.expression))) return true;
+        if (ts.isNewExpression(p) && ts.isIdentifier(p.expression) && p.expression.text === 'URL' && p.arguments?.[0] === n) return true;
+        if (ts.isArrayLiteralExpression(p) && ts.isVariableDeclaration(p.parent) && ts.isIdentifier(p.parent.name)
+          && p.parent.name.text === 'SUITES_PURAS') return true;
+        return false;
+      };
 
       // BASES: const X = join(aqui, 'lit', …) → carpeta (vieja) a la que apunta.
       const bases = new Map<string, string>();
@@ -168,7 +245,12 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
             por = mapa.get(`admin/${t}`)!.replace(/^admin\//, '');
           }
           if (por !== null && por !== t) {
-            reemplazos.push({ desde: n.getStart(fuente) + 1, hasta: n.getEnd() - 1, por, nota: `${t} → ${por}` });
+            if (enContexto(n)) {
+              reemplazos.push({ desde: n.getStart(fuente) + 1, hasta: n.getEnd() - 1, por, nota: `${t} → ${por}` });
+            } else {
+              const { line } = fuente.getLineAndCharacterOfPosition(n.getStart(fuente));
+              avisos.push(`${archivo}:${line + 1}: '${t}' nombra un archivo movido fuera de un contexto conocido (no se reescribe)`);
+            }
           }
         }
         ts.forEachChild(n, visitar);
@@ -183,30 +265,78 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
     }
     if (nuevoTexto !== texto || seMueve) ediciones.push({ archivo: nueva(archivo), nuevoTexto, cambios: cambios.reverse() });
   }
-  return { ediciones, renombres: [...movimientos] };
+  return { ediciones, renombres: [...movimientos], avisos };
+}
+
+// ------------------------------------------------------ la reproducibilidad
+export interface EntradaDiff { readonly estado: string; readonly viejo: string; readonly nuevo: string }
+
+/** Una línea de `SUITES_PURAS` (lo único que un PR de tanda agrega a mano en vitest.config.ts). */
+const LINEA_SUITE = /^\s*'pruebas\/[\w/.-]+\.test\.ts',\s*$/;
+
+function diferenciaDeLineas(esperado: string, real: string): string[] {
+  const cuenta = new Map<string, number>();
+  for (const l of esperado.split('\n')) cuenta.set(l, (cuenta.get(l) ?? 0) + 1);
+  const sobran: string[] = [];
+  for (const l of real.split('\n')) {
+    const n = cuenta.get(l) ?? 0;
+    if (n > 0) cuenta.set(l, n - 1); else sobran.push(`+ ${l}`);
+  }
+  for (const [l, n] of cuenta) for (let i = 0; i < n; i++) sobran.push(`- ${l}`);
+  return sobran;
+}
+
+/** ¿`real` es `esperado` con algunas entradas QUITADAS de sus listas (y nada más)? */
+function soloQuitaDeuda(esperado: string, real: string): boolean {
+  const e = JSON.parse(esperado) as Record<string, unknown>;
+  const r = JSON.parse(real) as Record<string, unknown>;
+  if (JSON.stringify(Object.keys(e)) !== JSON.stringify(Object.keys(r))) return false;
+  for (const k of Object.keys(e)) {
+    const ve = e[k]; const vr = r[k];
+    if (Array.isArray(ve) && Array.isArray(vr)) {
+      const quedan = new Set(ve.map((x) => JSON.stringify(x)));
+      if (!vr.every((x) => quedan.has(JSON.stringify(x)))) return false;
+    } else if (ve && vr && typeof ve === 'object' && typeof vr === 'object' && !Array.isArray(ve)) {
+      for (const [kk, vv] of Object.entries(vr)) if (JSON.stringify((ve as Record<string, unknown>)[kk]) !== JSON.stringify(vv)) return false;
+    } else if (JSON.stringify(ve) !== JSON.stringify(vr)) return false;
+  }
+  return true;
 }
 
 /**
- * El texto de un archivo de código con los literales —y las listas de
- * literales separados por comas— reemplazados por «§». Dos versiones que
- * difieren solo en rutas dan lo mismo.
+ * Los problemas de un PR de tanda frente a su plan: cada archivo del diff
+ * tiene que ser BYTE A BYTE el que el plan produce sobre la base. Lo único que
+ * se permite a mano: QUITAR entradas de `deuda.json` (las saldadas), agregar o
+ * quitar líneas de `SUITES_PURAS` en `admin/vitest.config.ts`, y los `.md`.
  */
-export function esqueleto(nombre: string, texto: string): string {
-  const escaner = ts.createScanner(ts.ScriptTarget.Latest, false,
-    nombre.endsWith('.tsx') || nombre.endsWith('.jsx') ? ts.LanguageVariant.JSX : ts.LanguageVariant.Standard, texto);
-  const fichas: string[] = [];
-  for (let k = escaner.scan(); k !== ts.SyntaxKind.EndOfFileToken; k = escaner.scan()) {
-    if (k === ts.SyntaxKind.WhitespaceTrivia || k === ts.SyntaxKind.NewLineTrivia
-      || k === ts.SyntaxKind.SingleLineCommentTrivia || k === ts.SyntaxKind.MultiLineCommentTrivia) continue;
-    const esLiteral = k === ts.SyntaxKind.StringLiteral || k === ts.SyntaxKind.NoSubstitutionTemplateLiteral;
-    const ficha = esLiteral ? '§' : escaner.getTokenText();
-    // § , § , § → §
-    if (ficha === '§' && fichas.at(-1) === ',' && fichas.at(-2) === '§') { fichas.pop(); continue; }
-    fichas.push(ficha);
+export function verificarReproducible(
+  tanda: readonly Movimiento[], plan: Plan, diff: readonly EntradaDiff[],
+  leerBase: (r: string) => string, leerHead: (r: string) => string,
+): string[] {
+  const problemas: string[] = [];
+  const movs = new Map(tanda.map((m) => [m.de, m.a]));
+  const esperado = new Map(plan.ediciones.map((e) => [e.archivo, e.nuevoTexto]));
+  const vistos = new Set<string>();
+  for (const d of diff) {
+    const destino = d.nuevo;
+    vistos.add(destino);
+    if (d.estado.startsWith('R')) {
+      if (movs.get(d.viejo) !== d.nuevo) { problemas.push(`${d.viejo} → ${d.nuevo}: renombre que no está en la tanda`); continue; }
+    } else if (d.estado !== 'M') {
+      problemas.push(`${d.estado} ${d.viejo}: una tanda solo renombra y reescribe`);
+      continue;
+    }
+    if (destino.endsWith('.md')) continue;
+    const real = leerHead(destino);
+    const quiere = esperado.get(destino) ?? leerBase(d.viejo);
+    if (real === quiere) continue;
+    if (destino.endsWith('/deuda.json') && soloQuitaDeuda(quiere, real)) continue;
+    if (destino === 'admin/vitest.config.ts' && diferenciaDeLineas(quiere, real).every((l) => LINEA_SUITE.test(l.slice(2)))) continue;
+    problemas.push(`${destino}: no es lo que produce la mudanza (cambia algo más que rutas)`);
   }
-  return fichas.join(' ');
+  for (const m of tanda) if (!vistos.has(m.a)) problemas.push(`${m.de} → ${m.a}: la tanda lo mueve y el PR no`);
+  for (const e of plan.ediciones) {
+    if (e.cambios.length && !vistos.has(e.archivo)) problemas.push(`${e.archivo}: la mudanza lo reescribe y el PR no`);
+  }
+  return problemas;
 }
-
-/** ¿`nuevo` difiere de `viejo` solo en rutas escritas como texto? */
-export const soloRutas = (nombre: string, viejo: string, nuevo: string): boolean =>
-  esqueleto(nombre, viejo) === esqueleto(nombre, nuevo);

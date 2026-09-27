@@ -18,7 +18,7 @@
  * `origin/main`, y verificar después con `solo-rutas.mjs`.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -30,25 +30,38 @@ process.emitWarning = (aviso, ...resto) => {
   return emitirOriginal.call(process, aviso, ...resto);
 };
 const { RAIZ, ARBOL_REAL, listarRaices, analizar, claveDeCruce, leerDeuda } = await import(pathToFileURL(join(AQUI, 'frontera.ts')).href);
-const { planDeMudanza } = await import(pathToFileURL(join(AQUI, 'mudanza.ts')).href);
+const { planDeMudanza, validarTanda, archivosAMirar } = await import(pathToFileURL(join(AQUI, 'mudanza.ts')).href);
 process.emitWarning = emitirOriginal;
 
 const [rutaTanda, ...banderas] = process.argv.slice(2);
 if (!rutaTanda) { console.error('Uso: mudanza.mjs <tanda.json> [--escribir]'); process.exit(2); }
 const ESCRIBIR = banderas.includes('--escribir');
+const git = (...a) => execFileSync('git', ['-C', RAIZ, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
 const tanda = JSON.parse(readFileSync(rutaTanda, 'utf8'));
 
-// Validar la tanda antes de nada.
-for (const { de, a } of tanda) {
-  if (!existsSync(join(RAIZ, de))) { console.error(`✗ No existe ${de}`); process.exit(1); }
-  if (existsSync(join(RAIZ, a))) { console.error(`✗ Ya existe ${a}`); process.exit(1); }
+// VALIDAR ANTES DE NADA (revisión de seguridad del #241): nada fuera del
+// repositorio, de las raíces de mudanza o de su extensión; nada a medias.
+const VERSIONADOS = new Set(git('ls-files').trim().split('\n'));
+const pasaPorEnlace = (r) => {
+  const partes = r.split('/');
+  for (let i = 1; i < partes.length; i++) {
+    const p = join(RAIZ, ...partes.slice(0, i));
+    if (!existsSync(p)) return false;
+    if (lstatSync(p).isSymbolicLink()) return true;
+  }
+  return false;
+};
+const errores = validarTanda(tanda, {
+  existe: (r) => existsSync(join(RAIZ, r)),
+  esArchivoVersionado: (r) => VERSIONADOS.has(r) && lstatSync(join(RAIZ, r), { throwIfNoEntry: false })?.isFile() === true,
+  pasaPorEnlace,
+});
+if (errores.length) { for (const e of errores) console.error(`✗ ${e}`); process.exit(1); }
+if (ESCRIBIR && git('status', '--porcelain').trim()) {
+  console.error('✗ El worktree tiene cambios sin commit: --escribir los arrastraría al PR.'); process.exit(1);
 }
 
-const listar = (dir) => (existsSync(join(RAIZ, dir)) ? readdirSync(join(RAIZ, dir), { withFileTypes: true }).flatMap((e) =>
-  (e.isDirectory() ? (e.name === 'node_modules' ? [] : listar(`${dir}/${e.name}`)) : [`${dir}/${e.name}`])) : []);
-const ARCHIVOS = [...new Set([
-  ...listarRaices(), ...listar('scripts'), 'admin/vitest.config.ts', 'admin/web/vite.config.ts',
-].filter((a) => existsSync(join(RAIZ, a))))].sort();
+const ARCHIVOS = archivosAMirar([...VERSIONADOS]);
 
 const arbol = { ...ARBOL_REAL, esCarpeta: (r) => existsSync(join(RAIZ, r)) && statSync(join(RAIZ, r)).isDirectory() };
 const plan = planDeMudanza(tanda, ARCHIVOS, arbol);
@@ -62,21 +75,32 @@ for (const e of plan.ediciones) {
   for (const c of e.cambios) console.log(`      ${c}`);
 }
 
-// Lo que queda en documentación (no se toca).
-const viejas = tanda.map((m) => m.de);
-let restos = '';
-try {
-  restos = execFileSync('git', ['-C', RAIZ, 'grep', '-n', '-F', ...viejas.flatMap((v) => ['-e', v]), '--',
-    'docs', 'Prompts', '.claude/agents', 'CLAUDE.md', 'admin/*.md', 'Flujos/*.md'], { encoding: 'utf8' });
-} catch { /* git grep sale con 1 si no encuentra nada */ }
-console.log(`\nRestos en documentación (${restos ? restos.trim().split('\n').length : 0}):`);
-if (restos) console.log(restos.trim().split('\n').map((l) => `  ${l}`).join('\n'));
+console.log(`\nLiterales que nombran un archivo movido fuera de un contexto conocido (${plan.avisos.length}; no se reescriben, revisar a mano):`);
+for (const a of plan.avisos) console.log(`  ${a}`);
+
+/** Las rutas viejas, completas y sin `admin/`, en todo el repositorio. */
+const restos = (donde) => {
+  const patrones = tanda.flatMap((m) => [m.de, m.de.replace(/^admin\//, '')]);
+  try {
+    return git('grep', '-n', '-F', ...patrones.flatMap((v) => ['-e', v]), '--', ...donde).trim().split('\n').filter(Boolean);
+  } catch { return []; } // git grep sale con 1 si no encuentra nada
+};
+const DOCUMENTACION = ['docs', 'Prompts', '.claude/agents', 'CLAUDE.md', 'admin/*.md', 'Flujos/*.md', 'ESTADO.md'];
+const enDocs = restos(DOCUMENTACION);
+console.log(`\nRestos en documentación (${enDocs.length}; se corrigen a mano en el mismo PR):`);
+for (const l of enDocs) console.log(`  ${l}`);
 
 if (!ESCRIBIR) { console.log('\nEn seco: no se escribió nada. Agregue --escribir.'); process.exit(0); }
+// Primero, git mv -n de TODA la tanda: si uno falla, no se mueve ninguno.
 for (const { de, a } of tanda) {
   mkdirSync(join(RAIZ, dirname(a)), { recursive: true });
-  execFileSync('git', ['-C', RAIZ, 'mv', de, a]);
 }
+try {
+  for (const { de, a } of tanda) git('mv', '-n', de, a);
+} catch (e) {
+  console.error(`✗ git mv -n falló: ${e.message}. No se movió nada.`); process.exit(1);
+}
+for (const { de, a } of tanda) git('mv', de, a);
 for (const e of plan.ediciones) writeFileSync(join(RAIZ, e.archivo), e.nuevoTexto);
 console.log(`\nEscrito: ${tanda.length} movidos, ${plan.ediciones.filter((e) => e.cambios.length).length} archivos reescritos. Verificar con solo-rutas.mjs.`);
 // La deuda que la tanda salda: se saca a mano de deuda.json, a la vista.
@@ -84,3 +108,12 @@ const vivas = new Set(analizar(listarRaices()).cruces.map(claveDeCruce));
 const saldadas = leerDeuda().cruces.map(claveDeCruce).filter((k) => !vivas.has(k));
 console.log(`\nCruces de la deuda que esta tanda salda (${saldadas.length}): sacarlos de deuda.json.`);
 for (const k of saldadas) console.log(`  ${k}`);
+
+// Restos en CÓDIGO después de escribir: la ruta vieja no puede quedar fuera de
+// la documentación, la bitácora y los análisis.
+const enCodigo = restos(['.', ':!docs', ':!Prompts', ':!bitacora', ':!Analisis', ':!*.md', ':!.claude/agents']);
+if (enCodigo.length) {
+  console.error(`\n✗ La ruta vieja sigue en código o configuración (${enCodigo.length}); corregir a mano y revisar:`);
+  for (const l of enCodigo) console.error(`  ${l}`);
+  process.exit(1);
+}
