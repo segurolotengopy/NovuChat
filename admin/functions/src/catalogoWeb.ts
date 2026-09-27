@@ -63,7 +63,7 @@ import { registrar, enmascarar } from './ingesta.js';
 // `configuracionFlujo`, y si viviera en uno de los dos el otro tendría que
 // importar a su propio importador. Un ciclo en ESM se resuelve en un orden
 // donde la constante todavía no está inicializada, y falla en ejecución.
-import { UMBRAL_CATALOGO_AL_PROMPT } from './prompt.js';
+import { UMBRAL_CATALOGO_AL_PROMPT } from './core/prompt/prompt.js';
 
 const db = () => getFirestore();
 

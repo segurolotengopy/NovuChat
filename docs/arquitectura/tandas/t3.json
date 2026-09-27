@@ -1,0 +1,6 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/prompt.ts", "a": "admin/functions/src/core/prompt/prompt.ts" }
+  ],
+  "suitesPuras": []
+}

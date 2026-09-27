@@ -169,6 +169,13 @@ tanda que lo necesita:
   espacio o fin de línea). El control de restos de `mudanza.mjs` no debería
   listar `docs/arquitectura/tandas/`, y debería mirar también `.github/*.md`
   (la tanda 2 corrigió a mano `DESPLIEGUE-FIREBASE.md`, que no revisaba).
+  La tanda 3 dejó sin corregir `functions/src/prompt.ts` en tres casos
+  distintos: los comentarios de `alta-comercio.mjs:71`, `asignar-numero.mjs:90`
+  y `completar-flujos.mjs:29` (la ruta cierra la oración con punto, como
+  arriba); dos comentarios de `admin/firestore.rules` (229 y 671: la compuerta
+  no reconoce comentarios en las reglas), y el valor `_umbral-del-prompt` de
+  `scripts/datos/negocio-demo-venta-{resto,walisuma}.json` (es un dato, no un
+  comentario).
 - **La separación seña/prepago es solo directa:** existe el camino
   `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
   `ingesta` en F3b.

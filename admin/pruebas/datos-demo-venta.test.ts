@@ -46,7 +46,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/prompt.ts';
+import { UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/core/prompt/prompt.ts';
 import { limitesDe } from '../functions/src/planes.ts';
 import { urlImagenValida } from '../functions/src/catalogoWeb.ts';
 

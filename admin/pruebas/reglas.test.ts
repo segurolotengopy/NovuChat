@@ -717,7 +717,7 @@ describe('Validación de la configuración del negocio', () => {
 // 5bis. HORARIO DE ATENCIÓN
 //
 // `horarios` entra tal cual en la frase que el asistente le lee al cliente
-// (`horarioAtencion()` en functions/src/prompt.ts) y en el Tablero. Hasta el
+// (`horarioAtencion()` en functions/src/core/prompt/prompt.ts) y en el Tablero. Hasta el
 // 15/09 la regla solo exigía `is map`: cualquier contenido pasaba. Ahora la
 // consola lo edita, y el formato lo fija la regla, no la pantalla.
 // ===========================================================================
