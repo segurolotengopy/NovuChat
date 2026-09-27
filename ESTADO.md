@@ -40,7 +40,7 @@ push a `main` que toque `admin/` despliega ahí.
 - **Siguiente:** F2 (mover sin lógica, `fronteras.test.ts`, `tenants.modulos`
   con migración en ventana, etiqueta con staging primero) → F3a (esqueleto de
   venta; habilita a Rubén Roca) → F3b (core de reservas).
-- Tablero, informes y coordinación con las sesiones de clientes:
+- Tablero, informes y coordinación con la sesión de cartera:
   **`Prompts/COORDINACION.md`**.
 
 ## Lo próximo, en orden

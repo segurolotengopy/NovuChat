@@ -1,4 +1,10 @@
-# Operación de clientes — sesión por cliente, durante la rearquitectura
+# Operación de clientes — guía de procedimiento de la cartera, durante la rearquitectura
+
+> **Nota del 26/09/2026, noche (decisión de Andres):** ya no hay una sesión por
+> cliente. Este archivo queda como **guía de procedimiento de la sesión de
+> cartera** (`Prompts/cartera-de-clientes.md`), que atiende a todos los
+> clientes; no se lanza como sesión aparte. Donde abajo diga «esta sesión» o
+> `<TENANT>`, léase «la cartera, para ese cliente». El resto no se reescribe.
 
 > **`<TENANT>`:** el comercio que esta sesión atiende. Andres lo indica al
 > lanzar la sesión; su carpeta es `CLIENTES/<TENANT>/` (ignorada por git, vive

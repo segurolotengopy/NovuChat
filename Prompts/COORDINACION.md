@@ -13,9 +13,12 @@ reorientación de #216; `v0.10.0` en producción). Al abrir el frente era
 `.claude/worktrees/`. La copia principal `~/NovuChat` está en `main` y **no
 se opera nada desde ahí**.
 
-**Las tres sesiones** (`Analisis/41` §8.5): esta (operadora), las de clientes
-(`Prompts/operacion-de-clientes.md`, una por comercio, bajo el congelamiento
-del §12.10) y la revisora (`Prompts/revision-de-hitos.md`). Los informes de
+**Las tres sesiones** (`Analisis/41` §8.5; reorganizadas por Andres el
+26/09/2026, noche): esta (operadora), la de **cartera**
+(`Prompts/cartera-de-clientes.md`, que atiende a todos los clientes, con
+`Prompts/operacion-de-clientes.md` como guía de procedimiento, bajo el
+congelamiento del §12.10) y la revisora (`Prompts/revision-de-hitos.md`). Ya no
+hay una sesión por cliente. Los informes de
 hito de abajo son lo que Andres le pega a la revisora.
 
 ## Tablero de fases
@@ -31,9 +34,9 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas. Sin cambios de alcance | **diseño en curso desde el 26/09**; sus PR se fusionan después de F1b; primer PR `registro.ts` solo; gancho corregido en #210. Condición de la etiqueta abajo (Reglas para F2) | H2 |
 | **F3a** Esqueleto de venta | Medios entrantes en el core para los tres esqueletos; transferencia con aviso y botón; fallo del modelo con botón; `NIEGA_IA` en la variante común; campaña por texto; embudo único; brechas 8 y 9 del anexo A. Agentes `core-flujos` y `modulo` | espera H2 | H3a |
 | **F3b** Core unificado de reservas | Una variante de los cinco nodos comunes; prompt por capas; suites sin `new Function`; corpus de captación fuera del nodo; los 8 publicados desde `main`, Bellido y Platinum en ventana con ensayo previo | espera H3a; Platinum además espera su PR de datos | H3b |
-| **H4-Bellido** Pase de Bellido | Lo cierra la sesión de Bellido, sobre la versión publicada | **ahora** (ver «Coordinación con las sesiones de clientes») | H4-Bellido |
-| **H4-Platinum** Pase de Platinum | Lo cierra la sesión de Platinum | cuando cierren anexo y datos; necesita H1b | H4-Platinum |
-| **H4-Rubén** Alta y pase de Rubén Roca | Lo cierra la sesión de Rubén Roca; alta en paralelo | su flujo sale de F3a: producción en H3a | H4-Rubén |
+| **H4-Bellido** Pase de Bellido | Lo cierra la sesión de cartera, sobre la versión publicada | **ahora** (ver «Coordinación con la sesión de cartera») | H4-Bellido |
+| **H4-Platinum** Pase de Platinum | Lo cierra la sesión de cartera | cuando cierren anexo y datos; necesita H1b | H4-Platinum |
+| **H4-Rubén** Alta y pase de Rubén Roca | Lo cierra la sesión de cartera; alta en paralelo | su flujo sale de F3a: producción en H3a | H4-Rubén |
 | **F4** Conector de canal ∥ **F5** Tenants como datos | Receptor y `enviar` fuera de n8n; Bellido como módulo | esperan H3b y el primer cliente pagador; antes del quinto número | H5 |
 
 ## Cola de fusión (F-1), en orden
@@ -45,7 +48,7 @@ Cada paso escribe en GitHub y necesita el «sí» de Andres. Lo que está
 |---|---|---|---|---|
 | 1 | Hotfix: `deleteMode` y hueco del candado, tres flujos de reservas | `cierre/hotfix-memoria-y-candado`, **PR #186, fusionado el 25/09** | 1076 pruebas de flujos + suite completa 3266 en verde; seguridad aprobado con 2 observaciones atendidas. Falta: **ensayo en el Demo A** y **publicación de los 3 flujos en la ventana de 02:00 a 03:00** (atraso declarado en `docs/versiones-por-cliente.md`) | 0 mensajes; 1 PR; 3 publicaciones |
 | 2 | Cinco ramas de documentación, en este orden: `estado/v0.9.0` (#182, más el commit local con `Prompts/capacidades-comunes.md`, que hay que subir) → `prepago/tablero-al-dia` (#183) → `cierre/traspaso-25-09` (#185) → `claude/topes-campanas-confirmados` (**#189**) → `docs/planes-a-medida` (#184) | las cinco | **fusionadas el 25/09 en ese orden** (#182, #183, #185, #189, #184). A #185 y #184 se les trajo `main` a la rama resolviendo `ESTADO.md` y `Prompts/LEEME.md` con la receta que conserva los dos lados | 0 mensajes; 5 fusiones, 1 push, 1 PR nuevo, hasta 3 pushes de resolución |
-| 3 | Traspaso del chat interno | `claude/novuchat-silvana-transfer-c40177`, **PR #187, fusionado el 25/09** | 138 pruebas de captación, saneo 0, identidad ok. Los pasos de Meta: sesión de clientes de NovuChat | 0 mensajes; 1 push, 1 PR |
+| 3 | Traspaso del chat interno | `claude/novuchat-silvana-transfer-c40177`, **PR #187, fusionado el 25/09** | 138 pruebas de captación, saneo 0, identidad ok. Los pasos de Meta: sesión de cartera | 0 mensajes; 1 push, 1 PR |
 | 4 | Origen del anuncio | `medicion/origen-del-anuncio`, **PR #188, fusionado el 25/09** | `main` fusionado dos veces sin reescribir la rama (la segunda, ya con el hotfix adentro: 1409 pruebas de flujos en verde), `origen` derivado del objeto `anuncio`, suite completa 3285 en verde, saneo 0. Las Functions entran con la siguiente etiqueta | 0 mensajes; 1 push, 1 PR |
 | 5 | Ayudante de configuración | `claude/ai-config-helper-e3b434` | **diseño guardado** como `Analisis/42` (en `cierre/25-09`). Falta: borrar la rama remota, con OK | 0 |
 | 6 | Worktrees colgados | `novuchat-byoc-pricing-4e0c69` (origen), `novuchat-modularization-0fc59d` (tablero), `optimistic-fermi-a6a02d` (traspaso), `planes` | se quitan después de fusionar sus ramas; los de esta sesión (`cierre-25-09`, `hotfix`, `origen-anuncio`, `traspaso`, `cola-docs`) se quitan al cerrar F-1 | 0 |
@@ -130,13 +133,13 @@ corridas de CI; 8 publicaciones en n8n; 0 despliegues (las Functions del
 origen del anuncio y de `uuid` entran con la próxima etiqueta).
 
 **Lo que quedó fuera y por qué:** `pedidos.md`, cláusulas de Q'Taco y
-Dhermacore, limpieza del calendario de Bellido y Meta de Platinum son de las
-sesiones de clientes (§8.5); el ensayo por `ensayo-flujo.sh` no hizo falta
+Dhermacore, limpieza del calendario de Bellido y Meta de Platinum son de la
+sesión de cartera (§8.5; entonces había una sesión por cliente); el ensayo por `ensayo-flujo.sh` no hizo falta
 porque el Demo A es uno de los tres flujos; las citas de prueba del 26/09 en el
 calendario del demo (corte 10:00 y 14:00) quedan hasta que se borren a mano.
 
 **Lo que se encontró mal o incompleto en `Analisis/41`:** (1) §7.1 mezcla en
-F-1 tareas de las sesiones de clientes; (2) §7.1 ubica el conflicto del origen
+F-1 tareas de clientes (hoy, de la sesión de cartera); (2) §7.1 ubica el conflicto del origen
 en `normalizar-entrada.js` y estaba en los tres JSON (el módulo fusionó solo);
 (3) §7.1 pone «comprobante en simulado con el hotfix» y fue PR propio; (4) el
 plano no prevé **estado por teléfono en n8n** como barrera por hecho
@@ -275,7 +278,7 @@ su veredicto, autorizar F2.
   silencio**; el bloque lo cierra con prueba negativa (script y callable).
   Platinum queda en 4 antes de H4. En obra: agente `central`,
   `central/copia-por-contrato`.
-- **Modalidad de Platinum y Bellido por las sesiones de clientes**, leyendo
+- **Modalidad de Platinum y Bellido por la sesión de cartera**, leyendo
   antes `estadoDeServicio` en prueba. **Advertencia de la coordinadora, antes
   de escribirla:** `asignar-plan.mjs --modalidad prueba` fija como mes de
   prueba el mes EN CURSO, sin opción para elegir otro. Hecho el 26/09, la
@@ -309,18 +312,26 @@ su veredicto, autorizar F2.
   de mover los ejes a `central/`; `estado-de-versiones.sh` compara también
   contra los módulos.
 
-## Coordinación con las sesiones de clientes (reorientación del 26/09)
+## Coordinación con la sesión de cartera (reorientación del 26/09)
 
 Decisión de Andres del 26/09/2026, después de H1 (`Analisis/41` §6.3 y §8.5).
 Lo que no cambia: cinco zonas y carpeta = zona, cero código a medida, cero
 mensajes por conversación, F4 y F5 después del quinto número, la regla de
-integración del §8.2 y las tres sesiones. Las sesiones de clientes siguen sin
-tocar `Flujos/src/`, Functions ni consola: lo que exige código va a
+integración del §8.2 y las tres sesiones.
+
+**Una sola sesión para todos los clientes** (Andres, 26/09/2026, noche): la de
+**cartera** (`Prompts/cartera-de-clientes.md`). Es dueña de los archivos de
+cada cliente en `CLIENTES/<T>/`: `pedidos.md`, `cumplimiento.md`, `estado.md`,
+`ficha.md`, `aceptacion.md`, `pase-a-produccion.md` y `solicitudes/`. Cierra
+los hitos por cliente (H4-Bellido, H4-Platinum, H4-Rubén) y sigue
+`Prompts/operacion-de-clientes.md` como guía de procedimiento. Todo lo que
+escribe en producción, Meta o GitHub va con el «sí» de Andres, por acción.
+La sesión de cartera no toca `Flujos/src/`, Functions ni consola: lo que exige código va a
 `pedidos.md` con fecha «después de F3b»; los **cambios incluidos** del
 contrato son de **configuración** y su SLA de dos días hábiles se cumple
 durante la obra (§12.10).
 
-**Reglas comunes a las cinco sesiones:**
+**Reglas comunes a las tres sesiones:**
 - **El pago no cambia la modalidad** (opción B, #212): el pase a prepago
   (producción en la consola) lo hace **el propietario después de confirmar el
   pago**, nunca el pago solo.

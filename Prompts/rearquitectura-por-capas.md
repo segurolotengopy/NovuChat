@@ -17,11 +17,11 @@ cuenta, ni que un tenant nunca posee código. Si algo del documento resulta
 estar mal al construir, se anota en el informe de hito y se sigue con lo que
 no depende de eso.
 
-**Hay tres sesiones** (`Analisis/41` §8.5): esta, que construye y fusiona; las
-de clientes, que atienden a cada comercio bajo el congelamiento del §12.10; y
-una revisora, que comprueba cada hito antes de que Andres autorice el
-siguiente. **Esta sesión no atiende pedidos de clientes.** Si llega uno, se
-deriva a la sesión del cliente.
+**Hay tres sesiones** (`Analisis/41` §8.5): esta, que construye y fusiona; la
+de cartera (`Prompts/cartera-de-clientes.md`), que atiende a todos los clientes
+bajo el congelamiento del §12.10; y una revisora, que comprueba cada hito antes
+de que Andres autorice el siguiente. **Esta sesión no atiende pedidos de
+clientes.** Si llega uno, se deriva a la sesión de cartera.
 
 Lee primero, en este orden: `CLAUDE.md` entero, `ESTADO.md` (los asientos del
 24 y 25/09), `CONFIGURACION.md`, y después:
@@ -183,11 +183,11 @@ F6 ∥ S (hechas) → **F1b** → F2 (registro primero, después los módulos en
 cualquier orden, consola, core-flujos) → etiqueta, despliegue (staging antes, o
 la alternativa declarada) y publicación de los 8 flujos → **F3a** (core-flujos
 con los módulos de venta) → etiqueta, despliegue, publicación de Demo B y
-captación y ensayo real → **H3a; la sesión de Rubén Roca ensambla su flujo** → **F3b**
+captación y ensayo real → **H3a; la sesión de cartera ensambla el flujo de Rubén Roca** → **F3b**
 (core-functions ∥ core-flujos, después módulos) → etiqueta, despliegue,
 publicación de los 8 en ventana y ensayo → H3b → F4 ∥ F5. **H4-Bellido y
-H4-Platinum los cierran las sesiones de clientes en paralelo, sin esperar a
-F3**; antes de F3b, la de Platinum alinea su JSON con producción.
+H4-Platinum los cierra la sesión de cartera en paralelo, sin esperar a
+F3**; antes de F3b, la cartera alinea el JSON de Platinum con producción.
 
 **Secuencia o paralelo, por fase:** F-1 y E van en secuencia y vos mismo las
 hacés (con `flujos-n8n` para el hotfix y `devsecops` para E). F1, F6 y S
@@ -200,7 +200,7 @@ dos en paralelo y después los módulos. F4 y F5, dos en paralelo.
 > **Reorientación del 26/09** (`Analisis/41` §6.3, confirmada por Andres): F-1,
 > E, F1, S y F6 están hechas. Sigue **F1b → F2 → F3a → F3b**. Los bloques de
 > abajo se leen con eso: F3 aparece partido, y H4 se cierra por cliente desde
-> las sesiones de clientes. El primer PR de esta reorientación es de solo
+> la sesión de cartera. El primer PR de esta reorientación es de solo
 > documentación y ya está en `main`; el tablero (`Prompts/COORDINACION.md`)
 > lo actualizás vos como primer paso.
 
@@ -220,7 +220,7 @@ En este orden, cada paso con OK:
    `claude/topes-campanas-confirmados`; `docs/planes-a-medida` (#184).
 3. **Traspaso del chat interno:** subir la rama local
    `claude/novuchat-silvana-transfer-c40177`, PR, fusión. Los pasos de Meta
-   quedan para la sesión de clientes de NovuChat.
+   quedan para la sesión de cartera.
 4. **Origen del anuncio:** traer `main` a `medicion/origen-del-anuncio` (nunca
    reescribirla: está publicada), resolver el conflicto de
    `normalizar-entrada.js` derivando el origen del objeto `anuncio` que `main`
@@ -327,7 +327,7 @@ en `Config base` o declarado (anexo A, brechas 1 a 6, 8 y 9). Ensayo real en el
 TENANT de ensayo de venta con audio, foto, PDF y foto sin contexto, y el caso
 «verbo no previsto y la herramienta sí corrió», con identificadores de
 ejecución. **Costo:** 0 mensajes; etiqueta, despliegue y publicación de Demo B
-y captación desde `main`. **Cierra H3a.** La sesión de Rubén Roca ensambla su flujo
+y captación desde `main`. **Cierra H3a.** La sesión de cartera ensambla el flujo de Rubén Roca
 de esta salida, sin nodo propio.
 
 ### F3b — Core unificado de reservas (2 jornadas, después de H3a)
@@ -376,7 +376,7 @@ publicación de Bellido y Platinum en ventana.
 - **El ayudante de configuración**: se rehace después de F6.
 - **Actualizaciones mayores de dependencias** mezcladas con cualquier fase.
 - **Cambiar precios, planes, unidad de cobro ni umbrales.**
-- **Atender pedidos de clientes**: es de las sesiones de clientes.
+- **Atender pedidos de clientes**: es de la sesión de cartera.
 
 ## Entregables al cerrar cada hito
 - El **informe de hito** en `Prompts/COORDINACION.md` (Andres lo pega en la

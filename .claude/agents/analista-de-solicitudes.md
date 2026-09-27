@@ -109,7 +109,7 @@ casos reales crezca con cada análisis.
 1. **Ruta del archivo** escrito y el número `<n>`.
 2. **Necesidad de fondo** en una frase y la **opción recomendada** con su
    esfuerzo.
-3. **Clasificación** para la sesión de clientes: configuración (se hace ya) |
+3. **Clasificación** para la sesión de cartera: configuración (se hace ya) |
    cotizable o mapa de producto | derivar a la operadora (hotfix o módulo,
    «después de F3»).
 4. **Qué se leyó fuera del proyecto** y para qué.

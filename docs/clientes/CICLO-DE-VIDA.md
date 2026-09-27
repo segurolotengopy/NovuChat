@@ -1,7 +1,7 @@
 # El ciclo de vida del cliente: altas, solicitudes, reclamos y colisiones
 
-> Documento de entrada para toda sesión de cliente
-> (`Prompts/operacion-de-clientes.md`) y para los agentes `alta-cliente` y
+> Documento de entrada para la sesión de cartera
+> (`Prompts/cartera-de-clientes.md`, con `Prompts/operacion-de-clientes.md` como guía) y para los agentes `alta-cliente` y
 > `analista-de-solicitudes`. Es el §12 de
 > `Analisis/41-arquitectura-por-capas.md` (25/09/2026), movido acá **sin
 > cambiar una letra** y con los punteros a los runbooks en las etapas que los
