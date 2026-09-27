@@ -120,6 +120,9 @@ function referenciasDePrueba(archivo, visitando = new Set()) {
 const heredada = (z) => (z.zona === 'modulo' ? { zona: 'modulo', modulo: z.modulo, destino: '' } : { zona: z.zona, destino: '' });
 
 function zonaDePrueba(archivo) {
+  // La regla de la frontera y su deuda son de la coordinadora, fuera de las
+  // zonas de negocio: clasificarlas por grafo las mandaría a un módulo.
+  if (archivo.startsWith('admin/pruebas/frontera/')) return { zona: { zona: 'frontera', destino: '' }, motivo: 'regla de la frontera (coordinadora)' };
   const ubicada = zonaDeCodigo(archivo);
   if (ubicada) return { zona: ubicada, motivo: 'carpeta ya ubicada' };
   const { refs, leeFlujos } = referenciasDePrueba(archivo);
@@ -194,7 +197,7 @@ if (JSON_SALIDA) {
   process.stdout.write(`${JSON.stringify(informe, null, 2)}\n`);
 } else {
   const pct = (n) => `${((100 * n) / informe.archivos).toFixed(0)} %`;
-  const orden = ['core', 'coordinador', 'registro', 'central', 'plataforma', 'modulo', 'tenants', 'flujo-json', 'sin-zona'];
+  const orden = ['frontera', 'core', 'coordinador', 'registro', 'central', 'plataforma', 'modulo', 'tenants', 'flujo-json', 'sin-zona'];
   console.log(`Medición de zonas — ${informe.fecha}`);
   console.log(`${informe.archivos} archivos en ${CARPETAS.join(', ')}; ${informe.suites} suites.\n`);
   console.log('Cuentas por zona:');

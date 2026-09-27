@@ -285,9 +285,12 @@ export function analizar(
   const sinResolver: { desde: string; especificador: string }[] = [];
   const cache = new Map<string, Importacion[]>();
   const imports = (a: string): Importacion[] => {
-    if (!cache.has(a)) cache.set(a, esCodigo(a) ? importsDe(a, arbol) : []);
+    if (!cache.has(a)) cache.set(a, esCodigo(a) ? juntarPorDestino(importsDe(a, arbol)) : []);
     return cache.get(a)!;
   };
+  // Cada archivo informa lo que no se puede seguir UNA vez, aunque se llegue
+  // a él desde muchos orígenes.
+  const informados = new Set<string>();
   for (const archivo of archivos) {
     if (!esCodigo(archivo)) continue;
     const prueba = esPrueba(archivo);
@@ -298,9 +301,13 @@ export function analizar(
     const pendientes: { archivo: string; via: string[] }[] = [{ archivo, via: [] }];
     while (pendientes.length) {
       const actual = pendientes.shift()!;
+      const informar = !informados.has(actual.archivo);
+      informados.add(actual.archivo);
       for (const i of imports(actual.archivo)) {
         if (!i.destino) {
-          if (actual.via.length === 0) sinResolver.push({ desde: archivo, especificador: i.especificador });
+          // También desde un puente: un archivo sin zona nunca se analiza como
+          // origen, así que un import calculado suyo no se informaría nunca.
+          if (informar) sinResolver.push({ desde: actual.archivo, especificador: i.especificador });
           continue;
         }
         const d = i.destino;
@@ -334,6 +341,23 @@ export function analizar(
     }
   }
   return { cruces, sinResolver };
+}
+
+/**
+ * Un import por destino (y por si reexporta), con `soloTipo` solo si TODOS los
+ * imports a ese destino son de tipo: si uno es de valor, gana el valor. Sin
+ * esto, un `import type` seguido de un import de valor se informaba «de tipo».
+ */
+function juntarPorDestino(lista: Importacion[]): Importacion[] {
+  const juntos = new Map<string, Importacion>();
+  const sueltos: Importacion[] = [];
+  for (const i of lista) {
+    if (!i.destino) { sueltos.push(i); continue; }
+    const clave = `${i.destino}\u0000${i.reexporta}`;
+    const previo = juntos.get(clave);
+    juntos.set(clave, previo ? { ...previo, soloTipo: previo.soloTipo && i.soloTipo } : i);
+  }
+  return [...juntos.values(), ...sueltos];
 }
 
 export const claveDeCruce = (c: { desde: string; hacia: string }): string => `${c.desde} → ${c.hacia}`;

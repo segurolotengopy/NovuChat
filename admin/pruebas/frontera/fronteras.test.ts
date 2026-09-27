@@ -42,7 +42,7 @@ const COORDINADOR_F3 = 'Lo deshace el coordinador de turno con ganchos (F3): nad
 const PRUEBA_DE_PLATAFORMA = 'Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2';
 
 /** Cruces que existían el 26/09/2026, con lo que los saca. Solo se achica. */
-const DEUDA_CONOCIDA: readonly { desde: string; hacia: string; porque: string }[] = [
+const DEUDA_CONOCIDA: readonly { desde: string; hacia: string; porque: string; soloTipo?: true }[] = [
   { desde: `${F}catalogoWeb.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
   { desde: `${F}cierres.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
   { desde: `${F}cobranza.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
@@ -59,7 +59,7 @@ const DEUDA_CONOCIDA: readonly { desde: string; hacia: string; porque: string }[
     porque: 'Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos' },
   { desde: `${F}catalogoWeb.ts`, hacia: `${F}inventario.ts`,
     porque: 'Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web' },
-  { desde: `${F}cobroVenta.ts`, hacia: `${F}sena.ts`,
+  { desde: `${F}cobroVenta.ts`, hacia: `${F}sena.ts`, soloTipo: true,
     porque: 'Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos' },
   { desde: `${F}prompt.ts`, hacia: `${F}saneo.ts`,
     porque: 'El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts' },
@@ -127,8 +127,10 @@ const SIN_ZONA: readonly string[] = [
  * Imports que el lector no puede seguir y que se aceptan, con su porqué. Un
  * `import()` con ruta calculada en un archivo con zona es un cruce invisible.
  */
-const SIN_RESOLVER_CONOCIDOS: Readonly<Record<string, string>> = {
-  'admin/scripts/medir-zonas.mjs': 'Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona',
+const SIN_RESOLVER_CONOCIDOS: Readonly<Record<string, { cantidad: number; porque: string }>> = {
+  'admin/scripts/medir-zonas.mjs': {
+    cantidad: 1, porque: 'Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona',
+  },
 };
 
 // ------------------------------------------------------------ el árbol real
@@ -158,8 +160,16 @@ describe('la frontera sobre el código de hoy', () => {
   it('todo import lleva a un archivo: ni relativo roto, ni calculado, ni alias (si no, el lector no ve el cruce)', () => {
     const inesperados = REAL.sinResolver.filter((s) => !(s.desde in SIN_RESOLVER_CONOCIDOS && s.especificador === CALCULADO));
     expect(inesperados).toEqual([]);
-    for (const conocido of Object.keys(SIN_RESOLVER_CONOCIDOS)) {
-      expect(REAL.sinResolver.some((s) => s.desde === conocido), `${conocido} ya no tiene import calculado: sacarlo de la lista`).toBe(true);
+    // Por cantidad exacta: un segundo import calculado en el mismo archivo no pasa.
+    for (const [conocido, { cantidad }] of Object.entries(SIN_RESOLVER_CONOCIDOS)) {
+      expect(REAL.sinResolver.filter((s) => s.desde === conocido).length, conocido).toBe(cantidad);
+    }
+  });
+
+  it('una deuda «solo tipo» no se vuelve dependencia de valor en silencio', () => {
+    for (const d of DEUDA_CONOCIDA.filter((x) => x.soloTipo)) {
+      const real = REAL.cruces.find((c) => claveDeCruce(c) === claveDeCruce(d));
+      expect(real?.soloTipo, `${claveDeCruce(d)} ya importa un valor: la entrada decía «solo tipo»`).toBe(true);
     }
   });
 
@@ -295,6 +305,26 @@ describe('la regla de la frontera (árbol inventado)', () => {
       { desde: CORE, especificador: CALCULADO },
       { desde: CORE, especificador: CALCULADO },
       { desde: CORE, especificador: '@/central/c' },
+    ]);
+  });
+
+  it('un import de tipo seguido de uno de valor al mismo archivo es de valor', () => {
+    const r = cruces({
+      [CORE]: "import type { T } from '../central/b';\nimport { f } from '../central/b';",
+      [CENTRAL]: '',
+    });
+    expect(r.cruces.map((c) => c.soloTipo)).toEqual([false]);
+  });
+
+  it('lo que un puente no deja seguir también se informa', () => {
+    const r = cruces({
+      [CORE]: "import { s } from '../suelto';",
+      [`${F}suelto.ts`]: "const m = await import(ruta);\nimport { c } from '@/central/c';\nimport { d } from './roto';",
+    });
+    expect(r.sinResolver).toEqual([
+      { desde: `${F}suelto.ts`, especificador: CALCULADO },
+      { desde: `${F}suelto.ts`, especificador: '@/central/c' },
+      { desde: `${F}suelto.ts`, especificador: './roto' },
     ]);
   });
 

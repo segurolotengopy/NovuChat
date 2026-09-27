@@ -149,6 +149,16 @@ escribirla: un import de `planes.ts` plantado en `atencion.ts`, un puente
 plantado en `web/src/lib/errores.ts` (sin zona) hacia Plataforma, y una
 entrada de la deuda borrada hacen fallar la suite.
 
+**Tercera vuelta de la revisión (#231):** un import de tipo seguido de uno de
+valor al mismo archivo cuenta como de valor, y una entrada de la deuda
+marcada «solo tipo» falla si pasa a valor; lo que un puente no deja seguir
+(calculado, alias, roto) también se informa; y el import calculado aceptado
+de `medir-zonas.mjs` se acepta por cantidad exacta. Quedan dos LOW para un PR
+siguiente: un paso de CI que compare las listas de la deuda con las de
+`origin/main` (hoy las protege solo el gancho, que no rige para `Bash` ni para
+agentes sin zona) y `createRequire(...)` / `require.resolve`, que el lector
+no reconoce.
+
 **Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
 venir de `ensamblador.test.ts` o `registro.test.ts` cuando en F3 existan
