@@ -13,7 +13,7 @@ import {
 import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
 import { importeBs, tipoCambioVigente } from '../../lib/prepago';
 import { avisoPrecioPorContrato } from '../../lib/pagar';
-import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../lib/atencion';
+import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../core/lib/atencion';
 import { resumenDeCambio } from '../lib/negocios';
 
 /**

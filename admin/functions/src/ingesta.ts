@@ -11,7 +11,7 @@ import { vozFija } from './prompt.js';
 import {
   HORAS_VENTANA_ATENCION, MS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
-} from './atencion.js';
+} from './core/conteo/atencion.js';
 // Los valores comerciales viven en `atencion.ts` (puro, compartido con la
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };

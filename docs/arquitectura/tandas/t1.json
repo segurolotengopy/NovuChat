@@ -1,0 +1,14 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/atencion.ts", "a": "admin/functions/src/core/conteo/atencion.ts" },
+    { "de": "admin/functions/src/cierres.ts", "a": "admin/functions/src/core/turno/cierres.ts" },
+    { "de": "admin/web/src/lib/atencion.ts", "a": "admin/web/src/core/lib/atencion.ts" },
+    { "de": "admin/pruebas/central/contrato-f1b-consola.test.ts", "a": "admin/pruebas/plataforma/contrato-f1b-consola.test.ts" },
+    { "de": "admin/pruebas/central/copia-por-contrato-consola.test.ts", "a": "admin/pruebas/plataforma/copia-por-contrato-consola.test.ts" }
+  ],
+  "suitesPuras": [
+    "pruebas/central/contrato-f1b-puras.test.ts",
+    "pruebas/plataforma/contrato-f1b-consola.test.ts",
+    "pruebas/plataforma/copia-por-contrato-consola.test.ts"
+  ]
+}

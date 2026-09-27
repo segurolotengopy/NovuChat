@@ -16,7 +16,7 @@ initializeApp();
 // opcionesGlobales.ts, que es el PRIMER import de este archivo: ver ahí por qué.
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
-export { registrarCierre } from './cierres.js';
+export { registrarCierre } from './core/turno/cierres.js';
 export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
 // servidor —el flujo manda lo que leyó el modelo y recibe `cuadra`,
@@ -38,7 +38,7 @@ export {
 } from './catalogoWeb.js';
 
 import { registrar } from './ingesta.js';
-import { umbralValido, umbralesDeAtencion } from './atencion.js';
+import { umbralValido, umbralesDeAtencion } from './core/conteo/atencion.js';
 import {
   CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, PLANES,
   RANGO_POR_CONTRATO, copiaDeLimites,

@@ -12,7 +12,7 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/cierres.ts",
+      "desde": "admin/functions/src/core/turno/cierres.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
@@ -86,21 +86,6 @@
       "desde": "admin/web/src/plataforma/lib/negocios.ts",
       "hacia": "admin/web/src/lib/archivoPlanes.ts",
       "porque": "Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación"
-    },
-    {
-      "desde": "admin/pruebas/central/contrato-f1b-consola.test.ts",
-      "hacia": "admin/web/src/plataforma/componentes/PanelEjes.tsx",
-      "porque": "Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2"
-    },
-    {
-      "desde": "admin/pruebas/central/contrato-f1b-consola.test.ts",
-      "hacia": "admin/web/src/plataforma/lib/negocios.ts",
-      "porque": "Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2"
-    },
-    {
-      "desde": "admin/pruebas/central/copia-por-contrato-consola.test.ts",
-      "hacia": "admin/web/src/plataforma/componentes/PanelEjes.tsx",
-      "porque": "Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2"
     }
   ],
   "sinZona": [

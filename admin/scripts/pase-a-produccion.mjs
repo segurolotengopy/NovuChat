@@ -87,7 +87,7 @@ registerHooks({
 });
 const FUENTES = join(aqui, '..', 'functions', 'src');
 const { PLANES, limitesDe, limitesDeCuenta } = await import(join(FUENTES, 'planes.ts'));
-const { umbralesDeAtencion } = await import(join(FUENTES, 'atencion.ts'));
+const { umbralesDeAtencion } = await import(join(FUENTES, 'core', 'conteo', 'atencion.ts'));
 const { corteAplicable, modalidadDe, tipoCambioVigente } = await import(join(FUENTES, 'prepago.ts'));
 
 const { initializeApp } = await import('firebase-admin/app');
