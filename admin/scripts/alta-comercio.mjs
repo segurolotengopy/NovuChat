@@ -152,7 +152,7 @@ await lote.commit();
 console.log('  ✓ ficha, configuración y membresía');
 
 // --- 3. el rol --------------------------------------------------------------
-// Misma forma de claim que functions/src/claims.ts: claves de una letra, porque
+// Misma forma de claim que functions/src/core/seguridad/claims.ts: claves de una letra, porque
 // el token tiene un tope de 1000 bytes.
 const actual = (usuario.customClaims ?? {}).nc ?? {};
 await auth.setCustomUserClaims(usuario.uid, {

@@ -43,7 +43,7 @@ export const db: Firestore = getFirestore(app);
 /**
  * REGIÓN DE LAS FUNCIONES, EN UN SOLO LUGAR.
  *
- * Tiene que ser la misma que `functions/src/region.ts`. Estaba escrita a mano
+ * Tiene que ser la misma que `functions/src/core/region.ts`. Estaba escrita a mano
  * en la pantalla de usuarios y decía `southamerica-east1`, donde no hay ninguna
  * función desplegada: invitar a alguien fallaba SIEMPRE, y el mensaje genérico
  * de la pantalla —«No se pudo enviar la invitación»— lo hacía parecer un

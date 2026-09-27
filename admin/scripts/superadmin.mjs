@@ -62,7 +62,7 @@ if (LISTAR) {
   process.exit(0);
 }
 
-// El mismo vínculo rol ↔ proveedor que aplica `functions/src/claims.ts`. Se
+// El mismo vínculo rol ↔ proveedor que aplica `functions/src/core/seguridad/claims.ts`. Se
 // repite acá a propósito: este script no pasa por las funciones desplegadas, y
 // un control que solo existe en el camino que hoy se usa no es un control.
 const GOOGLE = 'google.com';

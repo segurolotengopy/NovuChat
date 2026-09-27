@@ -1,4 +1,4 @@
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import {

@@ -160,6 +160,14 @@ tanda que lo necesita:
   `_load`, `new Function` y `eval`, y la exportación de un alias de
   `createRequire` (evasiones deliberadas; `o.require` hoy da un falso
   positivo sin casos).
+- **Citas de ruta que la tanda 2 dejó sin corregir** (la compuerta no las
+  acepta todavía): el comentario de `admin/vitest.config.ts` que cita
+  `functions/src/opcionesGlobales.ts` (la regla de ese archivo exige los
+  comentarios idénticos; que acepte `reemplazarRutas`) y
+  `sembrar-demos.mjs:437`, donde la ruta cierra una oración con punto (que el
+  límite de `reemplazarRutas` acepte `.` seguido de espacio o fin de línea). Y
+  el control de restos de `mudanza.mjs` no debería listar
+  `docs/arquitectura/tandas/`.
 - **La separación seña/prepago es solo directa:** existe el camino
   `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
   `ingesta` en F3b.

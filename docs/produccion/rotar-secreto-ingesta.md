@@ -7,7 +7,7 @@ procedimiento. No contiene secretos ni identificadores.
 Cada número de WhatsApp tiene un **alias de ingesta** (`demoA`, `demoB`,
 `cliente01`…`cliente20`) y un secreto propio en Secret Manager
 (`INGESTA_DEMOA`, `INGESTA_CLIENTE01`…), declarado con `defineSecret` en
-`admin/functions/src/firma.ts` (`SECRETOS_POR_ALIAS`). El mismo valor vive en
+`admin/functions/src/core/seguridad/firma.ts` (`SECRETOS_POR_ALIAS`). El mismo valor vive en
 dos lugares y **tienen que coincidir**:
 
 | Dónde | Qué | Quién lo lee |
@@ -336,7 +336,7 @@ sincronizarse con el despliegue.
 **dos claves separadas por un salto de línea**. La primera es la vigente y las
 dos se aceptan:
 
-- `admin/functions/src/firma.ts`: una función pura exportada
+- `admin/functions/src/core/seguridad/firma.ts`: una función pura exportada
   `clavesDe(valor: string): string[]`, que parte por `\n`, recorta, **descarta
   las vacías** y se queda con dos como máximo. En `rutaAutenticada()`, la firma
   HMAC y `tokenValido()` se aceptan si coinciden con **alguna** de las claves.

@@ -12,7 +12,7 @@ import { CobradorDoble, firmarAviso, idDeCobro, pngMinimo } from './dobles/cobra
 import {
   ErrorCobrador, CobradorNoResponde, configCobradorDe, crearClienteHttp, montoATexto, montoDesdeTexto, verificarAviso,
 } from '../functions/src/cobrador.ts';
-import { VENTANA_MS } from '../functions/src/firma.ts';
+import { VENTANA_MS } from '../functions/src/core/seguridad/firma.ts';
 
 const BASE = 'https://cobrador.prueba';
 const nuevo = () => {

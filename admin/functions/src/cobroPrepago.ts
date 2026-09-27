@@ -60,7 +60,7 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { FieldValue, Timestamp, getFirestore, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { registrar } from './ingesta.js';
 import {
   COBRADOR_AVISO_SECRETO, COBRADOR_TOKEN, ErrorCobrador, CobradorNoResponde,
@@ -73,7 +73,7 @@ import {
 } from './prepago.js';
 import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
 import { planQuePuedePedir, precioMensualDe } from './planes.js';
-import { exigirSesionReciente } from './autorizacion.js';
+import { exigirSesionReciente } from './core/seguridad/autorizacion.js';
 import {
   auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,

@@ -178,7 +178,7 @@ async function usuarioConGoogle({ uid, correo, nombre }) {
   return localId;
 }
 
-/** Custom claims con el mismo formato que emite `functions/src/claims.ts`. */
+/** Custom claims con el mismo formato que emite `functions/src/core/seguridad/claims.ts`. */
 const claims = (tenants, propietario = false) => ({
   nc: { t: tenants, ...(propietario ? { p: true } : {}), v: 1 },
 });

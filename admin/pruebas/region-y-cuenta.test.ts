@@ -26,7 +26,7 @@ process.env['GCLOUD_PROJECT'] ??= 'demo-test';
 const PROYECTO = process.env['GCLOUD_PROJECT'];
 
 const indice = (await import('../functions/src/index.ts')) as Record<string, unknown>;
-const { REGION } = await import('../functions/src/region.ts');
+const { REGION } = await import('../functions/src/core/region.ts');
 
 type ConEndpoint = { __endpoint?: { region?: string[]; serviceAccountEmail?: string | null } };
 const funciones = Object.entries(indice).filter(
