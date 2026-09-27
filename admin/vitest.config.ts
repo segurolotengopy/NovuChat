@@ -42,6 +42,7 @@ export const SUITES_PURAS = [
   'pruebas/candado-agenda.test.ts',
   'pruebas/captacion.test.ts',
   'pruebas/carrito-podado.test.ts',
+  'pruebas/ci-calidad-filtro.test.ts',
   'pruebas/citas-a-calendario.test.ts',
   'pruebas/cobrador-doble.test.ts',
   'pruebas/comportamiento-pantalla.test.ts',
