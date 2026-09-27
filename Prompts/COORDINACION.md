@@ -344,6 +344,25 @@ hoy fija en 20), los dos con `--operador` y auditoría como el resto del
 bloque. `Analisis/41` §7 (fila F1b) todavía no los nombra: va en el informe de
 H1b para la revisora.
 
+## Reglas para F2 (supervisora, 26/09, noche; mandan sobre las anteriores)
+
+1. **La etiqueta de F2 aterriza en staging primero**, ahora que existe y está
+   en verde. La alternativa del `--dry-run` con verificación posterior **deja de
+   ser el camino**.
+2. **`tenants.modulos` en ventana (02:00 a 03:00), con respaldo y la vuelta
+   atrás escrita antes de correr**, y el **segundo seco de `migrar-ejes.mjs` en
+   0** después de mover los ejes a `central/`. Con Bellido y Platinum en prueba,
+   un error de migración ya se nota.
+3. **`ruta` de `.devsecops.yml` a `./admin` en el PR que mueva
+   `functions/src`**, como quedó en H0 (una sola reindexación de Code
+   Scanning).
+4. **Las dos suites puras de F1b** (`contrato-f1b-puras`, y la otra que no toca
+   Firestore) **entran a `SUITES_PURAS` en el PR de F2 que las mueva**, y el
+   informe de H2 lo cita.
+5. **`medir-zonas.mjs` antes y después de cada tanda de movimiento**, con los
+   dos números en el informe (hoy: 47 de 271 archivos sin zona, 16
+   importaciones hacia arriba).
+
 ## Heredado del tablero anterior (prepago y modularización), y adónde va
 
 | Pendiente al 25/09 | Adónde va en este frente |
@@ -464,3 +483,7 @@ H1b para la revisora.
   Platinum en prueba en producción. Staging con 55/55 Functions y el pipeline
   encendido; tres defectos del job de staging corregidos. **H1b arriba, para
   la revisora.**
+- **26/09/2026 (noche, 2)** — La supervisora fija cinco reglas para F2
+  (arriba): staging primero, `tenants.modulos` en ventana con respaldo, `ruta`
+  con el movimiento de `functions/src`, suites puras de F1b, y `medir-zonas.mjs`
+  antes y después de cada tanda.
