@@ -12,7 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { UMBRALES_ATENCION, umbralesDeAtencion } from '../functions/src/atencion.ts';
+import { UMBRALES_ATENCION, umbralesDeAtencion } from '../functions/src/core/conteo/atencion.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'fijar-umbrales.mjs');

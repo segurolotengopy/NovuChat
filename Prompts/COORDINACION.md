@@ -71,6 +71,7 @@ Un ensayo a la vez (`Analisis/41` §12.9). Se anota antes de correr
 
 | Cuándo | Qué se ensaya | Con qué JSON | Estado |
 |---|---|---|---|
+| desde el 27/09 | Protección del código común de reservas (sesión de cartera: ofrecer horarios sin consultar, agendar ante una pregunta, repetir opciones, reagendar sin cancelar), con teléfono real insistiendo sobre una hora ocupada | Los tres de reservas, desde su rama `cartera/reservas-proteccion` | **reservado por la cartera**; los identificadores van en su PR |
 | 26/09 00:37–00:43 | Hotfix de memoria y candado | El propio Demo A, publicado desde `main` (`0655cd3`): es uno de los tres flujos | **hecho por Andres**: reserva buena #6054/#6059 (`agendarSinEvento: false`, id anclado, verificada); cruce #6063 (candado, `Olvidar turno fallido` `{success: true}`, reintento con alternativas); memoria conservada #6067/#6082. «¿Eres un robot?» no se hizo. Dos hallazgos previos: falso «duplicadas» por título (#6072) y **cancelación de la cita equivocada** (#6086/#6091), ver `ESTADO.md` |
 
 ## Informes de hito
@@ -382,12 +383,17 @@ H1b para la revisora.
    atrás escrita antes de correr**, y el **segundo seco de `migrar-ejes.mjs` en
    0** después de mover los ejes a `central/`. Con Bellido y Platinum en prueba,
    un error de migración ya se nota.
-3. **`ruta` de `.devsecops.yml` a `./admin` en el PR que mueva
-   `functions/src`**, como quedó en H0 (una sola reindexación de Code
-   Scanning).
+3. ~~`ruta` de `.devsecops.yml` a `./admin` en el PR que mueva
+   `functions/src`~~. **Decidido por la revisora el 27/09: `ruta: '.'` se
+   mantiene** (está en `ci-node-firebase.yml`, no en `.devsecops.yml`); la
+   auditoría nativa la sustituye Trivy fs sobre el lockfile de `admin/`;
+   Gitleaks es de repositorio entero; revisar como segundo componente después
+   de H3b. F2 conserva la misma cobertura antes y después.
 4. **Las dos suites puras de F1b** (`contrato-f1b-puras`, y la otra que no toca
    Firestore) **entran a `SUITES_PURAS` en el PR de F2 que las mueva**, y el
-   informe de H2 lo cita.
+   informe de H2 lo cita. **Hecho en la tanda 1:** `central/contrato-f1b-puras`
+   (que no se movía) y las dos de pantalla de Plataforma que pasan a
+   `pruebas/plataforma/` (`contrato-f1b-consola`, `copia-por-contrato-consola`).
 5. **`medir-zonas.mjs` antes y después de cada tanda de movimiento**, con los
    dos números en el informe (hoy: 47 de 271 archivos sin zona, 16
    importaciones hacia arriba).

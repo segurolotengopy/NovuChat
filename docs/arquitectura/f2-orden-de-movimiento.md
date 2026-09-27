@@ -50,7 +50,7 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | # | Qué | Cruces al terminar |
 |---|---|---|
 | **T0** | Nada se mueve. Se cierran las pruebas que pasarían en vacío al mover y se agregan las compuertas (ver abajo) | 19 |
-| **T1** piloto | `F/atencion.ts → F/core/conteo/`; `F/cierres.ts → F/core/turno/`; `W/lib/atencion.ts → W/core/lib/`; `P/central/{contrato-f1b-consola,copia-por-contrato-consola}.test.ts → P/plataforma/`. `ruta` de `ci-node-firebase.yml` a `./admin` (regla 3, si la revisora lo confirma). `SUITES_PURAS`: las dos movidas y `central/contrato-f1b-puras` (regla 4) | 16 |
+| **T1** piloto | `F/atencion.ts → F/core/conteo/`; `F/cierres.ts → F/core/turno/`; `W/lib/atencion.ts → W/core/lib/`; `P/central/{contrato-f1b-consola,copia-por-contrato-consola}.test.ts → P/plataforma/` (`docs/arquitectura/tandas/t1.json`). `SUITES_PURAS`: las dos movidas y `central/contrato-f1b-puras` (regla 4). La `ruta` del análisis de seguridad NO cambia (decisión de la revisora, 27/09) | 16 |
 | T2 | `firma`, `claims`, `autorizacion → F/core/seguridad/`; `region`, `opcionesGlobales → F/core/` (`opcionesGlobales` sigue primero en `index.ts`) | 16 |
 | T3 | `F/prompt.ts → F/core/prompt/`, entero | 16 |
 | T4 | `saneo`, `tipoCambio`, `tipoCambioBcb → F/central/servicios/`; `comportamiento`, `verificarComportamiento → F/central/asistente/`; `mapa → F/central/negocio/`; `reclamos → F/central/reclamos/` | 16 |

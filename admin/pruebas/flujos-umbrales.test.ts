@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   MENSAJE_USO_EXTENDIDO, avisoDeTransicion, estadoDeAtencion, umbralesDeAtencion,
-} from '../functions/src/atencion.ts';
+} from '../functions/src/core/conteo/atencion.ts';
 import { contadoresDelMensaje } from '../functions/src/ingesta.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

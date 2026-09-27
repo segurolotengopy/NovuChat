@@ -6,7 +6,7 @@
  * POR QUÉ EXISTE. Los dos umbrales de corte —a cuántas respuestas del asistente
  * en la ventana de 24 h se pasa al operador, y a cuántas se deja de responder—
  * viven en `tenants/{t}/cuenta/estado` (`umbralOperador`, `umbralBloqueo`) y
- * los lee el servidor (`functions/src/atencion.ts`; CLAUDE.md, base comercial
+ * los lee el servidor (`functions/src/core/conteo/atencion.ts`; CLAUDE.md, base comercial
  * §2 y §7). La callable `actualizarEstadoCuenta` los escribe, pero ninguna
  * pantalla la llama todavía (`Analisis/29`). Sin este script, la prueba de
  * aceptación 24a–24c de un cliente —bajar los umbrales a 3 y 5, comprobar con
@@ -44,7 +44,7 @@ const OPERADOR = opcion('operador');
 const BLOQUEO = opcion('bloqueo');
 
 const { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralValido, umbralesDeAtencion } =
-  await import('../functions/src/atencion.ts');
+  await import('../functions/src/core/conteo/atencion.ts');
 
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
