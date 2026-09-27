@@ -9,8 +9,18 @@
  *
  * Todo lo que necesita Auth (crear la cuenta, el claim, el enlace de
  * contraseña) queda fuera: acá se prueba lo que decide ANTES de tocar nada, que
- * es donde viven los errores que se pagan caro. Las validaciones corren antes
- * de que el script abra Firebase, así que esta suite no necesita emuladores.
+ * es donde viven los errores que se pagan caro.
+ *
+ * LAS VALIDACIONES CORREN ANTES DE ABRIR FIREBASE, PERO NO TODAS LAS PRUEBAS
+ * PARAN AHÍ. Con los argumentos bien, el script inicializa firebase-admin y lee
+ * `tenants/<id>` ANTES de decidir el modo seco. Hasta el 27/09/2026 el hijo
+ * heredaba el entorno de `correr.sh`, que exporta FIRESTORE_EMULATOR_PORT pero
+ * no FIRESTORE_EMULATOR_HOST: firebase-admin iba al Firestore REAL con las
+ * credenciales por defecto (ADC) del desarrollador. Sin red se colgaba hasta el
+ * tope de 20 s; con red era tráfico a Google (revisión de seguridad del PR
+ * #242). Por eso el hijo recibe el emulador explícito, y Auth apunta a un
+ * puerto donde nadie escucha: si algún día una prueba llega a Auth, falla acá
+ * en vez de salir de la máquina.
  */
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -20,8 +30,13 @@ import { dirname, join } from 'node:path';
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'asignar-rol.mjs');
 
+const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
+
 const correr = (...args: string[]) => {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8', timeout: 20000 });
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST, FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:1' },
+    encoding: 'utf8', timeout: 20000,
+  });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 };
 const BIEN = ['--proyecto', 'demo-novuchat-pruebas', '--tenant', 'bellido', '--correo', 'recepcion@ejemplo.com'];
@@ -87,6 +102,10 @@ describe('El uso', () => {
     const r = correr(...BIEN);
     expect(r.salida).not.toContain('--rol tiene que ser');
     expect(r.codigo).not.toBe(2);
+    // Y que la lectura del comercio la contestó el emulador: sin datos sembrados
+    // dice que no existe; si otra suite dejó `bellido`, termina en seco. Un
+    // cuelgue o un error de credenciales no da ninguna de las dos.
+    expect(r.salida).toMatch(/no existe|No se escribió nada/);
   });
 
   it('la ayuda nombra los dos roles y las dos banderas', () => {
