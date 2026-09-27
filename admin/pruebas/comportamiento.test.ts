@@ -1,6 +1,6 @@
 /**
  * EL COMPORTAMIENTO GENERAL SE VERIFICA EN EL SERVIDOR ANTES DE APLICARSE
- * (reglas de Andres del 17/09/2026; `functions/src/comportamiento.ts` y
+ * (reglas de Andres del 17/09/2026; `functions/src/central/asistente/comportamiento.ts` y
  * `verificarComportamiento.ts`).
  *
  * Dos partes:

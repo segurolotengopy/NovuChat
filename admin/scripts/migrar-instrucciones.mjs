@@ -2,7 +2,7 @@
  * MIGRAR EL COMPORTAMIENTO GENERAL AL CONTRATO DEL 17/09/2026.
  *
  * POR QUÉ EXISTE. Desde el 17/09 el flujo lee `config/negocio.instruccionesVigentes`
- * y no `instruccionesExtra` (`functions/src/comportamiento.ts`). Los comercios
+ * y no `instruccionesExtra` (`functions/src/central/asistente/comportamiento.ts`). Los comercios
  * dados de alta antes tienen texto en `instruccionesExtra` —cargado por
  * NovuChat con `cargar-negocio.mjs` o escrito en la consola— y NADA en
  * `instruccionesVigentes`. Sin esta migración, al desplegar `configuracionFlujo`

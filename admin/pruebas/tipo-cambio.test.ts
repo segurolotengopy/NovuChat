@@ -1,5 +1,5 @@
 /**
- * EL TIPO DE CAMBIO DEL DÍA (`functions/src/tipoCambio.ts`, bloque A-1).
+ * EL TIPO DE CAMBIO DEL DÍA (`functions/src/central/servicios/tipoCambio.ts`, bloque A-1).
  *
  * Sin TCO no se cobra (`CLAUDE.md`, base comercial §3; decisión 3 del frente):
  * `tipoCambioDe` es la validación pura y `tipoCambioDelDia` la lectura real de

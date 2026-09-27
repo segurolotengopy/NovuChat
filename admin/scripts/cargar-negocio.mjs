@@ -28,7 +28,7 @@
  *   - si la sección `negocio` trae `instruccionesExtra`, TAMBIÉN
  *     `instruccionesVigentes` (el mismo texto) e `instruccionesRevision`
  *     aprobada con `revisadoPor: 'cargar-negocio'`: ese texto lo revisó
- *     NovuChat, y el flujo solo lee lo vigente (`functions/src/comportamiento.ts`).
+ *     NovuChat, y el flujo solo lee lo vigente (`functions/src/central/asistente/comportamiento.ts`).
  *     Antes de escribirlo pasa por la MISMA capa de patrones que la Function:
  *     lo que NovuChat carga tiene que poder editarse después desde la consola
  *     sin que la capa 1 lo rechace por un carácter que puso NovuChat.
