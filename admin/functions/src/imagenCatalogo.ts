@@ -42,7 +42,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 
 /**
  * Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n.

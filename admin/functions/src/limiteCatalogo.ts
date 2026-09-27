@@ -30,7 +30,7 @@
  */
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { PLANES, PLAN_POR_DEFECTO, limitesDeCuenta } from './planes.js';
 
 const db = () => getFirestore();

@@ -133,7 +133,7 @@ del proyecto de producción. Lo que hay:
     **`sa-functions`**, secreto por secreto.
     La cuenta de despliegue ya no puede hacerlo. Si se olvida, el despliegue
     falla antes de publicar, pero **la simulación no lo detecta**: solo avisa
-    «will be granted». El procedimiento está en `admin/functions/src/firma.ts`.
+    «will be granted». El procedimiento está en `admin/functions/src/core/seguridad/firma.ts`.
     Dar de alta un cliente **no** crea secretos: usa uno libre de la reserva.
 - **El `predeploy` de las Functions no recompila en el CI.** En la máquina de
   quien despliega a mano recompila siempre, que es lo que evita subir un `lib/`

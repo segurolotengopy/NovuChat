@@ -51,7 +51,7 @@ Todas cuelgan del sitio de Hosting. n8n puede llamarlas por la reescritura
 
 Autenticación: **la misma de la ingesta**. Cabecera `X-NovuChat-Numero` con el
 `phone_number_id`, y firma HMAC o `Authorization: Bearer` con el secreto de ese
-número (ver `functions/src/firma.ts`). El comercio sale de `/rutasWhatsApp`,
+número (ver `functions/src/core/seguridad/firma.ts`). El comercio sale de `/rutasWhatsApp`,
 **nunca del cuerpo**.
 
 ```jsonc

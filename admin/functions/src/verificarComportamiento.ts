@@ -26,7 +26,7 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { CLAVE_GEMINI, claveGemini } from './imagenCatalogo.js';
 import {
   REVISOR_FUNCTION, hashCorto, revisarTexto,

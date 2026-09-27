@@ -165,7 +165,7 @@ los clientes juntos. Es exactamente la credencial que el encargo pide evitar.
    `/rutasWhatsApp/{numero}`. El motivo es que `defineSecret` exige un nombre
    fijo escrito en el código y este repositorio es público, así que el nombre no
    puede contener un `phone_number_id`. La verificación vive en
-   `functions/src/firma.ts` y la usan **los tres endpoints** de n8n: ingesta,
+   `functions/src/core/seguridad/firma.ts` y la usan **los tres endpoints** de n8n: ingesta,
    configuración y cierres.
 2. n8n firma cada petición: `HMAC-SHA256(secreto, timestamp + "." + cuerpo)`.
    **El secreto no viaja**; viaja una firma. Un `Authorization: Bearer` queda

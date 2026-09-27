@@ -51,9 +51,9 @@ import { onRequest, onCall, HttpsError, type CallableRequest } from 'firebase-fu
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { descontarPedido, hayParaVender } from './inventario.js';
-import { SECRETOS_POR_ALIAS, rutaAutenticada } from './firma.js';
+import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
 // enmascarado de dos formas distintas según qué lo escribió, y eso hace

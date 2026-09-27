@@ -42,7 +42,7 @@
 import { createHmac } from 'node:crypto';
 import { defineSecret } from 'firebase-functions/params';
 import { getFirestore } from 'firebase-admin/firestore';
-import { firmaValida, VENTANA_MS } from './firma.js';
+import { firmaValida, VENTANA_MS } from './core/seguridad/firma.js';
 
 export const COBRADOR_TOKEN = defineSecret('COBRADOR_TOKEN');
 export const COBRADOR_AVISO_SECRETO = defineSecret('COBRADOR_AVISO_SECRETO');

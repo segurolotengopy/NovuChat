@@ -39,7 +39,7 @@ process.env['COBRADOR_AVISO_SECRETO'] ??= 'secreto-de-prueba-del-aviso-de-confir
 // index.ts inicializa la app por defecto al cargarse, como en producción.
 const indice = await import('../functions/src/index.ts');
 const pagos = await import('../functions/src/pagos.ts');
-const { exigirAdminDe } = await import('../functions/src/autorizacion.ts');
+const { exigirAdminDe } = await import('../functions/src/core/seguridad/autorizacion.ts');
 const { getFirestore, FieldValue, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 

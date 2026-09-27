@@ -18,7 +18,7 @@
  *   - escribe la ruta con `aliasSecreto`; suma el flujo a la ficha sin quitar los
  *     que tenía; crea el documento de config del flujo si faltaba; deja auditoría.
  *
- * LOS ALIAS VÁLIDOS SE LEEN DE `functions/src/firma.ts`, no de una copia: si se
+ * LOS ALIAS VÁLIDOS SE LEEN DE `functions/src/core/seguridad/firma.ts`, no de una copia: si se
  * amplía la reserva allá, este script la ve sin tocarlo.
  *
  *   node scripts/asignar-numero.mjs --proyecto <id> --listar
@@ -90,7 +90,7 @@ const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
 // Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
-const firma = readFileSync(new URL('../functions/src/firma.ts', import.meta.url), 'utf8');
+const firma = readFileSync(new URL('../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
 const RESERVA = [...firma.matchAll(/^\s*(\w+):\s*defineSecret\('([A-Z0-9_]+)'\)/gm)]
   .map((m) => ({ alias: m[1], secreto: m[2] }));
 const ALIAS_VALIDOS = new Set(RESERVA.map((r) => r.alias));

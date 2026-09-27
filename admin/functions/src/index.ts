@@ -1,13 +1,13 @@
 // PRIMERO, antes que cualquier otro módulo propio: fija las opciones globales.
-import './opcionesGlobales.js';
+import './core/opcionesGlobales.js';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { REGION } from './region.js';
+import { REGION } from './core/region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { asignarRol } from './claims.js';
-import { claimsDe as claims, exigirAdminDe, exigirPropietario, exigirSesionReciente } from './autorizacion.js';
+import { asignarRol } from './core/seguridad/claims.js';
+import { claimsDe as claims, exigirAdminDe, exigirPropietario, exigirSesionReciente } from './core/seguridad/autorizacion.js';
 import { derivadosGobernados } from './pagos.js';
 
 initializeApp();

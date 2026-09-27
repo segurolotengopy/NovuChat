@@ -36,7 +36,7 @@ describe('Lo que no se puede pedir', () => {
   });
 
   // EL ROL `ingesta` ES DE UNA IDENTIDAD DE SERVICIO, NUNCA DE UNA PERSONA:
-  // `functions/src/claims.ts` lo rechaza para una cuenta con contraseña. Acá se
+  // `functions/src/core/seguridad/claims.ts` lo rechaza para una cuenta con contraseña. Acá se
   // rechaza antes, para que el motivo se lea en una línea en vez de salir como
   // un error de Firebase.
   it('el rol «ingesta» se rechaza, y se explica por qué', () => {

@@ -234,7 +234,7 @@ Las claves son de una letra a propósito. Firebase impone un **tope duro de 1000
 bytes** al conjunto de custom claims, y `setCustomUserClaims` falla al pasarlo —
 en producción, con el usuario ya creado. Con este formato entran del orden de 15
 a 20 negocios por usuario; con claves como `roles`/`tenantId`/`propietario` se
-llegaría a la mitad. `functions/src/claims.ts` verifica el tamaño antes de
+llegaría a la mitad. `functions/src/core/seguridad/claims.ts` verifica el tamaño antes de
 escribir y falla con un mensaje explícito en vez de romper en silencio.
 
 **Si algún día hiciera falta un usuario con más negocios que eso**, la salida no
