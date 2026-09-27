@@ -87,6 +87,48 @@ quedan sin zona, los que se parten y las importaciones hacia arriba o entre
 módulos sin `dependeDe`. Es una medición: sale siempre con 0. La prueba que
 falla por una importación hacia arriba es `fronteras.test.ts` (PR 2).
 
+## fronteras.test.ts (F2, PR 2)
+
+**Dónde vive:** `admin/pruebas/core/fronteras.test.ts` (pura, en
+`SUITES_PURAS`), con la regla en `admin/pruebas/core/frontera.ts`, que
+`medir-zonas.mjs` importa también: la prueba y la medición que se cita en
+cada informe no pueden contar distinto.
+
+**La zona de un archivo**, en este orden: su entrada en `destinos-f2.ts`
+(mientras dura F2, un archivo sin mover ya tiene la zona a la que va); la
+carpeta (`core/`, `central/`, `plataforma/`, `modulos/<m>/` bajo cada raíz de
+código, `scripts/datos/` para tenants, y `registro.ts` por nombre), que es la
+regla permanente cuando `destinos-f2.ts` se borre; y el prefijo más largo de
+`PREFIJOS_F2`.
+
+**La regla:** registro < core < central < plataforma < módulo < coordinador <
+tenants; una zona importa de la suya o de las de abajo, y un módulo importa a
+otro solo si lo declara, directa o indirectamente, en `dependeDe`. Cuenta todo
+import relativo: de tipo, de varias líneas, reexportación, dinámico,
+`require` y el que solo carga el archivo. Un script que importa
+`functions/lib/*.js` (compilado) depende de su fuente en `functions/src/`. No
+cuentan las reexportaciones de `functions/src/index.ts` (el inventario de
+despliegue) ni una prueba que lo importa para llamar a una callable. Las
+pruebas en carpeta de zona siguen la misma regla; `registro.test.ts` es la
+única transversal (compara el registro con el código de todas las zonas).
+
+**La deuda conocida, que solo se achica:** los 19 cruces que existían el
+26/09 están en la prueba, uno por uno, con lo que los saca (8 hacia
+`ingesta.ts`, que deshace el coordinador de F3; 8 que se cortan al mover el
+archivo: entre módulos, de Central o Plataforma hacia un módulo, y el prompt
+de Core hacia el saneo de Central; y 3 pruebas
+de pantallas de Plataforma guardadas en `pruebas/central/`). Un cruce nuevo
+falla; una entrada cuyo cruce ya no existe también falla, para que se saque.
+Lo mismo con los archivos de código sin zona: **exactamente 42** (47 con las
+pruebas que la medición no ubica), y el PR que ubica archivos baja el número.
+
+**Negando:** la mitad de la suite es un árbol inventado donde cada forma de
+cruce tiene que fallar (Core → Central, Central → Plataforma, Plataforma →
+módulo, módulo sin `dependeDe`, registro que importa, tenants importados, un
+import que no resuelve). Contraprueba hecha al escribirla: un import de
+`planes.ts` plantado en `atencion.ts` y una entrada de la deuda borrada hacen
+fallar la suite.
+
 ## La política de capas del 06/09, que el registro reemplaza
 
 Lo que sigue es `admin/DISENO.md` §4sexies tal como estaba. Es el antecedente

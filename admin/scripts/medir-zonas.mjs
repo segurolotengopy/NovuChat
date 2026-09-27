@@ -26,20 +26,21 @@
  *     MÁS ALTA de lo que toca; dos módulos donde ninguno declara al otro en
  *     `dependeDe` es «sin zona» (la prueba está mal cortada); si solo lee los
  *     JSON de `Flujos/`, es «flujo-json»; si no toca nada con zona, «sin zona».
- *   - Hacia arriba: registro < core < central < plataforma < módulo <
- *     coordinador < tenants. Un módulo puede importar a otro solo si lo
- *     declara (directa o indirectamente) en `dependeDe`. Las reexportaciones de
- *     `functions/src/index.ts` no cuentan: son el inventario de despliegue.
+ *   - Hacia arriba: la regla de `pruebas/core/frontera.ts`, la MISMA que usa
+ *     `fronteras.test.ts` (zona por inventario, por carpeta o por prefijo;
+ *     registro < core < central < plataforma < módulo < coordinador <
+ *     tenants; entre módulos, solo con `dependeDe`).
  *
  * Es una MEDICIÓN, no una prueba: sale siempre con 0. La prueba que falla si
- * una zona importa hacia arriba es `fronteras.test.ts` (F2, PR 2).
+ * una zona importa hacia arriba es `pruebas/core/fronteras.test.ts`; los dos
+ * números del informe (sin zona y hacia arriba) son los que ella acota.
  */
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { dirname, join, relative, resolve, basename } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
-const RAIZ = resolve(AQUI, '..', '..');
+const RAIZ_DEL_SCRIPT = join(AQUI, '..', '..');
 const JSON_SALIDA = process.argv.includes('--json');
 
 // Node carga los .ts quitando tipos y avisa, una vez por archivo, que
@@ -53,73 +54,21 @@ process.emitWarning = (aviso, ...resto) => {
   if (codigo.includes('MODULE_TYPELESS_PACKAGE_JSON') || /Reparsing as ES module/.test(texto)) return;
   return emitirOriginal.call(process, aviso, ...resto);
 };
-const { REGISTRO } = await import(pathToFileURL(join(RAIZ, 'admin/functions/src/registro.ts')).href);
-const { DESTINOS_F2, PREFIJOS_F2 } = await import(pathToFileURL(join(RAIZ, 'admin/pruebas/core/destinos-f2.ts')).href);
+const {
+  RAIZ, RAICES, RANGO, analizar, dependenciasDe, esPrueba, esSuite, etiqueta, importsDe,
+  listarRaices, sinComentarios, zonaDeCodigo,
+} = await import(pathToFileURL(join(RAIZ_DEL_SCRIPT, 'admin/pruebas/core/frontera.ts')).href);
 process.emitWarning = emitirOriginal;
 
 // ------------------------------------------------------------------ el árbol
-const CARPETAS = ['admin/functions/src', 'admin/web/src', 'Flujos/src', 'admin/scripts', 'admin/pruebas'];
-const listar = (dir) => readdirSync(join(RAIZ, dir)).flatMap((n) => {
-  if (n === 'node_modules') return [];
-  const rel = `${dir}/${n}`;
-  return statSync(join(RAIZ, rel)).isDirectory() ? listar(rel) : [rel];
-});
-const ARCHIVOS = CARPETAS.flatMap(listar).sort();
+const CARPETAS = RAICES.map((r) => r.slice(0, -1));
+const ARCHIVOS = listarRaices();
 // Los JSON de los flujos no se clasifican (son salida de construcción), pero
 // las pruebas los leen y eso decide su zona.
 const FLUJOS_JSON = readdirSync(join(RAIZ, 'Flujos')).filter((n) => n.endsWith('.json')).map((n) => `Flujos/${n}`);
 const UNIVERSO = [...ARCHIVOS, ...FLUJOS_JSON];
-const esPrueba = (a) => a.startsWith('admin/pruebas/');
-const esSuite = (a) => esPrueba(a) && a.endsWith('.test.ts');
-
-// ---------------------------------------------------------- zonas y módulos
-const DEPENDE = new Map(REGISTRO.map((m) => [m.modulo, m.dependeDe]));
-function dependenciasDe(m, vistos = new Set()) {
-  for (const d of DEPENDE.get(m) ?? []) if (!vistos.has(d)) { vistos.add(d); dependenciasDe(d, vistos); }
-  return vistos;
-}
-const RANGO = { registro: -1, core: 0, central: 1, plataforma: 2, modulo: 3, coordinador: 4, tenants: 5 };
-const etiqueta = (z) => (z.zona === 'modulo' ? `modulo:${z.modulo}` : z.zona);
-
-function zonaDeCodigo(archivo) {
-  if (DESTINOS_F2[archivo]) return DESTINOS_F2[archivo];
-  const prefijo = PREFIJOS_F2.filter((p) => archivo.startsWith(p.prefijo))
-    .sort((a, b) => b.prefijo.length - a.prefijo.length)[0];
-  return prefijo ? prefijo.destino : null;
-}
 
 // ------------------------------------------------------------- referencias
-// Un `//` pegado a `:` (una URL dentro de un texto) no es comentario.
-const sinComentarios = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;])\/\/.*$/gm, '$1');
-const EXTENSIONES = ['', '.ts', '.tsx', '.mjs', '.js', '.d.mts', '/index.ts'];
-
-function resolverRelativo(desde, especificador) {
-  const base = join(dirname(join(RAIZ, desde)), especificador);
-  const candidatos = [base, base.replace(/\.js$/, '.ts'), base.replace(/\.js$/, '.tsx'), base.replace(/\.mjs$/, '.d.mts')];
-  for (const c of candidatos) for (const e of EXTENSIONES) {
-    const r = c + e;
-    if (existsSync(r) && statSync(r).isFile()) return relative(RAIZ, r);
-  }
-  return null;
-}
-
-/** Imports estáticos, reexportaciones e imports dinámicos, con «solo tipo». */
-function importsDe(archivo) {
-  const texto = sinComentarios(readFileSync(join(RAIZ, archivo), 'utf8'));
-  const encontrados = [];
-  const patrones = [
-    /\b(import|export)\s+(type\s+)?[^;'"`]*?\bfrom\s+['"]([^'"]+)['"]/g,
-    /\bimport\s+()()['"]([^'"]+)['"]/g,
-    /\bimport\(\s*()()['"]([^'"]+)['"]\s*\)/g,
-  ];
-  for (const p of patrones) for (const m of texto.matchAll(p)) {
-    const especificador = m[3];
-    if (!especificador.startsWith('.')) continue;
-    const destino = resolverRelativo(archivo, especificador);
-    if (destino) encontrados.push({ destino, tipo: Boolean(m[2]), reexporta: m[1] === 'export' });
-  }
-  return encontrados;
-}
 
 /**
  * Rutas escritas en el CÓDIGO de una prueba (no en sus comentarios, que citan
@@ -153,7 +102,7 @@ function referenciasDePrueba(archivo, visitando = new Set()) {
   const { refs, leeFlujos } = rutasEscritas(archivo);
   const todas = new Set(refs);
   let flujos = leeFlujos;
-  if (/\.(ts|mjs|js)$/.test(archivo)) for (const i of importsDe(archivo)) todas.add(i.destino);
+  if (/\.(ts|mjs|js)$/.test(archivo)) for (const i of importsDe(archivo)) if (i.destino) todas.add(i.destino);
   // Se sigue a los ayudantes de la carpeta de pruebas (lib/, dobles/).
   for (const r of [...todas]) {
     if (esPrueba(r) && !esSuite(r) && r !== archivo && !visitando.has(r)) {
@@ -218,28 +167,12 @@ const sinZona = clasificados.filter((c) => !c.zona);
 const seParten = clasificados.filter((c) => c.zona?.seParte?.length);
 
 // --------------------------------------------------------- hacia arriba
-const ZONA = new Map(clasificados.map((c) => [c.archivo, c.zona]));
-const haciaArriba = [];
-const reexportacionesDeIndice = [];
-for (const archivo of ARCHIVOS) {
-  if (esPrueba(archivo) || !/\.(ts|tsx|mjs|js)$/.test(archivo)) continue;
-  const origen = ZONA.get(archivo);
-  if (!origen || origen.zona === 'flujo-json') continue;
-  for (const i of importsDe(archivo)) {
-    const destino = ZONA.get(i.destino);
-    if (!destino || esPrueba(i.destino)) continue;
-    if (archivo === 'admin/functions/src/index.ts' && i.reexporta) { reexportacionesDeIndice.push(i.destino); continue; }
-    let motivo = null;
-    if (origen.zona === 'modulo' && destino.zona === 'modulo') {
-      if (origen.modulo !== destino.modulo && !dependenciasDe(origen.modulo).has(destino.modulo)) {
-        motivo = `módulo sin dependeDe (${origen.modulo} → ${destino.modulo})`;
-      }
-    } else if (RANGO[destino.zona] > RANGO[origen.zona]) {
-      motivo = `${etiqueta(origen)} → ${etiqueta(destino)}`;
-    }
-    if (motivo) haciaArriba.push({ desde: archivo, hacia: i.destino, motivo, soloTipo: i.tipo });
-  }
-}
+// La regla de `pruebas/core/frontera.ts`: la misma que hace fallar a
+// `fronteras.test.ts`. Además de lo que medía el PR 1, recorre las pruebas que
+// ya están en una carpeta de zona (`pruebas/core/`, `pruebas/central/`).
+const { cruces: haciaArriba, sinResolver } = analizar(ARCHIVOS);
+const reexportacionesDeIndice = importsDe('admin/functions/src/index.ts')
+  .filter((i) => i.reexporta && i.destino).map((i) => i.destino);
 
 // ------------------------------------------------------------------- salida
 const informe = {
@@ -251,6 +184,7 @@ const informe = {
   sinZona: sinZona.map((c) => ({ archivo: c.archivo, motivo: c.motivo })),
   seParten: seParten.map((c) => ({ archivo: c.archivo, zona: etiqueta(c.zona), conPiezasDe: c.zona.seParte })),
   haciaArriba,
+  sinResolver,
   reexportacionesDeIndiceIgnoradas: [...new Set(reexportacionesDeIndice)].length,
   pruebas: clasificados.filter((c) => esPrueba(c.archivo))
     .map((c) => ({ archivo: c.archivo, zona: c.zona ? etiqueta(c.zona) : 'sin-zona', motivo: c.motivo })),
