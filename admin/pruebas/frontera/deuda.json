@@ -1,0 +1,159 @@
+{
+  "_leeme": [
+    "La deuda de la frontera de zonas (admin/pruebas/frontera/fronteras.test.ts). Solo se achica.",
+    "Una entrada nueva no se agrega para poner una prueba en verde: el cruce se corta o se declara en dependeDe.",
+    "En un PR, el CI compara cada lista con la de la base (deuda-solo-baja.mjs, en esta carpeta) y falla si alguna crece.",
+    "Mover un archivo cambia la ruta de su entrada, no la cantidad. Lo edita solo la coordinadora (docs/arquitectura/agentes.md)."
+  ],
+  "cruces": [
+    {
+      "desde": "admin/functions/src/catalogoWeb.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/cierres.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/cobranza.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/cobroPrepago.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/index.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/pagos.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/seguimientos.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/sena.ts",
+      "hacia": "admin/functions/src/ingesta.ts",
+      "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
+    },
+    {
+      "desde": "admin/functions/src/captacion.ts",
+      "hacia": "admin/functions/src/imagenCatalogo.ts",
+      "porque": "Captación usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover captación"
+    },
+    {
+      "desde": "admin/functions/src/verificarCampanas.ts",
+      "hacia": "admin/functions/src/imagenCatalogo.ts",
+      "porque": "Campañas usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover campañas"
+    },
+    {
+      "desde": "admin/functions/src/verificarComportamiento.ts",
+      "hacia": "admin/functions/src/imagenCatalogo.ts",
+      "porque": "Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos"
+    },
+    {
+      "desde": "admin/functions/src/catalogoWeb.ts",
+      "hacia": "admin/functions/src/inventario.ts",
+      "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
+    },
+    {
+      "desde": "admin/functions/src/cobroVenta.ts",
+      "hacia": "admin/functions/src/sena.ts",
+      "soloTipo": true,
+      "porque": "Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos"
+    },
+    {
+      "desde": "admin/functions/src/prompt.ts",
+      "hacia": "admin/functions/src/saneo.ts",
+      "porque": "El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts"
+    },
+    {
+      "desde": "admin/web/src/paginas/Captacion.tsx",
+      "hacia": "admin/web/src/lib/csv.ts",
+      "porque": "csv.ts es un servicio compartido (nota del inventario): pasa a Central al mover productos"
+    },
+    {
+      "desde": "admin/web/src/plataforma/lib/negocios.ts",
+      "hacia": "admin/web/src/lib/archivoPlanes.ts",
+      "porque": "Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación"
+    },
+    {
+      "desde": "admin/pruebas/central/contrato-f1b-consola.test.ts",
+      "hacia": "admin/web/src/plataforma/componentes/PanelEjes.tsx",
+      "porque": "Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2"
+    },
+    {
+      "desde": "admin/pruebas/central/contrato-f1b-consola.test.ts",
+      "hacia": "admin/web/src/plataforma/lib/negocios.ts",
+      "porque": "Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2"
+    },
+    {
+      "desde": "admin/pruebas/central/copia-por-contrato-consola.test.ts",
+      "hacia": "admin/web/src/plataforma/componentes/PanelEjes.tsx",
+      "porque": "Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2"
+    }
+  ],
+  "sinZona": [
+    "admin/scripts/activar-cobro-real.mjs",
+    "admin/scripts/completar-flujos.mjs",
+    "admin/scripts/contar-catalogo.mjs",
+    "admin/scripts/emuladores.sh",
+    "admin/scripts/ensayo.mjs",
+    "admin/scripts/fijar-webhook-carrito.mjs",
+    "admin/scripts/lib/contador-catalogo.mjs",
+    "admin/scripts/limpiar-cierres-de-prueba.mjs",
+    "admin/scripts/lockfile-functions.sh",
+    "admin/scripts/pase-a-produccion.mjs",
+    "admin/scripts/plantilla-catalogo.mjs",
+    "admin/scripts/probar-cierre.mjs",
+    "admin/scripts/probar-csp.mjs",
+    "admin/scripts/reiniciar-ventana.mjs",
+    "admin/scripts/sembrar-demos.mjs",
+    "admin/scripts/sembrar.mjs",
+    "admin/scripts/soltar-sena-pendiente.mjs",
+    "admin/scripts/usuarios-prueba.mjs",
+    "admin/web/src/App.tsx",
+    "admin/web/src/componentes/AvisoConsumo.tsx",
+    "admin/web/src/componentes/CampoMonto.tsx",
+    "admin/web/src/componentes/ChipModo.tsx",
+    "admin/web/src/componentes/EditorLista.tsx",
+    "admin/web/src/componentes/EncabezadoComercio.tsx",
+    "admin/web/src/componentes/GraficoDias.tsx",
+    "admin/web/src/componentes/Marca.tsx",
+    "admin/web/src/componentes/Proteger.tsx",
+    "admin/web/src/componentes/ResumenPrepago.tsx",
+    "admin/web/src/componentes/SinSalida.tsx",
+    "admin/web/src/componentes/TextoSeguro.tsx",
+    "admin/web/src/consola.tsx",
+    "admin/web/src/diseno.css",
+    "admin/web/src/estilos.css",
+    "admin/web/src/lib/contrasena.ts",
+    "admin/web/src/lib/ejes.ts",
+    "admin/web/src/lib/errores.ts",
+    "admin/web/src/lib/exportar.ts",
+    "admin/web/src/lib/firebase.ts",
+    "admin/web/src/lib/modoComercio.ts",
+    "admin/web/src/lib/paletas.ts",
+    "admin/web/src/lib/tema.ts",
+    "admin/web/src/main.tsx"
+  ],
+  "sinResolver": {
+    "admin/scripts/medir-zonas.mjs": {
+      "cantidad": 1,
+      "porque": "Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona"
+    }
+  },
+  "transversales": [
+    "admin/pruebas/core/registro.test.ts"
+  ]
+}

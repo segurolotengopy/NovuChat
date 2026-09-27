@@ -27,111 +27,33 @@
  * Y la regla se prueba NEGANDO, con un árbol inventado: sin esa parte, un
  * lector de imports que no ve nada daría verde para siempre.
  */
+import { dirname as carpetaDe } from 'node:path';
+import { fileURLToPath as rutaDe } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
 import {
   CALCULADO, INDICE_DE_FUNCTIONS, MOTIVO_INDICE, MOTIVO_PRUEBA, analizar, claveDeCruce, esPrueba, importsDe,
-  listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
+  leerDeuda, listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
 } from './frontera.ts';
 
+const RAIZ_FRONTERA = carpetaDe(rutaDe(import.meta.url));
 const F = 'admin/functions/src/';
 const W = 'admin/web/src/';
 
 // ------------------------------------------------------------------ la deuda
-const COORDINADOR_F3 = 'Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts';
-const PRUEBA_DE_PLATAFORMA = 'Prueba de una pantalla de Plataforma guardada en pruebas/central/: se mueve a pruebas/plataforma/ en F2';
-
-/** Cruces que existían el 26/09/2026, con lo que los saca. Solo se achica. */
-const DEUDA_CONOCIDA: readonly { desde: string; hacia: string; porque: string; soloTipo?: true }[] = [
-  { desde: `${F}catalogoWeb.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}cierres.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}cobranza.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}cobroPrepago.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}index.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}pagos.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}seguimientos.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}sena.ts`, hacia: `${F}ingesta.ts`, porque: COORDINADOR_F3 },
-  { desde: `${F}captacion.ts`, hacia: `${F}imagenCatalogo.ts`,
-    porque: 'Captación usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover captación' },
-  { desde: `${F}verificarCampanas.ts`, hacia: `${F}imagenCatalogo.ts`,
-    porque: 'Campañas usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover campañas' },
-  { desde: `${F}verificarComportamiento.ts`, hacia: `${F}imagenCatalogo.ts`,
-    porque: 'Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos' },
-  { desde: `${F}catalogoWeb.ts`, hacia: `${F}inventario.ts`,
-    porque: 'Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web' },
-  { desde: `${F}cobroVenta.ts`, hacia: `${F}sena.ts`, soloTipo: true,
-    porque: 'Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos' },
-  { desde: `${F}prompt.ts`, hacia: `${F}saneo.ts`,
-    porque: 'El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts' },
-  { desde: `${W}paginas/Captacion.tsx`, hacia: `${W}lib/csv.ts`,
-    porque: 'csv.ts es un servicio compartido (nota del inventario): pasa a Central al mover productos' },
-  { desde: `${W}plataforma/lib/negocios.ts`, hacia: `${W}lib/archivoPlanes.ts`,
-    porque: 'Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación' },
-  { desde: 'admin/pruebas/central/contrato-f1b-consola.test.ts', hacia: `${W}plataforma/componentes/PanelEjes.tsx`, porque: PRUEBA_DE_PLATAFORMA },
-  { desde: 'admin/pruebas/central/contrato-f1b-consola.test.ts', hacia: `${W}plataforma/lib/negocios.ts`, porque: PRUEBA_DE_PLATAFORMA },
-  { desde: 'admin/pruebas/central/copia-por-contrato-consola.test.ts', hacia: `${W}plataforma/componentes/PanelEjes.tsx`, porque: PRUEBA_DE_PLATAFORMA },
-];
-
 /**
- * Archivos sin zona fuera de `admin/pruebas/`, medidos el 26/09/2026 (incluye
- * dos `.css` y dos `.sh`). EXACTA: el PR que ubica archivos los saca de acá;
- * uno que agrega un archivo sin zona no pasa. Es una lista y no un número para
- * que ubicar uno y agregar otro no se compensen.
+ * Las listas viven en `deuda.json` (esta carpeta), con su porqué en cada
+ * entrada; el CI compara cada una con la de la base del PR y falla si crece.
+ *   - `cruces`: los cruces que existían el 26/09/2026, con lo que los saca.
+ *   - `sinZona`: archivos sin zona fuera de `admin/pruebas/`. Lista EXACTA, no
+ *     un número, para que ubicar uno y agregar otro no se compensen.
+ *   - `sinResolver`: imports que el lector no puede seguir y se aceptan, por
+ *     cantidad exacta.
  */
-const SIN_ZONA: readonly string[] = [
-  'admin/scripts/activar-cobro-real.mjs',
-  'admin/scripts/completar-flujos.mjs',
-  'admin/scripts/contar-catalogo.mjs',
-  'admin/scripts/emuladores.sh',
-  'admin/scripts/ensayo.mjs',
-  'admin/scripts/fijar-webhook-carrito.mjs',
-  'admin/scripts/lib/contador-catalogo.mjs',
-  'admin/scripts/limpiar-cierres-de-prueba.mjs',
-  'admin/scripts/lockfile-functions.sh',
-  'admin/scripts/pase-a-produccion.mjs',
-  'admin/scripts/plantilla-catalogo.mjs',
-  'admin/scripts/probar-cierre.mjs',
-  'admin/scripts/probar-csp.mjs',
-  'admin/scripts/reiniciar-ventana.mjs',
-  'admin/scripts/sembrar-demos.mjs',
-  'admin/scripts/sembrar.mjs',
-  'admin/scripts/soltar-sena-pendiente.mjs',
-  'admin/scripts/usuarios-prueba.mjs',
-  'admin/web/src/App.tsx',
-  'admin/web/src/componentes/AvisoConsumo.tsx',
-  'admin/web/src/componentes/CampoMonto.tsx',
-  'admin/web/src/componentes/ChipModo.tsx',
-  'admin/web/src/componentes/EditorLista.tsx',
-  'admin/web/src/componentes/EncabezadoComercio.tsx',
-  'admin/web/src/componentes/GraficoDias.tsx',
-  'admin/web/src/componentes/Marca.tsx',
-  'admin/web/src/componentes/Proteger.tsx',
-  'admin/web/src/componentes/ResumenPrepago.tsx',
-  'admin/web/src/componentes/SinSalida.tsx',
-  'admin/web/src/componentes/TextoSeguro.tsx',
-  'admin/web/src/consola.tsx',
-  'admin/web/src/diseno.css',
-  'admin/web/src/estilos.css',
-  'admin/web/src/lib/contrasena.ts',
-  'admin/web/src/lib/ejes.ts',
-  'admin/web/src/lib/errores.ts',
-  'admin/web/src/lib/exportar.ts',
-  'admin/web/src/lib/firebase.ts',
-  'admin/web/src/lib/modoComercio.ts',
-  'admin/web/src/lib/paletas.ts',
-  'admin/web/src/lib/tema.ts',
-  'admin/web/src/main.tsx',
-];
-
-/**
- * Imports que el lector no puede seguir y que se aceptan, con su porqué. Un
- * `import()` con ruta calculada en un archivo con zona es un cruce invisible.
- */
-const SIN_RESOLVER_CONOCIDOS: Readonly<Record<string, { cantidad: number; porque: string }>> = {
-  'admin/scripts/medir-zonas.mjs': {
-    cantidad: 1, porque: 'Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona',
-  },
-};
+const DEUDA = leerDeuda();
+const DEUDA_CONOCIDA = DEUDA.cruces;
+const SIN_ZONA = DEUDA.sinZona;
+const SIN_RESOLVER_CONOCIDOS = DEUDA.sinResolver;
 
 // ------------------------------------------------------------ el árbol real
 const ARCHIVOS = listarRaices();
@@ -281,6 +203,80 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.filter((c) => c.soloTipo).map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'j.ts']);
   });
 
+  it('ve require por createRequire, require.resolve y module.require (los paquetes de npm no cuentan)', () => {
+    const r = cruces({
+      [CORE]: [
+        "import { createRequire } from 'node:module';",
+        'const desdeWeb = createRequire(import.meta.url);',
+        "const react = desdeWeb('react');",
+        "const b = desdeWeb('../central/b');",
+        "const c = require.resolve('../central/c');",
+        "const d = module.require('../central/d');",
+      ].join('\n'),
+      [`${F}central/b.ts`]: '', [`${F}central/c.ts`]: '', [`${F}central/d.ts`]: '',
+    });
+    expect(r.cruces.map((c) => c.hacia.slice(-4))).toEqual(['b.ts', 'c.ts', 'd.ts']);
+  });
+
+  it('los require que no se pueden seguir se informan como calculados', () => {
+    const casos = [
+      "import { createRequire as cr } from 'node:module';\nconst r = cr(import.meta.url);\nr('../central/a');",
+      "import * as m from 'node:module';\nconst r = m.createRequire(import.meta.url);\nr('../central/a');",
+      "import { createRequire } from 'node:module';\nlet r;\nr = createRequire(import.meta.url);\nr('../central/a');",
+      "const q = require;\nq('../central/a');",
+      "import { createRequire } from 'node:module';\ncreateRequire(import.meta.url)('../central/a');",
+      // Sondas de la tercera vuelta de seguridad del #236.
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nfunction f(r) { return r; }\nconst q = r;\nq('../central/a');",
+      "const q = (require);\nq('../central/a');",
+      "const q = require as any;\nq('../central/a');",
+      "const q = c ? require : null;",
+      "const q = require || null;",
+      "require.call(null, '../central/a');",
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nr.apply(null, ['../central/a']);",
+      "const q = require.bind(null);",
+      "(0, require)('../central/a');",
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nr.call(null, '../central/a');",
+    ];
+    for (const texto of casos) {
+      const r = cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' });
+      expect(r.sinResolver.map((x) => x.especificador), texto).toContain(CALCULADO);
+    }
+    // Un alias llamado `require` y un `require` con `declare` son el require real: se siguen.
+    for (const texto of [
+      "import { createRequire } from 'node:module';\nconst require = createRequire(import.meta.url);\nrequire('../central/a');",
+      "declare const require: any;\nrequire('../central/a');",
+      "declare function require(x: string): any;\nrequire('../central/a');",
+    ]) {
+      expect(cruces({ [CORE]: texto, [`${F}central/a.ts`]: '' }).cruces.map((c) => c.hacia), texto).toEqual([`${F}central/a.ts`]);
+    }
+    // El patrón reconocido no se informa: se sigue.
+    const bien = cruces({
+      [CORE]: "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst a = r('../central/a');\nconst b = (require)('../central/b');\nconst c = require?.('../central/c');\nif (typeof require === 'undefined') {}",
+      [`${F}central/b.ts`]: '', [`${F}central/c.ts`]: '',
+      [`${F}central/a.ts`]: '',
+    });
+    expect(bien.sinResolver).toEqual([]);
+    expect(bien.cruces.map((c) => c.hacia)).toEqual([`${F}central/a.ts`, `${F}central/b.ts`, `${F}central/c.ts`]);
+  });
+
+  it('un nombre igual a require o a su alias que no es un require no se informa', () => {
+    const falsos = [
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nconst x = [1].map((r) => r + 1);\nfoo(r => r);",
+      'interface Opc { require: boolean }',
+      'class A { require() {} }',
+      'class B { require = true; }',
+      'const t = <input require />;',
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\ntype T = typeof r;",
+      'function f(require: boolean) { return 1; }',
+      "function g(require) { return require('../central/a'); }",
+      "import { createRequire } from 'node:module';\nconst r = createRequire(import.meta.url);\nfunction h(r) { return r('../central/a'); }",
+    ];
+    for (const texto of falsos) {
+      const archivo = texto.includes('<input') ? `${F}core/a.tsx` : CORE;
+      expect(cruces({ [archivo]: texto }).sinResolver, texto).toEqual([]);
+    }
+  });
+
   it('un import comentado no cuenta; un texto con /* o con // no esconde el import que sigue', () => {
     const r = cruces({
       [CORE]: [
@@ -400,5 +396,83 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(zonaPorCarpeta(`${F}suelto.ts`)).toBeNull();
     expect(zonaPorCarpeta(`${W}componentes/Marca.tsx`)).toBeNull();
     expect(zonaPorCarpeta(`${F}modulos/suelto.ts`)).toBeNull();
+  });
+});
+
+// ------------------------------------------- la deuda no crece (CI, en un PR)
+describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', async () => {
+  const { comparar, leerMovidos } = await import('./deuda-solo-baja.mjs');
+  const base = leerDeuda();
+
+  it('la deuda de hoy contra sí misma no crece', () => {
+    expect(comparar(base, base).crecen).toEqual([]);
+  });
+
+  it('un cruce anotado de más falla, aunque la prueba de fronteras quede en verde', () => {
+    const pr = { ...base, cruces: [...base.cruces, { desde: `${F}core/a.ts`, hacia: `${F}central/b.ts`, porque: 'para que pase' }] };
+    expect(comparar(base, pr).crecen).toEqual([`cruces: ${base.cruces.length} → ${base.cruces.length + 1}`]);
+  });
+
+  it('un archivo sin zona de más, un import calculado de más o una transversal de más fallan', () => {
+    const r = comparar(base, {
+      ...base,
+      sinZona: [...base.sinZona, `${W}lib/nuevo.ts`],
+      sinResolver: { ...base.sinResolver, 'admin/scripts/otro.mjs': { cantidad: 1, porque: 'x' } },
+      transversales: [...base.transversales, 'admin/pruebas/core/otra.test.ts'],
+    });
+    expect(r.crecen.map((c) => c.split(':')[0])).toEqual(['sinZona', 'sinResolver', 'transversales']);
+  });
+
+  it('mover un archivo (misma cantidad, otra ruta) pasa si git lo muestra como renombre', () => {
+    const viejo = base.cruces[0].desde;
+    const nuevo = `${F}modulos/catalogo-web/catalogoWeb.ts`;
+    const pr = { ...base, cruces: base.cruces.map((c, i) => (i === 0 ? { ...c, desde: nuevo } : c)) };
+    const movidos = leerMovidos(`M\tadmin/functions/src/index.ts\nR097\t${viejo}\t${nuevo}\n`);
+    const r = comparar(base, pr, movidos);
+    expect(r.crecen).toEqual([]);
+    expect(r.inexplicadas).toEqual([]);
+    expect(r.nuevas).toEqual([`cruce ${nuevo} → ${base.cruces[0].hacia}`]);
+    // Sin el renombre, la misma entrada no se explica.
+    expect(comparar(base, pr).inexplicadas).toHaveLength(1);
+  });
+
+  it('saldar un cruce y anotar otro (misma cantidad) no pasa: canjear deuda no vale', () => {
+    const pr = { ...base, cruces: [...base.cruces.slice(1), { desde: `${F}core/x.ts`, hacia: `${F}modulos/agenda/y.ts`, porque: 'canje' }] };
+    const r = comparar(base, pr);
+    expect(r.crecen).toEqual([]);
+    expect(r.inexplicadas).toEqual([`cruce ${F}core/x.ts → ${F}modulos/agenda/y.ts`]);
+  });
+
+  it('ubicar un archivo y dejar otro nuevo sin zona, o cambiar una transversal, no pasa', () => {
+    const r = comparar(base, {
+      ...base,
+      sinZona: [...base.sinZona.slice(1), `${W}lib/nuevo.ts`],
+      transversales: ['admin/pruebas/core/otra.test.ts'],
+    });
+    expect(r.crecen).toEqual([]);
+    expect(r.inexplicadas).toEqual([`sin zona ${W}lib/nuevo.ts`, 'transversal admin/pruebas/core/otra.test.ts']);
+  });
+
+  it('invocado por un enlace simbólico, el comparador compara igual (no termina en 0 sin hacer nada)', async () => {
+    const { mkdtempSync, symlinkSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { spawnSync } = await import('node:child_process');
+    const { join: unir } = await import('node:path');
+    const dir = mkdtempSync(unir(tmpdir(), 'deuda-'));
+    try {
+      symlinkSync(unir(RAIZ_FRONTERA), unir(dir, 'enlace'));
+      const crece = { ...base, cruces: [...base.cruces, { desde: `${F}core/a.ts`, hacia: `${F}central/b.ts`, porque: 'x' }] };
+      writeFileSync(unir(dir, 'base.json'), JSON.stringify(base));
+      writeFileSync(unir(dir, 'pr.json'), JSON.stringify(crece));
+      const r = spawnSync(process.execPath, [unir(dir, 'enlace', 'deuda-solo-baja.mjs'), unir(dir, 'base.json'), unir(dir, 'pr.json')], { encoding: 'utf8' });
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('::error::La deuda de la frontera crece');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('achicar la deuda pasa', () => {
+    expect(comparar(base, { ...base, cruces: base.cruces.slice(1), sinZona: base.sinZona.slice(1) }).crecen).toEqual([]);
   });
 });

@@ -90,6 +90,11 @@ jobs:
     name: preparar
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # actions: read para buscar la ultima corrida no cancelada de main (la base
+    # del filtro de rutas en un push; ver «Detectar cambios en el componente»).
+    permissions:
+      contents: read
+      actions: read
     outputs:
       pm: ${{ steps.pm.outputs.pm }}
       instalar: ${{ steps.pm.outputs.instalar }}
@@ -176,6 +181,8 @@ jobs:
           EVENTO: ${{ github.event_name }}
           BASE_PR: ${{ github.event.pull_request.base.sha }}
           ANTES_PUSH: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          ESTA_CORRIDA: ${{ github.run_id }}
         run: |
           set -euo pipefail
           # Un tag o un workflow_dispatch son ordenes explicitas de publicar:
@@ -191,6 +198,38 @@ jobs:
             push)         base="$ANTES_PUSH" ;;
             *)            base="" ;;
           esac
+
+          # En un push a main, la base NO es el commit anterior: es el de la
+          # ultima corrida de este workflow en main que no se cancelo. Con
+          # varias fusiones seguidas, GitHub deja una sola corrida pendiente
+          # por rama y cancela las otras; la que sobrevive comparaba solo
+          # contra el push inmediato anterior, y lo que traian las canceladas
+          # no pasaba nunca por calidad en main (27/09/2026: #231 se cancelo y
+          # la de #235, solo documentacion, se salto las pruebas). Solo cuenta
+          # como base una corrida COMPLETADA CON EXITO: una fallida, en curso o
+          # que no arranco no probo su contenido (revision de seguridad del
+          # #236). Si la API no responde o el commit no es ancestro, se asume
+          # cambio: ante la duda, el pipeline entero.
+          if [[ "$EVENTO" == "push" && "$GITHUB_REF" == "refs/heads/main" ]]; then
+            creada=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ESTA_CORRIDA}" --jq .created_at 2>/dev/null || true)
+            flujo=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ESTA_CORRIDA}" --jq .workflow_id 2>/dev/null || true)
+            previa=""
+            if [[ -n "$creada" && -n "$flujo" ]]; then
+              previa=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${flujo}/runs?branch=main&event=push&per_page=50" 2>/dev/null \
+                | jq -r --argjson id "$ESTA_CORRIDA" --arg c "$creada" \
+                  '[.workflow_runs[] | select(.id != $id and .status == "completed" and .conclusion == "success" and .created_at < $c)][0].head_sha // empty' \
+                  2>/dev/null || true)
+            fi
+            if [[ -n "$previa" ]] && git cat-file -e "${previa}^{commit}" 2>/dev/null \
+               && git merge-base --is-ancestor "$previa" "$GITHUB_SHA" 2>/dev/null; then
+              echo "Base del push: ultima corrida exitosa de main (${previa})."
+              base="$previa"
+            else
+              echo "::notice::Sin ultima corrida exitosa de main verificable: se asume cambio en el componente."
+              echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
+              echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+          fi
 
           # Sin base utilizable (primer push de la rama, base de todo ceros,
           # commit ausente tras un force-push) se asume que SI cambio: ante la
@@ -343,6 +382,57 @@ jobs:
             grep -q 'allow read, write: if false;' storage.rules
             echo "La negacion final de storage.rules esta presente."
           fi
+
+      # ---------------------------------------------------------------------
+      # CONTROL 2b — La deuda de la frontera de zonas no crece en un PR.
+      # fronteras.test.ts exige que la deuda coincida con el codigo, pero un
+      # PR que agrega un cruce y lo anota en la lista la deja en verde. Aca se
+      # compara cada lista de admin/pruebas/frontera/deuda.json con la de la
+      # base del PR, por cantidad (mover un archivo cambia la ruta, no cuantas
+      # hay). Revision de seguridad del PR #231. El sha de la base llega por
+      # variable de entorno, nunca interpolado en el script. Va ANTES de
+      # habilitar corepack e instalar dependencias: `pnpm install` corre los
+      # scripts del propio proyecto (un postinstall del PR podria anteponer un
+      # `node` o un `git` falsos en GITHUB_PATH). Solo usa git y el node del
+      # runner (revision de seguridad del #236).
+      # ---------------------------------------------------------------------
+      - name: La deuda de la frontera no crece (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          ruta=admin/pruebas/frontera/deuda.json
+          git fetch --no-tags --depth=1 origin "$BASE_PR"
+          if ! git cat-file -e "${BASE_PR}:${ruta}" 2>/dev/null; then
+            echo "::notice::La base no tiene ${ruta}: nada con que comparar (primer PR que la trae)."
+            exit 0
+          fi
+          git show "${BASE_PR}:${ruta}" > "$RUNNER_TEMP/deuda-base.json"
+          # El comparador es el de la BASE, no el del PR: un PR que agranda la
+          # deuda no puede, en el mismo PR, aflojar el comparador (revision del
+          # #236). Si la base tiene la deuda pero no el comparador, alguien lo
+          # borro: no se juzga con el del PR.
+          comparador=admin/pruebas/frontera/deuda-solo-baja.mjs
+          if ! git cat-file -e "${BASE_PR}:${comparador}" 2>/dev/null; then
+            echo "::error::La base tiene ${ruta} pero no ${comparador}: no se juzga con el comparador del PR."
+            exit 1
+          fi
+          git show "${BASE_PR}:${comparador}" > "$RUNNER_TEMP/deuda-solo-baja.mjs"
+          # Los archivos movidos explican una entrada nueva de la deuda; nada
+          # mas. -l0: sin limite de renombres (F2 mueve muchos archivos);
+          # quotePath=false: rutas con tildes sin comillas.
+          git -c core.quotePath=false diff -M -l0 --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"
+          # El analizador (frontera.ts, fronteras.test.ts, destinos-f2.ts) corre
+          # en la version del PR: un cambio ahi lo ve solo la revision humana.
+          if git diff --name-only "$BASE_PR" HEAD -- 'admin/pruebas/frontera/*.ts' | grep -q .; then
+            echo "::warning::Este PR cambia el analizador de la frontera (admin/pruebas/frontera/*.ts): revisarlo a mano."
+          fi
+          # Se exige la ultima linea de exito: un comparador que termina en 0
+          # sin comparar (por ejemplo, si no se reconoce como principal) no pasa.
+          node "$RUNNER_TEMP/deuda-solo-baja.mjs" "$RUNNER_TEMP/deuda-base.json" pruebas/frontera/deuda.json "$RUNNER_TEMP/movidos.txt" \
+            | tee "$RUNNER_TEMP/deuda.log"
+          grep -q '^La deuda no crece' "$RUNNER_TEMP/deuda.log"
 
       - name: Habilitar corepack
         if: needs.preparar.outputs.pm != 'npm'

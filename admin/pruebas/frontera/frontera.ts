@@ -55,6 +55,22 @@ import type { DestinoF2, ZonaF2 } from './destinos-f2.ts';
 /** La raíz del repositorio. */
 export const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
+/**
+ * La deuda de la frontera (`deuda.json`, en esta carpeta): cruces conocidos,
+ * archivos sin zona, imports que no se pueden seguir y pruebas transversales.
+ * En JSON para que el CI la compare con la de la base del PR sin ejecutar
+ * TypeScript (`deuda-solo-baja.mjs`, en esta carpeta): ninguna lista puede crecer.
+ */
+export interface Deuda {
+  readonly cruces: readonly { desde: string; hacia: string; porque: string; soloTipo?: true }[];
+  readonly sinZona: readonly string[];
+  readonly sinResolver: Readonly<Record<string, { cantidad: number; porque: string }>>;
+  readonly transversales: readonly string[];
+}
+export function leerDeuda(): Deuda {
+  return JSON.parse(readFileSync(join(RAIZ, 'admin/pruebas/frontera/deuda.json'), 'utf8')) as Deuda;
+}
+
 /** Las raíces de código: lo que tiene zona vive debajo de una de estas. */
 export const RAICES = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;
 
@@ -84,9 +100,7 @@ export const INDICE_DE_FUNCTIONS = 'admin/functions/src/index.ts';
  * contra el código de cada una. Una prueba de zona que no esté acá importa
  * solo de su zona y de las de abajo, como el código.
  */
-export const PRUEBAS_TRANSVERSALES: readonly string[] = [
-  'admin/pruebas/core/registro.test.ts',
-];
+export const PRUEBAS_TRANSVERSALES: readonly string[] = leerDeuda().transversales;
 
 export const esPrueba = (a: string): boolean => a.startsWith('admin/pruebas/');
 export const esSuite = (a: string): boolean => esPrueba(a) && a.endsWith('.test.ts');
@@ -217,7 +231,102 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
   };
   const literal = (n: ts.Node | undefined): string | null =>
     n && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n)) ? n.text : null;
+  // LOS REQUIRE, POR SÍMBOLO (revisión de seguridad del #236). Solo si el
+  // texto los nombra: armar un programa por archivo cuesta.
+  //   - `require` es el global: una referencia cuyo símbolo NO se declara en
+  //     este archivo (un parámetro `require` es otra cosa).
+  //   - Un alias es `const r = createRequire(…)`: cuenta toda referencia cuyo
+  //     símbolo es el de esa declaración (un parámetro `r` no; un `r` de
+  //     relleno tampoco apaga la detección).
+  // Una referencia se SIGUE si es una llamada directa (`r('…')`, también entre
+  // paréntesis u opcional) o `r.resolve('…')`; cualquier otra posición de
+  // expresión (`const q = r`, `r.call`, `c ? r : x`, `(0, r)`) se informa como
+  // CALCULADO. No cuentan los lugares que NOMBRAN algo (declaraciones,
+  // propiedades, atributos JSX, tipos) ni `typeof`.
+  const texto = fuente.text;
+  const hayRequires = /\brequire\b|\bcreateRequire\b/.test(texto);
+  let checker: ts.TypeChecker | null = null;
+  const aliases = new Set<ts.Symbol>();
+  if (hayRequires) {
+    const opciones: ts.CompilerOptions = { noResolve: true, noLib: true, allowJs: true, jsx: ts.JsxEmit.Preserve, types: [] };
+    const anfitrion = ts.createCompilerHost(opciones);
+    anfitrion.getSourceFile = (nombre) => (nombre === archivo ? fuente : undefined);
+    anfitrion.fileExists = (nombre) => nombre === archivo;
+    anfitrion.readFile = (nombre) => (nombre === archivo ? texto : undefined);
+    checker = ts.createProgram([archivo], opciones, anfitrion).getTypeChecker();
+    const buscarAliases = (n: ts.Node): void => {
+      if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer && ts.isCallExpression(n.initializer)
+        && ts.isIdentifier(n.initializer.expression) && n.initializer.expression.text === 'createRequire') {
+        const sim = checker!.getSymbolAtLocation(n.name);
+        if (sim) aliases.add(sim);
+      }
+      ts.forEachChild(n, buscarAliases);
+    };
+    buscarAliases(fuente);
+  }
+  // Una declaración `declare` no emite nada: en ejecución, el require es el global.
+  const declaradoAca = (sim: ts.Symbol | undefined): boolean =>
+    Boolean(sim?.declarations?.some((d) => d.getSourceFile() === fuente
+      && !(ts.getCombinedModifierFlags(d as ts.Declaration) & ts.ModifierFlags.Ambient)));
+  /** ¿Este identificador ES un require (el global o un alias de createRequire)? */
+  const esIdRequire = (id: ts.Identifier): boolean => {
+    if (!checker) return false;
+    const sim = checker.getSymbolAtLocation(id);
+    if (sim !== undefined && aliases.has(sim)) return true; // también un alias llamado `require`
+    return id.text === 'require' && !declaradoAca(sim);
+  };
+  /** ¿El identificador está en un lugar que nombra algo, y no es una referencia? */
+  const nombra = (id: ts.Identifier): boolean => {
+    const p = id.parent;
+    if ((ts.isVariableDeclaration(p) || ts.isParameter(p) || ts.isFunctionDeclaration(p) || ts.isMethodDeclaration(p)
+      || ts.isPropertyDeclaration(p) || ts.isPropertySignature(p) || ts.isMethodSignature(p) || ts.isPropertyAssignment(p)
+      || ts.isBindingElement(p) || ts.isEnumMember(p) || ts.isGetAccessor(p) || ts.isSetAccessor(p)
+      || ts.isClassDeclaration(p) || ts.isInterfaceDeclaration(p) || ts.isTypeAliasDeclaration(p)) && p.name === id) return true;
+    if (ts.isPropertyAccessExpression(p) && p.name === id) return true;
+    if (ts.isJsxAttribute(p) || ts.isQualifiedName(p) || ts.isTypeReferenceNode(p)) return true;
+    if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p)) return true;
+    for (let a: ts.Node | undefined = p; a; a = a.parent) if (ts.isTypeQueryNode(a)) return true;
+    return false;
+  };
+  /** Una referencia a un require que el lector sigue: la llamada directa y `.resolve(…)`. */
+  const seSigue = (id: ts.Identifier): boolean => {
+    let arriba: ts.Node = id;
+    while (ts.isParenthesizedExpression(arriba.parent)) arriba = arriba.parent;
+    const p = arriba.parent;
+    if (ts.isCallExpression(p) && p.expression === arriba) return true;
+    if (ts.isPropertyAccessExpression(p) && p.expression === arriba && p.name.text === 'resolve'
+      && ts.isCallExpression(p.parent) && p.parent.expression === p) return true;
+    if (ts.isTypeOfExpression(p)) return true;
+    return false;
+  };
+  /** `require(…)`, `r(…)` de un createRequire (con paréntesis), `require.resolve(…)` y `module.require(…)`. */
+  const esRequire = (e: ts.Expression): boolean => {
+    let x: ts.Expression = e;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x)
+      || ts.isTypeAssertionExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+    if (ts.isIdentifier(x)) return esIdRequire(x);
+    return ts.isPropertyAccessExpression(x) && ts.isIdentifier(x.expression)
+      && ((x.name.text === 'resolve' && esIdRequire(x.expression))
+        || (x.expression.text === 'module' && x.name.text === 'require'));
+  };
   const visitar = (n: ts.Node): void => {
+    // MODO CONSERVADOR con los require que no se pueden seguir (revisión de
+    // seguridad del #236): `import * as m from 'node:module'`, `createRequire`
+    // importado con alias, `createRequire` que no se guarda en un `const`
+    // (`r = createRequire(…)`, `createRequire(…)('…')`) y `require` usado como
+    // valor (`const q = require`) se informan como CALCULADO. Así caen en
+    // sinResolver, que el CI no deja crecer.
+    if (ts.isImportDeclaration(n) && /^(node:)?module$/.test(literal(n.moduleSpecifier) ?? '')) {
+      const nombres = n.importClause?.namedBindings;
+      if (nombres && ts.isNamespaceImport(nombres)) anotar(CALCULADO, false, false);
+      if (nombres && ts.isNamedImports(nombres)
+        && nombres.elements.some((e) => e.propertyName?.text === 'createRequire')) anotar(CALCULADO, false, false);
+    }
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'createRequire'
+      && !(ts.isVariableDeclaration(n.parent) && ts.isIdentifier(n.parent.name))) {
+      anotar(CALCULADO, false, false);
+    }
+    if (ts.isIdentifier(n) && !nombra(n) && esIdRequire(n) && !seSigue(n)) anotar(CALCULADO, false, false);
     if (ts.isImportDeclaration(n)) {
       anotar(literal(n.moduleSpecifier) ?? CALCULADO, Boolean(n.importClause?.isTypeOnly), false);
     } else if (ts.isExportDeclaration(n) && n.moduleSpecifier) {
@@ -227,8 +336,7 @@ export function importsDe(archivo: string, arbol: Arbol = ARBOL_REAL): Importaci
     } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument)) {
       const e = literal(n.argument.literal);
       if (e) anotar(e, true, false);
-    } else if (ts.isCallExpression(n)
-      && (n.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(n.expression) && n.expression.text === 'require'))) {
+    } else if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword || esRequire(n.expression))) {
       anotar(literal(n.arguments[0]) ?? CALCULADO, false, false);
     }
     ts.forEachChild(n, visitar);

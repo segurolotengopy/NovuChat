@@ -153,11 +153,27 @@ entrada de la deuda borrada hacen fallar la suite.
 valor al mismo archivo cuenta como de valor, y una entrada de la deuda
 marcada «solo tipo» falla si pasa a valor; lo que un puente no deja seguir
 (calculado, alias, roto) también se informa; y el import calculado aceptado
-de `medir-zonas.mjs` se acepta por cantidad exacta. Quedan dos LOW para un PR
-siguiente: un paso de CI que compare las listas de la deuda con las de
-`origin/main` (hoy las protege solo el gancho, que no rige para `Bash` ni para
-agentes sin zona) y `createRequire(...)` / `require.resolve`, que el lector
-no reconoce.
+de `medir-zonas.mjs` se acepta por cantidad exacta.
+
+**La deuda no crece en un PR (27/09):** las cuatro listas (cruces, archivos
+sin zona, imports que no se pueden seguir y pruebas transversales) viven en
+`admin/pruebas/frontera/deuda.json`, y `calidad` compara cada una con la de la
+base del PR con `deuda-solo-baja.mjs` (misma carpeta), **en su versión de la
+base**, para que un PR no afloje el comparador que lo juzga. Falla si alguna
+lista crece en cantidad, o si aparece una entrada nueva que no se explica por
+un archivo movido (`git diff -M` del PR): saldar un cruce trivial y anotar otro
+no se compensan. El lector reconoce además `createRequire(…)`,
+`require.resolve` y `module.require`, y toma por calculado (a `sinResolver`,
+que tampoco puede crecer) todo `require` que no puede seguir.
+
+**Hasta dónde protege:** el gancho frena a los agentes con zona. El CI frena
+a un PR que toca `deuda.json` o el comparador (corre el de la base; si la base
+lo perdió, bloquea). El **analizador** (`frontera.ts`, `fronteras.test.ts`,
+`destinos-f2.ts`) corre en la versión del PR: un PR que lo afloja y a la vez
+mete un cruce queda en verde, y lo frena solo la revisión humana. Lo mismo un
+PR que cambia `.github/workflows/`. Por eso el paso de la deuda emite un aviso
+cuando el PR toca `admin/pruebas/frontera/*.ts`, y la revisión de `seguridad`
+de cada PR lo señala, mientras `CODEOWNERS` tenga un único propietario.
 
 **Lo que no cubre:** `Flujos/src/`. Los nodos de n8n no se importan entre sí:
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
