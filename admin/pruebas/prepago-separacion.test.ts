@@ -9,37 +9,58 @@
  * uno de la seña, ningún texto del prepago dice «seña», y ninguno de la seña
  * dice «mensualidad». Lee las fuentes, como `comportamiento-pantalla.test.ts`.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { RAIZ, importsDe } from './frontera/frontera.ts';
 
-const aqui = dirname(fileURLToPath(import.meta.url));
-const ruta = (archivo: string) => join(aqui, '..', 'functions', 'src', archivo);
-const leer = (archivo: string) => readFileSync(ruta(archivo), 'utf8');
+/**
+ * LOS ARCHIVOS SE BUSCAN POR NOMBRE EN TODO `functions/src` (F2, tanda cero):
+ * F2 los mueve a `central/pagar/`, `modulos/cobros/` y `modulos/agenda/`, y
+ * una lista filtrada por `existsSync` en la raíz los dejaba caer sin avisar.
+ * Es la única guarda de que Cobros no importe Pagar: para la frontera de
+ * zonas, módulo → Central es hacia abajo y está permitido.
+ */
+const FUENTES = 'admin/functions/src';
+const todos = (dir: string): string[] => readdirSync(join(RAIZ, dir), { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory() ? todos(`${dir}/${e.name}`) : e.name.endsWith('.ts') ? [`${dir}/${e.name}`] : []));
+const ARCHIVOS = todos(FUENTES);
+/** La ruta del archivo con ese nombre, esté en la carpeta que esté; null si no existe. */
+const buscar = (nombre: string): string | null => {
+  const hay = ARCHIVOS.filter((a) => a.endsWith(`/${nombre}`));
+  if (hay.length > 1) throw new Error(`${nombre} aparece dos veces: ${hay.join(', ')}`);
+  return hay[0] ?? null;
+};
+const leer = (archivo: string) => readFileSync(join(RAIZ, archivo), 'utf8');
+const nombre = (a: string) => a.slice(a.lastIndexOf('/') + 1);
 
 const DEL_PREPAGO = ['cobrador.ts', 'cobroPrepago.ts', 'pagos-stub.ts', 'prepago.ts', 'pagos.ts', 'pagosConCobrador.ts', 'cobranza.ts', 'tipoCambio.ts']
-  .filter((a) => existsSync(ruta(a)));
-const DE_LA_SENA = ['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts'].filter((a) => existsSync(ruta(a)));
+  .map(buscar).filter((a): a is string => a !== null);
+const DE_LA_SENA = ['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts'].map(buscar).filter((a): a is string => a !== null);
 
 /** El cuerpo del archivo sin sus comentarios: lo que de verdad corre y lo que se muestra. */
 const sinComentarios = (fuente: string) => fuente
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const importaciones = (fuente: string) =>
-  [...fuente.matchAll(/from\s+'([^']+)'/g)].map((m) => m[1]!);
+/**
+ * Los NOMBRES de los archivos que importa, resueltos (el lector de la frontera):
+ * `'./cobro.js'` y `'../../modulos/cobros/cobro.js'` son el mismo cobro.ts.
+ */
+const importaciones = (archivo: string) =>
+  importsDe(archivo).map((i) => (i.destino ? nombre(i.destino) : i.especificador));
 
 describe('Separación entre la seña y el prepago', () => {
   it('los archivos del prepago existen (control de que la prueba no pasa en vacío)', () => {
-    expect(DEL_PREPAGO).toEqual(expect.arrayContaining(['cobrador.ts', 'cobroPrepago.ts']));
-    expect(DE_LA_SENA).toEqual(expect.arrayContaining(['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts']));
+    expect(DEL_PREPAGO.map(nombre)).toEqual(expect.arrayContaining(['cobrador.ts', 'cobroPrepago.ts', 'prepago.ts', 'pagos.ts']));
+    expect(DE_LA_SENA.map(nombre)).toEqual(expect.arrayContaining(['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts']));
   });
 
   it('ningún archivo del prepago importa cobro.ts, sena.ts, cotejo.ts, qrSimple.ts ni dibujoQr.ts', () => {
     for (const archivo of DEL_PREPAGO) {
-      const modulos = importaciones(leer(archivo));
-      for (const prohibido of ['./cobro.js', './sena.js', './cotejo.js', './qrSimple.js', './dibujoQr.js']) {
+      const modulos = importaciones(archivo);
+      for (const prohibido of ['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts', 'dibujoQr.ts']) {
         expect(modulos, `${archivo} importa ${prohibido}`).not.toContain(prohibido);
       }
     }
@@ -47,11 +68,15 @@ describe('Separación entre la seña y el prepago', () => {
 
   it('ningún archivo de la seña importa el prepago', () => {
     for (const archivo of DE_LA_SENA) {
-      const modulos = importaciones(leer(archivo));
-      for (const prohibido of ['./cobrador.js', './cobroPrepago.js', './pagos-stub.js', './pagos.js', './prepago.js']) {
+      const modulos = importaciones(archivo);
+      for (const prohibido of ['cobrador.ts', 'cobroPrepago.ts', 'pagos-stub.ts', 'pagos.ts', 'prepago.ts', 'pagosConCobrador.ts', 'cobranza.ts']) {
         expect(modulos, `${archivo} importa ${prohibido}`).not.toContain(prohibido);
       }
     }
+  });
+
+  it('el lector ve los imports resueltos (control: cobroPrepago.ts importa pagos.ts)', () => {
+    expect(importaciones(buscar('cobroPrepago.ts')!)).toContain('pagos.ts');
   });
 
   it('ningún texto del prepago dice «seña», y ninguno de la seña dice «mensualidad» (fuera de los comentarios que explican la separación)', () => {
@@ -69,15 +94,15 @@ describe('Separación entre la seña y el prepago', () => {
   });
 
   it('el stub de A-1 se va cuando llega pagos.ts: cobroPrepago.ts no puede importar los dos', () => {
-    const modulos = importaciones(leer('cobroPrepago.ts'));
-    if (existsSync(ruta('pagos.ts'))) {
-      expect(modulos, 'cobroPrepago.ts sigue importando el stub con pagos.ts ya en el repositorio').not.toContain('./pagos-stub.js');
-      expect(existsSync(ruta('pagos-stub.ts')), 'pagos-stub.ts tiene que borrarse cuando exista pagos.ts').toBe(false);
-      expect(modulos).toContain('./pagos.js');
+    const modulos = importaciones(buscar('cobroPrepago.ts')!);
+    if (buscar('pagos.ts')) {
+      expect(modulos, 'cobroPrepago.ts sigue importando el stub con pagos.ts ya en el repositorio').not.toContain('pagos-stub.ts');
+      expect(buscar('pagos-stub.ts'), 'pagos-stub.ts tiene que borrarse cuando exista pagos.ts').toBeNull();
+      expect(modulos).toContain('pagos.ts');
     } else {
-      // Hoy: el stub existe y es lo que se importa (control de que la vigilancia funciona).
-      expect(existsSync(ruta('pagos-stub.ts'))).toBe(true);
-      expect(modulos).toContain('./pagos-stub.js');
+      // Antes de pagos.ts: el stub existe y es lo que se importa.
+      expect(buscar('pagos-stub.ts')).not.toBeNull();
+      expect(modulos).toContain('pagos-stub.ts');
     }
   });
 

@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
@@ -49,7 +52,9 @@ export const SUITES_PURAS = [
   'pruebas/consola-pagar.test.ts',
   'pruebas/conteo-bloques.test.ts',
   'pruebas/contrasena-minimo.test.ts',
+  'pruebas/frontera/despliegue.test.ts',
   'pruebas/frontera/fronteras.test.ts',
+  'pruebas/frontera/rutas-escritas.test.ts',
   'pruebas/demo-b-catalogo.test.ts',
   'pruebas/demo-b-cobro.test.ts',
   'pruebas/direccion-maps.test.ts',
@@ -79,6 +84,15 @@ export const SUITES_PURAS = [
   'pruebas/umbrales-atencion.test.ts',
   'pruebas/xlsx.test.ts',
 ];
+
+// Una entrada de SUITES_PURAS que no existe no falla sola: la suite movida sale
+// de «puras» y sigue corriendo en «emulador» sin que nadie lo note (F2 mueve
+// suites de carpeta). Se corta acá, al cargar la configuración.
+const aqui = dirname(fileURLToPath(import.meta.url));
+const perdidas = SUITES_PURAS.filter((s) => !existsSync(join(aqui, s)));
+if (perdidas.length) {
+  throw new Error(`SUITES_PURAS nombra suites que no existen (¿se movieron?): ${perdidas.join(', ')}`);
+}
 
 export default defineConfig({
   test: {

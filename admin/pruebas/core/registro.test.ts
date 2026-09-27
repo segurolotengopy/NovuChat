@@ -38,6 +38,7 @@ import { FLUJOS } from '../../web/src/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/prompt.ts';
 import { PLANES } from '../../functions/src/planes.ts';
 import { DESTINOS_F2 } from '../frontera/destinos-f2.ts';
+import { zonaDeCodigo } from '../frontera/frontera.ts';
 
 process.env['GCLOUD_PROJECT'] ??= 'demo-test';
 const indice = (await import('../../functions/src/index.ts')) as Record<string, unknown>;
@@ -53,6 +54,13 @@ const ordenado = <T>(xs: Iterable<T>) => [...xs].sort();
 
 // ------------------------------------------------------------ lectura de textos
 /** Sin comentarios `//` y `/* *\/`. Un `//` pegado a `:` (una URL) no es comentario. */
+/**
+ * Todos los .ts de una carpeta, en subcarpetas también (F2, tanda cero): un
+ * archivo que F2 mueve a `central/cuenta/` o `modulos/<m>/` no puede dejar de
+ * revisarse porque el recorrido miraba un solo nivel.
+ */
+const tsDe = (dir: string): string[] => readdirSync(join(RAIZ, dir), { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory() ? tsDe(`${dir}/${e.name}`) : e.name.endsWith('.ts') ? [`${dir}/${e.name}`] : []));
 const sinComentarios = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;])\/\/.*$/gm, '$1');
 
 const REGLAS = sinComentarios(leer('admin/firestore.rules'));
@@ -400,9 +408,14 @@ describe('4. colecciones y almacenamiento: el registro contra las reglas', () =>
 describe('5. límites: el registro contra planes.ts y las reglas', () => {
   const limites = MANIFIESTOS.flatMap((m) => m.limites.map((l) => ({ modulo: m.modulo, ...l })));
   const capital = (s: string) => s[0]!.toUpperCase() + s.slice(1);
-  const servidor = readdirSync(join(RAIZ, 'admin/functions/src'))
-    .filter((n) => n.endsWith('.ts') && n !== 'planes.ts' && n !== 'registro.ts')
-    .map((n) => leer(`admin/functions/src/${n}`)).join('\n');
+  const archivosDelServidor = tsDe('admin/functions/src').filter((a) => !/\/(planes|registro)\.ts$/.test(a));
+  const servidor = archivosDelServidor.map((a) => leer(a)).join('\n');
+
+  it('el servidor que se revisa incluye las subcarpetas (control de que no pasa en vacío al mover)', () => {
+    // central/ejes.ts está en una subcarpeta desde F1: si el recorrido no baja, no aparece.
+    expect(archivosDelServidor.some((a) => a.endsWith('/central/ejes.ts'))).toBe(true);
+    expect(archivosDelServidor.some((a) => a.endsWith('/limiteCatalogo.ts'))).toBe(true);
+  });
 
   it('las claves de límite de los módulos son las de PLANES, menos las del core y Central', () => {
     const numericas = Object.entries(PLANES.impulso).filter(([, v]) => typeof v === 'number').map(([k]) => k);
@@ -452,18 +465,31 @@ describe('7. Functions: el registro contra index.ts', () => {
     }
   });
 
+  // La zona sale de `zonaDeCodigo` (inventario, carpeta o prefijo), no de la
+  // clave vieja del inventario: un archivo movido a `modulos/<m>/` ya no tiene
+  // clave y la prueba lo saltaba (F2, tanda cero). Las partes pendientes
+  // (`seParte`) se buscan por nombre de archivo, que F2 no cambia.
+  const SE_PARTE_POR_NOMBRE = new Map(Object.entries(DESTINOS_F2)
+    .filter(([, d]) => d.seParte?.length).map(([k, d]) => [k.slice(k.lastIndexOf('/') + 1), d.seParte!]));
+  const verificadas = new Set<string>();
   it('toda Function que index.ts reexporta de un archivo de módulo está en el manifiesto de ese módulo', () => {
     const texto = sinComentarios(leer('admin/functions/src/index.ts'));
     for (const m of texto.matchAll(/export\s*\{([^}]*)\}\s*from\s*'\.\/([\w/]+)\.js'/g)) {
-      const destino = DESTINOS_F2[`admin/functions/src/${m[2]}.ts`];
+      const archivo = `admin/functions/src/${m[2]}.ts`;
+      const destino = zonaDeCodigo(archivo);
       if (destino?.zona !== 'modulo') continue;
-      const duenos = [destino.modulo, ...(destino.seParte ?? []).map((s) => s.replace(/^modulo:/, ''))];
+      const seParte = destino.seParte ?? SE_PARTE_POR_NOMBRE.get(archivo.slice(archivo.lastIndexOf('/') + 1)) ?? [];
+      const duenos = [destino.modulo, ...seParte.map((s) => s.replace(/^modulo:/, ''))];
       for (const nombre of (m[1] as string).split(',').map((s) => s.trim()).filter(Boolean)) {
         const dueno = MANIFIESTOS.find((x) => (x.functions as readonly string[]).includes(nombre));
         expect(dueno, `${nombre} (de ${m[2]}.ts) no está en ningún manifiesto`).toBeDefined();
         expect(duenos, `${nombre}: lo declara ${dueno?.modulo}`).toContain(dueno?.modulo);
+        verificadas.add(nombre);
       }
     }
+    // Control de que no pasa en vacío: TODA Function de un manifiesto se verificó
+    // contra el archivo del que index.ts la reexporta, esté donde esté.
+    expect([...verificadas].sort()).toEqual(MANIFIESTOS.flatMap((x) => [...x.functions]).sort());
   });
 });
 
