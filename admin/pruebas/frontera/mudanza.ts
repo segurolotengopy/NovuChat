@@ -62,7 +62,9 @@ export const RUTA_DE_TANDA = /^docs\/arquitectura\/tandas\/t\d+[a-z]?\.json$/;
  * verificador que corre es el del PR (revisión del #241, tercera vuelta).
  */
 export const HERRAMIENTA = ['admin/pruebas/frontera/mudanza.ts', 'admin/pruebas/frontera/solo-rutas.mjs',
-  'admin/pruebas/frontera/mudanza.mjs', 'admin/pruebas/frontera/frontera.ts'] as const;
+  'admin/pruebas/frontera/mudanza.mjs', 'admin/pruebas/frontera/frontera.ts', 'admin/pruebas/frontera/desde-la-base.sh',
+  // Lo que frontera.ts importa: su código de nivel superior corre al importar.
+  'admin/pruebas/frontera/destinos-f2.ts', 'admin/functions/src/registro.ts'] as const;
 
 /** Las raíces donde F2 mueve archivos. */
 export const RAICES_DE_MUDANZA = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;

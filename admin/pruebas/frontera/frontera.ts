@@ -52,8 +52,12 @@ import { REGISTRO } from '../../functions/src/registro.ts';
 import { DESTINOS_F2, PREFIJOS_F2 } from './destinos-f2.ts';
 import type { DestinoF2, ZonaF2 } from './destinos-f2.ts';
 
-/** La raíz del repositorio. */
-export const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+/**
+ * La raíz del repositorio. `NOVUCHAT_RAIZ` la fija cuando la herramienta corre
+ * desde una copia de la BASE (`desde-la-base.sh`) contra el worktree de un PR:
+ * así el verificador que juzga un PR de tanda no es el del PR.
+ */
+export const RAIZ = process.env['NOVUCHAT_RAIZ'] || resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /**
  * La deuda de la frontera (`deuda.json`, en esta carpeta): cruces conocidos,
