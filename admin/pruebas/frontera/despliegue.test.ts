@@ -19,6 +19,16 @@
  * y el diff de `despliegue.json` va en el PR, a la vista. La carpeta es de la
  * coordinadora (`docs/arquitectura/agentes.md`).
  *
+ * LO QUE NO CUBRE (revisión de seguridad del #239): el `__endpoint` es la
+ * forma que firebase-tools lee para crear la Function, no todo lo que corre.
+ * Quedan fuera las opciones de ejecución de las callables (`cors`,
+ * `enforceAppCheck`, `consumeAppCheckToken`), el VALOR de los parámetros (solo
+ * se guarda `params.INSTANCIAS_MINIMAS`, no su default), la forma de staging
+ * (`cpu` con CPU_FRACCIONARIA, que vitest.config.ts fija vacía) y el
+ * comportamiento de cada handler, que cubren sus suites. Para F2 alcanza: lo
+ * que un movimiento puede romper es el nombre, el orden de `setGlobalOptions`
+ * (cuenta y región) y los secretos.
+ *
  * Pura: importa `index.ts` como `region-y-cuenta.test.ts`, con GCLOUD_PROJECT
  * de vitest.config.ts; no abre Firebase.
  */
@@ -41,6 +51,12 @@ describe('lo que se despliega', () => {
   it('index.ts exporta exactamente las Functions de despliegue.json, con el mismo __endpoint', async () => {
     const actual = await desplegado();
     if (process.env['ACTUALIZAR_DESPLIEGUE'] === 'si') {
+      // Regenerar compara el archivo consigo mismo: nunca en el CI.
+      if (process.env['CI']) throw new Error('ACTUALIZAR_DESPLIEGUE no se usa en el CI: pasaría en vacío.');
+      const correos = JSON.stringify(actual).match(/[\w.-]+@[\w.-]+/g) ?? [];
+      if (correos.some((c) => !c.endsWith('@demo-test.iam.gserviceaccount.com'))) {
+        throw new Error(`Un correo que no es del proyecto de prueba: ${correos.join(', ')}`);
+      }
       writeFileSync(ARCHIVO, `${JSON.stringify(actual, null, 2)}\n`);
     }
     const esperado = JSON.parse(readFileSync(ARCHIVO, 'utf8')) as Record<string, unknown>;

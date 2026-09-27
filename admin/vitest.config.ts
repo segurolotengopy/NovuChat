@@ -107,7 +107,9 @@ export default defineConfig({
     // GCLOUD_PROJECT y falla si no está (firebase-tools la fija al descubrir
     // las Functions; Cloud Run, en ejecución). Las suites que importan
     // index.ts la necesitan; `demo-` marca que no es un proyecto real.
-    env: { GCLOUD_PROJECT: 'demo-test' },
+    // CPU_FRACCIONARIA vacía: la forma de staging (`cpu`) no entra a la
+    // instantánea de despliegue aunque el shell la tenga (pruebas/frontera/despliegue.test.ts).
+    env: { GCLOUD_PROJECT: 'demo-test', CPU_FRACCIONARIA: '' },
     projects: [
       {
         extends: true,

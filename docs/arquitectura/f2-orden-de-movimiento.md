@@ -105,6 +105,25 @@ lector de la frontera toma por calculado todo `createRequire`,
 Las herramientas de mudanza (`mudanza.mjs`, `solo-rutas.mjs`) van en un PR
 propio antes de la tanda 1.
 
+**Pendiente de la revisión de seguridad del #239**, para ese PR o antes de la
+tanda que lo necesita:
+
+- **Antes de S1 y S2** (mover scripts): `rutas-escritas.test.ts` lee rutas con
+  expresiones regulares y no ve `join(aqui, …)` sin constante base,
+  `resolve`/`path.join`/`new URL`, plantillas, variables intermedias ni rutas
+  en `.sh` sin comillas; pasarlo al parser y marcar como error todo
+  `join(BASE, <no literal>)` hacia `admin/functions`. Además, una compuerta
+  para las referencias a `admin/scripts/*` desde `admin/package.json`, los
+  runbooks y `.claude/agents`.
+- **Lector de la frontera:** marcar como calculado todo import de `module`
+  distinto de `import { createRequire }`, todo acceso por clave no literal,
+  `_load`, `new Function` y `eval`, y la exportación de un alias de
+  `createRequire` (evasiones deliberadas; `o.require` hoy da un falso
+  positivo sin casos).
+- **La separación seña/prepago es solo directa:** existe el camino
+  `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
+  `ingesta` en F3b.
+
 ## Para la revisora
 
 1. **`ruta: './admin'` achica el análisis de seguridad**: Semgrep, Trivy,

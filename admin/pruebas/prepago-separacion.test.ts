@@ -52,9 +52,18 @@ const importaciones = (archivo: string) =>
   importsDe(archivo).map((i) => (i.destino ? nombre(i.destino) : i.especificador));
 
 describe('Separación entre la seña y el prepago', () => {
-  it('los archivos del prepago existen (control de que la prueba no pasa en vacío)', () => {
-    expect(DEL_PREPAGO.map(nombre)).toEqual(expect.arrayContaining(['cobrador.ts', 'cobroPrepago.ts', 'prepago.ts', 'pagos.ts']));
-    expect(DE_LA_SENA.map(nombre)).toEqual(expect.arrayContaining(['cobro.ts', 'sena.ts', 'cotejo.ts', 'qrSimple.ts']));
+  it('los archivos de las dos listas existen, todos (control de que la prueba no pasa en vacío)', () => {
+    // Todos los de hoy: uno que se renombre no cae de la lista en silencio. El
+    // único que falta a propósito es `pagos-stub.ts`, que se borró al llegar pagos.ts.
+    expect(DEL_PREPAGO.map(nombre).sort()).toEqual(
+      ['cobrador.ts', 'cobranza.ts', 'cobroPrepago.ts', 'pagos.ts', 'pagosConCobrador.ts', 'prepago.ts', 'tipoCambio.ts']);
+    expect(DE_LA_SENA.map(nombre).sort()).toEqual(['cobro.ts', 'cotejo.ts', 'qrSimple.ts', 'sena.ts']);
+  });
+
+  it('todo import de los dos lados se resuelve (uno roto, calculado o por alias no se podría comparar)', () => {
+    for (const archivo of [...DEL_PREPAGO, ...DE_LA_SENA]) {
+      expect(importsDe(archivo).filter((i) => !i.destino).map((i) => i.especificador), archivo).toEqual([]);
+    }
   });
 
   it('ningún archivo del prepago importa cobro.ts, sena.ts, cotejo.ts, qrSimple.ts ni dibujoQr.ts', () => {

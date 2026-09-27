@@ -53,7 +53,6 @@ const comunes = MODULOS_COMUNES_HOY as readonly IdModulo[];
 const ordenado = <T>(xs: Iterable<T>) => [...xs].sort();
 
 // ------------------------------------------------------------ lectura de textos
-/** Sin comentarios `//` y `/* *\/`. Un `//` pegado a `:` (una URL) no es comentario. */
 /**
  * Todos los .ts de una carpeta, en subcarpetas también (F2, tanda cero): un
  * archivo que F2 mueve a `central/cuenta/` o `modulos/<m>/` no puede dejar de
@@ -61,6 +60,7 @@ const ordenado = <T>(xs: Iterable<T>) => [...xs].sort();
  */
 const tsDe = (dir: string): string[] => readdirSync(join(RAIZ, dir), { withFileTypes: true })
   .flatMap((e) => (e.isDirectory() ? tsDe(`${dir}/${e.name}`) : e.name.endsWith('.ts') ? [`${dir}/${e.name}`] : []));
+/** Sin comentarios `//` y `/* *\/`. Un `//` pegado a `:` (una URL) no es comentario. */
 const sinComentarios = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;])\/\/.*$/gm, '$1');
 
 const REGLAS = sinComentarios(leer('admin/firestore.rules'));
@@ -474,7 +474,8 @@ describe('7. Functions: el registro contra index.ts', () => {
   const verificadas = new Set<string>();
   it('toda Function que index.ts reexporta de un archivo de módulo está en el manifiesto de ese módulo', () => {
     const texto = sinComentarios(leer('admin/functions/src/index.ts'));
-    for (const m of texto.matchAll(/export\s*\{([^}]*)\}\s*from\s*'\.\/([\w/]+)\.js'/g)) {
+    // `[\w/-]`: `modulos/catalogo-web/` lleva guion (revisión de seguridad del #239).
+    for (const m of texto.matchAll(/export\s*\{([^}]*)\}\s*from\s*'\.\/([\w/-]+)\.js'/g)) {
       const archivo = `admin/functions/src/${m[2]}.ts`;
       const destino = zonaDeCodigo(archivo);
       if (destino?.zona !== 'modulo') continue;
