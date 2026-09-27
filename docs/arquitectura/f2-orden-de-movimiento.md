@@ -61,8 +61,8 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | W1 | `W/lib/{planes,prepago,pagar,cuenta,bitacora}.ts → W/central/lib/`; `sesion`, `contexto → W/core/lib/` | 4 |
 | W2 | Las páginas de Central → `W/central/paginas/`; `ConfiguracionVertical → W/central/componentes/ConfiguracionModulo.tsx`; `Tenants → W/plataforma/paginas/` | 4 |
 | FL1 | `Flujos/src/comun → Flujos/src/core/`; de `reservas/`: dos a `core/medios/`, cuatro a `modulos/cobros/`, siete a `modulos/agenda/`. 8/8 JSON idénticos | 4 |
-| FL2 | Extraer los Code de Demo B y del onboarding (`core-flujos`). **El onboarding espera los PR de la cartera sobre `Flujos/novuchat-onboarding.json`** (#237 fusionado; #238 en curso) y parte del JSON con ellos ya fusionados | 4 |
-| S1, S2 | Scripts de Plataforma → `S/plataforma/`; de carga → `S/datos/`. Con los runbooks y `.claude/agents` en el mismo PR, y aviso a la cartera | 4 |
+| FL2 | Extraer los Code de Demo B y del onboarding (`core-flujos`). El onboarding parte de `dd13823` (con los PR #237 y #238 de la cartera, que cambiaron su topología); la cartera no tiene nada más en curso sobre ese flujo (27/09) | 4 |
+| S1, S2 | Scripts de Plataforma → `S/plataforma/`; de carga → `S/datos/`. Con los runbooks y `.claude/agents` en el mismo PR, y aviso a la cartera. **Antes: `rutas-escritas.test.ts` con parser** (pendiente de la revisión del #239, abajo). **Nunca el 01/10 de 08:00 a 12:00** (la cartera usa `asignar-plan.mjs`) | 4 |
 | Pz | Las suites de la raíz con zona por su grafo → `P/core|central|plataforma/` | 4 |
 | P1 | Partir `index.ts` (callables → `F/plataforma/tenants.ts` y `F/central/usuarios.ts`), solo después de C1 | 4 |
 | Z | Zona para los 42 sin zona (`App.tsx`, `main.tsx`, `consola.tsx` → coordinador por archivo). **Decide la revisora** | 4 |
@@ -102,8 +102,18 @@ La tanda cero cierra además el último LOW de la cuarta revisión del #236: el
 lector de la frontera toma por calculado todo `createRequire`,
 `getBuiltinModule`, `.require` o `['require']` fuera del patrón que sigue.
 
-Las herramientas de mudanza (`mudanza.mjs`, `solo-rutas.mjs`) van en un PR
-propio antes de la tanda 1.
+**Las herramientas de mudanza** (PR propio, antes de la tanda 1), en
+`admin/pruebas/frontera/`: `mudanza.ts` (la lógica, probada en
+`mudanza.test.ts` sobre un árbol inventado), `mudanza.mjs <tanda.json>` (en
+seco por defecto; `--escribir` hace `git mv`, reescribe y lista los cruces de
+la deuda que la tanda salda) y `solo-rutas.mjs [base]` (el diff del PR tiene
+que ser solo de rutas: compara cada archivo con los literales reemplazados por
+un marcador). Ensayo de la tanda 1 con la herramienta, en un worktree
+descartable: 5 movidos, 15 reescritos (los 13 consumidores que preveía el
+diseño, la deuda y el archivo movido), `solo-rutas` limpio, `functions:build`
+y `web:build` en verde, `lib/core/conteo/atencion.js` y
+`lib/core/turno/cierres.js` generados, 16 cruces, y la prueba de fronteras
+pidiendo sacar las 3 entradas saldadas, como corresponde.
 
 **Pendiente de la revisión de seguridad del #239**, para ese PR o antes de la
 tanda que lo necesita:
