@@ -158,16 +158,26 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
       const comilla = (n: ts.Node) => texto[n.getStart(fuente)]!;
       const nombreDe = (e: ts.Expression): string => (ts.isIdentifier(e) ? e.text
         : ts.isPropertyAccessExpression(e) ? e.name.text : e.kind === ts.SyntaxKind.ImportKeyword ? 'import' : '');
-      const LECTURAS = new Set(['import', 'require', 'resolve', 'mock', 'doMock', 'leer', 'readFileSync', 'existsSync',
-        'statSync', 'lstatSync', 'readdirSync', 'importActual']);
-      /** ¿El literal está donde se escribe una ruta? */
-      const enContexto = (n: ts.Node): boolean => {
+      // Un especificador RELATIVO se resuelve contra el archivo solo donde Node o
+      // vitest lo resuelven así: módulos. En una lectura (`readFileSync('../x')`)
+      // es relativo a la carpeta de trabajo, y en `join(RAIZ, …)` a una base
+      // desconocida: ahí solo se reescribe la ruta COMPLETA (revisión del #241).
+      const MODULOS = new Set(['import', 'require', 'mock', 'doMock', 'importActual']);
+      const LECTURAS = new Set(['leer', 'readFileSync', 'existsSync', 'statSync', 'lstatSync', 'readdirSync', 'join', 'resolve']);
+      /** ¿El literal está donde se escribe una ruta (relativa o completa, según `relativo`)? */
+      const enContexto = (n: ts.Node, relativo: boolean): boolean => {
         const p = n.parent;
         if ((ts.isImportDeclaration(p) || ts.isExportDeclaration(p)) && p.moduleSpecifier === n) return true;
         if (ts.isExternalModuleReference(p) || (ts.isLiteralTypeNode(p) && ts.isImportTypeNode(p.parent))) return true;
-        if (ts.isCallExpression(p) && p.arguments.includes(n as ts.Expression) && LECTURAS.has(nombreDe(p.expression))) return true;
+        if (ts.isCallExpression(p) && p.arguments.includes(n as ts.Expression)) {
+          const e = p.expression;
+          const esRequireResolve = ts.isPropertyAccessExpression(e) && e.name.text === 'resolve'
+            && ts.isIdentifier(e.expression) && e.expression.text === 'require';
+          if (MODULOS.has(nombreDe(e)) || esRequireResolve) return true;
+          if (!relativo && LECTURAS.has(nombreDe(e))) return true;
+        }
         if (ts.isNewExpression(p) && ts.isIdentifier(p.expression) && p.expression.text === 'URL' && p.arguments?.[0] === n) return true;
-        if (ts.isArrayLiteralExpression(p) && ts.isVariableDeclaration(p.parent) && ts.isIdentifier(p.parent.name)
+        if (!relativo && ts.isArrayLiteralExpression(p) && ts.isVariableDeclaration(p.parent) && ts.isIdentifier(p.parent.name)
           && p.parent.name.text === 'SUITES_PURAS') return true;
         return false;
       };
@@ -245,7 +255,7 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
             por = mapa.get(`admin/${t}`)!.replace(/^admin\//, '');
           }
           if (por !== null && por !== t) {
-            if (enContexto(n)) {
+            if (enContexto(n, t.startsWith('./') || t.startsWith('../'))) {
               reemplazos.push({ desde: n.getStart(fuente) + 1, hasta: n.getEnd() - 1, por, nota: `${t} → ${por}` });
             } else {
               const { line } = fuente.getLineAndCharacterOfPosition(n.getStart(fuente));
@@ -271,19 +281,69 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
 // ------------------------------------------------------ la reproducibilidad
 export interface EntradaDiff { readonly estado: string; readonly viejo: string; readonly nuevo: string }
 
-/** Una línea de `SUITES_PURAS` (lo único que un PR de tanda agrega a mano en vitest.config.ts). */
-const LINEA_SUITE = /^\s*'pruebas\/[\w/.-]+\.test\.ts',\s*$/;
+/**
+ * Una tanda versionada en el PR (`docs/arquitectura/tandas/<n>.json`): los
+ * movimientos y las suites que la tanda agrega a `SUITES_PURAS`. Así el CI, el
+ * revisor y el autor usan la MISMA tanda.
+ */
+export interface Tanda { readonly movimientos: readonly Movimiento[]; readonly suitesPuras: readonly string[] }
+export function leerTanda(json: unknown): Tanda {
+  if (Array.isArray(json)) return { movimientos: json as Movimiento[], suitesPuras: [] };
+  const t = json as Partial<Tanda>;
+  return { movimientos: t?.movimientos ?? [], suitesPuras: t?.suitesPuras ?? [] };
+}
 
-function diferenciaDeLineas(esperado: string, real: string): string[] {
-  const cuenta = new Map<string, number>();
-  for (const l of esperado.split('\n')) cuenta.set(l, (cuenta.get(l) ?? 0) + 1);
-  const sobran: string[] = [];
-  for (const l of real.split('\n')) {
-    const n = cuenta.get(l) ?? 0;
-    if (n > 0) cuenta.set(l, n - 1); else sobran.push(`+ ${l}`);
+/**
+ * Suites que NO pueden estar en `SUITES_PURAS` aunque una tanda lo pida: abren
+ * Firebase antes del modo seco (`asignar-rol.test.ts`, revisión del PR #206).
+ */
+export const SUITES_VETADAS: readonly string[] = ['pruebas/asignar-rol.test.ts'];
+
+/**
+ * El texto con cada ruta vieja de la tanda —completa y sin `admin/`— cambiada
+ * por la nueva, con límites (`…/x.ts` no toca `…/x.tsx`). Es lo ÚNICO que se
+ * acepta a mano en un comentario o en un `.md`: la cita de la ruta.
+ */
+export function reemplazarRutas(texto: string, movimientos: readonly Movimiento[]): string {
+  const pares = movimientos.flatMap((m) => [[m.de, m.a], [m.de.replace(/^admin\//, ''), m.a.replace(/^admin\//, '')]] as const);
+  let t = texto;
+  for (const [de, a] of pares) {
+    t = t.replace(new RegExp(`(?<![\\w./-])${de.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g'), a);
   }
-  for (const [l, n] of cuenta) for (let i = 0; i < n; i++) sobran.push(`- ${l}`);
-  return sobran;
+  return t;
+}
+
+/**
+ * El archivo reimpreso desde su AST sin comentarios. Un error de sintaxis NO
+ * se tolera (el parser se recupera y lo escondería).
+ */
+export function sinComentariosAst(nombre: string, texto: string): string {
+  const tipo = nombre.endsWith('.tsx') ? ts.ScriptKind.TSX : nombre.endsWith('.jsx') ? ts.ScriptKind.JSX
+    : /\.(m|c)?ts$/.test(nombre) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const fuente = ts.createSourceFile(nombre, texto, ts.ScriptTarget.Latest, false, tipo);
+  // `parseDiagnostics` no está en la API pública, pero es lo que el parser llena.
+  const errores = (fuente as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics ?? [];
+  if (errores.length) throw new Error(`${nombre}: error de sintaxis`);
+  return ts.createPrinter({ removeComments: true }).printFile(fuente);
+}
+
+/** Los elementos de `SUITES_PURAS` y el archivo sin ellos (por AST, con sus comentarios). */
+function separarSuites(nombre: string, texto: string): { suites: string[]; resto: string } {
+  const fuente = ts.createSourceFile(nombre, texto, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const errores = (fuente as unknown as { parseDiagnostics?: readonly unknown[] }).parseDiagnostics ?? [];
+  if (errores.length) throw new Error(`${nombre}: error de sintaxis`);
+  let suites: string[] = [];
+  let resto = texto;
+  const visitar = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === 'SUITES_PURAS'
+      && n.initializer && ts.isArrayLiteralExpression(n.initializer)) {
+      suites = n.initializer.elements.map((e) => (ts.isStringLiteral(e) ? e.text : `<no literal: ${e.getText(fuente)}>`));
+      resto = texto.slice(0, n.initializer.getStart(fuente)) + '[]' + texto.slice(n.initializer.getEnd());
+    }
+    ts.forEachChild(n, visitar);
+  };
+  visitar(fuente);
+  return { suites, resto };
 }
 
 /** ¿`real` es `esperado` con algunas entradas QUITADAS de sus listas (y nada más)? */
@@ -303,54 +363,77 @@ function soloQuitaDeuda(esperado: string, real: string): boolean {
   return true;
 }
 
-/**
- * El archivo reimpreso desde su AST SIN comentarios: dos versiones que solo
- * difieren en comentarios (o en espacios) dan lo mismo, y nada ejecutable se
- * esconde, porque es el árbol de sintaxis, no un escáner de fichas.
- */
-export function sinComentariosAst(nombre: string, texto: string): string {
-  const tipo = nombre.endsWith('.tsx') ? ts.ScriptKind.TSX : nombre.endsWith('.jsx') ? ts.ScriptKind.JSX
-    : /\.(m|c)?ts$/.test(nombre) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
-  const fuente = ts.createSourceFile(nombre, texto, ts.ScriptTarget.Latest, false, tipo);
-  return ts.createPrinter({ removeComments: true }).printFile(fuente);
+export interface Veredicto {
+  readonly problemas: string[];
+  /** `.md` que el PR cambia más allá de citar la ruta nueva: los lee el revisor. */
+  readonly revisarAMano: string[];
 }
 
 /**
- * Los problemas de un PR de tanda frente a su plan: cada archivo del diff
- * tiene que ser BYTE A BYTE el que el plan produce sobre la base. Lo único que
- * se permite a mano: QUITAR entradas de `deuda.json` (las saldadas), agregar o
- * quitar líneas de `SUITES_PURAS` en `admin/vitest.config.ts`, corregir
- * COMENTARIOS (la ruta vieja citada en un comentario) y los `.md`.
+ * Un PR de tanda frente a su plan. Cada archivo del diff tiene que ser BYTE A
+ * BYTE el que produce el plan sobre la base. A mano solo se acepta:
+ *   - quitar entradas de `deuda.json` (las saldadas);
+ *   - en `admin/vitest.config.ts`, agregar a `SUITES_PURAS` las suites que la
+ *     tanda declara (ninguna vetada) o quitar entradas; el resto del archivo,
+ *     idéntico (comparado por AST, con sus comentarios);
+ *   - en código, cambiar la CITA de una ruta vieja por la nueva (en un
+ *     comentario): `real === reemplazarRutas(plan)`. Ningún otro comentario;
+ *     `/*#__PURE__*\/` quitaría App Check del paquete (revisión del #241);
+ *   - agregar el archivo de la tanda (`archivoTanda`);
+ *   - los `.md`, que se listan para revisar a mano.
  */
 export function verificarReproducible(
-  tanda: readonly Movimiento[], plan: Plan, diff: readonly EntradaDiff[],
-  leerBase: (r: string) => string, leerHead: (r: string) => string,
-): string[] {
+  tanda: Tanda, plan: Plan, diff: readonly EntradaDiff[],
+  leerBase: (r: string) => string, leerHead: (r: string) => string, archivoTanda?: string,
+): Veredicto {
   const problemas: string[] = [];
-  const movs = new Map(tanda.map((m) => [m.de, m.a]));
+  const revisarAMano: string[] = [];
+  const movs = new Map(tanda.movimientos.map((m) => [m.de, m.a]));
   const esperado = new Map(plan.ediciones.map((e) => [e.archivo, e.nuevoTexto]));
   const vistos = new Set<string>();
   for (const d of diff) {
     const destino = d.nuevo;
     vistos.add(destino);
+    if (d.estado === 'A' && destino === archivoTanda) continue;
     if (d.estado.startsWith('R')) {
       if (movs.get(d.viejo) !== d.nuevo) { problemas.push(`${d.viejo} → ${d.nuevo}: renombre que no está en la tanda`); continue; }
     } else if (d.estado !== 'M') {
       problemas.push(`${d.estado} ${d.viejo}: una tanda solo renombra y reescribe`);
       continue;
     }
-    if (destino.endsWith('.md')) continue;
     const real = leerHead(destino);
     const quiere = esperado.get(destino) ?? leerBase(d.viejo);
+    if (destino.endsWith('.md')) {
+      if (real !== reemplazarRutas(quiere, tanda.movimientos)) revisarAMano.push(destino);
+      continue;
+    }
     if (real === quiere) continue;
-    if (destino.endsWith('/deuda.json') && soloQuitaDeuda(quiere, real)) continue;
-    if (destino === 'admin/vitest.config.ts' && diferenciaDeLineas(quiere, real).every((l) => LINEA_SUITE.test(l.slice(2)))) continue;
-    if (EXT_CODIGO.test(destino) && sinComentariosAst(destino, quiere) === sinComentariosAst(destino, real)) continue;
+    try {
+      if (destino.endsWith('/deuda.json') && soloQuitaDeuda(quiere, real)) continue;
+      if (destino === 'admin/vitest.config.ts') {
+        const a = separarSuites(destino, quiere);
+        const b = separarSuites(destino, real);
+        const agregadas = b.suites.filter((x) => !a.suites.includes(x));
+        const malas = agregadas.filter((x) => !tanda.suitesPuras.includes(x) || SUITES_VETADAS.includes(x));
+        if (a.resto === b.resto && !malas.length) continue;
+        problemas.push(`${destino}: fuera de SUITES_PURAS no se toca, y solo entran las suites que la tanda declara${malas.length ? ` (sobran: ${malas.join(', ')})` : ''}`);
+        continue;
+      }
+      if (EXT_CODIGO.test(destino) && real === reemplazarRutas(quiere, tanda.movimientos)
+        && sinComentariosAst(destino, quiere) === sinComentariosAst(destino, real)) continue;
+    } catch (e) {
+      problemas.push(`${destino}: ${(e as Error).message}`);
+      continue;
+    }
     problemas.push(`${destino}: no es lo que produce la mudanza (cambia algo más que rutas)`);
   }
-  for (const m of tanda) if (!vistos.has(m.a)) problemas.push(`${m.de} → ${m.a}: la tanda lo mueve y el PR no`);
+  for (const m of tanda.movimientos) if (!vistos.has(m.a)) problemas.push(`${m.de} → ${m.a}: la tanda lo mueve y el PR no`);
   for (const e of plan.ediciones) {
     if (e.cambios.length && !vistos.has(e.archivo)) problemas.push(`${e.archivo}: la mudanza lo reescribe y el PR no`);
   }
-  return problemas;
+  for (const s of tanda.suitesPuras) {
+    if (SUITES_VETADAS.includes(s)) problemas.push(`${s}: vetada en SUITES_PURAS`);
+    if (!/^pruebas\/[\w/.-]+\.test\.ts$/.test(s)) problemas.push(`${s}: no es una suite (pruebas/….test.ts)`);
+  }
+  return { problemas, revisarAMano };
 }

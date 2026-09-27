@@ -113,8 +113,8 @@ describe('validarTanda', () => {
 });
 
 describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
+  const T = { movimientos: TANDA, suitesPuras: ['pruebas/otra.test.ts'] };
   const leerBase = (r: string) => ARCHIVOS[r] ?? '';
-  // El PR «perfecto»: los renombres y las ediciones del plan, tal cual.
   const diffPerfecto = [
     ...TANDA.map((m) => ({ estado: 'R100', viejo: m.de, nuevo: m.a })),
     ...plan.ediciones.filter((e) => !TANDA.some((m) => m.a === e.archivo) && e.cambios.length)
@@ -122,45 +122,80 @@ describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
   ];
   const head = (cambios: Record<string, string> = {}) => (r: string) =>
     cambios[r] ?? plan.ediciones.find((e) => e.archivo === r)?.nuevoTexto ?? ARCHIVOS[r] ?? '';
+  const problemas = (diff = diffPerfecto, cambios: Record<string, string> = {}, base = leerBase) =>
+    verificarReproducible(T, plan, diff, base, head(cambios), 'docs/arquitectura/tandas/t9.json').problemas;
+  const M = (r: string) => ({ estado: 'M', viejo: r, nuevo: r });
 
-  it('el PR que es exactamente la mudanza pasa', () => {
-    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head())).toEqual([]);
+  it('el PR que es exactamente la mudanza pasa, con el archivo de la tanda agregado', () => {
+    expect(problemas([...diffPerfecto, { estado: 'A', viejo: 'docs/arquitectura/tandas/t9.json', nuevo: 'docs/arquitectura/tandas/t9.json' }])).toEqual([]);
   });
-  it('un literal que NO es una ruta, cambiado en un archivo de la tanda, no pasa (región, mensaje)', () => {
+  it('un literal que NO es una ruta, cambiado en un archivo de la tanda, no pasa (región)', () => {
     const idx = texto(`${F}/index.ts`)!;
-    const r = verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ [`${F}/index.ts`]: `${idx}export const R = 'europe-west1';\n` }));
-    expect(r).toEqual([`${F}/index.ts: no es lo que produce la mudanza (cambia algo más que rutas)`]);
+    expect(problemas(diffPerfecto, { [`${F}/index.ts`]: `${idx}export const R = 'europe-west1';\n` }))
+      .toEqual([`${F}/index.ts: no es lo que produce la mudanza (cambia algo más que rutas)`]);
   });
-  it('corregir un comentario a mano pasa; una regex o una plantilla con lógica al lado, no', () => {
-    const idx = texto(`${F}/index.ts`)!;
-    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ [`${F}/index.ts`]: `// ver core/conteo/muestra.ts\n${idx}` }))).toEqual([]);
-    const base = "const r = /['\"]/; permitir(false);\nconst u = `${b}/x?r=https://ok.com`; permitir(false);\n";
-    const truco = "const r = /['\"]/; permitir(true);\nconst u = `${b}/x?r=https://ok.com`; permitir(true);\n";
-    expect(verificarReproducible(TANDA, plan, [...diffPerfecto, { estado: 'M', viejo: `${F}/region.ts`, nuevo: `${F}/region.ts` }],
-      (r) => (r === `${F}/region.ts` ? base : leerBase(r)), head({ [`${F}/region.ts`]: truco }))).toHaveLength(1);
-  });
-
   it('un archivo que la tanda no toca, modificado, no pasa', () => {
-    const diff = [...diffPerfecto, { estado: 'M', viejo: `${F}/region.ts`, nuevo: `${F}/region.ts` }];
-    expect(verificarReproducible(TANDA, plan, diff, leerBase, head({ [`${F}/region.ts`]: "export const REGION = 'x';\n" }))).toHaveLength(1);
+    expect(problemas([...diffPerfecto, M(`${F}/region.ts`)], { [`${F}/region.ts`]: "export const REGION = 'x';\n" })).toHaveLength(1);
   });
   it('un archivo nuevo o borrado, o un renombre fuera de la tanda, no pasa', () => {
-    expect(verificarReproducible(TANDA, plan, [...diffPerfecto, { estado: 'A', viejo: 'x.ts', nuevo: 'x.ts' }], leerBase, head())).toHaveLength(1);
-    expect(verificarReproducible(TANDA, plan, [...diffPerfecto, { estado: 'R100', viejo: `${F}/region.ts`, nuevo: `${F}/core/region.ts` }], leerBase, head())).toHaveLength(1);
+    expect(problemas([...diffPerfecto, { estado: 'A', viejo: 'x.ts', nuevo: 'x.ts' }])).toHaveLength(1);
+    expect(problemas([...diffPerfecto, { estado: 'R100', viejo: `${F}/region.ts`, nuevo: `${F}/core/region.ts` }])).toHaveLength(1);
   });
   it('un PR que se olvida de reescribir un consumidor no pasa', () => {
-    const diff = diffPerfecto.filter((d) => d.nuevo !== `${F}/index.ts`);
-    expect(verificarReproducible(TANDA, plan, diff, leerBase, head())).toEqual([`${F}/index.ts: la mudanza lo reescribe y el PR no`]);
+    expect(problemas(diffPerfecto.filter((d) => d.nuevo !== `${F}/index.ts`))).toEqual([`${F}/index.ts: la mudanza lo reescribe y el PR no`]);
   });
-  it('a mano solo se permite QUITAR deuda y tocar líneas de SUITES_PURAS', () => {
+  it('comentarios: la CITA de la ruta nueva pasa; cualquier otro comentario, no (/*#__PURE__*/ quitaría App Check)', () => {
+    const base = (r: string) => (r === `${F}/region.ts` ? '// ver admin/functions/src/muestra.ts\ninitializeAppCheck(app, {});\n' : leerBase(r));
+    const d = [...diffPerfecto, M(`${F}/region.ts`)];
+    expect(problemas(d, { [`${F}/region.ts`]: '// ver admin/functions/src/core/conteo/muestra.ts\ninitializeAppCheck(app, {});\n' }, base)).toEqual([]);
+    expect(problemas(d, { [`${F}/region.ts`]: '// ver admin/functions/src/muestra.ts\n/*#__PURE__*/ initializeAppCheck(app, {});\n' }, base)).toHaveLength(1);
+    expect(problemas(d, { [`${F}/region.ts`]: '// @ts-nocheck\n// ver admin/functions/src/muestra.ts\ninitializeAppCheck(app, {});\n' }, base)).toHaveLength(1);
+  });
+  it('un error de sintaxis no pasa por comentario', () => {
+    const base = (r: string) => (r === `${F}/region.ts` ? 'f(1); // admin/functions/src/muestra.ts\n' : leerBase(r));
+    expect(problemas([...diffPerfecto, M(`${F}/region.ts`)], { [`${F}/region.ts`]: 'f(1); // admin/functions/src/core/conteo/muestra.ts\n)\n' }, base)).toHaveLength(1);
+  });
+  it('a mano: QUITAR deuda pasa; agregar, no', () => {
     const deuda = JSON.parse(texto('admin/pruebas/frontera/deuda.json')!);
-    const sinCruces = `${JSON.stringify({ ...deuda, cruces: [] }, null, 2)}\n`;
-    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ 'admin/pruebas/frontera/deuda.json': sinCruces }))).toEqual([]);
+    expect(problemas(diffPerfecto, { 'admin/pruebas/frontera/deuda.json': `${JSON.stringify({ ...deuda, cruces: [] }, null, 2)}\n` })).toEqual([]);
     const conOtro = `${JSON.stringify({ ...deuda, cruces: [...deuda.cruces, { desde: 'a', hacia: 'b', porque: 'x' }] }, null, 2)}\n`;
-    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ 'admin/pruebas/frontera/deuda.json': conOtro }))).toHaveLength(1);
-    const vitest = texto('admin/vitest.config.ts')!;
-    const conSuite = vitest.replace('[\n', "[\n  'pruebas/otra.test.ts',\n");
-    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ 'admin/vitest.config.ts': conSuite }))).toEqual([]);
-    expect(verificarReproducible(TANDA, plan, diffPerfecto, leerBase, head({ 'admin/vitest.config.ts': `${vitest}export const X = 1;\n` }))).toHaveLength(1);
+    expect(problemas(diffPerfecto, { 'admin/pruebas/frontera/deuda.json': conOtro })).toHaveLength(1);
   });
+  it('vitest.config.ts: solo entran las suites declaradas en la tanda, ninguna vetada, y el resto no se toca', () => {
+    const vitest = texto('admin/vitest.config.ts')!;
+    const con = (x: string) => vitest.replace('[\n', `[\n  '${x}',\n`);
+    expect(problemas(diffPerfecto, { 'admin/vitest.config.ts': con('pruebas/otra.test.ts') })).toEqual([]);
+    expect(problemas(diffPerfecto, { 'admin/vitest.config.ts': con('pruebas/no-declarada.test.ts') })).toHaveLength(1);
+    expect(verificarReproducible({ movimientos: TANDA, suitesPuras: ['pruebas/asignar-rol.test.ts'] }, plan, diffPerfecto, leerBase,
+      head({ 'admin/vitest.config.ts': con('pruebas/asignar-rol.test.ts') })).problemas.length).toBeGreaterThan(0);
+    // Mover código a un comentario (la guarda o el env) no es tocar SUITES_PURAS.
+    expect(problemas(diffPerfecto, { 'admin/vitest.config.ts': `${vitest}if (x) { throw new Error('y'); }\n` })).toHaveLength(1);
+    expect(problemas(diffPerfecto, { 'admin/vitest.config.ts': `// ${vitest.replace(/\n/g, '\n// ')}` })).toHaveLength(1);
+  });
+  it('un .md que cambia más que la cita se lista para revisar a mano', () => {
+    const base = (r: string) => (r === 'docs/x.md' ? 'ver admin/functions/src/muestra.ts\n' : leerBase(r));
+    const cita = verificarReproducible(T, plan, [...diffPerfecto, M('docs/x.md')], base, head({ 'docs/x.md': 'ver admin/functions/src/core/conteo/muestra.ts\n' }));
+    expect(cita.revisarAMano).toEqual([]);
+    const mas = verificarReproducible(T, plan, [...diffPerfecto, M('docs/x.md')], base, head({ 'docs/x.md': 'otra cosa\n' }));
+    expect(mas.revisarAMano).toEqual(['docs/x.md']);
+  });
+});
+
+describe('contextos: relativo solo en módulos; completo también en lecturas y join', () => {
+  const arb: ArbolConCarpetas = {
+    leer: (a) => ({
+      [`${F}/muestra.ts`]: '',
+      'admin/pruebas/p.test.ts': "const a = join(RAIZ, 'admin/functions/src/muestra.ts');\nconst b = readFileSync('../functions/src/muestra.ts');\nimport { m } from '../functions/src/muestra';\n",
+    } as Record<string, string>)[a] ?? '',
+    existe: (a) => a === `${F}/muestra.ts` || a === 'admin/pruebas/p.test.ts',
+    esCarpeta: () => false,
+  };
+  const p = planDeMudanza([{ de: `${F}/muestra.ts`, a: `${F}/core/muestra.ts` }], ['admin/pruebas/p.test.ts'], arb);
+  const t = p.ediciones.find((e) => e.archivo === 'admin/pruebas/p.test.ts')!.nuevoTexto;
+  it('join(RAIZ, ruta completa) se reescribe', () => { expect(t).toContain("join(RAIZ, 'admin/functions/src/core/muestra.ts')"); });
+  it('un relativo en una lectura (relativo a la carpeta de trabajo) NO: se avisa', () => {
+    expect(t).toContain("readFileSync('../functions/src/muestra.ts')");
+    expect(p.avisos.some((a) => a.includes("'../functions/src/muestra.ts'"))).toBe(true);
+  });
+  it('un relativo en un import sí', () => { expect(t).toContain("from '../functions/src/core/muestra'"); });
 });

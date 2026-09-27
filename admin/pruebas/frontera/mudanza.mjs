@@ -7,7 +7,8 @@
  *   node admin/pruebas/frontera/mudanza.mjs <tanda.json>              en seco: qué haría
  *   node admin/pruebas/frontera/mudanza.mjs <tanda.json> --escribir   git mv y escribe
  *
- * `tanda.json`: [{ "de": "admin/functions/src/<viejo>.ts", "a": "admin/functions/src/core/<zona>/<viejo>.ts" }, …]
+ * `tanda.json`: { "movimientos": [{ "de": "admin/functions/src/<viejo>.ts", "a": "admin/functions/src/core/<zona>/<viejo>.ts" }, …],
+ *                 "suitesPuras": ["pruebas/…test.ts"] }   (va versionada en docs/arquitectura/tandas/)
  *
  * La lógica está en `mudanza.ts` (probada en `mudanza.test.ts`). Recorre las
  * raíces de código, `scripts/` de la raíz y las configuraciones de vitest y
@@ -30,14 +31,16 @@ process.emitWarning = (aviso, ...resto) => {
   return emitirOriginal.call(process, aviso, ...resto);
 };
 const { RAIZ, ARBOL_REAL, listarRaices, analizar, claveDeCruce, leerDeuda } = await import(pathToFileURL(join(AQUI, 'frontera.ts')).href);
-const { planDeMudanza, validarTanda, archivosAMirar } = await import(pathToFileURL(join(AQUI, 'mudanza.ts')).href);
+const { planDeMudanza, validarTanda, archivosAMirar, leerTanda } = await import(pathToFileURL(join(AQUI, 'mudanza.ts')).href);
 process.emitWarning = emitirOriginal;
 
 const [rutaTanda, ...banderas] = process.argv.slice(2);
 if (!rutaTanda) { console.error('Uso: mudanza.mjs <tanda.json> [--escribir]'); process.exit(2); }
 const ESCRIBIR = banderas.includes('--escribir');
 const git = (...a) => execFileSync('git', ['-C', RAIZ, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-const tanda = JSON.parse(readFileSync(rutaTanda, 'utf8'));
+// La tanda: un arreglo de { de, a }, o { movimientos, suitesPuras } (la forma
+// versionada en docs/arquitectura/tandas/, que lee solo-rutas.mjs).
+const tanda = leerTanda(JSON.parse(readFileSync(rutaTanda, 'utf8'))).movimientos;
 
 // VALIDAR ANTES DE NADA (revisión de seguridad del #241): nada fuera del
 // repositorio, de las raíces de mudanza o de su extensión; nada a medias.
