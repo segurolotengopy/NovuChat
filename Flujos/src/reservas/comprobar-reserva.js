@@ -308,6 +308,10 @@ const esBloqueoFijo = (e) => {
 // realidad la clinica estaba cerrada es una explicacion falsa.
 const ceden = [];
 const causaDe = {};
+// SIN NOMBRE (Andres, 27/09/2026): hora elegida, pero el nombre del titulo no
+// es uno que el cliente haya dicho. Misma via, otra pregunta: solo el nombre.
+const sinNombre = new Set((Array.isArray(item.agendaSinNombre) ? item.agendaSinNombre : [])
+  .map((id) => String(id || '')).filter(Boolean));
 const sinConfirmar = new Set((Array.isArray(item.agendaSinConfirmar) ? item.agendaSinConfirmar : [])
   .map((id) => String(id || '')).filter(Boolean));
 for (const nueva of recien) {
@@ -367,6 +371,9 @@ for (const nueva of recien) {
   if (idsCreados.has(String(nueva.id)) && sinConfirmar.has(String(nueva.id))) {
     ceden.push(nueva);
     causaDe[String(nueva.id)] = 'sin_confirmar';
+  } else if (idsCreados.has(String(nueva.id)) && sinNombre.has(String(nueva.id))) {
+    ceden.push(nueva);
+    causaDe[String(nueva.id)] = 'sin_nombre';
   }
 }
 
@@ -411,7 +418,9 @@ if (ceden.length) {
   // dentro del horario --el cruce y el horario se miraron antes--, solo falta
   // que el paciente diga que si. El texto no es una disculpa ni el aviso del
   // comercio: es la pregunta. El dia de la semana lo pone el codigo.
-  const soloSinConfirmar = [...causas].every((c) => c === 'sin_confirmar');
+  // «Solo falta el cliente»: toda cita que cede es sin confirmar o sin nombre.
+  const soloSinConfirmar = [...causas].every((c) => c === 'sin_confirmar' || c === 'sin_nombre');
+  const todasSinNombre = [...causas].every((c) => c === 'sin_nombre');
   const usted = /\busted\b/i.test(String(cfgCampo('tratamiento') || ''));
   const cuandoEs = (e) => {
     const p = enLaPaz(e.start && e.start.dateTime);
@@ -420,8 +429,22 @@ if (ceden.length) {
     const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
     return `el ${dias[d.getUTCDay()]} ${d.getUTCDate()} a las ${String(Math.floor(p.min / 60)).padStart(2, '0')}:${String(p.min % 60).padStart(2, '0')}`;
   };
-  const preguntaSinConfirmar = 'Sí, ' + ceden.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
-    + (ceden.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'));
+  const sinConf = ceden.filter((e) => causaDe[String(e.id)] === 'sin_confirmar');
+  const sinNom = ceden.filter((e) => causaDe[String(e.id)] === 'sin_nombre');
+  // La hora sin «el»: «las 17:00 del lunes 28».
+  const horaDel = (e) => cuandoEs(e).replace(/^el (\S+ \d+) a (las \d{2}:\d{2})$/, '$2 del $1');
+  // Dijo «si» ante VARIAS opciones: se le pregunta cual (Andres, 27/09/2026).
+  const opciones = item.opcionesSinElegir && typeof item.opcionesSinElegir === 'object'
+    && item.opcionesSinElegir.horas ? item.opcionesSinElegir : null;
+  const preguntaSinConfirmar = [
+    sinConf.length ? (opciones
+      ? `¿Cuál de estas horas del ${opciones.dia} ${usted ? 'prefiere' : 'prefieres'}: ${opciones.horas}?`
+      : 'Sí, ' + sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
+        + (sinConf.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'))) : '',
+    // Falta solo el nombre: no se repiten horarios, se pide el nombre.
+    sinNom.length ? 'Para reservar ' + sinNom.map(horaDel).filter(Boolean).join(' y ')
+      + (sinNom.length > 1 ? ', ¿a nombre de quién las agendo?' : ', ¿a nombre de quién la agendo?') : '',
+  ].filter(Boolean).join(' ');
   // SI EN EL MISMO TURNO SE CANCELO LA VIEJA (revision de seguridad del PR
   // #244): cancelar la cita anterior y agendar la nueva sin confirmar deja al
   // paciente SIN cita. Se le dice antes de la pregunta, con la descripcion que
@@ -483,7 +506,9 @@ if (ceden.length) {
   // reintento no sale, ahi si va el aviso, con este mismo motivo.
   //
   // Un item por cita a deshacer: el nodo de Calendar borra uno por item.
-  const motivoCruce = (soloSinConfirmar
+  const motivoCruce = (todasSinNombre
+    ? 'se agendo SIN EL NOMBRE que dijo el cliente (el titulo lleva un nombre que el cliente no escribio, o ninguno) '
+    : soloSinConfirmar
     ? 'se agendo SIN QUE EL CLIENTE CONFIRMARA ese horario (su mensaje era una pregunta o no nombraba esa hora) '
     : causas.has('pasado')
     ? 'se intento agendar en una FECHA YA PASADA (el modelo uso un año anterior al de hoy) '
@@ -504,7 +529,7 @@ if (ceden.length) {
     transferir: false,
     motivoTransferencia: '',
     motivoCruce,
-    causaDeLaCaida: soloSinConfirmar ? 'sin_confirmar'
+    causaDeLaCaida: todasSinNombre ? 'sin_nombre' : soloSinConfirmar ? 'sin_confirmar'
       : (causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce' : 'horario')),
   }, pairedItem: { item: 0 } }));
 }
@@ -550,7 +575,7 @@ if (repetidos.length) {
 // PR #244): si el paciente no confirmo y la cita creada no aparece para
 // borrarla, puede haber quedado en la agenda sin que nadie la quiera. No se
 // falla abierto en silencio: pasa a recepcion con el motivo.
-const sinConfirmarNoEncontrada = () => (sinConfirmar.size > 0 ? {
+const sinConfirmarNoEncontrada = () => (sinConfirmar.size > 0 || sinNombre.size > 0 ? {
   transferir: true,
   motivoTransferencia: 'agendar_cita creo una cita SIN que el cliente confirmara ese horario y no aparecio en el calendario '
     + 'para deshacerla: revisar la agenda y borrarla si quedo, y confirmar con el cliente',

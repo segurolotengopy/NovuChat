@@ -198,41 +198,131 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     });
   });
 
-  describe('H2 · agendar exige que el paciente haya confirmado ESE horario', () => {
+  describe('H2 · agendar exige HORA ELEGIDA y NOMBRE DICHO por el cliente (regla de Andres, 27/09)', () => {
     const ev17 = cita('ev17', LUNES, '17:00', '17:30');
     const DIJO = `Listo, quedó agendada la consulta para Lucas Méndez con el ${DOCTOR} para este ${L} a las 17:00.`;
+    /** Lo que NO quedó en pie: sin hora elegida o sin nombre. */
+    const noAgenda = (r: J): string[] => [...(r['agendaSinConfirmar'] as string[]), ...(r['agendaSinNombre'] as string[])];
+    /** El cliente dijo el nombre del paciente en un turno anterior. */
+    const dijoElNombre = (estado: J) => procesar('Es para Lucas Méndez', '¿Para qué día lo quieres?', [], estado);
+    /** El asistente ofreció esas horas del lunes. */
+    const ofrecio = (estado: J, horas: string) =>
+      procesar('Prefiero el lunes', `El ${L} tengo ${horas}. ¿Cuál prefieres?`, [consulta(LUNES)], estado);
+    const cita1130 = cita('ev1130', LUNES, '11:30', '12:00');
 
-    it('#6555 de punta a punta: «A las 17 no tiene?» + agendar_cita → se deshace y sale «¿Te la agendo?»', () => {
+    it('oferta de 3 horas → el cliente nombra una, con el nombre conocido → AGENDA', () => {
+      for (const [escribio, ev] of [['16.30', cita('ev1630', LUNES, '16:30', '17:00')], ['11.30 por favor', cita1130],
+        ['la de las 11 y media', cita1130], ['agéndame a las 5 de la tarde', ev17]] as [string, J][]) {
+        const estado: J = {};
+        dijoElNombre(estado);
+        ofrecio(estado, '11:30, 16:30 o 17:00');
+        expect(noAgenda(procesar(escribio, 'Quedó agendada.', [consulta(LUNES), agendo(ev)], estado)), escribio).toEqual([]);
+      }
+    });
+
+    it('oferta de 3 horas → «sí» → se DESHACE y se pregunta cuál', () => {
       const estado: J = {};
+      dijoElNombre(estado);
+      ofrecio(estado, '11:00, 11:30 o 17:00');
+      const previa = procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], estado);
+      expect(previa['agendaSinConfirmar']).toEqual(['ev17']);
+      const c = comprobar(previa, [ev17])[0]!;
+      expect(c).toMatchObject({ citaSolapada: true, causaDeLaCaida: 'sin_confirmar', reservaVerificada: false });
+      expect(c['respuesta']).toBe(`¿Cuál de estas horas del ${L} prefieres: 11:00, 11:30 o 17:00?`);
+    });
+
+    it('oferta de 1 hora → «sí», con el nombre conocido → AGENDA', () => {
+      const estado: J = {};
+      dijoElNombre(estado);
+      procesar('A las 17 no tiene?', `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], estado);
+      expect(noAgenda(procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], estado))).toEqual([]);
+    });
+
+    it('oferta de 1 hora → «sí», SIN nombre → `sin_nombre`: pide solo el nombre, y el turno siguiente con el nombre agenda', () => {
+      const estado: J = {};
+      procesar('A las 17 no tiene?', `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], estado);
+      const previa = { ...procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], estado), __userInput: 'sí' };
+      expect(previa['agendaSinConfirmar']).toEqual([]);
+      expect(previa['agendaSinNombre']).toEqual(['ev17']);
+      expect(previa['avisos']).toContain('agendo_sin_nombre');
+      const c = comprobar(previa, [ev17])[0]!;
+      expect(c).toMatchObject({ citaSolapada: true, eventoABorrar: 'ev17', causaDeLaCaida: 'sin_nombre', transferir: false });
+      // Solo el nombre: sin repetir horarios.
+      expect(c['respuesta']).toBe(`Para reservar las 17:00 del ${L}, ¿a nombre de quién la agendo?`);
+      expect(String(c['motivoCruce'])).toContain('SIN EL NOMBRE');
+      const r = retomar(c, { success: true }, previa);
+      expect(r['reintentar']).toBe(true);
+      expect(String(r['notaCruce'])).toContain('todavía NO dijo a nombre de quién');
+      const p = reintento({ output: 'x', intermediateSteps: [] }, r, estado);
+      expect(p['respuesta']).toBe(c['respuesta']);
+      expect(p['transferir']).toBe(false);
+      expect(p['reintentoTrasCruce']).toBe('sin-confirmar');
+      // La hora quedó ELEGIDA: con el nombre, se agenda sin preguntar otra vez.
+      expect(estado['agendaPorTelefono'][TEL]['elegido']).toMatchObject({ fecha: LUNES.iso, min: 1020 });
+      expect(noAgenda(procesar('Lucas Méndez', DIJO, [consulta(LUNES), agendo(ev17)], estado))).toEqual([]);
+    });
+
+    it('solo el NOMBRE, sin hora elegida → NO agenda', () => {
+      const estado: J = {};
+      ofrecio(estado, '11:00, 11:30 o 17:00');
+      expect(procesar('Lucas Méndez', DIJO, [consulta(LUNES), agendo(ev17)], estado)['agendaSinConfirmar']).toEqual(['ev17']);
+      // Ni siquiera sin nada guardado.
+      expect(procesar('Lucas Méndez', DIJO, [consulta(LUNES), agendo(ev17)], {})['agendaSinConfirmar']).toEqual(['ev17']);
+    });
+
+    it('solo la HORA, sin nombre dicho → NO agenda (la hora sola no da el nombre)', () => {
+      const estado: J = {};
+      ofrecio(estado, '11:00, 11:30 o 17:00');
+      const r = procesar('a las 17', DIJO, [consulta(LUNES), agendo(ev17)], estado);
+      expect(r['agendaSinConfirmar']).toEqual([]);
+      expect(r['agendaSinNombre']).toEqual(['ev17']);
+    });
+
+    it.each([
+      ['¿a las 17?'], ['¿hay a las 17?'], ['tienes a las 17'], ['no tiene a las 17'], ['A las 17 no tiene'],
+      ['(audio transcripto) y a las 5 de la tarde tendrá'], ['si tiene a las 17?'], ['Gracias. ¿Hay a las 17?'],
+    ])('una PREGUNTA sobre horarios nunca elige, aunque la hora se haya ofrecido y el nombre se sepa: «%s»', (escribio) => {
+      const estado: J = {};
+      dijoElNombre(estado);
+      ofrecio(estado, '11:00, 11:30 o 17:00');
+      expect(procesar(escribio, DIJO, [consulta(LUNES), agendo(ev17)], estado)['agendaSinConfirmar']).toEqual(['ev17']);
+    });
+
+    it('el nombre del TÍTULO distinto del dicho por el cliente → se deshace; ni inventado ni del perfil de WhatsApp', () => {
+      const estado: J = {};
+      dijoElNombre(estado);
+      ofrecio(estado, '11:00, 11:30 o 17:00');
+      const otroNombre = { ...ev17, id: 'ev-otro', summary: 'Cita Lucía Méndez — consulta' };
+      expect(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(otroNombre)], JSON.parse(JSON.stringify(estado)))['agendaSinNombre']).toEqual(['ev-otro']);
+      // El perfil de WhatsApp se llama «Lucas» (ver `procesar`): sin haberlo escrito, no vale.
+      const soloOferta: J = {};
+      ofrecio(soloOferta, '11:00, 11:30 o 17:00');
+      const delPerfil = { ...ev17, id: 'ev-perfil', summary: 'Cita Lucas — consulta' };
+      expect(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(delPerfil)], soloOferta)['agendaSinNombre']).toEqual(['ev-perfil']);
+      // Positiva: el mismo nombre que escribió, con o sin tildes, vale.
+      const igual = { ...ev17, id: 'ev-igual', summary: 'Cita Lucas Mendez — consulta' };
+      expect(noAgenda(procesar('a las 17', 'Quedó agendada.', [consulta(LUNES), agendo(igual)], estado))).toEqual([]);
+    });
+
+    it('#6555 de punta a punta: «A las 17 no tiene?» + agendar_cita → se deshace y sale «¿Te la agendo?»; el «sí» siguiente agenda', () => {
+      const estado: J = {};
+      dijoElNombre(estado);
       const previa = { ...procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)], estado), __userInput: 'A las 17 no tiene?' };
       expect(previa['agendaSinConfirmar']).toEqual(['ev17']);
       expect(previa['verificarReserva']).toBe(true);              // el candado corre igual
-      expect(previa['avisos']).toContain('agendo_sin_confirmar');
-
       const c = comprobar(previa, [almuerzo(LUNES), ev17]);
       expect(c).toHaveLength(1);
       expect(c[0]).toMatchObject({ citaSolapada: true, eventoABorrar: 'ev17', calendarioDelBorrado: CAL,
         reservaVerificada: false, causaDeLaCaida: 'sin_confirmar', transferir: false });
       expect(c[0]!['respuesta']).toBe(`Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`);
-      expect(String(c[0]!['motivoCruce'])).toContain('SIN QUE EL CLIENTE CONFIRMARA');
-      // El mismo mecanismo del candado: la compuerta lleva al borrado.
       expect(destinos(f, '¿Deshacer cita solapada?', 0)).toEqual(['Deshacer cita solapada']);
-
       const r = retomar(c[0]!, { success: true }, previa);
       expect(r['reintentar']).toBe(true);
-      expect(r['transferir']).toBe(false);
       expect(String(r['notaCruce'])).toContain('NO había confirmado');
-
-      // El reintento solo sirve para que la memoria guarde la pregunta: lo que
-      // sale es la pregunta fija, diga lo que diga el modelo.
       const p = reintento({ output: 'Claro, te cuento que sí hay espacio.', intermediateSteps: [] }, r, estado);
       expect(p['respuesta']).toBe(`Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`);
-      expect(p['transferir']).toBe(false);
       expect(p['ejecutoAgendar']).toBe(false);
-      expect(p['reintentoTrasCruce']).toBe('sin-confirmar');
-      // Y el «sí» del turno siguiente confirma ESA hora.
-      const si = procesar('Sí', DIJO, [consulta(LUNES), agendo(ev17)], estado);
-      expect(si['agendaSinConfirmar']).toEqual([]);
+      expect(noAgenda(procesar('Sí', DIJO, [consulta(LUNES), agendo(ev17)], estado))).toEqual([]);
     });
 
     it('VERBO NO PREVISTO y la herramienta SÍ corrió: se deshace igual, por el hecho', () => {
@@ -244,76 +334,44 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(comprobar(previa, [ev17])[0]).toMatchObject({ citaSolapada: true, causaDeLaCaida: 'sin_confirmar' });
     });
 
-    it.each([
-      ['¿hay a las 17?'],
-      ['tienes a las 17'],
-      ['no tiene a las 17'],
-      ['A las 17 no tiene'],
-      ['(audio transcripto) y a las 5 de la tarde tendrá'],
-    ])('una PREGUNTA nunca confirma: «%s»', (escribio) => {
-      expect(procesar(escribio, DIJO, [consulta(LUNES), agendo(ev17)])['agendaSinConfirmar']).toEqual(['ev17']);
-    });
-
-    it.each([
-      ['11.30 por favor Lucas Méndez', '11:30'],
-      ['16.30', '16:30'],
-      ['quiero a las 17', '17:00'],
-      ['agéndame a las 5 de la tarde', '17:00'],
-      ['la de las 11 y media', '11:30'],
-    ])('nombrar la hora que se agendó confirma: «%s»', (escribio, hhmm) => {
-      const [h, m] = hhmm.split(':').map(Number) as [number, number];
-      const fin = `${String(h + (m === 30 ? 1 : 0)).padStart(2, '0')}:${m === 30 ? '00' : '30'}`;
-      const ev = cita('ev-x', LUNES, hhmm, fin);
-      expect(procesar(escribio, 'Quedó agendada.', [consulta(LUNES), agendo(ev)])['agendaSinConfirmar']).toEqual([]);
+    it('una hora que nadie le ofreció no queda elegida por nombrarla: primero se le dice si hay', () => {
+      const estado: J = {};
+      dijoElNombre(estado);
+      expect(procesar('quiero a las 17', DIJO, [consulta(LUNES), agendo(ev17)], estado)['agendaSinConfirmar']).toEqual(['ev17']);
     });
 
     it('nombrar OTRA hora no confirma la que se agendó', () => {
-      expect(procesar('a las 16:30 por favor', DIJO, [consulta(LUNES), agendo(ev17)])['agendaSinConfirmar']).toEqual(['ev17']);
-    });
-
-    it('«sí» ante VARIAS opciones no confirma ninguna; ante UNA sola, confirma esa (revisión del #244)', () => {
-      // Negativa: se ofrecieron tres horas y el paciente dijo solo «sí».
-      const tres: J = {};
-      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 11:30 o 17:00. ¿Cuál prefieres?`, [consulta(LUNES)], tres);
-      expect(procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], tres)['agendaSinConfirmar']).toEqual(['ev17']);
-      // Positiva: la última oferta era UNA hora.
-      const una: J = {};
-      procesar('A las 17 no tiene?', `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], una);
-      expect(procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], una)['agendaSinConfirmar']).toEqual([]);
-      // Y un «sí» a una hora que no es la ofrecida tampoco confirma.
-      const ev15 = cita('ev15', LUNES, '15:00', '15:30');
-      expect(procesar('sí', 'Quedó agendada.', [consulta(LUNES), agendo(ev15)], una)['agendaSinConfirmar']).toEqual(['ev15']);
+      const estado: J = {};
+      dijoElNombre(estado);
+      ofrecio(estado, '16:30 o 17:00');
+      expect(procesar('a las 16:30 por favor', DIJO, [consulta(LUNES), agendo(ev17)], estado)['agendaSinConfirmar']).toEqual(['ev17']);
     });
 
     it('una confirmación seguida de OTRA pregunta sigue confirmando (revisión del #244)', () => {
       const una: J = {};
+      dijoElNombre(una);
       procesar('¿a las 11:30?', `Sí, el ${L} a las 11:30 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], una);
-      const ev1130 = cita('ev1130', LUNES, '11:30', '12:00');
-      expect(procesar('Sí, la de 11:30. ¿Tengo que llevar algo?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], {})['agendaSinConfirmar']).toEqual([]);
-      expect(procesar('Sí, perfecto. ¿Hay estacionamiento?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], una)['agendaSinConfirmar']).toEqual([]);
-      // Negativa: un «si» condicional con la hora sigue siendo pregunta.
-      expect(procesar('si tiene a las 11:30?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], una)['agendaSinConfirmar']).toEqual(['ev1130']);
-      // Negativa: una pregunta por la hora después de otra oración, también.
-      expect(procesar('Gracias. ¿Hay a las 11:30?', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], una)['agendaSinConfirmar']).toEqual(['ev1130']);
+      expect(noAgenda(procesar('Sí, la de 11:30. ¿Tengo que llevar algo?', 'Quedó agendada.', [consulta(LUNES), agendo(cita1130)], JSON.parse(JSON.stringify(una))))).toEqual([]);
+      expect(noAgenda(procesar('Sí, perfecto. ¿Hay estacionamiento?', 'Quedó agendada.', [consulta(LUNES), agendo(cita1130)], una))).toEqual([]);
     });
 
-    it('«la segunda» nombra la segunda hora de la última oferta, y queda como elección para el turno siguiente', () => {
+    it('«la segunda» elige la segunda hora de la oferta; sin agendar queda elegida para el turno del nombre', () => {
       const estado: J = {};
-      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 11:30 o 14:00. ¿Cuál prefieres?`, [consulta(LUNES)], estado);
-      const ev1130 = cita('ev1130', LUNES, '11:30', '12:00');
+      ofrecio(estado, '11:00, 11:30 o 14:00');
       const ev1100 = cita('ev1100', LUNES, '11:00', '11:30');
-      // En el mismo turno: confirma la segunda (11:30) y no la primera.
-      expect(procesar('la segunda', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], JSON.parse(JSON.stringify(estado)))['agendaSinConfirmar']).toEqual([]);
-      expect(procesar('la segunda', 'Quedó agendada.', [consulta(LUNES), agendo(ev1100)], JSON.parse(JSON.stringify(estado)))['agendaSinConfirmar']).toEqual(['ev1100']);
-      // Sin agendar: queda como elección, y el nombre solo en el turno siguiente la confirma.
-      procesar('la segunda', `Perfecto. ¿Cuál es el nombre completo del paciente?`, [], estado);
+      const conNombre = JSON.parse(JSON.stringify(estado)) as J;
+      dijoElNombre(conNombre);
+      ofrecio(conNombre, '11:00, 11:30 o 14:00');
+      expect(noAgenda(procesar('la segunda', 'Quedó agendada.', [consulta(LUNES), agendo(cita1130)], JSON.parse(JSON.stringify(conNombre))))).toEqual([]);
+      expect(procesar('la segunda', 'Quedó agendada.', [consulta(LUNES), agendo(ev1100)], JSON.parse(JSON.stringify(conNombre)))['agendaSinConfirmar']).toEqual(['ev1100']);
+      procesar('la segunda', 'Perfecto. ¿Cuál es el nombre completo del paciente?', [], estado);
       expect(estado['agendaPorTelefono'][TEL]['elegido']).toMatchObject({ fecha: LUNES.iso, min: 690 });
-      expect(procesar('Lucas Méndez', 'Quedó agendada.', [consulta(LUNES), agendo(ev1130)], estado)['agendaSinConfirmar']).toEqual([]);
+      expect(noAgenda(procesar('Lucas Méndez', 'Quedó agendada.', [consulta(LUNES), agendo(cita1130)], estado))).toEqual([]);
     });
 
-    it('cancelar la vieja y agendar la nueva SIN confirmar: el mensaje dice que la vieja quedó cancelada (revisión del #244)', () => {
+    it('cancelar la vieja y agendar la nueva SIN elegir: el mensaje dice que la vieja quedó cancelada (revisión del #244)', () => {
       const estado: J = {};
-      procesar('Prefiero el lunes', `El ${L} tengo 11:00, 14:00 o 17:00. ¿Cuál prefieres?`, [consulta(LUNES)], estado);
+      ofrecio(estado, '11:00, 14:00 o 17:00');
       const vieja = cita('ev-vieja', LUNES, '11:30', '12:00');
       const pasos = [
         { action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([vieja]) },
@@ -323,7 +381,7 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(previa['agendaSinConfirmar']).toEqual(['ev17']);
       expect(previa['canceladasEnElTurno']).toEqual([{ id: 'ev-vieja', desc: expect.stringContaining('11:30') }]);
       const c = comprobar(previa, [ev17])[0]!;
-      expect(String(c['respuesta'])).toMatch(/^Tu cita de consulta del .*11:30 quedó cancelada\. Sí, el .* a las 17:00 hay espacio\. ¿Te la agendo\?$/);
+      expect(String(c['respuesta'])).toMatch(/^Tu cita de consulta del .*11:30 quedó cancelada\. ¿Cuál de estas horas del .* prefieres: 11:00, 14:00 o 17:00\?$/);
       // Negativa: sin cancelación en el turno, la pregunta sale sola.
       const sola = comprobar(procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]), [ev17])[0]!;
       expect(sola['respuesta']).toBe(`Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`);
@@ -331,33 +389,24 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
 
     it('sin confirmar y la cita creada no aparece para deshacerla: pasa a recepción (revisión del #244)', () => {
       const previa = procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]);
-      // La herramienta devolvió el evento sin calendario: no se puede ni ver ni borrar.
       const sinCalendario = { ...previa, eventosCreados: [{ id: 'ev17', calendario: '', inicio: '', fin: '' }] };
       const r = comprobar(sinCalendario, [])[0]!;
       expect(r['transferir']).toBe(true);
       expect(String(r['motivoTransferencia'])).toContain('SIN que el cliente confirmara');
-      // Negativa: confirmada y no encontrada, sigue como siempre (sin aviso).
-      const confirmada = { ...sinCalendario, agendaSinConfirmar: [] };
+      const confirmada = { ...sinCalendario, agendaSinConfirmar: [], agendaSinNombre: [] };
       expect(comprobar(confirmada, [])[0]!['transferir']).not.toBe(true);
-    });
-
-    it('eligió la hora y el turno pidió el nombre: con SOLO el nombre, esa hora cuenta como confirmada', () => {
-      const estado: J = {};
-      procesar('las 11:30', `Perfecto, el ${L} a las 11:30. ¿Cuál es el nombre completo del paciente?`, [consulta(LUNES)], estado);
-      const ev = cita('ev1130', LUNES, '11:30', '12:00');
-      expect(procesar('Lucas Méndez', 'Quedó agendada.', [consulta(LUNES), agendo(ev)], estado)['agendaSinConfirmar']).toEqual([]);
-      // Sin esa elección previa, solo el nombre no confirma nada.
-      expect(procesar('Lucas Méndez', 'Quedó agendada.', [consulta(LUNES), agendo(ev)], {})['agendaSinConfirmar']).toEqual(['ev1130']);
     });
 
     it('LA REGLA MANDATORIA SIGUE PRIMERO: si además choca con la cita de OTRA persona, cede por CRUCE', () => {
       const otra = { id: 'otra', summary: 'Cita OTRA PACIENTE — consulta', organizer: { email: CAL },
         start: { dateTime: hora(LUNES, '17:00') }, end: { dateTime: hora(LUNES, '17:30') }, created: '2026-09-01T12:00:00.000Z' };
-      const previa = procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]);
-      const c = comprobar(previa, [otra, ev17])[0]!;
-      expect(c).toMatchObject({ citaSolapada: true, eventoABorrar: 'ev17', causaDeLaCaida: 'cruce' });
-      expect(c['respuesta']).toBe(CFG['mensajeReservaNoConfirmada']);
-      expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
+      for (const escribio of ['A las 17 no tiene?', 'a las 17']) {
+        const estado: J = {};
+        ofrecio(estado, '11:00 o 17:00');
+        const c = comprobar(procesar(escribio, DIJO, [consulta(LUNES), agendo(ev17)], estado), [otra, ev17])[0]!;
+        expect(c, escribio).toMatchObject({ citaSolapada: true, eventoABorrar: 'ev17', causaDeLaCaida: 'cruce' });
+        expect(c['respuesta']).toBe(CFG['mensajeReservaNoConfirmada']);
+      }
     });
 
     it('si no se pudo deshacer, no se le pregunta nada falso: sale lo agendado y recepción confirma', () => {
@@ -375,18 +424,24 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(comprobar(previa, [ev17], USTED)[0]!['respuesta']).toBe(`Sí, el ${L} a las 17:00 hay espacio. ¿Se la agendo?`);
     });
 
-    it('el reintento recibe la instrucción de repetir la pregunta, y su sistema lo sabe', () => {
-      // Solo la línea del aviso: el resto de la plantilla usa `$now`, que el
-      // renderizador de las pruebas no tiene.
+    it('el reintento recibe la instrucción de repetir la pregunta, en los dos casos, y su sistema lo sabe', () => {
       const linea = String(nodo(f, 'Reintento tras cruce').parameters['text']).split('\n')
-        .find((l) => l.includes("causaDeLaCaida === 'sin_confirmar'"))!;
-      const texto = plantilla('=' + linea, {}, {
-        'Retomar respuesta': [{ causaDeLaCaida: 'sin_confirmar', notaCruce: 'el cliente todavía NO había confirmado las 17:00',
-          respuesta: `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, userInput: 'A las 17 no tiene?' }] });
-      expect(texto).toContain(`Respóndele EXACTAMENTE esto, sin agregar nada: «Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?»`);
-      expect(texto).toContain('En este turno NO puedes agendar ni confirmar nada.');
+        .find((l) => l.includes("['sin_confirmar', 'sin_nombre'].includes("))!;
+      for (const causa of ['sin_confirmar', 'sin_nombre']) {
+        const texto = plantilla('=' + linea, {}, {
+          'Retomar respuesta': [{ causaDeLaCaida: causa, notaCruce: 'nota',
+            respuesta: `Para reservar las 17:00 del ${L}, ¿a nombre de quién la agendo?`, userInput: 'sí' }] });
+        expect(texto, causa).toContain(`Respóndele EXACTAMENTE esto, sin agregar nada: «Para reservar las 17:00 del ${L}, ¿a nombre de quién la agendo?»`);
+        expect(texto).toContain('En este turno NO puedes agendar ni confirmar nada.');
+      }
       const sistema = String(nodo(f, 'Reintento tras cruce').parameters['options'].systemMessage);
-      expect(sistema).toContain("causaDeLaCaida === 'sin_confirmar'");
+      expect(sistema).toContain("['sin_confirmar', 'sin_nombre'].includes(");
+    });
+
+    it('el prompt dice la regla: hora elegida y nombre dicho, nunca el del perfil', () => {
+      const p = String(nodo(f, 'AI Agent (Sofía)').parameters['options'].systemMessage);
+      expect(p).toContain('AGENDAS SOLO CON DOS COSAS DICHAS POR EL CLIENTE');
+      expect(p).toContain('nunca el del perfil de WhatsApp');
     });
   });
 

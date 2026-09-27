@@ -354,7 +354,7 @@ const hoyLaPaz = agLaPaz(Date.now()).fecha;
 // guarde esa pregunta (el turno que no se envio ya se olvido). Sin aviso a
 // recepcion: no hay nada que resolver, falta que el paciente diga que si.
 // `ejecutoAgendar` vuelve a falso: para el reporte, este turno OFRECIO horarios.
-if (base.causaDeLaCaida === 'sin_confirmar') {
+if (base.causaDeLaCaida === 'sin_confirmar' || base.causaDeLaCaida === 'sin_nombre') {
   const { ofertas } = agOfertas(base.respuesta, hoyLaPaz);
   const primera = ofertas.find((o) => o.fecha);
   if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));

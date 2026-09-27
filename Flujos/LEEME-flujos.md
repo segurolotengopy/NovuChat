@@ -534,17 +534,26 @@ reintento` (bloque compartido «AGENDA DEL TURNO», idéntico en los dos):
 (H1) toda hora que la respuesta ofrece se comprueba contra el
 `consultar_disponibilidad` del MISMO turno —ocupado, horario del día de esa
 persona, pasado y anticipación mínima—; la que no pasa se quita y, si no queda
-ninguna, sale una pregunta honesta. (H2) si `agendar_cita` corrió y el mensaje
-del paciente no confirma esa hora (una pregunta nunca confirma), `Comprobar
-reserva` la deshace por la vía del candado (causa `sin_confirmar`) y el paciente
-recibe «Sí, el lunes 28 a las 17:00 hay espacio. ¿Te la agendo?»; el reintento
-corre solo para que la memoria guarde esa pregunta. (M1) si pide otra hora, una
+ninguna, sale una pregunta honesta. (H2, regla de Andres del 27/09) una cita
+que `agendar_cita` creó queda en pie SOLO si el cliente (a) ELIGIÓ esa hora
+—nombró una de las ofrecidas, un ordinal, o dijo «sí» a una oferta de UNA sola
+hora; una pregunta nunca elige— y (b) DIJO el nombre del paciente que va en el
+título, en ese turno o antes (ni inventado ni del perfil de WhatsApp). Sin (a),
+`Comprobar reserva` la deshace por la vía del candado con la causa
+`sin_confirmar` y el paciente recibe «Sí, el lunes 28 a las 17:00 hay espacio.
+¿Te la agendo?» (o «¿Cuál de estas horas del lunes 28 prefieres: …?» si dijo
+«sí» ante varias). Con (a) y sin (b), causa `sin_nombre`: «Para reservar las
+17:00 del lunes 28, ¿a nombre de quién la agendo?», y la hora queda elegida para
+el turno siguiente. El reintento corre solo para que la memoria guarde esa
+pregunta, y no agenda. (M1) si pide otra hora, una
 hora concreta o una franja, no se le repite lo ya ofrecido ese día. Lo ofrecido,
 la última oferta y la hora elegida se guardan por teléfono en
-`agendaPorTelefono` (datos estáticos, una hora). **Mensajes: 0 por turno; +1
-donde H2 actúa** (la confirmación que llega después del «sí» del paciente, en
-las conversaciones donde el modelo agendó sin confirmación; 0,0113 USD cada
-una). H1 puede sumar un intercambio cuando el modelo inventó horas; M1 tiende a
+`agendaPorTelefono` (datos estáticos, una hora), junto con las palabras que
+escribió el cliente (tope de 80), que es de donde sale el nombre dicho antes.
+**Mensajes: 0 por turno; +1 donde H2 actúa por `sin_confirmar`** (la
+confirmación que llega después del «sí» del paciente, en las conversaciones
+donde el modelo agendó sin que eligiera la hora; 0,0113 USD cada una).
+`sin_nombre` no agrega: reemplaza la respuesta del turno. H1 puede sumar un intercambio cuando el modelo inventó horas; M1 tiende a
 restar turnos. Si en el mismo turno se canceló la cita vieja, la pregunta de H2
 empieza con «Tu cita … quedó cancelada.». Suite:
 `admin/pruebas/horarios-ofrecidos.test.ts`.

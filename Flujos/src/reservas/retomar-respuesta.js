@@ -31,8 +31,11 @@ const describir = (c) => {
 // CAUSAS MEZCLADAS (revision de seguridad del PR #244): la cita sin confirmar
 // NO esta ni ocupada ni fuera de horario. La nota de las otras se arma solo
 // con las otras, y la sin confirmar se describe aparte.
-const sinConfirmarCaidas = caidas.filter((c) => c && c.causa === 'sin_confirmar');
-const otrasCaidas = caidas.filter((c) => !(c && c.causa === 'sin_confirmar'));
+// `sin_nombre` (27/09/2026) es del mismo grupo: la hora esta libre y elegida,
+// falta que el cliente diga a nombre de quien.
+const esDelCliente = (c) => !!c && (c.causa === 'sin_confirmar' || c.causa === 'sin_nombre');
+const sinConfirmarCaidas = caidas.filter(esDelCliente);
+const otrasCaidas = caidas.filter((c) => !esDelCliente(c));
 const porPasado = otrasCaidas.length > 0 && otrasCaidas.every((c) => c && c.causa === 'pasado');
 // SIN CONFIRMAR (27/09/2026, #6555): la cita se deshizo porque el paciente
 // solo PREGUNTO por esa hora. No hay nada ocupado ni cerrado que explicarle:
@@ -46,9 +49,12 @@ let hoy = '';
 try {
   hoy = new Date().toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/La_Paz' });
 } catch (e) { hoy = ''; }
-const notaSinConfirmar = sinConfirmarCaidas.length
-  ? `el cliente todavía NO había confirmado ${sinConfirmarCaidas.map(describir).join(' ni ')}: su mensaje era una pregunta o no eligió esa hora`
-  : '';
+const sinHora = sinConfirmarCaidas.filter((c) => c.causa === 'sin_confirmar');
+const sinNombreCaidas = sinConfirmarCaidas.filter((c) => c.causa === 'sin_nombre');
+const notaSinConfirmar = [
+  sinHora.length ? `el cliente todavía NO había confirmado ${sinHora.map(describir).join(' ni ')}: su mensaje era una pregunta o no eligió esa hora` : '',
+  sinNombreCaidas.length ? `el cliente eligió ${sinNombreCaidas.map(describir).join(' y ')} pero todavía NO dijo a nombre de quién es la cita` : '',
+].filter(Boolean).join('; ');
 const notaOtras = otrasCaidas.length
   ? (porPasado
     ? `la fecha de ${otrasCaidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${otrasCaidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`

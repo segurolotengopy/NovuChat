@@ -949,10 +949,11 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const AG_CONFIRMA = /^\s*(si|sip|ok|okay|okey|oki|dale|listo|perfecto|confirmo|confirmado|de\s+acuerdo|claro|correcto|exacto|vale|bueno|genial|excelente|ese|esa|esta|este|la\s+primera|la\s+segunda|la\s+tercera|la\s+ultima|por\s+favor)\b|\b(agend(a|ame|ala|alo|amela|amelo|eme|ar)|reserv(a|ame|ala|alo|amela|amelo)|anota(me|la|lo)|confirm(o|ada|ado|amos)|me\s+quedo\s+con|quiero\s+(esa|ese|esta|este|la|el)\b|prefiero|dame|pon(me|la|lo))\b/;
   const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano);
   // FRANJA u OTRA HORA: lo que el paciente pidio cuando no quiere lo ofrecido.
-  // «La tarde» empieza a las 13:00: el mediodia no es lo que pide quien dice
-  // «¿en la tarde?».
+  // «La tarde» empieza a las 13:00 (decision de Andres, 27/09/2026): el
+  // mediodia no es lo que pide quien dice «¿en la tarde?».
+  const AG_TARDE_DESDE_MIN = 13 * 60;
   const agFranja = (() => {
-    if (/\b(en|por|para)\s+la\s+tarde\b|\bde\s+tarde\b|\bla\s+tarde\b/.test(agClientePlano)) return { desde: 13 * 60, hasta: 1440, nombre: 'en la tarde' };
+    if (/\b(en|por|para)\s+la\s+tarde\b|\bde\s+tarde\b|\bla\s+tarde\b/.test(agClientePlano)) return { desde: AG_TARDE_DESDE_MIN, hasta: 1440, nombre: 'en la tarde' };
     if (/\b(en|por|para)\s+la\s+manana\b|\bde\s+manana\b|\btemprano\b/.test(agClientePlano)) return { desde: 0, hasta: 12 * 60, nombre: 'en la mañana' };
     if (/\b(en|por|para)\s+la\s+noche\b/.test(agClientePlano)) return { desde: 18 * 60, hasta: 1440, nombre: 'en la noche' };
     const tras = /\bdespues\s+de\s+(las?\s+)?(\d{1,2})/.exec(agClientePlano);
@@ -963,39 +964,97 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   })();
   const agPideOtra = /\botr[oa]s?\s+(hora|horas|horario|horarios|turno|turnos|opcion|opciones)\b|\bmas\s+(horarios|opciones|horas|turnos)\b|\bningun[oa]?\s+(me\s+)?(sirve|queda|conviene)|\bno\s+me\s+(sirve|sirven|queda|quedan|conviene|vienen?|acomoda)|\blos\s+mismos\b|\bya\s+me\s+(diste|dijiste|pasaste)|\bque\s+otr/.test(agClientePlano);
 
-  // --- H2: AGENDAR EXIGE QUE EL PACIENTE HAYA CONFIRMADO ESE HORARIO --------
-  // Confirma: un mensaje que no es pregunta ni negacion y que (a) nombra la
-  // hora que se agendo —«11.30 por favor», «quiero a las 16:30», «la de las
-  // 11»—, o (b) dice que si a lo ultimo que se le ofrecio, y lo agendado es
-  // eso, o (c) solo da su nombre despues de haber ELEGIDO esa hora en el
-  // mensaje anterior. Sin nada guardado (datos estaticos vacios) un «si» vale:
-  // la barrera contra la doble reserva sigue siendo el candado.
+  // --- H2: AGENDAR EXIGE HORA ELEGIDA Y NOMBRE DICHO POR EL CLIENTE ---------
+  // Regla de Andres (27/09/2026), textual: «La confirmacion debe ser estricta
+  // cuando el asistente tenga los datos del nombre y horario elegido, es decir
+  // NO AGENDAR cuando consulta sobre horarios o solamente indica el nombre sin
+  // el horario; el nombre es independiente del horario. Si el asistente
+  // propone un conjunto de horarios y el cliente indica alguno de ellos, se
+  // confirma (sabiendo el nombre previamente). Si el agente indica solo un
+  // horario, el cliente debe indicar aceptacion y se agenda (sabiendo el
+  // nombre previamente). No debe ser una confusion.»
+  //
+  // Una cita que agendar_cita creo en este turno queda en pie SOLO con las dos:
+  //   (a) HORA ELEGIDA por el cliente: nombro una de las horas que se le
+  //       ofrecieron (o un ordinal: «la segunda»), o dijo que si a una oferta
+  //       de UNA sola hora; en este turno o en uno anterior (`elegido`). Una
+  //       pregunta sobre horarios nunca elige. Una hora que nadie le ofrecio
+  //       tampoco: primero se le dice si hay («¿Te la agendo?»).
+  //   (b) NOMBRE DEL PACIENTE dicho por el cliente, en este turno o antes: el
+  //       nombre del titulo de la cita tiene que estar, palabra por palabra, en
+  //       lo que el cliente escribio. Ni inventado por el modelo ni sacado del
+  //       perfil de WhatsApp. El nombre solo no elige hora, y la hora sola no
+  //       da el nombre.
+  // Sin (a) la cita se deshace como `sin_confirmar`; con (a) y sin (b), como
+  // `sin_nombre`, y se le pide solo el nombre: la hora queda elegida.
+  const AG_PARTICULAS = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'da', 'do', 'dos', 'das', 'cita']);
+  const agPalabrasDe = (t) => agSinTilde(t).split(/[^a-zñ]+/).filter((w) => w.length >= 2 && !AG_PARTICULAS.has(w));
+  // Lo que el cliente escribio en la ultima hora, como palabras sueltas: es de
+  // donde sale el nombre dicho «antes». Tope de 80 palabras.
+  const agPalabrasCliente = new Set([...(agPrevio && Array.isArray(agPrevio.palabras) ? agPrevio.palabras : []),
+    ...agPalabrasDe(agCliente)]);
+  const agNombreDelTitulo = (titulo) => {
+    // «Cita <nombre> — <servicio>», con o sin el servicio.
+    const m = /Cita\s+(.+)$/.exec(String(titulo || ''));
+    return m ? m[1].split(/\s+[—–-]\s+/)[0].trim() : '';
+  };
+  const agTieneNombre = (titulo) => {
+    const palabras = agPalabrasDe(agNombreDelTitulo(titulo));
+    return palabras.length > 0 && palabras.every((w) => agPalabrasCliente.has(w));
+  };
+  // Las horas que este mensaje ELIGE, cada una con su fecha.
+  const agOfrecidasEn = (fecha) => Array.from(new Set([
+    ...(agUltima && agUltima.fecha === fecha ? agUltima.mins : []), ...agOfrecidosAntes(fecha)]));
+  const agElegidasAhora = (() => {
+    if (agPregunta || agNiega) return [];
+    const elegidas = [];
+    for (const h of agHorasCliente) {
+      const fechas = agFechaDeLaHora ? [agFechaDeLaHora]
+        : (agUltima ? [agUltima.fecha] : Object.keys((agPrevio && agPrevio.ofrecidos) || {}));
+      for (const fecha of fechas) {
+        const ofrecidas = agOfrecidasEn(fecha);
+        const min = ofrecidas.includes(h.min) ? h.min : (h.ambigua && ofrecidas.includes(h.min + 720) ? h.min + 720 : null);
+        if (min !== null) { elegidas.push({ fecha, min }); break; }
+      }
+    }
+    if (!agHorasCliente.length && agConfirmaPalabra && agUltima && agUltima.mins.length === 1) {
+      elegidas.push({ fecha: agUltima.fecha, min: agUltima.mins[0] });
+    }
+    return elegidas;
+  })();
   const agCitasSinConfirmar = [];
+  const agCitasSinNombre = [];
+  let agElegidaSinNombre = null;
   if (!fallo && eventosCreados.length) {
     for (const ev of eventosCreados) {
       const t = Date.parse(ev.inicio);
       if (!Number.isFinite(t)) continue;
       const lp = agLaPaz(t);
-      const esLaHora = (h) => h.min === lp.min || (h.ambigua && h.min + 720 === lp.min);
-      const fechaOk = !agFechaDeLaHora || agFechaDeLaHora === lp.fecha;
-      // Un «si» a VARIAS opciones no dice cual (revision del #244): cuenta solo
-      // si la ultima oferta era UNA hora («¿Te la agendo?») y es la agendada.
-      const enUltima = !!agUltima && agUltima.fecha === lp.fecha && agUltima.mins.length === 1
-        && agUltima.mins[0] === lp.min;
-      const esElegida = !!agElegido && agElegido.fecha === lp.fecha
-        && (Number(agElegido.min) === lp.min || (agElegido.ambigua === true && Number(agElegido.min) + 720 === lp.min));
-      let confirmada;
-      if (agPregunta || agNiega) confirmada = false;
-      else if (agHorasCliente.length) confirmada = fechaOk && agHorasCliente.some(esLaHora);
-      else if (agConfirmaPalabra) {
-        confirmada = fechaOk && (agUltima ? enUltima || esElegida
-          : (agElegido ? esElegida : (agOfrecidosAntes(lp.fecha).length
-            ? agOfrecidosAntes(lp.fecha).length === 1 && agOfrecidosAntes(lp.fecha)[0] === lp.min : true)));
-      } else confirmada = esElegida;
-      if (!confirmada) agCitasSinConfirmar.push(ev.id);
+      // Si el mensaje nombra horas, mandan esas: la eleccion de antes no cuenta
+      // cuando el cliente acaba de nombrar otra.
+      const esElegidaAntes = !agHorasCliente.length && !agPregunta && !agNiega && !!agElegido
+        && agElegido.fecha === lp.fecha && Number(agElegido.min) === lp.min;
+      const elegida = esElegidaAntes || agElegidasAhora.some((e) => e.fecha === lp.fecha && e.min === lp.min);
+      if (!elegida) agCitasSinConfirmar.push(ev.id);
+      else if (!agTieneNombre(ev.titulo)) {
+        agCitasSinNombre.push(ev.id);
+        agElegidaSinNombre = { fecha: lp.fecha, min: lp.min };
+      }
     }
     if (agCitasSinConfirmar.length) avisos.push('agendo_sin_confirmar');
+    if (agCitasSinNombre.length) avisos.push('agendo_sin_nombre');
   }
+  // «SI» ANTE VARIAS OPCIONES: no dice cual. La cita se deshace y la pregunta
+  // no es «¿te la agendo?» sino cual de las que se le ofrecieron, las que
+  // sigan libres segun la consulta de este turno (si la hubo para ese dia).
+  const agOpcionesSinElegir = (() => {
+    if (!agCitasSinConfirmar.length || agPregunta || agNiega || agHorasCliente.length || !agConfirmaPalabra
+      || !agUltima || agUltima.mins.length < 2) return null;
+    const consultado = agConsultasTurno.some((c) => c.fecha === agUltima.fecha);
+    const mins = agUltima.mins.filter((m) => !consultado
+      || agMotivo(agConsultasTurno, agUltima.fecha, m, agDuracion, agLimite) === '');
+    return mins.length >= 2 ? { fecha: agUltima.fecha, dia: agDiaTexto(agUltima.fecha), horas: agLista(mins) } : null;
+  })();
 
   // La respuesta se toca solo si es texto del modelo: los textos fijos de
   // arriba (cancelacion, servicio negado, error) no ofrecen horas.
@@ -1017,16 +1076,11 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   let agEleccion = null;          // la hora que el paciente eligio y no se agendo
   const agMotivosH1 = new Set();
 
-  if (agTextoDelModelo && !ejecutoAgendar) {
-    // Sin pregunta ni negacion, una hora nombrada es una ELECCION: si el turno
-    // no agendo (falto el nombre, por ejemplo), la proxima vez que se agende
-    // esa hora con solo el nombre del paciente, cuenta como confirmada.
-    if (!agPregunta && !agNiega && agHorasCliente.length === 1) {
-      const fechaElegida = agFechaCliente || (agUltima ? agUltima.fecha : '')
-        || (agConsultasTurno.length === 1 ? agConsultasTurno[0].fecha : '');
-      if (fechaElegida) agEleccion = { fecha: fechaElegida, min: agHorasCliente[0].min, ambigua: agHorasCliente[0].ambigua };
-    }
-  }
+  // Una hora elegida que no se agendo (falto el nombre, por ejemplo) queda
+  // guardada: el turno siguiente, con el nombre, la agenda sin preguntar otra
+  // vez. Tambien la de una cita deshecha por `sin_nombre`.
+  if (agElegidaSinNombre) agEleccion = agElegidaSinNombre;
+  else if (!ejecutoAgendar && agElegidasAhora.length === 1) agEleccion = agElegidasAhora[0];
 
   if (agTextoDelModelo) {
     const { partes, ofertas } = agOfertas(respuesta, agHoy);
@@ -1171,7 +1225,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // Lo que queda guardado de este turno, por telefono: lo ofrecido (sumado al
   // de antes, por fecha), la ultima oferta y la eleccion. Se barren los
   // registros vencidos de todos los telefonos solo si hay algo que escribir.
-  if (agRegistros && telefonoDelCliente && (agFinal || agEleccion || agCitasSinConfirmar.length || eventosCreados.length)) {
+  if (agRegistros && telefonoDelCliente) {
     for (const [tel, r] of Object.entries(agRegistros)) {
       if (!r || !(agAhora - Number(r.desde || 0) < AG_VIGENCIA_MS)) delete agRegistros[tel];
     }
@@ -1189,7 +1243,12 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     }
     if (agEleccion) r.elegido = { ...agEleccion, desde: agAhora };
     // Una cita que quedo agendada cierra la eleccion y la ultima oferta.
-    if (eventosCreados.length && !agCitasSinConfirmar.length) { r.elegido = null; r.ultima = null; }
+    if (eventosCreados.length && !agCitasSinConfirmar.length && !agCitasSinNombre.length) { r.elegido = null; r.ultima = null; }
+    // Las palabras del cliente (de donde sale el nombre dicho antes), las mas
+    // recientes al final, hasta 80.
+    const previas = Array.isArray(r.palabras) ? r.palabras : [];
+    const nuevas = agPalabrasDe(agCliente);
+    r.palabras = [...previas.filter((w) => !nuevas.includes(w)), ...nuevas].slice(-80);
     r.desde = agAhora;
   }
 
@@ -1358,6 +1417,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // confirmara ese horario. `Comprobar reserva` las deshace por la via del
     // candado y el paciente recibe la pregunta.
     agendaSinConfirmar: agCitasSinConfirmar,
+    // La misma regla, la otra mitad: hora elegida, pero el nombre del titulo no
+    // es uno que el cliente haya dicho. Se deshace y se le pide el nombre.
+    agendaSinNombre: agCitasSinNombre,
+    opcionesSinElegir: agOpcionesSinElegir,
     canceladasEnElTurno,
     agendarSinEvento,
     observacionAgendar,
