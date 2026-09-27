@@ -1,5 +1,11 @@
 # Dhermacore e Infoproductos: USD 99 por 800 conversaciones en dos líneas
 
+> **Nota del 26/09/2026 (decisión de Andres): esta oferta dual quedó sin base.**
+> La línea «Libros e Infoproductos» era de **Rubén Roca**, que es un tenant
+> propio (`CLIENTES/RUBEN_ROCA/`), no una segunda línea de Dhermacore.
+> Dhermacore queda con **una sola línea**. Las cuentas de abajo no se
+> reescriben: quedan como registro de lo que se analizó.
+
 **22-sep-2026.** Análisis de rentabilidad de la propuesta comercial del 22/09
 («Ecosistema dual: Dhermacore & Productos Digitales»), pedido por Andres antes
 de firmarla. Tarifas de Meta de `Analisis/14` (vigentes desde el 01/10/2026);
