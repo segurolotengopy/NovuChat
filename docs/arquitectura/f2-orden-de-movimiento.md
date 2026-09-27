@@ -102,18 +102,31 @@ La tanda cero cierra además el último LOW de la cuarta revisión del #236: el
 lector de la frontera toma por calculado todo `createRequire`,
 `getBuiltinModule`, `.require` o `['require']` fuera del patrón que sigue.
 
-**Las herramientas de mudanza** (PR propio, antes de la tanda 1), en
-`admin/pruebas/frontera/`: `mudanza.ts` (la lógica, probada en
-`mudanza.test.ts` sobre un árbol inventado), `mudanza.mjs <tanda.json>` (en
-seco por defecto; `--escribir` hace `git mv`, reescribe y lista los cruces de
-la deuda que la tanda salda) y `solo-rutas.mjs [base]` (el diff del PR tiene
-que ser solo de rutas: compara cada archivo con los literales reemplazados por
-un marcador). Ensayo de la tanda 1 con la herramienta, en un worktree
-descartable: 5 movidos, 15 reescritos (los 13 consumidores que preveía el
-diseño, la deuda y el archivo movido), `solo-rutas` limpio, `functions:build`
-y `web:build` en verde, `lib/core/conteo/atencion.js` y
-`lib/core/turno/cierres.js` generados, 16 cruces, y la prueba de fronteras
-pidiendo sacar las 3 entradas saldadas, como corresponde.
+**Las herramientas de mudanza** (PR #241, antes de la tanda 1), en
+`admin/pruebas/frontera/`:
+
+- `mudanza.ts`: la lógica, probada en `mudanza.test.ts` sobre un árbol
+  inventado. Reescribe un literal solo en contextos conocidos (import/export,
+  `import()`, `require`, `vi.mock`, `new URL`, `join`/`resolve`, lecturas,
+  `SUITES_PURAS`); uno que coincide con una ruta movida en otro lugar se avisa.
+- `mudanza.mjs <tanda.json>`: en seco por defecto. Valida la tanda antes de
+  nada (rutas relativas normales, dentro de las raíces, misma extensión, `de`
+  versionado, `a` libre, sin enlaces); con `--escribir` exige el worktree
+  limpio, hace `git mv -n` de toda la tanda antes de mover, reescribe, lista los
+  cruces de la deuda que la tanda salda y falla si la ruta vieja queda en
+  código (completa o sin `admin/`; los comentarios se corrigen a mano).
+- `solo-rutas.mjs <tanda.json> [base]`: **reproducibilidad**. Vuelve a correr
+  el plan sobre el `merge-base` y exige cada archivo del PR byte a byte. A mano
+  solo se permite quitar deuda saldada, líneas de `SUITES_PURAS`, comentarios
+  (comparados sin comentarios desde el AST) y los `.md`.
+
+Ensayo completo de la tanda 1 con la herramienta (en un worktree descartable):
+5 movidos y 15 reescritos, 3 comentarios corregidos a mano, 3 entradas de
+deuda saldadas y 3 suites a `SUITES_PURAS` (las dos de F1b movidas y
+`central/contrato-f1b-puras`); `solo-rutas` pasa; `functions:build` (sin
+`lib/atencion.js` viejo) y `web:build` en verde; 2.485 pruebas puras en verde en
+50 archivos, instantánea de despliegue idéntica, `registro.test.ts` 53 en
+verde, 16 cruces y los 8 flujos idénticos.
 
 **Pendiente de la revisión de seguridad del #239**, para ese PR o antes de la
 tanda que lo necesita:
