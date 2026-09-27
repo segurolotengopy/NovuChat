@@ -1806,7 +1806,7 @@ describe('Captación con la oferta de la consola (guion del 15/09)', () => {
     const preguntas = (t: unknown) => (String(t).match(/\?/g) ?? []).length;
     const conv = (sd: J) => sd['conversaciones'][TEL] as J;
 
-    // #6627: «Soy Andres Bellido, pediatra». Salida real del modelo.
+    // #6627: «Soy Andrés Rojas, pediatra» (nombre cambiado). Salida real del modelo.
     const SALIDA_6627 = '¡Mucho gusto, Andrés! 👋 Qué excelente que seas pediatra, los pequeños pacientes necesitan '
       + 'una atención rápida y cálida 🩺. \n\nPara poder asignarte la mejor solución de agenda, ¿podrías decirme el '
       + 'nombre de tu consultorio o clínica, por favor? 🏥\n\n'
