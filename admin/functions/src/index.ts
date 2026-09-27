@@ -25,7 +25,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 export { cotejarComprobante, senaVencida } from './sena.js';
 // Las coordenadas del pin salen del enlace de Maps que pega el comercio: nadie
 // carga latitud y longitud a mano (19/09/2026).
-export { ubicacionDeEnlace } from './mapa.js';
+export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 // Recordatorio de solicitud pendiente (bloque 4, `Analisis/31` §4): el
 // barrido de la hora pregunta a quién le toca y marca ANTES de enviar.
 export { seguimientosPendientes, seguimientoEnviado } from './seguimientos.js';
@@ -73,7 +73,7 @@ export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js'
 export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './pagosConCobrador.js';
 export { fijarTelefonosPago } from './pagos.js';
 import { documentoDeVertical } from './core/prompt/prompt.js';
-export { notificarReclamo } from './reclamos.js';
+export { notificarReclamo } from './central/reclamos/reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
 // altas de a una y de las importaciones de doscientas por igual, y una función
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
@@ -91,7 +91,7 @@ export { comprobarArchivoPlanes } from './captacion.js';
 // Andres del 17/09/2026). Lo propuesto (`instruccionesExtra`) pasa por dos capas
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
 // único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
-export { verificarComportamiento } from './verificarComportamiento.js';
+export { verificarComportamiento } from './central/asistente/verificarComportamiento.js';
 // CAMPAÑAS DE META (Andres, 24/09/2026). El comercio las carga en la consola
 // (`config/campanas.lista`); este disparador las verifica —fechas, duplicados,
 // palabras de emergencia, inyección y, con el modelo, que sean de ESTE negocio—
@@ -104,7 +104,7 @@ export { verificarCampanas } from './verificarCampanas.js';
 // del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
 // El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
 export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
-export { tipoCambioBcb } from './tipoCambioBcb.js';
+export { tipoCambioBcb } from './central/servicios/tipoCambioBcb.js';
 
 const db = () => getFirestore();
 

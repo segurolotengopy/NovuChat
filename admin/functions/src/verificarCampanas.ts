@@ -19,8 +19,8 @@ import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestor
 import { logger } from 'firebase-functions';
 import { REGION } from './core/region.js';
 import { CLAVE_GEMINI } from './imagenCatalogo.js';
-import type { ConsultarModelo } from './comportamiento.js';
-import { consultarGemini, otrosComercios } from './verificarComportamiento.js';
+import type { ConsultarModelo } from './central/asistente/comportamiento.js';
+import { consultarGemini, otrosComercios } from './central/asistente/verificarComportamiento.js';
 import { limiteDeCampanas } from './planes.js';
 import {
   hashLista, leerCampanas, revisarCampanas,

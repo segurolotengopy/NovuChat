@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALIAS_VALIDO, CORREO_VALIDO, neutralizar, neutralizarEncabezado,
-} from '../functions/src/saneo.ts';
+} from '../functions/src/central/servicios/saneo.ts';
 
 const CTRL = '\u0001';
 const BIDI = '\u202E';

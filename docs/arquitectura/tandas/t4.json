@@ -1,0 +1,12 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/saneo.ts", "a": "admin/functions/src/central/servicios/saneo.ts" },
+    { "de": "admin/functions/src/tipoCambio.ts", "a": "admin/functions/src/central/servicios/tipoCambio.ts" },
+    { "de": "admin/functions/src/tipoCambioBcb.ts", "a": "admin/functions/src/central/servicios/tipoCambioBcb.ts" },
+    { "de": "admin/functions/src/comportamiento.ts", "a": "admin/functions/src/central/asistente/comportamiento.ts" },
+    { "de": "admin/functions/src/verificarComportamiento.ts", "a": "admin/functions/src/central/asistente/verificarComportamiento.ts" },
+    { "de": "admin/functions/src/mapa.ts", "a": "admin/functions/src/central/negocio/mapa.ts" },
+    { "de": "admin/functions/src/reclamos.ts", "a": "admin/functions/src/central/reclamos/reclamos.ts" }
+  ],
+  "suitesPuras": []
+}

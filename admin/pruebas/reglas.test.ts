@@ -1468,7 +1468,7 @@ describe('Reclamos', () => {
     //
     // Hay DOS defensas y ésta prueba la primera: la lista blanca de claves de la
     // regla no los deja ni entrar a Firestore. La segunda está en
-    // `functions/src/reclamos.ts`, que arma el cuerpo campo por campo y no hace
+    // `functions/src/central/reclamos/reclamos.ts`, que arma el cuerpo campo por campo y no hace
     // ningún spread de los datos del documento.
     for (const especial of ['_cc', '_replyto', '_next', '_subject', '_template', '_captcha']) {
       await assertFails(setDoc(doc(adminA(), `tenants/${A}/reclamos/r_fs`),

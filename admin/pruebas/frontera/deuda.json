@@ -57,7 +57,7 @@
       "porque": "Campañas usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover campañas"
     },
     {
-      "desde": "admin/functions/src/verificarComportamiento.ts",
+      "desde": "admin/functions/src/central/asistente/verificarComportamiento.ts",
       "hacia": "admin/functions/src/imagenCatalogo.ts",
       "porque": "Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos"
     },
@@ -74,7 +74,7 @@
     },
     {
       "desde": "admin/functions/src/core/prompt/prompt.ts",
-      "hacia": "admin/functions/src/saneo.ts",
+      "hacia": "admin/functions/src/central/servicios/saneo.ts",
       "porque": "El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts"
     },
     {

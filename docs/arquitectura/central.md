@@ -352,7 +352,7 @@ Secret Manager, ni que rotar, ni que se pueda filtrar en un commit.
 | Amazon SES | el más barato | salir del *sandbox* y meter una **segunda nube** en un proyecto que ya tiene tres |
 
 **Cuándo pasar a Resend, y qué cambiar.** Cuando haya clientes reales y dominio
-propio. El cambio está acotado a `functions/src/reclamos.ts`:
+propio. El cambio está acotado a `functions/src/central/reclamos/reclamos.ts`:
 
 1. Declarar `RESEND_API_KEY` con `defineSecret` y agregarla a `secrets` de la
    función. Es el único secreto nuevo del proyecto.
@@ -630,7 +630,7 @@ pudo verificar queda `pendiente` y **tampoco se aplica**: ante la duda, no. El
 comercio ve en la consola qué escribió, qué está vigente y por qué difieren.
 
 **La verificación, en dos capas y las dos del servidor**
-(`functions/src/comportamiento.ts`, puro; `verificarComportamiento.ts`, el
+(`functions/src/central/asistente/comportamiento.ts`, puro; `verificarComportamiento.ts`, el
 disparador `onDocumentWritten` sobre `tenants/{t}/config/negocio`, que actúa solo
 cuando cambió `instruccionesExtra` y la revisión guardada no es ya de ese texto):
 
@@ -1372,7 +1372,7 @@ Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20
 
 | | |
 |---|---|
-| **Crea** | `admin/functions/src/pagos.ts`: `aplicarPagoEnTransaccion(tx, refs, pago, confirmacion)` (**la única puerta que suma meses o bolsas**; A-2 la llama dentro de su transacción), `camposDerivados`, `registrarPagoManual` (propietario; exige `medio`, `referencia`, `tcoAplicado`/`tcoFuente`/`tcoFecha`, `montoRecibidoBs`, `evidencia` si transferencia, comprobando que el objeto exista en Storage; `motivoDiferencia` si difiere; anula el QR vivo vía `cobrador.anularCobro` si existe), `anularPagoPendiente` (admin del tenant o propietario), `fijarTelefonosPago` (admin), `consultarPagoPendiente` (admin). `admin/functions/src/tipoCambio.ts`: `tipoCambioDelDia()` lee `plataforma/tipoCambio { tco, fecha, fuente }`, lanza `SinTipoDeCambio` si falta o `fecha` tiene más de 4 días (fines de semana del BCB). `admin/scripts/fijar-tipo-cambio.mjs` (de la rama, con `fecha` diaria). Reglas `/pagos` y `/cobrosPendientes`. Storage: `match /tenants/{tenantId}/pagos/{pagoId}/{archivo}` con `archivo in ['qr.png','evidencia.jpg','evidencia.png','evidencia.pdf']`, `get` para admin legible o propietario, `create/update` de `evidencia.*` solo `esPropietario()` con tipo y tamaño (≤ 5 MB imagen, ≤ 10 MB PDF), `list`/`delete` `false`, `qr.png` solo lo escribe el Admin SDK |
+| **Crea** | `admin/functions/src/pagos.ts`: `aplicarPagoEnTransaccion(tx, refs, pago, confirmacion)` (**la única puerta que suma meses o bolsas**; A-2 la llama dentro de su transacción), `camposDerivados`, `registrarPagoManual` (propietario; exige `medio`, `referencia`, `tcoAplicado`/`tcoFuente`/`tcoFecha`, `montoRecibidoBs`, `evidencia` si transferencia, comprobando que el objeto exista en Storage; `motivoDiferencia` si difiere; anula el QR vivo vía `cobrador.anularCobro` si existe), `anularPagoPendiente` (admin del tenant o propietario), `fijarTelefonosPago` (admin), `consultarPagoPendiente` (admin). `admin/functions/src/central/servicios/tipoCambio.ts`: `tipoCambioDelDia()` lee `plataforma/tipoCambio { tco, fecha, fuente }`, lanza `SinTipoDeCambio` si falta o `fecha` tiene más de 4 días (fines de semana del BCB). `admin/scripts/fijar-tipo-cambio.mjs` (de la rama, con `fecha` diaria). Reglas `/pagos` y `/cobrosPendientes`. Storage: `match /tenants/{tenantId}/pagos/{pagoId}/{archivo}` con `archivo in ['qr.png','evidencia.jpg','evidencia.png','evidencia.pdf']`, `get` para admin legible o propietario, `create/update` de `evidencia.*` solo `esPropietario()` con tipo y tamaño (≤ 5 MB imagen, ≤ 10 MB PDF), `list`/`delete` `false`, `qr.png` solo lo escribe el Admin SDK |
 | **Modifica** | `index.ts:314, 353` (quitar `estadoPago`); `536-563` (rechazar los derivados); `115-121` (`exigirAdminDe` con proveedor); exports. `firestore.rules`, `storage.rules`, `web/src/lib/cuenta.ts` (`pendiente` = «En gracia / cobro pendiente»). `ESTADO.md` |
 | **Pruebas nuevas** | `pruebas/pagos.test.ts` (callables reales con `.run()`): el admin **no** puede `registrarPagoManual` ni en su comercio; propietario con contraseña no; sin TCO válido no registra; transferencia sin evidencia no; evidencia declarada que no existe en Storage no; importe distinto sin motivo no; confirmado no se anula; segundo pendiente con uno vivo → `failed-precondition` y devuelve el vivo; `anularPagoPendiente` del admin de B sobre A → `permission-denied`; `suspenderTenant` ya no toca `estadoPago`; `fijarTelefonosPago` rechaza > 5 y formatos malos. `pruebas/reglas.test.ts` sección «Pagos del prepago» (tabla de §4undecies.1). `pruebas/storage-reglas.test.ts` sección «Evidencia de pagos». `pruebas/tipo-cambio.test.ts` |
 | **Modifica pruebas** | `estado-cuenta.test.ts:146-158` (ahora rechazan) |
@@ -1501,5 +1501,5 @@ mensaje nuevo sin campo rompe la suite, que es como se sostiene una política.
 Lo mismo vale al revés: **no se le pide al comercio un dato que se puede
 deducir**. Las coordenadas del pin se pedían en dos campos, con la instrucción
 de hacer clic derecho en Google Maps; nadie iba a hacerlo. Se sacan del enlace
-que el comercio ya pega (`functions/src/mapa.ts`), y la pantalla solo informa
+que el comercio ya pega (`functions/src/central/negocio/mapa.ts`), y la pantalla solo informa
 si quedaron detectadas.

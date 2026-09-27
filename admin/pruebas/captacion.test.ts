@@ -25,7 +25,7 @@ vi.mock('node:dns/promises', () => ({
     ? [{ address: '10.0.0.1', family: 4 }]
     : [{ address: '2001:db8::1', family: 6 }])),
 }));
-import { textoPlano, textoConSaltos } from '../functions/src/saneo.ts';
+import { textoPlano, textoConSaltos } from '../functions/src/central/servicios/saneo.ts';
 
 const CR = String.fromCharCode(13);
 const LF = String.fromCharCode(10);

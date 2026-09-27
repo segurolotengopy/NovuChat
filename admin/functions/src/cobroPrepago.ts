@@ -71,7 +71,7 @@ import {
   MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, importeCobrable, modalidadDe, montoFueraDeContrato, montoUsdDe,
   type CuentaCruda,
 } from './prepago.js';
-import { SinTipoDeCambio, tipoCambioDe } from './tipoCambio.js';
+import { SinTipoDeCambio, tipoCambioDe } from './central/servicios/tipoCambio.js';
 import { planQuePuedePedir, precioMensualDe } from './planes.js';
 import { exigirSesionReciente } from './core/seguridad/autorizacion.js';
 import {

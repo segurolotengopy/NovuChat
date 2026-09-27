@@ -93,7 +93,7 @@ acotar cada capacidad hasta que la combinación deje de ser explotable:
   contrato. Eso no lo cubre la Regla de Dos y está tratado aparte, en T-22.
 
 Está desarrollado en la amenaza T-20 y en la cabecera de
-`functions/src/reclamos.ts`.
+`functions/src/central/reclamos/reclamos.ts`.
 
 ### A.1.3 El CI procesa pull requests de un repositorio público
 
