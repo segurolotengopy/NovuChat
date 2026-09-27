@@ -95,6 +95,12 @@ jobs:
       instalar: ${{ steps.pm.outputs.instalar }}
       # true si este evento toca el componente (o es un tag / dispatch)
       admin_cambio: ${{ steps.cambios.outputs.admin_cambio }}
+      # true si este evento toca algo que las suites de admin/pruebas LEEN
+      # (admin/, Flujos/, scripts/, docs/base-comercial.md o el pipeline):
+      # decide `calidad`. Distinto de admin_cambio, que decide construir y
+      # desplegar. Un PR que solo toca Flujos/ no despliega nada, pero sus
+      # pruebas (los JSON, Flujos/src, la frontera) tienen que correr.
+      pruebas_cambio: ${{ steps.cambios.outputs.pruebas_cambio }}
       # nombre del script de pruebas de reglas de Firestore, vacio si no hay
       script_reglas: ${{ steps.pm.outputs.script_reglas }}
       # true si existe RUTA_COMPONENTE/package.json (el sitio admin/ ya aterrizo)
@@ -176,7 +182,8 @@ jobs:
           # no se filtran nunca, aunque el diff no toque el componente.
           if [[ "$EVENTO" == "workflow_dispatch" ]] || [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "Evento de publicacion explicita: no se filtra por rutas."
-            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
+            echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
 
           case "$EVENTO" in
@@ -190,7 +197,8 @@ jobs:
           # duda, el pipeline completo, nunca el atajo.
           if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             echo "Sin base de comparacion fiable: se asume cambio en el componente."
-            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
+            echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
 
           # La CABEZA tambien puede faltar, y ese caso no estaba cubierto. En un
@@ -207,15 +215,41 @@ jobs:
             cabeza="$(git rev-parse HEAD)"
           fi
 
-          archivos=$(git diff --name-only "$base" "$cabeza")
+          # --no-renames: un archivo MOVIDO fuera de admin/ o de Flujos/
+          # aparece tambien por su ruta de origen (como borrado); sin eso,
+          # `git mv Flujos/x.json Analisis/` salteaba calidad.
+          # core.quotePath=false: una ruta con tildes sale tal cual, no
+          # entre comillas (con comillas no coincide con `^Flujos/`).
+          # -z con tr: quotePath=false no alcanza para comillas, barras o
+          # tabuladores en el nombre (git los sigue entrecomillando); con -z
+          # no entrecomilla nada. tr consume toda la entrada (sin SIGPIPE).
+          # Revision de seguridad del PR #232.
+          archivos=$(git -c core.quotePath=false diff --no-renames --name-only -z "$base" "$cabeza" | tr '\0' '\n')
           echo "Archivos cambiados:"; echo "$archivos" | sed 's/^/  /'
           # Cambiar el propio pipeline tambien obliga a ejercitarlo entero.
-          if echo "$archivos" | grep -qE "^(${RUTA}/|\.github/workflows/)"; then
+          # `grep -q <<<` y no una tubería desde echo: con pipefail, grep -q corta en
+          # la primera coincidencia, echo recibe SIGPIPE (141) y el `if` toma la
+          # rama falsa en un diff de mas de ~1000 archivos (revision del #232).
+          if grep -qE "^(${RUTA}/|\.github/workflows/)" <<< "$archivos"; then
             echo "admin_cambio=true" >> "$GITHUB_OUTPUT"
             echo "El componente ${RUTA}/ (o el pipeline) cambio: se construye."
           else
             echo "admin_cambio=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Sin cambios en ${RUTA}/: se omiten construir y desplegar."
+          fi
+          # Las suites de admin/pruebas leen tambien lo que esta FUERA de
+          # admin/: los JSON y el codigo de Flujos/ (flujos-*.test.ts,
+          # ensamblador, fronteras), los scripts de la raiz
+          # (estado-de-versiones.test.ts) y docs/base-comercial.md
+          # (planes.test.ts). Hasta el 27/09 un PR que solo tocaba Flujos/
+          # salteaba `calidad` y entraba sin correr sus propias pruebas. Una
+          # suite que empiece a leer otra ruta fuera de admin/ la agrega aca.
+          if grep -qE "^(${RUTA}/|\.github/workflows/|Flujos/|scripts/|docs/base-comercial\.md$)" <<< "$archivos"; then
+            echo "pruebas_cambio=true" >> "$GITHUB_OUTPUT"
+            echo "Algo que leen las pruebas cambio: corre calidad."
+          else
+            echo "pruebas_cambio=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Nada de lo que leen las pruebas cambio: se omite calidad."
           fi
 
       - name: Habilitar corepack (pnpm/yarn)
@@ -241,11 +275,12 @@ jobs:
   calidad:
     name: calidad
     needs: preparar
-    # Se omite si el componente no existe todavia, o si este evento no lo toca.
+    # Se omite si el componente no existe todavia, o si este evento no toca
+    # nada de lo que leen las pruebas (pruebas_cambio, no admin_cambio).
     # compuerta-pr distingue esos 'skipped' legitimos de un fallo real.
     if: >-
       needs.preparar.outputs.hay_componente == 'true'
-      && needs.preparar.outputs.admin_cambio == 'true'
+      && needs.preparar.outputs.pruebas_cambio == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -1752,7 +1787,8 @@ jobs:
       - name: Verificar resultados de los jobs requeridos
         env:
           HAY_COMPONENTE: ${{ needs.preparar.outputs.hay_componente }}
-          HUBO_CAMBIO: ${{ needs.preparar.outputs.admin_cambio }}
+          # El mismo criterio que decide si `calidad` corre.
+          HUBO_CAMBIO: ${{ needs.preparar.outputs.pruebas_cambio }}
           R_PREPARAR: ${{ needs.preparar.result }}
           R_CALIDAD: ${{ needs.calidad.result }}
           R_DOCS: ${{ needs.calidad-documentacion.result }}
@@ -1787,7 +1823,7 @@ jobs:
               echo "compuerta-pr: aprobada"; exit 0
             fi
             if [[ "$HUBO_CAMBIO" == "false" ]]; then
-              echo "::notice::'calidad' omitida: este cambio no toca admin/."
+              echo "::notice::'calidad' omitida: este cambio no toca nada de lo que leen las pruebas."
               echo "compuerta-pr: aprobada"; exit 0
             fi
             echo "::error::compuerta-pr bloqueada: 'calidad' se omitio sin motivo valido (componente=$HAY_COMPONENTE, cambio=$HUBO_CAMBIO)"

@@ -41,9 +41,12 @@ recorrido; el agente del módulo mueve su cuerpo.
 
 ## Qué hace
 
-- **F2:** mover sin cambiar lógica, `index.ts` reexportando; escribir
-  `pruebas/core/fronteras.test.ts` (lee los `import` de cada archivo y falla si
-  una zona importa hacia arriba o un módulo importa a otro sin `dependeDe`) y
+- **F2:** mover sin cambiar lógica, `index.ts` reexportando; mantener en
+  verde `pruebas/frontera/fronteras.test.ts` (lee los `import` de cada archivo
+  y falla si una zona importa hacia arriba o un módulo importa a otro sin
+  `dependeDe`; la escribió la coordinadora y **está fuera de tu zona**: si un
+  movimiento cambia la deuda o la lista de archivos sin zona, propones la
+  línea en tu PR y la escribe la coordinadora) y
   `pruebas/core/registro.test.ts` (cada documento, colección, pestaña y límite
   del registro tiene su regla en `firestore.rules` y su prueba negativa «sin
   módulo no puede»). **Sin esas dos pruebas en CI no hay fase 2.**
