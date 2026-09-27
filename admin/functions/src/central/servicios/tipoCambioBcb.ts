@@ -34,8 +34,8 @@
  */
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
-import { REGION } from './core/region.js';
-import { esTipoCambio, tipoCambioVigente, type TipoCambio } from './prepago.js';
+import { REGION } from '../../core/region.js';
+import { esTipoCambio, tipoCambioVigente, type TipoCambio } from '../../prepago.js';
 import { RUTA_TIPO_CAMBIO } from './tipoCambio.js';
 
 /** La tabla que carga la página «Tipos de cambio» del BCB. */

@@ -69,7 +69,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './core/seguridad/autorizacion.js';
 import { registrar } from './ingesta.js';
-import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './tipoCambio.js';
+import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './central/servicios/tipoCambio.js';
 import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,

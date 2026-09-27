@@ -30,7 +30,7 @@
 import {
   MOTIVO_SIN_VERIFICAR, hashCorto, leerVeredictoModelo, motivoLimpio, verificarPatrones,
   type ConsultarModelo, type OtrosComercios,
-} from './comportamiento.js';
+} from './central/asistente/comportamiento.js';
 
 export const TOPE_TEXTO_CAMPANA = 300;
 /** Menos de esto no es un texto de anuncio: «hola» lo escribe cualquiera. */

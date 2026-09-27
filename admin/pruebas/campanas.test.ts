@@ -22,7 +22,7 @@ import {
   type Campana, type ContextoDelNegocio,
 } from '../functions/src/campanas.ts';
 import { MAXIMO_CAMPANAS, PLANES_ASIGNABLES, limiteDeCampanas } from '../functions/src/planes.ts';
-import { hashCorto } from '../functions/src/comportamiento.ts';
+import { hashCorto } from '../functions/src/central/asistente/comportamiento.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const DIA = 86_400_000;

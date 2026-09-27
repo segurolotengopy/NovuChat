@@ -26,7 +26,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'negocio') ?? initializeApp({ projectId: PROYECTO }, 'negocio');
 const db = getFirestore(app);
-const { hashCorto } = await import('../functions/src/comportamiento.ts');
+const { hashCorto } = await import('../functions/src/central/asistente/comportamiento.ts');
 
 // Identificadores propios de esta suite, para no pisar a ninguna otra.
 const T = 'neg-platinum';

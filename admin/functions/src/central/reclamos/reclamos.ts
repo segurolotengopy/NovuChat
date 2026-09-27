@@ -1,9 +1,9 @@
-import { REGION } from './core/region.js';
+import { REGION } from '../../core/region.js';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import {
   ALIAS_VALIDO, CORREO_VALIDO, neutralizar, neutralizarEncabezado,
-} from './saneo.js';
+} from '../servicios/saneo.js';
 
 /**
  * ===========================================================================

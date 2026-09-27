@@ -109,7 +109,7 @@ const VACIAR_AJENOS = args.includes('--vaciar-ajenos');
 
 // El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
 // módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
-const { hashCorto, verificarPatrones } = await import('../functions/src/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();

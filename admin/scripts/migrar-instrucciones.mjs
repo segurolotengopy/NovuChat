@@ -47,7 +47,7 @@ if (!PROYECTO) {
   process.exit(2);
 }
 
-const { hashCorto, verificarPatrones } = await import('../functions/src/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });

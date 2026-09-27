@@ -28,7 +28,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'migrar') ?? initializeApp({ projectId: PROYECTO }, 'migrar');
 const db = getFirestore(app);
-const { hashCorto } = await import('../functions/src/comportamiento.ts');
+const { hashCorto } = await import('../functions/src/central/asistente/comportamiento.ts');
 
 // Identificadores propios de esta suite.
 const SIN_VIGENTE = 'mig-sin-vigente';

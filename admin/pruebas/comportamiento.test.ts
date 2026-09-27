@@ -32,8 +32,8 @@ const db = getFirestore();
 const {
   PATRONES, hashCorto, instruccionParaElModelo, leerVeredictoModelo, revisarTexto, verificarPatrones,
   MOTIVO_SIN_VERIFICAR, TOPE_INSTRUCCIONES,
-} = await import('../functions/src/comportamiento.ts');
-const { hayQueRevisar, revisarYAplicar } = await import('../functions/src/verificarComportamiento.ts');
+} = await import('../functions/src/central/asistente/comportamiento.ts');
+const { hayQueRevisar, revisarYAplicar } = await import('../functions/src/central/asistente/verificarComportamiento.ts');
 
 // ===========================================================================
 // 1. PATRONES
