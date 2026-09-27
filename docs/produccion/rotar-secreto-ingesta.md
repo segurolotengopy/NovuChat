@@ -349,7 +349,7 @@ dos se aceptan:
   olvida, sale el par completo en una cabecera: es el defecto que hay que
   impedir con una prueba.
 - Prueba nueva `admin/pruebas/firma.test.ts` (vitest, importando
-  `../functions/src/firma.ts`, como ya hace `catalogo-web.test.ts` con su
+  `../functions/src/core/seguridad/firma.ts`, como ya hace `catalogo-web.test.ts` con su
   módulo). Para no depender de Firestore, extraer la comparación a una función
   pura (`credencialValida(peticion, claves, crudo)`). Escrita negando:
   - un valor que no es ninguna de las dos se rechaza, por token y por HMAC;
