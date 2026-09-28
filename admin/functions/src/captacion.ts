@@ -221,7 +221,7 @@ export function sanearCaptacion(doc: unknown): CaptacionSaneada {
 // de la consola, con los límites de WhatsApp: documento hasta 100 MB, imagen
 // JPEG o PNG hasta 5 MB.
 //
-// SE REUSA EL PEDIDO DE `imagenCatalogo.ts` (`pedirConFrenos`), con su defensa
+// SE REUSA EL PEDIDO DE `central/servicios/pedidoSeguro.ts` (`pedirConFrenos`), con su defensa
 // contra direcciones internas: la URL la escribe el comercio y la visita NUESTRO
 // servidor, desde adentro de la red de Google. Lo que el pedido NO cierra
 // —el cambio de DNS entre la resolución y la conexión— está dicho allá; acá el

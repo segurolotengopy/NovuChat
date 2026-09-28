@@ -360,10 +360,9 @@ export const REGISTRO = [
     modulo: 'captacion',
     nombre: 'Captación',
     version: 1,
-    // DUDA: `captacion.ts` importa `pedirConFrenos` y `tipoDeContenido` de
-    // `imagenCatalogo.ts` (Productos). Son utilidades de red genéricas, no
-    // del catálogo: el caso se resuelve sacándolas a un servicio, no
-    // declarando Productos. `medir-zonas.mjs` lo lista.
+    // `pedirConFrenos` y `tipoDeContenido` vienen de
+    // `central/servicios/pedidoSeguro.ts` (corte C2 de F2), no de Productos:
+    // por eso no se declara Productos.
     dependeDe: [],
     configuracion: [
       {
