@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { MODELO_POR_DEFECTO } from '../functions/src/central/ejes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'ensayo.mjs');
@@ -106,6 +107,9 @@ describe('ensayo.mjs', () => {
     const funcionarios = (await db.collection('tenants/ensayo/funcionarios').get()).docs.map((d) => d.get('calendarioId'));
     expect(funcionarios.sort()).toEqual([CAL_ENSAYO_1, CAL_ENSAYO_2].sort());
     expect(JSON.stringify(funcionarios)).not.toContain(CAL_CLIENTE);
+    // Nace con los tres ejes, como un alta: el modelo incluido (seco de
+    // migrar-ejes del 28/09, que lo vio faltar).
+    expect((await db.doc('tenants/ensayo').get()).get('modelo')).toBe(MODELO_POR_DEFECTO);
     // El demo de siempre no se tocó.
     expect((await db.doc(`tenants/${DEMO}/config/negocio`).get()).get('nombreNegocio')).toBe('Demo de siempre');
     expect(r.salida).not.toContain(NUM_DEMO);
