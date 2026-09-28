@@ -16,7 +16,7 @@
 | **Pestañas** | Agenda / Funcionarios (`admin`); ranura «citas de hoy» en el Tablero; la duración de cita como ranura en Catálogo |
 | **Prompt** | `Flujos/prompts/modulos/agenda.md` (hoy dentro de `Flujos/prompts/reservas/*.md`) |
 | **Herramientas** | `consultar_disponibilidad`, `agendar_cita`, `buscar_mi_cita`, `cancelar_cita` |
-| **Nodos (lo que queda en n8n)** | `Flujos/src/modulos/agenda/*.js` (hoy `Flujos/src/reservas/`, 13 módulos); Google Calendar por credencial de n8n |
+| **Nodos (lo que queda en n8n)** | `Flujos/src/modulos/agenda/*.js` (7 módulos desde FL1; la seña está en Cobros y los medios en `core/medios/`); Google Calendar por credencial de n8n |
 | **Ganchos** | `antesDelTurno`, `despuesDelTurno` (seña: retención), `alCierre` (cita), `programado` (recordatorios, seguimientos, señas vencidas: `agendamiento-seguimientos`, `agendamiento-senas-vencidas`, `demo-a-recordatorios`) |
 | **Mensajes por conversación** | 0 en la conversación; el recordatorio de solicitud pendiente y los recordatorios de cita son mensajes fuera de la ventana y se declaran en su sección |
 | **Pruebas** | `candado-agenda.test.ts`, `seguimientos.test.ts`, `senas-vencidas.test.ts`, `agendamiento-seguimientos.test.ts`, `sena-servidor.test.ts`, `citas-a-calendario.test.ts`, `direccion-maps.test.ts`; las suites de flujo de reservas (Demo A, Platinum, Bellido) hasta que F5 las reparta |

@@ -55,7 +55,7 @@ implementación actual del pipeline de turno. Los cuatro contratos:
 | `region.ts`, `opcionesGlobales.ts` | `core/` | |
 | `cierres`, `conversaciones`, `mensajes`, `metricas` (Firestore) | Core, escribe la ingesta | `contactoId` con prefijo de canal (`Analisis/35`), sin cambiar el conteo |
 | `/rutasWhatsApp/{n}` | Core, conector de canal | Se agrega `titularidad`; en F4 pasa a `/rutas/{canal}/{id}` |
-| `Flujos/src/comun/` (5 módulos, variante de reservas) | `Flujos/src/core/` | Una sola variante para reservas, venta y captación (F3) |
+| `Flujos/src/comun/` (5 módulos, variante de reservas), movidos en FL1 | `Flujos/src/core/` | Una sola variante para reservas, venta y captación (F3) |
 | Nodos de medios (transcribir, describir, leer comprobante) | `Flujos/src/core/medios/` | Con el esqueleto único |
 | `Flujos/prompts/…` (parte base) | `prompts/core/base.md` | El prompt se arma por capas |
 | `web/src/lib/sesion.ts`, `contexto.tsx` y demás reexportaciones | `core/lib/` | Son reexportaciones de Functions; siguen |
