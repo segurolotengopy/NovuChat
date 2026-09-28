@@ -58,7 +58,7 @@ import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
 // enmascarado de dos formas distintas según qué lo escribió, y eso hace
 // imposible cruzar un pedido con su bitácora de un vistazo.
-import { registrar, enmascarar } from './ingesta.js';
+import { registrar, enmascarar } from './core/turno/bitacora.js';
 // El umbral vive en `prompt.ts` y no acá: lo usan este módulo y
 // `configuracionFlujo`, y si viviera en uno de los dos el otro tendría que
 // importar a su propio importador. Un ciclo en ESM se resuelve en un orden

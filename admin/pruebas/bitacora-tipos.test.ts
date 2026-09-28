@@ -1,7 +1,7 @@
 /**
  * LOS TIPOS DE LA BITÁCORA: una lista, tres lectores.
  *
- * La ingesta (`functions/src/ingesta.ts`, `TipoEvento`) decide qué eventos se
+ * La ingesta (`TipoEvento`, en `functions/src/core/turno/bitacora.ts`) decide qué eventos se
  * escriben. Las reglas (`eventoValido()` de `/bitacora`) dicen qué tipos acepta
  * la colección, y la consola (`web/src/lib/bitacora.ts`, `TIPOS`) cuáles se
  * pueden filtrar. El 15/09 la ingesta ya escribía `derivacion_operador`,
@@ -25,9 +25,9 @@ const literales = (texto: string) => [...texto.matchAll(/'([a-z_]+)'/g)].map((m)
 
 /** Los tipos de `type TipoEvento = ... ;` de la ingesta, sin los comentarios. */
 function deLaIngesta(): string[] {
-  const fuente = leer('functions/src/ingesta.ts');
+  const fuente = leer('functions/src/core/turno/bitacora.ts');
   const m = fuente.match(/type TipoEvento =([\s\S]*?);/);
-  if (!m) throw new Error('no se encontró `type TipoEvento` en ingesta.ts');
+  if (!m) throw new Error('no se encontró `type TipoEvento` en core/turno/bitacora.ts');
   return literales(m[1]!.replace(/\/\/.*$/gm, ''));
 }
 

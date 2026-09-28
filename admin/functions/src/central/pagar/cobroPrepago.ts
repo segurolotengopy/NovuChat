@@ -61,7 +61,7 @@ import { FieldValue, Timestamp, getFirestore, type DocumentSnapshot } from 'fire
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
 import { REGION } from '../../core/region.js';
-import { registrar } from '../../ingesta.js';
+import { registrar } from '../../core/turno/bitacora.js';
 import {
   COBRADOR_AVISO_SECRETO, COBRADOR_TOKEN, ErrorCobrador, CobradorNoResponde,
   configCobradorDe, montoDesdeTexto, resolverCobrador, verificarAviso,

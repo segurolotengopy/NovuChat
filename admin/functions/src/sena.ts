@@ -5,7 +5,8 @@ import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from './core/segurida
 import {
   cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido,
 } from './cotejo.js';
-import { registrar, MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
+import { MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
+import { registrar } from './core/turno/bitacora.js';
 import { documentoDeVertical } from './core/prompt/prompt.js';
 import { periodoDe } from './central/cuenta/planes.js';
 import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';

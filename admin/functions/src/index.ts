@@ -37,7 +37,7 @@ export {
   vistaPreviaCatalogo, fotoDeCatalogo,
 } from './catalogoWeb.js';
 
-import { registrar } from './ingesta.js';
+import { registrar } from './core/turno/bitacora.js';
 import { umbralValido, umbralesDeAtencion } from './core/conteo/atencion.js';
 import {
   CATALOGO_PLANES, CLAVES_POR_CONTRATO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, PLANES,
