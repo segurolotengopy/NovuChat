@@ -317,7 +317,7 @@ describe('6. Ningún módulo, prompt ni manifiesto contiene un valor real', () =
   const PERMITIDOS = /(00000000-0000-0000-0000-000000000000|1234567890123456|59170000000|59100000000|example\.(com|org)|ejemplo\.(tld|com)|@group\.calendar\.google\.com|noreply@anthropic\.com|[a-z0-9._-]+@novuchat\.site|REEMPLAZAR|[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com|[0-9]*0{6,}[0-9]*)/;
   const REGLAS: [string, RegExp][] = [
     ['UUID', /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/],
-    ['secuencia de 10 o más dígitos sin seis ceros (la parte decimal de un número no cuenta)', /(^|[^0-9.])[0-9]{10,}([^0-9]|$)/],
+    ['secuencia de 10 o más dígitos sin seis ceros (la parte decimal de un número no cuenta)', /(^|[^0-9.]|(^|[^0-9])\.)[0-9]{10,}([^0-9]|$)/],
     ['correo electrónico', /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/],
     ['ruta absoluta con usuario del sistema', /\/(home|Users)\/[a-z][a-z0-9._-]+\//],
     ['token de Meta', /EAA[A-Za-z0-9]{20,}/],
