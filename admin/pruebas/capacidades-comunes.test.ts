@@ -23,11 +23,15 @@
  *      `esMedioAudio` y `esMedioVisual` (lo que marca «Normalizar entrada»).
  *   2. Desde su salida verdadera se llega a «Transcribir audio» y a
  *      «Describir imagen»; «Transcribir audio» va SOLO a «Preparar
- *      transcripción» y «Describir imagen» SOLO a «Preparar imagen».
+ *      transcripción» y «Describir imagen» SOLO a «Preparar imagen», o a UN
+ *      nodo Code del flujo que va solo a ese «Preparar» (el filtro de
+ *      categorías que cada flujo puede cumplir).
  *   3. Los dos «Preparar …» son nodos Code y llegan al MISMO agente al que
  *      llega un mensaje sin medio (la salida falsa de «¿Trae un medio?»).
- *   4. EL AGENTE NUNCA VE EL BINARIO: desde la salida verdadera, sin pasar por
- *      un «Preparar …», no se alcanza ningún agente.
+ *   4. EL AGENTE NUNCA VE EL BINARIO: desde toda descarga de la rama, sin
+ *      pasar por un «Preparar …», no se alcanza ningún agente ni el punto de
+ *      reingreso al camino de siempre. Lo que vuelve sin un «Preparar …» (el
+ *      aviso de un medio demasiado grande, que nunca se bajó) es un nodo Code.
  *   5. La rama no envía nada: sus nodos de Meta son lecturas (0 mensajes).
  *   6. Los dos «Preparar …» son el mismo código en todos los flujos (un solo
  *      módulo, nunca una copia que diverja), y donde hay manifiesto apuntan al
@@ -117,9 +121,18 @@ export function faltantesDeMedios(f: Flujo): string[] {
   for (const n of ['Transcribir audio', 'Describir imagen']) {
     if (!desdeVerdadera.has(n)) falta.push(`desde la salida verdadera de «¿Trae un medio?» no se llega a «${n}»`);
   }
+  // Directo a su «Preparar», o a UN nodo Code propio del flujo que va solo a
+  // ese «Preparar» (el «Filtrar categoría» de la revisión de seguridad del PR
+  // #256: reduce las categorías a las que el flujo cumple). Nada más: ni un
+  // agente, ni una bifurcación, ni un nodo que no sea código del flujo.
   const unico = (desde: string, hacia: string) => {
     const d = salidas(f, desde).flat();
-    if (d.length !== 1 || d[0] !== hacia) falta.push(`«${desde}» tiene que ir solo a «${hacia}» (va a ${JSON.stringify(d)})`);
+    const directo = d.length === 1 && d[0] === hacia;
+    const filtro = d.length === 1 && d[0] !== hacia && porNombre.get(d[0]!)?.type === 'n8n-nodes-base.code'
+      && JSON.stringify(salidas(f, d[0]!).flat()) === JSON.stringify([hacia]);
+    if (!directo && !filtro) {
+      falta.push(`«${desde}» tiene que ir solo a «${hacia}», o a un nodo Code que vaya solo a él (va a ${JSON.stringify(d)})`);
+    }
   };
   unico('Transcribir audio', 'Preparar transcripción');
   unico('Describir imagen', 'Preparar imagen');
@@ -135,17 +148,42 @@ export function faltantesDeMedios(f: Flujo): string[] {
     }
   }
 
-  // 4. El agente nunca ve el binario.
+  // 4. El agente nunca ve el binario. La rama termina donde vuelve al camino de
+  // siempre: en un agente, en un «Preparar …» o en el nodo al que va la salida
+  // falsa de «¿Trae un medio?» (el reingreso: el agente en el Demo B, «Estado
+  // de la conversación» en la captación).
   const agentes = new Set(f.nodes.filter((n) => esAgente(n.type)).map((n) => n.name));
-  const sinPreparar = alcanzables(f, verdadera, (n) => (PREPARAR as readonly string[]).includes(n) || agentes.has(n));
-  for (const a of agentes) {
-    if (sinPreparar.has(a)) falta.push(`desde la salida verdadera se llega a «${a}» sin pasar por un «Preparar …»`);
+  const esPreparar = (n: string) => (PREPARAR as readonly string[]).includes(n);
+  const reingreso = new Set(falsa);
+  const rama = alcanzables(f, verdadera, (n) => esPreparar(n) || agentes.has(n) || reingreso.has(n));
+  // Quién tiene el binario en la mano: toda descarga que devuelve un archivo.
+  const descargas = [...rama].filter((n) => {
+    const x = porNombre.get(n);
+    return x?.type === 'n8n-nodes-base.httpRequest'
+      && JSON.stringify(x.parameters['options'] ?? {}).includes('"responseFormat":"file"');
+  });
+  if (!descargas.length) falta.push('la rama de medios no descarga el archivo (ningún HTTP con respuesta de tipo archivo)');
+  for (const d of descargas) {
+    const conBinario = alcanzables(f, [d], esPreparar);
+    for (const a of [...agentes, ...reingreso]) {
+      if (conBinario.has(a)) falta.push(`desde «${d}» (con el binario) se llega a «${a}» sin pasar por un «Preparar …»`);
+    }
+  }
+  // Lo que vuelve al camino de siempre SIN un «Preparar …» (el aviso de un
+  // medio que no se bajó) tiene que ser un nodo Code: texto que escribe el
+  // flujo, nunca lo que devolvió un modelo o Meta tal cual.
+  for (const n of rama) {
+    if (esPreparar(n) || agentes.has(n) || reingreso.has(n)) continue;
+    const vuelve = salidas(f, n).flat().some((x) => agentes.has(x) || reingreso.has(x));
+    if (vuelve && porNombre.get(n)?.type !== 'n8n-nodes-base.code') {
+      falta.push(`«${n}» vuelve al agente sin ser un nodo Code`);
+    }
   }
 
   // 5. La rama no envía nada.
-  for (const n of sinPreparar) {
+  for (const n of rama) {
     const nodo = porNombre.get(n);
-    if (!nodo || (PREPARAR as readonly string[]).includes(n)) continue;
+    if (!nodo || esPreparar(n) || agentes.has(n) || reingreso.has(n)) continue;
     const enviaWhatsApp = nodo.type === 'n8n-nodes-base.whatsApp' && String(nodo.parameters['resource'] ?? 'message') !== 'media';
     const enviaHttp = nodo.type === 'n8n-nodes-base.httpRequest' && String(nodo.parameters['method'] ?? 'GET') !== 'GET';
     if (enviaWhatsApp || enviaHttp) falta.push(`«${n}», en la rama de medios, envía algo: tiene que ser solo lectura`);
@@ -238,7 +276,28 @@ describe('La prueba no es vacía: un flujo sin medios, o con la rama rota, FALLA
     f.connections['Describir imagen'] = { main: [[{ node: 'AI Agent NovuChat', type: 'main', index: 0 }]] };
     const falta = faltantesDeMedios(f).join('\n');
     expect(falta).toMatch(/«Describir imagen» tiene que ir solo a «Preparar imagen»/);
-    expect(falta).toMatch(/se llega a «AI Agent NovuChat» sin pasar por un «Preparar …»/);
+    expect(falta).toMatch(/desde «Descargar medio» \(con el binario\) se llega a «AI Agent NovuChat» sin pasar por un «Preparar …»/);
+  });
+
+  it('si el filtro de categoría deja de ser código del flujo, o se abre a otro destino, falla', () => {
+    const f = base();
+    f.nodes.find((x) => x.name === 'Filtrar categoría')!.type = 'n8n-nodes-base.set';
+    expect(faltantesDeMedios(f).join('\n')).toMatch(/«Describir imagen» tiene que ir solo a «Preparar imagen», o a un nodo Code/);
+    const g = base();
+    g.connections['Filtrar categoría'] = { main: [[{ node: 'Preparar imagen', type: 'main', index: 0 },
+      { node: 'AI Agent NovuChat', type: 'main', index: 0 }]] };
+    const falta = faltantesDeMedios(g).join('\n');
+    expect(falta).toMatch(/«Describir imagen» tiene que ir solo a «Preparar imagen»/);
+    expect(falta).toMatch(/sin pasar por un «Preparar …»/);
+  });
+
+  it('si el aviso de un medio no aceptado vuelve al agente desde un nodo que no es Code, o DESPUÉS de la descarga, falla', () => {
+    const f = base();
+    f.nodes.find((x) => x.name === 'Medio no aceptado')!.type = 'n8n-nodes-base.set';
+    expect(faltantesDeMedios(f).join('\n')).toMatch(/«Medio no aceptado» vuelve al agente sin ser un nodo Code/);
+    const g = base();
+    g.connections['Descargar medio'] = { main: [[{ node: 'Medio no aceptado', type: 'main', index: 0 }]] };
+    expect(faltantesDeMedios(g).join('\n')).toMatch(/desde «Descargar medio» \(con el binario\) se llega a «AI Agent NovuChat»/);
   });
 
   it('si un nodo de la rama empieza a enviar, falla', () => {

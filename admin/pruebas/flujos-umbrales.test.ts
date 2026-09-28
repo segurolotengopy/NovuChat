@@ -170,7 +170,9 @@ const FLUJOS = [
     // 28/09/2026, también la rama de medios entrantes (capacidad general): el
     // agente recibe el mensaje o el medio ya convertido en TEXTO.
     antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
-    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
+    // «Medio no aceptado»: el aviso de un medio demasiado grande, que nunca se
+    // bajó (revisión de seguridad del PR #256, M2). También es texto.
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen', 'Medio no aceptado'],
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.
