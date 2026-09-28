@@ -53,10 +53,31 @@ WhatsApp (Meta Cloud API)
    virtual y, si le preguntan, lo dice con naturalidad.
 5. **NUNCA** tocar la app de Meta `Demo SeguroLo Tengo` ni el `otp-service`:
    son de WhatsApp-Modular, un sistema financiero en producción. Comparten la
-   VM y la WABA, pero son productos distintos.
+   VM y la WABA, pero son productos distintos. NovuChat consume la salida del
+   receptor de clientes de AAB1 en su n8n. No toca la app AAB1-WA-Prod, el
+   contenedor receptor-clientes, el registro de clientes del receptor, sus
+   claves de firma, los tokens de negocio de los clientes, su proyecto de GCP
+   ni sus comandos: cualquier operación sobre el receptor (alta, destino,
+   pausar, reanudar, estados de envío) la ejecuta la sesión de
+   WhatsApp-Modular con autorización de Andres. Tampoco toca los proxies de
+   entrada, la red de Docker que comparten (ni conectar ni desconectar
+   contenedores), los contenedores del receptor, del `otp-service` y del proxy,
+   ni los flujos de n8n de WhatsApp-Modular (la entrada de referencia y los de
+   prueba). La entrada que recibe del receptor **siempre verifica** contra el
+   verificador interno, con el `wabaIdEsperado` fijo, sin «Continue on Fail» y
+   descartando repetidos entre ejecuciones; ese verificador solo se llama por la
+   red interna y nunca se expone. Las rutas de webhook de esa entrada son URL de
+   capacidad: nunca en archivos versionados, notas de n8n ni registros. El
+   detalle con los nombres concretos está en la documentación del receptor
+   (WhatsApp-Modular, `docs/25` §6).
 6. **NUNCA** publicar el número de prueba a terceros: solo responde a los 5
    destinatarios registrados (ver `CONFIGURACION.md`; el riesgo está en
    `bitacora/2026-09.md`, «Riesgos vivos»).
+7. **NUNCA** un WhatsApp Trigger de n8n —ni ningún nodo o llamada a
+   `/{app-id}/subscriptions`— con credenciales de AAB1-WA-Prod: al activarse
+   reescribe el webhook de toda la app y el OTP de SeguroLoTengo deja de
+   recibir acuses; al desactivarse lo borra, y dejan de llegar también los
+   mensajes de todos los clientes del receptor, NovuChat incluido.
 
 ## Reglas de diseño de los flujos n8n
 
