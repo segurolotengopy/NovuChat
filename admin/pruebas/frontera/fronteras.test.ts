@@ -370,12 +370,17 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.map((c) => c.hacia)).toEqual([`${F}modulos/agenda/y.ts`]);
   });
 
-  // Por el nombre del archivo y no por su carpeta: F2 los mueve (tanda 5), y
-  // la mudanza no reescribe una ruta armada con una plantilla.
+  // La fuente se deriva del propio especificador (`../functions/lib/<ruta>.js`
+  // → `admin/functions/src/<ruta>.ts`) y no de una ruta fija: F2 mueve esos
+  // archivos (tanda 5), la mudanza reescribe el especificador, y una ruta
+  // armada con plantilla no la reescribe (revisión de seguridad del #250).
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
-    const fuente = (nombre: string) => expect.stringMatching(new RegExp(`^${F}(?:[\\w-]+/)*${nombre}\\.ts$`));
-    expect(importsDe('admin/scripts/migrar-prepago.mjs').map((i) => i.destino))
-      .toEqual(expect.arrayContaining([fuente('prepago'), fuente('planes')]));
+    const compilados = importsDe('admin/scripts/migrar-prepago.mjs').filter((i) => i.especificador.startsWith('../functions/lib/'));
+    expect(compilados.map((i) => i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
+      .toEqual(expect.arrayContaining(['prepago', 'planes']));
+    for (const i of compilados) {
+      expect(i.destino, i.especificador).toBe(`${F}${i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1')}.ts`);
+    }
   });
 
   it('index.ts: sus reexportaciones no cuentan; un import suyo sí', () => {
