@@ -64,14 +64,17 @@ for (const item of $input.all()) {
   //   - `esComprobante`: cobro REAL con QR pendiente -> lectura y cotejo.
   //   - `hayQrPendiente` en cualquier modo: el archivo es el pago declarado y
   //     con el se cierra la venta en la demostracion (`¿Hay comprobante?`).
-  //   - cobro SIMULADO: cualquier archivo pasa como comprobante del pago
-  //     simulado, haya o no QR pendiente (Andres, 23/09 y 25/09; la prueba
-  //     de `demo-b-cobro.test.ts` lo fija). La rama no le cambia eso.
-  // Queda para la rama: cobro REAL, sin QR pendiente, con id del medio. Y todo
-  // audio con id, en los dos modos: un audio nunca fue un comprobante.
-  const cobroReal = String(cfg.cobroRealActivo || '') === 'si';
+  //   - cobro SIMULADO CON QR pendiente: el archivo es el comprobante del pago
+  //     simulado (Andres, 23/09 y 25/09).
+  // SIN QR PENDIENTE, EN LOS DOS MODOS, un archivo es un archivo (Andres,
+  // 28/09/2026): en simulado, una foto sin ningun pedido respondia «Pago
+  // verificado (SIMULADO)» con un pedido inventado (ejecucion #7454). Ahora va a
+  // la rama: se lee el texto y se pregunta de que se trata. Con un pedido en
+  // curso (QR pendiente) la demostracion queda igual que antes.
+  // Queda para la rama: sin QR pendiente, con id del medio. Y todo audio con
+  // id, en los dos modos: un audio nunca fue un comprobante.
   const esMedioAudio = ['audio', 'voice'].includes(tipo) && mediaId !== '';
-  const esMedioVisual = ARCHIVO.includes(tipo) && mediaId !== '' && cobroReal && !hayQrPendiente;
+  const esMedioVisual = ARCHIVO.includes(tipo) && mediaId !== '' && !hayQrPendiente;
   // Lo que el cliente escribio junto al archivo. `Preparar imagen` reemplaza
   // `userInput` por su texto fijo, asi que la leyenda viaja aparte y el turno
   // del agente la agrega: sin esto, «¿tienen este en talla 40?» se perdia.
@@ -86,15 +89,19 @@ for (const item of $input.all()) {
   // archivo es un archivo y no se lo trata como un pago: la exigencia del
   // pendiente es del modo REAL, donde el comprobante se coteja de verdad.
   //
-  // CON COBRO SIMULADO CUALQUIER ARCHIVO PASA (Andres, 23/09/2026; corregido el
-  // 25/09). El port del cobro le habia pegado la exigencia del pendiente a los
+  // CON COBRO SIMULADO Y QR PENDIENTE EL ARCHIVO PASA (Andres, 23/09/2026;
+  // corregido el 25/09; desde el 28/09, solo CON QR pendiente: sin el, ni con id
+  // ni sin id se toma por pago, ejecucion #7454). El port del cobro le habia pegado la exigencia del pendiente a los
   // dos modos, y en la demostracion --donde la gracia es que la conversacion
   // fluya y el QR es de mentira-- una foto sin QR pendiente le hacia decir al
   // asistente «no hay ningun pago pendiente». Aca el agente sigue siendo quien
   // confirma, con el rotulo de siempre; el CIERRE de la venta sigue naciendo
   // solo del hecho (`pagoDeclarado`: archivo CON QR pendiente segun el
   // servidor, en `¿Hay comprobante?`), asi que sin QR no se cuenta nada.
-  const textoDelArchivo = (que) => (String(cfg.cobroRealActivo || '') !== 'si'
+  const textoDelArchivo = (que) => (String(cfg.cobroRealActivo || '') !== 'si' && !hayQrPendiente
+    ? ('El cliente envió ' + (que === 'IMAGEN' ? 'una IMAGEN' : 'un DOCUMENTO')
+       + ' que no se pudo abrir. Pregúntale de qué se trata. No supongas que es un comprobante de pago.')
+    : String(cfg.cobroRealActivo || '') !== 'si'
     ? ('El cliente envió ' + (que === 'IMAGEN' ? 'una IMAGEN' : 'un DOCUMENTO')
        + '. En esta demostración se asume que es el comprobante del pago SIMULADO del QR.')
     : (!hayQrPendiente
