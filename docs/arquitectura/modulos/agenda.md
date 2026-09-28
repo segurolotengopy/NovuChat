@@ -8,7 +8,7 @@
 
 | Campo | Valor hoy |
 |---|---|
-| **Qué contiene hoy** | `funcionarios`, `agenda` (candado), `sena.ts`, `retencion.ts`, `seguimientos.ts`, recordatorios, señas vencidas; `Funcionarios.tsx`; 13 módulos de `Flujos/src/reservas/`; herramientas de Calendar |
+| **Qué contiene hoy** | `funcionarios`, `agenda` (candado), `sena.ts`, `retencion.ts`, `seguimientos.ts`, recordatorios, señas vencidas; `Funcionarios.tsx`; 7 módulos de `Flujos/src/modulos/agenda/` (desde FL1; hasta entonces, 13 en `Flujos/src/reservas/`, con la seña y los medios); herramientas de Calendar |
 | **Depende de** | Cobros (solo para la seña) |
 | **Límite por plan** | agendas (1 / 5 / 10), **hoy sin hacer cumplir**: falta la regla en `firestore.rules` al crear un funcionario, con un contador `contadores/agendas` como el del catálogo. El número ya viaja en la copia `cuenta/estado.limites.agendas` (`planes.ts`). Ver `limites.md` |
 | **Configuración** | `config/agenda` (hoy `config/agendamiento`), con lista blanca: `calendarioId` (sale de `config/negocio`), `duracionMin`, `recordatorios`, `senaActiva`, … |
