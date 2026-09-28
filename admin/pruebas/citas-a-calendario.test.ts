@@ -19,13 +19,14 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'citas-a-calendario.mjs');
 const tmp = mkdtempSync(join(tmpdir(), 'citas-'));
 
 const correr = (...args: string[]) => {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 };
 

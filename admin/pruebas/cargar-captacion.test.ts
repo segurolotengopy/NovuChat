@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'cargar-captacion.mjs');
@@ -39,7 +40,7 @@ function archivo(nombre: string, datos: unknown) {
 }
 function correr(tenant: string, ruta: string, ...extra: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', tenant, '--archivo', ruta, ...extra], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+    env: entornoDelEmulador(HOST), encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
@@ -59,7 +60,7 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe('cargar-captacion.mjs', () => {
   it('sin los argumentos no hace nada', () => {
-    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(r.status).toBe(2);
     expect(`${r.stdout}${r.stderr}`).toMatch(/--tenant inválido/);
   });

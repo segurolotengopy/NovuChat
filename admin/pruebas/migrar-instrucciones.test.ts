@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'migrar-instrucciones.mjs');
@@ -40,7 +41,7 @@ const CON_ANGULARES = 'Ante «cuánto dura», distingue la sesión del resultado
 
 function correr(...extra: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...extra], {
-    encoding: 'utf8', env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, timeout: 60_000,
+    encoding: 'utf8', env: entornoDelEmulador(HOST), timeout: 60_000,
   });
   return { codigo: r.status, salida: (r.stdout ?? '') + (r.stderr ?? '') };
 }
@@ -61,7 +62,7 @@ beforeEach(async () => {
 
 describe('migrar-instrucciones.mjs', () => {
   it('sin --proyecto no hace nada', () => {
-    const r = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [SCRIPT], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(r.status).toBe(2);
   });
 

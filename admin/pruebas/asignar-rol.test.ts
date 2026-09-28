@@ -29,6 +29,7 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'asignar-rol.mjs');
@@ -37,13 +38,7 @@ const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 
 const correr = (...args: string[]) => {
   const r = spawnSync(process.execPath, [SCRIPT, ...args], {
-    env: {
-      ...process.env,
-      FIRESTORE_EMULATOR_HOST: HOST,
-      FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:1',
-      GOOGLE_APPLICATION_CREDENTIALS: '/nonexistent/adc.json',
-      METADATA_SERVER_DETECTION: 'none',
-    },
+    env: entornoDelEmulador(HOST),
     encoding: 'utf8', timeout: 20000,
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };

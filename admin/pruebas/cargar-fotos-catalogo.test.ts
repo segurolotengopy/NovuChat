@@ -24,6 +24,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'cargar-fotos-catalogo.mjs');
@@ -73,7 +74,7 @@ const dir = (nombre: string) => {
 function correr(...extra: string[]) {
   const r = spawnSync(process.execPath,
     [SCRIPT, '--proyecto', PROYECTO, ...extra],
-    { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+    { env: entornoDelEmulador(HOST), encoding: 'utf8' });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
 
