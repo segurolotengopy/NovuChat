@@ -31,14 +31,24 @@ describe('prohibiciones 5 y 7: los sistemas ajenos no se tocan', () => {
       'gcloud run services describe receptor-clientes',
       'docker restart receptor-clientes',
       'ssh vm docker logs receptor-clientes',
-      'gh api graph.facebook.com/v23.0/APP/subscriptions -f object=whatsapp_business_account # AAB1-WA-Prod',
       'curl -X DELETE "https://graph.facebook.com/v23.0/$APP/subscriptions" # app AAB1-WA-Prod',
       'curl -X POST "$G/$APP_ID/subscriptions" --data app=aab1-wa-prod',
+      // Variantes del separador: Docker acepta guion bajo, y un agente puede escribir la app con espacios.
+      'docker logs receptor_clientes',
+      'gcloud run services describe "AAB1 WA Prod"',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('`/subscriptions` junto a la app ajena niega aunque el comando no use un verbo de red conocido', () => {
+    // Sin `curl`, `gh` ni `docker`: solo la línea `/subscriptions` de ACTUA los ve.
+    for (const c of [
+      `node -e "fetch(G+'/'+id+'/subscriptions',{method:'POST'})" # AAB1-WA-Prod`,
+      `python3 -c "import requests; requests.delete(G+'/'+app+'/subscriptions')" # AAB1-WA-Prod`,
     ]) expect(decision(c), c).toBe('deny');
   });
 
   it('sigue negando lo de antes (la app de SeguroLoTengo, el otp-service y WhatsApp-Modular)', () => {
-    for (const c of ['docker restart otp-service', 'gh repo clone segurolotengopy/WhatsApp-Modular']) {
+    for (const c of ['docker restart otp-service', 'gh repo clone segurolotengopy/WhatsApp-Modular', 'curl -X POST "$G/$APP/subscribed_apps" # Demo SeguroLo Tengo']) {
       expect(decision(c), c).toBe('deny');
     }
   });

@@ -46,8 +46,12 @@ ACTUA = r"\b(curl|wget|ssh|scp|docker|systemctl|gcloud|gh|firebase|npm\s+(i|inst
 # el espacio de arriba: aparece en títulos y cuerpos de PR que documentan B8.
 # NovuChat llama a `/{app-id}/subscriptions` con SUS apps
 # (`scripts/webhook-meta.sh`), así que esa ruta solo se niega junto a un nombre
-# de acá.
-SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp-Modular|AAB1-WA-Prod|receptor-clientes"
+# de acá. El separador del nombre admite guion, guion bajo, espacio o nada
+# (Docker acepta `receptor_clientes`); «receptor de clientes» en prosa no
+# coincide. Lo que una expresión regular no ve: comillas partidas en el nombre,
+# el id del contenedor, y la app que llega por un `.env` o por su id numérico
+# (`webhook-meta.sh --alta-meta --env-cliente …`); eso se cierra en el script.
+SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp-Modular|AAB1[-_\s]?WA[-_\s]?Prod|receptor[-_\s]?clientes"
 CANAL_NO_OFICIAL = r"evolution[-_ ]?api|baileys|wppconnect"
 
 # ---------------------------------------------------------------------------
