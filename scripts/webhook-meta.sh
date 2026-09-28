@@ -64,7 +64,14 @@ APPS_AJENAS_FRAGMENTOS="aab1 segurolotengo"
 # así que la huella no esconde nada: evita publicarlo y sirve cuando Graph no
 # está. NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA solo puede AGREGAR huellas (la usa
 # la suite, que no tiene los ids reales).
+# Las entregó la sesión de WhatsApp-Modular el 28/09/2026 (printf %s "<id>" |
+# sha256sum); la de AAB1-WA-Prod, cotejada contra su configuración viva. No
+# existe otra app de Meta de ese proyecto. En grupos de 8 con «:», que se
+# quitan al comparar: escrita de corrido, una huella puede traer 10 dígitos
+# seguidos y verificar-saneo.sh la toma por un id de Meta (con razón).
 APPS_AJENAS_HUELLAS="
+97340ef7:a7b04dc8:27d6875c:6ee38b49:d53d527d:13e63754:245307d5:4034ef74
+120b32ec:4e3c67fb:1785a6d8:1dced2ae:481bd0df:d38136ea:f5a73091:6cfbc739
 "
 
 # huella_ajena <app-id>: 0 si el sha256 del id está en la lista.
@@ -72,7 +79,7 @@ huella_ajena() {
   local h
   h=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
   # shellcheck disable=SC2086  # sin comillas a propósito: una huella por palabra
-  case " $(echo $APPS_AJENAS_HUELLAS ${NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA:-}) " in *" $h "*) return 0 ;; esac
+  case " $(echo $APPS_AJENAS_HUELLAS ${NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA:-} | tr -d :) " in *" $h "*) return 0 ;; esac
   return 1
 }
 
@@ -102,7 +109,10 @@ if not isinstance(d, dict) or "error" in d:
     print("error", (d.get("error") or {}).get("message", "?") if isinstance(d, dict) else "?"); sys.exit()
 nombre = str(d.get("name") or "")
 if not nombre: print("error Graph no devolvió el nombre de la app"); sys.exit()
-if d.get("id") and str(d["id"]) != id_env: print("distinta", nombre); sys.exit()
+# Sin id no se sabe de quién es el token: lo que manda es la app dueña del
+# token, no el WA_APP_ID del .env (cuya huella ya se miró arriba).
+if not d.get("id"): print("error Graph no devolvió el id de la app"); sys.exit()
+if str(d["id"]).strip() != id_env.strip(): print("distinta", nombre); sys.exit()
 plano = re.sub(r"[^a-z0-9]", "", nombre.lower())
 print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)' "$id" "$APPS_AJENAS_FRAGMENTOS")
   case "$v" in

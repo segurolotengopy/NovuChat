@@ -88,6 +88,7 @@ describe.each(['--alta-meta', '--alta-waba'] as const)('%s', (modo) => {
   it.each([
     ['un error de Graph', { error: { message: 'Invalid OAuth access token' } }],
     ['una respuesta sin nombre', { id: ID }],
+    ['una respuesta sin id (no se sabe de quién es el token)', { name: 'NovuChat-Asistente' }],
     ['una respuesta vacía', ''],
     ['algo que no es JSON', '<html>502</html>'],
     ['una lista en vez de un objeto', [{ id: ID, name: 'NovuChat-Asistente' }]],
@@ -146,14 +147,24 @@ describe('la fuente del script', () => {
     }
   });
 
-  it('no publica un id de app: las huellas son sha256 y no hay tiras largas de dígitos', () => {
+  const lista = (/APPS_AJENAS_HUELLAS="([^"]*)"/.exec(fuente)?.[1] ?? '').split(/\s+/).filter(Boolean);
+
+  it('no publica un id de app: las huellas son sha256 en grupos de 8 y no hay tiras largas de dígitos', () => {
+    // verificar-saneo.sh corta desde 10 dígitos seguidos; una huella de corrido puede traerlos.
     expect(fuente).not.toMatch(/\d{9,}/);
-    const lista = /APPS_AJENAS_HUELLAS="([^"]*)"/.exec(fuente)?.[1] ?? '';
-    for (const h of lista.split(/\s+/).filter(Boolean)) expect(h).toMatch(/^[0-9a-f]{64}$/);
+    for (const h of lista) expect(h).toMatch(/^([0-9a-f]{8}:){7}[0-9a-f]{8}$/);
   });
 
   it('trae la huella de las dos apps de WhatsApp-Modular (AAB1-WA-Prod y Demo SeguroLo Tengo)', () => {
-    const lista = /APPS_AJENAS_HUELLAS="([^"]*)"/.exec(fuente)?.[1] ?? '';
-    expect(lista.split(/\s+/).filter(Boolean).length).toBeGreaterThanOrEqual(2);
+    expect(new Set(lista).size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('una huella de la lista, con sus «:», corta de verdad (sin red)', () => {
+    // No se conoce ningún id que dé esas huellas: se prueba el cotejo con una
+    // lista equivalente, escrita en el mismo formato, por la variable EXTRA.
+    const conPuntos = huella(ID).replace(/(.{8})(?!$)/g, '$1:');
+    const r = correr('--alta-meta', { id: ID, name: 'NovuChat-Asistente' }, { NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: conPuntos });
+    expect(r.codigo).toBe(3);
+    expect(r.llamadas).toEqual([]);
   });
 });
