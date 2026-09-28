@@ -40,6 +40,21 @@ Una excepción necesita las tres cosas, o no es una excepción:
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
 
+## Estado al 28/09/2026 (medios entrantes en el Demo B y la captación)
+
+Primer paso general de «audio e imagen son capacidades de todos los flujos»
+(Andres, 25/09 y 28/09; `Flujos/LEEME-flujos.md` §0.d). Las filas **Demo B
+(venta y cobro)** y **NovuChat (captación)** reciben la rama de medios de
+reservas, con los mismos módulos `Preparar transcripción` y `Preparar imagen`.
+**Siguen sin excepción (`—`):** la nota va acá y no en la columna, porque
+`estado-de-versiones.sh` toma cualquier texto de esa columna por una excepción
+declarada. Consecuencia: desde que el PR se fusione y hasta que los dos se
+publiquen (con el OK de Andres, diagnóstico en seco y prueba con teléfono:
+audio, foto de producto, PDF y foto sin contexto), el script los va a marcar
+**atrasados sin declarar**, y es correcto que lo haga. `capacidades-comunes.test.ts`
+exige desde ahora la rama en todo flujo conversacional. Cero mensajes por
+conversación.
+
 ## Estado al 27/09/2026 (hotfix de protección de reservas)
 
 Los tres flujos de reservas reciben el mismo cambio —módulos compartidos más el

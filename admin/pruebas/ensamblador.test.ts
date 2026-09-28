@@ -75,11 +75,28 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
   it('hay 8 JSON de flujo, y el vertical de reservas (Demo A y Platinum) tiene manifiesto', () => {
     expect(FLUJOS).toHaveLength(8);
     expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-a-agendamiento.json', 'platinum-agendamiento.json']));
+    // Desde el 28/09/2026 el Demo B y la captación también tienen manifiesto,
+    // SOLO para los dos nodos de medios entrantes («Preparar transcripción» y
+    // «Preparar imagen»): son el mismo módulo que en reservas, inyectado, no
+    // una copia. El resto de su código sigue en el JSON (FL2).
+    expect(CON_MANIFIESTO).toEqual(expect.arrayContaining(['demo-b-venta-cobro.json', 'novuchat-onboarding.json']));
     // Los que todavía no se ensamblan, dichos con nombre: son el bloque B-2.
     expect(SIN_MANIFIESTO).toEqual([
       'agendamiento-seguimientos.json', 'agendamiento-senas-vencidas.json', 'bellido-agendamiento.json',
-      'demo-a-recordatorios.json', 'demo-b-venta-cobro.json', 'novuchat-onboarding.json',
+      'demo-a-recordatorios.json',
     ]);
+  });
+
+  it('el Demo B y la captación inyectan SOLO los dos nodos de medios, sin prompts', () => {
+    for (const f of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
+      const m = leerManifiesto(f) as Record<string, any>;
+      const a = leerManifiesto('demo-a-agendamiento.json') as Record<string, any>;
+      expect(Object.keys(m.codigo).sort(), f).toEqual(['Preparar imagen', 'Preparar transcripción']);
+      // El MISMO archivo que usan los flujos de reservas, sea cual sea su carpeta.
+      expect(m.codigo['Preparar transcripción'], f).toEqual(a.codigo['Preparar transcripción']);
+      expect(m.codigo['Preparar imagen'], f).toEqual(a.codigo['Preparar imagen']);
+      expect(m.prompts, f).toEqual({});
+    }
   });
 
   it('cada manifiesto declara el flujo del que es y conserva `Config base` con sus REEMPLAZAR_*', () => {
@@ -138,7 +155,8 @@ describe('3. `extraer` seguido de `ensamblar` es la identidad', () => {
     rmSync(carpetas(dir).prompts, { recursive: true, force: true });
     const r = extraerFlujo(archivo, { raiz: dir });
     expect(r.avisos).toEqual([]);
-    expect(r.escritos.length).toBe(22 + 1); // los módulos y el manifiesto
+    // Los módulos y el manifiesto: 22 + 1 en reservas, 2 + 1 en el Demo B y la captación.
+    expect(r.escritos.length).toBe((ensamblarEnMemoria(archivo).inyectados ?? []).length + 1);
     const e = ensamblarEnMemoria(archivo, dir);
     expect(Buffer.from(e.texto, 'utf8').equals(bytes(join(RAIZ_FLUJOS, archivo)))).toBe(true);
     // Y cada módulo escrito es byte a byte el versionado: `extraer` no inventa.
@@ -265,6 +283,10 @@ describe('5. Un nodo renombrado hace fallar con un mensaje claro', () => {
 
   it('la carpeta de `extraer --nuevo` solo admite un nombre simple', () => {
     const dir = copiaDeFlujos();
+    // Desde el 28/09 el Demo B tiene manifiesto (sus dos nodos de medios), y
+    // con manifiesto `extraer` no crea otro: en la copia se le quita, para
+    // seguir probando la creación con un flujo real.
+    rmSync(rutaDeManifiesto('demo-b-venta-cobro.json', dir));
     for (const mala of ['../fuera', 'a/b', '/tmp', 'Reservas', 'con espacio', '']) {
       expect(() => manifiestoInicial('demo-b-venta-cobro.json', mala, dir), mala).toThrow(/no es válida: solo minúsculas/);
       expect(() => extraerFlujo('demo-b-venta-cobro.json', { raiz: dir, nuevo: mala }), mala).toThrow(/no es válida: solo minúsculas/);
@@ -360,9 +382,21 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
     // aunque su código todavía diverja: es lo que el bloque B-2 tiene que mirar.
     const otros = ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']
       .map((f) => JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as { nodes: { name: string }[] });
+    // LOS DOS DE MEDIOS ENTRANTES son la excepción, y a propósito (28/09/2026):
+    // son una capacidad GENERAL (Andres, 25/09) que todavía vive en la carpeta
+    // de reservas hasta que F3a la mueva al core. Están en los otros dos flujos
+    // por nombre Y por archivo: los inyecta el ensamblador desde el mismo módulo.
+    const MEDIOS = ['Preparar transcripción', 'Preparar imagen'];
     for (const [nombre, v] of Object.entries(a.codigo)) {
       const ruta = typeof v === 'string' ? v : v.archivo;
       const enOtros = otros.every((o) => o.nodes.some((n) => n.name === nombre));
+      if (MEDIOS.includes(nombre)) {
+        expect(enOtros, nombre).toBe(true);
+        for (const f of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
+          expect((leerManifiesto(f) as { codigo: Record<string, unknown> }).codigo[nombre], `${f}: ${nombre}`).toEqual(v);
+        }
+        continue;
+      }
       expect(COMUN.test(ruta), `${nombre} → ${ruta}`).toBe(enOtros);
     }
   });
@@ -383,7 +417,12 @@ describe('8. La línea de comandos', () => {
     const salida = execFileSync(process.execPath, [SCRIPT, 'verificar'], { encoding: 'utf8' });
     expect(salida).toContain('Todos los flujos coinciden con sus módulos.');
     expect(salida.match(/sin manifiesto, idéntico por definición/g)).toHaveLength(SIN_MANIFIESTO.length);
-    expect(salida.match(/✓ .*: idéntico \(22 puntos de inyección\)/g)).toHaveLength(CON_MANIFIESTO.length);
+    expect(salida.match(/✓ .*: idéntico \(\d+ puntos de inyección\)/g)).toHaveLength(CON_MANIFIESTO.length);
+    // Y cada uno con SU cuenta: 22 en reservas, 2 en el Demo B y la captación.
+    for (const f of CON_MANIFIESTO) {
+      const n = (ensamblarEnMemoria(f).inyectados ?? []).length;
+      expect(salida, f).toContain(`✓ ${f}: idéntico (${n} puntos de inyección)`);
+    }
   });
 
   it('`verificar` sale con 1 y nombra el punto cuando un módulo difiere', () => {
