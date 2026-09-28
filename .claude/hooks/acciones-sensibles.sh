@@ -37,11 +37,21 @@ if evento.get("tool_name") != "Bash":
 cmd = str((evento.get("tool_input") or {}).get("command") or "")
 
 # Un comando que ACTÚA fuera de la máquina o instala algo.
-ACTUA = r"\b(curl|wget|ssh|scp|docker|systemctl|gcloud|gh|firebase|npm\s+(i|install)|pnpm\s+(add|install)|pip\s+install|git\s+clone)\b|--aplicar|--suscribir|publicar-flujo|subscribed_apps"
+ACTUA = r"\b(curl|wget|ssh|scp|docker|systemctl|gcloud|gh|firebase|npm\s+(i|install)|pnpm\s+(add|install)|pip\s+install|git\s+clone)\b|--aplicar|--suscribir|publicar-flujo|subscribed_apps|/subscriptions\b"
 # CON EL ESPACIO de «SeguroLo Tengo», a propósito: el dueño del repositorio en
 # GitHub se llama `segurolotengopy`, y la primera versión («SeguroLo» a secas,
 # sin distinguir mayúsculas) negaba cualquier `gh` que nombrara el repositorio.
-SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp-Modular"
+# El receptor de clientes de AAB1 (prohibiciones 5 y 7, #260): la app y su
+# contenedor, por su nombre exacto. «AAB1» a secas NO, por la misma razón que
+# el espacio de arriba: aparece en títulos y cuerpos de PR que documentan B8.
+# NovuChat llama a `/{app-id}/subscriptions` con SUS apps
+# (`scripts/webhook-meta.sh`), así que esa ruta solo se niega junto a un nombre
+# de acá. El separador del nombre admite guion, guion bajo, espacio o nada
+# (Docker acepta `receptor_clientes`); «receptor de clientes» en prosa no
+# coincide. Lo que una expresión regular no ve: comillas partidas en el nombre,
+# el id del contenedor, y la app que llega por un `.env` o por su id numérico
+# (`webhook-meta.sh --alta-meta --env-cliente …`); eso se cierra en el script.
+SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp-Modular|AAB1[-_\s]?WA[-_\s]?Prod|receptor[-_\s]?clientes"
 CANAL_NO_OFICIAL = r"evolution[-_ ]?api|baileys|wppconnect"
 
 # ---------------------------------------------------------------------------
@@ -264,7 +274,7 @@ def toca_enlace(c):
 
 NUNCA = [
     (lambda c: re.search(SISTEMA_AJENO, c, re.I) and re.search(ACTUA, c),
-     "Prohibición 5 de CLAUDE.md: la app Demo SeguroLo Tengo, el otp-service y WhatsApp-Modular no se tocan."),
+     "Prohibiciones 5 y 7 de CLAUDE.md: la app Demo SeguroLo Tengo, el otp-service, WhatsApp-Modular y el receptor de clientes de AAB1 (la app AAB1-WA-Prod, su contenedor y su suscripción) no se tocan; toda operación sobre el receptor la ejecuta la sesión de WhatsApp-Modular con autorización de Andres."),
     (lambda c: re.search(CANAL_NO_OFICIAL, c, re.I) and re.search(ACTUA, c),
      "Prohibición 1 de CLAUDE.md: el único canal es la Cloud API oficial de Meta."),
     (lambda c: re.search(r"\bgh\s+auth\s+switch\b|\bgcloud\s+config\s+set\b", c),
