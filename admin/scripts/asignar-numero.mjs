@@ -71,7 +71,7 @@ const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const ID_NUMERO = /^[0-9]{6,25}$/;
 const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
-// `central/ejes.ts` importa `./planes.js` y `./prepago.js`: se resuelve con el
+// `central/ejes.ts` importa `./cuenta/planes.js` y `./cuenta/prepago.js`: se resuelve con el
 // mismo hook que `asignar-plan.mjs` y `pase-a-produccion.mjs`, sin compilar.
 registerHooks({
   resolve(especificador, contexto, siguiente) {
