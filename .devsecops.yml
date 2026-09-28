@@ -51,14 +51,32 @@ seguridad:
   # NO se declara `componente` en ninguna excepción: el job seguridad-estatica
   # analiza con ruta '.' y el componente del manifiesto es './admin', así que
   # una excepción con componente quedaría filtrada y no surtiría efecto.
+  excepciones:
+
+
+  # ---------------------------------------------------------------------------
+  # ACTIVA: hallazgo de Gitleaks del PR #1 (falso positivo). La regla
+  # generic-api-key cruza el salto de línea cuando el valor está vacío y
+  # captura el renglón siguiente: lo que reporta como secreto es la cadena
+  # VITE_USAR_EMULADORES=true.
   #
-  # ✅ CERRADA el 2026-09-28: la excepción de Gitleaks por
-  # `admin/scripts/emuladores.sh:111` (generic-api-key cruzaba el salto de
-  # línea de una asignación vacía y tomaba `VITE_USAR_EMULADORES=true`) ya no
-  # hace falta. La cubren las allowlists por forma del valor de
-  # .github/gitleaks.toml, que es la configuración que usa el CI
-  # (`GITLEAKS_CONFIG` en _reusable-security.yml). Comprobado con gitleaks 8.30.1: sin
-  # esa configuración, el commit ce0b484 da el hallazgo; con ella, los 674
-  # commits de la historia dan «no leaks found». El comentario anterior la
-  # llamaba «respaldo no aplicado», pero la entrada estaba activa.
-  excepciones: []
+  # POR QUÉ SIGUE ACTIVA (revisión de seguridad del #253, 28/09/2026). Las
+  # allowlists por forma del valor de .github/gitleaks.toml lo tapan con
+  # gitleaks 8.30.1, pero el CI corre la versión por defecto de
+  # gitleaks-action, que es 8.24.3, y con esa versión no lo tapan. La corrida
+  # del PR #1 lo muestra con el hallazgo y las allowlists ya presentes, y la
+  # siguiente en verde lo saltea por esta excepción. Solo se nota en un
+  # escaneo de la historia completa (workflow_dispatch). Se cierra cuando el CI
+  # fije gitleaks 8.28 o posterior (GITLEAKS_VERSION en
+  # _reusable-security.yml, que es copia del estándar). Si eso no ocurre antes
+  # del vencimiento, se renueva con la misma huella exacta.
+  # ---------------------------------------------------------------------------
+    - id: ce0b484c46b784957ace1313296bf7089630dcd0:admin/scripts/emuladores.sh:generic-api-key:111
+      herramienta: gitleaks
+      justificacion: >-
+        Falso positivo: VITE_APPCHECK_SITE_KEY esta vacio y generic-api-key
+        cruza el salto de linea, capturando VITE_USAR_EMULADORES=true como si
+        fuera el secreto. No hay ninguna credencial en ese archivo.
+      aprobado_por: Andres Alberdi
+      creado: "2026-08-30"
+      vence: "2026-10-31"
