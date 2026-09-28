@@ -66,14 +66,14 @@ describe('el pagoId y el comprobante tienen la forma que exigen el servidor y st
     const ids = new Set(Array.from({ length: 50 }, () => nuevoPagoId()));
     for (const id of ids) expect(id).toMatch(ID_PAGO);
     expect(ids.size).toBe(50);
-    // La MISMA forma que `ID_PAGO` de functions/src/pagos.ts y que la regla de Storage.
+    // La MISMA forma que `ID_PAGO` de functions/src/central/pagar/pagos.ts y que la regla de Storage.
     expect(leer('functions/src/central/pagar/pagos.ts')).toContain('export const ID_PAGO = /^[A-Za-z0-9_-]{22}$/;');
     expect(leer('storage.rules')).toContain("pagoId.matches('^[A-Za-z0-9_-]{22}$')");
   });
 
   it('la evidencia va bajo el pagoId con uno de los tres nombres fijos', () => {
     expect(rutaEvidencia('t-1', 'AbCdEfGhIjKlMnOpQrStUv', 'pdf')).toBe('tenants/t-1/pagos/AbCdEfGhIjKlMnOpQrStUv/evidencia.pdf');
-    // Los tres nombres de `ARCHIVOS_EVIDENCIA` (functions/src/pagos.ts) y de `storage.rules`.
+    // Los tres nombres de `ARCHIVOS_EVIDENCIA` (functions/src/central/pagar/pagos.ts) y de `storage.rules`.
     const pagos = leer('functions/src/central/pagar/pagos.ts');
     const reglas = leer('storage.rules');
     for (const ext of ['jpg', 'png', 'pdf'] as const) {
@@ -129,7 +129,7 @@ describe('nada se sube a Storage si el servidor rechazaría el pedido antes de m
 });
 
 describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', () => {
-  it('ID_TENANT es la misma expresión de functions/src/pagos.ts e index.ts', () => {
+  it('ID_TENANT es la misma expresión de functions/src/central/pagar/pagos.ts e index.ts', () => {
     expect(leer('functions/src/central/pagar/pagos.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
     expect(leer('functions/src/index.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
     expect(esIdTenant('salon-rosa')).toBe(true);

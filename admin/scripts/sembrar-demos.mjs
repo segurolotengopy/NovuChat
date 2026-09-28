@@ -308,7 +308,7 @@ console.log(`\nDestino: ${PROYECTO}\n`);
 // es el mismo que el de `migrar-ejes.mjs`. OJO: el catálogo del Demo B tiene
 // más de 150 ítems; con `impulso` (20 productos) `cargar-negocio.mjs` lo
 // rechaza. Es una decisión de Andres, no de este script.
-// `central/ejes.ts` importa `./planes.js` y `./prepago.js`: Node no reescribe
+// `central/ejes.ts` importa `./cuenta/planes.js` y `./cuenta/prepago.js`: Node no reescribe
 // esa extensión al cargar TypeScript sin compilar, así que se resuelve con el
 // mismo hook que `asignar-plan.mjs` y `pase-a-produccion.mjs`.
 registerHooks({

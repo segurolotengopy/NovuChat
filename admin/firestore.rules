@@ -528,7 +528,7 @@ service cloud.firestore {
 
         // El tope escrito a mano, porque las reglas no importan TypeScript;
         // `pruebas/campanas-reglas.test.ts` compara esta tabla y el rango con
-        // `limiteDeCampanas` de `functions/src/planes.ts`.
+        // `limiteDeCampanas` de `functions/src/central/cuenta/planes.ts`.
         // RESPALDO-CAMPANAS-POR-PLAN
         function limiteCampanas() {
           let ruta = /databases/$(database)/documents/tenants/$(tenantId)/cuenta/estado;
@@ -1152,7 +1152,7 @@ service cloud.firestore {
       // chico, nunca hacia el más grande.
       //
       // ESTA TABLA ES SOLO EL RESPALDO. La fuente de los números es
-      // `functions/src/planes.ts` (`PLANES_ASIGNABLES`); las reglas no pueden
+      // `functions/src/central/cuenta/planes.ts` (`PLANES_ASIGNABLES`); las reglas no pueden
       // importar TypeScript, así que acá van escritos a mano y
       // `pruebas/limite-catalogo.test.ts` compara esta línea, el rango y el
       // mínimo con aquel archivo. Si se toca uno solo, se nota.
