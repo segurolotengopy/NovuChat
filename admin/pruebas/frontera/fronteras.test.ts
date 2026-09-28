@@ -370,9 +370,12 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.map((c) => c.hacia)).toEqual([`${F}modulos/agenda/y.ts`]);
   });
 
+  // Por el nombre del archivo y no por su carpeta: F2 los mueve (tanda 5), y
+  // la mudanza no reescribe una ruta armada con una plantilla.
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
+    const fuente = (nombre: string) => expect.stringMatching(new RegExp(`^${F}(?:[\\w-]+/)*${nombre}\\.ts$`));
     expect(importsDe('admin/scripts/migrar-prepago.mjs').map((i) => i.destino))
-      .toEqual(expect.arrayContaining([`${F}prepago.ts`, `${F}planes.ts`]));
+      .toEqual(expect.arrayContaining([fuente('prepago'), fuente('planes')]));
   });
 
   it('index.ts: sus reexportaciones no cuentan; un import suyo sí', () => {
