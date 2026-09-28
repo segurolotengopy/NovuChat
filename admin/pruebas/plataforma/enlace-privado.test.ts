@@ -18,7 +18,8 @@
  */
 import { spawnSync } from 'node:child_process';
 import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync,
+  closeSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync,
+  statSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -147,9 +148,15 @@ describe('escribirEnlace()', () => {
     const rel = escribir();
     expect(rel).toBe(join('CLIENTES', 'SALON_ROSA', '.enlaces', `${NOMBRE}.txt`));
     const archivo = join(raiz, rel);
-    expect(statSync(archivo).mode & 0o777).toBe(0o600);
     expect(statSync(dirname(archivo)).mode & 0o777).toBe(0o700);
-    expect(readFileSync(archivo, 'utf8')).toContain('oobCode');
+    // Permisos y contenido del MISMO descriptor (CodeQL js/file-system-race).
+    const fd = openSync(archivo, 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      expect(readFileSync(fd, 'utf8')).toContain('oobCode');
+    } finally {
+      closeSync(fd);
+    }
   });
 
   it('nada queda en el directorio personal', () => {
@@ -313,7 +320,7 @@ describe('Las defensas para que un agente no lo abra', () => {
     'ls CLIENTES/',
     'ls -d .*',
     'ls */*',
-    'node scripts/alta-comercio.mjs --proyecto p --tenant x --nombre X --admin a@b.co',
+    'node scripts/alta-comercio.mjs --proyecto p --tenant x --nombre X --admin ana@ejemplo.com',
     'git commit -m "Seguridad: va a CLIENTES/<CLIENTE>/.enlaces/"',
     'git commit -F - <<\'EOF\'\nEl enlace va a CLIENTES/<CLIENTE>/.enlaces/\nEOF',
     'git diff -- .gitignore | tail -5',
