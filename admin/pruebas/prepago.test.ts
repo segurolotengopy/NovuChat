@@ -22,8 +22,8 @@ import {
   modalidadDe, montoUsdDe, periodoAnterior, periodoSiguiente, periodosIncoherentes, rechazoPorPrepago,
   recordatoriosDebidos,
   resumenDeCuenta, sumarMeses, tipoCambioVigente, type ContextoRecordatorio, type CuentaCruda,
-} from '../functions/src/prepago.ts';
-import { PLANES, limitesDe } from '../functions/src/planes.ts';
+} from '../functions/src/central/cuenta/prepago.ts';
+import { PLANES, limitesDe } from '../functions/src/central/cuenta/planes.ts';
 
 const HORA = 3_600_000;
 /** Un instante en hora de Bolivia (UTC−4), en milisegundos. */

@@ -143,12 +143,12 @@ const {
   RANGO_POR_CONTRATO, copiaDeLimites,
   esIdPlan, limitesDe, mismoMarcador, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
   valorPorContratoValido,
-} = await import('../functions/src/planes.ts');
+} = await import('../functions/src/central/cuenta/planes.ts');
 const {
   BOLSA_PRUEBA_MAXIMA, MODALIDADES, PruebaInvalida, bolsaPruebaValida, camposDerivados, consumidasDe, esModalidad,
   esPeriodo, estadoDeServicio, montoFueraDeContrato, pruebaActual, pruebaNueva,
-} = await import('../functions/src/prepago.ts');
-const { periodoDe } = await import('../functions/src/planes.ts');
+} = await import('../functions/src/central/cuenta/prepago.ts');
+const { periodoDe } = await import('../functions/src/central/cuenta/planes.ts');
 const { MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad } = await import('../functions/src/central/ejes.ts');
 const { umbralValido, umbralesDeAtencion } = await import('../functions/src/core/conteo/atencion.ts');
 

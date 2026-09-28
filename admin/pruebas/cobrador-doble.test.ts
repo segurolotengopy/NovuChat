@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { CobradorDoble, firmarAviso, idDeCobro, pngMinimo } from './dobles/cobrador.ts';
 import {
   ErrorCobrador, CobradorNoResponde, configCobradorDe, crearClienteHttp, montoATexto, montoDesdeTexto, verificarAviso,
-} from '../functions/src/cobrador.ts';
+} from '../functions/src/central/pagar/cobrador.ts';
 import { VENTANA_MS } from '../functions/src/core/seguridad/firma.ts';
 
 const BASE = 'https://cobrador.prueba';

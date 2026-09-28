@@ -48,7 +48,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const db = getFirestore();
 
 const L = await import('../functions/src/limiteCatalogo.ts');
-const P = await import('../functions/src/planes.ts');
+const P = await import('../functions/src/central/cuenta/planes.ts');
 
 // ===========================================================================
 // 1) UNA SOLA FUENTE PARA LOS NÚMEROS

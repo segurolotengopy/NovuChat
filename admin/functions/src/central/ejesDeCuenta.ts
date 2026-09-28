@@ -31,8 +31,8 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../core/seguridad/autorizacion.js';
-import { limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe } from '../planes.js';
-import { modalidadDe, type CuentaCruda } from '../prepago.js';
+import { limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe } from './cuenta/planes.js';
+import { modalidadDe, type CuentaCruda } from './cuenta/prepago.js';
 import {
   MODELOS, TITULARIDADES, cambiosDelMes, esModelo, esTitularidad, modeloDe, titularidadDe,
 } from './ejes.js';

@@ -114,7 +114,7 @@ if (!usuario) {
 // con su copia de límites y la versión del catálogo, lo mismo que `altaTenant`.
 // Antes se escribía `plan: 'basico'`, que no es un plan del catálogo. Si el
 // comercio contrató otro plan, se asigna después con `asignar-plan.mjs`.
-const { cuentaInicial } = await import('../functions/src/planes.ts');
+const { cuentaInicial } = await import('../functions/src/central/cuenta/planes.ts');
 const cuenta = cuentaInicial();
 const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
 const lote = db.batch();

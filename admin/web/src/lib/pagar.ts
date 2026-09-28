@@ -22,7 +22,7 @@ import {
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
 import { PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, limitesDeCuenta, type IdPlanVendible } from './planes';
-import { porContratoDe, precioMensualDe, precioPorContratoDe } from '../../../functions/src/planes';
+import { porContratoDe, precioMensualDe, precioPorContratoDe } from '../../../functions/src/central/cuenta/planes';
 
 export type { Pago, TipoCambio };
 

@@ -20,7 +20,7 @@ import {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
   PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
   esIdPlan, esPlanVendible, limitesDe, limitesDeCuenta, planQuePuedePedir, umbralDeAviso,
-} from '../functions/src/planes.ts';
+} from '../functions/src/central/cuenta/planes.ts';
 
 const MES = '2026-10';
 

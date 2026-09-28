@@ -60,8 +60,8 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { FieldValue, Timestamp, getFirestore, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
-import { REGION } from './core/region.js';
-import { registrar } from './ingesta.js';
+import { REGION } from '../../core/region.js';
+import { registrar } from '../../ingesta.js';
 import {
   COBRADOR_AVISO_SECRETO, COBRADOR_TOKEN, ErrorCobrador, CobradorNoResponde,
   configCobradorDe, montoDesdeTexto, resolverCobrador, verificarAviso,
@@ -70,10 +70,10 @@ import {
 import {
   MONEDA_COBRO, MONEDA_LISTA, descripcionDe, importeBs, importeCobrable, modalidadDe, montoFueraDeContrato, montoUsdDe,
   type CuentaCruda,
-} from './prepago.js';
-import { SinTipoDeCambio, tipoCambioDe } from './central/servicios/tipoCambio.js';
-import { planQuePuedePedir, precioMensualDe } from './planes.js';
-import { exigirSesionReciente } from './core/seguridad/autorizacion.js';
+} from '../cuenta/prepago.js';
+import { SinTipoDeCambio, tipoCambioDe } from '../servicios/tipoCambio.js';
+import { planQuePuedePedir, precioMensualDe } from '../cuenta/planes.js';
+import { exigirSesionReciente } from '../../core/seguridad/autorizacion.js';
 import {
   auditoriaDeLimites, cambioAutorizado, conceptoDe, esPedidoDePago, puertaDePagos,
   type Confirmacion, type PedidoDePago, type PuertaDePagos,

@@ -51,7 +51,7 @@ const POR = (opcion('por') ?? '').trim().slice(0, 40);
 
 let prepago;
 try {
-  prepago = await import('../functions/lib/prepago.js');
+  prepago = await import('../functions/lib/central/cuenta/prepago.js');
 } catch {
   console.error('\n  ✗ No se encuentra functions/lib/prepago.js. Compile primero: pnpm functions:build\n');
   process.exit(2);

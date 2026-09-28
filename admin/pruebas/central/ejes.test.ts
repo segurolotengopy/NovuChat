@@ -18,8 +18,8 @@ import { describe, expect, it } from 'vitest';
 import {
   CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, PLANES, PLANES_ASIGNABLES, PLANES_PUBLICADOS, PLAN_DEMOSTRACION,
   PLAN_POR_DEFECTO, cuentaInicial, esIdPlan, esPlanVendible, limitesDe, limitesDeCuenta, planQuePuedePedir,
-} from '../../functions/src/planes.ts';
-import { estadoDeServicio, modalidadDe } from '../../functions/src/prepago.ts';
+} from '../../functions/src/central/cuenta/planes.ts';
+import { estadoDeServicio, modalidadDe } from '../../functions/src/central/cuenta/prepago.ts';
 import {
   MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, cambiosDelMes, cambiosUsadosEn,
   esModelo, esTitularidad, mesDeCambios, modeloDe, titularidadDe,
@@ -207,7 +207,7 @@ describe('Las fuentes: nadie escribe el plan viejo ni pagaMeta, y el servidor us
     for (const a of archivos) {
       expect(sinComentarios(leer(a)), a).not.toMatch(/pagaMeta\s*:\s*['"]/);
     }
-    expect(sinComentarios(leer('functions/src/planes.ts'))).toMatch(/pagaMeta\?:/);
+    expect(sinComentarios(leer('functions/src/central/cuenta/planes.ts'))).toMatch(/pagaMeta\?:/);
   });
 
   it('el servidor usa `esPlanVendible` e `IdPlanVendible`: el puente `esIdPlan` / `IdPlan` / `PLAN_DEMOSTRACION` es solo para la consola', () => {

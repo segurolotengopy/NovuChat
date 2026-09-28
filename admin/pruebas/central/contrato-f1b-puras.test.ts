@@ -22,12 +22,12 @@ import { describe, expect, it } from 'vitest';
 import {
   CLAVES_POR_CONTRATO, LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, PLANES, aCentavos,
   copiaDeLimites, limitesDe, limitesDeCuenta, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
-} from '../../functions/src/planes.ts';
+} from '../../functions/src/central/cuenta/planes.ts';
 import {
   BOLSA_PRUEBA_MAXIMA, PRUEBA, PRUEBA_MESES_MAXIMO, PruebaInvalida, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados,
   consumoDeConversacion, estadoDeServicio, importeBs, importeCobrable, inicioDePrueba, montoFueraDeContrato, montoUsdDe,
   periodosIncoherentes, pruebaNueva, recordatoriosDebidos, techoDePrueba,
-} from '../../functions/src/prepago.ts';
+} from '../../functions/src/central/cuenta/prepago.ts';
 
 /** 26/09/2026 a las 12:00 de Bolivia (16:00 UTC): quedan cinco días de septiembre. */
 const SEP_26 = Date.UTC(2026, 8, 26, 16, 0, 0);

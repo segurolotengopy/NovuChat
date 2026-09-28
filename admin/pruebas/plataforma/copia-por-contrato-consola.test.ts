@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PanelEjes } from '../../web/src/plataforma/componentes/PanelEjes';
 import { MODELO_POR_DEFECTO, origenDeCambiosIncluidos, type EjesDeCuenta } from '../../web/src/lib/ejes';
-import { MAXIMO_CAMBIOS_INCLUIDOS } from '../../functions/src/planes';
+import { MAXIMO_CAMBIOS_INCLUIDOS } from '../../functions/src/central/cuenta/planes';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', '..', ruta), 'utf8');

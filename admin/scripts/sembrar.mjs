@@ -31,7 +31,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
 // El plan inicial de las altas (Impulso con su copia de límites), el mismo que
 // escriben `altaTenant` y `alta-comercio.mjs`. Node 22.18+ carga TypeScript.
-import { cuentaInicial } from '../functions/src/planes.ts';
+import { cuentaInicial } from '../functions/src/central/cuenta/planes.ts';
 
 // -----------------------------------------------------------------------------
 // Salvaguardas

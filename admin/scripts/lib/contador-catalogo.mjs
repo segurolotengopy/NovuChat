@@ -27,7 +27,7 @@
  */
 import { FieldValue } from 'firebase-admin/firestore';
 
-const { LIMITE_MAXIMO, esIdPlan, limitesDeCuenta } = await import('../../functions/src/planes.ts');
+const { LIMITE_MAXIMO, esIdPlan, limitesDeCuenta } = await import('../../functions/src/central/cuenta/planes.ts');
 
 /**
  * Las ÚNICAS tres claves del documento del contador. Con una clave de más, la

@@ -25,8 +25,8 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
-const { MENSAJE_CORTESIA } = await import('../functions/src/prepago.ts');
-const { limitesDe } = await import('../functions/src/planes.ts');
+const { MENSAJE_CORTESIA } = await import('../functions/src/central/cuenta/prepago.ts');
+const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 
 const T = 'prepago-config';
 const NUMERO = '1000000095';
