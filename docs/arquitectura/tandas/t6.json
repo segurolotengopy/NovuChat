@@ -1,0 +1,77 @@
+{
+  "movimientos": [
+    {
+      "de": "Flujos/src/comun/comercio-no-operativo.js",
+      "a": "Flujos/src/core/comercio-no-operativo.js"
+    },
+    {
+      "de": "Flujos/src/comun/config-del-negocio.js",
+      "a": "Flujos/src/core/config-del-negocio.js"
+    },
+    {
+      "de": "Flujos/src/comun/normalizar-entrada.js",
+      "a": "Flujos/src/core/normalizar-entrada.js"
+    },
+    {
+      "de": "Flujos/src/comun/procesar-respuesta.js",
+      "a": "Flujos/src/core/procesar-respuesta.js"
+    },
+    {
+      "de": "Flujos/src/comun/uso-extendido.js",
+      "a": "Flujos/src/core/uso-extendido.js"
+    },
+    {
+      "de": "Flujos/src/reservas/preparar-imagen.js",
+      "a": "Flujos/src/core/medios/preparar-imagen.js"
+    },
+    {
+      "de": "Flujos/src/reservas/preparar-transcripcion.js",
+      "a": "Flujos/src/core/medios/preparar-transcripcion.js"
+    },
+    {
+      "de": "Flujos/src/reservas/preparar-sena.js",
+      "a": "Flujos/src/modulos/cobros/preparar-sena.js"
+    },
+    {
+      "de": "Flujos/src/reservas/respuesta-de-la-sena.js",
+      "a": "Flujos/src/modulos/cobros/respuesta-de-la-sena.js"
+    },
+    {
+      "de": "Flujos/src/reservas/mensaje-de-la-sena.js",
+      "a": "Flujos/src/modulos/cobros/mensaje-de-la-sena.js"
+    },
+    {
+      "de": "Flujos/src/reservas/interpretar-lectura.js",
+      "a": "Flujos/src/modulos/cobros/interpretar-lectura.js"
+    },
+    {
+      "de": "Flujos/src/reservas/calendarios-a-revisar.js",
+      "a": "Flujos/src/modulos/agenda/calendarios-a-revisar.js"
+    },
+    {
+      "de": "Flujos/src/reservas/comprobar-reserva.js",
+      "a": "Flujos/src/modulos/agenda/comprobar-reserva.js"
+    },
+    {
+      "de": "Flujos/src/reservas/mensaje-a-enviar.js",
+      "a": "Flujos/src/modulos/agenda/mensaje-a-enviar.js"
+    },
+    {
+      "de": "Flujos/src/reservas/procesar-reintento.js",
+      "a": "Flujos/src/modulos/agenda/procesar-reintento.js"
+    },
+    {
+      "de": "Flujos/src/reservas/retomar-respuesta.js",
+      "a": "Flujos/src/modulos/agenda/retomar-respuesta.js"
+    },
+    {
+      "de": "Flujos/src/reservas/preparar-reenvio-del-qr.js",
+      "a": "Flujos/src/modulos/agenda/preparar-reenvio-del-qr.js"
+    },
+    {
+      "de": "Flujos/src/reservas/qr-no-enviado.js",
+      "a": "Flujos/src/modulos/agenda/qr-no-enviado.js"
+    }
+  ],
+  "suitesPuras": []
+}
