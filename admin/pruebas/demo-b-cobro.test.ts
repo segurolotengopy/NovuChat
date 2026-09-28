@@ -403,19 +403,19 @@ describe('(5) El comprobante: quién lo desvía y quién NO', () => {
     expect(s['pagoDeclarado']).toBe(true);
   });
 
-  it('CON COBRO SIMULADO cualquier archivo pasa como comprobante del pago simulado, haya o no QR pendiente (Andres, 23/09)', () => {
-    // El port del cobro le había pegado la exigencia del pendiente a los dos
-    // modos: en la demostración una foto sin QR pendiente hacía decir «no hay
-    // ningún pago pendiente». La exigencia es del modo real.
-    for (const pendiente of [false, true]) {
-      const cfg = fusionar(simulado({ pendiente }));
-      const s = normalizar(cfg, { type: 'image', image: { id: '1000000000000002', mime_type: 'image/jpeg' } });
-      expect(String(s['userInput']), `pendiente=${pendiente}`).toContain('pago SIMULADO del QR');
-      expect(String(s['userInput']), `pendiente=${pendiente}`).not.toContain('no hay ningún pago pendiente');
-      expect(s['esComprobante']).toBe(false);
-      // El cierre sigue siendo por hecho: solo cuenta si el servidor tenía un QR pendiente.
-      expect(s['pagoDeclarado']).toBe(pendiente);
-    }
+  it('CON COBRO SIMULADO y QR pendiente el archivo pasa como comprobante del pago simulado (Andres, 23/09); sin QR pendiente, NO (28/09)', () => {
+    // El 23/09 una foto sin QR pendiente hacía decir «no hay ningún pago
+    // pendiente»; el 28/09 una foto sin pedido respondió «Pago verificado
+    // (SIMULADO)» con un pedido inventado (#7454). Ahora, sin QR pendiente, la
+    // foto va a la rama de medios (`demo-b-medios.test.ts`): ni una cosa ni la otra.
+    const con = normalizar(fusionar(simulado({ pendiente: true })), { type: 'image', image: { id: '1000000000000002', mime_type: 'image/jpeg' } });
+    expect(String(con['userInput'])).toContain('pago SIMULADO del QR');
+    expect(con['esComprobante']).toBe(false);
+    expect(con['pagoDeclarado']).toBe(true);
+    const sin = normalizar(fusionar(simulado({ pendiente: false })), { type: 'image', image: { id: '1000000000000002', mime_type: 'image/jpeg' } });
+    expect(String(sin['userInput'])).not.toContain('pago SIMULADO del QR');
+    expect(String(sin['userInput'])).not.toContain('no hay ningún pago pendiente');
+    expect(sin).toMatchObject({ esComprobante: false, pagoDeclarado: false, esMedioVisual: true });
   });
 
   it('NEGANDO: con cobro REAL y sin QR pendiente, el archivo NO se trata como pago', () => {

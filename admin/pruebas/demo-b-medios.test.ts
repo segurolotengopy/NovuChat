@@ -11,8 +11,9 @@
  * LO QUE NO SE PUEDE ROMPER: el Demo B decide que un archivo es un comprobante
  * con dos hechos del SERVIDOR (`cobroPendiente` y `cobroRealActivo`, de
  * `configuracionFlujo`), no con lo que se ve en la imagen. Con cobro real y QR
- * pendiente, la foto o el PDF va a la lectura y al cotejo; en cobro simulado,
- * todo archivo pasa como el comprobante del pago simulado (Andres, 23 y 25/09).
+ * pendiente, la foto o el PDF va a la lectura y al cotejo; en cobro simulado
+ * CON QR pendiente, el archivo es el comprobante del pago simulado (Andres, 23 y
+ * 25/09). Sin QR pendiente, en los dos modos, va a la rama (Andres, 28/09).
  * La rama de medios cuelga de la salida FALSA de «¿Es un comprobante?» y solo
  * toma lo que el cobro no reclama.
  *
@@ -160,14 +161,27 @@ describe('2. EL COMPROBANTE NO CAMBIA: la rama de medios no intercepta ningún p
     expect(destinos(f, 'Obtener URL del medio')).toEqual(['Descargar comprobante']);
   });
 
-  it('cobro SIMULADO, con o sin QR pendiente: el archivo sigue siendo el comprobante simulado (Andres, 23 y 25/09)', () => {
-    for (const pendiente of [false, true]) {
-      const s = normalizar(fusionar(simulado({ pendiente })), FOTO);
-      expect(s['esMedioVisual'], `pendiente=${pendiente}`).toBe(false);
-      expect(String(s['userInput'])).toContain('pago SIMULADO del QR');
-      expect(pasa('¿Trae un medio?', s)).toBe(false);
-      expect(s['pagoDeclarado']).toBe(pendiente);
-    }
+  it('cobro SIMULADO CON QR pendiente: el archivo es el comprobante simulado (Andres, 23 y 25/09)', () => {
+    const s = normalizar(fusionar(simulado({ pendiente: true })), FOTO);
+    expect(s['esMedioVisual']).toBe(false);
+    expect(String(s['userInput'])).toContain('pago SIMULADO del QR');
+    expect(pasa('¿Trae un medio?', s)).toBe(false);
+    expect(s['pagoDeclarado']).toBe(true);
+  });
+
+  it('cobro SIMULADO SIN QR pendiente: la foto va a la rama y NO se toma por pago (Andres, 28/09, ejecución #7454)', () => {
+    const s = normalizar(fusionar(simulado({ pendiente: false })), FOTO);
+    expect(s).toMatchObject({ esMedioVisual: true, esComprobante: false, pagoDeclarado: false });
+    expect(String(s['userInput'])).not.toMatch(/SIMULADO|comprobante|pago/i);
+    expect(pasa('¿Es un comprobante?', s)).toBe(false);
+    expect(pasa('¿Trae un medio?', s)).toBe(true);
+  });
+
+  it('cobro SIMULADO sin QR pendiente y SIN id: tampoco se toma por pago (revisión de seguridad del #261)', () => {
+    const s = normalizar(fusionar(simulado({ pendiente: false })), { type: 'image', image: { mime_type: 'image/jpeg' } });
+    expect(s).toMatchObject({ esMedioVisual: false, esComprobante: false, pagoDeclarado: false });
+    expect(String(s['userInput'])).not.toMatch(/SIMULADO|no hay ningún pago pendiente/);
+    expect(String(s['userInput'])).toContain('No supongas que es un comprobante de pago');
   });
 
   it('cobro REAL con QR pendiente pero sin id: no entra a ninguna rama y el agente NO da el pago por recibido', () => {
