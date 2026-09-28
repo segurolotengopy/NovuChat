@@ -187,8 +187,10 @@ const agFechaDelTexto = (texto, hoy) => {
     const f = buscar((x) => diaDe(x) === Number(m[1]) && Number(x.slice(5, 7)) === mes);
     if (f) return f;
   }
-  m = /\b(?:domingo|lunes|martes|miercoles|jueves|viernes|sabado|hoy|manana)\s+(\d{1,2})(?![\d:.])/.exec(t)
-    || /\b(?:el|para\s+el|del|dia)\s+(\d{1,2})(?![\d:.])(?!\s*(?:hrs?|hs|horas?|de\s+la)\b)/.exec(t);
+  // Un punto que cierra la oracion no es parte de una hora: «el lunes 5.» es
+  // el dia 5 (ensayo del 28/09: se leia como «hoy lunes 28»); «5.30» si.
+  m = /\b(?:domingo|lunes|martes|miercoles|jueves|viernes|sabado|hoy|manana)\s+(\d{1,2})(?![\d:]|\.\d)/.exec(t)
+    || /\b(?:el|para\s+el|del|dia)\s+(\d{1,2})(?![\d:]|\.\d)(?!\s*(?:hrs?|hs|horas?|de\s+la)\b)/.exec(t);
   if (m && Number(m[1]) >= 1 && Number(m[1]) <= 31) {
     const f = buscar((x) => diaDe(x) === Number(m[1]));
     if (f) return f;

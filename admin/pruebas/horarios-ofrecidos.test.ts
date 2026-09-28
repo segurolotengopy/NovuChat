@@ -736,6 +736,74 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(salida[0]!['enviarContacto']).toBe(false);
     });
   });
+
+  describe('Ensayo del 28/09 en el Demo A: lo que falló con el teléfono real', () => {
+    const DRA = 'Dra. Ana Pérez';
+    const CFG2: J = { ...CFG, funcionarios: JSON.stringify([
+      { nombre: DOCTOR, servicios: [], calendario: CAL, horario: HORARIO },
+      { nombre: DRA, servicios: [], calendario: 'cal-ficticio-2', horario: HORARIO }]) };
+    const consultaDe = (quien: string, f: Fecha): J => ({ action: { tool: 'consultar_disponibilidad',
+      toolInput: { inicio: hora(f, '09:00'), fin: hora(f, '19:00'), funcionario: quien } }, observation: JSON.stringify([almuerzo(f)]) });
+
+    it('#7167: eligió las 15:30, dio el nombre y el modelo agendó OTRA hora ⇒ se deshace y se pregunta por las 15:30', () => {
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: Date.now() }, elegido: { fecha: LUNES.iso, min: 930, desde: Date.now() },
+        palabras: [], desde: Date.now() } } };
+      const ev = { ...cita('ev-11', LUNES, '11:00', '11:30'), summary: 'Cita Andres — consulta' };
+      const r = procesar('Andres', `Queda confirmada tu cita el ${L} a las 11:00.`, [consulta(LUNES), agendo(ev)], estado);
+      expect(r['agendaSinConfirmar']).toEqual(['ev-11']);
+      expect(r['eleccionPendiente']).toEqual({ dia: L, hora: '15:30' });
+      // Su «sí» del turno siguiente confirma las 15:30, no las 11:00.
+      expect(estado['agendaPorTelefono'][TEL].ultima.mins).toEqual([930]);
+      expect(estado['agendaPorTelefono'][TEL].elegido).toMatchObject({ fecha: LUNES.iso, min: 930 });
+      const c = comprobar(r, [ev])[0]!;
+      expect(String(c['respuesta'])).toContain(`¿Te la reservo el ${L} a las 15:30?`);
+      expect(String(c['respuesta'])).not.toContain('11:00');
+      // Negativa: sin hora elegida antes, la pregunta sigue siendo por la agendada.
+      const sinEleccion = procesar('Andres', `Queda confirmada tu cita el ${L} a las 11:00.`, [consulta(LUNES), agendo(ev)], {});
+      expect(sinEleccion['eleccionPendiente']).toBeNull();
+    });
+
+    it('#7117: se consultó la agenda de UNO y la oferta dice «con los dos» ⇒ se ofrece solo con el consultado', () => {
+      const dijo = `El ${L} hay espacio a las 14:00, 15:30 o 17:00 con el ${DOCTOR} y con la ${DRA}. ¿Cuál prefieres?`;
+      const r = procesar('Prefiero el lunes', dijo, [consultaDe(DOCTOR, LUNES)], {}, CFG2);
+      expect(r['respuesta']).toBe(`El ${L} hay espacio a las 14:00, 15:30 o 17:00 con el ${DOCTOR}. ¿Cuál prefieres?`);
+      expect(r['avisos']).toContain('horario_persona_sin_consulta');
+      // Positiva: con las dos agendas consultadas, sale tal cual.
+      expect(procesar('Prefiero el lunes', dijo, [consultaDe(DOCTOR, LUNES), consultaDe(DRA, LUNES)], {}, CFG2)['respuesta']).toBe(dijo);
+    });
+
+    it('#7122: «¿y a las 14?» consultando a uno y ofreciendo con los dos ⇒ «Sí, … con el consultado»', () => {
+      const r = procesar('¿y a las 14?', `Sí, a las 14:00 hay espacio el ${L} con el ${DOCTOR} y con la ${DRA}. ¿Con cuál te la agendo?`,
+        [consultaDe(DOCTOR, LUNES)], {}, CFG2);
+      expect(r['respuesta']).toBe(`Sí, el ${L} a las 14:00 hay espacio con el ${DOCTOR}. ¿Te la agendo?`);
+    });
+
+    it('#7126: «a las 16:15 con perez» sin consulta ⇒ la grilla con el día y la doctora, nunca «¿para qué día y horario?»', () => {
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [840] },
+        ultima: { fecha: LUNES.iso, mins: [840], desde: Date.now() }, elegido: null, palabras: [], desde: Date.now() } } };
+      const r = procesar('a las 16:15 con perez',
+        `Para brindarte una atención precisa, por este chat agendamos en horarios en punto o y media. A las 16:00 o a las 16:30 `
+        + `tenemos disponibilidad con la ${DRA} el ${L}.\n\n¿Cuál de estos dos horarios te agendo?`, [], estado, CFG2);
+      expect(r['respuesta']).toBe(`Por este chat las citas son en punto o y media: ¿quieres el ${L} a las 16:00 o a las 16:30? `
+        + `Así reviso la agenda de la ${DRA}.`);
+      expect(String(r['respuesta'])).not.toContain('¿Para qué día y en qué horario');
+      expect(estado['agendaPorTelefono'][TEL].ultima.mins).toEqual([960, 990]);
+    });
+
+    it('«el lunes 5.» con punto final es ese lunes, no hoy', () => {
+      const dijo = `Hay espacio a las 11:00 o 11:30 el ${L}.`;
+      const r = procesar('Prefiero el lunes', dijo, [consulta(LUNES)]);
+      expect(r['respuesta']).toBe(dijo);
+    });
+
+    it('consultar_disponibilidad no le trae al modelo el título de las citas (el nombre de otro paciente)', () => {
+      const fields = String(nodo(f, 'consultar_disponibilidad').parameters['options'].fields ?? '');
+      expect(fields).toMatch(/items\(/);
+      for (const c of ['id', 'start', 'end']) expect(fields).toContain(c);
+      for (const c of ['summary', 'description', 'attendees', 'creator', 'organizer', 'location']) expect(fields).not.toContain(c);
+    });
+  });
 });
 
 describe('Los tres flujos corren el mismo código para esto', () => {

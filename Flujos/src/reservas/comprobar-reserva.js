@@ -541,6 +541,11 @@ if (ceden.length) {
   // Dijo «si» ante VARIAS opciones: se le pregunta cual (Andres, 27/09/2026).
   const opciones = item.opcionesSinElegir && typeof item.opcionesSinElegir === 'object'
     && item.opcionesSinElegir.horas ? item.opcionesSinElegir : null;
+  // Eligio una hora y el modelo agendo OTRA (ensayo del 28/09, #7167): se le
+  // pregunta por la que eligio, no por la que nadie pidio.
+  const eleccion = item.eleccionPendiente && typeof item.eleccionPendiente === 'object'
+    && /^\d{2}:\d{2}$/.test(String(item.eleccionPendiente.hora || ''))
+    && /^[a-záéíóúñ]+ \d{1,2}$/i.test(String(item.eleccionPendiente.dia || '')) ? item.eleccionPendiente : null;
   // Al SEGUNDO sin nombre seguido el mensaje es SOLO el paso a recepcion: no se
   // junta con un «¿Te la agendo?» (revision de f0c6957).
   const aRecepcionPorNombre = item.sinNombreRepetido === true && sinNom.length > 0;
@@ -550,6 +555,7 @@ if (ceden.length) {
     : [
     sinConf.length ? (opciones
       ? `¿Cuál de estas horas del ${opciones.dia} ${usted ? 'prefiere' : 'prefieres'}: ${opciones.horas}?`
+      : eleccion ? `${usted ? '¿Se' : '¿Te'} la reservo el ${eleccion.dia} a las ${eleccion.hora}?`
       : 'Sí, ' + sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
         + (sinConf.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'))) : '',
     // Falta solo el nombre: no se repiten horarios, se pide el nombre.

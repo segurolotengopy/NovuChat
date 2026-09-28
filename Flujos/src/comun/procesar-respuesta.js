@@ -193,8 +193,10 @@ const agFechaDelTexto = (texto, hoy) => {
     const f = buscar((x) => diaDe(x) === Number(m[1]) && Number(x.slice(5, 7)) === mes);
     if (f) return f;
   }
-  m = /\b(?:domingo|lunes|martes|miercoles|jueves|viernes|sabado|hoy|manana)\s+(\d{1,2})(?![\d:.])/.exec(t)
-    || /\b(?:el|para\s+el|del|dia)\s+(\d{1,2})(?![\d:.])(?!\s*(?:hrs?|hs|horas?|de\s+la)\b)/.exec(t);
+  // Un punto que cierra la oracion no es parte de una hora: «el lunes 5.» es
+  // el dia 5 (ensayo del 28/09: se leia como «hoy lunes 28»); «5.30» si.
+  m = /\b(?:domingo|lunes|martes|miercoles|jueves|viernes|sabado|hoy|manana)\s+(\d{1,2})(?![\d:]|\.\d)/.exec(t)
+    || /\b(?:el|para\s+el|del|dia)\s+(\d{1,2})(?![\d:]|\.\d)(?!\s*(?:hrs?|hs|horas?|de\s+la)\b)/.exec(t);
   if (m && Number(m[1]) >= 1 && Number(m[1]) <= 31) {
     const f = buscar((x) => diaDe(x) === Number(m[1]));
     if (f) return f;
@@ -1135,6 +1137,23 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     return mins.length >= 2 ? { fecha: agUltima.fecha, dia: agDiaTexto(agUltima.fecha), horas: agLista(mins) } : null;
   })();
 
+  // LA HORA QUE EL PACIENTE SI ELIGIO (ensayo del 28/09, ejecucion #7167):
+  // eligio las 15:30, dio el nombre y el modelo agendo las 09:00. La cita se
+  // deshace (sin confirmar), y la pregunta no es por las 09:00, que nadie
+  // pidio: es por la hora elegida. Su «si» del turno siguiente la confirma.
+  const agEleccionPendiente = (() => {
+    if (!agCitasSinConfirmar.length || agOpcionesSinElegir || agNiega) return null;
+    const e = agElegidasAhora.length === 1 ? agElegidasAhora[0]
+      : (!agHorasCliente.length && agElegido && agElegido.fecha
+        ? { fecha: String(agElegido.fecha), min: Number(agElegido.min) } : null);
+    if (!e || !/^\d{4}-\d{2}-\d{2}$/.test(e.fecha) || !Number.isFinite(e.min)) return null;
+    const yaCreada = eventosCreados.some((ev) => {
+      const t = Date.parse(ev.inicio);
+      return Number.isFinite(t) && agLaPaz(t).fecha === e.fecha && agLaPaz(t).min === e.min;
+    });
+    return yaCreada ? null : { fecha: e.fecha, min: e.min, dia: agDiaTexto(e.fecha), hora: agHora(e.min) };
+  })();
+
   // La respuesta se toca solo si es texto del modelo: los textos fijos de
   // arriba (cancelacion, servicio negado, error) no ofrecen horas.
   const agTextoDelModelo = !fallo && !vacia && !soloMarca && !negoServicio && !cancelacionSinConfirmar
@@ -1147,6 +1166,17 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     if (/^dr\.?\s/i.test(n)) return ' del ' + n;
     return n ? ' de ' + n : '';
   })();
+  // Quien del equipo nombra un texto: por su apellido (la ultima palabra de su
+  // nombre, sin titulo), que es como lo dicen el cliente y el modelo.
+  const AG_TITULOS = new Set(['dr', 'dra', 'lic', 'sr', 'sra', 'srta', 'ing', 'odont']);
+  const agPersonasEn = (t) => {
+    const w = new Set(agPalabrasDe(t));
+    return agEquipo.filter((x) => {
+      const ps = agPalabrasDe(x.nombre).filter((p) => p.length >= 3 && !AG_TITULOS.has(p));
+      return ps.length > 0 && w.has(ps[ps.length - 1]);
+    }).map((x) => String(x.nombre));
+  };
+  const agDeLaPersona = (n) => (/^dra\.?\s/i.test(n) ? ' de la ' : /^dr\.?\s/i.test(n) ? ' del ' : ' de ') + n;
   const agAgendo = agUsted ? '¿Se la agendo?' : '¿Te la agendo?';
   const agSirve = agUsted ? '¿Le sirve alguna?' : '¿Te sirve alguna?';
   const agOtroDia = agUsted ? '¿Le sirve otro día?' : '¿Te sirve otro día?';
@@ -1167,12 +1197,25 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // La fecha de cada oferta: la que nombra la oracion (o una anterior); si no
     // nombra ninguna y se consulto un solo dia, ese.
     const fechaDe = (o) => o.fecha || (fechasConsultadas.length === 1 ? fechasConsultadas[0] : '');
-    const motivoDe = (o, h) => {
+    const motivoBase = (o, h, consultas) => {
       const f = fechaDe(o);
-      if (f) return agMotivo(agConsultasTurno, f, h.min, agDuracion, agLimite);
+      if (f) return agMotivo(consultas, f, h.min, agDuracion, agLimite);
       // Sin fecha y con varias consultadas: vale si cabe en alguna.
-      const motivos = fechasConsultadas.map((x) => agMotivo(agConsultasTurno, x, h.min, agDuracion, agLimite));
+      const motivos = fechasConsultadas.map((x) => agMotivo(consultas, x, h.min, agDuracion, agLimite));
       return motivos.includes('') ? '' : (motivos[0] || 'sin_consulta');
+    };
+    // POR PERSONA, NO SOLO POR DIA (ensayo del 28/09, #7117 y #7122): se
+    // consulto la agenda de un doctor y la respuesta ofrecia la hora «con los
+    // dos». Si la oracion nombra a alguien del equipo, la hora tiene que salir
+    // de la consulta de ESA persona; la de otro no la sostiene.
+    const motivoDe = (o, h) => {
+      const m = motivoBase(o, h, agConsultasTurno);
+      if (m || agEquipo.length < 2) return m;
+      for (const quien of agPersonasEn(partes[o.indice] || '')) {
+        const mp = motivoBase(o, h, agConsultasTurno.filter((c) => c.persona === quien));
+        if (mp) return mp === 'sin_consulta' ? 'persona_sin_consulta' : mp;
+      }
+      return '';
     };
     // «a las 5» que vale a la tarde se lee como 17:00 desde aca en adelante.
     ofertas.forEach((o) => o.horas.forEach((h) => { if (h.ambigua) agMotivoDeHora((min) => motivoDe(o, { ...h, min }), h); }));
@@ -1265,22 +1308,56 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
           // inventado. Si el dia que nombro esta cerrado, se le dice; si el
           // paciente pregunto por una hora, la pregunta la nombra, y su «si»
           // del turno siguiente cuenta como confirmacion de ESA hora.
-          const fechaNombrada = ofertas.map(fechaDe).find(Boolean) || agFechaCliente;
+          const fechaNombrada = ofertas.map(fechaDe).find(Boolean) || agFechaCliente
+            || (agUltima && agHorasCliente.length ? agUltima.fecha : '');
           const iguales = agEquipo.length > 0
             && agEquipo.every((x) => JSON.stringify(x.horario || {}) === JSON.stringify(agEquipo[0].horario || {}));
           const tramos = fechaNombrada && iguales ? agTramos(agEquipo[0].horario, agSemanaDe(fechaNombrada)) : null;
           const cerrado = Array.isArray(tramos) && tramos.length === 0;
           const aviso = cerrado ? `El ${agDiaTexto(fechaNombrada)} no atendemos. ` : '';
-          const hora = agHorasCliente.length === 1 && agPregunta && !cerrado ? agHorasCliente[0].min : null;
+          // La hora que nombro, pregunte o elija (ensayo del 28/09, #7126: «a
+          // las 16:15 con perez» recibia «¿para que dia y en que horario?»).
+          const hora = agHorasCliente.length === 1 && !cerrado ? agHorasCliente[0].min : null;
+          // De quien es la agenda que se va a revisar: la persona que nombran el
+          // cliente o la respuesta, si es una sola.
+          const nombradas = Array.from(new Set([...agPersonasEn(agCliente), ...agPersonasEn(respuesta)]));
+          const deQuien = agDeQuien || (nombradas.length === 1 ? agDeLaPersona(nombradas[0]) : '');
+          // Consulto la agenda de UNA de las personas que nombra la oferta y la
+          // hora cabe en ella (#7117): se ofrece con esa persona, sin la otra.
+          const conUna = (() => {
+            if (![...agMotivosH1].every((m) => m === 'persona_sin_consulta') || !fechaNombrada) return null;
+            const consultadas = agEquipo.map((x) => String(x.nombre))
+              .filter((n) => agConsultasTurno.some((c) => c.persona === n && c.fecha === fechaNombrada)
+                && ofertas.some((o) => agPersonasEn(partes[o.indice] || '').includes(n)));
+            if (consultadas.length !== 1) return null;
+            const suyas = agConsultasTurno.filter((c) => c.persona === consultadas[0]);
+            const horas = Array.from(new Set(ofertas.filter((o) => fechaDe(o) === fechaNombrada)
+              .flatMap((o) => o.horas.map((h) => h.min))))
+              .filter((m) => agMotivo(suyas, fechaNombrada, m, agDuracion, agLimite) === '');
+            return horas.length ? { persona: consultadas[0], horas: horas.slice(0, 3) } : null;
+          })();
           let pregunta;
-          if (hora !== null && fechaNombrada) {
-            pregunta = (agUsted ? '¿Quiere' : '¿Quieres') + ` el ${agDiaTexto(fechaNombrada)} a las ${agHora(hora)}? Así reviso la agenda${agDeQuien}.`;
+          if (conUna) {
+            const una = conUna.horas.length === 1;
+            pregunta = (una && agPregunta ? 'Sí, el ' : 'El ') + agDiaTexto(fechaNombrada)
+              + (una ? ` a las ${agHora(conUna.horas[0])} hay espacio` : ` hay espacio a las ${agLista(conUna.horas)}`)
+              + (/^dra\.?\s/i.test(conUna.persona) ? ' con la ' : /^dr\.?\s/i.test(conUna.persona) ? ' con el ' : ' con ') + conUna.persona
+              + `. ${una ? agAgendo : agPrefiere}`;
+            agFinal = { fecha: fechaNombrada, mins: conUna.horas };
+          } else if (hora !== null && fechaNombrada && hora % AG_GRILLA_MIN !== 0) {
+            const a = hora - (hora % AG_GRILLA_MIN);
+            const b = a + AG_GRILLA_MIN;
+            pregunta = `Por este chat las citas son en punto o y media: ${agUsted ? '¿quiere' : '¿quieres'} el ${agDiaTexto(fechaNombrada)}`
+              + ` a las ${agHora(a)} o a las ${agHora(b)}? Así reviso la agenda${deQuien}.`;
+            agFinal = { fecha: fechaNombrada, mins: [a, b], soloUltima: true };
+          } else if (hora !== null && fechaNombrada) {
+            pregunta = (agUsted ? '¿Quiere' : '¿Quieres') + ` el ${agDiaTexto(fechaNombrada)} a las ${agHora(hora)}? Así reviso la agenda${deQuien}.`;
             agFinal = { fecha: fechaNombrada, mins: [hora], soloUltima: true };
           } else if (hora !== null) {
-            pregunta = `¿Para qué día ${agUsted ? 'quiere' : 'quieres'} las ${agHora(hora)}? Así reviso la agenda${agDeQuien}.`;
+            pregunta = `¿Para qué día ${agUsted ? 'quiere' : 'quieres'} las ${agHora(hora)}? Así reviso la agenda${deQuien}.`;
             agFinal = null;
           } else {
-            pregunta = `¿Para qué día y en qué horario ${agUsted ? 'le' : 'te'} acomoda? Reviso la agenda${agDeQuien}.`;
+            pregunta = `¿Para qué día y en qué horario ${agUsted ? 'le' : 'te'} acomoda? Reviso la agenda${deQuien}.`;
             agFinal = null;
           }
           respuesta = agCambiarHoras(respuesta, aviso + pregunta);
@@ -1419,6 +1496,12 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       if (Object.keys(quedan).length) {
         agRegistros[tel] = { ofrecidos: {}, ultima: null, elegido: null, palabras: [], creadas: quedan, desde: Number((r && r.desde) || 0) };
       } else delete agRegistros[tel];
+    }
+    // La pregunta sale por la hora elegida: su «si» confirma ESA, no la que
+    // el modelo agendo por su cuenta.
+    if (agEleccionPendiente) {
+      agFinal = { fecha: agEleccionPendiente.fecha, mins: [agEleccionPendiente.min], soloUltima: true };
+      agEleccion = { fecha: agEleccionPendiente.fecha, min: agEleccionPendiente.min };
     }
     const r = agRegistros[telefonoDelCliente] = agRegistros[telefonoDelCliente]
       || { ofrecidos: {}, ultima: null, elegido: null, desde: agAhora };
@@ -1643,6 +1726,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // es uno que el cliente haya dicho. Se deshace y se le pide el nombre.
     agendaSinNombre: agCitasSinNombre,
     opcionesSinElegir: agOpcionesSinElegir,
+    eleccionPendiente: agEleccionPendiente ? { dia: agEleccionPendiente.dia, hora: agEleccionPendiente.hora } : null,
     // AL SEGUNDO `sin_nombre` SEGUIDO, CON RECEPCION (revision de 98796fd): si
     // el nombre que dice el cliente no coincide dos veces, preguntarle de nuevo
     // es un bucle; lo resuelve una persona.
