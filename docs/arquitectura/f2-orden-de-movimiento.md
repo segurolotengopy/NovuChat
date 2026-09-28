@@ -171,6 +171,15 @@ tanda que lo necesita:
     un comentario;
   - **un texto dentro de un JSON de datos**, que es un valor y no un
     comentario.
+
+  La tanda 5 deja pendientes, para el PR siguiente, dos comentarios de
+  `firestore.rules` (531 y 1155, que citan `planes.ts`) y las tres citas de
+  `pagos.ts` de `pruebas/negocios-consola.test.ts`. Una de estas tres está en
+  el nombre de una prueba, y la compuerta exige cambiarlas todas o ninguna. El
+  literal `'admin/functions/src/planes.ts'` de `ci-calidad-filtro.test.ts` es
+  un ejemplo de ruta que el filtro debe reconocer, no una cita, y no cambia.
+  La prueba de `fronteras.test.ts` que armaba la ruta de `prepago.ts` con una
+  plantilla se reescribió antes (#250): la fuente se deriva del especificador.
 - **`functions:build` borra `lib/` y `tsconfig.tsbuildinfo` antes de `tsc -b`**
   (revisión de seguridad de la tanda 4). `tsc -b` no borra los compilados de
   fuentes que ya no existen, y un despliegue manual los subía. El CI no se
