@@ -13,7 +13,7 @@ import { enmascarar } from '../../functions/src/core/turno/bitacora.ts';
 describe('enmascarar', () => {
   it('deja los cuatro primeros y los tres últimos dígitos', () => {
     expect(enmascarar('59170000001')).toBe('5917****001');
-    expect(enmascarar('59171234567')).toBe('5917****567');
+    expect(enmascarar('59100000567')).toBe('5910****567');
   });
   it('descarta todo lo que no es dígito antes de enmascarar', () => {
     expect(enmascarar('+591 7000-0001')).toBe('5917****001');
