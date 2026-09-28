@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clienteDeTenant, comprobarDestino, destinoDelEnlace, escribirEnlace, guardarEnlaceDeContrasena, raizDelProyecto,
 } from '../../scripts/plataforma/enlace-privado.mjs';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const ADMIN = join(aqui, '..', '..');
@@ -258,7 +259,7 @@ describe('Las defensas para que un agente no lo abra', () => {
 
   const gancho = (command: string) => {
     const r = spawnSync('bash', [join(REPO, '.claude', 'hooks', 'acciones-sensibles.sh')], {
-      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8',
+      input: JSON.stringify({ tool_name: 'Bash', tool_input: { command } }), encoding: 'utf8', env: entornoDelEmulador(undefined),
     });
     return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'nada';
   };
