@@ -169,7 +169,7 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
       // el archivo ya esté escrito como lo escribe JSON.stringify con dos
       // espacios: si no, reescribirlo cambiaría más que la ruta.
       const antes = JSON.parse(texto) as { codigo?: Record<string, unknown> };
-      if (`${JSON.stringify(antes, null, 2)}\n` !== texto) throw new Error(`${archivo}: el manifiesto no tiene el formato de JSON.stringify(…, null, 2)`);
+      if (!antes || typeof antes !== 'object' || Array.isArray(antes)) throw new Error(`${archivo}: el manifiesto no es un objeto`);
       const moverRel = (rel: unknown): unknown => {
         if (typeof rel !== 'string') return rel;
         const destino = mapa.get(`${SRC_FLUJOS}${rel}`);
@@ -181,7 +181,11 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
       const codigo = antes.codigo && typeof antes.codigo === 'object' ? Object.fromEntries(Object.entries(antes.codigo).map(([nodo, v]) =>
         [nodo, v && typeof v === 'object' && !Array.isArray(v) ? { ...(v as object), archivo: moverRel((v as { archivo?: unknown }).archivo) } : moverRel(v)]))
         : antes.codigo;
-      nuevoTexto = `${JSON.stringify({ ...antes, ...(antes.codigo ? { codigo } : {}) }, null, 2)}\n`;
+      // Sin rutas movidas no se toca (y una tanda de otra carpeta no se traba
+      // por un manifiesto con otro formato: revisión de seguridad del #255).
+      if (!cambios.length) continue;
+      if (`${JSON.stringify(antes, null, 2)}\n` !== texto) throw new Error(`${archivo}: el manifiesto no tiene el formato de JSON.stringify(…, null, 2)`);
+      nuevoTexto = `${JSON.stringify({ ...antes, codigo }, null, 2)}\n`;
     } else if (archivo.endsWith('.json')) {
       if (!archivo.endsWith('/deuda.json')) continue;
       const cambiar = (v: unknown): unknown => (typeof v === 'string' && mapa.has(v) ? (cambios.push(`${v} → ${mapa.get(v)}`), mapa.get(v))

@@ -282,8 +282,16 @@ describe('manifiestos del ensamblador (Flujos/manifiestos/*.json, para FL1)', ()
     expect(Object.keys(nuevo.codigo['Uso extendido'])).toEqual(['archivo', 'saltoFinal']);
     expect(nuevo.prompts.Agente.systemMessage).toBe('comun/normalizar-entrada.js'); // los prompts viven en Flujos/prompts/
   });
-  it('un manifiesto con otro formato no se reescribe en silencio', () => {
+  it('un manifiesto con otro formato no se reescribe en silencio, pero no traba una tanda que no lo toca', () => {
     const otro: ArbolConCarpetas = { ...arb, leer: (a) => (a === 'Flujos/manifiestos/x.json' ? manifiesto.replace(/\n/g, '\r\n') : arb.leer(a)) };
     expect(() => planDeMudanza(movs, ['Flujos/manifiestos/x.json'], otro)).toThrow(/formato/);
+    const ajena = planDeMudanza([{ de: 'admin/scripts/x.mjs', a: 'admin/scripts/plataforma/x.mjs' }], ['Flujos/manifiestos/x.json'], otro);
+    expect(ajena.ediciones.find((e) => e.archivo === 'Flujos/manifiestos/x.json')).toBeUndefined();
+  });
+  it('un manifiesto cuya raíz no es un objeto no se reescribe como {}', () => {
+    for (const raiz of ['[]\n', '5\n', 'null\n']) {
+      const otro: ArbolConCarpetas = { ...arb, leer: (a) => (a === 'Flujos/manifiestos/x.json' ? raiz : arb.leer(a)) };
+      expect(() => planDeMudanza(movs, ['Flujos/manifiestos/x.json'], otro), raiz).toThrow(/no es un objeto/);
+    }
   });
 });

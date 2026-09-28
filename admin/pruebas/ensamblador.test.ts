@@ -355,7 +355,7 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
     const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> };
     const rutas = Object.values(a.codigo).map((v) => (typeof v === 'string' ? v : v.archivo));
     expect(rutas.filter((r) => COMUN.test(r))).toHaveLength(5);
-    expect(rutas.filter((r) => !COMUN.test(r))).toHaveLength(13);
+    expect(rutas.filter((r) => /^(reservas|modulos\/[a-z-]+|core\/medios)\/[^/]+\.js$/.test(r))).toHaveLength(13);
     // Los comunes existen con el mismo nombre en el Demo B y en la captación,
     // aunque su código todavía diverja: es lo que el bloque B-2 tiene que mirar.
     const otros = ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']
