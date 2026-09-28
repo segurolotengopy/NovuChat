@@ -395,7 +395,7 @@ describe('8. La línea de comandos', () => {
     cpSync(RAIZ_FLUJOS, join(raizFalsa, 'Flujos'), { recursive: true, filter: (src) => !src.endsWith('.local.json') });
     mkdirSync(join(raizFalsa, 'admin/scripts'), { recursive: true });
     cpSync(SCRIPT, join(raizFalsa, 'admin/scripts/ensamblar-flujo.mjs'));
-    const ruta = join(raizFalsa, 'Flujos/src/comun/normalizar-entrada.js');
+    const ruta = join(raizFalsa, 'Flujos/src/core/normalizar-entrada.js');
     writeFileSync(ruta, readFileSync(ruta, 'utf8') + '// cambio\n');
     let codigo = 0; let salida = '';
     try {

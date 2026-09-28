@@ -182,7 +182,7 @@ describe('campanas.ts: lo que viaja al flujo', () => {
   });
 
   it('la comparación de palabras es LETRA POR LETRA la del flujo (`Normalizar entrada`)', () => {
-    const codigo = readFileSync(join(aqui, '../../Flujos/src/comun/normalizar-entrada.js'), 'utf8');
+    const codigo = readFileSync(join(aqui, '..', '..', 'Flujos', 'src', 'core', 'normalizar-entrada.js'), 'utf8');
     expect(codigo).toContain(".normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')");
     expect(codigo).toContain(".toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim()");
     expect(palabrasDeCampana('  ¡Hola!, quiero  AGENDAR 👶 ')).toBe('hola quiero agendar');
