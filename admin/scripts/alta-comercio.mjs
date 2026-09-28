@@ -34,7 +34,9 @@
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
 import { randomBytes } from 'node:crypto';
-import { ID_CLIENTE, clienteDeTenant, comprobarDestino, escribirEnlace, raizDelProyecto } from './plataforma/enlace-privado.mjs';
+import {
+  ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
+} from './plataforma/enlace-privado.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -193,13 +195,13 @@ console.log('  ✓ rol de administrador');
 // Hasta el 28/09/2026 iba a `~/enlace-admin-<tenant>.txt`, y quedaban archivos
 // olvidados en el directorio personal. Ahora va a `CLIENTES/<CLIENTE>/.enlaces/`
 // de la copia principal, ignorada por git, con permisos 600: el porqué entero
-// está en `plataforma/enlace-privado.mjs`. La salida dice dónde quedó, nunca qué dice.
-const enlace = await auth.generatePasswordResetLink(ADMIN);
-const escrito = escribirEnlace({ ...ENLACE, texto:
+// está en `plataforma/enlace-privado.mjs`. La salida dice dónde quedó, nunca qué
+// dice: el enlace lo pide y lo escribe el módulo, y acá no existe ni como variable.
+const escrito = await guardarEnlaceDeContrasena({ auth, correo: ADMIN, ...ENLACE, encabezado:
   `Enlace para que ${ADMIN} ponga su contrasena en la consola de NovuChat.\n`
   + `Comercio: ${TENANT}. Un solo uso, vence en unas horas.\n`
   + `NO lo pegue en ningun chat ni lo reenvie: quien lo tenga fija esa contrasena.\n`
-  + `Borre este archivo apenas lo use.\n\n${enlace}\n` });
+  + 'Borre este archivo apenas lo use.' });
 console.log('\n  Enlace para que ponga su contraseña (vence en unas horas), escrito en:');
 console.log(`  ${escrito}   (copia principal, permisos 600; no se muestra acá)`);
 console.log('  Lo abre UNA PERSONA, nunca un agente, y borra el archivo al usarlo.\n');

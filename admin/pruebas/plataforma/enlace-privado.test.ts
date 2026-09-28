@@ -17,13 +17,15 @@
  * las fuentes de los scripts.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import {
+  existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync,
+} from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  clienteDeTenant, comprobarDestino, destinoDelEnlace, escribirEnlace, raizDelProyecto,
+  clienteDeTenant, comprobarDestino, destinoDelEnlace, escribirEnlace, guardarEnlaceDeContrasena, raizDelProyecto,
 } from '../../scripts/plataforma/enlace-privado.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -56,17 +58,72 @@ describe('Ningún script de admin/scripts escribe en el directorio personal', ()
     });
 });
 
-describe('Los scripts que generan el enlace lo dejan en la carpeta del cliente y no lo imprimen', () => {
+/** El código sin literales de texto: lo que queda son identificadores y llamadas. */
+const sinTextos = (c: string) => c.replace(/`(?:\\[\s\S]|[^`\\])*`|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"/g, '""');
+
+describe('Los scripts no tienen el enlace en la mano: lo pide y lo escribe el módulo', () => {
+  // Revisión de seguridad del PR #254: comprobar «no se imprime» mirando las
+  // llamadas a console dejaba pasar `'…' + enlace`, `process.stdout.write`,
+  // `{ enlace }`, `enlace.trim()`… La forma robusta es que el valor no llegue
+  // nunca al script: sin variable, no hay qué imprimir.
   it.each(CON_ENLACE.map((r) => [r.slice(ADMIN.length + 1), r]))('%s', (_nombre, ruta) => {
     const c = codigo(ruta);
     expect(c).toMatch(/from '\.\/plataforma\/enlace-privado\.mjs'/);
-    expect(c).not.toMatch(/\bwriteFileSync\b/);
-    // El enlace se interpola UNA vez, dentro del texto que recibe escribirEnlace.
-    expect(c.match(/\$\{enlace\}/g)).toHaveLength(1);
-    expect(c).toMatch(/escribirEnlace\(\{[^}]*texto:[\s\S]*?\$\{enlace\}[\s\S]*?\}\)/);
-    // Y nunca va a la consola, ni interpolado ni como argumento.
-    expect(c).not.toMatch(/console\.\w+\([^;]*\$\{enlace\}/);
-    expect(c).not.toMatch(/console\.\w+\([^;]*[(,]\s*enlace\s*[,)]/);
+    expect(c).toMatch(/await guardarEnlaceDeContrasena\(\{/);
+    expect(c).not.toMatch(/generatePasswordResetLink|generateEmailVerificationLink|generateSignInWithEmailLink/);
+    expect(c).not.toMatch(/\bescribirEnlace\b|\bwriteFileSync\b|\bappendFileSync\b|\bcreateWriteStream\b/);
+    // Ningún identificador `enlace` (ni variable, ni argumento, ni propiedad).
+    expect(sinTextos(c)).not.toMatch(/\benlace\b/);
+    expect(c).not.toMatch(/\$\{\s*enlace\b/);
+  });
+
+  it('el módulo no escribe en la consola ni en la salida estándar', () => {
+    const c = codigo(join(ADMIN, 'scripts', 'plataforma', 'enlace-privado.mjs'));
+    expect(c).not.toMatch(/\bconsole\.|process\.(stdout|stderr)/);
+  });
+});
+
+describe('guardarEnlaceDeContrasena(): el enlace no sale por ningún lado', () => {
+  const MARCA = `MARCA-${process.pid}-oobCode`;
+  const auth = { generatePasswordResetLink: vi.fn(async () => `https://ejemplo.invalid/accion?oobCode=${MARCA}`) };
+  let raiz: string;
+  beforeEach(() => {
+    raiz = join(mkdtempSync(join(tmpdir(), 'enlace-guardar-')), 'proyecto');
+    mkdirSync(join(raiz, 'CLIENTES', 'SALON_ROSA'), { recursive: true });
+    auth.generatePasswordResetLink.mockClear();
+  });
+
+  it('lo escribe en el archivo y ni la salida ni lo devuelto lo contienen', async () => {
+    const salida: string[] = [];
+    const capturar = (s: unknown) => { salida.push(String(s)); return true; };
+    const espias = [
+      vi.spyOn(process.stdout, 'write').mockImplementation(capturar),
+      vi.spyOn(process.stderr, 'write').mockImplementation(capturar),
+      ...(['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => vi.spyOn(console, m)
+        .mockImplementation((...a: unknown[]) => { salida.push(a.map(String).join(' ')); })),
+    ];
+    let rel: string;
+    try {
+      rel = await guardarEnlaceDeContrasena({
+        auth, correo: 'ana@ejemplo.com', raiz, cliente: 'SALON_ROSA', nombre: 'enlace-admin-salon-rosa',
+        encabezado: 'Enlace para Ana.\nBorre este archivo.',
+      });
+    } finally {
+      for (const e of espias) e.mockRestore();
+    }
+    expect(auth.generatePasswordResetLink).toHaveBeenCalledWith('ana@ejemplo.com');
+    expect(JSON.stringify(rel)).not.toContain(MARCA);
+    expect(salida.join('\n')).not.toContain(MARCA);
+    const texto = readFileSync(join(raiz, rel), 'utf8');
+    expect(texto).toContain(MARCA);
+    expect(texto.startsWith('Enlace para Ana.')).toBe(true);
+  });
+
+  it('sin carpeta del cliente falla SIN pedirle el enlace a Auth', async () => {
+    await expect(guardarEnlaceDeContrasena({
+      auth, correo: 'ana@ejemplo.com', raiz, cliente: 'NO_ESTA', nombre: 'enlace-admin-x-y', encabezado: 'x',
+    })).rejects.toThrow(/no existe CLIENTES\/NO_ESTA/);
+    expect(auth.generatePasswordResetLink).not.toHaveBeenCalled();
   });
 });
 
@@ -123,6 +180,36 @@ describe('escribirEnlace()', () => {
     expect(() => destinoDelEnlace({ raiz, cliente: 'SALON_ROSA', nombre })).toThrow(/nombre de enlace inválido/);
   });
 
+  // CWE-59 (revisión de seguridad del PR #254): un enlace simbólico dejado por
+  // alguien con el mismo usuario no puede desviar la credencial.
+  it('si CLIENTES/<X> es un enlace simbólico que sale de CLIENTES/, falla sin escribir', () => {
+    const afuera = mkdtempSync(join(tmpdir(), 'enlace-afuera-'));
+    symlinkSync(afuera, join(raiz, 'CLIENTES', 'DESVIADO'));
+    expect(() => escribir('DESVIADO')).toThrow(/sale de CLIENTES/);
+    expect(readdirSync(afuera)).toEqual([]);
+  });
+
+  it('si .enlaces es un enlace simbólico, falla sin escribir', () => {
+    const afuera = mkdtempSync(join(tmpdir(), 'enlace-afuera-'));
+    symlinkSync(afuera, join(raiz, 'CLIENTES', 'SALON_ROSA', '.enlaces'));
+    expect(() => escribir()).toThrow(/no es una carpeta de verdad/);
+    expect(readdirSync(afuera)).toEqual([]);
+  });
+
+  it('si el archivo destino es un enlace simbólico, se reemplaza el enlace y el apuntado queda intacto', () => {
+    const publico = join(mkdtempSync(join(tmpdir(), 'enlace-afuera-')), 'publico.txt');
+    writeFileSync(publico, 'nada\n', { mode: 0o644 });
+    mkdirSync(join(raiz, 'CLIENTES', 'SALON_ROSA', '.enlaces'), { mode: 0o700 });
+    const destino = join(raiz, 'CLIENTES', 'SALON_ROSA', '.enlaces', `${NOMBRE}.txt`);
+    symlinkSync(publico, destino);
+    escribir();
+    expect(readFileSync(publico, 'utf8')).toBe('nada\n');
+    expect(statSync(publico).mode & 0o777).toBe(0o644);
+    expect(lstatSync(destino).isSymbolicLink()).toBe(false);
+    expect(statSync(destino).mode & 0o777).toBe(0o600);
+    expect(readdirSync(dirname(destino))).toEqual([`${NOMBRE}.txt`]); // sin temporales
+  });
+
   it('comprobarDestino no escribe: dice dónde iría y si la carpeta existe', () => {
     const d = comprobarDestino({ raiz, cliente: 'SALON_ROSA', nombre: 'enlace-oper-salon-rosa' });
     expect(d.existe).toBe(true);
@@ -169,18 +256,52 @@ describe('Las defensas para que un agente no lo abra', () => {
     return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'nada';
   };
 
+  // Cualquier comando que reciba una ruta a la carpeta o a un archivo de enlace,
+  // con comodines incluidos, y la búsqueda recursiva que entraría sin nombrarla.
+  // Los casos de H1 de la revisión de seguridad del PR #254 están todos.
   it.each([
     'cat CLIENTES/BELLIDO/.enlaces/enlace-admin-bellido.txt',
     'ls -la ../../CLIENTES/X/.enlaces',
     'head < ~/enlace-admin-bellido.txt',
     'cp CLIENTES/X/.enlaces/enlace-oper-x.txt /tmp/',
+    'grep -h "" CLIENTES/X/.enlaces/enlace-admin-x.txt',
+    'sort CLIENTES/X/.enlaces/*',
+    'diff /dev/null CLIENTES/X/.enlaces/enlace-admin-x.txt',
+    'jq -R . CLIENTES/X/.enlaces/enlace-admin-x.txt',
+    'cut -c1- CLIENTES/X/.enlaces/enlace-admin-x.txt',
+    'cat CLIENTES/X/.[e]nlaces/*',
+    'cat CLIENTES/*/.*/enlace-*',
+    'python3 -c "p = open( \'CLIENTES/X/.enlaces/a.txt\' ); print(p.read())"',
+    'git diff --no-index /dev/null CLIENTES/X/.enlaces/enlace-admin-x.txt',
+    'cd /tmp && cat ../srv/NovuChat/CLIENTES/X/.enlaces/a',
+    'python3 - <<EOF\nprint(open("CLIENTES/X/.enlaces/a").read())\nEOF',
+    'grep -rn oobCode CLIENTES/',
+    'grep -rn "https" /srv/NovuChat/CLIENTES/BELLIDO',
+    'rg --hidden -n https CLIENTES/X',
+    'rg -uu https CLIENTES',
+    'find CLIENTES -name "*.txt" -exec cat {} +',
   ])('el gancho niega «%s»', (cmd) => {
     expect(gancho(cmd)).toBe('deny');
   });
 
+  // Y lo que NO es tocar el enlace pasa: documentar la carpeta en un commit o
+  // un PR, buscar el patrón escapado en la documentación, buscar en CLIENTES
+  // excluyéndola, o comodines que la shell no haría entrar a una carpeta oculta.
+  // Los casos de H3 de la misma revisión están todos.
   it.each([
     'grep -rn "enlaces" docs/',
+    'grep -rn "\\.enlaces" docs | head -20',
+    'grep -rn --exclude-dir=.enlaces https CLIENTES/BELLIDO',
+    'rg -n https CLIENTES/BELLIDO',
+    'ls CLIENTES/',
+    'ls -d .*',
+    'ls */*',
     'node scripts/alta-comercio.mjs --proyecto p --tenant x --nombre X --admin a@b.co',
+    'git commit -m "Seguridad: va a CLIENTES/<CLIENTE>/.enlaces/"',
+    'git commit -F - <<\'EOF\'\nEl enlace va a CLIENTES/<CLIENTE>/.enlaces/\nEOF',
+    'git diff -- .gitignore | tail -5',
+    'gh pr create --body "$(cat docs/x.md)"',
+    'GH_CONFIG_DIR=/x gh pr edit 1 --body "el enlace va a CLIENTES/<CLIENTE>/.enlaces/"',
   ])('el gancho deja pasar «%s»', (cmd) => {
     expect(gancho(cmd)).toBe('nada');
   });

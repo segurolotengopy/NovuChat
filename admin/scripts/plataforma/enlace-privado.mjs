@@ -36,12 +36,19 @@
  * dice. Lo abre una persona, lo manda por el canal que corresponda y borra el
  * archivo (docs/alta-cliente/RUNBOOK.md, etapa 4).
  *
+ * EL ENLACE NACE Y MUERE ACÁ. `guardarEnlaceDeContrasena` lo pide a Auth y lo
+ * escribe sin devolverlo: en los scripts no existe ni como variable, así que
+ * no hay cómo imprimirlo por descuido (revisión de seguridad del PR #254).
+ *
  * `pruebas/plataforma/enlace-privado.test.ts` falla si un script vuelve a escribir en el
- * directorio personal o a imprimir el enlace.
+ * directorio personal o si el enlace aparece en la salida.
  */
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import {
+  chmodSync, closeSync, constants, existsSync, fchmodSync, lstatSync, mkdirSync, openSync,
+  realpathSync, renameSync, rmSync, statSync, writeSync,
+} from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Como las carpetas de `CLIENTES/`: `BELLIDO`, `RUBEN_ROCA`. */
@@ -56,8 +63,10 @@ export const clienteDeTenant = (tenant) => String(tenant ?? '').toUpperCase().re
  */
 export function raizDelProyecto() {
   const aqui = dirname(fileURLToPath(import.meta.url));
+  // Sin las GIT_* del entorno: un GIT_DIR heredado apuntaría a otro repositorio.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
   const comun = execFileSync('git', ['-C', aqui, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env }).trim();
   return dirname(comun);
 }
 
@@ -82,17 +91,58 @@ export function comprobarDestino(opciones) {
 }
 
 /**
- * Escribe el enlace. Devuelve la ruta relativa a la raíz, que es lo único que
+ * Escribe el texto. Devuelve la ruta relativa a la raíz, que es lo único que
  * el script imprime. No crea la carpeta del cliente: si falta, falla.
+ *
+ * NO SIGUE ENLACES SIMBÓLICOS (CWE-59). Un agente con el mismo usuario podría
+ * dejar `CLIENTES/<X>` o el archivo destino como enlace a un lugar que sí puede
+ * leer, o a un archivo versionado, y la próxima alta escribiría la credencial
+ * ahí. Por eso: la carpeta del cliente tiene que quedar DENTRO de CLIENTES/ ya
+ * resuelta, `.enlaces` tiene que ser una carpeta de verdad, y el texto va a un
+ * temporal nuevo (O_EXCL | O_NOFOLLOW, 600 desde el primer byte) que después
+ * REEMPLAZA al destino con `rename`: si el destino era un enlace simbólico, se
+ * reemplaza el enlace, no se escribe a donde apunta. Y un archivo que ya
+ * existía con otros permisos nunca llega a tener el texto nuevo con esos
+ * permisos.
  */
 export function escribirEnlace({ raiz, cliente, nombre, texto }) {
   const d = comprobarDestino({ raiz, cliente, nombre });
   if (!d.existe) throw new Error(`no existe ${relative(raiz, d.carpetaCliente)}/`);
-  mkdirSync(d.carpeta, { recursive: true, mode: 0o700 });
+  const base = realpathSync(join(raiz, 'CLIENTES'));
+  if (!realpathSync(d.carpetaCliente).startsWith(base + sep)) {
+    throw new Error(`${relative(raiz, d.carpetaCliente)} sale de CLIENTES/ (enlace simbólico)`);
+  }
+  try { mkdirSync(d.carpeta, { mode: 0o700 }); } catch (e) { if (e.code !== 'EEXIST') throw e; }
+  const st = lstatSync(d.carpeta);
+  if (st.isSymbolicLink() || !st.isDirectory()) throw new Error('.enlaces no es una carpeta de verdad');
   chmodSync(d.carpeta, 0o700);
-  // `mode` solo rige al crear; el chmod de después cubre el archivo que ya
-  // estaba (un segundo alta del mismo comercio lo pisa).
-  writeFileSync(d.archivo, texto, { encoding: 'utf8', mode: 0o600 });
-  chmodSync(d.archivo, 0o600);
+  const temporal = join(d.carpeta, `.${nombre}.${process.pid}.tmp`);
+  const fd = openSync(temporal, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+  try {
+    fchmodSync(fd, 0o600);
+    writeSync(fd, texto);
+  } catch (e) {
+    closeSync(fd);
+    rmSync(temporal, { force: true });
+    throw e;
+  }
+  closeSync(fd);
+  renameSync(temporal, d.archivo);
   return d.legible;
+}
+
+/**
+ * Pide el enlace a Firebase Auth y lo escribe junto al encabezado, sin
+ * devolverlo ni imprimirlo. `auth` es el de `firebase-admin/auth` (o un doble
+ * en las pruebas). Devuelve solo la ruta relativa.
+ */
+export async function guardarEnlaceDeContrasena({ auth, correo, raiz, cliente, nombre, encabezado }) {
+  // Primero la comprobación: sin carpeta no se pide el enlace a Auth.
+  if (!comprobarDestino({ raiz, cliente, nombre }).existe) {
+    throw new Error(`no existe CLIENTES/${cliente}/`);
+  }
+  return escribirEnlace({
+    raiz, cliente, nombre,
+    texto: `${encabezado.trimEnd()}\n\n${await auth.generatePasswordResetLink(correo)}\n`,
+  });
 }

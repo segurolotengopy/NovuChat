@@ -162,9 +162,13 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
     a su contexto.
   - **Lo abre una persona, nunca un agente.** El agente informa la ruta y
     nada más; `.claude/settings.json` le niega leer cualquier `.enlaces/` y el
-    gancho `acciones-sensibles.sh` le niega listarla, copiarla o mostrarla por
-    Bash. La persona abre el archivo, manda el enlace al administrador por el
-    canal acordado y **borra el archivo**.
+    gancho `acciones-sensibles.sh` le niega todo comando por Bash que reciba
+    esa carpeta o un archivo de enlace (comodines incluidos) y la búsqueda
+    recursiva sobre `CLIENTES/` que no la excluya (`--exclude-dir=.enlaces`).
+    El enlace no existe ni como variable en los scripts: lo pide y lo escribe
+    `enlace-privado.mjs`, sin seguir enlaces simbólicos. La persona abre el
+    archivo, manda el enlace al administrador por el canal acordado y **borra
+    el archivo**.
   Quien tenga ese enlace fija la contraseña de la cuenta administradora, así que
   no se pega en ningún chat ni se reenvía, y el archivo se borra al usarlo. Si
   alguna vez queda a la vista, se invalida cambiando la contraseña de esa cuenta
