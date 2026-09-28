@@ -166,9 +166,11 @@ const FLUJOS = [
     campoTexto: 'textoAviso', salidaAlCliente: null, primeroTrasElEnvio: 'Texto enviado',
     // Desde el 23/09/2026 la venta también desvía el comprobante ANTES del
     // agente (cobro real, `cobroVenta.ts`): entre la compuerta de los umbrales
-    // y el modelo hay un eslabón, igual que en los tres de reservas.
-    antesDelAgente: ['¿Es un comprobante?'],
-    entradasAlAgente: ['¿Es un comprobante?'],
+    // y el modelo hay un eslabón, igual que en los tres de reservas. Desde el
+    // 28/09/2026, también la rama de medios entrantes (capacidad general): el
+    // agente recibe el mensaje o el medio ya convertido en TEXTO.
+    antesDelAgente: ['¿Es un comprobante?', '¿Trae un medio?'],
+    entradasAlAgente: ['¿Trae un medio?', 'Preparar transcripción', 'Preparar imagen'],
   },
   // El flujo de reservas de Clínica Platinum es el Demo A con los datos del
   // cliente: obedece los umbrales por los mismos nodos.

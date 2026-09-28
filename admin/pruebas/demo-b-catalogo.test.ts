@@ -209,8 +209,14 @@ describe('CUÁNTOS MENSAJES CUESTA: exactamente los mismos que antes', () => {
     const aClientes = deWhatsApp.filter((n) => n.parameters['operation'] === 'send')
       .map((n) => n.name).sort();
     expect(aClientes).toEqual(['Avisar al dueño', 'Responder al cliente']);
-    expect(deWhatsApp.filter((n) => n.parameters['operation'] !== 'send').map((n) => n.name))
-      .toEqual(['Obtener URL del medio']);
+    // Desde el 28/09 hay un cuarto, gemelo del anterior: «Obtener URL del medio
+    // (general)», de la rama de medios entrantes. Tampoco manda nada.
+    expect(deWhatsApp.filter((n) => n.parameters['operation'] !== 'send').map((n) => n.name).sort())
+      .toEqual(['Obtener URL del medio', 'Obtener URL del medio (general)']);
+    for (const n of deWhatsApp.filter((x) => x.parameters['operation'] !== 'send')) {
+      expect(n.parameters['resource'], n.name).toBe('media');
+      expect(n.parameters['operation'], n.name).toBe('mediaUrlGet');
+    }
   });
 });
 

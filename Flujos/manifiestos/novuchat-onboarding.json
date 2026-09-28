@@ -1,0 +1,11 @@
+{
+  "flujo": "novuchat-onboarding.json",
+  "conservanMarcadores": {
+    "Config base": "REEMPLAZAR_"
+  },
+  "codigo": {
+    "Preparar transcripción": "reservas/preparar-transcripcion.js",
+    "Preparar imagen": "reservas/preparar-imagen.js"
+  },
+  "prompts": {}
+}

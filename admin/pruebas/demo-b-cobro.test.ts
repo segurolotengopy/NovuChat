@@ -419,10 +419,21 @@ describe('(5) El comprobante: quién lo desvía y quién NO', () => {
   });
 
   it('NEGANDO: con cobro REAL y sin QR pendiente, el archivo NO se trata como pago', () => {
+    // Desde el 28/09/2026 ese archivo va a la rama de medios entrantes, que lo
+    // clasifica y le pasa TEXTO al agente (`demo-b-medios.test.ts`). Lo que no
+    // cambia es lo que esta prueba niega: no es comprobante, no es pago
+    // declarado y no va al cotejo.
     const cfg = fusionar(real({ pendiente: false }));
     const s = normalizar(cfg, { type: 'image', image: { id: '1000000000000002' } });
-    expect(String(s['userInput'])).toContain('no hay ningún pago pendiente');
-    expect(String(s['userInput'])).not.toContain('SIMULADO');
+    expect(s).toMatchObject({ esComprobante: false, pagoDeclarado: false, esMedioVisual: true });
+    expect(String(s['userInput'])).not.toMatch(/SIMULADO|comprobante|pago/i);
+    expect(pasa('¿Es un comprobante?', s)).toBe(false);
+    expect(pasa('¿Trae un medio?', s)).toBe(true);
+    // Sin id del medio no hay nada que bajar: el aviso de siempre, que tampoco lo toma por pago.
+    const sinId = normalizar(cfg, { type: 'image', image: {} });
+    expect(sinId['esMedioVisual']).toBe(false);
+    expect(String(sinId['userInput'])).toContain('no hay ningún pago pendiente');
+    expect(String(sinId['userInput'])).not.toContain('SIMULADO');
   });
 
   it('con cobro REAL y QR pendiente pero sin id del medio, el modelo recibe el aviso de que no se pudo leer y NO da el pago por recibido', () => {
@@ -470,8 +481,10 @@ describe('(5) El comprobante: quién lo desvía y quién NO', () => {
     }
     expect(destinos(f, '¿Es PDF?', 1)).toEqual(['Leer comprobante (imagen)']);
     expect(destinos(f, 'Leer comprobante (imagen)')).toEqual(['Interpretar lectura']);
-    // Y la rama falsa de la compuerta es la que lleva al modelo, como siempre.
-    expect(destinos(f, '¿Es un comprobante?', 1)).toEqual(['AI Agent NovuChat']);
+    // Y la rama falsa de la compuerta es la que lleva al modelo: desde el
+    // 28/09/2026 pasando por «¿Trae un medio?», que sin medio va derecho.
+    expect(destinos(f, '¿Es un comprobante?', 1)).toEqual(['¿Trae un medio?']);
+    expect(destinos(f, '¿Trae un medio?', 1)).toEqual(['AI Agent NovuChat']);
   });
 });
 

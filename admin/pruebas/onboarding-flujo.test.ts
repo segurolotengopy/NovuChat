@@ -217,9 +217,16 @@ describe('Normalizar entrada', () => {
   });
 
   it('una imagen NO se toma como comprobante: este flujo no cobra', () => {
+    // Con id del medio va a la rama de medios (28/09/2026), que la convierte en
+    // texto; sin id no hay nada que bajar y se pide que lo escriba, como antes.
     const e = normalizar({ type: 'image', image: { id: 'x' } });
     expect(String(e['userInput'])).not.toMatch(/comprobante|pago|QR/i);
-    expect(String(e['userInput'])).toMatch(/no puedes ver/);
+    expect(e).toMatchObject({ esMedioVisual: true, esMedioAudio: false, mediaId: 'x' });
+    expect(e['esComprobante']).toBeUndefined();
+    const sinId = normalizar({ type: 'image', image: {} });
+    expect(String(sinId['userInput'])).not.toMatch(/comprobante|pago|QR/i);
+    expect(String(sinId['userInput'])).toMatch(/no puedes ver/);
+    expect(sinId['esMedioVisual']).toBe(false);
   });
 
   it('un mensaje que llega de un anuncio trae el titular', () => {
@@ -917,7 +924,12 @@ describe('Estructura del flujo', () => {
     // subcadena también aceptaría un host arbitrario que la mencione (CodeQL).
     const META = /^=?https:\/\/graph\.facebook\.com\//;
     const aGraph = flujo.nodes.filter((n) => META.test(String(n.parameters['url'] ?? '')));
-    expect(aGraph.map((n) => n.name).sort()).toEqual(['Avisar a NovuChat', 'Enviar a WhatsApp', 'Enviar texto de respaldo']);
+    // Los que ENVÍAN (POST). Desde el 28/09/2026 hay además una LECTURA a la
+    // Graph API —la URL de un medio entrante—, que no le manda nada a nadie.
+    expect(aGraph.filter((n) => n.parameters['method'] === 'POST').map((n) => n.name).sort())
+      .toEqual(['Avisar a NovuChat', 'Enviar a WhatsApp', 'Enviar texto de respaldo']);
+    expect(aGraph.filter((n) => n.parameters['method'] !== 'POST').map((n) => [n.name, n.parameters['method']]))
+      .toEqual([['Obtener URL del medio (general)', 'GET']]);
     expect(entradas('¿Responder?')).toEqual(['Salida']);
     expect(entradas('Enviar a WhatsApp')).toEqual(['¿Responder?']);
     expect(entradas('Enviar texto de respaldo')).toEqual(['¿Falló el interactivo?']);
