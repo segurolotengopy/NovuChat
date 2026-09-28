@@ -28,19 +28,46 @@ const describir = (c) => {
 // Y CUANDO LA FECHA YA PASO (24/09/2026, #5563): la nota trae el año en que
 // se agendo y la fecha de HOY, con año, para que el modelo consulte la misma
 // fecha del año en curso. Sin decirle el dia de la semana de la cita caida.
-const porPasado = caidas.length > 0 && caidas.every((c) => c && c.causa === 'pasado');
-const porHorario = !porPasado && caidas.length > 0 && caidas.every((c) => c && c.causa && c.causa !== 'cruce');
+// CAUSAS MEZCLADAS (revision de seguridad del PR #244): la cita sin confirmar
+// NO esta ni ocupada ni fuera de horario. La nota de las otras se arma solo
+// con las otras, y la sin confirmar se describe aparte.
+// `sin_nombre` (27/09/2026) es del mismo grupo: la hora esta libre y elegida,
+// falta que el cliente diga a nombre de quien.
+const esDelCliente = (c) => !!c && (c.causa === 'sin_confirmar' || c.causa === 'sin_nombre');
+const sinConfirmarCaidas = caidas.filter(esDelCliente);
+const otrasCaidas = caidas.filter((c) => !esDelCliente(c));
+const porPasado = otrasCaidas.length > 0 && otrasCaidas.every((c) => c && c.causa === 'pasado');
+// SIN CONFIRMAR (27/09/2026, #6555): la cita se deshizo porque el paciente
+// solo PREGUNTO por esa hora. No hay nada ocupado ni cerrado que explicarle:
+// el reintento no ofrece alternativas, repite la pregunta que armo `Comprobar
+// reserva` («Si, a las 17:00 hay espacio. ¿Te la agendo?») para que quede en
+// la memoria del agente lo que el paciente de verdad recibio.
+const porSinConfirmar = caidas.length > 0 && otrasCaidas.length === 0;
+const porHorario = !porPasado && otrasCaidas.length > 0
+  && otrasCaidas.every((c) => c && c.causa && c.causa !== 'cruce');
 let hoy = '';
 try {
   hoy = new Date().toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/La_Paz' });
 } catch (e) { hoy = ''; }
-const notaCruce = caidas.length
+const sinHora = sinConfirmarCaidas.filter((c) => c.causa === 'sin_confirmar');
+const sinNombreCaidas = sinConfirmarCaidas.filter((c) => c.causa === 'sin_nombre');
+const notaSinConfirmar = [
+  sinHora.length ? `el cliente todavía NO había confirmado ${sinHora.map(describir).join(' ni ')}: su mensaje era una pregunta o no eligió esa hora` : '',
+  sinNombreCaidas.length ? `el cliente eligió ${sinNombreCaidas.map(describir).join(' y ')} pero todavía NO dijo a nombre de quién es la cita` : '',
+].filter(Boolean).join('; ');
+const notaOtras = otrasCaidas.length
   ? (porPasado
-    ? `la fecha de ${caidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${caidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
+    ? `la fecha de ${otrasCaidas.map(describir).join(' y de ')} YA PASÓ (se agendó en el año ${otrasCaidas.map((c) => c.anio).filter(Boolean).join(' y ') || 'equivocado'})`
       + (hoy ? `; hoy es ${hoy}` : '') + ': el cliente quiere esa misma fecha del año en curso'
-    : (porHorario
-      ? `${caidas.map(describir).join(' y ')} cae fuera del horario de atencion`
-      : `el horario de ${caidas.map(describir).join(' y el de ')} ya estaba ocupado`))
+    : (porHorario && otrasCaidas.every((c) => c.causa === 'fuera_de_grilla')
+      ? `${otrasCaidas.map(describir).join(' y ')} no cae en punto ni y media (por este chat solo se agenda en punto o y media)`
+      : porHorario
+      ? `${otrasCaidas.map(describir).join(' y ')} cae fuera del horario de atencion`
+      : `el horario de ${otrasCaidas.map(describir).join(' y el de ')} ya estaba ocupado`))
+  : '';
+const notaCruce = caidas.length
+  ? (porSinConfirmar ? notaSinConfirmar
+    : notaOtras + (notaSinConfirmar ? `; además, ${notaSinConfirmar} (esa cita también se deshizo)` : ''))
   : 'el horario pedido ya estaba ocupado con esa persona';
 
 // El texto original del cliente vuelve a entrar en el turno del reintento:
@@ -49,15 +76,46 @@ const notaCruce = caidas.length
 let userInput = '';
 try { userInput = String($('Normalizar entrada').first().json.userInput || ''); } catch (e) { userInput = ''; }
 
-const reintentar = !borradoFallo && caidas.length > 0;
+// Sin ids fiables o con una doble reserva simultanea NO hay reintento: el
+// paciente recibe «recepcion te confirma el horario» y pasa a recepcion
+// (Andres, 27/09/2026). Ofrecerle alternativas seria confirmarle una agenda
+// que el candado no pudo asegurar.
+const sinReintento = base.sinIdsFiables === true || base.dobleReservaSimultanea === true;
+const reintentar = !borradoFallo && caidas.length > 0 && !sinReintento;
+// El aviso del turno que armo `Comprobar reserva` (uno solo por turno).
+const avisoDelTurno = String(base.avisoDelTurno || '');
 const motivo = base.motivoCruce || 'hubo un cruce de horario';
+// Sin confirmar y el borrado FALLO: la cita existe. Decirle «¿te la agendo?»
+// seria falso; sale lo que el modelo habia escrito (la cita esta agendada, es
+// verdad) y recepcion confirma con el paciente si la quiere.
+// Pero si ademas no hay ids fiables o hay una doble reserva simultanea
+// (`sinReintento`), no se confirma nada: sale el texto de `Comprobar reserva`
+// (revision de f962cef). Y el aviso del turno va siempre en el motivo.
+if (porSinConfirmar && borradoFallo) {
+  let original = '';
+  try { original = String($('Procesar respuesta').first().json.respuesta || ''); } catch (e) { original = ''; }
+  return [{ json: { ...base,
+    reintentar: false,
+    notaCruce,
+    userInput,
+    respuesta: sinReintento ? base.respuesta : (original || base.respuesta),
+    reservaVerificada: !sinReintento,
+    transferir: true,
+    motivoTransferencia: [`${motivo}, PERO NO SE PUDO DESHACER: la cita quedó agendada sin que el cliente la confirmara; confirmar con él si la quiere`,
+      avisoDelTurno].filter(Boolean).join('; '),
+  }, pairedItem: { item: 0 } }];
+}
 return [{ json: { ...base,
   reintentar,
   notaCruce,
   userInput,
   // Sin reintento, la red de seguridad de siempre: texto fijo y recepcion.
   transferir: !reintentar,
-  motivoTransferencia: reintentar ? '' : (borradoFallo
-    ? `${motivo}, PERO NO SE PUDO DESHACER la cita nueva: hay dos citas a la misma hora en esa agenda y el cliente recibio el aviso de que no se pudo confirmar`
-    : `${motivo} y el cliente quedo esperando otro horario`),
+  motivoTransferencia: reintentar ? '' : [
+    sinReintento ? '' : (borradoFallo
+      ? `${motivo}, PERO NO SE PUDO DESHACER la cita nueva: hay dos citas a la misma hora en esa agenda y el cliente recibio el aviso de que no se pudo confirmar`
+      : `${motivo} y el cliente quedo esperando otro horario`),
+    avisoDelTurno,
+    sinReintento && borradoFallo ? 'ademas no se pudo deshacer la cita de este turno que chocaba' : '',
+  ].filter(Boolean).join('; '),
 }, pairedItem: { item: 0 } }];

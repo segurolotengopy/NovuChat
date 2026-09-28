@@ -361,6 +361,20 @@ const laSena = {
   senaAFavorHasta: (sn.aFavor && typeof sn.aFavor.hasta === 'string') ? sn.aFavor.hasta.slice(0, 40) : '',
 };
 
+// --- REGLAS DE AGENDA QUE EL CODIGO HACE CUMPLIR (27/09/2026) ---------------
+// `Procesar respuesta` quita de la respuesta toda hora que no se puede dar, y
+// para eso necesita la anticipacion minima y la duracion de la cita del
+// comercio (`config/agendamiento`). El servidor todavia NO las manda en la
+// respuesta: se leen de `agendamiento` si vienen, como numeros, y si no el
+// codigo usa lo seguro (ninguna hora en el pasado, 30 minutos). Viajan como
+// texto porque Config base es un Set de textos.
+const ag = (r.agendamiento && typeof r.agendamiento === 'object') ? r.agendamiento : {};
+const entero = (v, min, max) => (typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? String(v) : undefined);
+const reglasDeAgenda = soloLlenos({
+  anticipacionMinimaMin: entero(ag.anticipacionMinimaMin, 0, 10080),
+  duracionPorDefectoMin: entero(ag.duracionPorDefectoMin, 5, 480),
+});
+
 // `estadoComercio` NO se toma del respaldo: si el panel dice que el comercio no
 // esta operativo, manda el panel. Es lo que corta el servicio a quien dejo de
 // pagar, y no puede depender de un valor escrito adentro del flujo.
@@ -386,4 +400,4 @@ const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas :
   .slice(0, 10)
   .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
 
-return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion, ...deLaConsola, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];
+return [{ json: { ...base, ...atencion, diasProximos, ...laCancelacion, ...deLaConsola, ...reglasDeAgenda, ...laSena, campanasActivas, estadoComercio, configDeLaConsola: true } }];

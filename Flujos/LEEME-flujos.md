@@ -528,6 +528,121 @@ HTTP de ingesta y «WhatsApp Clínica Platinum (envío)» en los dos de WhatsApp
 en `Enviar ubicación`. `publicar-flujo.sh` asigna por ese nombre y avisa si no
 existe.
 
+**Horas ofrecidas, confirmación y lo ya ofrecido (27/09/2026, los tres flujos de
+reservas).** Tres barreras por hecho, en `Procesar respuesta` y `Procesar
+reintento` (bloque compartido «AGENDA DEL TURNO», idéntico en los dos):
+(H1) toda hora que la respuesta ofrece se comprueba contra el
+`consultar_disponibilidad` del MISMO turno —ocupado, horario del día de esa
+persona, pasado y anticipación mínima—; la que no pasa se quita y, si no queda
+ninguna, sale una pregunta honesta. (H2, regla de Andres del 27/09) una cita
+que `agendar_cita` creó queda en pie SOLO si el cliente (a) ELIGIÓ esa hora
+—nombró una de las ofrecidas, un ordinal, o dijo «sí» a una oferta de UNA sola
+hora; una pregunta nunca elige— y (b) DIJO el nombre del paciente que va en el
+título, en ese turno o antes (ni inventado ni del perfil de WhatsApp). Alcanza el
+primer nombre: la primera palabra del nombre del título que no sea genérica
+(«cita», «consulta», «paciente», «niño»…) ni del catálogo tiene que estar, sin
+tildes, en lo que el cliente tecleó o dictó —el texto, la transcripción del
+audio o el título de la opción del menú, nunca los avisos del sistema—. Sin (a),
+`Comprobar reserva` la deshace por la vía del candado con la causa
+`sin_confirmar` y el paciente recibe «Sí, el lunes 28 a las 17:00 hay espacio.
+¿Te la agendo?» (o «¿Cuál de estas horas del lunes 28 prefieres: …?» si dijo
+«sí» ante varias). Con (a) y sin (b), causa `sin_nombre`: «Para reservar las
+17:00 del lunes 28, ¿a nombre de quién la agendo?», y la hora queda elegida para
+el turno siguiente. El reintento corre solo para que la memoria guarde esa
+pregunta, y no agenda. (M1) si pide otra hora, una
+hora concreta o una franja, no se le repite lo ya ofrecido ese día. Lo ofrecido,
+la última oferta y la hora elegida se guardan por teléfono en
+`agendaPorTelefono` (datos estáticos, una hora), junto con las palabras que
+escribió el cliente (tope de 80), que es de donde sale el nombre dicho antes.
+**Mensajes: 0 por turno; +1 donde H2 actúa por `sin_confirmar`** (la
+confirmación que llega después del «sí» del paciente, en las conversaciones
+donde el modelo agendó sin que eligiera la hora; 0,0113 USD cada una).
+`sin_nombre` no agrega: reemplaza la respuesta del turno. H1 puede sumar un intercambio cuando el modelo inventó horas; M1 tiende a
+restar turnos. Si en el mismo turno se canceló la cita vieja, la pregunta de H2
+empieza con «Tu cita … quedó cancelada.». Suite:
+`admin/pruebas/horarios-ofrecidos.test.ts`.
+
+**La grilla del chat: en punto o y media (27/09/2026, pedido del doctor de un
+consultorio; vale para todos).** El negocio puede cargar a mano citas cada 15
+minutos —y hasta dos a la misma hora—, pero por el chat solo se ofrece y se
+agenda a las :00 o :30 (`AG_GRILLA_MIN = 30`). H1 quita toda hora fuera de la
+grilla (aviso `horario_fuera_de_grilla`) y `Comprobar reserva` deshace una cita
+del chat fuera de grilla (causa `fuera_de_grilla`, después del cruce; con
+causas mezcladas manda la grilla, salvo fecha pasada o cruce).
+
+**Qué juzga el candado (revisión de seguridad de `98796fd` y decisiones de
+Andres del 27/09).** Tres casos:
+- **El modelo solo lo dijo** (`pasosDelAgente` y `agendar_cita` sin ejecutar):
+  el turno no creó nada. No se juzga, no se borra, no se nombra y no se ata la
+  seña a ninguna cita de la ventana, que son de otros. Y si la respuesta
+  afirma una cita, la pone el código (aviso `afirmo_sin_agendar`, 0 mensajes):
+  con hora elegida y nombre, «Todavía no quedó agendada: ¿te la reservo el
+  <día> a las <hora>?»; con hora y sin nombre, la pregunta de `sin_nombre`; sin
+  hora, «No veo esa reserva en este chat: ¿me confirmas el día para
+  revisarla?» (nunca «no agendé nada»: puede haber una cita que el turno no
+  ve). Si en el turno se canceló la vieja, se le dice. **No se toca** cuando
+  habla de una cita que ya existe: hay evidencia (lo que `buscar_mi_cita`
+  mostró en el turno, los candidatos de 30 minutos, las citas que ese
+  teléfono agendó por el chat —`agendaPorTelefono.creadas`, vivas hasta el día
+  de la cita, mínimo 24 horas— o una seña pendiente), todas las horas que
+  nombra coinciden con esa evidencia, la respuesta no dice que el asistente
+  agendó, reservó, reprogramó, reagendó, movió o cambió algo, y no se canceló
+  nada en el turno (revisión de `f962cef`).
+- **Sin el dato** (`agendarEjecutado` ausente, otro llamador): se trata como
+  sin ids fiables; el respaldo que juzgaba toda la ventana ya no existe.
+- **Ids completos** (toda llamada a `agendar_cita` trajo su id): se juzgan solo
+  esas citas, contra todo lo que hay en la agenda, y se deshace la del turno
+  que choca. Dos manuales a la misma hora no son un cruce ni «duplicadas».
+- **Sin ids fiables** (alguna observación sin id, o `isExecuted` sin los
+  pasos): el candado **no borra ninguna cita ajena**. Las del turno con id
+  conocido que caen por cruce, fecha pasada o grilla sí se deshacen (son del
+  turno). No nombra citas ajenas, no le confirma nada al paciente («recepción
+  revisa la agenda y te confirma el horario por este chat», con el botón), no
+  hay reintento, y pasa a recepción con el motivo «posible cruce: agendar_cita
+  no devolvió el id; revisar la agenda de <día hora>». «Lo que agendamos» y el
+  cierre cuentan solo citas con id del turno. La marca de creación que devuelve
+  Google viaja en `eventosCreados.creado` para el desempate.
+- **Doble reserva simultánea**: si la cita del turno gana el desempate pero la
+  pisa otra más nueva, ajena y de la ventana, no se borra ninguna y pasa a
+  recepción («posible doble reserva simultánea»), sin confirmarle nada al
+  paciente.
+
+**Un solo aviso a recepción por turno** (revisión de `f0c6957`). Los ítems que
+ceden ya no transfieren cada uno: el motivo viaja en `avisoDelTurno` y lo manda
+el final del camino (`Retomar respuesta` o `Procesar reintento`). **Mensajes:
+quita** los avisos a recepción repetidos que salían por ítem (uno por cita que
+cedía en el respaldo, en la llamada sin id y al segundo `sin_nombre`); queda uno
+por turno. El contador de `sin_nombre` seguidos lo sube `Procesar reintento`
+solo cuando una cita se deshizo por el nombre.
+
+**Riesgo aceptado: lo que se guarda por teléfono** (revisión de seguridad de
+`ca88ced`). El vencimiento de una hora de `agendaPorTelefono` se renueva con
+cada mensaje del cliente: una conversación activa lo mantiene vivo más de una
+hora. Y las palabras guardadas —de donde sale el nombre dicho antes— pueden
+ser datos de salud (lo que el paciente cuenta del niño), que la API de n8n
+devuelve al leer el flujo con sus datos estáticos. Solo se guardan palabras de
+lo que el cliente tecleó o dictó (texto, transcripción, título de la opción
+elegida), nunca los avisos del sistema. Se revisa en F3, cuando este estado
+pase al servidor.
+
+**Riesgo aceptado: dos teléfonos a la vez con la lista de Google atrasada.**
+Si dos conversaciones agendan la misma hora en la misma agenda con segundos de
+diferencia y `Verificar en el calendario` todavía no trae la cita de la otra,
+cada candado ve solo la suya y las dos quedan. La marca de creación de Google
+achica la ventana pero no la cierra: la cierra solo un candado con exclusión
+mutua (una reserva de la ranura en el servidor antes de crear la cita), en F3.
+
+**Riesgo aceptado: escritura concurrente de `$getWorkflowStaticData`.** n8n
+guarda los datos estáticos al terminar cada ejecución que los cambió, y gana la
+última: dos ejecuciones solapadas (dos pacientes escribiendo a la vez) pueden
+pisar el registro de otro teléfono en `agendaPorTelefono` o en
+`cancelacionesPendientes`. Sin solape no pasa nada. El peor caso es perder lo
+que una de las dos guardó en ese turno (lo ofrecido, la elección o la
+cancelación pendiente): H2 y la compuerta de `cancelar_cita` vuelven a pedir
+confirmación y M1 puede repetir una opción. El candado contra la doble reserva
+no depende de estos datos. Se cierra en F3,
+cuando ese estado pase al servidor.
+
 **Mensajes por conversación: los mismos que el Demo A.** No agrega ni quita
 ninguno: 1 respuesta por turno, el aviso a recepción solo en los casos de
 siempre (tres rechazos, reserva no verificada, umbrales del servidor).

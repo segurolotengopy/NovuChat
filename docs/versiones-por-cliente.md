@@ -30,7 +30,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 |---|---|---|---|
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | — |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` **27/09/2026: hotfix de protección + mejoras adelantadas por decisión de Andres del 27/09** (reclamos #6509 a #6587): las horas que se ofrecen salen de la consulta del mismo turno (H1), agendar exige confirmación del paciente (H2) y no se repiten las opciones ya ofrecidas (M1). Entra por la puerta del hotfix de protección; la excepción de arriba sigue vigente para todo lo demás |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -39,6 +39,17 @@ Una excepción necesita las tres cosas, o no es una excepción:
 
 > El guion `—` significa **sin excepción**: ese flujo tiene que estar al día con
 > su JSON versionado, y el script falla si no lo está.
+
+## Estado al 27/09/2026 (hotfix de protección de reservas)
+
+Los tres flujos de reservas reciben el mismo cambio —módulos compartidos más el
+reintento con `returnIntermediateSteps`—: H1, H2 y M1 de la fila de Bellido.
+En Bellido entra como **hotfix de protección** (la excepción lo permite y lo
+exige anotado) y además con las mejoras que Andres adelantó el 27/09; la
+excepción no se borra. Queda pendiente su publicación con diagnóstico en seco,
+ensayo en el Demo A y prueba con teléfono real insistiendo sobre una hora
+ocupada (regla del candado). M2 (reagendar sin cancelar primero) NO entra acá:
+va en un bloque aparte.
 
 ## Estado al 26/09/2026 (reorientación después de H1)
 
