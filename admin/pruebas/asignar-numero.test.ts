@@ -11,6 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 // La variable permite correr esta suite contra otra versión del script (así se
@@ -38,7 +39,7 @@ const WABA_NUEVA = '1000000052';
 
 function correr(...args: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+    env: entornoDelEmulador(HOST), encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
@@ -107,7 +108,7 @@ describe('asignar-numero.mjs', () => {
     for (const operador of [null, 'asignar-numero', 'andres']) {
       const args = [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--numero', NUM, '--waba', WABA, '--flujo', 'onboarding', '--alias', 'cliente02',
         ...(operador === null ? [] : ['--operador', operador]), '--aplicar'];
-      const o = spawnSync(process.execPath, args, { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      const o = spawnSync(process.execPath, args, { env: entornoDelEmulador(HOST), encoding: 'utf8' });
       expect(o.status, String(operador)).toBe(2);
       expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
     }

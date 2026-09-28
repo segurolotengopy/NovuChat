@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { CATALOGO_PLANES, limitesDe } from '../../functions/src/central/cuenta/planes.ts';
 import { MODELO_POR_DEFECTO } from '../../functions/src/central/ejes.ts';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', '..', 'scripts', 'migrar-ejes.mjs');
@@ -40,7 +41,7 @@ const NUM = { demo: '1000000061', grande: '1000000062', byoc1: '1000000063', byo
 
 function correr(...args: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+    env: entornoDelEmulador(HOST), encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
@@ -110,12 +111,12 @@ beforeAll(async () => {
 
 describe('migrar-ejes.mjs', () => {
   it('sin --proyecto o con un plan de demos que no existe, no hace nada', () => {
-    const r = spawnSync(process.execPath, [SCRIPT, '--tenant', DEMO], { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [SCRIPT, '--tenant', DEMO], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(r.status).toBe(2);
     expect(`${r.stdout}${r.stderr}`).toMatch(/falta --proyecto/);
     // Sin operador, o con uno que no es un correo, no conecta (LOW-3).
     for (const args of [['--proyecto', PROYECTO], ['--proyecto', PROYECTO, '--operador', 'andres'], ['--proyecto', PROYECTO, '--operador', 'migrar-ejes']]) {
-      const o = spawnSync(process.execPath, [SCRIPT, ...args], { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      const o = spawnSync(process.execPath, [SCRIPT, ...args], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
       expect(o.status, args.join(' ')).toBe(2);
       expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
     }

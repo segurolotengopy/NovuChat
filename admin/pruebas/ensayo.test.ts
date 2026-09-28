@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { MODELO_POR_DEFECTO } from '../functions/src/central/ejes.ts';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'ensayo.mjs');
@@ -51,7 +52,7 @@ writeFileSync(LOCAL, [
 
 function correr(...args: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, ...args], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+    env: entornoDelEmulador(HOST), encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }

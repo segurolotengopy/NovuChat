@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'cargar-negocio.mjs');
@@ -62,7 +63,7 @@ function archivo(nombre: string, datos: unknown) {
 }
 function correr(tenant: string, ruta: string, ...extra: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', tenant, '--archivo', ruta, '--local', LOCAL, ...extra], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+    env: entornoDelEmulador(HOST), encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
@@ -93,7 +94,7 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe('cargar-negocio.mjs', () => {
   it('sin los argumentos no hace nada', () => {
-    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO], { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(r.status).toBe(2);
     expect(`${r.stdout}${r.stderr}`).toMatch(/--tenant inválido/);
   });
@@ -132,7 +133,7 @@ describe('cargar-negocio.mjs', () => {
 
   it('con un marcador que falta en la tabla local: en seco avisa y sigue; con --aplicar se niega', async () => {
     const seco = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', LOCAL_VACIA],
-      { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     const salidaSeco = `${seco.stdout}${seco.stderr}`;
     expect(seco.status, salidaSeco).toBe(0);
     expect(salidaSeco).toMatch(/sin resolver.*negocio\.numeroRecepcion: el marcador REEMPLAZAR_NUMERO_RECEPCION_PLATINUM no está/);
@@ -140,7 +141,7 @@ describe('cargar-negocio.mjs', () => {
     expect(salidaSeco).toMatch(/Seco: no se escribió nada/);
 
     const aplicar = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', LOCAL_VACIA, '--aplicar'],
-      { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(aplicar.status).toBe(2);
     expect(`${aplicar.stdout}${aplicar.stderr}`).toMatch(/NEGADO.*todos los marcadores tienen que estar/);
     expect((await db.collection(`tenants/${T}/funcionarios`).get()).size).toBe(0);
@@ -206,7 +207,7 @@ describe('cargar-negocio.mjs', () => {
       `| \`REEMPLAZAR_CALENDARIO_PLATINUM_2\` | ${CALENDARIO_2} |`, '',
     ].join('\n'));
     const enTabla = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--archivo', PLATINUM, '--local', tabla, '--aplicar'],
-      { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(enTabla.status).toBe(2);
     expect(`${enTabla.stdout}${enTabla.stderr}`).toMatch(/calendarioId \(resuelto\): 64 hexadecimales exactos/);
   });

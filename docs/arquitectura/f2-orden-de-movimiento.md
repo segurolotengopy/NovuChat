@@ -191,15 +191,16 @@ tanda que lo necesita:
     puerto muerto, `GOOGLE_APPLICATION_CREDENTIALS` hacia una ruta inexistente
     y `METADATA_SERVER_DETECTION=none`. Lo hace aunque `pruebas/correr.sh` ya
     exporte el emulador, porque la suite también se corre sin él.
-  - **Hoy solo la cumple `asignar-rol.test.ts`.** Otras doce suites fijan solo
-    `FIRESTORE_EMULATOR_HOST`: `asignar-numero`, `asignar-plan`,
-    `cargar-captacion`, `cargar-fotos-catalogo`, `cargar-negocio`,
-    `central/migrar-ejes`, `datos-demo-venta`, `ensayo`, `fijar-umbrales`,
-    `limite-catalogo`, `migrar-instrucciones` y `pase-a-produccion`. Hoy no hay
-    exposición demostrable: sus scripts no usan Auth ni Storage, y con el host
-    explícito firebase-admin no usa las ADC para Firestore (revisión de
-    seguridad del #248). Se completan en un PR propio, **antes de Pz**, y no
-    sirven de modelo para una suite nueva.
+  - **Desde el 28/09 la cumplen todas.** Toda suite que lanza Node o bash
+    (`spawnSync`, `spawn`, `execFileSync`, `execFile`, `fork`, `execSync`,
+    también como `cp.…` y con los argumentos en una variable) pasa
+    `entornoDelEmulador(…)` de `pruebas/core/entorno-del-hijo.ts`; sus
+    variables propias no pueden pisar las que cierran la salida a la nube.
+    `pruebas/core/hijos-hermeticos.test.ts` (pura) lee todas las suites con
+    el parser y falla ante cualquiera de esas formas sin el entorno, salvo un
+    `-e` de Node; un binario, unos argumentos o unas opciones que no se pueden
+    leer como literales cuentan como script. Probado sin red (`unshare -rn`):
+    13 archivos y 249 pruebas en verde (revisión de seguridad del #259).
   - **Qué exige a las tandas:** una tanda que mueva suites (Pz) conserva ese
     `env` y la última línea de `correr.sh`.
   - **Cómo se comprueba:** con `pnpm pruebas:reglas` dentro de `unshare -rn`,

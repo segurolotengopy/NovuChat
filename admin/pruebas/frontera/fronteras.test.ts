@@ -35,6 +35,7 @@ import {
   CALCULADO, INDICE_DE_FUNCTIONS, MOTIVO_INDICE, MOTIVO_PRUEBA, analizar, claveDeCruce, esPrueba, importsDe,
   leerDeuda, listarRaices, motivoDeCruce, zonaDeCodigo, zonaPorCarpeta, type Arbol,
 } from './frontera.ts';
+import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const RAIZ_FRONTERA = carpetaDe(rutaDe(import.meta.url));
 const F = 'admin/functions/src/';
@@ -479,7 +480,7 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
       const crece = { ...base, cruces: [...base.cruces, { desde: `${F}core/a.ts`, hacia: `${F}central/b.ts`, porque: 'x' }] };
       writeFileSync(unir(dir, 'base.json'), JSON.stringify(base));
       writeFileSync(unir(dir, 'pr.json'), JSON.stringify(crece));
-      const r = spawnSync(process.execPath, [unir(dir, 'enlace', 'deuda-solo-baja.mjs'), unir(dir, 'base.json'), unir(dir, 'pr.json')], { encoding: 'utf8' });
+      const r = spawnSync(process.execPath, [unir(dir, 'enlace', 'deuda-solo-baja.mjs'), unir(dir, 'base.json'), unir(dir, 'pr.json')], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
       expect(r.status).toBe(1);
       expect(r.stdout).toContain('::error::La deuda de la frontera crece');
     } finally {

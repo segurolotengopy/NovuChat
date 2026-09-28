@@ -30,6 +30,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { idDeNombre } from '../web/src/lib/csv.ts';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -461,7 +462,7 @@ describe('contar-catalogo.mjs', () => {
   const V = 'lim-script-otro';
   const correr = (...args: string[]) => {
     const r = spawnSync(process.execPath, [SCRIPT, ...args], {
-      env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+      env: entornoDelEmulador(HOST), encoding: 'utf8',
     });
     return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
   };

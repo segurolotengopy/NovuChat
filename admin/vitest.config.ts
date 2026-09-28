@@ -42,6 +42,7 @@ export const SUITES_PURAS = [
   'pruebas/bellido-flujo.test.ts',
   'pruebas/bitacora-tipos.test.ts',
   'pruebas/core/bitacora.test.ts',
+  'pruebas/core/hijos-hermeticos.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
   'pruebas/candado-agenda.test.ts',

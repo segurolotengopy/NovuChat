@@ -17,6 +17,7 @@ import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', '..', 'scripts', 'estado-de-versiones.sh');
@@ -57,7 +58,7 @@ function preparar(excepcion: string, seco: string) {
 }
 
 function correr() {
-  const r = spawnSync('bash', [join(raiz, 'scripts', 'estado-de-versiones.sh')], { encoding: 'utf8' });
+  const r = spawnSync('bash', [join(raiz, 'scripts', 'estado-de-versiones.sh')], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
   // eslint-disable-next-line no-control-regex
   const salida = `${r.stdout}${r.stderr}`.replace(/\u001b\[[0-9;]*m/g, '');
   return { codigo: r.status, lineas: salida.split('\n') };

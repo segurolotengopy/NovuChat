@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path';
 import { CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, limitesDe } from '../functions/src/central/cuenta/planes.ts';
 import { PRUEBA, estadoDeServicio, mesBolivia, sumarMeses } from '../functions/src/central/cuenta/prepago.ts';
 import { cambiosDelMes } from '../functions/src/central/ejes.ts';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '..', 'scripts', 'asignar-plan.mjs');
@@ -44,7 +45,7 @@ const NUM_SIN_RUTA = '1000000073';
 
 function correr(...args: string[]) {
   const r = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--operador', 'operador@ejemplo.com', ...args], {
-    env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8',
+    env: entornoDelEmulador(HOST), encoding: 'utf8',
   });
   return { codigo: r.status, salida: `${r.stdout}${r.stderr}` };
 }
@@ -88,7 +89,7 @@ describe('asignar-plan.mjs: el plan', () => {
     expect(r.salida).toMatch(/nada que asignar/);
     for (const args of [[], ['--operador', 'asignar-plan'], ['--operador', 'andres']]) {
       const o = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', T, '--plan', 'pro', ...args],
-        { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+        { env: entornoDelEmulador(HOST), encoding: 'utf8' });
       expect(o.status, args.join(' ')).toBe(2);
       expect(`${o.stdout}${o.stderr}`).toMatch(/--operador <correo> es obligatorio/);
     }
@@ -460,7 +461,7 @@ describe('asignar-plan.mjs F1b: --conversaciones, --precio, --periodo-prueba y -
       expect(r.salida, `${opcion} ${valor}`).toMatch(mensaje);
     }
     const sinOperador = spawnSync(process.execPath, [SCRIPT, '--proyecto', PROYECTO, '--tenant', P, '--precio', '120', '--aplicar'],
-      { env: { ...process.env, FIRESTORE_EMULATOR_HOST: HOST }, encoding: 'utf8' });
+      { env: entornoDelEmulador(HOST), encoding: 'utf8' });
     expect(sinOperador.status).toBe(2);
     expect(await cuenta(P)).toEqual(PRO_PREPAGO);
   });
