@@ -13,8 +13,10 @@
  * CÓMO SE RESUELVE LA CONTRASEÑA. No se elige ninguna. Se crea la cuenta con una
  * clave aleatoria de 32 bytes que **no se imprime, no se guarda y nadie ve**, y
  * se genera un enlace de restablecimiento para que la persona ponga la suya, que
- * NO se imprime: se escribe en `~/enlace-admin-<tenant>.txt` con permisos 600. Es
- * la diferencia entre «te mando tu contraseña por WhatsApp» y un alta seria.
+ * NO se imprime: se escribe en `CLIENTES/<CLIENTE>/.enlaces/enlace-admin-<tenant>.txt`
+ * de la copia principal, con permisos 600 (`plataforma/enlace-privado.mjs` dice por qué
+ * ahí y no en `~/`). Es la diferencia entre «te mando tu contraseña por WhatsApp»
+ * y un alta seria.
  *
  * Y RESUELVE ADEMÁS EL CORREO VERIFICADO, que las reglas exigen para cualquier
  * rol de comercio: completar un restablecimiento de contraseña marca el correo
@@ -24,14 +26,17 @@
  *
  *   node scripts/alta-comercio.mjs --proyecto <id> \
  *     --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
- *     --admin ana@ejemplo.com --nombre-admin "Ana Quispe"
+ *     --admin ana@ejemplo.com --nombre-admin "Ana Quispe" [--cliente SALON_ROSA]
+ *
+ * `--cliente` es la carpeta de `CLIENTES/`; por defecto, el tenant en mayúsculas
+ * con `_` por `-`. Tiene que existir: la crea la etapa «preparar» del alta.
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
 import { randomBytes } from 'node:crypto';
-import { chmodSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import {
+  ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
+} from './plataforma/enlace-privado.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -43,6 +48,7 @@ const NOMBRE = opcion('nombre');
 const ADMIN = opcion('admin');
 const NOMBRE_ADMIN = opcion('nombre-admin') ?? '';
 const FLUJOS = (opcion('flujos') ?? 'agendamiento').split(',').map((f) => f.trim()).filter(Boolean);
+const CLIENTE = opcion('cliente') ?? clienteDeTenant(TENANT);
 
 const FLUJOS_VALIDOS = new Set(['agendamiento', 'venta', 'onboarding']);
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
@@ -54,11 +60,24 @@ if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, gu
 if (!NOMBRE) problemas.push('falta --nombre');
 if (!ADMIN || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ADMIN)) problemas.push('--admin no es un correo');
 for (const f of FLUJOS) if (!FLUJOS_VALIDOS.has(f)) problemas.push(`flujo desconocido: ${f}`);
+if (!ID_CLIENTE.test(CLIENTE)) problemas.push('--cliente inválido (la carpeta de CLIENTES/: mayúsculas, dígitos y _)');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
   console.error('\n  node scripts/alta-comercio.mjs --proyecto <id> --tenant <id> --nombre "<nombre>" \\');
-  console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] [--aplicar]\n');
+  console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] [--cliente <CARPETA>] [--aplicar]\n');
   process.exit(2);
+}
+
+// DÓNDE IRÁ EL ENLACE, comprobado ANTES de abrir Firebase: si la carpeta del
+// cliente no existe, el alta se corta acá, y no después de crear la cuenta,
+// cuando ya no habría dónde dejar el enlace.
+const RAIZ = raizDelProyecto();
+const ENLACE = { raiz: RAIZ, cliente: CLIENTE, nombre: `enlace-admin-${TENANT}` };
+const destino = comprobarDestino(ENLACE);
+if (!destino.existe) {
+  console.error(`\n  ✗ No existe CLIENTES/${CLIENTE}/ en la copia principal, y ahí va el enlace de contraseña.`);
+  console.error('    Créela con la etapa «preparar» del alta, o indique la carpeta con --cliente.\n');
+  process.exit(1);
 }
 
 const { initializeApp } = await import('firebase-admin/app');
@@ -74,7 +93,8 @@ const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'o
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);
 console.log(`  Flujos     : ${FLUJOS.join(', ')}`);
 console.log(`  Admin      : ${ADMIN}${NOMBRE_ADMIN ? ` (${NOMBRE_ADMIN})` : ''}`);
-console.log(`  Proyecto   : ${PROYECTO}\n`);
+console.log(`  Proyecto   : ${PROYECTO}`);
+console.log(`  Enlace     : ${destino.legible} (copia principal)\n`);
 
 // UN IDENTIFICADOR NO SE REUTILIZA NUNCA, ni siquiera uno dado de baja: un claim
 // viejo que todavía diga {"salon-x": "admin"} le daría al dueño anterior acceso
@@ -172,19 +192,19 @@ console.log('  ✓ rol de administrador');
 // Platinum: el enlace quedó a la vista en una conversación, y hubo que rotar la
 // contraseña para invalidarlo.
 //
-// Va a un archivo del `$HOME` con permisos 600, FUERA de cualquier repositorio:
-// el `CLIENTES/<NOMBRE>/` del proyecto está dentro del repo público y un
-// `git add` distraído lo subiría. La salida dice dónde quedó, nunca qué dice.
-const enlace = await auth.generatePasswordResetLink(ADMIN);
-const destino = join(homedir(), `enlace-admin-${TENANT}.txt`);
-writeFileSync(destino,
+// Hasta el 28/09/2026 iba a `~/enlace-admin-<tenant>.txt`, y quedaban archivos
+// olvidados en el directorio personal. Ahora va a `CLIENTES/<CLIENTE>/.enlaces/`
+// de la copia principal, ignorada por git, con permisos 600: el porqué entero
+// está en `plataforma/enlace-privado.mjs`. La salida dice dónde quedó, nunca qué
+// dice: el enlace lo pide y lo escribe el módulo, y acá no existe ni como variable.
+const escrito = await guardarEnlaceDeContrasena({ auth, correo: ADMIN, ...ENLACE, encabezado:
   `Enlace para que ${ADMIN} ponga su contrasena en la consola de NovuChat.\n`
   + `Comercio: ${TENANT}. Un solo uso, vence en unas horas.\n`
   + `NO lo pegue en ningun chat ni lo reenvie: quien lo tenga fija esa contrasena.\n`
-  + `Borre este archivo apenas lo use.\n\n${enlace}\n`, 'utf8');
-chmodSync(destino, 0o600);
+  + 'Borre este archivo apenas lo use.' });
 console.log('\n  Enlace para que ponga su contraseña (vence en unas horas), escrito en:');
-console.log(`  ${destino}   (solo para usted; no se muestra acá)\n`);
+console.log(`  ${escrito}   (copia principal, permisos 600; no se muestra acá)`);
+console.log('  Lo abre UNA PERSONA, nunca un agente, y borra el archivo al usarlo.\n');
 console.log('  Al completarlo, Firebase marca el correo como verificado, que es lo');
 console.log('  que las reglas exigen para cualquier rol de comercio.\n');
 
