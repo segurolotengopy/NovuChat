@@ -4,8 +4,58 @@
     "Config base": "REEMPLAZAR_"
   },
   "codigo": {
+    "Normalizar entrada": {
+      "archivo": "core/venta/normalizar-entrada.js",
+      "saltoFinal": true
+    },
+    "Procesar respuesta": {
+      "archivo": "core/venta/procesar-respuesta.js",
+      "saltoFinal": true
+    },
+    "Enlace del catálogo": "modulos/catalogo-web/enlace-del-catalogo.js",
+    "¿Hay comprobante?": {
+      "archivo": "modulos/cobros/hay-comprobante.js",
+      "saltoFinal": true
+    },
+    "Texto enviado": "core/venta/texto-enviado.js",
+    "Config del negocio": {
+      "archivo": "core/venta/config-del-negocio.js",
+      "saltoFinal": true
+    },
+    "Comercio no operativo": {
+      "archivo": "core/venta/comercio-no-operativo.js",
+      "saltoFinal": true
+    },
+    "Uso extendido": {
+      "archivo": "core/venta/uso-extendido.js",
+      "saltoFinal": true
+    },
+    "Validar carrito": "modulos/catalogo-web/validar-carrito.js",
+    "Mensaje del carrito": "modulos/catalogo-web/mensaje-del-carrito.js",
+    "Preparar QR de cobro": {
+      "archivo": "modulos/cobros/preparar-qr-de-cobro.js",
+      "saltoFinal": true
+    },
+    "QR no enviado": {
+      "archivo": "modulos/cobros/venta/qr-no-enviado.js",
+      "saltoFinal": true
+    },
+    "Preparar reenvío del QR": {
+      "archivo": "modulos/cobros/venta/preparar-reenvio-del-qr.js",
+      "saltoFinal": true
+    },
+    "Interpretar lectura": {
+      "archivo": "modulos/cobros/venta/interpretar-lectura.js",
+      "saltoFinal": true
+    },
+    "Respuesta del cobro": {
+      "archivo": "modulos/cobros/respuesta-del-cobro.js",
+      "saltoFinal": true
+    },
     "Preparar transcripción": "core/medios/preparar-transcripcion.js",
-    "Preparar imagen": "core/medios/preparar-imagen.js"
+    "Preparar imagen": "core/medios/preparar-imagen.js",
+    "Filtrar categoría": "modulos/productos/filtrar-categoria.js",
+    "Medio no aceptado": "core/medios/medio-no-aceptado.js"
   },
   "prompts": {}
 }
