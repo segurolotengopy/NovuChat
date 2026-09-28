@@ -4,8 +4,31 @@
     "Config base": "REEMPLAZAR_"
   },
   "codigo": {
+    "Config del negocio": "core/captacion/config-del-negocio.js",
+    "Conocimiento del sitio": {
+      "archivo": "modulos/captacion/conocimiento-del-sitio.js",
+      "saltoFinal": true
+    },
+    "Normalizar entrada": "core/captacion/normalizar-entrada.js",
+    "Comercio no operativo": {
+      "archivo": "core/captacion/comercio-no-operativo.js",
+      "saltoFinal": true
+    },
+    "Estado de la conversación": "modulos/captacion/estado-de-la-conversacion.js",
+    "Uso extendido": {
+      "archivo": "core/captacion/uso-extendido.js",
+      "saltoFinal": true
+    },
+    "Traspaso a un asesor": "core/captacion/traspaso-a-un-asesor.js",
+    "Procesar respuesta": "core/captacion/procesar-respuesta.js",
+    "Salida": "core/captacion/salida.js",
+    "Prospecto para la planilla": "modulos/captacion/prospecto-para-la-planilla.js",
+    "Decidir fila de la planilla": "modulos/captacion/decidir-fila-de-la-planilla.js",
+    "Confirmar envío": "modulos/captacion/confirmar-envio.js",
     "Preparar transcripción": "core/medios/preparar-transcripcion.js",
-    "Preparar imagen": "core/medios/preparar-imagen.js"
+    "Preparar imagen": "core/medios/preparar-imagen.js",
+    "Filtrar categoría": "modulos/captacion/filtrar-categoria.js",
+    "Medio no aceptado": "core/medios/medio-no-aceptado.js"
   },
   "prompts": {}
 }

@@ -88,14 +88,21 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     ]);
   });
 
-  it('el Demo B y la captación inyectan SOLO los dos nodos de medios, sin prompts', () => {
+  it('el Demo B y la captación inyectan TODOS sus nodos Code (FL2), sin prompts todavía', () => {
     for (const f of ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']) {
       const m = leerManifiesto(f) as Record<string, any>;
       const a = leerManifiesto('demo-a-agendamiento.json') as Record<string, any>;
-      expect(Object.keys(m.codigo).sort(), f).toEqual(['Preparar imagen', 'Preparar transcripción']);
-      // El MISMO archivo que usan los flujos de reservas, sea cual sea su carpeta.
+      const j = JSON.parse(readFileSync(join(RAIZ_FLUJOS, f), 'utf8')) as { nodes: { name: string; type: string }[] };
+      const code = j.nodes.filter((n) => n.type === 'n8n-nodes-base.code').map((n) => n.name).sort();
+      expect(Object.keys(m.codigo).sort(), f).toEqual(code);
+      // Los medios: el MISMO archivo que usan los flujos de reservas, sea cual sea su carpeta.
       expect(m.codigo['Preparar transcripción'], f).toEqual(a.codigo['Preparar transcripción']);
       expect(m.codigo['Preparar imagen'], f).toEqual(a.codigo['Preparar imagen']);
+      // Las variantes de los nodos comunes viven en su carpeta transitoria, no en core/ (F3b las unifica).
+      for (const nodo of ['Normalizar entrada', 'Procesar respuesta', 'Config del negocio', 'Comercio no operativo', 'Uso extendido']) {
+        const v = m.codigo[nodo];
+        expect(typeof v === 'string' ? v : v.archivo, `${f} ${nodo}`).toMatch(/^core\/(venta|captacion)\//);
+      }
       expect(m.prompts, f).toEqual({});
     }
   });
@@ -310,7 +317,7 @@ describe('6. Ningún módulo, prompt ni manifiesto contiene un valor real', () =
   const PERMITIDOS = /(00000000-0000-0000-0000-000000000000|1234567890123456|59170000000|59100000000|example\.(com|org)|ejemplo\.(tld|com)|@group\.calendar\.google\.com|noreply@anthropic\.com|[a-z0-9._-]+@novuchat\.site|REEMPLAZAR|[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com|[0-9]*0{6,}[0-9]*)/;
   const REGLAS: [string, RegExp][] = [
     ['UUID', /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/],
-    ['secuencia de 10 o más dígitos sin seis ceros', /(^|[^0-9])[0-9]{10,}([^0-9]|$)/],
+    ['secuencia de 10 o más dígitos sin seis ceros (la parte decimal de un número no cuenta)', /(^|[^0-9.])[0-9]{10,}([^0-9]|$)/],
     ['correo electrónico', /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/],
     ['ruta absoluta con usuario del sistema', /\/(home|Users)\/[a-z][a-z0-9._-]+\//],
     ['token de Meta', /EAA[A-Za-z0-9]{20,}/],
@@ -448,4 +455,26 @@ describe('8. La línea de comandos', () => {
     expect(salida).toContain('✗ platinum-agendamiento.json: difiere en codigo/Normalizar entrada');
     expect(salida).toContain('2 flujo(s) no coinciden con sus módulos.');
   });
+});
+
+describe('9. Las carpetas transitorias de FL2 solo se achican', () => {
+  // Decisión de la revisora (28/09): `core/venta/` y `core/captacion/` son las
+  // variantes de los nodos comunes pendientes de unificar en `core/` (F3b), y
+  // `modulos/cobros/venta/` las tres de cobro que comparten nombre con las de
+  // reservas. No son zonas nuevas: después de FL2 no entra ningún archivo, y
+  // F3b las vacía. Como la deuda de la frontera, la lista solo se achica.
+  const PERMITIDOS: Record<string, string[]> = {
+    'core/venta': ['comercio-no-operativo.js', 'config-del-negocio.js', 'normalizar-entrada.js', 'procesar-respuesta.js',
+      'texto-enviado.js', 'uso-extendido.js'],
+    'core/captacion': ['comercio-no-operativo.js', 'config-del-negocio.js', 'normalizar-entrada.js', 'procesar-respuesta.js',
+      'salida.js', 'traspaso-a-un-asesor.js', 'uso-extendido.js'],
+    'modulos/cobros/venta': ['interpretar-lectura.js', 'preparar-reenvio-del-qr.js', 'qr-no-enviado.js'],
+  };
+  for (const [carpeta, permitidos] of Object.entries(PERMITIDOS)) {
+    it(`${carpeta}/ no tiene archivos fuera de la lista de FL2`, () => {
+      const dir = join(RAIZ_FLUJOS, 'src', carpeta);
+      const hay = existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).map((e) => (e.isDirectory() ? `${e.name}/` : e.name)) : [];
+      expect(hay.filter((a) => !permitidos.includes(a)), carpeta).toEqual([]);
+    });
+  }
 });

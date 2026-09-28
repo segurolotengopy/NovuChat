@@ -240,8 +240,11 @@ modo_patrones() {
         '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
   regla "correo electronico" \
         '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+  # La parte DECIMAL de un número no es un identificador: los vectores del
+  # corpus de captación (FL2, 28/09) tienen fracciones de 16 a 18 dígitos. Un
+  # teléfono o un ID de Meta no van precedidos de un punto.
   regla "secuencia de 10 o mas digitos (IDs de Meta, telefonos)" \
-        '(^|[^0-9])[0-9]{10,}([^0-9]|$)'
+        '(^|[^0-9.])[0-9]{10,}([^0-9]|$)'
   regla "dominio de DNS dinamico o tunel" \
         '\.(duckdns\.org|ngrok(-free)?\.(io|app|dev)|no-ip\.(org|com)|dyndns\.org|serveo\.net|trycloudflare\.com|loca\.lt)'
   regla "token de Meta / Facebook" \
