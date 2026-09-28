@@ -1465,7 +1465,7 @@
           "mode": "id",
           "value": "models/gemini-3.5-flash-lite"
         },
-        "text": "Clasifica esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda una persona que escribe para contratar un asistente de WhatsApp para SU negocio: casi siempre es material de ese negocio —su logo, su menú, una lista de precios, un catálogo, una captura de su local, de sus redes o de su WhatsApp—. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"publicidad|comprobante|otro\",\n \"texto\": \"<texto visible, si lo hay, hasta 500 caracteres: primero el nombre del negocio, después a qué se dedica y los productos, servicios o precios que se lean>\"}\n\n\"comprobante\" es SOLO el comprobante de un pago o de una transferencia bancaria. \"publicidad\" es SOLO un anuncio o una promoción de asistentes de WhatsApp, de chatbots o de sus planes, como los que ofrece este chat. Todo lo demás es \"otro\" con su texto visible, y en especial el material del propio negocio de la persona, aunque tenga precios, ofertas o promociones.\nNo describas a las personas, no opines sobre lo que ves.\nSi dudas, usa \"otro\" y deja \"texto\" con lo que se lea, o vacío.",
+        "text": "Clasifica esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda una persona que escribe para contratar un asistente de WhatsApp para SU negocio: casi siempre es material de ese negocio —su logo, su menú, una lista de precios, un catálogo, una captura de su local, de sus redes o de su WhatsApp—. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"comprobante|otro\",\n \"texto\": \"<texto visible, si lo hay, hasta 500 caracteres: primero el nombre del negocio, después a qué se dedica y los productos, servicios o precios que se lean>\"}\n\n\"comprobante\" es SOLO el comprobante de un pago o de una transferencia bancaria. Todo lo demás es \"otro\" con su texto visible, y en especial el material del propio negocio de la persona, aunque tenga precios, ofertas o promociones.\nNo describas a las personas, no opines sobre lo que ves.\nSi dudas, usa \"otro\" y deja \"texto\" con lo que se lea, o vacío.",
         "inputType": "binary",
         "binaryPropertyName": "data",
         "simplify": true,
@@ -1480,7 +1480,7 @@
           "name": ""
         }
       },
-      "notes": "Clasifica el archivo en una lista CERRADA (publicidad, comprobante, otro) y devuelve, como mucho, el texto visible. No describe a las personas ni opina. No envía nada."
+      "notes": "Clasifica el archivo en «comprobante» u «otro» y devuelve, como mucho, el texto visible (28/09/2026, «solo se ofrece lo que se cumple»): el aviso de «comprobante» se cumple porque el asesor sale con el botón; el de «publicidad» ofrece agendar y aquí no se ofrece. No describe a las personas ni opina. No envía nada."
     },
     {
       "id": "onb-describir-imagen",
@@ -1499,7 +1499,7 @@
           "mode": "id",
           "value": "models/gemini-3.5-flash-lite"
         },
-        "text": "Clasifica esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda una persona que escribe para contratar un asistente de WhatsApp para SU negocio: casi siempre es material de ese negocio —su logo, su menú, una lista de precios, un catálogo, una captura de su local, de sus redes o de su WhatsApp—. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"publicidad|comprobante|otro\",\n \"texto\": \"<texto visible, si lo hay, hasta 500 caracteres: primero el nombre del negocio, después a qué se dedica y los productos, servicios o precios que se lean>\"}\n\n\"comprobante\" es SOLO el comprobante de un pago o de una transferencia bancaria. \"publicidad\" es SOLO un anuncio o una promoción de asistentes de WhatsApp, de chatbots o de sus planes, como los que ofrece este chat. Todo lo demás es \"otro\" con su texto visible, y en especial el material del propio negocio de la persona, aunque tenga precios, ofertas o promociones.\nNo describas a las personas, no opines sobre lo que ves.\nSi dudas, usa \"otro\" y deja \"texto\" con lo que se lea, o vacío.",
+        "text": "Clasifica esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda una persona que escribe para contratar un asistente de WhatsApp para SU negocio: casi siempre es material de ese negocio —su logo, su menú, una lista de precios, un catálogo, una captura de su local, de sus redes o de su WhatsApp—. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"comprobante|otro\",\n \"texto\": \"<texto visible, si lo hay, hasta 500 caracteres: primero el nombre del negocio, después a qué se dedica y los productos, servicios o precios que se lean>\"}\n\n\"comprobante\" es SOLO el comprobante de un pago o de una transferencia bancaria. Todo lo demás es \"otro\" con su texto visible, y en especial el material del propio negocio de la persona, aunque tenga precios, ofertas o promociones.\nNo describas a las personas, no opines sobre lo que ves.\nSi dudas, usa \"otro\" y deja \"texto\" con lo que se lea, o vacío.",
         "inputType": "binary",
         "binaryPropertyName": "data",
         "simplify": true,
@@ -1514,7 +1514,7 @@
           "name": ""
         }
       },
-      "notes": "Clasifica la foto en una lista CERRADA (publicidad, comprobante, otro) y devuelve, como mucho, el texto visible. No describe a las personas ni opina. No envía nada."
+      "notes": "Clasifica el archivo en «comprobante» u «otro» y devuelve, como mucho, el texto visible (28/09/2026, «solo se ofrece lo que se cumple»): el aviso de «comprobante» se cumple porque el asesor sale con el botón; el de «publicidad» ofrece agendar y aquí no se ofrece. No describe a las personas ni opina. No envía nada."
     },
     {
       "id": "onb-preparar-imagen",

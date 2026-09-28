@@ -263,12 +263,19 @@ describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en
   const clasificar = (salida: J) => ejecutar(codigoDe(f, 'Preparar imagen'), [salida],
     { 'Normalizar entrada': [ent], 'Config del negocio': [cfgNeg] })[0] ?? {};
 
-  it('las tres categorías del Demo B dan un texto fijo, conservan el item y NINGUNO afirma un pago', () => {
-    for (const categoria of ['publicidad', 'comprobante', 'otro']) {
+  // SOLO SE OFRECE LO QUE SE CUMPLE (28/09/2026). En el Demo B el clasificador
+  // devuelve SIEMPRE «otro»: el aviso de «publicidad» del módulo común ofrece
+  // agendar y el de «comprobante», pasarlo al negocio, y este flujo no puede
+  // cumplir ninguno de los dos (no agenda y no tiene a quién pasar la
+  // conversación). El comprobante con QR pendiente no llega acá: va al OCR.
+  it('«otro», la única categoría del Demo B, da un texto fijo que conserva el item y no ofrece nada que no se cumpla', () => {
+    for (const categoria of ['otro']) {
       const s = clasificar(gemini(JSON.stringify({ categoria, texto: 'Zapatilla blanca, Bs 350' })));
       expect(s['categoriaMedio']).toBe(categoria);
       expect(String(s['userInput'])).toMatch(/^AVISO_SISTEMA:/);
+      expect(String(s['userInput'])).toContain('Zapatilla blanca, Bs 350');
       expect(String(s['userInput'])).not.toMatch(AFIRMA_PAGO);
+      expect(String(s['userInput'])).not.toMatch(/agend|valoraci|pasarlo al negocio/i);
       // Sigue siendo el mismo turno: el teléfono, la leyenda y la configuración viajan.
       expect(s).toMatchObject({ from: '59170000001', leyendaDelMedio: '¿tienen este?', cobroRealActivo: 'si' });
       // Un pago tardío de reservas no aplica acá: nunca se fuerza una transferencia.
@@ -280,14 +287,19 @@ describe('4. Los dos «Preparar …» son el MISMO módulo que en reservas, y en
     for (const categoria of ['zapatilla', 'producto', '', 'PUBLICIDAD']) {
       expect(clasificar(gemini(JSON.stringify({ categoria })))['categoriaMedio'], categoria).toBe('otro');
     }
-    // DEUDA DECLARADA (F3a, `Analisis/41`): la lista cerrada vive en el módulo
-    // común y todavía incluye las dos categorías de la clínica, así que si el
-    // modelo devolviera «boca_o_dientes» el agente recibiría el texto de la
-    // valoración. En este flujo la barrera es el clasificador, que no las
-    // ofrece (sección 5). Cuando las categorías pasen a ser por módulo, esta
-    // prueba se invierte.
-    expect(clasificar(gemini(JSON.stringify({ categoria: 'boca_o_dientes' })))['categoriaMedio']).toBe('boca_o_dientes');
   });
+
+  // NEGATIVA PENDIENTE: HOY NO SE PUEDE IMPEDIR SIN TOCAR EL COMÚN (F3a).
+  // La lista cerrada vive en `preparar-imagen.js` (líneas 38-48 y 80-81) y es la
+  // misma para los cinco flujos: si Gemini desobedeciera al clasificador y
+  // devolviera «publicidad» o «boca_o_dientes», el agente recibiría «ofrécele
+  // agendar» o «queda para la valoración». La única barrera de este flujo es el
+  // prompt del clasificador, que pide SIEMPRE «otro» (sección 5), y un prompt no
+  // es una barrera. Se cierra cuando las categorías sean por módulo (la lista
+  // permitida como configuración del flujo) o con un nodo de este flujo que
+  // reduzca a «otro» lo que no esté permitido antes de «Preparar imagen».
+  it.todo('NEGANDO: si Gemini devolviera «publicidad», lo que llega al agente no dice «agendar» ni «valoración» (F3a)');
+  it.todo('NEGANDO: si Gemini devolviera «boca_o_dientes», lo que llega al agente no dice «agendar» ni «valoración» (F3a)');
 
   it('el audio transcripto entra como texto marcado, y un fallo pide que lo repita', () => {
     const e = normalizar(fusionar(real()), AUDIO);
@@ -326,11 +338,13 @@ describe('5. Los nodos de Gemini y de Meta: lectura, credenciales por nombre, y 
     }
   });
 
-  it('los clasificadores piden la lista del Demo B —publicidad, comprobante, otro— y NINGUNA de clínica', () => {
+  it('los clasificadores piden SIEMPRE «otro» y el texto visible, sin nombrar ninguna otra categoría', () => {
     for (const n of ['Describir documento', 'Describir imagen']) {
       const t = String(nodo(f, n).parameters['text']);
-      expect(t).toContain('"categoria": "publicidad|comprobante|otro"');
-      expect(t).not.toMatch(/boca_o_dientes|documento_salud|diente|cl[ií]nica|diagn/i);
+      expect(t).toContain('"categoria": "otro"');
+      expect(t).toContain('"categoria" es SIEMPRE "otro"');
+      expect(t).not.toMatch(/publicidad|comprobante|boca_o_dientes|documento_salud|diente|cl[ií]nica|diagn|\|/i);
+      expect(t).toMatch(/menú o una lista de precios/);
       expect(t).toContain('POR SU TEXTO antes que por sus fotos');
       expect(t).toContain('hasta 500 caracteres');
       expect(t).toMatch(/No describas a las personas/);

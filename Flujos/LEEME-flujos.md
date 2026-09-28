@@ -176,7 +176,7 @@ una lista. Una excepción solo vale declarada ahí y en
 | Qué entra | Todo audio con id; una imagen o un PDF solo con cobro REAL y sin QR pendiente | Todo audio, imagen o PDF con id |
 | Qué NO entra | El comprobante con QR pendiente (va al OCR y al cotejo) y cualquier archivo en cobro simulado (es el comprobante simulado, decisión del 23 y 25/09) | Video, sticker (aviso de siempre) |
 | Leer de Meta | Nodo WhatsApp `mediaUrlGet` + HTTP con la credencial `whatsAppApi` que ya usa el flujo | HTTP `GET` a la Graph API con la credencial de `Enviar a WhatsApp` (el flujo no tiene una de tipo WhatsApp) |
-| Clasificador | `publicidad`, `comprobante`, `otro`: la foto de un producto es `otro`, con marca, precio, talla o qué producto es | `publicidad` (solo anuncios de asistentes o chatbots), `comprobante`, `otro`: el logo, el menú o la lista de precios del prospecto es `otro`, con su texto |
+| Clasificador | SIEMPRE `otro`, con el texto visible (marca, precio, talla, el menú o la lista de precios, o qué producto es). Los avisos de `publicidad` (ofrece agendar) y `comprobante` (ofrece pasarlo al negocio) no se cumplen en este flujo | `comprobante` u `otro`. `comprobante` se cumple: el asesor sale con el botón. `publicidad` no, porque ofrece agendar. El logo, el menú o la lista de precios del prospecto es `otro`, con su texto |
 | Leyenda del archivo | En el turno del agente, antes del texto del cliente | En `mensajeDelTurno`, después del texto del cliente |
 
 **Cómo decide el Demo B que un archivo es un comprobante** (y por qué la rama
@@ -192,10 +192,13 @@ pendiente, así que las dos compuertas son excluyentes por construcción
 
 **Costo:** cero mensajes por conversación (ningún nodo nuevo envía); una
 llamada a Gemini flash-lite por medio recibido. **Deudas declaradas** (F3a):
-la lista cerrada de `preparar-imagen.js` todavía acepta las categorías de la
-clínica en cualquier flujo (la barrera en venta y captación es el
-clasificador, que no las ofrece), y algunos de sus textos fijos hablan de
-«seña» y de «agendar».
+la lista cerrada de `preparar-imagen.js` es la misma en los cinco flujos:
+si Gemini desobedeciera al clasificador y devolviera `publicidad` o
+`boca_o_dientes` en venta o en captación, el agente recibiría «ofrécele
+agendar» o «queda para la valoración». Hoy la única barrera ahí es el prompt
+del clasificador; las pruebas negativas quedan como `it.todo` en
+`demo-b-medios.test.ts` y `onboarding-flujo.test.ts` hasta que la lista
+permitida sea por módulo. Algunos textos fijos hablan además de «seña».
 
 ---
 

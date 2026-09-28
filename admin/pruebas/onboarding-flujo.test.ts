@@ -3047,16 +3047,46 @@ describe('Medios entrantes: el agente recibe texto, nunca el audio ni la imagen'
     }
   });
 
-  it('los clasificadores usan la lista de la captación: el material del propio negocio es «otro», nada de clínica', () => {
+  // SOLO SE OFRECE LO QUE SE CUMPLE (28/09/2026): «comprobante» se cumple —el
+  // aviso ofrece pasarlo y el asesor sale con el botón—; «publicidad» no, porque
+  // su aviso ofrece agendar. Por eso el clasificador no la nombra.
+  it('los clasificadores usan la lista de la captación —comprobante u otro—: el material del propio negocio es «otro»', () => {
     for (const n of ['Describir documento', 'Describir imagen']) {
       const t = String(nodo(n).parameters['text']);
-      expect(t).toContain('"categoria": "publicidad|comprobante|otro"');
+      expect(t).toContain('"categoria": "comprobante|otro"');
+      expect(t).not.toMatch(/publicidad/i);
       expect(t).toMatch(/su logo, su menú, una lista de precios/);
       expect(t).toMatch(/material del propio negocio de la persona/);
       expect(t).not.toMatch(/boca_o_dientes|documento_salud|diente|diagn/i);
       expect(t).not.toMatch(/NovuChat/);
     }
   });
+
+  it('las dos categorías de la captación llegan al agente sin ofrecer agendar ni una valoración', () => {
+    for (const categoria of ['comprobante', 'otro']) {
+      const [i] = correr('Preparar imagen', [gemini(JSON.stringify({ categoria, texto: 'Pastelería La Colmena' }))],
+        { 'Normalizar entrada': normalizar(FOTO), 'Config del negocio': config() });
+      expect(i!['categoriaMedio']).toBe(categoria);
+      expect(String(i!['userInput']), categoria).not.toMatch(/agend|valoraci/i);
+      // Prohibición 3: nada de lo que llega al agente da un pago por recibido.
+      expect(String(i!['userInput']), categoria).not.toMatch(/(pago|transferencia)\s+(\S+\s+){0,3}(acreditad|verificad|recibid)/i);
+    }
+    // Con «comprobante» el aviso ofrece pasarlo: eso se cumple con el botón del
+    // asesor, que `Procesar respuesta` agrega cuando el texto remite a él.
+    const [c] = correr('Preparar imagen', [gemini('{"categoria":"comprobante"}')],
+      { 'Normalizar entrada': normalizar(FOTO), 'Config del negocio': config() });
+    expect(String(c!['userInput'])).toMatch(/ofrécele pasarlo/);
+  });
+
+  // NEGATIVA PENDIENTE: HOY NO SE PUEDE IMPEDIR SIN TOCAR EL COMÚN (F3a). Si
+  // Gemini desobedeciera al clasificador y devolviera «publicidad» o
+  // «boca_o_dientes», `preparar-imagen.js` (líneas 38-48, 80-81 y 107-119) le
+  // pasaría al agente «ofrécele agendar» o «queda para la valoración». La
+  // barrera de hoy es solo el prompt del clasificador. Se cierra con la lista
+  // permitida por módulo (F3a) o con un nodo de este flujo que reduzca a «otro»
+  // lo no permitido antes de «Preparar imagen».
+  it.todo('NEGANDO: si Gemini devolviera «publicidad», lo que llega al agente no dice «agendar» ni «valoración» (F3a)');
+  it.todo('NEGANDO: si Gemini devolviera «boca_o_dientes», lo que llega al agente no dice «agendar» ni «valoración» (F3a)');
 
   it('los «Preparar …» son el mismo módulo que en reservas, inyectado por el ensamblador', () => {
     const m = JSON.parse(readFileSync(join(aqui, '../../Flujos/manifiestos/novuchat-onboarding.json'), 'utf8')) as

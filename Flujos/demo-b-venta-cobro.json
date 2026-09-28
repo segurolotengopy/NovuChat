@@ -1927,7 +1927,7 @@
           "mode": "id",
           "value": "models/gemini-3.5-flash-lite"
         },
-        "text": "Clasifica esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda un cliente que le escribe por WhatsApp a un negocio que vende productos: suele ser la foto o la captura de un producto que busca, una publicidad o promoción, o el comprobante de un pago. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"publicidad|comprobante|otro\",\n \"texto\": \"<hasta 500 caracteres: el texto visible —primero la marca, el modelo o el nombre del producto, los precios, las tallas o medidas y las fechas o la vigencia—; si es un producto sin texto, di en pocas palabras qué producto es, por ejemplo «zapatilla deportiva blanca»>\"}\n\n\"comprobante\" es SOLO el comprobante de un pago o de una transferencia bancaria. \"publicidad\" es un afiche, un anuncio o una promoción con precios u ofertas. La foto o la captura de un producto es \"otro\", aunque se vea su marca o su precio, con lo que se lea y qué producto es.\nNo describas a las personas, no opines sobre lo que ves.\nSi dudas, usa \"otro\" y deja \"texto\" con lo que se lea, o vacío.",
+        "text": "Lee esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda un cliente que le escribe por WhatsApp a un negocio que vende productos: suele ser la foto o la captura de un producto que busca, un menú o una lista de precios. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"otro\",\n \"texto\": \"<hasta 500 caracteres: el texto visible —primero la marca, el modelo o el nombre del producto, los precios, las tallas o medidas; si es un menú o una lista de precios, sus productos y precios—; si es un producto sin texto, di en pocas palabras qué producto es, por ejemplo «zapatilla deportiva blanca»>\"}\n\n\"categoria\" es SIEMPRE \"otro\".\nNo describas a las personas, no opines sobre lo que ves.\nSi no se lee nada, deja \"texto\" vacío.",
         "inputType": "binary",
         "binaryPropertyName": "data",
         "simplify": true,
@@ -1942,7 +1942,7 @@
           "name": ""
         }
       },
-      "notes": "Clasifica el archivo en una lista CERRADA (publicidad, comprobante, otro) y devuelve, como mucho, el texto visible. No describe a las personas ni opina. No envía nada."
+      "notes": "Lee el texto visible del archivo y devuelve SIEMPRE la categoría «otro» (28/09/2026, «solo se ofrece lo que se cumple»): los avisos fijos de «publicidad» y «comprobante» del módulo común ofrecen agendar y pasar al negocio, y este flujo no puede cumplir ninguno. El comprobante con QR pendiente no llega acá: va al OCR. No describe a las personas ni opina. No envía nada."
     },
     {
       "id": "gemini-describir-imagen",
@@ -1961,7 +1961,7 @@
           "mode": "id",
           "value": "models/gemini-3.5-flash-lite"
         },
-        "text": "Clasifica esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda un cliente que le escribe por WhatsApp a un negocio que vende productos: suele ser la foto o la captura de un producto que busca, una publicidad o promoción, o el comprobante de un pago. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"publicidad|comprobante|otro\",\n \"texto\": \"<hasta 500 caracteres: el texto visible —primero la marca, el modelo o el nombre del producto, los precios, las tallas o medidas y las fechas o la vigencia—; si es un producto sin texto, di en pocas palabras qué producto es, por ejemplo «zapatilla deportiva blanca»>\"}\n\n\"comprobante\" es SOLO el comprobante de un pago o de una transferencia bancaria. \"publicidad\" es un afiche, un anuncio o una promoción con precios u ofertas. La foto o la captura de un producto es \"otro\", aunque se vea su marca o su precio, con lo que se lea y qué producto es.\nNo describas a las personas, no opines sobre lo que ves.\nSi dudas, usa \"otro\" y deja \"texto\" con lo que se lea, o vacío.",
+        "text": "Lee esta imagen o documento POR SU TEXTO antes que por sus fotos. Lo manda un cliente que le escribe por WhatsApp a un negocio que vende productos: suele ser la foto o la captura de un producto que busca, un menú o una lista de precios. Devuelve SOLO un JSON, sin texto alrededor:\n\n{\"categoria\": \"otro\",\n \"texto\": \"<hasta 500 caracteres: el texto visible —primero la marca, el modelo o el nombre del producto, los precios, las tallas o medidas; si es un menú o una lista de precios, sus productos y precios—; si es un producto sin texto, di en pocas palabras qué producto es, por ejemplo «zapatilla deportiva blanca»>\"}\n\n\"categoria\" es SIEMPRE \"otro\".\nNo describas a las personas, no opines sobre lo que ves.\nSi no se lee nada, deja \"texto\" vacío.",
         "inputType": "binary",
         "binaryPropertyName": "data",
         "simplify": true,
@@ -1976,7 +1976,7 @@
           "name": ""
         }
       },
-      "notes": "Clasifica la foto en una lista CERRADA (publicidad, comprobante, otro) y devuelve, como mucho, el texto visible. No describe a las personas ni opina. No envía nada."
+      "notes": "Lee el texto visible del archivo y devuelve SIEMPRE la categoría «otro» (28/09/2026, «solo se ofrece lo que se cumple»): los avisos fijos de «publicidad» y «comprobante» del módulo común ofrecen agendar y pasar al negocio, y este flujo no puede cumplir ninguno. El comprobante con QR pendiente no llega acá: va al OCR. No describe a las personas ni opina. No envía nada."
     },
     {
       "id": "code-preparar-imagen",
