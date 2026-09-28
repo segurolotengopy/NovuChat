@@ -1141,15 +1141,16 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // eligio las 15:30, dio el nombre y el modelo agendo las 09:00. La cita se
   // deshace (sin confirmar), y la pregunta no es por las 09:00, que nadie
   // pidio: es por la hora elegida. Su «si» del turno siguiente la confirma.
+  // La eleccion de ANTES vale solo si este mensaje no la cambia (revisiones
+  // de a6f533a y 4556525): ni pregunta, ni pide otra franja u otras horas, ni
+  // nombra horas u otro dia. Un solo predicado para las dos vias que la usan.
+  const agElegidoVale = !agHorasCliente.length && !agPregunta && !agFranja && !agPideOtra && !!agElegido && !!agElegido.fecha
+    && (!agFechaCliente || agFechaCliente === String(agElegido.fecha));
   const agEleccionPendiente = (() => {
     if (!agCitasSinConfirmar.length || agOpcionesSinElegir || agNiega) return null;
-    // La de antes vale solo si este mensaje no la cambia (revision de a6f533a):
-    // ni pregunta, ni pide otra franja u otras horas, ni nombra otro dia. Y
-    // conserva su hora de eleccion: preguntarla de nuevo no la renueva.
+    // Conserva su hora de eleccion: preguntarla de nuevo no la renueva.
     const e = agElegidasAhora.length === 1 ? agElegidasAhora[0]
-      : (!agHorasCliente.length && !agPregunta && !agFranja && !agPideOtra && agElegido && agElegido.fecha
-        && (!agFechaCliente || agFechaCliente === String(agElegido.fecha))
-        ? { fecha: String(agElegido.fecha), min: Number(agElegido.min), desde: Number(agElegido.desde) || 0 } : null);
+      : (agElegidoVale ? { fecha: String(agElegido.fecha), min: Number(agElegido.min), desde: Number(agElegido.desde) || 0 } : null);
     if (!e || !/^\d{4}-\d{2}-\d{2}$/.test(e.fecha) || !Number.isFinite(e.min)) return null;
     const yaCreada = eventosCreados.some((ev) => {
       const t = Date.parse(ev.inicio);
@@ -1333,7 +1334,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
           // cliente o la respuesta, si es una sola.
           // Solo lo que nombro el CLIENTE (revision de a6f533a): el nombre de un
           // paciente en la respuesta no elige agenda.
-          const nombradas = agPersonasEn(agCliente);
+          // Sin su propio nombre (revision de 4556525): «soy Juan Pérez» no
+          // elige a la Dra. Pérez. Lo que sigue a «soy / me llamo» se quita.
+          const nombradas = agPersonasEn(agClientePlano
+            .replace(/\b(soy|me\s+llamo|mi\s+nombre\s+es|a\s+nombre\s+de)\s+[a-zñ]+(\s+[a-zñ]+)?/g, ' '));
           const deQuien = agDeQuien || (nombradas.length === 1 ? agDeLaPersona(nombradas[0]) : '');
           // MEDIUM de a6f533a: nada fuera del horario ni ya pasado. El horario
           // es el de la persona nombrada; si no hay una, basta con que quepa en
@@ -1486,14 +1490,15 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   })();
   if (agTextoDelModelo && Array.isArray(dato.intermediateSteps) && !ejecutoAgendar && afirmaAgendo
     && !agCitaExistente) {
-    const pendiente = agEleccion || (agElegido ? { fecha: String(agElegido.fecha), min: Number(agElegido.min) } : null);
+    const pendiente = agEleccion || (agElegidoVale
+      ? { fecha: String(agElegido.fecha), min: Number(agElegido.min), desde: Number(agElegido.desde) || 0 } : null);
     const nombreConocido = [...agPalabrasCliente].some((w) => !AG_GENERICAS.has(w) && !AG_DEL_NEGOCIO.has(w));
     if (pendiente && Number.isFinite(pendiente.min) && pendiente.fecha) {
       respuesta = nombreConocido
         ? `Todavía no quedó agendada: ¿${agUsted ? 'se' : 'te'} la reservo el ${agDiaTexto(pendiente.fecha)} a las ${agHora(pendiente.min)}?`
         : `Para reservar las ${agHora(pendiente.min)} del ${agDiaTexto(pendiente.fecha)}, ¿a nombre de quién la agendo?`;
       if (nombreConocido) agFinal = { fecha: pendiente.fecha, mins: [pendiente.min] };
-      if (!agEleccion) agEleccion = { fecha: pendiente.fecha, min: pendiente.min };
+      if (!agEleccion) agEleccion = { fecha: pendiente.fecha, min: pendiente.min, desde: pendiente.desde };
     } else {
       // Sin hora elegida no se afirma «no agende nada» (revision de f962cef):
       // puede haber una cita que este turno no ve. Se pregunta para revisarla.

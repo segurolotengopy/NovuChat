@@ -837,6 +837,34 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(r['respuesta']).toBe(`El ${L} a las 14:00 hay espacio con el ${JUAN}. ¿Te la agendo?`);
     });
 
+    it('revisión de 4556525: la vía «afirmó sin agendar» tampoco revive la elección descartada ni la renueva', () => {
+      const MARTES = proximo(2);
+      const hace = Date.now() - 29 * 60000;
+      const base: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: hace }, elegido: { fecha: LUNES.iso, min: 930, desde: hace },
+        palabras: ['lucas'], desde: hace } } };
+      for (const dice of ['mejor el martes', '¿hay espacio el martes?', 'no me sirve, otras horas']) {
+        const est = JSON.parse(JSON.stringify(base));
+        const r = procesar(dice, `Listo, quedó agendada el ${MARTES.nombre} ${MARTES.dia} a las 10:00.`, [consulta(MARTES)], est);
+        expect(r['avisos'], dice).toContain('afirmo_sin_agendar');
+        expect(String(r['respuesta']), dice).not.toContain('15:30');
+        const el = est['agendaPorTelefono'][TEL].elegido;
+        expect(el === null || el.desde === hace, dice).toBe(true);
+      }
+      // «gracias», que no elige nada: se le pregunta por la elegida, y su hora de elección no se renueva.
+      // («ok» sí la renueva: confirma la única hora ofrecida, es una elección nueva.)
+      const est = JSON.parse(JSON.stringify(base));
+      const r = procesar('gracias', `Listo, quedó agendada el ${L} a las 15:30.`, [consulta(LUNES)], est);
+      expect(String(r['respuesta'])).toContain(`¿te la reservo el ${L} a las 15:30?`);
+      expect(est['agendaPorTelefono'][TEL].elegido.desde).toBe(hace);
+    });
+
+    it('revisión de 4556525: «soy Juan Perez» no elige la agenda de la Dra. Pérez', () => {
+      const r = procesar('soy Juan Perez, el lunes a las 16:15',
+        `Por este chat agendamos en punto o y media. A las 16:00 o a las 16:30 tenemos disponibilidad el ${L}.`, [], {}, CFG2);
+      expect(String(r['respuesta'])).not.toContain(DRA);
+    });
+
     it('«el lunes 5.» con punto final es ese lunes, no hoy', () => {
       const dijo = `Hay espacio a las 11:00 o 11:30 el ${L}.`;
       const r = procesar('Prefiero el lunes', dijo, [consulta(LUNES)]);
