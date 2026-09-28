@@ -1052,8 +1052,12 @@ describe.each([
 
     it('Comprobar reserva ya no transfiere por sí mismo: deja el motivo y QUIÉN y CUÁNDO chocó', () => {
       const c = candado();
-      expect(c['transferir']).toBe(false);
-      expect(c['motivoTransferencia']).toBe('');
+      // Este caso viene SIN los ids del turno (respaldo de la ventana): desde
+      // la revisión de 98796fd ese respaldo avisa a recepción, porque no se
+      // sabe de quién era la cita que cayó. Con los ids —como corre hoy— no
+      // transfiere desde acá (`horarios-ofrecidos.test.ts`, regla mandatoria).
+      expect(c['transferir']).toBe(true);
+      expect(String(c['motivoTransferencia'])).toContain('no supo con certeza');
       expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
       const caidas = c['citasCaidas'] as J[];
       expect(caidas).toHaveLength(1);
@@ -1360,6 +1364,8 @@ describe.each([
       expect(r['eventosCreados']).toEqual([{
         id: 'ev-nuevo', calendario: persona.calendario, inicio: `${DIA_J}T10:00:00-04:00`,
         fin: `${DIA_J}T10:30:00-04:00`, titulo: 'Cita Ana Rojas — estética facial',
+        // La marca de Google viaja al candado para el desempate (27/09).
+        creado: '2026-09-17T15:31:05.000Z',
       }]);
       expect(r['falloModelo']).toBe(false);
       expect(r['transferir']).toBe(false);

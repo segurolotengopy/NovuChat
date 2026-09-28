@@ -539,6 +539,11 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const pasos = Array.isArray(dato.intermediateSteps) ? dato.intermediateSteps : [];
   const herramientas = pasos.map((p) => String((p && p.action && p.action.tool) || '')).filter(Boolean);
   const eventosCreados = [];
+  // Las llamadas a agendar_cita cuya observacion NO trajo ninguna cita con id
+  // (revision de seguridad de 98796fd): si una de dos llamadas no la trae, esa
+  // cita no se puede anclar, y el candado tiene que volver a mirar toda la
+  // ventana en vez de confiar en los ids que si vinieron.
+  let agendarPasosSinId = 0;
   for (const p of pasos) {
     if (!p || !p.action || p.action.tool !== 'agendar_cita') continue;
     // La observacion es lo que devolvio la herramienta: el evento creado,
@@ -546,6 +551,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     let obs = p.observation;
     if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch (e) { obs = null; } }
     const lista = Array.isArray(obs) ? obs : (obs && typeof obs === 'object' ? [obs] : []);
+    if (!lista.some((ev) => ev && ev.id)) agendarPasosSinId += 1;
     for (const ev of lista) {
       if (!ev || !ev.id) continue;
       eventosCreados.push({
@@ -554,6 +560,9 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
         inicio: String((ev.start && ev.start.dateTime) || ''),
         fin: String((ev.end && ev.end.dateTime) || ''),
         titulo: String(ev.summary || ''),
+        // La marca de creacion que puso Google, si vino: con ella el desempate
+        // del candado no depende del reloj de n8n.
+        ...(ev.created ? { creado: String(ev.created) } : {}),
       });
     }
   }
@@ -909,6 +918,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const agUltima = agPrevio && agVigente(agPrevio.ultima, AG_VIGENCIA_MS) && Array.isArray(agPrevio.ultima.mins)
     ? agPrevio.ultima : null;
   const agElegido = agPrevio && agVigente(agPrevio.elegido, AG_ELECCION_MS) ? agPrevio.elegido : null;
+  // Se lee ANTES de que este turno escriba el registro (es el mismo objeto).
+  const agSinNombreAntes = Number((agPrevio && agPrevio.sinNombreSeguidos) || 0);
 
   // LO QUE ESCRIBIO EL PACIENTE, leido por codigo. Una pregunta nunca confirma:
   // «¿a las 17 no tiene?», «tienes a las 13», «hay a las 10?».
@@ -1035,18 +1046,33 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // Palabras que NO son un nombre: las de los servicios del catalogo, las de
   // quienes atienden, y las genericas. «Cita Consulta — consulta» con un
   // cliente que escribio «quiero una consulta» no es un nombre dicho.
-  const AG_NO_SON_NOMBRE = new Set(['cita', 'citas', 'consulta', 'consultas', 'control', 'controles', 'cliente', 'clienta',
+  // Palabras GENERICAS: no son un nombre en ningun negocio. Incluye las
+  // funcionales y temporales (revision de 98796fd): «quiero una cita con la
+  // doctora» no puede volver «Cita con Lucas» un nombre dicho, ni «es la primera
+  // vez» a «Cita primera vez».
+  const AG_GENERICAS = new Set(['cita', 'citas', 'consulta', 'consultas', 'control', 'controles', 'cliente', 'clienta',
     'paciente', 'bebe', 'bebito', 'bebita', 'nino', 'nina', 'ninos', 'ninas', 'hijo', 'hija', 'hijos', 'hijas', 'hijito', 'hijita',
     'senor', 'senora', 'senorita', 'sr', 'sra', 'don', 'dona', 'mama', 'papa', 'mi', 'su', 'tu', 'para', 'nombre', 'persona',
     'reserva', 'turno', 'servicio', 'recien', 'nacido', 'nacida', 'sano', 'sana', 'nuevo', 'nueva', 'dr', 'dra', 'doctor', 'doctora',
+    'con', 'por', 'un', 'una', 'uno', 'unos', 'unas', 'al', 'que', 'es', 'primera', 'primer', 'primero', 'vez', 'urgente', 'urgencia',
+    'hoy', 'manana', 'tarde', 'noche', 'general', 'revision', 'hora', 'horas', 'favor', 'quiero', 'queria', 'hola', 'buenas',
+    'buenos', 'dias', 'gracias', 'si', 'no', 'ok', 'medico', 'medica', 'pediatra', 'especialista', 'atencion', 'agenda',
+    ...AG_DIAS.map(agSinTilde), ...AG_MESES]);
+  // Palabras DEL NEGOCIO: los servicios del catalogo y los nombres y servicios
+  // de quienes atienden.
+  const AG_DEL_NEGOCIO = new Set([
     ...agPalabrasDe(String(cfg.catalogoConPrecio || '')), ...agPalabrasDe(String(cfg.catalogoSinPrecio || '')),
     ...agEquipo.flatMap((x) => [...agPalabrasDe(x.nombre), ...(Array.isArray(x.servicios) ? x.servicios.flatMap((v) => agPalabrasDe(v)) : [])])]);
   // EL PRIMER NOMBRE ALCANZA (Andres, 27/09/2026): el nombre del titulo vale
   // si su PRIMERA palabra de nombre —la primera que no es generica ni del
-  // catalogo— la escribio el cliente, sin tildes. «Lucas» dicho y «Lucas
-  // Méndez» en el titulo vale; «Lucía» por «Lucas», no.
+  // negocio— la escribio el cliente, sin tildes. «Lucas» dicho y «Lucas
+  // Méndez» en el titulo vale; «Lucía» por «Lucas», no. Si el paciente se
+  // llama como alguien del equipo o como un servicio (revision de 98796fd), no
+  // queda ninguna: se toma la primera que no sea generica, y tambien tiene que
+  // haberla dicho. Sin eso se le preguntaba el nombre sin fin.
   const agTieneNombre = (titulo) => {
-    const primera = agPalabrasDe(agNombreDelTitulo(titulo)).find((w) => !AG_NO_SON_NOMBRE.has(w));
+    const palabras = agPalabrasDe(agNombreDelTitulo(titulo)).filter((w) => !AG_GENERICAS.has(w));
+    const primera = palabras.find((w) => !AG_DEL_NEGOCIO.has(w)) || palabras[0];
     return !!primera && agPalabrasCliente.has(primera);
   };
   // Las horas que este mensaje ELIGE, cada una con su fecha.
@@ -1293,6 +1319,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     if (agEleccion) r.elegido = { ...agEleccion, desde: agAhora };
     // Una cita que quedo agendada cierra la eleccion y la ultima oferta.
     if (eventosCreados.length && !agCitasSinConfirmar.length && !agCitasSinNombre.length) { r.elegido = null; r.ultima = null; }
+    // Cuantas veces SEGUIDAS se deshizo una cita por falta de nombre: una cita
+    // que queda en pie vuelve la cuenta a cero.
+    if (agCitasSinNombre.length) r.sinNombreSeguidos = Number(r.sinNombreSeguidos || 0) + 1;
+    else if (eventosCreados.length && !agCitasSinConfirmar.length) r.sinNombreSeguidos = 0;
     // Las palabras del cliente (de donde sale el nombre dicho antes), las mas
     // recientes al final, hasta 80.
     const previas = Array.isArray(r.palabras) ? r.palabras : [];
@@ -1462,6 +1492,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
             + String(ent.userInput || '').replace(/\s+/g, ' ').slice(0, 160) + '»')) : '',
     afirmaAgendo,
     ejecutoAgendar,
+    // LO QUE EL CANDADO NECESITA PARA NO JUZGAR DE MAS (revision de seguridad
+    // de 98796fd): si el agente devolvio sus pasos y en ninguno agendo, el
+    // modelo solo DIJO que agendo; el candado no puede borrar ni nombrar citas
+    // de la ventana, que son de otros. `agendarPasosSinId`: llamadas sin id.
+    pasosDelAgente: Array.isArray(dato.intermediateSteps),
+    agendarEjecutado: ejecutoAgendar,
+    agendarPasosSinId,
     // H2 (27/09/2026): las citas que agendar_cita creo sin que el paciente
     // confirmara ese horario. `Comprobar reserva` las deshace por la via del
     // candado y el paciente recibe la pregunta.
@@ -1470,6 +1507,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // es uno que el cliente haya dicho. Se deshace y se le pide el nombre.
     agendaSinNombre: agCitasSinNombre,
     opcionesSinElegir: agOpcionesSinElegir,
+    // AL SEGUNDO `sin_nombre` SEGUIDO, CON RECEPCION (revision de 98796fd): si
+    // el nombre que dice el cliente no coincide dos veces, preguntarle de nuevo
+    // es un bucle; lo resuelve una persona.
+    sinNombreRepetido: agCitasSinNombre.length > 0 && agSinNombreAntes >= 1,
     canceladasEnElTurno,
     agendarSinEvento,
     observacionAgendar,

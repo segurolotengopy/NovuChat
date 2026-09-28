@@ -241,7 +241,7 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     it('oferta de 1 hora → «sí», SIN nombre → `sin_nombre`: pide solo el nombre, y el turno siguiente con el nombre agenda', () => {
       const estado: J = {};
       procesar('A las 17 no tiene?', `Sí, el ${L} a las 17:00 hay espacio. ¿Te la agendo?`, [consulta(LUNES)], estado);
-      const previa = { ...procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], estado), __userInput: 'sí' };
+      const previa: J = { ...procesar('sí', DIJO, [consulta(LUNES), agendo(ev17)], estado), __userInput: 'sí' };
       expect(previa['agendaSinConfirmar']).toEqual([]);
       expect(previa['agendaSinNombre']).toEqual(['ev17']);
       expect(previa['avisos']).toContain('agendo_sin_nombre');
@@ -357,7 +357,7 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     });
 
     it('si la cita sin NOMBRE no aparece para deshacerla, el motivo lo dice así (revisión de ca88ced)', () => {
-      const previa = { ...procesar('a las 17', DIJO, [consulta(LUNES), agendo(ev17)]),
+      const previa: J = { ...procesar('a las 17', DIJO, [consulta(LUNES), agendo(ev17)]),
         agendaSinConfirmar: [], agendaSinNombre: ['ev17'], eventosCreados: [{ id: 'ev17', calendario: '', inicio: '', fin: '' }] };
       const r = comprobar(previa, [])[0]!;
       expect(r['transferir']).toBe(true);
@@ -383,7 +383,7 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     it('#6555 de punta a punta: «A las 17 no tiene?» + agendar_cita → se deshace y sale «¿Te la agendo?»; el «sí» siguiente agenda', () => {
       const estado: J = {};
       dijoElNombre(estado);
-      const previa = { ...procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)], estado), __userInput: 'A las 17 no tiene?' };
+      const previa: J = { ...procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)], estado), __userInput: 'A las 17 no tiene?' };
       expect(previa['agendaSinConfirmar']).toEqual(['ev17']);
       expect(previa['verificarReserva']).toBe(true);              // el candado corre igual
       const c = comprobar(previa, [almuerzo(LUNES), ev17]);
@@ -486,7 +486,7 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
     });
 
     it('si no se pudo deshacer, no se le pregunta nada falso: sale lo agendado y recepción confirma', () => {
-      const previa = { ...procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]), __userInput: 'A las 17 no tiene?' };
+      const previa: J = { ...procesar('A las 17 no tiene?', DIJO, [consulta(LUNES), agendo(ev17)]), __userInput: 'A las 17 no tiene?' };
       const c = comprobar(previa, [ev17])[0]!;
       const r = retomar(c, { error: 'Google 403' }, previa);
       expect(r['reintentar']).toBe(false);

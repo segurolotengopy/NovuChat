@@ -567,10 +567,22 @@ consultorio; vale para todos).** El negocio puede cargar a mano citas cada 15
 minutos —y hasta dos a la misma hora—, pero por el chat solo se ofrece y se
 agenda a las :00 o :30 (`AG_GRILLA_MIN = 30`). H1 quita toda hora fuera de la
 grilla (aviso `horario_fuera_de_grilla`) y `Comprobar reserva` deshace una cita
-del chat fuera de grilla (causa `fuera_de_grilla`, después del cruce). Y el
-candado juzga solo las citas que creó ESE turno cuando la herramienta devolvió
-sus ids: dos citas manuales a la misma hora cargadas hace un minuto ya no se
-toman por un cruce ni por «duplicadas».
+del chat fuera de grilla (causa `fuera_de_grilla`, después del cruce; con
+causas mezcladas manda la grilla, salvo fecha pasada o cruce).
+
+**Qué juzga el candado (revisión de seguridad de `98796fd`).** Tres casos:
+- **El modelo solo lo dijo** (`pasosDelAgente` y `agendar_cita` sin ejecutar):
+  el turno no creó nada. No se juzga, no se borra, no se nombra y no se ata la
+  seña a ninguna cita de la ventana, que son de otros (recepción cargando
+  hermanos, otro paciente). Pasa por la red de siempre.
+- **Ids completos** (toda llamada a `agendar_cita` trajo su id): se juzgan solo
+  esas citas, contra todo lo que hay en la agenda. Dos manuales a la misma hora
+  cargadas hace un minuto no son un cruce ni «duplicadas».
+- **Respaldo** (sin ids, o alguna llamada con una observación sin id,
+  `agendarPasosSinId`): se juzga la ventana de cinco minutos como antes, pero
+  al cliente nunca se le dice el nombre de una cita que no sea del turno (solo
+  la hora) y el caso pasa a recepción con el motivo. La marca de creación que
+  devuelve Google viaja en `eventosCreados.creado` para el desempate.
 
 **Riesgo aceptado: lo que se guarda por teléfono** (revisión de seguridad de
 `ca88ced`). El vencimiento de una hora de `agendaPorTelefono` se renueva con
@@ -581,6 +593,13 @@ devuelve al leer el flujo con sus datos estáticos. Solo se guardan palabras de
 lo que el cliente tecleó o dictó (texto, transcripción, título de la opción
 elegida), nunca los avisos del sistema. Se revisa en F3, cuando este estado
 pase al servidor.
+
+**Riesgo aceptado: dos teléfonos a la vez con la lista de Google atrasada.**
+Si dos conversaciones agendan la misma hora en la misma agenda con segundos de
+diferencia y `Verificar en el calendario` todavía no trae la cita de la otra,
+cada candado ve solo la suya y las dos quedan. La marca de creación de Google
+achica la ventana pero no la cierra: la cierra solo un candado con exclusión
+mutua (una reserva de la ranura en el servidor antes de crear la cita), en F3.
 
 **Riesgo aceptado: escritura concurrente de `$getWorkflowStaticData`.** n8n
 guarda los datos estáticos al terminar cada ejecución que los cambió, y gana la

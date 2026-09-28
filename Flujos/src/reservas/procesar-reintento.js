@@ -365,10 +365,14 @@ if (base.causaDeLaCaida === 'sin_confirmar' || base.causaDeLaCaida === 'sin_nomb
   const { ofertas } = agOfertas(base.respuesta, hoyLaPaz);
   const primera = ofertas.find((o) => o.fecha);
   if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));
+  // Al segundo «sin nombre» seguido, la respuesta ya dice que pasa con
+  // recepcion: se transfiere (aviso y boton), que es lo unico que se ofrece.
+  const aRecepcion = base.sinNombreRepetido === true && base.causaDeLaCaida === 'sin_nombre';
   return [{ json: { ...base,
     respuesta: base.respuesta,
-    transferir: false,
-    motivoTransferencia: '',
+    transferir: aRecepcion,
+    motivoTransferencia: aRecepcion ? 'el cliente eligió la hora pero dos veces seguidas la cita quedó sin un nombre que él haya dicho: '
+      + 'terminar la reserva con él por este chat' : '',
     ejecutoAgendar: false,
     reintentoTrasCruce: fallo ? 'sin-confirmar-sin-modelo' : 'sin-confirmar',
   }, pairedItem: { item: 0 } }];

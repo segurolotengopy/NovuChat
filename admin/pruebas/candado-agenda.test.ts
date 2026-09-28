@@ -23,6 +23,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { ejecutar as ejecutarNodo } from './lib/flujo';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const flujo = JSON.parse(
@@ -162,8 +163,13 @@ describe('Candado contra la doble reserva', () => {
     // alternativas. Si el flujo transfiriera acá, el aviso saldría también
     // cuando el reintento resolvió, y diría algo falso («necesita atención
     // humana») por un mensaje pagado.
-    expect(r['transferir']).toBe(false);
-    expect(r['motivoTransferencia']).toBe('');
+    // EXCEPCIÓN DESDE EL 27/09 (revisión de 98796fd): este caso no trae los ids
+    // del turno —es el RESPALDO de la ventana de cinco minutos—, así que no se
+    // sabe con certeza de quién era la cita que cae. Ahí SÍ pasa a recepción,
+    // y al cliente no se le dice el nombre de la otra.
+    expect(r['transferir']).toBe(true);
+    expect(String(r['motivoTransferencia'])).toContain('no supo con certeza');
+    expect(String(r['respuesta'])).not.toContain('Andrés A.');
     expect(String(r['motivoCruce'])).toContain('YA OCUPADO');
     expect(String(r['motivoCruce'])).toContain('Cita Sil — corte');
   });
@@ -354,9 +360,11 @@ describe('Candado contra la doble reserva', () => {
     expect(items[0]?.['eventoABorrar']).toBe('j-padre');
     // Las otras dos citas son válidas, así que sigue habiendo cierre.
     expect(items[0]?.['reservaVerificada']).toBe(true);
-    // Y el mensaje dice CUÁL cayó, no un «hubo un cruce» a secas.
-    expect(String(items[0]?.['respuesta'])).toMatch(/Andrés A\./);
-    expect(String(items[0]?.['respuesta'])).toMatch(/09:00/);
+    // Y el mensaje dice CUÁL cayó, no un «hubo un cruce» a secas. Sin los ids
+    // del turno (respaldo), solo por la HORA (revisión de 98796fd): el nombre
+    // puede ser el de otro paciente y no se revela.
+    expect(String(items[0]?.['respuesta'])).toMatch(/la cita de las 09:00/);
+    expect(String(items[0]?.['respuesta'])).not.toMatch(/Andrés/);
   });
 
   it('la cita de María a la misma hora NO cede: es otra agenda', () => {
@@ -384,7 +392,8 @@ describe('Candado contra la doble reserva', () => {
     // Ningún item transfiere desde acá: el aviso —uno solo, nunca uno por
     // cita— lo decide «Procesar reintento» sobre el primer item que retoma
     // «Retomar respuesta». Las dos citas caídas viajan juntas en `citasCaidas`.
-    expect(items.every((i) => i['transferir'] === false)).toBe(true);
+    // Sin ids del turno es el respaldo: cada item avisa a recepción (27/09).
+    expect(items.every((i) => i['transferir'] === true)).toBe(true);
     expect((items[0]?.['citasCaidas'] as unknown[]).length).toBe(2);
     expect(String(items[0]?.['motivoCruce'])).toContain('Cita Dos — corte; Cita Tres — corte');
   });
@@ -1077,5 +1086,193 @@ describe('El bloque de la agenda del turno es letra por letra el mismo en los do
   it('existe en los dos, y es idéntico', () => {
     expect(bloque('Procesar respuesta').length).toBeGreaterThan(1000);
     expect(bloque('Procesar reintento')).toBe(bloque('Procesar respuesta'));
+  });
+});
+
+// =============================================================================
+// REVISIÓN DE SEGURIDAD DE 98796fd (27/09/2026): el candado no juzga de más.
+// =============================================================================
+
+const codigoProcesar = String(flujo.nodes.find((n) => n.name === 'Procesar respuesta')?.parameters.jsCode ?? '');
+const codigoReintento = String(flujo.nodes.find((n) => n.name === 'Procesar reintento')?.parameters.jsCode ?? '');
+/** Dos citas manuales «hermanas» de OTRO paciente, a las 10:00, cargadas hace 60 y 90 s. */
+const hermanas = (): Evento[] => [
+  ev('h1', 'Cita Ana Rojas — consulta', CAL_JOSE, '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00',
+    new Date(AHORA.getTime() - 60000).toISOString()),
+  ev('h2', 'Cita Ana Rojas — consulta', CAL_JOSE, '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00',
+    new Date(AHORA.getTime() - 90000).toISOString()),
+];
+const nombra = (r: Record<string, unknown>) => /Ana Rojas/.test(String(r['respuesta'] ?? ''));
+
+describe('HIGH · el modelo solo DIJO que agendó: no se borra ni se nombra la cita de otro', () => {
+  it('Procesar respuesta lo marca: pasos a la vista y agendar_cita sin ejecutar', () => {
+    const r = ejecutarNodo(codigoProcesar, [{ output: 'Listo, tu cita está confirmada para mañana a las 10:00.', intermediateSteps: [] }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: 'ok' }], 'Config del negocio': [{}] })[0]!;
+    expect(r['verificarReserva']).toBe(true);        // el detector de texto abre la compuerta, como hoy
+    expect(r).toMatchObject({ pasosDelAgente: true, agendarEjecutado: false, agendarPasosSinId: 0 });
+  });
+
+  it('«confirmada» sin herramienta + hermanas manuales recientes ⇒ NO borra, NO nombra, NO ata la seña a la de otra', () => {
+    const previa = { ...PREVIA, respuesta: 'Listo, tu cita está confirmada.', pasosDelAgente: true, agendarEjecutado: false,
+      agendarPasosSinId: 0, eventosCreados: [] };
+    const items = comprobarTodo(hermanas(), AHORA, { mensajeReservaNoConfirmada: '', senaActiva: 'si' }, previa);
+    expect(items).toHaveLength(1);
+    expect(items[0]!['citaSolapada']).toBeUndefined();
+    expect(items[0]!['eventoABorrar']).toBeUndefined();
+    expect(nombra(items[0]!)).toBe(false);
+    expect(items[0]!['eventoId']).toBeUndefined();
+    expect(items[0]!['reservaVerificada']).toBe(false);
+    expect(items[0]!['duplicados']).toBeUndefined();
+    expect(items[0]!['soloLoDijo']).toBe(true);
+  });
+
+  it('variante: agendar_cita corrió (isExecuted) pero sin ids ⇒ respaldo: si deshace, no nombra y pasa a recepción', () => {
+    const previa = { ...PREVIA, respuesta: 'Listo, tu cita quedó.', pasosDelAgente: false, agendarEjecutado: true, eventosCreados: [] };
+    const items = comprobarTodo(hermanas(), AHORA, { mensajeReservaNoConfirmada: '' }, previa);
+    expect(items.some((i) => nombra(i))).toBe(false);
+    for (const i of items.filter((x) => x['citaSolapada'] === true)) {
+      expect(i['transferir']).toBe(true);
+      expect(String(i['motivoTransferencia'])).toContain('no supo con certeza');
+      expect(String(i['respuesta'])).toMatch(/la cita de las 10:00/);
+    }
+  });
+});
+
+describe('MEDIUM · una llamada a agendar_cita sin id vuelve a mirar toda la ventana', () => {
+  const conId = ev('ev-a', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T09:00:00-04:00', '2026-09-07T09:30:00-04:00',
+    new Date(AHORA.getTime() - 20000).toISOString());
+  const sinId = ev('ev-b', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00',
+    new Date(AHORA.getTime() - 15000).toISOString());
+  const manual = ev('otra', 'Cita OTRA — consulta', CAL_JOSE, '2026-09-07T11:00:00-04:00', '2026-09-07T12:00:00-04:00',
+    '2026-09-01T12:00:00.000Z');
+  const previa = (sinIdCuenta: number) => ({ ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: sinIdCuenta,
+    eventosCreados: [{ id: 'ev-a', calendario: CAL_JOSE, inicio: conId.start.dateTime, fin: conId.end.dateTime, titulo: conId.summary }] });
+
+  it('Procesar respuesta cuenta la llamada cuya observación no trajo id', () => {
+    const pasos = [
+      { action: { tool: 'agendar_cita', toolInput: {} }, observation: JSON.stringify([conId]) },
+      { action: { tool: 'agendar_cita', toolInput: {} }, observation: JSON.stringify([{ summary: 'Cita Lucas — consulta' }]) }];
+    const r = ejecutarNodo(codigoProcesar, [{ output: 'Listo.', intermediateSteps: pasos }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: 'ok' }], 'Config del negocio': [{}] })[0]!;
+    expect(r['agendarPasosSinId']).toBe(1);
+    expect((r['eventosCreados'] as unknown[]).length).toBe(1);
+  });
+
+  it('con una llamada sin id, la cita sin ancla que cae encima de otra SE DESHACE y se avisa a recepción', () => {
+    const items = comprobarTodo([manual, conId, sinId], AHORA, { mensajeReservaNoConfirmada: '' }, previa(1));
+    const caida = items.find((i) => i['eventoABorrar'] === 'ev-b');
+    expect(caida).toBeDefined();
+    expect(caida!['transferir']).toBe(true);
+    expect(String(caida!['motivoTransferencia'])).toMatch(/observación sin id|no supo con certeza/);
+  });
+
+  it('negativa: si todas trajeron id, se juzgan solo esas (la manual reciente no es del chat)', () => {
+    const items = comprobarTodo([manual, conId], AHORA, { mensajeReservaNoConfirmada: '' }, previa(0));
+    expect(items[0]!['citaSolapada']).toBeUndefined();
+    expect(items[0]!['transferir']).not.toBe(true);
+  });
+
+  it('sin choque pero con una llamada sin id, igual pasa a recepción con ese motivo', () => {
+    const items = comprobarTodo([conId], AHORA, { mensajeReservaNoConfirmada: '' }, previa(1));
+    expect(items[0]!['transferir']).toBe(true);
+    expect(String(items[0]!['motivoTransferencia'])).toContain('observación sin id');
+  });
+});
+
+describe('LOW 1 · con la grilla entre las causas, la causa es la grilla', () => {
+  const grilla = ev('g', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T10:15:00-04:00', '2026-09-07T10:45:00-04:00',
+    new Date(AHORA.getTime() - 5000).toISOString());
+  const libre = ev('s', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00',
+    new Date(AHORA.getTime() - 5000).toISOString());
+  const almuerzo = { ...ev('alm', 'Almuerzo', CAL_JOSE, '2026-09-07T13:00:00-04:00', '2026-09-07T14:00:00-04:00',
+    '2026-08-01T12:00:00.000Z'), recurringEventId: 'serie' } as Evento;
+  const bloqueada = ev('b', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T13:00:00-04:00', '2026-09-07T13:30:00-04:00',
+    new Date(AHORA.getTime() - 5000).toISOString());
+  const previa = (evs: Evento[], sinConfirmar: string[] = []) => ({ ...PREVIA, pasosDelAgente: true, agendarEjecutado: true,
+    agendarPasosSinId: 0, agendaSinConfirmar: sinConfirmar,
+    eventosCreados: evs.map((e) => ({ id: e.id, calendario: CAL_JOSE, inicio: e.start.dateTime, fin: e.end.dateTime, titulo: e.summary })) });
+
+  it('{fuera_de_grilla, sin_confirmar} ⇒ fuera_de_grilla, y el texto no dice «fuera de nuestro horario»', () => {
+    const items = comprobarTodo([grilla, libre], AHORA, { mensajeReservaNoConfirmada: '' }, previa([grilla, libre], ['s']));
+    expect(items[0]!['causaDeLaCaida']).toBe('fuera_de_grilla');
+    expect(String(items[0]!['respuesta'])).toContain('por este chat las citas son en punto o y media');
+    expect(String(items[0]!['respuesta'])).not.toContain('fuera de nuestro horario');
+    expect(String(items[0]!['motivoCruce'])).toContain('FUERA DE LA GRILLA');
+  });
+
+  it('{fuera_de_grilla, bloqueado} ⇒ fuera_de_grilla', () => {
+    const items = comprobarTodo([almuerzo, grilla, bloqueada], AHORA, { mensajeReservaNoConfirmada: '' }, previa([grilla, bloqueada]));
+    expect(items[0]!['causaDeLaCaida']).toBe('fuera_de_grilla');
+    expect(String(items[0]!['respuesta'])).not.toContain('fuera de nuestro horario');
+  });
+});
+
+describe('LOW 2 y LOW 3 · el primer nombre, sin palabras de relleno y sin bucle', () => {
+  const MANANA = new Date(Date.now() + 86400000 - 4 * 3600000).toISOString().slice(0, 10);
+  const inicio = `${MANANA}T10:00:00-04:00`;
+  const EQUIPO = JSON.stringify([{ nombre: 'Dr. Tomás Quiroga', calendario: CAL_JOSE, servicios: [] }]);
+  /** Se ofrecieron las 10:00 y las 11:00 de mañana; el cliente escribió `dijo`, y ahora elige «a las 10». */
+  const turno = (dijo: string, titulo: string, sinNombreSeguidos = 0) => {
+    const palabras = dijo.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-zñ]+/).filter((w) => w.length >= 2);
+    const estado = { agendaPorTelefono: { '59170000001': { ofrecidos: { [MANANA]: [600, 660] },
+      ultima: { fecha: MANANA, mins: [600, 660], desde: Date.now() }, elegido: null, palabras, sinNombreSeguidos, desde: Date.now() } } };
+    const creado = { id: 'ev-n', summary: titulo, organizer: { email: CAL_JOSE }, start: { dateTime: inicio },
+      end: { dateTime: `${MANANA}T10:30:00-04:00` } };
+    return ejecutarNodo(codigoProcesar, [{ output: 'Quedó agendada.', intermediateSteps: [
+      { action: { tool: 'agendar_cita', toolInput: {} }, observation: JSON.stringify([creado]) }] }],
+    { 'Normalizar entrada': [{ from: '59170000001', nombrePerfil: 'Lucas', userInput: 'a las 10' }],
+      'Config del negocio': [{ funcionarios: EQUIPO, catalogoConPrecio: 'Consulta pediátrica 150 Bs' }] },
+    { $getWorkflowStaticData: () => estado })[0]!;
+  };
+
+  it.each([
+    ['quiero una cita con la doctora', 'Cita con Lucas — consulta'],
+    ['es la primera vez', 'Cita primera vez — consulta'],
+    ['para mañana', 'Cita mañana — consulta'],
+    ['consulta urgente', 'Cita urgente — consulta'],
+    ['para una consulta', 'Cita para una consulta'],
+    ['hola buenas, el lunes de octubre por favor', 'Cita Lunes Octubre — consulta'],
+  ])('«%s» no da el nombre de «%s» ⇒ sin_nombre', (dijo, titulo) => {
+    expect(turno(dijo, titulo)['agendaSinNombre']).toEqual(['ev-n']);
+  });
+
+  it('positiva: el primer nombre dicho vale', () => {
+    expect(turno('es para Lucas', 'Cita Lucas Méndez — consulta')['agendaSinNombre']).toEqual([]);
+  });
+
+  it('LOW 3: si el paciente se llama como alguien del equipo, vale el nombre si lo dijo (sin bucle)', () => {
+    expect(turno('es para Tomás', 'Cita Tomás — consulta')['agendaSinNombre']).toEqual([]);
+    expect(turno('quiero a las 10', 'Cita Tomás — consulta')['agendaSinNombre']).toEqual(['ev-n']);
+  });
+
+  it('LOW 3: al SEGUNDO sin_nombre seguido, pasa con recepción (aviso y botón)', () => {
+    const primera = turno('quiero a las 10', 'Cita Pedro — consulta', 0);
+    expect(primera['sinNombreRepetido']).toBe(false);
+    const segunda = turno('quiero a las 10', 'Cita Pedro — consulta', 1);
+    expect(segunda['sinNombreRepetido']).toBe(true);
+    const creado = ev('ev-n', 'Cita Pedro — consulta', CAL_JOSE, inicio, `${MANANA}T10:30:00-04:00`, new Date().toISOString());
+    const c = comprobarTodo([creado], new Date(), { mensajeReservaNoConfirmada: '' }, segunda)[0]!;
+    expect(c['causaDeLaCaida']).toBe('sin_nombre');
+    expect(String(c['respuesta'])).toContain('te paso con recepción');
+    expect(c['transferir']).toBe(true);
+    const r = ejecutarNodo(codigoReintento, [{ output: 'x' }], { 'Retomar respuesta': [{ ...c, from: '59170000001' }] })[0]!;
+    expect(r['transferir']).toBe(true);
+    expect(r['respuesta']).toBe(c['respuesta']);
+  });
+});
+
+describe('La marca de creación de Google viaja al candado (desempate sin el reloj de n8n)', () => {
+  it('la cita del chat creada ANTES que una manual que la pisa no cede, aunque la lista todavía no la traiga', () => {
+    const chat = { id: 'ev-c', calendario: CAL_JOSE, inicio: '2026-09-07T15:00:00-04:00', fin: '2026-09-07T15:30:00-04:00',
+      titulo: 'Cita Lucas — consulta', creado: new Date(AHORA.getTime() - 20000).toISOString() };
+    const manual = ev('m', 'Cita OTRA — consulta', CAL_JOSE, '2026-09-07T15:00:00-04:00', '2026-09-07T15:30:00-04:00',
+      new Date(AHORA.getTime() - 10000).toISOString());
+    const previa = { ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0, eventosCreados: [chat] };
+    const r = comprobarTodo([manual], AHORA, { mensajeReservaNoConfirmada: '' }, previa)[0]!;
+    expect(r['citaSolapada']).toBeUndefined();
+    // Sin la marca de Google, «ahora» la haría la más nueva y cedería.
+    const sinMarca = comprobarTodo([manual], AHORA, { mensajeReservaNoConfirmada: '' },
+      { ...previa, eventosCreados: [{ ...chat, creado: undefined }] })[0]!;
+    expect(sinMarca['citaSolapada']).toBe(true);
   });
 });
