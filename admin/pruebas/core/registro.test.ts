@@ -36,7 +36,7 @@ import {
 } from '../../functions/src/registro.ts';
 import { FLUJOS } from '../../web/src/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/core/prompt/prompt.ts';
-import { PLANES } from '../../functions/src/planes.ts';
+import { PLANES } from '../../functions/src/central/cuenta/planes.ts';
 import { DESTINOS_F2 } from '../frontera/destinos-f2.ts';
 import { zonaDeCodigo } from '../frontera/frontera.ts';
 

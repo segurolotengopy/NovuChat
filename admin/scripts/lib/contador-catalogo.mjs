@@ -23,11 +23,11 @@
  * desde ahí el comercio podría crear productos de más.
  *
  * EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO. Es `limitesDeCuenta` de
- * `functions/src/planes.ts`, la misma función que usa `importarCatalogo`.
+ * `functions/src/central/cuenta/planes.ts`, la misma función que usa `importarCatalogo`.
  */
 import { FieldValue } from 'firebase-admin/firestore';
 
-const { LIMITE_MAXIMO, esIdPlan, limitesDeCuenta } = await import('../../functions/src/planes.ts');
+const { LIMITE_MAXIMO, esIdPlan, limitesDeCuenta } = await import('../../functions/src/central/cuenta/planes.ts');
 
 /**
  * Las ÚNICAS tres claves del documento del contador. Con una clave de más, la

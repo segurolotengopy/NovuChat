@@ -7,7 +7,7 @@ import {
 } from './cotejo.js';
 import { registrar, MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
 import { documentoDeVertical } from './core/prompt/prompt.js';
-import { periodoDe } from './planes.js';
+import { periodoDe } from './central/cuenta/planes.js';
 import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';
 import {
   detalleDeLaVenta, esperadoDeLaVenta, idDeCierreDeVenta, qrDeVentaVencido, totalUtilizable,

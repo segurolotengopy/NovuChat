@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { modoDelComercio } from '../web/src/lib/modoComercio';
 import { ChipModo } from '../web/src/componentes/ChipModo';
-import { modalidadDe } from '../functions/src/prepago';
+import { modalidadDe } from '../functions/src/central/cuenta/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');

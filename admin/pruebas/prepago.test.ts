@@ -1,5 +1,5 @@
 /**
- * EL MÓDULO PURO DEL PREPAGO (`functions/src/prepago.ts`), sin emulador.
+ * EL MÓDULO PURO DEL PREPAGO (`functions/src/central/cuenta/prepago.ts`), sin emulador.
  *
  * Sobre esto se le corta el servicio a un comercio que paga y se le escribe
  * para cobrarle, así que se prueba mes por mes y HORA POR HORA en los bordes:
@@ -22,8 +22,8 @@ import {
   modalidadDe, montoUsdDe, periodoAnterior, periodoSiguiente, periodosIncoherentes, rechazoPorPrepago,
   recordatoriosDebidos,
   resumenDeCuenta, sumarMeses, tipoCambioVigente, type ContextoRecordatorio, type CuentaCruda,
-} from '../functions/src/prepago.ts';
-import { PLANES, limitesDe } from '../functions/src/planes.ts';
+} from '../functions/src/central/cuenta/prepago.ts';
+import { PLANES, limitesDe } from '../functions/src/central/cuenta/planes.ts';
 
 const HORA = 3_600_000;
 /** Un instante en hora de Bolivia (UTC−4), en milisegundos. */

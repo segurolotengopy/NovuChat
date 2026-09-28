@@ -2,7 +2,7 @@
  * PREPAGO EN LA CONSOLA — el MISMO módulo que usa el servidor.
  *
  * La cobertura del mes, la gracia de 48 horas, el saldo de conversaciones y
- * el corte se leen de `functions/src/prepago.ts`, importado directamente,
+ * el corte se leen de `functions/src/central/cuenta/prepago.ts`, importado directamente,
  * igual que `planes.ts` y `atencion.ts`. No hay una copia para el navegador:
  * si la hubiera, la pantalla podría decir «cubierto hasta el 30» mientras el
  * servidor corta el 3, y sobre esa diferencia se discute un reclamo. La
@@ -28,9 +28,9 @@ export {
   estadoDeServicio, fechaCorta, fechaEscrita, fechaFinDelPeriodo, finDelPeriodoMs, importeBs,
   inicioDelPeriodoMs, mensajeCortesia, mesBolivia, modalidadDe, montoUsdDe, periodoAnterior,
   periodoSiguiente, recordatoriosDebidos, resumenDeCuenta, sumarMeses, tipoCambioVigente,
-} from '../../../functions/src/prepago';
+} from '../../../functions/src/central/cuenta/prepago';
 export type {
   CamposDerivados, ContextoRecordatorio, Corte, CuentaCruda, CuentaTrasPago, EstadoPago,
   EstadoServicio, Fase, Modalidad, MotivoCorte, Pago, PlataformaPrepago, Recordatorio,
   TipoCambio, TipoRecordatorio,
-} from '../../../functions/src/prepago';
+} from '../../../functions/src/central/cuenta/prepago';

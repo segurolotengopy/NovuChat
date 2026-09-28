@@ -79,7 +79,7 @@ Consulta `~/Claude-Proyectos/proyectos/`. Dentro de NovuChat, esto ya existe y
 | Moderación con el modelo que muestra pero no bloquea, con prompt anti-inyección | `imagenCatalogo.ts` |
 | Servir binarios por ficha al azar, sin enumerar la cartera | `admin/functions/src/cobro.ts` |
 | Contador con tope por plan | el del catálogo, `limiteCatalogo.ts` |
-| Metadatos de integridad del objeto | `admin/functions/src/pagos.ts` |
+| Metadatos de integridad del objeto | `admin/functions/src/central/pagar/pagos.ts` |
 
 ## Cómo trabajar
 

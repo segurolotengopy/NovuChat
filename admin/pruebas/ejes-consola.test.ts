@@ -31,8 +31,8 @@ import {
   type CambiosVista, type EjesDeCuenta,
 } from '../web/src/lib/ejes';
 import { esPlanPublicado, esPlanVendible, planSiguiente, precioUsdDe } from '../web/src/lib/planes';
-import { PLANES, PLANES_PUBLICADOS } from '../functions/src/planes';
-import { MODALIDADES as MODALIDADES_SERVIDOR, importeBs } from '../functions/src/prepago';
+import { PLANES, PLANES_PUBLICADOS } from '../functions/src/central/cuenta/planes';
+import { MODALIDADES as MODALIDADES_SERVIDOR, importeBs } from '../functions/src/central/cuenta/prepago';
 import * as CENTRAL from '../functions/src/central/ejes';
 import { EjesDeLaCuenta } from '../web/src/central/componentes/EjesDeLaCuenta';
 import { ContadorCambios } from '../web/src/central/componentes/ContadorCambios';

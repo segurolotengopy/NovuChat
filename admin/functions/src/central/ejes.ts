@@ -45,8 +45,8 @@
  * está la aritmética; la callable que cuenta y NIEGA es
  * `central/cambiosOperados.ts`.
  */
-import { limitesDeCuenta } from '../planes.js';
-import { mesBolivia, modalidadDe, type CuentaCruda } from '../prepago.js';
+import { limitesDeCuenta } from './cuenta/planes.js';
+import { mesBolivia, modalidadDe, type CuentaCruda } from './cuenta/prepago.js';
 
 // -----------------------------------------------------------------------------
 // TITULARIDAD DEL CANAL — por número

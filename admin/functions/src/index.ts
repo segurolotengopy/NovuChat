@@ -8,7 +8,7 @@ import { REGION } from './core/region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol } from './core/seguridad/claims.js';
 import { claimsDe as claims, exigirAdminDe, exigirPropietario, exigirSesionReciente } from './core/seguridad/autorizacion.js';
-import { derivadosGobernados } from './pagos.js';
+import { derivadosGobernados } from './central/pagar/pagos.js';
 
 initializeApp();
 
@@ -44,7 +44,7 @@ import {
   RANGO_POR_CONTRATO, copiaDeLimites,
   cuentaInicial, esPlanVendible, mismoMarcador, periodoDe, porContratoDe, precioMensualDe, precioPorContratoDe,
   precioPorContratoValido, valorPorContratoValido, type ClavePorContrato, type IdPlanVendible,
-} from './planes.js';
+} from './central/cuenta/planes.js';
 // LOS TRES EJES DE LA CUENTA (F1, `Analisis/41` §4). El alta escribe el modelo
 // por defecto y `asignarNumero` la titularidad del número; cambiarlos después
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
@@ -60,18 +60,18 @@ import {
   BOLSA_PRUEBA_MAXIMA, MODALIDADES, PruebaInvalida, bolsaPruebaValida, camposDerivados, consumidasDe, esModalidad,
   esPeriodo, estadoDeServicio, montoFueraDeContrato, pruebaActual, pruebaNueva,
   type CuentaCruda, type PedidoDePrueba, type PruebaNueva,
-} from './prepago.js';
+} from './central/cuenta/prepago.js';
 // COBRANZA DEL PREPAGO: el barrido de la hora del número de NovuChat pregunta a
 // qué comercios les toca un recordatorio y marca ANTES de enviar (molde de
 // `seguimientos.ts`). El porqué en `cobranza.ts`.
-export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js';
+export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './central/pagar/cobranza.js';
 // PAGOS DEL PREPAGO (bloque A-1, `DISENO.md` §4undecies.1): la carga manual del
 // propietario con evidencia y auditoría, la anulación del pendiente, la
 // consulta al abrir la pantalla y los teléfonos que pueden pagar. Lo que suma
 // meses vive en `pagos.ts` y es una sola puerta; el porqué está ahí.
 // Pagos del prepago (A-1) con el cobrador (A-2) enchufado: ver pagosConCobrador.ts.
-export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './pagosConCobrador.js';
-export { fijarTelefonosPago } from './pagos.js';
+export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './central/pagar/pagosConCobrador.js';
+export { fijarTelefonosPago } from './central/pagar/pagos.js';
 import { documentoDeVertical } from './core/prompt/prompt.js';
 export { notificarReclamo } from './central/reclamos/reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
@@ -103,7 +103,7 @@ export { verificarCampanas } from './verificarCampanas.js';
 // secretos nuevos (`COBRADOR_TOKEN`, `COBRADOR_AVISO_SECRETO`) y el Scheduler
 // del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
 // El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
-export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
+export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './central/pagar/cobroPrepago.js';
 export { tipoCambioBcb } from './central/servicios/tipoCambioBcb.js';
 
 const db = () => getFirestore();

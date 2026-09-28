@@ -63,19 +63,19 @@
  * pantalla (A-3).
  */
 import { HttpsError, onCall, type CallableOptions } from 'firebase-functions/v2/https';
-import { REGION } from './core/region.js';
+import { REGION } from '../../core/region.js';
 import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Transaction } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
-import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from './core/seguridad/autorizacion.js';
-import { registrar } from './ingesta.js';
-import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from './central/servicios/tipoCambio.js';
-import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from './planes.js';
+import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../../core/seguridad/autorizacion.js';
+import { registrar } from '../../ingesta.js';
+import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from '../servicios/tipoCambio.js';
+import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from '../cuenta/planes.js';
 import {
   BOLSA, INSTALACION_USD, MONEDA_COBRO, MONEDA_LISTA, TCO_MAXIMO, TCO_MINIMO, aplicarPago, camposDerivados as derivadosDe,
   corteDe, descripcionDe, esFecha, esModalidad, esPago, estadoDeServicio, importeBs, importeCobrable, montoFueraDeContrato,
   montoUsdDe, type CuentaCruda, type Pago,
-} from './prepago.js';
+} from '../cuenta/prepago.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;

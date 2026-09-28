@@ -29,8 +29,8 @@ import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../we
 import { pagosEnRevision, vistaDelPagoManual } from '../../web/src/plataforma/lib/negocios';
 import {
   LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, limitesDe,
-} from '../../functions/src/planes';
-import { BOLSA_PRUEBA_MAXIMA } from '../../functions/src/prepago';
+} from '../../functions/src/central/cuenta/planes';
+import { BOLSA_PRUEBA_MAXIMA } from '../../functions/src/central/cuenta/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', '..', ruta), 'utf8');

@@ -47,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/core/prompt/prompt.ts';
-import { limitesDe } from '../functions/src/planes.ts';
+import { limitesDe } from '../functions/src/central/cuenta/planes.ts';
 import { urlImagenValida } from '../functions/src/catalogoWeb.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

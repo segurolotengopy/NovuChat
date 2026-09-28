@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cuentaEnDemostracion, planesOfrecidos, planesQuePuedePagar } from '../../web/src/lib/pagar';
-import { PLANES, PLANES_PUBLICADOS } from '../../functions/src/planes';
+import { PLANES, PLANES_PUBLICADOS } from '../../functions/src/central/cuenta/planes';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', '..', ruta), 'utf8');

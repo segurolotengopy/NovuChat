@@ -17,12 +17,12 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/cobranza.ts",
+      "desde": "admin/functions/src/central/pagar/cobranza.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/cobroPrepago.ts",
+      "desde": "admin/functions/src/central/pagar/cobroPrepago.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
@@ -32,7 +32,7 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/pagos.ts",
+      "desde": "admin/functions/src/central/pagar/pagos.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },

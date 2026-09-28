@@ -1,0 +1,12 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/planes.ts", "a": "admin/functions/src/central/cuenta/planes.ts" },
+    { "de": "admin/functions/src/prepago.ts", "a": "admin/functions/src/central/cuenta/prepago.ts" },
+    { "de": "admin/functions/src/pagos.ts", "a": "admin/functions/src/central/pagar/pagos.ts" },
+    { "de": "admin/functions/src/pagosConCobrador.ts", "a": "admin/functions/src/central/pagar/pagosConCobrador.ts" },
+    { "de": "admin/functions/src/cobroPrepago.ts", "a": "admin/functions/src/central/pagar/cobroPrepago.ts" },
+    { "de": "admin/functions/src/cobrador.ts", "a": "admin/functions/src/central/pagar/cobrador.ts" },
+    { "de": "admin/functions/src/cobranza.ts", "a": "admin/functions/src/central/pagar/cobranza.ts" }
+  ],
+  "suitesPuras": []
+}

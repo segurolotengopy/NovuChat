@@ -2,7 +2,7 @@
  * LO QUE LA PANTALLA «PAGAR» NECESITA SABER, SIN CALCULAR NADA PROPIO.
  *
  * Todo lo que decide un importe, un mes cubierto o una bolsa sale de
- * `functions/src/prepago.ts` a través de `lib/prepago.ts` (el mismo módulo que
+ * `functions/src/central/cuenta/prepago.ts` a través de `lib/prepago.ts` (el mismo módulo que
  * corre en el servidor, `DISENO.md` §4undecies.4). Acá solo se arma la vista:
  * qué opciones ofrecer y cómo se lee cada una.
  *
@@ -22,7 +22,7 @@ import {
   type CuentaCruda, type Pago, type TipoCambio,
 } from './prepago';
 import { PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible, limitesDeCuenta, type IdPlanVendible } from './planes';
-import { porContratoDe, precioMensualDe, precioPorContratoDe } from '../../../functions/src/planes';
+import { porContratoDe, precioMensualDe, precioPorContratoDe } from '../../../functions/src/central/cuenta/planes';
 
 export type { Pago, TipoCambio };
 

@@ -33,7 +33,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FieldPath, Timestamp, getFirestore } from 'firebase-admin/firestore';
 import { exigirPropietario } from '../core/seguridad/autorizacion.js';
-import { modalidadDe, type CuentaCruda } from '../prepago.js';
+import { modalidadDe, type CuentaCruda } from './cuenta/prepago.js';
 import { cambiosDelMes } from './ejes.js';
 
 const db = () => getFirestore();
