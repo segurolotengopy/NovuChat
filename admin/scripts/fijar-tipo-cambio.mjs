@@ -30,7 +30,7 @@
  * Andres en el chat, y NUNCA sin `--aplicar` explícito. La Function no pisa
  * una carga manual con la misma fecha o posterior.
  *
- * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/prepago.js`): antes de
+ * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/central/cuenta/prepago.js`): antes de
  * correrlo, `pnpm functions:build`.
  *
  *   node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres
@@ -52,8 +52,14 @@ const POR = (opcion('por') ?? '').trim().slice(0, 40);
 let prepago;
 try {
   prepago = await import('../functions/lib/central/cuenta/prepago.js');
-} catch {
-  console.error('\n  ✗ No se encuentra functions/lib/prepago.js. Compile primero: pnpm functions:build\n');
+} catch (e) {
+  // Solo «falta compilar» cuando lo que falta es el propio compilado; otro
+  // fallo al cargarlo (un import roto adentro) se muestra tal cual.
+  const { existsSync } = await import('node:fs');
+  const faltaElCompilado = !existsSync(new URL('../functions/lib/central/cuenta/prepago.js', import.meta.url));
+  console.error(faltaElCompilado
+    ? '\n  ✗ No se encuentra functions/lib/central/cuenta/prepago.js. Compile primero: pnpm functions:build\n'
+    : `\n  ✗ No se pudo cargar functions/lib/central/cuenta/prepago.js: ${e?.message ?? e}\n`);
   process.exit(2);
 }
 const { TCO_DIAS_VIGENCIA, TCO_MAXIMO, TCO_MINIMO, esFecha, esTipoCambio, tipoCambioVigente } = prepago;

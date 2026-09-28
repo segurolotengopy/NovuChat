@@ -23,7 +23,7 @@
  *     `proximoVencimiento`) con `camposDerivados`, igual que la ingesta;
  *   - no toca el plan, los límites, los umbrales, la bolsa ni el corte.
  *
- * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/prepago.js`): `prepago.ts`
+ * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/central/cuenta/prepago.js`): `prepago.ts`
  * importa `./planes.js`, y Node no reescribe esa extensión al cargar
  * TypeScript sin compilar. Antes de correrlo: `pnpm functions:build`.
  *
@@ -46,8 +46,14 @@ const PERIODO_PRUEBA = (opcion('periodo-prueba') ?? '').trim();
 let prepago;
 try {
   prepago = await import('../functions/lib/central/cuenta/prepago.js');
-} catch {
-  console.error('\n  ✗ No se encuentra functions/lib/prepago.js. Compile primero: pnpm functions:build\n');
+} catch (e) {
+  // Solo «falta compilar» cuando lo que falta es el propio compilado; otro
+  // fallo al cargarlo (un import roto adentro) se muestra tal cual.
+  const { existsSync } = await import('node:fs');
+  const faltaElCompilado = !existsSync(new URL('../functions/lib/central/cuenta/prepago.js', import.meta.url));
+  console.error(faltaElCompilado
+    ? '\n  ✗ No se encuentra functions/lib/central/cuenta/prepago.js. Compile primero: pnpm functions:build\n'
+    : `\n  ✗ No se pudo cargar functions/lib/central/cuenta/prepago.js: ${e?.message ?? e}\n`);
   process.exit(2);
 }
 const {

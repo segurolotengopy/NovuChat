@@ -12,10 +12,11 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 /**
  * Enmascara un teléfono para la bitácora: `59170000001` -> `5917****001`.
  *
- * La regla de Firestore EXIGE el patrón con asteriscos, así que un número
- * completo se rechaza en el servidor. Esta función existe para que el camino
- * correcto sea el fácil, no para ser la única defensa: la diferencia entre
- * «acordarse de enmascarar» y no poder no hacerlo.
+ * La regla de `/bitacora` EXIGE el patrón con asteriscos, pero solo rige para
+ * las escrituras del SDK cliente. Las Functions escriben con el SDK Admin, que
+ * se salta las reglas: en ese camino, que es el de `registrar`, la ÚNICA
+ * defensa es esta función, y `pruebas/core/bitacora.test.ts` fija lo que hace
+ * (revisión de seguridad del #252). No se cambia confiando en la regla.
  */
 export function enmascarar(telefono: unknown): string {
   const t = typeof telefono === 'string' ? telefono.replace(/[^0-9]/g, '') : '';
@@ -110,4 +111,3 @@ export async function registrar(tenantId: string, evento: Evento): Promise<void>
     console.error(`No se pudo registrar en la bitacora de ${tenantId}: ${evento.tipo}`);
   }
 }
-
