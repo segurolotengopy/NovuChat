@@ -175,7 +175,7 @@ una lista. Una excepción solo vale declarada ahí y en
 |---|---|---|
 | Dónde cuelga | Salida falsa de `¿Es un comprobante?`, como en reservas | Antes de `Estado de la conversación` (que arma el turno del agente con `userInput`); en operador o bloqueado no convierte nada |
 | Qué entra | Todo audio con id; una imagen o un PDF solo con cobro REAL y sin QR pendiente | Todo audio, imagen o PDF con id |
-| Qué NO entra | El comprobante con QR pendiente (va al OCR y al cotejo) y cualquier archivo en cobro simulado (es el comprobante simulado, decisión del 23 y 25/09) | Video, sticker (aviso de siempre) |
+| Qué NO entra | El comprobante con QR pendiente (va al OCR y al cotejo) y, en cobro simulado, el archivo CON QR pendiente (es el comprobante simulado, decisión del 23 y 25/09; sin QR pendiente va a la rama desde el 28/09, #7454) | Video, sticker (aviso de siempre) |
 | Leer de Meta | Nodo WhatsApp `mediaUrlGet` + HTTP con la credencial `whatsAppApi` que ya usa el flujo | HTTP `GET` a la Graph API con la credencial de `Enviar a WhatsApp` (el flujo no tiene una de tipo WhatsApp) |
 | Clasificador | SIEMPRE `otro`, con el texto visible (marca, precio, talla, el menú o la lista de precios, o qué producto es). Los avisos de `publicidad` (ofrece agendar) y `comprobante` (ofrece pasarlo al negocio) no se cumplen en este flujo | `comprobante` u `otro`. `comprobante` se cumple: el asesor sale con el botón. `publicidad` no, porque ofrece agendar. El logo, el menú o la lista de precios del prospecto es `otro`, con su texto |
 | Leyenda del archivo | En el turno del agente, antes del texto del cliente | En `mensajeDelTurno`, después del texto del cliente |
