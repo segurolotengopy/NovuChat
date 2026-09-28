@@ -15,12 +15,16 @@
  * lanza un script de `admin/scripts/` con Node pase este entorno.
  */
 export function entornoDelEmulador(host: string | undefined, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
+  // `extra` va ANTES de los valores fijos: una suite puede agregar variables
+  // propias (`CONFIG_LOCAL_MD`), nunca pisar las que cierran la salida a la
+  // nube (revisión de seguridad del #259).
   return {
     ...process.env,
+    ...extra,
     ...(host ? { FIRESTORE_EMULATOR_HOST: host } : {}),
     FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:1',
     GOOGLE_APPLICATION_CREDENTIALS: '/nonexistent/adc.json',
+    CLOUDSDK_CONFIG: '/nonexistent/gcloud',
     METADATA_SERVER_DETECTION: 'none',
-    ...extra,
   };
 }

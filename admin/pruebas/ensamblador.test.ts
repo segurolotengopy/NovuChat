@@ -41,6 +41,7 @@ import {
   RAIZ_FLUJOS, carpetas, ensamblarEnMemoria, ensamblarFlujo, extraerFlujo, leerManifiesto, listarFlujos,
   manifiestoInicial, rutaDeManifiesto, slug, verificarFlujo,
 } from '../scripts/ensamblar-flujo.mjs';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(aqui, '../scripts/ensamblar-flujo.mjs');
@@ -380,7 +381,7 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
 
 describe('8. La línea de comandos', () => {
   it('`verificar` sale con 0 sobre el repositorio y dice qué flujos no tienen manifiesto', () => {
-    const salida = execFileSync(process.execPath, [SCRIPT, 'verificar'], { encoding: 'utf8' });
+    const salida = execFileSync(process.execPath, [SCRIPT, 'verificar'], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
     expect(salida).toContain('Todos los flujos coinciden con sus módulos.');
     expect(salida.match(/sin manifiesto, idéntico por definición/g)).toHaveLength(SIN_MANIFIESTO.length);
     expect(salida.match(/✓ .*: idéntico \(22 puntos de inyección\)/g)).toHaveLength(CON_MANIFIESTO.length);
@@ -399,7 +400,7 @@ describe('8. La línea de comandos', () => {
     writeFileSync(ruta, readFileSync(ruta, 'utf8') + '// cambio\n');
     let codigo = 0; let salida = '';
     try {
-      salida = execFileSync(process.execPath, [join(raizFalsa, 'admin/scripts/ensamblar-flujo.mjs'), 'verificar'], { encoding: 'utf8' });
+      salida = execFileSync(process.execPath, [join(raizFalsa, 'admin/scripts/ensamblar-flujo.mjs'), 'verificar'], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
     } catch (e) {
       codigo = (e as { status: number }).status; salida = (e as { stdout: string }).stdout;
     }

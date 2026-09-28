@@ -34,6 +34,7 @@ import {
   type J, GLOBALES_FUERA_DEL_SANDBOX, codigoDe, configBase, destinos, ejecutar, entradas,
   expresion, leerFlujo, nodo, plantilla,
 } from './lib/flujo.ts';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
@@ -1197,7 +1198,7 @@ describe('`preparar-import.sh` no le pisa a Meta la ruta del webhook', () => {
       name: 'prueba', settings: { executionOrder: 'v1' }, nodes: nodos, connections: {},
     }, null, 2));
     const r = spawnSync('bash', [SCRIPT, flujo, join(dir, 'env')], {
-      encoding: 'utf8', env: { ...process.env, CONFIG_LOCAL_MD: join(dir, 'tabla.md') },
+      encoding: 'utf8', env: entornoDelEmulador(undefined, { CONFIG_LOCAL_MD: join(dir, 'tabla.md') }),
     });
     return { dir, flujo, r };
   };
