@@ -38,33 +38,17 @@
  */
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import { REGION } from './core/region.js';
+import { CLAVE_GEMINI, claveGemini } from './central/servicios/gemini.js';
+import {
+  pedirConFrenos, tipoDeContenido, type MotivoFalla,
+} from './central/servicios/pedidoSeguro.js';
 
-/**
- * Clave de la API de Gemini. Solo para esto; el modelo del asistente vive en n8n.
- *
- * SE DECLARA COMO SECRETO Y SE LEE DEL ENTORNO, las dos cosas. `defineSecret`
- * es lo que hace que Cloud Functions la inyecte desde Secret Manager; leerla de
- * `process.env` en vez de con `.value()` es lo que hace que la ausencia
- * degrade en lugar de romper.
- *
- * POR QUÉ IMPORTA ESA MEZCLA. Con `defineSecret` a secas, un despliegue hecho
- * antes de crear el secreto FALLA ENTERO y se lleva puesto todo lo que viajaba
- * con él: el 09/09 fueron el catálogo web, el mini inventario, la vista previa
- * y el importador, cuatro cosas terminadas esperando una clave. Así, el día que
- * alguien reconstruya el proyecto sin el secreto todavía cargado, lo único que
- * deja de funcionar es esta comprobación.
- *
- * Y SI LA CLAVE NO ESTÁ, la comprobación de que la foto SE VE corre igual —es
- * determinística y no usa modelo— y la de si la foto CORRESPONDE queda vacía:
- * se deja de opinar, no se empieza a mentir.
- */
-export const CLAVE_GEMINI = defineSecret('GEMINI_API_KEY');
-export const claveGemini = (): string => process.env['GEMINI_API_KEY'] ?? '';
+/** Salieron a `central/servicios/pedidoSeguro.ts` (corte C2 de F2); se reexportan para sus pruebas. */
+export {
+  esDestinoPublico, urlUtilizable, pedirConFrenos, tipoDeContenido, type MotivoFalla,
+} from './central/servicios/pedidoSeguro.js';
 
 /** El mismo modelo que usa el asistente, para no sostener dos criterios. */
 const MODELO = 'gemini-3.5-flash-lite';
@@ -72,12 +56,6 @@ const MODELO = 'gemini-3.5-flash-lite';
 const TIPOS_ACEPTADOS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 /** 4 MB. Una foto de catálogo que pesa más es un problema del comercio, no nuestro. */
 const TOPE_BYTES = 4 * 1024 * 1024;
-const TIEMPO_MAXIMO_MS = 8_000;
-const SALTOS_MAXIMOS = 2;
-
-export type MotivoFalla =
-  | 'no_es_https' | 'destino_privado' | 'no_responde' | 'no_es_imagen'
-  | 'demasiado_grande' | 'demasiados_saltos';
 
 export interface Comprobacion {
   /** ¿Es una imagen que se puede ver? Esto NO es opinable. */
@@ -87,150 +65,6 @@ export interface Comprobacion {
   bytes?: number;
   /** Lo que OPINA el modelo. Ausente si la imagen no se pudo mirar. */
   parecido?: { coincide: boolean; confianza: 'alta' | 'media' | 'baja'; motivo: string };
-}
-
-// ---------------------------------------------------------------------------
-// 1. QUE LA DIRECCIÓN SEA SEGURA DE VISITAR
-// ---------------------------------------------------------------------------
-
-/**
- * Rangos que NO se visitan.
- *
- * La dirección la escribe el comercio y la visita NUESTRO servidor, que corre
- * dentro de la red de Google con acceso al servidor de metadatos. Sin este
- * filtro, un comercio podría pedirnos que buscáramos `http://169.254.169.254/…`
- * y usarnos de puente hacia adentro. Es el ataque que se llama SSRF y no es
- * teórico: el servidor de metadatos de la nube es su blanco clásico.
- *
- * Se comprueba sobre la IP RESUELTA y no sobre el texto del host, porque
- * `midominio.com` puede apuntar a `127.0.0.1` y el texto no lo delata.
- */
-export function esDestinoPublico(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) {
-    const o = ip.split('.').map(Number);
-    if (o.length !== 4 || o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
-    const [a, b] = o as [number, number, number, number];
-    if (a === 0 || a === 10 || a === 127) return false;              // este host, privada, bucle
-    if (a === 169 && b === 254) return false;                        // enlace local y metadatos
-    if (a === 172 && b >= 16 && b <= 31) return false;               // privada
-    if (a === 192 && b === 168) return false;                        // privada
-    if (a === 100 && b >= 64 && b <= 127) return false;              // CGNAT
-    if (a === 192 && b === 0) return false;                          // reservada / documentación
-    if (a >= 224) return false;                                      // multidifusión y reservada
-    return true;
-  }
-  if (v === 6) {
-    const d = ip.toLowerCase().split('%')[0] as string;
-    if (d === '::' || d === '::1') return false;                     // sin especificar, bucle
-    if (d.startsWith('fe8') || d.startsWith('fe9')
-      || d.startsWith('fea') || d.startsWith('feb')) return false;   // enlace local
-    if (d.startsWith('fc') || d.startsWith('fd')) return false;      // única local
-    if (d.startsWith('ff')) return false;                            // multidifusión
-    // IPv4 DISFRAZADAS DE IPv6: se juzgan por la IPv4 que llevan adentro. La
-    // forma con puntos (`::ffff:127.0.0.1`) no alcanza: `new URL()` normaliza el
-    // host a hexadecimal (`::ffff:7f00:1`), y esa forma pasaba el filtro y
-    // llegaba al propio servidor (revisión de seguridad del 15/09/2026).
-    const conPuntos = /^::(ffff:)?(\d+\.\d+\.\d+\.\d+)$/.exec(d);
-    if (conPuntos) return esDestinoPublico(conPuntos[2] as string);
-    const h = expandirIPv6(d);
-    if (!h) return false;                                            // lo que no se entiende no se visita
-    const v4 = (a: number, b: number) =>
-      `${h[a]! >> 8}.${h[a]! & 255}.${h[b]! >> 8}.${h[b]! & 255}`;
-    if (h.slice(0, 5).every((x) => x === 0) && (h[5] === 0xffff || h[5] === 0)) {
-      return esDestinoPublico(v4(6, 7));                             // ::ffff:0:0/96 y ::/96
-    }
-    if (h[0] === 0x64 && h[1] === 0xff9b && h.slice(2, 6).every((x) => x === 0)) {
-      return esDestinoPublico(v4(6, 7));                             // NAT64, 64:ff9b::/96
-    }
-    if (h[0] === 0x2002) return esDestinoPublico(v4(1, 2));          // 6to4, 2002::/16
-    return true;
-  }
-  return false;
-}
-
-/** Los ocho grupos de 16 bits de una IPv6 en texto, o `null` si no se entiende. */
-function expandirIPv6(d: string): number[] | null {
-  if (!/^[0-9a-f:]+$/.test(d) || (d.match(/::/g) ?? []).length > 1) return null;
-  const [izq, der] = d.includes('::') ? d.split('::') as [string, string] : [d, null];
-  const partes = (t: string) => (t === '' ? [] : t.split(':'));
-  const a = partes(izq);
-  const b = der === null ? [] : partes(der);
-  const faltan = 8 - a.length - b.length;
-  if (der === null ? faltan !== 0 : faltan < 1) return null;
-  const grupos = [...a, ...Array(der === null ? 0 : faltan).fill('0'), ...b];
-  if (grupos.some((g) => g.length === 0 || g.length > 4)) return null;
-  return grupos.map((g) => parseInt(g, 16));
-}
-
-/** `https://` y nada más: `http` lo bloquea el navegador del cliente por contenido mixto. */
-export function urlUtilizable(url: string): { ok: true; u: URL } | { ok: false; falla: MotivoFalla } {
-  let u: URL;
-  try { u = new URL(url); } catch { return { ok: false, falla: 'no_es_https' }; }
-  if (u.protocol !== 'https:') return { ok: false, falla: 'no_es_https' };
-  return { ok: true, u };
-}
-
-async function destinoPermitido(u: URL): Promise<boolean> {
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  // Un comercio publica sus archivos con un NOMBRE de dominio. Una IP literal en
-  // la URL no tiene uso legítimo acá y es la vía más corta a una dirección
-  // interna: se rechaza sin juzgarla. Las IP que devuelve el DNS sí se juzgan.
-  if (isIP(host)) return false;
-  try {
-    const direcciones = await lookup(host, { all: true });
-    // TODAS tienen que ser públicas: alcanza una privada para descartar el host.
-    return direcciones.length > 0 && direcciones.every((d) => esDestinoPublico(d.address));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Baja la imagen con todos los frenos puestos.
- *
- * NO se delegan los saltos a `fetch`: con `redirect: 'follow'` el primer destino
- * puede ser público y el segundo `127.0.0.1`, y nadie lo miraría. Se siguen a
- * mano, comprobando cada uno.
- *
- * LO QUE ESTO NO CIERRA, dicho para que nadie lo dé por cerrado: entre que se
- * resuelve el nombre y que se abre la conexión, el DNS puede cambiar de
- * respuesta («DNS rebinding»). Cerrarlo exige conectarse a la IP y mandar el
- * `Host` a mano, que con `fetch` no se puede. El riesgo residual es una lectura
- * a ciegas: el contenido NUNCA se le devuelve a quien pidió la comprobación,
- * solo un veredicto de dos campos.
- */
-export async function pedirConFrenos(url: string, accept: string): Promise<
-  { ok: true; r: Response } | { ok: false; falla: MotivoFalla }> {
-  let actual = url;
-  for (let salto = 0; salto <= SALTOS_MAXIMOS; salto++) {
-    const v = urlUtilizable(actual);
-    if (!v.ok) return { ok: false, falla: v.falla };
-    if (!await destinoPermitido(v.u)) return { ok: false, falla: 'destino_privado' };
-
-    const corte = AbortSignal.timeout(TIEMPO_MAXIMO_MS);
-    let r: Response;
-    try {
-      r = await fetch(v.u, { redirect: 'manual', signal: corte, headers: { accept } });
-    } catch {
-      return { ok: false, falla: 'no_responde' };
-    }
-
-    if (r.status >= 300 && r.status < 400) {
-      const destino = r.headers.get('location');
-      if (!destino) return { ok: false, falla: 'no_responde' };
-      actual = new URL(destino, v.u).toString();
-      continue;
-    }
-    if (!r.ok) return { ok: false, falla: 'no_responde' };
-    return { ok: true, r };
-  }
-  return { ok: false, falla: 'demasiados_saltos' };
-}
-
-/** Tipo de contenido sin parámetros (`image/png; charset=…` → `image/png`). */
-export function tipoDeContenido(r: Response): string {
-  return (r.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
 }
 
 export async function bajarImagen(url: string): Promise<

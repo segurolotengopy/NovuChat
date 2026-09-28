@@ -29,7 +29,7 @@ import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/
 import { getFirestore } from 'firebase-admin/firestore';
 import { REGION } from './core/region.js';
 import { textoPlano, textoConSaltos, sinMarcas } from './central/servicios/saneo.js';
-import { pedirConFrenos, tipoDeContenido, type MotivoFalla } from './imagenCatalogo.js';
+import { pedirConFrenos, tipoDeContenido, type MotivoFalla } from './central/servicios/pedidoSeguro.js';
 
 // ---------------------------------------------------------------------------
 // 1. LA FORMA DE CADA ELEMENTO
@@ -221,7 +221,7 @@ export function sanearCaptacion(doc: unknown): CaptacionSaneada {
 // de la consola, con los límites de WhatsApp: documento hasta 100 MB, imagen
 // JPEG o PNG hasta 5 MB.
 //
-// SE REUSA EL PEDIDO DE `imagenCatalogo.ts` (`pedirConFrenos`), con su defensa
+// SE REUSA EL PEDIDO DE `central/servicios/pedidoSeguro.ts` (`pedirConFrenos`), con su defensa
 // contra direcciones internas: la URL la escribe el comercio y la visita NUESTRO
 // servidor, desde adentro de la red de Google. Lo que el pedido NO cierra
 // —el cambio de DNS entre la resolución y la conexión— está dicho allá; acá el

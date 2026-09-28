@@ -47,21 +47,6 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/captacion.ts",
-      "hacia": "admin/functions/src/imagenCatalogo.ts",
-      "porque": "Captación usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover captación"
-    },
-    {
-      "desde": "admin/functions/src/verificarCampanas.ts",
-      "hacia": "admin/functions/src/imagenCatalogo.ts",
-      "porque": "Campañas usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover campañas"
-    },
-    {
-      "desde": "admin/functions/src/central/asistente/verificarComportamiento.ts",
-      "hacia": "admin/functions/src/imagenCatalogo.ts",
-      "porque": "Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos"
-    },
-    {
       "desde": "admin/functions/src/catalogoWeb.ts",
       "hacia": "admin/functions/src/inventario.ts",
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
@@ -71,11 +56,6 @@
       "hacia": "admin/functions/src/sena.ts",
       "soloTipo": true,
       "porque": "Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos"
-    },
-    {
-      "desde": "admin/functions/src/core/prompt/prompt.ts",
-      "hacia": "admin/functions/src/central/servicios/saneo.ts",
-      "porque": "El prompt (Core) usa textoPlano y sinMarcas del saneo (Central): C2 los baja a core/prompt/texto.ts"
     },
     {
       "desde": "admin/web/src/paginas/Captacion.tsx",
