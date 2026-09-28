@@ -129,10 +129,10 @@ function ejecutar(codigo: string, items: J[], referencias: Record<string, J[]> =
   });
   // Se ejecuta el flujo VERSIONADO; copiar la lógica dejaría la prueba en verde
   // mientras el flujo se rompe. Misma justificación que `candado-agenda.test.ts`.
-  // nosemgrep: devsecops.js-eval-prohibido
   // `estado`: los datos estáticos del flujo, para las pruebas que los necesitan
   // (desde el 27/09 agendar exige una hora ELEGIDA y un nombre DICHO, que se
   // guardan por teléfono). Sin él, el nodo corre como si no existieran.
+  // nosemgrep: devsecops.js-eval-prohibido
   const fn = new Function('$input', '$', '$getWorkflowStaticData', codigo) as (i: unknown, r: unknown, e: unknown) => { json: J }[];
   return fn(entrada, $, estado ? () => estado : undefined).map((x) => x.json);
 }
