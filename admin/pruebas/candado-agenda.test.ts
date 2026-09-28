@@ -1501,6 +1501,35 @@ describe('Tercera revisión (f962cef): la respuesta honesta no niega citas que e
     expect(procesar('Tu cita está confirmada para mañana a las 11:00.', 'ok', conCreada())['avisos']).toContain('afirmo_sin_agendar');
   });
 
+  it('X6: con una cita viva, «tu nueva cita quedó confirmada» sin agendar ⇒ se reemplaza', () => {
+    const r = procesar('Listo, tu nueva cita quedó confirmada.', 'quiero otra cita para mi hijo', conCreada());
+    expect(r['avisos']).toContain('afirmo_sin_agendar');
+    // Sin hora ni palabra «nueva», si el cliente pide otra cita tampoco pasa.
+    expect(procesar('Listo, quedó confirmada.', 'agéndame otra para el viernes', conCreada())['avisos']).toContain('afirmo_sin_agendar');
+  });
+
+  it('X5: la cita viva es de mañana a las 10:00; «tu cita del <otro día> a las 10:00 quedó confirmada» ⇒ se reemplaza', () => {
+    const otroDia = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][
+      (new Date(`${MANANA}T12:00:00-04:00`).getUTCDay() + 3) % 7];
+    const r = procesar(`Tu cita del ${otroDia} a las 10:00 quedó confirmada.`, '¿ya quedó?', conCreada());
+    expect(r['avisos']).toContain('afirmo_sin_agendar');
+    // Positiva: el mismo día de la cita pasa.
+    const suDia = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][
+      new Date(`${MANANA}T12:00:00-04:00`).getUTCDay()];
+    const dijo = `Tu cita del ${suDia} a las 10:00 quedó confirmada.`;
+    expect(procesar(dijo, '¿ya quedó?', conCreada())['respuesta']).toBe(dijo);
+  });
+
+  it('X8: con seña pendiente, «tu segunda cita quedó confirmada» sin hora ni agendar ⇒ se reemplaza', () => {
+    const r = procesar('Tu segunda cita quedó confirmada.', 'quiero otra', {}, [], { senaPendiente: 'si' });
+    expect(r['avisos']).toContain('afirmo_sin_agendar');
+  });
+
+  it('sin hora en la respuesta, «¿ya quedó agendada?» con la cita creada ⇒ «Sí, quedó confirmada» NO se reemplaza', () => {
+    const dijo = 'Sí, quedó confirmada.';
+    expect(procesar(dijo, '¿ya quedó agendada?', conCreada())['respuesta']).toBe(dijo);
+  });
+
   it('H4: buscar_mi_cita corre y el modelo dice «reprogramé tu cita para el martes a las 15:00» sin agendar ⇒ se reemplaza', () => {
     const r = procesar('Listo, reprogramé tu cita para el martes a las 15:00.', 'pásala al martes a las 15', {},
       [{ action: { tool: 'buscar_mi_cita' }, observation: JSON.stringify([cita10]) }]);

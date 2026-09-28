@@ -1325,7 +1325,14 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // buscar_mi_cita mostro en el turno, los candidatos de los ultimos 30
   // minutos, las citas que ESTE telefono agendo por el chat (`creadas`, vivas
   // hasta el dia de la cita) y la seña pendiente (la cita esta retenida).
-  const agHorasDe = (iso) => { const t = Date.parse(String(iso || '')); return Number.isFinite(t) ? agHora(agLaPaz(t).min) : ''; };
+  // Con el dia, no solo la hora (revision de c9d2304): «tu cita del viernes a
+  // las 10:00» no es la del lunes a las 10:00.
+  const agHorasDe = (iso) => {
+    const t = Date.parse(String(iso || ''));
+    if (!Number.isFinite(t)) return '';
+    const p = agLaPaz(t);
+    return `${AG_DIAS[p.semana]} ${p.dia} de ${AG_MESES[p.mes - 1]} a las ${agHora(p.min)}`;
+  };
   const agEvidencia = (() => {
     const horas = [];
     let hay = false;
@@ -1350,11 +1357,29 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // asistente agendo o movio algo, ni se cancelo nada en el turno (revision de
   // f962cef: «reprogramé tu cita para el martes» sin agendar_cita no es una
   // cita existente, es una que no existe).
+  // Revision de c9d2304: una evidencia viva no basta para cualquier
+  // afirmacion. Si la respuesta nombra horas, cada una coincide con una cita
+  // de la evidencia, y el dia de la semana tambien si lo nombra. Si no nombra
+  // ninguna, solo vale como respuesta a una pregunta por la cita que ya tiene
+  // («¿ya quedo?», «¿mi cita esta confirmada?»): el cliente no pide otra, no
+  // elige hora ni dia en el turno, y la respuesta no habla de una cita
+  // «nueva», «otra» o «segunda».
   const AG_MOVIMIENTO = /(agend[eé]|reserv[eé]|anot[eé]|cambi[eé]|mov[ií])(?![a-záéíóúñ])|reprogram|reagend/i;
+  const AG_OTRA_CITA = /\b(nuev[oa]s?|otr[oa]s?|segund[oa]s?|adicional(es)?)\s+(cita|reserva|turno|hora|consulta)s?\b/;
+  const AG_PIDE_CITA = /\b(otr[oa]|nuev[oa]|segund[oa]|adicional|agendar(me|le|nos)?|agendame|agendeme|agende|reservar(me|le|nos)?|reservame|reserveme|sacar)\b/;
+  const agDiasEn = (t) => AG_DIAS.map(agSinTilde).filter((d) => new RegExp('\\b' + d + '\\b').test(agSinTilde(t)));
   const agCitaExistente = (() => {
-    if (!agEvidencia.hay || pasosCancelar.length > 0 || AG_MOVIMIENTO.test(respuesta.replace(/[*_~]/g, ''))) return false;
-    const horasDichas = agHorasDelTexto(respuesta).map((h) => agHora(h.min));
-    return horasDichas.every((h) => agEvidencia.textos.some((d) => d.includes(h)));
+    const texto = respuesta.replace(/[*_~]/g, '');
+    if (!agEvidencia.hay || pasosCancelar.length > 0 || AG_MOVIMIENTO.test(texto)) return false;
+    if (AG_OTRA_CITA.test(agSinTilde(texto))) return false;
+    const horasDichas = agHorasDelTexto(texto).map((h) => agHora(h.min));
+    if (horasDichas.length > 0) {
+      const dias = agDiasEn(texto);
+      return horasDichas.every((h) => agEvidencia.textos.some((d) => d.includes(h)
+        && (!dias.length || dias.some((dia) => agSinTilde(d).includes(dia)))));
+    }
+    return !agEleccion && !AG_PIDE_CITA.test(agClientePlano)
+      && agHorasDelTexto(agCliente).length === 0 && agDiasEn(agCliente).length === 0;
   })();
   if (agTextoDelModelo && Array.isArray(dato.intermediateSteps) && !ejecutoAgendar && afirmaAgendo
     && !agCitaExistente) {
