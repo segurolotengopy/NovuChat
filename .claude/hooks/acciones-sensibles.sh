@@ -50,33 +50,45 @@ CANAL_NO_OFICIAL = r"evolution[-_ ]?api|baileys|wppconnect"
 # persona. Acá NO se mira el verbo (cat, grep, sort, diff… son demasiados, y
 # la primera versión dejaba pasar la mitad): se mira si algún ARGUMENTO del
 # comando es una ruta a esa carpeta o a un archivo de enlace, con comodines
-# incluidos, y cualquier comando que la reciba se niega. Una palabra con
-# espacios de un git o un gh (el mensaje de un commit, el cuerpo de un PR) no es
-# una ruta, y el texto de un heredoc de git o gh tampoco: así un commit que
-# documenta la carpeta pasa. Un grep de la documentación con el patrón
-# escapado (\.enlaces) tampoco es una ruta, y pasa.
+# incluidos, y cualquier comando que la reciba se niega.
 #
-# Y la búsqueda RECURSIVA que entraría a la carpeta sin nombrarla (grep -r
-# sobre CLIENTES o sobre una carpeta que la contiene, rg con ocultos, find
-# con -exec) se niega salvo que la excluya (--exclude-dir=.enlaces, -g !.enlaces).
+# No son rutas, y pasan: el texto de un -m, --message, --title o --body de git
+# o gh, y un heredoc de git o gh (así un commit que documenta la carpeta
+# pasa); el PATRÓN de un grep, rg o git grep; los argumentos de echo y printf;
+# un git check-ignore; y un «.enlaces» sin barra que no existe donde se corre.
+#
+# Y el RECORRIDO que entraría a la carpeta sin nombrarla se niega salvo que la
+# excluya (--exclude-dir=.enlaces, -g !.enlaces, --exclude=.enlaces): grep -r,
+# rg con ocultos, find con -exec o hacia xargs, cp -r, rsync, tar, zip y scp,
+# sobre CLIENTES/, sobre cualquier carpeta dentro de ella o sobre cualquier
+# carpeta que la contenga (la copia principal, el directorio personal). Se
+# sigue el «cd» de los tramos anteriores del mismo comando.
 #
 # Límite honesto: con el mismo usuario del sistema una expresión regular no es
 # una barrera completa. Es la red contra el agente que lo lee SIN QUERER; la
 # defensa de fondo es que el enlace vence en horas y la persona borra el archivo.
-# Revisión de seguridad del PR #254.
-import fnmatch, os, shlex
+# Revisiones de seguridad del PR #254 (H1, H3; N1 a N5).
+import fnmatch, os, shlex, subprocess
 
 CWD = str(evento.get("cwd") or os.getcwd())
 CARPETA_ENLACES = re.compile(r"(^|/)\.enlaces(/|$)")
 ARCHIVO_ENLACE = re.compile(r"(^|/)enlace-(admin|oper)-[a-z0-9-]+\.txt$")
-MODELO = ["CLIENTES", "X", ".enlaces", "enlace-admin-x.txt"]
+# None: cualquier nombre de cliente (BELLIDO, RUBEN_ROCA…), literal o comodín.
+MODELO = ["CLIENTES", None, ".enlaces", "enlace-admin-x.txt"]
 COMODIN = re.compile(r"[*?\[]")
 PARTIR = re.compile(r"[\s\x27\"(),=:;`<>|&]+")
 HEREDOC = re.compile(r"<<-?[ \t]*([\"\x27]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.S)
-EXCLUYE = re.compile(r"^--exclude(-dir)?=|^--i?glob=!|^!")
+TEXTO_DE_GIT = {"-m", "--message", "--title", "-t", "--body", "-b", "--notes"}
+CON_VALOR = {"-m", "--max-count", "-A", "-B", "-C", "-t", "-T", "--type", "--type-not",
+             "--include", "--exclude", "--exclude-dir", "-g", "--glob", "--iglob"}
 
-def es_ruta_de_enlace(t):
-    if CARPETA_ENLACES.search(t) or ARCHIVO_ENLACE.search(t):
+def es_ruta_de_enlace(t, cwd):
+    if CARPETA_ENLACES.search(t):
+        # Un «.enlaces» suelto es texto, salvo que exista donde se corre o que
+        # se corra dentro de una carpeta de CLIENTES/.
+        return ("/" in t or os.path.lexists(os.path.join(cwd, t))
+                or "/CLIENTES/" in os.path.realpath(cwd) + "/")
+    if ARCHIVO_ENLACE.search(t):
         return True
     if not COMODIN.search(t):
         return False
@@ -93,7 +105,7 @@ def es_ruta_de_enlace(t):
             continue
         if k < 2 and "enlace" not in t:
             continue  # un «.*» suelto es demasiado general para negarlo
-        if all(fnmatch.fnmatchcase(m, p) for m, p in zip(cola_m, cola_t)):
+        if all(m is None or fnmatch.fnmatchcase(m, p) for m, p in zip(cola_m, cola_t)):
             return True
     return False
 
@@ -124,27 +136,94 @@ def comandos(c):
         todos.append(actual)
     return todos
 
-def contiene_clientes(ruta):
-    p = os.path.abspath(os.path.join(CWD, os.path.expanduser(ruta)))
-    return "/CLIENTES" in p + "/" or os.path.isdir(os.path.join(p, "CLIENTES"))
+_clientes = []
+def clientes_real():
+    """CLIENTES/ de la copia principal (la del .git común), o vacío."""
+    if not _clientes:
+        r = ""
+        try:
+            base = os.environ.get("CLAUDE_PROJECT_DIR") or CWD
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            comun = subprocess.run(["git", "-C", base, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                                   capture_output=True, text=True, timeout=5, env=env).stdout.strip()
+            if comun:
+                r = os.path.realpath(os.path.join(os.path.dirname(comun), "CLIENTES"))
+        except Exception:
+            pass
+        _clientes.append(r)
+    return _clientes[0]
 
-def busqueda_recursiva(cabeza, args):
-    if any(EXCLUYE.search(a) and ".enlaces" in a for a in args):
+def alcanza_clientes(ruta, cwd):
+    p = os.path.realpath(os.path.join(cwd, os.path.expanduser(ruta)))
+    if "/CLIENTES/" in p + "/" or os.path.isdir(os.path.join(p, "CLIENTES")):
+        return True
+    c = clientes_real()
+    return bool(c) and os.path.commonpath([p, c]) in (p, c)
+
+def excluye_enlaces(args):
+    for i, a in enumerate(args):
+        valor = a.split("=", 1)[1] if "=" in a else (args[i + 1] if i + 1 < len(args) else "")
+        if re.match(r"^--exclude(-dir)?(=|$)", a) and ".enlaces" in valor:
+            return True
+        if re.match(r"^(-g|--i?glob)(=|$)", a) and valor.startswith("!") and ".enlaces" in valor:
+            return True
+        if a == "-path" and ".enlaces" in valor and "-prune" in args:
+            return True
+    return False
+
+def partir_busqueda(args):
+    """(patrones, rutas) de un grep, un rg o un git grep."""
+    patrones, rutas, con_e, i = [], [], False, 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-e", "--regexp", "-f", "--file"):
+            con_e = True
+            patrones += args[i + 1:i + 2]
+            i += 2
+        elif a.startswith("--regexp=") or a.startswith("--file="):
+            con_e = True
+            patrones.append(a.split("=", 1)[1])
+            i += 1
+        elif a in CON_VALOR:
+            i += 2
+        elif a.startswith("-"):
+            i += 1
+        else:
+            rutas.append(a)
+            i += 1
+    if not con_e and rutas:
+        patrones.append(rutas.pop(0))
+    return patrones, rutas
+
+def recorre_clientes(cabeza, args, cwd, hacia_xargs):
+    if excluye_enlaces(args):
         return False
     opciones = [a for a in args if a.startswith("-")]
-    rutas = [a for a in args if not a.startswith("-")]
     if cabeza in ("grep", "egrep", "fgrep"):
-        recursiva = any(re.match(r"^-[a-zA-Z]*[rR]", o) or o in ("--recursive", "--dereference-recursive") for o in opciones)
-        rutas = rutas[1:] or ["."]  # el primero es el patrón; sin rutas, busca en el directorio actual
+        if not any(re.match(r"^-[a-zA-Z]*[rR]", o) or o in ("--recursive", "--dereference-recursive") for o in opciones):
+            return False
+        rutas = partir_busqueda(args)[1] or ["."]
     elif cabeza == "rg":
-        recursiva = any(re.match(r"^-u+$|^-[a-zA-Z]*\.|^--hidden$|^--no-ignore", o) for o in opciones)
-        rutas = rutas[1:] or ["."]
+        if not any(re.match(r"^-u+$|^-[a-zA-Z]*\.|^--hidden$|^--no-ignore", o) for o in opciones):
+            return False
+        rutas = partir_busqueda(args)[1] or ["."]
     elif cabeza == "find":
-        recursiva = any(a in ("-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fls") for a in args)
-        rutas = [a for a in rutas if not a.startswith("{")] or ["."]
+        if not (hacia_xargs or any(a in ("-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fls") for a in args)):
+            return False
+        rutas = []
+        for a in args:
+            if a.startswith("-") or a in ("(", "!"):
+                break
+            rutas.append(a)
+        rutas = rutas or ["."]
+    elif cabeza in ("cp", "rsync", "tar", "zip", "scp"):
+        if cabeza in ("cp", "scp", "zip") and not any(
+                re.match(r"^-[a-zA-Z]*[rRa]", o) or o in ("--recursive", "--archive") for o in opciones):
+            return False
+        rutas = [a for a in args if not a.startswith("-")]
     else:
         return False
-    return recursiva and any(contiene_clientes(r) for r in rutas)
+    return any(alcanza_clientes(r, cwd) for r in rutas)
 
 def toca_enlace(c):
     try:
@@ -152,17 +231,34 @@ def toca_enlace(c):
     except ValueError:
         # Comillas sin cerrar: no se puede partir, se decide sobre el texto crudo.
         return bool(re.search(r"(^|[/\s\x27\"])\.enlaces([/\s\x27\"]|$)|enlace-(admin|oper)-[a-z0-9-]+\.txt", c))
+    hacia_xargs = bool(re.search(r"\|\s*(\S*/)?xargs\b", c))
+    cwd = CWD
     for palabras in lista:
         sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)] or [""]
         cabeza, args = os.path.basename(sin_entorno[0]), sin_entorno[1:]
-        for w in palabras:
-            if re.search(r"\s", w) and cabeza in ("git", "gh"):
+        if cabeza == "cd":
+            destino = args[0] if args else "~"
+            if destino != "-":
+                cwd = os.path.realpath(os.path.join(cwd, os.path.expanduser(destino)))
+            continue
+        if cabeza in ("echo", "printf") or (cabeza == "git" and args[:1] == ["check-ignore"]):
+            continue
+        texto = set()
+        if cabeza in ("grep", "egrep", "fgrep", "rg"):
+            texto = set(partir_busqueda(args)[0])
+        elif cabeza == "git" and args[:1] == ["grep"]:
+            texto = set(partir_busqueda(args[1:])[0])
+        for i, w in enumerate(sin_entorno):
+            if w in texto:
                 continue
-            if EXCLUYE.search(w):
+            if i > 0 and sin_entorno[i - 1] == "-path" and "-prune" in sin_entorno:
+                continue  # find … -path */.enlaces -prune: la está excluyendo
+            if cabeza in ("git", "gh") and re.search(r"\s", w) and (
+                    sin_entorno[i - 1] in TEXTO_DE_GIT or re.match(r"^--(message|title|body|notes)=", w)):
                 continue
-            if any(es_ruta_de_enlace(p) for p in [w] + PARTIR.split(w) if p):
+            if any(es_ruta_de_enlace(p, cwd) for p in [w] + PARTIR.split(w) if p):
                 return True
-        if busqueda_recursiva(cabeza, args):
+        if recorre_clientes(cabeza, args, cwd, hacia_xargs):
             return True
     return False
 

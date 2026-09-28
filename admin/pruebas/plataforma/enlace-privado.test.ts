@@ -280,6 +280,23 @@ describe('Las defensas para que un agente no lo abra', () => {
     'rg --hidden -n https CLIENTES/X',
     'rg -uu https CLIENTES',
     'find CLIENTES -name "*.txt" -exec cat {} +',
+    // Segunda revisión (N1): el nombre real del cliente con comodines.
+    'cat CLIENTES/BELLIDO/.*/*',
+    'cat CLIENTES/BELLIDO/.enl?ces/*',
+    'head CLIENTES/RUBEN_ROCA/.e*/*',
+    // N2: el recorrido desde la copia principal o desde una carpeta que la contiene.
+    // (La copia principal, no este worktree: CLIENTES/ vive allá.)
+    `cd ${raizDelProyecto()} && grep -rn TODO .`,
+    `cd ${join(raizDelProyecto(), 'admin')} && rg --hidden TODO ..`,
+    'rg --hidden oobCode ~',
+    'cd CLIENTES/BELLIDO && ls -la .enlaces',
+    // N3: recorrer sin -exec y sin nombrar la carpeta.
+    'find CLIENTES/BELLIDO -type f | xargs cat',
+    'find CLIENTES -type f -print0 | xargs -0 grep -h https',
+    'cp -r CLIENTES/BELLIDO /tmp/b',
+    'tar -cf - CLIENTES/BELLIDO',
+    // N5: una palabra con espacios de git solo se salta si es un mensaje.
+    'git diff --no-index /dev/null "$(echo CLIENTES/X/.enlaces/a.txt)"',
   ])('el gancho niega «%s»', (cmd) => {
     expect(gancho(cmd)).toBe('deny');
   });
@@ -302,6 +319,18 @@ describe('Las defensas para que un agente no lo abra', () => {
     'git diff -- .gitignore | tail -5',
     'gh pr create --body "$(cat docs/x.md)"',
     'GH_CONFIG_DIR=/x gh pr edit 1 --body "el enlace va a CLIENTES/<CLIENTE>/.enlaces/"',
+    // Segunda revisión (N4): buscar o nombrar el texto no es abrir la carpeta.
+    "grep -rn '.enlaces' docs",
+    "rg -n '.enlaces/' docs .claude",
+    'git grep -n .enlaces',
+    'git log --oneline --grep=.enlaces',
+    'echo "La carpeta .enlaces/ es privada"',
+    'git check-ignore -v CLIENTES/X/.enlaces/a.txt',
+    // Y recorrer CLIENTES excluyéndola, o recorrer otra carpeta, pasa.
+    'grep -rn --exclude-dir .enlaces https CLIENTES/BELLIDO',
+    "find CLIENTES -path '*/.enlaces' -prune -o -type f -print | xargs grep -l https",
+    'grep -rn TODO admin/',
+    'cp -r admin/scripts /tmp/x',
   ])('el gancho deja pasar «%s»', (cmd) => {
     expect(gancho(cmd)).toBe('nada');
   });
