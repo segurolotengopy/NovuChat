@@ -8,53 +8,56 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-09-26, noche (H1b cerrado: F1b en `main`;
-Bellido y Platinum en prueba; staging en verde de punta a punta por CI). Lo
-anterior, en `bitacora/2026-09.md`.
+**Última actualización:** 2026-09-28, noche. F2 avanzó de T4 a FL2: las
+tandas, los dos cortes y los flujos, todo fusionado. `main` está en `6d6d808`,
+en verde en CI y en staging. Lo anterior está en `bitacora/2026-09.md`.
 
 ## En producción
 
-- **Consola y Functions:** `v0.10.0` (26/09, `4f7e091`). En `main` y **sin
-  desplegar**: la regla de planes (el comercio renueva, no cambia plan ni
-  modalidad; el pago no cambia la modalidad), el pago en revisión en Negocios,
-  F1b (conversaciones, precio, periodo y bolsa de prueba por contrato), la
-  instancia mínima por parámetro, `registro.ts` y el caché de la consola
-  (#227). Entran con la **etiqueta de F2**, que aterriza primero en staging.
-- **Flujos de n8n:** los 8 al día (`e02a756`); nada publicado hoy.
-- **Cuentas:** **Bellido** en prueba (septiembre, bolsa 20). **Platinum** en
-  prueba (septiembre, bolsa 100) con contrato: 4 cambios y USD 120 al mes. Los
-  demos y captación, en demostración. Nadie en producción; corte en
-  observación.
+- **Consola y Functions:** `v0.10.0` (26/09, `4f7e091`), 204 commits detrás
+  de `main`. En `main` y **sin desplegar**: todo F1b, la regla de planes, el
+  pago en revisión, y lo que F2 lleva movido hasta hoy (solo rutas, sin
+  lógica). Todo eso entra con la **etiqueta de F2**, que aterriza primero en
+  staging.
+- **Flujos de n8n:** los 8 están al día con `main`. La cartera publicó el
+  Demo B y la captación con los medios (#256) y la foto sin QR (#261). FL1 y
+  FL2 no cambian ningún JSON: son 8 de 8 idénticos byte a byte.
+- **Cuentas:** Bellido está en prueba (bolsa 20) y Platinum también (bolsa
+  100, contrato de 4 cambios). Los demos y la captación están en
+  demostración. Nadie está en producción.
 
 ## Staging
 
-`novuchatstaging`, en verde desde el 26/09 (el run de la fusión del #227): 55 Functions,
-47 invocables como en producción, CPU fraccionaria e instancia mínima 0 (cuota
-de 20 vCPU; aumento rechazado por falta de historial), humo 26/26 y ZAP. Cada
-push a `main` que toque `admin/` despliega ahí.
+`novuchatstaging` está en verde con el run de `6d6d808`: construir,
+desplegar, humo y ZAP. Cada push a `main` que toca `admin/` despliega ahí,
+así que cada tanda de F2 ya aterrizó en staging.
 
-## En obra: la rearquitectura por capas (`Analisis/41`, reorientado el 26/09)
+## En obra: F2 de la rearquitectura (`Analisis/41`)
 
-- Hechos: F-1, E, F1, F6, S, **F1b (H1b, informe en el tablero)**.
-- **F2 en obra:** están hechos `registro.ts`, `fronteras.test.ts`, la tanda
-  cero y las tandas T1 a T4. Esas tandas llevaron a `core/` conteo, turno,
-  seguridad y prompt, y a `central/` servicios, asistente, negocio y reclamos.
-  Todas están en verde en staging. La deuda de la frontera bajó de 19 a 16
-  cruces.
-- **Siguiente:** F2 (mover sin lógica, `fronteras.test.ts`, `tenants.modulos`
-  con migración en ventana, etiqueta con staging primero) → F3a (esqueleto de
-  venta; habilita a Rubén Roca) → F3b (core de reservas).
-- Tablero, informes y coordinación con la sesión de cartera:
+- **Hecho**: T0 a T5, C1 y C2 (Functions), y FL1 y FL2 (flujos: `comun/` y
+  `reservas/` pasaron a `core/` y `modulos/`, y se extrajeron los 35 Code del
+  Demo B y de la captación). Son 7 cruces (eran 19) y 47 archivos sin zona.
+  El segundo seco de `migrar-ejes` da 0 en los seis tenants.
+- **Ahora**: la tanda de **módulos** (productos, cobros, agenda, inventario y
+  pedidos, catálogo web, campañas, captación). Después vienen W1, W2, S1, S2,
+  Pz, P1, Z y el cierre. El orden está en
+  `docs/arquitectura/f2-orden-de-movimiento.md`.
+- **B8** (receptor de clientes de AAB1): el bloque 0 está hecho, con las
+  prohibiciones 5 y 7 (#260) y su gancho (#264). Los bloques A a C van
+  después de H3a, coordinados con WhatsApp-Modular.
+- El tablero y la coordinación con la cartera están en
   **`Prompts/COORDINACION.md`**.
 
 ## Lo próximo, en orden
 
 1. **01/10:** extender a octubre las pruebas de Bellido y Platinum
-   (`asignar-plan.mjs --periodo-prueba 2026-10 --bolsa-prueba 20|100`, seco
-   antes; confirmar que no tengan `periodoPagado`).
-2. Andres pega el informe **H1b** en la sesión revisora.
-3. F2: siguen C1 (lo decide la revisora), C2 y T5. FL1 espera el #244 de
-   la cartera (reservas).
+   (`asignar-plan.mjs --periodo-prueba 2026-10 --bolsa-prueba 20|100`, primero
+   en seco, confirmando que no tengan `periodoPagado`). **Ese día no se
+   fusiona entre las 08:00 y las 12:00 ninguna tanda que cambie rutas de
+   scripts.**
+2. F2: la tanda de módulos, fusionando de a uno y regenerando.
+3. Barrera de app ajena en `webhook-meta.sh` (hallazgo MEDIUM de la revisión
+   del #264), en su propia sesión.
 4. Plantillas `prueba_termina` y `conversaciones_agotadas` con texto nuevo
    (Meta), antes del primer pase real.
 

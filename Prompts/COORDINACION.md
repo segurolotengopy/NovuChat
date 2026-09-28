@@ -31,7 +31,7 @@ hito de abajo son lo que Andres le pega a la revisora.
 | **F6** Método | `docs/arquitectura/`, bitácora por mes, estado generado, `CLAUDE.md` con invariantes, gancho por carpeta, agentes por zona, `analista-de-solicitudes`, `CICLO-DE-VIDA.md` | **fusionada el 26/09**: #200, #201, #202, #204, #206 y #208 | H6 |
 | **S** Staging | Proyecto de staging, `desplegar-staging` y `dast-y-humo` en verde | **cerrada el 26/09**: primer `desplegar-staging` + `humo-staging` (26/26) + ZAP en verde por CI (el run de la fusión del #227). Cuota de 20 vCPU con CPU fraccionaria (#219); invocadores (#226); defectos del job corregidos (#213, #222, #224, #227) | H2 |
 | **F1b** Copia de límites y precio por contrato | `--conversaciones`, `--cambios`, `--precio`, `--periodo-prueba`, `--bolsa-prueba` con `--operador` y auditoría; lo mismo desde Negocios; pago manual al precio del contrato | **cerrada el 26/09**: #212, #217, #221, #223. Informe H1b abajo | H1b |
-| **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas. Sin cambios de alcance | **En obra.** Hechos: `registro.ts` (#214), `fronteras.test.ts` (#231), CI de `Flujos/` (#232) y base de push y deuda que no crece (#236). Orden de movimiento en `docs/arquitectura/f2-orden-de-movimiento.md` (27/09): mueve la coordinadora con un script. Fusionados el 27 y 28/09: tanda cero (#239), herramientas (#241 y #248), T1 (#242), T2 (#243), T3 (#246), T4 (#247), C2 (#249), el #250 (prepara T5) y T5 (#251). C1, en su PR. Todas llegaron en verde a `main` y a staging; la tanda cero llegó con la corrida del #241, porque la suya cayó por la prueba de fecha fija que corrigió el #240. También el #245 (`asignar-rol.test.ts` usa el emulador y nunca las ADC; hallazgo de la revisión de T1): de ahí sale la regla «el hijo de una suite hereda el emulador, nunca las ADC», escrita en el plano y a llevar al informe de H2. FL1 espera el #244 de la cartera (reservas). FL2 parte de `dd13823`. Medición, con C1: 7 cruces y 47 sin zona. La revisora decidió C1 (corte en F2) y Z (por regla) el 28/09: las dos decisiones están en el plano. Condición de la etiqueta abajo (Reglas para F2) | H2 |
+| **F2** Carpetas, registro y frontera | Diseño del registro primero; mover sin lógica; `fronteras` y `registro` en CI; `tenants.modulos`; límite de agendas. Sin cambios de alcance | **En obra.** Hechos: `registro.ts` (#214), `fronteras.test.ts` (#231), CI de `Flujos/` (#232) y base de push y deuda que no crece (#236). Orden de movimiento en `docs/arquitectura/f2-orden-de-movimiento.md` (27/09): mueve la coordinadora con un script. **Fusionados el 27 y 28/09:** tanda cero (#239), herramientas (#241 y #248), T1 (#242), T2 (#243), T3 (#246), T4 (#247), C2 (#249), #250 (prepara T5), T5 (#251), C1 (#252), limpieza (#253), preparación de FL1 (#255), FL1 (#258) y FL2 (#263). Todos llegaron en verde a `main` y a staging. También se fusionaron el #245 y el #259 (el hijo de una suite hereda el emulador, nunca las ADC; lo hace cumplir `hijos-hermeticos.test.ts`) y el #262 (arregla `main` en rojo por #254 + #259). **Medición al 28/09, después de FL2:** 7 cruces (eran 19) y 47 sin zona, de 336 archivos. El segundo seco de `migrar-ejes` da 0. La revisora decidió C1, Z y las zonas de FL2 el 28/09, y las decisiones están en el plano. **Sigue la tanda de módulos**, y después W1, W2, S1, S2, Pz, P1, Z y el cierre. Condición de la etiqueta abajo (Reglas para F2) | H2 |
 | **F3a** Esqueleto de venta | Medios entrantes en el core para los tres esqueletos; transferencia con aviso y botón; fallo del modelo con botón; `NIEGA_IA` en la variante común; campaña por texto; embudo único; brechas 8 y 9 del anexo A. Agentes `core-flujos` y `modulo` | espera H2 | H3a |
 | **F3b** Core unificado de reservas | Una variante de los cinco nodos comunes; prompt por capas; suites sin `new Function`; corpus de captación fuera del nodo; los 8 publicados desde `main`, Bellido y Platinum en ventana con ensayo previo | espera H3a; Platinum además espera su PR de datos | H3b |
 | **H4-Bellido** Pase de Bellido | Lo cierra la sesión de cartera, sobre la versión publicada | **ahora** (ver «Coordinación con la sesión de cartera») | H4-Bellido |
@@ -522,3 +522,20 @@ H1b para la revisora.
   (arriba): staging primero, `tenants.modulos` en ventana con respaldo, `ruta`
   con el movimiento de `functions/src`, suites puras de F1b, y `medir-zonas.mjs`
   antes y después de cada tanda.
+- **28/09/2026 (noche)** — Cierre de la jornada de la operadora. F2 fue de
+  T4 a FL2 en dos días: 14 PR de la tanda, con 0 mensajes por conversación y
+  0 escrituras en la nube. `main` está en `6d6d808`, en verde en CI y en
+  staging.
+  - **Lección de fusión:** #254 y #259, cada uno en verde, dejaron `main` en
+    rojo, porque cada PR pasó su CI contra un `main` que no tenía al otro.
+    Desde el #262, dos PR que se fusionan seguidos se prueban juntos antes.
+  - **Coordinación con la cartera:** avisó que FL2 partía de antes del #261;
+    se fusionó `main` y se volvió a extraer el módulo antes de fusionar.
+    También avisó de su rama `cartera/hora-ocupada-por-su-cita`, que toca
+    `Flujos/src/core/procesar-respuesta.js` y
+    `modulos/agenda/comprobar-reserva.js`: la tanda de módulos no toca
+    `Flujos/src`.
+  - **B8, bloque 0:** hecho con WhatsApp-Modular (su #119 y nuestro #260),
+    más el gancho (#264). La barrera en `webhook-meta.sh` quedó en su propia
+    sesión.
+  - Detalle en `bitacora/2026-09.md`, 28/09 (noche).
