@@ -4,7 +4,7 @@
  * `configuracionFlujo` entrega `datosDelNegocio.instruccionesExtra` —la clave
  * que los flujos ya leen— con el texto de `config/negocio.instruccionesVigentes`,
  * que solo escribe el SDK Admin después de verificarlo
- * (`functions/src/comportamiento.ts`). Lo que el comercio acaba de escribir en
+ * (`functions/src/central/asistente/comportamiento.ts`). Lo que el comercio acaba de escribir en
  * `instruccionesExtra` no llega al asistente hasta que se apruebe.
  *
  * Es la función real contra el emulador, autenticada por número como n8n.

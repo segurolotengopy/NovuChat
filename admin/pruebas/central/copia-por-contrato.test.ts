@@ -23,8 +23,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CATALOGO_PLANES, MAXIMO_CAMBIOS_INCLUIDOS, copiaDeLimites, limitesDe, limitesDeCuenta, mismoMarcador, porContratoDe,
-} from '../../functions/src/planes.ts';
-import { mesBolivia } from '../../functions/src/prepago.ts';
+} from '../../functions/src/central/cuenta/planes.ts';
+import { mesBolivia } from '../../functions/src/central/cuenta/prepago.ts';
 import { cambiosDelMes } from '../../functions/src/central/ejes.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
@@ -37,7 +37,7 @@ process.env['COBRADOR_TOKEN'] ??= 'token-de-prueba-de-novuchat-sin-valor-real';
 process.env['COBRADOR_AVISO_SECRETO'] ??= 'secreto-de-prueba-del-aviso-de-confirmacion';
 
 const indice = await import('../../functions/src/index.ts');
-const pagos = await import('../../functions/src/pagos.ts');
+const pagos = await import('../../functions/src/central/pagar/pagos.ts');
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 

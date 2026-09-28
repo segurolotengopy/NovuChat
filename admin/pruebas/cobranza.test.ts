@@ -1,5 +1,5 @@
 /**
- * LA COBRANZA DEL PREPAGO (`functions/src/cobranza.ts`), contra el emulador.
+ * LA COBRANZA DEL PREPAGO (`functions/src/central/pagar/cobranza.ts`), contra el emulador.
  *
  *  - Solo el número de NovuChat (ruta `onboarding`) puede preguntar y marcar:
  *    el número de un comercio recibe 403.
@@ -26,8 +26,8 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { recordatoriosPrepago, recordatorioPrepagoEnviado, telefonosPagoDe, enHorarioDeEnvio, claveValida } =
-  await import('../functions/src/cobranza.ts');
-const { limitesDe } = await import('../functions/src/planes.ts');
+  await import('../functions/src/central/pagar/cobranza.ts');
+const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 
 const NOVUCHAT = 'novuchat-cobranza';
 const NUMERO_NOVUCHAT = '1000000096';

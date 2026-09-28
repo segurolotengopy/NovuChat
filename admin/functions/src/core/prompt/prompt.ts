@@ -30,7 +30,7 @@
  *    marcada como DATO. Nunca concatenada por delante de las reglas de
  *    comportamiento del agente.
  */
-import { textoPlano, sinMarcas } from './saneo.js';
+import { textoPlano, sinMarcas } from './texto.js';
 
 /**
  * Campos de texto libre del comercio que llegan al prompt. La lista es cerrada.

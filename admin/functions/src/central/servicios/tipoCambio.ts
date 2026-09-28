@@ -27,9 +27,9 @@
  * la cobranza: un solo criterio de «este TCO sirve hoy».
  */
 import { getFirestore } from 'firebase-admin/firestore';
-import { TCO_DIAS_VIGENCIA, TCO_MAXIMO, TCO_MINIMO, esFecha, esTipoCambio, tipoCambioVigente, type TipoCambio } from './prepago.js';
+import { TCO_DIAS_VIGENCIA, TCO_MAXIMO, TCO_MINIMO, esFecha, esTipoCambio, tipoCambioVigente, type TipoCambio } from '../cuenta/prepago.js';
 
-export type { TipoCambio } from './prepago.js';
+export type { TipoCambio } from '../cuenta/prepago.js';
 
 export class SinTipoDeCambio extends Error {
   constructor(readonly motivo: string) {

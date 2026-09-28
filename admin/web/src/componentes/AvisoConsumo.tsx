@@ -9,7 +9,7 @@ import { BOLSA, type AvisoConsumoVista } from '../lib/planes';
  * bolsa es algo que el comercio elige comprar y que no vence.
  *
  * Los números del aviso son los que escribió el servidor al marcarlo, no una
- * cuenta hecha acá; los de la bolsa salen de `BOLSA` (`functions/src/planes.ts`).
+ * cuenta hecha acá; los de la bolsa salen de `BOLSA` (`functions/src/central/cuenta/planes.ts`).
  */
 export function AvisoConsumo({ aviso }: { aviso: AvisoConsumoVista }) {
   return (

@@ -2,7 +2,7 @@
  * MIGRAR EL COMPORTAMIENTO GENERAL AL CONTRATO DEL 17/09/2026.
  *
  * POR QUÉ EXISTE. Desde el 17/09 el flujo lee `config/negocio.instruccionesVigentes`
- * y no `instruccionesExtra` (`functions/src/comportamiento.ts`). Los comercios
+ * y no `instruccionesExtra` (`functions/src/central/asistente/comportamiento.ts`). Los comercios
  * dados de alta antes tienen texto en `instruccionesExtra` —cargado por
  * NovuChat con `cargar-negocio.mjs` o escrito en la consola— y NADA en
  * `instruccionesVigentes`. Sin esta migración, al desplegar `configuracionFlujo`
@@ -47,7 +47,7 @@ if (!PROYECTO) {
   process.exit(2);
 }
 
-const { hashCorto, verificarPatrones } = await import('../functions/src/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });

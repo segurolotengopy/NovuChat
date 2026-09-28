@@ -29,7 +29,7 @@
  * en el entorno escribe en el emulador (así lo prueba
  * `pruebas/limite-catalogo.test.ts`).
  *
- * EL LÍMITE SE LEE DE `functions/src/planes.ts`, no de una copia: es
+ * EL LÍMITE SE LEE DE `functions/src/central/cuenta/planes.ts`, no de una copia: es
  * `limitesDeCuenta`, la misma función que usa `importarCatalogo`. Node 22.18+
  * carga TypeScript sin compilar (igual que `asignar-plan.mjs`), y `planes.ts`
  * es puro a propósito. El acceso va por `lib/contador-catalogo.mjs`, que es

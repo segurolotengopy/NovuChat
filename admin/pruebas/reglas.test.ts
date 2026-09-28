@@ -717,7 +717,7 @@ describe('Validación de la configuración del negocio', () => {
 // 5bis. HORARIO DE ATENCIÓN
 //
 // `horarios` entra tal cual en la frase que el asistente le lee al cliente
-// (`horarioAtencion()` en functions/src/prompt.ts) y en el Tablero. Hasta el
+// (`horarioAtencion()` en functions/src/core/prompt/prompt.ts) y en el Tablero. Hasta el
 // 15/09 la regla solo exigía `is map`: cualquier contenido pasaba. Ahora la
 // consola lo edita, y el formato lo fija la regla, no la pantalla.
 // ===========================================================================
@@ -1468,7 +1468,7 @@ describe('Reclamos', () => {
     //
     // Hay DOS defensas y ésta prueba la primera: la lista blanca de claves de la
     // regla no los deja ni entrar a Firestore. La segunda está en
-    // `functions/src/reclamos.ts`, que arma el cuerpo campo por campo y no hace
+    // `functions/src/central/reclamos/reclamos.ts`, que arma el cuerpo campo por campo y no hace
     // ningún spread de los datos del documento.
     for (const especial of ['_cc', '_replyto', '_next', '_subject', '_template', '_captcha']) {
       await assertFails(setDoc(doc(adminA(), `tenants/${A}/reclamos/r_fs`),

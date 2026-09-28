@@ -55,7 +55,7 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | T3 | `F/prompt.ts → F/core/prompt/`, entero | 16 |
 | T4 | `saneo`, `tipoCambio`, `tipoCambioBcb → F/central/servicios/`; `comportamiento`, `verificarComportamiento → F/central/asistente/`; `mapa → F/central/negocio/`; `reclamos → F/central/reclamos/` | 16 |
 | C1 | El registro de eventos (`registrar`, `Evento`, `TipoEvento`, `enmascarar`) de `ingesta.ts` a `F/core/turno/bitacora.ts`, sin tocar una línea. **Decide la revisora** | 11 |
-| C2 | `textoPlano`, `sinMarcas → F/core/prompt/texto.ts`; la llamada a Gemini → `F/central/servicios/gemini.ts` | 7 |
+| C2 | `textoPlano`, `sinMarcas → F/core/prompt/texto.ts`; la clave de Gemini → `F/central/servicios/gemini.ts`; el pedido contra SSRF (`pedirConFrenos` y su filtro de destinos, que usa Captación) → `F/central/servicios/pedidoSeguro.ts`. Bloques cortados sin cambiar una línea; `saneo` reexporta lo suyo e `imagenCatalogo` reexporta el pedido contra SSRF, pero no la clave de Gemini (nadie la importa de ahí). Hecho el 27/09 antes que C1: 16 → 12 | 7 |
 | T5 | `planes`, `prepago → F/central/cuenta/`; `pagos`, `pagosConCobrador`, `cobroPrepago`, `cobrador`, `cobranza → F/central/pagar/` (54 consumidores). Segundo seco de `migrar-ejes.mjs` en 0 | 7 |
 | Módulos | productos (`lib/csv.ts` pasa a `W/central/lib/`), cobros (+C3: el tipo `ResultadoCotejo` sube a Cobros), agenda, inventario y pedidos, catálogo web, campañas, captación (`lib/archivoPlanes.ts` pasa a `W/central/lib/`). Se preparan en paralelo y se fusionan de a uno, regenerando | 4 |
 | W1 | `W/lib/{planes,prepago,pagar,cuenta,bitacora}.ts → W/central/lib/`; `sesion`, `contexto → W/core/lib/` | 4 |
@@ -160,15 +160,52 @@ tanda que lo necesita:
   `_load`, `new Function` y `eval`, y la exportación de un alias de
   `createRequire` (evasiones deliberadas; `o.require` hoy da un falso
   positivo sin casos).
-- **Citas de ruta que la tanda 2 dejó sin corregir** (la compuerta no las
-  acepta todavía): el comentario de `admin/vitest.config.ts` que cita
-  `functions/src/opcionesGlobales.ts` (la regla de ese archivo exige los
-  comentarios idénticos; que acepte `reemplazarRutas`) y
-  `sembrar-demos.mjs:437` y `superadmin.mjs:85`, donde la ruta cierra una
-  oración con punto (que el límite de `reemplazarRutas` acepte `.` seguido de
-  espacio o fin de línea). El control de restos de `mudanza.mjs` no debería
-  listar `docs/arquitectura/tandas/`, y debería mirar también `.github/*.md`
-  (la tanda 2 corrigió a mano `DESPLIEGUE-FIREBASE.md`, que no revisaba).
+- **Las citas que dejaron las tandas 2 y 3 quedaron corregidas** en el PR de
+  herramientas que siguió a la tanda 4. La compuerta ahora acepta el punto que
+  cierra una oración después de la ruta y la cita en un comentario de
+  `vitest.config.ts`. El control de restos mira `.github/*.md` y no lista
+  `docs/arquitectura/tandas/`. Dos casos siguen sin entrar en un PR de tanda, a
+  propósito, y se corrigen en el PR siguiente:
+  - **los comentarios de `firestore.rules`**: reconocerlos exige un lector de
+    reglas, y un error ahí dejaría pasar un cambio de permisos como si fuera
+    un comentario;
+  - **un texto dentro de un JSON de datos**, que es un valor y no un
+    comentario.
+
+  La tanda 5 deja pendientes, para el PR siguiente, dos comentarios de
+  `firestore.rules` (531 y 1155, que citan `planes.ts`) y las tres citas de
+  `pagos.ts` de `pruebas/negocios-consola.test.ts`. Una de estas tres está en
+  el nombre de una prueba, y la compuerta exige cambiarlas todas o ninguna. El
+  literal `'admin/functions/src/planes.ts'` de `ci-calidad-filtro.test.ts` es
+  un ejemplo de ruta que el filtro debe reconocer, no una cita, y no cambia.
+  La prueba de `fronteras.test.ts` que armaba la ruta de `prepago.ts` con una
+  plantilla se reescribió antes (#250): la fuente se deriva del especificador.
+- **`functions:build` borra `lib/` y `tsconfig.tsbuildinfo` antes de `tsc -b`**
+  (revisión de seguridad de la tanda 4). `tsc -b` no borra los compilados de
+  fuentes que ya no existen, y un despliegue manual los subía. El CI no se
+  veía afectado, porque compila desde un checkout limpio.
+- **El hijo de una suite hereda el emulador, nunca las ADC.** Lo mostró la
+  revisión de la tanda 1 y lo corrigió el #245 en `asignar-rol.test.ts`.
+  - **La regla:** toda suite que lance un script con `spawnSync` le pasa en su
+    `env` `FIRESTORE_EMULATOR_HOST`, `FIREBASE_AUTH_EMULATOR_HOST` hacia un
+    puerto muerto, `GOOGLE_APPLICATION_CREDENTIALS` hacia una ruta inexistente
+    y `METADATA_SERVER_DETECTION=none`. Lo hace aunque `pruebas/correr.sh` ya
+    exporte el emulador, porque la suite también se corre sin él.
+  - **Hoy solo la cumple `asignar-rol.test.ts`.** Otras doce suites fijan solo
+    `FIRESTORE_EMULATOR_HOST`: `asignar-numero`, `asignar-plan`,
+    `cargar-captacion`, `cargar-fotos-catalogo`, `cargar-negocio`,
+    `central/migrar-ejes`, `datos-demo-venta`, `ensayo`, `fijar-umbrales`,
+    `limite-catalogo`, `migrar-instrucciones` y `pase-a-produccion`. Hoy no hay
+    exposición demostrable: sus scripts no usan Auth ni Storage, y con el host
+    explícito firebase-admin no usa las ADC para Firestore (revisión de
+    seguridad del #248). Se completan en un PR propio, **antes de Pz**, y no
+    sirven de modelo para una suite nueva.
+  - **Qué exige a las tandas:** una tanda que mueva suites (Pz) conserva ese
+    `env` y la última línea de `correr.sh`.
+  - **Cómo se comprueba:** con `pnpm pruebas:reglas` dentro de `unshare -rn`,
+    sin red y con un puerto propio.
+  - **Pendiente:** `pruebas/correr-storage.sh` exporta solo el puerto. Hoy no
+    es un riesgo, porque ninguna suite de Storage lanza scripts.
 - **La separación seña/prepago es solo directa:** existe el camino
   `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
   `ingesta` en F3b.

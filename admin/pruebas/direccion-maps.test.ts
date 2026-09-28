@@ -15,7 +15,7 @@
  * Son funciones puras: se prueban sin emulador, como `planes.test.ts`.
  */
 import { describe, expect, it } from 'vitest';
-import { ENLACE_DE_MAPA, enlaceDeMapaValido, ubicacionDe } from '../functions/src/prompt.ts';
+import { ENLACE_DE_MAPA, enlaceDeMapaValido, ubicacionDe } from '../functions/src/core/prompt/prompt.ts';
 
 describe('enlaceDeMapaValido: solo https:// de un dominio de mapas de Google', () => {
   it.each([

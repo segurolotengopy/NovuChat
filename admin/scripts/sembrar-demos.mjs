@@ -323,7 +323,7 @@ registerHooks({
     }
   },
 });
-const { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe } = await import('../functions/src/planes.ts');
+const { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 const { MODELO_POR_DEFECTO, TITULARIDAD_POR_DEFECTO } = await import('../functions/src/central/ejes.ts');
 const PLAN_DEMOS = (opcion('plan-demos') ?? 'impulso').trim();
 if (!esIdPlan(PLAN_DEMOS)) {
@@ -411,7 +411,7 @@ for (const c of COMERCIOS) {
   }
 
   // El plan de los demos, CON su copia de límites y la versión del catálogo
-  // (`functions/src/planes.ts`): quien hace cumplir un límite lee la copia.
+  // (`functions/src/central/cuenta/planes.ts`): quien hace cumplir un límite lee la copia.
   // `set` con `merge` reemplaza `limites` entero, como `asignar-plan.mjs`.
   // La MODALIDAD es lo que dice que es un demo: sin cargo, nunca se corta.
   await db.doc(`tenants/${c.id}/cuenta/estado`).set({
@@ -434,7 +434,7 @@ for (const c of COMERCIOS) {
     // Apodo del secreto HMAC de ESTE número. El nombre del secreto tiene que
     // ser fijo en el código (`defineSecret`), y el identificador del número no
     // puede escribirse en un repositorio público: el alias resuelve las dos
-    // cosas sin perder el secreto por número. Ver functions/src/firma.ts.
+    // cosas sin perder el secreto por número. Ver functions/src/core/seguridad/firma.ts.
     aliasSecreto: c.alias,
     wabaId: c.wabaId ?? '',
     estado: 'activo',

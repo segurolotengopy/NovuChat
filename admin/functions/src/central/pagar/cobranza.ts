@@ -1,13 +1,13 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
-import { REGION } from './core/region.js';
-import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
-import { registrar } from './ingesta.js';
-import { periodoDe } from './planes.js';
+import { REGION } from '../../core/region.js';
+import { SECRETOS_POR_ALIAS, rutaAutenticada } from '../../core/seguridad/firma.js';
+import { registrar } from '../../ingesta.js';
+import { periodoDe } from '../cuenta/planes.js';
 import {
   PLANTILLAS, consumidasDe, estadoDeServicio, horaBolivia, mesBolivia, modalidadDe, periodoSiguiente,
   recordatoriosDebidos, tipoCambioVigente, type CuentaCruda, type Recordatorio,
-} from './prepago.js';
+} from '../cuenta/prepago.js';
 
 /**
  * =============================================================================

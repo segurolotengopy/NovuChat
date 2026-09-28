@@ -93,7 +93,7 @@ acotar cada capacidad hasta que la combinación deje de ser explotable:
   contrato. Eso no lo cubre la Regla de Dos y está tratado aparte, en T-22.
 
 Está desarrollado en la amenaza T-20 y en la cabecera de
-`functions/src/reclamos.ts`.
+`functions/src/central/reclamos/reclamos.ts`.
 
 ### A.1.3 El CI procesa pull requests de un repositorio público
 
@@ -1182,7 +1182,7 @@ depende de que ningún saneo esté completo.
 El texto libre que sí queda —`direccion`, `politicaCancelacion`,
 `instruccionesExtra`, los `mensaje*`— viaja topeado y en una sección delimitada
 rotulada como DATO DEL NEGOCIO, nunca por delante de las reglas de comportamiento
-del agente. La lista completa está en `functions/src/prompt.ts`,
+del agente. La lista completa está en `functions/src/core/prompt/prompt.ts`,
 `CAMPOS_LIBRES_AL_PROMPT`, y es cerrada a propósito: agregar un campo al prompt
 obliga a tocar esa constante.
 

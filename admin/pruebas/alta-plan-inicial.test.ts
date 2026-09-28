@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CATALOGO_PLANES, PLANES, PLAN_POR_DEFECTO, cuentaInicial, esIdPlan, limitesDeCuenta,
-} from '../functions/src/planes.ts';
+} from '../functions/src/central/cuenta/planes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 /**

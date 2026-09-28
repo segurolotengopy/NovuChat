@@ -8,7 +8,7 @@ import { REGION } from './core/region.js';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { asignarRol } from './core/seguridad/claims.js';
 import { claimsDe as claims, exigirAdminDe, exigirPropietario, exigirSesionReciente } from './core/seguridad/autorizacion.js';
-import { derivadosGobernados } from './pagos.js';
+import { derivadosGobernados } from './central/pagar/pagos.js';
 
 initializeApp();
 
@@ -25,7 +25,7 @@ export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
 export { cotejarComprobante, senaVencida } from './sena.js';
 // Las coordenadas del pin salen del enlace de Maps que pega el comercio: nadie
 // carga latitud y longitud a mano (19/09/2026).
-export { ubicacionDeEnlace } from './mapa.js';
+export { ubicacionDeEnlace } from './central/negocio/mapa.js';
 // Recordatorio de solicitud pendiente (bloque 4, `Analisis/31` §4): el
 // barrido de la hora pregunta a quién le toca y marca ANTES de enviar.
 export { seguimientosPendientes, seguimientoEnviado } from './seguimientos.js';
@@ -44,7 +44,7 @@ import {
   RANGO_POR_CONTRATO, copiaDeLimites,
   cuentaInicial, esPlanVendible, mismoMarcador, periodoDe, porContratoDe, precioMensualDe, precioPorContratoDe,
   precioPorContratoValido, valorPorContratoValido, type ClavePorContrato, type IdPlanVendible,
-} from './planes.js';
+} from './central/cuenta/planes.js';
 // LOS TRES EJES DE LA CUENTA (F1, `Analisis/41` §4). El alta escribe el modelo
 // por defecto y `asignarNumero` la titularidad del número; cambiarlos después
 // es `asignarEjes`, y contar los cambios operados es `registrarCambioOperado`,
@@ -60,20 +60,20 @@ import {
   BOLSA_PRUEBA_MAXIMA, MODALIDADES, PruebaInvalida, bolsaPruebaValida, camposDerivados, consumidasDe, esModalidad,
   esPeriodo, estadoDeServicio, montoFueraDeContrato, pruebaActual, pruebaNueva,
   type CuentaCruda, type PedidoDePrueba, type PruebaNueva,
-} from './prepago.js';
+} from './central/cuenta/prepago.js';
 // COBRANZA DEL PREPAGO: el barrido de la hora del número de NovuChat pregunta a
 // qué comercios les toca un recordatorio y marca ANTES de enviar (molde de
 // `seguimientos.ts`). El porqué en `cobranza.ts`.
-export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './cobranza.js';
+export { recordatoriosPrepago, recordatorioPrepagoEnviado } from './central/pagar/cobranza.js';
 // PAGOS DEL PREPAGO (bloque A-1, `DISENO.md` §4undecies.1): la carga manual del
 // propietario con evidencia y auditoría, la anulación del pendiente, la
 // consulta al abrir la pantalla y los teléfonos que pueden pagar. Lo que suma
 // meses vive en `pagos.ts` y es una sola puerta; el porqué está ahí.
 // Pagos del prepago (A-1) con el cobrador (A-2) enchufado: ver pagosConCobrador.ts.
-export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './pagosConCobrador.js';
-export { fijarTelefonosPago } from './pagos.js';
-import { documentoDeVertical } from './prompt.js';
-export { notificarReclamo } from './reclamos.js';
+export { registrarPagoManual, anularPagoPendiente, consultarPagoPendiente } from './central/pagar/pagosConCobrador.js';
+export { fijarTelefonosPago } from './central/pagar/pagos.js';
+import { documentoDeVertical } from './core/prompt/prompt.js';
+export { notificarReclamo } from './central/reclamos/reclamos.js';
 // COMPROBACIÓN DE LAS FOTOS DEL CATÁLOGO. Un disparador que se ocupa de las
 // altas de a una y de las importaciones de doscientas por igual, y una función
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
@@ -91,7 +91,7 @@ export { comprobarArchivoPlanes } from './captacion.js';
 // Andres del 17/09/2026). Lo propuesto (`instruccionesExtra`) pasa por dos capas
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
 // único que lee el flujo. El contrato y el porqué en `comportamiento.ts`.
-export { verificarComportamiento } from './verificarComportamiento.js';
+export { verificarComportamiento } from './central/asistente/verificarComportamiento.js';
 // CAMPAÑAS DE META (Andres, 24/09/2026). El comercio las carga en la consola
 // (`config/campanas.lista`); este disparador las verifica —fechas, duplicados,
 // palabras de emergencia, inyección y, con el modelo, que sean de ESTE negocio—
@@ -103,8 +103,8 @@ export { verificarCampanas } from './verificarCampanas.js';
 // secretos nuevos (`COBRADOR_TOKEN`, `COBRADOR_AVISO_SECRETO`) y el Scheduler
 // del barrido esperan la compuerta del demo (.github/DESPLIEGUE-FIREBASE.md).
 // El sondeo de cada 5 minutos acredita rápido mientras C no mande aviso.
-export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './cobroPrepago.js';
-export { tipoCambioBcb } from './tipoCambioBcb.js';
+export { crearCobroPrepago, avisoCobrador, sondeoCobros, barridoCobros, imagenDePago } from './central/pagar/cobroPrepago.js';
+export { tipoCambioBcb } from './central/servicios/tipoCambioBcb.js';
 
 const db = () => getFirestore();
 

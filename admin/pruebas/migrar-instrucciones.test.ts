@@ -1,7 +1,7 @@
 /**
  * `scripts/migrar-instrucciones.mjs` — LO PROPUESTO PASA A VIGENTE, UNA VEZ.
  *
- * Al desplegar el contrato del 17/09 (`functions/src/comportamiento.ts`), un
+ * Al desplegar el contrato del 17/09 (`functions/src/central/asistente/comportamiento.ts`), un
  * comercio con texto en `instruccionesExtra` y nada en `instruccionesVigentes`
  * se quedaría sin instrucciones: el flujo lee solo lo vigente. El script copia
  * lo propuesto a vigente con la revisión aprobada, y nada más:
@@ -28,7 +28,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 const { getFirestore } = await import('firebase-admin/firestore');
 const app = getApps().find((a) => a.name === 'migrar') ?? initializeApp({ projectId: PROYECTO }, 'migrar');
 const db = getFirestore(app);
-const { hashCorto } = await import('../functions/src/comportamiento.ts');
+const { hashCorto } = await import('../functions/src/central/asistente/comportamiento.ts');
 
 // Identificadores propios de esta suite.
 const SIN_VIGENTE = 'mig-sin-vigente';

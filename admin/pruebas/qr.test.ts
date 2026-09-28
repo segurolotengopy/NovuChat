@@ -19,7 +19,7 @@ import {
   crc16, cuentasDelQr, pareceCifrado, separarCampos, validarQrSimple,
 } from '../functions/src/qrSimple.ts';
 import { dibujarQr, pngDeMatriz } from '../functions/src/dibujoQr.ts';
-import { datosQueNoTenemos, horarioAtencion } from '../functions/src/prompt.ts';
+import { datosQueNoTenemos, horarioAtencion } from '../functions/src/core/prompt/prompt.ts';
 import {
   cotejarComprobante, cuentaCoincide, montoCoincide, nombreCoincide, normalizar,
   parsearFechaHora, parsearMonto,

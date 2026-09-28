@@ -21,8 +21,8 @@ import {
   leerCampanas, MOTIVO_TEXTO_NO_PERMITIDO, palabrasDeCampana, revisarCampanas, revisarSinModelo,
   type Campana, type ContextoDelNegocio,
 } from '../functions/src/campanas.ts';
-import { MAXIMO_CAMPANAS, PLANES_ASIGNABLES, limiteDeCampanas } from '../functions/src/planes.ts';
-import { hashCorto } from '../functions/src/comportamiento.ts';
+import { MAXIMO_CAMPANAS, PLANES_ASIGNABLES, limiteDeCampanas } from '../functions/src/central/cuenta/planes.ts';
+import { hashCorto } from '../functions/src/central/asistente/comportamiento.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const DIA = 86_400_000;

@@ -3,8 +3,8 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from './core/region.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { ETAPAS_PENDIENTES, milisegundosDe, registrar, type Solicitud } from './ingesta.js';
-import { documentoDeVertical } from './prompt.js';
-import { periodoDe } from './planes.js';
+import { documentoDeVertical } from './core/prompt/prompt.js';
+import { periodoDe } from './central/cuenta/planes.js';
 
 /**
  * =============================================================================

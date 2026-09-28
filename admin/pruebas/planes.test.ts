@@ -1,6 +1,6 @@
 /**
  * Pruebas del catálogo de planes y del aviso de consumo al 80 %
- * (`functions/src/planes.ts`, decisiones de Andres del 15/09/2026; los tres
+ * (`functions/src/central/cuenta/planes.ts`, decisiones de Andres del 15/09/2026; los tres
  * ejes de la cuenta, F1 del 25/09/2026, `Analisis/41` §4).
  *
  * NO NECESITAN EMULADOR: `planes.ts` es puro. La prueba de punta a punta del
@@ -20,7 +20,7 @@ import {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES, PLANES_ASIGNABLES,
   PLANES_PUBLICADOS, PLAN_DEMOSTRACION, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo,
   esIdPlan, esPlanVendible, limitesDe, limitesDeCuenta, planQuePuedePedir, umbralDeAviso,
-} from '../functions/src/planes.ts';
+} from '../functions/src/central/cuenta/planes.ts';
 
 const MES = '2026-10';
 

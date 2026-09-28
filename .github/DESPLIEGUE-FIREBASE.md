@@ -91,7 +91,7 @@ del proyecto de producción. Lo que hay:
     `gcloud projects add-iam-policy-binding` y `remove-iam-policy-binding`
     **exigen `--condition=None`**, o la condición correspondiente.
   - **Los dos secretos del cobrador del prepago** (bloque A-2, 20/09/2026;
-    `admin/functions/src/cobrador.ts`): `COBRADOR_TOKEN` (el token de salida
+    `admin/functions/src/central/pagar/cobrador.ts`): `COBRADOR_TOKEN` (el token de salida
     hacia el proyecto de cobros, que allá se configura como
     `CONSUMIDOR_TOKEN_NOVUCHAT`, mínimo 32 caracteres) y
     `COBRADOR_AVISO_SECRETO` (el que firma el aviso de confirmación que el

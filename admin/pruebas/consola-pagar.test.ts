@@ -23,15 +23,15 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../functions/src/prepago';
+import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../functions/src/central/cuenta/prepago';
 import {
   BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
   planesOfrecidos, vistaDelPedido,
 } from '../web/src/lib/pagar';
-import { PLANES_PUBLICADOS } from '../functions/src/planes';
+import { PLANES_PUBLICADOS } from '../functions/src/central/cuenta/planes';
 import { facturaMetaAlComercio } from '../web/src/lib/ejes';
 import { ResumenPrepago } from '../web/src/componentes/ResumenPrepago';
-import { estadoDeServicio, type Corte } from '../functions/src/prepago';
+import { estadoDeServicio, type Corte } from '../functions/src/central/cuenta/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');

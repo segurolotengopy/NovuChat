@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { CATALOGO_PLANES, limitesDe } from '../../functions/src/planes.ts';
+import { CATALOGO_PLANES, limitesDe } from '../../functions/src/central/cuenta/planes.ts';
 import { MODELO_POR_DEFECTO } from '../../functions/src/central/ejes.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

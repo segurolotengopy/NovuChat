@@ -11,7 +11,7 @@
  * `sin_cargo` además no estaba en la tabla original: la sembradora lo escribe
  * para los comercios de demostración y ninguna pantalla sabía traducirlo.
  */
-// `pendiente` es un estado DERIVADO (functions/src/prepago.ts,
+// `pendiente` es un estado DERIVADO (functions/src/central/cuenta/prepago.ts,
 // `camposDerivados`, DISENO.md §4undecies.2): la cuenta está en las 48 horas
 // de gracia, o tiene un cobro por QR emitido y sin confirmar. La etiqueta dice
 // las dos cosas porque el comercio ve una sola palabra y tiene que entender

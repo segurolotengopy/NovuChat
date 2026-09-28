@@ -130,7 +130,7 @@ reutiliza, no rehace:
 
 | Zona | Dueño | Quién más la toca | Cómo se evita el choque |
 |---|---|---|---|
-| `admin/functions/src/prepago.ts` (nuevo), `ingesta.ts`, `index.ts`, `planes.ts`, `firestore.rules`, `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx`, `admin/pruebas/` | **A** | nadie | B no toca Functions ni consola (su prompt lo dice) |
+| `admin/functions/src/central/cuenta/prepago.ts` (nuevo), `ingesta.ts`, `index.ts`, `planes.ts`, `firestore.rules`, `admin/web/src/paginas/EstadoCuenta.tsx`, `Consumo.tsx`, `Tenants.tsx`, `admin/pruebas/` | **A** | nadie | B no toca Functions ni consola (su prompt lo dice) |
 | `Flujos/*.json`, `Flujos/src/`, `Flujos/prompts/`, `Flujos/LEEME-flujos.md`, `scripts/publicar-flujo.sh`, `preparar-import.sh`, `verificar-saneo.sh`, `.claude/agents/flujos-n8n.md`, `docs/alta-cliente/RUNBOOK.md` | **B** | A-4 necesita el flujo del WhatsApp interno | **A-4 se encola detrás de B-1** y se escribe como módulo |
 | `ESTADO.md`, `admin/DISENO.md`, `CLAUDE.md` §7, `Prompts/LEEME.md` | compartidos | A y B | **Solo se agrega, nunca se reescribe** lo del otro; una sección o entrada por frente, con fecha; los conflictos los resuelve la coordinadora conservando ambos lados |
 | `Prompts/COORDINACION.md` (nuevo) | coordinadora | cada frente su fila | El tablero: frente · rama · bloque en curso · estado (en curso / encolado detrás de … / en espera de la compuerta del demo / listo para fusionar) · archivos que toca · próximo paso |

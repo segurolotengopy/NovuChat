@@ -10,8 +10,8 @@
  * Firebase, con un contexto de autenticación fabricado.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { limitesDe } from '../../functions/src/planes.ts';
-import { mesBolivia } from '../../functions/src/prepago.ts';
+import { limitesDe } from '../../functions/src/central/cuenta/planes.ts';
+import { mesBolivia } from '../../functions/src/central/cuenta/prepago.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;

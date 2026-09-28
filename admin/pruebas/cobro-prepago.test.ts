@@ -45,14 +45,14 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { crearClienteHttp, registrarCobradorDoble } = await import('../functions/src/cobrador.ts');
+const { crearClienteHttp, registrarCobradorDoble } = await import('../functions/src/central/pagar/cobrador.ts');
 const {
   crearCobroPrepago, crearCobroInterno, avisoCobrador, barrerCobrosPendientes, anularCobroVivo, imagenDePago,
   fijarAlmacenDePrueba, consultarYAplicar, sondearCobrosPendientes, TOPE_SONDEO,
-} = await import('../functions/src/cobroPrepago.ts');
-const { mesBolivia, sumarMeses } = await import('../functions/src/prepago.ts');
-const { puertaDePagos } = await import('../functions/src/pagos.ts');
-const { limitesDe } = await import('../functions/src/planes.ts');
+} = await import('../functions/src/central/pagar/cobroPrepago.ts');
+const { mesBolivia, sumarMeses } = await import('../functions/src/central/cuenta/prepago.ts');
+const { puertaDePagos } = await import('../functions/src/central/pagar/pagos.ts');
+const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 
 const A = 'prep-salon';
 const B = 'prep-otro';
@@ -599,7 +599,7 @@ describe('1ter. Un QR confirmado de OTRO plan no cambia el plan sin autorizació
 describe('1quater. El pago en revisión se resuelve, con auditoría y sesión reciente (tercera vuelta de #212)', () => {
   const PRO = { conversaciones: 500, productos: 500, agendas: 10, cambiosIncluidos: 2 };
   type Callable = { run: (x: unknown) => Promise<Record<string, unknown>> };
-  const conCobrador = async () => import('../functions/src/pagosConCobrador.ts') as unknown as Promise<Record<string, Callable>>;
+  const conCobrador = async () => import('../functions/src/central/pagar/pagosConCobrador.ts') as unknown as Promise<Record<string, Callable>>;
 
   /** Un QR de Crecimiento sin firma, confirmado por el banco después de que NovuChat pasó la cuenta a Pro. */
   async function pagoEnRevision(): Promise<{ pagoId: string; ficha: string }> {
@@ -796,7 +796,7 @@ describe('3. El barrido horario', () => {
     // falló porque consulta primero. Se comprueba sobre la fuente porque
     // borrar la configuración compartida rompe las suites que corren en
     // paralelo contra el mismo emulador.
-    const fuente = readFileSync(join(aqui, '../functions/src/cobroPrepago.ts'), 'utf8');
+    const fuente = readFileSync(join(aqui, '..', 'functions', 'src', 'central', 'pagar', 'cobroPrepago.ts'), 'utf8');
     const cuerpo = fuente.slice(fuente.indexOf('export async function barrerCobrosPendientes'));
     const salida = cuerpo.indexOf('if (lista.empty) return resumen;');
     const resolver = cuerpo.indexOf('await resolverCobrador(');
@@ -993,7 +993,7 @@ describe('3bis. El sondeo de cada 5 minutos', () => {
 // ===========================================================================
 describe('4bis. La carga manual EXPORTADA (A-1 con el cobrador enchufado, pagosConCobrador.ts)', () => {
   it('con cobrador disponible anula allá el QR vivo antes de cargar el manual, y el manual entra', async () => {
-    const indice = await import('../functions/src/pagosConCobrador.ts');
+    const indice = await import('../functions/src/central/pagar/pagosConCobrador.ts');
     const { randomBytes } = await import('node:crypto');
     const vivo = (await crear(MENSUALIDAD))['pagoId'] as string;
     const propietario = { uid: 'prop', token: { ...PROPIETARIO.token, auth_time: Math.floor(Date.now() / 1000) } };

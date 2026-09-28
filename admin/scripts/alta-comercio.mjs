@@ -68,7 +68,7 @@ initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 const auth = getAuth();
 
-// Mismo mapa que `documentoDeVertical` en functions/src/prompt.ts.
+// Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
 console.log(`\n  Negocio    : ${TENANT} · ${NOMBRE}`);
@@ -110,11 +110,11 @@ if (!usuario) {
 }
 
 // --- 2. la ficha del negocio ------------------------------------------------
-// EL PLAN INICIAL SALE DE `functions/src/planes.ts` (`cuentaInicial`): Impulso,
+// EL PLAN INICIAL SALE DE `functions/src/central/cuenta/planes.ts` (`cuentaInicial`): Impulso,
 // con su copia de límites y la versión del catálogo, lo mismo que `altaTenant`.
 // Antes se escribía `plan: 'basico'`, que no es un plan del catálogo. Si el
 // comercio contrató otro plan, se asigna después con `asignar-plan.mjs`.
-const { cuentaInicial } = await import('../functions/src/planes.ts');
+const { cuentaInicial } = await import('../functions/src/central/cuenta/planes.ts');
 const cuenta = cuentaInicial();
 const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
 const lote = db.batch();

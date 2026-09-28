@@ -30,7 +30,7 @@ públicos), y después:
 - `Analisis/27-modelo-bloques.md` §8 — por qué la transacción de la ingesta se abre con cuidado y una vez por frente.
 - **La nota del 20/09 al principio de `Analisis/36`**, y el `ESTADO.md` de `main`: el documento se escribió antes de `v0.6.0`. Antes de escribir una línea hay que cotejar contra `main` la ingesta (ya reabierta por la seña y los seguimientos), la maquinaria de QR que ya existe (`qrSimple.ts`, `dibujoQr.ts`, `cotejo.ts`, `firma.ts`) y `seguimientos.ts`, que es de donde deberían salir los recordatorios de cobranza.
 - `Analisis/17` §3.0 y `Analisis/14` §5ter — el tipo de cambio: por qué es del BCB y por qué la pregunta «día de pago o primer día del mes» queda resuelta como **día de emisión del cobro**.
-- La rama **`integracion/prepago-sobre-flujos-vivos`**: `admin/functions/src/prepago.ts` es el corazón de esto y **ya está escrito y probado**. Léelo antes de escribir una línea.
+- La rama **`integracion/prepago-sobre-flujos-vivos`**: `admin/functions/src/central/cuenta/prepago.ts` es el corazón de esto y **ya está escrito y probado**. Léelo antes de escribir una línea.
 
 Si `Analisis/36` está sin versionar en el worktree principal, tu primera tarea
 es llevarlo a tu rama con un commit propio, sin tocar nada más de esa carpeta:

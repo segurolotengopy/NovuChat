@@ -21,7 +21,7 @@ const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const {
   POR_AUTOMATICO, SALTO_MAXIMO, URL_TABLA_BCB, actualizarTipoCambio, decidirTipoCambio, leerTablaBcb,
-} = await import('../functions/src/tipoCambioBcb.ts');
+} = await import('../functions/src/central/servicios/tipoCambioBcb.ts');
 
 /** El 25/09/2026 a las 10:00 de La Paz. */
 const AHORA = Date.parse('2026-09-25T14:00:00Z');

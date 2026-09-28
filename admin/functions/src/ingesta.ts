@@ -7,7 +7,7 @@ import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 import { sanearCaptacion } from './captacion.js';
-import { vozFija } from './prompt.js';
+import { vozFija } from './core/prompt/prompt.js';
 import {
   HORAS_VENTANA_ATENCION, MS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION, avisoDeTransicion,
   estadoDeAtencion, umbralesDeAtencion, ventanaVencida,
@@ -16,7 +16,7 @@ import {
 // consola). Se reexportan para que quien ya los importaba de acá no cambie.
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
-import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './planes.js';
+import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
 import { campanasParaElFlujo } from './campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
@@ -25,12 +25,12 @@ import {
   camposDerivados, consumidasDe, consumoDeConversacion, corteAplicable, corteDe, estadoDeServicio,
   mensajeCortesia, modalidadDe, periodosIncoherentes, rechazoPorPrepago, type CuentaCruda,
   type EstadoServicio, type MotivoCorte,
-} from './prepago.js';
+} from './central/cuenta/prepago.js';
 import {
   CAMPOS_LIBRES_AL_PROMPT, datosQueNoTenemos, horarioAtencion, instruccionesDeVoz,
   resolverFuncionarios, documentoDeVertical, rotulosCobroSimulado,
   resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT, enlaceDeMapaValido, ubicacionDe,
-} from './prompt.js';
+} from './core/prompt/prompt.js';
 // El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
 // sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
 // (sus dos importaciones son de tipo), así que no hay ciclo.

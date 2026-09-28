@@ -28,7 +28,7 @@
  *   - si la sección `negocio` trae `instruccionesExtra`, TAMBIÉN
  *     `instruccionesVigentes` (el mismo texto) e `instruccionesRevision`
  *     aprobada con `revisadoPor: 'cargar-negocio'`: ese texto lo revisó
- *     NovuChat, y el flujo solo lee lo vigente (`functions/src/comportamiento.ts`).
+ *     NovuChat, y el flujo solo lee lo vigente (`functions/src/central/asistente/comportamiento.ts`).
  *     Antes de escribirlo pasa por la MISMA capa de patrones que la Function:
  *     lo que NovuChat carga tiene que poder editarse después desde la consola
  *     sin que la capa 1 lo rechace por un carácter que puso NovuChat.
@@ -109,7 +109,7 @@ const VACIAR_AJENOS = args.includes('--vaciar-ajenos');
 
 // El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
 // módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
-const { hashCorto, verificarPatrones } = await import('../functions/src/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();

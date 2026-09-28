@@ -18,7 +18,7 @@ import { db } from './firebase';
  * Un negocio tiene UNO O MÁS flujos (`tenants/{id}.flujos`), y la consola le
  * habilita una pestaña por cada uno. Esta tabla es la única lista de pestañas
  * por flujo del navegador. Sus espejos son `tieneAgenda`/`tieneCobro` en
- * `firestore.rules` y `VERTICALES_CONOCIDOS` en `functions/src/prompt.ts`:
+ * `firestore.rules` y `VERTICALES_CONOCIDOS` en `functions/src/core/prompt/prompt.ts`:
  * agregar un flujo es tocar los tres, y si se toca uno solo, se nota.
  *
  * ESTO ES COSMÉTICO. Quien autoriza es `firestore.rules`: un negocio de venta

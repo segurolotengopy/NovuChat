@@ -203,7 +203,7 @@ if (APLICAR) {
     // (nunca se corta, sin cargo) con los límites de Pro, porque carga el
     // catálogo entero del cliente que se ensaya (`cargar-negocio.mjs` respeta
     // `limites.productos`). `plan: 'demostracion'` ya no existe (F1).
-    const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/planes.ts');
+    const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
     await refEnsayo.set({
       nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
       plan: 'pro', creadoPor: 'ensayo', creadoEn: Timestamp.now(),

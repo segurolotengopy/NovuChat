@@ -2,7 +2,7 @@
  * PLANES EN LA CONSOLA — el MISMO módulo que usa el servidor.
  *
  * El catálogo de planes (precios, conversaciones, productos, agendas), la bolsa
- * y el aviso de consumo se leen de `functions/src/planes.ts`, importado
+ * y el aviso de consumo se leen de `functions/src/central/cuenta/planes.ts`, importado
  * directamente, igual que `atencion.ts`. No hay una copia para el navegador: si
  * la hubiera, la pantalla podría prometer un límite que el servidor no aplica.
  * (La rama de la consola traía su propia tabla de respaldo; se quitó al
@@ -24,17 +24,17 @@ import {
   AVISO_CONSUMO, PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible,
   limitesDeCuenta, periodoDe,
   type IdPlanVendible,
-} from '../../../functions/src/planes';
+} from '../../../functions/src/central/cuenta/planes';
 
 export {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES,
   PLANES_PUBLICADOS, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo, esPlanVendible,
   limitesDe, limitesDeCuenta, periodoDe, umbralDeAviso, limiteDeCampanas, MAXIMO_CAMPANAS,
   MAXIMO_CAMBIOS_INCLUIDOS,
-} from '../../../functions/src/planes';
+} from '../../../functions/src/central/cuenta/planes';
 export type {
   AvisoConsumo, IdPlanVendible, Limites, LimitesDeCuenta, Plan,
-} from '../../../functions/src/planes';
+} from '../../../functions/src/central/cuenta/planes';
 
 /**
  * Tope de productos para ESTE comercio: la copia de `cuenta/estado.limites`;

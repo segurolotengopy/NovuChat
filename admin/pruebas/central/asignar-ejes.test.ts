@@ -10,7 +10,7 @@
  * no lee los ejes de A.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { limitesDe } from '../../functions/src/planes.ts';
+import { limitesDe } from '../../functions/src/central/cuenta/planes.ts';
 import { MODELO_POR_DEFECTO } from '../../functions/src/central/ejes.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';

@@ -324,14 +324,17 @@ export const SUITES_VETADAS: readonly string[] = ['pruebas/asignar-rol.test.ts']
 
 /**
  * El texto con cada ruta vieja de la tanda —completa y sin `admin/`— cambiada
- * por la nueva, con límites (`…/x.ts` no toca `…/x.tsx`). Es lo ÚNICO que se
- * acepta a mano en un comentario o en un `.md`: la cita de la ruta.
+ * por la nueva, con límites (`…/x.ts` no toca `…/x.tsx` ni `…/x.ts.bak`). Es
+ * lo ÚNICO que se acepta a mano en un comentario o en un `.md`: la cita de la
+ * ruta. Un punto que cierra la oración (`… en functions/src/x.ts.`, seguido
+ * de espacio o fin de línea) no es parte de la ruta (tanda 2: `sembrar-demos`,
+ * `superadmin`).
  */
 export function reemplazarRutas(texto: string, movimientos: readonly Movimiento[]): string {
   const pares = movimientos.flatMap((m) => [[m.de, m.a], [m.de.replace(/^admin\//, ''), m.a.replace(/^admin\//, '')]] as const);
   let t = texto;
   for (const [de, a] of pares) {
-    t = t.replace(new RegExp(`(?<![\\w./-])${de.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`, 'g'), a);
+    t = t.replace(new RegExp(`(?<![\\w./-])${de.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-]|\\.\\S)`, 'g'), a);
   }
   return t;
 }
@@ -398,7 +401,8 @@ export interface Veredicto {
  *   - quitar entradas de `deuda.json` (las saldadas);
  *   - en `admin/vitest.config.ts`, agregar a `SUITES_PURAS` las suites que la
  *     tanda declara (ninguna vetada) o quitar entradas; el resto del archivo,
- *     idéntico (comparado por AST, con sus comentarios);
+ *     idéntico salvo la cita de una ruta en un comentario (el mismo criterio
+ *     que en el código: `reemplazarRutas` y el AST sin comentarios igual);
  *   - en código, cambiar la CITA de una ruta vieja por la nueva (en un
  *     comentario): `real === reemplazarRutas(plan)`. Ningún otro comentario;
  *     `/*#__PURE__*\/` quitaría App Check del paquete (revisión del #241);
@@ -445,7 +449,9 @@ export function verificarReproducible(
         const b = separarSuites(destino, real);
         const agregadas = b.suites.filter((x) => !a.suites.includes(x));
         const malas = agregadas.filter((x) => !tanda.suitesPuras.includes(x) || SUITES_VETADAS.includes(x));
-        if (a.resto === b.resto && !malas.length) continue;
+        const restoIgual = a.resto === b.resto || (b.resto === reemplazarRutas(a.resto, tanda.movimientos)
+          && sinComentariosAst(destino, a.resto) === sinComentariosAst(destino, b.resto));
+        if (restoIgual && !malas.length) continue;
         problemas.push(`${destino}: fuera de SUITES_PURAS no se toca, y solo entran las suites que la tanda declara${malas.length ? ` (sobran: ${malas.join(', ')})` : ''}`);
         continue;
       }

@@ -17,12 +17,12 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/cobranza.ts",
+      "desde": "admin/functions/src/central/pagar/cobranza.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/cobroPrepago.ts",
+      "desde": "admin/functions/src/central/pagar/cobroPrepago.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
@@ -32,7 +32,7 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/pagos.ts",
+      "desde": "admin/functions/src/central/pagar/pagos.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
@@ -47,21 +47,6 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/captacion.ts",
-      "hacia": "admin/functions/src/imagenCatalogo.ts",
-      "porque": "Captación usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover captación"
-    },
-    {
-      "desde": "admin/functions/src/verificarCampanas.ts",
-      "hacia": "admin/functions/src/imagenCatalogo.ts",
-      "porque": "Campañas usa la imagen del catálogo (Productos) sin declararlo: dependeDe o la pieza baja a Central, al mover campañas"
-    },
-    {
-      "desde": "admin/functions/src/verificarComportamiento.ts",
-      "hacia": "admin/functions/src/imagenCatalogo.ts",
-      "porque": "Central usa una pieza de Productos: la verificación de imagen baja a Central al mover productos"
-    },
-    {
       "desde": "admin/functions/src/catalogoWeb.ts",
       "hacia": "admin/functions/src/inventario.ts",
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
@@ -71,11 +56,6 @@
       "hacia": "admin/functions/src/sena.ts",
       "soloTipo": true,
       "porque": "Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos"
-    },
-    {
-      "desde": "admin/functions/src/prompt.ts",
-      "hacia": "admin/functions/src/saneo.ts",
-      "porque": "El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts"
     },
     {
       "desde": "admin/web/src/paginas/Captacion.tsx",

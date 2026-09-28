@@ -1,5 +1,5 @@
 /**
- * EL TIPO DE CAMBIO DEL DÍA (`functions/src/tipoCambio.ts`, bloque A-1).
+ * EL TIPO DE CAMBIO DEL DÍA (`functions/src/central/servicios/tipoCambio.ts`, bloque A-1).
  *
  * Sin TCO no se cobra (`CLAUDE.md`, base comercial §3; decisión 3 del frente):
  * `tipoCambioDe` es la validación pura y `tipoCambioDelDia` la lectura real de
@@ -14,7 +14,7 @@ process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMU
 process.env['GCLOUD_PROJECT'] = PROYECTO;
 
 await import('../functions/src/index.ts');
-const { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, tipoCambioDelDia } = await import('../functions/src/tipoCambio.ts');
+const { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, tipoCambioDelDia } = await import('../functions/src/central/servicios/tipoCambio.ts');
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 

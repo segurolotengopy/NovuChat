@@ -58,4 +58,9 @@ done
 curl -fsS -o /dev/null "http://127.0.0.1:${PUERTO}/" || { echo "El emulador no respondió."; exit 1; }
 
 cd "$RAIZ" || exit 1
-FIRESTORE_EMULATOR_PORT="$PUERTO" npx vitest run "$@"
+# FIRESTORE_EMULATOR_HOST TAMBIEN, no solo el puerto. Las suites de reglas arman
+# el host con el puerto, pero un script lanzado con spawnSync hereda el entorno
+# tal cual: sin HOST, firebase-admin va al Firestore REAL con las credenciales
+# por defecto (ADC) de quien corre las pruebas. Paso con asignar-rol.test.ts
+# hasta el 27/09/2026 (revision de seguridad del PR #242).
+FIRESTORE_EMULATOR_HOST="127.0.0.1:${PUERTO}" FIRESTORE_EMULATOR_PORT="$PUERTO" npx vitest run "$@"

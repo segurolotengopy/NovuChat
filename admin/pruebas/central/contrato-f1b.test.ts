@@ -24,8 +24,8 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CobradorDoble } from '../dobles/cobrador.ts';
-import { CATALOGO_PLANES, PLANES, limitesDe, limitesDeCuenta } from '../../functions/src/planes.ts';
-import { estadoDeServicio, importeBs, mesBolivia, sumarMeses } from '../../functions/src/prepago.ts';
+import { CATALOGO_PLANES, PLANES, limitesDe, limitesDeCuenta } from '../../functions/src/central/cuenta/planes.ts';
+import { estadoDeServicio, importeBs, mesBolivia, sumarMeses } from '../../functions/src/central/cuenta/prepago.ts';
 
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
@@ -37,10 +37,10 @@ process.env['COBRADOR_TOKEN'] ??= TOKEN;
 process.env['COBRADOR_AVISO_SECRETO'] ??= 'secreto-de-prueba-del-aviso-de-confirmacion';
 
 const indice = await import('../../functions/src/index.ts');
-const pagos = await import('../../functions/src/pagos.ts');
-const { crearClienteHttp, registrarCobradorDoble } = await import('../../functions/src/cobrador.ts');
-const { crearCobroPrepago, consultarYAplicar, fijarAlmacenDePrueba } = await import('../../functions/src/cobroPrepago.ts');
-const conCobrador = await import('../../functions/src/pagosConCobrador.ts');
+const pagos = await import('../../functions/src/central/pagar/pagos.ts');
+const { crearClienteHttp, registrarCobradorDoble } = await import('../../functions/src/central/pagar/cobrador.ts');
+const { crearCobroPrepago, consultarYAplicar, fijarAlmacenDePrueba } = await import('../../functions/src/central/pagar/cobroPrepago.ts');
+const conCobrador = await import('../../functions/src/central/pagar/pagosConCobrador.ts');
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 

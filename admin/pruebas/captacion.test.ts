@@ -15,7 +15,7 @@ import {
   comprobarArchivo, contenidoAceptado, firmaCoincide, puedeComprobar,
   sanearArchivoPlanes, sanearCaptacion, sanearCargoUnico, sanearPlan, sanearRubro,
 } from '../functions/src/captacion.ts';
-import { vozFija } from '../functions/src/prompt.ts';
+import { vozFija } from '../functions/src/core/prompt/prompt.ts';
 
 // Desde el 15/09 el filtro rechaza cualquier IP literal en la URL (revisión de
 // seguridad, MEDIUM-1): las pruebas usan un nombre, y el DNS se simula. Un
@@ -25,7 +25,7 @@ vi.mock('node:dns/promises', () => ({
     ? [{ address: '10.0.0.1', family: 4 }]
     : [{ address: '2001:db8::1', family: 6 }])),
 }));
-import { textoPlano, textoConSaltos } from '../functions/src/saneo.ts';
+import { textoPlano, textoConSaltos } from '../functions/src/central/servicios/saneo.ts';
 
 const CR = String.fromCharCode(13);
 const LF = String.fromCharCode(10);

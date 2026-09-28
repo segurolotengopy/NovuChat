@@ -34,9 +34,9 @@ process.env['INGESTA_CLIENTE16'] = TOKEN;
 // reexporta la ingesta: se importa todo de ahí para no inicializar dos veces.
 const { ingesta, fijarCortePrepago } = await import('../functions/src/index.ts');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
-const { limitesDe } = await import('../functions/src/planes.ts');
+const { limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
 const { GRACIA_MS, finDelPeriodoMs, inicioDelPeriodoMs, mesBolivia, periodoAnterior, periodoSiguiente } =
-  await import('../functions/src/prepago.ts');
+  await import('../functions/src/central/cuenta/prepago.ts');
 const db = getFirestore();
 
 const T = 'prepago-ingesta';
