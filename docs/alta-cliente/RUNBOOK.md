@@ -110,7 +110,7 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   leen las reglas y las Functions) y el contador `contadores/catalogo` en 0. Si
   contrató **Crecimiento** o **Pro**, `asignar-plan.mjs` (en seco y después con
   `--aplicar`) cambia el plan, la copia, el espejo de la ficha y deja la
-  auditoría. El plan sale del catálogo de `admin/functions/src/planes.ts`: no
+  auditoría. El plan sale del catálogo de `admin/functions/src/central/cuenta/planes.ts`: no
   hay texto libre. Desde F1 (26/09) `demostracion` es una **modalidad**, no un plan: los demos son Pro con modalidad demostración. `--operador` es obligatorio en `asignar-plan.mjs` y `asignar-numero.mjs`: es quien queda en la auditoría. La modalidad (`demostracion`, `prueba`, `prepago`, que la consola muestra como «Producción»), el modelo y la titularidad del número se fijan con el mismo script o desde Negocios.
 - **Lo pactado fuera de la lista va POR CONTRATO (F1b, decisión de Andres del
   26/09/2026).** Un contrato a medida no es un plan nuevo: es el plan de lista

@@ -29,7 +29,7 @@ import {
 } from '../../lib/prepago';
 
 /**
- * La MISMA forma que `ID_TENANT` de `functions/src/pagos.ts` e `index.ts`
+ * La MISMA forma que `ID_TENANT` de `functions/src/central/pagar/pagos.ts` e `index.ts`
  * (`pruebas/negocios-consola.test.ts` lo compara con la fuente). Importa para
  * `fijarCortePrepago`: con `tenantId` vacío la callable toca la COMPUERTA
  * GLOBAL (`index.ts`), así que la página de un comercio nunca llama a nada con
@@ -42,7 +42,7 @@ export const esIdTenant = (v: unknown): v is string => typeof v === 'string' && 
 // EL IDENTIFICADOR DEL PAGO
 // -----------------------------------------------------------------------------
 
-/** La misma forma que `ID_PAGO` de `functions/src/pagos.ts` y que exige `storage.rules`. */
+/** La misma forma que `ID_PAGO` de `functions/src/central/pagar/pagos.ts` y que exige `storage.rules`. */
 export const ID_PAGO = /^[A-Za-z0-9_-]{22}$/;
 
 /**
@@ -147,7 +147,7 @@ export function vistaDelPagoManual(
 
 /**
  * Días hacia atrás que `registrarPagoManual` acepta para `tcoFecha`
- * (`TCO_MANUAL_DIAS_MAXIMO` de `functions/src/pagos.ts`, que no se importa
+ * (`TCO_MANUAL_DIAS_MAXIMO` de `functions/src/central/pagar/pagos.ts`, que no se importa
  * porque ese módulo arrastra el SDK Admin; la prueba lo compara con la fuente).
  */
 export const TCO_MANUAL_DIAS_MAXIMO = 31;
@@ -256,7 +256,7 @@ export function pagosEnRevision(filas: ReadonlyArray<{ id: string } & Record<str
 
 /**
  * El motivo que el servidor exige para confirmar a mano (`motivoDiferencia`,
- * de `MOTIVO_CONFIRMACION_MINIMO` a 300; `functions/src/pagos.ts`, que no se
+ * de `MOTIVO_CONFIRMACION_MINIMO` a 300; `functions/src/central/pagar/pagos.ts`, que no se
  * importa porque arrastra el SDK Admin: la prueba compara los dos números).
  */
 export const MOTIVO_CONFIRMACION_MINIMO = 3;

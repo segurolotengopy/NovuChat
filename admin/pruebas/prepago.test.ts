@@ -1,5 +1,5 @@
 /**
- * EL MÓDULO PURO DEL PREPAGO (`functions/src/prepago.ts`), sin emulador.
+ * EL MÓDULO PURO DEL PREPAGO (`functions/src/central/cuenta/prepago.ts`), sin emulador.
  *
  * Sobre esto se le corta el servicio a un comercio que paga y se le escribe
  * para cobrarle, así que se prueba mes por mes y HORA POR HORA en los bordes:

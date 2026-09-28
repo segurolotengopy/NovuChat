@@ -241,7 +241,7 @@ primer pago.
 
 ### 3.4 El primer pago, y después el pase a `prepago` (lo hace el propietario)
 
-Solo dos cosas confirman un pago (`admin/functions/src/pagos.ts`): **el banco**
+Solo dos cosas confirman un pago (`admin/functions/src/central/pagar/pagos.ts`): **el banco**
 o **el propietario con evidencia**. Un comprobante que manda el comercio por
 WhatsApp es una imagen, y una imagen se edita.
 

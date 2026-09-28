@@ -1,6 +1,6 @@
 /**
  * Pruebas del catálogo de planes y del aviso de consumo al 80 %
- * (`functions/src/planes.ts`, decisiones de Andres del 15/09/2026; los tres
+ * (`functions/src/central/cuenta/planes.ts`, decisiones de Andres del 15/09/2026; los tres
  * ejes de la cuenta, F1 del 25/09/2026, `Analisis/41` §4).
  *
  * NO NECESITAN EMULADOR: `planes.ts` es puro. La prueba de punta a punta del

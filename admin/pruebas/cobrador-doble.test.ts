@@ -1,7 +1,7 @@
 /**
  * EL DOBLE CUMPLE EL CONTRATO, y el cliente HTTP lo habla bien.
  *
- * Se prueba a través de `crearClienteHttp` (functions/src/cobrador.ts) con el
+ * Se prueba a través de `crearClienteHttp` (functions/src/central/pagar/cobrador.ts) con el
  * `fetch` del doble: así se verifican a la vez las rutas, cabeceras y cuerpos
  * que manda NovuChat y las respuestas que el contrato promete
  * (DISENO.md §4undecies.5, `docs/10-contrato-consumidores.md` del cobrador).

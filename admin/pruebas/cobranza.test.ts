@@ -1,5 +1,5 @@
 /**
- * LA COBRANZA DEL PREPAGO (`functions/src/cobranza.ts`), contra el emulador.
+ * LA COBRANZA DEL PREPAGO (`functions/src/central/pagar/cobranza.ts`), contra el emulador.
  *
  *  - Solo el número de NovuChat (ruta `onboarding`) puede preguntar y marcar:
  *    el número de un comercio recibe 403.

@@ -2,7 +2,7 @@
  * PLANES EN LA CONSOLA — el MISMO módulo que usa el servidor.
  *
  * El catálogo de planes (precios, conversaciones, productos, agendas), la bolsa
- * y el aviso de consumo se leen de `functions/src/planes.ts`, importado
+ * y el aviso de consumo se leen de `functions/src/central/cuenta/planes.ts`, importado
  * directamente, igual que `atencion.ts`. No hay una copia para el navegador: si
  * la hubiera, la pantalla podría prometer un límite que el servidor no aplica.
  * (La rama de la consola traía su propia tabla de respaldo; se quitó al

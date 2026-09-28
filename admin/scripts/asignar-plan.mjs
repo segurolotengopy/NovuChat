@@ -6,7 +6,7 @@
  *
  * POR QUÉ EXISTE. El plan de un comercio vive en `tenants/{t}/cuenta/estado`
  * (`plan`, más la copia `limites` y la versión `catalogoPlanes`), y quien hace
- * cumplir un límite lee la copia (`functions/src/planes.ts`, `Analisis/29`
+ * cumplir un límite lee la copia (`functions/src/central/cuenta/planes.ts`, `Analisis/29`
  * §2.2-2.3). La callable `actualizarEstadoCuenta` lo hace; este script es el
  * mismo camino desde la terminal, para los demos, para NovuChat misma y para
  * un alta que todavía no pasó por la consola.
@@ -89,7 +89,7 @@
  * `camposDerivados` si la cuenta tiene modalidad, igual que la callable; sin
  * modalidad no se tocan (LOW 8). Si nada cambia, no escribe nada.
  *
- * EL CATÁLOGO SE IMPORTA DE `functions/src/planes.ts`, no se copia. Los
+ * EL CATÁLOGO SE IMPORTA DE `functions/src/central/cuenta/planes.ts`, no se copia. Los
  * módulos que importan `./x.js` entre sí se cargan con un hook de resolución
  * (`module.registerHooks`, Node 22.15+), como `pase-a-produccion.mjs`, así que
  * no hace falta compilar.

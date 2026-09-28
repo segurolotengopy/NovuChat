@@ -2,7 +2,7 @@
  * LO QUE LA PANTALLA «PAGAR» NECESITA SABER, SIN CALCULAR NADA PROPIO.
  *
  * Todo lo que decide un importe, un mes cubierto o una bolsa sale de
- * `functions/src/prepago.ts` a través de `lib/prepago.ts` (el mismo módulo que
+ * `functions/src/central/cuenta/prepago.ts` a través de `lib/prepago.ts` (el mismo módulo que
  * corre en el servidor, `DISENO.md` §4undecies.4). Acá solo se arma la vista:
  * qué opciones ofrecer y cómo se lee cada una.
  *

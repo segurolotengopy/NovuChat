@@ -8,7 +8,7 @@
  * vistazo si lo que toca le llega a clientes que pagan.
  *
  * LA REGLA NO SE ESCRIBE ACÁ. La modalidad la decide `modalidadDe` del módulo
- * compartido con el servidor (`functions/src/prepago.ts`, reexportado por
+ * compartido con el servidor (`functions/src/central/cuenta/prepago.ts`, reexportado por
  * `lib/prepago.ts`): ausente = demostración. Si la pantalla comparara el
  * campo `modalidad` a mano, el día que esa regla cambie la cabecera diría
  * PRODUCCIÓN de un comercio que el servidor trata como demostración. La

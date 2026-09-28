@@ -411,7 +411,7 @@ for (const c of COMERCIOS) {
   }
 
   // El plan de los demos, CON su copia de límites y la versión del catálogo
-  // (`functions/src/planes.ts`): quien hace cumplir un límite lee la copia.
+  // (`functions/src/central/cuenta/planes.ts`): quien hace cumplir un límite lee la copia.
   // `set` con `merge` reemplaza `limites` entero, como `asignar-plan.mjs`.
   // La MODALIDAD es lo que dice que es un demo: sin cargo, nunca se corta.
   await db.doc(`tenants/${c.id}/cuenta/estado`).set({
