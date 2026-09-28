@@ -19,9 +19,11 @@ después:
 
 - `docs/versiones-por-cliente.md` y `scripts/estado-de-versiones.sh`: el
   registro que NO vio este problema, y por qué (ver «El hecho»).
-- `Flujos/LEEME-flujos.md` §0, `Flujos/manifiestos/`, `Flujos/src/comun/`,
-  `Flujos/src/reservas/` y `admin/scripts/ensamblar-flujo.mjs`: la
-  modularización que ya existe y dónde quedó cada módulo.
+- `Flujos/LEEME-flujos.md` §0, `Flujos/manifiestos/`, `Flujos/src/core/`
+  (con `core/medios/`), `Flujos/src/modulos/` y
+  `admin/scripts/ensamblar-flujo.mjs`: la modularización que ya existe y dónde
+  quedó cada módulo. Hasta FL1 (F2) eran `Flujos/src/comun/` y
+  `Flujos/src/reservas/`; lo que sigue describe ese estado.
 - `Prompts/modularizacion-flujos.md` y las memorias `modularizacion-*`: el
   frente anterior, cuyas decisiones siguen vigentes.
 - `Prompts/sena-seguimiento-medios.md` y `Analisis/34` §3.1 y §4.1: cómo se
@@ -140,6 +142,11 @@ excepción declarada. `estado-de-versiones.sh` la corre además de comparar vivo
 contra versionado. **Costo:** 0 mensajes.
 
 ### Bloque 2 — Los medios pasan a `comun` (1 jornada)
+
+> Desde FL1 (F2), `preparar-transcripcion.js` y `preparar-imagen.js` ya están
+> en `Flujos/src/core/medios/`; lo que queda de este bloque es sacar las
+> categorías del clasificador por vertical.
+
 Rama `flujos/medios-comunes`. `preparar-transcripcion.js` y la rama pasan a
 `Flujos/src/comun/`; las categorías y avisos del clasificador salen a un módulo
 por vertical (reservas: los de hoy, sin cambio de texto; venta: producto,

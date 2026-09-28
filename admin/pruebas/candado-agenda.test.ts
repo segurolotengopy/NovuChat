@@ -98,7 +98,7 @@ function comprobarTodo(
   // La deuda que se declaró acá el 06/09 («que el código del nodo viva en un
   // `.js` versionado que se inyecte al JSON») quedó saldada a medias el
   // 20/09/2026, y a propósito: el candado vive en
-  // `Flujos/src/reservas/comprobar-reserva.js`, el ensamblador
+  // `Flujos/src/modulos/agenda/comprobar-reserva.js`, el ensamblador
   // (`admin/scripts/ensamblar-flujo.mjs`) lo inyecta al JSON y
   // `ensamblador.test.ts` prueba que los dos son idénticos byte a byte. Lo que
   // NO cambió es esta línea: el cuerpo de un nodo Code tiene `return` al nivel

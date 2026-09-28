@@ -46,7 +46,7 @@ hallazgos. **Nada publicado, nada desplegado, sin PR, sin push.**
 ## Lo primero, y es lo que cambió
 
 `main` avanzó de `#168` a `#181`. **El 24/09 otra sesión tocó el mismo archivo**
-(`Flujos/src/comun/normalizar-entrada.js`, frente de campañas, PR #176): ahora
+(`Flujos/src/core/normalizar-entrada.js`, frente de campañas, PR #176): ahora
 ese módulo **ya lee el `referral`** y arma un objeto `anuncio` con
 `{ titular, fuente, idAnuncio }`, recortado y sin saltos de línea.
 
@@ -61,7 +61,7 @@ cambia es cómo se empalma.**
 
 ### La resolución del conflicto, decidida
 
-Habrá conflicto en `Flujos/src/comun/normalizar-entrada.js`. **No se resuelve
+Habrá conflicto en `Flujos/src/core/normalizar-entrada.js`. **No se resuelve
 quedándose con la versión de la rama.** El `origen` se **deriva del `anuncio`
 que `main` ya calcula**, sin volver a mirar `msg.referral`:
 
