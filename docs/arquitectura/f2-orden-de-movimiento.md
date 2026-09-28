@@ -54,7 +54,7 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | T2 | `firma`, `claims`, `autorizacion → F/core/seguridad/`; `region`, `opcionesGlobales → F/core/` (`opcionesGlobales` sigue primero en `index.ts`) | 16 |
 | T3 | `F/prompt.ts → F/core/prompt/`, entero | 16 |
 | T4 | `saneo`, `tipoCambio`, `tipoCambioBcb → F/central/servicios/`; `comportamiento`, `verificarComportamiento → F/central/asistente/`; `mapa → F/central/negocio/`; `reclamos → F/central/reclamos/` | 16 |
-| C1 | El registro de eventos (`registrar`, `Evento`, `TipoEvento`, `enmascarar`) de `ingesta.ts` a `F/core/turno/bitacora.ts`, sin tocar una línea. **Decide la revisora** | 11 |
+| C1 | El registro de eventos (`registrar`, `Evento`, `TipoEvento`, `enmascarar`) de `ingesta.ts` a `F/core/turno/bitacora.ts`, sin tocar una línea y **sin reexportarlo desde la ingesta** (una reexportación deja viva la dependencia hacia arriba). Decidido por la revisora el 28/09 y hecho después de T5. Salda cinco cruces: `cobranza`, `cobroPrepago`, `pagos`, `catalogoWeb` e `index.ts`. `solicitudTras`, `ETAPAS_PENDIENTES`, `milisegundosDe`, `MINUTOS_RETENCION_POR_DEFECTO` y `Solicitud` son de la solicitud y quedan para F3b, así que `cierres`, `seguimientos` y `sena` siguen como deuda. `pruebas/core/bitacora.test.ts` fija el enmascarado. `bitacora-tipos.test.ts` se queda en la raíz porque es transversal: compara Core, las reglas y la consola | 7 |
 | C2 | `textoPlano`, `sinMarcas → F/core/prompt/texto.ts`; la clave de Gemini → `F/central/servicios/gemini.ts`; el pedido contra SSRF (`pedirConFrenos` y su filtro de destinos, que usa Captación) → `F/central/servicios/pedidoSeguro.ts`. Bloques cortados sin cambiar una línea; `saneo` reexporta lo suyo e `imagenCatalogo` reexporta el pedido contra SSRF, pero no la clave de Gemini (nadie la importa de ahí). Hecho el 27/09 antes que C1: 16 → 12 | 7 |
 | T5 | `planes`, `prepago → F/central/cuenta/`; `pagos`, `pagosConCobrador`, `cobroPrepago`, `cobrador`, `cobranza → F/central/pagar/` (54 consumidores). Segundo seco de `migrar-ejes.mjs` en 0 | 7 |
 | Módulos | productos (`lib/csv.ts` pasa a `W/central/lib/`), cobros (+C3: el tipo `ResultadoCotejo` sube a Cobros), agenda, inventario y pedidos, catálogo web, campañas, captación (`lib/archivoPlanes.ts` pasa a `W/central/lib/`). Se preparan en paralelo y se fusionan de a uno, regenerando | 4 |
@@ -65,7 +65,7 @@ S = `admin/scripts/`. Cada tanda lleva `medir-zonas.mjs` antes y después.
 | S1, S2 | Scripts de Plataforma → `S/plataforma/`; de carga → `S/datos/`. Con los runbooks y `.claude/agents` en el mismo PR, y aviso a la cartera. **Antes: `rutas-escritas.test.ts` con parser** (pendiente de la revisión del #239, abajo). **Nunca el 01/10 de 08:00 a 12:00** (la cartera usa `asignar-plan.mjs`) | 4 |
 | Pz | Las suites de la raíz con zona por su grafo → `P/core|central|plataforma/` | 4 |
 | P1 | Partir `index.ts` (callables → `F/plataforma/tenants.ts` y `F/central/usuarios.ts`), solo después de C1 | 4 |
-| Z | Zona para los 42 sin zona (`App.tsx`, `main.tsx`, `consola.tsx` → coordinador por archivo). **Decide la revisora** | 4 |
+| Z | Zona para los sin zona **por regla** (revisora, 28/09): (a) los puntos de entrada y lo que toca todas las zonas (`App.tsx`, `main.tsx`, `consola.tsx`, `correr.sh`, `correr-storage.sh`, `storage-reglas.test.ts`, `campanas-reglas.test.ts`) van al coordinador, archivo por archivo, en `ZONA_POR_ARCHIVO`; (b) los componentes de la consola que no conocen ningún módulo van a `W/central/componentes/` y `W/central/estilos/`, y `Proteger` va a `W/core/` con `sesion` y `contexto`; (c) los scripts de operador van a S1 y las semillas a S2; las herramientas de desarrollo y `pruebas/dobles/cobrador.ts` van al coordinador (no hay una sexta zona); (d) `lib/contador-catalogo.mjs` va al módulo productos. Lo que no cae en (a) a (d) va al coordinador con una línea de porqué, y la revisora lo mira en H2 | 4 |
 | Cierre | Borrar `destinos-f2.ts` y `medir-zonas.mjs`; `ZONA_POR_ARCHIVO` para `ingesta.ts`, `index.ts` y el ensamblador | 4 (9 sin C1) |
 
 Después, en el carril de lógica, cada agente en su carpeta: conectar el
@@ -228,7 +228,7 @@ tanda que lo necesita:
    coordinadora y los PR chocan en `index.ts` y `App.tsx`; §5.4 reparte
    `reservas/` entre Agenda y Cobros y el inventario manda dos a `core/medios`.
 3. **`tenants.modulos` en dos pasos** (§6.2 dice «reemplazar»).
-4. **C1**: si se baja el registro de eventos de `ingesta.ts` al Core en F2
-   (salda 5 cruces y habilita partir `index.ts`).
+4. ~~**C1**: si se baja el registro de eventos de `ingesta.ts` al Core en F2~~
+   **Decidido el 28/09: sí, como corte propio** (ver la fila C1).
 5. **Zonas sin dueño en `agentes.md`**: `W/core/`, `Flujos/manifiestos/`,
    `F/index.ts`, `F/ingesta.ts`, `.github/`.

@@ -68,7 +68,7 @@ import { FieldValue, Timestamp, getFirestore, type DocumentReference, type Trans
 import { getStorage } from 'firebase-admin/storage';
 import { randomBytes } from 'node:crypto';
 import { exigirAdminOPropietario, exigirPropietario, exigirSesionReciente } from '../../core/seguridad/autorizacion.js';
-import { registrar } from '../../ingesta.js';
+import { registrar } from '../../core/turno/bitacora.js';
 import { RUTA_TIPO_CAMBIO, SinTipoDeCambio, tipoCambioDe, type TipoCambio } from '../servicios/tipoCambio.js';
 import { CATALOGO_PLANES, PLANES, copiaDeLimites, esPlanVendible, type IdPlanVendible } from '../cuenta/planes.js';
 import {
