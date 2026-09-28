@@ -574,12 +574,22 @@ causas mezcladas manda la grilla, salvo fecha pasada o cruce).
 Andres del 27/09).** Tres casos:
 - **El modelo solo lo dijo** (`pasosDelAgente` y `agendar_cita` sin ejecutar):
   el turno no creó nada. No se juzga, no se borra, no se nombra y no se ata la
-  seña a ninguna cita de la ventana, que son de otros. Y la respuesta la pone
-  el código, sin confirmar nada (aviso `afirmo_sin_agendar`): con hora elegida
-  y nombre, «Todavía no quedó agendada: ¿te la reservo el <día> a las
-  <hora>?»; con hora y sin nombre, la pregunta de `sin_nombre`; sin hora,
-  «Todavía no agendé nada: ¿para qué día y horario te acomoda?». No se toca si
-  en el turno se buscó una cita existente (`buscar_mi_cita`). 0 mensajes.
+  seña a ninguna cita de la ventana, que son de otros. Y si la respuesta
+  afirma una cita, la pone el código (aviso `afirmo_sin_agendar`, 0 mensajes):
+  con hora elegida y nombre, «Todavía no quedó agendada: ¿te la reservo el
+  <día> a las <hora>?»; con hora y sin nombre, la pregunta de `sin_nombre`; sin
+  hora, «No veo esa reserva en este chat: ¿me confirmas el día para
+  revisarla?» (nunca «no agendé nada»: puede haber una cita que el turno no
+  ve). Si en el turno se canceló la vieja, se le dice. **No se toca** cuando
+  habla de una cita que ya existe: hay evidencia (lo que `buscar_mi_cita`
+  mostró en el turno, los candidatos de 30 minutos, las citas que ese
+  teléfono agendó por el chat —`agendaPorTelefono.creadas`, vivas hasta el día
+  de la cita, mínimo 24 horas— o una seña pendiente), todas las horas que
+  nombra coinciden con esa evidencia, la respuesta no dice que el asistente
+  agendó, reservó, reprogramó, reagendó, movió o cambió algo, y no se canceló
+  nada en el turno (revisión de `f962cef`).
+- **Sin el dato** (`agendarEjecutado` ausente, otro llamador): se trata como
+  sin ids fiables; el respaldo que juzgaba toda la ventana ya no existe.
 - **Ids completos** (toda llamada a `agendar_cita` trajo su id): se juzgan solo
   esas citas, contra todo lo que hay en la agenda, y se deshace la del turno
   que choca. Dos manuales a la misma hora no son un cruce ni «duplicadas».

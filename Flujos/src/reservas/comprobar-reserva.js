@@ -191,8 +191,12 @@ const recien = todos.filter(e => {
 // ajenas, no le confirma nada al paciente —recepcion confirma el horario, con
 // el boton: solo se ofrece lo que se cumple— y pasa a recepcion con el motivo.
 // Con los ids completos todo sigue igual: se deshace la del turno que choca.
-const sinIdsFiables = Number(item.agendarPasosSinId) > 0
-  || (item.agendarEjecutado === true && idsCreados.size === 0);
+// Y cuando el llamador no dice si agendar_cita corrio (`agendarEjecutado`
+// ausente), tambien (revision de f962cef): el respaldo que juzgaba toda la
+// ventana no se reabre con otro llamador.
+const sinIdsFiables = !soloLoDijo && (Number(item.agendarPasosSinId) > 0
+  || (item.agendarEjecutado === true && idsCreados.size === 0)
+  || item.agendarEjecutado === undefined);
 const usarUsted = /\busted\b/i.test(String(cfgCampo('tratamiento') || ''));
 const DIAS_LP = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const diaHora = (iso) => {
@@ -630,6 +634,12 @@ if (ceden.length) {
         ? 'se intento agendar sobre un BLOQUEO de la agenda (un horario que el negocio no abre a citas) '
         : 'se intento agendar FUERA DEL HORARIO DE ATENCION de esa persona ')))
     + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}); la cita nueva se deshizo`;
+  // Las que el candado deshace dejan de ser evidencia de una cita existente.
+  try {
+    const sd = $getWorkflowStaticData('global');
+    const reg = sd.agendaPorTelefono && sd.agendaPorTelefono[String(item.from || '')];
+    if (reg && reg.creadas) for (const e of ceden) delete reg.creadas[String(e.id)];
+  } catch (err) { /* sin datos estaticos */ }
   return ceden.map((e) => ({ json: { ...item,
     respuesta: aviso,
     reservaVerificada: sobreviven.length > 0,

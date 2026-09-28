@@ -88,6 +88,9 @@ const motivo = base.motivoCruce || 'hubo un cruce de horario';
 // Sin confirmar y el borrado FALLO: la cita existe. Decirle «¿te la agendo?»
 // seria falso; sale lo que el modelo habia escrito (la cita esta agendada, es
 // verdad) y recepcion confirma con el paciente si la quiere.
+// Pero si ademas no hay ids fiables o hay una doble reserva simultanea
+// (`sinReintento`), no se confirma nada: sale el texto de `Comprobar reserva`
+// (revision de f962cef). Y el aviso del turno va siempre en el motivo.
 if (porSinConfirmar && borradoFallo) {
   let original = '';
   try { original = String($('Procesar respuesta').first().json.respuesta || ''); } catch (e) { original = ''; }
@@ -95,10 +98,11 @@ if (porSinConfirmar && borradoFallo) {
     reintentar: false,
     notaCruce,
     userInput,
-    respuesta: original || base.respuesta,
-    reservaVerificada: true,
+    respuesta: sinReintento ? base.respuesta : (original || base.respuesta),
+    reservaVerificada: !sinReintento,
     transferir: true,
-    motivoTransferencia: `${motivo}, PERO NO SE PUDO DESHACER: la cita quedó agendada sin que el cliente la confirmara; confirmar con él si la quiere`,
+    motivoTransferencia: [`${motivo}, PERO NO SE PUDO DESHACER: la cita quedó agendada sin que el cliente la confirmara; confirmar con él si la quiere`,
+      avisoDelTurno].filter(Boolean).join('; '),
   }, pairedItem: { item: 0 } }];
 }
 return [{ json: { ...base,

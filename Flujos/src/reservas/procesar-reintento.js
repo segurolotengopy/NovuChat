@@ -343,7 +343,14 @@ const registrarOferta = (fecha, mins) => {
     // Un registro vencido (mas de una hora) no se reutiliza: se barre y se
     // empieza de cero, igual que en `Procesar respuesta` (revision del #244).
     const previo = sd.agendaPorTelefono[tel];
-    if (previo && !(Date.now() - Number(previo.desde || 0) < 60 * 60 * 1000)) delete sd.agendaPorTelefono[tel];
+    if (previo && !(Date.now() - Number(previo.desde || 0) < 60 * 60 * 1000)) {
+      // Se barre, salvo las citas creadas que siguen vivas (revision de f962cef).
+      const creadas = Object.fromEntries(Object.entries((previo.creadas && typeof previo.creadas === 'object') ? previo.creadas : {})
+        .filter(([, c]) => c && Number(c.hasta || 0) > Date.now()));
+      sd.agendaPorTelefono[tel] = Object.keys(creadas).length
+        ? { ofrecidos: {}, ultima: null, elegido: null, palabras: [], creadas, desde: Date.now() } : undefined;
+      if (!sd.agendaPorTelefono[tel]) delete sd.agendaPorTelefono[tel];
+    }
     const r = sd.agendaPorTelefono[tel] = sd.agendaPorTelefono[tel] || { ofrecidos: {}, ultima: null, elegido: null, desde: Date.now() };
     r.ofrecidos = (r.ofrecidos && typeof r.ofrecidos === 'object') ? r.ofrecidos : {};
     const previos = Array.isArray(r.ofrecidos[fecha]) ? r.ofrecidos[fecha] : [];

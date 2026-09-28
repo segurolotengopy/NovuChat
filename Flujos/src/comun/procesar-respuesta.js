@@ -1321,20 +1321,40 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // confirmada». Existe si buscar_mi_cita la mostro en este turno, o si en los
   // ultimos 30 minutos se le mostro una (candidatos por telefono) y la
   // respuesta nombra su hora, o el cliente pregunta por «mi cita».
-  const agCitaExistente = (() => {
-    if (vistasEsteTurno.length) return true;
-    let descs = [];
+  // LA EVIDENCIA DE UNA CITA QUE YA EXISTE (revision de f962cef): lo que
+  // buscar_mi_cita mostro en el turno, los candidatos de los ultimos 30
+  // minutos, las citas que ESTE telefono agendo por el chat (`creadas`, vivas
+  // hasta el dia de la cita) y la seña pendiente (la cita esta retenida).
+  const agHorasDe = (iso) => { const t = Date.parse(String(iso || '')); return Number.isFinite(t) ? agHora(agLaPaz(t).min) : ''; };
+  const agEvidencia = (() => {
+    const horas = [];
+    let hay = false;
+    for (const v of vistasEsteTurno) { hay = true; horas.push(v.desc); }
     try {
       const reg = pendientesDeCancelar && telefonoDelCliente ? pendientesDeCancelar[telefonoDelCliente] : null;
       if (reg && Date.now() - Number(reg.desde || 0) < 30 * 60 * 1000) {
-        descs = [...Object.values((reg.candidatos && typeof reg.candidatos === 'object') ? reg.candidatos : {}), reg.desc]
+        const descs = [...Object.values((reg.candidatos && typeof reg.candidatos === 'object') ? reg.candidatos : {}), reg.desc]
           .map((d) => String(d || '')).filter(Boolean);
+        if (descs.length) { hay = true; horas.push(...descs); }
       }
-    } catch (e) { descs = []; }
-    if (!descs.length) return false;
-    if (/\b(mi|mis|la|su)\s+citas?\b/.test(agClientePlano)) return true;
+    } catch (e) { /* sin datos estaticos */ }
+    const creadas = (agRegistros && telefonoDelCliente && agRegistros[telefonoDelCliente]
+      && agRegistros[telefonoDelCliente].creadas && typeof agRegistros[telefonoDelCliente].creadas === 'object')
+      ? Object.values(agRegistros[telefonoDelCliente].creadas).filter((c) => c && Number(c.hasta || 0) > agAhora) : [];
+    for (const c of creadas) { hay = true; horas.push(agHorasDe(c.inicio)); }
+    const sena = String(cfg.senaPendiente || '') === 'si';
+    return { hay: hay || sena, textos: horas.filter(Boolean) };
+  })();
+  // Existente: hay evidencia, TODAS las horas que nombra la respuesta coinciden
+  // con una cita vista, candidata o creada, y la respuesta no dice que el
+  // asistente agendo o movio algo, ni se cancelo nada en el turno (revision de
+  // f962cef: «reprogramé tu cita para el martes» sin agendar_cita no es una
+  // cita existente, es una que no existe).
+  const AG_MOVIMIENTO = /(agend[eé]|reserv[eé]|anot[eé]|cambi[eé]|mov[ií])(?![a-záéíóúñ])|reprogram|reagend/i;
+  const agCitaExistente = (() => {
+    if (!agEvidencia.hay || pasosCancelar.length > 0 || AG_MOVIMIENTO.test(respuesta.replace(/[*_~]/g, ''))) return false;
     const horasDichas = agHorasDelTexto(respuesta).map((h) => agHora(h.min));
-    return horasDichas.some((h) => descs.some((d) => d.includes(h)));
+    return horasDichas.every((h) => agEvidencia.textos.some((d) => d.includes(h)));
   })();
   if (agTextoDelModelo && Array.isArray(dato.intermediateSteps) && !ejecutoAgendar && afirmaAgendo
     && !agCitaExistente) {
@@ -1347,8 +1367,15 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       if (nombreConocido) agFinal = { fecha: pendiente.fecha, mins: [pendiente.min] };
       if (!agEleccion) agEleccion = { fecha: pendiente.fecha, min: pendiente.min };
     } else {
-      respuesta = `Todavía no agendé nada: ¿para qué día y horario ${agUsted ? 'le' : 'te'} acomoda?`;
+      // Sin hora elegida no se afirma «no agende nada» (revision de f962cef):
+      // puede haber una cita que este turno no ve. Se pregunta para revisarla.
+      respuesta = `No veo esa reserva en este chat: ¿me ${agUsted ? 'confirma' : 'confirmas'} el día para revisarla?`;
       agFinal = null;
+    }
+    // Si en el turno se cancelo la vieja, se le dice: la nueva no existe.
+    if (canceladasEnElTurno.length) {
+      respuesta = canceladasEnElTurno.map((c) => `${agUsted ? 'Su' : 'Tu'} cita${c.desc ? ' ' + String(c.desc).trim() : ' anterior'} quedó cancelada.`)
+        .join(' ') + ' ' + respuesta;
     }
     avisos.push('afirmo_sin_agendar');
   }
@@ -1357,8 +1384,16 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // de antes, por fecha), la ultima oferta y la eleccion. Se barren los
   // registros vencidos de todos los telefonos solo si hay algo que escribir.
   if (agRegistros && telefonoDelCliente) {
+    // Un registro vencido se barre, salvo sus `creadas` vivas: esas duran
+    // hasta el dia de la cita (revision de f962cef).
+    const vivas = (r) => Object.fromEntries(Object.entries((r && r.creadas && typeof r.creadas === 'object') ? r.creadas : {})
+      .filter(([, c]) => c && Number(c.hasta || 0) > agAhora));
     for (const [tel, r] of Object.entries(agRegistros)) {
-      if (!r || !(agAhora - Number(r.desde || 0) < AG_VIGENCIA_MS)) delete agRegistros[tel];
+      if (r && agAhora - Number(r.desde || 0) < AG_VIGENCIA_MS) { r.creadas = vivas(r); continue; }
+      const quedan = vivas(r);
+      if (Object.keys(quedan).length) {
+        agRegistros[tel] = { ofrecidos: {}, ultima: null, elegido: null, palabras: [], creadas: quedan, desde: Number((r && r.desde) || 0) };
+      } else delete agRegistros[tel];
     }
     const r = agRegistros[telefonoDelCliente] = agRegistros[telefonoDelCliente]
       || { ofrecidos: {}, ultima: null, elegido: null, desde: agAhora };
@@ -1381,6 +1416,20 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // una cita de verdad se deshizo por el nombre; aca solo vuelve a cero
     // cuando una cita queda en pie.
     if (eventosCreados.length && !agCitasSinConfirmar.length && !agCitasSinNombre.length) r.sinNombreSeguidos = 0;
+    // LAS CITAS QUE ESTE TELEFONO AGENDO POR EL CHAT (revision de f962cef): son
+    // la evidencia de que una cita existe en los turnos siguientes («¿ya
+    // quedo?»). Viven hasta el dia de la cita, minimo 24 horas. Las que se
+    // deshacen por falta de confirmacion o de nombre no entran; las que el
+    // candado deshace las borra `Comprobar reserva`.
+    r.creadas = (r.creadas && typeof r.creadas === 'object') ? r.creadas : {};
+    for (const ev of eventosCreados) {
+      if (agCitasSinConfirmar.includes(ev.id) || agCitasSinNombre.includes(ev.id)) continue;
+      const t = Date.parse(ev.inicio);
+      r.creadas[String(ev.id).slice(0, 200)] = { inicio: String(ev.inicio), desde: agAhora,
+        hasta: Math.max(Number.isFinite(t) ? t + 3600000 : 0, agAhora + 24 * 3600000) };
+    }
+    const ids = Object.keys(r.creadas);
+    for (const id of ids.slice(0, Math.max(0, ids.length - 10))) delete r.creadas[id];
     // Las palabras del cliente (de donde sale el nombre dicho antes), las mas
     // recientes al final, hasta 80.
     const previas = Array.isArray(r.palabras) ? r.palabras : [];

@@ -878,15 +878,18 @@ describe.each([
     const recien = new Date(Date.now() - 1000).toISOString();
     return [
       { id: 'existente', summary: 'Cita ANDRES', organizer: { email: persona.calendario },
-        start: { dateTime: '2026-09-17T14:00:00-04:00' }, end: { dateTime: '2026-09-17T15:00:00-04:00' },
+        start: { dateTime: `${DIA_J}T14:00:00-04:00` }, end: { dateTime: `${DIA_J}T15:00:00-04:00` },
         created: '2026-09-15T12:00:00.000Z' },
       { id: 'nueva', summary: 'Cita Ruben — blanqueamiento dental profesional', organizer: { email: persona.calendario },
-        start: { dateTime: '2026-09-17T14:30:00-04:00' }, end: { dateTime: '2026-09-17T15:30:00-04:00' },
+        start: { dateTime: `${DIA_J}T14:30:00-04:00` }, end: { dateTime: `${DIA_J}T15:30:00-04:00` },
         created: recien },
     ];
   };
   const DIJO_EL_MODELO = '¡Listo, Ruben! Quedó agendada tu cita de blanqueamiento dental profesional para hoy a las 14:30.';
-  const procesada = { respuesta: DIJO_EL_MODELO, transferir: false, afirmaAgendo: true, from: '59170000001', nombrePerfil: 'Ruben' };
+  // Como lo manda hoy `Procesar respuesta`: agendar_cita corrió y devolvió el
+  // id de la cita nueva. Fecha calculada (un miércoles futuro), nunca fija.
+  const procesada = { respuesta: DIJO_EL_MODELO, transferir: false, afirmaAgendo: true, from: '59170000001', nombrePerfil: 'Ruben',
+    pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0, eventosCreados: [{ id: 'nueva' }] };
   const PIDIO_EL_PACIENTE = 'una cita con el Dr Cristian sandobal a las 2.30 de la tarde hoy';
 
   /** `Comprobar reserva` sobre los eventos del caso: el item que sigue al candado. */
@@ -1052,17 +1055,16 @@ describe.each([
 
     it('Comprobar reserva ya no transfiere por sí mismo: deja el motivo y QUIÉN y CUÁNDO chocó', () => {
       const c = candado();
-      // Este caso viene SIN los ids del turno (respaldo de la ventana): el aviso
-      // a recepción viaja en `avisoDelTurno` y sale UNA vez, al final del
-      // camino (revisiones de 98796fd y f0c6957). Desde acá no transfiere.
+      // Con los ids del turno (como corre hoy), desde acá no transfiere ni hay
+      // aviso del turno: la transferencia la decide el final del camino.
       expect(c['transferir']).toBe(false);
       expect(c['motivoTransferencia']).toBe('');
-      expect(String(c['avisoDelTurno'])).toContain('no supo con certeza');
+      expect(c['avisoDelTurno']).toBe('');
       expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
       const caidas = c['citasCaidas'] as J[];
       expect(caidas).toHaveLength(1);
       expect(caidas[0]).toMatchObject({ hora: '14:30', persona: persona.nombre, servicio: 'blanqueamiento dental profesional' });
-      expect(String(caidas[0]!['fecha'])).toContain('17 de septiembre');
+      expect(String(caidas[0]!['fecha'])).toContain(`${Number(DIA_J.slice(8))} de `);
       // La rama directa a la transferencia sigue para los otros casos del candado.
       expect(destinos('Comprobar reserva')).toEqual(['¿Deshacer cita solapada?', '¿Transferir a humano?', '¿Hay cita verificada?',
         '¿Aplicar adelanto?', '¿Enviar QR de la seña?']); // el QR (bloque l) cuelga al final; el adelanto a favor (21/09) justo antes
@@ -1149,10 +1151,12 @@ describe.each([
       expect(conIds['transferir']).toBe(false);
       expect(conIds['motivoTransferencia']).toBe('');
       expect(String(conIds['respuesta'])).toContain('Puedo ofrecerle las 15:00');
-      // Este caso viene sin ids (respaldo): el ÚNICO aviso del turno sale acá.
-      const r = reintento(salida);
-      expect(r['transferir']).toBe(true);
-      expect(String(r['motivoTransferencia'])).toContain('no supo con certeza');
+      // Con aviso del turno (p. ej. al segundo «sin nombre»), el ÚNICO aviso sale acá.
+      const conAviso = ejecutar(codigo('Procesar reintento'), [salida],
+        { 'Retomar respuesta': [{ ...retomar({ success: true }), avisoDelTurno: 'motivo del turno' }] })[0]!;
+      expect(conAviso['transferir']).toBe(true);
+      expect(String(conAviso['motivoTransferencia'])).toContain('motivo del turno');
+      expect(reintento(salida)['transferir']).toBe(false);
     });
 
     it.each([
@@ -2396,10 +2400,12 @@ describe.each([
         expect(String(s['respuesta']), frase).toBe(frase);
         expect(s['avisos']).toEqual([]);
       }
-      // «Queda reservado» sin que agendar_cita haya corrido lo reemplaza la
-      // respuesta honesta (Andres, 27/09); la red del cobro no lo toca.
-      const reservado = procesar('El horario queda reservado 45 minutos a la espera de la seña.');
-      expect(reservado['avisos']).not.toContain('correccion_cobro');
+      // «Queda reservado» con la seña pendiente habla de la cita retenida: ni la
+      // red del cobro ni la respuesta honesta lo tocan (revisión de f962cef, H2).
+      const frase = 'El horario queda reservado 45 minutos a la espera de la seña.';
+      const reservado = procesar(frase, { ...CON_SENA, senaPendiente: 'si' });
+      expect(String(reservado['respuesta'])).toBe(frase);
+      expect(reservado['avisos']).toEqual([]);
     });
 
     it('sin la seña activa la red no corre: el texto del modelo sale tal cual (no hay cobro real que proteger)', () => {
@@ -4120,6 +4126,7 @@ describe('Adelanto a favor: el flujo', () => {
     const previa = { from: '5917',
       respuesta: 'Listo, cancelé tu cita del lunes y te agendé el martes a las 11:00. Queda RESERVADO por 15 minutos a la espera de la seña.\n\nEl adelanto que pagaste queda a tu favor por 7 días: si reagendas en ese plazo, no pagas otra seña.',
       eventoSena: { evento: 'cita_cancelada', referencia: 'pagada', inicio: '2026-09-21T15:00:00-04:00' },
+      pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
       eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }] };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
       'Config del negocio': [{ senaActiva: 'si', tratamiento: 'tú', funcionarios: '[]' }] })[0] ?? {};
@@ -4146,7 +4153,7 @@ describe('Adelanto a favor: el flujo', () => {
     const ev = { id: 'nueva', summary: 'Cita Andrés — blanqueamiento', organizer: { email: 'cal' },
       start: { dateTime: `${DIA_J}T11:00:00-04:00` }, end: { dateTime: `${DIA_J}T12:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { respuesta: 'Tu horario del martes a las 11:00 queda RESERVADO por 15 minutos a la espera de la seña. A continuación te llega el QR.',
-      from: '5917', eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }] };
+      from: '5917', pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0, eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }] };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
       'Config del negocio': [{ senaAFavor: 'si', senaActiva: 'si', tratamiento: 'tú', funcionarios: '[]' }] })[0] ?? {};
     expect(r['eventoSena']).toEqual({ evento: 'adelanto_aplicado', referencia: 'nueva', calendario: 'cal' });
@@ -4160,6 +4167,7 @@ describe('Adelanto a favor: el flujo', () => {
     const ev = { id: 'nueva', summary: 'PENDIENTE DE SEÑA · Cita', organizer: { email: 'cal' },
       start: { dateTime: `${DIA_J}T09:00:00-04:00` }, end: { dateTime: `${DIA_J}T10:00:00-04:00` }, created: new Date().toISOString() };
     const previa = { respuesta: 'Quedó confirmada.', ubicacionLat: -17.7, ubicacionLng: -63.1,
+      pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
       eventosCreados: [{ id: 'nueva', calendario: 'cal', inicio: ev.start.dateTime, fin: ev.end.dateTime }] };
     const r = ejecutar(cod, [ev], { 'Procesar respuesta': [previa],
       'Config del negocio': [{ senaAFavor: 'si', senaActiva: 'si', funcionarios: '[]' }] })[0] ?? {};
@@ -4744,6 +4752,7 @@ describe.each([['platinum-agendamiento.json', flujo], ['demo-a-agendamiento.json
       const previa = (ev: J): J => ({
         respuesta: `Quedó agendada tu consulta para mañana, ${J.nombre} ${J.dia} de ${J.nombreMes}, a las 15:30.`,
         from: '59170000001', nombrePerfil: 'Sil', transferir: false, ejecutoAgendar: true, verificarReserva: true,
+        pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
         eventosCreados: [{ id: ev.id, calendario: persona.calendario, inicio: ev.start.dateTime, fin: ev.end.dateTime, titulo: ev.summary }],
       });
       const candado = (ev: J, eventos: J[] = [ev], p: J = previa(ev)) =>
