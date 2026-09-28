@@ -51,6 +51,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { registerHooks } from 'node:module';
 
 const ENSAYO = 'ensayo';
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -204,9 +205,26 @@ if (APLICAR) {
     // catálogo entero del cliente que se ensaya (`cargar-negocio.mjs` respeta
     // `limites.productos`). `plan: 'demostracion'` ya no existe (F1).
     const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
+    // El modelo, como lo escribe el alta (`crearTenant` en index.ts): sin él,
+    // el seco de `migrar-ejes.mjs` ve un eje faltante en este comercio (28/09).
+    // `central/ejes.ts` importa `./cuenta/*.js`, que Node no reescribe al
+    // cargar TypeScript sin compilar: el mismo hook que `migrar-ejes.mjs`.
+    registerHooks({
+      resolve(especificador, contexto, siguiente) {
+        try {
+          return siguiente(especificador, contexto);
+        } catch (e) {
+          if (especificador.startsWith('.') && especificador.endsWith('.js') && contexto.parentURL?.endsWith('.ts')) {
+            return siguiente(`${especificador.slice(0, -3)}.ts`, contexto);
+          }
+          throw e;
+        }
+      },
+    });
+    const { MODELO_POR_DEFECTO } = await import('../functions/src/central/ejes.ts');
     await refEnsayo.set({
       nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
-      plan: 'pro', creadoPor: 'ensayo', creadoEn: Timestamp.now(),
+      plan: 'pro', modelo: MODELO_POR_DEFECTO, creadoPor: 'ensayo', creadoEn: Timestamp.now(),
     });
     await db.doc(`tenants/${ENSAYO}/cuenta/estado`).set({
       plan: 'pro', limites: limitesDe('pro'), catalogoPlanes: CATALOGO_PLANES, modalidad: 'demostracion',
