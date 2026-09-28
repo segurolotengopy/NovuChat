@@ -4,30 +4,30 @@
     "Config base": "REEMPLAZAR_"
   },
   "codigo": {
-    "Normalizar entrada": "comun/normalizar-entrada.js",
-    "Procesar respuesta": "comun/procesar-respuesta.js",
-    "Comprobar reserva": "reservas/comprobar-reserva.js",
-    "Comercio no operativo": "comun/comercio-no-operativo.js",
-    "Calendarios a revisar": "reservas/calendarios-a-revisar.js",
-    "Retomar respuesta": "reservas/retomar-respuesta.js",
-    "Config del negocio": "comun/config-del-negocio.js",
+    "Normalizar entrada": "core/normalizar-entrada.js",
+    "Procesar respuesta": "core/procesar-respuesta.js",
+    "Comprobar reserva": "modulos/agenda/comprobar-reserva.js",
+    "Comercio no operativo": "core/comercio-no-operativo.js",
+    "Calendarios a revisar": "modulos/agenda/calendarios-a-revisar.js",
+    "Retomar respuesta": "modulos/agenda/retomar-respuesta.js",
+    "Config del negocio": "core/config-del-negocio.js",
     "Uso extendido": {
-      "archivo": "comun/uso-extendido.js",
+      "archivo": "core/uso-extendido.js",
       "saltoFinal": true
     },
-    "Mensaje a enviar": "reservas/mensaje-a-enviar.js",
-    "Procesar reintento": "reservas/procesar-reintento.js",
+    "Mensaje a enviar": "modulos/agenda/mensaje-a-enviar.js",
+    "Procesar reintento": "modulos/agenda/procesar-reintento.js",
     "Preparar reenvío del QR": {
-      "archivo": "reservas/preparar-reenvio-del-qr.js",
+      "archivo": "modulos/agenda/preparar-reenvio-del-qr.js",
       "saltoFinal": true
     },
-    "Preparar seña": "reservas/preparar-sena.js",
-    "QR no enviado": "reservas/qr-no-enviado.js",
-    "Interpretar lectura": "reservas/interpretar-lectura.js",
-    "Respuesta de la seña": "reservas/respuesta-de-la-sena.js",
-    "Mensaje de la seña": "reservas/mensaje-de-la-sena.js",
-    "Preparar transcripción": "reservas/preparar-transcripcion.js",
-    "Preparar imagen": "reservas/preparar-imagen.js"
+    "Preparar seña": "modulos/cobros/preparar-sena.js",
+    "QR no enviado": "modulos/agenda/qr-no-enviado.js",
+    "Interpretar lectura": "modulos/cobros/interpretar-lectura.js",
+    "Respuesta de la seña": "modulos/cobros/respuesta-de-la-sena.js",
+    "Mensaje de la seña": "modulos/cobros/mensaje-de-la-sena.js",
+    "Preparar transcripción": "core/medios/preparar-transcripcion.js",
+    "Preparar imagen": "core/medios/preparar-imagen.js"
   },
   "prompts": {
     "AI Agent (Sofía)": {

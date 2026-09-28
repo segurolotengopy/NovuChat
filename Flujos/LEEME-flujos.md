@@ -36,8 +36,9 @@ en el JSON:
 
 | Carpeta | Qué hay |
 |---|---|
-| `Flujos/src/comun/` | Los nodos Code que existen con el mismo nombre en todos los verticales conversacionales (`Normalizar entrada`, `Procesar respuesta`, `Config del negocio`, `Comercio no operativo`, `Uso extendido`). Hoy llevan la versión del vertical de reservas; el Demo B y la captación tienen la suya, y conciliarlas es del bloque B-2 |
-| `Flujos/src/reservas/` | Los trece nodos Code que nacieron en los flujos de reservas (el candado `Comprobar reserva`, la seña, los medios, el reintento tras cruce). **Dos no son de reservas**: `preparar-transcripcion.js` y `preparar-imagen.js` son la capacidad general de medios entrantes y desde el 28/09/2026 también los inyectan el Demo B y la captación (§0.d); siguen en esta carpeta hasta que F3a los lleve al core |
+| `Flujos/src/core/` | Zona Core. En el primer nivel están los nodos Code que existen con el mismo nombre en todos los verticales conversacionales (`Normalizar entrada`, `Procesar respuesta`, `Config del negocio`, `Comercio no operativo`, `Uso extendido`). Hoy llevan la versión del vertical de reservas; el Demo B y la captación tienen la suya, y conciliarlas es de F3. En `core/medios/` están los medios entrantes (`Preparar transcripción`, `Preparar imagen`), que son Core por la regla del 25/09; desde el 28/09/2026 también los inyectan el Demo B y la captación (§0.d) |
+| `Flujos/src/modulos/agenda/` | Los siete nodos Code del módulo Agenda: el candado `Comprobar reserva`, los calendarios, el reintento tras cruce y el reenvío del QR |
+| `Flujos/src/modulos/cobros/` | Los cuatro nodos Code de la seña (módulo Cobros) |
 | `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`, `platinum.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
 | `Flujos/manifiestos/<flujo>.json` | Qué nodo de ese JSON toma qué archivo, **por nombre de nodo**. Nunca hay marcadores dentro del código |
 | `admin/scripts/ensamblar-flujo.mjs` | `verificar` (ensambla en memoria y compara byte a byte; sale con 1 si difiere), `ensamblar` (módulos → JSON) y `extraer` (JSON → módulos) |
@@ -248,7 +249,7 @@ repo Git).
 Es el único lugar del JSON donde hay valores del negocio (criterio B-8): el
 nodo Set `Config base` (`Config del negocio` en la captación) lleva los
 campos con prefijo `REEMPLAZAR_`, y `Config del negocio` —un nodo Code, en
-`Flujos/src/comun/`— los fusiona con lo que responde el panel. Los completa
+`Flujos/src/core/`— los fusiona con lo que responde el panel. Los completa
 `scripts/preparar-import.sh` desde `CONFIGURACION.local.md`, nunca a mano.
 Campos con prefijo `REEMPLAZAR_`:
 

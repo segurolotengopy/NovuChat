@@ -16,7 +16,7 @@
 | **Pestañas** | Cobros (`admin`), Cobro / QR (`admin`) |
 | **Prompt** | fragmento de cobro del prompt (QR, comprobante) |
 | **Herramientas** | las de la seña y del comprobante en los flujos de reservas y venta |
-| **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (hoy en `Flujos/src/reservas/`), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
+| **Nodos (lo que queda en n8n)** | `preparar-sena`, `respuesta-de-la-sena`, `mensaje-de-la-sena`, `interpretar-lectura` (en `Flujos/src/modulos/cobros/` desde FL1), más los nodos de cobro del Demo B; dibujo del QR y cotejo del comprobante como servicios internos del módulo |
 | **Ganchos** | `despuesDelTurno` (cotejo), `alCierre` con Pedidos o Agenda |
 | **Mensajes por conversación** | 0 en la venta; la seña agrega los mensajes declarados en §4duodecies (abajo) |
 | **Pruebas** | `qr.test.ts`, `sena-cotejo.test.ts`, `sena-servidor.test.ts`, `cobro-venta.test.ts`, `demo-b-cobro.test.ts` |

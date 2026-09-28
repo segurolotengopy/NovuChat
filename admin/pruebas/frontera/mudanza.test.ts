@@ -11,7 +11,7 @@
  * reproducibilidad con la que `solo-rutas.mjs` juzga un PR de tanda.
  */
 import { describe, expect, it } from 'vitest';
-import { leerTanda, planDeMudanza, reemplazarRutas, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
+import { archivosAMirar, leerTanda, planDeMudanza, reemplazarRutas, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
 
 const F = 'admin/functions/src';
 const ARCHIVOS: Record<string, string> = {
@@ -241,6 +241,57 @@ describe('reemplazarRutas: los límites de la cita', () => {
   it('otro archivo con el mismo prefijo no se toca', () => {
     for (const t of ['functions/src/muestra.tsx', 'functions/src/muestra.ts.bak', 'functions/src/muestra.ts-x', 'mas/functions/src/muestra.ts']) {
       expect(reemplazarRutas(t, m), t).toBe(t);
+    }
+  });
+});
+
+describe('manifiestos del ensamblador (Flujos/manifiestos/*.json, para FL1)', () => {
+  const manifiesto = `${JSON.stringify({
+    flujo: 'x.json',
+    conservanMarcadores: { 'Config base': 'REEMPLAZAR_' },
+    codigo: {
+      'Normalizar entrada': 'comun/normalizar-entrada.js',
+      'Uso extendido': { archivo: 'comun/uso-extendido.js', saltoFinal: true },
+      'Otro': 'reservas/otro.js',
+    },
+    prompts: { Agente: { systemMessage: 'comun/normalizar-entrada.js' } },
+  }, null, 2)}\n`;
+  const archivos: Record<string, string> = {
+    'Flujos/manifiestos/x.json': manifiesto,
+    'Flujos/src/comun/normalizar-entrada.js': '',
+    'Flujos/src/comun/uso-extendido.js': '',
+    'Flujos/src/reservas/otro.js': '',
+  };
+  const arb: ArbolConCarpetas = { leer: (a) => archivos[a] ?? '', existe: (a) => a in archivos, esCarpeta: () => false };
+  const movs = [
+    { de: 'Flujos/src/comun/normalizar-entrada.js', a: 'Flujos/src/core/normalizar-entrada.js' },
+    { de: 'Flujos/src/comun/uso-extendido.js', a: 'Flujos/src/core/uso-extendido.js' },
+  ];
+  it('archivosAMirar incluye los manifiestos y nada más de Flujos/ fuera de src/', () => {
+    expect(archivosAMirar(['Flujos/manifiestos/x.json', 'Flujos/x.json', 'Flujos/manifiestos/sub/y.json'])).toEqual(['Flujos/manifiestos/x.json']);
+  });
+  it('reescribe solo el `codigo` que nombra un archivo movido, con su forma de objeto, y respeta el orden', () => {
+    const p = planDeMudanza(movs, ['Flujos/manifiestos/x.json'], arb);
+    const nuevo = JSON.parse(p.ediciones.find((e) => e.archivo === 'Flujos/manifiestos/x.json')!.nuevoTexto);
+    expect(nuevo.codigo).toEqual({
+      'Normalizar entrada': 'core/normalizar-entrada.js',
+      'Uso extendido': { archivo: 'core/uso-extendido.js', saltoFinal: true },
+      'Otro': 'reservas/otro.js',
+    });
+    expect(Object.keys(nuevo)).toEqual(['flujo', 'conservanMarcadores', 'codigo', 'prompts']);
+    expect(Object.keys(nuevo.codigo['Uso extendido'])).toEqual(['archivo', 'saltoFinal']);
+    expect(nuevo.prompts.Agente.systemMessage).toBe('comun/normalizar-entrada.js'); // los prompts viven en Flujos/prompts/
+  });
+  it('un manifiesto con otro formato no se reescribe en silencio, pero no traba una tanda que no lo toca', () => {
+    const otro: ArbolConCarpetas = { ...arb, leer: (a) => (a === 'Flujos/manifiestos/x.json' ? manifiesto.replace(/\n/g, '\r\n') : arb.leer(a)) };
+    expect(() => planDeMudanza(movs, ['Flujos/manifiestos/x.json'], otro)).toThrow(/formato/);
+    const ajena = planDeMudanza([{ de: 'admin/scripts/x.mjs', a: 'admin/scripts/plataforma/x.mjs' }], ['Flujos/manifiestos/x.json'], otro);
+    expect(ajena.ediciones.find((e) => e.archivo === 'Flujos/manifiestos/x.json')).toBeUndefined();
+  });
+  it('un manifiesto cuya raíz no es un objeto no se reescribe como {}', () => {
+    for (const raiz of ['[]\n', '5\n', 'null\n']) {
+      const otro: ArbolConCarpetas = { ...arb, leer: (a) => (a === 'Flujos/manifiestos/x.json' ? raiz : arb.leer(a)) };
+      expect(() => planDeMudanza(movs, ['Flujos/manifiestos/x.json'], otro), raiz).toThrow(/no es un objeto/);
     }
   });
 });

@@ -27,8 +27,8 @@
   sección con el gancho: el agente declara qué sección toca y la revisión del
   PR cubre el resto.
 - Hasta que F2 cree las carpetas por zona, los archivos viven donde están hoy
-  (`admin/functions/src/*.ts`, `admin/web/src/paginas/*.tsx`,
-  `Flujos/src/comun/`): en el primer PR de cada agente la zona es la lista de
+  (`admin/functions/src/*.ts`, `admin/web/src/paginas/*.tsx`; los módulos
+  de flujos ya están por zona desde FL1): en el primer PR de cada agente la zona es la lista de
   archivos que su ficha nombra, y se declara.
 
 ## Zonas efectivas
