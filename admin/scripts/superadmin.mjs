@@ -82,7 +82,7 @@ for (const correo of correos) {
     continue;
   }
 
-  // Set y no arreglo, igual que `proveedoresDe()` en functions/src/claims.ts.
+  // Set y no arreglo, igual que `proveedoresDe()` en functions/src/core/seguridad/claims.ts.
   // Dos razones. La primera es que este control existe para ser el ESPEJO de
   // aquel, y dos espejos que se escriben distinto se separan con el tiempo.
   //

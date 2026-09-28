@@ -75,7 +75,7 @@
     {
       "desde": "admin/functions/src/core/prompt/prompt.ts",
       "hacia": "admin/functions/src/central/servicios/saneo.ts",
-      "porque": "El prompt (Core) usa el saneo (Central): lo que usa baja a Core al mover prompt.ts"
+      "porque": "El prompt (Core) usa textoPlano y sinMarcas del saneo (Central): C2 los baja a core/prompt/texto.ts"
     },
     {
       "desde": "admin/web/src/paginas/Captacion.tsx",

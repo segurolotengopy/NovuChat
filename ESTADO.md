@@ -35,8 +35,12 @@ push a `main` que toque `admin/` despliega ahí.
 
 ## En obra: la rearquitectura por capas (`Analisis/41`, reorientado el 26/09)
 
-- Hechos: F-1, E, F1, F6, S, **F1b (H1b, informe en el tablero)**. F2 con su
-  primer PR (`registro.ts`, #214).
+- Hechos: F-1, E, F1, F6, S, **F1b (H1b, informe en el tablero)**.
+- **F2 en obra:** están hechos `registro.ts`, `fronteras.test.ts`, la tanda
+  cero y las tandas T1 a T4. Esas tandas llevaron a `core/` conteo, turno,
+  seguridad y prompt, y a `central/` servicios, asistente, negocio y reclamos.
+  Todas están en verde en staging. La deuda de la frontera bajó de 19 a 16
+  cruces.
 - **Siguiente:** F2 (mover sin lógica, `fronteras.test.ts`, `tenants.modulos`
   con migración en ventana, etiqueta con staging primero) → F3a (esqueleto de
   venta; habilita a Rubén Roca) → F3b (core de reservas).
@@ -49,8 +53,8 @@ push a `main` que toque `admin/` despliega ahí.
    (`asignar-plan.mjs --periodo-prueba 2026-10 --bolsa-prueba 20|100`, seco
    antes; confirmar que no tengan `periodoPagado`).
 2. Andres pega el informe **H1b** en la sesión revisora.
-3. F2, empezando por `fronteras.test.ts` y el arreglo del CI para PR que solo
-   tocan `Flujos/`.
+3. F2: siguen C1 (lo decide la revisora), C2 y T5. FL1 espera el #244 de
+   la cartera (reservas).
 4. Plantillas `prueba_termina` y `conversaciones_agotadas` con texto nuevo
    (Meta), antes del primer pase real.
 
