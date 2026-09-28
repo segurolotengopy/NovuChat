@@ -570,19 +570,40 @@ grilla (aviso `horario_fuera_de_grilla`) y `Comprobar reserva` deshace una cita
 del chat fuera de grilla (causa `fuera_de_grilla`, después del cruce; con
 causas mezcladas manda la grilla, salvo fecha pasada o cruce).
 
-**Qué juzga el candado (revisión de seguridad de `98796fd`).** Tres casos:
+**Qué juzga el candado (revisión de seguridad de `98796fd` y decisiones de
+Andres del 27/09).** Tres casos:
 - **El modelo solo lo dijo** (`pasosDelAgente` y `agendar_cita` sin ejecutar):
   el turno no creó nada. No se juzga, no se borra, no se nombra y no se ata la
-  seña a ninguna cita de la ventana, que son de otros (recepción cargando
-  hermanos, otro paciente). Pasa por la red de siempre.
+  seña a ninguna cita de la ventana, que son de otros. Y la respuesta la pone
+  el código, sin confirmar nada (aviso `afirmo_sin_agendar`): con hora elegida
+  y nombre, «Todavía no quedó agendada: ¿te la reservo el <día> a las
+  <hora>?»; con hora y sin nombre, la pregunta de `sin_nombre`; sin hora,
+  «Todavía no agendé nada: ¿para qué día y horario te acomoda?». No se toca si
+  en el turno se buscó una cita existente (`buscar_mi_cita`). 0 mensajes.
 - **Ids completos** (toda llamada a `agendar_cita` trajo su id): se juzgan solo
-  esas citas, contra todo lo que hay en la agenda. Dos manuales a la misma hora
-  cargadas hace un minuto no son un cruce ni «duplicadas».
-- **Respaldo** (sin ids, o alguna llamada con una observación sin id,
-  `agendarPasosSinId`): se juzga la ventana de cinco minutos como antes, pero
-  al cliente nunca se le dice el nombre de una cita que no sea del turno (solo
-  la hora) y el caso pasa a recepción con el motivo. La marca de creación que
-  devuelve Google viaja en `eventosCreados.creado` para el desempate.
+  esas citas, contra todo lo que hay en la agenda, y se deshace la del turno
+  que choca. Dos manuales a la misma hora no son un cruce ni «duplicadas».
+- **Sin ids fiables** (alguna observación sin id, o `isExecuted` sin los
+  pasos): el candado **no borra ninguna cita ajena**. Las del turno con id
+  conocido que caen por cruce, fecha pasada o grilla sí se deshacen (son del
+  turno). No nombra citas ajenas, no le confirma nada al paciente («recepción
+  revisa la agenda y te confirma el horario por este chat», con el botón), no
+  hay reintento, y pasa a recepción con el motivo «posible cruce: agendar_cita
+  no devolvió el id; revisar la agenda de <día hora>». «Lo que agendamos» y el
+  cierre cuentan solo citas con id del turno. La marca de creación que devuelve
+  Google viaja en `eventosCreados.creado` para el desempate.
+- **Doble reserva simultánea**: si la cita del turno gana el desempate pero la
+  pisa otra más nueva, ajena y de la ventana, no se borra ninguna y pasa a
+  recepción («posible doble reserva simultánea»), sin confirmarle nada al
+  paciente.
+
+**Un solo aviso a recepción por turno** (revisión de `f0c6957`). Los ítems que
+ceden ya no transfieren cada uno: el motivo viaja en `avisoDelTurno` y lo manda
+el final del camino (`Retomar respuesta` o `Procesar reintento`). **Mensajes:
+quita** los avisos a recepción repetidos que salían por ítem (uno por cita que
+cedía en el respaldo, en la llamada sin id y al segundo `sin_nombre`); queda uno
+por turno. El contador de `sin_nombre` seguidos lo sube `Procesar reintento`
+solo cuando una cita se deshizo por el nombre.
 
 **Riesgo aceptado: lo que se guarda por teléfono** (revisión de seguridad de
 `ca88ced`). El vencimiento de una hora de `agendaPorTelefono` se renueva con

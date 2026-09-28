@@ -76,7 +76,14 @@ const notaCruce = caidas.length
 let userInput = '';
 try { userInput = String($('Normalizar entrada').first().json.userInput || ''); } catch (e) { userInput = ''; }
 
-const reintentar = !borradoFallo && caidas.length > 0;
+// Sin ids fiables o con una doble reserva simultanea NO hay reintento: el
+// paciente recibe «recepcion te confirma el horario» y pasa a recepcion
+// (Andres, 27/09/2026). Ofrecerle alternativas seria confirmarle una agenda
+// que el candado no pudo asegurar.
+const sinReintento = base.sinIdsFiables === true || base.dobleReservaSimultanea === true;
+const reintentar = !borradoFallo && caidas.length > 0 && !sinReintento;
+// El aviso del turno que armo `Comprobar reserva` (uno solo por turno).
+const avisoDelTurno = String(base.avisoDelTurno || '');
 const motivo = base.motivoCruce || 'hubo un cruce de horario';
 // Sin confirmar y el borrado FALLO: la cita existe. Decirle «¿te la agendo?»
 // seria falso; sale lo que el modelo habia escrito (la cita esta agendada, es
@@ -100,7 +107,11 @@ return [{ json: { ...base,
   userInput,
   // Sin reintento, la red de seguridad de siempre: texto fijo y recepcion.
   transferir: !reintentar,
-  motivoTransferencia: reintentar ? '' : (borradoFallo
-    ? `${motivo}, PERO NO SE PUDO DESHACER la cita nueva: hay dos citas a la misma hora en esa agenda y el cliente recibio el aviso de que no se pudo confirmar`
-    : `${motivo} y el cliente quedo esperando otro horario`),
+  motivoTransferencia: reintentar ? '' : [
+    sinReintento ? '' : (borradoFallo
+      ? `${motivo}, PERO NO SE PUDO DESHACER la cita nueva: hay dos citas a la misma hora en esa agenda y el cliente recibio el aviso de que no se pudo confirmar`
+      : `${motivo} y el cliente quedo esperando otro horario`),
+    avisoDelTurno,
+    sinReintento && borradoFallo ? 'ademas no se pudo deshacer la cita de este turno que chocaba' : '',
+  ].filter(Boolean).join('; '),
 }, pairedItem: { item: 0 } }];

@@ -1057,6 +1057,12 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     'con', 'por', 'un', 'una', 'uno', 'unos', 'unas', 'al', 'que', 'es', 'primera', 'primer', 'primero', 'vez', 'urgente', 'urgencia',
     'hoy', 'manana', 'tarde', 'noche', 'general', 'revision', 'hora', 'horas', 'favor', 'quiero', 'queria', 'hola', 'buenas',
     'buenos', 'dias', 'gracias', 'si', 'no', 'ok', 'medico', 'medica', 'pediatra', 'especialista', 'atencion', 'agenda',
+    // Las comunes (revision de f0c6957): «esta bien», «disponible», «reservar».
+    'necesito', 'reservar', 'agendar', 'puedo', 'puede', 'tiene', 'tienes', 'hay', 'espacio', 'disponible', 'disponibles',
+    'bien', 'esta', 'este', 'esa', 'ese', 'perfecto', 'dale', 'listo', 'bueno', 'claro', 'le', 'lo', 'me', 'te', 'se',
+    'en', 'las', 'sip', 'va', 'vale', 'como', 'cuando', 'donde', 'cual', 'eso', 'esto', 'mejor', 'otra', 'otro', 'ya',
+    'solo', 'nos', 'mas', 'muy', 'algo', 'todo', 'hacer', 'venir', 'ir', 'ser', 'estar', 'tengo', 'soy', 'llamo', 'seria',
+    'sera', 'mismo', 'misma', 'cuanto', 'cuesta', 'precio', 'costo',
     ...AG_DIAS.map(agSinTilde), ...AG_MESES]);
   // Palabras DEL NEGOCIO: los servicios del catalogo y los nombres y servicios
   // de quienes atienden.
@@ -1297,6 +1303,56 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     }
   }
 
+  // --- «SOLO LO DIJO»: RESPUESTA HONESTA (Andres, 27/09/2026) ---------------
+  // El modelo AFIRMA que agendo («quedo agendada», «tu cita esta confirmada») y
+  // agendar_cita NO se ejecuto en el turno (con los pasos del agente a la
+  // vista): no hay cita. Una confirmacion sin cita es presentar algo como lo
+  // que no es. El texto lo pone el codigo, y ninguna variante confirma:
+  //   · hora elegida pendiente y nombre conocido → «Todavia no quedo agendada:
+  //     ¿te la reservo el <dia> a las <hora>?» (su «si» la confirma);
+  //   · hora elegida sin nombre → la pregunta de `sin_nombre`;
+  //   · sin hora elegida → «Todavia no agende nada: ¿para que dia y horario te
+  //     acomoda?».
+  // Reemplaza la respuesta del turno: 0 mensajes agregados. Si el nombre
+  // parece conocido o no solo decide cual de las dos preguntas sale; la
+  // barrera real del nombre esta al agendar (H2, `sin_nombre`).
+  // Si la afirmacion habla de una cita que YA EXISTE, no se toca (revision de
+  // f0c6957): «¿mi cita esta confirmada?» → «Si, tu cita del lunes esta
+  // confirmada». Existe si buscar_mi_cita la mostro en este turno, o si en los
+  // ultimos 30 minutos se le mostro una (candidatos por telefono) y la
+  // respuesta nombra su hora, o el cliente pregunta por «mi cita».
+  const agCitaExistente = (() => {
+    if (vistasEsteTurno.length) return true;
+    let descs = [];
+    try {
+      const reg = pendientesDeCancelar && telefonoDelCliente ? pendientesDeCancelar[telefonoDelCliente] : null;
+      if (reg && Date.now() - Number(reg.desde || 0) < 30 * 60 * 1000) {
+        descs = [...Object.values((reg.candidatos && typeof reg.candidatos === 'object') ? reg.candidatos : {}), reg.desc]
+          .map((d) => String(d || '')).filter(Boolean);
+      }
+    } catch (e) { descs = []; }
+    if (!descs.length) return false;
+    if (/\b(mi|mis|la|su)\s+citas?\b/.test(agClientePlano)) return true;
+    const horasDichas = agHorasDelTexto(respuesta).map((h) => agHora(h.min));
+    return horasDichas.some((h) => descs.some((d) => d.includes(h)));
+  })();
+  if (agTextoDelModelo && Array.isArray(dato.intermediateSteps) && !ejecutoAgendar && afirmaAgendo
+    && !agCitaExistente) {
+    const pendiente = agEleccion || (agElegido ? { fecha: String(agElegido.fecha), min: Number(agElegido.min) } : null);
+    const nombreConocido = [...agPalabrasCliente].some((w) => !AG_GENERICAS.has(w) && !AG_DEL_NEGOCIO.has(w));
+    if (pendiente && Number.isFinite(pendiente.min) && pendiente.fecha) {
+      respuesta = nombreConocido
+        ? `Todavía no quedó agendada: ¿${agUsted ? 'se' : 'te'} la reservo el ${agDiaTexto(pendiente.fecha)} a las ${agHora(pendiente.min)}?`
+        : `Para reservar las ${agHora(pendiente.min)} del ${agDiaTexto(pendiente.fecha)}, ¿a nombre de quién la agendo?`;
+      if (nombreConocido) agFinal = { fecha: pendiente.fecha, mins: [pendiente.min] };
+      if (!agEleccion) agEleccion = { fecha: pendiente.fecha, min: pendiente.min };
+    } else {
+      respuesta = `Todavía no agendé nada: ¿para qué día y horario ${agUsted ? 'le' : 'te'} acomoda?`;
+      agFinal = null;
+    }
+    avisos.push('afirmo_sin_agendar');
+  }
+
   // Lo que queda guardado de este turno, por telefono: lo ofrecido (sumado al
   // de antes, por fecha), la ultima oferta y la eleccion. Se barren los
   // registros vencidos de todos los telefonos solo si hay algo que escribir.
@@ -1321,8 +1377,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     if (eventosCreados.length && !agCitasSinConfirmar.length && !agCitasSinNombre.length) { r.elegido = null; r.ultima = null; }
     // Cuantas veces SEGUIDAS se deshizo una cita por falta de nombre: una cita
     // que queda en pie vuelve la cuenta a cero.
-    if (agCitasSinNombre.length) r.sinNombreSeguidos = Number(r.sinNombreSeguidos || 0) + 1;
-    else if (eventosCreados.length && !agCitasSinConfirmar.length) r.sinNombreSeguidos = 0;
+    // El contador de «sin nombre» seguidos lo sube `Procesar reintento` cuando
+    // una cita de verdad se deshizo por el nombre; aca solo vuelve a cero
+    // cuando una cita queda en pie.
+    if (eventosCreados.length && !agCitasSinConfirmar.length && !agCitasSinNombre.length) r.sinNombreSeguidos = 0;
     // Las palabras del cliente (de donde sale el nombre dicho antes), las mas
     // recientes al final, hasta 80.
     const previas = Array.isArray(r.palabras) ? r.palabras : [];
@@ -1499,6 +1557,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     pasosDelAgente: Array.isArray(dato.intermediateSteps),
     agendarEjecutado: ejecutoAgendar,
     agendarPasosSinId,
+    // Las horas que se le pidieron a agendar_cita, para el motivo del aviso a
+    // recepcion cuando no volvio el id.
+    agendarInicios: pasos.filter((p) => p && p.action && p.action.tool === 'agendar_cita')
+      .map((p) => String(((p.action.toolInput || {}).inicio) || '')).filter(Boolean).slice(0, 5),
     // H2 (27/09/2026): las citas que agendar_cita creo sin que el paciente
     // confirmara ese horario. `Comprobar reserva` las deshace por la via del
     // candado y el paciente recibe la pregunta.

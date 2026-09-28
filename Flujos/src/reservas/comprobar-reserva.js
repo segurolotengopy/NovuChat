@@ -165,7 +165,10 @@ for (const e of (Array.isArray(item.eventosCreados) ? item.eventosCreados : []))
 // Lo que haya en la ventana es de OTROS —recepcion cargando hermanos a mano,
 // otro paciente—: no es propio, no se juzga, no se borra y no se nombra. Pasa
 // por la red de siempre de «dijo que agendo y no agendo».
-const soloLoDijo = item.pasosDelAgente === true && item.agendarEjecutado !== true;
+// `agendarEjecutado === false` explicito (lo manda `Procesar respuesta`) es el
+// mismo hecho aunque los pasos no vinieran: n8n dice que la herramienta no corrio.
+const soloLoDijo = item.agendarEjecutado === false
+  || (item.pasosDelAgente === true && item.agendarEjecutado !== true);
 // Los ids del turno sirven de ancla solo si TODAS las llamadas a agendar_cita
 // trajeron el suyo. Si una no lo trajo, esa cita no se puede identificar y se
 // vuelve a la ventana de cinco minutos (respaldo), con aviso a recepcion.
@@ -173,19 +176,45 @@ const idsCompletos = idsCreados.size > 0 && !(Number(item.agendarPasosSinId) > 0
 const respaldo = !soloLoDijo && !idsCompletos;
 const propia = (lista) => (soloLoDijo ? undefined : (lista.find((e) => idsCreados.has(String(e.id)))
   || (idsCreados.size === 0 ? lista[0] : undefined)));
-// A recepcion, con el motivo, cuando el candado no pudo saber que cita creo el
-// turno: nunca se le dice al cliente de quien era la otra.
-const avisoSinId = () => (Number(item.agendarPasosSinId) > 0 ? {
-  transferir: true,
-  motivoTransferencia: 'agendar_cita devolvió una observación sin id: el candado no pudo identificar esa cita y revisó toda la '
-    + 'ventana de los últimos cinco minutos; revisar la agenda por si quedó una cita sin verificar o encima de otra',
-} : {});
 
 const recien = todos.filter(e => {
   if (idsCreados.has(String(e.id))) return true;
   const c = Date.parse(e.created || e.updated || '');
   return Number.isFinite(c) && (ahora - c) >= 0 && (ahora - c) < VENTANA_MS;
 });
+
+// --- SIN IDS FIABLES, NO SE BORRA NADA (Andres, 27/09/2026) -----------------
+// agendar_cita corrio pero no se sabe que cita creo: una observacion sin id, o
+// la herramienta figura como ejecutada sin los pasos del agente. Borrar «la
+// mas nueva de la ventana» podia llevarse la cita de otro paciente. Decision
+// de Andres: en ese caso el candado NO borra ninguna cita, no nombra citas
+// ajenas, no le confirma nada al paciente —recepcion confirma el horario, con
+// el boton: solo se ofrece lo que se cumple— y pasa a recepcion con el motivo.
+// Con los ids completos todo sigue igual: se deshace la del turno que choca.
+const sinIdsFiables = Number(item.agendarPasosSinId) > 0
+  || (item.agendarEjecutado === true && idsCreados.size === 0);
+const usarUsted = /\busted\b/i.test(String(cfgCampo('tratamiento') || ''));
+const DIAS_LP = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const diaHora = (iso) => {
+  const t = Date.parse(String(iso || ''));
+  if (!Number.isFinite(t)) return '';
+  const d = new Date(t - 4 * 3600000);
+  return `${DIAS_LP[d.getUTCDay()]} ${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+};
+// Lo unico que se le dice al paciente cuando el candado no puede asegurar nada:
+// no se confirma; recepcion revisa y confirma (aviso y boton).
+const NO_SE_CONFIRMA = usarUsted
+  ? 'Todavía no le puedo confirmar la cita: recepción revisa la agenda y le confirma el horario por este chat.'
+  : 'Todavía no te puedo confirmar la cita: recepción revisa la agenda y te confirma el horario por este chat.';
+const motivoSinIds = () => {
+  const horarios = Array.from(new Set([
+    ...(Array.isArray(item.agendarInicios) ? item.agendarInicios : []),
+    ...(Array.isArray(item.eventosCreados) ? item.eventosCreados.map((e) => e && e.inicio) : []),
+  ].map(diaHora).filter(Boolean)));
+  return 'posible cruce: agendar_cita no devolvió el id; revisar la agenda de '
+    + (horarios.length ? horarios.join(' y ') : 'la cita que se intentó agendar en este turno')
+    + '. No se borró ninguna cita ajena y al cliente no se le confirmó nada: confirmarle el horario';
+};
 
 // Instante de inicio y fin de un evento. Los de dia completo (`start.date`) se
 // dejan afuera a proposito: suelen ser notas del negocio -- "feriado", "cerrado
@@ -340,7 +369,16 @@ const sinConfirmar = new Set((Array.isArray(item.agendaSinConfirmar) ? item.agen
 // minuto se tomaban por un cruce y el candado borraba una. Si la herramienta
 // devolvio sus ids, se juzgan esos (contra TODO lo que hay en la agenda, que
 // es lo que protege); si no, la ventana de siempre.
-const aJuzgar = soloLoDijo ? [] : (idsCompletos ? recien.filter((e) => idsCreados.has(String(e.id))) : recien);
+// SIN IDS FIABLES (Andres, 27/09/2026, y revision de f0c6957): se juzgan SOLO
+// las citas con id conocido del turno —esas si se deshacen por cruce, pasado,
+// grilla…—; ninguna otra de la ventana se toca.
+const delTurno = recien.filter((e) => idsCreados.has(String(e.id)));
+const aJuzgar = soloLoDijo ? [] : ((idsCompletos || sinIdsFiables) ? delTurno : recien);
+// DOBLE RESERVA SIMULTANEA (revision de f0c6957): la cita del turno gana el
+// desempate, pero la pisa otra MAS NUEVA, ajena y de la ventana (la lista de
+// Google atrasada, o dos conversaciones a la vez). No se borra ninguna: lo
+// resuelve recepcion.
+const simultaneas = [];
 for (const nueva of aJuzgar) {
   const r = rango(nueva);
   const calendario = nueva.organizer && nueva.organizer.email;
@@ -380,6 +418,13 @@ for (const nueva of aJuzgar) {
     causaDe[String(nueva.id)] = esBloqueoFijo(choque) ? 'bloqueado' : 'cruce';
     continue;
   }
+  const pisadaPor = todos.find((otro) => {
+    if (otro.id === nueva.id || idsCreados.has(String(otro.id)) || esBloqueoFijo(otro)) return false;
+    if (!otro.organizer || otro.organizer.email !== calendario) return false;
+    if (!recien.some((x) => x.id === otro.id)) return false;
+    const ro = rango(otro);
+    return ro && seSuperponen(r, ro);
+  });
 
   const quien = delCalendario(calendario);
   const mal = quien ? fueraDeHorario(nueva.start && nueva.start.dateTime,
@@ -416,6 +461,8 @@ for (const nueva of aJuzgar) {
   } else if (idsCreados.has(String(nueva.id)) && sinNombre.has(String(nueva.id))) {
     ceden.push(nueva);
     causaDe[String(nueva.id)] = 'sin_nombre';
+  } else if (pisadaPor && idsCreados.has(String(nueva.id))) {
+    simultaneas.push({ nueva, otro: pisadaPor });
   }
 }
 
@@ -424,7 +471,10 @@ if (ceden.length) {
   // cliente pidio tres y solo una choco, hubo cierre igual.
   // Las que sobreviven son de ESTE turno: una cita manual reciente no es «el
   // resto de lo que agendamos» (27/09/2026).
-  const sobreviven = aJuzgar.filter((e) => !ceden.some((c) => c.id === e.id));
+  // Y SOLO las que el turno creo con id (revision de f0c6957, caso C4): en el
+  // respaldo, una cita de otro paciente no puede quedar «agendada» ni contar
+  // como cierre.
+  const sobreviven = aJuzgar.filter((e) => idsCreados.has(String(e.id)) && !ceden.some((c) => c.id === e.id));
 
   // Nombre y hora de cada cita caida, para poder decirle al cliente CUAL fue.
   // Un "hubo un cruce" a secas, cuando se agendaron tres, no le dice a quien
@@ -487,18 +537,21 @@ if (ceden.length) {
   // Dijo «si» ante VARIAS opciones: se le pregunta cual (Andres, 27/09/2026).
   const opciones = item.opcionesSinElegir && typeof item.opcionesSinElegir === 'object'
     && item.opcionesSinElegir.horas ? item.opcionesSinElegir : null;
-  const preguntaSinConfirmar = [
+  // Al SEGUNDO sin nombre seguido el mensaje es SOLO el paso a recepcion: no se
+  // junta con un «¿Te la agendo?» (revision de f0c6957).
+  const aRecepcionPorNombre = item.sinNombreRepetido === true && sinNom.length > 0;
+  const preguntaSinConfirmar = aRecepcionPorNombre
+    ? (usted ? 'No logro dejar la reserva a su nombre por este chat: le paso con recepción para terminarla.'
+      : 'No logro dejar la reserva a tu nombre por este chat: te paso con recepción para terminarla.')
+    : [
     sinConf.length ? (opciones
       ? `¿Cuál de estas horas del ${opciones.dia} ${usted ? 'prefiere' : 'prefieres'}: ${opciones.horas}?`
       : 'Sí, ' + sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
         + (sinConf.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'))) : '',
     // Falta solo el nombre: no se repiten horarios, se pide el nombre.
     // Al SEGUNDO sin nombre seguido no se pregunta otra vez: pasa a recepcion.
-    sinNom.length ? (item.sinNombreRepetido === true
-      ? (usted ? 'No logro dejar la reserva a su nombre por este chat: le paso con recepción para terminarla.'
-        : 'No logro dejar la reserva a tu nombre por este chat: te paso con recepción para terminarla.')
-      : 'Para reservar ' + sinNom.map(horaDel).filter(Boolean).join(' y ')
-        + (sinNom.length > 1 ? ', ¿a nombre de quién las agendo?' : ', ¿a nombre de quién la agendo?')) : '',
+    sinNom.length ? 'Para reservar ' + sinNom.map(horaDel).filter(Boolean).join(' y ')
+      + (sinNom.length > 1 ? ', ¿a nombre de quién las agendo?' : ', ¿a nombre de quién la agendo?') : '',
   ].filter(Boolean).join(' ');
   // SI EN EL MISMO TURNO SE CANCELO LA VIEJA (revision de seguridad del PR
   // #244): cancelar la cita anterior y agendar la nueva sin confirmar deja al
@@ -511,7 +564,9 @@ if (ceden.length) {
       ? `Su cita${desc ? ' ' + desc : ' anterior'} quedó cancelada.`
       : `Tu cita${desc ? ' ' + desc : ' anterior'} quedó cancelada.`;
   }).join(' ');
-  const aviso = soloSinConfirmar
+  // Sin ids fiables, o con una doble reserva simultanea, no se confirma nada.
+  const aviso = (sinIdsFiables || simultaneas.length) ? NO_SE_CONFIRMA
+    : soloSinConfirmar
     ? (avisoCanceladas ? avisoCanceladas + ' ' : '')
       + (sobreviven.length > 0 ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. ` : '') + preguntaSinConfirmar
     : (configurado
@@ -583,22 +638,48 @@ if (ceden.length) {
     eventoABorrar: e.id,
     calendarioDelBorrado: e.organizer.email,
     citasCaidas,
+    // UN SOLO AVISO A RECEPCION POR TURNO (revision de f0c6957): los items que
+    // ceden no transfieren desde aca —serian un aviso por item—; el motivo viaja
+    // en `avisoDelTurno` y lo manda el final del camino (`Retomar respuesta` o
+    // `Procesar reintento`), una vez.
     transferir: false,
     motivoTransferencia: '',
-    // EN EL RESPALDO SIN IDS, A RECEPCION (revision de 98796fd): lo que se
-    // deshizo es «la mas nueva» de la ventana, y puede no ser la del chat.
-    ...(respaldo ? { transferir: true,
-      motivoTransferencia: 'el candado no supo con certeza que cita creo este turno y deshizo la mas nueva de la agenda '
-        + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}): revisar que no se haya borrado la cita de otro paciente` } : {}),
-    ...avisoSinId(),
-    ...(item.sinNombreRepetido === true && sinNom.length ? { transferir: true,
-      motivoTransferencia: 'el cliente eligió la hora pero dos veces seguidas la cita quedó sin un nombre que él haya dicho: '
-        + 'terminar la reserva con él por este chat' } : {}),
+    ...(sinIdsFiables ? { sinIdsFiables: true } : {}),
+    ...(simultaneas.length ? { dobleReservaSimultanea: true } : {}),
+    avisoDelTurno: [
+      sinIdsFiables ? motivoSinIds() : '',
+      respaldo && !sinIdsFiables ? 'el candado no supo con certeza que cita creo este turno y deshizo la mas nueva de la agenda '
+        + `(${ceden.map((c) => c.summary || 'sin titulo').join('; ')}): revisar que no se haya borrado la cita de otro paciente` : '',
+      simultaneas.length ? motivoSimultanea() : '',
+      aRecepcionPorNombre ? 'el cliente eligió la hora pero dos veces seguidas la cita quedó sin un nombre que él haya dicho: '
+        + 'terminar la reserva con él por este chat' : '',
+    ].filter(Boolean).join('; '),
     motivoCruce,
     causaDeLaCaida: todasSinNombre ? 'sin_nombre' : soloSinConfirmar ? 'sin_confirmar'
       : (causas.has('pasado') ? 'pasado' : (causas.has('cruce') ? 'cruce'
         : (causas.has('fuera_de_grilla') ? 'fuera_de_grilla' : 'horario'))),
   }, pairedItem: { item: 0 } }));
+}
+
+// SIN IDS FIABLES o DOBLE RESERVA SIMULTANEA, y nada del turno cedio: no se
+// borra ninguna cita, no se confirma nada y pasa a recepcion, con el boton.
+if (sinIdsFiables || simultaneas.length) {
+  return [{ json: { ...item,
+    respuesta: NO_SE_CONFIRMA,
+    reservaVerificada: false,
+    eventoId: undefined,
+    ...(sinIdsFiables ? { sinIdsFiables: true } : {}),
+    ...(simultaneas.length ? { dobleReservaSimultanea: true } : {}),
+    transferir: true,
+    motivoTransferencia: [sinIdsFiables ? motivoSinIds() : '', simultaneas.length ? motivoSimultanea() : '']
+      .filter(Boolean).join('; '),
+  }, pairedItem: { item: 0 } }];
+}
+
+function motivoSimultanea() {
+  return 'posible doble reserva simultánea: la cita de este turno ('
+    + simultaneas.map((x) => diaHora(x.nueva.start && x.nueva.start.dateTime)).join(' y ')
+    + ') se superpone con otra creada después en la misma agenda; no se borró ninguna: revisar cuál queda y avisar al otro paciente';
 }
 
 function cfgCampo(nombre) {
@@ -636,7 +717,6 @@ if (repetidos.length) {
   // El evento queda igual (bloque 2): con seña activa el QR se manda para la
   // cita que sobrevive; recepcion borra las repetidas con el aviso de abajo.
   return [{ json: { ...item, reservaVerificada: true, eventoId: (propia(recien) || recien[0]).id, duplicados: repetidos.length,
-    ...avisoSinId(),
     transferir: true,
     motivoTransferencia: `se crearon citas DUPLICADAS (${repetidos.map(([t, n]) => `${n}x ${t}`).join('; ')}), hay que borrar las sobrantes` }, pairedItem: { item: 0 } }];
 }
@@ -657,7 +737,7 @@ const sinConfirmarNoEncontrada = () => (sinConfirmar.size > 0 || sinNombre.size 
 } : {});
 if (recien.length === 0) {
   return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada,
-    ...avisoSinId(), ...sinConfirmarNoEncontrada() }, pairedItem: { item: 0 } }];
+    ...sinConfirmarNoEncontrada() }, pairedItem: { item: 0 } }];
 }
 
 // Si esta conversacion creo una cita y no aparece entre las recientes, NO se
@@ -666,7 +746,7 @@ if (recien.length === 0) {
 const laPropia = propia(recien);
 if (!laPropia) {
   return [{ json: { ...item, reservaVerificada: false, verificacionSinDatos: true, citaCreadaNoEncontrada: !soloLoDijo,
-    ...(soloLoDijo ? { soloLoDijo: true } : {}), ...avisoSinId(), ...sinConfirmarNoEncontrada() }, pairedItem: { item: 0 } }];
+    ...(soloLoDijo ? { soloLoDijo: true } : {}), ...sinConfirmarNoEncontrada() }, pairedItem: { item: 0 } }];
 }
 // EL ADELANTO A FAVOR SE APLICA A ESTA CITA (Andres, 21/09/2026), en los dos
 // casos en que existe: el servidor ya lo tenia a favor (canceló una cita
@@ -693,7 +773,7 @@ if (hecho) {
   // Sin «queda reservada»: el modelo ya lo dijo con fecha y hora (21/09/2026).
   const aplicada = usted ? 'Su adelanto de la cita anterior se aplica a esta: no paga otra seña.'
     : 'Tu adelanto de la cita anterior se aplica a esta: no pagas otra seña.';
-  return [{ json: { ...item, reservaVerificada: true, eventoId: laPropia.id, citaCreadaNoEncontrada, ...avisoSinId(),
+  return [{ json: { ...item, reservaVerificada: true, eventoId: laPropia.id, citaCreadaNoEncontrada,
     respuesta: (oraciones.join(' ').trim() + '\n\n' + aplicada).trim(),
     aplicarAdelanto: true,
     // UNA CITA PAGADA CON EL ADELANTO ES UNA CITA PAGADA: sale el pin, igual
@@ -705,4 +785,4 @@ if (hecho) {
     tituloDelAdelanto: String(laPropia.summary || ''),
     eventoSena: hecho }, pairedItem: { item: 0 } }];
 }
-return [{ json: { ...item, reservaVerificada: true, eventoId: laPropia.id, citaCreadaNoEncontrada, ...avisoSinId() }, pairedItem: { item: 0 } }];
+return [{ json: { ...item, reservaVerificada: true, eventoId: laPropia.id, citaCreadaNoEncontrada }, pairedItem: { item: 0 } }];

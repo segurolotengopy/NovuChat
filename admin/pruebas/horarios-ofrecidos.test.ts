@@ -172,11 +172,13 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       for (const texto of [
         'Atendemos de 11:00 a 18:00 de lunes a viernes.',
         'A las 13:00 no tenemos atención: es el almuerzo del doctor.',
-        `Listo, quedó agendada tu consulta para el ${L} a las 11:30.`,
         `Encontré tu cita del ${L} a las 11:30. ¿Confirmas que es esa?`,
       ]) {
         expect(procesar('hola', texto)['respuesta'], texto).toBe(texto);
       }
+      // Una confirmación de una cita que SÍ se agendó en el turno tampoco se toca.
+      const confirmo = `Listo, quedó agendada tu consulta para el ${L} a las 11:30.`;
+      expect(procesar('hola', confirmo, [agendo(cita('ev-x', LUNES, '11:30', '12:00'))])['respuesta']).toBe(confirmo);
     });
 
     it('«a las 13:00 no hay, pero tengo 12:30 o 14:00»: la negada no cuenta como oferta', () => {

@@ -163,12 +163,12 @@ describe('Candado contra la doble reserva', () => {
     // alternativas. Si el flujo transfiriera acá, el aviso saldría también
     // cuando el reintento resolvió, y diría algo falso («necesita atención
     // humana») por un mensaje pagado.
-    // EXCEPCIÓN DESDE EL 27/09 (revisión de 98796fd): este caso no trae los ids
-    // del turno —es el RESPALDO de la ventana de cinco minutos—, así que no se
-    // sabe con certeza de quién era la cita que cae. Ahí SÍ pasa a recepción,
-    // y al cliente no se le dice el nombre de la otra.
-    expect(r['transferir']).toBe(true);
-    expect(String(r['motivoTransferencia'])).toContain('no supo con certeza');
+    // Este caso no trae los ids del turno —es el RESPALDO de la ventana—: no se
+    // sabe con certeza de quién era la cita que cae. Al cliente no se le dice
+    // el nombre de la otra, y el aviso a recepción viaja en `avisoDelTurno`
+    // para que salga UNO solo por turno (revisiones de 98796fd y f0c6957).
+    expect(r['transferir']).toBe(false);
+    expect(String(r['avisoDelTurno'])).toContain('no supo con certeza');
     expect(String(r['respuesta'])).not.toContain('Andrés A.');
     expect(String(r['motivoCruce'])).toContain('YA OCUPADO');
     expect(String(r['motivoCruce'])).toContain('Cita Sil — corte');
@@ -349,7 +349,10 @@ describe('Candado contra la doble reserva', () => {
          '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
       ev('m-esposa', 'Cita Esposa de Andrés A. — corte', CAL_MARIA,
          '2026-09-08T09:00:00-04:00', '2026-09-08T10:00:00-04:00', MISMO),
-    ], new Date('2026-09-07T00:20:55.000Z'));
+    ], new Date('2026-09-07T00:20:55.000Z'), { mensajeReservaNoConfirmada: '' },
+    // Las tres las creó agendar_cita en ESE mensaje: con sus ids (27/09).
+    { ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
+      eventosCreados: ['j-padre', 'j-hijo', 'm-esposa'].map((id) => ({ id })) });
     // Cede EXACTAMENTE una: ni las dos, que dejaría al negocio sin ninguna,
     // ni ninguna, que es lo que pasó.
     expect(items).toHaveLength(1);
@@ -360,11 +363,10 @@ describe('Candado contra la doble reserva', () => {
     expect(items[0]?.['eventoABorrar']).toBe('j-padre');
     // Las otras dos citas son válidas, así que sigue habiendo cierre.
     expect(items[0]?.['reservaVerificada']).toBe(true);
-    // Y el mensaje dice CUÁL cayó, no un «hubo un cruce» a secas. Sin los ids
-    // del turno (respaldo), solo por la HORA (revisión de 98796fd): el nombre
-    // puede ser el de otro paciente y no se revela.
-    expect(String(items[0]?.['respuesta'])).toMatch(/la cita de las 09:00/);
-    expect(String(items[0]?.['respuesta'])).not.toMatch(/Andrés/);
+    // Y el mensaje dice CUÁL cayó, no un «hubo un cruce» a secas: es una cita
+    // del turno, así que con su nombre.
+    expect(String(items[0]?.['respuesta'])).toMatch(/Andrés A\./);
+    expect(String(items[0]?.['respuesta'])).toMatch(/09:00/);
   });
 
   it('la cita de María a la misma hora NO cede: es otra agenda', () => {
@@ -392,8 +394,10 @@ describe('Candado contra la doble reserva', () => {
     // Ningún item transfiere desde acá: el aviso —uno solo, nunca uno por
     // cita— lo decide «Procesar reintento» sobre el primer item que retoma
     // «Retomar respuesta». Las dos citas caídas viajan juntas en `citasCaidas`.
-    // Sin ids del turno es el respaldo: cada item avisa a recepción (27/09).
-    expect(items.every((i) => i['transferir'] === true)).toBe(true);
+    // Sin ids del turno es el respaldo: el aviso viaja en `avisoDelTurno`, y
+    // ningún item transfiere por su cuenta (un aviso por turno, no por item).
+    expect(items.every((i) => i['transferir'] === false)).toBe(true);
+    expect(String(items[0]?.['avisoDelTurno'])).toContain('no supo con certeza');
     expect((items[0]?.['citasCaidas'] as unknown[]).length).toBe(2);
     expect(String(items[0]?.['motivoCruce'])).toContain('Cita Dos — corte; Cita Tres — corte');
   });
@@ -810,7 +814,11 @@ describe('El aviso no le dice al cliente que quedó algo cuando no quedó nada',
          '2026-09-07T09:00:00-04:00', '2026-09-07T10:00:00-04:00', '2026-09-06T20:16:00.000Z'),
       ev('buena', 'Cita Sil — color', CAL_MARIA,
          '2026-09-07T11:00:00-04:00', '2026-09-07T12:00:00-04:00', '2026-09-06T20:16:01.000Z'),
-    ])[0] ?? {};
+    ], AHORA, { mensajeReservaNoConfirmada: '' },
+    // «Choca» y «buena» son las del turno, con sus ids: solo esas cuentan como
+    // «lo que agendamos» (revisión de f0c6957, caso C4).
+    { ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
+      eventosCreados: [{ id: 'choca' }, { id: 'buena' }] })[0] ?? {};
     expect(String(r['respuesta'])).toContain('El resto de lo que agendamos si esta bien');
     expect(r['reservaVerificada']).toBe(true);
   });
@@ -1126,15 +1134,16 @@ describe('HIGH · el modelo solo DIJO que agendó: no se borra ni se nombra la c
     expect(items[0]!['soloLoDijo']).toBe(true);
   });
 
-  it('variante: agendar_cita corrió (isExecuted) pero sin ids ⇒ respaldo: si deshace, no nombra y pasa a recepción', () => {
+  it('variante: agendar_cita corrió (isExecuted) sin pasos ni ids ⇒ NO borra, no nombra, no confirma y pasa a recepción', () => {
     const previa = { ...PREVIA, respuesta: 'Listo, tu cita quedó.', pasosDelAgente: false, agendarEjecutado: true, eventosCreados: [] };
     const items = comprobarTodo(hermanas(), AHORA, { mensajeReservaNoConfirmada: '' }, previa);
-    expect(items.some((i) => nombra(i))).toBe(false);
-    for (const i of items.filter((x) => x['citaSolapada'] === true)) {
-      expect(i['transferir']).toBe(true);
-      expect(String(i['motivoTransferencia'])).toContain('no supo con certeza');
-      expect(String(i['respuesta'])).toMatch(/la cita de las 10:00/);
-    }
+    expect(items).toHaveLength(1);
+    expect(items[0]!['eventoABorrar']).toBeUndefined();
+    expect(nombra(items[0]!)).toBe(false);
+    expect(items[0]!['reservaVerificada']).toBe(false);
+    expect(items[0]!['transferir']).toBe(true);
+    expect(String(items[0]!['motivoTransferencia'])).toContain('posible cruce');
+    expect(String(items[0]!['respuesta'])).not.toMatch(/quedó|confirmad/i);
   });
 });
 
@@ -1158,12 +1167,19 @@ describe('MEDIUM · una llamada a agendar_cita sin id vuelve a mirar toda la ven
     expect((r['eventosCreados'] as unknown[]).length).toBe(1);
   });
 
-  it('con una llamada sin id, la cita sin ancla que cae encima de otra SE DESHACE y se avisa a recepción', () => {
-    const items = comprobarTodo([manual, conId, sinId], AHORA, { mensajeReservaNoConfirmada: '' }, previa(1));
-    const caida = items.find((i) => i['eventoABorrar'] === 'ev-b');
-    expect(caida).toBeDefined();
-    expect(caida!['transferir']).toBe(true);
-    expect(String(caida!['motivoTransferencia'])).toMatch(/observación sin id|no supo con certeza/);
+  it('con una llamada sin id, el candado NO BORRA NADA (Andres, 27/09): transfiere con el día y la hora, y no confirma', () => {
+    const items = comprobarTodo([manual, conId, sinId], AHORA, { mensajeReservaNoConfirmada: '' },
+      { ...previa(1), respuesta: 'Listo, quedaron agendadas.', agendarInicios: [conId.start.dateTime, sinId.start.dateTime] });
+    expect(items).toHaveLength(1);
+    expect(items[0]!['eventoABorrar']).toBeUndefined();
+    expect(items[0]!['citaSolapada']).toBeUndefined();
+    expect(items[0]!['reservaVerificada']).toBe(false);
+    expect(items[0]!['transferir']).toBe(true);
+    // El 07/09/2026 fue lunes: el motivo dice qué revisar.
+    expect(String(items[0]!['motivoTransferencia'])).toBe('posible cruce: agendar_cita no devolvió el id; revisar la agenda de '
+      + 'lunes 7 09:00 y lunes 7 11:00. No se borró ninguna cita ajena y al cliente no se le confirmó nada: confirmarle el horario');
+    expect(String(items[0]!['respuesta'])).toBe('Todavía no te puedo confirmar la cita: recepción revisa la agenda y te confirma el horario por este chat.');
+    expect(String(items[0]!['respuesta'])).not.toMatch(/OTRA|Lucas/);
   });
 
   it('negativa: si todas trajeron id, se juzgan solo esas (la manual reciente no es del chat)', () => {
@@ -1172,10 +1188,11 @@ describe('MEDIUM · una llamada a agendar_cita sin id vuelve a mirar toda la ven
     expect(items[0]!['transferir']).not.toBe(true);
   });
 
-  it('sin choque pero con una llamada sin id, igual pasa a recepción con ese motivo', () => {
+  it('sin choque pero con una llamada sin id, igual: no confirma y pasa a recepción', () => {
     const items = comprobarTodo([conId], AHORA, { mensajeReservaNoConfirmada: '' }, previa(1));
     expect(items[0]!['transferir']).toBe(true);
-    expect(String(items[0]!['motivoTransferencia'])).toContain('observación sin id');
+    expect(items[0]!['reservaVerificada']).toBe(false);
+    expect(String(items[0]!['motivoTransferencia'])).toContain('posible cruce: agendar_cita no devolvió el id');
   });
 });
 
@@ -1232,6 +1249,8 @@ describe('LOW 2 y LOW 3 · el primer nombre, sin palabras de relleno y sin bucle
     ['consulta urgente', 'Cita urgente — consulta'],
     ['para una consulta', 'Cita para una consulta'],
     ['hola buenas, el lunes de octubre por favor', 'Cita Lunes Octubre — consulta'],
+    ['está bien, lo que esté disponible', 'Cita Disponible — consulta'],
+    ['quiero reservar', 'Cita Reservar — consulta'],
   ])('«%s» no da el nombre de «%s» ⇒ sin_nombre', (dijo, titulo) => {
     expect(turno(dijo, titulo)['agendaSinNombre']).toEqual(['ev-n']);
   });
@@ -1253,8 +1272,10 @@ describe('LOW 2 y LOW 3 · el primer nombre, sin palabras de relleno y sin bucle
     const creado = ev('ev-n', 'Cita Pedro — consulta', CAL_JOSE, inicio, `${MANANA}T10:30:00-04:00`, new Date().toISOString());
     const c = comprobarTodo([creado], new Date(), { mensajeReservaNoConfirmada: '' }, segunda)[0]!;
     expect(c['causaDeLaCaida']).toBe('sin_nombre');
-    expect(String(c['respuesta'])).toContain('te paso con recepción');
-    expect(c['transferir']).toBe(true);
+    expect(String(c['respuesta'])).toBe('No logro dejar la reserva a tu nombre por este chat: te paso con recepción para terminarla.');
+    // Un aviso por turno: no desde el item que cede, sino desde el reintento.
+    expect(c['transferir']).toBe(false);
+    expect(String(c['avisoDelTurno'])).toContain('dos veces seguidas');
     const r = ejecutarNodo(codigoReintento, [{ output: 'x' }], { 'Retomar respuesta': [{ ...c, from: '59170000001' }] })[0]!;
     expect(r['transferir']).toBe(true);
     expect(r['respuesta']).toBe(c['respuesta']);
@@ -1274,5 +1295,145 @@ describe('La marca de creación de Google viaja al candado (desempate sin el rel
     const sinMarca = comprobarTodo([manual], AHORA, { mensajeReservaNoConfirmada: '' },
       { ...previa, eventosCreados: [{ ...chat, creado: undefined }] })[0]!;
     expect(sinMarca['citaSolapada']).toBe(true);
+  });
+});
+
+describe('«Solo lo dijo»: la respuesta es honesta y nunca confirma (Andres, 27/09/2026)', () => {
+  const MANANA = new Date(Date.now() + 86400000 - 4 * 3600000).toISOString().slice(0, 10);
+  const dia = (() => { const d = new Date(Date.parse(`${MANANA}T12:00:00-04:00`) - 4 * 3600000);
+    return ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'][d.getUTCDay()] + ' ' + d.getUTCDate(); })();
+  const procesar = (output: string, userInput: string, estado: Record<string, unknown> | null, pasos: unknown[] = []) =>
+    ejecutarNodo(codigoProcesar, [{ output, intermediateSteps: pasos }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput }], 'Config del negocio': [{}] },
+      estado ? { $getWorkflowStaticData: () => estado } : {})[0]!;
+  const conEleccion = (palabras: string[]) => ({ agendaPorTelefono: { '59170000001': { ofrecidos: { [MANANA]: [600, 660] },
+    ultima: { fecha: MANANA, mins: [600, 660], desde: Date.now() }, elegido: { fecha: MANANA, min: 600, desde: Date.now() },
+    palabras, desde: Date.now() } } });
+  const CONFIRMA = /quedó agendada\.|está confirmada|agendé tu|te agendé/i;
+
+  it.each([['Listo, tu cita quedó agendada para mañana a las 10:00.'], ['Perfecto, tu cita está confirmada.']])(
+    'sin hora elegida: «%s» ⇒ «Todavía no agendé nada…»', (dijo) => {
+      const r = procesar(dijo, 'ok', {});
+      expect(r['respuesta']).toBe('Todavía no agendé nada: ¿para qué día y horario te acomoda?');
+      expect(r['avisos']).toContain('afirmo_sin_agendar');
+      expect(String(r['respuesta'])).not.toMatch(CONFIRMA);
+    });
+
+  it('con hora elegida y nombre dicho ⇒ «Todavía no quedó agendada: ¿te la reservo…?», y su «sí» la confirma', () => {
+    const estado = conEleccion(['es', 'para', 'lucas']);
+    const r = procesar('Listo, tu cita quedó agendada.', 'gracias', estado);
+    expect(r['respuesta']).toBe(`Todavía no quedó agendada: ¿te la reservo el ${dia} a las 10:00?`);
+    const reg = (estado.agendaPorTelefono as Record<string, Record<string, unknown>>)['59170000001']!;
+    expect(reg['ultima']).toMatchObject({ fecha: MANANA, mins: [600] });
+  });
+
+  it('con hora elegida y SIN nombre ⇒ la pregunta de sin_nombre', () => {
+    const r = procesar('Perfecto, tu cita está confirmada.', 'ok', conEleccion(['ok']));
+    expect(r['respuesta']).toBe(`Para reservar las 10:00 del ${dia}, ¿a nombre de quién la agendo?`);
+  });
+
+  it('negativas: con agendar_cita ejecutada no se toca; tampoco si se habla de una cita EXISTENTE que se buscó', () => {
+    const ev = { id: 'x', summary: 'Cita Lucas — consulta', organizer: { email: CAL_JOSE },
+      start: { dateTime: `${MANANA}T10:00:00-04:00` }, end: { dateTime: `${MANANA}T10:30:00-04:00` } };
+    expect(procesar('Listo, quedó agendada.', 'sí', {}, [{ action: { tool: 'agendar_cita' }, observation: JSON.stringify([ev]) }])['respuesta'])
+      .toBe('Listo, quedó agendada.');
+    expect(procesar('Tu cita de mañana está confirmada.', '¿mi cita sigue?', {},
+      [{ action: { tool: 'buscar_mi_cita' }, observation: JSON.stringify([ev]) }])['respuesta']).toBe('Tu cita de mañana está confirmada.');
+  });
+});
+
+describe('Segunda revisión de f0c6957: sin ids parciales, un aviso por turno, simultáneas', () => {
+  const codigoRetomar = String(flujo.nodes.find((n) => n.name === 'Retomar respuesta')?.parameters.jsCode ?? '');
+  const retomarCon = (base: Record<string, unknown>, borrado: Record<string, unknown> = { success: true }) =>
+    ejecutarNodo(codigoRetomar, [borrado], { 'Comprobar reserva': [base], 'Normalizar entrada': [{ userInput: 'ok' }],
+      'Procesar respuesta': [base] })[0]!;
+  const reciente = (s_: number) => new Date(AHORA.getTime() - s_ * 1000).toISOString();
+  const propia11 = ev('ev-a', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00', reciente(20));
+  const vieja11 = ev('otra', 'Cita OTRA — consulta', CAL_JOSE, '2026-09-07T11:00:00-04:00', '2026-09-07T12:00:00-04:00', '2026-09-01T12:00:00.000Z');
+  const ajena12 = ev('ajena', 'Cita AJENA — consulta', CAL_JOSE, '2026-09-07T12:00:00-04:00', '2026-09-07T12:30:00-04:00', reciente(30));
+  const conIds = (extra: Record<string, unknown> = {}) => ({ ...PREVIA, pasosDelAgente: true, agendarEjecutado: true,
+    agendarPasosSinId: 0, eventosCreados: [{ id: 'ev-a' }], ...extra });
+
+  it('MEDIUM · ids parciales (C1): la cita CON id del turno que choca se deshace; ninguna otra se toca; no se confirma; un aviso', () => {
+    const [h1, h2] = hermanas();
+    const items = comprobarTodo([vieja11, propia11, h1!, h2!], AHORA, { mensajeReservaNoConfirmada: '' }, conIds({ agendarPasosSinId: 1 }));
+    expect(items.map((i) => i['eventoABorrar'])).toEqual(['ev-a']);            // solo la del turno
+    expect(items[0]!['respuesta']).toBe('Todavía no te puedo confirmar la cita: recepción revisa la agenda y te confirma el horario por este chat.');
+    expect(items[0]!['transferir']).toBe(false);                                // desde acá no
+    expect(String(items[0]!['avisoDelTurno'])).toContain('posible cruce');
+    const r = retomarCon(items[0]!);
+    expect(r['reintentar']).toBe(false);                                        // no se ofrecen alternativas
+    expect(r['transferir']).toBe(true);                                         // el ÚNICO aviso del turno
+    expect(String(r['motivoTransferencia'])).toContain('posible cruce');
+    expect(r['respuesta']).toBe(items[0]!['respuesta']);
+  });
+
+  it('MEDIUM · C4: una cita ajena de la ventana NUNCA queda «agendada» ni cuenta como cierre', () => {
+    for (const previa of [conIds({ agendarPasosSinId: 1 }), { ...PREVIA }, conIds()]) {
+      const items = comprobarTodo([vieja11, propia11, ajena12], AHORA, { mensajeReservaNoConfirmada: '' }, previa);
+      for (const i of items) {
+        expect(String(i['respuesta'])).not.toMatch(/quedó agendada|El resto de lo que agendamos/);
+        expect(i['reservaVerificada']).toBe(false);
+        expect(i['eventoABorrar']).not.toBe('ajena');
+      }
+    }
+  });
+
+  it('LOW-3 · la cita del turno gana, pero la pisa otra MÁS NUEVA de la ventana: no se borra ninguna y pasa a recepción', () => {
+    const nuestra = ev('ev-a', 'Cita Lucas — consulta', CAL_JOSE, '2026-09-07T15:00:00-04:00', '2026-09-07T15:30:00-04:00', reciente(40));
+    const mas = ev('mas-nueva', 'Cita OTRA — consulta', CAL_JOSE, '2026-09-07T15:00:00-04:00', '2026-09-07T15:30:00-04:00', reciente(10));
+    const items = comprobarTodo([nuestra, mas], AHORA, { mensajeReservaNoConfirmada: '' }, conIds());
+    expect(items).toHaveLength(1);
+    expect(items[0]!['eventoABorrar']).toBeUndefined();
+    expect(items[0]!['reservaVerificada']).toBe(false);
+    expect(items[0]!['transferir']).toBe(true);
+    expect(String(items[0]!['motivoTransferencia'])).toContain('posible doble reserva simultánea');
+    expect(String(items[0]!['respuesta'])).toContain('recepción revisa la agenda');
+    // Negativa: si la otra es MÁS VIEJA, la del turno cede por cruce, como siempre.
+    const masVieja = { ...mas, created: reciente(60) };
+    expect(comprobarTodo([nuestra, masVieja], AHORA, { mensajeReservaNoConfirmada: '' }, conIds())[0]).toMatchObject(
+      { citaSolapada: true, eventoABorrar: 'ev-a', causaDeLaCaida: 'cruce' });
+  });
+
+  it('LOW-1 · al segundo sin nombre el mensaje es SOLO el paso a recepción, aunque haya otra sin confirmar; un aviso por turno', () => {
+    const a = ev('ev-a', 'Cita Pedro — consulta', CAL_JOSE, '2026-09-07T10:00:00-04:00', '2026-09-07T10:30:00-04:00', reciente(5));
+    const b = ev('ev-b', 'Cita Pedro — consulta', CAL_JOSE, '2026-09-07T11:00:00-04:00', '2026-09-07T11:30:00-04:00', reciente(5));
+    const previa = { ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
+      eventosCreados: [{ id: 'ev-a' }, { id: 'ev-b' }], agendaSinConfirmar: ['ev-b'], agendaSinNombre: ['ev-a'], sinNombreRepetido: true };
+    const items = comprobarTodo([a, b], AHORA, { mensajeReservaNoConfirmada: '' }, previa);
+    expect(items).toHaveLength(2);
+    expect(items[0]!['respuesta']).toBe('No logro dejar la reserva a tu nombre por este chat: te paso con recepción para terminarla.');
+    expect(String(items[0]!['respuesta'])).not.toContain('¿Te la agendo?');
+    expect(items.filter((i) => i['transferir'] === true)).toHaveLength(0);     // ningún item transfiere por su cuenta
+    const rei = ejecutarNodo(codigoReintento, [{ output: 'x' }], { 'Retomar respuesta': [{ ...items[0]!, from: '59170000001',
+      causaDeLaCaida: 'sin_confirmar' }] })[0]!;
+    expect(rei['transferir']).toBe(true);                                        // causas mezcladas: igual transfiere, una vez
+  });
+
+  it('LOW-2 · el contador de sin nombre lo sube Procesar reintento, no Procesar respuesta', () => {
+    const estado = { agendaPorTelefono: { '59170000001': { ofrecidos: {}, ultima: null, elegido: null, palabras: [], sinNombreSeguidos: 0, desde: Date.now() } } };
+    const reg = estado.agendaPorTelefono['59170000001'];
+    ejecutarNodo(codigoReintento, [{ output: 'x' }], { 'Retomar respuesta': [{ from: '59170000001', causaDeLaCaida: 'sin_nombre',
+      respuesta: 'Para reservar…', citasCaidas: [{ causa: 'sin_nombre' }] }] }, { $getWorkflowStaticData: () => estado });
+    expect(reg.sinNombreSeguidos).toBe(1);
+    ejecutarNodo(codigoReintento, [{ output: 'x' }], { 'Retomar respuesta': [{ from: '59170000001', causaDeLaCaida: 'sin_confirmar',
+      respuesta: 'Sí…', citasCaidas: [{ causa: 'sin_confirmar' }] }] }, { $getWorkflowStaticData: () => estado });
+    expect(reg.sinNombreSeguidos).toBe(1);                                       // sin_confirmar no cuenta
+  });
+
+  it('«¿mi cita está confirmada?» sobre una cita EXISTENTE vista antes: la respuesta NO se reemplaza', () => {
+    const estado = { cancelacionesPendientes: { '59170000001': { eventoId: '', desc: '', desde: Date.now(),
+      candidatos: { 'ev-x': ' de consulta del lunes, 28 de septiembre a las 10:00' } } } };
+    const dijo = 'Sí, tu cita del lunes a las 10:00 está confirmada.';
+    const r = ejecutarNodo(codigoProcesar, [{ output: dijo, intermediateSteps: [] }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: '¿mi cita está confirmada?' }], 'Config del negocio': [{}] },
+      { $getWorkflowStaticData: () => estado })[0]!;
+    expect(r['respuesta']).toBe(dijo);
+    expect(r['avisos']).not.toContain('afirmo_sin_agendar');
+    // Negativa: sin ninguna cita vista, la misma afirmación se reemplaza.
+    const sinCita = ejecutarNodo(codigoProcesar, [{ output: dijo, intermediateSteps: [] }],
+      { 'Normalizar entrada': [{ from: '59170000001', userInput: '¿mi cita está confirmada?' }], 'Config del negocio': [{}] },
+      { $getWorkflowStaticData: () => ({}) })[0]!;
+    expect(sinCita['respuesta']).not.toBe(dijo);
   });
 });

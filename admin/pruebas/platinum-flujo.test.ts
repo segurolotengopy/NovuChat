@@ -1052,12 +1052,12 @@ describe.each([
 
     it('Comprobar reserva ya no transfiere por sí mismo: deja el motivo y QUIÉN y CUÁNDO chocó', () => {
       const c = candado();
-      // Este caso viene SIN los ids del turno (respaldo de la ventana): desde
-      // la revisión de 98796fd ese respaldo avisa a recepción, porque no se
-      // sabe de quién era la cita que cayó. Con los ids —como corre hoy— no
-      // transfiere desde acá (`horarios-ofrecidos.test.ts`, regla mandatoria).
-      expect(c['transferir']).toBe(true);
-      expect(String(c['motivoTransferencia'])).toContain('no supo con certeza');
+      // Este caso viene SIN los ids del turno (respaldo de la ventana): el aviso
+      // a recepción viaja en `avisoDelTurno` y sale UNA vez, al final del
+      // camino (revisiones de 98796fd y f0c6957). Desde acá no transfiere.
+      expect(c['transferir']).toBe(false);
+      expect(c['motivoTransferencia']).toBe('');
+      expect(String(c['avisoDelTurno'])).toContain('no supo con certeza');
       expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
       const caidas = c['citasCaidas'] as J[];
       expect(caidas).toHaveLength(1);
@@ -1140,12 +1140,19 @@ describe.each([
       expect(p).toBe(String(nodo(demoA, 'Reintento tras cruce').parameters['options'].systemMessage));
     });
 
-    it('Procesar reintento: con alternativas, ese texto sale y NO se transfiere ni se avisa', () => {
-      const r = reintento({ output: 'El horario de las 14:30 ya está reservado. Puedo ofrecerle las 15:00 o las 16:00 con el mismo odontólogo, ¿cuál prefiere?' });
-      expect(r['reintentoTrasCruce']).toBe('ok');
-      expect(r['transferir']).toBe(false);
-      expect(r['motivoTransferencia']).toBe('');
-      expect(String(r['respuesta'])).toContain('Puedo ofrecerle las 15:00');
+    it('Procesar reintento: con alternativas, ese texto sale y NO se transfiere ni se avisa (salvo el aviso del turno)', () => {
+      const salida = { output: 'El horario de las 14:30 ya está reservado. Puedo ofrecerle las 15:00 o las 16:00 con el mismo odontólogo, ¿cuál prefiere?' };
+      // Con los ids del turno no hay aviso del turno: no se transfiere.
+      const conIds = ejecutar(codigo('Procesar reintento'), [salida],
+        { 'Retomar respuesta': [{ ...retomar({ success: true }), avisoDelTurno: '' }] })[0]!;
+      expect(conIds['reintentoTrasCruce']).toBe('ok');
+      expect(conIds['transferir']).toBe(false);
+      expect(conIds['motivoTransferencia']).toBe('');
+      expect(String(conIds['respuesta'])).toContain('Puedo ofrecerle las 15:00');
+      // Este caso viene sin ids (respaldo): el ÚNICO aviso del turno sale acá.
+      const r = reintento(salida);
+      expect(r['transferir']).toBe(true);
+      expect(String(r['motivoTransferencia'])).toContain('no supo con certeza');
     });
 
     it.each([
@@ -1498,11 +1505,17 @@ describe.each([
       expect(String(c['motivoCruce'])).toContain('YA OCUPADO');
     });
 
-    it('sin el id (la opción del agente no vino) el candado sigue con la ventana de cinco minutos, como antes', () => {
+    it('sin el id (la opción del agente no vino) el candado NO borra nada: pasa a recepción y no confirma (Andres, 27/09)', () => {
       const previa = procesar({ output: DIJO }, { agendar_cita: [{}] });
       const recien = { ...eventoCreado, created: new Date(Date.now() - 1000).toISOString() };
-      expect(candado(previa, [yaEstaba, recien])['eventoABorrar']).toBe('ev-nuevo');
-      expect(candado(previa, [yaEstaba, eventoCreado])['verificacionSinDatos']).toBe(true);
+      const c = candado(previa, [yaEstaba, recien]);
+      expect(c['eventoABorrar']).toBeUndefined();
+      expect(c['citaSolapada']).toBeUndefined();
+      expect(c['reservaVerificada']).toBe(false);
+      expect(c['transferir']).toBe(true);
+      expect(String(c['motivoTransferencia'])).toContain('posible cruce: agendar_cita no devolvió el id');
+      expect(String(c['respuesta'])).toContain('recepción revisa la agenda');
+      expect(String(c['respuesta'])).not.toMatch(/agendad|confirmad|OTRA PACIENTE/i);
     });
 
     it('sin choque, la cita verificada es la que devolvió la herramienta y llega al cierre', () => {
@@ -2378,12 +2391,15 @@ describe.each([
 
     it('deja pasar lo que NO afirma un pago: «el comprobante lo revisa la clínica», «mandá el comprobante»', () => {
       for (const frase of ['El comprobante lo revisa la clínica y ellos confirman el pago.',
-        'Cuando pagues, mandame el comprobante por acá antes de salir de la app del banco.',
-        'El horario queda reservado 45 minutos a la espera de la seña.']) {
+        'Cuando pagues, mandame el comprobante por acá antes de salir de la app del banco.']) {
         const s = procesar(frase);
         expect(String(s['respuesta']), frase).toBe(frase);
         expect(s['avisos']).toEqual([]);
       }
+      // «Queda reservado» sin que agendar_cita haya corrido lo reemplaza la
+      // respuesta honesta (Andres, 27/09); la red del cobro no lo toca.
+      const reservado = procesar('El horario queda reservado 45 minutos a la espera de la seña.');
+      expect(reservado['avisos']).not.toContain('correccion_cobro');
     });
 
     it('sin la seña activa la red no corre: el texto del modelo sale tal cual (no hay cobro real que proteger)', () => {

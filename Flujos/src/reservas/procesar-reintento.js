@@ -367,12 +367,28 @@ if (base.causaDeLaCaida === 'sin_confirmar' || base.causaDeLaCaida === 'sin_nomb
   if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));
   // Al segundo «sin nombre» seguido, la respuesta ya dice que pasa con
   // recepcion: se transfiere (aviso y boton), que es lo unico que se ofrece.
-  const aRecepcion = base.sinNombreRepetido === true && base.causaDeLaCaida === 'sin_nombre';
+  // Tambien con causas mezcladas: basta que una de las caidas sea sin nombre
+  // (revision de f0c6957). El motivo ya viene en `avisoDelTurno`.
+  const caidas = Array.isArray(base.citasCaidas) ? base.citasCaidas : [];
+  const huboSinNombre = caidas.some((c) => c && c.causa === 'sin_nombre');
+  const aRecepcion = base.sinNombreRepetido === true && huboSinNombre;
+  // EL CONTADOR DE «SIN NOMBRE» SEGUIDOS lo lleva este nodo (revision de
+  // f0c6957): cuenta solo cuando una cita de verdad se deshizo por el nombre.
+  // `Procesar respuesta` lo vuelve a cero cuando una cita queda en pie.
+  if (huboSinNombre) {
+    try {
+      const sd = $getWorkflowStaticData('global');
+      const tel = String(base.from || '');
+      const r = tel && sd.agendaPorTelefono && sd.agendaPorTelefono[tel];
+      if (r) { r.sinNombreSeguidos = Number(r.sinNombreSeguidos || 0) + 1; r.desde = Date.now(); }
+    } catch (e) { /* sin datos estaticos: no se cuenta */ }
+  }
+  const avisoDelTurno = String(base.avisoDelTurno || '');
   return [{ json: { ...base,
     respuesta: base.respuesta,
-    transferir: aRecepcion,
-    motivoTransferencia: aRecepcion ? 'el cliente eligió la hora pero dos veces seguidas la cita quedó sin un nombre que él haya dicho: '
-      + 'terminar la reserva con él por este chat' : '',
+    // Un solo aviso por turno: el de este nodo.
+    transferir: aRecepcion || avisoDelTurno !== '',
+    motivoTransferencia: avisoDelTurno,
     ejecutoAgendar: false,
     reintentoTrasCruce: fallo ? 'sin-confirmar-sin-modelo' : 'sin-confirmar',
   }, pairedItem: { item: 0 } }];
@@ -430,10 +446,9 @@ if (salio) {
   return [{ json: { ...base,
     respuesta: textoFinal,
     avisos: avisosReintento,
-    transferir: marca,
-    motivoTransferencia: marca
-      ? `${motivo}; al ofrecer alternativas el asistente pidio atencion humana`
-      : '',
+    transferir: marca || String(base.avisoDelTurno || '') !== '',
+    motivoTransferencia: [marca ? `${motivo}; al ofrecer alternativas el asistente pidio atencion humana` : '',
+      String(base.avisoDelTurno || '')].filter(Boolean).join('; '),
     reintentoTrasCruce: 'ok',
   }, pairedItem: { item: 0 } }];
 }
@@ -444,6 +459,7 @@ return [{ json: { ...base,
   respuesta: base.respuesta,
   avisos: avisosReintento,
   transferir: true,
-  motivoTransferencia: `${motivo}; el reintento de ofrecer alternativas no salio (${porQue}) y el cliente quedo esperando otro horario`,
+  motivoTransferencia: `${motivo}; el reintento de ofrecer alternativas no salio (${porQue}) y el cliente quedo esperando otro horario`
+    + (base.avisoDelTurno ? `; ${base.avisoDelTurno}` : ''),
   reintentoTrasCruce: fallo ? 'fallo' : (texto === '' ? 'vacio' : (horarioNoVerificado ? 'horario-no-verificado' : 'afirmo-agendar')),
 }, pairedItem: { item: 0 } }];
