@@ -791,6 +791,52 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(estado['agendaPorTelefono'][TEL].ultima.mins).toEqual([960, 990]);
     });
 
+    it('revisión de a6f533a: «mejor el martes» con una elección vieja NO la revive, ni renueva su hora', () => {
+      const MARTES = proximo(2);
+      const hace = Date.now() - 10 * 60000;
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: hace }, elegido: { fecha: LUNES.iso, min: 930, desde: hace },
+        palabras: ['lucas'], desde: hace } } };
+      const ev = cita('ev-m', MARTES, '11:00', '11:30');
+      for (const dice of ['mejor el martes', '¿hay espacio el martes?', 'no me sirve, otras horas']) {
+        const est = JSON.parse(JSON.stringify(estado));
+        const r = procesar(dice, `Listo, quedó agendada el ${MARTES.nombre} ${MARTES.dia} a las 11:00.`, [consulta(MARTES), agendo(ev)], est);
+        expect(r['eleccionPendiente'], dice).toBeNull();
+      }
+      // Positiva: «Lucas» (solo el nombre) sí la toma, y conserva su hora de elección.
+      const est = JSON.parse(JSON.stringify(estado));
+      const r = procesar('Lucas', `Listo, quedó agendada el ${MARTES.nombre} ${MARTES.dia} a las 11:00.`, [consulta(MARTES), agendo(ev)], est);
+      expect(r['eleccionPendiente']).toEqual({ dia: L, hora: '15:30' });
+      expect(est['agendaPorTelefono'][TEL].elegido.desde).toBe(hace);
+    });
+
+    it('revisión de a6f533a: la pregunta de grilla no ofrece horas fuera de horario ni ya pasadas', () => {
+      const SABADO = proximo(6);
+      const ofrece = (f: Fecha) => `Por este chat agendamos en punto o y media. A las 16:00 o a las 16:30 tenemos disponibilidad el ${f.nombre} ${f.dia}.`;
+      // Lunes 11-18: 19:15 no tiene ninguna; 17:45 solo las 17:30 (la de 18:00 terminaría 18:30).
+      const tarde = String(procesar('el lunes a las 19:15', ofrece(LUNES), [], {})['respuesta']);
+      expect(tarde).not.toMatch(/19:00|19:30/);
+      expect(tarde).toContain('¿Para qué día y en qué horario te acomoda?');
+      expect(String(procesar('el lunes a las 17:45', ofrece(LUNES), [], {})['respuesta']))
+        .toContain(`¿quieres el ${L} a las 17:30? Así reviso la agenda del ${DOCTOR}.`);
+      // Sábado 09-12: 15:15 no.
+      expect(String(procesar('el sábado a las 15:15', ofrece(SABADO), [], {})['respuesta'])).not.toMatch(/15:00|15:30/);
+      // Una hora de hoy que ya pasó.
+      const HOY = fechaEnLaPaz(Date.now());
+      const pasada = String(procesar('hoy a las 00:15', ofrece(HOY), [], {})['respuesta']);
+      expect(pasada).not.toMatch(/00:00|00:30/);
+    });
+
+    it('revisión de a6f533a: apellido compartido — «¿la Dra. Pérez…?» consultando al Dr. Juan Pérez no responde «Sí»', () => {
+      const JUAN = 'Dr. Juan Pérez';
+      const CFG3: J = { ...CFG, funcionarios: JSON.stringify([
+        { nombre: JUAN, servicios: [], calendario: CAL, horario: HORARIO },
+        { nombre: DRA, servicios: [], calendario: 'cal-ficticio-2', horario: HORARIO }]) };
+      const r = procesar('¿la Dra. Pérez tiene a las 14 el lunes?',
+        `Sí, a las 14:00 hay espacio el ${L} con el ${JUAN} y con la ${DRA}. ¿Con cuál te la agendo?`, [consultaDe(JUAN, LUNES)], {}, CFG3);
+      expect(r['respuesta']).toBe(`El ${L} a las 14:00 hay espacio con el ${JUAN}. ¿Te la agendo?`);
+    });
+
     it('«el lunes 5.» con punto final es ese lunes, no hoy', () => {
       const dijo = `Hay espacio a las 11:00 o 11:30 el ${L}.`;
       const r = procesar('Prefiero el lunes', dijo, [consulta(LUNES)]);
