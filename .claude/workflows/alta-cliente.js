@@ -68,7 +68,8 @@ const PROMPTS = {
     { tipo: 'plataforma', texto: `${DATOS} Etapa 4 del runbook. Primero en seco: alta-comercio.mjs (si el tenant `
       + 'no existe) y asignar-numero.mjs --listar y en seco con el siguiente alias libre. Muestre las salidas. '
       + 'Si son las esperadas, repita con --aplicar: el control pedirá confirmación a la persona; si la niega, '
-      + 'deténgase y devuelva los comandos listos. Nunca lea el valor de un secreto.' },
+      + 'deténgase y devuelva los comandos listos. Nunca lea el valor de un secreto. El enlace de contraseña '
+      + 'queda en CLIENTES/<CLIENTE>/.enlaces/: informe la ruta que imprime el script y nunca abra ese archivo.' },
   ],
   flujo: [
     { tipo: 'flujos-n8n', texto: `${DATOS} Etapa 5 del runbook. Revise qué cambió en origin/main en Flujos/ y en `

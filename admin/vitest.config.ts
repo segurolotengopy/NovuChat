@@ -76,6 +76,7 @@ export const SUITES_PURAS = [
   'pruebas/planes.test.ts',
   'pruebas/plataforma/contrato-f1b-consola.test.ts',
   'pruebas/plataforma/copia-por-contrato-consola.test.ts',
+  'pruebas/plataforma/enlace-privado.test.ts',
   'pruebas/plataforma.test.ts',
   'pruebas/platinum-flujo.test.ts',
   'pruebas/prefijo-cacheable.test.ts',

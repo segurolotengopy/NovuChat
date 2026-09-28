@@ -9,6 +9,8 @@
       "Read(./**/client_secret*.json)",
       "Read(~/.ssh/**)",
       "Read(~/.config/gh/**)",
+    "Read(./**/.enlaces/**)",
+    "Read(//**/.enlaces/**)",
       "Bash(./deploy.sh prod*)",
       "Bash(./deploy.sh production*)",
       "Bash(git push --force*)",

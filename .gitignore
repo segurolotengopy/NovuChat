@@ -33,6 +33,12 @@ Preliminares/
 # es su JSON de configuración en admin/scripts/datos/, ya saneado con
 # marcadores. Sin esta línea, un `git add -A` los publica.
 CLIENTES/
+# Enlaces de contraseña de un administrador u operador (credenciales por unas
+# horas). Viven en CLIENTES/<CLIENTE>/.enlaces/, ya ignorada arriba; estas
+# líneas los cubren si alguien mueve la carpeta (admin/scripts/plataforma/enlace-privado.mjs).
+.enlaces/
+enlace-admin-*.txt
+enlace-oper-*.txt
 
 # --- Ruido ---------------------------------------------------------------
 *.log

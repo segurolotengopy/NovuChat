@@ -26,13 +26,15 @@
  * para que el motivo se lea en una línea.
  *
  * EL ENLACE DE CONTRASEÑA NO SE IMPRIME. Quien tenga el `oobCode` fija la
- * contraseña de esa cuenta: es la credencial misma. Va a un archivo del `$HOME`
- * con permisos 600, fuera de todo repositorio, igual que en `alta-comercio.mjs`
- * y por el mismo incidente del 15/09/2026, cuando un enlace quedó a la vista en
- * una conversación y hubo que rotar la contraseña.
+ * contraseña de esa cuenta: es la credencial misma. Va a
+ * `CLIENTES/<CLIENTE>/.enlaces/` de la copia principal, con permisos 600, igual
+ * que en `alta-comercio.mjs` y por el mismo incidente del 15/09/2026, cuando un
+ * enlace quedó a la vista en una conversación y hubo que rotar la contraseña.
+ * Hasta el 28/09/2026 iba a `~/`; el porqué del cambio, en `plataforma/enlace-privado.mjs`.
+ * `--cliente` es la carpeta de `CLIENTES/` (por defecto, el tenant en mayúsculas).
  *
  *   node scripts/asignar-rol.mjs --proyecto <id> --tenant bellido \
- *     --correo recepcion@ejemplo.com --rol oper --nombre "María René" [--aplicar]
+ *     --correo recepcion@ejemplo.com --rol oper --nombre "María René" [--cliente BELLIDO] [--aplicar]
  *
  *   node scripts/asignar-rol.mjs --proyecto <id> --tenant bellido \
  *     --correo recepcion@ejemplo.com --quitar [--aplicar]
@@ -41,9 +43,7 @@
  * seco terminó bien), 1 si no pudo, 2 si la llamada está mal.
  */
 import { randomBytes } from 'node:crypto';
-import { chmodSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { ID_CLIENTE, clienteDeTenant, comprobarDestino, escribirEnlace, raizDelProyecto } from './plataforma/enlace-privado.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -56,6 +56,7 @@ const NOMBRE = opcion('nombre') ?? '';
 const QUITAR = bandera('quitar');
 const ROL = opcion('rol') ?? (QUITAR ? null : 'oper');
 const APLICAR = bandera('aplicar');
+const CLIENTE = opcion('cliente') ?? clienteDeTenant(TENANT);
 
 // Los roles que una PERSONA puede tener en un comercio. `ingesta` no está, y no
 // es un olvido: `claims.ts` lo reserva para el principal de servicio de la
@@ -72,10 +73,11 @@ if (!QUITAR && !ROLES.includes(String(ROL))) {
 }
 if (QUITAR && opcion('rol')) problemas.push('--quitar no lleva --rol: quita el que tenga');
 if (NOMBRE.length > 80) problemas.push('--nombre es demasiado largo');
+if (!ID_CLIENTE.test(CLIENTE)) problemas.push('--cliente inválido (la carpeta de CLIENTES/: mayúsculas, dígitos y _)');
 if (problemas.length) {
   console.error(`\n  ✗ ${problemas.join('\n  ✗ ')}\n`);
   console.error('  Uso: asignar-rol.mjs --proyecto <id> --tenant <id> --correo <correo>');
-  console.error('       [--rol admin|oper] [--nombre "<nombre>"] [--quitar] [--aplicar]\n');
+  console.error('       [--rol admin|oper] [--nombre "<nombre>"] [--cliente <CARPETA>] [--quitar] [--aplicar]\n');
   process.exit(2);
 }
 
@@ -101,11 +103,17 @@ if (!ficha.exists) {
 }
 console.log(`  Negocio  : ${ficha.get('nombre') ?? '(sin nombre)'} · estado ${ficha.get('estado') ?? '?'}\n`);
 
+// Dónde iría el enlace si la cuenta hay que crearla. Solo se sabe con --aplicar
+// (hay que preguntarle a Auth), así que acá se informa y abajo se exige.
+const ENLACE = QUITAR ? null : { raiz: raizDelProyecto(), cliente: CLIENTE, nombre: `enlace-${ROL}-${TENANT}` };
+const destino = ENLACE && comprobarDestino(ENLACE);
+
 if (!APLICAR) {
   console.log(QUITAR
     ? '  Seco: se quitaría el rol de esa persona en este comercio y se cerrarían sus sesiones.'
     : `  Seco: se le daría el rol «${ROL}» en este comercio`
-      + '\n  (si la cuenta no existe, se crearía y se escribiría su enlace de contraseña en $HOME).');
+      + `\n  (si la cuenta no existe, se crearía y su enlace de contraseña iría a ${destino.legible}`
+      + `${destino.existe ? '' : `: ✗ NO EXISTE CLIENTES/${CLIENTE}/, indique --cliente`}).`);
   console.log('  No se escribió nada. Agrega --aplicar.\n');
   process.exit(0);
 }
@@ -141,6 +149,13 @@ if (QUITAR) {
 }
 
 // --- dar --------------------------------------------------------------------
+// Sin carpeta para el enlace no se crea la cuenta: quedaría una cuenta que nadie
+// puede usar y un enlace sin dónde dejarlo.
+if (!existente && !destino.existe) {
+  console.error(`  ✗ No existe CLIENTES/${CLIENTE}/ en la copia principal, y ahí va el enlace de contraseña.`);
+  console.error('    Indique la carpeta con --cliente. No se escribió nada.\n');
+  process.exit(1);
+}
 let usuario = existente;
 let enlace = null;
 if (!usuario) {
@@ -172,15 +187,14 @@ console.log(`  ✓ rol «${ROL}» y membresía`);
 
 if (!existente) {
   enlace = await auth.generatePasswordResetLink(CORREO);
-  const destino = join(homedir(), `enlace-${ROL}-${TENANT}.txt`);
-  writeFileSync(destino,
+  const escrito = escribirEnlace({ ...ENLACE, texto:
     `Enlace para que ${CORREO} ponga su contrasena en la consola de NovuChat.\n`
     + `Comercio: ${TENANT}. Rol: ${ROL}. Un solo uso, vence en unas horas.\n`
     + `NO lo pegue en ningun chat ni lo reenvie: quien lo tenga fija esa contrasena.\n`
-    + `Borre este archivo apenas lo use.\n\n${enlace}\n`, 'utf8');
-  chmodSync(destino, 0o600);
+    + `Borre este archivo apenas lo use.\n\n${enlace}\n` });
   console.log('\n  Enlace para que ponga su contraseña (vence en unas horas), escrito en:');
-  console.log(`  ${destino}   (solo para usted; no se muestra acá)\n`);
+  console.log(`  ${escrito}   (copia principal, permisos 600; no se muestra acá)`);
+  console.log('  Lo abre UNA PERSONA, nunca un agente, y borra el archivo al usarlo.\n');
   console.log('  Al completarlo, Firebase marca el correo como verificado, que es lo');
   console.log('  que las reglas exigen para cualquier rol de comercio.\n');
 }

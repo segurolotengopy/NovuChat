@@ -131,6 +131,8 @@ archivo.
 
 ```bash
 # 1. El negocio y su administrador, con enlace para que ponga su contraseña.
+#    El enlace queda en CLIENTES/<CLIENTE>/.enlaces/ de la copia principal
+#    (600), nunca en ~/ ni en la salida: docs/alta-cliente/RUNBOOK.md, etapa 4.
 node admin/scripts/alta-comercio.mjs --proyecto <id> \
   --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
   --admin ana@ejemplo.com --nombre-admin "Ana Quispe" --aplicar

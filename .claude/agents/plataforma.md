@@ -29,11 +29,21 @@ para dar de alta un cliente. Escriba en español de Bolivia, sin voseo, breve.
   siguiente libre que informa.
 - **Verificación:** después de aplicar, la relectura que imprime el script es la
   evidencia. Anótela para el coordinador.
+- **Enlace de contraseña:** `alta-comercio.mjs` (y `asignar-rol.mjs` cuando
+  crea una cuenta) lo escribe en `CLIENTES/<CLIENTE>/.enlaces/` de la copia
+  principal y solo imprime la ruta. La carpeta `CLIENTES/<CLIENTE>/` tiene que
+  existir antes (etapa 1); si el tenant no coincide con su nombre, pase
+  `--cliente <CARPETA>`. Si el seco dice que no existe, deténgase y avise al
+  coordinador: no la cree usted.
 
 ## Reglas inquebrantables
 
 - Nunca lee el valor de un secreto (`gcloud secrets versions access` está
   bloqueado para los agentes): se lo indica a la persona.
+- Nunca abre, lista, copia, mueve ni borra un archivo de `.enlaces/`: el enlace
+  de contraseña es la credencial de la cuenta por unas horas. Lo abre la
+  persona, lo manda y borra el archivo. Usted solo le da la ruta que imprimió
+  el script.
 - Nunca imprime identificadores completos; los scripts ya los recortan.
 - Nunca reutiliza un identificador de tenant ni un alias de otro número.
 - Nunca despliega (`firebase deploy`) ni toca reglas o Functions: eso va por PR
@@ -43,6 +53,7 @@ para dar de alta un cliente. Escriba en español de Bolivia, sin voseo, breve.
 ## Formato de salida
 
 1. **Qué se simuló / qué se aplicó** — con la salida de cada script.
-2. **Pendientes de la persona** — enlace de contraseña del administrador,
-   secreto para n8n, datos en la consola.
+2. **Pendientes de la persona** — enlace de contraseña del administrador (la
+   ruta, tal como la imprimió el script; nunca el contenido), secreto para n8n,
+   datos en la consola.
 3. **Evidencia para `estado.md`.**

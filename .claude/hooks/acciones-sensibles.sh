@@ -43,6 +43,8 @@ ACTUA = r"\b(curl|wget|ssh|scp|docker|systemctl|gcloud|gh|firebase|npm\s+(i|inst
 # sin distinguir mayúsculas) negaba cualquier `gh` que nombrara el repositorio.
 SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp-Modular"
 CANAL_NO_OFICIAL = r"evolution[-_ ]?api|baileys|wppconnect"
+ENLACES = r"\.enlaces\b|\benlace-(admin|oper)-[a-z0-9-]+\.txt"
+LEE = r"(^|[\s;&|(`$])(cat|tac|less|more|head|tail|bat|nl|xxd|od|hexdump|strings|base64|cp|mv|ln|scp|rsync|tar|zip|ls|find|stat|python3?|node|awk|sed|perl|ruby|xdg-open|open|code|vim?|nano)\b|<"
 
 NUNCA = [
     (lambda c: re.search(SISTEMA_AJENO, c, re.I) and re.search(ACTUA, c),
@@ -55,6 +57,13 @@ NUNCA = [
      "El valor de un secreto no debe pasar por el modelo. Que lo corra una persona en su terminal."),
     (lambda c: re.search(r"\bgit\s+push\b.*(\s--force\b|\s-f\b|\s--force-with-lease\b)", c),
      "Push forzado prohibido."),
+    # EL ENLACE DE CONTRASEÑA ES UNA CREDENCIAL (28/09/2026). Lo escriben
+    # alta-comercio.mjs y asignar-rol.mjs en una carpeta oculta del cliente, y
+    # lo abre una persona. Acá la mención junto a un verbo que lee, lista,
+    # copia o mueve ES la acción: es tocar la credencial. Un grep de la
+    # documentación no usa ninguno de esos verbos y pasa.
+    (lambda c: re.search(ENLACES, c) and re.search(LEE, c),
+     "El enlace de contraseña es una credencial: lo abre una persona, nunca un agente (docs/alta-cliente/RUNBOOK.md, etapa 4)."),
 ]
 CONFIRMAR = [
     (r"(^|\s)--aplicar(\s|$)", "Escribe en producción (Firestore, Auth o n8n)."),

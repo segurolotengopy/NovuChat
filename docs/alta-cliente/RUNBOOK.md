@@ -96,7 +96,7 @@ gcloud auth login && gcloud auth application-default login && gcloud auth applic
 Después, siempre **primero en seco** y luego con `--aplicar`:
 
 ```bash
-node admin/scripts/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>"
+node admin/scripts/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>" [--cliente <CARPETA>]
 node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --plan <impulso|crecimiento|pro> [--modalidad <demostracion|prueba|prepago>]
 # Solo si el comercio firmó un contrato a medida (F1b), en la misma corrida o después:
 node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> [--conversaciones <N|plan>] [--cambios <N|plan>] [--precio <USD|plan>] [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>]
@@ -143,9 +143,28 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   reglas mientras falte.
 
 - El administrador del comercio entra con **contraseña**, nunca con la cuenta de
-  Google del propietario. **El enlace para ponerla no se imprime**: desde el
-  15/09/2026 `alta-comercio.mjs` lo escribe en `~/enlace-admin-<tenant>.txt` con
-  permisos 600, fuera de todo repositorio, y la salida solo dice dónde quedó.
+  Google del propietario. **El enlace para ponerla no se imprime** (desde el
+  15/09/2026): `alta-comercio.mjs` lo escribe en
+  `CLIENTES/<CLIENTE>/.enlaces/enlace-admin-<tenant>.txt` de la **copia
+  principal** (`~/NovuChat`, aunque se corra desde un worktree), con la carpeta
+  en 700 y el archivo en 600, y la salida solo dice dónde quedó. `CLIENTES/`
+  está ignorada por git. `<CLIENTE>` es la carpeta que creó la etapa 1 (por
+  defecto, el tenant en mayúsculas con `_` por `-`; si no coincide,
+  `--cliente <CARPETA>`), y si no existe el script se detiene **antes** de
+  crear nada, también en seco. `asignar-rol.mjs` hace lo mismo con
+  `enlace-<rol>-<tenant>.txt` cuando crea la cuenta de un operador.
+  - **Hasta el 28/09/2026 iba a `~/enlace-admin-<tenant>.txt`.** Ese día había
+    dos olvidados en el directorio personal, del 16 y del 17/09 (Bellido y
+    Platinum), y `~/` es solo para proyectos. Por eso ahora queda junto al
+    resto del cliente, donde se ve al cerrar su alta.
+  - **No va por la salida estándar** porque este paso lo corre también el
+    agente `plataforma`, y lo que imprime un comando que corre un agente entra
+    a su contexto.
+  - **Lo abre una persona, nunca un agente.** El agente informa la ruta y
+    nada más; `.claude/settings.json` le niega leer cualquier `.enlaces/` y el
+    gancho `acciones-sensibles.sh` le niega listarla, copiarla o mostrarla por
+    Bash. La persona abre el archivo, manda el enlace al administrador por el
+    canal acordado y **borra el archivo**.
   Quien tenga ese enlace fija la contraseña de la cuenta administradora, así que
   no se pega en ningún chat ni se reenvía, y el archivo se borra al usarlo. Si
   alguna vez queda a la vista, se invalida cambiando la contraseña de esa cuenta
