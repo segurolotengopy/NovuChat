@@ -29,20 +29,95 @@
 #       SOLO LEE: qué apps están suscritas a la WABA del entorno y si alguna
 #       tiene una URL propia (`override_callback_uri`).
 #   ./scripts/webhook-meta.sh --alta-waba --webhook-id <uuid> --env-cliente <.env.x>
-#       EL WEBHOOK A NIVEL DE WABA (24/09/2026, Tech Provider). Cuando la app
-#       es compartida con otro producto —AAB1-WA-Prod atiende también al otro
-#       sistema— NO se toca el webhook de la app: Meta permite que UNA WABA
-#       tenga su propia URL por encima de la de la app
+#       EL WEBHOOK A NIVEL DE WABA (24/09/2026, Tech Provider). Meta permite que
+#       UNA WABA tenga su propia URL por encima de la de la app
 #       (POST /{WABA}/subscribed_apps con override_callback_uri y verify_token;
 #       la app tiene que estar ya suscrita a la WABA). Solo van por ahí los
 #       mensajes de esa WABA; los eventos de plantillas y de cuenta siguen a la
 #       URL de la app. Meta verifica la URL con el mismo desafío: el rodeo
 #       --preparar / --cerrar aplica igual. Usa WA_TOKEN y WABA_ID del entorno.
+#       Se escribió pensando en AAB1-WA-Prod; desde el receptor de clientes
+#       (28/09) eso está PROHIBIDO: la URL de una WABA suscrita a esa app es el
+#       destino del receptor, y la cambia solo WhatsApp-Modular (prohibición 5).
+#
+# APPS AJENAS (prohibiciones 5 y 7 de CLAUDE.md; revisión de seguridad del
+# PR #264). --alta-meta y --alta-waba escriben con la app que traiga el .env,
+# y el comando no la nombra: un .env con el WA_APP_ID de AAB1-WA-Prod
+# reescribiría el webhook de toda esa app (tumba el OTP de SeguroLoTengo y el
+# receptor de clientes). El gancho de acciones sensibles no lo puede ver. Antes
+# de cualquier POST, `negar_app_ajena` corta en dos capas: la huella del id
+# (sin red) y el nombre que devuelve Graph. Si Graph no contesta un nombre,
+# también corta: sin saber qué app es, no se escribe.
 #
 # Lee N8N_BASE_URL y N8N_API_KEY de .env (o --env-n8n). No imprime valores.
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
+
+# Nombres de apps de WhatsApp-Modular, por fragmento normalizado (minúsculas,
+# solo letras y dígitos): «aab1» cubre AAB1-WA-Prod y cualquier otra app de
+# AAB1; «segurolotengo», la app de demostración «Demo SeguroLo Tengo». Ninguna
+# app de NovuChat se llama así (NovuChat-Demo-A, NovuChat-Asistente…).
+APPS_AJENAS_FRAGMENTOS="aab1 segurolotengo"
+# sha256 del id de cada app ajena, sin el id: el repositorio es público. El id
+# de una app no es un secreto (viaja en el client_id del registro insertado),
+# así que la huella no esconde nada: evita publicarlo y sirve cuando Graph no
+# está. NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA solo puede AGREGAR huellas (la usa
+# la suite, que no tiene los ids reales).
+APPS_AJENAS_HUELLAS="
+"
+
+# huella_ajena <app-id>: 0 si el sha256 del id está en la lista.
+huella_ajena() {
+  local h
+  h=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
+  # shellcheck disable=SC2086  # sin comillas a propósito: una huella por palabra
+  case " $(echo $APPS_AJENAS_HUELLAS ${NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA:-}) " in *" $h "*) return 0 ;; esac
+  return 1
+}
+
+# negar_app_ajena <app-id> app|token: sale con error si la app es ajena por
+# huella (antes de tocar la red) o por nombre, si Graph contestó un error o no
+# trajo nombre, o si el id que contestó no es el del entorno.
+#   app   → GET /{app-id}?fields=id,name con el app access token (--alta-meta)
+#   token → GET /app?fields=id,name con WA_TOKEN: la app que Meta suscribe en
+#           POST /{WABA}/subscribed_apps es la del token, no la del .env
+negar_app_ajena() {
+  local id="$1" modo="$2" json v
+  if huella_ajena "$id"; then
+    echo "✗ La app …${id: -4} es de WhatsApp-Modular (huella): NovuChat no escribe su webhook (CLAUDE.md, prohibiciones 5 y 7)" >&2
+    exit 3
+  fi
+  if [ "$modo" = "token" ]; then
+    json=$(curl -s --max-time 30 "$G/app?fields=id,name" -H "Authorization: Bearer ${WA_TOKEN}" || true)
+  else
+    json=$(curl -s --max-time 30 "$G/$id?fields=id,name&access_token=${id}|${WA_APP_SECRET}" || true)
+  fi
+  v=$(printf '%s' "$json" | python3 -c '
+import json,re,sys
+id_env, fragmentos = sys.argv[1], sys.argv[2].split()
+try: d = json.loads(sys.stdin.read() or "{}")
+except ValueError: print("error Graph no devolvió JSON"); sys.exit()
+if not isinstance(d, dict) or "error" in d:
+    print("error", (d.get("error") or {}).get("message", "?") if isinstance(d, dict) else "?"); sys.exit()
+nombre = str(d.get("name") or "")
+if not nombre: print("error Graph no devolvió el nombre de la app"); sys.exit()
+if d.get("id") and str(d["id"]) != id_env: print("distinta", nombre); sys.exit()
+plano = re.sub(r"[^a-z0-9]", "", nombre.lower())
+print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)' "$id" "$APPS_AJENAS_FRAGMENTOS")
+  case "$v" in
+    propia\ *) echo "  app: ${v#propia } (…${id: -4})" ;;
+    ajena\ *)
+      echo "✗ La app «${v#ajena }» es de WhatsApp-Modular: NovuChat no escribe su webhook (CLAUDE.md, prohibiciones 5 y 7)" >&2
+      exit 3 ;;
+    distinta\ *)
+      echo "✗ El token es de la app «${v#distinta }», no de la …${id: -4} del entorno: se corta sin escribir" >&2
+      exit 3 ;;
+    *)
+      echo "✗ No se pudo saber qué app es la …${id: -4} (${v#error }): sin eso no se escribe su webhook" >&2
+      exit 3 ;;
+  esac
+}
 
 MODO=""; WH=""; FID=""; ENV_N8N=".env"; ENV_CLIENTE=""
 while [ $# -gt 0 ]; do
@@ -93,6 +168,7 @@ for s in d.get('data',[]):
   : "${N8N_BASE_URL:?}"
   VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
   URL="${N8N_BASE_URL%/}/webhook/$WH/webhook"
+  negar_app_ajena "$WA_APP_ID" token
   echo "Webhook PROPIO de la WABA …${WABA_ID: -4} (la URL de la app …${WA_APP_ID: -4} no se toca):"
   echo "  override_callback_uri: $URL"
   R=$(curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
@@ -141,6 +217,7 @@ if [ "$MODO" = "alta-meta" ]; then
   VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
   URL="${N8N_BASE_URL%/}/webhook/$WH/webhook"
   G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
+  negar_app_ajena "$WA_APP_ID" app
   echo "Alta del webhook en la app …${WA_APP_ID: -4}:"
   echo "  callback_url: $URL"
   echo "  fields: messages, account_update"
