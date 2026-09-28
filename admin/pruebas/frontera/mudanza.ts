@@ -111,11 +111,21 @@ export function validarTanda(tanda: unknown, consulta: Consulta): string[] {
   return errores;
 }
 
-/** Los archivos que la mudanza lee: las raíces, `scripts/` de la raíz y las configuraciones de vitest y vite. */
+/**
+ * Los archivos que la mudanza lee: las raíces, `scripts/` de la raíz, las
+ * configuraciones de vitest y vite, y los manifiestos del ensamblador
+ * (`Flujos/manifiestos/*.json`, que nombran sus módulos relativos a
+ * `Flujos/src/`; los necesita FL1).
+ */
 export function archivosAMirar(todos: readonly string[]): string[] {
   return todos.filter((a) => RAICES_DE_MUDANZA.some((r) => a.startsWith(r)) || a.startsWith('scripts/')
-    || a === 'admin/vitest.config.ts' || a === 'admin/web/vite.config.ts').filter((a) => !a.includes('/node_modules/')).sort();
+    || a === 'admin/vitest.config.ts' || a === 'admin/web/vite.config.ts' || MANIFIESTO.test(a))
+    .filter((a) => !a.includes('/node_modules/')).sort();
 }
+
+/** Un manifiesto del ensamblador de flujos (`admin/scripts/ensamblar-flujo.mjs`). */
+const MANIFIESTO = /^Flujos\/manifiestos\/[^/]+\.json$/;
+const SRC_FLUJOS = 'Flujos/src/';
 
 /** Un árbol con carpetas: para saber si `join(aqui, '..', 'Flujos')` apunta a una. */
 export interface ArbolConCarpetas extends Arbol { esCarpeta(ruta: string): boolean }
@@ -152,7 +162,31 @@ export function planDeMudanza(movimientos: readonly Movimiento[], archivos: read
     const cambios: string[] = [];
     let nuevoTexto = texto;
 
-    if (archivo.endsWith('.json')) {
+    if (MANIFIESTO.test(archivo)) {
+      // `codigo`: nodo → "carpeta/archivo.js" (o { archivo, … }) bajo
+      // Flujos/src/. Solo se reescribe el valor que nombra un archivo movido;
+      // el resto del manifiesto (prompts, marcadores) no se toca. Se exige que
+      // el archivo ya esté escrito como lo escribe JSON.stringify con dos
+      // espacios: si no, reescribirlo cambiaría más que la ruta.
+      const antes = JSON.parse(texto) as { codigo?: Record<string, unknown> };
+      if (!antes || typeof antes !== 'object' || Array.isArray(antes)) throw new Error(`${archivo}: el manifiesto no es un objeto`);
+      const moverRel = (rel: unknown): unknown => {
+        if (typeof rel !== 'string') return rel;
+        const destino = mapa.get(`${SRC_FLUJOS}${rel}`);
+        if (!destino) return rel;
+        if (!destino.startsWith(SRC_FLUJOS)) throw new Error(`${archivo}: ${rel} sale de Flujos/src/`);
+        cambios.push(`${rel} → ${destino.slice(SRC_FLUJOS.length)}`);
+        return destino.slice(SRC_FLUJOS.length);
+      };
+      const codigo = antes.codigo && typeof antes.codigo === 'object' ? Object.fromEntries(Object.entries(antes.codigo).map(([nodo, v]) =>
+        [nodo, v && typeof v === 'object' && !Array.isArray(v) ? { ...(v as object), archivo: moverRel((v as { archivo?: unknown }).archivo) } : moverRel(v)]))
+        : antes.codigo;
+      // Sin rutas movidas no se toca (y una tanda de otra carpeta no se traba
+      // por un manifiesto con otro formato: revisión de seguridad del #255).
+      if (!cambios.length) continue;
+      if (`${JSON.stringify(antes, null, 2)}\n` !== texto) throw new Error(`${archivo}: el manifiesto no tiene el formato de JSON.stringify(…, null, 2)`);
+      nuevoTexto = `${JSON.stringify({ ...antes, codigo }, null, 2)}\n`;
+    } else if (archivo.endsWith('.json')) {
       if (!archivo.endsWith('/deuda.json')) continue;
       const cambiar = (v: unknown): unknown => (typeof v === 'string' && mapa.has(v) ? (cambios.push(`${v} → ${mapa.get(v)}`), mapa.get(v))
         : Array.isArray(v) ? v.map(cambiar)

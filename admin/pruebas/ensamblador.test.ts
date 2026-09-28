@@ -47,6 +47,16 @@ const SCRIPT = join(aqui, '../scripts/ensamblar-flujo.mjs');
 
 const FLUJOS = listarFlujos();
 const CON_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) !== null);
+/**
+ * El archivo de un nodo Code, leído del manifiesto del Demo A y no escrito acá:
+ * F2 mueve los módulos de carpeta (FL1) y la mudanza reescribe el manifiesto,
+ * no una ruta armada con `join(carpetas(dir).src, …)`.
+ */
+const moduloDe = (nodo: string): string => {
+  const v = (leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> }).codigo[nodo];
+  if (!v) throw new Error(`el manifiesto del Demo A no tiene el nodo ${nodo}`);
+  return typeof v === 'string' ? v : v.archivo;
+};
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
 /** Una copia de `Flujos/` en un directorio temporal, para romperla sin miedo. */
@@ -159,7 +169,7 @@ describe('3. `extraer` seguido de `ensamblar` es la identidad', () => {
 describe('4. Un módulo modificado hace fallar `verificar`, y la falla nombra el punto', () => {
   it('un byte más en un nodo Code', () => {
     const dir = copiaDeFlujos();
-    const ruta = join(carpetas(dir).src, 'reservas/comprobar-reserva.js');
+    const ruta = join(carpetas(dir).src, moduloDe('Comprobar reserva'));
     writeFileSync(ruta, readFileSync(ruta, 'utf8').replace(/\n$/, ' \n'));
     for (const f of ['demo-a-agendamiento.json', 'platinum-agendamiento.json']) {
       const r = verificarFlujo(f, dir);
@@ -180,13 +190,13 @@ describe('4. Un módulo modificado hace fallar `verificar`, y la falla nombra el
 
   it('un módulo que falta es un error con la ruta, no un JSON vacío', () => {
     const dir = copiaDeFlujos();
-    rmSync(join(carpetas(dir).src, 'comun/uso-extendido.js'));
+    rmSync(join(carpetas(dir).src, moduloDe('Uso extendido')));
     expect(() => verificarFlujo('demo-a-agendamiento.json', dir)).toThrow(/falta el módulo .*uso-extendido\.js/);
   });
 
   it('un módulo sin salto de línea final se rechaza: es la convención que sostiene la identidad', () => {
     const dir = copiaDeFlujos();
-    const ruta = join(carpetas(dir).src, 'reservas/qr-no-enviado.js');
+    const ruta = join(carpetas(dir).src, moduloDe('QR no enviado'));
     writeFileSync(ruta, readFileSync(ruta, 'utf8').replace(/\n$/, ''));
     expect(() => verificarFlujo('demo-a-agendamiento.json', dir)).toThrow(/termina en un salto de línea/);
   });
@@ -336,11 +346,16 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
     expect(p.prompts['AI Agent (Sofía)'].systemMessage).toBe('reservas/platinum.md');
   });
 
+  // La carpeta común es `comun/` hasta FL1 y `core/` desde FL1 (sus archivos
+  // de primer nivel; `core/medios/` son medios entrantes, Core por la regla del
+  // 25/09 aunque todavía solo los use reservas). Lo del vertical es `reservas/`
+  // hasta FL1 y `modulos/<m>/` o `core/medios/` desde FL1.
+  const COMUN = /^(comun|core)\/[^/]+\.js$/;
   it('cinco módulos son comunes por nombre a los otros verticales y trece son del vertical de reservas', () => {
     const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> };
     const rutas = Object.values(a.codigo).map((v) => (typeof v === 'string' ? v : v.archivo));
-    expect(rutas.filter((r) => r.startsWith('comun/'))).toHaveLength(5);
-    expect(rutas.filter((r) => r.startsWith('reservas/'))).toHaveLength(13);
+    expect(rutas.filter((r) => COMUN.test(r))).toHaveLength(5);
+    expect(rutas.filter((r) => /^(reservas|modulos\/[a-z-]+|core\/medios)\/[^/]+\.js$/.test(r))).toHaveLength(13);
     // Los comunes existen con el mismo nombre en el Demo B y en la captación,
     // aunque su código todavía diverja: es lo que el bloque B-2 tiene que mirar.
     const otros = ['demo-b-venta-cobro.json', 'novuchat-onboarding.json']
@@ -348,7 +363,7 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
     for (const [nombre, v] of Object.entries(a.codigo)) {
       const ruta = typeof v === 'string' ? v : v.archivo;
       const enOtros = otros.every((o) => o.nodes.some((n) => n.name === nombre));
-      expect(ruta.startsWith('comun/'), `${nombre} → ${ruta}`).toBe(enOtros);
+      expect(COMUN.test(ruta), `${nombre} → ${ruta}`).toBe(enOtros);
     }
   });
 
@@ -356,7 +371,7 @@ describe('7. El Demo A y Platinum comparten todos los módulos salvo el prompt d
     const a = leerManifiesto('demo-a-agendamiento.json') as { codigo: Record<string, string | { archivo: string }> };
     for (const [nombre, v] of Object.entries(a.codigo)) {
       const ruta = typeof v === 'string' ? v : v.archivo;
-      expect(ruta.replace(/^[a-z]+\//, '')).toBe(`${slug(nombre)}.js`);
+      expect(ruta.replace(/^.*\//, '')).toBe(`${slug(nombre)}.js`);
     }
     expect(slug('AI Agent (Sofía)')).toBe('ai-agent-sofia');
     expect(slug('¿Es un mensaje?')).toBe('es-un-mensaje');
