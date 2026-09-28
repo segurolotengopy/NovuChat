@@ -37,7 +37,7 @@ en el JSON:
 | Carpeta | Qué hay |
 |---|---|
 | `Flujos/src/comun/` | Los nodos Code que existen con el mismo nombre en todos los verticales conversacionales (`Normalizar entrada`, `Procesar respuesta`, `Config del negocio`, `Comercio no operativo`, `Uso extendido`). Hoy llevan la versión del vertical de reservas; el Demo B y la captación tienen la suya, y conciliarlas es del bloque B-2 |
-| `Flujos/src/reservas/` | Los trece nodos Code que solo existen en los flujos de reservas (el candado `Comprobar reserva`, la seña, los medios, el reintento tras cruce) |
+| `Flujos/src/reservas/` | Los trece nodos Code que nacieron en los flujos de reservas (el candado `Comprobar reserva`, la seña, los medios, el reintento tras cruce). **Dos no son de reservas**: `preparar-transcripcion.js` y `preparar-imagen.js` son la capacidad general de medios entrantes y desde el 28/09/2026 también los inyectan el Demo B y la captación (§0.d); siguen en esta carpeta hasta que F3a los lleve al core |
 | `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`, `platinum.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
 | `Flujos/manifiestos/<flujo>.json` | Qué nodo de ese JSON toma qué archivo, **por nombre de nodo**. Nunca hay marcadores dentro del código |
 | `admin/scripts/ensamblar-flujo.mjs` | `verificar` (ensambla en memoria y compara byte a byte; sale con 1 si difiere), `ensamblar` (módulos → JSON) y `extraer` (JSON → módulos) |
@@ -48,6 +48,9 @@ en el JSON:
 archivos. Los que todavía no tienen manifiesto (al 20/09: seguimientos, señas
 vencidas, Bellido, recordatorios, Demo B y captación) se verifican como «sin
 manifiesto: idéntico por definición», y pasan a módulos en el bloque B-2.
+Desde el 28/09/2026 el Demo B y la captación tienen manifiesto con **solo** sus
+dos nodos de medios (`Preparar transcripción` y `Preparar imagen`); el resto de
+su código sigue en el JSON hasta FL2.
 
 ### 0.a Por qué se retiró un generador en agosto de 2026, y por qué esto no es aquello
 
@@ -140,6 +143,59 @@ punto de inyección. Lo que se propone para B-2 es un prompt en capas —un
 rubro, duración)— que reproduzca cada `systemMessage` byte a byte a partir de
 una plantilla; hasta que esa reproducción exista, un archivo por flujo es la
 única forma que no cambia el texto.
+
+### 0.d Audio, imagen y documento: capacidad de TODOS los flujos conversacionales (28/09/2026)
+
+**La regla** (Andres, 25/09/2026; `Prompts/capacidades-comunes.md`): todo flujo
+con disparador de WhatsApp y agente de IA recibe notas de voz, fotos y PDF, los
+convierte en TEXTO y recién ese texto entra al agente. El agente nunca ve el
+medio. El 25/09 el Demo B contestó «No puedo escuchar notas de voz» y la
+captación hacía lo mismo: nunca habían tenido la rama, y ningún control lo vio.
+
+**Quién la tiene:** Demo A, Platinum, Bellido (desde el 18/09) y, desde el
+28/09, Demo B y captación. La rama es la misma en los cinco, por nombre de
+nodo: `¿Trae un medio?` → `Obtener URL del medio (general)` → `Descargar
+medio` → `¿Es audio?` → `Transcribir audio` → `Preparar transcripción`; o
+`¿Es un documento?` → `Describir documento` / `Describir imagen` → `Preparar
+imagen`. Los dos `Preparar …` son **el mismo módulo** en los cinco (lo inyecta
+el ensamblador; Bellido todavía sin manifiesto, pero con el código idéntico).
+
+**La prueba que la exige:** `admin/pruebas/capacidades-comunes.test.ts`
+descubre del disco los flujos conversacionales y falla si alguno no tiene la
+rama cableada hasta su agente, si el binario llega al agente sin pasar por un
+`Preparar …`, si la rama envía algo o si los dos `Preparar …` divergen entre
+flujos. Un flujo nuevo sin medios la pone en rojo sin que nadie lo agregue a
+una lista. Una excepción solo vale declarada ahí y en
+`docs/versiones-por-cliente.md`.
+
+**Lo que cambia por flujo** (y por eso está en el JSON, no en el módulo):
+
+| | Demo B (venta) | Captación |
+|---|---|---|
+| Dónde cuelga | Salida falsa de `¿Es un comprobante?`, como en reservas | Antes de `Estado de la conversación` (que arma el turno del agente con `userInput`); en operador o bloqueado no convierte nada |
+| Qué entra | Todo audio con id; una imagen o un PDF solo con cobro REAL y sin QR pendiente | Todo audio, imagen o PDF con id |
+| Qué NO entra | El comprobante con QR pendiente (va al OCR y al cotejo) y cualquier archivo en cobro simulado (es el comprobante simulado, decisión del 23 y 25/09) | Video, sticker (aviso de siempre) |
+| Leer de Meta | Nodo WhatsApp `mediaUrlGet` + HTTP con la credencial `whatsAppApi` que ya usa el flujo | HTTP `GET` a la Graph API con la credencial de `Enviar a WhatsApp` (el flujo no tiene una de tipo WhatsApp) |
+| Clasificador | `publicidad`, `comprobante`, `otro`: la foto de un producto es `otro`, con marca, precio, talla o qué producto es | `publicidad` (solo anuncios de asistentes o chatbots), `comprobante`, `otro`: el logo, el menú o la lista de precios del prospecto es `otro`, con su texto |
+| Leyenda del archivo | En el turno del agente, antes del texto del cliente | En `mensajeDelTurno`, después del texto del cliente |
+
+**Cómo decide el Demo B que un archivo es un comprobante** (y por qué la rama
+no lo intercepta): con dos hechos del servidor que trae `Config del negocio`,
+nunca con lo que se ve en la imagen. `cobroPendiente` (hay un QR enviado a ESTE
+teléfono, sin comprobante que cuadre y sin caducar: `cobroVenta.ts`) y
+`cobroRealActivo`. `Normalizar entrada` calcula `pagoDeclarado` (imagen o
+documento con QR pendiente, en los dos modos) y `esComprobante` (lo mismo, con
+cobro real y con id del medio). `¿Es un comprobante?` desvía `esComprobante`
+a la lectura y al cotejo; `esMedioVisual` exige cobro real y **ningún** QR
+pendiente, así que las dos compuertas son excluyentes por construcción
+(`demo-b-medios.test.ts`, sección 2).
+
+**Costo:** cero mensajes por conversación (ningún nodo nuevo envía); una
+llamada a Gemini flash-lite por medio recibido. **Deudas declaradas** (F3a):
+la lista cerrada de `preparar-imagen.js` todavía acepta las categorías de la
+clínica en cualquier flujo (la barrera en venta y captación es el
+clasificador, que no las ofrece), y algunos de sus textos fijos hablan de
+«seña» y de «agendar».
 
 ---
 
