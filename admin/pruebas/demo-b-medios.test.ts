@@ -177,6 +177,13 @@ describe('2. EL COMPROBANTE NO CAMBIA: la rama de medios no intercepta ningún p
     expect(pasa('¿Trae un medio?', s)).toBe(true);
   });
 
+  it('cobro SIMULADO sin QR pendiente y SIN id: tampoco se toma por pago (revisión de seguridad del #261)', () => {
+    const s = normalizar(fusionar(simulado({ pendiente: false })), { type: 'image', image: { mime_type: 'image/jpeg' } });
+    expect(s).toMatchObject({ esMedioVisual: false, esComprobante: false, pagoDeclarado: false });
+    expect(String(s['userInput'])).not.toMatch(/SIMULADO|no hay ningún pago pendiente/);
+    expect(String(s['userInput'])).toContain('No supongas que es un comprobante de pago');
+  });
+
   it('cobro REAL con QR pendiente pero sin id: no entra a ninguna rama y el agente NO da el pago por recibido', () => {
     const s = normalizar(fusionar(real({ pendiente: true })), { type: 'image', image: { mime_type: 'image/jpeg' } });
     expect(s).toMatchObject({ esComprobante: false, esMedioVisual: false });
