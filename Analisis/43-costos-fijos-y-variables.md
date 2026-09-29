@@ -23,6 +23,8 @@ señala lo que habría que rediscutir.
 
 ---
 
+> **Nota del 28/09 (`Analisis/45`):** el escenario «con caché» de este documento supone que el 100 % de las llamadas acierta en la caché sin costo; es el **techo** de la caché implícita, no su valor esperado. Para decidir, usar la columna «implícita central» de `Analisis/45` §3 hasta que se mida el acierto real.
+
 ## 1. Qué es fijo y qué es variable
 
 | Tipo | Rubro | Se mueve con | Dónde está la cifra |
