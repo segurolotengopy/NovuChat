@@ -206,12 +206,19 @@ def sin_heredoc_de_git(c):
     return HEREDOC.sub(cambio, c)
 
 def comandos(c):
-    lx = shlex.shlex(c, posix=True, punctuation_chars=True)
+    # EL SALTO DE LÍNEA SEPARA COMANDOS, como en bash (revisión de seguridad
+    # del #272, tercera ronda): con `\n` como espacio, `gh pr create -t x -b y`
+    # y en la línea siguiente `docker logs -t <contenedor>` eran un solo
+    # comando, y el `-t` de la segunda línea se tomaba por un título. Dentro
+    # de comillas el salto sigue siendo parte de la palabra.
+    c = c.replace("\\\n", "")  # la continuación de línea sí une
+    lx = shlex.shlex(c, posix=True, punctuation_chars="();<>|&\n")
+    lx.whitespace = " \t\r"
     lx.whitespace_split = True
     lx.commenters = ""
     todos, actual = [], []
     for t in lx:
-        if t and set(t) <= set("();|&"):
+        if t and set(t) <= set("();|&\n<>") and set(t) & set("();|&\n"):
             if actual:
                 todos.append(actual)
             actual = []
@@ -315,7 +322,7 @@ def recorre_clientes(cabeza, args, cwd, hacia_xargs):
 def toca_enlace(c):
     # El texto de git/gh (y su heredoc) se exceptúa solo con el mismo criterio
     # estructural de quitar_texto (revisión de seguridad del #272, LOW-A).
-    texto_seguro = quitar_texto(c) is not None
+    texto_seguro = sin_reuso(c)
     try:
         lista = comandos(sin_heredoc_de_git(c) if texto_seguro else c)
     except ValueError:
@@ -376,8 +383,10 @@ def es_de_tabla(palabras):
     return (cabeza == "git" and ("git", palabras[1] if len(palabras) > 1 else "") in TEXTO_POR_SUB) or (
         cabeza == "gh" and ("gh",) + tuple(palabras[1:3]) in TEXTO_POR_SUB)
 
-def quitar_texto(c):
-    """El comando sin el texto publicado, o None si quitarlo no es seguro.
+def sin_reuso(c):
+    """Si el texto de git/gh se puede exceptuar en toca_enlace (el enlace de
+    contraseña), donde además el heredoc de un git o un gh es texto. Para las
+    prohibiciones 1, 5 y 7 rige quitar_texto, más estricta.
 
     CUÁNDO NO SE QUITA NADA (revisión de seguridad del #272, LOW-A). El texto
     quitado se puede volver a ejecutar desde OTRO tramo sin intérprete:
@@ -394,32 +403,84 @@ def quitar_texto(c):
     try:
         lista = comandos(sin_heredoc_de_git(c))
     except ValueError:
-        return None
+        return False
     tramos = []
     for palabras in lista:
         entorno = [w for w in palabras if re.match(r"^\w+=", w)]
         sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)]
         if any(EJECUTA.search(w) for w in entorno):
-            return None
+            return False
+        if es_de_tabla(sin_entorno) and any(w.split("=", 1)[0] not in ENTORNO_INOCUO for w in entorno):
+            return False  # GIT_EDITOR=$SHELL git commit -e: git ejecuta el texto
         if not es_de_tabla(sin_entorno):
             junto = " ".join(sin_entorno)
             if re.search(ACTUA, junto) or "$" in junto or "`" in junto:
-                return None
+                return False
             tramos.append(" ".join(entorno + sin_entorno))
             continue
         texto, con_igual = texto_publicado(sin_entorno)
         quedan = []
         for k, w in enumerate(sin_entorno):
+            if (k in texto or k in con_igual) and not solo_texto(w):
+                return False  # un $( que no es `cat <<'EOF'`: su heredoc ya se quitó
             if k in texto and solo_texto(w):
                 continue
             if k in con_igual and solo_texto(w):
                 quedan.append(w.split("=", 1)[0] + "=")
                 continue
             if k not in texto and k not in con_igual and ("$" in w or "`" in w):
-                return None
+                return False
             quedan.append(w)
         tramos.append(" ".join(entorno + quedan))
-    t = " ; ".join(tramos)
+    return not INTERPRETE.search(" ; ".join(tramos))
+
+# Variables que pueden ir delante de un git o un gh sin cambiar qué ejecuta
+# (GH_CONFIG_DIR es la que recomienda este mismo gancho). Cualquier otra
+# (GIT_EDITOR, EDITOR, GIT_SSH_COMMAND, PAGER…) puede hacer que git ejecute
+# el texto: entonces no se quita (revisión de seguridad del #272, tercera ronda).
+ENTORNO_INOCUO = {"GH_CONFIG_DIR", "GH_REPO", "GH_HOST", "GH_PROMPT_DISABLED", "NO_COLOR",
+                  "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
+                  "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
+
+def quitar_texto(c):
+    """El comando sin el texto que publica, o None si no se quita nada.
+
+    UNA SOLA INVOCACIÓN, O NADA (revisión de seguridad del #272, tercera
+    ronda). Tres rondas mostraron que el texto quitado se puede reusar desde
+    otro tramo, desde la línea siguiente o desde un heredoc que la expresión
+    lee distinto que bash. En vez de seguir tapando formas, el texto se quita
+    solo cuando el comando entero es UN git o UN gh de la tabla:
+      - sin heredoc (un cuerpo de PR va en --body-file);
+      - un solo tramo: sin `;`, `&&`, `|`, `&` ni salto de línea fuera de
+        comillas;
+      - sin `$` ni comilla invertida en ninguna palabra, tampoco en el texto;
+      - sin variables delante salvo las de ENTORNO_INOCUO;
+      - y el resto, ya sin texto, sin un intérprete.
+    `git commit -m "…" && gh pr create …` con un nombre ajeno en el texto se
+    parte en dos llamadas. El costo es ese; a cambio no hay nada que leer.
+    """
+    if "<<" in c:
+        return None
+    try:
+        lista = comandos(c)
+    except ValueError:
+        return None
+    if len(lista) != 1:
+        return None
+    palabras = lista[0]
+    entorno = [w for w in palabras if re.match(r"^\w+=", w)]
+    sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)]
+    if any(w.split("=", 1)[0] not in ENTORNO_INOCUO or EJECUTA.search(w) for w in entorno):
+        return None
+    if not es_de_tabla(sin_entorno) or any("$" in w or "`" in w for w in sin_entorno):
+        return None
+    texto, con_igual = texto_publicado(sin_entorno)
+    quedan = []
+    for k, w in enumerate(sin_entorno):
+        if k in texto:
+            continue
+        quedan.append(w.split("=", 1)[0] + "=" if k in con_igual else w)
+    t = " ".join(entorno + quedan)
     return None if INTERPRETE.search(t) else t
 
 # `${X:+curl}`, `${X-curl}`, `${X:=curl}`: la expansión deja el verbo suelto

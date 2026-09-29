@@ -107,15 +107,23 @@ describe('el verbo es una palabra de comando, no un pedazo de nombre de archivo 
 });
 
 describe('el texto de un commit o de un PR no es una acción (#264, LOW)', () => {
-  it('el nombre en -m, --title, --body o un heredoc con comillas de git/gh pasa', () => {
+  it('el nombre en -m, --title o --body de UNA invocación de git/gh pasa', () => {
     for (const c of [
       "gh pr create --title 'Gancho' --body '…receptor-clientes…'",
       'gh pr create --title "receptor-clientes: B8" --body-file cuerpo.md',
       'git commit -m "receptor-clientes y AAB1-WA-Prod: prohibiciones 5 y 7"',
       'gh pr create --title x --body="AAB1-WA-Prod"',
+      'git commit -m "línea 1\n\nreceptor-clientes en la línea 3"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
+  it('por diseño, con un heredoc o varios tramos no se quita el texto: se parte en dos llamadas o va en --body-file', () => {
+    for (const c of [
       "git commit -q -F - <<'EOF'\nreceptor-clientes y curl -X POST\nEOF",
       "gh pr create --title x --body-file - <<'EOF'\nAAB1-WA-Prod $(nada)\nEOF",
-    ]) expect(decision(c), c).not.toBe('deny');
+      "gh pr edit 272 --body \"$(cat <<'EOF'\nINTERPRETE: sh, bash.\nreceptor-clientes intacto.\nEOF\n)\"",
+      'git commit -m "arreglo con bash" && gh pr create --title "receptor-clientes" --body x',
+    ]) expect(decision(c), c).toBe('deny');
   });
 
   it('el emparejamiento sigue sobre el comando ENTERO: otro argumento u otro tramo niega', () => {
@@ -214,14 +222,42 @@ describe('re-revisión del #272: el texto quitado no se puede reusar desde otro 
 
   it('los falsos positivos no vuelven: un cuerpo que menciona un intérprete, `--base=main`, la variable delante (LOW-C)', () => {
     for (const c of [
-      "gh pr edit 272 --body \"$(cat <<'EOF'\nINTERPRETE: sh, bash, eval, xargs, node.\nreceptor-clientes intacto.\nEOF\n)\"",
       'gh pr create --title x --body "Probado con node scripts/alta.mjs; el receptor-clientes intacto"',
       'gh pr create --title "python3 y otp-service" --body x',
-      'git commit -m "arreglo con bash" && gh pr create --title "receptor-clientes" --body x',
       'gh pr create --base=main --title "receptor-clientes: B8" --body x',
       'git add a b && git commit -m "receptor-clientes" && git push',
       'GH_CONFIG_DIR=$HOME/.config/gh-pro gh pr edit 272 --body "receptor-clientes"',
     ]) expect(decision(c), c).not.toBe('deny');
+  });
+});
+
+describe('tercera revisión del #272: una sola invocación, o nada', () => {
+  it('el salto de línea separa comandos: el -t de la línea siguiente no es un título (MEDIUM)', () => {
+    for (const c of [
+      'gh pr create -t x -b y\ndocker exec -t otp-service cat /app/.env',
+      'gh pr create -t x -b y\ndocker logs -t receptor-clientes',
+      'gh release create v1 -n x\ndocker exec -t receptor-clientes printenv',
+      'git commit -m x\ndocker run -m receptor-clientes',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('un heredoc que la expresión leería distinto que bash no abre nada (LOW)', () => {
+    for (const c of [
+      "git notes list # <<'true'\ndocker restart receptor-clientes\ntrue",
+      "git notes list '<<true'\ndocker restart receptor-clientes\ntrue",
+      "git stash list <<'E'\nE\ndocker restart receptor-clientes\nE",
+      "git commit -m \"$(cat <<'EOF'\nx\nEOF)\" -q\ndocker restart receptor-clientes\ngit commit -m \"$(cat <<'EOF'\ny\nEOF\n)\"",
+      "git commit -m \"$(awk '{system($0)}' <<'EOF'\ndocker restart receptor-clientes\nEOF\n)\"",
+      "git commit -m \"$(sed 's/^//e' <<'EOF'\ndocker restart receptor-clientes\nEOF\n)\"",
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('una variable delante que puede ejecutar el texto impide quitarlo (LOW)', () => {
+    for (const c of [
+      "GIT_EDITOR=$SHELL git commit --allow-empty -m 'docker restart receptor-clientes' -e",
+      "GIT_EDITOR=rbash git commit --allow-empty -m 'docker restart receptor-clientes' -e",
+      "GIT_EDITOR=$SHELL git commit -e -F - <<'EOF'\ndocker restart receptor-clientes\nEOF",
+    ]) expect(decision(c), c).toBe('deny');
   });
 });
 
