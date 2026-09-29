@@ -8,7 +8,10 @@
 # y marca como ESCRITURA toda forma que curl convierte en POST, PUT o DELETE:
 # -X/--request con cualquier verbo distinto de GET (-X POST, -XPOST,
 # --request POST, --request=POST), -d/--data*, --json, -F/--form*,
-# -T/--upload-file (revisión de seguridad del #265, LOW-C).
+# -T/--upload-file (revisión de seguridad del #265, LOW-C), también con las
+# opciones cortas agrupadas o pegadas a su valor (-sXPOST, -d@cuerpo, -Fx=y),
+# como las lee curl: en un grupo, la primera opción que lleva valor se queda
+# con el resto del grupo, o con el argumento siguiente si no queda resto.
 #
 # Contesta: a una escritura, éxito; a `fields=id,name` (la consulta del
 # candado), $RESPUESTA_GRAPH; a `subscribed_apps`, $SUSCRITAS_GRAPH; a lo
@@ -18,15 +21,35 @@ args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   a="${args[i]}"; sig="${args[i + 1]:-}"
   case "$a" in
-    -X | --request) [ "$sig" = GET ] || tipo=ESCRIBE ;;
-    -X?*) [ "${a#-X}" = GET ] || tipo=ESCRIBE ;;
+    --request) [ "$sig" = GET ] || tipo=ESCRIBE ;;
     --request=*) [ "${a#--request=}" = GET ] || tipo=ESCRIBE ;;
-    -d | --data | --data-* | --json | -F | --form | --form-* | -T | --upload-file)
+    --data | --data-* | --json | --form | --form-* | --upload-file)
       tipo=ESCRIBE
       case "$sig" in @-) ;; @*) datos+=$(cat "${sig#@}") ;; esac ;;
     --data=* | --json=* | --form=*) tipo=ESCRIBE ;;  # --data-x=y ya entra arriba
-    -o) salida="$sig" ;;
-    -w) formato="$sig" ;;
+    --output) salida="$sig" ;;
+    --write-out) formato="$sig" ;;
+    --*) ;;
+    -?*)
+      # Un grupo de opciones cortas: -s, -sS, -sXPOST, -d@cuerpo, -o archivo…
+      grupo="${a#-}"
+      while [ -n "$grupo" ]; do
+        c="${grupo:0:1}"; resto="${grupo:1}"
+        case "$c" in
+          X | d | F | T | o | w | H | K | m | u | A | e | b | c | r | x | E) ;;
+          *) grupo="$resto"; continue ;;
+        esac
+        valor="$resto"; [ -n "$valor" ] || valor="$sig"
+        case "$c" in
+          X) [ "$valor" = GET ] || tipo=ESCRIBE ;;
+          d | F | T)
+            tipo=ESCRIBE
+            case "$valor" in @-) ;; @*) datos+=$(cat "${valor#@}") ;; esac ;;
+          o) salida="$valor" ;;
+          w) formato="$valor" ;;
+        esac
+        break
+      done ;;
   esac
   [ "$a" = "@-" ] && entrada=$(cat)
 done

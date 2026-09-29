@@ -25,7 +25,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -164,6 +164,16 @@ function lanzar(args: string[], respuesta: unknown, opciones: { entrada?: string
   };
 }
 
+/** El caso por nombre (para las pruebas que miran uno solo). */
+const caso = (nombre: string): Caso => {
+  const c = CASOS.find((x) => x.nombre === nombre);
+  if (!c) throw new Error(`no hay caso «${nombre}»`);
+  return c;
+};
+
+/** El cuerpo que curl leyó de un archivo (lo que el curl falso anota entre «»). */
+const cuerpoDe = (l = '') => (l.split('«')[1] ?? '').replace(/»$/, '');
+
 const correr = (c: Caso, respuesta: unknown, extra: Record<string, string> = {}) =>
   lanzar(c.args(), respuesta, { entrada: c.entrada, suscritas: c.suscritas, extra });
 
@@ -223,7 +233,7 @@ describe.each(CASOS)('$nombre', (c) => {
     expect(r.error).not.toMatch(/✗/);
     expect(r.escrituras).toHaveLength(1);
     expect(r.escrituras[0]).toContain(c.destino);
-    expect(r.llamadas.findIndex((l) => l.includes('fields=id,name'))).toBeLessThan(r.llamadas.indexOf(r.escrituras[0]));
+    expect(r.llamadas.findIndex((l) => l.includes('fields=id,name'))).toBeLessThan(r.llamadas.indexOf(r.escrituras[0] ?? ''));
   });
 
   // No es una barrera contra un .env hostil (puede redefinir python3 o exit):
@@ -314,8 +324,8 @@ describe('las credenciales no van en los argumentos de curl (LOW-B)', () => {
   });
 
   it('--alta-meta manda el verify token y la URL en el cuerpo, desde un archivo', () => {
-    const r = correr(CASOS[0], PROPIA);
-    const cuerpo = new URLSearchParams(r.escrituras[0].split('«')[1].replace(/»$/, ''));
+    const r = correr(caso('webhook-meta.sh --alta-meta'), PROPIA);
+    const cuerpo = new URLSearchParams(cuerpoDe(r.escrituras[0]));
     expect(cuerpo.get('verify_token')).toBe(VERIFY);
     expect(cuerpo.get('callback_url')).toBe('https://n8n.invalid/webhook/ruta-de-prueba/webhook');
     expect(cuerpo.get('object')).toBe('whatsapp_business_account');
@@ -324,16 +334,16 @@ describe('las credenciales no van en los argumentos de curl (LOW-B)', () => {
   });
 
   it('--alta-waba manda el verify token y la URL en el cuerpo JSON, desde un archivo', () => {
-    const r = correr(CASOS[1], PROPIA);
-    expect(JSON.parse(r.escrituras[0].split('«')[1].replace(/»$/, ''))).toEqual({
+    const r = correr(caso('webhook-meta.sh --alta-waba'), PROPIA);
+    expect(JSON.parse(cuerpoDe(r.escrituras[0]))).toEqual({
       override_callback_uri: 'https://n8n.invalid/webhook/ruta-de-prueba/webhook', verify_token: VERIFY,
     });
     expect(r.escrituras[0]).toContain(`‹Authorization: Bearer ${TOKEN}›`);
   });
 
   it('registrar-numero.sh --registrar manda el PIN en el cuerpo, desde un archivo', () => {
-    const r = correr(CASOS[4], PROPIA);
-    expect(JSON.parse(r.escrituras[0].split('«')[1].replace(/»$/, ''))).toEqual({ messaging_product: 'whatsapp', pin: PIN });
+    const r = correr(caso('registrar-numero.sh --registrar'), PROPIA);
+    expect(JSON.parse(cuerpoDe(r.escrituras[0]))).toEqual({ messaging_product: 'whatsapp', pin: PIN });
     expect(r.escrituras[0]).toContain(`‹Authorization: Bearer ${TOKEN}›`);
   });
 });
@@ -375,19 +385,28 @@ describe('la fuente de los scripts (LOW-C)', () => {
   const esComentario = (l: string) => /^\s*#/.test(l);
 
   // Toda forma que curl convierte en escritura: -X/--request con un verbo que
-  // no sea GET, pegado o no; cuerpos (-d, --data*, --json, -F, --form*); subidas.
+  // no sea GET (o con una variable: no se sabe cuál es), pegado o no, también
+  // dentro de un grupo de opciones cortas (-sXPOST); cuerpos (-d, --data*,
+  // --json, -F, --form*) y subidas (-T), también pegados (-d@cuerpo, -sFx=y).
   const ESCRITURA = new RegExp([
     String.raw`\bcurl(?:_token)?\b.*(?:`,
-    String.raw`\s-X\s*(?!GET\b)[A-Z]+`,
-    String.raw`|\s--request(?:=|\s+)(?!GET\b)[A-Z]+`,
-    String.raw`|\s(?:-d|--data(?:-[a-z]+)?|--json|-F|--form(?:-string)?|-T|--upload-file)(?=[\s=]|$)`,
+    String.raw`\s-[a-zA-Z]*X\s*(?!GET\b)\S`,
+    String.raw`|\s--request(?:=|\s+)(?!GET\b)\S`,
+    String.raw`|\s-[a-zA-Z]*[dFT]`,
+    String.raw`|\s(?:--data(?:-[a-z]+)?|--json|--form(?:-string)?|--upload-file)(?=[\s=]|$)`,
     ')',
   ].join(''));
-  // A Graph (no a la API de n8n, que webhook-meta.sh llama por `$API`). Un
-  // `"$URL"` cuenta solo si el archivo arma URL con la de Graph.
-  const A_GRAPH = /\$\{?G\}?\/|graph\.facebook\.com/;
-  const escribeEnGraph = (l: string, texto = '') => !esComentario(l) && ESCRITURA.test(l) && !l.includes('$API')
-    && (A_GRAPH.test(l) || (/"\$\{?URL\}?"/.test(l) && /^\s*URL="https:\/\/graph\.facebook\.com\//m.test(texto)));
+  /**
+   * A Graph (no a la API de n8n, que webhook-meta.sh llama por `$API`): la URL
+   * literal o cualquier variable que el archivo arme con ella (G, GRAPH, URL…).
+   */
+  const aGraph = (l: string, texto: string) => {
+    if (/graph\.facebook\.com/.test(l)) return true;
+    const variables = [...texto.matchAll(/^\s*(?:local\s+|export\s+)?([A-Za-z_]\w*)="?https:\/\/graph\.facebook\.com/gm)].map((m) => m[1]);
+    return variables.some((v) => new RegExp(String.raw`\$\{?${v}\}?(?:/|"|$)`).test(l));
+  };
+  const escribeEnGraph = (l: string, texto = 'G="https://graph.facebook.com/v26.0"') =>
+    !esComentario(l) && ESCRITURA.test(l) && !l.includes('$API') && aGraph(l, texto);
 
   it.each([
     'curl -s -X POST "$G/x"',
@@ -403,14 +422,22 @@ describe('la fuente de los scripts (LOW-C)', () => {
     'curl -T archivo "https://graph.facebook.com/v26.0/x"',
     'R=$(curl -s --max-time 30 -X POST "${G}/x" -H @- <<<"x" \\\n  -d \'{}\')',
     'R=$(curl_token -s \\\n  "${G}/${WABA_ID}/subscribed_apps" \\\n  -X POST)',
+    'curl_token -sXPOST "${G}/${WA_PHONE_ID}/messages"',
+    'curl -sd@cuerpo "$G/x"',
+    'curl -d@cuerpo "$G/x"',
+    'curl -sFx=y "$G/x"',
+    'curl -X "$M" "$G/x"',
+    'curl --request "$M" "$G/x"',
   ])('reconoce como escritura: %s', (l) => {
     expect(logicas(l).some((x) => escribeEnGraph(x))).toBe(true);
   });
 
-  it('un "$URL" cuenta como Graph solo si el archivo arma URL con la de Graph', () => {
+  it('una variable cuenta como Graph solo si el archivo la arma con la URL de Graph', () => {
     const l = 'R=$(curl -sS -X POST "$URL" -d x)';
     expect(escribeEnGraph(l, 'URL="https://graph.facebook.com/${V}/${P}/messages"')).toBe(true);
     expect(escribeEnGraph(l, 'URL="${N8N_BASE_URL%/}/webhook/x"')).toBe(false);
+    expect(escribeEnGraph('curl -XPOST "$GRAPH/x"', 'GRAPH="https://graph.facebook.com/v21.0"')).toBe(true);
+    expect(escribeEnGraph('curl -XPOST "$GRAPHX/x"', 'GRAPH="https://graph.facebook.com/v21.0"')).toBe(false);
   });
 
   it.each([
@@ -420,6 +447,9 @@ describe('la fuente de los scripts (LOW-C)', () => {
     'curl -H @- "$G/app?fields=id,name" <<<"x"',
     'curl -s -X POST -H @- "$API$2" -d "$3"',
     '# curl -X POST "$G/x"',
+    'curl -sS --max-time 20 -H "Content-Type: application/json" "$G/x"',
+    'curl -so /dev/null -w "%{http_code}" "$G/x"',
+    'curl -sX GET "$G/x"',
   ])('no toma por escritura: %s', (l) => {
     expect(logicas(l).some((x) => escribeEnGraph(x))).toBe(false);
   });
@@ -437,7 +467,7 @@ describe('la fuente de los scripts (LOW-C)', () => {
    */
   const candadoAntes = (ls: string[], i: number): Modo | undefined => {
     for (let j = i - 1; j >= 0; j--) {
-      const l = ls[j].trim();
+      const l = (ls[j] ?? '').trim();
       const m = /^negar_app_ajena "\$\{?WA_APP_ID(?::-)?\}?" (app|token|numero)$/.exec(l);
       if (m) return m[1] as Modo;
       if (/^(?:fi|;;|esac|\}|done)\b/.test(l) || /;;\s*$/.test(l)) return undefined;
@@ -455,13 +485,19 @@ describe('la fuente de los scripts (LOW-C)', () => {
     ['enviar-plantilla.sh', 1],
     ['subir-qr.sh', 1],
   ];
-  // Excepciones declaradas, con su porqué.
-  const EXCEPCIONES: Record<string, string> = {
+  // Excepciones declaradas, con su porqué y su vencimiento: una vencida hace
+  // fallar la suite y obliga a decidir otra vez.
+  const EXCEPCIONES: Record<string, { id: string; porque: string; vence: string }> = {
     // Prueba de humo del arranque (Bloques 2-4 de la guía): se copia suelta
     // junto a un .env.meta sin WA_APP_ID ni el repositorio al lado, y solo
     // manda hello_world a WA_TO. El token ya no va en sus argumentos.
-    'Demo-Recursos/prueba-humo-meta.sh': 'suelta, sin WA_APP_ID',
+    'Demo-Recursos/prueba-humo-meta.sh': { id: 'prueba-humo-sin-candado', porque: 'suelta, sin WA_APP_ID', vence: '2026-12-27' },
   };
+
+  it.each(Object.entries(EXCEPCIONES))('la excepción de %s tiene porqué y no venció', (_r, e) => {
+    expect(e.porque).not.toBe('');
+    expect(Date.now()).toBeLessThan(Date.parse(`${e.vence}T23:59:59-04:00`));
+  });
 
   it.each(ESCRIBEN)('%s: cada escritura a Graph va después de negar_app_ajena, con el modo de su destino', (n, cuantas) => {
     const texto = fuente(script(n));
@@ -469,14 +505,25 @@ describe('la fuente de los scripts (LOW-C)', () => {
     const escrituras = ls.flatMap((l, i) => (escribeEnGraph(l, texto) ? [i] : []));
     expect(escrituras).toHaveLength(cuantas);
     for (const i of escrituras) {
-      expect(modoDe(ls[i]), ls[i]).toBeDefined();
-      expect(candadoAntes(ls, i), ls[i]).toBe(modoDe(ls[i]));
+      const l = ls[i] ?? '';
+      expect(modoDe(l), l).toBeDefined();
+      expect(candadoAntes(ls, i), l).toBe(modoDe(l));
     }
   });
 
-  // Los .sh que pueden hablar con Graph: scripts/, scripts/lib/, Demo-Recursos/ y la raíz.
-  const todos = ['scripts', 'scripts/lib', 'Demo-Recursos', '.'].flatMap((d) =>
-    readdirSync(join(REPO, d)).filter((f) => f.endsWith('.sh')).map((f) => (d === '.' ? f : `${d}/${f}`)));
+  /** Los archivos versionados con esas extensiones, en todo el repositorio. */
+  const versionados = (...patrones: string[]) => {
+    const r = spawnSync('git', ['ls-files', '-z', '--', ...patrones], { cwd: REPO, encoding: 'utf8' });
+    expect(r.status, r.stderr).toBe(0);
+    return r.stdout.split('\0').filter(Boolean);
+  };
+  const todos = versionados('*.sh');
+
+  it('recorre todos los .sh versionados, en cualquier carpeta', () => {
+    expect(todos).toContain('scripts/lib/apps-ajenas.sh');
+    expect(todos).toContain('Demo-Recursos/prueba-humo-meta.sh');
+    expect(todos.length).toBeGreaterThan(40);
+  });
 
   it('ningún otro .sh escribe en Graph sin estar en la lista (o en las excepciones, con su porqué)', () => {
     const conocidos = new Set([...ESCRIBEN.map(([n]) => `scripts/${n}`), ...Object.keys(EXCEPCIONES)]);
@@ -486,6 +533,17 @@ describe('la fuente de los scripts (LOW-C)', () => {
     });
     expect(escriben.filter((r) => !conocidos.has(r))).toEqual([]);
     for (const e of Object.keys(EXCEPCIONES)) expect(escriben, e).toContain(e);
+  });
+
+  it('fuera de curl, solo plantillas-cliente.sh escribe en Graph (desde python, con el candado antes)', () => {
+    // python/urllib, requests o fetch en un archivo que conoce la URL de Graph.
+    const archivos = versionados('*.sh', '*.py', '*.mjs', '*.js', '*.ts')
+      .filter((r) => !/^(?:web|functions)\/|node_modules\//.test(r) && !r.endsWith('.test.ts'));
+    const escriben = archivos.filter((r) => {
+      const t = fuente(join(REPO, r));
+      return /graph\.facebook\.com/.test(t) && /urllib\.request|\brequests\.(?:post|delete|put)|\bfetch\(/.test(t);
+    });
+    expect(escriben).toEqual(['scripts/plantillas-cliente.sh']);
   });
 
   // Solo por la entrada estándar: el secreto va en el `<<<`, después de todo argumento.
@@ -500,6 +558,16 @@ describe('la fuente de los scripts (LOW-C)', () => {
 
   it('ningún .sh pasa el token ni el verify token de Meta en los argumentos de curl', () => {
     sinSecretoEnArgumentos(todos, /Bearer \$\{?WA_TOKEN|access_token=\$|input_token=|verify_token=\$/);
+  });
+
+  it('ningún .sh pasa un secreto de Meta a python por argv (se pasa por el entorno)', () => {
+    // `VT="$VT" python3 -c …` está bien: el entorno es del dueño. `python3 -c … "$VT"`, no.
+    const EN_ARGV = /\bpython3?\b.*"\$\{?(?:WA_TOKEN|WA_APP_SECRET|VT|PIN|META_VERIFY_TOKEN)\}?"/;
+    for (const r of todos) {
+      for (const l of logicas(fuente(join(REPO, r)))) {
+        if (!esComentario(l)) expect(l, `${r}: ${l.trim()}`).not.toMatch(EN_ARGV);
+      }
+    }
   });
 
   // La clave de n8n, solo en los scripts de Meta: publicar-flujo.sh,
@@ -529,7 +597,27 @@ describe('la fuente de los scripts (LOW-C)', () => {
     expect(candado).toBeLessThan(f.indexOf("python3 - <<'PY'"));
   });
 
-  it('el candado queda readonly, con curl_token', () => {
+  it('con la biblioteca cargada, un --env sin «/» carga el del directorio actual, no uno del PATH', () => {
+    // `source nombre` busca primero en el PATH: el `[ -f ]` miraría un archivo
+    // y el `source` cargaría otro. La biblioteca apaga esa búsqueda (sourcepath).
+    const aca = mkdtempSync(join(dir, 'aca-'));
+    writeFileSync(join(aca, 'env.x'), readFileSync(envCliente, 'utf8'));
+    writeFileSync(join(dir, 'env.x'), readFileSync(envCliente, 'utf8').replace(`WA_PHONE_ID=${TELEFONO}`, 'WA_PHONE_ID=6666'));
+    const r = spawnSync('bash', [script('registrar-numero.sh'), '--env', 'env.x', '--dar-de-baja'], {
+      cwd: aca, encoding: 'utf8', input: `${TELEFONO}\n`,
+      env: entornoDelEmulador(undefined, {
+        PATH: `${dir}:${process.env.PATH ?? ''}`, BASH_ENV: '', ENV: '', REGISTRO_CURL: registro,
+        RESPUESTA_GRAPH: JSON.stringify(PROPIA), SUSCRITAS_GRAPH: '{}', NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '', ...SIN_RED,
+      }),
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const escrituras = readFileSync(registro, 'utf8').split('\n').filter((l) => l.startsWith('ESCRIBE '));
+    expect(escrituras).toHaveLength(1);
+    expect(escrituras[0]).toContain(`/${TELEFONO}/deregister`);
+  });
+
+  it('el candado apaga sourcepath y queda readonly, con curl_token', () => {
+    expect(fuente(LIB)).toMatch(/^shopt -u sourcepath$/m);
     expect(fuente(LIB)).toMatch(/^readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS$/m);
     expect(fuente(LIB)).toMatch(/^readonly -f huella_ajena negar_app_ajena curl_token$/m);
   });
@@ -556,7 +644,7 @@ describe('la fuente de los scripts (LOW-C)', () => {
     // No se conoce ningún id que dé las huellas reales: se prueba el cotejo con
     // una del mismo formato, por la variable EXTRA.
     const conPuntos = huella(ID).replace(/(.{8})(?!$)/g, '$1:');
-    const r = correr(CASOS[0], PROPIA, { NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: conPuntos });
+    const r = correr(caso('webhook-meta.sh --alta-meta'), PROPIA, { NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: conPuntos });
     expect(r.codigo).toBe(3);
     expect(r.llamadas).toEqual([]);
   });

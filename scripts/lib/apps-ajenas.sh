@@ -148,5 +148,11 @@ curl_token() {
   command curl "$@" -H @- <<<"Authorization: Bearer ${WA_TOKEN:-}"
 }
 
+# `source nombre` sin «/» busca PRIMERO en el PATH (revisión de seguridad de
+# los pendientes del #265): el `[ -f ]` de un script mira un archivo y el
+# `source` podría cargar otro, el .env equivocado que este candado quiere
+# evitar. Todo script que carga la biblioteca queda sin esa búsqueda.
+shopt -u sourcepath
+
 readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS
 readonly -f huella_ajena negar_app_ajena curl_token
