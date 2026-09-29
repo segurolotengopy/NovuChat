@@ -481,13 +481,17 @@ for (let i = 0; i < items.length; i++) {
 // lo que el modelo HIZO (ver mas abajo, `ejecutoAgendar`); el regex queda
 // como red adicional, y se juzga sobre el texto SIN marcas de formato.
 const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|ya esta)\s+(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad|anotad)|\b(he|hemos)\s+(agendado|reservado|registrado|confirmado|reprogramado|reagendado|movido|anotado)\b|(agendé|reservé|registré|reprogramé|reagendé|moví)(?![a-záéíóúñ])|\b(te|le|les|los|las)\s+anot(é|amos)(?![a-záéíóúñ])|\b(cambié|cambiamos|moví|movimos)\s+(tu|su|la)\s+cita\b|\b(cita|reserva|turno)\b[^.!?]{0,40}?\b(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad)[oa]s?\b/i;
-// «No encontramos ninguna cita registrada» / «No veo esa reserva» tampoco
-  // afirman nada (Bellido, 28/09, #7624: se reemplazaba una respuesta correcta).
-  const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b|(?:^|[.!?¿¡]\s*)no\s+(?:encontr|hay\b|tengo\b|tenemos\b|tienes\b|tiene\b|veo\b|figura|registr|existe)|\bninguna\s+(?:cita|reserva|turno)/i;
+  const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
+  // «No encontramos ninguna cita registrada» / «No veo esa reserva» no afirman que se
+  // agendo (Bellido, 28/09, #7624). SOLO la oracion que EMPIEZA asi: una negacion
+  // cualquiera («No hay problema, quedo agendada…») no anula el detector (revision
+  // de seguridad del #283). Se juzga oracion por oracion.
+  const SIN_CITA = /^\W*(?:no\s+(?:encontr\w*|veo|figura\w*|registr\w*)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
   const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
   // Sin marcas de formato: «quedó *agendada*» cuenta igual que «quedó agendada».
   const plano = respuesta.replace(/[*_~]/g, '');
-  const afirmaAgendo = CONFIRMA.test(plano) && !YA_EXISTE.test(plano) && !NIEGA.test(plano);
+  const sinLasNegadas = plano.split(/(?<=[.!?])\s+|\n+/).filter((o) => !SIN_CITA.test(o)).join(' ');
+  const afirmaAgendo = CONFIRMA.test(sinLasNegadas) && !YA_EXISTE.test(plano) && !NIEGA.test(plano);
 
   // Coordenadas del pin, de la configuracion (consola o respaldo). Viajan
   // como texto porque Config base es un Set de textos; aca se vuelven numero
@@ -1148,9 +1152,12 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // llama como alguien del equipo o como un servicio (revision de 98796fd), no
   // queda ninguna: se toma la primera que no sea generica, y tambien tiene que
   // haberla dicho. Sin eso se le preguntaba el nombre sin fin.
-  const agTieneNombre = (titulo) => {
+  const agPrimeraNombre = (titulo) => {
     const palabras = agPalabrasDe(agNombreDelTitulo(titulo)).filter((w) => !AG_GENERICAS.has(w));
-    const primera = palabras.find((w) => !AG_DEL_NEGOCIO.has(w)) || palabras[0];
+    return palabras.find((w) => !AG_DEL_NEGOCIO.has(w)) || palabras[0] || '';
+  };
+  const agTieneNombre = (titulo) => {
+    const primera = agPrimeraNombre(titulo);
     return !!primera && agPalabrasCliente.has(primera);
   };
   // Las horas que este mensaje ELIGE, cada una con su fecha.
@@ -1180,10 +1187,15 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
     // ofrecida (ni una mas, ni una hora que nadie ofrecio), de pacientes
     // DISTINTOS, con el nombre de cada uno dicho por el cliente. Ante «cual de
     // estas», el modelo agenda una sola y todo sigue como hasta hoy.
-    if (!agHorasCliente.length && agConfirmaPalabra && agUltima && agUltima.mins.length >= 2 && agUltima.mins.length <= 4
-      && eventosCreados.length === agUltima.mins.length) {
+    // (revision de seguridad del #283) Solo si la oferta la marco el CODIGO como
+    // conjunto —la pregunta «¿Te las agendo?» de `Comprobar reserva`—, no cualquier
+    // oferta de dos horas («¿16:00 o 16:30?» son alternativas); el paciente se
+    // distingue por su primera palabra de nombre, no por el titulo entero; y si el
+    // cliente pide otras horas o una franja, no confirmo nada.
+    if (!agHorasCliente.length && agConfirmaPalabra && !agPideOtra && !agFranja && agUltima && agUltima.conjunto === true
+      && agUltima.mins.length >= 2 && agUltima.mins.length <= 4 && eventosCreados.length === agUltima.mins.length) {
       const inicios = eventosCreados.map((ev) => Date.parse(ev.inicio)).filter(Number.isFinite).map(agLaPaz);
-      const nombres = eventosCreados.map((ev) => agSinTilde(agNombreDelTitulo(ev.titulo)));
+      const nombres = eventosCreados.map((ev) => agPrimeraNombre(ev.titulo));
       const exacto = inicios.length === eventosCreados.length
         && inicios.every((q) => q.fecha === agUltima.fecha && agUltima.mins.includes(q.min))
         && new Set(inicios.map((q) => q.min)).size === inicios.length;
@@ -1515,8 +1527,18 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
           // Si ese dia se consulto en este turno y lo atiende UNA persona, el
           // codigo sabe que hay: si no queda nada, se dice; si queda algo, se ofrece
           // lo que el mismo verifico.
+          // Revision de seguridad del #283: solo se afirma lo que se VERIFICO. Una sola
+          // persona (la que pidio el cliente, si nombro una), con su horario cargado, y
+          // una consulta que cubra TODO el horario de ese dia: con una consulta parcial
+          // («de 15:00 a 16:00») no se sabe si el resto del dia esta lleno.
           const delDia = fechaNombrada && !cerrado ? agConsultasTurno.filter((c) => c.fecha === fechaNombrada) : [];
-          const libresDia = delDia.length && new Set(delDia.map((c) => c.persona)).size === 1
+          const personaDia = delDia.length ? delDia[0].persona : '';
+          const tramosDia = delDia.length && delDia[0].horario ? agTramos(delDia[0].horario, agSemanaDe(fechaNombrada)) : null;
+          const verificable = delDia.length > 0 && new Set(delDia.map((c) => c.persona)).size === 1 && !!personaDia
+            && delDia.every((c) => !!c.horario) && Array.isArray(tramosDia) && tramosDia.length > 0
+            && (nombradas.length === 0 || (nombradas.length === 1 && nombradas[0] === personaDia))
+            && tramosDia.every((t) => delDia.some((c) => c.desde <= agInstante(fechaNombrada, t.i) && c.hasta >= agInstante(fechaNombrada, t.f)));
+          const libresDia = verificable
             ? agLibres(delDia, fechaNombrada, agDuracion, agLimite, AG_GRILLA_MIN)
               .filter((m) => !agFranja || (m >= agFranja.desde && m < agFranja.hasta)) : null;
           let pregunta;

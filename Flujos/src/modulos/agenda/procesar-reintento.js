@@ -327,8 +327,10 @@ const plano = texto.replace(/[*_~]/g, '');
 // (`platinum-flujo.test.ts`) exige que sean identicos para que un ajuste en
 // uno no deje al otro con una version vieja.
 const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|ya esta)\s+(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad|anotad)|\b(he|hemos)\s+(agendado|reservado|registrado|confirmado|reprogramado|reagendado|movido|anotado)\b|(agendé|reservé|registré|reprogramé|reagendé|moví)(?![a-záéíóúñ])|\b(te|le|les|los|las)\s+anot(é|amos)(?![a-záéíóúñ])|\b(cambié|cambiamos|moví|movimos)\s+(tu|su|la)\s+cita\b|\b(cita|reserva|turno)\b[^.!?]{0,40}?\b(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad)[oa]s?\b/i;
-// Igual que en `Procesar respuesta`: «No encontramos ninguna cita registrada» no afirma nada.
-const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b|(?:^|[.!?¿¡]\s*)no\s+(?:encontr|hay\b|tengo\b|tenemos\b|tienes\b|tiene\b|veo\b|figura|registr|existe)|\bninguna\s+(?:cita|reserva|turno)/i;
+const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
+// Igual que en `Procesar respuesta`: solo la oracion que EMPIEZA con «No encontramos…», «No veo…» o
+// «Ninguna cita…» no afirma que se agendo.
+const SIN_CITA = /^\W*(?:no\s+(?:encontr\w*|veo|figura\w*|registr\w*)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
 const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
 // Y uno propio de este turno: «ese horario ya esta ocupado» es exactamente lo
 // que el reintento tiene que decir, y CONFIRMA lo confunde con «esta
@@ -338,14 +340,14 @@ const OCUPADO = /\b(ya\s+)?(est[aá]|estaba|se encuentra|estar[ií]a)\s+(ocupad|
 // puede tapar un «quedo agendada a las 15:00» al final.
 const oraciones = plano.split(/[.!?\n]+/).map((s) => s.trim()).filter(Boolean);
 const afirmaAgendo = oraciones.some((s) =>
-  CONFIRMA.test(s) && !NIEGA.test(s) && !YA_EXISTE.test(s) && !OCUPADO.test(s));
+  CONFIRMA.test(s) && !NIEGA.test(s) && !SIN_CITA.test(s) && !YA_EXISTE.test(s) && !OCUPADO.test(s));
 
 const motivo = base.motivoCruce || 'hubo un cruce de horario';
 
 // LO QUE SE GUARDA POR TELEFONO, igual que en `Procesar respuesta`: lo ofrecido
 // por fecha y la ultima oferta, para que el «si» del turno siguiente confirme
 // ESA hora y para no repetirle lo mismo. Sin datos estaticos, nada.
-const registrarOferta = (fecha, mins) => {
+const registrarOferta = (fecha, mins, conjunto = false) => {
   if (!fecha || !mins.length) return;
   try {
     const sd = $getWorkflowStaticData('global');
@@ -367,7 +369,10 @@ const registrarOferta = (fecha, mins) => {
     r.ofrecidos = (r.ofrecidos && typeof r.ofrecidos === 'object') ? r.ofrecidos : {};
     const previos = Array.isArray(r.ofrecidos[fecha]) ? r.ofrecidos[fecha] : [];
     r.ofrecidos[fecha] = Array.from(new Set([...previos, ...mins])).slice(-48);
-    r.ultima = { fecha, mins: mins.slice(0, 12), desde: Date.now() };
+    // `conjunto`: la pregunta era «¿Te las agendo?» por VARIAS citas que el modelo
+    // agendo, no una oferta de alternativas: el «si» siguiente las confirma juntas
+    // (revision de seguridad del #283).
+    r.ultima = { fecha, mins: mins.slice(0, 12), desde: Date.now(), ...(conjunto ? { conjunto: true } : {}) };
     r.desde = Date.now();
   } catch (e) { /* sin datos estaticos: no se guarda */ }
 };
@@ -383,7 +388,16 @@ const hoyLaPaz = agLaPaz(Date.now()).fecha;
 if (base.causaDeLaCaida === 'sin_confirmar' || base.causaDeLaCaida === 'sin_nombre') {
   const { ofertas } = agOfertas(base.respuesta, hoyLaPaz);
   const primera = ofertas.find((o) => o.fecha);
-  if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));
+  // ¿Es la pregunta de un CONJUNTO (dos o mas citas sin confirmar, cada una a una hora
+  // distinta del mismo dia, sin «cual prefieres» ni eleccion pendiente)?
+  const sinConfirmarCaidas = (Array.isArray(base.citasCaidas) ? base.citasCaidas : [])
+    .filter((c) => c && c.causa === 'sin_confirmar' && Number.isFinite(Date.parse(c.inicio)));
+  const inicios = sinConfirmarCaidas.map((c) => agLaPaz(Date.parse(c.inicio)));
+  const esConjunto = sinConfirmarCaidas.length >= 2 && base.causaDeLaCaida === 'sin_confirmar'
+    && !base.opcionesSinElegir && !base.eleccionPendiente
+    && inicios.every((q) => q.fecha === inicios[0].fecha) && new Set(inicios.map((q) => q.min)).size === inicios.length;
+  if (esConjunto) registrarOferta(inicios[0].fecha, inicios.map((q) => q.min), true);
+  else if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));
   // Al segundo «sin nombre» seguido, la respuesta ya dice que pasa con
   // recepcion: se transfiere (aviso y boton), que es lo unico que se ofrece.
   // Tambien con causas mezcladas: basta que una de las caidas sea sin nombre
