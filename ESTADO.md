@@ -61,6 +61,29 @@ así que cada tanda de F2 ya aterrizó en staging.
 4. Plantillas `prueba_termina` y `conversaciones_agotadas` con texto nuevo
    (Meta), antes del primer pase real.
 
+## Coordinación 2026-09-29
+
+Formato de la orden general (§6); la escribe la sesión de cartera para las tres de NovuChat. **La rearquitectura está en pausa** por decisión de Andres (costo de tokens sin ingresos todavía); las prioridades son Bellido en piloto, el Q'Taco reducido y los modelos por rol.
+
+- **Fase 0:** cartera, hecha: nada sin subir (#267 y #275 fusionados, #280 abierto; los 17 archivos de `.claude/agents/` que `aplicar.sh` dejó sin confirmar el 28/09 quedan en el #280). Revisora, hecha (sin worktrees propios de trabajo; subió sin forzar la rama del #277). Operadora: sin línea todavía; la revisora verificó sus worktrees limpios y con su rama en origin.
+- **Fase 1** (modelos por rol v1+v2): PR #280 abierto por cartera con los 18 agentes y `CLAUDE.md` (sección «Delegación entre agentes y costo»). Seguridad aprobó los agentes; falta el CI y el «sí» de Andres para fusionar. Ningún agente pasa a haiku.
+- **Fase 2:**
+  - Cartera, Bellido: extensión a octubre en seco, hecha (bellido bolsa 20, platinum bolsa 100, sin `periodoPagado`); informe de calidad de respuestas, hecho y **sin aplicar**; `cumplimiento.md`, `anexo-particular.md`, `condiciones-piloto.md`, aceptación (13 de 46 filas) y ficha, hechos. Q'Taco: **detenida** hasta que Andres elija el alcance.
+  - Revisora: sin informe H1b nuevo (H1b ya revisado el 26/09); el plano asienta la pausa en el PR #281.
+  - Operadora: pausa ordenada de F2 en curso; el punto de pausa va en `Prompts/COORDINACION.md`.
+- **Requiere a Andres** (cada una con su «sí»; las corre Claude):
+  1. Publicar en Bellido los arreglos #267 y #275 (el seco muestra 7 nodos de diferencia): `preparar-import.sh` y después `publicar-flujo.sh --env .env.bellido --flujo Flujos/bellido-agendamiento.local.json --aplicar`. Costo: 0 mensajes por conversación, 1 actualización del flujo en n8n. Decidir también si van a Platinum y al Demo A (los mismos 7 nodos).
+  2. **01/10:** `node admin/scripts/asignar-plan.mjs --proyecto novuchat-demo --operador (correo de Andres) --tenant bellido --periodo-prueba 2026-10 --bolsa-prueba 20 --aplicar`, y el mismo con `--tenant platinum --bolsa-prueba 100`. Cambia la modalidad de la cuenta, por eso necesita el «sí» ese día.
+  3. Fusionar el PR #280.
+  4. Q'Taco, alcance: (a) el de la orden general, con reservas de mesa, sin cobro real y avisos por plantilla, que exige una excepción de código firmada · (b) pedidos por chat con cobro real, sin mesas · (c) alta y aceptación con lo que el Demo B ya hace hoy, sin mesas (recomendado por la revisora).
+  5. Contrato de Bellido (opciones numeradas en su `anexo-particular.md` y `condiciones-piloto.md`): precio desde noviembre, cambios incluidos, quién paga Meta y recordatorio de 24 h.
+  6. Persona en Meta (Bellido): alerta de gasto en la WABA **antes del 01/10**, nombre visible sin acento (sigue con acento), doctor como administrador del portafolio, app y WABA huérfanas.
+  7. Plantillas `prueba_termina` y `conversaciones_agotadas`: la WABA de Bellido solo tiene `solicitud_cita`, `alerta_emergencia` y `hello_world`.
+  8. Antes del piloto: reiniciar la memoria y el estado por teléfono de Bellido, y una ronda de aceptación con teléfono real (33 filas).
+  9. Autorizar la corrida de la batería de calidad contra Gemini (flujo temporal en n8n) y las dos correcciones de código pendientes de Bellido (día lleno, «no encontramos ninguna cita»), que son excepción del congelamiento.
+  10. El correo de María René, para darle el rol `oper` en la consola.
+- **Costo:** cartera trabajó en Opus 5.5 y pasó a Sonnet 5.5 el 29/09. La mayor parte del gasto fueron la lectura de ejecuciones y tres revisiones de seguridad (Opus) de los PR #267, #275 y #280.
+
 ## Dónde está cada cosa
 
 | Qué | Dónde |
