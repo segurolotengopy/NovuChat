@@ -402,7 +402,9 @@ describe('la fuente de los scripts (LOW-C)', () => {
    */
   const aGraph = (l: string, texto: string) => {
     if (/graph\.facebook\.com/.test(l)) return true;
-    const variables = [...texto.matchAll(/^\s*(?:local\s+|export\s+)?([A-Za-z_]\w*)="?https:\/\/graph\.facebook\.com/gm)].map((m) => m[1]);
+    // `G` es el nombre de la casa: cuenta aunque el archivo no la asigne (puede
+    // venir de otro `source`), además de toda asignación que traiga la URL.
+    const variables = ['G', ...[...texto.matchAll(/^\s*(?:local\s+|export\s+)?([A-Za-z_]\w*)=[^\n]*graph\.facebook\.com/gm)].map((m) => m[1])];
     return variables.some((v) => new RegExp(String.raw`\$\{?${v}\}?(?:/|"|$)`).test(l));
   };
   const escribeEnGraph = (l: string, texto = 'G="https://graph.facebook.com/v26.0"') =>
@@ -438,6 +440,8 @@ describe('la fuente de los scripts (LOW-C)', () => {
     expect(escribeEnGraph(l, 'URL="${N8N_BASE_URL%/}/webhook/x"')).toBe(false);
     expect(escribeEnGraph('curl -XPOST "$GRAPH/x"', 'GRAPH="https://graph.facebook.com/v21.0"')).toBe(true);
     expect(escribeEnGraph('curl -XPOST "$GRAPHX/x"', 'GRAPH="https://graph.facebook.com/v21.0"')).toBe(false);
+    expect(escribeEnGraph('curl -XPOST "$G/x"', '')).toBe(true);
+    expect(escribeEnGraph('curl -XPOST "$B/x"', 'B="${GRAPH_URL:-https://graph.facebook.com/v26.0}"')).toBe(true);
   });
 
   it.each([
