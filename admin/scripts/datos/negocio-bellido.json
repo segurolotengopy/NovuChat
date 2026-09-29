@@ -1,6 +1,6 @@
 {
   "_fuente": "CLIENTES/BELLIDO/conocimiento-asistente.md (17/09/2026), única fuente de los textos: si cambia allá, cambia acá. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. El número de recepción y el calendario NO van acá (repositorio público): van como marcadores que el script resuelve desde la tabla de CONFIGURACION.local.md.",
-  "_supuestos": "La duración de 30 minutos por consulta y la anticipación mínima de 2 horas son SUPUESTOS de Andres; el guion del cliente no los trae. Los precios NO se cargan porque el cliente todavía no los dio. Confirmar los tres con el doctor (§7 y §3 del archivo fuente).",
+  "_supuestos": "La duración de 30 minutos por cita del chat la CONFIRMÓ el doctor el 29/09/2026: el chat ofrece y agenda cada 30 minutos, lo que él da a mano de 15 minutos lo gestiona en su propio sistema, y lo que manda es la hora de fin de cada evento del calendario. La anticipación mínima de 2 horas sigue siendo SUPUESTO de Andres. El precio de la consulta (250 Bs) lo dio el doctor el 29/09/2026 y solo se dice si preguntan; los demás precios NO se cargan.",
   "negocio": {
     "nombreNegocio": "Dr. Andres Bellido — Pediatra",
     "descripcion": "Consultorio de pediatría, neonatología y nutrición infantil en La Paz, a cargo del Dr. Andres Bellido. Se atiende con cita previa y se agenda por este mismo WhatsApp. Quien escribe casi siempre es el papá o la mamá de un niño.",
@@ -17,7 +17,7 @@
       "591"
     ],
     "datosQueNoTenemos": [
-      "precios de la consulta",
+      "precios de los servicios que no son la consulta pediátrica",
       "formas de pago",
       "seguros y convenios",
       "atención a domicilio",
@@ -25,7 +25,7 @@
       "estacionamiento",
       "dosis, medicamentos y diagnósticos"
     ],
-    "instruccionesExtra": "ESPECIALIDADES: pediatría, neonatología y nutrición infantil. Acompañamos a los papás en el crecimiento de su hijo, con seguridad y confianza.\nTONO: cálido y cercano, como quien recibe a un papá preocupado; di que estás para ayudarle a cuidar lo más valioso que tiene.\nUBICACIÓN: Calle Campos esq. Av. 6 de Agosto, Edif. Iturri, piso 1, of. 1A, La Paz. Mapa: https://maps.app.goo.gl/aKzsbcPFASUAznRY8 — dala en el MISMO mensaje en que confirmas la cita.\nPRECIOS: todavía no los tenemos cargados. Si preguntan cuánto cuesta, dilo con naturalidad y ofrece pasar la conversación a recepción. No inventes ningún monto ni forma de pago.\nNADA CLÍNICO: no des diagnósticos, dosis, medicamentos ni opiniones sobre si un síntoma es grave, aunque insistan; eso lo dice el doctor en la consulta. Si te cuentan un síntoma, acompaña con calidez, no minimices y ofrece el turno más cercano.\nURGENCIA: ante fiebre alta que no cede, dificultad para respirar, convulsión, vómitos que no paran, un recién nacido decaído o un golpe en la cabeza, NO agendes primero: di que eso necesita verse ya y pasa la conversación a recepción de inmediato.\nQUIÉN ESCRIBE: casi siempre un papá o una mamá preocupada. Pide nombre y edad del niño solo cuando sirva para agendar.\nAL CONFIRMAR LA CITA, incluye en el mismo mensaje el mapa del consultorio. Las redes del doctor NO las menciones: salen solas en un mensaje aparte.",
+    "instruccionesExtra": "ESPECIALIDADES: pediatría, neonatología y nutrición infantil. Acompañamos a los papás en el crecimiento de su hijo, con seguridad y confianza.\nTONO: cálido y cercano, como quien recibe a un papá preocupado; di que estás para ayudarle a cuidar lo más valioso.\nUBICACIÓN: Calle Campos esq. Av. 6 de Agosto, Edif. Iturri, piso 1, of. 1A, La Paz. Mapa: https://maps.app.goo.gl/aKzsbcPFASUAznRY8 — dala al confirmar la cita, en el mismo mensaje.\nCOSTO: la consulta pediátrica cuesta 250 Bs; dilo SOLO si preguntan cuánto cuesta la consulta, nunca al ofrecer horarios, agendar ni confirmar. Otros servicios o descuentos: lo confirma recepción, ofrece pasar con ella. No inventes otros montos.\nNADA CLÍNICO: no des diagnósticos, dosis, medicamentos ni opiniones sobre la gravedad de un síntoma, aunque insistan; eso lo dice el doctor en la consulta. Ante un síntoma, acompaña con calidez, no minimices y ofrece el turno más cercano.\nURGENCIA: ante fiebre alta que no cede, dificultad para respirar, convulsión, vómitos que no paran, recién nacido decaído o golpe en la cabeza, NO agendes primero: di que eso necesita verse ya y pasa a recepción de inmediato.\nQUIÉN ESCRIBE: casi siempre un papá o mamá preocupados. Pide nombre y edad del niño solo para agendar.\nAL CONFIRMAR LA CITA: incluye en el mismo mensaje el mapa y esta aclaración: \"Recuerda que hay 10 minutos de tolerancia: pasado ese tiempo, el doctor puede reprogramar tu cita.\" Las redes NO las menciones: salen solas en un mensaje aparte.",
     "mensajeCierre": "Gracias por escribirnos. Si necesitas algo más, escríbeme por acá. 👶",
     "mensajeErrorTemporal": "Disculpa, tuve un problema técnico momentáneo. ¿Me repites lo último?",
     "mensajeReservaNoConfirmada": "Disculpa, ese horario ya estaba tomado y no pude dejar tu cita registrada. Te paso con recepción para que lo resuelva contigo ahora mismo.",
@@ -53,7 +53,7 @@
     {
       "nombre": "Consulta pediátrica",
       "area": "pediatria",
-      "descripcion": "Consulta con el Dr. Andres Bellido; costo a consultar con recepción",
+      "descripcion": "Consulta con el Dr. Andres Bellido",
       "duracionMin": 30,
       "activo": true
     },

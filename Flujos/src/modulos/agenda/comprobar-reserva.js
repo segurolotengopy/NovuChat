@@ -600,6 +600,16 @@ if (ceden.length) {
     : soloSinConfirmar
     ? (avisoCanceladas ? avisoCanceladas + ' ' : '')
       + (sobreviven.length > 0 ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. ` : '') + preguntaSinConfirmar
+    // UNA QUEDO Y OTRA NO (Bellido, 29/09, #8588): dos hermanos, Josue a las 17:30
+    // y Eitan a las 18:00, fuera del horario. El candado deshizo la de Eitan y el
+    // paciente leyo el texto del negocio, «no pude dejar tu cita registrada», con la
+    // de Josue CONFIRMADA en el calendario y recepcion avisada de que no habia
+    // nada. Si quedo alguna, el mensaje dice cual quedo y cual no, sea cual sea el
+    // texto configurado: ese solo vale cuando no quedo ninguna.
+    : sobreviven.length > 0
+    ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. La de ${caidas} no pudo quedar: ${porQue}. `
+      + (usted ? 'Le paso este pedido a recepción para darle otro horario enseguida.'
+        : 'Le paso este pedido a recepción para darte otro horario enseguida.')
     : (configurado
     || `Disculpa, tengo que corregirte algo: la cita de ${caidas} no quedo, `
      + `porque ${porQue}. `

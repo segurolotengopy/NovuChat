@@ -157,7 +157,7 @@ const agLibres = (consultas, fecha, duracion, limite, paso) => {
 const agHorasDelTexto = (texto) => {
   const t = String(texto || '');
   const out = [];
-  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
+  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm(?![a-záéíóúñ])|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am(?![a-záéíóúñ])|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
   let m;
   while ((m = re.exec(t)) !== null) {
     if (m[0] === '') { re.lastIndex += 1; continue; }
@@ -165,8 +165,10 @@ const agHorasDelTexto = (texto) => {
     const conMinutos = m[2] !== undefined || m[3] !== undefined;
     const antes = t.slice(Math.max(0, m.index - 12), m.index);
     const trasLas = /\b(las?|para\s+las?)\s+$/i.test(antes);
-    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570).
-    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[7]) continue;
+    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570), y
+    // «9 am» sin «las» (29/09, #8642: «el sabado 10 de octubre 9 am» no se leia
+    // como hora y el turno perdia la fecha y la hora que el cliente dijo).
+    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[6] && !m[7]) continue;
     // «15.00 Bs» es un precio, no una hora.
     if (/^\s*(bs\b|bolivianos|usd|\$|%)/i.test(t.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
     const min = m[2] !== undefined ? Number(m[2]) : (m[3] ? (/media/i.test(m[3]) ? 30 : 15) : 0);
@@ -279,9 +281,14 @@ const agDejarValidas = (oracion, horas, validas) => {
   for (const c of corridas.reverse()) {
     const quedan = c.filter((h) => validas.includes(h));
     if (quedan.length === c.length) continue;
-    texto = texto.slice(0, c[0].desde) + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
+    // Sin ninguna que quede, tambien se va el «a las» que las anunciaba (29/09, #8567:
+    // «(por ejemplo, a las ).» quedaba en el mensaje al paciente).
+    const antes = texto.slice(0, c[0].desde);
+    texto = (quedan.length ? antes : antes.replace(/(?:\ba\s+las?\s+|\blas\s+)$/i, ''))
+      + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
   }
-  return texto.replace(/[ \t]{2,}/g, ' ');
+  return texto.replace(/\(\s*(?:por\s+ejemplo|p\.\s*ej\.?|ej\.?)?\s*[,:]?\s*\)/gi, '')
+    .replace(/\s+([.,;:])/g, '$1').replace(/[ \t]{2,}/g, ' ');
 };
 // Cambia por `nuevo` las oraciones que hablan de horas; lo demas (una
 // presentacion, el nombre que falta, un precio) se queda, en su lugar.
@@ -320,7 +327,8 @@ const plano = texto.replace(/[*_~]/g, '');
 // (`platinum-flujo.test.ts`) exige que sean identicos para que un ajuste en
 // uno no deje al otro con una version vieja.
 const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|ya esta)\s+(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad|anotad)|\b(he|hemos)\s+(agendado|reservado|registrado|confirmado|reprogramado|reagendado|movido|anotado)\b|(agendé|reservé|registré|reprogramé|reagendé|moví)(?![a-záéíóúñ])|\b(te|le|les|los|las)\s+anot(é|amos)(?![a-záéíóúñ])|\b(cambié|cambiamos|moví|movimos)\s+(tu|su|la)\s+cita\b|\b(cita|reserva|turno)\b[^.!?]{0,40}?\b(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad)[oa]s?\b/i;
-const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
+// Igual que en `Procesar respuesta`: «No encontramos ninguna cita registrada» no afirma nada.
+const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b|(?:^|[.!?¿¡]\s*)no\s+(?:encontr|hay\b|tengo\b|tenemos\b|tienes\b|tiene\b|veo\b|figura|registr|existe)|\bninguna\s+(?:cita|reserva|turno)/i;
 const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
 // Y uno propio de este turno: «ese horario ya esta ocupado» es exactamente lo
 // que el reintento tiene que decir, y CONFIRMA lo confunde con «esta

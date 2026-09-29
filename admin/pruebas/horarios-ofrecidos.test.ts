@@ -1018,6 +1018,133 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(estado['agendaPorTelefono'][TEL].creadas['ev-m'].titulo).toBe('Cita Manuel — consulta');
     });
   });
+
+  describe('Prueba real de Bellido del 29/09: dos hermanos, día lleno y horas', () => {
+    const conNombre = (id: string, f: Fecha, d: string, h: string, nombre: string): J =>
+      ({ ...cita(id, f, d, h), summary: `Cita ${nombre} — consulta` });
+    /** El turno completo: procesar → comprobar → retomar → reintento, con el mismo registro por teléfono. */
+    const turno = (userInput: string, salida: string, pasos: J[], calendario: J[], estado: J, cfg: J = CFG): { r: J; c: J } => {
+      const r = procesar(userInput, salida, pasos, estado, cfg);
+      const c = comprobar(r, calendario, cfg)[0]!;
+      if (c['causaDeLaCaida']) { const ret = retomar(c, { success: true }, r); reintento({ output: 'ok' }, { ...ret, from: TEL }, estado, cfg); }
+      return { r, c };
+    };
+
+    it('#8570 a #8618: dos hermanos, «Sí» a «¿Te las agendo?» confirma las dos y no deshace ninguna', () => {
+      const estado: J = {};
+      const a = conNombre('h1', LUNES, '15:30', '16:00', 'Josué'), b = conNombre('h2', LUNES, '16:00', '16:30', 'Eitan');
+      const t1 = turno('Josué de 4 y Eitan de 3', 'Quedaron agendadas las dos citas.', [consulta(LUNES), agendo(a), agendo(b)], [a, b, almuerzo(LUNES)], estado);
+      expect(t1.r['agendaSinConfirmar']).toEqual(['h1', 'h2']);
+      expect(String(t1.c['respuesta'])).toContain('¿Te las agendo?');
+      // «Sí»: el modelo vuelve a agendar las mismas dos, ahora con el paciente que las eligió.
+      const a2 = conNombre('h3', LUNES, '15:30', '16:00', 'Josué'), b2 = conNombre('h4', LUNES, '16:00', '16:30', 'Eitan');
+      const t2 = turno('Si', '¡Listo! Quedaron agendadas las dos.', [consulta(LUNES), agendo(a2), agendo(b2)], [a2, b2, almuerzo(LUNES)], estado);
+      expect(t2.r['agendaSinConfirmar']).toEqual([]);
+      expect(t2.r['agendaSinNombre']).toEqual([]);
+      expect(t2.c['causaDeLaCaida']).toBeUndefined();
+    });
+
+    it('negativas del conjunto: una hora que nadie ofreció, un solo paciente para dos horas, o un solo evento ⇒ nada se confirma solo', () => {
+      const armar = () => {
+        const estado: J = {};
+        const a = conNombre('h1', LUNES, '15:30', '16:00', 'Josué'), b = conNombre('h2', LUNES, '16:00', '16:30', 'Eitan');
+        turno('Josué de 4 y Eitan de 3', 'Quedaron agendadas.', [consulta(LUNES), agendo(a), agendo(b)], [a, b, almuerzo(LUNES)], estado);
+        return estado;
+      };
+      // Una de las horas no estaba ofrecida (17:00).
+      let a2 = conNombre('h3', LUNES, '15:30', '16:00', 'Josué'), b2 = conNombre('h4', LUNES, '17:00', '17:30', 'Eitan');
+      let r = procesar('Si', 'Listo.', [consulta(LUNES), agendo(a2), agendo(b2)], armar());
+      expect(r['agendaSinConfirmar']).toEqual(['h3', 'h4']);
+      // Los dos eventos son del mismo paciente.
+      a2 = conNombre('h3', LUNES, '15:30', '16:00', 'Josué'); b2 = conNombre('h4', LUNES, '16:00', '16:30', 'Josué');
+      r = procesar('Si', 'Listo.', [consulta(LUNES), agendo(a2), agendo(b2)], armar());
+      expect(r['agendaSinConfirmar']).toEqual(['h3', 'h4']);
+      // Solo se agendó una de las dos: «¿cuál?», como siempre.
+      r = procesar('Si', 'Listo.', [consulta(LUNES), agendo(conNombre('h3', LUNES, '15:30', '16:00', 'Josué'))], armar());
+      expect(r['agendaSinConfirmar']).toEqual(['h3']);
+      expect(r['opcionesSinElegir']).not.toBeNull();
+    });
+
+    it('#8588: dos citas, una queda y otra se deshace ⇒ el mensaje dice cuál quedó, aunque el negocio tenga un texto configurado', () => {
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [1050] }, ultima: { fecha: LUNES.iso, mins: [1050], desde: Date.now() },
+        elegido: null, palabras: ['josue', 'eitan'], desde: Date.now() } } };
+      const a = conNombre('p1', LUNES, '17:30', '18:00', 'Josué'), b = conNombre('p2', LUNES, '18:00', '18:30', 'Eitan');
+      const { c } = turno('17.30 consecutivos', 'Quedaron agendadas.', [consulta(LUNES), agendo(a), agendo(b)], [a, b, almuerzo(LUNES)], estado);
+      const t = String(c['respuesta']);
+      expect(t).toContain('La cita de Josué a las 17:30 quedó agendada.');
+      expect(t).toContain('La de Eitan a las 18:00 no pudo quedar');
+      expect(t).not.toContain('no pude dejar tu cita registrada');
+      expect(c['reservaVerificada']).toBe(true);
+      // Negativa: si no quedó ninguna, sigue el texto configurado por el negocio.
+      const solo = conNombre('p3', LUNES, '18:00', '18:30', 'Eitan');
+      const sinNinguna = comprobar(procesar('a las 18:00', 'Quedó.', [consulta(LUNES), agendo(solo)], {}), [solo, almuerzo(LUNES)])[0]!;
+      expect(String(sinNinguna['respuesta'])).toBe(CFG['mensajeReservaNoConfirmada']);
+    });
+
+    it('#8636 a #8654: el día lleno se dice («ya no queda espacio»), no se vuelve a preguntar el día', () => {
+      const lleno = { id: 'lleno', summary: 'x', organizer: { email: CAL }, start: { dateTime: hora(LUNES, '11:00') }, end: { dateTime: hora(LUNES, '18:00') } };
+      const r = procesar(`¿Qué horarios tienes el ${L}?`, `El ${L} hay espacio a las 11:00, 11:30 o 12:00. ¿Cuál prefieres?`, [consulta(LUNES, [lleno])], {});
+      expect(String(r['respuesta'])).toBe(`El ${L} ya no queda espacio libre. ¿Te sirve otro día?`);
+      expect(r['avisos']).toContain('dia_sin_espacio');
+      // Negativa: si el día no se consultó, no se afirma nada (sigue la pregunta de siempre).
+      const sin = procesar(`¿Qué horarios tienes el ${L}?`, `El ${L} hay espacio a las 11:00, 11:30 o 12:00. ¿Cuál prefieres?`, [], {});
+      expect(String(sin['respuesta'])).toContain('¿Para qué día y en qué horario te acomoda?');
+    });
+
+    it('el día con espacio: cuando el modelo se equivoca en todas, el código ofrece lo que él verificó', () => {
+      const ocupado = (id: string, d: string, h: string) => ({ id, summary: 'x', organizer: { email: CAL }, start: { dateTime: hora(LUNES, d) }, end: { dateTime: hora(LUNES, h) } });
+      const dia = [ocupado('o1', '11:00', '16:00'), ocupado('o2', '16:30', '18:00')];   // solo queda 16:00
+      const r = procesar(`¿Qué horarios tienes el ${L}?`, `El ${L} hay espacio a las 11:00, 11:30 o 12:00. ¿Cuál prefieres?`, [consulta(LUNES, dia)], {});
+      expect(String(r['respuesta'])).toBe(`El ${L} hay espacio a las 16:00. ¿Cuál prefieres?`);
+      expect(r['avisos']).toContain('horas_del_codigo');
+    });
+
+    it('#8642: «9 am» sin «las» es una hora, y «2 amigos» no', () => {
+      const SAB = proximo(6);
+      const ocupa = [{ id: 's1', summary: 'x', organizer: { email: CAL }, start: { dateTime: hora(SAB, '09:00') }, end: { dateTime: hora(SAB, '10:30') } }];
+      const r = procesar(`Quiero el sábado ${SAB.dia} de ${['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'][Number(SAB.iso.slice(5, 7)) - 1]} 9 am`,
+        'Perfecto, te agendo.', [consulta(SAB, ocupa)], {});
+      expect(String(r['respuesta'])).toContain('a las 09:00 ya está ocupado');
+      const amigos = procesar('vamos 2 amigos el lunes', `El ${L} hay espacio a las 11:00, 11:30 o 12:00. ¿Cuál prefieres?`, [consulta(LUNES)], {});
+      expect(String(amigos['respuesta'])).not.toContain('09:00');
+      expect(String(amigos['respuesta'])).not.toContain('02:00');
+    });
+
+    it('#8567: si se quitan todas las horas de un paréntesis, no queda «(por ejemplo, a las )»', () => {
+      const ocupa = [{ id: 'o', summary: 'x', organizer: { email: CAL }, start: { dateTime: hora(LUNES, '11:00') }, end: { dateTime: hora(LUNES, '17:30') } }];
+      const r = procesar('somos dos hermanitos', `El ${L} tengo las 15:30, las 16:30 o las 17:30. Son dos, podemos agendarlos en turnos consecutivos (por ejemplo, a las 15:30 y a las 16:00, o a las 15:30 y a las 16:30). ¿Qué horarios prefieres?`,
+        [consulta(LUNES, ocupa)], {});
+      const t = String(r['respuesta']);
+      expect(t).not.toMatch(/a las\s*[).,]/);
+      expect(t).not.toContain('()');
+      expect(t).not.toContain('por ejemplo');
+    });
+
+    it('#8618: una elección vieja no revive si después hubo una oferta nueva que no la incluye', () => {
+      const MARTES = proximo(2); const hace = Date.now() - 10 * 60000;
+      const estado: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [MARTES.iso]: [840, 870] },
+        ultima: { fecha: MARTES.iso, mins: [840, 870], desde: Date.now() - 60000 }, elegido: { fecha: LUNES.iso, min: 1050, desde: hace },
+        palabras: ['josue'], desde: Date.now() } } };
+      const ev = conNombre('e1', MARTES, '14:00', '14:30', 'Josué');
+      const r = procesar('Confirme ese horario para mis dos hijos', 'Listo.', [consulta(MARTES), agendo(ev)], estado);
+      expect(r['eleccionPendiente']).toBeNull();
+      // Positiva: sin oferta nueva, la elección de antes sigue valiendo (el caso #7167).
+      const est2: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] }, ultima: { fecha: LUNES.iso, mins: [930], desde: hace },
+        elegido: { fecha: LUNES.iso, min: 930, desde: hace }, palabras: [], desde: hace } } };
+      const ev2 = { ...cita('e2', LUNES, '11:00', '11:30'), summary: 'Cita Andres — consulta' };
+      expect(procesar('Andres', 'Queda confirmada.', [consulta(LUNES), agendo(ev2)], est2)['eleccionPendiente']).toEqual({ dia: L, hora: '15:30' });
+    });
+
+    it('#7624: «No encontramos ninguna cita registrada» no se toma por una cita agendada', () => {
+      const texto = 'No encontramos ninguna cita registrada para el control. ¿Deseas que agendemos una nueva cita?';
+      const r = procesar('Quiero reagendar', texto, [{ action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: '[]' }], {});
+      expect(r['respuesta']).toBe(texto);
+      expect(r['avisos']).not.toContain('afirmo_sin_agendar');
+      // Negativa: «quedó agendada» sin haber agendado nada SÍ se corrige.
+      const falsa = procesar('Quiero una cita', `Listo, quedó agendada tu cita el ${L} a las 11:00.`, [consulta(LUNES)], {});
+      expect(falsa['avisos']).toContain('afirmo_sin_agendar');
+    });
+  });
 });
 
 describe('Los tres flujos corren el mismo código para esto', () => {
