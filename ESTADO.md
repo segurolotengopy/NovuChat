@@ -72,7 +72,7 @@ Formato de la orden general (§6); la escribe la sesión de cartera para las tre
   - Revisora: sin informe H1b nuevo (H1b ya revisado el 26/09); el plano asienta la pausa en el PR #281.
   - Operadora: pausa ordenada de F2 en curso; el punto de pausa va en `Prompts/COORDINACION.md`.
 - **Requiere a Andres** (cada una con su «sí»; las corre Claude):
-  1. Publicar en Bellido los arreglos #267 y #275 (el seco muestra 7 nodos de diferencia): `preparar-import.sh` y después `publicar-flujo.sh --env .env.bellido --flujo Flujos/bellido-agendamiento.local.json --aplicar`. Costo: 0 mensajes por conversación, 1 actualización del flujo en n8n. Decidir también si van a Platinum y al Demo A (los mismos 7 nodos).
+  1. ~~Publicar #267 y #275~~ **Hecho el 29/09 con el «sí» de Andres:** Bellido a las 13:39 (96 nodos), Platinum y Demo A a las 13:40 (77 nodos cada uno), desde `main` `572b793`; el seco posterior da 0 diferencias en los tres. Falta que Andres pruebe Bellido con un teléfono.
   2. **01/10:** `node admin/scripts/asignar-plan.mjs --proyecto novuchat-demo --operador (correo de Andres) --tenant bellido --periodo-prueba 2026-10 --bolsa-prueba 20 --aplicar`, y el mismo con `--tenant platinum --bolsa-prueba 100`. Cambia la modalidad de la cuenta, por eso necesita el «sí» ese día.
   3. Fusionar el PR #280.
   4. Q'Taco, alcance: (a) el de la orden general, con reservas de mesa, sin cobro real y avisos por plantilla, que exige una excepción de código firmada · (b) pedidos por chat con cobro real, sin mesas · (c) alta y aceptación con lo que el Demo B ya hace hoy, sin mesas (recomendado por la revisora).

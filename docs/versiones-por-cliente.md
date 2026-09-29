@@ -30,7 +30,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 |---|---|---|---|
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | — |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` **27/09/2026: hotfix de protección + mejoras adelantadas por decisión de Andres del 27/09** (reclamos #6509 a #6587): las horas que se ofrecen salen de la consulta del mismo turno (H1), agendar exige confirmación del paciente (H2) y no se repiten las opciones ya ofrecidas (M1). Entra por la puerta del hotfix de protección; la excepción de arriba sigue vigente para todo lo demás **28/09/2026: publicado el hotfix de protección** (a las 15:32, desde `main` `21aee7c`, 96 nodos). **29/09/2026: #267 y #275 (protección: la hora que pide es la de su propia cita; reagendar no pierde la cita en silencio) fusionados en `main`, pendientes de publicar**: el seco muestra 7 nodos de diferencia. Entran por la puerta del hotfix de protección; el #275 es código de flujo durante el congelamiento del §12.10 y entra como excepción decidida por Andres |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` **27/09/2026: hotfix de protección + mejoras adelantadas por decisión de Andres del 27/09** (reclamos #6509 a #6587): las horas que se ofrecen salen de la consulta del mismo turno (H1), agendar exige confirmación del paciente (H2) y no se repiten las opciones ya ofrecidas (M1). Entra por la puerta del hotfix de protección; la excepción de arriba sigue vigente para todo lo demás **28/09/2026: publicado el hotfix de protección** (a las 15:32, desde `main` `21aee7c`, 96 nodos). **29/09/2026: #267 y #275 (protección: la hora que pide es la de su propia cita; reagendar no pierde la cita en silencio) fusionados en `main` y publicados a las 13:39** (7 nodos; el seco posterior da 0 diferencias). Entran por la puerta del hotfix de protección; el #275 es código de flujo durante el congelamiento del §12.10 y entra como excepción decidida por Andres |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -55,16 +55,17 @@ audio, foto de producto, PDF y foto sin contexto), el script los va a marcar
 exige desde ahora la rama en todo flujo conversacional. Cero mensajes por
 conversación.
 
-## Estado al 29/09/2026 (Bellido: dos arreglos de protección esperando publicación)
+## Estado al 29/09/2026 (Bellido: dos arreglos de protección, publicados)
 
 `main` (`572b793`) trae dos arreglos de reservas para los tres flujos, motivados
 por la prueba real de Bellido del 28/09: #267 (la hora que pide es la de su
 propia cita, se le dice) y #275 (reagendar no borra la cita en silencio:
 `servicio` y `funcionario` opcionales, aviso a recepción si el modelo falla tras
-confirmar una cancelación, pendiente de cancelar de un solo uso). Bellido sigue
-con el flujo publicado el 28/09; el seco de `publicar-flujo.sh` muestra solo esos
-7 nodos de diferencia y ningún cambio de prompt. No se publican hasta el «sí»
-de Andres. Cero mensajes por conversación.
+confirmar una cancelación, pendiente de cancelar de un solo uso). Se publicaron
+el 29/09 con el «sí» de Andres: Bellido a las 13:39 y Platinum y el Demo A a
+las 13:40, desde `main`; el seco mostró solo esos 7 nodos de diferencia, ningún
+cambio de prompt, y después de aplicar dio 0 en los tres. Cero mensajes por
+conversación.
 
 ## Estado al 27/09/2026 (hotfix de protección de reservas)
 
