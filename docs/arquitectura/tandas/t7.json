@@ -1,0 +1,11 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/limiteCatalogo.ts", "a": "admin/functions/src/modulos/productos/limiteCatalogo.ts" },
+    { "de": "admin/functions/src/imagenCatalogo.ts", "a": "admin/functions/src/modulos/productos/imagenCatalogo.ts" },
+    { "de": "admin/web/src/paginas/Catalogo.tsx", "a": "admin/web/src/modulos/productos/Catalogo.tsx" },
+    { "de": "admin/web/src/lib/xlsx.ts", "a": "admin/web/src/modulos/productos/xlsx.ts" },
+    { "de": "admin/web/src/lib/foto.ts", "a": "admin/web/src/modulos/productos/foto.ts" },
+    { "de": "admin/web/src/lib/csv.ts", "a": "admin/web/src/central/lib/csv.ts" }
+  ],
+  "suitesPuras": []
+}

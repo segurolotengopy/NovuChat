@@ -29,5 +29,5 @@ Carpetas destino (F2): `admin/functions/src/modulos/<m>/`,
 
 ## Piezas de la consola que van con este módulo
 
-`lib/xlsx.ts`, `lib/csv.ts`, `lib/foto.ts` (`Analisis/41` §5.3). Storage:
+`modulos/productos/xlsx.ts` y `modulos/productos/foto.ts` (`Analisis/41` §5.3); `csv.ts` pasó a `central/lib/` porque también la usa Captación (F2, módulos). Storage:
 `fotosCatalogo` con `docs/seguridad/reglas-storage.md`.

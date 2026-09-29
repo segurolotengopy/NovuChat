@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { deflateRawSync, crc32 } from 'node:zlib';
-import { leerXlsx, leerXlsxConAviso } from '../web/src/lib/xlsx.ts';
+import { leerXlsx, leerXlsxConAviso } from '../web/src/modulos/productos/xlsx.ts';
 
 // --- Fabricación de un ZIP mínimo -------------------------------------------
 
@@ -279,7 +279,7 @@ describe('Las imágenes incrustadas se cuentan', () => {
  * comercio subiría su Excel, vería precios distintos de los que ve en su
  * planilla, y no habría ningún error en ninguna parte.
  */
-import { validarCsv, validarFilas } from '../web/src/lib/csv.ts';
+import { validarCsv, validarFilas } from '../web/src/central/lib/csv.ts';
 
 describe('Excel y CSV dan el mismo resultado', () => {
   it('mismas filas, mismos precios, mismas columnas detectadas', async () => {
