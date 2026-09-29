@@ -97,7 +97,8 @@ const agConsultas = (pasos, equipo, ignorar) => {
       if (!ev || typeof ev !== 'object' || ignorar.has(String(ev.id || ''))) continue;
       const i = Date.parse(String((ev.start || {}).dateTime || ''));
       const f = Date.parse(String((ev.end || {}).dateTime || ''));
-      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f });
+      // Con su id: el aviso de «ya está tu cita» exige verla en la agenda.
+      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f, id: String(ev.id || '') });
     }
     const quien = agSinTilde(e.funcionario);
     const persona = (quien && equipo.find((x) => agSinTilde(x.nombre) === quien))
@@ -157,12 +158,12 @@ const agLibres = (consultas, fecha, duracion, limite, paso) => {
 // Las horas escritas en un texto, con su posicion. Del modelo se toma lo que
 // tiene minutos («11:00», «11.30», «16h30»), lo que viene tras «las» («a las
 // 17») y «17 hs»; «2 horas» es una duracion, no una hora. «De la tarde» o «pm»
-// suman doce. `ambigua`: de 1 a 7 sin tarde ni
+// suman doce; «en punto» tambien la marca. `ambigua`: de 1 a 7 sin tarde ni
 // mañana, que en un consultorio casi siempre es de la tarde.
 const agHorasDelTexto = (texto) => {
   const t = String(texto || '');
   const out = [];
-  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?/gi;
+  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
   let m;
   while ((m = re.exec(t)) !== null) {
     if (m[0] === '') { re.lastIndex += 1; continue; }
@@ -170,7 +171,8 @@ const agHorasDelTexto = (texto) => {
     const conMinutos = m[2] !== undefined || m[3] !== undefined;
     const antes = t.slice(Math.max(0, m.index - 12), m.index);
     const trasLas = /\b(las?|para\s+las?)\s+$/i.test(antes);
-    if (!conMinutos && !trasLas && !m[4] && !m[5]) continue;
+    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570).
+    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[7]) continue;
     // «15.00 Bs» es un precio, no una hora.
     if (/^\s*(bs\b|bolivianos|usd|\$|%)/i.test(t.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
     const min = m[2] !== undefined ? Number(m[2]) : (m[3] ? (/media/i.test(m[3]) ? 30 : 15) : 0);
@@ -1164,6 +1166,52 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const agTextoDelModelo = !fallo && !vacia && !soloMarca && !negoServicio && !cancelacionSinConfirmar
     && !cancelacionFallida;
   const agUsted = /\busted\b/i.test(String(cfg.tratamiento || ''));
+  // LA HORA QUE PIDE YA ES LA DE SU PROPIA CITA (Bellido, prueba real del
+  // 28/09, #7566 y #7570): agendo a Manuel para el martes a las 11:00 y cuatro
+  // minutos despues, desde el mismo telefono, pidio «mañana a las 11». El
+  // modelo agendo las 11:30 por su cuenta (el candado la deshizo) y la pregunta
+  // decia «Sí, el martes 29 a las 11:30 hay espacio»; insistio con «11 en
+  // punto» y recibio «te puedo ofrecer 11:30 o 12:00». Nadie le dijo que las
+  // 11:00 eran de su cita, y pidio hablar con alguien. El codigo lo sabe
+  // (`creadas`: las citas que ESTE telefono agendo por el chat) y lo dice.
+  const AG_NOMBRE_DE_PACIENTE = /^[a-záéíóúüñ][a-záéíóúüñ']*( [a-záéíóúüñ][a-záéíóúüñ']*){0,3}$/i;
+  const AG_LEXICO_COBRO = /(pag|señ|sena\b|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel)/i;
+  const agSuCitaEnLaHora = (() => {
+    if (agHorasCliente.length !== 1 || agHorasCliente[0].ordinal || pasosCancelar.length || canceladasEnElTurno.length) return null;
+    const reg = agRegistros && telefonoDelCliente ? agRegistros[telefonoDelCliente] : null;
+    const creadas = (reg && reg.creadas && typeof reg.creadas === 'object')
+      ? Object.entries(reg.creadas).filter(([, c]) => c && Number(c.hasta || 0) > agAhora) : [];
+    const h = agHorasCliente[0];
+    // UN HECHO, NO UN RECUERDO (revision de seguridad de bb96b4c): `creadas` no
+    // se entera si recepcion la cancelo en el calendario, si vencio su seña o si
+    // se cancelo en otro turno. El aviso sale solo si la agenda consultada en
+    // ESTE turno muestra esa misma cita (su id) a esa hora; sin consulta de ese
+    // dia, no hay aviso.
+    const enLaAgenda = (id, t) => agConsultasTurno.some((k) => k.fecha === agLaPaz(t).fecha
+      && k.ocupados.some((o) => o.id === String(id) && o.i === t));
+    const mins = h.ambigua ? [h.min, h.min + 720] : [h.min];
+    // Si nombro el dia, la de ese dia; si no, solo si es UNA: dos citas suyas a
+    // esa hora en dias distintos no dicen de cual habla.
+    const coinciden = creadas.map(([id, c]) => ({ id, c, t: Date.parse(String(c.inicio || '')) }))
+      .filter(({ id, t }) => Number.isFinite(t) && t > agAhora && mins.includes(agLaPaz(t).min)
+        && (!agFechaDeLaHora || agLaPaz(t).fecha === agFechaDeLaHora) && enLaAgenda(id, t));
+    if (coinciden.length !== 1) return null;
+    const { c, t } = coinciden[0];
+    const p = agLaPaz(t);
+    // El paciente sale del titulo que puso el flujo («Cita Manuel — consulta»):
+    // de una a cuatro palabras de letras, y nada que afirme un cobro (revision
+    // de seguridad de bb96b4c: el titulo lo escribe el modelo); ni una palabra
+    // del lexico de cobro, que `AFIRMA_COBRO` no cubre entero («Manuel seña
+    // acreditada», «Manuel ya pagó»: revision de 9dac4e6); si no, «tu cita».
+    const paciente = agNombreDelTitulo(c.titulo);
+    return { fecha: p.fecha, min: p.min, dia: agDiaTexto(p.fecha), hora: agHora(p.min),
+      paciente: AG_NOMBRE_DE_PACIENTE.test(paciente) && !AFIRMA_COBRO.test(paciente) && !AG_LEXICO_COBRO.test(paciente)
+        ? paciente : '' };
+  })();
+  const agAvisoSuCita = agSuCitaEnLaHora
+    ? `El ${agSuCitaEnLaHora.dia} a las ${agSuCitaEnLaHora.hora} ya está `
+      + (agSuCitaEnLaHora.paciente ? `la cita de ${agSuCitaEnLaHora.paciente}.` : (agUsted ? 'su cita.' : 'tu cita.'))
+    : '';
   const agDeQuien = (() => {
     if (agEquipo.length !== 1) return '';
     const n = String(agEquipo[0].nombre || '').trim();
@@ -1273,7 +1321,9 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
             : motivo === 'cerrado' ? `El ${dia} no atendemos.`
             : (motivo === 'fuera' ? `El ${dia} a las ${agHora(hora)} no atendemos.`
               : (motivo === 'pasado' ? `El ${dia} a las ${agHora(hora)} ya no llego a darte el turno.`
-                : `El ${dia} a las ${agHora(hora)} ya está ocupado.`));
+                // Ocupada por SU cita: se le dice de quien es (Bellido, 28/09).
+                : (agSuCitaEnLaHora && agSuCitaEnLaHora.fecha === fechaPedida && agSuCitaEnLaHora.min === hora
+                  ? agAvisoSuCita : `El ${dia} a las ${agHora(hora)} ya está ocupado.`)));
           reemplazo = porque + (cercanas.length
             ? ` Lo más cercano libre ese día es ${agLista(cercanas)}. ${cercanas.length > 1 ? agSirve : (agUsted ? '¿Le sirve?' : '¿Te sirve?')}`
             : ` Ese día ya no queda espacio libre. ${agOtroDia}`);
@@ -1513,6 +1563,23 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     avisos.push('afirmo_sin_agendar');
   }
 
+  // Se dice antes de las horas que le ofrece el modelo, si no la nombra ya
+  // («tu cita del martes a las 11:00 sigue en pie» no se toca). Si en el turno
+  // se agendo algo, lo decide `Comprobar reserva`, que recibe el aviso.
+  if (agAvisoSuCita && agTextoDelModelo && !transferir && !eventosCreados.length) {
+    const horasDichas = agHorasDelTexto(respuesta.replace(/[*_~]/g, ''));
+    if (horasDichas.length && !horasDichas.some((x) => x.min === agSuCitaEnLaHora.min)) {
+      respuesta = agAvisoSuCita + ' ' + respuesta;
+      avisos.push('hora_de_su_cita');
+    }
+  }
+  // La hora que nombro el cliente, para que `Comprobar reserva` no le diga
+  // «Sí» a otra: pidio las 11 y el modelo agendo las 11:30.
+  const agHoraPedida = agHorasCliente.length === 1 && !agHorasCliente[0].ordinal
+    ? { dia: agFechaDeLaHora ? agDiaTexto(agFechaDeLaHora) : '',
+      horas: (agHorasCliente[0].ambigua ? [agHorasCliente[0].min, agHorasCliente[0].min + 720] : [agHorasCliente[0].min]).map(agHora) }
+    : null;
+
   // Lo que queda guardado de este turno, por telefono: lo ofrecido (sumado al
   // de antes, por fecha), la ultima oferta y la eleccion. Se barren los
   // registros vencidos de todos los telefonos solo si hay algo que escribir.
@@ -1561,11 +1628,14 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // deshacen por falta de confirmacion o de nombre no entran; las que el
     // candado deshace las borra `Comprobar reserva`.
     r.creadas = (r.creadas && typeof r.creadas === 'object') ? r.creadas : {};
+    // Las que se cancelaron en este turno ya no son evidencia de nada.
+    for (const id of idsCancelados) delete r.creadas[String(id).slice(0, 200)];
     for (const ev of eventosCreados) {
       if (agCitasSinConfirmar.includes(ev.id) || agCitasSinNombre.includes(ev.id)) continue;
       const t = Date.parse(ev.inicio);
-      r.creadas[String(ev.id).slice(0, 200)] = { inicio: String(ev.inicio), desde: agAhora,
-        hasta: Math.max(Number.isFinite(t) ? t + 3600000 : 0, agAhora + 24 * 3600000) };
+      // Con su titulo, para decirle de quien es la cita si pide esa hora.
+      r.creadas[String(ev.id).slice(0, 200)] = { inicio: String(ev.inicio), titulo: String(ev.titulo || '').slice(0, 120),
+        desde: agAhora, hasta: Math.max(Number.isFinite(t) ? t + 3600000 : 0, agAhora + 24 * 3600000) };
     }
     const ids = Object.keys(r.creadas);
     for (const id of ids.slice(0, Math.max(0, ids.length - 10))) delete r.creadas[id];
@@ -1758,6 +1828,10 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     agendaSinNombre: agCitasSinNombre,
     opcionesSinElegir: agOpcionesSinElegir,
     eleccionPendiente: agEleccionPendiente ? { dia: agEleccionPendiente.dia, hora: agEleccionPendiente.hora } : null,
+    // Prueba real de Bellido del 28/09 (#7566): la hora que pidio y, si es la
+    // de su propia cita, el aviso que va antes de la pregunta.
+    horaPedida: agHoraPedida,
+    avisoSuCita: agAvisoSuCita,
     // AL SEGUNDO `sin_nombre` SEGUIDO, CON RECEPCION (revision de 98796fd): si
     // el nombre que dice el cliente no coincide dos veces, preguntarle de nuevo
     // es un bucle; lo resuelve una persona.

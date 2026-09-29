@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import {
   controlaStock, existencias, hayParaVender, idMovimiento,
 } from '../functions/src/inventario.ts';
-import { bytesDeDataUrl, medidaDestino, tipoDeDataUrl } from '../web/src/lib/foto.ts';
+import { bytesDeDataUrl, medidaDestino, tipoDeDataUrl } from '../web/src/modulos/productos/foto.ts';
 
 describe('«No sé cuántos hay» NO es «hay cero»', () => {
   it('un ítem sin el campo no lleva control, y siempre se puede vender', () => {

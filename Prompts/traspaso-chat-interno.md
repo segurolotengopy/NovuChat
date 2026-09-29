@@ -47,9 +47,11 @@ fase 2: **el flujo cambió, y un flujo se publica solo desde `main`**.
    proyecto de AAB1, `docs/24` y su bitácora del 19 al 23/09). No se vuelve a
    intentar por AAB1 hasta que ese proyecto tenga un token que opere WABAs de
    clientes.
-2. **La app `AAB1-WA-Prod` no se toca** (prohibición 5: es la app de producción
-   del otro sistema). Si algún día se usa como Tech Provider, el webhook va **a
-   nivel de WABA** (`webhook-meta.sh --alta-waba`), nunca el de la app.
+2. **La app `AAB1-WA-Prod` no se toca** (prohibiciones 5 y 7: es la app de
+   producción del otro sistema). Desde el receptor de clientes (28/09/2026)
+   tampoco a nivel de WABA: el destino de una WABA suscrita a esa app lo cambia
+   solo WhatsApp-Modular, y `webhook-meta.sh --alta-waba` corta si el token es
+   de esa app (`scripts/lib/apps-ajenas.sh`).
 3. **El flujo de captación `ayMDHHBXRREgT8gR` es el mismo.** Cambian los
    valores de sus dos credenciales, el `phoneNumberId` de `Config base` y el
    webhook. El filtro por `phone_number_id` (condición c3 de `¿Es un
@@ -132,7 +134,8 @@ con el aviso a recepción (cuando la plantilla esté `APPROVED`); «Hola» al
 ### Lo que NO se construye ahora (y por qué)
 - **Tech Provider con `AAB1-WA-Prod`**: AAB1 no puede emitir un token que
   opere la WABA de Silvana (decisión 1). Queda escrito en §8 del
-  procedimiento y los scripts ya lo contemplan (`--alta-waba`, `--ver-waba`).
+  procedimiento. Desde el receptor de clientes (28/09/2026) ya no es un camino
+  futuro: está prohibido, y `--alta-waba` corta con esa app.
 - **Enrutador por `phone_number_id` en n8n** (`Analisis/20` nivel 3): recién
   cuando haya una app compartida entre clientes.
 - **Cambios al sitio**: publica el contacto directo, no el número del

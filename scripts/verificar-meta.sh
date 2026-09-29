@@ -49,6 +49,11 @@ if [[ ! -f "$ARCHIVO_ENV" ]]; then
   exit 1
 fi
 echo "Entorno: ${ARCHIVO_ENV}"
+# El candado de apps ajenas, ANTES del .env (queda readonly): --suscribir y
+# --desuscribir escriben en /{WABA}/subscribed_apps con la app DUEÑA DEL
+# TOKEN, que el comando no nombra (revisión de seguridad del #265).
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige --env
 source "$ARCHIVO_ENV"
@@ -82,13 +87,14 @@ if [[ $DESUSCRIBIR -eq 1 ]]; then
   if ! echo "$SUBS" | grep -q "\"${WA_APP_ID}\""; then
     p_ok "la app …${WA_APP_ID: -4} ya no está suscrita a la WABA …${WABA_ID: -4}: nada que hacer"
   else
+    negar_app_ajena "$WA_APP_ID" token
     echo "  La WABA …${WABA_ID: -4} DEJARÁ de entregar a la app …${WA_APP_ID: -4}."
     echo "  Desde ese momento los mensajes al número de esa WABA no llegan a esta app."
     read -r -p "  Para confirmar, escriba los últimos 4 dígitos del App ID: " CONF
     if [[ "$CONF" != "${WA_APP_ID: -4}" ]]; then
       p_fail "no coincide: no se desuscribió nada"
     else
-      R=$(curl -s --max-time 20 -X DELETE "${G}/${WABA_ID}/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+      R=$(command curl -s --max-time 20 -X DELETE "${G}/${WABA_ID}/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
       if echo "$R" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
         p_ok "desuscrita. Reversible con: $0 --env ${ARCHIVO_ENV} --suscribir"
       else
@@ -102,8 +108,9 @@ else
   p_fail "la app NO está suscrita a la WABA — los mensajes no llegarán a n8n"
   echo "$SUBS" | python3 -m json.tool 2>/dev/null || true
   if [[ $SUSCRIBIR -eq 1 ]]; then
+    negar_app_ajena "$WA_APP_ID" token
     echo "     → suscribiendo..."
-    curl -s -X POST "${G}/${WABA_ID}/subscribed_apps" \
+    command curl -s -X POST "${G}/${WABA_ID}/subscribed_apps" \
       -H "Authorization: Bearer ${WA_TOKEN}" | python3 -m json.tool
   else
     echo "     → corregir con: $0 --env ${ARCHIVO_ENV} --suscribir"
