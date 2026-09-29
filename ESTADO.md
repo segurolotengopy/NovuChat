@@ -28,7 +28,7 @@ en verde en CI y en staging. Lo anterior está en `bitacora/2026-09.md`.
 
 ## Staging
 
-`novuchatstaging` está en verde con el run de `6d6d808`: construir,
+El proyecto de staging está en verde con el run de `6d6d808`: construir,
 desplegar, humo y ZAP. Cada push a `main` que toca `admin/` despliega ahí,
 así que cada tanda de F2 ya aterrizó en staging.
 
