@@ -546,6 +546,22 @@ if (ceden.length) {
   const eleccion = item.eleccionPendiente && typeof item.eleccionPendiente === 'object'
     && /^\d{2}:\d{2}$/.test(String(item.eleccionPendiente.hora || ''))
     && /^[a-záéíóúñ]+ \d{1,2}$/i.test(String(item.eleccionPendiente.dia || '')) ? item.eleccionPendiente : null;
+  // PIDIO UNA HORA Y EL MODELO AGENDO OTRA (Bellido, prueba real del 28/09,
+  // #7566): «¿mañana a las 11?» recibia «Sí, el martes 29 a las 11:30 hay
+  // espacio». El «Sí» respondia a una pregunta que nadie hizo: sale solo si la
+  // hora agendada es la que pidio. Y si la que pidio es la de su propia cita,
+  // se le dice antes (el aviso lo arma `Procesar respuesta`).
+  const pedida = item.horaPedida && typeof item.horaPedida === 'object' && Array.isArray(item.horaPedida.horas)
+    && item.horaPedida.horas.length > 0 && item.horaPedida.horas.every((h) => /^\d{2}:\d{2}$/.test(String(h)))
+    && /^([a-záéíóúñ]+ \d{1,2})?$/i.test(String(item.horaPedida.dia || '')) ? item.horaPedida : null;
+  const esLaPedida = (e) => {
+    const t = cuandoEs(e);
+    return pedida.horas.some((h) => t.endsWith(` a las ${h}`)) && (!pedida.dia || t.startsWith(`el ${pedida.dia} `));
+  };
+  const siEsLaPedida = !pedida || sinConf.some(esLaPedida);
+  const avisoSuCita = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (la cita de [a-záéíóúüñ' ]{1,60}|su cita|tu cita)\.$/i
+    .test(String(item.avisoSuCita || '')) ? String(item.avisoSuCita) + ' ' : '';
+  const hayEspacio = sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. ';
   // Al SEGUNDO sin nombre seguido el mensaje es SOLO el paso a recepcion: no se
   // junta con un «¿Te la agendo?» (revision de f0c6957).
   const aRecepcionPorNombre = item.sinNombreRepetido === true && sinNom.length > 0;
@@ -556,7 +572,7 @@ if (ceden.length) {
     sinConf.length ? (opciones
       ? `¿Cuál de estas horas del ${opciones.dia} ${usted ? 'prefiere' : 'prefieres'}: ${opciones.horas}?`
       : eleccion ? `${usted ? '¿Se' : '¿Te'} la reservo el ${eleccion.dia} a las ${eleccion.hora}?`
-      : 'Sí, ' + sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. '
+      : avisoSuCita + (siEsLaPedida ? 'Sí, ' + hayEspacio : hayEspacio.charAt(0).toUpperCase() + hayEspacio.slice(1))
         + (sinConf.length > 1 ? (usted ? '¿Se las agendo?' : '¿Te las agendo?') : (usted ? '¿Se la agendo?' : '¿Te la agendo?'))) : '',
     // Falta solo el nombre: no se repiten horarios, se pide el nombre.
     // Al SEGUNDO sin nombre seguido no se pregunta otra vez: pasa a recepcion.
