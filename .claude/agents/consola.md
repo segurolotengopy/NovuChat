@@ -2,7 +2,7 @@
 name: consola
 description: "Agente de la CONSOLA CENTRAL de la rearquitectura por capas (Analisis/41): las páginas del comercio que todo módulo comparte. Usar en F2 para las ranuras del Tablero (cada módulo aporta la suya), Configuración sin piezas de módulo (sale el calendario a Agenda, el catálogo web y el logo a Catálogo web) y ConfiguracionModulo que lee la tabla de campos del manifiesto. Escribe solo en web/src/central/paginas/Tablero, Configuracion y componentes/ConfiguracionModulo."
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 Usted es el agente de la **consola central** de NovuChat: las páginas del

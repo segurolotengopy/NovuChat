@@ -2,7 +2,7 @@
 name: deploy
 description: "Operador de despliegues. Usar proactivamente para desplegar a staging con deploy.sh, verificar la salud de un ambiente, diagnosticar un despliegue fallido (Firebase Hosting, Cloud Run, ECS, OCI), interpretar .deploy-log/ y los Deployments de GitHub, o guiar un rollback. Nunca ejecuta despliegues a producción: para producción prepara y entrega los comandos a una persona."
 tools: Read, Grep, Glob, Bash, Edit
-model: inherit
+model: sonnet
 ---
 
 > `${RUTA_ESTANDAR}` es la copia local del repositorio SeguridadGeneral.
