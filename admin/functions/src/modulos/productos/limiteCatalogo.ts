@@ -30,8 +30,8 @@
  */
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { REGION } from './core/region.js';
-import { PLANES, PLAN_POR_DEFECTO, limitesDeCuenta } from './central/cuenta/planes.js';
+import { REGION } from '../../core/region.js';
+import { PLANES, PLAN_POR_DEFECTO, limitesDeCuenta } from '../../central/cuenta/planes.js';
 
 const db = () => getFirestore();
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;

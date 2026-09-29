@@ -29,7 +29,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { idDeNombre } from '../web/src/lib/csv.ts';
+import { idDeNombre } from '../web/src/central/lib/csv.ts';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -48,7 +48,7 @@ const { getFirestore } = requerir('firebase-admin/firestore') as typeof import('
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
-const L = await import('../functions/src/limiteCatalogo.ts');
+const L = await import('../functions/src/modulos/productos/limiteCatalogo.ts');
 const P = await import('../functions/src/central/cuenta/planes.ts');
 
 // ===========================================================================
@@ -248,7 +248,7 @@ describe('La forma del ítem: la función y las reglas dicen lo mismo', () => {
 // ===========================================================================
 type Auth = { uid: string; token: Record<string, unknown> } | undefined;
 function llamar(data: unknown, auth: Auth) {
-  const f = L.importarCatalogo as unknown as { run: (r: unknown) => Promise<import('../functions/src/limiteCatalogo.ts').ResultadoImportacion> };
+  const f = L.importarCatalogo as unknown as { run: (r: unknown) => Promise<import('../functions/src/modulos/productos/limiteCatalogo.ts').ResultadoImportacion> };
   return f.run({ data, auth, rawRequest: {} });
 }
 function comoAdmin(t: string): Auth { return { uid: `u-admin-${t}`, token: tokenPersona({ [t]: 'admin' }) }; }

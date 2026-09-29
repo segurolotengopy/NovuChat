@@ -39,7 +39,7 @@ import { PALETAS, PALETA_POR_DEFECTO, variablesDe, type PaletaId } from '../web/
 import { resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/core/prompt/prompt.ts';
 import {
   aCsv, idDeNombre, leerPrecio, partirCsv, validarCsv,
-} from '../web/src/lib/csv.ts';
+} from '../web/src/central/lib/csv.ts';
 
 // ===========================================================================
 // 1) URL DE IMAGEN

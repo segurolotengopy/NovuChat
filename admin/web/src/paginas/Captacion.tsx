@@ -9,7 +9,7 @@ import {
   rutaArchivoPlanes, validarArchivoPlanes, type ExtensionPlanes,
 } from '../lib/archivoPlanes';
 import { useFlujos } from '../lib/flujos';
-import { idDeNombre } from '../lib/csv';
+import { idDeNombre } from '../central/lib/csv';
 import { CampoMonto } from '../componentes/CampoMonto';
 import { EditorLista } from '../componentes/EditorLista';
 import { TextoSeguro } from '../componentes/TextoSeguro';
