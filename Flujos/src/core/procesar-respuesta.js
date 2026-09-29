@@ -777,7 +777,9 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // Cuando el MODELO pide la confirmacion por su cuenta (sin llamar a la
   // herramienta) y en este turno busco y encontro UNA sola cita, esa es la que
   // se mostro: queda guardada igual. Con varias no se adivina cual.
-  if (!fallo && pasosCancelar.length === 0 && /cancel/i.test(respuesta) && /\?/.test(respuesta)) {
+  // Tambien cuando pregunta por MOVERLA (#7655 de Bellido, 28/09: «¿Confirmas
+  // que es esa la cita que deseas cambiar?»): el «si» siguiente es para esa.
+  if (!fallo && pasosCancelar.length === 0 && /cancel|cambi|mover|mu[eé]v|reagend|reprogram/i.test(respuesta) && /\?/.test(respuesta)) {
     if (vistasEsteTurno.length === 1) guardarPendiente(vistasEsteTurno[0].id, vistasEsteTurno[0].desc);
   }
 
@@ -813,6 +815,33 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // sirven (la cita cancelada no vuelve a mostrarse; las otras, cuando las
   // vuelva a buscar).
   if (idsCancelados.size && pendientesDeCancelar && telefonoDelCliente) delete pendientesDeCancelar[telefonoDelCliente];
+  // --- LA FALLA DEL MODELO NO ESCONDE UNA CANCELACION (Bellido, 28/09, #7659) -
+  // La paciente confirmo mover su cita («Si»), `cancelar_cita` la BORRO y la
+  // llamada siguiente del modelo revento («Received tool input did not match
+  // expected schema», le falto `servicio`). Con el error n8n pierde los pasos
+  // del agente: este nodo no ve la cancelacion, y salio «tuve un problema
+  // tecnico, ¿me repites lo ultimo?». La paciente se quedo sin cita y nadie lo
+  // supo. Si el modelo fallo y el mensaje CONFIRMA una cancelacion pendiente
+  // (la compuerta de `cancelar_cita` ya dejo pasar el id guardado), la cita
+  // pudo quedar borrada: se le dice eso y pasa a recepcion, que revisa la
+  // agenda. Falla CERRADA: en el peor caso recepcion confirma una cita que
+  // seguia en pie.
+  // Cuenta el pendiente (la cita que se mostro) y tambien los candidatos: en
+  // el #7659 no habia pendiente y la compuerta dejo pasar el id del modelo
+  // porque era uno de los que buscar_mi_cita le habia mostrado.
+  const regCancelacion = pendientesDeCancelar && telefonoDelCliente ? pendientesDeCancelar[telefonoDelCliente] : null;
+  const candidatosIncierta = (regCancelacion && regCancelacion.candidatos && typeof regCancelacion.candidatos === 'object')
+    ? Object.values(regCancelacion.candidatos) : [];
+  const cancelacionIncierta = fallo && !!regCancelacion && (!!regCancelacion.eventoId || candidatosIncierta.length > 0)
+    && Date.now() - Number(regCancelacion.desde || 0) < 30 * 60 * 1000 && CONFIRMA_CANCELAR.test(textoCliente);
+  const descIncierta = !cancelacionIncierta ? ''
+    : String(regCancelacion.eventoId ? (regCancelacion.desc || '') : (candidatosIncierta.length === 1 ? candidatosIncierta[0] : '')).slice(0, 160);
+  if (cancelacionIncierta) {
+    avisos.push('cancelacion_incierta');
+    respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
+      ? `Tuve un problema al terminar el cambio de su cita${descIncierta}, y puede que ya haya quedado cancelada. Le paso con recepción para que la revisen y se la confirmen.`
+      : `Tuve un problema al terminar el cambio de tu cita${descIncierta}, y puede que ya haya quedado cancelada. Te paso con recepción para que la revisen y te la confirmen.`;
+  }
   let citaPagadaCancelada = null;
   if (idsCancelados.size && cfg.senaActiva === 'si') {
     for (const p of pasos) {
@@ -1175,7 +1204,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // 11:00 eran de su cita, y pidio hablar con alguien. El codigo lo sabe
   // (`creadas`: las citas que ESTE telefono agendo por el chat) y lo dice.
   const AG_NOMBRE_DE_PACIENTE = /^[a-záéíóúüñ][a-záéíóúüñ']*( [a-záéíóúüñ][a-záéíóúüñ']*){0,3}$/i;
-  const AG_LEXICO_COBRO = /(pag|señ|sena\b|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel)/i;
+  const AG_LEXICO_COBRO = /(pag|señ|sena|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel|sald|liquid|garantiz)/i;
   const agSuCitaEnLaHora = (() => {
     if (agHorasCliente.length !== 1 || agHorasCliente[0].ordinal || pasosCancelar.length || canceladasEnElTurno.length) return null;
     const reg = agRegistros && telefonoDelCliente ? agRegistros[telefonoDelCliente] : null;
@@ -1781,9 +1810,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   out.push({ json: {
     respuesta,
     // Con el adelanto a favor no hace falta una persona: se aplica solo.
-    transferir: transferir || qrSinSena || cancelacionFallida || negoServicio || (!!citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion,
-    motivoTransferencia: (transferir || qrSinSena || cancelacionFallida || negoServicio || (citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion)
-      ? ((citaPagadaCancelada && !adelantoAFavor) ? 'el cliente CANCELÓ una cita que ya tenía la seña pagada ('
+    transferir: transferir || qrSinSena || cancelacionFallida || negoServicio || (!!citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion
+      || cancelacionIncierta,
+    motivoTransferencia: (transferir || qrSinSena || cancelacionFallida || negoServicio || (citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion
+      || cancelacionIncierta)
+      ? (cancelacionIncierta ? 'el cliente CONFIRMÓ cancelar o mover su cita' + descIncierta
+          + ' y el modelo falló en ese mismo turno: la cita PUEDE haber quedado cancelada sin una nueva. Revisar la agenda y confirmarle por este chat'
+        : (citaPagadaCancelada && !adelantoAFavor) ? 'el cliente CANCELÓ una cita que ya tenía la seña pagada ('
           + String(citaPagadaCancelada.summary || '') + ', ' + String((citaPagadaCancelada.start || {}).dateTime || '')
           + '): coordinar con él qué pasa con el adelanto'
         : negoServicio ? 'el cliente preguntó por algo que el asistente no sabe si el negocio ofrece: asesorarlo. Escribió: «'

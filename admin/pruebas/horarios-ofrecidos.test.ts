@@ -986,6 +986,13 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       const previa = procesar(`Dame una cita para el ${L} a las 11?`, `Listo, te agendé el ${L} a las 11:30.`, [consulta(LUNES), agendo(ev)], {});
       const forzado = String(comprobar({ ...previa, avisoSuCita: `El ${L} a las 11:00 ya está la cita de Manuel seña acreditada.` }, [ev])[0]!['respuesta']);
       expect(forzado).not.toContain('acreditada');
+      // Revisión de 20305f2: el nombre no se recorta hasta el último «ya está».
+      const recorte = String(comprobar({ ...previa, avisoSuCita: `El ${L} a las 11:00 ya está la cita de pagado ya está listo.` }, [ev])[0]!['respuesta']);
+      expect(recorte).not.toContain('pagado');
+      for (const titulo of ['Cita Manuel saldado — consulta', 'Cita Manuel senas — consulta']) {
+        const est = conSuCita({ 'ev-manuel': creada(LUNES, titulo) });
+        expect(procesar('no, 11 en punto', ofrece, libres(), est)['respuesta'], titulo).toBe(`El ${L} a las 11:00 ya está tu cita. ${ofrece}`);
+      }
       // Con seña, el título lleva su rótulo y el nombre igual sale.
       const sena = conSuCita({ 'ev-manuel': creada(LUNES, 'PENDIENTE DE SEÑA · Cita Manuel — consulta') });
       expect(procesar('no, 11 en punto', ofrece, libres(), sena)['respuesta']).toBe(`El ${L} a las 11:00 ya está la cita de Manuel. ${ofrece}`);
