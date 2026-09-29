@@ -12,6 +12,11 @@ margen y qué tiene que medir la prueba para que sirva. Modelo reproducible:
 `Analisis/44-modelo-gemini-37-flash.py`, que reutiliza los tokens medidos y los
 planes de `Analisis/43`.
 
+> **Decisión del 28/09/2026:** Andres confirma subir a **Gemini 3.8 Flash**, no a 3.7.
+> Cuesta exactamente lo mismo, con el mismo salto al 01/01/2027, así que todas las
+> cifras de este documento valen para 3.8. Lo que queda por medir es su razonamiento
+> por llamada y cuánto baja los reintentos.
+
 ---
 
 ## 0. Conclusión, adelantada
