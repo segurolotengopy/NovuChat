@@ -29,20 +29,36 @@
 #       SOLO LEE: qué apps están suscritas a la WABA del entorno y si alguna
 #       tiene una URL propia (`override_callback_uri`).
 #   ./scripts/webhook-meta.sh --alta-waba --webhook-id <uuid> --env-cliente <.env.x>
-#       EL WEBHOOK A NIVEL DE WABA (24/09/2026, Tech Provider). Cuando la app
-#       es compartida con otro producto —AAB1-WA-Prod atiende también al otro
-#       sistema— NO se toca el webhook de la app: Meta permite que UNA WABA
-#       tenga su propia URL por encima de la de la app
+#       EL WEBHOOK A NIVEL DE WABA (24/09/2026, Tech Provider). Meta permite que
+#       UNA WABA tenga su propia URL por encima de la de la app
 #       (POST /{WABA}/subscribed_apps con override_callback_uri y verify_token;
 #       la app tiene que estar ya suscrita a la WABA). Solo van por ahí los
 #       mensajes de esa WABA; los eventos de plantillas y de cuenta siguen a la
 #       URL de la app. Meta verifica la URL con el mismo desafío: el rodeo
 #       --preparar / --cerrar aplica igual. Usa WA_TOKEN y WABA_ID del entorno.
+#       Se escribió pensando en AAB1-WA-Prod; desde el receptor de clientes
+#       (28/09) eso está PROHIBIDO: la URL de una WABA suscrita a esa app es el
+#       destino del receptor, y la cambia solo WhatsApp-Modular (prohibición 5).
+#
+# APPS AJENAS (prohibiciones 5 y 7 de CLAUDE.md; revisión de seguridad del
+# PR #264). --alta-meta y --alta-waba escriben con la app que traiga el .env,
+# y el comando no la nombra: un .env con el WA_APP_ID de AAB1-WA-Prod
+# reescribiría el webhook de toda esa app (tumba el OTP de SeguroLoTengo y el
+# receptor de clientes). El gancho de acciones sensibles no lo puede ver. Antes
+# de cualquier POST, `negar_app_ajena` (scripts/lib/apps-ajenas.sh, compartida
+# con verificar-meta.sh) corta en dos capas: la huella del id (sin red) y el
+# nombre que devuelve Graph. Si Graph no contesta nombre e id, también corta:
+# sin saber qué app es, no se escribe.
 #
 # Lee N8N_BASE_URL y N8N_API_KEY de .env (o --env-n8n). No imprime valores.
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
+
+# El candado de apps ajenas (huellas, nombres, negar_app_ajena), ANTES de
+# cargar cualquier .env: queda readonly y un .env no lo puede redefinir.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 
 MODO=""; WH=""; FID=""; ENV_N8N=".env"; ENV_CLIENTE=""
 while [ $# -gt 0 ]; do
@@ -93,9 +109,10 @@ for s in d.get('data',[]):
   : "${N8N_BASE_URL:?}"
   VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
   URL="${N8N_BASE_URL%/}/webhook/$WH/webhook"
+  negar_app_ajena "$WA_APP_ID" token
   echo "Webhook PROPIO de la WABA …${WABA_ID: -4} (la URL de la app …${WA_APP_ID: -4} no se toca):"
   echo "  override_callback_uri: $URL"
-  R=$(curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
+  R=$(command curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
         -H "Authorization: Bearer ${WA_TOKEN}" -H "Content-Type: application/json" \
         -d "$(python3 -c "import json,sys; print(json.dumps({'override_callback_uri': sys.argv[1], 'verify_token': sys.argv[2]}))" "$URL" "$VT")")
   echo "  respuesta: $R"
@@ -115,7 +132,7 @@ if [ "$MODO" = "ver-meta" ]; then
   : "${WA_APP_ID:?}" "${WA_APP_SECRET:?WA_APP_SECRET no está en $ENV_CLIENTE: sin él no hay app access token}"
   G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
   echo "Suscripciones de webhook de la app …${WA_APP_ID: -4}:"
-  curl -s --max-time 30 "$G/$WA_APP_ID/subscriptions?access_token=${WA_APP_ID}|${WA_APP_SECRET}" \
+  command curl -s --max-time 30 -H @- "$G/$WA_APP_ID/subscriptions" <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}" \
     | python3 -c "
 import json,sys; d=json.load(sys.stdin)
 if 'error' in d: print('  ERROR:', d['error'].get('message')); sys.exit(1)
@@ -141,18 +158,21 @@ if [ "$MODO" = "alta-meta" ]; then
   VT="${META_VERIFY_TOKEN:-}"; [ -n "$VT" ] || { echo "✗ Falta META_VERIFY_TOKEN en el entorno" >&2; exit 2; }
   URL="${N8N_BASE_URL%/}/webhook/$WH/webhook"
   G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
+  negar_app_ajena "$WA_APP_ID" app
   echo "Alta del webhook en la app …${WA_APP_ID: -4}:"
   echo "  callback_url: $URL"
   echo "  fields: messages, account_update"
-  R=$(curl -s --max-time 60 -X POST "$G/$WA_APP_ID/subscriptions" \
+  # El app access token va en la cabecera, leída de la entrada estándar: en
+  # los argumentos de curl se vería en `ps` (revisión de seguridad del #265).
+  R=$(command curl -s --max-time 60 -X POST "$G/$WA_APP_ID/subscriptions" -H @- \
         --data-urlencode "object=whatsapp_business_account" \
         --data-urlencode "callback_url=$URL" \
         --data-urlencode "verify_token=$VT" \
         --data-urlencode "fields=messages,account_update" \
-        --data-urlencode "access_token=${WA_APP_ID}|${WA_APP_SECRET}")
+        <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}")
   echo "  respuesta: $R"
   echo "Suscripciones vigentes de la app:"
-  curl -s --max-time 30 "$G/$WA_APP_ID/subscriptions?access_token=${WA_APP_ID}|${WA_APP_SECRET}" \
+  command curl -s --max-time 30 -H @- "$G/$WA_APP_ID/subscriptions" <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}" \
     | python3 -c "
 import json,sys; d=json.load(sys.stdin)
 for s in d.get('data',[]): print('  ', s.get('object'), '→', s.get('callback_url'), '· activo:', s.get('active'), '· campos:', [f.get('name') for f in s.get('fields',[])])
