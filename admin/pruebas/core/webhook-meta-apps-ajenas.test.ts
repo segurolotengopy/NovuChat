@@ -160,7 +160,9 @@ describe.each(MODOS)('%s', (modo) => {
     expect(r.llamadas.findIndex((l) => l.includes('fields=id,name'))).toBeLessThan(r.llamadas.indexOf(r.escrituras[0]));
   });
 
-  it('el .env no puede apagar el candado: redefinirlo hace fallar la carga, sin escribir', () => {
+  // No es una barrera contra un .env hostil (puede redefinir python3 o exit):
+  // ver el límite honesto en scripts/lib/apps-ajenas.sh.
+  it('redefinir la lista o las funciones del candado en el .env hace fallar la carga, sin escribir', () => {
     for (const trampa of ['negar_app_ajena() { :; }', 'APPS_AJENAS_FRAGMENTOS=zzz', 'APPS_AJENAS_HUELLAS=']) {
       escribirEnv([trampa]);
       const r = correr(modo, { id: ID, name: 'AAB1-WA-Prod' });

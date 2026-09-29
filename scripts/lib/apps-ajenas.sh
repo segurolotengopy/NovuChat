@@ -19,6 +19,10 @@
 # SE CARGA ANTES DEL .env: al final todo queda `readonly`, y un .env que
 # intente redefinir la lista o las funciones hace fallar el `source` (con
 # `set -e`, el script sale sin escribir). Revisión de seguridad del #265.
+# Límite honesto: cargar un .env con `source` es EJECUTARLO, y uno hostil
+# puede redefinir `python3`, `exit` o el PATH. El candado cubre el .env
+# equivocado (copiado de otro proyecto), no el malicioso: quien escribe el
+# .env ya tiene los secretos. La solución de fondo es leerlo como datos.
 # =============================================================================
 
 # Nombres de apps de WhatsApp-Modular, por fragmento normalizado (NFKD sin
