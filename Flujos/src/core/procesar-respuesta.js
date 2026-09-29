@@ -12,6 +12,12 @@ const falla = String(cfg.mensajeErrorTemporal ?? '').trim()
 let herramientaAgendarCorrio = false;
 try { herramientaAgendarCorrio = $('agendar_cita').isExecuted === true; }
 catch (e) { herramientaAgendarCorrio = false; }
+// Lo mismo con `cancelar_cita` (revision de seguridad del #275): si el agente
+// revienta, sus pasos se pierden, pero n8n sabe si la herramienta corrio.
+// `null` si la referencia falla: entonces decide el registro de la cita.
+let herramientaCancelarCorrio = null;
+try { herramientaCancelarCorrio = $('cancelar_cita').isExecuted === true; }
+catch (e) { herramientaCancelarCorrio = null; }
 
 // ===== AGENDA DEL TURNO: BLOQUE COMPARTIDO (inicio) =========================
 // LETRA POR LETRA el mismo en `Procesar respuesta` y en `Procesar reintento`:
@@ -696,9 +702,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const registroDe = () => (pendientesDeCancelar && telefonoDelCliente)
     ? (pendientesDeCancelar[telefonoDelCliente] = pendientesDeCancelar[telefonoDelCliente] || { eventoId: '', desc: '', desde: 0, candidatos: {} })
     : null;
+  let guardoPendiente = false;
   const guardarPendiente = (id, desc) => {
     const r = registroDe();
-    if (r && id) { r.eventoId = String(id).slice(0, 200); r.desc = String(desc || '').slice(0, 160); r.desde = Date.now(); }
+    if (r && id) {
+      r.eventoId = String(id).slice(0, 200); r.desc = String(desc || '').slice(0, 160); r.desde = Date.now();
+      guardoPendiente = true;
+    }
   };
   const olvidarPendiente = () => { const r = registroDe(); if (r) { r.eventoId = ''; r.desc = ''; } };
   const citasBuscadas = () => {
@@ -755,6 +765,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       guardarPendiente(pedida, desc);
     } else if (registro && registro.eventoId) {
       desc = String(registro.desc || '');
+      // La pregunta nombra ESE pendiente: sigue vigente para el «si» siguiente.
+      guardoPendiente = true;
     } else {
       olvidarPendiente();
     }
@@ -832,15 +844,33 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const regCancelacion = pendientesDeCancelar && telefonoDelCliente ? pendientesDeCancelar[telefonoDelCliente] : null;
   const candidatosIncierta = (regCancelacion && regCancelacion.candidatos && typeof regCancelacion.candidatos === 'object')
     ? Object.values(regCancelacion.candidatos) : [];
-  const cancelacionIncierta = fallo && !!regCancelacion && (!!regCancelacion.eventoId || candidatosIncierta.length > 0)
-    && Date.now() - Number(regCancelacion.desde || 0) < 30 * 60 * 1000 && CONFIRMA_CANCELAR.test(textoCliente);
-  const descIncierta = !cancelacionIncierta ? ''
+  // POR HECHO (revision de seguridad del #275): lo decide si `cancelar_cita`
+  // CORRIO en el turno. Por registro y texto fallaba en los dos sentidos: un
+  // «sí» a otra cosa con un 503 transferia de mas, y una cancelacion sin
+  // registro previo (busco y cancelo en el mismo turno) volvia a esconderse.
+  // El registro queda solo para nombrar la cita, y como respaldo si la
+  // referencia a la herramienta no se puede leer.
+  const regVigente = !!regCancelacion && Date.now() - Number(regCancelacion.desde || 0) < 30 * 60 * 1000;
+  const porRegistro = regVigente && (!!regCancelacion.eventoId || candidatosIncierta.length > 0)
+    && CONFIRMA_CANCELAR.test(textoCliente);
+  const cancelacionIncierta = fallo && (herramientaCancelarCorrio === null ? porRegistro : herramientaCancelarCorrio);
+  const descIncierta = !cancelacionIncierta || !regVigente ? ''
     : String(regCancelacion.eventoId ? (regCancelacion.desc || '') : (candidatosIncierta.length === 1 ? candidatosIncierta[0] : '')).slice(0, 160);
   if (cancelacionIncierta) {
     avisos.push('cancelacion_incierta');
     respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
-      ? `Tuve un problema al terminar el cambio de su cita${descIncierta}, y puede que ya haya quedado cancelada. Le paso con recepción para que la revisen y se la confirmen.`
-      : `Tuve un problema al terminar el cambio de tu cita${descIncierta}, y puede que ya haya quedado cancelada. Te paso con recepción para que la revisen y te la confirmen.`;
+      ? `Tuve un problema técnico mientras gestionaba su cita${descIncierta}, y puede que ya haya quedado cancelada. Le paso con recepción para que la revisen y se la confirmen.`
+      : `Tuve un problema técnico mientras gestionaba tu cita${descIncierta}, y puede que ya haya quedado cancelada. Te paso con recepción para que la revisen y te la confirmen.`;
+  }
+  // EL PENDIENTE SE USA UNA SOLA VEZ (revision de seguridad del #275): vale
+  // para el «si» del turno siguiente al que lo guardo. Un turno que no lo
+  // vuelve a guardar lo olvida: si no, «¿deseas cambiarla?» sobre la cita del
+  // lunes dejaba ese id pegado, y un «si» a «¿cancelo la del martes?» —con dos
+  // citas encontradas, que no guarda nada— borraba la del lunes. La lectura
+  // de arriba (cancelacion incierta) ya se hizo. Tras una falla del modelo se
+  // conserva: el cliente va a repetir lo ultimo.
+  if (!fallo && !guardoPendiente && regCancelacion && regCancelacion.eventoId) {
+    regCancelacion.eventoId = ''; regCancelacion.desc = '';
   }
   let citaPagadaCancelada = null;
   if (idsCancelados.size && cfg.senaActiva === 'si') {
