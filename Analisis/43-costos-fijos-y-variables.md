@@ -16,10 +16,11 @@ señala lo que habría que rediscutir.
 | | |
 |---|---|
 | **Gemini costaba en septiembre el 6 % del costo; medido, está entre el 18 % y el 42 %** | El supuesto de `Analisis/14` era un prompt de 2.150 tokens y una llamada por respuesta. Lo medido en 119 respuestas reales es un prompt de 7.500 a 8.000 tokens por llamada, y **2,2 llamadas por respuesta** en reservas: cada herramienta reenvía todo el prompt. Por eso Gemini cuesta **de 3 a 7 veces** lo supuesto (§2) |
-| **Los planes publicados siguen cerrando** | Con la caché funcionando, al 100 % de uso, el margen de contribución es de 59 % (Base), 46 % (Crecimiento), 25 % (Corporativo) y 40 % (Platinum). En el plan grande manda **Meta, no Gemini**: es el 41 % del precio (§3) |
+| **Los planes publicados siguen cerrando** | Con la caché funcionando, al 100 % de uso, el margen de contribución es de 59 % (Impulso), 46 % (Crecimiento), 25 % (Pro) y 40 % (Platinum). En el plan grande manda **Meta, no Gemini**: es el 41 % del precio (§3) |
 | **BYOC no cierra al tope que se vende** | En BYOC NovuChat no paga Meta, así que **Gemini es todo su costo variable**. USD 50 por 2.000 conversaciones de reservas deja **−4 %** si la caché funciona y **−125 %** si no funciona. El equilibrio real está entre **580 y 1.900** conversaciones, no en las 2.000 (§4). Rubén Roca y Dhermacore son BYOC |
-| **Lo que decide todo es una incógnita: la caché implícita de Gemini** | El margen del plan Corporativo pasa del 25 % al 8 %, y el de BYOC del −4 % al −125 %, según que Google reutilice o no el prompt de sistema. **n8n no registra la cifra que factura Google**, solo un estimado. Hay que leer la factura real de septiembre (§6) |
-| **El fijo de plataforma es chico: unos USD 22 al mes** | Se cubre con un solo cliente del plan Base. **El fijo que pesa es el tiempo de Andres y de Silvana**, que no está en ninguna cuenta. Es lo que falta para el punto de equilibrio del negocio (§5) |
+| **Lo que decide todo es una incógnita: la caché implícita de Gemini** | El margen del plan Pro pasa del 25 % al 8 %, y el de BYOC del −4 % al −125 %, según que Google reutilice o no el prompt de sistema. **n8n no registra la cifra que factura Google**, solo un estimado. Hay que leer la factura real de septiembre (§6) |
+| **Los cambios incluidos son el costo escondido de los planes** | El catálogo de F1 trae 0 / 1 / 2 cambios operados al mes (Platinum 4). Valuados a USD 15, son el 30 % del precio de Crecimiento y el 50 % del de Platinum: horas que no aparecen en ninguna factura (§3.3) |
+| **El fijo de plataforma es chico: unos USD 22 al mes** | Se cubre con un solo cliente del plan Impulso. **El fijo que pesa es el tiempo de Andres y de Silvana**, que no está en ninguna cuenta. Es lo que falta para el punto de equilibrio del negocio (§5) |
 
 ---
 
@@ -110,11 +111,17 @@ Google la aplica «cuando acierta», sin garantía, y n8n no lo registra.
 
 ## 3. Los planes, en porcentaje del precio
 
+Los planes son los del catálogo vigente (`admin/functions/src/central/cuenta/planes.ts`,
+`CATALOGO_PLANES = 2026-09-25`, iguales al sitio): **Impulso 25/100, Crecimiento
+50/220 y Pro 90/500**, más **BYOC 50/2.000** fuera de la lista y la bolsa de 30
+conversaciones por USD 10. **Platinum** es Pro con contrato a medida: USD 120 y 4
+cambios incluidos.
+
 Reservas, 10 clientes para prorratear el fijo, escenario «medido, con caché».
 
 ### 3.1 Al 100 % del cupo
 
-| | Base 25/100 | Crecimiento 50/220 | Corporativo 90/500 | Platinum 120/500 | BYOC 50/2.000 |
+| | Impulso 25/100 | Crecimiento 50/220 | Pro 90/500 | Platinum 120/500 | BYOC 50/2.000 |
 |---|---|---|---|---|---|
 | Impuestos (IVA + IT) | 16,0 % | 16,0 % | 16,0 % | 16,0 % | 16,0 % |
 | Meta, servicio | 0,0 % | 19,7 % | **40,8 %** | 30,6 % | 0,0 % |
@@ -126,29 +133,49 @@ Reservas, 10 clientes para prorratear el fijo, escenario «medido, con caché».
 
 ### 3.2 Al 60 % del cupo (un mes normal)
 
-| | Base | Crecimiento | Corporativo | Platinum | BYOC |
+| | Impulso | Crecimiento | Pro | Platinum | BYOC |
 |---|---|---|---|---|---|
 | Meta, servicio | 0,0 % | 2,8 % | 19,5 % | 14,6 % | 0,0 % |
 | **Gemini** | 5,0 % | 5,5 % | 6,9 % | 5,2 % | **49,9 %** |
 | **Margen de contribución** | **63,2 %** | **67,2 %** | **52,0 %** | **60,0 %** | **29,7 %** |
 
 **Cómo leerlo:**
-- **Base es el plan más sano**, como decía `Analisis/14`: cabe en la franquicia,
+- **Impulso es el plan más sano**, como decía `Analisis/14`: cabe en la franquicia,
   así que Meta no cobra nada. Lo que más pesa ahí, después de los impuestos, son
   el fijo y el chip, **no el uso**.
-- **En Corporativo manda Meta**: el 41 % del precio al 100 % de uso. Gemini
+- **En Pro manda Meta**: el 41 % del precio al 100 % de uso. Gemini
   suma 12 puntos más. Es el plan con menos colchón: con el escenario pesimista
   de Gemini queda en −1 %.
-- **Platinum (USD 120 por el mismo cupo que Corporativo) deja 15 puntos más**
+- **Platinum (USD 120 por el mismo cupo que Pro) deja 15 puntos más**
   que la lista: el precio a medida le hace bien al margen.
 
-### 3.3 Sensibilidad a Gemini: margen de contribución al 100 % de uso
+### 3.3 Lo que el catálogo incluye y esta cuenta no ve: los cambios operados
+
+Desde F1 cada plan trae **cambios de configuración operados por NovuChat al mes**
+(`cambiosIncluidos`: 0 / 1 / 2, BYOC 2; Platinum 4 por contrato). No son dinero
+que sale a un proveedor: son **horas de Andres o de Silvana**, y por eso no están
+en el margen de arriba. Pero pesan. Valuados a USD 15 cada uno, el precio del
+cambio suelto de `Analisis/40` §5.2:
+
+| | Impulso | Crecimiento | Pro | Platinum | BYOC |
+|---|---|---|---|---|---|
+| Cambios incluidos al mes | 0 | 1 | 2 | 4 | 2 |
+| Valor a USD 15 | 0 | 15 | 30 | 60 | 30 |
+| **En % del precio** | **0 %** | **30 %** | **33 %** | **50 %** | **60 %** |
+
+Si se usan todos, **Crecimiento pasa del 46 % al 16 % de margen y Platinum del
+40 % a −10 %**. Los USD 15 son un precio, no un costo medido: el costo real depende
+de cuánto tarda un cambio. Es la primera cifra que falta para el §5.2. Y confirma
+lo que ya advertía el catálogo: «incluir más de dos en un plan de USD 50 lo
+regala».
+
+### 3.4 Sensibilidad a Gemini: margen de contribución al 100 % de uso
 
 | | Supuesto de septiembre | **Con caché** | Sin caché | Pesimista |
 |---|---|---|---|---|
-| Base 25/100 | 64,7 % | **59,1 %** | 47,0 % | 40,1 % |
+| Impulso 25/100 | 64,7 % | **59,1 %** | 47,0 % | 40,1 % |
 | Crecimiento 50/220 | 52,0 % | **45,8 %** | 32,5 % | 24,9 % |
-| Corporativo 90/500 | 32,8 % | **25,0 %** | 8,2 % | **−1,4 %** |
+| Pro 90/500 | 32,8 % | **25,0 %** | 8,2 % | **−1,4 %** |
 | Platinum 120/500 | 45,6 % | **39,8 %** | 27,2 % | 20,0 % |
 | BYOC 50/2.000 | 52,1 % | **−3,6 %** | **−124,7 %** | **−193,6 %** |
 
@@ -200,7 +227,7 @@ impuestos (USD 42) menos el fijo prorrateado.
 | 0,00 | Firebase, Hosting, reCAPTCHA (capa gratuita) | `Analisis/14` §8 |
 | **21,82** | **Total** | |
 
-Con un cliente Base ya se cubre. **No es lo que decide el equilibrio.**
+Con un cliente Impulso ya se cubre. **No es lo que decide el equilibrio.**
 
 **Cuándo se rompe la capa gratuita.** La VM de OCI pasa a pagarse (~55 USD,
 estimación de `Analisis/14`) cuando n8n necesite más de lo que da el nivel
@@ -226,7 +253,7 @@ siguiente análisis natural (`Analisis/44`, caja a 12 meses).
 
 | # | Qué | Quién | Por qué |
 |---|---|---|---|
-| 1 | **Leer la factura de septiembre de la Generative Language API** (proyecto de la llave de Gemini) y dividirla por las respuestas de septiembre | Andres (consola de facturación) o un script con su «sí» | Decide entre «con caché» y «sin caché»: de eso depende el margen de BYOC y de Corporativo. Esta sesión no tiene acceso a la facturación |
+| 1 | **Leer la factura de septiembre de la Generative Language API** (proyecto de la llave de Gemini) y dividirla por las respuestas de septiembre | Andres (consola de facturación) o un script con su «sí» | Decide entre «con caché» y «sin caché»: de eso depende el margen de BYOC y de Pro. Esta sesión no tiene acceso a la facturación |
 | 2 | **Revisar el tope BYOC antes de firmar a Rubén Roca o a Dhermacore** | Andres, con la Cartera | A 2.000 conversaciones, un BYOC de reservas pierde; uno de venta gana solo con prompt chico. Agregar al contrato un disparador por costo del modelo por conversación |
 | 3 | **Presupuesto de tokens para el prompt de F3a**, declarado como hoy se declaran los mensajes por conversación | Planificadora | `CLAUDE.md` obliga a declarar mensajes agregados; los tokens agregados hoy no se declaran, y ya son entre el 18 % y el 42 % del costo |
 | 4 | Reescribir la frase «Meta es el 94 %, el modelo es el 6 %» de `base-comercial` §1 | Andres decide | Hoy induce a creer que optimizar el prompt no rinde. En reservas, sí rinde |

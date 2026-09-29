@@ -76,7 +76,7 @@ con 220 conversaciones, el almacenamiento pesa más que lo que ahorra.
 Razonamiento «medium» (800 tokens por llamada) contra «low» (300, supuesto), y
 mejora media contra fuerte (`44` §2):
 
-| Escenario | Caché | Base | Crecimiento | Corporativo | Platinum |
+| Escenario | Caché | Impulso | Crecimiento | Pro | Platinum |
 |---|---|---|---|---|---|
 | Hoy: 3.5 Flash-Lite, implícita central | | 56 % | 42 % | 21 % | 37 % |
 | Mejora media, medium | implícita central | 5 % | **−9 %** | −44 % | −12 % |
@@ -89,7 +89,7 @@ mejora media contra fuerte (`44` §2):
 **Cómo leerlo.** Cada palanca sola no alcanza. Las tres juntas —caché por
 módulo, razonamiento bajo y menos reintentos— dejan a 3.7 Flash en 2027 **unos
 5 puntos por debajo de hoy**. Ese es el precio de la calidad, y es razonable
-pagarlo si la calidad sube de verdad. Corporativo sigue siendo el plan con menos
+pagarlo si la calidad sube de verdad. Pro sigue siendo el plan con menos
 colchón: es donde Meta ya se lleva el 41 %.
 
 ---

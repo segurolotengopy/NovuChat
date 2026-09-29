@@ -79,7 +79,7 @@ conversación. Es real, pero chico al lado de lo que sube Gemini.
 
 ### 3.1 Margen de contribución, reservas, al 100 % del cupo (10 clientes)
 
-| Escenario | Base 25/100 | Crecimiento 50/220 | Corporativo 90/500 | Platinum 120/500 | BYOC 50/2.000 |
+| Escenario | Impulso 25/100 | Crecimiento 50/220 | Pro 90/500 | Platinum 120/500 | BYOC 50/2.000 |
 |---|---|---|---|---|---|
 | **Hoy: 3.5 Flash-Lite** | **59 %** | **46 %** | **25 %** | **40 %** | −4 % |
 | 3.7 en 2026, mejora media | 43 % | 33 % | 9 % | 28 % | −165 % |
@@ -90,7 +90,7 @@ conversación. Es real, pero chico al lado de lo que sube Gemini.
 
 ### 3.2 Al 60 % del cupo (un mes normal)
 
-| Escenario | Base | Crecimiento | Corporativo | Platinum |
+| Escenario | Impulso | Crecimiento | Pro | Platinum |
 |---|---|---|---|---|
 | **Hoy** | 63 % | 67 % | 52 % | 60 % |
 | 3.7 en 2027, mejora media | 39 % | 43 % | 22 % | 38 % |
@@ -125,9 +125,9 @@ el número es mejor (el prompt es más chico), pero la dirección es la misma.
 
 | Plan | Precio hoy | Margen hoy | Precio que lo conserva |
 |---|---|---|---|
-| Base 25/100 | 25 | 59 % | 66 |
+| Impulso 25/100 | 25 | 59 % | 66 |
 | Crecimiento 50/220 | 50 | 46 % | 102 |
-| Corporativo 90/500 | 90 | 25 % | 166 |
+| Pro 90/500 | 90 | 25 % | 166 |
 | Platinum 120/500 | 120 | 40 % | 222 |
 
 Esta tabla no es una propuesta de precios: muestra que **no se puede pasar el

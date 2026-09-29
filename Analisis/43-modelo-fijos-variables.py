@@ -69,9 +69,9 @@ NOMBRE = {'sept': 'Supuesto de sept.', 'con_cache': 'Medido, con cache',
 
 # --- Planes (precio USD, conversaciones incluidas, quien paga Meta) ---
 PLANES = [
-    ('Base 25/100',          25, 100,  True),
+    ('Impulso 25/100',          25, 100,  True),
     ('Crecimiento 50/220',   50, 220,  True),
-    ('Corporativo 90/500',   90, 500,  True),
+    ('Pro 90/500',   90, 500,  True),
     ('Platinum 120/500',    120, 500,  True),
     ('BYOC 50/2.000',        50, 2000, False),
 ]
