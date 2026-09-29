@@ -283,9 +283,9 @@ PY
       echo "  ✗ Ya existe $ENV_NUEVO: no se pisa (use --forzar). Ponga a mano N8N_WORKFLOW_ID=$NUEVO_ID"
       exit 1
     fi
-    umask 077
-    { grep -v -E '^(N8N_WORKFLOW_ID|N8N_WEBHOOK_PATH|N8N_WEBHOOK_URL)=' "$ENV_FILE"
-      echo "N8N_WORKFLOW_ID=$NUEVO_ID"; } > "$ENV_NUEVO"
+    ( umask 077
+      { grep -v -E '^(N8N_WORKFLOW_ID|N8N_WEBHOOK_PATH|N8N_WEBHOOK_URL)=' "$ENV_FILE"
+        echo "N8N_WORKFLOW_ID=$NUEVO_ID"; } > "$ENV_NUEVO" )
     chmod 600 "$ENV_NUEVO"
     echo "  ✓ $ENV_NUEVO escrito con el id nuevo (sin ruta de webhook: el flujo es programado)."
     echo "    De ahora en mas: ./scripts/publicar-flujo.sh --env $ENV_NUEVO --flujo $FLUJO"

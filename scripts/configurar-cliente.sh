@@ -130,7 +130,9 @@ if [[ $mal -eq 1 ]]; then
 fi
 
 # --- .env.<cliente> -----------------------------------------------------------
-[[ -f "$DESTINO" ]] && cp -p "$DESTINO" "${DESTINO}.respaldo"
+# El respaldo hereda el modo del original (cp -p): se cierra ANTES de copiar,
+# o una copia legible con los secretos viejos queda al lado del nuevo.
+[[ -f "$DESTINO" ]] && { chmod 600 "$DESTINO"; cp -p "$DESTINO" "${DESTINO}.respaldo"; }
 # LO DEL FLUJO NO CAMBIA CUANDO CAMBIA EL NUMERO (21/09/2026). Al mover un
 # cliente a su propia WABA (Platinum) el flujo de n8n es el mismo: su id, su
 # ruta de webhook y el token de verificacion se conservan del entorno anterior.
@@ -144,7 +146,11 @@ PREV_URL=$(previo N8N_WEBHOOK_URL); PREV_VERIF=$(previo WA_WEBHOOK_VERIFY_TOKEN)
 # y el alta del webhook en la app nueva se habria negado).
 PREV_META_VERIF=$(previo META_VERIFY_TOKEN)
 GRAPH=$(grep -E '^WA_GRAPH_VERSION=' .env | cut -d= -f2- | tr -d '[:space:]' || true)
-umask 077
+# El archivo NACE cerrado: con la umask por defecto (022/002) quedaba legible
+# por otros usuarios entre la redireccion y el chmod. La umask va en una
+# subshell para no cambiar la del resto del script; el chmod queda para
+# cuando el archivo ya existia (la redireccion no cambia su modo).
+( umask 077
 {
   echo "# Entorno de ${CLIENTE}. Generado por scripts/configurar-cliente.sh."
   echo "# Ignorado por git: contiene valores reales y el repositorio es publico."
@@ -165,7 +171,7 @@ umask 077
   echo "N8N_WORKFLOW_ID=${PREV_WF}"
   if [[ -n "$PREV_VERIF" ]]; then echo "WA_WEBHOOK_VERIFY_TOKEN=${PREV_VERIF}"; fi
   if [[ -n "$PREV_META_VERIF" ]]; then echo "META_VERIFY_TOKEN=${PREV_META_VERIF}"; fi
-} > "$DESTINO"
+} > "$DESTINO" )
 chmod 600 "$DESTINO"
 
 # --- marcadores en CONFIGURACION.local.md (solo valores no secretos) ---------
