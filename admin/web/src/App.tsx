@@ -20,7 +20,7 @@ import { Bitacora } from './paginas/Bitacora';
 import { Funcionarios } from './paginas/Funcionarios';
 import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
-import { Catalogo } from './paginas/Catalogo';
+import { Catalogo } from './modulos/productos/Catalogo';
 import { Campanas } from './paginas/Campanas';
 import { Cobro } from './paginas/Cobro';
 import { Inventario } from './paginas/Inventario';
