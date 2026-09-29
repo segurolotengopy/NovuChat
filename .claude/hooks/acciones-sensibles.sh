@@ -17,7 +17,9 @@
 # LAS PROHIBICIONES MIRAN LA ACCIÓN, NO LA MENCIÓN. La primera versión negaba
 # cualquier comando que nombrara el sistema ajeno, y bloqueó hasta un `grep` de
 # la documentación. Ahora niega solo cuando el comando además actúa: red, nube,
-# despliegue, GitHub, contenedores o instalación.
+# despliegue, GitHub, contenedores o instalación. El verbo cuenta como palabra
+# de comando, no dentro de un nombre de archivo, y el texto de un commit o de
+# un PR no cuenta como nombre (ver ACTUA y sin_texto_de_git).
 #
 # Recibe por stdin el JSON del evento (tool_name, tool_input.command) y responde
 # por stdout con hookSpecificOutput.permissionDecision. Sale siempre con 0: un
@@ -37,7 +39,22 @@ if evento.get("tool_name") != "Bash":
 cmd = str((evento.get("tool_input") or {}).get("command") or "")
 
 # Un comando que ACTÚA fuera de la máquina o instala algo.
-ACTUA = r"\b(curl|wget|ssh|scp|docker|systemctl|gcloud|gh|firebase|npm\s+(i|install)|pnpm\s+(add|install)|pip\s+install|git\s+clone)\b|--aplicar|--suscribir|publicar-flujo|subscribed_apps|/subscriptions\b"
+#
+# EL VERBO COMO PALABRA DE COMANDO, no como pedazo de un nombre de archivo
+# (revisión de seguridad del #264, LOW). Con `\b`, `docker-compose.yml`,
+# `docs/ssh-vm.md` o `gh-pages` contaban como acción, y el gancho negaba un
+# `grep` de la documentación. Ahora el verbo va precedido por el inicio, un
+# espacio o una puntuación de shell (comillas, `;`, `|`, `&`, `(`, `$`, la
+# comilla invertida), con una ruta opcional delante (`/usr/bin/curl` sigue
+# contando), y NO lo sigue ni letra, ni dígito, ni punto, ni guion.
+# `docker-compose` va explícito. Dentro de `bash -c "…"`, `$(…)`, `sudo`,
+# `timeout` o `xargs` el verbo sigue viéndose: lo precede un espacio o una
+# comilla. Lo que no es un verbo (`--aplicar`, `subscribed_apps`,
+# `/subscriptions`) se mira como antes.
+VERBO = r"(?:^|(?<=[\s;&|(`\x27\"$]))(?:[^\s;&|(`\x27\"$]*/)?"
+ACTUA = (VERBO + r"(?:curl|wget|ssh|scp|docker-compose|docker|systemctl|gcloud|gh|firebase)(?![\w.-])"
+         r"|" + VERBO + r"(?:npm\s+(?:i|install)|pnpm\s+(?:add|install)|pip3?\s+install|git\s+clone)(?![\w.-])"
+         r"|--aplicar|--suscribir|publicar-flujo|subscribed_apps|/subscriptions\b")
 # CON EL ESPACIO de «SeguroLo Tengo», a propósito: el dueño del repositorio en
 # GitHub se llama `segurolotengopy`, y la primera versión («SeguroLo» a secas,
 # sin distinguir mayúsculas) negaba cualquier `gh` que nombrara el repositorio.
@@ -119,11 +136,16 @@ def es_ruta_de_enlace(t, cwd):
             return True
     return False
 
+# Un texto que la shell EJECUTA aunque vaya de mensaje: `$(…)` o la comilla
+# invertida en un -m/--body entre comillas dobles o en un heredoc sin comillas.
+EJECUTA = re.compile(r"\$\(|`")
+
 def sin_heredoc_de_git(c):
     def cambio(m):
         linea = c[:m.start()].rsplit("\n", 1)[-1]
         tramo = [w for w in re.split(r"&&|\|\||;|\|", linea)[-1].split() if not re.match(r"^\w+=", w)]
-        if tramo and tramo[0] in ("git", "gh"):
+        # Un heredoc sin comillas expande `$(…)`: ese no es solo texto.
+        if tramo and tramo[0] in ("git", "gh") and (m.group(1) or not EJECUTA.search(m.group(0))):
             return m.group(0).split("\n", 1)[0]
         return m.group(0)
     return HEREDOC.sub(cambio, c)
@@ -272,10 +294,48 @@ def toca_enlace(c):
             return True
     return False
 
+# EL TEXTO DE UN COMMIT O DE UN PR NO ES UNA ACCIÓN (revisión de seguridad del
+# #264, LOW). `gh pr create --body "…receptor-clientes…"` nombra el receptor y
+# usa `gh`, pero el nombre está en el texto que se publica, no en lo que se
+# toca. Se quita el valor de -m, --message, --title, --body, --notes (y sus
+# formas con «=») de un git o un gh, y el heredoc de un git o un gh, antes de
+# buscar nombre y acción. El emparejamiento sigue sobre el comando ENTERO: un
+# nombre en cualquier otro argumento, o en otro tramo del mismo comando, niega.
+# No se quita un texto que la shell ejecuta (`$(…)`, comilla invertida), ni se
+# quita nada si el comando no se puede partir (comillas sin cerrar).
+def sin_texto_de_git(c):
+    try:
+        lista = comandos(sin_heredoc_de_git(c))
+    except ValueError:
+        return c
+    tramos = []
+    for palabras in lista:
+        sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)] or [""]
+        if os.path.basename(sin_entorno[0]) not in ("git", "gh"):
+            tramos.append(" ".join(palabras))
+            continue
+        quedan, es_texto = [], False
+        for w in palabras:
+            if es_texto:
+                es_texto = False
+                if not EJECUTA.search(w):
+                    continue
+            if w in TEXTO_DE_GIT:
+                es_texto = True
+            elif re.match(r"^--(message|title|body|notes)=", w) and not EJECUTA.search(w):
+                w = w.split("=", 1)[0] + "="
+            quedan.append(w)
+        tramos.append(" ".join(quedan))
+    return " ; ".join(tramos)
+
+def nombra_y_actua(patron_nombre, c):
+    t = sin_texto_de_git(c)
+    return bool(re.search(patron_nombre, t, re.I) and re.search(ACTUA, t))
+
 NUNCA = [
-    (lambda c: re.search(SISTEMA_AJENO, c, re.I) and re.search(ACTUA, c),
+    (lambda c: nombra_y_actua(SISTEMA_AJENO, c),
      "Prohibiciones 5 y 7 de CLAUDE.md: la app Demo SeguroLo Tengo, el otp-service, WhatsApp-Modular y el receptor de clientes de AAB1 (la app AAB1-WA-Prod, su contenedor y su suscripción) no se tocan; toda operación sobre el receptor la ejecuta la sesión de WhatsApp-Modular con autorización de Andres."),
-    (lambda c: re.search(CANAL_NO_OFICIAL, c, re.I) and re.search(ACTUA, c),
+    (lambda c: nombra_y_actua(CANAL_NO_OFICIAL, c),
      "Prohibición 1 de CLAUDE.md: el único canal es la Cloud API oficial de Meta."),
     (lambda c: re.search(r"\bgh\s+auth\s+switch\b|\bgcloud\s+config\s+set\b", c),
      "Cambia la identidad compartida por todas las sesiones. Use la variable de entorno por comando (GH_CONFIG_DIR, CLOUDSDK_CONFIG)."),
@@ -289,7 +349,12 @@ NUNCA = [
 ]
 CONFIRMAR = [
     (r"(^|\s)--aplicar(\s|$)", "Escribe en producción (Firestore, Auth o n8n)."),
-    (r"verificar-meta\.sh\b.*--suscribir", "Escribe en Meta: suscribe la app a la WABA."),
+    # --desuscribir no contiene «--suscribir», y los modos de escritura de
+    # webhook-meta.sh no estaban (revisión de seguridad del #265). La app la
+    # decide el .env: el candado de scripts/lib/apps-ajenas.sh corta las
+    # ajenas; esto pide la confirmación de cualquier escritura.
+    (r"verificar-meta\.sh\b.*--(de)?suscribir", "Escribe en Meta: suscribe o desuscribe la app de la WABA."),
+    (r"webhook-meta\.sh\b.*--(alta-meta|alta-waba|preparar|cerrar)\b", "Escribe en Meta o en n8n: el webhook de la app o de la WABA, o el flujo temporal."),
     (r"\bgh\s+pr\s+(merge|close)\b|\bgh\s+workflow\s+run\b", "Cambia GitHub: fusión, cierre o ejecución de un workflow."),
     (r"\bgit\s+push\b", "Publica en GitHub."),
     (r"\bfirebase\s+deploy\b|\bdeploy\.sh\b", "Despliega."),
