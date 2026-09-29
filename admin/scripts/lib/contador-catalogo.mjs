@@ -9,7 +9,7 @@
  * contador se mueva EN EL MISMO LOTE que cada alta o baja, y NIEGAN crear o
  * borrar un producto desde el navegador si el contador falta o no cuadra.
  *
- * Lo escriben TRES caminos: `importarCatalogo` (functions/src/limiteCatalogo.ts),
+ * Lo escriben TRES caminos: `importarCatalogo` (functions/src/modulos/productos/limiteCatalogo.ts),
  * `scripts/contar-catalogo.mjs` y `scripts/cargar-negocio.mjs`. Un criterio
  * distinto en cualquiera de ellos deja al comercio trabado, y no se nota hasta
  * que el comercio intenta cargar un producto y recibe un error rojo. Por eso el

@@ -8,7 +8,7 @@
  * el resto del servidor, también NEGANDO:
  *
  *  1. UNA SOLA FUENTE para los números: la tabla de respaldo de
- *     `firestore.rules`, la de `functions/src/limiteCatalogo.ts` y —si existe
+ *     `firestore.rules`, la de `functions/src/modulos/productos/limiteCatalogo.ts` y —si existe
  *     en la rama— `functions/src/central/cuenta/planes.ts`, que es la fuente.
  *  2. LA MISMA FORMA DE ÍTEM en las reglas y en `importarCatalogo`: el SDK
  *     Admin se salta las reglas, así que la función las copia; acá se pasan

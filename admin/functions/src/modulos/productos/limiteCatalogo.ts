@@ -60,7 +60,7 @@ export const PRODUCTOS_SIN_PLAN = PLANES[PLAN_POR_DEFECTO].productos;
 /**
  * Tope de ítems por llamada. Una transacción de Firestore se hace pesada muy
  * por debajo de sus límites duros, y la consola ya parte la importación en
- * trozos de 400 (`web/src/paginas/Catalogo.tsx`).
+ * trozos de 400 (`web/src/modulos/productos/Catalogo.tsx`).
  */
 export const MAX_ITEMS_POR_LLAMADA = 400;
 
@@ -77,7 +77,7 @@ export function limiteDeProductos(cuenta: Record<string, unknown> | undefined): 
 
 /**
  * Identificador derivado del nombre. MISMO criterio que `idDeNombre` de
- * `web/src/lib/csv.ts` (la prueba los compara): si difirieran, reimportar un
+ * `web/src/central/lib/csv.ts` (la prueba los compara): si difirieran, reimportar un
  * archivo duplicaría el catálogo en vez de actualizarlo.
  */
 export function idDeItem(nombre: string): string {
@@ -333,7 +333,7 @@ export const importarCatalogo = onCall({ region: REGION }, async (peticion: Call
         return;
       }
       // UN ÍTEM NUEVO SIN `activo` NACE ACTIVO. Es lo que hace la consola al
-      // leer un archivo sin esa columna (`web/src/lib/csv.ts`) y lo que
+      // leer un archivo sin esa columna (`web/src/central/lib/csv.ts`) y lo que
       // espera quien importa: una planilla de productos es una lista de lo que
       // se ofrece. El valor se pone ANTES de validar, así que la forma que se
       // exige sigue siendo la de la regla de `create` (que pide `activo`
