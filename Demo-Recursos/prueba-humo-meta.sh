@@ -13,7 +13,8 @@
 #   2. chmod +x prueba-humo-meta.sh && ./prueba-humo-meta.sh
 #
 # El .env.meta vive junto al gestor de contraseñas, nunca en Git
-# (criterio D-15). Este script no imprime el token.
+# (criterio D-15). Este script no imprime el token, y no lo pasa en los
+# argumentos de curl (se veria en `ps`): va por la entrada estandar.
 # ============================================================================
 set -euo pipefail
 
@@ -38,8 +39,7 @@ echo "→ Destinatario: ${WA_TO}"
 echo
 
 echo "== Prueba 1: plantilla hello_world (siempre permitida en el número de prueba) =="
-R1=$(curl -sS -X POST "$URL" \
-  -H "Authorization: Bearer ${WA_TOKEN}" \
+R1=$(curl -sS -X POST "$URL" -H @- <<<"Authorization: Bearer ${WA_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"messaging_product":"whatsapp","to":"'"${WA_TO}"'","type":"template",
        "template":{"name":"hello_world","language":{"code":"en_US"}}}')
@@ -53,8 +53,7 @@ echo "== Prueba 2: texto libre (requiere ventana de 24 h abierta) =="
 echo "   Primero envíe cualquier mensaje DESDE el celular ${WA_TO} al número de"
 echo "   prueba (eso abre la ventana). Enter para continuar, Ctrl+C para saltar."
 read -r
-R2=$(curl -sS -X POST "$URL" \
-  -H "Authorization: Bearer ${WA_TOKEN}" \
+R2=$(curl -sS -X POST "$URL" -H @- <<<"Authorization: Bearer ${WA_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"messaging_product":"whatsapp","to":"'"${WA_TO}"'","type":"text",
        "text":{"body":"NovuChat: prueba de humo OK — texto libre dentro de la ventana de servicio."}}')

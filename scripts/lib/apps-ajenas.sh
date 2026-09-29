@@ -8,7 +8,12 @@
 # app que traiga el .env, y el comando no la nombra: el gancho de acciones
 # sensibles no la puede ver. Un .env con el id de AAB1-WA-Prod, o con un token
 # emitido para esa app, reescribiría su webhook o quitaría su suscripción a una
-# WABA: se caen el OTP de SeguroLoTengo y el receptor de clientes.
+# WABA: se caen el OTP de SeguroLoTengo y el receptor de clientes. Lo mismo
+# vale para todo script que escribe en Graph con el token del .env (revisión
+# del #265): registrar-numero.sh --dar-de-baja daría de baja un número de ese
+# sistema; nombre-visible.sh gastaría su cupo de nombre; crear-plantilla.sh y
+# plantillas-cliente.sh crearían plantillas en su WABA; enviar-prueba.sh,
+# enviar-plantilla.sh y subir-qr.sh mandarían desde su número.
 #
 # LAS DOS CAPAS de `negar_app_ajena`, antes de cualquier escritura:
 #   1. la huella sha256 del id, sin red;
@@ -57,7 +62,7 @@ huella_ajena() {
   return 1
 }
 
-# negar_app_ajena <app-id> app|token: sale con código 3 si la app es ajena por
+# negar_app_ajena <app-id> app|token|numero: sale con código 3 si la app es ajena por
 # huella (antes de tocar la red) o por nombre, si Graph contestó un error o no
 # trajo nombre e id, o si el id que contestó no es el del entorno. Usa G.
 #   app   → GET /{app-id}?fields=id,name con el app access token APPID|SECRET
@@ -65,6 +70,11 @@ huella_ajena() {
 #   token → GET /app?fields=id,name con WA_TOKEN: lo que manda en
 #           /{WABA}/subscribed_apps es la app DUEÑA DEL TOKEN, no el WA_APP_ID
 #           del .env. Exige también un WABA_ID con forma de id.
+#   numero → igual que token, para lo que escribe en /{WA_PHONE_ID}/…
+#           (registro, baja, nombre visible, mensajes, medios): exige un
+#           WA_PHONE_ID con forma de id en vez del WABA_ID.
+# El id del destino se exige con forma de id porque va en la ruta de la URL:
+# un «123/../456» escribiría en otro objeto.
 # La credencial va por la entrada estándar (`-H @-`), no en los argumentos de
 # curl: así no se ve en `ps` (revisión de seguridad del #265).
 negar_app_ajena() {
@@ -75,14 +85,23 @@ negar_app_ajena() {
   if ! [[ ${G:-} =~ ^https://graph\.facebook\.com/v[0-9]+\.[0-9]+$ ]]; then
     echo "✗ La URL de Graph no es la esperada (WA_GRAPH_VERSION): se corta sin escribir" >&2; exit 3
   fi
-  if [ "$modo" = "token" ] && ! [[ ${WABA_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
-    echo "✗ WABA_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
-  fi
+  case "$modo" in
+    app) ;;
+    token)
+      if ! [[ ${WABA_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
+        echo "✗ WABA_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
+      fi ;;
+    numero)
+      if ! [[ ${WA_PHONE_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
+        echo "✗ WA_PHONE_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
+      fi ;;
+    *) echo "✗ negar_app_ajena: modo «$modo» desconocido (app, token o numero)" >&2; exit 3 ;;
+  esac
   if huella_ajena "$id"; then
     echo "✗ La app …${id: -4} es de WhatsApp-Modular (huella): NovuChat no escribe con ella (CLAUDE.md, prohibiciones 5 y 7)" >&2
     exit 3
   fi
-  if [ "$modo" = "token" ]; then
+  if [ "$modo" != "app" ]; then
     json=$(command curl -s --max-time 30 -H @- "$G/app?fields=id,name" <<<"Authorization: Bearer ${WA_TOKEN:-}" || true)
   else
     json=$(command curl -s --max-time 30 -H @- "$G/$id?fields=id,name" <<<"Authorization: Bearer ${id}|${WA_APP_SECRET:-}" || true)
@@ -119,5 +138,15 @@ print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)' "$i
   esac
 }
 
+# curl_token <argumentos de curl…>: curl con `Authorization: Bearer $WA_TOKEN`
+# leída de la entrada estándar (`-H @-`), nunca en los argumentos: ahí la ve
+# cualquier usuario de la máquina en `ps` o en /proc/<pid>/cmdline (revisión
+# de seguridad del #265, LOW-B). La entrada estándar queda tomada por la
+# cabecera: un cuerpo con secretos va en un archivo (`--data-binary @archivo`)
+# dentro de un directorio de `mktemp -d` (700), no en `-d`.
+curl_token() {
+  command curl "$@" -H @- <<<"Authorization: Bearer ${WA_TOKEN:-}"
+}
+
 readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS
-readonly -f huella_ajena negar_app_ajena
+readonly -f huella_ajena negar_app_ajena curl_token
