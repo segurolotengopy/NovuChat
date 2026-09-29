@@ -91,7 +91,8 @@ const agConsultas = (pasos, equipo, ignorar) => {
       if (!ev || typeof ev !== 'object' || ignorar.has(String(ev.id || ''))) continue;
       const i = Date.parse(String((ev.start || {}).dateTime || ''));
       const f = Date.parse(String((ev.end || {}).dateTime || ''));
-      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f });
+      // Con su id: el aviso de «ya está tu cita» exige verla en la agenda.
+      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f, id: String(ev.id || '') });
     }
     const quien = agSinTilde(e.funcionario);
     const persona = (quien && equipo.find((x) => agSinTilde(x.nombre) === quien))
@@ -151,12 +152,12 @@ const agLibres = (consultas, fecha, duracion, limite, paso) => {
 // Las horas escritas en un texto, con su posicion. Del modelo se toma lo que
 // tiene minutos («11:00», «11.30», «16h30»), lo que viene tras «las» («a las
 // 17») y «17 hs»; «2 horas» es una duracion, no una hora. «De la tarde» o «pm»
-// suman doce. `ambigua`: de 1 a 7 sin tarde ni
+// suman doce; «en punto» tambien la marca. `ambigua`: de 1 a 7 sin tarde ni
 // mañana, que en un consultorio casi siempre es de la tarde.
 const agHorasDelTexto = (texto) => {
   const t = String(texto || '');
   const out = [];
-  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?/gi;
+  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
   let m;
   while ((m = re.exec(t)) !== null) {
     if (m[0] === '') { re.lastIndex += 1; continue; }
@@ -164,7 +165,8 @@ const agHorasDelTexto = (texto) => {
     const conMinutos = m[2] !== undefined || m[3] !== undefined;
     const antes = t.slice(Math.max(0, m.index - 12), m.index);
     const trasLas = /\b(las?|para\s+las?)\s+$/i.test(antes);
-    if (!conMinutos && !trasLas && !m[4] && !m[5]) continue;
+    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570).
+    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[7]) continue;
     // «15.00 Bs» es un precio, no una hora.
     if (/^\s*(bs\b|bolivianos|usd|\$|%)/i.test(t.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
     const min = m[2] !== undefined ? Number(m[2]) : (m[3] ? (/media/i.test(m[3]) ? 30 : 15) : 0);
