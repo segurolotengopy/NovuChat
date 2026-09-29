@@ -170,11 +170,11 @@ BASE="${N8N_BASE_URL%/}"; API="$BASE/api/v1"
 URL="$BASE/webhook/$WH/webhook"
 NOMBRE_TMP="TEMPORAL desafío Meta $WH"
 
-api() { # metodo ruta [cuerpo]
+api() { # metodo ruta [cuerpo] — la clave de n8n, por la entrada estándar
   if [ $# -ge 3 ]; then
-    curl -s --max-time 60 -X "$1" -H "X-N8N-API-KEY: $N8N_API_KEY" -H "Content-Type: application/json" -d "$3" "$API$2"
+    curl -s --max-time 60 -X "$1" -H @- -H "Content-Type: application/json" -d "$3" "$API$2" <<<"X-N8N-API-KEY: $N8N_API_KEY"
   else
-    curl -s --max-time 60 -X "$1" -H "X-N8N-API-KEY: $N8N_API_KEY" "$API$2"
+    curl -s --max-time 60 -X "$1" -H @- "$API$2" <<<"X-N8N-API-KEY: $N8N_API_KEY"
   fi
 }
 id_temporal() { api GET "/workflows?limit=250" | python3 -c "

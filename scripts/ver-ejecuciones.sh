@@ -70,7 +70,7 @@ fi
 # porque el sintoma (una lista vacia) no se parece a la causa (un timeout).
 SALIDA=0
 COD=$(curl -sS --max-time 180 -o "$TMP" -w '%{http_code}' \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "$URL") || SALIDA=$?
+      -H @- "$URL" <<<"X-N8N-API-KEY: ${N8N_API_KEY}") || SALIDA=$?
 if [[ "$SALIDA" -ne 0 ]]; then
   printf '\033[1;31m✗ curl terminó con %s\033[0m (HTTP %s)\n' "$SALIDA" "${COD:-sin código}"
   [[ "$SALIDA" -eq 28 ]] && printf '  Se agotó el tiempo. Probá con --n más chico: la lista trae los datos de cada ejecución.\n'
@@ -93,8 +93,7 @@ for e in d.get("data", []):
         print(e.get("id"))
 ' "$TMP"); do
     curl -sS --max-time 60 -o "$DETALLES/${FALLIDA}.json" \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
-      "${API}/executions/${FALLIDA}?includeData=true" || true
+      -H @- "${API}/executions/${FALLIDA}?includeData=true" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
   done
 fi
 
