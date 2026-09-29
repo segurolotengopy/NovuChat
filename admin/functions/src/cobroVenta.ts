@@ -43,8 +43,7 @@
  * sobre cada texto que sale de acá.
  */
 
-import type { Esperado } from './cotejo.js';
-import type { ResultadoCotejo } from './sena.js';
+import type { Esperado, ResultadoCotejo } from './cotejo.js';
 
 /**
  * CUÁNTO VIVE UN QR DE VENTA SIN PAGAR, en minutos.
