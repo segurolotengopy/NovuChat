@@ -559,7 +559,7 @@ if (ceden.length) {
     return pedida.horas.some((h) => t.endsWith(` a las ${h}`)) && (!pedida.dia || t.startsWith(`el ${pedida.dia} `));
   };
   const siEsLaPedida = !pedida || sinConf.some(esLaPedida);
-  const avisoSuCita = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (la cita de [a-záéíóúüñ' ]{1,60}|su cita|tu cita)\.$/i
+  const avisoSuCita = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (la cita de [a-záéíóúüñ']+( [a-záéíóúüñ']+){0,3}|su cita|tu cita)\.$/i
     .test(String(item.avisoSuCita || '')) ? String(item.avisoSuCita) + ' ' : '';
   const hayEspacio = sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. ';
   // Al SEGUNDO sin nombre seguido el mensaje es SOLO el paso a recepcion: no se

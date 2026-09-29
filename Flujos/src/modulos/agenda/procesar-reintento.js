@@ -91,7 +91,8 @@ const agConsultas = (pasos, equipo, ignorar) => {
       if (!ev || typeof ev !== 'object' || ignorar.has(String(ev.id || ''))) continue;
       const i = Date.parse(String((ev.start || {}).dateTime || ''));
       const f = Date.parse(String((ev.end || {}).dateTime || ''));
-      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f });
+      // Con su id: el aviso de «ya está tu cita» exige verla en la agenda.
+      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f, id: String(ev.id || '') });
     }
     const quien = agSinTilde(e.funcionario);
     const persona = (quien && equipo.find((x) => agSinTilde(x.nombre) === quien))

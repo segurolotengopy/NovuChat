@@ -97,7 +97,8 @@ const agConsultas = (pasos, equipo, ignorar) => {
       if (!ev || typeof ev !== 'object' || ignorar.has(String(ev.id || ''))) continue;
       const i = Date.parse(String((ev.start || {}).dateTime || ''));
       const f = Date.parse(String((ev.end || {}).dateTime || ''));
-      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f });
+      // Con su id: el aviso de «ya está tu cita» exige verla en la agenda.
+      if (Number.isFinite(i) && Number.isFinite(f) && f > i) ocupados.push({ i, f, id: String(ev.id || '') });
     }
     const quien = agSinTilde(e.funcionario);
     const persona = (quien && equipo.find((x) => agSinTilde(x.nombre) === quien))
@@ -1177,22 +1178,30 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     if (agHorasCliente.length !== 1 || agHorasCliente[0].ordinal || pasosCancelar.length || canceladasEnElTurno.length) return null;
     const reg = agRegistros && telefonoDelCliente ? agRegistros[telefonoDelCliente] : null;
     const creadas = (reg && reg.creadas && typeof reg.creadas === 'object')
-      ? Object.values(reg.creadas).filter((c) => c && Number(c.hasta || 0) > agAhora) : [];
+      ? Object.entries(reg.creadas).filter(([, c]) => c && Number(c.hasta || 0) > agAhora) : [];
     const h = agHorasCliente[0];
+    // UN HECHO, NO UN RECUERDO (revision de seguridad de bb96b4c): `creadas` no
+    // se entera si recepcion la cancelo en el calendario, si vencio su seña o si
+    // se cancelo en otro turno. El aviso sale solo si la agenda consultada en
+    // ESTE turno muestra esa misma cita (su id) a esa hora; sin consulta de ese
+    // dia, no hay aviso.
+    const enLaAgenda = (id, t) => agConsultasTurno.some((k) => k.fecha === agLaPaz(t).fecha
+      && k.ocupados.some((o) => o.id === String(id) && o.i === t));
     const mins = h.ambigua ? [h.min, h.min + 720] : [h.min];
     // Si nombro el dia, la de ese dia; si no, solo si es UNA: dos citas suyas a
     // esa hora en dias distintos no dicen de cual habla.
-    const coinciden = creadas.map((c) => ({ c, t: Date.parse(String(c.inicio || '')) }))
-      .filter(({ t }) => Number.isFinite(t) && t > agAhora && mins.includes(agLaPaz(t).min)
-        && (!agFechaDeLaHora || agLaPaz(t).fecha === agFechaDeLaHora));
+    const coinciden = creadas.map(([id, c]) => ({ id, c, t: Date.parse(String(c.inicio || '')) }))
+      .filter(({ id, t }) => Number.isFinite(t) && t > agAhora && mins.includes(agLaPaz(t).min)
+        && (!agFechaDeLaHora || agLaPaz(t).fecha === agFechaDeLaHora) && enLaAgenda(id, t));
     if (coinciden.length !== 1) return null;
     const { c, t } = coinciden[0];
     const p = agLaPaz(t);
     // El paciente sale del titulo que puso el flujo («Cita Manuel — consulta»):
-    // solo letras y espacios; si no, «tu cita».
-    const paciente = String(c.titulo || '').replace(/^\s*cita\s+/i, '').split(/\s+[—–-]\s+/)[0].trim();
+    // de una a cuatro palabras de letras, y nada que afirme un cobro (revision
+    // de seguridad de bb96b4c: el titulo lo escribe el modelo); si no, «tu cita».
+    const paciente = agNombreDelTitulo(c.titulo);
     return { fecha: p.fecha, min: p.min, dia: agDiaTexto(p.fecha), hora: agHora(p.min),
-      paciente: /^[a-záéíóúüñ][a-záéíóúüñ' ]{0,59}$/i.test(paciente) ? paciente : '' };
+      paciente: /^[a-záéíóúüñ']+( [a-záéíóúüñ']+){0,3}$/i.test(paciente) && !AFIRMA_COBRO.test(paciente) ? paciente : '' };
   })();
   const agAvisoSuCita = agSuCitaEnLaHora
     ? `El ${agSuCitaEnLaHora.dia} a las ${agSuCitaEnLaHora.hora} ya está `
@@ -1614,6 +1623,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     // deshacen por falta de confirmacion o de nombre no entran; las que el
     // candado deshace las borra `Comprobar reserva`.
     r.creadas = (r.creadas && typeof r.creadas === 'object') ? r.creadas : {};
+    // Las que se cancelaron en este turno ya no son evidencia de nada.
+    for (const id of idsCancelados) delete r.creadas[String(id).slice(0, 200)];
     for (const ev of eventosCreados) {
       if (agCitasSinConfirmar.includes(ev.id) || agCitasSinNombre.includes(ev.id)) continue;
       const t = Date.parse(ev.inicio);
