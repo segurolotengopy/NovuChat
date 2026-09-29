@@ -30,7 +30,7 @@ import { join, resolve } from 'node:path';
 const RAIZ = resolve(new URL('..', import.meta.url).pathname);
 const SALIDA = join(RAIZ, '..', 'Demo-Recursos', 'plantilla-catalogo.xlsx');
 
-// Las columnas que entiende `web/src/lib/csv.ts`. El orden es el del documento.
+// Las columnas que entiende `web/src/central/lib/csv.ts`. El orden es el del documento.
 const ENCABEZADOS = [
   'nombre', 'descripcion', 'area', 'precio', 'duracionMin',
   'imagenUrl', 'activo', 'cantidad',

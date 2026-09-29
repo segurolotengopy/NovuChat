@@ -27,17 +27,6 @@
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
     },
     {
-      "desde": "admin/functions/src/cobroVenta.ts",
-      "hacia": "admin/functions/src/sena.ts",
-      "soloTipo": true,
-      "porque": "Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos"
-    },
-    {
-      "desde": "admin/web/src/paginas/Captacion.tsx",
-      "hacia": "admin/web/src/lib/csv.ts",
-      "porque": "csv.ts es un servicio compartido (nota del inventario): pasa a Central al mover productos"
-    },
-    {
       "desde": "admin/web/src/plataforma/lib/negocios.ts",
       "hacia": "admin/web/src/lib/archivoPlanes.ts",
       "porque": "Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación"

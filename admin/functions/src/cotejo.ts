@@ -269,6 +269,8 @@ export interface Leido {
   hora?: string;
 }
 
+export type ResultadoCotejo = 'cuadra' | 'no_cuadra' | 'ilegible';
+
 export interface Cotejo {
   /** Los datos cuadran. NO significa que el dinero haya entrado. */
   consistente: boolean;
