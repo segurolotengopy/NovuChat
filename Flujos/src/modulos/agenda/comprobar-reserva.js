@@ -560,10 +560,11 @@ if (ceden.length) {
   };
   const siEsLaPedida = !pedida || sinConf.some(esLaPedida);
   // Con la misma forma y el mismo lexico prohibido que `Procesar respuesta`.
-  const avisoSuCita = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (la cita de [a-záéíóúüñ][a-záéíóúüñ']*( [a-záéíóúüñ][a-záéíóúüñ']*){0,3}|su cita|tu cita)\.$/i
-    .test(String(item.avisoSuCita || ''))
-    && !/(pag|señ|sena\b|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel)/i
-      .test(String(item.avisoSuCita).replace(/^.* ya está /, ''))
+  // El nombre se toma con un grupo, no recortando hasta el ultimo «ya está»
+  // (revision de seguridad de 20305f2: «la cita de pagado ya está listo»).
+  const formaAviso = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (?:la cita de ([a-záéíóúüñ][a-záéíóúüñ']*(?: [a-záéíóúüñ][a-záéíóúüñ']*){0,3})|su cita|tu cita)\.$/i
+    .exec(String(item.avisoSuCita || ''));
+  const avisoSuCita = formaAviso && !/(pag|señ|sena|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel|sald|liquid|garantiz)/i.test(formaAviso[1] || '')
     ? String(item.avisoSuCita) + ' ' : '';
   const hayEspacio = sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. ';
   // Al SEGUNDO sin nombre seguido el mensaje es SOLO el paso a recepcion: no se
