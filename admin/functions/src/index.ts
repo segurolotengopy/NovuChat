@@ -17,7 +17,7 @@ initializeApp();
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './core/turno/cierres.js';
-export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
+export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
 // servidor —el flujo manda lo que leyó el modelo y recibe `cuadra`,
 // `no_cuadra` o `ilegible`— y la retención vencida se anota sin mandarle nada

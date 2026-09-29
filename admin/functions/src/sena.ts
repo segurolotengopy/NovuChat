@@ -4,7 +4,7 @@ import { REGION } from './core/region.js';
 import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from './core/seguridad/firma.js';
 import {
   cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido, type ResultadoCotejo,
-} from './cotejo.js';
+} from './modulos/cobros/cotejo.js';
 import { MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
 import { registrar } from './core/turno/bitacora.js';
 import { documentoDeVertical } from './core/prompt/prompt.js';
@@ -12,7 +12,7 @@ import { periodoDe } from './central/cuenta/planes.js';
 import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';
 import {
   detalleDeLaVenta, esperadoDeLaVenta, idDeCierreDeVenta, qrDeVentaVencido, totalUtilizable,
-} from './cobroVenta.js';
+} from './modulos/cobros/cobroVenta.js';
 
 /**
  * =============================================================================
