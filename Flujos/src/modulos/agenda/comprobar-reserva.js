@@ -559,8 +559,12 @@ if (ceden.length) {
     return pedida.horas.some((h) => t.endsWith(` a las ${h}`)) && (!pedida.dia || t.startsWith(`el ${pedida.dia} `));
   };
   const siEsLaPedida = !pedida || sinConf.some(esLaPedida);
-  const avisoSuCita = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (la cita de [a-záéíóúüñ']+( [a-záéíóúüñ']+){0,3}|su cita|tu cita)\.$/i
-    .test(String(item.avisoSuCita || '')) ? String(item.avisoSuCita) + ' ' : '';
+  // Con la misma forma y el mismo lexico prohibido que `Procesar respuesta`.
+  const avisoSuCita = /^El [a-záéíóúñ]+ \d{1,2} a las \d{2}:\d{2} ya está (la cita de [a-záéíóúüñ][a-záéíóúüñ']*( [a-záéíóúüñ][a-záéíóúüñ']*){0,3}|su cita|tu cita)\.$/i
+    .test(String(item.avisoSuCita || ''))
+    && !/(pag|señ|sena\b|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel)/i
+      .test(String(item.avisoSuCita).replace(/^.* ya está /, ''))
+    ? String(item.avisoSuCita) + ' ' : '';
   const hayEspacio = sinConf.map(cuandoEs).filter(Boolean).join(' y ') + ' hay espacio. ';
   // Al SEGUNDO sin nombre seguido el mensaje es SOLO el paso a recepcion: no se
   // junta con un «¿Te la agendo?» (revision de f0c6957).

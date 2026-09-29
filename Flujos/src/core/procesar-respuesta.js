@@ -1174,6 +1174,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // punto» y recibio «te puedo ofrecer 11:30 o 12:00». Nadie le dijo que las
   // 11:00 eran de su cita, y pidio hablar con alguien. El codigo lo sabe
   // (`creadas`: las citas que ESTE telefono agendo por el chat) y lo dice.
+  const AG_NOMBRE_DE_PACIENTE = /^[a-záéíóúüñ][a-záéíóúüñ']*( [a-záéíóúüñ][a-záéíóúüñ']*){0,3}$/i;
+  const AG_LEXICO_COBRO = /(pag|señ|sena\b|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel)/i;
   const agSuCitaEnLaHora = (() => {
     if (agHorasCliente.length !== 1 || agHorasCliente[0].ordinal || pasosCancelar.length || canceladasEnElTurno.length) return null;
     const reg = agRegistros && telefonoDelCliente ? agRegistros[telefonoDelCliente] : null;
@@ -1198,10 +1200,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     const p = agLaPaz(t);
     // El paciente sale del titulo que puso el flujo («Cita Manuel — consulta»):
     // de una a cuatro palabras de letras, y nada que afirme un cobro (revision
-    // de seguridad de bb96b4c: el titulo lo escribe el modelo); si no, «tu cita».
+    // de seguridad de bb96b4c: el titulo lo escribe el modelo); ni una palabra
+    // del lexico de cobro, que `AFIRMA_COBRO` no cubre entero («Manuel seña
+    // acreditada», «Manuel ya pagó»: revision de 9dac4e6); si no, «tu cita».
     const paciente = agNombreDelTitulo(c.titulo);
     return { fecha: p.fecha, min: p.min, dia: agDiaTexto(p.fecha), hora: agHora(p.min),
-      paciente: /^[a-záéíóúüñ']+( [a-záéíóúüñ']+){0,3}$/i.test(paciente) && !AFIRMA_COBRO.test(paciente) ? paciente : '' };
+      paciente: AG_NOMBRE_DE_PACIENTE.test(paciente) && !AFIRMA_COBRO.test(paciente) && !AG_LEXICO_COBRO.test(paciente)
+        ? paciente : '' };
   })();
   const agAvisoSuCita = agSuCitaEnLaHora
     ? `El ${agSuCitaEnLaHora.dia} a las ${agSuCitaEnLaHora.hora} ya está `

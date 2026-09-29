@@ -976,6 +976,16 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(procesar('no, 11 en punto', ofrece, libres(), dictado)['respuesta']).toBe(`El ${L} a las 11:00 ya está tu cita. ${ofrece}`);
       const cobro = conSuCita({ 'ev-manuel': creada(LUNES, 'Cita pago verificado — consulta') });
       expect(procesar('no, 11 en punto', ofrece, libres(), cobro)['respuesta']).toBe(`El ${L} a las 11:00 ya está tu cita. ${ofrece}`);
+      // Revisión de 9dac4e6: vocabulario de cobro que AFIRMA_COBRO no conoce, y un nombre sin letras.
+      for (const titulo of ['Cita Manuel seña acreditada — consulta', 'Cita Manuel ya pagó — consulta',
+        'Cita Manuel QR verificado — consulta', 'Cita Manuel canceló la seña — consulta', "Cita ''' — consulta"]) {
+        const est = conSuCita({ 'ev-manuel': creada(LUNES, titulo) });
+        expect(procesar('no, 11 en punto', ofrece, libres(), est)['respuesta'], titulo).toBe(`El ${L} a las 11:00 ya está tu cita. ${ofrece}`);
+      }
+      const ev = cita('ev-1130', LUNES, '11:30', '12:00');
+      const previa = procesar(`Dame una cita para el ${L} a las 11?`, `Listo, te agendé el ${L} a las 11:30.`, [consulta(LUNES), agendo(ev)], {});
+      const forzado = String(comprobar({ ...previa, avisoSuCita: `El ${L} a las 11:00 ya está la cita de Manuel seña acreditada.` }, [ev])[0]!['respuesta']);
+      expect(forzado).not.toContain('acreditada');
       // Con seña, el título lleva su rótulo y el nombre igual sale.
       const sena = conSuCita({ 'ev-manuel': creada(LUNES, 'PENDIENTE DE SEÑA · Cita Manuel — consulta') });
       expect(procesar('no, 11 en punto', ofrece, libres(), sena)['respuesta']).toBe(`El ${L} a las 11:00 ya está la cita de Manuel. ${ofrece}`);
