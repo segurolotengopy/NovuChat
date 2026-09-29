@@ -330,7 +330,7 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
 const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
 // Igual que en `Procesar respuesta`: solo la oracion que EMPIEZA con «No encontramos…», «No veo…» o
 // «Ninguna cita…» no afirma que se agendo.
-const SIN_CITA = /^\W*(?:no\s+(?:encontr\w*|veo|figura\w*|registr\w*)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
+const SIN_CITA = /^\W*(?:no\s+(?:encontr[a-záéíóúñ]*|veo|figura[a-záéíóúñ]*|registr[a-záéíóúñ]*)\s+(?:ning[uú]n[a]?\s+|esa\s+|tu\s+|la\s+|alguna\s+)?(?:citas?|reservas?|turnos?)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
 const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
 // Y uno propio de este turno: «ese horario ya esta ocupado» es exactamente lo
 // que el reintento tiene que decir, y CONFIRMA lo confunde con «esta

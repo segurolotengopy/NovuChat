@@ -486,7 +486,7 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // agendo (Bellido, 28/09, #7624). SOLO la oracion que EMPIEZA asi: una negacion
   // cualquiera («No hay problema, quedo agendada…») no anula el detector (revision
   // de seguridad del #283). Se juzga oracion por oracion.
-  const SIN_CITA = /^\W*(?:no\s+(?:encontr\w*|veo|figura\w*|registr\w*)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
+  const SIN_CITA = /^\W*(?:no\s+(?:encontr[a-záéíóúñ]*|veo|figura[a-záéíóúñ]*|registr[a-záéíóúñ]*)\s+(?:ning[uú]n[a]?\s+|esa\s+|tu\s+|la\s+|alguna\s+)?(?:citas?|reservas?|turnos?)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
   const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
   // Sin marcas de formato: «quedó *agendada*» cuenta igual que «quedó agendada».
   const plano = respuesta.replace(/[*_~]/g, '');

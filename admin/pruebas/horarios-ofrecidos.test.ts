@@ -1191,6 +1191,9 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
 
     it('#7624: «No encontramos ninguna cita registrada» no se toma por una cita agendada', () => {
       const texto = 'No encontramos ninguna cita registrada para el control. ¿Deseas que agendemos una nueva cita?';
+      for (const t of ['No veo esa reserva en este chat. ¿Me confirmas el día?', 'No figura ninguna cita a tu nombre. ¿Quieres agendar una?', 'No encontré tu cita registrada. ¿Con quién era?']) {
+        expect(procesar('Quiero reagendar', t, [{ action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: '[]' }], {})['avisos'], t).not.toContain('afirmo_sin_agendar');
+      }
       const r = procesar('Quiero reagendar', texto, [{ action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: '[]' }], {});
       expect(r['respuesta']).toBe(texto);
       expect(r['avisos']).not.toContain('afirmo_sin_agendar');
@@ -1207,6 +1210,11 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
         `Listo, agendé tu cita el ${L} a las 11:30. No hay costo por reprogramar.`,
         `Quedó agendada tu cita el ${L} a las 11:30. No hay más citas ese día`,
         `No encontramos ninguna cita registrada antes. Listo, quedó agendada tu cita el ${L} a las 11:30.`,
+        // Una oración que EMPIEZA con «No veo…» pero no niega una cita tampoco anula el detector.
+        `No veo ningún problema, tu cita quedó agendada para el ${L} a las 11:30.`,
+        `No veo inconveniente: quedó agendada tu cita el ${L}.`,
+        `No registramos costo adicional, tu cita quedó agendada el ${L}.`,
+        `No encontré conflicto, quedó agendada tu cita el ${L} a las 11:30.`,
       ]) expect(procesar('Quiero una cita', t, [consulta(LUNES)], {})['avisos'], t).toContain('afirmo_sin_agendar');
     });
   });
