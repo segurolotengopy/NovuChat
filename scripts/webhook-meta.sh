@@ -45,89 +45,20 @@
 # y el comando no la nombra: un .env con el WA_APP_ID de AAB1-WA-Prod
 # reescribiría el webhook de toda esa app (tumba el OTP de SeguroLoTengo y el
 # receptor de clientes). El gancho de acciones sensibles no lo puede ver. Antes
-# de cualquier POST, `negar_app_ajena` corta en dos capas: la huella del id
-# (sin red) y el nombre que devuelve Graph. Si Graph no contesta un nombre,
-# también corta: sin saber qué app es, no se escribe.
+# de cualquier POST, `negar_app_ajena` (scripts/lib/apps-ajenas.sh, compartida
+# con verificar-meta.sh) corta en dos capas: la huella del id (sin red) y el
+# nombre que devuelve Graph. Si Graph no contesta nombre e id, también corta:
+# sin saber qué app es, no se escribe.
 #
 # Lee N8N_BASE_URL y N8N_API_KEY de .env (o --env-n8n). No imprime valores.
 # =============================================================================
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-# Nombres de apps de WhatsApp-Modular, por fragmento normalizado (minúsculas,
-# solo letras y dígitos): «aab1» cubre AAB1-WA-Prod y cualquier otra app de
-# AAB1; «segurolotengo», la app de demostración «Demo SeguroLo Tengo». Ninguna
-# app de NovuChat se llama así (NovuChat-Demo-A, NovuChat-Asistente…).
-APPS_AJENAS_FRAGMENTOS="aab1 segurolotengo"
-# sha256 del id de cada app ajena, sin el id: el repositorio es público. El id
-# de una app no es un secreto (viaja en el client_id del registro insertado),
-# así que la huella no esconde nada: evita publicarlo y sirve cuando Graph no
-# está. NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA solo puede AGREGAR huellas (la usa
-# la suite, que no tiene los ids reales).
-# Las entregó la sesión de WhatsApp-Modular el 28/09/2026 (printf %s "<id>" |
-# sha256sum); la de AAB1-WA-Prod, cotejada contra su configuración viva. No
-# existe otra app de Meta de ese proyecto. En grupos de 8 con «:», que se
-# quitan al comparar: escrita de corrido, una huella puede traer 10 dígitos
-# seguidos y verificar-saneo.sh la toma por un id de Meta (con razón).
-APPS_AJENAS_HUELLAS="
-97340ef7:a7b04dc8:27d6875c:6ee38b49:d53d527d:13e63754:245307d5:4034ef74
-120b32ec:4e3c67fb:1785a6d8:1dced2ae:481bd0df:d38136ea:f5a73091:6cfbc739
-"
-
-# huella_ajena <app-id>: 0 si el sha256 del id está en la lista.
-huella_ajena() {
-  local h
-  h=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
-  # shellcheck disable=SC2086  # sin comillas a propósito: una huella por palabra
-  case " $(echo $APPS_AJENAS_HUELLAS ${NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA:-} | tr -d :) " in *" $h "*) return 0 ;; esac
-  return 1
-}
-
-# negar_app_ajena <app-id> app|token: sale con error si la app es ajena por
-# huella (antes de tocar la red) o por nombre, si Graph contestó un error o no
-# trajo nombre, o si el id que contestó no es el del entorno.
-#   app   → GET /{app-id}?fields=id,name con el app access token (--alta-meta)
-#   token → GET /app?fields=id,name con WA_TOKEN: la app que Meta suscribe en
-#           POST /{WABA}/subscribed_apps es la del token, no la del .env
-negar_app_ajena() {
-  local id="$1" modo="$2" json v
-  if huella_ajena "$id"; then
-    echo "✗ La app …${id: -4} es de WhatsApp-Modular (huella): NovuChat no escribe su webhook (CLAUDE.md, prohibiciones 5 y 7)" >&2
-    exit 3
-  fi
-  if [ "$modo" = "token" ]; then
-    json=$(curl -s --max-time 30 "$G/app?fields=id,name" -H "Authorization: Bearer ${WA_TOKEN}" || true)
-  else
-    json=$(curl -s --max-time 30 "$G/$id?fields=id,name&access_token=${id}|${WA_APP_SECRET}" || true)
-  fi
-  v=$(printf '%s' "$json" | python3 -c '
-import json,re,sys
-id_env, fragmentos = sys.argv[1], sys.argv[2].split()
-try: d = json.loads(sys.stdin.read() or "{}")
-except ValueError: print("error Graph no devolvió JSON"); sys.exit()
-if not isinstance(d, dict) or "error" in d:
-    print("error", (d.get("error") or {}).get("message", "?") if isinstance(d, dict) else "?"); sys.exit()
-nombre = str(d.get("name") or "")
-if not nombre: print("error Graph no devolvió el nombre de la app"); sys.exit()
-# Sin id no se sabe de quién es el token: lo que manda es la app dueña del
-# token, no el WA_APP_ID del .env (cuya huella ya se miró arriba).
-if not d.get("id"): print("error Graph no devolvió el id de la app"); sys.exit()
-if str(d["id"]).strip() != id_env.strip(): print("distinta", nombre); sys.exit()
-plano = re.sub(r"[^a-z0-9]", "", nombre.lower())
-print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)' "$id" "$APPS_AJENAS_FRAGMENTOS")
-  case "$v" in
-    propia\ *) echo "  app: ${v#propia } (…${id: -4})" ;;
-    ajena\ *)
-      echo "✗ La app «${v#ajena }» es de WhatsApp-Modular: NovuChat no escribe su webhook (CLAUDE.md, prohibiciones 5 y 7)" >&2
-      exit 3 ;;
-    distinta\ *)
-      echo "✗ El token es de la app «${v#distinta }», no de la …${id: -4} del entorno: se corta sin escribir" >&2
-      exit 3 ;;
-    *)
-      echo "✗ No se pudo saber qué app es la …${id: -4} (${v#error }): sin eso no se escribe su webhook" >&2
-      exit 3 ;;
-  esac
-}
+# El candado de apps ajenas (huellas, nombres, negar_app_ajena), ANTES de
+# cargar cualquier .env: queda readonly y un .env no lo puede redefinir.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 
 MODO=""; WH=""; FID=""; ENV_N8N=".env"; ENV_CLIENTE=""
 while [ $# -gt 0 ]; do
@@ -181,7 +112,7 @@ for s in d.get('data',[]):
   negar_app_ajena "$WA_APP_ID" token
   echo "Webhook PROPIO de la WABA …${WABA_ID: -4} (la URL de la app …${WA_APP_ID: -4} no se toca):"
   echo "  override_callback_uri: $URL"
-  R=$(curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
+  R=$(command curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
         -H "Authorization: Bearer ${WA_TOKEN}" -H "Content-Type: application/json" \
         -d "$(python3 -c "import json,sys; print(json.dumps({'override_callback_uri': sys.argv[1], 'verify_token': sys.argv[2]}))" "$URL" "$VT")")
   echo "  respuesta: $R"
@@ -201,7 +132,7 @@ if [ "$MODO" = "ver-meta" ]; then
   : "${WA_APP_ID:?}" "${WA_APP_SECRET:?WA_APP_SECRET no está en $ENV_CLIENTE: sin él no hay app access token}"
   G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
   echo "Suscripciones de webhook de la app …${WA_APP_ID: -4}:"
-  curl -s --max-time 30 "$G/$WA_APP_ID/subscriptions?access_token=${WA_APP_ID}|${WA_APP_SECRET}" \
+  command curl -s --max-time 30 -H @- "$G/$WA_APP_ID/subscriptions" <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}" \
     | python3 -c "
 import json,sys; d=json.load(sys.stdin)
 if 'error' in d: print('  ERROR:', d['error'].get('message')); sys.exit(1)
@@ -231,15 +162,17 @@ if [ "$MODO" = "alta-meta" ]; then
   echo "Alta del webhook en la app …${WA_APP_ID: -4}:"
   echo "  callback_url: $URL"
   echo "  fields: messages, account_update"
-  R=$(curl -s --max-time 60 -X POST "$G/$WA_APP_ID/subscriptions" \
+  # El app access token va en la cabecera, leída de la entrada estándar: en
+  # los argumentos de curl se vería en `ps` (revisión de seguridad del #265).
+  R=$(command curl -s --max-time 60 -X POST "$G/$WA_APP_ID/subscriptions" -H @- \
         --data-urlencode "object=whatsapp_business_account" \
         --data-urlencode "callback_url=$URL" \
         --data-urlencode "verify_token=$VT" \
         --data-urlencode "fields=messages,account_update" \
-        --data-urlencode "access_token=${WA_APP_ID}|${WA_APP_SECRET}")
+        <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}")
   echo "  respuesta: $R"
   echo "Suscripciones vigentes de la app:"
-  curl -s --max-time 30 "$G/$WA_APP_ID/subscriptions?access_token=${WA_APP_ID}|${WA_APP_SECRET}" \
+  command curl -s --max-time 30 -H @- "$G/$WA_APP_ID/subscriptions" <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}" \
     | python3 -c "
 import json,sys; d=json.load(sys.stdin)
 for s in d.get('data',[]): print('  ', s.get('object'), '→', s.get('callback_url'), '· activo:', s.get('active'), '· campos:', [f.get('name') for f in s.get('fields',[])])
