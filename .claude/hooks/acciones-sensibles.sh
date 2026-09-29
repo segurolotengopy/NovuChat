@@ -211,7 +211,9 @@ def comandos(c):
     # y en la línea siguiente `docker logs -t <contenedor>` eran un solo
     # comando, y el `-t` de la segunda línea se tomaba por un título. Dentro
     # de comillas el salto sigue siendo parte de la palabra.
-    c = c.replace("\\\n", "")  # la continuación de línea sí une
+    # La continuación de línea une solo con una cantidad IMPAR de barras: `\\`
+    # al final es una barra literal y el salto separa (quinta revisión del #272).
+    c = re.sub(r"(?<!\\)((?:\\\\)*)\\\n", r"\1", c)
     lx = shlex.shlex(c, posix=True, punctuation_chars="();<>|&\n")
     lx.whitespace = " \t\r"
     lx.whitespace_split = True
@@ -368,9 +370,9 @@ def toca_enlace(c):
 # nombre en cualquier otro argumento, o en otro tramo del mismo comando, niega.
 # No se quita un texto que la shell ejecuta (`$(…)`, comilla invertida), ni se
 # quita nada si el comando no se puede partir (comillas sin cerrar).
-# `--body "$(cat <<'EOF' … EOF)"`: la forma habitual de un cuerpo de PR. Con el
+# `--body "$(cat <<\x27EOF\x27 … EOF)"`: la forma habitual de un cuerpo de PR. Con el
 # heredoc entre comillas no se expande nada, y su cuerpo ya lo quitó
-# sin_heredoc_de_git: lo que queda es `$(cat <<'EOF'\n)`, que es solo texto.
+# sin_heredoc_de_git: lo que queda es `$(cat <<\x27EOF\x27\n)`, que es solo texto.
 CAT_HEREDOC = re.compile(r"^(?:--\w+=)?\$\(\s*cat\s+<<-?\s*([\"\x27])\w+\1\s*\)$")
 
 def solo_texto(w):
@@ -404,6 +406,10 @@ def sin_reuso(c):
         lista = comandos(sin_heredoc_de_git(c))
     except ValueError:
         return False
+    # Una línea unida con barra, o un comentario, pueden hacer que bash vea
+    # otra cosa que el tokenizador: el texto no se exceptúa (quinta revisión).
+    if "\\\n" in c or any(w.startswith("#") for palabras in lista for w in palabras):
+        return False
     tramos = []
     for palabras in lista:
         entorno = [w for w in palabras if re.match(r"^\w+=", w)]
@@ -422,7 +428,7 @@ def sin_reuso(c):
         quedan = []
         for k, w in enumerate(sin_entorno):
             if (k in texto or k in con_igual) and not solo_texto(w):
-                return False  # un $( que no es `cat <<'EOF'`: su heredoc ya se quitó
+                return False  # un $( que no es `cat <<\x27EOF\x27`: su heredoc ya se quitó
             if k in texto and solo_texto(w):
                 continue
             if k in con_igual and solo_texto(w):
@@ -459,7 +465,12 @@ def quitar_texto(c):
     `git commit -m "…" && gh pr create …` con un nombre ajeno en el texto se
     parte en dos llamadas. El costo es ese; a cambio no hay nada que leer.
     """
-    if "<<" in c:
+    # Sin salto de línea ni \r (quinta revisión del #272, MEDIUM): el
+    # tokenizador no modela el comentario de bash ni todas las formas de unir
+    # líneas, y un comando de varias líneas podía verse como UNO. Sin saltos,
+    # un comentario solo recorta: bash ejecuta un prefijo del mismo git/gh.
+    # Un -m de varias líneas con un nombre ajeno y un verbo va en -F.
+    if "<<" in c or "\n" in c or "\r" in c:
         return None
     try:
         lista = comandos(c)

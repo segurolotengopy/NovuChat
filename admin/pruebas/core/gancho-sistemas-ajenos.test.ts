@@ -252,6 +252,17 @@ describe('tercera revisión del #272: una sola invocación, o nada', () => {
     ]) expect(decision(c), c).toBe('deny');
   });
 
+  it('quinta revisión: con saltos de línea no se quita texto (una barra doble al final no une; un comentario no abre comillas)', () => {
+    for (const c of [
+      // Barra doble al final: para bash es una barra literal y el salto separa.
+      'git commit -m a\\\\\ndocker restart receptor-clientes',
+      // Un comentario con una comilla: bash lo ignora; el tokenizador abriría la comilla.
+      "git commit # -m '\ndocker restart receptor-clientes\n'",
+      // El enlace de contraseña: la ruta en una redirección de la línea siguiente.
+      'git commit -m "a b"\\\\\n< CLIENTES/B/.enlaces/enlace-admin-a.txt cat',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
   it('una variable delante que puede ejecutar el texto impide quitarlo (LOW)', () => {
     for (const c of [
       "GIT_EDITOR=$SHELL git commit --allow-empty -m 'docker restart receptor-clientes' -e",
