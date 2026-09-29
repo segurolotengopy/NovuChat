@@ -14,7 +14,8 @@
 # con el resto del grupo, o con el argumento siguiente si no queda resto.
 #
 # Contesta: a una escritura, éxito; a `fields=id,name` (la consulta del
-# candado), $RESPUESTA_GRAPH; a `subscribed_apps`, $SUSCRITAS_GRAPH; a lo
+# candado por la app), $RESPUESTA_GRAPH; a `fields=id,verified_name` (la del
+# número), $RESPUESTA_NUMERO; a `subscribed_apps`, $SUSCRITAS_GRAPH; a lo
 # demás, una lista vacía. Respeta -o (escribe ahí) y -w '%{http_code}' (200).
 entrada=""; datos=""; salida=""; formato=""; tipo=LEE
 args=("$@")
@@ -59,6 +60,7 @@ if [ "$tipo" = ESCRIBE ]; then
 else
   case " $* " in
     *fields=id,name*) cuerpo="$RESPUESTA_GRAPH" ;;
+    *fields=id,verified_name*) cuerpo="$RESPUESTA_NUMERO" ;;
     *subscribed_apps*) cuerpo="$SUSCRITAS_GRAPH" ;;
     *) cuerpo='{"data":[]}' ;;
   esac

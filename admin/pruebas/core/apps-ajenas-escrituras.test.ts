@@ -137,6 +137,9 @@ const CASOS: Caso[] = [
   },
 ];
 
+/** Lo que Graph contesta del número del entorno: uno de NovuChat. */
+const NUMERO_PROPIO = { id: TELEFONO, verified_name: 'Consultorio de Prueba NovuChat' };
+
 // Un proxy muerto: si algo intentara salir a la red, falla en el acto.
 const SIN_RED = { HTTPS_PROXY: 'http://127.0.0.1:9', https_proxy: 'http://127.0.0.1:9', HTTP_PROXY: 'http://127.0.0.1:9',
   http_proxy: 'http://127.0.0.1:9', ALL_PROXY: 'http://127.0.0.1:9', NO_PROXY: '', no_proxy: '' };
@@ -152,7 +155,9 @@ function lanzar(args: string[], respuesta: unknown, opciones: { entrada?: string
       REGISTRO_CURL: registro,
       RESPUESTA_GRAPH: typeof respuesta === 'string' ? respuesta : JSON.stringify(respuesta),
       SUSCRITAS_GRAPH: JSON.stringify(opciones.suscritas ?? { data: [] }),
+      RESPUESTA_NUMERO: JSON.stringify(NUMERO_PROPIO),
       NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '',
+      NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: '',
       ...SIN_RED,
       ...opciones.extra,
     }),
@@ -277,6 +282,53 @@ describe.each(CASOS)('$nombre', (c) => {
       expect(r.error).toMatch(new RegExp(`${variable} no tiene forma de id`));
       expect(r.escrituras).toEqual([]);
     });
+
+    if (c.modo === 'numero') {
+      // El MEDIUM de la revisión del #277: una app propia no alcanza si el
+      // número de destino es de WhatsApp-Modular (el .env copiado por error).
+      it('por huella del NÚMERO corta antes de tocar la red, aunque la app sea propia', () => {
+        const r = correr(c, PROPIA, { NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: huella(TELEFONO).replace(/(.{8})(?!$)/g, '$1:') });
+        expect(r.codigo).toBe(3);
+        expect(r.error).toMatch(/número …5555 es de WhatsApp-Modular \(huella\).*prohibiciones 5 y 7/);
+        expect(r.escrituras).toEqual([]);
+        expect(r.llamadas.filter((l) => l.includes('fields=id,'))).toEqual([]);
+      });
+
+      it.each([['AAB1'], ['SeguroLoTengo OTP'], ['ａａｂ１']])(
+        'corta sin escribir si Graph dice que el número se llama «%s», aunque la app sea propia', (nombre) => {
+          const r = correr(c, PROPIA, { RESPUESTA_NUMERO: JSON.stringify({ id: TELEFONO, verified_name: nombre }) });
+          expect(r.codigo).toBe(3);
+          expect(r.error).toMatch(/El número «.*» es de WhatsApp-Modular.*prohibiciones 5 y 7/);
+          expect(r.escrituras).toEqual([]);
+        });
+
+      it.each([
+        ['un error de Graph', { error: { message: 'Unsupported get request' } }],
+        ['un número sin nombre visible', { id: TELEFONO }],
+        ['una respuesta sin id', { verified_name: 'Consultorio' }],
+        ['algo que no es JSON', '<html>502</html>'],
+      ])('corta sin escribir ante %s al preguntar por el número', (_n, respuesta) => {
+        const r = correr(c, PROPIA, { RESPUESTA_NUMERO: typeof respuesta === 'string' ? respuesta : JSON.stringify(respuesta) });
+        expect(r.codigo).toBe(3);
+        expect(r.error).toMatch(/No se pudo saber de quién es el número/);
+        expect(r.escrituras).toEqual([]);
+      });
+
+      it('corta sin escribir si Graph contesta otro número que el del entorno', () => {
+        const r = correr(c, PROPIA, { RESPUESTA_NUMERO: JSON.stringify({ id: '6666', verified_name: 'Consultorio' }) });
+        expect(r.codigo).toBe(3);
+        expect(r.error).toMatch(/otro número/);
+        expect(r.escrituras).toEqual([]);
+      });
+
+      it('pregunta por el número con el token por la entrada estándar, antes de escribir', () => {
+        const r = correr(c, PROPIA);
+        const i = r.llamadas.findIndex((l) => l.includes(`/${TELEFONO}?fields=id,verified_name`));
+        expect(i).toBeGreaterThan(-1);
+        expect(r.llamadas[i]).toContain(`‹Authorization: Bearer ${TOKEN}›`);
+        expect(i).toBeLessThan(r.llamadas.indexOf(r.escrituras[0] ?? ''));
+      });
+    }
 
     it('pregunta por la app del TOKEN (/app), que es la que escribe', () => {
       const r = correr(c, PROPIA);
@@ -611,7 +663,8 @@ describe('la fuente de los scripts (LOW-C)', () => {
       cwd: aca, encoding: 'utf8', input: `${TELEFONO}\n`,
       env: entornoDelEmulador(undefined, {
         PATH: `${dir}:${process.env.PATH ?? ''}`, BASH_ENV: '', ENV: '', REGISTRO_CURL: registro,
-        RESPUESTA_GRAPH: JSON.stringify(PROPIA), SUSCRITAS_GRAPH: '{}', NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '', ...SIN_RED,
+        RESPUESTA_GRAPH: JSON.stringify(PROPIA), SUSCRITAS_GRAPH: '{}', RESPUESTA_NUMERO: JSON.stringify(NUMERO_PROPIO),
+        NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '', NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: '', ...SIN_RED,
       }),
     });
     expect(r.status, r.stderr).toBe(0);
@@ -622,8 +675,15 @@ describe('la fuente de los scripts (LOW-C)', () => {
 
   it('el candado apaga sourcepath y queda readonly, con curl_token', () => {
     expect(fuente(LIB)).toMatch(/^shopt -u sourcepath$/m);
-    expect(fuente(LIB)).toMatch(/^readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS$/m);
-    expect(fuente(LIB)).toMatch(/^readonly -f huella_ajena negar_app_ajena curl_token$/m);
+    expect(fuente(LIB)).toMatch(/^readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_CLASIFICAR$/m);
+    expect(fuente(LIB)).toMatch(/^readonly -f huella_en huella_ajena numero_ajeno negar_app_ajena curl_token$/m);
+  });
+
+  it('un .env que redefine la lista de números ajenos no carga', () => {
+    escribirEnv(['APPS_AJENAS_NUMEROS_HUELLAS=']);
+    const r = correr(caso('registrar-numero.sh --dar-de-baja'), PROPIA);
+    expect(r.codigo).not.toBe(0);
+    expect(r.llamadas).toEqual([]);
   });
 
   it('bootstrap-claude-code.sh ya no regenera scripts sin candado', () => {
@@ -632,16 +692,24 @@ describe('la fuente de los scripts (LOW-C)', () => {
     }
   });
 
-  const lista = (/APPS_AJENAS_HUELLAS="([^"]*)"/.exec(fuente(LIB))?.[1] ?? '').split(/\s+/).filter(Boolean);
+  const huellasDe = (nombre: string) =>
+    (new RegExp(`^${nombre}="([^"]*)"`, 'm').exec(fuente(LIB))?.[1] ?? '').split(/\s+/).filter(Boolean);
+  const lista = huellasDe('APPS_AJENAS_HUELLAS');
+  const numeros = huellasDe('APPS_AJENAS_NUMEROS_HUELLAS');
 
-  it('no publica un id de app: huellas sha256 en grupos de 8 y sin tiras largas de dígitos', () => {
+  it('no publica un id de app ni de número: huellas sha256 en grupos de 8 y sin tiras largas de dígitos', () => {
     // verificar-saneo.sh corta desde 10 dígitos seguidos; una huella de corrido puede traerlos.
     for (const ruta of [LIB, WEBHOOK_META, VERIFICAR_META]) expect(fuente(ruta)).not.toMatch(/\d{9,}/);
-    for (const h of lista) expect(h).toMatch(/^([0-9a-f]{8}:){7}[0-9a-f]{8}$/);
+    for (const h of [...lista, ...numeros]) expect(h).toMatch(/^([0-9a-f]{8}:){7}[0-9a-f]{8}$/);
   });
 
   it('trae la huella de las dos apps de WhatsApp-Modular (AAB1-WA-Prod y Demo SeguroLo Tengo)', () => {
     expect(new Set(lista).size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('trae la huella de los dos números de WhatsApp-Modular (el OTP y el de prueba de la Fase 0), distintas de las de apps', () => {
+    expect(new Set(numeros).size).toBeGreaterThanOrEqual(2);
+    for (const h of numeros) expect(lista).not.toContain(h);
   });
 
   it('una huella escrita con «:» corta de verdad (sin red)', () => {
