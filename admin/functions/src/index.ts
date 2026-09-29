@@ -78,7 +78,7 @@ export { notificarReclamo } from './central/reclamos/reclamos.js';
 // altas de a una y de las importaciones de doscientas por igual, y una función
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
 // que avise en vez de bloquear está en `imagenCatalogo.ts`.
-export { comprobarImagenDelCatalogo, recomprobarImagen } from './imagenCatalogo.js';
+export { comprobarImagenDelCatalogo, recomprobarImagen } from './modulos/productos/imagenCatalogo.js';
 // MINI INVENTARIO. El descuento por venta lo hace el checkout; acá van los dos
 // movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
 // pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
@@ -1101,7 +1101,7 @@ export const moverReclamo = onCall(async (peticion) => {
   return { ok: true };
 });
 
-export { importarCatalogo } from './limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
+export { importarCatalogo } from './modulos/productos/limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
 
 // ---------------------------------------------------------------------------
 // CONSTANCIA DE LOS CAMBIOS DE CONFIGURACIÓN

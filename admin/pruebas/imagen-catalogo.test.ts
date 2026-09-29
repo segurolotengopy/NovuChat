@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   esDestinoPublico, instruccionDeParecido, leerVeredicto, urlUtilizable,
-} from '../functions/src/imagenCatalogo.ts';
+} from '../functions/src/modulos/productos/imagenCatalogo.ts';
 
 describe('Destinos que el servidor NO puede visitar', () => {
   const prohibidas: [string, string][] = [
