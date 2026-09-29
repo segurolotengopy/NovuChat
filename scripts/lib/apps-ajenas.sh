@@ -64,7 +64,10 @@ APPS_AJENAS_HUELLAS="
 #      corta);
 #   2. el número de prueba de Meta de la Fase 0 (app de demostración), en
 #      desuso, tomado de su .env local.
-# No hay otros. NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA solo puede AGREGAR.
+# No hay otros. Igual que con las apps, la huella no esconde nada: un
+# phone_number_id se puede sacar de su sha256 por fuerza bruta. Evita
+# publicarlo, y alcanza porque el id no es una credencial.
+# NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA solo puede AGREGAR.
 APPS_AJENAS_NUMEROS_HUELLAS="
 f6deee9a:ec3542cf:4fbe734c:74e151b6:cea4b0a7:fbd04e07:99a50717:8432edbf
 57f8cfb2:d8b6bd3b:c46050ca:3d8718cc:d09842cd:70f68d4b:28454469:a19d36bf
@@ -73,7 +76,7 @@ f6deee9a:ec3542cf:4fbe734c:74e151b6:cea4b0a7:fbd04e07:99a50717:8432edbf
 # huella_en <valor> <huellas…>: 0 si el sha256 del valor está entre las huellas.
 huella_en() {
   local h
-  h=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
+  h=$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
   # shellcheck disable=SC2086  # sin comillas a propósito: una huella por palabra
   case " $(echo $2 | tr -d :) " in *" $h "*) return 0 ;; esac
   return 1
@@ -159,7 +162,7 @@ negar_app_ajena() {
   else
     json=$(command curl -s --max-time 30 -H @- "$G/$id?fields=id,name" <<<"Authorization: Bearer ${id}|${WA_APP_SECRET:-}" || true)
   fi
-  v=$(printf '%s' "$json" | python3 -c "$APPS_AJENAS_CLASIFICAR" "$id" "$APPS_AJENAS_FRAGMENTOS" name || echo "error la respuesta de Graph no se pudo leer")
+  v=$(printf '%s' "$json" | python3 -I -c "$APPS_AJENAS_CLASIFICAR" "$id" "$APPS_AJENAS_FRAGMENTOS" name || echo "error la respuesta de Graph no se pudo leer")
   case "$v" in
     propia\ *) echo "  app: ${v#propia } (…${id: -4})" ;;
     ajena\ *)
@@ -177,7 +180,7 @@ negar_app_ajena() {
   # fragmentos (el del OTP se llama «AAB1»). Si Graph no dice qué número es,
   # o dice otro, tampoco se escribe.
   json=$(command curl -s --max-time 30 -H @- "$G/$WA_PHONE_ID?fields=id,verified_name" <<<"Authorization: Bearer ${WA_TOKEN:-}" || true)
-  v=$(printf '%s' "$json" | python3 -c "$APPS_AJENAS_CLASIFICAR" "$WA_PHONE_ID" "$APPS_AJENAS_FRAGMENTOS" verified_name || echo "error la respuesta de Graph no se pudo leer")
+  v=$(printf '%s' "$json" | python3 -I -c "$APPS_AJENAS_CLASIFICAR" "$WA_PHONE_ID" "$APPS_AJENAS_FRAGMENTOS" verified_name || echo "error la respuesta de Graph no se pudo leer")
   case "$v" in
     propia\ *) echo "  número: ${v#propia } (…${WA_PHONE_ID: -4})" ;;
     ajena\ *)

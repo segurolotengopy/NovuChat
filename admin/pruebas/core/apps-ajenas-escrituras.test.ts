@@ -244,7 +244,8 @@ describe.each(CASOS)('$nombre', (c) => {
   // No es una barrera contra un .env hostil (puede redefinir python3 o exit):
   // ver el límite honesto en scripts/lib/apps-ajenas.sh.
   it('redefinir la lista o las funciones del candado en el .env hace fallar la carga, sin escribir', () => {
-    for (const trampa of ['negar_app_ajena() { :; }', 'curl_token() { :; }', 'APPS_AJENAS_FRAGMENTOS=zzz', 'APPS_AJENAS_HUELLAS=']) {
+    for (const trampa of ['negar_app_ajena() { :; }', 'curl_token() { :; }', 'APPS_AJENAS_FRAGMENTOS=zzz', 'APPS_AJENAS_HUELLAS=',
+      'APPS_AJENAS_NUMEROS_HUELLAS=', `APPS_AJENAS_CLASIFICAR='print("propia x")'`, 'huella_en() { return 1; }']) {
       escribirEnv([trampa]);
       const r = correr(c, { id: ID, name: 'AAB1-WA-Prod' });
       expect(r.codigo, trampa).not.toBe(0);
@@ -257,6 +258,17 @@ describe.each(CASOS)('$nombre', (c) => {
     const r = correr(c, PROPIA);
     expect(r.codigo).not.toBe(0);
     expect(r.llamadas).toEqual([]);
+  });
+
+  it('un .env que exporta PYTHONPATH no le cambia el json al clasificador (python3 -I)', () => {
+    // Un json.py propio que diría «propia» para cualquier respuesta.
+    const py = mkdtempSync(join(dir, 'py-'));
+    writeFileSync(join(py, 'json.py'), `def loads(s):\n    return {"id": "${ID}", "name": "NovuChat-Asistente", "verified_name": "Consultorio"}\n`);
+    escribirEnv([`PYTHONPATH=${py}`]);
+    const r = correr(c, { id: ID, name: 'AAB1-WA-Prod' });
+    // Algunos scripts caen antes, en su propio python: lo que importa es que no escriban.
+    expect(r.codigo).not.toBe(0);
+    expect(r.escrituras).toEqual([]);
   });
 
   it('corta sin escribir si WA_GRAPH_VERSION no tiene forma de versión', () => {
