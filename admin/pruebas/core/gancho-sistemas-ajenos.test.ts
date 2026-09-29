@@ -139,6 +139,53 @@ describe('el texto de un commit o de un PR no es una acción (#264, LOW)', () =>
   });
 });
 
+describe('revisión de seguridad del #272: lo que quitar el texto no puede abrir', () => {
+  it('la misma letra no es texto en todos los subcomandos: el objetivo no se borra (MEDIUM)', () => {
+    for (const c of [
+      // gh pr merge: -m es --merge; gh api: -p toma «-m» como valor; git fetch: -t es --tags.
+      'gh pr merge -m https://github.com/segurolotengopy/WhatsApp-Modular/pull/12',
+      'gh api -p -m repos/segurolotengopy/WhatsApp-Modular -X DELETE',
+      'git clone --template -m https://github.com/x/evolution-api',
+      'git clone -o -m https://github.com/x/evolution-api',
+      'git fetch -t https://github.com/segurolotengopy/WhatsApp-Modular && gh pr list',
+      'gh pr create --repo -t segurolotengopy/WhatsApp-Modular',
+      'GH_REPO=segurolotengopy/WhatsApp-Modular gh pr merge 3',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el texto sigue quitándose donde SÍ es texto, también después de una bandera sin valor', () => {
+    for (const c of [
+      'gh pr create --draft --title "receptor-clientes: B8" --body "AAB1-WA-Prod"',
+      'gh pr comment 272 --body "otp-service y receptor-clientes"',
+      'git tag -a v1 -m "WhatsApp-Modular"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
+  it('con un intérprete en el comando no se quita nada: el texto se podría ejecutar (LOW)', () => {
+    for (const c of [
+      `git -c alias.x='!sh -c "$2"' x -m 'docker restart otp-service'`,
+      "git commit --allow-empty -m 'docker restart otp-service' && git log -1 --format=%s | sh",
+      "git commit -F - <<'EOF'\ndocker restart otp-service\nEOF\ngit log -1 --format=%B | sh",
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el verbo detrás de =, {, «,» o «:-» también cuenta (LOW)', () => {
+    for (const c of [
+      'rsync --rsh=ssh vm:/opt/otp-service/.env /tmp/',
+      'a=curl; $a https://x/otp-service',
+      '{curl,-X,POST,https://x/otp-service}',
+      '${X:-curl} https://x/otp-service',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('escribir en Meta nombrando la app ajena se niega, no se confirma (LOW)', () => {
+    for (const c of [
+      './scripts/verificar-meta.sh --env .env.AAB1-WA-Prod --desuscribir',
+      './scripts/webhook-meta.sh --alta-meta --env-cliente .env.AAB1-WA-Prod',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+});
+
 describe('las escrituras en Meta por script piden confirmación (#265)', () => {
   it.each([
     './scripts/verificar-meta.sh --env .env.x --desuscribir',

@@ -51,10 +51,13 @@ cmd = str((evento.get("tool_input") or {}).get("command") or "")
 # `timeout` o `xargs` el verbo sigue viéndose: lo precede un espacio o una
 # comilla. Lo que no es un verbo (`--aplicar`, `subscribed_apps`,
 # `/subscriptions`) se mira como antes.
-VERBO = r"(?:^|(?<=[\s;&|(`\x27\"$]))(?:[^\s;&|(`\x27\"$]*/)?"
+# También `=` (`--rsh=ssh`, `a=curl`), `{` y `,` (la expansión de llaves de
+# bash) y `:-` (`${X:-curl}`): revisión de seguridad del #272.
+VERBO = r"(?:^|(?<=[\s;&|(`\x27\"$={,])|(?<=:-))(?:[^\s;&|(`\x27\"$={,]*/)?"
 ACTUA = (VERBO + r"(?:curl|wget|ssh|scp|docker-compose|docker|systemctl|gcloud|gh|firebase)(?![\w.-])"
          r"|" + VERBO + r"(?:npm\s+(?:i|install)|pnpm\s+(?:add|install)|pip3?\s+install|git\s+clone)(?![\w.-])"
-         r"|--aplicar|--suscribir|publicar-flujo|subscribed_apps|/subscriptions\b")
+         r"|--aplicar|--suscribir|--desuscribir|webhook-meta\.sh\b[^\n;&|]*--(?:alta-meta|alta-waba)"
+         r"|publicar-flujo|subscribed_apps|/subscriptions\b")
 # CON EL ESPACIO de «SeguroLo Tengo», a propósito: el dueño del repositorio en
 # GitHub se llama `segurolotengopy`, y la primera versión («SeguroLo» a secas,
 # sin distinguir mayúsculas) negaba cualquier `gh` que nombrara el repositorio.
@@ -106,6 +109,56 @@ COMODIN = re.compile(r"[*?\[]")
 PARTIR = re.compile(r"[\s\x27\"(),=:;`<>|&]+")
 HEREDOC = re.compile(r"<<-?[ \t]*([\"\x27]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.S)
 TEXTO_DE_GIT = {"-m", "--message", "--title", "-t", "--body", "-b", "--notes"}
+# EL TEXTO QUE PUBLICA un git o un gh, POR SUBCOMANDO (revisión de seguridad
+# del #272, MEDIUM). La misma letra no es texto en todos lados: en `gh pr
+# merge`, `-m` es `--merge`; en `git fetch`, `-t` es `--tags`; en `gh api`,
+# `-p -m` hace de `-m` el valor de `-p`. Quitar la palabra que sigue borraba
+# el OBJETIVO del comando. Nada se quita en gh api, gh pr merge ni git
+# clone/fetch/push; ni si git lleva opciones globales antes del subcomando
+# (`-c alias.x=!…`, `-C`, `--config-env`).
+TEXTO_POR_SUB = {
+    ("git", "commit"): {"-m", "--message"}, ("git", "tag"): {"-m", "--message"},
+    ("git", "merge"): {"-m"}, ("git", "notes"): {"-m", "--message"}, ("git", "stash"): {"-m", "--message"},
+    ("gh", "pr", "create"): {"-t", "--title", "-b", "--body"}, ("gh", "pr", "edit"): {"-t", "--title", "-b", "--body"},
+    ("gh", "pr", "comment"): {"-b", "--body"}, ("gh", "pr", "review"): {"-b", "--body"},
+    ("gh", "issue", "create"): {"-t", "--title", "-b", "--body"}, ("gh", "issue", "edit"): {"-t", "--title", "-b", "--body"},
+    ("gh", "issue", "comment"): {"-b", "--body"}, ("gh", "release", "create"): {"-t", "--title", "-n", "--notes"},
+}
+# Banderas sin valor que pueden ir justo antes de la de texto. Cualquier otra
+# bandera delante podría tomar la de texto como SU valor, y entonces lo que
+# sigue no es texto.
+BOOLEANAS = {"--draft", "--fill", "--web", "--allow-empty", "--all", "--no-verify", "--quiet",
+             "--signoff", "--amend", "--no-edit", "--verbose", "--approve", "--comment", "--request-changes"}
+
+def texto_publicado(palabras):
+    """(índices que son texto, índices «--bandera=texto») de un git o un gh, sin variables delante."""
+    if not palabras:
+        return set(), set()
+    cabeza = os.path.basename(palabras[0])
+    clave = ("git", palabras[1] if len(palabras) > 1 else "") if cabeza == "git" else (
+        ("gh",) + tuple(palabras[1:3]) if cabeza == "gh" else None)
+    banderas = TEXTO_POR_SUB.get(clave) if clave else None
+    if not banderas:
+        return set(), set()
+    texto, con_igual = set(), set()
+    for k in range(len(clave), len(palabras)):
+        w, previa = palabras[k], palabras[k - 1]
+        if k > len(clave) and previa.startswith("-") and previa not in BOOLEANAS:
+            continue  # la anterior puede tomar esta como su valor
+        if k in texto:
+            continue  # es el texto de una bandera anterior, no una bandera
+        if w in banderas and k + 1 < len(palabras) and not palabras[k + 1].startswith("-"):
+            texto.add(k + 1)
+        elif "=" in w and w.split("=", 1)[0] in banderas and w.startswith("--"):
+            con_igual.add(k)
+    return texto, con_igual
+
+# LOW: un texto quitado todavía se puede ejecutar por otro camino
+# (`git log -1 --format=%s | sh`, `xargs`, `eval`). Si el comando tiene un
+# intérprete como palabra de comando, no se quita nada.
+INTERPRETE = re.compile(r"(?:^|(?<=[\s;&|(`\x27\"$={,]))(?:[^\s;&|(`\x27\"$={,]*/)?"
+                        r"(?:sh|bash|zsh|dash|ksh|fish|eval|source|xargs|python3?|node|perl|ruby|php)(?![\w.-])"
+                        r"|(?:^|[;&|(]\s*)\.\s")
 CON_VALOR = {"-m", "--max-count", "-A", "-B", "-C", "-t", "-T", "--type", "--type-not",
              "--include", "--exclude", "--exclude-dir", "-g", "--glob", "--iglob"}
 
@@ -145,7 +198,9 @@ def sin_heredoc_de_git(c):
         linea = c[:m.start()].rsplit("\n", 1)[-1]
         tramo = [w for w in re.split(r"&&|\|\||;|\|", linea)[-1].split() if not re.match(r"^\w+=", w)]
         # Un heredoc sin comillas expande `$(…)`: ese no es solo texto.
-        if tramo and tramo[0] in ("git", "gh") and (m.group(1) or not EJECUTA.search(m.group(0))):
+        publica = bool(tramo) and ((tramo[0] == "git" and ("git", tramo[1] if len(tramo) > 1 else "") in TEXTO_POR_SUB)
+                                   or (tramo[0] == "gh" and ("gh",) + tuple(tramo[1:3]) in TEXTO_POR_SUB))
+        if publica and (m.group(1) or not EJECUTA.search(m.group(0))):
             return m.group(0).split("\n", 1)[0]
         return m.group(0)
     return HEREDOC.sub(cambio, c)
@@ -280,13 +335,13 @@ def toca_enlace(c):
             texto = set(partir_busqueda(args)[0])
         elif cabeza == "git" and args[:1] == ["grep"]:
             texto = set(partir_busqueda(args[1:])[0])
+        publicado, con_igual = (set(), set()) if INTERPRETE.search(c) else texto_publicado(sin_entorno)
         for i, w in enumerate(sin_entorno):
             if w in texto:
                 continue
             if i > 0 and sin_entorno[i - 1] == "-path" and "-prune" in sin_entorno:
                 continue  # find … -path */.enlaces -prune: la está excluyendo
-            if cabeza in ("git", "gh") and re.search(r"\s", w) and (
-                    sin_entorno[i - 1] in TEXTO_DE_GIT or re.match(r"^--(message|title|body|notes)=", w)):
+            if re.search(r"\s", w) and (i in publicado or i in con_igual) and not EJECUTA.search(w):
                 continue
             if any(es_ruta_de_enlace(p, cwd) for p in [w] + PARTIR.split(w) if p):
                 return True
@@ -304,28 +359,28 @@ def toca_enlace(c):
 # No se quita un texto que la shell ejecuta (`$(…)`, comilla invertida), ni se
 # quita nada si el comando no se puede partir (comillas sin cerrar).
 def sin_texto_de_git(c):
+    if INTERPRETE.search(c):
+        return c
     try:
         lista = comandos(sin_heredoc_de_git(c))
     except ValueError:
         return c
     tramos = []
     for palabras in lista:
-        sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)] or [""]
-        if os.path.basename(sin_entorno[0]) not in ("git", "gh"):
-            tramos.append(" ".join(palabras))
-            continue
-        quedan, es_texto = [], False
-        for w in palabras:
-            if es_texto:
-                es_texto = False
-                if not EJECUTA.search(w):
-                    continue
-            if w in TEXTO_DE_GIT:
-                es_texto = True
-            elif re.match(r"^--(message|title|body|notes)=", w) and not EJECUTA.search(w):
-                w = w.split("=", 1)[0] + "="
-            quedan.append(w)
-        tramos.append(" ".join(quedan))
+        entorno = [w for w in palabras if re.match(r"^\w+=", w)]
+        sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)]
+        texto, con_igual = texto_publicado(sin_entorno)
+        quedan = []
+        for k, w in enumerate(sin_entorno):
+            if EJECUTA.search(w):
+                quedan.append(w)
+            elif k in texto:
+                continue
+            elif k in con_igual:
+                quedan.append(w.split("=", 1)[0] + "=")
+            else:
+                quedan.append(w)
+        tramos.append(" ".join(entorno + quedan))
     return " ; ".join(tramos)
 
 def nombra_y_actua(patron_nombre, c):
