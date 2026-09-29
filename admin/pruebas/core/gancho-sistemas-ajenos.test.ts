@@ -186,6 +186,45 @@ describe('revisión de seguridad del #272: lo que quitar el texto no puede abrir
   });
 });
 
+describe('re-revisión del #272: el texto quitado no se puede reusar desde otro tramo', () => {
+  it('otro tramo con un verbo, `$` o comilla invertida impide quitar el texto (LOW-A)', () => {
+    for (const c of [
+      'git commit -m receptor-clientes; docker restart "$_"',
+      'git commit -m receptor-clientes; docker restart "${_}"',
+      'gh pr comment 999 -b receptor-clientes; docker restart $_',
+      'git commit --allow-empty -m receptor-clientes && docker restart "$(git log -1 --format=%s)"',
+      'git commit --allow-empty -m receptor-clientes && docker restart "`git log -1 --format=%s`"',
+      'git commit -m "a b receptor-clientes" && git log -1 --format=%s | while read a b c; do docker restart "$c"; done',
+      'git() { docker restart "$3"; }; git commit -m receptor-clientes',
+      'function gh { docker restart "$6"; }; gh pr create -t x -b receptor-clientes',
+      "trap 'docker restart ${BASH_COMMAND##* }' DEBUG; git commit -m receptor-clientes",
+      `git commit -m otp-service && git log -1 --format=%s | awk '{system("docker restart " $0)}'`,
+      "git commit -m otp-service && git log -1 --format=%s | sed 's/^/docker restart /e'",
+      'gh pr comment 1 -b AAB1-WA-Prod && gh api -X DELETE "/app/subscriptions?x=$_"',
+      'git commit -m segurolotengopy/WhatsApp-Modular; gh pr create -R "$_" -t x -b y',
+      'X=$(docker restart receptor-clientes) gh pr create -t x -b y',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('la expansión de parámetros no esconde el verbo (LOW-B)', () => {
+    for (const c of ['${X:+curl} https://x/otp-service', '${X+curl} https://x/otp-service', '${X-curl} https://x/otp-service']) {
+      expect(decision(c), c).toBe('deny');
+    }
+  });
+
+  it('los falsos positivos no vuelven: un cuerpo que menciona un intérprete, `--base=main`, la variable delante (LOW-C)', () => {
+    for (const c of [
+      "gh pr edit 272 --body \"$(cat <<'EOF'\nINTERPRETE: sh, bash, eval, xargs, node.\nreceptor-clientes intacto.\nEOF\n)\"",
+      'gh pr create --title x --body "Probado con node scripts/alta.mjs; el receptor-clientes intacto"',
+      'gh pr create --title "python3 y otp-service" --body x',
+      'git commit -m "arreglo con bash" && gh pr create --title "receptor-clientes" --body x',
+      'gh pr create --base=main --title "receptor-clientes: B8" --body x',
+      'git add a b && git commit -m "receptor-clientes" && git push',
+      'GH_CONFIG_DIR=$HOME/.config/gh-pro gh pr edit 272 --body "receptor-clientes"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+});
+
 describe('las escrituras en Meta por script piden confirmación (#265)', () => {
   it.each([
     './scripts/verificar-meta.sh --env .env.x --desuscribir',

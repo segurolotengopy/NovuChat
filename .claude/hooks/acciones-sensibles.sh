@@ -19,7 +19,7 @@
 # la documentación. Ahora niega solo cuando el comando además actúa: red, nube,
 # despliegue, GitHub, contenedores o instalación. El verbo cuenta como palabra
 # de comando, no dentro de un nombre de archivo, y el texto de un commit o de
-# un PR no cuenta como nombre (ver ACTUA y sin_texto_de_git).
+# un PR no cuenta como nombre (ver ACTUA y quitar_texto).
 #
 # Recibe por stdin el JSON del evento (tool_name, tool_input.command) y responde
 # por stdout con hookSpecificOutput.permissionDecision. Sale siempre con 0: un
@@ -108,7 +108,6 @@ MODELO = ["CLIENTES", None, ".enlaces", "enlace-admin-x.txt"]
 COMODIN = re.compile(r"[*?\[]")
 PARTIR = re.compile(r"[\s\x27\"(),=:;`<>|&]+")
 HEREDOC = re.compile(r"<<-?[ \t]*([\"\x27]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.S)
-TEXTO_DE_GIT = {"-m", "--message", "--title", "-t", "--body", "-b", "--notes"}
 # EL TEXTO QUE PUBLICA un git o un gh, POR SUBCOMANDO (revisión de seguridad
 # del #272, MEDIUM). La misma letra no es texto en todos lados: en `gh pr
 # merge`, `-m` es `--merge`; en `git fetch`, `-t` es `--tags`; en `gh api`,
@@ -143,7 +142,8 @@ def texto_publicado(palabras):
     texto, con_igual = set(), set()
     for k in range(len(clave), len(palabras)):
         w, previa = palabras[k], palabras[k - 1]
-        if k > len(clave) and previa.startswith("-") and previa not in BOOLEANAS:
+        # Una bandera con «=» ya trae su valor (`--base=main`): no toma la siguiente.
+        if k > len(clave) and previa.startswith("-") and "=" not in previa and previa not in BOOLEANAS:
             continue  # la anterior puede tomar esta como su valor
         if k in texto:
             continue  # es el texto de una bandera anterior, no una bandera
@@ -313,8 +313,11 @@ def recorre_clientes(cabeza, args, cwd, hacia_xargs):
     return any(alcanza_clientes(r, cwd) for r in rutas)
 
 def toca_enlace(c):
+    # El texto de git/gh (y su heredoc) se exceptúa solo con el mismo criterio
+    # estructural de quitar_texto (revisión de seguridad del #272, LOW-A).
+    texto_seguro = quitar_texto(c) is not None
     try:
-        lista = comandos(sin_heredoc_de_git(c))
+        lista = comandos(sin_heredoc_de_git(c) if texto_seguro else c)
     except ValueError:
         # Comillas sin cerrar: no se puede partir, se decide sobre el texto crudo.
         return bool(re.search(r"(^|[/\s\x27\"])\.enlaces([/\s\x27\"]|$)|enlace-(admin|oper)-[a-z0-9-]+\.txt", c))
@@ -335,7 +338,7 @@ def toca_enlace(c):
             texto = set(partir_busqueda(args)[0])
         elif cabeza == "git" and args[:1] == ["grep"]:
             texto = set(partir_busqueda(args[1:])[0])
-        publicado, con_igual = (set(), set()) if INTERPRETE.search(c) else texto_publicado(sin_entorno)
+        publicado, con_igual = texto_publicado(sin_entorno) if texto_seguro else (set(), set())
         for i, w in enumerate(sin_entorno):
             if w in texto:
                 continue
@@ -358,33 +361,82 @@ def toca_enlace(c):
 # nombre en cualquier otro argumento, o en otro tramo del mismo comando, niega.
 # No se quita un texto que la shell ejecuta (`$(…)`, comilla invertida), ni se
 # quita nada si el comando no se puede partir (comillas sin cerrar).
-def sin_texto_de_git(c):
-    if INTERPRETE.search(c):
-        return c
+# `--body "$(cat <<'EOF' … EOF)"`: la forma habitual de un cuerpo de PR. Con el
+# heredoc entre comillas no se expande nada, y su cuerpo ya lo quitó
+# sin_heredoc_de_git: lo que queda es `$(cat <<'EOF'\n)`, que es solo texto.
+CAT_HEREDOC = re.compile(r"^(?:--\w+=)?\$\(\s*cat\s+<<-?\s*([\"\x27])\w+\1\s*\)$")
+
+def solo_texto(w):
+    return not EJECUTA.search(w) or bool(CAT_HEREDOC.match(w))
+
+def es_de_tabla(palabras):
+    if not palabras:
+        return False
+    cabeza = os.path.basename(palabras[0])
+    return (cabeza == "git" and ("git", palabras[1] if len(palabras) > 1 else "") in TEXTO_POR_SUB) or (
+        cabeza == "gh" and ("gh",) + tuple(palabras[1:3]) in TEXTO_POR_SUB)
+
+def quitar_texto(c):
+    """El comando sin el texto publicado, o None si quitarlo no es seguro.
+
+    CUÁNDO NO SE QUITA NADA (revisión de seguridad del #272, LOW-A). El texto
+    quitado se puede volver a ejecutar desde OTRO tramo sin intérprete:
+    `git commit -m <nombre>; docker restart "$_"`, `… "$(git log -1
+    --format=%s)"`, una función `git() {…}`, un `trap … DEBUG`, `awk
+    system()`. La condición es estructural, no una lista:
+      1. un tramo que no es de la tabla trae un verbo de ACTUA, `$` o la
+         comilla invertida;
+      2. en un tramo de la tabla, una palabra fuera del texto trae `$` o la
+         comilla invertida (una variable delante solo si ejecuta: `$(`);
+      3. el comando YA SIN TEXTO tiene un intérprete como palabra de comando
+         (sobre el crudo, un cuerpo de PR que dice «bash» lo bloqueaba).
+    """
     try:
         lista = comandos(sin_heredoc_de_git(c))
     except ValueError:
-        return c
+        return None
     tramos = []
     for palabras in lista:
         entorno = [w for w in palabras if re.match(r"^\w+=", w)]
         sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)]
+        if any(EJECUTA.search(w) for w in entorno):
+            return None
+        if not es_de_tabla(sin_entorno):
+            junto = " ".join(sin_entorno)
+            if re.search(ACTUA, junto) or "$" in junto or "`" in junto:
+                return None
+            tramos.append(" ".join(entorno + sin_entorno))
+            continue
         texto, con_igual = texto_publicado(sin_entorno)
         quedan = []
         for k, w in enumerate(sin_entorno):
-            if EJECUTA.search(w):
-                quedan.append(w)
-            elif k in texto:
+            if k in texto and solo_texto(w):
                 continue
-            elif k in con_igual:
+            if k in con_igual and solo_texto(w):
                 quedan.append(w.split("=", 1)[0] + "=")
-            else:
-                quedan.append(w)
+                continue
+            if k not in texto and k not in con_igual and ("$" in w or "`" in w):
+                return None
+            quedan.append(w)
         tramos.append(" ".join(entorno + quedan))
-    return " ; ".join(tramos)
+    t = " ; ".join(tramos)
+    return None if INTERPRETE.search(t) else t
+
+# `${X:+curl}`, `${X-curl}`, `${X:=curl}`: la expansión deja el verbo suelto
+# (revisión de seguridad del #272, LOW-B). Se abre antes de buscar ACTUA.
+EXPANSION = re.compile(r"\$\{[#!]?\w+(?:\[[^\]]*\])?:?[-+=?]")
 
 def nombra_y_actua(patron_nombre, c):
-    t = sin_texto_de_git(c)
+    # Primero sobre el crudo, que es barato: quitar texto solo quita, así que
+    # si el crudo no coincide, lo saneado tampoco (y el heredoc, que es
+    # cuadrático, no corre para cada comando).
+    crudo = EXPANSION.sub(" ", c)
+    if not (re.search(patron_nombre, crudo, re.I) and re.search(ACTUA, crudo)):
+        return False
+    t = quitar_texto(c)
+    if t is None:
+        return True
+    t = EXPANSION.sub(" ", t)
     return bool(re.search(patron_nombre, t, re.I) and re.search(ACTUA, t))
 
 NUNCA = [
