@@ -12,6 +12,9 @@
 # camino: un flujo ($RESPUESTA_FLUJO) al leer /workflows/<id>, listas vacías o
 # $RESPUESTA_EJECUCIONES al listar, `{"active":…}` al encender o apagar, y el
 # flujo con id al crear o reescribir. Respeta -o y -w '%{http_code}' (200).
+# Sin registro no es la suite: se niega, en vez de contestar «200» a una
+# escritura que no ocurrió (revisión de seguridad del #276, L-3).
+[ -n "${REGISTRO_CURL:-}" ] || { echo "curl falso: solo para clave-n8n-fuera-de-argumentos.test.ts" >&2; exit 97; }
 metodo=GET; entrada=""; salida=""; formato=""; url=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do

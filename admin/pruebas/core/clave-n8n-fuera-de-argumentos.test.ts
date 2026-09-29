@@ -7,13 +7,14 @@
  * máquina en `ps` o en /proc/<pid>/cmdline mientras curl corre. Va por la
  * entrada estándar (`-H @- <<<"X-N8N-API-KEY: …"`); en Node, por `input`.
  *
- * El PR de los pendientes del #265 lo hizo en los scripts de Meta
- * (`webhook-meta.sh`); este lo cierra en los que hablan con la API de n8n
- * —`publicar-flujo.sh`, `ver-ejecuciones.sh`, `credenciales-flujo.sh` y
- * `comparar-prompt.mjs`— y lo exige en TODO archivo versionado.
+ * La rama de los pendientes del #265 lo hace en `webhook-meta.sh`; el #276
+ * lo cierra en los que hablan con la API de n8n —`publicar-flujo.sh`,
+ * `ver-ejecuciones.sh`, `credenciales-flujo.sh` y `comparar-prompt.mjs`, más
+ * la misma `api()` de `webhook-meta.sh`— y lo exige en TODO archivo versionado.
  *
- * Dos mitades. En la fuente: ninguna línea lógica (las partidas con «\» se
- * unen) pasa la clave a curl antes de un `<<<`. En ejecución: los scripts
+ * Dos mitades. En la fuente: en un .sh la clave solo aparece en las formas
+ * permitidas (ver `clavesFueraDeLugar`), y en Node o Python ningún lanzamiento
+ * de curl la lleva en sus argumentos. En ejecución: los scripts
  * reales corren contra un `curl` falso adelante en el PATH
  * (`curl-falso-n8n.sh`), en una copia del repositorio en un directorio
  * temporal (publicar-flujo.sh deja respaldos en Flujos/), sin red ni n8n, y
@@ -21,7 +22,7 @@
  * argumento.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,25 +41,70 @@ const fuente = (r: string) => readFileSync(join(REPO, r), 'utf8');
 const logicas = (texto: string) => texto.replace(/\\\n/g, ' ').split('\n');
 const esComentario = (l: string) => /^\s*(?:#|\/\/|\*)/.test(l);
 
-/** La clave, en cualquiera de sus formas: la variable o la cabecera armada con una variable. */
-const CLAVE_EN_TEXTO = /\$\{?N8N_API_KEY\b|X-N8N-API-KEY:\s*\$/i;
-
-/** Las líneas de un .sh que ponen la clave en los argumentos de curl (lo que va antes de `<<<`). */
-function enArgumentosDeCurl(texto: string): string[] {
-  return logicas(texto).filter((l) => !esComentario(l) && /\bcurl\b/.test(l) && CLAVE_EN_TEXTO.test(l.split('<<<')[0]));
+/**
+ * EN UN .sh, LA CLAVE SOLO PUEDE APARECER EN CUATRO FORMAS, y todo lo demás es
+ * una falla (lista de formas permitidas, no de prohibidas: revisión de
+ * seguridad del #276, L-2). Una lista de prohibidas deja pasar lo que nadie
+ * previó —la cabecera partida en dos comillas, `printf -v`, un alias, otro
+ * programa que no es curl—.
+ *   1. comprobada con `:` —  : "${N8N_API_KEY:?Falta…}"  (builtin, sin proceso);
+ *   2. como prefijo de entorno de un comando —  N8N_API_KEY="$N8N_API_KEY" python3 -
+ *      (va al entorno del hijo, que solo lee su dueño);
+ *   3. en la entrada estándar de curl —  -H @- … <<<"X-N8N-API-KEY: $N8N_API_KEY";
+ *   4. nunca copiada a otra variable: un alias sale del alcance de esta guarda.
+ * La cabecera `X-N8N-API-KEY:` fuera de ese `<<<` tampoco (va a terminar en argv).
+ */
+function clavesFueraDeLugar(texto: string): string[] {
+  const CLAVE = /\$\{?N8N_API_KEY\b/;
+  const CABECERA_SH = /X-N8N-API-KEY\s*:/i;
+  const ASIGNACIONES = /^\s*((?:[A-Za-z_]\w*=(?:"[^"]*"|'[^']*'|[^\s;|&()]*)\s*)+)/;
+  return logicas(texto).filter((l) => {
+    if (esComentario(l)) return false;
+    const resto = l
+      // 1. `: "${N8N_API_KEY:?…}"`, solo como argumento de `:`.
+      .replace(/(^|;)(\s*:)((?:\s+"\$\{\w+:\?[^"}]*\}")+)/g,
+        (_, a: string, b: string, c: string) => a + b + c.replace(/"\$\{N8N_API_KEY:\?[^"}]*\}"/g, '""'))
+      // 3. La entrada estándar de curl, en su forma exacta.
+      .replace(/<<<\s*"X-N8N-API-KEY: \$\{?N8N_API_KEY\}?"/g, '<<<""');
+    return resto.split(/;|&&|\|\|?|\$\(|[()]/).some((sentencia) => {
+      const prefijo = ASIGNACIONES.exec(sentencia)?.[1] ?? '';
+      const comando = sentencia.slice(prefijo.length);
+      // 4. Solo asignaciones: la clave copiada a otra variable.
+      if (!comando.trim()) return CLAVE.test(prefijo);
+      // 2. Prefijo de entorno de un comando: permitido; lo que sigue, no.
+      return CLAVE.test(comando) || CABECERA_SH.test(comando) || CABECERA_SH.test(prefijo);
+    });
+  });
 }
 
 /**
- * La cabecera armada fuera de un `<<<`: en un arreglo (`H=(-H "X-N8N-API-KEY: $K")`)
- * o en una variable que después se expande en curl. Donde sea, termina en argv.
+ * Node y Python: el arreglo de argumentos de cada lanzamiento de curl (desde
+ * su `[` hasta el `]` que lo cierra, aunque ocupe varias líneas) y toda orden
+ * de shell que empiece con `curl `, sin la clave ni la cabecera. La clave va
+ * por `input` (Node) o por la entrada estándar del proceso.
  */
-function cabeceraFueraDeHeredoc(texto: string): string[] {
-  return logicas(texto).filter((l) => !esComentario(l) && /X-N8N-API-KEY:\s*\$/i.test(l.split('<<<')[0]));
-}
-
-/** Node y Python: un lanzamiento de curl no lleva la clave en la misma línea (va por `input`). */
 function enLanzamientoDeCurl(texto: string): string[] {
-  return texto.split('\n').filter((l) => !esComentario(l) && /['"]curl['"]/.test(l) && /N8N_API_KEY|X-N8N-API-KEY/i.test(l));
+  const NOMBRA = /N8N_API_KEY|X-N8N-API-KEY/i;
+  const cerrar = (desde: number, abre: string, cierra: string) => {
+    let hondura = 0;
+    for (let i = desde; i < texto.length; i++) {
+      if (texto[i] === abre) hondura++;
+      else if (texto[i] === cierra && --hondura === 0) return texto.slice(desde, i + 1);
+    }
+    return texto.slice(desde);
+  };
+  const malos: string[] = [];
+  for (const m of texto.matchAll(/(['"])curl\1/g)) {
+    const antes = texto.slice(0, m.index).trimEnd();
+    const inicio = antes.endsWith('[') ? antes.length - 1 : texto.indexOf('[', m.index);
+    if (inicio < 0) continue;
+    const argumentos = cerrar(inicio, '[', ']');
+    if (NOMBRA.test(argumentos)) malos.push(argumentos.split('\n')[0]);
+  }
+  for (const m of texto.matchAll(/([`'"])curl\s(?:(?!\1)[^\n])*\1/g)) {
+    if (NOMBRA.test(m[0])) malos.push(m[0]);
+  }
+  return malos;
 }
 
 describe('en la fuente', () => {
@@ -71,29 +117,46 @@ describe('en la fuente', () => {
     expect(sh.length).toBeGreaterThan(40);
   });
 
-  it('el detector ve la forma vieja, también partida en dos líneas, y deja pasar la nueva', () => {
-    const viejas = [
+  it('el detector ve la forma vieja y las que se le escapaban a la primera guarda (#276, L-2)', () => {
+    const malas = [
       'curl -s --max-time 30 -H "X-N8N-API-KEY: $N8N_API_KEY" "$URL"',
       'COD=$(curl -s -o "$TMP/v.json" \\\n      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/1" || echo 000)',
       'curl -s -u "api:${N8N_API_KEY}" "$URL"',
       'curl -s "$URL?clave=$N8N_API_KEY"',
+      'curl --header "x-n8n-api-key: $N8N_API_KEY" "$URL"',
+      'H=(-H "X-N8N-API-KEY: $N8N_API_KEY")',
+      `curl -H 'X-N8N-API-KEY: '"$K" "$URL"`,
+      'printf -v H "X-N8N-API-KEY: %s" "$N8N_API_KEY"; curl -H "$H" "$URL"',
+      `python3 -c 'import sys; print(sys.argv[1])' "$N8N_API_KEY"`,
+      'K="$N8N_API_KEY"',
+      'curl -H @- "$U" <<<"X-N8N-API-KEY: $N8N_API_KEY"; curl -H "X-N8N-API-KEY: $N8N_API_KEY" "$U"',
+      'curl "${N8N_API_KEY:?}" "$U"',
     ];
-    for (const v of viejas) expect(enArgumentosDeCurl(v), v).toHaveLength(1);
-    expect(cabeceraFueraDeHeredoc('H=(-H "X-N8N-API-KEY: $N8N_API_KEY")')).toHaveLength(1);
-    expect(enLanzamientoDeCurl("execFileSync('curl', ['-H', `X-N8N-API-KEY: ${env['N8N_API_KEY']}`, url])")).toHaveLength(1);
+    for (const m of malas) expect(clavesFueraDeLugar(m), m).toHaveLength(1);
 
-    const nueva = 'COD=$(curl -s -o "$TMP/v.json" \\\n      -H @- "${API}/workflows/1" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)';
-    expect(enArgumentosDeCurl(nueva)).toEqual([]);
-    expect(cabeceraFueraDeHeredoc(nueva)).toEqual([]);
+    const buenas = [
+      ': "${N8N_API_KEY:?Falta N8N_API_KEY en .env (n8n: Settings -> n8n API)}"',
+      ': "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}"; : "${X:?}"',
+      '  N8N_BASE_URL="$N8N_BASE_URL" N8N_API_KEY="$N8N_API_KEY" \\\n  python3 - <<\'PY\'',
+      'COD=$(curl -s -o "$TMP/v.json" \\\n      -H @- "${API}/workflows/1" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)',
+      'curl -s -X "$1" -H @- "$API$2" <<<"X-N8N-API-KEY: $N8N_API_KEY"',
+      '        headers={"X-N8N-API-KEY": os.environ["N8N_API_KEY"], "Accept": "application/json"})',
+    ];
+    for (const b of buenas) expect(clavesFueraDeLugar(b), b).toEqual([]);
+
+    const lanzamientos = [
+      "execFileSync('curl', ['-H', `X-N8N-API-KEY: ${env['N8N_API_KEY']}`, url])",
+      "execFileSync('curl',\n  ['-fsS', '-H',\n   `X-N8N-API-KEY: ${env['N8N_API_KEY']}`, url])",
+      'subprocess.run(["curl",\n    "-H", f"X-N8N-API-KEY: {key}", url])',
+      'execSync(`curl -H "X-N8N-API-KEY: ${k}" ${url}`)',
+    ];
+    for (const x of lanzamientos) expect(enLanzamientoDeCurl(x), x).toHaveLength(1);
+    expect(enLanzamientoDeCurl(
+      "execFileSync('curl', ['-fsS', '-H', '@-', url],\n  { input: `X-N8N-API-KEY: ${env['N8N_API_KEY']}` })")).toEqual([]);
   });
 
-  it('ningún .sh pasa la clave de n8n en los argumentos de curl', () => {
-    const malas = sh.flatMap((r) => enArgumentosDeCurl(fuente(r)).map((l) => `${r}: ${l.trim()}`));
-    expect(malas).toEqual([]);
-  });
-
-  it('ningún .sh arma la cabecera de la clave fuera de un <<<', () => {
-    const malas = sh.flatMap((r) => cabeceraFueraDeHeredoc(fuente(r)).map((l) => `${r}: ${l.trim()}`));
+  it('ningún .sh nombra la clave fuera de las cuatro formas permitidas', () => {
+    const malas = sh.flatMap((r) => clavesFueraDeLugar(fuente(r)).map((l) => `${r}: ${l.trim()}`));
     expect(malas).toEqual([]);
   });
 
@@ -124,6 +187,12 @@ describe('en ejecución, contra un curl falso', () => {
     mkdirSync(join(dir, 'bin'));
     for (const s of ['publicar-flujo.sh', 'ver-ejecuciones.sh', 'credenciales-flujo.sh', 'webhook-meta.sh']) {
       copyFileSync(join(REPO, 'scripts', s), join(raiz, 'scripts', s));
+    }
+    // Las bibliotecas que los scripts cargan con `source scripts/lib/…` (el
+    // candado de apps ajenas, en la rama de los pendientes del #265): sin
+    // ellas, la suite se cae apenas se fusionen las dos (revisión del #276, L-1).
+    if (existsSync(join(REPO, 'scripts', 'lib'))) {
+      cpSync(join(REPO, 'scripts', 'lib'), join(raiz, 'scripts', 'lib'), { recursive: true });
     }
     copyFileSync(join(AQUI, 'curl-falso-n8n.sh'), join(dir, 'bin', 'curl'));
     chmodSync(join(dir, 'bin', 'curl'), 0o755);
