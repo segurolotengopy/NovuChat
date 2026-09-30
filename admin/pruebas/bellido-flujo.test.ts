@@ -1422,9 +1422,10 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       const reglas = String(configBase(flujo)['reglasAgenda']);
       expect(reglas).toMatch(/\(d\) RECIÉN NACIDO: ofrece los PRIMEROS turnos libres A PARTIR DE MAÑANA/);
       expect(reglas).toMatch(/\(e\) NIÑO SANO[^;]*la MISMA prioridad que el recién nacido, sin esperar a pasado mañana/);
-      expect(reglas).toMatch(/el MISMO DÍA solo si el papá o la mamá lo piden y hay un hueco libre/);
+      expect(reglas).toMatch(/si el papá o la mamá piden HOY \(o «hoy mismo»\), ofrécele los huecos libres de hoy/);
+      expect(reglas).toMatch(/ni «lo ideal es», ni expliques por qué no ofreces hoy/);
       expect(reglas).not.toMatch(/hoy o mañana si los hay/);
-      expect(reglas).toMatch(/\(j\) DOS HERMANOS VAN EN EL MISMO TURNO: [^;]*UNA sola cita de 30 minutos[^;]*UNA sola llamada a agendar_cita[^;]*los dos nombres en el título/);
+      expect(reglas).toMatch(/\(j\) DOS HERMANOS VAN EN EL MISMO TURNO: [^;]*UNA sola cita de 30 minutos[^;]*UNA sola llamada a agendar_cita \(nunca dos, ni una por hermano, ni la repitas si ya la hiciste\)[^;]*los dos nombres en el título/);
       expect(reglas).toMatch(/Nunca dos citas seguidas ni a la misma hora/);
       expect(reglas).not.toMatch(/Andrés|usted|\bvos\b/);
     });
