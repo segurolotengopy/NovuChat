@@ -1074,8 +1074,13 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // relleno («ya pues, esa nomas»). Un signo de pregunta, una hora, una franja
   // o cualquier otra palabra la descartan; ademas siguen mandando `agPregunta`,
   // `agNiega`, `agPideOtra` y `agFranja`, como con cualquier confirmacion.
-  const AG_CONFIRMA_YA = /^\s*(ya+|ya\s+pues|ya\s+esta|ya\s+dale|dale\s+ya|de\s+una|va|va\s+pues|asi\s+es|ya\s+ya)(?:[\s,.;!]*(?:pues|nomas|no\s+mas|esa|ese|esa\s+nomas|ese\s+nomas|esa\s+hora|ese\s+horario|gracias|listo|ok|okay|dale|por\s+favor|porfa|porfavor|perfecto))*[\s.!]*$/;
-  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano) || AG_CONFIRMA_YA.test(agClientePlano);
+  const AG_CONFIRMA_YA = /^\s*(ya+|ya\s+pues|ya\s+esta|ya\s+dale|dale\s+ya|de\s+una|va|va\s+pues|asi\s+es|ya\s+ya)(?:[\s,.;!]+(?:pues|nomas|esa|ese|esa\s+hora|ese\s+horario|listo|ok|okay|dale|por\s+favor|porfa|porfavor|perfecto)){0,4}[\s.!]*$/;
+  // (revision de seguridad del #284) SIN repeticiones solapadas —«esa nomas»
+  // se leia como una alternativa o como dos y el tiempo crecia como 2^n con un
+  // mensaje de WhatsApp de unos 250 caracteres— y con el largo acotado: una
+  // afirmacion asi nunca pasa de unas pocas palabras. Tampoco entran «no mas»
+  // ni «gracias»: «ya no mas» y «ya, gracias» suelen ser un rechazo cortes.
+  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano) || (agClientePlano.length <= 60 && AG_CONFIRMA_YA.test(agClientePlano));
   // FRANJA u OTRA HORA: lo que el paciente pidio cuando no quiere lo ofrecido.
   // «La tarde» empieza a las 13:00 (decision de Andres, 27/09/2026): el
   // mediodia no es lo que pide quien dice «¿en la tarde?».
