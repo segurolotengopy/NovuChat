@@ -1153,6 +1153,71 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(r['avisos']).toContain('horas_del_codigo');
     });
 
+    // LA ARITMETICA VA EN CODIGO (Bellido, 30/09): el modelo resta mal los eventos de
+    // una lista y dice «no quedan horarios» con 16:30 libre. Si la consulta cubre
+    // TODO el horario del dia y la respuesta niega el dia sin ofrecer ninguna hora,
+    // el codigo ofrece lo que el mismo verifico, con la regla del dia lleno.
+    describe('la negación del día sin oferta ⇒ el código ofrece lo verificado', () => {
+      const oc = (id: string, d: string, h: string): J => ({ id, summary: 'x', organizer: { email: CAL }, start: { dateTime: hora(LUNES, d) }, end: { dateTime: hora(LUNES, h) } });
+      const pregunta = `¿Qué horarios tienes el ${L}?`;
+
+      it('«ya no hay horarios», «agenda completa», «no quedan turnos» con espacio ⇒ «hay espacio a las 16:00»', () => {
+        const dia = [oc('o1', '11:00', '16:00'), oc('o2', '16:30', '18:00')];   // solo queda 16:00
+        for (const m of [`El ${L} ya no hay horarios disponibles. ¿Te sirve otro día?`, 'Lo siento, la agenda está completa ese día.',
+          `No quedan turnos para el ${L}.`, 'Ese día no tengo disponibilidad. ¿Quieres otro?', 'Sin disponibilidad para ese día.']) {
+          const r = procesar(pregunta, m, [consulta(LUNES, dia)], {});
+          expect(String(r['respuesta']), m).toBe(`El ${L} hay espacio a las 16:00. ¿Cuál prefieres?`);
+          expect(r['avisos'], m).toContain('negacion_con_horas_libres');
+        }
+        // Lo demás de la respuesta se conserva (una presentación, el nombre que falta).
+        const r = procesar(pregunta, 'Soy la asistente virtual del doctor. Ese día ya no hay horarios.', [consulta(LUNES, dia)], {});
+        expect(String(r['respuesta'])).toBe(`Soy la asistente virtual del doctor. El ${L} hay espacio a las 16:00. ¿Cuál prefieres?`);
+      });
+
+      it('el borde 16:15 a 16:30: una cita de 15 minutos del doctor que termina 16:15 libera las 16:30, y no las 16:00', () => {
+        // Ocupado 11:00–16:15 y 17:00–18:00: el turno de 16:00 a 16:30 se cruza; el de 16:30 a 17:00 cabe entero.
+        const r = procesar(pregunta, 'Ese día ya no hay horarios.', [consulta(LUNES, [oc('b1', '11:00', '16:15'), oc('b2', '17:00', '18:00')])], {});
+        expect(String(r['respuesta'])).toBe(`El ${L} hay espacio a las 16:30. ¿Cuál prefieres?`);
+        // Ocupado 11:00–16:15 y 16:45–18:00: a las 16:30 el turno se cruza con el de 16:45 ⇒ de verdad no hay, y no se toca.
+        const sin = procesar(pregunta, 'Ese día ya no hay horarios.', [consulta(LUNES, [oc('c1', '11:00', '16:15'), oc('c2', '16:45', '18:00')])], {});
+        expect(String(sin['respuesta'])).toBe('Ese día ya no hay horarios.');
+        expect(sin['avisos']).not.toContain('negacion_con_horas_libres');
+        // Un evento que termina 16:30 libera las 16:30 (hasta su fin, no más).
+        const fin = procesar(pregunta, 'Ese día ya no hay horarios.', [consulta(LUNES, [oc('d1', '11:00', '16:30'), oc('d2', '17:00', '18:00')])], {});
+        expect(String(fin['respuesta'])).toBe(`El ${L} hay espacio a las 16:30. ¿Cuál prefieres?`);
+      });
+
+      it('«está cerrado» con el día abierto: con espacio se ofrece; con el día lleno se dice que no queda espacio', () => {
+        const dia = [oc('e1', '11:00', '17:00')];                                       // queda 17:00 y 17:30
+        const r = procesar(pregunta, 'Ese día el consultorio está cerrado.', [consulta(LUNES, dia)], {});
+        expect(String(r['respuesta'])).toBe(`El ${L} hay espacio a las 17:00 o 17:30. ¿Cuál prefieres?`);
+        const lleno = procesar(pregunta, 'Ese día el consultorio está cerrado.', [consulta(LUNES, [oc('e2', '11:00', '18:00')])], {});
+        expect(String(lleno['respuesta'])).toBe(`El ${L} ya no queda espacio libre. ¿Te sirve otro día?`);
+        expect(lleno['avisos']).toContain('cerrado_con_horario');
+      });
+
+      it('no se toca: día no consultado, consulta parcial, una sola hora negada, varias personas, día realmente cerrado', () => {
+        const dia = [oc('f1', '11:00', '16:00'), oc('f2', '16:30', '18:00')];
+        const negacion = 'Ese día ya no hay horarios.';
+        // Sin consulta del día.
+        expect(String(procesar(pregunta, negacion, [], {})['respuesta'])).not.toContain('hay espacio');
+        // Consulta parcial (15:00 a 16:00): no se sabe del resto del día.
+        const parcial = { action: { tool: 'consultar_disponibilidad', toolInput: { inicio: hora(LUNES, '15:00'), fin: hora(LUNES, '16:00'), funcionario: DOCTOR } },
+          observation: JSON.stringify([oc('p', '15:00', '16:00')]) };
+        expect(String(procesar(pregunta, negacion, [parcial], {})['respuesta'])).not.toContain('hay espacio');
+        // Una sola hora negada, con la hora escrita: no es «el día».
+        expect(procesar(pregunta, 'A las 16:30 no está disponible.', [consulta(LUNES, dia)], {})['avisos']).not.toContain('negacion_con_horas_libres');
+        // Dos personas: la agenda que se niega no es la que se consultó.
+        const DOS: J = { ...CFG, funcionarios: JSON.stringify([{ nombre: DOCTOR, servicios: [], calendario: CAL, horario: HORARIO },
+          { nombre: 'Dra. Ana Pérez', servicios: [], calendario: 'cal-2', horario: HORARIO }]) };
+        expect(String(procesar(pregunta, negacion, [consulta(LUNES, dia)], {}, DOS)['respuesta'])).toBe(negacion);
+        // Un domingo cerrado de verdad: el horario no tiene tramos, no se afirma nada.
+        const DOM = proximo(0);
+        expect(String(procesar(`¿Qué horarios tienes el ${DOM.nombre} ${DOM.dia}?`, `El ${DOM.nombre} no atendemos.`, [consulta(DOM, [])], {})['respuesta']))
+          .not.toContain('hay espacio');
+      });
+    });
+
     it('#8642: «9 am» sin «las» es una hora, y «2 amigos» no', () => {
       const SAB = proximo(6);
       const ocupa = [{ id: 's1', summary: 'x', organizer: { email: CAL }, start: { dateTime: hora(SAB, '09:00') }, end: { dateTime: hora(SAB, '10:30') } }];

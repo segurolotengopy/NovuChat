@@ -1495,6 +1495,54 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
       }
     }
 
+    // --- LA NEGACION SIN OFERTA: «NO HAY HORARIOS» CON ESPACIO (Bellido, 30/09) --
+    // La bateria del 29/09 mostro que el modelo resta mal los eventos de una lista:
+    // dice «ya no quedan horarios» o «el consultorio esta cerrado» con el dia
+    // abierto y libre a las 16:30. El codigo ya sabe las horas libres cuando la
+    // consulta cubre TODO el horario del dia (la regla del dia lleno del #283:
+    // cada evento de su inicio a su fin, una cita de 30 minutos que cabe entera,
+    // solo en punto o y media, dentro del horario y de la anticipacion minima).
+    // Si la respuesta niega el DIA sin ofrecer ninguna hora, y el codigo verifico
+    // que queda espacio, se quita la negacion y se ofrece lo verificado; si la
+    // respuesta dice «cerrado» con el dia abierto y lleno, se dice lo cierto: que
+    // no queda espacio. Solo con UNA persona en el equipo (con varias, la agenda
+    // que se niega no es la que se consulto) y sin horas en la respuesta: una
+    // negacion de UNA hora («a las 16:00 no esta disponible») no se toca.
+    if (!reemplazo && !ejecutoAgendar && !ofertas.length && consultoEseDia && fechaPedida && agEquipo.length <= 1) {
+      const plano = agSinTilde(respuesta);
+      const NIEGA_EL_DIA = /\b(no\s+(hay|quedan?|tengo|tenemos|existen?)\s+(ningun[oa]?s?\s+)?(horarios?|turnos?|espacios?|disponibilidad|citas?|cupos?|lugares?|huecos?)|ya\s+no\s+(hay|quedan?|tengo|tenemos)|sin\s+(disponibilidad|horarios|turnos|espacios|cupo)|(agenda|dia|consultorio)\s+(esta\s+)?(completa|completo|llen[oa]|ocupad[oa])|(todo|todos)\s+(esta[n]?\s+)?(ocupad[oa]s?|llen[oa]s?|tomad[oa]s?)|no\s+(esta|estan)\s+disponibles?)\b/;
+      const DICE_CERRADO = /\b((consultorio|doctor|ese\s+dia|dia|sabado|domingo|lunes|martes|miercoles|jueves|viernes)\s+(esta\s+)?cerrad[oa]|no\s+atiend[eo]\s+(ese|este)\s+dia|no\s+atendemos\s+(ese|este)\s+dia)\b/;
+      const niega = NIEGA_EL_DIA.test(plano), cerrado = DICE_CERRADO.test(plano);
+      if ((niega || cerrado) && !agHorasDelTexto(respuesta).length) {
+        const dia = agDiaTexto(fechaPedida);
+        const delDia = agConsultasTurno.filter((c) => c.fecha === fechaPedida);
+        const tramosDia = delDia.length && delDia[0].horario ? agTramos(delDia[0].horario, agSemanaDe(fechaPedida)) : null;
+        // La misma prueba de «se verifico todo el dia» que el dia lleno del #283.
+        const verificable = delDia.length > 0 && new Set(delDia.map((c) => c.persona)).size === 1 && !!delDia[0].persona
+          && delDia.every((c) => !!c.horario) && Array.isArray(tramosDia) && tramosDia.length > 0
+          && tramosDia.every((t) => delDia.some((c) => c.desde <= agInstante(fechaPedida, t.i) && c.hasta >= agInstante(fechaPedida, t.f)));
+        if (verificable) {
+          const libresDia = agLibres(delDia, fechaPedida, agDuracion, agLimite, AG_GRILLA_MIN)
+            .filter((m) => !agFranja || (m >= agFranja.desde && m < agFranja.hasta));
+          const quitarNegacion = (t) => String(t || '').split(new RegExp(AG_ORACION.source + '|\\n+')).map((x) => x.trim())
+            // Y la pregunta de «¿quieres otro?» que acompañaba a la negacion: ya no tiene de que colgarse.
+            .filter((x) => x && !NIEGA_EL_DIA.test(agSinTilde(x)) && !DICE_CERRADO.test(agSinTilde(x))
+              && !(/[?¿]/.test(x) && /\botr[oa]s?\b/.test(agSinTilde(x)))).join(' ');
+          if (libresDia.length > 0) {
+            const nuevas = libresDia.filter((m) => !agOfrecidosAntes(fechaPedida).includes(m));
+            const ofrecer = (nuevas.length ? nuevas : libresDia).slice(0, 3);
+            respuesta = agCambiarHoras(quitarNegacion(respuesta), `El ${dia} hay espacio a las ${agLista(ofrecer)}. ${agPrefiere}`);
+            agFinal = { fecha: fechaPedida, mins: ofrecer };
+            avisos.push('negacion_con_horas_libres');
+          } else if (cerrado && !niega) {
+            respuesta = agCambiarHoras(quitarNegacion(respuesta), `El ${dia} ya no queda espacio libre. ${agOtroDia}`);
+            agFinal = null;
+            avisos.push('cerrado_con_horario');
+          }
+        }
+      }
+    }
+
     if (reemplazo) {
       respuesta = agCambiarHoras(respuesta, reemplazo);
     } else if (ofertas.length) {
