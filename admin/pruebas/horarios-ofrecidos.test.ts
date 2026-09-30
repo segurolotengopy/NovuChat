@@ -1217,6 +1217,62 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
         `No encontré conflicto, quedó agendada tu cita el ${L} a las 11:30.`,
       ]) expect(procesar('Quiero una cita', t, [consulta(LUNES)], {})['avisos'], t).toContain('afirmo_sin_agendar');
     });
+
+    it('«ya» es un «sí» en Bolivia (batería del 29/09, N1 a N4): confirma UNA hora ofrecida, solo si es lo único que dice el cliente', () => {
+      // El modelo ofreció UNA hora (15:30) y agenda; el paciente lo dijo antes, en la conversación.
+      const armar = (): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: Date.now() }, elegido: null, palabras: ['mateo', 'andres'], desde: Date.now() } } });
+      const agenda = () => [consulta(LUNES), agendo(conNombre('h3', LUNES, '15:30', '16:00', 'Mateo'))];
+      for (const t of ['Ya', 'ya', 'Yaa', 'yaaa', 'Ya pues', 'ya está', 'Ya, esa nomás', 'ya pues, esa nomás', 'ya pues esa nomas', 'De una', 'Va', 'va pues', 'Así es', 'Ya!', 'ya dale', 'ya listo', 'ya esa nomás']) {
+        expect(procesar(t, 'Listo.', agenda(), armar())['agendaSinConfirmar'], t).toEqual([]);
+      }
+      // Lo de siempre sigue igual: «Sí» confirma, y sin oferta de UNA hora nada se confirma solo.
+      expect(procesar('Si', 'Listo.', agenda(), armar())['agendaSinConfirmar']).toEqual([]);
+      const dos: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930, 960] },
+        ultima: { fecha: LUNES.iso, mins: [930, 960], desde: Date.now() }, elegido: null, palabras: ['mateo'], desde: Date.now() } } };
+      expect(procesar('ya', 'Listo.', agenda(), dos)['agendaSinConfirmar']).toEqual(['h3']);
+      expect(procesar('ya', 'Listo.', agenda(), {})['agendaSinConfirmar']).toEqual(['h3']);
+      // Negativas: «ya» al principio de otra frase, con pregunta, con hora, con franja o pidiendo otra cosa no confirma.
+      for (const t of ['ya te dije 10 de octubre', 'ya no', 'ya tengo cita', 'ya no puedo', 'ya pues, quiero otra hora', 'ya?', 'ya, ¿a las 5 tiene?',
+        'ya en la tarde', 'ya a las 5', 'ya pues, mejor otro día', 'ya me dijeron', 'de una vez', 'va a estar el doctor', 'así es como lo quiero para el jueves',
+        // Revisión de seguridad del #284: «no más» y «gracias» suelen ser un rechazo cortés.
+        'ya no más', 'ya no mas', 'ya gracias', 'ya, gracias', 'va pues gracias',
+        // Varias líneas: solo vale si TODO el mensaje es la afirmación.
+        'ya\nquiero otra hora', 'hola\nya']) {
+        expect(procesar(t, 'Listo.', agenda(), armar())['agendaSinConfirmar'], t).toEqual(['h3']);
+      }
+    });
+
+    it('revisión de seguridad del #284: el detector de «ya» no se enreda con mensajes largos (ReDoS) y no pasa de 60 caracteres', () => {
+      const armar = (): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: Date.now() }, elegido: null, palabras: ['mateo'], desde: Date.now() } } });
+      const agenda = () => [consulta(LUNES), agendo(conNombre('h3', LUNES, '15:30', '16:00', 'Mateo'))];
+      // Con la expresión de la primera versión, 24 repeticiones tardaban unos 8 segundos y cada una duplicaba el tiempo.
+      for (const unidad of [' esa nomás', ' ese nomás', ' ya pues', ' por favor', ' nomás', ',']) {
+        const largo = 'ya' + unidad.repeat(300) + ' x';
+        const t0 = Date.now();
+        const r = procesar(largo, 'Listo.', agenda(), armar());
+        expect(Date.now() - t0, unidad).toBeLessThan(500);
+        expect(r['agendaSinConfirmar'], unidad).toEqual(['h3']);
+      }
+      // Una afirmación válida pero de más de 60 caracteres no confirma.
+      expect(procesar('ya' + ' pues,'.repeat(15), 'Listo.', agenda(), armar())['agendaSinConfirmar']).toEqual(['h3']);
+      // Estas dos solo las rechaza la guarda de largo: la expresión sola las aceptaría («ya+» y «\s+» no tienen tope).
+      for (const t of ['ya' + ' '.repeat(80) + 'pues', 'y' + 'a'.repeat(80)]) {
+        expect(procesar(t, 'Listo.', agenda(), armar())['agendaSinConfirmar'], t.length + ' caracteres').toEqual(['h3']);
+      }
+    });
+
+    it('revisión de seguridad del #284: «ya» a «¿Te las agendo?» confirma el conjunto solo con la marca del código', () => {
+      const dos = [conNombre('h3', LUNES, '15:30', '16:00', 'Mateo'), conNombre('h4', LUNES, '16:00', '16:30', 'Luca')];
+      const armar = (conjunto: boolean): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930, 960] },
+        ultima: { fecha: LUNES.iso, mins: [930, 960], desde: Date.now(), ...(conjunto ? { conjunto: true } : {}) },
+        elegido: null, palabras: ['mateo', 'luca'], desde: Date.now() } } });
+      const pasos = [consulta(LUNES), ...dos.map(agendo)];
+      expect(procesar('ya', 'Listo.', pasos, armar(true))['agendaSinConfirmar']).toEqual([]);
+      expect(procesar('ya', 'Listo.', pasos, armar(false))['agendaSinConfirmar']).toEqual(['h3', 'h4']);
+      expect(procesar('ya no más', 'Listo.', pasos, armar(true))['agendaSinConfirmar']).toEqual(['h3', 'h4']);
+    });
   });
 });
 
