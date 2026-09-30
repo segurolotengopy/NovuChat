@@ -123,6 +123,9 @@ if (bandera('borrar')) {
 }
 
 // ---------------------------------------------------------------- sobre el Demo A
+// Nota (revisión de seguridad): el modo de CREAR usa la credencial de Gemini de PRUEBAS; este modo, que
+// pone un candidato en el número del Demo A para probar con teléfono real, usa la de PRODUCCIÓN porque
+// Andres la autorizó para las pruebas del 30/09/2026. Para otro día, revisar esa autorización.
 /*
  * --sobre-demo-a --respaldo <archivo fuera del repo> [--aplicar]
  *   Pone el candidato B (agenda-minima.v0.json) EN el flujo vivo del Demo A, para la prueba con
@@ -200,11 +203,19 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   // sigue si el vivo es EXACTAMENTE lo último que aplicó esta herramienta (cambio directo entre candidatos).
   const APLICADO = RESPALDO + '.aplicado.json';
   const huella = (w) => JSON.stringify(w.nodes.map((n) => [n.name, n.type]).sort());
+  // L3: además de nombres y tipos, el contenido entero de lo aplicado (un cambio a mano en n8n no se pisa en silencio).
+  const contenido = (w) => JSON.stringify(cuerpoPut(w));
+  // M4: nodos que el Demo A ORIGINAL no tiene; si el vivo los tiene, ya es un candidato.
+  const PROPIOS_DE_CANDIDATOS = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno',
+    'Estado de la conversación', 'Menú inicial', 'Enviar interactivo', 'Avisar al doctor (plantilla)'];
+  if (!existsSync(RESPALDO) && vivo.datos.nodes.some((n) => PROPIOS_DE_CANDIDATOS.includes(n.name))) {
+    morir('el vivo ya es un candidato y no hay respaldo del Demo A original en esa ruta: no se sigue (use el respaldo existente)');
+  }
   if (existsSync(RESPALDO)) {
     const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
     const esOriginal = JSON.stringify(cuerpoPut(previo)) === JSON.stringify(cuerpoPut(vivo.datos));
     const ultimo = existsSync(APLICADO) ? JSON.parse(readFileSync(APLICADO, 'utf8')) : null;
-    if (!esOriginal && !(ultimo && ultimo.huella === huella(vivo.datos))) {
+    if (!esOriginal && !(ultimo && ultimo.huella === huella(vivo.datos) && (!ultimo.contenido || ultimo.contenido === contenido(vivo.datos)))) {
       morir('el vivo no es ni el Demo A del respaldo ni lo último aplicado por esta herramienta: no se sigue');
     }
     if (!esOriginal) console.log(`El vivo es el candidato aplicado antes (${ultimo.flujo}, ${ultimo.aplicado}): se cambia directo, sin pasar por el original.`);
@@ -256,7 +267,9 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: ${tipo} → «${c.name}»`);
     }
   }
-  const sinCred = b.nodes.filter((n) => Object.values(n.credentials ?? {}).some((c) => !c || !c.id));
+  const sinCred = b.nodes.filter((n) => Object.values(n.credentials ?? {}).some((c) => !c || !c.id)
+    // L4: un HTTP con autenticación y sin credencial fallaría en ejecución.
+    || (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length));
   if (sinCred.length) morir(`nodos sin credencial resuelta: ${sinCred.map((n) => n.name).join(', ')}`);
   const credsUsadas = b.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c.name));
   const prohibidas = credsUsadas.filter((x) => NO_PERMITIDOS.test(x));
@@ -287,7 +300,8 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
   if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. El vivo no cambió o quedó a medias: revise y use --restaurar-respaldo`);
   const tras = await asegurarActivo();
-  writeFileSync(APLICADO, JSON.stringify({ flujo: ARCHIVO.split(sep).slice(-3).join('/'), aplicado: new Date().toISOString(), huella: huella(tras) }), { mode: 0o600 });
+  writeFileSync(APLICADO, JSON.stringify({ flujo: ARCHIVO.split(sep).slice(-3).join('/'), aplicado: new Date().toISOString(), huella: huella(tras), contenido: contenido(tras) }), { mode: 0o600 });
+  chmodSync(APLICADO, 0o600);
   console.log(`✓ candidato sobre el Demo A: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   process.exit(0);
 }
