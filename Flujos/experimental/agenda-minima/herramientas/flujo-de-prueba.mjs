@@ -143,9 +143,24 @@ const CRED_DEMO_A = {
   googlePalmApi: 'Google Gemini(PaLM) Api account',     // producción: Andres la autorizó para las pruebas del 30/09
   googleCalendarOAuth2Api: 'Google Calendar account',
   httpHeaderAuth: { 'NovuChat ingesta (Bellido)': 'Cierres NovuChat A (auto)' }, // por NOMBRE de origen (L1): configuración, ingesta y cierre cuentan en «ensayo»
+  // «Graph WhatsApp <Cliente> (Bearer)» no se mapea: el nodo pasa a la credencial predefinida whatsAppApi (ver GRAPH_BEARER).
   whatsAppApi: 'WhatsApp account',
 };
-const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo'];
+// Nodos que envían por Graph con un Bearer del cliente (el Demo A no tiene): pasan a la credencial
+// predefinida whatsAppApi. Se reconocen por el NOMBRE de la credencial, en cualquier candidato.
+const GRAPH_BEARER = /^Graph WhatsApp .+ \(Bearer\)$/;
+// Tipos de nodo que NECESITAN una credencial. En el JSON versionado de un cliente, algunos vienen sin
+// ella (el agente, sus herramientas de calendario): publicar-flujo.sh la injerta del vivo por nombre.
+// Acá se pone por tipo, desde la misma tabla, y ninguno puede quedar sin credencial.
+const CRED_POR_TIPO_DE_NODO = {
+  '@n8n/n8n-nodes-langchain.lmChatGoogleGemini': 'googlePalmApi',
+  '@n8n/n8n-nodes-langchain.googleGemini': 'googlePalmApi',
+  'n8n-nodes-base.googleCalendar': 'googleCalendarOAuth2Api',
+  'n8n-nodes-base.googleCalendarTool': 'googleCalendarOAuth2Api',
+  'n8n-nodes-base.whatsApp': 'whatsAppApi',
+};
+// El phone id del cliente en «Config base» (candidato A) se reemplaza, en memoria, por el del Demo A.
+const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
 
 if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
@@ -181,14 +196,22 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   }
 
   // M1: si el vivo ya es el candidato B, no se sigue (se perdería la vuelta atrás exacta).
-  const PROPIOS_DE_B = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
-  if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) morir('el Demo A vivo YA tiene el candidato B: para volver, --restaurar-respaldo');
+  // El respaldo es el Demo A ORIGINAL y nunca se reescribe. Si el vivo ya no es el original, solo se
+  // sigue si el vivo es EXACTAMENTE lo último que aplicó esta herramienta (cambio directo entre candidatos).
+  const APLICADO = RESPALDO + '.aplicado.json';
+  const huella = (w) => JSON.stringify(w.nodes.map((n) => [n.name, n.type]).sort());
   if (existsSync(RESPALDO)) {
     const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
-    if (JSON.stringify(cuerpoPut(previo)) !== JSON.stringify(cuerpoPut(vivo.datos))) morir('el respaldo existente difiere del vivo: no se pisa. Úselo para restaurar, o elija otro --respaldo');
+    const esOriginal = JSON.stringify(cuerpoPut(previo)) === JSON.stringify(cuerpoPut(vivo.datos));
+    const ultimo = existsSync(APLICADO) ? JSON.parse(readFileSync(APLICADO, 'utf8')) : null;
+    if (!esOriginal && !(ultimo && ultimo.huella === huella(vivo.datos))) {
+      morir('el vivo no es ni el Demo A del respaldo ni lo último aplicado por esta herramienta: no se sigue');
+    }
+    if (!esOriginal) console.log(`El vivo es el candidato aplicado antes (${ultimo.flujo}, ${ultimo.aplicado}): se cambia directo, sin pasar por el original.`);
   }
   // 1. el candidato B
-  const b = JSON.parse(readFileSync(join(AQUI, '..', 'agenda-minima.v0.json'), 'utf8'));
+  const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
+  const b = JSON.parse(readFileSync(ARCHIVO, 'utf8').replace(MARCA_PHONE, env.WA_PHONE_ID));
   const trigB = b.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
   const trigVivo = vivo.datos.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
   if (trigB.length !== 1 || trigVivo.length !== 1) morir(`disparadores: candidato ${trigB.length}, Demo A ${trigVivo.length}; hace falta exactamente uno en cada uno`);
@@ -205,8 +228,14 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const delDemoA = new Set(vivo.datos.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c && c.id)).filter(Boolean));
   const tabla = [];
   for (const n of b.nodes) {
+    const requerida = CRED_POR_TIPO_DE_NODO[n.type];
+    if (n !== t && requerida && !(n.credentials && n.credentials[requerida])) {
+      n.credentials = Object.assign({}, n.credentials, { [requerida]: {} });
+      tabla.push(`  ${n.name}: venía SIN credencial ${requerida} en el JSON; se pone por tipo`);
+    }
     if (n === t) { tabla.push(`  ${n.name}: el del Demo A, tal cual («${Object.values(n.credentials ?? {}).map((c) => c.name).join(', ')}»)`); continue; }
-    if (ENVIOS.includes(n.name)) {
+    const hh = n.credentials && n.credentials.httpHeaderAuth;
+    if (hh && GRAPH_BEARER.test(String(hh.name || ''))) {
       const antes = `${n.parameters.authentication}/${n.parameters.genericAuthType ?? n.parameters.nodeCredentialType}`;
       n.parameters.authentication = 'predefinedCredentialType';
       n.parameters.nodeCredentialType = 'whatsAppApi';
@@ -233,15 +262,22 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const prohibidas = credsUsadas.filter((x) => NO_PERMITIDOS.test(x));
   if (prohibidas.length) morir(`credenciales con nombre de cliente o sistema ajeno: ${[...new Set(prohibidas)].join(', ')}`);
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
-  const marcasMal = marcas.filter((m) => !['REEMPLAZAR_NUMERO_RECEPCION_BELLIDO', 'REEMPLAZAR_NUMERO_DOCTOR_BELLIDO', 'REEMPLAZAR_HORARIO_ATENCION_BELLIDO'].includes(m));
+  // Solo se admiten marcadores de RESPALDO del cliente en «Config base» (recepción, doctor, calendario,
+  // horario): con la ruta del Demo A en «ensayo», los manda el panel; sin reemplazar no son números ni
+  // calendarios válidos, así que nunca llegan al doctor ni a la agenda reales.
+  const RESPALDO_OK = /^REEMPLAZAR_(NUMERO_(RECEPCION|DOCTOR)|CALENDARIO|HORARIO_ATENCION)_[A-Z0-9_]+$/;
+  const marcasMal = marcas.filter((m) => !RESPALDO_OK.test(m));
+  const fueraDeConfigBase = b.nodes.filter((n) => n.name !== 'Config base' && /REEMPLAZAR_[A-Z]/.test(JSON.stringify(n.parameters ?? {}))).map((n) => n.name);
+  if (fueraDeConfigBase.length) morir(`hay marcadores fuera de «Config base»: ${fueraDeConfigBase.join(', ')}`);
   if (marcasMal.length) morir(`marcadores que el flujo necesitaría y nadie repone: ${marcasMal.join(', ')}`);
   // 4. la diferencia con el vivo
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
   console.log(`Demo A vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
-  console.log(`Candidato B: ${b.nodes.length} nodos (con el disparador del Demo A). El nombre del flujo queda «${vivo.datos.name}».`);
+  console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos (con el disparador del Demo A). El nombre del flujo queda «${vivo.datos.name}».`);
+  console.log(`Phone id del cliente en el JSON: ${MARCA_PHONE.test(readFileSync(ARCHIVO, 'utf8')) ? 'reemplazado en memoria por el del Demo A (no se muestra)' : 'no trae'}`);
   console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
-  console.log(`Marcadores que quedan (solo el respaldo de «Config base», se leen como vacío): ${marcas.join(', ') || '—'}`);
+  console.log(`Marcadores que quedan (solo respaldo de «Config base»; el panel de «ensayo» manda): ${marcas.join(', ') || '—'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
   if (!existsSync(RESPALDO)) {
     writeFileSync(RESPALDO, JSON.stringify(Object.assign({}, vivo.datos, { guardado: new Date().toISOString() })), { flag: 'wx', mode: 0o600 });
@@ -251,7 +287,8 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
   if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. El vivo no cambió o quedó a medias: revise y use --restaurar-respaldo`);
   const tras = await asegurarActivo();
-  console.log(`✓ candidato B sobre el Demo A: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
+  writeFileSync(APLICADO, JSON.stringify({ flujo: ARCHIVO.split(sep).slice(-3).join('/'), aplicado: new Date().toISOString(), huella: huella(tras) }), { mode: 0o600 });
+  console.log(`✓ candidato sobre el Demo A: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   process.exit(0);
 }
 
