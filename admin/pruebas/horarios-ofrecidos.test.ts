@@ -1257,6 +1257,10 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       }
       // Una afirmación válida pero de más de 60 caracteres no confirma.
       expect(procesar('ya' + ' pues,'.repeat(15), 'Listo.', agenda(), armar())['agendaSinConfirmar']).toEqual(['h3']);
+      // Estas dos solo las rechaza la guarda de largo: la expresión sola las aceptaría («ya+» y «\s+» no tienen tope).
+      for (const t of ['ya' + ' '.repeat(80) + 'pues', 'y' + 'a'.repeat(80)]) {
+        expect(procesar(t, 'Listo.', agenda(), armar())['agendaSinConfirmar'], t.length + ' caracteres').toEqual(['h3']);
+      }
     });
 
     it('revisión de seguridad del #284: «ya» a «¿Te las agendo?» confirma el conjunto solo con la marca del código', () => {
