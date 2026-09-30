@@ -5,9 +5,9 @@ Andres el 30/09/2026, sobre el JSON de `Flujos/bellido-agendamiento.json`.
 Se guarda tal como llegó (§1 a §4). La segunda parte —el ciclo entre
 Antigravity y Claude— está en el §6.
 
-**Estado:** diagnóstico, más una construcción experimental autorizada el
-30/09 como excepción a la pausa (§6). No cambia `Analisis/41`, y la
-migración de Bellido sigue sin decidir.
+**Estado:** diagnóstico. La construcción experimental del §6 se autorizó y
+se canceló el mismo 30/09. No cambia `Analisis/41`, y la migración de
+Bellido sigue sin decidir.
 
 ---
 
@@ -130,6 +130,15 @@ escrita (`Analisis/41` §12.10). La forma y los límites de ese encargo son la
 segunda parte, en el §6.
 
 ## 6. Segunda parte: el ciclo Antigravity ↔ Claude (30/09/2026)
+
+> **Cancelado el mismo 30/09 por Andres**, antes de empezar: construir con
+> Antigravity iba a ser ineficiente. La prioridad pasó a ser llevar el flujo
+> **actual** de Bellido al piloto del 01/10. La sesión constructora publica
+> los arreglos ya hechos (#267, #275, #283, #284 y #286) y cubre las filas
+> que invalidan el pase; no hay reescritura. El flujo mínimo del §3 queda
+> como diseño de referencia para el próximo cliente de agenda o para migrar
+> a Bellido después del piloto, con decisión aparte. Lo que sigue queda como
+> registro de lo que se preparó.
 
 **Autorización.** El 30/09/2026 Andres autorizó por escrito construir y
 verificar «Agenda mínima v0» como **excepción a la pausa** (`Analisis/41`
