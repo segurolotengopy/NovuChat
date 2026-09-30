@@ -1064,7 +1064,18 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // Un ordinal no trae fecha: es la de la ultima oferta.
   const agFechaDeLaHora = agFechaCliente || (agHorasCliente.some((h) => h.ordinal) && agUltima ? agUltima.fecha : '');
   const AG_CONFIRMA = /^\s*(si|sip|ok|okay|okey|oki|dale|listo|perfecto|confirmo|confirmado|de\s+acuerdo|claro|correcto|exacto|vale|bueno|genial|excelente|ese|esa|esta|este|la\s+primera|la\s+segunda|la\s+tercera|la\s+ultima|por\s+favor)\b|\b(agend(a|ame|ala|alo|amela|amelo|eme|ar)|reserv(a|ame|ala|alo|amela|amelo)|anota(me|la|lo)|confirm(o|ada|ado|amos)|me\s+quedo\s+con|quiero\s+(esa|ese|esta|este|la|el)\b|prefiero|dame|pon(me|la|lo))\b/;
-  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano);
+  // «YA» ES UN «SI» EN BOLIVIA (bateria de Bellido del 29/09, casos N1 a N4):
+  // «ya», «ya pues», «yaa», «ya esta», «de una», «va» y «asi es» confirman la
+  // hora que se ofrecio, pero AG_CONFIRMA no los conocia y el candado deshacia
+  // la cita como `sin_confirmar`. Va aparte y ANCLADO AL MENSAJE ENTERO, porque
+  // «ya» al principio de una frase casi nunca confirma («ya te dije 10 de
+  // octubre», «ya tengo cita», «ya no puedo», «ya pues, quiero otra hora»): solo
+  // vale cuando lo unico que el cliente dijo es la afirmacion, con a lo sumo un
+  // relleno («ya pues, esa nomas»). Un signo de pregunta, una hora, una franja
+  // o cualquier otra palabra la descartan; ademas siguen mandando `agPregunta`,
+  // `agNiega`, `agPideOtra` y `agFranja`, como con cualquier confirmacion.
+  const AG_CONFIRMA_YA = /^\s*(ya+|ya\s+pues|ya\s+esta|ya\s+dale|dale\s+ya|de\s+una|va|va\s+pues|asi\s+es|ya\s+ya)(?:[\s,.;!]*(?:pues|nomas|no\s+mas|esa|ese|esa\s+nomas|ese\s+nomas|esa\s+hora|ese\s+horario|gracias|listo|ok|okay|dale|por\s+favor|porfa|porfavor|perfecto))*[\s.!]*$/;
+  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano) || AG_CONFIRMA_YA.test(agClientePlano);
   // FRANJA u OTRA HORA: lo que el paciente pidio cuando no quiere lo ofrecido.
   // «La tarde» empieza a las 13:00 (decision de Andres, 27/09/2026): el
   // mediodia no es lo que pide quien dice «¿en la tarde?».
