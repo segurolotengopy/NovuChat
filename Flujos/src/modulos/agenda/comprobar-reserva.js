@@ -485,9 +485,13 @@ if (ceden.length) {
   // tiene que volver a llamar.
   // El NOMBRE solo de una cita de ESTE turno (revision de 98796fd): en el
   // respaldo la que cae puede ser de otro paciente, y su nombre no se revela.
+  // El titulo lo escribe el modelo: solo de una a cuatro palabras de letras y sin
+  // lexico de cobro (revision de seguridad del #283); si no, «las HH:MM».
+  const nombreSeguro = (n) => /^[a-záéíóúüñ][a-záéíóúüñ'.]*( [a-záéíóúüñ][a-záéíóúüñ'.]*){0,3}$/i.test(n)
+    && !/(pag|señ|sena|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel|sald|liquid|garantiz)/i.test(n) ? n : '';
   const describir = (e) => {
     const quien = idsCreados.has(String(e.id))
-      ? String(e.summary || '').replace(/^.*?Cita\s+/i, '').split('—')[0].trim() : '';
+      ? nombreSeguro(String(e.summary || '').replace(/^.*?Cita\s+/i, '').split('—')[0].trim()) : '';
     let hora = '';
     try {
       hora = new Date(e.start.dateTime).toLocaleTimeString('es-BO', {
@@ -502,19 +506,20 @@ if (ceden.length) {
   // si no, se arma con la causa REAL. Decirle «ya estaba ocupado» a quien pidio
   // un domingo con la clinica cerrada es explicarle algo que no paso.
   const causas = new Set(ceden.map((e) => causaDe[String(e.id)] || 'cruce'));
-  const porQue = causas.has('pasado')
+  const porQueDe = (cs) => cs.has('pasado')
     ? 'la fecha de esa cita ya paso'
-    : causas.has('cruce')
+    : cs.has('cruce')
     ? 'ese horario ya estaba ocupado con la misma persona'
-    : (causas.size === 1 && causas.has('cerrado')
+    : (cs.size === 1 && cs.has('cerrado')
       ? 'ese dia no atendemos'
       // La grilla, cuando esta, antes que cualquier otra causa de horario
       // (revision de 98796fd): con causas mezcladas decia «fuera de horario».
-      : (causas.has('fuera_de_grilla')
+      : (cs.has('fuera_de_grilla')
         ? 'por este chat las citas son en punto o y media'
-        : (causas.size === 1 && causas.has('bloqueado')
+        : (cs.size === 1 && cs.has('bloqueado')
           ? 'ese horario esta reservado en la agenda'
           : 'ese horario esta fuera de nuestro horario de atencion')));
+  const porQue = porQueDe(causas);
   // «El resto de lo que agendamos si esta bien» SOLO si de verdad quedo alguna:
   // cuando el cliente pidio una sola cita y esa es la que cayo, esa frase le
   // dice que algo quedo cuando no quedo nada (2026-09-20).
@@ -600,6 +605,23 @@ if (ceden.length) {
     : soloSinConfirmar
     ? (avisoCanceladas ? avisoCanceladas + ' ' : '')
       + (sobreviven.length > 0 ? `La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada. ` : '') + preguntaSinConfirmar
+    // UNA QUEDO Y OTRA NO (Bellido, 29/09, #8588): dos hermanos, Mateo a las 17:30
+    // y Luca a las 18:00, fuera del horario. El candado deshizo la de Luca y el
+    // paciente leyo el texto del negocio, «no pude dejar tu cita registrada», con la
+    // de Mateo CONFIRMADA en el calendario y recepcion avisada de que no habia
+    // nada. Si quedo alguna, el mensaje dice cual quedo y cual no, sea cual sea el
+    // texto configurado: ese solo vale cuando no quedo ninguna.
+    : sobreviven.length > 0
+    ? (() => {
+      // Cada cita caida con SU causa (revision de seguridad del #283): las que faltan
+      // confirmar o el nombre se preguntan como siempre; solo las demas «no pudieron quedar».
+      const otras = ceden.filter((e) => !['sin_confirmar', 'sin_nombre'].includes(causaDe[String(e.id)]));
+      return [`La cita de ${sobreviven.map(describir).join(' y ')} quedó agendada.`,
+        otras.length ? `La de ${otras.map(describir).join(' y ')} no pudo quedar: ${porQueDe(new Set(otras.map((e) => causaDe[String(e.id)] || 'cruce')))}.` : '',
+        sinConf.length || sinNom.length ? preguntaSinConfirmar : '',
+        otras.length ? (usted ? 'Le paso este pedido a recepción para darle otro horario enseguida.'
+          : 'Le paso este pedido a recepción para darte otro horario enseguida.') : ''].filter(Boolean).join(' ');
+    })()
     : (configurado
     || `Disculpa, tengo que corregirte algo: la cita de ${caidas} no quedo, `
      + `porque ${porQue}. `
