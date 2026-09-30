@@ -209,6 +209,7 @@ if (bandera('sobre-bellido')) {
   for (const n of vivo.datos.nodes) for (const [tipo, c] of Object.entries(n.credentials ?? {})) if (c && c.id) (delVivo[tipo] ??= new Map()).set(c.id, c.name);
   const tabla = [];
   for (const n of b.nodes) {
+    if (n === t && Object.values(n.credentials ?? {}).some((c) => /aab1|segurolo|otp|receptor/i.test(String(c && c.name)))) morir('la credencial del disparador vivo es de un sistema ajeno (prohibición 7): no se sigue');
     if (n === t) { tabla.push(`  ${n.name}: el de Bellido, tal cual («${Object.values(n.credentials ?? {}).map((c) => c.name).join(', ')}»)`); continue; }
     const requerida = CRED_POR_TIPO_DE_NODO[n.type];
     if (requerida && !(n.credentials && n.credentials[requerida])) { n.credentials = Object.assign({}, n.credentials, { [requerida]: {} }); tabla.push(`  ${n.name}: venía SIN credencial ${requerida}; se pone la de Bellido de ese tipo`); }
@@ -237,7 +238,7 @@ if (bandera('sobre-bellido')) {
     const origen = { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
     if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
     const v = String(valorVivo(origen) ?? '');
-    if (v && !v.startsWith('REEMPLAZAR_')) { a.value = v; llenados.push(a.name); }
+    if (v && !v.startsWith('REEMPLAZAR_') && !v.startsWith('=')) { a.value = v; llenados.push(a.name); }
   }
   const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
   const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
@@ -254,13 +255,18 @@ if (bandera('sobre-bellido')) {
   if (marcas.length) morir(`quedan marcadores sin reponer: ${marcas.join(', ')}`);
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
   if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. Revise y use --restaurar-respaldo`);
-  let tras = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+  const leer = async () => { const r = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`); if (r.cod !== 200) morir(`GET después del PUT → ${r.cod}. Revise n8n y use --restaurar-respaldo`); return r.datos; };
+  let tras = await leer();
   if (tras.active !== true) {
     const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
-    tras = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+    tras = await leer();
     if (tras.active !== true) morir(`el flujo de Bellido quedó INACTIVO (activate → ${a.cod}). Use --restaurar-respaldo YA`);
   }
+  // Activo no prueba que la versión PUBLICADA sea el candidato (n8n separa borrador y publicada).
+  if (!PROPIOS_DE_B.every((x) => tras.nodes.some((n) => n.name === x))) morir('el flujo leído después del PUT no tiene los nodos del candidato. Use --restaurar-respaldo');
+  if (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId) morir('la versión ACTIVA no es la que se acaba de escribir (versionId ≠ activeVersionId). Revise n8n y use --restaurar-respaldo');
   console.log(`✓ candidato sobre Bellido: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
+  console.log('FALTA, ya: verificar-meta.sh --env .env.bellido (suscripción), un mensaje real desde un teléfono registrado y su ejecución en n8n. Si algo falla: --restaurar-respaldo.');
   process.exit(0);
 }
 
@@ -284,7 +290,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   if (bandera('restaurar-respaldo')) {
     if (!existsSync(RESPALDO)) morir('no existe el respaldo');
     const r = JSON.parse(readFileSync(RESPALDO, 'utf8'));
-    if (r.id !== env.N8N_WORKFLOW_ID) morir('el respaldo no es del flujo del Demo A de este .env');
+    if (r.id !== env.N8N_WORKFLOW_ID) morir('el respaldo no es del flujo de este .env');
     const igual = JSON.stringify(cuerpoPut(r)) === JSON.stringify(cuerpoPut(vivo.datos));
     console.log(`Respaldo: «${r.name}», ${r.nodes.length} nodos, guardado ${r.guardado ?? '?'}`);
     console.log(`Vivo    : «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
