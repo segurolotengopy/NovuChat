@@ -33,10 +33,14 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join, resolve, sep } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(AQUI, '..', '..', '..', '..');
+// La copia principal también es el repositorio (revisión de seguridad, L2): se mira la raíz común de git.
+const RAIZ_COMUN = dirname(execFileSync('git', ['-C', REPO, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim());
+const dentroDelRepo = (p) => [REPO, RAIZ_COMUN].some((r) => (p + sep).startsWith(r + sep));
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const bandera = (n) => args.includes(`--${n}`);
@@ -44,7 +48,7 @@ const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
 const ESTADO = resolve(opcion('estado') ?? morir('falta --estado <archivo fuera del repositorio>'));
-if ((ESTADO + sep).startsWith(REPO + sep)) morir('--estado tiene que estar FUERA del repositorio (lleva la ruta del webhook)');
+if (dentroDelRepo(ESTADO)) morir('--estado tiene que estar FUERA del repositorio (lleva la ruta del webhook)');
 const APLICAR = bandera('aplicar');
 const NOMBRE = 'TEMPORAL — Agenda mínima (prueba, borrar)';
 
@@ -138,16 +142,26 @@ const NO_PERMITIDOS = /bellido|platinum|q'?taco|captaci|segurolo|otp|aab1|whatsa
 const CRED_DEMO_A = {
   googlePalmApi: 'Google Gemini(PaLM) Api account',     // producción: Andres la autorizó para las pruebas del 30/09
   googleCalendarOAuth2Api: 'Google Calendar account',
-  httpHeaderAuth: 'Cierres NovuChat A (auto)',          // configuración, ingesta y cierre: cuentan en «ensayo»
+  httpHeaderAuth: { 'NovuChat ingesta (Bellido)': 'Cierres NovuChat A (auto)' }, // por NOMBRE de origen (L1): configuración, ingesta y cierre cuentan en «ensayo»
   whatsAppApi: 'WhatsApp account',
 };
 const ENVIOS = ['Enviar a WhatsApp', 'Enviar respaldo'];
 
 if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
-  if ((RESPALDO + sep).startsWith(REPO + sep)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids)');
+  if (dentroDelRepo(RESPALDO)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids)');
   const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
   if (vivo.cod !== 200) morir(`GET del flujo vivo del Demo A → ${vivo.cod}`);
+  // M2: después de un PUT el flujo tiene que quedar ACTIVO (con su webhook); si no, se activa y se verifica.
+  const asegurarActivo = async () => {
+    let w = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+    if (w.active !== true) {
+      const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
+      w = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+      if (w.active !== true) morir(`el flujo quedó INACTIVO tras el PUT (activate → ${a.cod}: ${JSON.stringify(a.datos.message ?? '').slice(0, 200)}). Revise n8n YA`);
+    }
+    return w;
+  };
   const cuerpoPut = (w) => ({ name: w.name, nodes: w.nodes, connections: w.connections, settings: w.settings ?? {} });
 
   if (bandera('restaurar-respaldo')) {
@@ -161,11 +175,18 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     if (!APLICAR || igual) { console.log(APLICAR ? '' : '\nEn seco: no se escribió nada. Agregue --aplicar.'); process.exit(0); }
     const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, cuerpoPut(r));
     if (put.cod !== 200) morir(`PUT del respaldo → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}`);
-    const tras = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
-    console.log(`✓ repuesto: «${tras.datos.name}», ${tras.datos.nodes.length} nodos, activo=${tras.datos.active}`);
+    const tras = r.active === false ? (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos : await asegurarActivo();
+    console.log(`✓ repuesto: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
     process.exit(0);
   }
 
+  // M1: si el vivo ya es el candidato B, no se sigue (se perdería la vuelta atrás exacta).
+  const PROPIOS_DE_B = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
+  if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) morir('el Demo A vivo YA tiene el candidato B: para volver, --restaurar-respaldo');
+  if (existsSync(RESPALDO)) {
+    const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
+    if (JSON.stringify(cuerpoPut(previo)) !== JSON.stringify(cuerpoPut(vivo.datos))) morir('el respaldo existente difiere del vivo: no se pisa. Úselo para restaurar, o elija otro --respaldo');
+  }
   // 1. el candidato B
   const b = JSON.parse(readFileSync(join(AQUI, '..', 'agenda-minima.v0.json'), 'utf8'));
   const trigB = b.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
@@ -177,7 +198,11 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   b.nodes = b.nodes.map((n) => (n === trigB[0] ? t : n));
   if (t.name !== nombreB) { b.connections[t.name] = b.connections[nombreB]; delete b.connections[nombreB]; }
   // 3. credenciales por nombre
-  const porNombre = new Map(((await llamar('GET', '/credentials?limit=250')).datos.data ?? []).map((c) => [c.name, c]));
+  const lista = (await llamar('GET', '/credentials?limit=250')).datos.data ?? [];
+  const repetidos = lista.map((c) => c.name).filter((x, i, a) => a.indexOf(x) !== i);
+  const porNombre = new Map(lista.map((c) => [c.name, c]));
+  // M3: cada credencial asignada tiene que ser una que el Demo A VIVO ya usa (por id), no solo un nombre igual.
+  const delDemoA = new Set(vivo.datos.nodes.flatMap((n) => Object.values(n.credentials ?? {}).map((c) => c && c.id)).filter(Boolean));
   const tabla = [];
   for (const n of b.nodes) {
     if (n === t) { tabla.push(`  ${n.name}: el del Demo A, tal cual («${Object.values(n.credentials ?? {}).map((c) => c.name).join(', ')}»)`); continue; }
@@ -190,9 +215,14 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
       tabla.push(`  ${n.name}: PARÁMETROS CAMBIADOS ${antes} → predefinedCredentialType/whatsAppApi`);
     }
     for (const tipo of Object.keys(n.credentials ?? {})) {
-      const nombre = CRED_DEMO_A[tipo] ?? morir(`«${n.name}» usa ${tipo}, que no está en la tabla de credenciales del Demo A`);
+      const regla = CRED_DEMO_A[tipo];
+      const origen = (n.credentials[tipo] && n.credentials[tipo].name) || '';
+      const nombre = (typeof regla === 'string' ? regla : regla && regla[origen])
+        ?? morir(`«${n.name}» usa ${tipo} «${origen}», que no está en la tabla de credenciales del Demo A`);
+      if (repetidos.includes(nombre)) morir(`hay más de una credencial llamada «${nombre}» en n8n: no se elige por nombre`);
       const c = porNombre.get(nombre) ?? morir(`no existe en n8n la credencial «${nombre}»`);
       if (c.type !== tipo) morir(`«${nombre}» es de tipo ${c.type}, no ${tipo}`);
+      if (!delDemoA.has(c.id)) morir(`«${nombre}» no es una credencial que el Demo A vivo ya use`);
       n.credentials[tipo] = { id: c.id, name: c.name };
       tabla.push(`  ${n.name}: ${tipo} → «${c.name}»`);
     }
@@ -213,13 +243,15 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
   console.log(`Marcadores que quedan (solo el respaldo de «Config base», se leen como vacío): ${marcas.join(', ') || '—'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
-  writeFileSync(RESPALDO, JSON.stringify(Object.assign({}, vivo.datos, { guardado: new Date().toISOString() })));
+  if (!existsSync(RESPALDO)) {
+    writeFileSync(RESPALDO, JSON.stringify(Object.assign({}, vivo.datos, { guardado: new Date().toISOString() })), { flag: 'wx', mode: 0o600 });
+  }
   chmodSync(RESPALDO, 0o600);
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada en n8n (solo el respaldo local). Agregue --aplicar.'); process.exit(0); }
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
   if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. El vivo no cambió o quedó a medias: revise y use --restaurar-respaldo`);
-  const tras = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
-  console.log(`✓ candidato B sobre el Demo A: «${tras.datos.name}», ${tras.datos.nodes.length} nodos, activo=${tras.datos.active}`);
+  const tras = await asegurarActivo();
+  console.log(`✓ candidato B sobre el Demo A: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   process.exit(0);
 }
 
