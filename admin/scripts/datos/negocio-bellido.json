@@ -54,6 +54,8 @@
       "nombre": "Consulta pediátrica",
       "area": "pediatria",
       "descripcion": "Consulta con el Dr. Andres Bellido",
+      "precio": 250,
+      "moneda": "BOB",
       "duracionMin": 30,
       "activo": true
     },
