@@ -181,10 +181,13 @@ describe('La descripción es la que el asistente sabe leer', () => {
     expect(descripcion).toContain('Telefono: 59170000001');
   });
 
-  it('el título sigue el formato «Cita <nombre> — <servicio>» que usa el flujo', () => {
+  it('el título de la importación sigue el marco «Cita <nombre> — <servicio>» que el flujo recibe del modelo', () => {
     const agendar = flujo.nodes.find((n) => n.name === 'agendar_cita')!;
     const titulo = String((agendar.parameters['additionalFields'] as Record<string, unknown>)['summary']);
-    expect(titulo).toContain('Cita <nombre> — <servicio>');
+    // El flujo de Bellido recibe del modelo «Cita <apellidos>, <nombres> — <servicio>» y arma el evento
+    // como lo escribe el doctor, «Apellidos, Nombres (CNS)» (30/09/2026). Lo importado conserva el marco
+    // «Cita … — servicio»: el código lo entiende igual que el orden del doctor.
+    expect(titulo).toContain('Cita <apellidos>, <nombres> — <servicio>');
     const ics = generar(['2026-10-07,11:00,Ana Quispe,70000001,control-del-nino-sano']).leer();
     expect(ics).toContain('SUMMARY:Cita Ana Quispe — control-del-nino-sano');
   });

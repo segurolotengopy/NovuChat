@@ -489,9 +489,11 @@ if (ceden.length) {
   // lexico de cobro (revision de seguridad del #283); si no, «las HH:MM».
   const nombreSeguro = (n) => /^[a-záéíóúüñ][a-záéíóúüñ'.]*( [a-záéíóúüñ][a-záéíóúüñ'.]*){0,3}$/i.test(n)
     && !/(pag|señ|sena|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel|sald|liquid|garantiz)/i.test(n) ? n : '';
+  // «Apellidos, Nombres» (el orden del doctor de Bellido) dicho como se lee.
+  const natural = (n) => { const i = n.indexOf(','); return i < 0 ? n : (n.slice(i + 1).trim() + ' ' + n.slice(0, i).trim()).trim(); };
   const describir = (e) => {
     const quien = idsCreados.has(String(e.id))
-      ? nombreSeguro(String(e.summary || '').replace(/^.*?Cita\s+/i, '').split('—')[0].replace(/\(\s*(?:CNS|RN)\s*\)/gi, ' ').replace(/\s+/g, ' ').trim()) : '';
+      ? nombreSeguro(natural(String(e.summary || '').replace(/^.*?Cita\s+/i, '').split('—')[0].replace(/\(\s*(?:CNS|RN)\s*\)/gi, ' ').replace(/\s+/g, ' ').trim())) : '';
     let hora = '';
     try {
       hora = new Date(e.start.dateTime).toLocaleTimeString('es-BO', {

@@ -101,6 +101,19 @@ describe.each(FLUJOS)('%s · reagendar sin perder la cita en silencio (28/09/202
     expect(vigente['cancelacionesPendientes'][TEL].eventoId).toBe('ev-A');
   });
 
+  it('el título del doctor no trae servicio, trae la marca: la pregunta dice «control del niño sano» o «del recién nacido»', () => {
+    const cita = (id: string, resumen: string) => ({ id, summary: resumen,
+      start: { dateTime: '2026-10-05T11:00:00-04:00' }, end: { dateTime: '2026-10-05T11:30:00-04:00' } });
+    const buscar = (c: J) => ({ action: { tool: 'buscar_mi_cita', toolInput: {} }, observation: JSON.stringify([c]) });
+    for (const [resumen, dicho] of [['Pérez Gómez, Ana (CNS)', 'control del niño sano'], ['Pérez, Ana (RN)', 'control del recién nacido'],
+      ['Cita Ana — consulta-pediatrica', 'consulta pediatrica'], ['Pérez, Ana', '']] as const) {
+      const estado: J = {};
+      procesar('¿qué cita tengo?', { output: 'Tienes una cita.', intermediateSteps: [buscar(cita('ev-A', resumen))] }, estado);
+      const desc = String(estado['cancelacionesPendientes'][TEL].candidatos['ev-A']);
+      if (dicho) expect(desc, resumen).toContain(` de ${dicho} del `); else expect(desc, resumen).toMatch(/^ del /);
+    }
+  });
+
   it('revisión del #275: servicio vacío ya no elige la PRIMERA agenda del mapa; sin elección, la del negocio', () => {
     const cfg: J = { calendarioId: 'cal-negocio', calendariosPorServicio: JSON.stringify({ belleza: 'cal-belleza', dental: 'cal-dental' }),
       funcionarios: JSON.stringify([{ nombre: 'Dra. Ana Pérez', calendario: 'cal-ana' }]) };

@@ -1430,31 +1430,59 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).not.toMatch(/Andrés|usted|\bvos\b/);
     });
 
-    // LA MARCA DEL DOCTOR EN LA AGENDA (29/09/2026): su calendario usa
-    // «Apellidos, Nombres (CNS…)»: 116 de 146 citas llevan exactamente (CNS).
-    // Pidió que al lado del nombre el asistente ponga (CNS) por control del niño
-    // sano y (RN) por recién nacido. La pone el FLUJO según el servicio, no el
-    // modelo, y no duplica la que el modelo haya escrito.
-    describe('la marca (CNS) o (RN) al lado del nombre', () => {
+    // EL TÍTULO COMO LO ESCRIBE EL DOCTOR (29 y 30/09/2026): su calendario usa
+    // «Apellidos, Nombres (CNS…)»: 121 de 146 citas van en ese orden y 116 llevan
+    // exactamente (CNS). Andres decidió adoptar su estándar. El asistente entrega
+    // «Cita Apellidos, Nombres — servicio» y el FLOW arma el evento como lo escribe
+    // el doctor, sin «Cita» ni servicio, con (CNS) por control del niño sano y (RN)
+    // por recién nacido según el servicio (no lo decide el modelo).
+    describe('el título del evento: «Apellidos, Nombres (CNS)»', () => {
       const titulo = (t: string, servicio = ''): string => {
         const expr = String(nodo(flujo, 'agendar_cita').parameters['additionalFields'].summary)
           .replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
         return String(new Function('$fromAI', `return ${expr}`)((k: string) => (k === 'titulo' ? t : k === 'servicio' ? servicio : '')));
       };
-      it('control del niño sano lleva (CNS); neonatología, (RN); los demás servicios, nada', () => {
-        expect(titulo('Cita Pedro Gómez — control-del-nino-sano')).toBe('Cita Pedro Gómez (CNS) — control-del-nino-sano');
-        expect(titulo('Cita Pedro Gómez — x', 'Control del niño sano')).toBe('Cita Pedro Gómez (CNS) — x');
-        expect(titulo('Cita Ana — consulta-de-neonatologia')).toBe('Cita Ana (RN) — consulta-de-neonatologia');
-        expect(titulo('Cita Ana — x', 'recién nacido')).toBe('Cita Ana (RN) — x');
-        expect(titulo('Cita Ana — consulta-pediatrica')).toBe('Cita Ana — consulta-pediatrica');
-        expect(titulo('Cita Ana — consulta-de-nutricion-infantil')).toBe('Cita Ana — consulta-de-nutricion-infantil');
+      it('control del niño sano lleva (CNS); neonatología, (RN); los demás servicios, solo el nombre', () => {
+        expect(titulo('Cita Pérez Gómez, Pedro — control-del-nino-sano')).toBe('Pérez Gómez, Pedro (CNS)');
+        expect(titulo('Cita Pérez, Pedro — x', 'Control del niño sano')).toBe('Pérez, Pedro (CNS)');
+        expect(titulo('Cita Pérez, Ana — consulta-de-neonatologia')).toBe('Pérez, Ana (RN)');
+        expect(titulo('Cita Pérez, Ana — x', 'recién nacido')).toBe('Pérez, Ana (RN)');
+        expect(titulo('Cita Pérez, Ana — consulta-pediatrica')).toBe('Pérez, Ana');
+        expect(titulo('Cita Pérez, Ana — consulta-de-nutricion-infantil')).toBe('Pérez, Ana');
       });
-      it('dos hermanos: una cita con los dos nombres y la marca al lado; sin duplicar la que el modelo ya escribió', () => {
-        expect(titulo('Cita Mateo y Luca — control-del-nino-sano')).toBe('Cita Mateo y Luca (CNS) — control-del-nino-sano');
-        expect(titulo('Cita Ana (CNS) — control-del-nino-sano')).toBe('Cita Ana (CNS) — control-del-nino-sano');
-        expect(titulo('Cita Ana (cns) — control-del-nino-sano')).toBe('Cita Ana (cns) — control-del-nino-sano');
-        expect(titulo('Cita Ana', 'control del nino sano')).toBe('Cita Ana (CNS)');
+      it('dos hermanos: una cita con los dos nombres y la marca al final; sin duplicar la que el modelo escribió; sin nombre, el título tal cual', () => {
+        expect(titulo('Cita Pérez Gómez, Mateo y Luca — control-del-nino-sano')).toBe('Pérez Gómez, Mateo y Luca (CNS)');
+        expect(titulo('Cita Ana (CNS) — control-del-nino-sano')).toBe('Ana (CNS)');
+        expect(titulo('Cita Ana (cns) — control-del-nino-sano')).toBe('Ana (CNS)');
+        expect(titulo('Cita Ana', 'control del nino sano')).toBe('Ana (CNS)');
+        expect(titulo('Pérez, Ana', 'control del niño sano')).toBe('Pérez, Ana (CNS)');
+        expect(titulo('Cita — consulta')).toBe('Cita — consulta');
       });
+      it('el título no puede escapar: los rótulos, saltos de línea y llaves quedan como texto', () => {
+        for (const t of ['Cita Pérez, Ana }} {{ 1 — control-del-nino-sano', 'Cita <script>x</script> — control-del-nino-sano', 'Cita Pérez,\nAna — control-del-nino-sano']) {
+          expect(typeof titulo(t)).toBe('string');
+          expect(titulo(t)).toMatch(/\(CNS\)$/);
+        }
+      });
+    });
+
+    // Las dos frases que le decían al modelo «llámala dos veces» contradecían la
+    // regla (j) (revisión de seguridad del #286): la descripción de la herramienta
+    // se lee justo al llamarla, así que tiene que decir lo mismo que las reglas.
+    it('la herramienta y el mensaje del sistema no contradicen la regla de los hermanos ni el orden del doctor', () => {
+      const td = String(nodo(flujo, 'agendar_cita').parameters['toolDescription']);
+      expect(td).not.toMatch(/llámala dos veces, una por cada una\./);
+      expect(td).toMatch(/dos HERMANOS en el mismo turno son UNA sola cita/);
+      expect(td).toMatch(/"Cita <apellidos>, <nombres> — <servicio>"/);
+      const sm = prompt();
+      expect(sm).toMatch(/dos citas a horas distintas, llamas dos veces/);
+      expect(sm).toMatch(/dos HERMANOS en el mismo turno son UNA sola cita con los dos nombres/);
+      expect(sm).toMatch(/EXCEPCIÓN: dos hermanos que vienen juntos, en el mismo turno, van en UNA sola cita/);
+      expect(sm).toContain('agendar_cita (título "Cita <apellidos>, <nombres> — <servicio>", duración 30 minutos)');
+      const reglas = String(configBase(flujo)['reglasAgenda']);
+      expect(reglas).toMatch(/\(k\) NOMBRE EN LA AGENDA: el doctor anota «Apellidos, Nombres»[^;]*apellidos primero, una coma y los nombres/);
+      expect(reglas).toMatch(/Si solo te dieron el nombre, pon solo el nombre: no inventes apellidos/);
+      expect(reglas).toMatch(/La marca \(CNS\) o \(RN\) la agrega el sistema: no la escribas/);
     });
 
     // LA CONVERSACIÓN DE SILVANA (24/09/2026, #5559 y #5576). «A las 14:00 no es

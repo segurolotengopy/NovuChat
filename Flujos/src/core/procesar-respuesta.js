@@ -699,7 +699,10 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // el id para que la pregunta siguiente pueda nombrar lo que va a cancelar.
   const describirCita = (cita) => {
     if (!cita) return '';
-    const serv = (String(cita.summary || '').split('—')[1] || '').trim().replace(/-/g, ' ');
+    const resumen = String(cita.summary || '');
+    // El titulo del doctor (Bellido) no trae servicio, trae la marca: (CNS) o (RN).
+    const serv = (resumen.split('—')[1] || '').trim().replace(/-/g, ' ')
+      || (/\(\s*CNS\b/i.test(resumen) ? 'control del niño sano' : (/\(\s*RN\b/i.test(resumen) ? 'control del recién nacido' : ''));
     let cuando = '';
     try {
       const d = new Date(cita.start && cita.start.dateTime);
@@ -1132,11 +1135,21 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // delante. Sin anclar, «Cita — Consulta» daba el nombre «— Consulta».
   const agNombreDelTitulo = (titulo) => {
     const t = String(titulo || '').replace(/^\s*PENDIENTE DE SEÑA\s*·\s*/i, '');
-    const m = /^\s*Cita\s*:?\s*([^—–-]*)/i.exec(t);
-    // La marca del tipo de cita que el doctor pone al lado del nombre —«Cita Pedro (CNS)
-    // — …», «(RN)»: control del nino sano y recien nacido, 29/09/2026— no es parte del
-    // nombre: sin quitarla, el mensaje al paciente la tomaba por una palabra de mas.
+    // Dos formas: «Cita <nombre> — <servicio>» (la de siempre) y la del doctor de
+    // Bellido, «Apellidos, Nombres (CNS)», sin «Cita» ni servicio (30/09/2026).
+    // Sin anclar a «Cita», un titulo de una sola palabra generica sigue sin ser un
+    // nombre: `agPrimeraNombre` descarta las genericas y las del negocio.
+    const m = /^\s*Cita\s*:?\s*([^—–-]*)/i.exec(t) || /^\s*([^—–(]*)/.exec(t);
+    // La marca del tipo de cita que el doctor pone al lado del nombre —«(CNS)»
+    // control del nino sano, «(RN)» recien nacido— no es parte del nombre: sin
+    // quitarla, el mensaje al paciente la tomaba por una palabra de mas.
     return m ? m[1].replace(/\(\s*(?:CNS|RN)\s*\)/gi, ' ').replace(/\s+/g, ' ').trim() : '';
+  };
+  // «Apellidos, Nombres» (el orden del doctor) dicho como se lee: «Nombres Apellidos».
+  const agNombreNatural = (titulo) => {
+    const n = agNombreDelTitulo(titulo);
+    const i = n.indexOf(',');
+    return i < 0 ? n : (n.slice(i + 1).trim() + ' ' + n.slice(0, i).trim()).trim();
   };
   // Palabras que NO son un nombre: las de los servicios del catalogo, las de
   // quienes atienden, y las genericas. «Cita Consulta — consulta» con un
@@ -1172,7 +1185,13 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   // queda ninguna: se toma la primera que no sea generica, y tambien tiene que
   // haberla dicho. Sin eso se le preguntaba el nombre sin fin.
   const agPrimeraNombre = (titulo) => {
-    const palabras = agPalabrasDe(agNombreDelTitulo(titulo)).filter((w) => !AG_GENERICAS.has(w));
+    // Con «Apellidos, Nombres» el primer NOMBRE es el de despues de la coma (el
+    // criterio de siempre: la primera palabra de nombre); sin coma, la de siempre.
+    const n = agNombreDelTitulo(titulo);
+    const i = n.indexOf(',');
+    const util = (t) => agPalabrasDe(t).filter((w) => !AG_GENERICAS.has(w));
+    let palabras = util(i < 0 ? n : n.slice(i + 1));
+    if (!palabras.length && i >= 0) palabras = util(n.slice(0, i));
     return palabras.find((w) => !AG_DEL_NEGOCIO.has(w)) || palabras[0] || '';
   };
   const agTieneNombre = (titulo) => {
@@ -1326,7 +1345,7 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
     // de seguridad de bb96b4c: el titulo lo escribe el modelo); ni una palabra
     // del lexico de cobro, que `AFIRMA_COBRO` no cubre entero («Manuel seña
     // acreditada», «Manuel ya pagó»: revision de 9dac4e6); si no, «tu cita».
-    const paciente = agNombreDelTitulo(c.titulo);
+    const paciente = agNombreNatural(c.titulo);
     return { fecha: p.fecha, min: p.min, dia: agDiaTexto(p.fecha), hora: agHora(p.min),
       paciente: AG_NOMBRE_DE_PACIENTE.test(paciente) && !AFIRMA_COBRO.test(paciente) && !AG_LEXICO_COBRO.test(paciente)
         ? paciente : '' };

@@ -1309,6 +1309,34 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       expect(texto).toContain('La de Mateo a las 15:30 no pudo quedar');
     });
 
+    // EL TÍTULO DEL DOCTOR (30/09/2026): «Apellidos, Nombres (CNS)», sin «Cita» ni servicio.
+    it('«Apellidos, Nombres (CNS)»: el primer nombre es el de después de la coma; el mensaje lo dice como se lee', () => {
+      const doc = (id: string, h1: string, h2: string, resumen: string): J => ({ ...cita(id, LUNES, h1, h2), summary: resumen });
+      const armar = (palabras: string[], mins = [930]): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: mins },
+        ultima: { fecha: LUNES.iso, mins, desde: Date.now(), ...(mins.length > 1 ? { conjunto: true } : {}) }, elegido: null, palabras, desde: Date.now() } } });
+      const nueva = (t: string) => [consulta(LUNES), agendo(doc('h1', '15:30', '16:00', t))];
+      // El cliente dijo «Mateo Pérez Gómez» (y «Luca» para los hermanos): el nombre del título vale.
+      for (const t of ['Pérez Gómez, Mateo (CNS)', 'Pérez, Mateo (CNS)', 'Pérez Gómez, Mateo y Luca (CNS)', 'Mateo (RN)', 'Mateo']) {
+        const r = procesar('Si', 'Listo.', nueva(t), armar(['mateo', 'perez', 'gomez', 'luca']));
+        expect(r['agendaSinNombre'], t).toEqual([]);
+        expect(r['agendaSinConfirmar'], t).toEqual([]);
+      }
+      // El primer NOMBRE es el de después de la coma: si dijo el apellido y no el nombre, falta el nombre.
+      expect(procesar('Si', 'Listo.', nueva('Pérez Gómez, Mateo (CNS)'), armar(['perez', 'gomez']))['agendaSinNombre']).toEqual(['h1']);
+      // Solo la marca, o solo palabras genéricas, no son un nombre.
+      for (const t of ['(CNS)', '(RN)', 'Consulta', 'Control (CNS)']) {
+        expect(procesar('Si', 'Listo.', nueva(t), armar(['cns', 'rn', 'consulta', 'control']))['agendaSinNombre'], t).toEqual(['h1']);
+      }
+      // El mensaje al paciente nombra en orden natural: «Luca Pérez Gómez», no «Pérez Gómez, Luca».
+      const a1 = doc('h1', '15:30', '16:00', 'Pérez Gómez, Mateo (CNS)'), b1 = doc('h2', '16:00', '16:30', 'Pérez Gómez, Luca (CNS)');
+      const otra = { ...cita('otra', LUNES, '15:30', '16:00'), summary: 'Otro paciente', created: '2020-01-01T00:00:00Z' };
+      const t1 = turno('Si', 'Listo, agendadas.', [consulta(LUNES), agendo(a1), agendo(b1)], [a1, b1, otra, almuerzo(LUNES)], armar(['mateo', 'luca'], [930, 960]));
+      const texto = String(t1.c['respuesta']);
+      expect(texto).not.toMatch(/CNS|\(RN\)|,/);
+      expect(texto).toContain('La cita de Luca Pérez Gómez a las 16:00 quedó agendada');
+      expect(texto).toContain('La de Mateo Pérez Gómez a las 15:30 no pudo quedar');
+    });
+
     it('revisión de seguridad del #284: «ya» a «¿Te las agendo?» confirma el conjunto solo con la marca del código', () => {
       const dos = [conNombre('h3', LUNES, '15:30', '16:00', 'Mateo'), conNombre('h4', LUNES, '16:00', '16:30', 'Luca')];
       const armar = (conjunto: boolean): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930, 960] },
