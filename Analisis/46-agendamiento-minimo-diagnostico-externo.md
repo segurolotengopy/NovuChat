@@ -5,8 +5,9 @@ Andres el 30/09/2026, sobre el JSON de `Flujos/bellido-agendamiento.json`.
 Se guarda tal como llegó (§1 a §4). La segunda parte —el ciclo entre
 Antigravity y Claude— está en el §6.
 
-**Estado:** diagnóstico, sin decisión. No cambia `Analisis/41` ni la pausa de
-la rearquitectura (§6.4 de ese plano) por sí solo.
+**Estado:** diagnóstico, más una construcción experimental autorizada el
+30/09 como excepción a la pausa (§6). No cambia `Analisis/41`, y la
+migración de Bellido sigue sin decidir.
 
 ---
 
@@ -160,7 +161,7 @@ las corregidas, en `~/Descargas/NOVUCHAT_agenda-minima-0{1,2}-…_2026-09-30.md`
 
 | Marca | Corrección | Por qué |
 |---|---|---|
-| R1 | Solo credenciales del Demo A | El prompt original mandaba copiar la credencial de Bellido. «NovuChat ingesta (Bellido)» reporta a su comercio, un cliente en prueba con bolsa contada, y las de Graph y WhatsApp envían desde su número real |
+| R1 | Solo credenciales del Demo A; los flujos del sistema financiero que comparten la instancia de n8n no se abren (prohibiciones 5 y 7) | El prompt original mandaba copiar la credencial de Bellido. «NovuChat ingesta (Bellido)» reporta a su comercio, un cliente en prueba con bolsa contada, y las de Graph y WhatsApp envían desde su número real |
 | R2 | La configuración de Bellido llega por el comercio `ensayo` (`ensayo.mjs`) | Con la configuración real, la prueba de emergencia le escribía al doctor y la de día lleno llenaba su agenda |
 | R3 | Flujo inactivo; candado también después de crear; caso 13 de cruce | Una app de Meta tiene un solo webhook. Verificar solo antes de crear deja abierta la carrera (regla mandatoria del 17/09) |
 | R4 | Workspace en `.claude/worktrees/agenda-minima/`, rama `experimental/agenda-minima` | La carpeta principal la comparten varias sesiones |
