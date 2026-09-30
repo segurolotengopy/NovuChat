@@ -8,6 +8,34 @@ huecos los calcula `src/lib/agenda.js`; la confirmación es un **botón**, no la
 Es un flujo **experimental**: vive en `Flujos/experimental/agenda-minima/`, fuera de la publicación
 normal, y no se activa contra el número de ningún cliente (contrato: `CONTRATO.md`).
 
+## Estado al 30/09/2026, 19:00 (candidato B del concurso para Bellido, sha 7d49dec)
+
+- **Qué hace:** menú de 4 filas; cita por botón con candado antes y después de crear; hermanos en una cita;
+  título «Apellidos, Nombres (CNS)» o «(RN)»; desde mañana, hoy solo si lo piden; día lleno ofrece el siguiente;
+  una hora escrita que coincide con la oferta cuenta como el botón (una PREGUNTA no); reagendar y cancelar por
+  botón, sin perder la cita; emergencia con botón a recepción y aviso al doctor (plantilla, texto de respaldo);
+  vacunas y cremas al doctor; audio transcripto (hasta 720.000 bytes).
+- **Consultas por código**, con textos de la configuración: servicios, dirección, horario (solo el del panel) y
+  **costo, solo si el paciente lo pregunta explícitamente** (Andres, 30/09; `respuestaCosto` en «Config base»).
+  Un monto nunca sale de la redacción del modelo.
+- **Imágenes:** con pie, se procesan como ese texto; sin pie, «Recibí tu imagen. ¿Qué necesitas?» con el menú.
+- **Mensajes por cita típica: 5** (menú, oferta, nombre, confirmación y redes del doctor en un segundo mensaje,
+  como pidió el doctor), igual que el flujo actual de Bellido.
+- **Revisiones:** tres rondas de seguridad (0 críticas y 0 altas abiertas); cuatro rondas del arnés de la
+  revisora; prueba con teléfono real de Andres en el Demo A (5 observaciones, corregidas).
+
+### Límites conocidos y lo que queda para después
+- **Describir imágenes con Gemini** (como el flujo actual): hoy una imagen sin pie no se lee.
+- **Header Auth en el Webhook de prueba** («Entrada de prueba», solo en `agenda-minima.prueba.json`).
+- Los textos de transferencia nombran «el botón» aunque falte el número (panel caído y respaldo vacío).
+- «A las 11:30 para Juan Pérez Gómez» sin «el paciente es» elige la hora y vuelve a pedir el nombre; una hora
+  escrita con dos nombres de hermanos pasa por el modelo.
+- Una cita cargada a mano por el doctor, sin línea «Telefono:», no la ve el paciente para moverla o cancelarla:
+  pasa a recepción.
+- Sin seña, sin comprobantes, sin varias agendas (ver «Lo que NO hace, a propósito»).
+- La configuración de Bellido se contradice en el precio (`instruccionesExtra` dice que no hay precios); es de
+  datos y la alinea la cartera.
+
 ## Archivos
 
 | Archivo | Qué es |
@@ -245,16 +273,16 @@ texto: el menú sale una vez por ventana; el «Redes del doctor» sale **solo** 
 
 | Conversación | Bellido | Agenda mínima | Diferencia |
 |---|---|---|---|
-| **Cita típica** (hola, servicio, hueco, nombre, confirmación) | menú (1) + respuesta del agente con horarios (1) + pregunta del nombre o «¿te la agendo?» (1 o 2) + confirmación (1) + redes (1) = **5 a 6** | menú (1) + oferta con botones (1) + pide el nombre (1) + confirmación con las redes adentro (1) = **4** | **−1 a −2** |
+| **Cita típica** (hola, servicio, hueco, nombre, confirmación) | menú (1) + respuesta del agente con horarios (1) + pregunta del nombre o «¿te la agendo?» (1 o 2) + confirmación (1) + redes (1) = **5 a 6** | menú (1) + oferta con botones (1) + pide el nombre (1) + confirmación (1) + redes (1) = **5** | **0 a −1** |
 | Emergencia | botón a recepción (1) + aviso al doctor (1) = 2 | botón a recepción (1) + aviso al doctor (1) = **2** | 0 |
 | Vacunas y otros | contacto al doctor (1) | contacto al doctor (1) = **1** | 0 |
 | Cancelar una cita | pregunta y confirmación del agente (1 o 2) + resultado (1) = 2 a 3 | botón «Cancelar» (1) + resultado (1) = **2** | 0 a −1 |
 | Reagendar (una cita) | agente: cancelar, confirmar, ofrecer, nombre, confirmar = 4 o más | oferta directa (1) + confirmación (1) = **2** | −2 o más |
-| Foto o audio sin entender | respuesta del agente (1) | 1 (texto; foto: botón a recepción) + aviso (1, solo la foto) | 0 a +1 |
+| Foto o audio sin entender | respuesta del agente (1) | 1 (audio: pide que lo escriba; foto sin pie: «Recibí tu imagen» con el menú) | 0 |
 | Error del modelo o del calendario | «problema técnico» (1) | texto con botón (1) + aviso a recepción (1) = **2** | +1 (cumple la política de transferencia) |
 
-- Las redes del doctor van **dentro** del mensaje de confirmación (un mensaje de texto admite 4.096
-  caracteres): −1 mensaje por cita respecto a Bellido.
+- Las redes del doctor van en un **segundo** mensaje después de la confirmación, como en el flujo actual (petición
+  del doctor, fila 23 de la aceptación, 30/09). La primera versión las ponía dentro de la confirmación.
 - Los avisos a recepción y al doctor no son mensajes de la conversación del paciente (no se reportan a la
   ingesta), pero sí cuestan como envío: son los +1 de emergencia, errores y transferencias, igual que Bellido.
 - **Llamadas a la ingesta**: una por cada mensaje entrante y una por cada saliente al paciente. La suite las
