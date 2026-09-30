@@ -2,8 +2,8 @@
 
 **Origen:** análisis externo, hecho por otra sesión de Claude.ai a pedido de
 Andres el 30/09/2026, sobre el JSON de `Flujos/bellido-agendamiento.json`.
-Se guarda tal como llegó (§1 a §4). La segunda parte —las instrucciones a
-Antigravity y a la sesión revisora— llega aparte y se agrega como §6.
+Se guarda tal como llegó (§1 a §4). La segunda parte —el ciclo entre
+Antigravity y Claude— está en el §6.
 
 **Estado:** diagnóstico, sin decisión. No cambia `Analisis/41` ni la pausa de
 la rearquitectura (§6.4 de ese plano) por sí solo.
@@ -128,6 +128,57 @@ sea en el número de prueba y lo arme Antigravity, necesita su autorización
 escrita (`Analisis/41` §12.10). La forma y los límites de ese encargo son la
 segunda parte, en el §6.
 
-## 6. Segunda parte: instrucciones a Antigravity y a la sesión revisora
+## 6. Segunda parte: el ciclo Antigravity ↔ Claude (30/09/2026)
 
-Pendiente: llega en el siguiente mensaje de Andres.
+**Autorización.** El 30/09/2026 Andres autorizó por escrito construir y
+verificar «Agenda mínima v0» como **excepción a la pausa** (`Analisis/41`
+§6.4, por §12.10). La excepción cubre esto y nada más: un flujo aparte,
+inactivo y experimental, sobre el número del Demo A con el comercio
+`ensayo`. No retoma F2 ni F3, y no reemplaza al arreglo del flujo vigente de
+Bellido, que sigue su propio camino.
+
+**Los tres documentos del ciclo.** Llegaron de la misma sesión externa y
+están en `~/Claude-Proyectos/coordinacion/agendamiento-minimo/`:
+- `00-GUIA`: roles y calendario;
+- `01-PROMPT`: Antigravity construye;
+- `02-PROMPT`: Claude verifica.
+
+La idea central es separar los roles. **Antigravity construye y corrige, sin
+gastar cuota de Claude. Una sesión de Claude verifica con la batería del
+29/09 y devuelve hallazgos numerados. Andres decide.** Claude nunca corrige lo
+que construyó Antigravity, y Antigravity nunca discute el veredicto.
+
+**Calendario:**
+- **30/09 y 01/10:** Antigravity construye, una vez que Gemini vuelva a
+  responder.
+- **02/10 desde las 04:00:** la sesión constructora hace la primera
+  verificación.
+- **Fin de semana:** las rondas 2 y 3, si hacen falta.
+
+**Correcciones de la revisora antes de pegar.** Las versiones que se usan son
+las corregidas, en `~/Descargas/NOVUCHAT_agenda-minima-0{1,2}-…_2026-09-30.md`:
+
+| Marca | Corrección | Por qué |
+|---|---|---|
+| R1 | Solo credenciales del Demo A | El prompt original mandaba copiar la credencial de Bellido. «NovuChat ingesta (Bellido)» reporta a su comercio, un cliente en prueba con bolsa contada, y las de Graph y WhatsApp envían desde su número real |
+| R2 | La configuración de Bellido llega por el comercio `ensayo` (`ensayo.mjs`) | Con la configuración real, la prueba de emergencia le escribía al doctor y la de día lleno llenaba su agenda |
+| R3 | Flujo inactivo; candado también después de crear; caso 13 de cruce | Una app de Meta tiene un solo webhook. Verificar solo antes de crear deja abierta la carrera (regla mandatoria del 17/09) |
+| R4 | Workspace en `.claude/worktrees/agenda-minima/`, rama `experimental/agenda-minima` | La carpeta principal la comparten varias sesiones |
+| R5 | Nunca «eso lo confirma recepción» sin transferir | Política «solo se ofrece lo que se cumple» (21/09) |
+| R6 | El estado viaja en el id del botón cuando se puede | `staticData` no se guarda en una ejecución manual |
+| R7 | El texto va dentro del mensaje interactivo; los mensajes se cuentan | Cada mensaje cuesta 0,0113 USD desde el 01/10 |
+| R8 | Marcadores en el JSON exportado; ninguna secuencia de 10 dígitos o más | El repositorio es público |
+
+**Quién verifica.** La sesión constructora, por decisión de Andres del 30/09,
+y no la cartera: la cartera sigue con Bellido comercial. Antes de que
+Antigravity empiece, la constructora hace tres cosas:
+- prepara el worktree;
+- carga `ensayo` con la configuración de Bellido;
+- deja en `PREPARACION.md` los **nombres** de las credenciales del Demo A.
+
+Cada `--aplicar` de esa preparación pasa por el «sí» de Andres.
+
+**Un número para dos trabajos.** El número del Demo A es el único donde se
+ensaya. Por eso Agenda mínima y cualquier ensayo del arreglo de Bellido (PR
+#286) no pueden usarlo a la vez. Va primero el arreglo, porque protege a un
+cliente real.
