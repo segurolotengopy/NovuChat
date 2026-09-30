@@ -1437,11 +1437,9 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
     // el doctor, sin «Cita» ni servicio, con (CNS) por control del niño sano y (RN)
     // por recién nacido según el servicio (no lo decide el modelo).
     describe('el título del evento: «Apellidos, Nombres (CNS)»', () => {
-      const titulo = (t: string, servicio = ''): string => {
-        const expr = String(nodo(flujo, 'agendar_cita').parameters['additionalFields'].summary)
-          .replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
-        return String(new Function('$fromAI', `return ${expr}`)((k: string) => (k === 'titulo' ? t : k === 'servicio' ? servicio : '')));
-      };
+      // Se evalúa la expresión VERSIONADA del nodo con el evaluador que ya tiene su exclusión de Semgrep.
+      const titulo = (t: string, servicio = ''): string =>
+        String(expresion(nodo(flujo, 'agendar_cita').parameters['additionalFields'].summary, {}, {}, { titulo: t, servicio }));
       it('control del niño sano lleva (CNS); neonatología, (RN); los demás servicios, solo el nombre', () => {
         expect(titulo('Cita Pérez Gómez, Pedro — control-del-nino-sano')).toBe('Pérez Gómez, Pedro (CNS)');
         expect(titulo('Cita Pérez, Pedro — x', 'Control del niño sano')).toBe('Pérez, Pedro (CNS)');
