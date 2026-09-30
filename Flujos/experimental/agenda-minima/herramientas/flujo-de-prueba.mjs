@@ -60,17 +60,17 @@ const CRED = {
 };
 
 /** Lee un .env sin ejecutarlo ni mostrarlo: solo las claves pedidas. */
-function leerEnv(ruta, claves) {
+function leerEnv(ruta, claves, opcionales = []) {
   const out = {};
   for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
     const m = linea.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (!m || !claves.includes(m[1])) continue;
+    if (!m || !(claves.includes(m[1]) || opcionales.includes(m[1]))) continue;
     out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
   }
   for (const c of claves) if (!out[c]) morir(`el .env no tiene ${c}`);
   return out;
 }
-const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID', 'WA_PHONE_ID']);
+const env = leerEnv(ENV, ['N8N_BASE_URL', 'N8N_API_KEY', 'N8N_WORKFLOW_ID'], ['WA_PHONE_ID']);
 const API = `${env.N8N_BASE_URL.replace(/\/$/, '')}/api/v1`;
 
 async function llamar(metodo, ruta, cuerpo) {
@@ -87,6 +87,7 @@ const leerEstado = () => (existsSync(ESTADO) ? JSON.parse(readFileSync(ESTADO, '
 
 // ---------------------------------------------------------------- un turno
 if (opcion('turno')) {
+  if (!env.WA_PHONE_ID) morir('el .env no tiene WA_PHONE_ID');
   const est = leerEstado() ?? morir('no hay flujo de prueba: falta crearlo');
   const carga = JSON.parse(readFileSync(opcion('turno'), 'utf8'));
   // El phone id del Demo A entra acá, en memoria: la carga versionada lleva el marcador.
@@ -165,6 +166,104 @@ const CRED_POR_TIPO_DE_NODO = {
 // El phone id del cliente en «Config base» (candidato A) se reemplaza, en memoria, por el del Demo A.
 const MARCA_PHONE = /REEMPLAZAR_PHONE_NUMBER_ID_[A-Z0-9_]+/g;
 
+// ---------------------------------------------------------------- sobre Bellido (publicación definitiva)
+/*
+ * --sobre-bellido --respaldo <archivo fuera del repo> [--flujo <json>] [--aplicar]
+ *   Pone el candidato (por omisión agenda-minima.v0.json) EN el flujo vivo de Bellido (id del .env que se
+ *   pase, que tiene que ser el de Bellido). Es la publicación definitiva y solo va con el «sí» de Andres.
+ *   - El «WhatsApp Trigger» es EL DE BELLIDO, tal cual.
+ *   - Las credenciales son las de Bellido: las que el JSON nombra (si son de Bellido) y, las que vienen sin
+ *     nombre (Calendar, Gemini) o sin credencial, la ÚNICA de ese tipo que el flujo vivo de Bellido ya usa.
+ *     Toda credencial resultante tiene que estar entre las que usa el vivo de Bellido (por id). Sin cambio
+ *     de parámetros: Bellido sí tiene su Graph Bearer.
+ *   - Los marcadores de respaldo de «Config base» (recepción, doctor, horario) se llenan EN MEMORIA con los
+ *     valores del «Config base» del vivo de Bellido, sin mostrarlos. El calendario no tiene respaldo.
+ *   - Respaldo exacto del vivo antes de escribir; la vuelta atrás es --restaurar-respaldo con el mismo .env.
+ */
+const AJENOS_A_BELLIDO = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor|demo ?a\b|NovuChat A|pruebas/i;
+if (bandera('sobre-bellido')) {
+  const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
+  if (dentroDelRepo(RESPALDO)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids y datos del cliente)');
+  const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
+  if (vivo.cod !== 200) morir(`GET del flujo vivo → ${vivo.cod}`);
+  if (!/bellido/i.test(vivo.datos.name)) morir(`el flujo del .env no es el de Bellido («${vivo.datos.name}»)`);
+  const cuerpoPut = (w) => ({ name: w.name, nodes: w.nodes, connections: w.connections, settings: w.settings ?? {} });
+  if (existsSync(RESPALDO)) {
+    const previo = JSON.parse(readFileSync(RESPALDO, 'utf8'));
+    if (previo.id !== env.N8N_WORKFLOW_ID) morir('el respaldo existente es de otro flujo');
+    if (JSON.stringify(cuerpoPut(previo)) !== JSON.stringify(cuerpoPut(vivo.datos))) morir('el respaldo existente difiere del vivo: no se pisa (use --restaurar-respaldo o elija otra ruta)');
+  }
+  const PROPIOS_DE_B = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
+  if (vivo.datos.nodes.some((n) => PROPIOS_DE_B.includes(n.name))) morir('el vivo de Bellido ya tiene el candidato B');
+  const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
+  const b = JSON.parse(readFileSync(ARCHIVO, 'utf8'));
+  if (b.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato no puede traer un Webhook de prueba');
+  const trigB = b.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
+  const trigVivo = vivo.datos.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
+  if (trigB.length !== 1 || trigVivo.length !== 1) morir(`disparadores: candidato ${trigB.length}, vivo ${trigVivo.length}`);
+  const nombreB = trigB[0].name; const t = structuredClone(trigVivo[0]);
+  b.nodes = b.nodes.map((n) => (n === trigB[0] ? t : n));
+  if (t.name !== nombreB) { b.connections[t.name] = b.connections[nombreB]; delete b.connections[nombreB]; }
+  // credenciales del vivo de Bellido, por tipo e id
+  const delVivo = {};
+  for (const n of vivo.datos.nodes) for (const [tipo, c] of Object.entries(n.credentials ?? {})) if (c && c.id) (delVivo[tipo] ??= new Map()).set(c.id, c.name);
+  const tabla = [];
+  for (const n of b.nodes) {
+    if (n === t) { tabla.push(`  ${n.name}: el de Bellido, tal cual («${Object.values(n.credentials ?? {}).map((c) => c.name).join(', ')}»)`); continue; }
+    const requerida = CRED_POR_TIPO_DE_NODO[n.type];
+    if (requerida && !(n.credentials && n.credentials[requerida])) { n.credentials = Object.assign({}, n.credentials, { [requerida]: {} }); tabla.push(`  ${n.name}: venía SIN credencial ${requerida}; se pone la de Bellido de ese tipo`); }
+    for (const [tipo, c] of Object.entries(n.credentials ?? {})) {
+      const usadas = delVivo[tipo] ?? morir(`el vivo de Bellido no usa ninguna credencial ${tipo} («${n.name}»)`);
+      let elegida = null;
+      if (c && c.name) {
+        for (const [id, nombre] of usadas) if (nombre === c.name) elegida = { id, name: nombre };
+        if (!elegida) morir(`«${n.name}» pide «${c.name}», que el vivo de Bellido no usa`);
+      } else {
+        if (usadas.size !== 1) morir(`«${n.name}»: el vivo de Bellido usa ${usadas.size} credenciales ${tipo}; hace falta exactamente una para asignarla por tipo`);
+        const [id, nombre] = [...usadas][0]; elegida = { id, name: nombre };
+      }
+      if (AJENOS_A_BELLIDO.test(elegida.name)) morir(`credencial ajena a Bellido: «${elegida.name}»`);
+      n.credentials[tipo] = elegida;
+      tabla.push(`  ${n.name}: ${tipo} → «${elegida.name}»`);
+    }
+    if (n.type === 'n8n-nodes-base.httpRequest' && (n.parameters?.authentication ?? 'none') !== 'none' && !Object.keys(n.credentials ?? {}).length) morir(`«${n.name}»: HTTP con autenticación y sin credencial`);
+  }
+  // respaldo de «Config base» con los valores del vivo de Bellido, en memoria
+  const baseVivo = vivo.datos.nodes.find((n) => n.name === 'Config base');
+  const valorVivo = (campo) => ((baseVivo?.parameters?.assignments?.assignments ?? []).find((a) => a.name === campo) || {}).value;
+  const baseB = b.nodes.find((n) => n.name === 'Config base') ?? morir('el candidato no tiene «Config base»');
+  const llenados = [];
+  for (const a of baseB.parameters.assignments.assignments) {
+    const origen = { respaldoNumeroRecepcion: 'numeroRecepcion', respaldoNumeroDoctor: 'numeroDoctor', horarioAtencion: 'horarioAtencion' }[a.name];
+    if (!origen || !/^REEMPLAZAR_/.test(String(a.value))) continue;
+    const v = String(valorVivo(origen) ?? '');
+    if (v && !v.startsWith('REEMPLAZAR_')) { a.value = v; llenados.push(a.name); }
+  }
+  const marcas = [...new Set(JSON.stringify(b).match(/REEMPLAZAR_[A-Z][A-Z0-9_]*/g) ?? [])];
+  const nv = new Set(vivo.datos.nodes.map((n) => n.name)); const nb = new Set(b.nodes.map((n) => n.name));
+  console.log(`Bellido vivo: «${vivo.datos.name}», ${vivo.datos.nodes.length} nodos, activo=${vivo.datos.active}`);
+  console.log(`Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${b.nodes.length} nodos. El nombre del flujo queda «${vivo.datos.name}».`);
+  console.log(`Nodos que se van: ${[...nv].filter((x) => !nb.has(x)).length} · que llegan: ${[...nb].filter((x) => !nv.has(x)).length} · en los dos: ${[...nb].filter((x) => nv.has(x)).length}`);
+  console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
+  console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
+  console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
+  console.log(`Respaldo del vivo: ${RESPALDO}`);
+  if (!existsSync(RESPALDO)) writeFileSync(RESPALDO, JSON.stringify(Object.assign({}, vivo.datos, { guardado: new Date().toISOString() })), { flag: 'wx', mode: 0o600 });
+  chmodSync(RESPALDO, 0o600);
+  if (!APLICAR) { console.log('\nEn seco: no se escribió nada en n8n (solo el respaldo local). Agregue --aplicar.'); process.exit(0); }
+  if (marcas.length) morir(`quedan marcadores sin reponer: ${marcas.join(', ')}`);
+  const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
+  if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. Revise y use --restaurar-respaldo`);
+  let tras = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+  if (tras.active !== true) {
+    const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
+    tras = (await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`)).datos;
+    if (tras.active !== true) morir(`el flujo de Bellido quedó INACTIVO (activate → ${a.cod}). Use --restaurar-respaldo YA`);
+  }
+  console.log(`✓ candidato sobre Bellido: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
+  process.exit(0);
+}
+
 if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   const RESPALDO = resolve(opcion('respaldo') ?? morir('falta --respaldo <archivo fuera del repositorio>'));
   if (dentroDelRepo(RESPALDO)) morir('--respaldo tiene que estar FUERA del repositorio (lleva ids)');
@@ -221,6 +320,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
     if (!esOriginal) console.log(`El vivo es el candidato aplicado antes (${ultimo.flujo}, ${ultimo.aplicado}): se cambia directo, sin pasar por el original.`);
   }
   // 1. el candidato B
+  if (!env.WA_PHONE_ID) morir('el .env no tiene WA_PHONE_ID (el phone id del Demo A)');
   const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
   const b = JSON.parse(readFileSync(ARCHIVO, 'utf8').replace(MARCA_PHONE, env.WA_PHONE_ID));
   const trigB = b.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
