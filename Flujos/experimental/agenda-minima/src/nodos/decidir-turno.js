@@ -76,10 +76,19 @@ if (CN_SERVICIOS.indexOf(t.eleccion) >= 0) {
   }
   return salir('ofrecer');
 }
-// Cancelar o mover una cita no necesita el menu: se va directo a entender el mensaje.
+// Cancelar o mover una cita no necesita el menu: se va directo a entender el mensaje. Y gana sobre
+// CUALQUIER paso (HB3): con una oferta pendiente, «quiero reagendar mi cita» no es otra oferta. El
+// modelo recibe el paso en su contexto y puede tomarlo por «agendar»; por eso la intencion la
+// fija tambien el codigo (`intencionForzada`) y el modelo solo puede confirmarla. En los pasos que
+// no son el inicio la expresion es mas estrecha: «cambiar la hora» sola es pedir otra hora de la oferta.
 const PIDE_CANCELAR_O_MOVER = /cancel|anular|anula |reagend|reprogram|cambiar (la |mi )?(cita|hora|fecha|horario)|mover (la |mi )?cita|postergar/;
-if (est.paso === 'inicio' && tipoEf === 'text' && PIDE_CANCELAR_O_MOVER.test(norm)) {
-  return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtraccion(texto) });
+const PIDE_CANCELAR_O_MOVER_CON_OFERTA = /cancel|anular|anula |reagend|reprogram|cambiar (la |mi )?cita|mover (la |mi )?cita|postergar/;
+const PIDE_MOVER = /reagend|reprogram|cambiar|mover|postergar/;
+const forzada = (tipoEf === 'text' && ((est.paso === 'inicio' && PIDE_CANCELAR_O_MOVER.test(norm))
+  || (est.paso !== 'inicio' && est.paso !== 'esperando_nombre' && PIDE_CANCELAR_O_MOVER_CON_OFERTA.test(norm))))
+  ? (PIDE_MOVER.test(norm) ? 'mover' : 'cancelar') : null;
+if (forzada) {
+  return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtraccion(texto), intencionForzada: forzada });
 }
 if (est.paso === 'inicio') {
   en.paso = 'menu';
@@ -99,10 +108,113 @@ const RELLENO = ['si', 'ya', 'pues', 'dale', 'de', 'una', 'va', 'ok', 'okey', 'o
 const palabras = norm.replace(/[^a-z0-9ñ ]+/g, ' ').split(' ').filter(Boolean);
 const soloAfirma = palabras.length > 0 && palabras.length <= 8 && norm.length <= 60
   && palabras.every((w) => RELLENO.indexOf(w) >= 0);
+
+// --- HB2: ESCRIBIR la hora ofrecida (o «la primera», «esa»...) es tocar ESE boton ------------------
+// Solo una hora, un ordinal o una referencia inequivoca a una hora OFRECIDA cuenta como eleccion; un «si»,
+// «ya» o «dale» sigue sin agendar. Se decide aca, sin el modelo. Despues sigue el camino del boton: se
+// revalida el hueco, candado antes y despues, y el nombre si falta.
+const ofrecidas = Array.isArray(est.ultimaOferta) ? est.ultimaOferta : [];
+if (est.paso === 'ofreciendo_huecos' && ofrecidas.length > 0 && tipoEf === 'text') {
+  const sel = elegirPorEscrito(texto, ofrecidas);
+  if (sel.estado === 'uno' && CN_SERVICIOS.indexOf(est.servicio) >= 0) {
+    return salir('elegir_hueco', { boton: { tipo: 'h', inicio: sel.inicio, servicio: est.servicio }, nombreEscrito: sel.nombre || '' });
+  }
+  if (sel.estado === 'ambiguo') return salir('pedir_boton');
+}
+
+// «ya», «si», «dale» y afines: no agendan (regla de oro).
 if (est.paso === 'ofreciendo_huecos' && est.ultimaOferta.length > 0 && soloAfirma) return salir('pedir_boton');
 
+
 // --- Texto libre: la extraccion (unica llamada al modelo para entender) ----------
-return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtraccion(texto) });
+// HB4: un rechazo escrito («ninguno me sirve», «tampoco me sirven»): el codigo lo marca y el plan cuenta.
+const reRechazo = /\b(ninguno|ninguna|ningun)\b|\btampoco\b|\bno me (sirve|sirven|convienen?|gusta|gustan|cuadra|cuadran|acomoda|acomodan)/;
+const rechazo = est.paso === 'ofreciendo_huecos' && tipoEf === 'text' && reRechazo.test(norm);
+return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtraccion(texto), rechazo: rechazo });
+
+// Interpreta un texto escrito frente a las horas ofrecidas (inicios ISO, en el orden de los botones).
+// -> {estado: 'ninguno' | 'uno' | 'ambiguo', inicio, nombre}. Solo cuenta una HORA (11:30, «a las 3»,
+// «la de las 3»), un ORDINAL («la primera», «la segunda», «la ultima») o «esa» si se ofrecio una sola.
+// Un dia solo («el jueves») NO es una eleccion: es otro pedido y va al modelo. Con una negacion o una
+// peticion de otra cosa («no puedo a las 11:30», «otra hora») tampoco: no se le elige nada.
+function elegirPorEscrito(dicho, oferta) {
+  const nada = { estado: 'ninguno', inicio: '', nombre: '' };
+  let original = String(dicho || '').trim();
+  // El nombre del paciente, si lo trae con una frase explicita («el paciente es Juan Perez»).
+  let nombre = '';
+  const reNombre = /(?:\by\s+)?(?:(?:el|la)\s+)?(?:paciente|ni[nñ][oa]|beb[eé]|hij[oa])\s+(?:es|se\s+llama)\s+(.+)$|\b(?:y\s+)?se\s+llama\s+(.+)$|\ba\s+nombre\s+de\s+(.+)$|\bnombre\s+(?:es|:)\s*(.+)$/i;
+  const mn = reNombre.exec(original);
+  if (mn) {
+    let crudo = (mn[1] || mn[2] || mn[3] || mn[4] || '').replace(/\s+(por\s+favor|gracias)\s*$/i, '').replace(/[.!?,;\s]+$/, '').trim();
+    original = original.slice(0, mn.index).trim();
+    // «...el paciente es Juan Perez a las 11:30»: la hora que queda pegada al nombre es de la eleccion.
+    const cola = /\s+(?:a\s+las?\s+)?\d{1,2}(?:[:.]\d{2}|\s+y\s+media)?\s*(?:am|pm)?\s*$/i.exec(crudo);
+    if (cola) { original = (original + ' ' + cola[0]).trim(); crudo = crudo.slice(0, cola.index).trim(); }
+    // Dos nombres (hermanos) los entiende el modelo: aca no se elige por el.
+    if (/\s(y|e)\s|&|\//i.test(' ' + crudo + ' ')) return nada;
+    const pn = crudo ? partirNombre(crudo) : null;
+    if (pn && pn.apellidos && pn.nombres) nombre = crudo;
+  }
+  const n = cnNorm(original).replace(/[^a-z0-9:.\s]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!n || n.split(' ').length > 14) return nada;
+  if (/\b(no|nada|ni|ninguno|ninguna|tampoco|otra|otro|otras|otros|cambi\w*|despues|antes|pero|aunque|temprano|mas tarde)\b/.test(n)) return nada;
+
+  // --- lo que dice de la HORA
+  let h = null;
+  let mi = 0;
+  let m = /(?:^|[^\d])([01]?\d|2[0-3])[:.]([0-5]\d)(?!\d)/.exec(n);
+  if (m) { h = Number(m[1]); mi = Number(m[2]); }
+  if (h === null) {
+    m = /\b(?:a\s+)?(?:la|las|de\s+las)\s+(\d{1,2})(?:\s+y\s+(media|cuarto))?(?!\d|:)/.exec(n);
+    if (m && Number(m[1]) >= 1 && Number(m[1]) <= 23) { h = Number(m[1]); mi = m[2] === 'media' ? 30 : (m[2] === 'cuarto' ? 15 : 0); }
+  }
+  if (h === null) {
+    m = /\b(\d{1,2})\s*(?:am|pm)\b/.exec(n);
+    if (m && Number(m[1]) >= 1 && Number(m[1]) <= 12) h = Number(m[1]);
+  }
+  const pm = /\b(pm|tarde|noche)\b/.test(n);
+  const am = /\bam\b|\b(de|en|por) la manana\b/.test(n);
+
+  // --- ordinal o «esa»
+  let ord = null;
+  const mo = /\b(primer[oa]?|segund[oa]|tercer[oa]?|ultim[oa])\b/.exec(n);
+  if (mo) ord = mo[1].charAt(0) === 'p' ? 0 : (mo[1].charAt(0) === 's' ? 1 : (mo[1].charAt(0) === 't' ? 2 : oferta.length - 1));
+  const esa = oferta.length === 1 && /\b(esa|ese)( misma| mismo)?\b/.test(n);
+
+  // --- el dia, para separar dos ofertas de la misma hora
+  const dia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?:\s+(\d{1,2})(?![\d:.]))?/.exec(n);
+  const hoy = fechaLocal(ahora);
+  const manana = /\bmanana\b/.test(n.replace(/\b(de|en|por) la manana\b/g, ' '));
+
+  if (h === null && ord === null && !esa) return nada;
+  // Sin hora explicita, el texto entero tiene que ser relleno (evita «es mi primera cita»).
+  if (h === null) {
+    const permitidas = RELLENO.concat(['que', 'tengas', 'tengan', 'tienes', 'tiene', 'hay', 'disponible', 'opcion', 'horas', 'las', 'en',
+      'punto', 'a', 'y', 'tercer', 'ultima', 'ultimo', 'primer', 'misma', 'mismo']);
+    if (!n.split(' ').every((w) => permitidas.indexOf(w) >= 0 || /^(primer|segund|tercer|ultim)[oa]?$/.test(w))) return nada;
+  }
+  const cand = [];
+  oferta.forEach((iso, i) => {
+    const ms = msDe(iso);
+    const H = Number(horaLocal(ms).slice(0, 2));
+    const M = Number(horaLocal(ms).slice(3, 5));
+    const f = fechaLocal(ms);
+    if (h !== null) {
+      if (M !== mi) return;
+      if (h >= 13 || h === 0 ? H !== h : (H % 12) !== (h % 12)) return;
+      if (pm && H < 12) return;
+      if (am && H >= 12) return;
+    }
+    if (ord !== null && i !== ord) return;
+    if (dia && (cnNorm(diaDeLaSemana(f)) !== dia[1] || (dia[2] && Number(f.slice(8)) !== Number(dia[2])))) return;
+    if (/\bhoy\b/.test(n) && f !== hoy) return;
+    if (manana && f !== sumarDias(hoy, 1)) return;
+    cand.push(iso);
+  });
+  if (cand.length === 1) return { estado: 'uno', inicio: cand[0], nombre: nombre };
+  if (cand.length > 1) return { estado: 'ambiguo', inicio: '', nombre: '' };
+  return nada;
+}
 
 // El cuerpo de la llamada a Gemini (generateContent). Sin `temperature` ni `topP`; 200
 // tokens de salida; el esquema obliga a un JSON con los campos de abajo. Los tipos del

@@ -110,12 +110,25 @@ function redaccionValida(texto, huecos, aviso) {
 //  - El menu ya saludo: la oferta no vuelve a decir «¡Hola! Soy la asistente…». Se quitan
 //    las oraciones iniciales de saludo o presentacion.
 function pulirRedaccion(texto) {
-  let t = String(texto || '').trim();
-  for (let i = 0; i < 2; i++) {
-    const m = t.match(/^[¡!]?\s*(hola|buen[oa]s? (d[ií]as|tardes|noches)|soy (la|el|tu) asistente)[^.!?\n]*[.!?]+\s*/i);
-    if (!m) break;
-    t = t.slice(m[0].length).trim();
+  // Se trabaja por ORACIONES COMPLETAS, nunca por trozos (hallazgo HB1 de la ronda 1: cortar
+  // en el punto de «Dr.» dejaba «Andres Bellido y estoy aquí…» al principio de la oferta).
+  // Las abreviaturas de trato no cierran oración.
+  const ABREV = /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
+  const trozos = String(texto || '').trim().split(/(?<=[.!?…])\s+/);
+  const oraciones = [];
+  for (const t of trozos) {
+    if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1])) oraciones[oraciones.length - 1] += ' ' + t;
+    else oraciones.push(t);
   }
+  // Fuera, al principio, toda oración que solo saluda o presenta: el menú ya saludó.
+  const SALUDO = /^[¡!]?\s*(hola|buen[oa]s?\s+(d[ií]as|tardes|noches)|qu[eé] tal)\b/i;
+  const PRESENTA = /\b(soy|somos)\s+(la|el|una|un|tu)\s+(asistente|secretaria|recepcionista)\b|\bestoy aqu[ií] para\b|\best(oy|amos) para (ayudarte|servirte)\b/i;
+  while (oraciones.length > 1 && (SALUDO.test(oraciones[0]) || PRESENTA.test(oraciones[0]))) oraciones.shift();
+  // Si una oración de saludo trae pegado lo útil («¡Hola! Tengo estos horarios…»), se quita solo la
+  // interjección inicial, que termina en su propio signo.
+  if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
+  let t = oraciones.join(' ').trim();
+  // P1: toda palabra de `nombreNegocio` escrita con otros acentos vuelve a la forma de la configuración.
   const sinTilde = (w) => w.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const palabras = String(cfg.nombreNegocio || '').split(/[^A-Za-zÀ-ÿ]+/).filter((w) => w.length >= 4);
   for (const w of palabras) {
@@ -276,7 +289,15 @@ switch (plan) {
       agregar('paciente', mTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text' });
       break;
     }
-    const cuerpo = valida && !(o.aviso && !pregunta) ? redactado : textoFijoDeOferta(o, srvTxt);
+    let cuerpo = valida && !(o.aviso && !pregunta) ? redactado : textoFijoDeOferta(o, srvTxt);
+    // HB3: al mover, el paciente ve cuál es su cita actual y que no la pierde (incidente #7659).
+    const mov = base.estado && base.estado.moverId && base.estado.moverInicio ? base.estado : null;
+    if (mov) {
+      const aviso = 'Tu cita actual es el ' + textoDeFecha(mov.moverInicio) + '. Elige la nueva hora y la cambio: '
+        + 'la actual se mantiene hasta que la nueva quede confirmada.';
+      cuerpo = (aviso + '\n\n' + cuerpo).length <= 1000 ? aviso + '\n\n' + cuerpo
+        : aviso + '\n\nEstos son los horarios libres; toca el que prefieras.';
+    }
     if (!ofertaConBotones(o, cuerpo, srv || (params.servicio) || 'control_nino_sano')) {
       transferir('no se pudo armar una oferta de horarios', 'No encuentro horarios para ofrecerte por este chat. Escríbele directo a recepción tocando el botón.');
     }
@@ -360,8 +381,10 @@ switch (plan) {
   }
 
   case 'transferir':
-    transferir(params.motivo || 'consulta sin respuesta',
-      'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.');
+    transferir(params.motivo || 'consulta sin respuesta', params.rechazos
+      // HB4: tres rechazos seguidos de ofertas.
+      ? 'Disculpa que ninguno de los horarios te sirva. Para buscar otra opción, escríbele directo a recepción tocando el botón.'
+      : 'Esa consulta no la puedo resolver por este chat. Escríbele directo a recepción tocando el botón.');
     break;
 
   case 'error':

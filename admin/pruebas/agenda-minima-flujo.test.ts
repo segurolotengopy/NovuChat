@@ -1515,3 +1515,406 @@ describe('Agenda mínima v0: el pulido de la redacción (prueba real en n8n del 
     expect(t.enviados[0]!.cuerpo).toBe('Para el jueves en la tarde tengo estos horarios. Toca el que prefieras.');
   });
 });
+
+// =================================================================================================
+// Ronda 2 de la revisora: HB2 (escribir la hora ofrecida la elige), HB3 (cancelar o mover con una
+// oferta pendiente) y HB4 (tres rechazos seguidos pasan con recepción).
+// =================================================================================================
+describe('Agenda mínima v0: ronda 2 de la revisora', () => {
+  const MARTES = '2026-10-06';
+  const MIERCOLES = '2026-10-07';
+  /** Hola y el servicio elegido en el menú: la oferta «desde mañana» (martes 11:00, 11:30 y 12:00). */
+  const conOferta = (m: ReturnType<typeof mundo>, srv = SERV_CNS): Turno => {
+    m.turno(texto(MAMA, 'hola'));
+    return m.turno(lista(MAMA, srv, 'Servicio'));
+  };
+  /** Una oferta del jueves en la tarde, con las 14:00 a las 16:00 ocupadas: 16:00, 16:30 y 17:00. */
+  const ofertaDelJueves = (): { m: ReturnType<typeof mundo>; oferta: Turno } => {
+    const m = mundo({ eventos: [evento('bloqueo', JUEVES, '14:00', '16:00', 'Otro paciente')] });
+    m.turno(texto(MAMA, 'quiero cita el jueves'));
+    m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+    const oferta = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+    return { m, oferta };
+  };
+  const idsDe = (t: Turno): string[] => (t.enviados.length && t.enviados[0]!.tipo === 'interactive' && interactivo(t.enviados[0]!)['type'] === 'button' ? botonesDe(t.enviados[0]!).map((b) => b.id) : []);
+
+  // ------------------------------------------------------------------------------------- HB2
+  describe('HB2: escribir la hora ofrecida equivale a tocar ese botón', () => {
+    it('«a las 11:30», con el modelo caído: toma el botón de las 11:30, pide el nombre y al darlo crea esa cita', () => {
+      const m = mundo({ eventos: [] });
+      const oferta = conOferta(m);
+      expect(idsDe(oferta)).toEqual([idHueco(MARTES, '11:00'), idHueco(MARTES, '11:30'), idHueco(MARTES, '12:00')]);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'a las 11:30'));
+      expect(t.enviados).toHaveLength(1);
+      expect(t.enviados[0]!.cuerpo).toMatch(/Cómo se llama el niño o la niña/);
+      expect(m.calendario.eventos).toHaveLength(0);
+      m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+      const c = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+      expect(m.calendario.eventos).toHaveLength(1);
+      expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(MARTES, '11:30') });
+      expect(c.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    });
+
+    for (const [dicho, hora] of [['11:30', '11:30'], ['a las 12:00', '12:00'], ['la primera que tengas', '11:00'], ['la segunda', '11:30'],
+      ['la última', '12:00'], ['la primera', '11:00'], ['sí, la tercera', '12:00']] as const) {
+      it(`«${dicho}» elige el botón de las ${hora} (sin el modelo) y NO vuelve a ofrecer`, () => {
+        const m = mundo({ eventos: [] });
+        conOferta(m);
+        m.gemini.extraer = 'ERROR';
+        const t = m.turno(texto(MAMA, dicho));
+        expect(t.extraer).toHaveLength(0);
+        expect(t.enviados).toHaveLength(1);
+        expect(t.enviados[0]!.cuerpo).toMatch(/Cómo se llama el niño o la niña/);
+        expect(idsDe(t)).toHaveLength(0);
+        const estado = (m.sd['agendaMinima'] as J)[MAMA] as J;
+        expect(estado['huecoElegido']).toBe(iso(MARTES, hora));
+      });
+    }
+
+    it('«a las 11:30 y el paciente es Juan Pérez»: usa el nombre, no lo vuelve a pedir y crea la cita', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'a las 11:30 y el paciente es Juan Pérez'));
+      expect(m.calendario.eventos).toHaveLength(1);
+      expect(m.calendario.eventos[0]!['summary']).toBe('Pérez, Juan (CNS)');
+      expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(MARTES, '11:30') });
+      expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+      expect(t.bitacora).toEqual(['crear:ev-1']);
+    });
+
+    it('el nombre puede ir ANTES de la hora: «el paciente es Juan Pérez a las 11:30»', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'el paciente es Juan Pérez a las 11:30'));
+      expect(m.calendario.eventos[0]!['summary']).toBe('Pérez, Juan (CNS)');
+      expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(MARTES, '11:30') });
+      expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    });
+
+    it('«el jueves a las 16:30» con el jueves ofrecido: elige ESE día y esa hora', () => {
+      const { m, oferta } = ofertaDelJueves();
+      expect(idsDe(oferta)).toEqual([idHueco(JUEVES, '16:00'), idHueco(JUEVES, '16:30'), idHueco(JUEVES, '17:00')]);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'el jueves a las 16:30'));
+      expect(t.enviados[0]!.cuerpo).toMatch(/Cómo se llama el niño o la niña/);
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBe(iso(JUEVES, '16:30'));
+    });
+
+    it('«la de las 3» es la de las 15:00 (en la tarde), no la de las 03:00', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(texto(MAMA, 'quiero cita el jueves'));
+      m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+      const oferta = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+      expect(idsDe(oferta)).toContain(idHueco(JUEVES, '15:00'));
+      m.gemini.extraer = 'ERROR';
+      m.turno(texto(MAMA, 'la de las 3'));
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBe(iso(JUEVES, '15:00'));
+    });
+
+    it('«esa», si se ofreció UNA sola hora, es esa hora; con varias, se pide tocar el botón', () => {
+      const m = mundo({ eventos: [evento('bloqueo', JUEVES, '14:00', '17:30', 'Otro paciente')] });
+      m.turno(texto(MAMA, 'quiero cita el jueves'));
+      m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+      const oferta = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+      expect(idsDe(oferta)).toEqual([idHueco(JUEVES, '17:30')]);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'esa'));
+      expect(t.enviados[0]!.cuerpo).toMatch(/Cómo se llama el niño o la niña/);
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBe(iso(JUEVES, '17:30'));
+      // NIEGA: con tres horas ofrecidas, «esa» no dice cuál.
+      const otro = mundo({ eventos: [] });
+      conOferta(otro);
+      otro.gemini.extraer = 'ERROR';
+      const n = otro.turno(texto(MAMA, 'esa'));
+      expect(n.enviados[0]!.cuerpo).toMatch(/toca uno de los horarios/);
+      expect(((otro.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBeFalsy();
+    });
+
+    it('con el modelo: la extracción da horaPreferida y fechaPreferida de una frase que el código no entiende', () => {
+      const { m } = ofertaDelJueves();
+      m.gemini.extraer = extraccion({ fechaPreferida: JUEVES, horaPreferida: '16:30', pacientes: ['Juan Pérez'] });
+      const t = m.turno(texto(MAMA, 'para el jueves a las cuatro y media, es para Juan Pérez por favor'));
+      expect(m.calendario.eventos).toHaveLength(2);
+      expect(m.calendario.eventos[1]!['start']).toEqual({ dateTime: iso(JUEVES, '16:30') });
+      expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    });
+
+    it('reagendar: escribir la hora ofrecida crea la nueva y borra la vieja (el mismo camino del botón)', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')] });
+      m.gemini.extraer = extraccion({ intencion: 'mover' });
+      const oferta = m.turno(texto(MAMA, 'quiero mover mi cita'));
+      expect(idsDe(oferta)).toEqual([idHueco(MARTES, '11:00'), idHueco(MARTES, '11:30'), idHueco(MARTES, '12:00')]);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'a las 11:30'));
+      expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:vieja']);
+      expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['ev-1']);
+      expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    });
+
+    it('NIEGA: una hora que NO se ofreció no agenda nada: se vuelve a ofrecer', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '15:00' });
+      const t = m.turno(texto(MAMA, 'a las 15:00'));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBeFalsy();
+      expect(botonesDe(t.enviados[0]!)[0]!.id).toBe(idHueco(MARTES, '15:00'));
+    });
+
+    it('NIEGA: una hora ofrecida con un «no» («no puedo a las 11:30») NO la elige', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '11:30', masOpciones: true });
+      const t = m.turno(texto(MAMA, 'no puedo a las 11:30, tienes otra'));
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBeFalsy();
+      expect(t.enviados[0]!.cuerpo).not.toMatch(/Cómo se llama/);
+    });
+
+    it('NIEGA: el mismo día y hora en dos ofertas es ambiguo: se pide tocar el botón y no se crea nada', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      ((m.sd['agendaMinima'] as J)[MAMA] as J)['ultimaOferta'] = [iso(MARTES, '11:30'), iso(MIERCOLES, '11:30'), iso(JUEVES, '14:00')];
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'a las 11:30'));
+      expect(t.enviados[0]!.cuerpo).toMatch(/toca uno de los horarios/);
+      expect(m.calendario.eventos).toHaveLength(0);
+      // Con el día, deja de serlo.
+      const d = m.turno(texto(MAMA, 'el miércoles a las 11:30'));
+      expect(d.enviados[0]!.cuerpo).toMatch(/Cómo se llama el niño o la niña/);
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['huecoElegido']).toBe(iso(MIERCOLES, '11:30'));
+    });
+
+    it('NIEGA: escribir la hora de un hueco que se ocupó entre tanto no lo crea (se revalida)', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.calendario.eventos.push(evento('rival', MARTES, '11:30', '12:00', 'Otro paciente'));
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'a las 11:30 y el paciente es Juan Pérez'));
+      expect(m.calendario.eventos).toHaveLength(1);
+      expect(t.bitacora).toEqual([]);
+      expect(t.enviados[0]!.cuerpo).toMatch(/ya no está disponible/);
+    });
+
+    it('NIEGA: un «sí», «ya» o «dale» sigue sin agendar (regla de oro)', () => {
+      for (const dicho of ['sí', 'ya', 'dale', 'listo, sí']) {
+        const m = mundo({ eventos: [] });
+        conOferta(m);
+        m.gemini.extraer = 'ERROR';
+        const t = m.turno(texto(MAMA, dicho));
+        expect(m.calendario.eventos).toHaveLength(0);
+        expect(t.enviados[0]!.cuerpo).toMatch(/toca uno de los horarios/);
+      }
+    });
+  });
+
+  // ------------------------------------------------------------------------------------- HB3
+  describe('HB3: cancelar o mover una cita existente gana sobre una oferta pendiente', () => {
+    const CUANDO: [string, string, string][] = [
+      ['hoy', '2026-10-05', '16:00'], ['dentro de una semana', '2026-10-12', '14:00'], ['dentro de un mes', '2026-11-05', '15:00'],
+    ];
+    for (const [cuando, fecha, hora] of CUANDO) {
+      for (const previa of [false, true]) {
+        for (const modelo of ['bien', 'agendar']) {
+          const eleccion = (intencion: string): J => extraccion(modelo === 'bien' ? { intencion } : { intencion: 'agendar' });
+          const fin = (hora.startsWith('16') ? '16:30' : (hora === '14:00' ? '14:30' : '15:30'));
+          const cita = (): J => citaDe(MAMA, 'vieja', fecha, hora, fin, 'Pérez Gómez, Ana (CNS)');
+          const sufijo = `cita ${cuando}, ${previa ? 'DESPUÉS de una oferta' : 'sin oferta previa'}, modelo ${modelo === 'bien' ? 'acierta' : 'lo toma por «agendar»'}`;
+
+          it(`reagendar: ${sufijo} → ofrece horas para MOVER esa cita y al tocar una crea la nueva y borra la vieja`, () => {
+            const m = mundo({ eventos: [cita()] });
+            if (previa) conOferta(m);
+            m.gemini.extraer = eleccion('mover');
+            const t = m.turno(texto(MAMA, 'quiero reagendar mi cita'));
+            expect(t.enviados).toHaveLength(1);
+            expect(t.ejecutados.has('Leer agenda')).toBe(true);
+            const ids = idsDe(t);
+            expect(ids.length).toBeGreaterThan(0);
+            expect(t.enviados[0]!.cuerpo).not.toMatch(/No encuentro ninguna cita/);
+            const c = m.turno(boton(MAMA, ids[0]!));
+            expect(c.bitacora).toEqual(['crear:ev-1', 'borrar:vieja']);
+            expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['ev-1']);
+          });
+
+          it(`cancelar: ${sufijo} → muestra la cita con su botón y al tocarlo la borra`, () => {
+            const m = mundo({ eventos: [cita(), citaDe(OTRA, 'ajena', JUEVES, '15:00', '15:30', 'Rojas, Luis (CNS)')] });
+            if (previa) conOferta(m);
+            m.gemini.extraer = eleccion('cancelar');
+            const t = m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+            expect(t.enviados).toHaveLength(1);
+            expect(t.enviados[0]!.cuerpo).not.toMatch(/No encuentro ninguna cita/);
+            expect(idsDe(t)).toEqual(['c|vieja']);
+            expect(t.aRecepcion).toHaveLength(0);
+            const c = m.turno(boton(MAMA, 'c|vieja'));
+            expect(c.bitacora).toEqual(['borrar:vieja']);
+            expect(c.enviados[0]!.cuerpo).toMatch(/cancelé tu cita/);
+            expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['ajena']);
+          });
+        }
+      }
+    }
+
+    it('con DOS citas, «quiero reagendar» después de una oferta lista las dos con su botón de mover', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'a', '2026-10-12', '14:00', '14:30', 'Pérez Gómez, Ana (CNS)'), citaDe(MAMA, 'b', '2026-11-05', '15:00', '15:30', 'Pérez Gómez, Luis (CNS)')] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ intencion: 'agendar' });
+      const t = m.turno(texto(MAMA, 'quiero reagendar mi cita'));
+      expect(idsDe(t)).toEqual(['m|a', 'm|b']);
+    });
+
+    it('la lectura para buscar las citas cubre hasta anticipacionMaximaDias (una cita dentro de 59 días se encuentra)', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'lejana', '2026-12-03', '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ intencion: 'cancelar' });
+      const t = m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+      expect(idsDe(t)).toEqual(['c|lejana']);
+    });
+
+    it('con el modelo CAÍDO, cancelar y reagendar tras una oferta siguen funcionando: la intención la fija el código', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')] });
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      const c = m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+      expect(idsDe(c)).toEqual(['c|vieja']);
+      const r = m.turno(texto(MAMA, 'mejor quiero reagendar mi cita'));
+      expect(r.aRecepcion).toHaveLength(0);
+      expect(idsDe(r).length).toBeGreaterThan(0);
+    });
+
+    it('NIEGA: sin cita a su teléfono, cancelar tras una oferta pasa con recepción y no borra nada', () => {
+      const m = mundo({ eventos: [citaDe(OTRA, 'ajena', JUEVES, '15:00', '15:30', 'Rojas, Luis (CNS)')] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ intencion: 'cancelar' });
+      const t = m.turno(texto(MAMA, 'quiero cancelar mi cita'));
+      expect(t.enviados[0]!.cuerpo).toMatch(/No encuentro ninguna cita/);
+      expect(t.aRecepcion).toHaveLength(1);
+      expect(t.bitacora).toEqual([]);
+    });
+
+    it('NIEGA: «quiero otra hora» tras una oferta NO es cancelar ni mover: sigue la oferta', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ masOpciones: true });
+      const t = m.turno(texto(MAMA, 'quiero cambiar la hora por favor'));
+      expect(t.enviados[0]!.cuerpo).not.toMatch(/No encuentro ninguna cita/);
+      expect(idsDe(t).every((id) => id.startsWith('h|'))).toBe(true);
+    });
+  });
+
+  // ------------------------------------------------------------------------------------- HB4
+  describe('HB4: tres rechazos seguidos pasan con recepción', () => {
+    const rechazar = (m: ReturnType<typeof mundo>, dicho: string, ext: J = { masOpciones: true }): Turno => {
+      m.gemini.extraer = extraccion(ext);
+      return m.turno(texto(MAMA, dicho));
+    };
+    it('«ninguno me sirve», «ninguno, dame otros» y «tampoco me sirven»: las dos primeras ofrecen, la tercera transfiere (aviso más botón)', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      const a = rechazar(m, 'ninguno me sirve');
+      const b = rechazar(m, 'ninguno, dame otros');
+      expect(idsDe(a)).toHaveLength(3);
+      expect(idsDe(b)).toHaveLength(3);
+      expect(a.aRecepcion).toHaveLength(0);
+      expect(b.aRecepcion).toHaveLength(0);
+      const c = rechazar(m, 'tampoco me sirven');
+      expect(c.aRecepcion).toHaveLength(1);
+      expect(c.aRecepcion[0]!.cuerpo).toMatch(/necesita atención humana/);
+      expect(c.aPaciente(MAMA)).toHaveLength(1);
+      expect(urlDe(c.aPaciente(MAMA)[0]!)).toContain(REC);
+      expect(idsDe(c)).toHaveLength(0);
+      expect(m.calendario.eventos).toHaveLength(0);
+      expect(c.resumen!['resumen']).toMatchObject({ ruta: 'transferir' });
+    });
+    it('aunque el modelo no marque «masOpciones», las tres frases de rechazo cuentan (lo decide el código)', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      rechazar(m, 'ninguno me sirve', {});
+      rechazar(m, 'ninguno, dame otros', { intencion: 'otro' });
+      const c = rechazar(m, 'tampoco me sirven', {});
+      expect(c.aRecepcion).toHaveLength(1);
+    });
+    it('NIEGA: dos rechazos no transfieren, y un cambio de tema (pedir un día) reinicia la cuenta', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      rechazar(m, 'ninguno me sirve');
+      rechazar(m, 'ninguno, dame otros');
+      const d = rechazar(m, 'mejor el viernes en la tarde', { fechaPreferida: VIERNES, franja: 'tarde' });
+      expect(idsDe(d).length).toBeGreaterThan(0);
+      const e = rechazar(m, 'ninguno me sirve');
+      const f = rechazar(m, 'tampoco me sirven');
+      expect(e.aRecepcion).toHaveLength(0);
+      expect(f.aRecepcion).toHaveLength(0);
+      expect(idsDe(f).length).toBeGreaterThan(0);
+      // El tercero desde el cambio de tema sí transfiere.
+      const g = rechazar(m, 'ninguno de esos');
+      expect(g.aRecepcion).toHaveLength(1);
+    });
+    it('NIEGA: un rechazo con una preferencia nueva («ninguno, mejor el viernes a las 4») no cuenta como rechazo vacío', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      for (let i = 0; i < 4; i++) {
+        const t = rechazar(m, 'ninguno me sirve, mejor el viernes', { fechaPreferida: VIERNES });
+        expect(t.aRecepcion).toHaveLength(0);
+      }
+    });
+    it('NIEGA: tocar un botón (elegir) reinicia la cuenta: después de elegir, hacen falta otros tres', () => {
+      const m = mundo({ eventos: [] });
+      const oferta = conOferta(m);
+      rechazar(m, 'ninguno me sirve');
+      rechazar(m, 'ninguno, dame otros');
+      m.turno(boton(MAMA, idsDe(oferta)[0]!)); // elige: pide el nombre
+      expect(((m.sd['agendaMinima'] as J)[MAMA] as J)['rechazos'] ?? 0).toBe(0);
+    });
+  });
+});
+
+// =================================================================================================
+// Ronda 2 de la revisora, lo que corrigió la sesión coordinadora en «Armar mensajes»: HB1 (el recorte
+// del saludo quita oraciones completas; «Dr.» no cierra oración), el aviso de HB3 al mover (el paciente
+// ve su cita actual) y la disculpa de HB4.
+describe('Agenda mínima v0: ronda 2, lo de «Armar mensajes»', () => {
+  const conOferta = (m: ReturnType<typeof mundo>): Turno => { m.turno(texto(MAMA, 'hola')); return m.turno(lista(MAMA, SERV_CNS, 'Servicio')); };
+  const ofertaCon = (redaccion: string): Turno => {
+    const m = mundo({ eventos: [] });
+    m.gemini.redactar = redaccion;
+    return conOferta(m);
+  };
+  it('HB1: «¡Hola! Soy la asistente virtual del Dr. … y estoy aquí…» se quita ENTERO, sin dejar un trozo', () => {
+    const t = ofertaCon('¡Hola! Soy la asistente virtual del Dr. Consultorio Ejemplo y estoy aquí para ayudarte a cuidar lo más valioso. Puedes elegir tu cita tocando uno de los horarios.');
+    expect(t.enviados[0]!.cuerpo).toBe('Puedes elegir tu cita tocando uno de los horarios.');
+  });
+  it('HB1: «Soy una asistente virtual y estoy aquí…» también se quita', () => {
+    const t = ofertaCon('Soy una asistente virtual y estoy aquí para ayudarte. Tengo estos horarios; toca el que prefieras.');
+    expect(t.enviados[0]!.cuerpo).toBe('Tengo estos horarios; toca el que prefieras.');
+  });
+  it('HB1 NIEGA: «Dr.» en medio de una oración útil no la corta', () => {
+    const t = ofertaCon('El Dr. Ejemplo atiende estos horarios; toca el que prefieras.');
+    expect(t.enviados[0]!.cuerpo).toBe('El Dr. Ejemplo atiende estos horarios; toca el que prefieras.');
+  });
+  it('HB3: al mover, el mensaje nombra la cita actual y dice que no se pierde hasta confirmar la nueva', () => {
+    const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '15:00', '15:30', 'Pérez Gómez, Ana (CNS)')] });
+    m.gemini.extraer = extraccion({ intencion: 'mover' });
+    m.gemini.redactar = 'Tengo estos horarios; toca el que prefieras.';
+    const t = m.turno(texto(MAMA, 'quiero reagendar mi cita'));
+    expect(t.enviados).toHaveLength(1);
+    expect(t.enviados[0]!.cuerpo).toMatch(/^Tu cita actual es el .*15:00/);
+    expect(t.enviados[0]!.cuerpo).toMatch(/la actual se mantiene hasta que la nueva quede confirmada/);
+    expect(t.enviados[0]!.cuerpo.length).toBeLessThanOrEqual(1024);
+  });
+  it('HB3 NIEGA: una oferta para una cita NUEVA no habla de «tu cita actual»', () => {
+    const t = ofertaCon('Tengo estos horarios; toca el que prefieras.');
+    expect(t.enviados[0]!.cuerpo).not.toMatch(/cita actual/);
+  });
+  it('HB4: al tercer rechazo, el paciente recibe una disculpa con el botón a recepción', () => {
+    const m = mundo({ eventos: [] });
+    conOferta(m);
+    for (const dicho of ['ninguno me sirve', 'ninguno, dame otros']) { m.gemini.extraer = extraccion({ masOpciones: true }); m.turno(texto(MAMA, dicho)); }
+    m.gemini.extraer = extraccion({ masOpciones: true });
+    const c = m.turno(texto(MAMA, 'tampoco me sirven'));
+    expect(c.aPaciente(MAMA)[0]!.cuerpo).toMatch(/^Disculpa que ninguno de los horarios te sirva/);
+    expect(c.aRecepcion).toHaveLength(1);
+  });
+});

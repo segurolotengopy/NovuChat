@@ -20,7 +20,12 @@ const salir = (plan, extra) => {
   return [{ json: Object.assign(cuerpo, { plan: plan, leer: null, params: {}, estado: en, errores: [] }, extra || {}) }];
 };
 const leer14 = (fecha) => rangoALeer({ ahoraMs: ahora, fechaPreferida: fecha || null, dias: 14 });
-const leer90 = () => rangoALeer({ ahoraMs: ahora, dias: 90 });
+// Las citas del telefono: desde hoy hasta la anticipacion maxima (90 dias como minimo), no el rango de una oferta.
+const leer90 = () => rangoALeer({ ahoraMs: ahora, dias: Math.max(90, (Number(cfg.anticipacionMaximaDias) || 0) + 1) });
+// HB4: los rechazos seguidos de ofertas se cuentan en el estado; cualquier turno que no sea un rechazo
+// (una eleccion, un cambio de tema) los reinicia. Un «si» suelto que pide tocar el boton no los toca.
+const rechazosPrevios = est.paso === 'ofreciendo_huecos' ? (Number(est.rechazos) || 0) : 0;
+en.rechazos = 0;
 const fechaDe = (iso) => fechaLocal(msDe(iso));
 
 // Lo que sale del modelo, validado campo por campo.
@@ -70,21 +75,27 @@ if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'der
   if (accion !== 'nada' && est.paso === 'inicio') en.paso = 'menu';
   return salir(accion);
 }
-if (accion === 'pedir_boton') return salir('pedir_boton');
+if (accion === 'pedir_boton') { en.rechazos = rechazosPrevios; return salir('pedir_boton'); }
 
 // --- Botones -----------------------------------------------------------------------------
-if (accion === 'elegir_hueco') {
-  const b = d.boton;
-  const srv = CN_SERVICIOS.indexOf(b.servicio) >= 0 ? b.servicio : null;
+// Un hueco elegido (tocando el boton o escribiendo su hora): el MISMO camino. Se revalida en
+// `Resolver con agenda`, con el candado antes y despues de crear.
+function comoBoton(inicio, servicio, nombreEscrito) {
+  const srv = CN_SERVICIOS.indexOf(servicio) >= 0 ? servicio : null;
   if (!srv) return salir('menu');
   en.servicio = srv;
-  const nombres = nombresValidos(est.pacientes || []);
-  en.huecoElegido = b.inicio;
+  if (nombreEscrito) {
+    const pn = partirNombre(String(nombreEscrito));
+    if (pn && pn.apellidos && pn.nombres) { en.pacientes = [String(nombreEscrito).trim()]; en.hermanos = false; }
+  }
+  const nombres = nombresValidos(en.pacientes || []);
+  en.huecoElegido = inicio;
   return salir('elegir_hueco', {
-    leer: leer14(fechaDe(b.inicio)),
-    params: { inicio: b.inicio, servicio: srv, nombresListos: nombres.validos.length > 0 },
+    leer: leer14(fechaDe(inicio)),
+    params: { inicio: inicio, servicio: srv, nombresListos: nombres.validos.length > 0 },
   });
 }
+if (accion === 'elegir_hueco') return comoBoton(d.boton.inicio, d.boton.servicio, d.nombreEscrito);
 if (accion === 'cancelar_boton') return salir('cancelar', { leer: leer90(), params: { id: d.boton.id } });
 if (accion === 'mover_boton') return salir('mover_elegido', { leer: leer90(), params: { id: d.boton.id } });
 
@@ -105,6 +116,11 @@ if (accion === 'extraer') {
       pidioHoy: false, masOpciones: false, hermanos: false, pacientes: [String(d.textoExtraer || texto).trim()], pregunta: null };
   }
 }
+if (!x && d.intencionForzada) {
+  // El codigo ya sabe que quiere cancelar o mover: no depende de que el modelo responda.
+  x = { intencion: d.intencionForzada, servicio: 'desconocido', fechaPreferida: null, horaPreferida: null, franja: 'cualquiera',
+    pidioHoy: false, masOpciones: false, hermanos: false, pacientes: [], pregunta: null };
+}
 if (!x) {
   return salir('error', { errores: ['no se pudo interpretar el mensaje (modelo)'], params: { motivo: 'error del modelo al interpretar el mensaje' } });
 }
@@ -118,6 +134,12 @@ const srvDelTexto = (() => {
   return null;
 })();
 const srv = srvDelTexto || en.servicio || (CN_SERVICIOS.indexOf(x.servicio) >= 0 ? x.servicio : null);
+// HB3: una peticion de cancelar o mover gana sobre la oferta pendiente, diga lo que diga el modelo.
+if (d.intencionForzada && x.intencion !== 'cancelar' && x.intencion !== 'mover') {
+  x.intencion = d.intencionForzada;
+  if (x.servicio === 'vacunas_otros') x.servicio = 'desconocido';
+  x.pregunta = null;
+}
 if (x.servicio === 'vacunas_otros') { en.paso = est.paso === 'inicio' ? 'menu' : est.paso; return salir('contacto_doctor'); }
 
 // Una pregunta de salud no se contesta: a una persona.
@@ -132,6 +154,18 @@ if (x.intencion === 'mover') { en.paso = 'moviendo'; return salir('listar', { le
 if (x.pacientes.length) {
   en.pacientes = x.pacientes.slice(0, 2);
   if (x.hermanos || x.pacientes.length > 1) en.hermanos = true;
+}
+
+// --- HB2 (con el modelo): la hora que dio coincide con UNA de las ofrecidas = tocar ese boton -------
+// El codigo ya probo las frases simples sin el modelo (`Decidir turno`); esto cubre las que solo el
+// modelo entiende («a las cuatro y media»). Una hora ofrecida en dos dias es ambigua; sin coincidencia,
+// recien ahi se vuelve a ofrecer. Con una negacion o una peticion de mas opciones no se elige nada.
+if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && x.horaPreferida && !x.masOpciones && !x.pregunta
+  && (x.intencion === 'agendar' || x.intencion === 'otro')
+  && !/\b(no|nada|ni|ninguno|ninguna|tampoco|otra|otro|otras|otros|cambi\w*|despues|antes|pero|aunque)\b/.test(cnNorm(texto))) {
+  const coinciden = est.ultimaOferta.filter((iso) => horaLocal(msDe(iso)) === x.horaPreferida && (!x.fechaPreferida || fechaDe(iso) === x.fechaPreferida));
+  if (coinciden.length === 1) return comoBoton(coinciden[0], srv || est.servicio, '');
+  if (coinciden.length > 1) { en.rechazos = rechazosPrevios; return salir('pedir_boton'); }
 }
 
 // --- Esperando el nombre del nino ------------------------------------------------------
@@ -164,6 +198,18 @@ if ((x.intencion === 'consultar' || x.intencion === 'otro') && x.pregunta) {
   return salir('responder', { params: { pregunta: x.pregunta } });
 }
 if (!srv) return salir('menu');
+
+// --- HB4: tres rechazos seguidos de ofertas pasan con recepcion -------------------------------
+// Un rechazo es decir que ninguna sirve (la frase la marca el codigo; el modelo lo confirma con
+// `masOpciones`) sin traer una preferencia nueva. Una eleccion o un cambio de tema reinicia la cuenta.
+const pidioAlgoNuevo = x.fechaPreferida || x.horaPreferida || x.franja !== 'cualquiera' || x.pidioHoy;
+if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && !pidioAlgoNuevo && (d.rechazo === true || x.masOpciones)) {
+  en.rechazos = rechazosPrevios + 1;
+  if (en.rechazos >= 3) {
+    en.rechazos = 0; en.paso = 'menu'; en.huecoElegido = null; en.ultimaOferta = [];
+    return salir('transferir', { params: { motivo: 'el paciente rechazó tres ofertas seguidas de horarios', rechazos: true } });
+  }
+}
 
 // --- Oferta de huecos ----------------------------------------------------------------------
 en.servicio = srv;
