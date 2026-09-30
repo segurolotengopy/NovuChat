@@ -92,6 +92,9 @@ function redaccionValida(texto, huecos, aviso) {
   const s = String(texto || '').trim();
   if (!s || s.length > 900 || /^SIN_RESPUESTA/.test(s)) return false;
   const n = cnNorm(s);
+  // Un MONTO nunca sale de la redacción: el costo solo lo dice el código, con `respuestaCosto`, y solo si el
+  // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
+  if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
   if (/\b168\b/.test(n) || CLINICO.test(n) || PROMESAS.test(n) || AFIRMA.test(n)) return false;
   if (huecos.length && !aviso && NEGACION.test(n)) return false;
   // R13: un hueco («a las )») nunca sale.

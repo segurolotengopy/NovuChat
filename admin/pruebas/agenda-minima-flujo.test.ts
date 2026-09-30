@@ -1233,12 +1233,13 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       expect(t.aRecepcion).toHaveLength(1);
       expect(urlDe(t.aPaciente(MAMA)[0]!)).toContain(`wa.me/${REC}`);
     });
-    it('NIEGA: una pregunta de costo con respuesta en la configuración SÍ se contesta (un texto, sin recepción)', () => {
+    it('NIEGA: una pregunta con respuesta en la configuración SÍ se contesta (un texto, sin recepción)', () => {
+      // El costo ya no pasa por la redacción: lo dice el código con `respuestaCosto` (Andres, 30/09).
       const m = mundo({ eventos: [] });
-      m.gemini.redactar = 'La consulta cuesta 250 Bs.';
-      const t = pedir(m, { intencion: 'consultar', pregunta: 'cuánto cuesta la consulta' });
+      m.gemini.redactar = 'Sí, los sábados atendemos de 09:00 a 12:00.';
+      const t = pedir(m, { intencion: 'consultar', pregunta: 'atienden los sábados' });
       expect(t.enviados).toHaveLength(1);
-      expect(t.enviados[0]!.cuerpo).toBe('La consulta cuesta 250 Bs.');
+      expect(t.enviados[0]!.cuerpo).toBe('Sí, los sábados atendemos de 09:00 a 12:00.');
       expect(t.aRecepcion).toHaveLength(0);
     });
     it('una pregunta sin respuesta (SIN_RESPUESTA) pasa con recepción: aviso más botón, nunca «te aviso»', () => {
@@ -2459,5 +2460,30 @@ describe('Agenda mínima v0: observaciones con teléfono real, «Armar mensajes�
   it('NIEGA: tocar el botón «Emergencia» no se cita como texto escrito', () => {
     const t = mundo({ eventos: [] }).turno(lista(MAMA, 'emergencia', 'Emergencia'));
     expect(t.aDoctor.map((e) => e.cuerpo).join(' ')).toMatch(/sin escribir nada/);
+  });
+});
+
+describe('Agenda mínima v0: el costo SOLO si se pregunta explícitamente (Andres, 30/09)', () => {
+  const conCosto = { respuestaCosto: 'La consulta cuesta 250 Bs.' };
+  it('«¿cuál es el valor de la consulta?» también es una pregunta de costo', () => {
+    const m = mundo({ eventos: [], configBase: conCosto });
+    m.turno(texto(MAMA, 'hola'));
+    expect(m.turno(texto(MAMA, '¿cuál es el valor de la consulta?')).aPaciente(MAMA)[0]!.cuerpo).toBe('La consulta cuesta 250 Bs.');
+  });
+  for (const roza of ['¿cuánto dura la consulta?', '¿hay descuentos?', '¿aceptan seguro?']) {
+    it(`NIEGA: «${roza}» no da el monto`, () => {
+      const m = mundo({ eventos: [], configBase: conCosto });
+      m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta: roza });
+      m.gemini.redactar = 'La consulta dura 30 minutos y cuesta 250 Bs.';
+      m.turno(texto(MAMA, 'hola'));
+      expect(textos(m.turno(texto(MAMA, roza)))).not.toMatch(/250|\bBs\b/);
+    });
+  }
+  it('NIEGA: la redacción de una oferta que nombra el monto se descarta (el menú, la oferta y la confirmación no lo dicen)', () => {
+    const m = mundo({ eventos: [], configBase: conCosto });
+    m.gemini.redactar = 'Tengo estos horarios; la consulta cuesta 250 Bs.';
+    const a = m.turno(texto(MAMA, 'hola'));
+    const b = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+    expect(textos(a) + textos(b)).not.toMatch(/250|\bBs\b/);
   });
 });

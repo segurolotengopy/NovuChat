@@ -166,7 +166,7 @@ function claveDeRespuestaFija(normal, paso, hayInterrogacion) {
   const horarioFuerte = /\b(?:horarios? de (?:atencion|trabajo|consulta)|horarios? del (?:consultorio|doctor|dr)|a que hora (?:atienden|atiende|abren|abre|cierran|cierra|empiezan|empieza|trabajan|trabaja|terminan|se atiende|hay atencion)|hasta que hora (?:atienden|atiende|cierran|cierra|abren|abre|trabajan|trabaja)|desde que hora (?:atienden|atiende|abren|abre)|que dias (?:atienden|atiende|abren|abre|trabajan|trabaja)|cuando (?:atienden|atiende|abren|abre)|dias de atencion)\b/;
   const horarioSuelto = /\b(?:que horarios?|cual(?:es)? (?:es|son) (?:el|los|su|sus) horarios?|hasta que hora|desde que hora|a que hora atienden)\b|^horarios?$/;
   if (horarioFuerte.test(n) || (inicial && horarioSuelto.test(n))) claves.push('horario');
-  if (/\b(?:cuanto (?:cuesta|cuestan|sale|salen|cobra|cobran|cobras|vale|valen|es|seria|son|pago|pagaria|se paga|debo pagar|hay que pagar)|precios?|costos?|tarifas?|arancel(?:es)?)\b/.test(n)) claves.push('costo');
+  if (/\b(?:cuanto (?:cuesta|cuestan|sale|salen|cobra|cobran|cobras|vale|valen|es|seria|son|pago|pagaria|se paga|debo pagar|hay que pagar)|precios?|costos?|tarifas?|arancel(?:es)?|valor de (?:la )?consulta)\b/.test(n)) claves.push('costo');
   return claves.length === 1 ? claves[0] : '';
 }
 
