@@ -491,7 +491,7 @@ if (ceden.length) {
     && !/(pag|señ|sena|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel|sald|liquid|garantiz)/i.test(n) ? n : '';
   const describir = (e) => {
     const quien = idsCreados.has(String(e.id))
-      ? nombreSeguro(String(e.summary || '').replace(/^.*?Cita\s+/i, '').split('—')[0].trim()) : '';
+      ? nombreSeguro(String(e.summary || '').replace(/^.*?Cita\s+/i, '').split('—')[0].replace(/\(\s*(?:CNS|RN)\s*\)/gi, ' ').replace(/\s+/g, ' ').trim()) : '';
     let hora = '';
     try {
       hora = new Date(e.start.dateTime).toLocaleTimeString('es-BO', {

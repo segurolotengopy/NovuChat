@@ -1133,7 +1133,10 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
   const agNombreDelTitulo = (titulo) => {
     const t = String(titulo || '').replace(/^\s*PENDIENTE DE SEÑA\s*·\s*/i, '');
     const m = /^\s*Cita\s*:?\s*([^—–-]*)/i.exec(t);
-    return m ? m[1].trim() : '';
+    // La marca del tipo de cita que el doctor pone al lado del nombre —«Cita Pedro (CNS)
+    // — …», «(RN)»: control del nino sano y recien nacido, 29/09/2026— no es parte del
+    // nombre: sin quitarla, el mensaje al paciente la tomaba por una palabra de mas.
+    return m ? m[1].replace(/\(\s*(?:CNS|RN)\s*\)/gi, ' ').replace(/\s+/g, ' ').trim() : '';
   };
   // Palabras que NO son un nombre: las de los servicios del catalogo, las de
   // quienes atienden, y las genericas. «Cita Consulta — consulta» con un
@@ -1154,7 +1157,7 @@ const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|y
     'bien', 'esta', 'este', 'esa', 'ese', 'perfecto', 'dale', 'listo', 'bueno', 'claro', 'le', 'lo', 'me', 'te', 'se',
     'en', 'las', 'sip', 'va', 'vale', 'como', 'cuando', 'donde', 'cual', 'eso', 'esto', 'mejor', 'otra', 'otro', 'ya',
     'solo', 'nos', 'mas', 'muy', 'algo', 'todo', 'hacer', 'venir', 'ir', 'ser', 'estar', 'tengo', 'soy', 'llamo', 'seria',
-    'sera', 'mismo', 'misma', 'cuanto', 'cuesta', 'precio', 'costo',
+    'sera', 'mismo', 'misma', 'cuanto', 'cuesta', 'precio', 'costo', 'cns', 'rn',
     ...AG_DIAS.map(agSinTilde), ...AG_MESES]);
   // Palabras DEL NEGOCIO: los servicios del catalogo y los nombres y servicios
   // de quienes atienden.

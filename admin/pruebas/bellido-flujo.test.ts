@@ -1408,9 +1408,52 @@ describe.skipIf(!HAY_JSON)('(j) Menú inicial, contacto directo, emergencia y de
       expect(reglas).toMatch(/y media/i);
       expect(reglas).toMatch(/RECIÉN NACIDO/);
       expect(reglas).toMatch(/NIÑO SANO/);
-      expect(reglas).toMatch(/PASADO MAÑANA/);   // ni hoy ni mañana (Andres, 18/09)
+      // El doctor (29/09/2026): recién nacido y niño sano, la MISMA prioridad, desde mañana; ya no «pasado mañana».
+      expect(reglas).not.toMatch(/PASADO MAÑANA/);
       expect(reglas).toMatch(/NÚMERO SUELTO ES UNA HORA/);   // «2» son las 14:00, no la segunda opción (prueba del 18/09)
       expect(reglas).toMatch(/sin explicar/i);   // el bloqueo del mediodía no se le cuenta al paciente
+    });
+
+    // LO QUE DIJO EL DOCTOR EL 29/09/2026: control de recién nacido y de niño sano
+    // «con la misma prioridad», desde mañana («no importa que sea al día siguiente»;
+    // el mismo día solo si hay hueco), y «cuando vienen dos hermanos, van en el
+    // mismo turno». Es prompt, y por eso se fija acá letra por letra.
+    it('recién nacido y niño sano: la misma prioridad, desde mañana, el mismo día solo si hay hueco; y dos hermanos en UN turno', () => {
+      const reglas = String(configBase(flujo)['reglasAgenda']);
+      expect(reglas).toMatch(/\(d\) RECIÉN NACIDO: ofrece los PRIMEROS turnos libres A PARTIR DE MAÑANA/);
+      expect(reglas).toMatch(/\(e\) NIÑO SANO[^;]*la MISMA prioridad que el recién nacido, sin esperar a pasado mañana/);
+      expect(reglas).toMatch(/el MISMO DÍA solo si el papá o la mamá lo piden y hay un hueco libre/);
+      expect(reglas).not.toMatch(/hoy o mañana si los hay/);
+      expect(reglas).toMatch(/\(j\) DOS HERMANOS VAN EN EL MISMO TURNO: [^;]*UNA sola cita de 30 minutos[^;]*UNA sola llamada a agendar_cita[^;]*los dos nombres en el título/);
+      expect(reglas).toMatch(/Nunca dos citas seguidas ni a la misma hora/);
+      expect(reglas).not.toMatch(/Andrés|usted|\bvos\b/);
+    });
+
+    // LA MARCA DEL DOCTOR EN LA AGENDA (29/09/2026): su calendario usa
+    // «Apellidos, Nombres (CNS…)»: 116 de 146 citas llevan exactamente (CNS).
+    // Pidió que al lado del nombre el asistente ponga (CNS) por control del niño
+    // sano y (RN) por recién nacido. La pone el FLUJO según el servicio, no el
+    // modelo, y no duplica la que el modelo haya escrito.
+    describe('la marca (CNS) o (RN) al lado del nombre', () => {
+      const titulo = (t: string, servicio = ''): string => {
+        const expr = String(nodo(flujo, 'agendar_cita').parameters['additionalFields'].summary)
+          .replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
+        return String(new Function('$fromAI', `return ${expr}`)((k: string) => (k === 'titulo' ? t : k === 'servicio' ? servicio : '')));
+      };
+      it('control del niño sano lleva (CNS); neonatología, (RN); los demás servicios, nada', () => {
+        expect(titulo('Cita Pedro Gómez — control-del-nino-sano')).toBe('Cita Pedro Gómez (CNS) — control-del-nino-sano');
+        expect(titulo('Cita Pedro Gómez — x', 'Control del niño sano')).toBe('Cita Pedro Gómez (CNS) — x');
+        expect(titulo('Cita Ana — consulta-de-neonatologia')).toBe('Cita Ana (RN) — consulta-de-neonatologia');
+        expect(titulo('Cita Ana — x', 'recién nacido')).toBe('Cita Ana (RN) — x');
+        expect(titulo('Cita Ana — consulta-pediatrica')).toBe('Cita Ana — consulta-pediatrica');
+        expect(titulo('Cita Ana — consulta-de-nutricion-infantil')).toBe('Cita Ana — consulta-de-nutricion-infantil');
+      });
+      it('dos hermanos: una cita con los dos nombres y la marca al lado; sin duplicar la que el modelo ya escribió', () => {
+        expect(titulo('Cita Mateo y Luca — control-del-nino-sano')).toBe('Cita Mateo y Luca (CNS) — control-del-nino-sano');
+        expect(titulo('Cita Ana (CNS) — control-del-nino-sano')).toBe('Cita Ana (CNS) — control-del-nino-sano');
+        expect(titulo('Cita Ana (cns) — control-del-nino-sano')).toBe('Cita Ana (cns) — control-del-nino-sano');
+        expect(titulo('Cita Ana', 'control del nino sano')).toBe('Cita Ana (CNS)');
+      });
     });
 
     // LA CONVERSACIÓN DE SILVANA (24/09/2026, #5559 y #5576). «A las 14:00 no es

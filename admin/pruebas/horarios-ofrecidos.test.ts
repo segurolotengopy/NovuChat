@@ -1263,6 +1263,52 @@ describe.each(FLUJOS)('%s · horarios ofrecidos, confirmación y lo ya ofrecido 
       }
     });
 
+    // EL DOCTOR (29/09/2026): «cuando vienen dos hermanos, van en el mismo turno».
+    // Una sola cita de 30 minutos, con los dos nombres en el titulo: el candado
+    // no puede tomarla por una cita sin nombre, ni deshacerla, ni pedir otra hora.
+    it('dos hermanos en el mismo turno: UNA cita con los dos nombres, dichos por el cliente, se queda; sin nombre dicho, no', () => {
+      const armar = (palabras: string[]): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: Date.now() }, elegido: null, palabras, desde: Date.now() } } });
+      const cal = (titulo: string) => [conNombre('h1', LUNES, '15:30', '16:00', titulo), almuerzo(LUNES)];
+      for (const [titulo, dicho] of [['Mateo y Luca', ['mateo', 'luca']], ['Mateo Pérez y Luca Pérez', ['mateo', 'perez', 'luca']], ['Mateo e Isabel', ['mateo', 'isabel']]] as const) {
+        const estado = armar([...dicho]);
+        const t = turno('Si', 'Listo, agendé a los dos en el mismo turno.', [consulta(LUNES), agendo(conNombre('h1', LUNES, '15:30', '16:00', titulo))], cal(titulo), estado);
+        expect(t.r['agendaSinConfirmar'], titulo).toEqual([]);
+        expect(t.r['agendaSinNombre'], titulo).toEqual([]);
+        expect(t.c['causaDeLaCaida'], titulo).toBeUndefined();
+      }
+      // Ningún nombre dicho por el cliente: la cita se deshace como sin nombre. (Hoy el candado exige UN nombre
+      // dicho, no todos: si dijo solo «Mateo» y el modelo completó «y Luca», se queda. Es el criterio de siempre.)
+      const r = procesar('Si', 'Listo.', [consulta(LUNES), agendo(conNombre('h1', LUNES, '15:30', '16:00', 'Mateo y Luca'))], armar([]));
+      expect(r['agendaSinNombre']).toEqual(['h1']);
+    });
+
+    // La marca del doctor (CNS / RN) al lado del nombre no es parte del nombre.
+    it('«Cita Mateo (CNS) — …»: la marca no cuenta como nombre ni como palabra que el cliente tenga que haber dicho, y no ensucia el mensaje', () => {
+      const armar = (palabras: string[]): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930] },
+        ultima: { fecha: LUNES.iso, mins: [930], desde: Date.now() }, elegido: null, palabras, desde: Date.now() } } });
+      const nueva = (t: string) => [consulta(LUNES), agendo(conNombre('h1', LUNES, '15:30', '16:00', t))];
+      for (const t of ['Mateo (CNS)', 'Mateo Pérez (CNS)', 'Mateo (RN)', 'Mateo y Luca (CNS)']) {
+        const r = procesar('Si', 'Listo.', nueva(t), armar(['mateo', 'perez', 'luca']));
+        expect(r['agendaSinNombre'], t).toEqual([]);
+        expect(r['agendaSinConfirmar'], t).toEqual([]);
+      }
+      // «CNS» y «RN» no son un nombre: aunque el cliente los haya escrito, sin otro nombre sigue faltando.
+      for (const t of ['(CNS)', '(RN)']) {
+        expect(procesar('Si', 'Listo.', nueva(t), armar(['cns', 'rn']))['agendaSinNombre'], t).toEqual(['h1']);
+      }
+      // El mensaje al paciente cuando una de dos citas cae por un cruce nombra a las personas, sin la marca.
+      const a1 = conNombre('h1', LUNES, '15:30', '16:00', 'Mateo (CNS)'), b1 = conNombre('h2', LUNES, '16:00', '16:30', 'Luca (CNS)');
+      const otra = { ...cita('otra', LUNES, '15:30', '16:00'), summary: 'Otro paciente', created: '2020-01-01T00:00:00Z' };
+      const est: J = { agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930, 960] },
+        ultima: { fecha: LUNES.iso, mins: [930, 960], desde: Date.now(), conjunto: true }, elegido: null, palabras: ['mateo', 'luca'], desde: Date.now() } } };
+      const t1 = turno('Si', 'Listo, agendadas.', [consulta(LUNES), agendo(a1), agendo(b1)], [a1, b1, otra, almuerzo(LUNES)], est);
+      const texto = String(t1.c['respuesta']);
+      expect(texto).not.toMatch(/CNS|\(RN\)/);
+      expect(texto).toContain('La cita de Luca a las 16:00 quedó agendada');
+      expect(texto).toContain('La de Mateo a las 15:30 no pudo quedar');
+    });
+
     it('revisión de seguridad del #284: «ya» a «¿Te las agendo?» confirma el conjunto solo con la marca del código', () => {
       const dos = [conNombre('h3', LUNES, '15:30', '16:00', 'Mateo'), conNombre('h4', LUNES, '16:00', '16:30', 'Luca')];
       const armar = (conjunto: boolean): J => ({ agendaPorTelefono: { [TEL]: { ofrecidos: { [LUNES.iso]: [930, 960] },
