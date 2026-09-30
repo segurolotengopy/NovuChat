@@ -74,7 +74,7 @@ const CLINICO = /dosis|\bmg\b|\bml\b|gotas|paracetamol|ibuprofeno|amoxicilina|an
 const PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego|recepcion te|el doctor te/;
 // Lo que el modelo NO puede afirmar (revisión de seguridad): que una cita quedó agendada, confirmada
 // o reservada —eso solo lo dice el código después del candado—, ni negar ser una IA (prohibición 4).
-const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b/;
+const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b/;
 const NEGACION = /no (nos )?(quedan?|hay) (mas )?(horarios?|espacios?|turnos?|citas?|disponibilidad)|sin horarios|no tenemos (horarios|espacio|disponibilidad)|agenda (llena|completa)/;
 function clavesDeHora(texto) {
   const claves = [];

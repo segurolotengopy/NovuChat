@@ -2104,7 +2104,7 @@ describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => 
     return m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
   };
   for (const falso of ['Listo, tu cita quedó agendada para el martes.', 'Ya te reservé el martes a las 11:00.',
-    'Te confirmo tu cita del martes.', 'No soy una IA, soy una persona del consultorio.']) {
+    'Te confirmo tu cita del martes.', 'No soy una IA, soy una persona del consultorio.', 'Perfecto, la cita quedó lista.']) {
     it(`la redacción que afirma algo que no existe se descarta: «${falso}»`, () => {
       const t = ofertaCon(falso);
       expect(t.enviados[0]!.cuerpo).not.toBe(falso);
