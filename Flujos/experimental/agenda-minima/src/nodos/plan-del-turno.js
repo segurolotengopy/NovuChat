@@ -232,8 +232,8 @@ let fechaPref = x.fechaPreferida;
 if (diaHeredado && diaHeredado >= fechaLocal(ahora) && (x.horaPreferida || x.franja !== 'cualquiera') && !x.masOpciones && !x.pidioHoy && !dijoDia) {
   fechaPref = diaHeredado;
 }
-if (x.fechaPreferida) en.ultimaFechaPedida = x.fechaPreferida;
-else if (fechaPref) en.ultimaFechaPedida = fechaPref;
+// Se guarda la fecha que REALMENTE se usó (la del modelo puede haberse descartado por no estar en el texto).
+if (fechaPref) en.ultimaFechaPedida = fechaPref;
 
 // --- Oferta de huecos ----------------------------------------------------------------------
 en.servicio = srv;

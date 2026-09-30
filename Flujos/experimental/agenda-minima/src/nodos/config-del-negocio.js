@@ -114,6 +114,7 @@ if (codigo === 409) {
   const funcs = Array.isArray(cuerpo.funcionarios) ? cuerpo.funcionarios : [];
   const f0 = funcs.filter((f) => f && f.porDefecto === true)[0] || funcs[0] || {};
   // El horario dia por dia es el de la persona que atiende (el propio, o el del negocio).
+  const horarioDelPanel = !!(f0.horarioTrabajo && typeof f0.horarioTrabajo === 'object' && Object.keys(f0.horarioTrabajo).length);
   const horario = (f0.horarioTrabajo && typeof f0.horarioTrabajo === 'object' && Object.keys(f0.horarioTrabajo).length)
     ? f0.horarioTrabajo : RESPALDO.horario;
   const ag = cuerpo.agendamiento && typeof cuerpo.agendamiento === 'object' ? cuerpo.agendamiento : {};
@@ -152,7 +153,7 @@ if (codigo === 409) {
   });
   const util2 = util(cuerpo.estadoComercio);
   const estadoComercio = util2 === 'activo' ? 'operativo' : (util2 ? 'suspendido' : 'operativo');
-  cfg = Object.assign({}, RESPALDO, deBase, atencion, deLaConsola, { horario: horario, estadoComercio: estadoComercio, configDeLaConsola: true });
+  cfg = Object.assign({}, RESPALDO, deBase, atencion, deLaConsola, { horario: horario, horarioDelPanel: horarioDelPanel, estadoComercio: estadoComercio, configDeLaConsola: true });
 }
 
 // --- MODO PRUEBA Y CALENDARIO --------------------------------------------------

@@ -169,6 +169,8 @@ function respuestaFija(clave) {
   if (clave === 'horario') {
     const h = String(cfg.horarioAtencion || '').trim();
     if (h && !h.startsWith('REEMPLAZAR_')) return 'Nuestro horario de atención: ' + h + '.';
+    // El horario día por día solo si vino del PANEL: el del respaldo es ficticio (revisión de seguridad).
+    if (!(cfg.configDeLaConsola === true && cfg.horarioDelPanel === true)) return null;
     const DIAS = [['lun', 'lunes'], ['mar', 'martes'], ['mie', 'miércoles'], ['jue', 'jueves'], ['vie', 'viernes'], ['sab', 'sábado'], ['dom', 'domingo']];
     const hoyMs = Number(t.ahoraMs) || Date.now();
     const lineas = [];

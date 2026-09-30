@@ -2487,3 +2487,24 @@ describe('Agenda mínima v0: el costo SOLO si se pregunta explícitamente (Andre
     expect(textos(a) + textos(b)).not.toMatch(/250|\bBs\b/);
   });
 });
+
+describe('Agenda mínima v0: el horario ficticio del respaldo nunca se presenta como real (revisión de seguridad)', () => {
+  const preguntar = (panel: J | false): Turno => {
+    const m = mundo({ eventos: [], panel });
+    m.turno(texto(MAMA, 'hola'));
+    return m.turno(texto(MAMA, '¿a qué hora atienden?'));
+  };
+  it('con el panel caído, «¿a qué hora atienden?» pasa a recepción, sin horario inventado', () => {
+    const t = preguntar(false);
+    expect(textos(t)).not.toMatch(/\d{2}:\d{2} a \d{2}:\d{2}/);
+    expect(t.aPaciente(MAMA).length).toBeGreaterThan(0);
+  });
+  it('con el panel respondiendo SIN horario, tampoco se inventa', () => {
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    (panel['funcionarios'] as J[])[0]!['horarioTrabajo'] = {};
+    expect(textos(preguntar(panel))).not.toMatch(/\d{2}:\d{2} a \d{2}:\d{2}/);
+  });
+  it('NIEGA: con el horario del panel, se responde día por día', () => {
+    expect(textos(preguntar(PANEL))).toMatch(/lunes: 11:00 a 18:00/);
+  });
+});
