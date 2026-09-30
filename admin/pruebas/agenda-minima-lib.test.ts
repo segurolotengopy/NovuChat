@@ -791,9 +791,9 @@ describe('citasDelTelefono', () => {
       expect(ids([conTel('x', VIE, '15:00', TEL, { description: linea })]), linea).toEqual([]);
     }
   });
-  it('la línea puede estar en cualquier lugar de la descripción, con salto de línea de Windows o `<br>`', () => {
-    expect(ids([conTel('a', VIE, '15:00', TEL, { description: `Servicio: x\nTelefono: ${TEL}\nNota` })])).toEqual(['a']);
-    expect(ids([conTel('b', VIE, '15:00', TEL, { description: `Servicio: x\r\nTelefono: ${TEL}\r\n` })])).toEqual(['b']);
+  it('la línea está donde la escribe el formato (2.ª tras «Cliente:», 1.ª sin él), con salto de línea de Windows o `<br>`', () => {
+    expect(ids([conTel('a', VIE, '15:00', TEL, { description: `Cliente: x\nTelefono: ${TEL}\nNota` })])).toEqual(['a']);
+    expect(ids([conTel('b', VIE, '15:00', TEL, { description: `Cliente: x\r\nTelefono: ${TEL}\r\n` })])).toEqual(['b']);
     expect(ids([conTel('c', VIE, '15:00', TEL, { description: `Cliente: x<br>Telefono: ${TEL}<br>Agendado por NovuChat.` })])).toEqual(['c']);
   });
   it('los cancelados y los de día entero no cuentan', () => {
@@ -904,5 +904,39 @@ describe('partirNombre', () => {
   it('lo que sale sirve para el título de la cita', () => {
     const p = L.partirNombre('mateo pérez gómez');
     expect(L.tituloDeLaCita({ pacientes: [p], servicio: 'control_nino_sano' })).toBe('Pérez Gómez, Mateo (CNS)');
+  });
+});
+
+// El teléfono se reconoce SOLO en la línea que le toca al formato que se escribe (revisión de seguridad).
+describe('citasDelTelefono: la línea del teléfono es la que toca, no cualquiera', () => {
+  const ids = (eventos: Ev[], telefono: string) => L.citasDelTelefono({ eventos, telefono, ahoraMs: AHORA }).map((c: { id: string }) => c.id);
+  const con = (id: string, description: string): Ev => ev(id, VIE, '15:00', '15:30', { summary: `Pérez, ${id} (CNS)`, description });
+
+  it('un perfil con «Telefono: <otro>» embebido NO hace coincidir al otro número, y el dueño real sí', () => {
+    const e = [con('p', `Cliente: x<br>Telefono: ${TEL_OTRO}\nTelefono: ${TEL}\nAgendado por NovuChat.`)];
+    expect(ids(e, TEL_OTRO)).toEqual([]);
+    expect(ids(e, TEL)).toEqual(['p']);
+    // Un salto de línea en el perfil, en la línea equivocada (la 3.ª): tampoco.
+    const f = [con('q', `Cliente: x\nTelefono: ${TEL}\nServicio: y\nTelefono: ${TEL_OTRO}\nAgendado por NovuChat.`)];
+    expect(ids(f, TEL_OTRO)).toEqual([]);
+    expect(ids(f, TEL)).toEqual(['q']);
+  });
+  it('sin línea «Cliente:», el teléfono es la primera línea; en la segunda, no', () => {
+    expect(ids([con('a', `Telefono: ${TEL}\nNota`)], TEL)).toEqual(['a']);
+    expect(ids([con('b', `Servicio: x\nTelefono: ${TEL}`)], TEL)).toEqual([]);
+    expect(ids([con('c', `Nota\nTelefono: ${TEL}`)], TEL)).toEqual([]);
+  });
+  it('las citas del flujo vivo de Bellido y de citas-a-calendario.mjs (mismo formato) siguen reconocidas', () => {
+    for (const d of [`Cliente: Mamá de Ana\nTelefono: ${TEL}\nAgendado por NovuChat.`, `Cliente: \nTelefono: ${TEL}\nAgendado por NovuChat.`,
+      `Cliente: Ana\r\nTelefono: ${TEL}\r\nAgendado por NovuChat.`]) {
+      expect(ids([con('v', d)], TEL), d).toEqual(['v']);
+    }
+    // Una descripción que Google convirtió a HTML (sin ningún \n) se parte por <br>.
+    expect(ids([con('h', `Cliente: Ana<br>Telefono: ${TEL}<br>Agendado por NovuChat.`)], TEL)).toEqual(['h']);
+  });
+  it('lo que escribe `descripcionDeLaCita` (con servicio y pacientes) se encuentra', () => {
+    const d = L.descripcionDeLaCita({ telefono: TEL, servicio: 'control_nino_sano', pacientes: [{ apellidos: 'Pérez', nombres: 'Ana' }], nombrePerfil: 'Mamá\nTelefono: ' + TEL_OTRO });
+    expect(ids([con('w', d)], TEL)).toEqual(['w']);
+    expect(ids([con('w', d)], TEL_OTRO)).toEqual([]);
   });
 });

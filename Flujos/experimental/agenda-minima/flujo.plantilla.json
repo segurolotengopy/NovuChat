@@ -1043,7 +1043,10 @@
         }
       },
       "onError": "continueRegularOutput",
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "id": "cierre-si",
@@ -1491,6 +1494,41 @@
         "jsCode": "@@comun:nodos/resumen-del-turno.js"
       },
       "notes": "Ultimo nodo. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes salientes y resumen del turno."
+    },
+    {
+      "id": "audio-tamano",
+      "name": "¿Audio de tamaño aceptable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2720,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "t1",
+              "leftValue": "={{ Number($json.file_size) > 0 && Number($json.file_size) <= 720000 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Tope de 720.000 bytes (unos 3 minutos de nota de voz) ANTES de descargar y transcribir: una nota enorme no se transcribe con la credencial prepago. Sin tamaño (el nodo anterior falló o está desactivado) tampoco: el audio sigue sin transcripción y Decidir turno pide que lo escriba."
     }
   ],
   "connections": {
@@ -1691,7 +1729,7 @@
       "main": [
         [
           {
-            "node": "Descargar medio",
+            "node": "¿Audio de tamaño aceptable?",
             "type": "main",
             "index": 0
           }
@@ -2070,6 +2108,24 @@
         [
           {
             "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Audio de tamaño aceptable?": {
+      "main": [
+        [
+          {
+            "node": "Descargar medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decidir turno",
             "type": "main",
             "index": 0
           }

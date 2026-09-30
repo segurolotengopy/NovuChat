@@ -122,8 +122,10 @@ export interface Opciones {
   configBase?: Record<string, string>;
   desactivados?: string[];
   ingesta?: J;
+  /** Tamaño que devuelve el doble de «Obtener URL del medio» (por omisión 5.000 bytes). */
+  medioBytes?: number;
 }
-interface Fallas { leer?: boolean; crear?: boolean; releer?: boolean; borrar?: boolean; deshacer?: boolean }
+interface Fallas { leer?: boolean; crear?: boolean; releer?: boolean; borrar?: boolean; deshacer?: boolean | '404' }
 
 type Extraccion = J | ((cuerpo: J) => J) | 'ERROR';
 
@@ -215,7 +217,7 @@ function mundo(op: Opciones = {}) {
       case 'Registrar cierre (cita)': {
         return [cada((it) => { log.cierres.push(JSON.parse(String(evaluarValor(p['jsonBody'], it, refs)))); return [{ ok: true }]; })];
       }
-      case 'Obtener URL del medio': return [cada(() => [{ url: 'https://ejemplo.invalid/medio', file_size: 5000 }])];
+      case 'Obtener URL del medio': return [cada(() => [{ url: 'https://ejemplo.invalid/medio', file_size: op.medioBytes ?? 5000 }])];
       case 'Descargar medio': return [cada(() => [{ descargado: true }])];
       case 'Transcribir audio': {
         return [cada(() => [gemini.transcripcion === null ? { error: 'sin transcripcion' } : { content: { parts: [{ text: gemini.transcripcion }] } }])];
@@ -277,6 +279,7 @@ function mundo(op: Opciones = {}) {
           const cal = evaluarValor((p['calendar'] as { value: string }).value, it, refs);
           const falla = n.name === 'Borrar evento' ? calendario.fallas.borrar : calendario.fallas.deshacer;
           const id = String(evaluarValor(p['eventId'], it, refs));
+          if (falla === '404') return [{ error: { message: 'The resource you are requesting could not be found', httpCode: '404' } }];
           if (falla || !calendarioValido(cal)) return [{ error: 'no se pudo borrar' }];
           const antes = calendario.eventos.length;
           calendario.eventos = calendario.eventos.filter((e) => e['id'] !== id);
@@ -896,11 +899,19 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       expect(t.enviados[0]!.payload['interactive']).toBeDefined();
       expect(interactivo(t.enviados[0]!)['type']).toBe('list');
     });
-    it('una nota de voz enorme se rechaza sin transcribir', () => {
-      const m = mundo({ eventos: [] });
-      m.gemini.transcripcion = 'lo que sea';
-      // El doble de «Obtener URL del medio» devuelve 5.000 bytes: es corta.
-      expect(m.turno(audio(MAMA)).enviados[0]!.payload['type']).toBe('interactive');
+    it('una nota de voz enorme NO se descarga ni se transcribe (revisión de seguridad: costo)', () => {
+      const m = mundo({ eventos: [], medioBytes: 16_000_000 });
+      m.gemini.transcripcion = 'quiero cita para mañana';
+      const t = m.turno(audio(MAMA));
+      expect(t.ejecutados.has('Descargar medio')).toBe(false);
+      expect(t.ejecutados.has('Transcribir audio')).toBe(false);
+      expect(t.enviados.length).toBeGreaterThan(0);
+    });
+    it('NIEGA: una nota corta sí se transcribe', () => {
+      const m = mundo({ eventos: [], medioBytes: 5000 });
+      m.gemini.transcripcion = 'hola';
+      const t = m.turno(audio(MAMA));
+      expect(t.ejecutados.has('Transcribir audio')).toBe(true);
     });
   });
 
@@ -1916,5 +1927,227 @@ describe('Agenda mínima v0: ronda 2, lo de «Armar mensajes»', () => {
     const c = m.turno(texto(MAMA, 'tampoco me sirven'));
     expect(c.aPaciente(MAMA)[0]!.cuerpo).toMatch(/^Disculpa que ninguno de los horarios te sirva/);
     expect(c.aRecepcion).toHaveLength(1);
+  });
+});
+
+// =================================================================================================
+// Revisión de seguridad del flujo: (1) una regex de costo cuadrático sobre el texto del paciente
+// dejaba 10 a 15 s por mensaje con 80.000 espacios, (2) una PREGUNTA por una hora ofrecida agendaba
+// (o movía la cita sin tocar el botón), (3) el nombre de perfil entra limpio.
+// =================================================================================================
+describe('Agenda mínima v0: revisión de seguridad (texto hostil y preguntas)', () => {
+  const MARTES = '2026-10-06'; // la oferta «desde mañana»: martes 11:00, 11:30 y 12:00
+  const conOferta = (m: ReturnType<typeof mundo>): Turno => {
+    m.turno(texto(MAMA, 'hola'));
+    return m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+  };
+  const idsDe = (t: Turno): string[] => (t.enviados.length && t.enviados[0]!.tipo === 'interactive' && interactivo(t.enviados[0]!)['type'] === 'button' ? botonesDe(t.enviados[0]!).map((b) => b.id) : []);
+  const estadoDe = (m: ReturnType<typeof mundo>): J => (m.sd['agendaMinima'] as J)[MAMA] as J;
+
+  // ------------------------------------------------------------------------------ (1) el costo
+  describe('un texto de 80.000 caracteres se procesa en milisegundos, de punta a punta', () => {
+    const ESP = ' '.repeat(80_000);
+    const hostiles: [string, string][] = [
+      ['80.000 espacios', ESP],
+      ['«hola» y 80.000 espacios', `hola${ESP}`],
+      ['espacios y un carácter final', `${ESP}x`],
+      ['«el paciente es Ana Pérez» + espacios + gracias', `el paciente es Ana Pérez${ESP}gracias`],
+      ['«el paciente es» + espacios + hora', `a las 11:30 y el paciente es Ana Pérez${ESP}a las 11:30`],
+      ['nombre, espacios y puntuación', `el paciente es Ana Pérez${ESP}.!?,;${ESP}x`],
+      ['un dígito y espacios sueltos', `el paciente es Ana Pérez ${'1 '.repeat(40_000)}`],
+      ['tabulaciones y saltos', `a las 11:30\t\n\r ${'\t\n '.repeat(27_000)}x`],
+      ['espacios Unicode', `la primera${'   '.repeat(27_000)}x`],
+    ];
+    for (const [nombre, dicho] of hostiles) {
+      it(`${nombre}: el turno entero (los tres nodos de decisión incluidos) tarda menos de 300 ms y no rompe nada`, () => {
+        expect(dicho.length).toBeGreaterThanOrEqual(80_000);
+        const m = mundo({ eventos: [] });
+        conOferta(m);
+        m.gemini.extraer = extraccion({});
+        const desde = performance.now();
+        const t = m.turno(texto(MAMA, dicho));
+        const ms = performance.now() - desde;
+        expect(ms).toBeLessThan(300);
+        expect(t.ejecutados.has('Interpretar entrada')).toBe(true);
+        expect(t.ejecutados.has('Decidir turno')).toBe(true);
+        expect(t.ejecutados.has('Plan del turno')).toBe(true);
+        // Y al modelo nunca llega el texto entero: se recortó en el borde.
+        for (const e of t.extraer) expect(JSON.stringify(e).length).toBeLessThan(20_000);
+      });
+    }
+    it('el mismo texto en el primer mensaje (paso «inicio») también tarda menos de 300 ms', () => {
+      const m = mundo({ eventos: [] });
+      const desde = performance.now();
+      m.turno(texto(MAMA, `quiero una cita${ESP}x`));
+      expect(performance.now() - desde).toBeLessThan(300);
+    });
+    it('NIEGA: un texto normal sigue intacto (el recorte es de 1.500, no de 15)', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      m.turno(texto(MAMA, 'a las 11:30 y el paciente es Juan Pérez'));
+      expect(m.calendario.eventos).toHaveLength(1);
+      expect(m.calendario.eventos[0]!['summary']).toBe('Pérez, Juan (CNS)');
+    });
+  });
+
+  // ------------------------------------------------------------------------------ (2) preguntas
+  describe('una PREGUNTA por una hora ofrecida no agenda ni mueve', () => {
+    const preguntas: [string, string][] = [
+      ['¿tienes a las 9:30?', '09:30'],
+      ['¿tienes a las 11:30?', '11:30'],
+      ['¿a las 11:30 hay?', '11:30'],
+      ['¿y a las 12 se puede?', '12:00'],
+      ['a las 11 está libre?', '11:00'],
+      ['a las 12:00 hay lugar', '12:00'],
+      ['a las 11:30 esta disponible', '11:30'],
+    ];
+    for (const [dicho, hora] of preguntas) {
+      it(`«${dicho}» no crea ni borra nada: se contesta con la disponibilidad y los botones`, () => {
+        const m = mundo({ eventos: [] });
+        conOferta(m);
+        m.gemini.extraer = extraccion({ horaPreferida: hora });
+        const t = m.turno(texto(MAMA, dicho));
+        expect(t.extraer).toHaveLength(1); // fue al modelo: el código NO la tomó por una elección
+        expect(m.calendario.eventos).toHaveLength(0);
+        expect(t.bitacora).toEqual([]);
+        expect(estadoDe(m)['huecoElegido']).toBeFalsy();
+        expect(t.enviados).toHaveLength(1);
+        expect(t.enviados[0]!.cuerpo).not.toMatch(CONFIRMA);
+        expect(t.enviados[0]!.cuerpo).not.toMatch(/Cómo se llama el niño o la niña/);
+      });
+    }
+    it('MOVER: «¿tienes a las 11:30?» con una cita existente y moverId NO mueve la cita (ni crea ni borra)', () => {
+      const m = mundo({ eventos: [citaDe(MAMA, 'vieja', JUEVES, '14:00', '14:30', 'Pérez Gómez, Ana (CNS)')] });
+      m.gemini.extraer = extraccion({ intencion: 'mover' });
+      const oferta = m.turno(texto(MAMA, 'quiero mover mi cita'));
+      expect(idsDe(oferta)).toEqual([idHueco(MARTES, '11:00'), idHueco(MARTES, '11:30'), idHueco(MARTES, '12:00')]);
+      expect(estadoDe(m)['moverId']).toBe('vieja');
+      for (const dicho of ['¿tienes a las 11:30?', 'a las 11 está libre?', '¿y a las 12 se puede?']) {
+        m.gemini.extraer = extraccion({ horaPreferida: dicho.includes('12') ? '12:00' : (dicho.includes('11:30') ? '11:30' : '11:00') });
+        const t = m.turno(texto(MAMA, dicho));
+        expect(t.bitacora, dicho).toEqual([]);
+        expect(m.calendario.eventos.map((e) => e['id']), dicho).toEqual(['vieja']);
+        expect(t.enviados[0]!.cuerpo, dicho).not.toMatch(CONFIRMA);
+      }
+    });
+    it('POSITIVO: «a las 11:30» sin pregunta sigue agendando (el mismo camino del botón)', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      const t = m.turno(texto(MAMA, 'a las 11:30'));
+      expect(t.extraer).toHaveLength(0);
+      expect(estadoDe(m)['huecoElegido']).toBe(iso(MARTES, '11:30'));
+    });
+    it('POSITIVO en el plan (con el modelo): «mejor a las once y media» elige; la misma frase en pregunta no', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '11:30' });
+      m.turno(texto(MAMA, 'mejor a las once y media'));
+      expect(estadoDe(m)['huecoElegido']).toBe(iso(MARTES, '11:30'));
+      const q = mundo({ eventos: [] });
+      conOferta(q);
+      q.gemini.extraer = extraccion({ horaPreferida: '11:30' });
+      const t = q.turno(texto(MAMA, '¿mejor a las once y media?'));
+      expect(estadoDe(q)['huecoElegido']).toBeFalsy();
+      expect(q.calendario.eventos).toHaveLength(0);
+      expect(t.enviados[0]!.cuerpo).not.toMatch(/Cómo se llama el niño o la niña/);
+    });
+    it('NIEGA (plan): «mejor a las once y media, ¿tienes?» no elige aunque el modelo entienda la hora', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '11:30' });
+      m.turno(texto(MAMA, 'mejor a las once y media, hay?'));
+      expect(estadoDe(m)['huecoElegido']).toBeFalsy();
+      expect(m.calendario.eventos).toHaveLength(0);
+    });
+  });
+
+  // ------------------------------------------------------------------------------ (3) el perfil
+  describe('el nombre de perfil entra limpio', () => {
+    const conPerfil = (nombre: string): J => {
+      const v = texto(MAMA, 'hola');
+      (v['contacts'] as J[])[0]!['profile']['name'] = nombre;
+      return v;
+    };
+    it('sin <, >, &, saltos de línea ni controles, y de 60 caracteres como máximo', () => {
+      const m = mundo({ eventos: [] });
+      m.turno(conPerfil(`Ana<br>Telefono: ${OTRA} & <b>x</b>\nlinea\r\n${'z'.repeat(200)}`));
+      const cliente = m.log.ingesta.map((i) => JSON.stringify(i)).join('');
+      expect(cliente).not.toMatch(/<br>|<b>|<\/b>/);
+      // La cita que crea el flujo lleva el nombre ya limpio y una sola línea «Telefono:».
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      m.turno(texto(MAMA, 'a las 11:30 y el paciente es Juan Pérez'));
+      const d = String(m.calendario.eventos[0]!['description']);
+      expect(d.split('\n').filter((l) => /^Telefono:/.test(l))).toEqual([`Telefono: ${MAMA}`]);
+      expect(d).not.toMatch(/[<>&]/);
+      expect((d.split('\n')[0] ?? '').length).toBeLessThanOrEqual('Cliente: '.length + 60);
+    });
+    it('NIEGA: un nombre de perfil normal («Mamá de Ana») no se altera', () => {
+      const m = mundo({ eventos: [] });
+      conOferta(m);
+      m.gemini.extraer = 'ERROR';
+      m.turno(texto(MAMA, 'a las 11:30 y el paciente es Juan Pérez'));
+      expect(String(m.calendario.eventos[0]!['description']).split('\n')[0]).toBe('Cliente: Mamá de Ana');
+    });
+  });
+});
+
+// =================================================================================================
+// Revisión de seguridad del candidato B, lo de la sesión coordinadora («Armar mensajes»).
+describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => {
+  const ofertaCon = (redaccion: string, op: Opciones = {}): Turno => {
+    const m = mundo(Object.assign({ eventos: [] }, op));
+    m.gemini.redactar = redaccion;
+    m.turno(texto(MAMA, 'hola'));
+    return m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+  };
+  for (const falso of ['Listo, tu cita quedó agendada para el martes.', 'Ya te reservé el martes a las 11:00.',
+    'Te confirmo tu cita del martes.', 'No soy una IA, soy una persona del consultorio.']) {
+    it(`la redacción que afirma algo que no existe se descarta: «${falso}»`, () => {
+      const t = ofertaCon(falso);
+      expect(t.enviados[0]!.cuerpo).not.toBe(falso);
+      expect(textos(t)).not.toMatch(/quedó agendada|reservé|confirmo tu cita|no soy una ia/i);
+    });
+  }
+  it('NIEGA: una redacción normal pasa', () => {
+    const t = ofertaCon('Tengo estos horarios; toca el que prefieras.');
+    expect(t.enviados[0]!.cuerpo).toBe('Tengo estos horarios; toca el que prefieras.');
+  });
+  it('emergencia SIN número del doctor: no dice «ya le avisé al doctor» y avisa a recepción marcado EMERGENCIA', () => {
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['operacion'] as J)['numeroDoctor']);
+    const m = mundo({ eventos: [], panel });
+    const t = m.turno(texto(MAMA, 'emergencia'));
+    expect(textos(t)).not.toMatch(/avis[eé] al doctor/i);
+    expect(t.aDoctor).toHaveLength(0);
+    expect(t.aRecepcion.map((e) => e.cuerpo).join(' ')).toMatch(/EMERGENCIA/);
+    expect(textos(t)).not.toMatch(/\b168\b/);
+  });
+  it('NIEGA: con número del doctor, el aviso sale y el texto lo dice', () => {
+    const t = mundo({ eventos: [] }).turno(texto(MAMA, 'emergencia'));
+    expect(t.aDoctor.length).toBeGreaterThan(0);
+    expect(textos(t)).toMatch(/avis[eé] al doctor/i);
+  });
+  it('deshacer con 404 de Google cuenta como ya borrado: no se avisa a recepción de dos eventos', () => {
+    const m = mundo({ eventos: [] });
+    hastaPedirNombre(m);
+    m.calendario.despuesDeCrear = (c) => { c.push(evento('rival-1', JUEVES, '14:00', '14:30', 'Otro paciente')); };
+    m.calendario.fallas.deshacer = '404';
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(t.aRecepcion.map((e) => e.cuerpo).join(' ')).not.toMatch(/no se pudo borrar del calendario/);
+  });
+  it('deshacer que falla SIN número de recepción: el aviso va al doctor', () => {
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['operacion'] as J)['numeroRecepcion']);
+    const m = mundo({ eventos: [], panel, configBase: { respaldoNumeroRecepcion: '' } });
+    hastaPedirNombre(m);
+    m.calendario.despuesDeCrear = (c) => { c.push(evento('rival-1', JUEVES, '14:00', '14:30', 'Otro paciente')); };
+    m.calendario.fallas.deshacer = true;
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(t.aDoctor.map((e) => e.cuerpo).join(' ')).toMatch(/no se pudo borrar del calendario/);
   });
 });

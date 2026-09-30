@@ -72,6 +72,9 @@ const conEmoji = (e) => (cfg.nivelEmojis === 'ninguno' ? '' : e + ' ');
 // ------------------------------------------------------- verificar lo que redacto el modelo
 const CLINICO = /dosis|\bmg\b|\bml\b|gotas|paracetamol|ibuprofeno|amoxicilina|antibiotic|jarabe|medicamento|pastilla|receta medica|diagnostic|sintoma|tratamiento|remedio/;
 const PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego|recepcion te|el doctor te/;
+// Lo que el modelo NO puede afirmar (revisión de seguridad): que una cita quedó agendada, confirmada
+// o reservada —eso solo lo dice el código después del candado—, ni negar ser una IA (prohibición 4).
+const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b/;
 const NEGACION = /no (nos )?(quedan?|hay) (mas )?(horarios?|espacios?|turnos?|citas?|disponibilidad)|sin horarios|no tenemos (horarios|espacio|disponibilidad)|agenda (llena|completa)/;
 function clavesDeHora(texto) {
   const claves = [];
@@ -89,7 +92,7 @@ function redaccionValida(texto, huecos, aviso) {
   const s = String(texto || '').trim();
   if (!s || s.length > 900 || /^SIN_RESPUESTA/.test(s)) return false;
   const n = cnNorm(s);
-  if (/\b168\b/.test(n) || CLINICO.test(n) || PROMESAS.test(n)) return false;
+  if (/\b168\b/.test(n) || CLINICO.test(n) || PROMESAS.test(n) || AFIRMA.test(n)) return false;
   if (huecos.length && !aviso && NEGACION.test(n)) return false;
   // R13: un hueco («a las )») nunca sale.
   if (/\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/.test(n)) return false;
@@ -206,8 +209,15 @@ switch (plan) {
     // Sin el 168 y sin consejos. El mensaje al paciente es el mismo salga como salga el aviso.
     let cuerpo = String(cfg.mensajeEmergencia || '').trim();
     if (!cuerpo || /\b168\b/.test(cuerpo)) cuerpo = 'Comunícate AHORA con recepción tocando el botón. Ya le avisé al doctor.';
+    const hayDoctor = !!doc && doc !== desdeDigitos;
+    if (!hayDoctor) {
+      // Sin número del doctor no se afirma un aviso que no sale (revisión de seguridad): se quita la
+      // frase y el aviso va a recepción, marcado EMERGENCIA.
+      cuerpo = cuerpo.replace(/\s*ya le avis[eé] al doctor\.?/i, '').trim() || 'Comunícate AHORA con recepción tocando el botón.';
+    }
     mensajeConBoton(rec, cuerpo, 'Escribir a recepción', 'EMERGENCIA: escribo desde el asistente de ' + nombreNegocio + '.');
-    if (doc && doc !== desdeDigitos) {
+    if (!hayDoctor) avisarARecepcion('EMERGENCIA: el paciente pidió ayuda urgente y el asistente no tiene el número del doctor para avisarle');
+    if (hayDoctor) {
       const escrito = (t.tipo === 'text' ? String(base.texto || t.texto || '') : '').trim().replace(/\s+/g, ' ').slice(0, 300);
       const alerta = '🚨 EMERGENCIA en el asistente\nPaciente: ' + (t.nombrePerfil || 'sin nombre') + ' · +' + String(t.from || '')
         + (escrito ? '\nEscribió: «' + escrito + '»' : '\nTocó el botón de emergencia sin escribir nada.')
@@ -398,10 +408,17 @@ switch (plan) {
 // La cita cruzada no se pudo deshacer: dos eventos quedaron en el calendario.
 if (base.deshacerId) {
   const d = cnPrimero('Deshacer cita');
-  if (!d || d.error) {
+  // Un 404 o 410 de Google es que el evento ya no está: el deshacer cumplió.
+  const yaNoEsta = !!(d && d.error) && /\b(404|410)\b|not found|has been deleted|resource has been deleted/i.test(JSON.stringify(d.error));
+  if ((!d || d.error) && !yaNoEsta) {
     deshacerFallo = true;
     errores.push('no se pudo deshacer la cita cruzada');
-    avisarARecepcion('la cita cruzada no se pudo borrar del calendario (evento ' + base.deshacerId + '): revisar la agenda de ese horario');
+    const motivo = 'la cita cruzada no se pudo borrar del calendario (evento ' + base.deshacerId + '): revisar la agenda de ese horario';
+    if (rec && rec !== desdeDigitos) avisarARecepcion(motivo);
+    else if (doc && doc !== desdeDigitos) {
+      const aviso = '🔔 NovuChat (' + nombreNegocio + '): ' + motivo + '.';
+      agregar('doctor', mTexto(aviso), aviso, aviso, { tipoReporte: null });
+    }
   }
 }
 

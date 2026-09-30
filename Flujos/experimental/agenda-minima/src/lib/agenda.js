@@ -468,11 +468,16 @@ function citasDelTelefono(p) {
     if (!e.start || !e.start.dateTime) continue;
     const inicioMs = msDe(e.start.dateTime);
     if (Number.isNaN(inicioMs) || inicioMs < Number(p.ahoraMs)) continue;
-    const lineas = String(e.description || '').split(/\r?\n|<br\s*\/?>/i);
-    const suyo = lineas.some((l) => {
-      const m = /^\s*Tel(?:[eé]fono)?\s*:\s*\+?(\S+)\s*$/i.exec(l);
-      return !!m && m[1] === tel;
-    });
+    // El telefono se reconoce SOLO en la linea que le toca al formato que se escribe: la segunda si la
+    // primera es «Cliente: ...», la primera si no hay linea «Cliente:». Un nombre de perfil con
+    // «Telefono: <otro>» o con un `<br>` adentro no hace aparecer la cita en la lista de otro numero.
+    // Los saltos son `\n` (lo que escriben los flujos); solo una descripcion SIN ningun `\n` (la que
+    // Google Calendar convierte a HTML al editarla) se parte por `<br>`.
+    const descripcion = String(e.description || '').slice(0, 4000);
+    const lineas = /\n/.test(descripcion) ? descripcion.split(/\r?\n/) : descripcion.split(/<br\s*\/?>/i);
+    const linea = lineas.length > 1 && /^\s*Cliente\s*:/i.test(lineas[0]) ? lineas[1] : lineas[0];
+    const m = /^\s*Tel(?:[eé]fono)?\s*:\s*\+?(\S+)\s*$/i.exec(linea || '');
+    const suyo = !!m && m[1] === tel;
     if (!suyo) continue;
     let finMs = e.end && e.end.dateTime ? msDe(e.end.dateTime) : NaN;
     if (Number.isNaN(finMs)) finMs = inicioMs + 30 * 60000;

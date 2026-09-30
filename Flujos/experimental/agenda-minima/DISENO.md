@@ -323,3 +323,29 @@ las palabras de emergencia son las de la configuración, como en Bellido.
 - La plantilla `alerta_emergencia` tiene que estar aprobada en la WABA; si no, el aviso al doctor sale por el texto.
 - Lo que no se puede probar en una ejecución manual: el estado por teléfono (`staticData`) solo persiste con el
   flujo activo.
+
+## Revisión de seguridad del candidato B (30/09, sobre 383e363)
+
+Corregido en la ronda 3:
+- **Disponibilidad (HIGH):** el texto del paciente se recorta en «Interpretar entrada» (1.500 caracteres), y las
+  regex de «Decidir turno» ya no tienen costo cuadrático. La suite mide un texto de 80.000 caracteres.
+- **Una pregunta por una hora no agenda** (R4): «¿tienes a las 9:30?», «¿a las 10 se puede?» se contestan con
+  disponibilidad y botones; ni al agendar ni al mover se toma como elección.
+- **La redacción no puede afirmar una cita** («quedó agendada», «reservé», «confirmo tu cita») ni negar ser una
+  IA: se descarta y sale el texto fijo o la transferencia (`AFIRMA` en «Armar mensajes»).
+- **Audio:** «¿Audio de tamaño aceptable?» corta en 720.000 bytes ANTES de descargar y transcribir; sin tamaño
+  conocido tampoco se transcribe (Decidir turno pide que lo escriba).
+- **Emergencia sin número del doctor:** el paciente no lee «ya le avisé al doctor»; el aviso va a recepción,
+  marcado EMERGENCIA.
+- **Deshacer cita:** tres intentos; un 404 o 410 de Google cuenta como ya borrado; si falla y no hay recepción,
+  el aviso va al doctor.
+- **Perfil y teléfono:** el nombre de perfil pierde `<`, `>`, `&` y saltos de línea; la línea «Telefono:» solo se
+  reconoce en su lugar del formato (la cita de otro no aparece en la lista por un perfil manipulado).
+
+Anotado, sin corregir (LOW):
+- El Webhook «Entrada de prueba» no tiene autenticación: solo existe en `agenda-minima.prueba.json`, con una
+  ruta al azar que no se versiona, y se borra al terminar la prueba. Si esa variante se usara por más tiempo,
+  llevaría Header Auth.
+- Los textos de transferencia dicen «tocando el botón» aunque recepción o el doctor no tengan número (panel
+  caído y respaldo sin reemplazar): el botón no sale y el texto lo nombra igual. Con el panel de Bellido
+  respondiendo no pasa; se corrige cuando se revise el respaldo de «Config base».

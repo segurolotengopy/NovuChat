@@ -162,7 +162,9 @@ if (x.pacientes.length) {
 // recien ahi se vuelve a ofrecer. Con una negacion o una peticion de mas opciones no se elige nada.
 if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && x.horaPreferida && !x.masOpciones && !x.pregunta
   && (x.intencion === 'agendar' || x.intencion === 'otro')
-  && !/\b(no|nada|ni|ninguno|ninguna|tampoco|otra|otro|otras|otros|cambi\w*|despues|antes|pero|aunque)\b/.test(cnNorm(texto))) {
+  && !/\b(no|nada|ni|ninguno|ninguna|tampoco|otra|otro|otras|otros|cambi\w*|despues|antes|pero|aunque)\b/.test(cnNorm(texto))
+  // Una PREGUNTA por una hora ofrecida no es elegirla (ni agenda, ni mueve la cita): se contesta con la disponibilidad.
+  && !/[?¿]/.test(texto) && !/\b(tien|hay|habr|se puede|puedo|podr|queda|libre|disponible)/.test(cnNorm(texto))) {
   const coinciden = est.ultimaOferta.filter((iso) => horaLocal(msDe(iso)) === x.horaPreferida && (!x.fechaPreferida || fechaDe(iso) === x.fechaPreferida));
   if (coinciden.length === 1) return comoBoton(coinciden[0], srv || est.servicio, '');
   if (coinciden.length > 1) { en.rechazos = rechazosPrevios; return salir('pedir_boton'); }

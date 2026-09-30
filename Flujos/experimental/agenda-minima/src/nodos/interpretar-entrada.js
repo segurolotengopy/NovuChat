@@ -26,13 +26,15 @@ const mediaId = medio && medio.id ? String(medio.id) : '';
 let texto = '';
 let textoReporte = '';
 if (tipo === 'text') {
-  texto = String((msg.text && msg.text.body) || '');
+  // El texto del paciente se recorta en el borde (1.500): una regex de costo cuadratico sobre 80.000
+  // espacios tardaba 10 a 15 s por mensaje.
+  texto = String((msg.text && msg.text.body) || '').slice(0, 1500);
   textoReporte = texto;
 } else if (tipo === 'interactive') {
-  texto = String((sel && sel.title) || '');
+  texto = String((sel && sel.title) || '').slice(0, 1500);
   textoReporte = 'El cliente seleccionó la opción del menú: ' + texto + ' (id: ' + String((sel && sel.id) || '') + ')';
 } else if (tipo === 'button') {
-  texto = String((msg.button && (msg.button.text || msg.button.payload)) || '');
+  texto = String((msg.button && (msg.button.text || msg.button.payload)) || '').slice(0, 1500);
   textoReporte = 'El cliente tocó el botón: ' + texto;
 } else if (tipo === 'audio') {
   textoReporte = '(audio) el cliente envió una nota de voz';
@@ -49,7 +51,8 @@ const ref = msg.referral && typeof msg.referral === 'object' ? msg.referral : nu
 
 return [{ json: {
   from: from,
-  nombrePerfil: String((contacto && contacto.profile && contacto.profile.name) || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 80),
+  // El nombre de perfil acaba en la descripcion de la cita y en avisos: sin <, >, &, saltos ni controles; 60 caracteres.
+  nombrePerfil: String((contacto && contacto.profile && contacto.profile.name) || '').slice(0, 200).replace(/[\u0000-\u001f\u007f\u2028\u2029<>&]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 60),
   phoneNumberId: carga.phoneNumberId || String((carga.metadata && carga.metadata.phone_number_id) || ''),
   mensajeId: String(msg.id || ''),
   tipo: tipo,

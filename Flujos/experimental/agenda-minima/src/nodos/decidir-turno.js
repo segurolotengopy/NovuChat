@@ -139,16 +139,21 @@ return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtracc
 // peticion de otra cosa («no puedo a las 11:30», «otra hora») tampoco: no se le elige nada.
 function elegirPorEscrito(dicho, oferta) {
   const nada = { estado: 'ninguno', inicio: '', nombre: '' };
-  let original = String(dicho || '').trim();
+  // Una PREGUNTA por una hora ofrecida («¿tienes a las 9:30?», «a las 11 esta libre?») no es elegirla:
+  // sigue su camino (se contesta con la disponibilidad y los botones, sin agendar). Y el texto se
+  // recorta a 200 caracteres antes de cualquier regex: una eleccion escrita nunca es mas larga.
+  if (esPregunta(dicho)) return nada;
+  let original = String(dicho || '').slice(0, 1500).trim().slice(0, 200);
   // El nombre del paciente, si lo trae con una frase explicita («el paciente es Juan Perez»).
   let nombre = '';
   const reNombre = /(?:\by\s+)?(?:(?:el|la)\s+)?(?:paciente|ni[nñ][oa]|beb[eé]|hij[oa])\s+(?:es|se\s+llama)\s+(.+)$|\b(?:y\s+)?se\s+llama\s+(.+)$|\ba\s+nombre\s+de\s+(.+)$|\bnombre\s+(?:es|:)\s*(.+)$/i;
   const mn = reNombre.exec(original);
   if (mn) {
-    let crudo = (mn[1] || mn[2] || mn[3] || mn[4] || '').replace(/\s+(por\s+favor|gracias)\s*$/i, '').replace(/[.!?,;\s]+$/, '').trim();
+    let crudo = sinColaDeCortesia(mn[1] || mn[2] || mn[3] || mn[4] || '');
     original = original.slice(0, mn.index).trim();
     // «...el paciente es Juan Perez a las 11:30»: la hora que queda pegada al nombre es de la eleccion.
-    const cola = /\s+(?:a\s+las?\s+)?\d{1,2}(?:[:.]\d{2}|\s+y\s+media)?\s*(?:am|pm)?\s*$/i.exec(crudo);
+    // Sin `\s+` delante ni `\s*\s*` al final: costo lineal sobre el texto del paciente.
+    const cola = /\s(?:a\s+las?\s+)?\d{1,2}(?:[:.]\d{2}|\s+y\s+media)?\s*(?:(?:am|pm)\s*)?$/i.exec(crudo);
     if (cola) { original = (original + ' ' + cola[0]).trim(); crudo = crudo.slice(0, cola.index).trim(); }
     // Dos nombres (hermanos) los entiende el modelo: aca no se elige por el.
     if (/\s(y|e)\s|&|\//i.test(' ' + crudo + ' ')) return nada;
@@ -214,6 +219,26 @@ function elegirPorEscrito(dicho, oferta) {
   if (cand.length === 1) return { estado: 'uno', inicio: cand[0], nombre: nombre };
   if (cand.length > 1) return { estado: 'ambiguo', inicio: '', nombre: '' };
   return nada;
+}
+
+// ¿Es una pregunta? `?` o `¿`, o una forma de preguntar por disponibilidad. Devuelve true si lo es.
+function esPregunta(dicho) {
+  const crudo = String(dicho || '').slice(0, 1500);
+  if (/[?¿]/.test(crudo)) return true;
+  return /\b(tien|hay|habr|se puede|puedo|podr|queda|libre|disponible)/.test(cnNorm(crudo.slice(0, 200)));
+}
+
+// Quita del final de un nombre el «por favor» / «gracias» y la puntuacion, SIN regex de sufijo
+// (`\s+...\s*$` es de costo cuadratico con miles de espacios): trimEnd + endsWith + un recorrido.
+function sinColaDeCortesia(crudo) {
+  let y = String(crudo || '').slice(0, 200).trimEnd();
+  const bajo = y.toLowerCase();
+  for (const f of ['por favor', 'gracias']) {
+    if (bajo.endsWith(f) && /\s/.test(y.charAt(y.length - f.length - 1))) { y = y.slice(0, y.length - f.length); break; }
+  }
+  let k = y.length;
+  while (k > 0 && /[.!?,;\s]/.test(y.charAt(k - 1))) k--;
+  return y.slice(0, k).trim();
 }
 
 // El cuerpo de la llamada a Gemini (generateContent). Sin `temperature` ni `topP`; 200
