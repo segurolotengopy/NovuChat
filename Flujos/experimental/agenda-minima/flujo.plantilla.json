@@ -277,6 +277,18 @@
               "name": "direccionMaps",
               "type": "string",
               "value": ""
+            },
+            {
+              "id": "b_respuestaServicios",
+              "name": "respuestaServicios",
+              "type": "string",
+              "value": "En el consultorio del doctor Bellido atendemos pediatría, neonatología y nutrición infantil, acompañando a los papás en el crecimiento de sus hijos con seguridad y confianza 👶 ¿Te gustaría agendar una cita o necesitas información sobre alguno de estos servicios?"
+            },
+            {
+              "id": "b_respuestaCosto",
+              "name": "respuestaCosto",
+              "type": "string",
+              "value": "La consulta pediátrica cuesta 250 Bs. Si quieres, te ayudo a agendarla."
             }
           ]
         },

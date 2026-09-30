@@ -3,7 +3,7 @@
 // con codigo, y un campo raro del modelo se descarta, no se obedece.
 //
 // Tipos de plan (`plan`): nada, menu, emergencia, contacto_doctor, contacto_recepcion,
-// derivar_medio, audio_ilegible, pedir_boton, pedir_nombre, transferir, error, responder,
+// derivar_medio, audio_ilegible, imagen_sin_texto, respuesta_fija (params.clave, params.conMenu), pedir_boton, pedir_nombre, transferir, error, responder,
 // ofrecer, elegir_hueco, crear (con nombre), listar (cancelar o mover), cancelar,
 // mover_elegido.
 const d = cnPrimero('Decidir turno') || {};
@@ -71,8 +71,15 @@ function nombresValidos(lista) {
 const accion = d.accion;
 
 // --- Planes que no necesitan modelo ni calendario ---------------------------------------
-if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible'].indexOf(accion) >= 0) {
+if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'derivar_medio', 'audio_ilegible', 'imagen_sin_texto', 'respuesta_fija'].indexOf(accion) >= 0) {
   if (accion !== 'nada' && est.paso === 'inicio') en.paso = 'menu';
+  // Una pregunta sencilla contestada por codigo: `clave` dice cual y `conMenu` si es el primer mensaje de la
+  // conversacion (la respuesta va en el cuerpo del menu) o si el menu ya paso (va sola). Los textos los pone
+  // `Armar mensajes` con la configuracion; aca no hay ninguno. Una clave desconocida no se inventa: menu.
+  if (accion === 'respuesta_fija') {
+    if (['servicios', 'direccion', 'horario', 'costo'].indexOf(d.claveFija) < 0) return salir('menu');
+    return salir('respuesta_fija', { params: { clave: d.claveFija, conMenu: est.paso === 'inicio' } });
+  }
   return salir(accion);
 }
 if (accion === 'pedir_boton') { en.rechazos = rechazosPrevios; return salir('pedir_boton'); }
@@ -213,15 +220,30 @@ if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && !
   }
 }
 
+// --- El dia de una hora suelta --------------------------------------------------------------------
+// «¿y a las 4?» es SOLO una hora: no dice el dia, asi que es el de la ULTIMA OFERTA (o, sin oferta, la
+// ultima fecha pedida). Solo cambia de dia si el paciente lo dice con palabras; aunque el modelo devuelva una
+// fecha, sin un dia en el texto no se le cree (era el jueves 1 cuando se hablaba del viernes 2).
+const ofertaPrevia = est.paso === 'ofreciendo_huecos' ? (est.ultimaOferta || []) : [];
+const diaHeredado = ofertaPrevia.length ? fechaDe(ofertaPrevia[0]) : (est.paso === 'ofreciendo_huecos' && est.ultimaFechaPedida ? est.ultimaFechaPedida : null);
+const sinFranjaManana = cnNorm(texto).replace(/\b(de|en|por|a) la manana\b/g, ' ');
+const dijoDia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana|pasado manana|semana|proxim[oa]|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\bel \d{1,2}\b|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/.test(sinFranjaManana);
+let fechaPref = x.fechaPreferida;
+if (diaHeredado && diaHeredado >= fechaLocal(ahora) && (x.horaPreferida || x.franja !== 'cualquiera') && !x.masOpciones && !x.pidioHoy && !dijoDia) {
+  fechaPref = diaHeredado;
+}
+if (x.fechaPreferida) en.ultimaFechaPedida = x.fechaPreferida;
+else if (fechaPref) en.ultimaFechaPedida = fechaPref;
+
 // --- Oferta de huecos ----------------------------------------------------------------------
 en.servicio = srv;
 en.paso = 'ofreciendo_huecos';
-const sinPreferencias = !x.fechaPreferida && !x.horaPreferida && x.franja === 'cualquiera' && !x.pidioHoy;
+const sinPreferencias = !fechaPref && !x.horaPreferida && x.franja === 'cualquiera' && !x.pidioHoy;
 const excluir = est.paso === 'ofreciendo_huecos' && (x.masOpciones || sinPreferencias) ? (est.ultimaOferta || []) : [];
 return salir('ofrecer', {
-  leer: leer14(x.fechaPreferida),
+  leer: leer14(fechaPref),
   params: {
-    servicio: srv, fechaPreferida: x.fechaPreferida, horaPreferida: x.horaPreferida, franja: x.franja,
+    servicio: srv, fechaPreferida: fechaPref, horaPreferida: x.horaPreferida, franja: x.franja,
     pidioHoy: x.pidioHoy, pregunta: x.pregunta, excluir: excluir,
   },
 });

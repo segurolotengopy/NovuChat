@@ -349,3 +349,16 @@ Anotado, sin corregir (LOW):
 - Los textos de transferencia dicen «tocando el botón» aunque recepción o el doctor no tengan número (panel
   caído y respaldo sin reemplazar): el botón no sale y el texto lo nombra igual. Con el panel de Bellido
   respondiendo no pasa; se corrige cuando se revise el respaldo de «Config base».
+
+## Observaciones de Andres con teléfono real (30/09, sobre 4ae8f3c)
+
+| # | Cambio | Mensajes por conversación |
+|---|---|---|
+| 1 | Un mensaje con solo una hora («¿y a las 4?») hereda el día de la última oferta | 0 |
+| 2 | La confirmación y las redes del doctor van en **dos mensajes**, como en el flujo actual (petición del doctor, fila 23 de la aceptación) | **+1 por cita confirmada (0,0113 USD)**. Una cita típica pasa de 4 a 5 mensajes, igual que el flujo actual |
+| 3 | La redacción pierde las muletillas de apertura («Claro que sí,», «Por supuesto,»…), que quedaban incoherentes detrás de una frase fija | 0 |
+| 4 | Preguntas sencillas (servicios, dirección, horario, costo) respondidas por código con textos de la configuración (`respuestaServicios`, `respuestaCosto` en «Config base» o en el panel); al primer mensaje, la respuesta va en el cuerpo del menú | 0 |
+| 5 | Una imagen con texto se procesa como ese texto; sin texto, «Recibí tu imagen. ¿Qué necesitas?» con el menú. Describir la imagen con Gemini (como el flujo actual) queda para después | 0 |
+
+El costo (`respuestaCosto`) solo se dice si lo preguntan, nunca al agendar. La frase («La consulta pediátrica
+cuesta 250 Bs. Si quieres, te ayudo a agendarla.») es un dato del cliente en «Config base» y la valida Andres.

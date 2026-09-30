@@ -40,6 +40,15 @@ if (t.tipo === 'audio') {
   tipoEf = 'text';
 }
 
+// --- Imagen o documento: CON pie de foto es ese texto (mismo camino que un mensaje escrito: preguntas
+// sencillas, intencion de cita, emergencia...); una imagen SIN texto pide que diga que necesita
+// (`imagen_sin_texto`); un documento sin texto se deriva a una persona. `Interpretar entrada` ya lee
+// `image.caption` y `document.caption` y los recorta a 1.500 caracteres.
+if (t.tipo === 'image' || t.tipo === 'document') {
+  if (texto.trim()) tipoEf = 'text';
+  else return salir(t.tipo === 'image' ? 'imagen_sin_texto' : 'derivar_medio');
+}
+
 // --- Lo que no es texto ni boton: se deriva a una persona ------------------------
 if (['text', 'interactive', 'button'].indexOf(tipoEf) < 0) return salir('derivar_medio');
 
@@ -90,6 +99,13 @@ const forzada = (tipoEf === 'text' && ((est.paso === 'inicio' && PIDE_CANCELAR_O
 if (forzada) {
   return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtraccion(texto), intencionForzada: forzada });
 }
+// --- Preguntas sencillas: las contesta el codigo (servicios, direccion, horario, costo) -------------
+// Solo con texto escrito o dicho (no un boton ni una lista). Si trae una pregunta sencilla Y ademas pide
+// una cita, gana la cita: no es `respuesta_fija`. `conMenu` (primer mensaje) lo calcula `Plan del turno`.
+if (tipoEf === 'text' && !boton) {
+  const clave = claveDeRespuestaFija(norm, est.paso, /[?¿]/.test(texto));
+  if (clave) return salir('respuesta_fija', { claveFija: clave });
+}
 if (est.paso === 'inicio') {
   en.paso = 'menu';
   // Lo que escribio antes del menu se guarda solo si dice algo: un saludo no pasa por el modelo.
@@ -131,6 +147,28 @@ if (est.paso === 'ofreciendo_huecos' && est.ultimaOferta.length > 0 && soloAfirm
 const reRechazo = /\b(ninguno|ninguna|ningun)\b|\btampoco\b|\bno me (sirve|sirven|convienen?|gusta|gustan|cuadra|cuadran|acomoda|acomodan)/;
 const rechazo = est.paso === 'ofreciendo_huecos' && tipoEf === 'text' && reRechazo.test(norm);
 return salir('extraer', { textoExtraer: texto, cuerpoExtraccion: cuerpoDeExtraccion(texto), rechazo: rechazo });
+
+// Decide, SIN modelo, si el texto es UNA de las cuatro preguntas sencillas: 'servicios', 'direccion',
+// 'horario' o 'costo'. Devuelve '' si no lo es. Conservadora: con una intencion de agendar (cita, dia,
+// hora, disponibilidad), con dos preguntas a la vez, con un texto largo o con una consulta de
+// medicamentos, NO es una respuesta fija y sigue su camino (el modelo, o recepcion).
+function claveDeRespuestaFija(normal, paso, hayInterrogacion) {
+  if (paso === 'esperando_nombre' && !hayInterrogacion) return '';
+  const n = String(normal || '').replace(/[^a-z0-9ñ:. ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!n || n.length > 160) return '';
+  const pideCita = /\b(agend\w*|reserv\w*|turnos?|disponib\w*|cupos?|libres?|espacios?|hay(?! que)|lunes|martes|miercoles|jueves|viernes|sabados?|domingos?|hoy|manana|cancel\w*|reprogram\w*|mover|cambiar)\b|\b\d{1,2}[:.]\d{2}\b|\ba las? \d|\b(quiero|quisiera|quisieramos|queremos|necesito|necesitamos|deseo|me gustaria|puedo|podemos|pueden|podria|podrian)\b(?!\s+(saber|conocer|preguntar|consultar|informacion))[^?.!]*\bcitas?\b|\b(sacar|pedir|hacer|tomar) (una )?cita\b/;
+  if (pideCita.test(n)) return '';
+  if (/dosis|medicament|paracetamol|ibuprofeno|amoxicilina|jarabe|gotas|receta|antibiotic|pastilla|vacuna|crema/.test(n)) return '';
+  const inicial = paso === 'inicio' || paso === 'menu';
+  const claves = [];
+  if (/\b(servicios|especialidades)\b|\b(que|cuales|cual)\s+(?:son\s+|es\s+)?(?:(?:el|la|los|las|su|sus|tus|mis)\s+)?(?:servicios?|especialidad|tratamientos|atiende|atienden|atiendes|hace|hacen|ofrece|ofrecen|brinda|brindan|trata|tratan|consultas|controles)\b(?!\s+falta)|\b(?:en que|de que) (?:se )?especializa/.test(n)) claves.push('servicios');
+  if (/\b(?:donde (?:queda|quedan|esta|estan|se ubica|se ubican|ubican|atienden|atiende|se encuentra|se encuentran|es)|direccion|ubicacion|ubicados?|como (?:llego|llegar|se llega|llegamos)|mapa)\b/.test(n)) claves.push('direccion');
+  const horarioFuerte = /\b(?:horarios? de (?:atencion|trabajo|consulta)|horarios? del (?:consultorio|doctor|dr)|a que hora (?:atienden|atiende|abren|abre|cierran|cierra|empiezan|empieza|trabajan|trabaja|terminan|se atiende|hay atencion)|hasta que hora (?:atienden|atiende|cierran|cierra|abren|abre|trabajan|trabaja)|desde que hora (?:atienden|atiende|abren|abre)|que dias (?:atienden|atiende|abren|abre|trabajan|trabaja)|cuando (?:atienden|atiende|abren|abre)|dias de atencion)\b/;
+  const horarioSuelto = /\b(?:que horarios?|cual(?:es)? (?:es|son) (?:el|los|su|sus) horarios?|hasta que hora|desde que hora|a que hora atienden)\b|^horarios?$/;
+  if (horarioFuerte.test(n) || (inicial && horarioSuelto.test(n))) claves.push('horario');
+  if (/\b(?:cuanto (?:cuesta|cuestan|sale|salen|cobra|cobran|cobras|vale|valen|es|seria|son|pago|pagaria|se paga|debo pagar|hay que pagar)|precios?|costos?|tarifas?|arancel(?:es)?)\b/.test(n)) claves.push('costo');
+  return claves.length === 1 ? claves[0] : '';
+}
 
 // Interpreta un texto escrito frente a las horas ofrecidas (inicios ISO, en el orden de los botones).
 // -> {estado: 'ninguno' | 'uno' | 'ambiguo', inicio, nombre}. Solo cuenta una HORA (11:30, «a las 3»,

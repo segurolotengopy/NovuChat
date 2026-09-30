@@ -127,6 +127,9 @@ function pulirRedaccion(texto) {
   const SALUDO = /^[¡!]?\s*(hola|buen[oa]s?\s+(d[ií]as|tardes|noches)|qu[eé] tal)\b/i;
   const PRESENTA = /\b(soy|somos)\s+(la|el|una|un|tu)\s+(asistente|secretaria|recepcionista)\b|\bestoy aqu[ií] para\b|\best(oy|amos) para (ayudarte|servirte)\b/i;
   while (oraciones.length > 1 && (SALUDO.test(oraciones[0]) || PRESENTA.test(oraciones[0]))) oraciones.shift();
+  // Muletillas de apertura («Claro que sí,», «Por supuesto,»…): el texto sigue a una frase fija del código
+  // (al mover: «Tu cita actual es…») y quedan incoherentes. Se quitan siempre.
+  if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*(claro que s[ií]|claro|por supuesto|con gusto|perfecto|listo|dale|genial)\s*[!,.:]+\s*/i, '');
   // Si una oración de saludo trae pegado lo útil («¡Hola! Tengo estos horarios…»), se quita solo la
   // interjección inicial, que termina en su propio signo.
   if (oraciones.length) oraciones[0] = oraciones[0].replace(/^[¡!]?\s*hola\s*[!.,]\s*/i, '');
@@ -138,6 +141,44 @@ function pulirRedaccion(texto) {
     t = t.replace(/[A-Za-zÀ-ÿ]+/g, (x) => (x !== w && sinTilde(x) === sinTilde(w)) ? w : x);
   }
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+// El menú de cuatro filas, con el cuerpo que se le pase (el saludo, una respuesta más «¿En qué más te ayudo?»,
+// o el aviso de una imagen). Un solo mensaje.
+function menu(cuerpo) {
+  const c = cnRecorte(String(cuerpo || ''), 1024);
+  const filas = [
+    { id: 'emergencia', title: 'Emergencia', description: 'Te comunico ahora con una persona' },
+    { id: 'control_recien_nacido', title: 'Recién nacido', description: 'Control del recién nacido o menor de 2 meses' },
+    { id: 'control_nino_sano', title: 'Control niño sano', description: 'Control de crecimiento, desde los 2 meses' },
+    { id: 'vacunas_otros', title: 'Vacunas y otros', description: 'Te paso directo con el doctor' },
+  ];
+  agregar('paciente', mLista(c, 'Ver opciones', '¿Qué necesitas?', filas), c,
+    c + '\n\nRespóndeme «emergencia», «recién nacido», «niño sano» o «vacunas».', { tipoReporte: 'interactive' });
+}
+// Las respuestas a las preguntas sencillas salen de la configuración; sin texto configurado, null (transfiere).
+function respuestaFija(clave) {
+  if (clave === 'servicios') return String(cfg.respuestaServicios || '').trim() || null;
+  if (clave === 'costo') return String(cfg.respuestaCosto || '').trim() || null;
+  if (clave === 'direccion') {
+    if (!cfg.direccion) return null;
+    return 'Estamos en ' + cfg.direccion + '.' + (cfg.direccionMaps ? ' Ubicación: ' + cfg.direccionMaps : '');
+  }
+  if (clave === 'horario') {
+    const h = String(cfg.horarioAtencion || '').trim();
+    if (h && !h.startsWith('REEMPLAZAR_')) return 'Nuestro horario de atención: ' + h + '.';
+    const DIAS = [['lun', 'lunes'], ['mar', 'martes'], ['mie', 'miércoles'], ['jue', 'jueves'], ['vie', 'viernes'], ['sab', 'sábado'], ['dom', 'domingo']];
+    const hoyMs = Number(t.ahoraMs) || Date.now();
+    const lineas = [];
+    for (let i = 0; i < 7; i++) {
+      const fecha = sumarDias(fechaLocal(hoyMs), i);
+      const tramos = tramosDelDia(cfg.horario || {}, fecha);
+      const dia = DIAS.find((d) => diaDeLaSemana(fecha).startsWith(d[1].slice(0, 3)));
+      lineas.push({ orden: DIAS.indexOf(dia), texto: (dia ? dia[1] : diaDeLaSemana(fecha)) + ': ' + (tramos.length ? tramos.map((x) => x.desde + ' a ' + x.hasta).join(' y ') : 'cerrado') });
+    }
+    lineas.sort((a, b) => a.orden - b.orden);
+    return 'Nuestro horario de atención:\n' + lineas.map((l) => l.texto).join('\n');
+  }
+  return null;
 }
 // Los textos fijos, armados con los huecos reales, para cuando la redaccion no sirve.
 function textoFijoDeOferta(o, srvTxt) {
@@ -192,17 +233,26 @@ switch (plan) {
     break;
 
   case 'menu': {
-    const cuerpo = String(cfg.mensajeMenu || '').trim() || '¿Qué necesitas hoy?';
-    const filas = [
-      { id: 'emergencia', title: 'Emergencia', description: 'Te comunico ahora con una persona' },
-      { id: 'control_recien_nacido', title: 'Recién nacido', description: 'Control del recién nacido o menor de 2 meses' },
-      { id: 'control_nino_sano', title: 'Control niño sano', description: 'Control de crecimiento, desde los 2 meses' },
-      { id: 'vacunas_otros', title: 'Vacunas y otros', description: 'Te paso directo con el doctor' },
-    ];
-    agregar('paciente', mLista(cuerpo, 'Ver opciones', '¿Qué necesitas?', filas), cuerpo,
-      cuerpo + '\n\nRespóndeme «emergencia», «recién nacido», «niño sano» o «vacunas».', { tipoReporte: 'interactive' });
+    menu(String(cfg.mensajeMenu || '').trim() || '¿Qué necesitas hoy?');
     break;
   }
+
+  // Preguntas sencillas respondidas por código, con textos de la CONFIGURACIÓN (nunca del código común).
+  case 'respuesta_fija': {
+    const r = respuestaFija(params.clave);
+    if (!r) {
+      transferir('el paciente preguntó algo que el asistente no tiene en la configuración (' + String(params.clave || '') + ')',
+        'Eso te lo responde recepción. Escríbele directo tocando el botón.');
+      break;
+    }
+    if (params.conMenu) menu(r + '\n\n¿En qué más te ayudo?');
+    else agregar('paciente', mTexto(r), r, r, { tipoReporte: 'text' });
+    break;
+  }
+
+  case 'imagen_sin_texto':
+    menu('Recibí tu imagen. ¿Qué necesitas?');
+    break;
 
   case 'emergencia': {
     // P3: solo el boton a recepcion y «ya le avise al doctor», con el texto de la configuracion.
@@ -218,7 +268,9 @@ switch (plan) {
     mensajeConBoton(rec, cuerpo, 'Escribir a recepción', 'EMERGENCIA: escribo desde el asistente de ' + nombreNegocio + '.');
     if (!hayDoctor) avisarARecepcion('EMERGENCIA: el paciente pidió ayuda urgente y el asistente no tiene el número del doctor para avisarle');
     if (hayDoctor) {
-      const escrito = (t.tipo === 'text' ? String(base.texto || t.texto || '') : '').trim().replace(/\s+/g, ' ').slice(0, 300);
+      // Lo escrito: el texto, o el pie (caption) de una imagen o documento (se procesan como texto).
+      const tocoBoton = t.tipo === 'interactive' || t.tipo === 'button';
+      const escrito = (tocoBoton ? '' : String(base.texto || t.texto || '')).trim().replace(/\s+/g, ' ').slice(0, 300);
       const alerta = '🚨 EMERGENCIA en el asistente\nPaciente: ' + (t.nombrePerfil || 'sin nombre') + ' · +' + String(t.from || '')
         + (escrito ? '\nEscribió: «' + escrito + '»' : '\nTocó el botón de emergencia sin escribir nada.')
         + '\nSe le indicó comunicarse con recepción.';
@@ -374,7 +426,6 @@ switch (plan) {
       // P10: la tolerancia va dentro del mismo mensaje y sale de la configuracion; sin frase, no se agrega.
       String(cfg.toleranciaTexto || ''),
       String(cfg.mensajeCierre || ''),
-      String(cfg.mensajeRedes || ''),
     ].filter(Boolean);
     let cuerpo = partes.join('\n\n');
     const b = cnPrimero('Borrar evento');
@@ -386,6 +437,10 @@ switch (plan) {
       avisarARecepcion('reagendó y no se pudo borrar la cita anterior: quedan dos citas de este paciente');
     } else {
       agregar('paciente', mTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text' });
+      // Petición del doctor (fila 23 de la aceptación): las redes van en un SEGUNDO mensaje, como en el flujo
+      // actual. +1 mensaje por cita confirmada (0,0113 USD), declarado en DISENO.md.
+      const redes = String(cfg.mensajeRedes || '').trim();
+      if (redes) agregar('paciente', mTexto(redes), redes, redes, { tipoReporte: 'text' });
     }
     break;
   }

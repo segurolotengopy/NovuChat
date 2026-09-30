@@ -480,8 +480,10 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       expect(cita['end']).toEqual({ dateTime: iso(JUEVES, '14:30') });
       expect(String(cita['description'])).toContain(`Telefono: ${MAMA}`);
       expect(t.bitacora).toEqual(['crear:ev-1']);
-      expect(t.enviados).toHaveLength(1);
+      // Confirmación y, en un SEGUNDO mensaje, las redes del doctor (petición del doctor, 30/09).
+      expect(t.enviados).toHaveLength(2);
       expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+      expect(t.enviados[1]!.cuerpo).not.toMatch(CONFIRMA);
       expect(t.enviados[0]!.cuerpo).toContain('jueves 8 de octubre a las 14:00');
       expect(t.enviados[0]!.cuerpo).toContain('10 minutos de tolerancia');
       // El cierre: una sola vez, con el id del evento y el teléfono.
@@ -796,7 +798,7 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       expect(t.bitacora).toEqual(['crear:ev-1', 'borrar:vieja']);
       expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['ev-1']);
       expect(m.calendario.eventos[0]!['summary']).toBe('Pérez Gómez, Ana (CNS)');
-      expect(t.enviados).toHaveLength(1);
+      expect(t.enviados).toHaveLength(2); // confirmación y redes
       expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
       expect(t.cierres).toHaveLength(1);
       expect(t.resumen!['resumen']).toMatchObject({ accion: 'cita_movida', eventoCreadoId: 'ev-1', eventoBorradoId: 'vieja' });
@@ -863,14 +865,16 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
   });
 
   // ---------------------------------------------------------------------------------------- (l)
-  describe('(l) una foto deriva', () => {
-    it('una foto no se interpreta ni se clasifica: aviso a recepción más el botón', () => {
+  describe('(l) una foto sin texto', () => {
+    it('una foto sin texto no se interpreta: «Recibí tu imagen. ¿Qué necesitas?» con el menú, sin «solo puedo agendar» (Andres, 30/09)', () => {
       const m = mundo({ eventos: [] });
       const t = m.turno(imagen(MAMA));
       expect(t.extraer).toHaveLength(0);
-      expect(t.aRecepcion).toHaveLength(1);
+      expect(t.aRecepcion).toHaveLength(0);
       expect(t.aPaciente(MAMA)).toHaveLength(1);
-      expect(urlDe(t.aPaciente(MAMA)[0]!)).toContain(`wa.me/${REC}`);
+      expect(interactivo(t.aPaciente(MAMA)[0]!)['type']).toBe('list');
+      expect(t.aPaciente(MAMA)[0]!.cuerpo).toBe('Recibí tu imagen. ¿Qué necesitas?');
+      expect(textos(t)).not.toMatch(/solo puedo ayudarte/);
       expect(t.ejecutados.has('Descargar medio')).toBe(false);
       // Lo que se reporta a la consola no es el contenido de la foto.
       expect(t.ingesta[0]!['texto']).toBe('(imagen) el cliente envió una foto');
@@ -1378,7 +1382,7 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       imprimir('4 nombre', fin);
       expect(fin.enviados[0]!.cuerpo).toMatch(CONFIRMA);
     });
-    it('cuatro mensajes al paciente (menú, oferta, nombre, confirmación), y ninguno de texto aparte para la oferta', () => {
+    it('cinco mensajes al paciente (menú, oferta, nombre, confirmación y redes), y ninguno de texto aparte para la oferta', () => {
       const m = mundo({ eventos: [] });
       const tipo = (t: Turno): number => t.aPaciente(MAMA).length;
       const a = m.turno(texto(MAMA, 'quiero cita el jueves en la tarde'));
@@ -1387,12 +1391,12 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       const c = m.turno(boton(MAMA, idHueco(JUEVES, '14:00')));
       m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
       const d = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
-      expect([a, b, c, d].map(tipo)).toEqual([1, 1, 1, 1]);
-      expect(m.log.enviados.filter((e) => e.a === MAMA)).toHaveLength(4);
+      expect([a, b, c, d].map(tipo)).toEqual([1, 1, 1, 2]);
+      expect(m.log.enviados.filter((e) => e.a === MAMA)).toHaveLength(5);
       // Ni recepción ni el doctor reciben nada en el camino feliz.
       expect(m.log.enviados.filter((e) => e.a !== MAMA)).toHaveLength(0);
-      // Ingesta: 4 entrantes + 4 salientes; cierre: 1.
-      expect(m.log.ingesta).toHaveLength(8);
+      // Ingesta: 4 entrantes + 5 salientes; cierre: 1.
+      expect(m.log.ingesta).toHaveLength(9);
       expect(m.log.cierres).toHaveLength(1);
       // Llamadas al modelo: una extracción y una redacción como máximo por turno de texto libre.
       expect(m.log.extraer).toHaveLength(2);
@@ -1454,15 +1458,16 @@ describe('Agenda mínima v0: pedidos del doctor y protecciones (cobertura adicio
     expect(botonesDe(t.enviados[0]!)).toHaveLength(3);
   });
 
-  it('las redes del doctor van DENTRO del mensaje de confirmación: un solo mensaje, no dos', () => {
+  it('las redes del doctor van en un SEGUNDO mensaje, después de la confirmación (petición del doctor, 30/09)', () => {
     const redes = 'Síguenos en nuestras redes: https://ejemplo.org/consultorio';
     const m = mundo({ eventos: [], panel: { ...PANEL, datosDelNegocio: { ...PANEL.datosDelNegocio, mensajeRedes: redes } } });
     hastaPedirNombre(m);
     m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
     const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
-    expect(t.aPaciente(MAMA)).toHaveLength(1);
+    expect(t.aPaciente(MAMA)).toHaveLength(2);
     expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
-    expect(t.enviados[0]!.cuerpo).toContain(redes);
+    expect(t.enviados[0]!.cuerpo).not.toContain(redes);
+    expect(t.enviados[1]!.cuerpo).toBe(redes);
   });
 
   it('cancelar al empezar una conversación nueva no pasa por el menú: va directo al botón de la cita', () => {
@@ -2149,5 +2154,310 @@ describe('Agenda mínima v0: revisión de seguridad, «Armar mensajes»', () => 
     m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
     const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
     expect(t.aDoctor.map((e) => e.cuerpo).join(' ')).toMatch(/no se pudo borrar del calendario/);
+  });
+});
+
+// =================================================================================================
+describe('Agenda mínima v0: el día no se pierde, preguntas sencillas por código e imágenes (prueba real del 30/09)', () => {
+  const VIE = VIERNES; // 09/10: viernes 11:00-18:00
+  const estadoDe = (m: ReturnType<typeof mundo>): J => (m.sd['agendaMinima'] as J)[MAMA] as J;
+  const idsDe = (t: Turno): string[] => (t.enviados.length && t.enviados[0]!.tipo === 'interactive' && interactivo(t.enviados[0]!)['type'] === 'button' ? botonesDe(t.enviados[0]!).map((b) => b.id) : []);
+  /** El mundo con el resumen ampliado: además de la ruta, los `params` del nodo «Plan del turno». */
+  const mundoConParams = (op: Opciones = {}): ReturnType<typeof mundo> => {
+    const copia = JSON.parse(JSON.stringify(PRODUCCION)) as Flujo;
+    const resumen = copia.nodes.find((n) => n.name === 'Resumen del turno')!;
+    const codigo = String(resumen.parameters['jsCode']);
+    expect(codigo).toContain('ruta: r.plan,');
+    resumen.parameters['jsCode'] = codigo.replace('ruta: r.plan,', "ruta: r.plan, paramsDelPlan: (cnPrimero('Plan del turno') || {}).params || {},");
+    return mundo(Object.assign({ eventos: [] }, op, { flujo: copia }));
+  };
+  const ruta = (t: Turno): unknown => (t.resumen!['resumen'] as J)['ruta'];
+  const paramsDe = (t: Turno): J => (t.resumen!['resumen'] as J)['paramsDelPlan'] as J;
+  const conOfertaDelViernes = (m: ReturnType<typeof mundo>): Turno => {
+    m.turno(texto(MAMA, 'alternativas para el viernes 9 en la tarde'));
+    m.gemini.extraer = extraccion({ fechaPreferida: VIE, franja: 'tarde' });
+    return m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+  };
+  const conCaption = (from: string, tipo: 'image' | 'document', caption?: string): J =>
+    valorMeta({ type: tipo, [tipo]: Object.assign({ id: 'media-9', mime_type: tipo === 'image' ? 'image/jpeg' : 'application/pdf' }, caption === undefined ? {} : { caption }) }, from);
+
+  // ---------------------------------------------------------------------- 1. el día se hereda
+  describe('«¿y a las 4?» es del día de la última oferta', () => {
+    it('oferta del viernes 9: «¿y a las 4?» ofrece las 16:00 DEL VIERNES (el modelo no dijo día), nunca el jueves', () => {
+      const m = mundoConParams();
+      const oferta = conOfertaDelViernes(m);
+      expect(idsDe(oferta)).toEqual([idHueco(VIE, '12:00'), idHueco(VIE, '12:30'), idHueco(VIE, '13:00')]);
+      m.gemini.extraer = extraccion({ horaPreferida: '16:00' });
+      const t = m.turno(texto(MAMA, '¿y a las 4?'));
+      expect(t.ejecutados.has('Leer agenda')).toBe(true);
+      expect(idsDe(t)).toContain(idHueco(VIE, '16:00'));
+      expect(idsDe(t).every((id) => id.includes(`|${VIE}T`))).toBe(true);
+      expect(paramsDe(t)['fechaPreferida']).toBe(VIE);
+      expect(m.calendario.eventos).toHaveLength(0); // una pregunta: no agenda nada
+    });
+    it('si las 16:00 del viernes están ocupadas, salen las más cercanas DE ESE VIERNES', () => {
+      const m = mundoConParams({ eventos: [evento('o1', VIE, '16:00', '16:30', 'Otro paciente')] });
+      conOfertaDelViernes(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '16:00' });
+      const t = m.turno(texto(MAMA, '¿y a las 4?'));
+      expect(idsDe(t)).toHaveLength(3);
+      expect(idsDe(t)).not.toContain(idHueco(VIE, '16:00'));
+      expect(idsDe(t).every((id) => id.includes(`|${VIE}T`))).toBe(true);
+    });
+    it('aunque el modelo invente el jueves, sin un día en el texto se queda en el viernes', () => {
+      const m = mundoConParams();
+      conOfertaDelViernes(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '16:00', fechaPreferida: JUEVES });
+      const t = m.turno(texto(MAMA, '¿y a las 4?'));
+      expect(idsDe(t).every((id) => id.includes(`|${VIE}T`))).toBe(true);
+      expect(idsDe(t).some((id) => id.includes(`|${JUEVES}T`))).toBe(false);
+    });
+    it('NIEGA: si el paciente dice el día («¿y el jueves a las 4?»), cambia de día', () => {
+      const m = mundoConParams();
+      conOfertaDelViernes(m);
+      m.gemini.extraer = extraccion({ horaPreferida: '16:00', fechaPreferida: JUEVES });
+      const t = m.turno(texto(MAMA, '¿y el jueves a las 4?'));
+      expect(idsDe(t)).toContain(idHueco(JUEVES, '16:00'));
+      expect(idsDe(t).every((id) => id.includes(`|${JUEVES}T`))).toBe(true);
+      expect(paramsDe(t)['fechaPreferida']).toBe(JUEVES);
+    });
+    it('NIEGA: «otra hora» (más opciones) no fuerza el día: no se hereda nada que no sea una hora suelta', () => {
+      const m = mundoConParams();
+      conOfertaDelViernes(m);
+      m.gemini.extraer = extraccion({ masOpciones: true });
+      const t = m.turno(texto(MAMA, 'otras opciones'));
+      expect(paramsDe(t)['fechaPreferida']).toBeNull();
+    });
+    it('NIEGA: sin oferta previa (primer pedido con hora), no hay día que heredar', () => {
+      const m = mundoConParams();
+      m.turno(texto(MAMA, 'quiero cita a las 4'));
+      m.gemini.extraer = extraccion({ horaPreferida: '16:00' });
+      const t = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+      expect(paramsDe(t)['fechaPreferida']).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------- 2. preguntas sencillas
+  describe('preguntas sencillas por código: `respuesta_fija` con `params.clave` y `params.conMenu`', () => {
+    const casos: [string, string][] = [
+      ['¿Qué servicios brinda el doctor?', 'servicios'],
+      ['que atiende el doctor', 'servicios'],
+      ['¿qué especialidades tienen?', 'servicios'],
+      ['¿Qué hace el doctor?', 'servicios'],
+      ['¿dónde queda?', 'direccion'],
+      ['cuál es la dirección', 'direccion'],
+      ['¿cómo llego al consultorio?', 'direccion'],
+      ['ubicación por favor', 'direccion'],
+      ['¿qué horario tienen?', 'horario'],
+      ['¿a qué hora atienden?', 'horario'],
+      ['¿hasta qué hora atienden?', 'horario'],
+      ['¿cuánto cuesta la consulta?', 'costo'],
+      ['precio', 'costo'],
+      ['¿cuánto sale la consulta?', 'costo'],
+      ['¿cuánto cobra el doctor?', 'costo'],
+    ];
+    for (const [dicho, clave] of casos) {
+      it(`primer mensaje «${dicho}» → ${clave}, conMenu true, sin modelo ni calendario`, () => {
+        const m = mundoConParams();
+        const t = m.turno(texto(MAMA, dicho));
+        expect(ruta(t)).toBe('respuesta_fija');
+        expect(paramsDe(t)).toEqual({ clave, conMenu: true });
+        expect(t.extraer).toHaveLength(0);
+        expect(t.ejecutados.has('Leer agenda')).toBe(false);
+        expect(estadoDe(m)['paso']).toBe('menu');
+        expect(estadoDe(m)['primerTexto']).toBe('');
+      });
+    }
+    it('con el menú ya mostrado, conMenu es false y el paso no cambia', () => {
+      const m = mundoConParams();
+      m.turno(texto(MAMA, 'hola'));
+      const t = m.turno(texto(MAMA, '¿cuánto cuesta la consulta?'));
+      expect(ruta(t)).toBe('respuesta_fija');
+      expect(paramsDe(t)).toEqual({ clave: 'costo', conMenu: false });
+      expect(estadoDe(m)['paso']).toBe('menu');
+    });
+    it('en medio de una oferta también (conMenu false) y la oferta pendiente se conserva', () => {
+      const m = mundoConParams();
+      conOfertaDelViernes(m);
+      const t = m.turno(texto(MAMA, '¿dónde queda?'));
+      expect(ruta(t)).toBe('respuesta_fija');
+      expect(paramsDe(t)).toEqual({ clave: 'direccion', conMenu: false });
+      expect(estadoDe(m)['paso']).toBe('ofreciendo_huecos');
+      expect((estadoDe(m)['ultimaOferta'] as string[])).toHaveLength(3);
+    });
+    it('por audio también: una nota de voz transcripta con la pregunta es la misma respuesta', () => {
+      const m = mundoConParams();
+      m.gemini.transcripcion = '¿dónde queda el consultorio?';
+      const t = m.turno(audio(MAMA));
+      expect(ruta(t)).toBe('respuesta_fija');
+      expect(paramsDe(t)['clave']).toBe('direccion');
+    });
+    it('NIEGA: pregunta sencilla Y cita («¿cuánto cuesta? quiero cita el jueves») → gana la cita, no es respuesta fija', () => {
+      const m = mundoConParams();
+      const t = m.turno(texto(MAMA, '¿cuánto cuesta? quiero cita el jueves'));
+      expect(ruta(t)).not.toBe('respuesta_fija');
+      expect(ruta(t)).toBe('menu');
+      expect(estadoDe(m)['primerTexto']).toMatch(/quiero cita el jueves/);
+    });
+    it('NIEGA: «quiero una cita» sin pregunta no es respuesta fija; el costo no se dice al agendar', () => {
+      const m = mundoConParams();
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion();
+      const t = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+      expect(ruta(t)).toBe('ofrecer');
+      expect(textos(t)).not.toMatch(/Bs|cuesta|precio|costo/i);
+    });
+    it('NIEGA: «otro horario» con una oferta pendiente es pedir más opciones, no la pregunta del horario de atención', () => {
+      const m = mundoConParams();
+      conOfertaDelViernes(m);
+      m.gemini.extraer = extraccion({ masOpciones: true });
+      const t = m.turno(texto(MAMA, '¿tienen otro horario?'));
+      expect(ruta(t)).not.toBe('respuesta_fija');
+    });
+    it('NIEGA: dos preguntas a la vez («qué servicios y cuánto cuesta») no son una clave: siguen su camino', () => {
+      const t = mundoConParams().turno(texto(MAMA, '¿qué servicios hay y cuánto cuesta?'));
+      expect(ruta(t)).not.toBe('respuesta_fija');
+    });
+    it('NIEGA: un botón del menú nunca es una pregunta sencilla', () => {
+      const m = mundoConParams();
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion();
+      const t = m.turno(lista(MAMA, SERV_RN, 'Servicios'));
+      expect(ruta(t)).not.toBe('respuesta_fija');
+    });
+    it('NIEGA: una pregunta que no cae en las cuatro claves sigue como hoy (al modelo, no a una respuesta fija)', () => {
+      const m = mundoConParams();
+      m.turno(texto(MAMA, 'hola'));
+      m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta: '¿atienden con seguro médico?' });
+      const t = m.turno(texto(MAMA, '¿atienden con seguro médico?'));
+      expect(ruta(t)).not.toBe('respuesta_fija');
+      expect(t.extraer).toHaveLength(1);
+    });
+    it('NIEGA: «qué hace falta para la cita» no es «qué hace el doctor»', () => {
+      const t = mundoConParams().turno(texto(MAMA, 'qué hace falta para la cita'));
+      expect(ruta(t)).not.toBe('respuesta_fija');
+    });
+  });
+
+  // ---------------------------------------------------------------------- 3. imágenes
+  describe('imágenes: con texto es ese texto; sin texto, `imagen_sin_texto`', () => {
+    it('una imagen SIN texto → imagen_sin_texto (primer mensaje: paso menu), sin modelo ni aviso a recepción', () => {
+      const m = mundoConParams();
+      const t = m.turno(conCaption(MAMA, 'image'));
+      expect(ruta(t)).toBe('imagen_sin_texto');
+      expect(t.extraer).toHaveLength(0);
+      expect(t.aRecepcion).toHaveLength(0);
+      expect(estadoDe(m)['paso']).toBe('menu');
+      expect(t.ingesta[0]!['texto']).toBe('(imagen) el cliente envió una foto');
+    });
+    it('NIEGA: un pie de foto en blanco es una imagen sin texto', () => {
+      const t = mundoConParams().turno(conCaption(MAMA, 'image', '   '));
+      expect(ruta(t)).toBe('imagen_sin_texto');
+    });
+    it('una imagen con «¿dónde queda?» es la pregunta sencilla «direccion», como si fuera texto', () => {
+      const m = mundoConParams();
+      const t = m.turno(conCaption(MAMA, 'image', '¿dónde queda?'));
+      expect(ruta(t)).toBe('respuesta_fija');
+      expect(paramsDe(t)).toEqual({ clave: 'direccion', conMenu: true });
+    });
+    it('una imagen con «quiero cita el jueves» guarda ese texto para el menú (igual que el texto escrito)', () => {
+      const m = mundoConParams();
+      const t = m.turno(conCaption(MAMA, 'image', 'quiero cita el jueves'));
+      expect(ruta(t)).toBe('menu');
+      expect(estadoDe(m)['primerTexto']).toBe('quiero cita el jueves');
+    });
+    it('la foto con «¿él es el doctor?» no dice «solo puedo ayudarte a agendar»: sigue el camino del texto', () => {
+      const m = mundoConParams();
+      const t = m.turno(conCaption(MAMA, 'image', '¿Él es el doctor?'));
+      expect(ruta(t)).not.toBe('derivar_medio');
+      expect(ruta(t)).not.toBe('imagen_sin_texto');
+      expect(textos(t)).not.toMatch(/solo puedo ayudarte a agendar/);
+      // Ya con el menú, la misma pregunta sin respuesta fija va al modelo y, si no hay dato, a recepción.
+      m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta: '¿Él es el doctor?' });
+      const t2 = m.turno(conCaption(MAMA, 'image', '¿Él es el doctor?'));
+      expect(ruta(t2)).toBe('responder');
+      expect(t2.extraer).toHaveLength(1);
+    });
+    it('una imagen con «emergencia» en el pie de foto es una emergencia (la misma prioridad que el texto)', () => {
+      const t = mundoConParams().turno(conCaption(MAMA, 'image', 'es una emergencia'));
+      expect(ruta(t)).toBe('emergencia');
+    });
+    it('un DOCUMENTO con texto es ese texto; sin texto se deriva a una persona (no es imagen_sin_texto)', () => {
+      const a = mundoConParams().turno(conCaption(MAMA, 'document', '¿cuánto cuesta la consulta?'));
+      expect(ruta(a)).toBe('respuesta_fija');
+      expect(paramsDe(a)['clave']).toBe('costo');
+      const b = mundoConParams().turno(conCaption(MAMA, 'document'));
+      expect(ruta(b)).toBe('derivar_medio');
+      expect(b.aRecepcion).toHaveLength(1);
+    });
+    it('el pie de foto se recorta a 1.500 caracteres, como el texto', () => {
+      const m = mundoConParams();
+      const largo = 'quiero cita ' + 'a'.repeat(3000);
+      m.turno(conCaption(MAMA, 'image', largo));
+      expect(String(estadoDe(m)['primerTexto']).length).toBeLessThanOrEqual(300);
+      const n = mundoConParams();
+      n.turno(conCaption(MAMA, 'image', 'hola ' + 'b'.repeat(3000)));
+      expect(n.log.ingesta.length).toBeGreaterThan(0);
+    });
+    it('NIEGA: un video o un sticker sigue derivándose (solo imagen y documento tienen pie de foto)', () => {
+      const t = mundoConParams().turno(valorMeta({ type: 'video', video: { id: 'v1', caption: '¿dónde queda?' } }, MAMA));
+      expect(ruta(t)).toBe('derivar_medio');
+    });
+  });
+});
+
+// =================================================================================================
+// Observaciones de Andres con teléfono real (30/09): lo de «Armar mensajes» (respuestas fijas por código,
+// imagen sin texto, muletillas de apertura y el pie de una imagen en la alerta de emergencia).
+describe('Agenda mínima v0: observaciones con teléfono real, «Armar mensajes»', () => {
+  const conPie = (from: string, pie: string): J => valorMeta({ type: 'image', image: { id: 'media-9', mime_type: 'image/jpeg', caption: pie } }, from);
+  it('«¿Qué servicios brinda el doctor?» como primer mensaje: la respuesta de la configuración va en el cuerpo del menú', () => {
+    const m = mundo({ eventos: [], configBase: { respuestaServicios: 'Atendemos pediatría y nutrición infantil.' } });
+    const t = m.turno(texto(MAMA, '¿Qué servicios brinda el doctor?'));
+    expect(t.aPaciente(MAMA)).toHaveLength(1);
+    expect(interactivo(t.aPaciente(MAMA)[0]!)['type']).toBe('list');
+    expect(t.aPaciente(MAMA)[0]!.cuerpo).toMatch(/^Atendemos pediatría y nutrición infantil\./);
+  });
+  it('la misma pregunta después del menú: un texto con la respuesta, sin menú', () => {
+    const m = mundo({ eventos: [], configBase: { respuestaServicios: 'Atendemos pediatría y nutrición infantil.' } });
+    m.turno(texto(MAMA, 'hola'));
+    const t = m.turno(texto(MAMA, '¿qué especialidades atiende el doctor?'));
+    expect(t.aPaciente(MAMA)).toHaveLength(1);
+    expect(t.aPaciente(MAMA)[0]!.payload['type']).toBe('text');
+    expect(t.aPaciente(MAMA)[0]!.cuerpo).toBe('Atendemos pediatría y nutrición infantil.');
+  });
+  it('el costo solo si lo preguntan, con el texto de la configuración', () => {
+    const m = mundo({ eventos: [], configBase: { respuestaCosto: 'La consulta cuesta 250 Bs.' } });
+    m.turno(texto(MAMA, 'hola'));
+    expect(m.turno(texto(MAMA, '¿cuánto cuesta la consulta?')).aPaciente(MAMA)[0]!.cuerpo).toBe('La consulta cuesta 250 Bs.');
+  });
+  it('NIEGA: sin texto configurado para la pregunta, se transfiere a recepción (aviso y botón), sin inventar', () => {
+    const m = mundo({ eventos: [], configBase: { respuestaCosto: '' } });
+    m.turno(texto(MAMA, 'hola'));
+    const t = m.turno(texto(MAMA, '¿cuánto cuesta la consulta?'));
+    expect(t.aRecepcion).toHaveLength(1);
+    expect(textos(t)).not.toMatch(/\bBs\b/);
+  });
+  it('la dirección se arma con la dirección del negocio', () => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'hola'));
+    expect(m.turno(texto(MAMA, '¿dónde queda el consultorio?')).aPaciente(MAMA)[0]!.cuerpo).toMatch(/^Estamos en Calle Ejemplo 123/);
+  });
+  it('muletillas: «Claro que sí, puedes elegir…» queda en «Puedes elegir…»', () => {
+    const m = mundo({ eventos: [] });
+    m.gemini.redactar = 'Claro que sí, puedes elegir uno de estos horarios.';
+    m.turno(texto(MAMA, 'hola'));
+    const t = m.turno(lista(MAMA, SERV_CNS, 'Servicio'));
+    expect(t.enviados[0]!.cuerpo).toBe('Puedes elegir uno de estos horarios.');
+  });
+  it('una foto con pie «emergencia»: la alerta al doctor cita lo escrito', () => {
+    const t = mundo({ eventos: [] }).turno(conPie(MAMA, 'emergencia, no respira bien'));
+    // La alerta sale por la plantilla: su tercera variable es lo escrito (el texto «Escribió:» es el respaldo).
+    expect(t.aDoctor.map((e) => e.cuerpo).join(' ')).toMatch(/emergencia, no respira bien/);
+    expect(t.aDoctor.map((e) => e.cuerpo).join(' ')).not.toMatch(/sin escribir nada/);
+  });
+  it('NIEGA: tocar el botón «Emergencia» no se cita como texto escrito', () => {
+    const t = mundo({ eventos: [] }).turno(lista(MAMA, 'emergencia', 'Emergencia'));
+    expect(t.aDoctor.map((e) => e.cuerpo).join(' ')).toMatch(/sin escribir nada/);
   });
 });

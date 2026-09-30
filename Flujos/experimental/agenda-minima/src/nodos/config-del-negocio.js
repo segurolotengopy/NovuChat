@@ -89,7 +89,7 @@ const CAMPOS_BASE = ['nombreNegocio','descripcion','direccion','direccionMaps','
   'mensajeCierre','mensajeErrorTemporal','mensajeReservaNoConfirmada','mensajeComercioSuspendido','mensajeMenu',
   'mensajeContactoRecepcion','mensajeContactoDoctor','mensajeEmergencia','mensajeRedes','reglasAgenda','tratamiento',
   'estiloEmojis','nivelEmojis','datosQueNoTenemos','prefijosPermitidos','palabrasClaveRecepcion','palabrasClaveDoctor',
-  'palabrasClaveEmergencia','horarioAtencion'];
+  'palabrasClaveEmergencia','horarioAtencion','respuestaServicios','respuestaCosto'];
 const deBase = {};
 for (const k of CAMPOS_BASE) {
   const v = typeof base[k] === 'string' ? base[k].trim() : '';
@@ -134,6 +134,8 @@ if (codigo === 409) {
     mensajeContactoDoctor: util(dn.mensajeContactoDoctor),
     mensajeEmergencia: util(dn.mensajeEmergencia),
     mensajeRedes: util(dn.mensajeRedes),
+    respuestaServicios: util(dn.respuestaServicios),
+    respuestaCosto: util(dn.respuestaCosto),
     reglasAgenda: util(dn.reglasAgenda),
     numeroDoctor: util(op.numeroDoctor),
     numeroRecepcion: util(op.numeroRecepcion),

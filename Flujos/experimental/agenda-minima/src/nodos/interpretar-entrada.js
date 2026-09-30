@@ -39,8 +39,12 @@ if (tipo === 'text') {
 } else if (tipo === 'audio') {
   textoReporte = '(audio) el cliente envió una nota de voz';
 } else if (tipo === 'image') {
+  // El pie de foto (`image.caption`) es texto que escribio el paciente: `Decidir turno` lo trata como un
+  // mensaje de texto. Lo que se reporta sigue siendo solo «envio una foto»: la imagen no deja rastro.
+  texto = String((msg.image && msg.image.caption) || '').slice(0, 1500);
   textoReporte = '(imagen) el cliente envió una foto';
 } else if (tipo === 'document') {
+  texto = String((msg.document && msg.document.caption) || '').slice(0, 1500);
   textoReporte = '(documento) el cliente envió un archivo';
 } else {
   textoReporte = '(' + tipo + ') el cliente envió un mensaje de tipo ' + tipo;
