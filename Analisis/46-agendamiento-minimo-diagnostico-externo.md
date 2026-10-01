@@ -5,9 +5,11 @@ Andres el 30/09/2026, sobre el JSON de `Flujos/bellido-agendamiento.json`.
 Se guarda tal como llegó (§1 a §4). La segunda parte —el ciclo entre
 Antigravity y Claude— está en el §6.
 
-**Estado:** diagnóstico. La construcción experimental del §6 se autorizó y
-se canceló el mismo 30/09. No cambia `Analisis/41`, y la migración de
-Bellido sigue sin decidir.
+**Estado (actualizado el 01/10/2026):** el diagnóstico se aplicó. La
+construcción con Antigravity del §6 se canceló el 30/09, pero ese mismo día se
+hizo un concurso entre el flujo actual y un flujo nuevo («Agenda mínima»). **Ganó
+B, la Agenda mínima, y desde el 01/10 a las 01:24 corre en Bellido** (§7). No
+cambia `Analisis/41`: la rearquitectura sigue pausada.
 
 ---
 
@@ -192,3 +194,56 @@ Cada `--aplicar` de esa preparación pasa por el «sí» de Andres.
 ensaya. Por eso Agenda mínima y cualquier ensayo del arreglo de Bellido (PR
 #286) no pueden usarlo a la vez. Va primero el arreglo, porque protege a un
 cliente real.
+
+## 7. Resultado: B ganó y corre en Bellido (01/10/2026)
+
+El rumbo del §6 cambió dos veces el 30/09. Primero se canceló a Antigravity y
+se pasó a mejorar el flujo actual de Bellido. Después Andres pidió un
+**concurso**, con dos candidatos construidos en paralelo y comparados con el
+mismo arnés automático:
+
+| | A: flujo actual con los ajustes del doctor | B: Agenda mínima |
+|---|---|---|
+| Quién | sesión de cartera, rama `cartera/bellido-doctor-29-09` | sesión constructora, rama `experimental/agenda-minima` (PR #293) |
+| Diseño | agente con 4 herramientas y un prompt de unos 19.700 caracteres; 96 nodos | el código calcula (horas libres, candado, mensajes) y el modelo solo extrae y redacta; 45 nodos |
+| Modelo por turno | de 1 a 5 vueltas del agente | 0, 1 o 2 llamadas cortas, entre 5 y 10 veces menos |
+
+**Lo que midió el arnés** (flujo entero, calendario de prueba real, 62
+escenarios; las cifras de antes de las 19:00 del 30/09 son orientativas
+porque el arnés tuvo errores que se corrigieron durante la tarde): A 48 de
+62 y B 54 de 62, con cero violaciones de las seis puertas en los dos. Con los
+escenarios que Andres vio con teléfono real, B acertó 14 de 15 contra 10 de 15
+de A.
+
+**Por qué B.** Reagendar es correcto por construcción (crea la nueva, pasa el
+candado y recién borra la vieja), agenda el día correcto cuando el paciente
+escribe la hora, responde sin modelo servicios, dirección y horario (de la
+configuración del negocio), y la imagen que pregunta por una persona recibe una
+respuesta fija sin afirmar quién sale. A dejaba al paciente sin cita al
+reagendar (H8, defecto conocido) y a veces pedía un «sí» de más. A quedó
+aprobado por seguridad y listo para publicarse como respaldo. Decisión de
+Andres el 30/09 por la noche, tras ver las dos con teléfono real: B.
+
+**Qué se publicó.** El sha final es `f3f7411` (PR #293). Seguridad aprobó cada
+versión sin hallazgos que bloqueen. La publicación reemplazó el flujo vivo de
+96 nodos por el de 45 con el disparador y las credenciales de Bellido, con un
+respaldo exacto fuera del repositorio y la vuelta atrás probada en seco
+(`--restaurar-respaldo`). Se hizo el 01/10 a las 01:24, a pedido de Andres, antes
+del inicio del piloto. El Demo A volvió a su flujo original de 77 nodos. A las
+01:42 B atendió mensajes reales de Andres sin errores. Cada versión de Bellido
+se declara en `docs/versiones-por-cliente.md`.
+
+**Costo en mensajes.** Sin cambio por conversación. B agrega un aviso a
+recepción tras tres rechazos seguidos, que cuesta 0,0113 USD cada vez.
+
+**Lo que queda abierto.**
+- Ningún paciente real ha usado B todavía: los defectos que aún no se vieron
+  aparecerán con el piloto. Un fallo se corrige o se vuelve al respaldo.
+- B pide tocar el botón para agendar y no acepta un «sí» suelto, a propósito.
+- El PR #293 se fusionó el 01/10 (07:01 UTC). Las dos alertas altas de CodeQL
+  de la herramienta de pruebas se corrigen en el PR #297; las nueve medias se
+  descartaron en GitHub con su motivo, porque es una herramienta local que no
+  corre en producción.
+- `Analisis/41` sigue en pausa. B es un diseño de referencia para el próximo
+  cliente de agenda, pero llevarlo a la arquitectura por capas es una decisión
+  aparte.
