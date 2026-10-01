@@ -144,7 +144,7 @@ paths = ['''(^|/)docs?/.*\.md$''']
 
 # =============================================================================
 # PROPIO DE NOVUCHAT — no viene del estándar. Todo lo de arriba es copia exacta
-# del gitleaks.toml 2.1 de SeguridadGeneral; al actualizar, se reemplaza lo de
+# del gitleaks.toml 2.2 de SeguridadGeneral; al actualizar, se reemplaza lo de
 # arriba y se conserva este bloque. Es una allowlist por FORMA DEL VALOR (nunca
 # por ruta ni por huella de commit), con su motivo.
 # =============================================================================
