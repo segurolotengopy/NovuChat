@@ -1,0 +1,33 @@
+{
+  "movimientos": [
+    {
+      "de": "admin/web/src/lib/planes.ts",
+      "a": "admin/web/src/central/lib/planes.ts"
+    },
+    {
+      "de": "admin/web/src/lib/prepago.ts",
+      "a": "admin/web/src/central/lib/prepago.ts"
+    },
+    {
+      "de": "admin/web/src/lib/pagar.ts",
+      "a": "admin/web/src/central/lib/pagar.ts"
+    },
+    {
+      "de": "admin/web/src/lib/cuenta.ts",
+      "a": "admin/web/src/central/lib/cuenta.ts"
+    },
+    {
+      "de": "admin/web/src/lib/bitacora.ts",
+      "a": "admin/web/src/central/lib/bitacora.ts"
+    },
+    {
+      "de": "admin/web/src/lib/sesion.ts",
+      "a": "admin/web/src/core/lib/sesion.ts"
+    },
+    {
+      "de": "admin/web/src/lib/contexto.tsx",
+      "a": "admin/web/src/core/lib/contexto.tsx"
+    }
+  ],
+  "suitesPuras": []
+}
