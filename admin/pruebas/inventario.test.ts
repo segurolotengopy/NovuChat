@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   controlaStock, existencias, hayParaVender, idMovimiento,
-} from '../functions/src/inventario.ts';
+} from '../functions/src/modulos/inventario/inventario.ts';
 import { bytesDeDataUrl, medidaDestino, tipoDeDataUrl } from '../web/src/modulos/productos/foto.ts';
 
 describe('«No sé cuántos hay» NO es «hay cero»', () => {

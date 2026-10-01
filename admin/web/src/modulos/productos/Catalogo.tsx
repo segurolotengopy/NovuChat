@@ -65,7 +65,7 @@ interface Item {
   id: string; nombre?: unknown; descripcion?: unknown; area?: unknown;
   precio?: unknown; moneda?: unknown; duracionMin?: unknown; activo?: unknown;
   imagenUrl?: unknown; actualizadoEn?: unknown;
-  /** Ausente = no lleva control de existencias. Ver `functions/src/inventario.ts`. */
+  /** Ausente = no lleva control de existencias. Ver `functions/src/modulos/inventario/inventario.ts`. */
   stock?: unknown;
 }
 
