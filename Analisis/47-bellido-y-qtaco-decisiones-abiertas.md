@@ -31,13 +31,15 @@ Las demás cifras de costo son:
 Con 5 respuestas por cita, 100 conversaciones son 500 mensajes de servicio. Caben
 en la franquicia: **Meta solo cobra las plantillas.** Esas son el aviso al doctor
 por cada cita y, si se ofrece, el recordatorio. Con este diseño, Bellido no
-paga Meta de servicio hasta las 200 conversaciones al mes.
+paga Meta de servicio hasta las 200 conversaciones al mes. **Meta le cobra al doctor**,
+no a NovuChat: la WABA está en su portafolio. Las columnas «Meta» de la tabla son lo que
+paga él; el margen de NovuChat es ese margen más esa columna.
 
 ### Las tres decisiones de su anexo
 
 | Decisión | Recomendación | Por qué |
 |---|---|---|
-| **¿Quién paga Meta?** | **(1) NovuChat lo incluye en la mensualidad** | Son USD 0,45 a 0,90 al mes, el 2 a 4 % del precio. Traspasar la titularidad al doctor cuesta horas de Meta por menos de un dólar. El riesgo es que Meta pase una plantilla a Marketing (6,5 veces más cara): el margen bajaría a 45 %, y el control es el `pricing_analytics` que mide FinOps-Ecosistema |
+| **¿Quién paga Meta?** | **(2) El doctor, con la tarjeta de su WABA, que es como ya funciona.** Se le dice la cifra estimada en el contrato | La WABA de Bellido está en el portafolio del doctor, y Meta le cobra a la tarjeta cargada ahí: AAB1 no puede pagar la WABA de otro portafolio (borrador de la cartera del 01/10 sobre el recordatorio). Con «Agenda mínima» son **USD 0,45 a 0,90 al mes**, solo plantillas (aviso al doctor y recordatorio). Que NovuChat lo «incluya» obligaría a reembolsar menos de un dólar al mes: no vale la pena. **Hay que decírselo con la cifra y con el riesgo** (prohibición 3): si Meta pasa una plantilla a Marketing, sube a unos USD 6 al mes. El control es el `pricing_analytics` que mide FinOps-Ecosistema |
 | **¿Cuántos cambios incluidos?** | **(1) cero**, como dice el catálogo para Impulso | Un cambio, valuado a USD 15, es el **60 % del precio**; dos son el 120 %. Lo que pida el doctor se cotiza |
 | **¿Recordatorio de 24 h?** | **(2) módulo cotizado**, cuando haya presupuesto para construirlo | Cuesta 0,0113 USD por recordatorio, unos USD 0,45 al mes. Una consulta de 250 Bs son unos USD 19,8, así que **una sola inasistencia evitada paga 44 meses de recordatorios**. Es valor real para el doctor y casi no cuesta. Lo que cuesta es construirlo sobre «Agenda mínima»: tokens de Claude, hoy escasos. Su plantilla (`recordatorio_cita`) está pedida y pendiente de aprobación |
 
