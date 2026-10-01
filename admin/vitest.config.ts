@@ -66,6 +66,7 @@ export const SUITES_PURAS = [
   'pruebas/frontera/despliegue.test.ts',
   'pruebas/frontera/fronteras.test.ts',
   'pruebas/frontera/mudanza.test.ts',
+  'pruebas/frontera/referencias-a-scripts.test.ts',
   'pruebas/frontera/rutas-escritas.test.ts',
   'pruebas/demo-b-catalogo.test.ts',
   'pruebas/demo-b-cobro.test.ts',
