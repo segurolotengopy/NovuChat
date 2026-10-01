@@ -97,7 +97,7 @@ describe('Comportamiento del asistente en la consola', () => {
     const m = pantalla.match(/import \{ TextoSeguro \} from '([^']+)'/);
     expect(m, 'la pantalla importa TextoSeguro').not.toBeNull();
     expect(`${resolve(dirname(join(aqui, '..', 'web', 'src', 'central', 'paginas', 'Configuracion.tsx')), m![1])}.tsx`)
-      .toBe(join(aqui, '..', 'web/src/componentes/TextoSeguro.tsx'));
+      .toBe(join(aqui, '..', 'web', 'src', 'central', 'componentes', 'TextoSeguro.tsx'));
     expect(pantalla).toMatch(/<TextoSeguro valor=\{vigentes\}/);
     expect(pantalla).not.toContain('dangerouslySetInnerHTML');
   });

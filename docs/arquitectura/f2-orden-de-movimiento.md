@@ -185,7 +185,7 @@ tanda que lo necesita:
   La tanda de productos (`t7.json`) deja pendiente un comentario de
   `firestore.rules` (1128, que cita `functions/src/limiteCatalogo.ts`). Se
   corrige con los de las tandas de módulos que siguen, en un PR aparte, junto
-  con la cita `lib/xlsx.ts` de `web/src/lib/exportar.ts`: es relativa a
+  con la cita `lib/xlsx.ts` de `web/src/central/lib/exportar.ts`: es relativa a
   `web/src/` y la compuerta no la reconoce como la ruta movida.
   `admin/DISENO.md` (árbol de la línea 210) es histórico y no se toca.
 - **`functions:build` borra `lib/` y `tsconfig.tsbuildinfo` antes de `tsc -b`**

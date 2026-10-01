@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { onIdTokenChanged, signOut, type User } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
+import { auth } from './firebase';
 import { leerPermisos, type Permisos } from './sesion';
 
 interface Sesion {

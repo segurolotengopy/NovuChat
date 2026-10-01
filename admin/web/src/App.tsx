@@ -2,9 +2,9 @@ import { NavLink, Navigate, Route, Routes, useLocation, useParams } from 'react-
 import { useEffect } from 'react';
 import { ProveedorSesion, useSesion } from './core/lib/contexto';
 import { rolEn } from './core/lib/sesion';
-import { Proteger } from './componentes/Proteger';
-import { Marca } from './componentes/Marca';
-import { EncabezadoComercio } from './componentes/EncabezadoComercio';
+import { Proteger } from './core/componentes/Proteger';
+import { Marca } from './central/componentes/Marca';
+import { EncabezadoComercio } from './central/componentes/EncabezadoComercio';
 import { Ingresar } from './central/paginas/Ingresar';
 import { Tenants } from './plataforma/paginas/Tenants';
 import { CuentaNegocio } from './plataforma/paginas/CuentaNegocio';
@@ -27,8 +27,8 @@ import { Inventario } from './modulos/inventario/Inventario';
 import { Pedidos } from './modulos/pedidos/Pedidos';
 import { Cobros } from './modulos/cobros/Cobros';
 import { Captacion } from './modulos/captacion/Captacion';
-import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
-import type { FlujoId } from './lib/flujos';
+import { FLUJOS, etiquetaCatalogo, useFlujos } from './central/lib/flujos';
+import type { FlujoId } from './central/lib/flujos';
 
 /**
  * Menú, filtrado por rol.

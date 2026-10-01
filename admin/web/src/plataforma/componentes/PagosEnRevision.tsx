@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Confirmacion } from './Confirmacion';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { MOTIVO_CONFIRMACION_MAXIMO, motivoDeConfirmacionValido, type PagoEnRevision } from '../lib/negocios';
 
 /**

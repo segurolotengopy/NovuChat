@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { auth, db } from '../../lib/firebase';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { auth, db } from '../../core/lib/firebase';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
 interface Funcionario {
   id: string;
