@@ -73,6 +73,29 @@ f6deee9a:ec3542cf:4fbe734c:74e151b6:cea4b0a7:fbd04e07:99a50717:8432edbf
 57f8cfb2:d8b6bd3b:c46050ca:3d8718cc:d09842cd:70f68d4b:28454469:a19d36bf
 "
 
+# sha256 del WABA_ID de cada WABA de WhatsApp-Modular que NovuChat NO debe
+# tocar (LOW de la tercera revisión del #277). En modo `token`, un .env de
+# NovuChat con token propio y el WABA_ID de una de estas, copiado por error,
+# suscribiría la app de NovuChat a esa WABA (los mensajes de un sistema
+# financiero llegarían al n8n de NovuChat) o le crearía plantillas. Las
+# entregó la sesión de WhatsApp-Modular el 01/10/2026, calculadas desde Meta:
+#   1. la WABA del OTP de SeguroLoTengo y otros servicios de AAB1;
+#   2. la WABA de prueba de AAB1;
+#   3. la WABA de SeguroLoTengo en producción.
+# NO está la WABA de prueba de la Fase 0, A PROPÓSITO: el .env del Demo A de
+# NovuChat (y sus respaldos) la usan, y cortarla le impediría crear
+# plantillas o suscribir la app en su propia WABA. Se cotejó el 01/10/2026
+# con un script de solo lectura (el WABA_ID de cada .env contra estas
+# huellas): ningún .env de cliente coincide. Si el Demo A cambiara de WABA,
+# esa se puede sumar. Igual que con apps y números, la huella no esconde nada
+# y alcanza porque un WABA_ID no es una credencial.
+# NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA solo puede AGREGAR.
+APPS_AJENAS_WABAS_HUELLAS="
+2d158041:93b412f0:1459a022:c534f703:c7d1aab3:82cca119:251d3fd0:026b14a1
+2cafcbce:8747c5ab:0e11632a:8c5612e6:69d33974:9394ee1d:44d53cd6:2689d0ac
+86a1424b:3373925a:c7427324:b526c8ef:25814f70:a5610785:06dfec87:34e1ca09
+"
+
 # huella_en <valor> <huellas…>: 0 si el sha256 del valor está entre las huellas.
 huella_en() {
   local h
@@ -82,9 +105,11 @@ huella_en() {
   return 1
 }
 
-# huella_ajena <app-id> y numero_ajeno <phone-number-id>: 0 si es de la lista.
+# huella_ajena <app-id>, numero_ajeno <phone-number-id> y waba_ajena <waba-id>:
+# 0 si el id es de la lista.
 huella_ajena() { huella_en "$1" "$APPS_AJENAS_HUELLAS ${NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA:-}"; }
 numero_ajeno() { huella_en "$1" "$APPS_AJENAS_NUMEROS_HUELLAS ${NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA:-}"; }
+waba_ajena() { huella_en "$1" "$APPS_AJENAS_WABAS_HUELLAS ${NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA:-}"; }
 
 # El clasificador de una respuesta de Graph (sobre la entrada estándar):
 # argumentos id-esperado, fragmentos y el campo del nombre («name» de una
@@ -116,7 +141,8 @@ print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)'
 #           (WA_APP_SECRET), para lo que escribe en la app (--alta-meta)
 #   token → GET /app?fields=id,name con WA_TOKEN: lo que manda en
 #           /{WABA}/subscribed_apps es la app DUEÑA DEL TOKEN, no el WA_APP_ID
-#           del .env. Exige también un WABA_ID con forma de id.
+#           del .env. Exige también un WABA_ID con forma de id, y mira
+#           además la WABA: su huella, sin red y antes de todo.
 #   numero → igual que token, para lo que escribe en /{WA_PHONE_ID}/…
 #           (registro, baja, nombre visible, mensajes, medios): exige un
 #           WA_PHONE_ID con forma de id en vez del WABA_ID, y mira además el
@@ -150,6 +176,11 @@ negar_app_ajena() {
   esac
   if huella_ajena "$id"; then
     echo "✗ La app …${id: -4} es de WhatsApp-Modular (huella): NovuChat no escribe con ella (CLAUDE.md, prohibiciones 5 y 7)" >&2
+    exit 3
+  fi
+  # La WABA de destino, por huella y sin red, antes de preguntar nada.
+  if [ "$modo" = "token" ] && waba_ajena "$WABA_ID"; then
+    echo "✗ La WABA …${WABA_ID: -4} es de WhatsApp-Modular (huella): NovuChat no escribe en ella (CLAUDE.md, prohibiciones 5 y 7)" >&2
     exit 3
   fi
   # El número de destino, por huella y sin red, antes de preguntar nada.
@@ -211,5 +242,5 @@ curl_token() {
 # evitar. Todo script que carga la biblioteca queda sin esa búsqueda.
 shopt -u sourcepath
 
-readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_CLASIFICAR
-readonly -f huella_en huella_ajena numero_ajeno negar_app_ajena curl_token
+readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_WABAS_HUELLAS APPS_AJENAS_CLASIFICAR
+readonly -f huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token
