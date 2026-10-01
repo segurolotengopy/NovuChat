@@ -1,0 +1,93 @@
+{
+  "movimientos": [
+    {
+      "de": "admin/web/src/componentes/AvisoConsumo.tsx",
+      "a": "admin/web/src/central/componentes/AvisoConsumo.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/CampoMonto.tsx",
+      "a": "admin/web/src/central/componentes/CampoMonto.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/ChipModo.tsx",
+      "a": "admin/web/src/central/componentes/ChipModo.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/EditorLista.tsx",
+      "a": "admin/web/src/central/componentes/EditorLista.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/EncabezadoComercio.tsx",
+      "a": "admin/web/src/central/componentes/EncabezadoComercio.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/GraficoDias.tsx",
+      "a": "admin/web/src/central/componentes/GraficoDias.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/Marca.tsx",
+      "a": "admin/web/src/central/componentes/Marca.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/ResumenPrepago.tsx",
+      "a": "admin/web/src/central/componentes/ResumenPrepago.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/TextoSeguro.tsx",
+      "a": "admin/web/src/central/componentes/TextoSeguro.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/Proteger.tsx",
+      "a": "admin/web/src/core/componentes/Proteger.tsx"
+    },
+    {
+      "de": "admin/web/src/componentes/SinSalida.tsx",
+      "a": "admin/web/src/core/componentes/SinSalida.tsx"
+    },
+    {
+      "de": "admin/web/src/diseno.css",
+      "a": "admin/web/src/central/estilos/diseno.css"
+    },
+    {
+      "de": "admin/web/src/estilos.css",
+      "a": "admin/web/src/central/estilos/estilos.css"
+    },
+    {
+      "de": "admin/web/src/lib/firebase.ts",
+      "a": "admin/web/src/core/lib/firebase.ts"
+    },
+    {
+      "de": "admin/web/src/lib/contrasena.ts",
+      "a": "admin/web/src/core/lib/contrasena.ts"
+    },
+    {
+      "de": "admin/web/src/lib/ejes.ts",
+      "a": "admin/web/src/central/lib/ejes.ts"
+    },
+    {
+      "de": "admin/web/src/lib/errores.ts",
+      "a": "admin/web/src/central/lib/errores.ts"
+    },
+    {
+      "de": "admin/web/src/lib/exportar.ts",
+      "a": "admin/web/src/central/lib/exportar.ts"
+    },
+    {
+      "de": "admin/web/src/lib/modoComercio.ts",
+      "a": "admin/web/src/central/lib/modoComercio.ts"
+    },
+    {
+      "de": "admin/web/src/lib/paletas.ts",
+      "a": "admin/web/src/central/lib/paletas.ts"
+    },
+    {
+      "de": "admin/web/src/lib/tema.ts",
+      "a": "admin/web/src/central/lib/tema.ts"
+    },
+    {
+      "de": "admin/web/src/lib/flujos.ts",
+      "a": "admin/web/src/central/lib/flujos.ts"
+    }
+  ],
+  "suitesPuras": []
+}
