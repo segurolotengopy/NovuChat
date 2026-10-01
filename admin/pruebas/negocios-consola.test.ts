@@ -147,7 +147,7 @@ describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', (
 
 describe('la titularidad llega por ejesDeCuenta: nadie fuera de la cartera lee rutasWhatsApp (LOW 3)', () => {
   it('Cuenta, Pagar y Administrar piden ejesDeCuenta y no consultan rutasWhatsApp', () => {
-    for (const bruta of [leer('web/src/paginas/EstadoCuenta.tsx'), leer('web/src/paginas/Pagar.tsx'), leer('web/src/plataforma/paginas/CuentaNegocio.tsx')]) {
+    for (const bruta of [leer('web/src/central/paginas/EstadoCuenta.tsx'), leer('web/src/central/paginas/Pagar.tsx'), leer('web/src/plataforma/paginas/CuentaNegocio.tsx')]) {
       const fuente = sinComentarios(bruta);
       expect(fuente).toContain('useEjesDeCuenta(tenantId)');
       expect(fuente).not.toContain('rutasWhatsApp');
@@ -372,7 +372,7 @@ describe('FormularioPagoManual: lo que se ve antes de registrar', () => {
 
 describe('las pantallas no escriben en Firestore y llaman a las callables por el contrato', () => {
   const pagina = sinComentarios(leer('web/src/plataforma/paginas/CuentaNegocio.tsx'));
-  const cartera = sinComentarios(leer('web/src/paginas/Tenants.tsx'));
+  const cartera = sinComentarios(leer('web/src/plataforma/paginas/Tenants.tsx'));
   const app = sinComentarios(leer('web/src/App.tsx'));
 
   it('ni Negocios ni Administrar usan setDoc, updateDoc, addDoc, deleteDoc, writeBatch ni runTransaction', () => {

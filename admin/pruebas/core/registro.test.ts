@@ -347,7 +347,7 @@ describe('3. configuración: el registro contra las listas blancas de firestore.
   });
 
   it('la tabla de campos de ConfiguracionVertical.tsx no ofrece nada que el registro no declare', () => {
-    const pantalla = leer('admin/web/src/paginas/ConfiguracionVertical.tsx');
+    const pantalla = leer('admin/web/src/central/componentes/ConfiguracionModulo.tsx');
     for (const [f, siguiente] of [['agendamiento', 'venta'], ['venta', null]] as const) {
       const desde = pantalla.indexOf(`  ${f}: {`);
       const hasta = siguiente ? pantalla.indexOf(`  ${siguiente}: {`, desde) : pantalla.length;

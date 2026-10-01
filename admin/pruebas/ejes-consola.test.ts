@@ -301,7 +301,7 @@ describe('ninguna pantalla deduce un eje del nombre del plan (hito H1)', () => {
   it('la consola le dice «Producción» al comercio y no «prepago» en ningún texto visible', () => {
     // Se revisan los archivos que dibujan texto para el comercio: el nombre
     // del módulo `prepago.ts` y los identificadores del servidor se quedan.
-    for (const fuente of [leer('web/src/paginas/EstadoCuenta.tsx'), leer('web/src/paginas/Pagar.tsx'), leer('web/src/componentes/ResumenPrepago.tsx')]) {
+    for (const fuente of [leer('web/src/central/paginas/EstadoCuenta.tsx'), leer('web/src/central/paginas/Pagar.tsx'), leer('web/src/componentes/ResumenPrepago.tsx')]) {
       const jsx = sinComentarios(fuente).match(/>[^<>{}]*</g) ?? [];
       for (const trozo of jsx) expect(trozo.toLowerCase(), trozo).not.toContain('prepago');
     }

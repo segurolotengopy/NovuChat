@@ -95,7 +95,7 @@ describe('La cabecera en la fuente', () => {
   const encabezado = sinComentarios(leer('web/src/componentes/EncabezadoComercio.tsx'));
   const chip = sinComentarios(leer('web/src/componentes/ChipModo.tsx'));
   const app = sinComentarios(leer('web/src/App.tsx'));
-  const cartera = sinComentarios(leer('web/src/paginas/Tenants.tsx'));
+  const cartera = sinComentarios(leer('web/src/plataforma/paginas/Tenants.tsx'));
 
   it('la modalidad sale de modalidadDe del módulo compartido, no de leer el campo a mano', () => {
     expect(modulo).toMatch(/import \{[^}]*\bmodalidadDe\b[^}]*\} from '(?:\.\/|\.\.\/central\/lib\/)prepago'/);

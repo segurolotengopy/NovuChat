@@ -29,8 +29,8 @@ const sinComentarios = (fuente: string) => fuente
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const ingresar = leer('web/src/paginas/Ingresar.tsx');
-const miCuenta = leer('web/src/paginas/MiCuenta.tsx');
+const ingresar = leer('web/src/central/paginas/Ingresar.tsx');
+const miCuenta = leer('web/src/central/paginas/MiCuenta.tsx');
 
 describe('El mínimo de la contraseña', () => {
   it('cumple el piso de NIST SP 800-63B: al menos 8 caracteres', () => {
@@ -41,7 +41,7 @@ describe('El mínimo de la contraseña', () => {
     // Se resuelve el import desde la carpeta de cada pantalla y se compara con el
     // archivo canónico (el que importa esta prueba): acepta la ruta que sea tras cada
     // mudanza y rechaza cualquier copia de la constante en otro lado.
-    for (const [pantalla, fuente] of [[join(aqui, '..', 'web/src/paginas/Ingresar.tsx'), ingresar], [join(aqui, '..', 'web/src/paginas/MiCuenta.tsx'), miCuenta]]) {
+    for (const [pantalla, fuente] of [[join(aqui, '..', 'web', 'src', 'central', 'paginas', 'Ingresar.tsx'), ingresar], [join(aqui, '..', 'web', 'src', 'central', 'paginas', 'MiCuenta.tsx'), miCuenta]]) {
       const m = fuente.match(/MINIMO_CONTRASENA\s*\}\s*from\s*'([^']+)'/);
       expect(m, `${pantalla} importa MINIMO_CONTRASENA`).not.toBeNull();
       expect(`${resolve(dirname(pantalla), m![1])}.ts`)

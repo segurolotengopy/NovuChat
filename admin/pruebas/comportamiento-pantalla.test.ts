@@ -31,7 +31,7 @@ const sinComentarios = (fuente: string) => fuente
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const pantalla = sinComentarios(leer('web/src/paginas/Configuracion.tsx'));
+const pantalla = sinComentarios(leer('web/src/central/paginas/Configuracion.tsx'));
 
 /** El objeto que la pantalla manda en `updateDoc(... 'config', 'negocio' ...)`. */
 function loQueGuarda(): string {
@@ -96,7 +96,7 @@ describe('Comportamiento del asistente en la consola', () => {
     // canónico: vale tras cada mudanza y rechaza una copia sin escapar en otro lado.
     const m = pantalla.match(/import \{ TextoSeguro \} from '([^']+)'/);
     expect(m, 'la pantalla importa TextoSeguro').not.toBeNull();
-    expect(`${resolve(dirname(join(aqui, '..', 'web/src/paginas/Configuracion.tsx')), m![1])}.tsx`)
+    expect(`${resolve(dirname(join(aqui, '..', 'web', 'src', 'central', 'paginas', 'Configuracion.tsx')), m![1])}.tsx`)
       .toBe(join(aqui, '..', 'web/src/componentes/TextoSeguro.tsx'));
     expect(pantalla).toMatch(/<TextoSeguro valor=\{vigentes\}/);
     expect(pantalla).not.toContain('dangerouslySetInnerHTML');
