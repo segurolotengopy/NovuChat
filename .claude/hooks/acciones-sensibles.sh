@@ -71,7 +71,12 @@ ACTUA = (VERBO + r"(?:curl|wget|ssh|scp|docker-compose|docker|systemctl|gcloud|g
 # coincide. Lo que una expresión regular no ve: comillas partidas en el nombre,
 # el id del contenedor, y la app que llega por un `.env` o por su id numérico
 # (`webhook-meta.sh --alta-meta --env-cliente …`); eso se cierra en el script.
-SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp-Modular|AAB1[-_\s]?WA[-_\s]?Prod|receptor[-_\s]?clientes"
+# «WhatsApp-Modular» es el nombre de la carpeta; el repositorio en GitHub se
+# llama `WhatsAppModular`, sin guion (comprobado el 01/10/2026 en su remoto), y
+# con el guion solo el nombre de la carpeta coincidía: un `gh repo clone` o un
+# `gh pr merge --repo …/WhatsAppModular` no se negaba. Por eso el separador es
+# opcional, como el de las otras dos apps.
+SISTEMA_AJENO = r"SeguroLo\s+Tengo|otp-service|WhatsApp[-_\s]?Modular|AAB1[-_\s]?WA[-_\s]?Prod|receptor[-_\s]?clientes"
 CANAL_NO_OFICIAL = r"evolution[-_ ]?api|baileys|wppconnect"
 
 # ---------------------------------------------------------------------------

@@ -60,6 +60,30 @@ describe('prohibiciones 5 y 7: los sistemas ajenos no se tocan', () => {
     }
   });
 
+  it('el repositorio en GitHub se llama «WhatsAppModular», sin guion: también se niega', () => {
+    // El nombre de la carpeta lleva guion y el del repositorio no (comprobado
+    // en su remoto el 01/10/2026): con solo el guion, estos pasaban o pedían confirmación.
+    for (const c of [
+      'gh repo clone segurolotengopy/WhatsAppModular',
+      'gh pr merge 3 --repo segurolotengopy/WhatsAppModular',
+      'gh pr create -R segurolotengopy/WhatsAppModular --title x --body y',
+      'gh api -X DELETE repos/segurolotengopy/WhatsAppModular/hooks/1',
+      'gh pr list --repo segurolotengopy/whatsappmodular',
+      'git clone https://github.com/segurolotengopy/WhatsAppModular.git',
+      // Las otras formas del separador, como en las otras dos apps.
+      'gh repo clone segurolotengopy/WhatsApp_Modular',
+      'gh repo clone "WhatsApp Modular"',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('nombrar el repositorio sin actuar sigue pasando: leer la carpeta o mencionarlo en un commit', () => {
+    for (const c of [
+      'ls ~/WhatsAppModular/docs',
+      'grep -n WhatsAppModular CLAUDE.md',
+      'git commit -m "se coordina con WhatsAppModular"',
+    ]) expect(decision(c), c).not.toBe('deny');
+  });
+
   it('nombrarlos sin actuar pasa: leer la documentación o buscar en el repositorio', () => {
     for (const c of [
       'grep -n "receptor-clientes" CLAUDE.md',
