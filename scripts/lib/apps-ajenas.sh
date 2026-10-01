@@ -58,19 +58,28 @@ APPS_AJENAS_HUELLAS="
 # NovuChat con un token propio y el WA_PHONE_ID de un número ajeno, copiado
 # por error, pasaría la capa de la app, y `registrar-numero.sh --dar-de-baja`
 # le cortaría el OTP a SeguroLoTengo. Las entregó la sesión de
-# WhatsApp-Modular el 29/09/2026, con el mismo formato que las de las apps:
+# WhatsApp-Modular, con el mismo formato que las de las apps:
 #   1. el número del OTP de SeguroLoTengo, en uso, cotejado en vivo contra el
 #      otp-service (su nombre visible es «AAB1»: la segunda capa también lo
 #      corta);
-#   2. el número de prueba de Meta de la Fase 0 (app de demostración), en
-#      desuso, tomado de su .env local.
+#   2. y 3. la única línea de la WABA de prueba de AAB1 y la única línea de
+#      la WABA de SeguroLoTengo en producción (01/10/2026); no las usa
+#      NovuChat.
+# NO está el número de prueba de la Fase 0, A PROPÓSITO. Estuvo hasta el
+# 01/10/2026, rotulado «en desuso» sin cotejarlo contra los .env de NovuChat,
+# y es el WA_PHONE_ID del Demo A: el candado le cortaba a NovuChat sus propios
+# envíos, subidas y registros (revisión de la sesión de WhatsApp-Modular, que
+# lo corrigió). Hoy se cotejó el WA_APP_ID, el WA_PHONE_ID y el WABA_ID de
+# cada .env contra TODAS las listas: solo coinciden los de la Fase 0 del
+# Demo A, que están fuera a propósito.
 # No hay otros. Igual que con las apps, la huella no esconde nada: un
 # phone_number_id se puede sacar de su sha256 por fuerza bruta. Evita
 # publicarlo, y alcanza porque el id no es una credencial.
 # NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA solo puede AGREGAR.
 APPS_AJENAS_NUMEROS_HUELLAS="
 f6deee9a:ec3542cf:4fbe734c:74e151b6:cea4b0a7:fbd04e07:99a50717:8432edbf
-57f8cfb2:d8b6bd3b:c46050ca:3d8718cc:d09842cd:70f68d4b:28454469:a19d36bf
+f853b182:4857620b:275f90f0:18051d46:0767a184:4886cb1a:96a69f3f:c3ae8c75
+684f81ed:2ac56848:37cfe9ad:217f00a6:05e7a517:07e05302:c4b65d20:eb3c8a3d
 "
 
 # sha256 del WABA_ID de cada WABA de WhatsApp-Modular que NovuChat NO debe

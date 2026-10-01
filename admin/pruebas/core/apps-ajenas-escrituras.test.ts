@@ -875,9 +875,22 @@ describe('la fuente de los scripts (LOW-C)', () => {
     expect(new Set(lista).size).toBeGreaterThanOrEqual(2);
   });
 
-  it('trae la huella de los dos números de WhatsApp-Modular (el OTP y el de prueba de la Fase 0), distintas de las de apps', () => {
-    expect(new Set(numeros).size).toBeGreaterThanOrEqual(2);
-    for (const h of numeros) expect(lista).not.toContain(h);
+  it('trae la huella de los tres números de WhatsApp-Modular (el OTP y las líneas de sus dos WABA), distintas entre sí y de las de apps', () => {
+    expect(new Set(numeros).size).toBe(3);
+    for (const h of numeros) {
+      expect(lista).not.toContain(h);
+      expect(wabas).not.toContain(h);
+    }
+  });
+
+  it('el número de la Fase 0 NO está en la lista: es el WA_PHONE_ID del Demo A y cortarlo le impediría escribir con su propio número', () => {
+    // Estuvo hasta el 01/10/2026, rotulado «en desuso» sin cotejarlo contra los
+    // .env de NovuChat. Huella (no secreta) cotejada ese día contra el
+    // WA_PHONE_ID del .env del Demo A. Si un día entra en la lista, esta prueba
+    // obliga a decidir otra vez, con la sesión de WhatsApp-Modular y con Andres.
+    const fase0 = '57f8cfb2:d8b6bd3b:c46050ca:3d8718cc:d09842cd:70f68d4b:28454469:a19d36bf';
+    expect(numeros).not.toContain(fase0);
+    expect(fuente(LIB)).not.toContain('57f8cfb2');
   });
 
   it('una huella escrita con «:» corta de verdad (sin red)', () => {
