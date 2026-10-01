@@ -18,6 +18,9 @@ Las demás cifras de costo son:
 - chip y costo fijo prorrateado entre 10 comercios: USD 3,68;
 - Meta: 0,0113 USD por mensaje, con 1.000 mensajes gratis por número.
 
+> **Decisión del 01/10/2026:** en Bellido, **Andres paga Meta, los cambios y los recordatorios**.
+> La recomendación del §1 sobre esas tres preguntas queda superada. Q'Taco pasa a la cartera.
+
 ---
 
 ## 1. Bellido: Impulso, USD 25 por 100 conversaciones
