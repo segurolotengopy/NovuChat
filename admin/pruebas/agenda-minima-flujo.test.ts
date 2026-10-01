@@ -2373,11 +2373,12 @@ describe('Agenda mínima v0: el día no se pierde, preguntas sencillas por códi
       expect(ruta(t)).not.toBe('derivar_medio');
       expect(ruta(t)).not.toBe('imagen_sin_texto');
       expect(textos(t)).not.toMatch(/solo puedo ayudarte a agendar/);
-      // Ya con el menú, la misma pregunta sin respuesta fija va al modelo y, si no hay dato, a recepción.
-      m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta: '¿Él es el doctor?' });
+      // Desde el 30/09 (Andres, prueba «Flujo B 2»): una foto que pregunta QUIÉN sale tiene respuesta fija y
+      // honesta, por código, sin modelo.
       const t2 = m.turno(conCaption(MAMA, 'image', '¿Él es el doctor?'));
-      expect(ruta(t2)).toBe('responder');
-      expect(t2.extraer).toHaveLength(1);
+      expect(ruta(t2)).toBe('respuesta_fija');
+      expect(t2.extraer).toHaveLength(0);
+      expect(textos(t2)).toMatch(/^No puedo reconocer personas en las fotos/);
     });
     it('una imagen con «emergencia» en el pie de foto es una emergencia (la misma prioridad que el texto)', () => {
       const t = mundoConParams().turno(conCaption(MAMA, 'image', 'es una emergencia'));
@@ -2625,5 +2626,73 @@ describe('Agenda mínima v0: un nombre que también es mes no cambia el día', (
     m.gemini.extraer = extraccion({ fechaPreferida: null, horaPreferida: '15:00', pacientes: ['Ana Pérez Gómez'] });
     m.turno(texto(MAMA, 'el 2 de abril a las tres, es Ana Pérez Gómez'));
     expect(m.calendario.eventos.filter((e) => String((e['start'] as J)['dateTime']).startsWith(JUEVES))).toHaveLength(0);
+  });
+});
+
+// =================================================================================================
+// Andres, prueba «Flujo B 2» (30/09, noche): mapa en la confirmación, orden de los dos mensajes, foto que
+// pregunta por el doctor y un texto que no promete un botón que no sale.
+describe('Agenda mínima v0: prueba «Flujo B 2»', () => {
+  const MAPA = 'https://maps.app.goo.gl/EjemploConsultorio';
+  const IG = 'https://www.instagram.com/consultorio.ejemplo';
+  const base = { instruccionesExtra: `DIRECCIÓN: Calle Ejemplo 123. Mapa: ${MAPA}`, mensajeRedes: `Síguenos: ${IG} y https://www.youtube.com/@ejemplo` };
+  const panelSinMapa = (): J => { const p = JSON.parse(JSON.stringify(PANEL)) as J; delete ((p['datosDelNegocio'] as J)['direccionMaps']); delete ((p['datosDelNegocio'] as J)['instruccionesExtra']); return p; };
+  const foto = (from: string, pie: string): J => valorMeta({ type: 'image', image: { id: 'media-7', mime_type: 'image/jpeg', caption: pie } }, from);
+  it('la confirmación trae el mapa (tomado de la configuración) además de la dirección', () => {
+    const m = mundo({ eventos: [], panel: panelSinMapa(), configBase: base });
+    hastaPedirNombre(m);
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(t.enviados[0]!.cuerpo).toMatch(/Te esperamos en Calle Ejemplo 123/);
+    expect(t.enviados[0]!.cuerpo).toContain(`Mapa: ${MAPA}`);
+    expect(t.enviados[0]!.payload['text']).toMatchObject({ preview_url: true });
+  });
+  it('confirmación primero y redes después, y el envío va de a uno con 1,5 s entre mensajes', () => {
+    const m = mundo({ eventos: [], configBase: base });
+    hastaPedirNombre(m);
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const t = m.turno(texto(MAMA, 'Ana Pérez Gómez'));
+    expect(t.enviados[0]!.cuerpo).toMatch(CONFIRMA);
+    expect(t.enviados[1]!.cuerpo).toContain(IG);
+    const flujo = JSON.parse(readFileSync(join(CARPETA, 'agenda-minima.v0.json'), 'utf8')) as Flujo;
+    for (const nombre of ['Enviar a WhatsApp', 'Enviar respaldo']) {
+      const n = flujo.nodes.find((x) => x.name === nombre)!;
+      expect(((n.parameters as J)['options'] as J)['batching']).toEqual({ batch: { batchSize: 1, batchInterval: 1500 } });
+    }
+  });
+  for (const pie of ['¿Este es el doctor?', '¿quién es?', 'él es el doctor?']) {
+    it(`foto con «${pie}»: «No puedo reconocer personas…» con el Instagram de la configuración, nunca «Sí»`, () => {
+      const m = mundo({ eventos: [], configBase: base });
+      m.turno(texto(MAMA, 'hola'));
+      const t = m.turno(foto(MAMA, pie));
+      expect(t.enviados[0]!.cuerpo).toMatch(/^No puedo reconocer personas en las fotos, pero en las redes de .* puedes verlo: https:\/\/www\.instagram\.com\//);
+      expect(t.enviados[0]!.cuerpo).toMatch(/¿Te ayudo a agendar una cita o necesitas otra cosa\?$/);
+      expect(t.extraer).toHaveLength(0);
+    });
+  }
+  it('NIEGA: una foto con otro pie («quiero cita el jueves») sigue el camino del texto', () => {
+    const m = mundo({ eventos: [], configBase: base });
+    m.turno(texto(MAMA, 'hola'));
+    const t = m.turno(foto(MAMA, '¿dónde queda el consultorio?'));
+    expect(textos(t)).not.toMatch(/reconocer personas/);
+  });
+  it('la redacción que contesta «Sí» a «¿eres el doctor?», o dice «soy el doctor», se descarta', () => {
+    const m = mundo({ eventos: [] });
+    m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta: '¿eres el doctor?' });
+    m.gemini.redactar = 'Sí, soy la asistente virtual del doctor.';
+    m.turno(texto(MAMA, 'hola'));
+    expect(textos(m.turno(texto(MAMA, '¿eres el doctor?')))).not.toMatch(/^Sí/m);
+  });
+  it('«Vacunas y otros» sin número del doctor: el texto no nombra un botón que no sale, y recepción recibe el aviso', () => {
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['operacion'] as J)['numeroDoctor']);
+    const t = mundo({ eventos: [], panel, configBase: { respaldoNumeroDoctor: '' } }).turno(lista(MAMA, 'vacunas_otros', 'Vacunas y otros'));
+    expect(t.aPaciente(MAMA)[0]!.payload['type']).toBe('text');
+    expect(textos(t)).not.toMatch(/bot[oó]n/i);
+    expect(t.aRecepcion).toHaveLength(1);
+  });
+  it('NIEGA: con número del doctor (distinto del paciente), sí sale el botón', () => {
+    const t = mundo({ eventos: [] }).turno(lista(MAMA, 'vacunas_otros', 'Vacunas y otros'));
+    expect(interactivo(t.aPaciente(MAMA)[0]!)['type']).toBe('cta_url');
   });
 });

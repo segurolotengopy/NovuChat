@@ -102,6 +102,12 @@ if (forzada) {
 // --- Preguntas sencillas: las contesta el codigo (servicios, direccion, horario, costo) -------------
 // Solo con texto escrito o dicho (no un boton ni una lista). Si trae una pregunta sencilla Y ademas pide
 // una cita, gana la cita: no es `respuesta_fija`. `conMenu` (primer mensaje) lo calcula `Plan del turno`.
+// Una FOTO (o documento) cuyo pie pregunta QUIÉN sale en ella («¿este es el doctor?», «¿quién es?»): respuesta
+// fija y honesta, por código. Nadie se reconoce en una foto, y la respuesta nunca empieza con «Sí» (Andres, 30/09).
+if ((t.tipo === 'image' || t.tipo === 'document') && texto.trim()
+  && /\bquien(es)? (es|son|sale|aparece)\b|^\W*(es|este es|esta es|ese es|esa es|el es|ella es|seria)\s+(el |la )?(doctor|doctora|dr|dra|pediatra)\b|\b(es|seria) (el |la )?(doctor|doctora|dr|dra)\s*\?/.test(norm)) {
+  return salir('respuesta_fija', { claveFija: 'identidad_foto' });
+}
 if (tipoEf === 'text' && !boton) {
   const clave = claveDeRespuestaFija(norm, est.paso, /[?¿]/.test(texto));
   if (clave) return salir('respuesta_fija', { claveFija: clave });

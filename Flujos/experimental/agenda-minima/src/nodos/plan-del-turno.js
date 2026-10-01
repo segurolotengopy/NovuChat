@@ -77,7 +77,7 @@ if (['nada', 'menu', 'emergencia', 'contacto_doctor', 'contacto_recepcion', 'der
   // conversacion (la respuesta va en el cuerpo del menu) o si el menu ya paso (va sola). Los textos los pone
   // `Armar mensajes` con la configuracion; aca no hay ninguno. Una clave desconocida no se inventa: menu.
   if (accion === 'respuesta_fija') {
-    if (['servicios', 'direccion', 'horario', 'costo'].indexOf(d.claveFija) < 0) return salir('menu');
+    if (['servicios', 'direccion', 'horario', 'costo', 'identidad_foto'].indexOf(d.claveFija) < 0) return salir('menu');
     return salir('respuesta_fija', { params: { clave: d.claveFija, conMenu: est.paso === 'inicio' } });
   }
   return salir(accion);

@@ -49,11 +49,14 @@ function agregar(para, payload, texto, respaldo, extra) {
 
 // Un mensaje AL PACIENTE con el boton que abre el chat de recepcion (o solo texto, si no hay numero).
 function mensajeConBoton(numero, cuerpo, botonTexto, saludo, evento) {
-  if (numero) {
+  if (numero && numero !== desdeDigitos) {
     const url = urlWa(numero, saludo);
     agregar('paciente', mEnlace(cuerpo, botonTexto, url), cuerpo, cuerpo + '\n\nEscríbele aquí: ' + url, { tipoReporte: 'interactive', evento: evento });
   } else {
-    agregar('paciente', mTexto(cuerpo), cuerpo, cuerpo, { tipoReporte: 'text', evento: evento });
+    // Sin número (o el número es el del propio paciente): no hay botón, y el texto no lo nombra.
+    const sinBoton = String(cuerpo || '').replace(/\s*T[oó]ca(le)? el bot[oó]n[^.!?]*[.!?]?/gi, '')
+      .replace(/\s*tocando el bot[oó]n/gi, '').replace(/\s+([.,])/g, '$1').trim() || 'Eso lo coordina recepción.';
+    agregar('paciente', mTexto(sinBoton), sinBoton, sinBoton, { tipoReporte: 'text', evento: evento });
   }
 }
 // PASAR CON RECEPCION = el aviso a recepcion MAS el boton para escribirle. Nada mas se ofrece.
@@ -74,7 +77,7 @@ const CLINICO = /dosis|\bmg\b|\bml\b|gotas|paracetamol|ibuprofeno|amoxicilina|an
 const PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego|recepcion te|el doctor te/;
 // Lo que el modelo NO puede afirmar (revisión de seguridad): que una cita quedó agendada, confirmada
 // o reservada —eso solo lo dice el código después del candado—, ni negar ser una IA (prohibición 4).
-const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b/;
+const AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) cita|tu cita (ya )?(esta|quedo|queda)|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b|soy (el |la )?(doctor|doctora|dr|dra)\b/;
 const NEGACION = /no (nos )?(quedan?|hay) (mas )?(horarios?|espacios?|turnos?|citas?|disponibilidad)|sin horarios|no tenemos (horarios|espacio|disponibilidad)|agenda (llena|completa)/;
 function clavesDeHora(texto) {
   const claves = [];
@@ -96,6 +99,8 @@ function redaccionValida(texto, huecos, aviso) {
   // paciente lo pregunta (Andres, 30/09). Aunque `instruccionesExtra` lo nombre, el modelo no lo repite.
   if (/\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/.test(n)) return false;
   if (/\b168\b/.test(n) || CLINICO.test(n) || PROMESAS.test(n) || AFIRMA.test(n)) return false;
+  // A una pregunta de IDENTIDAD («¿eres el doctor?», «¿quién eres?») no se contesta empezando con «Sí».
+  if (/\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra)\b|\bquien (eres|es)\b/.test(cnNorm(base.texto || '')) && /^\W*si\b/.test(n)) return false;
   if (huecos.length && !aviso && NEGACION.test(n)) return false;
   // R13: un hueco («a las )») nunca sale.
   if (/\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/.test(n)) return false;
@@ -159,12 +164,24 @@ function menu(cuerpo) {
     c + '\n\nRespóndeme «emergencia», «recién nacido», «niño sano» o «vacunas».', { tipoReporte: 'interactive' });
 }
 // Las respuestas a las preguntas sencillas salen de la configuración; sin texto configurado, null (transfiere).
+// Enlaces que salen de la CONFIGURACIÓN (nunca del código común): el mapa (`direccionMaps`, o el primero que
+// nombre `instruccionesExtra`) y el Instagram de las redes (`mensajeRedes`).
+function enlaceDe(texto, re) { const m = String(texto || '').match(re); return m ? m[0].replace(/[).,;:!?»]+$/, '') : ''; }
+const MAPA = String(cfg.direccionMaps || '').trim()
+  || enlaceDe(cfg.instruccionesExtra, /https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.com\/maps|maps\.google\.com)\/[^\s"'<>»]+/i);
+const INSTAGRAM = enlaceDe(cfg.mensajeRedes, /https:\/\/(www\.)?instagram\.com\/[^\s"'<>»]+/i);
 function respuestaFija(clave) {
+  if (clave === 'identidad_foto') {
+    const nombre = String(cfg.nombreNegocio || '').split(/\s+[—–-]\s+/)[0].trim();
+    const de = /^dra\b/i.test(nombre) ? 'de la ' : (/^dr\b/i.test(nombre) ? 'del ' : 'de ');
+    return 'No puedo reconocer personas en las fotos' + (INSTAGRAM && nombre ? ', pero en las redes ' + de + nombre + ' puedes verlo: ' + INSTAGRAM + '.' : '.')
+      + ' ¿Te ayudo a agendar una cita o necesitas otra cosa?';
+  }
   if (clave === 'servicios') return String(cfg.respuestaServicios || '').trim() || null;
   if (clave === 'costo') return String(cfg.respuestaCosto || '').trim() || null;
   if (clave === 'direccion') {
     if (!cfg.direccion) return null;
-    return 'Estamos en ' + cfg.direccion + '.' + (cfg.direccionMaps ? ' Ubicación: ' + cfg.direccionMaps : '');
+    return 'Estamos en ' + cfg.direccion + '.' + (MAPA ? '\nMapa: ' + MAPA : '');
   }
   if (clave === 'horario') {
     const h = String(cfg.horarioAtencion || '').trim();
@@ -297,6 +314,7 @@ switch (plan) {
     const numero = aDoctor ? doc : rec;
     const cuerpo = String(aDoctor ? cfg.mensajeContactoDoctor : cfg.mensajeContactoRecepcion || '').trim()
       || 'Para eso te atiende una persona del consultorio. Tócale el botón y le escribes directo.';
+    if (!numero || numero === desdeDigitos) avisarARecepcion(aDoctor ? 'el paciente pidió hablar con el doctor (vacunas u otros) y el asistente no tiene el número del doctor' : 'el paciente pidió hablar con recepción');
     mensajeConBoton(numero, cuerpo, aDoctor ? 'Escribir al doctor' : 'Escribir a recepción',
       aDoctor ? 'Hola doctor, escribo desde su asistente virtual.' : 'Hola, escribo desde el asistente de ' + nombreNegocio + '.');
     break;
@@ -427,7 +445,7 @@ switch (plan) {
     const nombres = c.titulo.replace(/\s*\((?:CNS|RN)\)\s*$/, '');
     const partes = [
       conEmoji('✅') + 'Listo, quedó agendada la cita de ' + nombres + ' (' + (CN_NOMBRE_SERVICIO[c.servicio] || 'consulta') + '): ' + textoDeFecha(c.inicio) + '.',
-      cfg.direccion ? 'Te esperamos en ' + cfg.direccion + (cfg.direccionMaps ? ' · ' + cfg.direccionMaps : '') + '.' : '',
+      cfg.direccion ? 'Te esperamos en ' + cfg.direccion + '.' + (MAPA ? '\nMapa: ' + MAPA : '') : '',
       // P10: la tolerancia va dentro del mismo mensaje y sale de la configuracion; sin frase, no se agrega.
       String(cfg.toleranciaTexto || ''),
       String(cfg.mensajeCierre || ''),

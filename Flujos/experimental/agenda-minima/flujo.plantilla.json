@@ -1336,7 +1336,13 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.payload) }}",
         "options": {
-          "timeout": 15000
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
         }
       },
       "credentials": {
@@ -1347,7 +1353,7 @@
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "notes": "Un solo nodo para todo (texto, botones, lista, enlace, plantilla). El phoneNumberId sale de metadata.phone_number_id del mensaje entrante."
+      "notes": "Un solo nodo para todo (texto, botones, lista, enlace, plantilla). El phoneNumberId sale de metadata.phone_number_id del mensaje entrante. Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden (30/09)."
     },
     {
       "id": "fallo-si",
@@ -1402,7 +1408,13 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
         "options": {
-          "timeout": 15000
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
         }
       },
       "credentials": {
@@ -1413,7 +1425,7 @@
       },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
-      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Al doctor: si falla la plantilla `alerta_emergencia`, sale el texto."
+      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Al doctor: si falla la plantilla `alerta_emergencia`, sale el texto. Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden (30/09)."
     },
     {
       "id": "reportar-sal-si",
