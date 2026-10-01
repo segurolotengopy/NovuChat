@@ -30,7 +30,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 |---|---|---|---|
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | Atrasado en 1 nodo: `Procesar respuesta` (el #284, detector de «ya», `5aad7da`; código compartido). Por qué: el Demo A es el número de ensayo y no tiene pacientes; decidido por Andres el 30/09/2026 (según la sesión Principal) mientras Bellido sale a piloto, y Bellido ya lo tiene. Lo cierra: la próxima publicación de flujos, que llevará también el #286. |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | Atrasado en 1 nodo: `Procesar respuesta` (el #284, detector de «ya», `5aad7da`; código compartido). Por qué: Platinum es un demo, sin pacientes; decidido por Andres el 30/09/2026 (según la sesión Principal) mientras Bellido sale a piloto, y Bellido ya lo tiene. Lo cierra: la próxima publicación de flujos, que llevará también el #286. |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` **27/09/2026: hotfix de protección + mejoras adelantadas por decisión de Andres del 27/09** (reclamos #6509 a #6587): las horas que se ofrecen salen de la consulta del mismo turno (H1), agendar exige confirmación del paciente (H2) y no se repiten las opciones ya ofrecidas (M1). Entra por la puerta del hotfix de protección; la excepción de arriba sigue vigente para todo lo demás |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | **Corre otro flujo, el piloto «Agenda mínima v0»** (publicado el 01/10/2026 a la 01:24 con autorización de Andres): `Flujos/experimental/agenda-minima/agenda-minima.v0.json`, 45 nodos, de `f3f7411` (PR #293, sin fusionar), no el JSON versionado de arriba (96 nodos). Se publica con `herramientas/flujo-de-prueba.mjs --sobre-bellido`, **no** con `publicar-flujo.sh`. Por qué: es el piloto que Andres decidió el 30/09/2026 tras el concurso entre el flujo actual y este. Vuelta atrás: existe el respaldo exacto del flujo anterior (96 nodos), guardado fuera del repositorio; se vuelve con `--restaurar-respaldo` (en ventana de 2 a 3 salvo orden escrita de Andres). Lo cierra: la fusión del PR #293 y la decisión de Andres sobre el piloto; hasta entonces `estado-de-versiones.sh` lo verá «atrasado, CON excepción declarada», que es lo esperado. Historia: hasta el 30/09 corría el flujo publicado desde `main` con #284 (96 nodos, hotfix de protección del 27/09 más mejoras adelantadas, sobre la base `e02a756`); esa versión queda como respaldo |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -54,6 +54,21 @@ audio, foto de producto, PDF y foto sin contexto), el script los va a marcar
 **atrasados sin declarar**, y es correcto que lo haga. `capacidades-comunes.test.ts`
 exige desde ahora la rama en todo flujo conversacional. Cero mensajes por
 conversación.
+
+## Estado al 01/10/2026 (Bellido corre el piloto «Agenda mínima v0»)
+
+El 30/09 Andres hizo un concurso entre dos candidatos para Bellido: el flujo
+actual con todos los ajustes del doctor (A) y la «Agenda mínima» de la
+constructora (B). Decidió B. Se publicó el 01/10 a la 01:24 sobre el flujo de
+Bellido con `herramientas/flujo-de-prueba.mjs --sobre-bellido` (45 nodos, `f3f7411`,
+PR #293 sin fusionar), con el respaldo exacto del flujo anterior (96 nodos)
+guardado fuera del repositorio. Vuelta atrás: `--restaurar-respaldo`. El flujo A
+(rama `cartera/bellido-doctor-29-09`, #286, sin fusionar) queda como respaldo y no
+se publica; sus defectos conocidos están en `CLIENTES/BELLIDO/aceptacion.md`
+(sección 7). El Demo A volvió a su flujo original de 77 nodos, así que el ensayo
+apunta otra vez al flujo de siempre. Demo A y Platinum siguen atrasados en
+«Procesar respuesta» (el #284), declarado en el PR #289 (abierto). Cero mensajes por
+conversación en este registro: es documentación.
 
 ## Estado al 27/09/2026 (hotfix de protección de reservas)
 
