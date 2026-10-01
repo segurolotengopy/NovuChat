@@ -465,7 +465,7 @@ describe('la fuente de los scripts (LOW-C)', () => {
    * literal o cualquier variable que el archivo arme con ella (G, GRAPH, URL…).
    */
   const aGraph = (l: string, texto: string) => {
-    if (/graph\.facebook\.com/.test(l)) return true;
+    if (l.includes('graph.facebook.com')) return true;
     // `G` es el nombre de la casa: cuenta aunque el archivo no la asigne (puede
     // venir de otro `source`), además de toda asignación que traiga la URL.
     const variables = ['G', ...[...texto.matchAll(/^\s*(?:local\s+|export\s+)?([A-Za-z_]\w*)=[^\n]*graph\.facebook\.com/gm)].map((m) => m[1])];
@@ -606,10 +606,10 @@ describe('la fuente de los scripts (LOW-C)', () => {
   it('fuera de curl, solo plantillas-cliente.sh escribe en Graph (desde python, con el candado antes)', () => {
     // python/urllib, requests o fetch en un archivo que conoce la URL de Graph.
     const archivos = versionados('*.sh', '*.py', '*.mjs', '*.js', '*.ts')
-      .filter((r) => !/^(?:web|functions)\/|node_modules\//.test(r) && !r.endsWith('.test.ts'));
+      .filter((r) => !/^(?:web|functions)\/|(?:^|\/)node_modules\//.test(r) && !r.endsWith('.test.ts'));
     const escriben = archivos.filter((r) => {
       const t = fuente(join(REPO, r));
-      return /graph\.facebook\.com/.test(t) && /urllib\.request|\brequests\.(?:post|delete|put)|\bfetch\(/.test(t);
+      return t.includes('graph.facebook.com') && /urllib\.request|\brequests\.(?:post|delete|put)|\bfetch\(/.test(t);
     });
     expect(escriben).toEqual(['scripts/plantillas-cliente.sh']);
   });
