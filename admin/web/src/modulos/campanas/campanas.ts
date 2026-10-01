@@ -2,7 +2,7 @@
  * LAS CAMPAÑAS EN LA CONSOLA (Andres, 24/09/2026): lo que la pantalla necesita
  * para AVISAR antes de guardar y para decir en qué quedó cada campaña.
  *
- * La que decide es el servidor (`functions/src/campanas.ts` y la regla de
+ * La que decide es el servidor (`functions/src/modulos/campanas/campanas.ts` y la regla de
  * `config/campanas`). Esto acompaña: las mismas cifras, para que el comercio no
  * descubra el límite con un rechazo. No se importa aquel módulo porque trae
  * `node:crypto` y no corre en el navegador; `pruebas/campanas-consola.test.ts`

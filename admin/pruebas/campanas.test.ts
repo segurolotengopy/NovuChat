@@ -20,7 +20,7 @@ import {
   MAX_DIAS_HASTA_EL_INICIO, campanasParaElFlujo, diaBolivia, hashLista, instruccionCampana,
   leerCampanas, MOTIVO_TEXTO_NO_PERMITIDO, palabrasDeCampana, revisarCampanas, revisarSinModelo,
   type Campana, type ContextoDelNegocio,
-} from '../functions/src/campanas.ts';
+} from '../functions/src/modulos/campanas/campanas.ts';
 import { MAXIMO_CAMPANAS, PLANES_ASIGNABLES, limiteDeCampanas } from '../functions/src/central/cuenta/planes.ts';
 import { hashCorto } from '../functions/src/central/asistente/comportamiento.ts';
 
@@ -247,7 +247,7 @@ const { initializeApp, getApps } = await import('firebase-admin/app');
 if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: PROYECTO });
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
-const { revisarYAplicarCampanas, hayQueRevisarCampanas } = await import('../functions/src/verificarCampanas.ts');
+const { revisarYAplicarCampanas, hayQueRevisarCampanas } = await import('../functions/src/modulos/campanas/verificarCampanas.ts');
 const { configuracionFlujo } = await import('../functions/src/ingesta.ts');
 
 const refCampanas = () => db.doc(`tenants/${T}/config/campanas`);
