@@ -83,6 +83,15 @@ async function llamar(metodo, ruta, cuerpo) {
   try { datos = await r.json(); } catch { /* sin cuerpo */ }
   return { cod: r.status, datos };
 }
+// El respaldo se crea con `wx` (exclusivo): si ya existe, falla y NO se pisa. Sin comprobar antes con `existsSync`,
+// que dejaba una ventana entre la comprobación y la escritura (CodeQL js/file-system-race).
+function guardarRespaldo(ruta, vivo) {
+  try {
+    writeFileSync(ruta, JSON.stringify(Object.assign({}, vivo, { guardado: new Date().toISOString() })), { flag: 'wx', mode: 0o600 });
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+  }
+}
 const leerEstado = () => (existsSync(ESTADO) ? JSON.parse(readFileSync(ESTADO, 'utf8')) : null);
 
 // ---------------------------------------------------------------- un turno
@@ -249,7 +258,7 @@ if (bandera('sobre-bellido')) {
   console.log(`Respaldo de «Config base» llenado desde el vivo (sin mostrar valores): ${llenados.join(', ') || '—'}`);
   console.log(`Marcadores que quedan: ${marcas.join(', ') || 'ninguno'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
-  if (!existsSync(RESPALDO)) writeFileSync(RESPALDO, JSON.stringify(Object.assign({}, vivo.datos, { guardado: new Date().toISOString() })), { flag: 'wx', mode: 0o600 });
+  guardarRespaldo(RESPALDO, vivo.datos);
   chmodSync(RESPALDO, 0o600);
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada en n8n (solo el respaldo local). Agregue --aplicar.'); process.exit(0); }
   if (marcas.length) morir(`quedan marcadores sin reponer: ${marcas.join(', ')}`);
@@ -398,9 +407,7 @@ if (bandera('sobre-demo-a') || bandera('restaurar-respaldo')) {
   console.log('Credenciales, nodo por nodo:'); tabla.forEach((l) => console.log(l));
   console.log(`Marcadores que quedan (solo respaldo de «Config base»; el panel de «ensayo» manda): ${marcas.join(', ') || '—'}`);
   console.log(`Respaldo del vivo: ${RESPALDO}`);
-  if (!existsSync(RESPALDO)) {
-    writeFileSync(RESPALDO, JSON.stringify(Object.assign({}, vivo.datos, { guardado: new Date().toISOString() })), { flag: 'wx', mode: 0o600 });
-  }
+  guardarRespaldo(RESPALDO, vivo.datos);
   chmodSync(RESPALDO, 0o600);
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada en n8n (solo el respaldo local). Agregue --aplicar.'); process.exit(0); }
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: vivo.datos.name, nodes: b.nodes, connections: b.connections, settings: b.settings ?? vivo.datos.settings ?? {} });
