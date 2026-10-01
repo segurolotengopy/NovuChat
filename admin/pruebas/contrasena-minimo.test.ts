@@ -16,7 +16,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MINIMO_CONTRASENA } from '../web/src/lib/contrasena.ts';
 
@@ -38,8 +38,14 @@ describe('El mínimo de la contraseña', () => {
   });
 
   it('las dos pantallas importan la constante, no su número', () => {
-    for (const fuente of [ingresar, miCuenta]) {
-      expect(fuente).toMatch(/MINIMO_CONTRASENA \} from '(?:\.\.\/)+(?:core\/)?lib\/contrasena'/);
+    // Se resuelve el import desde la carpeta de cada pantalla y se compara con el
+    // archivo canónico (el que importa esta prueba): acepta la ruta que sea tras cada
+    // mudanza y rechaza cualquier copia de la constante en otro lado.
+    for (const [pantalla, fuente] of [[join(aqui, '..', 'web/src/paginas/Ingresar.tsx'), ingresar], [join(aqui, '..', 'web/src/paginas/MiCuenta.tsx'), miCuenta]]) {
+      const m = fuente.match(/MINIMO_CONTRASENA\s*\}\s*from\s*'([^']+)'/);
+      expect(m, `${pantalla} importa MINIMO_CONTRASENA`).not.toBeNull();
+      expect(`${resolve(dirname(pantalla), m![1])}.ts`)
+        .toBe(join(aqui, '..', 'web/src/lib/contrasena.ts'));
     }
     // Ningún `minLength` ni `length <` con un número escrito a mano: si el
     // valor vuelve a estar en dos lados, se desincroniza como en el alta del

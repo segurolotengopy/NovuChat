@@ -19,7 +19,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -92,7 +92,12 @@ describe('Comportamiento del asistente en la consola', () => {
   });
 
   it('lo vigente se muestra con TextoSeguro, nunca como HTML', () => {
-    expect(pantalla).toMatch(/import \{ TextoSeguro \} from '(?:\.\.\/)+(?:central\/)?componentes\/TextoSeguro'/);
+    // Se resuelve el import desde la carpeta de la pantalla y se compara con el componente
+    // canónico: vale tras cada mudanza y rechaza una copia sin escapar en otro lado.
+    const m = pantalla.match(/import \{ TextoSeguro \} from '([^']+)'/);
+    expect(m, 'la pantalla importa TextoSeguro').not.toBeNull();
+    expect(`${resolve(dirname(join(aqui, '..', 'web/src/paginas/Configuracion.tsx')), m![1])}.tsx`)
+      .toBe(join(aqui, '..', 'web/src/componentes/TextoSeguro.tsx'));
     expect(pantalla).toMatch(/<TextoSeguro valor=\{vigentes\}/);
     expect(pantalla).not.toContain('dangerouslySetInnerHTML');
   });
