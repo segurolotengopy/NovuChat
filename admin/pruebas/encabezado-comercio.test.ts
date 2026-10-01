@@ -98,7 +98,7 @@ describe('La cabecera en la fuente', () => {
   const cartera = sinComentarios(leer('web/src/paginas/Tenants.tsx'));
 
   it('la modalidad sale de modalidadDe del módulo compartido, no de leer el campo a mano', () => {
-    expect(modulo).toMatch(/import \{[^}]*\bmodalidadDe\b[^}]*\} from '[^']*\/prepago'/);
+    expect(modulo).toMatch(/import \{[^}]*\bmodalidadDe\b[^}]*\} from '(?:\.\/|\.\.\/central\/lib\/)prepago'/);
     expect(modulo).toContain('modalidadDe(cuenta)');
     for (const fuente of [modulo, encabezado, chip, cartera]) {
       expect(fuente).not.toMatch(/\.modalidad\b/);
