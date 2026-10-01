@@ -985,7 +985,7 @@ comercio está activo**, le pregunta al servidor a quién le toca el recordatori
 de solicitud pendiente.
 
 **El flujo no decide a quién se le escribe.** Lo decide
-`seguimientosPendientes` (`admin/functions/src/seguimientos.ts`, regla completa
+`seguimientosPendientes` (`admin/functions/src/modulos/agenda/seguimientos.ts`, regla completa
 en `admin/DISENO.md` §4quaterdecies): una sola vez por solicitud, nunca a quien
 pidió que no le escriban, nunca a un teléfono en operador o bloqueado, nunca a
 quien ya agendó, y solo entre 2 y 4 h (texto en ventana) o entre 24 y 48 h

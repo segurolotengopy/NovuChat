@@ -58,7 +58,7 @@ export const TIPOS = [
   'derivacion_operador', 'bloqueo_ventana',
   'aviso_consumo',
   // Seña por QR (bloque 2, 17/09): comprobante cotejado por el servidor y
-  // retención vencida sin comprobante. Los escribe `functions/src/sena.ts`.
+  // retención vencida sin comprobante. Los escribe `functions/src/modulos/agenda/sena.ts`.
   'cobro_cotejado', 'sena_vencida',
   // Seguimiento de solicitud pendiente (bloque 4, 17/09): salió el
   // recordatorio único a un paciente que no terminó de reservar. El modo

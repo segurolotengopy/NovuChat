@@ -1,5 +1,5 @@
 import { REGION } from './core/region.js';
-import { senaVencidaPorTiempo } from './retencion.js';
+import { senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
 import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
