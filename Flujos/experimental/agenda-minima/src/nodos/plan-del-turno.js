@@ -163,6 +163,47 @@ if (x.pacientes.length) {
   if (x.hermanos || x.pacientes.length > 1) en.hermanos = true;
 }
 
+// --- La FECHA que el paciente ESCRIBIÓ, leída por código (revisión de seguridad sobre c17552a) ----------
+// El modelo toma la fecha solo de su tabla de 14 días: «el 30 de octubre» le da null, y entonces la hora se
+// cruzaba con la oferta del jueves. Formas: ISO, «30 de octubre», «30/10», «el 30», un día de la semana (con o
+// sin número), «hoy», «mañana», «pasado mañana». `dicho` dice si el texto nombra un día; `fecha` es la fecha
+// concreta, o null si nombra un día que no se puede fijar («la próxima semana»).
+function fechaEscrita(textoLibre) {
+  const nf = cnNorm(String(textoLibre || '').slice(0, 300));
+  const sinM = nf.replace(/\b(de|en|por|a) la manana\b/g, ' ');
+  const hoyF = fechaLocal(ahora);
+  const anio = Number(hoyF.slice(0, 4));
+  const valida = (a, m, d) => { const f = a + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); return m >= 1 && m <= 12 && d >= 1 && d <= 31 && sumarDias(f, 0) === f ? f : null; };
+  const conAnio = (m, d) => { const f = valida(anio, m, d); return f && f < hoyF ? valida(anio + 1, m, d) : f; };
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  let m;
+  if ((m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(nf))) return { dicho: true, precisa: true, fecha: valida(Number(m[1]), Number(m[2]), Number(m[3])) };
+  if ((m = /\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/.exec(nf))) {
+    return { dicho: true, precisa: true, fecha: conAnio(m[2] === 'setiembre' ? 9 : MESES.indexOf(m[2]) + 1, Number(m[1])) };
+  }
+  if ((m = /\b(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?\b/.exec(nf))) return { dicho: true, precisa: true, fecha: conAnio(Number(m[2]), Number(m[1])) };
+  const sem = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?:\s+(\d{1,2})(?![\d:.]))?/.exec(nf);
+  const elN = /\bel\s+(\d{1,2})(?![\d:.])(?!\s*(?:hs|horas|h)\b)/.exec(nf);
+  const num = sem && sem[2] ? Number(sem[2]) : (elN ? Number(elN[1]) : null);
+  if (num !== null) {
+    // El próximo día con ese número (este mes o el siguiente); si además dijo el día de la semana, tiene que coincidir.
+    for (let i = 0; i <= 62; i++) {
+      const f = sumarDias(hoyF, i);
+      if (Number(f.slice(8, 10)) !== num) continue;
+      if (sem && cnNorm(diaDeLaSemana(f)) !== sem[1]) return { dicho: true, fecha: null };
+      return { dicho: true, precisa: true, fecha: f };
+    }
+    return { dicho: true, fecha: null };
+  }
+  if (sem) { for (let i = 0; i < 7; i++) { const f = sumarDias(hoyF, i); if (cnNorm(diaDeLaSemana(f)) === sem[1]) return { dicho: true, fecha: f }; } }
+  if (/\bpasado manana\b/.test(sinM)) return { dicho: true, fecha: sumarDias(hoyF, 2) };
+  if (/\bmanana\b/.test(sinM)) return { dicho: true, fecha: sumarDias(hoyF, 1) };
+  if (/\bhoy\b/.test(nf)) return { dicho: true, fecha: hoyF };
+  if (/\b(semana|proxim[oa]|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/.test(nf)) return { dicho: true, fecha: null };
+  return { dicho: false, fecha: null };
+}
+const escrita = fechaEscrita(texto);
+
 // --- HB2 (con el modelo): la hora que dio coincide con UNA de las ofrecidas = tocar ese boton -------
 // El codigo ya probo las frases simples sin el modelo (`Decidir turno`); esto cubre las que solo el
 // modelo entiende («a las cuatro y media»). Una hora ofrecida en dos dias es ambigua; sin coincidencia,
@@ -172,7 +213,9 @@ if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && x
   && !/\b(no|nada|ni|ninguno|ninguna|tampoco|otra|otro|otras|otros|cambi\w*|despues|antes|pero|aunque)\b/.test(cnNorm(texto))
   // Una PREGUNTA por una hora ofrecida no es elegirla (ni agenda, ni mueve la cita): se contesta con la disponibilidad.
   && !/[?¿]/.test(texto) && !/\b(tien|hay|habr|se puede|puedo|podr|queda|libre|disponible)/.test(cnNorm(texto))) {
-  const coinciden = est.ultimaOferta.filter((iso) => horaLocal(msDe(iso)) === x.horaPreferida && (!x.fechaPreferida || fechaDe(iso) === x.fechaPreferida));
+  // Si el TEXTO nombra un día, la hora ofrecida tiene que ser de ESE día (aunque el modelo no dé fecha).
+  const coinciden = est.ultimaOferta.filter((iso) => horaLocal(msDe(iso)) === x.horaPreferida && (!x.fechaPreferida || fechaDe(iso) === x.fechaPreferida)
+    && (!escrita.dicho || (escrita.fecha !== null && fechaDe(iso) === escrita.fecha)));
   if (coinciden.length === 1) return comoBoton(coinciden[0], srv || est.servicio, '');
   if (coinciden.length > 1) { en.rechazos = rechazosPrevios; return salir('pedir_boton'); }
 }
@@ -228,7 +271,10 @@ const ofertaPrevia = est.paso === 'ofreciendo_huecos' ? (est.ultimaOferta || [])
 const diaHeredado = ofertaPrevia.length ? fechaDe(ofertaPrevia[0]) : (est.paso === 'ofreciendo_huecos' && est.ultimaFechaPedida ? est.ultimaFechaPedida : null);
 const sinFranjaManana = cnNorm(texto).replace(/\b(de|en|por|a) la manana\b/g, ' ');
 const dijoDia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana|pasado manana|semana|proxim[oa]|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\bel \d{1,2}\b|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/.test(sinFranjaManana);
-let fechaPref = x.fechaPreferida;
+// Una fecha CONCRETA escrita por el paciente manda sobre la del modelo (el modelo la deja en null fuera de su tabla).
+// La numérica («el 30 de octubre», «30/10», «el 30») siempre; un día de la semana, «hoy» o «mañana», solo si el
+// modelo no dio fecha (para «el jueves» dicho un jueves decide el modelo, como antes).
+let fechaPref = (escrita.precisa && escrita.fecha) ? escrita.fecha : (x.fechaPreferida || escrita.fecha);
 if (diaHeredado && diaHeredado >= fechaLocal(ahora) && (x.horaPreferida || x.franja !== 'cualquiera') && !x.masOpciones && !x.pidioHoy && !dijoDia) {
   fechaPref = diaHeredado;
 }

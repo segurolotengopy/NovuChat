@@ -2561,3 +2561,44 @@ describe('Agenda mínima v0: una fecha escrita gana sobre la oferta (S06/S12)', 
     expect(ids).not.toContain(idHueco(VIERNES, '15:00'));
   });
 });
+
+// Revisión de seguridad sobre c17552a: por el camino del MODELO (la extracción sin `fechaPreferida`, con el
+// nombre ya dado) la hora se cruzaba con la oferta del jueves aunque el texto dijera otro día.
+describe('Agenda mínima v0: el día escrito también manda por el camino del modelo', () => {
+  const OCT30 = '2026-10-30';
+  const ofertaJueves = (): ReturnType<typeof mundo> => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'quiero cita el jueves'));
+    m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+    m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+    return m;
+  };
+  const sinFecha = (o: J = {}): J => extraccion(Object.assign({ fechaPreferida: null, horaPreferida: '15:00', pacientes: ['Pedro Gómez Pérez'] }, o));
+  for (const [dicho, dia] of [['quiero cita el 9 a las 15:00, se llama Pedro Gómez Pérez', VIERNES], ['el viernes a las tres, es Pedro Gómez Pérez', VIERNES]] as const) {
+    it(`«${dicho}» con la extracción SIN fecha: nunca agenda el jueves; ofrece el ${dia}`, () => {
+      const m = ofertaJueves();
+      m.gemini.extraer = sinFecha();
+      const t = m.turno(texto(MAMA, dicho));
+      expect(m.calendario.eventos.filter((e) => String((e['start'] as J)['dateTime']).startsWith(JUEVES))).toHaveLength(0);
+      const ids = botonesDe(t.enviados[0]!).map((b) => b.id);
+      expect(ids.length).toBeGreaterThan(0);
+      expect(ids.every((id) => id.includes(dia))).toBe(true);
+    });
+  }
+  it('«quiero cita el 30 de octubre a las 15:00» (fuera de la tabla del modelo): ofrece horas del 30 de octubre, nunca el jueves', () => {
+    const m = ofertaJueves();
+    m.gemini.extraer = sinFecha();
+    const t = m.turno(texto(MAMA, 'quiero cita el 30 de octubre a las 15:00'));
+    expect(m.calendario.eventos).toHaveLength(0);
+    const ids = botonesDe(t.enviados[0]!).map((b) => b.id);
+    expect(ids[0]).toBe(idHueco(OCT30, '15:00'));
+    expect(ids.every((id) => id.includes(OCT30))).toBe(true);
+  });
+  it('NIEGA: «a las tres» sin día, con la extracción sin fecha, sí elige las 15:00 de la oferta (y con el nombre, agenda el jueves)', () => {
+    const m = ofertaJueves();
+    m.gemini.extraer = sinFecha();
+    m.turno(texto(MAMA, 'a las tres, es Pedro Gómez Pérez'));
+    expect(m.calendario.eventos).toHaveLength(1);
+    expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(JUEVES, '15:00') });
+  });
+});
