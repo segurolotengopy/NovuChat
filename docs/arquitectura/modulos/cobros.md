@@ -260,5 +260,5 @@ modelo. Los avisos al negocio los paga NovuChat.
   vencimiento en septiembre se servía en octubre, el cliente escaneaba, el
   banco rechazaba y el negocio se enteraba por un reclamo.
 
-`admin/functions/src/cobroVenta.ts`; pruebas en `pruebas/cobro-venta.test.ts`
+`admin/functions/src/modulos/cobros/cobroVenta.ts`; pruebas en `pruebas/cobro-venta.test.ts`
 (el servidor) y `pruebas/demo-b-cobro.test.ts` (el flujo, escrita negando).

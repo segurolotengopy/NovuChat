@@ -17,7 +17,7 @@
  * `cierres.ts`), que si divergen cuentan una cita dos veces.
  */
 import { describe, expect, it } from 'vitest';
-import { cotejarComprobante, type Cotejo } from '../functions/src/cotejo.ts';
+import { cotejarComprobante, type Cotejo } from '../functions/src/modulos/cobros/cotejo.ts';
 import {
   NO_SE_PUDO_LEER, detalleDeLaSena, esperadoDeLaSena, idDeCierreDeCita, leidoDelCuerpo,
   resultadoDelCotejo,
@@ -25,7 +25,7 @@ import {
 import {
   IMPORTE_SENA_MAXIMO, MINUTOS_RETENCION_POR_DEFECTO, senaParaElFlujo, solicitudTras,
 } from '../functions/src/ingesta.ts';
-import { documentoQueCobra } from '../functions/src/cobro.ts';
+import { documentoQueCobra } from '../functions/src/modulos/cobros/cobro.ts';
 import { senaVencidaPorTiempo } from '../functions/src/retencion.ts';
 
 /** Lo que la prohibición 3 no deja decir, en ninguna forma. */

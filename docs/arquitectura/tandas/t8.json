@@ -1,0 +1,12 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/cobro.ts", "a": "admin/functions/src/modulos/cobros/cobro.ts" },
+    { "de": "admin/functions/src/qrSimple.ts", "a": "admin/functions/src/modulos/cobros/qrSimple.ts" },
+    { "de": "admin/functions/src/dibujoQr.ts", "a": "admin/functions/src/modulos/cobros/dibujoQr.ts" },
+    { "de": "admin/functions/src/cotejo.ts", "a": "admin/functions/src/modulos/cobros/cotejo.ts" },
+    { "de": "admin/functions/src/cobroVenta.ts", "a": "admin/functions/src/modulos/cobros/cobroVenta.ts" },
+    { "de": "admin/web/src/paginas/Cobros.tsx", "a": "admin/web/src/modulos/cobros/Cobros.tsx" },
+    { "de": "admin/web/src/paginas/Cobro.tsx", "a": "admin/web/src/modulos/cobros/Cobro.tsx" }
+  ],
+  "suitesPuras": []
+}

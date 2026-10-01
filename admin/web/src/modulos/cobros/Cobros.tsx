@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { auth, db } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
-import { descargarCsv } from '../lib/exportar';
+import { auth, db } from '../../lib/firebase';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { descargarCsv } from '../../lib/exportar';
 
 /**
  * =============================================================================
