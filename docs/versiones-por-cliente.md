@@ -70,6 +70,21 @@ apunta otra vez al flujo de siempre. Demo A y Platinum siguen atrasados en
 «Procesar respuesta» (el #284), declarado en el PR #289 (abierto). Cero mensajes por
 conversación en este registro: es documentación.
 
+## Estado al 29/09/2026 (Bellido: dos arreglos de protección, publicados)
+
+`main` (`572b793`) trae dos arreglos de reservas para los tres flujos, motivados
+por la prueba real de Bellido del 28/09: #267 (la hora que pide es la de su
+propia cita, se le dice) y #275 (reagendar no borra la cita en silencio:
+`servicio` y `funcionario` opcionales, aviso a recepción si el modelo falla tras
+confirmar una cancelación, pendiente de cancelar de un solo uso). Se publicaron
+el 29/09 con el «sí» de Andres: Bellido a las 13:39 y Platinum y el Demo A a
+las 13:40, desde `main`; el seco mostró solo esos 7 nodos de diferencia, ningún
+cambio de prompt, y después de aplicar dio 0 en los tres. Cero mensajes por conversación.
+
+A las 20:30 del mismo día se publicó el #283 (`main` `3790e4d`) en los tres flujos: seco de
+3 nodos de código, 0 diferencias después de aplicar y `estado-de-versiones.sh` sin atrasos
+sin declarar. Cero mensajes por conversación.
+
 ## Estado al 27/09/2026 (hotfix de protección de reservas)
 
 Los tres flujos de reservas reciben el mismo cambio —módulos compartidos más el
