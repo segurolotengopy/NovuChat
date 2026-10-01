@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Link, useParams } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
-import { etiquetaDePago, pagoAlDia } from '../lib/cuenta';
-import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../core/lib/atencion';
-import { avisoConsumoVigente, limiteDeProductos, periodoDe } from '../lib/planes';
-import { AvisoConsumo } from '../componentes/AvisoConsumo';
-import { consumidasDe, corteDe, estadoDeServicio } from '../lib/prepago';
-import { ResumenPrepago } from '../componentes/ResumenPrepago';
-import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
-import { useEjesDeCuenta, useTipoCambio } from '../central/lib/lecturas';
+import { db } from '../../lib/firebase';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { etiquetaDePago, pagoAlDia } from '../../lib/cuenta';
+import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../../core/lib/atencion';
+import { avisoConsumoVigente, limiteDeProductos, periodoDe } from '../../lib/planes';
+import { AvisoConsumo } from '../../componentes/AvisoConsumo';
+import { consumidasDe, corteDe, estadoDeServicio } from '../../lib/prepago';
+import { ResumenPrepago } from '../../componentes/ResumenPrepago';
+import { EjesDeLaCuenta } from '../componentes/EjesDeLaCuenta';
+import { useEjesDeCuenta, useTipoCambio } from '../lib/lecturas';
 
 interface Cuenta {
   plan?: unknown;

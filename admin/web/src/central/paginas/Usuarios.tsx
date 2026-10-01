@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { useParams } from 'react-router-dom';
-import { db, funciones } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
+import { db, funciones } from '../../lib/firebase';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
 
 interface Miembro { id: string; correo?: unknown; rol?: unknown; estado?: unknown }
 

@@ -2,16 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Link } from 'react-router-dom';
-import { db, funciones } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
-import { ChipModo } from '../componentes/ChipModo';
-import { avisoConsumoVigente, nombreDePlan, type AvisoConsumoVista } from '../lib/planes';
-import { modoDelComercio, type ModoComercio } from '../lib/modoComercio';
-import { corteDe, fechaCorta, type Corte } from '../lib/prepago';
-import { CALLABLES, ETIQUETA_TITULARIDAD, rutaDe, titularidadDe, type RutaWhatsApp } from '../lib/ejes';
-import { CortePrepago } from '../plataforma/componentes/CortePrepago';
-import { mensajeDeError } from '../plataforma/lib/negocios';
-import { useCompuertaDelCorte } from '../plataforma/lib/lecturas';
+import { db, funciones } from '../../lib/firebase';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { ChipModo } from '../../componentes/ChipModo';
+import { avisoConsumoVigente, nombreDePlan, type AvisoConsumoVista } from '../../lib/planes';
+import { modoDelComercio, type ModoComercio } from '../../lib/modoComercio';
+import { corteDe, fechaCorta, type Corte } from '../../lib/prepago';
+import { CALLABLES, ETIQUETA_TITULARIDAD, rutaDe, titularidadDe, type RutaWhatsApp } from '../../lib/ejes';
+import { CortePrepago } from '../componentes/CortePrepago';
+import { mensajeDeError } from '../lib/negocios';
+import { useCompuertaDelCorte } from '../lib/lecturas';
 
 interface Tenant { id: string; nombre?: unknown; estado?: unknown; plan?: unknown }
 

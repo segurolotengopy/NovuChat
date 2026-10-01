@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getDocs, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { useSesion } from '../lib/contexto';
-import { TextoSeguro } from '../componentes/TextoSeguro';
-import { descargarCsv } from '../lib/exportar';
+import { db } from '../../lib/firebase';
+import { useSesion } from '../../lib/contexto';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { descargarCsv } from '../../lib/exportar';
 import {
   construirConsulta, POR_PAGINA, RESULTADOS, TIPOS, tenantDe,
   type Filtros, type Resultado, type Tipo,
-} from '../lib/bitacora';
+} from '../../lib/bitacora';
 
 interface Fila {
   id: string;
