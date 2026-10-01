@@ -199,7 +199,9 @@ function fechaEscrita(textoLibre) {
   if (/\bpasado manana\b/.test(sinM)) return { dicho: true, fecha: sumarDias(hoyF, 2) };
   if (/\bmanana\b/.test(sinM)) return { dicho: true, fecha: sumarDias(hoyF, 1) };
   if (/\bhoy\b/.test(nf)) return { dicho: true, fecha: hoyF };
-  if (/\b(semana|proxim[oa]|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/.test(nf)) return { dicho: true, fecha: null };
+  // Un mes SUELTO no es un día: «Abril», «Mayo», «Junio» son nombres frecuentes. El mes cuenta solo con número
+  // delante («2 de abril»), que ya se leyó arriba.
+  if (/\b(semana|proxim[oa])\b/.test(nf)) return { dicho: true, fecha: null };
   return { dicho: false, fecha: null };
 }
 const escrita = fechaEscrita(texto);
@@ -270,7 +272,7 @@ if (est.paso === 'ofreciendo_huecos' && (est.ultimaOferta || []).length > 0 && !
 const ofertaPrevia = est.paso === 'ofreciendo_huecos' ? (est.ultimaOferta || []) : [];
 const diaHeredado = ofertaPrevia.length ? fechaDe(ofertaPrevia[0]) : (est.paso === 'ofreciendo_huecos' && est.ultimaFechaPedida ? est.ultimaFechaPedida : null);
 const sinFranjaManana = cnNorm(texto).replace(/\b(de|en|por|a) la manana\b/g, ' ');
-const dijoDia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana|pasado manana|semana|proxim[oa]|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\bel \d{1,2}\b|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/.test(sinFranjaManana);
+const dijoDia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo|hoy|manana|pasado manana|semana|proxim[oa])\b|\b\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b|\bel \d{1,2}\b|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b/.test(sinFranjaManana);
 // Una fecha CONCRETA escrita por el paciente manda sobre la del modelo (el modelo la deja en null fuera de su tabla).
 // La numérica («el 30 de octubre», «30/10», «el 30») siempre; un día de la semana, «hoy» o «mañana», solo si el
 // modelo no dio fecha (para «el jueves» dicho un jueves decide el modelo, como antes).

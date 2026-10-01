@@ -2602,3 +2602,28 @@ describe('Agenda mínima v0: el día escrito también manda por el camino del mo
     expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(JUEVES, '15:00') });
   });
 });
+
+describe('Agenda mínima v0: un nombre que también es mes no cambia el día', () => {
+  const ofertaJueves = (): ReturnType<typeof mundo> => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'quiero cita el jueves'));
+    m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+    m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+    return m;
+  };
+  for (const nombre of ['Abril Gómez Pérez', 'Mayo Quispe Mamani', 'María de Junio Rojas']) {
+    it(`«a las tres, es ${nombre}» elige las 15:00 del jueves ofrecido (el mes del nombre no es un día)`, () => {
+      const m = ofertaJueves();
+      m.gemini.extraer = extraccion({ fechaPreferida: null, horaPreferida: '15:00', pacientes: [nombre] });
+      m.turno(texto(MAMA, `a las tres, es ${nombre}`));
+      expect(m.calendario.eventos).toHaveLength(1);
+      expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(JUEVES, '15:00') });
+    });
+  }
+  it('NIEGA: «el 2 de abril a las tres» sí es otro día: no elige el jueves', () => {
+    const m = ofertaJueves();
+    m.gemini.extraer = extraccion({ fechaPreferida: null, horaPreferida: '15:00', pacientes: ['Ana Pérez Gómez'] });
+    m.turno(texto(MAMA, 'el 2 de abril a las tres, es Ana Pérez Gómez'));
+    expect(m.calendario.eventos.filter((e) => String((e['start'] as J)['dateTime']).startsWith(JUEVES))).toHaveLength(0);
+  });
+});
