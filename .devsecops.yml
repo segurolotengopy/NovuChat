@@ -105,8 +105,11 @@ seguridad:
         actions/checkout (`ref:`) y a una variable de entorno (TAG) que el
         shell usa entre comillas, y antes de desplegar a produccion se exige
         que sea un tag existente (refs/tags/), sin guion y ancestro de main,
-        y que quien lo lanza este en APROBADORES_PROD; vacio, falla. El camino
-        a dev (destino=dev) construye y despliega github.ref, no el tag. Solo
+        y que quien lo lanza este en APROBADORES_PROD; vacio, falla. Con
+        destino=dev y un tag cargado, calidad y seguridad analizan ese tag pero
+        construir-staging y desplegar-dev construyen y despliegan github.ref: el
+        tag no cambia lo que se despliega, pero si lo que se verifico (pendiente,
+        se corrige en otro PR). Solo
         quien tiene permiso de escritura lanza un workflow_dispatch. Quitar los
         inputs obligaria a editar el workflow en cada release o despliegue
         manual.
