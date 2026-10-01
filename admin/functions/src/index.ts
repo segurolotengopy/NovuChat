@@ -82,7 +82,7 @@ export { comprobarImagenDelCatalogo, recomprobarImagen } from './modulos/product
 // MINI INVENTARIO. El descuento por venta lo hace el checkout; acá van los dos
 // movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
 // pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
-export { ajustarStock, dejarDeControlarStock } from './inventario.js';
+export { ajustarStock, dejarDeControlarStock } from './modulos/inventario/inventario.js';
 // FLUJO DE CAPTACIÓN. Comprueba, a pedido de la consola, que el archivo de
 // planes que el asistente manda por WhatsApp se pueda mandar: responde, es del
 // tipo declarado y cabe en los límites de Meta. El porqué en `captacion.ts`.

@@ -23,7 +23,7 @@
     },
     {
       "desde": "admin/functions/src/catalogoWeb.ts",
-      "hacia": "admin/functions/src/inventario.ts",
+      "hacia": "admin/functions/src/modulos/inventario/inventario.ts",
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
     },
     {

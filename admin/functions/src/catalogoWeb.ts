@@ -52,7 +52,7 @@ import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { defineString } from 'firebase-functions/params';
 import { REGION } from './core/region.js';
-import { descontarPedido, hayParaVender } from './inventario.js';
+import { descontarPedido, hayParaVender } from './modulos/inventario/inventario.js';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
 // `enmascarar` sale de `ingesta.ts` y no de `firma.ts`, que tiene la suya con
 // otro recorte. Las dos pasan la regla, pero un mismo teléfono se vería
