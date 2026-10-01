@@ -283,6 +283,10 @@ PY
       echo "  ✗ Ya existe $ENV_NUEVO: no se pisa (use --forzar). Ponga a mano N8N_WORKFLOW_ID=$NUEVO_ID"
       exit 1
     fi
+    # Con --forzar el archivo puede existir: la umask no le cambia el modo, y la
+    # redireccion lo trunca y le escribe los secretos con el modo que tenia. Se
+    # cierra antes (revision de seguridad del PR #279).
+    [[ -e "$ENV_NUEVO" ]] && chmod 600 "$ENV_NUEVO"
     ( umask 077
       { grep -v -E '^(N8N_WORKFLOW_ID|N8N_WEBHOOK_PATH|N8N_WEBHOOK_URL)=' "$ENV_FILE"
         echo "N8N_WORKFLOW_ID=$NUEVO_ID"; } > "$ENV_NUEVO" )
