@@ -1,0 +1,2160 @@
+{
+  "name": "NovuChat — Agenda mínima (v0)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 60
+  },
+  "nodes": [
+    {
+      "id": "trigger-whatsapp",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        200
+      ],
+      "parameters": {
+        "updates": [
+          "messages"
+        ]
+      },
+      "notes": "SOLO en agenda-minima.v0.json (produccion). El de prueba no lo tiene: activarlo le quita el webhook a otro flujo de la misma app de Meta."
+    },
+    {
+      "id": "entrada-prueba",
+      "name": "Entrada de prueba",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -300,
+        420
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "REEMPLAZAR_RUTA_DE_PRUEBA",
+        "authentication": "none",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "notes": "SOLO en agenda-minima.prueba.json. Recibe la misma carga que el disparador de WhatsApp (dentro de `body`) y, opcionales, modoPrueba, calendarioDePrueba, telefonoDePrueba y enviarDeVerdad. La ruta es una URL de capacidad: va como marcador y el publicador de pruebas la reemplaza."
+    },
+    {
+      "id": "carga-entrada",
+      "name": "Carga de entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/carga-de-entrada.js"
+      },
+      "notes": "Unifica las tres formas de entrada (disparador, Webhook y carga completa de Meta) y lee el modo prueba SOLO del nodo «Entrada de prueba»."
+    },
+    {
+      "id": "es-mensaje",
+      "name": "¿Es un mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Array.isArray($json.messages) && $json.messages.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Filtro de eventos: solo pasan cargas con `messages`. Los acuses de estado se descartan."
+    },
+    {
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "calendarioForzado",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "a2",
+              "name": "waGraphVersion",
+              "type": "string",
+              "value": "v26.0"
+            },
+            {
+              "id": "a3",
+              "name": "respaldoNumeroRecepcion",
+              "type": "string",
+              "value": "REEMPLAZAR_NUMERO_RECEPCION_BELLIDO"
+            },
+            {
+              "id": "a4",
+              "name": "respaldoNumeroDoctor",
+              "type": "string",
+              "value": "REEMPLAZAR_NUMERO_DOCTOR_BELLIDO"
+            },
+            {
+              "id": "b_nombreNegocio",
+              "name": "nombreNegocio",
+              "type": "string",
+              "value": "Dr. Andres Bellido — Pediatra"
+            },
+            {
+              "id": "b_descripcion",
+              "name": "descripcion",
+              "type": "string",
+              "value": "Consultorio de pediatría, neonatología y nutrición infantil en La Paz, a cargo del Dr. Andres Bellido. Se atiende con cita previa y se agenda por este mismo WhatsApp. Quien escribe casi siempre es el papá o la mamá de un niño."
+            },
+            {
+              "id": "b_horarioAtencion",
+              "name": "horarioAtencion",
+              "type": "string",
+              "value": "REEMPLAZAR_HORARIO_ATENCION_BELLIDO"
+            },
+            {
+              "id": "b_mensajeCierre",
+              "name": "mensajeCierre",
+              "type": "string",
+              "value": "Gracias por escribirnos. Si necesitas algo más, escríbeme por acá."
+            },
+            {
+              "id": "b_mensajeErrorTemporal",
+              "name": "mensajeErrorTemporal",
+              "type": "string",
+              "value": "Disculpa, tuve un problema técnico momentáneo. ¿Me repites lo último?"
+            },
+            {
+              "id": "b_mensajeReservaNoConfirmada",
+              "name": "mensajeReservaNoConfirmada",
+              "type": "string",
+              "value": "Disculpa, ese horario ya estaba tomado y no pude dejar tu cita registrada. Te paso con recepcion para que lo resuelva contigo ahora mismo."
+            },
+            {
+              "id": "b_tratamiento",
+              "name": "tratamiento",
+              "type": "string",
+              "value": "Tutea siempre a quien escribe (tú, te, ti). Nunca uses \"usted\", \"le\" ni \"don/doña\", y nunca vosees: quien escribe es el papá o la mamá de un niño y el trato es cercano."
+            },
+            {
+              "id": "b_estiloEmojis",
+              "name": "estiloEmojis",
+              "type": "string",
+              "value": "Usa POCOS emojis: como mucho uno por mensaje, y solo cuando aporte; al principio o al final de una frase, nunca dentro de un precio ni de un horario. Repertorio sugerido: 👶 bebé · 🩺 consulta · 📅 día · ⏰ hora · ✅ cita confirmada · 👋 saludo. Si el mensaje habla de un síntoma, de una urgencia o de una mala noticia, no pongas ningún emoji."
+            },
+            {
+              "id": "b_mensajeComercioSuspendido",
+              "name": "mensajeComercioSuspendido",
+              "type": "string",
+              "value": "En este momento no podemos atenderte por este medio. Por favor comunícate directamente con el consultorio. Gracias por escribirnos."
+            },
+            {
+              "id": "b_prefijosPermitidos",
+              "name": "prefijosPermitidos",
+              "type": "string",
+              "value": "591"
+            },
+            {
+              "id": "b_direccion",
+              "name": "direccion",
+              "type": "string",
+              "value": "Calle Campos esq. Av. 6 de Agosto, Edif. Iturri, piso 1, of. 1A, La Paz"
+            },
+            {
+              "id": "b_politicaCancelacion",
+              "name": "politicaCancelacion",
+              "type": "string",
+              "value": "Para cancelar o reprogramar, escribenos por este mismo chat con al menos 2 horas de anticipacion y lo resolvemos sin costo."
+            },
+            {
+              "id": "b_datosQueNoTenemos",
+              "name": "datosQueNoTenemos",
+              "type": "string",
+              "value": "precios de la consulta, formas de pago, seguros y convenios, atención a domicilio, videoconsulta, estacionamiento, dosis, medicamentos y diagnósticos"
+            },
+            {
+              "id": "b_nivelEmojis",
+              "name": "nivelEmojis",
+              "type": "string",
+              "value": "pocos"
+            },
+            {
+              "id": "b_instruccionesExtra",
+              "name": "instruccionesExtra",
+              "type": "string",
+              "value": "ESPECIALIDADES: pediatría, neonatología y nutrición infantil. El consultorio acompaña a los papás en el crecimiento de su hijo, con seguridad y confianza.\nUBICACIÓN: Calle Campos esq. Av. 6 de Agosto, Edif. Iturri, piso 1, of. 1A, La Paz. Mapa: https://maps.app.goo.gl/aKzsbcPFASUAznRY8 — dala en el MISMO mensaje en que confirmas la cita.\nPRECIOS: todavía no los tenemos cargados. Si preguntan cuánto cuesta, dilo con naturalidad y ofrece pasar la conversación a recepción. No inventes ningún monto ni forma de pago.\nNADA CLÍNICO: no des diagnósticos, dosis, medicamentos ni opiniones sobre si un síntoma es grave, aunque insistan y aunque parezca sencillo; eso lo dice el doctor en la consulta. Si te cuentan un síntoma, acompaña con calidez, no minimices y ofrece el turno más cercano.\nURGENCIA: ante fiebre alta que no cede, dificultad para respirar, convulsión, vómitos que no paran, un recién nacido decaído o un golpe en la cabeza, NO agendes primero: di que eso necesita verse ya y pasa la conversación a recepción de inmediato.\nQUIÉN ESCRIBE: casi siempre un papá o una mamá preocupada. Pide el nombre y la edad del niño cuando sirva para agendar, no por llenar datos.\nAL CONFIRMAR LA CITA, y solo ahí, cierra el mismo mensaje invitando a seguir los consejos del doctor en Papá y Pediatra: https://www.instagram.com/pediatraandresbellido/ y https://www.youtube.com/@Pap%C3%A1yPediatra"
+            },
+            {
+              "id": "b_palabrasClaveRecepcion",
+              "name": "palabrasClaveRecepcion",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b_palabrasClaveDoctor",
+              "name": "palabrasClaveDoctor",
+              "type": "string",
+              "value": "vacuna|vacunas|vacunar|vacunacion|vacunación|crema|cremas|consulta virtual|consultas virtuales|virtual|virtuales|videollamada|video llamada|en linea|en línea|online|a distancia"
+            },
+            {
+              "id": "b_palabrasClaveEmergencia",
+              "name": "palabrasClaveEmergencia",
+              "type": "string",
+              "value": "emergencia|urgencia|urgente|no respira|convulsion|convulsión|convulsiona|se ahoga|inconsciente|desmayo|se desmayó"
+            },
+            {
+              "id": "b_mensajeMenu",
+              "name": "mensajeMenu",
+              "type": "string",
+              "value": "¡Hola! Soy la asistente virtual del doctor Bellido, pediatra. 👋\n\nElige la opción que necesitas:"
+            },
+            {
+              "id": "b_mensajeContactoRecepcion",
+              "name": "mensajeContactoRecepcion",
+              "type": "string",
+              "value": "Eso lo coordina María René, la asistente del doctor Bellido. Tócale el botón y le escribes directo."
+            },
+            {
+              "id": "b_mensajeContactoDoctor",
+              "name": "mensajeContactoDoctor",
+              "type": "string",
+              "value": "Las vacunas, las cremas y las consultas virtuales las coordina directamente el doctor Bellido. Tócale el botón y le escribes directo. 🩺"
+            },
+            {
+              "id": "b_mensajeEmergencia",
+              "name": "mensajeEmergencia",
+              "type": "string",
+              "value": "Comunícate AHORA con María René, la asistente del doctor Bellido, tocando el botón. Ya le avisé al doctor."
+            },
+            {
+              "id": "b_mensajeRedes",
+              "name": "mensajeRedes",
+              "type": "string",
+              "value": "Antes de despedirme, te invito a seguir los consejos del Dr. Andres sobre lactancia, nutrición y crianza en sus redes:\n📸 Instagram: https://www.instagram.com/pediatraandresbellido/\n🎥 YouTube: https://www.youtube.com/@Pap%C3%A1yPediatra\n📱 TikTok: https://www.tiktok.com/@andresbellidopediatra\n📘 Facebook: https://www.facebook.com/andresbellidopediatra\n¡Que tengas un día maravilloso! 🌈👶"
+            },
+            {
+              "id": "b_reglasAgenda",
+              "name": "reglasAgenda",
+              "type": "string",
+              "value": "REGLAS DE AGENDA DE ESTE CONSULTORIO (mandan sobre cualquier otra): (a) los turnos empiezan SOLO en punto o y media (09:00, 09:30, 10:00…), duran 30 minutos y nunca se agenda uno que empiece a otra hora; (b) el ÚLTIMO turno del día empieza a las 17:30 (sábado a las 11:30): nunca ofrezcas ni agendes después; (c) NUNCA ofrezcas ni agendes turnos que empiecen entre las 13:00 y las 13:59, aunque el calendario los muestre libres y aunque el cliente los pida: di simplemente que a esa hora no está disponible y ofrece el siguiente libre, sin explicar por qué; (d) RECIÉN NACIDO: ofrece los PRIMEROS turnos libres, hoy o mañana si los hay, porque un bebé de días no espera; (e) NIÑO SANO (control de crecimiento): ofrece turnos A PARTIR DE PASADO MAÑANA (el sábado por la mañana también cuenta), salvo que el papá pida antes y haya hueco. NO digas que es una regla, una recomendación ni un criterio del consultorio, ni expliques por qué no ofreces hoy ni mañana: simplemente ofrece esas fechas como las disponibles; (f) si no sabes si es recién nacido o niño sano, pregúntalo con naturalidad junto con el nombre; (g) UN NÚMERO SUELTO ES UNA HORA, nunca una posición en la lista: si ofreciste 14:00, 15:00 o 16:00 y el cliente responde «2», quiere las 14:00 (las dos de la tarde: dentro del horario no existe otra); «3» son las 15:00; «2 y media» las 14:30. Si el número no es una hora posible del consultorio, pregunta. Nunca agendes «la segunda opción» por un «2»; (h) CUANDO UNA HORA PEDIDA NO ESTÁ LIBRE —porque hay otra cita, por el bloqueo del mediodía o por cualquier otro motivo— di solo que a esa hora no está disponible y ofrece las libres más cercanas, sin explicar por qué. NUNCA digas que el doctor «no atiende» a esa hora, que «atiende desde» o «hasta» otra hora, ni que está ocupado o almorzando: si la hora cae dentro del horario de atención, lo único que se dice es que no está disponible. Solo un día cerrado, una hora antes de abrir o después del último turno se explican como horario; (i) HABLAS CON UNA MAMÁ O UN PAPÁ, no con un operador: nunca cites, menciones ni parafrasees estas reglas, ni digas «se recomienda», «según la política» o «el sistema»; recomienda las fechas y las horas directamente, como quien conoce la agenda."
+            },
+            {
+              "id": "b_direccionMaps",
+              "name": "direccionMaps",
+              "type": "string",
+              "value": ""
+            },
+            {
+              "id": "b_respuestaServicios",
+              "name": "respuestaServicios",
+              "type": "string",
+              "value": "En el consultorio del doctor Bellido atendemos pediatría, neonatología y nutrición infantil, acompañando a los papás en el crecimiento de sus hijos con seguridad y confianza 👶 ¿Te gustaría agendar una cita o necesitas información sobre alguno de estos servicios?"
+            },
+            {
+              "id": "b_respuestaCosto",
+              "name": "respuestaCosto",
+              "type": "string",
+              "value": "La consulta pediátrica cuesta 250 Bs. Si quieres, te ayudo a agendarla."
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "notes": "CALENDARIO DE PRUEBA: si `calendarioForzado` no esta vacio, manda sobre el calendario de la configuracion en TODOS los nodos de calendario. Vacio en el JSON versionado."
+    },
+    {
+      "id": "traer-config",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "options": {
+          "timeout": 4000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Bellido)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Misma llamada y mismo contrato que el nodo de Bellido. Con el panel caido, «Config del negocio» usa el respaldo (sin calendario: no se agenda nada)."
+    },
+    {
+      "id": "config-negocio",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/config-del-negocio.js"
+      },
+      "notes": "Todo lo configurable por negocio. 200 = panel; 409 = suspendido; otra cosa = respaldo local sin datos reales (`panelSinRespuesta`). Resuelve el calendario y el modo prueba."
+    },
+    {
+      "id": "interpretar",
+      "name": "Interpretar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/interpretar-entrada.js"
+      },
+      "notes": "Normaliza text, interactive (list_reply antes que button_reply), button, audio, image, document y cualquier otro tipo."
+    },
+    {
+      "id": "reportar-ent-si",
+      "name": "¿Reportar? (entrante)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba no se llama a la ingesta."
+    },
+    {
+      "id": "reportar-entrante",
+      "name": "Reportar mensaje (entrante)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Bellido)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Una llamada por cada mensaje entrante, ANTES de la rama del modelo (arriba en el lienzo): si no, el aviso de uso extendido no sale nunca. Nada de lo que sigue depende de su respuesta salvo, si la trae, `atencion` y `servicio`."
+    },
+    {
+      "id": "comercio-operativo",
+      "name": "¿Comercio operativo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const r = $json || {}; const cortado = !!(r.servicio && r.servicio.estado === 'cortado'); return c.estadoComercio === 'operativo' && !cortado; })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Si el reporte no devuelve `servicio` (o esta desactivado), comercio operativo segun la configuracion."
+    },
+    {
+      "id": "comercio-no-operativo",
+      "name": "Comercio no operativo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/comercio-no-operativo.js"
+      },
+      "notes": "Texto neutro, sin revelar el motivo. Mismos textos que Bellido."
+    },
+    {
+      "id": "atencion-normal",
+      "name": "¿Atención normal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const a = ($json && $json.atencion && typeof $json.atencion === 'object') ? $json.atencion.estado : c.atencionEstado; return !['operador', 'bloqueado'].includes(a); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Sin `atencion` en la respuesta del reporte, se toma la de `configuracionFlujo`; sin ninguna, normal."
+    },
+    {
+      "id": "uso-extendido",
+      "name": "Uso extendido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/uso-extendido.js"
+      },
+      "notes": "Pasado el umbral de operador: aviso fijo (y aviso a recepcion la primera vez). Pasado el de bloqueo: nada. No se llama al modelo."
+    },
+    {
+      "id": "es-audio",
+      "name": "¿Es audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2360,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Interpretar entrada').first().json.esAudio === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "media-url",
+      "name": "Obtener URL del medio",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        460
+      ],
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $('Interpretar entrada').first().json.mediaId }}"
+      },
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp Consultorio Bellido (envío)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "GET /{media-id}: devuelve url, mime_type y file_size, no el archivo. No envia nada."
+    },
+    {
+      "id": "descargar-medio",
+      "name": "Descargar medio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2840,
+        460
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "WhatsApp Consultorio Bellido (envío)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Baja el archivo CON el token y lo deja como binario `data`. No se guarda en ningun lado."
+    },
+    {
+      "id": "transcribir",
+      "name": "Transcribir audio",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        3080,
+        460
+      ],
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.5-flash-lite"
+        },
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "simplify": true,
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "El audio muere aca: lo que sigue es texto. Si falla, «Decidir turno» pide que lo escriban."
+    },
+    {
+      "id": "decidir",
+      "name": "Decidir turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3320,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/decidir-turno.js"
+      },
+      "notes": "Todo lo que no necesita entender lenguaje se decide con codigo: menu, emergencia, derivaciones, botones, «ya»/«si». Solo el texto libre va a la extraccion."
+    },
+    {
+      "id": "extraer-si",
+      "name": "¿Extraer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3560,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Decidir turno').first().json.accion === 'extraer' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "extraer",
+      "name": "Extraer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3800,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoExtraccion) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "notes": "Extraccion en JSON (responseSchema), 200 tokens. El modelo entiende el mensaje; no decide horarios ni lee el calendario."
+    },
+    {
+      "id": "plan",
+      "name": "Plan del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4040,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/plan-del-turno.js"
+      },
+      "notes": "Valida lo que dijo el modelo, decide el plan y el rango del calendario a leer."
+    },
+    {
+      "id": "leer-si",
+      "name": "¿Leer agenda?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4280,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!$('Plan del turno').first().json.leer }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "leer-agenda",
+      "name": "Leer agenda",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        4520,
+        300
+      ],
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Plan del turno').first().json.leer.desde }}",
+        "timeMax": "={{ $('Plan del turno').first().json.leer.hasta }}",
+        "options": {
+          "timeMin": "={{ $('Plan del turno').first().json.leer.desde }}",
+          "timeMax": "={{ $('Plan del turno').first().json.leer.hasta }}",
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "notes": "Un solo calendario, el de `Config del negocio`."
+    },
+    {
+      "id": "resolver",
+      "name": "Resolver con agenda",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4760,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/resolver-con-agenda.js"
+      },
+      "notes": "Aca se calcula: huecos, validacion del hueco elegido (candado, primera mitad), cita a crear."
+    },
+    {
+      "id": "crear-si",
+      "name": "¿Crear cita?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5000,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!$('Resolver con agenda').first().json.crear }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "crear-evento",
+      "name": "Crear evento",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        5240,
+        160
+      ],
+      "parameters": {
+        "operation": "create",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
+        },
+        "start": "={{ $('Resolver con agenda').first().json.crear.inicio }}",
+        "end": "={{ $('Resolver con agenda').first().json.crear.fin }}",
+        "additionalFields": {
+          "summary": "={{ $('Resolver con agenda').first().json.crear.titulo }}",
+          "description": "={{ $('Resolver con agenda').first().json.crear.descripcion }}"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Sin reintentos: un reintento podria duplicar la cita. El titulo lo arma el codigo: «Apellidos, Nombres (CNS)» o «(RN)»."
+    },
+    {
+      "id": "releer-hueco",
+      "name": "Releer el hueco",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        5480,
+        160
+      ],
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
+        },
+        "returnAll": true,
+        "timeMin": "={{ $('Resolver con agenda').first().json.leer.desde }}",
+        "timeMax": "={{ $('Resolver con agenda').first().json.leer.hasta }}",
+        "options": {
+          "timeMin": "={{ $('Resolver con agenda').first().json.leer.desde }}",
+          "timeMax": "={{ $('Resolver con agenda').first().json.leer.hasta }}",
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "notes": "CANDADO, segunda mitad: se vuelve a leer DESPUES de crear. No se omite nunca."
+    },
+    {
+      "id": "candado",
+      "name": "Candado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5720,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/candado.js"
+      },
+      "notes": "Si hay otro evento que se cruza, se borra el PROPIO. Si la relectura falla, tambien. Reagendar: la cita anterior solo se borra si el candado paso."
+    },
+    {
+      "id": "cruce-si",
+      "name": "¿Hay cruce?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5960,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!$('Candado').first().json.deshacerId }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "deshacer-cita",
+      "name": "Deshacer cita",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        6200,
+        160
+      ],
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
+        },
+        "eventId": "={{ $('Candado').first().json.deshacerId }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "cierre-si",
+      "name": "¿Registrar cierre?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Candado').first().json.registrarCierre === true && $('Config del negocio').first().json.modoPrueba !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba no se llama a registrarCierre."
+    },
+    {
+      "id": "registrar-cierre",
+      "name": "Registrar cierre (cita)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6680,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/registrarCierre",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tipo: 'cita', referencia: $('Candado').first().json.eventoCreadoId, telefono: $('Interpretar entrada').first().json.from, nombreCliente: $('Interpretar entrada').first().json.nombrePerfil || '' }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Bellido)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Registra el CIERRE (modelo comercial): no se omite. Solo con la relectura limpia."
+    },
+    {
+      "id": "borrar-si",
+      "name": "¿Borrar cita?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6920,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!$('Candado').first().json.borrarId }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Cancelar (cita elegida por boton) o reagendar (la anterior, DESPUES del candado)."
+    },
+    {
+      "id": "borrar-evento",
+      "name": "Borrar evento",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        7160,
+        160
+      ],
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Config del negocio').first().json.calendarioId }}"
+        },
+        "eventId": "={{ $('Candado').first().json.borrarId }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "redactar-si",
+      "name": "¿Redactar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7400,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Candado').first().json.redactar === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "redactar",
+      "name": "Redactar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7640,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Candado').first().json.cuerpoRedaccion) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "notes": "Solo texto, 300 tokens. Recibe los huecos YA calculados. Despues, «Armar mensajes» comprueba que no nombre otra hora."
+    },
+    {
+      "id": "armar",
+      "name": "Armar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7880,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/armar-mensajes.js"
+      },
+      "notes": "Un item por mensaje saliente. Es el unico lugar donde se escribe el estado por telefono."
+    },
+    {
+      "id": "enviar-si",
+      "name": "¿Enviar de verdad?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return $json.sinMensajes !== true && (c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba)); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba con enviarDeVerdad falsa el envio se saltea y los mensajes quedan como enviados."
+    },
+    {
+      "id": "enviar",
+      "name": "Enviar a WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8360,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Bellido (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Un solo nodo para todo (texto, botones, lista, enlace, plantilla). El phoneNumberId sale de metadata.phone_number_id del mensaje entrante. Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden (30/09)."
+    },
+    {
+      "id": "fallo-si",
+      "name": "¿Falló el envío?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && $json.error) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo mira un campo `error` explicito; sin el, no fallo."
+    },
+    {
+      "id": "enviar-respaldo",
+      "name": "Enviar respaldo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8840,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Armar mensajes').item.json.waGraphVersion || 'v26.0' }}/{{ $('Armar mensajes').item.json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Graph WhatsApp Bellido (Bearer)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Si Meta rechaza el interactivo o la plantilla, sale el mismo contenido como texto. Al doctor: si falla la plantilla `alerta_emergencia`, sale el texto. Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden (30/09)."
+    },
+    {
+      "id": "reportar-sal-si",
+      "name": "¿Reportar? (saliente)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        9080,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Armar mensajes').item.json.reportar === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo lo que se envio AL PACIENTE se reporta, y no en modo prueba."
+    },
+    {
+      "id": "reportar-saliente",
+      "name": "Reportar mensaje (saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9320,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; return JSON.stringify({ telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '', evento: m.evento }); })() }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "NovuChat ingesta (Bellido)"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Una llamada por cada mensaje enviado al paciente. Lee el texto de «Armar mensajes», no de la respuesta del envio."
+    },
+    {
+      "id": "resumen",
+      "name": "Resumen del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9560,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/resumen-del-turno.js"
+      },
+      "notes": "Ultimo nodo. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes salientes y resumen del turno."
+    },
+    {
+      "id": "audio-tamano",
+      "name": "¿Audio de tamaño aceptable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2720,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "t1",
+              "leftValue": "={{ Number($json.file_size) > 0 && Number($json.file_size) <= 720000 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Tope de 720.000 bytes (unos 3 minutos de nota de voz) ANTES de descargar y transcribir: una nota enorme no se transcribe con la credencial prepago. Sin tamaño (el nodo anterior falló o está desactivado) tampoco: el audio sigue sin transcripción y Decidir turno pide que lo escriba."
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada de prueba": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carga de entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Es un mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es un mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Interpretar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpretar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (entrante)": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Comercio operativo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar mensaje (entrante)": {
+      "main": [
+        [
+          {
+            "node": "¿Comercio operativo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comercio operativo?": {
+      "main": [
+        [
+          {
+            "node": "¿Atención normal?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Comercio no operativo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comercio no operativo": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Atención normal?": {
+      "main": [
+        [
+          {
+            "node": "¿Es audio?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Uso extendido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uso extendido": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es audio?": {
+      "main": [
+        [
+          {
+            "node": "Obtener URL del medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener URL del medio": {
+      "main": [
+        [
+          {
+            "node": "¿Audio de tamaño aceptable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar medio": {
+      "main": [
+        [
+          {
+            "node": "Transcribir audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir audio": {
+      "main": [
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir turno": {
+      "main": [
+        [
+          {
+            "node": "¿Extraer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Extraer?": {
+      "main": [
+        [
+          {
+            "node": "Extraer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer": {
+      "main": [
+        [
+          {
+            "node": "Plan del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan del turno": {
+      "main": [
+        [
+          {
+            "node": "¿Leer agenda?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Leer agenda?": {
+      "main": [
+        [
+          {
+            "node": "Leer agenda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resolver con agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer agenda": {
+      "main": [
+        [
+          {
+            "node": "Resolver con agenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver con agenda": {
+      "main": [
+        [
+          {
+            "node": "¿Crear cita?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Crear cita?": {
+      "main": [
+        [
+          {
+            "node": "Crear evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Candado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear evento": {
+      "main": [
+        [
+          {
+            "node": "Releer el hueco",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Releer el hueco": {
+      "main": [
+        [
+          {
+            "node": "Candado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Candado": {
+      "main": [
+        [
+          {
+            "node": "¿Hay cruce?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay cruce?": {
+      "main": [
+        [
+          {
+            "node": "Deshacer cita",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Registrar cierre?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deshacer cita": {
+      "main": [
+        [
+          {
+            "node": "¿Registrar cierre?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Registrar cierre?": {
+      "main": [
+        [
+          {
+            "node": "Registrar cierre (cita)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Borrar cita?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar cierre (cita)": {
+      "main": [
+        [
+          {
+            "node": "¿Borrar cita?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Borrar cita?": {
+      "main": [
+        [
+          {
+            "node": "Borrar evento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Redactar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Borrar evento": {
+      "main": [
+        [
+          {
+            "node": "¿Redactar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Redactar?": {
+      "main": [
+        [
+          {
+            "node": "Redactar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redactar": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar mensajes": {
+      "main": [
+        [
+          {
+            "node": "¿Enviar de verdad?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar de verdad?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar a WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló el envío?": {
+      "main": [
+        [
+          {
+            "node": "Enviar respaldo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar respaldo": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (saliente)": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar mensaje (saliente)": {
+      "main": [
+        [
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Audio de tamaño aceptable?": {
+      "main": [
+        [
+          {
+            "node": "Descargar medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

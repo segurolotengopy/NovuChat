@@ -479,48 +479,10 @@ EOF
 # script vive versionado en el repositorio.
 
 # -----------------------------------------------------------------------------
-escribir "scripts/enviar-prueba.sh" <<'EOF'
-#!/usr/bin/env bash
-# Envía un mensaje de texto de prueba al número registrado, sin pasar por n8n.
-# Aísla si el problema está en el canal de Meta o en el flujo.
-# Requiere que usted le haya escrito al número en las últimas 24 h.
-set -euo pipefail
-cd "$(dirname "$0")/.." || exit 1
-[[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
-set -a; source .env; set +a
-G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
-TEXTO="${1:-NovuChat: prueba de canal $(date +%H:%M).}"
-
-curl -s -X POST "${G}/${WA_PHONE_ID}/messages" \
-  -H "Authorization: Bearer ${WA_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "{\"messaging_product\":\"whatsapp\",\"to\":\"${WA_TO}\",\"type\":\"text\",\"text\":{\"body\":$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$TEXTO")}}" \
-  | python3 -m json.tool
-EOF
-chmod +x "$DIR/scripts/enviar-prueba.sh" 2>/dev/null || true
-
-# -----------------------------------------------------------------------------
-escribir "scripts/subir-qr.sh" <<'EOF'
-#!/usr/bin/env bash
-# Sube el QR de demostración a la Cloud API y devuelve un media ID (30 días).
-# Evita tener que publicar la imagen en una URL pública (Demo B).
-# El media ID queda ligado al número que lo sube.
-set -euo pipefail
-cd "$(dirname "$0")/.." || exit 1
-[[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
-set -a; source .env; set +a
-IMG="${1:-Demo-Recursos/qr-demo.png}"
-[[ -f "$IMG" ]] || { echo "✗ No existe $IMG"; exit 1; }
-
-curl -s -X POST "https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}/${WA_PHONE_ID}/media" \
-  -H "Authorization: Bearer ${WA_TOKEN}" \
-  -F "messaging_product=whatsapp" \
-  -F "file=@${IMG};type=image/png" | python3 -m json.tool
-
-echo
-echo "Pegue el id en el nodo 'Enviar QR (imagen DEMO)' cambiando el origen de Link a ID."
-EOF
-chmod +x "$DIR/scripts/subir-qr.sh" 2>/dev/null || true
+# scripts/enviar-prueba.sh y scripts/subir-qr.sh TAMPOCO (revisión de seguridad
+# del #265, segunda parte): escriben en Graph con el token del .env y ahora
+# pasan por el mismo candado; las plantillas de acá eran las versiones viejas,
+# con el token en los argumentos de curl.
 
 echo
 azul "Listo."

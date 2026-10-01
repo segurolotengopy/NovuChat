@@ -86,8 +86,9 @@ if (VERTEX) {
 function ejecucion(id) {
   const base = String(env['N8N_BASE_URL'] || '').replace(/\/+$/, '');
   const url = `${base}/api/v1/executions/${id}?includeData=true`;
-  const bruto = execFileSync('curl', ['-fsS', '-H', `X-N8N-API-KEY: ${env['N8N_API_KEY']}`, url],
-    { maxBuffer: 256 * 1024 * 1024 }).toString();
+  // La clave, por la entrada estándar: en los argumentos la ve todo usuario en `ps`.
+  const bruto = execFileSync('curl', ['-fsS', '-H', '@-', url],
+    { input: `X-N8N-API-KEY: ${env['N8N_API_KEY']}`, maxBuffer: 256 * 1024 * 1024 }).toString();
   return JSON.parse(bruto);
 }
 function salidaDeNodo(ej, nombre) {

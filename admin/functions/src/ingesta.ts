@@ -1,5 +1,5 @@
 import { REGION } from './core/region.js';
-import { senaVencidaPorTiempo } from './retencion.js';
+import { senaVencidaPorTiempo } from './modulos/agenda/retencion.js';
 import { existencias } from './inventario.js';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
@@ -35,7 +35,7 @@ import {
 // El cobro de una VENTA: el importe no vive en la configuración, se fija cuando
 // sale el QR. `cobroVenta.ts` no importa nada de acá en tiempo de ejecución
 // (sus dos importaciones son de tipo), así que no hay ciclo.
-import { cobroParaElFlujo, totalUtilizable } from './cobroVenta.js';
+import { cobroParaElFlujo, totalUtilizable } from './modulos/cobros/cobroVenta.js';
 
 /**
  * =========================================================================

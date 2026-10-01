@@ -12,17 +12,17 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/seguimientos.ts",
+      "desde": "admin/functions/src/modulos/agenda/seguimientos.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/sena.ts",
+      "desde": "admin/functions/src/modulos/agenda/sena.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/catalogoWeb.ts",
+      "desde": "admin/functions/src/modulos/catalogo-web/catalogoWeb.ts",
       "hacia": "admin/functions/src/inventario.ts",
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
     },

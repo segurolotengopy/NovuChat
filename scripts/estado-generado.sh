@@ -107,6 +107,9 @@ fi
 case "$CODIGO" in
   0) [[ "$SIN_COMPROBAR" -gt 0 ]] || nota "los 8 flujos comparados: ningún atraso sin declarar" ;;
   1) falta "hay un flujo atrasado SIN declarar en docs/versiones-por-cliente.md" ;;
+  # 3 = alguna fila sin poder comprobar (ya no es un verde falso): si el recuento
+  # de arriba no la vio («no se pudo consultar»), se dice aca.
+  3) [[ "$SIN_COMPROBAR" -gt 0 ]] || falta "estado-de-versiones.sh: hay flujo(s) sin poder comprobar (código 3): el estado de versiones NO está verificado" ;;
   *) falta "estado-de-versiones.sh no pudo correr (código $CODIGO)" ;;
 esac
 nota "la versión de módulo por tenant llega con F5 (Analisis/41 §5.5)"

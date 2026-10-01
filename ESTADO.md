@@ -8,9 +8,11 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-09-28, noche. F2 avanzó de T4 a FL2: las
-tandas, los dos cortes y los flujos, todo fusionado. `main` está en `6d6d808`,
-en verde en CI y en staging. Lo anterior está en `bitacora/2026-09.md`.
+**Última actualización:** 2026-10-01, mañana. La rearquitectura (F2) está **en pausa**
+desde el 29/09 (ver «Coordinación 2026-09-29»). Hoy **Bellido corre el candidato B**,
+«Agenda mínima v0» (publicado a la 01:24, #293 fusionado), el estándar DevSecOps 2.6 está en
+`main` (#295) y los #280 (modelo por rol) y #281 (la pausa en el plano) están fusionados.
+Lo anterior está en `bitacora/2026-09.md`.
 
 ## En producción
 
@@ -19,7 +21,10 @@ en verde en CI y en staging. Lo anterior está en `bitacora/2026-09.md`.
   pago en revisión, y lo que F2 lleva movido hasta hoy (solo rutas, sin
   lógica). Todo eso entra con la **etiqueta de F2**, que aterriza primero en
   staging.
-- **Flujos de n8n:** los 8 están al día con `main`. La cartera publicó el
+- **Flujos de n8n:** los otros cinco están al día con `main`; **hoy Bellido corre otro flujo, el piloto «Agenda mínima v0»**
+  (45 nodos, `f3f7411`, #293, 01/10 a la 01:24; el respaldo de 96 nodos está fuera del repositorio y se vuelve con
+  `--restaurar-respaldo`), y Demo A y Platinum están atrasados en «Procesar respuesta» (#284), declarado en el #289.
+  El 28/09 la cartera publicó el
   Demo B y la captación con los medios (#256) y la foto sin QR (#261). FL1 y
   FL2 no cambian ningún JSON: son 8 de 8 idénticos byte a byte.
 - **Cuentas:** Bellido está en prueba (bolsa 20) y Platinum también (bolsa
@@ -60,6 +65,34 @@ así que cada tanda de F2 ya aterrizó en staging.
    del #264), en su propia sesión.
 4. Plantillas `prueba_termina` y `conversaciones_agotadas` con texto nuevo
    (Meta), antes del primer pase real.
+
+## Coordinación 2026-09-29
+
+Formato de la orden general (§6); la escribe la sesión de cartera para las tres de NovuChat. **La rearquitectura está en pausa** por decisión de Andres (costo de tokens sin ingresos todavía); las prioridades son Bellido en piloto, el Q'Taco reducido y los modelos por rol.
+
+- **Fase 0:** cartera, hecha: nada sin subir (#267 y #275 fusionados, #280 fusionado el 01/10; los 17 archivos de `.claude/agents/` que `aplicar.sh` dejó sin confirmar el 28/09 quedaron en el #280). Revisora, hecha (sin worktrees propios de trabajo; subió sin forzar la rama del #277). Operadora (verificado el 01/10 contra origin): su trabajo de F2 está en origin y lo único abierto es el #278 (`f2/m2-cobros`), sin fusionar a propósito; sus worktrees no tienen commits sin subir y tres tienen cambios sin commit que no son de F2 (`candado-apps-ajenas`, `umask` y el de análisis financiero).
+- **Fase 1** (modelos por rol v1+v2): PR #280 con los 18 agentes y `CLAUDE.md` (sección «Delegación entre agentes y costo»); SeguridadGeneral lo aprobó el 30/09 sin ajustes y **se fusionó el 01/10** (junto con el #281, la pausa en el plano). Ningún agente pasa a haiku.
+- **Fase 2:**
+  - Cartera, Bellido: extensión a octubre en seco, hecha (bellido bolsa 20, platinum bolsa 100, sin `periodoPagado`); informe de calidad de respuestas, hecho y **sin aplicar**; `cumplimiento.md`, `anexo-particular.md`, `condiciones-piloto.md`, aceptación (13 de 46 filas) y ficha, hechos. Q'Taco: **detenida** hasta que Andres elija el alcance.
+  - Revisora: sin informe H1b nuevo (H1b ya revisado el 26/09); el plano asienta la pausa en el PR #281.
+  - Operadora: pausa de F2 hecha; **el punto de pausa sigue sin escribirse en `Prompts/COORDINACION.md`** (en main dice «en obra… sigue la tanda de módulos»): lo asienta el plano (#281) y este archivo. Falta que ese documento remita a ellos. Además hizo el flujo B de Bellido, lo publicó el 01/10 y abrió el PR del estándar 2.6 (#295, fusionado); el #277 (candado de apps ajenas) sigue estancado: conflictos con main y tres alertas altas de CodeQL en su prueba. Revisora: coordinó y midió el concurso de Bellido con un arnés propio; el resultado está en `Analisis/46` §7.
+- **Requiere a Andres** (cada una con su «sí»; las corre Claude):
+  0. **Gemini, 30/09:** el 29/09 por la noche la credencial de producción respondió 402 «prepayment credits are depleted» y Bellido no podía contestar; volvió a responder el 30/09 después de que Andres comprara créditos. Producción usa el proyecto `NovuchatDemo` (cuenta `ssaalberdi`) con «Google Gemini(PaLM) Api account»; las baterías y pruebas usan «Gemini — pruebas (no producción)» (proyecto `novuchat-pruebas`): ninguna batería más con la credencial de producción. **Decisión de Andres:** activar la recarga automática con límite mensual antes del 01/10, porque el saldo es prepago. El informe de los brazos D y E está en `CLIENTES/BELLIDO/solicitudes/prompt-2026-09-29-brazos-D-E.md`; recomienda quedarse con Flash-Lite y el código del #283.
+  1. ~~Publicar #267 y #275~~ **Hecho el 29/09 con el «sí» de Andres:** Bellido a las 13:39 (96 nodos), Platinum y Demo A a las 13:40 (77 nodos cada uno), desde `main` `572b793`; el seco posterior da 0 diferencias en los tres. Falta que Andres pruebe Bellido con un teléfono.
+  2. **01/10:** `node admin/scripts/asignar-plan.mjs --proyecto novuchat-demo --operador (correo de Andres) --tenant bellido --periodo-prueba 2026-10 --bolsa-prueba 20 --aplicar`, y el mismo con `--tenant platinum --bolsa-prueba 100`. Cambia la modalidad de la cuenta, por eso necesita el «sí» ese día.
+  3. ~~Fusionar el PR #280~~ **Hecho el 01/10** (y el #281).
+  4. Q'Taco, alcance: (a) el de la orden general, con reservas de mesa, sin cobro real y avisos por plantilla, que exige una excepción de código firmada · (b) pedidos por chat con cobro real, sin mesas · (c) alta y aceptación con lo que el Demo B ya hace hoy, sin mesas (recomendado por la revisora).
+  5. Contrato de Bellido (opciones numeradas en su `anexo-particular.md` y `condiciones-piloto.md`): precio desde noviembre, cambios incluidos, quién paga Meta y recordatorio de 24 h.
+  6. Persona en Meta (Bellido): nombre visible sin acento (aprobado por Meta y en cola de propagación, 30/09), el doctor como administrador del portafolio (invitación enviada, pendiente de su aceptación), app y WABA huérfanas. **La alerta de gasto de la WABA no aplica:** Meta no la ofrece para Cloud API (Andres, 30/09, verificado en pantalla con Antigravity).
+  7. Plantillas `prueba_termina` y `conversaciones_agotadas`: la WABA de Bellido solo tiene `solicitud_cita`, `alerta_emergencia` y `hello_world`.
+  8. Antes del piloto: reiniciar la memoria y el estado por teléfono de Bellido, y una ronda de aceptación con teléfono real (33 filas).
+  9. ~~Autorizar la batería de calidad y las correcciones de código de Bellido~~ **Superado el 30/09 por el concurso:** Andres decidió el candidato B («Agenda mínima v0»), publicado el 01/10 a la 01:24 (45 nodos, `f3f7411`, #293 fusionado); el flujo A (#286) se descartó y quedó cerrado. La consulta pediátrica quedó en 250 BOB en la consola (30/09). Detalle: `docs/versiones-por-cliente.md` y `CLIENTES/BELLIDO/`.
+  10. El correo de María René, para darle el rol `oper` en la consola.
+- **Costo:**
+  - Cartera trabajó en Opus 5.5 del 27/09 (02:29 UTC) al 29/09 (13:33 UTC) y en Sonnet 5.5 desde el 29/09 a las 17:07 UTC. Lanzó 35 subagentes (25 de seguridad, 4 analista de solicitudes, 4 `flujos-n8n`, 1 `Explore` y 1 general). La mayor parte del gasto fueron la lectura de ejecuciones y las revisiones de seguridad de los PR.
+  - Operadora trabaja en Opus 5.5 desde antes del 30/09 (no registró la fecha de inicio) y usó subagentes: revisiones de `seguridad` (la última, de unos 44 mil tokens), `devsecops` para el estándar 2.6 y agentes de implementación de F2.
+  - Revisora trabaja en Sonnet 5.5 desde el 30/09 a las 11:30. Subagentes: el que construyó el arnés de pruebas, unas siete revisiones de `seguridad` (en Opus por definición del agente) y dos o tres de dependencias y DevSecOps.
+  - El concurso de Bellido del 30/09 gastó Gemini con la credencial de producción (saldo prepago de `NovuchatDemo`), por una indicación de Andres y una vez agotada la cuota gratuita de las pruebas. No hay medición en dinero de ninguna de las tres sesiones.
 
 ## Dónde está cada cosa
 

@@ -31,8 +31,15 @@
 #   ./scripts/estado-de-versiones.sh              # todos los del registro
 #   ./scripts/estado-de-versiones.sh --cliente Bellido
 #
-# Salida: 0 si no hay ningun atraso sin declarar, 1 si lo hay, 2 si la llamada
-# o el registro estan mal.
+# Salida: 0 si se comprobaron TODAS las filas y no hay ningun atraso sin
+# declarar; 1 si hay un atraso sin declarar; 2 si la llamada o el registro
+# estan mal; 3 si alguna fila quedo SIN PODER COMPROBAR (falta su `.env`, o el
+# flujo vivo no se pudo consultar) y no hay atraso sin declarar. Antes el
+# veredicto de una fila sin comprobar era «✓ Ningun atraso sin declarar» con
+# salida 0: un VERDE FALSO (27/09/2026: en un worktree, sin `.env` ni
+# `.local.json`, las 8 filas salian «sin poder comprobar» y el script decia que
+# todo estaba bien). Lo que no se comprobo no esta bien: se dice y no es verde.
+# Si hay las dos cosas, manda el 1.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 2
@@ -150,9 +157,19 @@ if [[ $SIN_DECLARAR -gt 0 ]]; then
   printf '  %s✗ %s flujo(s) atrasado(s) SIN declarar, de %s revisado(s).%s\n' \
     "$R" "$SIN_DECLARAR" "$REVISADOS" "$FIN"
   printf '    O se publican, o se declara la excepción en %s con su porqué\n' "$REGISTRO"
-  printf '    y qué la cierra. Un atraso sin fila es un defecto, no una excepción.\n\n'
+  printf '    y qué la cierra. Un atraso sin fila es un defecto, no una excepción.\n'
+  if [[ $OMITIDOS -gt 0 ]]; then
+    printf '  %s✗ Y además %s de %s revisado(s) SIN PODER COMPROBAR.%s\n' "$R" "$OMITIDOS" "$REVISADOS" "$FIN"
+  fi
+  printf '\n'
   exit 1
 fi
-printf '  %s✓ Ningún atraso sin declarar%s (%s revisado(s)' "$V" "$FIN" "$REVISADOS"
-[[ $OMITIDOS -gt 0 ]] && printf ', %s sin poder comprobar' "$OMITIDOS"
-printf ').\n\n'
+if [[ $OMITIDOS -gt 0 ]]; then
+  printf '  %s✗ %s de %s revisado(s) SIN PODER COMPROBAR: el veredicto NO es verde%s (salida 3).\n' \
+    "$A" "$OMITIDOS" "$REVISADOS" "$FIN"
+  printf '    Faltan los .env.<cliente> con el acceso a n8n, o el flujo vivo no se pudo consultar.\n'
+  printf '    En un worktree: enlaces a los .env de la copia base y, por fila,\n'
+  printf '    CONFIG_LOCAL_MD=<ruta> ./scripts/preparar-import.sh <flujo> <env>; o correrlo desde la copia base.\n\n'
+  exit 3
+fi
+printf '  %s✓ Ningún atraso sin declarar%s (%s revisado(s) y comprobados).\n\n' "$V" "$FIN" "$REVISADOS"

@@ -157,7 +157,7 @@ const agLibres = (consultas, fecha, duracion, limite, paso) => {
 const agHorasDelTexto = (texto) => {
   const t = String(texto || '');
   const out = [];
-  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
+  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm(?![a-záéíóúñ])|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am(?![a-záéíóúñ])|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
   let m;
   while ((m = re.exec(t)) !== null) {
     if (m[0] === '') { re.lastIndex += 1; continue; }
@@ -165,8 +165,10 @@ const agHorasDelTexto = (texto) => {
     const conMinutos = m[2] !== undefined || m[3] !== undefined;
     const antes = t.slice(Math.max(0, m.index - 12), m.index);
     const trasLas = /\b(las?|para\s+las?)\s+$/i.test(antes);
-    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570).
-    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[7]) continue;
+    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570), y
+    // «9 am» sin «las» (29/09, #8642: «el sabado 10 de octubre 9 am» no se leia
+    // como hora y el turno perdia la fecha y la hora que el cliente dijo).
+    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[6] && !m[7]) continue;
     // «15.00 Bs» es un precio, no una hora.
     if (/^\s*(bs\b|bolivianos|usd|\$|%)/i.test(t.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
     const min = m[2] !== undefined ? Number(m[2]) : (m[3] ? (/media/i.test(m[3]) ? 30 : 15) : 0);
@@ -279,9 +281,14 @@ const agDejarValidas = (oracion, horas, validas) => {
   for (const c of corridas.reverse()) {
     const quedan = c.filter((h) => validas.includes(h));
     if (quedan.length === c.length) continue;
-    texto = texto.slice(0, c[0].desde) + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
+    // Sin ninguna que quede, tambien se va el «a las» que las anunciaba (29/09, #8567:
+    // «(por ejemplo, a las ).» quedaba en el mensaje al paciente).
+    const antes = texto.slice(0, c[0].desde);
+    texto = (quedan.length ? antes : antes.replace(/(?:\ba\s+las?\s+|\blas\s+)$/i, ''))
+      + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
   }
-  return texto.replace(/[ \t]{2,}/g, ' ');
+  return texto.replace(/\(\s*(?:por\s+ejemplo|p\.\s*ej\.?|ej\.?)?\s*[,:]?\s*\)/gi, '')
+    .replace(/\s+([.,;:])/g, '$1').replace(/[ \t]{2,}/g, ' ');
 };
 // Cambia por `nuevo` las oraciones que hablan de horas; lo demas (una
 // presentacion, el nombre que falta, un precio) se queda, en su lugar.
@@ -321,6 +328,9 @@ const plano = texto.replace(/[*_~]/g, '');
 // uno no deje al otro con una version vieja.
 const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|ya esta)\s+(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad|anotad)|\b(he|hemos)\s+(agendado|reservado|registrado|confirmado|reprogramado|reagendado|movido|anotado)\b|(agendé|reservé|registré|reprogramé|reagendé|moví)(?![a-záéíóúñ])|\b(te|le|les|los|las)\s+anot(é|amos)(?![a-záéíóúñ])|\b(cambié|cambiamos|moví|movimos)\s+(tu|su|la)\s+cita\b|\b(cita|reserva|turno)\b[^.!?]{0,40}?\b(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad)[oa]s?\b/i;
 const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
+// Igual que en `Procesar respuesta`: solo la oracion que EMPIEZA con «No encontramos…», «No veo…» o
+// «Ninguna cita…» no afirma que se agendo.
+const SIN_CITA = /^\W*(?:no\s+(?:encontr[a-záéíóúñ]*|veo|figura[a-záéíóúñ]*|registr[a-záéíóúñ]*)\s+(?:ning[uú]n[a]?\s+|esa\s+|tu\s+|la\s+|alguna\s+)?(?:citas?|reservas?|turnos?)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
 const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
 // Y uno propio de este turno: «ese horario ya esta ocupado» es exactamente lo
 // que el reintento tiene que decir, y CONFIRMA lo confunde con «esta
@@ -330,14 +340,14 @@ const OCUPADO = /\b(ya\s+)?(est[aá]|estaba|se encuentra|estar[ií]a)\s+(ocupad|
 // puede tapar un «quedo agendada a las 15:00» al final.
 const oraciones = plano.split(/[.!?\n]+/).map((s) => s.trim()).filter(Boolean);
 const afirmaAgendo = oraciones.some((s) =>
-  CONFIRMA.test(s) && !NIEGA.test(s) && !YA_EXISTE.test(s) && !OCUPADO.test(s));
+  CONFIRMA.test(s) && !NIEGA.test(s) && !SIN_CITA.test(s) && !YA_EXISTE.test(s) && !OCUPADO.test(s));
 
 const motivo = base.motivoCruce || 'hubo un cruce de horario';
 
 // LO QUE SE GUARDA POR TELEFONO, igual que en `Procesar respuesta`: lo ofrecido
 // por fecha y la ultima oferta, para que el «si» del turno siguiente confirme
 // ESA hora y para no repetirle lo mismo. Sin datos estaticos, nada.
-const registrarOferta = (fecha, mins) => {
+const registrarOferta = (fecha, mins, conjunto = false) => {
   if (!fecha || !mins.length) return;
   try {
     const sd = $getWorkflowStaticData('global');
@@ -359,7 +369,10 @@ const registrarOferta = (fecha, mins) => {
     r.ofrecidos = (r.ofrecidos && typeof r.ofrecidos === 'object') ? r.ofrecidos : {};
     const previos = Array.isArray(r.ofrecidos[fecha]) ? r.ofrecidos[fecha] : [];
     r.ofrecidos[fecha] = Array.from(new Set([...previos, ...mins])).slice(-48);
-    r.ultima = { fecha, mins: mins.slice(0, 12), desde: Date.now() };
+    // `conjunto`: la pregunta era «¿Te las agendo?» por VARIAS citas que el modelo
+    // agendo, no una oferta de alternativas: el «si» siguiente las confirma juntas
+    // (revision de seguridad del #283).
+    r.ultima = { fecha, mins: mins.slice(0, 12), desde: Date.now(), ...(conjunto ? { conjunto: true } : {}) };
     r.desde = Date.now();
   } catch (e) { /* sin datos estaticos: no se guarda */ }
 };
@@ -375,7 +388,16 @@ const hoyLaPaz = agLaPaz(Date.now()).fecha;
 if (base.causaDeLaCaida === 'sin_confirmar' || base.causaDeLaCaida === 'sin_nombre') {
   const { ofertas } = agOfertas(base.respuesta, hoyLaPaz);
   const primera = ofertas.find((o) => o.fecha);
-  if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));
+  // ¿Es la pregunta de un CONJUNTO (dos o mas citas sin confirmar, cada una a una hora
+  // distinta del mismo dia, sin «cual prefieres» ni eleccion pendiente)?
+  const sinConfirmarCaidas = (Array.isArray(base.citasCaidas) ? base.citasCaidas : [])
+    .filter((c) => c && c.causa === 'sin_confirmar' && Number.isFinite(Date.parse(c.inicio)));
+  const inicios = sinConfirmarCaidas.map((c) => agLaPaz(Date.parse(c.inicio)));
+  const esConjunto = sinConfirmarCaidas.length >= 2 && base.causaDeLaCaida === 'sin_confirmar'
+    && !base.opcionesSinElegir && !base.eleccionPendiente
+    && inicios.every((q) => q.fecha === inicios[0].fecha) && new Set(inicios.map((q) => q.min)).size === inicios.length;
+  if (esConjunto) registrarOferta(inicios[0].fecha, inicios.map((q) => q.min), true);
+  else if (primera) registrarOferta(primera.fecha, primera.horas.map((h) => h.min));
   // Al segundo «sin nombre» seguido, la respuesta ya dice que pasa con
   // recepcion: se transfiere (aviso y boton), que es lo unico que se ofrece.
   // Tambien con causas mezcladas: basta que una de las caidas sea sin nombre

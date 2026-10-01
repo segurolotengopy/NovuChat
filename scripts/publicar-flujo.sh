@@ -101,7 +101,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 # --- 1. leer el flujo vivo ----------------------------------------------------
 COD=$(curl -s --max-time 30 -o "$TMP/vivo.json" -w '%{http_code}' \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+      -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
 
 if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ No se pudo leer el flujo: HTTP %s\033[0m\n' "$COD"
@@ -136,7 +136,7 @@ if [[ $ENCENDER -eq 1 || $APAGAR -eq 1 ]]; then
     exit 0
   fi
   COD=$(curl -s --max-time 30 -o "$TMP/estado.json" -w '%{http_code}' -X POST \
-        -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}" || echo 000)
+        -H @- "${API}/workflows/${N8N_WORKFLOW_ID}/${RUTA}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
   if [[ "$COD" != "200" ]]; then
     printf '\033[1;31m✗ HTTP %s al %s el flujo\033[0m\n' "$COD" "$QUE"
     head -c 300 "$TMP/estado.json" 2>/dev/null || true
@@ -151,7 +151,7 @@ fi
 # Sirven para asignar a cada nodo la credencial que el JSON versionado NOMBRA.
 # Si la API no las lista, se sigue como antes (heredando del flujo vivo).
 curl -s --max-time 30 -o "$TMP/credenciales.json" \
-     -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/credentials?limit=250" || true
+     -H @- "${API}/credentials?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
 
 # --- crear un flujo NUEVO ------------------------------------------------------
 # Hasta el 17/09/2026 un flujo nuevo solo entraba por la interfaz: importar el
@@ -170,7 +170,7 @@ curl -s --max-time 30 -o "$TMP/credenciales.json" \
 # con el camino normal del script.
 if [[ $CREAR -eq 1 ]]; then
   curl -s --max-time 30 -o "$TMP/lista.json" \
-       -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows?limit=250" || true
+       -H @- "${API}/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
   APLICAR="$APLICAR" FORZAR="$FORZAR" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
 import json, os, re, sys
 aplicar = os.environ["APLICAR"] == "1"
@@ -253,8 +253,8 @@ PY
   [[ $APLICAR -eq 1 ]] || exit 0
 
   COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X POST \
-        -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
-        --data-binary @"$TMP/cuerpo.json" "${API}/workflows" || echo 000)
+        -H @- -H "Content-Type: application/json" \
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
   if [[ "$COD" != "200" && "$COD" != "201" ]]; then
     printf '\033[1;31m✗ No se pudo crear: HTTP %s\033[0m\n' "$COD"
     head -c 500 "$TMP/rta.json" 2>/dev/null || true; echo
@@ -266,7 +266,7 @@ PY
 
   if [[ $ACTIVAR -eq 1 ]]; then
     COD=$(curl -s --max-time 60 -o "$TMP/act.json" -w '%{http_code}' -X POST \
-          -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${NUEVO_ID}/activate" || echo 000)
+          -H @- "${API}/workflows/${NUEVO_ID}/activate" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
     if [[ "$COD" == "200" ]]; then
       printf '\033[1;32m✓ Flujo activado (publicado).\033[0m\n'
     else
@@ -339,10 +339,10 @@ open(f"{tmp}/cuerpo.json", "w", encoding="utf-8").write(json.dumps(cuerpo, ensur
 PY
   [[ $APLICAR -eq 1 ]] || exit 0
   COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
-        -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
-        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+        -H @- -H "Content-Type: application/json" \
+        --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
   if [[ "$COD" == "200" ]]; then
-    RESTAN=$(curl -s --max-time 30 -H "X-N8N-API-KEY: ${N8N_API_KEY}" "${API}/workflows/${N8N_WORKFLOW_ID}" \
+    RESTAN=$(curl -s --max-time 30 -H @- "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(((d.get("staticData") or {}).get("global") or {}).get("conversaciones") or {}))')
     printf '\033[1;32m✓ Estado reiniciado (HTTP 200). Telefonos con estado ahora: %s\033[0m\n' "$RESTAN"
   else
@@ -631,8 +631,8 @@ PY
 
 # --- 2. escribir de vuelta ----------------------------------------------------
 COD=$(curl -s --max-time 60 -o "$TMP/rta.json" -w '%{http_code}' -X PUT \
-      -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
-      --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" || echo 000)
+      -H @- -H "Content-Type: application/json" \
+      --data-binary @"$TMP/cuerpo.json" "${API}/workflows/${N8N_WORKFLOW_ID}" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
 
 if [[ "$COD" == "200" ]]; then
   printf '\033[1;32m✓ Flujo actualizado en su lugar (HTTP 200).\033[0m\n'

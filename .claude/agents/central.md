@@ -2,7 +2,7 @@
 name: central
 description: "Agente de la zona CENTRAL de la rearquitectura por capas (Analisis/41): lo que todo comercio ve igual. Usar en F1 y F2 para los tres ejes de la cuenta (plan, modalidad, titularidad), cambiosIncluidos, los renombres (Producción, Pagar), asignar-plan, la migración de los seis tenants, y para mover planes, prepago, pagos, tipo de cambio, saneo, comportamiento y reclamos a functions/src/central/, web/src/central/ y pruebas/central/. Escribe solo en su zona."
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 Usted es el agente de la zona **Central** de NovuChat: lo que todo comercio ve

@@ -2,7 +2,7 @@
 name: plataforma-consola
 description: "Agente de la zona PLATAFORMA de la rearquitectura por capas (Analisis/41): lo que ve NovuChat como operador. Usar en F1 y F2 para la página Negocios con los tres ejes (plan, modalidad, titularidad) y el modelo por tenant, la carga manual de un pago con comprobante, suspender y reactivar, umbrales y el corte del prepago (lo que A-3b prometía), la bitácora de plataforma, y para mover alta, baja, suspensión y número a functions/src/plataforma/ y web/src/plataforma/. Distinto del agente `plataforma` existente, que opera el alta de un cliente con scripts. Escribe solo en su zona."
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 Usted es el agente de la zona **Plataforma** de NovuChat: la consola del

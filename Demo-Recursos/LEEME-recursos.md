@@ -45,14 +45,15 @@ publicar nada en internet, la entrega es más rápida (Meta ya tiene el archivo)
 y no queda ningún enlace expuesto.
 
 ```bash
-# WA_TOKEN y WA_PHONE_ID deben ser los de la app que ENVÍA el QR (Demo B):
-# el media ID queda ligado al número que lo sube.
-curl -sS -X POST "https://graph.facebook.com/v26.0/${WA_PHONE_ID}/media" \
-  -H "Authorization: Bearer ${WA_TOKEN}" \
-  -F "messaging_product=whatsapp" \
-  -F "file=@Demo-Recursos/qr-demo.png;type=image/png"
-# → {"id":"1234567890123456"}
+# El entorno debe ser el de la app que ENVÍA el QR (Demo B): el media ID queda
+# ligado al número que lo sube.
+./scripts/subir-qr.sh --env .env.demo-b Demo-Recursos/qr-demo.png
+# → {"id":"…"}
 ```
+
+Por el script y no con un `curl` a mano: el script corta si el token es de una
+app ajena (CLAUDE.md, prohibiciones 5 y 7) y no deja el token a la vista en
+`ps`.
 
 También se puede hacer sin terminal, desde el propio n8n: nodo **WhatsApp**,
 recurso **Media → Upload**, ejecutándolo una sola vez a mano.

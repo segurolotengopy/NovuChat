@@ -77,7 +77,7 @@ Consulta `~/Claude-Proyectos/proyectos/`. Dentro de NovuChat, esto ya existe y
 | Validación por firma mágica y tope, en navegador y servidor | `archivoPlanes.ts`, `captacion.ts` |
 | Compresión y reencuadre en el navegador | `admin/web/src/modulos/productos/foto.ts` |
 | Moderación con el modelo que muestra pero no bloquea, con prompt anti-inyección | `imagenCatalogo.ts` |
-| Servir binarios por ficha al azar, sin enumerar la cartera | `admin/functions/src/cobro.ts` |
+| Servir binarios por ficha al azar, sin enumerar la cartera | `admin/functions/src/modulos/cobros/cobro.ts` |
 | Contador con tope por plan | el del catálogo, `limiteCatalogo.ts` |
 | Metadatos de integridad del objeto | `admin/functions/src/central/pagar/pagos.ts` |
 
