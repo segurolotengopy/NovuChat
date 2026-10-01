@@ -92,7 +92,7 @@ describe('Comportamiento del asistente en la consola', () => {
   });
 
   it('lo vigente se muestra con TextoSeguro, nunca como HTML', () => {
-    expect(pantalla).toContain("import { TextoSeguro } from '../componentes/TextoSeguro'");
+    expect(pantalla).toMatch(/import \{ TextoSeguro \} from '(?:\.\.\/)+(?:central\/)?componentes\/TextoSeguro'/);
     expect(pantalla).toMatch(/<TextoSeguro valor=\{vigentes\}/);
     expect(pantalla).not.toContain('dangerouslySetInnerHTML');
   });

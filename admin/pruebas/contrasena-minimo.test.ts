@@ -39,7 +39,7 @@ describe('El mínimo de la contraseña', () => {
 
   it('las dos pantallas importan la constante, no su número', () => {
     for (const fuente of [ingresar, miCuenta]) {
-      expect(fuente).toContain("MINIMO_CONTRASENA } from '../lib/contrasena'");
+      expect(fuente).toMatch(/MINIMO_CONTRASENA \} from '(?:\.\.\/)+(?:core\/)?lib\/contrasena'/);
     }
     // Ningún `minLength` ni `length <` con un número escrito a mano: si el
     // valor vuelve a estar en dos lados, se desincroniza como en el alta del
