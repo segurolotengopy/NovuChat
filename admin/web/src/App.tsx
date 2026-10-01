@@ -26,7 +26,7 @@ import { Cobro } from './modulos/cobros/Cobro';
 import { Inventario } from './modulos/inventario/Inventario';
 import { Pedidos } from './modulos/pedidos/Pedidos';
 import { Cobros } from './modulos/cobros/Cobros';
-import { Captacion } from './paginas/Captacion';
+import { Captacion } from './modulos/captacion/Captacion';
 import { FLUJOS, etiquetaCatalogo, useFlujos } from './lib/flujos';
 import type { FlujoId } from './lib/flujos';
 

@@ -343,7 +343,7 @@ la cartera la encendió a mano. Es la familia del PR #174, sin fusionar:
 **Pendientes de servidor del módulo captación** (informados por la cartera
 tras la revisión de seguridad del #238, 27/09; no son de su zona):
 `archivoPlanesValido` en `admin/firestore.rules` y `sanearArchivoPlanes` en
-`admin/functions/src/captacion.ts` exigen https pero no el dominio de Storage
+`admin/functions/src/modulos/captacion/captacion.ts` exigen https pero no el dominio de Storage
 (`firebasestorage.googleapis.com` o `storage.googleapis.com`, sin «@»), que el
 flujo ya exige; falta con su prueba negativa en `reglas.test.ts`. Y
 `captacion.ts:210` marca `planesEnArchivo` solo con más de 5 planes, y la

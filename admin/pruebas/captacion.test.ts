@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   comprobarArchivo, contenidoAceptado, firmaCoincide, puedeComprobar,
   sanearArchivoPlanes, sanearCaptacion, sanearCargoUnico, sanearPlan, sanearRubro,
-} from '../functions/src/captacion.ts';
+} from '../functions/src/modulos/captacion/captacion.ts';
 import { vozFija } from '../functions/src/core/prompt/prompt.ts';
 
 // Desde el 15/09 el filtro rechaza cualquier IP literal en la URL (revisión de

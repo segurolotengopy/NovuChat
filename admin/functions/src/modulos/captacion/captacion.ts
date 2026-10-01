@@ -27,9 +27,9 @@
  */
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { REGION } from './core/region.js';
-import { textoPlano, textoConSaltos, sinMarcas } from './central/servicios/saneo.js';
-import { pedirConFrenos, tipoDeContenido, type MotivoFalla } from './central/servicios/pedidoSeguro.js';
+import { REGION } from '../../core/region.js';
+import { textoPlano, textoConSaltos, sinMarcas } from '../../central/servicios/saneo.js';
+import { pedirConFrenos, tipoDeContenido, type MotivoFalla } from '../../central/servicios/pedidoSeguro.js';
 
 // ---------------------------------------------------------------------------
 // 1. LA FORMA DE CADA ELEMENTO

@@ -22,7 +22,7 @@
  *
  * Módulo puro: no importa Firebase y se prueba sin emulador.
  */
-import { FORMATOS, extensionDe, type ExtensionPlanes } from '../../lib/archivoPlanes';
+import { FORMATOS, extensionDe, type ExtensionPlanes } from '../../central/lib/archivoPlanes';
 import {
   MESES_MAXIMO, TCO_MAXIMO, TCO_MINIMO, aplicarPago, descripcionDe, esFecha, esPago, importeBs, montoUsdDe,
   type CuentaCruda, type Pago,
