@@ -1,0 +1,9 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/campanas.ts", "a": "admin/functions/src/modulos/campanas/campanas.ts" },
+    { "de": "admin/functions/src/verificarCampanas.ts", "a": "admin/functions/src/modulos/campanas/verificarCampanas.ts" },
+    { "de": "admin/web/src/paginas/Campanas.tsx", "a": "admin/web/src/modulos/campanas/Campanas.tsx" },
+    { "de": "admin/web/src/lib/campanas.ts", "a": "admin/web/src/modulos/campanas/campanas.ts" }
+  ],
+  "suitesPuras": []
+}
