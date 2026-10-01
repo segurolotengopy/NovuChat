@@ -36,9 +36,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
+# Solo lee: no pasa por el candado de apps ajenas, pero usa su curl_token (el
+# token por la entrada estándar, no en los argumentos: revisión del #265).
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige --env
-. "./$ENV_FILE"
+case "$ENV_FILE" in /*) . "$ENV_FILE" ;; *) . "./$ENV_FILE" ;; esac
 set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"
 : "${WABA_ID:?Falta WABA_ID}"
@@ -47,9 +51,9 @@ G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 CAMPOS=""
 if [[ $DETALLE -eq 1 ]]; then CAMPOS=",components,message_send_ttl_seconds"; fi
 TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
-COD=$(curl -s --max-time 25 -o "$TMP" -w '%{http_code}' \
+COD=$(curl_token -s --max-time 25 -o "$TMP" -w '%{http_code}' \
   "${G}/${WABA_ID}/message_templates?limit=100&fields=name,status,category,language${CAMPOS}" \
-  -H "Authorization: Bearer ${WA_TOKEN}" || echo 000)
+  || echo 000)
 
 if [[ "$COD" != "200" ]]; then
   printf '\033[1;31m✗ No se pudo consultar: HTTP %s\033[0m\n' "$COD"

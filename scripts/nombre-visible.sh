@@ -31,11 +31,17 @@
 # visible en `/proc/<pid>/cmdline`: va en un archivo de cabeceras con permisos
 # 600 que se borra al salir.
 #
+# APPS AJENAS (prohibiciones 5 y 7; revisión de seguridad del #265). Antes del
+# POST, `negar_app_ajena` corta si el token es de una app ajena o si no se
+# sabe de qué app es: con el .env de otro sistema se gastaría el cupo de
+# nombre de un número suyo. Solo leer no pasa por el candado.
+#
 #   ./scripts/nombre-visible.sh --env .env.bellido                      # solo leer
 #   ./scripts/nombre-visible.sh --env .env.bellido --pedir "Dr. Andres Bellido"
 #
 # Salida: 0 si leyo (o si pidio y Meta acepto), 1 si Meta rechazo o si el
-# cambio no corresponde, 2 si la llamada esta mal.
+# cambio no corresponde, 2 si la llamada esta mal, 3 si el candado de apps
+# ajenas corto antes de pedir.
 set -euo pipefail
 
 ENV_FILE=""; NUEVO=""
@@ -44,20 +50,23 @@ while [[ $# -gt 0 ]]; do
     --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
     --env=*) ENV_FILE="${1#*=}"; shift ;;
     --pedir) NUEVO="${2:?--pedir necesita el nombre nuevo}"; shift 2 ;;
-    -h|--help) sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
   esac
 done
 [[ -n "$ENV_FILE" ]] || { echo "Falta --env" >&2; exit 2; }
 [[ -f "$ENV_FILE" ]] || { echo "No existe $ENV_FILE" >&2; exit 2; }
 
+# El candado de apps ajenas, ANTES del .env: queda readonly.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source "$(dirname "$0")/lib/apps-ajenas.sh"
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige --env
-. "$ENV_FILE"
+case "$ENV_FILE" in */*) . "$ENV_FILE" ;; *) . "./$ENV_FILE" ;; esac
 set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"
 : "${WA_PHONE_ID:?Falta WA_PHONE_ID}"
-GRAPH="https://graph.facebook.com/${WA_GRAPH_VERSION:-v21.0}"
+G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v21.0}"
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 umask 077
@@ -65,7 +74,7 @@ printf 'Authorization: Bearer %s\n' "$WA_TOKEN" > "$TMP/cabeceras"
 
 leer() {
   curl -sS --max-time 20 -H @"$TMP/cabeceras" \
-    "${GRAPH}/${WA_PHONE_ID}?fields=verified_name,name_status,new_display_name,new_name_status" \
+    "${G}/${WA_PHONE_ID}?fields=verified_name,name_status,new_display_name,new_name_status" \
     > "$TMP/estado.json"
 }
 
@@ -91,9 +100,10 @@ PY
 
 [[ -n "$NUEVO" ]] || exit 0
 
+negar_app_ajena "${WA_APP_ID:-}" numero
 printf '\n  Pidiendo: «%s»\n' "$NUEVO"
 curl -sS --max-time 30 -X POST -H @"$TMP/cabeceras" \
-  --data-urlencode "new_display_name=${NUEVO}" "${GRAPH}/${WA_PHONE_ID}" > "$TMP/respuesta.json"
+  --data-urlencode "new_display_name=${NUEVO}" "${G}/${WA_PHONE_ID}" > "$TMP/respuesta.json"
 python3 - "$TMP/respuesta.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1], encoding='utf-8'))

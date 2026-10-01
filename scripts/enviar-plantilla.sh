@@ -7,14 +7,34 @@
 #
 #   ./scripts/enviar-plantilla.sh                       # hello_world, en_US
 #   ./scripts/enviar-plantilla.sh recordatorio_cita_manana es Ana Manicure 15:30
+#   ./scripts/enviar-plantilla.sh --env .env.x hello_world en_US
 #
 # Los parametros posicionales despues del idioma rellenan las variables del
 # cuerpo de la plantilla, en orden.
+#
+# APPS AJENAS (prohibiciones 5 y 7; revision de seguridad del #265): antes de
+# mandar, `negar_app_ajena` corta si el token es de una app ajena o si no se
+# sabe de que app es. El token va por la entrada estandar, no en los
+# argumentos de curl.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
-[[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
-set -a; . ./.env; set +a
+ENV_FILE=".env"
+while [[ "${1:-}" == --env* ]]; do
+  case "$1" in
+    --env)   ENV_FILE="${2:?--env necesita un archivo}"; shift 2 ;;
+    --env=*) ENV_FILE="${1#*=}"; shift ;;
+    *) echo "Opcion desconocida: $1" >&2; exit 2 ;;
+  esac
+done
+[[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
+# El candado de apps ajenas, ANTES del .env: queda readonly.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
+set -a
+# shellcheck disable=SC1090  # ruta variable: la elige --env
+case "$ENV_FILE" in /*) . "$ENV_FILE" ;; *) . "./$ENV_FILE" ;; esac
+set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"; : "${WA_PHONE_ID:?Falta WA_PHONE_ID}"; : "${WA_TO:?Falta WA_TO}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 
@@ -22,7 +42,8 @@ PLANTILLA="${1:-hello_world}"
 IDIOMA="${2:-en_US}"
 shift 2 2>/dev/null || shift $#
 
-PLANTILLA="$PLANTILLA" IDIOMA="$IDIOMA" WA_TO="$WA_TO" python3 - "$@" > /tmp/plantilla.json <<'PY'
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+PLANTILLA="$PLANTILLA" IDIOMA="$IDIOMA" WA_TO="$WA_TO" python3 - "$@" > "$TMP/plantilla.json" <<'PY'
 import json, os, sys
 variables = sys.argv[1:]
 cuerpo = {
@@ -42,9 +63,8 @@ if variables:
 print(json.dumps(cuerpo, ensure_ascii=False))
 PY
 
+negar_app_ajena "${WA_APP_ID:-}" numero
 echo "Enviando plantilla '${PLANTILLA}' (${IDIOMA})…"
-curl -s -X POST "${G}/${WA_PHONE_ID}/messages" \
-  -H "Authorization: Bearer ${WA_TOKEN}" \
+curl_token -s -X POST "${G}/${WA_PHONE_ID}/messages" \
   -H "Content-Type: application/json" \
-  --data-binary @/tmp/plantilla.json | python3 -m json.tool
-rm -f /tmp/plantilla.json
+  --data-binary @"$TMP/plantilla.json" | python3 -m json.tool
