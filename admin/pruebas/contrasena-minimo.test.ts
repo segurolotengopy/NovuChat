@@ -5,7 +5,7 @@
  * `Ingresar.tsx` y `const MINIMO = 12` en `MiCuenta.tsx`— y un tercer actor, la
  * pantalla de restablecimiento que sirve Firebase, usaba el suyo (6). El
  * administrador de un cliente nuevo puso 11 caracteres donde se los aceptaron y
- * quedó afuera donde no. Ahora el número vive en `web/src/lib/contrasena.ts` y
+ * quedó afuera donde no. Ahora el número vive en `web/src/core/lib/contrasena.ts` y
  * esta prueba exige que siga viviendo ahí: que las pantallas lo IMPORTEN en vez
  * de volver a escribirlo, que es la forma en que estas cosas se desincronizan.
  *
@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MINIMO_CONTRASENA } from '../web/src/lib/contrasena.ts';
+import { MINIMO_CONTRASENA } from '../web/src/core/lib/contrasena.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');
@@ -45,7 +45,7 @@ describe('El mínimo de la contraseña', () => {
       const m = fuente.match(/MINIMO_CONTRASENA\s*\}\s*from\s*'([^']+)'/);
       expect(m, `${pantalla} importa MINIMO_CONTRASENA`).not.toBeNull();
       expect(`${resolve(dirname(pantalla), m![1])}.ts`)
-        .toBe(join(aqui, '..', 'web/src/lib/contrasena.ts'));
+        .toBe(join(aqui, '..', 'web', 'src', 'core', 'lib', 'contrasena.ts'));
     }
     // Ningún `minLength` ni `length <` con un número escrito a mano: si el
     // valor vuelve a estar en dos lados, se desincroniza como en el alta del

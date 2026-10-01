@@ -3,8 +3,8 @@ import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/fir
 import { httpsCallable, type FunctionsError } from 'firebase/functions';
 import { GoogleAuthProvider, reauthenticateWithPopup } from 'firebase/auth';
 import { Link, useParams } from 'react-router-dom';
-import { auth, db, funciones, urlDeFuncionHttp } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
+import { auth, db, funciones, urlDeFuncionHttp } from '../core/lib/firebase';
+import { TextoSeguro } from '../central/componentes/TextoSeguro';
 import {
   BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
   pideVolverAEntrar, planDeLaCuenta, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
@@ -12,7 +12,7 @@ import {
 import { BOLSA, fechaCorta } from '../central/lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
 import { useEjesDeCuenta } from '../central/lib/lecturas';
-import { facturaMetaAlComercio } from '../lib/ejes';
+import { facturaMetaAlComercio } from '../central/lib/ejes';
 
 /**
  * PAGAR — NovuChat cobrándole al comercio (`Analisis/41` §6.1 punto 6; «Cobros»

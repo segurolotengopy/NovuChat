@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Link, useParams } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
+import { db } from '../core/lib/firebase';
+import { TextoSeguro } from '../central/componentes/TextoSeguro';
 import { etiquetaDePago, pagoAlDia } from '../central/lib/cuenta';
 import { RESPUESTAS_POR_CONVERSACION, umbralesDeAtencion } from '../core/lib/atencion';
 import { avisoConsumoVigente, limiteDeProductos, periodoDe } from '../central/lib/planes';
-import { AvisoConsumo } from '../componentes/AvisoConsumo';
+import { AvisoConsumo } from '../central/componentes/AvisoConsumo';
 import { consumidasDe, corteDe, estadoDeServicio } from '../central/lib/prepago';
-import { ResumenPrepago } from '../componentes/ResumenPrepago';
+import { ResumenPrepago } from '../central/componentes/ResumenPrepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
 import { useEjesDeCuenta, useTipoCambio } from '../central/lib/lecturas';
 

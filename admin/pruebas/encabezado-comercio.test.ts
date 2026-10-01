@@ -23,8 +23,8 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { modoDelComercio } from '../web/src/lib/modoComercio';
-import { ChipModo } from '../web/src/componentes/ChipModo';
+import { modoDelComercio } from '../web/src/central/lib/modoComercio';
+import { ChipModo } from '../web/src/central/componentes/ChipModo';
 import { modalidadDe } from '../functions/src/central/cuenta/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
@@ -91,9 +91,9 @@ describe('El chip dibujado', () => {
 });
 
 describe('La cabecera en la fuente', () => {
-  const modulo = sinComentarios(leer('web/src/lib/modoComercio.ts'));
-  const encabezado = sinComentarios(leer('web/src/componentes/EncabezadoComercio.tsx'));
-  const chip = sinComentarios(leer('web/src/componentes/ChipModo.tsx'));
+  const modulo = sinComentarios(leer('web/src/central/lib/modoComercio.ts'));
+  const encabezado = sinComentarios(leer('web/src/central/componentes/EncabezadoComercio.tsx'));
+  const chip = sinComentarios(leer('web/src/central/componentes/ChipModo.tsx'));
   const app = sinComentarios(leer('web/src/App.tsx'));
   const cartera = sinComentarios(leer('web/src/paginas/Tenants.tsx'));
 

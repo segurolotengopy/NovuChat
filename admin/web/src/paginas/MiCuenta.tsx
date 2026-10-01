@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { sendPasswordResetEmail, updatePassword } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth } from '../core/lib/firebase';
 import { useSesion } from '../core/lib/contexto';
-import { MINIMO_CONTRASENA } from '../lib/contrasena';
+import { MINIMO_CONTRASENA } from '../core/lib/contrasena';
 
 /**
  * MI CUENTA — cambiar la contraseña desde adentro.

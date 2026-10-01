@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getDocs, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { db } from '../lib/firebase';
+import { db } from '../core/lib/firebase';
 import { useSesion } from '../core/lib/contexto';
-import { TextoSeguro } from '../componentes/TextoSeguro';
-import { descargarCsv } from '../lib/exportar';
+import { TextoSeguro } from '../central/componentes/TextoSeguro';
+import { descargarCsv } from '../central/lib/exportar';
 import {
   construirConsulta, POR_PAGINA, RESULTADOS, TIPOS, tenantDe,
   type Filtros, type Resultado, type Tipo,

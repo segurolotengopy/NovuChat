@@ -4,15 +4,15 @@ import {
   Timestamp, collection, doc, getCountFromServer, getDoc, limit, onSnapshot,
   orderBy, query, where,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db } from '../core/lib/firebase';
 import { useSesion } from '../core/lib/contexto';
-import { TextoSeguro } from '../componentes/TextoSeguro';
-import { SinSalida } from '../componentes/SinSalida';
-import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../lib/flujos';
+import { TextoSeguro } from '../central/componentes/TextoSeguro';
+import { SinSalida } from '../core/componentes/SinSalida';
+import { FLUJOS, etiquetaCatalogo, flujosDe, useFlujos } from '../central/lib/flujos';
 import { etiquetaDePago, pagoAlDia } from '../central/lib/cuenta';
-import { GraficoDias, type DiaDeGrafico } from '../componentes/GraficoDias';
+import { GraficoDias, type DiaDeGrafico } from '../central/componentes/GraficoDias';
 import { avisoConsumoVigente, type AvisoConsumoVista as Aviso } from '../central/lib/planes';
-import { AvisoConsumo } from '../componentes/AvisoConsumo';
+import { AvisoConsumo } from '../central/componentes/AvisoConsumo';
 
 /**
  * TABLERO DE INICIO, DISTINTO SEGÚN QUIÉN ENTRA.

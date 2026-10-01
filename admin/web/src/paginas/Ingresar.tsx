@@ -3,9 +3,9 @@ import {
   GoogleAuthProvider, getRedirectResult, sendEmailVerification, sendPasswordResetEmail,
   signInWithEmailAndPassword, signInWithPopup, signInWithRedirect,
 } from 'firebase/auth';
-import { auth } from '../lib/firebase';
-import { MINIMO_CONTRASENA } from '../lib/contrasena';
-import { Isotipo } from '../componentes/Marca';
+import { auth } from '../core/lib/firebase';
+import { MINIMO_CONTRASENA } from '../core/lib/contrasena';
+import { Isotipo } from '../central/componentes/Marca';
 
 /**
  * INGRESO CON AUTENTICACIÓN MIXTA POR ROL.

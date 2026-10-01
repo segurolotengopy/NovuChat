@@ -38,7 +38,7 @@ import { PanelEjes } from '../web/src/plataforma/componentes/PanelEjes';
 import { SuspensionNegocio } from '../web/src/plataforma/componentes/SuspensionNegocio';
 import { CortePrepago } from '../web/src/plataforma/componentes/CortePrepago';
 import { FormularioPagoManual } from '../web/src/plataforma/componentes/FormularioPagoManual';
-import { MODELO_POR_DEFECTO, type EjesDeCuenta } from '../web/src/lib/ejes';
+import { MODELO_POR_DEFECTO, type EjesDeCuenta } from '../web/src/central/lib/ejes';
 import { BOLSA, MESES_MAXIMO, PLANES, aplicarPago, importeBs } from '../functions/src/central/cuenta/prepago';
 import { UMBRALES_ATENCION } from '../functions/src/core/conteo/atencion';
 

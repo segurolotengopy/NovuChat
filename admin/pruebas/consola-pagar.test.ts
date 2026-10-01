@@ -29,8 +29,8 @@ import {
   planesOfrecidos, vistaDelPedido,
 } from '../web/src/central/lib/pagar';
 import { PLANES_PUBLICADOS } from '../functions/src/central/cuenta/planes';
-import { facturaMetaAlComercio } from '../web/src/lib/ejes';
-import { ResumenPrepago } from '../web/src/componentes/ResumenPrepago';
+import { facturaMetaAlComercio } from '../web/src/central/lib/ejes';
+import { ResumenPrepago } from '../web/src/central/componentes/ResumenPrepago';
 import { estadoDeServicio, type Corte } from '../functions/src/central/cuenta/prepago';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

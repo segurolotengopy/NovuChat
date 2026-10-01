@@ -191,7 +191,7 @@ export const diaBolivia = (ms: number): string => new Date(ms - 4 * 3_600_000).t
 // -----------------------------------------------------------------------------
 
 /** El error del servidor, tal cual (`lib/errores.ts`, compartido con Central). */
-export { mensajeDeError } from '../../lib/errores';
+export { mensajeDeError } from '../../central/lib/errores';
 
 /** `registrarPagoManual` exige una sesión de hace menos de media hora: con este código la pantalla ofrece volver a entrar. */
 export const pideSesionReciente = (e: unknown): boolean =>

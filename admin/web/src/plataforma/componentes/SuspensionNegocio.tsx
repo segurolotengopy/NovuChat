@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Confirmacion } from './Confirmacion';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
 const MOTIVO_VISIBLE_POR_DEFECTO = 'Servicio suspendido. Comuníquese con NovuChat para regularizar su cuenta.';
 
