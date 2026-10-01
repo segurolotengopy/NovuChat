@@ -59,6 +59,8 @@ else
 fi
 
 cp -p "$LOCAL" "${LOCAL}.respaldo"
+# Se cierra ANTES de copiar y de escribir: el respaldo hereda el modo (cp -p).
+chmod 600 "$ENV_FILE"
 cp -p "$ENV_FILE" "${ENV_FILE}.respaldo"
 
 ID="$ID" LOCAL="$LOCAL" ENV_FILE="$ENV_FILE" python3 - <<'PY'
