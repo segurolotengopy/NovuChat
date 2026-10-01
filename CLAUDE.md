@@ -145,6 +145,25 @@ WhatsApp (Meta Cloud API)
   la tabla de capacidades de las reglas y su pestaña en `web/src/lib/flujos.ts`.
   Un negocio tiene uno o más flujos (`tenants/{id}.flujos`), y la consola
   habilita pestañas por flujo. Nunca una consola que solo sirve a un flujo.
+- **«Basado en» otro flujo significa basarse en sus FUNCIONALIDADES, no en el
+  flujo mismo; y ante la duda se empieza de nuevo (Andres, 01/10/2026; la
+  experiencia de Bellido).** A Bellido se le pidió un flujo simple basado en
+  otro. Se fue complicando, ajuste tras ajuste, hasta tener el doble de nodos
+  de los necesarios (96, con 19 propios y un candado parchado ronda tras
+  ronda). Cuando se construyó de nuevo, listando solo lo que el cliente
+  necesita, salió mucho más eficiente (45 nodos, «Agenda mínima»: el código
+  calcula, el modelo conversa) y fue el que se publicó. De ahí, para todo
+  NovuChat:
+  1. Un pedido «como el flujo de X» se traduce primero a **una lista corta de
+     funcionalidades** que el cliente necesita, y esa lista se confirma. El
+     JSON de X no es el punto de partida: copiarlo y retocarlo hereda su
+     complejidad, sus parches y sus defectos.
+  2. Se construye **lo mínimo que cumple la lista**, reutilizando los módulos
+     comunes (`Flujos/src/`), no el flujo ajeno.
+  3. Si un flujo derivado acumula parches y ya tiene más nodos o más reglas de
+     las que sus funcionalidades justifican, **es preferible rehacerlo** que
+     seguir parchándolo; la simplicidad es un criterio de diseño y de
+     revisión (menos nodos, menos reglas en el prompt, más cálculo en código).
 
 ## La regla de zonas: carpeta = zona
 
