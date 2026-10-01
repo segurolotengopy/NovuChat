@@ -189,5 +189,7 @@ jobs:
           set -euo pipefail
           # tag + confirmar=DESPLEGAR son los inputs que exigen los ci-*.yml
           # (D3); quien ejecuta release.yml debe estar en vars.APROBADORES_PROD.
-          gh workflow run "$WF" --ref "$VERSION" -f "tag=$VERSION" -f confirmar=DESPLEGAR
+          # destino=produccion es explícito: su valor por defecto es dev, y sin
+          # él este camino desplegaría en dev (revisión de seguridad del #301).
+          gh workflow run "$WF" --ref "$VERSION" -f "tag=$VERSION" -f confirmar=DESPLEGAR -f destino=produccion
           echo "Despliegue de producción lanzado: $WF @ $VERSION" >> "$GITHUB_STEP_SUMMARY"
