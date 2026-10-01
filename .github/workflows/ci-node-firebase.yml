@@ -7,7 +7,7 @@
 # por uno (2.1), pull-requests: read en seguridad-estatica (2.4), concurrency
 # sin expresión en cancel-in-progress (2.5), /health por defecto (2.6) y el
 # grupo de las corridas que no son PR por run_id (2.7; NovuChat ya lo tenía
-# desde el #295). Propio de NovuChat: dast-y-humo y humo-staging en el grupo
+# desde el #295). Propio de NovuChat: desplegar-staging en el grupo
 # deploy-staging (ver el bloque `concurrency`). No se portaron 2.2 (corepack
 # prepare para el hook predeploy) ni 2.3 (traducción del «404 Site Not
 # Found»): los pasos de despliegue de NovuChat son propios, instalan
@@ -93,9 +93,11 @@ concurrency:
   # En NovuChat (texto propio, además del del estándar 2.7): el tag vX.Y.Z se
   # crea sobre el commit de main, así que con sha su push cancelaba también la
   # corrida de main a mitad de desplegar-staging o del DAST. Como consecuencia
-  # del run_id, dos pushes seguidos a main ya no se esperan entre sí: por eso
-  # dast-y-humo y humo-staging comparten el grupo deploy-staging con
-  # desplegar-staging (ver esos jobs).
+  # del run_id, dos pushes seguidos a main ya no se esperan entre sí. Solo
+  # desplegar-staging está en el grupo deploy-staging (cancel-in-progress:
+  # false). Los controles de staging (dast-y-humo, humo-staging) NO lo están a
+  # propósito: ver dast-y-humo. Pendiente de proponer a SeguridadGeneral: que
+  # comprueben qué commit sirve staging.
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
@@ -149,7 +151,7 @@ jobs:
           # despliegue-admin.yml, retirado).
           persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           # Historia completa: el paso "Detectar cambios" necesita comparar
           # contra la base del PR o contra el commit anterior del push.
           fetch-depth: 0
@@ -363,7 +365,7 @@ jobs:
           # despliegue-admin.yml, retirado).
           persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       # ---------------------------------------------------------------------
       # CONTROL 1 — Prohibiciones de renderizado.
@@ -647,7 +649,7 @@ jobs:
       stack: node
       bloquear_en: ${{ vars.BLOQUEAR_EN || 'CRITICAL,HIGH' }}
       subir_sarif: ${{ github.event.repository.visibility == 'public' || vars.GHAS_ENABLED == 'true' }}
-      ref: ${{ inputs.tag || '' }}
+      ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
     secrets:
       GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -671,7 +673,7 @@ jobs:
           # El token del checkout no queda en .git/config (portado de
           # despliegue-admin.yml, retirado).
           persist-credentials: false
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Sintaxis de los scripts Bash
         run: |
@@ -755,7 +757,7 @@ jobs:
           # despliegue-admin.yml, retirado).
           persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Habilitar corepack
         if: needs.preparar.outputs.pm != 'npm'
@@ -1110,7 +1112,7 @@ jobs:
           # despliegue-admin.yml, retirado).
           persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       # El paquete de PRODUCCIÓN: construir-staging no corre en PR (el
       # Environment `staging` solo admite `main`). Es lo mismo que pasaba
@@ -1488,18 +1490,13 @@ jobs:
   dast-y-humo:
     name: dast-y-humo
     needs: desplegar-staging
-    # Mismo grupo que desplegar-staging (revisión de seguridad del #295, LOW).
-    # El grupo del workflow va por run_id (ver el bloque `concurrency` de
-    # arriba), así que dos pushes seguidos a main ya no se esperan entre sí:
-    # sin este grupo, el desplegar-staging del segundo podía correr mientras
-    # el DAST del primero escaneaba, y el DAST daba por bueno un commit que no
-    # era el suyo. Con el grupo, el despliegue siguiente espera a que termine
-    # este. Desviación propia de NovuChat: el estándar 2.7 también agrupa por
-    # run_id pero deja dast-y-humo fuera de deploy-staging (candidato a
-    # proponerse allá).
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
+    # SIN grupo de concurrencia, como el estándar. Se probó ponerlo en
+    # deploy-staging y se revirtió (revisión de seguridad del #301, LOW): un
+    # grupo tiene un solo lugar de espera y el que llega después cancela al que
+    # esperaba, así que cancelaba controles pendientes sin garantizar que
+    # miraran su propio despliegue. Con dos pushes seguidos a main, este DAST
+    # puede escanear lo que desplegó la corrida siguiente. Staging es solo
+    # humo: ninguna compuerta ni el despliegue a producción dependen de este job.
     permissions:
       contents: read
     uses: ./.github/workflows/_reusable-dast.yml
@@ -1524,11 +1521,8 @@ jobs:
     needs: desplegar-staging
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Mismo grupo que desplegar-staging y dast-y-humo: el humo mira el staging
-    # que desplegó ESTA corrida, no el de un push posterior (ver dast-y-humo).
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
+    # Sin grupo de concurrencia (ver dast-y-humo): puede mirar el staging que
+    # desplegó una corrida posterior. Es solo humo.
     # SIN Environment, a propósito: así `vars.VITE_FIREBASE_APP_ID` es la del
     # repositorio —la de producción— y el humo puede exigir que NO esté en el
     # paquete publicado. Lo de staging llega por las salidas de
@@ -1588,7 +1582,7 @@ jobs:
           # despliegue-admin.yml, retirado).
           persist-credentials: false
           # En workflow_dispatch se analiza/despliega el tag aprobado (D3)
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0 # historial y tags completos para verificar la aprobación
 
       # D3 — Verificación de aprobación previa a producción (todos los modos).

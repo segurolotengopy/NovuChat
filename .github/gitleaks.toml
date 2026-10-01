@@ -144,9 +144,7 @@ stopwords = ["ejemplo", "example", "placeholder", "sample"]
 #
 # Nota: el hallazgo NUNCA fue VITE_FIREBASE_API_KEY=clave-ficticia-de-emulador
 # de la línea 107, como se creyó primero. Esa lectura mapeaba mal el número de
-# línea del SARIF. La allowlist de `ficticia` de abajo se conserva porque el
-# criterio es correcto -el repositorio está en español y la lista del estándar
-# solo traía `ejemplo`-, pero no era lo que bloqueaba.
+# línea del SARIF. (Hubo una allowlist de `ficticia`; se retiró, ver abajo.)
 #
 # Se filtra por FORMA DEL VALOR, nunca por ruta ni por huella de commit: la regla
 # de abajo es una verdad sobre el dato, no un permiso sobre un archivo.
