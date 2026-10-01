@@ -1,13 +1,16 @@
 # =============================================================================
 # ci-node-firebase.yml — Pipeline completo SPA Node/React (Vite/Vitest)
 #                        → Firebase Hosting + reglas de Firestore
-# Versión: 2.7 | Fecha: 2026-10-01
-# Adaptación de NovuChat del ci-node-firebase.yml del estándar (2.7, commit
-# 0ab6e88 de SeguridadGeneral). Del estándar se tomaron: secretos mapeados uno
+# Versión: 2.8 | Fecha: 2026-10-01
+# Adaptación de NovuChat del ci-node-firebase.yml del estándar (2.8, commit
+# c9313d3 de SeguridadGeneral). Del estándar se tomaron: secretos mapeados uno
 # por uno (2.1), pull-requests: read en seguridad-estatica (2.4), concurrency
-# sin expresión en cancel-in-progress (2.5), /health por defecto (2.6) y el
+# sin expresión en cancel-in-progress (2.5), /health por defecto (2.6), el
 # grupo de las corridas que no son PR por run_id (2.7; NovuChat ya lo tenía
-# desde el #295). Propio de NovuChat: desplegar-staging en el grupo
+# desde el #295) y, de la 2.8: Dependabot excluido también por autor del PR en
+# `previsualizar`, el plazo del canal `previa` renovado tras cada clon, el
+# aviso del primer despliegue sin versión en live y el alcance del rollback
+# (solo Hosting). Propio de NovuChat: desplegar-staging en el grupo
 # deploy-staging (ver el bloque `concurrency`). No se portaron 2.2 (corepack
 # prepare para el hook predeploy) ni 2.3 (traducción del «404 Site Not
 # Found»): los pasos de despliegue de NovuChat son propios, instalan
@@ -1091,9 +1094,20 @@ jobs:
   previsualizar:
     name: previsualizar (canal de PR)
     needs: [calidad, construir]
+    # Dependabot queda fuera por DOS condiciones, no una (estándar 2.8): las PR
+    # de Dependabot corren con un almacén de secretos APARTE (sin el
+    # `workload_identity_provider`) y concederles los del repositorio abriría el
+    # vector de cadena de suministro que el `cooldown` de dependabot.yml cierra.
+    # `github.actor` es quien disparó ESTA ejecución y cambia si una persona
+    # empuja un commit a la rama de Dependabot (el job recibiría los secretos y
+    # el OIDC sobre código que Dependabot abrió); `pull_request.user.login` es el
+    # autor del PR y sigue siendo Dependabot aunque cambie el actor. La compuerta
+    # no se debilita: `compuerta-pr` solo exige `calidad` y `seguridad-estatica`.
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
+      && github.actor != 'dependabot[bot]'
+      && github.event.pull_request.user.login != 'dependabot[bot]'
       && vars.FIREBASE_PREVIEW == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1330,14 +1344,51 @@ jobs:
         # D7: antes de CADA deploy a live (staging y producción) se clona el
         # contenido en vivo a un canal "previa". El rollback es clonar de vuelta:
         # firebase hosting:clone <proyecto>:previa <proyecto>:live
+        # AVISO: la llamada REST de renovación (PATCH sobre
+        # sites/<sitio>/channels/previa con updateMask=ttl) NO se verificó
+        # contra el servicio real de Firebase Hosting: solo con dobles en
+        # pruebas-workflows/canal_previa.py (del estándar). Si falla en el primer
+        # uso real, el efecto es únicamente el ::warning:: y el canal conserva su
+        # plazo.
         continue-on-error: true
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_STAGING }}
           SITIO: ${{ vars.GCP_PROJECT_ID_STAGING }}
         run: |
-          firebase hosting:channel:create previa --project "$PROYECTO" --expires 30d \
+          firebase hosting:channel:create previa --project "$PROYECTO" --site "$SITIO" --expires 30d \
             --non-interactive >/dev/null 2>&1 || true
-          firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"
+          if ! firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"; then
+            echo "::notice::No se pudo clonar live a 'previa' (esperable en el primer despliegue, cuando aún no hay versión en live; si no lo es, vea el error de arriba): no hay copia para rollback automático hasta el siguiente despliegue."
+            echo "::warning::No se pudo guardar la copia para rollback (clone $SITIO:live → previa). Si el sitio '$SITIO' todavía no existe, créelo: firebase hosting:sites:create $SITIO --project $PROYECTO"
+            exit 0
+          fi
+          # Renueva el plazo del canal: `--expires 30d` solo rige al CREARLO y
+          # `hosting:clone` no lo extiende. Sin esto "previa" caduca 30 días
+          # después de crearse aunque se clone en cada despliegue. Un fallo
+          # aquí NUNCA tumba el despliegue: solo avisa. Sin la cabecera
+          # x-goog-user-project a propósito: exige serviceusage.services.use sobre
+          # el proyecto y la cuenta de despliegue del estándar no lo tiene; con un
+          # token de cuenta de servicio la cuota ya va al proyecto de esa cuenta.
+          # Con tiempos máximos: un curl colgado agotaría el timeout del job
+          # (continue-on-error no protege de eso).
+          token="$(gcloud auth print-access-token 2>/dev/null)" || token=""
+          if [[ -z "$token" ]]; then
+            echo "::warning::No se pudo obtener el token para renovar el plazo del canal 'previa' (gcloud auth print-access-token); conserva el plazo que tenía."
+            exit 0
+          fi
+          respuesta="$(mktemp)"
+          codigo="$(curl -sS --connect-timeout 10 --max-time 30 -o "$respuesta" -w '%{http_code}' -X PATCH \
+            -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" \
+            --data '{"ttl":"2592000s"}' \
+            "https://firebasehosting.googleapis.com/v1beta1/sites/${SITIO}/channels/previa?updateMask=ttl")" || codigo="000"
+          # El motivo del fallo (error.message de la respuesta; no contiene el token).
+          motivo="$(python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print(str(d.get("error", {}).get("message", ""))[:200])' "$respuesta" 2>/dev/null)" || motivo=""
+          rm -f "$respuesta"
+          case "$codigo" in
+            2??) echo "Plazo del canal 'previa' renovado a 30 días." ;;
+            *)   echo "::warning::No se pudo renovar el plazo del canal 'previa' (HTTP $codigo${motivo:+: $motivo}); conserva el plazo que tenía." ;;
+          esac
 
       - name: Cloud Functions — dependencias para que firebase deploy lea el código
         # Igual que en producción: `firebase deploy` carga lib/index.js para
@@ -1652,15 +1703,52 @@ jobs:
         # Clona el contenido en vivo a un canal de vista previa de larga
         # duración. Si el health check posterior falla, post-despliegue lo
         # vuelve a clonar sobre live. Ver 01-seguridad/06-rollback-e-incidentes.md.
+        # AVISO: la llamada REST de renovación (PATCH sobre
+        # sites/<sitio>/channels/previa con updateMask=ttl) NO se verificó
+        # contra el servicio real de Firebase Hosting: solo con dobles en
+        # pruebas-workflows/canal_previa.py (del estándar). Si falla en el primer
+        # uso real, el efecto es únicamente el ::warning:: y el canal conserva su
+        # plazo.
         continue-on-error: true
         env:
           PROYECTO: ${{ vars.GCP_PROJECT_ID_PROD }}
           SITIO: ${{ vars.FIREBASE_SITE_ID || vars.GCP_PROJECT_ID_PROD }}
         run: |
           npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
-          firebase hosting:channel:create previa --project "$PROYECTO" --expires 30d \
+          firebase hosting:channel:create previa --project "$PROYECTO" --site "$SITIO" --expires 30d \
             --non-interactive >/dev/null 2>&1 || true
-          firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"
+          if ! firebase hosting:clone "$SITIO:live" "$SITIO:previa" --project "$PROYECTO"; then
+            echo "::notice::No se pudo clonar live a 'previa' (esperable en el primer despliegue, cuando aún no hay versión en live; si no lo es, vea el error de arriba): no hay copia para rollback automático hasta el siguiente despliegue."
+            echo "::warning::No se pudo guardar la copia para rollback (clone $SITIO:live → previa). Si el sitio '$SITIO' todavía no existe, créelo: firebase hosting:sites:create $SITIO --project $PROYECTO"
+            exit 0
+          fi
+          # Renueva el plazo del canal: `--expires 30d` solo rige al CREARLO y
+          # `hosting:clone` no lo extiende. Sin esto "previa" caduca 30 días
+          # después de crearse aunque se clone en cada despliegue. Un fallo
+          # aquí NUNCA tumba el despliegue: solo avisa. Sin la cabecera
+          # x-goog-user-project a propósito: exige serviceusage.services.use sobre
+          # el proyecto y la cuenta de despliegue del estándar no lo tiene; con un
+          # token de cuenta de servicio la cuota ya va al proyecto de esa cuenta.
+          # Con tiempos máximos: un curl colgado agotaría el timeout del job
+          # (continue-on-error no protege de eso).
+          token="$(gcloud auth print-access-token 2>/dev/null)" || token=""
+          if [[ -z "$token" ]]; then
+            echo "::warning::No se pudo obtener el token para renovar el plazo del canal 'previa' (gcloud auth print-access-token); conserva el plazo que tenía."
+            exit 0
+          fi
+          respuesta="$(mktemp)"
+          codigo="$(curl -sS --connect-timeout 10 --max-time 30 -o "$respuesta" -w '%{http_code}' -X PATCH \
+            -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" \
+            --data '{"ttl":"2592000s"}' \
+            "https://firebasehosting.googleapis.com/v1beta1/sites/${SITIO}/channels/previa?updateMask=ttl")" || codigo="000"
+          # El motivo del fallo (error.message de la respuesta; no contiene el token).
+          motivo="$(python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); print(str(d.get("error", {}).get("message", ""))[:200])' "$respuesta" 2>/dev/null)" || motivo=""
+          rm -f "$respuesta"
+          case "$codigo" in
+            2??) echo "Plazo del canal 'previa' renovado a 30 días." ;;
+            *)   echo "::warning::No se pudo renovar el plazo del canal 'previa' (HTTP $codigo${motivo:+: $motivo}); conserva el plazo que tenía." ;;
+          esac
 
       - name: Cloud Functions — dependencias para que firebase deploy lea el código
         # `firebase deploy` no solo SUBE functions/: antes CARGA lib/index.js
@@ -1873,10 +1961,12 @@ jobs:
           # existe, el rollback es MANUAL: consola Firebase → Hosting →
           # Historial de versiones → "Revertir" (ver 06-rollback-e-incidentes.md).
           # Las reglas de Firestore se revierten con `git revert` + nuevo tag.
+          # ALCANCE: este paso revierte SOLO Hosting. Las reglas de Firestore,
+          # las funciones y los datos NO se revierten solos.
           if firebase hosting:clone "$SITIO:previa" "$SITIO:live" --project "$PROYECTO"; then
-            echo "::warning::ROLLBACK ejecutado: live restaurado desde el canal 'previa'."
+            echo "::warning::ROLLBACK ejecutado: live restaurado desde el canal 'previa'. Se revirtió SOLO Hosting: las reglas de Firestore, las funciones y los datos NO se revierten solos; si el despliegue los cambió, use git revert + nuevo tag (ver 01-seguridad/06-rollback-e-incidentes.md)."
           else
-            echo "::error::Rollback automático no disponible. Ejecute el rollback manual: consola Firebase → Hosting → Historial → Revertir. Ver 01-seguridad/06-rollback-e-incidentes.md"
+            echo "::error::Rollback automático no disponible (y aunque lo estuviera, revertiría SOLO Hosting: reglas de Firestore, funciones y datos no se revierten solos). Ejecute el rollback manual: consola Firebase → Hosting → Historial → Revertir; para reglas y funciones, git revert + nuevo tag. Ver 01-seguridad/06-rollback-e-incidentes.md"
           fi
 
       - name: Registrar resultado del despliegue
