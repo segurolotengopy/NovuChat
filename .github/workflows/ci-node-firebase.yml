@@ -1013,7 +1013,7 @@ jobs:
           # de producción está atada a su dominio, GitHub no admite una variable
           # de Environment vacía, y sin variable en `staging` se usaría la del
           # repositorio (la de producción). Con la clave vacía la consola no
-          # inicializa App Check (`web/src/core/lib/firebase.ts`).
+          # inicializa App Check (`web/src/lib/firebase.ts`).
           VITE_APPCHECK_SITE_KEY: ''
         run: |
           set -euo pipefail

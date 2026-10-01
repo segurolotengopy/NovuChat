@@ -28,13 +28,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
+vi.mock('../../web/src/lib/firebase', () => ({ db: {} }));
 
 import {
   IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, esModulo, manifiestoDe,
   type IdModulo, type Manifiesto, type Pestana,
 } from '../../functions/src/registro.ts';
-import { FLUJOS } from '../../web/src/central/lib/flujos.ts';
+import { FLUJOS } from '../../web/src/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/core/prompt/prompt.ts';
 import { PLANES } from '../../functions/src/central/cuenta/planes.ts';
 import { DESTINOS_F2 } from '../frontera/destinos-f2.ts';
@@ -248,7 +248,7 @@ describe('1. estructura del registro', () => {
 });
 
 // ======================================================================= 2
-describe('2. pestañas: el registro contra web/src/central/lib/flujos.ts y App.tsx', () => {
+describe('2. pestañas: el registro contra web/src/lib/flujos.ts y App.tsx', () => {
   type PestanaDeHoy = { ruta: string; etiqueta: string; roles?: readonly string[]; tambienPropietario?: boolean };
   const normal = (p: { ruta: string; titulo: string; roles?: readonly string[]; tambienPropietario?: boolean }) => ({
     ruta: p.ruta, titulo: p.titulo, roles: ordenado(p.roles ?? ['admin']), tambienPropietario: p.tambienPropietario === true,

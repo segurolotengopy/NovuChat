@@ -8,7 +8,7 @@
  * (configuración, colecciones, límites, pestañas, herramientas, Functions,
  * ganchos y los mensajes que agrega por conversación). De acá se derivan, en
  * F2 y F3, las siete copias de hoy (`Analisis/41` §3.3): la tabla de flujos de
- * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `index.ts`,
+ * la consola (`web/src/lib/flujos.ts`), `VERTICALES` de `index.ts`,
  * `VERTICALES_CONOCIDOS` y `documentoDeVertical` de `prompt.ts`, las
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
