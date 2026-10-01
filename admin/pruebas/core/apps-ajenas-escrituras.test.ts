@@ -450,6 +450,16 @@ describe('plantillas-cliente.sh --crear --aplicar (escribe desde python, no con 
     expect(r.llamadas).toEqual([]);
   });
 
+  it('corta por huella de la WABA, antes del python y sin consultar a Graph', () => {
+    const r = lanzar(args('--crear', '--aplicar'), PROPIA, {
+      extra: { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: huella(WABA).replace(/(.{8})(?!$)/g, '$1:') },
+    });
+    expect(r.codigo).toBe(3);
+    expect(r.error).toMatch(/WABA …7777 es de WhatsApp-Modular \(huella\).*prohibiciones 5 y 7/);
+    expect(r.llamadas).toEqual([]);
+    expect(r.salida).not.toMatch(/Plantillas en la WABA/);
+  });
+
   it('con una app propia pasa el candado (el python después no tiene red)', () => {
     const r = lanzar(args('--crear', '--aplicar'), PROPIA);
     expect(r.codigo).not.toBe(3);
@@ -460,6 +470,112 @@ describe('plantillas-cliente.sh --crear --aplicar (escribe desde python, no con 
     for (const m of [['--crear'], ['--listar']]) {
       lanzar(args(...m), PROPIA);
       expect(readFileSync(registro, 'utf8'), m.join(' ')).toBe('');
+    }
+  });
+});
+
+// Revisión de seguridad del #313: la comparación de huellas no puede depender
+// del shell. Con `echo $2 | tr`, un .env con `IFS=,` apagaba las tres capas, y
+// en la WABA la huella es la única.
+describe('las huellas se comparan sin depender del shell (#313)', () => {
+  const agrupada = (s: string) => huella(s).replace(/(.{8})(?!$)/g, '$1:');
+  /** Carga la biblioteca (o una copia) en un bash limpio y corre `cuerpo`. */
+  const bash = (cuerpo: string, opciones: { lib?: string; shim?: string; extraEnv?: Record<string, string> } = {}) => {
+    const r = spawnSync('bash', ['-c', `source "${opciones.lib ?? LIB}"\n${cuerpo}`], {
+      encoding: 'utf8',
+      env: entornoDelEmulador(undefined, {
+        PATH: `${opciones.shim ? `${opciones.shim}:` : ''}${process.env.PATH ?? ''}`, BASH_ENV: '', ENV: '', ...opciones.extraEnv,
+      }),
+    });
+    return { codigo: r.status, salida: r.stdout.trim(), error: r.stderr };
+  };
+  // La lista con el formato de la base: una huella por línea, con saltos de línea.
+  const LISTA = `\n${agrupada('777777')}\n${agrupada('888888')}\n`;
+  const PREAMBULOS = [':', 'IFS=,', 'IFS=', "IFS=$'\\n'", 'IFS=:', 'IFS=01234abcdef', 'echo() { :; }', 'tr() { cat; }', 'printf() { :; }'];
+
+  it.each(PREAMBULOS)('con «%s» en el entorno, una huella de la lista se reconoce y otra no', (pre) => {
+    expect(bash(`${pre}; huella_en 777777 "$L" && command echo si || command echo no`, { extraEnv: { L: LISTA } }).salida, pre).toBe('si');
+    expect(bash(`${pre}; huella_en 888888 "$L" && command echo si || command echo no`, { extraEnv: { L: LISTA } }).salida, pre).toBe('si');
+    expect(bash(`${pre}; huella_en 999999 "$L" && command echo si || command echo no`, { extraEnv: { L: LISTA } }).salida, pre).toBe('no');
+  });
+
+  it('un .env con IFS=, ya no apaga la capa de la WABA: corta con código 3, sin escribir', () => {
+    escribirEnv(['IFS=,']);
+    for (const nombre of ['crear-plantilla.sh --aplicar', 'webhook-meta.sh --alta-waba', 'verificar-meta.sh --suscribir']) {
+      const r = correr(caso(nombre), PROPIA, { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: LISTA });
+      expect(r.codigo, nombre).toBe(3);
+      expect(r.error, nombre).toMatch(/WABA …7777 es de WhatsApp-Modular \(huella\)/);
+      expect(r.escrituras, nombre).toEqual([]);
+    }
+  });
+
+  describe('falla cerrado si no puede calcular la huella', () => {
+    const shim = (cuerpo: string) => {
+      const d = mkdtempSync(join(dir, 'shim-'));
+      writeFileSync(join(d, 'python3'), `#!/bin/sh\n${cuerpo}\n`);
+      chmodSync(join(d, 'python3'), 0o755);
+      return d;
+    };
+    it.each([
+      ['python3 que sale con error', 'exit 1'],
+      ['python3 que no existe como programa', 'exit 127'],
+      ['python3 que contesta cualquier otra cosa', 'echo quizas'],
+      ['python3 que no contesta nada', 'exit 0'],
+    ])('%s: sale con 3 y no da por buena la huella', (_n, cuerpo) => {
+      const r = bash('huella_en 777777 "$L" && echo si || echo no', { shim: shim(cuerpo), extraEnv: { L: LISTA } });
+      expect(r.codigo).toBe(3);
+      expect(r.salida).not.toMatch(/si|no/);
+      expect(r.error).toMatch(/No se pudo calcular la huella/);
+    });
+  });
+
+  describe('cada función de huellas usa su lista de base, además de _EXTRA', () => {
+    // La lista real no se puede ejercitar (los ids reales no están): se copia
+    // la biblioteca con las tres listas cambiadas por huellas de ids de prueba.
+    const copia = () => {
+      let t = readFileSync(LIB, 'utf8');
+      for (const [variable, id] of [['APPS_AJENAS_HUELLAS', ID], ['APPS_AJENAS_NUMEROS_HUELLAS', TELEFONO], ['APPS_AJENAS_WABAS_HUELLAS', WABA]] as const) {
+        const antes = t;
+        t = t.replace(new RegExp(`^${variable}="[^"]*"`, 'm'), `${variable}="\n${agrupada(id)}\n"`);
+        expect(t, variable).not.toBe(antes);
+      }
+      const ruta = join(dir, 'lib-de-prueba.sh');
+      writeFileSync(ruta, t);
+      return ruta;
+    };
+    it.each([
+      ['huella_ajena', ID, [TELEFONO, WABA]],
+      ['numero_ajeno', TELEFONO, [ID, WABA]],
+      ['waba_ajena', WABA, [ID, TELEFONO]],
+    ])('%s reconoce su id y no el de las otras dos listas', (funcion, propio, ajenos) => {
+      const lib = copia();
+      expect(bash(`${funcion} ${propio} && command echo si || command echo no`, { lib }).salida).toBe('si');
+      for (const otro of ajenos) expect(bash(`${funcion} ${otro} && command echo si || command echo no`, { lib }).salida, otro).toBe('no');
+    });
+  });
+
+  // En es_ES y es_BO (las de este equipo), [0-9] aceptaba dígitos de ancho
+  // completo y arábigo-índicos: pasaban el control de forma y su huella no
+  // coincidía con la del id. Donde la configuración regional no está
+  // instalada, bash vuelve a C y la prueba solo comprueba que rechaza.
+  it.each([['７７７７７７'], ['٧٧٧٧٧٧'], ['77７777'], [' 777777'], ['0777777'], ['777777\n']])(
+    'un WABA_ID «%s» no pasa el control de forma, en ninguna configuración regional', (valor) => {
+      for (const locale of ['C', 'C.UTF-8', 'es_ES.UTF-8', 'es_BO.utf8', 'es_AR.utf8']) {
+        escribirEnv([`WABA_ID=${JSON.stringify(valor)}`]);
+        const r = correr(caso('crear-plantilla.sh --aplicar'), PROPIA, { LC_ALL: locale });
+        expect(r.codigo, locale).toBe(3);
+        expect(r.error, locale).toMatch(/WABA_ID no tiene forma de id/);
+        expect(r.escrituras, locale).toEqual([]);
+      }
+    });
+
+  it.each([['７７７７'], ['٧٧٧٧']])('es_id rechaza «%s» aunque el entorno traiga LC_ALL=es_ES.UTF-8', (valor) => {
+    const r = bash(`es_id "$V" && command echo si || command echo no`, { extraEnv: { V: valor, LC_ALL: 'es_ES.UTF-8' } });
+    expect(r.salida).toBe('no');
+  });
+  it('es_id acepta un id de Meta y rechaza lo que no lo es', () => {
+    for (const [v, esperado] of [['777777', 'si'], ['1234', 'si'], ['123', 'no'], ['0777', 'no'], ['7777a', 'no'], ['', 'no'], ['7'.repeat(21), 'si'], ['7'.repeat(22), 'no']]) {
+      expect(bash(`es_id "$V" && command echo si || command echo no`, { extraEnv: { V: v ?? '' } }).salida, String(v)).toBe(esperado);
     }
   });
 });
@@ -710,7 +826,7 @@ describe('la fuente de los scripts (LOW-C)', () => {
   it('el candado apaga sourcepath y queda readonly, con curl_token', () => {
     expect(fuente(LIB)).toMatch(/^shopt -u sourcepath$/m);
     expect(fuente(LIB)).toMatch(/^readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_WABAS_HUELLAS APPS_AJENAS_CLASIFICAR$/m);
-    expect(fuente(LIB)).toMatch(/^readonly -f huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token$/m);
+    expect(fuente(LIB)).toMatch(/^readonly -f es_id huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token$/m);
   });
 
   it('un .env que redefine la lista de números ajenos no carga', () => {

@@ -96,14 +96,31 @@ APPS_AJENAS_WABAS_HUELLAS="
 86a1424b:3373925a:c7427324:b526c8ef:25814f70:a5610785:06dfec87:34e1ca09
 "
 
-# huella_en <valor> <huellas…>: 0 si el sha256 del valor está entre las huellas.
+# huella_en <valor> <huellas…>: 0 si el sha256 del valor está entre las huellas,
+# 1 si no. La comparación la hace python, no el shell (revisión de seguridad
+# del #313): con `echo $2 | tr`, un .env con `IFS=,` o `IFS=` cambiaba cómo se
+# partía la lista y apagaba las tres capas de huellas, y en la WABA la huella
+# es la única capa. Falla CERRADO: si python no contesta «si» o «no», sale con
+# 3 en vez de dar por buena una huella que no pudo calcular.
 huella_en() {
-  local h
-  h=$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
-  # shellcheck disable=SC2086  # sin comillas a propósito: una huella por palabra
-  case " $(echo $2 | tr -d :) " in *" $h "*) return 0 ;; esac
-  return 1
+  local r
+  r=$(python3 -I -c 'import hashlib,sys
+h = hashlib.sha256(sys.argv[1].strip().encode()).hexdigest()
+print("si" if h in sys.argv[2].replace(":", "").split() else "no")' "$1" "$2") || r=error
+  case "$r" in
+    si) return 0 ;;
+    no) return 1 ;;
+  esac
+  echo "✗ No se pudo calcular la huella de un id: se corta sin escribir" >&2
+  exit 3
 }
+
+# es_id <valor>: 0 si es un id numérico de Meta, ASCII, sin ceros a la
+# izquierda y de 4 a 21 dígitos. Se compara con LC_ALL=C local: en es_ES y
+# es_BO (las de este equipo), [0-9] acepta dígitos de ancho completo y
+# arábigo-índicos, que no darían la huella del id y pasarían el candado
+# (revisión de seguridad del #313; se comprobó en bash de esta máquina).
+es_id() { local LC_ALL=C; [[ $1 =~ ^[1-9][0-9]{3,20}$ ]]; }
 
 # huella_ajena <app-id>, numero_ajeno <phone-number-id> y waba_ajena <waba-id>:
 # 0 si el id es de la lista.
@@ -150,13 +167,13 @@ print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)'
 #           propia, GET /{WA_PHONE_ID}?fields=id,verified_name con WA_TOKEN,
 #           que corta por los mismos fragmentos, por otro id o si Graph no
 #           contesta.
-# El id del destino se exige con forma de id porque va en la ruta de la URL:
-# un «123/../456» escribiría en otro objeto.
+# El id del destino se exige con forma de id (`es_id`) porque va en la ruta de
+# la URL: un «123/../456» escribiría en otro objeto.
 # La credencial va por la entrada estándar (`-H @-`), no en los argumentos de
 # curl: así no se ve en `ps` (revisión de seguridad del #265).
 negar_app_ajena() {
   local id="$1" modo="$2" json v
-  if ! [[ $id =~ ^[1-9][0-9]{3,20}$ ]]; then
+  if ! es_id "$id"; then
     echo "✗ WA_APP_ID no tiene forma de id de app: se corta sin escribir" >&2; exit 3
   fi
   if ! [[ ${G:-} =~ ^https://graph\.facebook\.com/v[0-9]+\.[0-9]+$ ]]; then
@@ -165,11 +182,11 @@ negar_app_ajena() {
   case "$modo" in
     app) ;;
     token)
-      if ! [[ ${WABA_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
+      if ! es_id "${WABA_ID:-}"; then
         echo "✗ WABA_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
       fi ;;
     numero)
-      if ! [[ ${WA_PHONE_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
+      if ! es_id "${WA_PHONE_ID:-}"; then
         echo "✗ WA_PHONE_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
       fi ;;
     *) echo "✗ negar_app_ajena: modo «$modo» desconocido (app, token o numero)" >&2; exit 3 ;;
@@ -243,4 +260,4 @@ curl_token() {
 shopt -u sourcepath
 
 readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_WABAS_HUELLAS APPS_AJENAS_CLASIFICAR
-readonly -f huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token
+readonly -f es_id huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token
