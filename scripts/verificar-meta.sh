@@ -17,6 +17,12 @@
 # Cada demo tiene su propia app de Meta, con su WA_APP_ID, WA_PHONE_ID y
 # WABA_ID: por eso hace falta poder apuntar el script a un archivo distinto.
 # Todos los archivos .env* están en .gitignore (repositorio público).
+#
+# El token no va en los argumentos de curl ni en la URL (se vería en `ps`):
+# todas las llamadas pasan por `curl_token`, que lo lee de la entrada estándar
+# (revisión de seguridad del #265, LOW-B). Por eso la comprobación 1 ya no usa
+# `debug_token`, que exige el token en la query: `GET /app` devuelve la app
+# dueña del token, la misma consulta que hace el candado.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -72,8 +78,8 @@ p_ok()   { printf '  \033[1;32m✓\033[0m %s\n' "$*"; ok=$((ok+1)); }
 p_fail() { printf '  \033[1;31m✗\033[0m %s\n' "$*"; fail=$((fail+1)); }
 
 echo "== 1. El token pertenece a la app correcta =="
-APP=$(curl -s --max-time 20 "${G}/debug_token?input_token=${WA_TOKEN}&access_token=${WA_TOKEN}" || echo '{}')
-APP_ID=$(echo "$APP" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("data",{}).get("app_id",""))' 2>/dev/null || echo "")
+APP=$(curl_token -s --max-time 20 "${G}/app?fields=id" || echo '{}')
+APP_ID=$(echo "$APP" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
 if [[ "$APP_ID" == "${WA_APP_ID}" ]]; then
   p_ok "token de la app ${WA_APP_ID}"
 else
@@ -82,7 +88,7 @@ else
 fi
 
 echo "== 2. La WABA está suscrita a la app =="
-SUBS=$(curl -s --max-time 20 "${G}/${WABA_ID}/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+SUBS=$(curl_token -s --max-time 20 "${G}/${WABA_ID}/subscribed_apps" || echo '{}')
 if [[ $DESUSCRIBIR -eq 1 ]]; then
   if ! echo "$SUBS" | grep -q "\"${WA_APP_ID}\""; then
     p_ok "la app …${WA_APP_ID: -4} ya no está suscrita a la WABA …${WABA_ID: -4}: nada que hacer"
@@ -94,7 +100,7 @@ if [[ $DESUSCRIBIR -eq 1 ]]; then
     if [[ "$CONF" != "${WA_APP_ID: -4}" ]]; then
       p_fail "no coincide: no se desuscribió nada"
     else
-      R=$(command curl -s --max-time 20 -X DELETE "${G}/${WABA_ID}/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+      R=$(curl_token -s --max-time 20 -X DELETE "${G}/${WABA_ID}/subscribed_apps" || echo '{}')
       if echo "$R" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
         p_ok "desuscrita. Reversible con: $0 --env ${ARCHIVO_ENV} --suscribir"
       else
@@ -110,15 +116,14 @@ else
   if [[ $SUSCRIBIR -eq 1 ]]; then
     negar_app_ajena "$WA_APP_ID" token
     echo "     → suscribiendo..."
-    command curl -s -X POST "${G}/${WABA_ID}/subscribed_apps" \
-      -H "Authorization: Bearer ${WA_TOKEN}" | python3 -m json.tool
+    curl_token -s -X POST "${G}/${WABA_ID}/subscribed_apps" | python3 -m json.tool
   else
     echo "     → corregir con: $0 --env ${ARCHIVO_ENV} --suscribir"
   fi
 fi
 
 echo "== 3. El número de prueba responde =="
-NUM=$(curl -s --max-time 20 "${G}/${WA_PHONE_ID}" -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+NUM=$(curl_token -s --max-time 20 "${G}/${WA_PHONE_ID}" || echo '{}')
 if echo "$NUM" | grep -q '"id"'; then
   p_ok "$(echo "$NUM" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("display_phone_number","?"),"·",d.get("verified_name","?"))' 2>/dev/null)"
 else
@@ -126,8 +131,7 @@ else
 fi
 # El nombre visible: WhatsApp Manager puede mostrar el viejo mientras Meta ya
 # aprobó el nuevo (pasó con NovuChat el 15/09). Lo que vale es lo que dice la API.
-NOMBRE=$(curl -s --max-time 20 "${G}/${WA_PHONE_ID}?fields=verified_name,name_status,new_name_status,new_display_name" \
-  -H "Authorization: Bearer ${WA_TOKEN}" || echo '{}')
+NOMBRE=$(curl_token -s --max-time 20 "${G}/${WA_PHONE_ID}?fields=verified_name,name_status,new_name_status,new_display_name" || echo '{}')
 echo "$NOMBRE" | python3 -c '
 import sys, json
 d = json.load(sys.stdin)

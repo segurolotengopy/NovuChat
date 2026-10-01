@@ -29,12 +29,20 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$MODO" ] && [ -f "$ENV_CLIENTE" ] || { echo "Uso: --env-cliente <.env.x> --listar | --crear [--aplicar]" >&2; exit 2; }
+# El candado de apps ajenas, ANTES del .env: queda readonly (prohibiciones 5
+# y 7; revisión de seguridad del #265). --crear --aplicar escribe plantillas
+# en la WABA con el token del .env: con el de otro sistema, en la suya.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige un argumento
 source "$ENV_CLIENTE"
 set +a
 : "${WA_TOKEN:?}" "${WABA_ID:?}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
+if [ "$MODO" = "crear" ] && [ "$APLICAR" = 1 ]; then
+  negar_app_ajena "${WA_APP_ID:-}" token
+fi
 
 export MODO APLICAR WA_TOKEN WABA_ID G
 python3 - <<'PY'
