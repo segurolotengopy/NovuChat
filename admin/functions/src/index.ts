@@ -35,7 +35,7 @@ export { seguimientosPendientes, seguimientoEnviado } from './seguimientos.js';
 export {
   enlaceCatalogo, catalogoPublico, checkoutCatalogo, fijarWebhookCarrito,
   vistaPreviaCatalogo, fotoDeCatalogo,
-} from './catalogoWeb.js';
+} from './modulos/catalogo-web/catalogoWeb.js';
 
 import { registrar } from './core/turno/bitacora.js';
 import { umbralValido, umbralesDeAtencion } from './core/conteo/atencion.js';
