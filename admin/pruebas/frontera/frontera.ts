@@ -84,9 +84,11 @@ export const RANGO: Readonly<Record<ZonaF2, number>> = {
 
 /**
  * Archivos cuya zona no sale de la carpeta. El registro está en la raíz de
- * Functions a propósito (lo lee todo el mundo y no importa a nadie). El
- * coordinador de turno recibe su línea en el PR que mueva `ingesta.ts`; hasta
- * entonces lo ubica `DESTINOS_F2`, y la prueba falla si deja de haber uno.
+ * Functions a propósito (lo lee todo el mundo y no importa a nadie). Los puntos
+ * de entrada de la consola y las herramientas de desarrollo que tocan todas las
+ * zonas son coordinador, por regla (F2, Z). El coordinador DE TURNO recibe su
+ * línea en el PR que mueva `ingesta.ts`; hasta entonces lo ubica `DESTINOS_F2`,
+ * y la prueba exige uno cuyo destino sea `core/turno/` (los de arriba no cuentan).
  */
 export const ZONA_POR_ARCHIVO: Readonly<Record<string, DestinoF2>> = {
   'admin/functions/src/registro.ts': { zona: 'registro', destino: 'admin/functions/src/registro.ts' },
@@ -114,10 +116,6 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, DestinoF2>> = {
   'admin/pruebas/correr-storage.sh': { zona: 'coordinador', destino: 'admin/pruebas/correr-storage.sh' },
   // Las reglas de Storage amparan a todas las zonas.
   'admin/pruebas/storage-reglas.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/storage-reglas.test.ts' },
-  // Las reglas de Firestore que cruzan zonas, con las campañas.
-  'admin/pruebas/campanas-reglas.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/campanas-reglas.test.ts' },
-  // Doble de desarrollo (no hay una sexta zona): lo usan suites de varias zonas.
-  'admin/pruebas/dobles/cobrador.ts': { zona: 'coordinador', destino: 'admin/pruebas/dobles/cobrador.ts' },
 };
 
 /**

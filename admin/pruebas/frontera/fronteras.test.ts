@@ -111,7 +111,12 @@ describe('la frontera sobre el código de hoy', () => {
   });
 
   it('el coordinador de turno no se pierde al moverlo (sigue habiendo uno)', () => {
-    expect(ARCHIVOS.some((a) => zonaDeCodigo(a)?.zona === 'coordinador')).toBe(true);
+    // Los puntos de entrada y las herramientas con línea en ZONA_POR_ARCHIVO también son coordinador:
+    // lo que se vigila es el del turno, el que va a `core/turno/`.
+    expect(ARCHIVOS.some((a) => {
+      const z = zonaDeCodigo(a);
+      return z?.zona === 'coordinador' && z.destino.startsWith('admin/functions/src/core/turno/');
+    })).toBe(true);
   });
 });
 
