@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cuentaEnDemostracion, planesOfrecidos, planesQuePuedePagar } from '../../web/src/lib/pagar';
+import { cuentaEnDemostracion, planesOfrecidos, planesQuePuedePagar } from '../../web/src/central/lib/pagar';
 import { PLANES, PLANES_PUBLICADOS } from '../../functions/src/central/cuenta/planes';
 
 const aqui = dirname(fileURLToPath(import.meta.url));

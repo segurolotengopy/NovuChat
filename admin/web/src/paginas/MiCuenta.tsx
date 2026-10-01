@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { sendPasswordResetEmail, updatePassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { useSesion } from '../lib/contexto';
+import { useSesion } from '../core/lib/contexto';
 import { MINIMO_CONTRASENA } from '../lib/contrasena';
 
 /**

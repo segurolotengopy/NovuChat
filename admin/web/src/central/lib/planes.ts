@@ -24,17 +24,17 @@ import {
   AVISO_CONSUMO, PLANES, PLANES_PUBLICADOS, PLAN_POR_DEFECTO, esPlanVendible,
   limitesDeCuenta, periodoDe,
   type IdPlanVendible,
-} from '../../../functions/src/central/cuenta/planes';
+} from '../../../../functions/src/central/cuenta/planes';
 
 export {
   AVISO_CONSUMO, BOLSA, CATALOGO_PLANES, INSTALACION_USD, LIMITE_MAXIMO, PLANES,
   PLANES_PUBLICADOS, PLAN_POR_DEFECTO, avisoConsumoPendiente, avisoDeConsumo, esPlanVendible,
   limitesDe, limitesDeCuenta, periodoDe, umbralDeAviso, limiteDeCampanas, MAXIMO_CAMPANAS,
   MAXIMO_CAMBIOS_INCLUIDOS,
-} from '../../../functions/src/central/cuenta/planes';
+} from '../../../../functions/src/central/cuenta/planes';
 export type {
   AvisoConsumo, IdPlanVendible, Limites, LimitesDeCuenta, Plan,
-} from '../../../functions/src/central/cuenta/planes';
+} from '../../../../functions/src/central/cuenta/planes';
 
 /**
  * Tope de productos para ESTE comercio: la copia de `cuenta/estado.limites`;

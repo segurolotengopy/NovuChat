@@ -3,7 +3,7 @@
  *
  * La ingesta (`TipoEvento`, en `functions/src/core/turno/bitacora.ts`) decide qué eventos se
  * escriben. Las reglas (`eventoValido()` de `/bitacora`) dicen qué tipos acepta
- * la colección, y la consola (`web/src/lib/bitacora.ts`, `TIPOS`) cuáles se
+ * la colección, y la consola (`web/src/central/lib/bitacora.ts`, `TIPOS`) cuáles se
  * pueden filtrar. El 15/09 la ingesta ya escribía `derivacion_operador`,
  * `bloqueo_ventana` y `aviso_consumo`, y ninguna de las otras dos listas los
  * tenía: la regla los habría rechazado el día que la ingesta escriba sujeta a
@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { TIPOS } from '../web/src/lib/bitacora.ts';
+import { TIPOS } from '../web/src/central/lib/bitacora.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');

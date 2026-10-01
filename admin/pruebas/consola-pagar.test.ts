@@ -27,7 +27,7 @@ import { BOLSA, INSTALACION_USD, MESES_MAXIMO, PLANES, importeBs } from '../func
 import {
   BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, cobroSeMuestraParaPagar, mesEscrito, pideVolverAEntrar, planInicial,
   planesOfrecidos, vistaDelPedido,
-} from '../web/src/lib/pagar';
+} from '../web/src/central/lib/pagar';
 import { PLANES_PUBLICADOS } from '../functions/src/central/cuenta/planes';
 import { facturaMetaAlComercio } from '../web/src/lib/ejes';
 import { ResumenPrepago } from '../web/src/componentes/ResumenPrepago';
@@ -158,7 +158,7 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
     expect(facturaMetaAlComercio([provisto, propio])).toBe(true);
     // Y el plan ya no dice nada al respecto: ni `pagaMeta`, ni el nombre BYOC,
     // ni el viejo `paganEllosAMeta(plan)`.
-    expect(sinComentarios(leer('web/src/lib/pagar.ts'))).not.toMatch(/\bpagaMeta\b|paganEllosAMeta/);
+    expect(sinComentarios(leer('web/src/central/lib/pagar.ts'))).not.toMatch(/\bpagaMeta\b|paganEllosAMeta/);
     expect(sinComentarios(leer('web/src/paginas/Pagar.tsx'))).not.toMatch(/\bpagaMeta\b|'byoc'|paganEllosAMeta/);
   });
 

@@ -10,9 +10,9 @@ import {
   periodoPruebaAceptable, precioMensualDe, precioPorContratoDe, precioPorContratoValido, pruebaDeCuenta, techoDePrueba,
   type CambiosVista, type EjesDeCuenta, type Modalidad, type Modelo, type NumeroDeCuenta, type Titularidad,
 } from '../../lib/ejes';
-import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../lib/planes';
-import { importeBs, tipoCambioVigente } from '../../lib/prepago';
-import { avisoPrecioPorContrato } from '../../lib/pagar';
+import { MAXIMO_CAMBIOS_INCLUIDOS, PLANES, esPlanVendible, nombreDePlan, type IdPlanVendible } from '../../central/lib/planes';
+import { importeBs, tipoCambioVigente } from '../../central/lib/prepago';
+import { avisoPrecioPorContrato } from '../../central/lib/pagar';
 import { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralesDeAtencion } from '../../core/lib/atencion';
 import { resumenDeCambio } from '../lib/negocios';
 

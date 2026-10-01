@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
-import { useSesion } from '../lib/contexto';
+import { useSesion } from '../core/lib/contexto';
 import { SinSalida } from './SinSalida';
-import { esAdmin, rolEn } from '../lib/sesion';
+import { esAdmin, rolEn } from '../core/lib/sesion';
 
 /**
  * Guardia de rutas. Es CONVENIENCIA, no seguridad: evita pintar pantallas vacías

@@ -14,14 +14,14 @@
  * alguien la usa en producción, que es el peor momento posible para enterarse.
  *
  * Esta prueba es el control compensatorio: no corre consultas, compara la lista
- * de formas declaradas en `web/src/lib/bitacora.ts` contra el archivo de
+ * de formas declaradas en `web/src/central/lib/bitacora.ts` contra el archivo de
  * índices. Es pura, no necesita emulador ni red.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CAMPO_ORDEN, FORMAS, type Forma } from '../web/src/lib/bitacora.ts';
+import { CAMPO_ORDEN, FORMAS, type Forma } from '../web/src/central/lib/bitacora.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 
