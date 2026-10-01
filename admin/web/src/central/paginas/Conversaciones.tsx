@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
+import { db } from '../../lib/firebase';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
 
 interface Mensaje {
   id: string; direccion?: unknown; texto?: unknown; tipo?: unknown; ts?: { toDate(): Date };
