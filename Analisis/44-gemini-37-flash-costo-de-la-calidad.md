@@ -17,6 +17,13 @@ planes de `Analisis/43`.
 > cifras de este documento valen para 3.8. Lo que queda por medir es su razonamiento
 > por llamada y cuánto baja los reintentos.
 
+> **Actualización del 01/10/2026:** la decisión de arriba **quedó en espera de Andres**.
+> La orden general del 29/09 manda seguir en Gemini 3.5 y subir de modelo solo con evidencia en
+> los logs, después de corregir prompt y esquema. Además, con el diseño «Agenda mínima»
+> (`Analisis/43` §8), subir a 3.8 Flash cuesta **0,009 USD por conversación aun en 2027**
+> (14 % del costo variable): lo caro de este documento es el **agente con herramientas**, no el
+> modelo. Las tablas de abajo valen para los flujos que siguen con agente.
+
 ---
 
 ## 0. Conclusión, adelantada

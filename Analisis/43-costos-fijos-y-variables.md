@@ -9,6 +9,12 @@ dependencias). Parte de `Analisis/14` (tarifas de Meta), `27` (bloques), `39`
 (BYOC) y `docs/base-comercial.md`. **No cambia ningún precio vigente**: mide, y
 señala lo que habría que rediscutir.
 
+> **Actualización del 01/10/2026 (§8):** desde el 01/10 Bellido corre «Agenda mínima»,
+> un flujo donde el código calcula y el modelo solo extrae y redacta. Medido con las cifras
+> reales de Google, **Gemini vuelve a ser el 2,5 % del costo variable** y los márgenes suben.
+> Las cifras de §0 a §4 describen al **agente con herramientas**, que siguen usando el Demo A,
+> Platinum, el Demo B y la captación.
+
 ---
 
 ## 0. Conclusión, adelantada
@@ -283,3 +289,51 @@ solo se dimensionan):
 | Mezcla de conversaciones | 60 % de 5 respuestas, 30 % de 10, 10 % de 25 | Distribución real cuando haya un cliente en producción |
 | Chip del número | USD 1,50 al mes | Andres |
 | Dominio | USD 2,50 al mes | Andres |
+
+---
+
+## 8. Agenda mínima: el diseño cambia la cuenta (01/10/2026)
+
+El 01/10 Bellido pasó a «Agenda mínima v0» (`Analisis/46` §7; `Flujos/experimental/agenda-minima/`).
+El código consulta el calendario, calcula los huecos libres y arma los mensajes; el modelo solo **extrae**
+la intención (salida JSON, 200 tokens como techo) y a veces **redacta** (300 tokens). Llama a Gemini por
+HTTP, así que cada ejecución guarda el **`usageMetadata` real de Google**: la medición que a §2 le faltaba.
+
+**Medido el 01/10** (72 ejecuciones de 01:42 a 10:06 hora de Bolivia, pruebas de Andres; muestra chica):
+
+| | Agente con herramientas (§2) | Agenda mínima |
+|---|---|---|
+| Llamadas al modelo por turno | 2,2 | 0 o 1 (63 sin modelo, 9 con una, ninguna con dos) |
+| Tokens de entrada por llamada | ~7.800 (estimado de n8n) | ~790 al extraer, ~1.070 al redactar (cifra de Google) |
+| Salida por llamada | ~26 | ~100 al extraer, ~64 al redactar |
+| Razonamiento y caché | sin medir | 0 y 0 |
+| Respuestas por cita (`DISENO.md`) | 8,5 (supuesto) | 5 |
+
+Con 2 extracciones y 1 redacción por conversación (supuesto conservador):
+
+| Modelo | Gemini por conversación | Gemini en el costo variable |
+|---|---|---|
+| 3.5 Flash-Lite | **0,0015 USD** | **2,5 %** |
+| 3.8 Flash, 2026 (150 de razonamiento por llamada) | 0,0047 | 7,6 % |
+| 3.8 Flash, 2027 | 0,0093 | 14,2 % |
+
+Margen de contribución al 100 % del cupo, con 5 respuestas por conversación:
+
+| | Impulso | Crecimiento | Pro | Platinum | BYOC |
+|---|---|---|---|---|---|
+| Agente (§3.1, con caché) | 59 % | 46 % | 25 % | 40 % | −4 % |
+| **Agenda mínima, 3.5 Flash-Lite** | **67 %** | **72 %** | **58 %** | **64 %** | **74 %** |
+| Agenda mínima, 3.8 Flash 2027 | 64 % | 68 % | 53 % | 61 % | 42 % |
+| Agenda mínima, Flash-Lite, 8,5 respuestas | 67 % | 54 % | 36 % | 48 % | 74 % |
+
+**Lo que dice:**
+- **El costo lo decide la arquitectura, no el modelo.** Con el agente, Gemini pesaba entre el 18 y el 42 %;
+  con «el código calcula», el 2,5 %. La frase de la base comercial («Meta es el 94 %, el modelo el 6 %»)
+  vuelve a ser cierta **para los flujos con este diseño**.
+- **La mitad del salto viene de Meta, no de Gemini:** menos respuestas por cita (5 contra 8,5). Con 8,5
+  respuestas, el margen de Pro baja de 58 % a 36 %. Medir las respuestas reales por conversación del
+  piloto es la cifra que más importa ahora.
+- **BYOC de reservas vuelve a cerrar con holgura:** el equilibrio pasa a unas 27.000 conversaciones con
+  Flash-Lite y a unas 4.300 aun con 3.8 Flash en 2027.
+- **Los cambios incluidos (§3.3) siguen igual:** son horas, y el diseño no los toca.
+- La muestra son pruebas de Andres. Las cifras de un mes de piloto con pacientes reales reemplazan a estas.

@@ -173,3 +173,68 @@ if __name__ == '__main__':
     for n, v in FIJOS:
         print(f'   {v:7.2f}  {n}')
     print(f'   {FIJO_PLATAFORMA:7.2f}  TOTAL   (+ {CHIP_POR_NUMERO:.2f} por numero, supuesto)')
+
+
+# =============================================================================
+# 6. AGENDA MINIMA (01/10/2026): «el codigo calcula, el modelo conversa»
+# =============================================================================
+# El flujo de Bellido desde el 01/10 (Flujos/experimental/agenda-minima) llama
+# a Gemini por HTTP y guarda el usageMetadata REAL de Google. Medido el 01/10
+# en 72 ejecuciones (pruebas de Andres; muestra chica): 63 sin modelo, 9 con
+# UNA llamada; Extraer ~792 tokens de entrada y ~100 de salida; Redactar ~1.072
+# y ~64; razonamiento 0 y cache 0 (gemini-3.5-flash-lite).
+LLAMADAS_AM = {'Extraer': (792, 100), 'Redactar': (1072, 64)}
+# Por conversacion: supuesto conservador de 2 extracciones y 1 redaccion (las
+# preguntas sencillas y los botones no llaman al modelo). DISENO.md: 5 mensajes
+# por cita tipica.
+LLAMADAS_POR_CONV_AM = {'Extraer': 2, 'Redactar': 1}
+RESP_POR_CONV_AM = 5
+
+TARIFAS_AM = {   # entrada, salida (incluye razonamiento), USD por millon
+    '3.5 Flash-Lite': (0.30, 2.50),
+    '3.8 Flash 2026': (0.75, 3.75),
+    '3.8 Flash 2027': (1.50, 7.50),
+}
+
+
+def gemini_conv_am(modelo, razon_por_llamada=0):
+    ent, sal = TARIFAS_AM[modelo]
+    return sum(n * (LLAMADAS_AM[k][0] * ent + (LLAMADAS_AM[k][1] + razon_por_llamada) * sal) / 1e6
+               for k, n in LLAMADAS_POR_CONV_AM.items())
+
+
+def mes_am(plan, uso, modelo, razon=0, rpc=RESP_POR_CONV_AM, clientes=10):
+    nombre, precio, incluidas, paga_meta = plan
+    conv = incluidas * uso
+    msj = conv * rpc
+    d = {
+        'Impuestos': precio * IMPUESTOS,
+        'Meta': ((max(0, msj - GRATIS) * SERVICIO + conv * RECORDATORIO * UTILIDAD)
+                 if paga_meta else 0),
+        'Gemini': conv * gemini_conv_am(modelo, razon),
+        'Chip y fijo': (CHIP_POR_NUMERO if paga_meta else 0) + FIJO_PLATAFORMA / clientes,
+    }
+    return precio, d
+
+
+if __name__ == '__main__':
+    print('\n' + '=' * 96)
+    print('6. AGENDA MINIMA: Gemini por conversacion (USD) y margen por plan al 100 % del cupo')
+    print('=' * 96)
+    casos = [('3.5 Flash-Lite', 0), ('3.8 Flash 2026', 150), ('3.8 Flash 2027', 150)]
+    for mod, r in casos:
+        g = gemini_conv_am(mod, r)
+        print(f'   {mod:16} razonamiento {r:4d}/llamada: {g:.4f} USD por conversacion; '
+              f'Meta {RESP_POR_CONV_AM * SERVICIO:.4f} fuera de franquicia '
+              f'-> Gemini = {100 * g / (g + RESP_POR_CONV_AM * SERVICIO):4.1f} % del variable')
+    print(f'   {"":34}' + ''.join(f'{p[0][:17]:>18}' for p in PLANES))
+    for rpc in (RESP_POR_CONV_AM, RESP_POR_CONV):
+        for mod, r in casos:
+            fila = ''
+            for p in PLANES:
+                precio, d = mes_am(p, 1.0, mod, r, rpc)
+                fila += f'{pct(precio - sum(d.values()), precio):>18}'
+            print(f'   {mod + f", {rpc:.1f} resp":34}' + fila)
+    neto = 50 * (1 - IMPUESTOS) - FIJO_PLATAFORMA / 10
+    for mod, r in casos:
+        print(f'   BYOC 50, {mod:16}: equilibrio en {neto / gemini_conv_am(mod, r):8.0f} conversaciones')

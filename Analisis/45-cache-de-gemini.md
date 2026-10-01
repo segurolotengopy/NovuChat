@@ -5,6 +5,12 @@ la activación de la caché junto con la prueba de Gemini 3.7 Flash
 (`Analisis/44`). Modelo reproducible: `Analisis/45-modelo-cache-gemini.py`, que
 reutiliza los tokens medidos de `43` y los escenarios de `44`.
 
+> **Actualización del 01/10/2026:** la caché **solo importa en los flujos con agente** (Demo A,
+> Platinum, Demo B, captación). «Agenda mínima» (`Analisis/43` §8) manda prompts de 800 a
+> 1.100 tokens, por debajo del mínimo de caché de Google, y Gemini ya es el 2,5 % de su costo
+> variable: ahí no hay nada que ahorrar con caché. Los requisitos del §7 quedan para cuando se
+> trabaje sobre los flujos con agente.
+
 ---
 
 ## 0. Conclusión, adelantada
