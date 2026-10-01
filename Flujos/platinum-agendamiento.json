@@ -570,9 +570,9 @@
         },
         "returnAll": false,
         "limit": 50,
+        "timeMin": "={{ $json.ventanaDesde }}",
+        "timeMax": "={{ $json.ventanaHasta }}",
         "options": {
-          "timeMin": "={{ $json.ventanaDesde }}",
-          "timeMax": "={{ $json.ventanaHasta }}",
           "singleEvents": true,
           "orderBy": "startTime"
         }

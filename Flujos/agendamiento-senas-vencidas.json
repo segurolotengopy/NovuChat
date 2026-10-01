@@ -150,9 +150,9 @@
           "value": "={{ $json.calendarioARevisar }}"
         },
         "returnAll": true,
+        "timeMin": "={{ $now.minus({ days: 1 }).toISO() }}",
+        "timeMax": "={{ $now.plus({ days: 90 }).toISO() }}",
         "options": {
-          "timeMin": "={{ $now.minus({ days: 1 }).toISO() }}",
-          "timeMax": "={{ $now.plus({ days: 90 }).toISO() }}",
           "singleEvents": true
         }
       },
