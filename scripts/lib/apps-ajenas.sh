@@ -58,33 +58,85 @@ APPS_AJENAS_HUELLAS="
 # NovuChat con un token propio y el WA_PHONE_ID de un número ajeno, copiado
 # por error, pasaría la capa de la app, y `registrar-numero.sh --dar-de-baja`
 # le cortaría el OTP a SeguroLoTengo. Las entregó la sesión de
-# WhatsApp-Modular el 29/09/2026, con el mismo formato que las de las apps:
+# WhatsApp-Modular, con el mismo formato que las de las apps:
 #   1. el número del OTP de SeguroLoTengo, en uso, cotejado en vivo contra el
 #      otp-service (su nombre visible es «AAB1»: la segunda capa también lo
 #      corta);
-#   2. el número de prueba de Meta de la Fase 0 (app de demostración), en
-#      desuso, tomado de su .env local.
+#   2. y 3. la única línea de la WABA de prueba de AAB1 y la única línea de
+#      la WABA de SeguroLoTengo en producción (01/10/2026); no las usa
+#      NovuChat.
+# NO está el número de prueba de la Fase 0, A PROPÓSITO. Estuvo hasta el
+# 01/10/2026, rotulado «en desuso» sin cotejarlo contra los .env de NovuChat,
+# y es el WA_PHONE_ID del Demo A: el candado le cortaba a NovuChat sus propios
+# envíos, subidas y registros (revisión de la sesión de WhatsApp-Modular, que
+# lo corrigió). Hoy se cotejó el WA_APP_ID, el WA_PHONE_ID y el WABA_ID de
+# cada .env contra TODAS las listas: solo coinciden los de la Fase 0 del
+# Demo A, que están fuera a propósito.
 # No hay otros. Igual que con las apps, la huella no esconde nada: un
 # phone_number_id se puede sacar de su sha256 por fuerza bruta. Evita
 # publicarlo, y alcanza porque el id no es una credencial.
 # NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA solo puede AGREGAR.
 APPS_AJENAS_NUMEROS_HUELLAS="
 f6deee9a:ec3542cf:4fbe734c:74e151b6:cea4b0a7:fbd04e07:99a50717:8432edbf
-57f8cfb2:d8b6bd3b:c46050ca:3d8718cc:d09842cd:70f68d4b:28454469:a19d36bf
+f853b182:4857620b:275f90f0:18051d46:0767a184:4886cb1a:96a69f3f:c3ae8c75
+684f81ed:2ac56848:37cfe9ad:217f00a6:05e7a517:07e05302:c4b65d20:eb3c8a3d
 "
 
-# huella_en <valor> <huellas…>: 0 si el sha256 del valor está entre las huellas.
+# sha256 del WABA_ID de cada WABA de WhatsApp-Modular que NovuChat NO debe
+# tocar (LOW de la tercera revisión del #277). En modo `token`, un .env de
+# NovuChat con token propio y el WABA_ID de una de estas, copiado por error,
+# suscribiría la app de NovuChat a esa WABA (los mensajes de un sistema
+# financiero llegarían al n8n de NovuChat) o le crearía plantillas. Las
+# entregó la sesión de WhatsApp-Modular el 01/10/2026, calculadas desde Meta:
+#   1. la WABA del OTP de SeguroLoTengo y otros servicios de AAB1;
+#   2. la WABA de prueba de AAB1;
+#   3. la WABA de SeguroLoTengo en producción.
+# NO está la WABA de prueba de la Fase 0, A PROPÓSITO: el .env del Demo A de
+# NovuChat (y sus respaldos) la usan, y cortarla le impediría crear
+# plantillas o suscribir la app en su propia WABA. Se cotejó el 01/10/2026
+# con un script de solo lectura (el WABA_ID de cada .env contra estas
+# huellas): ningún .env de cliente coincide. Si el Demo A cambiara de WABA,
+# esa se puede sumar. Igual que con apps y números, la huella no esconde nada
+# y alcanza porque un WABA_ID no es una credencial.
+# NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA solo puede AGREGAR.
+APPS_AJENAS_WABAS_HUELLAS="
+2d158041:93b412f0:1459a022:c534f703:c7d1aab3:82cca119:251d3fd0:026b14a1
+2cafcbce:8747c5ab:0e11632a:8c5612e6:69d33974:9394ee1d:44d53cd6:2689d0ac
+86a1424b:3373925a:c7427324:b526c8ef:25814f70:a5610785:06dfec87:34e1ca09
+"
+
+# huella_en <valor> <huellas…>: 0 si el sha256 del valor está entre las huellas,
+# 1 si no. La comparación la hace python, no el shell (revisión de seguridad
+# del #313): con `echo $2 | tr`, un .env con `IFS=,` o `IFS=` cambiaba cómo se
+# partía la lista y apagaba las tres capas de huellas, y en la WABA la huella
+# es la única capa. Falla CERRADO: si python no contesta «si» o «no», sale con
+# 3 en vez de dar por buena una huella que no pudo calcular.
 huella_en() {
-  local h
-  h=$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(sys.argv[1].strip().encode()).hexdigest())' "$1")
-  # shellcheck disable=SC2086  # sin comillas a propósito: una huella por palabra
-  case " $(echo $2 | tr -d :) " in *" $h "*) return 0 ;; esac
-  return 1
+  local r
+  r=$(python3 -I -c 'import hashlib,sys
+h = hashlib.sha256(sys.argv[1].strip().encode()).hexdigest()
+print("si" if h in sys.argv[2].replace(":", "").split() else "no")' "$1" "$2") || r=error
+  case "$r" in
+    si) return 0 ;;
+    no) return 1 ;;
+  esac
+  echo "✗ No se pudo calcular la huella de un id: se corta sin escribir" >&2
+  exit 3
 }
 
-# huella_ajena <app-id> y numero_ajeno <phone-number-id>: 0 si es de la lista.
+# es_id <valor>: 0 si es un id numérico de Meta, ASCII, sin ceros a la
+# izquierda y de 4 a 21 dígitos. Se compara con LC_ALL=C local: en es_ES y
+# es_BO (las de este equipo), [0-9] acepta dígitos de ancho completo y
+# arábigo-índicos, que no darían la huella del id y pasarían el candado
+# (revisión de seguridad del #313; se comprobó en bash de esta máquina). Si el
+# .env dejara LC_ALL de solo lectura, el `local` falla y es_id rechaza.
+es_id() { local LC_ALL=C || return 1; [[ $1 =~ ^[1-9][0-9]{3,20}$ ]]; }
+
+# huella_ajena <app-id>, numero_ajeno <phone-number-id> y waba_ajena <waba-id>:
+# 0 si el id es de la lista.
 huella_ajena() { huella_en "$1" "$APPS_AJENAS_HUELLAS ${NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA:-}"; }
 numero_ajeno() { huella_en "$1" "$APPS_AJENAS_NUMEROS_HUELLAS ${NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA:-}"; }
+waba_ajena() { huella_en "$1" "$APPS_AJENAS_WABAS_HUELLAS ${NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA:-}"; }
 
 # El clasificador de una respuesta de Graph (sobre la entrada estándar):
 # argumentos id-esperado, fragmentos y el campo del nombre («name» de una
@@ -116,7 +168,8 @@ print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)'
 #           (WA_APP_SECRET), para lo que escribe en la app (--alta-meta)
 #   token → GET /app?fields=id,name con WA_TOKEN: lo que manda en
 #           /{WABA}/subscribed_apps es la app DUEÑA DEL TOKEN, no el WA_APP_ID
-#           del .env. Exige también un WABA_ID con forma de id.
+#           del .env. Exige también un WABA_ID con forma de id, y mira
+#           además la WABA: su huella, sin red y antes de todo.
 #   numero → igual que token, para lo que escribe en /{WA_PHONE_ID}/…
 #           (registro, baja, nombre visible, mensajes, medios): exige un
 #           WA_PHONE_ID con forma de id en vez del WABA_ID, y mira además el
@@ -124,13 +177,13 @@ print("ajena" if any(f in plano for f in fragmentos) else "propia", nombre)'
 #           propia, GET /{WA_PHONE_ID}?fields=id,verified_name con WA_TOKEN,
 #           que corta por los mismos fragmentos, por otro id o si Graph no
 #           contesta.
-# El id del destino se exige con forma de id porque va en la ruta de la URL:
-# un «123/../456» escribiría en otro objeto.
+# El id del destino se exige con forma de id (`es_id`) porque va en la ruta de
+# la URL: un «123/../456» escribiría en otro objeto.
 # La credencial va por la entrada estándar (`-H @-`), no en los argumentos de
 # curl: así no se ve en `ps` (revisión de seguridad del #265).
 negar_app_ajena() {
   local id="$1" modo="$2" json v
-  if ! [[ $id =~ ^[1-9][0-9]{3,20}$ ]]; then
+  if ! es_id "$id"; then
     echo "✗ WA_APP_ID no tiene forma de id de app: se corta sin escribir" >&2; exit 3
   fi
   if ! [[ ${G:-} =~ ^https://graph\.facebook\.com/v[0-9]+\.[0-9]+$ ]]; then
@@ -139,17 +192,22 @@ negar_app_ajena() {
   case "$modo" in
     app) ;;
     token)
-      if ! [[ ${WABA_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
+      if ! es_id "${WABA_ID:-}"; then
         echo "✗ WABA_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
       fi ;;
     numero)
-      if ! [[ ${WA_PHONE_ID:-} =~ ^[1-9][0-9]{3,20}$ ]]; then
+      if ! es_id "${WA_PHONE_ID:-}"; then
         echo "✗ WA_PHONE_ID no tiene forma de id: se corta sin escribir" >&2; exit 3
       fi ;;
     *) echo "✗ negar_app_ajena: modo «$modo» desconocido (app, token o numero)" >&2; exit 3 ;;
   esac
   if huella_ajena "$id"; then
     echo "✗ La app …${id: -4} es de WhatsApp-Modular (huella): NovuChat no escribe con ella (CLAUDE.md, prohibiciones 5 y 7)" >&2
+    exit 3
+  fi
+  # La WABA de destino, por huella y sin red, antes de preguntar nada.
+  if [ "$modo" = "token" ] && waba_ajena "$WABA_ID"; then
+    echo "✗ La WABA …${WABA_ID: -4} es de WhatsApp-Modular (huella): NovuChat no escribe en ella (CLAUDE.md, prohibiciones 5 y 7)" >&2
     exit 3
   fi
   # El número de destino, por huella y sin red, antes de preguntar nada.
@@ -211,5 +269,5 @@ curl_token() {
 # evitar. Todo script que carga la biblioteca queda sin esa búsqueda.
 shopt -u sourcepath
 
-readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_CLASIFICAR
-readonly -f huella_en huella_ajena numero_ajeno negar_app_ajena curl_token
+readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_WABAS_HUELLAS APPS_AJENAS_CLASIFICAR
+readonly -f es_id huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token

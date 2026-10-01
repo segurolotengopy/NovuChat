@@ -160,6 +160,7 @@ function lanzar(args: string[], respuesta: unknown, opciones: { entrada?: string
       RESPUESTA_NUMERO: JSON.stringify(NUMERO_PROPIO),
       NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '',
       NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: '',
+      NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: '',
       ...SIN_RED,
       ...opciones.extra,
     }),
@@ -247,7 +248,7 @@ describe.each(CASOS)('$nombre', (c) => {
   // ver el límite honesto en scripts/lib/apps-ajenas.sh.
   it('redefinir la lista o las funciones del candado en el .env hace fallar la carga, sin escribir', () => {
     for (const trampa of ['negar_app_ajena() { :; }', 'curl_token() { :; }', 'APPS_AJENAS_FRAGMENTOS=zzz', 'APPS_AJENAS_HUELLAS=',
-      'APPS_AJENAS_NUMEROS_HUELLAS=', `APPS_AJENAS_CLASIFICAR='print("propia x")'`, 'huella_en() { return 1; }']) {
+      'APPS_AJENAS_NUMEROS_HUELLAS=', 'APPS_AJENAS_WABAS_HUELLAS=', 'waba_ajena() { return 1; }', `APPS_AJENAS_CLASIFICAR='print("propia x")'`, 'huella_en() { return 1; }']) {
       escribirEnv([trampa]);
       const r = correr(c, { id: ID, name: 'AAB1-WA-Prod' });
       expect(r.codigo, trampa).not.toBe(0);
@@ -296,6 +297,25 @@ describe.each(CASOS)('$nombre', (c) => {
       expect(r.error).toMatch(new RegExp(`${variable} no tiene forma de id`));
       expect(r.escrituras).toEqual([]);
     });
+
+    if (c.modo === 'token') {
+      // El LOW de la tercera revisión del #277: una app propia no alcanza si la
+      // WABA de destino es de WhatsApp-Modular (el .env copiado por error).
+      it('por huella de la WABA corta antes de tocar la red, aunque la app sea propia', () => {
+        const r = correr(c, PROPIA, { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: huella(WABA).replace(/(.{8})(?!$)/g, '$1:') });
+        expect(r.codigo).toBe(3);
+        expect(r.error).toMatch(/WABA …7777 es de WhatsApp-Modular \(huella\).*prohibiciones 5 y 7/);
+        expect(r.escrituras).toEqual([]);
+        // El candado no pregunta nada a Graph (verificar-meta hace antes sus lecturas de siempre).
+        expect(r.llamadas.filter((l) => l.includes('fields=id,'))).toEqual([]);
+      });
+
+      it('una huella de WABA que no es la del entorno no corta (la lista no confunde WABAs)', () => {
+        const r = correr(c, PROPIA, { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: huella('888888') });
+        expect(r.codigo).not.toBe(3);
+        expect(r.escrituras).toHaveLength(1);
+      });
+    }
 
     if (c.modo === 'numero') {
       // El MEDIUM de la revisión del #277: una app propia no alcanza si el
@@ -430,6 +450,16 @@ describe('plantillas-cliente.sh --crear --aplicar (escribe desde python, no con 
     expect(r.llamadas).toEqual([]);
   });
 
+  it('corta por huella de la WABA, antes del python y sin consultar a Graph', () => {
+    const r = lanzar(args('--crear', '--aplicar'), PROPIA, {
+      extra: { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: huella(WABA).replace(/(.{8})(?!$)/g, '$1:') },
+    });
+    expect(r.codigo).toBe(3);
+    expect(r.error).toMatch(/WABA …7777 es de WhatsApp-Modular \(huella\).*prohibiciones 5 y 7/);
+    expect(r.llamadas).toEqual([]);
+    expect(r.salida).not.toMatch(/Plantillas en la WABA/);
+  });
+
   it('con una app propia pasa el candado (el python después no tiene red)', () => {
     const r = lanzar(args('--crear', '--aplicar'), PROPIA);
     expect(r.codigo).not.toBe(3);
@@ -440,6 +470,121 @@ describe('plantillas-cliente.sh --crear --aplicar (escribe desde python, no con 
     for (const m of [['--crear'], ['--listar']]) {
       lanzar(args(...m), PROPIA);
       expect(readFileSync(registro, 'utf8'), m.join(' ')).toBe('');
+    }
+  });
+});
+
+// Revisión de seguridad del #313: la comparación de huellas no puede depender
+// del shell. Con `echo $2 | tr`, un .env con `IFS=,` apagaba las tres capas, y
+// en la WABA la huella es la única.
+describe('las huellas se comparan sin depender del shell (#313)', () => {
+  const agrupada = (s: string) => huella(s).replace(/(.{8})(?!$)/g, '$1:');
+  /** Carga la biblioteca (o una copia) en un bash limpio y corre `cuerpo`. */
+  const bash = (cuerpo: string, opciones: { lib?: string; shim?: string; extraEnv?: Record<string, string> } = {}) => {
+    const r = spawnSync('bash', ['-c', `source "${opciones.lib ?? LIB}"\n${cuerpo}`], {
+      encoding: 'utf8',
+      env: entornoDelEmulador(undefined, {
+        PATH: `${opciones.shim ? `${opciones.shim}:` : ''}${process.env.PATH ?? ''}`, BASH_ENV: '', ENV: '', ...opciones.extraEnv,
+      }),
+    });
+    return { codigo: r.status, salida: r.stdout.trim(), error: r.stderr };
+  };
+  // La lista con el formato de la base: una huella por línea, con saltos de línea.
+  const LISTA = `\n${agrupada('777777')}\n${agrupada('888888')}\n`;
+  const PREAMBULOS = [':', 'IFS=,', 'IFS=', "IFS=$'\\n'", 'IFS=:', 'IFS=01234abcdef', 'echo() { :; }', 'tr() { cat; }', 'printf() { :; }'];
+
+  it.each(PREAMBULOS)('con «%s» en el entorno, una huella de la lista se reconoce y otra no', (pre) => {
+    expect(bash(`${pre}; huella_en 777777 "$L" && command echo si || command echo no`, { extraEnv: { L: LISTA } }).salida, pre).toBe('si');
+    expect(bash(`${pre}; huella_en 888888 "$L" && command echo si || command echo no`, { extraEnv: { L: LISTA } }).salida, pre).toBe('si');
+    expect(bash(`${pre}; huella_en 999999 "$L" && command echo si || command echo no`, { extraEnv: { L: LISTA } }).salida, pre).toBe('no');
+  });
+
+  it('un .env con IFS=, ya no apaga la capa de la WABA: corta con código 3, sin escribir', () => {
+    escribirEnv(['IFS=,']);
+    for (const nombre of ['crear-plantilla.sh --aplicar', 'webhook-meta.sh --alta-waba', 'verificar-meta.sh --suscribir']) {
+      const r = correr(caso(nombre), PROPIA, { NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: LISTA });
+      expect(r.codigo, nombre).toBe(3);
+      expect(r.error, nombre).toMatch(/WABA …7777 es de WhatsApp-Modular \(huella\)/);
+      expect(r.escrituras, nombre).toEqual([]);
+    }
+  });
+
+  describe('falla cerrado si no puede calcular la huella', () => {
+    const shim = (cuerpo: string) => {
+      const d = mkdtempSync(join(dir, 'shim-'));
+      writeFileSync(join(d, 'python3'), `#!/bin/sh\n${cuerpo}\n`);
+      chmodSync(join(d, 'python3'), 0o755);
+      return d;
+    };
+    it.each([
+      ['python3 que sale con error', 'exit 1'],
+      ['python3 que no existe como programa', 'exit 127'],
+      ['python3 que contesta cualquier otra cosa', 'echo quizas'],
+      ['python3 que no contesta nada', 'exit 0'],
+      ['python3 que dice «no» y después sale con error', 'echo no; exit 1'],
+      ['python3 que dice «si» y después sale con error', 'echo si; exit 1'],
+    ])('%s: sale con 3 y no da por buena la huella', (_n, cuerpo) => {
+      const r = bash('huella_en 777777 "$L" && echo si || echo no', { shim: shim(cuerpo), extraEnv: { L: LISTA } });
+      expect(r.codigo).toBe(3);
+      expect(r.salida).not.toMatch(/si|no/);
+      expect(r.error).toMatch(/No se pudo calcular la huella/);
+    });
+  });
+
+  describe('cada función de huellas usa su lista de base, además de _EXTRA', () => {
+    // La lista real no se puede ejercitar (los ids reales no están): se copia
+    // la biblioteca con las tres listas cambiadas por huellas de ids de prueba.
+    const copia = () => {
+      let t = readFileSync(LIB, 'utf8');
+      for (const [variable, id] of [['APPS_AJENAS_HUELLAS', ID], ['APPS_AJENAS_NUMEROS_HUELLAS', TELEFONO], ['APPS_AJENAS_WABAS_HUELLAS', WABA]] as const) {
+        const antes = t;
+        t = t.replace(new RegExp(`^${variable}="[^"]*"`, 'm'), `${variable}="\n${agrupada(id)}\n"`);
+        expect(t, variable).not.toBe(antes);
+      }
+      const ruta = join(dir, 'lib-de-prueba.sh');
+      writeFileSync(ruta, t);
+      return ruta;
+    };
+    it.each([
+      ['huella_ajena', ID, [TELEFONO, WABA]],
+      ['numero_ajeno', TELEFONO, [ID, WABA]],
+      ['waba_ajena', WABA, [ID, TELEFONO]],
+    ])('%s reconoce su id y no el de las otras dos listas', (funcion, propio, ajenos) => {
+      const lib = copia();
+      expect(bash(`${funcion} ${propio} && command echo si || command echo no`, { lib }).salida).toBe('si');
+      for (const otro of ajenos) expect(bash(`${funcion} ${otro} && command echo si || command echo no`, { lib }).salida, otro).toBe('no');
+    });
+  });
+
+  // En es_ES y es_BO (las de este equipo), [0-9] aceptaba dígitos de ancho
+  // completo y arábigo-índicos: pasaban el control de forma y su huella no
+  // coincidía con la del id. Donde la configuración regional no está
+  // instalada, bash vuelve a C y la prueba solo comprueba que rechaza.
+  it.each([['７７７７７７'], ['٧٧٧٧٧٧'], ['77７777'], [' 777777'], ['0777777'], ['777777\n']])(
+    'un WABA_ID «%s» no pasa el control de forma, en ninguna configuración regional', (valor) => {
+      for (const locale of ['C', 'C.UTF-8', 'es_ES.UTF-8', 'es_BO.utf8', 'es_AR.utf8']) {
+        escribirEnv([`WABA_ID=${JSON.stringify(valor)}`]);
+        const r = correr(caso('crear-plantilla.sh --aplicar'), PROPIA, { LC_ALL: locale });
+        expect(r.codigo, locale).toBe(3);
+        expect(r.error, locale).toMatch(/WABA_ID no tiene forma de id/);
+        expect(r.escrituras, locale).toEqual([]);
+      }
+    });
+
+  it.each([['７７７７'], ['٧٧٧٧']])('es_id rechaza «%s» aunque el entorno traiga LC_ALL=es_ES.UTF-8', (valor) => {
+    const r = bash(`es_id "$V" && command echo si || command echo no`, { extraEnv: { V: valor, LC_ALL: 'es_ES.UTF-8' } });
+    expect(r.salida).toBe('no');
+  });
+  it('es_id rechaza (no acepta) si el .env deja LC_ALL de solo lectura', () => {
+    const r = bash('readonly LC_ALL=es_ES.UTF-8\nes_id "$V" && command echo si || command echo no', { extraEnv: { V: '７７７７' } });
+    expect(r.salida).toBe('no');
+    const ok = bash('readonly LC_ALL=es_ES.UTF-8\nes_id "$V" && command echo si || command echo no', { extraEnv: { V: '777777' } });
+    expect(ok.salida).toBe('no'); // falla cerrado: sin poder fijar LC_ALL=C, no da por bueno ni un id válido
+  });
+
+  it('es_id acepta un id de Meta y rechaza lo que no lo es', () => {
+    for (const [v, esperado] of [['777777', 'si'], ['1234', 'si'], ['123', 'no'], ['0777', 'no'], ['7777a', 'no'], ['', 'no'], ['7'.repeat(21), 'si'], ['7'.repeat(22), 'no']]) {
+      expect(bash(`es_id "$V" && command echo si || command echo no`, { extraEnv: { V: v ?? '' } }).salida, String(v)).toBe(esperado);
     }
   });
 });
@@ -678,7 +823,7 @@ describe('la fuente de los scripts (LOW-C)', () => {
       env: entornoDelEmulador(undefined, {
         PATH: `${dir}:${process.env.PATH ?? ''}`, BASH_ENV: '', ENV: '', REGISTRO_CURL: registro,
         RESPUESTA_GRAPH: JSON.stringify(PROPIA), SUSCRITAS_GRAPH: '{}', RESPUESTA_NUMERO: JSON.stringify(NUMERO_PROPIO),
-        NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '', NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: '', ...SIN_RED,
+        NOVUCHAT_APPS_AJENAS_HUELLAS_EXTRA: '', NOVUCHAT_NUMEROS_AJENOS_HUELLAS_EXTRA: '', NOVUCHAT_WABAS_AJENAS_HUELLAS_EXTRA: '', ...SIN_RED,
       }),
     });
     expect(r.status, r.stderr).toBe(0);
@@ -689,8 +834,8 @@ describe('la fuente de los scripts (LOW-C)', () => {
 
   it('el candado apaga sourcepath y queda readonly, con curl_token', () => {
     expect(fuente(LIB)).toMatch(/^shopt -u sourcepath$/m);
-    expect(fuente(LIB)).toMatch(/^readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_CLASIFICAR$/m);
-    expect(fuente(LIB)).toMatch(/^readonly -f huella_en huella_ajena numero_ajeno negar_app_ajena curl_token$/m);
+    expect(fuente(LIB)).toMatch(/^readonly APPS_AJENAS_FRAGMENTOS APPS_AJENAS_HUELLAS APPS_AJENAS_NUMEROS_HUELLAS APPS_AJENAS_WABAS_HUELLAS APPS_AJENAS_CLASIFICAR$/m);
+    expect(fuente(LIB)).toMatch(/^readonly -f es_id huella_en huella_ajena numero_ajeno waba_ajena negar_app_ajena curl_token$/m);
   });
 
   it('un .env que redefine la lista de números ajenos no carga', () => {
@@ -710,20 +855,51 @@ describe('la fuente de los scripts (LOW-C)', () => {
     (new RegExp(`^${nombre}="([^"]*)"`, 'm').exec(fuente(LIB))?.[1] ?? '').split(/\s+/).filter(Boolean);
   const lista = huellasDe('APPS_AJENAS_HUELLAS');
   const numeros = huellasDe('APPS_AJENAS_NUMEROS_HUELLAS');
+  const wabas = huellasDe('APPS_AJENAS_WABAS_HUELLAS');
 
-  it('no publica un id de app ni de número: huellas sha256 en grupos de 8 y sin tiras largas de dígitos', () => {
+  it('no publica un id de app, de número ni de WABA: huellas sha256 en grupos de 8 y sin tiras largas de dígitos', () => {
     // verificar-saneo.sh corta desde 10 dígitos seguidos; una huella de corrido puede traerlos.
     for (const ruta of [LIB, WEBHOOK_META, VERIFICAR_META]) expect(fuente(ruta)).not.toMatch(/\d{9,}/);
-    for (const h of [...lista, ...numeros]) expect(h).toMatch(/^([0-9a-f]{8}:){7}[0-9a-f]{8}$/);
+    for (const h of [...lista, ...numeros, ...wabas]) expect(h).toMatch(/^([0-9a-f]{8}:){7}[0-9a-f]{8}$/);
+  });
+
+  it('trae la huella de las tres WABA de WhatsApp-Modular (el OTP, la de prueba y la de producción), todas distintas', () => {
+    expect(new Set(wabas).size).toBe(3);
+    for (const h of wabas) {
+      expect(lista).not.toContain(h);
+      expect(numeros).not.toContain(h);
+    }
+  });
+
+  it('la WABA de la Fase 0 NO está en la lista: el Demo A de NovuChat la usa y cortarla le impediría escribir en la suya', () => {
+    // Huella (no secreta) de esa WABA, cotejada el 01/10/2026 contra el WABA_ID
+    // de los .env del Demo A. Si un día entra en la lista, esta prueba obliga a
+    // decidir de nuevo, con la sesión de WhatsApp-Modular y con Andres.
+    const fase0 = '81b6dbfe:a743262e:262c511d:1744ba20:fd14c37d:8d01482f:85a58016:f2123386';
+    expect(wabas).not.toContain(fase0);
+    expect(fuente(LIB)).not.toContain('81b6dbfe');
   });
 
   it('trae la huella de las dos apps de WhatsApp-Modular (AAB1-WA-Prod y Demo SeguroLo Tengo)', () => {
     expect(new Set(lista).size).toBeGreaterThanOrEqual(2);
   });
 
-  it('trae la huella de los dos números de WhatsApp-Modular (el OTP y el de prueba de la Fase 0), distintas de las de apps', () => {
-    expect(new Set(numeros).size).toBeGreaterThanOrEqual(2);
-    for (const h of numeros) expect(lista).not.toContain(h);
+  it('trae la huella de los tres números de WhatsApp-Modular (el OTP y las líneas de sus dos WABA), distintas entre sí y de las de apps', () => {
+    expect(new Set(numeros).size).toBe(3);
+    for (const h of numeros) {
+      expect(lista).not.toContain(h);
+      expect(wabas).not.toContain(h);
+    }
+  });
+
+  it('el número de la Fase 0 NO está en la lista: es el WA_PHONE_ID del Demo A y cortarlo le impediría escribir con su propio número', () => {
+    // Estuvo hasta el 01/10/2026, rotulado «en desuso» sin cotejarlo contra los
+    // .env de NovuChat. Huella (no secreta) cotejada ese día contra el
+    // WA_PHONE_ID del .env del Demo A. Si un día entra en la lista, esta prueba
+    // obliga a decidir otra vez, con la sesión de WhatsApp-Modular y con Andres.
+    const fase0 = '57f8cfb2:d8b6bd3b:c46050ca:3d8718cc:d09842cd:70f68d4b:28454469:a19d36bf';
+    expect(numeros).not.toContain(fase0);
+    expect(fuente(LIB)).not.toContain('57f8cfb2');
   });
 
   it('una huella escrita con «:» corta de verdad (sin red)', () => {
