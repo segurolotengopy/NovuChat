@@ -521,6 +521,8 @@ describe('las huellas se comparan sin depender del shell (#313)', () => {
       ['python3 que no existe como programa', 'exit 127'],
       ['python3 que contesta cualquier otra cosa', 'echo quizas'],
       ['python3 que no contesta nada', 'exit 0'],
+      ['python3 que dice «no» y después sale con error', 'echo no; exit 1'],
+      ['python3 que dice «si» y después sale con error', 'echo si; exit 1'],
     ])('%s: sale con 3 y no da por buena la huella', (_n, cuerpo) => {
       const r = bash('huella_en 777777 "$L" && echo si || echo no', { shim: shim(cuerpo), extraEnv: { L: LISTA } });
       expect(r.codigo).toBe(3);
@@ -573,6 +575,13 @@ describe('las huellas se comparan sin depender del shell (#313)', () => {
     const r = bash(`es_id "$V" && command echo si || command echo no`, { extraEnv: { V: valor, LC_ALL: 'es_ES.UTF-8' } });
     expect(r.salida).toBe('no');
   });
+  it('es_id rechaza (no acepta) si el .env deja LC_ALL de solo lectura', () => {
+    const r = bash('readonly LC_ALL=es_ES.UTF-8\nes_id "$V" && command echo si || command echo no', { extraEnv: { V: '７７７７' } });
+    expect(r.salida).toBe('no');
+    const ok = bash('readonly LC_ALL=es_ES.UTF-8\nes_id "$V" && command echo si || command echo no', { extraEnv: { V: '777777' } });
+    expect(ok.salida).toBe('no'); // falla cerrado: sin poder fijar LC_ALL=C, no da por bueno ni un id válido
+  });
+
   it('es_id acepta un id de Meta y rechaza lo que no lo es', () => {
     for (const [v, esperado] of [['777777', 'si'], ['1234', 'si'], ['123', 'no'], ['0777', 'no'], ['7777a', 'no'], ['', 'no'], ['7'.repeat(21), 'si'], ['7'.repeat(22), 'no']]) {
       expect(bash(`es_id "$V" && command echo si || command echo no`, { extraEnv: { V: v ?? '' } }).salida, String(v)).toBe(esperado);

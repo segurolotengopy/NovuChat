@@ -128,8 +128,9 @@ print("si" if h in sys.argv[2].replace(":", "").split() else "no")' "$1" "$2") |
 # izquierda y de 4 a 21 dígitos. Se compara con LC_ALL=C local: en es_ES y
 # es_BO (las de este equipo), [0-9] acepta dígitos de ancho completo y
 # arábigo-índicos, que no darían la huella del id y pasarían el candado
-# (revisión de seguridad del #313; se comprobó en bash de esta máquina).
-es_id() { local LC_ALL=C; [[ $1 =~ ^[1-9][0-9]{3,20}$ ]]; }
+# (revisión de seguridad del #313; se comprobó en bash de esta máquina). Si el
+# .env dejara LC_ALL de solo lectura, el `local` falla y es_id rechaza.
+es_id() { local LC_ALL=C || return 1; [[ $1 =~ ^[1-9][0-9]{3,20}$ ]]; }
 
 # huella_ajena <app-id>, numero_ajeno <phone-number-id> y waba_ajena <waba-id>:
 # 0 si el id es de la lista.
