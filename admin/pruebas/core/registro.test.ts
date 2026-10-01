@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../web/src/lib/firebase', () => ({ db: {} }));
+vi.mock('../../web/src/core/lib/firebase', () => ({ db: {} }));
 
 import {
   IDS_MODULOS, MODULOS_COMUNES_HOY, PUENTE_DE_FLUJOS, REGISTRO, carpetasDe, esModulo, manifiestoDe,
