@@ -84,12 +84,38 @@ export const RANGO: Readonly<Record<ZonaF2, number>> = {
 
 /**
  * Archivos cuya zona no sale de la carpeta. El registro está en la raíz de
- * Functions a propósito (lo lee todo el mundo y no importa a nadie). El
- * coordinador de turno recibe su línea en el PR que mueva `ingesta.ts`; hasta
- * entonces lo ubica `DESTINOS_F2`, y la prueba falla si deja de haber uno.
+ * Functions a propósito (lo lee todo el mundo y no importa a nadie). Los puntos
+ * de entrada de la consola y las herramientas de desarrollo que tocan todas las
+ * zonas son coordinador, por regla (F2, Z). El coordinador DE TURNO recibe su
+ * línea en el PR que mueva `ingesta.ts`; hasta entonces lo ubica `DESTINOS_F2`,
+ * y la prueba exige uno cuyo destino sea `core/turno/` (los de arriba no cuentan).
  */
 export const ZONA_POR_ARCHIVO: Readonly<Record<string, DestinoF2>> = {
   'admin/functions/src/registro.ts': { zona: 'registro', destino: 'admin/functions/src/registro.ts' },
+  // Punto de entrada de la consola: monta las rutas de todas las zonas.
+  'admin/web/src/App.tsx': { zona: 'coordinador', destino: 'admin/web/src/App.tsx' },
+  // Arranque de la consola: toca todas las zonas.
+  'admin/web/src/main.tsx': { zona: 'coordinador', destino: 'admin/web/src/main.tsx' },
+  // Ensambla las pestañas de la consola de todas las zonas.
+  'admin/web/src/consola.tsx': { zona: 'coordinador', destino: 'admin/web/src/consola.tsx' },
+  // Herramienta de desarrollo: levanta los emuladores de todas las zonas; admin/package.json lo nombra.
+  'admin/scripts/emuladores.sh': { zona: 'coordinador', destino: 'admin/scripts/emuladores.sh' },
+  // Herramienta de desarrollo: regenera el lockfile de Functions, sin zona propia.
+  'admin/scripts/lockfile-functions.sh': { zona: 'coordinador', destino: 'admin/scripts/lockfile-functions.sh' },
+  // Herramienta de desarrollo: prueba de punta a punta del cierre, cruza zonas.
+  'admin/scripts/probar-cierre.mjs': { zona: 'coordinador', destino: 'admin/scripts/probar-cierre.mjs' },
+  // Herramienta de desarrollo: verifica la CSP de toda la consola.
+  'admin/scripts/probar-csp.mjs': { zona: 'coordinador', destino: 'admin/scripts/probar-csp.mjs' },
+  // Herramienta de desarrollo: siembra datos de todas las zonas; admin/package.json lo nombra.
+  'admin/scripts/sembrar.mjs': { zona: 'coordinador', destino: 'admin/scripts/sembrar.mjs' },
+  // Herramienta de desarrollo: usuarios de prueba para todas las zonas.
+  'admin/scripts/usuarios-prueba.mjs': { zona: 'coordinador', destino: 'admin/scripts/usuarios-prueba.mjs' },
+  // Corredor de las suites: toca todas las zonas.
+  'admin/pruebas/correr.sh': { zona: 'coordinador', destino: 'admin/pruebas/correr.sh' },
+  // Corredor de las reglas de Storage: toca todas las zonas.
+  'admin/pruebas/correr-storage.sh': { zona: 'coordinador', destino: 'admin/pruebas/correr-storage.sh' },
+  // Las reglas de Storage amparan a todas las zonas.
+  'admin/pruebas/storage-reglas.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/storage-reglas.test.ts' },
 };
 
 /**
