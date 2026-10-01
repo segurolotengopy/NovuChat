@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { logoValido, paletaValida, sePuedeComprar, urlImagenValida } from '../functions/src/catalogoWeb.ts';
+import { logoValido, paletaValida, sePuedeComprar, urlImagenValida } from '../functions/src/modulos/catalogo-web/catalogoWeb.ts';
 import { PALETAS, PALETA_POR_DEFECTO, variablesDe, type PaletaId } from '../web/src/lib/paletas.ts';
 import { resumirCatalogo, UMBRAL_CATALOGO_AL_PROMPT } from '../functions/src/core/prompt/prompt.ts';
 import {
