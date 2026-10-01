@@ -464,16 +464,40 @@ ENTORNO_INOCUO = {"GH_CONFIG_DIR", "GH_REPO", "GH_HOST", "GH_PROMPT_DISABLED", "
                   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
                   "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
 
-GIT_LOCAL = {"add", "push", "status", "diff"}
-
 def git_local_inocuo(palabras):
-    """Un `git add|push|status|diff …` pelado: el subcomando va pegado a `git`
-    (sin `-c`, `-C` ni `--git-dir` en medio), sin variables delante, sin `$` ni
-    comilla invertida, y sin un verbo de ACTUA entre sus palabras."""
-    if len(palabras) < 2 or palabras[0] != "git" or palabras[1] not in GIT_LOCAL:
+    """Una de las pocas formas CONOCIDAS de git local que acompañan a un commit
+    (revisión de seguridad del #329: lista cerrada, no «cualquier opción»).
+
+    El subcomando va pegado a `git` (sin `-c`, `-C` ni `--git-dir` en medio),
+    sin `$` ni comilla invertida, y sin un verbo de ACTUA. Y solo estas formas:
+      - `git add [-A|--all|-u|--update|--] <rutas…>`: rutas sin opciones y sin
+        «:» (los pathspec mágicos);
+      - `git status [-s|--short|-b|--branch|-sb|--porcelain]`;
+      - `git push [-u|--set-upstream] [<remoto> [<rama>]]`: el remoto es un
+        nombre (sin «/» ni «:», o sea, no una URL ni un transporte `ext::`) y
+        la rama un nombre sin «:» (no un refspec).
+    Todo lo demás, incluida cualquier otra opción de push (`--receive-pack`,
+    `--exec`, `--mirror`…), anula la excepción del texto de git/gh."""
+    if len(palabras) < 2 or palabras[0] != "git":
         return False
     junto = " ".join(palabras)
-    return not ("$" in junto or "`" in junto or re.search(ACTUA, junto))
+    if "$" in junto or "`" in junto or re.search(ACTUA, junto):
+        return False
+    sub, args = palabras[1], palabras[2:]
+    if sub == "add":
+        return all(a in ("-A", "--all", "-u", "--update", "--")
+                   or (not a.startswith("-") and re.fullmatch(r"[\w.@+/*,-]+", a) is not None) for a in args)
+    if sub == "status":
+        return all(a in ("-s", "--short", "-b", "--branch", "-sb", "--porcelain") for a in args)
+    if sub == "push":
+        opciones = [a for a in args if a.startswith("-")]
+        resto = [a for a in args if not a.startswith("-")]
+        if any(a not in ("-u", "--set-upstream") for a in opciones) or len(resto) > 2:
+            return False
+        if resto and re.fullmatch(r"[A-Za-z0-9._-]+", resto[0]) is None:
+            return False
+        return len(resto) < 2 or re.fullmatch(r"[A-Za-z0-9._/-]+", resto[1]) is not None
+    return False
 
 def quitar_texto(c):
     """El comando sin el texto que publica, o None si no se quita nada.
@@ -486,8 +510,8 @@ def quitar_texto(c):
     sumo, tramos de git local inocuo: ver git_local_inocuo):
       - sin heredoc (un cuerpo de PR va en --body-file);
       - un solo tramo de la tabla: sin otro `;`, `&&`, `|` o `&` fuera de
-        comillas que lleve a algo que no sea `git add|push|status|diff`, y sin
-        salto de línea;
+        comillas que lleve a algo que no sea una de las formas cerradas de
+        `git add`, `git status` o `git push`, y sin salto de línea;
       - sin `$` ni comilla invertida en ninguna palabra, tampoco en el texto;
       - sin variables delante salvo las de ENTORNO_INOCUO;
       - y el resto, ya sin texto, sin un intérprete.

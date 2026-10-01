@@ -337,6 +337,32 @@ describe('un git push al sistema ajeno se niega, no se confirma (#323, L2)', () 
     ]) expect(decision(c), c).toBe('deny');
   });
 
+  it('el push inocuo es una lista cerrada: otra opción, una URL, un transporte o un refspec anulan la excepción (#329)', () => {
+    // Con el nombre ajeno en el mensaje y un push que no es una de las formas conocidas, se niega.
+    for (const c of [
+      'git commit -m "receptor-clientes" && git push --receive-pack=x origin main',
+      'git commit -m "receptor-clientes" && git push --exec=x origin main',
+      'git commit -m "receptor-clientes" && git push --mirror origin',
+      'git commit -m "receptor-clientes" && git push ext::sh main',
+      'git commit -m "receptor-clientes" && git push https://example.org/r.git main',
+      'git commit -m "receptor-clientes" && git push origin HEAD:refs/heads/otra',
+      'git commit -m "receptor-clientes" && git push origin a b',
+      'git commit -m "receptor-clientes" && git add --chmod=+x f && git push',
+      'git commit -m "receptor-clientes" && git add :(top)f && git push',
+      'git commit -m "receptor-clientes" && git status --ignored && git push',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('y las formas conocidas del push, del add y del status siguen pasando junto al commit', () => {
+    for (const c of [
+      'git commit -m "receptor-clientes" && git push -u origin HEAD',
+      'git commit -m "receptor-clientes" && git push --set-upstream origin ganchos/git-push-al-sistema-ajeno',
+      'git add -A && git commit -m "receptor-clientes" && git push',
+      'git add admin/pruebas/core/x.test.ts .claude/hooks/y.sh && git commit -m "receptor-clientes" && git push',
+      'git status -sb && git commit -m "receptor-clientes" && git push origin main',
+    ]) expect(decision(c), c).toBe('ask');
+  });
+
   it('el canal no oficial no gana el push: una rama de NovuChat que lo mencione se puede empujar', () => {
     // La prohibición 1 sigue negando instalar o llamar al canal, no empujar una rama sobre él.
     expect(decision('git push -u origin docs/retiro-evolution-api')).toBe('ask');
