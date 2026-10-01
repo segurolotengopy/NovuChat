@@ -1,7 +1,7 @@
 import { NavLink, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { useEffect } from 'react';
-import { ProveedorSesion, useSesion } from './lib/contexto';
-import { rolEn } from './lib/sesion';
+import { ProveedorSesion, useSesion } from './core/lib/contexto';
+import { rolEn } from './core/lib/sesion';
 import { Proteger } from './componentes/Proteger';
 import { Marca } from './componentes/Marca';
 import { EncabezadoComercio } from './componentes/EncabezadoComercio';

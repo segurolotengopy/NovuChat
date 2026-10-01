@@ -30,7 +30,7 @@ import {
   MODELO_POR_DEFECTO, TITULARIDADES, etiquetaModalidad, facturaMetaAlComercio, modeloDe, rutaDe, titularidadDe,
   type CambiosVista, type EjesDeCuenta,
 } from '../web/src/lib/ejes';
-import { esPlanPublicado, esPlanVendible, planSiguiente, precioUsdDe } from '../web/src/lib/planes';
+import { esPlanPublicado, esPlanVendible, planSiguiente, precioUsdDe } from '../web/src/central/lib/planes';
 import { PLANES, PLANES_PUBLICADOS } from '../functions/src/central/cuenta/planes';
 import { MODALIDADES as MODALIDADES_SERVIDOR, importeBs } from '../functions/src/central/cuenta/prepago';
 import * as CENTRAL from '../functions/src/central/ejes';

@@ -8,8 +8,8 @@ import { TextoSeguro } from '../componentes/TextoSeguro';
 import {
   BOLSAS_POSIBLES, ESTADO_DEL_COBRO, MESES_POSIBLES, PRECIOS, cobroSeMuestraParaPagar, cuentaEnDemostracion, mesEscrito,
   pideVolverAEntrar, planDeLaCuenta, planesQuePuedePagar, vistaDelPedido, type Pago, type PlanEnVenta,
-} from '../lib/pagar';
-import { BOLSA, fechaCorta } from '../lib/prepago';
+} from '../central/lib/pagar';
+import { BOLSA, fechaCorta } from '../central/lib/prepago';
 import { EjesDeLaCuenta } from '../central/componentes/EjesDeLaCuenta';
 import { useEjesDeCuenta } from '../central/lib/lecturas';
 import { facturaMetaAlComercio } from '../lib/ejes';

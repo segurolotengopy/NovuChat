@@ -25,7 +25,7 @@ import { EjesDeLaCuenta } from '../../web/src/central/componentes/EjesDeLaCuenta
 import {
   MODELO_POR_DEFECTO, origenPorContrato, periodoPruebaAceptable, pruebaDeCuenta, type EjesDeCuenta,
 } from '../../web/src/lib/ejes';
-import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../web/src/lib/pagar';
+import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../web/src/central/lib/pagar';
 import { pagosEnRevision, vistaDelPagoManual } from '../../web/src/plataforma/lib/negocios';
 import {
   LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, limitesDe,
