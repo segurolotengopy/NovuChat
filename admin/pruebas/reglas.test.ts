@@ -1650,7 +1650,7 @@ describe('Bitácora', () => {
   });
 
   it('las consultas con filtros funcionan tal como las arma la pantalla', async () => {
-    // Las mismas formas declaradas en `web/src/lib/bitacora.ts`. OJO: el
+    // Las mismas formas declaradas en `web/src/central/lib/bitacora.ts`. OJO: el
     // emulador NO exige índices, así que esto prueba los PERMISOS, no que el
     // índice exista. De eso se ocupa `pruebas/indices.test.ts`.
     const base = collection(adminA(), `tenants/${A}/bitacora`);

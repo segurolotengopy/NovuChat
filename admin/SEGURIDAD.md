@@ -1560,7 +1560,7 @@ deben usar la misma consulta que la interfaz, no una parecida.** Corregido con
 **Una limitación del emulador que hay que tener presente:** **no exige índices
 compuestos.** Responde cualquier consulta, así que una pantalla de filtros puede
 pasar todo lo local y romperse en producción con «The query requires an index».
-Por eso las formas de consulta se declaran en `web/src/lib/bitacora.ts` y
+Por eso las formas de consulta se declaran en `web/src/central/lib/bitacora.ts` y
 `pruebas/indices.test.ts` verifica que cada una tenga su índice en
 `firestore.indexes.json`. Se comprobó que el control funciona quitando un índice
 a propósito: la prueba lo nombra exactamente.

@@ -23,7 +23,7 @@
  * Módulo puro, sin Firebase: lo prueba `pruebas/encabezado-comercio.test.ts`
  * sin emulador ni navegador.
  */
-import { modalidadDe, type CuentaCruda, type Modalidad } from './prepago';
+import { modalidadDe, type CuentaCruda, type Modalidad } from '../central/lib/prepago';
 import { ETIQUETA_MODALIDAD } from './ejes';
 
 export type EtiquetaModo = 'PRUEBA' | 'PRODUCCIÓN';

@@ -22,7 +22,7 @@
  *
  * Módulo puro: no importa Firebase, se prueba sin emulador.
  */
-import { MODALIDADES, esModalidad, modalidadDe, type CuentaCruda, type Modalidad } from './prepago';
+import { MODALIDADES, esModalidad, modalidadDe, type CuentaCruda, type Modalidad } from '../central/lib/prepago';
 import {
   MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esModelo, esTitularidad,
   modeloDe as modeloDeFicha, titularidadDe as titularidadDeRuta,

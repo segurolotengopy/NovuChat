@@ -26,7 +26,7 @@ import { FORMATOS, extensionDe, type ExtensionPlanes } from '../../central/lib/a
 import {
   MESES_MAXIMO, TCO_MAXIMO, TCO_MINIMO, aplicarPago, descripcionDe, esFecha, esPago, importeBs, montoUsdDe,
   type CuentaCruda, type Pago,
-} from '../../lib/prepago';
+} from '../../central/lib/prepago';
 
 /**
  * La MISMA forma que `ID_TENANT` de `functions/src/central/pagar/pagos.ts` e `index.ts`

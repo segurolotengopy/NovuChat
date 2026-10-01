@@ -10,7 +10,7 @@
  * (`pruebas/prepago.test.ts`). Quien lo llama —la ingesta, `configuracionFlujo`,
  * `actualizarEstadoCuenta`, `cobranza.ts` y, en los bloques siguientes, los
  * pagos— solo aplica lo que esto decidió. Y lo importa TAMBIÉN la consola
- * (`web/src/lib/prepago.ts`), para que la pantalla y el servidor no puedan
+ * (`web/src/central/lib/prepago.ts`), para que la pantalla y el servidor no puedan
  * calcular dos estados distintos de la misma cuenta.
  *
  * ES LA REAPLICACIÓN del módulo del 08/09 (rama
@@ -75,7 +75,7 @@ import {
 } from './planes.js';
 
 // Lo que la consola y los pagos necesitan del catálogo lo reexportamos desde
-// acá, para que `web/src/lib/prepago.ts` tenga un solo origen.
+// acá, para que `web/src/central/lib/prepago.ts` tenga un solo origen.
 export { BOLSA, INSTALACION_USD, PLANES, PLANES_ASIGNABLES } from './planes.js';
 
 // -----------------------------------------------------------------------------

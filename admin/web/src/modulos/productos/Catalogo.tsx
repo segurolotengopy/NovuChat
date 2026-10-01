@@ -4,7 +4,7 @@ import {
   query, serverTimestamp, setDoc, updateDoc, where, writeBatch,
 } from 'firebase/firestore';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../lib/planes';
+import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../central/lib/planes';
 import { auth, db, funciones } from '../../lib/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { TextoSeguro } from '../../componentes/TextoSeguro';
