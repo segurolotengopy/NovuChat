@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import * as servidor from '../functions/src/campanas.ts';
-import * as consola from '../web/src/lib/campanas.ts';
+import * as servidor from '../functions/src/modulos/campanas/campanas.ts';
+import * as consola from '../web/src/modulos/campanas/campanas.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
 const AHORA = Date.now();
@@ -76,7 +76,7 @@ describe('la consola y el servidor dicen lo mismo', () => {
 
 describe('la página', () => {
   const sinComentarios = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/^\s*\/\/.*$/gm, '');
-  const pagina = sinComentarios(readFileSync(join(aqui, '../web/src/paginas/Campanas.tsx'), 'utf8'));
+  const pagina = sinComentarios(readFileSync(join(aqui, '..', 'web', 'src', 'modulos', 'campanas', 'Campanas.tsx'), 'utf8'));
   const app = readFileSync(join(aqui, '../web/src/App.tsx'), 'utf8');
 
   it('escribe SOLO la lista y el sello, con updateDoc cuando el documento existe', () => {

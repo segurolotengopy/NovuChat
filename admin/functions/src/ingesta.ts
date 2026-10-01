@@ -18,7 +18,7 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
-import { campanasParaElFlujo } from './campanas.js';
+import { campanasParaElFlujo } from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.
