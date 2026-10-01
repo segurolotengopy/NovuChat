@@ -529,12 +529,15 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
   });
 
   // Dos copias más que el §3.3 de Analisis/41 no lista: los scripts de alta.
-  it.each(['admin/scripts/alta-comercio.mjs', 'admin/scripts/asignar-numero.mjs'])(
-    '%s: FLUJOS_VALIDOS y DOCUMENTO', (ruta) => {
-      const texto = leer(ruta);
+  it.each([
+    ['alta-comercio', () => leer('admin/scripts/alta-comercio.mjs')],
+    ['asignar-numero', () => leer('admin/scripts/asignar-numero.mjs')],
+  ])(
+    '%s: FLUJOS_VALIDOS y DOCUMENTO', (nombre, leerScript) => {
+      const texto = leerScript();
       expect(conjunto(texto, 'FLUJOS_VALIDOS')).toEqual(claves);
       const doc = /const DOCUMENTO = \{([^}]*)\}/.exec(texto);
-      expect(doc, `${ruta} sin DOCUMENTO`).not.toBeNull();
+      expect(doc, `${nombre} sin DOCUMENTO`).not.toBeNull();
       const pares = Object.fromEntries([...(doc![1] as string).matchAll(/(\w+):\s*'(\w+)'/g)].map((m) => [m[1], m[2]]));
       expect(pares).toEqual(Object.fromEntries(FLUJOS_HOY.map((f) => [f, PUENTE_DE_FLUJOS[f].documento])));
     });
