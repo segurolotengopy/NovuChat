@@ -350,6 +350,9 @@ describe('un git push al sistema ajeno se niega, no se confirma (#323, L2)', () 
       'git commit -m "receptor-clientes" && git add --chmod=+x f && git push',
       'git commit -m "receptor-clientes" && git add :(top)f && git push',
       'git commit -m "receptor-clientes" && git status --ignored && git push',
+      // Revisión del #329: una redirección no es una ruta, y un `*` lo expande la shell antes que git.
+      'git commit -m "receptor-clientes" && git push origin main > salida.txt',
+      'git commit -m "receptor-clientes" && git add * && git push',
     ]) expect(decision(c), c).toBe('deny');
   });
 

@@ -486,7 +486,7 @@ def git_local_inocuo(palabras):
     sub, args = palabras[1], palabras[2:]
     if sub == "add":
         return all(a in ("-A", "--all", "-u", "--update", "--")
-                   or (not a.startswith("-") and re.fullmatch(r"[\w.@+/*,-]+", a) is not None) for a in args)
+                   or (not a.startswith("-") and re.fullmatch(r"[\w.@+/,-]+", a) is not None) for a in args)
     if sub == "status":
         return all(a in ("-s", "--short", "-b", "--branch", "-sb", "--porcelain") for a in args)
     if sub == "push":
@@ -530,12 +530,18 @@ def quitar_texto(c):
     except ValueError:
         return None
     # Un tramo de la tabla y, a lo sumo, otros que son git local sin riesgo
-    # (add, push, status, diff): `git add … && git commit -m "…" && git push`
+    # (formas cerradas de add, push y status): `git add … && git commit -m "…" && git push`
     # es la cadena de todos los días y, con el push como acción frente a un
     # sistema ajeno, se negaría solo por nombrarlo en el mensaje. Esos tramos
     # no pueden leer el texto del commit (sin `$`, sin comilla invertida, sin
     # variables, sin opciones globales) y se conservan enteros: un nombre ajeno
     # EN ellos (`git push <repositorio ajeno>`) sigue contando.
+    # Con más de un tramo, una redirección (`<`, `>`) no se admite: `comandos`
+    # la descarta y su destino pasaría por una ruta o un remoto (revisión del
+    # #329, L2). Un `*` tampoco entra en las rutas de `git add` (L3): la shell
+    # lo expande antes que git y un archivo con nombre de opción lo cambiaría.
+    if len(lista) > 1 and re.search(r"[<>]", c):
+        return None
     tabla = [p for p in lista if es_de_tabla([w for w in p if not re.match(r"^\w+=", w)])]
     if len(tabla) != 1:
         return None
