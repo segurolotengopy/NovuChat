@@ -48,30 +48,48 @@ const existeArchivo = (r: string) => {
 };
 
 /**
- * Casos reales que no se pueden calcular sin correr el script. Cada uno dice
- * cuántas veces aparece (por archivo y causa) y por qué no se corrige acá.
- * Solo baja: la prueba falla si la cuenta real difiere.
+ * Casos reales que no se pueden calcular sin correr el script, identificados
+ * por el TEXTO del sitio. Solo descuentan hallazgos «no se puede calcular»: un
+ * «no existe» (la base o el prefijo calculado no lleva a nada) nunca se
+ * descuenta. Solo baja: una entrada que ya no se da falla, y un caso nuevo no
+ * entra solo.
  */
-const SIN_CALCULAR: readonly { archivo: string; cuantas: number; porque: string }[] = [
-  { archivo: 'admin/scripts/catalogo-demo.mjs', cuantas: 2,
-    porque: 'la base (admin/) sí se calcula; falla el último tramo: el archivo del conjunto (`CONJUNTOS[...]`) y la ruta de la petición del servidor de la vista previa' },
-  { archivo: 'admin/scripts/probar-csp.mjs', cuantas: 1,
-    porque: 'servidor de archivos estáticos: el último tramo es la ruta de la petición (la base admin/web/dist sí se calcula)' },
-  { archivo: 'admin/scripts/pase-a-produccion.mjs', cuantas: 2,
-    porque: 'nombres de Flujos/ leídos del disco y `negocio-${TENANT}.json` bajo admin/scripts/datos: la carpeta se calcula, el nombre no' },
-  { archivo: 'admin/scripts/probar-cierre.mjs', cuantas: 1,
-    porque: 'el archivo .env sale de `leer(\'--env\', \'.env\')` (opción con valor por defecto) y se une a la raíz calculada con new URL' },
-  { archivo: 'admin/scripts/sembrar-demos.mjs', cuantas: 1,
-    porque: 'new URL(nombre, RAIZ) con el nombre de cada archivo de una lista; la raíz sí se calcula' },
+const SIN_CALCULAR: readonly { archivo: string; sitio: string; porque: string }[] = [
+  { archivo: 'admin/scripts/catalogo-demo.mjs', sitio: "join(RAIZ, 'scripts', 'datos', CONJUNTOS[CONJUNTO].archivo)",
+    porque: 'el archivo del conjunto sale de un diccionario; el prefijo admin/scripts/datos se verifica' },
+  { archivo: 'admin/scripts/catalogo-demo.mjs', sitio: 'join(DIST, ruta)',
+    porque: 'servidor de la vista previa: el último tramo es la ruta de la petición (admin/web/dist se verifica)' },
+  { archivo: 'admin/scripts/probar-csp.mjs', sitio: 'join(DIST, ruta)',
+    porque: 'servidor de archivos estáticos: el último tramo es la ruta de la petición (admin/web/dist se verifica)' },
+  { archivo: 'admin/scripts/pase-a-produccion.mjs', sitio: 'join(dirFlujos, a)',
+    porque: 'nombres de Flujos/ leídos del disco; el prefijo Flujos se verifica' },
+  { archivo: 'admin/scripts/pase-a-produccion.mjs', sitio: "join(REPO, 'admin', 'scripts', 'datos', `negocio-${TENANT}.json`)",
+    porque: 'el nombre depende del tenant; el prefijo admin/scripts/datos se verifica' },
+  { archivo: 'admin/scripts/probar-cierre.mjs', sitio: "new URL(ARCHIVO, new URL('../../', import.meta.url))",
+    porque: "el .env sale de `leer('--env', '.env')` (opción con valor por defecto) y se une a la raíz calculada" },
+  { archivo: 'admin/scripts/sembrar-demos.mjs', sitio: 'new URL(nombre, RAIZ)',
+    porque: 'el nombre de cada archivo de una lista; la raíz sí se calcula' },
 ];
 
-/** Los hallazgos de un archivo: lo que no se calcula, y lo que se calcula y no existe. */
-export function hallazgosDe(archivo: string, texto: string, disco: Disco): string[] {
-  return sitiosDe(archivo, texto).flatMap((s) => {
-    if (s.ruta === null) return [`${archivo}:${s.linea}: no se puede calcular (${s.motivo}): ${s.texto}`];
-    return lleva(s.ruta, disco) ? [] : [`${archivo}:${s.linea}: ${s.ruta} no existe: ${s.texto}`];
+interface Hallazgo { tipo: 'calcular' | 'no-existe'; sitio: string; mensaje: string }
+
+/** Lo que no se calcula (y si su prefijo calculado no existe, también eso), y lo que se calcula y no existe. */
+export function analizarRutas(archivo: string, texto: string, disco: Disco): Hallazgo[] {
+  return sitiosDe(archivo, texto).flatMap((s): Hallazgo[] => {
+    const donde = `${archivo}:${s.linea}`;
+    if (s.ruta !== null) {
+      return lleva(s.ruta, disco) ? [] : [{ tipo: 'no-existe', sitio: s.texto, mensaje: `${donde}: ${s.ruta} no existe: ${s.texto}` }];
+    }
+    const salida: Hallazgo[] = [{ tipo: 'calcular', sitio: s.texto, mensaje: `${donde}: no se puede calcular (${s.motivo}): ${s.texto}` }];
+    if (s.prefijo !== null && !lleva(s.prefijo, disco)) {
+      salida.push({ tipo: 'no-existe', sitio: s.texto, mensaje: `${donde}: el prefijo ${s.prefijo} no existe: ${s.texto}` });
+    }
+    return salida;
   });
 }
+
+export const hallazgosDe = (archivo: string, texto: string, disco: Disco): string[] =>
+  analizarRutas(archivo, texto, disco).map((h) => h.mensaje);
 
 describe('las rutas escritas en los scripts llevan a un archivo', () => {
   it('hay scripts que revisar, y las formas conocidas se reconocen (control de que no pasa en vacío)', () => {
@@ -105,15 +123,15 @@ describe('las rutas escritas en los scripts llevan a un archivo', () => {
   });
 
   it('toda ruta anclada al script (import.meta.url, aqui, __dirname) se calcula y lleva a algo que existe', () => {
-    const hallazgos = SCRIPTS.filter(esJs).flatMap((a) => hallazgosDe(a, readFileSync(join(RAIZ, a), 'utf8'), DISCO_REAL));
-    const sobran: string[] = [];
-    const nuevos = [...hallazgos];
-    for (const d of SIN_CALCULAR) {
-      const propios = nuevos.filter((h) => h.startsWith(`${d.archivo}:`));
-      if (propios.length !== d.cuantas) sobran.push(`${d.archivo}: la deuda declara ${d.cuantas} y hay ${propios.length}`);
-      for (const h of propios) nuevos.splice(nuevos.indexOf(h), 1);
-    }
-    expect(sobran, 'La deuda de SIN_CALCULAR solo baja').toEqual([]);
+    const porArchivo = SCRIPTS.filter(esJs).flatMap((a) => analizarRutas(a, readFileSync(join(RAIZ, a), 'utf8'), DISCO_REAL).map((h) => ({ a, ...h })));
+    const usadas = new Set<number>();
+    const nuevos = porArchivo.filter((h) => {
+      const i = SIN_CALCULAR.findIndex((d) => h.tipo === 'calcular' && d.archivo === h.a && d.sitio === h.sitio);
+      if (i >= 0) usadas.add(i);
+      return i < 0;
+    }).map((h) => h.mensaje);
+    const sobran = SIN_CALCULAR.filter((_, i) => !usadas.has(i)).map((d) => `${d.archivo}: ${d.sitio}`);
+    expect(sobran, 'La deuda de SIN_CALCULAR solo baja: estas entradas ya no se dan').toEqual([]);
     expect(nuevos, 'Ruta que depende de la ubicación del script y no lleva a nada (¿se movió el script o el destino?)').toEqual([]);
   });
 });
@@ -148,6 +166,12 @@ describe('la regla, negando: un árbol inventado con las formas rotas', () => {
       "import { join } from 'node:path';\nconst aqui = dirname(fileURLToPath(import.meta.url));\nexport const f = (nombre) => join(aqui, nombre);\n",
     'ruta que depende de una constante que no se calcula':
       "import { join } from 'node:path';\nimport { dirname } from 'node:path';\nimport { fileURLToPath } from 'node:url';\nconst aqui = dirname(fileURLToPath(import.meta.url));\nconst T = process.env.TENANT;\nconst a = join(aqui, '..', T);\n",
+    'join(FUENTES, no-existe.ts) como en main':
+      "import { join } from 'node:path';\nconst FUENTES = join(aqui, '..', '..', 'functions', 'src');\nawait import(join(FUENTES, 'no-existe.ts'));\n",
+    'join(LIB, viejo/prepago.js) sobre functions/lib (compilado, solo cuenta su fuente)':
+      "import { join } from 'node:path';\nconst LIB = join(aqui, '..', '..', 'functions', 'lib');\nawait import(join(LIB, 'viejo', 'prepago.js'));\n",
+    'prefijo calculado que no existe aunque el resto no se calcule':
+      "import { join } from 'node:path';\nexport const f = (n) => join(aqui, '..', 'carpeta-movida', n);\n",
     'ruta con un alias de import y path.resolve':
       "import { join as unir } from 'node:path';\nimport * as path from 'node:path';\nconst aqui = path.dirname(new URL(import.meta.url).pathname);\nconst b = path.resolve(aqui, '../../Flujos-viejos');\nconst c = unir(aqui, 'no-existe.json');\n",
   };
