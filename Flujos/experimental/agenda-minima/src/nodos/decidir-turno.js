@@ -228,6 +228,21 @@ function elegirPorEscrito(dicho, oferta) {
   const dia = /\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)(?:\s+(\d{1,2})(?![\d:.]))?/.exec(n);
   const hoy = fechaLocal(ahora);
   const manana = /\bmanana\b/.test(n.replace(/\b(de|en|por) la manana\b/g, ' '));
+  // Una FECHA escrita con número («el 2 de octubre», «2/10», «el 2», «el 02 de octubre», una fecha ISO) tiene que
+  // coincidir con la de la hora ofrecida; si no coincide con ninguna, no se elige nada y el turno sigue su camino
+  // normal (se ofrece ese día). Hallazgo S06/S12 de la revisora, 30/09: «quiero cita el 2 de octubre a las
+  // 15:00» con la oferta del jueves 1 agendaba el jueves 1 a las 15:00.
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const nf = cnNorm(original); // con «/» y «-», que `n` quita
+  let fDia = null; let fMes = null;
+  let mf = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(nf);
+  if (mf) { fMes = Number(mf[2]); fDia = Number(mf[3]); }
+  if (fDia === null && (mf = /\b(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\b/.exec(nf))) {
+    fDia = Number(mf[1]); fMes = mf[2] === 'setiembre' ? 9 : MESES.indexOf(mf[2]) + 1;
+  }
+  if (fDia === null && (mf = /\b(\d{1,2})\/(\d{1,2})(?:\/\d{2,4})?\b/.exec(nf))) { fDia = Number(mf[1]); fMes = Number(mf[2]); }
+  if (fDia === null && (mf = /\bel\s+(\d{1,2})(?![\d:.])(?!\s*(?:hs|horas|h)\b)/.exec(nf))) fDia = Number(mf[1]);
+  if (fDia !== null && (fDia < 1 || fDia > 31)) fDia = null;
 
   if (h === null && ord === null && !esa) return nada;
   // Sin hora explicita, el texto entero tiene que ser relleno (evita «es mi primera cita»).
@@ -250,6 +265,8 @@ function elegirPorEscrito(dicho, oferta) {
     }
     if (ord !== null && i !== ord) return;
     if (dia && (cnNorm(diaDeLaSemana(f)) !== dia[1] || (dia[2] && Number(f.slice(8)) !== Number(dia[2])))) return;
+    if (fDia !== null && Number(f.slice(8, 10)) !== fDia) return;
+    if (fMes !== null && Number(f.slice(5, 7)) !== fMes) return;
     if (/\bhoy\b/.test(n) && f !== hoy) return;
     if (manana && f !== sumarDias(hoy, 1)) return;
     cand.push(iso);

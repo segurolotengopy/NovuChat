@@ -2508,3 +2508,56 @@ describe('Agenda mínima v0: el horario ficticio del respaldo nunca se presenta 
     expect(textos(preguntar(PANEL))).toMatch(/lunes: 11:00 a 18:00/);
   });
 });
+
+// =================================================================================================
+// Hallazgo S06/S12 de la revisora (30/09, sobre 7d49dec): una FECHA escrita con número («el 9 de octubre»,
+// «9/10», «el 9») no se miraba al elegir una hora escrita, y «a las 15:00» se tomaba de la oferta del JUEVES.
+describe('Agenda mínima v0: una fecha escrita gana sobre la oferta (S06/S12)', () => {
+  const ofertaJueves = (): ReturnType<typeof mundo> => {
+    const m = mundo({ eventos: [] });
+    m.turno(texto(MAMA, 'quiero cita el jueves'));
+    m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+    m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+    return m;
+  };
+  const elViernes = (dicho: string): void => {
+    it(`oferta del jueves, «${dicho}» → NO agenda el jueves; ofrece el viernes, y al elegir y dar el nombre el evento queda el viernes a las 15:00`, () => {
+      const m = ofertaJueves();
+      m.gemini.extraer = extraccion({ fechaPreferida: VIERNES, horaPreferida: '15:00' });
+      const t = m.turno(texto(MAMA, dicho));
+      expect(m.calendario.eventos).toHaveLength(0);
+      const ids = botonesDe(t.enviados[0]!).map((b) => b.id);
+      expect(ids[0]).toBe(idHueco(VIERNES, '15:00'));
+      expect(ids.every((id) => id.includes(VIERNES))).toBe(true);
+      m.turno(boton(MAMA, ids[0]!));
+      m.gemini.extraer = extraccion({ pacientes: ['Pedro Gómez Pérez'] });
+      const c = m.turno(texto(MAMA, 'Se llama Pedro Gómez Pérez'));
+      expect(m.calendario.eventos).toHaveLength(1);
+      expect(m.calendario.eventos[0]!['start']).toEqual({ dateTime: iso(VIERNES, '15:00') });
+      expect(c.enviados[0]!.cuerpo).toMatch(/viernes 9 de octubre a las 15:00/);
+    });
+  };
+  elViernes('quiero cita el 9 de octubre a las 15:00');
+  elViernes('el 9 a las 15:00');
+  elViernes('9/10 a las 15:00');
+  elViernes('el viernes a las 15:00');
+  it('NIEGA: «el 8 de octubre a las 15:00» (la fecha de la oferta) sí elige esa hora del jueves', () => {
+    const m = ofertaJueves();
+    const t = m.turno(texto(MAMA, 'el 8 de octubre a las 15:00'));
+    expect(m.calendario.eventos).toHaveLength(0); // falta el nombre
+    expect(textos(t)).toMatch(/nombre|llama/i);
+  });
+  it('una fecha escrita fuera de la oferta y SIN hueco a esa hora: ofrece otras horas de ese día, no agenda la de la oferta', () => {
+    const m = mundo({ eventos: [evento('o1', VIERNES, '15:00', '16:00', 'Otro paciente')] });
+    m.turno(texto(MAMA, 'quiero cita el jueves'));
+    m.gemini.extraer = extraccion({ fechaPreferida: JUEVES });
+    m.turno(lista(MAMA, SERV_CNS, 'Control niño sano'));
+    m.gemini.extraer = extraccion({ fechaPreferida: VIERNES, horaPreferida: '15:00' });
+    const t = m.turno(texto(MAMA, 'quiero cita el 9 de octubre a las 15:00'));
+    expect(m.calendario.eventos.map((e) => e['id'])).toEqual(['o1']);
+    const ids = botonesDe(t.enviados[0]!).map((b) => b.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.every((id) => id.includes(VIERNES))).toBe(true);
+    expect(ids).not.toContain(idHueco(VIERNES, '15:00'));
+  });
+});
