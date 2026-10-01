@@ -43,9 +43,11 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { basename, extname, join, normalize, resolve } from 'node:path';
+import { basename, dirname, extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const RAIZ = resolve(new URL('..', import.meta.url).pathname);
+const aqui = dirname(fileURLToPath(import.meta.url));
+const RAIZ = join(aqui, '..');
 const DIST = join(RAIZ, 'web', 'dist');
 const PUERTO = Number(process.env['PUERTO_DEMO'] ?? 5241);
 

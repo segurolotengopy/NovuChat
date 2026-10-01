@@ -25,9 +25,11 @@
  */
 import { deflateRawSync, crc32 } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const RAIZ = resolve(new URL('..', import.meta.url).pathname);
+const aqui = dirname(fileURLToPath(import.meta.url));
+const RAIZ = join(aqui, '..');
 const SALIDA = join(RAIZ, '..', 'Demo-Recursos', 'plantilla-catalogo.xlsx');
 
 // Las columnas que entiende `web/src/central/lib/csv.ts`. El orden es el del documento.

@@ -147,10 +147,10 @@ describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', (
 
 describe('la titularidad llega por ejesDeCuenta: nadie fuera de la cartera lee rutasWhatsApp (LOW 3)', () => {
   it('Cuenta, Pagar y Administrar piden ejesDeCuenta y no consultan rutasWhatsApp', () => {
-    for (const ruta of ['web/src/paginas/EstadoCuenta.tsx', 'web/src/paginas/Pagar.tsx', 'web/src/plataforma/paginas/CuentaNegocio.tsx']) {
-      const fuente = sinComentarios(leer(ruta));
-      expect(fuente, ruta).toContain('useEjesDeCuenta(tenantId)');
-      expect(fuente, ruta).not.toContain('rutasWhatsApp');
+    for (const bruta of [leer('web/src/paginas/EstadoCuenta.tsx'), leer('web/src/paginas/Pagar.tsx'), leer('web/src/plataforma/paginas/CuentaNegocio.tsx')]) {
+      const fuente = sinComentarios(bruta);
+      expect(fuente).toContain('useEjesDeCuenta(tenantId)');
+      expect(fuente).not.toContain('rutasWhatsApp');
     }
     const hook = sinComentarios(leer('web/src/central/lib/lecturas.ts'));
     expect(hook).toContain('CALLABLES.leerEjes');

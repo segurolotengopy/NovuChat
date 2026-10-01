@@ -20,6 +20,8 @@ Las demás cifras de costo son:
 
 > **Decisión del 01/10/2026:** en Bellido, **Andres paga Meta, los cambios y los recordatorios**.
 > La recomendación del §1 sobre esas tres preguntas queda superada. Q'Taco pasa a la cartera.
+> Meta lo paga Andres **con su propia tarjeta, cargada en la WABA de Bellido**, que está en el
+> portafolio del doctor. No lo paga AAB1, que no puede pagar la WABA de otro portafolio (§1).
 
 ---
 

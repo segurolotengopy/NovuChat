@@ -27,7 +27,7 @@
  * Y la regla se prueba NEGANDO, con un árbol inventado: sin esa parte, un
  * lector de imports que no ve nada daría verde para siempre.
  */
-import { dirname as carpetaDe } from 'node:path';
+import { dirname as carpetaDe, join } from 'node:path';
 import { fileURLToPath as rutaDe } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
@@ -111,7 +111,12 @@ describe('la frontera sobre el código de hoy', () => {
   });
 
   it('el coordinador de turno no se pierde al moverlo (sigue habiendo uno)', () => {
-    expect(ARCHIVOS.some((a) => zonaDeCodigo(a)?.zona === 'coordinador')).toBe(true);
+    // Los puntos de entrada y las herramientas con línea en ZONA_POR_ARCHIVO también son coordinador:
+    // lo que se vigila es el del turno, el que va a `core/turno/`.
+    expect(ARCHIVOS.some((a) => {
+      const z = zonaDeCodigo(a);
+      return z?.zona === 'coordinador' && z.destino.startsWith('admin/functions/src/core/turno/');
+    })).toBe(true);
   });
 });
 
@@ -376,7 +381,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
   // archivos (tanda 5), la mudanza reescribe el especificador, y una ruta
   // armada con plantilla no la reescribe (revisión de seguridad del #250).
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
-    const compilados = importsDe('admin/scripts/migrar-prepago.mjs').filter((i) => i.especificador.startsWith('../functions/lib/'));
+    const compilados = importsDe(join('admin/scripts/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../functions/lib/'));
     expect(compilados.map((i) => i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
       .toEqual(expect.arrayContaining(['prepago', 'planes']));
     for (const i of compilados) {
