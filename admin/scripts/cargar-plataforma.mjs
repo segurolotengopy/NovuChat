@@ -115,10 +115,10 @@ export function validar(textos) {
 // acá, pero sí comprobar que sigue siendo el mismo archivo que se revisó: si
 // alguien lo reemplaza por un QR sin rótulo, esto avisa. El fallo NO frena la
 // carga —el texto puede cargarse antes que la imagen definitiva—, pero se dice.
-const QR = '../../Demo-Recursos/qr-demo.png';
+const QR = new URL('../../Demo-Recursos/qr-demo.png', import.meta.url);
 function huellaDelQr() {
   try {
-    const b = readFileSync(new URL(QR, import.meta.url));
+    const b = readFileSync(QR);
     return `${b.length} bytes`;
   } catch {
     return null;
@@ -179,7 +179,7 @@ console.log('\nTextos de /plataforma/cobroSimulado\n');
 for (const [k, v] of Object.entries(TEXTOS)) console.log(`  ${k}\n      ${v}`);
 
 const huella = huellaDelQr();
-console.log(`\n  imagen rotulada: ${huella ? `${QR} (${huella})` : 'NO ENCONTRADA'}`);
+console.log(`\n  imagen rotulada: ${huella ? `${QR.pathname} (${huella})` : 'NO ENCONTRADA'}`);
 
 console.log('\nValidación');
 if (problemas.length) {

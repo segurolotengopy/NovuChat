@@ -27,7 +27,7 @@
  * Y la regla se prueba NEGANDO, con un árbol inventado: sin esa parte, un
  * lector de imports que no ve nada daría verde para siempre.
  */
-import { dirname as carpetaDe } from 'node:path';
+import { dirname as carpetaDe, join } from 'node:path';
 import { fileURLToPath as rutaDe } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { IDS_MODULOS, REGISTRO } from '../../functions/src/registro.ts';
@@ -376,7 +376,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
   // archivos (tanda 5), la mudanza reescribe el especificador, y una ruta
   // armada con plantilla no la reescribe (revisión de seguridad del #250).
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
-    const compilados = importsDe('admin/scripts/migrar-prepago.mjs').filter((i) => i.especificador.startsWith('../functions/lib/'));
+    const compilados = importsDe(join('admin/scripts/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../functions/lib/'));
     expect(compilados.map((i) => i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
       .toEqual(expect.arrayContaining(['prepago', 'planes']));
     for (const i of compilados) {

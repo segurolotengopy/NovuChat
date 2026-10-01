@@ -101,6 +101,8 @@
  * y no se escriben.
  */
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -116,7 +118,9 @@ const TENANT = (opcion('tenant') ?? '').toLowerCase();
 const ARCHIVO = opcion('archivo');
 // Por defecto, la tabla de la raíz del repositorio, como `sembrar-demos.mjs`.
 // Desde un worktree hay que apuntar a la de la carpeta principal con `--local`.
-const LOCAL = opcion('local') ?? new URL('../../CONFIGURACION.local.md', import.meta.url).pathname;
+const aqui = dirname(fileURLToPath(import.meta.url));
+const REPO = join(aqui, '..', '..');
+const LOCAL = opcion('local') ?? join(REPO, 'CONFIGURACION.local.md');
 
 const rojo = (s) => `\x1b[1;31m${s}\x1b[0m`;
 const cola = (v) => (v ? `…${String(v).slice(-4)}` : '—');
