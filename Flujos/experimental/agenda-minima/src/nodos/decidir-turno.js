@@ -104,8 +104,10 @@ if (forzada) {
 // una cita, gana la cita: no es `respuesta_fija`. `conMenu` (primer mensaje) lo calcula `Plan del turno`.
 // Una FOTO (o documento) cuyo pie pregunta QUIÉN sale en ella («¿este es el doctor?», «¿quién es?»): respuesta
 // fija y honesta, por código. Nadie se reconoce en una foto, y la respuesta nunca empieza con «Sí» (Andres, 30/09).
-if ((t.tipo === 'image' || t.tipo === 'document') && texto.trim()
-  && /\bquien(es)? (es|son|sale|aparece)\b|^\W*(es|este es|esta es|ese es|esa es|el es|ella es|seria)\s+(el |la )?(doctor|doctora|dr|dra|pediatra)\b|\b(es|seria) (el |la )?(doctor|doctora|dr|dra)\s*\?/.test(norm)) {
+// Solo la pregunta por quien SALE en la foto (termina ahi): «¿quién es el doctor de turno?» o un pedido de cita
+// con foto siguen su camino normal (revisión de seguridad de ccb149d, LOW 1).
+if ((t.tipo === 'image' || t.tipo === 'document') && texto.trim() && !/\b(cita|agend|reserv|turno|ficha)/.test(norm)
+  && /\bquien(es)? (es|son|sale|aparece)( (este|esta|ese|esa|el|ella|ellos|ellas|aqui|ahi))?( en (la|esta|esa) (foto|imagen))?\W*$|^\W*(es|este es|esta es|ese es|esa es|el es|ella es|seria)\s+(el |la )?(doctor|doctora|dr|dra|pediatra)\b|\b(es|seria) (el |la )?(doctor|doctora|dr|dra)\s*\?/.test(norm)) {
   return salir('respuesta_fija', { claveFija: 'identidad_foto' });
 }
 if (tipoEf === 'text' && !boton) {

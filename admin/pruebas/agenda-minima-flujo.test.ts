@@ -2676,6 +2676,13 @@ describe('Agenda mínima v0: prueba «Flujo B 2»', () => {
     const t = m.turno(foto(MAMA, '¿dónde queda el consultorio?'));
     expect(textos(t)).not.toMatch(/reconocer personas/);
   });
+  for (const pie of ['¿Quién sale de turno hoy?', 'quiero cita, ¿quién es el doctor?', '¿quién es el doctor de turno?']) {
+    it(`NIEGA: foto con «${pie}» no es una pregunta por quién sale en la foto`, () => {
+      const m = mundo({ eventos: [], configBase: base });
+      m.turno(texto(MAMA, 'hola'));
+      expect(textos(m.turno(foto(MAMA, pie)))).not.toMatch(/reconocer personas/);
+    });
+  }
   it('la redacción que contesta «Sí» a «¿eres el doctor?», o dice «soy el doctor», se descarta', () => {
     const m = mundo({ eventos: [] });
     m.gemini.extraer = extraccion({ intencion: 'consultar', pregunta: '¿eres el doctor?' });
@@ -2706,5 +2713,26 @@ describe('Agenda mínima v0: el mapa también sale si el panel trae otra instruc
     hastaPedirNombre(m);
     m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
     expect(m.turno(texto(MAMA, 'Ana Pérez Gómez')).enviados[0]!.cuerpo).toContain(`Mapa: ${MAPA}`);
+  });
+  it('NIEGA: un enlace de mapa de más de 200 caracteres no se envía, ni por el panel ni por instruccionesExtra', () => {
+    const LARGO = 'https://maps.app.goo.gl/' + 'x'.repeat(200);
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['datosDelNegocio'] as J)['direccionMaps']);
+    delete ((panel['datosDelNegocio'] as J)['instruccionesExtra']);
+    const m = mundo({ eventos: [], panel, configBase: { direccionMaps: LARGO, instruccionesExtra: `Mapa: ${LARGO}` } });
+    hastaPedirNombre(m);
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    const cuerpo = m.turno(texto(MAMA, 'Ana Pérez Gómez')).enviados[0]!.cuerpo;
+    expect(cuerpo).toMatch(CONFIRMA);
+    expect(cuerpo).not.toContain('Mapa:');
+  });
+  it('NIEGA: un direccionMaps que no es de Google Maps no se envía', () => {
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['datosDelNegocio'] as J)['direccionMaps']);
+    delete ((panel['datosDelNegocio'] as J)['instruccionesExtra']);
+    const m = mundo({ eventos: [], panel, configBase: { direccionMaps: 'https://ejemplo.invalido/maps', instruccionesExtra: '' } });
+    hastaPedirNombre(m);
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    expect(m.turno(texto(MAMA, 'Ana Pérez Gómez')).enviados[0]!.cuerpo).not.toContain('Mapa:');
   });
 });

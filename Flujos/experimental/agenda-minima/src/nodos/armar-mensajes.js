@@ -164,11 +164,10 @@ function menu(cuerpo) {
     c + '\n\nRespóndeme «emergencia», «recién nacido», «niño sano» o «vacunas».', { tipoReporte: 'interactive' });
 }
 // Las respuestas a las preguntas sencillas salen de la configuración; sin texto configurado, null (transfiere).
-// Enlaces que salen de la CONFIGURACIÓN (nunca del código común): el mapa (`direccionMaps`, o el primero que
-// nombre `instruccionesExtra`) y el Instagram de las redes (`mensajeRedes`).
+// Enlaces que salen de la CONFIGURACIÓN (nunca del código común): el mapa (`direccionMaps`, que `Config del negocio`
+// valida o completa desde `instruccionesExtra`) y el Instagram de las redes (`mensajeRedes`).
 function enlaceDe(texto, re) { const m = String(texto || '').match(re); return m ? m[0].replace(/[).,;:!?»]+$/, '') : ''; }
-const MAPA = String(cfg.direccionMaps || '').trim()
-  || enlaceDe(cfg.instruccionesExtra, /https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.com\/maps|maps\.google\.com)\/[^\s"'<>»]+/i);
+const MAPA = String(cfg.direccionMaps || '').trim(); // ya filtrado en `Config del negocio`
 const INSTAGRAM = enlaceDe(cfg.mensajeRedes, /https:\/\/(www\.)?instagram\.com\/[^\s"'<>»]+/i);
 function respuestaFija(clave) {
   if (clave === 'identidad_foto') {
