@@ -32,7 +32,7 @@ Lee primero, en este orden: `CLAUDE.md` entero, `ESTADO.md`,
   que no se guarda, y la regla que exige acuerdo del cliente para reducir un
   compromiso.
 - `admin/functions/src/modulos/productos/imagenCatalogo.ts`, `captacion.ts`,
-  `admin/web/src/lib/archivoPlanes.ts` y `foto.ts`: los controles que se
+  `admin/web/src/central/lib/archivoPlanes.ts` y `foto.ts`: los controles que se
   reutilizan en vez de rehacerse.
 
 ## Las decisiones que no se tocan

@@ -6,7 +6,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
-import { sanearCaptacion } from './captacion.js';
+import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import {
