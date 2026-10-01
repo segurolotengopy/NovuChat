@@ -1,0 +1,9 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/sena.ts", "a": "admin/functions/src/modulos/agenda/sena.ts" },
+    { "de": "admin/functions/src/retencion.ts", "a": "admin/functions/src/modulos/agenda/retencion.ts" },
+    { "de": "admin/functions/src/seguimientos.ts", "a": "admin/functions/src/modulos/agenda/seguimientos.ts" },
+    { "de": "admin/web/src/paginas/Funcionarios.tsx", "a": "admin/web/src/modulos/agenda/Funcionarios.tsx" }
+  ],
+  "suitesPuras": []
+}
