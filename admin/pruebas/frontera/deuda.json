@@ -25,11 +25,6 @@
       "desde": "admin/functions/src/modulos/catalogo-web/catalogoWeb.ts",
       "hacia": "admin/functions/src/modulos/inventario/inventario.ts",
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
-    },
-    {
-      "desde": "admin/web/src/plataforma/lib/negocios.ts",
-      "hacia": "admin/web/src/lib/archivoPlanes.ts",
-      "porque": "Plataforma lee el archivo de planes de Captación: la pieza compartida baja a Central al mover captación"
     }
   ],
   "sinZona": [

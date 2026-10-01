@@ -17,11 +17,11 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
-import { REGION } from './core/region.js';
-import { CLAVE_GEMINI } from './central/servicios/gemini.js';
-import type { ConsultarModelo } from './central/asistente/comportamiento.js';
-import { consultarGemini, otrosComercios } from './central/asistente/verificarComportamiento.js';
-import { limiteDeCampanas } from './central/cuenta/planes.js';
+import { REGION } from '../../core/region.js';
+import { CLAVE_GEMINI } from '../../central/servicios/gemini.js';
+import type { ConsultarModelo } from '../../central/asistente/comportamiento.js';
+import { consultarGemini, otrosComercios } from '../../central/asistente/verificarComportamiento.js';
+import { limiteDeCampanas } from '../../central/cuenta/planes.js';
 import {
   hashLista, leerCampanas, revisarCampanas,
   type ContextoDelNegocio, type ResultadoCampanas, type RevisionCampana,

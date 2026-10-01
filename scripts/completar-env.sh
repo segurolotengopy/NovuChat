@@ -34,7 +34,9 @@ done
 [[ -f "$ENV_FILE" ]] || { echo "✗ No existe $ENV_FILE (copie .env.example)"; exit 1; }
 [[ -f "$LOCAL"    ]] || { echo "✗ No existe $LOCAL — sin el no hay de donde tomar los valores"; exit 1; }
 
-[[ $SIMULAR -eq 0 ]] && cp -p "$ENV_FILE" "${ENV_FILE}.respaldo"
+# Se cierra ANTES de copiar y de escribir: el respaldo hereda el modo (cp -p)
+# y python reescribe el archivo en su lugar, sin cambiarle el modo.
+[[ $SIMULAR -eq 0 ]] && { chmod 600 "$ENV_FILE"; cp -p "$ENV_FILE" "${ENV_FILE}.respaldo"; }
 
 SIMULAR="$SIMULAR" ENV_FILE="$ENV_FILE" LOCAL="$LOCAL" python3 - <<'PY'
 import os, re, sys

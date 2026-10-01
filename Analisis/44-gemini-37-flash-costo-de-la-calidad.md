@@ -24,6 +24,9 @@ planes de `Analisis/43`.
 > (14 % del costo variable): lo caro de este documento es el **agente con herramientas**, no el
 > modelo. Las tablas de abajo valen para los flujos que siguen con agente.
 
+> **Decisión del 01/10/2026:** Andres **descarta por ahora** subir a Gemini 3.8 Flash. Se sigue
+> con 3.5 Flash-Lite. Este documento queda como referencia de costos para cuando se retome.
+
 ---
 
 ## 0. Conclusión, adelantada

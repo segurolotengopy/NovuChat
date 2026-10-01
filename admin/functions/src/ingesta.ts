@@ -6,7 +6,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { defineInt } from 'firebase-functions/params';
 import { SECRETOS_POR_ALIAS, rutaAutenticada } from './core/seguridad/firma.js';
-import { sanearCaptacion } from './captacion.js';
+import { sanearCaptacion } from './modulos/captacion/captacion.js';
 import { vozFija } from './core/prompt/prompt.js';
 import { registrar } from './core/turno/bitacora.js';
 import {
@@ -18,7 +18,7 @@ import {
 export { HORAS_VENTANA_ATENCION, RESPUESTAS_POR_CONVERSACION };
 // El aviso de consumo al 80 % se decide en `planes.ts`, también puro.
 import { avisoConsumoPendiente, avisoDeConsumo, limiteDeCampanas, periodoDe } from './central/cuenta/planes.js';
-import { campanasParaElFlujo } from './campanas.js';
+import { campanasParaElFlujo } from './modulos/campanas/campanas.js';
 // EL PREPAGO se decide en `prepago.ts`, puro: cobertura del mes, gracia,
 // saldo de conversaciones y si el corte SE APLICA o solo se observa. Acá se
 // aplica lo que decidió, dentro de la transacción que ya existía.

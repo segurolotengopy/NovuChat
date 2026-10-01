@@ -86,7 +86,7 @@ export { ajustarStock, dejarDeControlarStock } from './modulos/inventario/invent
 // FLUJO DE CAPTACIÓN. Comprueba, a pedido de la consola, que el archivo de
 // planes que el asistente manda por WhatsApp se pueda mandar: responde, es del
 // tipo declarado y cabe en los límites de Meta. El porqué en `captacion.ts`.
-export { comprobarArchivoPlanes } from './captacion.js';
+export { comprobarArchivoPlanes } from './modulos/captacion/captacion.js';
 // COMPORTAMIENTO GENERAL DEL ASISTENTE, VERIFICADO ANTES DE APLICARSE (reglas de
 // Andres del 17/09/2026). Lo propuesto (`instruccionesExtra`) pasa por dos capas
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
@@ -96,7 +96,7 @@ export { verificarComportamiento } from './central/asistente/verificarComportami
 // (`config/campanas.lista`); este disparador las verifica —fechas, duplicados,
 // palabras de emergencia, inyección y, con el modelo, que sean de ESTE negocio—
 // y copia las aprobadas a `vigentes`, lo único que viaja al flujo.
-export { verificarCampanas } from './verificarCampanas.js';
+export { verificarCampanas } from './modulos/campanas/verificarCampanas.js';
 // PREPAGO: EL CLIENTE DEL COBRADOR (bloque A-2, 20/09/2026). NovuChat le cobra
 // al comercio por QR a través del proyecto de cobros; el aviso del cobrador
 // solo dispara la consulta autenticada, que es la única que confirma. Dos
