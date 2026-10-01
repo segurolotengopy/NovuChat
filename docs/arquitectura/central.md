@@ -468,7 +468,7 @@ una pantalla de filtros puede pasar todas las pruebas locales y romperse la
 primera vez que alguien la usa en producción.
 
 La defensa es estructural: las formas de consulta se declaran en
-`web/src/lib/bitacora.ts`, y de ahí salen **dos cosas** — la consulta que arma la
+`web/src/central/lib/bitacora.ts`, y de ahí salen **dos cosas** — la consulta que arma la
 pantalla y la prueba `pruebas/indices.test.ts`, que verifica que cada forma tenga
 su índice. La pantalla no puede construir una consulta que la prueba no haya
 visto, porque leen la misma lista.
@@ -1060,7 +1060,7 @@ Todo dentro de la transacción que ya existe (`ingesta.ts:1026-1200`). No se abr
 
 **Bitácora y auditoría.** `TipoEvento` (`ingesta.ts:511-544`) suma `'corte_servicio'
 | 'reanudacion_servicio' | 'pago_registrado'`. Las tres listas (`ingesta.ts`,
-`firestore.rules:2035-2060`, `web/src/lib/bitacora.ts:52-70`) se tocan juntas o
+`firestore.rules:2035-2060`, `web/src/central/lib/bitacora.ts:52-70`) se tocan juntas o
 `pruebas/bitacora-tipos.test.ts` rompe. El entrante durante el corte se registra como
 `mensaje_entrante` con `resultado: 'rechazado'` y `codigo: 'cortado'`.
 
@@ -1096,7 +1096,7 @@ siguiente turno ya lee la cuenta con `periodoPagado` nuevo.
 - **`dibujoQr.ts`**: **no se usa** (el cobrador entrega PNG). Si el banco algún día
   devuelve la cadena EMV, `imagenDePago` puede redibujar con `dibujarQr`.
 - **`atencion.ts`** como molde de módulo puro compartido con la consola
-  (`web/src/lib/prepago.ts` reexporta, como `web/src/lib/planes.ts:23-35`).
+  (`web/src/central/lib/prepago.ts` reexporta, como `web/src/central/lib/planes.ts:23-35`).
 - **`cobro.ts:200-243` (`imagenDeCobro`)** como molde de `imagenDePago`: pública, por
   ficha al azar de 128 bits, 404 si el pago no está `pendiente`.
 
@@ -1173,7 +1173,7 @@ dd/mm») con el botón que llama a `fijarCortePrepago`; en cada fila `modalidad`
 y, si hay `corte`, «cortaría por sin_pago desde el dd/mm · N clientes» en gris si
 `aplicado: false` y en rojo si `true`. Comercio (`EstadoCuenta.tsx`): `corte` **solo si
 `aplicado === true`**; un corte observado no existe para él. La consola importa
-`estadoDeServicio` y `corteDe` vía `web/src/lib/prepago.ts` y no calcula nada.
+`estadoDeServicio` y `corteDe` vía `web/src/central/lib/prepago.ts` y no calcula nada.
 
 **Pruebas negativas (`pruebas/prepago-ingesta.test.ts`, ingesta real contra el emulador, alias `cliente16`):**
 
@@ -1362,8 +1362,8 @@ Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20
 
 | | |
 |---|---|
-| **Crea** | `admin/functions/src/central/cuenta/prepago.ts` (puro, reaplicado con §4undecies.3); `admin/functions/src/central/pagar/cobranza.ts` (`recordatoriosPrepago`, `recordatorioPrepagoEnviado`, molde `seguimientos.ts`); `admin/web/src/lib/prepago.ts` (reexporta); `admin/scripts/migrar-prepago.mjs` (seco por defecto) |
-| **Modifica** | `ingesta.ts`: `Promise.all` (1027), condición de `metricasDoc` (1053), bloque de decisión tras 1058, `escribirMensaje`, retorno (1199) y respuesta (1264); `configuracionFlujo`: orden de lectura de `config/negocio` (1354/1374), lecturas de cuenta/métricas/plataforma (1389-1394), 409 del corte, campo `prepago`; `TipoEvento` (511-544). `index.ts`: exports; `actualizarEstadoCuenta` acepta `modalidad`, `periodoPrueba`, `corteActivo` y recalcula `camposDerivados` (607-663); nueva `fijarCortePrepago`. `firestore.rules`: tipos de bitácora (2035-2060). `web/src/lib/bitacora.ts:52-70`. `ESTADO.md`, `CLAUDE.md` §7 fila «Conversaciones incluidas» |
+| **Crea** | `admin/functions/src/central/cuenta/prepago.ts` (puro, reaplicado con §4undecies.3); `admin/functions/src/central/pagar/cobranza.ts` (`recordatoriosPrepago`, `recordatorioPrepagoEnviado`, molde `seguimientos.ts`); `admin/web/src/central/lib/prepago.ts` (reexporta); `admin/scripts/migrar-prepago.mjs` (seco por defecto) |
+| **Modifica** | `ingesta.ts`: `Promise.all` (1027), condición de `metricasDoc` (1053), bloque de decisión tras 1058, `escribirMensaje`, retorno (1199) y respuesta (1264); `configuracionFlujo`: orden de lectura de `config/negocio` (1354/1374), lecturas de cuenta/métricas/plataforma (1389-1394), 409 del corte, campo `prepago`; `TipoEvento` (511-544). `index.ts`: exports; `actualizarEstadoCuenta` acepta `modalidad`, `periodoPrueba`, `corteActivo` y recalcula `camposDerivados` (607-663); nueva `fijarCortePrepago`. `firestore.rules`: tipos de bitácora (2035-2060). `web/src/central/lib/bitacora.ts:52-70`. `ESTADO.md`, `CLAUDE.md` §7 fila «Conversaciones incluidas» |
 | **Pruebas nuevas** | `pruebas/prepago.test.ts` (pura: períodos, gracia hora por hora en los bordes, `estadoDeServicio` por modalidad, `aplicarPago` mes por mes incluidos 6 meses con bolsa de regalo y tope 6, `recordatoriosDebidos` día por día D-5..D+4 e idempotencia por clave, `mensajeCortesia` con y sin número y sin «pago»/«mantenimiento», `PLANTILLAS` sin voseo); `pruebas/prepago-ingesta.test.ts` (tabla de §4undecies.4, más: contadores idénticos a hoy con modalidad ausente; `sin_conversaciones` descuenta `bolsa` y no corta la ventana abierta); `pruebas/prepago-configuracion.test.ts` (409 con teléfono de recepción; 200 en gracia; 200 con demostración); `pruebas/cobranza.test.ts` (lista solo tenants con modalidad; nunca demostración; prueba solo `conversion`; marcar antes: segunda llamada `repetido`; tenant sin `telefonosPago` va en `sinTelefono`) |
 | **Modifica pruebas** | `estado-cuenta.test.ts` (+ modalidad cerrada; `corteActivo` solo booleano) |
 | **Necesita** | nada. Entra a `main` en observación |
@@ -1373,7 +1373,7 @@ Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20
 | | |
 |---|---|
 | **Crea** | `admin/functions/src/central/pagar/pagos.ts`: `aplicarPagoEnTransaccion(tx, refs, pago, confirmacion)` (**la única puerta que suma meses o bolsas**; A-2 la llama dentro de su transacción), `camposDerivados`, `registrarPagoManual` (propietario; exige `medio`, `referencia`, `tcoAplicado`/`tcoFuente`/`tcoFecha`, `montoRecibidoBs`, `evidencia` si transferencia, comprobando que el objeto exista en Storage; `motivoDiferencia` si difiere; anula el QR vivo vía `cobrador.anularCobro` si existe), `anularPagoPendiente` (admin del tenant o propietario), `fijarTelefonosPago` (admin), `consultarPagoPendiente` (admin). `admin/functions/src/central/servicios/tipoCambio.ts`: `tipoCambioDelDia()` lee `plataforma/tipoCambio { tco, fecha, fuente }`, lanza `SinTipoDeCambio` si falta o `fecha` tiene más de 4 días (fines de semana del BCB). `admin/scripts/fijar-tipo-cambio.mjs` (de la rama, con `fecha` diaria). Reglas `/pagos` y `/cobrosPendientes`. Storage: `match /tenants/{tenantId}/pagos/{pagoId}/{archivo}` con `archivo in ['qr.png','evidencia.jpg','evidencia.png','evidencia.pdf']`, `get` para admin legible o propietario, `create/update` de `evidencia.*` solo `esPropietario()` con tipo y tamaño (≤ 5 MB imagen, ≤ 10 MB PDF), `list`/`delete` `false`, `qr.png` solo lo escribe el Admin SDK |
-| **Modifica** | `index.ts:314, 353` (quitar `estadoPago`); `536-563` (rechazar los derivados); `115-121` (`exigirAdminDe` con proveedor); exports. `firestore.rules`, `storage.rules`, `web/src/lib/cuenta.ts` (`pendiente` = «En gracia / cobro pendiente»). `ESTADO.md` |
+| **Modifica** | `index.ts:314, 353` (quitar `estadoPago`); `536-563` (rechazar los derivados); `115-121` (`exigirAdminDe` con proveedor); exports. `firestore.rules`, `storage.rules`, `web/src/central/lib/cuenta.ts` (`pendiente` = «En gracia / cobro pendiente»). `ESTADO.md` |
 | **Pruebas nuevas** | `pruebas/pagos.test.ts` (callables reales con `.run()`): el admin **no** puede `registrarPagoManual` ni en su comercio; propietario con contraseña no; sin TCO válido no registra; transferencia sin evidencia no; evidencia declarada que no existe en Storage no; importe distinto sin motivo no; confirmado no se anula; segundo pendiente con uno vivo → `failed-precondition` y devuelve el vivo; `anularPagoPendiente` del admin de B sobre A → `permission-denied`; `suspenderTenant` ya no toca `estadoPago`; `fijarTelefonosPago` rechaza > 5 y formatos malos. `pruebas/reglas.test.ts` sección «Pagos del prepago» (tabla de §4undecies.1). `pruebas/storage-reglas.test.ts` sección «Evidencia de pagos». `pruebas/tipo-cambio.test.ts` |
 | **Modifica pruebas** | `estado-cuenta.test.ts:146-158` (ahora rechazan) |
 | **Necesita** | A-0. `registrarPagoManual` llama a `anularCobro` solo si `cobrador.ts` existe: A-1 lo define como inyección (`anular: (cobroId) => Promise<Resultado>`) y A-2 la enchufa |
@@ -1413,7 +1413,7 @@ Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20
 | | |
 |---|---|
 | **Crea** | `admin/web/src/paginas/Pagar.tsx` (plan, meses 1-6, bolsas; importe USD y Bs con TCO y fuente **leídos del servidor** vía `cotizarPago` callable o de `plataforma/tipoCambio`; el QR desde Storage; «cancelar y emitir otro»); `admin/web/src/paginas/CuentaNegocio.tsx` (propietario, fases 1-2 de `Analisis/29`: modalidad, plan, umbrales, suspender/reactivar, **cargar pago manual** con subida de evidencia, historial de `/auditoria` y de `/pagos`, bandera por tenant); `admin/web/src/componentes/HistorialPagos.tsx` |
-| **Modifica** | `EstadoCuenta.tsx` (botón Pagar, `fase`/gracia, `corte.perdidas` solo si `aplicado`, historial, `telefonosPago` editable por el admin vía callable); `Tenants.tsx` (franja de modo observación, columnas modalidad/fase/corte, botón `fijarCortePrepago`); `Tablero.tsx:352,490` (derivados; sin cambio de nombre); `App.tsx` (rutas `/negocio/:tenantId/cuenta/pagar`, `/negocio/:tenantId/cuenta-novuchat`); `web/src/lib/prepago.ts` |
+| **Modifica** | `EstadoCuenta.tsx` (botón Pagar, `fase`/gracia, `corte.perdidas` solo si `aplicado`, historial, `telefonosPago` editable por el admin vía callable); `Tenants.tsx` (franja de modo observación, columnas modalidad/fase/corte, botón `fijarCortePrepago`); `Tablero.tsx:352,490` (derivados; sin cambio de nombre); `App.tsx` (rutas `/negocio/:tenantId/cuenta/pagar`, `/negocio/:tenantId/cuenta-novuchat`); `web/src/central/lib/prepago.ts` |
 | **Pruebas nuevas** | `pruebas/prepago-pantalla.test.ts` (lectura de fuentes): `Pagar.tsx` y `EstadoCuenta.tsx` **no importan** `cobro`, `sena`, `Cobros`, `Cobro`; ningún texto contiene «seña»; el importe en Bs **no se calcula en la pantalla**; `perdidas` se pinta condicionado a `aplicado`; `Tenants.tsx` llama a `fijarCortePrepago` y no escribe `plataforma/`. `pruebas/indices.test.ts` si `pagos` necesita orden compuesto (no debería) |
 | **Necesita** | A-1 (callables y regla), A-2 para el QR real (hasta entonces «cobro no disponible») |
 
