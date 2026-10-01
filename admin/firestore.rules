@@ -985,7 +985,7 @@ service cloud.firestore {
         // `aclaraciones` y `archivoPlanes`. Las reglas NO recorren elementos de
         // una lista: acá se comprueba el tipo y el tope de cada una; la forma
         // de cada elemento la valida y recorta `sanearCaptacion`
-        // (functions/src/captacion.ts) antes de mandarla al flujo, y descarta
+        // (functions/src/modulos/captacion/captacion.ts) antes de mandarla al flujo, y descarta
         // lo que no cumple. Mismo reparto que `datosQueNoTenemos` (T-27).
         //
         // MÁS DE CINCO PLANES EXIGEN EL ARCHIVO. Recitar veinte planes por chat

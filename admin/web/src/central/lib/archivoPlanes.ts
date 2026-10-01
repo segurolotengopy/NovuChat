@@ -24,7 +24,7 @@
  * realidad es un .docx renombrado pasaría la regla (que solo ve el
  * `contentType` que declaramos nosotros) y le llegaría al prospecto como un
  * PDF que no abre. Las firmas son las mismas que usa `firmaCoincide` de
- * `functions/src/captacion.ts`, para que lo que acepta la pantalla no lo
+ * `functions/src/modulos/captacion/captacion.ts`, para que lo que acepta la pantalla no lo
  * rechace después «Comprobar archivo».
  */
 

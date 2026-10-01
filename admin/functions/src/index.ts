@@ -86,7 +86,7 @@ export { ajustarStock, dejarDeControlarStock } from './inventario.js';
 // FLUJO DE CAPTACIÓN. Comprueba, a pedido de la consola, que el archivo de
 // planes que el asistente manda por WhatsApp se pueda mandar: responde, es del
 // tipo declarado y cabe en los límites de Meta. El porqué en `captacion.ts`.
-export { comprobarArchivoPlanes } from './captacion.js';
+export { comprobarArchivoPlanes } from './modulos/captacion/captacion.js';
 // COMPORTAMIENTO GENERAL DEL ASISTENTE, VERIFICADO ANTES DE APLICARSE (reglas de
 // Andres del 17/09/2026). Lo propuesto (`instruccionesExtra`) pasa por dos capas
 // del servidor y recién entonces se copia a `instruccionesVigentes`, que es lo
