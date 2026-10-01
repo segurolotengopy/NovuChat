@@ -28,9 +28,9 @@ export {
   estadoDeServicio, fechaCorta, fechaEscrita, fechaFinDelPeriodo, finDelPeriodoMs, importeBs,
   inicioDelPeriodoMs, mensajeCortesia, mesBolivia, modalidadDe, montoUsdDe, periodoAnterior,
   periodoSiguiente, recordatoriosDebidos, resumenDeCuenta, sumarMeses, tipoCambioVigente,
-} from '../../../functions/src/central/cuenta/prepago';
+} from '../../../../functions/src/central/cuenta/prepago';
 export type {
   CamposDerivados, ContextoRecordatorio, Corte, CuentaCruda, CuentaTrasPago, EstadoPago,
   EstadoServicio, Fase, Modalidad, MotivoCorte, Pago, PlataformaPrepago, Recordatorio,
   TipoCambio, TipoRecordatorio,
-} from '../../../functions/src/central/cuenta/prepago';
+} from '../../../../functions/src/central/cuenta/prepago';

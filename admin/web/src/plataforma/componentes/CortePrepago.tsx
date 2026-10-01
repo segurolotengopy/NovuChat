@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Confirmacion } from './Confirmacion';
-import { fechaCorta } from '../../lib/prepago';
+import { fechaCorta } from '../../central/lib/prepago';
 
 /**
  * LA COMPUERTA DEL CORTE (`DISENO.md` §4undecies.4): global en

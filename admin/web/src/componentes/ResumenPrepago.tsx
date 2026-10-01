@@ -1,5 +1,5 @@
-import { fechaCorta, type Corte, type EstadoServicio } from '../lib/prepago';
-import { mesEscrito } from '../lib/pagar';
+import { fechaCorta, type Corte, type EstadoServicio } from '../central/lib/prepago';
+import { mesEscrito } from '../central/lib/pagar';
 
 /**
  * LA PRODUCCIÓN, COMO LA VE EL COMERCIO («prepago» en el código; «Producción»

@@ -4,8 +4,8 @@ import {
   DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_TITULARIDAD,
   type EjesDeCuenta,
 } from '../../lib/ejes';
-import { nombreDePlan, precioUsdDe } from '../../lib/planes';
-import { importeBs, tipoCambioVigente } from '../../lib/prepago';
+import { nombreDePlan, precioUsdDe } from '../lib/planes';
+import { importeBs, tipoCambioVigente } from '../lib/prepago';
 
 /**
  * LOS TRES EJES DE LA CUENTA, POR SEPARADO, como los ve el comercio en

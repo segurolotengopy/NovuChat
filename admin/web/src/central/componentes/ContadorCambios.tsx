@@ -1,4 +1,4 @@
-import { mesEscrito } from '../../lib/pagar';
+import { mesEscrito } from '../lib/pagar';
 import type { CambiosVista } from '../../lib/ejes';
 
 /**
