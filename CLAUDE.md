@@ -261,3 +261,14 @@ código.
   solo para agregar; `./scripts/estado-generado.sh` imprime la etiqueta viva,
   las Functions desplegadas, los flujos publicados con su versión y los
   tenants con su modalidad.
+
+## Delegación entre agentes y costo
+
+La sesión principal orquesta y no codifica tareas extensas por sí misma. El modelo de cada agente está fijado en el campo `model` de su archivo en `.claude/agents/` (esa es la fuente de verdad): lo decide quién verifica la salida del agente. **Sonnet** cuando después pasan pruebas o un revisor en Opus (ejecutar lo ya planificado); **Opus** cuando la salida es el veredicto, la cifra o el acta y nadie la vuelve a mirar (planificar, revisar, seguridad, actas).
+
+1. Cambio que toca más de un archivo, una regla de negocio, datos persistidos o una integración: `planificador` → `implementador` (global, en `~/.claude/agents`) o el agente de dominio de la zona (`central`, `core-flujos`, `core-functions`, `modulo`, `consola`, `plataforma-consola`, `metodo`) → `revisor-codigo` (y `seguridad` si el cambio toca autenticación, reglas de acceso, IAM, dependencias o infraestructura).
+2. Búsquedas amplias en el código: delegar en el agente integrado `Explore` (modelo económico) en vez de leer muchos archivos en la sesión principal. Al lanzar subagentes de exploración o de lectura masiva, usar `model: haiku`.
+3. Planificar con Opus en una sesión corta y separada y ejecutar con Sonnet en otra, que es el modelo por defecto. Para abrir la de Opus sin cambiar ese valor por defecto, usar `claude --model opus` o la tecla `s` del selector de `/model`: `/model opus` a secas lo guardaría. No alternar de modelo dentro de una misma sesión larga (cada modelo tiene su propia caché de prompts). No dejar a Opus iterando sobre errores de compilación o de pruebas.
+4. Al delegar, pasar rutas, el plan y el criterio de terminado; no pegar contenido extenso. Cada subagente vuelve a cargar este archivo y lee lo demás por ruta.
+5. No usar el modo rápido (*fast mode*) salvo pedido explícito: cuesta el doble por token.
+6. **Este archivo es estable.** No registrar aquí avances, estado, fechas de sesión ni pendientes (van en `ESTADO.md`, la bitácora y los PR). Un `CLAUDE.md` que no cambia entre sesiones permite reutilizar la caché de contexto en la sesión principal y en cada subagente; cada edición la invalida.

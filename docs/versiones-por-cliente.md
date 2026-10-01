@@ -30,7 +30,7 @@ Una excepción necesita las tres cosas, o no es una excepción:
 |---|---|---|---|
 | Demo A (agendamiento) | `.env` | `Flujos/demo-a-agendamiento.json` | — |
 | Clínica Platinum (reservas) | `.env.platinum` | `Flujos/platinum-agendamiento.json` | — |
-| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | Queda en la versión sobre la que pasa a producción (H4-Bellido): la publicada desde `e02a756`. Lo que la obra cambie en su JSON no se le publica, salvo un hotfix de seguridad o de protección (que se publica y se anota aquí). Por qué: su pase no espera a F3 (reorientación del 26/09, `Analisis/41` §6.3) y su aceptación de 46 filas es sobre esa versión. Lo cierra: la re-aceptación de su delta tras F3b, republicado en ventana con ensayo previo y `sincronizar-flujo-cliente.mjs --base` **27/09/2026: hotfix de protección + mejoras adelantadas por decisión de Andres del 27/09** (reclamos #6509 a #6587): las horas que se ofrecen salen de la consulta del mismo turno (H1), agendar exige confirmación del paciente (H2) y no se repiten las opciones ya ofrecidas (M1). Entra por la puerta del hotfix de protección; la excepción de arriba sigue vigente para todo lo demás **28/09/2026: publicado el hotfix de protección** (a las 15:32, desde `main` `21aee7c`, 96 nodos). **29/09/2026: #267 y #275 (protección: la hora que pide es la de su propia cita; reagendar no pierde la cita en silencio) fusionados en `main` y publicados a las 13:39** (7 nodos; el seco posterior da 0 diferencias). Entran por la puerta del hotfix de protección; el #275 es código de flujo durante el congelamiento del §12.10 y entra como excepción decidida por Andres **29/09/2026 20:30: #283 (dos citas con un «sí», día lleno, «9 am», cita parcial) publicado** desde `main` `3790e4d` con el seco de 3 nodos de código (`Procesar respuesta`, `Comprobar reserva`, `Procesar reintento`); en Platinum y el Demo A también; después de aplicar, 0 diferencias en los tres. Parámetros del doctor cargados en la consola el mismo día (`datosQueNoTenemos`, `instruccionesExtra`, descripción de la consulta pediátrica). |
+| Dr. Bellido (pediatría) | `.env.bellido` | `Flujos/bellido-agendamiento.json` | **Corre otro flujo, el piloto «Agenda mínima v0»** (publicado el 01/10/2026 a la 01:24 con autorización de Andres): `Flujos/experimental/agenda-minima/agenda-minima.v0.json`, 45 nodos, de `f3f7411` (PR #293, sin fusionar), no el JSON versionado de arriba (96 nodos). Se publica con `herramientas/flujo-de-prueba.mjs --sobre-bellido`, **no** con `publicar-flujo.sh`. Por qué: es el piloto que Andres decidió el 30/09/2026 tras el concurso entre el flujo actual y este. Vuelta atrás: existe el respaldo exacto del flujo anterior (96 nodos), guardado fuera del repositorio; se vuelve con `--restaurar-respaldo` (en ventana de 2 a 3 salvo orden escrita de Andres). Lo cierra: la fusión del PR #293 y la decisión de Andres sobre el piloto; hasta entonces `estado-de-versiones.sh` lo verá «atrasado, CON excepción declarada», que es lo esperado. Historia: hasta el 30/09 corría el flujo publicado desde `main` con #284 (96 nodos, hotfix de protección del 27/09 más mejoras adelantadas, sobre la base `e02a756`); esa versión queda como respaldo |
 | Demo B (venta y cobro) | `.env.demo-b` | `Flujos/demo-b-venta-cobro.json` | — |
 | NovuChat (captación) | `.env.novuchat` | `Flujos/novuchat-onboarding.json` | — |
 | Demo A (recordatorios) | `.env.recordatorios` | `Flujos/demo-a-recordatorios.json` | — |
@@ -55,6 +55,21 @@ audio, foto de producto, PDF y foto sin contexto), el script los va a marcar
 exige desde ahora la rama en todo flujo conversacional. Cero mensajes por
 conversación.
 
+## Estado al 01/10/2026 (Bellido corre el piloto «Agenda mínima v0»)
+
+El 30/09 Andres hizo un concurso entre dos candidatos para Bellido: el flujo
+actual con todos los ajustes del doctor (A) y la «Agenda mínima» de la
+constructora (B). Decidió B. Se publicó el 01/10 a la 01:24 sobre el flujo de
+Bellido con `herramientas/flujo-de-prueba.mjs --sobre-bellido` (45 nodos, `f3f7411`,
+PR #293 sin fusionar), con el respaldo exacto del flujo anterior (96 nodos)
+guardado fuera del repositorio. Vuelta atrás: `--restaurar-respaldo`. El flujo A
+(rama `cartera/bellido-doctor-29-09`, #286, sin fusionar) queda como respaldo y no
+se publica; sus defectos conocidos están en `CLIENTES/BELLIDO/aceptacion.md`
+(sección 7). El Demo A volvió a su flujo original de 77 nodos, así que el ensayo
+apunta otra vez al flujo de siempre. Demo A y Platinum siguen atrasados en
+«Procesar respuesta» (el #284), declarado en el PR #289 (abierto). Cero mensajes por
+conversación en este registro: es documentación.
+
 ## Estado al 29/09/2026 (Bellido: dos arreglos de protección, publicados)
 
 `main` (`572b793`) trae dos arreglos de reservas para los tres flujos, motivados
@@ -64,12 +79,11 @@ propia cita, se le dice) y #275 (reagendar no borra la cita en silencio:
 confirmar una cancelación, pendiente de cancelar de un solo uso). Se publicaron
 el 29/09 con el «sí» de Andres: Bellido a las 13:39 y Platinum y el Demo A a
 las 13:40, desde `main`; el seco mostró solo esos 7 nodos de diferencia, ningún
-cambio de prompt, y después de aplicar dio 0 en los tres. Cero mensajes por
+cambio de prompt, y después de aplicar dio 0 en los tres. Cero mensajes por conversación.
 
 A las 20:30 del mismo día se publicó el #283 (`main` `3790e4d`) en los tres flujos: seco de
 3 nodos de código, 0 diferencias después de aplicar y `estado-de-versiones.sh` sin atrasos
 sin declarar. Cero mensajes por conversación.
-conversación.
 
 ## Estado al 27/09/2026 (hotfix de protección de reservas)
 
