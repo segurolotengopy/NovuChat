@@ -159,7 +159,7 @@ describe('las opciones que ofrece la pantalla salen del catálogo', () => {
     // Y el plan ya no dice nada al respecto: ni `pagaMeta`, ni el nombre BYOC,
     // ni el viejo `paganEllosAMeta(plan)`.
     expect(sinComentarios(leer('web/src/central/lib/pagar.ts'))).not.toMatch(/\bpagaMeta\b|paganEllosAMeta/);
-    expect(sinComentarios(leer('web/src/paginas/Pagar.tsx'))).not.toMatch(/\bpagaMeta\b|'byoc'|paganEllosAMeta/);
+    expect(sinComentarios(leer('web/src/central/paginas/Pagar.tsx'))).not.toMatch(/\bpagaMeta\b|'byoc'|paganEllosAMeta/);
   });
 
   it('los meses y las bolsas son los topes del servidor, no listas escritas a mano', () => {
@@ -229,7 +229,7 @@ describe('ResumenPrepago: el corte observado no existe para el comercio, y se ll
 });
 
 describe('la pantalla no escribe, y no promete lo que no sabe', () => {
-  const pagar = leer('web/src/paginas/Pagar.tsx');
+  const pagar = leer('web/src/central/paginas/Pagar.tsx');
 
   it('no usa setDoc, updateDoc, addDoc ni deleteDoc: emitir y anular son callables', () => {
     for (const escritura of ['setDoc', 'updateDoc', 'addDoc', 'deleteDoc', 'writeBatch', 'runTransaction']) {
@@ -265,7 +265,7 @@ describe('la pantalla no escribe, y no promete lo que no sabe', () => {
     // La titularidad llega SOLO por `ejesDeCuenta`: `rutasWhatsApp` es del propietario.
     expect(texto).toContain('useEjesDeCuenta(tenantId)');
     expect(texto).not.toContain('rutasWhatsApp');
-    const cuenta = sinComentarios(leer('web/src/paginas/EstadoCuenta.tsx'));
+    const cuenta = sinComentarios(leer('web/src/central/paginas/EstadoCuenta.tsx'));
     expect(cuenta).toContain('<EjesDeLaCuenta');
     expect(cuenta).not.toMatch(/plan === 'demostracion'|\bpagaMeta\b/);
     expect(cuenta).toContain('useEjesDeCuenta(tenantId)');
@@ -274,7 +274,7 @@ describe('la pantalla no escribe, y no promete lo que no sabe', () => {
 });
 
 describe('el cobro que el banco ya confirmó y espera en revisión (tercera vuelta de #212, LOW 1)', () => {
-  const pagar = sinComentarios(leer('web/src/paginas/Pagar.tsx'));
+  const pagar = sinComentarios(leer('web/src/central/paginas/Pagar.tsx'));
 
   it('CONFIRMADO se lee «el banco confirmó el pago; NovuChat lo está registrando», sin decir acreditado', () => {
     expect(ESTADO_DEL_COBRO['CONFIRMADO']).toBe('el banco confirmó el pago; NovuChat lo está registrando');

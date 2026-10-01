@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import jsQR from 'jsqr';
 import { db, funciones } from '../../lib/firebase';
 import { useFlujos } from '../../lib/flujos';
-import { ConfiguracionVertical } from '../../paginas/ConfiguracionVertical';
+import { ConfiguracionVertical } from '../../central/componentes/ConfiguracionModulo';
 import { TextoSeguro } from '../../componentes/TextoSeguro';
 
 /**

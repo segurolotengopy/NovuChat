@@ -169,7 +169,7 @@ describe('Cuenta, Pagar y el pago manual dicen el precio del contrato', () => {
   });
 
   it('Pagar usa `planDeLaCuenta` para el renglón del plan, no el precio del catálogo', () => {
-    const pagar = leer('web/src/paginas/Pagar.tsx');
+    const pagar = leer('web/src/central/paginas/Pagar.tsx');
     expect(pagar).toContain('planDeLaCuenta(cuenta, planes[0])');
     expect(pagar).not.toMatch(/PLANES\[planes\[0\]\]\.precioUsd/);
   });

@@ -3,8 +3,8 @@ import {
   collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { auth, db } from '../lib/firebase';
-import { TextoSeguro } from '../componentes/TextoSeguro';
+import { auth, db } from '../../lib/firebase';
+import { TextoSeguro } from '../../componentes/TextoSeguro';
 
 interface Contacto {
   id: string;
