@@ -21,7 +21,7 @@ import { Funcionarios } from './paginas/Funcionarios';
 import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './modulos/productos/Catalogo';
-import { Campanas } from './paginas/Campanas';
+import { Campanas } from './modulos/campanas/Campanas';
 import { Cobro } from './paginas/Cobro';
 import { Inventario } from './paginas/Inventario';
 import { Pedidos } from './paginas/Pedidos';
