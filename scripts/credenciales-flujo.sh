@@ -24,7 +24,7 @@ source "$ENV_FILE"
 set +a
 : "${N8N_BASE_URL:?}" "${N8N_API_KEY:?}"
 FID="${FID:-${N8N_WORKFLOW_ID:?Falta --flujo-id o N8N_WORKFLOW_ID}}"
-curl -s --max-time 30 -H "X-N8N-API-KEY: $N8N_API_KEY" "${N8N_BASE_URL%/}/api/v1/workflows/$FID" | python3 -c "
+curl -s --max-time 30 -H @- "${N8N_BASE_URL%/}/api/v1/workflows/$FID" <<<"X-N8N-API-KEY: $N8N_API_KEY" | python3 -c "
 import json, sys
 w = json.load(sys.stdin)
 if 'nodes' not in w: print('✗', w.get('message', w)); sys.exit(1)

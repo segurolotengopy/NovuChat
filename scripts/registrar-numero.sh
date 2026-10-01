@@ -21,9 +21,16 @@
 # pide escribir a mano los últimos 4 dígitos del Phone ID: un Enter de más no
 # corta a un cliente.
 #
-# Lee WA_TOKEN y WA_PHONE_ID del entorno del cliente (escrito por
+# Lee WA_TOKEN, WA_PHONE_ID y WA_APP_ID del entorno del cliente (escrito por
 # configurar-cliente.sh). El PIN lo pega una persona, oculto; no queda en el
 # historial ni en la salida. Solo se imprime la respuesta de Meta.
+#
+# APPS AJENAS (prohibiciones 5 y 7; revisión de seguridad del #265). Con un
+# .env de otro sistema, --dar-de-baja le cortaría un número en producción.
+# Antes de --registrar y --dar-de-baja, `negar_app_ajena` corta si el token es
+# de una app de ese sistema, o si no se sabe de qué app es. El token y el PIN
+# no van en los argumentos de curl (se verían en `ps`): la cabecera por la
+# entrada estándar y el cuerpo en un archivo 600.
 # =============================================================================
 set -euo pipefail
 
@@ -40,6 +47,9 @@ done
 [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ] || { echo "✗ Falta --env <archivo> (p. ej. .env.bellido)" >&2; exit 2; }
 [ -n "$MODO" ] || { echo "✗ Falta --estado, --registrar o --dar-de-baja" >&2; exit 2; }
 
+# El candado de apps ajenas, ANTES del .env: queda readonly.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source "$(dirname "$0")/lib/apps-ajenas.sh"
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige un argumento
 source "$ENV_FILE"
@@ -55,24 +65,27 @@ mostrar() { if command -v python3 >/dev/null; then python3 -m json.tool 2>/dev/n
 case "$MODO" in
   estado)
     echo "Estado del número …${WA_PHONE_ID: -4} según Meta:"
-    curl -s --max-time 20 \
+    curl_token -s --max-time 20 \
       "${G}/${WA_PHONE_ID}?fields=display_phone_number,verified_name,name_status,code_verification_status,status,quality_rating,platform_type,is_pin_enabled,messaging_limit_tier" \
-      -H "Authorization: Bearer ${WA_TOKEN}" | mostrar
+      | mostrar
     echo
     echo "Lectura: code_verification_status=VERIFIED es el SMS ya pasado;"
     echo "         status=CONNECTED es que está REGISTRADO en la Cloud API;"
     echo "         is_pin_enabled dice si el número ya tiene PIN de dos pasos."
     ;;
   registrar)
+    negar_app_ajena "${WA_APP_ID:-}" numero
     echo "Registro del número …${WA_PHONE_ID: -4} en la Cloud API."
     echo "El PIN son 6 dígitos que elige el dueño del número (NO el código del SMS)."
     echo "Si el número ya tiene PIN, tiene que ser ESE. No se muestra al escribir."
     read -r -s -p "  PIN de dos pasos: " PIN; echo
     printf '%s' "$PIN" | grep -Eq '^[0-9]{6}$' || { echo "✗ El PIN son exactamente 6 dígitos." >&2; exit 1; }
-    RESP=$(curl -s --max-time 30 -X POST "${G}/${WA_PHONE_ID}/register" \
-      -H "Authorization: Bearer ${WA_TOKEN}" -H "Content-Type: application/json" \
-      -d "{\"messaging_product\":\"whatsapp\",\"pin\":\"${PIN}\"}")
+    TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+    # printf es del shell: el PIN no pasa por los argumentos de ningún proceso.
+    (umask 077; printf '{"messaging_product":"whatsapp","pin":"%s"}' "$PIN" > "$TMP/cuerpo.json")
     unset PIN
+    RESP=$(curl_token -s --max-time 30 -X POST "${G}/${WA_PHONE_ID}/register" \
+      -H "Content-Type: application/json" --data-binary @"$TMP/cuerpo.json")
     echo "$RESP" | mostrar
     if echo "$RESP" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
       echo; echo "✓ Registrado. Ahora --estado tiene que decir status=CONNECTED."
@@ -85,12 +98,12 @@ case "$MODO" in
     fi
     ;;
   baja)
+    negar_app_ajena "${WA_APP_ID:-}" numero
     echo "BAJA del número …${WA_PHONE_ID: -4} de la Cloud API (entorno ${ENV_FILE})."
     echo "Desde ahora NO recibe ni manda mensajes hasta registrarlo en la WABA nueva."
     read -r -p "  Para confirmar, escriba los últimos 4 dígitos del Phone ID: " CONF
     [ "$CONF" = "${WA_PHONE_ID: -4}" ] || { echo "✗ No coincide. No se hizo nada." >&2; exit 1; }
-    RESP=$(curl -s --max-time 30 -X POST "${G}/${WA_PHONE_ID}/deregister" \
-      -H "Authorization: Bearer ${WA_TOKEN}")
+    RESP=$(curl_token -s --max-time 30 -X POST "${G}/${WA_PHONE_ID}/deregister")
     echo "$RESP" | mostrar
     if echo "$RESP" | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
       echo; echo "✓ Dado de baja. --estado ya no tiene que decir CONNECTED."

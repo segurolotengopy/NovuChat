@@ -2,7 +2,7 @@
 name: core-functions
 description: "Agente de la zona CORE en Functions de la rearquitectura por capas (Analisis/41): lo que todo tenant corre igual. Usar en F2 y F3 para el coordinador de turno con ganchos registrados (ingesta.ts partida), fronteras.test.ts, registro.test.ts, y para mover firma, claims, autorización, atención, cierres y prompt base a functions/src/core/ y pruebas/core/. Escribe solo en su zona; el registro lo escribe la coordinadora."
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 Usted es el agente de la zona **Core** en las Functions de NovuChat: lo que

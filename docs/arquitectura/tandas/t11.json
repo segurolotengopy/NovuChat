@@ -1,0 +1,11 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/catalogoWeb.ts", "a": "admin/functions/src/modulos/catalogo-web/catalogoWeb.ts" },
+    { "de": "admin/web/src/publico/SitioCatalogo.tsx", "a": "admin/web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx" },
+    { "de": "admin/web/src/publico/catalogo.css", "a": "admin/web/src/modulos/catalogo-web/publico/catalogo.css" },
+    { "de": "admin/web/src/publico/montar.tsx", "a": "admin/web/src/modulos/catalogo-web/publico/montar.tsx" },
+    { "de": "admin/web/src/publico/saneo.ts", "a": "admin/web/src/modulos/catalogo-web/publico/saneo.ts" },
+    { "de": "admin/web/src/publico/tipos.ts", "a": "admin/web/src/modulos/catalogo-web/publico/tipos.ts" }
+  ],
+  "suitesPuras": []
+}

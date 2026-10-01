@@ -50,6 +50,12 @@
 # nombre que devuelve Graph. Si Graph no contesta nombre e id, también corta:
 # sin saber qué app es, no se escribe.
 #
+# NINGÚN SECRETO EN LOS ARGUMENTOS DE CURL (revisión de seguridad del #265,
+# LOW-B): ahí los ve cualquier usuario de la máquina en `ps`. El token y el
+# app access token van por la entrada estándar (`curl_token`, `-H @-`); el
+# verify token, dentro de un cuerpo escrito en un directorio privado (700) que
+# se borra al salir; la clave de n8n, también por la entrada estándar.
+#
 # Lee N8N_BASE_URL y N8N_API_KEY de .env (o --env-n8n). No imprime valores.
 # =============================================================================
 set -euo pipefail
@@ -59,6 +65,9 @@ cd "$(dirname "$0")/.." || exit 1
 # cargar cualquier .env: queda readonly y un .env no lo puede redefinir.
 # shellcheck source=scripts/lib/apps-ajenas.sh
 source scripts/lib/apps-ajenas.sh
+
+# Los cuerpos con el verify token, en un directorio 700 que se borra al salir.
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
 MODO=""; WH=""; FID=""; ENV_N8N=".env"; ENV_CLIENTE=""
 while [ $# -gt 0 ]; do
@@ -93,7 +102,7 @@ if [ "$MODO" = "ver-waba" ] || [ "$MODO" = "alta-waba" ]; then
   : "${WA_TOKEN:?}" "${WABA_ID:?}" "${WA_APP_ID:?}"
   G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
   mostrar_waba() {
-    curl -s --max-time 30 "$G/$WABA_ID/subscribed_apps" -H "Authorization: Bearer ${WA_TOKEN}" \
+    curl_token -s --max-time 30 "$G/$WABA_ID/subscribed_apps" \
       | python3 -c "
 import json,sys; d=json.load(sys.stdin)
 if 'error' in d: print('  ERROR:', d['error'].get('message')); sys.exit(1)
@@ -112,9 +121,11 @@ for s in d.get('data',[]):
   negar_app_ajena "$WA_APP_ID" token
   echo "Webhook PROPIO de la WABA …${WABA_ID: -4} (la URL de la app …${WA_APP_ID: -4} no se toca):"
   echo "  override_callback_uri: $URL"
-  R=$(command curl -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
-        -H "Authorization: Bearer ${WA_TOKEN}" -H "Content-Type: application/json" \
-        -d "$(python3 -c "import json,sys; print(json.dumps({'override_callback_uri': sys.argv[1], 'verify_token': sys.argv[2]}))" "$URL" "$VT")")
+  # El verify token pasa a python por el entorno (/proc/<pid>/environ es solo
+  # del dueño; los argumentos, de todos) y el cuerpo, por un archivo.
+  URL="$URL" VT="$VT" python3 -c "import json,os; print(json.dumps({'override_callback_uri': os.environ['URL'], 'verify_token': os.environ['VT']}))" > "$TMP/cuerpo.json"
+  R=$(curl_token -s --max-time 60 -X POST "$G/$WABA_ID/subscribed_apps" \
+        -H "Content-Type: application/json" --data-binary @"$TMP/cuerpo.json")
   echo "  respuesta: $R"
   echo "Suscripciones vigentes de la WABA:"; mostrar_waba
   exit 0
@@ -162,13 +173,13 @@ if [ "$MODO" = "alta-meta" ]; then
   echo "Alta del webhook en la app …${WA_APP_ID: -4}:"
   echo "  callback_url: $URL"
   echo "  fields: messages, account_update"
-  # El app access token va en la cabecera, leída de la entrada estándar: en
-  # los argumentos de curl se vería en `ps` (revisión de seguridad del #265).
+  # El app access token va en la cabecera, leída de la entrada estándar, y el
+  # verify token en el cuerpo, en un archivo: en los argumentos de curl se
+  # verían en `ps` (revisión de seguridad del #265). --data-binary manda el
+  # mismo application/x-www-form-urlencoded que --data-urlencode.
+  URL="$URL" VT="$VT" python3 -c "import os,sys,urllib.parse; sys.stdout.write(urllib.parse.urlencode({'object': 'whatsapp_business_account', 'callback_url': os.environ['URL'], 'verify_token': os.environ['VT'], 'fields': 'messages,account_update'}))" > "$TMP/cuerpo.txt"
   R=$(command curl -s --max-time 60 -X POST "$G/$WA_APP_ID/subscriptions" -H @- \
-        --data-urlencode "object=whatsapp_business_account" \
-        --data-urlencode "callback_url=$URL" \
-        --data-urlencode "verify_token=$VT" \
-        --data-urlencode "fields=messages,account_update" \
+        --data-binary @"$TMP/cuerpo.txt" \
         <<<"Authorization: Bearer ${WA_APP_ID}|${WA_APP_SECRET}")
   echo "  respuesta: $R"
   echo "Suscripciones vigentes de la app:"
@@ -190,11 +201,11 @@ BASE="${N8N_BASE_URL%/}"; API="$BASE/api/v1"
 URL="$BASE/webhook/$WH/webhook"
 NOMBRE_TMP="TEMPORAL desafío Meta $WH"
 
-api() { # metodo ruta [cuerpo]
+api() { # metodo ruta [cuerpo] — la clave de n8n, por la entrada estándar
   if [ $# -ge 3 ]; then
-    curl -s --max-time 60 -X "$1" -H "X-N8N-API-KEY: $N8N_API_KEY" -H "Content-Type: application/json" -d "$3" "$API$2"
+    curl -s --max-time 60 -X "$1" -H @- -H "Content-Type: application/json" -d "$3" "$API$2" <<<"X-N8N-API-KEY: $N8N_API_KEY"
   else
-    curl -s --max-time 60 -X "$1" -H "X-N8N-API-KEY: $N8N_API_KEY" "$API$2"
+    curl -s --max-time 60 -X "$1" -H @- "$API$2" <<<"X-N8N-API-KEY: $N8N_API_KEY"
   fi
 }
 id_temporal() { api GET "/workflows?limit=250" | python3 -c "

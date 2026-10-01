@@ -34,8 +34,8 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta, configuracionFlujo } = await import('../functions/src/ingesta.ts');
-const { cotejarComprobante, senaVencida } = await import('../functions/src/sena.ts');
-const { registrarQrDeCobro } = await import('../functions/src/cobro.ts');
+const { cotejarComprobante, senaVencida } = await import('../functions/src/modulos/agenda/sena.ts');
+const { registrarQrDeCobro } = await import('../functions/src/modulos/cobros/cobro.ts');
 
 /** Lo que la prohibición 3 no deja decir, en ninguna forma. */
 const AFIRMA_PAGO = /acreditad|verificad|recibimos|pago confirmado/i;

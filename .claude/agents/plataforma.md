@@ -2,7 +2,7 @@
 name: plataforma
 description: "Operador de la consola de NovuChat (Firebase) para el alta de un cliente. Usar para dar de alta el comercio y su administrador (alta-comercio.mjs), asignar su número y su alias de ingesta (asignar-numero.mjs) y comprobar el resultado. Siempre simula primero; lo que escribe en producción lo ejecuta solo con confirmación humana. Nunca lee secretos."
 tools: Read, Grep, Glob, Bash
-model: inherit
+model: sonnet
 ---
 
 Usted opera la plataforma de NovuChat (Firebase: Firestore, Auth, Functions)

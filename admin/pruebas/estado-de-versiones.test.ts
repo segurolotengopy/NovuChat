@@ -34,7 +34,7 @@ const FIN = '\u001b[0m';
 const raiz = mkdtempSync(join(tmpdir(), 'estado-versiones-'));
 afterAll(() => rmSync(raiz, { recursive: true, force: true }));
 
-function preparar(excepcion: string, seco: string) {
+function preparar(excepcion: string, seco: string, opciones: { sinEnv?: boolean; publicarFalla?: boolean } = {}) {
   rmSync(raiz, { recursive: true, force: true });
   mkdirSync(join(raiz, 'scripts'), { recursive: true });
   mkdirSync(join(raiz, 'docs'), { recursive: true });
@@ -46,9 +46,9 @@ function preparar(excepcion: string, seco: string) {
     chmodSync(ruta, 0o755);
   };
   doble('preparar-import.sh', 'exit 0');
-  doble('publicar-flujo.sh', 'cat "$(dirname "$0")/../seco.txt"');
+  doble('publicar-flujo.sh', opciones.publicarFalla ? 'echo "✗ No se pudo leer el flujo vivo (HTTP 401)"; exit 1' : 'cat "$(dirname "$0")/../seco.txt"');
   writeFileSync(join(raiz, 'seco.txt'), seco);
-  writeFileSync(join(raiz, '.env.demo-b'), 'N8N_URL=http://ejemplo.invalid\n');
+  if (!opciones.sinEnv) writeFileSync(join(raiz, '.env.demo-b'), 'N8N_URL=http://ejemplo.invalid\n');
   writeFileSync(join(raiz, 'Flujos', 'demo-b.json'), '{}\n');
   writeFileSync(join(raiz, 'docs', 'versiones-por-cliente.md'), [
     '| Cliente | `--env` | `Flujo` | Excepción |',
@@ -118,5 +118,43 @@ describe('estado-de-versiones.sh: los nodos que difieren', () => {
     expect(codigo).toBe(1);
     expect(lineas).toContain('      difiere en: (diferencias de configuración)');
     expect(lineas.some((l) => /^ {8}- /.test(l))).toBe(false);
+  });
+});
+
+// EL VERDE FALSO (27/09/2026, cerrado el 01/10): una fila que no se pudo comprobar
+// dejaba el veredicto en «✓ Ningún atraso sin declarar» con salida 0. Lo que no se
+// comprobó no está bien: se dice, y la salida es 3 (o 1 si además hay un atraso sin declarar).
+describe('estado-de-versiones.sh: lo que no se pudo comprobar no es verde', () => {
+  const alDia = '  Diagnóstico en seco de Demo B\n  El archivo coincide con el origen\n';
+
+  it('sin el .env del cliente: «sin poder comprobar», salida 3 y ningún «✓ Ningún atraso»', () => {
+    preparar('—', alDia, { sinEnv: true });
+    const { codigo, lineas } = correr();
+    const salida = lineas.join('\n');
+    expect(codigo).toBe(3);
+    expect(salida).toContain('no se puede comprobar');
+    expect(salida).toContain('1 de 1 revisado(s) SIN PODER COMPROBAR');
+    expect(salida).not.toContain('Ningún atraso sin declarar');
+  });
+
+  it('el flujo vivo no se pudo consultar (publicar-flujo.sh falla): salida 3, no verde', () => {
+    preparar('—', alDia, { publicarFalla: true });
+    const { codigo, lineas } = correr();
+    expect(codigo).toBe(3);
+    expect(lineas.join('\n')).toContain('no se pudo consultar');
+    expect(lineas.join('\n')).not.toContain('Ningún atraso sin declarar');
+  });
+
+  it('un flujo al día y comprobado sí es verde (salida 0), y dice que se comprobó', () => {
+    preparar('—', alDia);
+    const { codigo, lineas } = correr();
+    expect(codigo).toBe(0);
+    expect(lineas.join('\n')).toContain('Ningún atraso sin declarar (1 revisado(s) y comprobados)');
+  });
+
+  it('un atraso sin declarar sigue mandando (salida 1), aunque haya filas sin comprobar', () => {
+    preparar('—', diagnostico);
+    const { codigo } = correr();
+    expect(codigo).toBe(1);
   });
 });

@@ -36,18 +36,22 @@ import { configDefaults, defineConfig } from 'vitest/config';
  * El CI sigue corriendo `pruebas:reglas`: los dos proyectos, con emulador.
  */
 export const SUITES_PURAS = [
+  'pruebas/agenda-minima-flujo.test.ts',
+  'pruebas/agenda-minima-lib.test.ts',
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',
   // 'pruebas/asignar-rol.test.ts' NO: abre Firebase antes del modo seco (ver arriba).
   'pruebas/bellido-flujo.test.ts',
   'pruebas/bitacora-tipos.test.ts',
   'pruebas/core/bitacora.test.ts',
+  'pruebas/core/clave-n8n-fuera-de-argumentos.test.ts',
   'pruebas/core/gancho-sistemas-ajenos.test.ts',
   'pruebas/core/hijos-hermeticos.test.ts',
-  'pruebas/core/webhook-meta-apps-ajenas.test.ts',
+  'pruebas/core/apps-ajenas-escrituras.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
   'pruebas/candado-agenda.test.ts',
+  'pruebas/calendario-fechas-en-el-nodo.test.ts',
   'pruebas/capacidades-comunes.test.ts',
   'pruebas/captacion.test.ts',
   'pruebas/carrito-podado.test.ts',

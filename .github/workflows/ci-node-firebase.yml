@@ -1,7 +1,17 @@
 # =============================================================================
 # ci-node-firebase.yml — Pipeline completo SPA Node/React (Vite/Vitest)
 #                        → Firebase Hosting + reglas de Firestore
-# Versión: 2.0 | Fecha: 2026-08-24
+# Versión: 2.7 | Fecha: 2026-10-01
+# Adaptación de NovuChat del ci-node-firebase.yml del estándar (2.7, commit
+# 0ab6e88 de SeguridadGeneral). Del estándar se tomaron: secretos mapeados uno
+# por uno (2.1), pull-requests: read en seguridad-estatica (2.4), concurrency
+# sin expresión en cancel-in-progress (2.5), /health por defecto (2.6) y el
+# grupo de las corridas que no son PR por run_id (2.7; NovuChat ya lo tenía
+# desde el #295). Propio de NovuChat: dast-y-humo y humo-staging en el grupo
+# deploy-staging (ver el bloque `concurrency`). No se portaron 2.2 (corepack
+# prepare para el hook predeploy) ni 2.3 (traducción del «404 Site Not
+# Found»): los pasos de despliegue de NovuChat son propios, instalan
+# functions/ sin hooks y sus sitios de Hosting existen.
 # -----------------------------------------------------------------------------
 # Flujo (ver 00-gobernanza/02-flujo-git-y-versionado.md):
 #   PR → main ............ preparar, calidad, seguridad-estatica, construir
@@ -65,11 +75,29 @@ on:
 permissions:
   contents: read
 
-# Un solo run activo por rama/tag. En producción NO se cancela un despliegue
-# en curso (concurrency propia en el job).
+# En producción NO se cancela un despliegue en curso: además del grupo propio de
+# esta corrida, el job tiene su concurrency deploy-production.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Un PR cancela su corrida anterior (misma ref); cualquier otra corrida (push a main,
+  # tag, workflow_dispatch) tiene su grupo único y nunca se cancela. Es `github.run_id`
+  # y NO `github.sha`: con sha, el push de un tag vX.Y.Z y un workflow_dispatch sobre
+  # ese mismo commit compartirían grupo y la segunda corrida cancelaría la corrida
+  # ENTERA de la primera, incluido un despliegue a producción en curso (la concurrency
+  # propia del job, deploy-production, no lo evita: protege al job de otros jobs, no de
+  # que cancelen su corrida). Lo señaló la sesión de novuchat-site el 2026-10-01.
+  # La condición va en `group` y NO en
+  # `cancel-in-progress`: Checkov descarta en silencio, sin error ni aviso, todo
+  # workflow cuyo `cancel-in-progress` sea una expresión (medido el 2026-10-01 con
+  # checkov 3.3.13), y el job `iac` pasaba en verde sin analizarlo.
+  #
+  # En NovuChat (texto propio, además del del estándar 2.7): el tag vX.Y.Z se
+  # crea sobre el commit de main, así que con sha su push cancelaba también la
+  # corrida de main a mitad de desplegar-staging o del DAST. Como consecuencia
+  # del run_id, dos pushes seguidos a main ya no se esperan entre sí: por eso
+  # dast-y-humo y humo-staging comparten el grupo deploy-staging con
+  # desplegar-staging (ver esos jobs).
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
 
 env:
   # El unico componente desplegable de NovuChat es el sitio administrativo de
@@ -606,6 +634,11 @@ jobs:
       # security-events: write solo lo usa el reusable cuando subir_sarif = true
       # (Code Scanning en Modo A/B). No se concede pull-requests: write: los
       # escáneres no comentan en el PR.
+      # pull-requests: read lo pide el job `secretos` del reusable (2.6):
+      # gitleaks-action lista los commits del PR por la API y, en un repositorio
+      # privado, sin él responde 403. Un job llamador no puede conceder menos de
+      # lo que el reusable pide: sin esta línea el workflow no valida.
+      pull-requests: read
       security-events: write
       actions: read
     uses: ./.github/workflows/_reusable-security.yml
@@ -1455,6 +1488,18 @@ jobs:
   dast-y-humo:
     name: dast-y-humo
     needs: desplegar-staging
+    # Mismo grupo que desplegar-staging (revisión de seguridad del #295, LOW).
+    # El grupo del workflow va por run_id (ver el bloque `concurrency` de
+    # arriba), así que dos pushes seguidos a main ya no se esperan entre sí:
+    # sin este grupo, el desplegar-staging del segundo podía correr mientras
+    # el DAST del primero escaneaba, y el DAST daba por bueno un commit que no
+    # era el suyo. Con el grupo, el despliegue siguiente espera a que termine
+    # este. Desviación propia de NovuChat: el estándar 2.7 también agrupa por
+    # run_id pero deja dast-y-humo fuera de deploy-staging (candidato a
+    # proponerse allá).
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     permissions:
       contents: read
     uses: ./.github/workflows/_reusable-dast.yml
@@ -1464,7 +1509,7 @@ jobs:
       url_objetivo: ${{ vars.STAGING_URL }}
       reglas: .github/zap-rules.tsv
       escaneo_completo: false
-      ruta_salud: ${{ vars.HEALTH_PATH || '/healthz' }}
+      ruta_salud: ${{ vars.HEALTH_PATH || '/health' }}
 
   # ---------------------------------------------------------------------------
   # Fase 5.b — humo-staging: lo que el humo HTTP del reusable no mira
@@ -1479,6 +1524,11 @@ jobs:
     needs: desplegar-staging
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Mismo grupo que desplegar-staging y dast-y-humo: el humo mira el staging
+    # que desplegó ESTA corrida, no el de un push posterior (ver dast-y-humo).
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     # SIN Environment, a propósito: así `vars.VITE_FIREBASE_APP_ID` es la del
     # repositorio —la de producción— y el humo puede exigir que NO esté en el
     # paquete publicado. Lo de staging llega por las salidas de
@@ -1793,12 +1843,12 @@ jobs:
         id: salud
         env:
           URL: ${{ vars.PROD_URL }}
-          RUTA_SALUD: ${{ vars.HEALTH_PATH || '/healthz' }}
+          RUTA_SALUD: ${{ vars.HEALTH_PATH || '/health' }}
         run: |
           set -uo pipefail
           for i in $(seq 1 10); do
             codigo=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -L "${URL%/}${RUTA_SALUD}" || echo 000)
-            # Una SPA estática puede no exponer /healthz: 404 en la ruta de salud
+            # Una SPA estática puede no exponer /health: 404 en la ruta de salud
             # se acepta si / responde 200.
             if [[ "$codigo" == "404" ]]; then
               codigo=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -L "${URL%/}/" || echo 000)

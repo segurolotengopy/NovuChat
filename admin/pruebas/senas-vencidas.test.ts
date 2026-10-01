@@ -190,8 +190,11 @@ describe('Config de la seña: la consola manda, y sin ella no se borra nada', ()
     // nuestro y es exacto. Si alguien vuelve a poner `query`, esto lo atrapa.
     expect(c.parameters['options']).toMatchObject({ singleEvents: true });
     expect(c.parameters['options']).not.toHaveProperty('query');
-    expect(String(c.parameters['options'].timeMin)).toContain("minus({ days: 1 })");
-    expect(String(c.parameters['options'].timeMax)).toContain('plus({ days: 90 })');
+    // Las fechas son parámetros del NODO (1.3); en `options` n8n las ignora.
+    expect(String(c.parameters['timeMin'])).toContain("minus({ days: 1 })");
+    expect(String(c.parameters['timeMax'])).toContain('plus({ days: 90 })');
+    expect(c.parameters['options']).not.toHaveProperty('timeMin');
+    expect(c.parameters['options']).not.toHaveProperty('timeMax');
     expect(c.onError).toBe('continueRegularOutput');
   });
 });

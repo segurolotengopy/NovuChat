@@ -9,11 +9,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
 [[ -f .env ]] || { echo "✗ Falta .env"; exit 1; }
+# Solo lee: usa el curl_token del candado (el token por la entrada estándar,
+# no en los argumentos: revisión de seguridad del #265).
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 set -a; . ./.env; set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"; : "${WABA_ID:?Falta WABA_ID}"
 G="https://graph.facebook.com/${WA_GRAPH_VERSION:-v26.0}"
 
-consulta() { curl -s --max-time 25 -H "Authorization: Bearer ${WA_TOKEN}" "$1"; }
+consulta() { curl_token -s --max-time 25 "$1"; }
 
 echo "== Dueño de la WABA =="
 consulta "${G}/${WABA_ID}?fields=id,name,owner_business_info,account_review_status,business_verification_status" > /tmp/waba.json

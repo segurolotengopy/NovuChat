@@ -1,7 +1,7 @@
 # =============================================================================
 # gitleaks.toml — Configuración de Gitleaks para _reusable-security.yml,
 #                 pre-commit y security-local.sh
-# Versión: 2.0 | Fecha: 2026-08-24 | Destino: .github/gitleaks.toml
+# Versión: 2.1 | Fecha: 2026-10-01 | Destino: .github/gitleaks.toml
 # -----------------------------------------------------------------------------
 # Extiende la configuración por defecto de Gitleaks (≈170 reglas: AWS, GCP,
 # GitHub, Slack, claves privadas, JWT, etc.) y añade:
@@ -98,6 +98,15 @@ paths = [
   '''\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|pdf)$''',
   '''(^|/)\.gitleaks\.toml$''',
   '''(^|/)\.github/gitleaks\.toml$''',
+  # Artefactos que generan las propias herramientas del estándar. Todos están en
+  # .gitignore (security-local.sh y bootstrap-repo.sh los agregan), así que no hay
+  # código del proyecto ahí; pero Gitleaks en modo directorio (--no-git) no respeta
+  # .gitignore y en la SEGUNDA corrida de security-local.sh leía la base de Trivy
+  # (.trivy-cache/db/trivy.db) y daba ~20 CRITICAL falsos. Son directorios exactos,
+  # no nombres: un `src/trivy-cache.js` se sigue analizando.
+  '''(^|/)\.trivy-cache/''',
+  '''(^|/)\.security-reports/''',
+  '''(^|/)\.deploy-log/''',
 ]
 
 [[allowlists]]
@@ -108,6 +117,13 @@ regexes = [
   '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
 ]
 stopwords = ["ejemplo", "example", "placeholder", "sample"]
+
+# =============================================================================
+# PROPIO DE NOVUCHAT — no viene del estándar. Todo lo de arriba es copia exacta
+# del gitleaks.toml 2.1 de SeguridadGeneral; al actualizar, se reemplaza lo de
+# arriba y se conserva este bloque. Es una allowlist por FORMA DEL VALOR (nunca
+# por ruta ni por huella de commit), con su motivo.
+# =============================================================================
 
 # -----------------------------------------------------------------------------
 # Falso positivo de `generic-api-key` por asignación con VALOR VACÍO
@@ -132,45 +148,20 @@ stopwords = ["ejemplo", "example", "placeholder", "sample"]
 # criterio es correcto -el repositorio está en español y la lista del estándar
 # solo traía `ejemplo`-, pero no era lo que bloqueaba.
 #
-# Se filtra por FORMA DEL VALOR, nunca por ruta ni por huella de commit: las
-# dos reglas de abajo son verdades sobre el dato, no permisos sobre un archivo.
-# Comprobado que NO permiten AIza..., sk-ant-..., ghp_... ni una contraseña.
+# Se filtra por FORMA DEL VALOR, nunca por ruta ni por huella de commit: la regla
+# de abajo es una verdad sobre el dato, no un permiso sobre un archivo.
+# Comprobado que NO permite AIza..., sk-ant-..., ghp_... ni una contraseña.
+#
+# Se retiraron (revisión de seguridad del 01/10/2026) otras dos allowlists que
+# miraban la LÍNEA COMPLETA («valor vacío» y «ficticia/ejemplo…»): una línea larga
+# con la palabra «ejemplo» ocultaba un token real a su lado, y sin ellas el árbol
+# y la historia siguen sin hallazgos (gitleaks 8.30.1).
 #
 # Como gitleaks escanea la HISTORIA, corregir el archivo hoy no borraría el
 # hallazgo: vive en un commit ya empujado. Por eso la salida es de config.
 # -----------------------------------------------------------------------------
 [[allowlists]]
-description = "Asignación con valor vacío: un valor vacío no puede ser un secreto"
-regexTarget = "line"
-regexes = [
-  '''^[ \t]*[A-Za-z_][A-Za-z0-9_]*=[ \t]*$''',
-]
-
-[[allowlists]]
 description = "El secreto capturado es otra asignación con literal no secreto"
 regexes = [
   '''^[A-Z][A-Z0-9_]*=(true|false|[0-9]+)$''',
-]
-
-# -----------------------------------------------------------------------------
-# Igual que el bloque de arriba, pero mirando la LÍNEA COMPLETA en vez del valor
-# capturado. Hace falta porque la regla `generic-api-key` a veces recorta el
-# secreto y se pierde la palabra que delata que es sintético.
-#
-# Se agregan las formas en español: el repositorio está escrito en español y la
-# lista de arriba solo traía `ejemplo`. Cubre valores como:
-#   admin/scripts/emuladores.sh:107  VITE_FIREBASE_API_KEY=clave-ficticia-de-emulador
-# No es un secreto: es el valor que el script escribe en `web/.env.local` para
-# apuntar el frontend a los emuladores. Con un proyecto `demo-*` el SDK de
-# Firebase ni siquiera valida la clave. (Esta entrada NO era la que bloqueaba
-# el pipeline; ver el bloque de arriba.)
-#
-# Se filtra por VALOR, nunca por ruta: si mañana aparece una clave de verdad en
-# ese mismo archivo, sigue saltando.
-# -----------------------------------------------------------------------------
-[[allowlists]]
-description = "Valores sintéticos declarados como tales (incluye español)"
-regexTarget = "line"
-regexes = [
-  '''(?i)(ficticia|ficticio|ejemplo|example|dummy|placeholder|changeme|REEMPLAZAR)''',
 ]
