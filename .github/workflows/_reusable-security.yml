@@ -1,6 +1,6 @@
 # =============================================================================
 # _reusable-security.yml — Fase 2 "seguridad-estatica" (workflow reutilizable)
-# Versión: 2.4 | Fecha: 2026-09-20
+# Versión: 2.6 | Fecha: 2026-09-30
 # -----------------------------------------------------------------------------
 # Propósito: concentrar en un solo lugar todas las comprobaciones de seguridad
 # estática que corren en TODOS los modos (A público, B privado con licencias,
@@ -374,6 +374,7 @@ jobs:
   # Config: .github/gitleaks.toml (misma que pre-commit y security-local.sh).
   # Sin `pull-requests: write`: los comentarios en PR están desactivados
   # (GITLEAKS_ENABLE_COMMENTS=false); el resultado va al Step Summary y artifact.
+  # Con `pull-requests: read`: la acción lo necesita para listar los commits del PR.
   # ---------------------------------------------------------------------------
   secretos:
     name: Secretos (Gitleaks)
@@ -382,6 +383,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+      # gitleaks-action lista los commits del PR (GET pulls/{n}/commits). En un repositorio
+      # privado, sin este permiso la API responde 403 «Resource not accessible by integration»
+      # y Gitleaks falla. Es solo lectura; los comentarios en el PR siguen desactivados.
+      pull-requests: read
     steps:
       - name: Checkout con historial completo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -895,6 +900,7 @@ jobs:
           fi
           if [[ -z "$archivo" ]]; then
             echo "::warning::Checkov no dejó ningún SARIF; no se sube a Code Scanning."
+            # shellcheck disable=SC2012  # listado para una persona, no se procesa
             ls -la resultados-checkov 2>&1 | sed 's/^/  /' || echo "  (no existe)"
           else
             echo "SARIF de Checkov: $archivo ($(wc -c <"$archivo") bytes)"

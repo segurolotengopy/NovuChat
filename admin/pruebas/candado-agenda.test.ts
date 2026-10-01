@@ -830,7 +830,10 @@ describe('El aviso no le dice al cliente que quedó algo cuando no quedó nada',
     // «lo que agendamos» (revisión de f0c6957, caso C4).
     { ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
       eventosCreados: [{ id: 'choca' }, { id: 'buena' }] })[0] ?? {};
-    expect(String(r['respuesta'])).toContain('El resto de lo que agendamos si esta bien');
+    // Dice CUAL quedó y cual no (29/09, #8588), en vez de «el resto esta bien» a secas.
+    expect(String(r['respuesta'])).toContain('La cita de Sil a las 11:00 quedó agendada.');
+    expect(String(r['respuesta'])).toContain('La de Sil a las 09:00 no pudo quedar');
+    expect(String(r['respuesta'])).toContain('recepción');
     expect(r['reservaVerificada']).toBe(true);
   });
 });
