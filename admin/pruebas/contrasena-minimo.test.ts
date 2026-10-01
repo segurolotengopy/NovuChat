@@ -29,8 +29,8 @@ const sinComentarios = (fuente: string) => fuente
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const ingresar = leer('web/src/paginas/Ingresar.tsx');
-const miCuenta = leer('web/src/paginas/MiCuenta.tsx');
+const ingresar = leer('web/src/central/paginas/Ingresar.tsx');
+const miCuenta = leer('web/src/central/paginas/MiCuenta.tsx');
 
 describe('El mínimo de la contraseña', () => {
   it('cumple el piso de NIST SP 800-63B: al menos 8 caracteres', () => {

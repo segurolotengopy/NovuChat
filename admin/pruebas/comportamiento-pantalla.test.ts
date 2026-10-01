@@ -31,7 +31,7 @@ const sinComentarios = (fuente: string) => fuente
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '');
 
-const pantalla = sinComentarios(leer('web/src/paginas/Configuracion.tsx'));
+const pantalla = sinComentarios(leer('web/src/central/paginas/Configuracion.tsx'));
 
 /** El objeto que la pantalla manda en `updateDoc(... 'config', 'negocio' ...)`. */
 function loQueGuarda(): string {

@@ -48,7 +48,7 @@ describe('planesQuePuedePagar: el comercio renueva el suyo, y nada más', () => 
 });
 
 describe('Pagar en demostración: no ofrece pagar, y no promete nada (opción B, 26/09/2026)', () => {
-  const pagar = sinComentarios(leer('web/src/paginas/Pagar.tsx'));
+  const pagar = sinComentarios(leer('web/src/central/paginas/Pagar.tsx'));
   it('cuentaEnDemostracion sigue la regla del servidor: sin modalidad, es demostración', () => {
     expect(cuentaEnDemostracion({})).toBe(true);
     expect(cuentaEnDemostracion({ modalidad: 'demostracion' })).toBe(true);
@@ -62,7 +62,7 @@ describe('Pagar en demostración: no ofrece pagar, y no promete nada (opción B,
 });
 
 describe('Pagar: sin selector de plan ni de modalidad, y el camino que existe para pedir el cambio', () => {
-  const pagar = sinComentarios(leer('web/src/paginas/Pagar.tsx'));
+  const pagar = sinComentarios(leer('web/src/central/paginas/Pagar.tsx'));
 
   it('no hay selector de plan ni de modalidad, ni usa la lista del propietario', () => {
     expect(pagar).not.toMatch(/<select id="plan"/);
@@ -77,6 +77,6 @@ describe('Pagar: sin selector de plan ni de modalidad, y el camino que existe pa
     expect(pagar).toMatch(/<em>Facturación<\/em>/);
     expect(pagar).not.toMatch(/te (llamamos|contactamos|escribiremos|avisamos)|lo contactaremos|le escribiremos|nos pondremos en contacto/i);
     // La categoría existe de verdad en Reclamos.
-    expect(leer('web/src/paginas/Reclamos.tsx')).toMatch(/facturacion: 'Facturación'/);
+    expect(leer('web/src/central/paginas/Reclamos.tsx')).toMatch(/facturacion: 'Facturación'/);
   });
 });
