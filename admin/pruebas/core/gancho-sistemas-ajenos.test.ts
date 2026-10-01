@@ -296,6 +296,59 @@ describe('tercera revisión del #272: una sola invocación, o nada', () => {
   });
 });
 
+describe('un git push al sistema ajeno se niega, no se confirma (#323, L2)', () => {
+  it('empujar al repositorio ajeno, o desde la carpeta de otro proyecto, se niega', () => {
+    for (const c of [
+      'git push https://github.com/segurolotengopy/WhatsAppModular.git main',
+      'git push https://github.com/segurolotengopy/WhatsApp-Modular.git HEAD:refs/heads/x',
+      'git -C ~/WhatsApp-Modular push origin main',
+      'cd ~/WhatsApp-Modular && git push',
+      'git --no-pager push https://github.com/segurolotengopy/WhatsAppModular.git main',
+      'git -c push.default=current -C ~/WhatsAppModular push',
+      'git push origin main # receptor-clientes',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el push propio de NovuChat sigue pidiendo confirmación, no se niega', () => {
+    for (const c of [
+      'git push -u origin HEAD',
+      'git push origin ganchos/git-push-al-sistema-ajeno',
+    ]) expect(decision(c), c).toBe('ask');
+    // `git -C <carpeta> push` no lo confirma el gancho (anterior a este cambio), pero no se niega.
+    expect(decision('git -C ~/NovuChat push origin HEAD')).not.toBe('deny');
+  });
+
+  it('la cadena de todos los días, `git add && git commit -m "…nombre…" && git push`, sigue pasando', () => {
+    for (const c of [
+      'git add a b && git commit -m "receptor-clientes" && git push',
+      'git commit -m "se coordina con otp-service" && git push -u origin HEAD',
+      'git add -A && git status && git commit -m "WhatsAppModular: documentado" && git push origin ganchos/x',
+    ]) expect(decision(c), c).toBe('ask');
+  });
+
+  it('pero un nombre ajeno EN el push, o un tramo que pueda leer el texto, se niega', () => {
+    for (const c of [
+      'git commit -m x && git push https://github.com/segurolotengopy/WhatsAppModular.git',
+      'git commit -m "receptor-clientes" && git -C ~/WhatsApp-Modular push',
+      'git commit -m "https://github.com/segurolotengopy/WhatsAppModular.git" && git push "$_"',
+      'git commit -m "docker restart receptor-clientes" && git log -1 --format=%s | sh',
+      'git commit -m "receptor-clientes" && docker restart x',
+      'git commit -m "receptor-clientes" && git -c core.pager=docker push',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('el canal no oficial no gana el push: una rama de NovuChat que lo mencione se puede empujar', () => {
+    // La prohibición 1 sigue negando instalar o llamar al canal, no empujar una rama sobre él.
+    expect(decision('git push -u origin docs/retiro-evolution-api')).toBe('ask');
+  });
+
+  it('nombrar el sistema ajeno sin empujar sigue pasando', () => {
+    for (const c of ['ls ~/WhatsApp-Modular/docs', 'git -C ~/WhatsApp-Modular log --oneline -3']) {
+      expect(decision(c), c).not.toBe('deny');
+    }
+  });
+});
+
 describe('las escrituras en Meta por script piden confirmación (#265)', () => {
   it.each([
     './scripts/verificar-meta.sh --env .env.x --desuscribir',

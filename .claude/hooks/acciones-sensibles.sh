@@ -58,6 +58,17 @@ ACTUA = (VERBO + r"(?:curl|wget|ssh|scp|docker-compose|docker|systemctl|gcloud|g
          r"|" + VERBO + r"(?:npm\s+(?:i|install)|pnpm\s+(?:add|install)|pip3?\s+install|git\s+clone)(?![\w.-])"
          r"|--aplicar|--suscribir|--desuscribir|webhook-meta\.sh\b[^\n;&|]*--(?:alta-meta|alta-waba)"
          r"|publicar-flujo|subscribed_apps|/subscriptions\b")
+# UN `git push` TAMBIÉN ACTÚA, pero solo frente a un sistema ajeno (revisión de
+# seguridad del #323, L2): `git push <repositorio ajeno>` o un push desde la
+# carpeta de otro proyecto (`git -C <carpeta> push`, `cd <carpeta> && git
+# push`) escribe en él y hasta hoy solo pedía confirmación. Se agrega aparte de
+# ACTUA y solo para SISTEMA_AJENO: para el canal no oficial (prohibición 1) un
+# push de una rama de NovuChat que mencione «evolution» no toca nada ajeno.
+# Entre `git` y `push` caben hasta seis palabras (`-C <carpeta>`, `-c k=v`,
+# `--no-pager`). Costo: una rama propia con el nombre de un sistema ajeno en su
+# nombre no se puede empujar; se renombra.
+PUSH = VERBO + r"git(?:\s+[^\s;&|]+){0,6}?\s+push(?![\w.-])"
+ACTUA_AJENO = ACTUA + r"|" + PUSH
 # CON EL ESPACIO de «SeguroLo Tengo», a propósito: el dueño del repositorio en
 # GitHub se llama `segurolotengopy`, y la primera versión («SeguroLo» a secas,
 # sin distinguir mayúsculas) negaba cualquier `gh` que nombrara el repositorio.
@@ -453,6 +464,17 @@ ENTORNO_INOCUO = {"GH_CONFIG_DIR", "GH_REPO", "GH_HOST", "GH_PROMPT_DISABLED", "
                   "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
                   "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_COMMITTER_DATE"}
 
+GIT_LOCAL = {"add", "push", "status", "diff"}
+
+def git_local_inocuo(palabras):
+    """Un `git add|push|status|diff …` pelado: el subcomando va pegado a `git`
+    (sin `-c`, `-C` ni `--git-dir` en medio), sin variables delante, sin `$` ni
+    comilla invertida, y sin un verbo de ACTUA entre sus palabras."""
+    if len(palabras) < 2 or palabras[0] != "git" or palabras[1] not in GIT_LOCAL:
+        return False
+    junto = " ".join(palabras)
+    return not ("$" in junto or "`" in junto or re.search(ACTUA, junto))
+
 def quitar_texto(c):
     """El comando sin el texto que publica, o None si no se quita nada.
 
@@ -460,10 +482,12 @@ def quitar_texto(c):
     ronda). Tres rondas mostraron que el texto quitado se puede reusar desde
     otro tramo, desde la línea siguiente o desde un heredoc que la expresión
     lee distinto que bash. En vez de seguir tapando formas, el texto se quita
-    solo cuando el comando entero es UN git o UN gh de la tabla:
+    solo cuando el comando entero es UN git o UN gh de la tabla (más, a lo
+    sumo, tramos de git local inocuo: ver git_local_inocuo):
       - sin heredoc (un cuerpo de PR va en --body-file);
-      - un solo tramo: sin `;`, `&&`, `|`, `&` ni salto de línea fuera de
-        comillas;
+      - un solo tramo de la tabla: sin otro `;`, `&&`, `|` o `&` fuera de
+        comillas que lleve a algo que no sea `git add|push|status|diff`, y sin
+        salto de línea;
       - sin `$` ni comilla invertida en ninguna palabra, tampoco en el texto;
       - sin variables delante salvo las de ENTORNO_INOCUO;
       - y el resto, ya sin texto, sin un intérprete.
@@ -481,43 +505,59 @@ def quitar_texto(c):
         lista = comandos(c)
     except ValueError:
         return None
-    if len(lista) != 1:
+    # Un tramo de la tabla y, a lo sumo, otros que son git local sin riesgo
+    # (add, push, status, diff): `git add … && git commit -m "…" && git push`
+    # es la cadena de todos los días y, con el push como acción frente a un
+    # sistema ajeno, se negaría solo por nombrarlo en el mensaje. Esos tramos
+    # no pueden leer el texto del commit (sin `$`, sin comilla invertida, sin
+    # variables, sin opciones globales) y se conservan enteros: un nombre ajeno
+    # EN ellos (`git push <repositorio ajeno>`) sigue contando.
+    tabla = [p for p in lista if es_de_tabla([w for w in p if not re.match(r"^\w+=", w)])]
+    if len(tabla) != 1:
         return None
-    palabras = lista[0]
-    entorno = [w for w in palabras if re.match(r"^\w+=", w)]
-    sin_entorno = [w for w in palabras if not re.match(r"^\w+=", w)]
-    if any(w.split("=", 1)[0] not in ENTORNO_INOCUO or EJECUTA.search(w) for w in entorno):
-        return None
-    if not es_de_tabla(sin_entorno) or any("$" in w or "`" in w for w in sin_entorno):
-        return None
-    texto, con_igual = texto_publicado(sin_entorno)
-    quedan = []
-    for k, w in enumerate(sin_entorno):
-        if k in texto:
+    for p in lista:
+        if p is not tabla[0] and not git_local_inocuo(p):
+            return None
+    tramos = []
+    for p in lista:
+        if p is not tabla[0]:
+            tramos.append(" ".join(p))
             continue
-        quedan.append(w.split("=", 1)[0] + "=" if k in con_igual else w)
-    t = " ".join(entorno + quedan)
+        entorno = [w for w in p if re.match(r"^\w+=", w)]
+        sin_entorno = [w for w in p if not re.match(r"^\w+=", w)]
+        if any(w.split("=", 1)[0] not in ENTORNO_INOCUO or EJECUTA.search(w) for w in entorno):
+            return None
+        if any("$" in w or "`" in w for w in sin_entorno):
+            return None
+        texto, con_igual = texto_publicado(sin_entorno)
+        quedan = []
+        for k, w in enumerate(sin_entorno):
+            if k in texto:
+                continue
+            quedan.append(w.split("=", 1)[0] + "=" if k in con_igual else w)
+        tramos.append(" ".join(entorno + quedan))
+    t = " ; ".join(tramos)
     return None if INTERPRETE.search(t) else t
 
 # `${X:+curl}`, `${X-curl}`, `${X:=curl}`: la expansión deja el verbo suelto
 # (revisión de seguridad del #272, LOW-B). Se abre antes de buscar ACTUA.
 EXPANSION = re.compile(r"\$\{[#!]?\w+(?:\[[^\]]*\])?:?[-+=?]")
 
-def nombra_y_actua(patron_nombre, c):
+def nombra_y_actua(patron_nombre, c, actua=ACTUA):
     # Primero sobre el crudo, que es barato: quitar texto solo quita, así que
     # si el crudo no coincide, lo saneado tampoco (y el heredoc, que es
     # cuadrático, no corre para cada comando).
     crudo = EXPANSION.sub(" ", c)
-    if not (re.search(patron_nombre, crudo, re.I) and re.search(ACTUA, crudo)):
+    if not (re.search(patron_nombre, crudo, re.I) and re.search(actua, crudo)):
         return False
     t = quitar_texto(c)
     if t is None:
         return True
     t = EXPANSION.sub(" ", t)
-    return bool(re.search(patron_nombre, t, re.I) and re.search(ACTUA, t))
+    return bool(re.search(patron_nombre, t, re.I) and re.search(actua, t))
 
 NUNCA = [
-    (lambda c: nombra_y_actua(SISTEMA_AJENO, c),
+    (lambda c: nombra_y_actua(SISTEMA_AJENO, c, ACTUA_AJENO),
      "Prohibiciones 5 y 7 de CLAUDE.md: la app Demo SeguroLo Tengo, el otp-service, WhatsApp-Modular y el receptor de clientes de AAB1 (la app AAB1-WA-Prod, su contenedor y su suscripción) no se tocan; toda operación sobre el receptor la ejecuta la sesión de WhatsApp-Modular con autorización de Andres."),
     (lambda c: nombra_y_actua(CANAL_NO_OFICIAL, c),
      "Prohibición 1 de CLAUDE.md: el único canal es la Cloud API oficial de Meta."),
