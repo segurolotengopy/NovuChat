@@ -1,0 +1,8 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/captacion.ts", "a": "admin/functions/src/modulos/captacion/captacion.ts" },
+    { "de": "admin/web/src/paginas/Captacion.tsx", "a": "admin/web/src/modulos/captacion/Captacion.tsx" },
+    { "de": "admin/web/src/lib/archivoPlanes.ts", "a": "admin/web/src/central/lib/archivoPlanes.ts" }
+  ],
+  "suitesPuras": []
+}
