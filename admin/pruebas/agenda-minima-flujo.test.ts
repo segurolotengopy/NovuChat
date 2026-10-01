@@ -2696,3 +2696,15 @@ describe('Agenda mínima v0: prueba «Flujo B 2»', () => {
     expect(interactivo(t.aPaciente(MAMA)[0]!)['type']).toBe('cta_url');
   });
 });
+
+describe('Agenda mínima v0: el mapa también sale si el panel trae otra instruccionesExtra', () => {
+  it('el panel manda instruccionesExtra SIN mapa: el enlace se toma de la de «Config base»', () => {
+    const MAPA = 'https://maps.app.goo.gl/EjemploConsultorio2';
+    const panel = JSON.parse(JSON.stringify(PANEL)) as J;
+    delete ((panel['datosDelNegocio'] as J)['direccionMaps']);
+    const m = mundo({ eventos: [], panel, configBase: { instruccionesExtra: `Mapa: ${MAPA}` } });
+    hastaPedirNombre(m);
+    m.gemini.extraer = extraccion({ pacientes: ['Ana Pérez Gómez'] });
+    expect(m.turno(texto(MAMA, 'Ana Pérez Gómez')).enviados[0]!.cuerpo).toContain(`Mapa: ${MAPA}`);
+  });
+});

@@ -166,6 +166,15 @@ const forzado = String(base.calendarioForzado || '').trim();
 const cnRespaldo = (v) => { const t = String(v || '').trim(); return t && !t.startsWith('REEMPLAZAR_') ? t : ''; };
 if (!String(cfg.numeroRecepcion || '').trim()) cfg.numeroRecepcion = cnRespaldo(base.respaldoNumeroRecepcion);
 if (!String(cfg.numeroDoctor || '').trim()) cfg.numeroDoctor = cnRespaldo(base.respaldoNumeroDoctor);
+// El MAPA: si el panel no manda `direccionMaps`, el primer enlace de mapas de `instruccionesExtra` (la del panel o,
+// si esa no lo trae, la de «Config base»). Solo enlaces de Google Maps, de hasta 200 caracteres.
+if (!String(cfg.direccionMaps || '').trim()) {
+  const reMapa = /https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)[/?][A-Za-z0-9._~:/?#@!$&()*+,;=%-]*/;
+  for (const fuente of [cfg.instruccionesExtra, deBase.instruccionesExtra]) {
+    const m = String(fuente || '').match(reMapa);
+    if (m && m[0].length <= 200) { cfg.direccionMaps = m[0].replace(/[).,;:!?]+$/, ''); break; }
+  }
+}
 const calendarioId = forzado || (prueba ? String(prueba.calendarioDePrueba || '') : String(cfg.calendarioId || ''));
 
 // --- LA TOLERANCIA (P10): la frase sale de la configuracion, no del codigo -----
