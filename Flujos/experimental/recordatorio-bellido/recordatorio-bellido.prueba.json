@@ -1,0 +1,559 @@
+{
+ "name": "ZZ Recordatorio Bellido (prueba)",
+ "nodes": [
+  {
+   "id": "rec-191e540a22c4",
+   "name": "Todos los días 17:00 (apagado en la prueba)",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    300
+   ],
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "cronExpression",
+       "expression": "0 17 * * *"
+      }
+     ]
+    }
+   },
+   "disabled": true
+  },
+  {
+   "id": "rec-832f817adaab",
+   "name": "Correr recordatorio ahora",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    500
+   ],
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "REEMPLAZAR_RUTA_CORRER",
+    "responseMode": "onReceived",
+    "responseData": "allEntries",
+    "options": {}
+   },
+   "webhookId": "rec-correr"
+  },
+  {
+   "id": "rec-84920e4099f5",
+   "name": "Crear citas ficticias",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "REEMPLAZAR_RUTA_CREAR",
+    "responseMode": "onReceived",
+    "responseData": "allEntries",
+    "options": {}
+   },
+   "webhookId": "rec-crear"
+  },
+  {
+   "id": "rec-6cd091ac5af9",
+   "name": "Config del recordatorio",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    300,
+    300
+   ],
+   "parameters": {
+    "assignments": {
+     "assignments": [
+      {
+       "id": "c1",
+       "name": "calendarioId",
+       "type": "string",
+       "value": "REEMPLAZAR_CALENDARIO_ENSAYO_1"
+      },
+      {
+       "id": "c2",
+       "name": "phoneNumberId",
+       "type": "string",
+       "value": "REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO"
+      },
+      {
+       "id": "c3",
+       "name": "waGraphVersion",
+       "type": "string",
+       "value": "v26.0"
+      },
+      {
+       "id": "c4",
+       "name": "plantilla",
+       "type": "string",
+       "value": "recordatorio_cita"
+      },
+      {
+       "id": "c5",
+       "name": "idiomaPlantilla",
+       "type": "string",
+       "value": "es"
+      },
+      {
+       "id": "c6",
+       "name": "nombreNegocio",
+       "type": "string",
+       "value": "Dr. Andres Bellido"
+      },
+      {
+       "id": "c7",
+       "name": "prefijosPermitidos",
+       "type": "string",
+       "value": "591"
+      },
+      {
+       "id": "c8",
+       "name": "estadoComercio",
+       "type": "string",
+       "value": "operativo"
+      },
+      {
+       "id": "c9",
+       "name": "telefonoPruebaAndres",
+       "type": "string",
+       "value": "REEMPLAZAR_TELEFONO_PRUEBA_ANDRES"
+      },
+      {
+       "id": "c10",
+       "name": "telefonoPruebaSilvana",
+       "type": "string",
+       "value": "REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"
+      }
+     ]
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "rec-72792dc9d341",
+   "name": "Config de la prueba",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    300,
+    0
+   ],
+   "parameters": {
+    "assignments": {
+     "assignments": [
+      {
+       "id": "c1",
+       "name": "calendarioId",
+       "type": "string",
+       "value": "REEMPLAZAR_CALENDARIO_ENSAYO_1"
+      },
+      {
+       "id": "c2",
+       "name": "phoneNumberId",
+       "type": "string",
+       "value": "REEMPLAZAR_PHONE_NUMBER_ID_BELLIDO"
+      },
+      {
+       "id": "c3",
+       "name": "waGraphVersion",
+       "type": "string",
+       "value": "v26.0"
+      },
+      {
+       "id": "c4",
+       "name": "plantilla",
+       "type": "string",
+       "value": "recordatorio_cita"
+      },
+      {
+       "id": "c5",
+       "name": "idiomaPlantilla",
+       "type": "string",
+       "value": "es"
+      },
+      {
+       "id": "c6",
+       "name": "nombreNegocio",
+       "type": "string",
+       "value": "Dr. Andres Bellido"
+      },
+      {
+       "id": "c7",
+       "name": "prefijosPermitidos",
+       "type": "string",
+       "value": "591"
+      },
+      {
+       "id": "c8",
+       "name": "estadoComercio",
+       "type": "string",
+       "value": "operativo"
+      },
+      {
+       "id": "c9",
+       "name": "telefonoPruebaAndres",
+       "type": "string",
+       "value": "REEMPLAZAR_TELEFONO_PRUEBA_ANDRES"
+      },
+      {
+       "id": "c10",
+       "name": "telefonoPruebaSilvana",
+       "type": "string",
+       "value": "REEMPLAZAR_TELEFONO_PRUEBA_SILVANA"
+      }
+     ]
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "rec-dc44b9bb447b",
+   "name": "Citas ficticias",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    600,
+    0
+   ],
+   "parameters": {
+    "jsCode": "// Citas FICTICIAS de prueba para MAÑANA (La Paz), en el calendario de pruebas. Con el formato del chat:\n// titulo «Apellidos, Nombres (CNS|RN)» y descripcion con la linea «Telefono: <numero>».\nconst cfg = $('Config de la prueba').first().json;\nconst manana = new Date(Date.now() - 4 * 3600000 + 86400000).toISOString().slice(0, 10);   // mañana, en hora de La Paz\nconst fin = (hh) => {\n  const [h, mi] = hh.split(':').map(Number);\n  const t = h * 60 + mi + 30;\n  return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');\n};\nconst cita = (hh, summary, tel) => ({ json: {\n  calendario: cfg.calendarioId, summary,\n  start: `${manana}T${hh}:00-04:00`, end: `${manana}T${fin(hh)}:00-04:00`,\n  description: 'Cita FICTICIA de prueba del recordatorio\\n' + (tel ? 'Telefono: ' + tel + '\\n' : '') + 'Servicio: control-del-nino-sano',\n} });\nreturn [\n  cita('11:00', 'Prueba Recordatorio, Andres (CNS)', cfg.telefonoPruebaAndres),\n  cita('11:30', 'Prueba Recordatorio, Silvana (RN)', cfg.telefonoPruebaSilvana),\n  cita('12:00', 'Prueba Sin Telefono, Paciente (CNS)', ''),\n  cita('12:30', 'Prueba Extranjera, Paciente (CNS)', ['54', '911', '1234', '5678'].join('')),\n];\n"
+   }
+  },
+  {
+   "id": "rec-edc9fddb2e51",
+   "name": "Crear cita de prueba",
+   "type": "n8n-nodes-base.googleCalendar",
+   "typeVersion": 1.3,
+   "position": [
+    900,
+    0
+   ],
+   "parameters": {
+    "operation": "create",
+    "calendar": {
+     "__rl": true,
+     "mode": "id",
+     "value": "={{ $json.calendario }}"
+    },
+    "start": "={{ $json.start }}",
+    "end": "={{ $json.end }}",
+    "additionalFields": {
+     "summary": "={{ $json.summary }}",
+     "description": "={{ $json.description }}"
+    }
+   }
+  },
+  {
+   "id": "rec-ff79cb961ba6",
+   "name": "Citas de mañana",
+   "type": "n8n-nodes-base.googleCalendar",
+   "typeVersion": 1.3,
+   "position": [
+    600,
+    300
+   ],
+   "parameters": {
+    "operation": "getAll",
+    "calendar": {
+     "__rl": true,
+     "mode": "id",
+     "value": "={{ $json.calendarioId }}"
+    },
+    "returnAll": true,
+    "timeMin": "={{ $now.setZone('America/La_Paz').plus({days:1}).startOf('day').toISO() }}",
+    "timeMax": "={{ $now.setZone('America/La_Paz').plus({days:1}).endOf('day').toISO() }}",
+    "options": {
+     "singleEvents": true
+    }
+   },
+   "alwaysOutputData": true
+  },
+  {
+   "id": "rec-cac5c0eed00e",
+   "name": "Preparar recordatorios",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    900,
+    300
+   ],
+   "parameters": {
+    "jsCode": "// RECORDATORIO DE CITA AL PACIENTE (Bellido): prepara un item por cita que se debe recordar.\n// Funcionalidades (CLIENTES/BELLIDO/solicitudes/recordatorio-al-paciente-funcionalidades):\n//  2. solo citas con telefono (linea «Telefono: <numero>») y prefijo permitido;\n//  3. una vez por cita: la marca [recordado] en su descripcion;\n//  4. solo si el comercio esta operativo;\n//  5. el paciente en forma natural, el consultorio, la fecha escrita y la hora en 24 h.\nconst cfg = $('Config del recordatorio').first().json;\nconst omitidas = [];\nif (String(cfg.estadoComercio || 'operativo') !== 'operativo') return [];\nconst prefijos = String(cfg.prefijosPermitidos || '').split(',').map((p) => p.trim()).filter(Boolean);\nconst MARCA = '[recordado]';\nconst DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];\nconst MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];\n// «Apellidos, Nombres (CNS|RN)» -> «Nombres Apellidos»; sin coma, tal cual (sin la marca).\nconst natural = (titulo) => {\n  const t = String(titulo || '').replace(/^\\s*Cita\\s*:?\\s*/i, '').split(/\\s+[—–]\\s+/)[0].replace(/\\(\\s*(?:CNS|RN)\\s*\\)/gi, ' ').replace(/\\s+/g, ' ').trim();\n  const i = t.indexOf(',');\n  return (i < 0 ? t : (t.slice(i + 1).trim() + ' ' + t.slice(0, i).trim())).trim() || 'paciente';\n};\nconst salida = [];\nfor (const item of $input.all()) {\n  const ev = item.json;\n  const desc = String(ev.description || '').slice(0, 4000);\n  if (desc.includes(MARCA)) { omitidas.push('ya recordada'); continue; }\n  const linea = desc.split(/\\r?\\n/).find((l) => /^\\s*Tel[eé]fono\\s*:/i.test(l));\n  const m = linea && /(\\d{8,15})/.exec(linea);\n  if (!m) { omitidas.push('sin telefono'); continue; }\n  const telefono = m[1];\n  if (prefijos.length && !prefijos.some((p) => telefono.startsWith(p))) { omitidas.push('prefijo no permitido'); continue; }\n  const inicio = Date.parse(String((ev.start || {}).dateTime || ''));\n  if (!Number.isFinite(inicio)) { omitidas.push('evento sin hora'); continue; }\n  const lp = new Date(inicio - 4 * 3600000);               // UTC-4 fijo (La Paz)\n  const fecha = `${DIAS[lp.getUTCDay()]} ${lp.getUTCDate()} de ${MESES[lp.getUTCMonth()]}`;\n  const hora = String(lp.getUTCHours()).padStart(2, '0') + ':' + String(lp.getUTCMinutes()).padStart(2, '0');\n  salida.push({ json: {\n    eventoId: ev.id, calendarioDelEvento: (ev.organizer || {}).email || cfg.calendarioId,\n    telefono, paciente: natural(ev.summary), negocio: String(cfg.nombreNegocio || ''), fecha, hora,\n    plantilla: cfg.plantilla, idioma: cfg.idiomaPlantilla, phoneNumberId: cfg.phoneNumberId, waGraphVersion: cfg.waGraphVersion,\n    descripcionMarcada: (desc ? desc + '\\n' : '') + MARCA + ' ' + new Date().toISOString(),\n  }, pairedItem: { item: 0 } });\n}\nif (!salida.length) return [{ json: { sinRecordatorios: true, omitidas } }];\nsalida[0].json.omitidas = omitidas;\nreturn salida;\n"
+   }
+  },
+  {
+   "id": "rec-5dd2027e6b1a",
+   "name": "¿Hay recordatorios?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    1200,
+    300
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "h1",
+       "leftValue": "={{ $json.sinRecordatorios !== true }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "rec-9d3ae689c536",
+   "name": "Enviar plantilla",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1500,
+    200
+   ],
+   "parameters": {
+    "method": "POST",
+    "url": "=https://graph.facebook.com/{{ $json.waGraphVersion }}/{{ $json.phoneNumberId }}/messages",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.telefono, type: 'template', template: { name: $json.plantilla, language: { code: $json.idioma || 'es' }, components: [{ type: 'body', parameters: [ { type: 'text', text: $json.paciente }, { type: 'text', text: $json.negocio }, { type: 'text', text: $json.fecha }, { type: 'text', text: $json.hora } ] }] } }) }}",
+    "options": {
+     "response": {
+      "response": {
+       "neverError": true,
+       "fullResponse": false
+      }
+     }
+    }
+   },
+   "onError": "continueRegularOutput"
+  },
+  {
+   "id": "rec-e24792575a31",
+   "name": "Después del envío",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1800,
+    200
+   ],
+   "parameters": {
+    "jsCode": "// Después del envío: ¿Meta lo aceptó? Si sí, la cita se marca; si no, se registra la causa (sin mostrar el token).\nconst out = [];\nconst previos = $('Preparar recordatorios').all();\n$input.all().forEach((it, k) => {\n  const r = it.json || {};\n  const base = (previos[k] && previos[k].json) || {};\n  const id = (r.messages && r.messages[0] && r.messages[0].id) || '';\n  const err = r.error || (r.body && r.body.error) || null;\n  out.push({ json: { ...base, enviado: !!id, causa: id ? '' : String((err && (err.code + ' ' + err.message)) || 'sin id de mensaje').slice(0, 200) } });\n});\nreturn out;\n"
+   }
+  },
+  {
+   "id": "rec-a86592ea5be5",
+   "name": "¿Se envió?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    2100,
+    200
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "e1",
+       "leftValue": "={{ $json.enviado }}",
+       "rightValue": "",
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "rec-d06e11e38729",
+   "name": "Marcar como recordada",
+   "type": "n8n-nodes-base.googleCalendar",
+   "typeVersion": 1.3,
+   "position": [
+    2400,
+    100
+   ],
+   "parameters": {
+    "operation": "update",
+    "eventId": "={{ $json.eventoId }}",
+    "calendar": {
+     "__rl": true,
+     "mode": "id",
+     "value": "={{ $json.calendarioDelEvento }}"
+    },
+    "updateFields": {
+     "description": "={{ $json.descripcionMarcada }}"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Todos los días 17:00 (apagado en la prueba)": {
+   "main": [
+    [
+     {
+      "node": "Config del recordatorio",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Correr recordatorio ahora": {
+   "main": [
+    [
+     {
+      "node": "Config del recordatorio",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Crear citas ficticias": {
+   "main": [
+    [
+     {
+      "node": "Config de la prueba",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Config de la prueba": {
+   "main": [
+    [
+     {
+      "node": "Citas ficticias",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Citas ficticias": {
+   "main": [
+    [
+     {
+      "node": "Crear cita de prueba",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Config del recordatorio": {
+   "main": [
+    [
+     {
+      "node": "Citas de mañana",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Citas de mañana": {
+   "main": [
+    [
+     {
+      "node": "Preparar recordatorios",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Preparar recordatorios": {
+   "main": [
+    [
+     {
+      "node": "¿Hay recordatorios?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Hay recordatorios?": {
+   "main": [
+    [
+     {
+      "node": "Enviar plantilla",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    []
+   ]
+  },
+  "Enviar plantilla": {
+   "main": [
+    [
+     {
+      "node": "Después del envío",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Después del envío": {
+   "main": [
+    [
+     {
+      "node": "¿Se envió?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "¿Se envió?": {
+   "main": [
+    [
+     {
+      "node": "Marcar como recordada",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    []
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ }
+}
