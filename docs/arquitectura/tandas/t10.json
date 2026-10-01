@@ -1,0 +1,8 @@
+{
+  "movimientos": [
+    { "de": "admin/functions/src/inventario.ts", "a": "admin/functions/src/modulos/inventario/inventario.ts" },
+    { "de": "admin/web/src/paginas/Inventario.tsx", "a": "admin/web/src/modulos/inventario/Inventario.tsx" },
+    { "de": "admin/web/src/paginas/Pedidos.tsx", "a": "admin/web/src/modulos/pedidos/Pedidos.tsx" }
+  ],
+  "suitesPuras": []
+}
