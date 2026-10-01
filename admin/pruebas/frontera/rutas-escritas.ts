@@ -51,13 +51,15 @@ export interface Sitio {
   ruta: string | null;
   /** Por qué no se pudo calcular. */
   motivo: string | null;
+  /** Si no se calculó: la carpeta que sí se calcula antes del primer tramo que no (relativa a la raíz). */
+  prefijo: string | null;
 }
 
 type Val =
   | { t: 'cad'; v: string }
   | { t: 'ruta'; v: string }
   | { t: 'url'; v: string }
-  | { t: 'x'; why: string; ancla: boolean };
+  | { t: 'x'; why: string; ancla: boolean; prefijo?: string };
 
 const x = (why: string, ancla: boolean): Val => ({ t: 'x', why, ancla });
 const anclado = (v: Val): boolean => v.t !== 'cad' && (v.t !== 'x' || v.ancla);
@@ -168,7 +170,12 @@ export function sitiosDe(archivo: string, texto: string): Sitio[] {
     const ancla = args.some(anclado);
     if (!ancla) return x('sin ancla', false);
     const raro = args.find((a) => a.t === 'x');
-    if (raro && raro.t === 'x') return x(raro.why, true);
+    if (raro && raro.t === 'x') {
+      // El prefijo que sí se calcula (los argumentos anteriores al primero que no) tiene que existir.
+      const i = args.indexOf(raro);
+      const previo = i > 0 ? unirRutas(args.slice(0, i), quien) : null;
+      return { ...x(raro.why, true), ...(previo && previo.t === 'ruta' ? { prefijo: previo.v } : {}) };
+    }
     if (args.some((a) => a.t === 'url')) return x('una URL dentro de join/resolve (falta fileURLToPath)', true);
     let actual: string | null = null;
     for (const a of args as { t: 'cad' | 'ruta'; v: string }[]) {
@@ -301,7 +308,8 @@ export function sitiosDe(archivo: string, texto: string): Sitio[] {
         const linea = fuente.getLineAndCharacterOfPosition(n.getStart(fuente)).line + 1;
         const t = n.getText(fuente).replace(/\s+/g, ' ');
         const ruta = v.t === 'ruta' || v.t === 'url' ? posix.normalize(v.v.slice(R.length + 1) || '.').replace(/\/$/, '') : null;
-        sitios.push({ linea, texto: t.length > 110 ? `${t.slice(0, 107)}...` : t, ruta, motivo: v.t === 'x' ? v.why : null });
+        sitios.push({ linea, texto: t.length > 110 ? `${t.slice(0, 107)}...` : t, ruta, motivo: v.t === 'x' ? v.why : null,
+          prefijo: v.t === 'x' && v.prefijo ? posix.normalize(v.prefijo.slice(R.length + 1) || '.') : null });
       }
     }
     ts.forEachChild(n, visitar);
@@ -344,6 +352,8 @@ export const aFuente = (r: string): string => r.replace(/^admin\/functions\/lib\
 
 /** ¿La ruta calculada lleva a algo que existe hoy (archivo o carpeta) o a una local/generada declarada? */
 export function lleva(ruta: string, disco: Disco): boolean {
+  // Un compilado `lib/*.js` existe solo si existe su fuente: el comodín de las generadas no lo salva.
+  if (/^admin\/functions\/lib\/.+\.js$/.test(ruta)) return disco.existe(aFuente(ruta));
   if (disco.existe(aFuente(ruta))) return true;
   return LOCALES_O_GENERADAS.some((g) => (ruta === g || ruta.startsWith(`${g}/`)) && disco.existe(posix.dirname(g)));
 }
