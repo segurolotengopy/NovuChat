@@ -17,7 +17,7 @@ import { EstadoCuenta } from './paginas/EstadoCuenta';
 import { Pagar } from './paginas/Pagar';
 import { Reclamos } from './paginas/Reclamos';
 import { Bitacora } from './paginas/Bitacora';
-import { Funcionarios } from './paginas/Funcionarios';
+import { Funcionarios } from './modulos/agenda/Funcionarios';
 import { Tablero } from './paginas/Tablero';
 import { MiCuenta } from './paginas/MiCuenta';
 import { Catalogo } from './modulos/productos/Catalogo';

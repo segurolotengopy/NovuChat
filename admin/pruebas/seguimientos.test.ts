@@ -34,7 +34,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { seguimientosPendientes, seguimientoEnviado, esPendienteDeSeguimiento, VENTANAS } =
-  await import('../functions/src/seguimientos.ts');
+  await import('../functions/src/modulos/agenda/seguimientos.ts');
 const { solicitudTras, reactivaTras, DIAS_ADELANTO_A_FAVOR } = await import('../functions/src/ingesta.ts');
 
 const T = 'seg-clinica';

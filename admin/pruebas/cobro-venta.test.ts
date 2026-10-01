@@ -38,7 +38,7 @@ if (!getApps().some((a) => a.name === '[DEFAULT]')) initializeApp({ projectId: P
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 const db = getFirestore();
 const { ingesta, configuracionFlujo } = await import('../functions/src/ingesta.ts');
-const { cotejarComprobante } = await import('../functions/src/sena.ts');
+const { cotejarComprobante } = await import('../functions/src/modulos/agenda/sena.ts');
 const { registrarCierre } = await import('../functions/src/core/turno/cierres.ts');
 const { imagenDeCobro, registrarQrDeCobro } = await import('../functions/src/modulos/cobros/cobro.ts');
 const {
@@ -438,7 +438,7 @@ describe('6. La imagen del QR: un código vencido deja de servirse', () => {
 
 describe('7. La seña no se rompió: el otro vertical sigue leyendo su importe fijo', () => {
   it('`esperadoDeLaVenta` y `esperadoDeLaSena` producen la misma forma', async () => {
-    const { esperadoDeLaSena, MINUTOS_TOLERANCIA_RELOJ } = await import('../functions/src/sena.ts');
+    const { esperadoDeLaSena, MINUTOS_TOLERANCIA_RELOJ } = await import('../functions/src/modulos/agenda/sena.ts');
     const qr = { nombreCuenta: TITULAR, cuentas: [CUENTA] };
     const sena = esperadoDeLaSena(50, qr, 1000, 2000);
     const venta = esperadoDeLaVenta(50, qr, 1000, 2000, MINUTOS_TOLERANCIA_RELOJ);

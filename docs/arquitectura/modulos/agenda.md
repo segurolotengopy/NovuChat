@@ -197,7 +197,7 @@ escrito en forma de negación.
 ### 4terdecies.1 Quién entra, y quién no
 
 La decisión es una función pura del servidor —`esPendienteDeSeguimiento`, en
-`functions/src/seguimientos.ts`— y se prueba caso por caso en
+`functions/src/modulos/agenda/seguimientos.ts`— y se prueba caso por caso en
 `pruebas/seguimientos.test.ts`. Entra la conversación que cumple **todas**:
 
 | Condición | Por qué |
