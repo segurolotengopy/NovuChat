@@ -40,11 +40,11 @@ const db = getFirestore();
 const { ingesta, configuracionFlujo } = await import('../functions/src/ingesta.ts');
 const { cotejarComprobante } = await import('../functions/src/sena.ts');
 const { registrarCierre } = await import('../functions/src/core/turno/cierres.ts');
-const { imagenDeCobro, registrarQrDeCobro } = await import('../functions/src/cobro.ts');
+const { imagenDeCobro, registrarQrDeCobro } = await import('../functions/src/modulos/cobros/cobro.ts');
 const {
   MINUTOS_QR_VENTA, cobroParaElFlujo, detalleDeLaVenta, esperadoDeLaVenta,
   idDeCierreDeVenta, qrDeVentaVencido, totalUtilizable,
-} = await import('../functions/src/cobroVenta.ts');
+} = await import('../functions/src/modulos/cobros/cobroVenta.ts');
 
 /** Lo que la prohibición 3 no deja decir, en ninguna forma. */
 const AFIRMA_PAGO = /acreditad|verificad|recibimos|pago confirmado/i;

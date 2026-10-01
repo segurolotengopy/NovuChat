@@ -830,7 +830,10 @@ describe('El aviso no le dice al cliente que quedó algo cuando no quedó nada',
     // «lo que agendamos» (revisión de f0c6957, caso C4).
     { ...PREVIA, pasosDelAgente: true, agendarEjecutado: true, agendarPasosSinId: 0,
       eventosCreados: [{ id: 'choca' }, { id: 'buena' }] })[0] ?? {};
-    expect(String(r['respuesta'])).toContain('El resto de lo que agendamos si esta bien');
+    // Dice CUAL quedó y cual no (29/09, #8588), en vez de «el resto esta bien» a secas.
+    expect(String(r['respuesta'])).toContain('La cita de Sil a las 11:00 quedó agendada.');
+    expect(String(r['respuesta'])).toContain('La de Sil a las 09:00 no pudo quedar');
+    expect(String(r['respuesta'])).toContain('recepción');
     expect(r['reservaVerificada']).toBe(true);
   });
 });
@@ -951,10 +954,15 @@ describe('Bloqueos repetidos: una restricción, no cincuenta eventos', () => {
   it('el nodo que consulta usa esa ventana, en los tres flujos', () => {
     for (const archivo of ['demo-a-agendamiento.json', 'platinum-agendamiento.json', 'bellido-agendamiento.json']) {
       const f = JSON.parse(readFileSync(join(aqui, '../../Flujos/', archivo), 'utf8')) as
-        { nodes: { name: string; parameters: { options?: Record<string, unknown> } }[] };
-      const o = f.nodes.find((n) => n.name === 'Verificar en el calendario')!.parameters.options!;
-      expect(o['timeMin'], archivo).toBe('={{ $json.ventanaDesde }}');
-      expect(o['timeMax'], archivo).toBe('={{ $json.ventanaHasta }}');
+        { nodes: { name: string; parameters: { timeMin?: string; timeMax?: string; options?: Record<string, unknown> } }[] };
+      const nodo = f.nodes.find((n) => n.name === 'Verificar en el calendario')!;
+      const o = nodo.parameters.options!;
+      // `timeMin` y `timeMax` son parámetros del NODO (1.3): dentro de `options` n8n los ignora y la consulta
+      // no tiene ventana (trae hasta 50 eventos de toda la cuenta). Ver calendario-fechas-en-el-nodo.test.ts.
+      expect(nodo.parameters.timeMin, archivo).toBe('={{ $json.ventanaDesde }}');
+      expect(nodo.parameters.timeMax, archivo).toBe('={{ $json.ventanaHasta }}');
+      expect(o, archivo).not.toHaveProperty('timeMin');
+      expect(o, archivo).not.toHaveProperty('timeMax');
       // Sin orden explícito, Google devuelve los eventos en un orden arbitrario:
       // con la lista recortada, cuáles llegan pasaba a ser cuestión de suerte.
       expect(o['orderBy'], archivo).toBe('startTime');

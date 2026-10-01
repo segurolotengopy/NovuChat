@@ -31,7 +31,7 @@ Lee primero, en este orden: `CLAUDE.md` entero, `ESTADO.md`,
 - `docs/contrato/anexo-tecnico-sla.md` §9 y §13: la cláusula que hoy promete
   que no se guarda, y la regla que exige acuerdo del cliente para reducir un
   compromiso.
-- `admin/functions/src/imagenCatalogo.ts`, `captacion.ts`,
+- `admin/functions/src/modulos/productos/imagenCatalogo.ts`, `captacion.ts`,
   `admin/web/src/lib/archivoPlanes.ts` y `foto.ts`: los controles que se
   reutilizan en vez de rehacerse.
 
@@ -75,9 +75,9 @@ Consulta `~/Claude-Proyectos/proyectos/`. Dentro de NovuChat, esto ya existe y
 | Patrón de `storage.rules` y sus cinco pasos | `docs/seguridad/reglas-storage.md` |
 | Identidad por claim, tenant en la ruta, `list: false`, negación final | `admin/storage.rules` |
 | Validación por firma mágica y tope, en navegador y servidor | `archivoPlanes.ts`, `captacion.ts` |
-| Compresión y reencuadre en el navegador | `admin/web/src/lib/foto.ts` |
+| Compresión y reencuadre en el navegador | `admin/web/src/modulos/productos/foto.ts` |
 | Moderación con el modelo que muestra pero no bloquea, con prompt anti-inyección | `imagenCatalogo.ts` |
-| Servir binarios por ficha al azar, sin enumerar la cartera | `admin/functions/src/cobro.ts` |
+| Servir binarios por ficha al azar, sin enumerar la cartera | `admin/functions/src/modulos/cobros/cobro.ts` |
 | Contador con tope por plan | el del catálogo, `limiteCatalogo.ts` |
 | Metadatos de integridad del objeto | `admin/functions/src/central/pagar/pagos.ts` |
 

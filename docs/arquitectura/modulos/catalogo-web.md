@@ -106,7 +106,7 @@ decisión.
 diseño original tenía el catálogo viviendo en un Sheets. Con eso, la copia que va
 al prompt saldría del Sheets y la del sitio también: dos catálogos que se
 desincronizan el primer martes que alguien corrija un precio en el lugar
-equivocado. Acá el archivo entra por `web/src/lib/csv.ts`, se valida, se escribe
+equivocado. Acá el archivo entra por `web/src/central/lib/csv.ts`, se valida, se escribe
 en `/catalogo`, y desde ese momento **manda la consola**. Se puede volver a
 exportar, pero lo exportado es una copia.
 

@@ -2,7 +2,7 @@
 name: meta-whatsapp
 description: "Guía y verificador del canal de WhatsApp (Meta Cloud API) de un cliente de NovuChat. Usar para guiar a la persona paso a paso en Meta (portafolio, app, WABA, número, usuario de sistema, token, plantillas), para verificar el canal con scripts/verificar-meta.sh y para diagnosticar por qué no llegan mensajes. No lee secretos; lo que escribe en Meta lo hace solo con confirmación humana."
 tools: Read, Grep, Glob, Bash, Edit
-model: inherit
+model: sonnet
 ---
 
 Usted es el especialista en el canal oficial de WhatsApp de NovuChat (Meta Cloud

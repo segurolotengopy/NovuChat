@@ -2,7 +2,12 @@
 # ==============================================================================
 # deploy.sh v2 — Despliegue manual gobernado por el estándar DevSecOps
 # ==============================================================================
-# Versión: 2.1 | Fecha: 2026-09-12
+# Versión: 2.3 | Fecha: 2026-10-01
+# Adaptación de NovuChat: del estándar 2.3 (commit e44942c de SeguridadGeneral)
+# se tomó /health como HEALTH_PATH por defecto. NO se portó la 2.2 (traducción
+# del «404 Site Not Found» de Hosting): los sitios de NovuChat existen. Propio
+# de NovuChat: el despliegue opcional de las reglas de Storage
+# (DESPLEGAR_STORAGE=1) en fase_desplegar de Firebase.
 # Documentos relacionados: 00-gobernanza/01-politica-cicd-devsecops.md,
 #   00-gobernanza/02-flujo-git-y-versionado.md, 01-seguridad/05-checklist-pase-a-produccion.md,
 #   02-pipelines/README.md, 03-scripts/security-local.sh
@@ -34,7 +39,7 @@
 #   - Las imágenes se despliegan por digest (sha256), nunca por etiqueta mutable,
 #     y se publican SIEMPRE en el registro del proyecto de staging (producción
 #     despliega por digest la misma imagen, igual que los workflows).
-#   - Verificación de salud contra HEALTH_PATH (/healthz) con reintentos y
+#   - Verificación de salud contra HEALTH_PATH (/health) con reintentos y
 #     registro en .deploy-log/.
 #   - Nunca hace push a main: los cambios de registro van en una rama
 #     chore/deploy-<ambiente>-<fecha> y un PR (compatible con el hook
@@ -57,7 +62,7 @@ set -Eeuo pipefail
 # ------------------------------------------------------------------------------
 # Constantes y estado global
 # ------------------------------------------------------------------------------
-readonly SCRIPT_VERSION="2.1"
+readonly SCRIPT_VERSION="2.3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
 readonly MANIFIESTO=".devsecops.yml"
@@ -67,9 +72,9 @@ readonly TOTAL_FASES=7
 # global (fijada para evitar regresiones, p. ej. la de 15.22.2, jun-2026);
 # ajuste FIREBASE_TOOLS_VERSION en el entorno si necesita otra.
 FIREBASE_TOOLS_VERSION="${FIREBASE_TOOLS_VERSION:-15.28.1}"
-# Health check unificado del estándar: HEALTH_PATH (/healthz), 10 intentos,
+# Health check unificado del estándar: HEALTH_PATH (/health), 10 intentos,
 # 15 segundos entre intentos (mismos valores que post-despliegue en CI).
-HEALTH_PATH="${HEALTH_PATH:-/healthz}"
+HEALTH_PATH="${HEALTH_PATH:-/health}"
 HEALTH_REINTENTOS="${HEALTH_REINTENTOS:-10}"
 HEALTH_ESPERA="${HEALTH_ESPERA:-15}"
 
@@ -918,7 +923,7 @@ fase_salud() {
     return 0
   fi
   requiere_comando curl
-  # Ruta de salud unificada del estándar: HEALTH_PATH (/healthz), 10 intentos,
+  # Ruta de salud unificada del estándar: HEALTH_PATH (/health), 10 intentos,
   # 15 s entre intentos (los mismos valores que post-despliegue en CI).
   local entrada nombre url url_salud fallos=0
   for entrada in "${URLS_SALUD[@]}"; do

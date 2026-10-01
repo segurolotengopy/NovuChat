@@ -17,7 +17,7 @@ initializeApp();
 
 export { ingesta, configuracionFlujo } from './ingesta.js';
 export { registrarCierre } from './core/turno/cierres.js';
-export { registrarQrDeCobro, imagenDeCobro } from './cobro.js';
+export { registrarQrDeCobro, imagenDeCobro } from './modulos/cobros/cobro.js';
 // SEÑA POR QR EN LAS RESERVAS (bloque 2). El cotejo del comprobante lo hace el
 // servidor —el flujo manda lo que leyó el modelo y recibe `cuadra`,
 // `no_cuadra` o `ilegible`— y la retención vencida se anota sin mandarle nada
@@ -35,7 +35,7 @@ export { seguimientosPendientes, seguimientoEnviado } from './seguimientos.js';
 export {
   enlaceCatalogo, catalogoPublico, checkoutCatalogo, fijarWebhookCarrito,
   vistaPreviaCatalogo, fotoDeCatalogo,
-} from './catalogoWeb.js';
+} from './modulos/catalogo-web/catalogoWeb.js';
 
 import { registrar } from './core/turno/bitacora.js';
 import { umbralValido, umbralesDeAtencion } from './core/conteo/atencion.js';
@@ -78,7 +78,7 @@ export { notificarReclamo } from './central/reclamos/reclamos.js';
 // altas de a una y de las importaciones de doscientas por igual, y una función
 // para reintentar cuando la primera vez falló por algo pasajero. El porqué de
 // que avise en vez de bloquear está en `imagenCatalogo.ts`.
-export { comprobarImagenDelCatalogo, recomprobarImagen } from './imagenCatalogo.js';
+export { comprobarImagenDelCatalogo, recomprobarImagen } from './modulos/productos/imagenCatalogo.js';
 // MINI INVENTARIO. El descuento por venta lo hace el checkout; acá van los dos
 // movimientos que pide la consola. El comercio NO escribe `stock` a mano: si
 // pudiera, el saldo y su historial discreparían y el reporte dejaría de servir.
@@ -1101,7 +1101,7 @@ export const moverReclamo = onCall(async (peticion) => {
   return { ok: true };
 });
 
-export { importarCatalogo } from './limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
+export { importarCatalogo } from './modulos/productos/limiteCatalogo.js'; // límite de productos por plan: ver limiteCatalogo.ts
 
 // ---------------------------------------------------------------------------
 // CONSTANCIA DE LOS CAMBIOS DE CONFIGURACIÓN

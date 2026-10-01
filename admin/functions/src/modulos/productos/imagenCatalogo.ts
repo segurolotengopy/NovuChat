@@ -39,16 +39,16 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { REGION } from './core/region.js';
-import { CLAVE_GEMINI, claveGemini } from './central/servicios/gemini.js';
+import { REGION } from '../../core/region.js';
+import { CLAVE_GEMINI, claveGemini } from '../../central/servicios/gemini.js';
 import {
   pedirConFrenos, tipoDeContenido, type MotivoFalla,
-} from './central/servicios/pedidoSeguro.js';
+} from '../../central/servicios/pedidoSeguro.js';
 
 /** Salieron a `central/servicios/pedidoSeguro.ts` (corte C2 de F2); se reexportan para sus pruebas. */
 export {
   esDestinoPublico, urlUtilizable, pedirConFrenos, tipoDeContenido, type MotivoFalla,
-} from './central/servicios/pedidoSeguro.js';
+} from '../../central/servicios/pedidoSeguro.js';
 
 /** El mismo modelo que usa el asistente, para no sostener dos criterios. */
 const MODELO = 'gemini-3.5-flash-lite';

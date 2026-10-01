@@ -39,7 +39,7 @@ retirado), `CLAUDE.md` §7 (todo límite se hace cumplir en el servidor).
 | **La unidad de la arquitectura** | El **manifiesto de módulo** (§3): configuración, colecciones, límites, pestañas, fragmento de prompt, herramientas, ganchos y pruebas. De él se derivan las siete copias de hoy |
 | **Los tres ejes de la cuenta** | **Plan** (módulos y límites contratados), **modalidad** (demostración, prueba, producción) y **titularidad del canal** (NovuChat o el comercio). Hoy `demostracion` es plan y modalidad a la vez, y BYOC es un plan cuando es titularidad más un plan (§4) |
 | **Cómo se hace cumplir** | Carpeta = zona, una prueba de fronteras de importación en CI, y un gancho de Claude Code que limita a cada agente a su carpeta. La política escrita es un prompt, y el prompt no es una barrera |
-| **El camino** | Una fase de cierre más siete (§7), unas 21 jornadas de trabajo. **Hechas al 26/09:** F-1 y E (H0), F1 (H1), F6 (H6) y S (fusionada, sin estrenar por falta de facturación). **Reorientado el 26/09 (§6.3), en este orden:** F1b (copia de límites y precio por contrato), F2 (carpetas, registro y frontera), F3a (esqueleto de venta: lo que todo cliente de venta necesita), F3b (core unificado de reservas). **Los clientes de reservas no esperan a F3:** Bellido pasa ahora sobre la versión publicada y Platinum cuando cierren anexo y datos; los de venta (Rubén Roca, Dhermacore, Q'Taco) esperan F3a. **Después, antes del quinto número:** F4 (conector de canal fuera de n8n) y F5 (tenants como datos) |
+| **El camino** | Una fase de cierre más siete (§7), unas 21 jornadas de trabajo. **Hechas al 26/09:** F-1 y E (H0), F1 (H1), F6 (H6) y S (fusionada, sin estrenar por falta de facturación). **Reorientado el 26/09 (§6.3), en este orden:** F1b (copia de límites y precio por contrato), F2 (carpetas, registro y frontera), F3a (esqueleto de venta: lo que todo cliente de venta necesita), F3b (core unificado de reservas). **Los clientes de reservas no esperan a F3:** Bellido pasa ahora sobre la versión publicada y Platinum cuando cierren anexo y datos; los de venta (Rubén Roca, Dhermacore, Q'Taco) esperan F3a. **Después, antes del quinto número:** F4 (conector de canal fuera de n8n) y F5 (tenants como datos). **Pausada el 29/09 (§6.4):** la obra de F2 en adelante espera a que haya clientes que la paguen; sigue la cartera |
 | **El proceso con los clientes** | Ocho etapas con compuerta (§12.2); todo pedido pasa por un análisis de solicitud con tres opciones «así se puede», esfuerzo real y decisión comercial antes de construirse (§12.3, §12.4); reclamos con circuito (§12.7); inventario de recursos compartidos (§12.9); ningún código a medida mientras F2 y F3 estén en obra (§12.10) |
 | **Cómo se opera** | Tres sesiones (§8.5): una operadora de la rearquitectura, una de **cartera** que atiende a todos los clientes (decisión del 26/09, noche: ya no hay una sesión por cliente), y una revisora que comprueba cada hito antes de que Andres autorice el siguiente |
 | **Mensajes por conversación** | Cero agregados o quitados en todas las fases. F4 agrega un salto de red por mensaje, no un mensaje |
@@ -488,6 +488,36 @@ del quinto número no cambian.
 | **El primer despliegue con clientes pagando** | Es el de F2, y el staging no tiene facturación | Staging con facturación antes, o `--dry-run` leído entero más verificación de las Functions HTTP después, **declarado en el informe**. La facturación del staging es decisión de Andres con fecha |
 | **Migrar antes de desplegar** | Cuando las reglas dejan de reconocer un valor (`plan: 'demostracion'` en F1), desplegar antes de migrar deja la consola sin leer la cuenta | Regla general: toda migración que acompaña a reglas nuevas se aplica y relee antes de la etiqueta; con clientes pagando, en ventana y con vuelta atrás escrita |
 | **Platinum antes de F3b** | Su JSON versionado y `negocio-platinum.json` no tienen la tercera agenda, estética facial, emojis ni Maps que sí están en producción | La sesión de cartera alinea los dos archivos con producción en un PR de solo datos; **F3b no publica Platinum sin ese PR** |
+
+### 6.4 Decidida el 29/09: la rearquitectura se pausa
+
+Andres emitió el 29/09/2026 una orden general (`~/Claude-Proyectos/coordinacion/2026-09-29-ORDEN-GENERAL.md`)
+que pausa la obra hasta que haya clientes que la paguen. No cambia el plano ni
+las zonas: cambia **cuándo** se construye.
+
+| Qué | Estado desde el 29/09 |
+|---|---|
+| **Hecho y vigente** | F-1, E, F1, F1b, S y F6 (H0, H1, H1b y H6 cerrados). De F2, lo que ya está en `main`: `registro.ts`, `fronteras.test.ts` en CI y las tandas de movimiento y de corte fusionadas hasta el 28/09. El punto exacto lo escribe la operadora en `Prompts/COORDINACION.md` («punto de pausa de F2»), con lo que está en `main`, lo que está en rama y por qué no se fusiona |
+| **En pausa** | El resto de F2 (módulos, consola, scripts, `tenants.modulos`, límite de agendas, cierre), F3a, F3b, F4, F5 y los bloques A a C de B8. Los hitos H2, H3a, H3b y H3c quedan en espera; H4-Bellido, H4-Platinum y H4-Rubén siguen siendo de la cartera |
+| **Sigue** | La sesión de cartera (§8.5): Bellido y Platinum a octubre, Q'Taco reducido, calidad de respuestas. La operadora no construye: atiende solo defectos que bloqueen a un cliente |
+| **Sigue vigente sin cambio** | Cinco zonas y carpeta = zona; el congelamiento del §12.10 (ningún código a medida); cero mensajes por conversación; el «sí» de Andres por acción; la regla de integración del §8.2 para todo PR que se fusione |
+| **Cuándo se retoma** | Cuando haya clientes que la paguen, por decisión de Andres. Al retomar, lo primero es un informe de estado de `main`: qué se movió, qué falta y si la línea base de los ocho JSON idénticos sigue vigente |
+
+**Tres riesgos que la pausa deja abiertos, y quién los cierra:**
+
+1. **`main` va por delante de producción.** Desde `v0.10.0` hay cientos de commits sin desplegar, con F2 a medias. Un hotfix etiquetado desde `main` los arrastra todos. La operadora declara en el punto de pausa si un hotfix sale de `main` o de una rama nacida de `v0.10.0`.
+2. **Un cliente de venta pasa a producción sin el esqueleto de F3a** (transferencia con aviso y botón, fallo del modelo con botón, `NIEGA_IA` en código). Antes de ese pase, Andres firma una excepción declarada en `docs/versiones-por-cliente.md`, no un olvido.
+3. **Los pedidos que exigen código** (por ejemplo las reservas de mesa de Q'Taco o el aviso por plantilla) no entran por el §12.10 salvo excepción por escrito de Andres.
+
+**Requisitos comerciales que se conservan para cuando se retome**, traídos por la
+sesión de análisis financiero (`Analisis/43` a `45`): prompt por capas con el
+comercio al final (núcleo común, módulo, datos del comercio; nada que cambie por
+comercio o por conversación antes del núcleo, orden determinista de listas), un
+conector de modelo propio con caché por módulo y no por comercio, y tokens
+declarados con el `usageMetadata` de Google en cada cambio de flujo o prompt. La
+elección de modelo (Gemini 3.5 o 3.8 Flash) la decide Andres; el conector, si se
+construye, es una pieza del core con interfaz fija y el texto de la invariante «modelo
+como sub-nodo intercambiable» lo aprueba él.
 
 ---
 

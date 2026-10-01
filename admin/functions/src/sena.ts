@@ -3,8 +3,8 @@ import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { REGION } from './core/region.js';
 import { SECRETOS_POR_ALIAS, enmascarar, rutaAutenticada } from './core/seguridad/firma.js';
 import {
-  cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido,
-} from './cotejo.js';
+  cotejarComprobante as cotejar, parsearMonto, type Cotejo, type Esperado, type Leido, type ResultadoCotejo,
+} from './modulos/cobros/cotejo.js';
 import { MINUTOS_RETENCION_POR_DEFECTO, type Solicitud } from './ingesta.js';
 import { registrar } from './core/turno/bitacora.js';
 import { documentoDeVertical } from './core/prompt/prompt.js';
@@ -12,7 +12,7 @@ import { periodoDe } from './central/cuenta/planes.js';
 import { comprobanteEnRevision, marcaMs, senaVencidaPorTiempo } from './retencion.js';
 import {
   detalleDeLaVenta, esperadoDeLaVenta, idDeCierreDeVenta, qrDeVentaVencido, totalUtilizable,
-} from './cobroVenta.js';
+} from './modulos/cobros/cobroVenta.js';
 
 /**
  * =============================================================================
@@ -68,8 +68,6 @@ function texto(valor: unknown, maxLargo: number): string {
 export function idDeCierreDeCita(referencia: string): string {
   return `cita_${referencia.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120)}`;
 }
-
-export type ResultadoCotejo = 'cuadra' | 'no_cuadra' | 'ilegible';
 
 /** Lo que se le dice al flujo y lo que queda en el cierre. */
 export interface Veredicto {

@@ -174,10 +174,10 @@ export const REGISTRO = [
     // DUDA (i): `Analisis/41` §3.2 dice «Pedidos o Agenda (quien cierra)».
     // Declararlo cerraría un ciclo con Agenda, que depende de Cobros por la
     // seña. En el código de hoy `cobro.ts`, `qrSimple.ts`, `dibujoQr.ts` y
-    // `cotejo.ts` no importan nada de otro módulo; `cobroVenta.ts` importa UN
-    // TIPO de `sena.ts` (`ResultadoCotejo`, de Agenda). Es un caso conocido
-    // que `medir-zonas.mjs` lista: se resuelve en F2 llevando el tipo a Cobros
-    // (`cotejo.ts`), sin cambiar lógica.
+    // `cotejo.ts` no importan nada de otro módulo. `cobroVenta.ts` importaba
+    // UN TIPO de `sena.ts` (`ResultadoCotejo`, de Agenda); el corte C3 de F2
+    // lo llevó a `cotejo.ts`, sin cambiar lógica, y ahora es Agenda la que lo
+    // toma de Cobros, como declara su `dependeDe`.
     dependeDe: [],
     // Cobros no tiene documento propio todavía (`config/cobros` es de F2): hoy
     // su estado vive en el documento del flujo que cobra, y `registrarQrDeCobro`

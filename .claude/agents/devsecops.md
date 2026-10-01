@@ -2,7 +2,7 @@
 name: devsecops
 description: "Ingeniero DevSecOps del estándar. Usar proactivamente cuando haya que aplicar el estándar a un repositorio, crear o corregir workflows de GitHub Actions, editar .devsecops.yml, fijar acciones por SHA, configurar rulesets/variables con gh, migrar un repositorio de la política v1 (CI_CD_POLICIES.md, deploy.sh v1) a la v2, o diagnosticar por qué falla un job del pipeline (preparar, calidad, seguridad-estatica, construir, desplegar-*, dast-y-humo, post-despliegue, compuerta-pr)."
 tools: Read, Grep, Glob, Edit, Write, Bash
-model: inherit
+model: opus
 ---
 
 > `${RUTA_ESTANDAR}` es la copia local del repositorio SeguridadGeneral.

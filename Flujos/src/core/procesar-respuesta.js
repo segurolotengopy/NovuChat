@@ -12,6 +12,12 @@ const falla = String(cfg.mensajeErrorTemporal ?? '').trim()
 let herramientaAgendarCorrio = false;
 try { herramientaAgendarCorrio = $('agendar_cita').isExecuted === true; }
 catch (e) { herramientaAgendarCorrio = false; }
+// Lo mismo con `cancelar_cita` (revision de seguridad del #275): si el agente
+// revienta, sus pasos se pierden, pero n8n sabe si la herramienta corrio.
+// `null` si la referencia falla: entonces decide el registro de la cita.
+let herramientaCancelarCorrio = null;
+try { herramientaCancelarCorrio = $('cancelar_cita').isExecuted === true; }
+catch (e) { herramientaCancelarCorrio = null; }
 
 // ===== AGENDA DEL TURNO: BLOQUE COMPARTIDO (inicio) =========================
 // LETRA POR LETRA el mismo en `Procesar respuesta` y en `Procesar reintento`:
@@ -163,7 +169,7 @@ const agLibres = (consultas, fecha, duracion, limite, paso) => {
 const agHorasDelTexto = (texto) => {
   const t = String(texto || '');
   const out = [];
-  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
+  const re = /(?<![\d:.,/])([01]?\d|2[0-3])(?:\s*[:.h]\s*([0-5]\d)|\s+y\s+(media|cuarto))?(?![\d/]|[.:]\d)(\s*(?:hrs?\.?|hs\.?)(?![a-záéíóúñ]))?(\s*(?:de\s+la\s+(?:tarde|noche)|pm(?![a-záéíóúñ])|p\.\s?m\.?))?(\s*(?:de\s+la\s+ma[ñn]ana|am(?![a-záéíóúñ])|a\.\s?m\.?))?(\s+en\s+punto\b)?/gi;
   let m;
   while ((m = re.exec(t)) !== null) {
     if (m[0] === '') { re.lastIndex += 1; continue; }
@@ -171,8 +177,10 @@ const agHorasDelTexto = (texto) => {
     const conMinutos = m[2] !== undefined || m[3] !== undefined;
     const antes = t.slice(Math.max(0, m.index - 12), m.index);
     const trasLas = /\b(las?|para\s+las?)\s+$/i.test(antes);
-    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570).
-    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[7]) continue;
+    // «11 en punto» tambien es una hora (Bellido, prueba real del 28/09, #7570), y
+    // «9 am» sin «las» (29/09, #8642: «el sabado 10 de octubre 9 am» no se leia
+    // como hora y el turno perdia la fecha y la hora que el cliente dijo).
+    if (!conMinutos && !trasLas && !m[4] && !m[5] && !m[6] && !m[7]) continue;
     // «15.00 Bs» es un precio, no una hora.
     if (/^\s*(bs\b|bolivianos|usd|\$|%)/i.test(t.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
     const min = m[2] !== undefined ? Number(m[2]) : (m[3] ? (/media/i.test(m[3]) ? 30 : 15) : 0);
@@ -285,9 +293,14 @@ const agDejarValidas = (oracion, horas, validas) => {
   for (const c of corridas.reverse()) {
     const quedan = c.filter((h) => validas.includes(h));
     if (quedan.length === c.length) continue;
-    texto = texto.slice(0, c[0].desde) + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
+    // Sin ninguna que quede, tambien se va el «a las» que las anunciaba (29/09, #8567:
+    // «(por ejemplo, a las ).» quedaba en el mensaje al paciente).
+    const antes = texto.slice(0, c[0].desde);
+    texto = (quedan.length ? antes : antes.replace(/(?:\ba\s+las?\s+|\blas\s+)$/i, ''))
+      + agLista(quedan.map((h) => h.min)) + texto.slice(c[c.length - 1].hasta);
   }
-  return texto.replace(/[ \t]{2,}/g, ' ');
+  return texto.replace(/\(\s*(?:por\s+ejemplo|p\.\s*ej\.?|ej\.?)?\s*[,:]?\s*\)/gi, '')
+    .replace(/\s+([.,;:])/g, '$1').replace(/[ \t]{2,}/g, ' ');
 };
 // Cambia por `nuevo` las oraciones que hablan de horas; lo demas (una
 // presentacion, el nombre que falta, un precio) se queda, en su lugar.
@@ -468,11 +481,17 @@ for (let i = 0; i < items.length; i++) {
 // lo que el modelo HIZO (ver mas abajo, `ejecutoAgendar`); el regex queda
 // como red adicional, y se juzga sobre el texto SIN marcas de formato.
 const CONFIRMA = /(ha sido|han sido|queda|quedó|quedo|fue|está|esta|ya está|ya esta)\s+(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad|anotad)|\b(he|hemos)\s+(agendado|reservado|registrado|confirmado|reprogramado|reagendado|movido|anotado)\b|(agendé|reservé|registré|reprogramé|reagendé|moví)(?![a-záéíóúñ])|\b(te|le|les|los|las)\s+anot(é|amos)(?![a-záéíóúñ])|\b(cambié|cambiamos|moví|movimos)\s+(tu|su|la)\s+cita\b|\b(cita|reserva|turno)\b[^.!?]{0,40}?\b(agendad|reservad|registrad|confirmad|reprogramad|reagendad|movid|cambiad)[oa]s?\b/i;
-const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
+  const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
+  // «No encontramos ninguna cita registrada» / «No veo esa reserva» no afirman que se
+  // agendo (Bellido, 28/09, #7624). SOLO la oracion que EMPIEZA asi: una negacion
+  // cualquiera («No hay problema, quedo agendada…») no anula el detector (revision
+  // de seguridad del #283). Se juzga oracion por oracion.
+  const SIN_CITA = /^\W*(?:no\s+(?:encontr[a-záéíóúñ]*|veo|figura[a-záéíóúñ]*|registr[a-záéíóúñ]*)\s+(?:ning[uú]n[a]?\s+|esa\s+|tu\s+|la\s+|alguna\s+)?(?:citas?|reservas?|turnos?)\b|ninguna\s+(?:cita|reserva|turno)\b)/i;
   const YA_EXISTE = /\bya\s+(tiene|tienes|cuenta con|hay)/i;
   // Sin marcas de formato: «quedó *agendada*» cuenta igual que «quedó agendada».
   const plano = respuesta.replace(/[*_~]/g, '');
-  const afirmaAgendo = CONFIRMA.test(plano) && !YA_EXISTE.test(plano) && !NIEGA.test(plano);
+  const sinLasNegadas = plano.split(/(?<=[.!?])\s+|\n+/).filter((o) => !SIN_CITA.test(o)).join(' ');
+  const afirmaAgendo = CONFIRMA.test(sinLasNegadas) && !YA_EXISTE.test(plano) && !NIEGA.test(plano);
 
   // Coordenadas del pin, de la configuracion (consola o respaldo). Viajan
   // como texto porque Config base es un Set de textos; aca se vuelven numero
@@ -696,9 +715,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   const registroDe = () => (pendientesDeCancelar && telefonoDelCliente)
     ? (pendientesDeCancelar[telefonoDelCliente] = pendientesDeCancelar[telefonoDelCliente] || { eventoId: '', desc: '', desde: 0, candidatos: {} })
     : null;
+  let guardoPendiente = false;
   const guardarPendiente = (id, desc) => {
     const r = registroDe();
-    if (r && id) { r.eventoId = String(id).slice(0, 200); r.desc = String(desc || '').slice(0, 160); r.desde = Date.now(); }
+    if (r && id) {
+      r.eventoId = String(id).slice(0, 200); r.desc = String(desc || '').slice(0, 160); r.desde = Date.now();
+      guardoPendiente = true;
+    }
   };
   const olvidarPendiente = () => { const r = registroDe(); if (r) { r.eventoId = ''; r.desc = ''; } };
   const citasBuscadas = () => {
@@ -755,6 +778,8 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
       guardarPendiente(pedida, desc);
     } else if (registro && registro.eventoId) {
       desc = String(registro.desc || '');
+      // La pregunta nombra ESE pendiente: sigue vigente para el «si» siguiente.
+      guardoPendiente = true;
     } else {
       olvidarPendiente();
     }
@@ -777,7 +802,9 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // Cuando el MODELO pide la confirmacion por su cuenta (sin llamar a la
   // herramienta) y en este turno busco y encontro UNA sola cita, esa es la que
   // se mostro: queda guardada igual. Con varias no se adivina cual.
-  if (!fallo && pasosCancelar.length === 0 && /cancel/i.test(respuesta) && /\?/.test(respuesta)) {
+  // Tambien cuando pregunta por MOVERLA (#7655 de Bellido, 28/09: «¿Confirmas
+  // que es esa la cita que deseas cambiar?»): el «si» siguiente es para esa.
+  if (!fallo && pasosCancelar.length === 0 && /cancel|cambi|mover|mu[eé]v|reagend|reprogram/i.test(respuesta) && /\?/.test(respuesta)) {
     if (vistasEsteTurno.length === 1) guardarPendiente(vistasEsteTurno[0].id, vistasEsteTurno[0].desc);
   }
 
@@ -813,6 +840,51 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // sirven (la cita cancelada no vuelve a mostrarse; las otras, cuando las
   // vuelva a buscar).
   if (idsCancelados.size && pendientesDeCancelar && telefonoDelCliente) delete pendientesDeCancelar[telefonoDelCliente];
+  // --- LA FALLA DEL MODELO NO ESCONDE UNA CANCELACION (Bellido, 28/09, #7659) -
+  // La paciente confirmo mover su cita («Si»), `cancelar_cita` la BORRO y la
+  // llamada siguiente del modelo revento («Received tool input did not match
+  // expected schema», le falto `servicio`). Con el error n8n pierde los pasos
+  // del agente: este nodo no ve la cancelacion, y salio «tuve un problema
+  // tecnico, ¿me repites lo ultimo?». La paciente se quedo sin cita y nadie lo
+  // supo. Si el modelo fallo y el mensaje CONFIRMA una cancelacion pendiente
+  // (la compuerta de `cancelar_cita` ya dejo pasar el id guardado), la cita
+  // pudo quedar borrada: se le dice eso y pasa a recepcion, que revisa la
+  // agenda. Falla CERRADA: en el peor caso recepcion confirma una cita que
+  // seguia en pie.
+  // Cuenta el pendiente (la cita que se mostro) y tambien los candidatos: en
+  // el #7659 no habia pendiente y la compuerta dejo pasar el id del modelo
+  // porque era uno de los que buscar_mi_cita le habia mostrado.
+  const regCancelacion = pendientesDeCancelar && telefonoDelCliente ? pendientesDeCancelar[telefonoDelCliente] : null;
+  const candidatosIncierta = (regCancelacion && regCancelacion.candidatos && typeof regCancelacion.candidatos === 'object')
+    ? Object.values(regCancelacion.candidatos) : [];
+  // POR HECHO (revision de seguridad del #275): lo decide si `cancelar_cita`
+  // CORRIO en el turno. Por registro y texto fallaba en los dos sentidos: un
+  // «sí» a otra cosa con un 503 transferia de mas, y una cancelacion sin
+  // registro previo (busco y cancelo en el mismo turno) volvia a esconderse.
+  // El registro queda solo para nombrar la cita, y como respaldo si la
+  // referencia a la herramienta no se puede leer.
+  const regVigente = !!regCancelacion && Date.now() - Number(regCancelacion.desde || 0) < 30 * 60 * 1000;
+  const porRegistro = regVigente && (!!regCancelacion.eventoId || candidatosIncierta.length > 0)
+    && CONFIRMA_CANCELAR.test(textoCliente);
+  const cancelacionIncierta = fallo && (herramientaCancelarCorrio === null ? porRegistro : herramientaCancelarCorrio);
+  const descIncierta = !cancelacionIncierta || !regVigente ? ''
+    : String(regCancelacion.eventoId ? (regCancelacion.desc || '') : (candidatosIncierta.length === 1 ? candidatosIncierta[0] : '')).slice(0, 160);
+  if (cancelacionIncierta) {
+    avisos.push('cancelacion_incierta');
+    respuesta = /\busted\b/i.test(String(cfg.tratamiento || ''))
+      ? `Tuve un problema técnico mientras gestionaba su cita${descIncierta}, y puede que ya haya quedado cancelada. Le paso con recepción para que la revisen y se la confirmen.`
+      : `Tuve un problema técnico mientras gestionaba tu cita${descIncierta}, y puede que ya haya quedado cancelada. Te paso con recepción para que la revisen y te la confirmen.`;
+  }
+  // EL PENDIENTE SE USA UNA SOLA VEZ (revision de seguridad del #275): vale
+  // para el «si» del turno siguiente al que lo guardo. Un turno que no lo
+  // vuelve a guardar lo olvida: si no, «¿deseas cambiarla?» sobre la cita del
+  // lunes dejaba ese id pegado, y un «si» a «¿cancelo la del martes?» —con dos
+  // citas encontradas, que no guarda nada— borraba la del lunes. La lectura
+  // de arriba (cancelacion incierta) ya se hizo. Tras una falla del modelo se
+  // conserva: el cliente va a repetir lo ultimo.
+  if (!fallo && !guardoPendiente && regCancelacion && regCancelacion.eventoId) {
+    regCancelacion.eventoId = ''; regCancelacion.desc = '';
+  }
   let citaPagadaCancelada = null;
   if (idsCancelados.size && cfg.senaActiva === 'si') {
     for (const p of pasos) {
@@ -992,7 +1064,23 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // Un ordinal no trae fecha: es la de la ultima oferta.
   const agFechaDeLaHora = agFechaCliente || (agHorasCliente.some((h) => h.ordinal) && agUltima ? agUltima.fecha : '');
   const AG_CONFIRMA = /^\s*(si|sip|ok|okay|okey|oki|dale|listo|perfecto|confirmo|confirmado|de\s+acuerdo|claro|correcto|exacto|vale|bueno|genial|excelente|ese|esa|esta|este|la\s+primera|la\s+segunda|la\s+tercera|la\s+ultima|por\s+favor)\b|\b(agend(a|ame|ala|alo|amela|amelo|eme|ar)|reserv(a|ame|ala|alo|amela|amelo)|anota(me|la|lo)|confirm(o|ada|ado|amos)|me\s+quedo\s+con|quiero\s+(esa|ese|esta|este|la|el)\b|prefiero|dame|pon(me|la|lo))\b/;
-  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano);
+  // «YA» ES UN «SI» EN BOLIVIA (bateria de Bellido del 29/09, casos N1 a N4):
+  // «ya», «ya pues», «yaa», «ya esta», «de una», «va» y «asi es» confirman la
+  // hora que se ofrecio, pero AG_CONFIRMA no los conocia y el candado deshacia
+  // la cita como `sin_confirmar`. Va aparte y ANCLADO AL MENSAJE ENTERO, porque
+  // «ya» al principio de una frase casi nunca confirma («ya te dije 10 de
+  // octubre», «ya tengo cita», «ya no puedo», «ya pues, quiero otra hora»): solo
+  // vale cuando lo unico que el cliente dijo es la afirmacion, con a lo sumo un
+  // relleno («ya pues, esa nomas»). Un signo de pregunta, una hora, una franja
+  // o cualquier otra palabra la descartan; ademas siguen mandando `agPregunta`,
+  // `agNiega`, `agPideOtra` y `agFranja`, como con cualquier confirmacion.
+  const AG_CONFIRMA_YA = /^\s*(ya+|ya\s+pues|ya\s+esta|ya\s+dale|dale\s+ya|de\s+una|va|va\s+pues|asi\s+es|ya\s+ya)(?:[\s,.;!]+(?:pues|nomas|esa|ese|esa\s+hora|ese\s+horario|listo|ok|okay|dale|por\s+favor|porfa|porfavor|perfecto)){0,4}[\s.!]*$/;
+  // (revision de seguridad del #284) SIN repeticiones solapadas —«esa nomas»
+  // se leia como una alternativa o como dos y el tiempo crecia como 2^n con un
+  // mensaje de WhatsApp de unos 250 caracteres— y con el largo acotado: una
+  // afirmacion asi nunca pasa de unas pocas palabras. Tampoco entran «no mas»
+  // ni «gracias»: «ya no mas» y «ya, gracias» suelen ser un rechazo cortes.
+  const agConfirmaPalabra = AG_CONFIRMA.test(agClientePlano) || (agClientePlano.length <= 60 && AG_CONFIRMA_YA.test(agClientePlano));
   // FRANJA u OTRA HORA: lo que el paciente pidio cuando no quiere lo ofrecido.
   // «La tarde» empieza a las 13:00 (decision de Andres, 27/09/2026): el
   // mediodia no es lo que pide quien dice «¿en la tarde?».
@@ -1080,9 +1168,12 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // llama como alguien del equipo o como un servicio (revision de 98796fd), no
   // queda ninguna: se toma la primera que no sea generica, y tambien tiene que
   // haberla dicho. Sin eso se le preguntaba el nombre sin fin.
-  const agTieneNombre = (titulo) => {
+  const agPrimeraNombre = (titulo) => {
     const palabras = agPalabrasDe(agNombreDelTitulo(titulo)).filter((w) => !AG_GENERICAS.has(w));
-    const primera = palabras.find((w) => !AG_DEL_NEGOCIO.has(w)) || palabras[0];
+    return palabras.find((w) => !AG_DEL_NEGOCIO.has(w)) || palabras[0] || '';
+  };
+  const agTieneNombre = (titulo) => {
+    const primera = agPrimeraNombre(titulo);
     return !!primera && agPalabrasCliente.has(primera);
   };
   // Las horas que este mensaje ELIGE, cada una con su fecha.
@@ -1102,6 +1193,30 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
     }
     if (!agHorasCliente.length && agConfirmaPalabra && agUltima && agUltima.mins.length === 1) {
       elegidas.push({ fecha: agUltima.fecha, min: agUltima.mins[0] });
+    }
+    // UN «SI» A VARIAS CITAS QUE EL MODELO AGENDO (Bellido, 29/09, #8570 a
+    // #8618): una mama pidio citas para sus dos hijos, el modelo agendo las dos
+    // horas que acababa de ofrecer, una por nino, y el «Si» las deshizo a las
+    // dos —un «si» solo valia para UNA hora—, ocho veces seguidas. Un «si» que
+    // cierra una oferta de varias horas confirma el CONJUNTO solo cuando lo que
+    // el modelo agendo es EXACTAMENTE ese conjunto: una cita por cada hora
+    // ofrecida (ni una mas, ni una hora que nadie ofrecio), de pacientes
+    // DISTINTOS, con el nombre de cada uno dicho por el cliente. Ante «cual de
+    // estas», el modelo agenda una sola y todo sigue como hasta hoy.
+    // (revision de seguridad del #283) Solo si la oferta la marco el CODIGO como
+    // conjunto —la pregunta «¿Te las agendo?» de `Comprobar reserva`—, no cualquier
+    // oferta de dos horas («¿16:00 o 16:30?» son alternativas); el paciente se
+    // distingue por su primera palabra de nombre, no por el titulo entero; y si el
+    // cliente pide otras horas o una franja, no confirmo nada.
+    if (!agHorasCliente.length && agConfirmaPalabra && !agPideOtra && !agFranja && agUltima && agUltima.conjunto === true
+      && agUltima.mins.length >= 2 && agUltima.mins.length <= 4 && eventosCreados.length === agUltima.mins.length) {
+      const inicios = eventosCreados.map((ev) => Date.parse(ev.inicio)).filter(Number.isFinite).map(agLaPaz);
+      const nombres = eventosCreados.map((ev) => agPrimeraNombre(ev.titulo));
+      const exacto = inicios.length === eventosCreados.length
+        && inicios.every((q) => q.fecha === agUltima.fecha && agUltima.mins.includes(q.min))
+        && new Set(inicios.map((q) => q.min)).size === inicios.length;
+      const distintos = nombres.every((n) => n !== '') && new Set(nombres).size === nombres.length;
+      if (exacto && distintos) for (const q of inicios) elegidas.push({ fecha: q.fecha, min: q.min });
     }
     return elegidas;
   })();
@@ -1146,8 +1261,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // La eleccion de ANTES vale solo si este mensaje no la cambia (revisiones
   // de a6f533a y 4556525): ni pregunta, ni pide otra franja u otras horas, ni
   // nombra horas u otro dia. Un solo predicado para las dos vias que la usan.
+  // Y tampoco si DESPUES hubo una oferta nueva que no la incluye (Bellido,
+  // 29/09, #8618): «Confirme ese horario» sobre las 14:00 del martes 6 revivio
+  // las 17:30 del martes 29 que habia elegido media hora antes.
   const agElegidoVale = !agHorasCliente.length && !agPregunta && !agFranja && !agPideOtra && !!agElegido && !!agElegido.fecha
-    && (!agFechaCliente || agFechaCliente === String(agElegido.fecha));
+    && (!agFechaCliente || agFechaCliente === String(agElegido.fecha))
+    && !(agUltima && Number(agUltima.desde || 0) > Number(agElegido.desde || 0)
+      && (agUltima.fecha !== String(agElegido.fecha) || !agUltima.mins.includes(Number(agElegido.min))));
   const agEleccionPendiente = (() => {
     if (!agCitasSinConfirmar.length || agOpcionesSinElegir || agNiega) return null;
     // Conserva su hora de eleccion: preguntarla de nuevo no la renueva.
@@ -1175,7 +1295,7 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   // 11:00 eran de su cita, y pidio hablar con alguien. El codigo lo sabe
   // (`creadas`: las citas que ESTE telefono agendo por el chat) y lo dice.
   const AG_NOMBRE_DE_PACIENTE = /^[a-záéíóúüñ][a-záéíóúüñ']*( [a-záéíóúüñ][a-záéíóúüñ']*){0,3}$/i;
-  const AG_LEXICO_COBRO = /(pag|señ|sena\b|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel)/i;
+  const AG_LEXICO_COBRO = /(pag|señ|sena|abon|adelant|dep[oó]sit|transf|cobr|acredit|verific|confirm|recib|aprob|comprob|\bqr\b|cancel|sald|liquid|garantiz)/i;
   const agSuCitaEnLaHora = (() => {
     if (agHorasCliente.length !== 1 || agHorasCliente[0].ordinal || pasosCancelar.length || canceladasEnElTurno.length) return null;
     const reg = agRegistros && telefonoDelCliente ? agRegistros[telefonoDelCliente] : null;
@@ -1416,8 +1536,39 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
               .filter((m) => agMotivo(suyas, fechaNombrada, m, agDuracion, agLimite) === '');
             return horas.length ? { persona: consultadas[0], horas: horas.slice(0, 3) } : null;
           })();
+          // EL DIA CONSULTADO EN ESTE TURNO (Bellido, 29/09, #8636 a #8654): Silvana
+          // pidio el sabado 10 de octubre seis veces y siempre recibio «¿para que
+          // dia y en que horario te acomoda?»: el modelo ofrecia horas ocupadas, el
+          // codigo las quitaba todas y volvia a preguntar lo que ya se habia dicho.
+          // Si ese dia se consulto en este turno y lo atiende UNA persona, el
+          // codigo sabe que hay: si no queda nada, se dice; si queda algo, se ofrece
+          // lo que el mismo verifico.
+          // Revision de seguridad del #283: solo se afirma lo que se VERIFICO. Una sola
+          // persona (la que pidio el cliente, si nombro una), con su horario cargado, y
+          // una consulta que cubra TODO el horario de ese dia: con una consulta parcial
+          // («de 15:00 a 16:00») no se sabe si el resto del dia esta lleno.
+          const delDia = fechaNombrada && !cerrado ? agConsultasTurno.filter((c) => c.fecha === fechaNombrada) : [];
+          const personaDia = delDia.length ? delDia[0].persona : '';
+          const tramosDia = delDia.length && delDia[0].horario ? agTramos(delDia[0].horario, agSemanaDe(fechaNombrada)) : null;
+          const verificable = delDia.length > 0 && new Set(delDia.map((c) => c.persona)).size === 1 && !!personaDia
+            && delDia.every((c) => !!c.horario) && Array.isArray(tramosDia) && tramosDia.length > 0
+            && (nombradas.length === 0 || (nombradas.length === 1 && nombradas[0] === personaDia))
+            && tramosDia.every((t) => delDia.some((c) => c.desde <= agInstante(fechaNombrada, t.i) && c.hasta >= agInstante(fechaNombrada, t.f)));
+          const libresDia = verificable
+            ? agLibres(delDia, fechaNombrada, agDuracion, agLimite, AG_GRILLA_MIN)
+              .filter((m) => !agFranja || (m >= agFranja.desde && m < agFranja.hasta)) : null;
           let pregunta;
-          if (conUna) {
+          if (libresDia && libresDia.length === 0 && !conUna) {
+            pregunta = `El ${agDiaTexto(fechaNombrada)} ya no queda espacio libre. ${agOtroDia}`;
+            agFinal = null;
+            avisos.push('dia_sin_espacio');
+          } else if (libresDia && libresDia.length > 0 && !conUna && hora === null) {
+            const nuevas = libresDia.filter((m) => !agOfrecidosAntes(fechaNombrada).includes(m));
+            const ofrecer = (nuevas.length ? nuevas : libresDia).slice(0, 3);
+            pregunta = `El ${agDiaTexto(fechaNombrada)} hay espacio a las ${agLista(ofrecer)}. ${agPrefiere}`;
+            agFinal = { fecha: fechaNombrada, mins: ofrecer };
+            avisos.push('horas_del_codigo');
+          } else if (conUna) {
             const una = conUna.horas.length === 1;
             // «Sí» solo si el cliente pregunto por ESA persona (o por nadie).
             const siEsa = agPregunta && (!nombradas.length || nombradas.includes(conUna.persona));
@@ -1781,9 +1932,13 @@ const NIEGA = /\bno\s+(pude|se pudo|pudimos|quedó|quedo|está|esta)\b/i;
   out.push({ json: {
     respuesta,
     // Con el adelanto a favor no hace falta una persona: se aplica solo.
-    transferir: transferir || qrSinSena || cancelacionFallida || negoServicio || (!!citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion,
-    motivoTransferencia: (transferir || qrSinSena || cancelacionFallida || negoServicio || (citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion)
-      ? ((citaPagadaCancelada && !adelantoAFavor) ? 'el cliente CANCELÓ una cita que ya tenía la seña pagada ('
+    transferir: transferir || qrSinSena || cancelacionFallida || negoServicio || (!!citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion
+      || cancelacionIncierta,
+    motivoTransferencia: (transferir || qrSinSena || cancelacionFallida || negoServicio || (citaPagadaCancelada && !adelantoAFavor) || pasarARecepcion
+      || cancelacionIncierta)
+      ? (cancelacionIncierta ? 'el cliente CONFIRMÓ cancelar o mover su cita' + descIncierta
+          + ' y el modelo falló en ese mismo turno: la cita PUEDE haber quedado cancelada sin una nueva. Revisar la agenda y confirmarle por este chat'
+        : (citaPagadaCancelada && !adelantoAFavor) ? 'el cliente CANCELÓ una cita que ya tenía la seña pagada ('
           + String(citaPagadaCancelada.summary || '') + ', ' + String((citaPagadaCancelada.start || {}).dateTime || '')
           + '): coordinar con él qué pasa con el adelanto'
         : negoServicio ? 'el cliente preguntó por algo que el asistente no sabe si el negocio ofrece: asesorarlo. Escribió: «'

@@ -22,20 +22,9 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     },
     {
-      "desde": "admin/functions/src/catalogoWeb.ts",
+      "desde": "admin/functions/src/modulos/catalogo-web/catalogoWeb.ts",
       "hacia": "admin/functions/src/inventario.ts",
       "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
-    },
-    {
-      "desde": "admin/functions/src/cobroVenta.ts",
-      "hacia": "admin/functions/src/sena.ts",
-      "soloTipo": true,
-      "porque": "Solo tipo: Cobros toma un tipo de la seña (Agenda), y es Agenda la que depende de Cobros; el tipo sube a Cobros al moverlos"
-    },
-    {
-      "desde": "admin/web/src/paginas/Captacion.tsx",
-      "hacia": "admin/web/src/lib/csv.ts",
-      "porque": "csv.ts es un servicio compartido (nota del inventario): pasa a Central al mover productos"
     },
     {
       "desde": "admin/web/src/plataforma/lib/negocios.ts",

@@ -343,7 +343,7 @@ dos se aceptan:
   Cada comparación sigue en tiempo constante. Un valor de una sola línea, que es
   lo que hay hoy en los 22 secretos, se comporta igual que ahora: no hay
   migración.
-- `admin/functions/src/catalogoWeb.ts`, `despertarFlujo()` (líneas 1032 y 1039):
+- `admin/functions/src/modulos/catalogo-web/catalogoWeb.ts`, `despertarFlujo()` (líneas 1032 y 1039):
   hoy manda `secreto.value()` entero como `Bearer` y como clave HMAC hacia el
   webhook de carrito de n8n. Tendría que usar **solo la primera** clave. Si se
   olvida, sale el par completo en una cabecera: es el defecto que hay que

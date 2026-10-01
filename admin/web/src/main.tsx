@@ -18,7 +18,7 @@ const raiz = document.getElementById('raiz');
 if (!raiz) throw new Error('Falta el nodo #raiz');
 
 if (/^\/c\/[0-9a-f]{32}$/.test(window.location.pathname)) {
-  void import('./publico/montar').then((m) => m.montarCatalogo(raiz));
+  void import('./modulos/catalogo-web/publico/montar').then((m) => m.montarCatalogo(raiz));
 } else {
   void import('./consola').then((m) => m.montarConsola(raiz));
 }

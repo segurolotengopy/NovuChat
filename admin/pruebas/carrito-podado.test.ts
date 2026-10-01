@@ -23,8 +23,8 @@
  * comprobar una poda sería más frágil que la poda.
  */
 import { describe, expect, it } from 'vitest';
-import { podarCarrito } from '../web/src/publico/SitioCatalogo.tsx';
-import type { ItemPublico } from '../web/src/publico/tipos.ts';
+import { podarCarrito } from '../web/src/modulos/catalogo-web/publico/SitioCatalogo.tsx';
+import type { ItemPublico } from '../web/src/modulos/catalogo-web/publico/tipos.ts';
 
 const item = (id: string, precio = 10): ItemPublico => ({
   id, nombre: id, descripcion: '', area: 'x', precio, moneda: 'BOB', imagenUrl: '',

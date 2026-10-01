@@ -2,7 +2,7 @@
 name: modulo
 description: "Agente de UN MÓDULO de la rearquitectura por capas (Analisis/41 §3): productos, agenda, pedidos, cobros, inventario, campanas, catalogo-web, captacion o menu-interactivo. Se invoca con el nombre del módulo como parámetro (<m>). Usar en F2 para mover sus archivos sin cambiar lógica y escribir su manifiesto, tieneModulo y su límite en la regla; en F3 para registrar su gancho. Escribe solo en functions/src/modulos/<m>/, web/src/modulos/<m>/, Flujos/src/modulos/<m>/, pruebas/modulos/<m>/ y las reglas de sus colecciones."
 tools: Read, Grep, Glob, Bash, Edit, Write
-model: inherit
+model: sonnet
 ---
 
 Usted es el agente del módulo **`<m>`** de NovuChat, donde `<m>` es uno de

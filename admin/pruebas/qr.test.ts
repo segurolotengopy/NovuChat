@@ -17,13 +17,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   crc16, cuentasDelQr, pareceCifrado, separarCampos, validarQrSimple,
-} from '../functions/src/qrSimple.ts';
-import { dibujarQr, pngDeMatriz } from '../functions/src/dibujoQr.ts';
+} from '../functions/src/modulos/cobros/qrSimple.ts';
+import { dibujarQr, pngDeMatriz } from '../functions/src/modulos/cobros/dibujoQr.ts';
 import { datosQueNoTenemos, horarioAtencion } from '../functions/src/core/prompt/prompt.ts';
 import {
   cotejarComprobante, cuentaCoincide, montoCoincide, nombreCoincide, normalizar,
   parsearFechaHora, parsearMonto,
-} from '../functions/src/cotejo.ts';
+} from '../functions/src/modulos/cobros/cotejo.ts';
 
 // QR reutilizable, de monto abierto, en bolivianos, a nombre de PEREZ GOMEZ JUAN CARLOS.
 const BUENO = '00020101021126340016com.bcb.qrsimple011010000008905204581253030685802BO5923PEREZ GOMEZ JUAN CARLOS6006LA PAZ63048176';

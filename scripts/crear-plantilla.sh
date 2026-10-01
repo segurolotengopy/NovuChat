@@ -33,6 +33,11 @@
 # calzando: el encabezado y el pie fijos no llevan parametros.
 #
 # Despues: ./scripts/listar-plantillas.sh --env .env.platinum --detalle
+#
+# APPS AJENAS (prohibiciones 5 y 7; revision de seguridad del #265). Antes del
+# POST, `negar_app_ajena` corta si el token es de una app ajena o si no se
+# sabe de que app es: con el .env de otro sistema se crearia una plantilla en
+# su WABA. El token va por la entrada estandar, no en los argumentos de curl.
 set -euo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -59,9 +64,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "$ENV_FILE" ]] || { echo "✗ Falta $ENV_FILE"; exit 1; }
+# El candado de apps ajenas, ANTES del .env: queda readonly.
+# shellcheck source=scripts/lib/apps-ajenas.sh
+source scripts/lib/apps-ajenas.sh
 set -a
 # shellcheck disable=SC1090  # ruta variable: la elige --env
-. "./$ENV_FILE"
+case "$ENV_FILE" in /*) . "$ENV_FILE" ;; *) . "./$ENV_FILE" ;; esac
 set +a
 : "${WA_TOKEN:?Falta WA_TOKEN}"
 : "${WABA_ID:?Falta WABA_ID}"
@@ -148,9 +156,10 @@ if [[ $APLICAR -ne 1 ]]; then
   exit 0
 fi
 
-COD=$(curl -s --max-time 30 -o "$TMP/rta.json" -w '%{http_code}' -X POST \
+negar_app_ajena "${WA_APP_ID:-}" token
+COD=$(curl_token -s --max-time 30 -o "$TMP/rta.json" -w '%{http_code}' -X POST \
   "${G}/${WABA_ID}/message_templates" \
-  -H "Authorization: Bearer ${WA_TOKEN}" -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \
   --data-binary @"$TMP/carga.json" || echo 000)
 
 if [[ "$COD" == "200" ]]; then
