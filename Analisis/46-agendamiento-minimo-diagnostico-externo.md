@@ -240,8 +240,10 @@ recepción tras tres rechazos seguidos, que cuesta 0,0113 USD cada vez.
 - Ningún paciente real ha usado B todavía: los defectos que aún no se vieron
   aparecerán con el piloto. Un fallo se corrige o se vuelve al respaldo.
 - B pide tocar el botón para agendar y no acepta un «sí» suelto, a propósito.
-- El PR #293 está sin fusionar: la herramienta de pruebas tiene alertas de
-  CodeQL por corregir.
+- El PR #293 se fusionó el 01/10 (07:01 UTC). Las dos alertas altas de CodeQL
+  de la herramienta de pruebas se corrigen en el PR #297; las nueve medias se
+  descartaron en GitHub con su motivo, porque es una herramienta local que no
+  corre en producción.
 - `Analisis/41` sigue en pausa. B es un diseño de referencia para el próximo
   cliente de agenda, pero llevarlo a la arquitectura por capas es una decisión
   aparte.
