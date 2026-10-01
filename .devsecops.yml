@@ -80,3 +80,36 @@ seguridad:
       aprobado_por: Andres Alberdi
       creado: "2026-08-30"
       vence: "2026-10-31"
+
+  # ---------------------------------------------------------------------------
+  # ACTIVA (01/10/2026): CKV_GHA_7 de Checkov sobre release.yml y
+  # ci-node-firebase.yml. Desde el reusable de seguridad 2.7, el job
+  # `workflows` analiza los workflows (antes Checkov los descartaba sin avisar).
+  # Comprobado con entradas_workflow_dispatch.py del estándar: 13 ok, 0 fallos.
+  # Apartarse del texto del estándar: NovuChat tiene un tercer input, `destino`,
+  # y `tag` y `confirmar` no son obligatorios (se dice abajo). Se revisa al vencer.
+  # ---------------------------------------------------------------------------
+    - id: CKV_GHA_7
+      herramienta: checkov
+      justificacion: >-
+        Regla SLSA sobre workflow_dispatch con inputs, en dos workflows
+        (revisado el 2026-10-01 con entradas_workflow_dispatch.py del estandar:
+        13 ok, 0 fallos; ningun input se interpola en un script). (1)
+        release.yml declara `tipo`, un choice de [auto, patch, minor, major], y
+        `prerelease`, un boolean: GitHub rechaza cualquier otro valor antes de
+        que arranque, y `tipo` llega al shell por variable de entorno
+        (TIPO_ENTRADA). (2) ci-node-firebase.yml declara `destino`, un choice
+        de [dev, produccion] que solo se usa en condiciones `if:`, y `tag` y
+        `confirmar`, de texto y opcionales: `confirmar` solo se compara con la
+        cadena DESPLEGAR en el `if:` de desplegar-produccion; `tag` llega a
+        actions/checkout (`ref:`) y a una variable de entorno (TAG) que el
+        shell usa entre comillas, y antes de desplegar a produccion se exige
+        que sea un tag existente (refs/tags/), sin guion y ancestro de main,
+        y que quien lo lanza este en APROBADORES_PROD; vacio, falla. El camino
+        a dev (destino=dev) construye y despliega github.ref, no el tag. Solo
+        quien tiene permiso de escritura lanza un workflow_dispatch. Quitar los
+        inputs obligaria a editar el workflow en cada release o despliegue
+        manual.
+      aprobado_por: Andres Alberdi
+      creado: "2026-10-01"
+      vence: "2026-12-30"
