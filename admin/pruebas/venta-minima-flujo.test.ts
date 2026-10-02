@@ -574,7 +574,13 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     for (const k of ['plantillaPedido', 'plantillaReserva', 'plantillaDerivacion', 'idiomaPlantillaPedido', 'idiomaPlantillaReserva', 'idiomaPlantillaDerivacion']) expect(base[k], k).toBeTruthy();
     expect(Object.keys(base)).not.toContain('plantillaAviso');
     expect(base['plantillaPedido']).toBe('pedido_registrado');
-    expect(base['plantillaReserva']).toBe('appointment_confirmed');
+    // Decisión de Andres (02/10/2026): reservas y derivaciones usan la MISMA plantilla `pedido_registrado`, con la forma `pedido`
+    // (el texto fijo de Meta dice «Se registró un pedido…» y para una reserva lo da la plantilla, no el código).
+    expect([base['plantillaReserva'], base['plantillaDerivacion']]).toEqual(['pedido_registrado', 'pedido_registrado']);
+    expect([base['formaPlantillaReserva'], base['formaPlantillaDerivacion']]).toEqual(['pedido', 'pedido']);
+    expect([base['idiomaPlantillaPedido'], base['idiomaPlantillaReserva'], base['idiomaPlantillaDerivacion']]).toEqual(['es', 'es', 'es']);
+    for (const f of [QTACO, PRUEBA]) expect(Object.values(configBase(f)).map(String).join('|'), 'Config base').not.toContain('appointment_confirmed');
+    expect(readFileSync(join(AQUI, '../scripts/datos/venta-minima/qtaco.json'), 'utf8')).not.toContain('appointment_confirmed');
     expect(base['destinatariosAviso']).toBe('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO , cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO');
     // Las tres capacidades, encendidas; el catálogo web no existe en este flujo.
     expect([base['pedidosActivo'], base['reservasActivo'], base['promosActivo']]).toEqual([true, true, true]);
@@ -1089,6 +1095,17 @@ describe('no negociable 8: la reserva (día de la semana por código; cada error
     expect(plantillasA(enviada, AV2)).toHaveLength(1);
     expect(detallesA(enviada, AV1)[0]?.cuerpo).toMatch(/Solicitud de reserva/);
     expect(cuerpos(enviada)[0]).toContain('Todavía es una solicitud');
+    // La plantilla es `pedido_registrado` con la forma `pedido`: la variable 1 se rotula «SOLICITUD DE RESERVA», nunca «confirmada».
+    const plantillaReserva = plantillasA(enviada, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>;
+    expect(plantillaReserva.payload['template']?.name).toBe('pedido_registrado');
+    expect(plantillaReserva.payload['template']?.language?.code).toBe('es');
+    const vars = parametrosDe(plantillaReserva);
+    expect(vars).toHaveLength(4);
+    expect(vars[0]).toMatch(/^SOLICITUD DE RESERVA /);
+    expect(vars[1]).toBe('sin cobro');
+    expect(vars[2]).toBe('reserva de mesa por confirmar con el cliente');
+    expect(vars[3]).toBe('no aplica');
+    expect(vars.join(' ')).not.toMatch(/confirmad/i);
     // Un día de la semana equivocado del modelo no entra: el modelo ni siquiera tiene dónde ponerlo.
     const r2 = armarReserva({ extra: { fecha: '2026-10-10', diaDeLaSemana: 'lunes' } });
     expect(cuerpos(r2.resumen)[0]).toContain('sábado 10 de octubre');
@@ -1821,6 +1838,20 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     const d = con(sano);
     expect(d.escribe('quiero hablar con una persona').avisos.some((a) => a.ok)).toBe(true);
     expect(d.escribe('necesito hablar con alguien por favor', { avanzarMin: 10 }).avisos).toHaveLength(0);
+  });
+
+  it('la derivación avisa con `pedido_registrado` en la forma `pedido`: «CONSULTA …», «sin cobro», «el cliente pide hablar con una persona», «no aplica»', () => {
+    const w = crear();
+    const t = con(w).escribe('quiero hablar con una persona');
+    const plantillas = t.avisos.filter((a) => a.tipo === 'template');
+    expect(plantillas.length).toBeGreaterThan(0);
+    for (const a of plantillas) {
+      expect(a.payload['template']?.name).toBe('pedido_registrado');
+      const vars = parametrosDe(a);
+      expect(vars).toHaveLength(4);
+      expect(vars[0]).toMatch(/^CONSULTA /);
+      expect(vars.slice(1)).toEqual(['sin cobro', 'el cliente pide hablar con una persona', 'no aplica']);
+    }
   });
 
   it('dos teléfonos no comparten estado: el pedido del uno no aparece en el otro', () => {
