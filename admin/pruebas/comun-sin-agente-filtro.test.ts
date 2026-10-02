@@ -176,7 +176,7 @@ describe('lo que la revisión de seguridad hizo pasar (01/10): todo se rechaza a
 });
 
 describe('segunda revisión de seguridad (02/10): lo que seguía pasando', () => {
-  const ARROBA = '@'; // escrita así: un «x@y.com» literal en el archivo lo marcaría el saneo de correos
+  const ARROBA = '@'; // escrita aparte: una dirección de correo literal en el archivo la marcaría el saneo
   const rechaza = (lista: string[], esperado: string, o?: object): void => { for (const t of lista) expect(motivo(t, o), t).toBe(esperado); };
   it('pago: transferencia, «se acreditó», validado, exitoso, «llegó tu pago»', () => {
     rechaza(['Recibimos tu transferencia', 'Hemos recibido tu transferencia', 'Tu pago se acreditó', 'Ya se acreditó tu pago', 'Pago validado', 'Pago exitoso', 'Llegó tu pago', 'Tu comprobante fue validado', 'Payment received'], 'afirma_un_hecho');
