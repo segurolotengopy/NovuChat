@@ -455,6 +455,91 @@ describe('Procesar respuesta', () => {
 });
 
 // ===========================================================================
+// F3a-3: el fallo del modelo sale con el boton al asesor (politica «solo se
+// ofrece lo que se cumple»). Cuesta +1 mensaje SOLO en el turno de fallo.
+describe('Procesar respuesta: fallo del modelo con botón', () => {
+  const turno = (item: J, sd: J = {}) => {
+    enCurso(sd);
+    const ent = estado(normalizar(texto('Hola, quiero info')), sd)[0]!;
+    return correr('Procesar respuesta', [item], { 'Estado de la conversación': ent }, sd)[0]!;
+  };
+  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y te paso con una persona del equipo.';
+  const FALLO = /^Disculpa, tuve un problema para responderte\. Si prefieres, toca el botón y te paso con una persona del equipo\.$/;
+  const conBotonAsesor = (r: J) => r['cuerpoMeta']?.interactive?.action?.buttons?.[0]?.reply?.id === 'asesor';
+
+  it('el agente con onError entrega el item con error: texto fijo y botón', () => {
+    const r = turno({ [ITEM]: { json: {}, error: { name: 'NodeApiError', message: 'The model is overloaded' } } });
+    expect(r['respuesta']).toMatch(FALLO);
+    expect(r['avisos']).toContain('fallo_modelo');
+    expect(r['cuerpoMeta'].type).toBe('interactive');
+    expect(conBotonAsesor(r)).toBe(true);
+    expect(r['cuerpoMeta'].interactive.body.text).toMatch(FALLO);
+    expect(r['avisar']).toBe(false);
+  });
+
+  // Forma REAL de n8n 2.36.5: el error del agente viaja como TEXTO en json.error
+  // (con la URL y la clave del proveedor), no en item.error. Nada de eso sale al cliente.
+  it('con json.error en texto, el cliente recibe solo el texto fijo, sin la URL ni la clave', () => {
+    const msg = 'Request failed: https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=XYZ';
+    const r = turno({ error: msg });
+    expect(r['respuesta']).toBe(TEXTO_FALLO);
+    expect(r['avisos']).toContain('fallo_modelo');
+    for (const t of [r['respuesta'], r['cuerpoMeta'].interactive.body.text, r['textoRespaldo']]) {
+      expect(String(t)).not.toMatch(/googleapis|key=|Request failed/);
+    }
+    expect(r['textoRespaldo']).toContain(TEXTO_FALLO);
+    expect(conBotonAsesor(r)).toBe(true);
+  });
+
+  it('cerrada y ya avisada, el fallo no lleva botón ni lo ofrece', () => {
+    const sd: J = {};
+    enCurso(sd);
+    sd['conversaciones'][TEL].etapa = 'cerrado';
+    sd['conversaciones'][TEL].avisado = true;
+    const ent = estado(normalizar(texto('Hola otra vez')), sd)[0]!;
+    const r = correr('Procesar respuesta', [{ error: 'x' }], { 'Estado de la conversación': ent }, sd)[0]!;
+    expect(r['avisos']).toContain('fallo_modelo');
+    expect(r['cuerpoMeta']).toBeUndefined();
+    expect(r['respuesta']).not.toMatch(/bot[oó]n/i);
+    expect(r['textoRespaldo']).toBe(r['respuesta']);
+  });
+
+  it('una salida sin `output` (modelo caído sin error en el item) también', () => {
+    const r = turno({});
+    expect(r['avisos']).toContain('fallo_modelo');
+    expect(conBotonAsesor(r)).toBe(true);
+  });
+
+  it('texto vacío del modelo: respuesta_vacia con botón', () => {
+    const r = turno({ output: '   ' });
+    expect(r['avisos']).toContain('respuesta_vacia');
+    expect(r['avisos']).not.toContain('fallo_modelo');
+    expect(r['respuesta']).toMatch(FALLO);
+    expect(conBotonAsesor(r)).toBe(true);
+  });
+
+  // Contraprueba: el botón no se prende siempre.
+  it('una respuesta normal sin promesa NO lleva botón ni aviso de fallo', () => {
+    const r = turno({ output: 'Claro, te cuento cómo funciona. ¿A qué se dedica tu negocio?' });
+    expect(r['cuerpoMeta']).toBeUndefined();
+    expect(r['avisos']).not.toContain('fallo_modelo');
+    expect(r['avisos']).not.toContain('respuesta_vacia');
+    expect(r['respuesta']).not.toMatch(FALLO);
+  });
+
+  it('el fallo no es un cierre: no avisa a una persona ni marca la conversación', () => {
+    const sd: J = {};
+    const r = turno({ [ITEM]: { json: {}, error: { message: 'x' } } }, sd);
+    expect(r['avisar']).toBe(false);
+    expect(sd['conversaciones'][TEL]['etapa']).not.toBe('cerrado');
+  });
+
+  it('el JSON versionado deja al agente en continueRegularOutput', () => {
+    expect((nodo('AI Agent NovuChat') as J)['onError']).toBe('continueRegularOutput');
+  });
+});
+
+// ===========================================================================
 describe('Ramas sin modelo', () => {
   const ent = () => ({ ...config(), from: TEL, nombrePerfil: 'Ana' });
 
