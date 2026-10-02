@@ -1336,7 +1336,7 @@ describe('P-1: el recorte al tope no vuelve a formar una coincidencia de la red'
 
   it('fuzz determinista (5.000 casos, semilla fija) con campos hostiles: ninguna salida coincide con la red ni pasa el tope', () => {
     let semilla = 20261002;
-    const azar = (): number => { semilla = (Math.imul(semilla, 1664525) + 1013904223) >>> 0; return semilla / 4294967296; };
+    const azar = (): number => { semilla = (Math.imul(semilla, 1664525) + 0x3c6ef35f) >>> 0; return semilla / 2 ** 32; };
     const elige = <T>(a: T[]): T => a[Math.floor(azar() * a.length)]!;
     const trozos = [
       'confirmo tubos', 'confirmo tu', 'confirmamos su', 'confirmo la', 'tu pago', 'recibimos tu pago', 'recibí tu pago', 'pagado',
