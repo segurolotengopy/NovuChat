@@ -63,6 +63,7 @@ export const SUITES_PURAS = [
   'pruebas/core/gancho-sistemas-ajenos.test.ts',
   'pruebas/core/hijos-hermeticos.test.ts',
   'pruebas/core/apps-ajenas-escrituras.test.ts',
+  'pruebas/core/cotejar-ids-ajenos.test.ts',
   'pruebas/campanas-consola.test.ts',
   'pruebas/central/contrato-f1b-puras.test.ts',
   'pruebas/candado-agenda.test.ts',
