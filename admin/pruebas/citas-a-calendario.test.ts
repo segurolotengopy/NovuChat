@@ -1,5 +1,5 @@
 /**
- * `scripts/citas-a-calendario.mjs` — LAS CITAS QUE YA EXISTEN, IMPORTABLES.
+ * `scripts/datos/citas-a-calendario.mjs` — LAS CITAS QUE YA EXISTEN, IMPORTABLES.
  *
  * POR QUÉ IMPORTA ESTA SUITE, y no es por el formato del archivo. Una cita
  * cargada a mano en el calendario **no la encuentra el asistente**:
@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'citas-a-calendario.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'citas-a-calendario.mjs');
 const tmp = mkdtempSync(join(tmpdir(), 'citas-'));
 
 const correr = (...args: string[]) => {

@@ -387,11 +387,11 @@ describe('la regla de la frontera (árbol inventado)', () => {
   // archivos (tanda 5), la mudanza reescribe el especificador, y una ruta
   // armada con plantilla no la reescribe (revisión de seguridad del #250).
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
-    const compilados = importsDe(join('admin/scripts/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../functions/lib/'));
-    expect(compilados.map((i) => i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
+    const compilados = importsDe(join('admin/scripts/plataforma/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../../functions/lib/'));
+    expect(compilados.map((i) => i.especificador.replace(/^\.\.\/\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
       .toEqual(expect.arrayContaining(['prepago', 'planes']));
     for (const i of compilados) {
-      expect(i.destino, i.especificador).toBe(`${F}${i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1')}.ts`);
+      expect(i.destino, i.especificador).toBe(`${F}${i.especificador.replace(/^\.\.\/\.\.\/functions\/lib\/(.+)\.js$/, '$1')}.ts`);
     }
   });
 
@@ -471,9 +471,11 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
   });
 
   it('ubicar un archivo y dejar otro nuevo sin zona, o cambiar una transversal, no pasa', () => {
-    const r = comparar(base, {
-      ...base,
-      sinZona: [...base.sinZona.slice(1), `${W}lib/nuevo.ts`],
+    // La base lleva una entrada propia: la deuda real puede quedar sin ninguna.
+    const conUna = { ...base, sinZona: [`${W}lib/viejo.ts`] };
+    const r = comparar(conUna, {
+      ...conUna,
+      sinZona: [`${W}lib/nuevo.ts`],
       transversales: ['admin/pruebas/core/otra.test.ts'],
     });
     expect(r.crecen).toEqual([]);

@@ -55,19 +55,19 @@ const existeArchivo = (r: string) => {
  * entra solo.
  */
 const SIN_CALCULAR: readonly { archivo: string; sitio: string; porque: string }[] = [
-  { archivo: 'admin/scripts/catalogo-demo.mjs', sitio: "join(RAIZ, 'scripts', 'datos', CONJUNTOS[CONJUNTO].archivo)",
+  { archivo: 'admin/scripts/datos/catalogo-demo.mjs', sitio: "join(RAIZ, 'scripts', 'datos', CONJUNTOS[CONJUNTO].archivo)",
     porque: 'el archivo del conjunto sale de un diccionario; el prefijo admin/scripts/datos se verifica' },
-  { archivo: 'admin/scripts/catalogo-demo.mjs', sitio: 'join(DIST, ruta)',
+  { archivo: 'admin/scripts/datos/catalogo-demo.mjs', sitio: 'join(DIST, ruta)',
     porque: 'servidor de la vista previa: el último tramo es la ruta de la petición (admin/web/dist se verifica)' },
   { archivo: 'admin/scripts/probar-csp.mjs', sitio: 'join(DIST, ruta)',
     porque: 'servidor de archivos estáticos: el último tramo es la ruta de la petición (admin/web/dist se verifica)' },
-  { archivo: 'admin/scripts/pase-a-produccion.mjs', sitio: 'join(dirFlujos, a)',
+  { archivo: 'admin/scripts/plataforma/pase-a-produccion.mjs', sitio: 'join(dirFlujos, a)',
     porque: 'nombres de Flujos/ leídos del disco; el prefijo Flujos se verifica' },
-  { archivo: 'admin/scripts/pase-a-produccion.mjs', sitio: "join(REPO, 'admin', 'scripts', 'datos', `negocio-${TENANT}.json`)",
+  { archivo: 'admin/scripts/plataforma/pase-a-produccion.mjs', sitio: "join(REPO, 'admin', 'scripts', 'datos', `negocio-${TENANT}.json`)",
     porque: 'el nombre depende del tenant; el prefijo admin/scripts/datos se verifica' },
   { archivo: 'admin/scripts/probar-cierre.mjs', sitio: "new URL(ARCHIVO, new URL('../../', import.meta.url))",
     porque: "el .env sale de `leer('--env', '.env')` (opción con valor por defecto) y se une a la raíz calculada" },
-  { archivo: 'admin/scripts/sembrar-demos.mjs', sitio: 'new URL(nombre, RAIZ)',
+  { archivo: 'admin/scripts/datos/sembrar-demos.mjs', sitio: 'new URL(nombre, RAIZ)',
     porque: 'el nombre de cada archivo de una lista; la raíz sí se calcula' },
 ];
 
@@ -96,11 +96,11 @@ describe('las rutas escritas en los scripts llevan a un archivo', () => {
     expect(SCRIPTS.length).toBeGreaterThan(40);
     const sitios = SCRIPTS.filter(esJs).flatMap((a) => sitiosDe(a, readFileSync(join(RAIZ, a), 'utf8')).map((s) => ({ a, ...s })));
     const rutas = sitios.map((s) => s.ruta);
-    // pase-a-produccion (join(FUENTES, …)), el compilado de migrar-prepago (new URL(…, import.meta.url))
-    // y el `new URL('../../', import.meta.url)` de sembrar-demos tienen que verse.
-    expect(rutas.some((r) => r?.endsWith('/atencion.ts'))).toBe(true);
+    // el compilado de migrar-prepago (new URL(…, import.meta.url)), la constante de plantilla-catalogo (join(aqui, …) → admin)
+    // y el `new URL('../../', import.meta.url)` de sembrar-demos tienen que verse (pase-a-produccion ya importa con literales).
+    expect(sitios.some((s) => s.a === 'admin/scripts/plataforma/plantilla-catalogo.mjs' && s.ruta === 'admin')).toBe(true);
     expect(rutas.some((r) => r?.startsWith('admin/functions/lib/') && r.endsWith('/prepago.js'))).toBe(true);
-    expect(sitios.some((s) => s.a === 'admin/scripts/sembrar-demos.mjs' && s.ruta === '.')).toBe(true);
+    expect(sitios.some((s) => s.a === 'admin/scripts/datos/sembrar-demos.mjs' && s.ruta === '.')).toBe(true);
     expect(sitios.length).toBeGreaterThan(30);
   });
 

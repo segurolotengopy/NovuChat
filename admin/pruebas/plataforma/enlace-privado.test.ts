@@ -45,7 +45,7 @@ const scriptsMjs = (dir: string): string[] => readdirSync(dir, { withFileTypes: 
   return e.name.endsWith('.mjs') ? [ruta] : [];
 });
 
-const CON_ENLACE = ['alta-comercio.mjs', 'asignar-rol.mjs'].map((f) => join(ADMIN, 'scripts', f));
+const CON_ENLACE = ['alta-comercio.mjs', 'asignar-rol.mjs'].map((f) => join(ADMIN, 'scripts', 'plataforma', f));
 
 describe('Ningún script de admin/scripts escribe en el directorio personal', () => {
   // Para escribir en `~/` hay que nombrarlo: `homedir()`, `$HOME` o `~/`.
@@ -70,7 +70,7 @@ describe('Los scripts no tienen el enlace en la mano: lo pide y lo escribe el m�
   // nunca al script: sin variable, no hay qué imprimir.
   it.each(CON_ENLACE.map((r) => [r.slice(ADMIN.length + 1), r]))('%s', (_nombre, ruta) => {
     const c = codigo(ruta);
-    expect(c).toMatch(/from '\.\/plataforma\/enlace-privado\.mjs'/);
+    expect(c).toMatch(/from '\.\/enlace-privado\.mjs'/);
     expect(c).toMatch(/await guardarEnlaceDeContrasena\(\{/);
     expect(c).not.toMatch(/generatePasswordResetLink|generateEmailVerificationLink|generateSignInWithEmailLink/);
     expect(c).not.toMatch(/\bescribirEnlace\b|\bwriteFileSync\b|\bappendFileSync\b|\bcreateWriteStream\b/);

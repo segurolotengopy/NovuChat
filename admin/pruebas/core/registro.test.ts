@@ -536,8 +536,8 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
 
   // Dos copias más que el §3.3 de Analisis/41 no lista: los scripts de alta.
   it.each([
-    ['alta-comercio', () => leer('admin/scripts/alta-comercio.mjs')],
-    ['asignar-numero', () => leer('admin/scripts/asignar-numero.mjs')],
+    ['alta-comercio', () => leer('admin/scripts/plataforma/alta-comercio.mjs')],
+    ['asignar-numero', () => leer('admin/scripts/plataforma/asignar-numero.mjs')],
   ])(
     '%s: FLUJOS_VALIDOS y DOCUMENTO', (nombre, leerScript) => {
       const texto = leerScript();

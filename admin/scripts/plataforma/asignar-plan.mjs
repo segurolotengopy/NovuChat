@@ -94,12 +94,12 @@
  * (`module.registerHooks`, Node 22.15+), como `pase-a-produccion.mjs`, así que
  * no hace falta compilar.
  *
- *   node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant demo-venta --plan pro --modalidad demostracion
- *   node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant salon-rosa --plan crecimiento --aplicar
- *   node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --titularidad comercio --numero <phone id> --aplicar
- *   node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --conversaciones 500 --precio 120 --aplicar
- *   node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --periodo-prueba 2026-10 --bolsa-prueba 40 --aplicar
- *   node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --cambios plan --precio plan --aplicar
+ *   node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant demo-venta --plan pro --modalidad demostracion
+ *   node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant salon-rosa --plan crecimiento --aplicar
+ *   node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --titularidad comercio --numero <phone id> --aplicar
+ *   node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --conversaciones 500 --precio 120 --aplicar
+ *   node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --periodo-prueba 2026-10 --bolsa-prueba 40 --aplicar
+ *   node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <tenant> --cambios plan --precio plan --aplicar
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
@@ -143,14 +143,14 @@ const {
   RANGO_POR_CONTRATO, copiaDeLimites,
   esIdPlan, limitesDe, mismoMarcador, porContratoDe, precioMensualDe, precioPorContratoDe, precioPorContratoValido,
   valorPorContratoValido,
-} = await import('../functions/src/central/cuenta/planes.ts');
+} = await import('../../functions/src/central/cuenta/planes.ts');
 const {
   BOLSA_PRUEBA_MAXIMA, MODALIDADES, PruebaInvalida, bolsaPruebaValida, camposDerivados, consumidasDe, esModalidad,
   esPeriodo, estadoDeServicio, montoFueraDeContrato, pruebaActual, pruebaNueva,
-} = await import('../functions/src/central/cuenta/prepago.ts');
-const { periodoDe } = await import('../functions/src/central/cuenta/planes.ts');
-const { MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad } = await import('../functions/src/central/ejes.ts');
-const { umbralValido, umbralesDeAtencion } = await import('../functions/src/core/conteo/atencion.ts');
+} = await import('../../functions/src/central/cuenta/prepago.ts');
+const { periodoDe } = await import('../../functions/src/central/cuenta/planes.ts');
+const { MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad } = await import('../../functions/src/central/ejes.ts');
+const { umbralValido, umbralesDeAtencion } = await import('../../functions/src/core/conteo/atencion.ts');
 
 // Mismos formatos que `ID_TENANT` e `ID_NUMERO` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -227,7 +227,7 @@ if (!pideAlgo) {
 }
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <id> [--plan <plan>] [--modalidad <m>]');
+  console.error('\n  node scripts/plataforma/asignar-plan.mjs --proyecto <id> --operador <correo> --tenant <id> [--plan <plan>] [--modalidad <m>]');
   console.error('      [--modelo <id>] [--titularidad <t> --numero <phone_number_id>] [--umbral-operador N --umbral-bloqueo M]');
   console.error('      [--cambios <N|plan>] [--conversaciones <N|plan>] [--precio <USD|plan>]');
   console.error('      [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>] [--aplicar]\n');

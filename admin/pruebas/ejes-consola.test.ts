@@ -38,7 +38,9 @@ import { EjesDeLaCuenta } from '../web/src/central/componentes/EjesDeLaCuenta';
 import { ContadorCambios } from '../web/src/central/componentes/ContadorCambios';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');
+// Base armada con join(aqui, …): la mudanza de suites la recalcula (un join con un argumento no literal, no).
+const RAIZ_ADMIN = join(aqui, '..');
+const leer = (ruta: string) => readFileSync(join(RAIZ_ADMIN, ruta), 'utf8');
 const sinComentarios = (fuente: string) => fuente
   .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -137,7 +139,7 @@ describe('modelo y titularidad: las listas son las del servidor, no una copia', 
     // vale tras cada mudanza y rechaza una copia local de las listas.
     const desde = dirname(join(aqui, '..', 'web', 'src', 'central', 'lib', 'ejes.ts'));
     const destinos = [...ejes.matchAll(/from '(\.{1,2}\/[^']+)'/g)].map((m) => resolve(desde, m[1]));
-    expect(destinos).toContain(join(aqui, '..', 'functions/src/central/ejes'));
+    expect(destinos).toContain(join(RAIZ_ADMIN, 'functions/src/central/ejes'));
   });
 });
 

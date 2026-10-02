@@ -22,7 +22,7 @@
  * en el contrato —un campo que no está en la lista no entra, igual que en las
  * reglas— y exige que el comercio tenga `onboarding` en `flujos` y esté activo.
  *
- *   node scripts/cargar-captacion.mjs --proyecto <id> --tenant novuchat \
+ *   node scripts/datos/cargar-captacion.mjs --proyecto <id> --tenant novuchat \
  *     --archivo scripts/datos/captacion-novuchat.json            # en seco
  *   ... --aplicar                                                 # escribe
  *
@@ -179,7 +179,7 @@ if (!ID_TENANT.test(TENANT)) problemasArgs.push('--tenant inválido (minúsculas
 if (!ARCHIVO) problemasArgs.push('falta --archivo');
 if (problemasArgs.length) {
   console.error('\n  ✗ ' + problemasArgs.join('\n  ✗ '));
-  console.error('\n  node scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json> [--aplicar]\n');
+  console.error('\n  node scripts/datos/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json> [--aplicar]\n');
   process.exit(2);
 }
 
