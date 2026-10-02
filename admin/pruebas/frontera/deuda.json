@@ -22,11 +22,7 @@
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
     }
   ],
-  "sinZona": [
-    "admin/scripts/contar-catalogo.mjs",
-    "admin/scripts/lib/contador-catalogo.mjs",
-    "admin/scripts/sembrar-demos.mjs"
-  ],
+  "sinZona": [],
   "sinResolver": {
     "admin/scripts/medir-zonas.mjs": {
       "cantidad": 1,

@@ -251,7 +251,7 @@ if (!APLICAR && !fichaEnsayo.exists) {
 const tmp = mkdtempSync(join(tmpdir(), 'ensayo-'));
 const archivoTmp = join(tmp, `negocio-ensayo-${CLIENTE}.json`);
 writeFileSync(archivoTmp, JSON.stringify(ensayado, null, 2));
-const carga = spawnSync(process.execPath, [join(aqui, '..', 'cargar-negocio.mjs'), '--proyecto', PROYECTO,
+const carga = spawnSync(process.execPath, [join(aqui, '..', 'datos', 'cargar-negocio.mjs'), '--proyecto', PROYECTO,
   '--tenant', ENSAYO, '--archivo', archivoTmp, ...(LOCAL ? ['--local', LOCAL] : []), ...(APLICAR ? ['--aplicar'] : [])],
   { env: process.env, encoding: 'utf8' });
 rmSync(tmp, { recursive: true, force: true });

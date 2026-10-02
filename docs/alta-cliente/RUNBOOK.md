@@ -100,7 +100,7 @@ node admin/scripts/plataforma/alta-comercio.mjs --proyecto <proyecto> --tenant <
 node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --plan <impulso|crecimiento|pro> [--modalidad <demostracion|prueba|prepago>]
 # Solo si el comercio firmó un contrato a medida (F1b), en la misma corrida o después:
 node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> [--conversaciones <N|plan>] [--cambios <N|plan>] [--precio <USD|plan>] [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>]
-node admin/scripts/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
+node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --listar
 node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
 ```
@@ -191,7 +191,7 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
   versionado, también primero en seco:
 
   ```bash
-  node admin/scripts/cargar-captacion.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/captacion-<id>.json
+  node admin/scripts/datos/cargar-captacion.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/captacion-<id>.json
   ```
 
   El script rechaza lo que no cumple el contrato (más de 8 rubros, un precio
@@ -219,7 +219,7 @@ node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operado
   principal):
 
   ```bash
-  node admin/scripts/cargar-negocio.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/negocio-<id>.json --local "$HOME/NovuChat/CONFIGURACION.local.md"
+  node admin/scripts/datos/cargar-negocio.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/negocio-<id>.json --local "$HOME/NovuChat/CONFIGURACION.local.md"
   ```
 
   Valida con el mismo contrato que `firestore.rules` (largos, enumerados de

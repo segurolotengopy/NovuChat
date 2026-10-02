@@ -780,7 +780,7 @@ describe('Horario de atención', () => {
   });
 
   it('ACEPTA los horarios que ya cargan las semillas', async () => {
-    // Copiados de scripts/sembrar-demos.mjs (los dos demos) y de
+    // Copiados de scripts/datos/sembrar-demos.mjs (los dos demos) y de
     // scripts/sembrar.mjs. Si una semilla cambia de formato, esta prueba
     // tiene que cambiar con ella, o la regla deja afuera datos reales.
     const semana = (h: string, sab = h) => ({

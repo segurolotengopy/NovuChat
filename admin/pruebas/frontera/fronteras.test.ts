@@ -471,9 +471,11 @@ describe('deuda-solo-baja.mjs: el paso de CI que compara la deuda con la base', 
   });
 
   it('ubicar un archivo y dejar otro nuevo sin zona, o cambiar una transversal, no pasa', () => {
-    const r = comparar(base, {
-      ...base,
-      sinZona: [...base.sinZona.slice(1), `${W}lib/nuevo.ts`],
+    // La base lleva una entrada propia: la deuda real puede quedar sin ninguna.
+    const conUna = { ...base, sinZona: [`${W}lib/viejo.ts`] };
+    const r = comparar(conUna, {
+      ...conUna,
+      sinZona: [`${W}lib/nuevo.ts`],
       transversales: ['admin/pruebas/core/otra.test.ts'],
     });
     expect(r.crecen).toEqual([]);

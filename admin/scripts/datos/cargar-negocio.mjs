@@ -76,7 +76,7 @@
  * corrección. Un marcador que no está en la tabla: en seco se avisa en rojo y
  * se sigue; con `--aplicar` se niega.
  *
- *   node scripts/cargar-negocio.mjs --proyecto <id> --tenant platinum \
+ *   node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant platinum \
  *     --archivo scripts/datos/negocio-platinum.json \
  *     [--local <ruta a CONFIGURACION.local.md>]                # en seco
  *   ... --aplicar                                              # escribe
@@ -111,7 +111,7 @@ const VACIAR_AJENOS = args.includes('--vaciar-ajenos');
 
 // El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
 // módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
-const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../../functions/src/central/asistente/comportamiento.ts');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
@@ -119,7 +119,7 @@ const ARCHIVO = opcion('archivo');
 // Por defecto, la tabla de la raíz del repositorio, como `sembrar-demos.mjs`.
 // Desde un worktree hay que apuntar a la de la carpeta principal con `--local`.
 const aqui = dirname(fileURLToPath(import.meta.url));
-const REPO = join(aqui, '..', '..');
+const REPO = join(aqui, '..', '..', '..');
 const LOCAL = opcion('local') ?? join(REPO, 'CONFIGURACION.local.md');
 
 const rojo = (s) => `\x1b[1;31m${s}\x1b[0m`;
@@ -402,7 +402,7 @@ if (!ID_TENANT.test(TENANT)) problemasArgs.push('--tenant inválido (minúsculas
 if (!ARCHIVO) problemasArgs.push('falta --archivo');
 if (problemasArgs.length) {
   console.error('\n  ✗ ' + problemasArgs.join('\n  ✗ '));
-  console.error('\n  node scripts/cargar-negocio.mjs --proyecto <id> --tenant <id> --archivo <json> [--local <CONFIGURACION.local.md>] [--aplicar]\n');
+  console.error('\n  node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant <id> --archivo <json> [--local <CONFIGURACION.local.md>] [--aplicar]\n');
   process.exit(2);
 }
 
@@ -497,7 +497,7 @@ const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = await import('firebase-admin/firestore');
 // El criterio del contador del catálogo, compartido con `contar-catalogo.mjs`.
 const { CLAVES_CONTADOR, contarProductos, escribirContador, limiteDe } =
-  await import('./lib/contador-catalogo.mjs');
+  await import('../modulos/productos/contador-catalogo.mjs');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 
