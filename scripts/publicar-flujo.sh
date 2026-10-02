@@ -150,8 +150,10 @@ fi
 # --- 1b. las credenciales de la instancia: nombre, tipo e id, nunca valores ----
 # Sirven para asignar a cada nodo la credencial que el JSON versionado NOMBRA.
 # Si la API no las lista, se sigue como antes (heredando del flujo vivo).
-curl -s --max-time 30 -o "$TMP/credenciales.json" \
-     -H @- "${API}/credentials?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
+# El codigo HTTP se guarda: con --aplicar, una lista que no llego (403, 5xx) o
+# que llego partida (nextCursor) no es base para decidir credenciales.
+CRED_COD=$(curl -s --max-time 30 -o "$TMP/credenciales.json" -w '%{http_code}' \
+     -H @- "${API}/credentials?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || echo 000)
 
 # --- crear un flujo NUEVO ------------------------------------------------------
 # Hasta el 17/09/2026 un flujo nuevo solo entraba por la interfaz: importar el
@@ -171,7 +173,7 @@ curl -s --max-time 30 -o "$TMP/credenciales.json" \
 if [[ $CREAR -eq 1 ]]; then
   curl -s --max-time 30 -o "$TMP/lista.json" \
        -H @- "${API}/workflows?limit=250" <<<"X-N8N-API-KEY: ${N8N_API_KEY}" || true
-  APLICAR="$APLICAR" FORZAR="$FORZAR" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
+  APLICAR="$APLICAR" FORZAR="$FORZAR" FLUJO="$FLUJO" TMP="$TMP" CRED_COD="$CRED_COD" python3 - <<'PY'
 import json, os, re, sys
 aplicar = os.environ["APLICAR"] == "1"
 forzar  = os.environ["FORZAR"] == "1"
@@ -201,14 +203,22 @@ for v in referencia.get("nodes", []):
         if ref.get("id"):
             cred_por_tipo.setdefault(tipo, ref)
 try:
-    lista_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8")).get("data") or []
+    crudo_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8"))
+    lista_cred = crudo_cred.get("data") or []
+    hay_mas = bool(crudo_cred.get("nextCursor"))
 except Exception:
-    lista_cred = []
+    lista_cred, hay_mas = [], False
+if aplicar and os.environ.get("CRED_COD") != "200":
+    print(f"{R}✗ ABORTADO: n8n no entrego la lista de credenciales (HTTP {os.environ.get('CRED_COD')}); no se decide por TIPO sin ella.{FIN}")
+    sys.exit(1)
+if aplicar and hay_mas:
+    print(f"{R}✗ ABORTADO: hay mas de 250 credenciales y la lista llego partida; no se decide con una lista parcial.{FIN}")
+    sys.exit(1)
 indice = {}
 for c in lista_cred:
     indice.setdefault((c.get("type"), c.get("name")), []).append(c)
 
-por_nombre, por_tipo, faltantes = [], [], []
+por_nombre, por_tipo, faltantes, ambiguas = [], [], [], []
 for n in nuevo["nodes"]:
     for tipo, ref in list((n.get("credentials") or {}).items()):
         nombre = (ref or {}).get("name") or ""
@@ -216,6 +226,14 @@ for n in nuevo["nodes"]:
         if len(halladas) == 1:
             n["credentials"][tipo] = {"id": halladas[0]["id"], "name": nombre}
             por_nombre.append((n["name"], nombre))
+        elif len(halladas) > 1:
+            # Dos credenciales con el mismo nombre y tipo: no hay forma de saber
+            # cual es la del negocio, y rellenar por TIPO tomaria la de otro.
+            ambiguas.append((n["name"], nombre, len(halladas)))
+        elif nombre:
+            # Un nombre declarado que no existe es un faltante: el relleno por
+            # TIPO es solo para referencias SIN nombre.
+            faltantes.append((n["name"], tipo, nombre))
         elif tipo in cred_por_tipo:
             n["credentials"][tipo] = cred_por_tipo[tipo]
             por_tipo.append((n["name"], tipo, cred_por_tipo[tipo].get("name", "")))
@@ -225,6 +243,10 @@ for n in nuevo["nodes"]:
 for nodo, nombre in por_nombre: print(f"  {V}+{FIN} credencial por nombre: {nodo} <- «{nombre}»")
 for nodo, tipo, nombre in por_tipo: print(f"  {A}+{FIN} credencial por TIPO ({tipo}): {nodo} <- «{nombre}» (de la referencia)")
 for nodo, tipo, nombre in faltantes: print(f"  {R}✗{FIN} {nodo}: sin credencial {tipo} («{nombre}») ni por nombre ni en la referencia")
+for nodo, nombre, cuantas in ambiguas: print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; no se elige una por TIPO")
+if ambiguas:
+    print(f"\n{R}✗ ABORTADO: un nombre de credencial repetido no se resuelve por tipo.{FIN}")
+    sys.exit(1)
 if faltantes:
     print(f"\n{R}✗ ABORTADO: n8n no publica un flujo con un nodo sin credencial.{FIN}")
     sys.exit(1)
@@ -326,7 +348,10 @@ if os.environ["APLICAR"] != "1":
     raise SystemExit(0)
 sello = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 respaldo = f"Flujos/respaldo-estado-{vivo.get('id','sinid')}-{sello}.local.json"
-json.dump(vivo.get("staticData"), open(respaldo, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+fd = os.open(respaldo, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.fchmod(fd, 0o600)
+with os.fdopen(fd, "w", encoding="utf-8") as f:
+    json.dump(vivo.get("staticData"), f, ensure_ascii=False, indent=2)
 print(f"  respaldo del estado: {respaldo}")
 cuerpo = {
     "name": vivo["name"],
@@ -353,7 +378,7 @@ PY
   exit 0
 fi
 
-APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" python3 - <<'PY'
+APLICAR="$APLICAR" FORZAR="$FORZAR" ENV_FILE="$ENV_FILE" FLUJO="$FLUJO" TMP="$TMP" CRED_COD="$CRED_COD" python3 - <<'PY'
 import json, os, sys, datetime
 
 aplicar  = os.environ["APLICAR"] == "1"
@@ -395,14 +420,6 @@ if nombre_vivo and nombre_nuevo and nombre_vivo != nombre_nuevo and not forzar:
     print("  Revise --env: el id del flujo sale de ahi y el archivo de --flujo.")
     print("  Si de verdad quiere renombrar el flujo vivo, use --forzar.")
     sys.exit(1)
-
-# --- respaldo del flujo vivo, solo cuando se va a escribir --------------------
-# El diagnostico no deja archivos: si no toca nada, no ensucia nada.
-if aplicar:
-    sello = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    respaldo = f"Flujos/respaldo-{vivo.get('id','sinid')}-{sello}.local.json"
-    json.dump(vivo, open(respaldo, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
-    print(f"  {G}respaldo del flujo vivo: {respaldo}{FIN}\n")
 
 # --- injerto de credenciales y webhookId, por nombre de nodo -----------------
 por_nombre = {n["name"]: n for n in vivo.get("nodes", [])}
@@ -450,9 +467,11 @@ for n in nuevo["nodes"]:
 # incluidos los que envian a Meta. Meta respondia 190 y el diagnostico lo
 # informaba en verde como «credenciales heredadas».
 try:
-    lista_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8")).get("data")
+    crudo_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8"))
+    lista_cred = crudo_cred.get("data")
+    hay_mas = bool(crudo_cred.get("nextCursor"))
 except Exception:
-    lista_cred = None
+    lista_cred, hay_mas = None, False
 corregidas, faltantes, ambiguas = [], [], []
 if isinstance(lista_cred, list):
     indice = {}
@@ -470,9 +489,9 @@ if isinstance(lista_cred, list):
                     corregidas.append((n["name"], actual.get("name") or "ninguna", nombre))
                 n.setdefault("credentials", {})[tipo] = {"id": halladas[0]["id"], "name": nombre}
             elif len(halladas) > 1:
-                ambiguas.append((n["name"], nombre, len(halladas)))
+                ambiguas.append((n["name"], nombre, len(halladas), tipo))
             else:
-                faltantes.append((n["name"], nombre))
+                faltantes.append((n["name"], nombre, tipo))
 else:
     print(f"  {A}!{FIN} la API no listo las credenciales: se heredan del flujo vivo sin comprobar el nombre")
 
@@ -487,10 +506,62 @@ for nodo, tipo in heredadas_por_tipo:
 for c in sin_par:  print(f"  {A}!{FIN} nodo del flujo vivo que ya no existe: {c}")
 for nodo, antes, despues in corregidas:
     print(f"  {A}~{FIN} credencial corregida: {nodo}: vivo «{antes}» -> «{despues}»")
-for nodo, nombre in faltantes:
+for nodo, nombre, _tipo in faltantes:
     print(f"  {R}✗{FIN} {nodo}: la credencial «{nombre}» no existe en n8n (creela con ese nombre exacto); queda la del flujo vivo")
-for nodo, nombre, cuantas in ambiguas:
+for nodo, nombre, cuantas, _tipo in ambiguas:
     print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; queda la del flujo vivo")
+
+# Con --aplicar, un nodo cuya credencial NO se pudo resolver por nombre y que
+# la recibio por TIPO (relleno desde otra del mismo tipo: no es la del flujo
+# vivo ni la nombrada) puede quedar con la credencial de OTRO negocio. Se
+# aborta antes de escribir. El seco solo muestra el diagnostico.
+por_relleno = set(heredadas_por_tipo)
+sin_resolver = [(f[0], f[2]) for f in faltantes] + [(a[0], a[3]) for a in ambiguas]
+riesgo = sorted({nodo for nodo, tipo in sin_resolver if (nodo, tipo) in por_relleno})
+if riesgo and aplicar:
+    print(f"\n{R}✗ ABORTADO antes de escribir: estos nodos recibirian una credencial por TIPO sin que su nombre se resolviera:{FIN}")
+    for nodo in riesgo: print(f"    {nodo}")
+    print(f"{G}  Cree la credencial con el nombre exacto del JSON (o deje una sola con ese nombre) y reintente.{FIN}")
+    sys.exit(1)
+if riesgo:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: {', '.join(riesgo)} (credencial por TIPO sin nombre resuelto)")
+
+# Sin lista de credenciales confiable no hay nombre que resolver: un 403 o un
+# 5xx dejaba pasar el relleno por TIPO como si todo estuviera bien. Con
+# --aplicar se aborta; el seco avisa.
+bloqueo = None
+if os.environ.get("CRED_COD") != "200":
+    bloqueo = f"n8n no entrego la lista de credenciales (HTTP {os.environ.get('CRED_COD')})"
+elif not isinstance(lista_cred, list) and heredadas_por_tipo:
+    bloqueo = "la respuesta de credenciales no es una lista y hay credenciales rellenadas por TIPO"
+elif hay_mas:
+    bloqueo = "hay mas de 250 credenciales y la lista llego partida: no se decide con una lista parcial"
+if bloqueo and aplicar:
+    print(f"\n{R}✗ ABORTADO antes de escribir: {bloqueo}.{FIN}")
+    sys.exit(1)
+if bloqueo:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: {bloqueo}")
+
+# Un nodo NUEVO cuya referencia no declara nombre recibe «alguna» credencial del
+# tipo. Con mas de una en el flujo vivo, no hay forma de saber cual es la suya.
+ids_vivo = {}
+for v in vivo.get("nodes", []):
+    for tipo, ref in (v.get("credentials") or {}).items():
+        if (ref or {}).get("id"):
+            ids_vivo.setdefault(tipo, set()).add(ref["id"])
+sin_nombre = sorted((nodo, tipo) for nodo, tipo in heredadas_por_tipo
+                    if nodo in nuevos and not ((declaradas.get(nodo) or {}).get(tipo) or {}).get("name"))
+ambiguos_sn = [f"{nodo} ({tipo})" for nodo, tipo in sin_nombre if len(ids_vivo.get(tipo, ())) > 1]
+if ambiguos_sn and aplicar:
+    print(f"\n{R}✗ ABORTADO antes de escribir: nodo nuevo sin nombre de credencial y varias del mismo tipo en el flujo vivo:{FIN}")
+    for x in ambiguos_sn: print(f"    {x}")
+    print(f"{G}  Declare el nombre de la credencial en el JSON y reintente.{FIN}")
+    sys.exit(1)
+if ambiguos_sn:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: {', '.join(ambiguos_sn)} (sin nombre de credencial, varias del tipo)")
+for nodo, tipo in sin_nombre:
+    if f"{nodo} ({tipo})" not in ambiguos_sn:
+        print(f"  {R}!{FIN} {nodo}: sin nombre de credencial; recibe la unica del tipo {tipo} del flujo vivo, sin comprobar el nombre")
 
 if not con_cred:
     print(f"\n  {R}Ningun nodo heredo credenciales.{FIN} Revise que el ID sea el del")
@@ -618,6 +689,18 @@ if marcas:
         print(f"    {m}")
     print(f"{G}  Corra primero:  ./scripts/preparar-import.sh {flujo}{FIN}")
     raise SystemExit(2)
+
+# --- respaldo del flujo vivo, solo cuando se va a escribir --------------------
+# Va DESPUES de todos los abortos: un aborto no deja el respaldo de un PUT que
+# nunca ocurrio. Modo 600: el flujo vivo trae la configuracion real del negocio.
+if aplicar:
+    sello = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    respaldo = f"Flujos/respaldo-{vivo.get('id','sinid')}-{sello}.local.json"
+    fd = os.open(respaldo, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(vivo, f, ensure_ascii=False, indent=2)
+    print(f"  {G}respaldo del flujo vivo: {respaldo}{FIN}\n")
 
 open(f"{tmp}/cuerpo.json", "w", encoding="utf-8").write(serializado)
 
