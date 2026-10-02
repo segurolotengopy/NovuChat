@@ -11,7 +11,9 @@
  * reproducibilidad con la que `solo-rutas.mjs` juzga un PR de tanda.
  */
 import { describe, expect, it } from 'vitest';
-import { archivosAMirar, leerTanda, planDeMudanza, reemplazarRutas, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
+import { existsSync } from 'node:fs';
+import { RAIZ, importsDe } from './frontera.ts';
+import { HERRAMIENTA, archivosAMirar, leerTanda, planDeMudanza, reemplazarRutas, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
 
 const F = 'admin/functions/src';
 const ARCHIVOS: Record<string, string> = {
@@ -137,8 +139,20 @@ describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
     expect(() => leerTanda({ movimientos: [], suitesPuras: [], on: { push: {} } })).toThrow(/claves/);
     expect(() => leerTanda({ movimientos: 'x', suitesPuras: [] })).toThrow(/arreglos/);
   });
-  it('un PR de tanda no toca la herramienta que lo juzga', () => {
-    expect(problemas([...diffPerfecto, M('admin/pruebas/frontera/mudanza.ts')])).toHaveLength(1);
+  it.each([...HERRAMIENTA])('tocar %s en una tanda no pasa', (archivo) => {
+    expect(problemas([...diffPerfecto, M(archivo)])).toHaveLength(1);
+  });
+  it('cada archivo de HERRAMIENTA existe', () => {
+    expect(HERRAMIENTA.filter((r) => !existsSync(`${RAIZ}/${r}`))).toEqual([]);
+  });
+  it('lo que importan los .ts/.mjs de la herramienta (y la suite del lector de rutas) está en HERRAMIENTA', () => {
+    // Su código de nivel superior corre al importar: si uno entra sin estar acá, un PR de tanda lo cambia.
+    const fuentes = [...HERRAMIENTA.filter((r) => /\.(ts|mjs)$/.test(r)), 'admin/pruebas/frontera/rutas-escritas.test.ts'];
+    const faltan = fuentes.flatMap((f) => importsDe(f).map((i) => i.destino)
+      .filter((d): d is string => d !== null && d.startsWith('admin/') && !d.includes('/node_modules/'))
+      .filter((d) => !(HERRAMIENTA as readonly string[]).includes(d))
+      .map((d) => `${f} → ${d}`));
+    expect(faltan).toEqual([]);
   });
   it('suitesPuras no admite ..', () => {
     expect(verificarReproducible({ movimientos: TANDA, suitesPuras: ['pruebas/../../Flujos/x.test.ts'] }, plan, diffPerfecto, leerBase, head())

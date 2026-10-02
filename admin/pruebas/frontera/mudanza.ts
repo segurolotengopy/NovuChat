@@ -3,7 +3,7 @@
  * LA MUDANZA DE F2, como funciones puras
  * =============================================================================
  *
- * `docs/arquitectura/f2-orden-de-movimiento.md`: los archivos de F2 los mueve
+ * `docs/arquitectura/registro.md` («Mover archivos entre zonas»): los archivos de F2 los mueve
  * la coordinadora con un script revisado, no los agentes a mano. Este módulo
  * es la lógica; `mudanza.mjs` (en esta carpeta) es el comando.
  *
@@ -64,7 +64,9 @@ export const RUTA_DE_TANDA = /^docs\/arquitectura\/tandas\/t\d+[a-z]?\.json$/;
 export const HERRAMIENTA = ['admin/pruebas/frontera/mudanza.ts', 'admin/pruebas/frontera/solo-rutas.mjs',
   'admin/pruebas/frontera/mudanza.mjs', 'admin/pruebas/frontera/frontera.ts', 'admin/pruebas/frontera/desde-la-base.sh',
   // Lo que frontera.ts importa: su código de nivel superior corre al importar.
-  'admin/pruebas/frontera/destinos-f2.ts', 'admin/functions/src/registro.ts'] as const;
+  'admin/functions/src/registro.ts',
+  // Las compuertas que juzgan la mudanza: el lector de rutas escritas y las referencias a scripts.
+  'admin/pruebas/frontera/rutas-escritas.ts', 'admin/pruebas/frontera/referencias-a-scripts.test.ts'] as const;
 
 /** Las raíces donde F2 mueve archivos. */
 export const RAICES_DE_MUDANZA = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;
