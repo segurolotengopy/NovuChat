@@ -41,24 +41,52 @@
  *
  * NO HACE NADA MÁS: no lee `.env`, no llama a la red, no importa nada de fuera de `node:`.
  */
-import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // Nada se lee fuera de `Flujos/`: este módulo vive en `Flujos/experimental/comun-sin-agente/`. Las pruebas pasan otro tope.
 const TOPE_POR_DEFECTO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+// Nada de «comprobar que existe y luego leer/escribir»: entre una cosa y la otra el archivo puede cambiar (CodeQL
+// js/file-system-race). Se INTENTA, y se interpreta el error.
+const noExiste = (e) => e && (e.code === 'ENOENT' || e.code === 'ENOTDIR');
+function leerSiExiste(ruta, nombre) {
+  let fd;
+  try {
+    fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (e) {
+    if (noExiste(e)) return null;
+    if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se escribe`);
+    throw e;
+  }
+  try { return readFileSync(fd, 'utf8'); } finally { closeSync(fd); }
+}
+// Escribe SIN seguir enlaces simbólicos: `O_NOFOLLOW` hace que abrir un enlace falle (ELOOP) en vez de pisar lo que apunta.
+function escribirSinSeguirEnlaces(ruta, texto, nombre) {
+  let fd;
+  try {
+    fd = openSync(ruta, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o644);
+  } catch (e) {
+    if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se escribe`);
+    throw e;
+  }
+  try { writeSync(fd, texto); } finally { closeSync(fd); }
+}
+
 /** Lee `construir.config.json` y comprueba su forma. Devuelve el proyecto listo para armar. */
 export function leerProyecto(carpeta, configEnMemoria = null, { tope = TOPE_POR_DEFECTO } = {}) {
   const dir = resolve(carpeta);
   const rutaConfig = join(dir, 'construir.config.json');
   // `configEnMemoria` sirve para armar con el config de otro sin escribir un archivo en su carpeta (las pruebas).
-  if (!configEnMemoria && !existsSync(rutaConfig)) throw new Error(`no existe ${rutaConfig}`);
   let cfg = configEnMemoria;
   if (!cfg) {
-    if (lstatSync(rutaConfig).isSymbolicLink()) throw new Error('construir.config.json no puede ser un enlace simbólico');
+    // Se abre SIN seguir enlaces: un config que es enlace simbólico no se lee.
+    let texto;
+    try { texto = leerSiExiste(rutaConfig, 'construir.config.json'); } catch (e) { throw new Error('construir.config.json no puede ser un enlace simbólico'); }
+    if (texto === null) throw new Error(`no existe ${rutaConfig}`);
     // Sin el texto del archivo en el mensaje: si no es JSON, no se muestran sus bytes.
-    try { cfg = JSON.parse(readFileSync(rutaConfig, 'utf8')); } catch (e) { throw new Error('construir.config.json no es un JSON válido'); }
+    try { cfg = JSON.parse(texto); } catch (e) { throw new Error('construir.config.json no es un JSON válido'); }
   }
   // Se compara por la RUTA REAL: un enlace simbólico dentro de la raíz que apunte afuera no se sigue.
   const real = (r) => { try { return realpathSync(r); } catch (e) { return resolve(r); } };
@@ -70,8 +98,9 @@ export function leerProyecto(carpeta, configEnMemoria = null, { tope = TOPE_POR_
     const abs = isAbsolute(ruta) ? ruta : resolve(dir, ruta);
     // Primero el camino escrito (sin tocar el disco: no se averigua si un archivo de afuera existe), y después la ruta REAL.
     if (fuera(raiz, resolve(abs))) throw new Error(`${que}: «${ruta}» queda fuera de la raíz permitida`);
-    if (!existsSync(abs)) throw new Error(`${que}: no existe ${ruta}`);
-    if (fuera(raiz, real(abs))) throw new Error(`${que}: «${ruta}» queda fuera de la raíz permitida`);
+    let r;
+    try { r = realpathSync(abs); } catch (e) { if (noExiste(e)) throw new Error(`${que}: no existe ${ruta}`); throw e; }
+    if (fuera(raiz, r)) throw new Error(`${que}: «${ruta}» queda fuera de la raíz permitida`);
     return abs;
   };
   const lista = (v) => (v === undefined || v === null ? [] : (Array.isArray(v) ? v : [v]));
@@ -160,10 +189,9 @@ export function construir(carpeta, { verificar = false, config = null, tope } = 
   for (const v of p.variantes) {
     const texto = armarVariante(p, v);
     const ruta = join(p.dir, v.archivo);
-    const actual = existsSync(ruta) ? readFileSync(ruta, 'utf8') : null;
-    // Nunca se escribe a través de un enlace simbólico (pisaría un archivo de afuera).
-    if (existsSync(ruta) && lstatSync(ruta).isSymbolicLink()) throw new Error(`${v.archivo}: es un enlace simbólico y no se escribe`);
-    if (!verificar) writeFileSync(ruta, texto);
+    // Nunca se lee ni se escribe a través de un enlace simbólico (pisaría o leería un archivo de afuera): también con `--verificar`.
+    const actual = leerSiExiste(ruta, v.archivo);
+    if (!verificar) escribirSinSeguirEnlaces(ruta, texto, v.archivo);
     resultado.push({ archivo: v.archivo, nodos: JSON.parse(texto).nodes.length, alDia: actual === texto, existia: actual !== null });
   }
   return resultado;
