@@ -1,7 +1,8 @@
 {
   "flujo": "demo-b-venta-cobro.json",
   "conservanMarcadores": {
-    "Config base": "REEMPLAZAR_"
+    "Config base": "REEMPLAZAR_",
+    "Carrito del catálogo": "REEMPLAZAR_"
   },
   "codigo": {
     "Normalizar entrada": {
