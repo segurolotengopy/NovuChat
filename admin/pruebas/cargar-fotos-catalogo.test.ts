@@ -27,7 +27,7 @@ import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'cargar-fotos-catalogo.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-fotos-catalogo.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;

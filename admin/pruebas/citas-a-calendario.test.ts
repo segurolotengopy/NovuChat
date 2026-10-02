@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'citas-a-calendario.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'citas-a-calendario.mjs');
 const tmp = mkdtempSync(join(tmpdir(), 'citas-'));
 
 const correr = (...args: string[]) => {

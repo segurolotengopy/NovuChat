@@ -47,7 +47,7 @@ import { basename, dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const RAIZ = join(aqui, '..');
+const RAIZ = join(aqui, '..', '..');
 const DIST = join(RAIZ, 'web', 'dist');
 const PUERTO = Number(process.env['PUERTO_DEMO'] ?? 5241);
 

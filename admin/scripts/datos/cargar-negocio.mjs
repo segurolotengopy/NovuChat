@@ -111,7 +111,7 @@ const VACIAR_AJENOS = args.includes('--vaciar-ajenos');
 
 // El mismo filtro y el mismo hash que la Function `verificarComportamiento`: el
 // módulo es puro y Node 22.18+ lo carga sin compilar, como `planes.ts`.
-const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../../functions/src/central/asistente/comportamiento.ts');
 
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
@@ -497,7 +497,7 @@ const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = await import('firebase-admin/firestore');
 // El criterio del contador del catálogo, compartido con `contar-catalogo.mjs`.
 const { CLAVES_CONTADOR, contarProductos, escribirContador, limiteDe } =
-  await import('./lib/contador-catalogo.mjs');
+  await import('../modulos/productos/contador-catalogo.mjs');
 initializeApp({ projectId: PROYECTO });
 const db = getFirestore();
 

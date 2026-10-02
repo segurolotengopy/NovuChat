@@ -457,7 +457,7 @@ describe('importarCatalogo: el permiso es el de crear productos en las reglas', 
 // 4) scripts/contar-catalogo.mjs
 // ===========================================================================
 describe('contar-catalogo.mjs', () => {
-  const SCRIPT = join(aqui, '..', 'scripts', 'contar-catalogo.mjs');
+  const SCRIPT = join(aqui, '..', 'scripts', 'modulos', 'productos', 'contar-catalogo.mjs');
   const U = 'lim-script';
   const V = 'lim-script-otro';
   const correr = (...args: string[]) => {

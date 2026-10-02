@@ -41,7 +41,7 @@
 // catálogo) y con `importarCatalogo`. Tener el criterio dos veces es pedir que
 // un día uno cuente los activos y el otro los documentos.
 const { contadorAlDia, contarProductos, escribirContador, limiteDe } =
-  await import('./lib/contador-catalogo.mjs');
+  await import('./contador-catalogo.mjs');
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
