@@ -262,6 +262,22 @@ const deLaConsola = soloLlenos({
 const estadoComercio = util(r.estadoComercio) === 'activo' ? 'operativo'
   : (util(r.estadoComercio) ? 'suspendido' : (base.estadoComercio ?? 'operativo'));
 
+// --- CAMPAÑAS VIGENTES (Andres, 02/10/2026, D4) ------------------------------
+// Copia de `core/config-del-negocio.js`: el servidor manda en `campanas` SOLO las
+// aplicadas y vigentes con el tope del plan cumplido; aca se vuelve a mirar la
+// vigencia contra el reloj. Viaja como texto JSON y `Normalizar entrada` compara
+// el texto. Sin `campanas` o con el panel caido no hay campañas.
+const campanasActivas = JSON.stringify((Array.isArray(r.campanas) ? r.campanas : [])
+  .filter((k) => k && typeof k.texto === 'string' && k.texto.trim() !== '' && k.texto.length <= 300)
+  .filter((k) => {
+    const desde = Date.parse(String(k.inicio || ''));
+    const hasta = Date.parse(String(k.fin || ''));
+    const ahora = Date.now();
+    return Number.isFinite(desde) && Number.isFinite(hasta) && desde <= ahora && ahora < hasta;
+  })
+  .slice(0, 10)
+  .map((k) => ({ id: String(k.id || '').slice(0, 60), texto: k.texto.trim() })));
+
 return [{ json: derivar({
   ...respaldo,
   ...deLaConsola,
@@ -272,6 +288,7 @@ return [{ json: derivar({
   ...limpiarOferta(ob),
   ...atencion,
   topeAviso,
+  campanasActivas,
   estadoComercio,
   configDeLaConsola: true,
 }) }];
