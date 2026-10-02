@@ -463,7 +463,8 @@ describe('Procesar respuesta: fallo del modelo con botón', () => {
     const ent = estado(normalizar(texto('Hola, quiero info')), sd)[0]!;
     return correr('Procesar respuesta', [item], { 'Estado de la conversación': ent }, sd)[0]!;
   };
-  const FALLO = /problema para responderte.*bot[oó]n/i;
+  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y te paso con una persona del equipo.';
+  const FALLO = /^Disculpa, tuve un problema para responderte\. Si prefieres, toca el botón y te paso con una persona del equipo\.$/;
   const conBotonAsesor = (r: J) => r['cuerpoMeta']?.interactive?.action?.buttons?.[0]?.reply?.id === 'asesor';
 
   it('el agente con onError entrega el item con error: texto fijo y botón', () => {
@@ -474,6 +475,33 @@ describe('Procesar respuesta: fallo del modelo con botón', () => {
     expect(conBotonAsesor(r)).toBe(true);
     expect(r['cuerpoMeta'].interactive.body.text).toMatch(FALLO);
     expect(r['avisar']).toBe(false);
+  });
+
+  // Forma REAL de n8n 2.36.5: el error del agente viaja como TEXTO en json.error
+  // (con la URL y la clave del proveedor), no en item.error. Nada de eso sale al cliente.
+  it('con json.error en texto, el cliente recibe solo el texto fijo, sin la URL ni la clave', () => {
+    const msg = 'Request failed: https://generativelanguage.googleapis.com/v1beta/models/x:generateContent?key=XYZ';
+    const r = turno({ error: msg });
+    expect(r['respuesta']).toBe(TEXTO_FALLO);
+    expect(r['avisos']).toContain('fallo_modelo');
+    for (const t of [r['respuesta'], r['cuerpoMeta'].interactive.body.text, r['textoRespaldo']]) {
+      expect(String(t)).not.toMatch(/googleapis|key=|Request failed/);
+    }
+    expect(r['textoRespaldo']).toContain(TEXTO_FALLO);
+    expect(conBotonAsesor(r)).toBe(true);
+  });
+
+  it('cerrada y ya avisada, el fallo no lleva botón ni lo ofrece', () => {
+    const sd: J = {};
+    enCurso(sd);
+    sd['conversaciones'][TEL].etapa = 'cerrado';
+    sd['conversaciones'][TEL].avisado = true;
+    const ent = estado(normalizar(texto('Hola otra vez')), sd)[0]!;
+    const r = correr('Procesar respuesta', [{ error: 'x' }], { 'Estado de la conversación': ent }, sd)[0]!;
+    expect(r['avisos']).toContain('fallo_modelo');
+    expect(r['cuerpoMeta']).toBeUndefined();
+    expect(r['respuesta']).not.toMatch(/bot[oó]n/i);
+    expect(r['textoRespaldo']).toBe(r['respuesta']);
   });
 
   it('una salida sin `output` (modelo caído sin error en el item) también', () => {
