@@ -72,7 +72,7 @@ describe('las referencias a admin/scripts/* llevan a un archivo o carpeta', () =
     const todas = ARCHIVOS.flatMap((a) => referenciasA(a, readFileSync(join(RAIZ, a), 'utf8')).map((r) => ({ a, ...r })));
     expect(ARCHIVOS.length).toBeGreaterThan(20);
     expect(todas.some((r) => r.a === 'admin/package.json' && r.texto === 'scripts/sembrar.mjs')).toBe(true);
-    expect(todas.some((r) => r.a === '.claude/launch.json' && r.texto === 'admin/scripts/catalogo-demo.mjs')).toBe(true);
+    expect(todas.some((r) => r.a === '.claude/launch.json' && r.texto === 'admin/scripts/datos/catalogo-demo.mjs')).toBe(true);
     expect(todas.some((r) => r.a === 'docs/pase-a-produccion/RUNBOOK.md')).toBe(true);
     expect(todas.some((r) => r.a.startsWith('.claude/agents/'))).toBe(true);
     expect(todas.length).toBeGreaterThan(20);

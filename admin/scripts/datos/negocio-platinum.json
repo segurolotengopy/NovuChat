@@ -1,5 +1,5 @@
 {
-  "_fuente": "CLIENTES/PLATINUM/conocimiento-asistente.md §2 y §4 (15/09/2026), única fuente de los textos: si cambia allá, cambia acá. Se carga con admin/scripts/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. El número de recepción y los calendarios NO van acá (repositorio público): van como marcadores que el script resuelve desde la tabla de CONFIGURACION.local.md.",
+  "_fuente": "CLIENTES/PLATINUM/conocimiento-asistente.md §2 y §4 (15/09/2026), única fuente de los textos: si cambia allá, cambia acá. Se carga con admin/scripts/datos/cargar-negocio.mjs. Las claves que empiezan con `_` son notas y no se escriben. El número de recepción y los calendarios NO van acá (repositorio público): van como marcadores que el script resuelve desde la tabla de CONFIGURACION.local.md.",
   "_supuestos": "Horario, política de cancelación y nombres de los odontólogos son SUPUESTOS de Andres para el demo del 16/09; confirmar con la clínica (§5 del archivo fuente).",
   "negocio": {
     "nombreNegocio": "Clínica Platinum",

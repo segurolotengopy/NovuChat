@@ -90,7 +90,7 @@ comercial §3); un importe en bolivianos calculado por el modelo sería una cifr
 inventada.
 
 **Cómo se carga.** Desde la pestaña «Captación», o de una vez desde un JSON
-versionado con `admin/scripts/cargar-captacion.mjs` (valida el mismo contrato,
+versionado con `admin/scripts/datos/cargar-captacion.mjs` (valida el mismo contrato,
 exige el flujo en la ficha, muestra en seco qué cambia y deja auditoría). El
 contenido de NovuChat, copiado del sitio, está en
 `admin/scripts/datos/captacion-novuchat.json`.

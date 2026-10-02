@@ -31,14 +31,14 @@
  * `--sin-fotos` se ve la página de un comercio que todavía no cargó ninguna.
  *
  * USO:
- *   pnpm web:build && node scripts/catalogo-demo.mjs
+ *   pnpm web:build && node scripts/datos/catalogo-demo.mjs
  *   # abrir la dirección que imprime
  *
- *   node scripts/catalogo-demo.mjs --datos walisuma    # el catálogo de Walisuma
- *   node scripts/catalogo-demo.mjs --paleta bosque     # otra paleta
- *   node scripts/catalogo-demo.mjs --sin-logo          # sin logo cargado
- *   node scripts/catalogo-demo.mjs --sin-fotos         # como un comercio que no cargó ninguna
- *   PUERTO_DEMO=5250 node scripts/catalogo-demo.mjs
+ *   node scripts/datos/catalogo-demo.mjs --datos walisuma    # el catálogo de Walisuma
+ *   node scripts/datos/catalogo-demo.mjs --paleta bosque     # otra paleta
+ *   node scripts/datos/catalogo-demo.mjs --sin-logo          # sin logo cargado
+ *   node scripts/datos/catalogo-demo.mjs --sin-fotos         # como un comercio que no cargó ninguna
+ *   PUERTO_DEMO=5250 node scripts/datos/catalogo-demo.mjs
  */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -47,7 +47,7 @@ import { basename, dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const RAIZ = join(aqui, '..');
+const RAIZ = join(aqui, '..', '..');
 const DIST = join(RAIZ, 'web', 'dist');
 const PUERTO = Number(process.env['PUERTO_DEMO'] ?? 5241);
 
@@ -66,7 +66,7 @@ if (!existsSync(DIST)) {
 // LOS DATOS DEL DEMO B SALEN DEL ARCHIVO VERSIONADO, NO DE UNA COPIA.
 //
 // HASTA EL 22/09/2026 ACÁ HABÍA UNA COPIA A MANO de los seis ítems que
-// `scripts/sembrar-demos.mjs` siembra en `demo-venta`, con un comentario que
+// `scripts/datos/sembrar-demos.mjs` siembra en `demo-venta`, con un comentario que
 // admitía que iba a quedar vieja. Y quedó vieja el día que el catálogo del
 // comercio pasó a diecisiete: la vista previa mostraba seis tarjetas mientras
 // la página de producción mostraba diecisiete. Una vista previa que enseña otra

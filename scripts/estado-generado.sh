@@ -124,7 +124,7 @@ elif [[ ! -d admin/node_modules/firebase-admin ]]; then
   falta "admin/ sin dependencias: cd admin && pnpm install"
 else
   # Lee solo la ficha y cuenta/estado de cada tenant, con las credenciales
-  # por defecto (ADC), igual que admin/scripts/asignar-plan.mjs. No escribe.
+  # por defecto (ADC), igual que admin/scripts/plataforma/asignar-plan.mjs. No escribe.
   node --input-type=module - "$PROYECTO" <<'JS' 2>&1 | sed 's/^/   /'
 const proyecto = process.argv[2];
 const { initializeApp } = await import('firebase-admin/app');

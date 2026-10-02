@@ -325,7 +325,7 @@ ponerlo a propósito, en la máquina donde se hace la demostración. Es la
 diferencia entre un andamio que se ve y uno que se queda puesto.
 
 Para la demostración local, la dirección es la que imprime
-`scripts/catalogo-demo.mjs` al arrancar.
+`scripts/datos/catalogo-demo.mjs` al arrancar.
 
 ## 6. Importar un catálogo desde una planilla
 

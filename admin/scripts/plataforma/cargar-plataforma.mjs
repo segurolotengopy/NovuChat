@@ -28,9 +28,9 @@
  * ni base de datos delante.
  *
  * Uso:
- *   node scripts/cargar-plataforma.mjs                          # seco
- *   node scripts/cargar-plataforma.mjs --emulador --aplicar     # al emulador
- *   node scripts/cargar-plataforma.mjs --proyecto X --aplicar   # a un proyecto real
+ *   node scripts/plataforma/cargar-plataforma.mjs                          # seco
+ *   node scripts/plataforma/cargar-plataforma.mjs --emulador --aplicar     # al emulador
+ *   node scripts/plataforma/cargar-plataforma.mjs --proyecto X --aplicar   # a un proyecto real
  */
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -115,7 +115,7 @@ export function validar(textos) {
 // acá, pero sí comprobar que sigue siendo el mismo archivo que se revisó: si
 // alguien lo reemplaza por un QR sin rótulo, esto avisa. El fallo NO frena la
 // carga —el texto puede cargarse antes que la imagen definitiva—, pero se dice.
-const QR = new URL('../../Demo-Recursos/qr-demo.png', import.meta.url);
+const QR = new URL('../../../Demo-Recursos/qr-demo.png', import.meta.url);
 function huellaDelQr() {
   try {
     const b = readFileSync(QR);
@@ -191,8 +191,8 @@ console.log('  ✓ los cuatro textos llevan su marca y están en tuteo');
 
 if (!APLICAR) {
   console.log('\nSeco: no se abrió ninguna conexión ni se escribió nada.');
-  console.log('  al emulador:  node scripts/cargar-plataforma.mjs --emulador --aplicar');
-  console.log('  a un proyecto: node scripts/cargar-plataforma.mjs --proyecto <id> --aplicar\n');
+  console.log('  al emulador:  node scripts/plataforma/cargar-plataforma.mjs --emulador --aplicar');
+  console.log('  a un proyecto: node scripts/plataforma/cargar-plataforma.mjs --proyecto <id> --aplicar\n');
   process.exit(0);
 }
 

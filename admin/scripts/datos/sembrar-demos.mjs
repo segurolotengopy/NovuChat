@@ -35,13 +35,13 @@
  *     clientes: no hay factura ni monto. Se marca como tal.
  *
  * Uso:
- *   node scripts/sembrar-demos.mjs                          # seco, no conecta
- *   node scripts/sembrar-demos.mjs --proyecto <id> --aplicar
+ *   node scripts/datos/sembrar-demos.mjs                          # seco, no conecta
+ *   node scripts/datos/sembrar-demos.mjs --proyecto <id> --aplicar
  */
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 
-const RAIZ = new URL('../../', import.meta.url);
+const RAIZ = new URL('../../..', import.meta.url);
 
 /** Lee un `.env` sin exportarlo al proceso. */
 function leerEnv(nombre) {
@@ -277,7 +277,7 @@ console.log('  no hay cifras verdaderas todavía y una cifra inventada es peor q
 
 if (!APLICAR) {
   console.log('\nSeco: no se abrió ninguna conexión.');
-  console.log('  node scripts/sembrar-demos.mjs --proyecto <id> --aplicar\n');
+  console.log('  node scripts/datos/sembrar-demos.mjs --proyecto <id> --aplicar\n');
   process.exit(0);
 }
 if (!PROYECTO) {
@@ -323,8 +323,8 @@ registerHooks({
     }
   },
 });
-const { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
-const { MODELO_POR_DEFECTO, TITULARIDAD_POR_DEFECTO } = await import('../functions/src/central/ejes.ts');
+const { CATALOGO_PLANES, PLANES, esIdPlan, limitesDe } = await import('../../functions/src/central/cuenta/planes.ts');
+const { MODELO_POR_DEFECTO, TITULARIDAD_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
 const PLAN_DEMOS = (opcion('plan-demos') ?? 'impulso').trim();
 if (!esIdPlan(PLAN_DEMOS)) {
   console.error(`\n  ✗ --plan-demos desconocido: ${PLAN_DEMOS}. Del catálogo: ${Object.keys(PLANES).join(', ')}\n`);
@@ -379,7 +379,7 @@ for (const c of COMERCIOS) {
   // CONTADOR DEL CATÁLOGO (límite de productos por plan, firestore.rules). El
   // SDK Admin se salta las reglas, así que el contador lo deja este script: con
   // lo que HAY en la colección, que por el `merge` puede ser más que lo de la
-  // lista. Mismo criterio que scripts/contar-catalogo.mjs.
+  // lista. Mismo criterio que scripts/modulos/productos/contar-catalogo.mjs.
   await db.doc(`tenants/${c.id}/contadores/catalogo`).set({
     items: (await db.collection(`tenants/${c.id}/catalogo`).select().get()).size,
     ultimoItem: '',

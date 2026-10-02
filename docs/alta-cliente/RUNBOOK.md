@@ -96,13 +96,13 @@ gcloud auth login && gcloud auth application-default login && gcloud auth applic
 Después, siempre **primero en seco** y luego con `--aplicar`:
 
 ```bash
-node admin/scripts/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>" [--cliente <CARPETA>]
-node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --plan <impulso|crecimiento|pro> [--modalidad <demostracion|prueba|prepago>]
+node admin/scripts/plataforma/alta-comercio.mjs --proyecto <proyecto> --tenant <id> --nombre "<Nombre>" --flujos <flujo> --admin <correo> --nombre-admin "<Nombre>" [--cliente <CARPETA>]
+node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --plan <impulso|crecimiento|pro> [--modalidad <demostracion|prueba|prepago>]
 # Solo si el comercio firmó un contrato a medida (F1b), en la misma corrida o después:
-node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> [--conversaciones <N|plan>] [--cambios <N|plan>] [--precio <USD|plan>] [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>]
-node admin/scripts/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
-node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --listar
-node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
+node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --operador <correo> --tenant <id> [--conversaciones <N|plan>] [--cambios <N|plan>] [--precio <USD|plan>] [--periodo-prueba <aaaa-mm>] [--bolsa-prueba <N>]
+node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto> --tenant <id>
+node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --listar
+node admin/scripts/plataforma/asignar-numero.mjs --proyecto <proyecto> --operador <correo> --tenant <id> --numero <phone_number_id> --waba <waba_id> --flujo <flujo> --alias <clienteNN>
 ```
 
 - **El plan y el contador del catálogo.** `alta-comercio.mjs` deja al comercio
@@ -191,7 +191,7 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   versionado, también primero en seco:
 
   ```bash
-  node admin/scripts/cargar-captacion.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/captacion-<id>.json
+  node admin/scripts/datos/cargar-captacion.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/captacion-<id>.json
   ```
 
   El script rechaza lo que no cumple el contrato (más de 8 rubros, un precio
@@ -219,7 +219,7 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   principal):
 
   ```bash
-  node admin/scripts/cargar-negocio.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/negocio-<id>.json --local "$HOME/NovuChat/CONFIGURACION.local.md"
+  node admin/scripts/datos/cargar-negocio.mjs --proyecto <proyecto> --tenant <id> --archivo admin/scripts/datos/negocio-<id>.json --local "$HOME/NovuChat/CONFIGURACION.local.md"
   ```
 
   Valida con el mismo contrato que `firestore.rules` (largos, enumerados de
@@ -243,7 +243,7 @@ node admin/scripts/asignar-numero.mjs --proyecto <proyecto> --operador <correo> 
   que la verificación lo rechace. Lo que el comercio escriba después en ese
   campo pasa por las dos capas del servidor y recién entonces rige
   (`admin/DISENO.md` §4quater.5). Comercios cargados ANTES del 17/09: una vez,
-  `node admin/scripts/migrar-instrucciones.mjs --proyecto <proyecto>` en seco y
+  `node admin/scripts/plataforma/migrar-instrucciones.mjs --proyecto <proyecto>` en seco y
   con `--aplicar`, antes de desplegar `configuracionFlujo`.
 - En la consola, con el administrador: revisar lo cargado, número de recepción,
   horario, catálogo y **«Cómo trata al cliente»** (tú, usted, vos o impersonal).
@@ -286,7 +286,7 @@ la cuenta revisora de `production`.
 
 La etapa que sigue a la aceptación es **el pase del comercio de PRUEBA a
 PRODUCCIÓN**, con la activación del prepago: precondiciones verificadas con
-`admin/scripts/pase-a-produccion.mjs` (solo lectura), número y WABA del
+`admin/scripts/plataforma/pase-a-produccion.mjs` (solo lectura), número y WABA del
 comercio, `prueba` → primer pago → `prepago`, un ciclo de cobranza en
 observación y, recién entonces, el corte encendido solo en ese comercio. El
 procedimiento es `docs/pase-a-produccion/RUNBOOK.md`; su aplicación a cada

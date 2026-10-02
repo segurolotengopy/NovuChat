@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — script .mjs sin tipos; se importa por sus dos exportaciones
-import { TEXTOS, validar } from '../scripts/cargar-plataforma.mjs';
+import { TEXTOS, validar } from '../scripts/plataforma/cargar-plataforma.mjs';
 
 const sinProblemas = (t: Record<string, string>) => validar(t).length === 0;
 
@@ -75,7 +75,7 @@ describe('Estilo: español boliviano sin voseo', () => {
  * que Andres corrió el script.
  */
 // @ts-expect-error — script .mjs sin tipos
-import { explicar } from '../scripts/cargar-plataforma.mjs';
+import { explicar } from '../scripts/plataforma/cargar-plataforma.mjs';
 
 describe('Traducción de las fallas esperables', () => {
   const P = 'novuchat-admin-dev';
