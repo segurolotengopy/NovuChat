@@ -18,7 +18,7 @@
  * el calendario del negocio. Acá no hay credencial de Google, y borrar una cita
  * de un cliente a ciegas es peor que dejarla.
  *
- *   node scripts/soltar-sena-pendiente.mjs --proyecto <id> --tenant <id> \
+ *   node scripts/plataforma/soltar-sena-pendiente.mjs --proyecto <id> --tenant <id> \
  *       --telefono 59170000000 [--aplicar]
  *
  * Sin `--aplicar` informa y no escribe. Queda en la auditoría del comercio.
@@ -36,7 +36,7 @@ const verde = (t) => console.log(`\x1b[1;32m${t}\x1b[0m`);
 const gris = (t) => console.log(`\x1b[0;90m${t}\x1b[0m`);
 
 if (!PROYECTO || !TENANT || TELEFONO === '') {
-  console.error('\n  node scripts/soltar-sena-pendiente.mjs --proyecto <id> --tenant <id> '
+  console.error('\n  node scripts/plataforma/soltar-sena-pendiente.mjs --proyecto <id> --tenant <id> '
     + '--telefono <digitos> [--motivo <texto>] [--aplicar]\n');
   process.exit(2);
 }

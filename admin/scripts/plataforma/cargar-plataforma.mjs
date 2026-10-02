@@ -28,9 +28,9 @@
  * ni base de datos delante.
  *
  * Uso:
- *   node scripts/cargar-plataforma.mjs                          # seco
- *   node scripts/cargar-plataforma.mjs --emulador --aplicar     # al emulador
- *   node scripts/cargar-plataforma.mjs --proyecto X --aplicar   # a un proyecto real
+ *   node scripts/plataforma/cargar-plataforma.mjs                          # seco
+ *   node scripts/plataforma/cargar-plataforma.mjs --emulador --aplicar     # al emulador
+ *   node scripts/plataforma/cargar-plataforma.mjs --proyecto X --aplicar   # a un proyecto real
  */
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -191,8 +191,8 @@ console.log('  ✓ los cuatro textos llevan su marca y están en tuteo');
 
 if (!APLICAR) {
   console.log('\nSeco: no se abrió ninguna conexión ni se escribió nada.');
-  console.log('  al emulador:  node scripts/cargar-plataforma.mjs --emulador --aplicar');
-  console.log('  a un proyecto: node scripts/cargar-plataforma.mjs --proyecto <id> --aplicar\n');
+  console.log('  al emulador:  node scripts/plataforma/cargar-plataforma.mjs --emulador --aplicar');
+  console.log('  a un proyecto: node scripts/plataforma/cargar-plataforma.mjs --proyecto <id> --aplicar\n');
   process.exit(0);
 }
 

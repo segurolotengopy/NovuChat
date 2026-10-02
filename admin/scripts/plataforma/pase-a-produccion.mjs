@@ -27,8 +27,8 @@
  * Node 22.15+) prueba `.ts` cuando el `.js` no existe, solo para importaciones
  * relativas desde un `.ts`.
  *
- *   node scripts/pase-a-produccion.mjs --proyecto <id> --tenant platinum
- *   node scripts/pase-a-produccion.mjs --proyecto <id> --tenant platinum \
+ *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant platinum
+ *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant platinum \
  *     --aceptacion ~/NovuChat/CLIENTES/PLATINUM/aceptacion.md
  *
  * `--repo <raíz>` apunta a otra copia del repositorio (por defecto, la de este
@@ -64,7 +64,7 @@ if (!PROYECTO) problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/pase-a-produccion.mjs --proyecto <id> --tenant <id> [--aceptacion <aceptacion.md>] [--repo <raíz>]\n');
+  console.error('\n  node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant <id> [--aceptacion <aceptacion.md>] [--repo <raíz>]\n');
   process.exit(2);
 }
 

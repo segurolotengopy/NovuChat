@@ -27,9 +27,9 @@
  * importa `./planes.js`, y Node no reescribe esa extensión al cargar
  * TypeScript sin compilar. Antes de correrlo: `pnpm functions:build`.
  *
- *   node scripts/migrar-prepago.mjs --proyecto <id> --tenant salon-rosa --modalidad prepago --periodo-pagado 2026-09
- *   node scripts/migrar-prepago.mjs --proyecto <id> --tenant salon-rosa --modalidad prueba
- *   node scripts/migrar-prepago.mjs --proyecto <id> --tenant salon-rosa --modalidad prepago --periodo-pagado 2026-09 --aplicar
+ *   node scripts/plataforma/migrar-prepago.mjs --proyecto <id> --tenant salon-rosa --modalidad prepago --periodo-pagado 2026-09
+ *   node scripts/plataforma/migrar-prepago.mjs --proyecto <id> --tenant salon-rosa --modalidad prueba
+ *   node scripts/plataforma/migrar-prepago.mjs --proyecto <id> --tenant salon-rosa --modalidad prepago --periodo-pagado 2026-09 --aplicar
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
@@ -74,7 +74,7 @@ if (MODALIDAD === 'prepago' && !esPeriodo(PERIODO_PAGADO)) problemas.push('--per
 if (PERIODO_PRUEBA && !esPeriodo(PERIODO_PRUEBA)) problemas.push('--periodo-prueba tiene que ser aaaa-mm');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/migrar-prepago.mjs --proyecto <id> --tenant <id> --modalidad <prepago|prueba|demostracion> [--periodo-pagado aaaa-mm] [--periodo-prueba aaaa-mm] [--aplicar]\n');
+  console.error('\n  node scripts/plataforma/migrar-prepago.mjs --proyecto <id> --tenant <id> --modalidad <prepago|prueba|demostracion> [--periodo-pagado aaaa-mm] [--periodo-prueba aaaa-mm] [--aplicar]\n');
   process.exit(2);
 }
 

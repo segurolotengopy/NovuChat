@@ -21,7 +21,7 @@
  * ayuda va en una hoja aparte del cuaderno o en la consola; la hoja de datos
  * tiene encabezados y datos, y nada más.
  *
- * USO:  node scripts/plantilla-catalogo.mjs
+ * USO:  node scripts/plataforma/plantilla-catalogo.mjs
  */
 import { deflateRawSync, crc32 } from 'node:zlib';
 import { writeFileSync } from 'node:fs';

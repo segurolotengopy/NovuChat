@@ -24,7 +24,7 @@
  * eso el alta NO pone `emailVerified: true` a mano como hace el script de
  * pruebas: acá el correo se verifica de verdad.
  *
- *   node scripts/alta-comercio.mjs --proyecto <id> \
+ *   node scripts/plataforma/alta-comercio.mjs --proyecto <id> \
  *     --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
  *     --admin ana@ejemplo.com --nombre-admin "Ana Quispe" [--cliente SALON_ROSA]
  *
@@ -63,7 +63,7 @@ for (const f of FLUJOS) if (!FLUJOS_VALIDOS.has(f)) problemas.push(`flujo descon
 if (!ID_CLIENTE.test(CLIENTE)) problemas.push('--cliente inválido (la carpeta de CLIENTES/: mayúsculas, dígitos y _)');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/alta-comercio.mjs --proyecto <id> --tenant <id> --nombre "<nombre>" \\');
+  console.error('\n  node scripts/plataforma/alta-comercio.mjs --proyecto <id> --tenant <id> --nombre "<nombre>" \\');
   console.error('      --flujos agendamiento[,venta] --admin <correo> [--nombre-admin "<nombre>"] [--cliente <CARPETA>] [--aplicar]\n');
   process.exit(2);
 }
@@ -217,6 +217,6 @@ console.log(`  Verificación: ficha ${ficha.exists ? 'sí' : 'NO'}`
 console.log(`  Plan       : ${cuenta.plan} (${cuenta.limites.productos} productos,`
   + ` ${cuenta.limites.conversaciones} conversaciones) · contador del catálogo en 0\n`);
 console.log('  SIGUE (docs/alta-cliente/RUNBOOK.md, etapa 4): si contrató otro plan,');
-console.log('  `node scripts/asignar-plan.mjs --tenant ... --plan <plan>`; después, su número');
-console.log('  y su alias de ingesta con `node scripts/asignar-numero.mjs --listar` y');
+console.log('  `node scripts/plataforma/asignar-plan.mjs --tenant ... --plan <plan>`; después, su número');
+console.log('  y su alias de ingesta con `node scripts/plataforma/asignar-numero.mjs --listar` y');
 console.log('  `--tenant ... --numero ... --waba ... --flujo ... --alias clienteNN`.\n');

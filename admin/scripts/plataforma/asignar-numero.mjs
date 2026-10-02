@@ -21,8 +21,8 @@
  * LOS ALIAS VÁLIDOS SE LEEN DE `functions/src/core/seguridad/firma.ts`, no de una copia: si se
  * amplía la reserva allá, este script la ve sin tocarlo.
  *
- *   node scripts/asignar-numero.mjs --proyecto <id> --listar
- *   node scripts/asignar-numero.mjs --proyecto <id> --tenant novuchat \
+ *   node scripts/plataforma/asignar-numero.mjs --proyecto <id> --listar
+ *   node scripts/plataforma/asignar-numero.mjs --proyecto <id> --tenant novuchat \
  *     --numero <phone_number_id> --waba <waba_id> --flujo onboarding --alias cliente01
  *
  * CAMBIAR EL NÚMERO DE UN COMERCIO (`--reemplaza <phone_number_id viejo>`,
@@ -34,7 +34,7 @@
  * otro. El secreto del alias no cambia, así que n8n no toca su credencial de
  * ingesta. Queda en la auditoría qué número reemplazó a cuál.
  *
- *   node scripts/asignar-numero.mjs --proyecto <id> --tenant platinum \
+ *   node scripts/plataforma/asignar-numero.mjs --proyecto <id> --tenant platinum \
  *     --numero <nuevo> --waba <waba nueva> --flujo agendamiento --alias cliente02 \
  *     --reemplaza <viejo>
  *
@@ -114,9 +114,9 @@ if (!LISTAR) {
   if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
   if (problemas.length) {
     console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-    console.error('\n  node scripts/asignar-numero.mjs --proyecto <id> --operador <correo> --tenant <id> --numero <phone_number_id> \\');
+    console.error('\n  node scripts/plataforma/asignar-numero.mjs --proyecto <id> --operador <correo> --tenant <id> --numero <phone_number_id> \\');
     console.error('      --waba <waba_id> --flujo <flujo> --alias <clienteNN> [--titularidad novuchat|comercio] [--aplicar]');
-    console.error('  node scripts/asignar-numero.mjs --proyecto <id> --listar\n');
+    console.error('  node scripts/plataforma/asignar-numero.mjs --proyecto <id> --listar\n');
     process.exit(2);
   }
 }

@@ -67,9 +67,9 @@
  * LOS MÓDULOS DEL SERVIDOR SE IMPORTAN SIN COMPILAR con el hook de resolución
  * (`module.registerHooks`), como `asignar-plan.mjs` y `pase-a-produccion.mjs`.
  *
- *   node scripts/migrar-ejes.mjs --proyecto <id>
- *   node scripts/migrar-ejes.mjs --proyecto <id> --plan-demos pro
- *   node scripts/migrar-ejes.mjs --proyecto <id> --plan-demos pro --aplicar
+ *   node scripts/plataforma/migrar-ejes.mjs --proyecto <id>
+ *   node scripts/plataforma/migrar-ejes.mjs --proyecto <id> --plan-demos pro
+ *   node scripts/plataforma/migrar-ejes.mjs --proyecto <id> --plan-demos pro --aplicar
  *
  * Nunca imprime identificadores de número completos: solo sus últimos cuatro dígitos.
  */
@@ -110,7 +110,7 @@ const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 if (!CORREO.test(OPERADOR)) problemas.push('--operador <correo> es obligatorio: es quien queda en la auditoría');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/migrar-ejes.mjs --proyecto <id> --operador <correo> [--plan-demos <plan>] [--tenant <id>] [--aplicar]\n');
+  console.error('\n  node scripts/plataforma/migrar-ejes.mjs --proyecto <id> --operador <correo> [--plan-demos <plan>] [--tenant <id>] [--aplicar]\n');
   process.exit(2);
 }
 

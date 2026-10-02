@@ -38,11 +38,11 @@
  *     ahí;
  *   - sin `--aplicar` no escribe nada.
  *
- *   node scripts/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
- *   node scripts/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
+ *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
+ *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
  *     --cliente platinum --archivo scripts/datos/negocio-platinum.json \
  *     --local <ruta a CONFIGURACION.local.md> [--aplicar]
- *   node scripts/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
+ *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
  *
  * Nunca imprime identificadores completos ni valores de la tabla local.
  */

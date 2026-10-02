@@ -33,8 +33,8 @@
  * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/central/cuenta/prepago.js`): antes de
  * correrlo, `pnpm functions:build`.
  *
- *   node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres
- *   node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres --aplicar
+ *   node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres
+ *   node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres --aplicar
  *
  * `--fuente` es `BCB` salvo que se diga otra cosa. Sin `--aplicar` no
  * escribe nada: dice qué haría.
@@ -78,7 +78,7 @@ if (problemas.length === 0 && !tipoCambioVigente(nuevo, ahoraMs)) {
 }
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco <bs por usd> --fecha aaaa-mm-dd --por <quien> [--fuente BCB] [--aplicar]\n');
+  console.error('\n  node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <id> --tco <bs por usd> --fecha aaaa-mm-dd --por <quien> [--fuente BCB] [--aplicar]\n');
   process.exit(2);
 }
 

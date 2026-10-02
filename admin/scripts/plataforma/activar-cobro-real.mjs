@@ -27,8 +27,8 @@
  * LO QUE NO HACE. No toca el importe de la seña ni la retención (eso es
  * `cargar-negocio.mjs`), y no lee ni muestra la carga útil del QR.
  *
- *   node scripts/activar-cobro-real.mjs --proyecto <id> --tenant <id> [--aplicar]
- *   node scripts/activar-cobro-real.mjs --proyecto <id> --tenant <id> --apagar --aplicar
+ *   node scripts/plataforma/activar-cobro-real.mjs --proyecto <id> --tenant <id> [--aplicar]
+ *   node scripts/plataforma/activar-cobro-real.mjs --proyecto <id> --tenant <id> --apagar --aplicar
  *   ... --motivo 'prueba de seña del 19/09'    # queda en la auditoría
  *
  * Sin `--aplicar` no escribe nada: dice qué cambiaría.
@@ -46,7 +46,7 @@ const verde = (t) => console.log(`\x1b[1;32m${t}\x1b[0m`);
 const gris = (t) => console.log(`\x1b[0;90m${t}\x1b[0m`);
 
 if (!PROYECTO || !TENANT) {
-  console.error('\n  node scripts/activar-cobro-real.mjs --proyecto <id> --tenant <id> '
+  console.error('\n  node scripts/plataforma/activar-cobro-real.mjs --proyecto <id> --tenant <id> '
     + '[--apagar] [--motivo <texto>] [--aplicar]\n');
   process.exit(2);
 }

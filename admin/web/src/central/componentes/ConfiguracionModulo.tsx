@@ -164,7 +164,7 @@ export function ConfiguracionVertical({ tenantId, vertical }: { tenantId: string
    * seña, no contra el QR—, pero es un cobro que no funciona y el comercio no
    * tiene cómo saber por qué. Solo se ve en los QR legibles: en un cifrado no
    * hay nada que leer. La pantalla avisa; quien lo impide de verdad es el paso
-   * de encender el cobro (`admin/scripts/activar-cobro-real.mjs`), como manda
+   * de encender el cobro (`admin/scripts/plataforma/activar-cobro-real.mjs`), como manda
    * CLAUDE.md §7: un límite que solo vive en la pantalla no existe.
    */
   const cobro = (datos['cobroReal'] ?? {}) as { montoFijo?: unknown };
