@@ -31,14 +31,14 @@
  * `--sin-fotos` se ve la página de un comercio que todavía no cargó ninguna.
  *
  * USO:
- *   pnpm web:build && node scripts/catalogo-demo.mjs
+ *   pnpm web:build && node scripts/datos/catalogo-demo.mjs
  *   # abrir la dirección que imprime
  *
- *   node scripts/catalogo-demo.mjs --datos walisuma    # el catálogo de Walisuma
- *   node scripts/catalogo-demo.mjs --paleta bosque     # otra paleta
- *   node scripts/catalogo-demo.mjs --sin-logo          # sin logo cargado
- *   node scripts/catalogo-demo.mjs --sin-fotos         # como un comercio que no cargó ninguna
- *   PUERTO_DEMO=5250 node scripts/catalogo-demo.mjs
+ *   node scripts/datos/catalogo-demo.mjs --datos walisuma    # el catálogo de Walisuma
+ *   node scripts/datos/catalogo-demo.mjs --paleta bosque     # otra paleta
+ *   node scripts/datos/catalogo-demo.mjs --sin-logo          # sin logo cargado
+ *   node scripts/datos/catalogo-demo.mjs --sin-fotos         # como un comercio que no cargó ninguna
+ *   PUERTO_DEMO=5250 node scripts/datos/catalogo-demo.mjs
  */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';

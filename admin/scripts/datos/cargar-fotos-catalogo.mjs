@@ -47,10 +47,10 @@
  * NO IMPRIME NINGÚN SECRETO, y tampoco imprime los datos de las imágenes: de
  * cada una salen el identificador, las medidas y los kilobytes.
  *
- *   node scripts/cargar-fotos-catalogo.mjs --proyecto <id> --tenant <id> \
+ *   node scripts/datos/cargar-fotos-catalogo.mjs --proyecto <id> --tenant <id> \
  *     --fotos CLIENTES/WALISUMA/fotos [--logo CLIENTES/WALISUMA/logo.webp] [--aplicar]
  *
- *   node scripts/cargar-fotos-catalogo.mjs --proyecto <id> --tenant <id> \
+ *   node scripts/datos/cargar-fotos-catalogo.mjs --proyecto <id> --tenant <id> \
  *     --limpiar [--logo] [--aplicar]   # borra las fotos (y vacía el logo con
  *                                      # --logo sin archivo), para volver al otro demo
  *

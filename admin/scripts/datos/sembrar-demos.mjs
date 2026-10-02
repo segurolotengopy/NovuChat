@@ -35,8 +35,8 @@
  *     clientes: no hay factura ni monto. Se marca como tal.
  *
  * Uso:
- *   node scripts/sembrar-demos.mjs                          # seco, no conecta
- *   node scripts/sembrar-demos.mjs --proyecto <id> --aplicar
+ *   node scripts/datos/sembrar-demos.mjs                          # seco, no conecta
+ *   node scripts/datos/sembrar-demos.mjs --proyecto <id> --aplicar
  */
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
@@ -277,7 +277,7 @@ console.log('  no hay cifras verdaderas todavía y una cifra inventada es peor q
 
 if (!APLICAR) {
   console.log('\nSeco: no se abrió ninguna conexión.');
-  console.log('  node scripts/sembrar-demos.mjs --proyecto <id> --aplicar\n');
+  console.log('  node scripts/datos/sembrar-demos.mjs --proyecto <id> --aplicar\n');
   process.exit(0);
 }
 if (!PROYECTO) {

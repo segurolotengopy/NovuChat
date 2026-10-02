@@ -21,9 +21,9 @@
  * queda con su contador verdadero: no puede crear hasta bajar del límite, pero
  * sigue editando y borrando. Se avisa, y es una conversación comercial.
  *
- *   node scripts/contar-catalogo.mjs --proyecto <id>                   # seco
- *   node scripts/contar-catalogo.mjs --proyecto <id> --tenant <id>
- *   node scripts/contar-catalogo.mjs --proyecto <id> [--tenant <id>] --aplicar
+ *   node scripts/modulos/productos/contar-catalogo.mjs --proyecto <id>                   # seco
+ *   node scripts/modulos/productos/contar-catalogo.mjs --proyecto <id> --tenant <id>
+ *   node scripts/modulos/productos/contar-catalogo.mjs --proyecto <id> [--tenant <id>] --aplicar
  *
  * Sin `--aplicar` no escribe nada: dice qué haría. Con `FIRESTORE_EMULATOR_HOST`
  * en el entorno escribe en el emulador (así lo prueba
@@ -52,7 +52,7 @@ const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 
 if (!PROYECTO) {
   console.error('\n  ✗ falta --proyecto');
-  console.error('  node scripts/contar-catalogo.mjs --proyecto <id> [--tenant <id>] [--aplicar]\n');
+  console.error('  node scripts/modulos/productos/contar-catalogo.mjs --proyecto <id> [--tenant <id>] [--aplicar]\n');
   process.exit(2);
 }
 if (TENANT && !ID_TENANT.test(TENANT)) {

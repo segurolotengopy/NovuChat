@@ -76,7 +76,7 @@
  * corrección. Un marcador que no está en la tabla: en seco se avisa en rojo y
  * se sigue; con `--aplicar` se niega.
  *
- *   node scripts/cargar-negocio.mjs --proyecto <id> --tenant platinum \
+ *   node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant platinum \
  *     --archivo scripts/datos/negocio-platinum.json \
  *     [--local <ruta a CONFIGURACION.local.md>]                # en seco
  *   ... --aplicar                                              # escribe
@@ -402,7 +402,7 @@ if (!ID_TENANT.test(TENANT)) problemasArgs.push('--tenant inválido (minúsculas
 if (!ARCHIVO) problemasArgs.push('falta --archivo');
 if (problemasArgs.length) {
   console.error('\n  ✗ ' + problemasArgs.join('\n  ✗ '));
-  console.error('\n  node scripts/cargar-negocio.mjs --proyecto <id> --tenant <id> --archivo <json> [--local <CONFIGURACION.local.md>] [--aplicar]\n');
+  console.error('\n  node scripts/datos/cargar-negocio.mjs --proyecto <id> --tenant <id> --archivo <json> [--local <CONFIGURACION.local.md>] [--aplicar]\n');
   process.exit(2);
 }
 

@@ -27,8 +27,8 @@
  * el calendario del negocio. Así la carga masiva de datos de pacientes la
  * autoriza y la ve quien es dueño de esos datos.
  *
- *   node scripts/citas-a-calendario.mjs --plantilla citas.csv
- *   node scripts/citas-a-calendario.mjs --entrada citas.csv --salida citas.ics \
+ *   node scripts/datos/citas-a-calendario.mjs --plantilla citas.csv
+ *   node scripts/datos/citas-a-calendario.mjs --entrada citas.csv --salida citas.ics \
  *     [--minutos 30] [--pais 591] [--zona America/La_Paz]
  *
  * La planilla lleva una fila por cita, con cabecera:
