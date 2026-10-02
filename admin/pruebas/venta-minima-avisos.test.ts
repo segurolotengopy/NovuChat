@@ -37,7 +37,7 @@ const cargar = (antes = ''): Lib =>
 const L = cargar();
 
 // La lista de palabras que el asistente jamás dice (la misma que `comun.js` define como `VM_PROHIBIDAS`).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const HORA = 60 * 60 * 1000;
@@ -1278,6 +1278,82 @@ describe('S-1: homoglifos y marcas combinantes no esconden una palabra prohibida
     const r = L.avLimpio('x'.repeat(10) + ' validado', 15);
     expect(r).not.toMatch(/\[texto omit?$|\[$/);
     expect(Array.from(r).length).toBeLessThanOrEqual(15);
+  });
+});
+
+// La red mirada como la mira el código: en la forma canónica y en la sin puntuación.
+const coincideConLaRed = (t: string): boolean => {
+  const c: string = L.avCanon(t);
+  return VM_PROHIBIDAS.test(c) || VM_PROHIBIDAS.test(c.replace(/[^\p{L}\p{N}]+/gu, ' ').trim());
+};
+
+describe('P-2 y P-3 en avisos: raíces ampliadas e invisibles que NFKC deja como letras', () => {
+  it('avLimpio omite las conjugaciones nuevas y deja los datos de una carta', () => {
+    for (const t of ['Te confirmo que la mesa está lista', 'Ya lo confirmamos', 'El restaurante te confirmó', 'Tu mesa fue reservada',
+      'Tu mesa queda reservada', 'Quedaron reservadas las mesas']) {
+      expect(L.avLimpio(t, 100), t).toContain('[texto omitido]');
+    }
+    for (const t of ['Mesa reservada para 4', 'Zona reservada', 'Hotel Reservado', 'Vino Tinto Reservado', 'Confirmo que sí']) {
+      expect(L.avLimpio(t, 100), t).toBe(t);
+    }
+  });
+  it('«pa» + U+3164 / U+115F / U+1160 / U+FFA0 / U+2800 + «gado» queda bloqueado', () => {
+    for (const c of ['ㅤ', 'ᅟ', 'ᅠ', 'ﾠ', '⠀']) {
+      expect(L.avLimpio(`pa${c}gado`, 100), JSON.stringify(c)).toBe('[texto omitido]');
+      expect(L.avCanon(`pa${c}gado`), JSON.stringify(c)).toBe('pagado');
+    }
+  });
+});
+
+describe('P-4: enlaces con letras de otras escrituras y con el punto ideográfico', () => {
+  it('«हिंदी.भारत», «ejemplo。com», «ejemplo｡com» y «x.ru» no quedan como un enlace tocable', () => {
+    expect(L.avLimpio('हिंदी.भारत', 100)).toBe('हिंदी. भारत');
+    expect(L.avLimpio('ejemplo。com', 100)).toBe('[enlace omitido]');
+    expect(L.avLimpio('ejemplo｡com', 100)).toBe('[enlace omitido]');
+    expect(L.avLimpio('x.ru', 100)).toBe('x. ru');
+    for (const t of ['हिंदी.भारत', 'ejemplo。com', 'x.ru']) expect(L.avLimpio(t, 100), t).not.toMatch(/[\p{L}\p{M}]\.[\p{L}\p{M}]/u);
+  });
+  it('lo ya cubierto no empeora: «Nro.123», «12.30» y «Bs 12.50»', () => {
+    expect(L.avLimpio('Nro.123', 100)).toBe('Nro. 123');
+    expect(L.avLimpio('Entrega a las 12.30', 100)).toBe('Entrega a las 12.30');
+    expect(L.avLimpio('Total Bs 12.50', 100)).toBe('Total Bs 12.50');
+    expect(L.avLimpio('Av.Arce', 100)).toBe('Av. Arce');
+  });
+});
+
+describe('P-1: el recorte al tope no vuelve a formar una coincidencia de la red', () => {
+  it('«confirmo tubos» cortado en «confirmo tu» ya no sale tal cual', () => {
+    const r = L.avLimpio('a'.repeat(108) + ' confirmo tubos de 3 pulgadas', 120);
+    expect(coincideConLaRed(r)).toBe(false);
+    expect(r).not.toMatch(/confirmo tu$/);
+    expect(Array.from(r).length).toBeLessThanOrEqual(120);
+    expect(r.startsWith('a'.repeat(100))).toBe(true);
+  });
+
+  it('un texto sin riesgo sigue cortándose en el tope, sin cambios', () => {
+    expect(L.avLimpio('b'.repeat(130), 120)).toBe('b'.repeat(120));
+  });
+
+  it('fuzz determinista (5.000 casos, semilla fija) con campos hostiles: ninguna salida coincide con la red ni pasa el tope', () => {
+    let semilla = 20261002;
+    const azar = (): number => { semilla = (Math.imul(semilla, 1664525) + 0x3c6ef35f) >>> 0; return semilla / 2 ** 32; };
+    const elige = <T>(a: T[]): T => a[Math.floor(azar() * a.length)]!;
+    const trozos = [
+      'confirmo tubos', 'confirmo tu', 'confirmamos su', 'confirmo la', 'tu pago', 'recibimos tu pago', 'recibí tu pago', 'pagado',
+      'validado', 'acreditado', 'te avisamos', 'te llamaremos', 'en camino', 'lo consulto', 'está reservada', 'quedó reservada',
+      'te confirmo', 'ya lo confirmamos', 'reserva registrada', 'reservamos tu mesa', 'pa​gado', 'paㅤgado', 'pаgаdo',
+      'ｖａｌｉｄａｄｏ', 'tubos', 'a', 'x', 'Av. Arce 123', 'Nro.123', '12.30', 'hola', 'mesa', ' ', '  ', ' · ', '*', '_', '~', '[texto omitido]',
+      '[texto', 'omitido]', '\n', 'ejemplo.com', 'www.x.com/y',
+    ];
+    for (let i = 0; i < 5000; i++) {
+      const tope = 8 + Math.floor(azar() * 120);
+      const n = 1 + Math.floor(azar() * 14);
+      let t = '';
+      for (let k = 0; k < n; k++) t += (azar() < 0.3 ? 'a'.repeat(Math.floor(azar() * 100)) : '') + (azar() < 0.7 ? ' ' : '') + elige(trozos);
+      const r: string = L.avLimpio(t, tope);
+      expect(coincideConLaRed(r), JSON.stringify([t, tope, r])).toBe(false);
+      expect(Array.from(r).length, JSON.stringify([t, tope, r])).toBeLessThanOrEqual(tope);
+    }
   });
 });
 

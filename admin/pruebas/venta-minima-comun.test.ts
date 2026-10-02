@@ -187,7 +187,7 @@ describe('comun.js: red de palabras prohibidas', () => {
   ];
   it('el regex es el del contrato, literal', () => {
     expect((L.VM_PROHIBIDAS as unknown as RegExp).source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|(est[aá]|qued[oó])\\s+reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu');
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|\\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu|\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b');
     expect((L.VM_PROHIBIDAS as unknown as RegExp).flags).toBe('i');
   });
   it('S3 e I1: las raíces nuevas se atrapan en su contexto de afirmación; «reservado» como dato de una carta o de una zona, no', () => {
@@ -201,6 +201,27 @@ describe('comun.js: red de palabras prohibidas', () => {
       'Vino Tinto Reservado', 'Salón, sala reservada y terraza', 'Mesa reservada para eventos', 'Yo confirmo que llego a las 8']) {
       expect(L.vmTextoSeguro(t), t).toBe(true);
     }
+  });
+  it('P-2: las raíces de reserva y de «te confirmo» cubren las conjugaciones comunes; los datos de una carta o de una zona no', () => {
+    for (const t of ['Te confirmo que la mesa está lista', 'Ya lo confirmamos', 'El restaurante te confirmó', 'Tu mesa fue reservada',
+      'Tu mesa queda reservada', 'Quedaron reservadas las mesas', 'Las mesas están reservadas', 'Ya reservadas', 'Les confirmamos todo',
+      'Se confirmaron los datos', 'Tu mesa ya está ya reservada']) {
+      expect(L.vmTextoSeguro(t), t).toBe(false);
+    }
+    for (const t of ['Mesa reservada para 4', 'Zona reservada', 'Hotel Reservado', 'Vino Tinto Reservado', 'Playa Reservada', 'Confirmo que sí',
+      'Quiero confirmar mi pedido', 'Mesa para 4 personas']) {
+      expect(L.vmTextoSeguro(t), t).toBe(true);
+    }
+    // «Confirmo la dirección» ya caía antes de P-2 (`confirm(o)\s+la\b`, S3): no es un efecto nuevo.
+    expect(L.vmTextoSeguro('Confirmo la dirección')).toBe(false);
+  });
+  it('P-3: los invisibles que NFKC deja como letras (U+3164, U+115F, U+1160, U+FFA0, U+2800) no esconden una palabra', () => {
+    for (const c of ['ㅤ', 'ᅟ', 'ᅠ', 'ﾠ', '⠀']) {
+      const t = `Tu pedido pa${c}gado`;
+      expect(L.vmTextoSeguro(t), JSON.stringify(c)).toBe(false);
+      expect(L.vmCanon(t), JSON.stringify(c)).toContain('pagado');
+    }
+    expect(L.vmTextoSeguro('Tu pedido va a salir')).toBe(true);
   });
   it('S3: se compara en NFKC y sin caracteres de formato (ancho cero, guion blando, ancho completo)', () => {
     for (const t of ['va​lidado', 'val­idado', 'ｖａｌｉｄａｄｏ', 'pa⁠gado', 'v‮alidado', 'con‍firmado']) {
