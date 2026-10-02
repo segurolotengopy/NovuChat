@@ -197,17 +197,31 @@ if repetidos and not forzar:
     print("  Para actualizarlo use el camino normal con su .env; --forzar crea otro igual.")
     sys.exit(1)
 
-cred_por_tipo = {}
+# Por TIPO se rellena solo si la referencia tiene UNA credencial de ese tipo
+# (por id distinto); con varias, elegir la primera sin avisar podria dar la de
+# otro negocio, como en --aplicar.
+cred_por_tipo, tipos_varios = {}, {}
 for v in referencia.get("nodes", []):
     for tipo, ref in (v.get("credentials") or {}).items():
         if ref.get("id"):
-            cred_por_tipo.setdefault(tipo, ref)
+            tipos_varios.setdefault(tipo, {})[ref["id"]] = ref
+for tipo, por_id in tipos_varios.items():
+    if len(por_id) == 1:
+        cred_por_tipo[tipo] = next(iter(por_id.values()))
+lista_llego = True
 try:
     crudo_cred = json.load(open(f"{tmp}/credenciales.json", encoding="utf-8"))
     lista_cred = crudo_cred.get("data") or []
     hay_mas = bool(crudo_cred.get("nextCursor"))
+    lista_llego = isinstance(crudo_cred.get("data"), list)
 except Exception:
-    lista_cred, hay_mas = [], False
+    lista_cred, hay_mas, lista_llego = [], False, False
+if os.environ.get("CRED_COD") != "200":
+    lista_llego = False
+if not aplicar and not lista_llego:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: n8n no entrego la lista de credenciales (HTTP {os.environ.get('CRED_COD')}); no se decide por TIPO sin ella.")
+if not aplicar and hay_mas:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: hay mas de 250 credenciales y la lista llego partida.")
 if aplicar and os.environ.get("CRED_COD") != "200":
     print(f"{R}✗ ABORTADO: n8n no entrego la lista de credenciales (HTTP {os.environ.get('CRED_COD')}); no se decide por TIPO sin ella.{FIN}")
     sys.exit(1)
@@ -218,7 +232,7 @@ indice = {}
 for c in lista_cred:
     indice.setdefault((c.get("type"), c.get("name")), []).append(c)
 
-por_nombre, por_tipo, faltantes, ambiguas = [], [], [], []
+por_nombre, por_tipo, faltantes, ambiguas, ambiguas_tipo = [], [], [], [], []
 for n in nuevo["nodes"]:
     for tipo, ref in list((n.get("credentials") or {}).items()):
         nombre = (ref or {}).get("name") or ""
@@ -234,6 +248,8 @@ for n in nuevo["nodes"]:
             # Un nombre declarado que no existe es un faltante: el relleno por
             # TIPO es solo para referencias SIN nombre.
             faltantes.append((n["name"], tipo, nombre))
+        elif len(tipos_varios.get(tipo, {})) > 1:
+            ambiguas_tipo.append((n["name"], tipo, len(tipos_varios[tipo])))
         elif tipo in cred_por_tipo:
             n["credentials"][tipo] = cred_por_tipo[tipo]
             por_tipo.append((n["name"], tipo, cred_por_tipo[tipo].get("name", "")))
@@ -244,8 +260,12 @@ for nodo, nombre in por_nombre: print(f"  {V}+{FIN} credencial por nombre: {nodo
 for nodo, tipo, nombre in por_tipo: print(f"  {A}+{FIN} credencial por TIPO ({tipo}): {nodo} <- «{nombre}» (de la referencia)")
 for nodo, tipo, nombre in faltantes: print(f"  {R}✗{FIN} {nodo}: sin credencial {tipo} («{nombre}») ni por nombre ni en la referencia")
 for nodo, nombre, cuantas in ambiguas: print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; no se elige una por TIPO")
+for nodo, tipo, cuantas in ambiguas_tipo: print(f"  {R}✗{FIN} {nodo}: la referencia tiene {cuantas} credenciales {tipo} distintas; no se elige una por TIPO")
 if ambiguas:
     print(f"\n{R}✗ ABORTADO: un nombre de credencial repetido no se resuelve por tipo.{FIN}")
+    sys.exit(1)
+if ambiguas_tipo:
+    print(f"\n{R}✗ ABORTADO: varias credenciales del mismo tipo en la referencia; ponga el nombre de la credencial en el JSON.{FIN}")
     sys.exit(1)
 if faltantes:
     print(f"\n{R}✗ ABORTADO: n8n no publica un flujo con un nodo sin credencial.{FIN}")
