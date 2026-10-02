@@ -1698,6 +1698,46 @@ describe('pedido', () => {
     const falla = crear({ dobles: { 'Transcribir audio': () => ({ error: { message: 'sin saldo' } }) } });
     expect(cuerpos(con(falla).audio())[0]).toBe('No pude entender ese mensaje. ¿Me lo escribes?');
   });
+
+  // A3. El token de Meta viaja con la descarga del medio: solo por https, sin seguir redirecciones, y con un id de forma conocida.
+  it('A3: una URL de medio que no es https:// no se descarga (el token no sale por http), y el audio se pide por escrito; con https sí', () => {
+    for (const url of ['http://medios.ejemplo.invalid/m', 'ftp://medios.ejemplo.invalid/m', '//medios.ejemplo.invalid/m', '', 'HTTPS://medios.ejemplo.invalid/m']) {
+      const w = crear({ dobles: { 'Obtener URL del medio': () => ({ url, mime_type: 'audio/ogg', file_size: 100_000 }) } });
+      const t = con(w).audio();
+      expect(t.ejecutados.has('Descargar medio'), url).toBe(false);
+      expect(t.ejecutados.has('Transcribir audio'), url).toBe(false);
+      expect(cuerpos(t)[0], url).toBe('No pude entender ese mensaje. ¿Me lo escribes?');
+    }
+    expect(con(crear()).audio().ejecutados.has('Descargar medio')).toBe(true);
+    // Lo mismo para un comprobante: con una URL http no hay descarga, ni lectura, ni cotejo.
+    const r = armarPedido({ ventana: 5 });
+    const qr = confirmarPedido(r);
+    const ref = String(qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')?.['referencia']);
+    r.w.estado.panel = panel(conCobroPendiente(ref, 84));
+    r.w.mundo.dobles['Obtener URL del medio'] = () => ({ url: 'http://medios.ejemplo.invalid/m', mime_type: 'image/jpeg', file_size: 100_000 });
+    const t = r.c.imagen('media-15');
+    for (const n of ['Descargar medio', 'Leer comprobante (imagen)', 'Cotejar en el servidor']) expect(t.ejecutados.has(n), n).toBe(false);
+  });
+
+  it('A3: un `mediaId` con caracteres fuera de [A-Za-z0-9_-] (o de más de 100) no llega a Meta: ni «Obtener URL del medio» ni descarga', () => {
+    for (const id of ['../../otro', 'abc/def', 'a b', 'id?x=1', 'x'.repeat(101), 'id%2F..']) {
+      const w = crear();
+      const t = con(w).turno({ type: 'audio', audio: { id, mime_type: 'audio/ogg' } });
+      for (const n of ['Obtener URL del medio', 'Descargar medio', 'Transcribir audio']) expect(t.ejecutados.has(n), `${id} → ${n}`).toBe(false);
+    }
+    // Negativo: un id de la forma de Meta sí baja.
+    const bueno = con(crear()).turno({ type: 'audio', audio: { id: 'Abc_123-xyz', mime_type: 'audio/ogg' } });
+    expect(bueno.ejecutados.has('Obtener URL del medio')).toBe(true);
+  });
+
+  it('A3: «Descargar medio» no sigue redirecciones (followRedirects false) en la plantilla y en los dos JSON', () => {
+    for (const f of [PLANTILLA, QTACO, PRUEBA]) {
+      const n = f.nodes.find((x) => x.name === 'Descargar medio') as NonNullable<(typeof f.nodes)[number]>;
+      expect(n.parameters['options']?.redirect?.redirect?.followRedirects).toBe(false);
+      // y la autenticación sigue siendo la credencial del medio (no se quita para «arreglar» el redirect)
+      expect(n.parameters['authentication']).toBe('predefinedCredentialType');
+    }
+  });
 });
 
 describe('carta', () => {

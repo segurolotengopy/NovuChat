@@ -65,7 +65,10 @@ if (sd) {
 const sel = msg.interactive ? (msg.interactive.list_reply || msg.interactive.button_reply) : null;
 const audio = msg.audio || msg.voice || null;
 const medio = msg.image || msg.document || msg.video || audio || null;
-const mediaId = medio && medio.id ? String(medio.id) : '';
+// El id del medio va a la URL de Graph: solo letras, numeros, guion y guion bajo (A3). Un id con otra forma es un medio sin
+// id utilizable: no se baja ni se transcribe, y el turno sigue como si no hubiera medio.
+const mediaIdCrudo = medio && medio.id ? String(medio.id) : '';
+const mediaId = /^[A-Za-z0-9_-]{1,100}$/.test(mediaIdCrudo) ? mediaIdCrudo : '';
 const mimeType = medio && typeof medio.mime_type === 'string' ? medio.mime_type.slice(0, 100) : '';
 // El texto del cliente se recorta en el borde (1.500): una regex de costo cuadratico sobre 80.000
 // espacios tardaba 10 a 15 s por mensaje.

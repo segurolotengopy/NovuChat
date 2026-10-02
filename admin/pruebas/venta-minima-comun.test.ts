@@ -733,6 +733,16 @@ describe('Interpretar entrada', () => {
     expect(uno(mensaje({ type: 'voice', voice: { id: 'media-v1' } }))).toMatchObject({ tipo: 'audio', esAudio: true, mediaId: 'media-v1' });
     expect(uno(mensaje({ type: 'audio', audio: {} }))).toMatchObject({ tipo: 'audio', esAudio: false, mediaId: '' });
   });
+  it('A3: un id de medio que no es [A-Za-z0-9_-]{1,100} se trata como un medio sin id (no se baja, no es comprobante)', () => {
+    const cfg = { ...CFG, cobro: COBRO_PENDIENTE };
+    for (const id of ['../x', 'a/b', 'a b', 'id?x=1', 'x'.repeat(101), '..%2F', 'a\nb']) {
+      expect(uno(mensaje({ type: 'audio', audio: { id } })), id).toMatchObject({ tipo: 'audio', esAudio: false, mediaId: '' });
+      expect(uno(mensaje({ type: 'image', image: { id } }), { cfg }), id).toMatchObject({ esComprobante: false, mediaId: '' });
+    }
+    // negativos: la forma de Meta pasa, con 100 caracteres justos también
+    expect(uno(mensaje({ type: 'audio', audio: { id: 'x'.repeat(100) } }))).toMatchObject({ esAudio: true, mediaId: 'x'.repeat(100) });
+    expect(uno(mensaje({ type: 'image', image: { id: 'A_b-9' } }), { cfg })).toMatchObject({ esComprobante: true, mediaId: 'A_b-9' });
+  });
   it('imagen y documento: el pie de foto es texto; lo que se reporta no es el contenido', () => {
     const i = uno(mensaje({ type: 'image', image: { id: 'media-i1', mime_type: 'image/jpeg', caption: 'mi comprobante' } }));
     expect(i).toMatchObject({ tipo: 'image', texto: 'mi comprobante', mediaId: 'media-i1', mimeType: 'image/jpeg', esAudio: false });

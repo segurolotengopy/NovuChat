@@ -584,7 +584,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
+              "leftValue": "={{ String($json.url || '').startsWith('https://') && Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -597,7 +597,7 @@
         },
         "options": {}
       },
-      "notes": "Verdadero si Meta informó un tamaño y no pasa de 720 kB para un audio ni de 5 MB para una foto o un PDF. Falso: no se descarga ni se llama a Gemini; `Decidir turno` pide que lo escriban (audio) o trata el comprobante como «sin cotejar» (nunca como «cuadra»)."
+      "notes": "Verdadero si la URL que devolvió Meta empieza con https:// (A3: el token de Meta solo viaja por https), si informó un tamaño y no pasa de 720 kB para un audio ni de 5 MB para una foto o un PDF. Falso: no se descarga ni se llama a Gemini; `Decidir turno` pide que lo escriban (audio) o trata el comprobante como «sin cotejar» (nunca como «cuadra»)."
     },
     {
       "id": "descargar-medio",
@@ -615,6 +615,11 @@
         "nodeCredentialType": "whatsAppApi",
         "options": {
           "timeout": 12000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          },
           "response": {
             "response": {
               "responseFormat": "file",
@@ -634,7 +639,7 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1000,
-      "notes": "Baja el archivo CON el token y lo deja como binario `data`. No se guarda en ningún lado y no se reenvía a nadie."
+      "notes": "Baja el archivo CON el token y lo deja como binario `data`, sin seguir redirecciones (A3: el token no sigue a otro anfitrión). No se guarda en ningún lado y no se reenvía a nadie."
     },
     {
       "id": "es-audio",
