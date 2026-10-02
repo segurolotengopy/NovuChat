@@ -48,6 +48,10 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-decision.test.ts',
   'pruebas/venta-minima-integracion.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
+  'pruebas/comun-sin-agente-construir.test.ts',
+  'pruebas/comun-sin-agente-envio.test.ts',
+  'pruebas/comun-sin-agente-filtro.test.ts',
+  'pruebas/comun-sin-agente-mensajes.test.ts',
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',
   // 'pruebas/asignar-rol.test.ts' NO: abre Firebase antes del modo seco (ver arriba).

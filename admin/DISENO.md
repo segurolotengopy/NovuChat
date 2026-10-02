@@ -182,6 +182,8 @@ Esta decisión es barata hoy y cara en seis meses.
 
 ## 7. Estructura del directorio
 
+> Árbol de los inicios: desde F2 las carpetas son las zonas (`docs/arquitectura/registro.md`, «Mover archivos entre zonas»); para ubicar un archivo, ver `docs/arquitectura/indice.md`.
+
 ```
 admin/
 ├── DISENO.md                    este documento

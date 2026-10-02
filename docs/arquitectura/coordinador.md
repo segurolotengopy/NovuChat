@@ -17,6 +17,16 @@ través del registro de módulos** (`registro.md`). El core no nombra a ningún
 módulo: el coordinador recorre los módulos encendidos para ese tenant en el
 orden del registro.
 
+## Dónde vive
+
+El coordinador de turno es `admin/functions/src/ingesta.ts`, en la raíz de
+Functions hasta F3b: tiene su línea de coordinador en `ZONA_POR_ARCHIVO`
+(`admin/pruebas/frontera/frontera.ts`) y la lista de lo que se parte en
+`SE_PARTE` (seña, inventario, captación, campañas y cobro de venta).
+`index.ts` también es coordinador y solo reexporta. `fronteras.test.ts` toma
+de `index.ts` el archivo que reexporta la Function `ingesta` y exige que sea
+coordinador: no lo fija como una constante de ruta, porque F3b lo mueve.
+
 ## Las dos llamadas por turno (`Analisis/41` §2.2 y §2.3)
 
 No se agregan llamadas: las dos por turno ya existen.
@@ -40,6 +50,21 @@ No se agregan llamadas: las dos por turno ya existen.
 `ingesta.ts` (2.130 líneas) va a `functions/src/core/turno/` y **se parte**:
 coordinador más los ganchos de seña, inventario, captación, campañas y cobro de
 venta, que vuelven a sus módulos.
+
+## Pendiente F3b
+
+- **El corte de `ingesta.ts`** (coordinador más ganchos). Hasta entonces, tres
+  cruces hacia arriba en `deuda.json`: `core/turno/cierres.ts`,
+  `modulos/agenda/seguimientos.ts` y `modulos/agenda/sena.ts` importan de
+  `ingesta.ts`.
+- **De la solicitud, no del registro de eventos:** `solicitudTras`,
+  `ETAPAS_PENDIENTES`, `milisegundosDe`, `MINUTOS_RETENCION_POR_DEFECTO` y el
+  tipo `Solicitud` quedan en `ingesta.ts` y bajan con el corte.
+- **La separación seña/prepago es solo directa:** existe el camino
+  `sena.ts → ingesta.ts → prepago.ts`. Una prueba transitiva, o el corte de
+  `ingesta` en F3b.
+- **§5.1 de `Analisis/41`** manda `ingesta.ts` (coordinador) a `core/turno/`,
+  contra «carpeta = zona»: se resuelve en F3b, al partirla.
 
 ## Flujo delgado, gradual (`Analisis/41` §6.1.3)
 

@@ -35,14 +35,14 @@
  * marcadores dentro del código: un marcador en el código sería texto que viaja
  * al JSON, y el JSON tiene que quedar idéntico. Va en una carpeta propia y no
  * al lado de los módulos porque un manifiesto es metadato de UN JSON (qué nodo
- * toma qué archivo), mientras que `Flujos/src/comun/` es código que comparten
+ * toma qué archivo), mientras que `Flujos/src/core/` es código que comparten
  * varios; mezclarlos sugeriría que el manifiesto también se comparte, y no.
  *
  *   {
  *     "flujo": "demo-a-agendamiento.json",
  *     "conservanMarcadores": { "Config base": "REEMPLAZAR_" },
- *     "codigo":  { "Normalizar entrada": "comun/normalizar-entrada.js",
- *                  "Uso extendido": { "archivo": "comun/uso-extendido.js", "saltoFinal": true } },
+ *     "codigo":  { "Normalizar entrada": "core/normalizar-entrada.js",
+ *                  "Uso extendido": { "archivo": "core/uso-extendido.js", "saltoFinal": true } },
  *     "prompts": { "AI Agent (Sofía)": { "systemMessage": "reservas/demo-a.md",
  *                                        "text": "reservas/turno-del-cliente.md" } }
  *   }
@@ -78,7 +78,7 @@
  *
  * `extraer --nuevo reservas` crea el manifiesto de un flujo que no lo tiene,
  * con un archivo por nodo bajo esa carpeta; después se edita a mano para
- * apuntar a `comun/` lo que se comparte y se vuelve a correr `extraer`.
+ * apuntar a `core/` lo que se comparte y se vuelve a correr `extraer`.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';

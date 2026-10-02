@@ -48,7 +48,7 @@
  * `catalogo`, la misma transacción que escribe los ítems deja el contador en
  * el número REAL de productos del comercio —los documentos de la colección,
  * que es lo que cuentan las reglas, no los que tienen `activo: true`— con el
- * criterio compartido de `lib/contador-catalogo.mjs`. Sin sección `catalogo`
+ * criterio compartido de `modulos/productos/contador-catalogo.mjs`. Sin sección `catalogo`
  * no se toca: esta carga no cambió cuántos productos hay, y reconciliar un
  * contador ajeno es trabajo de `contar-catalogo.mjs`.
  *

@@ -1,5 +1,5 @@
 /**
- * `scripts/asignar-rol.mjs` — EL ACCESO DE UNA PERSONA A UN COMERCIO.
+ * `scripts/plataforma/asignar-rol.mjs` — EL ACCESO DE UNA PERSONA A UN COMERCIO.
  *
  * El script escribe con el SDK Admin, que se salta las reglas de Firestore: lo
  * único que impide darle acceso a un comercio equivocado, o darle a una persona

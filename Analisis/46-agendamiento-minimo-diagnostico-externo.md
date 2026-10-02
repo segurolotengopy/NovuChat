@@ -220,30 +220,42 @@ candado y recién borra la vieja), agenda el día correcto cuando el paciente
 escribe la hora, responde sin modelo servicios, dirección y horario (de la
 configuración del negocio), y la imagen que pregunta por una persona recibe una
 respuesta fija sin afirmar quién sale. A dejaba al paciente sin cita al
-reagendar (H8, defecto conocido) y a veces pedía un «sí» de más. A quedó
-aprobado por seguridad y listo para publicarse como respaldo. Decisión de
+reagendar (H8, defecto conocido) y a veces pedía un «sí» de más. A pasó
+la revisión de seguridad, pero **se descartó** por decisión de Andres (01/10):
+el #286 se cerró sin fusionar y su rama se borró de origin. Decisión de
 Andres el 30/09 por la noche, tras ver las dos con teléfono real: B.
 
 **Qué se publicó.** El sha final es `f3f7411` (PR #293). Seguridad aprobó cada
 versión sin hallazgos que bloqueen. La publicación reemplazó el flujo vivo de
-96 nodos por el de 45 con el disparador y las credenciales de Bellido, con un
-respaldo exacto fuera del repositorio y la vuelta atrás probada en seco
-(`--restaurar-respaldo`). Se hizo el 01/10 a las 01:24, a pedido de Andres, antes
-del inicio del piloto. El Demo A volvió a su flujo original de 77 nodos. A las
-01:42 B atendió mensajes reales de Andres sin errores. Cada versión de Bellido
+96 nodos por el de 45 con el disparador y las credenciales de Bellido, y la herramienta guardó
+una copia del flujo anterior fuera del repositorio. **Esa copia no es el plan de
+vuelta atrás:** Andres decidió el 01/10 que, ante una falla, se corrige B y no se
+vuelve a A ni al flujo de 96 nodos. Se publicó el 01/10 a las 01:24, a pedido de
+Andres, antes del inicio del piloto. El Demo A volvió a su flujo original de 77 nodos. A las
+01:42 B atendió mensajes reales de Andres sin errores, y a las 10:04 Andres hizo
+el ciclo completo (hola, agendar, horarios, nombre, confirmación con el mapa,
+redes en un segundo mensaje, ver la cita y cancelarla) sin errores y con el
+evento borrado del calendario. Cada versión de Bellido
 se declara en `docs/versiones-por-cliente.md`.
 
 **Costo en mensajes.** Sin cambio por conversación. B agrega un aviso a
 recepción tras tres rechazos seguidos, que cuesta 0,0113 USD cada vez.
 
+**Costo de modelo, medido.** La sesión de análisis financiero midió 72
+ejecuciones del 01/10 con el uso real que devuelve Google: 63 sin modelo y 9 con
+una sola llamada (`Analisis/43` §8, PR #274). Según esa medición, Gemini es el
+2,5 % del costo variable de B, contra un 18 a 42 % del agente con herramientas:
+lo caro era la arquitectura y no el modelo.
+
 **Lo que queda abierto.**
 - Ningún paciente real ha usado B todavía: los defectos que aún no se vieron
-  aparecerán con el piloto. Un fallo se corrige o se vuelve al respaldo.
+  aparecerán con el piloto. Ante una falla se corrige B: arreglo, prueba y publicación
+  con el «sí» de Andres. No hay vuelta atrás a A (decisión del 01/10).
 - B pide tocar el botón para agendar y no acepta un «sí» suelto, a propósito.
 - El PR #293 se fusionó el 01/10 (07:01 UTC). Las dos alertas altas de CodeQL
-  de la herramienta de pruebas se corrigen en el PR #297; las nueve medias se
-  descartaron en GitHub con su motivo, porque es una herramienta local que no
-  corre en producción.
+  de la herramienta de pruebas se corrigieron en el PR #297 (fusionado el 01/10,
+  07:49 UTC); las nueve medias se descartaron en GitHub con su motivo, porque es
+  una herramienta local que no corre en producción.
 - `Analisis/41` sigue en pausa. B es un diseño de referencia para el próximo
   cliente de agenda, pero llevarlo a la arquitectura por capas es una decisión
   aparte.

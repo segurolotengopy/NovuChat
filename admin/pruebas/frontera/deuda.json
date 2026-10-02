@@ -23,12 +23,7 @@
     }
   ],
   "sinZona": [],
-  "sinResolver": {
-    "admin/scripts/medir-zonas.mjs": {
-      "cantidad": 1,
-      "porque": "Carga frontera.ts con import() después de callar un aviso de Node; frontera.ts no tiene zona"
-    }
-  },
+  "sinResolver": {},
   "transversales": [
     "admin/pruebas/core/registro.test.ts"
   ]

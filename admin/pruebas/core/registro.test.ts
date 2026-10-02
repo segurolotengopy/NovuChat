@@ -37,7 +37,6 @@ import {
 import { FLUJOS } from '../../web/src/central/lib/flujos.ts';
 import { VERTICALES_CONOCIDOS, documentoDeVertical } from '../../functions/src/core/prompt/prompt.ts';
 import { PLANES } from '../../functions/src/central/cuenta/planes.ts';
-import { DESTINOS_F2 } from '../frontera/destinos-f2.ts';
 import { zonaDeCodigo } from '../frontera/frontera.ts';
 
 process.env['GCLOUD_PROJECT'] ??= 'demo-test';
@@ -213,17 +212,17 @@ describe('1. estructura del registro', () => {
     expect(carpetasDe('catalogo-web').functions).toBe('admin/functions/src/modulos/catalogo-web/');
   });
 
-  it('CERO import en registro.ts y en destinos-f2.ts, y Node los carga quitando tipos', () => {
-    for (const ruta of ['admin/functions/src/registro.ts', 'admin/pruebas/frontera/destinos-f2.ts']) {
-      const codigo = sinComentarios(leer(ruta));
-      expect(codigo, ruta).not.toMatch(/^\s*import\b|\bimport\s*\(|\brequire\s*\(|^\s*export\s[^;]*?\bfrom\s/m);
-      expect(codigo, `${ruta}: sintaxis que Node no borra`).not.toMatch(/\benum\s+\w|\bnamespace\s+\w|constructor\s*\(\s*(public|private|protected|readonly)\b/);
+  it('CERO import en registro.ts, y Node carga registro.ts y frontera.ts quitando tipos', () => {
+    const codigoDeRegistro = sinComentarios(leer('admin/functions/src/registro.ts'));
+    expect(codigoDeRegistro, 'registro.ts').not.toMatch(/^\s*import\b|\bimport\s*\(|\brequire\s*\(|^\s*export\s[^;]*?\bfrom\s/m);
+    for (const ruta of ['admin/functions/src/registro.ts', 'admin/pruebas/frontera/frontera.ts']) {
+      expect(sinComentarios(leer(ruta)), `${ruta}: sintaxis que Node no borra`).not.toMatch(/\benum\s+\w|\bnamespace\s+\w|constructor\s*\(\s*(public|private|protected|readonly)\b/);
     }
-    // Lo que hace `medir-zonas.mjs`: si Node no lo puede cargar, los scripts tampoco.
+    // Si Node no puede cargarlos quitando tipos, las herramientas que los cargan tampoco.
     const r = spawnSync(process.execPath, ['--no-warnings', '--input-type=module', '-e', `
       const r = await import(${JSON.stringify(join(RAIZ, 'admin/functions/src/registro.ts'))});
-      const d = await import(${JSON.stringify(join(RAIZ, 'admin/pruebas/frontera/destinos-f2.ts'))});
-      console.log(r.REGISTRO.length, Object.keys(d.DESTINOS_F2).length > 0);`], { encoding: 'utf8' });
+      const f = await import(${JSON.stringify(join(RAIZ, 'admin/pruebas/frontera/frontera.ts'))});
+      console.log(r.REGISTRO.length, Object.keys(f.ZONA_POR_ARCHIVO).length > 0);`], { encoding: 'utf8' });
     expect(r.stderr).toBe('');
     expect(r.stdout.trim()).toBe(`${IDS_MODULOS.length} true`);
   });
@@ -244,8 +243,8 @@ describe('1. estructura del registro', () => {
     );
     expect(nombres.size, 'la derivación de nombres no encontró ninguno').toBeGreaterThan(0);
     for (const ruta of [
-      'admin/functions/src/registro.ts', 'admin/pruebas/frontera/destinos-f2.ts',
-      'admin/pruebas/core/registro.test.ts', 'admin/scripts/medir-zonas.mjs',
+      'admin/functions/src/registro.ts', 'admin/pruebas/frontera/frontera.ts',
+      'admin/pruebas/core/registro.test.ts',
     ]) {
       const texto = leer(ruta).toLowerCase();
       for (const n of nombres) expect(texto.includes(n), `${ruta} nombra a un cliente`).toBe(false);
@@ -471,12 +470,8 @@ describe('7. Functions: el registro contra index.ts', () => {
     }
   });
 
-  // La zona sale de `zonaDeCodigo` (inventario, carpeta o prefijo), no de la
-  // clave vieja del inventario: un archivo movido a `modulos/<m>/` ya no tiene
-  // clave y la prueba lo saltaba (F2, tanda cero). Las partes pendientes
-  // (`seParte`) se buscan por nombre de archivo, que F2 no cambia.
-  const SE_PARTE_POR_NOMBRE = new Map(Object.entries(DESTINOS_F2)
-    .filter(([, d]) => d.seParte?.length).map(([k, d]) => [k.slice(k.lastIndexOf('/') + 1), d.seParte!]));
+  // La zona sale de `zonaDeCodigo` (la carpeta, más lo que anota SE_PARTE): un
+  // archivo movido a `modulos/<m>/` conserva su zona (F2, tanda cero).
   const verificadas = new Set<string>();
   it('toda Function que index.ts reexporta de un archivo de módulo está en el manifiesto de ese módulo', () => {
     const texto = sinComentarios(leer('admin/functions/src/index.ts'));
@@ -485,7 +480,7 @@ describe('7. Functions: el registro contra index.ts', () => {
       const archivo = `admin/functions/src/${m[2]}.ts`;
       const destino = zonaDeCodigo(archivo);
       if (destino?.zona !== 'modulo') continue;
-      const seParte = destino.seParte ?? SE_PARTE_POR_NOMBRE.get(archivo.slice(archivo.lastIndexOf('/') + 1)) ?? [];
+      const seParte = destino.seParte ?? [];
       const duenos = [destino.modulo, ...seParte.map((s) => s.replace(/^modulo:/, ''))];
       for (const nombre of (m[1] as string).split(',').map((s) => s.trim()).filter(Boolean)) {
         const dueno = MANIFIESTOS.find((x) => (x.functions as readonly string[]).includes(nombre));
