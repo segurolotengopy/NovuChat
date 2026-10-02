@@ -65,6 +65,7 @@ export const HERRAMIENTA = ['admin/pruebas/frontera/mudanza.ts', 'admin/pruebas/
   'admin/pruebas/frontera/mudanza.mjs', 'admin/pruebas/frontera/frontera.ts', 'admin/pruebas/frontera/desde-la-base.sh',
   // Lo que frontera.ts importa: su código de nivel superior corre al importar.
   'admin/functions/src/registro.ts',
+  // `rutas-escritas.test.ts` queda fuera a propósito (D6): es una prueba, no código que el verificador cargue; lo que carga es `rutas-escritas.ts`.
   // Las compuertas que juzgan la mudanza: el lector de rutas escritas y las referencias a scripts.
   'admin/pruebas/frontera/rutas-escritas.ts', 'admin/pruebas/frontera/referencias-a-scripts.test.ts'] as const;
 

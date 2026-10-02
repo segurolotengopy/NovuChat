@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
-import { RAIZ, importsDe } from './frontera.ts';
+import { CALCULADO, RAIZ, importsDe } from './frontera.ts';
 import { HERRAMIENTA, archivosAMirar, leerTanda, planDeMudanza, reemplazarRutas, validarTanda, verificarReproducible, type ArbolConCarpetas, type Consulta } from './mudanza.ts';
 
 const F = 'admin/functions/src';
@@ -148,10 +148,16 @@ describe('verificarReproducible (lo que usa solo-rutas.mjs)', () => {
   it('lo que importan los .ts/.mjs de la herramienta (y la suite del lector de rutas) está en HERRAMIENTA', () => {
     // Su código de nivel superior corre al importar: si uno entra sin estar acá, un PR de tanda lo cambia.
     const fuentes = [...HERRAMIENTA.filter((r) => /\.(ts|mjs)$/.test(r)), 'admin/pruebas/frontera/rutas-escritas.test.ts'];
-    const faltan = fuentes.flatMap((f) => importsDe(f).map((i) => i.destino)
-      .filter((d): d is string => d !== null && d.startsWith('admin/') && !d.includes('/node_modules/'))
-      .filter((d) => !(HERRAMIENTA as readonly string[]).includes(d))
-      .map((d) => `${f} → ${d}`));
+    const importaciones = fuentes.flatMap((f) => importsDe(f).map((i) => ({ f, i })));
+    // Un import relativo que no lleva a un archivo (roto, calculado o alias) no se puede comprobar: falla. Los paquetes no entran en importsDe.
+    const sinDestino = importaciones.filter(({ i }) => i.destino === null).map(({ f, i }) => `${f} → ${i.especificador}`);
+    // Los únicos aceptados, por cantidad exacta: los dos `import()` con `pathToFileURL` que cargan frontera.ts y mudanza.ts desde la base.
+    const aceptados = ['solo-rutas.mjs', 'solo-rutas.mjs', 'mudanza.mjs', 'mudanza.mjs'].map((n) => `admin/pruebas/frontera/${n} → ${CALCULADO}`);
+    expect([...sinDestino].sort(), 'import de la herramienta que el lector no sigue').toEqual([...aceptados].sort());
+    const faltan = importaciones.map(({ f, i }) => ({ f, d: i.destino }))
+      .filter((x): x is { f: string; d: string } => x.d !== null && x.d.startsWith('admin/') && !x.d.includes('/node_modules/'))
+      .filter(({ d }) => !(HERRAMIENTA as readonly string[]).includes(d))
+      .map(({ f, d }) => `${f} → ${d}`);
     expect(faltan).toEqual([]);
   });
   it('suitesPuras no admite ..', () => {
