@@ -136,6 +136,13 @@ en la prueba (L2): son 51 menos esos dos.
    instrucción». Llevan `alwaysOutputData` y `onError: continueRegularOutput`. El nodo de Gemini 1.2 **no tiene opción de timeout**
    (verificado en el paquete 2.36.5): lo acota `maxOutputTokens` y, sobre todo, el `executionTimeout` de la ejecución (60 s).
 
+8. **Costo al restaurante: más mensajes que el plano §6 (PENDIENTE DE LA CONFIRMACIÓN DE ANDRES).** Con las ventanas de 24 h
+   abiertas, un pedido con QR cuesta **5** mensajes al restaurante (2 plantillas, 2 detalles —uno de ellos a `cocina`— y la
+   imagen del comprobante) frente a **3** del plano §6, y una reserva cuesta **4** frente a 3. Con 150 pedidos y 40 reservas al
+   mes son unos **340 mensajes más** (≈ 3,8 USD, a 0,0113 USD cada uno). `CLAUDE.md` pide discutir con Andres toda decisión
+   que mueva este costo antes de implementarla: **queda declarado como apartamiento pendiente de su confirmación** (alternativas:
+   no mandar el detalle a `cocina`, o no reenviar la imagen del comprobante).
+
 ## La entrada del receptor (camino B)
 
 `Entrega del receptor` (Webhook POST, `responseMode: responseNode`, ruta marcador) → `Verificar firma con el
@@ -163,6 +170,12 @@ deja publicado junto a la producción. Sus cerraduras:
   `numeroEnsayo` (marcador `REEMPLAZAR_NUMERO_ENSAYO_QTACO` en `ensayo.json`). Si no está, no se envía nada (los avisos se
   simulan). `enviarDeVerdad` sigue siendo necesario.
 - Nada se reporta ni se registra en modo prueba (es lo que se factura).
+- **Falla cerrada (A1).** Si «Entrada de prueba» corrió, es modo prueba **siempre**: un cuerpo sin `modoPrueba`, o con un valor raro,
+  no deja a la variante hablando con la ingesta, el cierre y el Graph de producción. El cuerpo solo aporta `telefonoDePrueba` y
+  `enviarDeVerdad === true`.
+- **`from` no es libre (A2).** Quien escribe en el ensayo tiene que ser el `telefonoDePrueba`, un destinatario de aviso de
+  `Config base` o el `numeroEnsayo` (la misma lista de `¿Avisar de verdad?` y `¿Enviar de verdad?`). Se mira en `¿Es un mensaje?`
+  (antes de `Traer configuración`) y otra vez en `Interpretar entrada`: un `from` ajeno no llega a la consola ni a `Cotejar en el servidor`.
 
 ## Defectos conocidos y comportamientos fijados
 
@@ -188,6 +201,43 @@ deja publicado junto a la producción. Sus cerraduras:
   lee un IF o un nodo de varias salidas, hay que pedir la rama a mano. El arnés tampoco simula `retryOnFail` ni el `batching`
   del HTTP (cada ítem es una llamada, sin esperar): los reintentos y los 1,5 s entre mensajes se cuentan en la prueba del
   peor caso, no se ejecutan.
+
+- **Descarga del medio (A3).** El id del medio debe ser `[A-Za-z0-9_-]{1,100}`; `¿Tamaño aceptable?` exige además que la URL que
+  devolvió Meta empiece con `https://`, y `Descargar medio` no sigue redirecciones (`followRedirects: false`). **Pendiente del
+  ensayo:** confirmar el anfitrión real de los medios de Meta (hoy no se exige un anfitrión concreto, porque la URL la fija Meta).
+- **Guardias de `construir.mjs` (A4, A5).** La guardia de anfitriones fija el de las Functions de la consola (no «cualquier
+  `*.cloudfunctions.net`») y rechaza usuario y puerto en el anfitrión; solo `ensayo.json` puede tener `entrada: prueba`.
+  **Límite conocido:** la guardia del WhatsApp Trigger mira el NOMBRE de la credencial; el JSON no dice a qué app de Meta apunta,
+  así que una credencial de AAB1-WA-Prod con un nombre neutro la pasaría. Lo cubre la prohibición 7 y el ensayo (comprobar a qué
+  app apunta antes de activar un Trigger), no este archivo; la variante `trigger` no se usa en la entrada de Q'Taco (es la del
+  receptor).
+- **Carreras de `$getWorkflowStaticData` con ejecuciones simultáneas (DECISIÓN PENDIENTE DE ANDRES).** El estado del flujo (memoria
+  por teléfono, repetidos, avisos, `reservasDelDia`) vive en los datos estáticos, que n8n escribe al terminar cada ejecución: dos
+  ejecuciones a la vez pueden pisarse. Escenarios: **(a)** un doble toque en «Confirmar pedido» dispara dos ejecuciones con dos
+  `wamid` distintos: salen dos avisos y dos cierres, porque `pedidoId` lleva milisegundos (`pedido.js`, ~850) y la referencia del
+  cierre es el `wamid` del aviso; **(b)** dos clientes a la vez: se puede perder el estado de uno; **(c)** `reservasDelDia` puede
+  pasar el tope. Opciones: aceptarlo (el volumen de Q'Taco es bajo) o hacer **estables** la referencia del cierre (derivarla del
+  pedido, no del `wamid`) y la clave de avisos por pedido. **El ensayo T11 debe incluir un doble toque real** en «Confirmar pedido».
+- **La variante de prueba usa la credencial de ingesta y el número de Q'Taco para `Cotejar en el servidor`**: si los datos del
+  comprobante coinciden, el cotejo **crea un cierre real** en el servidor (por eso el teléfono de prueba tiene que ser uno del
+  equipo y el ensayo no debe mandar comprobantes que cuadren con un pedido real). Y la credencial «Graph WhatsApp — pruebas»
+  puede tener o no acceso al número de Q'Taco: **se verifica en el ensayo**.
+- **Peor caso del comprobante: 57 s contra 60 s** (`executionTimeout`). El margen es de 3 s y sale de supuestos (15 s por intento
+  para los dos nodos sin timeout, 1 s típico por llamada): **medir el OCR y las Functions en frío es lo primero del ensayo.**
+- **Reportes repetidos (B5).** `ingesta` **no deduplica por `idMeta`**: guarda el `idMeta` en el mensaje, pero crea un documento
+  nuevo por cada llamada y suma `respuestasDelPeriodo` y `mensajesVentana` en cada saliente. Si `Reportar mensaje (saliente)`
+  (4 s, 3 intentos) agota el tiempo en un arranque en frío con la primera llamada ya procesada, el reintento duplica el mensaje
+  en el historial y cuenta una respuesta de más (acerca el bloque de 25 y los umbrales de uso extendido). **`registrarCierre` sí
+  es idempotente** (el documento sale de la referencia: un reintento no cuenta dos veces; `registrarCierre` no tiene instancia
+  mínima, pero por eso mismo un reintento es inofensivo). `ingesta` y `configuracionFlujo` tienen `minInstances`, lo que hace raro el
+  arranque en frío de la que más importa aquí. **Tampoco hay un límite de mensajes entrantes por teléfono antes de Gemini** (solo los
+  umbrales de uso extendido de `atencion.ts`, 50 y 100 respuestas del asistente por ventana, que `¿Atención normal?` aplica antes del
+  modelo; un mensaje que no recibe respuesta no cuenta). **No se subió el timeout a 10 s:** con 3 intentos el peor caso de la suite
+  llegaría a 60 s (no cabe); con 10 s y 2 intentos daría 48 s. Es una decisión para Andres junto con la medición del ensayo.
+- **`tipoReporte` con texto de respaldo (B6).** Cuando un mensaje sale como texto de respaldo, `Reportar mensaje (saliente)` sigue
+  reportando `tipo` `image` o `interactive` (el del mensaje original). Solo afecta al campo `tipo` del mensaje guardado (no a la
+  facturación ni a los contadores de entrantes). No se corrigió: distinguir el respaldo por ítem exige emparejar ítems de
+  `Enviar respaldo` en la expresión, algo que el arnés de pruebas no reproduce con fidelidad; queda para quien toque ese nodo.
 
 ## Mensajes por conversación (declarados y medidos en la suite)
 
