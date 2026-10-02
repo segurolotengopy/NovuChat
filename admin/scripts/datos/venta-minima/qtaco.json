@@ -37,7 +37,7 @@
     "topeReservasDia": 3,
     "topeAvisosDia": 150,
     "topeTransferenciasHora": 1,
-    "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO",
+    "destinatariosAviso": "completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO , cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO",
     "plantillaPedido": "pedido_registrado",
     "idiomaPlantillaPedido": "es",
     "plantillaReserva": "appointment_confirmed",

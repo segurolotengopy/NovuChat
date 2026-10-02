@@ -147,16 +147,40 @@ function armar(datos, archivo) {
   return texto;
 }
 
+// LO QUE UN JSON DE PRODUCCIÓN NO PUEDE TENER, aunque alguien lo haya agregado a mano al archivo versionado.
+//   - «Entrada de prueba»: es el único nodo que activa `modoPrueba`; en producción no debe existir, porque
+//     una carga que lo trajera podría encender el modo prueba (mensajes a otro número, avisos simulados);
+//   - «WhatsApp Trigger» con la entrada del receptor: activarlo reescribe el webhook de toda la app de Meta
+//     (prohibición 7 de CLAUDE.md).
+function guardiasDeProduccion(entrada, flujo) {
+  const hallazgos = [];
+  const nombres = new Set(flujo.nodes.map((n) => n.name));
+  const tipos = flujo.nodes.map((n) => n.type);
+  if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
+  if (entrada === 'receptor' && tipos.includes('n8n-nodes-base.whatsAppTrigger')) hallazgos.push('contiene un «WhatsApp Trigger» en la variante del receptor (prohibición 7)');
+  return hallazgos;
+}
+
 const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'venta-minima.prueba.json' : `venta-minima.${archivo.replace(/\.json$/, '')}.json`);
 
 let difiere = false;
 for (const archivo of readdirSync(DATOS).filter((f) => f.endsWith('.json')).sort()) {
-  const texto = armar(cargarDatos(archivo), archivo);
+  const datos = cargarDatos(archivo);
+  const texto = armar(datos, archivo);
   const destino = salidaDe(archivo);
   const ruta = join(AQUI, destino);
+  // Lo que se arma nunca viola las guardias (si la plantilla lo hiciera, falla la construcción)…
+  const propios = guardiasDeProduccion(datos.entrada, JSON.parse(texto));
+  if (propios.length) throw new Error(`${destino}: ${propios.join('; ')}`);
   if (verificar) {
     const actual = existsSync(ruta) ? readFileSync(ruta, 'utf8') : null;
-    if (actual !== texto) {
+    // …y el archivo VERSIONADO tampoco las viola (aunque alguien lo haya tocado a mano).
+    let versionado = [];
+    try { versionado = actual === null ? [] : guardiasDeProduccion(datos.entrada, JSON.parse(actual)); } catch (e) { versionado = ['no es un JSON válido']; }
+    if (versionado.length) {
+      difiere = true;
+      console.error(`✗ ${destino} ${versionado.join('; ')}`);
+    } else if (actual !== texto) {
       difiere = true;
       console.error(`✗ ${destino} ${actual === null ? 'no existe' : 'difiere de lo que arma la plantilla'}: corra «node construir.mjs»`);
     } else {

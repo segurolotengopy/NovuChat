@@ -40,7 +40,7 @@
         "url": "@@dato:receptor.urlVerificador@@",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ firma: $json.headers['x-aab1-signature'] ?? '', timestamp: $json.headers['x-aab1-timestamp'] ?? '', deliveryId: $json.headers['x-aab1-delivery-id'] ?? '', cuerpo: JSON.stringify($json.body), wabaIdEsperado: '@@dato:receptor.wabaIdEsperado@@' }) }}",
+        "jsonBody": "={{ JSON.stringify({ firma: $json.headers['x-aab1-signature'] ?? '', timestamp: $json.headers['x-aab1-timestamp'] ?? '', deliveryId: $json.headers['x-aab1-delivery-id'] ?? '', cuerpo: JSON.stringify($json.body), wabaIdEsperado: \"@@dato:receptor.wabaIdEsperado@@\" }) }}",
         "options": {
           "timeout": 10000
         }

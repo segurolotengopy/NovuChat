@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 import { configBase, destinos, type Flujo, type J } from './lib/flujo';
 import { crearMundo, ROLES_POR_OMISION, type Doble, type LlamadaDoble, type Mundo, type ResultadoTurno } from './lib/n8n-de-mentira';
 
@@ -267,10 +268,11 @@ interface OpPedido {
   /** Minutos entre que los destinatarios abren su ventana y este pedido; sin él, nadie abrió su ventana. */
   ventana?: number;
   lineas?: J[]; entrega?: 'recojo' | 'delivery'; extra?: J; msg?: string; perfil?: string; from?: string; ahoraMs?: number;
+  dobles?: Record<string, Doble>;
 }
 
 function armarPedido(op: OpPedido = {}) {
-  const w = crear({ panel: panel({ ...(op.cobro === false ? {} : COBRO_REAL), ...(op.panelExtra ?? {}) }), config: op.config, ahoraMs: op.ahoraMs });
+  const w = crear({ panel: panel({ ...(op.cobro === false ? {} : COBRO_REAL), ...(op.panelExtra ?? {}) }), config: op.config, ahoraMs: op.ahoraMs, dobles: op.dobles });
   for (const n of op.fallan ?? []) w.fallan.add(n);
   if (op.cotejo) w.estado.cotejo = op.cotejo;
   if (op.ventana !== undefined) abrirVentanas(w);
@@ -400,10 +402,8 @@ const todosLosTurnos = (): { nombre: string; turno: Turno }[] =>
 // 1. EL FLUJO ARMADO: lo que se versiona
 // =====================================================================================================
 describe('el flujo armado es el que sale de la plantilla y de los datos', () => {
-  it('construir.mjs --verificar sale con 0, y con 1 si un JSON versionado difiere (con su negativo)', () => {
-    const ok = spawnSync(process.execPath, [join(CARPETA_VM, 'construir.mjs'), '--verificar'], { encoding: 'utf8' });
-    expect(ok.status, ok.stderr).toBe(0);
-    // Negativo: una copia de la carpeta (y de los datos) con un JSON alterado a mano debe fallar.
+  /** `construir.mjs --verificar` sobre una COPIA de la carpeta y de los datos, que `modifica` puede alterar antes de verificar. */
+  function verificarEnCopia(modifica: (vm: string) => void) {
     const tmp = mkdtempSync(join(tmpdir(), 'vm-'));
     try {
       const vm = join(tmp, 'Flujos/experimental/venta-minima');
@@ -412,16 +412,56 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       mkdirSync(datos, { recursive: true });
       cpSync(CARPETA_VM, vm, { recursive: true });
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
-      const limpio = spawnSync(process.execPath, [join(vm, 'construir.mjs'), '--verificar'], { encoding: 'utf8' });
-      expect(limpio.status, limpio.stderr).toBe(0);
-      const alterado = join(vm, 'venta-minima.qtaco.json');
-      writeFileSync(alterado, readFileSync(alterado, 'utf8').replace('"Q\'Taco"', '"Otro negocio"'));
-      const malo = spawnSync(process.execPath, [join(vm, 'construir.mjs'), '--verificar'], { encoding: 'utf8' });
-      expect(malo.status).toBe(1);
-      expect(malo.stderr).toContain('venta-minima.qtaco.json');
+      modifica(vm);
+      return spawnSync(process.execPath, [join(vm, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  }
+  const editarJson = (vm: string, archivo: string, f: (flujo: Flujo) => void): void => {
+    const ruta = join(vm, archivo);
+    const flujo = JSON.parse(readFileSync(ruta, 'utf8')) as Flujo;
+    f(flujo);
+    writeFileSync(ruta, JSON.stringify(flujo, null, 2) + '\n');
+  };
+
+  it('construir.mjs --verificar sale con 0, y con 1 si un JSON versionado difiere (con su negativo)', () => {
+    const ok = spawnSync(process.execPath, [join(CARPETA_VM, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    expect(ok.status, ok.stderr).toBe(0);
+    // Negativo: una copia sin tocar da 0; con un JSON alterado a mano, 1 y dice cuál.
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
+    const malo = verificarEnCopia((vm) => {
+      const alterado = join(vm, 'venta-minima.qtaco.json');
+      writeFileSync(alterado, readFileSync(alterado, 'utf8').replace('"Q\'Taco"', '"Otro negocio"'));
+    });
+    expect(malo.status).toBe(1);
+    expect(malo.stderr).toContain('venta-minima.qtaco.json');
+    // Y un JSON que falta también falla.
+    expect(verificarEnCopia((vm) => rmSync(join(vm, 'venta-minima.prueba.json'))).status).toBe(1);
+  });
+
+  it('--verificar FALLA (código 1) si el JSON de producción trae «Entrada de prueba» (activa modoPrueba) o un WhatsApp Trigger', () => {
+    const conEntrada = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
+      const molde = f.nodes.find((n) => n.name === '¿Es un mensaje?') as NonNullable<(typeof f.nodes)[number]>;
+      f.nodes.push({ ...molde, id: 'entrada-prueba', name: 'Entrada de prueba', type: 'n8n-nodes-base.webhook' });
+    }));
+    expect(conEntrada.status).toBe(1);
+    expect(conEntrada.stderr).toContain('venta-minima.qtaco.json');
+    expect(conEntrada.stderr).toContain('«Entrada de prueba»');
+    const conTrigger = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
+      const molde = f.nodes.find((n) => n.name === '¿Es un mensaje?') as NonNullable<(typeof f.nodes)[number]>;
+      f.nodes.push({ ...molde, id: 'trigger-whatsapp', name: 'WhatsApp Trigger', type: 'n8n-nodes-base.whatsAppTrigger' });
+    }));
+    expect(conTrigger.status).toBe(1);
+    expect(conTrigger.stderr).toContain('prohibición 7');
+    // Negativo: en el JSON de PRUEBA, «Entrada de prueba» es lo normal, y el verificador lo da por bueno.
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
+    expect(PRUEBA.nodes.some((n) => n.name === 'Entrada de prueba')).toBe(true);
+    // Y quitarlo del de prueba (sin tocar la plantilla) sí lo hace diferir.
+    const sinEntrada = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => {
+      f.nodes = f.nodes.filter((n) => n.name !== 'Entrada de prueba');
+    }));
+    expect(sinEntrada.status).toBe(1);
   });
 
   it('cada Code lleva el código real: sin marcas @@, con las seis librerías donde corresponde', () => {
@@ -481,6 +521,18 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(('un valor 5912345678901 suelto'.match(/\d{10,}/g) ?? []).filter((n) => !n.includes('000000'))).toHaveLength(1);
   });
 
+  it('cada marcador es uno solo para `preparar-import.sh` (su patrón corta en comillas, barras y espacios; una coma o un `:` pegados lo fundirían con otro)', () => {
+    // El mismo patrón que `scripts/preparar-import.sh`.
+    const patron = /REEMPLAZAR_[A-Z][^"\\\s]*/g;
+    const marcadores = (f: string): string[] => [...new Set(texto(f).match(patron) ?? [])].sort();
+    const comunes = ['REEMPLAZAR_DIRECCION_QTACO', 'REEMPLAZAR_HORARIO_ATENCION_QTACO', 'REEMPLAZAR_HORARIO_PEDIDOS_QTACO', 'REEMPLAZAR_NUMERO_AVISO_1_QTACO', 'REEMPLAZAR_NUMERO_AVISO_2_QTACO', 'REEMPLAZAR_NUMERO_RECEPCION_QTACO', 'REEMPLAZAR_PHONE_NUMBER_ID_QTACO'];
+    expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
+    expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_DE_PRUEBA'].sort());
+    // El negativo: así se fundían los dos números de aviso (o el WABA y su comilla) cuando iban pegados.
+    expect('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO'.match(patron)).toHaveLength(1);
+    expect("wabaIdEsperado: 'REEMPLAZAR_WABA_ID_QTACO' }".match(patron)).toEqual(["REEMPLAZAR_WABA_ID_QTACO'"]);
+  });
+
   it('los id de nodo son nombres cortos (nada de UUID) y no se repiten', () => {
     for (const f of [QTACO, PRUEBA, PLANTILLA]) {
       const ids = f.nodes.map((n) => n.id ?? '');
@@ -523,7 +575,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(Object.keys(base)).not.toContain('plantillaAviso');
     expect(base['plantillaPedido']).toBe('pedido_registrado');
     expect(base['plantillaReserva']).toBe('appointment_confirmed');
-    expect(base['destinatariosAviso']).toBe('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO');
+    expect(base['destinatariosAviso']).toBe('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO , cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO');
     // Las tres capacidades, encendidas; el catálogo web no existe en este flujo.
     expect([base['pedidosActivo'], base['reservasActivo'], base['promosActivo']]).toEqual([true, true, true]);
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
@@ -557,12 +609,57 @@ describe('la entrada del receptor: verificada, sin Trigger, sin repetidos', () =
     expect(crudo['onError']).toBeUndefined();
     expect(crudo['retryOnFail']).toBeUndefined();
     const cuerpo = String(v.parameters['jsonBody']);
-    expect(cuerpo).toContain("wabaIdEsperado: 'REEMPLAZAR_WABA_ID_QTACO'");
+    expect(cuerpo).toContain('wabaIdEsperado: "REEMPLAZAR_WABA_ID_QTACO"');
     expect(cuerpo.startsWith('={{ JSON.stringify(')).toBe(true);
     for (const h of ['x-aab1-signature', 'x-aab1-timestamp', 'x-aab1-delivery-id']) expect(cuerpo).toContain(h);
     expect(v.parameters['url']).toBe('REEMPLAZAR_URL_VERIFICADOR_RECEPTOR');
     // El WABA no sale de lo que llega: es una constante del flujo.
     expect(cuerpo).not.toMatch(/wabaIdEsperado:\s*\$/);
+  });
+
+  it('todo cuerpo HTTP se arma con JSON.stringify (o con la forma del Demo B), nunca interpolando texto en una cadena JSON', () => {
+    let httpConCuerpo = 0;
+    for (const f of [QTACO, PRUEBA]) {
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest' && x.parameters['sendBody'] === true)) {
+        httpConCuerpo++;
+        const jb = String(n.parameters['jsonBody']);
+        expect(n.parameters['specifyBody'], n.name).toBe('json');
+        expect(jb.startsWith('={{ '), n.name).toBe(true);
+        expect(jb.endsWith(' }}'), n.name).toBe(true);
+        expect(jb, n.name).toContain('JSON.stringify(');
+        expect(jb.slice(3).includes('{{'), `${n.name}: una segunda interpolación dentro del cuerpo`).toBe(false);
+      }
+    }
+    expect(httpConCuerpo).toBeGreaterThanOrEqual(2 * 8);
+    // Y ningún Code arma un JSON pegando cadenas (el payload es un objeto que se serializa en el envío).
+    for (const f of [QTACO, PRUEBA]) {
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.code')) {
+        expect(String(n.parameters['jsCode']), n.name).not.toMatch(/['"`]\s*\{\s*\\?"(to|messaging_product|type|text|body|caption)\\?"\s*:/);
+      }
+    }
+    // El negativo: así se vería un cuerpo interpolado (el que NO debe existir).
+    expect('={{ \'{"text":"\' + $json.texto + \'"}\' }}'.includes('JSON.stringify(')).toBe(false);
+  });
+
+  it('un texto del cliente con comillas, llaves y «}}» no rompe ningún cuerpo ni cambia a quién va', () => {
+    const malo = '"}},{"to":"59100000099","type":"text","text":{"body":"hackeo"}} {{ $json }} \\" \\n';
+    const r = armarPedido({ cobro: false, ventana: 5, perfil: 'Pepe "El Rápido" Gómez', lineas: [ln('tacos de birria', 4, 'unidad', malo)] });
+    const t = confirmarPedido(r); // el n8n de mentira hace JSON.parse de cada `jsonBody`: si alguno no fuera JSON, el turno lanzaría
+    expect(t.mensajes.length).toBeGreaterThan(0);
+    for (const m of t.mensajes) expect(m.a).toBe(CLIENTE);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    for (const a of t.avisos) {
+      expect([AV1, AV2]).toContain(a.a);
+      expect(Object.keys(a.payload).sort()).toEqual(a.tipo === 'text' ? ['messaging_product', 'recipient_type', 'text', 'to', 'type'] : ['messaging_product', 'recipient_type', 'template', 'to', 'type']);
+    }
+    expect(JSON.stringify([...t.mensajes, ...t.avisos].map((x) => x.payload['to']))).not.toContain('59100000099');
+    // El texto sigue siendo texto: a lo sumo aparece como parte del detalle, nunca como campos del mensaje.
+    for (const a of t.avisos.filter((x) => x.tipo === 'text')) expect(Object.keys(a.payload['text'] as J)).toEqual(['preview_url', 'body']);
+    // Y la reserva: un nombre con comillas tampoco rompe el aviso.
+    const res = armarReserva({ ventana: 5, extra: { nombre: 'Ana "La Jefa" Pérez', requerimiento: malo } });
+    const enviada = enviarReserva(res);
+    expect(enviada.avisos.length).toBeGreaterThan(0);
+    for (const a of enviada.avisos) expect([AV1, AV2]).toContain(a.a);
   });
 
   it('el webhook responde por nodo (200 si la firma vale, 401 si no) y la ruta es un marcador', () => {
@@ -1801,7 +1898,91 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
 });
 
 // =====================================================================================================
-// 5. TOPOLOGÍA Y COPIAS LITERALES
+// 5. MENSAJES POR CONVERSACIÓN (cada mensaje cuesta dinero: lo que se declara en DISENO.md se mide acá)
+// =====================================================================================================
+describe('mensajes por conversación: los números que declara DISENO.md', () => {
+  /** Recorre una conversación completa y cuenta lo que salió al cliente y al restaurante (plantillas + detalles). */
+  const contar = (turnos: ResultadoTurno[]) => ({
+    alCliente: turnos.reduce((n, t) => n + t.mensajes.filter((m) => m.ok).length, 0),
+    alRestaurante: turnos.reduce((n, t) => n + t.avisos.filter((a) => a.ok).length, 0),
+    plantillas: turnos.reduce((n, t) => n + t.avisos.filter((a) => a.ok && a.tipo === 'template').length, 0),
+  });
+
+  function pedidoCompleto(conQr: boolean, ventana: boolean): ReturnType<typeof contar> {
+    const w = crear({ panel: panel(conQr ? COBRO_REAL : {}) });
+    if (ventana) abrirVentanas(w);
+    const antes = w.turnos.length;
+    const c = con(w);
+    c.escribe('hola', ventana ? { avanzarMin: 5 } : {});
+    c.toca('m|pedido', 'Hacer un pedido');
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const resumen = c.escribe('quiero 4 tacos de birria');
+    const qr = c.toca(idDeBoton(resumen, 'Confirmar pedido'));
+    if (conQr) {
+      const ref = String(qr.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')?.['referencia']);
+      w.estado.panel = panel(conCobroPendiente(ref, 84));
+      c.imagen('media-9');
+    }
+    return contar(w.turnos.slice(antes + (ventana ? 0 : 0)).filter((x) => x.from === CLIENTE).map((x) => x.t));
+  }
+
+  it('pedido con QR: 5 mensajes al cliente (menú, carta, resumen, QR, comprobante) y 2 plantillas al restaurante (con las ventanas abiertas, 5: más 2 detalles y la imagen del comprobante para `completo`)', () => {
+    expect(pedidoCompleto(true, false)).toEqual({ alCliente: 5, alRestaurante: 2, plantillas: 2 });
+    expect(pedidoCompleto(true, true)).toEqual({ alCliente: 5, alRestaurante: 5, plantillas: 2 });
+  });
+
+  it('(P9, sin verificar con Meta) con la ventana abierta, `avisos.js` reenvía la imagen del comprobante por su id SOLO al rol `completo`; sin ventana o sin QR, nunca', () => {
+    const p = pedidoConComprobante({ ventana: 5 });
+    const imagenes = p.comp.avisos.filter((a) => a.tipo === 'image');
+    expect(imagenes.map((a) => a.a)).toEqual([AV1]);
+    expect(imagenes[0]?.payload['image']).toMatchObject({ id: 'media-9' });
+    expect(p.comp.avisosA(AV2).some((a) => a.tipo === 'image')).toBe(false);
+    // Si Meta la rechazara, no cambia lo que lee el cliente: el aviso «salió» por la plantilla o el detalle, nunca por la imagen.
+    expect(pedidoConComprobante().comp.avisos.some((a) => a.tipo === 'image')).toBe(false);
+    // Que Meta rechace la imagen no cambia lo que lee el cliente (el aviso salió por la plantilla y el detalle)…
+    const soloImagenCae = pedidoConComprobante({ ventana: 5, dobles: { 'Enviar aviso': (ll) => (ll.cuerpo?.['type'] === 'image' ? { error: { message: 'no acepta ese id' } } : aceptado('Enviar aviso', ll.n)) } });
+    expect(soloImagenCae.comp.avisos.filter((a) => !a.ok).map((a) => a.tipo)).toEqual(['image']);
+    expect(cuerpos(soloImagenCae.comp)[0]).toContain('Ya pasé tu pedido');
+    // …y que SOLO la imagen salga no cuenta como aviso: la imagen nunca prueba que el restaurante se enteró.
+    const soloImagenSale = pedidoConComprobante({ ventana: 5, dobles: { 'Enviar aviso': (ll) => (ll.cuerpo?.['type'] === 'image' ? aceptado('Enviar aviso', ll.n) : { error: { message: 'rechazado' } }) } });
+    expect(cuerpos(soloImagenSale.comp).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+    expect(cuerpos(soloImagenSale.comp).join('\n')).not.toMatch(/ya pas[eé]/i);
+  });
+
+  it('pedido sin QR (plan B): 4 mensajes al cliente (menú, carta, resumen, pase) y los mismos avisos', () => {
+    expect(pedidoCompleto(false, false)).toEqual({ alCliente: 4, alRestaurante: 2, plantillas: 2 });
+    expect(pedidoCompleto(false, true)).toEqual({ alCliente: 4, alRestaurante: 4, plantillas: 2 });
+  });
+
+  it('reserva: 4 mensajes al cliente (menú, datos, resumen, enviada) y 2 plantillas (4 con las ventanas abiertas)', () => {
+    for (const [ventana, esperado] of [[false, { alCliente: 4, alRestaurante: 2, plantillas: 2 }], [true, { alCliente: 4, alRestaurante: 4, plantillas: 2 }]] as const) {
+      const r = armarReserva(ventana ? { ventana: 5 } : {});
+      enviarReserva(r);
+      expect(contar(r.w.turnos.filter((x) => x.from === CLIENTE).map((x) => x.t)), `ventana ${ventana}`).toEqual(esperado);
+    }
+  });
+
+  it('promoción: 1 mensaje (la ficha con 3 botones) y el restaurante no se entera; derivación: 1 al cliente y 2 plantillas', () => {
+    const p = con(crear()).escribe(TEXTO_DUO);
+    expect(p.mensajes).toHaveLength(1);
+    expect(p.avisos).toHaveLength(0);
+    const d = con(crear()).escribe('quiero hablar con una persona');
+    expect(d.mensajes).toHaveLength(1);
+    expect(d.avisos.filter((a) => a.tipo === 'template')).toHaveLength(2);
+  });
+
+  it('lo que NO cuesta: repetidos, números fuera del prefijo, acuses de estado, tipos sin contenido, y el cliente en uso bloqueado', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola', {});
+    silencio(w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x1', wamid: 'wamid.DUP' })) && w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x1', wamid: 'wamid.DUP2' })));
+    silencio(con(w, '54100000011').escribe('hola'));
+    silencio(c.turno({ type: 'sticker', sticker: { id: 'st' } }));
+  });
+});
+
+// =====================================================================================================
+// 6. TOPOLOGÍA Y COPIAS LITERALES
 // =====================================================================================================
 describe('topología: el orden del lienzo, un solo paso por turno y las copias del Demo B', () => {
   const y = (f: Flujo, nombre: string): number => (f.nodes.find((n) => n.name === nombre)?.position ?? [0, 0])[1] as number;
