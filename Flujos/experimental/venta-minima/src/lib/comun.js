@@ -431,6 +431,58 @@ function vmCodigoCorto(ms) {
 }
 
 // ---------------------------------------------------------------------------
+// Claves estables (B0): el mismo estado de partida y la misma confirmacion dan SIEMPRE la misma clave
+// ---------------------------------------------------------------------------
+// n8n carga los datos estaticos al empezar cada ejecucion y los reescribe al terminar: dos ejecuciones
+// simultaneas (el doble toque en «Confirmar pedido») parten del MISMO estado. Si la clave del pedido saliera
+// del reloj (como hasta el PR-2) saldrian dos pedidos distintos; si sale de un ANCLA (el `ultimoMensajeMs` del
+// estado leido, que ambas ejecuciones ven igual) y de lo que se confirma, saldria el mismo, y el servidor
+// (`registrarCierre`, idempotente por tipo y referencia) cuenta UN cierre. Ningun reloj entra a la clave.
+
+// El texto canonico de un valor JSON: claves ordenadas, sin `undefined`. Dos copias del mismo dato dan el mismo texto.
+function _vmCanonico(v) {
+  if (v === null || v === undefined) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(_vmCanonico).join(',') + ']';
+  if (typeof v === 'object') {
+    return '{' + Object.keys(v).sort().filter((k) => v[k] !== undefined)
+      .map((k) => JSON.stringify(k) + ':' + _vmCanonico(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+
+// Huella FNV-1a de 32 bits (sin signo) del texto canonico de `valor`. Recorre las unidades de 16 bits del texto:
+// determinista, sin `crypto` (el sandbox de n8n no lo tiene). No es criptografica: es una clave, no un secreto.
+function vmHuella(valor) {
+  const t = typeof valor === 'string' ? valor : _vmCanonico(valor);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) {
+    h ^= t.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+// La clave estable de un pedido o una reserva: {id, codigo, huella}.
+//   id     = '<prefijo>-<fecha de La Paz del ancla>-<ultimos 4 del telefono>-<huella en base 36, 7 caracteres>'
+//   codigo = 4 caracteres en base 36 de la misma huella (el que ve el cliente y el restaurante).
+// La huella mezcla el ancla, el telefono ENTERO, la fecha y lo que se confirma (`contenido`: el carrito o la reserva).
+// El ANCLA es el `ultimoMensajeMs` del estado leido al empezar el turno: dos ejecuciones simultaneas lo ven igual; el
+// mismo cliente que repite despues el mismo pedido lo ve distinto, porque el estado se reescribe en cada turno.
+// Sin ancla valida (0 o ausente) usa `respaldoMs`, y la clave deja de ser estable (como antes de B0).
+function vmIdEstable(prefijo, from, contenido, anclaMs, respaldoMs) {
+  const valido = (x) => typeof x === 'number' && Number.isFinite(x) && x > 0;
+  const ancla = valido(anclaMs) ? Math.floor(anclaMs) : (valido(respaldoMs) ? Math.floor(respaldoMs) : 0);
+  const tel = _vmCadena(from).replace(/\D/g, '');
+  const fecha = vmFechaLocal(ancla);
+  const huella = vmHuella([prefijo, ancla, tel, fecha, _vmCanonico(contenido)].join('|'));
+  return {
+    id: prefijo + '-' + fecha + '-' + tel.slice(-4) + '-' + huella.toString(36).padStart(7, '0'),
+    codigo: vmCodigoCorto(huella),
+    huella: huella,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Fechas y horario (America/La_Paz)
 // ---------------------------------------------------------------------------
 function _vmPad2(n) { return (n < 10 ? '0' : '') + n; }

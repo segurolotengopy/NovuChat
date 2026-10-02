@@ -816,11 +816,12 @@ describe('Armar mensajes — estado, pedido guardado y cierre (el único que esc
     expect(a.items[0]!['errores']).toEqual(['sin_datos_estaticos: no se pudo comprobar el tope de avisos']);
   });
 
-  it('el cierre va solo en el primer ítem, con referencia = primer wamid del aviso', () => {
+  it('el cierre va solo en el primer ítem, con referencia = pedidoId (B0: ya no el primer wamid del aviso)', () => {
     const r = mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a'), texto('b')], cierre: { tipo: 'registro', detalle: 'Pedido K7Q2 sin QR: cobrar al recoger.' } },
       { armados: [armado('pedido')], enviados: [OK(7)] });
     expect(r.items).toHaveLength(2);
-    expect(r.items[0]!['cierre']).toEqual({ tipo: 'registro', detalle: 'Pedido K7Q2 sin QR: cobrar al recoger.', referencia: 'wamid.AVISO7' });
+    expect(r.items[0]!['cierre']).toEqual({ tipo: 'registro', detalle: 'Pedido K7Q2 sin QR: cobrar al recoger.', referencia: PEDIDO['pedidoId'] });
+    expect(JSON.stringify(r.items[0]!['cierre'])).not.toContain('AVISO7');
     expect(r.items[1]!['cierre']).toBeUndefined();
   });
 

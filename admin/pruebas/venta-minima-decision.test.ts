@@ -11,6 +11,7 @@
  * LAS LIBRERÍAS NO ESTÁN ACÁ. Las escriben otros agentes a la vez (comun, pedido, reserva, avisos, promos, cobro).
  * Esta suite define DOBLES MÍNIMOS de lo que estos dos nodos llaman, con el contrato del diseño (§4.2) y lo que
  * suponen los nodos; los dobles viven solo en este archivo, nunca en el código de producción. Lo que suponen:
+ *   - `vmIdEstable` (B0): la clave sale de (ancla, teléfono, contenido), nunca del reloj; `pdNuevoPedido` la usa para `pedidoId` y `codigo`.
  *   - `pdCarta`/`pdAgregarLineas`/`pdResolverForma`: la carta tiene `forma` y `piezas`; un producto con una orden y
  *     unidades sueltas pregunta si la cantidad es múltiplo de las piezas; `pendiente` = {cantidad, producto,
  *     opciones: [itemOrden, itemUnidad]}; `pdResolverForma` devuelve {carrito}.
@@ -73,7 +74,8 @@ function pdTotal(carrito){ return carrito.reduce(function(s, l){ return s + Math
 function pdFaltanEntrega(e, perfil){ const f = []; if (!e.direccion) f.push('direccion'); if (!e.referencia) f.push('referencia'); if (!e.nombre && vmNorm(perfil).split(' ').length < 2) f.push('nombre'); return f; }
 function pdResumen(carrito, e, o){ return 'Tu pedido:\n' + carrito.map(function(l){ return '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '') + ': ' + (l.precio * l.cantidad) + ' ' + o.moneda; }).join('\n') + '\nEntrega: ' + (e.entrega === 'delivery' ? 'delivery a ' + e.direccion + ' (' + e.referencia + '), recibe ' + e.nombre : 'recojo en el local') + '.\nTotal de la comida: ' + pdTotal(carrito) + ' ' + o.moneda + '.' + (e.entrega === 'delivery' ? '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.' : ''); }
 function pdLineaCompacta(carrito, max){ return carrito.map(function(l){ return l.cantidad + ' ' + l.nombre; }).join(', ').slice(0, max); }
-function pdNuevoPedido(from, perfil, carrito, e, total, moneda, ahora){ return { pedidoId: 'ped-2026-10-05-' + from.slice(-4) + '-' + ahora.toString(36), codigo: vmCodigoCorto(ahora), from: from, lineas: carrito.slice(), entrega: Object.assign({}, e), modalidad: e.entrega, total: pdTotal(carrito), moneda: 'BOB', mediaId: null, resultado: null, errores: [] }; }
+function vmIdEstable(pre, from, cont, ancla, resp){ const a = ancla > 0 ? ancla : resp; const t = JSON.stringify([pre, a, from, cont]); let h = 7; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 4294967296; return { id: pre + '-2026-10-05-' + String(from).slice(-4) + '-' + h.toString(36), codigo: vmCodigoCorto(h), huella: h }; }
+function pdNuevoPedido(from, perfil, carrito, e, total, moneda, ahora, ancla){ const k = vmIdEstable('ped', from, carrito, ancla, ahora); return { pedidoId: k.id, codigo: k.codigo, from: from, lineas: carrito.slice(), entrega: Object.assign({}, e), modalidad: e.entrega, total: pdTotal(carrito), moneda: 'BOB', mediaId: null, resultado: null, errores: [] }; }
 function pdMonto(n, m){ const c = Math.round(n * 100); return Math.floor(c / 100) + (c % 100 ? ',' + ('0' + (c % 100)).slice(-2) : '') + ' ' + m; }
 function pdLineasAviso(carrito){ return carrito.map(function(l){ return { cantidad: l.cantidad, nombre: l.nombre, detalle: l.detalle }; }); }
 function pdTextoForma(p, o){ return '¿«' + p.cantidad + ' ' + p.producto + '» es ' + (p.ordenes === 1 ? '1 orden' : p.ordenes + ' órdenes') + ' de ' + p.piezas + ' (' + pdMonto(p.totalOrden, o.moneda) + ') o ' + p.cantidad + ' sueltos (' + pdMonto(p.totalUnidad, o.moneda) + ')?'; }

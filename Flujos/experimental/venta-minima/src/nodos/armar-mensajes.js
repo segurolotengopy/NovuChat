@@ -327,7 +327,11 @@ if (AM_c) {
       detalle = 'Solicitud registrada: revisar el chat con el cliente.';
     }
     const ped = AM_PLAN.pedido && typeof AM_PLAN.pedido === 'object' ? AM_PLAN.pedido : {};
-    AM_cierre = { tipo: 'registro', detalle: vmRecorte(detalle, 300), referencia: AM_wamids[0] || String(ped.pedidoId || '') || String(AM_T.mensajeId || '') };
+    // La referencia del cierre es ESTABLE (B0): la que pide el plan (la de la reserva) o el `pedidoId`, nunca el `wamid` del aviso
+    // (cambia con cada ejecucion y un doble toque dejaria dos cierres). El servidor deduplica por tipo y referencia. Solo si el
+    // plan no trae ninguna se cae al id del mensaje que se procesa.
+    const refPlan = typeof AM_c.referencia === 'string' && /^[A-Za-z0-9_-]{1,120}$/.test(AM_c.referencia) ? AM_c.referencia : '';
+    AM_cierre = { tipo: 'registro', detalle: vmRecorte(detalle, 300), referencia: refPlan || String(ped.pedidoId || '') || String(AM_T.mensajeId || '') };
   }
 }
 

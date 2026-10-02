@@ -1225,7 +1225,7 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(p.comp.llamadas.cotejo).toHaveLength(1);
   });
 
-  it('sin QR → «Registrar cierre» con `tipo: registro`, una referencia (el aviso) y un detalle de 300 caracteres o menos', () => {
+  it('sin QR → «Registrar cierre» con `tipo: registro`, una referencia (el pedidoId, no el aviso) y un detalle de 300 caracteres o menos', () => {
     const r = armarPedido({ cobro: false, ventana: 5 });
     const t = confirmarPedido(r);
     expect(t.llamadas.cierre).toHaveLength(1);
@@ -1233,7 +1233,10 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(cierre['tipo']).toBe('registro');
     expect(String(cierre['detalle']).length).toBeLessThanOrEqual(300);
     expect(String(cierre['detalle'])).toMatch(/Pedido #/);
-    expect(String(cierre['referencia'])).toMatch(/^wamid\./); // el aviso que salió
+    // B0: la referencia es el `pedidoId` (estable), NO el `wamid` del aviso que salió (cambia con cada ejecución).
+    expect(String(cierre['referencia'])).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
+    expect(String(cierre['referencia'])).not.toMatch(/wamid/);
+    expect(cierre['referencia']).toBe(pedidosGuardados(r.w.mundo)[0]?.['pedidoId']);
     expect(cierre['telefono']).toBe(CLIENTE);
     expect(t.llamadas.cotejo).toHaveLength(0);
     expect(cuerpos(t)[0]).toMatch(/Listo: pasé tu pedido #\w+ al restaurante\. El pago lo coordinas con ellos al recoger/);
@@ -1241,7 +1244,7 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(cuerpos(t).join(' ')).not.toMatch(/QR|comprobante/i);
   });
 
-  it('el detalle del cierre no pasa de 300 caracteres aunque el pedido sea largo, y la referencia no es un wamid si ningún aviso salió', () => {
+  it('el detalle del cierre no pasa de 300 caracteres aunque el pedido sea largo, y la referencia es el pedidoId aunque ningún aviso haya salido', () => {
     const lineas = [ln('queso fundido', 2, '', 'con mucho queso y sin picante para los niños'), ln('nachos supremos', 3, '', 'sin guacamole y con doble salsa'), ln('enchiladas suizas', 2, '', 'bien calientes'),
       ln('tacos de birria', 6, 'unidad', 'sin cebolla ni cilantro, con limón aparte'), ln('gaseosas', 4), ln('promo dúo', 2)];
     const r = armarPedido({ cobro: false, lineas, fallan: ['Enviar aviso'], extra: { entrega: 'recojo' } });
