@@ -107,7 +107,7 @@ da Andres y se leen solo como referencia. Las memorias del proyecto
 - **Podés correr lo de solo lectura**, y decís desde dónde: `git show
   origin/main:…`, `estado-de-versiones.sh`, `pase-a-produccion.mjs` sin
   `--aplicar`, `migrar-ejes.mjs` en seco, `asignar-plan.mjs` en seco,
-  `medir-zonas.mjs`, `gh pr view`. Nunca `--aplicar`, nunca Meta, nunca n8n.
+  `gh pr view`. Nunca `--aplicar`, nunca Meta, nunca n8n.
   Corré los scripts desde un worktree al día con `origin/main`, no desde la
   copia principal, que se atrasa: un script viejo te muestra opciones viejas.
 - Andres autoriza; vos operás lo tuyo (los tres archivos). Nunca le pases

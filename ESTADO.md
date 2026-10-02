@@ -45,12 +45,12 @@ así que cada tanda de F2 ya aterrizó en staging.
 
 - **Hecho**: T0 a T5, C1 y C2 (Functions), y FL1 y FL2 (flujos: `comun/` y
   `reservas/` pasaron a `core/` y `modulos/`, y se extrajeron los 35 Code del
-  Demo B y de la captación). Son 7 cruces (eran 19) y 47 archivos sin zona.
+  Demo B y de la captación). Con el cierre quedan 3 cruces (eran 19) y 0
+  archivos sin zona (eran 47).
   El segundo seco de `migrar-ejes` da 0 en los seis tenants.
-- **Ahora**: la tanda de **módulos** (productos, cobros, agenda, inventario y
-  pedidos, catálogo web, campañas, captación). Después vienen W1, W2, S1, S2,
-  Pz, P1, Z y el cierre. El orden está en
-  `docs/arquitectura/f2-orden-de-movimiento.md`.
+- **Ahora**: el cierre de F2 (carpeta = zona; se borraron el inventario de
+  destinos y la medición). Lo que dejó el orden de movimiento está en
+  `docs/arquitectura/registro.md`, «Mover archivos entre zonas».
 - **B8** (receptor de clientes de AAB1): el bloque 0 está hecho, con las
   prohibiciones 5 y 7 (#260), su gancho (#264, #272, #323 y #329) y el candado de
   apps ajenas en los scripts de Meta (#265 y #277). Los bloques A a C van

@@ -60,8 +60,9 @@ traduce `./x.js` a `./x.ts`, así que un solo `import` relativo rompería la
 carga desde los scripts. Por la misma razón la sintaxis es solo la que Node
 sabe borrar (sin `enum`, `namespace` ni propiedades de parámetro). Y el
 registro **no lleva rutas de archivos que F2 mueve**: las carpetas de un
-módulo se derivan del id, y el inventario origen → destino está aparte, en
-`admin/pruebas/frontera/destinos-f2.ts`, que se borra al cerrar F2.
+módulo se derivan del id. Desde el cierre de F2 la carpeta ES la zona, y lo
+que no sale de la carpeta lo anota `admin/pruebas/frontera/frontera.ts`
+(`ZONA_POR_ARCHIVO` y `SE_PARTE`).
 
 **Cómo se verifica:** `admin/pruebas/core/registro.test.ts` (pura, sin
 emulador) comprueba el registro contra el código de hoy en ocho grupos:
@@ -73,41 +74,43 @@ flujos (`prompt.ts`, `flujos.ts`, `index.ts`, reglas y los dos scripts de
 alta). Lo que hoy es una incoherencia conocida del código está en una lista
 con nombre que solo puede achicarse.
 
-**Cómo se corre la medición:**
-
-```
-node admin/scripts/medir-zonas.mjs          # informe legible
-node admin/scripts/medir-zonas.mjs --json   # el mismo, en JSON
-```
-
-Solo lectura. Clasifica cada archivo de `admin/functions/src`,
-`admin/web/src`, `Flujos/src`, `admin/scripts` y `admin/pruebas` por
-`destinos-f2.ts` (las pruebas, por lo que importan o leen), y lista los que
-quedan sin zona, los que se parten y las importaciones hacia arriba o entre
-módulos sin `dependeDe`. Es una medición: sale siempre con 0. La prueba que
-falla por una importación hacia arriba es `fronteras.test.ts` (PR 2).
+**La medición de F2, retirada:** hasta el cierre, una herramienta de medición
+(`scripts/`, retirada) clasificaba cada archivo por el inventario de destinos y se citaba en cada
+informe de tanda. Ya no existe: el inventario se borró con ella. Lo que
+medía lo dicen ahora los largos de `deuda.json` (`cruces`, `sinZona`,
+`sinResolver`), que `fronteras.test.ts` hace cumplir y el CI compara con la
+base. La historia: los cruces bajaron de 19 a 3 y los archivos sin zona, de 42
+(26/09) y 47 (28/09) a 0.
 
 ## fronteras.test.ts (F2, PR 2)
 
 **Dónde vive:** `admin/pruebas/frontera/fronteras.test.ts` (pura, en
 `SUITES_PURAS`), con la regla en `admin/pruebas/frontera/frontera.ts`, que
-`medir-zonas.mjs` importa también: la prueba y la medición que se cita en
-cada informe no pueden contar distinto. El inventario de F2
-(`destinos-f2.ts`) vive en la misma carpeta.
+las herramientas de la carpeta importan también, para que todas cuenten
+igual. `ZONA_POR_ARCHIVO` y `SE_PARTE` viven ahí mismo.
 
 **Por qué en `pruebas/frontera/` y no en `pruebas/core/`:** esa carpeta no
 está en la zona de ningún agente (`agentes.md`), así que el gancho rechaza que
 un agente la edite. En `pruebas/core/`, un agente de Core podía «arreglar» su
 propia prueba roja agregando el cruce a la deuda o cambiando la zona de un
-archivo en el inventario, sin salir de su zona (revisión de seguridad del
-#231). La regla, la deuda y el inventario los cambia solo la coordinadora.
+archivo en `ZONA_POR_ARCHIVO`, sin salir de su zona (revisión de seguridad del
+#231). La regla, la deuda, `ZONA_POR_ARCHIVO` y `SE_PARTE` los cambia solo la coordinadora.
 
-**La zona de un archivo**, en este orden: su entrada en `destinos-f2.ts`
-(mientras dura F2, un archivo sin mover ya tiene la zona a la que va); la
+**La zona de un archivo**, en este orden: su línea en `ZONA_POR_ARCHIVO`
+(lo que no sale de la carpeta: el registro, los puntos de entrada de la
+consola, las herramientas que tocan todas las zonas, `ingesta.ts` e `index.ts`
+como coordinador y las herramientas de construcción de flujos como core); y la
 carpeta (`core/`, `central/`, `plataforma/`, `modulos/<m>/` bajo cada raíz de
-código, `scripts/datos/` para tenants, y `registro.ts` por nombre), que es la
-regla permanente cuando `destinos-f2.ts` se borre; y el prefijo más largo de
-`PREFIJOS_F2`.
+código y `scripts/datos/` para tenants). `SE_PARTE` solo ANOTA las piezas de
+otra zona que hay dentro de un archivo y que F3 separa; no cambia su zona y
+solo se achica. Las dos tienen su prueba: cada clave existe, y `SE_PARTE`
+nombra zonas reales distintas de la del archivo.
+
+**El coordinador de turno** es `ingesta.ts`, en la raíz de Functions hasta F3b;
+`index.ts` es coordinador y solo reexporta (salvo `core/opcionesGlobales.ts`,
+que va primero). La prueba toma de `index.ts` el archivo que reexporta la
+Function `ingesta` y exige que sea coordinador: si alguien lo muda a una
+carpeta de zona sin darle su línea, queda como core y la prueba lo ve.
 
 **La regla:** registro < core < central < plataforma < módulo < coordinador <
 tenants. Una zona importa de la suya o de las de abajo, y un módulo importa a
@@ -125,8 +128,8 @@ otro solo si lo declara, directa o indirectamente, en `dependeDe`.
   para llamar a una callable.
 - **Lo que el lector no puede seguir se informa:** un import relativo roto, un
   `import()` o `require` con ruta calculada y un alias (`@/`, `~/`, `#`, ruta
-  absoluta). Hoy el único aceptado es el `import()` de `medir-zonas.mjs`, en
-  su lista con el porqué.
+  absoluta). Hoy no se acepta ninguno: `sinResolver` está vacío y solo se
+  achica.
 - Un script que importa `functions/lib/*.js` (compilado) depende de su fuente
   en `functions/src/`.
 - Las pruebas en carpeta de zona siguen la misma regla; `registro.test.ts` es
@@ -134,14 +137,13 @@ otro solo si lo declara, directa o indirectamente, en `dependeDe`.
   zonas).
 
 **La deuda conocida, que solo se achica:** los 19 cruces que existían el
-26/09 están en la prueba, uno por uno, con lo que los saca (8 hacia
-`ingesta.ts`, que deshace el coordinador de F3; 8 que se cortan al mover el
-archivo: entre módulos, de Central o Plataforma hacia un módulo, y el prompt
-de Core hacia el saneo de Central; y 3 pruebas de pantallas de Plataforma
-guardadas en `pruebas/central/`). Un cruce nuevo falla; una entrada cuyo
-cruce ya no existe también falla, para que se saque. Los **archivos sin zona
-fuera de las pruebas** (42, contando dos `.css` y dos `.sh`) son una lista
-exacta, no un número: ubicar uno y agregar otro no se compensan.
+26/09 estaban en la prueba, uno por uno, con lo que los saca. Al cierre de F2
+quedan 3, los tres hacia `ingesta.ts` (`core/turno/cierres.ts`,
+`modulos/agenda/seguimientos.ts` y `modulos/agenda/sena.ts`), que deshace el
+coordinador de F3. Un cruce nuevo falla; una entrada cuyo cruce ya no existe
+también falla, para que se saque. Los **archivos sin zona fuera de las
+pruebas** eran 42 el 26/09, 47 el 28/09 y son 0 al cierre: es una lista exacta, no un número (ubicar uno y
+agregar otro no se compensan), y está vacía.
 
 **Negando:** la mitad de la suite es un árbol inventado donde cada forma de
 cruce tiene que fallar. Contraprueba sobre el código real, hecha al
@@ -153,7 +155,8 @@ entrada de la deuda borrada hacen fallar la suite.
 valor al mismo archivo cuenta como de valor, y una entrada de la deuda
 marcada «solo tipo» falla si pasa a valor; lo que un puente no deja seguir
 (calculado, alias, roto) también se informa; y el import calculado aceptado
-de `medir-zonas.mjs` se acepta por cantidad exacta.
+(el de la herramienta de medición, ya retirada) se aceptaba por cantidad
+exacta.
 
 **La deuda no crece en un PR (27/09):** las cuatro listas (cruces, archivos
 sin zona, imports que no se pueden seguir y pruebas transversales) viven en
@@ -168,14 +171,13 @@ que tampoco puede crecer) todo `require` que no puede seguir.
 
 **Hasta dónde protege:** el gancho frena a los agentes con zona. El CI frena
 a un PR que toca `deuda.json` o el comparador (corre el de la base; si la base
-lo perdió, bloquea). El **analizador** (`frontera.ts`, `fronteras.test.ts`,
-`destinos-f2.ts`) corre en la versión del PR: un PR que lo afloja y a la vez
+lo perdió, bloquea). El **analizador** (`frontera.ts`, `fronteras.test.ts`) corre en la versión del PR: un PR que lo afloja y a la vez
 mete un cruce queda en verde, y lo frena solo la revisión humana. Lo mismo un
 PR que cambia `.github/workflows/`. Por eso el paso de la deuda emite un aviso
 cuando el PR toca `admin/pruebas/frontera/*.ts`, y la revisión de `seguridad`
 de cada PR lo señala, mientras `CODEOWNERS` tenga un único propietario.
 
-**La tanda cero de F2** (`f2-orden-de-movimiento.md`) agrega a esta carpeta
+**La tanda cero de F2** (historia, en la sección «Mover archivos entre zonas») agrega a esta carpeta
 `rutas-escritas.test.ts` (las rutas que los scripts escriben hacia Functions
 existen) y `despliegue.test.ts` (los 55 nombres de `index.ts` y su
 `__endpoint`, contra `despliegue.json`), y cierra las pruebas que pasaban en
@@ -185,7 +187,112 @@ vacío al mover un archivo.
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
 venir de `ensamblador.test.ts` o `registro.test.ts` cuando en F3 existan
 `Flujos/src/core/` y `Flujos/src/modulos/`. Tampoco las pruebas fuera de una
-carpeta de zona: esas las ubica la medición por grafo, no esta prueba.
+carpeta de zona: no las analiza nadie (ver «Límite conocido»).
+
+## Mover archivos entre zonas
+
+> Lo que decidió F2 (diseño del 27/09/2026, cerrado el 01/10/2026) y sigue
+> valiendo para cualquier mudanza futura. La carpeta es la zona; mover un
+> archivo es cambiar de carpeta.
+
+**Cómo se mueve**
+
+1. **Mueve la coordinadora, con un script revisado; los agentes de zona no.**
+   Mover un archivo obliga a editar las importaciones de quienes lo usan, y
+   casi ninguno está en la zona del agente: `index.ts`, `ingesta.ts`, las
+   suites y los scripts de la raíz, `App.tsx`, `vitest.config.ts`, el CI.
+   Además cada movimiento cambia `deuda.json`, que es solo de la coordinadora.
+   El script (`admin/pruebas/frontera/mudanza.mjs`) reescribe con el mismo
+   lector que usa la frontera, en seco por defecto; el modo que escribe se
+   llama `--escribir` (nunca `--aplicar`, que dispara `acciones-sensibles.sh`).
+2. **Sin archivos puente** en la ruta vieja: un `export * from './core/…/x.js'`
+   no lo resuelve Node al quitar tipos (rompe los scripts que cargan
+   Functions), y git deja de ver el renombre, con lo que el control de la
+   deuda rechaza la entrada movida.
+3. **Una rama de movimiento no se rebasa: se regenera** con el script sobre el
+   `main` nuevo (es determinista). Así se resuelven los choques en `index.ts`,
+   `App.tsx` y `deuda.json`.
+4. **Los PR de movimiento solo mueven.** Los cortes van aparte: si en la misma
+   tanda cambia el contenido, git puede dejar de ver el renombre y la deuda
+   queda «inexplicada».
+5. **Los que se parten se mueven enteros y se parten después** (F3).
+   `ingesta.ts` no se mueve: queda en la raíz con su línea de coordinador en
+   `ZONA_POR_ARCHIVO`.
+
+**Las herramientas de mudanza**, en `admin/pruebas/frontera/`:
+
+- `mudanza.ts`: la lógica, probada en `mudanza.test.ts` sobre un árbol
+  inventado. Reescribe un literal solo en contextos conocidos (import/export,
+  `import()`, `require`, `vi.mock`, `new URL`, `join`/`resolve`, lecturas,
+  `SUITES_PURAS`); uno que coincide con una ruta movida en otro lugar se avisa.
+- `mudanza.mjs <tanda.json>`: en seco por defecto. Valida la tanda antes de
+  nada (rutas relativas normales, dentro de las raíces, misma extensión, `de`
+  versionado, `a` libre, sin enlaces); con `--escribir` exige el worktree
+  limpio, hace `git mv -n` de toda la tanda antes de mover, reescribe, lista los
+  cruces de la deuda que la tanda salda y falla si la ruta vieja queda en
+  código (completa o sin `admin/`; los comentarios se corrigen a mano).
+- **La tanda va versionada en el PR**: `docs/arquitectura/tandas/tN.json`, con
+  `movimientos` (`{ de, a }`) y `suitesPuras`.
+- **La compuerta solo vale corrida desde la BASE**, nunca con la copia del PR:
+  `desde-la-base.sh`, leído de `origin/main` y pasado a `bash -s -- <tanda.json>`.
+  Un PR de tanda no puede tocar la herramienta ni lo que ella importa: la lista
+  es `HERRAMIENTA` en `mudanza.ts`, y `mudanza.test.ts` exige que cada archivo
+  exista, que tocar uno no pase y que lo que importan las herramientas esté en
+  la lista. **Una tanda futura que mueva `sembrar.mjs` o `datos/catalogo-demo.mjs`
+  necesita antes un PR de herramienta** (`referencias-a-scripts.test.ts` y
+  `rutas-escritas.ts` las miran).
+- `solo-rutas.mjs`: **reproducibilidad**. Vuelve a correr el plan sobre el
+  `merge-base` y exige cada archivo del PR byte a byte. A mano solo se acepta:
+  quitar deuda saldada; en `vitest.config.ts`, las suites declaradas; en un
+  comentario, la CITA de la ruta nueva y nada más.
+
+**La regla Z (zona por regla para lo que no la tenía, 28/09):** los puntos de
+entrada y lo que toca todas las zonas (`App.tsx`, `main.tsx`, `consola.tsx`,
+`correr.sh`, `correr-storage.sh`, `storage-reglas.test.ts`) van al coordinador,
+archivo por archivo, en `ZONA_POR_ARCHIVO`; los componentes de la consola que
+no conocen ningún módulo, a `web/src/central/`; los scripts de operador, a
+`scripts/plataforma/`; las semillas y cargas, a `scripts/datos/`; las
+herramientas de desarrollo, al coordinador (no hay una sexta zona).
+
+**La tanda cero** cerró las pruebas que pasaban en vacío al mover un archivo
+(las que miraban un solo nivel de carpeta o una clave vieja del inventario,
+`SUITES_PURAS` con una ruta que no existe) y agregó dos compuertas:
+`rutas-escritas.test.ts` (las rutas que escriben los scripts llevan a un
+archivo que existe) y `despliegue.test.ts` (los nombres que exporta `index.ts`
+y su `__endpoint`, contra `despliegue.json`; una Function nueva lo regenera con
+`ACTUALIZAR_DESPLIEGUE=si`, y el diff va a la vista). El lector de la frontera
+toma por calculado todo `createRequire`, `getBuiltinModule`, `.require` o
+`['require']` fuera del patrón que sigue.
+
+## Límite conocido
+
+**`ruta: './admin'` achica el análisis de seguridad:** Semgrep, Trivy, Checkov
+y OSV no miran `Flujos/*.json`, los `scripts/` de la raíz ni `.github/`. La
+`ruta` está en `ci-node-firebase.yml`, no en `.devsecops.yml` (que ya dice
+`./admin`). Decisión de la revisora (27/09): no cambia con F2. Además, las
+suites que quedan en la raíz de `admin/pruebas/` no se analizan como origen de
+importaciones (la raíz no es una carpeta de zona).
+
+## Pendiente
+
+- **Lector de la frontera** (revisión de seguridad del #239): marcar como
+  calculado todo import de `module` distinto de `import { createRequire }`,
+  todo acceso por clave no literal, `_load`, `new Function` y `eval`, y la
+  exportación de un alias de `createRequire`.
+- **`pruebas/correr-storage.sh` exporta solo el puerto** del emulador: hoy no es
+  un riesgo, porque ninguna suite de Storage lanza scripts.
+- **Zonas sin dueño en `agentes.md`:** `web/src/core/`, `Flujos/manifiestos/`,
+  `functions/src/index.ts`, `functions/src/ingesta.ts` y `.github/`. Lo anota el
+  agente `metodo` en `agentes.md`, con revisión de Andres.
+- **El corte de `ingesta.ts` y `prompt.ts`** es de F3b.
+
+## Lo que sigue
+
+En el carril de lógica, cada agente en su carpeta: conectar el registro (fuera
+las siete copias de la lista de flujos), `tieneModulo`, el límite de agendas,
+los chequeos de inventario y catálogo. `tenants.modulos` en ventana y **en dos
+pasos** (escribir `modulos` conservando `flujos`, desplegar, recién después
+quitar `flujos`), con Bellido y Platinum en prueba.
 
 ## La política de capas del 06/09, que el registro reemplaza
 

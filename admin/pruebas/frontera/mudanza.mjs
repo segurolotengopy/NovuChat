@@ -118,8 +118,7 @@ for (const k of saldadas) console.log(`  ${k}`);
 
 // Restos en CÓDIGO después de escribir: la ruta vieja no puede quedar fuera de
 // la documentación, la bitácora y los análisis.
-// destinos-f2.ts es el mapa de rutas viejas a nuevas: las nombra a propósito.
-const enCodigo = restos(['.', ':!docs', ':!Prompts', ':!bitacora', ':!Analisis', ':!*.md', ':!.claude/agents', ':!admin/pruebas/frontera/destinos-f2.ts']);
+const enCodigo = restos(['.', ':!docs', ':!Prompts', ':!bitacora', ':!Analisis', ':!*.md', ':!.claude/agents']);
 if (enCodigo.length) {
   console.error(`\n✗ La ruta vieja sigue en código o configuración (${enCodigo.length}); corregir a mano y revisar:`);
   for (const l of enCodigo) console.error(`  ${l}`);

@@ -32,11 +32,11 @@
  * EL LÍMITE SE LEE DE `functions/src/central/cuenta/planes.ts`, no de una copia: es
  * `limitesDeCuenta`, la misma función que usa `importarCatalogo`. Node 22.18+
  * carga TypeScript sin compilar (igual que `asignar-plan.mjs`), y `planes.ts`
- * es puro a propósito. El acceso va por `lib/contador-catalogo.mjs`, que es
+ * es puro a propósito. El acceso va por `./contador-catalogo.mjs`, que es
  * donde vive el criterio de conteo compartido.
  */
 // EL CRITERIO DE CONTEO, EL LÍMITE Y LA FORMA DEL DOCUMENTO viven en
-// `lib/contador-catalogo.mjs`, que comparte con `cargar-negocio.mjs` (que
+// `./contador-catalogo.mjs`, que comparte con `cargar-negocio.mjs` (que
 // también mueve el contador, en la misma transacción en la que carga el
 // catálogo) y con `importarCatalogo`. Tener el criterio dos veces es pedir que
 // un día uno cuente los activos y el otro los documentos.

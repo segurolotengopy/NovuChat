@@ -674,7 +674,7 @@ export function senaParaElFlujo(
  * ATENCIONES E INTERACCIONES — dos de las tres cifras de la oferta comercial
  * ===========================================================================
  *
- * Las definiciones son las de `web/src/paginas/Cierres.tsx` y no se
+ * Las definiciones son las de `web/src/central/paginas/Consumo.tsx` y no se
  * reinterpretan acá:
  *
  *   ATENCIÓN     una conversación iniciada con un cliente. Cuenta el arranque,

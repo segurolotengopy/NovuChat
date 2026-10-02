@@ -1,5 +1,5 @@
 /**
- * `scripts/fijar-umbrales.mjs`, CONTRA EL EMULADOR.
+ * `scripts/plataforma/fijar-umbrales.mjs`, CONTRA EL EMULADOR.
  *
  * El script escribe con el SDK Admin, que se salta las reglas: lo único que
  * impide dejar a un comercio con una pareja de umbrales que el servidor

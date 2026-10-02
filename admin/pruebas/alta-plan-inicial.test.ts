@@ -2,7 +2,7 @@
  * EL ALTA DE UN COMERCIO NACE CON PLAN DEL CATÁLOGO Y CON CONTADOR.
  *
  * Arreglo de integración (b). Las tres altas —`altaTenant` (Functions),
- * `scripts/alta-comercio.mjs` y el sembrador local `scripts/sembrar.mjs`—
+ * `scripts/plataforma/alta-comercio.mjs` y el sembrador local `scripts/sembrar.mjs`—
  * escribían `plan: 'basico'`, que no es un plan del catálogo, y ninguna creaba
  * el contador del catálogo, sin el cual las reglas no dejan dar de alta ni de
  * baja un producto.

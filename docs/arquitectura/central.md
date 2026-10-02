@@ -193,7 +193,7 @@ caro pero puntual, y no exige haber guardado ninguna estructura extra.
 ### 4bis.2bis Atenciones e interacciones
 
 Las otras dos cifras de la oferta comercial. Las definiciones son las de la
-cabecera de `web/src/paginas/Cierres.tsx` y no se reinterpretan en ningún lado:
+cabecera de `web/src/central/paginas/Consumo.tsx` y no se reinterpretan en ningún lado:
 
 | Cifra | Definición | Cuándo suma |
 |---|---|---|

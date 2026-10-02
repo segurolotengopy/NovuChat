@@ -1,6 +1,6 @@
 /**
  * EL HIJO DE UNA SUITE HEREDA EL EMULADOR, NUNCA LAS ADC (#245; regla escrita
- * en docs/arquitectura/f2-orden-de-movimiento.md).
+ * en docs/arquitectura/core.md, «El hijo de una suite»).
  *
  * Toda suite que lanza un script con Node (`spawnSync(process.execPath,
  * [SCRIPT, …], { … })`) le pasa `entorno-del-hijo.ts`: el emulador, Auth a un

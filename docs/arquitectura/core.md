@@ -67,6 +67,40 @@ Lo que **no** es módulo aunque se parezca y es core: los **medios entrantes**
 regla del 25/09 «capacidades generales, no por vertical»; la **firma**; el
 **modelo de IA por tenant** (`tenants/{t}.modelo`, lo escribe solo Plataforma).
 
+## El hijo de una suite
+
+**Una suite que lanza un script hereda el emulador, nunca las ADC.** Lo mostró
+la revisión de la tanda 1 y lo corrigió el #245 en `asignar-rol.test.ts`.
+
+- **La regla:** toda suite que lance un script con `spawnSync` le pasa en su
+  `env` `FIRESTORE_EMULATOR_HOST` y `FIREBASE_AUTH_EMULATOR_HOST` hacia un
+  puerto muerto, `GOOGLE_APPLICATION_CREDENTIALS` hacia una ruta inexistente y
+  `METADATA_SERVER_DETECTION=none`. Lo hace aunque `pruebas/correr.sh` ya
+  exporte el emulador, porque la suite también se corre sin él.
+- **Cómo se cumple:** toda suite que lanza Node o bash (`spawnSync`, `spawn`,
+  `execFileSync`, `execFile`, `fork`, `execSync`, también como `cp.…` y con los
+  argumentos en una variable) pasa `entornoDelEmulador(…)` de
+  `pruebas/core/entorno-del-hijo.ts`; sus variables propias no pueden pisar las
+  que cierran la salida a la nube. `pruebas/core/hijos-hermeticos.test.ts`
+  (pura) lee todas las suites con el parser y falla ante cualquiera de esas
+  formas sin el entorno, salvo un `-e` de Node.
+- **Qué exige a las mudanzas:** una tanda que mueva suites conserva ese `env` y
+  la última línea de `correr.sh`.
+- **Cómo se comprueba:** con `pnpm pruebas:reglas` dentro de `unshare -rn`, sin
+  red y con un puerto propio.
+
+## Pendiente F3b (flujos)
+
+- **Carpetas transitorias de Flujos:** `Flujos/src/core/venta/`,
+  `Flujos/src/core/captacion/` y `Flujos/src/modulos/cobros/venta/` son Core o
+  el módulo para `fronteras.test.ts`; no entra ningún archivo nuevo (sección 9
+  de `ensamblador.test.ts`, la lista solo se achica); F3b las vacía al unificar
+  en `core/`.
+- **Comentarios con la carpeta vieja:** quedan citando `Flujos/src/comun/`, a
+  propósito, comentarios dentro del código de los nodos Code de los JSON de
+  `Flujos/` (cambiarlos cambia el flujo publicado). Se corrigen en F3b, con una
+  publicación.
+
 ## Límites que el core hace cumplir
 
 Los del bloque de 25 respuestas por conversación y los umbrales de operador y

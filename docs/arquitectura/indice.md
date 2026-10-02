@@ -18,11 +18,10 @@
 | `modulos/<m>.md` | Un manifiesto en prosa por módulo: productos, agenda, pedidos, cobros, inventario, campanas, catalogo-web, captacion, menu-interactivo |
 | `tenants.md` | Datos de un cliente, nunca código |
 | `coordinador.md` | El coordinador de turno: las dos llamadas y los ganchos |
-| `registro.md` | El registro de módulos y la política de capas que reemplaza |
+| `registro.md` | El registro de módulos, la frontera de zonas, cómo se mueven archivos entre zonas y la política de capas que reemplaza |
 | `limites.md` | La tabla de límites comerciales y dónde se hace cumplir cada uno (copia del §7 de la base comercial) |
 | `agentes.md` | Los agentes por zona: la zona de escritura efectiva de cada uno y en qué difiere de `Analisis/41` §8.1 |
 | `zona-de-escritura.md` | El gancho de Claude Code que limita a cada agente a su zona: de dónde lee la zona, qué rechaza y qué no cubre |
-| `f2-orden-de-movimiento.md` | El orden de movimiento de F2 (tandas, quién mueve y cómo), lo que cierra la tanda cero y lo que decide la revisora. Se borra al cerrar F2 |
 | `../base-comercial.md` | La base comercial completa: el dinero de cada decisión técnica |
 
 ## Sección por sección
