@@ -510,10 +510,10 @@ describe('8. las copias de la lista de flujos coinciden con el puente', () => {
     return ordenado([...(m[1] as string).matchAll(/'(\w+)'/g)].map((x) => x[1] as string));
   };
 
-  it('prompt.ts (VERTICALES_CONOCIDOS), flujos.ts (FLUJOS) e index.ts (VERTICALES)', () => {
+  it('prompt.ts (VERTICALES_CONOCIDOS), flujos.ts (FLUJOS) y plataforma/tenants.ts (VERTICALES)', () => {
     expect(ordenado(VERTICALES_CONOCIDOS)).toEqual(claves);
     expect(ordenado(Object.keys(FLUJOS))).toEqual(claves);
-    expect(conjunto(leer('admin/functions/src/index.ts'), 'VERTICALES')).toEqual(claves);
+    expect(conjunto(leer('admin/functions/src/plataforma/tenants.ts'), 'VERTICALES')).toEqual(claves);
   });
 
   it('firestore.rules: los literales de tieneFlujo y la capacidad de cada flujo', () => {
