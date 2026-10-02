@@ -257,7 +257,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}) {
 // antes de la primera llave; la única excepción es `Descargar medio`, que baja el medio de la URL que le devuelve Meta.
 // A4. Las Functions de la consola son UN anfitrión exacto (el que ya usan los nodos de producción), no «cualquier
 // *.cloudfunctions.net»: otro proyecto de Google recibiría el token de ingesta. Y el «anfitrión» es TODO lo que va entre
-// «https://» y la primera barra, `?` o `#`: con un `@` o un puerto («graph.facebook.com:x@otro.dominio») no es un anfitrión.
+// «https://» y la primera barra, `?` o `#`: con un usuario (arroba) o un puerto delante o detrás del nombre, no es un anfitrión permitido.
 const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
 const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 function anfitrionPermitido(nombreDelNodo, url) {
