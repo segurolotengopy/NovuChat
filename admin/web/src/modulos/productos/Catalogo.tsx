@@ -1277,7 +1277,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
       avisarSiTraeMoneda(r.columnas);
       if (imagenes > 0) {
         // Se dice ANTES de importar, no después. Ver el comentario de
-        // `imagenesIncrustadas` en `lib/xlsx.ts`.
+        // `imagenesIncrustadas` en `web/src/modulos/productos/xlsx.ts`.
         const atadas = fotos.size;
         setEstado(`Ese archivo trae ${imagenes} ${imagenes === 1 ? 'foto pegada' : 'fotos pegadas'} adentro`
           + (atadas === imagenes

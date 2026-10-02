@@ -64,7 +64,7 @@ import { TextoSeguro } from '../../componentes/TextoSeguro';
  * de servir, así que dejar la dirección nueva sin guardar dejaría al asistente
  * con una rota. Por eso, antes de gastar datos en subir, se revisa que el resto
  * de la pantalla se pueda guardar. Los tipos y tamaños los valida
- * `lib/archivoPlanes.ts` en el navegador; la que manda es `storage.rules`.
+ * `web/src/central/lib/archivoPlanes.ts` en el navegador; la que manda es `storage.rules`.
  */
 
 /** Sin bucket configurado la consola funciona igual, pero no puede subir. */

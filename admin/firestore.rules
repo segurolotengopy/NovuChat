@@ -985,7 +985,7 @@ service cloud.firestore {
         // `aclaraciones` y `archivoPlanes`. Las reglas NO recorren elementos de
         // una lista: acá se comprueba el tipo y el tope de cada una; la forma
         // de cada elemento la valida y recorta `sanearCaptacion`
-        // (functions/src/captacion.ts) antes de mandarla al flujo, y descarta
+        // (functions/src/modulos/captacion/captacion.ts) antes de mandarla al flujo, y descarta
         // lo que no cumple. Mismo reparto que `datosQueNoTenemos` (T-27).
         //
         // MÁS DE CINCO PLANES EXIGEN EL ARCHIVO. Recitar veinte planes por chat
@@ -1125,7 +1125,7 @@ service cloud.firestore {
       // `ultimoItem` es lo que impide colar DOS productos con un solo +1: cada
       // alta exige que el contador la nombre a ella, y el contador nombra uno.
       // Un lote crea o borra, entonces, un producto a la vez. La importación
-      // masiva va por `importarCatalogo` (functions/src/limiteCatalogo.ts), que
+      // masiva va por `importarCatalogo` (functions/src/modulos/productos/limiteCatalogo.ts), que
       // cuenta en una transacción con el SDK Admin.
       //
       // SIN CONTADOR NO SE CREA NI SE BORRA desde el navegador. Las reglas no
