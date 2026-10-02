@@ -39,7 +39,7 @@ const PLANTILLA = leer('flujo.plantilla.json');
 const DEMO_B = JSON.parse(readFileSync(join(AQUI, '../../Flujos/demo-b-venta-cobro.json'), 'utf8')) as Flujo;
 
 // La red de palabras del contrato (`VM_PROHIBIDAS`, §4.2): se repite acá a propósito. Si el contrato cambia, esta suite lo dice.
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026, 10:00 en La Paz
 const MIN = 60_000;
@@ -1131,10 +1131,15 @@ describe('no negociable 9: roles de los destinatarios (cocina no ve el teléfono
     // En recojo, ni siquiera el `completo` recibe una dirección.
     const recojo = pedidoConComprobante({ ventana: 5 });
     expect(detallesA(recojo.comp, AV1)[0]?.cuerpo ?? '').not.toMatch(/Calle Falsa|Dirección|dirección/);
-    // Ninguna plantilla (de ningún rol) lleva teléfono ni dirección: eso viaja solo en el texto con ventana abierta.
-    for (const a of [...entrega.comp.avisos, ...recojo.comp.avisos].filter((x) => x.tipo === 'template')) {
+    // La plantilla de `cocina` no lleva teléfono ni dirección en ningún caso; la del `completo` SÍ los lleva (decisión de la
+    // integración: el rol `completo` los ve siempre, aunque su ventana esté cerrada).
+    for (const a of [...entrega.comp.avisos, ...recojo.comp.avisos].filter((x) => x.tipo === 'template' && x.a === AV2)) {
       expect(parametrosDe(a).join(' ')).not.toContain(CLIENTE);
+      expect(parametrosDe(a).join(' ')).not.toMatch(/Calle Falsa|portón verde/);
     }
+    const plantillaCompleto = entrega.comp.avisos.filter((x) => x.tipo === 'template' && x.a === AV1).map((a) => parametrosDe(a).join(' ')).join(' ');
+    expect(plantillaCompleto).toContain(CLIENTE);
+    expect(plantillaCompleto).toContain('Calle Falsa 123');
   });
 });
 
@@ -1353,10 +1358,11 @@ describe('pedido', () => {
     expect(siguiente.mensajes.flatMap(titulosDe)).toContain('Confirmar pedido');
   });
 
-  it('una ubicación compartida NO se toma como dirección: se vuelve a pedir por escrito (el diseño decía lo contrario; ver el informe)', () => {
+  it('una ubicación compartida cuenta como la dirección (decisión de la integración): falta la referencia, que se pide, y no se confirma nada', () => {
     const r = armarPedido({ entrega: 'delivery', extra: { direccion: '', referencia: '', nombre: '' } });
     const t = r.c.ubicacion();
-    expect(cuerpos(t).join('\n')).toMatch(/dirección/);
+    expect(cuerpos(t).join('\n')).toMatch(/Para el delivery necesito una referencia para llegar/);
+    expect(cuerpos(t).join('\n')).not.toMatch(/dirección exacta/);
     expect(t.mensajes.flatMap(titulosDe)).not.toContain('Confirmar pedido');
     expect(t.avisos).toHaveLength(0);
     expect(estadoDe(r.w.mundo)['paso']).toBe('pedido_datos');
@@ -1479,7 +1485,7 @@ describe('carta', () => {
     const texto = cuerpos(carta).join('\n');
     for (const quedan of ['Promo Dúo', 'Nachos Supremos', 'Queso Fundido', 'Tacos de Birria', 'Enchiladas Suizas', 'Horchata']) expect(texto, quedan).toContain(quedan);
     for (const sale of ['Michelada', 'Pils', 'Rompope', 'Helado', 'Cervezas', 'Cócteles']) expect(texto, sale).not.toContain(sale);
-    expect(texto).toContain('Por delivery no enviamos bebidas sueltas.');
+    expect(texto).toContain('Por delivery no enviamos bebidas.');
     w.estado.extraccion = EX([ln('michelada', 2)]);
     const t = c.escribe('quiero 2 micheladas');
     expect(cuerpos(t).join('\n')).toMatch(/No encuentro «michelada»/);
@@ -1650,16 +1656,17 @@ describe('cobro', () => {
     expect(cancela.llamadas.cierre).toHaveLength(0);
   });
 
-  // DEFECTO CONOCIDO DE INTEGRACIÓN (T7a + T7b), sin arreglar acá: `Plan del turno` arma el «Reenviar QR» como una imagen
-  // SIN `monto` ni `referencia` (a propósito: no reporta `qr_enviado` otra vez) y `Armar mensajes` rechaza todo QR sin
-  // monto igual al total (`qr_rechazado: qr_sin_monto`). El cliente que toca «Reenviar QR» recibe «Eso lo ve directamente el
-  // restaurante» con el botón, no el QR. Se pone rojo cuando se arregle: ahí se quita el `.fails`.
-  it.fails('(DEFECTO CONOCIDO) «Reenviar QR» vuelve a mandar la imagen del QR', () => {
+  // «Reenviar QR» (arreglado en la integración): la imagen lleva monto y referencia (los de ese pedido) pero NO el evento
+  // `qr_enviado`, y el reporte al servidor se guía por el EVENTO: sin evento, ni evento, ni referencia, ni monto viajan.
+  it('«Reenviar QR» vuelve a mandar la imagen del QR, con el monto del pedido, y NO reabre el cobro', () => {
     const r = armarPedido();
     confirmarPedido(r);
     const recuerdo = r.c.escribe('¿ya llegó?');
     const reenvio = r.c.toca(idDeBoton(recuerdo, 'Reenviar QR'), 'Reenviar QR');
     expect(reenvio.mensajes[0]?.payload['image']?.link).toBe(QR_URL);
+    expect(reenvio.mensajes[0]?.payload['image']?.caption).toMatch(/84/);
+    expect(reenvio.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado')).toBe(false);
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
   });
 
   it('una imagen sin QR pendiente NO es un pago: no se baja, no se lee, no se coteja, no se avisa; con pie de foto, el pie es un texto más', () => {
@@ -1782,20 +1789,23 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
     expect(tres.avisos.length).toBeGreaterThan(0);
   });
 
-  // DEFECTO CONOCIDO DE INTEGRACIÓN (T7a + T7b), sin arreglar acá: `Plan del turno` anota la derivación en el estado
-  // del teléfono (`estado.transferencias`) en cuanto PIDE el aviso, y `Armar mensajes` guarda ese estado salga o no el
-  // aviso. Si Meta rechaza el aviso de la primera derivación, la segunda, dentro de la hora, ya no avisa a nadie: el
-  // restaurante nunca se entera, aunque `Armar mensajes` sí respeta «la marca solo si el aviso salió» en `sd.transferencias`.
-  // `it.fails` pasa mientras el defecto exista y se pone rojo cuando se arregle: ahí se quita el `.fails`.
-  it.fails('(DEFECTO CONOCIDO) si el aviso de la primera derivación cae, la segunda dentro de la hora vuelve a avisar', () => {
+  // Arreglado en la integración: la marca de derivación solo queda si el aviso SALIÓ (hecho, no dicho). Si Meta rechaza el
+  // aviso de la primera derivación, la segunda, dentro de la hora, vuelve a avisar al restaurante.
+  it('si el aviso de la primera derivación cae, la segunda dentro de la hora vuelve a avisar; y si salió, la segunda no avisa', () => {
     const w = crear();
     w.fallan.add('Enviar aviso');
     const c = con(w);
     const uno = c.escribe('quiero hablar con una persona');
+    expect(uno.avisos.length).toBeGreaterThan(0);
     expect(uno.avisos.every((a) => !a.ok)).toBe(true);
     w.fallan.delete('Enviar aviso');
     const dos = c.escribe('necesito hablar con alguien por favor', { avanzarMin: 10 });
     expect(dos.avisos.filter((a) => a.ok).length).toBeGreaterThan(0);
+    // Negativo: con el primer aviso salido, el segundo dentro de la hora no avisa (ya hay una persona avisada).
+    const sano = crear();
+    const d = con(sano);
+    expect(d.escribe('quiero hablar con una persona').avisos.some((a) => a.ok)).toBe(true);
+    expect(d.escribe('necesito hablar con alguien por favor', { avanzarMin: 10 }).avisos).toHaveLength(0);
   });
 
   it('dos teléfonos no comparten estado: el pedido del uno no aparece en el otro', () => {
