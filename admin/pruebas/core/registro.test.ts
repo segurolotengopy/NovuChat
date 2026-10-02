@@ -160,6 +160,12 @@ describe('1. estructura del registro', () => {
     });
   });
 
+  it('catálogo web declara su dependencia de inventario, y no al revés (sin ciclo)', () => {
+    const porId = (id: string) => MANIFIESTOS.find((m) => m.modulo === id)!;
+    expect(porId('catalogo-web').dependeDe).toContain('inventario');
+    expect(porId('inventario').dependeDe).not.toContain('catalogo-web');
+  });
+
   it('versión entera desde 1 y cero mensajes por conversación en todos', () => {
     for (const m of MANIFIESTOS) {
       expect(Number.isInteger(m.version) && m.version >= 1, m.modulo).toBe(true);
