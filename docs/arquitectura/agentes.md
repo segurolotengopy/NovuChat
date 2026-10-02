@@ -26,10 +26,6 @@
 - Un archivo compartido (`admin/firestore.rules`) no se puede partir por
   sección con el gancho: el agente declara qué sección toca y la revisión del
   PR cubre el resto.
-- Hasta que F2 cree las carpetas por zona, los archivos viven donde están hoy
-  (`admin/functions/src/*.ts`, `admin/web/src/paginas/*.tsx`; los módulos
-  de flujos ya están por zona desde FL1): en el primer PR de cada agente la zona es la lista de
-  archivos que su ficha nombra, y se declara.
 
 ## Zonas efectivas
 
@@ -44,7 +40,12 @@
 | **metodo** | `docs/`, `bitacora/`, `.claude/hooks/`, `.claude/agents/`, `CLAUDE.md`, `ESTADO.md`, `Prompts/COORDINACION.md`, `scripts/estado-generado.sh`, `admin/vitest.config.ts`, `admin/LEEME.md` | `docs/`, `bitacora/`, `.claude/hooks/`, `.claude/agents/`, `CLAUDE.md` | **Agrega** `ESTADO.md` y `Prompts/COORDINACION.md` (solo en el PR final de una tanda), `scripts/estado-generado.sh` (el «script de estado generado» de F6 vive en `scripts/`), `admin/vitest.config.ts` y `admin/LEEME.md` (separar pruebas puras y documentarlo). **Quita** de la zona ordinaria `.claude/settings.json` y `admin/package.json` (observación 5): se conceden por PR |
 | **analista-de-solicitudes** | `CLIENTES/<T>/solicitudes/` | No está en §8.1 (es del §12.4) | Solo lectura del repositorio; `Bash` únicamente para consultas de solo lectura (`git log`, `ls`, `grep`, `estado-de-versiones.sh` sin `--aplicar`) |
 | **seguridad** (existente) | Solo lectura | Solo lectura | Igual |
-| **Coordinadora** (la sesión) | `registro.ts`, `admin/pruebas/frontera/` (la regla de fronteras, su deuda en `deuda.json` y el inventario de F2; el CI rechaza un PR que haga crecer la deuda), `docs/arquitectura/indice.md`, tablero, cola de fusión | Igual | Sin gancho: es la sesión de Andres. `admin/pruebas/frontera/` **no está en la zona de ningún agente a propósito**: un agente que rompe la frontera no puede agregar su cruce a la deuda ni cambiar la zona de un archivo en el inventario; propone la línea en su PR (revisión de seguridad del #231) |
+| **Coordinadora** (la sesión) | `registro.ts`, `admin/pruebas/frontera/` (la regla de fronteras, su deuda en `deuda.json` y `ZONA_POR_ARCHIVO` y `SE_PARTE` (`admin/pruebas/frontera/frontera.ts`); el CI rechaza un PR que haga crecer la deuda), `docs/arquitectura/indice.md`, tablero, cola de fusión | Igual | Sin gancho: es la sesión de Andres. `admin/pruebas/frontera/` **no está en la zona de ningún agente a propósito**: un agente que rompe la frontera no puede agregar su cruce a la deuda ni cambiar la zona de un archivo en el inventario; propone la línea en su PR (revisión de seguridad del #231) |
+
+**Sin dueño (pendiente de Andres o la revisora).** Ningún agente tiene en su zona
+`admin/web/src/core/`, `Flujos/manifiestos/`, `admin/functions/src/index.ts`,
+`admin/functions/src/ingesta.ts` ni `.github/`: quien los necesite lo declara en
+su PR y la revisión humana los cubre hasta que se asigne un dueño.
 
 ## Cómo se actualiza esta tabla
 
