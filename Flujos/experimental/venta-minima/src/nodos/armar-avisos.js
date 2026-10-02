@@ -27,6 +27,8 @@ const AA_T = vmPrimero('Interpretar entrada') || {};
 const AA_AHORA = Number(AA_T.ahoraMs) || Date.now();
 const AA_FROM = String(AA_T.from || '');
 const AA_PRUEBA = AA_CFG.modoPrueba === true;
+// El número que envía: en modo prueba, SIEMPRE el de la configuración (el `phone_number_id` del cuerpo de la prueba se ignora).
+const AA_NUMERO_ID = AA_PRUEBA ? String(AA_CFG.phoneNumberIdEsperado || '') : (AA_T.phoneNumberId || AA_CFG.phoneNumberId || AA_CFG.phoneNumberIdEsperado || '');
 const AA_TEL_PRUEBA = vmDigitos(AA_CFG.telefonoDePrueba);
 const AA_PREFIJO = '[al restaurante] ';
 const AA_TIPOS = ['pedido', 'comprobante', 'reserva', 'transferencia'];
@@ -191,7 +193,7 @@ if (AA_armar) {
         : (payload.type === 'image' ? 'imagen' : (it.esPlantilla === true ? 'plantilla' : 'detalle'));
       AA_items.push({
         para: numero, rol: String(it.rol || ''), payload: payload, respaldo: respaldo, esPlantilla: it.esPlantilla === true,
-        clase: clase, sinAviso: false, tipoAviso: tipo, phoneNumberId: AA_T.phoneNumberId || AA_CFG.phoneNumberId || AA_CFG.phoneNumberIdEsperado || '',
+        clase: clase, sinAviso: false, tipoAviso: tipo, phoneNumberId: AA_NUMERO_ID,
         waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM,
       });
     }
@@ -201,7 +203,7 @@ if (AA_armar) {
 if (!AA_items.length) {
   return [{ json: {
     para: '', rol: '', payload: null, respaldo: null, esPlantilla: false, sinAviso: true, tipoAviso: '',
-    phoneNumberId: AA_T.phoneNumberId || AA_CFG.phoneNumberId || AA_CFG.phoneNumberIdEsperado || '',
+    phoneNumberId: AA_NUMERO_ID,
     waGraphVersion: AA_CFG.waGraphVersion || 'v26.0', from: AA_FROM, errores: AA_errores,
   } }];
 }

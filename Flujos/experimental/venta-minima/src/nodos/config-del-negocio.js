@@ -14,8 +14,8 @@
 //   - `areasExcluidas`, `areasSinDelivery`, `zonasReserva`: ARREGLOS (vienen como CSV);
 //   - `horario`: el CSV crudo («lun=12:00-22:00,…»); lo convierte `vmHorario`;
 //   - `prefijosPermitidos` y `destinatariosAviso`: CSV (los consumen `vmPrefijoPermitido` y `avDestinatarios`);
-//   - `plantilla*` e `idioma*` (`plantillaPedido`, `idiomaPlantillaPedido`…): se copian TODOS los de
-//     «Config base»; los posee T4;
+//   - `plantilla*`, `idioma*`, `formaPlantilla*` y `orden*` (`plantillaPedido`, `idiomaPlantillaPedido`, `ordenPedido`…): se
+//     copian TODOS los de «Config base»; los posee T4;
 //   - `pedidosActivo`, `reservasActivo`, `promosActivo`: valen `false` si faltan;
 //   - `phoneNumberIdEsperado`: '' si es un marcador sin reemplazar (`Interpretar entrada` descarta todo);
 //   - `cobro`: `cbCobroReal(cuerpo)`; si algo falla, apagado (plan B: sin QR);
@@ -76,10 +76,12 @@ for (const k of CAMPOS_BASE) {
   if (v) deBase[k] = v;
 }
 // Las plantillas de aviso son por evento y configurables (`plantillaPedido`, `idiomaPlantillaPedido`,
-// `plantillaReserva`, …): se copian todas las claves `plantilla*` e `idioma*` con valor de texto.
+// `plantillaReserva`, …): se copian todas las claves `plantilla*`, `idioma*`, `formaPlantilla*` y `orden*` con valor de texto.
 const deBasePlantillas = {};
 for (const k of Object.keys(base)) {
-  if (/^(plantilla|idioma)[A-Za-z0-9_]{0,60}$/.test(k)) {
+  // `formaPlantilla*`: la forma de la reserva y de la derivación (`cita` o `pedido`); `orden*` (`ordenPedido`, `ordenReserva`,
+  // `ordenDerivacion`): el orden de las variables de la plantilla, que `avisos.js` lee de `cfg` (un orden inválido cae al de por omisión).
+  if (/^(plantilla|idioma|formaPlantilla|orden)[A-Za-z0-9_]{0,60}$/.test(k)) {
     const v = marcador(base[k]);
     if (v && v.length <= 100) deBasePlantillas[k] = v;
   }

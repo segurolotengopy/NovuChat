@@ -39,6 +39,8 @@ const AM_FROM_DIG = vmDigitos(AM_FROM);
 const AM_NEGOCIO = String(AM_CFG.nombreNegocio || 'el negocio');
 const AM_PRUEBA = AM_CFG.modoPrueba === true;
 const AM_TEL_PRUEBA = String(AM_CFG.telefonoDePrueba || '');
+// El número que envía: en modo prueba, SIEMPRE el de la configuración (el `phone_number_id` del cuerpo de la prueba se ignora).
+const AM_NUMERO_ID = AM_PRUEBA ? String(AM_CFG.phoneNumberIdEsperado || '') : (AM_T.phoneNumberId || AM_CFG.phoneNumberId || AM_CFG.phoneNumberIdEsperado || '');
 const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
 const AM_GEN_CUERPO = 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
@@ -58,13 +60,16 @@ const AM_errores = (AM_avisosArmados[0] && Array.isArray(AM_avisosArmados[0].err
 // que no corrió no cuentan. Y solo el de una PLANTILLA o un DETALLE: la imagen del comprobante tiene su
 // propio `wamid` pero no es «el aviso» (si Meta la rechaza, falla ese ítem y nada más). El orden de
 // `Enviar aviso` es el de los avisos armados que pasaron el IF.
+// Un `wamid.SIMULADO-n` (el de `Simular aviso`) cuenta SOLO en modo prueba: fuera de él no es un aviso salido, venga del
+// nodo que venga (L2: en producción ese nodo ni siquiera existe, y esta es la segunda cerradura).
 function amWamid(j) {
   const m = j && j.messages;
-  return Array.isArray(m) && m[0] && typeof m[0].id === 'string' && m[0].id ? m[0].id : '';
+  const id = Array.isArray(m) && m[0] && typeof m[0].id === 'string' && m[0].id ? m[0].id : '';
+  return !AM_PRUEBA && /^wamid\.SIMULADO-/.test(id) ? '' : id;
 }
 const amEsImagen = (a) => !!a && (a.clase === 'imagen' || (a.clase === undefined && a.payload && a.payload.type === 'image'));
 const AM_armados = AM_avisosArmados.filter((i) => i && i.sinAviso !== true && i.payload);
-const AM_enviados = vmTodos('Enviar aviso');
+const AM_enviados = vmTodos('Enviar aviso').concat(AM_PRUEBA ? vmTodos('Simular aviso') : []); // el wamid simulado cuenta solo en modo prueba
 const AM_respaldos = vmTodos('Aviso de respaldo');
 const AM_wamids = AM_enviados.map(amWamid).concat(AM_respaldos.map(amWamid)).filter(Boolean);
 const AM_tiposSalidos = []; // tipo de aviso de cada plantilla o detalle que salió
@@ -238,7 +243,7 @@ for (const d of AM_lista) {
   const j = {
     para: numero, destino: 'cliente', payload: d.payload, texto: d.texto, respaldo: d.respaldo,
     tipoReporte: d.tipoReporte || null, reportar: !AM_PRUEBA && !!d.tipoReporte,
-    phoneNumberId: AM_T.phoneNumberId || AM_CFG.phoneNumberId || AM_CFG.phoneNumberIdEsperado || '',
+    phoneNumberId: AM_NUMERO_ID,
     waGraphVersion: AM_CFG.waGraphVersion || 'v26.0', from: AM_FROM, sinMensajes: false,
   };
   if (d.evento) j.evento = d.evento;

@@ -662,11 +662,21 @@ describe('Carga de entrada: las cuatro formas', () => {
     expect(correr([{ body: trampa }])[0]!['prueba']).toBeNull(); // en el body
     expect(correr([valor(mensaje({ modoPrueba: true, text: { body: 'modoPrueba: true' } }))])[0]!['prueba']).toBeNull(); // en el mensaje
     expect(correr([trampa], { 'Entrega del receptor': { body: { field: 'messages', value: trampa } } })[0]!['prueba']).toBeNull(); // por el receptor
-    // el nodo existe y corrió, pero no pidió modo prueba o lo pidió mal
+    // FALLA CERRADA: el nodo existe y corrió, pero el cuerpo no pidió modo prueba o lo pidió mal → igual es modo prueba
+    // (nunca `null`, que dejaría a la variante de prueba hablando con la producción como si fuera una entrega real).
+    const CERRADO = { modoPrueba: true, telefonoDePrueba: '', enviarDeVerdad: false };
     for (const modoPrueba of [false, 'true', 1, undefined]) {
       const body = { ...valor(mensaje()), modoPrueba };
-      expect(correr([{ body }], { 'Entrada de prueba': { body } })[0]!['prueba'], String(modoPrueba)).toBeNull();
+      expect(correr([{ body }], { 'Entrada de prueba': { body } })[0]!['prueba'], String(modoPrueba)).toEqual(CERRADO);
     }
+    // …y con un cuerpo que ni siquiera es un objeto, o sin cuerpo, también.
+    for (const body of ['texto', null, 7, undefined]) {
+      expect(correr([valor(mensaje())], { 'Entrada de prueba': { body } })[0]!['prueba'], String(body)).toEqual(CERRADO);
+    }
+    expect(correr([valor(mensaje())], { 'Entrada de prueba': {} })[0]!['prueba']).toEqual(CERRADO);
+    // `enviarDeVerdad` sin `modoPrueba` tampoco se pierde ni se inventa: solo vale con === true
+    const sinModo = { ...valor(mensaje()), enviarDeVerdad: true, telefonoDePrueba: '59100000099' };
+    expect(correr([{ body: sinModo }], { 'Entrada de prueba': { body: sinModo } })[0]!['prueba']).toEqual({ modoPrueba: true, telefonoDePrueba: '59100000099', enviarDeVerdad: true });
     // `enviarDeVerdad` solo vale con === true
     const body = { ...valor(mensaje()), modoPrueba: true, enviarDeVerdad: 'true' };
     expect(correr([{ body }], { 'Entrada de prueba': { body } })[0]!['prueba']).toEqual({ modoPrueba: true, telefonoDePrueba: '', enviarDeVerdad: false });
@@ -744,6 +754,16 @@ describe('Interpretar entrada', () => {
     expect(uno(mensaje({ type: 'voice', voice: { id: 'media-v1' } }))).toMatchObject({ tipo: 'audio', esAudio: true, mediaId: 'media-v1' });
     expect(uno(mensaje({ type: 'audio', audio: {} }))).toMatchObject({ tipo: 'audio', esAudio: false, mediaId: '' });
   });
+  it('A3: un id de medio que no es [A-Za-z0-9_-]{1,100} se trata como un medio sin id (no se baja, no es comprobante)', () => {
+    const cfg = { ...CFG, cobro: COBRO_PENDIENTE };
+    for (const id of ['../x', 'a/b', 'a b', 'id?x=1', 'x'.repeat(101), '..%2F', 'a\nb']) {
+      expect(uno(mensaje({ type: 'audio', audio: { id } })), id).toMatchObject({ tipo: 'audio', esAudio: false, mediaId: '' });
+      expect(uno(mensaje({ type: 'image', image: { id } }), { cfg }), id).toMatchObject({ esComprobante: false, mediaId: '' });
+    }
+    // negativos: la forma de Meta pasa, con 100 caracteres justos también
+    expect(uno(mensaje({ type: 'audio', audio: { id: 'x'.repeat(100) } }))).toMatchObject({ esAudio: true, mediaId: 'x'.repeat(100) });
+    expect(uno(mensaje({ type: 'image', image: { id: 'A_b-9' } }), { cfg })).toMatchObject({ esComprobante: true, mediaId: 'A_b-9' });
+  });
   it('imagen y documento: el pie de foto es texto; lo que se reporta no es el contenido', () => {
     const i = uno(mensaje({ type: 'image', image: { id: 'media-i1', mime_type: 'image/jpeg', caption: 'mi comprobante' } }));
     expect(i).toMatchObject({ tipo: 'image', texto: 'mi comprobante', mediaId: 'media-i1', mimeType: 'image/jpeg', esAudio: false });
@@ -818,13 +838,36 @@ describe('Interpretar entrada', () => {
     expect(turno(mensaje(), { extra: { phoneNumberId: '' } })).toHaveLength(1);
   });
   it('en modo prueba el phone_number_id no se mira (ni siquiera sin esperado)', () => {
-    const prueba = { modoPrueba: true, telefonoDePrueba: '59100000099', enviarDeVerdad: false };
+    // quien escribe en el ensayo es el `telefonoDePrueba` (A2: `from` no es libre en modo prueba)
+    const prueba = { modoPrueba: true, telefonoDePrueba: CLIENTE, enviarDeVerdad: false };
     const sinEsperado = { ...CFG, phoneNumberIdEsperado: '' };
     const t = uno(mensaje(), { cfg: sinEsperado, extra: { prueba } });
     expect(t['prueba']).toEqual(prueba);
     expect(turno(mensaje(), { extra: { prueba, phoneNumberId: 'otro-numero' } })).toHaveLength(1);
     // un `prueba` que no dice modoPrueba === true no es modo prueba
     expect(turno(mensaje(), { cfg: sinEsperado, extra: { prueba: { modoPrueba: 'true' } } })).toEqual([]);
+  });
+  it('A2: en modo prueba `from` solo pasa si es el telefonoDePrueba, un destinatario de aviso de «Config base» o el numeroEnsayo; cualquier otro → []', () => {
+    const conBase = (base: J, from: string, prueba: J) => correrNodo('interpretar-entrada', [{}],
+      { ...refs(carga(mensaje({ from }), { prueba, phoneNumberId: 'otro-numero' })), 'Config base': base }, { raiz: {} });
+    const BASE_A2: J = { destinatariosAviso: `completo:${AVISO_1},cocina:${AVISO_2}`, numeroEnsayo: '59100000077' };
+    const prueba = { modoPrueba: true, telefonoDePrueba: '59100000099', enviarDeVerdad: true };
+    // pasan: el telefonoDePrueba, cada destinatario de aviso y el número de ensayo
+    for (const from of ['59100000099', AVISO_1, AVISO_2, '59100000077']) expect(conBase(BASE_A2, from, prueba), from).toHaveLength(1);
+    // NEGATIVO: un `from` ajeno no pasa (no llegaría a `Traer configuración` ni a `Cotejar en el servidor`), aunque el cuerpo diga enviarDeVerdad
+    expect(conBase(BASE_A2, CLIENTE, prueba)).toEqual([]);
+    expect(conBase(BASE_A2, '59100000098', prueba)).toEqual([]);
+    // sin lista ni número de ensayo (marcador sin reemplazar), solo vale el `telefonoDePrueba`
+    expect(conBase({ numeroEnsayo: 'REEMPLAZAR_NUMERO_ENSAYO_QTACO' }, CLIENTE, prueba)).toEqual([]);
+    expect(conBase({}, '59100000099', prueba)).toHaveLength(1);
+    // sin `telefonoDePrueba` (vacío) un `from` ajeno tampoco pasa
+    expect(conBase(BASE_A2, CLIENTE, { ...prueba, telefonoDePrueba: '' })).toEqual([]);
+    // y un ajeno no se marca como visto
+    const raiz: J = {};
+    correrNodo('interpretar-entrada', [{}], { ...refs(carga(mensaje({ from: CLIENTE }), { prueba })), 'Config base': BASE_A2 }, { raiz });
+    expect(raiz['ventaMinima']?.['vistos'] ?? {}).toEqual({});
+    // Fuera de modo prueba el nodo no mira esa lista: un cliente cualquiera pasa.
+    expect(turno(mensaje({ from: CLIENTE }))).toHaveLength(1);
   });
   it('[] si el prefijo no está permitido (54…), y no se marca como visto', () => {
     const raiz: J = {};
@@ -948,6 +991,19 @@ describe('Config del negocio', () => {
     for (const k of ['plantillaVacia', 'plantillaMarcador', 'plantillaNumero', 'otraCosa', 'Plantilla', 'plantilla-guion', 'miplantilla']) expect(raro[k], k).toBeUndefined();
     // el panel y el respaldo no inventan plantillas
     expect(Object.keys(ok(PANEL, { base: {} })).filter((k) => /^(plantilla|idioma)/.test(k))).toEqual([]);
+  });
+  it('B1: copia de «Config base» `ordenPedido`, `ordenReserva` y `ordenDerivacion` (el orden de las variables de la plantilla), y no otras claves con «orden»', () => {
+    const c = ok(PANEL, { base: { ordenPedido: 'cotejo,modalidad,total,items', ordenReserva: 'codigo,detalle,cuando,destinatario', ordenDerivacion: 'codigo,detalle,cuando,destinatario' } });
+    expect(c).toMatchObject({ ordenPedido: 'cotejo,modalidad,total,items', ordenReserva: 'codigo,detalle,cuando,destinatario', ordenDerivacion: 'codigo,detalle,cuando,destinatario' });
+    // también con el panel caído o suspendido (el aviso sale igual)
+    for (const r of [{ statusCode: 500, body: {} }, { statusCode: 409, body: {} }]) {
+      expect(correr(r, { base: { ordenPedido: 'cotejo,modalidad,total,items' } })['ordenPedido'], String(r.statusCode)).toBe('cotejo,modalidad,total,items');
+    }
+    // negativos: vacío, marcador sin reemplazar, algo que no es texto, demasiado largo o con otro nombre, no pasan
+    const raro = ok(PANEL, { base: { ordenPedido: '', ordenReserva: 'REEMPLAZAR_ORDEN', ordenDerivacion: 5, ordenLargo: 'x'.repeat(101), Orden: 'no', 'orden-x': 'no', miorden: 'no' } });
+    for (const k of ['ordenPedido', 'ordenReserva', 'ordenDerivacion', 'ordenLargo', 'Orden', 'orden-x', 'miorden']) expect(raro[k], k).toBeUndefined();
+    // el panel y el respaldo no inventan órdenes
+    expect(Object.keys(ok(PANEL, { base: {} })).filter((k) => /^orden/.test(k))).toEqual([]);
   });
   it('las banderas pedidosActivo, reservasActivo y promosActivo valen false si faltan', () => {
     const c = ok(PANEL, { base: {} });
