@@ -1633,6 +1633,23 @@ describe('cobro', () => {
     expect(todoElTexto(t)).not.toMatch(/datos coinciden/);
   });
 
+  it('esperando el comprobante: un texto recuerda con «Reenviar QR» y «Cancelar pedido»; reenviar no abre otro cobro; cancelar vuelve al menú', () => {
+    const r = armarPedido({ ventana: 5 });
+    confirmarPedido(r);
+    const recuerdo = r.c.escribe('¿ya llegó?');
+    expect(cuerpos(recuerdo)[0]).toMatch(/Estoy esperando el comprobante de tu pedido #\w+/);
+    expect(recuerdo.mensajes.flatMap(titulosDe)).toEqual(['Reenviar QR', 'Cancelar pedido']);
+    expect(recuerdo.avisos).toHaveLength(0);
+    const reenvio = r.c.toca(idDeBoton(recuerdo, 'Reenviar QR'), 'Reenviar QR');
+    expect(reenvio.mensajes[0]?.payload['image']?.link).toBe(QR_URL);
+    expect(reenvio.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado')).toBe(false); // el servidor ya abrió ese cobro
+    expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+    const cancela = r.c.toca(idDeBoton(recuerdo, 'Cancelar pedido'), 'Cancelar pedido');
+    expect(estadoDe(r.w.mundo)['paso']).toBe('menu');
+    expect(cancela.avisos).toHaveLength(0);
+    expect(cancela.llamadas.cierre).toHaveLength(0);
+  });
+
   it('una imagen sin QR pendiente NO es un pago: no se baja, no se lee, no se coteja, no se avisa; con pie de foto, el pie es un texto más', () => {
     const w = crear({ panel: panel(COBRO_REAL) });
     const c = con(w);
