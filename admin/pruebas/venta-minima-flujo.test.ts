@@ -2052,4 +2052,3 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
   });
 });
 
-void [ver, PLANTILLA, MIN, HORA, destinos, configBase, ROLES_POR_OMISION];
