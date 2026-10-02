@@ -3,10 +3,10 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Link, useParams } from 'react-router-dom';
 import jsQR from 'jsqr';
-import { db, funciones } from '../../lib/firebase';
-import { useFlujos } from '../../lib/flujos';
+import { db, funciones } from '../../core/lib/firebase';
+import { useFlujos } from '../../central/lib/flujos';
 import { ConfiguracionVertical } from '../../central/componentes/ConfiguracionModulo';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
 /**
  * CONFIGURACIÓN DE QR — el QR propio del comercio, para el flujo que cobra.
@@ -247,7 +247,7 @@ export function Cobro() {
 
   // Sin un flujo que cobre no se ofrece el formulario: `registrarQrDeCobro` lo
   // rechazaría, y ofrecer una puerta que el servidor cierra es lo que la
-  // consola evita en todas partes (`lib/flujos.ts`).
+  // consola evita en todas partes (`web/src/central/lib/flujos.ts`).
   if (flujos !== null && documento === null) {
     return (
       <section>

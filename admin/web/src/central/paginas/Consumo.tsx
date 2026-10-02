@@ -3,9 +3,9 @@ import {
   collection, documentId, limit, onSnapshot, orderBy, query, where,
 } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { db } from '../../lib/firebase';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { descargarCsv } from '../../lib/exportar';
+import { db } from '../../core/lib/firebase';
+import { TextoSeguro } from '../componentes/TextoSeguro';
+import { descargarCsv } from '../lib/exportar';
 
 /**
  * CONSUMO — lo que se factura, con el mismo vocabulario que la página de precios.

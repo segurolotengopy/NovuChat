@@ -18,9 +18,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, funciones } from '../../lib/firebase';
-import { CALLABLES, type EjesDeCuenta } from '../../lib/ejes';
-import { mensajeDeError } from '../../lib/errores';
+import { db, funciones } from '../../core/lib/firebase';
+import { CALLABLES, type EjesDeCuenta } from './ejes';
+import { mensajeDeError } from './errores';
 
 export interface LecturaDeEjes {
   ejes: EjesDeCuenta | null | undefined;

@@ -3,7 +3,7 @@
  * LOS EJES DE UNA CUENTA: asignar el modelo y la titularidad, y leerlos
  * =============================================================================
  *
- * Dos callables, con la firma que la consola (`web/src/lib/ejes.ts`, PR #203)
+ * Dos callables, con la firma que la consola (`web/src/central/lib/ejes.ts`, PR #203)
  * ya supone:
  *
  *   `asignarEjes({ tenantId, titularidad?: { phoneNumberId, titularidad }, modelo? })`

@@ -8,7 +8,7 @@
  * (configuración, colecciones, límites, pestañas, herramientas, Functions,
  * ganchos y los mensajes que agrega por conversación). De acá se derivan, en
  * F2 y F3, las siete copias de hoy (`Analisis/41` §3.3): la tabla de flujos de
- * la consola (`web/src/lib/flujos.ts`), `VERTICALES` de `index.ts`,
+ * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `index.ts`,
  * `VERTICALES_CONOCIDOS` y `documentoDeVertical` de `prompt.ts`, las
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
@@ -311,10 +311,10 @@ export const REGISTRO = [
     modulo: 'catalogo-web',
     nombre: 'Catálogo web',
     version: 1,
-    // DUDA (i): `catalogoWeb.ts` importa `hayParaVender` de `inventario.ts`
-    // para no ofrecer lo agotado. Igual que en Pedidos, no se declara: lo
-    // decide la revisora junto con el caso de Pedidos.
-    dependeDe: ['productos', 'pedidos'],
+    // `catalogoWeb.ts` importa `hayParaVender` y `descontarPedido` de
+    // `inventario.ts`: el catálogo no ofrece lo agotado y descuenta el stock
+    // al tomar el pedido. Declarado el 01/10/2026 (decisión de Andres).
+    dependeDe: ['productos', 'pedidos', 'inventario'],
     // El logo vive aparte porque `config/negocio` viaja en cada turno
     // (firestore.rules, `logoValido`).
     configuracion: [{ documento: 'config/marca', campos: ['logo'] }],

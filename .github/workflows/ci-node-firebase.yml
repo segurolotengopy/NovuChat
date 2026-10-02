@@ -1,16 +1,20 @@
 # =============================================================================
 # ci-node-firebase.yml — Pipeline completo SPA Node/React (Vite/Vitest)
 #                        → Firebase Hosting + reglas de Firestore
-# Versión: 2.8 | Fecha: 2026-10-01
-# Adaptación de NovuChat del ci-node-firebase.yml del estándar (2.8, commit
-# c9313d3 de SeguridadGeneral). Del estándar se tomaron: secretos mapeados uno
+# Versión: 2.9 | Fecha: 2026-10-01
+# Adaptación de NovuChat del ci-node-firebase.yml del estándar (2.9, commit
+# d36bb93 de SeguridadGeneral). Del estándar se tomaron: secretos mapeados uno
 # por uno (2.1), pull-requests: read en seguridad-estatica (2.4), concurrency
 # sin expresión en cancel-in-progress (2.5), /health por defecto (2.6), el
 # grupo de las corridas que no son PR por run_id (2.7; NovuChat ya lo tenía
 # desde el #295) y, de la 2.8: Dependabot excluido también por autor del PR en
 # `previsualizar`, el plazo del canal `previa` renovado tras cada clon, el
 # aviso del primer despliegue sin versión en live y el alcance del rollback
-# (solo Hosting). Propio de NovuChat: desplegar-staging en el grupo
+# (solo Hosting). De la 2.9: el health check y el rollback automático corren
+# al final de desplegar-produccion (el job aprobado por el Environment
+# `production`); post-despliegue solo registra el Deployment y ya no recibe
+# credenciales de nube; el dispatch de producción se lanza SOBRE el tag y se
+# comprueba que el código del workspace es el del tag. Propio de NovuChat: desplegar-staging en el grupo
 # deploy-staging (ver el bloque `concurrency`). No se portaron 2.2 (corepack
 # prepare para el hook predeploy) ni 2.3 (traducción del «404 Site Not
 # Found»): los pasos de despliegue de NovuChat son propios, instalan
@@ -790,7 +794,7 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
-          # El bucket del archivo de planes de Captación (lib/firebase.ts). Sin
+          # El bucket del archivo de planes de Captación (`web/src/core/lib/firebase.ts`). Sin
           # esta línea la variable del repositorio no llega al bundle: la
           # consola compila igual, pero con Storage apagado y «Subir»
           # deshabilitado. Ver docs/seguridad/reglas-storage.md §Despliegue.
@@ -1016,7 +1020,7 @@ jobs:
           # de producción está atada a su dominio, GitHub no admite una variable
           # de Environment vacía, y sin variable en `staging` se usaría la del
           # repositorio (la de producción). Con la clave vacía la consola no
-          # inicializa App Check (`web/src/lib/firebase.ts`).
+          # inicializa App Check (`web/src/core/lib/firebase.ts`).
           VITE_APPCHECK_SITE_KEY: ''
         run: |
           set -euo pipefail
@@ -1612,7 +1616,9 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
             && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25 # 2.9: incluye el health check (hasta ~450 s) y el rollback
+    outputs:
+      salud_ok: ${{ steps.salud.outputs.ok }}
     environment:
       name: production
       url: ${{ vars.PROD_URL }}
@@ -1644,10 +1650,26 @@ jobs:
           ACTOR: ${{ github.actor }}
           APROBADORES: ${{ vars.APROBADORES_PROD }}
           FIRMA_REQUERIDA: ${{ vars.TAG_FIRMADO_REQUERIDO }}
+          REF_EJECUCION: ${{ github.ref }}
         run: |
           set -euo pipefail
           git fetch --quiet origin main
           if [[ "$EVENTO" == "workflow_dispatch" ]]; then
+            # 0) El dispatch se lanza SOBRE el mismo tag estable que despliega. Control de coherencia del propio
+            #    workflow (NO es una barrera: quien edita el workflow en una rama puede quitarlo; la barrera de
+            #    identidad es la condición del provider de producción, setup-oidc-gcp.sh 2.3, PR-B, pendiente).
+            if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::El tag del dispatch debe tener la forma vX.Y.Z (versión estable; un prerelease no se despliega a producción)."
+              exit 1
+            fi
+            if [[ "$REF_EJECUCION" != "refs/tags/$TAG" ]]; then
+              wf="${GITHUB_WORKFLOW_REF%%@*}"; wf="${wf##*/}"
+              echo "::error::Lance el workflow_dispatch sobre el mismo tag que despliega: gh workflow run ${wf} --ref ${TAG} -f tag=${TAG} -f confirmar=DESPLEGAR -f destino=produccion (ref de esta ejecución: ${REF_EJECUCION})"
+              exit 1
+            fi
+            # 0b) El código descargado es el del tag aprobado, no el de una rama con el mismo nombre.
+            [[ "$(git rev-parse HEAD)" == "$(git rev-parse "refs/tags/$TAG^{commit}")" ]] \
+              || { echo "::error::El código del workspace no es el del tag $TAG (¿existe una rama con el mismo nombre?)"; exit 1; }
             # 1) El tag existe
             git rev-parse -q --verify "refs/tags/$TAG" >/dev/null \
               || { echo "::error::El tag '$TAG' no existe en el repositorio"; exit 1; }
@@ -1701,8 +1723,8 @@ jobs:
 
       - name: Conservar copia de la versión actual (canal "previa" para rollback)
         # Clona el contenido en vivo a un canal de vista previa de larga
-        # duración. Si el health check posterior falla, post-despliegue lo
-        # vuelve a clonar sobre live. Ver 01-seguridad/06-rollback-e-incidentes.md.
+        # duración. Si el health check posterior falla, el paso "Rollback de
+        # hosting" de este mismo job lo vuelve a clonar sobre live. Ver 01-seguridad/06-rollback-e-incidentes.md.
         # AVISO: la llamada REST de renovación (PATCH sobre
         # sites/<sitio>/channels/previa con updateMask=ttl) NO se verificó
         # contra el servicio real de Firebase Hosting: solo con dobles en
@@ -1890,37 +1912,6 @@ jobs:
             --message "producción ${GITHUB_REF_NAME} (run ${GITHUB_RUN_ID})"
           echo "### Producción desplegada: $URL_PROD (${GITHUB_REF_NAME})" >> "$GITHUB_STEP_SUMMARY"
 
-  # ---------------------------------------------------------------------------
-  # Fase 7 — post-despliegue: health check con reintentos; si falla, rollback
-  # y registro del Deployment. El Environment ya crea un Deployment de GitHub;
-  # aquí se registra además el resultado de la verificación (útil en Modo B0).
-  # ---------------------------------------------------------------------------
-  post-despliegue:
-    name: post-despliegue
-    needs: desplegar-produccion
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Environment SIN reglas de proteccion, a proposito. Existe por la
-    # condicion de atributos del proveedor OIDC, que exige que el `sub` del
-    # token nombre un Environment (ver .github/DESPLIEGUE-FIREBASE.md §2).
-    # Sin esto, este job NO puede autenticarse y el rollback automatico no
-    # funciona: se descubriria justo cuando hace falta.
-    # No se reutiliza `production` porque su revisor obligatorio dejaria el
-    # rollback esperando aprobacion humana, que es lo contrario de un rollback.
-    environment:
-      name: production-rollback
-    permissions:
-      contents: read
-      id-token: write
-      deployments: write
-    # SIN `defaults.run.working-directory`, a propósito. Este job no hace
-    # checkout, así que admin/ no existe: con el working-directory en admin/
-    # el runner no podía ni arrancar bash («An error occurred trying to start
-    # process '/usr/bin/bash' with working directory …/admin. No such file or
-    # directory»), el health check no corría y el despliegue sano de v0.1.4
-    # (2026-09-13) quedó registrado como fallido. Ninguno de sus pasos usa
-    # archivos del repositorio: curl y `firebase hosting:clone --project`.
-    steps:
       - name: Health check de producción (10 intentos, 15 s)
         id: salud
         env:
@@ -1940,13 +1931,6 @@ jobs:
           done
           echo "ok=false" >> "$GITHUB_OUTPUT"
           echo "::error::Producción no responde 200 tras 10 intentos"
-
-      - name: Autenticar en GCP para rollback
-        if: steps.salud.outputs.ok == 'false'
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_SA_DEPLOY_PROD }}
 
       - name: Rollback de hosting (clonar canal "previa" sobre live)
         if: steps.salud.outputs.ok == 'false'
@@ -1969,15 +1953,45 @@ jobs:
             echo "::error::Rollback automático no disponible (y aunque lo estuviera, revertiría SOLO Hosting: reglas de Firestore, funciones y datos no se revierten solos). Ejecute el rollback manual: consola Firebase → Hosting → Historial → Revertir; para reglas y funciones, git revert + nuevo tag. Ver 01-seguridad/06-rollback-e-incidentes.md"
           fi
 
+      - name: Fallar si producción no responde
+        if: steps.salud.outputs.ok == 'false'
+        run: echo "::error::Health check de producción fallido tras el despliegue; se intentó el rollback (paso anterior)."; exit 1
+
+  # ---------------------------------------------------------------------------
+  # Fase 7 — post-despliegue: registra el resultado como Deployment (útil en B0).
+  # El health check y el rollback corren al final de desplegar-produccion, el único
+  # job aprobado por el Environment (los secretos del Environment solo llegan a los
+  # jobs que lo declaran). Cuando exista la condición del provider de producción
+  # (03-scripts/setup-oidc-gcp.sh 2.3, PR-B, pendiente), la identidad de producción
+  # en GCP solo aceptará tokens de un tag v* estable y, en Modos A/B, de un job con
+  # environment: production. Declarar aquí el Environment pediría otra aprobación.
+  # Este job no recibe credenciales de nube.
+  # ---------------------------------------------------------------------------
+  post-despliegue:
+    name: post-despliegue
+    needs: desplegar-produccion
+    if: >-
+      always() && contains(fromJSON('["success","failure","cancelled"]'), needs.desplegar-produccion.result)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      deployments: write
+    steps:
       - name: Registrar resultado del despliegue
-        if: always()
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
-          SALUD_OK: ${{ steps.salud.outputs.ok }}
+          RESULTADO: ${{ needs.desplegar-produccion.result }}
+          SALUD_OK: ${{ needs.desplegar-produccion.outputs.salud_ok }}
           URL_PROD: ${{ vars.PROD_URL }}
         with:
           script: |
-            const ok = process.env.SALUD_OK === 'true';
+            const ok = process.env.RESULTADO === 'success';
+            const descripcion = ok
+              ? 'Health check correcto'
+              : process.env.SALUD_OK === 'false'
+                ? 'Health check fallido; rollback intentado en desplegar-produccion'
+                : 'desplegar-produccion falló antes de verificar la salud';
             const { data: d } = await github.rest.repos.createDeployment({
               owner: context.repo.owner, repo: context.repo.repo,
               ref: context.ref, environment: 'production', auto_merge: false,
@@ -1989,12 +2003,12 @@ jobs:
               deployment_id: d.id, state: ok ? 'success' : 'failure',
               environment_url: process.env.URL_PROD,
               log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: ok ? 'Health check correcto' : 'Health check fallido; rollback intentado'
+              description: descripcion
             });
             core.summary.addHeading('Post-despliegue')
-              .addRaw(ok ? 'Producción verificada correctamente.' : 'FALLO de verificación: revise el rollback.')
+              .addRaw(ok ? 'Producción verificada correctamente.' : `FALLO: ${descripcion}.`)
               .write();
-            if (!ok) core.setFailed('Health check de producción fallido');
+            if (!ok) core.setFailed('Despliegue a producción fallido: vea el job desplegar-produccion');
 
   # ---------------------------------------------------------------------------
   # compuerta-pr (D1): ÚNICO status check que exigen los rulesets de main.

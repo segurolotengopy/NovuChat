@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { deleteField, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { funciones } from '../../lib/firebase';
+import { funciones } from '../../core/lib/firebase';
 import { useParams } from 'react-router-dom';
-import { auth, db } from '../../lib/firebase';
-import { useFlujos } from '../../lib/flujos';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../../lib/paletas';
+import { auth, db } from '../../core/lib/firebase';
+import { useFlujos } from '../lib/flujos';
+import { TextoSeguro } from '../componentes/TextoSeguro';
+import { PALETAS, PALETA_POR_DEFECTO, type PaletaId } from '../lib/paletas';
 
 /**
  * Edición de la configuración del negocio: lo que hoy vive a mano en el nodo
@@ -269,7 +269,7 @@ function revisionCorresponde(revision: Revision, hex: string | null): boolean {
 export function Configuracion() {
   const { tenantId = '' } = useParams();
   // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
-  // vive en su pestaña («Agenda», «Pedidos y cobro»): ver lib/flujos.ts.
+  // vive en su pestaña («Agenda», «Pedidos y cobro»): ver `web/src/central/lib/flujos.ts`.
   const flujos = useFlujos(tenantId) ?? [];
   const conAgenda = flujos.includes('agendamiento');
   const conVenta = flujos.includes('venta');

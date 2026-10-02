@@ -149,7 +149,7 @@ la conversación. Esos avisos se quitan cuando llegue el dato, no antes.
 
 ### 4nonies.4 Lo que cambia en el registro de flujos — hecho
 
-`web/src/lib/flujos.ts` declara para `venta` las pestañas Pedidos, Cobros,
+`web/src/central/lib/flujos.ts` declara para `venta` las pestañas Pedidos, Cobros,
 Inventario y Configuración de QR. «Pedidos» es la primera con `oper` entre sus
 roles, y la compuerta de la cabecera (`App.tsx`) ya filtra por `roles` en vez de
 suponer que una pestaña de flujo implica administrador.
