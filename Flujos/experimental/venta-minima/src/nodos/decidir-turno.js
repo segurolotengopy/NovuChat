@@ -43,12 +43,14 @@
 //     con la pregunta `i` pendiente; `e|…` en `pedido_entrega`; `p|…` en `pedido_confirmar`;
 //     `r|…` en `reserva_confirmar`; `q|…` en `esperando_comprobante`. En otro paso, un botón
 //     viejo muestra el paso actual y no cambia nada. `q|cancelar` es `menu` con el pedido
-//     descartado; `q|reenviar` es `reenviar_qr`.
+//     descartado; `q|reenviar` es `reenviar_qr`. LÍMITE CONOCIDO: `q|cancelar` descarta el pedido del
+//     estado pero NO avisa al servidor (el cobro abierto por `qr_enviado` vence solo): no se construye aquí.
 //  d. «Hacer un pedido» (`m|pedido`) y «Ver la carta» son la misma acción: `carta`.
 //  e. Sin horario en la configuración (`horario` vacío) no se bloquea ningún pedido; con un
 //     horario ilegible tampoco, pero se anota en `errores`.
 //  f. Una ubicación compartida no se toma como dirección (supuesto 6): muestra el paso
-//     actual, que en `pedido_datos` vuelve a pedir la dirección por escrito.
+//     actual, que en `pedido_datos` vuelve a pedir la dirección por escrito. (`Plan del turno` la traduce a
+//     `entrega.ubicacion`: con delivery, el paso de entrega la toma como dirección.)
 //  g. Tipos de mensaje que no son texto, botón, audio, imagen, documento ni ubicación
 //     (sticker, contactos, pedido de catálogo…) → `medio_no_leido`.
 const cfg = vmCfg();

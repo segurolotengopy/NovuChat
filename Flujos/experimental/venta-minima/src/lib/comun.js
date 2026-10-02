@@ -151,6 +151,15 @@ function vmJsonDeGemini(j) {
 function vmTextoSeguro(t) {
   return typeof t === 'string' && !VM_PROHIBIDAS.test(t.normalize('NFKC').replace(/\p{Cf}/gu, ''));
 }
+// El texto con cada coincidencia de la red de prohibidas cambiada por «…». Es para el texto de TERCEROS (la dirección, la
+// referencia, las notas, el nombre): así un «Calle 3 en camino a Obrajes» no traba el mensaje entero al cliente. Solo el texto
+// que coincide sale normalizado (NFKC y sin `\p{Cf}`); el resto sale tal cual.
+function vmSinProhibidas(t) {
+  const s = _vmCadena(t);
+  const c = s.normalize('NFKC').replace(/\p{Cf}/gu, '');
+  if (!VM_PROHIBIDAS.test(c)) return s;
+  return c.replace(new RegExp(VM_PROHIBIDAS.source, 'gi'), '…');
+}
 
 // ---------------------------------------------------------------------------
 // Estado por telefono, repetidos y pedidos
