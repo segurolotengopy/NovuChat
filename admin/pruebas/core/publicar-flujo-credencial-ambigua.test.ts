@@ -180,8 +180,21 @@ describe('publicar-flujo.sh y las credenciales sin resolver', () => {
       expect(r.llamadas).toContain('POST /workflows');
     });
     it('--crear en seco: avisa si la lista de credenciales no llegó, sin escribir', () => {
-      const r = correr(flujo([nodo('Nodo nuevo', 'Mia')]), '{"message":"forbidden"}', ['--crear'], { CODIGO_CREDENCIALES: '403' });
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), '{"message":"forbidden"}', ['--crear'], { CODIGO_CREDENCIALES: '403' });
+      expect(r.codigo, r.salida).toBe(0);
       expect(r.salida).toMatch(/con --aplicar se abortaria: n8n no entrego la lista de credenciales \(HTTP 403\)/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear en seco: avisa si la lista llegó partida (nextCursor), sin escribir', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', 'Mia')]), JSON.stringify({ data: UNICA, nextCursor: 'abc' }), ['--crear']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/hay mas de 250 credenciales y la lista llego partida/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear --aplicar con HTTP 200 sin lista y un nodo sin nombre aborta sin POST', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), '{}', ['--crear', '--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/ABORTADO[\s\S]*HTTP 200/);
       expect(escribio(r.llamadas)).toBe(false);
     });
     it('--crear en seco: contraprueba, con la lista completa no hay aviso', () => {

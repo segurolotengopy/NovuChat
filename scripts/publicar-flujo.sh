@@ -222,7 +222,7 @@ if not aplicar and not lista_llego:
     print(f"  {A}!{FIN} con --aplicar se abortaria: n8n no entrego la lista de credenciales (HTTP {os.environ.get('CRED_COD')}); no se decide por TIPO sin ella.")
 if not aplicar and hay_mas:
     print(f"  {A}!{FIN} con --aplicar se abortaria: hay mas de 250 credenciales y la lista llego partida.")
-if aplicar and os.environ.get("CRED_COD") != "200":
+if aplicar and not lista_llego:
     print(f"{R}✗ ABORTADO: n8n no entrego la lista de credenciales (HTTP {os.environ.get('CRED_COD')}); no se decide por TIPO sin ella.{FIN}")
     sys.exit(1)
 if aplicar and hay_mas:
