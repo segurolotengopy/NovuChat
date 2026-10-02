@@ -31,7 +31,7 @@
  * CALENDARIO: el TERCER calendario del Demo A, leído del flujo vivo del Demo A
  * (`N8N_WORKFLOW_ID` del .env). Va al campo `calendarioForzado` de «Config base».
  */
-import { chmodSync, existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, constants, existsSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -336,7 +336,6 @@ if (bandera('actualizar-codigo')) {
   // El candidato es un archivo VERSIONADO: dentro del repositorio, rastreado por git y sin cambios sin confirmar.
   let archivoReal;
   try { archivoReal = realpathSync(ARCHIVO); } catch (e) { morir('--flujo no existe'); }
-  if (lstatSync(ARCHIVO).isSymbolicLink()) morir('--flujo no puede ser un enlace simbólico');
   const relativo = relative(REPO, archivoReal);
   if (relativo.startsWith('..') || relativo === '' ) morir('--flujo tiene que ser un archivo versionado DENTRO del repositorio');
   let commitDelArchivo = 'sin comprobar';
@@ -347,7 +346,18 @@ if (bandera('actualizar-codigo')) {
     if (git('status', '--porcelain', '--', relativo) !== '') morir('el candidato tiene cambios sin confirmar: confirme el commit (o use el archivo del commit) antes de publicar');
     commitDelArchivo = (git('log', '-1', '--format=%h', '--', relativo) || 'desconocido');
   }
-  const cand = JSON.parse(readFileSync(ARCHIVO, 'utf8'));
+  // Se lee SIN comprobar antes: `O_NOFOLLOW` hace que abrir un enlace simbólico falle (ELOOP) en vez de seguirlo, y se lee por el descriptor abierto.
+  let cand;
+  let fd;
+  try {
+    fd = openSync(ARCHIVO, constants.O_RDONLY | constants.O_NOFOLLOW);
+    cand = JSON.parse(readFileSync(fd, 'utf8'));
+  } catch (e) {
+    morir(e && e.code === 'ELOOP' ? '--flujo no puede ser un enlace simbólico' : '--flujo no se pudo leer como JSON');
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  if (!cand || !Array.isArray(cand.nodes)) morir('--flujo no es un flujo de n8n (falta «nodes»)');
   if (cand.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato trae un Webhook de prueba: no se publica');
   const nv = new Map(v.nodes.map((n) => [n.name, n]));
   const nc = new Map(cand.nodes.map((n) => [n.name, n]));
