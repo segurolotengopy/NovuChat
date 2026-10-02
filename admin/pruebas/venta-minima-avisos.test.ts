@@ -1281,6 +1281,48 @@ describe('S-1: homoglifos y marcas combinantes no esconden una palabra prohibida
   });
 });
 
+// La red mirada como la mira el código: en la forma canónica y en la sin puntuación.
+const coincideConLaRed = (t: string): boolean => {
+  const c: string = L.avCanon(t);
+  return VM_PROHIBIDAS.test(c) || VM_PROHIBIDAS.test(c.replace(/[^\p{L}\p{N}]+/gu, ' ').trim());
+};
+
+describe('P-1: el recorte al tope no vuelve a formar una coincidencia de la red', () => {
+  it('«confirmo tubos» cortado en «confirmo tu» ya no sale tal cual', () => {
+    const r = L.avLimpio('a'.repeat(108) + ' confirmo tubos de 3 pulgadas', 120);
+    expect(coincideConLaRed(r)).toBe(false);
+    expect(r).not.toMatch(/confirmo tu$/);
+    expect(Array.from(r).length).toBeLessThanOrEqual(120);
+    expect(r.startsWith('a'.repeat(100))).toBe(true);
+  });
+
+  it('un texto sin riesgo sigue cortándose en el tope, sin cambios', () => {
+    expect(L.avLimpio('b'.repeat(130), 120)).toBe('b'.repeat(120));
+  });
+
+  it('fuzz determinista (5.000 casos, semilla fija) con campos hostiles: ninguna salida coincide con la red ni pasa el tope', () => {
+    let semilla = 20261002;
+    const azar = (): number => { semilla = (Math.imul(semilla, 1664525) + 1013904223) >>> 0; return semilla / 4294967296; };
+    const elige = <T>(a: T[]): T => a[Math.floor(azar() * a.length)]!;
+    const trozos = [
+      'confirmo tubos', 'confirmo tu', 'confirmamos su', 'confirmo la', 'tu pago', 'recibimos tu pago', 'recibí tu pago', 'pagado',
+      'validado', 'acreditado', 'te avisamos', 'te llamaremos', 'en camino', 'lo consulto', 'está reservada', 'quedó reservada',
+      'te confirmo', 'ya lo confirmamos', 'reserva registrada', 'reservamos tu mesa', 'pa​gado', 'paㅤgado', 'pаgаdo',
+      'ｖａｌｉｄａｄｏ', 'tubos', 'a', 'x', 'Av. Arce 123', 'Nro.123', '12.30', 'hola', 'mesa', ' ', '  ', ' · ', '*', '_', '~', '[texto omitido]',
+      '[texto', 'omitido]', '\n', 'ejemplo.com', 'www.x.com/y',
+    ];
+    for (let i = 0; i < 5000; i++) {
+      const tope = 8 + Math.floor(azar() * 120);
+      const n = 1 + Math.floor(azar() * 14);
+      let t = '';
+      for (let k = 0; k < n; k++) t += (azar() < 0.3 ? 'a'.repeat(Math.floor(azar() * 100)) : '') + (azar() < 0.7 ? ' ' : '') + elige(trozos);
+      const r: string = L.avLimpio(t, tope);
+      expect(coincideConLaRed(r), JSON.stringify([t, tope, r])).toBe(false);
+      expect(Array.from(r).length, JSON.stringify([t, tope, r])).toBeLessThanOrEqual(tope);
+    }
+  });
+});
+
 describe('M1: el tope diario de avisos respeta el 0', () => {
   it('avPlan con `topeAvisosDia: 0` no arma ningún aviso; con la clave ausente rige 150', () => {
     const r = L.avPlan('pedido', pedido(), CSV, { ...CFG, topeAvisosDia: 0 }, sdCon(), AHORA);

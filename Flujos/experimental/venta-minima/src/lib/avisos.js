@@ -283,15 +283,41 @@ function avLimpio(t, max, opc) {
   s = avSinBordes(s.replace(/\s{2,}/g, ' '));
   s = avSinBordes(s.replace(/(?:\s·){2,}/g, ' ·'));
   s = avSinBordes(avSinProhibidas(s).replace(/\s{2,}/g, ' '));
-  const cps = Array.from(s);
-  if (cps.length > tope) {
-    s = cps.slice(0, tope).join('');
-    // Un corte que cae dentro de una marca («[texto omit») se retrocede hasta el corchete que la abre.
-    const ab = s.lastIndexOf('[');
-    if (ab >= 0 && ab > s.lastIndexOf(']')) s = s.slice(0, ab);
-    s = avSinBordes(s);
+  if (Array.from(s).length > tope) {
+    // El corte PUEDE volver a formar una coincidencia de la red («confirmo tubos» recortado a «confirmo tu»): tras cortar se vuelve
+    // a sanear, y como la marca es más larga que una palabra corta, se vuelve a cortar (hasta 4 vueltas, siempre acotado).
+    for (let vuelta = 0; vuelta < 4; vuelta++) {
+      s = Array.from(s).slice(0, tope).join('');
+      // Un corte que cae dentro de una marca («[texto omit») se retrocede hasta el corchete que la abre.
+      const ab = s.lastIndexOf('[');
+      if (ab >= 0 && ab > s.lastIndexOf(']')) s = s.slice(0, ab);
+      s = avSinBordes(avSinProhibidas(avSinBordes(s)).replace(/\s{2,}/g, ' '));
+      if (Array.from(s).length <= tope) break;
+    }
   }
-  return s;
+  return avAjustarFinal(s, tope);
+}
+
+/** Verdadero si `s` coincide con la red en la forma canónica o en la sin puntuación (la misma comprobación de `avSinProhibidas`). */
+function avCoincide(s) {
+  const re = avProhibidas();
+  const rx = new RegExp(re.source, re.flags.replace(/[gy]/g, ''));
+  return rx.test(avCanon(s)) || rx.test(avNorm(s));
+}
+
+/**
+ * Última garantía de `avLimpio`: el resultado respeta el tope y NO coincide con la red. Si algo falla, se quitan palabras
+ * ENTERAS del final hasta que cumpla (y, en el peor caso, devuelve '').
+ */
+function avAjustarFinal(s, tope) {
+  if (Array.from(s).length <= tope && !avCoincide(s)) return s;
+  const palabras = s.split(' ');
+  while (palabras.length > 0) {
+    palabras.pop();
+    const t = avSinBordes(palabras.join(' '));
+    if (Array.from(t).length <= tope && !avCoincide(t)) return t;
+  }
+  return '';
 }
 
 /** El texto de una variable de plantilla: sin saltos, sin 5+ espacios, con tope (500) y nunca vacío («—»). */
