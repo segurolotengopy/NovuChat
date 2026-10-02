@@ -23,7 +23,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CALLABLES, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO, ETIQUETA_TITULARIDAD, MODALIDADES, MODELOS,
@@ -133,7 +133,11 @@ describe('modelo y titularidad: las listas son las del servidor, no una copia', 
     const ejes = sinComentarios(leer('web/src/lib/ejes.ts'));
     expect(ejes).not.toMatch(/MODELOS\s*=\s*\[/);
     expect(ejes).not.toMatch(/TITULARIDADES\s*=\s*\[/);
-    expect(ejes).toContain("from '../../../functions/src/central/ejes'");
+    // El import se resuelve desde la carpeta del archivo y debe llegar al módulo del servidor:
+    // vale tras cada mudanza y rechaza una copia local de las listas.
+    const desde = dirname(join(aqui, '..', 'web/src/lib/ejes.ts'));
+    const destinos = [...ejes.matchAll(/from '(\.{1,2}\/[^']+)'/g)].map((m) => resolve(desde, m[1]));
+    expect(destinos).toContain(join(aqui, '..', 'functions/src/central/ejes'));
   });
 });
 
