@@ -308,6 +308,49 @@ describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador,
     expect(r.codigo, r.salida).toBe(0);
     expect(r.salida).toMatch(/commit [0-9a-f]{7,}/);
   });
+  it('NIEGA: «Bellido» o «Demo A» tienen que ser PALABRAS del nombre (un «Demo Agendamiento» de otro negocio no pasa)', async () => {
+    for (const nombre of ['Otro Negocio — Demo Agendamiento', 'Rubén Roca — demo asesor', 'Mibellidoto Agendamiento']) {
+      await niega(vivoDe(nombre), /no es el de Bellido ni el del Demo A/);
+    }
+    for (const nombre of [BELLIDO, 'NovuChat Demo A — Agendamiento (Belleza y Salud)', 'demo a de prueba']) {
+      nuevo(vivoDe(nombre));
+      expect((await correr('--aplicar')).codigo, nombre).toBe(0);
+    }
+  });
+  it('NIEGA: un enlace simbólico DENTRO del repositorio que apunta a un archivo de afuera no es el candidato', async () => {
+    nuevo(vivoDe(BELLIDO));
+    const afuera = join(carpeta, 'afuera.json');
+    writeFileSync(afuera, JSON.stringify(candidato()));
+    const enlace = join(CARPETA, `candidato-enlace-${String(Date.now())}.json`);
+    symlinkSync(afuera, enlace);
+    try {
+      for (const extra of [[], ['--exigir-commit']]) {
+        const r = await correr('--aplicar', ...extra, '--flujo', enlace);
+        expect(r.codigo, extra.join(' ')).toBe(1);
+        expect(r.salida).toMatch(/enlace simbólico|versionado DENTRO del repositorio/);
+      }
+      expect(mundo.puts).toHaveLength(0);
+    } finally { rmSync(enlace, { force: true }); }
+  });
+  it('NIEGA: un nombre con comodines de git no se hace pasar por el archivo rastreado (pathspec literal)', async () => {
+    nuevo(vivoDe(BELLIDO));
+    const trampa = join(CARPETA, 'agenda-minima.v0.jso[n.respaldo]');
+    writeFileSync(trampa, JSON.stringify(candidato()));
+    try {
+      const r = await correr('--aplicar', '--exigir-commit', '--flujo', trampa);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/no está rastreado por git|cambios sin confirmar/);
+      expect(mundo.puts).toHaveLength(0);
+    } finally { rmSync(trampa, { force: true }); }
+  });
+  it('si tras el PUT las credenciales cambian, el aviso dice que el código nuevo YA quedó escrito y dónde está la copia', async () => {
+    nuevo(vivoDe(BELLIDO), { cambiaCredenciales: true });
+    const previa = join(carpeta, 'previa-aviso.json');
+    const r = await correr('--aplicar', '--previa', previa);
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/El código nuevo YA quedó escrito/);
+    expect(r.salida).toContain(previa);
+  });
   it('NIEGA: --actualizar-codigo no se combina con otro modo (antes, con --borrar, corría --borrar)', async () => {
     nuevo(vivoDe(BELLIDO));
     for (const otro of ['--borrar', '--sobre-bellido', '--sobre-demo-a', '--restaurar-respaldo']) {

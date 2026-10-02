@@ -31,7 +31,7 @@
  * CALENDARIO: el TERCER calendario del Demo A, leído del flujo vivo del Demo A
  * (`N8N_WORKFLOW_ID` del .env). Va al campo `calendarioForzado` de «Config base».
  */
-import { chmodSync, existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -324,18 +324,24 @@ if (bandera('actualizar-codigo')) {
   // El nombre se compara SIN tildes, espacios, apóstrofos ni signos: «Q’Taco», «Q Taco» y «Bellido — WhatsApp Modular» no esquivan la lista.
   const compacto = (t) => String(t).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const nombreCompacto = compacto(v.name);
-  if (NO_ACTUALIZAR_COMPACTO.test(nombreCompacto) || !/bellido|demoa/.test(nombreCompacto)) morir(`el flujo del .env no es el de Bellido ni el del Demo A («${v.name}»)`);
+  // «Bellido» o «Demo A» tienen que ser PALABRAS del nombre (no una subcadena: «Demo Agendamiento» de otro negocio no cuenta).
+  const palabras = ` ${String(v.name).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  if (NO_ACTUALIZAR_COMPACTO.test(nombreCompacto) || !(palabras.includes(' bellido ') || palabras.includes(' demo a '))) morir(`el flujo del .env no es el de Bellido ni el del Demo A («${v.name}»)`);
   const disparadores = v.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
   if (disparadores.length !== 1) morir(`el flujo vivo tiene ${disparadores.length} WhatsApp Trigger; hace falta exactamente uno`);
   if (Object.values(disparadores[0].credentials ?? {}).some((c) => NO_ACTUALIZAR_COMPACTO.test(compacto(c && c.name)))) morir('la credencial del disparador vivo es de un sistema ajeno (prohibición 7): no se sigue');
   if (!PROPIOS_DE_B_.every((x) => v.nodes.some((n) => n.name === x))) morir('el flujo vivo todavía no es un B (le faltan los nodos del candidato): use --sobre-bellido o --sobre-demo-a');
   const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
   // El candidato es un archivo VERSIONADO: dentro del repositorio, rastreado por git y sin cambios sin confirmar.
-  const relativo = relative(REPO, rutaReal(ARCHIVO));
+  let archivoReal;
+  try { archivoReal = realpathSync(ARCHIVO); } catch (e) { morir('--flujo no existe'); }
+  if (lstatSync(ARCHIVO).isSymbolicLink()) morir('--flujo no puede ser un enlace simbólico');
+  const relativo = relative(REPO, archivoReal);
   if (relativo.startsWith('..') || relativo === '' ) morir('--flujo tiene que ser un archivo versionado DENTRO del repositorio');
   let commitDelArchivo = 'sin comprobar';
   if (!bandera('permitir-sin-commit')) {
-    const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch (e) { return null; } };
+    // GIT_LITERAL_PATHSPECS: la ruta se toma TAL CUAL, sin comodines de git (un archivo llamado `x.jso[n]` no coincide con `x.json`).
+    const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8', env: { ...process.env, GIT_LITERAL_PATHSPECS: '1' } }).trim(); } catch (e) { return null; } };
     if (git('ls-files', '--error-unmatch', '--', relativo) === null) morir('el candidato no está rastreado por git: solo se publica un archivo versionado');
     if (git('status', '--porcelain', '--', relativo) !== '') morir('el candidato tiene cambios sin confirmar: confirme el commit (o use el archivo del commit) antes de publicar');
     commitDelArchivo = (git('log', '-1', '--format=%h', '--', relativo) || 'desconocido');
@@ -400,7 +406,7 @@ if (bandera('actualizar-codigo')) {
   }
   // Lo que el mensaje afirma, se LEYÓ: las credenciales de cada nodo y las conexiones, contra el vivo de antes del PUT.
   const credenciales = (w) => JSON.stringify(Object.fromEntries(w.nodes.map((n) => [n.name, n.credentials ?? null]).sort(([x], [y]) => (x < y ? -1 : 1))));
-  if (credenciales(tras) !== credenciales(v) || !igual(tras.connections, v.connections) || tras.nodes.length !== v.nodes.length) morir('después del PUT las credenciales o las conexiones no coinciden con las de antes: REVISE n8n YA');
+  if (credenciales(tras) !== credenciales(v) || !igual(tras.connections, v.connections) || tras.nodes.length !== v.nodes.length) morir(`después del PUT las credenciales o las conexiones no coinciden con las de antes. El código nuevo YA quedó escrito${PREVIA ? ` (el flujo de antes está en ${PREVIA})` : ''}; REVISE n8n YA`);
   console.log(`✓ «${tras.name}»: ${tras.nodes.length} nodos, activo=${tras.active}, publicada=${tras.versionId === tras.activeVersionId}; ${cambian.length} nodos con el código nuevo (leído de vuelta); credenciales y conexiones iguales a las de antes (leídas de vuelta).`);
   console.log('FALTA, ya: un mensaje real desde un teléfono registrado y la lectura de su ejecución en n8n.');
   process.exit(0);
