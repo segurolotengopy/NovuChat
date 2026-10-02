@@ -1616,7 +1616,7 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && inputs.destino == 'produccion'
             && inputs.confirmar == 'DESPLEGAR')
     runs-on: ubuntu-latest
-    timeout-minutes: 25 # 2.9: incluye el health check (hasta 150 s) y el rollback
+    timeout-minutes: 25 # 2.9: incluye el health check (hasta ~450 s) y el rollback
     outputs:
       salud_ok: ${{ steps.salud.outputs.ok }}
     environment:
@@ -1664,7 +1664,7 @@ jobs:
             fi
             if [[ "$REF_EJECUCION" != "refs/tags/$TAG" ]]; then
               wf="${GITHUB_WORKFLOW_REF%%@*}"; wf="${wf##*/}"
-              echo "::error::Lance el workflow_dispatch sobre el mismo tag que despliega: gh workflow run ${wf} --ref ${TAG} -f tag=${TAG} -f confirmar=DESPLEGAR (ref de esta ejecución: ${REF_EJECUCION})"
+              echo "::error::Lance el workflow_dispatch sobre el mismo tag que despliega: gh workflow run ${wf} --ref ${TAG} -f tag=${TAG} -f confirmar=DESPLEGAR -f destino=produccion (ref de esta ejecución: ${REF_EJECUCION})"
               exit 1
             fi
             # 0b) El código descargado es el del tag aprobado, no el de una rama con el mismo nombre.
@@ -1971,7 +1971,7 @@ jobs:
     name: post-despliegue
     needs: desplegar-produccion
     if: >-
-      always() && contains(fromJSON('["success","failure"]'), needs.desplegar-produccion.result)
+      always() && contains(fromJSON('["success","failure","cancelled"]'), needs.desplegar-produccion.result)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
