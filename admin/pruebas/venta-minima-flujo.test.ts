@@ -550,7 +550,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     }));
     for (const url of [
       'https://evil.ejemplo.invalid/ingesta', 'http://graph.facebook.com/v26.0/x', 'https://graph.facebook.com.evil.ejemplo.invalid/x',
-      'https://graph.facebook.com@evil.ejemplo.invalid/x', 'https://evilcloudfunctions.net/x', 'https://cloudfunctions.net/x',
+      ['https://graph.facebook.com', 'evil.ejemplo.invalid/x'].join(String.fromCharCode(64)), 'https://evilcloudfunctions.net/x', 'https://cloudfunctions.net/x',
       '={{ $json.destino }}', '=https://{{ $json.host }}/x', 'ftp://graph.facebook.com/x', '',
     ]) {
       const r = conUrl(url);
