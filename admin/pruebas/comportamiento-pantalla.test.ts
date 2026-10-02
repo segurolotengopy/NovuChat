@@ -23,7 +23,9 @@ import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const leer = (ruta: string) => readFileSync(join(aqui, '..', ruta), 'utf8');
+// Base armada con join(aqui, …): la mudanza de suites la recalcula (un join con un argumento no literal, no).
+const RAIZ_ADMIN = join(aqui, '..');
+const leer = (ruta: string) => readFileSync(join(RAIZ_ADMIN, ruta), 'utf8');
 
 /** El cuerpo del archivo sin sus comentarios: lo que de verdad corre. */
 const sinComentarios = (fuente: string) => fuente
