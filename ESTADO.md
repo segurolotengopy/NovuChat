@@ -12,7 +12,7 @@
 cerrada en `main` el 02/10 a las ~00:40** (#353, el Cierre). La etiqueta `v0.11.0`
 (sobre `e23bf34`) la creó Andres a las 00:21, fuera de la ventana de 02:00 a 03:00
 por decisión suya («hagámoslo ahora»), y **quedó en producción a las 00:37**
-(hora de Bolivia; corrida 36964207581, producción aprobada a las 00:34). Asiento de hoy en `bitacora/2026-10.md`; lo anterior,
+(hora de Bolivia; corrida de la etiqueta, producción aprobada a las 00:34). Asiento de hoy en `bitacora/2026-10.md`; lo anterior,
 en `bitacora/2026-09.md`.
 
 ## En producción
@@ -57,7 +57,7 @@ en `bitacora/2026-09.md`.
 3. Pendientes que señaló el informe H2: repetir el seco de `migrar-ejes`
    (`scripts/plataforma/migrar-ejes.mjs`) tras S1; Bellido corre un JSON de
    `Flujos/` experimental fuera de los 8 que verifica el ensamblador; un
-   Deployment `production` falso en failure de la corrida 36950792045 ensucia las
+   Deployment `production` falso en failure de una corrida cancelada del PR #345 ensucia las
    métricas DORA.
 4. Plantillas `prueba_termina` y `conversaciones_agotadas` con texto nuevo
    (Meta), antes del primer pase real.
