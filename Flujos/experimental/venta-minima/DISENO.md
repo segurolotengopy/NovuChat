@@ -191,18 +191,22 @@ deja publicado junto a la producción. Sus cerraduras:
 
 ## Mensajes por conversación (declarados y medidos en la suite)
 
-Es un flujo nuevo: no agrega ni quita mensajes a ningún otro cliente. Lo que cuesta cada conversación de Q'Taco, **en rangos**:
+Es un flujo nuevo: no agrega ni quita mensajes a ningún otro cliente. Lo que cuesta cada conversación de Q'Taco es **el recorrido
+típico más un mensaje por cada aclaración** (no hay un techo fijo):
 
-| Conversación | Al cliente | Al restaurante (ventanas cerradas) | Al restaurante (ventanas abiertas) |
+| Conversación | Al cliente (recorrido típico) | Al restaurante (ventanas cerradas) | Al restaurante (ventanas abiertas) |
 |---|---|---|---|
-| Pedido con QR (menú, carta, resumen, QR, comprobante) | **5 a 7** | 2 plantillas | 5 (2 plantillas, 2 detalles y la imagen del comprobante para `completo`) |
-| Pedido sin QR, plan B (menú, carta, resumen, pase) | **4 a 6** | 2 | 4 |
-| Reserva (menú, datos, resumen, enviada) | **4 a 5** | 2 | 4 |
+| Pedido con QR (menú, carta, resumen, QR, comprobante) | **5** + 1 por aclaración | 2 plantillas | 5 (2 plantillas, 2 detalles y la imagen del comprobante para `completo`) |
+| Pedido sin QR, plan B (menú, carta, resumen, pase) | **4** + 1 por aclaración | 2 | 4 |
+| Reserva (menú, datos, resumen, enviada) | **4** + 1 si faltan datos | 2 | 4 |
 | Promoción | **1** (ficha con 3 botones) | 0 | 0 |
 | Derivación | **1** | 2 plantillas | 2 (texto libre en lugar de la plantilla) |
 
-El piso es el recorrido sin tropiezos; el techo suma, como mucho, estos extras (la suite los mide: un caso con `entrega: ''`
-y una carta de más de 3.500 caracteres, y uno con datos de reserva que faltan):
+Una «aclaración» es cualquier mensaje extra que el flujo manda para completar el pedido. La suite mide, uno por uno, estos extras
+(un caso con `entrega: ''` y una carta de más de 3.500 caracteres, y uno con datos de reserva que faltan); **cada uno suma
+exactamente uno y se acumulan sin tope**: un pedido con QR con un «3 tacos» ambiguo, la entrega vacía, la carta larga y un
+comprobante ilegible llega a 9 mensajes al cliente (cuenta de la revisión de código; la suite no lo mide entero). Los casos medidos (5 + entrega vacía + carta larga = 7 con QR; 6 sin QR) son
+**dos extras acumulados, no un máximo**.
 
 - **+1** si el modelo no extrajo la entrega (`entrega: ''`): el flujo pregunta «delivery o recojo»;
 - **+1** si la carta pasa de 3.500 caracteres: no cabe en un texto de WhatsApp y sale partida en dos;

@@ -2592,24 +2592,24 @@ describe('mensajes por conversación: los números que declara DISENO.md', () =>
     };
   }
 
-  it('COSTO: los rangos de DISENO.md (QR 5 a 7, plan B 4 a 6) se miden con `entrega: \'\'` y una carta de más de 3.500 caracteres', () => {
+  it('COSTO: el recorrido típico (QR 5, plan B 4) y cada extra suma exactamente uno: entrega vacía y carta larga acumuladas dan 7 con QR y 6 sin QR (dos extras medidos, no un techo)', () => {
     // El mínimo: sin extras.
     expect(pedidoConExtras(true, {}).cliente).toBe(5);
     expect(pedidoConExtras(false, {}).cliente).toBe(4);
-    // Cada extra suma exactamente uno, y juntos llegan al techo del rango.
+    // Cada extra suma exactamente uno, y se acumulan: aquí solo se miden DOS extras (no es un máximo; DISENO.md lo dice).
     const vacia = pedidoConExtras(true, { entregaVacia: true });
     expect(vacia.cliente, JSON.stringify(vacia.textos)).toBe(6);
     const larga = pedidoConExtras(true, { cartaLarga: true });
     expect(larga.cartaChars).toBeGreaterThan(3500);
     expect(larga.mensajesDeCarta, 'una carta de más de 3.500 caracteres sale partida').toBeGreaterThanOrEqual(2);
     expect(larga.cliente, JSON.stringify(larga.textos)).toBe(6);
-    const techoConQr = pedidoConExtras(true, { entregaVacia: true, cartaLarga: true });
-    expect(techoConQr.cliente, JSON.stringify(techoConQr.textos)).toBe(7);
-    const techoPlanB = pedidoConExtras(false, { entregaVacia: true, cartaLarga: true });
-    expect(techoPlanB.cliente, JSON.stringify(techoPlanB.textos)).toBe(6);
+    const dosExtrasConQr = pedidoConExtras(true, { entregaVacia: true, cartaLarga: true });
+    expect(dosExtrasConQr.cliente, JSON.stringify(dosExtrasConQr.textos)).toBe(7);
+    const dosExtrasPlanB = pedidoConExtras(false, { entregaVacia: true, cartaLarga: true });
+    expect(dosExtrasPlanB.cliente, JSON.stringify(dosExtrasPlanB.textos)).toBe(6);
   });
 
-  it('COSTO: la reserva con datos que faltan suma un mensaje (4 a 5), y nada pasa de 5 salvo el pedido (hasta 7)', () => {
+  it('COSTO: la reserva con datos que faltan suma un mensaje (recorrido típico 4, con un dato que falta 5); lo medido en reservas no pasa de 5', () => {
     const w = crear();
     const c = con(w);
     c.escribe('hola');
