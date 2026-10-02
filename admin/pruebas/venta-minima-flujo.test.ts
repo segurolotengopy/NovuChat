@@ -2882,27 +2882,33 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
     Object.assign(mundo.sd, JSON.parse(JSON.stringify(copia)));
   };
   /** Dos ejecuciones que parten del mismo estado y reciben el mismo botón (cada una, con su `wamid`). */
-  function dobleToque(mundo: Mundo, c: ReturnType<typeof conversacion>, id: string, titulo: string): { t1: ResultadoTurno; t2: ResultadoTurno } {
+  function dobleToque(mundo: Mundo, c: ReturnType<typeof conversacion>, id: string, titulo: string): { t1: ResultadoTurno; t2: ResultadoTurno; pedidos1: J[]; pedidos2: J[] } {
     const partida = sdCopia(mundo);
     const t1 = c.toca(id, titulo);
+    // Lo que la primera ejecución guardó, ANTES de restaurar `sd` (la restauración borra su pedido).
+    const pedidos1 = pedidosGuardados(mundo).map((p) => JSON.parse(JSON.stringify(p)) as J);
     restaurarSd(mundo, partida);
     const t2 = c.toca(id, titulo);
-    return { t1, t2 };
+    return { t1, t2, pedidos1, pedidos2: pedidosGuardados(mundo) };
   }
   const wamidDelAviso = (t: ResultadoTurno): string => String((t.avisos[0]?.respuesta['messages'] as J[] | undefined)?.[0]?.['id'] ?? '');
   const referenciaDelCierre = (t: ResultadoTurno): string => String((t.llamadas.cierre[0] as J | undefined)?.['referencia'] ?? '');
 
   it('(a) pedido sin QR: el doble toque deja el MISMO pedidoId, el MISMO código y la MISMA referencia de cierre, y un solo pedido guardado', () => {
     const r = armarPedido({ cobro: false, ventana: 5 });
-    const { t1, t2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
+    const { t1, t2, pedidos1, pedidos2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
     // Los dos cierres existen (el servidor los deduplica) y apuntan al MISMO documento.
     expect(t1.llamadas.cierre).toHaveLength(1);
     expect(t2.llamadas.cierre).toHaveLength(1);
     expect(referenciaDelCierre(t1)).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
     expect(referenciaDelCierre(t2)).toBe(referenciaDelCierre(t1));
-    // Un solo pedido guardado, con el mismo id: la segunda escritura cae sobre la primera.
-    const guardados = pedidosGuardados(r.w.mundo);
-    expect(guardados).toHaveLength(1);
+    // Cada ejecución guardó un pedido, y los dos tienen el MISMO id (y el mismo código): en la producción real, la segunda
+    // escritura cae sobre la primera. (`dobleToque` capturó el de t1 antes de restaurar `sd`.)
+    expect(pedidos1).toHaveLength(1);
+    expect(pedidos2).toHaveLength(1);
+    expect(pedidos2[0]?.['pedidoId']).toBe(pedidos1[0]?.['pedidoId']);
+    expect(pedidos2[0]?.['codigo']).toBe(pedidos1[0]?.['codigo']);
+    const guardados = pedidos2;
     expect(guardados[0]?.['pedidoId']).toBe(referenciaDelCierre(t1));
     // El aviso duplicado (B0 NO lo evita) sale, pero con el MISMO código: el restaurante ve que es el mismo pedido.
     expect(t1.avisos.length).toBeGreaterThan(0);
@@ -2942,12 +2948,16 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
 
   it('pedido con QR: el doble toque abre el cobro dos veces con la MISMA referencia y el MISMO monto (el servidor ve un solo pedido)', () => {
     const r = armarPedido({ ventana: 5 });
-    const { t1, t2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
+    const { t1, t2, pedidos1, pedidos2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
     const abre = (t: ResultadoTurno): J => t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
     expect(abre(t1)['referencia']).toMatch(/^ped-/);
     expect(abre(t2)['referencia']).toBe(abre(t1)['referencia']);
     expect(abre(t2)['monto']).toBe(abre(t1)['monto']);
-    expect(pedidosGuardados(r.w.mundo)).toHaveLength(1);
+    // Cada ejecución guardó su pedido con el mismo id (el de t1 se capturó antes de restaurar `sd`).
+    expect(pedidos1).toHaveLength(1);
+    expect(pedidos2).toHaveLength(1);
+    expect(pedidos1[0]?.['pedidoId']).toBe(abre(t1)['referencia']);
+    expect(pedidos2[0]?.['pedidoId']).toBe(pedidos1[0]?.['pedidoId']);
   });
 
   it('(b) dos teléfonos con el mismo carrito, desde el mismo reloj: ids y referencias distintos', () => {

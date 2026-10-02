@@ -14,9 +14,9 @@
  * sinteticos, con seis ceros. La libreria se evalua con `ejecutar` (./lib/flujo): le quita los globales que el
  * sandbox de n8n no tiene (URL, Buffer, crypto, process, require…), asi que si los usara aqui reventaria igual.
  *
- * DEPENDENCIA. `pedido.js` usa `comun.js` (T1: vmNorm, vmLinea, vmFechaLocal, vmHoraLocal, vmCodigoCorto, y vmIdEstable de B0). Si
+ * DEPENDENCIA. `pedido.js` usa `comun.js` (T1: vmNorm, vmLinea, vmFechaLocal, vmHoraLocal, vmCodigoCorto y, desde B0, vmIdEstable). Si
  * `comun.js` ya existe junto a `pedido.js`, esta suite corre contra el real; si no, contra `COMUN_DE_CONTRATO`
- * (abajo), que implementa esas cinco funciones tal como las fija el contrato de §4.2.
+ * (abajo), que implementa esas seis funciones tal como las fija el contrato de §4.2.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -27,13 +27,24 @@ import { ejecutar } from './lib/flujo';
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib');
 const PEDIDO = readFileSync(join(CARPETA, 'pedido.js'), 'utf8');
 
-// Las cinco funciones de comun.js que usa pedido.js, tal como las fija el contrato (§4.2).
+// Las seis funciones de comun.js que usa pedido.js, tal como las fija el contrato (§4.2) y B0 (`vmIdEstable`).
 const COMUN_DE_CONTRATO = `
 function vmNorm(t) { return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim(); }
 function vmLinea(t, max) { return String(t === undefined || t === null ? '' : t).replace(/[\\u0000-\\u001f\\u007f\\u2028\\u2029<>&]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, max); }
 function vmFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }
 function vmHoraLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(11, 16); }
 function vmCodigoCorto(ms) { return ms.toString(36).slice(-4).toUpperCase(); }
+function vmIdEstable(prefijo, from, contenido, anclaMs, respaldoMs) {
+  const valido = (x) => typeof x === 'number' && Number.isFinite(x) && x > 0;
+  const ancla = valido(anclaMs) ? Math.floor(anclaMs) : (valido(respaldoMs) ? Math.floor(respaldoMs) : 0);
+  const tel = String(from === undefined || from === null ? '' : from).replace(/\\D/g, '');
+  const fecha = vmFechaLocal(ancla);
+  const texto = [prefijo, ancla, tel, fecha, JSON.stringify(contenido)].join('|');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) { h ^= texto.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  h = h >>> 0;
+  return { id: prefijo + '-' + fecha + '-' + tel.slice(-4) + '-' + h.toString(36).padStart(7, '0'), codigo: vmCodigoCorto(h), huella: h };
+}
 `;
 const RUTA_COMUN = join(CARPETA, 'comun.js');
 const COMUN = existsSync(RUTA_COMUN) ? readFileSync(RUTA_COMUN, 'utf8') : COMUN_DE_CONTRATO;
