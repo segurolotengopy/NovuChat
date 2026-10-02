@@ -54,7 +54,7 @@ if (args.includes('--aplicar')) {
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
 const aqui = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(opcion('repo') ?? join(aqui, '..', '..'));
+const REPO = resolve(opcion('repo') ?? join(aqui, '..', '..', '..'));
 const ACEPTACION = opcion('aceptacion');
 
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
