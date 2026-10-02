@@ -57,7 +57,7 @@ function cmEnlace(cuerpo, texto, url) {
 }
 // El enlace que abre un chat de WhatsApp con un número (solo dígitos) y un saludo ya escrito.
 function cmUrlWa(numero, saludo) {
-  return 'https://wa.me/' + String(numero).replace(/\D/g, '') + '?text=' + encodeURIComponent(String(saludo || ''));
+  return 'https://wa.me/' + String(numero).replace(/\D/g, '') + '?text=' + encodeURIComponent(cmRecorte(saludo || '', 300));
 }
 function cmMensaje(para, payload, texto, respaldo, extra) {
   return Object.assign({ para: para, payload: payload, texto: texto, respaldo: respaldo || texto }, extra || {});
@@ -78,7 +78,7 @@ function cmContactoConBoton(op) {
   const para = op.para || 'cliente';
   if (numero && numero !== desde) {
     const url = cmUrlWa(numero, op.saludo || '');
-    const pie = '\n\n' + (op.textoDelRespaldo || 'Escríbele aquí:') + ' ' + url;
+    const pie = '\n\n' + cmRecorte(op.textoDelRespaldo || 'Escríbele aquí:', 100) + ' ' + url;
     // El respaldo es TEXTO (tope 4000): se recorta el cuerpo, nunca el enlace del final.
     return cmMensaje(para, cmEnlace(op.cuerpo, op.botonTexto || 'Escribir', url), op.cuerpo,
       cmRecorte(op.cuerpo, 4000 - pie.length) + pie,

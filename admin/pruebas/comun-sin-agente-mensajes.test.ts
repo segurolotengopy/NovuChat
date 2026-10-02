@@ -170,3 +170,12 @@ describe('lo que la revisión de seguridad encontró (01/10): recortes seguros, 
     expect(m.respaldo.endsWith('https://wa.me/71234561?text=Hola')).toBe(true);
   });
 });
+
+describe('segunda revisión de seguridad (02/10): el saludo largo no rompe el respaldo', () => {
+  it('NIEGA: con un saludo y un texto de respaldo larguísimos, el respaldo sigue ≤ 4000 y termina con el enlace', () => {
+    const m = M.cmContactoConBoton({ numero: '71234561', desde: '71234562', cuerpo: 'x'.repeat(5000), botonTexto: 'Escribir', saludo: 'h'.repeat(9000), textoDelRespaldo: 'r'.repeat(9000) });
+    expect(m.respaldo.length).toBeLessThanOrEqual(4000);
+    expect(m.respaldo).toMatch(/https:\/\/wa\.me\/71234561\?text=h+(%E2%80%A6)?$/);
+    expect(m.payload.interactive.action.parameters.url.length).toBeLessThan(700);
+  });
+});

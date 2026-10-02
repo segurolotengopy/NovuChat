@@ -236,6 +236,39 @@ describe('lo que la revisión de seguridad encontró (01/10): enlaces simbólico
   });
 });
 
+describe('segunda revisión de seguridad (02/10): escritura por enlace, plantilla con ./ y mensajes de error', () => {
+  it('NIEGA: la variante versionada como enlace simbólico no se escribe (pisaría un archivo de afuera)', () => {
+    const dir = proyecto();
+    const victima = join(dir, '..', 'victima-' + String(Date.now()) + '.json');
+    writeFileSync(victima, 'ORIGINAL');
+    try {
+      symlinkSync(victima, join(dir, 'prod.json'));
+      expect(() => construir(dir, { tope: TOPE })).toThrow(/enlace simbólico/);
+      expect(readFileSync(victima, 'utf8')).toBe('ORIGINAL');
+    } finally { rmSync(victima, { force: true }); }
+  });
+  it('NIEGA: la plantilla escrita como «./flujo.plantilla.json» tampoco se puede pisar', () => {
+    expect(() => leerProyecto(proyecto({ plantilla: './flujo.plantilla.json', variantes: [{ archivo: 'flujo.plantilla.json', nombre: 'X' }] }), null, { tope: TOPE })).toThrow(/no se puede escribir/);
+    expect(() => leerProyecto(proyecto({ variantes: [{ archivo: './construir.config.json', nombre: 'X' }] }), null, { tope: TOPE })).toThrow();
+  });
+  it('NIEGA: un config que es enlace simbólico no se lee, y uno que no es JSON no muestra sus bytes', () => {
+    const dir = proyecto();
+    const fuera = join(dir, '..', 'config-' + String(Date.now()) + '.json');
+    writeFileSync(fuera, 'SECRETO=abc');
+    try {
+      rmSync(join(dir, 'construir.config.json'));
+      symlinkSync(fuera, join(dir, 'construir.config.json'));
+      expect(() => leerProyecto(dir, null, { tope: TOPE })).toThrow(/enlace simbólico/);
+      rmSync(join(dir, 'construir.config.json'));
+      writeFileSync(join(dir, 'construir.config.json'), 'SECRETO=abc');
+      let mensaje = '';
+      try { leerProyecto(dir, null, { tope: TOPE }); } catch (e) { mensaje = String(e); }
+      expect(mensaje).toMatch(/no es un JSON válido/);
+      expect(mensaje).not.toContain('SECRETO');
+    } finally { rmSync(fuera, { force: true }); }
+  });
+});
+
 describe('la línea de comandos', () => {
   const correr = (...args: string[]): { codigo: number; salida: string } => {
     try {

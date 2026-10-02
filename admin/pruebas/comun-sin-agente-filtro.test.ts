@@ -175,6 +175,31 @@ describe('lo que la revisión de seguridad hizo pasar (01/10): todo se rechaza a
   });
 });
 
+describe('segunda revisión de seguridad (02/10): lo que seguía pasando', () => {
+  const ARROBA = '@'; // escrita así: un «x@y.com» literal en el archivo lo marcaría el saneo de correos
+  const rechaza = (lista: string[], esperado: string, o?: object): void => { for (const t of lista) expect(motivo(t, o), t).toBe(esperado); };
+  it('pago: transferencia, «se acreditó», validado, exitoso, «llegó tu pago»', () => {
+    rechaza(['Recibimos tu transferencia', 'Hemos recibido tu transferencia', 'Tu pago se acreditó', 'Ya se acreditó tu pago', 'Pago validado', 'Pago exitoso', 'Llegó tu pago', 'Tu comprobante fue validado', 'Payment received'], 'afirma_un_hecho');
+  });
+  it('reserva: primera persona del plural, «se», presente, sinónimos, ✓, palabra partida y en inglés', () => {
+    rechaza(['Agendamos tu cita', 'Se agendó tu cita', 'Te agendo para el lunes', 'Programé tu cita', 'Cambié tu cita al martes', 'Te separé la hora', 'Ya te agendamos', 'Hecho ✓', 'agen-dada', 'a.gen.dé tu cita', 'Booked'], 'afirma_un_hecho');
+  });
+  it('negar ser una IA con otros sujetos y formas', () => {
+    rechaza(['Estás hablando con una persona', 'Esto no es un bot', 'No hablas con un bot', 'Te responde una persona', 'Te escribe una persona', 'Para nada soy una IA', 'Soy Ana de recepción, no un bot', 'Soy real', 'No es un bot, es una persona'], 'afirma_un_hecho');
+  });
+  it('enlaces: cualquier terminación, IP, Markdown, punto ideográfico y salto de línea', () => {
+    rechaza(['Visita evil.mx', 'evil.pe/x', 'evil.ar', 'evil.cloud', 'evil.zip', 'evil.es/pago', 'evil.ai', 'evil.tk', '1.2.3.4:8080', '192.168.0.1', '[clic](evil.mx)', 'evil。com', 'evil\n.com'], 'enlace_ajeno');
+  });
+  it('enlace permitido: mismo esquema, sin salirse de la ruta ni llevar otro enlace dentro', () => {
+    const o = { enlacesPermitidos: ['https://www.facebook.com/negocio', 'https://wa.me/12345678'] };
+    rechaza(['Mira https://facebook.com/negocio/../atacante', 'Mira https://wa.me/12345678?next=https://evil.com', 'Escribe a http://wa.me/12345678', `Mira https://wa.me/12345678/%2f${ARROBA}evil.com`, `Mira https://wa.me/12345678/${ARROBA}evil.com`], 'enlace_ajeno', o);
+    expect(motivo('Mira https://www.facebook.com/negocio/photos y https://wa.me/12345678?text=Hola', o)).toBe('');
+  });
+  it('NIEGA: los textos honestos de siempre siguen saliendo', () => {
+    for (const t of ['Tenemos lugar el viernes a las 11:30. ¿Te sirve?', 'Te muestro los horarios disponibles.', 'Para cancelar toca el botón.', 'Una persona del equipo continuará esta conversación.', '¿En qué te ayudo con tu pedido?']) expect(motivo(t, { enlacesPermitidos: [] }), t).toBe('');
+  });
+});
+
 describe('las reglas de NovuChat no se apagan con opciones', () => {
   it('ninguna opción vuelve válido «quedó agendada», una promesa o un hueco', () => {
     const apagar = { permitirMontos: true, enlacesPermitidos: null, prohibidos: [], extra: [], quienPromete: [], maximo: 100000, textoDelCliente: '' }; // enlacesPermitidos:null solo apaga la revisión de enlaces

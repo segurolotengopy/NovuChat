@@ -41,7 +41,7 @@
  *
  * NO HACE NADA MÁS: no lee `.env`, no llama a la red, no importa nada de fuera de `node:`.
  */
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -54,7 +54,12 @@ export function leerProyecto(carpeta, configEnMemoria = null, { tope = TOPE_POR_
   const rutaConfig = join(dir, 'construir.config.json');
   // `configEnMemoria` sirve para armar con el config de otro sin escribir un archivo en su carpeta (las pruebas).
   if (!configEnMemoria && !existsSync(rutaConfig)) throw new Error(`no existe ${rutaConfig}`);
-  const cfg = configEnMemoria || JSON.parse(readFileSync(rutaConfig, 'utf8'));
+  let cfg = configEnMemoria;
+  if (!cfg) {
+    if (lstatSync(rutaConfig).isSymbolicLink()) throw new Error('construir.config.json no puede ser un enlace simbólico');
+    // Sin el texto del archivo en el mensaje: si no es JSON, no se muestran sus bytes.
+    try { cfg = JSON.parse(readFileSync(rutaConfig, 'utf8')); } catch (e) { throw new Error('construir.config.json no es un JSON válido'); }
+  }
   // Se compara por la RUTA REAL: un enlace simbólico dentro de la raíz que apunte afuera no se sigue.
   const real = (r) => { try { return realpathSync(r); } catch (e) { return resolve(r); } };
   const fuera = (base, abs) => { const rel = relative(base, abs); return rel === '..' || rel.startsWith('..' + sep) || isAbsolute(rel); };
@@ -84,8 +89,8 @@ export function leerProyecto(carpeta, configEnMemoria = null, { tope = TOPE_POR_
   const archivos = cfg.variantes.map((v) => v.archivo);
   if (new Set(archivos).size !== archivos.length) throw new Error('dos variantes escriben el mismo archivo');
   // Una variante nunca pisa el config ni la plantilla (ni el código del que se arma).
-  const reservados = new Set(['construir.config.json', cfg.plantilla || 'flujo.plantilla.json']);
-  for (const v of cfg.variantes) if (reservados.has(v.archivo)) throw new Error(`${v.archivo}: es un archivo del proyecto y no se puede escribir`);
+  const reservados = new Set([resolve(dir, 'construir.config.json'), resolve(dir, cfg.plantilla || 'flujo.plantilla.json')]);
+  for (const v of cfg.variantes) if (reservados.has(resolve(dir, v.archivo))) throw new Error(`${v.archivo}: es un archivo del proyecto y no se puede escribir`);
   return {
     dir,
     plantilla: JSON.parse(readFileSync(dentro(cfg.plantilla || 'flujo.plantilla.json', 'plantilla'), 'utf8')),
@@ -156,6 +161,8 @@ export function construir(carpeta, { verificar = false, config = null, tope } = 
     const texto = armarVariante(p, v);
     const ruta = join(p.dir, v.archivo);
     const actual = existsSync(ruta) ? readFileSync(ruta, 'utf8') : null;
+    // Nunca se escribe a través de un enlace simbólico (pisaría un archivo de afuera).
+    if (existsSync(ruta) && lstatSync(ruta).isSymbolicLink()) throw new Error(`${v.archivo}: es un enlace simbólico y no se escribe`);
     if (!verificar) writeFileSync(ruta, texto);
     resultado.push({ archivo: v.archivo, nodos: JSON.parse(texto).nodes.length, alDia: actual === texto, existia: actual !== null });
   }

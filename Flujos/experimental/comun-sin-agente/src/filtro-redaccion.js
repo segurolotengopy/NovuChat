@@ -27,8 +27,12 @@
 function cmNorm(t) {
   // NFKC junta las formas de ancho completo («ｑｕｅｄó» → «quedó»); se quitan los caracteres invisibles (U+200B a U+200D,
   // U+2060, U+FEFF) y el guion blando, que partían una palabra sin que se viera («agen​dé»).
-  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '')
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '').replace(/[。｡]/g, '.')
     .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+// El texto SIN los guiones, puntos y asteriscos que parten una palabra para esconderla («agen-dada», «a.gen.dé»).
+function cmJunto(n) {
+  return n.replace(/(\p{L})[-.·_*]+(?=\p{L})/gu, '$1');
 }
 // «Política: el asistente solo ofrece lo que el flujo cumple»: ninguna promesa sin un mecanismo detrás.
 const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis(o|ar[eé]|amos)\b|\b(te|le) llam(amos|ar[eé]|aremos)\b|te vamos a (llamar|avisar|escribir|contactar)|te van a (llamar|contactar|escribir|avisar)|te escribir[aá]n|te escribiremos|\b(te|le) contactar[eé]|nos comunicaremos|\b(te|le) confirm(o|ar[eé]) (luego|despues|mas tarde|manana)|te confirmar[eé]/;
@@ -41,22 +45,51 @@ const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis
 //   - marcas de visto bueno que pone el código: ✅ ✔ ☑
 // Y negar ser una IA (prohibición 4: NUNCA): «no soy un bot / una máquina / un asistente», «soy una persona»,
 // «hablas con una persona», «persona real», «de carne y hueso».
-const CM_AFIRMA = /\b(agendad|reservad|registrad|confirmad|anotad|reprogramad|cancelad|acreditad|aprobad|verificad|pagad)[oa]s?\b|\b(agende|reserve|registre|confirme|anote|reprograme|cancele)\b|\bte (agende|reserve|registre|confirme|anote)\b|\b(qued[oa]|esta|estan|fue|fueron|ha sido|han sido) (list|hech|fij|recibid|ya)[oa]s?\b|\b(pago|abono|deposito|comprobante) (recibid|acreditad|aprobad|confirmad|verificad|registrad)|\brecib(i|imos|ido) (tu|el|su) (pago|abono|deposito|comprobante)|\btu (cita|reserva|pedido|pago) (ya )?(esta|quedo|queda|fue|ha sido)\b|\bconfirm(o|amos) (tu|la|su|el) (cita|reserva|pedido|pago)\b|[✅✔☑]|no soy (una |un )?(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)|\bsoy (una |un )?(persona|humana|humano|ser humano)\b|\bhablas con (una |un )?(persona|humano|humana)\b|\bpersona (real|de verdad)\b|carne y hueso/;
+const CM_AFIRMA = new RegExp([
+  // participios de lo que el código hace o confirma, y la primera persona (singular y plural), en pasado y presente
+  '\\b(agendad|reservad|registrad|confirmad|anotad|reprogramad|programad|cancelad|acreditad|aprobad|verificad|validad|pagad|separad)[oa]s?\\b',
+  '\\b(agende|reserve|registre|confirme|anote|reprograme|programe|cancele|cambie|separe|valide|acredite)\\b',
+  '\\b(agend|reserv|registr|confirm|anot|reprogram|program|cancel|acredit|valid|separ)(amos|aron)\\b',
+  '\\b(te|le|lo|la) (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito)\\b',
+  '\\bse (agendo|reservo|registro|confirmo|anoto|programo|separo|reprogramo|cancelo|valido|acredito|aprobo|cambio)\\b',
+  '\\b(qued[oa]|esta|estan|fue|fueron|ha sido|han sido) (list|hech|fij|recib|ya)[oa]s?\\b',
+  '\\bya (se|te|le) (agend|reserv|registr|confirm|anot|program|separ|acredit)',
+  // el pago: el comprobante no es una acreditación bancaria (prohibición 3)
+  '\\b(pago|abono|deposito|transferencia|comprobante|dinero|plata|qr)\\b[^.!?]{0,25}\\b(recibid|acreditad|aprobad|confirmad|verificad|registrad|validad|exitos|llego|llegaron|entro)',
+  '\\b(recib(i|imos|ido|ida)|llego|llegaron|entro|entraron)\\b[^.!?]{0,30}\\b(pago|abono|transferencia|deposito|comprobante|dinero|plata)\\b',
+  '\\bpago (exitoso|validado|aprobado|confirmado|acreditado|recibido)\\b',
+  '\\bconfirm(o|amos) (tu|la|su|el) (cita|reserva|pedido|pago)\\b',
+  '\\btu (cita|reserva|pedido|pago) (ya )?(esta|quedo|queda|fue|ha sido)\\b',
+  // marcas de visto bueno: las pone el código
+  '[✅✔✓☑]',
+  // en inglés
+  '\\b(booked|confirmed|scheduled|reserved|payment (received|confirmed))\\b',
+  // negar ser una IA (prohibición 4: NUNCA): «no soy un bot», «esto no es un bot», «soy real», «hablas con una persona»…
+  '\\bno (soy|es|eres|estas hablando con|hablas con|estoy)\\b[^.!?]{0,20}\\b(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\\b',
+  '\\b(no|ni) (un|una) (bot|chatbot|ia|robot|maquina|programa)\\b',
+  '\\b(para nada|nunca|jamas|tampoco|ni de lejos|de ninguna manera)\\b[^.!?]{0,15}\\b(soy|es|eres|estoy)\\b[^.!?]{0,20}\\b(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)\\b',
+  '\\bsoy (una |un )?(persona|humana|humano|ser humano|real|de verdad)\\b',
+  '\\b(hablas|estas hablando|conversas|chateas) con (una |un )?(persona|humano|humana)\\b',
+  '\\b(te )?(responde|escribe|atiende|contesta|habla) (una |un )?(persona|humano|humana)\\b',
+  '\\bpersona (real|de verdad)\\b',
+  'carne y hueso',
+].join('|'));
 const CM_PALABRA_DE_NUMERO = 'un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|quinientos|mil|medio';
 const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dolar(es)?|\\$us)\\b|\\b(?:bs|bob|usd)\\.?\\s*\\d|\\$\\s*\\d|\\b(?:' + CM_PALABRA_DE_NUMERO + ')\\s+(bolivianos?|dolar(es)?|bs|bob|usdt)\\b');
 // Un hueco de plantilla («a las )», «{{x}}», «undefined») nunca sale.
 const CM_HUECO = /\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/;
 const CM_PREGUNTA_DE_IDENTIDAD = /\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra|persona|humano|humana|bot|robot)\b|\bquien (eres|es)\b/;
 
-// Los enlaces de un texto: con esquema, con `www.`, o un dominio suelto con una terminación conocida.
-const CM_TERMINACIONES = 'com|net|org|bo|app|io|me|ly|link|info|biz|co|site|online|shop|store|xyz|top|gl|page|dev|edu|gob';
-const CM_ENLACE = new RegExp('(?:https?:\\/\\/|www\\.)\\S+|\\b[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.(?:' + CM_TERMINACIONES + ')(?![a-z0-9-])(?:\\/\\S*)?', 'gi');
+// Los enlaces de un texto: con esquema, con `www.`, una IP, o CUALQUIER dominio suelto (algo.mx, algo.cloud…). Se rechaza de
+// más a propósito («Dr.Pérez» sin espacio cuenta): el costo es caer en el texto fijo.
+const CM_ENLACE = new RegExp('(?:[a-z][a-z0-9+.-]*:\\/\\/|www\\.)\\S+|\\b\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d+)?(?:\\/\\S*)?|\\b[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.[a-z]{2,}(?![a-z0-9-])(?::\\d+)?(?:\\/\\S*)?', 'gi');
 function cmEnlacesDe(texto) {
-  const t = String(texto || '').normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '');
-  return (t.match(CM_ENLACE) || []).map((e) => e.replace(/[).,;:!?»”"']+$/, ''));
+  // Primero se normaliza igual que el resto (ancho completo, invisibles, «。») y se junta lo que un salto o un espacio parte antes de la terminación.
+  const t = String(texto || '').normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '').replace(/[。｡]/g, '.').replace(/\s+(?=\.[a-z]{2,}\b)/gi, '');
+  return (t.match(CM_ENLACE) || []).map((e) => e.replace(/[).,;:!?»”"'\]]+$/, ''));
 }
 function cmNormEnlace(e) {
-  return String(e || '').normalize('NFKC').trim().replace(/[).,;:!?»”"']+$/, '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
+  return String(e || '').normalize('NFKC').trim().replace(/[).,;:!?»”"'\]]+$/, '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
 }
 
 function cmMotivoDeRechazo(texto, opciones) {
@@ -66,11 +99,12 @@ function cmMotivoDeRechazo(texto, opciones) {
   if (/^SIN_RESPUESTA/.test(s)) return 'sin_respuesta';
   if (s.length > (o.maximo || 900)) return 'largo';
   const n = cmNorm(s);
-  if (!o.permitirMontos && CM_MONTO.test(n)) return 'monto';
-  if (CM_PROMESAS.test(n)) return 'promesa';
+  if (!o.permitirMontos && (CM_MONTO.test(n) || CM_MONTO.test(cmJunto(n)))) return 'monto';
+  const nj = cmJunto(n);
+  if (CM_PROMESAS.test(n) || CM_PROMESAS.test(nj)) return 'promesa';
   const sujetos = (o.quienPromete || []).map((x) => String(x).replace(/[.*+?^${}()[\]\\|]/g, '\\$&'));
   if (sujetos.length && new RegExp('\\b(?:' + sujetos.join('|') + ') te\\b').test(n)) return 'promesa';
-  if (CM_AFIRMA.test(n)) return 'afirma_un_hecho';
+  if (CM_AFIRMA.test(n) || CM_AFIRMA.test(nj)) return 'afirma_un_hecho';
   if (CM_HUECO.test(n)) return 'hueco';
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
@@ -83,7 +117,15 @@ function cmMotivoDeRechazo(texto, opciones) {
     const lista = (o.enlacesPermitidos || []).map((x) => cmNormEnlace(x)).filter(Boolean);
     for (const e of cmEnlacesDe(s)) {
       const n = cmNormEnlace(e);
-      if (!lista.some((p) => n === p || (n.startsWith(p) && /[\/?#]/.test(n.charAt(p.length))))) return 'enlace_ajeno';
+      // Nunca `http://` (un enlace del negocio es https), nunca `..` ni `@` en la ruta, ni otro enlace dentro de él (`?next=https://…`).
+      if (/^http:\/\//i.test(e) || /^[a-z][a-z0-9+.-]*:\/\//i.test(e) && !/^https:\/\//i.test(e)) return 'enlace_ajeno';
+      const ok = lista.some((p) => {
+        if (n === p) return true;
+        if (!n.startsWith(p) || !/[\/?#]/.test(n.charAt(p.length))) return false;
+        const cola = n.slice(p.length);
+        return !/\.\.|@|:\/\/|%2f|%40|\\/i.test(cola);
+      });
+      if (!ok) return 'enlace_ajeno';
     }
   }
   for (const f of (o.extra || [])) {

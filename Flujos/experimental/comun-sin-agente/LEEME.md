@@ -11,6 +11,17 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
 | `src/filtro-redaccion.js` | Lo que el modelo redacta se **verifica** antes de salir: monto (también en letra), promesas, afirmar un hecho que solo el código puede afirmar (cita, pedido, pago, ✅), negar ser una IA, huecos de plantilla, **enlaces: por defecto ninguno sale**, identidad. Y se **pule**; `cmRevisarRedaccion` pule y valida lo pulido. Las reglas de NovuChat no se apagan con opciones. Normaliza (NFKC, sin invisibles). |
 | `src/envio.mjs` | La cadena de envío: nodos y conexiones (¿Enviar de verdad?, envío con lote de 1 y 1,5 s, respaldo en texto, reporte saliente), sin credenciales por id. El `phoneNumberId` y la versión de Graph se validan antes de entrar a la URL, y lo que ni el respaldo pudo enviar no se reporta como enviado. `injertar()` la cuelga de una plantilla. |
 
+## Estado y límites (leer antes de adoptarlo)
+
+- **Experimental y SIN adoptar.** Ningún flujo lo usa todavía. Seguridad lo revisó dos veces (02/10): aprobó con
+  observaciones, ningún CRITICAL ni HIGH. Antes de que un flujo en producción adopte `filtro-redaccion.js`, pasa por una
+  tercera revisión con su caso real.
+- **El filtro es una red de listas, no una garantía.** Un filtro de frases no cubre todas las formas de decir «tu cita
+  quedó agendada» o «soy una persona»: cada revisión encontró variantes nuevas y se cerraron una por una. Rechaza de más a
+  propósito (el costo es caer en el texto fijo del código). **La barrera de verdad es el diseño:** la confirmación, el total y
+  el cobro los arma el código, y el modelo no redacta nunca una confirmación. El filtro es la segunda línea.
+- No se ha probado contra Meta ni contra n8n real; solo con el evaluador de pruebas del proyecto.
+
 ## Cómo se usa
 
 1. En la carpeta del flujo, un `construir.config.json`:
