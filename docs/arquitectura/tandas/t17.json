@@ -1,0 +1,85 @@
+{
+  "movimientos": [
+    {
+      "de": "admin/scripts/alta-comercio.mjs",
+      "a": "admin/scripts/plataforma/alta-comercio.mjs"
+    },
+    {
+      "de": "admin/scripts/asignar-numero.mjs",
+      "a": "admin/scripts/plataforma/asignar-numero.mjs"
+    },
+    {
+      "de": "admin/scripts/asignar-plan.mjs",
+      "a": "admin/scripts/plataforma/asignar-plan.mjs"
+    },
+    {
+      "de": "admin/scripts/asignar-rol.mjs",
+      "a": "admin/scripts/plataforma/asignar-rol.mjs"
+    },
+    {
+      "de": "admin/scripts/fijar-umbrales.mjs",
+      "a": "admin/scripts/plataforma/fijar-umbrales.mjs"
+    },
+    {
+      "de": "admin/scripts/superadmin.mjs",
+      "a": "admin/scripts/plataforma/superadmin.mjs"
+    },
+    {
+      "de": "admin/scripts/cargar-plataforma.mjs",
+      "a": "admin/scripts/plataforma/cargar-plataforma.mjs"
+    },
+    {
+      "de": "admin/scripts/fijar-tipo-cambio.mjs",
+      "a": "admin/scripts/plataforma/fijar-tipo-cambio.mjs"
+    },
+    {
+      "de": "admin/scripts/migrar-ejes.mjs",
+      "a": "admin/scripts/plataforma/migrar-ejes.mjs"
+    },
+    {
+      "de": "admin/scripts/migrar-instrucciones.mjs",
+      "a": "admin/scripts/plataforma/migrar-instrucciones.mjs"
+    },
+    {
+      "de": "admin/scripts/migrar-prepago.mjs",
+      "a": "admin/scripts/plataforma/migrar-prepago.mjs"
+    },
+    {
+      "de": "admin/scripts/activar-cobro-real.mjs",
+      "a": "admin/scripts/plataforma/activar-cobro-real.mjs"
+    },
+    {
+      "de": "admin/scripts/pase-a-produccion.mjs",
+      "a": "admin/scripts/plataforma/pase-a-produccion.mjs"
+    },
+    {
+      "de": "admin/scripts/reiniciar-ventana.mjs",
+      "a": "admin/scripts/plataforma/reiniciar-ventana.mjs"
+    },
+    {
+      "de": "admin/scripts/soltar-sena-pendiente.mjs",
+      "a": "admin/scripts/plataforma/soltar-sena-pendiente.mjs"
+    },
+    {
+      "de": "admin/scripts/fijar-webhook-carrito.mjs",
+      "a": "admin/scripts/plataforma/fijar-webhook-carrito.mjs"
+    },
+    {
+      "de": "admin/scripts/completar-flujos.mjs",
+      "a": "admin/scripts/plataforma/completar-flujos.mjs"
+    },
+    {
+      "de": "admin/scripts/limpiar-cierres-de-prueba.mjs",
+      "a": "admin/scripts/plataforma/limpiar-cierres-de-prueba.mjs"
+    },
+    {
+      "de": "admin/scripts/ensayo.mjs",
+      "a": "admin/scripts/plataforma/ensayo.mjs"
+    },
+    {
+      "de": "admin/scripts/plantilla-catalogo.mjs",
+      "a": "admin/scripts/plataforma/plantilla-catalogo.mjs"
+    }
+  ],
+  "suitesPuras": []
+}

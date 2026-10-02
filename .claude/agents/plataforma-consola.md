@@ -26,7 +26,7 @@ revisión del PR sí. Hasta que F2 cree las carpetas, las piezas viven en
 `admin/functions/src/index.ts` (alta, baja, suspensión, número, plan, corte,
 soporte: **se parte**, invitar y quitar usuario van a Central),
 `admin/web/src/paginas/Tenants.tsx` y `Bitacora.tsx` (la cara de plataforma),
-y `admin/scripts/` (`alta-comercio`, `asignar-numero`, `asignar-plan`,
+y `admin/scripts/plataforma/` (`alta-comercio`, `asignar-numero`, `asignar-plan`,
 `asignar-rol`, `fijar-umbrales`, `superadmin`, `cargar-plataforma`,
 `fijar-tipo-cambio`, `migrar-*`): en el primer PR la zona es esa lista, y se
 declara. `asignar-plan` lo comparte con el agente `central` en F1: uno lo

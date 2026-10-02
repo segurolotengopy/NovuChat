@@ -33,10 +33,10 @@
  * sin la cabecera, una ruta publicada es una ruta que hay que rotar. Por eso no
  * se escribe entera ni en la pantalla, ni en el historial, ni en la auditoría.
  *
- *   node scripts/fijar-webhook-carrito.mjs --proyecto <id> --listar
- *   node scripts/fijar-webhook-carrito.mjs --proyecto <id> --numero <phone_number_id> \
+ *   node scripts/plataforma/fijar-webhook-carrito.mjs --proyecto <id> --listar
+ *   node scripts/plataforma/fijar-webhook-carrito.mjs --proyecto <id> --numero <phone_number_id> \
  *     --url https://<host de n8n>/webhook/<ruta> [--aplicar]
- *   node scripts/fijar-webhook-carrito.mjs --proyecto <id> --numero <phone_number_id> \
+ *   node scripts/plataforma/fijar-webhook-carrito.mjs --proyecto <id> --numero <phone_number_id> \
  *     --quitar [--aplicar]
  *
  * Seco por defecto: sin `--aplicar` no escribe nada.

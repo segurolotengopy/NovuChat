@@ -13,7 +13,7 @@
  * consola: las reglas prohíben borrar cierres desde cualquier cliente, incluida
  * la cuenta de NovuChat.
  *
- *   node scripts/limpiar-cierres-de-prueba.mjs --proyecto novuchat-demo
+ *   node scripts/plataforma/limpiar-cierres-de-prueba.mjs --proyecto novuchat-demo
  */
 const args = process.argv.slice(2);
 const i = args.indexOf('--proyecto');

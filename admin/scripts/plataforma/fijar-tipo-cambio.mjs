@@ -33,8 +33,8 @@
  * EL MÓDULO SE IMPORTA COMPILADO (`functions/lib/central/cuenta/prepago.js`): antes de
  * correrlo, `pnpm functions:build`.
  *
- *   node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres
- *   node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres --aplicar
+ *   node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres
+ *   node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <id> --tco 12.60 --fecha 2026-09-21 --por andres --aplicar
  *
  * `--fuente` es `BCB` salvo que se diga otra cosa. Sin `--aplicar` no
  * escribe nada: dice qué haría.
@@ -51,12 +51,12 @@ const POR = (opcion('por') ?? '').trim().slice(0, 40);
 
 let prepago;
 try {
-  prepago = await import('../functions/lib/central/cuenta/prepago.js');
+  prepago = await import('../../functions/lib/central/cuenta/prepago.js');
 } catch (e) {
   // Solo «falta compilar» cuando lo que falta es el propio compilado; otro
   // fallo al cargarlo (un import roto adentro) se muestra tal cual.
   const { existsSync } = await import('node:fs');
-  const faltaElCompilado = !existsSync(new URL('../functions/lib/central/cuenta/prepago.js', import.meta.url));
+  const faltaElCompilado = !existsSync(new URL('../../functions/lib/central/cuenta/prepago.js', import.meta.url));
   console.error(faltaElCompilado
     ? '\n  ✗ No se encuentra functions/lib/central/cuenta/prepago.js. Compile primero: pnpm functions:build\n'
     : `\n  ✗ No se pudo cargar functions/lib/central/cuenta/prepago.js: ${e?.message ?? e}\n`);
@@ -78,7 +78,7 @@ if (problemas.length === 0 && !tipoCambioVigente(nuevo, ahoraMs)) {
 }
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/fijar-tipo-cambio.mjs --proyecto <id> --tco <bs por usd> --fecha aaaa-mm-dd --por <quien> [--fuente BCB] [--aplicar]\n');
+  console.error('\n  node scripts/plataforma/fijar-tipo-cambio.mjs --proyecto <id> --tco <bs por usd> --fecha aaaa-mm-dd --por <quien> [--fuente BCB] [--aplicar]\n');
   process.exit(2);
 }
 

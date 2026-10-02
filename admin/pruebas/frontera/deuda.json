@@ -23,16 +23,6 @@
     }
   ],
   "sinZona": [
-    "admin/scripts/activar-cobro-real.mjs",
-    "admin/scripts/completar-flujos.mjs",
-    "admin/scripts/ensayo.mjs",
-    "admin/scripts/fijar-webhook-carrito.mjs",
-    "admin/scripts/limpiar-cierres-de-prueba.mjs",
-    "admin/scripts/pase-a-produccion.mjs",
-    "admin/scripts/plantilla-catalogo.mjs",
-    "admin/scripts/reiniciar-ventana.mjs",
-    "admin/scripts/soltar-sena-pendiente.mjs"
-  ],
   "sinResolver": {
     "admin/scripts/medir-zonas.mjs": {
       "cantidad": 1,

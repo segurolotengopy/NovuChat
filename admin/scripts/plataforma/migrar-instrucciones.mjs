@@ -29,8 +29,8 @@
  * (Platinum tenía comillas angulares en «cuánto dura»; el JSON versionado ya
  * no las lleva).
  *
- *   node scripts/migrar-instrucciones.mjs --proyecto <id>            # seco
- *   node scripts/migrar-instrucciones.mjs --proyecto <id> --aplicar  # escribe
+ *   node scripts/plataforma/migrar-instrucciones.mjs --proyecto <id>            # seco
+ *   node scripts/plataforma/migrar-instrucciones.mjs --proyecto <id> --aplicar  # escribe
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
@@ -43,11 +43,11 @@ const rojo = (s) => `\x1b[1;31m${s}\x1b[0m`;
 
 if (!PROYECTO) {
   console.error('\n  ✗ falta --proyecto');
-  console.error('\n  node scripts/migrar-instrucciones.mjs --proyecto <id> [--aplicar]\n');
+  console.error('\n  node scripts/plataforma/migrar-instrucciones.mjs --proyecto <id> [--aplicar]\n');
   process.exit(2);
 }
 
-const { hashCorto, verificarPatrones } = await import('../functions/src/central/asistente/comportamiento.ts');
+const { hashCorto, verificarPatrones } = await import('../../functions/src/central/asistente/comportamiento.ts');
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore, Timestamp } = await import('firebase-admin/firestore');
 initializeApp({ projectId: PROYECTO });

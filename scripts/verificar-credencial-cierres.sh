@@ -57,4 +57,4 @@ echo "Si dice «no» en los dos, el valor no es ninguno de los dos tokens:"
 echo "vuelva a copiarlo con  grep '^NOVUCHAT_HMAC=' .env | cut -d= -f2-"
 echo
 echo "Los cierres de verificación que se hayan creado se borran con:"
-echo "  cd admin && node scripts/limpiar-cierres-de-prueba.mjs --proyecto novuchat-demo"
+echo "  cd admin && node scripts/plataforma/limpiar-cierres-de-prueba.mjs --proyecto novuchat-demo"

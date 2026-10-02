@@ -193,10 +193,10 @@ el momento y jamás mostrados** (`openssl rand -hex 32 | gcloud secrets create
 
 | Se siembra | Con | Por qué |
 |---|---|---|
-| `/plataforma/cobroSimulado` | `admin/scripts/cargar-plataforma.mjs --proyecto <staging> --aplicar` | Los rótulos del cobro simulado (prohibición 3); sin ellos la vertical de venta no arranca |
-| Dos comercios de prueba, uno por vertical | `admin/scripts/alta-comercio.mjs --proyecto <staging> --tenant prueba-agenda --flujos agendamiento …` y otro con `venta`, con administradores `@ejemplo.com` | Es el alta real, por el camino real |
+| `/plataforma/cobroSimulado` | `admin/scripts/plataforma/cargar-plataforma.mjs --proyecto <staging> --aplicar` | Los rótulos del cobro simulado (prohibición 3); sin ellos la vertical de venta no arranca |
+| Dos comercios de prueba, uno por vertical | `admin/scripts/plataforma/alta-comercio.mjs --proyecto <staging> --tenant prueba-agenda --flujos agendamiento …` y otro con `venta`, con administradores `@ejemplo.com` | Es el alta real, por el camino real |
 | Usuarios de cada rol | `admin/scripts/usuarios-prueba.mjs --proyecto <staging> --aplicar` | Solo acepta correos `@ejemplo.com`/`@example.com`; crea admin y operador por vertical |
-| Plan y límites | `admin/scripts/asignar-plan.mjs --proyecto <staging> --tenant … --plan … --aplicar` | Las reglas leen la copia de límites |
+| Plan y límites | `admin/scripts/plataforma/asignar-plan.mjs --proyecto <staging> --tenant … --plan … --aplicar` | Las reglas leen la copia de límites |
 
 | NO se siembra | Por qué |
 |---|---|
@@ -263,7 +263,7 @@ persona) o Claude con el script. Todo lo del script se corre **primero sin
 | 12b | **Invocadores**: `roles/run.invoker` para `allUsers` en cada Function HTTP o callable (el mismo conjunto que producción: 47 el 26/09). Una Function nueva no nace invocable si su creación no salió limpia; en el primer despliegue faltaban 29 | Claude | `S invocadores` | `S verificar` dice «las N Functions HTTP o callables son invocables»; el humo da los códigos del código, no 403 de Google | Sí (`remove-iam-policy-binding`) |
 | 13 | Secretos y variables de GitHub: `GCP_WIF_PROVIDER` y `GCP_SA_DEPLOY_STAGING` (Environment), `SITIO_PUBLICO` y `FIREBASE_DEPLOY_ONLY` (Environment), `STAGING_URL` y, **última**, `GCP_PROJECT_ID_STAGING` (repositorio) | Claude | `S github` (con `--sin-storage` si el paso 6 se posterga) | `gh variable list`, `gh secret list --env staging` | Sí; borrar `GCP_PROJECT_ID_STAGING` vuelve a omitir los jobs |
 | 14 | Primer despliegue por el pipeline: el push a `main` de este PR (o el siguiente que toque `admin/`) ejecuta `construir-staging` → `desplegar-staging` → `humo-staging` + `dast-y-humo` | GitHub Actions, sin aprobación (el Environment `staging` no tiene revisor) | `GH_CONFIG_DIR=~/.config/gh-pro gh run watch` | Los cuatro jobs en verde; el informe de ZAP como artefacto | `firebase hosting:clone <id>:previa <id>:live --project <id>` |
-| 15 | Datos de prueba (§6): plataforma, dos comercios, usuarios, planes | Claude, cada script primero en seco | `node admin/scripts/cargar-plataforma.mjs --proyecto <id>` … (§6) | Entrar a `https://<id>.web.app` con `admin.salon@ejemplo.com` y ver las pestañas de su vertical | Sí (`usuarios-prueba.mjs --borrar`, `bajaTenant`) |
+| 15 | Datos de prueba (§6): plataforma, dos comercios, usuarios, planes | Claude, cada script primero en seco | `node admin/scripts/plataforma/cargar-plataforma.mjs --proyecto <id>` … (§6) | Entrar a `https://<id>.web.app` con `admin.salon@ejemplo.com` y ver las pestañas de su vertical | Sí (`usuarios-prueba.mjs --borrar`, `bajaTenant`) |
 | 16 | `CONFIGURACION.local.md`: fila `${GCP_PROJECT_ID_STAGING}` con el valor real, para que `verificar-saneo.sh --exacto` lo vigile | Claude (archivo local, ignorado por git) | edición del archivo local | `./scripts/verificar-saneo.sh --exacto` en verde | Sí |
 
 **El orden importa en tres lugares:** 6 antes de 11 (el agente de Storage nace

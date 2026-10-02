@@ -3,7 +3,7 @@
 # ensayo-flujo.sh — publica el flujo de un CLIENTE sobre el número del DEMO A
 # para probar un cambio antes de llevarlo al número del cliente, y lo devuelve.
 #
-# Es la mitad n8n del ensayo; la mitad plataforma es `admin/scripts/ensayo.mjs`
+# Es la mitad n8n del ensayo; la mitad plataforma es `admin/scripts/plataforma/ensayo.mjs`
 # (el comercio `ensayo` y la ruta del número). Procedimiento completo:
 # docs/ensayo/LEEME.md.
 #

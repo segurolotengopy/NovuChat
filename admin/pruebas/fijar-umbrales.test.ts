@@ -16,7 +16,7 @@ import { UMBRALES_ATENCION, umbralesDeAtencion } from '../functions/src/core/con
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'fijar-umbrales.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'fijar-umbrales.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;

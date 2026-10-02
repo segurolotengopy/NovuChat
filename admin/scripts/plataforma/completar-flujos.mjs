@@ -11,13 +11,13 @@
  * Es idempotente: una ficha que ya tiene lista no se toca, y un documento de
  * configuración que ya existe no se pisa.
  *
- *   node scripts/completar-flujos.mjs --proyecto <id-del-proyecto>
+ *   node scripts/plataforma/completar-flujos.mjs --proyecto <id-del-proyecto>
  */
 const args = process.argv.slice(2);
 const iProy = args.indexOf('--proyecto');
 const PROYECTO = iProy >= 0 ? args[iProy + 1] : null;
 if (!PROYECTO) {
-  console.error('Uso: node scripts/completar-flujos.mjs --proyecto <id>');
+  console.error('Uso: node scripts/plataforma/completar-flujos.mjs --proyecto <id>');
   process.exit(2);
 }
 

@@ -64,7 +64,7 @@ un tenant (los 19 de Bellido) son del agente `tenants` en F5.
   `GLOBALES_FUERA_DEL_SANDBOX` de `admin/pruebas/lib/flujo.ts`: el Code de n8n
   no tiene `URL`, `Buffer` ni `crypto`.
 - **Cero mensajes agregados o quitados**, y se demuestra con la suite.
-- Ensayo con teléfono real en el tenant de ensayo (`admin/scripts/ensayo.mjs` +
+- Ensayo con teléfono real en el tenant de ensayo (`admin/scripts/plataforma/ensayo.mjs` +
   `scripts/ensayo-flujo.sh`) antes de publicar en un cliente; publicación
   **solo desde `origin/main`** con `publicar-flujo.sh`, en la ventana de 02:00
   a 03:00 cuando el flujo atiende personas; `estado-de-versiones.sh` 8/8 al

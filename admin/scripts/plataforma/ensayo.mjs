@@ -38,11 +38,11 @@
  *     ahí;
  *   - sin `--aplicar` no escribe nada.
  *
- *   node scripts/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
- *   node scripts/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
+ *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --estado
+ *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --preparar \
  *     --cliente platinum --archivo scripts/datos/negocio-platinum.json \
  *     --local <ruta a CONFIGURACION.local.md> [--aplicar]
- *   node scripts/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
+ *   node scripts/plataforma/ensayo.mjs --proyecto <id> --numero <phone id del demo> --restaurar [--aplicar]
  *
  * Nunca imprime identificadores completos ni valores de la tabla local.
  */
@@ -204,7 +204,7 @@ if (APLICAR) {
     // (nunca se corta, sin cargo) con los límites de Pro, porque carga el
     // catálogo entero del cliente que se ensaya (`cargar-negocio.mjs` respeta
     // `limites.productos`). `plan: 'demostracion'` ya no existe (F1).
-    const { CATALOGO_PLANES, limitesDe } = await import('../functions/src/central/cuenta/planes.ts');
+    const { CATALOGO_PLANES, limitesDe } = await import('../../functions/src/central/cuenta/planes.ts');
     // El modelo, como lo escribe el alta (`crearTenant` en index.ts): sin él,
     // el seco de `migrar-ejes.mjs` ve un eje faltante en este comercio (28/09).
     // `central/ejes.ts` importa `./cuenta/*.js`, que Node no reescribe al
@@ -221,7 +221,7 @@ if (APLICAR) {
         }
       },
     });
-    const { MODELO_POR_DEFECTO } = await import('../functions/src/central/ejes.ts');
+    const { MODELO_POR_DEFECTO } = await import('../../functions/src/central/ejes.ts');
     await refEnsayo.set({
       nombre: 'Ensayo de NovuChat', estado: 'activo', vertical: flujoCliente, flujos: [flujoCliente],
       plan: 'pro', modelo: MODELO_POR_DEFECTO, creadoPor: 'ensayo', creadoEn: Timestamp.now(),
@@ -251,7 +251,7 @@ if (!APLICAR && !fichaEnsayo.exists) {
 const tmp = mkdtempSync(join(tmpdir(), 'ensayo-'));
 const archivoTmp = join(tmp, `negocio-ensayo-${CLIENTE}.json`);
 writeFileSync(archivoTmp, JSON.stringify(ensayado, null, 2));
-const carga = spawnSync(process.execPath, [join(aqui, 'datos', 'cargar-negocio.mjs'), '--proyecto', PROYECTO,
+const carga = spawnSync(process.execPath, [join(aqui, '..', 'datos', 'cargar-negocio.mjs'), '--proyecto', PROYECTO,
   '--tenant', ENSAYO, '--archivo', archivoTmp, ...(LOCAL ? ['--local', LOCAL] : []), ...(APLICAR ? ['--aplicar'] : [])],
   { env: process.env, encoding: 'utf8' });
 rmSync(tmp, { recursive: true, force: true });
