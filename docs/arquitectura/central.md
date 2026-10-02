@@ -971,7 +971,7 @@ modo observación, §4undecies.4).
 | `index.ts:536-563` | acepta `estadoPago`, `montoMensual`, `moneda`, `proximoVencimiento` | se **rechazan** con `invalid-argument` «se deriva de los pagos» |
 | `index.ts:115-121` (`exigirAdminDe`) | no mira proveedor ni correo verificado | exige `sign_in_provider === 'password'` y `email_verified`, igual que `esAdmin()` de las reglas, porque A-2 y A-3 agregan callables de admin |
 | `pruebas/estado-cuenta.test.ts:146-158` | prueban que esos campos se aceptan | se reescriben negando |
-| `web/src/paginas/EstadoCuenta.tsx:54-55, 86-99`, `Tablero.tsx:352, 490-491` | pintan `estadoPago`, `montoMensual`, `proximoVencimiento` | siguen leyendo los mismos nombres: ahora son derivados |
+| `web/src/central/paginas/EstadoCuenta.tsx:54-55, 86-99`, `Tablero.tsx:352, 490-491` | pintan `estadoPago`, `montoMensual`, `proximoVencimiento` | siguen leyendo los mismos nombres: ahora son derivados |
 | `scripts/asignar-plan.mjs` | escribe plan sin tocar el resto | no cambia |
 
 `actualizarEstadoCuenta` gana `modalidad` (cerrada, `esModalidad`), `periodoPrueba`
@@ -1412,7 +1412,7 @@ Alias de secreto libres para las suites nuevas (usados: `cliente17` a `cliente20
 
 | | |
 |---|---|
-| **Crea** | `admin/web/src/paginas/Pagar.tsx` (plan, meses 1-6, bolsas; importe USD y Bs con TCO y fuente **leídos del servidor** vía `cotizarPago` callable o de `plataforma/tipoCambio`; el QR desde Storage; «cancelar y emitir otro»); `admin/web/src/paginas/CuentaNegocio.tsx` (propietario, fases 1-2 de `Analisis/29`: modalidad, plan, umbrales, suspender/reactivar, **cargar pago manual** con subida de evidencia, historial de `/auditoria` y de `/pagos`, bandera por tenant); `admin/web/src/componentes/HistorialPagos.tsx` |
+| **Crea** | `admin/web/src/central/paginas/Pagar.tsx` (plan, meses 1-6, bolsas; importe USD y Bs con TCO y fuente **leídos del servidor** vía `cotizarPago` callable o de `plataforma/tipoCambio`; el QR desde Storage; «cancelar y emitir otro»); `admin/web/src/paginas/CuentaNegocio.tsx` (propietario, fases 1-2 de `Analisis/29`: modalidad, plan, umbrales, suspender/reactivar, **cargar pago manual** con subida de evidencia, historial de `/auditoria` y de `/pagos`, bandera por tenant); `admin/web/src/componentes/HistorialPagos.tsx` |
 | **Modifica** | `EstadoCuenta.tsx` (botón Pagar, `fase`/gracia, `corte.perdidas` solo si `aplicado`, historial, `telefonosPago` editable por el admin vía callable); `Tenants.tsx` (franja de modo observación, columnas modalidad/fase/corte, botón `fijarCortePrepago`); `Tablero.tsx:352,490` (derivados; sin cambio de nombre); `App.tsx` (rutas `/negocio/:tenantId/cuenta/pagar`, `/negocio/:tenantId/cuenta-novuchat`); `web/src/central/lib/prepago.ts` |
 | **Pruebas nuevas** | `pruebas/prepago-pantalla.test.ts` (lectura de fuentes): `Pagar.tsx` y `EstadoCuenta.tsx` **no importan** `cobro`, `sena`, `Cobros`, `Cobro`; ningún texto contiene «seña»; el importe en Bs **no se calcula en la pantalla**; `perdidas` se pinta condicionado a `aplicado`; `Tenants.tsx` llama a `fijarCortePrepago` y no escribe `plataforma/`. `pruebas/indices.test.ts` si `pagos` necesita orden compuesto (no debería) |
 | **Necesita** | A-1 (callables y regla), A-2 para el QR real (hasta entonces «cobro no disponible») |

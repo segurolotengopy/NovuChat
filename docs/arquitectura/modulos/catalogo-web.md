@@ -152,7 +152,7 @@ hay que darla de alta en Meta: está en `admin/CATALOGO-WEB.md` §4.
 
 Se coincide con el §4 del análisis. La consola ya es una aplicación React sobre
 Firebase Hosting con su API y su sistema de diseño; una ruta pública de catálogo
-—lista, detalle, carrito, checkout— es lo que hay en `web/src/publico/`, unas
+—lista, detalle, carrito, checkout— es lo que hay en `web/src/modulos/catalogo-web/publico/`, unas
 quinientas líneas. Integrar una plantilla ajena cuesta entenderla, alojarla,
 mantenerla actualizada, hacerla parecerse a NovuChat, y deja una dependencia más
 que auditar en un producto que ya tiene una CSP con `default-src 'none'`.
