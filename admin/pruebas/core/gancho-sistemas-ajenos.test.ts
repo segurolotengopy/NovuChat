@@ -314,8 +314,8 @@ describe('un git push al sistema ajeno se niega, no se confirma (#323, L2)', () 
       'git push -u origin HEAD',
       'git push origin ganchos/git-push-al-sistema-ajeno',
     ]) expect(decision(c), c).toBe('ask');
-    // `git -C <carpeta> push` no lo confirma el gancho (anterior a este cambio), pero no se niega.
-    expect(decision('git -C ~/NovuChat push origin HEAD')).not.toBe('deny');
+    // Con una opción global entre `git` y `push` también pide confirmación (ver el bloque siguiente).
+    expect(decision('git -C ~/NovuChat push origin HEAD')).toBe('ask');
   });
 
   it('la cadena de todos los días, `git add && git commit -m "…nombre…" && git push`, sigue pasando', () => {
@@ -374,6 +374,72 @@ describe('un git push al sistema ajeno se niega, no se confirma (#323, L2)', () 
   it('nombrar el sistema ajeno sin empujar sigue pasando', () => {
     for (const c of ['ls ~/WhatsApp-Modular/docs', 'git -C ~/WhatsApp-Modular log --oneline -3']) {
       expect(decision(c), c).not.toBe('deny');
+    }
+  });
+});
+
+describe('una opción global entre `git` y `push` no esconde el push (revisión del #334)', () => {
+  // Solo se le pasa el JSON al gancho y se lee su decisión: ningún comando se ejecuta.
+  it('el push forzado se niega con una opción global delante, igual que sin ella', () => {
+    for (const c of [
+      'git push --force',
+      'git -C ~/NovuChat push --force',
+      'git -C ~/NovuChat push origin HEAD -f',
+      'git -c user.name=x push --force-with-lease origin main',
+      'git --no-pager push --force-if-includes origin main',
+      'git -C "~/Nova Chat" push --force',
+      '/usr/bin/git -C ~/NovuChat push -f',
+      // El `-f` dentro de un grupo de letras, que la regla anterior no veía.
+      'git push -fu origin HEAD',
+      'git -C ~/NovuChat push -uf origin HEAD',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('un refspec que empieza con `+` fuerza la actualización: se niega, con o sin opción global', () => {
+    for (const c of [
+      'git push origin +rama',
+      'git push origin +HEAD:rama',
+      'git push +rama',
+      'git push origin "+rama"',
+      'git -C ~/NovuChat push origin +HEAD:rama',
+      'git -c push.default=current push origin +main:main',
+    ]) expect(decision(c), c).toBe('deny');
+  });
+
+  it('una barra invertida al final de la línea no parte el comando', () => {
+    expect(decision('git \\\n  -C ~/NovuChat push \\\n  --force')).toBe('deny');
+    expect(decision('git -C ~/NovuChat push origin \\\n  +HEAD:rama')).toBe('deny');
+  });
+
+  it('el push propio con una opción global pide confirmación, no se niega', () => {
+    for (const c of [
+      'git -C ~/NovuChat push',
+      'git -C ~/NovuChat push origin HEAD',
+      'git -C ~/NovuChat push -u origin ganchos/x',
+      'git -c push.default=current push',
+      'git --no-pager push origin ganchos/x',
+      '/usr/bin/git -C ~/NovuChat push origin HEAD',
+    ]) expect(decision(c), c).toBe('ask');
+  });
+
+  it('`git push -u origin HEAD` sigue pidiendo confirmación, sin negarse', () => {
+    expect(decision('git push -u origin HEAD')).toBe('ask');
+    expect(decision('git push --follow-tags origin ganchos/x')).toBe('ask');
+    expect(decision('git push origin ganchos/x --tags')).toBe('ask');
+    expect(decision('git add -A && git commit -m "ajuste" && git push -u origin HEAD')).toBe('ask');
+  });
+
+  it('una rama cuyo nombre lleva una `f` o un `+` en medio no es un empujón forzado', () => {
+    for (const c of ['git push origin feature/x', 'git push origin ganchos/fix-a+b', 'git push -u origin refactor-f']) {
+      expect(decision(c), c).toBe('ask');
+    }
+  });
+
+  it('la palabra «push» dentro del mensaje de un commit no pide confirmación', () => {
+    // Costo conocido: con una opción global delante del `commit`, quitar_texto no
+    // quita el mensaje, y una palabra «push» dentro vuelve a pedir confirmación.
+    for (const c of ['git commit -m "arreglo del push"', 'git add a && git commit -m "se documenta el push propio"']) {
+      expect(decision(c), c).toBe('nada');
     }
   });
 });

@@ -69,6 +69,20 @@ ACTUA = (VERBO + r"(?:curl|wget|ssh|scp|docker-compose|docker|systemctl|gcloud|g
 # nombre no se puede empujar; se renombra.
 PUSH = VERBO + r"git(?:\s+[^\s;&|]+){0,6}?\s+push(?![\w.-])"
 ACTUA_AJENO = ACTUA + r"|" + PUSH
+# LA MISMA FORMA SIRVE PARA LO PROPIO. Antes la regla del push forzado y la
+# confirmación de CONFIRMAR buscaban `git push` pegado, y una opción global entre
+# `git` y `push` (`git -C <carpeta> push --force`) no se negaba ni pedía
+# confirmación (revisión de seguridad del #334). Ahora ambas parten de PUSH.
+# FORZADO: tras el push, `--force` (y con él `--force-with-lease` y
+# `--force-if-includes`), un `-f` suelto o dentro de un grupo de letras (`-fu`,
+# `-uf`) o un refspec que empieza con `+` (`+rama`, `origin +HEAD:x`), con o sin
+# comillas. Como la regla anterior, mira todo lo que sigue en la línea: prefiere
+# negar de más antes que dejar pasar un empujón forzado.
+FORZADO = (PUSH + r"[^\n]*?(?:\s(?:--force\b|-[A-Za-z0-9]*f[A-Za-z0-9]*\b)"
+           r"|\s[\"\x27]?\+[^\s;&|\"\x27])")
+# Una barra invertida al final de la línea une con la siguiente: se une antes de
+# buscar, o `git \<salto> -C x push --force` se veía como dos comandos.
+UNIDO = re.compile(r"(?<!\\)((?:\\\\)*)\\\n")
 # CON EL ESPACIO de «SeguroLo Tengo», a propósito: el dueño del repositorio en
 # GitHub se llama `segurolotengopy`, y la primera versión («SeguroLo» a secas,
 # sin distinguir mayúsculas) negaba cualquier `gh` que nombrara el repositorio.
@@ -595,12 +609,24 @@ NUNCA = [
      "Cambia la identidad compartida por todas las sesiones. Use la variable de entorno por comando (GH_CONFIG_DIR, CLOUDSDK_CONFIG)."),
     (lambda c: re.search(r"\bgcloud\s+secrets\s+versions\s+access\b", c),
      "El valor de un secreto no debe pasar por el modelo. Que lo corra una persona en su terminal."),
-    (lambda c: re.search(r"\bgit\s+push\b.*(\s--force\b|\s-f\b|\s--force-with-lease\b)", c),
+    (lambda c: re.search(FORZADO, UNIDO.sub(r"\1", c)),
      "Push forzado prohibido."),
     # El enlace de contraseña: ver toca_enlace() arriba.
     (toca_enlace,
      "El enlace de contraseña es una credencial: lo abre una persona, nunca un agente (docs/alta-cliente/RUNBOOK.md, etapa 4)."),
 ]
+def empuja(c):
+    """Si el comando hace un `git push`, con opciones globales o sin ellas.
+
+    Con la forma abierta de PUSH, una palabra «push» dentro del mensaje de un
+    commit (`git commit -m "arreglo del push"`) contaría como push y pediría
+    confirmación sin motivo. Por eso se mira el comando sin el texto que publica
+    cuando quitar_texto puede quitarlo (un solo git o gh de la tabla); si no
+    puede, se mira el comando entero, que es el lado seguro."""
+    c = UNIDO.sub(r"\1", c)
+    t = quitar_texto(c)
+    return bool(re.search(PUSH, c if t is None else t))
+
 CONFIRMAR = [
     (r"(^|\s)--aplicar(\s|$)", "Escribe en producción (Firestore, Auth o n8n)."),
     # --desuscribir no contiene «--suscribir», y los modos de escritura de
@@ -610,7 +636,7 @@ CONFIRMAR = [
     (r"verificar-meta\.sh\b.*--(de)?suscribir", "Escribe en Meta: suscribe o desuscribe la app de la WABA."),
     (r"webhook-meta\.sh\b.*--(alta-meta|alta-waba|preparar|cerrar)\b", "Escribe en Meta o en n8n: el webhook de la app o de la WABA, o el flujo temporal."),
     (r"\bgh\s+pr\s+(merge|close)\b|\bgh\s+workflow\s+run\b", "Cambia GitHub: fusión, cierre o ejecución de un workflow."),
-    (r"\bgit\s+push\b", "Publica en GitHub."),
+    (lambda c: empuja(c), "Publica en GitHub."),
     (r"\bfirebase\s+deploy\b|\bdeploy\.sh\b", "Despliega."),
 ]
 
@@ -626,7 +652,7 @@ for condicion, motivo in NUNCA:
     if condicion(cmd):
         responder("deny", motivo)
 for patron, motivo in CONFIRMAR:
-    if re.search(patron, cmd):
+    if (patron(cmd) if callable(patron) else re.search(patron, cmd)):
         responder("ask", motivo + " Requiere confirmación humana (decisión del 14/09/2026).")
 '
 exit 0
