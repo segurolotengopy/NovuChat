@@ -287,6 +287,67 @@ modo_patrones() {
   else
     verde "  ✓ JSON de flujo conservan sus marcadores REEMPLAZAR_"
   fi
+
+  # Higiene de los flujos (F3a): el id de una credencial de n8n es un
+  # identificador de la instancia; en el JSON versionado va vacio y
+  # publicar-flujo.sh resuelve la credencial por su nombre.
+  local con_id
+  con_id="$(python3 - "${ARCHIVOS[@]}" <<'PY'
+import json, sys
+for ruta in sys.argv[1:]:
+    if not (ruta.startswith("Flujos/") and ruta.endswith(".json")) or "/manifiestos/" in ruta:
+        continue
+    try:
+        datos = json.load(open(ruta, encoding="utf-8"))
+    except Exception:
+        continue
+    for nodo in (datos.get("nodes") or []) if isinstance(datos, dict) else []:
+        for tipo, ref in (nodo.get("credentials") or {}).items():
+            if isinstance(ref, dict) and ref.get("id"):
+                print(f"{ruta}: nodo «{nodo.get('name')}» ({tipo})")
+PY
+)"
+  if [[ -n "$con_id" ]]; then
+    rojo "  ✗ id de credencial de n8n no vacio en un JSON de flujo"
+    printf '%s\n' "$con_id" | sed 's/^/      /'
+    gris "      Deje \"id\": \"\" y conserve el nombre: publicar-flujo.sh la resuelve."
+    HALLAZGOS=$((HALLAZGOS+1))
+  else
+    verde "  ✓ JSON de flujo sin ids de credencial"
+  fi
+
+  # Un REEMPLAZAR_ fuera de «Config base» y fuera de un jsCode (donde solo
+  # aparece dentro de una expresion regular) existe unicamente si el manifiesto
+  # del flujo lo declara en conservanMarcadores (Flujos/LEEME-flujos.md §0.a).
+  local sin_declarar
+  sin_declarar="$(python3 - "${ARCHIVOS[@]}" <<'PY'
+import json, os, sys
+for ruta in sys.argv[1:]:
+    if not (ruta.startswith("Flujos/") and ruta.endswith(".json")) or "/" in ruta[len("Flujos/"):]:
+        continue
+    try:
+        datos = json.load(open(ruta, encoding="utf-8"))
+    except Exception:
+        continue
+    man = os.path.join("Flujos", "manifiestos", os.path.basename(ruta))
+    declarados = set()
+    if os.path.isfile(man):
+        declarados = set((json.load(open(man, encoding="utf-8")).get("conservanMarcadores") or {}).keys())
+    for nodo in (datos.get("nodes") or []) if isinstance(datos, dict) else []:
+        params = dict(nodo.get("parameters") or {})
+        params.pop("jsCode", None)
+        nombre = nodo.get("name") or ""
+        if "REEMPLAZAR_" in json.dumps(params) and nombre not in declarados and not nombre.startswith("Config base"):
+            print(f"{ruta}: nodo «{nombre}»")
+PY
+)"
+  if [[ -n "$sin_declarar" ]]; then
+    rojo "  ✗ marcador REEMPLAZAR_ no declarado en conservanMarcadores"
+    printf '%s\n' "$sin_declarar" | sed 's/^/      /'
+    HALLAZGOS=$((HALLAZGOS+1))
+  else
+    verde "  ✓ marcadores REEMPLAZAR_ fuera de Config base, declarados"
+  fi
 }
 
 # ============================================================================
