@@ -11,7 +11,7 @@
  *
  * DÓNDE VIVE: un solo documento, `plataforma/tipoCambio`, que escribe cada
  * día `tipoCambioBcb` leyendo la tabla del BCB (`tipoCambioBcb.ts`), y a mano
- * el script `scripts/fijar-tipo-cambio.mjs` (seco por defecto, `--aplicar` con
+ * el script `scripts/plataforma/fijar-tipo-cambio.mjs` (seco por defecto, `--aplicar` con
  * el OK de Andres); ninguna pantalla puede tocarlo (`match /plataforma`:
  * solo lectura del propietario). Con historial en
  * `plataforma/tipoCambio/historial`.

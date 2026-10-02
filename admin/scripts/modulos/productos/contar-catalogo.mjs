@@ -27,7 +27,7 @@
  *
  * Sin `--aplicar` no escribe nada: dice qué haría. Con `FIRESTORE_EMULATOR_HOST`
  * en el entorno escribe en el emulador (así lo prueba
- * `pruebas/limite-catalogo.test.ts`).
+ * `pruebas/modulos/productos/limite-catalogo.test.ts`).
  *
  * EL LÍMITE SE LEE DE `functions/src/central/cuenta/planes.ts`, no de una copia: es
  * `limitesDeCuenta`, la misma función que usa `importarCatalogo`. Node 22.18+

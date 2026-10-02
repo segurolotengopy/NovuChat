@@ -81,7 +81,7 @@ node scripts/plataforma/pase-a-produccion.mjs --proyecto <proyecto> --tenant <id
   n8n, un teléfono). Al final dice **en qué etapa está el pase** (1 a 4 de este
   documento). Salida 0 = todo lo que ve se cumple; 1 = falta algo; 3 = este
   comercio no pasa nunca.
-- Probado contra el emulador en `admin/pruebas/pase-a-produccion.test.ts`
+- Probado contra el emulador en `admin/pruebas/plataforma/pase-a-produccion.test.ts`
   (listo, sin plan, demo, `novuchat`, marcadores y supuestos, WABA compartida,
   en prueba, corte encendido sin precondiciones, sin TCO, aceptación a medias).
 
