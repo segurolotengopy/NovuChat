@@ -332,6 +332,19 @@ describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador,
       expect(mundo.puts).toHaveLength(0);
     } finally { rmSync(enlace, { force: true }); }
   });
+  it('NIEGA: un enlace simbólico DENTRO del repositorio hacia el archivo versionado y limpio tampoco es el candidato (O_NOFOLLOW)', async () => {
+    const sucio = await ejecutar('git', ['-C', CARPETA, 'status', '--porcelain', '--', 'agenda-minima.v0.json'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    if (sucio.stdout.trim() !== '') return; // el archivo por omisión tiene cambios locales: esta comprobación no aplica aquí
+    nuevo(vivoDe(BELLIDO));
+    const enlace = join(CARPETA, `candidato-enlace-interno-${String(Date.now())}.json`);
+    symlinkSync(join(CARPETA, 'agenda-minima.v0.json'), enlace);
+    try {
+      const r = await correr('--aplicar', '--exigir-commit', '--flujo', enlace);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/enlace simbólico/);
+      expect(mundo.puts).toHaveLength(0);
+    } finally { rmSync(enlace, { force: true }); }
+  });
   it('NIEGA: un nombre con comodines de git no se hace pasar por el archivo rastreado (pathspec literal)', async () => {
     nuevo(vivoDe(BELLIDO));
     const trampa = join(CARPETA, 'agenda-minima.v0.jso[n.respaldo]');

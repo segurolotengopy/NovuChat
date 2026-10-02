@@ -347,13 +347,14 @@ if (bandera('actualizar-codigo')) {
     commitDelArchivo = (git('log', '-1', '--format=%h', '--', relativo) || 'desconocido');
   }
   // Se lee SIN comprobar antes: `O_NOFOLLOW` hace que abrir un enlace simbólico falle (ELOOP) en vez de seguirlo, y se lee por el descriptor abierto.
+  if (typeof constants.O_NOFOLLOW !== 'number') morir('esta plataforma no tiene O_NOFOLLOW: no se puede abrir el candidato sin seguir enlaces');
   let cand;
   let fd;
   try {
     fd = openSync(ARCHIVO, constants.O_RDONLY | constants.O_NOFOLLOW);
     cand = JSON.parse(readFileSync(fd, 'utf8'));
   } catch (e) {
-    morir(e && e.code === 'ELOOP' ? '--flujo no puede ser un enlace simbólico' : '--flujo no se pudo leer como JSON');
+    morir(e && e.code === 'ELOOP' ? '--flujo no puede ser un enlace simbólico' : `--flujo no se pudo leer como JSON (${(e && e.code) || 'JSON inválido'})`);
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
