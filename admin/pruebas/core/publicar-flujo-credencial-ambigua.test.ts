@@ -160,6 +160,48 @@ describe('publicar-flujo.sh y las credenciales sin resolver', () => {
       expect(r.codigo, r.salida).toBe(0);
       expect(r.llamadas).toContain('POST /workflows');
     });
+    it('--crear con lista partida (nextCursor) aborta sin POST', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', 'Mia')]), JSON.stringify({ data: UNICA, nextCursor: 'abc' }), ['--crear', '--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/mas de 250 credenciales/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear: la referencia con dos credenciales del mismo TIPO aborta sin elegir una', () => {
+      const vivo = flujo([nodo('A', 'Ajena', 'ID-1'), nodo('B', 'Otra', 'ID-2')]);
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), UNICA, ['--crear', '--aplicar'], {}, vivo);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/Nodo nuevo: la referencia tiene 2 credenciales httpHeaderAuth/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear: contraprueba, dos nodos de la referencia con la MISMA credencial no son ambiguos', () => {
+      const vivo = flujo([nodo('A', 'Ajena', 'ID-1'), nodo('B', 'Ajena', 'ID-1')]);
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), UNICA, ['--crear', '--aplicar'], {}, vivo);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.llamadas).toContain('POST /workflows');
+    });
+    it('--crear en seco: avisa si la lista de credenciales no llegó, sin escribir', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), '{"message":"forbidden"}', ['--crear'], { CODIGO_CREDENCIALES: '403' });
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/con --aplicar se abortaria: n8n no entrego la lista de credenciales \(HTTP 403\)/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear en seco: avisa si la lista llegó partida (nextCursor), sin escribir', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', 'Mia')]), JSON.stringify({ data: UNICA, nextCursor: 'abc' }), ['--crear']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/hay mas de 250 credenciales y la lista llego partida/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear --aplicar con HTTP 200 sin lista y un nodo sin nombre aborta sin POST', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), '{}', ['--crear', '--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/ABORTADO[\s\S]*HTTP 200/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('--crear en seco: contraprueba, con la lista completa no hay aviso', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', 'Mia')]), UNICA, ['--crear']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).not.toMatch(/se abortaria/);
+    });
     it('--crear con la lista caída (HTTP 500) aborta sin POST', () => {
       const r = correr(flujo([nodo('Nodo nuevo', '')]), '{}', ['--crear', '--aplicar'], { CODIGO_CREDENCIALES: '500' });
       expect(r.codigo, r.salida).toBe(1);
