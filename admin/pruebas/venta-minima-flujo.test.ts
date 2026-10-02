@@ -464,6 +464,18 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(sinEntrada.status).toBe(1);
   });
 
+  it('L2: `--verificar` FALLA si el JSON de producción trae `Simular aviso` o `¿Avisar de verdad?` (y el de prueba, que los trae, sigue dando 0)', () => {
+    for (const nombre of ['Simular aviso', '¿Avisar de verdad?']) {
+      const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
+        const molde = f.nodes.find((n) => n.name === '¿Es un mensaje?') as NonNullable<(typeof f.nodes)[number]>;
+        f.nodes.push({ ...molde, id: 'sim', name: nombre });
+      }));
+      expect(r.status, nombre).toBe(1);
+      expect(r.stderr, nombre).toContain(`«${nombre}»`);
+    }
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
+  });
+
   it('cada Code lleva el código real: sin marcas @@, con las seis librerías donde corresponde', () => {
     for (const f of [QTACO, PRUEBA]) {
       for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.code')) {
@@ -1977,8 +1989,43 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
     expect(nombres(QTACO)).not.toContain('Entrada de prueba');
     expect(PRUEBA.nodes.find((n) => n.name === 'Entrada de prueba')?.parameters['path']).toBe('REEMPLAZAR_RUTA_DE_PRUEBA');
     // Las demás conexiones son las mismas: la prueba corre el mismo flujo.
-    const sinEntrada = (f: Flujo) => nombres(f).filter((n) => !['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos'].includes(n));
+    const sinEntrada = (f: Flujo) => nombres(f).filter((n) => !['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos', 'Simular aviso', '¿Avisar de verdad?'].includes(n));
     expect(sinEntrada(PRUEBA)).toEqual(sinEntrada(QTACO));
+  });
+  // L2. `Simular aviso` inventa un `wamid` que cuenta como «aviso salido»: solo existe en la variante de prueba.
+  it('L2: `Simular aviso` y `¿Avisar de verdad?` NO están en el JSON de producción (con `¿Hay avisos?` conectado directo a `Enviar aviso`) y sí en el de prueba', () => {
+    const nombres = (f: Flujo) => f.nodes.map((n) => n.name);
+    for (const n of ['Simular aviso', '¿Avisar de verdad?']) {
+      expect(nombres(QTACO), n).not.toContain(n);
+      expect(nombres(PRUEBA), n).toContain(n);
+      expect(nombres(PLANTILLA), n).toContain(n);
+    }
+    expect([destinos(QTACO, '¿Hay avisos?', 0), destinos(QTACO, '¿Hay avisos?', 1)]).toEqual([['Enviar aviso'], ['Armar mensajes']]);
+    expect([destinos(PRUEBA, '¿Hay avisos?', 0), destinos(PRUEBA, '¿Hay avisos?', 1)]).toEqual([['¿Avisar de verdad?'], ['Armar mensajes']]);
+    // Ninguna conexión de producción apunta a un nodo que no existe.
+    const vivos = new Set(nombres(QTACO));
+    for (const [de, c] of Object.entries(QTACO.connections)) {
+      expect(vivos.has(de), de).toBe(true);
+      for (const salida of (c as J)['main'] as J[][]) for (const x of salida) expect(vivos.has(x['node']), `${de} → ${x['node']}`).toBe(true);
+    }
+    expect(QTACO.nodes).toHaveLength(49);
+    expect(PRUEBA.nodes).toHaveLength(46);
+  });
+
+  it('L2: en producción un `wamid.SIMULADO-…` NO cuenta como aviso salido: el cliente no lee «pasé tu pedido» y el cierre no lo toma de referencia', () => {
+    const simulado = (): J => ({ messaging_product: 'whatsapp', messages: [{ id: 'wamid.SIMULADO-1' }] });
+    const r = armarPedido({ cobro: false, dobles: { 'Enviar aviso': simulado, 'Aviso de respaldo': simulado } });
+    const t = confirmarPedido(r);
+    expect(t.avisos.length).toBeGreaterThan(0);
+    expect((t.resumen as J)['resumen'].avisoSalio).toBe(false);
+    expect(cuerpos(t).join('\n')).not.toMatch(/pasé tu pedido|llegó al restaurante/);
+    expect(cuerpos(t).join('\n')).toMatch(/No pude pasarle/);
+    expect(JSON.stringify(t.llamadas.cierre)).not.toContain('SIMULADO');
+    // Negativo: con un `wamid` real el mismo pedido sale como enviado.
+    const real = armarPedido({ cobro: false });
+    const u = confirmarPedido(real);
+    expect((u.resumen as J)['resumen'].avisoSalio).toBe(true);
+    expect(cuerpos(u).join('\n')).toMatch(/pasé tu pedido/);
   });
 });
 

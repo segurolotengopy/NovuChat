@@ -61,6 +61,12 @@ const NODOS_DE_ENTRADA = {
   prueba: ['Entrada de prueba'],
 };
 
+// NODOS QUE SOLO EXISTEN EN LA VARIANTE DE PRUEBA (L2). `Simular aviso` inventa un `wamid` que cuenta como «aviso salido»: en
+// producción un nodo así sería una puerta para decirle al cliente «llegó al restaurante» sin que nada haya salido. Se quitan
+// con sus conexiones y `¿Avisar de verdad?` se SALTEA (quien llegaba a él llega directo a su salida 0, `Enviar aviso`).
+const SOLO_PRUEBA = ['Simular aviso', '¿Avisar de verdad?'];
+const PUENTES_FUERA_DE_PRUEBA = { '¿Avisar de verdad?': 0 };
+
 function codigoDe(marca, nodo) {
   const modo = marca.startsWith('@@solo:') ? 'solo' : (marca.startsWith('@@comun:') ? 'comun' : 'todo');
   const ruta = marca.slice(modo === 'solo' ? '@@solo:'.length : (modo === 'comun' ? '@@comun:'.length : '@@'.length));
@@ -114,6 +120,16 @@ function armar(datos, archivo) {
   const flujo = JSON.parse(JSON.stringify(plantilla));
   flujo.name = dato(datos, 'nombreFlujo', archivo);
   const quitar = new Set(Object.entries(NODOS_DE_ENTRADA).filter(([k]) => k !== entrada).flatMap(([, v]) => v));
+  if (entrada !== 'prueba') {
+    for (const nombre of SOLO_PRUEBA) quitar.add(nombre);
+    // Cada conexión que llegaba a un nodo salteado llega ahora a lo que ese nodo tenía en su salida elegida.
+    for (const [puente, salida] of Object.entries(PUENTES_FUERA_DE_PRUEBA)) {
+      const destino = ((flujo.connections[puente] || {}).main || [])[salida] || [];
+      for (const salidas of Object.values(flujo.connections)) {
+        salidas.main = (salidas.main || []).map((s) => (s || []).flatMap((c) => (c.node === puente ? destino : [c])));
+      }
+    }
+  }
   flujo.nodes = flujo.nodes.filter((n) => !quitar.has(n.name));
   for (const n of flujo.nodes) {
     n.parameters = reemplazarTextos(n.parameters, datos, `${archivo} · ${n.name}`);
@@ -150,6 +166,7 @@ function armar(datos, archivo) {
 // LO QUE UN JSON DE PRODUCCIÓN NO PUEDE TENER, aunque alguien lo haya agregado a mano al archivo versionado.
 //   - «Entrada de prueba»: es el único nodo que activa `modoPrueba`; en producción no debe existir, porque
 //     una carga que lo trajera podría encender el modo prueba (mensajes a otro número, avisos simulados);
+//   - «Simular aviso» y «¿Avisar de verdad?»: simulan que un aviso salió (L2); solo existen en la prueba;
 //   - «WhatsApp Trigger» con la entrada del receptor: activarlo reescribe el webhook de toda la app de Meta
 //     (prohibición 7 de CLAUDE.md).
 function guardiasDeProduccion(entrada, flujo) {
@@ -157,6 +174,9 @@ function guardiasDeProduccion(entrada, flujo) {
   const nombres = new Set(flujo.nodes.map((n) => n.name));
   const tipos = flujo.nodes.map((n) => n.type);
   if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
+  for (const solo of SOLO_PRUEBA) {
+    if (entrada !== 'prueba' && nombres.has(solo)) hallazgos.push(`contiene el nodo «${solo}» (inventa avisos «salidos»): solo va en el JSON de prueba`);
+  }
   // Retención de ejecuciones (decisión de Andres, 02/10/2026): nada se guarda, ni éxitos ni errores ni progreso, porque
   // las ejecuciones llevan texto de clientes. Vale para todas las variantes.
   const st = flujo.settings || {};

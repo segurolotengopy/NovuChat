@@ -58,13 +58,16 @@ const AM_errores = (AM_avisosArmados[0] && Array.isArray(AM_avisosArmados[0].err
 // que no corrió no cuentan. Y solo el de una PLANTILLA o un DETALLE: la imagen del comprobante tiene su
 // propio `wamid` pero no es «el aviso» (si Meta la rechaza, falla ese ítem y nada más). El orden de
 // `Enviar aviso` es el de los avisos armados que pasaron el IF.
+// Un `wamid.SIMULADO-n` (el de `Simular aviso`) cuenta SOLO en modo prueba: fuera de él no es un aviso salido, venga del
+// nodo que venga (L2: en producción ese nodo ni siquiera existe, y esta es la segunda cerradura).
 function amWamid(j) {
   const m = j && j.messages;
-  return Array.isArray(m) && m[0] && typeof m[0].id === 'string' && m[0].id ? m[0].id : '';
+  const id = Array.isArray(m) && m[0] && typeof m[0].id === 'string' && m[0].id ? m[0].id : '';
+  return !AM_PRUEBA && /^wamid\.SIMULADO-/.test(id) ? '' : id;
 }
 const amEsImagen = (a) => !!a && (a.clase === 'imagen' || (a.clase === undefined && a.payload && a.payload.type === 'image'));
 const AM_armados = AM_avisosArmados.filter((i) => i && i.sinAviso !== true && i.payload);
-const AM_enviados = vmTodos('Enviar aviso').concat(vmTodos('Simular aviso')); // T7c: en la prueba sin enviarDeVerdad, el wamid simulado
+const AM_enviados = vmTodos('Enviar aviso').concat(AM_PRUEBA ? vmTodos('Simular aviso') : []); // el wamid simulado cuenta solo en modo prueba
 const AM_respaldos = vmTodos('Aviso de respaldo');
 const AM_wamids = AM_enviados.map(amWamid).concat(AM_respaldos.map(amWamid)).filter(Boolean);
 const AM_tiposSalidos = []; // tipo de aviso de cada plantilla o detalle que salió
