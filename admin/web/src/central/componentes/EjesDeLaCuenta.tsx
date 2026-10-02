@@ -1,9 +1,9 @@
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from './TextoSeguro';
 import { ContadorCambios } from './ContadorCambios';
 import {
   DESCRIPCION_MODALIDAD, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_TITULARIDAD,
   type EjesDeCuenta,
-} from '../../lib/ejes';
+} from '../lib/ejes';
 import { nombreDePlan, precioUsdDe } from '../lib/planes';
 import { importeBs, tipoCambioVigente } from '../lib/prepago';
 

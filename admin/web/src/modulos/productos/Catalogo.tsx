@@ -5,10 +5,10 @@ import {
 } from 'firebase/firestore';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../central/lib/planes';
-import { auth, db, funciones } from '../../lib/firebase';
+import { auth, db, funciones } from '../../core/lib/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { etiquetaCatalogo, useFlujos } from '../../lib/flujos';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { etiquetaCatalogo, useFlujos } from '../../central/lib/flujos';
 import { mensajeDeFalla, prepararFoto } from './foto';
 import {
   aCsv, idDeNombre, partirCsv, validarFilas, type FilaCatalogo, type FilaConProblemas,
@@ -1277,7 +1277,7 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
       avisarSiTraeMoneda(r.columnas);
       if (imagenes > 0) {
         // Se dice ANTES de importar, no después. Ver el comentario de
-        // `imagenesIncrustadas` en `lib/xlsx.ts`.
+        // `imagenesIncrustadas` en `web/src/modulos/productos/xlsx.ts`.
         const atadas = fotos.size;
         setEstado(`Ese archivo trae ${imagenes} ${imagenes === 1 ? 'foto pegada' : 'fotos pegadas'} adentro`
           + (atadas === imagenes

@@ -13,12 +13,12 @@
  *     pantalla no existe).
  *  4. NINGÚN ARCHIVO DE LA CONSOLA compara `plan === 'demostracion'` ni lee
  *     `pagaMeta` (hito H1 de `Analisis/41` §8.5).
- *  5. EL CONTRATO CON `central` VIVE EN UN SOLO ARCHIVO (`lib/ejes.ts`): las
+ *  5. EL CONTRATO CON `central` VIVE EN UN SOLO ARCHIVO (`web/src/central/lib/ejes.ts`): las
  *     pantallas llaman a las callables por `CALLABLES`, no por su nombre suelto.
  *
  * Las partes que dependen de datos que `central` escribe (`titularidad`,
  * `cambios`, `limites.cambiosIncluidos`) se prueban contra el contrato
- * declarado en `lib/ejes.ts` y se validan al reconciliar las dos ramas.
+ * declarado en `web/src/central/lib/ejes.ts` y se validan al reconciliar las dos ramas.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -29,7 +29,7 @@ import {
   CALLABLES, DESCRIPCION_TITULARIDAD, ETIQUETA_MODALIDAD, ETIQUETA_MODELO, ETIQUETA_TITULARIDAD, MODALIDADES, MODELOS,
   MODELO_POR_DEFECTO, TITULARIDADES, etiquetaModalidad, facturaMetaAlComercio, modeloDe, rutaDe, titularidadDe,
   type CambiosVista, type EjesDeCuenta,
-} from '../web/src/lib/ejes';
+} from '../web/src/central/lib/ejes';
 import { esPlanPublicado, esPlanVendible, planSiguiente, precioUsdDe } from '../web/src/central/lib/planes';
 import { PLANES, PLANES_PUBLICADOS } from '../functions/src/central/cuenta/planes';
 import { MODALIDADES as MODALIDADES_SERVIDOR, importeBs } from '../functions/src/central/cuenta/prepago';
@@ -130,12 +130,12 @@ describe('modelo y titularidad: las listas son las del servidor, no una copia', 
   });
 
   it('la consola no escribe su propia lista de modelos ni de titularidades', () => {
-    const ejes = sinComentarios(leer('web/src/lib/ejes.ts'));
+    const ejes = sinComentarios(leer('web/src/central/lib/ejes.ts'));
     expect(ejes).not.toMatch(/MODELOS\s*=\s*\[/);
     expect(ejes).not.toMatch(/TITULARIDADES\s*=\s*\[/);
     // El import se resuelve desde la carpeta del archivo y debe llegar al módulo del servidor:
     // vale tras cada mudanza y rechaza una copia local de las listas.
-    const desde = dirname(join(aqui, '..', 'web/src/lib/ejes.ts'));
+    const desde = dirname(join(aqui, '..', 'web', 'src', 'central', 'lib', 'ejes.ts'));
     const destinos = [...ejes.matchAll(/from '(\.{1,2}\/[^']+)'/g)].map((m) => resolve(desde, m[1]));
     expect(destinos).toContain(join(aqui, '..', 'functions/src/central/ejes'));
   });
@@ -305,7 +305,7 @@ describe('ninguna pantalla deduce un eje del nombre del plan (hito H1)', () => {
   it('la consola le dice «Producción» al comercio y no «prepago» en ningún texto visible', () => {
     // Se revisan los archivos que dibujan texto para el comercio: el nombre
     // del módulo `prepago.ts` y los identificadores del servidor se quedan.
-    for (const fuente of [leer('web/src/central/paginas/EstadoCuenta.tsx'), leer('web/src/central/paginas/Pagar.tsx'), leer('web/src/componentes/ResumenPrepago.tsx')]) {
+    for (const fuente of [leer('web/src/central/paginas/EstadoCuenta.tsx'), leer('web/src/central/paginas/Pagar.tsx'), leer('web/src/central/componentes/ResumenPrepago.tsx')]) {
       const jsx = sinComentarios(fuente).match(/>[^<>{}]*</g) ?? [];
       for (const trozo of jsx) expect(trozo.toLowerCase(), trozo).not.toContain('prepago');
     }

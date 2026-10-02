@@ -146,7 +146,7 @@ export function planInicial(cuenta: CuentaCruda | null | undefined): PlanEnVenta
 }
 
 // Quién le paga a Meta NO sale del plan: es la titularidad de cada número, que
-// la pantalla lee de `ejesDeCuenta` (`facturaMetaAlComercio`, `lib/ejes.ts`).
+// la pantalla lee de `ejesDeCuenta` (`facturaMetaAlComercio`, `web/src/central/lib/ejes.ts`).
 
 export const MESES_POSIBLES = Array.from({ length: MESES_MAXIMO }, (_, i) => i + 1);
 export const BOLSAS_POSIBLES = Array.from({ length: BOLSAS_MAXIMO }, (_, i) => i + 1);

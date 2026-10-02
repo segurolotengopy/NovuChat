@@ -20,11 +20,6 @@
       "desde": "admin/functions/src/modulos/agenda/sena.ts",
       "hacia": "admin/functions/src/ingesta.ts",
       "porque": "Lo deshace el coordinador de turno con ganchos (F3): nadie importa ingesta.ts"
-    },
-    {
-      "desde": "admin/functions/src/modulos/catalogo-web/catalogoWeb.ts",
-      "hacia": "admin/functions/src/modulos/inventario/inventario.ts",
-      "porque": "Catálogo web lee el stock de Inventario sin declararlo: dependeDe o gancho, al mover catálogo web"
     }
   ],
   "sinZona": [
@@ -36,28 +31,7 @@
     "admin/scripts/pase-a-produccion.mjs",
     "admin/scripts/plantilla-catalogo.mjs",
     "admin/scripts/reiniciar-ventana.mjs",
-    "admin/scripts/soltar-sena-pendiente.mjs",
-    "admin/web/src/componentes/AvisoConsumo.tsx",
-    "admin/web/src/componentes/CampoMonto.tsx",
-    "admin/web/src/componentes/ChipModo.tsx",
-    "admin/web/src/componentes/EditorLista.tsx",
-    "admin/web/src/componentes/EncabezadoComercio.tsx",
-    "admin/web/src/componentes/GraficoDias.tsx",
-    "admin/web/src/componentes/Marca.tsx",
-    "admin/web/src/componentes/Proteger.tsx",
-    "admin/web/src/componentes/ResumenPrepago.tsx",
-    "admin/web/src/componentes/SinSalida.tsx",
-    "admin/web/src/componentes/TextoSeguro.tsx",
-    "admin/web/src/diseno.css",
-    "admin/web/src/estilos.css",
-    "admin/web/src/lib/contrasena.ts",
-    "admin/web/src/lib/ejes.ts",
-    "admin/web/src/lib/errores.ts",
-    "admin/web/src/lib/exportar.ts",
-    "admin/web/src/lib/firebase.ts",
-    "admin/web/src/lib/modoComercio.ts",
-    "admin/web/src/lib/paletas.ts",
-    "admin/web/src/lib/tema.ts"
+    "admin/scripts/soltar-sena-pendiente.mjs"
   ],
   "sinResolver": {
     "admin/scripts/medir-zonas.mjs": {

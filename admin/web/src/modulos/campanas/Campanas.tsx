@@ -16,8 +16,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { Link, useParams } from 'react-router-dom';
-import { auth, db } from '../../lib/firebase';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { auth, db } from '../../core/lib/firebase';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import { PLANES, PLANES_PUBLICADOS, esPlanPublicado, esPlanVendible, limiteDeCampanas, nombreDePlan } from '../../central/lib/planes';
 import {
   TOPE_TEXTO_CAMPANA, diaBolivia, estadoVisible, fechaLegible, hashListaEnNavegador, idNuevo,

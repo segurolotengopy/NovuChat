@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Confirmacion } from './Confirmacion';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 import {
   BOLSAS_POSIBLES, MESES_POSIBLES, PRECIOS, avisoPrecioPorContrato, mesEscrito, planDeLaCuenta, planesOfrecidos, planInicial,
   type PlanEnVenta,
