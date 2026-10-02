@@ -451,6 +451,19 @@ for (let i = 0; i < items.length; i++) {
     avisos.push('correccion_cobro');
   }
 
+  // --- Prohibición 4: el agente no niega ser una IA ---------------------
+  // Mismo bloque y misma expresión que en venta y captación (una prueba exige
+  // que la fuente sea idéntica). Si la empresa le puso nombre al asistente, la
+  // corrección lo dice; función y no cadena de reemplazo: un `$&` dentro del
+  // nombre no se expande. Corrige texto dentro del mismo mensaje: 0 mensajes.
+  const NIEGA_IA = /(no\s+soy\s+(un[ao]?\s+)?(bot|robot|m[aá]quina|programa|inteligencia\s+artificial|\bia\b|asistente\s+virtual|autom[aá]tic[ao])|soy\s+(un[ao]?\s+)?(persona|humano|humana|ser\s+humano)|habl(as|[aá]s|a)\s+con\s+(un[ao]?\s+)?(persona|humano|humana))/i;
+  if (NIEGA_IA.test(respuesta)) {
+    const quien = String(cfg.nombreAsistente ?? '').trim();
+    respuesta = respuesta.replace(new RegExp(NIEGA_IA.source, 'gi'), () => 'sí, soy ' + (quien ? quien + ', ' : '')
+      + 'un asistente virtual con inteligencia artificial');
+    avisos.push('correccion_ia');
+  }
+
   // Marca si la respuesta AFIRMA que la cita quedo agendada. Se decide aca y
   // no en una expresion del nodo IF para poder probarlo: la trampa es que
   // "ya tiene reservada su cita" no es una confirmacion nueva sino un aviso
