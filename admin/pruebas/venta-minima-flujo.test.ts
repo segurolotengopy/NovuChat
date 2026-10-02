@@ -2376,6 +2376,87 @@ describe('mensajes por conversación: los números que declara DISENO.md', () =>
     expect(d.avisos.filter((a) => a.tipo === 'template')).toHaveLength(2);
   });
 
+  // COSTO. Los números del cuadro de arriba son el MÍNIMO; DISENO.md declara RANGOS. Los extras que los explican se miden acá:
+  //   - la entrega que el modelo no extrajo (`entrega: ''`): el flujo pregunta «delivery o recojo» (+1 mensaje al cliente);
+  //   - una carta de más de 3.500 caracteres: no cabe en un texto de WhatsApp y sale en dos (+1);
+  //   - datos de reserva que faltan: se piden en un mensaje aparte (+1).
+  const CARTA_LARGA: J[] = Array.from({ length: 40 }, (_, i) => it_(`larga${i}`, `Plato especial número ${String(i + 1).padStart(2, '0')} con guarnición de la casa, salsa picante a elección y una porción extra de la cocina`, 30 + i, i % 2 ? 'Platos fuertes' : 'Entradas'));
+
+  function pedidoConExtras(conQr: boolean, op: { entregaVacia?: boolean; cartaLarga?: boolean }): { cliente: number; cartaChars: number; mensajesDeCarta: number; textos: string[] } {
+    const w = crear({ panel: panel({ ...(conQr ? COBRO_REAL : {}), ...(op.cartaLarga ? { catalogo: CARTA_LARGA } : {}) }) });
+    const c = con(w);
+    c.escribe('hola');
+    const carta = c.toca('m|pedido', 'Hacer un pedido');
+    const producto = op.cartaLarga ? 'Plato especial número 01 con guarnición de la casa, salsa picante a elección y una porción extra de la cocina' : 'tacos de birria';
+    w.estado.extraccion = EX([ln(producto, 1, op.cartaLarga ? '' : 'unidad')], op.entregaVacia ? { entrega: '' } : {});
+    const resumen = c.escribe(`quiero ${producto}`);
+    let ultimo = resumen;
+    // Si el flujo pregunta la entrega, se contesta con el botón (o con el texto) y sigue al resumen.
+    const pideEntrega = resumen.mensajes.find((m) => titulosDe(m).some((t) => /delivery|recoger|recojo/i.test(t)));
+    if (op.entregaVacia) {
+      expect(pideEntrega, 'el flujo pregunta cómo se entrega').toBeDefined();
+      const boton = botonesDe(pideEntrega as NonNullable<typeof pideEntrega>).find((b) => /recoger|recojo/i.test(b.title)) as { id: string };
+      ultimo = c.toca(boton.id, 'Recojo en el local');
+    }
+    const confirmado = c.toca(idDeBoton(ultimo, 'Confirmar pedido'));
+    if (conQr) {
+      const ref = String(confirmado.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')?.['referencia']);
+      const total = Number(confirmado.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado')?.['monto']);
+      w.estado.panel = panel({ ...conCobroPendiente(ref, total), ...(op.cartaLarga ? { catalogo: CARTA_LARGA } : {}) });
+      c.imagen('media-9');
+    }
+    const deCliente = w.turnos.filter((x) => x.from === CLIENTE).map((x) => x.t);
+    return {
+      cliente: contar(deCliente).alCliente,
+      cartaChars: carta.mensajes.reduce((n, m) => n + m.cuerpo.length, 0),
+      mensajesDeCarta: carta.mensajes.length,
+      textos: deCliente.flatMap((t) => t.mensajes.map((m) => m.cuerpo)),
+    };
+  }
+
+  it('COSTO: los rangos de DISENO.md (QR 5 a 7, plan B 4 a 6) se miden con `entrega: \'\'` y una carta de más de 3.500 caracteres', () => {
+    // El mínimo: sin extras.
+    expect(pedidoConExtras(true, {}).cliente).toBe(5);
+    expect(pedidoConExtras(false, {}).cliente).toBe(4);
+    // Cada extra suma exactamente uno, y juntos llegan al techo del rango.
+    const vacia = pedidoConExtras(true, { entregaVacia: true });
+    expect(vacia.cliente, JSON.stringify(vacia.textos)).toBe(6);
+    const larga = pedidoConExtras(true, { cartaLarga: true });
+    expect(larga.cartaChars).toBeGreaterThan(3500);
+    expect(larga.mensajesDeCarta, 'una carta de más de 3.500 caracteres sale partida').toBeGreaterThanOrEqual(2);
+    expect(larga.cliente, JSON.stringify(larga.textos)).toBe(6);
+    const techoConQr = pedidoConExtras(true, { entregaVacia: true, cartaLarga: true });
+    expect(techoConQr.cliente, JSON.stringify(techoConQr.textos)).toBe(7);
+    const techoPlanB = pedidoConExtras(false, { entregaVacia: true, cartaLarga: true });
+    expect(techoPlanB.cliente, JSON.stringify(techoPlanB.textos)).toBe(6);
+  });
+
+  it('COSTO: la reserva con datos que faltan suma un mensaje (4 a 5), y nada pasa de 5 salvo el pedido (hasta 7)', () => {
+    const w = crear();
+    const c = con(w);
+    c.escribe('hola');
+    c.toca('m|reserva', 'Reservar mesa');
+    w.estado.extraccion = { ...RESERVA_OK, hora: '' }; // falta la hora
+    const faltan = c.escribe('quiero reservar una mesa');
+    expect(faltan.mensajes.flatMap(titulosDe)).not.toContain('Enviar solicitud');
+    w.estado.extraccion = { ...RESERVA_OK };
+    const resumen = c.escribe('a las 20:00');
+    c.toca(idDeBoton(resumen, 'Enviar solicitud'), 'Enviar solicitud');
+    expect(contar(w.turnos.filter((x) => x.from === CLIENTE).map((x) => x.t)).alCliente).toBe(5);
+  });
+
+  it('COSTO: cuando el personal del restaurante escribe para abrir su ventana recibe el menú (+1 mensaje) y el servidor lo cuenta como una conversación', () => {
+    const w = crear();
+    const t = con(w, AV1, 'Ana Duran').escribe('hola');
+    expect(cuerpos(t)[0]).toContain('¿Qué quieres hacer?'); // recibe el menú como cualquier cliente: 1 mensaje saliente
+    expect(t.mensajes).toHaveLength(1);
+    // Se reporta el entrante y el saliente: la ingesta abre la ventana y cuenta la conversación (se factura como una más).
+    expect(t.llamadas.ingesta.map((x) => x['direccion'])).toEqual(['entrante', 'saliente']);
+    // Y abre su ventana de 24 h: desde ahí recibe el detalle en texto además de la plantilla.
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    expect(detallesA(confirmarPedido(r), AV1)).toHaveLength(1);
+  });
+
   it('lo que NO cuesta: repetidos, números fuera del prefijo, acuses de estado, tipos sin contenido, y el cliente en uso bloqueado', () => {
     const w = crear();
     const c = con(w);
