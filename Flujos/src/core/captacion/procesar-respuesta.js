@@ -505,6 +505,13 @@ for (let i = 0; i < items.length; i++) {
   // primer mensaje a todos los items si llegaran dos a la vez.
   const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;
   const bruto = String(items[i].json.output ?? items[i].json.text ?? '').trim();
+  // Gemini devuelve 500/503 en picos y el agente (onError: continueRegularOutput)
+  // entrega el item con `error` o sin `output`. Se distingue de una respuesta
+  // vacia, pero las dos terminan igual: texto fijo CON el boton al asesor
+  // (politica «solo se ofrece lo que se cumple»). Cuesta un mensaje en el turno
+  // en que el modelo falla; antes el cliente no recibia nada.
+  const fallo = items[i].json.error !== undefined
+    || (items[i].json.output === undefined && items[i].json.text === undefined);
 
   const { lead, invalido } = leerLead(bruto);
   const pideCierre = /\[CIERRE\]/i.test(bruto);
@@ -790,10 +797,15 @@ for (let i = 0; i < items.length; i++) {
   const bloqueEnlace = conArchivo ? 'Te comparto los planes y sus precios en este enlace: ' + archivo.url : '';
   texto = armar(conMarca, bloqueLargo);
 
-  if (!texto) {
-    texto = 'Disculpa, no pude generar la respuesta. ¿Me lo repites?';
+  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y escríbele directo a una persona del equipo.';
+  if (fallo) {
+    texto = TEXTO_FALLO;
+    avisos.push('fallo_modelo');
+  } else if (!texto) {
+    texto = TEXTO_FALLO;
     avisos.push('respuesta_vacia');
   }
+  const sinRespuesta = avisos.includes('fallo_modelo') || avisos.includes('respuesta_vacia');
 
   // --- Datos del prospecto: se acumulan en la conversacion ----------------
   // `flujos` se deduce del rubro, cuando el rubro es uno de la lista. `area` la
@@ -838,6 +850,7 @@ for (let i = 0; i < items.length; i++) {
   if (prometeSinAviso) avisos.push('promesa_con_boton_asesor');
   const conBoton = cerradoSinAviso || (prometeSinAviso && !(c && c.avisado === true))
     || botonSoporte
+    || sinRespuesta
     || (!yaCerrado && (planesMostrados || ent.finBloque === true || (pideCierre && !cierre)));
 
   // --- Que el boton sobreviva al limite de Meta ----------------------------
