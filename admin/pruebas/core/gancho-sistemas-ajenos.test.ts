@@ -411,6 +411,30 @@ describe('una opción global entre `git` y `push` no esconde el push (revisión 
     expect(decision('git -C ~/NovuChat push origin \\\n  +HEAD:rama')).toBe('deny');
   });
 
+  it('sin regresión frente a la forma anterior: `\\git` (git sin alias) se ve igual que `git` (revisión de seguridad, HIGH)', () => {
+    expect(decision('\\git push --force')).toBe('deny');
+    expect(decision('\\git -C ~/NovuChat push -f')).toBe('deny');
+    expect(decision('\\git push origin HEAD')).toBe('ask');
+    expect(decision('\\git -C ~/WhatsApp-Modular push')).toBe('deny');
+  });
+
+  it('un comentario con una barra al final no esconde un push de la línea siguiente (revisión de seguridad, MEDIUM)', () => {
+    // La unión de líneas no debe anular el resguardo de quitar_texto contra los saltos de línea.
+    expect(decision("git commit -m x a b c d e f #'\\\ngit push #'")).toBe('ask');
+  });
+
+  it('el «-f» o el «+» dentro del mensaje de un commit no es un empujón forzado', () => {
+    for (const c of ['git commit -m "se documenta el push -f"', 'git add a && git commit -m "el push +rama queda prohibido"']) {
+      expect(decision(c), c).toBe('nada');
+    }
+  });
+
+  it('las comillas delante de la opción no la esconden', () => {
+    for (const c of ['git push "--force" origin x', "git -C ~/NovuChat push '-f' origin x"]) {
+      expect(decision(c), c).toBe('deny');
+    }
+  });
+
   it('el push propio con una opción global pide confirmación, no se niega', () => {
     for (const c of [
       'git -C ~/NovuChat push',

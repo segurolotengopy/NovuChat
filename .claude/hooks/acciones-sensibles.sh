@@ -53,7 +53,9 @@ cmd = str((evento.get("tool_input") or {}).get("command") or "")
 # `/subscriptions`) se mira como antes.
 # También `=` (`--rsh=ssh`, `a=curl`), `{` y `,` (la expansión de llaves de
 # bash) y `:-` (`${X:-curl}`): revisión de seguridad del #272.
-VERBO = r"(?:^|(?<=[\s;&|(`\x27\"$={,])|(?<=:-))(?:[^\s;&|(`\x27\"$={,]*/)?"
+# Y la barra invertida: `\git` es `git` sin alias para bash, y con `\b` contaba
+# (revisión de seguridad del cambio del #334, HIGH).
+VERBO = r"(?:^|(?<=[\s;&|(`\x27\"$={,\\])|(?<=:-))(?:[^\s;&|(`\x27\"$={,]*/)?"
 ACTUA = (VERBO + r"(?:curl|wget|ssh|scp|docker-compose|docker|systemctl|gcloud|gh|firebase)(?![\w.-])"
          r"|" + VERBO + r"(?:npm\s+(?:i|install)|pnpm\s+(?:add|install)|pip3?\s+install|git\s+clone)(?![\w.-])"
          r"|--aplicar|--suscribir|--desuscribir|webhook-meta\.sh\b[^\n;&|]*--(?:alta-meta|alta-waba)"
@@ -78,8 +80,12 @@ ACTUA_AJENO = ACTUA + r"|" + PUSH
 # `-uf`) o un refspec que empieza con `+` (`+rama`, `origin +HEAD:x`), con o sin
 # comillas. Como la regla anterior, mira todo lo que sigue en la línea: prefiere
 # negar de más antes que dejar pasar un empujón forzado.
-FORZADO = (PUSH + r"[^\n]*?(?:\s(?:--force\b|-[A-Za-z0-9]*f[A-Za-z0-9]*\b)"
-           r"|\s[\"\x27]?\+[^\s;&|\"\x27])")
+FORZADO = PUSH + r"[^\n]*?\s[\"\x27]?(?:--force\b|-[A-Za-z0-9]*f[A-Za-z0-9]*\b|\+[^\s;&|\"\x27])"
+# SIN REGRESIÓN: las formas de antes (`git push` pegado, con `\b` delante) se
+# siguen mirando además de las nuevas, y lo que una negaba o confirmaba sigue
+# igual (revisión de seguridad, HIGH: `\git push` dejó de verse al pasar a VERBO).
+PUSH_PEGADO = r"\bgit\s+push\b"
+FORZADO_PEGADO = PUSH_PEGADO + r".*(\s--force\b|\s-f\b|\s--force-with-lease\b)"
 # Una barra invertida al final de la línea une con la siguiente: se une antes de
 # buscar, o `git \<salto> -C x push --force` se veía como dos comandos.
 UNIDO = re.compile(r"(?<!\\)((?:\\\\)*)\\\n")
@@ -600,6 +606,26 @@ def nombra_y_actua(patron_nombre, c, actua=ACTUA):
     t = EXPANSION.sub(" ", t)
     return bool(re.search(patron_nombre, t, re.I) and re.search(actua, t))
 
+def lecturas(c):
+    """Los textos sobre los que se busca un push, uno por uno.
+
+    Con la forma abierta de PUSH, una palabra «push» (o un «-f») dentro del
+    mensaje de un commit (`git commit -m "arreglo del push"`) contaría como push
+    y pediría confirmación o se negaría sin motivo. Por eso, cuando quitar_texto
+    puede quitar el texto que se publica (un solo git o gh de la tabla), se mira
+    el comando sin él. Si no puede, se mira el comando entero y también unido por
+    la barra invertida: quitar_texto se llama sobre el ORIGINAL porque ya rechaza
+    cualquier salto de línea, y unir antes anularía ese resguardo (un comentario
+    con una barra al final no continúa la línea en bash)."""
+    t = quitar_texto(c)
+    return [t] if t is not None else [c, UNIDO.sub(r"\1", c)]
+
+def forzado(c):
+    return any(re.search(FORZADO, b) or re.search(FORZADO_PEGADO, b) for b in lecturas(c))
+
+def empuja(c):
+    return any(re.search(PUSH, b) or re.search(PUSH_PEGADO, b) for b in lecturas(c))
+
 NUNCA = [
     (lambda c: nombra_y_actua(SISTEMA_AJENO, c, ACTUA_AJENO),
      "Prohibiciones 5 y 7 de CLAUDE.md: la app Demo SeguroLo Tengo, el otp-service, WhatsApp-Modular y el receptor de clientes de AAB1 (la app AAB1-WA-Prod, su contenedor y su suscripción) no se tocan; toda operación sobre el receptor la ejecuta la sesión de WhatsApp-Modular con autorización de Andres."),
@@ -609,24 +635,12 @@ NUNCA = [
      "Cambia la identidad compartida por todas las sesiones. Use la variable de entorno por comando (GH_CONFIG_DIR, CLOUDSDK_CONFIG)."),
     (lambda c: re.search(r"\bgcloud\s+secrets\s+versions\s+access\b", c),
      "El valor de un secreto no debe pasar por el modelo. Que lo corra una persona en su terminal."),
-    (lambda c: re.search(FORZADO, UNIDO.sub(r"\1", c)),
+    (forzado,
      "Push forzado prohibido."),
     # El enlace de contraseña: ver toca_enlace() arriba.
     (toca_enlace,
      "El enlace de contraseña es una credencial: lo abre una persona, nunca un agente (docs/alta-cliente/RUNBOOK.md, etapa 4)."),
 ]
-def empuja(c):
-    """Si el comando hace un `git push`, con opciones globales o sin ellas.
-
-    Con la forma abierta de PUSH, una palabra «push» dentro del mensaje de un
-    commit (`git commit -m "arreglo del push"`) contaría como push y pediría
-    confirmación sin motivo. Por eso se mira el comando sin el texto que publica
-    cuando quitar_texto puede quitarlo (un solo git o gh de la tabla); si no
-    puede, se mira el comando entero, que es el lado seguro."""
-    c = UNIDO.sub(r"\1", c)
-    t = quitar_texto(c)
-    return bool(re.search(PUSH, c if t is None else t))
-
 CONFIRMAR = [
     (r"(^|\s)--aplicar(\s|$)", "Escribe en producción (Firestore, Auth o n8n)."),
     # --desuscribir no contiene «--suscribir», y los modos de escritura de
@@ -636,7 +650,7 @@ CONFIRMAR = [
     (r"verificar-meta\.sh\b.*--(de)?suscribir", "Escribe en Meta: suscribe o desuscribe la app de la WABA."),
     (r"webhook-meta\.sh\b.*--(alta-meta|alta-waba|preparar|cerrar)\b", "Escribe en Meta o en n8n: el webhook de la app o de la WABA, o el flujo temporal."),
     (r"\bgh\s+pr\s+(merge|close)\b|\bgh\s+workflow\s+run\b", "Cambia GitHub: fusión, cierre o ejecución de un workflow."),
-    (lambda c: empuja(c), "Publica en GitHub."),
+    (empuja, "Publica en GitHub."),
     (r"\bfirebase\s+deploy\b|\bdeploy\.sh\b", "Despliega."),
 ]
 
