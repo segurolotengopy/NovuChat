@@ -44,7 +44,7 @@ const OPERADOR = opcion('operador');
 const BLOQUEO = opcion('bloqueo');
 
 const { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralValido, umbralesDeAtencion } =
-  await import('../functions/src/core/conteo/atencion.ts');
+  await import('../../functions/src/core/conteo/atencion.ts');
 
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;

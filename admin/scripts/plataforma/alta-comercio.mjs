@@ -36,7 +36,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
-} from './plataforma/enlace-privado.mjs';
+} from './enlace-privado.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
@@ -134,7 +134,7 @@ if (!usuario) {
 // con su copia de límites y la versión del catálogo, lo mismo que `altaTenant`.
 // Antes se escribía `plan: 'basico'`, que no es un plan del catálogo. Si el
 // comercio contrató otro plan, se asigna después con `asignar-plan.mjs`.
-const { cuentaInicial } = await import('../functions/src/central/cuenta/planes.ts');
+const { cuentaInicial } = await import('../../functions/src/central/cuenta/planes.ts');
 const cuenta = cuentaInicial();
 const sello = { creadoEn: Timestamp.now(), creadoPor: 'alta-comercio' };
 const lote = db.batch();

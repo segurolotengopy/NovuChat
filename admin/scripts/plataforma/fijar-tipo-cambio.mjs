@@ -51,12 +51,12 @@ const POR = (opcion('por') ?? '').trim().slice(0, 40);
 
 let prepago;
 try {
-  prepago = await import('../functions/lib/central/cuenta/prepago.js');
+  prepago = await import('../../functions/lib/central/cuenta/prepago.js');
 } catch (e) {
   // Solo «falta compilar» cuando lo que falta es el propio compilado; otro
   // fallo al cargarlo (un import roto adentro) se muestra tal cual.
   const { existsSync } = await import('node:fs');
-  const faltaElCompilado = !existsSync(new URL('../functions/lib/central/cuenta/prepago.js', import.meta.url));
+  const faltaElCompilado = !existsSync(new URL('../../functions/lib/central/cuenta/prepago.js', import.meta.url));
   console.error(faltaElCompilado
     ? '\n  ✗ No se encuentra functions/lib/central/cuenta/prepago.js. Compile primero: pnpm functions:build\n'
     : `\n  ✗ No se pudo cargar functions/lib/central/cuenta/prepago.js: ${e?.message ?? e}\n`);

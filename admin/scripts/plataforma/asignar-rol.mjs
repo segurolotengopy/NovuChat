@@ -45,7 +45,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
-} from './plataforma/enlace-privado.mjs';
+} from './enlace-privado.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };

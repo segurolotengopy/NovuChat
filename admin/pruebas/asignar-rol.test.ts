@@ -32,7 +32,7 @@ import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'asignar-rol.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'asignar-rol.mjs');
 
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 

@@ -85,12 +85,12 @@ registerHooks({
     }
   },
 });
-const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../functions/src/central/ejes.ts');
+const { TITULARIDADES, TITULARIDAD_POR_DEFECTO, esTitularidad } = await import('../../functions/src/central/ejes.ts');
 const titularidad = TITULARIDAD || TITULARIDAD_POR_DEFECTO;
 // Mismo mapa que `documentoDeVertical` en functions/src/core/prompt/prompt.ts.
 const DOCUMENTO = { agendamiento: 'agendamiento', venta: 'venta', onboarding: 'onboarding' };
 
-const firma = readFileSync(new URL('../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
+const firma = readFileSync(new URL('../../functions/src/core/seguridad/firma.ts', import.meta.url), 'utf8');
 const RESERVA = [...firma.matchAll(/^\s*(\w+):\s*defineSecret\('([A-Z0-9_]+)'\)/gm)]
   .map((m) => ({ alias: m[1], secreto: m[2] }));
 const ALIAS_VALIDOS = new Set(RESERVA.map((r) => r.alias));

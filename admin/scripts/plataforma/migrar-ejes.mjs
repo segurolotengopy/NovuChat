@@ -97,9 +97,9 @@ registerHooks({
 });
 const {
   PLANES, CATALOGO_PLANES, copiaDeLimites, esIdPlan, limitesDeCuenta, mismoMarcador, periodoDe,
-} = await import('../functions/src/central/cuenta/planes.ts');
-const { camposDerivados, consumidasDe, esModalidad, estadoDeServicio } = await import('../functions/src/central/cuenta/prepago.ts');
-const { MODELO_POR_DEFECTO, esModelo, esTitularidad } = await import('../functions/src/central/ejes.ts');
+} = await import('../../functions/src/central/cuenta/planes.ts');
+const { camposDerivados, consumidasDe, esModalidad, estadoDeServicio } = await import('../../functions/src/central/cuenta/prepago.ts');
+const { MODELO_POR_DEFECTO, esModelo, esTitularidad } = await import('../../functions/src/central/ejes.ts');
 
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
 const problemas = [];

@@ -19,7 +19,7 @@ import { MODELO_POR_DEFECTO } from '../../functions/src/central/ejes.ts';
 import { entornoDelEmulador } from '../core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', '..', 'scripts', 'migrar-ejes.mjs');
+const SCRIPT = join(aqui, '..', '..', 'scripts', 'plataforma', 'migrar-ejes.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;

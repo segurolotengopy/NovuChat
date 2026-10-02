@@ -115,7 +115,7 @@ export function validar(textos) {
 // acá, pero sí comprobar que sigue siendo el mismo archivo que se revisó: si
 // alguien lo reemplaza por un QR sin rótulo, esto avisa. El fallo NO frena la
 // carga —el texto puede cargarse antes que la imagen definitiva—, pero se dice.
-const QR = new URL('../../Demo-Recursos/qr-demo.png', import.meta.url);
+const QR = new URL('../../../Demo-Recursos/qr-demo.png', import.meta.url);
 function huellaDelQr() {
   try {
     const b = readFileSync(QR);

@@ -16,7 +16,7 @@ import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 const aqui = dirname(fileURLToPath(import.meta.url));
 // La variable permite correr esta suite contra otra versión del script (así se
 // comprobó que la prueba del bloqueo falla con la versión que lanzaba).
-const SCRIPT = process.env['ASIGNAR_NUMERO_SCRIPT'] ?? join(aqui, '..', 'scripts', 'asignar-numero.mjs');
+const SCRIPT = process.env['ASIGNAR_NUMERO_SCRIPT'] ?? join(aqui, '..', 'scripts', 'plataforma', 'asignar-numero.mjs');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['FIRESTORE_EMULATOR_HOST'] = HOST;

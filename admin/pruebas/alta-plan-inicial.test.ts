@@ -73,7 +73,7 @@ function bloqueAltaTenant(): string {
 
 describe.each([
   ['altaTenant (functions/src/index.ts)', bloqueAltaTenant],
-  ['alta-comercio (script de alta)', () => leer('scripts/alta-comercio.mjs')],
+  ['alta-comercio (script de alta)', () => leer('scripts/plataforma/alta-comercio.mjs')],
 ])('%s', (_nombre, fuente) => {
   it('usa cuentaInicial() y no escribe el viejo «basico»', () => {
     const f = fuente();

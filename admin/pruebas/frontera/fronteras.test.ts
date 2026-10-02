@@ -381,7 +381,7 @@ describe('la regla de la frontera (árbol inventado)', () => {
   // archivos (tanda 5), la mudanza reescribe el especificador, y una ruta
   // armada con plantilla no la reescribe (revisión de seguridad del #250).
   it('los scripts que importan las Functions compiladas dependen de su fuente', () => {
-    const compilados = importsDe(join('admin/scripts/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../functions/lib/'));
+    const compilados = importsDe(join('admin/scripts/plataforma/migrar-prepago.mjs')).filter((i) => i.especificador.startsWith('../functions/lib/'));
     expect(compilados.map((i) => i.especificador.replace(/^\.\.\/functions\/lib\/(.+)\.js$/, '$1').split('/').pop()))
       .toEqual(expect.arrayContaining(['prepago', 'planes']));
     for (const i of compilados) {

@@ -85,7 +85,7 @@ registerHooks({
     }
   },
 });
-const FUENTES = join(aqui, '..', 'functions', 'src');
+const FUENTES = join(aqui, '..', '..', 'functions', 'src');
 const { PLANES, limitesDe, limitesDeCuenta } = await import(join(FUENTES, 'central', 'cuenta', 'planes.ts'));
 const { umbralesDeAtencion } = await import(join(FUENTES, 'core', 'conteo', 'atencion.ts'));
 const { corteAplicable, modalidadDe, tipoCambioVigente } = await import(join(FUENTES, 'central', 'cuenta', 'prepago.ts'));

@@ -45,12 +45,12 @@ const PERIODO_PRUEBA = (opcion('periodo-prueba') ?? '').trim();
 
 let prepago;
 try {
-  prepago = await import('../functions/lib/central/cuenta/prepago.js');
+  prepago = await import('../../functions/lib/central/cuenta/prepago.js');
 } catch (e) {
   // Solo «falta compilar» cuando lo que falta es el propio compilado; otro
   // fallo al cargarlo (un import roto adentro) se muestra tal cual.
   const { existsSync } = await import('node:fs');
-  const faltaElCompilado = !existsSync(new URL('../functions/lib/central/cuenta/prepago.js', import.meta.url));
+  const faltaElCompilado = !existsSync(new URL('../../functions/lib/central/cuenta/prepago.js', import.meta.url));
   console.error(faltaElCompilado
     ? '\n  ✗ No se encuentra functions/lib/central/cuenta/prepago.js. Compile primero: pnpm functions:build\n'
     : `\n  ✗ No se pudo cargar functions/lib/central/cuenta/prepago.js: ${e?.message ?? e}\n`);
@@ -59,7 +59,7 @@ try {
 const {
   MODALIDADES, PRUEBA, camposDerivados, consumidasDe, esModalidad, esPeriodo, estadoDeServicio, mesBolivia,
 } = prepago;
-const { periodoDe } = await import('../functions/lib/central/cuenta/planes.js');
+const { periodoDe } = await import('../../functions/lib/central/cuenta/planes.js');
 
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
