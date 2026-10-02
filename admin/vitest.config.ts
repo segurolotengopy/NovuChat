@@ -38,6 +38,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export const SUITES_PURAS = [
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
+  'pruebas/agenda-minima-herramienta-actualizar.test.ts',
   'pruebas/venta-minima-comun.test.ts',
   'pruebas/venta-minima-pedido.test.ts',
   'pruebas/venta-minima-reserva.test.ts',
