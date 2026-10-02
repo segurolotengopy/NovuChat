@@ -138,11 +138,18 @@ describe('la frontera sobre el código de hoy', () => {
 
   it('index.ts solo reexporta, salvo core/opcionesGlobales.ts (si no, el coordinador esconde lógica)', () => {
     const fuente = ts.createSourceFile(INDICE_DE_FUNCTIONS, readFileSync(join(RAIZ, INDICE_DE_FUNCTIONS), 'utf8'), ts.ScriptTarget.Latest, true);
-    const ajenos = importsDe(INDICE_DE_FUNCTIONS).filter((i) => !i.reexporta && i.destino !== `${F}core/opcionesGlobales.ts`)
-      .map((i) => i.especificador);
-    expect(ajenos, 'index.ts importa algo que no reexporta').toEqual([]);
+    const importados = fuente.statements.filter(ts.isImportDeclaration)
+      .map((n) => (ts.isStringLiteral(n.moduleSpecifier) ? n.moduleSpecifier.text : '<calculado>'));
+    expect(importados.filter((m) => m !== 'firebase-admin/app' && m !== './core/opcionesGlobales.js'),
+      'index.ts importa algo que no es firebase-admin/app ni core/opcionesGlobales').toEqual([]);
+    // Toda exportación con origen es nombrada: `export * from` y `export * as ns from` esconden qué se despliega.
+    const noNombradas = fuente.statements.filter((n): n is ts.ExportDeclaration => ts.isExportDeclaration(n))
+      .filter((n) => !(n.exportClause && ts.isNamedExports(n.exportClause))).map((n) => n.getText().slice(0, 60));
+    expect(noNombradas, 'index.ts tiene una exportación que no es `export { … } from`').toEqual([]);
+    const esInicio = (n: ts.Statement): boolean => ts.isExpressionStatement(n) && ts.isCallExpression(n.expression)
+      && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === 'initializeApp';
     const sueltos = fuente.statements
-      .filter((n) => !ts.isImportDeclaration(n) && !(ts.isExportDeclaration(n) && n.moduleSpecifier) && n.getText() !== 'initializeApp();')
+      .filter((n) => !ts.isImportDeclaration(n) && !(ts.isExportDeclaration(n) && n.moduleSpecifier) && !esInicio(n))
       .map((n) => n.getText().slice(0, 60));
     expect(sueltos, 'index.ts declara algo que no es una reexportación').toEqual([]);
   });
@@ -453,6 +460,11 @@ describe('la regla de la frontera (árbol inventado)', () => {
     const fuente = fuenteDeFunction('ingesta', arbol);
     expect(fuente).toBe(`${F}core/turno/ingesta.ts`);
     expect(zonaDeCodigo(fuente!)?.zona).toBe('core');
+  });
+
+  it('fuenteDeFunction: reexportar desde una ruta que no existe es un error claro, no «null»', () => {
+    expect(() => fuenteDeFunction('ingesta', arbolDe({ [INDICE_DE_FUNCTIONS]: "export { ingesta } from './no-existe.js';" })))
+      .toThrow(/ingesta desde \.\/no-existe\.js, que no existe/);
   });
 
   it('fuenteDeFunction: un index.ts que no reexporta la Function devuelve null', () => {

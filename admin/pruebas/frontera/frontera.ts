@@ -34,7 +34,7 @@
  *
  * DÓNDE VIVE Y QUIÉN LO CAMBIA. En `admin/pruebas/frontera/`, que no está en la
  * zona de ningún agente (`docs/arquitectura/agentes.md`): la regla, la deuda y
- * el inventario los cambia solo la coordinadora. Si estuvieran en
+ * `ZONA_POR_ARCHIVO` y `SE_PARTE` los cambia solo la coordinadora. Si estuvieran en
  * `pruebas/core/`, un agente de Core podría «arreglar» una prueba roja
  * agregando su cruce a la deuda, dentro de su zona.
  *
@@ -54,10 +54,9 @@ export interface ZonaDeArchivo {
   readonly zona: Zona;
   /** Id del módulo cuando `zona` es `modulo` (un id de `IDS_MODULOS`). */
   readonly modulo?: string;
-  /** Carpeta o archivo de la zona, relativo a la raíz del repositorio. */
+  /** Carpeta de la zona; en `ZONA_POR_ARCHIVO`, la propia ruta del archivo. Relativo a la raíz. */
   readonly destino: string;
   readonly seParte?: readonly string[];
-  readonly nota?: string;
 }
 
 /**
@@ -262,7 +261,8 @@ export function resolverRelativo(desde: string, especificador: string, arbol: Ar
 
 /**
  * El archivo del que `index.ts` reexporta la Function `nombre`, o null si no
- * la reexporta. Sirve para exigir que la Function del coordinador salga de un
+ * la reexporta. Si la reexporta desde una ruta que no existe, falla con un
+ * mensaje claro (no se confunde con «no la reexporta»). Sirve para exigir que la Function del coordinador salga de un
  * archivo coordinador, sin escribir su ruta como constante.
  */
 export function fuenteDeFunction(nombre: string, arbol: Arbol = ARBOL_REAL): string | null {
@@ -272,7 +272,9 @@ export function fuenteDeFunction(nombre: string, arbol: Arbol = ARBOL_REAL): str
     const nombrados = n.exportClause;
     if (!nombrados || !ts.isNamedExports(nombrados)) continue;
     if (nombrados.elements.some((e) => e.name.text === nombre)) {
-      return resolverRelativo(INDICE_DE_FUNCTIONS, n.moduleSpecifier.text, arbol);
+      const fuenteReal = resolverRelativo(INDICE_DE_FUNCTIONS, n.moduleSpecifier.text, arbol);
+      if (!fuenteReal) throw new Error(`index.ts reexporta ${nombre} desde ${n.moduleSpecifier.text}, que no existe`);
+      return fuenteReal;
     }
   }
   return null;
