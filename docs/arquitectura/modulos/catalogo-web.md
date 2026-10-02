@@ -9,7 +9,7 @@
 | Campo | Valor hoy |
 |---|---|
 | **Qué contiene hoy** | `catalogoWeb.ts` (sitio público, fichas, `fijarWebhookCarrito`), `publico/` |
-| **Depende de** | Productos, Pedidos |
+| **Depende de** | Productos, Pedidos, Inventario (declarado el 01/10/2026: el catálogo muestra el stock y no ofrece lo agotado, y descuenta el stock al tomar el pedido) |
 | **Límite por plan** | — |
 | **Configuración** | `config/marca` (logo, colores) |
 | **Colecciones** | `/fichasCatalogo` |

@@ -311,10 +311,10 @@ export const REGISTRO = [
     modulo: 'catalogo-web',
     nombre: 'Catálogo web',
     version: 1,
-    // DUDA (i): `catalogoWeb.ts` importa `hayParaVender` de `inventario.ts`
-    // para no ofrecer lo agotado. Igual que en Pedidos, no se declara: lo
-    // decide la revisora junto con el caso de Pedidos.
-    dependeDe: ['productos', 'pedidos'],
+    // `catalogoWeb.ts` importa `hayParaVender` y `descontarPedido` de
+    // `inventario.ts`: el catálogo no ofrece lo agotado y descuenta el stock
+    // al tomar el pedido. Declarado el 01/10/2026 (decisión de Andres).
+    dependeDe: ['productos', 'pedidos', 'inventario'],
     // El logo vive aparte porque `config/negocio` viaja en cada turno
     // (firestore.rules, `logoValido`).
     configuracion: [{ documento: 'config/marca', campos: ['logo'] }],
