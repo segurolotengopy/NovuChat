@@ -64,8 +64,8 @@ módulo se derivan del id. Desde el cierre de F2 la carpeta ES la zona, y lo
 que no sale de la carpeta lo anota `admin/pruebas/frontera/frontera.ts`
 (`ZONA_POR_ARCHIVO` y `SE_PARTE`).
 
-**Cómo se verifica:** `admin/pruebas/core/registro.test.ts` (pura, sin
-emulador) comprueba el registro contra el código de hoy en ocho grupos:
+**Cómo se verifica:** `admin/pruebas/core/registro.test.ts` (corre en el proyecto `emulador`, no en
+`pnpm pruebas:puras`) comprueba el registro contra el código de hoy en ocho grupos:
 estructura y cero `import`; pestañas contra `web/src/central/lib/flujos.ts` y
 `App.tsx`; listas blancas de `firestore.rules`; colecciones y Storage;
 límites contra `planes.ts` y las reglas; herramientas contra los nodos de
