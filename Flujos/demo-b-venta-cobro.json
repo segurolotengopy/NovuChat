@@ -693,7 +693,7 @@
       "notes": "Registra el CIERRE de venta. Solo con comprobante del cliente.",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "vfcydksbQT1mBXU2",
+          "id": "",
           "name": "Cierres NovuChat B (auto)"
         }
       }
@@ -734,7 +734,7 @@
       "waitBetweenTries": 1000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "vfcydksbQT1mBXU2",
+          "id": "",
           "name": "Cierres NovuChat B (auto)"
         }
       },
@@ -787,7 +787,7 @@
       "waitBetweenTries": 2000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "vfcydksbQT1mBXU2",
+          "id": "",
           "name": "Cierres NovuChat B (auto)"
         }
       },
@@ -805,7 +805,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "vfcydksbQT1mBXU2",
+          "id": "",
           "name": "Cierres NovuChat B (auto)"
         }
       },

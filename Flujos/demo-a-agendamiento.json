@@ -735,7 +735,7 @@
       "notes": "Registra el CIERRE. El telefono se llama `from` y el nombre `nombrePerfil`: son los nombres que usa el normalizador, no `telefono`/`nombreContacto`.",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       }
@@ -776,7 +776,7 @@
       "waitBetweenTries": 1000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
@@ -816,7 +816,7 @@
       "waitBetweenTries": 2000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
@@ -971,7 +971,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
@@ -1335,7 +1335,7 @@
       "waitBetweenTries": 2000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
@@ -1443,7 +1443,7 @@
       "waitBetweenTries": 2000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
@@ -1615,7 +1615,7 @@
       "waitBetweenTries": 1000,
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
@@ -1886,7 +1886,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },

@@ -313,7 +313,7 @@
       "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "zsGBHfe95mZ9oJCQ",
+          "id": "",
           "name": "Cierres NovuChat A (auto)"
         }
       },
