@@ -1264,6 +1264,40 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
   });
 });
 
+describe('B1: el orden de las variables de la plantilla es un dato de «Config base» y llega al aviso (pasando por «Config del negocio»)', () => {
+  const plantillaDelPedido = (config: J) => {
+    const r = armarPedido({ cobro: false, config });
+    const t = confirmarPedido(r);
+    return { t, params: parametrosDe(plantillasA(t, AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>) };
+  };
+  it('`ordenPedido` en «Config base» reordena las cuatro variables de la plantilla del pedido; sin él rige el de por omisión', () => {
+    const base = plantillaDelPedido({});
+    expect(base.params).toHaveLength(4);
+    expect(base.params[0]).toMatch(/ítems?|×/); // items, total, modalidad, cotejo
+    const orden = ['cotejo', 'modalidad', 'total', 'items'];
+    const alReves = plantillaDelPedido({ ordenPedido: orden.join(',') });
+    expect(alReves.params).toEqual([...base.params].reverse());
+    expect(alReves.params).not.toEqual(base.params);
+  });
+  it('un orden inválido no se obedece: sale el de por omisión y el turno lo anota (`orden_invalido_pedido`)', () => {
+    const base = plantillaDelPedido({});
+    for (const orden of ['items,total', 'items,total,modalidad,modalidad', 'a,b,c,d']) {
+      const r = plantillaDelPedido({ ordenPedido: orden });
+      expect(r.params, orden).toEqual(base.params);
+      expect(((r.t.resumen as J)['resumen'].errores as string[]).join(' '), orden).toContain('orden_invalido_pedido');
+    }
+    expect(((base.t.resumen as J)['resumen'].errores as string[]).join(' ')).not.toContain('orden_invalido');
+  });
+  it('`ordenReserva` también llega (la reserva de Q\'Taco usa la forma `pedido`: sus cuatro variables son las del pedido)', () => {
+    const normal = armarReserva({ ventana: 5 });
+    const a = parametrosDe(plantillasA(enviarReserva(normal), AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>);
+    const r2 = armarReserva({ ventana: 5, config: { ordenReserva: 'cotejo,modalidad,total,items' } });
+    const b = parametrosDe(plantillasA(enviarReserva(r2), AV1)[0] as NonNullable<ReturnType<typeof plantillasA>[number]>);
+    expect(b).toEqual([...a].reverse());
+    expect(b).not.toEqual(a);
+  });
+});
+
 describe('no negociable 6: el aviso pide revisar el banco; un comprobante ya aceptado no se vuelve a avisar', () => {
   it('el detalle del aviso (ventana abierta) trae «Revisen el pago en su banco antes de despachar»', () => {
     const p = pedidoConComprobante({ ventana: 5 });

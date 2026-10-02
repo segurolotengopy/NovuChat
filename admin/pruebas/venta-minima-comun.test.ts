@@ -971,6 +971,19 @@ describe('Config del negocio', () => {
     // el panel y el respaldo no inventan plantillas
     expect(Object.keys(ok(PANEL, { base: {} })).filter((k) => /^(plantilla|idioma)/.test(k))).toEqual([]);
   });
+  it('B1: copia de «Config base» `ordenPedido`, `ordenReserva` y `ordenDerivacion` (el orden de las variables de la plantilla), y no otras claves con «orden»', () => {
+    const c = ok(PANEL, { base: { ordenPedido: 'cotejo,modalidad,total,items', ordenReserva: 'codigo,detalle,cuando,destinatario', ordenDerivacion: 'codigo,detalle,cuando,destinatario' } });
+    expect(c).toMatchObject({ ordenPedido: 'cotejo,modalidad,total,items', ordenReserva: 'codigo,detalle,cuando,destinatario', ordenDerivacion: 'codigo,detalle,cuando,destinatario' });
+    // también con el panel caído o suspendido (el aviso sale igual)
+    for (const r of [{ statusCode: 500, body: {} }, { statusCode: 409, body: {} }]) {
+      expect(correr(r, { base: { ordenPedido: 'cotejo,modalidad,total,items' } })['ordenPedido'], String(r.statusCode)).toBe('cotejo,modalidad,total,items');
+    }
+    // negativos: vacío, marcador sin reemplazar, algo que no es texto, demasiado largo o con otro nombre, no pasan
+    const raro = ok(PANEL, { base: { ordenPedido: '', ordenReserva: 'REEMPLAZAR_ORDEN', ordenDerivacion: 5, ordenLargo: 'x'.repeat(101), Orden: 'no', 'orden-x': 'no', miorden: 'no' } });
+    for (const k of ['ordenPedido', 'ordenReserva', 'ordenDerivacion', 'ordenLargo', 'Orden', 'orden-x', 'miorden']) expect(raro[k], k).toBeUndefined();
+    // el panel y el respaldo no inventan órdenes
+    expect(Object.keys(ok(PANEL, { base: {} })).filter((k) => /^orden/.test(k))).toEqual([]);
+  });
   it('las banderas pedidosActivo, reservasActivo y promosActivo valen false si faltan', () => {
     const c = ok(PANEL, { base: {} });
     expect([c['pedidosActivo'], c['reservasActivo'], c['promosActivo']]).toEqual([false, false, false]);
