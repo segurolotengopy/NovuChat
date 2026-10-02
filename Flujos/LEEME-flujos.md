@@ -527,7 +527,7 @@ con los límites de WhatsApp (imagen JPEG o PNG hasta 5 MB, documento hasta
 100 MB) antes de que lo pruebe un prospecto.
 
 **Carga inicial:** desde la pestaña «Captación», o con
-`node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
+`node admin/scripts/datos/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
 (primero en seco). El contenido de NovuChat está en
 `admin/scripts/datos/captacion-novuchat.json`, copiado del sitio.
 

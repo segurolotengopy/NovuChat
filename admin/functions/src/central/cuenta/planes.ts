@@ -6,7 +6,7 @@
  *
  * ESTE MÓDULO ES PURO A PROPÓSITO, igual que `atencion.ts`: no importa Firebase
  * ni lee la red. Lo usan las Functions (`actualizarEstadoCuenta`, la ingesta),
- * el script `scripts/asignar-plan.mjs` y la consola (`web/src/central/lib/planes.ts`).
+ * el script `scripts/plataforma/asignar-plan.mjs` y la consola (`web/src/central/lib/planes.ts`).
  * Un solo catálogo y cuatro lectores: si la consola tuviera su copia, podría
  * decir «hasta 100 productos» mientras el servidor corta en otra cifra, y sobre
  * esa diferencia se discute un reclamo.
@@ -339,7 +339,7 @@ export function limitesDe(plan: unknown): Limites {
 /**
  * LO QUE NACE EN `cuenta/estado` AL DAR DE ALTA UN COMERCIO: el plan más chico
  * con su copia de límites y la versión del catálogo. Lo usan `altaTenant`
- * (index.ts), `scripts/alta-comercio.mjs` y el sembrador local, para que las
+ * (index.ts), `scripts/plataforma/alta-comercio.mjs` y el sembrador local, para que las
  * tres altas escriban lo mismo. Antes escribían `plan: 'basico'`, que no es un
  * plan del catálogo y no traía copia: el comercio caía en el respaldo sin que
  * nadie lo supiera. Subir de plan después es `asignar-plan.mjs` o

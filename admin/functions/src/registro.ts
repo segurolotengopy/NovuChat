@@ -8,15 +8,14 @@
  * (configuración, colecciones, límites, pestañas, herramientas, Functions,
  * ganchos y los mensajes que agrega por conversación). De acá se derivan, en
  * F2 y F3, las siete copias de hoy (`Analisis/41` §3.3): la tabla de flujos de
- * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `index.ts`,
+ * la consola (`web/src/central/lib/flujos.ts`), `VERTICALES` de `plataforma/tenants.ts`,
  * `VERTICALES_CONOCIDOS` y `documentoDeVertical` de `prompt.ts`, las
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
  *
- * F2, PR 1: ESTE ARCHIVO TODAVÍA NO LO IMPORTA NADIE. Existe, se verifica
- * contra el código de hoy (`pruebas/core/registro.test.ts`) y mide cuánto del
- * árbol cabe en las zonas (`scripts/medir-zonas.mjs`). Los PR siguientes lo
- * enchufan donde hoy están las copias.
+ * F2, PR 1: ESTE ARCHIVO TODAVÍA NO LO IMPORTA NADIE. Existe y se verifica
+ * contra el código de hoy (`pruebas/core/registro.test.ts`). Los PR siguientes
+ * lo enchufan donde hoy están las copias.
  *
  * CERO `import`, Y ES A PROPÓSITO. Lo importan cuatro mundos que no comparten
  * resolución de módulos: las Functions (compilan con `rootDir: src` e importan
@@ -30,9 +29,9 @@
  * La prueba del registro falla si aparece un `import`.
  *
  * EL REGISTRO NO LLEVA RUTAS DE ARCHIVOS QUE F2 MUEVE. Las carpetas de un
- * módulo se derivan de su id (`carpetasDe`); el inventario origen → destino de
- * la mudanza vive aparte, en `pruebas/frontera/destinos-f2.ts`, y se borra cuando
- * F2 termine.
+ * módulo se derivan de su id (`carpetasDe`); desde el cierre de F2 la carpeta
+ * ES la zona, y lo que no sale de la carpeta lo anota
+ * `pruebas/frontera/frontera.ts` (`ZONA_POR_ARCHIVO` y `SE_PARTE`).
  *
  * LO ESCRIBE LA COORDINADORA (`Analisis/41` §8.1): cada agente de módulo
  * escribe su carpeta y propone su línea acá.
@@ -280,7 +279,7 @@ export const REGISTRO = [
     // descuenta stock con `descontarPedido` de `inventario.ts`. No se declara
     // `inventario` porque haría obligatorio Inventario para vender; la
     // revisora decide entre declararlo o volver el descuento un gancho de
-    // Inventario. `medir-zonas.mjs` lo lista como importación entre módulos.
+    // Inventario. `fronteras.test.ts` la verá como importación entre módulos.
     dependeDe: ['productos'],
     configuracion: [
       {

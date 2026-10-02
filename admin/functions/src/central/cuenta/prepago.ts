@@ -59,7 +59,7 @@
  * presentación. DESDE F1 (`Analisis/41` §4, 25/09/2026) LA MODALIDAD ES EL
  * ÚNICO EJE QUE DECIDE ESTO: `plan: 'demostracion'` dejó de existir como plan
  * y ya no manda sobre la modalidad. Un demo es modalidad `demostracion` con
- * cualquier plan del catálogo; `scripts/migrar-ejes.mjs` convierte los que
+ * cualquier plan del catálogo; `scripts/plataforma/migrar-ejes.mjs` convierte los que
  * quedaron con el plan viejo.
  *
  * Y LA BANDERA DE MODO OBSERVACIÓN (§4undecies.4): aunque una cuenta con
@@ -441,7 +441,7 @@ export function corteDe(cuenta: CuentaCruda | null | undefined): Corte | null {
  * («doble salvaguarda»). Esa doble salvaguarda era la mezcla de los dos ejes:
  * el plan decidiendo si se cobra. Ahora la modalidad es el único dato que
  * decide, y los tenants que tenían el plan viejo reciben `modalidad:
- * 'demostracion'` por `scripts/migrar-ejes.mjs`. Lo que sí se conserva es la
+ * 'demostracion'` por `scripts/plataforma/migrar-ejes.mjs`. Lo que sí se conserva es la
  * salvaguarda de la AUSENCIA: sin modalidad, demostración.
  */
 export function modalidadDe(cuenta: CuentaCruda | null | undefined): Modalidad {
@@ -1336,7 +1336,7 @@ export function resumenDeCuenta(estado: EstadoServicio, nombreNegocio: string): 
 
 /**
  * VOSEO: español boliviano sin voseo (CLAUDE.md). Misma expresión que en
- * `scripts/cargar-plataforma.mjs`; se repite acá para poder probar los cuerpos
+ * `scripts/plataforma/cargar-plataforma.mjs`; se repite acá para poder probar los cuerpos
  * de las plantillas sin importar un script.
  */
 export const VOSEO = new RegExp(

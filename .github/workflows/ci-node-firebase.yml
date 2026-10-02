@@ -460,7 +460,7 @@ jobs:
           # mas. -l0: sin limite de renombres (F2 mueve muchos archivos);
           # quotePath=false: rutas con tildes sin comillas.
           git -c core.quotePath=false diff -M -l0 --name-status "$BASE_PR" HEAD > "$RUNNER_TEMP/movidos.txt"
-          # El analizador (frontera.ts, fronteras.test.ts, destinos-f2.ts) corre
+          # El analizador (frontera.ts, fronteras.test.ts) corre
           # en la version del PR: un cambio ahi lo ve solo la revision humana.
           if git diff --name-only "$BASE_PR" HEAD -- 'admin/pruebas/frontera/*.ts' | grep -q .; then
             echo "::warning::Este PR cambia el analizador de la frontera (admin/pruebas/frontera/*.ts): revisarlo a mano."

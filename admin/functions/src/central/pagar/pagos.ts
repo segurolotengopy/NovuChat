@@ -230,7 +230,7 @@ export interface PuertaDePagos {
  *
  * Hasta F1 un `plan: 'demostracion'` también gobernaba; desde el 25/09 el
  * plan no dice nada sobre el cobro (`Analisis/41` §4), y los demos reciben su
- * `modalidad: 'demostracion'` explícita con `scripts/migrar-ejes.mjs`.
+ * `modalidad: 'demostracion'` explícita con `scripts/plataforma/migrar-ejes.mjs`.
  */
 export function derivadosGobernados(cuenta: Record<string, unknown> | null | undefined): boolean {
   return esModalidad(cuenta?.['modalidad']);
