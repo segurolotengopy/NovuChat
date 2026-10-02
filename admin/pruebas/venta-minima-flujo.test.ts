@@ -581,10 +581,25 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     expect(Object.keys(base)).not.toContain('catalogoWebActivo');
   });
 
-  it('settings: executionOrder v1, zona de La Paz, 60 s, y sin datos de éxitos guardados (llevan texto de clientes)', () => {
-    for (const f of [QTACO, PRUEBA]) {
-      expect(f.settings).toMatchObject({ executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60, saveDataSuccessExecution: 'none' });
+  it('settings: executionOrder v1, zona de La Paz, 60 s, y NADA de ejecuciones guardadas (éxito, error y progreso: llevan texto de clientes; decisión del 02/10)', () => {
+    for (const f of [PLANTILLA, QTACO, PRUEBA]) {
+      expect(f.settings).toMatchObject({
+        executionOrder: 'v1', timezone: 'America/La_Paz', executionTimeout: 60,
+        saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false,
+      });
     }
+  });
+
+  it('--verificar FALLA si un JSON versionado guarda ejecuciones de errores, de éxitos o su progreso (cada uno, por separado)', () => {
+    for (const [clave, valor] of [['saveDataErrorExecution', 'all'], ['saveDataSuccessExecution', 'all'], ['saveExecutionProgress', true]] as const) {
+      const r = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => { (f.settings as J)[clave] = valor; }));
+      expect(r.status, clave).toBe(1);
+      expect(r.stderr, clave).toContain('retención');
+    }
+    // Una clave que falta también falla (n8n tomaría el valor de la instancia).
+    const sin = verificarEnCopia((vm) => editarJson(vm, 'venta-minima.prueba.json', (f) => { delete (f.settings as J)['saveExecutionProgress']; }));
+    expect(sin.status).toBe(1);
+    expect(sin.stderr).toContain('retención');
   });
 });
 

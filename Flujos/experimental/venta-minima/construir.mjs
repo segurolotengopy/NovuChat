@@ -157,6 +157,12 @@ function guardiasDeProduccion(entrada, flujo) {
   const nombres = new Set(flujo.nodes.map((n) => n.name));
   const tipos = flujo.nodes.map((n) => n.type);
   if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
+  // Retención de ejecuciones (decisión de Andres, 02/10/2026): nada se guarda, ni éxitos ni errores ni progreso, porque
+  // las ejecuciones llevan texto de clientes. Vale para todas las variantes.
+  const st = flujo.settings || {};
+  if (st.saveDataSuccessExecution !== 'none' || st.saveDataErrorExecution !== 'none' || st.saveExecutionProgress !== false) {
+    hallazgos.push('los ajustes de retención deben ser saveDataSuccessExecution y saveDataErrorExecution «none» y saveExecutionProgress false (las ejecuciones llevan texto de clientes)');
+  }
   if (entrada === 'receptor' && tipos.includes('n8n-nodes-base.whatsAppTrigger')) hallazgos.push('contiene un «WhatsApp Trigger» en la variante del receptor (prohibición 7)');
   return hallazgos;
 }

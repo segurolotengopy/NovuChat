@@ -5,7 +5,8 @@
     "timezone": "America/La_Paz",
     "executionTimeout": 60,
     "saveDataSuccessExecution": "none",
-    "saveDataErrorExecution": "all",
+    "saveDataErrorExecution": "none",
+    "saveExecutionProgress": false,
     "saveManualExecutions": false
   },
   "nodes": [
