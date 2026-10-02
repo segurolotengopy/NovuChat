@@ -22,6 +22,15 @@ overrides:
   #   así que solo un override lo saca de ahí. En el navegador el SDK no usa
   #   gRPC; en Node lo ejercitan las pruebas del emulador (30/09/2026).
   '@grpc/grpc-js': ^1.14.5
+  # CVE-2026-102990 (GHSA-c475-qrg2-pj4r, alta): un listado de directorio FTP
+  # malicioso consume CPU sin límite en basic-ftp < 6.2.1. Llega solo por
+  # get-uri <- pac-proxy-agent <- proxy-agent (herramientas, no código de
+  # producción). La rama 5.x no tiene parche y hasta get-uri 8 declara ^5.3.1,
+  # así que solo un override lo saca. El único cambio incompatible de 6.0 es que
+  # rechaza por defecto hosts de transferencia separados (defensa contra FTP
+  # bounce); get-uri no usa esa opción y solo llama access, lastMod, list,
+  # downloadTo y close, que no cambiaron (02/10/2026).
+  basic-ftp: ^6.2.1
 
 packages:
   - web
