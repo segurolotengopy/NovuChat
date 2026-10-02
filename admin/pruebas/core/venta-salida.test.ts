@@ -484,12 +484,15 @@ describe('(7) El prompt: solo promete pasar con una persona si hay a quién', ()
 
   it('la regla de no prometer es la nueva y el filtro PROMESA no borra la oración de la transferencia', () => {
     expect(con).toContain('no le prometes al cliente que alguien le escribirá ni que le avisarás después');
-    expect(con).toContain('Si transfieres, di que el negocio ya fue avisado y que puede tocar el botón.');
+    // Solo se afirma lo que siempre se cumple: el botón. El aviso al dueño puede no
+    // salir (repetido en 24 h, o rechazado), y eso lo dicen los textos fijos del código.
+    expect(con).toContain('Si transfieres, di que puede tocar el botón para escribirle directo al negocio, sin prometer tiempos.');
+    expect(con).not.toContain('ya fue avisado');
     expect(con).not.toContain('«le avisas»');
     expect(sin).toContain('no le prometes al cliente que alguien le escribirá');
     expect(sin).not.toContain('Si transfieres');
     for (const o of ['Ya le avisé al negocio, así que puedes tocar el botón para escribirle directo.',
-      'El negocio ya fue avisado y puedes tocar el botón para escribirle directo.']) {
+      'Puedes tocar el botón para escribirle directo al negocio.']) {
       const p = turno({ output: o + ' [TRANSFERIR]' });
       expect(p['respuesta'], o).toBe(o);
       expect(p['avisos']).not.toContain('promesa_quitada');
