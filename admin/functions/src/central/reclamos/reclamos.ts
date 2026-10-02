@@ -70,7 +70,7 @@ const PUNTO_FINAL = 'https://formsubmit.co/ajax/';
 const MAX_TEXTO_CORREO = 1000;
 
 // El saneo vive en `saneo.ts`, sin dependencias de Firebase, para poder
-// probarlo sin emulador ni red. Ver `pruebas/saneo.test.ts`.
+// probarlo sin emulador ni red. Ver `pruebas/central/saneo.test.ts`.
 
 export const notificarReclamo = onDocumentCreated(
   {

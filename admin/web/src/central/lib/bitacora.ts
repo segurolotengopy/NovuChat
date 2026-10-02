@@ -24,7 +24,7 @@ import {
  * ----------
  * Las formas de consulta posibles se declaran ACÁ, en `FORMAS`, y de acá salen
  * dos cosas: la consulta que arma la pantalla, y la prueba
- * `pruebas/indices.test.ts`, que verifica que cada forma tenga su índice en
+ * `pruebas/central/indices.test.ts`, que verifica que cada forma tenga su índice en
  * `firestore.indexes.json`. La pantalla no puede construir una consulta que la
  * prueba no haya visto, porque las dos leen la misma lista.
  *
