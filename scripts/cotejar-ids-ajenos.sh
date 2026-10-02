@@ -38,12 +38,12 @@
 set -euo pipefail
 
 DIR=""; ARCHIVOS=(); CANDIDATAS=()
-requiere_valor() { [ "$1" -ge 2 ] || { echo "✗ La opción $2 requiere un valor" >&2; exit 2; }; }
+requiere_valor() { { [ "$1" -ge 2 ] && [ -n "$3" ]; } || { echo "✗ La opción $2 requiere un valor" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir)       requiere_valor $# "$1"; DIR="$2"; shift 2 ;;
-    --env)       requiere_valor $# "$1"; ARCHIVOS+=("$2"); shift 2 ;;
-    --candidata) requiere_valor $# "$1"; CANDIDATAS+=("$2"); shift 2 ;;
+    --dir)       requiere_valor $# "$1" "${2-}"; DIR="$2"; shift 2 ;;
+    --env)       requiere_valor $# "$1" "${2-}"; ARCHIVOS+=("$2"); shift 2 ;;
+    --candidata) requiere_valor $# "$1" "${2-}"; CANDIDATAS+=("$2"); shift 2 ;;
     -h|--help)   sed -n '2,37p' "$0"; exit 0 ;;
     # No se repite el argumento: podría ser un id pegado por error.
     *) echo "✗ Argumento desconocido (ver --help)" >&2; exit 2 ;;
@@ -75,29 +75,40 @@ fi
 
 # Lee una clave del archivo como datos. Deja el valor en LEIDO y devuelve:
 #   0  encontrada, con forma de id;   1  la clave no está;
-#   2  la clave está y su valor no se entiende como id (no se imprime).
-# La última aparición vale, como al cargar el archivo. Las líneas de comentario
-# no cuentan. Un error de lectura de grep corta con 2.
+#   2  la clave está y NO se puede asegurar qué valor tiene `source` (no se imprime).
+# La última asignación vale, como al cargar el archivo. Las líneas de comentario
+# no cuentan. Solo es una asignación la línea ANCLADA: [export|readonly|declare
+# -x] CLAVE=valor, y tras el valor solo puede haber espacios, «;» o «# …». Toda
+# otra línea que nombre la clave (dos asignaciones en una, la clave dentro de
+# otro valor, un prefijo parecido seguido de la clave…) es ambigua: sale 2.
+# Revisión de seguridad del #367, segunda ronda. Un error de lectura de grep
+# corta con 2.
 leer_clave() {
-  local todas rc=0 linea="" l rest v
+  local todas rc=0 linea="" l rest v tras t ambiguo=0
+  local ancla="^[[:space:]]*(export[[:space:]]+|readonly[[:space:]]+|declare[[:space:]]+(-[A-Za-z]+[[:space:]]+)*)?$2[[:space:]]*="
   LEIDO=""
   todas=$(LC_ALL=C grep -a -E -e "(^|[^A-Za-z0-9_])$2[[:space:]]*=" -- "$1") || rc=$?
   [ "$rc" -le 1 ] || { echo "✗ No se pudo leer $(basename -- "$1")" >&2; exit 2; }
   while IFS= read -r l; do
+    l=${l#$'\xef\xbb\xbf'}
     case "$l" in *[![:space:]]*) ;; *) continue ;; esac
-    l=${l#"${l%%[![:space:]]*}"}
-    [ "${l:0:1}" = "#" ] && continue
-    linea=$l
+    t=${l#"${l%%[![:space:]]*}"}
+    [ "${t:0:1}" = "#" ] && continue
+    if [[ $l =~ $ancla ]]; then linea=$l; else ambiguo=1; fi
   done <<<"$todas"
+  [ "$ambiguo" -eq 0 ] || return 2
   [ -n "$linea" ] || return 1
   rest=${linea#*"$2"}
   rest=${rest#"${rest%%[![:space:]]*}"}; rest=${rest#=}
   rest=${rest#"${rest%%[![:space:]]*}"}; rest=${rest//$'\r'/}
   case $rest in
-    \"*) v=${rest#\"}; v=${v%%\"*} ;;
-    \'*) v=${rest#\'}; v=${v%%\'*} ;;
-    *)   v=${rest%%[[:space:];#]*} ;;
+    \"*) v=${rest#\"}; [[ $v == *\"* ]] || return 2; tras=${v#*\"}; v=${v%%\"*} ;;
+    \'*) v=${rest#\'}; [[ $v == *\'* ]] || return 2; tras=${v#*\'}; v=${v%%\'*} ;;
+    *)   v=${rest%%[[:space:];#]*}; tras=${rest#"$v"} ;;
   esac
+  t=${tras#"${tras%%[![:space:]]*}"}
+  if [ "${t:0:1}" = ";" ]; then t=${t#;}; t=${t#"${t%%[![:space:]]*}"}; fi
+  case "$t" in ""|"#"*) ;; *) return 2 ;; esac
   es_id "$v" || return 2
   LEIDO=$v
 }

@@ -191,6 +191,36 @@ describe('cotejar-ids-ajenos.sh', () => {
       expect(r.salida).not.toContain(INOCENTE);
     });
 
+    // Segunda ronda de seguridad: líneas que `source` lee distinto de lo que parece
+    // a simple vista. Ninguna puede dar 0 con la huella del id a la vista.
+    it.each([
+      ['un prefijo parecido y luego la clave', `X_WA_PHONE_ID=111111111 WA_PHONE_ID=${INOCENTE}`],
+      ['dos asignaciones en la misma línea', `WA_PHONE_ID=111111111 WA_PHONE_ID=${INOCENTE}`],
+      ['dos asignaciones separadas por «;»', `WA_PHONE_ID=111111111;WA_PHONE_ID=${INOCENTE}`],
+      ['el valor partido por una comilla', `WA_PHONE_ID="${INOCENTE.slice(0, 4)}"${INOCENTE.slice(4)}`],
+      ['la clave dentro de otro valor', `NOTA="ver WA_PHONE_ID=${INOCENTE}"`],
+      ['comilla sin cerrar', `WA_PHONE_ID="${INOCENTE}`],
+    ])('%s: sale 2, nunca 0', (_n, linea) => {
+      const f = env('.env.ambiguo', [linea]);
+      const r = correr(['--env', f, '--candidata', sha(INOCENTE)]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).not.toContain('✓');
+    });
+
+    it('la clave en el comentario del final de OTRA línea hace ambiguo el archivo: sale 2', () => {
+      const f = env('.env.ambiguo', [`WA_PHONE_ID=${INOCENTE}`, `OTRA=1 # WA_PHONE_ID=111111111`]);
+      expect(correr(['--env', f, '--candidata', sha(INOCENTE)]).codigo).toBe(2);
+    });
+
+    it('«;» y un comentario tras el valor siguen siendo una sola asignación', () => {
+      const f = env('.env.ok', [`WA_PHONE_ID=${INOCENTE}; # demo`]);
+      expect(correr(['--env', f, '--candidata', sha(INOCENTE)]).codigo).toBe(1);
+    });
+
+    it('--dir con un valor vacío: sale 2, no cae a la carpeta principal', () => {
+      expect(correr(['--dir', '']).codigo).toBe(2);
+    });
+
     it('una clave ilegible junto a otra legible que no coincide: sale 2, no 0', () => {
       const f = env('.env.mixto', [`WA_APP_ID=${INOCENTE}`, 'WA_PHONE_ID=${OTRO}']);
       expect(correr(['--env', f]).codigo).toBe(2);
