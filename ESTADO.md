@@ -11,15 +11,18 @@
 **Última actualización:** 2026-10-02, madrugada. **F2 de la rearquitectura quedó
 cerrada en `main` el 02/10 a las ~00:40** (#353, el Cierre). La etiqueta `v0.11.0`
 (sobre `e23bf34`) la creó Andres a las 00:21, fuera de la ventana de 02:00 a 03:00
-por decisión suya («hagámoslo ahora»); la corrida 36964207581 espera su aprobación
-del entorno `production`. Asiento de hoy en `bitacora/2026-10.md`; lo anterior,
+por decisión suya («hagámoslo ahora»), y **quedó en producción a las 00:37**
+(hora de Bolivia; corrida 36964207581, producción aprobada a las 00:34). Asiento de hoy en `bitacora/2026-10.md`; lo anterior,
 en `bitacora/2026-09.md`.
 
 ## En producción
 
-- **Consola y Functions:** `v0.10.0` (26/09, `4f7e091`) **hasta que termine la
-  corrida de `v0.11.0`** (en curso; el despliegue de F2 completo: F1b, la regla
-  de planes, el pago en revisión y todas las mudanzas de F2, solo rutas).
+- **Consola y Functions:** **`v0.11.0`** (02/10, `e23bf34`), con F1b (la regla de
+  planes, el pago en revisión) y todas las mudanzas de F2 (solo rutas).
+  `desplegar-produccion` y `post-despliegue` en verde (chequeo de salud OK), 55
+  Functions actualizadas, 0 creadas y 0 eliminadas; el canal `previa` de Hosting
+  quedó clonado para la reversión; 0 errores ni 5xx en Cloud Run en los primeros
+  minutos. Antes: `v0.10.0` (26/09, `4f7e091`).
 - **Flujos de n8n:** Bellido corre el piloto «Agenda mínima v0» (45 nodos,
   `f3f7411`, #293; el respaldo de 96 nodos está fuera del repositorio y se vuelve
   con `--restaurar-respaldo`). Demo A y Platinum están atrasados en «Procesar
@@ -47,8 +50,8 @@ en `bitacora/2026-09.md`.
 
 ## Lo próximo, en orden
 
-1. Terminar la corrida de `v0.11.0` (aprobación de `production` por Andres) y
-   verificar el humo posterior.
+1. Vigilar `v0.11.0` durante 60 minutos (en curso) y probar con teléfono real
+   (ver «Requiere a Andres»).
 2. **H2** de la revisora (informe en
    `~/Descargas/NOVUCHAT_informe-hito-H2-F2_2026-10-02.md`); después **F3a**.
 3. Pendientes que señaló el informe H2: repetir el seco de `migrar-ejes`
@@ -67,7 +70,8 @@ Orden general de la sesión de cartera. Trabajan la de **rearquitectura**, la
 
 **Requiere a Andres** (cada una con su «sí»; las corre Claude):
 
-1. Aprobar el entorno `production` de la corrida de `v0.11.0`.
+1. Prueba con teléfono real sobre `v0.11.0`: Bellido (agendar y cancelar) y
+   Platinum (seña). La vigilancia de 60 minutos sigue en curso.
 2. **Gemini:** credencial de producción prepago (`NovuchatDemo`); recarga
    automática con límite mensual decidida. Se sigue con 3.5 Flash-Lite
    (`Analisis/44`).
