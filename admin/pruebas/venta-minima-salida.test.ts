@@ -53,7 +53,9 @@ const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu
  *    devuelve `false` si el texto coincide con `VM_PROHIBIDAS`; `vmSd()` da `ventaMinima` de los datos
  *    estáticos; `vmEscribirEstado` guarda el estado por teléfono; `vmBarrer` limpia vencidos.
  *  - `avisos.js` (T4): `avPlan` envuelve a `avArmar` con los errores; `avDestinatarios` filtra a los de 8 a 15 dígitos con prefijo permitido y distintos
- *    del que escribe; `avArmar` devuelve la LISTA de ítems `{para, rol, payload, respaldo:null,
+ *    del que escribe, y asigna el rol `completo` SOLO a «completo:» (un número sin rol o con un rol desconocido es `cocina`, como la
+ *    librería real: antes el doble daba `completo` por omisión y ocultaba la diferencia; ver `venta-minima-integracion`);
+ *    `avArmar` devuelve la LISTA de ítems `{para, rol, payload, respaldo:null,
  *    esPlantilla, clase}` (`clase`: plantilla, detalle o imagen; el detalle con ventana abierta y la imagen del
  *    comprobante son ítems aparte) y NO modifica `sd`;
  *    `avDentroDelTopeDiario` lee `sd`; `avContar` escribe en `sd` y SOLO lo llama `Armar mensajes`.
@@ -79,9 +81,12 @@ function avDestinatarios(csv, from, pref) {
   const out = []; const visto = {};
   const prefijos = String(pref || '591').split(',').map((s) => s.trim()).filter(Boolean);
   for (const p of String(csv || '').split(',')) {
-    const i = p.indexOf(':'); const rol = i < 0 ? 'completo' : p.slice(0, i).trim(); const d = vmDigitos(i < 0 ? p : p.slice(i + 1));
-    if (d.length < 8 || d.length > 15 || !prefijos.some((x) => d.startsWith(x)) || d === vmDigitos(from) || visto[d]) continue;
-    visto[d] = true; out.push({ rol: rol, tel: d });
+    // Igual que la librería real (avisos.js): solo el rol «completo» (sin tildes ni mayúsculas) es completo; un número SIN rol o
+    // con un rol desconocido es «cocina», el de menos privilegio. Un número repetido queda con el rol de menos privilegio.
+    const i = p.indexOf(':'); const nombreRol = i < 0 ? '' : p.slice(0, i).trim().toLowerCase(); const rol = nombreRol === 'completo' ? 'completo' : 'cocina'; const d = vmDigitos(i < 0 ? p : p.slice(i + 1));
+    if (d.length < 8 || d.length > 15 || !prefijos.some((x) => d.startsWith(x)) || d === vmDigitos(from)) continue;
+    if (visto[d]) { if (rol === 'cocina') visto[d].rol = 'cocina'; continue; }
+    visto[d] = { rol: rol, tel: d }; out.push(visto[d]);
   }
   return out;
 }
