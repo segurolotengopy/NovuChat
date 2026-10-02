@@ -1127,6 +1127,33 @@ describe('no negociable 3: «pasé tu pedido al restaurante» solo si un aviso s
     expect((t4.resumen as J)['resumen'].avisoSalio).toBe(true);
   });
 
+  // `respaldo: null` (comportamiento fijado, no un defecto a esconder): `avisos.js` hoy NO arma ningún aviso con respaldo, así que
+  // en producción «Aviso de respaldo» no corre aunque «Enviar aviso» falle: la plantilla que cae no se reintenta con un texto.
+  // Lo que cubre al cliente es otra cosa: «Armar mensajes» elige «No pude pasarle…» (con el botón) por el hecho de que ningún
+  // aviso salió. Si alguna vez `avisos.js` trae respaldos, esta prueba se pone roja y avisa que hay que revisar el costo (un mensaje
+  // más por aviso caído) y el cableado, que la prueba de arriba ya cubre con un doble.
+  it('con el «Armar avisos» real, ningún aviso trae respaldo: si «Enviar aviso» falla, «Aviso de respaldo» NO corre y el cliente lee «No pude pasarle…»', () => {
+    const casos: [string, () => ResultadoTurno[]][] = [
+      ['pedido con comprobante', () => [pedidoConComprobante({ ventana: 5, fallan: ['Enviar aviso'] }).comp]],
+      ['pedido sin QR', () => { const r = armarPedido({ cobro: false, ventana: 5, fallan: ['Enviar aviso'] }); return [confirmarPedido(r)]; }],
+      ['reserva', () => { const r = armarReserva({ ventana: 5, fallan: ['Enviar aviso'] }); return [enviarReserva(r)]; }],
+      ['derivación', () => { const w = crear(); w.fallan.add('Enviar aviso'); abrirVentanas(w); return [con(w).escribe('quiero hablar con una persona', { avanzarMin: 5 })]; }],
+    ];
+    for (const [nombre, correr] of casos) {
+      for (const t of correr()) {
+        const armados = (t.porNodo['Armar avisos'] ?? []).filter((a) => (a as J)['sinAviso'] !== true);
+        expect(armados.length, nombre).toBeGreaterThan(0);
+        for (const a of armados) expect((a as J)['respaldo'], `${nombre}: respaldo`).toBeNull();
+        expect(t.ejecutados.has('Aviso de respaldo'), nombre).toBe(false);
+        expect(t.avisos.some((a) => a.respaldo), nombre).toBe(false);
+        expect(t.avisos.every((a) => !a.ok), nombre).toBe(true);
+        expect(cuerpos(t).join('\n'), nombre).toMatch(/No pude (pasarle|hacer llegar)|Eso lo ve directamente el restaurante/);
+        expect(cuerpos(t).join('\n'), nombre).not.toMatch(/ya pas[eé]|llegó al restaurante/i);
+        expect(tieneEnlace(t), nombre).toBe(true);
+      }
+    }
+  });
+
   it('la misma regla para la reserva: «llegó al restaurante» solo con el aviso salido', () => {
     const buena = armarReserva({ ventana: 5 });
     const enviada = enviarReserva(buena);
