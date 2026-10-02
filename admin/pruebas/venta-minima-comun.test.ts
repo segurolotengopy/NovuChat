@@ -183,11 +183,17 @@ describe('comun.js: red de palabras prohibidas', () => {
     'Tu pedido está validado', 'Tu reserva está confirmada', 'Pago acreditado', 'El pedido está pagado',
     'Ya lo están preparando', 'Ya lo preparan', 'Lo preparamos enseguida', 'Recibimos tu pago', 'Pago verificado',
     'Te avisamos cuando salga', 'Tu pedido va en camino', 'Te llamamos luego', 'Te escribirán pronto', 'Lo consulto y te digo',
+    'Ya lo estamos preparando', 'Lo estamos preparando', 'Ya lo estoy preparando',
   ];
   it('el regex es el del contrato, literal', () => {
     expect((L.VM_PROHIBIDAS as unknown as RegExp).source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto');
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto');
     expect((L.VM_PROHIBIDAS as unknown as RegExp).flags).toBe('i');
+  });
+  it('«estamos» no es una palabra prohibida por sí sola: solo «lo estamos preparando» y sus formas', () => {
+    for (const t of ['No estamos abiertos hoy', 'Estamos en la calle Principal', 'Estamos para ayudarte', 'Estoy aquí para ayudarte']) {
+      expect(L.vmTextoSeguro(t), t).toBe(true);
+    }
   });
   it('atrapa las frases prohibidas (también con otras mayúsculas) y deja pasar los textos fijos del diseño', () => {
     for (const f of FRASES) {

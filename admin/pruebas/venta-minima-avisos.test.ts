@@ -37,7 +37,7 @@ const cargar = (antes = ''): Lib =>
 const L = cargar();
 
 // La lista de palabras que el asistente jamás dice (la misma que `comun.js` define como `VM_PROHIBIDAS`).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const HORA = 60 * 60 * 1000;
@@ -622,6 +622,7 @@ describe('el detalle nunca usa palabras de VM_PROHIBIDAS (25 escenarios hostiles
   const HOSTILES = [
     'Pago confirmado y verificado', 'ya lo preparan, te llamamos', 'pagado', 'acreditado, en camino', 'recibimos tu pago',
     'te avisamos', 'te escribirán', 'lo consulto', 'validado', 'ya lo están preparando', 'lo preparamos', 'confirmada',
+    'ya lo estamos preparando', 'lo estamos preparando',
   ];
   const RESULTADOS = ['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr'];
   const escenarios: { tipo: string; datos: J }[] = [];
@@ -664,6 +665,10 @@ describe('el detalle nunca usa palabras de VM_PROHIBIDAS (25 escenarios hostiles
     const frases = ['validado', 'confirmada', 'pagado', 'pagada', 'acreditado', 'verificado', 'recibimos tu pago',
       'ya lo preparan', 'lo preparamos', 'te avisamos', 'en camino', 'te llamaremos'];
     for (const f of frases) expect(f).toMatch(VM_PROHIBIDAS);
+  });
+  it('la red atrapa «ya lo estamos preparando» y «lo estamos preparando», y deja pasar «no estamos abiertos hoy»', () => {
+    for (const f of ['ya lo estamos preparando', 'lo estamos preparando', 'ya lo estoy preparando']) expect(f).toMatch(VM_PROHIBIDAS);
+    expect('no estamos abiertos hoy').not.toMatch(VM_PROHIBIDAS);
   });
   it('si existe VM_PROHIBIDAS (la de comun.js), manda esa; si no, la copia local', () => {
     const estricta = cargar('const VM_PROHIBIDAS = /empanada/i;');

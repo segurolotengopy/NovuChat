@@ -32,7 +32,7 @@
 
 // La red de palabras de `comun.js` (`VM_PROHIBIDAS`), copiada acá a propósito: esta
 // librería se prueba sola y no puede depender de otro archivo.
-const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 // El total que acepta el servidor para cotejar (`TOTAL_VENTA_MAXIMO`).
 const CB_TOTAL_MAXIMO = 1000000;

@@ -45,7 +45,7 @@ const PRUEBA = '59100000041';
 
 // La red de palabras del contrato (§4.2, `comun.js`). Se repite acá a propósito: si el contrato cambia,
 // esta suite lo dice.
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 /**
  * LO QUE SE SUPONE DE CADA LIBRERÍA (los dobles de abajo; `avArmar` según lo que informó T4):
@@ -842,13 +842,14 @@ describe('Armar mensajes — estado, pedido guardado y cierre (el único que esc
 describe('Las diez reglas: nada prohibido sale, en ningún texto', () => {
   const FRASES = [
     'Tu pedido está validado.', 'Pedido confirmado.', 'Pago confirmado.', 'Ya está pagado.', 'Pago acreditado.', 'Datos verificados: verificado.',
-    'Recibimos tu pago.', 'Ya lo preparan.', 'Ya lo están preparando.', 'Lo preparamos enseguida.', 'Te avisamos cuando salga.',
+    'Recibimos tu pago.', 'Ya lo preparan.', 'Ya lo están preparando.', 'Ya lo estamos preparando.', 'Lo estamos preparando.', 'Lo preparamos enseguida.', 'Te avisamos cuando salga.',
     'Ya va en camino.', 'Te llamamos pronto.', 'Te escribirán en un rato.', 'Lo consulto y te digo.',
   ];
 
   it('el regex del contrato atrapa cada frase prohibida (el negativo de la red)', () => {
     for (const f of FRASES) expect(PROHIBIDAS.test(f), f).toBe(true);
     expect(PROHIBIDAS.test('Recibí tu comprobante y los datos coinciden con tu pedido.')).toBe(false);
+    expect(PROHIBIDAS.test('No estamos abiertos hoy.')).toBe(false);
   });
 
   it.each(FRASES)('«%s» en un mensaje al cliente se reemplaza por la derivación', (frase) => {

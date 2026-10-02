@@ -49,7 +49,7 @@ type Fn = (...a: any[]) => any;
 const L = ejecutar(`${COMUN}\n${PEDIDO}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
 
 // La red de palabras de §4.2 (`VM_PROHIBIDAS`): ningun texto de este archivo debe coincidir.
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const TEL = '59100000011';
@@ -223,6 +223,10 @@ describe('pdTextoDeLaCarta', () => {
   });
   it('sin texto raro: no usa palabras prohibidas', () => {
     expect(L.pdTextoDeLaCarta(CARTA, {}).join('\n')).not.toMatch(PROHIBIDAS);
+  });
+  it('la red del contrato atrapa «ya lo estamos preparando» y deja pasar «no estamos abiertos hoy»', () => {
+    for (const f of ['ya lo estamos preparando', 'lo estamos preparando']) expect(f).toMatch(PROHIBIDAS);
+    expect('no estamos abiertos hoy').not.toMatch(PROHIBIDAS);
   });
 });
 
