@@ -55,7 +55,8 @@
     "Preparar transcripción": "core/medios/preparar-transcripcion.js",
     "Preparar imagen": "core/medios/preparar-imagen.js",
     "Filtrar categoría": "modulos/productos/filtrar-categoria.js",
-    "Medio no aceptado": "core/medios/medio-no-aceptado.js"
+    "Medio no aceptado": "core/medios/medio-no-aceptado.js",
+    "Mensaje a enviar": "core/mensaje-a-enviar-venta.js"
   },
   "prompts": {}
 }

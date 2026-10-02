@@ -1,0 +1,400 @@
+/**
+ * DEMO B: LA SALIDA AL CLIENTE (F3a, 02/10/2026).
+ *
+ * QUÉ SE PRUEBA Y POR QUÉ. La política del 21/09/2026 dice que ante un error o
+ * una consulta sin respuesta lo único que el asistente ofrece es pasar con una
+ * persona, y que eso es SIEMPRE el aviso al negocio MÁS el botón para
+ * escribirle directo. Reservas y captación ya lo cumplían; el Demo B no tenía
+ * a quién transferir y, si el modelo fallaba, el cliente no recibía nada. Esta
+ * suite clava, ejecutando el código del JSON versionado:
+ *
+ *   1. UN EMBUDO: todo camino al cliente pasa por «Mensaje a enviar» (salvo la
+ *      imagen del QR, que es del módulo Cobros).
+ *   2. TRANSFERIR: la marca [TRANSFERIR] da UN mensaje con el botón adentro y
+ *      el aviso al dueño UNA vez por teléfono y ventana de 24 h.
+ *   3. FALLO DEL MODELO: botón; sin QR, sin catálogo, sin pedido confirmado.
+ *   4. CONTRAPRUEBAS: una respuesta normal sale sin botón; una promesa sin
+ *      respaldo se quita; sin número no hay botón ni aviso.
+ *   5. SI META RECHAZA EL BOTÓN: el mismo texto, con el enlace, en un mensaje.
+ *
+ * Costo en mensajes (Base comercial §1): 0 por transferencia al cliente (el
+ * botón va dentro), +1 al dueño por teléfono y 24 h, +1 al cliente en el turno
+ * en que el modelo falla (antes: silencio).
+ */
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import {
+  type J, GLOBALES_FUERA_DEL_SANDBOX, codigoDe, destinos, ejecutar, entradas, expresion, leerFlujo,
+  nodo, plantilla,
+} from '../lib/flujo.ts';
+
+const aqui = dirname(fileURLToPath(import.meta.url));
+const f = leerFlujo('demo-b-venta-cobro.json');
+const y = (n: string) => nodo(f, n).position?.[1] ?? Number.NaN;
+
+const DUENO = '59170000009';
+const CLIENTE = '59170000001';
+const ENT: J = {
+  from: CLIENTE, nombrePerfil: 'Ana', phoneNumberId: '1000000001', numeroDueno: DUENO,
+  waGraphVersion: 'v26.0', nombreNegocio: 'Un Negocio', userInput: 'quiero hablar con una persona',
+  rotuloDemo: 'rótulo simulado', textoPagoSimulado: 'Pago verificado (SIMULADO).',
+};
+
+/** Un `Date` con reloj controlado: `Date.now()` devuelve `ahora.t`. */
+const reloj = (ahora: { t: number }) => class extends Date { static override now() { return ahora.t; } };
+
+const HORA = 3_600_000;
+
+/** «Procesar respuesta» con estado compartido (`$getWorkflowStaticData`) y reloj. */
+function turno(
+  salida: J, ent: J = {}, sd: J = {}, ahora = { t: 1_800_000_000_000 },
+): J {
+  return ejecutar(codigoDe(f, 'Procesar respuesta'), [salida],
+    { 'Normalizar entrada': [{ ...ENT, ...ent }] },
+    { $getWorkflowStaticData: () => sd, Date: reloj(ahora) })[0] ?? {};
+}
+
+/** «Mensaje a enviar» sobre la salida de «Procesar respuesta». */
+const enviar = (item: J, cfg: J | null = { numeroDueno: DUENO, nombreNegocio: 'Un Negocio' }): J =>
+  ejecutar(codigoDe(f, 'Mensaje a enviar'), [item], cfg ? { 'Config del negocio': [cfg] } : {})[0] ?? {};
+
+const FALLA = { error: { message: 'The model is overloaded (503)' } };
+
+// ---------------------------------------------------------------------------
+
+describe('(1) Un embudo único de salida al cliente', () => {
+  it('todos los caminos al cliente entran a «Mensaje a enviar»', () => {
+    expect([...entradas(f, 'Mensaje a enviar')].sort()).toEqual([
+      '¿Avisar del carrito?', '¿Responder ahora?', '¿Responder uso extendido?',
+      'Comercio no operativo', 'Enlace del catálogo', 'Respuesta del cobro',
+    ].sort());
+    // Y nadie más llega a los envíos de texto sin pasar por él.
+    expect([...entradas(f, 'Responder al cliente')].sort()).toEqual(['¿Con botón?', 'Responder con botón'].sort());
+    expect(entradas(f, 'Responder con botón')).toEqual(['¿Con botón?']);
+    expect(destinos(f, 'Mensaje a enviar')).toEqual(['¿Con botón?']);
+    expect(destinos(f, '¿Con botón?', 0)).toEqual(['Responder con botón']);
+    expect(destinos(f, '¿Con botón?', 1)).toEqual(['Responder al cliente']);
+  });
+
+  it('conteo de emisores declarado: texto, botón, aviso al dueño y la imagen del QR (excepción por nombre)', () => {
+    const envian = f.nodes.filter((n) => (n.type === 'n8n-nodes-base.whatsApp' && n.parameters['operation'] === 'send')
+      || (n.type === 'n8n-nodes-base.httpRequest' && /^=?https:\/\/graph\.facebook\.com\//.test(String(n.parameters['url'] ?? ''))
+        && String(n.parameters['url']).endsWith('/messages')))
+      .map((n) => n.name).sort();
+    expect(envian).toEqual(['Avisar al dueño', 'Enviar QR de cobro', 'Responder al cliente', 'Responder con botón']);
+    // «Enviar QR de cobro» queda fuera del embudo: es la imagen con su pie.
+    expect(entradas(f, 'Enviar QR de cobro').sort()).toEqual(['Preparar QR de cobro', 'Preparar reenvío del QR']);
+  });
+
+  it('el botón y el texto reportan por el mismo camino, después del envío', () => {
+    expect(destinos(f, 'Responder con botón', 0)).toEqual(['Texto enviado']);
+    expect(destinos(f, 'Responder con botón', 1)).toEqual(['Responder al cliente']);
+    expect(destinos(f, 'Responder al cliente')).toEqual(['Texto enviado']);
+    expect(destinos(f, 'Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
+    expect(nodo(f, 'Responder con botón').onError).toBe('continueErrorOutput');
+  });
+
+  it('el orden de ramas es el del lienzo: «Reportar mensaje (entrante)» sigue arriba de la rama del agente', () => {
+    expect(f.settings?.executionOrder).toBe('v1');
+    expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('¿Comercio operativo?'));
+    expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('AI Agent NovuChat'));
+    expect(y('Reportar mensaje (entrante)')).toBeLessThan(y('Procesar respuesta'));
+    // La respuesta al cliente va antes que el aviso al dueño: el cliente recibe primero.
+    const abanico = destinos(f, 'Procesar respuesta').map(y);
+    expect(abanico).toEqual([...abanico].sort((a, b) => a - b));
+    expect(destinos(f, 'Procesar respuesta').at(-1)).toBe('¿Transferir al dueño?');
+    expect(y('¿Responder ahora?')).toBeLessThan(y('¿Transferir al dueño?'));
+    expect(y('Mensaje a enviar')).toBeLessThan(y('¿Transferir al dueño?'));
+    expect(destinos(f, '¿Transferir al dueño?', 0)).toEqual(['Avisar al dueño']);
+  });
+
+  it('«Mensaje a enviar» corre en el sandbox de n8n: sin URL, Buffer ni crypto', () => {
+    const codigo = codigoDe(f, 'Mensaje a enviar');
+    for (const g of GLOBALES_FUERA_DEL_SANDBOX) {
+      expect(new RegExp(`(?<![\\w$.])${g}(?![\\w$])`).test(codigo.replace(/\/\/.*$/gm, '')), g).toBe(false);
+    }
+  });
+
+  it('la negrita es la misma línea que en reservas y el módulo es el declarado', () => {
+    const linea = (t: string) => /const NEGRITA_MD = .*/.exec(t)?.[0];
+    const agenda = readFileSync(join(aqui, '../../../Flujos/src/modulos/agenda/mensaje-a-enviar.js'), 'utf8');
+    expect(linea(codigoDe(f, 'Mensaje a enviar'))).toBe(linea(agenda));
+  });
+
+  it('el agente sigue y no corta el turno si el modelo falla', () => {
+    expect(nodo(f, 'AI Agent NovuChat').onError).toBe('continueRegularOutput');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('(2) [TRANSFERIR]: un mensaje con botón y un aviso al dueño por ventana', () => {
+  it('la marca no llega al cliente: sale un solo mensaje con el botón adentro', () => {
+    const p = turno({ output: 'Claro, te paso con una persona del negocio. [TRANSFERIR]' });
+    expect(p['respuesta']).toBe('Claro, te paso con una persona del negocio.');
+    expect(p['transferir']).toBe(true);
+    const m = enviar(p);
+    expect(m['conBoton']).toBe(true);
+    const cuerpo = m['cuerpoBoton'] as J;
+    expect(cuerpo['type']).toBe('interactive');
+    expect(cuerpo['to']).toBe(CLIENTE);
+    expect(cuerpo['interactive'].type).toBe('cta_url');
+    expect(cuerpo['interactive'].body.text).toBe('Claro, te paso con una persona del negocio.');
+    expect(cuerpo['interactive'].action.parameters.display_text.length).toBeLessThanOrEqual(20);
+    expect(cuerpo['interactive'].action.parameters.url).toContain('https://wa.me/' + DUENO + '?text=');
+    expect(JSON.stringify(cuerpo)).not.toContain('TRANSFERIR');
+  });
+
+  it('el JSON del botón sale de «Responder con botón» tal cual', () => {
+    const m = enviar(turno({ output: 'Te paso con alguien. [TRANSFERIR]' }));
+    const cuerpo = expresion(nodo(f, 'Responder con botón').parameters['jsonBody'], {}, { 'Mensaje a enviar': [m] });
+    expect(JSON.parse(String(cuerpo))).toEqual(m['cuerpoBoton']);
+    expect(plantilla(nodo(f, 'Responder con botón').parameters['url'], {}, { 'Mensaje a enviar': [m] }))
+      .toBe('https://graph.facebook.com/v26.0/1000000001/messages');
+  });
+
+  it('solo la marca: el texto fijo remite al botón', () => {
+    const p = turno({ output: '[TRANSFERIR]' });
+    expect(p['respuesta']).toBe('Le aviso a Un Negocio para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.');
+    expect(p['avisos']).not.toContain('respuesta_vacia');
+    expect(enviar(p)['conBoton']).toBe(true);
+  });
+
+  it('el aviso al dueño sale UNA vez por teléfono y ventana de 24 h', () => {
+    const sd: J = {};
+    const ahora = { t: 1_800_000_000_000 };
+    const primero = turno({ output: 'Te paso. [TRANSFERIR]' }, {}, sd, ahora);
+    expect(primero['avisarDueno']).toBe(true);
+    expect(primero['textoAviso']).toContain('Ana (' + CLIENTE + ')');
+    expect(primero['textoAviso']).toContain('Motivo: quiero hablar con una persona');
+    // CONTRAPRUEBA: dentro de las 24 h el cliente insiste y NO se avisa de nuevo,
+    // pero el botón sale igual.
+    ahora.t += 23 * HORA;
+    const repetido = turno({ output: 'Te paso otra vez. [TRANSFERIR]' }, {}, sd, ahora);
+    expect(repetido['avisarDueno']).toBe(false);
+    expect(repetido['textoAviso']).toBe('');
+    expect(repetido['avisos']).toContain('aviso_dueno_repetido');
+    expect(enviar(repetido)['conBoton']).toBe(true);
+    // Otro teléfono no comparte la barrera.
+    const otro = turno({ output: 'Te paso. [TRANSFERIR]' }, { from: '59170000002' }, sd, ahora);
+    expect(otro['avisarDueno']).toBe(true);
+    // Pasadas las 24 h desde el primer aviso, vuelve a avisar.
+    ahora.t += 2 * HORA;
+    expect(turno({ output: 'Te paso. [TRANSFERIR]' }, {}, sd, ahora)['avisarDueno']).toBe(true);
+  });
+
+  it('el estado por teléfono es el de la ejecución: sin transferencia no se toca', () => {
+    const sd: J = {};
+    turno({ output: 'Hola, ¿qué te sirvo?' }, {}, sd);
+    expect(sd['avisosTransferencia']).toBeUndefined();
+  });
+
+  it('si quien escribe es el dueño, no hay aviso', () => {
+    const p = turno({ output: 'Te paso. [TRANSFERIR]' }, { from: DUENO });
+    expect(p['transferir']).toBe(true);
+    expect(p['avisarDueno']).toBe(false);
+  });
+
+  it('sin número del dueño: ni botón ni aviso, y el texto no promete', () => {
+    const p = turno({ output: 'Lo consulto con el negocio y te aviso más tarde. [TRANSFERIR]' }, { numeroDueno: '' });
+    expect(p['transferir']).toBe(false);
+    expect(p['avisarDueno']).toBe(false);
+    expect(p['avisos']).toContain('transferencia_sin_numero');
+    expect(p['avisos']).toContain('promesa_quitada');
+    expect(String(p['respuesta'])).not.toMatch(/te aviso/);
+    const m = enviar(p, { numeroDueno: '' });
+    expect(m['conBoton']).toBe(false);
+    expect(m['cuerpoBoton']).toBeUndefined();
+  });
+
+  it('el aviso al dueño usa el texto armado por «Procesar respuesta»', () => {
+    const p = turno({ output: 'Te paso. [TRANSFERIR]' });
+    const txt = plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], p);
+    expect(txt).toBe(p['textoAviso']);
+    expect(txt).toContain('necesita atención de una persona');
+    // El pedido confirmado sigue usando su texto de siempre.
+    const pedido = turno({ output: 'Listo. [PEDIDO_CONFIRMADO]' });
+    expect(plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], pedido)).toContain('NUEVO PEDIDO CONFIRMADO');
+  });
+
+  it('transferir con QR pendiente: el texto sale por el embudo con el botón, no en el pie de la imagen', () => {
+    const p = turno({ output: 'Aquí tu QR. [ENVIAR_QR] [TRANSFERIR]' });
+    expect(p['enviarQr']).toBe(true);
+    expect(p['textoEnElQr']).toBe(false);
+    expect(enviar(p)['conBoton']).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('(3) El modelo falla: el cliente recibe algo, y con botón', () => {
+  it('sin `output` o con `error`, texto fijo + botón (antes: silencio)', () => {
+    for (const salida of [FALLA, {}, { output: undefined }]) {
+      const p = turno(salida);
+      expect(p['falloModelo'], JSON.stringify(salida)).toBe(true);
+      expect(p['avisos']).toContain('fallo_modelo');
+      expect(p['respuesta']).toBe('Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y escríbele directo a Un Negocio.');
+      const m = enviar(p);
+      expect(m['conBoton']).toBe(true);
+      expect((m['cuerpoBoton'] as J)['interactive'].body.text).toBe(p['respuesta']);
+    }
+  });
+
+  it('CONTRAPRUEBA: si el botón no se arma en el fallo, la suite lo detecta', () => {
+    const p = turno(FALLA);
+    // El mismo item sin la bandera de fallo NO lleva botón: la bandera es lo que lo decide.
+    expect(enviar({ ...p, falloModelo: false })['conBoton']).toBe(false);
+    expect(enviar(p)['conBoton']).toBe(true);
+  });
+
+  it('en el fallo no se envía QR, no se pide catálogo ni se confirma un pedido, y no se avisa al dueño', () => {
+    const p = turno(FALLA);
+    expect(p['enviarQr']).toBe(false);
+    expect(p['reenviarQr']).toBe(false);
+    expect(p['pedirCatalogo']).toBe(false);
+    expect(p['pedidoConfirmado']).toBe(false);
+    expect(p['transferir']).toBe(false);
+    expect(p['avisarDueno']).toBe(false);
+  });
+
+  it('un fallo sin número del negocio: texto sin invitar a tocar un botón que no existe', () => {
+    const p = turno(FALLA, { numeroDueno: '' });
+    expect(p['respuesta']).toBe('Disculpa, tuve un problema para responderte. ¿Me lo repites?');
+    expect(p['respuesta']).not.toMatch(/bot[oó]n/i);
+    expect(enviar(p, { numeroDueno: '' })['conBoton']).toBe(false);
+  });
+
+  it('una respuesta vacía del modelo (con output) también sale con botón, y una marca sola no es vacía', () => {
+    const vacia = turno({ output: '   ' });
+    expect(vacia['respuestaVacia']).toBe(true);
+    expect(vacia['falloModelo']).toBe(false);
+    expect(vacia['avisos']).toContain('respuesta_vacia');
+    expect(enviar(vacia)['conBoton']).toBe(true);
+    const soloCatalogo = turno({ output: '[ENVIAR_CATALOGO]' });
+    expect(soloCatalogo['respuestaVacia']).toBe(false);
+    expect(soloCatalogo['avisos']).toContain('catalogo_sin_texto');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('(4) Contrapruebas: lo normal no se toca', () => {
+  it('una respuesta normal sale sin botón y sin aviso', () => {
+    const p = turno({ output: 'La hamburguesa doble cuesta 35 Bs. ¿Te la anoto?' });
+    expect(p['transferir']).toBe(false);
+    expect(p['avisarDueno']).toBe(false);
+    expect(p['falloModelo']).toBe(false);
+    const m = enviar(p);
+    expect(m['conBoton']).toBe(false);
+    expect(m['cuerpoBoton']).toBeUndefined();
+    expect(m['textoParaTexto']).toBe('La hamburguesa doble cuesta 35 Bs. ¿Te la anoto?');
+  });
+
+  it('una promesa sin respaldo (sin [TRANSFERIR]) se quita: no hay botón que la cumpla', () => {
+    const p = turno({ output: 'No tengo la dirección cargada. Lo consulto con el negocio y te aviso más tarde. ¿Quieres ver el catálogo?' });
+    expect(p['respuesta']).toBe('No tengo la dirección cargada. ¿Quieres ver el catálogo?');
+    expect(p['avisos']).toContain('promesa_quitada');
+    expect(enviar(p)['conBoton']).toBe(false);
+  });
+
+  it('las ramas que no pasan por el agente (cobro, carrito, no operativo) salen sin botón', () => {
+    for (const item of [
+      { respuesta: 'Recibimos tu comprobante.', from: CLIENTE, phoneNumberId: '1' },
+      { respuesta: 'Tu pedido del catálogo…', from: CLIENTE },
+      { respuesta: 'Estamos cerrados.', from: CLIENTE, phoneNumberId: '1' },
+    ]) {
+      const m = enviar(item);
+      expect(m['conBoton']).toBe(false);
+      expect(m['textoParaTexto']).toBe(item.respuesta);
+    }
+  });
+
+  it('el carrito, que no ejecutó «Config del negocio», no rompe: completa el teléfono desde el item', () => {
+    const m = enviar({ respuesta: 'Tu pedido del catálogo…', from: CLIENTE, phoneNumberId: '1000000001' }, null);
+    expect(m['conBoton']).toBe(false);
+    expect(m['phoneNumberId']).toBe('1000000001');
+    // Y el código lo protege por escrito, porque el helper no tira como n8n.
+    expect(codigoDe(f, 'Mensaje a enviar')).toMatch(/try \{ cfg = \$\('Config del negocio'\)\.first\(\)\.json \?\? \{\}; \} catch/);
+  });
+
+  it('la negrita de Markdown sale como la de WhatsApp', () => {
+    expect(enviar({ respuesta: '**Total:** 35 Bs', from: CLIENTE })['respuesta']).toBe('*Total:* 35 Bs');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('(5) Si Meta rechaza el botón, sale el mismo texto con el enlace, en un solo mensaje', () => {
+  it('cuerpo de más de 1.024 caracteres: texto con enlace y aviso `boton_perdido_por_largo`', () => {
+    const largo = 'Detalle del pedido. '.repeat(55) + '[TRANSFERIR]';
+    const p = turno({ output: largo });
+    expect(String(p['respuesta']).length).toBeGreaterThan(1024);
+    const m = enviar(p);
+    expect(m['conBoton']).toBe(false);
+    expect(m['avisos']).toContain('boton_perdido_por_largo');
+    expect(m['textoParaTexto']).toBe(m['respuesta'] + '\n\nEscríbele directo a Un Negocio: https://wa.me/' + DUENO);
+  });
+
+  it('error del interactivo: «Responder al cliente» manda el texto con el enlace, leyendo del embudo y no del error', () => {
+    const m = enviar(turno({ output: 'Te paso con alguien. [TRANSFERIR]' }));
+    const p = nodo(f, 'Responder al cliente').parameters;
+    // En la salida de error de «Responder con botón», `$json` es el error de Meta.
+    const error = { error: { message: 'Meta rechazó el interactivo' } };
+    const refs = { 'Mensaje a enviar': [m] };
+    expect(expresion(p['textBody'], error, refs)).toBe('Te paso con alguien.\n\nEscríbele directo a Un Negocio: https://wa.me/' + DUENO);
+    expect(expresion(p['recipientPhoneNumber'], error, refs)).toBe(CLIENTE);
+    expect(expresion(p['phoneNumberId'], error, refs)).toBe('1000000001');
+  });
+
+  it('sin botón pedido, el envío de texto manda la respuesta tal cual', () => {
+    const m = enviar(turno({ output: 'Hola, ¿qué te sirvo?' }));
+    expect(expresion(nodo(f, 'Responder al cliente').parameters['textBody'], m, { 'Mensaje a enviar': [m] }))
+      .toBe('Hola, ¿qué te sirvo?');
+  });
+});
+
+describe('(6) «Texto enviado» reporta exactamente lo que salió', () => {
+  const reportar = (m: J, rechazado: boolean): J => ejecutar(codigoDe(f, 'Texto enviado'),
+    [{ messages: [{ id: 'wamid.X' }] }], {
+      'Normalizar entrada': [ENT], 'Mensaje a enviar': [m], 'Procesar respuesta': [m],
+      ...(rechazado ? { 'Responder al cliente': [{}] } : {}),
+    })[0] ?? {};
+
+  it('botón aceptado: el cuerpo del botón; botón rechazado: el texto con el enlace', () => {
+    const m = enviar(turno({ output: 'Te paso con alguien. [TRANSFERIR]' }));
+    expect(reportar(m, false)['texto']).toBe('Te paso con alguien.');
+    expect(reportar(m, false)['fuenteDelTexto']).toBe('Mensaje a enviar');
+    expect(reportar(m, true)['texto']).toBe(m['textoParaTexto']);
+    expect(reportar(m, true)['idMeta']).toBe('wamid.X');
+  });
+
+  it('una respuesta normal se reporta tal cual', () => {
+    const m = enviar(turno({ output: 'Hola, ¿qué te sirvo?' }));
+    expect(reportar(m, false)['texto']).toBe('Hola, ¿qué te sirvo?');
+  });
+});
+
+describe('(7) El prompt: solo promete pasar con una persona si hay a quién', () => {
+  const sistema = String(nodo(f, 'AI Agent NovuChat').parameters['options'].systemMessage);
+  const con = plantilla(sistema, { ...ENT, moneda: 'Bs' });
+  const sin = plantilla(sistema, { ...ENT, moneda: 'Bs', numeroDueno: '' });
+
+  it('con número del dueño enseña [TRANSFERIR]', () => {
+    expect(con).toContain('escribe [TRANSFERIR] al final');
+    expect(con).toContain('pasar con una persona del negocio');
+    expect(con).not.toContain('no tiene a quién pasarle');
+  });
+
+  it('sin número conserva la regla anterior y no ofrece pasar con nadie', () => {
+    expect(sin).not.toContain('[TRANSFERIR]');
+    expect(sin).toContain('Este negocio no tiene a quién pasarle la conversación');
+    expect(sin).toContain('mandar el QR de pago y confirmar el pedido.');
+    expect(sin).not.toContain('pasar con una persona');
+  });
+
+  it('el ensamblador reproduce el JSON (el prompt vive en el JSON, sin módulo)', () => {
+    expect(sistema).toContain('SOLO OFRECES LO QUE PUEDES HACER');
+  });
+});

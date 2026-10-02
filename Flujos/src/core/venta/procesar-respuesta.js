@@ -23,9 +23,21 @@ for (let i = 0; i < $input.all().length; i++) {
   // primer mensaje a todos los items si llegaran dos a la vez.
   const ent = (entradas[i] ?? entradas[entradas.length - 1]).json;
 
-  const bruto = String(item.json.output ?? item.json.text ?? '').trim();
+  // EL MODELO FALLO (Gemini devuelve 500/503 en picos; el agente sigue con
+  // `onError: continueRegularOutput` y entrega `error` en vez de `output`).
+  // Se distingue de una respuesta vacia: no se despide, no se pide catalogo, no
+  // se manda QR ni se confirma un pedido. Lo unico que se ofrece es pasar con
+  // una persona (politica del 21/09/2026): texto fijo + boton, en UN mensaje.
+  const fallo = item.json.error !== undefined
+    || (item.json.output === undefined && item.json.text === undefined);
+  const bruto = fallo ? '' : String(item.json.output ?? item.json.text ?? '').trim();
   const enviarQr = /\[ENVIAR_QR\]/i.test(bruto);
   const pedidoConfirmado = /\[PEDIDO_CONFIRMADO\]/i.test(bruto);
+  // [TRANSFERIR]: el modelo pide pasar con una persona del negocio. La marca la
+  // convierte el codigo en aviso al dueno (una vez por telefono y ventana de
+  // 24 h) y en un boton para escribirle directo, dentro del mismo mensaje.
+  const pideTransferir = /\[TRANSFERIR\]/i.test(bruto);
+  const numeroDuenoLimpio = String(ent.numeroDueno ?? '').replace(/\D/g, '');
   // [ENVIAR_CATALOGO]: el agente pide derivar al catalogo web propio. La marca
   // se obedece SIEMPRE, aunque la configuracion diga que esta apagado: quien
   // decide es el servidor (`enlaceCatalogo` contesta 409 «catalogo web
@@ -46,10 +58,16 @@ for (let i = 0; i < $input.all().length; i++) {
     .replace(/\[PEDIDO_CONFIRMADO\]/gi, '')
     .replace(/\[ENVIAR_CATALOGO\]/gi, '')
     .replace(/\[REENVIAR_QR\]/gi, '')
+    .replace(/\[TRANSFERIR\]/gi, '')
     .replace(/\[[A-ZÁÉÍÓÚÑ_ ]{3,30}\]/g, '')
     .trim();
 
   const avisos = [];
+  if (fallo) avisos.push('fallo_modelo');
+  // Sin numero del dueno no hay a quien transferir ni boton que dar: la marca
+  // se ignora, se deja constancia y el texto no promete nada (filtro PROMESA).
+  let transferir = pideTransferir && numeroDuenoLimpio !== '';
+  if (pideTransferir && !transferir) avisos.push('transferencia_sin_numero');
 
   // ¿EL TEXTO VA EN EL PIE DE LA IMAGEN, O APARTE? (23/09/2026)
   //
@@ -136,9 +154,10 @@ for (let i = 0; i < $input.all().length; i++) {
   }
 
   // --- SOLO SE OFRECE LO QUE SE CUMPLE (politica de NovuChat, 21/09/2026) ---
-  // Este flujo no tiene a nadie a quien pasar la conversacion: una promesa de
-  // consultar o de avisar despues no la cumple nadie, asi que se quita la
-  // oracion. Las preguntas no prometen nada y quedan.
+  // Lo unico que este flujo cumple es pasar con una persona (aviso al dueno mas
+  // boton, ver `Mensaje a enviar`): una promesa de consultar o de avisar despues
+  // no la cumple nadie, asi que se quita la oracion. Las preguntas no prometen
+  // nada y quedan.
   const PROMESA = /(consult|averigu|pregunt|verific|revis|coordin)[a-záéíóúñ]*\s+(lo\s+|eso\s+)?(con|a)\s+(recepci|la\s+cl[ií]nica|el\s+equipo|el\s+personal|(el|la)\s+(doctor|doctora|dr|dra)(?![a-záéíóúñ])|administraci|caja|alguien|una\s+persona|la\s+empresa|el\s+negocio|mis\s+compa)|(te|le)\s+(avis|escrib|llam|contact|confirm|mand|env[ií]|respond)[a-záéíóúñ]*\s+(luego|despu[eé]s|m[aá]s\s+tarde|ma[ñn]ana|en\s+cuanto|apenas|pronto|en\s+un\s+rato|en\s+breve|a\s+la\s+brevedad)|(te|le)\s+(avisar|escribir|llamar|contactar|confirmar|responder)([eé]|[aá]n?)(?![a-záéíóúñ])|voy\s+a\s+(consultar|averiguar|preguntar|avisar|escribir|llamar|contactar|confirmar)/i;
   const oraciones = texto.split(/(?<=[.!?…])\s+/);
   const sinPromesas = oraciones.filter((o) => /\?\s*$/.test(o.trim()) || !PROMESA.test(o));
@@ -156,13 +175,56 @@ for (let i = 0; i < $input.all().length; i++) {
     avisos.push('catalogo_sin_texto');
   }
 
-  if (!texto) {
+  const negocio = String(ent.nombreNegocio ?? '').trim() || 'el negocio';
+  let respuestaVacia = false;
+  let falloModelo = false;
+  if (fallo) {
+    // Con numero hay boton, y el texto lo dice; sin numero no se invita a tocar
+    // nada que no existe.
+    falloModelo = true;
+    texto = numeroDuenoLimpio
+      ? 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y escríbele directo a ' + negocio + '.'
+      : 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
+  } else if (!texto && transferir) {
+    // Una respuesta que es solo la marca no esta vacia: es «paso con una persona».
+    texto = 'Le aviso a ' + negocio + ' para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.';
+    avisos.push('transferencia_sin_texto');
+  } else if (!texto) {
     texto = 'Disculpa, no pude generar la respuesta. ¿Me lo repites?';
     avisos.push('respuesta_vacia');
+    respuestaVacia = true;
   }
 
+  // AVISO AL DUENO: UNA VEZ POR TELEFONO Y VENTANA DE 24 H (Andres, 02/10/2026).
+  // Cada aviso es un mensaje que Meta cobra: un cliente que insiste en hablar
+  // con una persona no manda diez avisos. El boton, en cambio, sale siempre:
+  // no cuesta mas. El estado va por telefono en `$getWorkflowStaticData`; se
+  // marca al decidir, porque el envio no devuelve nada que este nodo vea.
+  let avisarDueno = false;
+  if (transferir && String(ent.from ?? '') !== numeroDuenoLimpio) {
+    const VENTANA_MS = 24 * 60 * 60 * 1000;
+    const sd = $getWorkflowStaticData('global');
+    sd.avisosTransferencia = sd.avisosTransferencia ?? {};
+    const ahora = Date.now();
+    for (const k of Object.keys(sd.avisosTransferencia)) {
+      if (ahora - Number(sd.avisosTransferencia[k]) >= VENTANA_MS) delete sd.avisosTransferencia[k];
+    }
+    const previo = Number(sd.avisosTransferencia[ent.from]);
+    avisarDueno = !(Number.isFinite(previo) && ahora - previo < VENTANA_MS);
+    if (avisarDueno) sd.avisosTransferencia[ent.from] = ahora;
+    else avisos.push('aviso_dueno_repetido');
+  }
+  const motivoBruto = /^AVISO_SISTEMA/.test(String(ent.userInput ?? '')) ? '' : String(ent.userInput ?? '').trim();
+  const motivo = motivoBruto.length > 200 ? motivoBruto.slice(0, 200) + '…' : motivoBruto;
+  const textoAviso = avisarDueno
+    ? '🔔 NovuChat: el cliente ' + (String(ent.nombrePerfil ?? '').trim() || 'sin nombre de perfil') + ' (' + ent.from
+      + ') necesita atención de una persona. Motivo: ' + (motivo || 'no indicado') + '. Escríbele a este número.'
+    : '';
+
   // Se decide con el texto YA saneado: es el que va a viajar.
-  const textoEnElQr = enviarQr && texto.length <= TOPE_TEXTO_EN_PIE;
+  // Con transferencia el texto sale por `Mensaje a enviar`, que es quien le
+  // pone el boton: no puede viajar en el pie de la imagen.
+  const textoEnElQr = enviarQr && !transferir && texto.length <= TOPE_TEXTO_EN_PIE;
 
   out.push({ json: {
     respuesta: texto,
@@ -172,6 +234,12 @@ for (let i = 0; i < $input.all().length; i++) {
     // «Enviar QR de cobro» en el pie de la imagen, en UN solo mensaje.
     textoEnElQr,
     pedidoConfirmado,
+    // Para `Mensaje a enviar` (boton) y `¿Transferir al dueño?` (aviso).
+    transferir,
+    avisarDueno,
+    textoAviso,
+    falloModelo,
+    respuestaVacia,
     // Con `pedirCatalogo` el texto NO sale por el camino normal: «¿Responder
     // ahora?» lo corta y el mensaje lo arma «Enlace del catálogo» con la
     // direccion adentro, para que el cliente reciba UN SOLO mensaje.
