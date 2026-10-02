@@ -26,7 +26,7 @@ const FUENTE = readFileSync(RUTA, 'utf8');
 
 const NOMBRES = [
   'avDestinatarios', 'avParametro', 'avPlantilla', 'avTexto', 'avVentanaAbierta', 'avAnotarEntrante',
-  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible',
+  'avDentroDelTopeDiario', 'avContar', 'avArmar', 'avPlan', 'avLimpio', 'avFechaLegible', 'avSinProhibidas', 'avCanon',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,7 +37,7 @@ const cargar = (antes = ''): Lib =>
 const L = cargar();
 
 // La lista de palabras que el asistente jamás dice (la misma que `comun.js` define como `VM_PROHIBIDAS`).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const HORA = 60 * 60 * 1000;
@@ -51,7 +51,12 @@ const CUENTA = '1000000000045';
 
 const CSV = `completo:${ANDRES}:Andres,cocina:${SILVANA}:Silvana`;
 // Las plantillas NO tienen nombre por omisión en el código: viven en la configuración del negocio.
-const CFG = { nombreNegocio: "Q'Taco", prefijosPermitidos: '591', plantillaPedido: 'pedido_registrado', plantillaReserva: 'appointment_confirmed' };
+const CFG = {
+  nombreNegocio: "Q'Taco", prefijosPermitidos: '591', plantillaPedido: 'pedido_registrado', plantillaReserva: 'appointment_confirmed',
+  plantillaDerivacion: 'derivacion_cliente',
+};
+// Los ítems del `pedido()` de abajo, compactos, tal como salen al final de la variable 3 de la plantilla.
+const ITEMS_PEDIDO = '2 × Orden de 3 tacos de birria (sin cebolla), 1 × Queso fundido con chorizo';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = Record<string, any>;
@@ -158,10 +163,11 @@ describe('avParametro — las variables de plantilla', () => {
   it('vacío, solo espacios o solo separadores = «—»', () => {
     for (const v of ['', '   ', '\n\t', undefined, null, '\n\n \t']) expect(L.avParametro(v)).toBe('—');
   });
-  it('las palabras prohibidas se cambian por «…»', () => {
+  it('las palabras prohibidas se cambian, enteras, por «[texto omitido]»', () => {
     const r = L.avParametro('pago confirmado y ya lo preparan');
     expect(r).not.toMatch(VM_PROHIBIDAS);
-    expect(r).toContain('…');
+    expect(r).toContain('[texto omitido]');
+    expect(r).not.toContain('…');
   });
   it('para rol cocina se quitan además los números largos', () => {
     expect(L.avLimpio(`llámame al 71234567 o al +591 7123 4567 cuenta ${CUENTA}`, 200, { cocina: true })).not.toMatch(/\d{7}/);
@@ -318,7 +324,7 @@ describe('pedido: plantilla `pedido_registrado` y su orden', () => {
     expect(it.payload.template.language.code).toBe('es');
     expect(params(it)).toEqual([
       'N.º K7P2 de 3 ítems', 'Bs 110',
-      `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE}`, 'comprobante: datos coinciden',
+      `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`, 'comprobante: datos coinciden',
     ]);
     expect(it.esPlantilla).toBe(true);
     expect(it.respaldo).toBeNull();
@@ -329,7 +335,7 @@ describe('pedido: plantilla `pedido_registrado` y su orden', () => {
     expect(it.payload.template.name).toBe('pedido_nuevo');
     expect(it.payload.template.language.code).toBe('es_MX');
     expect(params(it)).toEqual([
-      'comprobante: datos coinciden', `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE}`, 'Bs 110', 'N.º K7P2 de 3 ítems',
+      'comprobante: datos coinciden', `Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`, 'Bs 110', 'N.º K7P2 de 3 ítems',
     ]);
   });
   it('un orden inválido cae al de por defecto y se anota', () => {
@@ -352,7 +358,7 @@ describe('pedido: plantilla `pedido_registrado` y su orden', () => {
   });
   it('un ítem y los datos faltantes: singular y «—», sin variables vacías', () => {
     const it = plantillaDe(L.avArmar('pedido', { lineas: [{ cantidad: 1, nombre: 'Café' }] }, CSV, CFG, sdCon(), AHORA), ANDRES);
-    expect(params(it)).toEqual(['N.º — de 1 ítem', 'Bs —', '—', 'sin QR: se cobra al entregar o al recoger']);
+    expect(params(it)).toEqual(['N.º — de 1 ítem', 'Bs —', '— · 1 × Café', 'sin QR: se cobra al entregar o al recoger']);
     for (const p of params(it)) expect(p.trim()).not.toBe('');
   });
   it('las variables no llevan saltos de línea aunque el contenido los traiga', () => {
@@ -433,16 +439,16 @@ describe('derivación: texto libre con ventana, plantilla sin ella', () => {
     expect(c.endsWith('El cliente también puede escribirles directo con el botón.')).toBe(true);
     expect(c).not.toContain('banco');
   });
-  it('ventana cerrada → la plantilla de reserva por defecto, con el momento de la consulta', () => {
+  it('ventana cerrada → la plantilla de derivación configurada, con el momento de la consulta', () => {
     const items = L.avArmar('transferencia', datos, CSV, CFG, sdCon(), AHORA);
     expect(items.map((i: J) => i.clase)).toEqual(['plantilla', 'plantilla']);
     const it = plantillaDe(items, ANDRES);
-    expect(it.payload.template.name).toBe('appointment_confirmed');
+    expect(it.payload.template.name).toBe('derivacion_cliente');
     expect(params(it)).toEqual(['Andres', 'lunes 5 de octubre a las 10:00', 'Consulta de cliente · Ana Pérez · Nota del cliente: quiero hablar de un evento para 40 personas', 'C1D2']);
   });
-  it('la derivación hereda el idioma de la reserva; una propia usa el suyo', () => {
-    const heredada = L.avArmar('transferencia', datos, CSV, { ...CFG, idiomaPlantillaReserva: 'es_ES' }, sdCon(), AHORA);
-    expect(plantillaDe(heredada, ANDRES).payload.template.language.code).toBe('es_ES');
+  it('la derivación NO hereda el idioma de la reserva; el suyo, o el respaldo común, o `es`', () => {
+    const sinPropio = L.avArmar('transferencia', datos, CSV, { ...CFG, idiomaPlantillaReserva: 'es_ES' }, sdCon(), AHORA);
+    expect(plantillaDe(sinPropio, ANDRES).payload.template.language.code).toBe('es');
     const propia = L.avArmar('transferencia', datos, CSV, { ...CFG, plantillaDerivacion: 'derivacion_cliente', idiomaPlantillaDerivacion: 'es_MX', ordenDerivacion: 'codigo,detalle,cuando,destinatario' }, sdCon(), AHORA);
     const it = plantillaDe(propia, ANDRES);
     expect(it.payload.template.name).toBe('derivacion_cliente');
@@ -807,9 +813,10 @@ describe('S2: sin plantilla configurada no se inventa un nombre (falla cerrado)'
     expect(r.errores).toContain('plantilla_invalida');
     expect(r.errores).not.toContain('plantilla_no_configurada_pedido');
   });
-  it('la derivación hereda la plantilla de reserva solo si esa SÍ está configurada', () => {
-    const hereda = L.avPlan('transferencia', derivacion, CSV, { ...sinPlantillas, plantillaReserva: 'reserva_x' }, sdCon(), AHORA);
-    expect(plantillas(hereda.items).map((i: J) => i.payload.template.name)).toEqual(['reserva_x', 'reserva_x']);
+  it('la derivación NO hereda la plantilla de reserva: sin la propia ni el respaldo común, falla cerrado', () => {
+    const noHereda = L.avPlan('transferencia', derivacion, CSV, { ...sinPlantillas, plantillaReserva: 'reserva_x' }, sdCon(), AHORA);
+    expect(noHereda.items).toEqual([]);
+    expect(noHereda.errores).toContain('plantilla_no_configurada_derivacion');
     const propia = L.avPlan('transferencia', derivacion, CSV, { ...sinPlantillas, plantillaReserva: 'reserva_x', plantillaDerivacion: 'deriva_x' }, sdCon(), AHORA);
     expect(plantillas(propia.items).map((i: J) => i.payload.template.name)).toEqual(['deriva_x', 'deriva_x']);
   });
@@ -819,18 +826,18 @@ describe('S3: texto de terceros más endurecido', () => {
   it('quita caracteres de formato y compara en NFKC: una palabra prohibida no se esconde con un ancho cero ni en ancho completo', () => {
     for (const t of ['va​lidado', 'val­idado', 'ｖａｌｉｄａｄｏ', 'pa⁠gado', 'v‮alidado']) {
       const r = L.avLimpio(`tu pedido ${t} ya`, 100);
-      expect(r, JSON.stringify(t)).toContain('…');
+      expect(r, JSON.stringify(t)).toContain('[texto omitido]');
       expect(r.normalize('NFKC').replace(/\p{Cf}/gu, ''), JSON.stringify(t)).not.toMatch(VM_PROHIBIDAS);
     }
     // Negativo: un texto limpio sale tal cual (incluido «N.º», que NFKC cambiaría por «N.o»).
     expect(L.avLimpio('Pedido N.º 5, sin cebolla', 100)).toBe('Pedido N.º 5, sin cebolla');
   });
   it('las raíces nuevas se atrapan en el texto del cliente', () => {
-    for (const t of ['pago acreditado', 'ya acreditamos', 'recibí tu pago', 'recibimos el pago', 'pago exitoso', 'pago recibido', 'confirmó su pedido', 'te confirmamos', 'yo confirmo', 'mesa reservada']) {
-      expect(L.avLimpio(t, 100), t).toContain('…');
+    for (const t of ['pago acreditado', 'ya acreditamos', 'recibí tu pago', 'recibimos el pago', 'pago exitoso', 'pago recibido', 'confirmó tu pedido', 'te confirmamos la hora', 'yo confirmo el pedido', 'tu mesa está reservada']) {
+      expect(L.avLimpio(t, 100), t).toContain('[texto omitido]');
     }
-    // Negativos: frases legítimas no se tocan.
-    for (const t of ['no estamos abiertos hoy', '¿a qué hora reservo?', 'quiero reservar una mesa', 'Confirmar pedido', 'recibí tu imagen']) {
+    // Negativos: frases legítimas, y «reservado» como dato de una carta o de una zona, no se tocan (I1).
+    for (const t of ['no estamos abiertos hoy', '¿a qué hora reservo?', 'quiero reservar una mesa', 'Confirmar pedido', 'recibí tu imagen', 'Vino Tinto Reservado', 'sala reservada', 'N.º 5 casa reservada']) {
       expect(L.avLimpio(t, 100), t).toBe(t);
     }
   });
@@ -838,8 +845,8 @@ describe('S3: texto de terceros más endurecido', () => {
     expect(L.avLimpio('*URGENTE* _ya_ ~no~ `x`', 100)).toBe('URGENTE ya no x');
     expect(L.avLimpio('sin marcas', 100)).toBe('sin marcas');
   });
-  it('cualquier palabra con la forma a.bc se toma por enlace; un punto de frase no', () => {
-    expect(L.avLimpio('escríbeme a juan.perez o mira pago.xyz/cobrar', 100)).toBe('escríbeme a [enlace omitido] o mira [enlace omitido]');
+  it('un dominio con una terminación conocida es un enlace; una abreviatura con punto no pierde el dato (B1); un punto de frase no', () => {
+    expect(L.avLimpio('escríbeme a juan.perez o mira pago.xyz/cobrar', 100)).toBe('escríbeme a juan. perez o mira [enlace omitido]');
     for (const t of ['Av. Arce 2345, gracias.', 'sin cebolla. Gracias.', 'Bs 12,50']) expect(L.avLimpio(t, 100), t).toBe(t);
   });
   it('el texto libre de una derivación sale enmarcado como «Nota del cliente: …»', () => {
@@ -858,7 +865,7 @@ describe('R2: con la ventana cerrada, la plantilla de pedido lleva el detalle po
   ] });
   const cerrada = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, sdCon(), AHORA);
   it('rol completo, delivery: modalidad, dirección con referencia, quien recibe y el celular', () => {
-    expect(params(plantillaDe(cerrada(p), ANDRES))[2]).toBe(`Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE}`);
+    expect(params(plantillaDe(cerrada(p), ANDRES))[2]).toBe(`Delivery a ${DIRECCION} (${REFERENCIA}) · recibe Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`);
   });
   it('rol cocina: modalidad e ítems compactos con sus notas, SIN teléfono ni dirección', () => {
     const v = params(plantillaDe(cerrada(p), SILVANA))[2];
@@ -867,9 +874,16 @@ describe('R2: con la ventana cerrada, la plantilla de pedido lleva el detalle po
     expect(v).not.toContain('Banzer');
     expect(v).not.toContain(REFERENCIA);
   });
-  it('en recojo, completo dice solo la modalidad (negativo: ni dirección ni celular)', () => {
+  it('en recojo, completo recibe igual nombre, celular e ítems, pero ni dirección ni referencia (I3)', () => {
     const v = params(plantillaDe(cerrada({ ...p, modalidad: 'recojo' }), ANDRES))[2];
-    expect(v).toBe('Recojo en el local');
+    expect(v).toBe(`Recojo en el local · cliente Ana Pérez · cel ${CLIENTE} · ${ITEMS_PEDIDO}`);
+    expect(v).not.toContain('Banzer');
+    expect(v).not.toContain(REFERENCIA);
+    // Negado: cocina, con recojo, sigue sin teléfono ni nombre completo.
+    const c = params(plantillaDe(cerrada({ ...p, modalidad: 'recojo' }), SILVANA))[2];
+    expect(c).toBe(`Recojo en el local · ${ITEMS_PEDIDO}`);
+    expect(c).not.toContain(CLIENTE);
+    expect(c).not.toContain('Ana Pérez');
   });
   it('sigue siendo UNA variable: sin saltos, sin enlaces, saneada y con el tope de 500 caracteres', () => {
     const largo = pedido({
@@ -908,5 +922,372 @@ describe('la librería es JavaScript plano para el Code de n8n', () => {
     expect(FUENTE).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     expect(FUENTE).not.toMatch(/\d{10,}/);
     expect(FUENTE).not.toMatch(/\/home\/|Bearer |EAA[A-Za-z0-9]{10}/);
+  });
+});
+
+// =================================================================================================
+// RONDA 2 DEL PR-1 (revisión de código y de seguridad): B1, I2, I3, I4, I6, la forma `pedido`, S-1 y S-5.
+// =================================================================================================
+
+/** La forma sin puntuación con que `armar-avisos` y `armar-mensajes` comparan (`vmNorm`), escrita acá para no depender de la librería. */
+const normaliza = (t: string): string => t.normalize('NFKC').replace(/[\u0080-\u009f]|\p{Cf}/gu, '').normalize('NFD').replace(/\p{M}/gu, '')
+  .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const ESPACIOS_5 = /\s{5,}/;
+/** Un texto con la forma `dominio.terminación`: lo que WhatsApp podría convertir en un enlace tocable. */
+const PARECE_ENLACE = /[\p{L}\d-]\.\p{L}{2}/u;
+
+describe('B1: las abreviaturas con punto llegan enteras (un espacio tras el punto; nada se omite)', () => {
+  const ENTEROS: [string, string][] = [
+    ['Calle 21 Nro.123', 'Calle 21 Nro. 123'],
+    ['Av.Banzer Nro.1234, esq. Calle 5', 'Av. Banzer Nro. 1234, esq. Calle 5'],
+    ['Av.Arce esq.Rosendo', 'Av. Arce esq. Rosendo'],
+    ['Edif. Torre B dpto.301', 'Edif. Torre B dpto. 301'],
+    ['dpto.4B', 'dpto. 4B'],
+    ['Km 4.50', 'Km 4.50'],
+    ['a las 12.30', 'a las 12.30'],
+    ['Pepsi 1.25L', 'Pepsi 1.25L'],
+    ['Bs 12.50', 'Bs 12.50'],
+    ['12.30', '12.30'],
+    ['N.º 5, Bs.12', 'N.º 5, Bs. 12'],
+  ];
+  it('avLimpio y avParametro no cambian por «[enlace omitido]» ninguna de estas direcciones, horas ni montos', () => {
+    for (const [entrada, esperado] of ENTEROS) {
+      expect(L.avLimpio(entrada, 200), entrada).toBe(esperado);
+      expect(L.avParametro(entrada), entrada).toBe(esperado);
+      expect(L.avLimpio(entrada, 200), entrada).not.toContain('[enlace omitido]');
+    }
+  });
+  it('de punta a punta: «Calle 21 Nro.123» llega entera en la plantilla de completo y en el detalle', () => {
+    const p = pedido({ direccion: 'Calle 21 Nro.123', referencia: 'dpto.4B, esq.Rosendo' });
+    const v = params(plantillaDe(L.avArmar('pedido', p, CSV, CFG, sdCon(), AHORA), ANDRES))[2];
+    expect(v).toContain('Delivery a Calle 21 Nro. 123 (dpto. 4B, esq. Rosendo)');
+    expect(v).not.toContain('[enlace omitido]');
+    const c = cuerpo(L.avArmar('pedido', p, CSV, CFG, abierta(), AHORA), ANDRES);
+    expect(c).toContain('Entrega: delivery a Calle 21 Nro. 123 (dpto. 4B, esq. Rosendo)');
+    expect(c).not.toContain('[enlace omitido]');
+  });
+  it('negado: «malo.test/x», «hxxps://x.ru» y los dominios reales no quedan como un enlace', () => {
+    for (const t of ['malo.test/x', 'hxxps://x.ru', 'mira malo.test/x ya', 'a1.ru', 'x.ru/pago', 'juan.perez']) {
+      expect(L.avLimpio(t, 200), t).not.toMatch(PARECE_ENLACE);
+    }
+    for (const t of ['tienda.com/x', 'www.malo.test', 'https://malo.test/x', 'wa.me/59100000011', 'bit.ly/abc', 'pago.xyz/cobrar']) {
+      const r = L.avLimpio(t, 200);
+      expect(r, t).toContain('[enlace omitido]');
+      expect(r, t).not.toMatch(PARECE_ENLACE);
+    }
+    // Un punto al final de frase o con espacio no se toca.
+    expect(L.avLimpio('sin cebolla. Gracias.', 100)).toBe('sin cebolla. Gracias.');
+  });
+});
+
+describe('I2: el saneo de texto de terceros revisa también la forma sin puntuación y reemplaza por palabra entera', () => {
+  const CASOS = ['Calle 3 en, camino a Obrajes', 'pago: recibido', 'en-camino', 'recibimos *tu pago', 'te *avisamos', 'en *camino', 'te *avisamos·luego'];
+  it('cada caso sale con la marca explícita, sin «…», y ni la forma con puntuación ni la sin puntuación coinciden con la red', () => {
+    for (const t of CASOS) {
+      const r = L.avLimpio(t, 100);
+      expect(r, t).toContain('[texto omitido]');
+      expect(r, t).not.toContain('…');
+      expect(r.normalize('NFKC'), t).not.toMatch(VM_PROHIBIDAS);
+      expect(normaliza(r), t).not.toMatch(VM_PROHIBIDAS);
+    }
+    expect(L.avLimpio('Calle 3 en, camino a Obrajes', 100)).toBe('Calle 3 [texto omitido] a Obrajes');
+    expect(L.avLimpio('pago: recibido', 100)).toBe('[texto omitido]');
+  });
+  it('reemplaza la palabra entera: no corta palabras ni normaliza fuera de la coincidencia («N.º», tildes, mayúsculas)', () => {
+    expect(L.avLimpio('N.º 5 casa validada', 100)).toBe('N.º 5 casa [texto omitido]');
+    expect(L.avLimpio('Ñandú Pérez, en camino', 100)).toBe('Ñandú Pérez, [texto omitido]');
+    expect(L.avLimpio('xvalidadox', 100)).toBe('[texto omitido]');
+    expect(L.avLimpio('Avenida Ánimas VALIDADO fin', 100)).toBe('Avenida Ánimas [texto omitido] fin');
+    // Antes: «N.º 5 casa reservada» salía «N.o 5 casa …a». Ahora «reservada» sola ya no es una palabra prohibida.
+    expect(L.avLimpio('N.º 5 casa reservada', 100)).toBe('N.º 5 casa reservada');
+    // Una racha de palabras afectadas deja UNA sola marca.
+    expect(L.avLimpio('hola recibimos tu pago gracias', 100)).toBe('hola [texto omitido] gracias');
+  });
+  it('lo que no coincide no se toca: «teconfirmo avisaremos» ya no es una palabra prohibida y sale igual', () => {
+    expect(L.avLimpio('teconfirmo avisaremos', 100)).toBe('teconfirmo avisaremos');
+    expect(L.avLimpio('Calle Principal 45, frente a la plaza', 100)).toBe('Calle Principal 45, frente a la plaza');
+  });
+  it('colapsa espacios y « · » ANTES de comparar: quitar `*_~` no reforma una frase prohibida que se escapaba', () => {
+    expect(L.avLimpio('te *  *avisamos', 100)).toBe('[texto omitido]');
+    expect(L.avLimpio('en\n\ncamino', 100)).toBe('[texto omitido]');
+  });
+  it('llega a un punto fijo: si tras reemplazar aún coincide (aquí la propia marca), devuelve solo la marca', () => {
+    const rara = cargar('const VM_PROHIBIDAS = /texto/i;');
+    expect(rara.avSinProhibidas('hola texto')).toBe('[texto omitido]');
+    // Y sin coincidencia devuelve el mismo texto, sin normalizar.
+    expect(L.avSinProhibidas('N.º 5 Ñandú')).toBe('N.º 5 Ñandú');
+  });
+});
+
+describe('I3 e I4: la variable 3 de la plantilla de pedido por rol', () => {
+  const lineas = Array.from({ length: 8 }, (_, i) => ({ cantidad: 1, nombre: `Plato número ${i + 1} de la casa`, detalle: 'sin picante, con la salsa aparte y bien caliente' }));
+  const cerrada = (datos: J) => L.avArmar('pedido', datos, CSV, CFG, sdCon(), AHORA);
+
+  it('completo recibe SIEMPRE nombre, celular, entrega e ítems, en delivery y en recojo; cocina nunca el teléfono ni el nombre completo', () => {
+    for (const modalidad of ['delivery', 'recojo']) {
+      const items = cerrada(pedido({ modalidad }));
+      const completo = params(plantillaDe(items, ANDRES))[2]!;
+      expect(completo, modalidad).toContain('Ana Pérez');
+      expect(completo, modalidad).toContain(`cel ${CLIENTE}`);
+      expect(completo, modalidad).toContain(ITEMS_PEDIDO);
+      const cocina = params(plantillaDe(items, SILVANA))[2]!;
+      expect(cocina, modalidad).toContain(ITEMS_PEDIDO);
+      for (const prohibido of [CLIENTE, 'Ana Pérez', 'Banzer', REFERENCIA, 'cel ']) expect(cocina, modalidad + prohibido).not.toContain(prohibido);
+    }
+    expect(params(plantillaDe(cerrada(pedido({ modalidad: 'recojo' })), ANDRES))[2]).not.toContain('Banzer');
+  });
+  it('M5: las coordenadas van en su propio segmento y no se pierden aunque la dirección sea larga (cocina no las recibe)', () => {
+    const coordenadas = 'ubicación compartida (-16,50000; -68,15000)';
+    const p = pedido({ direccion: 'Avenida muy larga '.repeat(12), referencia: 'frente a la casa '.repeat(8), coordenadas, lineas });
+    const v = params(plantillaDe(cerrada(p), ANDRES))[2]!;
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v).toContain(coordenadas);
+    expect(v).toContain(`cel ${CLIENTE}`);
+    expect(v).toContain('recibe Ana Pérez');
+    expect(params(plantillaDe(cerrada(p), SILVANA))[2]).not.toContain('ubicación');
+    // Con la ventana abierta, el detalle de completo las trae en su propia línea; el de cocina no.
+    const abiertas = L.avArmar('pedido', p, CSV, CFG, abierta(), AHORA);
+    expect(cuerpo(abiertas, ANDRES).split('\n')).toContain('Ubicación compartida (-16,50000; -68,15000)');
+    expect(cuerpo(abiertas, SILVANA)).not.toContain('Ubicación');
+  });
+  it('I4: la lista de cocina se corta POR ÍTEM y termina en «… y N más» (8 líneas con nota)', () => {
+    const v = params(plantillaDe(cerrada(pedido({ lineas })), SILVANA))[2]!;
+    expect(v.length).toBeLessThanOrEqual(500);
+    const m = /^Delivery · (.*), … y (\d+) más$/.exec(v);
+    expect(m, v).not.toBeNull();
+    // Ningún ítem listado quedó a medias: la lista son ítems completos (con su nota entera) unidos por «, ».
+    const completos = [...m![1]!.matchAll(/1 × Plato número \d de la casa \(sin picante, con la salsa aparte y bien caliente\)/g)].map((x) => x[0]);
+    expect(m![1]).toBe(completos.join(', '));
+    expect(completos.length + Number(m![2])).toBe(8);
+    // Negado: cuando todo cabe no hay marca.
+    expect(params(plantillaDe(cerrada(pedido({ lineas: lineas.slice(0, 2) })), SILVANA))[2]).not.toContain('más');
+  });
+  it('con 30 líneas, completo conserva sus datos y la lista termina en «… y N más»', () => {
+    const treinta = Array.from({ length: 30 }, (_, i) => ({ cantidad: 1, nombre: `Plato ${i + 1} con nombre largo de la carta`, detalle: 'sin picante y con salsa aparte' }));
+    const v = params(plantillaDe(cerrada(pedido({ lineas: treinta, coordenadas: 'ubicación compartida (-16,50000; -68,15000)' })), ANDRES))[2]!;
+    expect(v.length).toBeLessThanOrEqual(500);
+    expect(v).toMatch(/… y \d+ más$/);
+    expect(v).toContain('ubicación compartida');
+    expect(v).toContain(`cel ${CLIENTE}`);
+  });
+});
+
+describe('I6: contrato de claves de plantilla (respaldo común `plantillaAviso` e `idiomaPlantilla`)', () => {
+  const SIN = { nombreNegocio: "Q'Taco", prefijosPermitidos: '591' };
+  const derivacion = { nombre: 'Ana Pérez', telefono: CLIENTE, motivo: 'consulta', codigo: 'C1D2' };
+  const EVENTOS: [string, string, J, string, string][] = [
+    ['pedido', 'plantillaPedido', pedido(), 'idiomaPlantillaPedido', 'plantilla_no_configurada_pedido'],
+    ['reserva', 'plantillaReserva', reserva(), 'idiomaPlantillaReserva', 'plantilla_no_configurada_reserva'],
+    ['transferencia', 'plantillaDerivacion', derivacion, 'idiomaPlantillaDerivacion', 'plantilla_no_configurada_derivacion'],
+  ];
+  const nombres = (items: J[]): string[] => items.filter((i) => i.payload.type === 'template').map((i) => i.payload.template.name);
+  const idiomas = (items: J[]): string[] => items.filter((i) => i.payload.type === 'template').map((i) => i.payload.template.language.code);
+
+  it('combinaciones de nombre: la específica manda; si falta, el respaldo común; sin ninguna, falla cerrado', () => {
+    for (const [tipo, clave, datos, , error] of EVENTOS) {
+      const ambas = L.avPlan(tipo, datos, CSV, { ...SIN, [clave]: 'especifica_x', plantillaAviso: 'comun_x' }, sdCon(), AHORA);
+      expect(nombres(ambas.items), `${tipo}: ambas`).toEqual(['especifica_x', 'especifica_x']);
+      const soloComun = L.avPlan(tipo, datos, CSV, { ...SIN, plantillaAviso: 'comun_x' }, sdCon(), AHORA);
+      expect(nombres(soloComun.items), `${tipo}: solo común`).toEqual(['comun_x', 'comun_x']);
+      expect(soloComun.errores, `${tipo}: solo común`).toEqual([]);
+      const soloEspecifica = L.avPlan(tipo, datos, CSV, { ...SIN, [clave]: 'especifica_x' }, sdCon(), AHORA);
+      expect(nombres(soloEspecifica.items), `${tipo}: solo específica`).toEqual(['especifica_x', 'especifica_x']);
+      const ninguna = L.avPlan(tipo, datos, CSV, SIN, sdCon(), AHORA);
+      expect(ninguna.items, `${tipo}: ninguna`).toEqual([]);
+      expect(ninguna.errores, `${tipo}: ninguna`).toContain(error);
+      // Una clave vacía ('') es «sin plantilla» para ese evento y no cae al respaldo.
+      const vacia = L.avPlan(tipo, datos, CSV, { ...SIN, [clave]: '', plantillaAviso: 'comun_x' }, sdCon(), AHORA);
+      expect(nombres(vacia.items), `${tipo}: vacía`).toEqual([]);
+    }
+  });
+  it('combinaciones de idioma: el del evento, luego `idiomaPlantilla`, luego «es»', () => {
+    for (const [tipo, clave, datos, idioma] of EVENTOS) {
+      const base = { ...SIN, [clave]: 'x_y' };
+      expect(idiomas(L.avArmar(tipo, datos, CSV, { ...base, [idioma]: 'es_MX', idiomaPlantilla: 'es_ES' }, sdCon(), AHORA)), `${tipo}: ambos`).toEqual(['es_MX', 'es_MX']);
+      expect(idiomas(L.avArmar(tipo, datos, CSV, { ...base, idiomaPlantilla: 'es_ES' }, sdCon(), AHORA)), `${tipo}: solo común`).toEqual(['es_ES', 'es_ES']);
+      expect(idiomas(L.avArmar(tipo, datos, CSV, { ...base, [idioma]: 'es_MX' }, sdCon(), AHORA)), `${tipo}: solo del evento`).toEqual(['es_MX', 'es_MX']);
+      expect(idiomas(L.avArmar(tipo, datos, CSV, base, sdCon(), AHORA)), `${tipo}: ninguno`).toEqual(['es', 'es']);
+    }
+  });
+  it('la derivación NO hereda `plantillaReserva` ni su idioma, con ninguna combinación', () => {
+    const reservaSola = { ...SIN, plantillaReserva: 'reserva_x', idiomaPlantillaReserva: 'es_ES' };
+    const a = L.avPlan('transferencia', derivacion, CSV, reservaSola, sdCon(), AHORA);
+    expect(a.items).toEqual([]);
+    expect(a.errores).toContain('plantilla_no_configurada_derivacion');
+    // Con el respaldo común, usa el común (y su idioma común), nunca el de reserva.
+    const b = L.avPlan('transferencia', derivacion, CSV, { ...reservaSola, plantillaAviso: 'comun_x', idiomaPlantilla: 'es_BO' }, sdCon(), AHORA);
+    expect(nombres(b.items)).toEqual(['comun_x', 'comun_x']);
+    expect(idiomas(b.items)).toEqual(['es_BO', 'es_BO']);
+    // Con la propia, la propia.
+    const c = L.avPlan('transferencia', derivacion, CSV, { ...reservaSola, plantillaAviso: 'comun_x', plantillaDerivacion: 'deriva_x' }, sdCon(), AHORA);
+    expect(nombres(c.items)).toEqual(['deriva_x', 'deriva_x']);
+    // La reserva sí usa la suya aunque exista la común.
+    expect(nombres(L.avPlan('reserva', reserva(), CSV, { ...reservaSola, plantillaAviso: 'comun_x' }, sdCon(), AHORA).items)).toEqual(['reserva_x', 'reserva_x']);
+  });
+  it('un nombre inválido en el respaldo común tampoco sale, y se anota como inválido', () => {
+    const r = L.avPlan('pedido', pedido(), CSV, { ...SIN, plantillaAviso: 'Nombre Raro!' }, sdCon(), AHORA);
+    expect(r.items).toEqual([]);
+    expect(r.errores).toContain('plantilla_invalida');
+  });
+  it('sin ningún nombre configurado, ni siquiera el respaldo común, no hay nombre en el código', () => {
+    expect(FUENTE).not.toMatch(/['"]pedido_registrado['"]|['"]appointment_confirmed['"]/);
+    expect(FUENTE).not.toMatch(/plantillaAviso\s*\|\|\s*['"]/);
+  });
+});
+
+describe('la forma `pedido` de la reserva y de la derivación (plantilla `pedido_registrado`)', () => {
+  const FORMA = { ...CFG, plantillaReserva: 'pedido_registrado', plantillaDerivacion: 'pedido_registrado', formaPlantillaReserva: 'pedido', formaPlantillaDerivacion: 'pedido' };
+  const deriva = { nombre: 'Ana Pérez', telefono: CLIENTE, motivo: 'quiero hablar de un evento para 40 personas', codigo: 'C1D2' };
+  const todos = (items: J[]): string[] => items.flatMap((i) => params(i));
+
+  it('reserva: {{1}} «SOLICITUD DE RESERVA <código>: …», {{2}} «sin cobro», {{3}} por confirmar, {{4}} «no aplica»', () => {
+    const items = L.avArmar('reserva', reserva(), CSV, FORMA, sdCon(), AHORA);
+    expect(items.map((i: J) => i.clase)).toEqual(['plantilla', 'plantilla']);
+    for (const rol of [ANDRES, SILVANA]) {
+      expect(params(plantillaDe(items, rol))).toEqual([
+        'SOLICITUD DE RESERVA R4T9: 4 personas, viernes 9 de octubre a las 20:00, terraza',
+        'sin cobro', 'reserva de mesa por confirmar con el cliente', 'no aplica',
+      ]);
+    }
+    expect(plantillaDe(items, ANDRES).payload.template.name).toBe('pedido_registrado');
+  });
+  it('derivación: {{1}} «CONSULTA <código>: <motivo>», {{2}} «sin cobro», {{3}} pide hablar con una persona, {{4}} «no aplica»', () => {
+    const items = L.avArmar('transferencia', deriva, CSV, FORMA, sdCon(), AHORA);
+    expect(params(plantillaDe(items, ANDRES))).toEqual([
+      'CONSULTA C1D2: quiero hablar de un evento para 40 personas', 'sin cobro', 'el cliente pide hablar con una persona', 'no aplica',
+    ]);
+    // Sin código ni motivo: igual hay un código corto y la variable no queda vacía.
+    const sin = params(plantillaDe(L.avArmar('transferencia', { telefono: CLIENTE }, CSV, FORMA, sdCon(), AHORA), ANDRES));
+    expect(sin[0]).toMatch(/^CONSULTA [0-9A-Z]{4}$/);
+  });
+  it('sin forma configurada rige `cita` (las 4 variables de siempre); una forma desconocida cae a `cita` y se anota', () => {
+    const cita = L.avArmar('reserva', reserva(), CSV, CFG, sdCon(), AHORA);
+    expect(params(plantillaDe(cita, ANDRES))).toEqual(['Andres', 'viernes 9 de octubre a las 20:00', 'Reserva 4 personas · Ana Pérez · terraza', 'R4T9']);
+    const explicita = L.avArmar('reserva', reserva(), CSV, { ...CFG, formaPlantillaReserva: 'cita' }, sdCon(), AHORA);
+    expect(params(plantillaDe(explicita, ANDRES))).toEqual(params(plantillaDe(cita, ANDRES)));
+    const rara = L.avPlan('reserva', reserva(), CSV, { ...CFG, formaPlantillaReserva: 'otra' }, sdCon(), AHORA);
+    expect(rara.errores).toContain('forma_invalida_reserva');
+    expect(params(plantillaDe(rara.items, ANDRES))[0]).toBe('Andres');
+    // Cada evento tiene su forma: la de la reserva no cambia la de la derivación.
+    const mezcla = L.avArmar('transferencia', deriva, CSV, { ...CFG, formaPlantillaReserva: 'pedido' }, sdCon(), AHORA);
+    expect(params(plantillaDe(mezcla, ANDRES))[0]).toBe('Andres');
+  });
+  it('ninguna variable lleva saltos de línea ni 5 espacios seguidos, ni queda vacía, con datos hostiles o ausentes', () => {
+    const hostil = reserva({ codigo: 'R\n4', nombre: 'Ana\nPérez', reserva: { personas: 4, fecha: '2026-10-09', hora: '20:00', zona: 'terraza\n\n          norte', nombre: 'Ana', celebracion: '', requerimiento: '' } });
+    const casos: [string, J][] = [['reserva', hostil], ['reserva', { reserva: {} }], ['transferencia', { motivo: 'a\n\n\n          b\t\tc', telefono: CLIENTE }], ['transferencia', {}]];
+    for (const [tipo, datos] of casos) {
+      for (const it of L.avArmar(tipo, datos, CSV, FORMA, sdCon(), AHORA)) {
+        const v = params(it);
+        expect(v).toHaveLength(4);
+        for (const t of v) {
+          expect(t.trim(), `${tipo} ${JSON.stringify(datos)}`).not.toBe('');
+          expect(t).not.toMatch(/[\r\n\t]/);
+          expect(t).not.toMatch(ESPACIOS_5);
+        }
+      }
+    }
+  });
+  it('ningún valor usa palabras prohibidas, y nunca «confirmada», ni en la solicitud ni en la derivación', () => {
+    const motivo = 'mi reserva está confirmada? pago acreditado, ya lo preparan, te avisamos y validado';
+    const r = L.avArmar('reserva', reserva({ reserva: { ...reserva().reserva, zona: 'terraza confirmada', celebracion: 'pago verificado', requerimiento: 'en camino' } }), CSV, FORMA, sdCon(), AHORA);
+    const d = L.avArmar('transferencia', { ...deriva, motivo }, CSV, FORMA, sdCon(), AHORA);
+    for (const t of [...todos(r), ...todos(d)]) {
+      expect(t).not.toMatch(VM_PROHIBIDAS);
+      expect(normaliza(t)).not.toMatch(VM_PROHIBIDAS);
+      expect(t).not.toMatch(/confirmad/i);
+    }
+    // Y con la ventana abierta, el texto libre tampoco.
+    const libres = [...L.avArmar('reserva', reserva(), CSV, FORMA, abierta(), AHORA), ...L.avArmar('transferencia', { ...deriva, motivo }, CSV, FORMA, abierta(), AHORA)]
+      .filter((i: J) => i.clase === 'detalle');
+    expect(libres.length).toBeGreaterThan(0);
+    for (const it of libres) expect(it.payload.text.body).not.toMatch(/confirmad/i);
+  });
+  it('la reserva se rotula siempre como solicitud, también sin código ni datos', () => {
+    for (const datos of [reserva(), reserva({ codigo: undefined }), { reserva: {} }]) {
+      for (const it of L.avArmar('reserva', datos, CSV, FORMA, sdCon(), AHORA)) expect(params(it)[0]).toMatch(/^SOLICITUD DE RESERVA/);
+    }
+    expect(params(plantillaDe(L.avArmar('reserva', { reserva: {} }, CSV, FORMA, sdCon(), AHORA), ANDRES))[0]).toBe('SOLICITUD DE RESERVA: personas sin indicar, fecha sin indicar');
+  });
+  it('cocina no ve teléfono ni dirección ni números largos; completo tampoco recibe el teléfono en estas variables', () => {
+    const r = L.avArmar('reserva', reserva({ direccion: DIRECCION, telefono: CLIENTE, reserva: { ...reserva().reserva, zona: `terraza ${CUENTA}` } }), CSV, FORMA, sdCon(), AHORA);
+    const d = L.avArmar('transferencia', { ...deriva, direccion: DIRECCION, motivo: `llámame al 71234567 o a ${CUENTA}` }, CSV, FORMA, sdCon(), AHORA);
+    for (const it of [plantillaDe(r, SILVANA), plantillaDe(d, SILVANA)]) {
+      const t = params(it).join('\n');
+      expect(t).not.toContain(CLIENTE);
+      expect(t).not.toContain('Banzer');
+      expect(t).not.toMatch(/\d{7}/);
+    }
+    for (const it of [plantillaDe(r, ANDRES), plantillaDe(d, ANDRES)]) {
+      expect(params(it).join('\n')).not.toContain(CLIENTE);
+      expect(params(it).join('\n')).not.toContain('Banzer');
+    }
+  });
+  it('con la ventana abierta, la derivación sale como texto libre (la forma solo rige las plantillas)', () => {
+    const items = L.avArmar('transferencia', deriva, CSV, FORMA, abierta(), AHORA);
+    expect(items.map((i: J) => i.clase)).toEqual(['detalle', 'detalle']);
+    expect(cuerpo(items, ANDRES)).toContain('Consulta de un cliente N.º C1D2');
+  });
+  it('el orden de la forma `pedido` es el de la plantilla de pedido; uno inválido cae al de por defecto y se anota', () => {
+    const ok = L.avArmar('reserva', reserva(), CSV, { ...FORMA, ordenReserva: 'cotejo,modalidad,total,items' }, sdCon(), AHORA);
+    expect(params(plantillaDe(ok, ANDRES))[0]).toBe('no aplica');
+    expect(params(plantillaDe(ok, ANDRES))[3]).toMatch(/^SOLICITUD DE RESERVA/);
+    const mal = L.avPlan('reserva', reserva(), CSV, { ...FORMA, ordenReserva: 'destinatario,cuando,detalle,codigo' }, sdCon(), AHORA);
+    expect(mal.errores).toContain('orden_invalido_reserva');
+    expect(params(plantillaDe(mal.items, ANDRES))[0]).toMatch(/^SOLICITUD DE RESERVA/);
+  });
+});
+
+describe('S-1: homoglifos y marcas combinantes no esconden una palabra prohibida; S-5: recorte tras NFKC', () => {
+  const ESCONDIDAS: [string, string][] = [
+    ['pаgаdo', 'a cirílica'], ['vαlidado', 'alfa griega'], ['valídado', 'tilde'], ['valídado', 'marca combinante'],
+    ['vali\u0090dado', 'control C1'], ['раgаdo', 'p y a cirílicas'], ['acrеditado', 'e cirílica'], ['ｖａｌｉｄａｄｏ', 'ancho completo'],
+  ];
+  it('cada forma escondida se omite en avLimpio y en la red de comparación', () => {
+    for (const [t, motivo] of ESCONDIDAS) {
+      const r = L.avLimpio(`tu pedido ${t} ya`, 100);
+      expect(r, motivo).toContain('[texto omitido]');
+      expect(L.avCanon(t), motivo).toMatch(VM_PROHIBIDAS);
+    }
+  });
+  it('un texto legítimo, también en cirílico o con tildes, no se rompe por la tabla de confusables', () => {
+    for (const t of ['Piña colada, jalapeño y café con leche', 'Москва 5', 'Ελλάδα', 'Av. Ánimas 123, esquina Pérez']) {
+      expect(L.avLimpio(t, 100), t).toBe(t);
+    }
+    // «pagado» legítimo sigue siendo prohibido, pero escrito con letras latinas normales: la tabla no cambia el resultado.
+    expect(L.avLimpio('pagado', 100)).toBe('[texto omitido]');
+    // Las dos cadenas de la tabla tienen la misma longitud (cada confusable tiene su letra).
+    for (const m of FUENTE.matchAll(/const AV_CONFUSABLES_DE = '([^']+)' \+ '([^']+)';\nconst AV_CONFUSABLES_A = '([^']+)' \+ '([^']+)';/g)) {
+      expect(Array.from(m[1]!).length).toBe(m[3]!.length);
+      expect(Array.from(m[2]!).length).toBe(m[4]!.length);
+    }
+  });
+  it('S-5: `recib\\S{0,40}` está acotado y avLimpio vuelve a recortar después de NFKC', () => {
+    expect(FUENTE).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(L.avLimpio('recibimos tu pago', 100)).toBe('[texto omitido]');
+    // Una «palabra» de 41 caracteres tras «recib» ya no coincide con la raíz acotada.
+    expect(L.avLimpio('recib' + 'x'.repeat(41) + ' tu pago', 200)).toContain('tu pago');
+    // «㏂» crece 4 veces con NFKC: el resultado respeta el tope y tarda poco.
+    let r = '';
+    const t0 = performance.now();
+    r = L.avLimpio('㏂'.repeat(1000), 500);
+    expect(performance.now() - t0).toBeLessThan(50);
+    expect(Array.from(r).length).toBeLessThanOrEqual(500);
+    expect(r.length).toBeGreaterThan(0);
+  });
+  it('un corte que cae dentro de una marca no la deja a medias', () => {
+    const r = L.avLimpio('x'.repeat(10) + ' validado', 15);
+    expect(r).not.toMatch(/\[texto omit?$|\[$/);
+    expect(Array.from(r).length).toBeLessThanOrEqual(15);
+  });
+});
+
+describe('M1: el tope diario de avisos respeta el 0', () => {
+  it('avPlan con `topeAvisosDia: 0` no arma ningún aviso; con la clave ausente rige 150', () => {
+    const r = L.avPlan('pedido', pedido(), CSV, { ...CFG, topeAvisosDia: 0 }, sdCon(), AHORA);
+    expect(r.items).toEqual([]);
+    expect(r.errores).toContain('tope_avisos_dia');
+    expect(L.avDentroDelTopeDiario(sdCon(), AHORA, 0)).toBe(false);
+    expect(L.avDentroDelTopeDiario(sdCon(), AHORA, undefined)).toBe(true);
+    expect(L.avPlan('pedido', pedido(), CSV, CFG, sdCon(), AHORA).items.length).toBeGreaterThan(0);
   });
 });
