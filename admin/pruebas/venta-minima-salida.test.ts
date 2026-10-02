@@ -816,18 +816,43 @@ describe('Armar mensajes — estado, pedido guardado y cierre (el único que esc
     expect(a.items[0]!['errores']).toEqual(['sin_datos_estaticos: no se pudo comprobar el tope de avisos']);
   });
 
-  it('el cierre va solo en el primer ítem, con referencia = primer wamid del aviso', () => {
+  it('el cierre va solo en el primer ítem, con referencia = pedidoId (B0: ya no el primer wamid del aviso)', () => {
     const r = mensajes({ ruta: 'm', pedido: PEDIDO, mensajes: [texto('a'), texto('b')], cierre: { tipo: 'registro', detalle: 'Pedido K7Q2 sin QR: cobrar al recoger.' } },
       { armados: [armado('pedido')], enviados: [OK(7)] });
     expect(r.items).toHaveLength(2);
-    expect(r.items[0]!['cierre']).toEqual({ tipo: 'registro', detalle: 'Pedido K7Q2 sin QR: cobrar al recoger.', referencia: 'wamid.AVISO7' });
+    expect(r.items[0]!['cierre']).toEqual({ tipo: 'registro', detalle: 'Pedido K7Q2 sin QR: cobrar al recoger.', referencia: PEDIDO['pedidoId'] });
+    expect(JSON.stringify(r.items[0]!['cierre'])).not.toContain('AVISO7');
     expect(r.items[1]!['cierre']).toBeUndefined();
   });
 
-  it('la referencia del cierre cae a pedidoId y luego a mensajeId si no hubo wamid', () => {
+  it('la referencia del cierre, sin referencia en el plan, cae a pedidoId y luego a mensajeId (nunca al wamid del aviso)', () => {
     const cierre = { tipo: 'registro', detalle: 'x' };
     expect(mensajes({ pedido: PEDIDO, mensajes: [texto('a')], cierre }).items[0]!['cierre'].referencia).toBe(PEDIDO['pedidoId']);
     expect(mensajes({ mensajes: [texto('a')], cierre }).items[0]!['cierre'].referencia).toBe('wamid.ENTRANTE1');
+    // con un aviso que SÍ salió (wamid del aviso), la referencia sigue siendo el pedidoId
+    const conAviso = mensajes({ pedido: PEDIDO, mensajes: [texto('a')], cierre }, { armados: [armado('pedido')], enviados: [OK(7)] });
+    expect(conAviso.items[0]!['cierre'].referencia).toBe(PEDIDO['pedidoId']);
+  });
+
+  it('B0: la `cierre.referencia` del plan GANA sobre el pedidoId (y sobre el wamid del aviso)', () => {
+    const cierre = { tipo: 'registro', detalle: 'x', referencia: 'res-2026-10-05-0011-abc1234' };
+    expect(mensajes({ pedido: PEDIDO, mensajes: [texto('a')], cierre }).items[0]!['cierre'].referencia).toBe('res-2026-10-05-0011-abc1234');
+    expect(mensajes({ mensajes: [texto('a')], cierre }).items[0]!['cierre'].referencia).toBe('res-2026-10-05-0011-abc1234');
+    const conAviso = mensajes({ mensajes: [texto('a')], cierre }, { armados: [armado('reserva')], enviados: [OK(7)] });
+    expect(conAviso.items[0]!['cierre'].referencia).toBe('res-2026-10-05-0011-abc1234');
+  });
+
+  it('B0: una referencia del plan que no cumple ^[A-Za-z0-9_-]{1,120}$ (con «/», vacía, de 121 caracteres, con espacio o no texto) cae a pedidoId y luego a mensajeId', () => {
+    const malas: unknown[] = ['ped/otro', '', 'a'.repeat(121), 'con espacio', 'ñandú', 'x\ny', 42, null, { a: 1 }];
+    for (const referencia of malas) {
+      const cierre = { tipo: 'registro', detalle: 'x', referencia };
+      expect(mensajes({ pedido: PEDIDO, mensajes: [texto('a')], cierre }).items[0]!['cierre'].referencia, JSON.stringify(referencia)).toBe(PEDIDO['pedidoId']);
+      expect(mensajes({ mensajes: [texto('a')], cierre }).items[0]!['cierre'].referencia, JSON.stringify(referencia)).toBe('wamid.ENTRANTE1');
+    }
+    // negando: los bordes válidos sí pasan (1 y 120 caracteres, guion y guion bajo)
+    for (const buena of ['a', 'a'.repeat(120), 'res-2026_10-05']) {
+      expect(mensajes({ pedido: PEDIDO, mensajes: [texto('a')], cierre: { tipo: 'registro', detalle: 'x', referencia: buena } }).items[0]!['cierre'].referencia).toBe(buena);
+    }
   });
 
   it('el detalle del cierre se recorta a 300 caracteres y pasa por vmTextoSeguro', () => {

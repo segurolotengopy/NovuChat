@@ -53,7 +53,7 @@ const NOMBRES = [
   'vmNodo', 'vmPrimero', 'vmTodos', 'vmCfg', 'vmNorm', 'vmDigitos', 'vmRecorte', 'vmLinea', 'vmLista', 'vmEntero',
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
-  'vmCodigoCorto', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
+  'vmCodigoCorto', 'vmHuella', 'vmIdEstable', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
   'vmHorario', 'vmAbierto', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
 ] as const;
 type Lib = Record<(typeof NOMBRES)[number], Fn>;
@@ -473,6 +473,49 @@ describe('comun.js: botones y códigos', () => {
     expect(L.vmCodigoCorto(35)).toBe('000Z');
     expect(L.vmCodigoCorto(undefined)).toBe('0000');
     expect(L.vmCodigoCorto(36 ** 4 + 5)).toBe('0005'); // se queda con los 4 últimos
+  });
+  it('vmHuella: FNV-1a de 32 bits (vectores de referencia), sin signo y determinista', () => {
+    expect(L.vmHuella('')).toBe(0x811c9dc5);
+    expect(L.vmHuella('a')).toBe(0xe40c292c);
+    expect(L.vmHuella('foobar')).toBe(0xbf9cf968);
+    expect(L.vmHuella('foobar')).toBe(L.vmHuella('foobar'));
+    expect(L.vmHuella('foobaR')).not.toBe(L.vmHuella('foobar'));
+    for (const v of ['á', '😀', { a: 1 }, [1, 2], null, undefined, 7]) {
+      const h = L.vmHuella(v);
+      expect(Number.isInteger(h) && h >= 0 && h <= 0xffffffff, String(v)).toBe(true);
+    }
+  });
+  it('vmHuella de un objeto no depende del orden de sus claves, pero sí de sus valores y del orden de una lista', () => {
+    expect(L.vmHuella({ a: 1, b: { c: 2, d: 3 } })).toBe(L.vmHuella({ b: { d: 3, c: 2 }, a: 1 }));
+    expect(L.vmHuella({ a: 1, x: undefined })).toBe(L.vmHuella({ a: 1 }));
+    expect(L.vmHuella({ a: 1 })).not.toBe(L.vmHuella({ a: 2 }));
+    expect(L.vmHuella([1, 2])).not.toBe(L.vmHuella([2, 1]));
+    expect(L.vmHuella({ a: '1' })).not.toBe(L.vmHuella({ a: 1 }));
+  });
+  it('vmIdEstable: el id es <prefijo>-<fecha de La Paz del ancla>-<ultimos 4>-<huella>, y el codigo son 4 caracteres de la misma huella', () => {
+    const k = L.vmIdEstable('ped', '59100000011', [{ id: 'x', cantidad: 1 }], AHORA, AHORA + 5);
+    expect(k.id).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
+    expect(k.codigo).toMatch(/^[0-9A-Z]{4}$/);
+    expect(k.codigo).toBe(L.vmCodigoCorto(k.huella));
+    expect(k.id.endsWith(k.huella.toString(36).padStart(7, '0'))).toBe(true);
+    // la fecha es la del ANCLA (11:00 del 06/10 en La Paz = 15:00 UTC; 23:59 del 05/10 en La Paz = 03:59 UTC del 06/10)
+    expect(L.vmIdEstable('res', '59100000011', {}, Date.UTC(2026, 9, 6, 3, 59), AHORA).id).toMatch(/^res-2026-10-05-0011-/);
+    expect(L.vmIdEstable('res', '59100000011', {}, Date.UTC(2026, 9, 6, 4, 0), AHORA).id).toMatch(/^res-2026-10-06-0011-/);
+  });
+  it('vmIdEstable: el reloj de respaldo solo cuenta si no hay ancla; con ancla, el reloj no cambia nada', () => {
+    const a = L.vmIdEstable('ped', '59100000011', 'x', AHORA, 1);
+    expect(L.vmIdEstable('ped', '59100000011', 'x', AHORA, 999_999).id).toBe(a.id);
+    expect(L.vmIdEstable('ped', '59100000011', 'x', AHORA, 999_999).codigo).toBe(a.codigo);
+    // negando: sin ancla (0, NaN, texto, ausente) manda el respaldo
+    for (const mala of [0, NaN, 'x', '12', undefined, null, -1]) {
+      expect(L.vmIdEstable('ped', '59100000011', 'x', mala, AHORA).id, String(mala)).toBe(L.vmIdEstable('ped', '59100000011', 'x', undefined, AHORA).id);
+    }
+    expect(L.vmIdEstable('ped', '59100000011', 'x', 0, AHORA + 1).id).not.toBe(L.vmIdEstable('ped', '59100000011', 'x', 0, AHORA).id);
+    // cada ingrediente cambia la clave
+    expect(L.vmIdEstable('res', '59100000011', 'x', AHORA).id.slice(4)).not.toBe(a.id.slice(4)); // otro prefijo (misma fecha y ultimos 4)
+    expect(L.vmIdEstable('ped', '59100000011', 'x', AHORA + 1, 1).id).not.toBe(a.id);
+    expect(L.vmIdEstable('ped', '59100000012', 'x', AHORA, 1).id).not.toBe(a.id);
+    expect(L.vmIdEstable('ped', '59100000011', 'y', AHORA, 1).id).not.toBe(a.id);
   });
 });
 

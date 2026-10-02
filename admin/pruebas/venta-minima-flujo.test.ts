@@ -1225,7 +1225,7 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(p.comp.llamadas.cotejo).toHaveLength(1);
   });
 
-  it('sin QR → «Registrar cierre» con `tipo: registro`, una referencia (el aviso) y un detalle de 300 caracteres o menos', () => {
+  it('sin QR → «Registrar cierre» con `tipo: registro`, una referencia (el pedidoId, no el aviso) y un detalle de 300 caracteres o menos', () => {
     const r = armarPedido({ cobro: false, ventana: 5 });
     const t = confirmarPedido(r);
     expect(t.llamadas.cierre).toHaveLength(1);
@@ -1233,7 +1233,10 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(cierre['tipo']).toBe('registro');
     expect(String(cierre['detalle']).length).toBeLessThanOrEqual(300);
     expect(String(cierre['detalle'])).toMatch(/Pedido #/);
-    expect(String(cierre['referencia'])).toMatch(/^wamid\./); // el aviso que salió
+    // B0: la referencia es el `pedidoId` (estable), NO el `wamid` del aviso que salió (cambia con cada ejecución).
+    expect(String(cierre['referencia'])).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
+    expect(String(cierre['referencia'])).not.toMatch(/wamid/);
+    expect(cierre['referencia']).toBe(pedidosGuardados(r.w.mundo)[0]?.['pedidoId']);
     expect(cierre['telefono']).toBe(CLIENTE);
     expect(t.llamadas.cotejo).toHaveLength(0);
     expect(cuerpos(t)[0]).toMatch(/Listo: pasé tu pedido #\w+ al restaurante\. El pago lo coordinas con ellos al recoger/);
@@ -1241,7 +1244,7 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
     expect(cuerpos(t).join(' ')).not.toMatch(/QR|comprobante/i);
   });
 
-  it('el detalle del cierre no pasa de 300 caracteres aunque el pedido sea largo, y la referencia no es un wamid si ningún aviso salió', () => {
+  it('el detalle del cierre no pasa de 300 caracteres aunque el pedido sea largo, y la referencia es el pedidoId aunque ningún aviso haya salido', () => {
     const lineas = [ln('queso fundido', 2, '', 'con mucho queso y sin picante para los niños'), ln('nachos supremos', 3, '', 'sin guacamole y con doble salsa'), ln('enchiladas suizas', 2, '', 'bien calientes'),
       ln('tacos de birria', 6, 'unidad', 'sin cebolla ni cilantro, con limón aparte'), ln('gaseosas', 4), ln('promo dúo', 2)];
     const r = armarPedido({ cobro: false, lineas, fallan: ['Enviar aviso'], extra: { entrega: 'recojo' } });
@@ -2863,3 +2866,185 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
   });
 });
 
+
+// =====================================================================================================
+// 6. B0: CLAVES ESTABLES POR PEDIDO (el doble toque en «Confirmar pedido» o «Enviar solicitud»)
+// =====================================================================================================
+// n8n carga los datos estáticos al empezar cada ejecución y los reescribe enteros al terminar: dos ejecuciones
+// simultáneas parten del MISMO estado. El arnés no corre en paralelo, así que el doble toque se simula así: se guarda
+// una copia de `sd` antes del primer toque y, tras la primera ejecución, se RESTAURA antes de la segunda (la segunda
+// "cargó" los datos antes de que la primera los reescribiera). El segundo toque llega con otro `wamid`, otra entrega y
+// UN MINUTO después (más estricto que los milisegundos reales: la clave no puede mirar el reloj).
+describe('B0: claves estables por pedido (doble toque simulado desde el mismo estado)', () => {
+  const sdCopia = (mundo: Mundo): J => JSON.parse(JSON.stringify(mundo.sd)) as J;
+  const restaurarSd = (mundo: Mundo, copia: J): void => {
+    for (const k of Object.keys(mundo.sd)) delete mundo.sd[k];
+    Object.assign(mundo.sd, JSON.parse(JSON.stringify(copia)));
+  };
+  /** Dos ejecuciones que parten del mismo estado y reciben el mismo botón (cada una, con su `wamid`). */
+  function dobleToque(mundo: Mundo, c: ReturnType<typeof conversacion>, id: string, titulo: string): { t1: ResultadoTurno; t2: ResultadoTurno; pedidos1: J[]; pedidos2: J[] } {
+    const partida = sdCopia(mundo);
+    const t1 = c.toca(id, titulo);
+    // Lo que la primera ejecución guardó, ANTES de restaurar `sd` (la restauración borra su pedido).
+    const pedidos1 = pedidosGuardados(mundo).map((p) => JSON.parse(JSON.stringify(p)) as J);
+    restaurarSd(mundo, partida);
+    const t2 = c.toca(id, titulo);
+    return { t1, t2, pedidos1, pedidos2: pedidosGuardados(mundo) };
+  }
+  const wamidDelAviso = (t: ResultadoTurno): string => String((t.avisos[0]?.respuesta['messages'] as J[] | undefined)?.[0]?.['id'] ?? '');
+  const referenciaDelCierre = (t: ResultadoTurno): string => String((t.llamadas.cierre[0] as J | undefined)?.['referencia'] ?? '');
+
+  it('(a) pedido sin QR: el doble toque deja el MISMO pedidoId, el MISMO código y la MISMA referencia de cierre, y un solo pedido guardado', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const { t1, t2, pedidos1, pedidos2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
+    // Los dos cierres existen (el servidor los deduplica) y apuntan al MISMO documento.
+    expect(t1.llamadas.cierre).toHaveLength(1);
+    expect(t2.llamadas.cierre).toHaveLength(1);
+    expect(referenciaDelCierre(t1)).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
+    expect(referenciaDelCierre(t2)).toBe(referenciaDelCierre(t1));
+    // Cada ejecución guardó un pedido, y los dos tienen el MISMO id (y el mismo código): en la producción real, la segunda
+    // escritura cae sobre la primera. (`dobleToque` capturó el de t1 antes de restaurar `sd`.)
+    expect(pedidos1).toHaveLength(1);
+    expect(pedidos2).toHaveLength(1);
+    expect(pedidos2[0]?.['pedidoId']).toBe(pedidos1[0]?.['pedidoId']);
+    expect(pedidos2[0]?.['codigo']).toBe(pedidos1[0]?.['codigo']);
+    const guardados = pedidos2;
+    expect(guardados[0]?.['pedidoId']).toBe(referenciaDelCierre(t1));
+    // El aviso duplicado (B0 NO lo evita) sale, pero con el MISMO código: el restaurante ve que es el mismo pedido.
+    expect(t1.avisos.length).toBeGreaterThan(0);
+    expect(t2.avisos.length).toBe(t1.avisos.length);
+    const codigo = String(guardados[0]?.['codigo']);
+    expect(codigo).toMatch(/^[0-9A-Z]{4}$/);
+    for (const t of [t1, t2]) {
+      expect(t.avisos.map((a) => `${a.cuerpo} ${JSON.stringify(a.payload)}`).join('\n')).toContain(codigo);
+      expect(cuerpos(t).join('\n')).toContain(`#${codigo}`);
+      expect(String((t.llamadas.cierre[0] as J)['detalle'])).toContain(`#${codigo}`);
+    }
+  });
+
+  it('(a, el negativo) la clave no sale del reloj ni del aviso: el segundo toque llegó un minuto después y su aviso tiene otro wamid, y aun así coinciden', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const { t1, t2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
+    expect(wamidDelAviso(t1)).toMatch(/^wamid\./);
+    expect(wamidDelAviso(t2)).toMatch(/^wamid\./);
+    expect(wamidDelAviso(t2)).not.toBe(wamidDelAviso(t1)); // los wamid son distintos entre ejecuciones…
+    expect(referenciaDelCierre(t2)).toBe(referenciaDelCierre(t1)); // …y la referencia no depende de ellos
+    // (d) la referencia ya no es el wamid de ningún aviso, de ninguna de las dos ejecuciones.
+    for (const t of [t1, t2]) {
+      const wamids = [...t.avisos, ...t.mensajes].map((e) => String((e.respuesta['messages'] as J[] | undefined)?.[0]?.['id'] ?? '')).filter(Boolean);
+      expect(wamids.length).toBeGreaterThan(0);
+      expect(wamids).not.toContain(referenciaDelCierre(t));
+      expect(referenciaDelCierre(t)).not.toMatch(/wamid/);
+    }
+  });
+
+  it('(d) la referencia del cierre es el pedidoId aunque ningún aviso haya salido (nada de wamid ni de mensajeId)', () => {
+    const r = armarPedido({ cobro: false, fallan: ['Enviar aviso', 'Aviso de respaldo'] });
+    const t = confirmarPedido(r);
+    expect((t.resumen as J)['resumen'].avisoSalio).toBe(false);
+    expect(t.llamadas.cierre).toHaveLength(1); // el cierre sigue saliendo aunque el aviso no salga
+    expect(referenciaDelCierre(t)).toBe(pedidosGuardados(r.w.mundo)[0]?.['pedidoId']);
+  });
+
+  it('pedido con QR: el doble toque abre el cobro dos veces con la MISMA referencia y el MISMO monto (el servidor ve un solo pedido)', () => {
+    const r = armarPedido({ ventana: 5 });
+    const { t1, t2, pedidos1, pedidos2 } = dobleToque(r.w.mundo, r.c, idDeBoton(r.resumen, 'Confirmar pedido'), 'Confirmar pedido');
+    const abre = (t: ResultadoTurno): J => t.llamadas.ingesta.find((x) => x['evento'] === 'qr_enviado') as J;
+    expect(abre(t1)['referencia']).toMatch(/^ped-/);
+    expect(abre(t2)['referencia']).toBe(abre(t1)['referencia']);
+    expect(abre(t2)['monto']).toBe(abre(t1)['monto']);
+    // Cada ejecución guardó su pedido con el mismo id (el de t1 se capturó antes de restaurar `sd`).
+    expect(pedidos1).toHaveLength(1);
+    expect(pedidos2).toHaveLength(1);
+    expect(pedidos1[0]?.['pedidoId']).toBe(abre(t1)['referencia']);
+    expect(pedidos2[0]?.['pedidoId']).toBe(pedidos1[0]?.['pedidoId']);
+  });
+
+  it('(b) dos teléfonos con el mismo carrito, desde el mismo reloj: ids y referencias distintos', () => {
+    const a = armarPedido({ cobro: false, from: CLIENTE });
+    const b = armarPedido({ cobro: false, from: OTRO });
+    const ta = confirmarPedido(a);
+    const tb = confirmarPedido(b);
+    expect(referenciaDelCierre(ta)).toMatch(/^ped-2026-10-05-0011-/);
+    expect(referenciaDelCierre(tb)).toMatch(/^ped-2026-10-05-0012-/);
+    expect(referenciaDelCierre(tb)).not.toBe(referenciaDelCierre(ta));
+    // Y en un MISMO mundo (los dos clientes a la vez): dos pedidos, no uno.
+    const w = crear({ panel: panel() });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad', 'sin cebolla')]);
+    const c1 = con(w, CLIENTE);
+    const c2 = con(w, OTRO);
+    const r1 = c1.escribe('quiero 4 tacos de birria');
+    const r2 = c2.escribe('quiero 4 tacos de birria');
+    c1.toca(idDeBoton(r1, 'Confirmar pedido'), 'Confirmar pedido');
+    c2.toca(idDeBoton(r2, 'Confirmar pedido'), 'Confirmar pedido');
+    expect(new Set(pedidosGuardados(w.mundo).map((p) => String(p['pedidoId']))).size).toBe(2);
+    expect(new Set(pedidosGuardados(w.mundo).map((p) => String(p['codigo']))).size).toBe(2);
+  });
+
+  it('(c) el mismo teléfono repite el MISMO pedido idéntico más tarde: el ancla cambió (el estado se reescribió en cada turno), así que el id es otro', () => {
+    const r = armarPedido({ cobro: false, ventana: 5 });
+    const t1 = confirmarPedido(r);
+    const primero = referenciaDelCierre(t1);
+    // El estado volvió a «menu» y se reescribió con la hora del turno de confirmación: el pedido idéntico parte de otro ancla.
+    const resumen2 = r.c.escribe('quiero 4 tacos de birria');
+    const t2 = r.c.toca(idDeBoton(resumen2, 'Confirmar pedido'), 'Confirmar pedido');
+    const segundo = referenciaDelCierre(t2);
+    expect(primero).toMatch(/^ped-/);
+    expect(segundo).toMatch(/^ped-/);
+    expect(segundo).not.toBe(primero);
+    expect(pedidosGuardados(r.w.mundo)).toHaveLength(2);
+    // Los dos códigos son distintos: el restaurante no confunde el segundo pedido con el primero.
+    expect(new Set(pedidosGuardados(r.w.mundo).map((p) => String(p['codigo']))).size).toBe(2);
+    // …y un tercero, una hora después, tampoco repite ninguno.
+    r.w.mundo.avanzar(60);
+    const resumen3 = r.c.escribe('quiero 4 tacos de birria');
+    const t3 = r.c.toca(idDeBoton(resumen3, 'Confirmar pedido'), 'Confirmar pedido');
+    expect([primero, segundo]).not.toContain(referenciaDelCierre(t3));
+  });
+
+  it('(e) reserva: el doble toque en «Enviar solicitud» deja la MISMA referencia (res-<fecha>-<tel4>-<huella>) y el MISMO código', () => {
+    const r = armarReserva({ ventana: 5 });
+    const { t1, t2 } = dobleToque(r.w.mundo, r.c, 'r|enviar', 'Enviar solicitud');
+    expect(t1.llamadas.cierre).toHaveLength(1);
+    expect(t2.llamadas.cierre).toHaveLength(1);
+    expect(referenciaDelCierre(t1)).toMatch(/^res-2026-10-05-0011-[0-9a-z]{7}$/);
+    expect(referenciaDelCierre(t2)).toBe(referenciaDelCierre(t1));
+    expect(referenciaDelCierre(t1)).not.toMatch(/wamid/);
+    expect(wamidDelAviso(t2)).not.toBe(wamidDelAviso(t1));
+    // El aviso duplicado (B0 NO lo evita) sale con el mismo código; el detalle del cierre lo trae.
+    const codigo = /#([0-9A-Z]{4})/.exec(String((t1.llamadas.cierre[0] as J)['detalle']))?.[1];
+    expect(codigo).toBeDefined();
+    expect(String((t2.llamadas.cierre[0] as J)['detalle'])).toContain(`#${codigo}`);
+    for (const t of [t1, t2]) {
+      expect(t.avisos.length).toBeGreaterThan(0);
+      expect(t.avisos.map((a) => `${a.cuerpo} ${JSON.stringify(a.payload)}`).join('\n')).toContain(String(codigo));
+    }
+  });
+
+  it('(e, los negativos) otra reserva (otros datos, otro teléfono, o la misma repetida más tarde) NO comparte referencia', () => {
+    const base = armarReserva({ ventana: 5 });
+    const ref1 = referenciaDelCierre(enviarReserva(base));
+    // la misma reserva repetida más tarde por el mismo teléfono (el estado se reescribió: otro ancla)
+    base.c.toca('m|reserva', 'Reservar mesa');
+    base.w.estado.extraccion = { ...RESERVA_OK };
+    base.c.escribe('quiero reservar una mesa');
+    const ref2 = referenciaDelCierre(base.c.toca('r|enviar', 'Enviar solicitud'));
+    expect(ref2).toMatch(/^res-/);
+    expect(ref2).not.toBe(ref1);
+    // otros datos (otra cantidad de personas)
+    const otros = armarReserva({ ventana: 5, extra: { personas: 2 } });
+    expect(referenciaDelCierre(enviarReserva(otros))).not.toBe(ref1);
+    // otro teléfono con los mismos datos
+    const ajeno = armarReserva({ ventana: 5, from: OTRO });
+    const ref3 = referenciaDelCierre(enviarReserva(ajeno));
+    expect(ref3).toMatch(/^res-2026-10-05-0012-/);
+    expect(ref3).not.toBe(ref1);
+  });
+
+  it('el tipo de cierre sigue siendo `registro` y el contrato con el servidor no cambia (solo cambia de dónde sale la referencia)', () => {
+    const r = armarPedido({ cobro: false });
+    const c = confirmarPedido(r).llamadas.cierre[0] as J;
+    expect(Object.keys(c).sort()).toEqual(['detalle', 'nombreCliente', 'referencia', 'telefono', 'tipo']); // las mismas claves de antes de B0
+    expect(c['tipo']).toBe('registro');
+  });
+});

@@ -24,7 +24,7 @@
 // `pr*`, `cb*`).
 //
 // DEPENDE DE `comun.js` (T1), y solo de esto: vmNorm, vmLinea, vmFechaLocal,
-// vmHoraLocal, vmCodigoCorto.
+// vmHoraLocal, vmCodigoCorto, vmIdEstable.
 //
 // FORMAS DE LOS DATOS
 //   item de la carta (`pdCarta`):
@@ -830,11 +830,15 @@ function pdTextoFaltanEntrega(faltan) {
 // El pedido que se guarda
 // ---------------------------------------------------------------------------
 
-// El pedido de este turno. `pedidoId`: 'ped-<fecha>-<ultimos 4 del telefono>-<ms en base 36>' (es la
-// `referencia` del QR y de la ingesta). El total SIEMPRE es la suma de la carta: si el `total` que llega
+// El pedido de este turno. `pedidoId`: 'ped-<fecha>-<ultimos 4 del telefono>-<huella en base 36>' (es la
+// `referencia` del QR y de la ingesta) y `codigo` salen de un ANCLA determinista, no del reloj (B0, `vmIdEstable`
+// de comun.js): `anclaMs` = el `ultimoMensajeMs` del estado leido al empezar el turno, mas el carrito, el telefono y la
+// fecha. Dos ejecuciones que parten del mismo estado y confirman lo mismo (el doble toque) dan EL MISMO id y el mismo
+// codigo; otro carrito, otro telefono u otro estado leido dan otro. Sin `anclaMs` valido se usa `ahoraMs` (la clave
+// deja de ser estable). El total SIEMPRE es la suma de la carta: si el `total` que llega
 // no coincide, manda la suma y queda `errores: ['total_no_coincide']`. El costo del delivery no existe aqui.
 // ADITIVO: `nItems` (suma de cantidades), `nLineas`, `mediaId` y `resultado` (se llenan despues, con el comprobante).
-function pdNuevoPedido(from, nombrePerfil, carrito, entrega, total, moneda, ahoraMs) {
+function pdNuevoPedido(from, nombrePerfil, carrito, entrega, total, moneda, ahoraMs, anclaMs) {
   const errores = [];
   const ms = typeof ahoraMs === 'number' && Number.isFinite(ahoraMs) ? Math.floor(ahoraMs) : 0;
   if (ms === 0) errores.push('reloj_invalido');
@@ -846,9 +850,10 @@ function pdNuevoPedido(from, nombrePerfil, carrito, entrega, total, moneda, ahor
   const tipo = _pdTipoDe(e);
   const ent = { entrega: tipo, modalidad: tipo, direccion: _pdTexto(e.direccion, 200), referencia: _pdTexto(e.referencia, 150), nombre: _pdNombreEntrega(e, nombrePerfil) };
   if (_pdUbicacion(e.ubicacion)) ent.ubicacion = { lat: e.ubicacion.lat, lng: e.ubicacion.lng };
+  const clave = vmIdEstable('ped', tel, lineas, anclaMs, ms);
   return {
-    pedidoId: 'ped-' + vmFechaLocal(ms) + '-' + tel.slice(-4) + '-' + ms.toString(36),
-    codigo: vmCodigoCorto(ms),
+    pedidoId: clave.id,
+    codigo: clave.codigo,
     from: tel,
     nombrePerfil: _pdTexto(nombrePerfil, 80),
     creado: ms,

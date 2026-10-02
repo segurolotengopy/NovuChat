@@ -11,10 +11,10 @@
 // cuerpo, botones, url, evento, referencia, monto}]; `condicionados` {siSalio, siNoSalio} | null
 // (los textos que dependen de si el aviso salió: «ya pasé tu pedido» solo sale con el aviso
 // enviado); `aviso` {tipo, datos} | null; `pedido` (a guardar); `cierre` {tipo: 'registro',
-// detalle} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
+// detalle, referencia} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmJsonDeGemini, vmSinProhibidas.
+//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmIdEstable, vmJsonDeGemini, vmSinProhibidas.
 //   pedido: pdCarta, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
 //     pdQuitarSinDelivery, pdTotal, pdFaltanEntrega, pdResumen, pdLineaCompacta, pdNuevoPedido y
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
@@ -91,12 +91,16 @@
 // LÍMITES CONOCIDOS (no se construyen aquí): si el modelo da un sábado para «este viernes», nadie lo
 // detecta (el cruce entre el día nombrado y la fecha queda fuera); `q|cancelar` («Cancelar pedido») descarta el
 // pedido del estado pero NO avisa al servidor: el cobro que abrió `qr_enviado` queda abierto hasta que vence; el cierre
-// `registro` sale aunque el aviso al restaurante no haya salido (no afirma nada del aviso); `cierre.referencia` y la
-// anotación de la reserva los resuelve T7b según los `wamid` del aviso.
+// `registro` sale aunque el aviso al restaurante no haya salido (no afirma nada del aviso); `cierre.referencia` es
+// ESTABLE (B0): el `pedidoId` del pedido o `res-<fecha>-<tel4>-<huella>` de la reserva, nunca el `wamid` del aviso; la
+// anotación de la reserva la resuelve T7b según los `wamid` del aviso.
 const d = vmPrimero('Decidir turno') || {};
 const cfg = vmCfg();
 const t = vmPrimero('Interpretar entrada') || {};
 const ahora = Number(t.ahoraMs) || Date.now();
+// El ancla de las claves estables (B0): el `ultimoMensajeMs` del estado LEIDO que fija `Decidir turno`. Sin ancla (un
+// doble de prueba, o sin estado previo) se usa `ahora` y la clave deja de ser estable.
+const ancla = Number(d.anclaMs) > 0 ? Number(d.anclaMs) : ahora;
 const sd = vmSd();
 const en = estadoDe(d.estado);
 const errores = Array.isArray(d.errores) ? d.errores.slice() : [];
@@ -599,7 +603,7 @@ function aExtraerPedido() {
 function armarPedido() {
   const total = pdTotal(en.carrito);
   if (!(total > 0)) return null;
-  const nuevo = pdNuevoPedido(t.from, t.nombrePerfil, en.carrito, en.entrega, total, monedaTxt, ahora) || {};
+  const nuevo = pdNuevoPedido(t.from, t.nombrePerfil, en.carrito, en.entrega, total, monedaTxt, ahora, ancla) || {};
   if (!nuevo.pedidoId) return null;
   const delivery = en.entrega.entrega === 'delivery';
   // Con una ubicación compartida el restaurante recibe las coordenadas (con coma decimal, que no se confunde con un enlace),
@@ -661,7 +665,7 @@ function confirmarPedido() {
   aviso = { tipo: 'pedido', datos: datosDePedido(pedidoGuardar, 'sin_qr', []) };
   condicionados = { siSalio: [mensajeDeCb(salio)], siNoSalio: [mensajeDeCb(noSalio)] };
   cierre = { tipo: 'registro', detalle: vmRecorte('Pedido #' + ped.codigo + ' (sin QR, ' + ped.modalidad + '): '
-    + pdLineaCompacta(en.carrito, 200) + '. Total ' + pdMonto(ped.total, monedaTxt) + '.', 300) };
+    + pdLineaCompacta(en.carrito, 200) + '. Total ' + pdMonto(ped.total, monedaTxt) + '.', 300), referencia: ped.pedidoId };
   mensajes = [];
   ruta = 'pedido:sin_qr';
   reiniciar('menu');
@@ -809,7 +813,10 @@ function enviarReserva() {
     return (mensajes = [enlace('Por hoy ya recibimos todas las solicitudes de reserva que podemos tomar por este medio. Escríbele al restaurante con el botón para reservar.')]);
   }
   const reserva = v.reserva;
-  const codigo = vmCodigoCorto(ahora);
+  // La referencia y el codigo salen del ancla y de los datos de la reserva (no del reloj): un doble toque en «Enviar solicitud»
+  // da el mismo codigo y la misma referencia de cierre, y el servidor cuenta UN cierre.
+  const clave = vmIdEstable('res', t.from, reserva, ancla, ahora);
+  const codigo = clave.codigo;
   const nombre = String(reserva.nombre || '').split(' ')[0];
   aviso = { tipo: 'reserva', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: reserva.nombre, codigo: codigo, reserva: reserva,
@@ -818,7 +825,7 @@ function enviarReserva() {
     siSalio: [enlace('Listo, ' + nombre + ': tu solicitud de reserva llegó al restaurante. Todavía es una solicitud: el restaurante la revisa según sus mesas. Si quieres hablar con ellos, toca el botón.')],
     siNoSalio: [enlace('No pude hacer llegar tu solicitud al restaurante en este momento. Escríbeles con el botón para reservar.')],
   };
-  cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300) };
+  cierre = { tipo: 'registro', detalle: vmRecorte('Solicitud de reserva #' + codigo + ': ' + rsLineaCompacta(reserva, 'completo'), 300), referencia: clave.id };
   anotarReserva = true;
   mensajes = [];
   ruta = 'reserva:enviada';

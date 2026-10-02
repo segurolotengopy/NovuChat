@@ -14,9 +14,9 @@
  * sinteticos, con seis ceros. La libreria se evalua con `ejecutar` (./lib/flujo): le quita los globales que el
  * sandbox de n8n no tiene (URL, Buffer, crypto, process, require…), asi que si los usara aqui reventaria igual.
  *
- * DEPENDENCIA. `pedido.js` usa `comun.js` (T1: vmNorm, vmLinea, vmFechaLocal, vmHoraLocal, vmCodigoCorto). Si
+ * DEPENDENCIA. `pedido.js` usa `comun.js` (T1: vmNorm, vmLinea, vmFechaLocal, vmHoraLocal, vmCodigoCorto y, desde B0, vmIdEstable). Si
  * `comun.js` ya existe junto a `pedido.js`, esta suite corre contra el real; si no, contra `COMUN_DE_CONTRATO`
- * (abajo), que implementa esas cinco funciones tal como las fija el contrato de §4.2.
+ * (abajo), que implementa esas seis funciones tal como las fija el contrato de §4.2.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -27,13 +27,24 @@ import { ejecutar } from './lib/flujo';
 const CARPETA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experimental/venta-minima/src/lib');
 const PEDIDO = readFileSync(join(CARPETA, 'pedido.js'), 'utf8');
 
-// Las cinco funciones de comun.js que usa pedido.js, tal como las fija el contrato (§4.2).
+// Las seis funciones de comun.js que usa pedido.js, tal como las fija el contrato (§4.2) y B0 (`vmIdEstable`).
 const COMUN_DE_CONTRATO = `
 function vmNorm(t) { return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, ' ').trim(); }
 function vmLinea(t, max) { return String(t === undefined || t === null ? '' : t).replace(/[\\u0000-\\u001f\\u007f\\u2028\\u2029<>&]/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, max); }
 function vmFechaLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); }
 function vmHoraLocal(ms) { return new Date(ms - 4 * 3600000).toISOString().slice(11, 16); }
 function vmCodigoCorto(ms) { return ms.toString(36).slice(-4).toUpperCase(); }
+function vmIdEstable(prefijo, from, contenido, anclaMs, respaldoMs) {
+  const valido = (x) => typeof x === 'number' && Number.isFinite(x) && x > 0;
+  const ancla = valido(anclaMs) ? Math.floor(anclaMs) : (valido(respaldoMs) ? Math.floor(respaldoMs) : 0);
+  const tel = String(from === undefined || from === null ? '' : from).replace(/\\D/g, '');
+  const fecha = vmFechaLocal(ancla);
+  const texto = [prefijo, ancla, tel, fecha, JSON.stringify(contenido)].join('|');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texto.length; i++) { h ^= texto.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  h = h >>> 0;
+  return { id: prefijo + '-' + fecha + '-' + tel.slice(-4) + '-' + h.toString(36).padStart(7, '0'), codigo: vmCodigoCorto(h), huella: h };
+}
 `;
 const RUTA_COMUN = join(CARPETA, 'comun.js');
 const COMUN = existsSync(RUTA_COMUN) ? readFileSync(RUTA_COMUN, 'utf8') : COMUN_DE_CONTRATO;
@@ -864,9 +875,10 @@ describe('pdNuevoPedido: el pedido que se guarda', () => {
   const nuevo = (extra: Record<string, unknown> = {}, ms = AHORA) =>
     L.pdNuevoPedido(TEL, 'Ana Soria', carrito(), { ...entrega, ...extra }, 118, 'BOB', ms);
 
-  it('el pedidoId es ped-<fecha de La Paz>-<ultimos 4 del telefono>-<ms en base 36>, y trae un codigo corto', () => {
+  it('el pedidoId es ped-<fecha de La Paz>-<ultimos 4 del telefono>-<huella en base 36>, y trae un codigo corto (B0: ya no lleva los ms)', () => {
     const p = nuevo();
-    expect(p.pedidoId).toBe(`ped-2026-10-05-0011-${AHORA.toString(36)}`);
+    expect(p.pedidoId).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
+    expect(p.pedidoId).not.toContain(AHORA.toString(36)); // el reloj no es la clave
     expect(p.pedidoId.startsWith('ped-')).toBe(true); // la referencia del QR empieza con «ped-»
     expect(p.codigo).toMatch(/^[0-9A-Z]{4}$/);
   });
@@ -899,6 +911,37 @@ describe('pdNuevoPedido: el pedido que se guarda', () => {
     expect(nuevo()).toEqual(nuevo());
     expect(nuevo({}, AHORA + 1).pedidoId).not.toBe(nuevo().pedidoId);
     expect(L.pdNuevoPedido('59100000022', 'x', carrito(), entrega, 118, 'BOB', AHORA).pedidoId).not.toBe(nuevo().pedidoId);
+  });
+  it('B0: con el mismo ancla, telefono y carrito, el id y el codigo NO dependen del reloj; con otro ancla, otro telefono u otro carrito, cambian', () => {
+    const ANCLA = AHORA - 90_000;
+    const base = (tel = TEL, c = carrito(), ahora = AHORA, ancla: number | undefined = ANCLA) => L.pdNuevoPedido(tel, 'Ana Soria', c, entrega, 118, 'BOB', ahora, ancla);
+    const a = base();
+    const b = base(TEL, carrito(), AHORA + 3_600_000); // otra hora de reloj, misma ancla (la otra ejecucion del doble toque)
+    expect(b.pedidoId).toBe(a.pedidoId);
+    expect(b.codigo).toBe(a.codigo);
+    // negando: cada ingrediente de la clave la cambia
+    expect(base(TEL, carrito(), AHORA, ANCLA + 1).pedidoId).not.toBe(a.pedidoId); // otro estado leido
+    expect(base('59100000099').pedidoId).not.toBe(a.pedidoId); // otro telefono (ultimos 4 distintos)
+    expect(base('59200000011').pedidoId).not.toBe(a.pedidoId); // otro telefono con los MISMOS ultimos 4
+    expect(base('59100000011', carrito().slice(0, 1)).pedidoId).not.toBe(a.pedidoId); // otro carrito
+    const masUno = carrito();
+    masUno[0].cantidad += 1;
+    expect(base(TEL, masUno).pedidoId).not.toBe(a.pedidoId); // misma linea, otra cantidad
+    expect(a.pedidoId).toMatch(/^ped-2026-10-05-0011-/); // fecha de La Paz del ancla y ultimos 4
+  });
+  it('B0: sin ancla valido (ausente, 0, NaN, negativo) cae al reloj: la clave sigue siendo valida pero ya no es estable', () => {
+    const sin = L.pdNuevoPedido(TEL, 'x', carrito(), entrega, 118, 'BOB', AHORA);
+    expect(sin.pedidoId).toMatch(/^ped-2026-10-05-0011-[0-9a-z]{7}$/);
+    for (const mala of [0, NaN, -5, '12', null]) {
+      expect(L.pdNuevoPedido(TEL, 'x', carrito(), entrega, 118, 'BOB', AHORA, mala).pedidoId).toBe(sin.pedidoId);
+    }
+    expect(L.pdNuevoPedido(TEL, 'x', carrito(), entrega, 118, 'BOB', AHORA + 1).pedidoId).not.toBe(sin.pedidoId); // el reloj cambia la clave
+  });
+  it('B0: el orden de las claves de una linea no cambia la huella (copia canonica)', () => {
+    const c = carrito();
+    const invertida = c.map((l: Record<string, unknown>) => Object.fromEntries(Object.entries(l).reverse()));
+    expect(L.pdNuevoPedido(TEL, 'x', invertida, entrega, 118, 'BOB', AHORA, AHORA - 1).pedidoId)
+      .toBe(L.pdNuevoPedido(TEL, 'x', c, entrega, 118, 'BOB', AHORA, AHORA - 1).pedidoId);
   });
   it('el telefono se guarda solo con digitos; la ubicacion, solo lat y lng', () => {
     const p = L.pdNuevoPedido('+591 000-00011', 'x', carrito(), { entrega: 'delivery', modalidad: 'delivery', ubicacion: { lat: -16.5, lng: -68.1, otro: 1 } }, 118, 'BOB', AHORA);

@@ -59,6 +59,10 @@ const ahora = Number(t.ahoraMs) || Date.now();
 const sd = vmSd();
 const previo = Object.assign(estadoBase(), vmLeerEstado(sd, t.from, ahora));
 const estado = Object.assign({}, previo, { ultimoMensajeMs: ahora });
+// El ANCLA de las claves estables (B0): el `ultimoMensajeMs` del estado tal como se LEYO, antes de ponerle la hora de este
+// turno. Dos ejecuciones simultaneas (doble toque) leen el mismo estado y ven la misma ancla; `Plan del turno` la usa para
+// derivar `pedidoId`, el codigo y la referencia de la reserva sin mirar el reloj. 0 si no habia estado (o estaba vencido).
+const anclaMs = Number(previo.ultimoMensajeMs) || 0;
 const errores = [];
 const pedidosOn = cfg.pedidosActivo === true;
 const reservasOn = cfg.reservasActivo === true;
@@ -68,7 +72,7 @@ let tipoEf = t.tipo;
 
 const salir = (accion, extra) => [{ json: Object.assign({
   accion: accion, boton: null, consulta: '', campana: null, motivo: '', cuerpoExtraccion: null,
-  texto: texto, estado: estado, errores: errores,
+  texto: texto, estado: estado, errores: errores, anclaMs: anclaMs,
 }, extra || {}) }];
 
 // --- 1. Resultado del cotejo: el comprobante llegó hasta el servidor ----------------------
