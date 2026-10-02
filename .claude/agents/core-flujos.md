@@ -19,8 +19,8 @@ NOVUCHAT_ZONA="Flujos/src/core/:Flujos/prompts/core/:admin/scripts/ensamblar-flu
 
 Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** agrega `admin/pruebas/core/` (compartida con `core-functions`), porque las suites de los nodos comunes y del ensamblador son pruebas del core de flujos y en F3 dejan `new Function` para importar `Flujos/src/`; y el `.d.mts` del ensamblador, que es el mismo archivo tipado.
 
-Hasta que F2 cree `Flujos/src/core/`, los módulos comunes viven en
-`Flujos/src/comun/` (cinco, variante de reservas) y el primer PR los mueve.
+Los módulos comunes viven en `Flujos/src/core/` (los de la variante de
+reservas en la raíz, y `captacion/`, `venta/` y `medios/` por variante).
 Los JSON de `Flujos/*.json` son **salida de construcción**: se regeneran con
 `ensamblar-flujo.mjs`, nunca se editan a mano, y el PR muestra que
 `ensamblar-flujo.mjs verificar` reproduce los 8 JSON byte a byte (F2) o que

@@ -26,10 +26,11 @@ Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`d
 su manifiesto; el gancho no distingue secciones de un archivo, así que la
 revisión del PR sí. **La línea del módulo en `registro.ts` la escribe la
 coordinadora** con el manifiesto que usted le entrega. Otro módulo no es suyo
-aunque el suyo dependa de él: se pide en el PR. Hasta que F2 cree las carpetas
-`modulos/<m>/`, los archivos viven donde dice el inventario de
-`docs/arquitectura/modulos/<m>.md` («Qué contiene hoy»): en el primer PR la
-zona es esa lista de archivos, y se declara.
+aunque el suyo dependa de él: se pide en el PR. Los archivos viven en
+`admin/functions/src/modulos/<m>/`, `admin/web/src/modulos/<m>/`,
+`Flujos/src/modulos/<m>/`, `admin/pruebas/modulos/<m>/` y, si el módulo los
+tiene, `admin/scripts/modulos/<m>/` (hoy solo `productos`): la zona es esa
+lista, y se declara.
 
 ## Antes de actuar, lea
 
