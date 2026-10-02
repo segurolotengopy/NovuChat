@@ -27,7 +27,7 @@
     "pedidosActivo": true,
     "reservasActivo": true,
     "promosActivo": true,
-    "areasExcluidas": "Cócteles,Cervezas,Helados",
+    "areasExcluidas": "cocteleria,cervezas,postres",
     "areasSinDelivery": "Bebidas",
     "horario": "REEMPLAZAR_HORARIO_PEDIDOS_QTACO",
     "zonasReserva": "salón,terraza",

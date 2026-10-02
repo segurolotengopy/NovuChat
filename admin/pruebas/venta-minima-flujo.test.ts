@@ -71,8 +71,8 @@ const CATALOGO: J[] = [
   it_('horchata', 'Horchata', 20, 'Bebidas'),
   it_('gaseosas', 'Gaseosas', 16, 'Bebidas'),
   it_('pils', 'Pils Chop 300 ml', 25, 'Cervezas'),
-  it_('michelada', 'Michelada', 35, 'Cócteles'),
-  it_('rompope', 'Helado de Rompope', 23, 'Helados'),
+  it_('michelada', 'Michelada', 35, 'cocteleria'),
+  it_('rompope', 'Helado de Rompope', 23, 'postres'),
 ];
 
 const iso = (ms: number): string => new Date(ms).toISOString();
@@ -1802,7 +1802,7 @@ describe('pedido', () => {
 });
 
 describe('carta', () => {
-  it('los ítems de «Cócteles», «Cervezas» y «Helados» (áreas excluidas) no aparecen en la carta, y «2 micheladas» no se encuentra', () => {
+  it('los ítems de «cocteleria», «cervezas» y «postres» (áreas excluidas) no aparecen en la carta, y «2 micheladas» no se encuentra', () => {
     const w = crear();
     const c = con(w);
     c.escribe('hola');
@@ -1819,6 +1819,46 @@ describe('carta', () => {
     const cc = con(todo);
     cc.escribe('hola');
     expect(cuerpos(cc.toca('m|pedido', 'Hacer un pedido')).join('\n')).toContain('Michelada');
+  });
+
+  it('las áreas excluidas de Q\'Taco son las REALES de su carta: un cóctel, un shot, un vino, una cerveza y un helado salen EXCLUIDOS, y un taco NO', () => {
+    // La comparación es por `vmNorm` (minúsculas y sin tildes), no por parecido: «Cócteles» no excluía «cocteleria», y el asistente vendía cócteles,
+    // shots, vinos y helados contra lo que pidió el comercio (nada de bebidas alcohólicas ni helados). Los nombres de área son los de su carta; los ítems, de relleno.
+    expect(configBase(QTACO)['areasExcluidas']).toBe('cocteleria,cervezas,postres');
+    const CARTA_REAL: J[] = [
+      it_('taco', 'Orden de 3 tacos al pastor', 48, 'tacos'),
+      it_('refresco', 'Refresco de la casa', 12, 'bebidas'),
+      it_('coctel', 'Cóctel de la casa', 40, 'cocteleria'),
+      it_('shot', 'Shot de tequila', 30, 'cocteleria'),
+      it_('vino', 'Copa de vino tinto', 35, 'cocteleria'),
+      it_('cerveza', 'Cerveza artesanal 500 ml', 28, 'cervezas'),
+      it_('helado', 'Helado de vainilla', 18, 'postres'),
+    ];
+    const cartaDe = (config: J = {}) => {
+      const w = crear({ panel: panel({ catalogo: CARTA_REAL }), config });
+      const c = con(w);
+      c.escribe('hola');
+      return { w, c, texto: cuerpos(c.toca('m|pedido', 'Hacer un pedido')).join('\n') };
+    };
+    const real = cartaDe();
+    expect(real.texto).toContain('tacos al pastor');
+    expect(real.texto).toContain('Refresco de la casa');
+    for (const sale of ['Cóctel de la casa', 'Shot de tequila', 'Copa de vino tinto', 'Cerveza artesanal', 'Helado de vainilla']) expect(real.texto, sale).not.toContain(sale);
+    // Y el modelo no puede pedirlos: ninguno se encuentra.
+    for (const [nombre, id] of [['Cóctel de la casa', 'coctel'], ['Shot de tequila', 'shot'], ['Copa de vino tinto', 'vino'], ['Cerveza artesanal 500 ml', 'cerveza'], ['Helado de vainilla', 'helado']] as const) {
+      const w = crear({ panel: panel({ catalogo: CARTA_REAL }) });
+      const c = con(w);
+      c.escribe('hola');
+      c.toca('m|pedido', 'Hacer un pedido');
+      w.estado.extraccion = EX([ln(nombre, 1)]);
+      const t = c.escribe(`quiero ${nombre}`);
+      expect(cuerpos(t).join('\n'), id).toMatch(/No encuentro/);
+      expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), id).toBe(false);
+    }
+    // Negativo: con las áreas viejas («Cócteles», «Cervezas», «Helados») solo se excluía la cerveza: el resto se vendía.
+    const vieja = cartaDe({ areasExcluidas: 'Cócteles,Cervezas,Helados' });
+    for (const se_vendia of ['Cóctel de la casa', 'Shot de tequila', 'Copa de vino tinto', 'Helado de vainilla']) expect(vieja.texto, se_vendia).toContain(se_vendia);
+    expect(vieja.texto).not.toContain('Cerveza artesanal');
   });
 
   it('un precio ausente o un ítem agotado no entran a la carta; el modelo no puede pedirlos', () => {

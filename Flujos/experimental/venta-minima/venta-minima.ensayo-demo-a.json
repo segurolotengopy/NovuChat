@@ -148,7 +148,7 @@
               "id": "cb_areasExcluidas",
               "name": "areasExcluidas",
               "type": "string",
-              "value": "Cócteles,Cervezas,Helados"
+              "value": "cocteleria,cervezas,postres"
             },
             {
               "id": "cb_areasSinDelivery",
