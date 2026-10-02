@@ -207,6 +207,20 @@ describe('cotejar-ids-ajenos.sh', () => {
       expect(r.salida).not.toContain('✓');
     });
 
+    it('una asignación con «+=» (source concatena y el cotejo no) hace ambiguo el archivo: sale 2', () => {
+      const f = env('.env.concatena', [`WA_PHONE_ID=${INOCENTE}`, 'WA_PHONE_ID+=5678']);
+      const r = correr(['--env', f, '--candidata', sha(INOCENTE)]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).not.toContain('✓');
+    });
+
+    it('una línea de más de 4 KiB que nombra la clave: sale 2 sin tardar', () => {
+      const f = env('.env.larga', [`WA_PHONE_ID=${INOCENTE} # ${'x'.repeat(5000)}`]);
+      const r = correr(['--env', f, '--candidata', sha(INOCENTE)]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).not.toContain('✓');
+    });
+
     it('la clave en el comentario del final de OTRA línea hace ambiguo el archivo: sale 2', () => {
       const f = env('.env.ambiguo', [`WA_PHONE_ID=${INOCENTE}`, `OTRA=1 # WA_PHONE_ID=111111111`]);
       expect(correr(['--env', f, '--candidata', sha(INOCENTE)]).codigo).toBe(2);

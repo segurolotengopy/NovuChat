@@ -81,15 +81,18 @@ fi
 # -x] CLAVE=valor, y tras el valor solo puede haber espacios, «;» o «# …». Toda
 # otra línea que nombre la clave (dos asignaciones en una, la clave dentro de
 # otro valor, un prefijo parecido seguido de la clave…) es ambigua: sale 2.
-# Revisión de seguridad del #367, segunda ronda. Un error de lectura de grep
-# corta con 2.
+# Una asignación con «+=» y una línea de más de 4 KiB también son ambiguas.
+# Revisión de seguridad del #367. Un error de lectura de grep corta con 2.
 leer_clave() {
   local todas rc=0 linea="" l rest v tras t ambiguo=0
   local ancla="^[[:space:]]*(export[[:space:]]+|readonly[[:space:]]+|declare[[:space:]]+(-[A-Za-z]+[[:space:]]+)*)?$2[[:space:]]*="
   LEIDO=""
-  todas=$(LC_ALL=C grep -a -E -e "(^|[^A-Za-z0-9_])$2[[:space:]]*=" -- "$1") || rc=$?
+  todas=$(LC_ALL=C grep -a -E -e "(^|[^A-Za-z0-9_])$2[[:space:]]*\+?=" -- "$1") || rc=$?
   [ "$rc" -le 1 ] || { echo "✗ No se pudo leer $(basename -- "$1")" >&2; exit 2; }
   while IFS= read -r l; do
+    # Una línea de más de 4 KiB que nombra la clave no es un .env normal, y las
+    # expansiones de abajo son cuadráticas: se corta antes, fallando cerrado.
+    (( ${#l} <= 4096 )) || return 2
     l=${l#$'\xef\xbb\xbf'}
     case "$l" in *[![:space:]]*) ;; *) continue ;; esac
     t=${l#"${l%%[![:space:]]*}"}
