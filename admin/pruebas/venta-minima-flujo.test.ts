@@ -2635,13 +2635,39 @@ describe('mensajes por conversación: los números que declara DISENO.md', () =>
     expect(detallesA(confirmarPedido(r), AV1)).toHaveLength(1);
   });
 
-  it('lo que NO cuesta: repetidos, números fuera del prefijo, acuses de estado, tipos sin contenido, y el cliente en uso bloqueado', () => {
+  it('lo que NO cuesta: repetidos, números fuera del prefijo, acuses de estado, tipos sin contenido, y el cliente en uso bloqueado (cada uno con su negativo y en cada turno)', () => {
     const w = crear();
     const c = con(w);
-    c.escribe('hola', {});
-    silencio(w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x1', wamid: 'wamid.DUP' })) && w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x1', wamid: 'wamid.DUP2' })));
+    // Un mensaje nuevo SÍ se contesta (el negativo de todo lo que sigue).
+    expect(c.escribe('hola').mensajes.length).toBeGreaterThan(0);
+    // Repetidos, por entrega y por wamid: el primer turno cuesta y los dos siguientes no cuestan nada.
+    const primero = w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x1', wamid: 'wamid.DUP' }));
+    expect(primero.mensajes.length).toBeGreaterThan(0);
+    silencio(w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x1', wamid: 'wamid.DUP2' }))); // la misma entrega (deliveryId)
+    silencio(w.mundo.turno(entrega(CLIENTE, mTexto('hola'), { deliveryId: 'x2', wamid: 'wamid.DUP' }))); // otra entrega del mismo mensaje (wamid)
+    // Número fuera del prefijo.
     silencio(con(w, '54100000011').escribe('hola'));
+    silencio(con(w, '54100000011').escribe('hola otra vez'));
+    // Acuse de estado (sin `messages`), dos veces: ni respuesta ni llamada.
+    const acuse = JSON.parse(JSON.stringify(entrega(CLIENTE, mTexto('hola')))) as J;
+    delete acuse['body'].value.messages;
+    acuse['body'].value.statuses = [{ id: 'wamid.X', status: 'delivered' }];
+    silencio(w.mundo.turno(acuse));
+    silencio(w.mundo.turno({ ...acuse, headers: { ...acuse['headers'], 'x-aab1-delivery-id': 'otro-acuse' } }));
+    // Tipos sin contenido.
     silencio(c.turno({ type: 'sticker', sticker: { id: 'st' } }));
+    silencio(c.turno({ type: 'reaction', reaction: { emoji: '👍' } }));
+    // Cliente en uso bloqueado: ningún mensaje al cliente en ninguno de sus turnos (el aviso a recepción es del restaurante, no del cliente),
+    // y sin llamar al modelo.
+    const bloqueado = crear({ panel: panel({ atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 200 } }) });
+    const cb = con(bloqueado);
+    for (const texto of ['hola', 'quiero 4 tacos de birria']) {
+      const t = cb.escribe(texto);
+      expect(t.mensajes, texto).toHaveLength(0);
+      expect(t.llamadas.extraer, texto).toHaveLength(0);
+      expect(t.llamadas.cierre, texto).toHaveLength(0);
+    }
+    expect(bloqueado.estado.extraer).toBe(0);
   });
 });
 
