@@ -1,5 +1,5 @@
 /**
- * `scripts/cargar-negocio.mjs` — LA CONFIGURACIÓN DE UN COMERCIO, CONTRA EL EMULADOR.
+ * `scripts/datos/cargar-negocio.mjs` — LA CONFIGURACIÓN DE UN COMERCIO, CONTRA EL EMULADOR.
  *
  * El script escribe con el SDK Admin, que se salta las reglas: lo único que
  * impide cargar un horario mal formado, un calendario de 63 hexadecimales o una

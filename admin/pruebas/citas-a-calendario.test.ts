@@ -1,5 +1,5 @@
 /**
- * `scripts/citas-a-calendario.mjs` — LAS CITAS QUE YA EXISTEN, IMPORTABLES.
+ * `scripts/datos/citas-a-calendario.mjs` — LAS CITAS QUE YA EXISTEN, IMPORTABLES.
  *
  * POR QUÉ IMPORTA ESTA SUITE, y no es por el formato del archivo. Una cita
  * cargada a mano en el calendario **no la encuentra el asistente**:

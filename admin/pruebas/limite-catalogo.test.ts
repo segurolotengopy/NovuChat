@@ -16,7 +16,7 @@
  *  3. `importarCatalogo` contra el emulador: corta en el límite con
  *     `motivo: 'limite_plan'`, deja el contador igual a lo que hay, y NO deja
  *     entrar a nadie que las reglas no dejarían crear.
- *  4. `scripts/contar-catalogo.mjs`: en seco no escribe, con `--aplicar` crea
+ *  4. `scripts/modulos/productos/contar-catalogo.mjs`: en seco no escribe, con `--aplicar` crea
  *     o corrige el contador, y no borra nada.
  */
 import {
@@ -454,7 +454,7 @@ describe('importarCatalogo: el permiso es el de crear productos en las reglas', 
 });
 
 // ===========================================================================
-// 4) scripts/contar-catalogo.mjs
+// 4) scripts/modulos/productos/contar-catalogo.mjs
 // ===========================================================================
 describe('contar-catalogo.mjs', () => {
   const SCRIPT = join(aqui, '..', 'scripts', 'modulos', 'productos', 'contar-catalogo.mjs');

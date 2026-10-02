@@ -1,5 +1,5 @@
 /**
- * `scripts/cargar-captacion.mjs` — EL CONTENIDO DE LA CAPTACIÓN, CONTRA EL EMULADOR.
+ * `scripts/datos/cargar-captacion.mjs` — EL CONTENIDO DE LA CAPTACIÓN, CONTRA EL EMULADOR.
  *
  * El script escribe con el SDK Admin, que se salta las reglas: lo único que
  * impide cargar diez rubros, un precio negativo o la captación en un comercio

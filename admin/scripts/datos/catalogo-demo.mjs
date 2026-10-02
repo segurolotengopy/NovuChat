@@ -66,7 +66,7 @@ if (!existsSync(DIST)) {
 // LOS DATOS DEL DEMO B SALEN DEL ARCHIVO VERSIONADO, NO DE UNA COPIA.
 //
 // HASTA EL 22/09/2026 ACÁ HABÍA UNA COPIA A MANO de los seis ítems que
-// `scripts/sembrar-demos.mjs` siembra en `demo-venta`, con un comentario que
+// `scripts/datos/sembrar-demos.mjs` siembra en `demo-venta`, con un comentario que
 // admitía que iba a quedar vieja. Y quedó vieja el día que el catálogo del
 // comercio pasó a diecisiete: la vista previa mostraba seis tarjetas mientras
 // la página de producción mostraba diecisiete. Una vista previa que enseña otra

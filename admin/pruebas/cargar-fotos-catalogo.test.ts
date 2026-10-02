@@ -1,6 +1,6 @@
 /**
  * =============================================================================
- * `scripts/cargar-fotos-catalogo.mjs` — LAS FOTOS Y EL LOGO, DESDE ARCHIVOS
+ * `scripts/datos/cargar-fotos-catalogo.mjs` — LAS FOTOS Y EL LOGO, DESDE ARCHIVOS
  * =============================================================================
  *
  * QUÉ DEFIENDE. Este script escribe 154 documentos de imagen en producción con

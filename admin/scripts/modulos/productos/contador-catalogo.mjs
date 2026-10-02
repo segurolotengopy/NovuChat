@@ -10,7 +10,7 @@
  * borrar un producto desde el navegador si el contador falta o no cuadra.
  *
  * Lo escriben TRES caminos: `importarCatalogo` (functions/src/modulos/productos/limiteCatalogo.ts),
- * `scripts/contar-catalogo.mjs` y `scripts/cargar-negocio.mjs`. Un criterio
+ * `scripts/modulos/productos/contar-catalogo.mjs` y `scripts/datos/cargar-negocio.mjs`. Un criterio
  * distinto en cualquiera de ellos deja al comercio trabado, y no se nota hasta
  * que el comercio intenta cargar un producto y recibe un error rojo. Por eso el
  * criterio vive acá y los scripts lo importan en vez de copiarlo.

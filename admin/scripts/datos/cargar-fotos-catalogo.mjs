@@ -20,7 +20,7 @@
  *     sello;
  *   - con `--logo <archivo>` escribe `config/marca.logo`. El archivo tiene que
  *     venir ya recortado a 320 px del lado mayor, que es lo que hace el
- *     navegador en `web/src/paginas/Configuracion.tsx`; si viene más grande se
+ *     navegador en `web/src/central/paginas/Configuracion.tsx`; si viene más grande se
  *     avisa, porque el resultado no sería idéntico al de subirlo a mano;
  *   - con `--limpiar` borra las fotos del comercio, que es como se vuelve de una
  *     demostración a otra;

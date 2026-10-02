@@ -126,7 +126,7 @@ una vitrina con marca y una página anónima.
 
 Dos usos, y no son el mismo:
 
-- **La vista previa local** (`admin/scripts/catalogo-demo.mjs`) lo lee de acá y
+- **La vista previa local** (`admin/scripts/datos/catalogo-demo.mjs`) lo lee de acá y
   lo incrusta en la respuesta, igual que hace producción. No hay que hacer
   nada.
 - **El comercio de verdad** lo sube desde la consola, en Configuración →
