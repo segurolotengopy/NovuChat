@@ -985,10 +985,15 @@ describe('Config del negocio', () => {
     expect(ok({ ...PANEL, campanas: Array.from({ length: 30 }, (_, i) => ({ id: `c${i}`, texto: `t${i}` })) })['campanas']).toHaveLength(20);
     expect(ok({ ...PANEL, campanas: undefined })['campanas']).toEqual([]);
   });
-  it('aceptaDelivery y aceptaRetiroEnLocal salen solo del panel y solo con true', () => {
-    expect(ok({ ...PANEL, venta: undefined })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: false });
-    expect(ok({ ...PANEL, venta: { aceptaDelivery: 'true', aceptaRetiroEnLocal: 1 } })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: false });
+  it('R1: aceptaDelivery y aceptaRetiroEnLocal solo se apagan con `false` (falta = «sí», como en el servidor)', () => {
+    // Un panel sin las claves de modalidad acepta las dos: es lo que hace el servidor (`!== false`).
+    expect(ok({ ...PANEL, venta: undefined })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: true });
+    expect(ok({ ...PANEL, venta: {} })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: true });
+    expect(ok({ ...PANEL, venta: { aceptaDelivery: 'true', aceptaRetiroEnLocal: 1 } })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: true });
+    // Negativos: solo el booleano `false` apaga cada modalidad, por separado.
     expect(ok({ ...PANEL, venta: { aceptaDelivery: false, aceptaRetiroEnLocal: true } })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: true });
+    expect(ok({ ...PANEL, venta: { aceptaDelivery: true, aceptaRetiroEnLocal: false } })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: false });
+    expect(ok({ ...PANEL, venta: { aceptaDelivery: false, aceptaRetiroEnLocal: false } })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: false });
   });
   it('cobro: lo arma `cbCobroReal`; si falla o el panel no está en 200, queda apagado (plan B)', () => {
     expect(ok()['cobro']).toMatchObject({ activo: true });
@@ -1027,7 +1032,10 @@ describe('Config del negocio', () => {
   it('si el panel no responde (500, sin tenantId, cuerpo roto): respaldo sin carta, sin QR y con panelSinRespuesta', () => {
     for (const resp of [{ statusCode: 500, body: {} }, { statusCode: 200, body: {} }, { statusCode: 200, body: 'no es json' }, { statusCode: undefined, body: undefined }, {}]) {
       const c = correr(resp);
-      expect(c, JSON.stringify(resp)).toMatchObject({ panelSinRespuesta: true, configDeLaConsola: false, estadoComercio: 'operativo', catalogo: [], campanas: [], aceptaDelivery: false, aceptaRetiroEnLocal: true });
+      expect(c, JSON.stringify(resp)).toMatchObject({ panelSinRespuesta: true, configDeLaConsola: false, estadoComercio: 'operativo', catalogo: [], campanas: [] });
+      // Sin respuesta del panel no se sabe qué modalidades acepta: no se fija ninguna (falta = «sí», el mismo criterio de R1).
+      expect(c).not.toHaveProperty('aceptaDelivery');
+      expect(c).not.toHaveProperty('aceptaRetiroEnLocal');
       expect((c['cobro'] as J)['activo']).toBe(false);
       expect(c['nombreNegocio']).toBe('Restaurante de ejemplo'); // lo de «Config base» sigue
     }
