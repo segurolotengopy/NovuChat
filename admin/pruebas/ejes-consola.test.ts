@@ -139,7 +139,7 @@ describe('modelo y titularidad: las listas son las del servidor, no una copia', 
     // vale tras cada mudanza y rechaza una copia local de las listas.
     const desde = dirname(join(aqui, '..', 'web', 'src', 'central', 'lib', 'ejes.ts'));
     const destinos = [...ejes.matchAll(/from '(\.{1,2}\/[^']+)'/g)].map((m) => resolve(desde, m[1]));
-    expect(destinos).toContain(join(aqui, '..', 'functions/src/central/ejes'));
+    expect(destinos).toContain(join(RAIZ_ADMIN, 'functions/src/central/ejes'));
   });
 });
 
