@@ -140,7 +140,7 @@ describe('prVigente: inicio <= ahora < fin', () => {
   });
 
   it('sin un reloj válido no hay vigencia', () => {
-    for (const r of [undefined, null, NaN, Infinity, '1759672800000', {}]) {
+    for (const r of [undefined, null, NaN, Infinity, String(LUN_10), {}]) {
       expect(L.prVigente(c, r), String(r)).toBe(false);
     }
   });
