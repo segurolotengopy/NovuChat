@@ -1,0 +1,37 @@
+{
+  "movimientos": [
+    {
+      "de": "admin/scripts/cargar-negocio.mjs",
+      "a": "admin/scripts/datos/cargar-negocio.mjs"
+    },
+    {
+      "de": "admin/scripts/cargar-captacion.mjs",
+      "a": "admin/scripts/datos/cargar-captacion.mjs"
+    },
+    {
+      "de": "admin/scripts/cargar-fotos-catalogo.mjs",
+      "a": "admin/scripts/datos/cargar-fotos-catalogo.mjs"
+    },
+    {
+      "de": "admin/scripts/citas-a-calendario.mjs",
+      "a": "admin/scripts/datos/citas-a-calendario.mjs"
+    },
+    {
+      "de": "admin/scripts/catalogo-demo.mjs",
+      "a": "admin/scripts/datos/catalogo-demo.mjs"
+    },
+    {
+      "de": "admin/scripts/sembrar-demos.mjs",
+      "a": "admin/scripts/datos/sembrar-demos.mjs"
+    },
+    {
+      "de": "admin/scripts/lib/contador-catalogo.mjs",
+      "a": "admin/scripts/modulos/productos/contador-catalogo.mjs"
+    },
+    {
+      "de": "admin/scripts/contar-catalogo.mjs",
+      "a": "admin/scripts/modulos/productos/contar-catalogo.mjs"
+    }
+  ],
+  "suitesPuras": []
+}

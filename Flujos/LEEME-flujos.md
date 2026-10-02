@@ -42,7 +42,7 @@ en el JSON:
 | `Flujos/prompts/reservas/` | El `systemMessage` de Sofía, uno por flujo (`demo-a.md`, `platinum.md`); el turno del cliente (`turno-del-cliente.md`) y el reintento tras cruce, compartidos |
 | `Flujos/manifiestos/<flujo>.json` | Qué nodo de ese JSON toma qué archivo, **por nombre de nodo**. Nunca hay marcadores dentro del código |
 | `admin/scripts/ensamblar-flujo.mjs` | `verificar` (ensambla en memoria y compara byte a byte; sale con 1 si difiere), `ensamblar` (módulos → JSON) y `extraer` (JSON → módulos) |
-| `admin/pruebas/ensamblador.test.ts` | La prueba de identidad: para cada JSON con manifiesto, ensamblar reproduce el archivo byte a byte; `extraer` y volver a ensamblar es la identidad; un módulo cambiado o un nodo renombrado hacen fallar con el nombre; y ningún módulo contiene un valor real |
+| `admin/pruebas/core/ensamblador.test.ts` | La prueba de identidad: para cada JSON con manifiesto, ensamblar reproduce el archivo byte a byte; `extraer` y volver a ensamblar es la identidad; un módulo cambiado o un nodo renombrado hacen fallar con el nombre; y ningún módulo contiene un valor real |
 
 **Regla:** el JSON y sus módulos tienen que ser **idénticos byte a byte**, y
 `node admin/scripts/ensamblar-flujo.mjs verificar` lo comprueba para los ocho
@@ -527,7 +527,7 @@ con los límites de WhatsApp (imagen JPEG o PNG hasta 5 MB, documento hasta
 100 MB) antes de que lo pruebe un prospecto.
 
 **Carga inicial:** desde la pestaña «Captación», o con
-`node admin/scripts/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
+`node admin/scripts/datos/cargar-captacion.mjs --proyecto <id> --tenant <id> --archivo <json>`
 (primero en seco). El contenido de NovuChat está en
 `admin/scripts/datos/captacion-novuchat.json`, copiado del sitio.
 

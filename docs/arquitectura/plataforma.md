@@ -133,7 +133,7 @@ archivo.
 # 1. El negocio y su administrador, con enlace para que ponga su contraseña.
 #    El enlace queda en CLIENTES/<CLIENTE>/.enlaces/ de la copia principal
 #    (600), nunca en ~/ ni en la salida: docs/alta-cliente/RUNBOOK.md, etapa 4.
-node admin/scripts/alta-comercio.mjs --proyecto <id> \
+node admin/scripts/plataforma/alta-comercio.mjs --proyecto <id> \
   --tenant salon-rosa --nombre "Salón Rosa" --flujos agendamiento \
   --admin ana@ejemplo.com --nombre-admin "Ana Quispe" --aplicar
 
@@ -145,8 +145,8 @@ gcloud secrets versions access latest --secret=INGESTA_CLIENTE01 --project <id>
 #    pantalla llama a `asignarNumero`, las reglas prohíben escribir
 #    /rutasWhatsApp desde un navegador, y la Function no escribe `aliasSecreto`
 #    (descubierto el 2026-09-14, alta de NovuChat). Se hace con el SDK Admin:
-node admin/scripts/asignar-numero.mjs --proyecto <id> --listar     # alias libres
-node admin/scripts/asignar-numero.mjs --proyecto <id> --tenant salon-rosa \
+node admin/scripts/plataforma/asignar-numero.mjs --proyecto <id> --listar     # alias libres
+node admin/scripts/plataforma/asignar-numero.mjs --proyecto <id> --tenant salon-rosa \
   --numero <phone_number_id> --waba <waba_id> --flujo agendamiento \
   --alias cliente01 --aplicar
 ```

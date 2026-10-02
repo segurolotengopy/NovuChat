@@ -1132,7 +1132,7 @@ service cloud.firestore {
       // pueden saber si un comercio sin contador tiene cero productos o
       // doscientos, y tratar la ausencia como cero regalaría el cupo entero a
       // quien ya lo tiene lleno. Por eso: el contador lo crea
-      // `scripts/contar-catalogo.mjs` ANTES de desplegar estas reglas, y para
+      // `scripts/modulos/productos/contar-catalogo.mjs` ANTES de desplegar estas reglas, y para
       // un comercio nuevo lo crea `importarCatalogo` (con `items: []` basta),
       // que sí puede contar. Nadie lo crea ni lo borra desde el navegador.
       // -----------------------------------------------------------------------
@@ -1144,7 +1144,7 @@ service cloud.firestore {
       //
       // Primero `cuenta/estado.limites.productos`, la copia que escribe
       // NovuChat al asignar el plan (`actualizarEstadoCuenta`,
-      // `scripts/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
+      // `scripts/plataforma/asignar-plan.mjs`). Vale si es un entero de 1 a 100000
       // (`LIMITE_MAXIMO` de `planes.ts`): fuera de ese rango es un dato
       // corrupto y rige el plan, igual que en `limitesDeCuenta()`. Si no está,
       // la TABLA DE RESPALDO de abajo según `cuenta/estado.plan`; y si el plan

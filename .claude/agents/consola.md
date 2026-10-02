@@ -18,13 +18,13 @@ NOVUCHAT_ZONA="admin/web/src/central/paginas/Tablero.tsx:admin/web/src/central/p
 
 Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** quita `plataforma/`, que §8.1 pone en esta fila y que `Prompts/rearquitectura-por-capas.md` ya separa en el agente `plataforma-consola` (§1.2 del plano: lo del operador no comparte zona con lo del comercio); y agrega `admin/pruebas/central/` (compartida con `central`) para las pruebas de pantalla.
 
-Hasta que F2 cree `web/src/central/`, esas páginas viven en
-`admin/web/src/paginas/` (`Tablero.tsx`, `Configuracion.tsx`,
-`ConfiguracionVertical.tsx`): en el primer PR la zona es esa lista, y se
-declara. Las pestañas de un módulo (`Catalogo`, `Funcionarios`, `Pedidos`,
+Esas páginas viven en `admin/web/src/central/paginas/` (`Tablero.tsx`,
+`Configuracion.tsx`) y el componente en
+`admin/web/src/central/componentes/ConfiguracionModulo.tsx`: la zona es esa
+lista, y se declara. Las pestañas de un módulo (`Catalogo`, `Funcionarios`, `Pedidos`,
 `Cobros`, `Inventario`, `Campanas`, `Captacion`) son de su agente `modulo`; las
 páginas de Plataforma (`Tenants`, `Bitacora` del propietario) son del agente
-`plataforma-consola`; `lib/flujos.ts` desaparece con el registro y no se
+`plataforma-consola`; `admin/web/src/central/lib/flujos.ts` desaparece con el registro y no se
 edita: se reemplaza por `registro.modulos.flatMap(m => m.pestanas)`.
 
 ## Antes de actuar, lea

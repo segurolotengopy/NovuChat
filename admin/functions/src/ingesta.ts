@@ -674,7 +674,7 @@ export function senaParaElFlujo(
  * ATENCIONES E INTERACCIONES — dos de las tres cifras de la oferta comercial
  * ===========================================================================
  *
- * Las definiciones son las de `web/src/paginas/Cierres.tsx` y no se
+ * Las definiciones son las de `web/src/central/paginas/Consumo.tsx` y no se
  * reinterpretan acá:
  *
  *   ATENCIÓN     una conversación iniciada con un cliente. Cuenta el arranque,
@@ -1176,7 +1176,7 @@ export const ingesta = onRequest(
       // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.3). Sin modalidad, o
       // en demostración, `servicio` es operativo, `rechazo` es nulo y nada de
       // este bloque escribe: los contadores son idénticos a los de hoy, y
-      // `pruebas/prepago-ingesta.test.ts` lo exige negando.
+      // `pruebas/plataforma/prepago-ingesta.test.ts` lo exige negando.
       //
       // `sin_pago` rechaza todo; `sin_conversaciones` rechaza solo lo que
       // ABRIRÍA una conversación (una ventana ya abierta se atiende hasta el

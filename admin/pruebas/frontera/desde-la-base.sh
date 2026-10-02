@@ -9,7 +9,7 @@
 #     | bash -s -- docs/arquitectura/tandas/tN.json [origin/main]
 #
 # Por qué (revisión de seguridad del #241): `solo-rutas.mjs` importa
-# `frontera.ts`, que importa `destinos-f2.ts` y `functions/src/registro.ts`; el
+# `frontera.ts`, que importa `functions/src/registro.ts`; el
 # código de nivel superior de cualquiera de ellos corre al importar. Si se
 # ejecuta la copia del PR, un PR de tanda puede hacer que la compuerta diga
 # «todo en orden». Acá se extrae la herramienta del merge-base a una carpeta

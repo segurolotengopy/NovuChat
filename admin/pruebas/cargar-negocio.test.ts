@@ -1,5 +1,5 @@
 /**
- * `scripts/cargar-negocio.mjs` — LA CONFIGURACIÓN DE UN COMERCIO, CONTRA EL EMULADOR.
+ * `scripts/datos/cargar-negocio.mjs` — LA CONFIGURACIÓN DE UN COMERCIO, CONTRA EL EMULADOR.
  *
  * El script escribe con el SDK Admin, que se salta las reglas: lo único que
  * impide cargar un horario mal formado, un calendario de 63 hexadecimales o una
@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'cargar-negocio.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'datos', 'cargar-negocio.mjs');
 const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;

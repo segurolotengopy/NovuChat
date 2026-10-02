@@ -37,7 +37,7 @@ antes de mandarlo. Acá no hay nada que editar porque no hay ningún número del
 cliente en el que el sistema confíe.
 
 Si alguien va a tocar `catalogoWeb.ts`, esa es la propiedad que no se puede
-perder. Hay pruebas que la cubren en `pruebas/catalogo-web.test.ts`.
+perder. Hay pruebas que la cubren en `pruebas/modulos/catalogo-web/catalogo-web.test.ts`.
 
 ---
 
@@ -325,7 +325,7 @@ ponerlo a propósito, en la máquina donde se hace la demostración. Es la
 diferencia entre un andamio que se ve y uno que se queda puesto.
 
 Para la demostración local, la dirección es la que imprime
-`scripts/catalogo-demo.mjs` al arrancar.
+`scripts/datos/catalogo-demo.mjs` al arrancar.
 
 ## 6. Importar un catálogo desde una planilla
 

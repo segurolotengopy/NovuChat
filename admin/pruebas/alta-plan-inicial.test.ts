@@ -2,7 +2,7 @@
  * EL ALTA DE UN COMERCIO NACE CON PLAN DEL CATÁLOGO Y CON CONTADOR.
  *
  * Arreglo de integración (b). Las tres altas —`altaTenant` (Functions),
- * `scripts/alta-comercio.mjs` y el sembrador local `scripts/sembrar.mjs`—
+ * `scripts/plataforma/alta-comercio.mjs` y el sembrador local `scripts/sembrar.mjs`—
  * escribían `plan: 'basico'`, que no es un plan del catálogo, y ninguna creaba
  * el contador del catálogo, sin el cual las reglas no dejan dar de alta ni de
  * baja un producto.
@@ -62,9 +62,9 @@ describe('cuentaInicial()', () => {
   });
 });
 
-// El bloque de `altaTenant` en index.ts: desde su declaración hasta la siguiente.
+// El bloque de `altaTenant` en plataforma/tenants.ts: desde su declaración hasta la siguiente.
 function bloqueAltaTenant(): string {
-  const fuente = leer('functions/src/index.ts');
+  const fuente = leer('functions/src/plataforma/tenants.ts');
   const desde = fuente.indexOf('export const altaTenant');
   const hasta = fuente.indexOf('export const bajaTenant', desde);
   expect(desde, 'no se encontró altaTenant').toBeGreaterThan(-1);
@@ -72,8 +72,8 @@ function bloqueAltaTenant(): string {
 }
 
 describe.each([
-  ['altaTenant (functions/src/index.ts)', bloqueAltaTenant],
-  ['alta-comercio (script de alta)', () => leer('scripts/alta-comercio.mjs')],
+  ['altaTenant (functions/src/plataforma/tenants.ts)', bloqueAltaTenant],
+  ['alta-comercio (script de alta)', () => leer('scripts/plataforma/alta-comercio.mjs')],
 ])('%s', (_nombre, fuente) => {
   it('usa cuentaInicial() y no escribe el viejo «basico»', () => {
     const f = fuente();

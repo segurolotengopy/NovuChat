@@ -12,8 +12,8 @@ para dar de alta un cliente. Escriba en español de Bolivia, sin voseo, breve.
 
 1. `docs/alta-cliente/RUNBOOK.md`, etapa 4.
 2. `admin/DISENO.md` §6.1 y §4sexies (política de capas).
-3. La cabecera de `admin/scripts/alta-comercio.mjs` y de
-   `admin/scripts/asignar-numero.mjs`.
+3. La cabecera de `admin/scripts/plataforma/alta-comercio.mjs` y de
+   `admin/scripts/plataforma/asignar-numero.mjs`.
 
 ## Cómo trabaja
 

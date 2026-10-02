@@ -1,5 +1,5 @@
 /**
- * `scripts/ensayo.mjs` — EL ENSAYO DE UN CLIENTE EN UN NÚMERO DE DEMOSTRACIÓN.
+ * `scripts/plataforma/ensayo.mjs` — EL ENSAYO DE UN CLIENTE EN UN NÚMERO DE DEMOSTRACIÓN.
  *
  * Escribe con el SDK Admin, que se salta las reglas: lo único que impide
  * desviar el número de un cliente que paga, o cargarle a un ensayo la agenda
@@ -16,7 +16,7 @@ import { MODELO_POR_DEFECTO } from '../functions/src/central/ejes.ts';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'ensayo.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'ensayo.mjs');
 const PLATINUM = join(aqui, '..', 'scripts', 'datos', 'negocio-platinum.json');
 const PROYECTO = 'demo-novuchat-pruebas';
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;

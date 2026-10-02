@@ -10,7 +10,7 @@
     {
       "name": "catalogo-demo",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["admin/scripts/catalogo-demo.mjs", "--datos", "walisuma-10"],
+      "runtimeArgs": ["admin/scripts/datos/catalogo-demo.mjs", "--datos", "walisuma-10"],
       "port": 5241
     }
   ]

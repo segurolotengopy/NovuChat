@@ -1,5 +1,5 @@
 /**
- * `scripts/asignar-rol.mjs` — EL ACCESO DE UNA PERSONA A UN COMERCIO.
+ * `scripts/plataforma/asignar-rol.mjs` — EL ACCESO DE UNA PERSONA A UN COMERCIO.
  *
  * El script escribe con el SDK Admin, que se salta las reglas de Firestore: lo
  * único que impide darle acceso a un comercio equivocado, o darle a una persona
@@ -32,7 +32,7 @@ import { dirname, join } from 'node:path';
 import { entornoDelEmulador } from './core/entorno-del-hijo.ts';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SCRIPT = join(aqui, '..', 'scripts', 'asignar-rol.mjs');
+const SCRIPT = join(aqui, '..', 'scripts', 'plataforma', 'asignar-rol.mjs');
 
 const HOST = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 

@@ -8,84 +8,77 @@
 > bitácora del mes. **Nunca contiene secretos**: solo estado, decisiones y
 > próximos pasos. (`Analisis/41` §5.5 y §9.4.)
 
-**Última actualización:** 2026-10-01, noche. **F2 de la rearquitectura está
-reactivada** (Andres levantó la pausa del 29/09 el 01/10) y casi completa en
-`main`. **Bloqueo:** desde cerca de las 01:20 UTC del 02/10 el job SCA (Trivy)
-falla en todos los PR y en `main` por un hallazgo nuevo en dependencias; lo
-diagnostica un agente `devsecops` (PR por confirmar). Asiento de hoy en
-`bitacora/2026-10.md`; lo anterior, en `bitacora/2026-09.md`.
+**Última actualización:** 2026-10-02, madrugada. **F2 de la rearquitectura quedó
+cerrada en `main` el 02/10 a las ~00:40** (#353, el Cierre). La etiqueta `v0.11.0`
+(sobre `e23bf34`) la creó Andres a las 00:21, fuera de la ventana de 02:00 a 03:00
+por decisión suya («hagámoslo ahora»); la corrida 36964207581 espera su aprobación
+del entorno `production`. Asiento de hoy en `bitacora/2026-10.md`; lo anterior,
+en `bitacora/2026-09.md`.
 
-## En producción (sin cambios)
+## En producción
 
-- **Consola y Functions:** `v0.10.0` (26/09, `4f7e091`). Todo lo de abajo está
-  en `main` y **sin desplegar**.
+- **Consola y Functions:** `v0.10.0` (26/09, `4f7e091`) **hasta que termine la
+  corrida de `v0.11.0`** (en curso; el despliegue de F2 completo: F1b, la regla
+  de planes, el pago en revisión y todas las mudanzas de F2, solo rutas).
 - **Flujos de n8n:** Bellido corre el piloto «Agenda mínima v0» (45 nodos,
-  `f3f7411`, #293, 01/10; el respaldo de 96 nodos está fuera del repositorio y
-  se vuelve con `--restaurar-respaldo`). Demo A y Platinum están atrasados en
-  «Procesar respuesta» (#284), declarado en el #289. Los demás, al día.
-- **Cuentas:** Bellido (bolsa 20) y Platinum (bolsa 100) en prueba; los demos
-  y la captación, en demostración. Nadie está en producción.
+  `f3f7411`, #293; el respaldo de 96 nodos está fuera del repositorio y se vuelve
+  con `--restaurar-respaldo`). Demo A y Platinum están atrasados en «Procesar
+  respuesta» (#284), declarado en el #289. F2 no cambió ningún JSON de `Flujos/`
+  (8 de 8 idénticos byte a byte).
+- **Cuentas:** Bellido (bolsa 20) y Platinum (bolsa 100) en prueba; los demos y
+  la captación, en demostración. Nadie está en producción.
 - **Staging:** en verde; cada push a `main` que toca `admin/` despliega ahí.
 
-## En `main`, sin desplegar: F2 casi completa
+## F2 cerrada
 
-Fusionados el 01/10 (todos con seguridad aprobada; ninguno toca un JSON de
-`Flujos/` ni cambia comportamiento):
-
-- **Módulos:** #278 cobros, #305 catálogo web, #309 agenda, #312 inventario y
-  pedidos, #314 captación, #315 campañas.
-- **Cortes y herramientas:** #318, #319, #317, #320 (compuerta H), #324, #328,
-  #335.
-- **Web:** #327 (W1, t14), #330 (W2, t15), #338 (Z web, t16).
-- **Otros:** #339 (C4: `catalogoWeb` depende de `inventario`; cruces 4 a 3),
-  citas #341 y #342.
-
-**Abiertos y aprobados por seguridad, esperando el CI:** #343 (S1, t17),
-#340 (S2, t18), #344 (P1) y #347 (W0e). En preparación: Pz (#346, se regenera
-tras S1, S2 y W0e), Citas-scripts y el Cierre. El orden completo está en
-`docs/arquitectura/f2-orden-de-movimiento.md`; el tablero, en
-`Prompts/COORDINACION.md`.
+- **Última tanda (fusionada el 01 y 02/10):** #349 (`basic-ftp` 6.2.1, arreglo
+  del SCA), #343 S1, #340 S2, #344 P1, #347 W0e, #350 Pz, #352 (citas de agentes,
+  con revisión de Andres: `admin/scripts/modulos/<m>/` pasa a la zona del agente
+  `modulo`; criterio «sin dueño» aprobado) y #353 (Cierre: se borran
+  `destinos-f2.ts`, `medir-zonas.mjs` y `f2-orden-de-movimiento.md`; carpeta =
+  zona). Quedan **3 cruces hacia `ingesta.ts` y 0 archivos sin zona** (eran 19 y
+  47). Lo que dejó el movimiento: `docs/arquitectura/registro.md`, «Mover archivos
+  entre zonas».
+- **Rojos previos aceptados por Andres para este pase:** el ruleset de `main` sin
+  revisor obligatorio, sin GitHub Releases y sin ruleset de etiquetas `v*` (queda
+  un PR del estándar esta semana).
+- **B8** (receptor de AAB1): el bloque 0 está hecho (#260, #264, #272, #323, #329,
+  #265, #277). Los bloques A a C van después de H3a, con WhatsApp-Modular.
 
 ## Lo próximo, en orden
 
-1. **SCA:** el PR de `devsecops` que arregla el hallazgo de Trivy (número por
-   confirmar); sin él no vuelve el verde.
-2. **S1** (#343) y **S2** (#340): por decisión de Andres, se fusionan el mismo
-   01/10 por la noche, con aviso a la cartera.
-3. **P1** (#344), **W0e** (#347), **Pz** (#346, suites de módulo a
-   `pruebas/modulos/<m>/`), **Citas-scripts** y el **Cierre**.
-4. **Etiqueta de F2:** primero a staging y después a producción, cada paso con
-   el «sí» de Andres y dentro de la ventana de 02:00 a 03:00. Pide antes
-   leer «Reglas para F2» en `Prompts/COORDINACION.md`.
-5. **H2** de la revisora y después **F3a**.
-6. Aparte: plantillas `prueba_termina` y `conversaciones_agotadas` con texto
-   nuevo (Meta), antes del primer pase real.
+1. Terminar la corrida de `v0.11.0` (aprobación de `production` por Andres) y
+   verificar el humo posterior.
+2. **H2** de la revisora (informe en
+   `~/Descargas/NOVUCHAT_informe-hito-H2-F2_2026-10-02.md`); después **F3a**.
+3. Pendientes que señaló el informe H2: repetir el seco de `migrar-ejes`
+   (`scripts/plataforma/migrar-ejes.mjs`) tras S1; Bellido corre un JSON de
+   `Flujos/` experimental fuera de los 8 que verifica el ensamblador; un
+   Deployment `production` falso en failure de la corrida 36950792045 ensucia las
+   métricas DORA.
+4. Plantillas `prueba_termina` y `conversaciones_agotadas` con texto nuevo
+   (Meta), antes del primer pase real.
 
 ## Coordinación
 
-La orden general la escribe la sesión de cartera. Hoy trabajan cuatro: la de
-**rearquitectura** (F2, esta), la **operadora**, la **revisora** (H2) y la
-**cartera** (clientes). Se avisó a Cartera, Operadora y Principal del orden de
-S1 y S2; las sesiones de seguridad de scripts (#265/#277, #272/#323/#329, #276 y
-#279) ya fusionaron lo suyo. **B8** (receptor de AAB1): el bloque 0 está hecho;
-los bloques A a C van después de H3a, coordinados con WhatsApp-Modular.
+Orden general de la sesión de cartera. Trabajan la de **rearquitectura**, la
+**operadora**, la **revisora** (H2) y la **cartera** (clientes); el tablero está en
+`Prompts/COORDINACION.md`.
 
 **Requiere a Andres** (cada una con su «sí»; las corre Claude):
 
-1. Autorizar la etiqueta de F2 a staging y a producción (punto 4 de arriba).
-2. **Gemini:** la credencial de producción es prepago (proyecto
-   `NovuchatDemo`); Andres decidió activar la recarga automática con límite
-   mensual. Se sigue con 3.5 Flash-Lite (`Analisis/44`).
-3. Q'Taco: el alcance (opciones en `Analisis/47` §2); se lo pasó a la cartera.
-4. Bellido: que la cartera pase el contrato (USD 25 al mes, sin instalación,
-   Meta a cargo de Andres) al `anexo-particular.md` y lo firme el doctor; el
-   doctor como administrador del portafolio de Meta (invitación pendiente);
-   plantillas `prueba_termina` y `conversaciones_agotadas`; reiniciar memoria
-   y estado por teléfono antes del piloto y una ronda de aceptación.
+1. Aprobar el entorno `production` de la corrida de `v0.11.0`.
+2. **Gemini:** credencial de producción prepago (`NovuchatDemo`); recarga
+   automática con límite mensual decidida. Se sigue con 3.5 Flash-Lite
+   (`Analisis/44`).
+3. Q'Taco: alcance a elegir (`Analisis/47` §2); lo lleva la cartera.
+4. Bellido: contrato (USD 25 al mes, sin instalación, Meta a cargo de Andres) al
+   `anexo-particular.md` y firma del doctor; invitación de administrador del
+   portafolio de Meta; plantillas `prueba_termina` y `conversaciones_agotadas`;
+   reiniciar memoria y estado por teléfono y ronda de aceptación.
 5. El correo de María René, para darle el rol `oper` en la consola.
 6. Sin decidir: si `--alta-waba` puede usarse con una app propia de NovuChat
-   sobre una WABA que el receptor ya entrega. Detalle y límites del gancho de
-   `git push` en `bitacora/2026-10.md`.
+   sobre una WABA que el receptor ya entrega (detalle en `bitacora/2026-10.md`).
 
 ## Dónde está cada cosa
 

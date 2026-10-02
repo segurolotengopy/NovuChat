@@ -200,10 +200,10 @@ importa, y es este:
    aisladas, `docs/alta-cliente/RUNBOOK.md` etapa 4):
 
    ```bash
-   node admin/scripts/contar-catalogo.mjs --proyecto <proyecto>            # seco: dice qué haría
-   node admin/scripts/contar-catalogo.mjs --proyecto <proyecto> --aplicar  # crea o corrige cada contador
-   node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --tenant demo-agendamiento --plan demostracion
-   node admin/scripts/asignar-plan.mjs --proyecto <proyecto> --tenant demo-agendamiento --plan demostracion --aplicar
+   node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto>            # seco: dice qué haría
+   node admin/scripts/modulos/productos/contar-catalogo.mjs --proyecto <proyecto> --aplicar  # crea o corrige cada contador
+   node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --tenant demo-agendamiento --plan demostracion
+   node admin/scripts/plataforma/asignar-plan.mjs --proyecto <proyecto> --tenant demo-agendamiento --plan demostracion --aplicar
    # lo mismo para demo-venta (demostracion), novuchat y cada comercio con su plan contratado
    ```
 

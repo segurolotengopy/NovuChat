@@ -76,7 +76,7 @@ necesita ya existe: `configurar-cliente.sh`, `verificar-meta.sh`
 `actualizar-credenciales-cliente.sh`, `preparar-import.sh`,
 `publicar-flujo.sh`, `webhook-meta.sh` (`--ver-meta`, `--ver-waba`,
 `--preparar`, `--alta-meta`, `--cerrar`), `marcador-local.sh`,
-`admin/scripts/asignar-numero.mjs --reemplaza`, `credenciales-flujo.sh`,
+`admin/scripts/plataforma/asignar-numero.mjs --reemplaza`, `credenciales-flujo.sh`,
 `ver-ejecuciones.sh`. No se escribe ningún script nuevo sin decir en el chat
 por qué ninguno de estos alcanza.
 
