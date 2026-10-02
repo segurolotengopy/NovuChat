@@ -176,30 +176,14 @@ for (let i = 0; i < $input.all().length; i++) {
   }
 
   const negocio = String(ent.nombreNegocio ?? '').trim() || 'el negocio';
-  let respuestaVacia = false;
-  let falloModelo = false;
-  if (fallo) {
-    // Con numero hay boton, y el texto lo dice; sin numero no se invita a tocar
-    // nada que no existe.
-    falloModelo = true;
-    texto = numeroDuenoLimpio
-      ? 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y escríbele directo a ' + negocio + '.'
-      : 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
-  } else if (!texto && transferir) {
-    // Una respuesta que es solo la marca no esta vacia: es «paso con una persona».
-    texto = 'Le aviso a ' + negocio + ' para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.';
-    avisos.push('transferencia_sin_texto');
-  } else if (!texto) {
-    texto = 'Disculpa, no pude generar la respuesta. ¿Me lo repites?';
-    avisos.push('respuesta_vacia');
-    respuestaVacia = true;
-  }
-
   // AVISO AL DUENO: UNA VEZ POR TELEFONO Y VENTANA DE 24 H (Andres, 02/10/2026).
   // Cada aviso es un mensaje que Meta cobra: un cliente que insiste en hablar
   // con una persona no manda diez avisos. El boton, en cambio, sale siempre:
-  // no cuesta mas. El estado va por telefono en `$getWorkflowStaticData`; se
-  // marca al decidir, porque el envio no devuelve nada que este nodo vea.
+  // no cuesta mas. El estado va por telefono en `$getWorkflowStaticData`. Aca
+  // solo se LEE: la marca la pone `Marcar aviso de transferencia` DESPUES del
+  // envio y solo si Meta devolvio un id; un aviso que fallo no cierra la ventana.
+  // Dos ejecuciones simultaneas del mismo telefono pueden leer antes de que
+  // ninguna marque: eso solo provoca un aviso de mas, nunca uno de menos.
   let avisarDueno = false;
   if (transferir && String(ent.from ?? '') !== numeroDuenoLimpio) {
     const VENTANA_MS = 24 * 60 * 60 * 1000;
@@ -211,12 +195,40 @@ for (let i = 0; i < $input.all().length; i++) {
     }
     const previo = Number(sd.avisosTransferencia[ent.from]);
     avisarDueno = !(Number.isFinite(previo) && ahora - previo < VENTANA_MS);
-    if (avisarDueno) sd.avisosTransferencia[ent.from] = ahora;
-    else avisos.push('aviso_dueno_repetido');
+    if (!avisarDueno) avisos.push('aviso_dueno_repetido');
   }
+  let respuestaVacia = false;
+  let falloModelo = false;
+  if (fallo) {
+    // Con numero hay boton, y el texto lo dice; sin numero no se invita a tocar
+    // nada que no existe.
+    falloModelo = true;
+    texto = numeroDuenoLimpio
+      ? 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y escríbele directo a ' + negocio + '.'
+      : 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
+  } else if (!texto && transferir) {
+    // Una respuesta que es solo la marca no esta vacia: es «paso con una persona».
+    // El texto dice solo lo que este turno cumple: «le aviso» si el aviso sale;
+    // «ya le avisé» si salió hace menos de 24 h; y si quien escribe es el
+    // propio dueño, no hay a quien avisar y solo se remite al botón.
+    texto = String(ent.from ?? '') === numeroDuenoLimpio
+      ? 'Para hablar con una persona de ' + negocio + ', toca el botón y escríbele directo.'
+      : avisarDueno
+        ? 'Le aviso a ' + negocio + ' para que te atienda una persona. Si prefieres no esperar, toca el botón y escríbele directo.'
+        : 'Ya le avisé a ' + negocio + '; si prefieres no esperar, toca el botón y escríbele directo.';
+    avisos.push('transferencia_sin_texto');
+  } else if (!texto) {
+    texto = 'Disculpa, no pude generar la respuesta. ¿Me lo repites?';
+    avisos.push('respuesta_vacia');
+    respuestaVacia = true;
+  }
+
   const motivoBruto = /^AVISO_SISTEMA/.test(String(ent.userInput ?? '')) ? '' : String(ent.userInput ?? '').trim();
   const motivo = motivoBruto.length > 200 ? motivoBruto.slice(0, 200) + '…' : motivoBruto;
-  const textoAviso = avisarDueno
+  // Campo PROPIO: `textoAviso` es el del pedido confirmado y no se comparte. Con
+  // [PEDIDO_CONFIRMADO] y [TRANSFERIR] en el mismo turno salen dos avisos
+  // distintos, cada uno con su texto (`Aviso de transferencia` lo mapea).
+  const textoAvisoTransferencia = avisarDueno
     ? '🔔 NovuChat: el cliente ' + (String(ent.nombrePerfil ?? '').trim() || 'sin nombre de perfil') + ' (' + ent.from
       + ') necesita atención de una persona. Motivo: ' + (motivo || 'no indicado') + '. Escríbele a este número.'
     : '';
@@ -237,7 +249,7 @@ for (let i = 0; i < $input.all().length; i++) {
     // Para `Mensaje a enviar` (boton) y `¿Transferir al dueño?` (aviso).
     transferir,
     avisarDueno,
-    textoAviso,
+    textoAvisoTransferencia,
     falloModelo,
     respuestaVacia,
     // Con `pedirCatalogo` el texto NO sale por el camino normal: «¿Responder

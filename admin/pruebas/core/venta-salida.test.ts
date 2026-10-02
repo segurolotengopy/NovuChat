@@ -60,6 +60,17 @@ function turno(
 const enviar = (item: J, cfg: J | null = { numeroDueno: DUENO, nombreNegocio: 'Un Negocio' }): J =>
   ejecutar(codigoDe(f, 'Mensaje a enviar'), [item], cfg ? { 'Config del negocio': [cfg] } : {})[0] ?? {};
 
+/** Lo que `Aviso de transferencia` deja para el envío: el texto propio en `textoAviso`. */
+const mapear = (p: J): J => ejecutar(codigoDe(f, 'Aviso de transferencia'), [p])[0] ?? {};
+
+/** `Marcar aviso de transferencia` tras el envío: con id de Meta (aceptado) o con error. */
+function marcar(sd: J, ahora: { t: number }, p: J, aceptado = true): void {
+  ejecutar(codigoDe(f, 'Marcar aviso de transferencia'),
+    [aceptado ? { messages: [{ id: 'wamid.AVISO' }] } : { error: { message: 'rechazado' } }],
+    { 'Aviso de transferencia': [mapear(p)] },
+    { $getWorkflowStaticData: () => sd, Date: reloj(ahora) });
+}
+
 const FALLA = { error: { message: 'The model is overloaded (503)' } };
 
 // ---------------------------------------------------------------------------
@@ -94,6 +105,8 @@ describe('(1) Un embudo único de salida al cliente', () => {
     expect(destinos(f, 'Responder al cliente')).toEqual(['Texto enviado']);
     expect(destinos(f, 'Texto enviado')).toEqual(['Reportar mensaje (saliente)']);
     expect(nodo(f, 'Responder con botón').onError).toBe('continueErrorOutput');
+    // Su salida de error ya es el respaldo de texto: reintentar mandaría dos veces.
+    expect(nodo(f, 'Responder con botón').maxTries).toBe(1);
   });
 
   it('el orden de ramas es el del lienzo: «Reportar mensaje (entrante)» sigue arriba de la rama del agente', () => {
@@ -107,7 +120,11 @@ describe('(1) Un embudo único de salida al cliente', () => {
     expect(destinos(f, 'Procesar respuesta').at(-1)).toBe('¿Transferir al dueño?');
     expect(y('¿Responder ahora?')).toBeLessThan(y('¿Transferir al dueño?'));
     expect(y('Mensaje a enviar')).toBeLessThan(y('¿Transferir al dueño?'));
-    expect(destinos(f, '¿Transferir al dueño?', 0)).toEqual(['Avisar al dueño']);
+    expect(destinos(f, '¿Transferir al dueño?', 0)).toEqual(['Aviso de transferencia']);
+    expect(destinos(f, 'Aviso de transferencia')).toEqual(['Avisar al dueño']);
+    expect(destinos(f, 'Avisar al dueño')).toEqual(['Marcar aviso de transferencia']);
+    // El aviso del pedido (más arriba) llega al envío ANTES que el de la transferencia.
+    expect(y('¿Pedido confirmado?')).toBeLessThan(y('¿Transferir al dueño?'));
   });
 
   it('«Mensaje a enviar» corre en el sandbox de n8n: sin URL, Buffer ni crypto', () => {
@@ -167,14 +184,17 @@ describe('(2) [TRANSFERIR]: un mensaje con botón y un aviso al dueño por venta
     const ahora = { t: 1_800_000_000_000 };
     const primero = turno({ output: 'Te paso. [TRANSFERIR]' }, {}, sd, ahora);
     expect(primero['avisarDueno']).toBe(true);
-    expect(primero['textoAviso']).toContain('Ana (' + CLIENTE + ')');
-    expect(primero['textoAviso']).toContain('Motivo: quiero hablar con una persona');
+    expect(primero['textoAvisoTransferencia']).toContain('Ana (' + CLIENTE + ')');
+    expect(primero['textoAvisoTransferencia']).toContain('Motivo: quiero hablar con una persona');
+    // `Procesar respuesta` no marca: lo hace el nodo posterior al envío.
+    expect(sd['avisosTransferencia'] ?? {}).toEqual({});
+    marcar(sd, ahora, primero);
     // CONTRAPRUEBA: dentro de las 24 h el cliente insiste y NO se avisa de nuevo,
     // pero el botón sale igual.
     ahora.t += 23 * HORA;
     const repetido = turno({ output: 'Te paso otra vez. [TRANSFERIR]' }, {}, sd, ahora);
     expect(repetido['avisarDueno']).toBe(false);
-    expect(repetido['textoAviso']).toBe('');
+    expect(repetido['textoAvisoTransferencia']).toBe('');
     expect(repetido['avisos']).toContain('aviso_dueno_repetido');
     expect(enviar(repetido)['conBoton']).toBe(true);
     // Otro teléfono no comparte la barrera.
@@ -183,6 +203,41 @@ describe('(2) [TRANSFERIR]: un mensaje con botón y un aviso al dueño por venta
     // Pasadas las 24 h desde el primer aviso, vuelve a avisar.
     ahora.t += 2 * HORA;
     expect(turno({ output: 'Te paso. [TRANSFERIR]' }, {}, sd, ahora)['avisarDueno']).toBe(true);
+  });
+
+  it('la ventana se cierra DESPUÉS del envío y solo si salió: un aviso rechazado no la cierra', () => {
+    const sd: J = {};
+    const ahora = { t: 1_800_000_000_000 };
+    const p = turno({ output: 'Te paso. [TRANSFERIR]' }, {}, sd, ahora);
+    marcar(sd, ahora, p, false);
+    expect(sd['avisosTransferencia']?.[CLIENTE]).toBeUndefined();
+    expect(turno({ output: 'Te paso de nuevo. [TRANSFERIR]' }, {}, sd, ahora)['avisarDueno']).toBe(true);
+    marcar(sd, ahora, p, true);
+    expect(sd['avisosTransferencia'][CLIENTE]).toBe(ahora.t);
+  });
+
+  it('el aviso del pedido, que llega antes, no cierra la ventana de la transferencia', () => {
+    const sd: J = {};
+    const ahora = { t: 1_800_000_000_000 };
+    // `Aviso de transferencia` todavía no corrió: el envío del pedido pasa de largo.
+    ejecutar(codigoDe(f, 'Marcar aviso de transferencia'), [{ messages: [{ id: 'wamid.PEDIDO' }] }], {},
+      { $getWorkflowStaticData: () => sd, Date: reloj(ahora) });
+    expect(sd['avisosTransferencia']).toBeUndefined();
+  });
+
+  it('el texto fijo de «solo la marca» dice lo que ese turno cumple', () => {
+    const sd: J = {};
+    const ahora = { t: 1_800_000_000_000 };
+    const primero = turno({ output: '[TRANSFERIR]' }, {}, sd, ahora);
+    expect(primero['respuesta']).toMatch(/^Le aviso a Un Negocio/);
+    marcar(sd, ahora, primero);
+    const repetido = turno({ output: '[TRANSFERIR]' }, {}, sd, ahora);
+    expect(repetido['respuesta']).toBe('Ya le avisé a Un Negocio; si prefieres no esperar, toca el botón y escríbele directo.');
+    expect(repetido['respuesta']).not.toMatch(/^Le aviso/);
+    const dueno = turno({ output: '[TRANSFERIR]' }, { from: DUENO });
+    expect(dueno['respuesta']).toBe('Para hablar con una persona de Un Negocio, toca el botón y escríbele directo.');
+    expect(dueno['respuesta']).not.toMatch(/avis/i);
+    for (const p of [primero, repetido, dueno]) expect(enviar(p)['conBoton']).toBe(true);
   });
 
   it('el estado por teléfono es el de la ejecución: sin transferencia no se toca', () => {
@@ -211,12 +266,45 @@ describe('(2) [TRANSFERIR]: un mensaje con botón y un aviso al dueño por venta
 
   it('el aviso al dueño usa el texto armado por «Procesar respuesta»', () => {
     const p = turno({ output: 'Te paso. [TRANSFERIR]' });
-    const txt = plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], p);
-    expect(txt).toBe(p['textoAviso']);
+    const txt = plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], mapear(p));
+    expect(txt).toBe(p['textoAvisoTransferencia']);
+    // `Procesar respuesta` no emite `textoAviso`: es del pedido.
+    expect(p['textoAviso']).toBeUndefined();
     expect(txt).toContain('necesita atención de una persona');
     // El pedido confirmado sigue usando su texto de siempre.
     const pedido = turno({ output: 'Listo. [PEDIDO_CONFIRMADO]' });
     expect(plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], pedido)).toContain('NUEVO PEDIDO CONFIRMADO');
+  });
+
+  it('[PEDIDO_CONFIRMADO] + [TRANSFERIR] en el mismo turno: un aviso de pedido y como máximo uno de transferencia', () => {
+    const p = turno({ output: 'Listo. [PEDIDO_CONFIRMADO] [TRANSFERIR]' });
+    expect(p['pedidoConfirmado']).toBe(true);
+    expect(p['transferir']).toBe(true);
+    // Lo que sale por «Avisar al dueño»: cada rama arma su texto por el camino que tiene.
+    const avisoDelPedido = plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], p);
+    const avisoDeTransferencia = plantilla(nodo(f, 'Avisar al dueño').parameters['textBody'], mapear(p));
+    expect(avisoDelPedido).toContain('NUEVO PEDIDO CONFIRMADO');
+    expect(avisoDelPedido).toContain('SIMULADO');
+    expect(avisoDelPedido).not.toContain('necesita atención');
+    expect(avisoDeTransferencia).toContain('necesita atención de una persona');
+    expect(avisoDeTransferencia).not.toContain('NUEVO PEDIDO');
+    // Cableado: el pedido entra al envío por su compuerta y la transferencia por la suya.
+    expect(destinos(f, '¿Pedido confirmado?', 0)).toEqual(['Avisar al dueño']);
+    const avisosDelDueno = [
+      ...(p['pedidoConfirmado'] === true ? [avisoDelPedido] : []),
+      ...(p['avisarDueno'] === true ? [avisoDeTransferencia] : []),
+    ];
+    expect(avisosDelDueno.filter((t) => t.includes('NUEVO PEDIDO CONFIRMADO'))).toHaveLength(1);
+    expect(avisosDelDueno.filter((t) => t.includes('necesita atención'))).toHaveLength(1);
+    // Mensajes: al cliente 1 (con botón); al dueño 2 (pedido, que ya existía, y transferencia, la 1.ª en 24 h).
+    expect(enviar(p)['conBoton']).toBe(true);
+    // Repetido dentro de la ventana: solo el aviso del pedido.
+    const sd: J = {};
+    const ahora = { t: 1_800_000_000_000 };
+    marcar(sd, ahora, turno({ output: 'x [TRANSFERIR]' }, {}, sd, ahora));
+    const otra = turno({ output: 'Listo. [PEDIDO_CONFIRMADO] [TRANSFERIR]' }, {}, sd, ahora);
+    expect(otra['avisarDueno']).toBe(false);
+    expect(otra['pedidoConfirmado']).toBe(true);
   });
 
   it('transferir con QR pendiente: el texto sale por el embudo con el botón, no en el pie de la imagen', () => {
@@ -394,7 +482,19 @@ describe('(7) El prompt: solo promete pasar con una persona si hay a quién', ()
     expect(sin).not.toContain('pasar con una persona');
   });
 
-  it('el ensamblador reproduce el JSON (el prompt vive en el JSON, sin módulo)', () => {
-    expect(sistema).toContain('SOLO OFRECES LO QUE PUEDES HACER');
+  it('la regla de no prometer es la nueva y el filtro PROMESA no borra la oración de la transferencia', () => {
+    expect(con).toContain('no le prometes al cliente que alguien le escribirá ni que le avisarás después');
+    expect(con).toContain('Si transfieres, di que el negocio ya fue avisado y que puede tocar el botón.');
+    expect(con).not.toContain('«le avisas»');
+    expect(sin).toContain('no le prometes al cliente que alguien le escribirá');
+    expect(sin).not.toContain('Si transfieres');
+    for (const o of ['Ya le avisé al negocio, así que puedes tocar el botón para escribirle directo.',
+      'El negocio ya fue avisado y puedes tocar el botón para escribirle directo.']) {
+      const p = turno({ output: o + ' [TRANSFERIR]' });
+      expect(p['respuesta'], o).toBe(o);
+      expect(p['avisos']).not.toContain('promesa_quitada');
+    }
+    // Y la promesa de verdad sí se quita.
+    expect(turno({ output: 'Hola. Mañana te avisaré cuando esté. [TRANSFERIR]' })['avisos']).toContain('promesa_quitada');
   });
 });
