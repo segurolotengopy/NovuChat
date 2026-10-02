@@ -36,7 +36,7 @@ export interface ModoComercio {
   produccion: boolean;
 }
 
-// Las mismas palabras que el resto de la consola (`lib/ejes.ts`): «Prepago» ya
+// Las mismas palabras que el resto de la consola (`web/src/central/lib/ejes.ts`): «Prepago» ya
 // no se le dice a nadie.
 const DETALLE: Record<Modalidad, string> = {
   demostracion: ETIQUETA_MODALIDAD.demostracion,

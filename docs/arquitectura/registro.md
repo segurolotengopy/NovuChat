@@ -146,7 +146,7 @@ exacta, no un número: ubicar uno y agregar otro no se compensan.
 **Negando:** la mitad de la suite es un árbol inventado donde cada forma de
 cruce tiene que fallar. Contraprueba sobre el código real, hecha al
 escribirla: un import de `planes.ts` plantado en `atencion.ts`, un puente
-plantado en `web/src/central/lib/errores.ts` (sin zona) hacia Plataforma, y una
+plantado en `web/src/central/lib/errores.ts` (Central desde F2; antes sin zona) hacia Plataforma, y una
 entrada de la deuda borrada hacen fallar la suite.
 
 **Tercera vuelta de la revisión (#231):** un import de tipo seguido de uno de

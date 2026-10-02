@@ -19,7 +19,7 @@
  *
  * Es pura: lee archivos e importa módulos que no abren Firebase (`index.ts` se
  * importa igual que en `region-y-cuenta.test.ts`, con GCLOUD_PROJECT de
- * vitest.config.ts). La consola se importa con `lib/firebase` sustituido, para
+ * vitest.config.ts). La consola se importa con `core/lib/firebase` sustituido, para
  * no inicializar una app de Firebase.
  */
 import { spawnSync } from 'node:child_process';
@@ -248,7 +248,7 @@ describe('1. estructura del registro', () => {
 });
 
 // ======================================================================= 2
-describe('2. pestañas: el registro contra web/src/lib/flujos.ts y App.tsx', () => {
+describe('2. pestañas: el registro contra web/src/central/lib/flujos.ts y App.tsx', () => {
   type PestanaDeHoy = { ruta: string; etiqueta: string; roles?: readonly string[]; tambienPropietario?: boolean };
   const normal = (p: { ruta: string; titulo: string; roles?: readonly string[]; tambienPropietario?: boolean }) => ({
     ruta: p.ruta, titulo: p.titulo, roles: ordenado(p.roles ?? ['admin']), tambienPropietario: p.tambienPropietario === true,

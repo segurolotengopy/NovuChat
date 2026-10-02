@@ -27,7 +27,7 @@ import { MINIMO_CONTRASENA } from '../../core/lib/contrasena';
  * ESTA ES LA PANTALLA QUE SÍ EXIGE EL MÍNIMO. La longitud se revisa al ELEGIR
  * la contraseña, que es cuando se decide cuánto aguanta; el formulario de
  * ingreso no la revisa, porque ahí la contraseña ya existe y el único efecto
- * sería dejar afuera a quien la tiene bien (ver `lib/contrasena.ts`). El número
+ * sería dejar afuera a quien la tiene bien (ver `web/src/core/lib/contrasena.ts`). El número
  * vive en un solo lugar, `MINIMO_CONTRASENA`, junto con el porqué del valor y
  * de los criterios de NIST SP 800-63B que sigue.
  */

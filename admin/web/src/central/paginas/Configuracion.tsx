@@ -269,7 +269,7 @@ function revisionCorresponde(revision: Revision, hex: string | null): boolean {
 export function Configuracion() {
   const { tenantId = '' } = useParams();
   // Esta pantalla es LO COMÚN a cualquier negocio. Lo propio de cada flujo
-  // vive en su pestaña («Agenda», «Pedidos y cobro»): ver lib/flujos.ts.
+  // vive en su pestaña («Agenda», «Pedidos y cobro»): ver `web/src/central/lib/flujos.ts`.
   const flujos = useFlujos(tenantId) ?? [];
   const conAgenda = flujos.includes('agendamiento');
   const conVenta = flujos.includes('venta');

@@ -69,7 +69,7 @@ temporal y puertos propios. Sin `STORAGE_EMULATOR_PORT`, la suite se salta: así
    `lib/archivoPlanes.ts`, con los mismos topes que la regla y los primeros
    bytes), los mensajes de error en castellano, y que la consola funcione aunque
    Storage no esté configurado (`storage` puede ser `null`, ver
-   `lib/firebase.ts`).
+   `web/src/core/lib/firebase.ts`).
 5. **Revisión y despliegue.** Pasa por CODEOWNERS y por la revisión del agente
    `seguridad`; se despliega en el mismo comando que las reglas de Firestore
    (`FIREBASE_DEPLOY_ONLY` con `storage`). Si el camino es de un flujo nuevo,

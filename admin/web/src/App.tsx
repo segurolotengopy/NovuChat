@@ -41,7 +41,7 @@ import type { FlujoId } from './central/lib/flujos';
  * exactamente lo que no se quiere. Se detectó probando a mano con la siembra.
  *
  * PESTAÑAS POR FLUJO. Un negocio tiene uno o más flujos y cada flujo trae las
- * suyas (`lib/flujos.ts`): «Agenda» solo con reservas, «Pedidos y cobro» solo
+ * suyas (`web/src/central/lib/flujos.ts`): «Agenda» solo con reservas, «Pedidos y cobro» solo
  * con venta. Antes «Funcionarios» se ofrecía a todo administrador, y el de un
  * restaurante entraba a una pantalla cuyo alta el servidor le rechazaba.
  *
@@ -136,14 +136,14 @@ function Cabecera() {
           <NavLink to={`/negocio/${tenantId}/catalogo`}>{etiquetaCatalogo(flujos)}</NavLink>}
         {/* CAMPAÑAS: capa común (24/09/2026). Un anuncio lleva al número del
             comercio, no a un flujo, así que va con el catálogo y no en
-            `lib/flujos.ts`. Solo el administrador: la regla no deja escribir
+            `web/src/central/lib/flujos.ts`. Solo el administrador: la regla no deja escribir
             a nadie más. */}
         {tenantId && esAdminDelNegocio &&
           <NavLink to={`/negocio/${tenantId}/campanas`}>Campañas</NavLink>}
         {/* LA COMPUERTA DE ROLES YA NO DA POR SENTADO QUE PESTAÑA DE FLUJO =
             ADMINISTRADOR. Lo era hasta el 09/09, y «Pedidos» rompe la regla: la
             mira el cocinero o el repartidor. Cada pestaña declara sus roles en
-            `lib/flujos.ts`; sin declararlos, sigue siendo solo del admin, que es
+            `web/src/central/lib/flujos.ts`; sin declararlos, sigue siendo solo del admin, que es
             el comportamiento que ya había.
             Esto es COSMÉTICO, como todo el menú: quien autoriza es
             `firestore.rules`. Lo que evita es ofrecerle a un operador una puerta
@@ -154,7 +154,7 @@ function Cabecera() {
               || (p.roles ?? ['admin']).includes(rol as 'admin' | 'oper')))
           // UNA PESTAÑA POR RUTA, aunque la declaren dos flujos. Desde el 17/09
           // reservas y venta comparten «Cobros» y «Configuración de QR» (la
-          // seña, `lib/flujos.ts`): un negocio con los dos flujos las veía
+          // seña, `web/src/central/lib/flujos.ts`): un negocio con los dos flujos las veía
           // repetidas, y React se quejaba de la clave duplicada. Se queda la
           // primera, que es la del flujo que va antes en la lista.
           .filter((p, i, todas) => todas.findIndex((q) => q.ruta === p.ruta) === i)
