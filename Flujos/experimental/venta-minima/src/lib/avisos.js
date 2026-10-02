@@ -267,6 +267,8 @@ function avLimpio(t, max, opc) {
   // Tampoco «…»: NFKC lo cambiaría por «...» y la marca «… y N más» de una lista recortada dejaría de ser la que armó el código.
   s = s.split(/([ºª…])/).map((p, i) => (i % 2 ? p : p.normalize('NFKC'))).join('').replace(/\p{Cf}/gu, '');
   s = avCortar(s, tope * 2);
+  // El punto ideográfico («。» U+3002) y el de media anchura («｡» U+FF61) NFKC no los lleva a «.»: se normalizan aquí, antes del filtro.
+  s = s.replace(/[。｡]/g, '.');
   s = s.replace(AV_ENLACE, ' [enlace omitido] ');
   s = s.replace(/[\r\n\t\u000b\u000c\u0085\u2028\u2029]+/g, ' · ');
   s = s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, '');
@@ -274,7 +276,7 @@ function avLimpio(t, max, opc) {
   // Un punto pegado a lo que sigue (letra.letra, letra.número o número.letras) recibe un espacio: así «Nro.123», «Av.Arce» o
   // «dpto.4B» llegan enteros, y «malo.test/x» o «x.ru» no quedan como un enlace que WhatsApp convierta en tocable. Los
   // decimales y las horas («4.50», «12.30», «1.25L») no se tocan.
-  s = s.replace(/(?<=\p{L})(?<![ºª])\.(?=[\p{L}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
+  s = s.replace(/(?<=[\p{L}\p{M}])(?<![ºª])\.(?=[\p{L}\p{M}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
   if (opc && opc.cocina) {
     s = s.replace(/\+?\d[\d\s.-]{5,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
     s = s.replace(/\d{7,}/g, '…');

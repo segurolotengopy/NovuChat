@@ -1305,6 +1305,22 @@ describe('P-2 y P-3 en avisos: raíces ampliadas e invisibles que NFKC deja como
   });
 });
 
+describe('P-4: enlaces con letras de otras escrituras y con el punto ideográfico', () => {
+  it('«हिंदी.भारत», «ejemplo。com», «ejemplo｡com» y «x.ru» no quedan como un enlace tocable', () => {
+    expect(L.avLimpio('हिंदी.भारत', 100)).toBe('हिंदी. भारत');
+    expect(L.avLimpio('ejemplo。com', 100)).toBe('[enlace omitido]');
+    expect(L.avLimpio('ejemplo｡com', 100)).toBe('[enlace omitido]');
+    expect(L.avLimpio('x.ru', 100)).toBe('x. ru');
+    for (const t of ['हिंदी.भारत', 'ejemplo。com', 'x.ru']) expect(L.avLimpio(t, 100), t).not.toMatch(/[\p{L}\p{M}]\.[\p{L}\p{M}]/u);
+  });
+  it('lo ya cubierto no empeora: «Nro.123», «12.30» y «Bs 12.50»', () => {
+    expect(L.avLimpio('Nro.123', 100)).toBe('Nro. 123');
+    expect(L.avLimpio('Entrega a las 12.30', 100)).toBe('Entrega a las 12.30');
+    expect(L.avLimpio('Total Bs 12.50', 100)).toBe('Total Bs 12.50');
+    expect(L.avLimpio('Av.Arce', 100)).toBe('Av. Arce');
+  });
+});
+
 describe('P-1: el recorte al tope no vuelve a formar una coincidencia de la red', () => {
   it('«confirmo tubos» cortado en «confirmo tu» ya no sale tal cual', () => {
     const r = L.avLimpio('a'.repeat(108) + ' confirmo tubos de 3 pulgadas', 120);
