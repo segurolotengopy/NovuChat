@@ -1,5 +1,5 @@
 /**
- * `scripts/migrar-ejes.mjs`, CONTRA EL EMULADOR, ejecutado como proceso.
+ * `scripts/plataforma/migrar-ejes.mjs`, CONTRA EL EMULADOR, ejecutado como proceso.
  *
  * Es el script que la sesión corre en producción con el OK de Andres después
  * del despliegue de F1 (`Analisis/41` §8.5, H1: «migración aplicada y

@@ -1,5 +1,5 @@
 /**
- * `scripts/asignar-plan.mjs`, CONTRA EL EMULADOR.
+ * `scripts/plataforma/asignar-plan.mjs`, CONTRA EL EMULADOR.
  *
  * El script escribe con el SDK Admin, que se salta las reglas: lo único que
  * impide asignar un plan inventado, pisar la mensualidad de un comercio o

@@ -1,5 +1,5 @@
 /**
- * `scripts/pase-a-produccion.mjs` — ¿ESTÁ LISTO ESTE COMERCIO PARA PRODUCCIÓN?
+ * `scripts/plataforma/pase-a-produccion.mjs` — ¿ESTÁ LISTO ESTE COMERCIO PARA PRODUCCIÓN?
  *
  * Es solo lectura, y eso es lo primero que se prueba: con `--aplicar` se
  * niega, y después de correrlo ningún documento cambió. Lo demás se prueba

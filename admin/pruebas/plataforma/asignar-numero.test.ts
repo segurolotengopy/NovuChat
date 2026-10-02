@@ -1,5 +1,5 @@
 /**
- * `scripts/asignar-numero.mjs` — EL PASO 3 DEL ALTA, CONTRA EL EMULADOR.
+ * `scripts/plataforma/asignar-numero.mjs` — EL PASO 3 DEL ALTA, CONTRA EL EMULADOR.
  *
  * El script escribe en producción con el SDK Admin, que se salta las reglas: lo
  * único que impide asignar un número a otro comercio o repetir un alias es su

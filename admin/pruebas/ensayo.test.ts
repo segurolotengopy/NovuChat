@@ -1,5 +1,5 @@
 /**
- * `scripts/ensayo.mjs` — EL ENSAYO DE UN CLIENTE EN UN NÚMERO DE DEMOSTRACIÓN.
+ * `scripts/plataforma/ensayo.mjs` — EL ENSAYO DE UN CLIENTE EN UN NÚMERO DE DEMOSTRACIÓN.
  *
  * Escribe con el SDK Admin, que se salta las reglas: lo único que impide
  * desviar el número de un cliente que paga, o cargarle a un ensayo la agenda

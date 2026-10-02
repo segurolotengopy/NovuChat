@@ -1,5 +1,5 @@
 /**
- * `scripts/migrar-instrucciones.mjs` — LO PROPUESTO PASA A VIGENTE, UNA VEZ.
+ * `scripts/plataforma/migrar-instrucciones.mjs` — LO PROPUESTO PASA A VIGENTE, UNA VEZ.
  *
  * Al desplegar el contrato del 17/09 (`functions/src/central/asistente/comportamiento.ts`), un
  * comercio con texto en `instruccionesExtra` y nada en `instruccionesVigentes`

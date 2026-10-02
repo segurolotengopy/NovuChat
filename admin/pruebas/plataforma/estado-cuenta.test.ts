@@ -347,7 +347,7 @@ describe('Prepago: modalidad cerrada, bandera por tenant y derivados', () => {
 
   it('un plan viejo «demostracion» SIN modalidad ya no gobierna los derivados (F1): es un demo sin migrar y no se toca', async () => {
     // Hasta el 25/09 `plan: 'demostracion'` derivaba «Sin cargo» por sí solo.
-    // Desde F1 solo la modalidad gobierna; `scripts/migrar-ejes.mjs` le da al
+    // Desde F1 solo la modalidad gobierna; `scripts/plataforma/migrar-ejes.mjs` le da al
     // demo su `modalidad: 'demostracion'` y recién entonces deriva.
     await db.doc(`tenants/${T}/cuenta/estado`).set({ plan: 'demostracion', estadoPago: 'al_dia', montoMensual: 50, moneda: 'BOB' });
     await llamar({ tenantId: T, motivoVisible: 'demo' });
