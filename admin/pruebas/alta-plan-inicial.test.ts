@@ -62,9 +62,9 @@ describe('cuentaInicial()', () => {
   });
 });
 
-// El bloque de `altaTenant` en index.ts: desde su declaración hasta la siguiente.
+// El bloque de `altaTenant` en plataforma/tenants.ts: desde su declaración hasta la siguiente.
 function bloqueAltaTenant(): string {
-  const fuente = leer('functions/src/index.ts');
+  const fuente = leer('functions/src/plataforma/tenants.ts');
   const desde = fuente.indexOf('export const altaTenant');
   const hasta = fuente.indexOf('export const bajaTenant', desde);
   expect(desde, 'no se encontró altaTenant').toBeGreaterThan(-1);
@@ -72,7 +72,7 @@ function bloqueAltaTenant(): string {
 }
 
 describe.each([
-  ['altaTenant (functions/src/index.ts)', bloqueAltaTenant],
+  ['altaTenant (functions/src/plataforma/tenants.ts)', bloqueAltaTenant],
   ['alta-comercio (script de alta)', () => leer('scripts/alta-comercio.mjs')],
 ])('%s', (_nombre, fuente) => {
   it('usa cuentaInicial() y no escribe el viejo «basico»', () => {

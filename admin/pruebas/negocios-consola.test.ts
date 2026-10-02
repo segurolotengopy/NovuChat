@@ -129,9 +129,9 @@ describe('nada se sube a Storage si el servidor rechazaría el pedido antes de m
 });
 
 describe('el tenantId se valida antes de llamar a cualquier callable (LOW 2)', () => {
-  it('ID_TENANT es la misma expresión de functions/src/central/pagar/pagos.ts e index.ts', () => {
+  it('ID_TENANT es la misma expresión de functions/src/central/pagar/pagos.ts y central/comunes.ts', () => {
     expect(leer('functions/src/central/pagar/pagos.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
-    expect(leer('functions/src/index.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
+    expect(leer('functions/src/central/comunes.ts')).toContain(`const ID_TENANT = ${ID_TENANT.toString()};`);
     expect(esIdTenant('salon-rosa')).toBe(true);
     for (const malo of ['', 'ab', 'Salon', '-salon', 'a'.repeat(61), undefined, 7]) expect(esIdTenant(malo)).toBe(false);
   });
