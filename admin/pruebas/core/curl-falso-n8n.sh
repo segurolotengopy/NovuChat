@@ -15,7 +15,7 @@
 # Sin registro no es la suite: se niega, en vez de contestar «200» a una
 # escritura que no ocurrió (revisión de seguridad del #276, L-3).
 [ -n "${REGISTRO_CURL:-}" ] || { echo "curl falso: solo para clave-n8n-fuera-de-argumentos.test.ts" >&2; exit 97; }
-metodo=GET; entrada=""; salida=""; formato=""; url=""
+codigo=200; metodo=GET; entrada=""; salida=""; formato=""; url=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   a="${args[i]}"; sig="${args[i + 1]:-}"
@@ -40,11 +40,11 @@ case "$metodo $ruta" in
   "POST /workflows")              cuerpo='{"id":"99","name":"Flujo de prueba","active":false,"nodes":[]}' ;;
   "PUT /workflows/"*)             cuerpo="${RESPUESTA_FLUJO:-$FLUJO_POR_DEFECTO}" ;;
   "GET /workflows/"*)             cuerpo="${RESPUESTA_FLUJO:-$FLUJO_POR_DEFECTO}" ;;
-  "GET /credentials")             cuerpo="${RESPUESTA_CREDENCIALES:-$LISTA_VACIA}" ;;
+  "GET /credentials")             cuerpo="${RESPUESTA_CREDENCIALES:-$LISTA_VACIA}"; codigo="${CODIGO_CREDENCIALES:-200}" ;;
   "GET /executions")              cuerpo="${RESPUESTA_EJECUCIONES:-$LISTA_VACIA}" ;;
   "GET /executions/"*)            cuerpo='{"id":"1","status":"error","data":{"resultData":{"runData":{}}}}' ;;
   *)                              cuerpo="$LISTA_VACIA" ;;
 esac
 if [ -n "$salida" ]; then printf '%s' "$cuerpo" > "$salida"; else printf '%s' "$cuerpo"; fi
-case "$formato" in *http_code*) printf 200 ;; esac
+case "$formato" in *http_code*) printf '%s' "$codigo" ;; esac
 exit 0
