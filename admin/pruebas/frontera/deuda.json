@@ -28,18 +28,9 @@
     }
   ],
   "sinZona": [
-    "admin/scripts/plataforma/activar-cobro-real.mjs",
-    "admin/scripts/plataforma/completar-flujos.mjs",
     "admin/scripts/contar-catalogo.mjs",
-    "admin/scripts/plataforma/ensayo.mjs",
-    "admin/scripts/plataforma/fijar-webhook-carrito.mjs",
     "admin/scripts/lib/contador-catalogo.mjs",
-    "admin/scripts/plataforma/limpiar-cierres-de-prueba.mjs",
-    "admin/scripts/plataforma/pase-a-produccion.mjs",
-    "admin/scripts/plataforma/plantilla-catalogo.mjs",
-    "admin/scripts/plataforma/reiniciar-ventana.mjs",
     "admin/scripts/sembrar-demos.mjs",
-    "admin/scripts/plataforma/soltar-sena-pendiente.mjs",
     "admin/web/src/componentes/AvisoConsumo.tsx",
     "admin/web/src/componentes/CampoMonto.tsx",
     "admin/web/src/componentes/ChipModo.tsx",
