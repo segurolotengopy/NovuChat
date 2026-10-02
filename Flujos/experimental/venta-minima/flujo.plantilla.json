@@ -160,12 +160,18 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "@@dato:pruebaRuta@@",
-        "authentication": "none",
+        "authentication": "headerAuth",
         "responseMode": "lastNode",
         "responseData": "firstEntryJson",
         "options": {}
       },
-      "notes": "SOLO en venta-minima.prueba.json. Recibe la misma carga que Meta (dentro de `body`) y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad. Responde con el `Resumen del turno`. La ruta es una URL de capacidad: va como marcador."
+      "notes": "SOLO en venta-minima.prueba.json, que se importa únicamente para ensayar y se DESACTIVA y BORRA al terminar. Exige una credencial de cabecera propia («Entrada de prueba Q'Taco»; la ruta, además, es una URL de capacidad). Recibe la misma carga que Meta (dentro de `body`) y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad. El `phone_number_id` del cuerpo se IGNORA: se usa siempre el de `Config base.phoneNumberIdEsperado`. Responde con el `Resumen del turno`.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:entradaPrueba"
+        }
+      }
     },
     {
       "id": "carga-entrada",
@@ -255,7 +261,7 @@
           "parameters": [
             {
               "name": "X-NovuChat-Numero",
-              "value": "={{ $json.phoneNumberId }}"
+              "value": "={{ $json.prueba && $json.prueba.modoPrueba === true ? String($json.phoneNumberIdEsperado || '') : String($json.phoneNumberId || '') }}"
             }
           ]
         },
@@ -826,7 +832,7 @@
           "parameters": [
             {
               "name": "X-NovuChat-Numero",
-              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+              "value": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba === true ? String(c.phoneNumberIdEsperado || '') : String($('Interpretar entrada').first().json.phoneNumberId || ''); })() }}"
             }
           ]
         },
@@ -1022,7 +1028,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba); })() }}",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; if (c.modoPrueba !== true) return true; const b = $('Config base').first().json; const dig = (x) => String(x || '').replace(/\\D/g, ''); const ok = String(b.destinatariosAviso || '').split(/[,;]/).map((x) => dig(x.split(':')[1])).concat([dig(b.numeroEnsayo)]).filter((x) => x.length >= 8); return c.enviarDeVerdad === true && ok.indexOf(dig(c.telefonoDePrueba)) >= 0; })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1035,7 +1041,7 @@
         },
         "options": {}
       },
-      "notes": "En modo prueba sin enviarDeVerdad no se manda nada al restaurante: el aviso se simula (con un wamid marcado) para recorrer el mismo camino."
+      "notes": "En modo prueba, el aviso solo se manda de verdad con `enviarDeVerdad` y si `telefonoDePrueba` es uno de los destinatarios de aviso de `Config base` o el `numeroEnsayo`; si no, se simula (con un wamid marcado) para recorrer el mismo camino. Este nodo solo existe en el JSON de prueba."
     },
     {
       "id": "enviar-aviso",
@@ -1212,7 +1218,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return $json.sinMensajes !== true && (c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba)); })() }}",
+              "leftValue": "={{ $json.sinMensajes !== true && (() => { const c = $('Config del negocio').first().json; if (c.modoPrueba !== true) return true; const b = $('Config base').first().json; const dig = (x) => String(x || '').replace(/\\D/g, ''); const ok = String(b.destinatariosAviso || '').split(/[,;]/).map((x) => dig(x.split(':')[1])).concat([dig(b.numeroEnsayo)]).filter((x) => x.length >= 8); return c.enviarDeVerdad === true && ok.indexOf(dig(c.telefonoDePrueba)) >= 0; })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -1225,7 +1231,7 @@
         },
         "options": {}
       },
-      "notes": "En modo prueba con enviarDeVerdad falsa el envío se saltea."
+      "notes": "En modo prueba el envío al cliente se saltea salvo con `enviarDeVerdad` y un `telefonoDePrueba` permitido (los destinatarios de aviso de `Config base` o `numeroEnsayo`). Fuera de modo prueba, siempre envía."
     },
     {
       "id": "enviar",

@@ -51,6 +51,8 @@ const AV1 = '59100000021'; // destinatario con rol «completo»
 const AV2 = '59100000022'; // destinatario con rol «cocina»
 const REC = '59100000031'; // recepción: el destino del botón «Escribir al local»
 const PRUEBA_TEL = '59100000041';
+/** El número de ensayo configurable de la variante de prueba (`numeroEnsayo` de «Config base»): sin él, un `telefonoDePrueba` ajeno a los avisos no envía. */
+const NUMERO_DE_ENSAYO: J = { numeroEnsayo: PRUEBA_TEL };
 const PHONE_ID = '100000000000042';
 const QR_URL = 'https://qr.ejemplo.invalid/qtaco.png';
 const HORARIO_TODOS = 'lun=08:00-23:00,mar=08:00-23:00,mie=08:00-23:00,jue=08:00-23:00,vie=08:00-23:00,sab=08:00-23:00,dom=08:00-23:00';
@@ -539,7 +541,7 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     const marcadores = (f: string): string[] => [...new Set(texto(f).match(patron) ?? [])].sort();
     const comunes = ['REEMPLAZAR_DIRECCION_QTACO', 'REEMPLAZAR_HORARIO_ATENCION_QTACO', 'REEMPLAZAR_HORARIO_PEDIDOS_QTACO', 'REEMPLAZAR_NUMERO_AVISO_1_QTACO', 'REEMPLAZAR_NUMERO_AVISO_2_QTACO', 'REEMPLAZAR_NUMERO_RECEPCION_QTACO', 'REEMPLAZAR_PHONE_NUMBER_ID_QTACO'];
     expect(marcadores('venta-minima.qtaco.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_RECEPTOR_QTACO', 'REEMPLAZAR_URL_VERIFICADOR_RECEPTOR', 'REEMPLAZAR_WABA_ID_QTACO'].sort());
-    expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_RUTA_DE_PRUEBA'].sort());
+    expect(marcadores('venta-minima.prueba.json')).toEqual([...comunes, 'REEMPLAZAR_NUMERO_ENSAYO_QTACO', 'REEMPLAZAR_RUTA_DE_PRUEBA'].sort());
     // El negativo: así se fundían los dos números de aviso (o el WABA y su comilla) cuando iban pegados.
     expect('completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:REEMPLAZAR_NUMERO_AVISO_2_QTACO'.match(patron)).toHaveLength(1);
     expect("wabaIdEsperado: 'REEMPLAZAR_WABA_ID_QTACO' }".match(patron)).toEqual(["REEMPLAZAR_WABA_ID_QTACO'"]);
@@ -1049,7 +1051,7 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
   });
 
   it('en modo prueba nunca se registra un cierre (es la unidad que se factura)', () => {
-    const w = crear({ flujo: PRUEBA, panel: panel() });
+    const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO });
     const e = { headers: {}, body: { ...(entrega(CLIENTE, mTexto('x'))['body'].value as J), modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true } };
     w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
     const c1 = w.mundo.turno({ ...e, body: { ...e.body, messages: [{ from: CLIENTE, id: 'wamid.P1', type: 'text', text: { body: 'quiero 4 tacos de birria' } }] } });
@@ -1926,10 +1928,10 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
 });
 
 describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
-  const cuerpoDePrueba = (mensaje: J, op: J = {}): J => ({
+  const cuerpoDePrueba = (mensaje: J, op: J = {}, phoneId: string = PHONE_ID): J => ({
     headers: {},
     body: {
-      messaging_product: 'whatsapp', metadata: { phone_number_id: PHONE_ID }, contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: CLIENTE }],
+      messaging_product: 'whatsapp', metadata: { phone_number_id: phoneId }, contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: CLIENTE }],
       messages: [{ from: CLIENTE, id: `wamid.PR${++contador}`, timestamp: '1', ...mensaje }],
       modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: false, ...op,
     },
@@ -1937,7 +1939,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
   const texto_ = (t: string): J => ({ type: 'text', text: { body: t } });
 
   it('sin `enviarDeVerdad` no se manda nada a nadie, pero el aviso se simula y el cliente de la prueba recorre el mismo camino (sin «No pude pasarle…»)', () => {
-    const w = crear({ flujo: PRUEBA, panel: panel() });
+    const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO });
     w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
     const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria')));
     const resumenId = (a.resumen as J)['mensajes'][0].payload.interactive.action.buttons[0].reply.id as string;
@@ -1960,7 +1962,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
   });
 
   it('con `enviarDeVerdad`, los mensajes y los avisos salen SOLO al `telefonoDePrueba` (los avisos con el prefijo «[al restaurante]»), y nada se reporta', () => {
-    const w = crear({ flujo: PRUEBA, panel: panel() });
+    const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO });
     w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
     const op = { enviarDeVerdad: true };
     const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria'), op));
@@ -1992,6 +1994,112 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
     const sinEntrada = (f: Flujo) => nombres(f).filter((n) => !['Entrada de prueba', 'Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos', 'Simular aviso', '¿Avisar de verdad?'].includes(n));
     expect(sinEntrada(PRUEBA)).toEqual(sinEntrada(QTACO));
   });
+  // M2. La variante de prueba solo se importa para ensayar: autenticada, con su propia credencial de Graph, con el número del
+  // negocio (no el del cuerpo) y con una lista de destinos permitidos.
+  /** Espía las llamadas de red que importan: la URL y las cabeceras de cada envío y de las llamadas al servidor. */
+  function espiar(panelActual: () => J = () => panel()): { dobles: Record<string, Doble>; llamadas: { nodo: string; url: string; encabezados: Record<string, string> }[] } {
+    const llamadas: { nodo: string; url: string; encabezados: Record<string, string> }[] = [];
+    const dobles: Record<string, Doble> = {};
+    for (const nodo of ['Enviar a WhatsApp', 'Enviar aviso', 'Traer configuración', 'Cotejar en el servidor']) {
+      dobles[nodo] = (ll: LlamadaDoble) => {
+        llamadas.push({ nodo, url: ll.url, encabezados: ll.encabezados });
+        if (nodo === 'Traer configuración') return { statusCode: 200, body: panelActual() };
+        if (nodo === 'Cotejar en el servidor') return { statusCode: 200, body: { resultado: 'cuadra', diferencias: [], cierreId: 'venta_prueba' } };
+        return aceptado(nodo, ll.n);
+      };
+    }
+    return { dobles, llamadas };
+  }
+
+  it('M2: «Entrada de prueba» exige una credencial de cabecera propia, y el JSON de prueba usa su propia credencial de Graph (nunca la de Q\'Taco)', () => {
+    const entradaDePrueba = PRUEBA.nodes.find((n) => n.name === 'Entrada de prueba') as NonNullable<(typeof PRUEBA.nodes)[number]>;
+    expect(entradaDePrueba.parameters['authentication']).toBe('headerAuth');
+    expect(entradaDePrueba.credentials).toEqual({ httpHeaderAuth: { id: '', name: "Entrada de prueba Q'Taco" } });
+    expect(PLANTILLA.nodes.find((n) => n.name === 'Entrada de prueba')?.parameters['authentication']).toBe('headerAuth');
+    const graph = (f: Flujo): string[] => [...new Set(f.nodes.map((n) => (n.credentials as J | undefined)?.['httpHeaderAuth']?.name as string | undefined).filter((x): x is string => !!x))];
+    expect(graph(PRUEBA)).toContain('Graph WhatsApp — pruebas (no producción)');
+    expect(graph(PRUEBA)).not.toContain("Graph WhatsApp Q'Taco (Bearer)");
+    // Los nodos que envían por Graph, uno por uno.
+    for (const nombre of ['Enviar aviso', 'Aviso de respaldo', 'Enviar a WhatsApp', 'Enviar respaldo']) {
+      expect((PRUEBA.nodes.find((n) => n.name === nombre)?.credentials as J)['httpHeaderAuth'].name, nombre).toBe('Graph WhatsApp — pruebas (no producción)');
+      expect((QTACO.nodes.find((n) => n.name === nombre)?.credentials as J)['httpHeaderAuth'].name, nombre).toBe("Graph WhatsApp Q'Taco (Bearer)");
+    }
+    // Ninguna credencial lleva id (los ids se asignan al importar).
+    for (const f of [QTACO, PRUEBA]) for (const n of f.nodes) for (const c of Object.values((n.credentials ?? {}) as J)) expect((c as J)['id'], n.name).toBe('');
+  });
+
+  it('M2: el `phone_number_id` del cuerpo de la prueba se IGNORA: la consola, los avisos y los mensajes usan el de «Config base»', () => {
+    const espia = espiar();
+    const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO, dobles: espia.dobles });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const AJENO = '999000000000999';
+    const op = { enviarDeVerdad: true };
+    const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria'), op, AJENO));
+    const id = botonesDe(a.mensajes[0] as NonNullable<(typeof a.mensajes)[number]>)[0]?.id as string;
+    w.mundo.turno(cuerpoDePrueba({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'Confirmar pedido' } } }, op, AJENO));
+    expect(espia.llamadas.length).toBeGreaterThan(3);
+    for (const l of espia.llamadas.filter((x) => x.nodo === 'Traer configuración')) expect(l.encabezados['X-NovuChat-Numero']).toBe(PHONE_ID);
+    for (const l of espia.llamadas.filter((x) => x.nodo !== 'Traer configuración')) {
+      expect(l.url, l.nodo).toContain(`/${PHONE_ID}/messages`);
+    }
+    expect(JSON.stringify(espia.llamadas)).not.toContain(AJENO);
+    expect(espia.llamadas.some((x) => x.nodo === 'Enviar aviso')).toBe(true);
+    // Negativo: en producción (receptor) el número de la entrega SÍ es el que cuenta, y uno ajeno no pasa el filtro.
+    const prod = crear();
+    const t = con(prod).turno(mTexto('hola'));
+    expect(t.mensajes.length).toBeGreaterThan(0);
+    const ajeno = prod.mundo.turno(entrega(CLIENTE, mTexto('hola'), { phoneId: AJENO }));
+    silencio(ajeno);
+  });
+
+  it('M2: el cotejo del comprobante en prueba también usa el número de «Config base», no el del cuerpo', () => {
+    let panelDelServidor: J = panel(COBRO_REAL);
+    const espia = espiar(() => panelDelServidor);
+    const w = crear({ flujo: PRUEBA, panel: panel(COBRO_REAL), config: NUMERO_DE_ENSAYO, dobles: espia.dobles });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const AJENO = '999000000000999';
+    const op = { enviarDeVerdad: true };
+    const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria'), op, AJENO));
+    const id = botonesDe(a.mensajes[0] as NonNullable<(typeof a.mensajes)[number]>)[0]?.id as string;
+    const b = w.mundo.turno(cuerpoDePrueba({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'Confirmar pedido' } } }, op, AJENO));
+    expect(b.mensajes.some((m) => m.tipo === 'image')).toBe(true);
+    const ref = Object.keys((sdVm(w.mundo)['pedidos'] ?? {}) as J)[0] as string;
+    panelDelServidor = panel(conCobroPendiente(ref, 84));
+    const c = w.mundo.turno(cuerpoDePrueba({ type: 'image', image: { id: 'media-7', mime_type: 'image/jpeg' } }, op, AJENO));
+    expect(c.ejecutados.has('Cotejar en el servidor')).toBe(true);
+    const cotejos = espia.llamadas.filter((x) => x.nodo === 'Cotejar en el servidor');
+    expect(cotejos.length).toBeGreaterThan(0);
+    for (const l of cotejos) expect(l.encabezados['X-NovuChat-Numero']).toBe(PHONE_ID);
+  });
+
+  it('M2: `telefonoDePrueba` debe ser un destinatario de aviso de «Config base» o el número de ensayo: si no, no se envía nada (ni mensajes ni avisos reales)', () => {
+    const AJENO = '59100000099';
+    const corre = (config: J, tel: string) => {
+      const espia = espiar();
+      const w = crear({ flujo: PRUEBA, panel: panel(), config, dobles: espia.dobles });
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+      const op = { enviarDeVerdad: true, telefonoDePrueba: tel };
+      const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria'), op));
+      const id = (a.resumen as J)['mensajes'][0].payload.interactive.action.buttons[0].reply.id as string; // el resumen lo trae aunque nada se envíe
+      const b = w.mundo.turno(cuerpoDePrueba({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'Confirmar pedido' } } }, op));
+      return { a, b, enviados: espia.llamadas.filter((x) => x.nodo === 'Enviar a WhatsApp' || x.nodo === 'Enviar aviso') };
+    };
+    // Un número que no está en ninguna lista: nada sale, y el aviso se simula.
+    const ajeno = corre(NUMERO_DE_ENSAYO, AJENO);
+    expect(ajeno.enviados).toHaveLength(0);
+    expect(ajeno.a.mensajes).toHaveLength(0);
+    expect(ajeno.b.ejecutados.has('Enviar aviso')).toBe(false);
+    expect(ajeno.b.ejecutados.has('Simular aviso')).toBe(true);
+    // El número de ensayo configurado: sale.
+    expect(corre(NUMERO_DE_ENSAYO, PRUEBA_TEL).enviados.length).toBeGreaterThan(0);
+    // Un destinatario de aviso de «Config base» (el que escribe es otro): sale.
+    expect(corre({}, AV1).enviados.length).toBeGreaterThan(0);
+    // Sin número de ensayo (el marcador sin reemplazar), el mismo número de antes ya no sale.
+    expect(corre({}, PRUEBA_TEL).enviados).toHaveLength(0);
+    // Las partes del texto de «destinatariosAviso» que no son un teléfono (rol, nombre con dígitos) no abren la lista.
+    expect(corre({ destinatariosAviso: `completo:${AV1}:Ana 59100000041,cocina:${AV2}` }, PRUEBA_TEL).enviados).toHaveLength(0);
+  });
+
   // L2. `Simular aviso` inventa un `wamid` que cuenta como «aviso salido»: solo existe en la variante de prueba.
   it('L2: `Simular aviso` y `¿Avisar de verdad?` NO están en el JSON de producción (con `¿Hay avisos?` conectado directo a `Enviar aviso`) y sí en el de prueba', () => {
     const nombres = (f: Flujo) => f.nodes.map((n) => n.name);

@@ -19,7 +19,7 @@
  *       `"@@comun:nodos/<archivo>.js"`  solo `comun.js` + el archivo;
  *       `"@@solo:nodos/<archivo>.js"`   solo el archivo.
  *   - `@@dato:a.b.c@@` (dentro de cualquier texto) se reemplaza por ese dato del tenant;
- *   - `@@cred:ingesta|graph|medios` (en el nombre de una credencial) por el nombre que da el tenant;
+ *   - `@@cred:ingesta|graph|medios|entradaPrueba` (en el nombre de una credencial) por el nombre que da el tenant;
  *   - `Config base` se llena con `configBase` del tenant (tipos string, number o boolean).
  *
  * LOS DATOS son `admin/scripts/datos/venta-minima/<tenant>.json` (zona Tenants: solo marcadores
@@ -136,7 +136,7 @@ function armar(datos, archivo) {
     const js = n.parameters && n.parameters.jsCode;
     if (typeof js === 'string' && js.startsWith('@@')) n.parameters.jsCode = codigoDe(js, n.name);
     for (const cred of Object.values(n.credentials || {})) {
-      const m = /^@@cred:(ingesta|graph|medios)$/.exec(cred.name);
+      const m = /^@@cred:(ingesta|graph|medios|entradaPrueba)$/.exec(cred.name);
       if (m) cred.name = dato(datos, `credenciales.${m[1]}`, `${archivo} · ${n.name}`);
     }
     if (n.name === 'Config base') n.parameters.assignments.assignments = asignaciones(datos.configBase || {});

@@ -39,6 +39,8 @@ const AM_FROM_DIG = vmDigitos(AM_FROM);
 const AM_NEGOCIO = String(AM_CFG.nombreNegocio || 'el negocio');
 const AM_PRUEBA = AM_CFG.modoPrueba === true;
 const AM_TEL_PRUEBA = String(AM_CFG.telefonoDePrueba || '');
+// El número que envía: en modo prueba, SIEMPRE el de la configuración (el `phone_number_id` del cuerpo de la prueba se ignora).
+const AM_NUMERO_ID = AM_PRUEBA ? String(AM_CFG.phoneNumberIdEsperado || '') : (AM_T.phoneNumberId || AM_CFG.phoneNumberId || AM_CFG.phoneNumberIdEsperado || '');
 const AM_REC = vmDigitos(AM_CFG.numeroRecepcion);
 const AM_REC_OK = AM_REC.length >= 8 && AM_REC.length <= 15 && AM_REC !== AM_FROM_DIG;
 const AM_GEN_CUERPO = 'Eso lo ve directamente el restaurante. Toca el botón para escribirles.';
@@ -241,7 +243,7 @@ for (const d of AM_lista) {
   const j = {
     para: numero, destino: 'cliente', payload: d.payload, texto: d.texto, respaldo: d.respaldo,
     tipoReporte: d.tipoReporte || null, reportar: !AM_PRUEBA && !!d.tipoReporte,
-    phoneNumberId: AM_T.phoneNumberId || AM_CFG.phoneNumberId || AM_CFG.phoneNumberIdEsperado || '',
+    phoneNumberId: AM_NUMERO_ID,
     waGraphVersion: AM_CFG.waGraphVersion || 'v26.0', from: AM_FROM, sinMensajes: false,
   };
   if (d.evento) j.evento = d.evento;
