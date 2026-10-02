@@ -522,7 +522,7 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
   // la cuenta no queda en prueba.
   //
   // `periodoPagado` NO se acepta: solo lo escribe un pago (A-1) o la migración
-  // (`scripts/migrar-prepago.mjs`, uno por uno, con el OK de Andres).
+  // (`scripts/plataforma/migrar-prepago.mjs`, uno por uno, con el OK de Andres).
   const prepago: Record<string, unknown> = {};
   if (viene('modalidad')) {
     const m = datos['modalidad'];
@@ -726,8 +726,8 @@ export const actualizarEstadoCuenta = onCall(async (peticion) => {
     // SALVO un comercio SIN MIGRAR (sin `modalidad`): para el módulo sería
     // demostración y derivaría «Sin cargo» con monto cero, cambiándole el
     // estado de cuenta sin que nada hubiera pasado. Sus derivados no se tocan
-    // hasta que `scripts/migrar-prepago.mjs` (un comercio real) o
-    // `scripts/migrar-ejes.mjs` (un demo con el plan viejo) le dé su
+    // hasta que `scripts/plataforma/migrar-prepago.mjs` (un comercio real) o
+    // `scripts/plataforma/migrar-ejes.mjs` (un demo con el plan viejo) le dé su
     // modalidad (`derivadosGobernados`, revisión de seguridad de A-1, LOW 8).
     const combinada: Record<string, unknown> = { ...actual };
     for (const [k, v] of Object.entries(escritura)) {

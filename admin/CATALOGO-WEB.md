@@ -37,7 +37,7 @@ antes de mandarlo. Acá no hay nada que editar porque no hay ningún número del
 cliente en el que el sistema confíe.
 
 Si alguien va a tocar `catalogoWeb.ts`, esa es la propiedad que no se puede
-perder. Hay pruebas que la cubren en `pruebas/catalogo-web.test.ts`.
+perder. Hay pruebas que la cubren en `pruebas/modulos/catalogo-web/catalogo-web.test.ts`.
 
 ---
 

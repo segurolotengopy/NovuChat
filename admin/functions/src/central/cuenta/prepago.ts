@@ -7,7 +7,7 @@
  * Firebase ni lee la red. Sobre lo que decide acá se le corta el servicio a un
  * comercio que paga y se le escribe para cobrarle, así que la decisión tiene
  * que poder probarse mes por mes y hora por hora sin emulador
- * (`pruebas/prepago.test.ts`). Quien lo llama —la ingesta, `configuracionFlujo`,
+ * (`pruebas/central/prepago.test.ts`). Quien lo llama —la ingesta, `configuracionFlujo`,
  * `actualizarEstadoCuenta`, `cobranza.ts` y, en los bloques siguientes, los
  * pagos— solo aplica lo que esto decidió. Y lo importa TAMBIÉN la consola
  * (`web/src/central/lib/prepago.ts`), para que la pantalla y el servidor no puedan
@@ -59,7 +59,7 @@
  * presentación. DESDE F1 (`Analisis/41` §4, 25/09/2026) LA MODALIDAD ES EL
  * ÚNICO EJE QUE DECIDE ESTO: `plan: 'demostracion'` dejó de existir como plan
  * y ya no manda sobre la modalidad. Un demo es modalidad `demostracion` con
- * cualquier plan del catálogo; `scripts/migrar-ejes.mjs` convierte los que
+ * cualquier plan del catálogo; `scripts/plataforma/migrar-ejes.mjs` convierte los que
  * quedaron con el plan viejo.
  *
  * Y LA BANDERA DE MODO OBSERVACIÓN (§4undecies.4): aunque una cuenta con
@@ -239,7 +239,7 @@ const TELEFONO_LEGIBLE = /^\+?[0-9][0-9 ()-]{5,24}$/;
  * El mensaje de cortesía, con el teléfono de recepción del comercio si lo
  * tiene (`Analisis/36` §3.2, corrección 2): ayuda al cliente final y le
  * recuerda al comercio que ahora atiende él. Sin número válido, el texto de
- * siempre. `pruebas/prepago.test.ts` exige que nunca diga «pago», «deuda» ni
+ * siempre. `pruebas/central/prepago.test.ts` exige que nunca diga «pago», «deuda» ni
  * «mantenimiento».
  */
 export function mensajeCortesia(numeroRecepcion: unknown): string {
@@ -441,7 +441,7 @@ export function corteDe(cuenta: CuentaCruda | null | undefined): Corte | null {
  * («doble salvaguarda»). Esa doble salvaguarda era la mezcla de los dos ejes:
  * el plan decidiendo si se cobra. Ahora la modalidad es el único dato que
  * decide, y los tenants que tenían el plan viejo reciben `modalidad:
- * 'demostracion'` por `scripts/migrar-ejes.mjs`. Lo que sí se conserva es la
+ * 'demostracion'` por `scripts/plataforma/migrar-ejes.mjs`. Lo que sí se conserva es la
  * salvaguarda de la AUSENCIA: sin modalidad, demostración.
  */
 export function modalidadDe(cuenta: CuentaCruda | null | undefined): Modalidad {
@@ -1077,7 +1077,7 @@ export function pruebaActual(cuenta: CuentaCruda | Record<string, unknown> | nul
  * NovuChat: es el único camino para escribirle a alguien fuera de la ventana
  * de 24 horas. Los nombres, las variables y los cuerpos son los de
  * `docs/plantillas-cobranza.md` (bloque A-5), que es lo que se presenta a
- * Meta; acá se repiten para que `pruebas/prepago.test.ts` vigile el voseo y
+ * Meta; acá se repiten para que `pruebas/central/prepago.test.ts` vigile el voseo y
  * la cantidad de variables sin leer un documento. Si cambian allá, cambian acá.
  *
  * TODOS SON EL ESTADO DE UNA CUENTA QUE YA EXISTE (categoría de utilidad): sin
@@ -1336,7 +1336,7 @@ export function resumenDeCuenta(estado: EstadoServicio, nombreNegocio: string): 
 
 /**
  * VOSEO: español boliviano sin voseo (CLAUDE.md). Misma expresión que en
- * `scripts/cargar-plataforma.mjs`; se repite acá para poder probar los cuerpos
+ * `scripts/plataforma/cargar-plataforma.mjs`; se repite acá para poder probar los cuerpos
  * de las plantillas sin importar un script.
  */
 export const VOSEO = new RegExp(

@@ -543,7 +543,7 @@ export const catalogoPublico = onRequest(
       // emulador no lo exige —responde cualquier consulta— así que el fallo no
       // aparecería en ninguna prueba local: aparecería en producción, con «The
       // query requires an index», la primera vez que un cliente real abriera el
-      // enlace. Es exactamente el agujero que documenta `pruebas/indices.test.ts`.
+      // enlace. Es exactamente el agujero que documenta `pruebas/central/indices.test.ts`.
       //
       // Ordenar acá cuesta cero: son 500 documentos como mucho, ya están en
       // memoria, y así el catálogo no le agrega un índice más —con su costo en

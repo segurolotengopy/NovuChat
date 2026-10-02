@@ -211,7 +211,7 @@ function escribirHorarios(h: Record<string, DiaHorario>): Record<string, string>
  * los va a negar, y un `updateDoc` rechazado deja el formulario ENTERO en
  * «el servidor rechazó el cambio»: el comercio no podría guardar ni su
  * dirección. Por eso viven en estados propios (`vigentes`, `revision`) y no en
- * `datos`, que es lo que se guarda. `pruebas/comportamiento-pantalla.test.ts`
+ * `datos`, que es lo que se guarda. `pruebas/central/comportamiento-pantalla.test.ts`
  * lo verifica leyendo esta fuente.
  *
  * CÓMO SABE LA PANTALLA SI LA REVISIÓN ES DEL TEXTO QUE VE. Calcula el sha256

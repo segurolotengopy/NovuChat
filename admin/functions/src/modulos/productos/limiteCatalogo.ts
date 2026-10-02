@@ -21,7 +21,7 @@
  * crear un producto se vuelve a exigir acá, a mano: el permiso (rol, proveedor
  * de la sesión, correo verificado, comercio operativo) y la forma del ítem
  * (`formaDeItemValida`, copia de `itemValido()` de las reglas).
- * `pruebas/limite-catalogo.test.ts` pasa los mismos casos por las dos y exige
+ * `pruebas/modulos/productos/limite-catalogo.test.ts` pasa los mismos casos por las dos y exige
  * que digan lo mismo: si alguien toca una sola, se nota.
  *
  * EL LÍMITE SE LEE DEL PLAN, NO DEL CÓDIGO. Primero
@@ -42,7 +42,7 @@ const ID_ITEM = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
  * RESPALDO del límite de productos por plan, DERIVADO de `planes.ts`, que es
  * la fuente: acá no hay ningún número escrito. Existe como tabla porque las
  * reglas de Firestore no importan TypeScript y llevan la suya en
- * `limiteProductos()`; `pruebas/limite-catalogo.test.ts` compara aquella línea
+ * `limiteProductos()`; `pruebas/modulos/productos/limite-catalogo.test.ts` compara aquella línea
  * con esta tabla, o sea con `planes.ts`.
  *
  * Son los planes del catálogo y nada más: desde F1 (`Analisis/41` §4) no hay

@@ -17,10 +17,12 @@ NOVUCHAT_ZONA="admin/functions/src/core/:admin/pruebas/core/"
 
 Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. Esta zona es la de §8.1 tal cual.
 
-Hasta que F2 cree `core/`, los archivos viven en `admin/functions/src/`
-(`firma.ts`, `claims.ts`, `autorizacion.ts`, `atencion.ts`, `cierres.ts`,
-`ingesta.ts`, `prompt.ts`, `region.ts`, `opcionesGlobales.ts`): en el primer
-PR de F2 la zona es esa lista, y se declara. **`registro.ts` no es suyo**: lo
+Los archivos viven en `admin/functions/src/core/`
+(`seguridad/{firma,claims,autorizacion}.ts`, `conteo/atencion.ts`,
+`turno/{cierres,bitacora}.ts`, `prompt/{prompt,texto}.ts`, `region.ts`,
+`opcionesGlobales.ts`) y en `admin/pruebas/core/`; `ingesta.ts` sigue en la
+raíz de `admin/functions/src/` y no tiene dueño todavía (ver
+`docs/arquitectura/agentes.md`): la zona es esa lista, y se declara. **`registro.ts` no es suyo**: lo
 escribe la coordinadora; usted lo importa. Los ganchos de cada módulo (seña,
 inventario, captación, campañas, cobro de venta) que hoy están dentro de
 `ingesta.ts` **vuelven a su módulo**: usted deja la interfaz del gancho y el
