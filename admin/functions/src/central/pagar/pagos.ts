@@ -45,7 +45,7 @@
  *     cada pago; `actualizarEstadoCuenta` los RECHAZA si vienen a mano.
  *  8. TODO SE HACE CUMPLIR ACÁ, no en la pantalla (`CLAUDE.md` §7): meses ≤ 6,
  *     bolsas ≤ 12, plan del catálogo, `telefonosPago` ≤ 5 con formato, quién
- *     puede qué. Cada límite tiene su prueba negativa en `pruebas/pagos.test.ts`.
+ *     puede qué. Cada límite tiene su prueba negativa en `pruebas/plataforma/pagos.test.ts`.
  *
  * EL IDENTIFICADOR DEL PAGO es opaco, 22 caracteres de `base64url` (128 bits),
  * y es también la referencia externa que viaja al cobrador (§4undecies.1). En

@@ -31,7 +31,7 @@
  * LOS NÚMEROS DE LOS PLANES PUBLICADOS son los que publica el sitio
  * (`Novuchat-site`, `src/contenido/precios.es.ts`, verificado el 15/09/2026) y
  * los de la «Base comercial» de `CLAUDE.md`. Un PR que cambie uno de ellos
- * cambia los tres lugares; `pruebas/planes.test.ts` compara este archivo con
+ * cambia los tres lugares; `pruebas/central/planes.test.ts` compara este archivo con
  * `CLAUDE.md`. `byoc` NO se publica y por eso no está en esa comparación: se
  * ofrece caso por caso (`Analisis/39`).
  */
@@ -204,7 +204,7 @@ export const PLANES: Readonly<Record<IdPlanVendible, Readonly<Plan>>> = {
 /**
  * LOS QUE PUBLICA EL SITIO, en el orden en que se muestran. `Novuchat-site`
  * (`src/contenido/precios.es.ts`) y la «Base comercial» de `CLAUDE.md` §3 dicen
- * estos tres y solo estos tres; `pruebas/planes.test.ts` lo verifica.
+ * estos tres y solo estos tres; `pruebas/central/planes.test.ts` lo verifica.
  *
  * BYOC no está acá a propósito: se ofrece caso por caso, contra un portafolio
  * verificado del comercio, y su precio no se puede comparar de frente con los

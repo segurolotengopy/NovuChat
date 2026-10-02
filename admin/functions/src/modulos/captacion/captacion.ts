@@ -23,7 +23,7 @@
  * quitan saltos de línea y controles—, que no cambia lo que dice.
  *
  * Este módulo no toca Firestore en la parte del saneo: son funciones puras, con
- * sus pruebas en `pruebas/captacion.test.ts`, sin emulador ni red.
+ * sus pruebas en `pruebas/modulos/captacion/captacion.test.ts`, sin emulador ni red.
  */
 import { onCall, HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';

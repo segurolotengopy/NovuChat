@@ -1176,7 +1176,7 @@ export const ingesta = onRequest(
       // EL PREPAGO (bloque A-0, `DISENO.md` §4undecies.3). Sin modalidad, o
       // en demostración, `servicio` es operativo, `rechazo` es nulo y nada de
       // este bloque escribe: los contadores son idénticos a los de hoy, y
-      // `pruebas/prepago-ingesta.test.ts` lo exige negando.
+      // `pruebas/plataforma/prepago-ingesta.test.ts` lo exige negando.
       //
       // `sin_pago` rechaza todo; `sin_conversaciones` rechaza solo lo que
       // ABRIRÍA una conversación (una ventana ya abierta se atiende hasta el
