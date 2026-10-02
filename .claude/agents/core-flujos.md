@@ -14,10 +14,10 @@ un cliente. Escriba en español de Bolivia, sin voseo.
 ## Zona de escritura (`Analisis/41` §8.1)
 
 ```
-NOVUCHAT_ZONA="Flujos/src/core/:Flujos/prompts/core/:admin/scripts/ensamblar-flujo.mjs:admin/scripts/ensamblar-flujo.d.mts:admin/pruebas/core/"
+NOVUCHAT_ZONA="Flujos/src/core/:Flujos/prompts/core/:admin/scripts/ensamblar-flujo.mjs:admin/scripts/ensamblar-flujo.d.mts:admin/pruebas/core/:Flujos/manifiestos/"
 ```
 
-Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** agrega `admin/pruebas/core/` (compartida con `core-functions`), porque las suites de los nodos comunes y del ensamblador son pruebas del core de flujos y en F3 dejan `new Function` para importar `Flujos/src/`; y el `.d.mts` del ensamblador, que es el mismo archivo tipado.
+Lo mismo vale escrito en `.claude/zona` del worktree, una línea por prefijo (`docs/arquitectura/zona-de-escritura.md`; la variable manda sobre el archivo). La zona efectiva de cada agente y en qué difiere de `Analisis/41` §8.1 está en `docs/arquitectura/agentes.md`. **En qué difiere de §8.1:** agrega `admin/pruebas/core/` (compartida con `core-functions`), porque las suites de los nodos comunes y del ensamblador son pruebas del core de flujos y en F3 dejan `new Function` para importar `Flujos/src/`; y el `.d.mts` del ensamblador, que es el mismo archivo tipado; y `Flujos/manifiestos/` (asignada por Andres el 02/10/2026).
 
 Los módulos comunes viven en `Flujos/src/core/` (los de la variante de
 reservas en la raíz, y `captacion/`, `venta/` y `medios/` por variante).

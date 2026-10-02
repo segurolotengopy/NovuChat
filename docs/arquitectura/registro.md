@@ -281,9 +281,10 @@ importaciones (la raíz no es una carpeta de zona).
   exportación de un alias de `createRequire`.
 - **`pruebas/correr-storage.sh` exporta solo el puerto** del emulador: hoy no es
   un riesgo, porque ninguna suite de Storage lanza scripts.
-- **Zonas sin dueño en `agentes.md`:** `web/src/core/`, `Flujos/manifiestos/`,
-  `functions/src/index.ts`, `functions/src/ingesta.ts` y `.github/`. Lo anota el
-  agente `metodo` en `agentes.md`, con revisión de Andres.
+- **Zonas que estaban sin dueño, asignadas el 02/10/2026 en `agentes.md`:**
+  `web/src/core/` (`consola`), `Flujos/manifiestos/` (`core-flujos`),
+  `functions/src/index.ts` y `functions/src/ingesta.ts` (la coordinadora) y
+  `.github/` (`devsecops`).
 - **El corte de `ingesta.ts` y `prompt.ts`** es de F3b.
 
 ## Lo que sigue
