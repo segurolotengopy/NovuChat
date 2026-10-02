@@ -291,7 +291,7 @@ modo_patrones() {
   # Higiene de los flujos (F3a): el id de una credencial de n8n es un
   # identificador de la instancia; en el JSON versionado va vacio y
   # publicar-flujo.sh resuelve la credencial por su nombre.
-  local con_id
+  local con_id hallazgos_antes=$HALLAZGOS
   con_id="$(python3 - "${ARCHIVOS[@]}" <<'PY'
 import json, sys
 for ruta in sys.argv[1:]:
@@ -299,20 +299,28 @@ for ruta in sys.argv[1:]:
         continue
     try:
         datos = json.load(open(ruta, encoding="utf-8"))
-    except Exception:
-        continue
-    for nodo in (datos.get("nodes") or []) if isinstance(datos, dict) else []:
-        for tipo, ref in (nodo.get("credentials") or {}).items():
-            if isinstance(ref, dict) and ref.get("id"):
-                print(f"{ruta}: nodo «{nodo.get('name')}» ({tipo})")
+        nodos = datos["nodes"]
+        assert isinstance(nodos, list)
+        for nodo in nodos:
+            cred = nodo.get("credentials")
+            if cred is None:
+                continue
+            assert isinstance(cred, dict)
+            for tipo, ref in cred.items():
+                assert isinstance(ref, dict)
+                if ref.get("id"):
+                    print(f"{ruta}: nodo «{nodo.get('name')}» ({tipo})")
+    except Exception as e:
+        print(f"ERROR {ruta}: {type(e).__name__}")
+        sys.exit(3)
 PY
-)"
+)" || { rojo "  ✗ no se pudo analizar un JSON de flujo (ilegible o con forma inesperada)"; printf '%s\n' "$con_id" | sed 's/^/      /'; con_id=""; HALLAZGOS=$((HALLAZGOS+1)); }
   if [[ -n "$con_id" ]]; then
     rojo "  ✗ id de credencial de n8n no vacio en un JSON de flujo"
     printf '%s\n' "$con_id" | sed 's/^/      /'
     gris "      Deje \"id\": \"\" y conserve el nombre: publicar-flujo.sh la resuelve."
     HALLAZGOS=$((HALLAZGOS+1))
-  else
+  elif [[ $HALLAZGOS -eq $hallazgos_antes ]]; then
     verde "  ✓ JSON de flujo sin ids de credencial"
   fi
 
@@ -327,25 +335,33 @@ for ruta in sys.argv[1:]:
         continue
     try:
         datos = json.load(open(ruta, encoding="utf-8"))
-    except Exception:
-        continue
-    man = os.path.join("Flujos", "manifiestos", os.path.basename(ruta))
-    declarados = set()
-    if os.path.isfile(man):
-        declarados = set((json.load(open(man, encoding="utf-8")).get("conservanMarcadores") or {}).keys())
-    for nodo in (datos.get("nodes") or []) if isinstance(datos, dict) else []:
-        params = dict(nodo.get("parameters") or {})
-        params.pop("jsCode", None)
-        nombre = nodo.get("name") or ""
-        if "REEMPLAZAR_" in json.dumps(params) and nombre not in declarados and not nombre.startswith("Config base"):
-            print(f"{ruta}: nodo «{nombre}»")
+        nodos = datos["nodes"]
+        assert isinstance(nodos, list)
+        man = os.path.join("Flujos", "manifiestos", os.path.basename(ruta))
+        declarados = set()
+        if os.path.isfile(man):
+            cm = json.load(open(man, encoding="utf-8")).get("conservanMarcadores") or {}
+            assert isinstance(cm, dict)
+            declarados = set(cm.keys())
+        for nodo in nodos:
+            params = nodo.get("parameters") or {}
+            assert isinstance(params, dict)
+            params = dict(params)
+            params.pop("jsCode", None)
+            nombre = nodo.get("name") or ""
+            # Igualdad exacta: un nodo «Config base X» propio no queda exento.
+            if "REEMPLAZAR_" in json.dumps(params) and nombre not in declarados and nombre not in ("Config base", "Config base del recordatorio"):
+                print(f"{ruta}: nodo «{nombre}»")
+    except Exception as e:
+        print(f"ERROR {ruta}: {type(e).__name__}")
+        sys.exit(3)
 PY
-)"
+)" || { rojo "  ✗ no se pudo analizar un JSON de flujo o su manifiesto"; printf '%s\n' "$sin_declarar" | sed 's/^/      /'; sin_declarar=""; HALLAZGOS=$((HALLAZGOS+1)); }
   if [[ -n "$sin_declarar" ]]; then
     rojo "  ✗ marcador REEMPLAZAR_ no declarado en conservanMarcadores"
     printf '%s\n' "$sin_declarar" | sed 's/^/      /'
     HALLAZGOS=$((HALLAZGOS+1))
-  else
+  elif [[ $HALLAZGOS -eq $hallazgos_antes ]]; then
     verde "  ✓ marcadores REEMPLAZAR_ fuera de Config base, declarados"
   fi
 }
