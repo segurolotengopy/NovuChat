@@ -10,7 +10,7 @@
 #
 # Contesta como la API pública de n8n, lo mínimo para que cada script siga su
 # camino: un flujo ($RESPUESTA_FLUJO) al leer /workflows/<id>, listas vacías o
-# $RESPUESTA_EJECUCIONES al listar, `{"active":…}` al encender o apagar, y el
+# $RESPUESTA_EJECUCIONES / $RESPUESTA_CREDENCIALES al listar, `{"active":…}` al encender o apagar, y el
 # flujo con id al crear o reescribir. Respeta -o y -w '%{http_code}' (200).
 # Sin registro no es la suite: se niega, en vez de contestar «200» a una
 # escritura que no ocurrió (revisión de seguridad del #276, L-3).
@@ -40,6 +40,7 @@ case "$metodo $ruta" in
   "POST /workflows")              cuerpo='{"id":"99","name":"Flujo de prueba","active":false,"nodes":[]}' ;;
   "PUT /workflows/"*)             cuerpo="${RESPUESTA_FLUJO:-$FLUJO_POR_DEFECTO}" ;;
   "GET /workflows/"*)             cuerpo="${RESPUESTA_FLUJO:-$FLUJO_POR_DEFECTO}" ;;
+  "GET /credentials")             cuerpo="${RESPUESTA_CREDENCIALES:-$LISTA_VACIA}" ;;
   "GET /executions")              cuerpo="${RESPUESTA_EJECUCIONES:-$LISTA_VACIA}" ;;
   "GET /executions/"*)            cuerpo='{"id":"1","status":"error","data":{"resultData":{"runData":{}}}}' ;;
   *)                              cuerpo="$LISTA_VACIA" ;;

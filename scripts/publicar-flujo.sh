@@ -208,7 +208,7 @@ indice = {}
 for c in lista_cred:
     indice.setdefault((c.get("type"), c.get("name")), []).append(c)
 
-por_nombre, por_tipo, faltantes = [], [], []
+por_nombre, por_tipo, faltantes, ambiguas = [], [], [], []
 for n in nuevo["nodes"]:
     for tipo, ref in list((n.get("credentials") or {}).items()):
         nombre = (ref or {}).get("name") or ""
@@ -216,6 +216,10 @@ for n in nuevo["nodes"]:
         if len(halladas) == 1:
             n["credentials"][tipo] = {"id": halladas[0]["id"], "name": nombre}
             por_nombre.append((n["name"], nombre))
+        elif len(halladas) > 1:
+            # Dos credenciales con el mismo nombre y tipo: no hay forma de saber
+            # cual es la del negocio, y rellenar por TIPO tomaria la de otro.
+            ambiguas.append((n["name"], nombre, len(halladas)))
         elif tipo in cred_por_tipo:
             n["credentials"][tipo] = cred_por_tipo[tipo]
             por_tipo.append((n["name"], tipo, cred_por_tipo[tipo].get("name", "")))
@@ -225,6 +229,10 @@ for n in nuevo["nodes"]:
 for nodo, nombre in por_nombre: print(f"  {V}+{FIN} credencial por nombre: {nodo} <- «{nombre}»")
 for nodo, tipo, nombre in por_tipo: print(f"  {A}+{FIN} credencial por TIPO ({tipo}): {nodo} <- «{nombre}» (de la referencia)")
 for nodo, tipo, nombre in faltantes: print(f"  {R}✗{FIN} {nodo}: sin credencial {tipo} («{nombre}») ni por nombre ni en la referencia")
+for nodo, nombre, cuantas in ambiguas: print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; no se elige una por TIPO")
+if ambiguas:
+    print(f"\n{R}✗ ABORTADO: un nombre de credencial repetido no se resuelve por tipo.{FIN}")
+    sys.exit(1)
 if faltantes:
     print(f"\n{R}✗ ABORTADO: n8n no publica un flujo con un nodo sin credencial.{FIN}")
     sys.exit(1)
@@ -470,9 +478,9 @@ if isinstance(lista_cred, list):
                     corregidas.append((n["name"], actual.get("name") or "ninguna", nombre))
                 n.setdefault("credentials", {})[tipo] = {"id": halladas[0]["id"], "name": nombre}
             elif len(halladas) > 1:
-                ambiguas.append((n["name"], nombre, len(halladas)))
+                ambiguas.append((n["name"], nombre, len(halladas), tipo))
             else:
-                faltantes.append((n["name"], nombre))
+                faltantes.append((n["name"], nombre, tipo))
 else:
     print(f"  {A}!{FIN} la API no listo las credenciales: se heredan del flujo vivo sin comprobar el nombre")
 
@@ -487,10 +495,25 @@ for nodo, tipo in heredadas_por_tipo:
 for c in sin_par:  print(f"  {A}!{FIN} nodo del flujo vivo que ya no existe: {c}")
 for nodo, antes, despues in corregidas:
     print(f"  {A}~{FIN} credencial corregida: {nodo}: vivo «{antes}» -> «{despues}»")
-for nodo, nombre in faltantes:
+for nodo, nombre, _tipo in faltantes:
     print(f"  {R}✗{FIN} {nodo}: la credencial «{nombre}» no existe en n8n (creela con ese nombre exacto); queda la del flujo vivo")
-for nodo, nombre, cuantas in ambiguas:
+for nodo, nombre, cuantas, _tipo in ambiguas:
     print(f"  {R}✗{FIN} {nodo}: hay {cuantas} credenciales llamadas «{nombre}»; queda la del flujo vivo")
+
+# Con --aplicar, un nodo cuya credencial NO se pudo resolver por nombre y que
+# la recibio por TIPO (relleno desde otra del mismo tipo: no es la del flujo
+# vivo ni la nombrada) puede quedar con la credencial de OTRO negocio. Se
+# aborta antes de escribir. El seco solo muestra el diagnostico.
+por_relleno = set(heredadas_por_tipo)
+sin_resolver = [(f[0], f[2]) for f in faltantes] + [(a[0], a[3]) for a in ambiguas]
+riesgo = sorted({nodo for nodo, tipo in sin_resolver if (nodo, tipo) in por_relleno})
+if riesgo and aplicar:
+    print(f"\n{R}✗ ABORTADO antes de escribir: estos nodos recibirian una credencial por TIPO sin que su nombre se resolviera:{FIN}")
+    for nodo in riesgo: print(f"    {nodo}")
+    print(f"{G}  Cree la credencial con el nombre exacto del JSON (o deje una sola con ese nombre) y reintente.{FIN}")
+    sys.exit(1)
+if riesgo:
+    print(f"  {A}!{FIN} con --aplicar se abortaria: {', '.join(riesgo)} (credencial por TIPO sin nombre resuelto)")
 
 if not con_cred:
     print(f"\n  {R}Ningun nodo heredo credenciales.{FIN} Revise que el ID sea el del")
