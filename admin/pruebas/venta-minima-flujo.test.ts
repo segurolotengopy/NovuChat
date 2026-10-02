@@ -2399,8 +2399,42 @@ describe('topología: el orden del lienzo, un solo paso por turno y las copias d
     expect(t.orden.indexOf('Reportar mensaje (entrante)')).toBeLessThan(t.orden.indexOf('Decidir turno'));
     expect(destinos(QTACO, '¿Reportar? (entrante)', 0)).toEqual(['Reportar mensaje (entrante)']);
     // El cierre cuelga de «Armar mensajes» por debajo del envío: primero se manda, después se registra.
-    expect(destinos(QTACO, 'Armar mensajes', 0)).toEqual(['¿Enviar de verdad?', '¿Registrar cierre?']);
+    // …y «Resumen del turno» cuelga directo de «Armar mensajes», lo más abajo de todo: corre una vez, al final.
+    expect(destinos(QTACO, 'Armar mensajes', 0)).toEqual(['¿Enviar de verdad?', '¿Registrar cierre?', 'Resumen del turno']);
     expect(y(QTACO, '¿Registrar cierre?')).toBeGreaterThan(y(QTACO, '¿Enviar de verdad?'));
+    expect(y(QTACO, 'Resumen del turno')).toBeGreaterThan(y(QTACO, '¿Registrar cierre?'));
+    expect(y(QTACO, 'Resumen del turno')).toBeGreaterThan(y(QTACO, 'Registrar cierre'));
+    expect(Object.keys(QTACO.connections)).not.toContain('Registrar cierre');
+    expect(destinos(QTACO, '¿Registrar cierre?', 1)).toEqual([]);
+  });
+
+  // RESUMEN. Con `executionOrder: v1`, un nodo al que llegan dos ramas corre una vez por rama. Si «Armar mensajes» emite 2 o más
+  // ítems y hay cierre, «¿Registrar cierre?» reparte el primero (con el cierre) y el resto, y «Resumen del turno» correría dos
+  // veces. Hoy ningún escenario real lo provoca (el cierre llega con un solo mensaje), pero es una trampa a un cambio de distancia.
+  it('«Resumen del turno» corre UNA sola vez aunque «Armar mensajes» emita 2 ítems y haya cierre (con su negativo: el cierre se registra una sola vez y los dos mensajes salen)', () => {
+    // El mismo flujo, con «Armar mensajes» envuelto para que emita un segundo mensaje sin cierre.
+    const DOS = JSON.parse(JSON.stringify(QTACO)) as Flujo;
+    const armar = DOS.nodes.find((n) => n.name === 'Armar mensajes') as NonNullable<(typeof DOS.nodes)[number]>;
+    armar.parameters['jsCode'] = `const AMX_salida = (() => {\n${String(armar.parameters['jsCode'])}\n})();\n`
+      + 'if (AMX_salida.length === 1 && AMX_salida[0].json.sinMensajes !== true) {\n'
+      + '  const j = AMX_salida[0].json;\n'
+      + "  return [AMX_salida[0], { json: Object.assign({}, j, { cierre: null, resumen: null, errores: [], texto: 'Segundo mensaje del mismo turno.', payload: Object.assign({}, j.payload, { type: 'text', text: { preview_url: false, body: 'Segundo mensaje del mismo turno.' } }) }) }];\n"
+      + '}\nreturn AMX_salida;\n';
+    const w = crear({ flujo: DOS, panel: panel() });
+    abrirVentanas(w);
+    const c = con(w);
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    const resumen = c.escribe('quiero 4 tacos de birria', { avanzarMin: 5 });
+    const t = c.toca(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido');
+    expect(t.mensajes).toHaveLength(2); // los dos ítems salieron
+    expect(t.llamadas.cierre).toHaveLength(1); // y el cierre se registró una sola vez
+    expect(t.orden.filter((n) => n === 'Armar mensajes')).toHaveLength(1);
+    expect(t.orden.filter((n) => n === 'Registrar cierre')).toHaveLength(1);
+    expect(t.orden.filter((n) => n === 'Resumen del turno')).toHaveLength(1);
+    expect(t.orden[t.orden.length - 1]).toBe('Resumen del turno'); // y es el último nodo
+    // Negativo: sin cierre (un menú con 2 ítems) tampoco corre dos veces.
+    const menu = con(crear({ flujo: DOS })).escribe('hola');
+    expect(menu.orden.filter((n) => n === 'Resumen del turno')).toHaveLength(1);
   });
 
   it('en ningún turno de ningún escenario «Decidir turno», «Plan del turno», «Armar avisos» o «Armar mensajes» corren más de una vez', () => {

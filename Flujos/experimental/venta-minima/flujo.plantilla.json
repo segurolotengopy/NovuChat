@@ -1512,15 +1512,15 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        7880,
-        700
+        7400,
+        780
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
         "jsCode": "@@comun:nodos/resumen-del-turno.js"
       },
-      "notes": "Último nodo. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+      "notes": "Último nodo, y el único que corre UNA sola vez por turno: cuelga directo de «Armar mensajes» por debajo de todo el lienzo, así que con `executionOrder: v1` corre después de los envíos y del cierre. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
     }
   ],
   "connections": {
@@ -2083,6 +2083,11 @@
             "node": "¿Registrar cierre?",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2166,24 +2171,7 @@
             "index": 0
           }
         ],
-        [
-          {
-            "node": "Resumen del turno",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Registrar cierre": {
-      "main": [
-        [
-          {
-            "node": "Resumen del turno",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     }
   }
