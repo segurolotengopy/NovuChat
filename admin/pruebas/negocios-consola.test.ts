@@ -6,7 +6,7 @@
  *
  * Lo que estas pruebas defienden, y por qué:
  *  1. LA PANTALLA NO ESCRIBE EN FIRESTORE. Todo es una callable del propietario
- *     (`CALLABLES` de `lib/ejes.ts`), y las reglas niegan la escritura del
+ *     (`CALLABLES` de `web/src/central/lib/ejes.ts`), y las reglas niegan la escritura del
  *     navegador sobre `/cuenta`, `/pagos` y `/rutasWhatsApp`. La pantalla
  *     acompaña, el servidor manda (`CLAUDE.md` §7).
  *  2. NADA SE ESCRIBE SIN CONFIRMAR. Cada acción muestra qué va a cambiar y

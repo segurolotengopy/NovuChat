@@ -42,7 +42,7 @@ interface FilaPago {
  *
  * LA PANTALLA ACOMPAÑA, EL SERVIDOR MANDA (`CLAUDE.md` §7). Ninguna acción
  * escribe Firestore desde el navegador: todas son callables del propietario
- * (`lib/ejes.ts`, `CALLABLES`), cada una con su confirmación explícita antes,
+ * (`web/src/central/lib/ejes.ts`, `CALLABLES`), cada una con su confirmación explícita antes,
  * y el error que devuelve el servidor se muestra tal cual, porque está escrito
  * para quien opera. Lo que el servidor rechaza, no pasa, aunque alguien arme
  * la petición a mano.

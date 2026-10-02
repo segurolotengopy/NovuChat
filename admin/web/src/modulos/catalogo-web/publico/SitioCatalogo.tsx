@@ -129,7 +129,7 @@ export function SitioCatalogo({ ficha }: { ficha: string }) {
    *
    * LOS VALORES SALEN DE LA TABLA LOCAL, NO DE LA RESPUESTA. El servidor manda
    * el NOMBRE de la paleta —`terracota`, `bosque`…— y `variablesDe` lo traduce
-   * contra `lib/paletas.ts`. Un nombre desconocido cae en la paleta por
+   * contra `web/src/central/lib/paletas.ts`. Un nombre desconocido cae en la paleta por
    * defecto. Así no hay ningún color del servidor entrando a una propiedad de
    * CSS: no queda nada que inyectar, ni siquiera si el servidor estuviera
    * comprometido.

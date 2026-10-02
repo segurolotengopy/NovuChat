@@ -13,12 +13,12 @@
  *     pantalla no existe).
  *  4. NINGÚN ARCHIVO DE LA CONSOLA compara `plan === 'demostracion'` ni lee
  *     `pagaMeta` (hito H1 de `Analisis/41` §8.5).
- *  5. EL CONTRATO CON `central` VIVE EN UN SOLO ARCHIVO (`lib/ejes.ts`): las
+ *  5. EL CONTRATO CON `central` VIVE EN UN SOLO ARCHIVO (`web/src/central/lib/ejes.ts`): las
  *     pantallas llaman a las callables por `CALLABLES`, no por su nombre suelto.
  *
  * Las partes que dependen de datos que `central` escribe (`titularidad`,
  * `cambios`, `limites.cambiosIncluidos`) se prueban contra el contrato
- * declarado en `lib/ejes.ts` y se validan al reconciliar las dos ramas.
+ * declarado en `web/src/central/lib/ejes.ts` y se validan al reconciliar las dos ramas.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';

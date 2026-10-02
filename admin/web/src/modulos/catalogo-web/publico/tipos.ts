@@ -47,7 +47,7 @@ export interface NegocioPublico {
    * de la página.
    */
   logo: string;
-  /** Una de las cinco de `lib/paletas.ts`. Nunca un color suelto. */
+  /** Una de las cinco de `web/src/central/lib/paletas.ts`. Nunca un color suelto. */
   paleta: string;
 }
 
