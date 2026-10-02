@@ -21,7 +21,8 @@
 //   - `cobro`: `cbCobroReal(cuerpo)`; si algo falla, apagado (plan B: sin QR);
 //   - `aceptaDelivery` y `aceptaRetiroEnLocal`: solo se apagan con `false` en `venta` (`!== false`), el mismo criterio
 //     del servidor y de `Plan del turno`: un panel sin esas claves acepta las dos modalidades. Con el panel sin
-//     respuesta no se fijan (se desconocen); con el comercio suspendido van en `false`.
+//     respuesta no se fijan (se desconocen) y `Plan del turno` deriva en vez de ofrecer delivery; con el comercio
+//     suspendido van en `false`.
 // EL MODO PRUEBA lo dijo `Carga de entrada` (solo si corrio «Entrada de prueba»).
 const RESPALDO = {
   nombreNegocio: 'nuestro restaurante',
@@ -151,7 +152,9 @@ if (codigo === 409) {
 } else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, {
     configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,
-    // Sin respuesta del panel NO se sabe qué modalidades acepta: no se fija ninguna (falta = «sí», el mismo criterio).
+    // Sin respuesta del panel NO se sabe qué modalidades acepta: no se fija ninguna. OJO: «falta = sí» valdría para el
+    // servidor, pero aquí NO se puede leer como «hay delivery»: `Plan del turno` mira `panelSinRespuesta` y, con él en `true`,
+    // ni ofrece ni afirma delivery ni confirma un pedido: deriva (aviso + botón).
     catalogo: [], campanas: [], cobro: COBRO_APAGADO,
   });
 } else {

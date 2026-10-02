@@ -49,7 +49,7 @@ type Fn = (...a: any[]) => any;
 const L = ejecutar(`${COMUN}\n${PEDIDO}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
 
 // La red de palabras de §4.2 (`VM_PROHIBIDAS`): ningun texto de este archivo debe coincidir.
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const TEL = '59100000011';
@@ -1072,5 +1072,44 @@ describe('higiene de la libreria (corre en el sandbox de n8n)', () => {
     // y el pendiente que vuelve del estado guardado se puede resolver
     const vuelta = JSON.parse(JSON.stringify(r.pendiente));
     expect(L.pdTotal(L.pdResolverForma(r.carrito, vuelta, 'orden').carrito)).toBe(16 + 55);
+  });
+});
+
+describe('I5: `pdResumen` con `maxDetalle` cabe en un solo texto (notas recortadas y, si hace falta, «• … y N más»)', () => {
+  const NOMBRES_30 = Array.from({ length: 30 }, (_, i) => `Plato ${String.fromCharCode(65 + (i % 26))}${i}`);
+  const cartaCon = (largo: number) => L.pdCarta(NOMBRES_30.map((n, i) => ({ id: `p${i}`, nombre: (n + ' ' + 'especial de la casa con salsa picante '.repeat(4)).slice(0, largo), precio: 10 + i, area: 'x' })), {});
+  const carritoDe = (carta: { nombre: string }[], detalle: string) => L.pdAgregarLineas([], carta, carta.map((c) => ln(c.nombre, 1, '', detalle))).carrito;
+  const NOTA = 'sin picante, con la salsa aparte, bien caliente, sin cebolla y con mucho limón por favor ahora mismo gracias';
+  const entrega = { entrega: 'recojo', modalidad: 'recojo' };
+  const bloque = (t: string): string => t.slice(0, t.indexOf('\nEntrega:'));
+
+  it('un pedido corto sale idéntico con o sin `maxDetalle` (negado: no recorta lo que cabe)', () => {
+    const corto = agregar([ln('tacos de birria', 1, 'orden', 'sin cebolla'), ln('gaseosas', 1)]).carrito;
+    const envio = { entrega: 'delivery', modalidad: 'delivery', direccion: 'Av. Arce 2345', referencia: 'casa verde', nombre: 'Ana Soria' };
+    expect(L.pdResumen(corto, envio, { moneda: 'BOB', maxDetalle: 3000 })).toBe(L.pdResumen(corto, envio, { moneda: 'BOB' }));
+  });
+  it('30 líneas con notas largas: las notas se recortan hasta que todo cabe y no se pierde ninguna línea', () => {
+    const c = carritoDe(cartaCon(12), NOTA);
+    expect(c).toHaveLength(30);
+    const largo = L.pdResumen(c, entrega, { moneda: 'BOB' });
+    expect(bloque(largo).length).toBeGreaterThan(3000);
+    const corto = L.pdResumen(c, entrega, { moneda: 'BOB', maxDetalle: 3000 });
+    expect(bloque(corto).length).toBeLessThanOrEqual(3000 + 'Tu pedido:\n'.length);
+    for (const n of NOMBRES_30) expect(corto).toContain(n.slice(0, 12));
+    expect(corto).not.toMatch(/… y \d+ más/);
+    expect(corto).toContain(`Total de la comida: ${L.pdTotal(c)} Bs.`);
+  });
+  it('si aun sin notas no caben (aquí un tope de 1.000): corta por línea, termina en «• … y N más» y el total sigue siendo el de TODAS', () => {
+    const c = carritoDe(cartaCon(110), '');
+    expect(c).toHaveLength(30);
+    const r = L.pdResumen(c, entrega, { moneda: 'BOB', maxDetalle: 1000 });
+    expect(bloque(r).length).toBeLessThanOrEqual(1000 + 'Tu pedido:\n'.length);
+    const m = /\n• … y (\d+) más\nEntrega:/.exec(r);
+    expect(m).not.toBeNull();
+    const listadas = (r.match(/^• 1 × /gm) ?? []).length;
+    expect(listadas + Number(m![1])).toBe(30);
+    expect(r).toContain(`Total de la comida: ${L.pdTotal(c)} Bs.`);
+    // Las líneas listadas están enteras (terminan con su precio).
+    for (const linea of r.split('\n').filter((x: string) => x.startsWith('• 1 × '))) expect(linea).toMatch(/: \d+ Bs$/);
   });
 });

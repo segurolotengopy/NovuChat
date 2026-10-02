@@ -746,8 +746,27 @@ function pdResumen(carrito, entrega, opts) {
   const lista = _pdCopiarCarrito(carrito);
   const e = entrega && typeof entrega === 'object' ? entrega : {};
   const tipo = _pdTipoDe(e);
-  const lineas = lista.map((l) => '• ' + l.cantidad + ' × ' + l.nombre + (l.detalle ? ' (' + l.detalle + ')' : '')
-    + ': ' + _pdBs(_pdSubtotalCent(l) / 100) + ' ' + mon);
+  const lineasDe = (maxNota) => lista.map((l) => {
+    const nota = l.detalle ? (maxNota === undefined ? l.detalle : _pdCortar(l.detalle, maxNota)) : '';
+    return '• ' + l.cantidad + ' × ' + l.nombre + (nota ? ' (' + nota + ')' : '') + ': ' + _pdBs(_pdSubtotalCent(l) / 100) + ' ' + mon;
+  });
+  let lineas = lineasDe();
+  // ADITIVO. `opts.maxDetalle`: tope de caracteres del bloque de líneas (para que el resumen largo quepa en UN solo texto).
+  // Si no cabe, primero se recortan las notas (80, 40, 20 y 0 caracteres) y, si aun así no cabe, se corta por línea y
+  // termina en «• … y N más». El total no se toca: siempre es el de TODAS las líneas.
+  const tope = Number(o.maxDetalle);
+  if (tope > 0 && lineas.join('\n').length > tope) {
+    for (const n of [80, 40, 20, 0]) {
+      lineas = lineasDe(n);
+      if (lineas.join('\n').length <= tope) break;
+    }
+    if (lineas.join('\n').length > tope) {
+      const todas = lineas;
+      let k = todas.length;
+      while (k > 0 && (todas.slice(0, k).join('\n') + '\n• … y ' + (todas.length - k) + ' más').length > tope) k--;
+      lineas = todas.slice(0, k).concat('• … y ' + (todas.length - k) + ' más');
+    }
+  }
   const entregaTxt = tipo === 'delivery' ? _pdDestino(e, o.nombrePerfil) : (tipo === 'recojo' ? 'recojo en el local' : 'por definir');
   let t = 'Tu pedido:\n' + lineas.join('\n') + '\nEntrega: ' + entregaTxt + '.\nTotal de la comida: ' + _pdBs(pdTotal(lista)) + ' ' + mon + '.';
   if (tipo === 'delivery') t += '\nEl delivery no está incluido: se lo pagas al repartidor al recibir.';
