@@ -11,7 +11,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,7 +113,7 @@ describe('cotejar-ids-ajenos.sh', () => {
       expect(r.codigo).toBe(1);
     });
 
-    it.each(['no-es-hex', 'abc', sha('x').slice(1), `${sha('x')}00000`])('rechaza «%s»: sale 2', (mala) => {
+    it.each(['no-es-hex', 'abc', sha('x').slice(1), `${sha('x')}00000`, '１'.repeat(64), 'á'.repeat(64)])('rechaza «%s»: sale 2', (mala) => {
       const f = env('.env.demo', [`WA_APP_ID=${INOCENTE}`]);
       expect(correr(['--env', f, '--candidata', mala]).codigo).toBe(2);
     });
@@ -140,16 +140,114 @@ describe('cotejar-ids-ajenos.sh', () => {
       expect(correr(['--env', f], LISTAS).codigo).toBe(0);
     });
 
-    it('un valor sin forma de id se omite y no cuenta', () => {
-      const f = env('.env.raro', ['WA_APP_ID=abc', 'WA_PHONE_ID=', 'WABA_ID=12']);
-      const r = correr(['--env', f]);
-      expect(r.codigo).toBe(0);
-      expect(r.salida).toContain('0 id(s) revisados');
-    });
 
     it('un comentario con una clave no cuenta', () => {
-      const f = env('.env.comentado', [`# WA_APP_ID=${APP}`]);
+      const f = env('.env.comentado', [`# WA_APP_ID=${APP}`, `WABA_ID=${INOCENTE}`]);
       expect(correr(['--env', f], LISTAS).codigo).toBe(0);
+    });
+  });
+
+  describe('falla cerrado: «no coincide» solo se dice cuando se demostró (revisión de seguridad)', () => {
+    const CAND = sha(INOCENTE);
+
+    // Formas que `source` entiende y el script tiene que entender igual: si no,
+    // una huella candidata de un id propio pasaría con exit 0.
+    it.each([
+      ['comentario al final de la línea', `WA_PHONE_ID=${INOCENTE} # demo A`],
+      ['entre comillas y comentario', `WA_PHONE_ID="${INOCENTE}" # x`],
+      ['punto y coma al final', `WA_PHONE_ID=${INOCENTE};`],
+      ['readonly delante', `readonly WA_PHONE_ID=${INOCENTE}`],
+      ['declare -x delante', `declare -x WA_PHONE_ID=${INOCENTE}`],
+      ['BOM al principio del archivo', `\uFEFFWA_PHONE_ID=${INOCENTE}`],
+      ['sangría', `    WA_PHONE_ID=${INOCENTE}`],
+    ])('reconoce el id con %s', (_n, linea) => {
+      const f = env('.env.forma', [linea]);
+      const r = correr(['--env', f, '--candidata', CAND]);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).toContain('COINCIDE con la huella candidata');
+    });
+
+    it('un archivo binario (con un byte NUL) se lee igual, no se salta', () => {
+      const f = join(dir, '.env.binario');
+      writeFileSync(f, Buffer.concat([Buffer.from('\0\n'), Buffer.from(`WA_PHONE_ID=${INOCENTE}\n`)]));
+      expect(correr(['--env', f, '--candidata', CAND]).codigo).toBe(1);
+    });
+
+    // Una clave presente cuyo valor no se entiende como id: no se puede decir
+    // que nada coincide. Sale 2, y nunca repite el valor.
+    it.each([
+      ['una variable', 'WA_PHONE_ID=${OTRO}'],
+      ['una sustitución', 'WA_PHONE_ID=$(echo 1)'],
+      ['vacío', 'WA_PHONE_ID='],
+      ['letras', 'WA_APP_ID=abc'],
+      ['demasiado corto', 'WABA_ID=12'],
+      ['pegado a otro texto', `WA_APP_ID=${INOCENTE}x`],
+    ])('una clave presente con %s: sale 2 y no dice «todo bien»', (_n, linea) => {
+      const f = env('.env.raro', [linea]);
+      const r = correr(['--env', f, '--candidata', CAND]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('NO se pudo cotejar');
+      expect(r.salida).not.toContain('✓');
+      expect(r.salida).not.toContain(INOCENTE);
+    });
+
+    it('una clave ilegible junto a otra legible que no coincide: sale 2, no 0', () => {
+      const f = env('.env.mixto', [`WA_APP_ID=${INOCENTE}`, 'WA_PHONE_ID=${OTRO}']);
+      expect(correr(['--env', f]).codigo).toBe(2);
+    });
+
+    it('un id legible que coincide gana sobre una clave ilegible en otro lado: sale 1', () => {
+      const f = env('.env.mixto', [`WA_APP_ID=${APP}`, 'WA_PHONE_ID=${OTRO}']);
+      expect(correr(['--env', f], LISTAS).codigo).toBe(1);
+    });
+
+    it('un archivo sin ninguna de las tres claves no es error, pero solo, no demuestra nada: sale 2', () => {
+      const f = env('.env.sinclaves', ['N8N_BASE_URL=https://n8n.invalid']);
+      const r = correr(['--env', f]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).toContain('No se revisó ningún id');
+    });
+
+    it('un archivo sin claves junto a otro con ids no impide el cotejo: sale 0', () => {
+      const a = env('.env.sinclaves', ['N8N_BASE_URL=https://n8n.invalid']);
+      const b = env('.env.uno', [`WA_APP_ID=${INOCENTE}`]);
+      expect(correr(['--env', a, '--env', b]).codigo).toBe(0);
+    });
+
+    it.skipIf(process.getuid?.() === 0)('un archivo ilegible: sale 2', () => {
+      const f = env('.env.cerrado', [`WA_APP_ID=${INOCENTE}`]);
+      chmodSync(f, 0o000);
+      expect(correr(['--env', f]).codigo).toBe(2);
+    });
+
+    it('si python3 no contesta, sale 3 y no dice «todo bien»', () => {
+      const bin = join(dir, 'bin');
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'python3'), '#!/bin/sh\nexit 1\n');
+      chmodSync(join(bin, 'python3'), 0o755);
+      const f = env('.env.uno', [`WA_APP_ID=${INOCENTE}`]);
+      const r = correr(['--env', f], { PATH: `${bin}:${process.env.PATH ?? ''}` });
+      expect(r.codigo).toBe(3);
+      expect(r.salida).not.toContain('✓');
+    });
+  });
+
+  describe('no revela ids por ninguna vía', () => {
+    it('de un id solo se ven los últimos 4 dígitos, ni siquiera los primeros', () => {
+      const f = env('.env.uno', [`WA_APP_ID=${APP}`]);
+      const r = correr(['--env', f], LISTAS);
+      expect(r.salida).toContain(`…${APP.slice(-4)}`);
+      expect(r.salida).not.toContain(APP.slice(0, 5));
+    });
+
+    it('un argumento desconocido, que podría ser un id pegado por error, no se repite', () => {
+      const r = correr([NUMERO]);
+      expect(r.codigo).toBe(2);
+      expect(r.salida).not.toContain(NUMERO);
+    });
+
+    it.each(['--dir', '--env', '--candidata'])('%s sin valor: sale 2 (no 1, que significa «coincide»)', (opcion) => {
+      expect(correr([opcion]).codigo).toBe(2);
     });
   });
 

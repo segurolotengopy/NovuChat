@@ -17,39 +17,54 @@
 #   ./scripts/cotejar-ids-ajenos.sh --candidata <sha256> # ANTES de agregar una huella
 #
 # QUÉ MIRA: WA_APP_ID, WA_PHONE_ID y WABA_ID de cada archivo, contra las tres
-# listas vigentes (apps, números, WABAs) y contra cada --candidata. Sale 0 si
-# ninguno coincide; 1 si alguno coincide (con una lista vigente: ese .env está
-# bloqueado hoy; con una candidata: NO se agrega sin decidirlo con Andres y con
-# WhatsApp-Modular); 2 si el uso es incorrecto o no hay nada que cotejar.
+# listas vigentes (apps, números, WABAs) y contra cada --candidata.
+#
+# CÓDIGOS DE SALIDA (FALLA CERRADO: solo el 0 dice «todo bien»):
+#   0  se revisó al menos un id y ninguno coincide.
+#   1  algo coincide (con una lista vigente: ese .env está bloqueado hoy; con
+#      una candidata: NO se agrega sin decidirlo con Andres y con WhatsApp-Modular).
+#   2  uso incorrecto, un archivo que no se pudo leer, UNA CLAVE PRESENTE CUYO
+#      VALOR NO SE PUDO LEER COMO ID (p. ej. «${OTRA}»), o no se revisó ningún
+#      id: en cualquiera de esos casos «no coincide» no está demostrado.
+#   3  python3 no contestó (lo corta la biblioteca del candado).
 #
 # LEE EL .env COMO DATOS: busca las tres claves línea por línea y no ejecuta el
-# archivo (no usa `source`). Nada de red, nada de escritura, ningún valor en la
-# salida. La biblioteca del candado SÍ se carga: es código del repositorio.
+# archivo (no usa `source`). Entiende «export», «readonly» y «declare» delante,
+# comillas, espacios, «;» y un comentario al final de la línea. Una clave que
+# no está en un archivo no es error (no todo .env las trae); una que está y no
+# se entiende, sí. Nada de red, nada de escritura, ningún valor en la salida.
+# La biblioteca del candado SÍ se carga: es código del repositorio.
 # =============================================================================
 set -euo pipefail
 
 DIR=""; ARCHIVOS=(); CANDIDATAS=()
+requiere_valor() { [ "$1" -ge 2 ] || { echo "✗ La opción $2 requiere un valor" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dir)       DIR="${2:-}"; shift 2 ;;
-    --env)       ARCHIVOS+=("${2:-}"); shift 2 ;;
-    --candidata) CANDIDATAS+=("${2:-}"); shift 2 ;;
-    -h|--help)   sed -n '2,29p' "$0"; exit 0 ;;
-    *) echo "Argumento desconocido: $1" >&2; exit 2 ;;
+    --dir)       requiere_valor $# "$1"; DIR="$2"; shift 2 ;;
+    --env)       requiere_valor $# "$1"; ARCHIVOS+=("$2"); shift 2 ;;
+    --candidata) requiere_valor $# "$1"; CANDIDATAS+=("$2"); shift 2 ;;
+    -h|--help)   sed -n '2,37p' "$0"; exit 0 ;;
+    # No se repite el argumento: podría ser un id pegado por error.
+    *) echo "✗ Argumento desconocido (ver --help)" >&2; exit 2 ;;
   esac
 done
 
+# sha256: 64 hex, con o sin «:». LC_ALL=C: en es_ES/es_BO/es_AR `[0-9a-f]`
+# acepta dígitos de otras escrituras y letras con tilde (como `es_id`).
+es_sha256() { local LC_ALL=C || return 1; local h=${1//:/}; [[ $h =~ ^[0-9a-f]{64}$ ]]; }
 for c in "${CANDIDATAS[@]+"${CANDIDATAS[@]}"}"; do
-  [[ ${c//:/} =~ ^[0-9a-f]{64}$ ]] || { echo "✗ --candidata espera un sha256 (64 hex, con o sin «:»)" >&2; exit 2; }
+  es_sha256 "$c" || { echo "✗ --candidata espera un sha256 (64 hex, con o sin «:»)" >&2; exit 2; }
 done
 
 # shellcheck source=scripts/lib/apps-ajenas.sh
 source "$(dirname "$0")/lib/apps-ajenas.sh"
 
 if [ ${#ARCHIVOS[@]} -eq 0 ]; then
-  # Los .env viven en la carpeta principal, no en cada worktree.
-  [ -n "$DIR" ] || DIR=$(git worktree list --porcelain | sed -n '1s/^worktree //p')
-  [ -d "$DIR" ] || { echo "✗ No existe la carpeta: ${DIR:-<vacía>}" >&2; exit 2; }
+  # Los .env viven en la carpeta principal, no en cada worktree. Se pregunta
+  # desde ESTE repositorio, no desde la carpeta donde se corra el script.
+  [ -n "$DIR" ] || DIR=$(git -C "$(dirname "$0")" worktree list --porcelain | sed -n '1s/^worktree //p')
+  [ -d "$DIR" ] || { echo "✗ No existe la carpeta indicada" >&2; exit 2; }
   for f in "$DIR"/.env "$DIR"/.env.*; do
     [ -f "$f" ] || continue
     case "$f" in *.example) continue ;; esac
@@ -58,31 +73,48 @@ if [ ${#ARCHIVOS[@]} -eq 0 ]; then
 fi
 [ ${#ARCHIVOS[@]} -gt 0 ] || { echo "✗ No hay ningún .env que cotejar (¿--dir o --env?)" >&2; exit 2; }
 
-# Valor de una clave, leyendo el archivo como datos: última aparición, sin
-# «export», sin comillas ni espacios, sin retorno de carro.
-valor() {
-  local linea v
-  linea=$(grep -E "^[[:space:]]*(export[[:space:]]+)?$2[[:space:]]*=" "$1" | tail -n 1) || true
-  [ -n "$linea" ] || return 0
-  v=${linea#*=}
-  v=${v//$'\r'/}
-  v=${v#"${v%%[![:space:]]*}"}; v=${v%"${v##*[![:space:]]}"}
-  v=${v#[\"\']}; v=${v%[\"\']}
-  printf '%s' "$v"
+# Lee una clave del archivo como datos. Deja el valor en LEIDO y devuelve:
+#   0  encontrada, con forma de id;   1  la clave no está;
+#   2  la clave está y su valor no se entiende como id (no se imprime).
+# La última aparición vale, como al cargar el archivo. Las líneas de comentario
+# no cuentan. Un error de lectura de grep corta con 2.
+leer_clave() {
+  local todas rc=0 linea="" l rest v
+  LEIDO=""
+  todas=$(LC_ALL=C grep -a -E -e "(^|[^A-Za-z0-9_])$2[[:space:]]*=" -- "$1") || rc=$?
+  [ "$rc" -le 1 ] || { echo "✗ No se pudo leer $(basename -- "$1")" >&2; exit 2; }
+  while IFS= read -r l; do
+    case "$l" in *[![:space:]]*) ;; *) continue ;; esac
+    l=${l#"${l%%[![:space:]]*}"}
+    [ "${l:0:1}" = "#" ] && continue
+    linea=$l
+  done <<<"$todas"
+  [ -n "$linea" ] || return 1
+  rest=${linea#*"$2"}
+  rest=${rest#"${rest%%[![:space:]]*}"}; rest=${rest#=}
+  rest=${rest#"${rest%%[![:space:]]*}"}; rest=${rest//$'\r'/}
+  case $rest in
+    \"*) v=${rest#\"}; v=${v%%\"*} ;;
+    \'*) v=${rest#\'}; v=${v%%\'*} ;;
+    *)   v=${rest%%[[:space:];#]*} ;;
+  esac
+  es_id "$v" || return 2
+  LEIDO=$v
 }
 
-coincidencias=0; revisados=0
+coincidencias=0; revisados=0; omitidos=0
 for f in "${ARCHIVOS[@]}"; do
-  [ -f "$f" ] || { echo "✗ No existe: $f" >&2; exit 2; }
-  nombre=$(basename "$f")
+  nombre=$(basename -- "$f")
+  { [ -f "$f" ] && [ -r "$f" ]; } || { echo "✗ No existe o no se puede leer: $nombre" >&2; exit 2; }
   for par in "WA_APP_ID:huella_ajena:apps" "WA_PHONE_ID:numero_ajeno:números" "WABA_ID:waba_ajena:WABAs"; do
     IFS=: read -r clave fn lista <<<"$par"
-    id=$(valor "$f" "$clave")
-    if [ -z "$id" ]; then continue; fi
-    if ! es_id "$id"; then
-      echo "  ?  $nombre  $clave: valor sin forma de id (se omite)"
-      continue
-    fi
+    estado=0; leer_clave "$f" "$clave" || estado=$?
+    case "$estado" in
+      1) continue ;;
+      2) echo "  ?  $nombre  $clave: está, pero su valor no se entiende como id: NO se pudo cotejar"
+         omitidos=$((omitidos + 1)); continue ;;
+    esac
+    id=$LEIDO
     revisados=$((revisados + 1))
     marca="…${id: -4}"
     if "$fn" "$id"; then
@@ -103,5 +135,13 @@ echo
 if [ "$coincidencias" -gt 0 ]; then
   echo "✗ $coincidencias coincidencia(s) en $revisados id(s) revisados."
   exit 1
+fi
+if [ "$omitidos" -gt 0 ]; then
+  echo "✗ $omitidos clave(s) presentes que no se pudieron leer como id: no se puede decir que nada coincide. Revisar a mano." >&2
+  exit 2
+fi
+if [ "$revisados" -eq 0 ]; then
+  echo "✗ No se revisó ningún id (ningún archivo trae WA_APP_ID, WA_PHONE_ID ni WABA_ID): no se puede decir que nada coincide." >&2
+  exit 2
 fi
 echo "✓ Ningún id de ${#ARCHIVOS[@]} archivo(s) coincide ($revisados id(s) revisados)."
