@@ -22,12 +22,12 @@
  *
  * Módulo puro: no importa Firebase, se prueba sin emulador.
  */
-import { MODALIDADES, esModalidad, modalidadDe, type CuentaCruda, type Modalidad } from '../central/lib/prepago';
+import { MODALIDADES, esModalidad, modalidadDe, type CuentaCruda, type Modalidad } from './prepago';
 import {
   MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, TITULARIDAD_POR_DEFECTO, esModelo, esTitularidad,
   modeloDe as modeloDeFicha, titularidadDe as titularidadDeRuta,
   type Modelo, type Titularidad,
-} from '../../../functions/src/central/ejes';
+} from '../../../../functions/src/central/ejes';
 // LO QUE VA POR CONTRATO (F1b): las validaciones y las lecturas del precio y
 // de la prueba son las del servidor, importadas del módulo puro como todo lo
 // demás de esta carpeta. El campo de la pantalla valida con el MISMO
@@ -35,10 +35,10 @@ import {
 import {
   LIMITE_MAXIMO, MAXIMO_PRECIO_POR_CONTRATO_USD, MINIMO_PRECIO_POR_CONTRATO_USD, conversacionesValidas, precioMensualDe,
   precioPorContratoDe, precioPorContratoValido,
-} from '../../../functions/src/central/cuenta/planes';
+} from '../../../../functions/src/central/cuenta/planes';
 import {
   BOLSA_PRUEBA_MAXIMA, PRUEBA_MESES_MAXIMO, bolsaPruebaValida, esPeriodo, inicioDePrueba, mesBolivia, techoDePrueba,
-} from '../../../functions/src/central/cuenta/prepago';
+} from '../../../../functions/src/central/cuenta/prepago';
 
 export { MODALIDADES, esModalidad, modalidadDe, MODELOS, MODELO_POR_DEFECTO, TITULARIDADES, esModelo, esTitularidad };
 export type { Modalidad, Modelo, Titularidad };

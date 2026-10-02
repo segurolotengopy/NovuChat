@@ -71,7 +71,7 @@ const DE_PRUEBA = /@(ejemplo|example)\.com$/i;
  * vez y se guarda en el gestor de contraseñas.
  *
  * Da dieciocho caracteres, bastante por encima del mínimo del proyecto
- * (`web/src/lib/contrasena.ts`, ocho desde el 16/09/2026). Acá no se toma el
+ * (`web/src/core/lib/contrasena.ts`, ocho desde el 16/09/2026). Acá no se toma el
  * mínimo como objetivo: es el piso de lo que se le acepta a una persona, no la
  * medida de una clave generada, que no cuesta nada tener más larga.
  */

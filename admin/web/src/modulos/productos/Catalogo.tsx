@@ -5,10 +5,10 @@ import {
 } from 'firebase/firestore';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { limiteDeProductos, nombreDePlan, planSiguiente } from '../../central/lib/planes';
-import { auth, db, funciones } from '../../lib/firebase';
+import { auth, db, funciones } from '../../core/lib/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
-import { etiquetaCatalogo, useFlujos } from '../../lib/flujos';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
+import { etiquetaCatalogo, useFlujos } from '../../central/lib/flujos';
 import { mensajeDeFalla, prepararFoto } from './foto';
 import {
   aCsv, idDeNombre, partirCsv, validarFilas, type FilaCatalogo, type FilaConProblemas,

@@ -261,7 +261,7 @@ agregaría decenas de kilobytes a cada mensaje del asistente.
 Los tipos son **PNG, JPEG y WebP**. SVG **no**, aunque sea una imagen: puede
 llevar `<script>` adentro y esto termina en un `src`.
 
-**El color pasó a ser una de cinco paletas** (`web/src/lib/paletas.ts`). La razón
+**El color pasó a ser una de cinco paletas** (`web/src/central/lib/paletas.ts`). La razón
 de diseño pesa más que la de seguridad: la página necesita **tres** tonos que
 combinen y un comercio elige uno solo; pedirle los tres termina en texto que no
 se lee. Las cinco están calculadas juntas y sus quince relaciones de contraste

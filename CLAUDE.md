@@ -142,7 +142,7 @@ WhatsApp (Meta Cloud API)
   de secciones viejas es `docs/arquitectura/indice.md`): lo común (identidad, horarios, voz, catálogo,
   usuarios) no se repite por flujo; lo propio de un flujo (agendas, QR, costos
   de entrega) es excluyente y trae su documento `/config/{flujo}`, su línea en
-  la tabla de capacidades de las reglas y su pestaña en `web/src/lib/flujos.ts`.
+  la tabla de capacidades de las reglas y su pestaña en `web/src/central/lib/flujos.ts`.
   Un negocio tiene uno o más flujos (`tenants/{id}.flujos`), y la consola
   habilita pestañas por flujo. Nunca una consola que solo sirve a un flujo.
 - **«Basado en» otro flujo significa basarse en sus FUNCIONALIDADES, no en el

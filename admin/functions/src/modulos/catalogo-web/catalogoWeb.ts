@@ -241,7 +241,7 @@ export function urlImagenValida(valor: unknown): boolean {
 }
 
 /**
- * Las cinco paletas. La tabla con los colores vive en `web/src/lib/paletas.ts`,
+ * Las cinco paletas. La tabla con los colores vive en `web/src/central/lib/paletas.ts`,
  * que es donde se usan; acá solo hace falta saber cuáles son válidas.
  *
  * Que sean CINCO Y NO UN COLOR LIBRE no es una simplificación de la interfaz:

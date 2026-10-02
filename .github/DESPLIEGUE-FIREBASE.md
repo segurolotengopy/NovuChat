@@ -258,7 +258,7 @@ se hace clic y no pasa nada. Falta algo como:
 frame-src https://<PROJECT_ID>.firebaseapp.com https://accounts.google.com;
 ```
 
-**2. La CSP bloquea App Check.** `admin/web/src/lib/firebase.ts` inicializa App
+**2. La CSP bloquea App Check.** `admin/web/src/core/lib/firebase.ts` inicializa App
 Check con `ReCaptchaEnterpriseProvider`, que carga un script de
 `https://www.google.com/recaptcha/` y recursos de `https://www.gstatic.com`.
 La política dice `script-src 'self'`. Con la clave cargada, App Check no
