@@ -10,7 +10,7 @@
  * del repositorio: sin red, sin n8n y sin leer ninguna clave real.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,15 +49,16 @@ describe('publicar-flujo.sh y las credenciales sin resolver', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  function correr(nuevo: unknown, creds: unknown[], args: string[]) {
+  function correr(nuevo: unknown, creds: unknown[] | string, args: string[], extra: Record<string, string> = {}, vivo: unknown = VIVO) {
     writeFileSync(join(raiz, 'Flujos', 'prueba.json'), JSON.stringify(nuevo));
     const r = spawnSync('bash', ['scripts/publicar-flujo.sh', '--env', '.env.prueba', '--flujo', 'Flujos/prueba.json', ...args], {
       cwd: raiz, encoding: 'utf8',
       env: entornoDelEmulador(undefined, {
         PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`, HOME: dir, BASH_ENV: '', ENV: '',
         REGISTRO_CURL: registro,
-        RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...VIVO }),
-        RESPUESTA_CREDENCIALES: JSON.stringify({ data: creds }),
+        RESPUESTA_FLUJO: JSON.stringify({ id: '7', ...(vivo as object) }),
+        RESPUESTA_CREDENCIALES: typeof creds === 'string' ? creds : JSON.stringify({ data: creds }),
+        ...extra,
         HTTPS_PROXY: 'http://127.0.0.1:1', HTTP_PROXY: 'http://127.0.0.1:1', NO_PROXY: '',
       }),
     });
@@ -111,5 +112,97 @@ describe('publicar-flujo.sh y las credenciales sin resolver', () => {
     const r = correr(flujo([nodo('Nodo nuevo', 'Mia')]), UNICA, ['--crear', '--aplicar']);
     expect(r.codigo, r.salida).toBe(0);
     expect(r.llamadas).toContain('POST /workflows');
+  });
+
+  const respaldos = () => readdirSync(join(raiz, 'Flujos')).filter((f) => f.startsWith('respaldo-'));
+  const dosNodos = () => flujo([nodo('Existente', 'Mia'), nodo('Nodo nuevo', 'Mia')]);
+
+  describe('la lista de credenciales tiene que haber llegado (M-1)', () => {
+    it('HTTP 403 con --aplicar: aborta sin escribir', () => {
+      const r = correr(dosNodos(), '{"message":"forbidden"}', ['--aplicar'], { CODIGO_CREDENCIALES: '403' });
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/ABORTADO[\s\S]*HTTP 403/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('HTTP 403 en seco: avisa sin abortar', () => {
+      const r = correr(dosNodos(), '{"message":"forbidden"}', [], { CODIGO_CREDENCIALES: '403' });
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/con --aplicar se abortaria: n8n no entrego la lista/);
+    });
+    it('HTTP 200 con una respuesta que no es lista y relleno por TIPO: aborta', () => {
+      const r = correr(dosNodos(), '{"message":"forbidden"}', ['--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/no es una lista/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('contraprueba: sin ningún relleno por TIPO, una respuesta que no es lista sigue como antes', () => {
+      const r = correr(flujo([nodo('Existente', 'Mia')]), '{"message":"x"}', ['--aplicar']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.llamadas).toContain('PUT /workflows/7');
+    });
+    it('nextCursor (lista partida) con --aplicar: aborta con mensaje claro', () => {
+      const r = correr(dosNodos(), JSON.stringify({ data: UNICA, nextCursor: 'abc' }), ['--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/mas de 250 credenciales/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+  });
+
+  describe('--crear: un nombre declarado que no existe es faltante (M-2)', () => {
+    it('«No existe» aborta sin POST aunque haya una credencial del tipo en la referencia', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', 'No existe')]), UNICA, ['--crear', '--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/Nodo nuevo: sin credencial/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('contraprueba: una referencia SIN nombre sí se rellena por TIPO', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), UNICA, ['--crear', '--aplicar']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.llamadas).toContain('POST /workflows');
+    });
+    it('--crear con la lista caída (HTTP 500) aborta sin POST', () => {
+      const r = correr(flujo([nodo('Nodo nuevo', '')]), '{}', ['--crear', '--aplicar'], { CODIGO_CREDENCIALES: '500' });
+      expect(r.codigo, r.salida).toBe(1);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+  });
+
+  describe('nodo nuevo sin nombre de credencial (L-1)', () => {
+    const vivoConDos = flujo([nodo('Existente', 'Ajena', 'ID-1'), nodo('Otro', 'Otra', 'ID-2')]);
+    it('varias credenciales del tipo en el vivo: aborta con --aplicar y nombra el nodo', () => {
+      const r = correr(flujo([nodo('Existente', 'Ajena'), nodo('Otro', 'Otra'), nodo('Nodo nuevo', '')]),
+        [cred('1', 'Ajena'), cred('2', 'Otra')], ['--aplicar'], {}, vivoConDos);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(r.salida).toMatch(/ABORTADO[\s\S]*Nodo nuevo/);
+      expect(escribio(r.llamadas)).toBe(false);
+    });
+    it('una sola en el vivo: avisa en rojo y sigue', () => {
+      const r = correr(flujo([nodo('Existente', 'Mia'), nodo('Nodo nuevo', '')]), UNICA, ['--aplicar']);
+      expect(r.codigo, r.salida).toBe(0);
+      expect(r.salida).toMatch(/Nodo nuevo: sin nombre de credencial/);
+      expect(r.llamadas).toContain('PUT /workflows/7');
+    });
+  });
+
+  describe('el respaldo (L-2)', () => {
+    it('un aborto no deja respaldo de un PUT que nunca ocurrió', () => {
+      const r = correr(dosNodos(), DOBLE, ['--aplicar']);
+      expect(r.codigo, r.salida).toBe(1);
+      expect(respaldos()).toEqual([]);
+    });
+    it('al escribir, el respaldo se crea con modo 600', () => {
+      const r = correr(flujo([nodo('Existente', 'Mia')]), UNICA, ['--aplicar']);
+      expect(r.codigo, r.salida).toBe(0);
+      const [archivo] = respaldos();
+      expect(archivo).toBeDefined();
+      expect(statSync(join(raiz, 'Flujos', archivo)).mode & 0o777).toBe(0o600);
+    });
+    it('el respaldo de --reiniciar-estado también es 600', () => {
+      const r = correr(flujo([]), UNICA, ['--reiniciar-estado', '--aplicar']);
+      expect(r.codigo, r.salida).toBe(0);
+      const [archivo] = respaldos();
+      expect(archivo).toMatch(/^respaldo-estado-/);
+      expect(statSync(join(raiz, 'Flujos', archivo)).mode & 0o777).toBe(0o600);
+    });
   });
 });
