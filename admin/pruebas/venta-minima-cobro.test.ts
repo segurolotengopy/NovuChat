@@ -35,7 +35,7 @@ export const LUNES_10 = Date.UTC(2026, 9, 5, 14);
 
 const NOMBRES = [
   'cbCobroReal', 'cbCaption', 'cbMensajeQr', 'cbLectura', 'cbResultado', 'cbEstadoParaAviso',
-  'cbTextoAlCliente', 'cbDiferencia', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto',
+  'cbTextoAlCliente', 'cbDiferencia', 'cbObjetoUnico', 'cbTotalValido', 'cbMonto', 'cbUrlSegura',
 ] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -130,6 +130,37 @@ describe('S3: la red se compara en NFKC y sin caracteres de formato, con las raÃ
     }
     // Negativo: un titular normal sale.
     expect(L.cbCaption(PEDIDO, { titular: 'Taqueria Ejemplo SRL', moneda: 'BOB' })).toContain('la cuenta es de Taqueria Ejemplo SRL');
+  });
+});
+
+describe('S5: la URL del QR solo vale con https, dominio con nombre, sin @ y sin puerto', () => {
+  const buenas = ['https://almacen.ejemplo.test/qr/qtaco.png', 'https://a.b-c.example.bo/x/y.png?v=2#f', 'https://qr.ejemplo.test', 'HTTPS://QR.EJEMPLO.TEST/A.PNG'];
+  const malas = [
+    'http://qr.ejemplo.test/a.png', 'https://127.0.0.1/qr.png', 'https://10.0.0.5/qr.png', 'https://localhost/qr.png', 'https://[::1]/qr.png',
+    `https://${['2130706', '433'].join('')}/qr.png`, 'https://usuario\u0040qr.ejemplo.test/a.png', 'https://qr.ejemplo.test\u0040malo.test/a.png',
+    'https://qr.ejemplo.test:8443/a.png', 'https://qr.ejemplo.test/a b.png', 'https://qr.ejemplo.test/a.png"x', 'https://qr.ejemplo.test/a\u0040b.png',
+    'https://', 'https://.ejemplo.test/a.png', 'https://ejemplo..test/a.png', 'https://-malo.ejemplo.test/a.png', 'ftp://qr.ejemplo.test/a.png',
+    'https://qr.ejemplo.test/' + 'x'.repeat(2000), '', '   ',
+  ];
+  it('cbUrlSegura acepta las buenas y rechaza las malas', () => {
+    for (const u of buenas) expect(L.cbUrlSegura(u), u).toBe(true);
+    for (const u of malas) expect(L.cbUrlSegura(u), u).toBe(false);
+    for (const v of [undefined, null, 5, {}]) expect(L.cbUrlSegura(v), String(v)).toBe(false);
+  });
+  it('cbCobroReal no enciende el cobro con una URL mala (plan B sin QR), y sÃ­ con una buena', () => {
+    for (const u of malas) expect(L.cbCobroReal(panel({}, { qr: { url: u } })), u).toMatchObject({ activo: false, qrUrl: '' });
+    for (const u of buenas.slice(0, 3)) expect(L.cbCobroReal(panel({}, { qr: { url: u } })), u).toMatchObject({ activo: true, qrUrl: u });
+  });
+  it('cbMensajeQr no arma un QR con una URL mala', () => {
+    for (const u of malas) expect(L.cbMensajeQr(PEDIDO, { activo: true, qrUrl: u, titular: '' }, {}), u).toBeNull();
+    expect(L.cbMensajeQr(PEDIDO, { activo: true, qrUrl: URL_QR, titular: '' }, {})).toMatchObject({ tipo: 'imagen', url: URL_QR });
+  });
+  it('es de tiempo lineal: una URL de 2.000 caracteres con guiones y puntos tarda menos de 50 ms', () => {
+    for (const u of ['https://' + 'a-'.repeat(900) + '.com', 'https://' + 'a.'.repeat(900) + 'com', 'https://' + 'a'.repeat(1990)]) {
+      const ini = performance.now();
+      L.cbUrlSegura(u);
+      expect(performance.now() - ini, u.slice(0, 20)).toBeLessThan(50);
+    }
   });
 });
 

@@ -119,6 +119,15 @@ function cbCodigo(c) {
 // Cobro real: solo si el servidor lo manda y el QR tiene una dirección https
 // ---------------------------------------------------------------------------
 
+// La URL del QR: solo `https://`, con un dominio con nombre (la última parte empieza con una letra: nada de IP, de
+// «localhost» ni de números sueltos), SIN usuario (`@`) ni puerto, sin espacios ni comillas. Hasta 2.000 caracteres.
+// (La expresión es lineal: cada parte del dominio está acotada a 63 caracteres y separada por un punto.)
+function cbUrlSegura(u) {
+  const s = typeof u === 'string' ? u.trim() : '';
+  return s.length > 0 && s.length <= 2000
+    && /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:[/?#][^\s<>"'@]*)?$/i.test(s);
+}
+
 // `cuerpoPanel` es el cuerpo completo de `configuracionFlujo`. Sale `activo:false`
 // con todo lo demás vacío en cualquier duda: sin QR utilizable no hay cobro real.
 function cbCobroReal(cuerpoPanel) {
@@ -127,8 +136,7 @@ function cbCobroReal(cuerpoPanel) {
   const cb = cbEsObjeto(r.cobro) ? r.cobro : {};
   const qr = cbEsObjeto(cb.qr) ? cb.qr : {};
   const url = typeof qr.url === 'string' ? qr.url.trim() : '';
-  const activo = cr !== null && cb.activo !== false && url.length <= 2000
-    && /^https:\/\/[^\s<>"']+$/i.test(url);
+  const activo = cr !== null && cb.activo !== false && cbUrlSegura(url);
   if (!activo) {
     return {
       activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null,
@@ -186,7 +194,7 @@ function cbMensajeQr(pedido, cobro, opciones) {
   const total = cbTotalValido(p.total);
   const id = typeof p.pedidoId === 'string' ? p.pedidoId.trim() : '';
   const url = typeof c.qrUrl === 'string' ? c.qrUrl : '';
-  if (c.activo !== true || !/^https:\/\//i.test(url) || total === null || id === '') return null;
+  if (c.activo !== true || !cbUrlSegura(url) || total === null || id === '') return null;
   const o = cbEsObjeto(opciones) ? opciones : {};
   const cuerpo = cbCaption({ codigo: p.codigo, total: total }, {
     titular: c.titular, moneda: o.moneda, delivery: o.delivery === true,

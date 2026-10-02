@@ -2,16 +2,19 @@
 // RESTAURANTE (plantilla y, con la ventana abierta, el texto con el detalle) y sale un ítem por
 // aviso: {para, rol, payload, respaldo, esPlantilla, sinAviso, tipoAviso, ...}. NO escribe estado
 // (eso es solo de `Armar mensajes`) y NO nombra ninguna plantilla: las plantillas son por evento,
-// son configurables y las posee `avisos.js` (`avArmar`).
+// son configurables y las posee `avisos.js` (`avPlan`, que envuelve a `avArmar`). Sin plantilla
+// configurada para el evento no se inventa un nombre: ningún ítem de plantilla sale y se anota el error.
 //
 // LO QUE NUNCA HACE:
 //   - dejar salir un texto o un parámetro de plantilla con una palabra de `VM_PROHIBIDAS`
 //     («validado», «pagado», «ya lo preparan»…): se reemplaza por uno genérico y se anota;
-//   - armar un aviso si ya se alcanzó el tope diario, o una segunda derivación del mismo teléfono
-//     dentro de la hora (la marca la escribe `Armar mensajes`, y solo si el aviso salió);
+//   - armar un aviso si ya se alcanzó el tope diario, o una derivación (`topeTransferenciasHora`, def. 1) o un
+//     aviso de pedido o de comprobante (`topePedidosHora`, def. 6) del mismo teléfono dentro de la hora. Las marcas
+//     las escribe `Armar mensajes`, y solo si el aviso salió (por hecho): un aviso que falló NO cuenta, así que el
+//     siguiente intento sí se hace. Un tope en 0 significa «ninguno»: no se arma ese aviso;
 //   - mandar un aviso al propio número de quien escribe (lo excluye `avDestinatarios`).
 //
-// Cada ítem lleva su `clase` (`plantilla`, `detalle` o `imagen`, la que pone `avArmar`): `Armar mensajes`
+// Cada ítem lleva su `clase` (`plantilla`, `detalle` o `imagen`, la que pone `avPlan`): `Armar mensajes`
 // cuenta «el aviso salió» solo con el `wamid` de una plantilla o de un detalle, nunca con la imagen.
 //
 // SIEMPRE emite al menos un ítem: con `sinAviso: true` cuando no hay nada que avisar, para que
@@ -53,13 +56,19 @@ function aaPedir(a) {
 if (Array.isArray(AA_PLAN.aviso)) AA_PLAN.aviso.forEach(aaPedir); else aaPedir(AA_PLAN.aviso);
 if (Array.isArray(AA_PLAN.avisos)) AA_PLAN.avisos.forEach(aaPedir);
 
-// Una derivación por teléfono por hora (`sd.transferencias[from]`: marcas en ms). La escribe `Armar mensajes`.
-function aaDerivacionReciente() {
-  if (!AA_sd || !AA_sd.transferencias || typeof AA_sd.transferencias !== 'object') return false;
-  const marcas = AA_sd.transferencias[AA_FROM];
+// Topes por teléfono y por hora. Las marcas (en ms) las escribe `Armar mensajes` SOLO cuando el aviso salió:
+// `sd.transferencias[from]` (derivaciones) y `sd.avisosPedido[from]` (avisos de pedido y de comprobante).
+// El tope sale de la configuración; un 0 se respeta (ningún aviso), solo la falta del dato usa el valor por omisión.
+function aaTope(valor, porOmision) {
+  if (valor === undefined || valor === null || valor === '') return porOmision;
+  const n = Number(valor);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : porOmision;
+}
+function aaTopeAlcanzado(clave, tope) {
+  const mapa = AA_sd && AA_sd[clave] && typeof AA_sd[clave] === 'object' ? AA_sd[clave] : null;
+  const marcas = mapa && Object.prototype.hasOwnProperty.call(mapa, AA_FROM) ? mapa[AA_FROM] : null;
   const lista = Array.isArray(marcas) ? marcas : (marcas ? [marcas] : []);
-  const tope = Number(AA_CFG.topeTransferenciasHora) || 1;
-  return lista.filter((ms) => AA_AHORA - Number(ms) < AA_HORA_MS).length >= tope;
+  return lista.filter((ms) => AA_AHORA - Number(ms) < AA_HORA_MS && AA_AHORA - Number(ms) >= 0).length >= tope;
 }
 
 // Lo que `avArmar` necesita y el plan no trajo se completa con el pedido que el plan guarda y con la
@@ -143,8 +152,12 @@ function aaPrefijar(payload) {
 if (AA_armar) {
   for (const a of aaPedidos) {
     const tipo = String(a.tipo);
-    if (tipo === 'transferencia' && aaDerivacionReciente()) {
+    if (tipo === 'transferencia' && aaTopeAlcanzado('transferencias', aaTope(AA_CFG.topeTransferenciasHora, 1))) {
       AA_errores.push('derivacion_repetida: ya se avisó una derivación de este teléfono en la última hora');
+      continue;
+    }
+    if ((tipo === 'pedido' || tipo === 'comprobante') && aaTopeAlcanzado('avisosPedido', aaTope(AA_CFG.topePedidosHora, 6))) {
+      AA_errores.push('tope_pedidos_hora: ya se avisaron demasiados pedidos de este teléfono en la última hora');
       continue;
     }
     const datos = aaDatos(a);
@@ -152,12 +165,13 @@ if (AA_armar) {
     if (tipo === 'comprobante' && datos.resultado === 'ya_cotejado') { AA_errores.push('sin_aviso_ya_cotejado'); continue; }
     let crudo = null;
     try {
-      crudo = avArmar(tipo, datos, AA_destinatarios, AA_CFG, AA_sd, AA_AHORA);
+      // `avPlan` trae también los errores (p. ej. `plantilla_no_configurada_<evento>`) y respeta el cupo del día.
+      crudo = avPlan(tipo, datos, AA_destinatarios, AA_CFG, AA_sd, AA_AHORA);
     } catch (e) {
       AA_errores.push('aviso_no_armado: ' + tipo + ': ' + String(e && e.message).slice(0, 80));
       continue;
     }
-    // `avArmar` da la lista; si alguna versión la envuelve en `{items, errores}`, también se acepta.
+    // `avPlan` da `{items, errores}`; si alguna versión devuelve solo la lista, también se acepta.
     if (crudo && !Array.isArray(crudo) && Array.isArray(crudo.items)) {
       if (Array.isArray(crudo.errores)) crudo.errores.forEach((m) => AA_errores.push(String(m)));
       crudo = crudo.items;
