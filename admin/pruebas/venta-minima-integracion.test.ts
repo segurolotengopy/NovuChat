@@ -765,9 +765,11 @@ describe('las tres copias de la red de prohibidas y las expresiones regulares', 
   });
 
   it('ninguna librería ni nodo trae un cuantificador anidado del tipo `(\\s*X\\s*)+` (retroceso exponencial)', () => {
-    const archivos = ['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].map((n) => [`lib/${n}.js`, leer(`lib/${n}.js`)] as const)
-      .concat(['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes']
-        .map((n) => [`nodos/${n}.js`, leer(`nodos/${n}.js`)] as const));
+    const rutas = [
+      ...['comun', 'pedido', 'reserva', 'promos', 'avisos', 'cobro'].map((n) => `lib/${n}.js`),
+      ...['carga-de-entrada', 'config-del-negocio', 'interpretar-entrada', 'decidir-turno', 'plan-del-turno', 'armar-avisos', 'armar-mensajes'].map((n) => `nodos/${n}.js`),
+    ];
+    const archivos: [string, string][] = rutas.map((r) => [r, leer(r)]);
     for (const [nombre, fuente] of archivos) {
       const sinComentarios = fuente.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
       // Un grupo que EMPIEZA con un átomo cuantificado (`\s*`, `\w+`, `.*`, `[a-z]+`), repetido con `+` o `*`: `(\s*·\s*)+`,

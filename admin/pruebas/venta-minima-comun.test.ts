@@ -940,8 +940,12 @@ describe('Config del negocio', () => {
   });
   it('valores por omisión de la reserva y de los topes: 12 personas, 60 min, 30 días, 3, 150 y 1', () => {
     const c = ok(PANEL, { base: {} });
-    expect(c).toMatchObject({ maxPersonasReserva: 12, anticipacionReservaMin: 60, maxDiasReserva: 30, topeReservasDia: 3, topeAvisosDia: 150, topeTransferenciasHora: 1 });
-    expect(ok()).toMatchObject({ maxPersonasReserva: 15, anticipacionReservaMin: 90, maxDiasReserva: 45, topeReservasDia: 5, topeAvisosDia: 200, topeTransferenciasHora: 2 });
+    expect(c).toMatchObject({ maxPersonasReserva: 12, anticipacionReservaMin: 60, maxDiasReserva: 30, topeReservasDia: 3, topeAvisosDia: 150, topeTransferenciasHora: 1, topePedidosHora: 6 });
+    expect(ok()).toMatchObject({ maxPersonasReserva: 15, anticipacionReservaMin: 90, maxDiasReserva: 45, topeReservasDia: 5, topeAvisosDia: 200, topeTransferenciasHora: 2, topePedidosHora: 6 });
+    // S6: el tope de avisos de pedido y comprobante por teléfono y por hora (def. 6; 0 = ninguno; un dato malo vuelve al 6).
+    expect(ok(PANEL, { base: { topePedidosHora: '2' } })).toMatchObject({ topePedidosHora: 2 });
+    expect(ok(PANEL, { base: { topePedidosHora: 0 } })).toMatchObject({ topePedidosHora: 0 });
+    for (const malo of [-1, 'abc', 1.5, null, '', 5000]) expect(ok(PANEL, { base: { topePedidosHora: malo } }), String(malo)).toMatchObject({ topePedidosHora: 6 });
     expect(ok(PANEL, { base: { maxPersonasReserva: '20', topeAvisosDia: '0' } })).toMatchObject({ maxPersonasReserva: 20, topeAvisosDia: 0 });
     // lo que no es un entero válido vuelve al valor por omisión
     const malos = ok(PANEL, { base: { maxPersonasReserva: -3, anticipacionReservaMin: 'abc', maxDiasReserva: 0, topeReservasDia: 1.5, topeAvisosDia: null, topeTransferenciasHora: '' } });

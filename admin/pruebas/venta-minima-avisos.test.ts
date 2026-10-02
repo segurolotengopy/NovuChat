@@ -877,7 +877,7 @@ describe('R2: con la ventana cerrada, la plantilla de pedido lleva el detalle po
       lineas: Array.from({ length: 30 }, (_, i) => ({ cantidad: 1, nombre: `Plato ${i} ` + 'y'.repeat(50), detalle: 'sin ají y ' + 'w'.repeat(70) })),
     });
     for (const rol of [ANDRES, SILVANA]) {
-      const v = params(plantillaDe(cerrada(largo), rol))[2];
+      const v = params(plantillaDe(cerrada(largo), rol))[2]!;
       expect(v.length, rol).toBeLessThanOrEqual(500);
       expect(v, rol).not.toMatch(/[\r\n\t]/);
       expect(v, rol).not.toMatch(/\s{2,}/);
