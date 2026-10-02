@@ -1,0 +1,129 @@
+{
+  "movimientos": [
+    {
+      "de": "admin/pruebas/asignar-numero.test.ts",
+      "a": "admin/pruebas/plataforma/asignar-numero.test.ts"
+    },
+    {
+      "de": "admin/pruebas/asignar-plan.test.ts",
+      "a": "admin/pruebas/plataforma/asignar-plan.test.ts"
+    },
+    {
+      "de": "admin/pruebas/captacion.test.ts",
+      "a": "admin/pruebas/modulos/captacion/captacion.test.ts"
+    },
+    {
+      "de": "admin/pruebas/carrito-podado.test.ts",
+      "a": "admin/pruebas/modulos/catalogo-web/carrito-podado.test.ts"
+    },
+    {
+      "de": "admin/pruebas/catalogo-web.test.ts",
+      "a": "admin/pruebas/modulos/catalogo-web/catalogo-web.test.ts"
+    },
+    {
+      "de": "admin/pruebas/cobrador-doble.test.ts",
+      "a": "admin/pruebas/central/cobrador-doble.test.ts"
+    },
+    {
+      "de": "admin/pruebas/cobranza.test.ts",
+      "a": "admin/pruebas/central/cobranza.test.ts"
+    },
+    {
+      "de": "admin/pruebas/cobro-prepago.test.ts",
+      "a": "admin/pruebas/central/cobro-prepago.test.ts"
+    },
+    {
+      "de": "admin/pruebas/comportamiento.test.ts",
+      "a": "admin/pruebas/central/comportamiento.test.ts"
+    },
+    {
+      "de": "admin/pruebas/direccion-maps.test.ts",
+      "a": "admin/pruebas/core/direccion-maps.test.ts"
+    },
+    {
+      "de": "admin/pruebas/ensamblador.test.ts",
+      "a": "admin/pruebas/core/ensamblador.test.ts"
+    },
+    {
+      "de": "admin/pruebas/estado-cuenta.test.ts",
+      "a": "admin/pruebas/plataforma/estado-cuenta.test.ts"
+    },
+    {
+      "de": "admin/pruebas/fijar-umbrales.test.ts",
+      "a": "admin/pruebas/plataforma/fijar-umbrales.test.ts"
+    },
+    {
+      "de": "admin/pruebas/imagen-catalogo.test.ts",
+      "a": "admin/pruebas/modulos/productos/imagen-catalogo.test.ts"
+    },
+    {
+      "de": "admin/pruebas/indices.test.ts",
+      "a": "admin/pruebas/central/indices.test.ts"
+    },
+    {
+      "de": "admin/pruebas/inventario.test.ts",
+      "a": "admin/pruebas/modulos/inventario/inventario.test.ts"
+    },
+    {
+      "de": "admin/pruebas/limite-catalogo.test.ts",
+      "a": "admin/pruebas/modulos/productos/limite-catalogo.test.ts"
+    },
+    {
+      "de": "admin/pruebas/manifiesto-secretos.test.ts",
+      "a": "admin/pruebas/plataforma/manifiesto-secretos.test.ts"
+    },
+    {
+      "de": "admin/pruebas/migrar-instrucciones.test.ts",
+      "a": "admin/pruebas/plataforma/migrar-instrucciones.test.ts"
+    },
+    {
+      "de": "admin/pruebas/pagos.test.ts",
+      "a": "admin/pruebas/plataforma/pagos.test.ts"
+    },
+    {
+      "de": "admin/pruebas/pase-a-produccion.test.ts",
+      "a": "admin/pruebas/central/pase-a-produccion.test.ts"
+    },
+    {
+      "de": "admin/pruebas/planes.test.ts",
+      "a": "admin/pruebas/central/planes.test.ts"
+    },
+    {
+      "de": "admin/pruebas/plataforma.test.ts",
+      "a": "admin/pruebas/plataforma/plataforma.test.ts"
+    },
+    {
+      "de": "admin/pruebas/prepago-ingesta.test.ts",
+      "a": "admin/pruebas/plataforma/prepago-ingesta.test.ts"
+    },
+    {
+      "de": "admin/pruebas/prepago.test.ts",
+      "a": "admin/pruebas/central/prepago.test.ts"
+    },
+    {
+      "de": "admin/pruebas/qr.test.ts",
+      "a": "admin/pruebas/modulos/cobros/qr.test.ts"
+    },
+    {
+      "de": "admin/pruebas/region-y-cuenta.test.ts",
+      "a": "admin/pruebas/plataforma/region-y-cuenta.test.ts"
+    },
+    {
+      "de": "admin/pruebas/saneo.test.ts",
+      "a": "admin/pruebas/central/saneo.test.ts"
+    },
+    {
+      "de": "admin/pruebas/tipo-cambio-bcb.test.ts",
+      "a": "admin/pruebas/central/tipo-cambio-bcb.test.ts"
+    },
+    {
+      "de": "admin/pruebas/tipo-cambio.test.ts",
+      "a": "admin/pruebas/plataforma/tipo-cambio.test.ts"
+    },
+    {
+      "de": "admin/pruebas/xlsx.test.ts",
+      "a": "admin/pruebas/modulos/productos/xlsx.test.ts"
+    }
+  ],
+  "suitesPuras": []
+}
