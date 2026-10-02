@@ -76,10 +76,10 @@ for (const k of CAMPOS_BASE) {
   if (v) deBase[k] = v;
 }
 // Las plantillas de aviso son por evento y configurables (`plantillaPedido`, `idiomaPlantillaPedido`,
-// `plantillaReserva`, …): se copian todas las claves `plantilla*` e `idioma*` con valor de texto.
+// `plantillaReserva`, …): se copian todas las claves `plantilla*`, `idioma*` y `formaPlantilla*` con valor de texto.
 const deBasePlantillas = {};
 for (const k of Object.keys(base)) {
-  if (/^(plantilla|idioma)[A-Za-z0-9_]{0,60}$/.test(k)) {
+  if (/^(plantilla|idioma|formaPlantilla)[A-Za-z0-9_]{0,60}$/.test(k)) { // `formaPlantilla*`: la forma de la reserva y de la derivación (`cita` o `pedido`)
     const v = marcador(base[k]);
     if (v && v.length <= 100) deBasePlantillas[k] = v;
   }
