@@ -8,6 +8,7 @@
  *   node flujo-de-prueba.mjs --env <.env> --estado <archivo> --aplicar  crea y activa
  *   node flujo-de-prueba.mjs --env <.env> --estado <archivo> --borrar --aplicar
  *   node flujo-de-prueba.mjs --env <.env> --estado <archivo> --turno <carga.json>
+ *   node flujo-de-prueba.mjs --env <.env> --actualizar-codigo [--flujo <json>] [--aplicar]   un B YA VIVO: solo su código
  *
  * QUÉ SUBE: `agenda-minima.prueba.json`, que NO tiene disparador de WhatsApp
  * (activarlo le quitaría el webhook al flujo vivo de la app). Entra por un
@@ -47,8 +48,9 @@ const bandera = (n) => args.includes(`--${n}`);
 const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
-const ESTADO = resolve(opcion('estado') ?? morir('falta --estado <archivo fuera del repositorio>'));
-if (dentroDelRepo(ESTADO)) morir('--estado tiene que estar FUERA del repositorio (lleva la ruta del webhook)');
+// `--actualizar-codigo` no guarda ningún estado: no necesita (ni lee) `--estado`.
+const ESTADO = bandera('actualizar-codigo') ? null : resolve(opcion('estado') ?? morir('falta --estado <archivo fuera del repositorio>'));
+if (ESTADO && dentroDelRepo(ESTADO)) morir('--estado tiene que estar FUERA del repositorio (lleva la ruta del webhook)');
 const APLICAR = bandera('aplicar');
 const NOMBRE = 'TEMPORAL — Agenda mínima (prueba, borrar)';
 
@@ -276,6 +278,100 @@ if (bandera('sobre-bellido')) {
   if (tras.versionId && tras.activeVersionId && tras.versionId !== tras.activeVersionId) morir('la versión ACTIVA no es la que se acaba de escribir (versionId ≠ activeVersionId). Revise n8n y use --restaurar-respaldo');
   console.log(`✓ candidato sobre Bellido: «${tras.name}», ${tras.nodes.length} nodos, activo=${tras.active}`);
   console.log('FALTA, ya: verificar-meta.sh --env .env.bellido (suscripción), un mensaje real desde un teléfono registrado y su ejecución en n8n. Si algo falla: --restaurar-respaldo.');
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------- actualizar el código de un B YA VIVO
+/*
+ * --actualizar-codigo [--flujo <json>] [--previa <archivo fuera del repo>] [--aplicar]
+ *   Para cuando el flujo vivo (Bellido o el Demo A) YA es el candidato B y solo cambió el CÓDIGO de los nodos
+ *   Code (por ejemplo, una corrección en `_comun.js`, que se pega en varios nodos). `--sobre-bellido` se niega
+ *   a correr con B ya vivo; este modo es el que sí. Nace de la corrección de `cnAtencion` (02/10/2026), que se
+ *   publicó con un script de una sola vez.
+ *
+ *   QUÉ TOCA: SOLO `parameters.jsCode` de los nodos Code cuyo código cambió. Nada más: ni credenciales, ni
+ *   configuración, ni conexiones, ni ajustes. El PUT lleva los nodos VIVOS con ese único campo reemplazado.
+ *   QUÉ EXIGE (si algo falla, no escribe y dice qué nodo, nunca un valor):
+ *     - el flujo vivo es de Bellido o del Demo A, y NO de un cliente ajeno (Platinum, Q'Taco, captación, el
+ *       sistema financiero…); y YA tiene los nodos de B (si no, es `--sobre-bellido`);
+ *     - el candidato no trae un Webhook de prueba ni un WhatsApp Trigger distinto del vivo;
+ *     - los mismos nodos (por nombre), del mismo tipo y versión, y las mismas conexiones;
+ *     - en los nodos Code, ninguna diferencia fuera de `jsCode`; en los demás nodos, ninguna diferencia de
+ *       parámetros, salvo los campos de «Config base» que el candidato trae como marcador `REEMPLAZAR_…` y el
+ *       vivo tiene llenos (los llenó la publicación);
+ *     - hay al menos un nodo Code con código distinto.
+ *   DESPUÉS DEL PUT: lee el vivo, comprueba que sigue ACTIVO, que la versión ACTIVA es la última y que el código
+ *   leído es el del candidato; si la versión activa no es la última, la activa y vuelve a comprobar.
+ *   `--previa` (opcional): guarda el flujo vivo entero ANTES de escribir, con `wx` (nunca pisa) y permisos 600.
+ *   Sin `--aplicar`, en seco: lista los nodos que cambiarían y no escribe nada.
+ */
+const NO_ACTUALIZAR = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor/i;
+if (bandera('actualizar-codigo')) {
+  const PROPIOS_DE_B_ = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
+  const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
+  if (vivo.cod !== 200) morir(`GET del flujo vivo → ${vivo.cod}`);
+  const v = vivo.datos;
+  if (NO_ACTUALIZAR.test(v.name) || !/bellido|demo ?a\b/i.test(v.name)) morir(`el flujo del .env no es el de Bellido ni el del Demo A («${v.name}»)`);
+  if (!PROPIOS_DE_B_.every((x) => v.nodes.some((n) => n.name === x))) morir('el flujo vivo todavía no es un B (le faltan los nodos del candidato): use --sobre-bellido o --sobre-demo-a');
+  const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
+  const cand = JSON.parse(readFileSync(ARCHIVO, 'utf8'));
+  if (cand.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato trae un Webhook de prueba: no se publica');
+  const nv = new Map(v.nodes.map((n) => [n.name, n]));
+  const nc = new Map(cand.nodes.map((n) => [n.name, n]));
+  const sobran = [...nv.keys()].filter((k) => !nc.has(k)); const faltan = [...nc.keys()].filter((k) => !nv.has(k));
+  if (sobran.length || faltan.length) morir(`los nodos no coinciden. Solo en el vivo: ${sobran.join(', ') || '—'}. Solo en el candidato: ${faltan.join(', ') || '—'}`);
+  const igual = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const cambian = []; const prohibidas = [];
+  for (const [nombre, c] of nc) {
+    const n = nv.get(nombre);
+    if (n.type !== c.type || n.typeVersion !== c.typeVersion) { prohibidas.push(`${nombre}: tipo o versión`); continue; }
+    if (c.type === 'n8n-nodes-base.code') {
+      const { jsCode: codigoVivo, ...restoVivo } = n.parameters; const { jsCode: codigoCand, ...restoCand } = c.parameters;
+      if (!igual(restoVivo, restoCand)) prohibidas.push(`${nombre}: parámetros distintos de jsCode`);
+      if (typeof codigoCand !== 'string' || codigoCand.startsWith('@@')) prohibidas.push(`${nombre}: el candidato no trae el código armado`);
+      else if (codigoVivo !== codigoCand) cambian.push(nombre);
+    } else if (!igual(n.parameters, c.parameters)) {
+      // Único cambio de parámetros que se tolera: los campos de «Config base» que el candidato trae como marcador y el vivo tiene llenos.
+      const asig = (w) => Object.fromEntries(((w.parameters.assignments || {}).assignments || []).map((x) => [x.name, x.value]));
+      const av = asig(n); const ac = asig(c);
+      const otrosParametros = Object.keys({ ...n.parameters, ...c.parameters }).filter((k) => k !== 'assignments' && !igual(n.parameters[k], c.parameters[k]));
+      const camposDistintos = Object.keys({ ...av, ...ac }).filter((k) => !igual(av[k], ac[k]));
+      const noMarcador = camposDistintos.filter((k) => !(typeof ac[k] === 'string' && /^REEMPLAZAR_[A-Z0-9_]+$/.test(ac[k]) && typeof av[k] === 'string' && av[k] !== '' && !/^REEMPLAZAR_/.test(av[k])));
+      if (nombre !== 'Config base' || otrosParametros.length || noMarcador.length) prohibidas.push(`${nombre}: ${[...otrosParametros, ...noMarcador].join(', ') || 'parámetros'}`);
+    }
+  }
+  if (!igual(v.connections, cand.connections)) prohibidas.push('las conexiones');
+  console.log(`Vivo: «${v.name}», ${v.nodes.length} nodos, activo=${v.active}, versión publicada=${v.versionId === v.activeVersionId}. Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${cand.nodes.length} nodos.`);
+  console.log(`Nodos Code con código distinto (${cambian.length}): ${cambian.join(', ') || '—'}`);
+  if (prohibidas.length) morir(`hay diferencias que este modo NO toca (use --sobre-bellido o revise): ${prohibidas.join(' · ')}`);
+  if (!cambian.length) morir('no hay nada que actualizar: el código vivo ya es el del candidato');
+  if (!APLICAR) { console.log('\nEn seco: no se escribió nada. Agregue --aplicar.'); process.exit(0); }
+  const PREVIA = opcion('previa') ? resolve(opcion('previa')) : null;
+  if (PREVIA) {
+    if (dentroDelRepo(PREVIA)) morir('--previa tiene que estar FUERA del repositorio (lleva ids y datos del cliente)');
+    try { writeFileSync(PREVIA, JSON.stringify(v), { flag: 'wx', mode: 0o600 }); } catch (e) { if (e.code === 'EEXIST') morir('--previa ya existe: no se pisa'); throw e; }
+    chmodSync(PREVIA, 0o600);
+  }
+  for (const nombre of cambian) nv.get(nombre).parameters.jsCode = nc.get(nombre).parameters.jsCode;
+  const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: v.name, nodes: v.nodes, connections: v.connections, settings: v.settings ?? {} });
+  if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. Lea el flujo vivo y corrija hacia adelante`);
+  const leer = async () => { const r = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`); if (r.cod !== 200) morir(`GET después del PUT → ${r.cod}. Revise n8n`); return r.datos; };
+  let tras = await leer();
+  if (tras.active !== true) {
+    const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
+    tras = await leer();
+    if (tras.active !== true) morir(`el flujo quedó INACTIVO (activate → ${a.cod}). Actívelo YA`);
+  }
+  const codigoOk = (w) => cambian.every((nombre) => (w.nodes.find((n) => n.name === nombre) || { parameters: {} }).parameters.jsCode === nc.get(nombre).parameters.jsCode);
+  if (!codigoOk(tras)) morir('el código leído después del PUT no es el del candidato');
+  if (tras.versionId !== tras.activeVersionId) {
+    const a = await llamar('POST', `/workflows/${env.N8N_WORKFLOW_ID}/activate`);
+    tras = await leer();
+    if (tras.versionId !== tras.activeVersionId) morir(`la versión ACTIVA no es la que se acaba de escribir (activate → ${a.cod}). Revise n8n`);
+    if (!codigoOk(tras)) morir('después de activar, el código leído no es el del candidato');
+  }
+  console.log(`✓ «${tras.name}»: ${tras.nodes.length} nodos, activo=${tras.active}, publicada=${tras.versionId === tras.activeVersionId}; ${cambian.length} nodos con el código nuevo; credenciales, configuración y conexiones intactas.`);
+  console.log('FALTA, ya: un mensaje real desde un teléfono registrado y la lectura de su ejecución en n8n.');
   process.exit(0);
 }
 
