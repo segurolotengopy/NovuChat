@@ -3048,3 +3048,261 @@ describe('B0: claves estables por pedido (doble toque simulado desde el mismo es
     expect(c['tipo']).toBe('registro');
   });
 });
+
+// =====================================================================================================
+// ENSAYO EN EL DEMO A: `venta-minima.ensayo-demo-a.json` (entrada `trigger`, credenciales del Demo A por nombre)
+// =====================================================================================================
+describe('ensayo en el Demo A: la variante `trigger` con las credenciales del Demo A', () => {
+  const DEMO_A = leer('venta-minima.ensayo-demo-a.json');
+  const DEMO_A_VIVO = JSON.parse(readFileSync(join(AQUI, '../../Flujos/demo-a-agendamiento.json'), 'utf8')) as Flujo;
+  const DATOS_DEMO_A = readFileSync(join(AQUI, '../scripts/datos/venta-minima/ensayo-demo-a.json'), 'utf8');
+  const AJENA = ['AAB1', 'WA', 'Prod'].join('-'); // el nombre de la credencial que jamás debe usarse
+  const nodo = (f: Flujo, nombre: string) => f.nodes.find((n) => n.name === nombre) as NonNullable<(typeof f.nodes)[number]>;
+  const credencialesDe = (f: Flujo): { nodo: string; tipo: string; nombre: string }[] =>
+    f.nodes.flatMap((n) => Object.entries((n.credentials ?? {}) as Record<string, { name?: string }>).map(([tipo, c]) => ({ nodo: n.name, tipo, nombre: String(c.name ?? '') })));
+
+  /** `construir.mjs` sobre una copia de la carpeta y de los datos, con `modifica` aplicado antes. */
+  function enCopia(modifica: (vm: string, datos: string) => void, args: string[] = []) {
+    const tmp = mkdtempSync(join(tmpdir(), 'vm-da-'));
+    try {
+      const vm = join(tmp, 'Flujos/experimental/venta-minima');
+      const datos = join(tmp, 'admin/scripts/datos/venta-minima');
+      mkdirSync(vm, { recursive: true });
+      mkdirSync(datos, { recursive: true });
+      cpSync(CARPETA_VM, vm, { recursive: true });
+      cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
+      modifica(vm, datos);
+      return spawnSync(process.execPath, [join(vm, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  const editarDatosDemoA = (datos: string, f: (d: J) => void): void => {
+    const ruta = join(datos, 'ensayo-demo-a.json');
+    const d = JSON.parse(readFileSync(ruta, 'utf8')) as J;
+    f(d);
+    writeFileSync(ruta, JSON.stringify(d, null, 2) + '\n');
+  };
+
+  // ---- lo que se versiona
+  it('la entrada es SOLO el `WhatsApp Trigger`, con la credencial «WhatsApp OAuth account» del Demo A (y ninguna de la app de producción del receptor)', () => {
+    const triggers = DEMO_A.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
+    expect(triggers.map((n) => n.name)).toEqual(['WhatsApp Trigger']);
+    expect(triggers[0]?.credentials).toEqual({ whatsAppTriggerApi: { id: '', name: 'WhatsApp OAuth account' } });
+    // Ningún otro disparador ni webhook, y ninguno de los nodos de las otras dos entradas.
+    expect(DEMO_A.nodes.filter((n) => /webhook|trigger/i.test(n.type)).map((n) => n.name)).toEqual(['WhatsApp Trigger']);
+    for (const fuera of ['Entrega del receptor', 'Verificar firma con el receptor', '¿Firma válida?', 'Aceptar (200)', 'Rechazar (401)', 'Descartar repetidos', 'Entrada de prueba', 'Simular aviso', '¿Avisar de verdad?']) {
+      expect(DEMO_A.nodes.some((n) => n.name === fuera), fuera).toBe(false);
+    }
+    // El Trigger alimenta el flujo y nada más lo hace.
+    expect(destinos(DEMO_A, 'WhatsApp Trigger')).toEqual(['Carga de entrada']);
+    for (const cred of credencialesDe(DEMO_A)) expect(cred.nombre, cred.nodo).not.toMatch(/aab1|wa-prod|q'?taco/i);
+    // Negativo: el JSON de Q'Taco (receptor) y el de prueba no son esta variante.
+    expect(QTACO.nodes.some((n) => n.name === 'WhatsApp Trigger')).toBe(false);
+    expect(PRUEBA.nodes.some((n) => n.name === 'WhatsApp Trigger')).toBe(false);
+  });
+
+  it('las credenciales son las del Demo A por nombre: Trigger, ingesta, medios y Graph; Gemini se completa por tipo', () => {
+    for (const c of credencialesDe(DEMO_A)) {
+      if (c.tipo === 'httpHeaderAuth') {
+        const envio = ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo'].includes(c.nodo);
+        expect(c.nombre, c.nodo).toBe(envio ? 'Graph WhatsApp Demo A (Bearer)' : 'Cierres NovuChat A (auto)');
+      } else if (c.tipo === 'googlePalmApi') {
+        expect(c.nombre, c.nodo).toBe('');
+      } else if (c.tipo === 'whatsAppApi') {
+        expect(c.nombre, c.nodo).toBe('WhatsApp account');
+      } else {
+        expect(c.tipo, c.nodo).toBe('whatsAppTriggerApi');
+        expect(c.nombre, c.nodo).toBe('WhatsApp OAuth account');
+      }
+    }
+    // Los nodos de envío son nuevos para el Demo A (no existen en su JSON): `credenciales-cliente.sh` resuelve su id contra la instancia.
+    const nuevos = DEMO_A.nodes.filter((n) => n.credentials && !DEMO_A_VIVO.nodes.some((v) => v.name === n.name)).map((n) => n.name);
+    for (const n of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo']) expect(nuevos).toContain(n);
+  });
+
+  it('el nombre del flujo es EXACTAMENTE el del Demo A: es lo que protege el cerrojo de nombre de `publicar-flujo.sh`', () => {
+    expect(DEMO_A.name).toBe(DEMO_A_VIVO.name);
+    // Negativo: los demás JSON de venta no se llaman así (publicarlos sobre el Demo A fallaría el cerrojo).
+    for (const f of [QTACO, PRUEBA]) expect(f.name).not.toBe(DEMO_A_VIVO.name);
+  });
+
+  it('los marcadores son exactamente dos, ninguno del cliente (`_QTACO`), y ningún valor real', () => {
+    const patron = /REEMPLAZAR_[A-Z][^"\\\s]*/g; // el mismo patrón que `scripts/preparar-import.sh`
+    const t = texto('venta-minima.ensayo-demo-a.json');
+    expect([...new Set(t.match(patron) ?? [])].sort()).toEqual(['REEMPLAZAR_NUMERO_AVISO_ENSAYO', 'REEMPLAZAR_PHONE_NUMBER_ID']);
+    expect(t).not.toMatch(/REEMPLAZAR_[A-Z0-9_]*QTACO/);
+    expect(DATOS_DEMO_A).not.toMatch(/REEMPLAZAR_[A-Z0-9_]*QTACO/);
+    for (const x of [t, DATOS_DEMO_A]) {
+      expect((x.match(/\d{10,}/g) ?? []).filter((n) => !n.includes('000000'))).toEqual([]);
+      for (const prohibido of ['8081', 'receptor-clientes', 'receptor/', '/home/', 'Bearer ', 'client_secret']) expect(x).not.toContain(prohibido);
+      expect(x).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    }
+    // Del receptor y de la prueba no queda nada por reemplazar.
+    expect(t).not.toMatch(/REEMPLAZAR_(RUTA|URL|WABA)/);
+    // Negativo: el JSON de Q'Taco SÍ trae marcadores del cliente (el detector no es ciego).
+    expect(texto('venta-minima.qtaco.json')).toMatch(/REEMPLAZAR_[A-Z0-9_]*QTACO/);
+  });
+
+  it('las plantillas van vacías a propósito (en la línea del Demo A no existen) y el horario es de prueba', () => {
+    const cb = configBase(DEMO_A);
+    for (const k of ['plantillaPedido', 'plantillaReserva', 'plantillaDerivacion']) expect(cb[k], k).toBe('');
+    expect(cb['destinatariosAviso']).toBe('completo:REEMPLAZAR_NUMERO_AVISO_ENSAYO');
+    expect(cb['respaldoNumeroRecepcion']).toBe('REEMPLAZAR_NUMERO_AVISO_ENSAYO');
+    expect(cb['phoneNumberIdEsperado']).toBe('REEMPLAZAR_PHONE_NUMBER_ID');
+    // Negativo: Q'Taco SÍ trae su plantilla (es la que usa en producción).
+    expect(configBase(QTACO)['plantillaPedido']).toBe('pedido_registrado');
+  });
+
+  it('retención «none» en todo, y ninguna mención de `subscriptions` (prohibición 7)', () => {
+    expect(DEMO_A.settings).toMatchObject({ saveDataSuccessExecution: 'none', saveDataErrorExecution: 'none', saveExecutionProgress: false });
+    expect(JSON.stringify(DEMO_A)).not.toMatch(/subscriptions|subscribed_apps/i);
+    // Negativo: el detector sí atrapa la mención.
+    expect(/subscriptions|subscribed_apps/i.test('https://graph.facebook.com/v26.0/APP/subscriptions')).toBe(true);
+  });
+
+  it('ningún nodo HTTP habla con otro anfitrión que Meta, Gemini o la consola', () => {
+    for (const n of DEMO_A.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+      expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
+    }
+  });
+
+  // ---- las guardias de construir.mjs
+  it('`construir.mjs --verificar` sale con 0 con este archivo, y con 1 si alguien le cambia la credencial del Trigger por la de la app de producción del receptor', () => {
+    const ok = enCopia(() => undefined, ['--verificar']);
+    expect(ok.status, ok.stderr).toBe(0);
+    expect(ok.stdout).toContain('venta-minima.ensayo-demo-a.json al día');
+    // A mano en el JSON versionado: la guardia de producción lo atrapa.
+    for (const credenciales of [{ whatsAppTriggerApi: { id: '', name: AJENA } }, {}] as J[]) {
+      const r = enCopia((vm) => {
+        const ruta = join(vm, 'venta-minima.ensayo-demo-a.json');
+        const f = JSON.parse(readFileSync(ruta, 'utf8')) as Flujo;
+        nodo(f, 'WhatsApp Trigger').credentials = credenciales;
+        writeFileSync(ruta, JSON.stringify(f, null, 2) + '\n');
+      }, ['--verificar']);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(/prohibición 7|credencial explícita/);
+    }
+  });
+
+  it('construir.mjs NO construye si los datos del Demo A nombran la credencial de la app de producción del receptor (en cualquier grafía) o no traen la del Trigger', () => {
+    for (const nombre of [AJENA, 'aab1 wa prod', 'WhatsApp wa-prod']) {
+      const r = enCopia((_vm, datos) => editarDatosDemoA(datos, (d) => { (d['credenciales'] as J)['trigger'] = nombre; }));
+      expect(r.status, nombre).not.toBe(0);
+      expect(r.stderr, nombre).toMatch(/prohibición 7/);
+    }
+    // Sin credencial de Trigger: qtaco no la trae, no hay de dónde heredarla, y falla.
+    const sin = enCopia((_vm, datos) => editarDatosDemoA(datos, (d) => { delete (d['credenciales'] as J)['trigger']; }));
+    expect(sin.status).not.toBe(0);
+    expect(sin.stderr).toMatch(/credenciales\.trigger/);
+    // Negativo: con la del Demo A, construye.
+    expect(enCopia(() => undefined).status).toBe(0);
+  });
+
+  it('A5: solo `ensayo.json` puede ser `prueba`; este archivo es `trigger` y no puede pasar a `prueba`', () => {
+    expect(JSON.parse(DATOS_DEMO_A)['entrada']).toBe('trigger');
+    const r = enCopia((_vm, datos) => editarDatosDemoA(datos, (d) => { d['entrada'] = 'prueba'; }));
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('solo ensayo.json puede tener entrada «prueba»');
+  });
+
+  it('el archivo de datos no deja un JSON huérfano: sin él, `--verificar` falla por `venta-minima.ensayo-demo-a.json`', () => {
+    const r = enCopia((_vm, datos) => rmSync(join(datos, 'ensayo-demo-a.json')), ['--verificar']);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain('venta-minima.ensayo-demo-a.json');
+  });
+
+  // ---- un turno de punta a punta, por la forma del Trigger (el `value` de Meta en la raíz)
+  /** Lo que entrega el WhatsApp Trigger de n8n: el `value` de Meta, sin `body` ni cabeceras del receptor. */
+  const valorDeTrigger = (from: string, mensaje: Mensaje, perfil = 'Carlos Pérez'): J => ({
+    messaging_product: 'whatsapp',
+    metadata: { display_phone_number: '59100000001', phone_number_id: PHONE_ID },
+    contacts: [{ profile: { name: perfil }, wa_id: from }],
+    messages: [{ from, id: idEntrante(), timestamp: '1', ...mensaje }],
+  });
+  /** El mundo de la variante, con los dos marcadores reemplazados por teléfonos sintéticos (el restaurante es AV1) y SIN tocar las plantillas (vacías). */
+  function mundoDemoA(op: { restaurante?: string } = {}) {
+    const restaurante = op.restaurante ?? AV1;
+    const w = crear({
+      flujo: DEMO_A,
+      config: { destinatariosAviso: `completo:${restaurante}`, respaldoNumeroRecepcion: restaurante, horario: HORARIO_TODOS },
+    });
+    const turno = (from: string, m: Mensaje, avanzarMin?: number): ResultadoTurno => {
+      const t = w.mundo.turno(valorDeTrigger(from, m), avanzarMin === undefined ? {} : { avanzarMin });
+      w.turnos.push({ t, from, etiqueta: String(m.type) });
+      return t;
+    };
+    return { w, restaurante, turno };
+  }
+  /** Un pedido sin QR (el comercio no tiene cobro) hasta el toque en «Confirmar pedido». `ventanaMin: null` = el restaurante nunca escribió. */
+  function pedidoEnDemoA(op: { restaurante?: string; cliente?: string; ventanaMin?: number | null } = {}) {
+    const m = mundoDemoA({ restaurante: op.restaurante });
+    const cliente = op.cliente ?? CLIENTE;
+    // El restaurante escribe primero: eso abre SU ventana de 24 horas.
+    if (op.ventanaMin !== null && cliente !== m.restaurante) m.turno(m.restaurante, mTexto('hola'));
+    m.w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad', 'sin cebolla')]);
+    const resumen = m.turno(cliente, mTexto('quiero 4 tacos de birria'), op.ventanaMin ?? undefined);
+    const confirmar = m.turno(cliente, mBoton(idDeBoton(resumen, 'Confirmar pedido'), 'Confirmar pedido'));
+    return { ...m, cliente, resumen, confirmar };
+  }
+
+  it('un pedido sin QR llega al restaurante en TEXTO LIBRE (la ventana está abierta), sin plantilla, y el cliente lee «pasé tu pedido»', () => {
+    const p = pedidoEnDemoA({ ventanaMin: 5 });
+    ver('demo A: pedido sin QR con ventana abierta', p.confirmar);
+    expect(p.confirmar.fallo).toBeNull();
+    expect(p.confirmar.ejecutados.has('WhatsApp Trigger')).toBe(true);
+    expect(plantillasA(p.confirmar, p.restaurante)).toHaveLength(0);
+    expect(p.confirmar.avisos.filter((a) => a.tipo === 'template')).toHaveLength(0);
+    const detalle = detallesA(p.confirmar, p.restaurante);
+    expect(detalle).toHaveLength(1);
+    expect(detalle[0]?.ok).toBe(true);
+    expect(detalle[0]?.cuerpo).toMatch(/birria/i);
+    // Solo el restaurante recibe avisos, nunca el cliente.
+    expect(p.confirmar.avisos.every((a) => a.a === p.restaurante)).toBe(true);
+    const aCliente = cuerpos(p.confirmar).join('\n');
+    expect(aCliente).toMatch(/pasé tu pedido #\w+ al restaurante/);
+    expect(aCliente).not.toContain('No pude pasarle');
+    // El pedido quedó guardado y registrado en el cierre.
+    expect(pedidosGuardados(p.w.mundo)).toHaveLength(1);
+    expect(p.confirmar.llamadas.cierre).toHaveLength(1);
+  });
+
+  it('con la ventana del restaurante CERRADA no sale ninguna plantilla (no existe en el Demo A): el cliente lee «No pude pasarle…» con el botón para escribir al local', () => {
+    const p = pedidoEnDemoA({ ventanaMin: null }); // el restaurante no escribió nunca
+    ver('demo A: pedido sin QR con la ventana cerrada', p.confirmar);
+    expect(p.confirmar.fallo).toBeNull();
+    expect(p.confirmar.avisos.filter((a) => a.tipo === 'template')).toHaveLength(0);
+    expect(p.confirmar.avisos).toHaveLength(0);
+    const aCliente = cuerpos(p.confirmar).join('\n');
+    expect(aCliente).toContain('No pude pasarle tu pedido al restaurante');
+    expect(aCliente).not.toMatch(/ya pas[eé]|pasé tu pedido/i);
+    expect(tieneEnlace(p.confirmar)).toBe(true);
+    expect(p.confirmar.mensajes.map(urlDeEnlace).join(' ')).toContain(REC); // el botón sale de la recepción de la consola (en el ensayo, el teléfono del restaurante)
+    // Y la ventana vencida (25 horas) tampoco abre una plantilla.
+    const vieja = pedidoEnDemoA({ ventanaMin: 25 * 60 });
+    expect(vieja.confirmar.avisos).toHaveLength(0);
+    expect(cuerpos(vieja.confirmar).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+  });
+
+  it('si el destinatario del aviso es el mismo `from`, no hay aviso (`avUnificar` lo descarta): el cliente no puede ser también el restaurante', () => {
+    const p = pedidoEnDemoA({ restaurante: CLIENTE, cliente: CLIENTE });
+    expect(p.confirmar.fallo).toBeNull();
+    expect(p.confirmar.avisos).toHaveLength(0);
+    expect(p.confirmar.ejecutados.has('Enviar aviso')).toBe(false);
+    expect(cuerpos(p.confirmar).join('\n')).toContain('No pude pasarle tu pedido al restaurante');
+    expect((p.confirmar.resumen as J)['resumen'].errores.join(' ')).toContain('sin_destinatarios_de_aviso');
+    // Negativo: con dos teléfonos distintos sí hay aviso.
+    expect(pedidoEnDemoA({ ventanaMin: 5 }).confirmar.avisos.length).toBeGreaterThan(0);
+  });
+
+  it('un mensaje de otra línea (`phone_number_id` distinto del configurado) no recorre el flujo, y un acuse de estado se descarta', () => {
+    const m = mundoDemoA();
+    const ajeno = m.w.mundo.turno({ ...valorDeTrigger(CLIENTE, mTexto('hola')), metadata: { phone_number_id: '100000000000099' } });
+    expect(ajeno.mensajes).toHaveLength(0);
+    expect(ajeno.avisos).toHaveLength(0);
+    const acuse = m.w.mundo.turno({ messaging_product: 'whatsapp', metadata: { phone_number_id: PHONE_ID }, statuses: [{ id: 'wamid.X', status: 'delivered' }] });
+    silencio(acuse);
+    // Negativo: con la línea configurada, responde.
+    expect(m.turno(CLIENTE, mTexto('hola')).mensajes.length).toBeGreaterThan(0);
+  });
+});
