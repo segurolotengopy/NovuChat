@@ -3,16 +3,16 @@ import { deleteField, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/
 import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { useParams } from 'react-router-dom';
-import { auth, db, funciones, storage } from '../../lib/firebase';
+import { auth, db, funciones, storage } from '../../core/lib/firebase';
 import {
   ACEPTA, EXTENSIONES, esDelDeposito, mensajeDeFallaStorage, nombreParaProspecto,
   rutaArchivoPlanes, validarArchivoPlanes, type ExtensionPlanes,
 } from '../../central/lib/archivoPlanes';
-import { useFlujos } from '../../lib/flujos';
+import { useFlujos } from '../../central/lib/flujos';
 import { idDeNombre } from '../../central/lib/csv';
-import { CampoMonto } from '../../componentes/CampoMonto';
-import { EditorLista } from '../../componentes/EditorLista';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { CampoMonto } from '../../central/componentes/CampoMonto';
+import { EditorLista } from '../../central/componentes/EditorLista';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
 /**
  * CAPTACIÓN — la pestaña del flujo de captación de prospectos (`onboarding`).

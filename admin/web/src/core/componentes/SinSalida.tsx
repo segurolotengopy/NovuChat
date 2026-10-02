@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useSesion } from '../core/lib/contexto';
+import { useSesion } from '../lib/contexto';
 
 /**
  * Pantalla sin salida, CON salida.

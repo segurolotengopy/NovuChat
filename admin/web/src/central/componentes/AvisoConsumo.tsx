@@ -1,4 +1,4 @@
-import { BOLSA, type AvisoConsumoVista } from '../central/lib/planes';
+import { BOLSA, type AvisoConsumoVista } from '../lib/planes';
 
 /**
  * «Llegaste al 80 % de las conversaciones de tu plan».

@@ -379,7 +379,7 @@ activa de `gcloud` ni de `firebase`.
 14c. Comprobar que la **protección contra enumeración de correos** esté activa.
 14c-bis. Configurar la **política de contraseñas** de Firebase Auth (*password
      policy*): longitud mínima **8** —la misma que pide la consola en
-     `web/src/lib/contrasena.ts`— y **bloqueo de contraseñas comunes o
+     `web/src/core/lib/contrasena.ts`— y **bloqueo de contraseñas comunes o
      comprometidas**, sin reglas de composición. Es lo único que hace cumplir el
      mínimo **también en la pantalla de restablecimiento que sirve Firebase**,
      que hoy acepta desde 6 y ya dejó a un administrador con una contraseña que

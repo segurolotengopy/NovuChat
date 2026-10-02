@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { db } from '../../core/lib/firebase';
 import { modoDelComercio, type ModoComercio } from '../lib/modoComercio';
 import { TextoSeguro } from './TextoSeguro';
 import { ChipModo } from './ChipModo';

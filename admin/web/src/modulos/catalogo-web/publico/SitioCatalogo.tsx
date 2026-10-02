@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CatalogoPublico, ItemPublico, RespuestaCheckout } from './tipos';
 import { imagenSegura, logoSeguro, precioTexto } from './saneo';
-import { variablesDe } from '../../../lib/paletas';
+import { variablesDe } from '../../../central/lib/paletas';
 
 /**
  * =============================================================================
