@@ -32,7 +32,7 @@
 
 // La red de palabras de `comun.js` (`VM_PROHIBIDAS`), copiada acá a propósito: esta
 // librería se prueba sola y no puede depender de otro archivo.
-const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
 
 // El total que acepta el servidor para cotejar (`TOTAL_VENTA_MAXIMO`).
 const CB_TOTAL_MAXIMO = 1000000;
@@ -40,6 +40,11 @@ const CB_TOTAL_MAXIMO = 1000000;
 // ---------------------------------------------------------------------------
 // Utilidades mínimas
 // ---------------------------------------------------------------------------
+
+// La forma en que se COMPARA contra `CB_PROHIBIDAS`: NFKC y sin caracteres de formato (`\p{Cf}`).
+function cbCanon(t) {
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/\p{Cf}/gu, '');
+}
 
 // El nodo `nombre` si existe Y corrió en esta ejecución; si no, null.
 function cbNodo(nombre) {
@@ -107,7 +112,7 @@ function cbMoneda(m) {
 function cbCodigo(c) {
   const limpio = String(c === undefined || c === null ? '' : c).replace(/[^A-Za-z0-9]/g, '').slice(0, 12);
   // Un código que formara una palabra de la red de prohibidas no se muestra.
-  return CB_PROHIBIDAS.test(limpio) ? '' : limpio;
+  return CB_PROHIBIDAS.test(cbCanon(limpio)) ? '' : limpio;
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +166,7 @@ function cbCaption(pedido, opciones) {
   // El nombre del titular viene de la ficha del QR, no de un cliente; igual se
   // sanea, y si cae en la red de palabras prohibidas se omite.
   let titular = cbLinea(o.titular, 120);
-  if (CB_PROHIBIDAS.test(titular)) titular = '';
+  if (CB_PROHIBIDAS.test(cbCanon(titular))) titular = '';
   const cabeza = codigo ? 'Pedido #' + codigo + '. ' : '';
   const delivery = o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '';
   const texto = cabeza + 'Total a pagar por QR: ' + cbMonto(total) + ' ' + cbMoneda(o.moneda)

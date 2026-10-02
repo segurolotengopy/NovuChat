@@ -27,19 +27,28 @@
 // Con ventana abierta el texto de detalle hace de respaldo de la plantilla, así que
 // `respaldo` es siempre `null` y T7b salta «Aviso de respaldo» cuando es null.
 //
-// PLANTILLAS POR EVENTO, configurables (claves de `cfg`, que salen de `configBase`):
-//   pedido      → `plantillaPedido` (def. `pedido_registrado`), idioma `idiomaPlantillaPedido`,
+// PLANTILLAS POR EVENTO, configurables (claves de `cfg`, que salen de `configBase`). NO HAY NOMBRE
+// POR OMISIÓN: ninguna plantilla se inventa en el código. Sin la clave del evento, ningún ítem de tipo
+// plantilla sale y se anota `plantilla_no_configurada_<evento>` (con ventana abierta cae al texto). Los
+// nombres reales (`pedido_registrado`, `appointment_confirmed`…) viven en la configuración del negocio.
+// Las claves son estas tres (más sus idiomas y órdenes); `plantillaAviso` e `idiomaPlantilla`, del diseño
+// original, quedan DESCARTADAS: no existe una plantilla única para todos los eventos.
+//   pedido      → `plantillaPedido`, idioma `idiomaPlantillaPedido` (def. `es`),
 //                 orden `ordenPedido` (def. `items,total,modalidad,cotejo`):
 //                 items «N.º <código> de <n> ítems» · total «Bs <total>» · modalidad · cotejo.
-//   reserva     → `plantillaReserva` (def. `appointment_confirmed`, de la biblioteca de Meta,
-//                 texto fijo; NO se edita), `idiomaPlantillaReserva`, `ordenReserva`
+//                 La variable `modalidad` ({{3}}) lleva el detalle POR ROL (ver `avModalidadVariable`):
+//                 `completo`, en delivery: «Delivery a <dirección> (<referencia>) · recibe <nombre> · cel <teléfono>»;
+//                 `cocina`: «<modalidad> · <ítems compactos con sus notas>», sin teléfono ni dirección.
+//   reserva     → `plantillaReserva` (p. ej. `appointment_confirmed`, de la biblioteca de Meta, texto
+//                 fijo; NO se edita), `idiomaPlantillaReserva`, `ordenReserva`
 //                 (def. `destinatario,cuando,detalle,codigo`): destinatario = nombre de quien
 //                 recibe el aviso («equipo» si falta) · cuando = fecha y hora de la solicitud
 //                 · detalle «Reserva N personas · cliente · zona» · codigo.
 //                 Esa plantilla presenta como programada una SOLICITUD: es la decisión P2
 //                 pendiente de Andres, por eso nombre y orden son configuración.
-//   derivación  → `plantillaDerivacion` (def.: la de reserva; '' = sin plantilla),
-//                 `idiomaPlantillaDerivacion`, `ordenDerivacion` (mismos tokens que reserva).
+//   derivación  → `plantillaDerivacion` (si no existe, hereda `plantillaReserva` SOLO si esa sí está
+//                 configurada; '' = sin plantilla), `idiomaPlantillaDerivacion`, `ordenDerivacion`
+//                 (mismos tokens que reserva).
 //   Idiomas: def. `es` (la derivación que hereda la plantilla de reserva hereda su idioma).
 //   Otras claves: `prefijosPermitidos` (def. «591»), `topeAvisosDia` (def. 150, en MENSAJES de aviso).
 //   Una variable de plantilla no admite saltos de línea, 5+ espacios seguidos ni vacío:
@@ -49,7 +58,14 @@
 // dirección del cliente; `cocina` solo ítems y notas (primer nombre, sin teléfono, sin
 // dirección, sin diferencias del cotejo, sin números largos). Rol desconocido → `cocina`.
 // Un número repetido queda con el rol de menos privilegio. Nunca va al propio número de
-// quien escribe. Las variables de plantilla no llevan teléfono ni dirección para nadie.
+// quien escribe. Las variables de plantilla de reserva y de derivación no llevan teléfono ni dirección;
+// la `modalidad` del pedido lleva teléfono y dirección SOLO para el rol `completo` (R2) y los ítems
+// SOLO para `cocina`.
+//
+// TEXTO DEL CLIENTE. Todo texto que escribió un tercero pasa por `avLimpio`: sin enlaces (ni siquiera una
+// palabra con la forma `a.bc`), sin `{}<>&`, sin las marcas de formato `* _ ~` y la comilla invertida, en
+// NFKC y sin caracteres de formato (`\p{Cf}`) antes de compararlo con la red de prohibidas, y en tiempo
+// lineal. En la derivación el texto libre sale enmarcado: «Nota del cliente: …».
 //
 // FORMA DE `datos` (todos los campos son opcionales; lo que falta sale como «—»):
 //   tipo `pedido` | `comprobante`:
@@ -72,13 +88,14 @@
 //
 // ERRORES de `avPlan` (arreglo de textos): `tope_avisos_dia`, `sin_destinatarios`,
 // `sin_aviso_ya_cotejado`, `tipo_desconocido`, `sin_datos_reserva`, `plantilla_invalida`,
-// `sin_plantilla_derivacion`, `sin_aviso_posible`, `orden_invalido_<evento>`.
+// `sin_plantilla_derivacion`, `plantilla_no_configurada_<evento>` (pedido, reserva, derivacion),
+// `sin_aviso_posible`, `orden_invalido_<evento>`.
 //
 // Ítems devueltos: {para, rol, payload, respaldo:null, esPlantilla, clase} con
 // `clase` ∈ `plantilla` | `detalle` | `imagen`. La imagen NO cuenta como «el aviso salió».
 
 // La copia local de la red de palabras que el asistente jamás dice (la de `comun.js` manda si existe).
-const AV_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const AV_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
 
 const AV_VENTANA_MS = 23.5 * 60 * 60 * 1000; // 23 h 30 min
 const AV_TOPE_DIA_DEF = 150;
@@ -103,37 +120,65 @@ function avProhibidas() {
   return AV_PROHIBIDAS;
 }
 
+// Se COMPARA en NFKC y sin caracteres de formato (`avCanon`): «va​lidado» con un ancho cero, o en ancho completo,
+// también se atrapa. Solo el texto que coincide sale normalizado; el resto sale tal cual (para no cambiar «N.º»).
 function avSinProhibidas(t) {
   const re = avProhibidas();
-  return String(t).replace(new RegExp(re.source, re.flags.replace(/[gy]/g, '') + 'g'), '…');
+  const s = String(t);
+  const c = avCanon(s);
+  const base = re.flags.replace(/[gy]/g, '');
+  if (!new RegExp(re.source, base).test(c)) return s;
+  return c.replace(new RegExp(re.source, base + 'g'), '…');
 }
 
 function avDigitos(v) {
   return String(v === undefined || v === null ? '' : v).replace(/\D/g, '');
 }
 
+/** NFKC y sin caracteres de formato (`\p{Cf}`: ancho cero, controles bidireccionales, guion blando): la forma en que se COMPARA. */
+function avCanon(t) {
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/\p{Cf}/gu, '');
+}
+
+/** Quita, sin regex (tiempo lineal), los espacios y los «·» del principio y del final. */
+function avSinBordes(s) {
+  const sep = (c) => c === '·' || /\s/.test(c);
+  let i = 0;
+  let j = s.length;
+  while (i < j && sep(s.charAt(i))) i++;
+  while (j > i && sep(s.charAt(j - 1))) j--;
+  return s.slice(i, j);
+}
+
 /**
- * Una sola línea limpia: sin saltos ni tabuladores (quedan « · »), sin enlaces («[enlace omitido]»),
- * sin `{}<>&`, sin palabras prohibidas («…»), sin espacios repetidos y con tope de caracteres.
- * Con `opc.cocina` se quitan además los números largos (teléfonos, cuentas, documentos).
- * Devuelve '' si no queda nada.
+ * Una sola línea limpia: sin saltos ni tabuladores (quedan « · »), sin enlaces («[enlace omitido]», también cualquier
+ * palabra con la forma `a.bc`), sin `{}<>&` ni marcas de formato de WhatsApp (`* _ ~` y la comilla invertida), sin palabras
+ * prohibidas («…»), sin espacios repetidos y con tope de caracteres. Con `opc.cocina` se quitan además los números largos
+ * (teléfonos, cuentas, documentos). Devuelve '' si no queda nada.
+ * TIEMPO LINEAL: el texto se recorta a `max * 2` antes de aplicar ninguna expresión regular, y los bordes « · » se quitan
+ * a mano (la forma `(\s*·\s*)+$` tenía retroceso exponencial: 24 «· » seguidos tardaban 1,6 s y 90 no terminaban).
  */
 function avLimpio(t, max, opc) {
+  const tope = (Number.isFinite(max) && max > 0) ? Math.floor(max) : 500;
   let s = (t === undefined || t === null) ? '' : String(t);
+  if (s.length > tope * 2) s = Array.from(s.slice(0, tope * 2 + 1)).slice(0, tope * 2).join('');
+  // NFKC (ancho completo, ligaduras) y sin caracteres de formato, salvo «º» y «ª» (NFKC los cambia por «o» y «a»: «N.º»).
+  s = s.split(/([ºª])/).map((p, i) => (i % 2 ? p : p.normalize('NFKC'))).join('').replace(/\p{Cf}/gu, '');
   s = s.replace(AV_ENLACE, ' [enlace omitido] ');
   s = s.replace(/[\r\n\t\u000b\u000c\u0085\u2028\u2029]+/g, ' · ');
   s = s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, '');
-  s = s.replace(/[{}<>&]/g, ' ');
+  s = s.replace(/[{}<>&*_~`]/g, ' ');
+  // Cualquier palabra con la forma `a.bc` (un dominio sin lista, un enlace sin esquema) se omite entera.
+  s = s.split(' ').map((w) => (/\w\.\w{2,}/.test(w) ? '[enlace omitido]' : w)).join(' ');
   if (opc && opc.cocina) {
     s = s.replace(/\+?\d[\d\s.-]{5,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
     s = s.replace(/\d{7,}/g, '…');
   }
   s = avSinProhibidas(s);
-  s = s.replace(/\s{2,}/g, ' ').trim();
-  s = s.replace(/^(?:\s*·\s*)+/, '').replace(/(?:\s*·\s*)+$/, '').replace(/(?:\s·){2,}/g, ' ·').trim();
-  const tope = (Number.isFinite(max) && max > 0) ? Math.floor(max) : 500;
+  s = avSinBordes(s.replace(/\s{2,}/g, ' '));
+  s = avSinBordes(s.replace(/(?:\s·){2,}/g, ' ·'));
   const cps = Array.from(s);
-  if (cps.length > tope) s = cps.slice(0, tope).join('').trim().replace(/(?:\s*·\s*)+$/, '').trim();
+  if (cps.length > tope) s = avSinBordes(cps.slice(0, tope).join(''));
   return s;
 }
 
@@ -369,26 +414,27 @@ function avOrden(valor, base) {
   return ok ? { orden: lista, valido: true } : { orden: base.slice(), valido: false };
 }
 
-// Clave de configuración → qué plantilla, idioma y orden rige para el evento.
+// Clave de configuración → qué plantilla, idioma y orden rige para el evento. NO HAY NOMBRE POR OMISIÓN: una plantilla
+// sin configurar (`plantillaPedido`, `plantillaReserva`, `plantillaDerivacion`) no se inventa; el evento falla cerrado
+// (`plantilla_no_configurada_<evento>`) y los nombres reales viven en la configuración del negocio, no en el código.
+// La derivación hereda la de reserva SOLO si `plantillaDerivacion` no existe y `plantillaReserva` sí está configurada.
 function avConfigPlantilla(tipo, c, errores) {
   const texto = (v) => String(v === undefined || v === null ? '' : v).trim();
   let nombre; let idioma; let ordenCsv; let base; let evento;
   if (tipo === 'pedido' || tipo === 'comprobante') {
     evento = 'pedido';
-    nombre = c.plantillaPedido === undefined || c.plantillaPedido === null ? 'pedido_registrado' : texto(c.plantillaPedido);
+    nombre = texto(c.plantillaPedido);
     idioma = texto(c.idiomaPlantillaPedido) || 'es';
     ordenCsv = c.ordenPedido; base = AV_ORDEN_PEDIDO;
   } else if (tipo === 'reserva') {
     evento = 'reserva';
-    nombre = c.plantillaReserva === undefined || c.plantillaReserva === null ? 'appointment_confirmed' : texto(c.plantillaReserva);
+    nombre = texto(c.plantillaReserva);
     idioma = texto(c.idiomaPlantillaReserva) || 'es';
     ordenCsv = c.ordenReserva; base = AV_ORDEN_AGENDA;
   } else {
     evento = 'derivacion';
     const heredada = c.plantillaDerivacion === undefined || c.plantillaDerivacion === null;
-    nombre = heredada
-      ? (c.plantillaReserva === undefined || c.plantillaReserva === null ? 'appointment_confirmed' : texto(c.plantillaReserva))
-      : texto(c.plantillaDerivacion);
+    nombre = heredada ? texto(c.plantillaReserva) : texto(c.plantillaDerivacion);
     idioma = texto(c.idiomaPlantillaDerivacion) || (heredada ? texto(c.idiomaPlantillaReserva) : '') || 'es';
     ordenCsv = c.ordenDerivacion; base = AV_ORDEN_AGENDA;
   }
@@ -396,7 +442,29 @@ function avConfigPlantilla(tipo, c, errores) {
   if (!o.valido) errores.push('orden_invalido_' + evento);
   const valida = /^[a-z0-9_]{1,512}$/.test(nombre);
   if (nombre && !valida) errores.push('plantilla_invalida');
-  return { nombre: valida ? nombre : '', idioma, orden: o.orden };
+  return { nombre: valida ? nombre : '', configurada: nombre !== '', evento, idioma, orden: o.orden };
+}
+
+// La variable `modalidad` ({{3}} del pedido) por ROL: con la ventana cerrada es lo único del detalle que llega.
+//  - `completo`: modalidad + «a <dirección> (<referencia>)» + «recibe <nombre>» + «cel <teléfono>», solo en delivery;
+//  - `cocina`: modalidad + los ítems compactos con sus notas; SIN teléfono ni dirección.
+// Sigue siendo UNA variable: sin saltos de línea, saneada como las demás y con el tope de la variable (500).
+function avModalidadVariable(d, dest, opc) {
+  const base = avModalidadTexto(d.modalidad);
+  if (dest.rol === 'completo') {
+    if (d.modalidad !== 'delivery') return base;
+    const dir = avLimpio(d.direccion, 160);
+    const ref = avLimpio(d.referencia, 100);
+    const recibe = avLimpio(d.nombre, 60);
+    const tel = avDigitos(d.telefono);
+    return [base + (dir ? ' a ' + dir : '') + (ref ? ' (' + ref + ')' : ''), recibe ? 'recibe ' + recibe : '', tel ? 'cel ' + tel : '']
+      .filter(Boolean).join(' · ');
+  }
+  const items = avLineas(d.lineas).map((l) => {
+    const nota = avLimpio(l.detalle, 80, opc);
+    return l.cantidad + ' × ' + (avLimpio(l.nombre, 60, opc) || 'ítem') + (nota ? ' (' + nota + ')' : '');
+  });
+  return items.length ? base + ' · ' + items.join(', ') : base;
 }
 
 // Las cuatro variables, ya saneadas, por token. `rol` decide cuánto se muestra.
@@ -410,7 +478,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs) {
     return {
       items: avParametro('N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : ''), 60),
       total: avParametro('Bs ' + avMonto(d.total), 30),
-      modalidad: avParametro(avModalidadTexto(d.modalidad), 40),
+      modalidad: avParametro(avModalidadVariable(d, dest, opc), 500),
       cotejo: avParametro(avCotejoTexto(resultado), 80),
     };
   }
@@ -434,7 +502,7 @@ function avVariables(tipo, d, dest, resultado, ahoraMs) {
   return {
     destinatario,
     cuando: avParametro(avAhoraLegible(ahoraMs), 70),
-    detalle: avParametro(['Consulta de cliente', nombreDe(d.nombre), motivo].filter(Boolean).join(' · '), 200),
+    detalle: avParametro(['Consulta de cliente', nombreDe(d.nombre), motivo ? 'Nota del cliente: ' + motivo : ''].filter(Boolean).join(' · '), 200),
     codigo: avParametro(avLimpio(d.codigo, 20) || avCodigoCorto(ahoraMs), 20),
   };
 }
@@ -499,7 +567,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
     lineas.push('Consulta de un cliente N.º ' + cod);
     lineas.push(cliente());
     const motivo = avLimpio(d.motivo, 300, opc);
-    if (motivo) lineas.push('Escribió: «' + motivo + '»');
+    if (motivo) lineas.push('Nota del cliente: «' + motivo + '»');
     cierre = AV_CIERRE_DERIVACION;
   }
   lineas.push(cierre);
@@ -539,7 +607,11 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
       items.push({ para: dest.tel, rol: dest.rol, payload: avTexto(dest.tel, cuerpo), respaldo: null, esPlantilla: false, clase: 'detalle' });
     };
     const conPlantilla = () => {
-      if (!pl.nombre) return false;
+      if (!pl.nombre) {
+        // Sin plantilla configurada no se inventa un nombre: el evento falla cerrado (con ventana abierta cae al texto).
+        if (!pl.configurada && errores.indexOf('plantilla_no_configurada_' + pl.evento) < 0) errores.push('plantilla_no_configurada_' + pl.evento);
+        return false;
+      }
       const vars = avVariables(tipo, d, dest, resultado, ahoraMs);
       const payload = avPlantilla(dest.tel, pl.nombre, pl.idioma, pl.orden.map((k) => vars[k]));
       if (!payload) return false;

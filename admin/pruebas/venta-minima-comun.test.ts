@@ -187,8 +187,27 @@ describe('comun.js: red de palabras prohibidas', () => {
   ];
   it('el regex es el del contrato, literal', () => {
     expect((L.VM_PROHIBIDAS as unknown as RegExp).source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto');
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\\b)|reservad');
     expect((L.VM_PROHIBIDAS as unknown as RegExp).flags).toBe('i');
+  });
+  it('S3: las raíces nuevas (acredit, recibir el pago, pago exitoso…, confirmo, reservad) se atrapan; las frases legítimas no', () => {
+    for (const t of ['Ya acreditamos el pago', 'Recibí tu pago', 'Recibimos el pago', 'Pago exitoso', 'Pago recibido', 'Pago aprobado', 'Pago realizado',
+      'Pago registrado', 'Confirmó su pedido', 'Te confirmamos la mesa', 'Yo confirmo', 'Tu mesa está reservada', 'Mesa reservado para hoy']) {
+      expect(L.vmTextoSeguro(t), t).toBe(false);
+    }
+    for (const t of ['No estamos abiertos hoy', '¿A qué hora reservo?', 'Quiero reservar una mesa', 'Confirmar pedido', 'Recibí tu imagen',
+      'Estoy esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.']) {
+      expect(L.vmTextoSeguro(t), t).toBe(true);
+    }
+  });
+  it('S3: se compara en NFKC y sin caracteres de formato (ancho cero, guion blando, ancho completo)', () => {
+    for (const t of ['va​lidado', 'val­idado', 'ｖａｌｉｄａｄｏ', 'pa⁠gado', 'v‮alidado', 'con‍firmado']) {
+      expect(L.vmTextoSeguro(`Tu pedido ${t}`), JSON.stringify(t)).toBe(false);
+      expect((L.VM_PROHIBIDAS as unknown as RegExp).test(L.vmNorm(`Tu pedido ${t}`)), JSON.stringify(t)).toBe(true);
+    }
+    // Negativo: un emoji con unión de ancho cero y un texto normal siguen siendo seguros.
+    expect(L.vmTextoSeguro('Tu pedido 👨‍🍳 va a salir'), 'emoji compuesto').toBe(true);
+    expect(L.vmTextoSeguro('Tu pedido está en la cocina'), 'texto normal').toBe(true);
   });
   it('«estamos» no es una palabra prohibida por sí sola: solo «lo estamos preparando» y sus formas', () => {
     for (const t of ['No estamos abiertos hoy', 'Estamos en la calle Principal', 'Estamos para ayudarte', 'Estoy aquí para ayudarte']) {

@@ -103,12 +103,33 @@ describe('la librería respeta el sandbox de n8n', () => {
 
   it('la red propia de la librería coincide con la del plan (y atrapa las 16 frases prohibidas)', () => {
     expect(L.CB_PROHIBIDAS.source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto',
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\\b)|reservad',
     );
     for (const f of FRASES_PROHIBIDAS) expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
     // El negativo: una frase honesta no la dispara.
     expect(L.CB_PROHIBIDAS.test('Recibí tu comprobante y los datos coinciden con tu pedido.')).toBe(false);
     expect(L.CB_PROHIBIDAS.test('No estamos abiertos hoy.')).toBe(false);
+  });
+});
+
+describe('S3: la red se compara en NFKC y sin caracteres de formato, con las raíces nuevas', () => {
+  it('atrapa las raíces nuevas y no las frases legítimas', () => {
+    for (const f of ['ya acreditamos', 'recibí tu pago', 'recibimos el pago', 'pago exitoso', 'pago aprobado', 'pago realizado', 'pago registrado',
+      'confirmó su pedido', 'te confirmamos', 'yo confirmo', 'mesa reservada']) {
+      expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
+    }
+    for (const f of ['no estamos abiertos hoy', '¿a qué hora reservo?', 'Recibí tu comprobante', 'Confirmar pedido']) {
+      expect(L.CB_PROHIBIDAS.test(f), f).toBe(false);
+    }
+  });
+  it('un titular con una palabra prohibida escondida (ancho cero o ancho completo) se omite del pie del QR', () => {
+    for (const titular of ['Pago va​lidado SRL', 'ｖａｌｉｄａｄｏ SRL', 'Pago aprobado SRL']) {
+      const pie = L.cbCaption(PEDIDO, { titular, moneda: 'BOB' });
+      expect(pie, JSON.stringify(titular)).not.toContain('la cuenta es de');
+      expect(pie, JSON.stringify(titular)).toContain('Total a pagar por QR: 63 Bs');
+    }
+    // Negativo: un titular normal sale.
+    expect(L.cbCaption(PEDIDO, { titular: 'Taqueria Ejemplo SRL', moneda: 'BOB' })).toContain('la cuenta es de Taqueria Ejemplo SRL');
   });
 });
 
