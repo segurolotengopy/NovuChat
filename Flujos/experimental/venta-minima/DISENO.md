@@ -228,11 +228,20 @@ deja publicado junto a la producción. Sus cerraduras:
     sigue saliendo aunque el aviso no salga. **Contrato con el servidor sin cambios; cero nodos nuevos; cero mensajes por conversación
     agregados o quitados.**
   - **«El mismo cliente repite el mismo pedido idéntico más tarde».** El id incluye el ancla, y el ancla cambia entre un pedido y el
-    siguiente: el estado se reescribe en **cada turno** (`ultimoMensajeMs` = la hora del turno), así que el segundo pedido parte del
-    estado escrito por el turno posterior a la confirmación del primero, y su ancla es otra aunque el carrito sea idéntico. Hace
+    siguiente porque el estado se reescribe en casi todos los turnos (`ultimoMensajeMs` = la hora del turno): el segundo pedido parte
+    del estado escrito por el turno posterior a la confirmación del primero, y su ancla es otra aunque el carrito sea idéntico. Hace
     falta que dos turnos distintos del mismo teléfono caigan **en el mismo milisegundo** para que choquen (los separan, como mínimo, un
-    toque humano y una ejecución de n8n). Las pruebas lo cubren (mismo teléfono y mismo carrito, pedidos consecutivos y una hora
-    después; la reserva repetida) y el caso inverso (una reserva repetida por error dentro del mismo estado leído sí es la misma).
+    toque humano y una ejecución de n8n). **No es «en cada turno»:** `Armar mensajes` no escribe el estado cuando la ruta del plan es
+    `nada`, cuando el QR fue rechazado y el estado nuevo era `esperando_comprobante` (`AM_sinQr`), cuando la clave del teléfono es
+    inválida ni cuando no hay datos estáticos. En esos casos el ancla no avanza, y **el mismo id corresponde al mismo carrito sin
+    reiniciar**: es el comportamiento buscado (el mismo estado no se confirmó de verdad), y un reintento sobre ese estado produce la
+    misma clave. Las pruebas cubren mismo teléfono y mismo carrito con pedidos consecutivos y una hora después, y la reserva repetida
+    (otra referencia), y el caso inverso (la misma solicitud sobre el mismo estado leído, que sí da la misma).
+  - **Decisiones aceptadas sobre el formato del id.** (1) La referencia lleva los **últimos 4 dígitos del teléfono** (`tel4`): en los
+    pedidos ya estaba antes de B0 y la reserva sigue el mismo formato; la huella, en cambio, mezcla el teléfono **completo**, así que dos
+    teléfonos con los mismos 4 últimos dígitos no comparten id. (2) La **fecha del id es la de La Paz del ancla**, no la de la
+    confirmación: así el id es determinista aunque las dos ejecuciones crucen la medianoche, y a lo sumo el id de un pedido confirmado
+    justo después de medianoche lleva la fecha del día anterior (el ancla es del turno previo). El flujo no interpreta esa fecha y el servidor trata la referencia como un texto opaco.
   - **Qué NO cubre B0.** **(1) Los avisos duplicados:** con un doble toque el restaurante sigue recibiendo dos avisos (dos
     plantillas y dos detalles), pero con el **mismo código**, de modo que ve que es el mismo pedido; el segundo cuenta además
     como mensajes que se pagan. **(2) Dos clientes a la vez:** si dos ejecuciones de teléfonos distintos terminan juntas, la última en
