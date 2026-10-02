@@ -105,7 +105,7 @@ return [{ json: {
   from: from,
   // El nombre de perfil acaba en los avisos al restaurante y en los resúmenes al cliente: sin <, >, &, saltos ni
   // controles, 60 caracteres y sin palabras de la red de prohibidas («…»): texto de un tercero no traba un mensaje.
-  nombrePerfil: vmSinProhibidas(vmLinea(String((contacto && contacto.profile && contacto.profile.name) || '').slice(0, 200), 60)),
+  nombrePerfil: vmSinProhibidas(vmLinea(String((contacto && contacto.profile && contacto.profile.name) || '').slice(0, 200), 60), 60),
   phoneNumberId: phoneNumberId,
   mensajeId: mensajeId,
   tipo: tipo,

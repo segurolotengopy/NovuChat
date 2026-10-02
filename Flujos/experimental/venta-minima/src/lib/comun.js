@@ -30,7 +30,7 @@ const VM_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 // La red de palabras que un texto al cliente o al restaurante nunca puede traer:
 // presentan como hecho lo que el flujo no verifico (prohibicion 3) o prometen lo
 // que no tiene mecanismo detras («solo se ofrece lo que se cumple»).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 // ---------------------------------------------------------------------------
 // Nodos de n8n
@@ -74,10 +74,24 @@ function vmCfg() {
 function _vmCadena(v) {
   return String(v === undefined || v === null ? '' : v);
 }
-// Para comparar: sin tildes, en minusculas, todo lo que no es letra ni numero es un espacio.
+// Confusables latino/cirilico/griego que se pliegan a ASCII SOLO para comparar (S-1): «pаgаdo» con una «а» cirilica se
+// lee como «pagado». Las dos cadenas van en paralelo, letra por letra. El texto que sale NUNCA se pliega: es solo la forma
+// en que se compara. Las letras latinas no estan en la tabla, asi que un texto legitimo no cambia.
+const VM_CONFUSABLES_DE = 'аеорсухіјѕԁһӏ' + 'αεικορτυχνηβı';
+const VM_CONFUSABLES_A = 'aeopcyxijsdhl' + 'aeikoptuxvnbi';
+// La forma en que se COMPARA contra `VM_PROHIBIDAS` (S-1): NFKC, sin controles C1 (\u0080-\u009f) ni caracteres de formato
+// (`\p{Cf}`), NFD sin marcas (`\p{M}`: tildes y marcas combinantes), en minusculas y con los confusables plegados a ASCII.
+function vmCanon(t) {
+  return _vmCadena(t).normalize('NFKC').replace(/[\u0080-\u009f]/g, '').replace(/\p{Cf}/gu, '')
+    .normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[\u0370-\u03ff\u0400-\u052f\u0131]/g, (c) => {
+      const i = VM_CONFUSABLES_DE.indexOf(c);
+      return i < 0 ? c : VM_CONFUSABLES_A.charAt(i);
+    });
+}
+// Para comparar: la forma canonica y todo lo que no es letra ni numero es un espacio.
 function vmNorm(t) {
-  return _vmCadena(t).normalize('NFKC').replace(/\p{Cf}/gu, '').normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return vmCanon(t).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 function vmDigitos(v) {
   return _vmCadena(v).replace(/\D/g, '');
@@ -89,7 +103,9 @@ function vmRecorte(t, max) {
 }
 // Una linea limpia: sin controles, sin separadores de linea, sin < > &, espacios colapsados.
 function vmLinea(t, max) {
-  const s = _vmCadena(t).replace(/[\u0000-\u001f\u007f\u2028\u2029<>&]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Los controles C1 (\u0080-\u009f) se QUITAN (no se cambian por un espacio): «vali\u0090dado» queda «validado» y la red lo atrapa.
+  // `\u0085` (salto de linea) si es un separador.
+  const s = _vmCadena(t).replace(/[\u0080-\u0084\u0086-\u009f]/g, '').replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029<>&]/g, ' ').replace(/\s+/g, ' ').trim();
   return Number(max) > 0 ? vmRecorte(s, max) : s;
 }
 // Una lista (arreglo o CSV) de lineas cortas, sin vacios, sin repetidos y sin marcadores `REEMPLAZAR_`.
@@ -145,20 +161,100 @@ function vmJsonDeGemini(j) {
     return null;
   }
 }
-// `false` si el texto no es un texto o coincide con la red de palabras prohibidas. Se compara en NFKC y sin
-// caracteres de formato (`\p{Cf}`: ancho cero, guion blando, marcas bidireccionales): un «validado» con un
-// ancho cero adentro, o escrito en ancho completo, también se atrapa.
+// `false` si el texto no es un texto o coincide con la red de palabras prohibidas. Se compara en la forma canonica
+// (`vmCanon`: NFKC, sin controles C1 ni caracteres de formato, sin marcas combinantes y con los confusables plegados a
+// ASCII): un «validado» con un ancho cero adentro, en ancho completo, con una «а» cirilica o con una marca combinante tambien
+// se atrapa.
 function vmTextoSeguro(t) {
-  return typeof t === 'string' && !VM_PROHIBIDAS.test(t.normalize('NFKC').replace(/\p{Cf}/gu, ''));
+  return typeof t === 'string' && !VM_PROHIBIDAS.test(vmCanon(t));
 }
-// El texto con cada coincidencia de la red de prohibidas cambiada por «…». Es para el texto de TERCEROS (la dirección, la
-// referencia, las notas, el nombre): así un «Calle 3 en camino a Obrajes» no traba el mensaje entero al cliente. Solo el texto
-// que coincide sale normalizado (NFKC y sin `\p{Cf}`); el resto sale tal cual.
-function vmSinProhibidas(t) {
-  const s = _vmCadena(t);
-  const c = s.normalize('NFKC').replace(/\p{Cf}/gu, '');
-  if (!VM_PROHIBIDAS.test(c)) return s;
-  return c.replace(new RegExp(VM_PROHIBIDAS.source, 'gi'), '…');
+
+const VM_OMITIDO = '[texto omitido]';
+
+// Las palabras de `s` (separadas por espacios) que caen dentro de una coincidencia de la red, mirando dos formas del texto:
+// la canonica (`vmCanon`, con su puntuacion) y la sin puntuacion (`vmNorm`), cada una con las palabras unidas por un espacio.
+// Devuelve {palabras, separadores, marcadas}; `separadores[k]` es el espacio que antecede a la palabra `k`, y `cola` el final.
+function _vmPalabrasProhibidas(s) {
+  const partes = s.split(/(\s+)/);
+  const palabras = [];
+  const separadores = [];
+  let sep = '';
+  for (let i = 0; i < partes.length; i++) {
+    if (i % 2 === 1) { sep = partes[i]; continue; }
+    if (partes[i] === '') continue;
+    palabras.push(partes[i]);
+    separadores.push(sep);
+    sep = '';
+  }
+  const marcadas = palabras.map(() => false);
+  const vacias = palabras.map(() => false);
+  for (const forma of [vmCanon, vmNorm]) {
+    const spans = [];
+    let unido = '';
+    palabras.forEach((w, k) => {
+      const f = forma(w);
+      if (f === '') { spans.push(null); if (forma === vmNorm) vacias[k] = true; return; }
+      if (unido !== '') unido += ' ';
+      spans.push([unido.length, unido.length + f.length]);
+      unido += f;
+    });
+    const re = new RegExp(VM_PROHIBIDAS.source, 'gi');
+    let m = re.exec(unido);
+    while (m) {
+      const a = m.index;
+      const b = a + m[0].length;
+      spans.forEach((p, k) => { if (p && p[0] < b && p[1] > a) marcadas[k] = true; });
+      if (m[0].length === 0) re.lastIndex++;
+      m = re.exec(unido);
+    }
+  }
+  // Una palabra sin letras ni numeros («·», «-») entre dos marcadas se va con ellas: queda UNA marca.
+  for (let k = 0; k < palabras.length; k++) {
+    if (!marcadas[k]) continue;
+    let j = k + 1;
+    while (j < palabras.length && vacias[j] && !marcadas[j]) j++;
+    if (j < palabras.length && marcadas[j]) for (let x = k + 1; x < j; x++) marcadas[x] = true;
+  }
+  return { palabras: palabras, separadores: separadores, marcadas: marcadas, cola: sep };
+}
+
+// El texto con cada PALABRA que forma parte de una coincidencia de la red cambiada por «[texto omitido]» (una sola marca por
+// racha de palabras). Es para el texto de TERCEROS (la direccion, la referencia, las notas, el nombre): asi un «Calle 3 en,
+// camino a Obrajes» no traba el mensaje entero. Se compara en las dos formas (con y sin puntuacion), se reemplaza por palabra
+// entera (nada se corta ni se normaliza fuera de lo que coincide) y se llega a un punto fijo: tras reemplazar se vuelve a
+// probar (hasta 3 pasadas) y, si aun coincide, devuelve solo la marca. Con `max` (opcional) el resultado no pasa de `max`
+// caracteres: la marca es mas larga que una palabra corta, asi que se quitan palabras ENTERAS del final (un prefijo de palabras
+// enteras de un texto limpio sigue limpio).
+function vmSinProhibidas(t, max) {
+  const r = _vmSinProhibidas(t);
+  if (!(Number(max) > 0) || r.length <= max) return r;
+  let salida = '';
+  for (const w of (r.match(/\[texto omitido\]|\S+/g) || [])) {
+    const sig = salida === '' ? w : salida + ' ' + w;
+    if (sig.length > max) break;
+    salida = sig;
+  }
+  return salida === '' ? r.slice(0, max) : salida;
+}
+function _vmSinProhibidas(t) {
+  let s = _vmCadena(t);
+  for (let pasada = 0; pasada < 3; pasada++) {
+    const r = _vmPalabrasProhibidas(s);
+    if (!r.marcadas.some(Boolean)) return s;
+    let salida = '';
+    let enMarca = false;
+    r.palabras.forEach((w, k) => {
+      if (r.marcadas[k]) {
+        if (!enMarca) salida += r.separadores[k] + VM_OMITIDO;
+        enMarca = true;
+      } else {
+        salida += r.separadores[k] + w;
+        enMarca = false;
+      }
+    });
+    s = salida + r.cola;
+  }
+  return VM_PROHIBIDAS.test(vmCanon(s)) || VM_PROHIBIDAS.test(vmNorm(s)) ? VM_OMITIDO : s;
 }
 
 // ---------------------------------------------------------------------------

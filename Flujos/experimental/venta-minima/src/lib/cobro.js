@@ -32,7 +32,7 @@
 
 // La red de palabras de `comun.js` (`VM_PROHIBIDAS`), copiada acá a propósito: esta
 // librería se prueba sola y no puede depender de otro archivo.
-const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
+const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
 
 // El total que acepta el servidor para cotejar (`TOTAL_VENTA_MAXIMO`).
 const CB_TOTAL_MAXIMO = 1000000;
@@ -41,9 +41,19 @@ const CB_TOTAL_MAXIMO = 1000000;
 // Utilidades mínimas
 // ---------------------------------------------------------------------------
 
-// La forma en que se COMPARA contra `CB_PROHIBIDAS`: NFKC y sin caracteres de formato (`\p{Cf}`).
+// Confusables latino/cirílico/griego plegados a ASCII SOLO para comparar (S-1); las dos cadenas van en paralelo, letra por letra.
+const CB_CONFUSABLES_DE = 'аеорсухіјѕԁһӏ' + 'αεικορτυχνηβı';
+const CB_CONFUSABLES_A = 'aeopcyxijsdhl' + 'aeikoptuxvnbi';
+
+// La forma en que se COMPARA contra `CB_PROHIBIDAS` (S-1): NFKC, sin controles C1 (\u0080-\u009f) ni caracteres de formato
+// (`\p{Cf}`), NFD sin marcas (`\p{M}`), en minúsculas y con los confusables plegados a ASCII.
 function cbCanon(t) {
-  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/\p{Cf}/gu, '');
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\u0080-\u009f]/g, '').replace(/\p{Cf}/gu, '')
+    .normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[Ͱ-ϿЀ-ԯı]/g, (c) => {
+      const i = CB_CONFUSABLES_DE.indexOf(c);
+      return i < 0 ? c : CB_CONFUSABLES_A.charAt(i);
+    });
 }
 
 // El nodo `nombre` si existe Y corrió en esta ejecución; si no, null.

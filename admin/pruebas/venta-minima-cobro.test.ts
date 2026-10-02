@@ -103,7 +103,7 @@ describe('la librería respeta el sandbox de n8n', () => {
 
   it('la red propia de la librería coincide con la del plan (y atrapa las 16 frases prohibidas)', () => {
     expect(L.CB_PROHIBIDAS.source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\\b)|reservad',
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|(est[aá]|qued[oó])\\s+reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu',
     );
     for (const f of FRASES_PROHIBIDAS) expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
     // El negativo: una frase honesta no la dispara.
@@ -115,10 +115,10 @@ describe('la librería respeta el sandbox de n8n', () => {
 describe('S3: la red se compara en NFKC y sin caracteres de formato, con las raíces nuevas', () => {
   it('atrapa las raíces nuevas y no las frases legítimas', () => {
     for (const f of ['ya acreditamos', 'recibí tu pago', 'recibimos el pago', 'pago exitoso', 'pago aprobado', 'pago realizado', 'pago registrado',
-      'confirmó su pedido', 'te confirmamos', 'yo confirmo', 'mesa reservada']) {
+      'confirmó su pedido', 'te confirmamos la mesa', 'yo confirmo tu pedido', 'tu mesa está reservada']) {
       expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
     }
-    for (const f of ['no estamos abiertos hoy', '¿a qué hora reservo?', 'Recibí tu comprobante', 'Confirmar pedido']) {
+    for (const f of ['no estamos abiertos hoy', '¿a qué hora reservo?', 'Recibí tu comprobante', 'Confirmar pedido', 'Vino Tinto Reservado', 'sala reservada']) {
       expect(L.CB_PROHIBIDAS.test(f), f).toBe(false);
     }
   });
@@ -714,5 +714,27 @@ describe('Interpretar lectura (el nodo): envoltorio de cbLectura', () => {
     const b = correr([gemini(JSON.stringify(COMPROBANTE))]);
     expect([a[0].telefono, a[0].mediaId]).toEqual(['59100000012', 'media-0002']);
     expect([b[0].telefono, b[0].mediaId]).toEqual(['59100000011', 'media-0001']);
+  });
+});
+
+// =================================================================================================
+// RONDA 2 DEL PR-1: S-1 en la tercera copia de la red (`cbCanon`) y el contrato de las tres copias.
+// =================================================================================================
+describe('S-1: `cbCanon` compara sin homoglifos, sin marcas combinantes y sin controles C1', () => {
+  it('las formas escondidas coinciden con la red; el texto legítimo no cambia de resultado', () => {
+    const cbCanon = ejecutar(`${LIB}\nreturn [{ json: { cbCanon } }];`, [{}])[0] as unknown as { cbCanon: (t: string) => string };
+    for (const t of ['pаgаdo', 'vαlidado', 'valídado', 'valídado', 'vali\u0090dado', 'ｖａｌｉｄａｄｏ']) {
+      expect(L.CB_PROHIBIDAS.test(cbCanon.cbCanon(t)), JSON.stringify(t)).toBe(true);
+    }
+    for (const t of ['Piña colada', 'Москва', 'Vino Tinto Reservado', 'sala reservada']) expect(L.CB_PROHIBIDAS.test(cbCanon.cbCanon(t)), t).toBe(false);
+  });
+  it('un titular escrito con letras cirílicas que forma una palabra prohibida se omite del pie del QR', () => {
+    const pie = L.cbCaption({ codigo: 'AB12', total: 55 }, { titular: 'Cuenta pаgаda SRL', moneda: 'BOB' });
+    expect(pie).toContain('Total a pagar por QR: 55 Bs');
+    expect(pie).not.toContain('la cuenta es de');
+  });
+  it('la red conserva el cuantificador acotado y las raíces en su contexto', () => {
+    expect(L.CB_PROHIBIDAS.source).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(L.CB_PROHIBIDAS.source).not.toContain('|reservad|');
   });
 });

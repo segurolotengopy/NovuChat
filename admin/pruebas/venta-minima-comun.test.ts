@@ -54,7 +54,7 @@ const NOMBRES = [
   'vmTextoDeGemini', 'vmJsonDeGemini', 'vmTextoSeguro', 'vmSd', 'vmEstadoBase', 'vmLeerEstado', 'vmEscribirEstado',
   'vmBarrer', 'vmYaVisto', 'vmMarcarVisto', 'vmAtencion', 'vmPrefijoPermitido', 'vmIdDeBoton', 'vmLeerBoton',
   'vmCodigoCorto', 'vmFechaLocal', 'vmHoraLocal', 'vmDiaSemana', 'vmMsLocal', 'vmFechaLegible', 'vmTablaDeDias',
-  'vmHorario', 'vmAbierto', 'VM_PROHIBIDAS',
+  'vmHorario', 'vmAbierto', 'VM_PROHIBIDAS', 'vmCanon', 'vmSinProhibidas',
 ] as const;
 type Lib = Record<(typeof NOMBRES)[number], Fn>;
 
@@ -187,16 +187,18 @@ describe('comun.js: red de palabras prohibidas', () => {
   ];
   it('el regex es el del contrato, literal', () => {
     expect((L.VM_PROHIBIDAS as unknown as RegExp).source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\\b)|reservad');
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|(est[aá]|qued[oó])\\s+reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu');
     expect((L.VM_PROHIBIDAS as unknown as RegExp).flags).toBe('i');
   });
-  it('S3: las raíces nuevas (acredit, recibir el pago, pago exitoso…, confirmo, reservad) se atrapan; las frases legítimas no', () => {
+  it('S3 e I1: las raíces nuevas se atrapan en su contexto de afirmación; «reservado» como dato de una carta o de una zona, no', () => {
     for (const t of ['Ya acreditamos el pago', 'Recibí tu pago', 'Recibimos el pago', 'Pago exitoso', 'Pago recibido', 'Pago aprobado', 'Pago realizado',
-      'Pago registrado', 'Confirmó su pedido', 'Te confirmamos la mesa', 'Yo confirmo', 'Tu mesa está reservada', 'Mesa reservado para hoy']) {
+      'Pago registrado', 'Confirmó su pedido', 'Te confirmamos la mesa', 'Yo confirmo tu pedido', 'Tu mesa está reservada', 'Tu reserva quedó reservada',
+      'Confirmamos tu reserva', 'Tu reserva quedó registrada', 'Reservamos tu mesa', 'Tu reserva está agendada']) {
       expect(L.vmTextoSeguro(t), t).toBe(false);
     }
     for (const t of ['No estamos abiertos hoy', '¿A qué hora reservo?', 'Quiero reservar una mesa', 'Confirmar pedido', 'Recibí tu imagen',
-      'Estoy esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.']) {
+      'Estoy esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.',
+      'Vino Tinto Reservado', 'Salón, sala reservada y terraza', 'Mesa reservada para eventos', 'Yo confirmo que llego a las 8']) {
       expect(L.vmTextoSeguro(t), t).toBe(true);
     }
   });
@@ -1219,5 +1221,80 @@ describe('Los cinco nodos y la librería: reglas de la zona', () => {
     expect((correrNodo('uso-extendido', [{}], refs({ atencion: { estado: 'operador' } }))[0]!['mensajes'] as J[]).length).toBe(1);
     expect((correrNodo('uso-extendido', [{}], refs({ atencion: { estado: 'bloqueado' } }))[0]!['mensajes'] as J[]).length).toBe(0);
     expect((correrNodo('comercio-no-operativo', [{}], {})[0]!['mensajes'] as J[]).length).toBe(1);
+  });
+});
+
+// =================================================================================================
+// RONDA 2 DEL PR-1: I1 (raíces acotadas), I2 (punto fijo, forma sin puntuación, marca explícita) y S-1 (homoglifos y marcas).
+// =================================================================================================
+describe('I1, I2 y S-1: la red de prohibidas y el saneo del texto de terceros', () => {
+  const RED = (): RegExp => L.VM_PROHIBIDAS as unknown as RegExp;
+  const sinProhibidas = L.vmSinProhibidas as (t: unknown, max?: number) => string;
+  const canon = L.vmCanon as (t: unknown) => string;
+  const MARCA = '[texto omitido]';
+
+  it('I1: «reservado» y «confirmo» como dato no traban; las afirmaciones sí', () => {
+    for (const t of ['Vino Tinto Reservado', 'Salón, terraza y sala reservada', 'Mesa reservada para eventos']) expect(L.vmTextoSeguro(t), t).toBe(true);
+    for (const t of ['Tu reserva quedó reservada', 'Tu mesa está reservada', 'Confirmamos tu reserva', 'Reservamos tu mesa', 'Tu reserva está registrada', 'Reserva confirmada']) {
+      expect(L.vmTextoSeguro(t), t).toBe(false);
+    }
+  });
+  it('I2: los tres casos de la tabla, con puntuación, se omiten por palabra entera y con la marca explícita', () => {
+    for (const t of ['Calle 3 en, camino a Obrajes', 'pago: recibido', 'en-camino']) {
+      const r = sinProhibidas(t);
+      expect(r, t).toContain(MARCA);
+      expect(r, t).not.toContain('…');
+      expect(RED().test(canon(r)), t).toBe(false);
+      expect(RED().test(L.vmNorm(r)), t).toBe(false);
+    }
+    expect(sinProhibidas('Calle 3 en, camino a Obrajes')).toBe(`Calle 3 ${MARCA} a Obrajes`);
+    expect(sinProhibidas('pago: recibido')).toBe(MARCA);
+    expect(sinProhibidas('en-camino')).toBe(MARCA);
+  });
+  it('I2: por palabra entera, sin cortar ni normalizar fuera de la coincidencia (N.º, tildes, mayúsculas)', () => {
+    expect(sinProhibidas('N.º 5 casa validada')).toBe(`N.º 5 casa ${MARCA}`);
+    expect(sinProhibidas('Ñandú Pérez VALIDADO ya')).toBe(`Ñandú Pérez ${MARCA} ya`);
+    expect(sinProhibidas('xvalidadox')).toBe(MARCA);
+    expect(sinProhibidas('hola recibimos tu pago gracias')).toBe(`hola ${MARCA} gracias`);
+    // Sin coincidencia, el texto vuelve idéntico (sin normalizar).
+    expect(sinProhibidas('N.º 5 Ñandú, casa reservada')).toBe('N.º 5 Ñandú, casa reservada');
+    expect(sinProhibidas('  dos  espacios\ty tab ')).toBe('  dos  espacios\ty tab ');
+  });
+  it('I2: punto fijo (si aún coincide tras reemplazar, devuelve solo la marca) y tope opcional sin cortar palabras', () => {
+    const conRedPropia = ejecutar(`const VM_PROHIBIDAS = /texto/i;\n${COMUN.replace(/^const VM_PROHIBIDAS = .*$/m, '')}\nreturn [{ json: { vmSinProhibidas } }];`, [{}], {}, { $getWorkflowStaticData: () => ({}), Date: relojFijo(AHORA) })[0] as unknown as { vmSinProhibidas: (t: string) => string };
+    expect(conRedPropia.vmSinProhibidas('hola texto')).toBe(MARCA);
+    const largo = sinProhibidas('Calle 3 en camino a la casa azul del fondo', 20);
+    expect(largo.length).toBeLessThanOrEqual(20);
+    expect(largo).toBe('Calle 3');
+    for (const palabra of largo.split(' ')) expect(['Calle', '3', MARCA]).toContain(palabra);
+  });
+  it('S-1: homoglifos, marcas combinantes y controles C1 no esconden una palabra prohibida', () => {
+    const escondidas = ['pаgаdo', 'vαlidado', 'valídado', 'valídado', 'vali\u0090dado', 'раgаdo', 'acrеditado', 'ｖａｌｉｄａｄｏ'];
+    for (const t of escondidas) {
+      expect(L.vmTextoSeguro(`Tu pedido ${t}`), JSON.stringify(t)).toBe(false);
+      expect(RED().test(L.vmNorm(`Tu pedido ${t}`)), JSON.stringify(t)).toBe(true);
+      expect(sinProhibidas(`Tu pedido ${t} ya`), JSON.stringify(t)).toBe(`Tu pedido ${MARCA} ya`);
+    }
+    // Texto legítimo (también en cirílico, griego o con tildes) no cambia por la tabla.
+    for (const t of ['Piña colada, jalapeño y café', 'Москва 5', 'Ελλάδα']) {
+      expect(L.vmTextoSeguro(t), t).toBe(true);
+      expect(sinProhibidas(t), t).toBe(t);
+    }
+    // Las dos cadenas de la tabla de confusables tienen la misma longitud.
+    const m = /const VM_CONFUSABLES_DE = '([^']+)' \+ '([^']+)';\nconst VM_CONFUSABLES_A = '([^']+)' \+ '([^']+)';/.exec(COMUN)!;
+    expect(Array.from(m[1]!).length).toBe(m[3]!.length);
+    expect(Array.from(m[2]!).length).toBe(m[4]!.length);
+  });
+  it('S-1: `vmLinea` quita los controles C1 (no los cambia por un espacio) y el resultado sigue atrapado', () => {
+    expect(L.vmLinea('vali\u0090dado')).toBe('validado');
+    expect(sinProhibidas(L.vmLinea('vali\u0090dado'))).toBe(MARCA);
+    // \u0085 (NEL) sí separa.
+    expect(L.vmLinea('a\u0085b')).toBe('a b');
+    expect(L.vmLinea('Hola\u0080 mundo')).toBe('Hola mundo');
+  });
+  it('S-5: `recib\\S{0,40}` acota la raíz; una palabra de 41 caracteres tras «recib» no la dispara', () => {
+    expect(RED().source).toContain('recib\\S{0,40} (tu|el) pago');
+    expect(L.vmTextoSeguro('recib' + 'x'.repeat(41) + ' tu pago')).toBe(true);
+    expect(L.vmTextoSeguro('recibimos tu pago')).toBe(false);
   });
 });
