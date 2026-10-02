@@ -21,7 +21,7 @@
  * ayuda va en una hoja aparte del cuaderno o en la consola; la hoja de datos
  * tiene encabezados y datos, y nada más.
  *
- * USO:  node scripts/plantilla-catalogo.mjs
+ * USO:  node scripts/plataforma/plantilla-catalogo.mjs
  */
 import { deflateRawSync, crc32 } from 'node:zlib';
 import { writeFileSync } from 'node:fs';
@@ -29,7 +29,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const RAIZ = join(aqui, '..');
+const RAIZ = join(aqui, '..', '..');
 const SALIDA = join(RAIZ, '..', 'Demo-Recursos', 'plantilla-catalogo.xlsx');
 
 // Las columnas que entiende `web/src/central/lib/csv.ts`. El orden es el del documento.

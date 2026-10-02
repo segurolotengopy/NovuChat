@@ -27,9 +27,9 @@
  * 5 con operador 50): el servidor lo descartaría en silencio y la prueba
  * creería que bajó el techo cuando no lo bajó.
  *
- *   node scripts/fijar-umbrales.mjs --proyecto <id> --tenant platinum --operador 3 --bloqueo 5
- *   node scripts/fijar-umbrales.mjs --proyecto <id> --tenant platinum --operador 3 --bloqueo 5 --aplicar
- *   node scripts/fijar-umbrales.mjs --proyecto <id> --tenant platinum --restaurar --aplicar
+ *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant platinum --operador 3 --bloqueo 5
+ *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant platinum --operador 3 --bloqueo 5 --aplicar
+ *   node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant platinum --restaurar --aplicar
  *
  * Sin `--aplicar` no escribe nada: dice qué haría.
  */
@@ -44,7 +44,7 @@ const OPERADOR = opcion('operador');
 const BLOQUEO = opcion('bloqueo');
 
 const { UMBRALES_ATENCION, UMBRAL_MAXIMO, umbralValido, umbralesDeAtencion } =
-  await import('../functions/src/core/conteo/atencion.ts');
+  await import('../../functions/src/core/conteo/atencion.ts');
 
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
 const ID_TENANT = /^[a-z0-9][a-z0-9-]{2,59}$/;
@@ -77,8 +77,8 @@ if (RESTAURAR) {
 }
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/fijar-umbrales.mjs --proyecto <id> --tenant <id> --operador N --bloqueo M [--aplicar]');
-  console.error('  node scripts/fijar-umbrales.mjs --proyecto <id> --tenant <id> --restaurar [--aplicar]\n');
+  console.error('\n  node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant <id> --operador N --bloqueo M [--aplicar]');
+  console.error('  node scripts/plataforma/fijar-umbrales.mjs --proyecto <id> --tenant <id> --restaurar [--aplicar]\n');
   process.exit(2);
 }
 

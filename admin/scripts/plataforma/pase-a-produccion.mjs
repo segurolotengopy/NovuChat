@@ -27,8 +27,8 @@
  * Node 22.15+) prueba `.ts` cuando el `.js` no existe, solo para importaciones
  * relativas desde un `.ts`.
  *
- *   node scripts/pase-a-produccion.mjs --proyecto <id> --tenant platinum
- *   node scripts/pase-a-produccion.mjs --proyecto <id> --tenant platinum \
+ *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant platinum
+ *   node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant platinum \
  *     --aceptacion ~/NovuChat/CLIENTES/PLATINUM/aceptacion.md
  *
  * `--repo <raíz>` apunta a otra copia del repositorio (por defecto, la de este
@@ -54,7 +54,7 @@ if (args.includes('--aplicar')) {
 const PROYECTO = opcion('proyecto');
 const TENANT = (opcion('tenant') ?? '').toLowerCase();
 const aqui = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(opcion('repo') ?? join(aqui, '..', '..'));
+const REPO = resolve(opcion('repo') ?? join(aqui, '..', '..', '..'));
 const ACEPTACION = opcion('aceptacion');
 
 // Mismo formato que `ID_TENANT` en functions/src/index.ts.
@@ -64,7 +64,7 @@ if (!PROYECTO) problemas.push('falta --proyecto');
 if (!ID_TENANT.test(TENANT)) problemas.push('--tenant inválido (minúsculas, guiones, 3 a 60)');
 if (problemas.length) {
   console.error('\n  ✗ ' + problemas.join('\n  ✗ '));
-  console.error('\n  node scripts/pase-a-produccion.mjs --proyecto <id> --tenant <id> [--aceptacion <aceptacion.md>] [--repo <raíz>]\n');
+  console.error('\n  node scripts/plataforma/pase-a-produccion.mjs --proyecto <id> --tenant <id> [--aceptacion <aceptacion.md>] [--repo <raíz>]\n');
   process.exit(2);
 }
 
@@ -85,10 +85,9 @@ registerHooks({
     }
   },
 });
-const FUENTES = join(aqui, '..', 'functions', 'src');
-const { PLANES, limitesDe, limitesDeCuenta } = await import(join(FUENTES, 'central', 'cuenta', 'planes.ts'));
-const { umbralesDeAtencion } = await import(join(FUENTES, 'core', 'conteo', 'atencion.ts'));
-const { corteAplicable, modalidadDe, tipoCambioVigente } = await import(join(FUENTES, 'central', 'cuenta', 'prepago.ts'));
+const { PLANES, limitesDe, limitesDeCuenta } = await import('../../functions/src/central/cuenta/planes.ts');
+const { umbralesDeAtencion } = await import('../../functions/src/core/conteo/atencion.ts');
+const { corteAplicable, modalidadDe, tipoCambioVigente } = await import('../../functions/src/central/cuenta/prepago.ts');
 
 const { initializeApp } = await import('firebase-admin/app');
 const { getFirestore } = await import('firebase-admin/firestore');

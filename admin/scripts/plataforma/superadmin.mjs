@@ -21,9 +21,9 @@
  *   4. sale y vuelve a entrar, para que el token traiga el permiso nuevo.
  *
  * Uso:
- *   node scripts/superadmin.mjs --proyecto <id> correo@dominio [otro@dominio]
- *   node scripts/superadmin.mjs --proyecto <id> --quitar correo@dominio
- *   node scripts/superadmin.mjs --proyecto <id> --listar
+ *   node scripts/plataforma/superadmin.mjs --proyecto <id> correo@dominio [otro@dominio]
+ *   node scripts/plataforma/superadmin.mjs --proyecto <id> --quitar correo@dominio
+ *   node scripts/plataforma/superadmin.mjs --proyecto <id> --listar
  */
 const args = process.argv.slice(2);
 const QUITAR = args.includes('--quitar');

@@ -16,7 +16,7 @@
 |---|---|---|---|
 | **El número** | El del **Demo A** (el número de prueba de Meta, solo responde a los destinatarios registrados) | — | — |
 | **El flujo de n8n** del Demo A | El **JSON del cliente** de la rama con el cambio, con el nombre, el webhook y las **credenciales del Demo A** | `scripts/ensayo-flujo.sh` | `ensayo-flujo.sh --restaurar` republica `demo-a-agendamiento.json` de `main` |
-| **La ruta** del número en la plataforma | Apunta al comercio **`ensayo`** (no a `demo-agendamiento`) | `admin/scripts/ensayo.mjs --preparar` | `ensayo.mjs --restaurar` |
+| **La ruta** del número en la plataforma | Apunta al comercio **`ensayo`** (no a `demo-agendamiento`) | `admin/scripts/plataforma/ensayo.mjs --preparar` | `ensayo.mjs --restaurar` |
 | **La configuración** que lee el flujo | La de `ensayo`: el `datos/negocio-<cliente>.json` **propuesto**, con recepción y agendas **de prueba** | `ensayo.mjs --preparar` (usa `cargar-negocio.mjs`) | No hace falta: el demo nunca se tocó |
 | **Lo que se escribe** (conversaciones, conteos) | En `ensayo` | — | Se queda ahí; el próximo ensayo lo vacía |
 | El número, la agenda, la recepción y la configuración **del cliente** | **Nada** | — | — |
@@ -60,7 +60,7 @@ fusiona** hasta que el ensayo sale bien.
 **1. La plataforma** (desde `admin/`, con las credenciales de producción de
 siempre: `CLOUDSDK_CONFIG=$HOME/.config/gcloud-novuchat-prod`):
 
-    node scripts/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --preparar \
+    node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --preparar \
       --cliente platinum --archivo scripts/datos/negocio-platinum.json \
       --local ~/NovuChat/CONFIGURACION.local.md            # seco: se lee entero
     ... --aplicar
@@ -97,7 +97,7 @@ leído entero antes del `--aplicar`.
 
     ./scripts/ensayo-flujo.sh --restaurar            # seco
     ./scripts/ensayo-flujo.sh --restaurar --aplicar
-    node scripts/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --restaurar --aplicar
+    node scripts/plataforma/ensayo.mjs --proyecto <proyecto> --numero <phone id del Demo A> --restaurar --aplicar
 
 Y borrar de las agendas del demo las citas de la prueba.
 
@@ -113,7 +113,7 @@ Y borrar de las agendas del demo las citas de la prueba.
 
 ## 5 · Las piezas
 
-- `admin/scripts/ensayo.mjs` — plataforma. Pruebas: `admin/pruebas/ensayo.test.ts`
+- `admin/scripts/plataforma/ensayo.mjs` — plataforma. Pruebas: `admin/pruebas/ensayo.test.ts`
   (nunca desvía el número de un cliente que paga, nunca carga la agenda ni la
   recepción del cliente, restaura solo al comercio de origen).
 - `scripts/ensayo-flujo.sh` — n8n. Sus dos cerrojos (credenciales del Demo A

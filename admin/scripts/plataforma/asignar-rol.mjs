@@ -33,10 +33,10 @@
  * Hasta el 28/09/2026 iba a `~/`; el porqué del cambio, en `plataforma/enlace-privado.mjs`.
  * `--cliente` es la carpeta de `CLIENTES/` (por defecto, el tenant en mayúsculas).
  *
- *   node scripts/asignar-rol.mjs --proyecto <id> --tenant bellido \
+ *   node scripts/plataforma/asignar-rol.mjs --proyecto <id> --tenant bellido \
  *     --correo recepcion@ejemplo.com --rol oper --nombre "María René" [--cliente BELLIDO] [--aplicar]
  *
- *   node scripts/asignar-rol.mjs --proyecto <id> --tenant bellido \
+ *   node scripts/plataforma/asignar-rol.mjs --proyecto <id> --tenant bellido \
  *     --correo recepcion@ejemplo.com --quitar [--aplicar]
  *
  * Sin `--aplicar` no escribe nada: dice qué haría. Salida: 0 si hizo (o si el
@@ -45,7 +45,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   ID_CLIENTE, clienteDeTenant, comprobarDestino, guardarEnlaceDeContrasena, raizDelProyecto,
-} from './plataforma/enlace-privado.mjs';
+} from './enlace-privado.mjs';
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
