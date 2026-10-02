@@ -56,6 +56,7 @@ function vmLeerEstado(sd, from, ahora){ const e = sd && sd.estados && sd.estados
 function vmIdDeBoton(){ return Array.prototype.slice.call(arguments).join('|'); }
 function vmLeerBoton(id){ const p = String(id).split('|'); return p.length >= 2 && /^[a-z]$/.test(p[0]) ? { tipo: p[0], partes: p.slice(1) } : null; }
 function vmCodigoCorto(ms){ return ms.toString(36).slice(-4).toUpperCase(); }
+function vmSinProhibidas(t){ return String(t == null ? '' : t).replace(new RegExp(${JSON.stringify(PROHIBIDAS.source)}, 'gi'), '…'); }
 function vmHorario(csv){ const o = {}; let mal = false; String(csv).split(',').forEach(function(p){ const kv = p.split('='); const v = (kv[1] || '').trim(); if (v === 'cerrado') o[kv[0].trim()] = []; else { const m = /^(\d\d:\d\d)-(\d\d:\d\d)$/.exec(v); if (m) o[kv[0].trim()] = [{ desde: m[1], hasta: m[2] }]; else mal = true; } }); return mal ? null : o; }
 function vmAbierto(h, ms){ const l = new Date(ms - 4 * 3600000); const dia = ['dom','lun','mar','mie','jue','vie','sab'][l.getUTCDay()]; const hm = ('0' + l.getUTCHours()).slice(-2) + ':' + ('0' + l.getUTCMinutes()).slice(-2); const tr = h[dia] || []; return { abierto: tr.some(function(x){ return hm >= x.desde && hm < x.hasta; }), hoyCerrado: !tr.length }; }
 
@@ -428,7 +429,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     expect(cuerpo).toContain('Orden de 3 tacos de birria');
     expect(cuerpo).not.toContain('Michelada'); // área excluida
     expect(cuerpo).toContain('(por ejemplo: «1 queso fundido con chorizo y 1 orden de 3 tacos de cochinita sin cebolla»)');
-    expect(cuerpo).toContain(' Por delivery no enviamos bebidas sueltas.');
+    expect(cuerpo).toContain(' Por delivery no enviamos bebidas.');
     expect(estadoDe(m)['paso']).toBe('pedido');
     const sin = turno(crearMundo({ areasSinDelivery: '' }), { boton: 'm|pedido' });
     expect(sin.p!['mensajes'][0]['cuerpo']).not.toContain('bebidas sueltas');
@@ -454,7 +455,7 @@ describe('Plan del turno: menú, carta, consultas y promoción', () => {
     expect(dir.p!['mensajes'][0]['cuerpo']).toBe('Estamos en Av. Ejemplo 123.');
     expect(ids(dir.p!['mensajes'][0])).toEqual(['m|pedido', 'm|reserva']);
     expect(registrar(turno(crearMundo(), { texto: 'a qué hora abren' })).cuerpos[0]).toBe('Atendemos todos los días de 9:00 a 22:00.');
-    expect(registrar(turno(crearMundo(), { texto: 'hacen delivery?' })).cuerpos[0]).toBe('Sí, hacemos delivery. Por delivery no enviamos bebidas sueltas.');
+    expect(registrar(turno(crearMundo(), { texto: 'hacen delivery?' })).cuerpos[0]).toBe('Sí, hacemos delivery. Por delivery no enviamos bebidas.');
     expect(registrar(turno(crearMundo({ aceptaDelivery: false }), { texto: 'hacen delivery?' })).cuerpos[0]).toContain('Por ahora no hacemos delivery');
     const sinDato = turno(crearMundo({ direccion: '' }), { texto: 'cuál es la dirección' });
     expect(sinDato.p!['aviso']['tipo']).toBe('transferencia');
@@ -825,23 +826,27 @@ describe('Plan del turno: derivar a una persona (solo se ofrece lo que se cumple
     expect(sinNodo.p!['errores']).toContain('extraccion_invalida');
   });
 
-  it('como mucho una derivación con aviso por hora y por teléfono; la segunda queda con botón y sin aviso', () => {
+  it('R3: el plan SIEMPRE pide el aviso de derivación y no escribe ninguna marca ni suprime el aviso por su cuenta', () => {
+    // El tope por teléfono y por hora lo aplica `Armar avisos` con la marca que escribe `Armar mensajes` solo si el aviso
+    // salió (prueba en `venta-minima-salida` y de punta a punta en `venta-minima-integracion`). Aquí, negado: aunque haya
+    // una derivación reciente, el plan vuelve a pedir el aviso, y no deja nada en `transferencias` ni en `sd`.
     const m = crearMundo();
     const a = turno(m, { texto: 'quiero hablar con una persona' });
     expect(a.p!['aviso']['tipo']).toBe('transferencia');
-    m.ahora += 10 * 60000;
+    expect(a.p!['estadoNuevo']['transferencias']).toEqual([]);
+    expect(sdDe(m)['transferencias']).toBeUndefined();
+    m.ahora += 60 * 1000;
     const b = turno(m, { texto: 'quiero hablar con una persona' });
-    expect(b.p!['aviso']).toBeNull();
+    expect(b.p!['aviso']['tipo']).toBe('transferencia');
     expect(b.p!['mensajes'][0]['tipo']).toBe('enlace');
-    // Otro teléfono tiene su propio tope; y pasada la hora vuelve a avisar.
-    expect(turno(m, { from: OTRO, texto: 'quiero hablar con una persona' }).p!['aviso']['tipo']).toBe('transferencia');
-    m.ahora += 61 * 60000;
-    expect(turno(m, { texto: 'quiero hablar con una persona' }).p!['aviso']['tipo']).toBe('transferencia');
-    // El tope sale de la configuración.
-    const dos = crearMundo({ topeTransferenciasHora: 2 });
-    turno(dos, { texto: 'tengo una queja' });
-    expect(turno(dos, { texto: 'tengo una queja' }).p!['aviso']['tipo']).toBe('transferencia');
-    expect(turno(dos, { texto: 'tengo una queja' }).p!['aviso']).toBeNull();
+    expect(b.p!['estadoNuevo']['transferencias']).toEqual([]);
+    expect(sdDe(m)['transferencias']).toBeUndefined();
+    // Con cualquier tope configurado (también 0), el plan pide el aviso: el tope no es cosa suya.
+    for (const tope of [0, 1, 2]) {
+      const w = crearMundo({ topeTransferenciasHora: tope });
+      turno(w, { texto: 'tengo una queja' });
+      expect(turno(w, { texto: 'tengo una queja' }).p!['aviso']['tipo']).toBe('transferencia');
+    }
   });
 
   it('sin número de recepción utilizable el botón no tiene enlace y se anota el error', () => {
@@ -1205,5 +1210,179 @@ describe('Todo texto al cliente es seguro (PROHIBICIÓN 3)', () => {
     for (const s of salidas) {
       for (const msg of s.p!['mensajes']) expect(String(msg['cuerpo'])).not.toMatch(/ya pasé|llegó al restaurante|pasé tu pedido/i);
     }
+  });
+});
+
+// =================================================================================================
+// Correcciones de la revisión del PR-1 (R4, R5, R7, R8, S4, S7), cada una probada negando el defecto.
+// Los dobles de arriba son mínimos: lo que depende de las librerías reales se prueba en la suite de integración.
+describe('Plan del turno: correcciones de la revisión', () => {
+  const enEspera = (extra: J = {}): Mundo => {
+    const m = crearMundo({ ...CFG_QR, ...extra });
+    hastaResumen(m);
+    turno(m, { boton: 'p|confirmar' });
+    return m;
+  };
+  const cotejo = (resultado: string) => ({ statusCode: 200, body: { resultado } });
+
+  it('R7: la ubicación compartida pasa a `entrega.ubicacion` {lat, lng} en un pedido con delivery', () => {
+    const m = crearMundo();
+    turno(m, { texto: 'hola' });
+    turno(m, { texto: 'quiero 1 orden de tacos de birria para delivery', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden')], entrega: 'delivery' }) });
+    expect(estadoDe(m)['paso']).toBe('pedido_datos');
+    const s = turno(m, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15, nombre: '', direccion: '' } });
+    expect(s.d['motivo']).toBe('ubicacion');
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+    // «Cambiar algo» conserva la ubicación ya dada, como la dirección.
+    turno(m, { boton: 'p|cambiar' });
+    expect(estadoDe(m)['entrega']['ubicacion']).toEqual({ lat: -16.5, lng: -68.15 });
+  });
+
+  it('R7 negado: sin delivery, fuera de un pedido, con coordenadas fuera de rango o de otro tipo, no se toma ninguna ubicación', () => {
+    const recojo = crearMundo();
+    hastaResumen(recojo);
+    turno(recojo, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
+    expect(estadoDe(recojo)['entrega']['ubicacion']).toBeUndefined();
+    const menu = crearMundo();
+    turno(menu, { texto: 'hola' });
+    turno(menu, { tipo: 'location', ubicacion: { latitud: -16.5, longitud: -68.15 } });
+    expect(estadoDe(menu)['entrega']['ubicacion']).toBeUndefined();
+    for (const u of [{ latitud: 95, longitud: -68 }, { latitud: -16, longitud: 190 }, { latitud: '-16', longitud: '-68' }, { latitud: null, longitud: null }, null]) {
+      const m = crearMundo();
+      turno(m, { texto: 'hola' });
+      turno(m, { texto: 'quiero 1 orden de tacos de birria para delivery', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden')], entrega: 'delivery' }) });
+      turno(m, { tipo: 'location', ubicacion: u as J });
+      expect(estadoDe(m)['entrega']['ubicacion'], JSON.stringify(u)).toBeUndefined();
+    }
+  });
+
+  it('R8a: «Por delivery no enviamos …» sale del área configurada; sin áreas no se dice; con el panel sin respuesta se pasa con el local', () => {
+    const dos = turno(crearMundo({ areasSinDelivery: 'Postres,Bebidas' }), { boton: 'm|pedido' }).p!['mensajes'][0]['cuerpo'] as string;
+    expect(dos).toContain(' Por delivery no enviamos postres y bebidas.');
+    expect(dos).not.toContain('sueltas');
+    const una = turno(crearMundo({ areasSinDelivery: 'Postres' }), { texto: 'hacen delivery?' }).p!['mensajes'][0]['cuerpo'] as string;
+    expect(una).toBe('Sí, hacemos delivery. Por delivery no enviamos postres.');
+    for (const areas of ['', []]) {
+      const sin = turno(crearMundo({ areasSinDelivery: areas }), { texto: 'hacen delivery?' }).p!['mensajes'][0]['cuerpo'] as string;
+      expect(sin, JSON.stringify(areas)).toBe('Sí, hacemos delivery.');
+      const carta = turno(crearMundo({ areasSinDelivery: areas }), { boton: 'm|pedido' }).p!['mensajes'][0]['cuerpo'] as string;
+      expect(carta, JSON.stringify(areas)).not.toContain('Por delivery no enviamos');
+    }
+    const caido = turno(crearMundo({ panelSinRespuesta: true, aceptaDelivery: undefined }), { texto: 'hacen delivery?' });
+    expect(caido.p!['aviso']['tipo']).toBe('transferencia');
+    expect(caido.p!['mensajes'][0]['tipo']).toBe('enlace');
+  });
+
+  it('R4: el texto del cliente se sanea al entrar; «Calle 3 en camino a Obrajes» no traba el resumen', () => {
+    const m = crearMundo();
+    turno(m, { texto: 'hola' });
+    turno(m, { texto: 'quiero 1 orden de tacos de birria', extraccion: extPedido({ lineas: [linea('tacos de birria', 1, 'orden', 'sin cebolla, pago confirmado')], entrega: 'delivery' }) });
+    const s = turno(m, { texto: 'Calle 3 en camino a Obrajes', extraccion: extPedido({ direccion: 'Calle 3 en camino a Obrajes', referencia: 'portón validado', nombre: 'Ana ya lo preparan' }) });
+    const e = estadoDe(m);
+    expect(e['paso']).toBe('pedido_confirmar');
+    expect(e['entrega']['direccion']).toBe('Calle 3 … a Obrajes');
+    // La coincidencia es la raíz («validad»), así que el resto de la palabra queda; lo que importa es que no coincida con la red.
+    expect(e['entrega']['referencia']).toMatch(/^portón …/);
+    expect(e['entrega']['nombre']).toMatch(/^Ana …/);
+    expect(e['carrito'][0]['detalle']).toMatch(/^sin cebolla, pago …/);
+    for (const campo of [e['entrega']['direccion'], e['entrega']['referencia'], e['entrega']['nombre'], e['carrito'][0]['detalle']]) {
+      expect(PROHIBIDAS.test(String(campo)), String(campo)).toBe(false);
+    }
+    const botonesMsg = s.p!['mensajes'][0];
+    expect(botonesMsg['tipo']).toBe('botones');
+    expect(PROHIBIDAS.test(String(botonesMsg['cuerpo']))).toBe(false);
+    // Un producto escrito con una palabra prohibida tampoco sale en «No encuentro …».
+    const n = crearMundo();
+    turno(n, { texto: 'hola' });
+    const x = turno(n, { texto: 'quiero algo', extraccion: extPedido({ lineas: [linea('combo pagado', 1)] }) });
+    for (const c of x.cuerpos) expect(PROHIBIDAS.test(c), c).toBe(false);
+  });
+
+  it('R4: la zona, el nombre, la celebración y el requerimiento de una reserva también se sanean', () => {
+    const m = crearMundo();
+    turno(m, { boton: 'm|reserva' });
+    turno(m, { texto: 'mesa', extraccion: extReserva({ personas: 4, fecha: '2026-10-09', hora: '20:00', nombre: 'Ana validado', celebracion: 'cumple, pago acreditado', requerimiento: 'silla en camino' }) });
+    const r = estadoDe(m)['reserva'];
+    expect(r['nombre']).toMatch(/^Ana …/);
+    expect(r['celebracion']).toMatch(/^cumple, pago …/);
+    expect(r['requerimiento']).toBe('silla …');
+    for (const campo of [r['nombre'], r['celebracion'], r['requerimiento']]) expect(PROHIBIDAS.test(String(campo)), String(campo)).toBe(false);
+  });
+
+  it('R5: un resumen de más de 1.024 caracteres se parte: el detalle en texto y el total con los botones en un mensaje corto', () => {
+    const m = crearMundo();
+    turno(m, { texto: 'hola' });
+    const doce = Array.from({ length: 12 }, (_, i) => linea('queso fundido con chorizo', i + 1, '', `nota de la línea ${i} con bastante texto para que ocupe lugar en el resumen`));
+    const s = turno(m, { texto: 'pedido grande', extraccion: extPedido({ lineas: doce, entrega: 'delivery', direccion: 'Calle Falsa 123', referencia: 'casa azul', nombre: 'Ana Pérez' }) });
+    const ms = s.p!['mensajes'] as J[];
+    expect(ms.length).toBeGreaterThanOrEqual(2);
+    const ultimo = ms[ms.length - 1]!;
+    expect(ultimo['tipo']).toBe('botones');
+    expect((ultimo['cuerpo'] as string).length).toBeLessThanOrEqual(1024);
+    expect(ultimo['cuerpo']).toMatch(/^Total de la comida: /);
+    expect(ultimo['cuerpo']).toContain('El delivery no está incluido');
+    expect(ids(ultimo)).toEqual(['p|confirmar', 'p|cambiar']);
+    for (const previo of ms.slice(0, -1)) {
+      expect(previo['tipo']).toBe('texto');
+      expect((previo['cuerpo'] as string).length).toBeLessThanOrEqual(3800);
+    }
+    const detalle = ms.slice(0, -1).map((x) => x['cuerpo']).join('\n');
+    expect(detalle).toContain('nota de la línea 0');
+    expect(detalle).toContain('nota de la línea 11');
+    expect(detalle).not.toContain('Total de la comida');
+    expect(estadoDe(m)['paso']).toBe('pedido_confirmar');
+  });
+
+  it('R5 negado: un pedido corto sigue en UN solo mensaje con botones, con el total adentro', () => {
+    const m = crearMundo();
+    const s = hastaResumen(m, 'delivery');
+    expect(s.p!['mensajes']).toHaveLength(1);
+    expect(s.p!['mensajes'][0]['tipo']).toBe('botones');
+    expect(s.p!['mensajes'][0]['cuerpo']).toContain('Total de la comida');
+  });
+
+  it('S4: «Reenviar QR» lleva monto y referencia del pedido y NO el evento `qr_enviado`', () => {
+    const m = enEspera();
+    const ped = estadoDe(m)['pedido'];
+    const s = turno(m, { boton: 'q|reenviar' });
+    expect(s.d['accion']).toBe('reenviar_qr');
+    const q = s.p!['mensajes'][0];
+    expect(q).toMatchObject({ tipo: 'imagen', url: QR, monto: 55, referencia: ped['pedidoId'] });
+    expect(q).not.toHaveProperty('evento');
+    // Negado: sin cobro real encendido no hay QR que reenviar: se deriva.
+    const sin = enEspera();
+    sin.cfg['cobro'] = { activo: false };
+    expect(turno(sin, { boton: 'q|reenviar' }).p!['aviso']['tipo']).toBe('transferencia');
+  });
+
+  it('S7: la referencia del servidor solo vale si es un pedido propio de `sd.pedidos` y de este teléfono; si no, se deriva', () => {
+    const intentar = (ref: string, antes?: (m: Mundo) => void) => {
+      const m = enEspera();
+      antes?.(m);
+      m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: ref, pendiente: true };
+      return turno(m, { tipo: 'image', esComprobante: true, mediaId: 'm1', cotejo: cotejo('cuadra') }).p!;
+    };
+    const ajeno = 'ped-2026-10-05-0012-zzz';
+    const deOtro = (m: Mundo) => { sdDe(m)['pedidos'][ajeno] = { pedidoId: ajeno, from: OTRO, codigo: 'ZZZZ', total: 10, lineas: [], modalidad: 'recojo' }; };
+    // Negativos: claves heredadas del prototipo, un pedido de otro teléfono, una referencia inexistente.
+    for (const ref of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+      const p = intentar(ref);
+      expect(p['aviso']['tipo'], ref).toBe('transferencia');
+      expect(p['ruta'], ref).toContain('comprobante sin pedido en el flujo');
+    }
+    const otro = intentar(ajeno, deOtro);
+    expect(otro['aviso']['tipo']).toBe('transferencia');
+    expect(otro['pedido']).toBeNull();
+    expect(intentar('ped-no-existe')['aviso']['tipo']).toBe('transferencia');
+    // Positivo: la referencia del propio pedido, esté o no en `sd.pedidos` (si está en el estado, sirve).
+    const m = enEspera();
+    const id = estadoDe(m)['pedido']['pedidoId'] as string;
+    m.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: id, pendiente: true };
+    expect(turno(m, { tipo: 'image', esComprobante: true, mediaId: 'm1', cotejo: cotejo('cuadra') }).p!['aviso']['tipo']).toBe('comprobante');
+    const sinGuardado = enEspera();
+    const id2 = estadoDe(sinGuardado)['pedido']['pedidoId'] as string;
+    delete sdDe(sinGuardado)['pedidos'];
+    sinGuardado.cfg['cobro'] = { ...CFG_QR.cobro, pedidoRef: id2, pendiente: true };
+    expect(turno(sinGuardado, { tipo: 'image', esComprobante: true, mediaId: 'm1', cotejo: cotejo('cuadra') }).p!['aviso']['tipo']).toBe('comprobante');
   });
 });

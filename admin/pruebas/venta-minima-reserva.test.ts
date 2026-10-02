@@ -34,7 +34,7 @@ type Fn = (...a: any[]) => any;
 const L = ejecutar(`${FUENTE}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
 
 // La red de palabras prohibidas de `comun.js` (§4.2), copiada: esta suite corre sola.
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
 
 // --- El mundo de las pruebas ------------------------------------------------------------------
 // Lunes 05/10/2026, 10:00 en La Paz. Martes 06, … viernes 09, sábado 10, domingo 11.

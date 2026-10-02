@@ -45,15 +45,17 @@ const PRUEBA = '59100000041';
 
 // La red de palabras del contrato (§4.2, `comun.js`). Se repite acá a propósito: si el contrato cambia,
 // esta suite lo dice.
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
 
 /**
  * LO QUE SE SUPONE DE CADA LIBRERÍA (los dobles de abajo; `avArmar` según lo que informó T4):
  *  - `comun.js` (T1): `vmPrimero/vmTodos/vmCfg` leen por nombre solo si el nodo corrió; `vmTextoSeguro`
  *    devuelve `false` si el texto coincide con `VM_PROHIBIDAS`; `vmSd()` da `ventaMinima` de los datos
  *    estáticos; `vmEscribirEstado` guarda el estado por teléfono; `vmBarrer` limpia vencidos.
- *  - `avisos.js` (T4): `avDestinatarios` filtra a los de 8 a 15 dígitos con prefijo permitido y distintos
- *    del que escribe; `avArmar` devuelve la LISTA de ítems `{para, rol, payload, respaldo:null,
+ *  - `avisos.js` (T4): `avPlan` envuelve a `avArmar` con los errores; `avDestinatarios` filtra a los de 8 a 15 dígitos con prefijo permitido y distintos
+ *    del que escribe, y asigna el rol `completo` SOLO a «completo:» (un número sin rol o con un rol desconocido es `cocina`, como la
+ *    librería real: antes el doble daba `completo` por omisión y ocultaba la diferencia; ver `venta-minima-integracion`);
+ *    `avArmar` devuelve la LISTA de ítems `{para, rol, payload, respaldo:null,
  *    esPlantilla, clase}` (`clase`: plantilla, detalle o imagen; el detalle con ventana abierta y la imagen del
  *    comprobante son ítems aparte) y NO modifica `sd`;
  *    `avDentroDelTopeDiario` lee `sd`; `avContar` escribe en `sd` y SOLO lo llama `Armar mensajes`.
@@ -79,9 +81,12 @@ function avDestinatarios(csv, from, pref) {
   const out = []; const visto = {};
   const prefijos = String(pref || '591').split(',').map((s) => s.trim()).filter(Boolean);
   for (const p of String(csv || '').split(',')) {
-    const i = p.indexOf(':'); const rol = i < 0 ? 'completo' : p.slice(0, i).trim(); const d = vmDigitos(i < 0 ? p : p.slice(i + 1));
-    if (d.length < 8 || d.length > 15 || !prefijos.some((x) => d.startsWith(x)) || d === vmDigitos(from) || visto[d]) continue;
-    visto[d] = true; out.push({ rol: rol, tel: d });
+    // Igual que la librería real (avisos.js): solo el rol «completo» (sin tildes ni mayúsculas) es completo; un número SIN rol o
+    // con un rol desconocido es «cocina», el de menos privilegio. Un número repetido queda con el rol de menos privilegio.
+    const i = p.indexOf(':'); const nombreRol = i < 0 ? '' : p.slice(0, i).trim().toLowerCase(); const rol = nombreRol === 'completo' ? 'completo' : 'cocina'; const d = vmDigitos(i < 0 ? p : p.slice(i + 1));
+    if (d.length < 8 || d.length > 15 || !prefijos.some((x) => d.startsWith(x)) || d === vmDigitos(from)) continue;
+    if (visto[d]) { if (rol === 'cocina') visto[d].rol = 'cocina'; continue; }
+    visto[d] = { rol: rol, tel: d }; out.push(visto[d]);
   }
   return out;
 }
@@ -100,6 +105,11 @@ function avArmar(tipo, datos, dest, cfg, sd, ms) {
   if (datos.detalle && dest.length) items.push({ para: dest[0].tel, rol: dest[0].rol, payload: { messaging_product: 'whatsapp', to: dest[0].tel, type: 'text', text: { body: datos.detalle } }, respaldo: null, esPlantilla: false, clase: 'detalle' });
   if (datos.imagen && dest.length) items.push({ para: dest[0].tel, rol: dest[0].rol, payload: { messaging_product: 'whatsapp', to: dest[0].tel, type: 'image', image: { id: datos.mediaId, caption: datos.pieImagen === undefined ? 'Comprobante del cliente.' : datos.pieImagen } }, respaldo: null, esPlantilla: false, clase: 'imagen' });
   return datos.envuelto ? { items: items, errores: ['nota de avisos'] } : items;
+}
+// avPlan (la que llama el nodo) = avArmar + los errores; el doble solo envuelve la lista.
+function avPlan(tipo, datos, dest, cfg, sd, ms) {
+  const r = avArmar(tipo, datos, dest, cfg, sd, ms);
+  return Array.isArray(r) ? { items: r, errores: [] } : r;
 }
 `;
 
@@ -452,13 +462,23 @@ describe('Armar mensajes — mensajes, botones, enlace y modo prueba', () => {
     expect(i['texto']).toBe(GENERICO);
   });
 
-  it('enlace con una URL del plan: se usa si es https y no es el chat del propio cliente', () => {
-    const buena = mensajes({ mensajes: [enlace(GENERICO, { url: 'https://wa.me/59100000055?text=Hola' })] });
-    expect(buena.items[0]!['payload'].interactive.action.parameters.url).toBe('https://wa.me/59100000055?text=Hola');
-    const propia = mensajes({ mensajes: [enlace(GENERICO, { url: `https://wa.me/${CLIENTE}` })] });
-    expect(propia.items[0]!['payload'].interactive.action.parameters.url).toContain(`wa.me/${REC}`);
-    const http = mensajes({ mensajes: [enlace(GENERICO, { url: 'http://wa.me/59100000055' })] });
-    expect(http.items[0]!['payload'].interactive.action.parameters.url).toContain(`wa.me/${REC}`);
+  it('S5: enlace con una URL del plan: solo `https://wa.me/<número de recepción>` (con ?text= opcional); cualquier otra se descarta', () => {
+    const url = (m: J) => m.items[0]!['payload'].interactive.action.parameters.url as string;
+    // Positivos: el número de recepción, con y sin ?text=.
+    expect(url(mensajes({ mensajes: [enlace(GENERICO, { url: `https://wa.me/${REC}?text=Hola` })] }))).toBe(`https://wa.me/${REC}?text=Hola`);
+    expect(url(mensajes({ mensajes: [enlace(GENERICO, { url: `https://wa.me/${REC}` })] }))).toBe(`https://wa.me/${REC}`);
+    // Negativos: otro número, el chat del propio cliente, http, otro dominio, usuario con @, puerto, texto con espacios o con enlace.
+    const malas = [
+      'https://wa.me/59100000055?text=Hola', `https://wa.me/${CLIENTE}`, `http://wa.me/${REC}`, `https://wa.me.malo.test/${REC}`,
+      `https://malo.test/https://wa.me/${REC}`, `https://wa.me\u0040malo.test/${REC}`, `https://wa.me:8080/${REC}`, `https://wa.me/${REC}/mas`,
+      `https://wa.me/${REC}?text=hola mundo`, `https://wa.me/${REC}?text=a&b=c`, `https://wa.me/${REC}?x=1`, 'https://wa.me/123', `https://wa.me/${REC}0000000000`,
+      'javascript:alert(1)', 'https://malo.test/pagar',
+    ];
+    for (const mala of malas) {
+      const u = url(mensajes({ mensajes: [enlace(GENERICO, { url: mala })] }));
+      expect(u, mala).toContain(`https://wa.me/${REC}?text=`);
+      expect(u, mala).not.toMatch(/malo\.test|javascript|\u0040|:8080/);
+    }
   });
 
   it('sin número de recepción válido (marcador, vacío o el propio cliente) se quita la frase del botón', () => {
@@ -994,5 +1014,156 @@ describe('Los tres nodos son JavaScript plano', () => {
     for (const f of [AVISOS, RESUMEN]) expect(f).not.toMatch(/vmEscribirEstado|vmBarrer|avContar|rsAnotar|\$getWorkflowStaticData/);
     expect(MENSAJES).toMatch(/vmEscribirEstado/);
     expect(MENSAJES).toMatch(/avContar/);
+  });
+});
+
+// =================================================================================================
+// Correcciones de la revisión del PR-1 (S4, S5, S6, R3), cada una probada negando el defecto.
+describe('Armar mensajes — S4: «Reenviar QR» sí reenvía, sin reabrir el cobro', () => {
+  const reenvio = (extra: J = {}, plan: J = {}): J => ({
+    ruta: 'reenviar_qr', estadoNuevo: { paso: 'esperando_comprobante', pedido: PEDIDO },
+    mensajes: [qr({ evento: undefined, ...extra })], ...plan,
+  });
+
+  it('con monto y referencia del pedido del estado, la imagen sale SIN el evento `qr_enviado`', () => {
+    const r = mensajes(reenvio());
+    const i = r.items[0]!;
+    expect(i['payload']).toMatchObject({ type: 'image', image: { link: 'https://qr.ejemplo.test/qtaco.png' } });
+    expect(i).toMatchObject({ referencia: PEDIDO['pedidoId'], monto: 55, tipoReporte: 'image' });
+    expect(i['evento']).toBeUndefined();
+    expect(r.sd['estados'][CLIENTE].paso).toBe('esperando_comprobante');
+  });
+
+  it('el evento solo lo lleva el QR que el plan pidió como evento (el primer envío)', () => {
+    const primero = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] });
+    expect(primero.items[0]!['evento']).toBe('qr_enviado');
+    // Negado: un mensaje con otro evento o con un evento vacío no abre cobro alguno.
+    for (const evento of [undefined, '', 'pedido_pasado']) {
+      expect(mensajes(reenvio({ evento })).items[0]!['evento'], String(evento)).toBeUndefined();
+    }
+  });
+
+  it('se compara contra el pedido del estado: sin pedido, o con otro monto, se rechaza y se deriva', () => {
+    const sinPedido = mensajes(reenvio({}, { estadoNuevo: { paso: 'esperando_comprobante' } }));
+    expect(sinPedido.items[0]!['payload'].type).not.toBe('image');
+    expect((sinPedido.items[0]!['errores'] as string[]).some((e) => e.startsWith('qr_rechazado'))).toBe(true);
+    const otroMonto = mensajes(reenvio({ monto: 999 }));
+    expect(otroMonto.items[0]!['payload'].type).not.toBe('image');
+    expect((otroMonto.items[0]!['errores'] as string[])).toContain('qr_rechazado: qr_monto_distinto_del_total');
+    const otraRef = mensajes(reenvio({ referencia: 'ped-otro' }));
+    expect((otraRef.items[0]!['errores'] as string[])).toContain('qr_rechazado: qr_referencia_distinta');
+    // Y sin monto (el defecto original: el plan no lo mandaba) sigue siendo un rechazo.
+    expect((mensajes(reenvio({ monto: undefined })).items[0]!['errores'] as string[])).toContain('qr_rechazado: qr_sin_monto');
+  });
+});
+
+describe('Armar mensajes — S5: la URL del QR solo vale con https, dominio con nombre, sin @ y sin puerto', () => {
+  const plan = (): J => ({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] });
+  const con = (qrUrl: string) => mensajes(plan(), { cfg: { cobro: { activo: true, qrUrl } } });
+
+  it('acepta https con dominio, ruta, consulta y fragmento', () => {
+    for (const u of ['https://qr.ejemplo.test/qtaco.png', 'https://a.b-c.example.bo/x/y.png?v=2#f', 'https://almacen.ejemplo.test']) {
+      expect(con(u).items[0]!['payload'].type, u).toBe('image');
+      expect(con(u).items[0]!['payload'].image.link, u).toBe(u);
+    }
+  });
+
+  it.each([
+    'http://qr.ejemplo.test/a.png', 'https://127.0.0.1/qr.png', 'https://10.0.0.5/qr.png', 'https://localhost/qr.png', `https://${['2130706', '433'].join('')}/qr.png`,
+    'https://[::1]/qr.png', 'https://usuario\u0040qr.ejemplo.test/a.png', 'https://qr.ejemplo.test\u0040malo.test/a.png', 'https://qr.ejemplo.test:8443/a.png',
+    'https://qr.ejemplo.test/a b.png', 'https://qr.ejemplo.test/a.png"onerror=', 'ftp://qr.ejemplo.test/a.png', 'https://', 'https://.ejemplo.test/a.png',
+    'https://qr.ejemplo.test/a\u0040b.png',
+  ])('rechaza «%s»: sale la derivación y no se manda ningún QR', (u) => {
+    const r = con(u);
+    expect(r.items[0]!['payload'].type).not.toBe('image');
+    expect((r.items[0]!['errores'] as string[])).toContain('qr_rechazado: qr_sin_https');
+    expect(r.sd['estados']).toBeUndefined();
+  });
+});
+
+describe('Armar mensajes y Armar avisos — S6: topes por teléfono y por hora, y tope de pedidos guardados', () => {
+  const planPedido = (tipo = 'pedido'): J => ({ ruta: 'x', mensajes: [texto('Hola')], aviso: { tipo, datos: {} } });
+  const marcas = (n: number, extra: J = {}): J => ({
+    ventaMinima: { avisosPedido: { [CLIENTE]: Array.from({ length: n }, (_, i) => AHORA - (i + 1) * MIN) }, ...extra },
+  });
+
+  it('con 6 avisos de pedido o comprobante en la última hora no se arma otro; con 5, sí (tope por defecto 6)', () => {
+    for (const tipo of ['pedido', 'comprobante']) {
+      const lleno = avisos({ aviso: { tipo, datos: {} } }, { g: marcas(6) });
+      expect(lleno.items[0], tipo).toMatchObject({ sinAviso: true });
+      expect(String((lleno.items[0]!['errores'] as string[])[0]), tipo).toContain('tope_pedidos_hora');
+      expect(lleno.bit.some((b) => b[0] === 'avArmar'), tipo).toBe(false);
+      expect(avisos({ aviso: { tipo, datos: {} } }, { g: marcas(5) }).items[0], tipo).toMatchObject({ sinAviso: false });
+    }
+  });
+
+  it('el tope sale de la configuración (también 0 = ninguno); las marcas viejas y las de otro teléfono no cuentan', () => {
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { g: marcas(2), cfg: { topePedidosHora: 2 } }).items[0]).toMatchObject({ sinAviso: true });
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { g: marcas(2), cfg: { topePedidosHora: 3 } }).items[0]).toMatchObject({ sinAviso: false });
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { g: marcas(0), cfg: { topePedidosHora: 0 } }).items[0]).toMatchObject({ sinAviso: true });
+    const viejas = { ventaMinima: { avisosPedido: { [CLIENTE]: [1, 2, 3, 4, 5, 6].map((i) => AHORA - (60 + i) * MIN) } } };
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { g: viejas }).items[0]).toMatchObject({ sinAviso: false });
+    const ajenas = { ventaMinima: { avisosPedido: { '59100000099': [1, 2, 3, 4, 5, 6, 7].map((i) => AHORA - i * MIN) } } };
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { g: ajenas }).items[0]).toMatchObject({ sinAviso: false });
+    // Una clave heredada del prototipo no es una marca.
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { t: { from: '59100000011' }, g: { ventaMinima: { avisosPedido: {} } } }).items[0]).toMatchObject({ sinAviso: false });
+  });
+
+  it('el tope de pedidos no frena las derivaciones ni las reservas, y el de derivaciones no frena los pedidos', () => {
+    expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }, { g: marcas(6) }).items[0]).toMatchObject({ sinAviso: false });
+    expect(avisos({ aviso: { tipo: 'reserva', datos: {} } }, { g: marcas(6) }).items[0]).toMatchObject({ sinAviso: false });
+    const deriv = { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - MIN] } } };
+    expect(avisos({ aviso: { tipo: 'pedido', datos: {} } }, { g: deriv }).items[0]).toMatchObject({ sinAviso: false });
+  });
+
+  it('la marca de pedido se escribe solo si el aviso de pedido o de comprobante SALIÓ (una vez por aviso, no por mensaje)', () => {
+    const salio = mensajes(planPedido(), { armados: [armado('pedido'), armado('pedido', { clase: 'detalle', esPlantilla: false })], enviados: [OK(1), OK(2)] });
+    expect(salio.sd['avisosPedido'][CLIENTE]).toEqual([AHORA]);
+    expect(mensajes(planPedido('comprobante'), { armados: [armado('comprobante')], enviados: [OK()] }).sd['avisosPedido'][CLIENTE]).toEqual([AHORA]);
+    // Negativos: cayó, no hubo aviso, o fue de otro tipo.
+    expect(mensajes(planPedido(), { armados: [armado('pedido')], enviados: [FALLA] }).sd['avisosPedido']).toBeUndefined();
+    expect(mensajes(planPedido(), { armados: [SIN_AVISO] }).sd['avisosPedido']).toBeUndefined();
+    expect(mensajes(planPedido('reserva'), { armados: [armado('reserva')], enviados: [OK()] }).sd['avisosPedido']).toBeUndefined();
+    expect(mensajes(planPedido('transferencia'), { armados: [armado('transferencia')], enviados: [OK()] }).sd['avisosPedido']).toBeUndefined();
+  });
+
+  it('las marcas de más de una hora se podan y no hay más de 500 teléfonos con marca', () => {
+    const g = { ventaMinima: { avisosPedido: { '59100000098': [AHORA - 2 * HORA], '59100000097': [AHORA - 5 * MIN] } } };
+    const r = mensajes(planPedido(), { g, armados: [armado('pedido')], enviados: [OK()] });
+    expect(r.sd['avisosPedido']['59100000098']).toBeUndefined();
+    expect(r.sd['avisosPedido']['59100000097']).toEqual([AHORA - 5 * MIN]);
+    const muchos: J = {};
+    for (let i = 0; i < 600; i++) muchos[`5917${String(i).padStart(7, '0')}`] = [AHORA - 30 * MIN + i];
+    const tope = mensajes(planPedido(), { g: { ventaMinima: { avisosPedido: muchos } }, armados: [armado('pedido')], enviados: [OK()] });
+    const claves = Object.keys(tope.sd['avisosPedido']);
+    expect(claves.length).toBeLessThanOrEqual(500);
+    expect(claves).toContain(CLIENTE); // la marca recién escrita nunca se expulsa
+    expect(claves).not.toContain('59170000000'); // las más antiguas, sí
+  });
+
+  it('`sd.pedidos` guarda como mucho 500 pedidos: al pasarse se expulsan los más antiguos, nunca el recién guardado', () => {
+    const viejos: J = {};
+    for (let i = 0; i < 520; i++) viejos[`ped-${i}`] = { pedidoId: `ped-${i}`, from: '59100000099', total: 10, guardadoMs: AHORA - 60 * MIN + i };
+    const r = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { g: { ventaMinima: { pedidos: viejos } } });
+    const claves = Object.keys(r.sd['pedidos']);
+    expect(claves).toHaveLength(500);
+    expect(claves).toContain(PEDIDO['pedidoId']);
+    expect(claves).not.toContain('ped-0');
+    expect(claves).toContain('ped-519');
+    // Negado: por debajo del tope no se expulsa nada.
+    const pocos: J = { 'ped-a': { pedidoId: 'ped-a', from: '59100000099', total: 10, guardadoMs: AHORA - 60 * MIN } };
+    const q = mensajes({ ruta: 'confirmar', estadoNuevo: { paso: 'esperando_comprobante' }, pedido: PEDIDO, mensajes: [qr()] }, { g: { ventaMinima: { pedidos: pocos } } });
+    expect(Object.keys(q.sd['pedidos']).sort()).toEqual(['ped-a', PEDIDO['pedidoId']].sort());
+  });
+});
+
+describe('Armar avisos — R3: el tope de derivaciones respeta el 0 y lee solo la marca por hecho', () => {
+  it('topeTransferenciasHora = 0 significa «ninguna derivación avisa» (antes caía a 1)', () => {
+    const r = avisos({ aviso: { tipo: 'transferencia', datos: {} } }, { cfg: { topeTransferenciasHora: 0 } });
+    expect(r.items[0]).toMatchObject({ sinAviso: true });
+    expect(String((r.items[0]!['errores'] as string[])[0])).toContain('derivacion_repetida');
+    // Negado: sin el dato rige 1 (avisa la primera) y con 1 marca reciente ya no.
+    expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }).items[0]).toMatchObject({ sinAviso: false });
+    expect(avisos({ aviso: { tipo: 'transferencia', datos: {} } }, { g: { ventaMinima: { transferencias: { [CLIENTE]: [AHORA - MIN] } } } }).items[0]).toMatchObject({ sinAviso: true });
   });
 });

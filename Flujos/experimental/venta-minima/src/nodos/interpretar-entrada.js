@@ -103,8 +103,9 @@ const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
 
 return [{ json: {
   from: from,
-  // El nombre de perfil acaba en los avisos al restaurante: sin <, >, &, saltos ni controles; 60 caracteres.
-  nombrePerfil: vmLinea(String((contacto && contacto.profile && contacto.profile.name) || '').slice(0, 200), 60),
+  // El nombre de perfil acaba en los avisos al restaurante y en los resúmenes al cliente: sin <, >, &, saltos ni
+  // controles, 60 caracteres y sin palabras de la red de prohibidas («…»): texto de un tercero no traba un mensaje.
+  nombrePerfil: vmSinProhibidas(vmLinea(String((contacto && contacto.profile && contacto.profile.name) || '').slice(0, 200), 60)),
   phoneNumberId: phoneNumberId,
   mensajeId: mensajeId,
   tipo: tipo,

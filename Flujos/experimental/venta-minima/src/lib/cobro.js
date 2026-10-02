@@ -32,7 +32,7 @@
 
 // La red de palabras de `comun.js` (`VM_PROHIBIDAS`), copiada acá a propósito: esta
 // librería se prueba sola y no puede depender de otro archivo.
-const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const CB_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
 
 // El total que acepta el servidor para cotejar (`TOTAL_VENTA_MAXIMO`).
 const CB_TOTAL_MAXIMO = 1000000;
@@ -40,6 +40,11 @@ const CB_TOTAL_MAXIMO = 1000000;
 // ---------------------------------------------------------------------------
 // Utilidades mínimas
 // ---------------------------------------------------------------------------
+
+// La forma en que se COMPARA contra `CB_PROHIBIDAS`: NFKC y sin caracteres de formato (`\p{Cf}`).
+function cbCanon(t) {
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/\p{Cf}/gu, '');
+}
 
 // El nodo `nombre` si existe Y corrió en esta ejecución; si no, null.
 function cbNodo(nombre) {
@@ -107,12 +112,21 @@ function cbMoneda(m) {
 function cbCodigo(c) {
   const limpio = String(c === undefined || c === null ? '' : c).replace(/[^A-Za-z0-9]/g, '').slice(0, 12);
   // Un código que formara una palabra de la red de prohibidas no se muestra.
-  return CB_PROHIBIDAS.test(limpio) ? '' : limpio;
+  return CB_PROHIBIDAS.test(cbCanon(limpio)) ? '' : limpio;
 }
 
 // ---------------------------------------------------------------------------
 // Cobro real: solo si el servidor lo manda y el QR tiene una dirección https
 // ---------------------------------------------------------------------------
+
+// La URL del QR: solo `https://`, con un dominio con nombre (la última parte empieza con una letra: nada de IP, de
+// «localhost» ni de números sueltos), SIN usuario (`@`) ni puerto, sin espacios ni comillas. Hasta 2.000 caracteres.
+// (La expresión es lineal: cada parte del dominio está acotada a 63 caracteres y separada por un punto.)
+function cbUrlSegura(u) {
+  const s = typeof u === 'string' ? u.trim() : '';
+  return s.length > 0 && s.length <= 2000
+    && /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:[/?#][^\s<>"'@]*)?$/i.test(s);
+}
 
 // `cuerpoPanel` es el cuerpo completo de `configuracionFlujo`. Sale `activo:false`
 // con todo lo demás vacío en cualquier duda: sin QR utilizable no hay cobro real.
@@ -122,8 +136,7 @@ function cbCobroReal(cuerpoPanel) {
   const cb = cbEsObjeto(r.cobro) ? r.cobro : {};
   const qr = cbEsObjeto(cb.qr) ? cb.qr : {};
   const url = typeof qr.url === 'string' ? qr.url.trim() : '';
-  const activo = cr !== null && cb.activo !== false && url.length <= 2000
-    && /^https:\/\/[^\s<>"']+$/i.test(url);
+  const activo = cr !== null && cb.activo !== false && cbUrlSegura(url);
   if (!activo) {
     return {
       activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null,
@@ -161,7 +174,7 @@ function cbCaption(pedido, opciones) {
   // El nombre del titular viene de la ficha del QR, no de un cliente; igual se
   // sanea, y si cae en la red de palabras prohibidas se omite.
   let titular = cbLinea(o.titular, 120);
-  if (CB_PROHIBIDAS.test(titular)) titular = '';
+  if (CB_PROHIBIDAS.test(cbCanon(titular))) titular = '';
   const cabeza = codigo ? 'Pedido #' + codigo + '. ' : '';
   const delivery = o.delivery === true ? '; el delivery se paga aparte, al repartidor' : '';
   const texto = cabeza + 'Total a pagar por QR: ' + cbMonto(total) + ' ' + cbMoneda(o.moneda)
@@ -181,7 +194,7 @@ function cbMensajeQr(pedido, cobro, opciones) {
   const total = cbTotalValido(p.total);
   const id = typeof p.pedidoId === 'string' ? p.pedidoId.trim() : '';
   const url = typeof c.qrUrl === 'string' ? c.qrUrl : '';
-  if (c.activo !== true || !/^https:\/\//i.test(url) || total === null || id === '') return null;
+  if (c.activo !== true || !cbUrlSegura(url) || total === null || id === '') return null;
   const o = cbEsObjeto(opciones) ? opciones : {};
   const cuerpo = cbCaption({ codigo: p.codigo, total: total }, {
     titular: c.titular, moneda: o.moneda, delivery: o.delivery === true,

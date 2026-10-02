@@ -46,6 +46,7 @@ export const SUITES_PURAS = [
   'pruebas/venta-minima-cobro.test.ts',
   'pruebas/venta-minima-salida.test.ts',
   'pruebas/venta-minima-decision.test.ts',
+  'pruebas/venta-minima-integracion.test.ts',
   'pruebas/n8n-de-mentira.test.ts',
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',

@@ -30,7 +30,7 @@ const VM_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 // La red de palabras que un texto al cliente o al restaurante nunca puede traer:
 // presentan como hecho lo que el flujo no verifico (prohibicion 3) o prometen lo
 // que no tiene mecanismo detras («solo se ofrece lo que se cumple»).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\b)|reservad/i;
 
 // ---------------------------------------------------------------------------
 // Nodos de n8n
@@ -76,7 +76,7 @@ function _vmCadena(v) {
 }
 // Para comparar: sin tildes, en minusculas, todo lo que no es letra ni numero es un espacio.
 function vmNorm(t) {
-  return _vmCadena(t).normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return _vmCadena(t).normalize('NFKC').replace(/\p{Cf}/gu, '').normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 function vmDigitos(v) {
@@ -145,9 +145,20 @@ function vmJsonDeGemini(j) {
     return null;
   }
 }
-// `false` si el texto no es un texto o coincide con la red de palabras prohibidas.
+// `false` si el texto no es un texto o coincide con la red de palabras prohibidas. Se compara en NFKC y sin
+// caracteres de formato (`\p{Cf}`: ancho cero, guion blando, marcas bidireccionales): un «validado» con un
+// ancho cero adentro, o escrito en ancho completo, también se atrapa.
 function vmTextoSeguro(t) {
-  return typeof t === 'string' && !VM_PROHIBIDAS.test(t);
+  return typeof t === 'string' && !VM_PROHIBIDAS.test(t.normalize('NFKC').replace(/\p{Cf}/gu, ''));
+}
+// El texto con cada coincidencia de la red de prohibidas cambiada por «…». Es para el texto de TERCEROS (la dirección, la
+// referencia, las notas, el nombre): así un «Calle 3 en camino a Obrajes» no traba el mensaje entero al cliente. Solo el texto
+// que coincide sale normalizado (NFKC y sin `\p{Cf}`); el resto sale tal cual.
+function vmSinProhibidas(t) {
+  const s = _vmCadena(t);
+  const c = s.normalize('NFKC').replace(/\p{Cf}/gu, '');
+  if (!VM_PROHIBIDAS.test(c)) return s;
+  return c.replace(new RegExp(VM_PROHIBIDAS.source, 'gi'), '…');
 }
 
 // ---------------------------------------------------------------------------

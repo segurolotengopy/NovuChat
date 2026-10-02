@@ -18,7 +18,10 @@
 //     «Config base»; los posee T4;
 //   - `pedidosActivo`, `reservasActivo`, `promosActivo`: valen `false` si faltan;
 //   - `phoneNumberIdEsperado`: '' si es un marcador sin reemplazar (`Interpretar entrada` descarta todo);
-//   - `cobro`: `cbCobroReal(cuerpo)`; si algo falla, apagado (plan B: sin QR).
+//   - `cobro`: `cbCobroReal(cuerpo)`; si algo falla, apagado (plan B: sin QR);
+//   - `aceptaDelivery` y `aceptaRetiroEnLocal`: solo se apagan con `false` en `venta` (`!== false`), el mismo criterio
+//     del servidor y de `Plan del turno`: un panel sin esas claves acepta las dos modalidades. Con el panel sin
+//     respuesta no se fijan (se desconocen); con el comercio suspendido van en `false`.
 // EL MODO PRUEBA lo dijo `Carga de entrada` (solo si corrio «Entrada de prueba»).
 const RESPALDO = {
   nombreNegocio: 'nuestro restaurante',
@@ -96,6 +99,7 @@ const deBaseDeReglas = {
   topeReservasDia: vmEntero(base.topeReservasDia, 0, 1000, 3),
   topeAvisosDia: vmEntero(base.topeAvisosDia, 0, 100000, 150),
   topeTransferenciasHora: vmEntero(base.topeTransferenciasHora, 0, 1000, 1),
+  topePedidosHora: vmEntero(base.topePedidosHora, 0, 1000, 6),
   destinatariosAviso: csvLimpio(base.destinatariosAviso),
   phoneNumberIdEsperado: marcador(base.phoneNumberIdEsperado),
   waGraphVersion: marcador(base.waGraphVersion) || RESPALDO.waGraphVersion,
@@ -147,7 +151,8 @@ if (codigo === 409) {
 } else if (!(codigo === 200 && typeof cuerpo.tenantId === 'string')) {
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, {
     configDeLaConsola: false, panelSinRespuesta: true, codigoDelPanel: Number.isFinite(codigo) ? codigo : 0,
-    catalogo: [], campanas: [], aceptaDelivery: false, aceptaRetiroEnLocal: true, cobro: COBRO_APAGADO,
+    // Sin respuesta del panel NO se sabe qué modalidades acepta: no se fija ninguna (falta = «sí», el mismo criterio).
+    catalogo: [], campanas: [], cobro: COBRO_APAGADO,
   });
 } else {
   const dn = objeto(cuerpo.datosDelNegocio);
@@ -174,8 +179,9 @@ if (codigo === 409) {
     estadoComercio: estadoComercio, configDeLaConsola: true, panelSinRespuesta: false,
     catalogo: carta(cuerpo.catalogo),
     campanas: campanas(cuerpo.campanas),
-    aceptaDelivery: venta.aceptaDelivery === true,
-    aceptaRetiroEnLocal: venta.aceptaRetiroEnLocal === true,
+    // Solo se apagan con `false`: la falta del dato es «sí», igual que en el servidor (`!== false`).
+    aceptaDelivery: venta.aceptaDelivery !== false,
+    aceptaRetiroEnLocal: venta.aceptaRetiroEnLocal !== false,
     cobro: cobro,
   });
 }

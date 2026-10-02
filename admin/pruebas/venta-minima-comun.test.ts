@@ -187,8 +187,27 @@ describe('comun.js: red de palabras prohibidas', () => {
   ];
   it('el regex es el del contrato, literal', () => {
     expect((L.VM_PROHIBIDAS as unknown as RegExp).source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto');
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S* (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(ó|amos|o\\b)|reservad');
     expect((L.VM_PROHIBIDAS as unknown as RegExp).flags).toBe('i');
+  });
+  it('S3: las raíces nuevas (acredit, recibir el pago, pago exitoso…, confirmo, reservad) se atrapan; las frases legítimas no', () => {
+    for (const t of ['Ya acreditamos el pago', 'Recibí tu pago', 'Recibimos el pago', 'Pago exitoso', 'Pago recibido', 'Pago aprobado', 'Pago realizado',
+      'Pago registrado', 'Confirmó su pedido', 'Te confirmamos la mesa', 'Yo confirmo', 'Tu mesa está reservada', 'Mesa reservado para hoy']) {
+      expect(L.vmTextoSeguro(t), t).toBe(false);
+    }
+    for (const t of ['No estamos abiertos hoy', '¿A qué hora reservo?', 'Quiero reservar una mesa', 'Confirmar pedido', 'Recibí tu imagen',
+      'Estoy esperando el comprobante de tu pedido', 'Solicitud de reserva', 'El pago se coordina con el cliente al entregar o al recoger.']) {
+      expect(L.vmTextoSeguro(t), t).toBe(true);
+    }
+  });
+  it('S3: se compara en NFKC y sin caracteres de formato (ancho cero, guion blando, ancho completo)', () => {
+    for (const t of ['va​lidado', 'val­idado', 'ｖａｌｉｄａｄｏ', 'pa⁠gado', 'v‮alidado', 'con‍firmado']) {
+      expect(L.vmTextoSeguro(`Tu pedido ${t}`), JSON.stringify(t)).toBe(false);
+      expect((L.VM_PROHIBIDAS as unknown as RegExp).test(L.vmNorm(`Tu pedido ${t}`)), JSON.stringify(t)).toBe(true);
+    }
+    // Negativo: un emoji con unión de ancho cero y un texto normal siguen siendo seguros.
+    expect(L.vmTextoSeguro('Tu pedido 👨‍🍳 va a salir'), 'emoji compuesto').toBe(true);
+    expect(L.vmTextoSeguro('Tu pedido está en la cocina'), 'texto normal').toBe(true);
   });
   it('«estamos» no es una palabra prohibida por sí sola: solo «lo estamos preparando» y sus formas', () => {
     for (const t of ['No estamos abiertos hoy', 'Estamos en la calle Principal', 'Estamos para ayudarte', 'Estoy aquí para ayudarte']) {
@@ -921,8 +940,12 @@ describe('Config del negocio', () => {
   });
   it('valores por omisión de la reserva y de los topes: 12 personas, 60 min, 30 días, 3, 150 y 1', () => {
     const c = ok(PANEL, { base: {} });
-    expect(c).toMatchObject({ maxPersonasReserva: 12, anticipacionReservaMin: 60, maxDiasReserva: 30, topeReservasDia: 3, topeAvisosDia: 150, topeTransferenciasHora: 1 });
-    expect(ok()).toMatchObject({ maxPersonasReserva: 15, anticipacionReservaMin: 90, maxDiasReserva: 45, topeReservasDia: 5, topeAvisosDia: 200, topeTransferenciasHora: 2 });
+    expect(c).toMatchObject({ maxPersonasReserva: 12, anticipacionReservaMin: 60, maxDiasReserva: 30, topeReservasDia: 3, topeAvisosDia: 150, topeTransferenciasHora: 1, topePedidosHora: 6 });
+    expect(ok()).toMatchObject({ maxPersonasReserva: 15, anticipacionReservaMin: 90, maxDiasReserva: 45, topeReservasDia: 5, topeAvisosDia: 200, topeTransferenciasHora: 2, topePedidosHora: 6 });
+    // S6: el tope de avisos de pedido y comprobante por teléfono y por hora (def. 6; 0 = ninguno; un dato malo vuelve al 6).
+    expect(ok(PANEL, { base: { topePedidosHora: '2' } })).toMatchObject({ topePedidosHora: 2 });
+    expect(ok(PANEL, { base: { topePedidosHora: 0 } })).toMatchObject({ topePedidosHora: 0 });
+    for (const malo of [-1, 'abc', 1.5, null, '', 5000]) expect(ok(PANEL, { base: { topePedidosHora: malo } }), String(malo)).toMatchObject({ topePedidosHora: 6 });
     expect(ok(PANEL, { base: { maxPersonasReserva: '20', topeAvisosDia: '0' } })).toMatchObject({ maxPersonasReserva: 20, topeAvisosDia: 0 });
     // lo que no es un entero válido vuelve al valor por omisión
     const malos = ok(PANEL, { base: { maxPersonasReserva: -3, anticipacionReservaMin: 'abc', maxDiasReserva: 0, topeReservasDia: 1.5, topeAvisosDia: null, topeTransferenciasHora: '' } });
@@ -966,10 +989,15 @@ describe('Config del negocio', () => {
     expect(ok({ ...PANEL, campanas: Array.from({ length: 30 }, (_, i) => ({ id: `c${i}`, texto: `t${i}` })) })['campanas']).toHaveLength(20);
     expect(ok({ ...PANEL, campanas: undefined })['campanas']).toEqual([]);
   });
-  it('aceptaDelivery y aceptaRetiroEnLocal salen solo del panel y solo con true', () => {
-    expect(ok({ ...PANEL, venta: undefined })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: false });
-    expect(ok({ ...PANEL, venta: { aceptaDelivery: 'true', aceptaRetiroEnLocal: 1 } })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: false });
+  it('R1: aceptaDelivery y aceptaRetiroEnLocal solo se apagan con `false` (falta = «sí», como en el servidor)', () => {
+    // Un panel sin las claves de modalidad acepta las dos: es lo que hace el servidor (`!== false`).
+    expect(ok({ ...PANEL, venta: undefined })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: true });
+    expect(ok({ ...PANEL, venta: {} })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: true });
+    expect(ok({ ...PANEL, venta: { aceptaDelivery: 'true', aceptaRetiroEnLocal: 1 } })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: true });
+    // Negativos: solo el booleano `false` apaga cada modalidad, por separado.
     expect(ok({ ...PANEL, venta: { aceptaDelivery: false, aceptaRetiroEnLocal: true } })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: true });
+    expect(ok({ ...PANEL, venta: { aceptaDelivery: true, aceptaRetiroEnLocal: false } })).toMatchObject({ aceptaDelivery: true, aceptaRetiroEnLocal: false });
+    expect(ok({ ...PANEL, venta: { aceptaDelivery: false, aceptaRetiroEnLocal: false } })).toMatchObject({ aceptaDelivery: false, aceptaRetiroEnLocal: false });
   });
   it('cobro: lo arma `cbCobroReal`; si falla o el panel no está en 200, queda apagado (plan B)', () => {
     expect(ok()['cobro']).toMatchObject({ activo: true });
@@ -1008,7 +1036,10 @@ describe('Config del negocio', () => {
   it('si el panel no responde (500, sin tenantId, cuerpo roto): respaldo sin carta, sin QR y con panelSinRespuesta', () => {
     for (const resp of [{ statusCode: 500, body: {} }, { statusCode: 200, body: {} }, { statusCode: 200, body: 'no es json' }, { statusCode: undefined, body: undefined }, {}]) {
       const c = correr(resp);
-      expect(c, JSON.stringify(resp)).toMatchObject({ panelSinRespuesta: true, configDeLaConsola: false, estadoComercio: 'operativo', catalogo: [], campanas: [], aceptaDelivery: false, aceptaRetiroEnLocal: true });
+      expect(c, JSON.stringify(resp)).toMatchObject({ panelSinRespuesta: true, configDeLaConsola: false, estadoComercio: 'operativo', catalogo: [], campanas: [] });
+      // Sin respuesta del panel no se sabe qué modalidades acepta: no se fija ninguna (falta = «sí», el mismo criterio de R1).
+      expect(c).not.toHaveProperty('aceptaDelivery');
+      expect(c).not.toHaveProperty('aceptaRetiroEnLocal');
       expect((c['cobro'] as J)['activo']).toBe(false);
       expect(c['nombreNegocio']).toBe('Restaurante de ejemplo'); // lo de «Config base» sigue
     }

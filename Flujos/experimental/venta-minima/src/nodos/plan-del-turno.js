@@ -14,7 +14,7 @@
 // detalle} | null; `ruta`; `errores`. Además, `anotarReserva` (ver el supuesto 4) y `accion`.
 //
 // LIBRERÍAS QUE LLAMA (contrato §4.2; en la suite van dobles mínimos):
-//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmJsonDeGemini.
+//   comun: vmCfg, vmPrimero, vmNodo, vmSd, vmIdDeBoton, vmLinea, vmRecorte, vmCodigoCorto, vmJsonDeGemini, vmSinProhibidas.
 //   pedido: pdCarta, pdTextoDeLaCarta, pdValidarExtraccion, pdAgregarLineas, pdResolverForma,
 //     pdQuitarSinDelivery, pdTotal, pdFaltanEntrega, pdResumen, pdLineaCompacta, pdNuevoPedido y
 //     las ayudas ADITIVAS de la versión final de `pedido.js` (T2): pdTextoForma, pdTextoNoEncontrado,
@@ -48,7 +48,8 @@
 //     sigue literal y queda como DEUDA para F3 (texto de un cliente en código común).
 // SUPUESTOS PROPIOS (a confirmar en la integración):
 //  a. Las banderas de capacidad valen solo si son `true`; `aceptaDelivery` y
-//     `aceptaRetiroEnLocal` solo se apagan con `false`. Las áreas y zonas se pasan como arreglo.
+//     `aceptaRetiroEnLocal` solo se apagan con `false` (la falta del dato es «sí», como en el servidor y en
+//     `Config del negocio`). Las áreas y zonas se pasan como arreglo.
 //  b. `pdTotal` devuelve el total en Bs (número); `pdResumen` devuelve el texto completo del
 //     resumen (con el total y la nota del delivery); `pdNuevoPedido` devuelve {pedidoId, codigo, …};
 //     `pdQuitarSinDelivery` devuelve `quitados` como lista de textos o de líneas con `nombre`.
@@ -61,19 +62,30 @@
 //  e. El pedido de un comprobante se busca primero por la referencia que manda el servidor
 //     (`cobro.pedidoRef`, en `sd.pedidos`) y, si no está, en el estado del teléfono. Sin pedido,
 //     el comprobante se deriva a una persona.
-//  f. «Reenviar QR» no reporta `qr_enviado` otra vez: el servidor ya abrió ese cobro.
-//  g. La derivación (`transferir`) avisa al restaurante como mucho `topeTransferenciasHora`
-//     veces por teléfono y por hora (por defecto 1); pasado el tope, queda el botón y no el aviso.
+//  f. «Reenviar QR» no reporta `qr_enviado` otra vez: el servidor ya abrió ese cobro. El mensaje lleva `monto`
+//     y `referencia` (para que `Armar mensajes` compruebe el total) y NO lleva `evento`.
+//  g. La derivación (`transferir`) SIEMPRE pide el aviso: el tope `topeTransferenciasHora` por teléfono y por hora
+//     (por defecto 1; 0 = ninguno) lo aplica `Armar avisos` con la marca que `Armar mensajes` escribe SOLO si el aviso
+//     salió. Este nodo no escribe la marca ni suprime nada: si el primer aviso falla, el siguiente se intenta.
+//  i. El texto de terceros (dirección, referencia, nombre, notas de las líneas, zona, celebración, requerimiento) se
+//     sanea al entrar al estado: las palabras de la red de prohibidas quedan en «…» (`vmSinProhibidas`). Así un texto del
+//     cliente («Calle 3 en camino a Obrajes») no traba el mensaje entero. La red de `Armar mensajes` queda para el texto fijo.
+//  j. Una ubicación compartida vale como dirección de un delivery: `t.ubicacion` {latitud, longitud} pasa a
+//     `entrega.ubicacion` {lat, lng} (solo con delivery y en un paso de pedido) y el restaurante recibe las coordenadas.
+//  k. Un resumen con más de 1.024 caracteres se PARTE: un texto con las líneas y un mensaje corto con el total, la nota
+//     del delivery y los botones. Agrega UN mensaje, solo en pedidos largos (cuesta un mensaje más por esa conversación).
+//  l. El comprobante busca su pedido por la referencia del servidor SOLO en `sd.pedidos` (propio y del mismo teléfono) o,
+//     si la referencia es la del pedido del estado, en el estado; si no hay forma, deriva.
 //  h. Textos que el diseño no fija (se agregaron los mínimos): avisos de producto quitado por
 //     delivery, producto que sigue sin entenderse, consultas fijas (dirección, horario, delivery,
 //     promociones), tope de reservas, recordatorio del comprobante, imagen sin pedido, medio no
 //     leído. Ninguno usa palabras de `VM_PROHIBIDAS`.
 //
 // LÍMITES CONOCIDOS (no se construyen aquí): si el modelo da un sábado para «este viernes», nadie lo
-// detecta (el cruce entre el día nombrado y la fecha queda fuera); una ubicación compartida no
-// se toma como dirección (supuesto 6); el resumen de un pedido muy largo puede pasar de los 1.024
-// caracteres de un mensaje con botones (lo parte T7b); `cierre.referencia` y la anotación de la reserva
-// los resuelve T7b según los `wamid` del aviso.
+// detecta (el cruce entre el día nombrado y la fecha queda fuera); `q|cancelar` («Cancelar pedido») descarta el
+// pedido del estado pero NO avisa al servidor: el cobro que abrió `qr_enviado` queda abierto hasta que vence; el cierre
+// `registro` sale aunque el aviso al restaurante no haya salido (no afirma nada del aviso); `cierre.referencia` y la
+// anotación de la reserva los resuelve T7b según los `wamid` del aviso.
 const d = vmPrimero('Decidir turno') || {};
 const cfg = vmCfg();
 const t = vmPrimero('Interpretar entrada') || {};
@@ -95,6 +107,7 @@ let anotarReserva = false;
 let ruta = String(d.accion || '');
 
 despachar();
+mensajes = partirLargos(mensajes);
 en.ultimoMensajeMs = ahora;
 return [{ json: {
   accion: d.accion, estadoNuevo: en, mensajes: mensajes, condicionados: condicionados, aviso: aviso,
@@ -126,6 +139,31 @@ function despachar() {
   if (a === 'boton') return aBoton(b);
   errores.push('accion_desconocida');
   return derivar('acción desconocida');
+}
+
+// --- Un resumen más largo que un mensaje con botones ---------------------------------------
+// Un mensaje con botones admite 1.024 caracteres. Si el resumen del pedido los pasa, `Armar mensajes` lo recortaría y el
+// cliente perdería justo lo que confirma: el total. Entonces se PARTE: uno o más textos con el detalle de las líneas y un
+// mensaje corto con «Total de la comida: X Bs.», la nota del delivery (si no está incluido) y los botones. Es el ÚNICO caso
+// en que el flujo agrega un mensaje: solo en un pedido largo (un mensaje más para ese cliente en esa conversación).
+// (Las constantes van DENTRO de la función: lo que se declara después del `return` del nodo no llega a inicializarse.)
+function partirLargos(lista_) {
+  const MAX_CUERPO_BOTONES = 1024;
+  const MAX_CUERPO_TEXTO = 3800;
+  const salida = [];
+  for (const m of (Array.isArray(lista_) ? lista_ : [])) {
+    const cuerpo = m && m.tipo === 'botones' ? String(m.cuerpo || '') : '';
+    const i = cuerpo.lastIndexOf('\nTotal de la comida:');
+    if (cuerpo.length <= MAX_CUERPO_BOTONES || i < 0) { salida.push(m); continue; }
+    let trozo = '';
+    for (const linea of cuerpo.slice(0, i).split('\n')) {
+      if (trozo && trozo.length + linea.length + 1 > MAX_CUERPO_TEXTO) { salida.push(texto(trozo)); trozo = ''; }
+      trozo += (trozo ? '\n' : '') + linea.slice(0, MAX_CUERPO_TEXTO);
+    }
+    if (trozo) salida.push(texto(trozo));
+    salida.push(Object.assign({}, m, { cuerpo: cuerpo.slice(i + 1) }));
+  }
+  return salida;
 }
 
 // --- Estado ------------------------------------------------------------------------------
@@ -173,6 +211,18 @@ function enlace(cuerpo) {
 
 function negocio() { return vmLinea(cfg.nombreNegocio, 60) || 'nuestro restaurante'; }
 
+// Texto de un TERCERO (la dirección, la referencia, las notas, el nombre, la zona): una línea limpia y SIN palabras de la
+// red de prohibidas (cambiadas por «…»). Se sanea al entrar al estado, antes de componer ningún mensaje: así «Calle 3 en
+// camino a Obrajes» no hace que `Armar mensajes` reemplace el resumen entero por la derivación genérica.
+function delCliente(x, max) { return vmSinProhibidas(vmLinea(x, max)); }
+
+// «Por delivery no enviamos <áreas>.» sale de `areasSinDelivery` (configuración), con el nombre de cada área.
+// Sin áreas configuradas no se dice nada: nunca un texto fijo sobre un rubro que el negocio no declaró.
+function textoSinDelivery() {
+  const areas = lista(cfg.areasSinDelivery).map((a) => vmSinProhibidas(vmLinea(a, 40)).toLowerCase());
+  return areas.length ? ' Por delivery no enviamos ' + unirY(areas) + '.' : '';
+}
+
 function lista(v) {
   const base = Array.isArray(v) ? v : String(v === undefined || v === null ? '' : v).split(/[,;|]/);
   return base.map((x) => String(x).trim()).filter(Boolean);
@@ -202,22 +252,16 @@ function menuBotones() {
 
 // --- Derivar a una persona -----------------------------------------------------------------
 // Lo único que se ofrece ante un error o una consulta sin respuesta: el aviso al restaurante
-// MÁS el botón para escribirle (política «solo se ofrece lo que se cumple»).
+// MÁS el botón para escribirle (política «solo se ofrece lo que se cumple»). El plan SIEMPRE pide el
+// aviso: el tope por teléfono y por hora lo aplica `Armar avisos` leyendo la marca que escribe
+// `Armar mensajes` SOLO si el aviso salió (hecho, no dicho). Este nodo ni escribe esa marca ni suprime
+// el aviso por su cuenta: si el primer aviso falla (Graph en error), el siguiente SÍ se intenta.
 function derivar(razon) {
   ruta = 'transferir:' + razon;
-  const recientes = en.transferencias.filter((ms) => ahora - ms >= 0 && ahora - ms < 3600000);
-  const tt = cfg.topeTransferenciasHora;
-  const tope = tt === '' || tt === null || tt === undefined || !isFinite(Number(tt)) ? 1 : Number(tt);
-  if (recientes.length < tope) {
-    aviso = { tipo: 'transferencia', datos: {
-      from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
-      codigo: vmCodigoCorto(ahora), motivo: vmLinea(d.texto, 300),
-    } };
-    recientes.push(ahora);
-  } else {
-    aviso = null;
-  }
-  en.transferencias = recientes;
+  aviso = { tipo: 'transferencia', datos: {
+    from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
+    codigo: vmCodigoCorto(ahora), motivo: vmLinea(d.texto, 300),
+  } };
   en.vacias = 0;
   if (en.paso === 'inicio') en.paso = 'menu';
   mensajes = [enlace('Eso lo ve directamente el restaurante. Toca el botón para escribirles.')];
@@ -249,7 +293,7 @@ function mensajesDeCarta() {
   const partes = pdTextoDeLaCarta(carta, { moneda: monedaTxt, max: 3500 });
   if (!Array.isArray(partes) || !partes.length) return derivar('carta sin texto');
   const cierreTxt = 'Escríbeme en un mensaje qué quieres y cuántos (por ejemplo: «1 queso fundido con chorizo y 1 orden de 3 tacos de cochinita sin cebolla») y si es para delivery o para recoger.'
-    + (lista(cfg.areasSinDelivery).length ? ' Por delivery no enviamos bebidas sueltas.' : '');
+    + textoSinDelivery();
   return partes.map((p, i) => {
     const inicio = i === 0 ? 'Esta es nuestra carta:\n\n' : '';
     const fin = i === partes.length - 1 ? '\n\n' + cierreTxt : '';
@@ -267,7 +311,6 @@ function aCarta() {
 
 function aConsulta(clave) {
   let cuerpo = '';
-  const sinDelivery = lista(cfg.areasSinDelivery).length ? ' Por delivery no enviamos bebidas sueltas.' : '';
   if (clave === 'direccion') {
     const x = vmLinea(cfg.direccion, 200);
     cuerpo = x ? 'Estamos en ' + x + '.' : '';
@@ -275,8 +318,10 @@ function aConsulta(clave) {
     const x = vmLinea(cfg.horarioAtencion, 200);
     cuerpo = x ? 'Atendemos ' + x + '.' : '';
   } else if (clave === 'delivery') {
-    if (cfg.aceptaDelivery === false) cuerpo = cfg.aceptaRetiroEnLocal === false ? '' : 'Por ahora no hacemos delivery: puedes recoger tu pedido en el local.';
-    else cuerpo = 'Sí, hacemos delivery.' + sinDelivery;
+    // Con el panel sin respuesta no se sabe si hay delivery: no se afirma ni se niega, se pasa con el local.
+    if (cfg.panelSinRespuesta === true) cuerpo = '';
+    else if (cfg.aceptaDelivery === false) cuerpo = cfg.aceptaRetiroEnLocal === false ? '' : 'Por ahora no hacemos delivery: puedes recoger tu pedido en el local.';
+    else cuerpo = 'Sí, hacemos delivery.' + textoSinDelivery();
   } else if (clave === 'promociones') {
     const camp = Array.isArray(cfg.campanas) ? cfg.campanas : [];
     const carta = cfg.promosActivo === true ? cartaDelNegocio() : [];
@@ -338,6 +383,7 @@ function aBoton(b) {
     const e = en.entrega;
     reiniciar('pedido');
     en.entrega = Object.assign(entregaVacia(), { direccion: e.direccion, referencia: e.referencia, nombre: e.nombre });
+    if (e.ubicacion) en.entrega.ubicacion = e.ubicacion;
     const m = mensajesDeCarta();
     if (m) mensajes = m;
     return;
@@ -348,9 +394,21 @@ function aBoton(b) {
   return mostrarPaso();
 }
 
+// La ubicación compartida vale como dirección del delivery. `Interpretar entrada` la emite como {latitud, longitud} y
+// `pdFaltanEntrega` espera {lat, lng}: acá se traduce, solo en un pedido con delivery. Sin esto el cliente compartía su
+// ubicación y el asistente le volvía a pedir la dirección por escrito.
+function tomarUbicacion() {
+  const u = t.ubicacion;
+  if (!u || typeof u !== 'object' || typeof u.latitud !== 'number' || typeof u.longitud !== 'number') return;
+  if (!isFinite(u.latitud) || !isFinite(u.longitud) || Math.abs(u.latitud) > 90 || Math.abs(u.longitud) > 180) return;
+  if (en.paso.indexOf('pedido') !== 0 || en.entrega.entrega !== 'delivery') return;
+  en.entrega.ubicacion = { lat: u.latitud, lng: u.longitud };
+}
+
 // Vuelve a mostrar el paso actual (botón viejo, «sí» suelto, ubicación, pregunta pendiente).
 function mostrarPaso() {
   ruta = 'boton:' + (d.motivo || 'paso_actual');
+  if (d.motivo === 'ubicacion') tomarUbicacion();
   const p = en.paso;
   if (p === 'inicio' || p === 'menu') return aMenu();
   if (p === 'esperando_comprobante') return aRecordatorio();
@@ -447,6 +505,11 @@ function mostrarPedido() {
   if (m) mensajes = conNotas(m);
 }
 
+// Lo que el cliente escribió en una línea (el producto pedido y su nota) se sanea; cantidad y forma las valida `pdValidarExtraccion`.
+function lineaSaneada(l) {
+  return Object.assign({}, l, { producto: delCliente(l.producto, 120), detalle: delCliente(l.detalle, 120) });
+}
+
 function agregarLineas(lineas) {
   const carta = cartaDelNegocio();
   const r = pdAgregarLineas(en.carrito, carta, lineas) || {};
@@ -505,8 +568,8 @@ function aExtraerPedido() {
   }
   en.vacias = 0;
   if (x.entrega && modalidades().indexOf(x.entrega) >= 0) ponerModalidad(x.entrega);
-  ['direccion', 'referencia', 'nombre'].forEach((k) => { if (x[k]) en.entrega[k] = vmLinea(x[k], 160); });
-  const noEnc = lineas.length ? agregarLineas(lineas) : [];
+  ['direccion', 'referencia', 'nombre'].forEach((k) => { if (x[k]) en.entrega[k] = delCliente(x[k], 160); });
+  const noEnc = lineas.length ? agregarLineas(lineas.map(lineaSaneada)) : [];
   const falto = noEnc.length ? textoNoEncontrados(noEnc) : '';
   if (!en.carrito.length && !en.pendiente.length && falto) {
     // Nada se entendió: solo se dice qué no se encontró (sin repetir la carta).
@@ -524,10 +587,15 @@ function armarPedido() {
   const nuevo = pdNuevoPedido(t.from, t.nombrePerfil, en.carrito, en.entrega, total, monedaTxt, ahora) || {};
   if (!nuevo.pedidoId) return null;
   const delivery = en.entrega.entrega === 'delivery';
+  // Con una ubicación compartida el restaurante recibe las coordenadas (con coma decimal, que no se confunde con un enlace).
+  const u = en.entrega.ubicacion;
+  const coordenadas = u && isFinite(u.lat) && isFinite(u.lng)
+    ? 'ubicación compartida (' + u.lat.toFixed(5).replace('.', ',') + '; ' + u.lng.toFixed(5).replace('.', ',') + ')' : '';
   return Object.assign({}, nuevo, {
     lineas: pdLineasAviso(en.carrito),
     total: total, modalidad: en.entrega.entrega, moneda: monedaTxt,
-    nombre: en.entrega.nombre, direccion: delivery ? en.entrega.direccion : '', referencia: delivery ? en.entrega.referencia : '',
+    nombre: en.entrega.nombre, direccion: delivery ? [en.entrega.direccion, coordenadas].filter(Boolean).join(' · ') : '',
+    referencia: delivery ? en.entrega.referencia : '',
     from: t.from, nombrePerfil: t.nombrePerfil,
   });
 }
@@ -600,14 +668,26 @@ function aReenviarQr() {
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const pie = ped && cobro.activo === true ? cbCaption(ped, { titular: cobro.titular, moneda: monedaTxt, delivery: ped.modalidad === 'delivery' }) : '';
   if (!pie) return derivar('no se pudo reenviar el QR');
-  mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl }];
+  // Lleva el monto y la referencia del pedido para que `Armar mensajes` compruebe el total, pero NO el evento
+  // `qr_enviado`: el servidor ya abrió ese cobro y reenviar la imagen no lo reabre.
+  mensajes = [{ tipo: 'imagen', cuerpo: pie, url: cobro.qrUrl, monto: ped.total, referencia: ped.pedidoId }];
 }
 
 function aComprobante() {
   const cobro = cfg.cobro && typeof cfg.cobro === 'object' ? cfg.cobro : {};
   const ref = String(cobro.pedidoRef || '');
   const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
-  const ped = (ref && guardados[ref]) || en.pedido;
+  // La referencia del servidor se busca SOLO entre los pedidos propios de `sd.pedidos` y solo si el pedido es de ESTE
+  // teléfono (`hasOwnProperty`: «constructor» o «__proto__» no son un pedido; otro teléfono tampoco). Si la referencia
+  // no sirve y el pedido del estado no es ese mismo, no se coteja contra otro pedido: se deriva.
+  let ped = null;
+  if (ref) {
+    const propio = Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
+    if (propio && typeof propio === 'object' && String(propio.from) === String(t.from)) ped = propio;
+    else if (en.pedido && String(en.pedido.pedidoId) === ref) ped = en.pedido;
+  } else {
+    ped = en.pedido;
+  }
   if (!ped || !ped.pedidoId) return derivar('comprobante sin pedido en el flujo');
 
   let resultado = 'sin_cotejo';
@@ -696,6 +776,7 @@ function aExtraerReserva() {
     return derivar('el modelo no devolvió una reserva legible');
   }
   const x = rsValidarExtraccion(j);
+  ['zona', 'nombre', 'celebracion', 'requerimiento'].forEach((k) => { x[k] = delCliente(x[k], 200); });
   evaluarReserva(rsFusionar(en.reserva || {}, x));
 }
 

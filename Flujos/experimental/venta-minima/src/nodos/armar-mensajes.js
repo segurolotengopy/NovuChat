@@ -13,9 +13,21 @@
 //   - dejar salir un texto, un título de botón o un detalle con una palabra de `VM_PROHIBIDAS`
 //     («validado», «pagado», «recibimos tu pago», «ya lo preparan»…): se usa el texto de derivación
 //     y se anota en `errores`;
-//   - mandar un QR sin enlace https, sin monto, o con un monto distinto del total del pedido que
-//     calculó el código: en ese caso no se guarda `esperando_comprobante`;
-//   - ofrecer algo distinto de pasar con el restaurante (el botón que abre su chat).
+//   - mandar un QR sin enlace https (solo con dominio con nombre: sin IP, sin `@` y sin puerto), sin monto, o con
+//     un monto distinto del total del pedido que calculó el código (el del plan, o el del estado al reenviarlo): en ese
+//     caso no se guarda `esperando_comprobante`. El evento `qr_enviado` solo lo lleva el QR que el plan pidió como evento:
+//     «Reenviar QR» lleva monto y referencia, pero NO el evento (no reabre el cobro);
+//   - ofrecer algo distinto de pasar con el restaurante (el botón que abre su chat): la URL del botón vale SOLO si es
+//     `https://wa.me/<dígitos>` y los dígitos son el número de recepción de la configuración; si no, se arma de ahí;
+//   - bloquear un mensaje por el texto de un TERCERO: la dirección, la referencia, las notas y el nombre llegan ya
+//     saneados por `Plan del turno` (las palabras prohibidas en «…»); esta red queda para el texto fijo y el compuesto.
+//
+// ESTADO QUE ESCRIBE (solo este nodo): el estado por teléfono; los pedidos guardados (72 h, como mucho 500: al pasar el
+// tope se expulsan los más antiguos); y las marcas de aviso por hora, SOLO si el aviso salió: `transferencias` y
+// `avisosPedido` (pedido y comprobante), que `Armar avisos` lee para sus topes. Un aviso que falló no deja marca.
+//
+// MENSAJES QUE AGREGA: ninguno por sí mismo. (Un resumen de pedido de más de 1.024 caracteres lo parte `Plan del turno`
+// en un texto y un mensaje corto con el total: es el único caso en el flujo que agrega un mensaje.)
 //
 // MODO PRUEBA: los mensajes al cliente van a `telefonoDePrueba`, sin prefijo y sin reportar.
 const AM_PLAN = vmPrimero('Plan del turno') || vmPrimero('Uso extendido') || vmPrimero('Comercio no operativo') || {};
@@ -33,6 +45,8 @@ const AM_GEN_CUERPO = 'Eso lo ve directamente el restaurante. Toca el botón par
 const AM_GEN_BOTON = 'Escribir al local';
 const AM_HORA_MS = 60 * 60 * 1000;
 const AM_PEDIDOS_MS = 72 * AM_HORA_MS;
+const AM_MAX_PEDIDOS = 500; // pedidos guardados: al pasar el tope se expulsan los más antiguos
+const AM_MAX_MARCAS = 500; // teléfonos con marcas de aviso por hora
 const AM_sd = vmSd();
 
 const AM_avisosArmados = vmTodos('Armar avisos');
@@ -116,9 +130,11 @@ function amSinBoton(cuerpo) {
 // El botón que abre el chat del restaurante. La URL del plan se acepta si es https y no es el chat del
 // propio cliente; si no, sale del número de recepción; sin número válido, texto sin la frase del botón.
 function amEnlace(cuerpo, boton, urlDelPlan, tipoReporte) {
+  // La URL del plan vale SOLO si es `https://wa.me/<8 a 15 dígitos>` (con `?text=` opcional) y esos dígitos son EXACTAMENTE
+  // el número de recepción de la configuración (que no es el del propio cliente). Cualquier otra cosa se descarta.
   let url = String(urlDelPlan || '').trim();
-  const wa = /^https:\/\/wa\.me\/(\d+)/i.exec(url);
-  if (!/^https:\/\/\S+$/i.test(url) || (wa && wa[1] === AM_FROM_DIG)) url = '';
+  const wa = /^https:\/\/wa\.me\/(\d{8,15})(?:\?text=[A-Za-z0-9%._~!*'()-]*)?$/.exec(url);
+  if (!wa || !AM_REC_OK || wa[1] !== AM_REC) url = '';
   if (!url && AM_REC_OK) url = amUrlWa('Hola, escribo desde el asistente de ' + AM_NEGOCIO + '.');
   const titulo = amSeguro(boton) && String(boton || '').trim() ? String(boton).trim() : AM_GEN_BOTON;
   if (!url) {
@@ -134,8 +150,17 @@ function amGenerico(motivo) {
 
 // ----------------------------------------------------------------- un mensaje del plan
 let AM_qrRechazado = false;
+// La URL del QR: solo https, con un dominio con nombre (nada de IP ni de «localhost»), sin usuario (`@`) ni puerto.
+function amUrlSegura(u) {
+  const s = String(u === undefined || u === null ? '' : u).trim();
+  return s.length <= 2000 && /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?:[/?#][^\s<>"'@]*)?$/i.test(s);
+}
 function amQr(m, cuerpo) {
-  const ped = AM_PLAN.pedido && typeof AM_PLAN.pedido === 'object' ? AM_PLAN.pedido : {};
+  // El pedido contra el que se compara el monto: el del plan (el turno que creó el QR) o, al reenviarlo, el del estado
+  // nuevo (el que quedó esperando el comprobante). Nunca el que diga el propio mensaje.
+  const estado = AM_PLAN.estadoNuevo && typeof AM_PLAN.estadoNuevo === 'object' ? AM_PLAN.estadoNuevo : {};
+  const ped = AM_PLAN.pedido && typeof AM_PLAN.pedido === 'object' ? AM_PLAN.pedido
+    : (estado.pedido && typeof estado.pedido === 'object' ? estado.pedido : {});
   const cobro = AM_CFG.cobro && typeof AM_CFG.cobro === 'object' ? AM_CFG.cobro : {};
   const link = String(cobro.qrUrl || '').trim();
   const monto = Number(m.monto);
@@ -143,7 +168,7 @@ function amQr(m, cuerpo) {
   const pedidoId = String(ped.pedidoId || '');
   let motivo = '';
   if (cobro.activo !== true) motivo = 'cobro_no_activo';
-  else if (!/^https:\/\/\S+$/i.test(link)) motivo = 'qr_sin_https';
+  else if (!amUrlSegura(link)) motivo = 'qr_sin_https';
   else if (!(monto > 0) || !isFinite(monto)) motivo = 'qr_sin_monto';
   else if (!(total > 0) || Math.round(monto * 100) !== Math.round(total * 100)) motivo = 'qr_monto_distinto_del_total';
   else if (!pedidoId) motivo = 'qr_sin_pedido';
@@ -152,10 +177,14 @@ function amQr(m, cuerpo) {
     AM_qrRechazado = true;
     return amGenerico('qr_rechazado: ' + motivo);
   }
-  return {
+  const salida = {
     payload: amImagen(link, cuerpo), texto: cuerpo, respaldo: vmRecorte(cuerpo + '\n\nAbre el QR aquí: ' + link, 4000),
-    tipoReporte: 'image', evento: 'qr_enviado', referencia: pedidoId, monto: Math.round(total * 100) / 100,
+    tipoReporte: 'image', referencia: pedidoId, monto: Math.round(total * 100) / 100,
   };
+  // El evento `qr_enviado` (abre el cobro en el servidor) solo lo lleva el QR que el plan pidió como evento: «Reenviar QR»
+  // lleva monto y referencia pero NO el evento, porque el servidor ya abrió ese cobro.
+  if (m.evento === 'qr_enviado') salida.evento = 'qr_enviado';
+  return salida;
 }
 function amArmarUno(m) {
   if (!m || typeof m !== 'object') return null;
@@ -242,19 +271,37 @@ if (AM_sd) {
     if (!AM_sd.pedidos || typeof AM_sd.pedidos !== 'object') AM_sd.pedidos = {};
     const id = String(ped.pedidoId);
     AM_sd.pedidos[id] = Object.assign({}, AM_sd.pedidos[id] || {}, ped, { guardadoMs: AM_AHORA });
-  }
-  // La marca de derivación se escribe SOLO si el aviso de derivación salió (hecho, no dicho).
-  if (AM_sd.transferencias && typeof AM_sd.transferencias === 'object') {
-    for (const k of Object.keys(AM_sd.transferencias)) {
-      const v = AM_sd.transferencias[k];
-      const marcas = (Array.isArray(v) ? v : [v]).filter((ms) => AM_AHORA - Number(ms) < AM_HORA_MS);
-      if (marcas.length) AM_sd.transferencias[k] = marcas; else delete AM_sd.transferencias[k];
+    // Como mucho 500 pedidos guardados: pasado el tope se expulsan los más antiguos (el recién escrito nunca).
+    const claves = Object.keys(AM_sd.pedidos);
+    if (claves.length > AM_MAX_PEDIDOS) {
+      claves.sort((a, b) => Number(AM_sd.pedidos[a].guardadoMs || 0) - Number(AM_sd.pedidos[b].guardadoMs || 0));
+      for (const k of claves.slice(0, claves.length - AM_MAX_PEDIDOS)) delete AM_sd.pedidos[k];
     }
   }
-  if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('transferencia') >= 0) {
-    if (!AM_sd.transferencias || typeof AM_sd.transferencias !== 'object') AM_sd.transferencias = {};
-    AM_sd.transferencias[AM_FROM] = (AM_sd.transferencias[AM_FROM] || []).concat([AM_AHORA]);
+  // Las marcas de aviso por hora se escriben SOLO si el aviso salió (hecho, no dicho): `transferencias` (derivaciones)
+  // y `avisosPedido` (avisos de pedido y de comprobante). `Armar avisos` las lee para aplicar `topeTransferenciasHora` y
+  // `topePedidosHora`. Se podan las de más de una hora y no hay más de 500 teléfonos con marca.
+  for (const mapa of ['transferencias', 'avisosPedido']) {
+    const m = AM_sd[mapa];
+    if (!m || typeof m !== 'object') continue;
+    for (const k of Object.keys(m)) {
+      const v = m[k];
+      const marcas = (Array.isArray(v) ? v : [v]).filter((ms) => AM_AHORA - Number(ms) < AM_HORA_MS);
+      if (marcas.length) m[k] = marcas; else delete m[k];
+    }
   }
+  const amMarcar = (mapa) => {
+    if (!AM_sd[mapa] || typeof AM_sd[mapa] !== 'object') AM_sd[mapa] = {};
+    const m = AM_sd[mapa];
+    m[AM_FROM] = (Object.prototype.hasOwnProperty.call(m, AM_FROM) && Array.isArray(m[AM_FROM]) ? m[AM_FROM] : []).concat([AM_AHORA]);
+    const claves = Object.keys(m);
+    if (claves.length > AM_MAX_MARCAS) {
+      claves.sort((a, b) => Number(m[a][m[a].length - 1]) - Number(m[b][m[b].length - 1]));
+      for (const k of claves.slice(0, claves.length - AM_MAX_MARCAS)) delete m[k];
+    }
+  };
+  if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('transferencia') >= 0) amMarcar('transferencias');
+  if (AM_AVISO_SALIO && AM_claveValida && (AM_tiposSalidos.indexOf('pedido') >= 0 || AM_tiposSalidos.indexOf('comprobante') >= 0)) amMarcar('avisosPedido');
   // El tope de reservas por día (`rsDentroDelTope`) cuenta solo solicitudes cuyo aviso SALIÓ: `rsAnotar`
   // escribe en `sd`, y por eso lo llama este nodo, que es el único que escribe estado.
   if (AM_AVISO_SALIO && AM_claveValida && AM_tiposSalidos.indexOf('reserva') >= 0) rsAnotar(AM_sd, AM_FROM, AM_AHORA);
