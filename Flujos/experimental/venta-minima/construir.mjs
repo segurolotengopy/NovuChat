@@ -25,7 +25,7 @@
  * LOS DATOS son `admin/scripts/datos/venta-minima/<tenant>.json` (zona Tenants: solo marcadores
  * `REEMPLAZAR_*` y datos del negocio, nunca un token ni una ruta de webhook real):
  *
- *     { nombreFlujo, entrada: 'receptor' | 'trigger' | 'prueba',
+ *     { nombreFlujo, entrada: 'receptor' | 'trigger' | 'prueba',   // 'prueba' SOLO en ensayo.json (A5)
  *       credenciales: { ingesta, graph, medios },
  *       receptor: { ruta, urlVerificador, wabaIdEsperado }, pruebaRuta,
  *       hereda?: '<otro tenant>',   // `ensayo.json` hereda de `qtaco.json` y cambia lo que dice
@@ -234,7 +234,7 @@ function guardiasDeProduccion(entrada, flujo, datos = {}) {
   // L1. Un nodo HTTP solo habla con Meta, con Gemini y con las Functions de la consola (o con un marcador por reemplazar).
   for (const n of flujo.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
     const url = String((n.parameters || {}).url || '');
-    if (!anfitrionPermitido(n.name, url)) hallazgos.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, *.cloudfunctions.net)`);
+    if (!anfitrionPermitido(n.name, url)) hallazgos.push(`el nodo «${n.name}» llama a un anfitrión fuera de la lista (graph.facebook.com, generativelanguage.googleapis.com, las Functions de la consola)`);
   }
   // L1. Ningún webhook con ruta de prueba fuera de la variante de prueba, y en el receptor un solo webhook: el suyo.
   if (entrada !== 'prueba') {
@@ -255,13 +255,17 @@ function guardiasDeProduccion(entrada, flujo, datos = {}) {
 
 // L1. Los anfitriones con los que un nodo HTTP puede hablar. Una URL por expresión (`=…`) solo vale si su anfitrión está escrito
 // antes de la primera llave; la única excepción es `Descargar medio`, que baja el medio de la URL que le devuelve Meta.
+// A4. Las Functions de la consola son UN anfitrión exacto (el que ya usan los nodos de producción), no «cualquier
+// *.cloudfunctions.net»: otro proyecto de Google recibiría el token de ingesta. Y el «anfitrión» es TODO lo que va entre
+// «https://» y la primera barra, `?` o `#`: con un `@` o un puerto («graph.facebook.com:x@otro.dominio») no es un anfitrión.
+const ANFITRION_CONSOLA = 'us-east1-novuchat-demo.cloudfunctions.net';
+const ANFITRIONES = ['graph.facebook.com', 'generativelanguage.googleapis.com', ANFITRION_CONSOLA];
 function anfitrionPermitido(nombreDelNodo, url) {
   if (/^REEMPLAZAR_[A-Z0-9_]+$/.test(url)) return true;
   if (nombreDelNodo === 'Descargar medio' && url === '={{ $json.url }}') return true;
-  const m = /^=?https:\/\/([^/\s?#:]+)(?:[/?#:]|$)/i.exec(url);
-  if (!m) return false;
-  const host = m[1].toLowerCase();
-  return host === 'graph.facebook.com' || host === 'generativelanguage.googleapis.com' || /^([a-z0-9-]+\.)+cloudfunctions\.net$/.test(host);
+  const m = /^=?https:\/\/([^/?#\s]*)/i.exec(url);
+  if (!m || !/^[a-z0-9.-]+$/i.test(m[1])) return false;
+  return ANFITRIONES.includes(m[1].toLowerCase());
 }
 
 // L1. Cada `venta-minima.<x>.json` versionado nace de un archivo de datos (`ensayo.json` para la prueba): si el archivo de
@@ -276,6 +280,12 @@ const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'venta-minima.prueba.
 let difiere = false;
 for (const archivo of readdirSync(DATOS).filter((f) => f.endsWith('.json')).sort()) {
   const datos = cargarDatos(archivo);
+  // A5. Solo `ensayo.json` puede ser la variante de prueba: cualquier otro archivo de datos (un tenant) tiene la entrada del
+  // receptor o la del trigger. Sin esto, un `"entrada": "prueba"` en `qtaco.json` se saltaría las guardias de producción
+  // (que no miran la «Entrada de prueba» ni los nodos simulados cuando la entrada es `prueba`).
+  if (archivo !== 'ensayo.json' && !['receptor', 'trigger'].includes(datos.entrada)) {
+    throw new Error(`${archivo}: solo ensayo.json puede tener entrada «prueba»; los demás archivos de datos usan «receptor» o «trigger» (no «${datos.entrada}»)`);
+  }
   validarDatos(datos, archivo);
   const texto = armar(datos, archivo);
   const destino = salidaDe(archivo);

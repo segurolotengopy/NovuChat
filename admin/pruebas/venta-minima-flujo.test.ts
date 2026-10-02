@@ -513,6 +513,21 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       expect(r.status, nombre).toBe(1);
       expect(r.stderr, nombre).toMatch(esperado);
     }
+    // A5: solo `ensayo.json` puede ser «prueba»; un tenant con `"entrada": "prueba"` se saltaría las guardias de producción.
+    for (const entrada of ['prueba', 'Prueba', 'otra', '']) {
+      const r = construirEnCopia((datos) => editarDatos(datos, 'qtaco.json', (d) => { d['entrada'] = entrada; }));
+      expect(r.status, `entrada «${entrada}»`).toBe(1);
+      expect(r.stderr, `entrada «${entrada}»`).toContain('solo ensayo.json puede tener entrada');
+    }
+    // …y con un «prueba» heredado por un archivo de tenant que no es el de ensayo (el archivo no dice `entrada` y la hereda).
+    const heredada = construirEnCopia((datos) => {
+      editarDatos(datos, 'qtaco.json', (d) => { d['entrada'] = 'prueba'; });
+      writeFileSync(join(datos, 'otro.json'), JSON.stringify({ hereda: 'qtaco', nombreFlujo: 'NovuChat — otro' }, null, 2) + '\n');
+    });
+    expect(heredada.status).toBe(1);
+    expect(heredada.stderr).toContain('solo ensayo.json puede tener entrada');
+    // Negativo: `ensayo.json` sí es «prueba» y `qtaco.json` «receptor»: la construcción normal da 0.
+    expect(construirEnCopia(() => undefined).status).toBe(0);
     // «hereda»: solo un nombre de archivo, y dentro de la carpeta de datos.
     for (const hereda of ['../qtaco', 'QTACO', 'qtaco.json', 'a/b', '..', '']) {
       const r = construirEnCopia((datos) => editarDatos(datos, 'ensayo.json', (d) => { d['hereda'] = hereda; }));
@@ -552,20 +567,24 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       'https://evil.ejemplo.invalid/ingesta', 'http://graph.facebook.com/v26.0/x', 'https://graph.facebook.com.evil.ejemplo.invalid/x',
       ['https://graph.facebook.com', 'evil.ejemplo.invalid/x'].join(String.fromCharCode(64)), 'https://evilcloudfunctions.net/x', 'https://cloudfunctions.net/x',
       '={{ $json.destino }}', '=https://{{ $json.host }}/x', 'ftp://graph.facebook.com/x', '',
+      // A4: un solo anfitrión de la consola (no «cualquier *.cloudfunctions.net»), y nada de usuario ni puerto en el anfitrión.
+      'https://us-east1-otro-proyecto.cloudfunctions.net/ingesta', 'https://us-east1-novuchat-demo.cloudfunctions.net.evil.invalid/ingesta',
+      `https://graph.facebook.com:x${String.fromCharCode(64)}otro.dominio.invalid/`, `https://us-east1-novuchat-demo.cloudfunctions.net:x${String.fromCharCode(64)}otro.dominio.invalid/ingesta`,
+      `https://otro.dominio.invalid${String.fromCharCode(64)}graph.facebook.com/x`, 'https://graph.facebook.com:8443/x', 'https://graph.facebook.com:443/x',
     ]) {
       const r = conUrl(url);
       expect(r.status, url).toBe(1);
       expect(r.stderr, url).toContain('anfitrión fuera de la lista');
     }
     // Negativos: los tres anfitriones permitidos (y una expresión con el anfitrión escrito delante) NO fallan por eso.
-    for (const url of ['https://graph.facebook.com/v26.0/x/messages', 'https://generativelanguage.googleapis.com/v1beta/x', 'https://us-east1-proyecto.cloudfunctions.net/ingesta', '=https://graph.facebook.com/{{ $json.v }}/x', 'REEMPLAZAR_URL_X']) {
+    for (const url of ['https://graph.facebook.com/v26.0/x/messages', 'https://generativelanguage.googleapis.com/v1beta/x', 'https://us-east1-novuchat-demo.cloudfunctions.net/ingesta', 'https://US-EAST1-novuchat-demo.cloudfunctions.net/ingesta', '=https://graph.facebook.com/{{ $json.v }}/x', 'REEMPLAZAR_URL_X']) {
       expect(conUrl(url).stderr, url).not.toContain('anfitrión fuera de la lista');
     }
     expect(conUrl('https://evil.ejemplo.invalid/x', 'venta-minima.prueba.json').stderr).toContain('anfitrión fuera de la lista');
     // Y los JSON reales cumplen: todo nodo HTTP tiene un anfitrión permitido.
     for (const f of [QTACO, PRUEBA]) {
       for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
-        expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|[a-z0-9.-]+\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
+        expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|us-east1-novuchat-demo\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
       }
     }
   });
@@ -619,6 +638,11 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
     // Con una credencial de una app propia: construye y verifica en 0…
     const ok = variante({ trigger: 'WhatsApp Trigger NovuChat (app propia)' });
     expect(ok.status, ok.stderr).toBe(0);
+    // LÍMITE CONOCIDO (A4): la guardia mira el NOMBRE de la credencial; el JSON no dice a qué app de Meta apunta. Una credencial de
+    // AAB1-WA-Prod con un nombre neutro pasaría esta guardia: lo cubre el ensayo (se comprueba a qué app apunta antes de activar
+    // un Trigger) y la prohibición 7, no este archivo. Se fija acá para que nadie crea que la guardia lo atrapa.
+    const neutral = variante({ trigger: 'Credencial de ensayo 7' });
+    expect(neutral.status, 'un nombre neutro no se distingue de una app propia: límite declarado en DISENO.md').toBe(0);
     // …y si alguien cambia a mano la credencial del JSON versionado por esa, o se la quita, falla.
     for (const credenciales of [{ whatsAppTriggerApi: { id: '', name: AJENA } }, {}] as J[]) {
       const r = variante({ trigger: 'WhatsApp Trigger NovuChat (app propia)' }, (vm) => editarJson(vm, 'venta-minima.trigger.json', (f) => {
