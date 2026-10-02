@@ -41,7 +41,7 @@
  *
  * NO HACE NADA MÁS: no lee `.env`, no llama a la red, no importa nada de fuera de `node:`.
  */
-import { closeSync, constants, openSync, readFileSync, realpathSync, writeSync } from 'node:fs';
+import { closeSync, constants, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -57,7 +57,7 @@ function leerSiExiste(ruta, nombre) {
     fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (e) {
     if (noExiste(e)) return null;
-    if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se escribe`);
+    if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se lee`);
     throw e;
   }
   try { return readFileSync(fd, 'utf8'); } finally { closeSync(fd); }
@@ -71,7 +71,8 @@ function escribirSinSeguirEnlaces(ruta, texto, nombre) {
     if (e && e.code === 'ELOOP') throw new Error(`${nombre}: es un enlace simbólico y no se escribe`);
     throw e;
   }
-  try { writeSync(fd, texto); } finally { closeSync(fd); }
+  // `writeFileSync(fd, …)` REPITE la escritura hasta grabar todo; `writeSync` puede grabar solo una parte y dejar un JSON cortado.
+  try { writeFileSync(fd, texto); } finally { closeSync(fd); }
 }
 
 /** Lee `construir.config.json` y comprueba su forma. Devuelve el proyecto listo para armar. */
@@ -83,7 +84,9 @@ export function leerProyecto(carpeta, configEnMemoria = null, { tope = TOPE_POR_
   if (!cfg) {
     // Se abre SIN seguir enlaces: un config que es enlace simbólico no se lee.
     let texto;
-    try { texto = leerSiExiste(rutaConfig, 'construir.config.json'); } catch (e) { throw new Error('construir.config.json no puede ser un enlace simbólico'); }
+    try { texto = leerSiExiste(rutaConfig, 'construir.config.json'); } catch (e) {
+      throw (e instanceof Error && /enlace simbólico/.test(e.message)) ? new Error('construir.config.json no puede ser un enlace simbólico') : e;
+    }
     if (texto === null) throw new Error(`no existe ${rutaConfig}`);
     // Sin el texto del archivo en el mensaje: si no es JSON, no se muestran sus bytes.
     try { cfg = JSON.parse(texto); } catch (e) { throw new Error('construir.config.json no es un JSON válido'); }
@@ -101,7 +104,7 @@ export function leerProyecto(carpeta, configEnMemoria = null, { tope = TOPE_POR_
     let r;
     try { r = realpathSync(abs); } catch (e) { if (noExiste(e)) throw new Error(`${que}: no existe ${ruta}`); throw e; }
     if (fuera(raiz, r)) throw new Error(`${que}: «${ruta}» queda fuera de la raíz permitida`);
-    return abs;
+    return r;
   };
   const lista = (v) => (v === undefined || v === null ? [] : (Array.isArray(v) ? v : [v]));
   const leerLista = (rutas, que) => lista(rutas).map((r) => readFileSync(dentro(r, que), 'utf8').trimEnd());

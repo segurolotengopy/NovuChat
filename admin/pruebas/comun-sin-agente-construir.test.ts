@@ -269,6 +269,38 @@ describe('segunda revisión de seguridad (02/10): escritura por enlace, plantill
   });
 });
 
+describe('la escritura graba TODO (revisión de seguridad del #357, LOW)', () => {
+  it('un JSON de varios megabytes se escribe entero y `--verificar` lo da por al día', () => {
+    // Una escritura parcial dejaría un JSON cortado: `writeSync` puede grabar solo una parte; `writeFileSync` repite.
+    const grande = 'x'.repeat(6 * 1024 * 1024);
+    const dir = proyecto({ variantes: [{ archivo: 'grande.json', nombre: 'Grande' }] }, {
+      name: 'x', connections: {}, nodes: [{ id: 'a', name: 'A', type: 'n8n-nodes-base.code', parameters: { jsCode: grande } }],
+    });
+    construir(dir, { tope: TOPE });
+    const escrito = readFileSync(join(dir, 'grande.json'), 'utf8');
+    expect(JSON.parse(escrito).nodes[0].parameters.jsCode).toHaveLength(grande.length);
+    expect(construir(dir, { verificar: true, tope: TOPE })[0]!.alDia).toBe(true);
+  });
+  it('NIEGA: un config ilegible por otro motivo no se disfraza de «enlace simbólico»', () => {
+    const dir = proyecto();
+    rmSync(join(dir, 'construir.config.json'));
+    mkdirSync(join(dir, 'construir.config.json'));
+    let mensaje = '';
+    try { leerProyecto(dir, null, { tope: TOPE }); } catch (e) { mensaje = String(e); }
+    expect(mensaje).not.toMatch(/enlace simbólico/);
+    expect(mensaje).toMatch(/EISDIR|illegal operation|directory/i);
+  });
+  it('el mensaje de un enlace al LEER no dice que no se escribe', () => {
+    const dir = proyecto();
+    const fuera = join(dir, '..', 'lectura-' + String(Date.now()) + '.json');
+    writeFileSync(fuera, '{}');
+    try {
+      symlinkSync(fuera, join(dir, 'prod.json'));
+      expect(() => construir(dir, { verificar: true, tope: TOPE })).toThrow(/enlace simbólico y no se lee/);
+    } finally { rmSync(fuera, { force: true }); }
+  });
+});
+
 describe('la línea de comandos', () => {
   const correr = (...args: string[]): { codigo: number; salida: string } => {
     try {

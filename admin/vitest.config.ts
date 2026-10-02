@@ -88,6 +88,7 @@ export const SUITES_PURAS = [
   'pruebas/core/direccion-maps.test.ts',
   'pruebas/encabezado-comercio.test.ts',
   'pruebas/core/ensamblador.test.ts',
+  'pruebas/core/niega-ia.test.ts',
   'pruebas/estado-comercio.test.ts',
   'pruebas/estado-de-versiones.test.ts',
   'pruebas/flujos-origen.test.ts',
