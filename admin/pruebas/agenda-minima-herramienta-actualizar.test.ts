@@ -10,7 +10,7 @@
  * Cada «NIEGA» comprueba además que NO hubo ningún PUT.
  */
 import { execFile } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -343,14 +343,6 @@ describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador,
       expect(mundo.puts).toHaveLength(0);
     } finally { rmSync(trampa, { force: true }); }
   });
-  it('si tras el PUT las credenciales cambian, el aviso dice que el código nuevo YA quedó escrito y dónde está la copia', async () => {
-    nuevo(vivoDe(BELLIDO), { cambiaCredenciales: true });
-    const previa = join(carpeta, 'previa-aviso.json');
-    const r = await correr('--aplicar', '--previa', previa);
-    expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/El código nuevo YA quedó escrito/);
-    expect(r.salida).toContain(previa);
-  });
   it('NIEGA: --actualizar-codigo no se combina con otro modo (antes, con --borrar, corría --borrar)', async () => {
     nuevo(vivoDe(BELLIDO));
     for (const otro of ['--borrar', '--sobre-bellido', '--sobre-demo-a', '--restaurar-respaldo']) {
@@ -358,24 +350,6 @@ describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador,
       expect(r.codigo, otro).toBe(1);
       expect(r.salida, otro).toMatch(/no se combina con otro modo/);
     }
-    expect(mundo.puts).toHaveLength(0);
-  });
-  it('NIEGA: --previa sin archivo (al final, o seguido de otra opción) NO se omite en silencio', async () => {
-    nuevo(vivoDe(BELLIDO));
-    for (const args of [['--aplicar', '--previa'], ['--previa', '--aplicar']]) {
-      const r = await correr(...args);
-      expect(r.codigo, args.join(' ')).toBe(1);
-      expect(r.salida).toMatch(/--previa necesita un archivo/);
-    }
-    expect(mundo.puts).toHaveLength(0);
-  });
-  it('NIEGA: --previa a través de un enlace simbólico hacia el repositorio', async () => {
-    nuevo(vivoDe(BELLIDO));
-    const enlace = join(carpeta, 'enlace-al-repo');
-    symlinkSync(CARPETA, enlace);
-    const r = await correr('--aplicar', '--previa', join(enlace, 'previa-por-enlace.json'));
-    expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/FUERA del repositorio/);
     expect(mundo.puts).toHaveLength(0);
   });
   it('NIEGA: si después del PUT las credenciales cambiaron, el mensaje NO dice «intactas» y avisa que se revise n8n', async () => {
@@ -393,24 +367,18 @@ describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador,
   });
 });
 
-describe('--previa: la copia del vivo antes de escribir (opcional)', () => {
-  it('guarda el flujo vivo con permisos 600 y NO pisa una copia que ya existe', async () => {
+describe('--previa ya no existe (el modo no guarda copias: se corrige hacia adelante)', () => {
+  it('NIEGA: pasar --previa es un error claro, y no se escribe nada', async () => {
     nuevo(vivoDe(BELLIDO));
-    const previa = join(carpeta, 'previa.json');
-    expect((await correr('--aplicar', '--previa', previa)).codigo).toBe(0);
-    expect((statSync(previa).mode & 0o777)).toBe(0o600);
-    expect((JSON.parse(readFileSync(previa, 'utf8')) as J).name).toMatch(/Bellido/);
-    nuevo(vivoDe(BELLIDO));
-    const r = await correr('--aplicar', '--previa', previa);
+    const r = await correr('--aplicar', '--previa', join(carpeta, 'previa.json'));
     expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/ya existe: no se pisa/);
+    expect(r.salida).toMatch(/--previa ya no existe/);
     expect(mundo.puts).toHaveLength(0);
   });
-  it('NIEGA: una copia DENTRO del repositorio (lleva ids del cliente)', async () => {
-    nuevo(vivoDe(BELLIDO));
-    const r = await correr('--aplicar', '--previa', join(CARPETA, 'previa-prohibida.json'));
+  it('el aviso de credenciales cambiadas dice que el código nuevo YA quedó escrito', async () => {
+    nuevo(vivoDe(BELLIDO), { cambiaCredenciales: true });
+    const r = await correr('--aplicar');
     expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/FUERA del repositorio/);
-    expect(mundo.puts).toHaveLength(0);
+    expect(r.salida).toMatch(/El código nuevo YA quedó escrito/);
   });
 });

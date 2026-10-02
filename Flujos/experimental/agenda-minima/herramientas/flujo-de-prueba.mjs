@@ -287,7 +287,7 @@ if (bandera('sobre-bellido')) {
 
 // ---------------------------------------------------------------- actualizar el código de un B YA VIVO
 /*
- * --actualizar-codigo [--flujo <json>] [--previa <archivo fuera del repo>] [--aplicar]
+ * --actualizar-codigo [--flujo <json>] [--aplicar]
  *   Para cuando el flujo vivo (Bellido o el Demo A) YA es el candidato B y solo cambió el CÓDIGO de los nodos
  *   Code (por ejemplo, una corrección en `_comun.js`, que se pega en varios nodos). `--sobre-bellido` se niega
  *   a correr con B ya vivo; este modo es el que sí. Nace de la corrección de `cnAtencion` (02/10/2026), que se
@@ -311,7 +311,8 @@ if (bandera('sobre-bellido')) {
  *     - hay al menos un nodo Code con código distinto.
  *   DESPUÉS DEL PUT: lee el vivo, comprueba que sigue ACTIVO, que la versión ACTIVA es la última y que el código
  *   leído es el del candidato; si la versión activa no es la última, la activa y vuelve a comprobar.
- *   `--previa` (opcional): guarda el flujo vivo entero ANTES de escribir, con `wx` (nunca pisa) y permisos 600.
+ *   NO guarda una copia del vivo (el plan es corregir hacia adelante, y n8n conserva el historial de versiones del flujo);
+ *   si hace falta una, se baja de n8n antes de usar este modo.
  *   Sin `--aplicar`, en seco: lista los nodos que cambiarían y no escribe nada.
  */
 // Sobre el nombre ya COMPACTADO (sin tildes, espacios ni signos): ver `compacto` más abajo.
@@ -377,15 +378,8 @@ if (bandera('actualizar-codigo')) {
   console.log(`Nodos Code con código distinto (${cambian.length}): ${cambian.join(', ') || '—'}`);
   if (prohibidas.length) morir(`hay diferencias que este modo NO toca (use --sobre-bellido o revise): ${prohibidas.join(' · ')}`);
   if (!cambian.length) morir('no hay nada que actualizar: el código vivo ya es el del candidato');
-  if (args.includes('--previa') && (!opcion('previa') || String(opcion('previa')).startsWith('--'))) morir('--previa necesita un archivo (fuera del repositorio)');
+  if (args.includes('--previa')) morir('--previa ya no existe: este modo no guarda copias (corrija hacia adelante)');
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada. Agregue --aplicar.'); process.exit(0); }
-  if (args.includes('--previa') && !opcion('previa')) morir('--previa necesita un archivo (fuera del repositorio)');
-  const PREVIA = opcion('previa') ? resolve(opcion('previa')) : null;
-  if (PREVIA) {
-    if (dentroDelRepo(PREVIA)) morir('--previa tiene que estar FUERA del repositorio (lleva ids y datos del cliente)');
-    try { writeFileSync(PREVIA, JSON.stringify(v), { flag: 'wx', mode: 0o600 }); } catch (e) { if (e.code === 'EEXIST') morir('--previa ya existe: no se pisa'); throw e; }
-    chmodSync(PREVIA, 0o600);
-  }
   for (const nombre of cambian) nv.get(nombre).parameters.jsCode = nc.get(nombre).parameters.jsCode;
   const put = await llamar('PUT', `/workflows/${env.N8N_WORKFLOW_ID}`, { name: v.name, nodes: v.nodes, connections: v.connections, settings: v.settings ?? {} });
   if (put.cod !== 200) morir(`PUT → ${put.cod}: ${JSON.stringify(put.datos.message ?? '').slice(0, 300)}. Lea el flujo vivo y corrija hacia adelante`);
@@ -406,7 +400,7 @@ if (bandera('actualizar-codigo')) {
   }
   // Lo que el mensaje afirma, se LEYÓ: las credenciales de cada nodo y las conexiones, contra el vivo de antes del PUT.
   const credenciales = (w) => JSON.stringify(Object.fromEntries(w.nodes.map((n) => [n.name, n.credentials ?? null]).sort(([x], [y]) => (x < y ? -1 : 1))));
-  if (credenciales(tras) !== credenciales(v) || !igual(tras.connections, v.connections) || tras.nodes.length !== v.nodes.length) morir(`después del PUT las credenciales o las conexiones no coinciden con las de antes. El código nuevo YA quedó escrito${PREVIA ? ` (el flujo de antes está en ${PREVIA})` : ''}; REVISE n8n YA`);
+  if (credenciales(tras) !== credenciales(v) || !igual(tras.connections, v.connections) || tras.nodes.length !== v.nodes.length) morir(`después del PUT las credenciales o las conexiones no coinciden con las de antes. El código nuevo YA quedó escrito; REVISE n8n YA (su historial de versiones guarda el flujo de antes)`);
   console.log(`✓ «${tras.name}»: ${tras.nodes.length} nodos, activo=${tras.active}, publicada=${tras.versionId === tras.activeVersionId}; ${cambian.length} nodos con el código nuevo (leído de vuelta); credenciales y conexiones iguales a las de antes (leídas de vuelta).`);
   console.log('FALTA, ya: un mensaje real desde un teléfono registrado y la lectura de su ejecución en n8n.');
   process.exit(0);
