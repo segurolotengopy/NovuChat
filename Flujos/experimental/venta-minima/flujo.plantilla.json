@@ -146,7 +146,13 @@
           "messages"
         ]
       },
-      "notes": "SOLO en la variante `entrada: trigger` (camino A, con credenciales de una app propia de NovuChat). NUNCA con las credenciales de AAB1-WA-Prod: al activarse reescribe el webhook de toda la app (prohibición 7). Ningún JSON versionado hoy usa esta variante."
+      "notes": "SOLO en la variante `entrada: trigger` (camino A, con credenciales de una app propia de NovuChat). La credencial es EXPLÍCITA (`credenciales.trigger` en los datos del tenant) y NUNCA la de AAB1-WA-Prod: al activarse reescribe el webhook de toda la app (prohibición 7); `construir.mjs --verificar` lo rechaza. Ningún JSON versionado usa hoy esta variante.",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "",
+          "name": "@@cred:trigger"
+        }
+      }
     },
     {
       "id": "entrada-prueba",

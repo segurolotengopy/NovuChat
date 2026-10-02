@@ -405,7 +405,7 @@ const todosLosTurnos = (): { nombre: string; turno: Turno }[] =>
 // =====================================================================================================
 describe('el flujo armado es el que sale de la plantilla y de los datos', () => {
   /** `construir.mjs --verificar` sobre una COPIA de la carpeta y de los datos, que `modifica` puede alterar antes de verificar. */
-  function verificarEnCopia(modifica: (vm: string) => void) {
+  function verificarEnCopia(modifica: (vm: string, datos: string) => void, args: string[] = ['--verificar']) {
     const tmp = mkdtempSync(join(tmpdir(), 'vm-'));
     try {
       const vm = join(tmp, 'Flujos/experimental/venta-minima');
@@ -414,12 +414,20 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       mkdirSync(datos, { recursive: true });
       cpSync(CARPETA_VM, vm, { recursive: true });
       cpSync(join(AQUI, '../scripts/datos/venta-minima'), datos, { recursive: true });
-      modifica(vm);
-      return spawnSync(process.execPath, [join(vm, 'construir.mjs'), '--verificar'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+      modifica(vm, datos);
+      return spawnSync(process.execPath, [join(vm, 'construir.mjs'), ...args], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   }
+  /** `construir.mjs` (sin `--verificar`) sobre una copia cuyos DATOS `modifica` altera: lo que escribe es de la copia, nunca del repositorio. */
+  const construirEnCopia = (modifica: (datos: string) => void) => verificarEnCopia((_vm, datos) => modifica(datos), []);
+  const editarDatos = (datos: string, archivo: string, f: (d: J) => void): void => {
+    const ruta = join(datos, archivo);
+    const d = JSON.parse(readFileSync(ruta, 'utf8')) as J;
+    f(d);
+    writeFileSync(ruta, JSON.stringify(d, null, 2) + '\n');
+  };
   const editarJson = (vm: string, archivo: string, f: (flujo: Flujo) => void): void => {
     const ruta = join(vm, archivo);
     const flujo = JSON.parse(readFileSync(ruta, 'utf8')) as Flujo;
@@ -476,6 +484,149 @@ describe('el flujo armado es el que sale de la plantilla y de los datos', () => 
       expect(r.stderr, nombre).toContain(`«${nombre}»`);
     }
     expect(verificarEnCopia(() => undefined).status).toBe(0);
+  });
+
+  // L1. Los datos del tenant se meten dentro de expresiones: se validan, y lo que no tiene la forma esperada no construye nada.
+  it('L1: `construir.mjs` rechaza los datos del tenant con una forma peligrosa (WABA, ruta, URL, «hereda», textos con «=», comillas o saltos de línea)', () => {
+    const malos: [string, (d: J) => void, RegExp][] = [
+      ['WABA con letras', (d) => { d['receptor'].wabaIdEsperado = 'abc123'; }, /wabaIdEsperado/],
+      ['WABA corto (5 dígitos)', (d) => { d['receptor'].wabaIdEsperado = '12345'; }, /wabaIdEsperado/],
+      ['WABA que cierra la cadena', (d) => { d['receptor'].wabaIdEsperado = '1234567" }) } //'; }, /wabaIdEsperado/],
+      ['ruta con espacio', (d) => { d['receptor'].ruta = 'ruta con espacio'; }, /receptor\.ruta/],
+      ['ruta con comilla', (d) => { d['receptor'].ruta = "ruta'x"; }, /receptor\.ruta/],
+      ['ruta con «..» y punto', (d) => { d['receptor'].ruta = '../otra.ruta'; }, /receptor\.ruta/],
+      ['URL sin esquema http(s)', (d) => { d['receptor'].urlVerificador = 'javascript:alert(1)'; }, /urlVerificador/],
+      ['URL con comilla', (d) => { d['receptor'].urlVerificador = "http://interno/verificar'x"; }, /urlVerificador/],
+      ['URL con llave', (d) => { d['receptor'].urlVerificador = 'http://interno/{{ $json }}'; }, /urlVerificador/],
+      ['URL con barra invertida', (d) => { d['receptor'].urlVerificador = 'http://interno/a\\b'; }, /urlVerificador/],
+      ['URL con salto de línea', (d) => { d['receptor'].urlVerificador = 'http://interno/a\nb'; }, /urlVerificador|salto/],
+      ['ruta de prueba con punto', (d) => { d['pruebaRuta'] = 'prueba.x'; }, /pruebaRuta/],
+      ['configBase que empieza con «=»', (d) => { d['configBase'].nombreNegocio = '={{ $env.SECRETO }}'; }, /empieza con «=»/],
+      ['configBase con salto de línea', (d) => { d['configBase'].direccion = 'Calle 1\nCalle 2'; }, /salto de línea/],
+      ['configBase con llave', (d) => { d['configBase'].direccion = 'Calle {x}'; }, /llave/],
+      ['configBase con barra invertida', (d) => { d['configBase'].direccion = 'Calle \\x'; }, /barra invertida/],
+      ['credencial con comilla doble', (d) => { d['credenciales'].graph = 'Graph" , x'; }, /credenciales\.graph/],
+      ['credencial que empieza con «=»', (d) => { d['credenciales'].ingesta = '=cred'; }, /credenciales\.ingesta/],
+    ];
+    for (const [nombre, mutar, esperado] of malos) {
+      const r = construirEnCopia((datos) => editarDatos(datos, 'qtaco.json', mutar));
+      expect(r.status, nombre).toBe(1);
+      expect(r.stderr, nombre).toMatch(esperado);
+    }
+    // «hereda»: solo un nombre de archivo, y dentro de la carpeta de datos.
+    for (const hereda of ['../qtaco', 'QTACO', 'qtaco.json', 'a/b', '..', '']) {
+      const r = construirEnCopia((datos) => editarDatos(datos, 'ensayo.json', (d) => { d['hereda'] = hereda; }));
+      expect(r.status, `hereda «${hereda}»`).toBe(1);
+      expect(r.stderr, `hereda «${hereda}»`).toMatch(/hereda/);
+    }
+    // Los negativos: las formas válidas (valores reales o marcadores) construyen, y una comilla simple en un texto de configBase
+    // («Q'Taco») está bien: no se inyecta en ninguna expresión.
+    const ok = construirEnCopia((datos) => editarDatos(datos, 'qtaco.json', (d) => {
+      d['receptor'] = { ruta: 'mi-ruta_1/x', urlVerificador: 'REEMPLAZAR_URL_VERIFICADOR_OTRO', wabaIdEsperado: '100000000000042' };
+      d['configBase'].nombreNegocio = "Q'Taco Centro";
+    }));
+    expect(ok.status, ok.stderr).toBe(0);
+    // Una URL real del verificador tiene la forma válida pero NO entra al JSON: el repositorio es público y solo lleva marcadores
+    // (la guardia de anfitriones la rechaza; el valor real lo pone `preparar-import.sh` al importar).
+    const real = construirEnCopia((datos) => editarDatos(datos, 'qtaco.json', (d) => { d['receptor'].urlVerificador = 'http://verificador-interno:8080/verificar'; }));
+    expect(real.status).toBe(1);
+    expect(real.stderr).toContain('anfitrión fuera de la lista');
+  });
+
+  it('L1: `--verificar` FALLA si algún JSON menciona `subscriptions` o `subscribed_apps` (prohibición 7)', () => {
+    for (const [archivo, palabra] of [['venta-minima.qtaco.json', 'subscriptions'], ['venta-minima.prueba.json', 'subscribed_apps'], ['venta-minima.qtaco.json', 'Subscriptions']] as const) {
+      const r = verificarEnCopia((vm) => editarJson(vm, archivo, (f) => { (f.nodes[0] as NonNullable<(typeof f.nodes)[number]>).notes = `llamar a /app/${palabra}`; }));
+      expect(r.status, palabra).toBe(1);
+      expect(r.stderr, palabra).toContain('subscriptions');
+    }
+    // Negativo: sin la mención, 0 (y el código de los nodos no las usa).
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
+    expect(JSON.stringify(QTACO) + JSON.stringify(PRUEBA)).not.toMatch(/subscriptions|subscribed_apps/i);
+  });
+
+  it('L1: `--verificar` FALLA si un nodo HTTP apunta a un anfitrión fuera de la lista (Meta, Gemini, Functions de la consola)', () => {
+    const conUrl = (url: string, archivo = 'venta-minima.qtaco.json') => verificarEnCopia((vm) => editarJson(vm, archivo, (f) => {
+      (f.nodes.find((n) => n.name === 'Reportar mensaje (saliente)') as NonNullable<(typeof f.nodes)[number]>).parameters['url'] = url;
+    }));
+    for (const url of [
+      'https://evil.ejemplo.invalid/ingesta', 'http://graph.facebook.com/v26.0/x', 'https://graph.facebook.com.evil.ejemplo.invalid/x',
+      'https://graph.facebook.com@evil.ejemplo.invalid/x', 'https://evilcloudfunctions.net/x', 'https://cloudfunctions.net/x',
+      '={{ $json.destino }}', '=https://{{ $json.host }}/x', 'ftp://graph.facebook.com/x', '',
+    ]) {
+      const r = conUrl(url);
+      expect(r.status, url).toBe(1);
+      expect(r.stderr, url).toContain('anfitrión fuera de la lista');
+    }
+    // Negativos: los tres anfitriones permitidos (y una expresión con el anfitrión escrito delante) NO fallan por eso.
+    for (const url of ['https://graph.facebook.com/v26.0/x/messages', 'https://generativelanguage.googleapis.com/v1beta/x', 'https://us-east1-proyecto.cloudfunctions.net/ingesta', '=https://graph.facebook.com/{{ $json.v }}/x', 'REEMPLAZAR_URL_X']) {
+      expect(conUrl(url).stderr, url).not.toContain('anfitrión fuera de la lista');
+    }
+    expect(conUrl('https://evil.ejemplo.invalid/x', 'venta-minima.prueba.json').stderr).toContain('anfitrión fuera de la lista');
+    // Y los JSON reales cumplen: todo nodo HTTP tiene un anfitrión permitido.
+    for (const f of [QTACO, PRUEBA]) {
+      for (const n of f.nodes.filter((x) => x.type === 'n8n-nodes-base.httpRequest')) {
+        expect(String(n.parameters['url']), n.name).toMatch(/^(=?https:\/\/(graph\.facebook\.com|generativelanguage\.googleapis\.com|[a-z0-9.-]+\.cloudfunctions\.net)\/|REEMPLAZAR_[A-Z0-9_]+$|=\{\{ \$json\.url \}\}$)/);
+      }
+    }
+  });
+
+  it('L1: `--verificar` FALLA si el JSON de producción trae un webhook con ruta de prueba, o cualquier webhook que no sea la entrada del receptor', () => {
+    const conWebhook = (nombre: string, ruta: string) => verificarEnCopia((vm) => editarJson(vm, 'venta-minima.qtaco.json', (f) => {
+      const molde = f.nodes.find((n) => n.name === 'Entrega del receptor') as NonNullable<(typeof f.nodes)[number]>;
+      f.nodes.push({ ...molde, id: 'otro-webhook', name: nombre, parameters: { ...molde.parameters, path: ruta } });
+    }));
+    const a = conWebhook('Otra entrada', 'REEMPLAZAR_RUTA_DE_PRUEBA');
+    expect(a.status).toBe(1);
+    expect(a.stderr).toContain('ruta de prueba');
+    const b = conWebhook('Otra entrada', 'prueba-de-ensayo');
+    expect(b.stderr).toContain('ruta de prueba');
+    const c = conWebhook('Otra entrada', 'otra-ruta-cualquiera');
+    expect(c.status).toBe(1);
+    expect(c.stderr).toContain('no es la entrada del receptor');
+    // Negativo: en el JSON de prueba su webhook de prueba es lo normal; en el de producción, el del receptor.
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
+    expect(PRUEBA.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrada de prueba']);
+    expect(QTACO.nodes.filter((n) => n.type === 'n8n-nodes-base.webhook').map((n) => n.name)).toEqual(['Entrega del receptor']);
+  });
+
+  it('L1: `--verificar` FALLA si un `venta-minima.*.json` versionado ya no tiene su archivo de datos', () => {
+    const huerfano = verificarEnCopia((vm) => writeFileSync(join(vm, 'venta-minima.huerfano.json'), texto('venta-minima.qtaco.json')));
+    expect(huerfano.status).toBe(1);
+    expect(huerfano.stderr).toContain('venta-minima.huerfano.json');
+    expect(huerfano.stderr).toContain('ya no tiene archivo de datos');
+    // El de prueba nace de `ensayo.json`: sin él, queda huérfano.
+    const sinEnsayo = verificarEnCopia((_vm, datos) => rmSync(join(datos, 'ensayo.json')));
+    expect(sinEnsayo.status).toBe(1);
+    expect(sinEnsayo.stderr).toContain('venta-minima.prueba.json');
+    // Negativo: con todos sus datos, 0.
+    expect(verificarEnCopia(() => undefined).status).toBe(0);
+  });
+
+  it('L1: la variante `trigger` exige una credencial explícita y nunca una de la app de producción del receptor (prohibición 7)', () => {
+    const AJENA = ['AAB1', 'WA', 'Prod'].join('-'); // el nombre de la credencial que jamás debe usarse
+    const variante = (credenciales: J | undefined, extra: (vm: string) => void = () => undefined) => verificarEnCopia((vm, datos) => {
+      writeFileSync(join(datos, 'trigger.json'), JSON.stringify({ hereda: 'qtaco', nombreFlujo: 'NovuChat — Venta mínima (trigger de ensayo)', entrada: 'trigger', ...(credenciales ? { credenciales } : {}) }, null, 2) + '\n');
+      const construido = spawnSync(process.execPath, [join(vm, 'construir.mjs')], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+      if (construido.status !== 0) throw new Error(construido.stderr);
+      extra(vm);
+    });
+    // Sin credencial explícita: no construye.
+    expect(() => variante(undefined)).toThrow(/credenciales\.trigger/);
+    // Con la credencial de producción del receptor (en cualquier grafía): no construye.
+    for (const nombre of [AJENA, 'aab1 wa prod', 'WhatsApp wa-prod']) {
+      expect(() => variante({ trigger: nombre }), nombre).toThrow(/prohibición 7/);
+    }
+    // Con una credencial de una app propia: construye y verifica en 0…
+    const ok = variante({ trigger: 'WhatsApp Trigger NovuChat (app propia)' });
+    expect(ok.status, ok.stderr).toBe(0);
+    // …y si alguien cambia a mano la credencial del JSON versionado por esa, o se la quita, falla.
+    for (const credenciales of [{ whatsAppTriggerApi: { id: '', name: AJENA } }, {}] as J[]) {
+      const r = variante({ trigger: 'WhatsApp Trigger NovuChat (app propia)' }, (vm) => editarJson(vm, 'venta-minima.trigger.json', (f) => {
+        (f.nodes.find((n) => n.type === 'n8n-nodes-base.whatsAppTrigger') as NonNullable<(typeof f.nodes)[number]>).credentials = credenciales;
+      }));
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(/prohibición 7|credencial explícita/);
+    }
   });
 
   it('cada Code lleva el código real: sin marcas @@, con las seis librerías donde corresponde', () => {
