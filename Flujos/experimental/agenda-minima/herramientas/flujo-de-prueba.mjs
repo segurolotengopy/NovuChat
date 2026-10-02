@@ -31,9 +31,9 @@
  * CALENDARIO: el TERCER calendario del Demo A, leído del flujo vivo del Demo A
  * (`N8N_WORKFLOW_ID` del .env). Va al campo `calendarioForzado` de «Config base».
  */
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -41,12 +41,16 @@ const AQUI = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(AQUI, '..', '..', '..', '..');
 // La copia principal también es el repositorio (revisión de seguridad, L2): se mira la raíz común de git.
 const RAIZ_COMUN = dirname(execFileSync('git', ['-C', REPO, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' }).trim());
-const dentroDelRepo = (p) => [REPO, RAIZ_COMUN].some((r) => (p + sep).startsWith(r + sep));
+// Se compara por la ruta REAL del directorio que contiene el archivo (un enlace simbólico hacia el repositorio no lo esquiva).
+const rutaReal = (p) => { try { return join(realpathSync(dirname(p)), basename(p)); } catch (e) { return p; } };
+const dentroDelRepo = (p) => [p, rutaReal(p)].some((q) => [REPO, RAIZ_COMUN].some((r) => (q + sep).startsWith(r + sep)));
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : null; };
 const bandera = (n) => args.includes(`--${n}`);
 const morir = (m) => { console.error(`✗ ${m}`); process.exit(1); };
 
+// `--actualizar-codigo` corre SOLO: antes, con `--borrar` al lado, corría `--borrar` (revisión de seguridad del #364).
+if (bandera('actualizar-codigo') && ['borrar', 'sobre-bellido', 'sobre-demo-a', 'restaurar-respaldo', 'turno'].some((m) => args.includes(`--${m}`))) morir('--actualizar-codigo no se combina con otro modo');
 const ENV = opcion('env') ?? morir('falta --env <archivo .env del Demo A>');
 // `--actualizar-codigo` no guarda ningún estado: no necesita (ni lee) `--estado`.
 const ESTADO = bandera('actualizar-codigo') ? null : resolve(opcion('estado') ?? morir('falta --estado <archivo fuera del repositorio>'));
@@ -293,7 +297,12 @@ if (bandera('sobre-bellido')) {
  *   configuración, ni conexiones, ni ajustes. El PUT lleva los nodos VIVOS con ese único campo reemplazado.
  *   QUÉ EXIGE (si algo falla, no escribe y dice qué nodo, nunca un valor):
  *     - el flujo vivo es de Bellido o del Demo A, y NO de un cliente ajeno (Platinum, Q'Taco, captación, el
- *       sistema financiero…); y YA tiene los nodos de B (si no, es `--sobre-bellido`);
+ *       sistema financiero…): el nombre se normaliza (sin tildes, espacios ni apóstrofos) antes de compararlo; tiene
+ *       EXACTAMENTE un `WhatsApp Trigger` y su credencial NO es de un sistema ajeno (prohibición 7: un PUT seguido
+ *       de `activate` vuelve a registrar la suscripción con esa credencial); y YA tiene los nodos de B (si no, es
+ *       `--sobre-bellido`);
+ *     - el candidato es un archivo VERSIONADO del repositorio (rastreado por git y sin cambios sin confirmar; se
+ *       imprime el commit); `--permitir-sin-commit` lo salta, solo para pruebas;
  *     - el candidato no trae un Webhook de prueba ni un WhatsApp Trigger distinto del vivo;
  *     - los mismos nodos (por nombre), del mismo tipo y versión, y las mismas conexiones;
  *     - en los nodos Code, ninguna diferencia fuera de `jsCode`; en los demás nodos, ninguna diferencia de
@@ -305,15 +314,32 @@ if (bandera('sobre-bellido')) {
  *   `--previa` (opcional): guarda el flujo vivo entero ANTES de escribir, con `wx` (nunca pisa) y permisos 600.
  *   Sin `--aplicar`, en seco: lista los nodos que cambiarían y no escribe nada.
  */
-const NO_ACTUALIZAR = /platinum|q'?taco|captaci|segurolo|otp|aab1|whatsapp-?modular|receptor/i;
+// Sobre el nombre ya COMPACTADO (sin tildes, espacios ni signos): ver `compacto` más abajo.
+const NO_ACTUALIZAR_COMPACTO = /platinum|qtaco|captacion|segurolo|otp|aab1|whatsappmodular|receptor/;
 if (bandera('actualizar-codigo')) {
   const PROPIOS_DE_B_ = ['Plan del turno', 'Resolver con agenda', 'Candado', 'Resumen del turno'];
   const vivo = await llamar('GET', `/workflows/${env.N8N_WORKFLOW_ID}`);
   if (vivo.cod !== 200) morir(`GET del flujo vivo → ${vivo.cod}`);
   const v = vivo.datos;
-  if (NO_ACTUALIZAR.test(v.name) || !/bellido|demo ?a\b/i.test(v.name)) morir(`el flujo del .env no es el de Bellido ni el del Demo A («${v.name}»)`);
+  // El nombre se compara SIN tildes, espacios, apóstrofos ni signos: «Q’Taco», «Q Taco» y «Bellido — WhatsApp Modular» no esquivan la lista.
+  const compacto = (t) => String(t).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const nombreCompacto = compacto(v.name);
+  if (NO_ACTUALIZAR_COMPACTO.test(nombreCompacto) || !/bellido|demoa/.test(nombreCompacto)) morir(`el flujo del .env no es el de Bellido ni el del Demo A («${v.name}»)`);
+  const disparadores = v.nodes.filter((n) => /whatsAppTrigger/i.test(n.type));
+  if (disparadores.length !== 1) morir(`el flujo vivo tiene ${disparadores.length} WhatsApp Trigger; hace falta exactamente uno`);
+  if (Object.values(disparadores[0].credentials ?? {}).some((c) => NO_ACTUALIZAR_COMPACTO.test(compacto(c && c.name)))) morir('la credencial del disparador vivo es de un sistema ajeno (prohibición 7): no se sigue');
   if (!PROPIOS_DE_B_.every((x) => v.nodes.some((n) => n.name === x))) morir('el flujo vivo todavía no es un B (le faltan los nodos del candidato): use --sobre-bellido o --sobre-demo-a');
   const ARCHIVO = resolve(opcion('flujo') ?? join(AQUI, '..', 'agenda-minima.v0.json'));
+  // El candidato es un archivo VERSIONADO: dentro del repositorio, rastreado por git y sin cambios sin confirmar.
+  const relativo = relative(REPO, rutaReal(ARCHIVO));
+  if (relativo.startsWith('..') || relativo === '' ) morir('--flujo tiene que ser un archivo versionado DENTRO del repositorio');
+  let commitDelArchivo = 'sin comprobar';
+  if (!bandera('permitir-sin-commit')) {
+    const git = (...a) => { try { return execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim(); } catch (e) { return null; } };
+    if (git('ls-files', '--error-unmatch', '--', relativo) === null) morir('el candidato no está rastreado por git: solo se publica un archivo versionado');
+    if (git('status', '--porcelain', '--', relativo) !== '') morir('el candidato tiene cambios sin confirmar: confirme el commit (o use el archivo del commit) antes de publicar');
+    commitDelArchivo = (git('log', '-1', '--format=%h', '--', relativo) || 'desconocido');
+  }
   const cand = JSON.parse(readFileSync(ARCHIVO, 'utf8'));
   if (cand.nodes.some((n) => n.type === 'n8n-nodes-base.webhook')) morir('el candidato trae un Webhook de prueba: no se publica');
   const nv = new Map(v.nodes.map((n) => [n.name, n]));
@@ -341,11 +367,13 @@ if (bandera('actualizar-codigo')) {
     }
   }
   if (!igual(v.connections, cand.connections)) prohibidas.push('las conexiones');
-  console.log(`Vivo: «${v.name}», ${v.nodes.length} nodos, activo=${v.active}, versión publicada=${v.versionId === v.activeVersionId}. Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}): ${cand.nodes.length} nodos.`);
+  console.log(`Vivo: «${v.name}», ${v.nodes.length} nodos, activo=${v.active}, versión publicada=${v.versionId === v.activeVersionId}. Candidato (${ARCHIVO.split(sep).slice(-2).join('/')}, commit ${commitDelArchivo}): ${cand.nodes.length} nodos.`);
   console.log(`Nodos Code con código distinto (${cambian.length}): ${cambian.join(', ') || '—'}`);
   if (prohibidas.length) morir(`hay diferencias que este modo NO toca (use --sobre-bellido o revise): ${prohibidas.join(' · ')}`);
   if (!cambian.length) morir('no hay nada que actualizar: el código vivo ya es el del candidato');
+  if (args.includes('--previa') && (!opcion('previa') || String(opcion('previa')).startsWith('--'))) morir('--previa necesita un archivo (fuera del repositorio)');
   if (!APLICAR) { console.log('\nEn seco: no se escribió nada. Agregue --aplicar.'); process.exit(0); }
+  if (args.includes('--previa') && !opcion('previa')) morir('--previa necesita un archivo (fuera del repositorio)');
   const PREVIA = opcion('previa') ? resolve(opcion('previa')) : null;
   if (PREVIA) {
     if (dentroDelRepo(PREVIA)) morir('--previa tiene que estar FUERA del repositorio (lleva ids y datos del cliente)');
@@ -370,7 +398,10 @@ if (bandera('actualizar-codigo')) {
     if (tras.versionId !== tras.activeVersionId) morir(`la versión ACTIVA no es la que se acaba de escribir (activate → ${a.cod}). Revise n8n`);
     if (!codigoOk(tras)) morir('después de activar, el código leído no es el del candidato');
   }
-  console.log(`✓ «${tras.name}»: ${tras.nodes.length} nodos, activo=${tras.active}, publicada=${tras.versionId === tras.activeVersionId}; ${cambian.length} nodos con el código nuevo; credenciales, configuración y conexiones intactas.`);
+  // Lo que el mensaje afirma, se LEYÓ: las credenciales de cada nodo y las conexiones, contra el vivo de antes del PUT.
+  const credenciales = (w) => JSON.stringify(Object.fromEntries(w.nodes.map((n) => [n.name, n.credentials ?? null]).sort(([x], [y]) => (x < y ? -1 : 1))));
+  if (credenciales(tras) !== credenciales(v) || !igual(tras.connections, v.connections) || tras.nodes.length !== v.nodes.length) morir('después del PUT las credenciales o las conexiones no coinciden con las de antes: REVISE n8n YA');
+  console.log(`✓ «${tras.name}»: ${tras.nodes.length} nodos, activo=${tras.active}, publicada=${tras.versionId === tras.activeVersionId}; ${cambian.length} nodos con el código nuevo (leído de vuelta); credenciales y conexiones iguales a las de antes (leídas de vuelta).`);
   console.log('FALTA, ya: un mensaje real desde un teléfono registrado y la lectura de su ejecución en n8n.');
   process.exit(0);
 }

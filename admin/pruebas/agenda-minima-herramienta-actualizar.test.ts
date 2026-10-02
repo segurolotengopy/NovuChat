@@ -10,7 +10,7 @@
  * Cada «NIEGA» comprueba además que NO hubo ningún PUT.
  */
 import { execFile } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -44,7 +44,7 @@ function vivoDe(nombre: string, cambios: (w: J) => void = () => undefined): J {
 }
 
 // ---------------------------------------------------------------------------------- n8n de mentira
-interface Mundo { flujo: J; puts: J[]; activaciones: number; cabeceras: string[]; activarAlGuardar: boolean; activarNoArregla: boolean; putFalla: boolean; guardaOtroCodigo: boolean }
+interface Mundo { flujo: J; puts: J[]; activaciones: number; cabeceras: string[]; activarAlGuardar: boolean; activarNoArregla: boolean; putFalla: boolean; guardaOtroCodigo: boolean; cambiaCredenciales: boolean }
 let mundo: Mundo;
 let servidor: Server;
 let carpeta = '';
@@ -65,6 +65,7 @@ beforeAll(async () => {
         mundo.puts.push(b);
         mundo.flujo = { ...mundo.flujo, name: b.name, nodes: b.nodes, connections: b.connections, settings: b.settings, versionId: 'v' + String(mundo.puts.length + 1) };
         // Un n8n que dice «200» pero guarda otra cosa: la herramienta tiene que LEER de vuelta y notarlo.
+        if (mundo.cambiaCredenciales) ((mundo.flujo.nodes as J[]).find((n) => n.name === 'Leer agenda')!).credentials = { googleCalendarOAuth2Api: { id: 'otra', name: 'Otra credencial' } };
         if (mundo.guardaOtroCodigo) ((mundo.flujo.nodes as J[]).find((n) => n.name === 'Candado')!).parameters.jsCode = '// otro codigo';
         if (mundo.activarAlGuardar) mundo.flujo.activeVersionId = mundo.flujo.versionId;
         return enviar(200, mundo.flujo);
@@ -86,11 +87,11 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise<void>((ok) => servidor.close(() => ok())); rmSync(carpeta, { recursive: true, force: true }); });
 
 const nuevo = (flujo: J, extra: Partial<Mundo> = {}): void => {
-  mundo = { flujo, puts: [], activaciones: 0, cabeceras: [], activarAlGuardar: true, activarNoArregla: false, putFalla: false, guardaOtroCodigo: false, ...extra };
+  mundo = { flujo, puts: [], activaciones: 0, cabeceras: [], activarAlGuardar: true, activarNoArregla: false, putFalla: false, guardaOtroCodigo: false, cambiaCredenciales: false, ...extra };
 };
 async function correr(...args: string[]): Promise<{ codigo: number; salida: string }> {
   try {
-    const r = await ejecutar(process.execPath, [HERRAMIENTA, '--env', join(carpeta, '.env.falso'), '--actualizar-codigo', ...args], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
+    const r = await ejecutar(process.execPath, [HERRAMIENTA, '--env', join(carpeta, '.env.falso'), '--actualizar-codigo', ...(args.includes('--exigir-commit') ? [] : ['--permitir-sin-commit']), ...args.filter((x) => x !== '--exigir-commit')], { env: entornoDelEmulador(undefined), encoding: 'utf8' });
     return { codigo: 0, salida: r.stdout + r.stderr };
   } catch (e) {
     const x = e as { code: number; stdout: string; stderr: string };
@@ -241,12 +242,111 @@ describe('lo que la herramienta se niega a hacer (y no hay ningún PUT)', () => 
     nuevo(vivoDe(BELLIDO));
     const roto = candidato();
     nodo(roto, 'Candado').parameters.jsCode = '@@nodos/candado.js';
-    const ruta = join(carpeta, 'roto.json');
+    // Dentro del repositorio (si no, se niega antes por ser un archivo de afuera); se borra siempre.
+    const ruta = join(CARPETA, `candidato-roto-${String(Date.now())}.json`);
     writeFileSync(ruta, JSON.stringify(roto));
+    try {
+      const r = await correr('--aplicar', '--flujo', ruta);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).toMatch(/el candidato no trae el código armado/);
+      expect(mundo.puts).toHaveLength(0);
+    } finally { rmSync(ruta, { force: true }); }
+  });
+});
+
+describe('segunda ronda de la revisión de seguridad (#364): nombre, disparador, candidato versionado y modos', () => {
+  const niega = async (flujo: J, patron: RegExp, ...args: string[]): Promise<void> => {
+    nuevo(flujo);
+    const r = await correr('--aplicar', ...args);
+    expect(r.codigo, r.salida).toBe(1);
+    expect(r.salida).toMatch(patron);
+    expect(mundo.puts).toHaveLength(0);
+  };
+  it('NIEGA: un nombre que esquiva la lista con espacios, apóstrofos tipográficos o mayúsculas (se compara compacto)', async () => {
+    for (const nombre of ['Bellido — WhatsApp Modular', 'Demo A — Seguro Lo Tengo', 'Bellido — Q’Taco', 'Bellido Q Taco', 'BELLIDO — PLATINUM', 'Demo A — Captación']) {
+      await niega(vivoDe(nombre), /no es el de Bellido ni el del Demo A/);
+    }
+  });
+  it('NIEGA: si la credencial del WhatsApp Trigger vivo es de un sistema ajeno, aunque el nombre del flujo sea el de Bellido (prohibición 7)', async () => {
+    await niega(vivoDe(BELLIDO, (w) => {
+      const t = (w.nodes as J[]).find((n) => /whatsAppTrigger/i.test(n.type))!;
+      t.credentials = { whatsAppTriggerApi: { id: 'x', name: 'Credencial de otp (sistema ajeno)' } };
+    }), /credencial del disparador vivo es de un sistema ajeno/);
+  });
+  it('NIEGA: un flujo vivo con DOS WhatsApp Trigger, o con ninguno', async () => {
+    await niega(vivoDe(BELLIDO, (w) => {
+      const t = (w.nodes as J[]).find((n) => /whatsAppTrigger/i.test(n.type))!;
+      (w.nodes as J[]).push({ ...JSON.parse(JSON.stringify(t)) as J, id: 'otro', name: 'Otro disparador' });
+    }), /tiene 2 WhatsApp Trigger/);
+    await niega(vivoDe(BELLIDO, (w) => { w.nodes = (w.nodes as J[]).filter((n) => !/whatsAppTrigger/i.test(n.type)); }), /tiene 0 WhatsApp Trigger/);
+  });
+  it('NIEGA: un candidato FUERA del repositorio (un archivo cualquiera con el código que se quiera)', async () => {
+    nuevo(vivoDe(BELLIDO));
+    const ruta = join(carpeta, 'cualquiera.json');
+    writeFileSync(ruta, JSON.stringify(candidato()));
     const r = await correr('--aplicar', '--flujo', ruta);
     expect(r.codigo).toBe(1);
-    expect(r.salida).toMatch(/el candidato no trae el código armado/);
+    expect(r.salida).toMatch(/versionado DENTRO del repositorio/);
     expect(mundo.puts).toHaveLength(0);
+  });
+  it('NIEGA: un candidato dentro del repositorio pero SIN rastrear por git', async () => {
+    nuevo(vivoDe(BELLIDO));
+    const ruta = join(CARPETA, `candidato-sin-rastrear-${String(Date.now())}.json`);
+    writeFileSync(ruta, JSON.stringify(candidato()));
+    try {
+      const r = await correr('--aplicar', '--exigir-commit', '--flujo', ruta);
+      expect(r.codigo).toBe(1);
+      expect(r.salida).toMatch(/no está rastreado por git/);
+      expect(mundo.puts).toHaveLength(0);
+    } finally { rmSync(ruta, { force: true }); }
+  });
+  it('el candidato por omisión, versionado y sin cambios, pasa SIN la bandera y se imprime su commit', async () => {
+    const sucio = await ejecutar('git', ['-C', CARPETA, 'status', '--porcelain', '--', 'agenda-minima.v0.json'], { encoding: 'utf8', env: entornoDelEmulador(undefined) });
+    if (sucio.stdout.trim() !== '') return; // el archivo tiene cambios locales sin confirmar: esta comprobación no aplica aquí
+    nuevo(vivoDe(BELLIDO));
+    const r = await correr('--exigir-commit');
+    expect(r.codigo, r.salida).toBe(0);
+    expect(r.salida).toMatch(/commit [0-9a-f]{7,}/);
+  });
+  it('NIEGA: --actualizar-codigo no se combina con otro modo (antes, con --borrar, corría --borrar)', async () => {
+    nuevo(vivoDe(BELLIDO));
+    for (const otro of ['--borrar', '--sobre-bellido', '--sobre-demo-a', '--restaurar-respaldo']) {
+      const r = await correr('--aplicar', otro);
+      expect(r.codigo, otro).toBe(1);
+      expect(r.salida, otro).toMatch(/no se combina con otro modo/);
+    }
+    expect(mundo.puts).toHaveLength(0);
+  });
+  it('NIEGA: --previa sin archivo (al final, o seguido de otra opción) NO se omite en silencio', async () => {
+    nuevo(vivoDe(BELLIDO));
+    for (const args of [['--aplicar', '--previa'], ['--previa', '--aplicar']]) {
+      const r = await correr(...args);
+      expect(r.codigo, args.join(' ')).toBe(1);
+      expect(r.salida).toMatch(/--previa necesita un archivo/);
+    }
+    expect(mundo.puts).toHaveLength(0);
+  });
+  it('NIEGA: --previa a través de un enlace simbólico hacia el repositorio', async () => {
+    nuevo(vivoDe(BELLIDO));
+    const enlace = join(carpeta, 'enlace-al-repo');
+    symlinkSync(CARPETA, enlace);
+    const r = await correr('--aplicar', '--previa', join(enlace, 'previa-por-enlace.json'));
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/FUERA del repositorio/);
+    expect(mundo.puts).toHaveLength(0);
+  });
+  it('NIEGA: si después del PUT las credenciales cambiaron, el mensaje NO dice «intactas» y avisa que se revise n8n', async () => {
+    nuevo(vivoDe(BELLIDO), { cambiaCredenciales: true });
+    const r = await correr('--aplicar');
+    expect(r.codigo).toBe(1);
+    expect(r.salida).toMatch(/las credenciales o las conexiones no coinciden con las de antes/);
+    expect(r.salida).not.toMatch(/✓/);
+  });
+  it('el éxito afirma solo lo que leyó: código, credenciales y conexiones', async () => {
+    nuevo(vivoDe(BELLIDO));
+    const r = await correr('--aplicar');
+    expect(r.salida).toMatch(/leído de vuelta\); credenciales y conexiones iguales a las de antes \(leídas de vuelta\)/);
+    expect(r.salida).not.toMatch(/configuración/);
   });
 });
 
