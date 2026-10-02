@@ -38,6 +38,8 @@
  *   reportar      false si el flujo no reporta: el reporte no se arma
  *   desde         [x, y] del primer nodo (por defecto [8120, 300])
  *   lote          { tamano: 1, intervaloMs: 1500 }
+ *   reportarFallidos  true reporta TAMBIÉN el mensaje que no salió (como Agenda mínima). Por defecto no: si Meta rechazó el
+ *                 original Y el respaldo, el mensaje no salió y no se cuenta como enviado.
  * Devuelve { nodes, connections, entrada, salidas }: `entrada` es el nombre del primer nodo (cuélguelo de «armado») y
  * `salidas` son los nodos que hay que conectar a lo que sigue (el último del reporte y su rama «no»).
  */
@@ -81,7 +83,7 @@ export function nodosDeEnvio(opciones = {}) {
       credentials: credencialDeGraph, onError: 'continueRegularOutput', alwaysOutputData: true,
       parameters: {
         method: 'POST',
-        url: "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        url: "=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String($json.waGraphVersion)) ? $json.waGraphVersion : 'v26.0' }}/{{ String($json.phoneNumberId).replace(/\\D/g, '') }}/messages",
         authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
         sendBody: true, specifyBody: 'json', jsonBody: '={{ JSON.stringify($json.payload) }}',
         options: { timeout: 15000, batching: lote },
@@ -98,7 +100,7 @@ export function nodosDeEnvio(opciones = {}) {
       credentials: credencialDeGraph, onError: 'continueRegularOutput', alwaysOutputData: true,
       parameters: {
         method: 'POST',
-        url: `=https://graph.facebook.com/{{ ${A}.item.json.waGraphVersion || 'v26.0' }}/{{ ${A}.item.json.phoneNumberId }}/messages`,
+        url: `=https://graph.facebook.com/{{ /^v\\d+\\.\\d$/.test(String(${A}.item.json.waGraphVersion)) ? ${A}.item.json.waGraphVersion : 'v26.0' }}/{{ String(${A}.item.json.phoneNumberId).replace(/\\D/g, '') }}/messages`,
         authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
         sendBody: true, specifyBody: 'json',
         jsonBody: `={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: ${A}.item.json.para, type: 'text', text: { preview_url: true, body: String(${A}.item.json.respaldo || '').slice(0, 4000) } }) }}`,
@@ -116,8 +118,10 @@ export function nodosDeEnvio(opciones = {}) {
     nodes.push(
       {
         id: 'reportar-sal-si', name: '¿Reportar? (saliente)', type: 'n8n-nodes-base.if', typeVersion: 2.2, position: [x0 + 960, y0],
-        parameters: condicion(`={{ ${A}.item.json.reportar === true }}`),
-        notes: `Solo lo que se envio AL CLIENTE se reporta (para = «${para}»), y no en modo prueba.`,
+        parameters: condicion(o.reportarFallidos === true
+          ? `={{ ${A}.item.json.reportar === true }}`
+          : `={{ ${A}.item.json.reportar === true && !($json && $json.error) }}`),
+        notes: `Solo lo que se envio AL CLIENTE se reporta (para = «${para}»), no en modo prueba y no si ni el respaldo salió (sin idMeta no se cuenta como enviado).`,
       },
       {
         id: 'reportar-saliente', name: 'Reportar mensaje (saliente)', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, position: [x0 + 1200, y0 - 140],

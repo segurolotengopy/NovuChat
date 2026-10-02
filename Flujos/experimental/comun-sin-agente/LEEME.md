@@ -8,8 +8,8 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
 |---|---|
 | `construir.mjs` | Armador genérico: plantilla + código de los nodos → un JSON por variante (producción y prueba), con `--verificar`. Se configura con un `construir.config.json` en la carpeta del flujo. Reproduce, byte por byte, los JSON de Agenda mínima. |
 | `src/mensajes.js` | Constructores de lo que sale por WhatsApp: texto, botones, lista, enlace, URL de wa.me y «pasar con una persona» (botón, o solo texto sin mención del botón si no hay a quién). Prefijo `cm`. |
-| `src/filtro-redaccion.js` | Lo que el modelo redacta se **verifica** antes de salir: monto, promesas, afirmar un hecho que solo el código puede afirmar, huecos de plantilla, enlaces ajenos, identidad. Y se **pule**. Las reglas de NovuChat no se apagan con opciones. |
-| `src/envio.mjs` | La cadena de envío: nodos y conexiones (¿Enviar de verdad?, envío con lote de 1 y 1,5 s, respaldo en texto, reporte saliente), sin credenciales por id. `injertar()` la cuelga de una plantilla. |
+| `src/filtro-redaccion.js` | Lo que el modelo redacta se **verifica** antes de salir: monto (también en letra), promesas, afirmar un hecho que solo el código puede afirmar (cita, pedido, pago, ✅), negar ser una IA, huecos de plantilla, **enlaces: por defecto ninguno sale**, identidad. Y se **pule**; `cmRevisarRedaccion` pule y valida lo pulido. Las reglas de NovuChat no se apagan con opciones. Normaliza (NFKC, sin invisibles). |
+| `src/envio.mjs` | La cadena de envío: nodos y conexiones (¿Enviar de verdad?, envío con lote de 1 y 1,5 s, respaldo en texto, reporte saliente), sin credenciales por id. El `phoneNumberId` y la versión de Graph se validan antes de entrar a la URL, y lo que ni el respaldo pudo enviar no se reporta como enviado. `injertar()` la cuelga de una plantilla. |
 
 ## Cómo se usa
 
@@ -40,7 +40,7 @@ código, y el modelo solo redacta lo que el código verifica. Sacado de `Flujos/
 
 ## Lo que NO hace
 
-- **Ninguna lectura fuera de `raiz`**, ninguna ruta con `..`, ningún `.env`, ninguna llamada a la red.
+- **Ninguna lectura fuera de `raiz`** (por la ruta real: un enlace simbólico que sale no se sigue), ni fuera de `Flujos/`; `raiz` es relativa; ninguna ruta con `..`, ningún `.env`, ninguna llamada a la red. Una variante nunca pisa el config ni la plantilla.
 - **Ningún identificador**: las credenciales van por nombre y la URL de la ingesta es obligatoria.
 - **Nada de agenda ni de un negocio**: ni horarios, ni calendario, ni «lo clínico», ni nombres de personas.
   Eso entra por `opciones` (`prohibidos`, `extra`, `quienPromete`).

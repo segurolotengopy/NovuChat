@@ -32,14 +32,19 @@ const OPC: OpcionesDeEnvio = {
 const NOMBRES = ['¿Enviar de verdad?', 'Enviar a WhatsApp', '¿Falló el envío?', 'Enviar respaldo', '¿Reportar? (saliente)', 'Reportar mensaje (saliente)'];
 
 describe('equivalencia con los nodos de Agenda mínima', () => {
-  const cadena = nodosDeEnvio(OPC);
+  // Tres diferencias A PROPÓSITO (revisión de seguridad del 01/10), que se prueban abajo: el `phoneNumberId` y la versión
+  // de Graph se validan antes de entrar a la URL, y lo que no salió ni por el respaldo no se reporta como enviado
+  // (`reportarFallidos: true` lo devuelve a lo de Agenda mínima). Todo lo demás es IGUAL.
+  const cadena = nodosDeEnvio({ ...OPC, reportarFallidos: true });
+  const sinUrl = (p: J): J => { const { url, ...resto } = p; void url; return resto; };
   for (const nombre of NOMBRES) {
     it(`«${nombre}»`, () => {
       const g = cadena.nodes.find((n) => n.name === nombre)!;
       const a = deAgenda(nombre);
       expect(g.type).toBe(a.type);
       expect(g.typeVersion).toBe(a.typeVersion);
-      expect(g.parameters).toEqual(a.parameters);
+      if (nombre === 'Enviar a WhatsApp' || nombre === 'Enviar respaldo') expect(sinUrl(g.parameters)).toEqual(sinUrl(a.parameters));
+      else expect(g.parameters).toEqual(a.parameters);
       expect(g.credentials ?? null).toEqual(a.credentials ?? null);
       expect(g.onError ?? null).toBe(a.onError ?? null);
       expect(g.alwaysOutputData ?? null).toBe(a.alwaysOutputData ?? null);
@@ -137,6 +142,40 @@ describe('opciones', () => {
     expect(c.nodes.find((n) => n.name === 'Enviar respaldo')!['credentials']).toEqual({ httpHeaderAuth: { id: '', name: 'Graph X' } });
     expect(c.nodes.find((n) => n.name === 'Reportar mensaje (saliente)')!['credentials']).toEqual({ httpHeaderAuth: { id: '', name: 'Ingesta Y' } });
     expect(c.nodes.find((n) => n.name === 'Reportar mensaje (saliente)')!.parameters['url']).toBe('https://ingesta.example/x');
+  });
+});
+
+describe('lo que la revisión de seguridad encontró (01/10): URL validada y reporte solo de lo que salió', () => {
+  const cadena = nodosDeEnvio(OPC);
+  const urlDe = (n: string): string => cadena.nodes.find((x) => x.name === n)!.parameters['url'] as string;
+  const evaluarUrl = (nombre: string, item: J): string => {
+    const m = /^=(.*)$/s.exec(urlDe(nombre))![1]!;
+    return m.replace(/\{\{([\s\S]*?)\}\}/g, (_: string, e: string) => {
+      // nosemgrep: devsecops.js-eval-prohibido
+      const f = new Function('$json', '$', `return (${e});`) as (j: J, r: unknown) => unknown;
+      return String(f(item, () => ({ item: { json: item } })));
+    });
+  };
+  it('el `phoneNumberId` y la versión de Graph no pueden alterar la URL del envío', () => {
+    expect(evaluarUrl('Enviar a WhatsApp', { phoneNumberId: '12345', waGraphVersion: 'v26.0' })).toBe('https://graph.facebook.com/v26.0/12345/messages');
+    // Un valor con `/`, `?`, `@` o letras se limpia o se descarta: la petición nunca sale a otro host o ruta.
+    expect(evaluarUrl('Enviar a WhatsApp', { phoneNumberId: '12345/../x?a=b@evil', waGraphVersion: 'v26.0/../x' })).toBe('https://graph.facebook.com/v26.0/12345/messages');
+    expect(evaluarUrl('Enviar a WhatsApp', { phoneNumberId: '12345', waGraphVersion: undefined })).toBe('https://graph.facebook.com/v26.0/12345/messages');
+  });
+  it('el respaldo valida igual (lee del nodo de armado)', () => {
+    expect(evaluarUrl('Enviar respaldo', { phoneNumberId: '9@x', waGraphVersion: 'latest' })).toBe('https://graph.facebook.com/v26.0/9/messages');
+  });
+  const condicion = (c: ReturnType<typeof nodosDeEnvio>): string => c.nodes.find((n) => n.name === '¿Reportar? (saliente)')!.parameters['conditions'].conditions[0].leftValue as string;
+  const evaluarReporte = (c: ReturnType<typeof nodosDeEnvio>, json: J): unknown => expresion(condicion(c), json, { 'Armar mensajes': { reportar: true } });
+  it('por defecto NO se reporta un mensaje que ni el respaldo pudo enviar (sin idMeta no se cuenta como enviado)', () => {
+    expect(evaluarReporte(cadena, { messages: [{ id: 'wamid.X' }] })).toBe(true);
+    expect(evaluarReporte(cadena, { error: { message: 'rechazado' } })).toBe(false);
+  });
+  it('`reportarFallidos: true` conserva lo de Agenda mínima (se reporta igual)', () => {
+    expect(evaluarReporte(nodosDeEnvio({ ...OPC, reportarFallidos: true }), { error: { message: 'x' } })).toBe(true);
+  });
+  it('un item que NO se debe reportar no se reporta, salga o no', () => {
+    expect(expresion(condicion(cadena), { messages: [{ id: 'a' }] }, { 'Armar mensajes': { reportar: false } })).toBe(false);
   });
 });
 

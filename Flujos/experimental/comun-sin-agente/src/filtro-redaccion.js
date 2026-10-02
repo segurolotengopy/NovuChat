@@ -16,7 +16,7 @@
 // opciones de `cmMotivoDeRechazo` (todas opcionales):
 //   maximo            largo máximo (900)
 //   permitirMontos    false por defecto: un MONTO nunca sale de la redacción, lo dice el código con su cifra
-//   enlacesPermitidos lista de textos: todo enlace http(s) del texto tiene que estar entre ellos (null = no se revisa)
+//   enlacesPermitidos los enlaces COMPLETOS del negocio; por defecto NINGÚN enlace sale (null apaga la revisión)
 //   quienPromete      sujetos (ya normalizados) cuyo «<sujeto> te…» es una promesa: ['recepcion', 'el doctor']
 //   prohibidos        regex extra, probadas contra el texto NORMALIZADO (minúsculas y sin tildes)
 //   textoDelCliente   lo que preguntó el cliente: a una pregunta de IDENTIDAD no se contesta empezando con «Sí»
@@ -25,18 +25,39 @@
 // negar ser una IA y los huecos de plantilla se revisan SIEMPRE, y no se pueden apagar.
 
 function cmNorm(t) {
-  return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/\s+/g, ' ').trim();
+  // NFKC junta las formas de ancho completo («ｑｕｅｄó» → «quedó»); se quitan los caracteres invisibles (U+200B a U+200D,
+  // U+2060, U+FEFF) y el guion blando, que partían una palabra sin que se viera («agen​dé»).
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 // «Política: el asistente solo ofrece lo que el flujo cumple»: ninguna promesa sin un mecanismo detrás.
-const CM_PROMESAS = /lo consulto|lo consultar[eé]|te aviso|te avisar[eé]|te avisamos|te llamamos|te llamar[eé]|te escribir[aá]n|te escribiremos|te contactar[eé]|nos comunicaremos|te confirmo luego/;
-// Lo que SOLO el código puede afirmar: una reserva o un pedido registrado, un pago recibido (el comprobante no
-// es una acreditación bancaria: prohibición 3), y ser una persona (prohibición 4: nunca negar ser una IA).
-const CM_AFIRMA = /\b(qued[oa]|esta|estan) (agendad|confirmad|reservad|registrad|list|hech|fij|pagad|recibid|acreditad|verificad)|\bagende\b|\breserve\b|\bte (agende|reserve)\b|confirm(o|ada|ado) (tu|la|su) (cita|reserva|pedido)|tu (cita|reserva|pedido) (ya )?(esta|quedo|queda)|pago (acreditad|verificad|confirmad)|recibimos tu pago|no soy (una |un )?(ia|inteligencia|bot|robot|asistente virtual)|soy (una |un )?(persona|humana|humano)\b/;
-const CM_MONTO = /\b\d[\d.,]*\s*(bs|bolivianos?|usd|dolares)\b|\bbs\.?\s*\d|\$\s*\d/;
+const CM_PROMESAS = /lo consulto|lo consultar[eé]|consultar[eé]|\b(te|le) avis(o|ar[eé]|amos)\b|\b(te|le) llam(amos|ar[eé]|aremos)\b|te vamos a (llamar|avisar|escribir|contactar)|te van a (llamar|contactar|escribir|avisar)|te escribir[aá]n|te escribiremos|\b(te|le) contactar[eé]|nos comunicaremos|\b(te|le) confirm(o|ar[eé]) (luego|despues|mas tarde|manana)|te confirmar[eé]/;
+// Lo que SOLO el código puede afirmar. Por defecto se rechaza todo lo que SUENA a confirmación: un falso rechazo
+// cae en el texto fijo del código (barato); un falso «quedó agendada» es una cita que no existe (CLAUDE.md).
+//   - participios de lo que el código hace o confirma: agendada, reservado, registrado, confirmada, anotado,
+//     reprogramada, cancelada, acreditado, aprobado, verificado, pagado, recibido (de un pago)…
+//   - primera persona: «agendé», «reservé», «registré», «confirmé», «anoté», «reprogramé», «he reservado»…
+//   - el pago: «recibimos tu pago», «pago recibido/acreditado/aprobado», «tu pago fue…»
+//   - marcas de visto bueno que pone el código: ✅ ✔ ☑
+// Y negar ser una IA (prohibición 4: NUNCA): «no soy un bot / una máquina / un asistente», «soy una persona»,
+// «hablas con una persona», «persona real», «de carne y hueso».
+const CM_AFIRMA = /\b(agendad|reservad|registrad|confirmad|anotad|reprogramad|cancelad|acreditad|aprobad|verificad|pagad)[oa]s?\b|\b(agende|reserve|registre|confirme|anote|reprograme|cancele)\b|\bte (agende|reserve|registre|confirme|anote)\b|\b(qued[oa]|esta|estan|fue|fueron|ha sido|han sido) (list|hech|fij|recibid|ya)[oa]s?\b|\b(pago|abono|deposito|comprobante) (recibid|acreditad|aprobad|confirmad|verificad|registrad)|\brecib(i|imos|ido) (tu|el|su) (pago|abono|deposito|comprobante)|\btu (cita|reserva|pedido|pago) (ya )?(esta|quedo|queda|fue|ha sido)\b|\bconfirm(o|amos) (tu|la|su|el) (cita|reserva|pedido|pago)\b|[✅✔☑]|no soy (una |un )?(ia|inteligencia|bot|chatbot|robot|maquina|programa|asistente|virtual)|\bsoy (una |un )?(persona|humana|humano|ser humano)\b|\bhablas con (una |un )?(persona|humano|humana)\b|\bpersona (real|de verdad)\b|carne y hueso/;
+const CM_PALABRA_DE_NUMERO = 'un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|quince|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|doscientos|trescientos|quinientos|mil|medio';
+const CM_MONTO = new RegExp('\\b\\d[\\d.,]*\\s*(bs|bob|bolivianos?|usd|usdt|dolar(es)?|\\$us)\\b|\\b(?:bs|bob|usd)\\.?\\s*\\d|\\$\\s*\\d|\\b(?:' + CM_PALABRA_DE_NUMERO + ')\\s+(bolivianos?|dolar(es)?|bs|bob|usdt)\\b');
 // Un hueco de plantilla («a las )», «{{x}}», «undefined») nunca sale.
 const CM_HUECO = /\(\s*\)|\ba las?\s*[).,;:!?]|\ba las?\s*$|\bde\s*\)|«\s*»|\{\{|undefined|null\b/;
 const CM_PREGUNTA_DE_IDENTIDAD = /\b(eres|es|sos) (el |la )?(doctor|doctora|dr|dra|persona|humano|humana|bot|robot)\b|\bquien (eres|es)\b/;
+
+// Los enlaces de un texto: con esquema, con `www.`, o un dominio suelto con una terminación conocida.
+const CM_TERMINACIONES = 'com|net|org|bo|app|io|me|ly|link|info|biz|co|site|online|shop|store|xyz|top|gl|page|dev|edu|gob';
+const CM_ENLACE = new RegExp('(?:https?:\\/\\/|www\\.)\\S+|\\b[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.(?:' + CM_TERMINACIONES + ')(?![a-z0-9-])(?:\\/\\S*)?', 'gi');
+function cmEnlacesDe(texto) {
+  const t = String(texto || '').normalize('NFKC').replace(/[​-‍⁠﻿­]/g, '');
+  return (t.match(CM_ENLACE) || []).map((e) => e.replace(/[).,;:!?»”"']+$/, ''));
+}
+function cmNormEnlace(e) {
+  return String(e || '').normalize('NFKC').trim().replace(/[).,;:!?»”"']+$/, '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').toLowerCase();
+}
 
 function cmMotivoDeRechazo(texto, opciones) {
   const o = opciones || {};
@@ -54,10 +75,16 @@ function cmMotivoDeRechazo(texto, opciones) {
   const pregunta = cmNorm(o.textoDelCliente || '');
   if (pregunta && CM_PREGUNTA_DE_IDENTIDAD.test(pregunta) && /^\W*si\b/.test(n)) return 'identidad';
   for (const re of (o.prohibidos || [])) if (re.test(n)) return 'prohibido';
-  if (Array.isArray(o.enlacesPermitidos)) {
-    const propios = o.enlacesPermitidos.map((x) => String(x || '')).join(' ');
-    const enlaces = s.match(/https?:\/\/\S+/gi) || [];
-    if (enlaces.some((e) => propios.indexOf(e.replace(/[).,;:!?]+$/, '')) < 0)) return 'enlace_ajeno';
+  // ENLACES: por defecto NINGUNO sale. `enlacesPermitidos` es la lista de enlaces COMPLETOS del negocio (mapa, redes,
+  // wa.me). Se detectan `https?://…`, `www.…` y los dominios sueltos más comunes (wa.me/…, bit.ly/…, algo.com); un
+  // enlace sale solo si es IGUAL a uno de la lista o cuelga de él (`/`, `?` o `#` después). `null` apaga la revisión
+  // y debe ser una decisión escrita del flujo.
+  if (o.enlacesPermitidos !== null) {
+    const lista = (o.enlacesPermitidos || []).map((x) => cmNormEnlace(x)).filter(Boolean);
+    for (const e of cmEnlacesDe(s)) {
+      const n = cmNormEnlace(e);
+      if (!lista.some((p) => n === p || (n.startsWith(p) && /[\/?#]/.test(n.charAt(p.length))))) return 'enlace_ajeno';
+    }
   }
   for (const f of (o.extra || [])) {
     const m = f(s, n);
@@ -77,7 +104,8 @@ function cmRedaccionValida(texto, opciones) {
 function cmPulirRedaccion(texto, opciones) {
   const o = opciones || {};
   const ABREV = /\b(Dr|Dra|Sr|Sra|Srta|Lic|Ing|Prof|Esp|Av|Edif|Of|No|Nro)\.$/i;
-  const trozos = String(texto || '').trim().split(/(?<=[.!?…])\s+/);
+  // Tope de largo: el pulido parte por oraciones y un texto enorme lo volvía cuadrático. Una redacción válida mide ≤ 900.
+  const trozos = String(texto || '').slice(0, 5000).trim().split(/(?<=[.!?…])\s+/);
   const oraciones = [];
   for (const t of trozos) {
     if (oraciones.length && ABREV.test(oraciones[oraciones.length - 1])) oraciones[oraciones.length - 1] += ' ' + t;
@@ -95,4 +123,10 @@ function cmPulirRedaccion(texto, opciones) {
     t = t.replace(/[A-Za-zÀ-ÿ]+/g, (x) => (x !== w && sinTilde(x) === sinTilde(w)) ? w : x);
   }
   return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+// LO QUE SALE es lo PULIDO, así que se valida lo pulido (pulir puede dejar un «Sí» al principio de lo que era
+// «Hola. Sí, soy yo»). Devuelve { texto, motivo }: si `motivo` no es '', se descarta y se usa el texto fijo del código.
+function cmRevisarRedaccion(texto, opciones) {
+  const pulido = cmPulirRedaccion(texto, opciones);
+  return { texto: pulido, motivo: cmMotivoDeRechazo(pulido, opciones) };
 }

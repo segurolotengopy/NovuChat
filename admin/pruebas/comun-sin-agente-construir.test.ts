@@ -10,7 +10,7 @@
  *     repetir ids o nombres de nodo, quitar un nodo que no existe, o escribir en el modo `--verificar`.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,8 @@ import {
 } from '../../Flujos/experimental/comun-sin-agente/construir.mjs';
 
 const aqui = dirname(fileURLToPath(import.meta.url));
+// Los proyectos de juguete viven en una carpeta temporal: el tope de lectura de las pruebas es esa carpeta.
+const TOPE = tmpdir();
 const COMUN = join(aqui, '../../Flujos/experimental/comun-sin-agente');
 const AGENDA = join(aqui, '../../Flujos/experimental/agenda-minima');
 
@@ -103,14 +105,14 @@ const codigo = (dir: string, nombre: string, variante = 'prod.json'): string =>
 describe('las marcas y los paquetes', () => {
   it('@@nodos/x.js (todo) = librería + común + nodo; @@comun: = común + nodo; @@solo+paquetes: = paquetes + nodo, EN ESE ORDEN', () => {
     const dir = proyecto();
-    construir(dir);
+    construir(dir, { tope: TOPE });
     expect(codigo(dir, 'Uno')).toBe('// LIB\nconst LIB = 1;\n\n// COMUN\nconst COMUN = 2;\n\n// NODO UNO\nreturn [];\n');
     expect(codigo(dir, 'Dos')).toBe('// COMUN\nconst COMUN = 2;\n\n// NODO UNO\nreturn [];\n');
     expect(codigo(dir, 'Tres')).toBe('// PAQUETE A\n\n// PAQUETE B1\n\n// PAQUETE B2\n\n// NODO UNO\nreturn [];\n');
   });
   it('el orden de los paquetes es el que pide la marca (+b+a ≠ +a+b)', () => {
     const dir = proyecto();
-    const p = leerProyecto(dir);
+    const p = leerProyecto(dir, null, { tope: TOPE });
     const ab = codigoDe(p, '@@solo+a+b:nodos/nodo-uno.js', 'N');
     const ba = codigoDe(p, '@@solo+b+a:nodos/nodo-uno.js', 'N');
     expect(ab).not.toBe(ba);
@@ -118,7 +120,7 @@ describe('las marcas y los paquetes', () => {
   });
   it('cada variante quita su nodo Y sus conexiones', () => {
     const dir = proyecto();
-    construir(dir);
+    construir(dir, { tope: TOPE });
     const prod = JSON.parse(readFileSync(join(dir, 'prod.json'), 'utf8')) as { nodes: { name: string }[]; connections: Record<string, unknown>; name: string };
     const prueba = JSON.parse(readFileSync(join(dir, 'prueba.json'), 'utf8')) as typeof prod;
     expect(prod.name).toBe('Prod');
@@ -130,7 +132,7 @@ describe('las marcas y los paquetes', () => {
   });
   it('`quitar` acepta una lista', () => {
     const dir = proyecto({ variantes: [{ archivo: 'sin-los-dos.json', quitar: ['Disparador', 'Entrada de prueba'], nombre: 'X' }] });
-    construir(dir);
+    construir(dir, { tope: TOPE });
     const f = JSON.parse(readFileSync(join(dir, 'sin-los-dos.json'), 'utf8')) as { nodes: unknown[]; connections: Record<string, unknown> };
     expect(f.nodes).toHaveLength(3);
     expect(Object.keys(f.connections).sort()).toEqual(['Dos', 'Uno']);
@@ -140,7 +142,7 @@ describe('las marcas y los paquetes', () => {
 describe('lo que el armador NUNCA hace', () => {
   it('NIEGA: un paquete que el config no declara', () => {
     const dir = proyecto();
-    expect(() => codigoDe(leerProyecto(dir), '@@solo+inexistente:nodos/nodo-uno.js', 'N')).toThrow(/no declara el paquete/);
+    expect(() => codigoDe(leerProyecto(dir, null, { tope: TOPE }), '@@solo+inexistente:nodos/nodo-uno.js', 'N')).toThrow(/no declara el paquete/);
   });
   it('NIEGA: un paquete (o librería, o común) fuera de la raíz permitida', () => {
     for (const extra of [
@@ -149,67 +151,95 @@ describe('lo que el armador NUNCA hace', () => {
       { comun: ['../../etc/passwd'] },
       { paquetes: { abs: '/etc/hostname' } },
     ] as Partial<ConfigDeConstruccion>[]) {
-      expect(() => leerProyecto(proyecto(extra)), JSON.stringify(extra)).toThrow(/fuera de la raíz/);
+      expect(() => leerProyecto(proyecto(extra), null, { tope: TOPE }), JSON.stringify(extra)).toThrow(/fuera de la raíz/);
     }
   });
   it('con `raiz` más amplia, un paquete hermano SÍ se lee (el caso de comun-sin-agente)', () => {
     const dir = proyecto({ raiz: '..', paquetes: { hermano: '../hermano-' + 'x.js' } });
     writeFileSync(join(dir, '..', 'hermano-x.js'), '// HERMANO\n');
-    try { expect(() => leerProyecto(dir)).not.toThrow(); } finally { rmSync(join(dir, '..', 'hermano-x.js'), { force: true }); }
+    try { expect(() => leerProyecto(dir, null, { tope: TOPE })).not.toThrow(); } finally { rmSync(join(dir, '..', 'hermano-x.js'), { force: true }); }
   });
   it('NIEGA: una ruta de nodo con `..`, absoluta o con barra invertida', () => {
-    const p = leerProyecto(proyecto());
+    const p = leerProyecto(proyecto(), null, { tope: TOPE });
     for (const marca of ['@@solo:nodos/../../x.js', '@@solo:/etc/passwd', '@@solo:nodos\\x.js', '@@solo:..', '@@algo:nodos/x.js']) {
       expect(() => codigoDe(p, marca, 'N'), marca).toThrow();
     }
   });
   it('NIEGA: un archivo de código que no existe', () => {
-    expect(() => codigoDe(leerProyecto(proyecto()), '@@solo:nodos/no-existe.js', 'N')).toThrow(/no existe/);
+    expect(() => codigoDe(leerProyecto(proyecto(), null, { tope: TOPE }), '@@solo:nodos/no-existe.js', 'N')).toThrow(/no existe/);
   });
   it('NIEGA: quitar un nodo que no está (un typo no puede dejar el disparador puesto)', () => {
     const dir = proyecto({ variantes: [{ archivo: 'x.json', quitar: 'Dsparador', nombre: 'X' }] });
-    expect(() => construir(dir)).toThrow(/no hay un nodo «Dsparador»/);
+    expect(() => construir(dir, { tope: TOPE })).toThrow(/no hay un nodo «Dsparador»/);
   });
   it('NIEGA: ids o nombres de nodo repetidos', () => {
     const base = (id: string, nombre: string) => ({ name: 'x', connections: {}, nodes: [
       { id: 'a', name: 'A', type: 't', parameters: {} }, { id, name: nombre, type: 't', parameters: {} }] });
     const una = { variantes: [{ archivo: 'x.json', nombre: 'X' }] };
-    expect(() => construir(proyecto(una, base('a', 'B')))).toThrow(/ids de nodo repetidos/);
-    expect(() => construir(proyecto(una, base('b', 'A')))).toThrow(/nombres de nodo repetidos/);
+    expect(() => construir(proyecto(una, base('a', 'B')), { tope: TOPE })).toThrow(/ids de nodo repetidos/);
+    expect(() => construir(proyecto(una, base('b', 'A')), { tope: TOPE })).toThrow(/nombres de nodo repetidos/);
   });
   it('NIEGA: una marca @@ que no es de jsCode no se reemplaza, y queda como error', () => {
     const plantilla = { name: 'x', connections: {}, nodes: [{ id: 'a', name: 'A', type: 't', parameters: { otro: '@@nodos/nodo-uno.js' } }] };
-    expect(() => construir(proyecto({ variantes: [{ archivo: 'x.json', nombre: 'X' }] }, plantilla))).toThrow(/marca @@ sin reemplazar/);
+    expect(() => construir(proyecto({ variantes: [{ archivo: 'x.json', nombre: 'X' }] }, plantilla), { tope: TOPE })).toThrow(/marca @@ sin reemplazar/);
   });
   it('NIEGA: dos variantes que escriben el mismo archivo, o un archivo con ruta', () => {
     expect(() => leerProyecto(proyecto({ variantes: [
-      { archivo: 'a.json', nombre: 'A' }, { archivo: 'a.json', nombre: 'B' }] }))).toThrow(/mismo archivo/);
-    expect(() => leerProyecto(proyecto({ variantes: [{ archivo: '../a.json', nombre: 'A' }] }))).toThrow(/no válido/);
+      { archivo: 'a.json', nombre: 'A' }, { archivo: 'a.json', nombre: 'B' }] }), null, { tope: TOPE })).toThrow(/mismo archivo/);
+    expect(() => leerProyecto(proyecto({ variantes: [{ archivo: '../a.json', nombre: 'A' }] }), null, { tope: TOPE })).toThrow(/no válido/);
   });
   it('NIEGA: un config sin variantes, o sin archivo de configuración', () => {
-    expect(() => leerProyecto(proyecto({ variantes: [] }))).toThrow(/variantes/);
+    expect(() => leerProyecto(proyecto({ variantes: [] }), null, { tope: TOPE })).toThrow(/variantes/);
     const vacio = mkdtempSync(join(tmpdir(), 'comun-sin-agente-vacio-'));
     temporales.push(vacio);
-    expect(() => leerProyecto(vacio)).toThrow(/no existe/);
+    expect(() => leerProyecto(vacio, null, { tope: TOPE })).toThrow(/no existe/);
   });
   it('--verificar NO escribe: dice qué falta y qué difiere, y construir() lo repara', () => {
     const dir = proyecto();
-    const antes = construir(dir, { verificar: true });
+    const antes = construir(dir, { verificar: true, tope: TOPE });
     expect(antes.every((r) => !r.existia && !r.alDia)).toBe(true);
     expect(existsSync(join(dir, 'prod.json'))).toBe(false);
-    construir(dir);
-    expect(construir(dir, { verificar: true }).every((r) => r.alDia)).toBe(true);
+    construir(dir, { tope: TOPE });
+    expect(construir(dir, { verificar: true, tope: TOPE }).every((r) => r.alDia)).toBe(true);
     writeFileSync(join(dir, 'prod.json'), '{}\n');
-    const r = construir(dir, { verificar: true });
+    const r = construir(dir, { verificar: true, tope: TOPE });
     expect(r.find((x) => x.archivo === 'prod.json')!.alDia).toBe(false);
     expect(readFileSync(join(dir, 'prod.json'), 'utf8')).toBe('{}\n');
+  });
+});
+
+describe('lo que la revisión de seguridad encontró (01/10): enlaces simbólicos, raíz sin tope y archivos reservados', () => {
+  it('NIEGA: un enlace simbólico DENTRO de la raíz que apunta afuera no se sigue (nodo, paquete, librería)', () => {
+    const dir = proyecto();
+    const fuera = join(dir, '..', 'fuera-' + String(Date.now()) + '.js');
+    writeFileSync(fuera, '// SECRETO\n');
+    try {
+      symlinkSync(fuera, join(dir, 'src/nodos/enlazado.js'));
+      symlinkSync(fuera, join(dir, 'paquetes/enlazado.js'));
+      const p = leerProyecto(dir, null, { tope: TOPE });
+      expect(() => codigoDe(p, '@@solo:nodos/enlazado.js', 'N')).toThrow(/fuera de la raíz/);
+      writeFileSync(join(dir, 'construir.config.json'), JSON.stringify({ paquetes: { e: 'paquetes/enlazado.js' }, variantes: [{ archivo: 'x.json', nombre: 'X' }] }));
+      expect(() => leerProyecto(dir, null, { tope: TOPE })).toThrow(/fuera de la raíz/);
+    } finally { rmSync(fuera, { force: true }); }
+  });
+  it('NIEGA: `raiz` absoluta o que se sale del tope (con `/`, cualquier archivo del equipo se podía leer)', () => {
+    expect(() => leerProyecto(proyecto({ raiz: '/' }), null, { tope: TOPE })).toThrow(/ruta relativa/);
+    expect(() => leerProyecto(proyecto({ raiz: '../../../../..' }), null, { tope: TOPE })).toThrow(/dentro de/);
+  });
+  it('NIEGA: con el tope por defecto (`Flujos/`), un proyecto fuera de Flujos/ no se arma', () => {
+    expect(() => leerProyecto(proyecto())).toThrow(/dentro de/);
+  });
+  it('NIEGA: una variante no puede pisar el config ni la plantilla', () => {
+    for (const archivo of ['construir.config.json', 'flujo.plantilla.json']) {
+      expect(() => leerProyecto(proyecto({ variantes: [{ archivo, nombre: 'X' }] }), null, { tope: TOPE }), archivo).toThrow(/no se puede escribir/);
+    }
   });
 });
 
 describe('la línea de comandos', () => {
   const correr = (...args: string[]): { codigo: number; salida: string } => {
     try {
-      const salida = execFileSync(process.execPath, [join(COMUN, 'construir.mjs'), ...args], { encoding: 'utf8', stdio: 'pipe', env: entornoDelEmulador(undefined) });
+      const salida = execFileSync(process.execPath, [join(COMUN, 'construir.mjs'), ...args, ...(args.includes('--proyecto') ? ['--tope', TOPE] : [])], { encoding: 'utf8', stdio: 'pipe', env: entornoDelEmulador(undefined) });
       return { codigo: 0, salida };
     } catch (e) {
       const x = e as { status: number; stdout: string; stderr: string };

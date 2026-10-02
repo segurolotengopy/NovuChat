@@ -147,3 +147,26 @@ describe('pasar con una persona: el botón, o solo texto', () => {
     expect(M.cmContactoConBoton({ ...op, para: 'paciente' }).para).toBe('paciente');
   });
 });
+
+describe('lo que la revisión de seguridad encontró (01/10): recortes seguros, solo https y respaldo que no pierde el enlace', () => {
+  it('NIEGA: un recorte nunca parte un emoji por la mitad (Meta rechaza un medio carácter)', () => {
+    const t = M.cmRecorte('abc😀😀😀😀', 5);
+    expect(t).not.toMatch(/[\uD800-\uDBFF]…?$/);
+    expect(t.endsWith('…')).toBe(true);
+    expect(M.cmRecorte('😀'.repeat(30), 20)).not.toMatch(/[\uD800-\uDBFF]…$/);
+    expect(M.cmRecorte('hola', 20)).toBe('hola');
+  });
+  it('NIEGA: un botón con enlace que no es https no sale como botón (sale el texto, sin el enlace)', () => {
+    for (const url of ['javascript:alert(1)', 'http://ejemplo.com', 'data:text/html,x', 'ftp://x.example', '//x.example', 'https://', 'https://a b']) {
+      const m = M.cmEnlace('Mira', 'Abrir', url);
+      expect(m.type, url).toBe('text');
+      expect(JSON.stringify(m), url).not.toContain(url.split(' ')[0]);
+    }
+    expect(M.cmEnlace('Mira', 'Abrir', 'https://ejemplo.com/x').interactive.type).toBe('cta_url');
+  });
+  it('NIEGA: el respaldo de «pasar con una persona» nunca pasa de 4000 y NO corta el enlace del final', () => {
+    const m = M.cmContactoConBoton({ numero: '71234561', desde: '71234562', cuerpo: 'x'.repeat(5000), botonTexto: 'Escribir', saludo: 'Hola' });
+    expect(m.respaldo.length).toBeLessThanOrEqual(4000);
+    expect(m.respaldo.endsWith('https://wa.me/71234561?text=Hola')).toBe(true);
+  });
+});

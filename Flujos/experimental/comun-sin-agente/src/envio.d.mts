@@ -9,6 +9,7 @@ export interface OpcionesDeEnvio {
   reportar?: boolean;
   desde?: [number, number];
   lote?: { tamano?: number; intervaloMs?: number };
+  reportarFallidos?: boolean;
   siguiente?: string;
 }
 export interface NodoDeEnvio { id: string; name: string; type: string; typeVersion: number; position: [number, number]; parameters: Record<string, any>; [clave: string]: any }

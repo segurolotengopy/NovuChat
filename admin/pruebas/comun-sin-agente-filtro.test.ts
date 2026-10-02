@@ -16,8 +16,8 @@ const RUTA = join(dirname(fileURLToPath(import.meta.url)), '../../Flujos/experim
 const FUENTE = readFileSync(RUTA, 'utf8');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Fn = (...a: any[]) => any;
-const F = ejecutar(`${FUENTE}\nreturn [{ json: { cmNorm, cmMotivoDeRechazo, cmRedaccionValida, cmPulirRedaccion } }];`, [{}])[0] as
-  Record<'cmNorm' | 'cmMotivoDeRechazo' | 'cmRedaccionValida' | 'cmPulirRedaccion', Fn>;
+const F = ejecutar(`${FUENTE}\nreturn [{ json: { cmNorm, cmMotivoDeRechazo, cmRedaccionValida, cmPulirRedaccion, cmRevisarRedaccion, cmEnlacesDe } }];`, [{}])[0] as
+  Record<'cmNorm' | 'cmMotivoDeRechazo' | 'cmRedaccionValida' | 'cmPulirRedaccion' | 'cmRevisarRedaccion' | 'cmEnlacesDe', Fn>;
 const motivo = (t: string, o?: object): string => F.cmMotivoDeRechazo(t, o);
 
 describe('el módulo es autosuficiente', () => {
@@ -94,12 +94,29 @@ describe('cada regla rechaza con su motivo', () => {
     expect(motivo('Te recomiendo Paracetamol', { prohibidos: [/paracetamol|ibuprofeno/] })).toBe('prohibido');
     expect(motivo('Te recomiendo agua', { prohibidos: [/paracetamol/] })).toBe('');
   });
-  it('enlaces: solo los que el negocio declaró; sin lista, no se revisan', () => {
+  it('enlaces: POR DEFECTO ninguno sale; solo los que el negocio declaró, completos', () => {
     const permitidos = ['https://maps.app.goo.gl/abc', 'https://www.instagram.com/negocio'];
     expect(motivo('Mira https://maps.app.goo.gl/abc.', { enlacesPermitidos: permitidos })).toBe('');
+    expect(motivo('Mira https://www.instagram.com/negocio/', { enlacesPermitidos: permitidos })).toBe('');
     expect(motivo('Mira https://maliciosa.example/x', { enlacesPermitidos: permitidos })).toBe('enlace_ajeno');
     expect(motivo('Mira https://maliciosa.example/x', { enlacesPermitidos: [] })).toBe('enlace_ajeno');
-    expect(motivo('Mira https://maliciosa.example/x')).toBe('');
+    expect(motivo('Mira https://maliciosa.example/x')).toBe('enlace_ajeno');
+    expect(motivo('Mira https://maps.app.goo.gl/abc')).toBe('enlace_ajeno');
+    expect(motivo('Mira https://maliciosa.example/x', { enlacesPermitidos: null })).toBe('');
+  });
+  it('enlaces: se detectan también sin esquema (www., wa.me, dominios sueltos) y con caracteres invisibles', () => {
+    for (const t of ['Entra a www.pago-falso.com', 'Escríbeme a wa.me/71234567', 'Mira pago-falso.com/x', 'Ve a bit.ly/abc', 'Mira https://pago-falso.com', 'Mira ｗｗｗ.pago-falso.com', 'Mira pago-falso​.com']) {
+      expect(motivo(t, { enlacesPermitidos: ['https://www.instagram.com/negocio'] }), t).toBe('enlace_ajeno');
+    }
+  });
+  it('NIEGA: un enlace que solo EMPIEZA como uno permitido no pasa (antes la comparación era por subcadena)', () => {
+    const permitidos = ['https://wa.me/12345678'];
+    expect(motivo('Escribe a https://wa.me/1', { enlacesPermitidos: permitidos })).toBe('enlace_ajeno');
+    expect(motivo('Escribe a https://wa.me/123456789', { enlacesPermitidos: permitidos })).toBe('enlace_ajeno');
+    expect(motivo('Escribe a https://wa.me/12345678?text=Hola', { enlacesPermitidos: permitidos })).toBe('');
+  });
+  it('NIEGA: lo que parece dominio pero no lo es no se rechaza (Dr.Pérez, 3.5, «e.g.»)', () => {
+    expect(motivo('Con el Dr.Pérez tenemos lugar. Son 3.5 horas.', { enlacesPermitidos: [] })).toBe('');
   });
   it('`extra`: reglas propias del flujo (horas, etc.); su motivo sale tal cual', () => {
     const horaAjena = (t: string): string => (/\b3:00\b/.test(t) ? 'hora_ajena' : '');
@@ -108,9 +125,59 @@ describe('cada regla rechaza con su motivo', () => {
   });
 });
 
+describe('lo que la revisión de seguridad hizo pasar (01/10): todo se rechaza ahora', () => {
+  const rechaza = (lista: string[], esperado: string): void => {
+    for (const t of lista) expect(motivo(t), t).toBe(esperado);
+  };
+  it('hechos que solo el código afirma: pago, cita, reprogramación, pedido, marcas ✅', () => {
+    rechaza([
+      'Pago recibido', 'Recibí tu pago', 'Ya recibimos el pago', 'Tu pago fue acreditado', 'Pago aprobado', 'Tu cita ha sido agendada', 'Tu cita fue agendada',
+      'He reprogramado tu cita', 'Te he reservado', 'Registré tu pedido', 'Confirmé tu pedido', 'Anoté tu cita', 'Reserva confirmada', 'Pedido registrado', 'Cita agendada ✅',
+      'Comprobante recibido', 'Tu abono fue acreditado', 'Pedido anotado',
+    ], 'afirma_un_hecho');
+  });
+  it('la marca de visto bueno ✅ ✔ ☑ la pone el código, nunca el modelo (aunque no diga nada más)', () => {
+    rechaza(['Todo en orden ✅', 'Hecho ✔', 'Perfecto ☑️'], 'afirma_un_hecho');
+  });
+  it('NIEGA: lo que SOLO ofrece o pregunta sigue saliendo', () => {
+    for (const t of ['¿Quieres que te ayude a agendar una cita?', 'Si me das tu nombre, puedo reservar el horario.', 'Para cancelar toca el botón.', 'Te muestro los horarios disponibles.']) expect(motivo(t), t).toBe('');
+  });
+  it('negar ser una IA, en todas sus formas', () => {
+    rechaza(['No soy una máquina', 'No soy un asistente, soy Ana', 'Hablas con una persona', 'Te atiende una persona real', 'Soy de carne y hueso', 'Soy una persona de verdad', 'No soy un programa'], 'afirma_un_hecho');
+  });
+  it('NIEGA: pasar con una persona del equipo NO es negar ser una IA', () => {
+    expect(motivo('Te paso con una persona del equipo.')).toBe('');
+    expect(motivo('Una persona del equipo continuará esta conversación.')).toBe('');
+  });
+  it('promesas con «le», futuro perifrástico y primera persona', () => {
+    rechaza(['Le aviso', 'Le llamaremos', 'Te vamos a llamar', 'Te van a contactar', 'Consultaré y te cuento', 'Te confirmaré', 'Le confirmo mañana'], 'promesa');
+  });
+  it('montos en letra y en otras monedas', () => {
+    rechaza(['Son cien bolivianos', 'Cuesta 100 BOB', 'Paga 50 USDT', 'Vale 50 dolares', 'Son cincuenta bolivianos', '25 $us'], 'monto');
+  });
+  it('NIEGA: «bolivianos» sin cifra o como gentilicio no es un monto', () => {
+    expect(motivo('Atendemos a clientes bolivianos y de otros países.')).toBe('');
+  });
+  it('caracteres de ancho completo e invisibles no esconden una palabra', () => {
+    rechaza(['Tu cita ｑｕｅｄó agendada', 'Te agen\u200Bdé', 'Te agen\u00ADdé', 'Tu pe\u2060dido queda registrado'], 'afirma_un_hecho');
+  });
+  it('cmRevisarRedaccion valida lo PULIDO: «Hola. Sí, soy yo» ya no cuela con un «Sí» al principio', () => {
+    const r = F.cmRevisarRedaccion('Hola. Sí, soy yo.', { textoDelCliente: '¿eres el doctor?' });
+    expect(r.texto.startsWith('Sí')).toBe(true);
+    expect(r.motivo).toBe('identidad');
+    expect(F.cmRevisarRedaccion('Hola. Tenemos lugar el viernes.', {}).motivo).toBe('');
+  });
+  it('el pulido tiene tope de largo: un texto enorme no cuelga el flujo', () => {
+    const t0 = Date.now();
+    F.cmPulirRedaccion('Dr. '.repeat(250000), { nombreNegocio: 'x' });
+    F.cmPulirRedaccion('a. '.repeat(250000), { nombreNegocio: 'x' });
+    expect(Date.now() - t0).toBeLessThan(1500);
+  });
+});
+
 describe('las reglas de NovuChat no se apagan con opciones', () => {
   it('ninguna opción vuelve válido «quedó agendada», una promesa o un hueco', () => {
-    const apagar = { permitirMontos: true, enlacesPermitidos: null, prohibidos: [], extra: [], quienPromete: [], maximo: 100000, textoDelCliente: '' };
+    const apagar = { permitirMontos: true, enlacesPermitidos: null, prohibidos: [], extra: [], quienPromete: [], maximo: 100000, textoDelCliente: '' }; // enlacesPermitidos:null solo apaga la revisión de enlaces
     expect(motivo('Tu cita quedó agendada', apagar)).toBe('afirma_un_hecho');
     expect(motivo('Te aviso luego', apagar)).toBe('promesa');
     expect(motivo('Hola {{x}}', apagar)).toBe('hueco');

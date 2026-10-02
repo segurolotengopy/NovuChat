@@ -17,10 +17,10 @@ export interface ConfigDeConstruccion {
   paquetes?: Record<string, string | string[]>;
   variantes: Variante[];
 }
-export function leerProyecto(carpeta: string, configEnMemoria?: ConfigDeConstruccion | null): Proyecto;
+export function leerProyecto(carpeta: string, configEnMemoria?: ConfigDeConstruccion | null, opciones?: { tope?: string }): Proyecto;
 export function codigoDe(proyecto: Proyecto, marca: string, nodo: string): string;
 export function armarVariante(proyecto: Proyecto, variante: Variante): string;
 export function construir(
   carpeta: string,
-  opciones?: { verificar?: boolean; config?: ConfigDeConstruccion | null },
+  opciones?: { verificar?: boolean; config?: ConfigDeConstruccion | null; tope?: string },
 ): Array<{ archivo: string; nodos: number; alDia: boolean; existia: boolean }>;

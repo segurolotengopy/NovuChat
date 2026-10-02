@@ -21,7 +21,11 @@
 
 function cmRecorte(t, max) {
   const s = String(t === undefined || t === null ? '' : t);
-  return s.length > max ? s.slice(0, max - 1).trimEnd() + '…' : s;
+  if (s.length <= max) return s;
+  let corte = s.slice(0, max - 1);
+  // Nunca se parte un emoji (un par sustituto) por la mitad: Meta rechaza el mensaje con un medio carácter.
+  if (/[\uD800-\uDBFF]$/.test(corte)) corte = corte.slice(0, -1);
+  return corte.trimEnd() + '…';
 }
 function cmBase(tipo) {
   return { messaging_product: 'whatsapp', recipient_type: 'individual', to: '', type: tipo };
@@ -43,6 +47,9 @@ function cmLista(cuerpo, boton, titulo, filas) {
   } });
 }
 function cmEnlace(cuerpo, texto, url) {
+  // Un botón con enlace solo lleva `https://`: cualquier otro esquema (`javascript:`, `http:`…) no sale como botón,
+  // sale el texto sin el enlace.
+  if (!/^https:\/\/[^\s]+$/i.test(String(url))) return cmTexto(cuerpo);
   return Object.assign(cmBase('interactive'), { interactive: {
     type: 'cta_url', body: { text: cmRecorte(cuerpo, 1024) },
     action: { name: 'cta_url', parameters: { display_text: cmRecorte(texto, 20), url: String(url) } },
@@ -71,8 +78,10 @@ function cmContactoConBoton(op) {
   const para = op.para || 'cliente';
   if (numero && numero !== desde) {
     const url = cmUrlWa(numero, op.saludo || '');
+    const pie = '\n\n' + (op.textoDelRespaldo || 'Escríbele aquí:') + ' ' + url;
+    // El respaldo es TEXTO (tope 4000): se recorta el cuerpo, nunca el enlace del final.
     return cmMensaje(para, cmEnlace(op.cuerpo, op.botonTexto || 'Escribir', url), op.cuerpo,
-      op.cuerpo + '\n\n' + (op.textoDelRespaldo || 'Escríbele aquí:') + ' ' + url,
+      cmRecorte(op.cuerpo, 4000 - pie.length) + pie,
       { tipoReporte: 'interactive', evento: op.evento, conBoton: true });
   }
   const sinBoton = cmSinMencionDelBoton(op.cuerpo, op.sinNumero || 'Eso lo coordina una persona del equipo.');
