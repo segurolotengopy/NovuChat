@@ -50,7 +50,9 @@ function amWamid(j) {
 }
 const amEsImagen = (a) => !!a && (a.clase === 'imagen' || (a.clase === undefined && a.payload && a.payload.type === 'image'));
 const AM_armados = AM_avisosArmados.filter((i) => i && i.sinAviso !== true && i.payload);
-const AM_enviados = vmTodos('Enviar aviso');
+// `Simular aviso` (T7c): en modo prueba sin `enviarDeVerdad` no corre `Enviar aviso`; ese nodo da un
+// `wamid` marcado como simulado. Son ramas excluyentes: solo una de las dos listas tiene datos.
+const AM_enviados = vmTodos('Enviar aviso').concat(vmTodos('Simular aviso'));
 const AM_respaldos = vmTodos('Aviso de respaldo');
 const AM_wamids = AM_enviados.map(amWamid).concat(AM_respaldos.map(amWamid)).filter(Boolean);
 const AM_tiposSalidos = []; // tipo de aviso de cada plantilla o detalle que salió

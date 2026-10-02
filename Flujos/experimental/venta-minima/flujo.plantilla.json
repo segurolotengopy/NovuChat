@@ -1,0 +1,2171 @@
+{
+  "name": "NovuChat — Venta mínima (v0)",
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/La_Paz",
+    "executionTimeout": 60,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "nodes": [
+    {
+      "id": "entrega-receptor",
+      "name": "Entrega del receptor",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1560,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "@@dato:receptor.ruta@@",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "notes": "SOLO en la variante del receptor de clientes (camino B). Recibe la entrega firmada del receptor (cabeceras X-AAB1-Delivery-Id, X-AAB1-Timestamp, X-AAB1-Signature y X-AAB1-Attempt). La ruta es una URL de capacidad: va como marcador y la reemplaza preparar-import.sh. El Code de n8n no tiene crypto: la firma la verifica el receptor, por la red interna, en el nodo siguiente."
+    },
+    {
+      "id": "verificar-firma",
+      "name": "Verificar firma con el receptor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1320,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "@@dato:receptor.urlVerificador@@",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ firma: $json.headers['x-aab1-signature'] ?? '', timestamp: $json.headers['x-aab1-timestamp'] ?? '', deliveryId: $json.headers['x-aab1-delivery-id'] ?? '', cuerpo: JSON.stringify($json.body), wabaIdEsperado: '@@dato:receptor.wabaIdEsperado@@' }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "notes": "SIN «Continue on Fail» ni onError, a propósito: con él, un 503 del verificador daría 401 y la entrega moriría en vez de reintentarse. El cuerpo se arma con JSON.stringify, nunca interpolando. El verificador solo se llama por la red interna y nunca se expone. `wabaIdEsperado` va fijo (marcador)."
+    },
+    {
+      "id": "firma-valida",
+      "name": "¿Firma válida?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1080,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "firma-valida",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "aceptar-200",
+      "name": "Aceptar (200)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -840,
+        200
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "rechazar-401",
+      "name": "Rechazar (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -840,
+        420
+      ],
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "notes": "Una firma inválida corta aquí: 0 mensajes, 0 avisos, 0 llamadas."
+    },
+    {
+      "id": "descartar-repetidos",
+      "name": "Descartar repetidos",
+      "type": "n8n-nodes-base.removeDuplicates",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        200
+      ],
+      "parameters": {
+        "operation": "removeItemsSeenInPreviousExecutions",
+        "logic": "removeItemsWithAlreadySeenKeyValues",
+        "dedupeValue": "={{ $('Verificar firma con el receptor').item.json.deliveryId }}",
+        "options": {}
+      },
+      "notes": "Descarta una entrega ya vista (el receptor reintenta) entre ejecuciones, por deliveryId. Los repetidos por id de mensaje de Meta los frena además `Interpretar entrada`."
+    },
+    {
+      "id": "trigger-whatsapp",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        100
+      ],
+      "parameters": {
+        "updates": [
+          "messages"
+        ]
+      },
+      "notes": "SOLO en la variante `entrada: trigger` (camino A, con credenciales de una app propia de NovuChat). NUNCA con las credenciales de AAB1-WA-Prod: al activarse reescribe el webhook de toda la app (prohibición 7). Ningún JSON versionado hoy usa esta variante."
+    },
+    {
+      "id": "entrada-prueba",
+      "name": "Entrada de prueba",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -300,
+        520
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "@@dato:pruebaRuta@@",
+        "authentication": "none",
+        "responseMode": "lastNode",
+        "responseData": "firstEntryJson",
+        "options": {}
+      },
+      "notes": "SOLO en venta-minima.prueba.json. Recibe la misma carga que Meta (dentro de `body`) y, opcionales, modoPrueba, telefonoDePrueba y enviarDeVerdad. Responde con el `Resumen del turno`. La ruta es una URL de capacidad: va como marcador."
+    },
+    {
+      "id": "carga-entrada",
+      "name": "Carga de entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -40,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/carga-de-entrada.js"
+      },
+      "notes": "Deja la entrada en una sola forma (Trigger, `body` de la prueba, carga completa o `body.value` del receptor). El modo prueba solo se lee de «Entrada de prueba»."
+    },
+    {
+      "id": "config-base",
+      "name": "Config base",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": []
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "notes": "LO CONFIGURABLE DEL NEGOCIO. Se llena desde admin/scripts/datos/venta-minima/<tenant>.json (nunca a mano en n8n). El panel manda sobre estos valores; un marcador REEMPLAZAR_* cuenta como vacío."
+    },
+    {
+      "id": "es-mensaje",
+      "name": "¿Es un mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Carga de entrada').first().json; const b = $('Config base').first().json; const esperado = String(b.phoneNumberIdEsperado || ''); const hay = Array.isArray(c.messages) && c.messages.length > 0; const prueba = !!(c.prueba && c.prueba.modoPrueba === true); return hay && (prueba || (esperado !== '' && !esperado.startsWith('REEMPLAZAR_') && String(c.phoneNumberId || '') === esperado)); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Filtro de eventos: solo pasan cargas con `messages` y del número esperado. Los acuses de estado y lo que llegue de otro número de la misma WABA se descartan ANTES de llamar a la consola. (Va después de «Config base» para poder leer `phoneNumberIdEsperado`.)"
+    },
+    {
+      "id": "traer-config",
+      "name": "Traer configuración",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/configuracionFlujo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: String(((($json.messages || [])[0]) || {}).from || '') }) }}",
+        "options": {
+          "timeout": 4000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Carta, campañas, cobro real, atención y datos del negocio. Con el panel caído, «Config del negocio» usa el respaldo: sin carta no se toma ningún pedido, se deriva."
+    },
+    {
+      "id": "config-negocio",
+      "name": "Config del negocio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/config-del-negocio.js"
+      }
+    },
+    {
+      "id": "interpretar",
+      "name": "Interpretar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/interpretar-entrada.js"
+      },
+      "notes": "Devuelve [] (0 mensajes, 0 costo) si el mensaje ya se vio, el prefijo no está permitido o el phone_number_id no es el esperado."
+    },
+    {
+      "id": "reportar-ent-si",
+      "name": "¿Reportar? (entrante)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Config del negocio').first().json.modoPrueba !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba no se llama a la ingesta."
+    },
+    {
+      "id": "reportar-entrante",
+      "name": "Reportar mensaje (entrante)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1640,
+        140
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ telefono: t.from, direccion: 'entrante', tipo: t.tipo || 'text', texto: t.textoReporte || '', idMeta: t.mensajeId || '', nombreContacto: t.nombrePerfil || '', origen: t.origen || 'directo', evento: /no (me )?(escrib|mand|molest|contact|llam)|dej(a|á|e|en) de escribir|no quiero (más|mas) mensajes|b[oó]rr(a|e)me|qu[ií]t(a|e)me|d(a|á|e)me de baja|^stop$/i.test(String(t.texto || '')) ? 'no_contactar' : undefined }); })() }}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Una llamada por cada mensaje entrante, ANTES de la rama del agente (arriba en el lienzo): si no, el aviso de uso extendido no sale nunca y la primera respuesta de cada ventana no se cuenta. Si la respuesta trae `atencion` o `servicio`, mandan."
+    },
+    {
+      "id": "comercio-operativo",
+      "name": "¿Comercio operativo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const r = $json || {}; const cortado = !!(r.servicio && r.servicio.estado === 'cortado'); return c.estadoComercio === 'operativo' && !cortado; })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Si el reporte no devuelve `servicio` (o está desactivado), comercio operativo según la configuración."
+    },
+    {
+      "id": "comercio-no-operativo",
+      "name": "Comercio no operativo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/comercio-no-operativo.js"
+      }
+    },
+    {
+      "id": "atencion-normal",
+      "name": "¿Atención normal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2120,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; const a = ($json && $json.atencion && typeof $json.atencion === 'object') ? $json.atencion.estado : c.atencionEstado; return !['operador', 'bloqueado'].includes(a); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Sin `atencion` en la respuesta del reporte, se toma la de `configuracionFlujo`; sin ninguna, normal."
+    },
+    {
+      "id": "uso-extendido",
+      "name": "Uso extendido",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2360,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/uso-extendido.js"
+      }
+    },
+    {
+      "id": "bajar-medio",
+      "name": "¿Bajar medio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2360,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Interpretar entrada').first().json.esAudio === true || $('Interpretar entrada').first().json.esComprobante === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo se baja un medio si es una nota de voz (para transcribirla) o un comprobante esperado (para leerlo): una imagen cualquiera no se descarga."
+    },
+    {
+      "id": "media-url",
+      "name": "Obtener URL del medio",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        460
+      ],
+      "parameters": {
+        "resource": "media",
+        "operation": "mediaUrlGet",
+        "mediaGetId": "={{ $('Interpretar entrada').first().json.mediaId }}"
+      },
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "@@cred:medios"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "GET /{media-id}: devuelve url, mime_type y file_size, no el archivo. No envía nada."
+    },
+    {
+      "id": "tamano-aceptable",
+      "name": "¿Tamaño aceptable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2840,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ Number($json.file_size) > 0 && Number($json.file_size) <= ($('Interpretar entrada').first().json.esAudio === true ? 720000 : 5000000) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Verdadero si Meta informó un tamaño y no pasa de 720 kB para un audio ni de 5 MB para una foto o un PDF. Falso: no se descarga ni se llama a Gemini; `Decidir turno` pide que lo escriban (audio) o trata el comprobante como «sin cotejar» (nunca como «cuadra»)."
+    },
+    {
+      "id": "descargar-medio",
+      "name": "Descargar medio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        460
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppApi",
+        "options": {
+          "timeout": 20000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "whatsAppApi": {
+          "id": "",
+          "name": "@@cred:medios"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "notes": "Baja el archivo CON el token y lo deja como binario `data`. No se guarda en ningún lado y no se reenvía a nadie."
+    },
+    {
+      "id": "es-audio",
+      "name": "¿Es audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3320,
+        460
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Interpretar entrada').first().json.esAudio === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "transcribir",
+      "name": "Transcribir audio",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        3560,
+        360
+      ],
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.5-flash-lite"
+        },
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "simplify": true,
+        "options": {}
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Copia del Demo B. El audio muere aquí: lo que sigue es texto. Si falla, `Decidir turno` pide que lo escriban."
+    },
+    {
+      "id": "es-pdf",
+      "name": "¿Es PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3560,
+        620
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ String($('Interpretar entrada').first().json.mimeType || '').toLowerCase().startsWith('application/pdf') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "leer-pdf",
+      "name": "Leer comprobante (PDF)",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        3800,
+        560
+      ],
+      "parameters": {
+        "resource": "document",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.5-flash-lite"
+        },
+        "text": "Este es un comprobante de una transferencia bancaria boliviana. Devuelve SOLO\nun objeto JSON, sin texto alrededor, con estas claves:\n\n  monto           el importe transferido, tal cual figura, con su separador\n  cuentaDestino   el número de la cuenta que RECIBIÓ, tal cual, con asteriscos\n                  si está enmascarada\n  nombreCuenta    el nombre de quien RECIBIÓ\n  fecha           la fecha de la transacción\n  hora            la hora de la transacción\n  banco           el banco de destino\n\nSi un dato no aparece, pon cadena vacía. NO lo deduzcas ni lo inventes.\n\nCUIDADO con estas tres cosas:\n- Varios comprobantes muestran también quién PAGÓ. Nunca lo pongas como\n  destinatario. Un rótulo «A nombre de» puede referirse a la cuenta de origen:\n  fíjate a qué cuenta acompaña.\n- El importe puede tener los centavos en letra más chica: «Bs 5.00» son cinco,\n  no quinientos.\n- Copia los números tal como están, sin quitar asteriscos ni guiones.\n",
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "simplify": true,
+        "options": {
+          "maxOutputTokens": 400
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Copia del Demo B (el texto es idéntico). Lo que lee es un DATO: el servidor lo compara contra el total y la cuenta del QR."
+    },
+    {
+      "id": "leer-imagen",
+      "name": "Leer comprobante (imagen)",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        3800,
+        720
+      ],
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.5-flash-lite"
+        },
+        "text": "Este es un comprobante de una transferencia bancaria boliviana. Devuelve SOLO\nun objeto JSON, sin texto alrededor, con estas claves:\n\n  monto           el importe transferido, tal cual figura, con su separador\n  cuentaDestino   el número de la cuenta que RECIBIÓ, tal cual, con asteriscos\n                  si está enmascarada\n  nombreCuenta    el nombre de quien RECIBIÓ\n  fecha           la fecha de la transacción\n  hora            la hora de la transacción\n  banco           el banco de destino\n\nSi un dato no aparece, pon cadena vacía. NO lo deduzcas ni lo inventes.\n\nCUIDADO con estas tres cosas:\n- Varios comprobantes muestran también quién PAGÓ. Nunca lo pongas como\n  destinatario. Un rótulo «A nombre de» puede referirse a la cuenta de origen:\n  fíjate a qué cuenta acompaña.\n- El importe puede tener los centavos en letra más chica: «Bs 5.00» son cinco,\n  no quinientos.\n- Copia los números tal como están, sin quitar asteriscos ni guiones.\n",
+        "inputType": "binary",
+        "binaryPropertyName": "data",
+        "simplify": true,
+        "options": {
+          "maxOutputTokens": 400
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Copia del Demo B (el texto es idéntico)."
+    },
+    {
+      "id": "interpretar-lectura",
+      "name": "Interpretar lectura",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4040,
+        640
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/interpretar-lectura.js"
+      }
+    },
+    {
+      "id": "cotejar",
+      "name": "Cotejar en el servidor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4280,
+        640
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/cotejarComprobante",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ telefono: $json.telefono, legible: $json.legible === true, leido: ($json.leido && typeof $json.leido === 'object') ? $json.leido : {}, idMeta: $json.idMeta || '' }) }}",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "Copia del Demo B (mismo cuerpo). El servidor coteja contra el monto del `qr_enviado` y las cuentas del QR, y dice cuadra, no_cuadra o ilegible. «Cuadra» NO es una acreditación bancaria."
+    },
+    {
+      "id": "decidir",
+      "name": "Decidir turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4520,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/decidir-turno.js"
+      },
+      "notes": "Todo lo que no necesita entender lenguaje se decide con código, sin modelo."
+    },
+    {
+      "id": "extraer-si",
+      "name": "¿Extraer?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4760,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ String($('Decidir turno').first().json.accion || '').startsWith('extraer_') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "extraer",
+      "name": "Extraer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5000,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.cuerpoExtraccion) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "",
+          "name": ""
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1500,
+      "notes": "El modelo SOLO extrae datos (las líneas del pedido o los campos de la reserva) en JSON con esquema. No calcula precios, ni totales, ni horas; ningún texto al cliente sale de él."
+    },
+    {
+      "id": "plan",
+      "name": "Plan del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5240,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/plan-del-turno.js"
+      },
+      "notes": "Arma mensajes, aviso, cierre, pedido y estado nuevo. Los totales, los días y los textos los pone el código."
+    },
+    {
+      "id": "armar-avisos",
+      "name": "Armar avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5480,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/armar-avisos.js"
+      },
+      "notes": "Primera etapa de envío: lo que va AL RESTAURANTE. Siempre emite al menos un ítem (`sinAviso: true` si no hay nada que avisar)."
+    },
+    {
+      "id": "hay-avisos",
+      "name": "¿Hay avisos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5720,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.sinAviso !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "avisar-si",
+      "name": "¿Avisar de verdad?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5960,
+        160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba sin enviarDeVerdad no se manda nada al restaurante: el aviso se simula (con un wamid marcado) para recorrer el mismo camino."
+    },
+    {
+      "id": "enviar-aviso",
+      "name": "Enviar aviso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6200,
+        60
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:graph"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Plantilla (y, con la ventana de 24 h abierta, el texto con el detalle) a cada destinatario, nunca al propio número de quien escribe. Sin reintentos automáticos: un aviso repetido llegaría dos veces. Los avisos NO se reportan a la ingesta."
+    },
+    {
+      "id": "simular-aviso",
+      "name": "Simular aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6200,
+        260
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@solo:nodos/simular-aviso.js"
+      }
+    },
+    {
+      "id": "reunir-avisos",
+      "name": "Reunir avisos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6440,
+        60
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@solo:nodos/reunir-avisos.js"
+      }
+    },
+    {
+      "id": "fallo-aviso-si",
+      "name": "¿Falló el aviso?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        6680,
+        60
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.sinRespaldos !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Verdadero solo si algún aviso falló Y tiene respaldo. Es una decisión única para todos los avisos del turno (ver `Reunir avisos`)."
+    },
+    {
+      "id": "aviso-respaldo",
+      "name": "Aviso de respaldo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        6920,
+        -60
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.respaldo) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:graph"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Solo para los avisos cuyo envío cayó y traen un respaldo. Un aviso sin respaldo no se reintenta."
+    },
+    {
+      "id": "armar-mensajes",
+      "name": "Armar mensajes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7160,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@nodos/armar-mensajes.js"
+      },
+      "notes": "Segunda etapa: todo lo que sale AL CLIENTE, con código. Elige el texto por lo que PASÓ con el aviso (hecho, no dicho). Es el ÚNICO lugar donde se escribe el estado por teléfono."
+    },
+    {
+      "id": "enviar-si",
+      "name": "¿Enviar de verdad?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7400,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ (() => { const c = $('Config del negocio').first().json; return $json.sinMensajes !== true && (c.modoPrueba !== true || (c.enviarDeVerdad === true && !!c.telefonoDePrueba)); })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "En modo prueba con enviarDeVerdad falsa el envío se saltea."
+    },
+    {
+      "id": "enviar",
+      "name": "Enviar a WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7640,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.waGraphVersion || 'v26.0' }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:graph"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Un solo nodo para todo (texto, botones, enlace, imagen del QR). Envía de a uno con 1,5 s entre mensajes: Meta entregaba la confirmación y las redes fuera de orden."
+    },
+    {
+      "id": "fallo-si",
+      "name": "¿Falló el envío?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json && $json.error) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo mira un campo `error` explícito; sin él, no falló."
+    },
+    {
+      "id": "enviar-respaldo",
+      "name": "Enviar respaldo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8120,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Armar mensajes').item.json.waGraphVersion || 'v26.0' }}/{{ $('Armar mensajes').item.json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: $('Armar mensajes').item.json.para, type: 'text', text: { preview_url: true, body: String($('Armar mensajes').item.json.respaldo || '').slice(0, 4000) } }) }}",
+        "options": {
+          "timeout": 15000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1500
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:graph"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "Si Meta rechaza el interactivo o la imagen, sale el mismo contenido como texto (con el enlace del QR o del chat)."
+    },
+    {
+      "id": "reportar-sal-si",
+      "name": "¿Reportar? (saliente)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        8360,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Armar mensajes').item.json.reportar === true && !!((($json || {}).messages || [])[0] || {}).id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Solo lo que se envió AL CLIENTE y que Meta aceptó (con id): un QR que Meta rechazó no abre el cobro en el servidor. No se reporta en modo prueba."
+    },
+    {
+      "id": "reportar-saliente",
+      "name": "Reportar mensaje (saliente)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        8600,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/ingesta",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; return JSON.stringify({ telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '', evento: m.evento, referencia: m.referencia, monto: m.monto }); })() }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Una llamada por cada mensaje enviado al cliente. El QR lleva `evento: qr_enviado`, `referencia` (el pedido) y `monto` (el total calculado por el código): contra ese número coteja el servidor."
+    },
+    {
+      "id": "cierre-si",
+      "name": "¿Registrar cierre?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        7400,
+        620
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ !!($json.cierre && $json.cierre.tipo === 'registro' && $json.cierre.referencia) && $('Config del negocio').first().json.modoPrueba !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Cuelga de `Armar mensajes` en paralelo con el envío, por debajo en el lienzo: corre una sola vez. En modo prueba nunca se registra un cierre (es la unidad que se factura)."
+    },
+    {
+      "id": "registrar-cierre",
+      "name": "Registrar cierre",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7640,
+        620
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://us-east1-novuchat-demo.cloudfunctions.net/registrarCierre",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-NovuChat-Numero",
+              "value": "={{ $('Interpretar entrada').first().json.phoneNumberId }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const t = $('Interpretar entrada').first().json; return JSON.stringify({ tipo: $json.cierre.tipo, referencia: $json.cierre.referencia, detalle: $json.cierre.detalle, telefono: t.from, nombreCliente: t.nombrePerfil || '' }); })() }}",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "@@cred:ingesta"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Cierre tipo `registro` (plan B y reservas): referencia = wamid del aviso (o el pedido), detalle de hasta 300 caracteres. Idempotente por referencia. El cierre de una venta con QR lo crea el cotejo en el servidor."
+    },
+    {
+      "id": "resumen",
+      "name": "Resumen del turno",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7880,
+        700
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "@@comun:nodos/resumen-del-turno.js"
+      },
+      "notes": "Último nodo. En la variante de prueba, «Entrada de prueba» responde con esto: mensajes al cliente, avisos y resumen del turno."
+    }
+  ],
+  "connections": {
+    "Entrega del receptor": {
+      "main": [
+        [
+          {
+            "node": "Verificar firma con el receptor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar firma con el receptor": {
+      "main": [
+        [
+          {
+            "node": "¿Firma válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Firma válida?": {
+      "main": [
+        [
+          {
+            "node": "Aceptar (200)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rechazar (401)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aceptar (200)": {
+      "main": [
+        [
+          {
+            "node": "Descartar repetidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descartar repetidos": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Entrada de prueba": {
+      "main": [
+        [
+          {
+            "node": "Carga de entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carga de entrada": {
+      "main": [
+        [
+          {
+            "node": "Config base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config base": {
+      "main": [
+        [
+          {
+            "node": "¿Es un mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es un mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Traer configuración",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Traer configuración": {
+      "main": [
+        [
+          {
+            "node": "Config del negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config del negocio": {
+      "main": [
+        [
+          {
+            "node": "Interpretar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpretar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (entrante)": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (entrante)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Comercio operativo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reportar mensaje (entrante)": {
+      "main": [
+        [
+          {
+            "node": "¿Comercio operativo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Comercio operativo?": {
+      "main": [
+        [
+          {
+            "node": "¿Atención normal?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Comercio no operativo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comercio no operativo": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Atención normal?": {
+      "main": [
+        [
+          {
+            "node": "¿Bajar medio?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Uso extendido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Uso extendido": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Bajar medio?": {
+      "main": [
+        [
+          {
+            "node": "Obtener URL del medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener URL del medio": {
+      "main": [
+        [
+          {
+            "node": "¿Tamaño aceptable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tamaño aceptable?": {
+      "main": [
+        [
+          {
+            "node": "Descargar medio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar medio": {
+      "main": [
+        [
+          {
+            "node": "¿Es audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es audio?": {
+      "main": [
+        [
+          {
+            "node": "Transcribir audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Es PDF?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir audio": {
+      "main": [
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es PDF?": {
+      "main": [
+        [
+          {
+            "node": "Leer comprobante (PDF)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Leer comprobante (imagen)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer comprobante (PDF)": {
+      "main": [
+        [
+          {
+            "node": "Interpretar lectura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer comprobante (imagen)": {
+      "main": [
+        [
+          {
+            "node": "Interpretar lectura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interpretar lectura": {
+      "main": [
+        [
+          {
+            "node": "Cotejar en el servidor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cotejar en el servidor": {
+      "main": [
+        [
+          {
+            "node": "Decidir turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decidir turno": {
+      "main": [
+        [
+          {
+            "node": "¿Extraer?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Extraer?": {
+      "main": [
+        [
+          {
+            "node": "Extraer",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plan del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer": {
+      "main": [
+        [
+          {
+            "node": "Plan del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan del turno": {
+      "main": [
+        [
+          {
+            "node": "Armar avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar avisos": {
+      "main": [
+        [
+          {
+            "node": "¿Hay avisos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay avisos?": {
+      "main": [
+        [
+          {
+            "node": "¿Avisar de verdad?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Avisar de verdad?": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simular aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso": {
+      "main": [
+        [
+          {
+            "node": "Reunir avisos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simular aviso": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reunir avisos": {
+      "main": [
+        [
+          {
+            "node": "¿Falló el aviso?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló el aviso?": {
+      "main": [
+        [
+          {
+            "node": "Aviso de respaldo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aviso de respaldo": {
+      "main": [
+        [
+          {
+            "node": "Armar mensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar mensajes": {
+      "main": [
+        [
+          {
+            "node": "¿Enviar de verdad?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Registrar cierre?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar de verdad?": {
+      "main": [
+        [
+          {
+            "node": "Enviar a WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar a WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "¿Falló el envío?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Falló el envío?": {
+      "main": [
+        [
+          {
+            "node": "Enviar respaldo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar respaldo": {
+      "main": [
+        [
+          {
+            "node": "¿Reportar? (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Reportar? (saliente)": {
+      "main": [
+        [
+          {
+            "node": "Reportar mensaje (saliente)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿Registrar cierre?": {
+      "main": [
+        [
+          {
+            "node": "Registrar cierre",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar cierre": {
+      "main": [
+        [
+          {
+            "node": "Resumen del turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
