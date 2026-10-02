@@ -55,9 +55,9 @@ const existeArchivo = (r: string) => {
  * entra solo.
  */
 const SIN_CALCULAR: readonly { archivo: string; sitio: string; porque: string }[] = [
-  { archivo: 'admin/scripts/catalogo-demo.mjs', sitio: "join(RAIZ, 'scripts', 'datos', CONJUNTOS[CONJUNTO].archivo)",
+  { archivo: 'admin/scripts/datos/catalogo-demo.mjs', sitio: "join(RAIZ, 'scripts', 'datos', CONJUNTOS[CONJUNTO].archivo)",
     porque: 'el archivo del conjunto sale de un diccionario; el prefijo admin/scripts/datos se verifica' },
-  { archivo: 'admin/scripts/catalogo-demo.mjs', sitio: 'join(DIST, ruta)',
+  { archivo: 'admin/scripts/datos/catalogo-demo.mjs', sitio: 'join(DIST, ruta)',
     porque: 'servidor de la vista previa: el último tramo es la ruta de la petición (admin/web/dist se verifica)' },
   { archivo: 'admin/scripts/probar-csp.mjs', sitio: 'join(DIST, ruta)',
     porque: 'servidor de archivos estáticos: el último tramo es la ruta de la petición (admin/web/dist se verifica)' },
@@ -67,7 +67,7 @@ const SIN_CALCULAR: readonly { archivo: string; sitio: string; porque: string }[
     porque: 'el nombre depende del tenant; el prefijo admin/scripts/datos se verifica' },
   { archivo: 'admin/scripts/probar-cierre.mjs', sitio: "new URL(ARCHIVO, new URL('../../', import.meta.url))",
     porque: "el .env sale de `leer('--env', '.env')` (opción con valor por defecto) y se une a la raíz calculada" },
-  { archivo: 'admin/scripts/sembrar-demos.mjs', sitio: 'new URL(nombre, RAIZ)',
+  { archivo: 'admin/scripts/datos/sembrar-demos.mjs', sitio: 'new URL(nombre, RAIZ)',
     porque: 'el nombre de cada archivo de una lista; la raíz sí se calcula' },
 ];
 
@@ -100,7 +100,7 @@ describe('las rutas escritas en los scripts llevan a un archivo', () => {
     // y el `new URL('../../', import.meta.url)` de sembrar-demos tienen que verse.
     expect(rutas.some((r) => r?.endsWith('/atencion.ts'))).toBe(true);
     expect(rutas.some((r) => r?.startsWith('admin/functions/lib/') && r.endsWith('/prepago.js'))).toBe(true);
-    expect(sitios.some((s) => s.a === 'admin/scripts/sembrar-demos.mjs' && s.ruta === '.')).toBe(true);
+    expect(sitios.some((s) => s.a === 'admin/scripts/datos/sembrar-demos.mjs' && s.ruta === '.')).toBe(true);
     expect(sitios.length).toBeGreaterThan(30);
   });
 
