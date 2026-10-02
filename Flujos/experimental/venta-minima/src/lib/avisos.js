@@ -111,7 +111,7 @@
 // `clase` ∈ `plantilla` | `detalle` | `imagen`. La imagen NO cuenta como «el aviso salió».
 
 // La copia local de la red de palabras que el asistente jamás dice (la de `comun.js` manda si existe).
-const AV_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const AV_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 const AV_VENTANA_MS = 23.5 * 60 * 60 * 1000; // 23 h 30 min
 const AV_TOPE_DIA_DEF = 150;
@@ -144,7 +144,7 @@ const AV_OMITIDO = '[texto omitido]';
 
 /** La forma en que se COMPARA (S-1): NFKC, sin controles C1 ni caracteres de formato, NFD sin marcas, en minúsculas y con los confusables plegados. */
 function avCanon(t) {
-  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\u0080-\u009f]/g, '').replace(/\p{Cf}/gu, '')
+  return String(t === undefined || t === null ? '' : t).normalize('NFKC').replace(/[\u0080-\u009f]/g, '').replace(/\p{Cf}/gu, '').replace(/[\u115f\u1160\u3164\uffa0\u2800]/g, '')
     .normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
     .replace(/[Ͱ-ϿЀ-ԯı]/g, (c) => {
       const i = AV_CONFUSABLES_DE.indexOf(c);
@@ -267,6 +267,8 @@ function avLimpio(t, max, opc) {
   // Tampoco «…»: NFKC lo cambiaría por «...» y la marca «… y N más» de una lista recortada dejaría de ser la que armó el código.
   s = s.split(/([ºª…])/).map((p, i) => (i % 2 ? p : p.normalize('NFKC'))).join('').replace(/\p{Cf}/gu, '');
   s = avCortar(s, tope * 2);
+  // El punto ideográfico («。» U+3002) y el de media anchura («｡» U+FF61) NFKC no los lleva a «.»: se normalizan aquí, antes del filtro.
+  s = s.replace(/[。｡]/g, '.');
   s = s.replace(AV_ENLACE, ' [enlace omitido] ');
   s = s.replace(/[\r\n\t\u000b\u000c\u0085\u2028\u2029]+/g, ' · ');
   s = s.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, '');
@@ -274,7 +276,7 @@ function avLimpio(t, max, opc) {
   // Un punto pegado a lo que sigue (letra.letra, letra.número o número.letras) recibe un espacio: así «Nro.123», «Av.Arce» o
   // «dpto.4B» llegan enteros, y «malo.test/x» o «x.ru» no quedan como un enlace que WhatsApp convierta en tocable. Los
   // decimales y las horas («4.50», «12.30», «1.25L») no se tocan.
-  s = s.replace(/(?<=\p{L})(?<![ºª])\.(?=[\p{L}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
+  s = s.replace(/(?<=[\p{L}\p{M}])(?<![ºª])\.(?=[\p{L}\p{M}\p{N}])(?![ºª])|(?<=\p{N})\.(?=\p{L}{2})/gu, '. ');
   if (opc && opc.cocina) {
     s = s.replace(/\+?\d[\d\s.-]{5,}\d/g, (m) => (m.replace(/\D/g, '').length >= 7 ? '…' : m));
     s = s.replace(/\d{7,}/g, '…');
@@ -283,15 +285,41 @@ function avLimpio(t, max, opc) {
   s = avSinBordes(s.replace(/\s{2,}/g, ' '));
   s = avSinBordes(s.replace(/(?:\s·){2,}/g, ' ·'));
   s = avSinBordes(avSinProhibidas(s).replace(/\s{2,}/g, ' '));
-  const cps = Array.from(s);
-  if (cps.length > tope) {
-    s = cps.slice(0, tope).join('');
-    // Un corte que cae dentro de una marca («[texto omit») se retrocede hasta el corchete que la abre.
-    const ab = s.lastIndexOf('[');
-    if (ab >= 0 && ab > s.lastIndexOf(']')) s = s.slice(0, ab);
-    s = avSinBordes(s);
+  if (Array.from(s).length > tope) {
+    // El corte PUEDE volver a formar una coincidencia de la red («confirmo tubos» recortado a «confirmo tu»): tras cortar se vuelve
+    // a sanear, y como la marca es más larga que una palabra corta, se vuelve a cortar (hasta 4 vueltas, siempre acotado).
+    for (let vuelta = 0; vuelta < 4; vuelta++) {
+      s = Array.from(s).slice(0, tope).join('');
+      // Un corte que cae dentro de una marca («[texto omit») se retrocede hasta el corchete que la abre.
+      const ab = s.lastIndexOf('[');
+      if (ab >= 0 && ab > s.lastIndexOf(']')) s = s.slice(0, ab);
+      s = avSinBordes(avSinProhibidas(avSinBordes(s)).replace(/\s{2,}/g, ' '));
+      if (Array.from(s).length <= tope) break;
+    }
   }
-  return s;
+  return avAjustarFinal(s, tope);
+}
+
+/** Verdadero si `s` coincide con la red en la forma canónica o en la sin puntuación (la misma comprobación de `avSinProhibidas`). */
+function avCoincide(s) {
+  const re = avProhibidas();
+  const rx = new RegExp(re.source, re.flags.replace(/[gy]/g, ''));
+  return rx.test(avCanon(s)) || rx.test(avNorm(s));
+}
+
+/**
+ * Última garantía de `avLimpio`: el resultado respeta el tope y NO coincide con la red. Si algo falla, se quitan palabras
+ * ENTERAS del final hasta que cumpla (y, en el peor caso, devuelve '').
+ */
+function avAjustarFinal(s, tope) {
+  if (Array.from(s).length <= tope && !avCoincide(s)) return s;
+  const palabras = s.split(' ');
+  while (palabras.length > 0) {
+    palabras.pop();
+    const t = avSinBordes(palabras.join(' '));
+    if (Array.from(t).length <= tope && !avCoincide(t)) return t;
+  }
+  return '';
 }
 
 /** El texto de una variable de plantilla: sin saltos, sin 5+ espacios, con tope (500) y nunca vacío («—»). */
