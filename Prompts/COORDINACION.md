@@ -540,3 +540,8 @@ H1b para la revisora.
     más el gancho (#264). La barrera en `webhook-meta.sh` quedó en su propia
     sesión.
   - Detalle en `bitacora/2026-09.md`, 28/09 (noche).
+- **01/10/2026** — Frente aparte, con excepción al congelamiento de F2 firmada
+  por Andres: «Venta mínima v0» de Q'Taco (piloto del 05/10), construido con 9
+  tareas en paralelo (T0 a T7b) en `Flujos/experimental/venta-minima/`, sin
+  tocar zonas de F2 ni `Flujos/src`. Nada publicado; fila en
+  `docs/versiones-por-cliente.md`.

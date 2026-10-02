@@ -78,7 +78,7 @@
 // `clase` ∈ `plantilla` | `detalle` | `imagen`. La imagen NO cuenta como «el aviso salió».
 
 // La copia local de la red de palabras que el asistente jamás dice (la de `comun.js` manda si existe).
-const AV_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const AV_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 const AV_VENTANA_MS = 23.5 * 60 * 60 * 1000; // 23 h 30 min
 const AV_TOPE_DIA_DEF = 150;

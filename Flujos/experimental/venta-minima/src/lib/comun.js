@@ -30,7 +30,7 @@ const VM_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 // La red de palabras que un texto al cliente o al restaurante nunca puede traer:
 // presentan como hecho lo que el flujo no verifico (prohibicion 3) o prometen lo
 // que no tiene mecanismo detras («solo se ofrece lo que se cumple»).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 // ---------------------------------------------------------------------------
 // Nodos de n8n

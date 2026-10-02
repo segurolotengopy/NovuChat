@@ -34,7 +34,7 @@ type Fn = (...a: any[]) => any;
 const L = ejecutar(`${FUENTE}\nreturn [{ json: { ${NOMBRES.join(', ')} } }];`, [{}])[0] as Record<(typeof NOMBRES)[number], Fn>;
 
 // La red de palabras prohibidas de `comun.js` (§4.2), copiada: esta suite corre sola.
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 
 // --- El mundo de las pruebas ------------------------------------------------------------------
 // Lunes 05/10/2026, 10:00 en La Paz. Martes 06, … viernes 09, sábado 10, domingo 11.
@@ -221,6 +221,8 @@ describe('rsValidar: la solicitud completa', () => {
     ]) expect(t).not.toMatch(VM_PROHIBIDAS);
     // El negativo de la propia prueba: la red SÍ atrapa la palabra que se busca.
     expect('Reserva confirmada').toMatch(VM_PROHIBIDAS);
+    for (const f of ['Ya lo estamos preparando', 'Lo estamos preparando']) expect(f).toMatch(VM_PROHIBIDAS);
+    expect('No estamos abiertos hoy').not.toMatch(VM_PROHIBIDAS);
   });
   it('ningún caso inválido dice «recibí tu solicitud» ni «llegó al restaurante»', () => {
     for (const c of [{ fecha: '2026-10-04' }, { hora: '08:00' }, { personas: 40 }, { fecha: DOM }, { zona: 'jardín' }, { nombre: 'Ana' }]) {

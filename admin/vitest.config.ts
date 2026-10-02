@@ -38,6 +38,15 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export const SUITES_PURAS = [
   'pruebas/agenda-minima-flujo.test.ts',
   'pruebas/agenda-minima-lib.test.ts',
+  'pruebas/venta-minima-comun.test.ts',
+  'pruebas/venta-minima-pedido.test.ts',
+  'pruebas/venta-minima-reserva.test.ts',
+  'pruebas/venta-minima-avisos.test.ts',
+  'pruebas/venta-minima-promos.test.ts',
+  'pruebas/venta-minima-cobro.test.ts',
+  'pruebas/venta-minima-salida.test.ts',
+  'pruebas/venta-minima-decision.test.ts',
+  'pruebas/n8n-de-mentira.test.ts',
   'pruebas/agendamiento-seguimientos.test.ts',
   'pruebas/alta-plan-inicial.test.ts',
   // 'pruebas/asignar-rol.test.ts' NO: abre Firebase antes del modo seco (ver arriba).

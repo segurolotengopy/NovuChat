@@ -46,13 +46,13 @@ const L = ejecutar(`${LIB}\nreturn [{ json: { ${NOMBRES.join(', ')}, CB_PROHIBID
 // Las formas prohibidas, escritas ACÁ y no importadas de la librería: si la librería aflojara su red, esta
 // prueba lo vería. Son las del plan técnico (`VM_PROHIBIDAS`) más las de CLAUDE.md, PROHIBICIÓN 3.
 const PROHIBIDAS =
-  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|pago recibido|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
+  /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|pago recibido|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto/i;
 // Voseo: el español de Bolivia usa tuteo.
 const VOSEO = /(?<![\p{L}])(mand[aá]me|mandá|guardá|escaneá|tenés|querés|podés|decime|escribile|avisame|compartí|enviá|enviame)(?![\p{L}])/iu;
 
 const FRASES_PROHIBIDAS = [
   'pago acreditado', 'pago verificado', 'pago validado', 'pago confirmado', 'tu pedido está pagado',
-  'recibimos tu pago', 'ya lo preparan', 'ya lo están preparando', 'lo preparamos', 'te avisamos',
+  'recibimos tu pago', 'ya lo preparan', 'ya lo están preparando', 'ya lo estamos preparando', 'lo estamos preparando', 'lo preparamos', 'te avisamos',
   'te llamaremos', 'tu pedido va en camino', 'te escribirán', 'lo consulto con recepción',
 ];
 
@@ -101,13 +101,14 @@ describe('la librería respeta el sandbox de n8n', () => {
     expect(typeof L.cbCobroReal).toBe('function');
   });
 
-  it('la red propia de la librería coincide con la del plan (y atrapa las 14 frases prohibidas)', () => {
+  it('la red propia de la librería coincide con la del plan (y atrapa las 16 frases prohibidas)', () => {
     expect(L.CB_PROHIBIDAS.source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo (est[aá]n )?prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto',
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto',
     );
     for (const f of FRASES_PROHIBIDAS) expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
     // El negativo: una frase honesta no la dispara.
     expect(L.CB_PROHIBIDAS.test('Recibí tu comprobante y los datos coinciden con tu pedido.')).toBe(false);
+    expect(L.CB_PROHIBIDAS.test('No estamos abiertos hoy.')).toBe(false);
   });
 });
 
