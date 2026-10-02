@@ -1864,6 +1864,20 @@ describe('cobro', () => {
     expect(reenvio.mensajes[0]?.payload['image']?.caption).toMatch(/84/);
     expect(reenvio.llamadas.ingesta.some((x) => x['evento'] === 'qr_enviado')).toBe(false);
     expect(estadoDe(r.w.mundo)['paso']).toBe('esperando_comprobante');
+    // De punta a punta: «Armar mensajes» le da a la imagen el monto y la referencia SIN evento, y «Reportar mensaje (saliente)»
+    // se guía por el EVENTO: la imagen del reenvío se reporta (cuenta como mensaje) pero sin evento, sin referencia y sin monto.
+    const armada = (reenvio.porNodo['Armar mensajes'] ?? []).find((m) => (m['payload'] as J)?.['type'] === 'image') as J;
+    expect(armada['monto']).toBe(84);
+    expect(String(armada['referencia'])).toMatch(/^ped-/);
+    expect(armada['evento']).toBeUndefined();
+    const reportada = reenvio.llamadas.ingesta.find((x) => x['direccion'] === 'saliente' && x['tipo'] === 'image') as J;
+    expect(reportada).toBeDefined();
+    for (const clave of ['evento', 'referencia', 'monto']) expect(Object.keys(reportada), clave).not.toContain(clave);
+    // Negativo: el QR original SÍ lleva las tres cosas, en el mismo reporte de la imagen.
+    const original = r.w.mundo.llamadas.ingesta.filter((x) => x['direccion'] === 'saliente' && x['tipo'] === 'image');
+    expect(original).toHaveLength(2); // el original y el reenvío
+    expect(original[0]).toMatchObject({ evento: 'qr_enviado', monto: 84 });
+    expect(String((original[0] as J)['referencia'])).toMatch(/^ped-/);
   });
 
   it('una imagen sin QR pendiente NO es un pago: no se baja, no se lee, no se coteja, no se avisa; con pie de foto, el pie es un texto más', () => {

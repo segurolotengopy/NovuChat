@@ -1512,7 +1512,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; return JSON.stringify({ telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '', evento: m.evento, referencia: m.referencia, monto: m.monto }); })() }}",
+        "jsonBody": "={{ (() => { const m = $('Armar mensajes').item.json; const r = { telefono: m.para, direccion: 'saliente', tipo: m.tipoReporte, texto: m.texto || '', idMeta: ((($json || {}).messages || [])[0] || {}).id || '' }; if (typeof m.evento === 'string' && m.evento) { r.evento = m.evento; if (m.referencia) r.referencia = m.referencia; if (m.monto !== undefined && m.monto !== null) r.monto = m.monto; } return JSON.stringify(r); })() }}",
         "options": {
           "timeout": 4000
         }
@@ -1528,7 +1528,7 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 2000,
-      "notes": "Una llamada por cada mensaje enviado al cliente. El QR lleva `evento: qr_enviado`, `referencia` (el pedido) y `monto` (el total calculado por el código): contra ese número coteja el servidor."
+      "notes": "Una llamada por cada mensaje enviado al cliente. El reporte se guía por el EVENTO: `evento`, `referencia` y `monto` viajan solo cuando el mensaje trae evento. El QR lleva `evento: qr_enviado`, `referencia` (el pedido) y `monto` (el total calculado por el código): contra ese número coteja el servidor. El reenvío del QR lleva monto y referencia SIN evento y por eso no reabre el cobro."
     },
     {
       "id": "cierre-si",
