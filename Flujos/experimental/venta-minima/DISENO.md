@@ -102,6 +102,18 @@ cuerpo con `JSON.stringify`) → `¿Firma válida?` → `Aceptar (200)` | `Recha
 repetidos por `wamid` de Meta y los números de otro prefijo. **Ningún WhatsApp Trigger** (prohibición 7). El
 verificador solo se llama por la red interna. Ruta y URL van como `REEMPLAZAR_*`.
 
+## Defectos de integración conocidos (la suite los marca con `it.fails`; se quitan al arreglarlos)
+
+- **«Reenviar QR» no reenvía el QR.** `Plan del turno` lo arma sin `monto` ni `referencia` (para no reportar `qr_enviado`
+  otra vez) y `Armar mensajes` rechaza todo QR sin monto (`qr_rechazado: qr_sin_monto`): el cliente lee «Eso lo ve
+  directamente el restaurante» con el botón. No abre un segundo cobro ni queda sin respuesta.
+- **Derivación con el aviso caído.** `Plan del turno` anota la derivación en el estado al pedir el aviso, salga o no; si
+  Meta lo rechaza, una segunda derivación dentro de la hora ya no avisa al restaurante.
+- **`avisos.js` nunca trae respaldo** (`respaldo: null`): `Aviso de respaldo` hoy no corre en la práctica; su cableado se
+  prueba con un doble de `Armar avisos`.
+- **La imagen del comprobante** se reenvía por su id al rol `completo` con la ventana abierta (el plano la dejaba fuera
+  del lunes, P9): no está verificado que Meta acepte ese id; si lo rechaza, no cambia nada de lo que lee el cliente.
+
 ## Mensajes por conversación (declarados y medidos en la suite)
 
 Es un flujo nuevo: no agrega ni quita mensajes a ningún otro cliente. Lo que cuesta cada conversación de Q'Taco:
