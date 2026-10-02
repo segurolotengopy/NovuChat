@@ -136,12 +136,12 @@ en la prueba (L2): son 51 menos esos dos.
    instrucción». Llevan `alwaysOutputData` y `onError: continueRegularOutput`. El nodo de Gemini 1.2 **no tiene opción de timeout**
    (verificado en el paquete 2.36.5): lo acota `maxOutputTokens` y, sobre todo, el `executionTimeout` de la ejecución (60 s).
 
-8. **Costo al restaurante: más mensajes que el plano §6 (PENDIENTE DE LA CONFIRMACIÓN DE ANDRES).** Con las ventanas de 24 h
+8. **Costo al restaurante: más mensajes que el plano §6 (CONFIRMADO POR ANDRES EL 02/10/2026).** Con las ventanas de 24 h
    abiertas, un pedido con QR cuesta **5** mensajes al restaurante (2 plantillas, 2 detalles —uno de ellos a `cocina`— y la
    imagen del comprobante) frente a **3** del plano §6, y una reserva cuesta **4** frente a 3. Con 150 pedidos y 40 reservas al
    mes son unos **340 mensajes más** (≈ 3,8 USD, a 0,0113 USD cada uno). `CLAUDE.md` pide discutir con Andres toda decisión
-   que mueva este costo antes de implementarla: **queda declarado como apartamiento pendiente de su confirmación** (alternativas:
-   no mandar el detalle a `cocina`, o no reenviar la imagen del comprobante).
+   que mueva este costo antes de implementarla: **Andres lo confirmó el 02/10/2026** y queda como apartamiento aceptado (las
+   alternativas descartadas eran no mandar el detalle a `cocina`, o no reenviar la imagen del comprobante).
 
 ## La entrada del receptor (camino B)
 
@@ -211,13 +211,42 @@ deja publicado junto a la producción. Sus cerraduras:
   así que una credencial de AAB1-WA-Prod con un nombre neutro la pasaría. Lo cubre la prohibición 7 y el ensayo (comprobar a qué
   app apunta antes de activar un Trigger), no este archivo; la variante `trigger` no se usa en la entrada de Q'Taco (es la del
   receptor).
-- **Carreras de `$getWorkflowStaticData` con ejecuciones simultáneas (DECISIÓN PENDIENTE DE ANDRES).** El estado del flujo (memoria
-  por teléfono, repetidos, avisos, `reservasDelDia`) vive en los datos estáticos, que n8n escribe al terminar cada ejecución: dos
-  ejecuciones a la vez pueden pisarse. Escenarios: **(a)** un doble toque en «Confirmar pedido» dispara dos ejecuciones con dos
-  `wamid` distintos: salen dos avisos y dos cierres, porque `pedidoId` lleva milisegundos (`pedido.js`, ~850) y la referencia del
-  cierre es el `wamid` del aviso; **(b)** dos clientes a la vez: se puede perder el estado de uno; **(c)** `reservasDelDia` puede
-  pasar el tope. Opciones: aceptarlo (el volumen de Q'Taco es bajo) o hacer **estables** la referencia del cierre (derivarla del
-  pedido, no del `wamid`) y la clave de avisos por pedido. **El ensayo T11 debe incluir un doble toque real** en «Confirmar pedido».
+- **Carreras de `$getWorkflowStaticData` con ejecuciones simultáneas (B0 cubre solo el doble toque; la solución de fondo está decidida).**
+  El estado del flujo (memoria por teléfono, repetidos, avisos, `reservasDelDia`) vive en los datos estáticos: n8n los carga al
+  empezar cada ejecución y los **reescribe enteros** al terminar, así que con ejecuciones simultáneas gana la última. Escenarios:
+  **(a)** un doble toque en «Confirmar pedido» (o «Enviar solicitud») dispara dos ejecuciones con dos `wamid` distintos y el mismo
+  estado de partida; **(b)** dos clientes a la vez: se puede perder el estado de uno; **(c)** `reservasDelDia` puede pasar el tope.
+  - **Qué cubre B0 (PR-2b, solo el flujo).** La clave del pedido ya no sale del reloj ni del `wamid`: el `pedidoId`
+    (`ped-<fecha>-<tel4>-<huella>`), el código de 4 caracteres y la referencia de la reserva (`res-<fecha>-<tel4>-<huella>`) salen de un
+    **ancla** determinista: el `ultimoMensajeMs` del estado tal como se **leyó** (`Decidir turno` lo entrega como `anclaMs`), el
+    carrito o los datos de la reserva (huella FNV-1a de 32 bits sobre su texto canónico, sin `crypto`), el teléfono y la fecha de La
+    Paz del ancla (`vmIdEstable`, `comun.js`). Dos ejecuciones que parten del mismo estado y confirman lo mismo dan **exactamente** el
+    mismo id y el mismo código. La referencia del cierre pasa a ser el `pedidoId` (o la de la reserva) y ya no el `wamid` del aviso
+    (`Plan del turno` la pide en `cierre.referencia`; `Armar mensajes` la usa, y solo si el plan no trae ninguna cae al `pedidoId`).
+    `registrarCierre` **ya es idempotente por `tipo` y `referencia`**: el doble cierre queda en uno. `cotejarComprobante` ya usaba el
+    `pedidoId` como referencia, y el QR abre el cobro con la misma referencia y el mismo monto en las dos ejecuciones. El cierre
+    sigue saliendo aunque el aviso no salga. **Contrato con el servidor sin cambios; cero nodos nuevos; cero mensajes por conversación
+    agregados o quitados.**
+  - **«El mismo cliente repite el mismo pedido idéntico más tarde».** El id incluye el ancla, y el ancla cambia entre un pedido y el
+    siguiente: el estado se reescribe en **cada turno** (`ultimoMensajeMs` = la hora del turno), así que el segundo pedido parte del
+    estado escrito por el turno posterior a la confirmación del primero, y su ancla es otra aunque el carrito sea idéntico. Hace
+    falta que dos turnos distintos del mismo teléfono caigan **en el mismo milisegundo** para que choquen (los separan, como mínimo, un
+    toque humano y una ejecución de n8n). Las pruebas lo cubren (mismo teléfono y mismo carrito, pedidos consecutivos y una hora
+    después; la reserva repetida) y el caso inverso (una reserva repetida por error dentro del mismo estado leído sí es la misma).
+  - **Qué NO cubre B0.** **(1) Los avisos duplicados:** con un doble toque el restaurante sigue recibiendo dos avisos (dos
+    plantillas y dos detalles), pero con el **mismo código**, de modo que ve que es el mismo pedido; el segundo cuenta además
+    como mensajes que se pagan. **(2) Dos clientes a la vez:** si dos ejecuciones de teléfonos distintos terminan juntas, la última en
+    reescribir se lleva el estado del otro (el cliente pierde su carrito o su paso). **(3) El tope de reservas por día:**
+    `reservasDelDia` es otro mapa de los mismos datos estáticos y se puede pasar del tope si dos solicitudes se anotan a la vez. Y los
+    repetidos (`vistos`) viven en el mismo lugar: un reintento de Meta que llegue en paralelo puede procesarse dos veces.
+    **Límites del ancla:** sin ancla (estado nuevo o vencido, o una prueba que no pasa por `Decidir turno`) la clave cae al reloj y deja
+    de ser estable; y un doble toque que llegue **después** de que la primera ejecución reescribió el estado ya no es una carrera:
+    el botón viene viejo y el flujo muestra el paso actual.
+  - **Decisión de fondo (Andres, 02/10/2026).** Se construye la solución de fondo: **el estado por teléfono en el servidor, con
+    transacciones**, en lugar de los datos estáticos de n8n. El plan está en `NOVUCHAT_QTaco-plan-estado-en-el-servidor_2026-10-02.md`
+    (en `CLIENTES` y en Descargas): 4 a 5 días hábiles, publicación prevista hacia el 08-09/10. Cuando llegue, B0 queda como segunda
+    barrera (la clave estable sigue sirviendo para que el cierre sea idempotente). **El ensayo T11 debe incluir un doble toque real**
+    en «Confirmar pedido» y otro en «Enviar solicitud»: la suite simula la carrera restaurando `sd`, no la reproduce en paralelo.
 - **La variante de prueba usa la credencial de ingesta y el número de Q'Taco para `Cotejar en el servidor`**: si los datos del
   comprobante coinciden, el cotejo **crea un cierre real** en el servidor (por eso el teléfono de prueba tiene que ser uno del
   equipo y el ensayo no debe mandar comprobantes que cuadren con un pedido real). Y la credencial «Graph WhatsApp — pruebas»
