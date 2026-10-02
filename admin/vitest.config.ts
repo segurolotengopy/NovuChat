@@ -90,6 +90,7 @@ export const SUITES_PURAS = [
   'pruebas/encabezado-comercio.test.ts',
   'pruebas/core/ensamblador.test.ts',
   'pruebas/core/niega-ia.test.ts',
+  'pruebas/core/venta-salida.test.ts',
   'pruebas/estado-comercio.test.ts',
   'pruebas/estado-de-versiones.test.ts',
   'pruebas/flujos-origen.test.ts',

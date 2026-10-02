@@ -677,8 +677,11 @@ describe('(9) El orden del lienzo y el costo en mensajes', () => {
   });
 
   it('el envío al cliente va ARRIBA del aviso al negocio, en la rama del cotejo', () => {
-    expect(destinos(f, 'Respuesta del cobro')).toEqual(['Responder al cliente', '¿Avisar del cobro?']);
+    // F3a: el envío al cliente es el embudo «Mensaje a enviar» y su par de envío.
+    expect(destinos(f, 'Respuesta del cobro')).toEqual(['Mensaje a enviar', '¿Avisar del cobro?']);
+    expect(y('Mensaje a enviar')).toBeLessThan(y('¿Avisar del cobro?'));
     expect(y('Responder al cliente')).toBeLessThan(y('¿Avisar del cobro?'));
+    expect(y('Responder con botón')).toBeLessThan(y('¿Avisar del cobro?'));
   });
 
   it('la rama del carrito sigue abajo de todo', () => {
@@ -713,7 +716,10 @@ describe('(9) El orden del lienzo y el costo en mensajes', () => {
     };
     const porGraph = f.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest'
       && vaAMeta(String(n.parameters['url'] ?? ''))).map((n) => n.name);
-    expect(porGraph).toEqual(['Enviar QR de cobro']);
+    // F3a (02/10/2026): el segundo HTTP a Graph es el botón de «pasar con una
+    // persona», que lleva el MISMO texto en un interactivo: reemplaza al texto
+    // plano de ese turno, no es un mensaje más (la suite venta-salida lo clava).
+    expect(porGraph).toEqual(['Responder con botón', 'Enviar QR de cobro']);
   });
 
   it('lo que se reporta como saliente es el texto del COTEJO, no el del modelo', () => {

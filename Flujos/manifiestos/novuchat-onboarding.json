@@ -1,7 +1,8 @@
 {
   "flujo": "novuchat-onboarding.json",
   "conservanMarcadores": {
-    "Config base": "REEMPLAZAR_"
+    "Config base": "REEMPLAZAR_",
+    "¿Es un mensaje?": "REEMPLAZAR_"
   },
   "codigo": {
     "Config del negocio": "core/captacion/config-del-negocio.js",

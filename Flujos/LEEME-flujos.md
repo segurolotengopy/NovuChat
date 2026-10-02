@@ -86,6 +86,11 @@ El ensamblador de hoy responde a esa objeción punto por punto:
    manifiesto lo declara en `conservanMarcadores`; `verificar` comprueba que
    el prefijo sigue ahí. `preparar-import.sh` y `verificar-saneo.sh` no
    cambiaron.
+   Un `REEMPLAZAR_` fuera de `Config base` existe solo si el manifiesto lo
+   declara en `conservanMarcadores` (el carrito del Demo B, `¿Es un mensaje?`
+   de la captación), y ningún JSON versionado lleva el id de una credencial de
+   n8n: va `""` y `publicar-flujo.sh` la resuelve por el nombre. Lo exigen
+   `verificar-saneo.sh` y `admin/pruebas/core/higiene-flujos.test.ts`.
 
 ### 0.b El ciclo de trabajo, ahora
 

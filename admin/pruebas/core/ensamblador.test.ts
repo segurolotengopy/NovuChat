@@ -58,6 +58,11 @@ const moduloDe = (nodo: string): string => {
   if (!v) throw new Error(`el manifiesto del Demo A no tiene el nodo ${nodo}`);
   return typeof v === 'string' ? v : v.archivo;
 };
+/** Marcadores declarados además de `Config base` (F3a, higiene). */
+const MARCADORES_DECLARADOS_APARTE: Record<string, Record<string, string>> = {
+  'demo-b-venta-cobro.json': { 'Carrito del catálogo': 'REEMPLAZAR_' },
+  'novuchat-onboarding.json': { '¿Es un mensaje?': 'REEMPLAZAR_' },
+};
 const SIN_MANIFIESTO = FLUJOS.filter((f) => leerManifiesto(f) === null);
 
 /** Una copia de `Flujos/` en un directorio temporal, para romperla sin miedo. */
@@ -111,7 +116,12 @@ describe('Inventario: qué flujos tienen manifiesto', () => {
     for (const f of CON_MANIFIESTO) {
       const m = leerManifiesto(f) as { flujo: string; conservanMarcadores: Record<string, string> };
       expect(m.flujo).toBe(f);
-      expect(m.conservanMarcadores).toEqual({ 'Config base': 'REEMPLAZAR_' });
+      // `Config base` siempre; además, solo los marcadores fuera de él que la
+      // higiene de F3a declara (higiene-flujos.test.ts exige que no falte ninguno).
+      expect(m.conservanMarcadores).toEqual({
+        'Config base': 'REEMPLAZAR_',
+        ...(MARCADORES_DECLARADOS_APARTE[f] ?? {}),
+      });
       // `scripts/verificar-saneo.sh` exige que todo `Flujos/**.json` tenga un
       // REEMPLAZAR_ (su patrón `Flujos/*.json` alcanza también a los
       // manifiestos). El manifiesto lo cumple porque declara el prefijo que
