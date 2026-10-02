@@ -797,7 +797,9 @@ for (let i = 0; i < items.length; i++) {
   const bloqueEnlace = conArchivo ? 'Te comparto los planes y sus precios en este enlace: ' + archivo.url : '';
   texto = armar(conMarca, bloqueLargo);
 
-  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y escríbele directo a una persona del equipo.';
+  const TEXTO_FALLO = 'Disculpa, tuve un problema para responderte. Si prefieres, toca el botón y te paso con una persona del equipo.';
+  // Cerrado y ya avisado, el boton no sale (no hay a quien avisar de nuevo): el texto no lo ofrece.
+  const TEXTO_FALLO_SIN_BOTON = 'Disculpa, tuve un problema para responderte. ¿Me lo repites?';
   if (fallo) {
     texto = TEXTO_FALLO;
     avisos.push('fallo_modelo');
@@ -838,6 +840,8 @@ for (let i = 0; i < items.length; i++) {
   const yaCerrado = cierre || c?.etapa === 'cerrado' || ent.etapa === 'cerrado';
   // Cerrado, pero con el aviso sin confirmar y sin uno saliendo en este turno:
   // la salida hacia una persona se sigue ofreciendo en cada respuesta.
+  const falloSinBoton = sinRespuesta && yaCerrado && c?.avisado === true;
+  if (falloSinBoton) texto = TEXTO_FALLO_SIN_BOTON;
   const cerradoSinAviso = !avisar && !!c && c.etapa === 'cerrado' && c.avisado !== true;
   // SOLO SE OFRECE LO QUE SE CUMPLE (politica de NovuChat, 21/09/2026). Si el
   // texto remite a un asesor o promete que alguien le va a responder, y en este
@@ -850,7 +854,7 @@ for (let i = 0; i < items.length; i++) {
   if (prometeSinAviso) avisos.push('promesa_con_boton_asesor');
   const conBoton = cerradoSinAviso || (prometeSinAviso && !(c && c.avisado === true))
     || botonSoporte
-    || sinRespuesta
+    || (sinRespuesta && !falloSinBoton)
     || (!yaCerrado && (planesMostrados || ent.finBloque === true || (pideCierre && !cierre)));
 
   // --- Que el boton sobreviva al limite de Meta ----------------------------
