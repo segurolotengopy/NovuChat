@@ -1115,6 +1115,27 @@ describe('Agenda mínima v0: el flujo, de punta a punta', () => {
       expect(u.aPaciente(MAMA)[0]!.cuerpo).toBe('Te atiende una persona del equipo.');
       expect(u.aRecepcion).toHaveLength(1);
     });
+    // Hallazgo de la cartera (01/10): `cnAtencion` leía `a.respuestasEnVentana` aunque `a` fuera null (la ingesta no
+    // trajo `atencion`), y el turno fallaba con un TypeError: el cliente se quedaba sin respuesta. El estado puede
+    // venir SOLO del panel (`configuracionFlujo`) cuando la ingesta no contesta o contesta sin `atencion`.
+    for (const [caso, ingesta] of [
+      ['la ingesta no trae `atencion`', { atencion: undefined }],
+      ['la ingesta contesta con un error', { atencion: undefined, error: 'sin servicio' }],
+    ] as const) {
+      it(`NIEGA: con el uso extendido SOLO en el panel y ${caso}, el turno no falla y se responde el aviso fijo`, () => {
+        const panel = Object.assign({}, PANEL, { atencion: { estado: 'operador', mensajeFijo: 'Te atiende una persona del equipo.', avisarRecepcion: 'operador', respuestasEnVentana: 50 } });
+        const u = mundo({ eventos: [], panel, ingesta }).turno(texto(MAMA, 'hola'));
+        expect(u.ejecutados.has('Extraer')).toBe(false);
+        expect(u.aPaciente(MAMA)).toHaveLength(1);
+        expect(u.aPaciente(MAMA)[0]!.cuerpo).toBe('Te atiende una persona del equipo.');
+      });
+    }
+    it('NIEGA: con el estado «bloqueado» solo en el panel y sin `atencion` de la ingesta, no se responde nada ni falla', () => {
+      const panel = Object.assign({}, PANEL, { atencion: { estado: 'bloqueado', avisarRecepcion: 'bloqueado', respuestasEnVentana: 80 } });
+      const u = mundo({ eventos: [], panel, ingesta: { atencion: undefined } }).turno(texto(MAMA, 'hola'));
+      expect(u.aPaciente(MAMA)).toHaveLength(0);
+      expect(u.aRecepcion).toHaveLength(1);
+    });
   });
 
   // ---------------------------------------------------------------------------------------- (s)
