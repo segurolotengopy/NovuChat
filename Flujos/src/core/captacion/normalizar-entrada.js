@@ -146,7 +146,7 @@ for (let i = 0; i < items.length; i++) {
     : (campanas.find((c) => c && typeof c.texto === 'string' && palabras(c.texto) === escrito) || null);
   const plano = (t, max) => String(t ?? '').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ')
     .replace(/\s+/g, ' ').trim().slice(0, max);
-  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300) } : null;
+  const campana = laCampana ? { id: plano(laCampana.id, 60), texto: plano(laCampana.texto, 300).replace(/[\[\]]/g, "") } : null;
 
   const contacto = Array.isArray(src.contacts) ? src.contacts[0] : undefined;
 
