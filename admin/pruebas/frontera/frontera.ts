@@ -3,21 +3,19 @@
  * LA FRONTERA DE ZONAS, como funciones (F2, PR 2)
  * =============================================================================
  *
- * Lo que comparten `fronteras.test.ts` (la prueba que falla) y
- * `scripts/medir-zonas.mjs` (la medición que se cita en cada informe de hito):
- * de qué zona es un archivo, qué importa, y qué importación va hacia arriba.
- * Viven en un solo lugar para que la prueba y la medición no puedan contar
- * distinto.
+ * Lo que comparte `fronteras.test.ts` (la prueba que falla) con el resto de las
+ * herramientas: de qué zona es un archivo, qué importa, y qué importación va
+ * hacia arriba. Viven en un solo lugar para que todos cuenten igual.
  *
- * LA ZONA DE UN ARCHIVO, en este orden:
- *   1. Una entrada de `DESTINOS_F2` (el inventario del §5): mientras dura F2,
- *      el archivo que todavía no se movió ya tiene la zona a la que va.
- *   2. La CARPETA (`Analisis/41` §1: carpeta = zona): `core/`, `central/`,
- *      `plataforma/` y `modulos/<m>/` bajo cada raíz de código, y
- *      `scripts/datos/` (tenants). Es la regla permanente: cuando F2 termine,
- *      `DESTINOS_F2` se borra y esto es lo único que queda.
- *   3. El prefijo más largo de `PREFIJOS_F2` (lo que el §5 ubica por carpeta
- *      entera sin que la carpeta tenga todavía el nombre de su zona).
+ * LA ZONA DE UN ARCHIVO, en este orden. Desde el cierre de F2 la CARPETA ES LA
+ * ZONA (`Analisis/41` §1: carpeta = zona), y no queda inventario de destinos:
+ *   1. Una entrada de `ZONA_POR_ARCHIVO`: lo que no sale de la carpeta (el
+ *      registro, los puntos de entrada, el coordinador de turno en la raíz de
+ *      Functions hasta F3b, las herramientas de construcción de flujos).
+ *   2. La CARPETA: `core/`, `central/`, `plataforma/` y `modulos/<m>/` bajo
+ *      cada raíz de código, y `scripts/datos/` (tenants).
+ * `SE_PARTE` solo ANOTA las piezas de un archivo que son de otra zona y que F3
+ * separa: no cambia la zona del archivo.
  *
  * HACIA ARRIBA: registro < core < central < plataforma < módulo < coordinador
  * < tenants. Una zona importa solo de la suya o de las de abajo; un módulo
@@ -40,17 +38,27 @@
  * `pruebas/core/`, un agente de Core podría «arreglar» una prueba roja
  * agregando su cruce a la deuda, dentro de su zona.
  *
- * Node carga este archivo quitando tipos (desde `medir-zonas.mjs`): nada de
- * `enum` ni de parámetros con modificador, y las importaciones relativas con
- * su extensión.
+ * Node carga este archivo quitando tipos (lo prueba `core/registro.test.ts`):
+ * nada de `enum` ni de parámetros con modificador, y las importaciones
+ * relativas con su extensión.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { REGISTRO } from '../../functions/src/registro.ts';
-import { DESTINOS_F2, PREFIJOS_F2 } from './destinos-f2.ts';
-import type { DestinoF2, ZonaF2 } from './destinos-f2.ts';
+
+export type Zona = 'core' | 'coordinador' | 'central' | 'plataforma' | 'modulo' | 'tenants' | 'registro';
+
+export interface ZonaDeArchivo {
+  readonly zona: Zona;
+  /** Id del módulo cuando `zona` es `modulo` (un id de `IDS_MODULOS`). */
+  readonly modulo?: string;
+  /** Carpeta o archivo de la zona, relativo a la raíz del repositorio. */
+  readonly destino: string;
+  readonly seParte?: readonly string[];
+  readonly nota?: string;
+}
 
 /**
  * La raíz del repositorio. `NOVUCHAT_RAIZ` la fija cuando la herramienta corre
@@ -78,7 +86,7 @@ export function leerDeuda(): Deuda {
 /** Las raíces de código: lo que tiene zona vive debajo de una de estas. */
 export const RAICES = ['admin/functions/src/', 'admin/web/src/', 'Flujos/src/', 'admin/scripts/', 'admin/pruebas/'] as const;
 
-export const RANGO: Readonly<Record<ZonaF2, number>> = {
+export const RANGO: Readonly<Record<Zona, number>> = {
   registro: -1, core: 0, central: 1, plataforma: 2, modulo: 3, coordinador: 4, tenants: 5,
 };
 
@@ -86,11 +94,11 @@ export const RANGO: Readonly<Record<ZonaF2, number>> = {
  * Archivos cuya zona no sale de la carpeta. El registro está en la raíz de
  * Functions a propósito (lo lee todo el mundo y no importa a nadie). Los puntos
  * de entrada de la consola y las herramientas de desarrollo que tocan todas las
- * zonas son coordinador, por regla (F2, Z). El coordinador DE TURNO recibe su
- * línea en el PR que mueva `ingesta.ts`; hasta entonces lo ubica `DESTINOS_F2`,
- * y la prueba exige uno cuyo destino sea `core/turno/` (los de arriba no cuentan).
+ * zonas son coordinador, por regla (F2, Z). El coordinador DE TURNO
+ * (`ingesta.ts`) sigue en la raíz de Functions hasta F3b, y la prueba exige
+ * que la Function `ingesta` salga de un archivo coordinador.
  */
-export const ZONA_POR_ARCHIVO: Readonly<Record<string, DestinoF2>> = {
+export const ZONA_POR_ARCHIVO: Readonly<Record<string, ZonaDeArchivo>> = {
   'admin/functions/src/registro.ts': { zona: 'registro', destino: 'admin/functions/src/registro.ts' },
   // Punto de entrada de la consola: monta las rutas de todas las zonas.
   'admin/web/src/App.tsx': { zona: 'coordinador', destino: 'admin/web/src/App.tsx' },
@@ -116,7 +124,43 @@ export const ZONA_POR_ARCHIVO: Readonly<Record<string, DestinoF2>> = {
   'admin/pruebas/correr-storage.sh': { zona: 'coordinador', destino: 'admin/pruebas/correr-storage.sh' },
   // Las reglas de Storage amparan a todas las zonas.
   'admin/pruebas/storage-reglas.test.ts': { zona: 'coordinador', destino: 'admin/pruebas/storage-reglas.test.ts' },
+  // Coordinador de turno; en la raíz de Functions hasta F3b.
+  'admin/functions/src/ingesta.ts': { zona: 'coordinador', destino: 'admin/functions/src/ingesta.ts' },
+  // Punto de entrada de las Functions: solo reexporta (la prueba lo exige, salvo core/opcionesGlobales.ts).
+  'admin/functions/src/index.ts': { zona: 'coordinador', destino: 'admin/functions/src/index.ts' },
+  // Construcción de flujos (agente core-flujos); moverlos queda para F3.
+  'admin/scripts/ensamblar-flujo.mjs': { zona: 'core', destino: 'admin/scripts/ensamblar-flujo.mjs' },
+  'admin/scripts/ensamblar-flujo.d.mts': { zona: 'core', destino: 'admin/scripts/ensamblar-flujo.d.mts' },
+  // Construcción de flujos: maneja solo topología.
+  'admin/scripts/sincronizar-flujo-cliente.mjs': { zona: 'core', destino: 'admin/scripts/sincronizar-flujo-cliente.mjs' },
+  // Construcción de flujos: se retira con los prompts por capas.
+  'admin/scripts/portar-prompt-cliente.py': { zona: 'core', destino: 'admin/scripts/portar-prompt-cliente.py' },
 };
+
+/**
+ * Piezas de OTRA zona que hay dentro de un archivo: las separa F3 (cada una
+ * va a su zona). Solo se achica; no cambia la zona del archivo. Cada elemento
+ * es una zona (`core`, `central`, `plataforma`) o `modulo:<id>`.
+ */
+export const SE_PARTE: Readonly<Record<string, readonly string[]>> = {
+  // Coordinador más los ganchos de seña, inventario, captación, campañas y cobro de venta.
+  'admin/functions/src/ingesta.ts': ['modulo:agenda', 'modulo:inventario', 'modulo:captacion', 'modulo:campanas', 'modulo:cobros'],
+  // El checkout que escribe pedidos va a modulos/pedidos/.
+  'admin/functions/src/modulos/catalogo-web/catalogoWeb.ts': ['modulo:pedidos'],
+  // El resumen del catálogo va a Productos; documentoDeVertical desaparece.
+  'admin/functions/src/core/prompt/prompt.ts': ['modulo:productos'],
+  // Hoy es el MISMO archivo para la bitácora del negocio (Central) y la de plataforma.
+  'admin/web/src/central/paginas/Bitacora.tsx': ['plataforma'],
+  // Hoy cuenta catálogo y agendas; cada módulo aporta su ranura.
+  'admin/web/src/central/paginas/Tablero.tsx': ['modulo:productos', 'modulo:agenda'],
+  // Sale el calendario a Agenda y el catálogo web y el logo a Catálogo web.
+  'admin/web/src/central/paginas/Configuracion.tsx': ['modulo:agenda', 'modulo:catalogo-web'],
+  // La duración de cita es ranura de Agenda; la vista previa, de Catálogo web; el stock, de Inventario.
+  'admin/web/src/modulos/productos/Catalogo.tsx': ['modulo:agenda', 'modulo:catalogo-web', 'modulo:inventario'],
+};
+
+/** La Function por la que entra todo mensaje: su archivo fuente debe ser coordinador. */
+export const FUNCTION_DEL_COORDINADOR = 'ingesta';
 
 /**
  * El punto de entrada de las Functions. Sus reexportaciones no cuentan (son el
@@ -133,9 +177,8 @@ export const INDICE_DE_FUNCTIONS = 'admin/functions/src/index.ts';
 export const PRUEBAS_TRANSVERSALES: readonly string[] = leerDeuda().transversales;
 
 export const esPrueba = (a: string): boolean => a.startsWith('admin/pruebas/');
-export const esSuite = (a: string): boolean => esPrueba(a) && a.endsWith('.test.ts');
 export const esCodigo = (a: string): boolean => /\.(ts|tsx|mts|cts|mjs|cjs|js|jsx)$/.test(a);
-export const etiqueta = (z: DestinoF2): string => (z.zona === 'modulo' ? `modulo:${z.modulo}` : z.zona);
+export const etiqueta = (z: ZonaDeArchivo): string => (z.zona === 'modulo' ? `modulo:${z.modulo}` : z.zona);
 
 // -------------------------------------------------------------------- módulos
 const DEPENDE = new Map<string, readonly string[]>(REGISTRO.map((m) => [m.modulo, m.dependeDe]));
@@ -147,8 +190,8 @@ export function dependenciasDe(m: string, vistos: Set<string> = new Set()): Set<
 }
 
 // ---------------------------------------------------------------------- zonas
-/** La zona que da la carpeta, sin mirar el inventario. */
-export function zonaPorCarpeta(archivo: string): DestinoF2 | null {
+/** La zona que da la carpeta (o su línea en ZONA_POR_ARCHIVO), sin mirar SE_PARTE. */
+export function zonaPorCarpeta(archivo: string): ZonaDeArchivo | null {
   if (ZONA_POR_ARCHIVO[archivo]) return ZONA_POR_ARCHIVO[archivo];
   const raiz = RAICES.find((r) => archivo.startsWith(r));
   if (!raiz) return null;
@@ -164,14 +207,12 @@ export function zonaPorCarpeta(archivo: string): DestinoF2 | null {
   return null;
 }
 
-/** La zona de un archivo de código: inventario, carpeta, prefijo (ver arriba). */
-export function zonaDeCodigo(archivo: string): DestinoF2 | null {
-  if (DESTINOS_F2[archivo]) return DESTINOS_F2[archivo];
+/** La zona de un archivo de código: la carpeta (o su línea en ZONA_POR_ARCHIVO), más lo que se parte. */
+export function zonaDeCodigo(archivo: string): ZonaDeArchivo | null {
   const porCarpeta = zonaPorCarpeta(archivo);
-  if (porCarpeta) return porCarpeta;
-  const prefijo = PREFIJOS_F2.filter((p) => archivo.startsWith(p.prefijo))
-    .sort((a, b) => b.prefijo.length - a.prefijo.length)[0];
-  return prefijo ? prefijo.destino : null;
+  if (!porCarpeta) return null;
+  const seParte = SE_PARTE[archivo];
+  return seParte ? { ...porCarpeta, seParte } : porCarpeta;
 }
 
 // ---------------------------------------------------------------- el árbol
@@ -199,8 +240,8 @@ export function listarRaices(): string[] {
 // ------------------------------------------------------------ importaciones
 /**
  * Quita comentarios SIN tocar el texto de los literales. Ya no lo usa el
- * lector de imports (que usa el parser); lo usa `medir-zonas.mjs` para buscar
- * rutas escritas en las pruebas.
+ * lector de imports (que usa el parser); lo usan las pruebas que buscan
+ * rutas escritas en otros archivos.
  */
 export const sinComentarios = (t: string): string =>
   t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[\s;])\/\/.*$/gm, '$1');
@@ -216,6 +257,24 @@ export function resolverRelativo(desde: string, especificador: string, arbol: Ar
   if (base.startsWith('admin/functions/lib/')) base = base.replace('admin/functions/lib/', 'admin/functions/src/');
   const candidatos = [base, base.replace(/\.js$/, '.ts'), base.replace(/\.js$/, '.tsx'), base.replace(/\.mjs$/, '.d.mts')];
   for (const c of candidatos) for (const e of EXTENSIONES) if (arbol.existe(c + e)) return c + e;
+  return null;
+}
+
+/**
+ * El archivo del que `index.ts` reexporta la Function `nombre`, o null si no
+ * la reexporta. Sirve para exigir que la Function del coordinador salga de un
+ * archivo coordinador, sin escribir su ruta como constante.
+ */
+export function fuenteDeFunction(nombre: string, arbol: Arbol = ARBOL_REAL): string | null {
+  const fuente = ts.createSourceFile(INDICE_DE_FUNCTIONS, arbol.leer(INDICE_DE_FUNCTIONS), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  for (const n of fuente.statements) {
+    if (!ts.isExportDeclaration(n) || !n.moduleSpecifier || !ts.isStringLiteral(n.moduleSpecifier)) continue;
+    const nombrados = n.exportClause;
+    if (!nombrados || !ts.isNamedExports(nombrados)) continue;
+    if (nombrados.elements.some((e) => e.name.text === nombre)) {
+      return resolverRelativo(INDICE_DE_FUNCTIONS, n.moduleSpecifier.text, arbol);
+    }
+  }
   return null;
 }
 
@@ -414,7 +473,7 @@ export interface Cruce {
  * Por qué `origen` no puede importar a `destino`, o null si puede. Es LA
  * regla: la prueba negativa la ejerce con zonas inventadas.
  */
-export function motivoDeCruce(origen: DestinoF2, destino: DestinoF2): string | null {
+export function motivoDeCruce(origen: ZonaDeArchivo, destino: ZonaDeArchivo): string | null {
   if (origen.zona === 'modulo' && destino.zona === 'modulo') {
     if (origen.modulo === destino.modulo) return null;
     if (dependenciasDe(origen.modulo ?? '').has(destino.modulo ?? '')) return null;
@@ -441,7 +500,7 @@ export interface Analisis {
  */
 export function analizar(
   archivos: readonly string[],
-  zonaDe: (a: string) => DestinoF2 | null = zonaDeCodigo,
+  zonaDe: (a: string) => ZonaDeArchivo | null = zonaDeCodigo,
   arbol: Arbol = ARBOL_REAL,
 ): Analisis {
   const cruces: Cruce[] = [];
