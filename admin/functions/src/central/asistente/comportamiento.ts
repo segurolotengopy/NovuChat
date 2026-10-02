@@ -127,7 +127,7 @@ export interface Patron {
 
 /**
  * LA LISTA, CON EL PORQUÉ DE CADA ENTRADA. Es cerrada y se prueba en
- * `pruebas/comportamiento.test.ts`: quitar o debilitar una entrada obliga a
+ * `pruebas/central/comportamiento.test.ts`: quitar o debilitar una entrada obliga a
  * cambiar una prueba que dice por qué existía.
  */
 export const PATRONES: readonly Patron[] = [

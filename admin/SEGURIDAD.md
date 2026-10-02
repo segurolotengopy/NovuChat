@@ -163,7 +163,7 @@ administrador con una credencial válida y una pantalla que no lo dejaba pasar,
 sin explicar nada. Un `minLength` en el ingreso no le agrega dificultad a quien
 adivina contraseñas —no las escribe más cortas— y sí bloquea a quien la tiene
 bien. El número está una sola vez, en `web/src/core/lib/contrasena.ts`, con la
-prueba `pruebas/contrasena-minimo.test.ts` que verifica que las dos pantallas lo
+prueba `pruebas/central/contrasena-minimo.test.ts` que verifica que las dos pantallas lo
 usen.
 
 **Lo que queda pendiente, y es configuración, no código:** activar la *password
@@ -214,7 +214,7 @@ le toca a este diseño:
     modelo—. Ante la duda no se aplica. Las reglas niegan `instruccionesVigentes`
     e `instruccionesRevision` desde el navegador a todo rol, mirando el diff.
     `DISENO.md` §4quater.5; pruebas en *"Comportamiento general: lo vigente lo
-    escribe solo el servidor"* y `pruebas/comportamiento.test.ts`.
+    escribe solo el servidor"* y `pruebas/central/comportamiento.test.ts`.
   - **El prompt base del agente no es editable desde el panel**: vive en el flujo
     de n8n. Desde el panel se aportan datos, no comportamiento.
   - `configuracionParaFlujo` devuelve los campos **separados y rotulados** para
@@ -956,7 +956,7 @@ medios son distintos.
 
 **Pruebas.** 9 en *"Reclamos"* —una recorre los seis campos reservados de
 FormSubmit— y 2 en *"Configuración de plataforma"*, más las 13 pruebas puras de
-`pruebas/saneo.test.ts`, que verifican el escapado y la limpieza de encabezados
+`pruebas/central/saneo.test.ts`, que verifican el escapado y la limpieza de encabezados
 sin emulador ni red.
 
 ---
@@ -1399,7 +1399,7 @@ Tres consecuencias que salen gratis del mismo diseño:
 de NINGÚN navegador —ni el del admin del comercio, ni el de NovuChat—. Eso es lo
 que hace que un pedido sea evidencia de lo que el catálogo decía en ese momento.
 
-**Probado.** `pruebas/catalogo-web.test.ts`, sección de reglas: el admin no puede
+**Probado.** `pruebas/modulos/catalogo-web/catalogo-web.test.ts`, sección de reglas: el admin no puede
 crear, actualizar ni borrar un pedido.
 
 ---
@@ -1479,8 +1479,8 @@ abierta en producción.
 ```
 $ pnpm pruebas:reglas
  ✓ pruebas/reglas.test.ts   (155 tests)
- ✓ pruebas/saneo.test.ts    ( 22 tests)
- ✓ pruebas/indices.test.ts  (  4 tests)
+ ✓ pruebas/central/saneo.test.ts    ( 22 tests)
+ ✓ pruebas/central/indices.test.ts  (  4 tests)
    Test Files  3 passed (3)
         Tests  164 passed (164)
 ```
@@ -1561,7 +1561,7 @@ deben usar la misma consulta que la interfaz, no una parecida.** Corregido con
 compuestos.** Responde cualquier consulta, así que una pantalla de filtros puede
 pasar todo lo local y romperse en producción con «The query requires an index».
 Por eso las formas de consulta se declaran en `web/src/central/lib/bitacora.ts` y
-`pruebas/indices.test.ts` verifica que cada una tenga su índice en
+`pruebas/central/indices.test.ts` verifica que cada una tenga su índice en
 `firestore.indexes.json`. Se comprobó que el control funciona quitando un índice
 a propósito: la prueba lo nombra exactamente.
 

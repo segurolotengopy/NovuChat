@@ -4,7 +4,7 @@
  * =============================================================================
  *
  * POR QUÉ EXISTE (Andres, 25/09/2026). `plataforma/tipoCambio` lo cargaba una
- * persona con `scripts/fijar-tipo-cambio.mjs`, y vence a los
+ * persona con `scripts/plataforma/fijar-tipo-cambio.mjs`, y vence a los
  * `TCO_DIAS_VIGENCIA` días: un olvido de un fin de semana largo y «Pagar» deja
  * de emitir cobros. La fuente es la que el sitio del BCB muestra en
  * «Tipos de cambio» (www.bcb.gob.bo/?q=cotizaciones_tc), que por dentro carga
@@ -28,7 +28,7 @@
  *   - NO pisa una carga manual más nueva: la fecha manda.
  *   - NO sigue direcciones que vengan de afuera: la URL es una constante.
  *
- * `scripts/fijar-tipo-cambio.mjs` sigue existiendo para corregir a mano, con
+ * `scripts/plataforma/fijar-tipo-cambio.mjs` sigue existiendo para corregir a mano, con
  * `--aplicar` y el OK de Andres; la próxima corrida no lo pisa si su fecha es
  * la misma o posterior.
  */
