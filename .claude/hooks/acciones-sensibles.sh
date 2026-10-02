@@ -83,7 +83,7 @@ ACTUA_AJENO = ACTUA + r"|" + PUSH
 FORZADO = PUSH + r"[^\n]*?\s[\"\x27]?(?:--force\b|-[A-Za-z0-9]*f[A-Za-z0-9]*\b|\+[^\s;&|\"\x27])"
 # SIN REGRESIÓN: las formas de antes (`git push` pegado, con `\b` delante) se
 # siguen mirando además de las nuevas, y lo que una negaba o confirmaba sigue
-# igual (revisión de seguridad, HIGH: `\git push` dejó de verse al pasar a VERBO).
+# igual, salvo el texto de un commit que quitar_texto quita (ver lecturas) (revisión de seguridad, HIGH: `\git push` dejó de verse al pasar a VERBO).
 PUSH_PEGADO = r"\bgit\s+push\b"
 FORZADO_PEGADO = PUSH_PEGADO + r".*(\s--force\b|\s-f\b|\s--force-with-lease\b)"
 # Una barra invertida al final de la línea une con la siguiente: se une antes de
