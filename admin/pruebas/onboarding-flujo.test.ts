@@ -455,6 +455,63 @@ describe('Procesar respuesta', () => {
 });
 
 // ===========================================================================
+// F3a-3: el fallo del modelo sale con el boton al asesor (politica «solo se
+// ofrece lo que se cumple»). Cuesta +1 mensaje SOLO en el turno de fallo.
+describe('Procesar respuesta: fallo del modelo con botón', () => {
+  const turno = (item: J, sd: J = {}) => {
+    enCurso(sd);
+    const ent = estado(normalizar(texto('Hola, quiero info')), sd)[0]!;
+    return correr('Procesar respuesta', [item], { 'Estado de la conversación': ent }, sd)[0]!;
+  };
+  const FALLO = /problema para responderte.*bot[oó]n/i;
+  const conBotonAsesor = (r: J) => r['cuerpoMeta']?.interactive?.action?.buttons?.[0]?.reply?.id === 'asesor';
+
+  it('el agente con onError entrega el item con error: texto fijo y botón', () => {
+    const r = turno({ [ITEM]: { json: {}, error: { name: 'NodeApiError', message: 'The model is overloaded' } } });
+    expect(r['respuesta']).toMatch(FALLO);
+    expect(r['avisos']).toContain('fallo_modelo');
+    expect(r['cuerpoMeta'].type).toBe('interactive');
+    expect(conBotonAsesor(r)).toBe(true);
+    expect(r['cuerpoMeta'].interactive.body.text).toMatch(FALLO);
+    expect(r['avisar']).toBe(false);
+  });
+
+  it('una salida sin `output` (modelo caído sin error en el item) también', () => {
+    const r = turno({});
+    expect(r['avisos']).toContain('fallo_modelo');
+    expect(conBotonAsesor(r)).toBe(true);
+  });
+
+  it('texto vacío del modelo: respuesta_vacia con botón', () => {
+    const r = turno({ output: '   ' });
+    expect(r['avisos']).toContain('respuesta_vacia');
+    expect(r['avisos']).not.toContain('fallo_modelo');
+    expect(r['respuesta']).toMatch(FALLO);
+    expect(conBotonAsesor(r)).toBe(true);
+  });
+
+  // Contraprueba: el botón no se prende siempre.
+  it('una respuesta normal sin promesa NO lleva botón ni aviso de fallo', () => {
+    const r = turno({ output: 'Claro, te cuento cómo funciona. ¿A qué se dedica tu negocio?' });
+    expect(r['cuerpoMeta']).toBeUndefined();
+    expect(r['avisos']).not.toContain('fallo_modelo');
+    expect(r['avisos']).not.toContain('respuesta_vacia');
+    expect(r['respuesta']).not.toMatch(FALLO);
+  });
+
+  it('el fallo no es un cierre: no avisa a una persona ni marca la conversación', () => {
+    const sd: J = {};
+    const r = turno({ [ITEM]: { json: {}, error: { message: 'x' } } }, sd);
+    expect(r['avisar']).toBe(false);
+    expect(sd['conversaciones'][TEL]['etapa']).not.toBe('cerrado');
+  });
+
+  it('el JSON versionado deja al agente en continueRegularOutput', () => {
+    expect((nodo('AI Agent NovuChat') as J)['onError']).toBe('continueRegularOutput');
+  });
+});
+
+// ===========================================================================
 describe('Ramas sin modelo', () => {
   const ent = () => ({ ...config(), from: TEL, nombrePerfil: 'Ana' });
 
