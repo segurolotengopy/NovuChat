@@ -80,7 +80,7 @@ informe de tanda. Ya no existe: el inventario se borró con ella. Lo que
 medía lo dicen ahora los largos de `deuda.json` (`cruces`, `sinZona`,
 `sinResolver`), que `fronteras.test.ts` hace cumplir y el CI compara con la
 base. La historia: los cruces bajaron de 19 a 3 y los archivos sin zona, de 42
-a 0.
+(26/09) y 47 (28/09) a 0.
 
 ## fronteras.test.ts (F2, PR 2)
 
@@ -93,8 +93,8 @@ igual. `ZONA_POR_ARCHIVO` y `SE_PARTE` viven ahí mismo.
 está en la zona de ningún agente (`agentes.md`), así que el gancho rechaza que
 un agente la edite. En `pruebas/core/`, un agente de Core podía «arreglar» su
 propia prueba roja agregando el cruce a la deuda o cambiando la zona de un
-archivo en el inventario, sin salir de su zona (revisión de seguridad del
-#231). La regla, la deuda y el inventario los cambia solo la coordinadora.
+archivo en `ZONA_POR_ARCHIVO`, sin salir de su zona (revisión de seguridad del
+#231). La regla, la deuda, `ZONA_POR_ARCHIVO` y `SE_PARTE` los cambia solo la coordinadora.
 
 **La zona de un archivo**, en este orden: su línea en `ZONA_POR_ARCHIVO`
 (lo que no sale de la carpeta: el registro, los puntos de entrada de la
@@ -142,7 +142,7 @@ quedan 3, los tres hacia `ingesta.ts` (`core/turno/cierres.ts`,
 `modulos/agenda/seguimientos.ts` y `modulos/agenda/sena.ts`), que deshace el
 coordinador de F3. Un cruce nuevo falla; una entrada cuyo cruce ya no existe
 también falla, para que se saque. Los **archivos sin zona fuera de las
-pruebas** eran 42 y hoy son 0: es una lista exacta, no un número (ubicar uno y
+pruebas** eran 42 el 26/09, 47 el 28/09 y son 0 al cierre: es una lista exacta, no un número (ubicar uno y
 agregar otro no se compensan), y está vacía.
 
 **Negando:** la mitad de la suite es un árbol inventado donde cada forma de
@@ -187,7 +187,7 @@ vacío al mover un archivo.
 los compone el ensamblador. La frontera Core/módulo de los flujos tiene que
 venir de `ensamblador.test.ts` o `registro.test.ts` cuando en F3 existan
 `Flujos/src/core/` y `Flujos/src/modulos/`. Tampoco las pruebas fuera de una
-carpeta de zona: esas las ubica la medición por grafo, no esta prueba.
+carpeta de zona: no las analiza nadie (ver «Límite conocido»).
 
 ## Mover archivos entre zonas
 

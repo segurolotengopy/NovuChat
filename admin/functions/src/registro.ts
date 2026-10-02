@@ -13,9 +13,10 @@
  * capacidades de `firestore.rules`, y las elecciones a mano de `cobro.ts`,
  * `catalogoWeb.ts` y `captacion.ts`.
  *
- * F2, PR 1: ESTE ARCHIVO TODAVÍA NO LO IMPORTA NADIE. Existe y se verifica
- * contra el código de hoy (`pruebas/core/registro.test.ts`). Los PR siguientes
- * lo enchufan donde hoy están las copias.
+ * F2, PR 1: EL CÓDIGO DE PRODUCCIÓN TODAVÍA NO LO IMPORTA. Lo importan
+ * `pruebas/frontera/frontera.ts` y sus suites, y se verifica contra el código
+ * de hoy (`pruebas/core/registro.test.ts`). Los PR siguientes lo enchufan donde
+ * hoy están las copias.
  *
  * CERO `import`, Y ES A PROPÓSITO. Lo importan cuatro mundos que no comparten
  * resolución de módulos: las Functions (compilan con `rootDir: src` e importan
