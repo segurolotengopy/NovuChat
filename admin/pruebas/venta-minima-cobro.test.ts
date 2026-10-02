@@ -103,7 +103,7 @@ describe('la librería respeta el sandbox de n8n', () => {
 
   it('la red propia de la librería coincide con la del plan (y atrapa las 16 frases prohibidas)', () => {
     expect(L.CB_PROHIBIDAS.source).toBe(
-      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|(est[aá]|qued[oó])\\s+reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu',
+      'validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\\s+(tu|tus|su|sus|la|el|lo|los|las)\\b|\\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad|reserva\\s+((est[aá]|qued[oó])\\s+)?(registrad|agendad)|reservamos tu|\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b',
     );
     for (const f of FRASES_PROHIBIDAS) expect(L.CB_PROHIBIDAS.test(f), f).toBe(true);
     // El negativo: una frase honesta no la dispara.
@@ -720,6 +720,24 @@ describe('Interpretar lectura (el nodo): envoltorio de cbLectura', () => {
 // =================================================================================================
 // RONDA 2 DEL PR-1: S-1 en la tercera copia de la red (`cbCanon`) y el contrato de las tres copias.
 // =================================================================================================
+describe('P-2 y P-3 en cobro: raíces ampliadas e invisibles que NFKC deja como letras', () => {
+  const cbCanon = (t: string): string => (ejecutar(`${LIB}\nreturn [{ json: { cbCanon } }];`, [{}])[0] as unknown as { cbCanon: (t: string) => string }).cbCanon(t);
+  it('la red atrapa las conjugaciones nuevas y no los datos de una carta', () => {
+    for (const t of ['Te confirmo que la mesa está lista', 'Ya lo confirmamos', 'El restaurante te confirmó', 'Tu mesa fue reservada',
+      'Tu mesa queda reservada', 'Quedaron reservadas las mesas']) {
+      expect(L.CB_PROHIBIDAS.test(cbCanon(t)), t).toBe(true);
+    }
+    for (const t of ['Mesa reservada para 4', 'Zona reservada', 'Hotel Reservado', 'Vino Tinto Reservado', 'Confirmo que sí']) {
+      expect(L.CB_PROHIBIDAS.test(cbCanon(t)), t).toBe(false);
+    }
+  });
+  it('«pa» + invisible + «gado» queda bloqueado', () => {
+    for (const c of ['ㅤ', 'ᅟ', 'ᅠ', 'ﾠ', '⠀']) {
+      expect(L.CB_PROHIBIDAS.test(cbCanon(`pa${c}gado`)), JSON.stringify(c)).toBe(true);
+    }
+  });
+});
+
 describe('S-1: `cbCanon` compara sin homoglifos, sin marcas combinantes y sin controles C1', () => {
   it('las formas escondidas coinciden con la red; el texto legítimo no cambia de resultado', () => {
     const cbCanon = ejecutar(`${LIB}\nreturn [{ json: { cbCanon } }];`, [{}])[0] as unknown as { cbCanon: (t: string) => string };

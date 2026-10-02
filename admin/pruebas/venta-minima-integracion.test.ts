@@ -188,7 +188,7 @@ const params = (j: J): string[] => j['payload'].template.components[0].parameter
 const plantillas = (s: Salida): J[] => s.armados.filter((i) => i['payload'].type === 'template');
 const errores = (s: Salida): string[] => (s.mensajes[0]?.['errores'] ?? []) as string[];
 const erroresAvisos = (s: Salida): string[] => (s.avisos[0]?.['errores'] ?? []) as string[];
-const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 /** Lleva a `from` hasta el resumen de un pedido: 1 orden de tacos, delivery con dirección y referencia (o recojo). */
 function hastaResumen(m: Mundo, modalidad: 'delivery' | 'recojo' = 'delivery', from = CLIENTE): Salida {
@@ -1037,7 +1037,8 @@ describe('las tres copias de la red de prohibidas y las expresiones regulares', 
     expect(fuentes[0]).toContain('|acredit|');
     // I1: `reservad` ya no es una raíz suelta; solo vale en su contexto de afirmación. S-5: `recib` acotado a 40 caracteres.
     expect(fuentes[0]).not.toContain('|reservad|');
-    expect(fuentes[0]).toContain('(est[aá]|qued[oó])\\s+reservad');
+    expect(fuentes[0]).toContain('(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\\s+(?:ya\\s+)?reservad');
+    expect(fuentes[0]).toContain('\\b(?:te|le|les|se|lo|la|ya)\\s+confirm(?:o|amos|é|ó|aron)\\b');
     expect(fuentes[0]).toContain('recib\\S{0,40} (tu|el) pago');
     // La copia que usan las pruebas de esta suite coincide con las tres.
     expect(PROHIBIDAS.source).toBe(fuentes[0]);

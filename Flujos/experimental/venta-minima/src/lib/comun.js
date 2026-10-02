@@ -30,7 +30,7 @@ const VM_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
 // La red de palabras que un texto al cliente o al restaurante nunca puede traer:
 // presentan como hecho lo que el flujo no verifico (prohibicion 3) o prometen lo
 // que no tiene mecanismo detras («solo se ofrece lo que se cumple»).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 // ---------------------------------------------------------------------------
 // Nodos de n8n
@@ -82,7 +82,7 @@ const VM_CONFUSABLES_A = 'aeopcyxijsdhl' + 'aeikoptuxvnbi';
 // La forma en que se COMPARA contra `VM_PROHIBIDAS` (S-1): NFKC, sin controles C1 (\u0080-\u009f) ni caracteres de formato
 // (`\p{Cf}`), NFD sin marcas (`\p{M}`: tildes y marcas combinantes), en minusculas y con los confusables plegados a ASCII.
 function vmCanon(t) {
-  return _vmCadena(t).normalize('NFKC').replace(/[\u0080-\u009f]/g, '').replace(/\p{Cf}/gu, '')
+  return _vmCadena(t).normalize('NFKC').replace(/[\u0080-\u009f]/g, '').replace(/\p{Cf}/gu, '').replace(/[\u115f\u1160\u3164\uffa0\u2800]/g, '')
     .normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
     .replace(/[\u0370-\u03ff\u0400-\u052f\u0131]/g, (c) => {
       const i = VM_CONFUSABLES_DE.indexOf(c);

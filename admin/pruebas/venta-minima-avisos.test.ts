@@ -37,7 +37,7 @@ const cargar = (antes = ''): Lib =>
 const L = cargar();
 
 // La lista de palabras que el asistente jamás dice (la misma que `comun.js` define como `VM_PROHIBIDAS`).
-const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|(est[aá]|qued[oó])\s+reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu/i;
+const VM_PROHIBIDAS = /validad|confirmad|pagad[oa]|acreditad|verificad|recibimos tu pago|ya lo prepar|lo (est[aá](n|mos)|estoy) prepar|lo preparamos|te avisa(mos|remos)|en camino|te llama(mos|remos)|te escribir[aá]n|lo consulto|acredit|recib\S{0,40} (tu|el) pago|pago (recibid|aprobad|[eé]xitos|realizad|registrad)|confirm(amos|ó|o)\s+(tu|tus|su|sus|la|el|lo|los|las)\b|\b(?:est[aá]n?|qued[oó]|queda|quedan|quedaron|fue|fueron|ya)\s+(?:ya\s+)?reservad|reserva\s+((est[aá]|qued[oó])\s+)?(registrad|agendad)|reservamos tu|\b(?:te|le|les|se|lo|la|ya)\s+confirm(?:o|amos|é|ó|aron)\b/i;
 
 const AHORA = Date.UTC(2026, 9, 5, 14); // lunes 05/10/2026 10:00 en La Paz
 const HORA = 60 * 60 * 1000;
@@ -1286,6 +1286,24 @@ const coincideConLaRed = (t: string): boolean => {
   const c: string = L.avCanon(t);
   return VM_PROHIBIDAS.test(c) || VM_PROHIBIDAS.test(c.replace(/[^\p{L}\p{N}]+/gu, ' ').trim());
 };
+
+describe('P-2 y P-3 en avisos: raíces ampliadas e invisibles que NFKC deja como letras', () => {
+  it('avLimpio omite las conjugaciones nuevas y deja los datos de una carta', () => {
+    for (const t of ['Te confirmo que la mesa está lista', 'Ya lo confirmamos', 'El restaurante te confirmó', 'Tu mesa fue reservada',
+      'Tu mesa queda reservada', 'Quedaron reservadas las mesas']) {
+      expect(L.avLimpio(t, 100), t).toContain('[texto omitido]');
+    }
+    for (const t of ['Mesa reservada para 4', 'Zona reservada', 'Hotel Reservado', 'Vino Tinto Reservado', 'Confirmo que sí']) {
+      expect(L.avLimpio(t, 100), t).toBe(t);
+    }
+  });
+  it('«pa» + U+3164 / U+115F / U+1160 / U+FFA0 / U+2800 + «gado» queda bloqueado', () => {
+    for (const c of ['ㅤ', 'ᅟ', 'ᅠ', 'ﾠ', '⠀']) {
+      expect(L.avLimpio(`pa${c}gado`, 100), JSON.stringify(c)).toBe('[texto omitido]');
+      expect(L.avCanon(`pa${c}gado`), JSON.stringify(c)).toBe('pagado');
+    }
+  });
+});
 
 describe('P-1: el recorte al tope no vuelve a formar una coincidencia de la red', () => {
   it('«confirmo tubos» cortado en «confirmo tu» ya no sale tal cual', () => {
