@@ -1,5 +1,5 @@
 import { mesEscrito } from '../lib/pagar';
-import type { CambiosVista } from '../../lib/ejes';
+import type { CambiosVista } from '../lib/ejes';
 
 /**
  * LOS CAMBIOS DE CONFIGURACIÓN INCLUIDOS EN EL MES: usados / incluidos.

@@ -4,7 +4,7 @@
  * =============================================================================
  *
  * POR QUÉ CSV Y NO `.xlsx`. Escribir un `.xlsx` es armar un ZIP con varios XML
- * adentro; leerlo ya se hace en `lib/xlsx.ts` porque el comercio sube lo que
+ * adentro; leerlo ya se hace en `web/src/modulos/productos/xlsx.ts` porque el comercio sube lo que
  * tiene, pero ESCRIBIRLO para que después alguien lo abra y lo ordene no agrega
  * nada: Excel, Sheets y LibreOffice abren un CSV con doble clic. La diferencia
  * la notaría el usuario solo si necesitara formatos o fórmulas, y una

@@ -23,7 +23,7 @@
  * Módulo puro, sin Firebase: lo prueba `pruebas/encabezado-comercio.test.ts`
  * sin emulador ni navegador.
  */
-import { modalidadDe, type CuentaCruda, type Modalidad } from '../central/lib/prepago';
+import { modalidadDe, type CuentaCruda, type Modalidad } from './prepago';
 import { ETIQUETA_MODALIDAD } from './ejes';
 
 export type EtiquetaModo = 'PRUEBA' | 'PRODUCCIÓN';
@@ -36,7 +36,7 @@ export interface ModoComercio {
   produccion: boolean;
 }
 
-// Las mismas palabras que el resto de la consola (`lib/ejes.ts`): «Prepago» ya
+// Las mismas palabras que el resto de la consola (`web/src/central/lib/ejes.ts`): «Prepago» ya
 // no se le dice a nadie.
 const DETALLE: Record<Modalidad, string> = {
   demostracion: ETIQUETA_MODALIDAD.demostracion,

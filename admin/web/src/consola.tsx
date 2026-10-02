@@ -2,9 +2,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { App } from './App';
-import { iniciarTema } from './lib/tema';
-import './diseno.css';
-import './estilos.css';
+import { iniciarTema } from './central/lib/tema';
+import './central/estilos/diseno.css';
+import './central/estilos/estilos.css';
 
 /**
  * MONTAJE DE LA CONSOLA. Era el contenido de `main.tsx`, y se mudó acá cuando

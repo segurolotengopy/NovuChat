@@ -167,6 +167,12 @@ describe('la regla de la frontera (árbol inventado)', () => {
     expect(r.cruces.map((c) => c.motivo)).toEqual([`módulo sin dependeDe (${conDependencia.modulo} → ${sinDependencia.modulo})`]);
     // Indirecto: catalogo-web → pedidos → productos.
     expect(motivoDeCruce({ zona: 'modulo', modulo: 'catalogo-web', destino: '' }, { zona: 'modulo', modulo: 'productos', destino: '' })).toBeNull();
+    // Catálogo web → inventario está declarada; inventario → catálogo web, no.
+    expect(motivoDeCruce({ zona: 'modulo', modulo: 'catalogo-web', destino: '' }, { zona: 'modulo', modulo: 'inventario', destino: '' })).toBeNull();
+    expect(motivoDeCruce({ zona: 'modulo', modulo: 'inventario', destino: '' }, { zona: 'modulo', modulo: 'catalogo-web', destino: '' }))
+      .toMatch(/módulo sin dependeDe \(inventario → catalogo-web\)/);
+    expect(motivoDeCruce({ zona: 'modulo', modulo: 'catalogo-web', destino: '' }, { zona: 'modulo', modulo: 'campanas', destino: '' }))
+      .toMatch(/módulo sin dependeDe/);
     // Y al revés, no: que A dependa de B no deja a B importar de A.
     expect(motivoDeCruce({ zona: 'modulo', modulo: declarado, destino: '' }, { zona: 'modulo', modulo: conDependencia.modulo, destino: '' }))
       .toMatch(/módulo sin dependeDe/);

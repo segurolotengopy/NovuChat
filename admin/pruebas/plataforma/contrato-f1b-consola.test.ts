@@ -24,7 +24,7 @@ import { PanelEjes } from '../../web/src/plataforma/componentes/PanelEjes';
 import { EjesDeLaCuenta } from '../../web/src/central/componentes/EjesDeLaCuenta';
 import {
   MODELO_POR_DEFECTO, origenPorContrato, periodoPruebaAceptable, pruebaDeCuenta, type EjesDeCuenta,
-} from '../../web/src/lib/ejes';
+} from '../../web/src/central/lib/ejes';
 import { avisoPrecioPorContrato, planDeLaCuenta, vistaDelPedido } from '../../web/src/central/lib/pagar';
 import { pagosEnRevision, vistaDelPagoManual } from '../../web/src/plataforma/lib/negocios';
 import {

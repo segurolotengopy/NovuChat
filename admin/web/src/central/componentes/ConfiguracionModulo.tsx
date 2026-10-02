@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
-import { CampoMonto } from '../../componentes/CampoMonto';
+import { auth, db } from '../../core/lib/firebase';
+import { CampoMonto } from './CampoMonto';
 
 /**
  * Configuración ESPECÍFICA DEL VERTICAL.

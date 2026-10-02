@@ -327,7 +327,7 @@ El ataque concreto que esto impide está en `SEGURIDAD.md`, T-19.
 | **Verificación de correo antes del primer acceso** | ✅ **sí, y de verdad** | `correoVerificado()` en las reglas: sin verificar, el servidor niega los datos. No es un aviso de la interfaz que se saltee recargando. Gratis. |
 | **Recuperación de contraseña** | ✅ sí | `sendPasswordResetEmail`. Gratis. |
 | **Protección contra enumeración de usuarios** | ✅ sí | opción de Firebase Auth, activada por defecto en proyectos nuevos, más mensajes de error genéricos en la pantalla de ingreso. Gratis. |
-| **Longitud mínima de contraseña** | ⚠️ parcial | Firebase Auth impone **6 caracteres**. La consola pide **8** al cambiarla (`web/src/lib/contrasena.ts`), pero **eso es del navegador y se saltea**. Una política real —longitud, tipos de carácter, contraseñas filtradas— es *password policy*, y eso **exige Identity Platform**. |
+| **Longitud mínima de contraseña** | ⚠️ parcial | Firebase Auth impone **6 caracteres**. La consola pide **8** al cambiarla (`web/src/core/lib/contrasena.ts`), pero **eso es del navegador y se saltea**. Una política real —longitud, tipos de carácter, contraseñas filtradas— es *password policy*, y eso **exige Identity Platform**. |
 | **Límite de intentos / bloqueo de cuenta** | ⚠️ parcial | Firebase Auth tiene protección anti-abuso por IP, **no configurable y no documentada como garantía**. Un límite real por cuenta **exige Identity Platform**. Mitigación gratuita mientras tanto: **App Check con reCAPTCHA Enterprise** en el flujo de ingreso. |
 | **Segundo factor para cuentas de contraseña** | ❌ **no** | MFA **exige Identity Platform**. Los superadministradores sí lo tienen, porque el segundo factor de su cuenta de Google lo administra Google. |
 
@@ -377,7 +377,7 @@ Las dos cosas que cambian, y el porqué:
    la contraseña ya existe: un `minLength` no le agrega ninguna dificultad a
    quien intenta adivinarla, y sí deja afuera a quien la tiene bien.
 
-**El número vive en un solo lugar**, `web/src/lib/contrasena.ts`
+**El número vive en un solo lugar**, `web/src/core/lib/contrasena.ts`
 (`MINIMO_CONTRASENA`), y `pruebas/contrasena-minimo.test.ts` verifica que las
 dos pantallas lo usen en vez de volver a escribirlo. Mientras Firebase siga con
 su política de seis, **la pantalla de restablecimiento va a aceptar menos que

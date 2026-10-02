@@ -3,16 +3,16 @@ import { deleteField, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/
 import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { useParams } from 'react-router-dom';
-import { auth, db, funciones, storage } from '../../lib/firebase';
+import { auth, db, funciones, storage } from '../../core/lib/firebase';
 import {
   ACEPTA, EXTENSIONES, esDelDeposito, mensajeDeFallaStorage, nombreParaProspecto,
   rutaArchivoPlanes, validarArchivoPlanes, type ExtensionPlanes,
 } from '../../central/lib/archivoPlanes';
-import { useFlujos } from '../../lib/flujos';
+import { useFlujos } from '../../central/lib/flujos';
 import { idDeNombre } from '../../central/lib/csv';
-import { CampoMonto } from '../../componentes/CampoMonto';
-import { EditorLista } from '../../componentes/EditorLista';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { CampoMonto } from '../../central/componentes/CampoMonto';
+import { EditorLista } from '../../central/componentes/EditorLista';
+import { TextoSeguro } from '../../central/componentes/TextoSeguro';
 
 /**
  * CAPTACIÓN — la pestaña del flujo de captación de prospectos (`onboarding`).
@@ -64,7 +64,7 @@ import { TextoSeguro } from '../../componentes/TextoSeguro';
  * de servir, así que dejar la dirección nueva sin guardar dejaría al asistente
  * con una rota. Por eso, antes de gastar datos en subir, se revisa que el resto
  * de la pantalla se pueda guardar. Los tipos y tamaños los valida
- * `lib/archivoPlanes.ts` en el navegador; la que manda es `storage.rules`.
+ * `web/src/central/lib/archivoPlanes.ts` en el navegador; la que manda es `storage.rules`.
  */
 
 /** Sin bucket configurado la consola funciona igual, pero no puede subir. */

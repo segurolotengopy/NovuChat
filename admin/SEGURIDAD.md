@@ -31,7 +31,7 @@ entrada no confiable en el sentido más literal.
 
 Dos de tres, nunca las tres. Controles concretos:
 
-- **`web/src/componentes/TextoSeguro.tsx`.** Todo texto ajeno pasa por ahí. React
+- **`web/src/central/componentes/TextoSeguro.tsx`.** Todo texto ajeno pasa por ahí. React
   escapa por defecto y el componente solo interpola texto como hijo de un
   elemento; **nunca** `dangerouslySetInnerHTML`.
 - **Prohibición verificada en el CI.** El paso "Prohibiciones de renderizado" de
@@ -131,7 +131,7 @@ comercio. Conviene tener las dos cosas separadas en la cabeza.
 | Verificación de correo antes del primer acceso | ✅ **cubierto de verdad** | `correoVerificado()` en las reglas: sin verificar, **el servidor niega los datos**. No es un aviso de interfaz que se saltee recargando. Gratis |
 | Recuperación de contraseña | ✅ cubierto | `sendPasswordResetEmail`. Gratis |
 | No confirmar qué correos están registrados | ✅ cubierto | protección de enumeración de Firebase + mensajes de error genéricos en el ingreso. Gratis |
-| Longitud mínima real de contraseña | ⚠️ **parcial** | Firebase Auth impone 6. La consola pide **8** al cambiarla (`web/src/lib/contrasena.ts`), **pero eso es del navegador y se saltea**. Una política real —y el bloqueo de contraseñas comunes— exige **Identity Platform** |
+| Longitud mínima real de contraseña | ⚠️ **parcial** | Firebase Auth impone 6. La consola pide **8** al cambiarla (`web/src/core/lib/contrasena.ts`), **pero eso es del navegador y se saltea**. Una política real —y el bloqueo de contraseñas comunes— exige **Identity Platform** |
 | Límite de intentos / bloqueo | ⚠️ **parcial** | hay anti-abuso por IP, no configurable ni garantizado. Un límite por cuenta exige **Identity Platform**. Mitigación gratuita: **App Check con reCAPTCHA Enterprise** en el ingreso |
 | Segundo factor para cuentas de contraseña | ❌ **no cubierto** | exige **Identity Platform**. Los superadministradores sí lo tienen: su MFA la administra Google |
 
@@ -162,7 +162,7 @@ contraseña de 11 caracteres y el ingreso de la consola la rechazó, dejando a u
 administrador con una credencial válida y una pantalla que no lo dejaba pasar,
 sin explicar nada. Un `minLength` en el ingreso no le agrega dificultad a quien
 adivina contraseñas —no las escribe más cortas— y sí bloquea a quien la tiene
-bien. El número está una sola vez, en `web/src/lib/contrasena.ts`, con la
+bien. El número está una sola vez, en `web/src/core/lib/contrasena.ts`, con la
 prueba `pruebas/contrasena-minimo.test.ts` que verifica que las dos pantallas lo
 usen.
 

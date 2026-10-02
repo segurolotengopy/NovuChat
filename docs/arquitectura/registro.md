@@ -26,7 +26,7 @@ escribe solo en su carpeta y en su línea del registro.
 | `cobro.ts`: elige `venta` o `agendamiento` | Cobros tiene su propio `config/cobros` |
 | `catalogoWeb.ts`: `tieneVenta()` | `tieneModulo('catalogo-web')` |
 | `captacion.ts:371` | `tieneModulo('captacion')` |
-| `web/src/lib/flujos.ts` | `registro.modulos.flatMap(m => m.pestanas)` |
+| `web/src/central/lib/flujos.ts` | `registro.modulos.flatMap(m => m.pestanas)` |
 
 `tenants/{t}.modulos` **reemplaza** a `flujos` (decisión del 25/09): nadie está
 en producción; mantener dos listas es la séptima copia otra vez.
@@ -65,7 +65,7 @@ módulo se derivan del id, y el inventario origen → destino está aparte, en
 
 **Cómo se verifica:** `admin/pruebas/core/registro.test.ts` (pura, sin
 emulador) comprueba el registro contra el código de hoy en ocho grupos:
-estructura y cero `import`; pestañas contra `web/src/lib/flujos.ts` y
+estructura y cero `import`; pestañas contra `web/src/central/lib/flujos.ts` y
 `App.tsx`; listas blancas de `firestore.rules`; colecciones y Storage;
 límites contra `planes.ts` y las reglas; herramientas contra los nodos de
 `Flujos/*.json`; Functions contra `index.ts`; y las copias de la lista de
@@ -146,7 +146,7 @@ exacta, no un número: ubicar uno y agregar otro no se compensan.
 **Negando:** la mitad de la suite es un árbol inventado donde cada forma de
 cruce tiene que fallar. Contraprueba sobre el código real, hecha al
 escribirla: un import de `planes.ts` plantado en `atencion.ts`, un puente
-plantado en `web/src/lib/errores.ts` (sin zona) hacia Plataforma, y una
+plantado en `web/src/central/lib/errores.ts` (Central desde F2; antes sin zona) hacia Plataforma, y una
 entrada de la deuda borrada hacen fallar la suite.
 
 **Tercera vuelta de la revisión (#231):** un import de tipo seguido de uno de
@@ -239,7 +239,7 @@ Y cuatro reglas que se aplican a **todo flujo nuevo**:
    Un negocio de pedidos no ve —ni puede escribir— la agenda, y al revés. Cada
    flujo con parámetros propios tiene: su documento `/config/{flujo}` con lista
    blanca propia en las reglas, su línea en la tabla de capacidades
-   (`tieneAgenda`, `tieneCobro`), su entrada en `web/src/lib/flujos.ts` con las
+   (`tieneAgenda`, `tieneCobro`), su entrada en `web/src/central/lib/flujos.ts` con las
    pestañas que agrega, y su rama en `documentoDeVertical` (`prompt.ts`).
 4. **La consola habilita pestañas por flujo, no por negocio.** El menú se
    arma con las pestañas comunes más las de cada flujo de la lista. Y es

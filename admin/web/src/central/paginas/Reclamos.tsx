@@ -3,8 +3,8 @@ import {
   collection, doc, onSnapshot, orderBy, query, limit, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import { useParams } from 'react-router-dom';
-import { auth, db } from '../../lib/firebase';
-import { TextoSeguro } from '../../componentes/TextoSeguro';
+import { auth, db } from '../../core/lib/firebase';
+import { TextoSeguro } from '../componentes/TextoSeguro';
 
 interface Reclamo {
   id: string;

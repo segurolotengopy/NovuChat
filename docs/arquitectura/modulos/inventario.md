@@ -9,7 +9,7 @@
 | Campo | Valor hoy |
 |---|---|
 | **Qué contiene hoy** | `inventario.ts`, `movimientosStock`, `stock`; `Inventario.tsx` |
-| **Depende de** | Productos |
+| **Depende de** | Productos. **De él depende Catálogo web** (declarado el 01/10/2026: el catálogo lee su stock y lo descuenta) |
 | **Límite por plan** | — |
 | **Configuración** | campos de stock dentro del ítem del catálogo; lista blanca por manifiesto |
 | **Colecciones** | `movimientosStock`, `stock`; escrituras exigen el módulo |
