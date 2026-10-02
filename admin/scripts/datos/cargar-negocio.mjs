@@ -119,7 +119,7 @@ const ARCHIVO = opcion('archivo');
 // Por defecto, la tabla de la raíz del repositorio, como `sembrar-demos.mjs`.
 // Desde un worktree hay que apuntar a la de la carpeta principal con `--local`.
 const aqui = dirname(fileURLToPath(import.meta.url));
-const REPO = join(aqui, '..', '..');
+const REPO = join(aqui, '..', '..', '..');
 const LOCAL = opcion('local') ?? join(REPO, 'CONFIGURACION.local.md');
 
 const rojo = (s) => `\x1b[1;31m${s}\x1b[0m`;

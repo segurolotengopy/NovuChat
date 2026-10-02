@@ -41,7 +41,7 @@
 import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 
-const RAIZ = new URL('../../', import.meta.url);
+const RAIZ = new URL('../../..', import.meta.url);
 
 /** Lee un `.env` sin exportarlo al proceso. */
 function leerEnv(nombre) {
