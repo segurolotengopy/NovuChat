@@ -139,7 +139,9 @@ function cnAtencion(rIngesta, cfg) {
     estado: estado,
     avisar: avisar,
     mensajeFijo: String((a && a.mensajeFijo) || cfg.atencionMensajeFijo || '').trim(),
-    respuestas: Number((a && a.respuestasEnVentana) !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,
+    // `a` puede ser null (la ingesta no trajo `atencion`): sin `a &&` delante, `a.respuestasEnVentana` lanzaba un TypeError
+    // y el cliente se quedaba sin respuesta (hallazgo de la cartera, 01/10).
+    respuestas: Number(a && a.respuestasEnVentana !== undefined ? a.respuestasEnVentana : cfg.atencionRespuestas) || 0,
     venceEn: String((a && a.ventanaVenceEn) || cfg.atencionVenceEn || ''),
   };
 }
