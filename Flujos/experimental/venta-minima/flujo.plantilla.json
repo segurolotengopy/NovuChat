@@ -233,7 +233,7 @@
           "conditions": [
             {
               "id": "c1",
-              "leftValue": "={{ (() => { const c = $('Carga de entrada').first().json; const b = $('Config base').first().json; const esperado = String(b.phoneNumberIdEsperado || ''); const hay = Array.isArray(c.messages) && c.messages.length > 0; const prueba = !!(c.prueba && c.prueba.modoPrueba === true); return hay && (prueba || (esperado !== '' && !esperado.startsWith('REEMPLAZAR_') && String(c.phoneNumberId || '') === esperado)); })() }}",
+              "leftValue": "={{ (() => { const c = $('Carga de entrada').first().json; const b = $('Config base').first().json; const esperado = String(b.phoneNumberIdEsperado || ''); const hay = Array.isArray(c.messages) && c.messages.length > 0; const prueba = !!(c.prueba && c.prueba.modoPrueba === true); const dig = (x) => String(x || '').replace(/\\D/g, ''); const ok = String(b.destinatariosAviso || '').split(/[,;]/).map((x) => dig(x.split(':')[1])).concat([dig(b.numeroEnsayo), dig(c.prueba && c.prueba.telefonoDePrueba)]).filter((x) => x.length >= 8); const from = dig(((c.messages || [])[0] || {}).from); return hay && (prueba ? ok.indexOf(from) >= 0 : (esperado !== '' && !esperado.startsWith('REEMPLAZAR_') && String(c.phoneNumberId || '') === esperado)); })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",

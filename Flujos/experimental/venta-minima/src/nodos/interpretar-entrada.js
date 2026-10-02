@@ -6,6 +6,7 @@
 //
 // DEVUELVE [] (no responde nada, no cuesta nada) en estos casos:
 //   - no hay mensaje, o `from` no es un numero;
+//   - en modo prueba, `from` no es el `telefonoDePrueba` ni un destinatario de aviso ni el `numeroEnsayo`;
 //   - el `phone_number_id` no es el esperado (`cfg.phoneNumberIdEsperado`): la WABA puede traer
 //     mensajes de otro numero. Sin esperado configurado (marcador sin reemplazar) se descarta
 //     TODO, salvo en modo prueba, que no mira este dato;
@@ -27,6 +28,16 @@ const from = String(msg.from || '');
 if (!/^\d{6,20}$/.test(from)) return [];
 
 const prueba = carga.prueba && carga.prueba.modoPrueba === true ? carga.prueba : null;
+// EN MODO PRUEBA `from` NO ES LIBRE: el cuerpo de la «Entrada de prueba» lo escribe quien la llama, y desde `from` salen la
+// memoria, el cotejo del comprobante y los avisos. Solo pasa un `from` que sea el `telefonoDePrueba` o uno de los permitidos
+// (los destinatarios de aviso de «Config base» y `numeroEnsayo`: la misma lista de `¿Avisar de verdad?` y `¿Enviar de verdad?`).
+if (prueba) {
+  const dig = (x) => String(x === undefined || x === null ? '' : x).replace(/\D/g, '');
+  const base = vmPrimero('Config base') || {};
+  const permitidos = String(base.destinatariosAviso || '').split(/[,;]/).map((x) => dig(x.split(':')[1]))
+    .concat([dig(base.numeroEnsayo), dig(prueba.telefonoDePrueba)]).filter((x) => x.length >= 8);
+  if (permitidos.indexOf(from) < 0) return [];
+}
 const phoneNumberId = String(carga.phoneNumberId || (carga.metadata && carga.metadata.phone_number_id) || '');
 const esperado = String(cfg.phoneNumberIdEsperado || '');
 if (!prueba && (esperado === '' || phoneNumberId !== esperado)) return [];

@@ -12,9 +12,10 @@
 // Un acuse de estado (sin `messages`) sale con `messages: []`: «¿Es un mensaje?» lo descarta.
 //
 // EL MODO PRUEBA NO SE LEE DE LA CARGA. Solo lo activa el nodo «Entrada de prueba» (un Webhook
-// que el JSON de produccion NO tiene): se pregunta si ese nodo corrio y se lee SU cuerpo, con
-// `=== true`. Una carga de WhatsApp con `modoPrueba` adentro —en la raiz, en el mensaje o en un
-// texto— no lo activa jamas, porque en produccion `$('Entrada de prueba')` ni siquiera existe.
+// que el JSON de produccion NO tiene): se pregunta si ese nodo corrio y, si corrio, SIEMPRE es modo
+// prueba (el cuerpo solo aporta `telefonoDePrueba` y `enviarDeVerdad === true`). Una carga de
+// WhatsApp con `modoPrueba` adentro —en la raiz, en el mensaje o en un texto— no lo activa jamas,
+// porque en produccion `$('Entrada de prueba')` ni siquiera existe.
 function cdeValorDeMeta(c) {
   if (!c || typeof c !== 'object') return null;
   if (Array.isArray(c.messages)) return c;
@@ -31,8 +32,11 @@ function cdeValorDeMeta(c) {
 
 function cdePrueba() {
   const w = vmPrimero('Entrada de prueba');
-  const b = w && w.body && typeof w.body === 'object' ? w.body : null;
-  if (!b || b.modoPrueba !== true) return null;
+  if (!w) return null;
+  // FALLA CERRADA: si «Entrada de prueba» corrió, es modo prueba SIEMPRE, diga lo que diga el cuerpo. Un cuerpo sin
+  // `modoPrueba` (o con un valor raro) no puede dejar a la variante de prueba hablando con la ingesta, el cierre y el
+  // Graph de produccion como si fuera una entrega real.
+  const b = w.body && typeof w.body === 'object' ? w.body : {};
   return {
     modoPrueba: true,
     telefonoDePrueba: vmDigitos(b.telefonoDePrueba),

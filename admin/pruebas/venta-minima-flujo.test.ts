@@ -1230,11 +1230,11 @@ describe('no negociable 4: el pedido queda guardado y, sin QR, queda registrado'
 
   it('en modo prueba nunca se registra un cierre (es la unidad que se factura)', () => {
     const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO });
-    const e = { headers: {}, body: { ...(entrega(CLIENTE, mTexto('x'))['body'].value as J), modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true } };
+    const e = { headers: {}, body: { ...(entrega(PRUEBA_TEL, mTexto('x'))['body'].value as J), modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: true } };
     w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
-    const c1 = w.mundo.turno({ ...e, body: { ...e.body, messages: [{ from: CLIENTE, id: 'wamid.P1', type: 'text', text: { body: 'quiero 4 tacos de birria' } }] } });
+    const c1 = w.mundo.turno({ ...e, body: { ...e.body, messages: [{ from: PRUEBA_TEL, id: 'wamid.P1', type: 'text', text: { body: 'quiero 4 tacos de birria' } }] } });
     const resumen = c1.mensajes[0] as NonNullable<(typeof c1.mensajes)[number]>;
-    const c2 = w.mundo.turno({ ...e, body: { ...e.body, messages: [{ from: CLIENTE, id: 'wamid.P2', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: botonesDe(resumen).find((b) => b.title === 'Confirmar pedido')?.id, title: 'Confirmar pedido' } } }] } });
+    const c2 = w.mundo.turno({ ...e, body: { ...e.body, messages: [{ from: PRUEBA_TEL, id: 'wamid.P2', type: 'interactive', interactive: { type: 'button_reply', button_reply: { id: botonesDe(resumen).find((b) => b.title === 'Confirmar pedido')?.id, title: 'Confirmar pedido' } } }] } });
     expect(c2.llamadas.cierre).toHaveLength(0);
     expect(c2.ejecutados.has('Registrar cierre')).toBe(false);
   });
@@ -2120,14 +2120,19 @@ describe('comunes: identidad, derivación, estado, comercio', () => {
 });
 
 describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
-  const cuerpoDePrueba = (mensaje: J, op: J = {}, phoneId: string = PHONE_ID): J => ({
-    headers: {},
-    body: {
-      messaging_product: 'whatsapp', metadata: { phone_number_id: phoneId }, contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: CLIENTE }],
-      messages: [{ from: CLIENTE, id: `wamid.PR${++contador}`, timestamp: '1', ...mensaje }],
-      modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: false, ...op,
-    },
-  });
+  // En modo prueba `from` no es libre (A2): quien escribe en el ensayo es, por omisión, el `telefonoDePrueba` (PRUEBA_TEL); `desde` lo cambia.
+  const cuerpoDePrueba = (mensaje: J, op: J = {}, phoneId: string = PHONE_ID): J => {
+    const { desde, ...resto } = op;
+    const from = String(desde ?? PRUEBA_TEL);
+    return {
+      headers: {},
+      body: {
+        messaging_product: 'whatsapp', metadata: { phone_number_id: phoneId }, contacts: [{ profile: { name: 'Carlos Pérez' }, wa_id: from }],
+        messages: [{ from, id: `wamid.PR${++contador}`, timestamp: '1', ...mensaje }],
+        modoPrueba: true, telefonoDePrueba: PRUEBA_TEL, enviarDeVerdad: false, ...resto,
+      },
+    };
+  };
   const texto_ = (t: string): J => ({ type: 'text', text: { body: t } });
 
   it('sin `enviarDeVerdad` no se manda nada a nadie, pero el aviso se simula y el cliente de la prueba recorre el mismo camino (sin «No pude pasarle…»)', () => {
@@ -2151,6 +2156,54 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
     expect(r['avisos'].map((x: J) => x.para)).toEqual([PRUEBA_TEL, PRUEBA_TEL]);
     expect(r['resumen'].avisoSalio).toBe(true);
     expect(JSON.stringify(r['avisos'])).toContain('[al restaurante]');
+  });
+
+  it('A1: cuerpo sin `modoPrueba` (o con uno raro) en el JSON de prueba → falla CERRADA: 0 llamadas a ingesta, a registrarCierre y a Graph de producción', () => {
+    for (const modoPrueba of [undefined, false, 'true', 1, null]) {
+      const w = crear({ flujo: PRUEBA, panel: panel(), config: NUMERO_DE_ENSAYO });
+      w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+      const sinModo = (mensaje: J): J => {
+        const c = cuerpoDePrueba(mensaje);
+        if (modoPrueba === undefined) delete (c['body'] as J)['modoPrueba']; else (c['body'] as J)['modoPrueba'] = modoPrueba;
+        return c;
+      };
+      const a = w.mundo.turno(sinModo(texto_('quiero 4 tacos de birria')));
+      expect(a.mensajes, String(modoPrueba)).toHaveLength(0);
+      const id = (a.resumen as J)['mensajes'][0].payload.interactive.action.buttons[0].reply.id as string;
+      const b = w.mundo.turno(sinModo({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'Confirmar pedido' } } }));
+      for (const t of [a, b]) {
+        expect(t.llamadas.ingesta, String(modoPrueba)).toHaveLength(0);
+        expect(t.llamadas.cierre).toHaveLength(0);
+        expect(t.llamadas.cotejo).toHaveLength(0);
+        expect(t.mensajes).toHaveLength(0);
+        expect(t.avisos).toHaveLength(0);
+        for (const nodo of ['Enviar a WhatsApp', 'Enviar respaldo', 'Enviar aviso', 'Aviso de respaldo', 'Reportar mensaje (entrante)', 'Reportar mensaje (saliente)', 'Registrar cierre']) {
+          expect(t.ejecutados.has(nodo), `${nodo} con modoPrueba ${String(modoPrueba)}`).toBe(false);
+        }
+      }
+      expect(b.ejecutados.has('Simular aviso')).toBe(true);
+      expect((b.resumen as J)['modoPrueba']).toBe(true);
+    }
+  });
+
+  it('A2: en el JSON de prueba un `from` ajeno no llega a `Traer configuración` ni a `Cotejar en el servidor` (ni habla con ninguna llamada), aunque diga enviarDeVerdad', () => {
+    const AJENO = '59100000098';
+    const w = crear({ flujo: PRUEBA, panel: panel(COBRO_REAL), config: NUMERO_DE_ENSAYO });
+    w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
+    for (const mensaje of [texto_('quiero 4 tacos de birria'), { type: 'image', image: { id: 'media-7', mime_type: 'image/jpeg' } }]) {
+      const t = w.mundo.turno(cuerpoDePrueba(mensaje, { enviarDeVerdad: true, desde: AJENO }));
+      expect(t.mensajes).toHaveLength(0);
+      expect(t.avisos).toHaveLength(0);
+      expect(t.llamadas.ingesta).toHaveLength(0);
+      expect(t.llamadas.cotejo).toHaveLength(0);
+      for (const nodo of ['Traer configuración', 'Cotejar en el servidor', 'Obtener URL del medio', 'Extraer', 'Enviar a WhatsApp', 'Enviar aviso', 'Reportar mensaje (entrante)']) {
+        expect(t.ejecutados.has(nodo), nodo).toBe(false);
+      }
+      expect(JSON.stringify(sdVm(w.mundo))).not.toContain(AJENO); // ni memoria ni vistos a su nombre
+    }
+    // Negativo: el `telefonoDePrueba` sí pasa, y un destinatario de aviso también.
+    expect(w.mundo.turno(cuerpoDePrueba(texto_('hola'))).ejecutados.has('Traer configuración')).toBe(true);
+    expect(w.mundo.turno(cuerpoDePrueba(texto_('hola'), { desde: AV1 })).ejecutados.has('Traer configuración')).toBe(true);
   });
 
   it('con `enviarDeVerdad`, los mensajes y los avisos salen SOLO al `telefonoDePrueba` (los avisos con el prefijo «[al restaurante]»), y nada se reporta', () => {
@@ -2270,7 +2323,7 @@ describe('modo prueba («Entrada de prueba» del JSON de prueba)', () => {
       const espia = espiar();
       const w = crear({ flujo: PRUEBA, panel: panel(), config, dobles: espia.dobles });
       w.estado.extraccion = EX([ln('tacos de birria', 4, 'unidad')]);
-      const op = { enviarDeVerdad: true, telefonoDePrueba: tel };
+      const op = { enviarDeVerdad: true, telefonoDePrueba: tel, desde: tel === '' ? PRUEBA_TEL : tel };
       const a = w.mundo.turno(cuerpoDePrueba(texto_('quiero 4 tacos de birria'), op));
       const id = (a.resumen as J)['mensajes'][0].payload.interactive.action.buttons[0].reply.id as string; // el resumen lo trae aunque nada se envíe
       const b = w.mundo.turno(cuerpoDePrueba({ type: 'interactive', interactive: { type: 'button_reply', button_reply: { id, title: 'Confirmar pedido' } } }, op));
