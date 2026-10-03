@@ -32,6 +32,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const PROYECTO = 'demo-novuchat-pruebas';
 process.env['FIRESTORE_EMULATOR_HOST'] = `127.0.0.1:${process.env['FIRESTORE_EMULATOR_PORT'] ?? '8231'}`;
 process.env['GCLOUD_PROJECT'] = PROYECTO;
+// DÓNDE VIVE EL SITIO PÚBLICO, fijado a un valor ficticio ANTES de importar el
+// módulo. Sin `SITIO_PUBLICO` no hay enlace (el PR de Hosting, T-37, quitó el
+// respaldo `https://<proyecto>.web.app`: ese sitio ya no sirve `/c/**`), así que
+// esta suite no puede depender de que el proyecto lo derive.
+const SITIO_DE_PRUEBA = 'https://catalogo.ejemplo.test';
+process.env['SITIO_PUBLICO'] = SITIO_DE_PRUEBA;
 const TOKEN = 'valor-de-prueba-del-catalogo-completo';
 process.env['INGESTA_CLIENTE16'] = TOKEN;
 
@@ -305,7 +311,7 @@ describe('El comercio sale de la ruta autenticada, nunca del cuerpo', () => {
 // que se defiende acá es: ni una ficha de más, ni un enlace para quien no lo
 // pidió, ni uno compartido entre dos conversaciones, ni uno en un registro.
 // =============================================================================
-const FORMA_ENLACE = /^https:\/\/[^/]+\/c\/[0-9a-f]{32}$/;
+const FORMA_ENLACE = /^https:\/\/catalogo\.ejemplo\.test\/c\/[0-9a-f]{32}$/;
 const fichasDe = async (tenant: string, telefono?: string) => {
   const q = await db.collection('fichasCatalogo').where('tenantId', '==', tenant).get();
   // El puntero `ult_…` no es una ficha: se cuentan solo las de 32 hexadecimales.
@@ -709,20 +715,32 @@ describe('Si no hay enlace, el registro dice por qué (`catalogoEnlaceMotivo`) y
     } finally { await db.doc(`tenants/${T_CHICO}`).update({ flujos: ['venta'] }); }
   });
 
-  it('`SITIO_PUBLICO` ausente y sin proyecto de donde derivarlo: `sinSitio` (la señal que faltaba)', async () => {
-    const guardado = { g: process.env['GCLOUD_PROJECT'], p: process.env['GCP_PROJECT'] };
-    delete process.env['GCLOUD_PROJECT'];
-    delete process.env['GCP_PROJECT'];
+  it('`SITIO_PUBLICO` ausente (o que no es https): `sinSitio`, la señal que faltaba', async () => {
+    // Se borra SITIO_PUBLICO, que es lo que decide. Los dos de proyecto se
+    // quitan también para que la prueba valga igual con o sin el respaldo
+    // `https://<proyecto>.web.app` que quitó T-37: con la rama sola (respaldo
+    // presente) y con la rama junto a Hosting (respaldo ausente) da `sinSitio`.
+    const claves = ['SITIO_PUBLICO', 'GCLOUD_PROJECT', 'GCP_PROJECT'] as const;
+    const guardado = Object.fromEntries(claves.map((k) => [k, process.env[k]]));
+    const restaurar = () => {
+      for (const k of claves) {
+        if (guardado[k] === undefined) delete process.env[k]; else process.env[k] = guardado[k];
+      }
+    };
     try {
-      const { r, log } = await conLog(T_VENTA, { telefono: '70010042', catalogoCompleto: true });
-      expect(r.codigo).toBe(200);
-      expect(enlaceDe(r)).toBeUndefined();
-      expect(log).toContain('"catalogoEnlaceMotivo":"sinSitio"');
-      expect(catalogoDe(r)).toHaveLength(ITEMS);
-    } finally {
-      if (guardado.g !== undefined) process.env['GCLOUD_PROJECT'] = guardado.g;
-      if (guardado.p !== undefined) process.env['GCP_PROJECT'] = guardado.p;
-    }
+      for (const sitio of [undefined, 'http://catalogo.ejemplo.test', 'catalogo.ejemplo.test']) {
+        for (const k of claves) delete process.env[k];
+        if (sitio !== undefined) process.env['SITIO_PUBLICO'] = sitio;
+        const { r, log } = await conLog(T_VENTA, { telefono: '70010042', catalogoCompleto: true });
+        expect(r.codigo).toBe(200);
+        expect(enlaceDe(r), String(sitio)).toBeUndefined();
+        expect(log).toContain('"catalogoEnlaceMotivo":"sinSitio"');
+        expect(catalogoDe(r)).toHaveLength(ITEMS);
+      }
+    } finally { restaurar(); }
+    // Y con el sitio configurado, el enlace sale en ESE sitio.
+    const r = await configuracion(T_VENTA, { telefono: '70010042', catalogoCompleto: true });
+    expect(enlaceDe(r)).toMatch(new RegExp(`^${SITIO_DE_PRUEBA.replace(/\./g, '\\.')}/c/[0-9a-f]{32}$`));
   });
 
   it('un error al abrir la ficha: `error`, con el código y el teléfono (últimos 4), sin el mensaje ni la ruta', async () => {
