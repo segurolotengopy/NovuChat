@@ -6,7 +6,7 @@ import './catalogo.css';
 
 /**
  * Monta el sitio público. No hay enrutador: la página es una sola y la ficha ya
- * viene en la dirección, validada por `main.tsx` antes de cargar este trozo.
+ * viene en la dirección, validada por `entrada.tsx` antes de montar la página.
  * Meter `react-router` acá sería sumar una dependencia a la página que más
  * necesita ser liviana, a cambio de nada.
  *
