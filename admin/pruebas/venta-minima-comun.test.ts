@@ -17,7 +17,10 @@
  *   - `avAnotarEntrante(sd, tel, ahoraMs)`: anota que `tel` escribió (el doble lo deja en
  *     `sd.avVentanas[tel]`, solo para poder comprobar que se llamó);
  *   - `cbCobroReal(cuerpoPanel)`: `{activo, qrUrl, titular, banco, pendiente, monto, pedidoRef,
- *     vencidoHaceMin}` desde `cuerpo.cobro` (`activo` solo con un QR `https://`).
+ *     vencidoHaceMin}` desde `cuerpo.cobro` (`activo` solo con un QR `https://`);
+ *   - `cbCobroSimulado(cuerpoPanel, base)`: `null` si el cuerpo trae `cobroReal`, si no trae `cobroSimulado`, si «Config base» no
+ *     trae `cobroSimuladoActivo === true` o si `qrSimuladoUrl` no empieza con `https://`; si no, el cobro simulado
+ *     (`activo:false`, `modo:'simulado'`, `pendiente`, `monto` y `pedidoRef` del servidor).
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -93,10 +96,25 @@ function cbCobroReal(cuerpo) {
   const c = (cuerpo && cuerpo.cobro) || {};
   const qr = c.qr || {};
   const activo = c.activo === true && typeof qr.url === 'string' && qr.url.indexOf('https://') === 0;
+  // Sin QR utilizable todo queda vacío, como en la librería de verdad (nada del servidor se arrastra a un cobro apagado).
+  if (!activo) return { activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
   return {
-    activo: activo, qrUrl: activo ? qr.url : '', titular: qr.nombreCuenta || '', banco: qr.banco || '',
-    pendiente: activo && c.pendiente === true, monto: typeof c.monto === 'number' ? c.monto : null,
+    activo: true, qrUrl: qr.url, titular: qr.nombreCuenta || '', banco: qr.banco || '',
+    pendiente: c.pendiente === true, monto: typeof c.monto === 'number' ? c.monto : null,
     pedidoRef: c.pedido || null, vencidoHaceMin: typeof c.vencidoHaceMin === 'number' ? c.vencidoHaceMin : null,
+  };
+}
+function cbCobroSimulado(cuerpo, base) {
+  if (!cuerpo || !base) return null;
+  if (cuerpo.cobroReal) return null;
+  if (!cuerpo.cobroSimulado || typeof cuerpo.cobroSimulado !== 'object') return null;
+  if (base.cobroSimuladoActivo !== true) return null;
+  const url = typeof base.qrSimuladoUrl === 'string' ? base.qrSimuladoUrl.trim() : '';
+  if (url.indexOf('https://') !== 0) return null;
+  const c = cuerpo.cobro || {};
+  return {
+    activo: false, modo: 'simulado', qrUrl: url, titular: '', banco: '', pendiente: c.pendiente === true,
+    monto: typeof c.monto === 'number' ? c.monto : null, pedidoRef: c.pedido || null, vencidoHaceMin: null,
   };
 }
 `;
@@ -825,11 +843,11 @@ describe('Interpretar entrada', () => {
     const t = uno(mensaje());
     expect(t).toMatchObject({
       from: CLIENTE, nombrePerfil: 'Ana Pérez', phoneNumberId: PNID, mensajeId: 'wamid.prueba-1', tipo: 'text', texto: 'hola',
-      textoReporte: 'hola', origen: 'directo', boton: '', esAudio: false, esComprobante: false, mediaId: '', mimeType: '',
+      textoReporte: 'hola', origen: 'directo', boton: '', esAudio: false, esComprobante: false, comprobanteSimulado: false, mediaId: '', mimeType: '',
       ubicacion: null, ahoraMs: AHORA, prueba: null,
     });
     expect(Object.keys(t).sort()).toEqual([
-      'ahoraMs', 'boton', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
+      'ahoraMs', 'boton', 'comprobanteSimulado', 'esAudio', 'esComprobante', 'from', 'mediaId', 'mensajeId', 'mimeType', 'nombrePerfil', 'origen',
       'phoneNumberId', 'prueba', 'texto', 'textoReporte', 'tipo', 'ubicacion',
     ]);
   });
@@ -898,6 +916,30 @@ describe('Interpretar entrada', () => {
     expect(uno(mensaje({ type: 'video', video: { id: 'v' } }), { cfg })['esComprobante']).toBe(false);
     expect(uno(img, { cfg: { ...CFG, cobro: undefined } })['esComprobante']).toBe(false); // sin bloque de cobro
     expect(uno(img, { cfg: { ...CFG, cobro: { activo: 'true', pendiente: 'true' } } })['esComprobante']).toBe(false); // solo true de verdad
+  });
+  it('cobro SIMULADO: `comprobanteSimulado` con foto o archivo y QR pendiente, sin medio ni descarga; `esComprobante` nunca', () => {
+    const SIM = { activo: false, modo: 'simulado', pendiente: true, qrUrl: 'https://qr.example/sim.png' };
+    const cfg = { ...CFG, cobro: SIM };
+    const img = mensaje({ type: 'image', image: { id: 'media-i1' } });
+    const doc = mensaje({ type: 'document', document: { id: 'media-d1' } });
+    for (const m of [img, doc, mensaje({ type: 'image', image: {} })]) {
+      // no exige `mediaId` (no se baja nada) y NUNCA es un comprobante para cotejar: sin descarga, sin Gemini, sin cotejo
+      expect(uno(m, { cfg }), JSON.stringify(m)).toMatchObject({ comprobanteSimulado: true, esComprobante: false });
+    }
+    // los negativos, uno por condición
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, pendiente: false } } })).toMatchObject({ comprobanteSimulado: false, esComprobante: false }); // sin QR pendiente
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, pendiente: 'true' } } })['comprobanteSimulado']).toBe(false); // solo true de verdad
+    expect(uno(mensaje({ type: 'audio', audio: { id: 'a' } }), { cfg })['comprobanteSimulado']).toBe(false);
+    expect(uno(mensaje({ type: 'text', text: { body: 'hola' } }), { cfg })['comprobanteSimulado']).toBe(false);
+    expect(uno(mensaje({ type: 'video', video: { id: 'v' } }), { cfg })['comprobanteSimulado']).toBe(false);
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, modo: 'apagado' } } })['comprobanteSimulado']).toBe(false);
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, modo: undefined } } })['comprobanteSimulado']).toBe(false);
+    expect(uno(img, { cfg: { ...cfg, cobro: { ...SIM, activo: true } } })['comprobanteSimulado']).toBe(false); // «activo» es real: no se mezclan
+    // con el cobro REAL: `esComprobante` sí, `comprobanteSimulado` nunca
+    const real = { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'real' } };
+    expect(uno(img, { cfg: real })).toMatchObject({ esComprobante: true, comprobanteSimulado: false });
+    // y aunque llegue `activo:true` con `modo:'simulado'` (no debería), no se baja ni se coteja: `esComprobante` es falso
+    expect(uno(img, { cfg: { ...CFG, cobro: { ...COBRO_PENDIENTE, modo: 'simulado' } } })).toMatchObject({ esComprobante: false, comprobanteSimulado: false });
   });
   it('location pasa a `ubicacion`; una coordenada inválida la deja en null', () => {
     const u = uno(mensaje({ type: 'location', location: { latitude: -16.5, longitude: -68.15, name: 'Casa', address: 'Calle 1 <b>' } }));
@@ -1065,7 +1107,7 @@ describe('Config del negocio', () => {
       nombreAsistente: 'Kai', nivelEmojis: 'muchos', moneda: 'BOB', horarioAtencion: 'Lunes a sábado de 12:00 a 22:00',
       numeroRecepcion: '59100000041', prefijosPermitidos: '591,51', aceptaDelivery: true, aceptaRetiroEnLocal: true,
     });
-    expect(c['cobro']).toEqual({ activo: true, qrUrl: 'https://qr.example/f?x=1', titular: 'Casa de Tacos SRL', banco: 'Banco X', pendiente: true, monto: 55, pedidoRef: 'ped-1', vencidoHaceMin: null });
+    expect(c['cobro']).toEqual({ activo: true, modo: 'real', qrUrl: 'https://qr.example/f?x=1', titular: 'Casa de Tacos SRL', banco: 'Banco X', pendiente: true, monto: 55, pedidoRef: 'ped-1', vencidoHaceMin: null });
     expect(c['campanas']).toEqual([{ id: 'c1', texto: 'Promo Dúo', inicio: '2026-10-01T04:00:00.000Z', fin: '2026-10-31T04:00:00.000Z' }]);
     expect(c['catalogo']).toEqual([{ id: 'a1', nombre: 'Queso fundido', precio: 40, area: 'Entradas', descripcion: 'Con chorizo', agotado: false }]);
     expect(c['phoneNumberId']).toBe(PNID);
@@ -1210,11 +1252,67 @@ describe('Config del negocio', () => {
   });
   it('cobro: lo arma `cbCobroReal`; si falla o el panel no está en 200, queda apagado (plan B)', () => {
     expect(ok()['cobro']).toMatchObject({ activo: true });
-    const apagado = { activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
+    const apagado = { activo: false, modo: 'apagado', qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
     expect(ok(PANEL, { globales: { $fallaCobro: true } })['cobro']).toEqual(apagado);
     expect(ok({ ...PANEL, cobro: { activo: true, qr: { url: 'http://sin-https.example/q' } } })['cobro']).toMatchObject({ activo: false });
     expect(correr({ statusCode: 500, body: PANEL })['cobro']).toEqual(apagado);
     expect(correr({ statusCode: 409, body: PANEL })['cobro']).toEqual(apagado);
+  });
+  describe('cobro SIMULADO (modo del cobro)', () => {
+    const URL_SIM = 'https://qr.example/qr-sim.png';
+    const BASE_SIM: J = { ...BASE, cobroSimuladoActivo: true, qrSimuladoUrl: URL_SIM };
+    // El panel del servidor en simulado: `cobroSimulado` (objeto), SIN `cobroReal` y con el `cobro` pendiente.
+    const PANEL_SIM: J = { ...PANEL, cobro: { activo: false, pendiente: true, monto: 55, pedido: 'ped-1' }, cobroSimulado: {} };
+    const APAGADO = { activo: false, modo: 'apagado', qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null };
+    const cobroDe = (resp: J, base: J = BASE_SIM): J => correr(resp, { base })['cobro'] as J;
+
+    it('con las cuatro condiciones: `modo:simulado`, `activo:false`, la imagen de «Config base» y lo pendiente del servidor', () => {
+      expect(cobroDe({ statusCode: 200, body: PANEL_SIM })).toEqual({
+        activo: false, modo: 'simulado', qrUrl: URL_SIM, titular: '', banco: '', pendiente: true, monto: 55, pedidoRef: 'ped-1', vencidoHaceMin: null,
+      });
+    });
+    it('el servidor con `cobroReal` (aunque no sirva) NUNCA es simulado: o es real o está apagado', () => {
+      // real útil + base simulada → real, con la imagen del real, jamás la simulada
+      const real = cobroDe({ statusCode: 200, body: { ...PANEL, cobroReal: { nombreCuenta: 'Casa de Tacos SRL' }, cobroSimulado: {} } });
+      expect(real).toMatchObject({ activo: true, modo: 'real', qrUrl: 'https://qr.example/f?x=1' });
+      expect(real['qrUrl']).not.toBe(URL_SIM);
+      // `cobroReal` presente pero sin QR utilizable + `cobroSimulado` + base simulada → apagado, no simulado
+      expect(cobroDe({ statusCode: 200, body: { ...PANEL_SIM, cobroReal: {} } })).toEqual(APAGADO);
+    });
+    it('409, 500 y panel sin respuesta con la base simulada: apagado (plan B), nunca simulado', () => {
+      expect(cobroDe({ statusCode: 409, body: PANEL_SIM })).toEqual(APAGADO);
+      expect(cobroDe({ statusCode: 500, body: PANEL_SIM })).toEqual(APAGADO);
+      expect(cobroDe({ statusCode: 200, body: 'no es json' })).toEqual(APAGADO);
+      expect(cobroDe({})).toEqual(APAGADO);
+    });
+    it('falta una condición → apagado: sin `cobroSimulado` del servidor, con `cobroSimulado` que no es objeto, o con la base mal', () => {
+      const { cobroSimulado: _quitado, ...sinSim } = PANEL_SIM;
+      expect(cobroDe({ statusCode: 200, body: sinSim })).toEqual(APAGADO);
+      for (const malo of ['si', 1, true, null]) {
+        expect(cobroDe({ statusCode: 200, body: { ...PANEL_SIM, cobroSimulado: malo } }), JSON.stringify(malo)).toEqual(APAGADO);
+      }
+      for (const activo of ['true', 1, false, undefined, null]) {
+        expect(cobroDe({ statusCode: 200, body: PANEL_SIM }, { ...BASE_SIM, cobroSimuladoActivo: activo }), String(activo)).toEqual(APAGADO);
+      }
+      for (const url of ['http://qr.example/x.png', '', undefined, 7]) {
+        expect(cobroDe({ statusCode: 200, body: PANEL_SIM }, { ...BASE_SIM, qrSimuladoUrl: url }), String(url)).toEqual(APAGADO);
+      }
+      expect(cobroDe({ statusCode: 200, body: PANEL_SIM }, BASE)).toEqual(APAGADO); // la base sin las claves
+    });
+    it('barrido: nunca `activo:true` con `modo:simulado`, ni `modo:simulado` con `activo` distinto de false', () => {
+      const paneles: J[] = [PANEL, PANEL_SIM, { ...PANEL_SIM, cobroReal: {} }, { ...PANEL, cobroSimulado: {} },
+        { ...PANEL_SIM, cobro: { activo: true, pendiente: true, qr: { url: 'https://qr.example/f?x=1' } } }, { ...PANEL, cobro: undefined }];
+      const bases: J[] = [BASE, BASE_SIM, { ...BASE_SIM, cobroSimuladoActivo: 'true' }, { ...BASE_SIM, qrSimuladoUrl: 'http://x.example/a' }];
+      for (const body of paneles) for (const base of bases) {
+        const c = cobroDe({ statusCode: 200, body }, base);
+        expect(['real', 'simulado', 'apagado'], JSON.stringify(c)).toContain(c['modo']);
+        if (c['modo'] === 'simulado') expect(c['activo']).toBe(false);
+        if (c['activo'] === true) expect(c['modo']).toBe('real');
+      }
+    });
+    it('si `cbCobroSimulado` falla, el cobro queda apagado (no se cae el nodo)', () => {
+      expect(correr({ statusCode: 200, body: PANEL_SIM }, { base: BASE_SIM, globales: { $fallaCobro: true } })['cobro']).toEqual(APAGADO);
+    });
   });
   it('numeroRecepcion: dígitos del panel; si falta, el respaldo de «Config base»; un marcador cuenta como vacío', () => {
     expect(ok()['numeroRecepcion']).toBe('59100000041');

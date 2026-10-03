@@ -142,7 +142,10 @@ return [{ json: {
   origen: ref ? 'anuncio' : 'directo',
   boton: boton,
   esAudio: tipo === 'audio' && mediaId !== '',
-  esComprobante: (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.pendiente === true && mediaId !== '',
+  esComprobante: (tipo === 'image' || tipo === 'document') && cobro.activo === true && cobro.modo !== 'simulado' && cobro.pendiente === true && mediaId !== '',
+  // Cobro SIMULADO: cualquier foto o archivo con el QR pendiente es el comprobante de la prueba. No exige `mediaId` porque no se baja
+  // nada (ni se lee con Gemini ni se coteja en el servidor): `esComprobante` y esto nunca valen a la vez.
+  comprobanteSimulado: (tipo === 'image' || tipo === 'document') && cobro.modo === 'simulado' && cobro.activo !== true && cobro.pendiente === true,
   mediaId: mediaId,
   mimeType: mimeType,
   ubicacion: ubicacion,

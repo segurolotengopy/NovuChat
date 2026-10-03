@@ -19,7 +19,8 @@
 //     copian TODOS los de «Config base»; los posee T4;
 //   - `pedidosActivo`, `reservasActivo`, `promosActivo`: valen `false` si faltan;
 //   - `phoneNumberIdEsperado`: '' si es un marcador sin reemplazar (`Interpretar entrada` descarta todo);
-//   - `cobro`: `cbCobroReal(cuerpo)`; si algo falla, apagado (plan B: sin QR);
+//   - `cobro`: real (`cbCobroReal`) o simulado (`cbCobroSimulado`, solo con «Config base» y sin `cobroReal` del servidor), con `modo`
+//     ('real', 'simulado' o 'apagado'; `activo` sigue significando «real»); si algo falla, apagado (plan B: sin QR);
 //   - `aceptaDelivery` y `aceptaRetiroEnLocal`: solo se apagan con `false` en `venta` (`!== false`), el mismo criterio
 //     del servidor y de `Plan del turno`: un panel sin esas claves acepta las dos modalidades. Con el panel sin
 //     respuesta no se fijan (se desconocen) y `Plan del turno` deriva en vez de ofrecer delivery; con el comercio
@@ -40,7 +41,7 @@ const RESPALDO = {
   waGraphVersion: 'v26.0',
 };
 const COBRO_APAGADO = {
-  activo: false, qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null,
+  activo: false, modo: 'apagado', qrUrl: '', titular: '', banco: '', pendiente: false, monto: null, pedidoRef: null, vencidoHaceMin: null,
 };
 
 const carga = vmPrimero('Carga de entrada') || {};
@@ -185,7 +186,17 @@ if (codigo === 409) {
   const util2 = util(cuerpo.estadoComercio);
   const estadoComercio = util2 === 'activo' ? 'operativo' : (util2 ? 'suspendido' : 'operativo');
   let cobro = COBRO_APAGADO;
-  try { cobro = Object.assign({}, COBRO_APAGADO, objeto(cbCobroReal(cuerpo))); } catch (e) { cobro = COBRO_APAGADO; }
+  // `activo` significa «real» y nada más: en simulado vale `false` (la descarga del medio, Gemini y el cotejo del servidor
+  // cuelgan de él y NO deben correr). El simulado solo existe si el servidor no manda `cobroReal` y «Config base» lo habilita.
+  try {
+    const real = Object.assign({}, COBRO_APAGADO, objeto(cbCobroReal(cuerpo)));
+    if (real.activo === true) cobro = Object.assign(real, { modo: 'real' });
+    else {
+      const sim = cbCobroSimulado(cuerpo, base);
+      cobro = sim ? Object.assign({}, COBRO_APAGADO, sim, { activo: false, modo: 'simulado' })
+        : Object.assign(real, { modo: 'apagado' });
+    }
+  } catch (e) { cobro = COBRO_APAGADO; }
   cfg = Object.assign({}, RESPALDO, deBase, deBaseDeReglas, deBasePlantillas, atencion, deLaConsola, {
     estadoComercio: estadoComercio, configDeLaConsola: true, panelSinRespuesta: false,
     catalogo: carta(cuerpo.catalogo),
