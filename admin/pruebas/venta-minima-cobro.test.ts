@@ -823,7 +823,7 @@ describe('cbCobroSimulado: simulado solo con las cuatro condiciones, y nunca con
     const malas = [
       'http://raw.githubusercontent.com/x/qr-demo.png',
       'https://192.168.1.10/qr.png',
-      'https://usuario@raw.githubusercontent.com/qr-demo.png',
+      ['https://usuario', 'raw.githubusercontent.com/qr-demo.png'].join('@'),
       'https://raw.githubusercontent.com:8443/qr-demo.png',
       'REEMPLAZAR_URL', '', '   ', 'https://localhost/qr.png',
       'https://almacen.ejemplo.test/' + 'a'.repeat(2001),
