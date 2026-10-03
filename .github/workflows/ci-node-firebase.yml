@@ -38,7 +38,10 @@
 #            GCP_PROJECT_ID_PROD, STAGING_URL, PROD_URL, HEALTH_PATH,
 #            NODE_VERSION (22), COVERAGE_MIN (70), GHAS_ENABLED, BLOQUEAR_EN,
 #            FIREBASE_DEPLOY_ONLY ('hosting,firestore:rules,firestore:indexes,functions,storage'),
-#            FIREBASE_SITE_ID, FIREBASE_PREVIEW ('true' para canales de PR)
+#            FIREBASE_SITE_ID, FIREBASE_PREVIEW ('true' para canales de PR),
+#            HOSTING_SITIO_CATALOGO (id del SEGUNDO sitio de Hosting, el de la
+#            página pública del catálogo, T-37; repositorio = producción,
+#            Environment `staging` = staging)
 #
 # ALCANCE DE LAS VARIABLES (2026-09-25). Las del repositorio son las de
 # PRODUCCIÓN (VITE_*, SITIO_PUBLICO, FIREBASE_DEPLOY_ONLY, ...). El Environment
@@ -894,6 +897,23 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # T-37 (admin/SEGURIDAD.md): la página pública del catálogo es un SEGUNDO
+      # sitio de Hosting, con su propia compilación (`web/dist-catalogo`, la
+      # genera el mismo `web:build`). Antes de guardarla se comprueba, sobre lo
+      # que Vite emitió, que no arrastra el SDK de Firebase ni la entrada de la
+      # consola: es lo que hace que el código de sesión de un administrador no
+      # exista en el origen que abre un cliente final.
+      - name: Sitio público del catálogo — sin código de sesión
+        run: node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs
+
+      - name: Guardar dist-catalogo/ (segundo sitio de Hosting)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dist-catalogo-production
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist-catalogo/
+          retention-days: 7
+          if-no-files-found: error
+
       # Se despliega lo que se probo: el `lib/` compilado y el lockfile viajan
       # como artefacto, no se reconstruyen en el job de despliegue.
       # El `predeploy` de admin/firebase.json respeta esto: con CI=true y el
@@ -1080,6 +1100,23 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # T-37 (admin/SEGURIDAD.md): la página pública del catálogo es un SEGUNDO
+      # sitio de Hosting, con su propia compilación (`web/dist-catalogo`, la
+      # genera el mismo `web:build`). Antes de guardarla se comprueba, sobre lo
+      # que Vite emitió, que no arrastra el SDK de Firebase ni la entrada de la
+      # consola: es lo que hace que el código de sesión de un administrador no
+      # exista en el origen que abre un cliente final.
+      - name: Sitio público del catálogo — sin código de sesión
+        run: node scripts/modulos/catalogo-web/verificar-sitio-publico.mjs
+
+      - name: Guardar dist-catalogo/ (segundo sitio de Hosting)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dist-catalogo-staging
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist-catalogo/
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Guardar functions/ (lib compilado + package-lock)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1164,8 +1201,11 @@ jobs:
         run: |
           set -euo pipefail
           npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+          # firebase.json tiene DOS sitios (T-37): el canal de vista previa es
+          # de la consola. El sitio público del catálogo no se previsualiza.
+          firebase target:apply hosting consola "$PROYECTO" --project "$PROYECTO"
           firebase hosting:channel:deploy "$CANAL" --project "$PROYECTO" \
-            --expires 7d --non-interactive --json | tee canal.json
+            --only consola --expires 7d --non-interactive --json | tee canal.json
           url=$(jq -r '.result | to_entries[0].value.url' canal.json)
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
@@ -1213,6 +1253,7 @@ jobs:
     outputs:
       bucket: ${{ steps.paquete.outputs.bucket }}
       app_id: ${{ steps.paquete.outputs.app_id }}
+      sitio_publico: ${{ steps.sitio.outputs.url }}
     environment:
       name: staging
       url: ${{ vars.STAGING_URL }}
@@ -1241,6 +1282,13 @@ jobs:
           # firebase.json de admin/ publica `web/dist`.
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
+      - name: Descargar dist-catalogo/ (segundo sitio de Hosting)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: dist-catalogo-staging
+          # El target `catalogo` de firebase.json publica `web/dist-catalogo`.
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist-catalogo
+
       - name: Descargar functions/ (lib compilado + package-lock)
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -1254,6 +1302,7 @@ jobs:
           URL_STAGING: ${{ vars.STAGING_URL }}
           URL_PROD: ${{ vars.PROD_URL }}
           SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+          SITIO_CATALOGO: ${{ vars.HOSTING_SITIO_CATALOGO }}
           BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
         run: |
@@ -1271,7 +1320,33 @@ jobs:
           if [[ "$SOLO" == *storage* && "${BUCKET_STORAGE#gs://}" != "$PROYECTO".* ]]; then
             echo "::error::VITE_FIREBASE_STORAGE_BUCKET no es un bucket del proyecto de staging (falta en el Environment)."; fallos=1
           fi
+          # T-37: la página pública del catálogo es un SEGUNDO sitio de Hosting.
+          # Sin su identificador (variable del Environment `staging`, sin caer
+          # al valor de producción) `firebase deploy --only hosting` no sabe
+          # dónde publicarla; y nunca puede ser el sitio de la consola ni su
+          # enlace apuntar al origen de la consola.
+          if [[ "$SOLO" == *hosting* ]]; then
+            if [[ -z "$SITIO_CATALOGO" ]]; then
+              echo "::error::Falta HOSTING_SITIO_CATALOGO en el Environment 'staging' (el segundo sitio de Hosting, T-37)."; fallos=1
+            elif [[ ! "$SITIO_CATALOGO" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]; then
+              echo "::error::HOSTING_SITIO_CATALOGO no tiene forma de identificador de sitio de Hosting."; fallos=1
+            elif [[ "$SITIO_CATALOGO" == "$PROYECTO" ]]; then
+              echo "::error::HOSTING_SITIO_CATALOGO es el sitio de la consola: la página pública necesita OTRO sitio (T-37)."; fallos=1
+            fi
+            if [[ -n "$SITIO_PUBLICO" && "${SITIO_PUBLICO%/}" == "${URL_STAGING%/}" ]]; then
+              echo "::error::SITIO_PUBLICO es el origen de la consola (STAGING_URL): el enlace del catálogo tiene que apuntar al segundo sitio (T-37)."; fallos=1
+            fi
+          fi
           exit "$fallos"
+
+      - name: Dirección del sitio público (para el humo, que corre sin Environment)
+        # humo-staging corre SIN Environment a propósito (ver ese job) y por eso
+        # no ve las variables de `staging`. El valor viaja como salida del job:
+        # no es un secreto y no se imprime.
+        id: sitio
+        env:
+          SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+        run: echo "url=${SITIO_PUBLICO%/}" >> "$GITHUB_OUTPUT"
 
       - name: Autenticar en GCP (WIF + impersonación de la SA de deploy)
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -1414,6 +1489,7 @@ jobs:
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_STAGING: ${{ vars.STAGING_URL }}
           SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+          SITIO_CATALOGO: ${{ vars.HOSTING_SITIO_CATALOGO }}
           FORZAR_FACTURA: ${{ vars.FIREBASE_DEPLOY_FORCE }}
           BUCKET_STORAGE: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
         run: |
@@ -1432,6 +1508,15 @@ jobs:
           # «EL BUCKET DE STORAGE SE DECLARA» del job de producción).
           if [[ "$SOLO" == *storage* ]]; then
             firebase target:apply storage principal "${BUCKET_STORAGE#gs://}" --project "$PROYECTO"
+          fi
+          # Los DOS sitios de Hosting (T-37) se declaran como destinos, igual
+          # que el bucket: firebase.json nombra `consola` y `catalogo`, y acá se
+          # resuelven a sitios reales desde variables (el repositorio es público
+          # y no lleva identificadores). La consola de staging es el sitio por
+          # defecto del proyecto, que se llama como él.
+          if [[ "$SOLO" == *hosting* ]]; then
+            firebase target:apply hosting consola "$PROYECTO" --project "$PROYECTO"
+            firebase target:apply hosting catalogo "$SITIO_CATALOGO" --project "$PROYECTO"
           fi
           # Simulación primero, con el mismo --force que la publicación; hosting
           # queda fuera porque su prepare crea una versión aun en dry-run. Los
@@ -1534,6 +1619,14 @@ jobs:
             exit 1
           fi
           npm i -g "firebase-tools@${FIREBASE_TOOLS_VERSION}"
+          # firebase.json tiene DOS sitios de Hosting (T-37). El ambiente de
+          # desarrollo es un camino corto para probar y no tiene segundo sitio:
+          # se publica solo la consola (`hosting:consola`) y el sitio público
+          # del catálogo no existe en dev.
+          if [[ "$SOLO" == *hosting* ]]; then
+            firebase target:apply hosting consola "$PROYECTO" --project "$PROYECTO"
+            SOLO="${SOLO//hosting/hosting:consola}"
+          fi
           firebase deploy --only "$SOLO" --project "$PROYECTO" --non-interactive \
             --message "dev ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
           echo "### Dev desplegado: componentes [$SOLO] en $PROYECTO" >> "$GITHUB_STEP_SUMMARY"
@@ -1599,6 +1692,8 @@ jobs:
           APP_ID_PROD: ${{ vars.VITE_FIREBASE_APP_ID }}
           APP_ID_STAGING: ${{ needs.desplegar-staging.outputs.app_id }}
           FIREBASE_STORAGE_BUCKET: ${{ needs.desplegar-staging.outputs.bucket }}
+          # T-37: el segundo sitio de Hosting, el de la página pública.
+          SITIO_PUBLICO_URL: ${{ needs.desplegar-staging.outputs.sitio_publico }}
         run: ./scripts/humo-staging.sh
 
   # ---------------------------------------------------------------------------
@@ -1703,6 +1798,13 @@ jobs:
           name: dist-production
           path: ${{ env.RUTA_COMPONENTE }}/web/dist
 
+      - name: Descargar dist-catalogo/ (segundo sitio de Hosting)
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: dist-catalogo-production
+          # El target `catalogo` de firebase.json publica `web/dist-catalogo`.
+          path: ${{ env.RUTA_COMPONENTE }}/web/dist-catalogo
+
       - name: Descargar functions/ (lib compilado + package-lock)
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
@@ -1799,6 +1901,11 @@ jobs:
           SOLO: ${{ vars.FIREBASE_DEPLOY_ONLY || 'hosting,firestore:rules,firestore:indexes,functions,storage' }}
           URL_PROD: ${{ vars.PROD_URL }}
           SITIO_PUBLICO: ${{ vars.SITIO_PUBLICO }}
+          # T-37: los dos sitios de Hosting. La consola es el de FIREBASE_SITE_ID
+          # (o el del proyecto, como en la copia «previa»); la página pública del
+          # catálogo, el de HOSTING_SITIO_CATALOGO.
+          SITIO_CONSOLA: ${{ vars.FIREBASE_SITE_ID || vars.GCP_PROJECT_ID_PROD }}
+          SITIO_CATALOGO: ${{ vars.HOSTING_SITIO_CATALOGO }}
           # Ver el bloque «LA FACTURA MÍNIMA» más abajo. Vacía por defecto: la
           # protección de firebase-tools queda puesta salvo que se la levante a
           # propósito para un despliegue concreto.
@@ -1842,6 +1949,28 @@ jobs:
             [[ -n "${BUCKET_STORAGE:-}" ]] \
               || { echo "::error::Falta vars.VITE_FIREBASE_STORAGE_BUCKET y el despliegue incluye storage"; exit 1; }
             firebase target:apply storage principal "${BUCKET_STORAGE#gs://}" --project "$PROYECTO"
+          fi
+          # LOS DOS SITIOS DE HOSTING (T-37, admin/SEGURIDAD.md). La página
+          # pública del catálogo vive en su propio sitio, con otro origen que la
+          # consola: el origen de la consola guarda las sesiones de
+          # administrador. FALLA si falta, a propósito, por la misma razón que
+          # SITIO_PUBLICO: sin el segundo sitio `firebase deploy --only hosting`
+          # no sabe dónde publicar la página, y publicarla en el sitio de la
+          # consola deshace la separación. Y se corta si el enlace del catálogo
+          # (SITIO_PUBLICO) sigue siendo el origen de la consola, que es el
+          # estado de antes de T-37: los enlaces nuevos llegarían a una pantalla
+          # de ingreso.
+          if [[ "$SOLO" == *hosting* ]]; then
+            [[ -n "${SITIO_CATALOGO:-}" ]] \
+              || { echo "::error::Falta vars.HOSTING_SITIO_CATALOGO (el segundo sitio de Hosting, T-37; ver docs/produccion/sitio-publico-catalogo.md)"; exit 1; }
+            [[ "$SITIO_CATALOGO" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] \
+              || { echo "::error::vars.HOSTING_SITIO_CATALOGO no tiene forma de identificador de sitio de Hosting."; exit 1; }
+            [[ "$SITIO_CATALOGO" != "$SITIO_CONSOLA" ]] \
+              || { echo "::error::vars.HOSTING_SITIO_CATALOGO es el sitio de la consola: la página pública necesita OTRO sitio (T-37)."; exit 1; }
+            [[ -n "${URL_PROD:-}" && "${SITIO_PUBLICO%/}" != "${URL_PROD%/}" ]] \
+              || { echo "::error::vars.SITIO_PUBLICO es el origen de la consola (o PROD_URL falta): el enlace del catálogo tiene que apuntar al segundo sitio (T-37)."; exit 1; }
+            firebase target:apply hosting consola "$SITIO_CONSOLA" --project "$PROYECTO"
+            firebase target:apply hosting catalogo "$SITIO_CATALOGO" --project "$PROYECTO"
           fi
           # SIMULACIÓN PRIMERO (2026-09-12). `--dry-run` corre predeploy y
           # prepare —permisos, secretos, dependencias, descubrimiento de las

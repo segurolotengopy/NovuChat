@@ -1779,8 +1779,11 @@ function ImportarCatalogo({ tenantId, conAgenda, items, usados, limite, unidad }
  * minutos, no cuenta como conversación —mirar el catálogo propio no se cobra— y
  * el checkout la rechaza, así que probando no se puede generar un pedido falso.
  *
- * Va en un marco del ancho de un teléfono porque es donde lo va a abrir el
- * cliente: mostrarlo a 1.200 píxeles da una impresión que después no se cumple.
+ * SE ABRE EN OTRA PESTAÑA, no en un marco (T-37, `admin/SEGURIDAD.md`): la
+ * página pública está en un sitio de Hosting con otro origen que la consola, y
+ * enmarcarla exigiría que ambas políticas de seguridad nombraran la dirección de
+ * la otra. (Antes iba en un marco del ancho de un teléfono; `.marco-catalogo` en
+ * `estilos.css` quedó sin uso.)
  */
 function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boolean }) {
   const [catalogoWebActivo, setCatalogoWebActivo] = useState<boolean | null>(null);
@@ -1836,12 +1839,17 @@ function VistaPrevia({ tenantId, conVenta }: { tenantId: string; conVenta: boole
         </button>
       ) : (
         <>
-          <iframe className="marco-catalogo" src={url} title="Vista previa del catálogo"
-                  sandbox="allow-scripts allow-same-origin" />
+          {/* SIN MARCO (T-37, admin/SEGURIDAD.md). La vista previa era un
+              `<iframe>` con la página pública dentro; ahora la página vive en
+              OTRO sitio de Hosting, con otro origen, y enmarcarla exigiría que
+              cada una de las dos políticas de seguridad nombrara la dirección
+              de la otra —direcciones que cambian por ambiente y que no se
+              versionan—, o abrirlas a cualquier sitio de Firebase. Se abre en
+              otra pestaña, que además es como la ve el cliente. */}
           <p className="ayuda">
             {/* `noreferrer` además de `noopener`: la página del catálogo no tiene
                 por qué enterarse de desde qué dirección de la consola se la abrió. */}
-            <a href={url} target="_blank" rel="noopener noreferrer">Abrirla en otra pestaña ↗</a>
+            <a className="btn btn-secondary" href={url} target="_blank" rel="noopener noreferrer">Abrir la vista previa en otra pestaña ↗</a>
             {' · '}
             <button type="button" className="enlace" onClick={() => void abrir()}>Recargar</button>
             {' · '}vence en 15 minutos
