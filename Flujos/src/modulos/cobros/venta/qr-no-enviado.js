@@ -7,9 +7,9 @@
 // UN mensaje corto con el boton para escribirle directo al negocio (politica
 // «solo se ofrece lo que se cumple»: lo unico que se ofrece es pasar con una
 // persona). Ese mensaje sale por el embudo `Mensaje a enviar`, que arma el
-// boton porque `transferir` es true, y se reporta como saliente solo si Meta
-// devolvio un id (el reporte cuelga del envio, no de este nodo). No promete QR
-// ni tiempos.
+// boton porque `transferir` es true. Ese mensaje SI se reporta como saliente,
+// porque sale con id de Meta (el reporte cuelga del envio, no de este nodo);
+// solo el aviso al dueno queda fuera del reporte. No promete QR ni tiempos.
 //
 // EL QR QUE NO SALIÓ NO SE REPORTA A LA CONSOLA: no hubo mensaje, no se cuenta,
 // y el servidor no abre un pago pendiente que nadie va a poder completar. Sin
@@ -26,17 +26,21 @@ try {
   previo = $(corrio('Preparar reenvío del QR') ? 'Preparar reenvío del QR' : 'Preparar QR de cobro').first().json;
 } catch (e) { previo = {}; }
 
-const detalle = String((item && (item.error && (item.error.message || item.error.description)))
-  || (item && item.error) || '').slice(0, 160);
-// UN SOLO TEXTO: lo que iba en el pie de la imagen (el rotulo de simulacro
-// incluido: prohibicion 3, el cobro simulado nunca se presenta como real) mas
-// la frase de que la imagen no salio. Lo que el ASISTENTE habia escrito dentro
-// del pie («aqui tienes el codigo QR...») se QUITA: afirma algo que no ocurrio.
-let pie = String(previo.captionQr || '');
-const delAsistente = previo.textoEnElQr === true ? String(previo.respuesta || '').trim() : '';
-if (delAsistente) pie = pie.split(delAsistente).join('');
-pie = pie.replace(/\n{3,}/g, '\n\n').trim();
-const respuestaAlCliente = (pie ? pie + '\n\n' : '') + 'No pude enviarte la imagen del QR.';
+// El error puede ser texto u objeto sin `message`: nunca «[object Object]».
+const err = item && item.error;
+const detalle = String((err && typeof err === 'object')
+  ? (err.message || err.description || '')
+  : (err || '')).slice(0, 160);
+// EL TEXTO AL CLIENTE SE ARMA DESDE SUS PARTES; el pie de la imagen NO se recicla.
+// El pie lleva lineas que piden cosas imposibles sin el QR («Escanea el QR»,
+// «envia la foto de tu comprobante», «Este es el QR de tu pedido»). Con cobro
+// simulado se conserva solo el rotulo de simulacro (prohibicion 3); con cobro
+// real, solo la frase. El boton de `Mensaje a enviar` ya ofrece pasar con el negocio.
+let cfg = {};
+try { cfg = $('Config del negocio').first().json ?? {}; } catch (e) { cfg = {}; }
+const simulado = previo.qrEsReal !== true;
+const rotulo = simulado ? String(cfg.rotuloDemo || '').trim() : '';
+const respuestaAlCliente = (rotulo ? rotulo + '\n\n' : '') + 'No pude enviarte la imagen del QR.';
 const total = String(previo.cobroTotal || '').trim();
 
 return [{ json: {
