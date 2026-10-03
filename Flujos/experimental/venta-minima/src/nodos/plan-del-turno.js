@@ -349,7 +349,9 @@ function derivar(razon, conservarPaso) {
   ruta = 'transferir:' + razon;
   aviso = { tipo: 'transferencia', datos: {
     from: t.from, nombrePerfil: t.nombrePerfil, telefono: t.from, nombre: vmLinea(t.nombrePerfil, 60),
-    codigo: vmCodigoCorto(ahora), motivo: vmLinea(d.texto, 300),
+    codigo: vmCodigoCorto(ahora),
+    // Una foto sin pie no trae texto: el comprobante derivado por el cambio de modo lleva un motivo fijo para que el restaurante sepa qué es.
+    motivo: vmLinea(d.texto, 300) || (/^el modo de cobro cambió: comprobante/.test(razon) ? 'comprobante recibido con el modo de cobro cambiado' : ''),
   } };
   // El paso queda en `menu` y no se borra nada: el siguiente mensaje se atiende de nuevo (antes, un paso de pedido volvía a
   // derivar cada mensaje) y el cliente retoma su pedido o su reserva escribiendo «menú». Con un comprobante en espera
@@ -882,16 +884,14 @@ function aComprobante() {
   if (!ped || !ped.pedidoId) return derivar('comprobante sin pedido en el flujo');
 
   // COBRO SIMULADO: la foto es el comprobante de la prueba. NUNCA se coteja en el servidor (no distingue modos: daría «no cuadra» y
-  // un cierre de venta con monto) ni se lee con Gemini. Un pedido que no esperaba un comprobante simulado (cancelado, ya
-  // terminado o de otro modo) se trata como una imagen sin pendiente. Un segundo comprobante del mismo pedido no repite el
+  // un cierre de venta con monto) ni se lee con Gemini. Un pedido SIMULADO que ya no espera su comprobante (cancelado o terminado) se trata como una
+  // imagen sin pendiente. Un pedido REAL (salió con el cobro real y el modo pasó a simulado) NO entra a esta rama: su foto puede ser un pago, así
+  // que sigue el camino del cobro real SIN cotejo (`sin_cotejo`: «no pude revisarlo», aviso de comprobante con la foto al restaurante, que lo revisa
+  // en su banco); nunca se rotula «SIMULADO», nunca se descarta como imagen sin pendiente, y el cliente no queda esperando.
+  // Un segundo comprobante del mismo pedido (simulado) no repite el
   // aviso ni el cierre (`ya_cotejado`). El cierre es un `registro` de PRUEBA, sin monto.
-  if (t.comprobanteSimulado === true && !vmNodo('Cotejar en el servidor')) {
-    if (ped.resultado !== 'simulado') {
-      // Un pedido REAL con su QR pendiente cuyo modo pasó a simulado: la foto puede ser un pago real. Nunca se rotula «SIMULADO» ni se descarta
-      // como imagen sin pendiente: se pasa con una persona (aviso + botón) conservando el paso y el pedido.
-      if (en.paso === 'esperando_comprobante' && ped.simulado !== true) return derivar('el modo de cobro cambió: comprobante de un pedido real', true);
-      if (en.paso !== 'esperando_comprobante' || ped.simulado !== true) return aImagenSinPendiente();
-    }
+  if (t.comprobanteSimulado === true && !vmNodo('Cotejar en el servidor') && ped.simulado === true) {
+    if (ped.resultado !== 'simulado' && en.paso !== 'esperando_comprobante') return aImagenSinPendiente();
     const resSim = ped.resultado === 'simulado' ? 'ya_cotejado' : 'simulado';
     const baseSim = { codigo: ped.codigo, entrega: ped.modalidad };
     const conA = cbTextoAlCliente(resSim, Object.assign({ avisoSalio: true }, baseSim));

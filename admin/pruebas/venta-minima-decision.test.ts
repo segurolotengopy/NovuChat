@@ -1357,6 +1357,30 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     expect(estadoDe(dentro)['paso']).toBe('menu');
   });
 
+  it('LOW: un pedido REAL ya cancelado (paso `menu`) cuyo QR sigue pendiente con el modo ahora simulado NO se descarta como «sin pendiente»: aviso de comprobante sin cotejar con su código', () => {
+    const m = enEsperaReal();
+    const ref = String(estadoDe(m)['pedido']['pedidoId']);
+    const codigo = String(estadoDe(m)['pedido']['codigo']);
+    turno(m, { boton: 'q|cancelar' });
+    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(sdDe(m)['pedidos'][ref]['simulado']).toBe(false);
+    m.cfg['cobro'] = { ...CFG_SIM.cobro, pedidoRef: ref, pendiente: true };
+    const s = foto(m); // una foto SIN pie: la que podría ser un pago real
+    expect(s.p!['aviso']['tipo']).toBe('comprobante');
+    expect(s.p!['aviso']['datos']['resultado']).toBe('sin_cotejo');
+    expect(s.p!['aviso']['datos']['codigo']).toBe(codigo);
+    expect(s.p!['ruta']).toBe('comprobante:sin_cotejo');
+    expect(JSON.stringify([s.p!['mensajes'], s.p!['condicionados']])).not.toMatch(/no tienes ninguno pendiente|SIMULADO|simulado/);
+    // NEGANDO: un pedido SIMULADO cancelado sigue siendo una imagen sin pendiente (sin aviso), como antes.
+    const sim = enEsperaSim();
+    const refSim = String(estadoDe(sim)['pedido']['pedidoId']);
+    turno(sim, { boton: 'q|cancelar' });
+    pendiente(sim, refSim);
+    const t = foto(sim);
+    expect(t.p!['aviso']).toBeNull();
+    expect(JSON.stringify(t.p!['mensajes'])).toContain('no tienes ninguno pendiente');
+  });
+
   it('una foto después de «Cancelar pedido» es una imagen sin pendiente: ni aviso ni cierre, aunque el servidor aún vea el QR', () => {
     const m = enEsperaSim();
     const ref = String(estadoDe(m)['pedido']['pedidoId']);
@@ -1376,19 +1400,23 @@ describe('Plan del turno: el cobro SIMULADO (QR de prueba, comprobante sin cotej
     const m = enEsperaReal();
     const ref = String(estadoDe(m)['pedido']['pedidoId']);
     expect(estadoDe(m)['pedido']['simulado']).toBe(false);
+    const codigoDelPedido = String(estadoDe(m)['pedido']['codigo']);
     m.cfg['cobro'] = { ...CFG_SIM.cobro, pedidoRef: ref, pendiente: true };
     const s = foto(m);
     expect(s.p!['cierre']).toBeNull();
     expect(s.p!['ruta']).not.toBe('comprobante:simulado');
-    // H1 (revisión del cobro simulado): la foto puede ser un pago REAL. Se pasa con una persona (aviso de transferencia + botón),
-    // conservando el paso y el pedido; no es una «imagen sin pendiente» y nada dice «SIMULADO».
-    expect(s.p!['aviso']['tipo']).toBe('transferencia');
-    expect(s.p!['ruta']).toContain('transferir:el modo de cobro cambió: comprobante de un pedido real');
-    expect(s.p!['mensajes'][0]['tipo']).toBe('enlace');
-    expect(JSON.stringify([s.p!['mensajes'], s.p!['aviso']])).not.toMatch(/SIMULADO|simulado|PRUEBA/);
-    expect(JSON.stringify(s.p!['mensajes'])).not.toContain('no tienes ninguno pendiente');
-    expect(estadoDe(m)['paso']).toBe('esperando_comprobante');
-    expect(estadoDe(m)['pedido']['pedidoId']).toBe(ref);
+    // H1 (revisión del cobro simulado): la foto puede ser un pago REAL. Sigue el camino del cobro real SIN cotejo (`sin_cotejo`): el restaurante recibe
+    // un aviso de COMPROBANTE con el código DEL PEDIDO (no una «consulta» genérica) y el cliente lee que no se pudo revisar; nada dice «SIMULADO»
+    // ni «sin pendiente», y el cliente no queda esperando (el pedido se suelta).
+    expect(s.p!['aviso']['tipo']).toBe('comprobante');
+    expect(s.p!['aviso']['datos']['resultado']).toBe('sin_cotejo');
+    expect(s.p!['aviso']['datos']['codigo']).toBe(codigoDelPedido); // el número DEL PEDIDO, no uno inventado del turno
+    expect(s.p!['ruta']).toBe('comprobante:sin_cotejo');
+    const textos = JSON.stringify([s.p!['mensajes'], s.p!['condicionados']]);
+    expect(textos).toMatch(/no pude revisarlo/);
+    expect(textos).not.toMatch(/SIMULADO|simulado|PRUEBA|no tienes ninguno pendiente/);
+    expect(estadoDe(m)['paso']).toBe('menu');
+    expect(estadoDe(m)['pedido'] ?? null).toBeNull();
   });
 
   it('H1: el recordatorio de un pedido REAL nunca dice «SIMULADO» aunque el modo vigente sea simulado; el de un pedido simulado sí', () => {

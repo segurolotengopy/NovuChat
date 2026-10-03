@@ -97,7 +97,7 @@ const simYaCotejadoFueraDelCobro = (() => {
   const ref = String((cfg.cobro && cfg.cobro.pedidoRef) || '');
   const guardados = sd && sd.pedidos && typeof sd.pedidos === 'object' ? sd.pedidos : {};
   const p = ref && Object.prototype.hasOwnProperty.call(guardados, ref) ? guardados[ref] : null;
-  return !!p && typeof p === 'object' && p.resultado === 'simulado';
+  return !!p && typeof p === 'object' && String(p.from) === String(t.from) && p.resultado === 'simulado';
 })();
 if (vmNodo('Cotejar en el servidor') || t.esComprobante === true || (t.comprobanteSimulado === true && !simYaCotejadoFueraDelCobro)) return salir('comprobante');
 // Un pedido SIMULADO con el cobro real encendido y su QR pendiente: la foto no es un comprobante real ni se coteja; se pasa con una persona.
