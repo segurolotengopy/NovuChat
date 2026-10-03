@@ -666,7 +666,8 @@ describe('(8) El reenvío del QR, y el QR que Meta rechazó', () => {
     // La salida de error del envío va al aviso, NUNCA al reporte del saliente.
     expect(destinos(f, 'Enviar QR de cobro', 1)).toEqual(['QR no enviado']);
     expect(destinos(f, 'Enviar QR de cobro', 0)).toEqual(['Reportar QR (saliente)']);
-    expect(destinos(f, 'QR no enviado')).toEqual(['Avisar al dueño']);
+    // F3a (03/10): ademas del aviso, el cliente recibe un mensaje con el boton.
+    expect(destinos(f, 'QR no enviado')).toEqual(['Mensaje a enviar', 'Avisar al dueño']);
   });
 });
 
