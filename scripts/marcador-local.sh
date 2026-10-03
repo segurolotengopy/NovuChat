@@ -20,7 +20,8 @@
 #   ./scripts/marcador-local.sh --verificar REEMPLAZAR_X
 #   ./scripts/marcador-local.sh --listar
 #   ./scripts/marcador-local.sh --marcador REEMPLAZAR_X --copiar-de REEMPLAZAR_Y [--nota "texto"]
-#   ./scripts/marcador-local.sh --marcador REEMPLAZAR_X --valor <valor> --reemplazar
+#   MARCADOR_VALOR=<valor> ./scripts/marcador-local.sh --marcador REEMPLAZAR_X --reemplazar
+#   (con --reemplazar no uses --valor: queda en el historial y en /proc/<pid>/cmdline)
 #
 # --reemplazar (03/10/2026) cambia el valor de una fila EXISTENTE, para renovar
 # lo que vence (el media ID del QR de demostración dura 30 días). Aborta sin
@@ -38,6 +39,8 @@
 # MARCADOR_VALOR, para que no quede en el historial del shell.
 # =============================================================================
 set -euo pipefail
+# Si el entorno trae SHELLOPTS=xtrace, el valor se imprimiría en cada asignación.
+set +x
 
 LOCAL="${CONFIG_LOCAL:-$HOME/NovuChat/CONFIGURACION.local.md}"
 MARCADOR="" ; VALOR="${MARCADOR_VALOR:-}" ; NOTA="" ; MODO="agregar" ; COPIAR_DE="" ; REEMPLAZAR=0
@@ -56,6 +59,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Se resuelve el enlace simbólico: el temporal y el `mv` van junto al ARCHIVO REAL,
+# y no reemplazan el enlace por un archivo común.
+LOCAL="$(readlink -f -- "$LOCAL")"
 [ -f "$LOCAL" ] || { echo "✗ No existe el archivo de valores locales." >&2; exit 1; }
 
 # --- listar: solo los NOMBRES de los marcadores, nunca los valores -----------
@@ -104,6 +110,9 @@ case "$MARCADOR" in
   *PHONE_NUMBER_ID*)
     echo "$VALOR" | grep -Eq '^[0-9]{10,20}$' \
       || { echo "✗ El valor no tiene forma de PHONE_NUMBER_ID (solo dígitos)." >&2; exit 1; } ;;
+  *MEDIA_ID*)
+    echo "$VALOR" | grep -Eq '^[0-9]{10,20}$' \
+      || { echo "✗ El valor no tiene forma de MEDIA_ID (solo dígitos)." >&2; exit 1; } ;;
   *NUMERO_RECEPCION*|*NUMERO_DUENO*)
     echo "$VALOR" | grep -Eq '^591[0-9]{7,8}$' \
       || { echo "✗ El valor no tiene forma de número boliviano con prefijo y sin «+» (591…)." >&2; exit 1; } ;;
@@ -119,7 +128,8 @@ esac
 for campo in MARCADOR VALOR NOTA; do
   contenido="${!campo}"
   case "$contenido" in
-    *'|'*|*'\'*) echo "✗ El campo $campo lleva «|» o «\» y rompería la tabla." >&2; exit 1 ;;
+    *'|'*|*'\'*|*'"'*) echo "✗ El campo $campo lleva «|», «\» o comillas y rompería la tabla." >&2; exit 1 ;;
+    *[[:cntrl:]]*) echo "✗ El campo $campo lleva un carácter de control (tabulador, retorno de carro…)." >&2; exit 1 ;;
   esac
   [ "$contenido" = "${contenido%%$'\n'*}" ] \
     || { echo "✗ El campo $campo lleva un salto de línea." >&2; exit 1; }
@@ -150,7 +160,12 @@ if [ "$REEMPLAZAR" -eq 1 ]; then
   # Respaldo con modo 600 y nombre con fecha; nunca pisa uno existente.
   sello="$(date +%Y%m%d-%H%M%S)" ; resp="$LOCAL.respaldo-$sello" ; n=1
   while [ -e "$resp" ]; do resp="$LOCAL.respaldo-$sello-$n"; n=$((n+1)); done
-  ( umask 077; cp -p "$LOCAL" "$resp" ); chmod 600 "$resp"
+  # `install -m 600` bajo umask 077: nace con 600, nunca más abierto ni a medias.
+  ( umask 077; install -m 600 -- "$LOCAL" "$resp" )
+  # `preparar-import.sh` ignora las filas con «pendiente» en la nota: se avisa.
+  if awk -v m="$MARCADOR" -F'|' '/^\| *`REEMPLAZAR_/ { c=$2; gsub(/[ `]/, "", c); if (c == m && tolower($4) ~ /pendiente/) f=1 } END { exit !f }' "$LOCAL"; then
+    echo "⚠ La nota de $MARCADOR dice «pendiente»: preparar-import.sh seguirá ignorando esta fila hasta que la nota se edite a mano."
+  fi
   mv "$tmp" "$LOCAL"   # atómico; conserva el modo del original (copiado al temporal)
   trap - EXIT
   echo "✓ $MARCADOR reemplazado (valor no mostrado). Respaldo con modo 600: $(basename "$resp")."
