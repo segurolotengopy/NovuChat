@@ -940,6 +940,14 @@ describe('cbTextoAlCliente simulado: dice SIMULADO y nunca acredita nada', () =>
     expect(t.aviso).toBe(true);
   });
 
+  it('H8: dice «tu comprobante» y NO «tu foto» (el comprobante simulado también puede ser un PDF), con y sin el aviso salido', () => {
+    for (const avisoSalio of [true, false]) {
+      const c = String(T({ avisoSalio }).cuerpo);
+      expect(c, String(avisoSalio)).toMatch(/^Recibí tu comprobante SIMULADO de tu pedido #K7QX\./);
+      expect(c, String(avisoSalio)).not.toMatch(/\bfoto\b/i);
+    }
+  });
+
   it('sin el aviso salido: no se promete nada, y sale con el botón para escribirle al local', () => {
     const t = T({ avisoSalio: false });
     expect(t.cuerpo).toContain('SIMULADO');

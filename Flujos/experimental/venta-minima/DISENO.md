@@ -511,6 +511,10 @@ CLAUDE.md: el rótulo va **impreso en la imagen** y en el **pie**, la respuesta 
 - `qtaco.json` queda en `simulado`. `ensayo.json` y `ensayo-demo-a.json` **heredan** de `qtaco.json`: no cambia lo que hacen hoy, porque la clave
   de datos es solo un permiso; sin que el servidor mande `cobroSimulado` (el Demo A es de agenda) el flujo sigue en plan B.
 - Volver al plan B sin código: `modoCobro: sin_qr`, quitar las dos claves, reconstruir y republicar.
+  **`modoCobro` `sin_qr` y `real` son solo rótulos** (documentan lo que se espera y activan las guardas de los datos): el modo EFECTIVO lo decide el
+  servidor en cada turno, según mande o no `cobroReal` y `cobroSimulado`. Por eso volver al plan B sin tocar código solo vale si el servidor no
+  manda `cobroReal` ni `cobroSimulado`; con `cobroSimulado` declarado y las dos claves puestas, el flujo sigue en simulado aunque los datos digan
+  otra cosa. El texto del comprobante simulado dice «tu comprobante» (puede ser una foto o un PDF).
 
 **Trampa que se evita (`registrarQrDeCobro`).** Esa Function es solo para el cobro real: guarda `cobroReal` apagado y `imagenDeCobro` vuelve a
 dibujar el QR desde `cargaUtil`, **sin rótulo**. Registrar `qr-demo.png` como QR real dejaría un cobro real sin rótulo: está prohibido. La imagen

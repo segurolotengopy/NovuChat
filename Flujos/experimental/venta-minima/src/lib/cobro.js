@@ -495,7 +495,7 @@ function cbTextoAlCliente(resultado, opciones) {
     };
   }
   if (resultado === 'simulado') {
-    const cabezaSim = 'Recibí tu foto como comprobante SIMULADO de ' + pedido + '. Es una prueba: no se movió dinero.';
+    const cabezaSim = 'Recibí tu comprobante SIMULADO de ' + pedido + '. Es una prueba: no se movió dinero.';
     return salio
       ? { cuerpo: cabezaSim + ' Ya pasé tu pedido al restaurante como pedido de PRUEBA.', enlace: false, aviso: true }
       : { cuerpo: cabezaSim + ' ' + sinAviso, enlace: true, aviso: true };
