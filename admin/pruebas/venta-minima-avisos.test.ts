@@ -1549,3 +1549,148 @@ describe('Meta: TODA variable de plantilla sale en una línea, sin tabuladores n
     expect(L.avParametro('a \t \n  b')).not.toMatch(CUATRO_ESPACIOS);
   });
 });
+
+// =====================================================================================================================
+// COBRO SIMULADO (piloto de Q'Taco, 03/10/2026): un pedido de PRUEBA se rotula PRUEBA y SIMULADO en cada pieza del aviso,
+// no habla del banco y no lleva la imagen de un comprobante. Cada caso va con su opuesto (el real no se rotula así).
+// =====================================================================================================================
+describe('resultado «simulado»: el aviso al restaurante dice PRUEBA y SIMULADO', () => {
+  const CIERRE_SIM = 'Pedido de PRUEBA: el cobro fue SIMULADO y no se movió dinero.';
+  const BANCO = 'Revisen el pago en su banco antes de despachar.';
+  const ACREDITACION = /pago (acreditado|verificado)|recibimos tu pago/i;
+  const simulado = (extra: J = {}): J => pedido({ resultado: 'simulado', ...extra });
+  const IGUALES = ['pedido', 'comprobante'] as const;
+
+  it('la variable 1 (items) empieza en «PRUEBA · » y respeta su tope de 60; la del real no', () => {
+    for (const tipo of IGUALES) {
+      const it = plantillaDe(L.avArmar(tipo, simulado(), CSV, CFG, sdCon(), AHORA), ANDRES);
+      expect(params(it)[0]).toBe('PRUEBA · N.º K7P2 de 3 ítems');
+      expect(Array.from(params(it)[0]!).length).toBeLessThanOrEqual(60);
+      const real = plantillaDe(L.avArmar(tipo, pedido(), CSV, CFG, sdCon(), AHORA), ANDRES);
+      expect(params(real)[0]).not.toMatch(/PRUEBA|SIMULAD/);
+    }
+  });
+
+  it('la variable 2 (total) termina en «(SIMULADO)» y cabe en 30; la del real no lo lleva', () => {
+    const it = plantillaDe(L.avArmar('comprobante', simulado(), CSV, CFG, sdCon(), AHORA), SILVANA);
+    expect(params(it)[1]).toBe('Bs 110 (SIMULADO)');
+    expect(params(it)[1]!.endsWith('(SIMULADO)')).toBe(true);
+    expect(Array.from(params(it)[1]!).length).toBeLessThanOrEqual(30);
+    const grande = plantillaDe(L.avArmar('comprobante', simulado({ total: 123456.5 }), CSV, CFG, sdCon(), AHORA), SILVANA);
+    expect(Array.from(params(grande)[1]!).length).toBeLessThanOrEqual(30);
+    expect(grande.payload.template.components[0].parameters[1].text).toContain('(SIMULADO)');
+    expect(params(plantillaDe(L.avArmar('comprobante', pedido(), CSV, CFG, sdCon(), AHORA), ANDRES))[1]).toBe('Bs 110');
+  });
+
+  it('la variable 4 (cotejo) dice PRUEBA y SIMULADO, y no se parece a ningún otro estado', () => {
+    const c = params(plantillaDe(L.avArmar('comprobante', simulado(), CSV, CFG, sdCon(), AHORA), ANDRES))[3]!;
+    expect(c).toContain('PRUEBA');
+    expect(c).toContain('SIMULADO');
+    expect(c).not.toMatch(/coinciden|banco/);
+    for (const r of ['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr']) {
+      const otro = params(plantillaDe(L.avArmar('comprobante', pedido({ resultado: r }), CSV, CFG, sdCon(), AHORA), ANDRES))[3]!;
+      expect(otro, r).not.toMatch(/SIMULAD|PRUEBA/);
+    }
+  });
+
+  it('el detalle empieza en «PEDIDO DE PRUEBA», termina en el cierre simulado y NUNCA manda revisar el banco (ambos roles)', () => {
+    for (const tipo of IGUALES) for (const rol of [ANDRES, SILVANA]) {
+      const c = cuerpo(L.avArmar(tipo, simulado(), CSV, CFG, abierta(), AHORA), rol);
+      expect(c.startsWith('PEDIDO DE PRUEBA N.º K7P2 (cobro SIMULADO: no se movió dinero)'), `${tipo}/${rol}`).toBe(true);
+      expect(c.endsWith(CIERRE_SIM)).toBe(true);
+      expect(c).not.toContain(BANCO);
+      expect(c).not.toContain('Revisen el pago');
+      expect(c).not.toMatch(ACREDITACION);
+    }
+    // El opuesto: el real conserva su primera línea y su cierre, sin la palabra PRUEBA.
+    const real = cuerpo(L.avArmar('comprobante', pedido(), CSV, CFG, abierta(), AHORA), ANDRES);
+    expect(real.startsWith('Pedido N.º K7P2 (comprobante: datos coinciden)')).toBe(true);
+    expect(real.endsWith(BANCO)).toBe(true);
+    expect(real).not.toMatch(/PRUEBA|SIMULAD/);
+  });
+
+  it('el texto completo de un pedido simulado, tal cual sale (el nombre del cliente y las diferencias del real no cambian)', () => {
+    const c = cuerpo(L.avArmar('comprobante', simulado(), CSV, CFG, abierta(), AHORA), ANDRES);
+    expect(c).toBe([
+      'PEDIDO DE PRUEBA N.º K7P2 (cobro SIMULADO: no se movió dinero)',
+      `Cliente: Ana Pérez · tel ${CLIENTE}`,
+      `Entrega: delivery a ${DIRECCION} (${REFERENCIA})`,
+      'Ítems:',
+      '• 2 × Orden de 3 tacos de birria (sin cebolla)',
+      '• 1 × Queso fundido con chorizo',
+      'Total de la comida: Bs 110',
+      CIERRE_SIM,
+    ].join('\n'));
+  });
+
+  it('NO sale la imagen del comprobante aunque `mediaId` traiga un id válido; con el real y ese mismo id sí sale', () => {
+    for (const tipo of IGUALES) {
+      const items = L.avArmar(tipo, simulado({ mediaId: '99887766' }), CSV, CFG, abierta(), AHORA);
+      expect(items.some((i: J) => i.clase === 'imagen'), tipo).toBe(false);
+      expect(items.some((i: J) => i.payload.type === 'image'), tipo).toBe(false);
+    }
+    const real = L.avArmar('comprobante', pedido({ mediaId: '99887766' }), CSV, CFG, abierta(), AHORA);
+    expect(real.filter((i: J) => i.clase === 'imagen')).toHaveLength(1);
+  });
+
+  it('`simulado` es un resultado aceptado: no cae al valor por defecto del tipo, y no es «sin_qr» ni «sin_cotejo»', () => {
+    for (const tipo of IGUALES) {
+      const r = L.avPlan(tipo, simulado(), CSV, CFG, sdCon(), AHORA);
+      expect(r.errores).toEqual([]);
+      const v = params(plantillaDe(r.items, ANDRES));
+      expect(v[3], tipo).not.toBe('sin QR: se cobra al entregar o al recoger');
+      expect(v[3], tipo).not.toBe('comprobante sin cotejar');
+    }
+    // Un resultado cercano pero inválido no es simulado.
+    for (const raro of ['Simulado', 'simulada', 'SIMULADO', ' simulado', 'simulado ']) {
+      const v = params(plantillaDe(L.avArmar('comprobante', pedido({ resultado: raro }), CSV, CFG, sdCon(), AHORA), ANDRES));
+      expect(v[0], JSON.stringify(raro)).not.toMatch(/PRUEBA/);
+    }
+  });
+
+  it('recojo y delivery, ventana abierta y cerrada, hostiles incluidos: una línea por variable, con su tope, sin la red', () => {
+    const SOLO_UNA_LINEA = /[\r\n\t\v\f\u0085\u2028\u2029]/;
+    const hostil = simulado({
+      codigo: 'K7\n\n\n\n' + 'x'.repeat(80), nombre: 'Ana\u2028Pérez', modalidad: 'recojo',
+      lineas: Array.from({ length: 20 }, (_, i) => ({ cantidad: 2, nombre: 'Taco ' + i + '\t\tcon   salsa'.repeat(10), detalle: 'sin\ncebolla' })),
+    });
+    for (const modalidad of ['delivery', 'recojo']) for (const sd of [sdCon(), abierta()]) for (const tipo of IGUALES) {
+      const items = L.avArmar(tipo, { ...hostil, modalidad }, CSV, CFG, sd, AHORA);
+      const plantillas = items.filter((i: J) => i.clase === 'plantilla');
+      expect(plantillas.length).toBeGreaterThanOrEqual(2);
+      for (const it of plantillas) {
+        const v = params(it);
+        expect(v).toHaveLength(4);
+        const topes = [60, 30, 500, 80];
+        v.forEach((t, k) => {
+          expect(t.trim(), `variable ${k + 1}`).not.toBe('');
+          expect(t, `variable ${k + 1}`).not.toMatch(SOLO_UNA_LINEA);
+          expect(t, `variable ${k + 1}`).not.toMatch(/\s{4,}/);
+          expect(Array.from(t).length, `variable ${k + 1}`).toBeLessThanOrEqual(topes[k]!);
+        });
+        // Aun con códigos largos, lo que identifica la prueba sobrevive al tope.
+        expect(v[0]).toMatch(/^PRUEBA · /);
+        expect(v[3]).toContain('SIMULADO');
+      }
+    }
+  });
+
+  it('ningún texto del aviso simulado coincide con la red ni acredita un pago', () => {
+    for (const tipo of IGUALES) for (const sd of [sdCon(), abierta()]) for (const modalidad of ['delivery', 'recojo']) {
+      for (const it of L.avArmar(tipo, simulado({ modalidad }), CSV, CFG, sd, AHORA)) {
+        for (const t of textosDe(it)) {
+          expect(t).not.toMatch(VM_PROHIBIDAS);
+          expect(t).not.toMatch(ACREDITACION);
+          expect(t).not.toMatch(/Revisen el pago/);
+        }
+      }
+    }
+  });
+
+  it('un aviso simulado cuenta igual que uno real: mismos ítems por destinatario, salvo la imagen del comprobante', () => {
+    const real = L.avArmar('comprobante', pedido({ mediaId: '123' }), CSV, CFG, abierta(), AHORA);
+    const sim = L.avArmar('comprobante', simulado({ mediaId: '123' }), CSV, CFG, abierta(), AHORA);
+    expect(real.length - sim.length).toBe(1);
+    expect(sim.map((i: J) => i.clase).sort()).toEqual(['detalle', 'detalle', 'plantilla', 'plantilla']);
+  });
+});

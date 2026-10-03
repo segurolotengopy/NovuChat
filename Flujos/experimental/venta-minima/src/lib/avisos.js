@@ -88,7 +88,9 @@
 //     lineas:[{cantidad, nombre, detalle}]   total: número en Bs (nunca el delivery)
 //     notaPedido (opcional): la nota del cliente desde la página del catálogo; la ven `completo` y `cocina`
 //     modalidad: 'delivery' | 'recojo'       codigo: código corto del pedido
-//     resultado: 'cuadra'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'ya_cotejado'
+//     resultado: 'cuadra'|'no_cuadra'|'ilegible'|'sin_cotejo'|'sin_qr'|'ya_cotejado'|'simulado'
+//       (`simulado` = pedido de PRUEBA con cobro simulado: se rotula PRUEBA y SIMULADO, su cierre no habla del banco
+//        y NUNCA lleva la imagen del comprobante, aunque `mediaId` venga)
 //       (por defecto: `sin_qr` en `pedido`, `sin_cotejo` en `comprobante`; con
 //        `ya_cotejado` NO hay aviso: error `sin_aviso_ya_cotejado`)
 //     nombre, telefono (quien escribe), direccion, referencia (solo se muestran en delivery y rol completo)
@@ -101,7 +103,8 @@
 //
 // CIERRES del detalle. Pedido y comprobante con QR: «Revisen el pago en su banco antes
 // de despachar.» Con `resultado: 'sin_qr'`: «El pago se coordina con el cliente al entregar
-// o al recoger.» Reserva y derivación tienen cierres propios, sin la frase del banco.
+// o al recoger.» Con `resultado: 'simulado'`: «Pedido de PRUEBA: el cobro fue SIMULADO y no se movió dinero.»
+// Reserva y derivación tienen cierres propios, sin la frase del banco.
 //
 // ERRORES de `avPlan` (arreglo de textos): `tope_avisos_dia`, `sin_destinatarios`,
 // `sin_aviso_ya_cotejado`, `tipo_desconocido`, `sin_datos_reserva`, `plantilla_invalida`,
@@ -122,6 +125,7 @@ const AV_ORDEN_PEDIDO = ['items', 'total', 'modalidad', 'cotejo'];
 const AV_ORDEN_AGENDA = ['destinatario', 'cuando', 'detalle', 'codigo'];
 const AV_CIERRE_PAGO = 'Revisen el pago en su banco antes de despachar.';
 const AV_CIERRE_SIN_QR = 'El pago se coordina con el cliente al entregar o al recoger.';
+const AV_CIERRE_SIMULADO = 'Pedido de PRUEBA: el cobro fue SIMULADO y no se movió dinero.';
 const AV_CIERRE_RESERVA = 'Es una solicitud: revísenla según sus mesas y respondan al cliente.';
 const AV_CIERRE_DERIVACION = 'El cliente también puede escribirles directo con el botón.';
 const AV_DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -522,6 +526,7 @@ function avCodigoCorto(ms) {
 }
 
 function avCotejoTexto(resultado) {
+  if (resultado === 'simulado') return 'PRUEBA: cobro SIMULADO, no se movió dinero';
   if (resultado === 'cuadra') return 'comprobante: datos coinciden';
   if (resultado === 'no_cuadra') return 'comprobante: NO coinciden los datos';
   if (resultado === 'ilegible') return 'comprobante ilegible';
@@ -537,7 +542,7 @@ function avModalidadTexto(m) {
 
 function avResultado(tipo, r) {
   const v = String(r === undefined || r === null ? '' : r);
-  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'ya_cotejado'].indexOf(v) >= 0) return v;
+  if (['cuadra', 'no_cuadra', 'ilegible', 'sin_cotejo', 'sin_qr', 'ya_cotejado', 'simulado'].indexOf(v) >= 0) return v;
   return tipo === 'pedido' ? 'sin_qr' : 'sin_cotejo';
 }
 
@@ -699,8 +704,8 @@ function avVariables(tipo, d, dest, resultado, ahoraMs, forma) {
     const n = lineas.reduce((a, l) => a + l.cantidad, 0);
     const cod = avLimpio(d.codigo, 20) || '—';
     return {
-      items: avParametro('N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : ''), 60),
-      total: avParametro('Bs ' + avMonto(d.total), 30),
+      items: avParametro((resultado === 'simulado' ? 'PRUEBA · ' : '') + 'N.º ' + cod + (n > 0 ? ' de ' + n + (n === 1 ? ' ítem' : ' ítems') : ''), 60),
+      total: avParametro('Bs ' + avMonto(d.total) + (resultado === 'simulado' ? ' (SIMULADO)' : ''), 30),
       modalidad: avParametro(avModalidadVariable(d, dest, opc), 500),
       cotejo: avParametro(avCotejoTexto(resultado), 80),
     };
@@ -744,7 +749,9 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
   let cierre = '';
   if (tipo === 'pedido' || tipo === 'comprobante') {
     const cod = avLimpio(d.codigo, 20) || '—';
-    lineas.push('Pedido N.º ' + cod + ' (' + avCotejoTexto(resultado) + ')');
+    lineas.push(resultado === 'simulado'
+      ? 'PEDIDO DE PRUEBA N.º ' + cod + ' (cobro SIMULADO: no se movió dinero)'
+      : 'Pedido N.º ' + cod + ' (' + avCotejoTexto(resultado) + ')');
     lineas.push(cliente());
     if (d.modalidad === 'delivery') {
       const dir = completo ? avLimpio(d.direccion, 200) : '';
@@ -776,7 +783,7 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
       const dif = d.diferencias.slice(0, 6).map((x) => avLimpio(x, 100)).filter(Boolean).join('; ');
       if (dif) lineas.push('Diferencias: ' + dif);
     }
-    cierre = resultado === 'sin_qr' ? AV_CIERRE_SIN_QR : AV_CIERRE_PAGO;
+    cierre = resultado === 'sin_qr' ? AV_CIERRE_SIN_QR : (resultado === 'simulado' ? AV_CIERRE_SIMULADO : AV_CIERRE_PAGO);
   } else if (tipo === 'reserva') {
     const r = (d.reserva && typeof d.reserva === 'object') ? d.reserva : {};
     const p = Math.floor(Number(r.personas));
@@ -829,7 +836,8 @@ function avConstruir(tipo, datos, destinatarios, cfg, sd, ahoraMs) {
   if (!dests.length) return { items: [], errores: ['sin_destinatarios'] };
 
   const pl = avConfigPlantilla(tipo, c, errores);
-  const idMedio = /^[A-Za-z0-9_.-]{1,100}$/.test(String(d.mediaId || '')) ? String(d.mediaId) : '';
+  // En simulado no hay comprobante que mostrar (la foto no se baja ni se lee): nunca sale la imagen, venga o no `mediaId`.
+  const idMedio = resultado !== 'simulado' && /^[A-Za-z0-9_.-]{1,100}$/.test(String(d.mediaId || '')) ? String(d.mediaId) : '';
   const items = [];
   for (const dest of dests) {
     const abierta = avVentanaAbierta(sd, dest.tel, ahoraMs);
