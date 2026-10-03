@@ -4278,7 +4278,7 @@ describe('excluidos de punta a punta: «jamaica shot», «limonada con tequila»
     for (const [dicho, lineas] of [
       ['quiero un jamaica shot', [ln('jamaica shot', 1)]],
       ['quiero una limonada con tequila', [ln('limonada con tequila', 1)]],
-      ['quiero una gaseosa con ron', [ln('gaseosa', 1, '', 'con ron')]],
+      ['quiero una gaseosa con ron', [ln('gaseosa con ron', 1)]],
       ['quiero una paleta mango chamoy', [ln('paleta mango chamoy', 1)]],
     ] as [string, J[]][]) {
       const { w, t } = pedir(lineas, dicho);
@@ -4286,6 +4286,29 @@ describe('excluidos de punta a punta: «jamaica shot», «limonada con tequila»
       expect(t.avisos, dicho).toHaveLength(0);
       expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(false);
       expect((estadoDe(w.mundo)['carrito'] as J[]) ?? [], dicho).toHaveLength(0);
+    }
+  });
+
+  it('el DETALLE «con ron» de una gaseosa NO culpa a la gaseosa: el resumen sale con ella, sin la nota, y dice que «ron» no se puede incluir', () => {
+    const { t, w } = pedir([ln('gaseosa', 1, '', 'con ron')], 'quiero una gaseosa con ron');
+    const texto = cuerpos(t).join('\n');
+    expect(texto).toContain('«ron» no lo podemos incluir en tu pedido.');
+    expect(texto).not.toMatch(/Gaseosas[^\n]*(ron)/);
+    expect(texto).not.toContain('no está disponible para pedir por WhatsApp');
+    expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido'))).toBe(true);
+    expect(t.avisos).toHaveLength(0);
+    expect((estadoDe(w.mundo)['carrito'] as J[]).length).toBe(1);
+  });
+
+  it('un pedido para una PERSONA con nombre de bebida («para Paloma», nota «Es para Margarita») llega al resumen sin rechazar nada', () => {
+    for (const [dicho, lineas] of [
+      ['quiero una gaseosa para Paloma', [ln('gaseosa para Paloma', 1)]],
+      ['quiero una gaseosa, es para Margarita', [ln('gaseosa', 1, '', 'es para Margarita')]],
+      ['una limonada a nombre de Ron', [ln('limonada', 1, '', 'a nombre de Ron')]],
+    ] as [string, J[]][]) {
+      const { t } = pedir(lineas, dicho);
+      expect(cuerpos(t).join('\n'), dicho).not.toMatch(/no está disponible|no lo podemos incluir/);
+      expect(t.mensajes.some((m) => botonesDe(m).some((b) => b.title === 'Confirmar pedido')), dicho).toBe(true);
     }
   });
 

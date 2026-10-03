@@ -407,7 +407,8 @@ describe('el carrito que vuelve de la página', () => {
       const t = carrito(m, { nota });
       const cuerpo = String(mensajes(t)[0]!['cuerpo']);
       expect(cuerpo, nota).not.toContain('Tu nota');
-      expect(cuerpo, nota).toMatch(/No incluí tu nota: menciona «(tequila|cerveza|shot)», que no está disponible para pedir por WhatsApp/);
+      expect(cuerpo, nota).toMatch(/No pude incluir tu nota: «(tequila|cerveza|shot)» no lo podemos incluir en el pedido\./);
+      expect(cuerpo, nota).not.toContain('no está disponible'); // no culpa al producto: la línea sigue y solo se quitó la nota
       expect(estadoDe(m)['entrega']?.['notaPedido'], nota).toBeUndefined();
       // el resto del pedido sigue: se confirma con el botón y el aviso NO lleva la nota
       const c = turno(m, { mensaje: boton('p|confirmar', 'Confirmar pedido') });
@@ -428,6 +429,19 @@ describe('el carrito que vuelve de la página', () => {
       expect(cuerpo, nota).toContain(`Tu nota: ${nota}\nTotal de la comida:`);
       expect(cuerpo.split('Total de la comida:').length, nota).toBe(2); // el resumen no se duplicó ni se partió
     }
+  });
+
+  it('una nota del carrito con un NOMBRE PROPIO que también es bebida («Es para Margarita», «para Paloma», «a nombre de Ron») llega a cocina', () => {
+    for (const nota of ['Es para Margarita', 'para Paloma por favor', 'a nombre de Ron', 'Chop']) {
+      const m = crear({ palabrasExcluidas: 'margarita,paloma,ron,chop,tequila' });
+      const t = carrito(m, { nota });
+      const cuerpo = String(mensajes(t)[0]!['cuerpo']);
+      expect(cuerpo, nota).toContain(`Tu nota: ${nota}\nTotal de la comida:`);
+      expect(cuerpo, nota).not.toContain('no lo podemos incluir');
+    }
+    // NEGANDO: la bebida en la nota sigue sin pasar.
+    const bebida = carrito(crear({ palabrasExcluidas: 'margarita,paloma,ron,chop,tequila' }), { nota: 'con una margarita' });
+    expect(String(mensajes(bebida)[0]!['cuerpo'])).toContain('«margarita» no lo podemos incluir');
   });
 
   it('el carrito sin nota no deja rastro de nota, y una nota con palabras de la red se sanea', () => {

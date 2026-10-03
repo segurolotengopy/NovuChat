@@ -662,6 +662,8 @@ function agregarLineas(lineas) {
   if (Array.isArray(r.carrito)) en.carrito = r.carrito;
   const lista1 = (v) => (Array.isArray(v) ? v : (v ? [v] : []));
   en.pendiente = en.pendiente.concat(lista1(r.pendiente));
+  // Una palabra que el negocio no vende, escrita como nota de una linea que SI entra: la linea se conserva y se le dice cual no se incluyo.
+  for (const q of lista1(r.notasQuitadas).slice(0, 3)) notas.push('«' + vmLinea(q.palabra, 40) + '» no lo podemos incluir en tu pedido.');
   return lista1(r.noEncontrados);
 }
 
@@ -1136,7 +1138,7 @@ function aCarrito() {
   const nota = delCliente(c.nota, 200);
   const notaExcluida = nota ? pdPalabraExcluida(nota, lista(cfg.palabrasExcluidas)) : '';
   if (nota && !notaExcluida) en.entrega.notaPedido = nota;
-  if (notaExcluida) notas.push('No incluí tu nota: menciona «' + notaExcluida + '», que no está disponible para pedir por WhatsApp.');
+  if (notaExcluida) notas.push('No pude incluir tu nota: «' + notaExcluida + '» no lo podemos incluir en el pedido.');
 
   const nombres = (l) => unirY(l.slice(0, 3).map((n) => '«' + n + '»')) + (l.length > 3 ? ' y ' + (l.length - 3) + ' más' : '');
   if (fuera.length) notas.push('No pude incluir ' + nombres(fuera) + ' en tu pedido: no está disponible por este medio.');

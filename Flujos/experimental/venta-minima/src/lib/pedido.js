@@ -518,14 +518,42 @@ function _pdPalabrasEx(v) {
   }
   return r;
 }
+// LA LISTA ES DE MEJOR ESFUERZO, no una garantia: un cliente puede escribir una bebida con otra palabra, con faltas o en otro idioma. La
+// barrera real es que el area no se venda y que el negocio vea cada pedido antes de despacharlo; la lista solo evita el caso corriente.
+//
+// NOMBRES PROPIOS: algunas palabras de la lista tambien son nombres de persona (Paloma, Margarita, Ron) o palabras comunes («vino» de venir,
+// «chop»). Esas SOLO cuentan en contexto de bebida: precedidas de «con», «un/una/uno», «el/la», «otro/otra», un numero o «de» cuando antes
+// va un envase («copa de», «vaso de»…), o como el nombre mismo de lo pedido (`esProducto`: «margarita», «dos paloma»). Nunca tras «para», «a nombre
+// de» ni «es de»: «una orden de birria para Paloma» y «es para Margarita» son pedidos de un cliente, no de un coctel.
+const PD_HOMONIMOS = ['paloma', 'margarita', 'ron', 'chop', 'vino'];
+const PD_ANTES_DE_BEBIDA = ['con', 'un', 'una', 'unos', 'unas', 'uno', 'el', 'la', 'otro', 'otra', 'mi', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'].map(_pdSingular);
+const PD_ENVASES = ['copa', 'vaso', 'trago', 'botella', 'jarra', 'litro', 'medio', 'shot', 'chorro', 'chorrito', 'poco', 'poquito', 'gota'].map(_pdSingular);
+function _pdEnContextoDeBebida(dicho, i, esProducto) {
+  const prev = i > 0 ? dicho[i - 1] : '';
+  if (!prev) return esProducto === true; // abre el texto: solo vale si ES lo pedido, no una nota con un nombre
+  if (/^\d+$/.test(prev) || PD_ANTES_DE_BEBIDA.indexOf(prev) >= 0) return true;
+  return prev === 'de' && i > 1 && PD_ENVASES.indexOf(dicho[i - 2]) >= 0;
+}
 // La palabra excluida que dice `texto` (la de la lista, normalizada), o '' si ninguna. `palabras`: lista o texto con comas.
-function pdPalabraExcluida(texto, palabras) {
+// `esProducto` (opcional): `texto` es lo que se pidio (el nombre del producto), no una nota o un detalle.
+// Tambien se compara la forma COMPACTA: «cubalibre» (una palabra por dos de la lista) y «te quila» (dos palabras por una), solo con
+// palabras de 6 letras o mas para no unir restos de otras palabras.
+function pdPalabraExcluida(texto, palabras, esProducto) {
   const lista = _pdPalabrasEx(palabras);
   if (!lista.length) return '';
   const dicho = vmNorm(typeof texto === 'string' ? texto : '').split(' ').filter(Boolean).map(_pdSingular);
   for (const w of lista) {
+    const homonimo = w.toks.length === 1 && PD_HOMONIMOS.indexOf(w.toks[0]) >= 0;
     for (let i = 0; i + w.toks.length <= dicho.length; i++) {
-      if (w.toks.every((t, k) => dicho[i + k] === t)) return w.texto;
+      if (w.toks.every((t, k) => dicho[i + k] === t) && (!homonimo || _pdEnContextoDeBebida(dicho, i, esProducto))) return w.texto;
+    }
+    const junto = w.toks.join('');
+    if (junto.length < 6) continue;
+    for (let i = 0; i < dicho.length; i++) {
+      if (w.toks.length > 1 && dicho[i] === junto) return w.texto;
+      for (let n = 2; n <= 3 && i + n <= dicho.length; n++) {
+        if (dicho.slice(i, i + n).join('') === junto) return w.texto;
+      }
     }
   }
   return '';
@@ -547,7 +575,7 @@ function pdBuscar(carta, producto, forma, palabras) {
   const f = forma === 'orden' || forma === 'unidad' ? forma : q.forma;
   const grupos = _pdGrupos(carta);
   if (!q.tokens.length || !grupos.length) {
-    const w = grupos.length ? '' : pdPalabraExcluida(producto, palabras); // sin carta tambien se sabe lo que no se vende
+    const w = grupos.length ? '' : pdPalabraExcluida(producto, palabras, true); // sin carta tambien se sabe lo que no se vende
     return w ? { estado: 'excluido', palabra: w, sugerencias: [], forma: f } : { estado: 'ninguno', sugerencias: [], forma: f };
   }
   const elegir = (g, extra) => {
@@ -590,7 +618,7 @@ function pdBuscar(carta, producto, forma, palabras) {
   }
 
   // 4. No esta. Si es una palabra que el negocio NO vende (`palabras`, opcional): {estado:'excluido', palabra}.
-  const palabra = pdPalabraExcluida(producto, palabras);
+  const palabra = pdPalabraExcluida(producto, palabras, true);
   if (palabra) return { estado: 'excluido', palabra, sugerencias: [], forma: f };
 
   // 5. Se sugiere lo que comparte palabras (o se parece a ellas) y, si nada, lo que dice la descripcion.
@@ -688,15 +716,19 @@ function _pdMejorOrden(ords, cantidad) {
 }
 
 // Una linea validada a su resultado: ok (item y cantidad), no (no se pudo) o forma (hay que preguntar).
-// `palabras` (opcional, `palabrasExcluidas`): una palabra excluida que viaja como NOTA de un producto que si se vende («jamaica shot» ->
-// «Jamaica» con «shot» de nota, «paleta mango chamoy» -> «Mango con Chamoy» con «paleta», «gaseosa» con detalle «con ron») no se esquiva:
-// la linea entera se descarta como excluida. Se mira SOLO lo que sobra del nombre y el detalle del modelo, nunca el nombre del producto
-// de la carta (un plato activo que lleve esa palabra en su nombre no se bloquea).
+// `palabras` (opcional, `palabrasExcluidas`): una palabra excluida que viaja DENTRO de lo que se pidio, como lo que sobra del nombre de un
+// producto que si se vende («jamaica shot» -> «Jamaica» con «shot» de nota, «paleta mango chamoy» -> «Mango con Chamoy» con «paleta»),
+// no se esquiva: la linea entera se descarta como excluida. Se mira SOLO lo que sobra del nombre, nunca el nombre del producto de la carta
+// (un plato activo que lleve esa palabra en su nombre no se bloquea). El DETALLE del modelo lo trata `pdAgregarLineas`: conserva la linea
+// y le quita solo la nota («gaseosa» con detalle «con ron» sigue siendo una gaseosa).
 function _pdResolverLinea(carta, ln, palabras) {
   const r = pdBuscar(carta, ln.producto, ln.forma);
   const nota = (extra) => _pdNota(ln.detalle, extra);
   if (r.estado === 'unico' || r.estado === 'forma') {
-    const w = pdPalabraExcluida([r.extra, ln.detalle].filter(Boolean).join(' '), palabras);
+    // Se mira el texto COMPLETO de lo pedido (no solo `r.extra`, que ya perdio «con», «para»…: sin ese contexto un nombre propio parecia una bebida),
+    // salvo que la palabra sea del propio nombre del producto de la carta.
+    const item = r.item || (Array.isArray(r.opciones) ? r.opciones[0] : null);
+    const w = item && pdPalabraExcluida(item.nombre, palabras, true) ? '' : pdPalabraExcluida(ln.producto, palabras, true);
     if (w) return { tipo: 'no', motivo: 'excluido', producto: ln.producto, cantidad: ln.cantidad, sugerencias: [], palabra: w };
   }
   if (r.estado === 'ninguno') return { tipo: 'no', motivo: 'ninguno', producto: ln.producto, cantidad: ln.cantidad, sugerencias: r.sugerencias };
@@ -736,7 +768,7 @@ function _pdExcluidoDe(producto, carta, excluidos, palabras) {
     if (r.estado === 'forma' || r.estado === 'ambiguo') return r.opciones[0];
   }
   // La lista de palabras del negocio (aunque la carta no tenga el item): el excluido es solo `{nombre, palabra}`.
-  const palabra = pdPalabraExcluida(producto, palabras);
+  const palabra = pdPalabraExcluida(producto, palabras, true);
   if (palabra) return { id: '', nombre: _pdTexto(producto, 80) || palabra, palabra };
   if (!hay) return null;
   return pdSugerir(producto, carta) ? null : pdSugerir(producto, excluidos);
@@ -772,16 +804,21 @@ function pdAgregarLineas(carrito, carta, lineas, excluidos, palabras) {
   const nuevo = _pdCopiarCarrito(carrito);
   const noEnc = [];
   const pend = [];
-  for (const ln of (Array.isArray(lineas) ? lineas : [])) {
-    if (!ln || typeof ln.producto !== 'string' || !Number.isInteger(ln.cantidad) || ln.cantidad < 1) continue;
+  const notasQuitadas = [];
+  for (const ln0 of (Array.isArray(lineas) ? lineas : [])) {
+    if (!ln0 || typeof ln0.producto !== 'string' || !Number.isInteger(ln0.cantidad) || ln0.cantidad < 1) continue;
+    // Una palabra excluida en el DETALLE: la linea se conserva y solo se quita la nota (se dice cual, si la linea entra).
+    const quitada = pdPalabraExcluida(ln0.detalle, palabras);
+    const ln = quitada ? Object.assign({}, ln0, { detalle: '' }) : ln0;
     const r = _pdResolverLinea(carta, ln, palabras);
+    if (quitada && r.tipo !== 'no') notasQuitadas.push({ producto: ln0.producto, palabra: quitada });
     if (r.tipo === 'no') noEnc.push(_pdNoEncontrado(ln, r.motivo, r.sugerencias, carta, excluidos, palabras, r.palabra));
     else if (r.tipo === 'forma') pend.push(r.pendiente);
     else if (!_pdPoner(nuevo, _pdLinea(r.item, r.cantidad, r.detalle))) {
       noEnc.push({ producto: ln.producto, cantidad: ln.cantidad, motivo: 'limite', sugerencias: [] });
     }
   }
-  return { carrito: nuevo, pendiente: pend, noEncontrados: noEnc };
+  return { carrito: nuevo, pendiente: pend, noEncontrados: noEnc, notasQuitadas: notasQuitadas };
 }
 
 // El cliente eligio «orden» o «unidad» para la PRIMERA pregunta de `pendiente` (la lista que dio

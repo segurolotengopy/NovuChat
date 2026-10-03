@@ -437,7 +437,14 @@ vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («ex
   «menú». Solo «Cancelar pedido» lleva al menú y borra el pedido.
 - **Excluidos.** `pdAgregarLineas` aplica la lista `palabrasExcluidas` también al sobrante del nombre y al detalle del modelo (nunca al nombre
   del producto de la carta), y `aCarrito` a la nota del carrito: la palabra excluida no se esquiva como nota. La lista por omisión de Q'Taco
-  se amplió (se probó contra los 53 ítems activos reales: sin falsos positivos).
+  se amplió (se probó contra los 53 ítems activos reales: sin falsos positivos). **La lista es de mejor esfuerzo, no una garantía** (un cliente
+  puede escribir la bebida con otra palabra, con faltas o en otro idioma): la barrera real es que las áreas no se vendan y que el negocio vea
+  cada pedido. También se compara la forma compacta («cubalibre», «te quila», solo palabras de 6 letras o más). **Nombres propios:** «paloma»,
+  «margarita», «ron», «chop» y «vino» solo cuentan como bebida en su contexto («con», «un/una», un número, «copa de»…) o como lo pedido;
+  nunca tras «para», «a nombre de» o «es de» («una orden de birria para Paloma» y la nota «Es para Margarita» pasan). Una palabra excluida en
+  el DETALLE del modelo o en la nota del carrito no culpa al producto: la línea se conserva, se quita solo la nota y el mensaje nombra la palabra
+  (««ron» no lo podemos incluir en tu pedido.»); si la palabra va dentro del nombre de lo pedido («gaseosa con ron», «jamaica shot»), la línea se
+  descarta como excluida.
 - **Carrito.** Conserva el nombre, la dirección y la referencia ya dados; con la ventana cerrada (o sin el dato) no sale nada aunque el
   comercio esté suspendido o la atención sea de un operador (las condiciones de `¿Comercio operativo?` y `¿Atención normal?` dejan pasar a
   `Decidir turno`); el comprobante pendiente se revisa antes del horario.
