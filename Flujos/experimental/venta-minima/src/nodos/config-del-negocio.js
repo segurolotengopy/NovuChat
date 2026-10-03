@@ -104,6 +104,9 @@ const deBaseDeReglas = {
   topeTransferenciasHora: vmEntero(base.topeTransferenciasHora, 0, 1000, 1),
   topePedidosHora: vmEntero(base.topePedidosHora, 0, 1000, 6),
   destinatariosAviso: csvLimpio(base.destinatariosAviso),
+  // INTERRUPTOR SOLO DE ENSAYO: se lee de «Config base» y NUNCA del panel (la consola no lo puede encender). Solo vale `true` o
+  // «true»; cualquier otro valor es falso. `construir.mjs` lo deja únicamente en `ensayo-demo-a.json`: en producción no existe.
+  avisarAlPropioNumero: verdadero(base.avisarAlPropioNumero),
   phoneNumberIdEsperado: marcador(base.phoneNumberIdEsperado),
   waGraphVersion: marcador(base.waGraphVersion) || RESPALDO.waGraphVersion,
 };

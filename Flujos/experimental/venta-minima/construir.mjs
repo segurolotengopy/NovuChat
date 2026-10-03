@@ -214,8 +214,17 @@ function armar(datos, archivo) {
 //   - «Simular aviso» y «¿Avisar de verdad?»: simulan que un aviso salió (L2); solo existen en la prueba;
 //   - «WhatsApp Trigger» con la entrada del receptor: activarlo reescribe el webhook de toda la app de Meta
 //     (prohibición 7 de CLAUDE.md).
-function guardiasDeProduccion(entrada, flujo, datos = {}) {
+function guardiasDeProduccion(entrada, flujo, datos = {}, destino = '') {
   const hallazgos = [];
+  // INTERRUPTOR SOLO DE ENSAYO: `avisarAlPropioNumero` en «Config base» hace que el aviso al restaurante salga aunque el destinatario sea
+  // quien escribe (un solo teléfono de ensayo). En cualquier otro JSON (producción de Q'Taco, prueba) sería avisar a un empleado de su
+  // propio pedido y perder el hecho de «avisó a otra persona»: solo `venta-minima.ensayo-demo-a.json` puede llevarla. Se mira la
+  // ASIGNACIÓN de «Config base» (el dato), no el código de los nodos, que nombra la clave para leerla.
+  const base = flujo.nodes.find((n) => n.name === 'Config base');
+  const asignadas = (((base || {}).parameters || {}).assignments || {}).assignments || [];
+  if (destino !== SALIDA_CON_LA_CLAVE && asignadas.some((a) => a && a.name === CLAVE_SOLO_ENSAYO)) {
+    hallazgos.push(`«Config base» trae «${CLAVE_SOLO_ENSAYO}» (interruptor solo de ensayo): solo ${SALIDA_CON_LA_CLAVE} puede llevarla`);
+  }
   const nombres = new Set(flujo.nodes.map((n) => n.name));
   const tipos = flujo.nodes.map((n) => n.type);
   if (entrada !== 'prueba' && nombres.has('Entrada de prueba')) hallazgos.push('contiene el nodo «Entrada de prueba» (activa modoPrueba): solo va en el JSON de prueba');
@@ -270,13 +279,26 @@ function anfitrionPermitido(nombreDelNodo, url) {
 
 // L1. Cada `venta-minima.<x>.json` versionado nace de un archivo de datos (`ensayo.json` para la prueba): si el archivo de
 // datos se borró o se renombró, el JSON quedó huérfano y nadie lo regenera.
+// La clave del interruptor de ensayo y el único archivo de datos (y su salida) que puede traerla.
+const CLAVE_SOLO_ENSAYO = 'avisarAlPropioNumero';
+const DATOS_CON_LA_CLAVE = 'ensayo-demo-a.json';
+const SALIDA_CON_LA_CLAVE = 'venta-minima.ensayo-demo-a.json';
+
 function huerfanos() {
   const salidas = new Set(readdirSync(DATOS).filter((f) => f.endsWith('.json')).map(salidaDe));
-  return readdirSync(AQUI).filter((f) => /^venta-minima\..+\.json$/.test(f) && !salidas.has(f));
+  // Un `*.local.json` es lo que deja `preparar-import.sh` (con valores reales, ignorado por git): no es una salida versionada.
+  return readdirSync(AQUI).filter((f) => /^venta-minima\..+\.json$/.test(f) && !/\.local\.json$/.test(f) && !salidas.has(f));
 }
 
 const salidaDe = (archivo) => (archivo === 'ensayo.json' ? 'venta-minima.prueba.json' : `venta-minima.${archivo.replace(/\.json$/, '')}.json`);
 
+// El interruptor de ensayo NO se hereda ni se cuela: ningún archivo de datos salvo `ensayo-demo-a.json` puede nombrarlo (ni `qtaco.json`,
+// de donde heredan los demás, ni `ensayo.json`). Se mira el TEXTO crudo de cada archivo, antes de mezclar nada.
+for (const archivo of readdirSync(DATOS).filter((f) => f.endsWith('.json')).sort()) {
+  if (archivo !== DATOS_CON_LA_CLAVE && readFileSync(join(DATOS, archivo), 'utf8').includes(CLAVE_SOLO_ENSAYO)) {
+    throw new Error(`${archivo}: «${CLAVE_SOLO_ENSAYO}» es un interruptor solo de ensayo y solo puede estar en ${DATOS_CON_LA_CLAVE} (ni heredada de otro archivo de datos)`);
+  }
+}
 let difiere = false;
 for (const archivo of readdirSync(DATOS).filter((f) => f.endsWith('.json')).sort()) {
   const datos = cargarDatos(archivo);
@@ -291,13 +313,13 @@ for (const archivo of readdirSync(DATOS).filter((f) => f.endsWith('.json')).sort
   const destino = salidaDe(archivo);
   const ruta = join(AQUI, destino);
   // Lo que se arma nunca viola las guardias (si la plantilla lo hiciera, falla la construcción)…
-  const propios = guardiasDeProduccion(datos.entrada, JSON.parse(texto), datos);
+  const propios = guardiasDeProduccion(datos.entrada, JSON.parse(texto), datos, destino);
   if (propios.length) throw new Error(`${destino}: ${propios.join('; ')}`);
   if (verificar) {
     const actual = existsSync(ruta) ? readFileSync(ruta, 'utf8') : null;
     // …y el archivo VERSIONADO tampoco las viola (aunque alguien lo haya tocado a mano).
     let versionado = [];
-    try { versionado = actual === null ? [] : guardiasDeProduccion(datos.entrada, JSON.parse(actual), datos); } catch (e) { versionado = ['no es un JSON válido']; }
+    try { versionado = actual === null ? [] : guardiasDeProduccion(datos.entrada, JSON.parse(actual), datos, destino); } catch (e) { versionado = ['no es un JSON válido']; }
     if (versionado.length) {
       difiere = true;
       console.error(`✗ ${destino} ${versionado.join('; ')}`);

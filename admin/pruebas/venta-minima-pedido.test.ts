@@ -125,6 +125,25 @@ describe('pdCarta: la carta que se vende', () => {
     ]);
     expect(nombresDe(c)).toEqual(['Con precio']);
   });
+  it('un item marcado `excluido: true` no entra a la carta (igual que en las promociones), y uno con `excluido: false` o sin la marca, sí', () => {
+    const c = L.pdCarta([
+      it_('a', 'Marcado excluido', 10, 'x', { excluido: true }), it_('b', 'No excluido', 10, 'x', { excluido: false }),
+      it_('c', 'Sin marca', 10, 'x'), it_('d', 'Excluido como texto', 10, 'x', { excluido: 'true' }),
+    ]);
+    // `excluido` solo cuenta con el booleano `true` (la misma regla estricta de `agotado`).
+    expect(nombresDe(c)).toEqual(['No excluido', 'Sin marca', 'Excluido como texto']);
+  });
+  it('LÍMITE DECLARADO: el área es el único control de «sin alcohol ni helados»; un ítem sin área o que el comercio pasa a otra área deja de estar excluido', () => {
+    const cat = [
+      it_('a', 'Cerveza en su area', 25, 'cervezas'), it_('b', 'Cerveza sin area', 25, ''), it_('c', 'Cerveza pasada a bebidas', 25, 'bebidas'),
+      { id: 'd', nombre: 'Cerveza con area ausente', precio: 25 },
+    ];
+    const c = L.pdCarta(cat, { areasExcluidas: EXCLUIDAS });
+    expect(nombresDe(c)).toEqual(['Cerveza sin area', 'Cerveza pasada a bebidas', 'Cerveza con area ausente']);
+    // Y la nota libre no se mira: «horchata con ron» pasa sobre un ítem permitido (la nota viaja al restaurante). Se declara en DISENO.md.
+    const r = L.pdAgregarLineas([], CARTA, [ln('horchata', 1, '', 'con ron')]);
+    expect(JSON.stringify(r.carrito)).toContain('con ron');
+  });
   it('negando: un item sin `agotado` ni `activo` sigue en la carta (no saber el stock no es no tener)', () => {
     const c = L.pdCarta([{ id: 'a', nombre: 'Sin banderas', precio: 10, area: 'x' }]);
     expect(nombresDe(c)).toEqual(['Sin banderas']);

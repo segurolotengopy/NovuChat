@@ -203,7 +203,7 @@ function _pdSlug(t) {
 // ---------------------------------------------------------------------------
 
 // El catalogo de la consola a la carta que vende el asistente. Descarta lo que no se puede
-// cobrar por codigo: sin precio numerico positivo, agotado, inactivo, de un area excluida (alcohol,
+// cobrar por codigo: sin precio numerico positivo, agotado, inactivo, marcado `excluido`, de un area excluida (alcohol,
 // helados...) o en otra moneda que la de la carta (no se pueden sumar).
 function pdCarta(catalogo, opts) {
   const o = opts && typeof opts === 'object' ? opts : {};
@@ -218,7 +218,7 @@ function pdCarta(catalogo, opts) {
     const nombre = _pdTexto(it.nombre, 80);
     if (!nombre) continue;
     if (typeof it.precio !== 'number' || !Number.isFinite(it.precio) || it.precio <= 0) continue;
-    if (it.agotado === true || it.activo === false) continue;
+    if (it.agotado === true || it.excluido === true || it.activo === false) continue;
     const area = _pdTexto(it.area, 40);
     if (area && excluidas.indexOf(vmNorm(area)) >= 0) continue;
     const monedaItem = _pdMonedaCodigo(it.moneda, moneda);

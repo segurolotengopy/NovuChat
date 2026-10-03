@@ -20,8 +20,11 @@ restaurante lo arma el código; los totales salen de la carta; los avisos solo d
 | `construir.mjs` | Arma los JSON. `--verificar` no escribe y sale 1 si alguno difiere o viola una guardia |
 | `venta-minima.qtaco.json` | **Producción** de Q'Taco: entrada del receptor, sin nada de prueba |
 | `venta-minima.prueba.json` | **Variante de prueba**: «Entrada de prueba» en lugar de la cadena del receptor |
+| `venta-minima.ensayo-demo-a.json` | **Variante de ensayo en el Demo A**: `WhatsApp Trigger` como única entrada, credenciales del Demo A por nombre y el nombre del flujo del Demo A. Solo para ensayar (ver «La variante de ensayo en el Demo A») |
 | `admin/scripts/datos/venta-minima/qtaco.json` | Datos del tenant: credenciales por nombre, receptor y `configBase`, solo con marcadores `REEMPLAZAR_*` |
 | `admin/scripts/datos/venta-minima/ensayo.json` | Datos del ensayo: hereda de `qtaco.json`, con `entrada: "prueba"`, su credencial de Graph y su número de ensayo |
+| `admin/scripts/datos/venta-minima/ensayo-demo-a.json` | Datos del ensayo en el Demo A: hereda de `qtaco.json`, con `entrada: "trigger"`, las credenciales del Demo A, plantillas vacías y solo dos marcadores (`REEMPLAZAR_PHONE_NUMBER_ID`, `REEMPLAZAR_NUMERO_AVISO_ENSAYO`) |
+| `admin/pruebas/venta-minima-herramienta-demo-a.test.ts` | `flujo-de-prueba.mjs --sobre-demo-a` y `--restaurar-respaldo` contra un n8n de mentira: credenciales resueltas, Trigger del Demo A, vuelta atrás exacta y negativas |
 | `admin/pruebas/venta-minima-flujo.test.ts` | La suite de punta a punta: corre el JSON armado con el n8n de mentira contra las librerías reales |
 
 Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librería; correr
@@ -36,7 +39,8 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   `@@comun:` pone solo `comun.js` y `@@solo:` solo el nodo (el Code de n8n no tiene módulos).
 - `@@dato:a.b.c@@` toma un dato del tenant (ruta del receptor, URL del verificador, WABA, ruta de prueba) y
   `@@cred:ingesta|graph|medios|entradaPrueba|trigger` el nombre de la credencial. `Config base` se llena entera con `configBase`.
-- **Una salida por archivo de datos**: `qtaco.json` → `venta-minima.qtaco.json`; `ensayo.json` → `venta-minima.prueba.json`.
+- **Una salida por archivo de datos**: `qtaco.json` → `venta-minima.qtaco.json`; `ensayo.json` → `venta-minima.prueba.json`;
+  `ensayo-demo-a.json` → `venta-minima.ensayo-demo-a.json`.
   Un tenant nuevo es un archivo nuevo en `datos/venta-minima/`, nunca código.
 - **Los datos se validan al construir (L1).** Los valores de `@@dato` van dentro de expresiones, así que se rechazan
   las comillas, la barra invertida, las llaves y los saltos de línea; `wabaIdEsperado` es `^(\d{6,25}|REEMPLAZAR_…)$`, `ruta` y
@@ -52,7 +56,10 @@ Para cambiar el flujo: editar la plantilla, un nodo de `src/nodos/` o una librer
   - un nodo HTTP solo llama a `graph.facebook.com`, `generativelanguage.googleapis.com` o `*.cloudfunctions.net` (o a un
     marcador; la única URL por expresión es la de `Descargar medio`, que baja el medio que Meta devolvió);
   - en producción, ningún webhook con ruta de prueba y ninguno que no sea la entrada del receptor;
-  - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano);
+  - cada `venta-minima.*.json` versionado tiene su archivo de datos (si no, queda huérfano); un `*.local.json` (lo que deja
+    `preparar-import.sh`, con valores reales) no cuenta como huérfano;
+  - la clave `avisarAlPropioNumero` (interruptor solo de ensayo) solo puede estar en `ensayo-demo-a.json` y en su salida (ver «La variante
+    de ensayo en el Demo A»);
   - retención de ejecuciones en `none` (ver abajo).
 - **Retención de ejecuciones (decisión de Andres, 02/10/2026): nada se guarda.** `saveDataSuccessExecution: "none"`,
   `saveDataErrorExecution: "none"` y `saveExecutionProgress: false`, explícitos en la plantilla y en los JSON generados,
@@ -176,6 +183,96 @@ deja publicado junto a la producción. Sus cerraduras:
 - **`from` no es libre (A2).** Quien escribe en el ensayo tiene que ser el `telefonoDePrueba`, un destinatario de aviso de
   `Config base` o el `numeroEnsayo` (la misma lista de `¿Avisar de verdad?` y `¿Enviar de verdad?`). Se mira en `¿Es un mensaje?`
   (antes de `Traer configuración`) y otra vez en `Interpretar entrada`: un `from` ajeno no llega a la consola ni a `Cotejar en el servidor`.
+
+## La variante de ensayo en el Demo A: UN teléfono real contra la línea del Demo A
+
+`venta-minima.ensayo-demo-a.json` (44 nodos) permite ensayar el flujo de venta con **un solo teléfono real**, el de Andres, que hace de
+cliente, de dueño y de cocinero contra la línea del Demo A, antes de que exista la línea de Q'Taco. Es una tercera salida de
+`construir.mjs`, con la entrada `trigger`. El procedimiento está en `docs/ensayo/LEEME.md`, «Ensayar un flujo de venta mínima en el
+Demo A». Decisiones:
+
+- **El interruptor de un solo teléfono, `avisarAlPropioNumero` (solo de ensayo).** En producción `avUnificar` descarta al destinatario
+  igual al `from` (un empleado que pide no se avisa a sí mismo), y con un solo teléfono el aviso nunca saldría. Con
+  `avisarAlPropioNumero: true` en `configBase` (`ensayo-demo-a.json`), `avDestinatarios` y `avNormalizarDestinatarios` pasan `propio`
+  vacío: el destinatario igual al `from` se queda, y siguen valiendo los demás filtros (prefijo, 8 a 15 dígitos, unicidad, rol). Solo
+  `true` exacto (o el texto «true», como llega de `Config base`) lo enciende; ausente, «false», «0», vacío, un número o un objeto es falso.
+  `Config del negocio` lo lee **solo de `Config base`**: el panel no lo puede encender. El aviso llega **al mismo chat** del cliente, y
+  «pasé tu pedido» sigue saliendo únicamente si Meta devolvió un `wamid` real (con Meta rechazando el aviso, el cliente lee «No pude
+  pasarle…»). Guardias de construcción: `construir.mjs` falla si la clave aparece en cualquier archivo de datos que no sea
+  `ensayo-demo-a.json` (ni `qtaco.json` ni `ensayo.json`, ni heredada), y `--verificar` falla si `venta-minima.qtaco.json` o
+  `venta-minima.prueba.json` traen la clave como asignación de «Config base». **El código de los nodos sí nombra la clave** (para
+  leerla) en todos los JSON, incluido el de producción: eso no es el dato y no enciende nada. Solo `venta-minima.ensayo-demo-a.json`
+  puede llevar el dato.
+- **Se publica con `Flujos/experimental/agenda-minima/herramientas/flujo-de-prueba.mjs --sobre-demo-a`, no con `ensayo-flujo.sh`.**
+  `ensayo-flujo.sh` no sirve: su cerrojo exige los mismos nodos con credencial que el Demo A de agendamiento, y su `--restaurar`
+  republica el `demo-a-agendamiento.json` de la copia desde donde se corre (puede traer F3a sin autorizar) y deja 12 nodos del Demo A
+  sin credencial (completa por tipo; hallazgo de la revisión del PR #375, defecto aparte). La herramienta, en cambio:
+  - copia el **`WhatsApp Trigger` vivo del Demo A tal cual** (id, `webhookId`, credencial): el `WhatsApp Trigger` de este JSON solo
+    existe para que la plantilla tenga una entrada, y la herramienta lo reemplaza. Un Trigger con la credencial de AAB1-WA-Prod
+    reescribiría el webhook de toda esa app (prohibición 7), por eso el procedimiento coteja, antes y después, que el `callback_url`
+    de `webhook-meta.sh --ver-meta` termine en `/webhook/<webhookId del Trigger vivo>/webhook` (solo los últimos 4 caracteres: el seco
+    imprime `Trigger vivo: webhookId …XXXX`);
+  - asigna **todas** las credenciales por nombre y por id, y solo las que el Demo A vivo ya usa; se niega si un nodo queda sin
+    credencial, si hay dos credenciales con el mismo nombre, si el nombre es de un cliente o de un sistema ajeno, o si un nodo con URL
+    a `graph.facebook.com` conserva una credencial de cabecera (la trampa del 15/09);
+  - guarda el flujo vivo **entero** (permisos 600, fuera del repositorio) y la vuelta atrás es **solo** `--restaurar-respaldo`, que
+    comprueba la versión activa y relee el vivo para compararlo con el respaldo.
+  Se le hicieron ajustes (con su prueba en `venta-minima-herramienta-demo-a.test.ts`): su tabla acepta el nombre de la ingesta del Demo A
+  que este JSON ya trae («Cierres NovuChat A (auto)»); `--sobre-demo-a` se niega si el flujo del `.env` no es el Demo A (palabras
+  «demo a», ningún cliente ni sistema ajeno, ni «Bellido») o si está inactivo; y `--aplicar` exige `--autorizo-gemini-produccion`.
+  Límite declarado: no se exige que el nombre del respaldo contenga «demo a» (`--restaurar-respaldo` lo comparten otros flujos); se
+  exige que el `id` del respaldo sea el del `.env`.
+- **El nombre del flujo es el del Demo A**, y la herramienta conserva el del vivo al escribir. La suite compara el nombre del JSON con el
+  de `demo-a-agendamiento.json`; que el flujo vivo se llame igual solo se ve en el seco real.
+- **Credenciales por nombre**: «WhatsApp OAuth account» (Trigger, el que se reemplaza), «Cierres NovuChat A (auto)» (ingesta y cierres),
+  «WhatsApp account» (medios). Los cuatro envíos por Graph llevan el nombre «Graph WhatsApp Demo A (Bearer)», que es **solo la etiqueta**
+  que la herramienta reconoce (`^Graph WhatsApp .+ \(Bearer\)$`) para pasarlos a la credencial predefinida `whatsAppApi`: esa credencial
+  **no existe ni se crea**, y no se crea ninguna con el token (`PREPARACION.md` de Agenda mínima decía «no crees» una credencial Graph
+  Bearer en el Demo A: queda cumplido). Gemini va sin nombre y la herramienta pone «Google Gemini(PaLM) Api account» **por nombre**: hay
+  otra de Gemini, «Gemini — pruebas (no producción)», que no se usa.
+- **Gemini de producción: la autorización es por ensayo.** Andres la dio para las pruebas del 30/09/2026 y, en el chat, para este ensayo el
+  02/10/2026; cada ensayo nuevo la pide de nuevo (paso A.1 del procedimiento). Costo: ~0,0005 USD **por llamada**, y un turno puede sumar
+  varias (`Extraer`, `Transcribir audio` y `Leer comprobante` llaman a Gemini cada uno cuando corren). Cerrojo de código: `--aplicar` exige
+  `--autorizo-gemini-produccion`.
+- **Dos marcadores y nada más**: `REEMPLAZAR_PHONE_NUMBER_ID` (el del Demo A) y `REEMPLAZAR_NUMERO_AVISO_ENSAYO` (el teléfono de Andres, con
+  prefijo 591, que solo vive en la tabla local: destinatario `completo` y recepción de respaldo; **ninguna cifra de teléfono en el
+  repositorio**). `preparar-import.sh` los reemplaza y deja un `.local.json` que `construir.mjs` no cuenta como huérfano. Ninguno `_QTACO`,
+  ni receptor, ni verificador, ni «Entrada de prueba», ni «Simular aviso», ni webhooks. La retención sigue en `none`.
+- **Plantillas vacías**: en la línea del Demo A no existen. Con un solo teléfono la ventana de 24 h **ya está abierta** (escribe él, y cada
+  mensaje suyo la reabre): el aviso sale como texto libre. El botón «Escribir al local» va a la recepción del comercio `ensayo`
+  (`REEMPLAZAR_NUMERO_RECEPCION_ENSAYO`, hoy el teléfono de Andres): su propio teléfono.
+- **Con un solo teléfono, «No pude pasarle…» no se puede provocar en vivo** (la ventana nunca está cerrada cuando confirma el pedido): se
+  prueba en la suite, con el interruptor apagado, con la ventana cerrada de otro teléfono o con Meta rechazando el aviso.
+- **Lo que NO se prueba aquí**: QR y comprobante (la ruta del Demo A es `agendamiento`: el servidor no manda `config/venta` ni
+  cobro), plantillas, receptor y verificador, promociones, ni la latencia con el número real de Q'Taco; tampoco que el aviso llegue a
+  **otra** persona (con un solo teléfono llega al mismo chat).
+- **Lo que no se puede probar sin n8n ni Meta reales** (se mira en el seco real): que los nombres de credencial de la tabla existan hoy
+  en la instancia, que el Trigger vivo tenga la credencial de la app del Demo A (la guardia mira el NOMBRE: un nombre neutro no se
+  distingue, el mismo límite de A4) y que Meta siga apuntando a la ruta del Demo A después del PUT.
+- **`--reiniciar-estado` no tiene cerrojo de nombre** (`publicar-flujo.sh`): el procedimiento exige leer en su seco que el flujo vivo es
+  el Demo A. Un cerrojo de nombre queda como mejora aparte.
+
+## Áreas excluidas de Q'Taco: se comparan por nombre normalizado, no por parecido
+
+`areasExcluidas` de `qtaco.json` era `Cócteles,Cervezas,Helados`, pero la carta real usa las áreas `cocteleria`, `cervezas` y
+`postres`. La comparación es por `vmNorm` (minúsculas, sin tildes, sin signos): solo `cervezas` coincidía, y el asistente habría
+vendido cócteles, shots, vinos y helados contra lo que pidió el comercio («excepto bebidas alcohólicas y helados»; Andres,
+02/10/2026: se excluyen cócteles y helados, y las cervezas por ser alcohol). Ahora es `cocteleria,cervezas,postres`:
+
+- `cocteleria` (cócteles, shots y vinos): se excluye entera. Trae ítems cuya descripción no dice si llevan alcohol (un «sabor cola»,
+  un shot de jamaica, un «Azulito»); **«Horchata Pispireta»** también está ahí y por su nombre parece un cóctel con alcohol: queda fuera
+  con el área. Si el comercio quiere vender uno sin alcohol, se pasa a otra área desde su consola (y entonces deja de estar excluido).
+- `cervezas`: se excluye entera (incluye una michelada, que lleva cerveza).
+- `postres`: son los helados (de rompope, de tequila, de fruta) y **una paleta de pulpa de fruta («Paleta Mango-Chamoy»), que se toma por
+  helado. POR CONFIRMAR con Andres y el comercio**: si la paleta no cuenta como helado, hay que moverla a otra área o dejar `postres`
+  fuera de la exclusión.
+- El panel **no** cambia esta lista: `Config del negocio` la lee solo de `Config base`. Cambiar las áreas es cambiar datos y JSON.
+- `pdCarta` descarta además un ítem con `excluido === true` (como `promos.js`): un comercio puede sacar un ítem de la venta sin cambiarle el área.
+- **Límites declarados** (la suite los fija): **el área es el único control de «sin alcohol ni helados»**. Un ítem sin área, o que el comercio
+  pasa a otra área, deja de estar excluido. Y la nota libre no se mira: «horchata con ron» pasa sobre un ítem permitido y la nota viaja al
+  restaurante en el aviso. No hay filtro por nombre ni por palabras en el pedido: se acepta para el piloto, y se vuelve a mirar si hace falta.
+- La suite carga una carta de relleno con los nombres reales de área y comprueba que un cóctel, un shot, un vino, una cerveza y
+  un helado salen excluidos (y no se pueden pedir) y que un taco no; su negativo, con las áreas viejas, muestra lo que se vendía.
 
 ## Defectos conocidos y comportamientos fijados
 

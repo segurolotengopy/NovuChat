@@ -365,8 +365,13 @@ function avUnificar(lista, propio, pref) {
  * `rol:tel[:Nombre]` separados por coma o punto y coma → `[{rol, tel, nombre}]`: únicos, de 8 a 15 dígitos,
  * con prefijo permitido (def. «591») y distintos de `from`. Rol desconocido → `cocina`; un marcador sin
  * número válido (`REEMPLAZAR_…`) se descarta.
+ *
+ * `incluirPropio` es el INTERRUPTOR SOLO DE ENSAYO (`avisarAlPropioNumero` de «Config base»): con `true` EXACTO, el destinatario
+ * igual a `from` no se descarta (un solo teléfono hace de cliente y de restaurante). Es la ÚNICA excepción a «nunca al propio
+ * número»; el resto de los filtros (prefijo, 8 a 15 dígitos, unicidad, rol) sigue igual. `construir.mjs` solo deja la clave en
+ * `ensayo-demo-a.json`. Cualquier otro valor (ausente, «true» como texto, 1, un objeto) es falso: la regla de producción.
  */
-function avDestinatarios(csv, from, prefijos) {
+function avDestinatarios(csv, from, prefijos, incluirPropio) {
   const crudos = [];
   const partes = String(csv === undefined || csv === null ? '' : csv).split(/[,;\n]+/);
   for (const tok of partes) {
@@ -384,7 +389,7 @@ function avDestinatarios(csv, from, prefijos) {
     }
     crudos.push({ rol, tel, nombre: resto.join(':') });
   }
-  return avUnificar(crudos, avDigitos(from), avPrefijos(prefijos));
+  return avUnificar(crudos, incluirPropio === true ? '' : avDigitos(from), avPrefijos(prefijos));
 }
 
 // --- Cargas útiles para la Cloud API ----------------------------------------------------------
@@ -794,8 +799,10 @@ function avDetalle(tipo, d, rol, resultado, ahoraMs) {
 // --- Armado -----------------------------------------------------------------------------------
 
 function avNormalizarDestinatarios(destinatarios, d, c) {
-  const propio = avDigitos(d.telefono || d.from);
-  if (typeof destinatarios === 'string') return avDestinatarios(destinatarios, propio, c.prefijosPermitidos);
+  // Solo el interruptor de ensayo (`true` exacto) deja de descartar al propio número; ver `avDestinatarios`.
+  const incluirPropio = c.avisarAlPropioNumero === true;
+  const propio = incluirPropio ? '' : avDigitos(d.telefono || d.from);
+  if (typeof destinatarios === 'string') return avDestinatarios(destinatarios, propio, c.prefijosPermitidos, incluirPropio);
   if (!Array.isArray(destinatarios)) return [];
   return avUnificar(destinatarios, propio, avPrefijos(c.prefijosPermitidos));
 }

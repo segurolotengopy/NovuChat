@@ -114,6 +114,25 @@ describe('avDestinatarios — rol:tel[:Nombre]', () => {
     expect(L.avDestinatarios(CSV, `+${SILVANA}`, '591').map((x: J) => x.tel)).toEqual([ANDRES]);
     expect(L.avDestinatarios(`completo:${CLIENTE}`, CLIENTE, '591')).toEqual([]);
   });
+  it('INTERRUPTOR DE ENSAYO: solo con `incluirPropio === true` el destinatario igual a `from` se queda; cualquier otro valor es falso y el resto de los filtros sigue', () => {
+    expect(L.avDestinatarios(`completo:${CLIENTE}`, CLIENTE, '591', true)).toEqual([{ rol: 'completo', tel: CLIENTE, nombre: '' }]);
+    // Falso: ausente, `false`, texto, número, objeto, arreglo, null.
+    for (const valor of [undefined, false, 'true', 'false', '0', '', 1, 0, {}, [], null]) {
+      expect(L.avDestinatarios(`completo:${CLIENTE}`, CLIENTE, '591', valor), JSON.stringify(valor)).toEqual([]);
+    }
+    // El resto de los filtros no se relaja: marcador, corto, largo, otro prefijo, repetido (rol de menos privilegio).
+    const csv = `completo:REEMPLAZAR_NUMERO_AVISO_ENSAYO,cocina:1234567,cocina:1234567890123456,cocina:54100000055,completo:${CLIENTE},cocina:${CLIENTE}`;
+    expect(L.avDestinatarios(csv, CLIENTE, '591', true)).toEqual([{ rol: 'cocina', tel: CLIENTE, nombre: '' }]);
+  });
+  it('INTERRUPTOR DE ENSAYO en `avArmar`: con `cfg.avisarAlPropioNumero === true` el aviso al propio número sale; sin él, o con otro valor, no', () => {
+    const sd = sdCon({ [CLIENTE]: AHORA - 5 * MIN });
+    const propio = pedido({ telefono: CLIENTE });
+    const con = L.avArmar('pedido', propio, `completo:${CLIENTE}`, { ...CFG, plantillaPedido: '', avisarAlPropioNumero: true }, sd, AHORA);
+    expect(con.map((i: J) => [i.para, i.clase])).toEqual([[CLIENTE, 'detalle']]);
+    for (const valor of [undefined, false, 'true', 1, {}]) {
+      expect(L.avArmar('pedido', propio, `completo:${CLIENTE}`, { ...CFG, plantillaPedido: '', avisarAlPropioNumero: valor }, sd, AHORA), JSON.stringify(valor)).toEqual([]);
+    }
+  });
   it('descarta marcadores, números cortos o largos y prefijos no permitidos', () => {
     const csv = `completo:REEMPLAZAR_NUMERO_AVISO_1_QTACO,cocina:1234567,cocina:1234567890123456,cocina:54100000055,cocina:${SILVANA}`;
     expect(L.avDestinatarios(csv, CLIENTE, '591').map((x: J) => x.tel)).toEqual([SILVANA]);
